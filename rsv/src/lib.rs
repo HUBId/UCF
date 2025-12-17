@@ -5,17 +5,12 @@ use thiserror::Error;
 
 pub type OverlayId = String;
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Default)]
 pub enum HealthFlag {
+    #[default]
     Nominal,
     Degraded,
     Faulted,
-}
-
-impl Default for HealthFlag {
-    fn default() -> Self {
-        Self::Nominal
-    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Default)]
