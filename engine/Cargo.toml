@@ -1,0 +1,11 @@
+[package]
+name = "engine"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rsv = { path = "../rsv" }
+profiles = { path = "../profiles" }
+wire = { path = "../wire" }
+serde = { workspace = true }
+thiserror = { workspace = true }

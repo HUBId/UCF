@@ -1,0 +1,15 @@
+[package]
+name = "app"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+engine = { path = "../engine" }
+hpa = { path = "../hpa" }
+pvgs_client = { path = "../pvgs_client" }
+profiles = { path = "../profiles" }
+rsv = { path = "../rsv" }
+wire = { path = "../wire" }
+serde = { workspace = true }
+serde_yaml = { workspace = true }
+thiserror = { workspace = true }

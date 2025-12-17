@@ -1,0 +1,25 @@
+[workspace]
+members = [
+    "wire",
+    "rsv",
+    "engine",
+    "profiles",
+    "hpa",
+    "pvgs_client",
+    "app",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+thiserror = "1"
+
+[patch.crates-io]
+serde = { path = "vendor/serde" }
+serde_derive = { path = "vendor/serde_derive" }
+serde_yaml = { path = "vendor/serde_yaml" }
+thiserror = { path = "vendor/thiserror" }
