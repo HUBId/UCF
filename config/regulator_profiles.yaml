@@ -1,2 +1,101 @@
-# Placeholder profile definitions for the UCF Chip 2 regulation engine.
-# Populate with profile descriptors when integration begins.
+m0_research:
+  approval_mode: monitor
+  gain_profile:
+    novelty: Low
+    abstraction: Med
+  budgets:
+    k1: Low
+    k2: Low
+    k3: Low
+    k4: Low
+  chain_policy:
+    max_chain: 2
+    max_concurrency: 1
+  export_policy:
+    export_lock_default: false
+    allowed_output_types:
+      - text
+  toolclass_mask:
+    read: true
+    write: false
+    execute: false
+    transform: true
+    export: true
+  deescalation:
+    lock: false
+    cooldown_class: Low
+m1_restricted:
+  approval_mode: review
+  gain_profile:
+    novelty: Med
+    abstraction: Med
+  budgets:
+    k1: Med
+    k2: Low
+    k3: Low
+    k4: Low
+  chain_policy:
+    max_chain: 1
+    max_concurrency: 1
+  export_policy:
+    export_lock_default: true
+    allowed_output_types: []
+  toolclass_mask:
+    read: true
+    write: false
+    execute: false
+    transform: true
+    export: false
+  deescalation:
+    lock: true
+    cooldown_class: Med
+m2_quarantine:
+  approval_mode: block
+  gain_profile:
+    novelty: High
+    abstraction: High
+  budgets:
+    k1: Low
+    k2: Low
+    k3: Low
+    k4: Low
+  chain_policy:
+    max_chain: 0
+    max_concurrency: 0
+  export_policy:
+    export_lock_default: true
+    allowed_output_types: []
+  toolclass_mask:
+    read: true
+    write: false
+    execute: false
+    transform: false
+    export: false
+  deescalation:
+    lock: true
+    cooldown_class: High
+m3_forensic:
+  approval_mode: block
+  gain_profile:
+    novelty: High
+    abstraction: High
+  budgets:
+    k1: Low
+    k2: Low
+    k3: Low
+    k4: Low
+  chain_policy:
+    max_chain: 0
+    max_concurrency: 0
+  export_policy:
+    export_lock_default: true
+    allowed_output_types: []
+  toolclass_mask:
+    read: true
+    write: false
+    execute: false
+    transform: false
+    export: false
+  deescalation:
+    lock: true
+    cooldown_class: High

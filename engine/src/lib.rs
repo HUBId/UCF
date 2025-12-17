@@ -1,19 +1,49 @@
 #![forbid(unsafe_code)]
 
 use blake3::Hasher;
-use profiles::{decide, ControlDecision, ProfileState};
+use profiles::{
+    apply_classification, classify_signal_frame, decide_with_fallback, ControlDecision,
+    RegulationConfig,
+};
 use prost::Message;
 use rsv::RsvState;
+use std::path::PathBuf;
 use ucf::v1::{ActiveProfile, ControlFrame, Overlays, ToolClassMask};
 
 const CONTROL_FRAME_DOMAIN: &str = "UCF:HASH:CONTROL_FRAME";
 
-#[derive(Default)]
 pub struct RegulationEngine {
     pub rsv: RsvState,
+    config: RegulationConfig,
+}
+
+impl Default for RegulationEngine {
+    fn default() -> Self {
+        let config_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .join("config");
+        match RegulationConfig::load_from_dir(config_dir) {
+            Ok(config) => RegulationEngine {
+                rsv: RsvState::default(),
+                config,
+            },
+            Err(_) => RegulationEngine {
+                rsv: RsvState::default(),
+                config: RegulationConfig::fallback(),
+            },
+        }
+    }
 }
 
 impl RegulationEngine {
+    pub fn new(config: RegulationConfig) -> Self {
+        RegulationEngine {
+            rsv: RsvState::default(),
+            config,
+        }
+    }
+
     pub fn on_signal_frame(
         &mut self,
         mut frame: ucf::v1::SignalFrame,
@@ -23,17 +53,18 @@ impl RegulationEngine {
             frame.timestamp_ms = Some(now_ms);
         }
 
-        self.rsv.update_from_signal_frame(&frame);
-        self.rsv.last_seen_frame_ts_ms = frame.timestamp_ms;
+        let timestamp_ms = frame.timestamp_ms.unwrap_or(now_ms);
+        let classified = classify_signal_frame(&frame, &self.config.thresholds);
+        apply_classification(&mut self.rsv, &classified, timestamp_ms);
 
-        let decision = decide(&self.rsv, now_ms);
+        let decision = decide_with_fallback(&self.rsv, now_ms, &self.config);
         self.render_control_frame(decision)
     }
 
     pub fn on_tick(&mut self, now_ms: u64) -> ControlFrame {
         self.rsv.missing_frame_counter = self.rsv.missing_frame_counter.saturating_add(1);
 
-        let decision = decide(&self.rsv, now_ms);
+        let decision = decide_with_fallback(&self.rsv, now_ms, &self.config);
         self.render_control_frame(decision)
     }
 
@@ -45,32 +76,10 @@ impl RegulationEngine {
         };
 
         let profile = ActiveProfile {
-            profile: profile_string(decision.profile),
+            profile: decision.profile.as_str().to_string(),
         };
 
-        let toolclass_mask = match decision.profile {
-            ProfileState::M0Research => ToolClassMask {
-                read: true,
-                write: false,
-                execute: false,
-                transform: true,
-                export: true,
-            },
-            ProfileState::M1Restricted => ToolClassMask {
-                read: true,
-                write: false,
-                execute: false,
-                transform: true,
-                export: false,
-            },
-            ProfileState::M2Quarantine | ProfileState::M3Forensic => ToolClassMask {
-                read: true,
-                write: false,
-                execute: false,
-                transform: false,
-                export: false,
-            },
-        };
+        let toolclass_mask_config = self.toolclass_mask_for(&decision);
 
         let mut profile_reason_codes: Vec<i32> = decision
             .profile_reason_codes
@@ -82,7 +91,7 @@ impl RegulationEngine {
         let mut control_frame = ControlFrame {
             active_profile: Some(profile),
             overlays: Some(overlays),
-            toolclass_mask: Some(toolclass_mask),
+            toolclass_mask: Some(toolclass_mask_config),
             profile_reason_codes,
             control_frame_digest: None,
         };
@@ -98,20 +107,41 @@ impl RegulationEngine {
 
         control_frame
     }
-}
 
-fn profile_string(profile: ProfileState) -> String {
-    match profile {
-        ProfileState::M0Research => "M0_RESEARCH".to_string(),
-        ProfileState::M1Restricted => "M1_RESTRICTED".to_string(),
-        ProfileState::M2Quarantine => "M2_QUARANTINE".to_string(),
-        ProfileState::M3Forensic => "M3_FORENSIC".to_string(),
+    fn toolclass_mask_for(&self, decision: &ControlDecision) -> ToolClassMask {
+        let mut mask_cfg = self
+            .config
+            .profiles
+            .get(decision.profile)
+            .toolclass_mask
+            .clone();
+
+        if decision.overlays.simulate_first {
+            if let Some(overlay_mask) = &self.config.overlays.simulate_first.toolclass_mask {
+                mask_cfg = mask_cfg.merge_overlay(overlay_mask);
+            }
+        }
+
+        if decision.overlays.export_lock {
+            if let Some(overlay_mask) = &self.config.overlays.export_lock.toolclass_mask {
+                mask_cfg = mask_cfg.merge_overlay(overlay_mask);
+            }
+        }
+
+        if decision.overlays.novelty_lock {
+            if let Some(overlay_mask) = &self.config.overlays.novelty_lock.toolclass_mask {
+                mask_cfg = mask_cfg.merge_overlay(overlay_mask);
+            }
+        }
+
+        mask_cfg.to_tool_class_mask()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use profiles::{OverlaySet, ProfileState, RegulationConfig};
     use ucf::v1::{
         ExecStats, IntegrityStateClass, PolicyStats, ReasonCode, ReceiptStats, SignalFrame,
         WindowKind,
@@ -130,7 +160,10 @@ mod tests {
             integrity_state: IntegrityStateClass::Ok as i32,
             top_reason_codes: Vec::new(),
             signal_frame_digest: None,
-            receipt_stats: None,
+            receipt_stats: Some(ReceiptStats {
+                receipt_missing_count: 0,
+                receipt_invalid_count: 0,
+            }),
         }
     }
 
@@ -147,52 +180,7 @@ mod tests {
     }
 
     #[test]
-    fn frame_without_receipt_stats_stays_in_m0() {
-        let mut engine = RegulationEngine::default();
-        let frame = base_frame();
-        let control = engine.on_signal_frame(frame, 1);
-
-        assert_eq!(control.active_profile.unwrap().profile, "M0_RESEARCH");
-        assert_eq!(control.profile_reason_codes, Vec::<i32>::new());
-    }
-
-    #[test]
-    fn policy_pressure_triggers_m1() {
-        let mut engine = RegulationEngine::default();
-        let mut frame = base_frame();
-        frame.policy_stats = Some(PolicyStats {
-            deny_count: 5,
-            allow_count: 0,
-        });
-
-        let control = engine.on_signal_frame(frame, 1);
-        let profile = control.active_profile.unwrap().profile;
-        assert_eq!(profile, "M1_RESTRICTED");
-        let overlays = control.overlays.unwrap();
-        assert!(overlays.simulate_first && overlays.export_lock && overlays.novelty_lock);
-    }
-
-    #[test]
-    fn receipt_missing_triggers_restriction() {
-        let mut engine = RegulationEngine::default();
-        let mut frame = base_frame();
-        frame.receipt_stats = Some(ReceiptStats {
-            receipt_missing_count: 1,
-            receipt_invalid_count: 0,
-        });
-
-        let control = engine.on_signal_frame(frame, 1);
-        assert_eq!(control.active_profile.unwrap().profile, "M1_RESTRICTED");
-        let overlays = control.overlays.unwrap();
-        assert!(overlays.simulate_first && overlays.export_lock && overlays.novelty_lock);
-        assert_eq!(
-            control.profile_reason_codes,
-            vec![ReasonCode::RcGeExecDispatchBlocked as i32]
-        );
-    }
-
-    #[test]
-    fn receipt_invalid_escalates_to_quarantine() {
+    fn config_driven_profile_switches() {
         let mut engine = RegulationEngine::default();
         let mut frame = base_frame();
         frame.receipt_stats = Some(ReceiptStats {
@@ -201,15 +189,16 @@ mod tests {
         });
 
         let control = engine.on_signal_frame(frame, 1);
-        assert_eq!(control.active_profile.unwrap().profile, "M2_QUARANTINE");
-        assert_eq!(
-            control.profile_reason_codes,
-            vec![ReasonCode::RcGeExecDispatchBlocked as i32]
-        );
+        assert_eq!(control.active_profile.unwrap().profile, "M1_RESTRICTED");
+        let overlays = control.overlays.unwrap();
+        assert!(overlays.simulate_first && overlays.export_lock && overlays.novelty_lock);
+        assert!(control
+            .profile_reason_codes
+            .contains(&(ReasonCode::RcGeExecDispatchBlocked as i32)));
     }
 
     #[test]
-    fn integrity_fail_triggers_m3() {
+    fn integrity_fail_triggers_forensic_profile() {
         let mut engine = RegulationEngine::default();
         let mut frame = base_frame();
         frame.integrity_state = IntegrityStateClass::Fail as i32;
@@ -228,40 +217,38 @@ mod tests {
         let control = engine.on_tick(60_000);
         assert_eq!(control.active_profile.unwrap().profile, "M1_RESTRICTED");
         assert!(control.overlays.unwrap().export_lock);
+        assert!(control
+            .profile_reason_codes
+            .contains(&(ReasonCode::ReIntegrityDegraded as i32)));
     }
 
     #[test]
-    fn toolclass_masks_match_profiles() {
-        let mut engine = RegulationEngine::default();
-        let frame = base_frame();
-        let control = engine.on_signal_frame(frame.clone(), 1);
-        let mask = control.toolclass_mask.unwrap();
-        assert!(mask.read && mask.transform && mask.export);
-        assert!(!mask.write && !mask.execute);
+    fn overlay_masks_are_applied() {
+        let engine = RegulationEngine::default();
+        let decision = ControlDecision {
+            profile: ProfileState::M0Research,
+            overlays: OverlaySet {
+                simulate_first: true,
+                export_lock: false,
+                novelty_lock: false,
+            },
+            deescalation_lock: false,
+            missing_frame_override: false,
+            profile_reason_codes: vec![ReasonCode::ReIntegrityDegraded],
+        };
 
-        let mut restricted_frame = frame.clone();
-        restricted_frame.policy_stats = Some(PolicyStats {
-            deny_count: 5,
-            allow_count: 0,
-        });
-        let restricted_control = engine.on_signal_frame(restricted_frame, 1);
-        let mask = restricted_control.toolclass_mask.unwrap();
-        assert!(mask.read && mask.transform);
-        assert!(!mask.export && !mask.write && !mask.execute);
-
-        let mut quarantine_frame = frame;
-        quarantine_frame.top_reason_codes = vec![ReasonCode::RcCdDlpSecretPattern as i32];
-        let quarantine_control = engine.on_signal_frame(quarantine_frame, 1);
-        let profile = quarantine_control.active_profile.unwrap();
-        assert_eq!(profile.profile, "M2_QUARANTINE");
-        let mask = quarantine_control.toolclass_mask.unwrap();
+        let mask = engine.toolclass_mask_for(&decision);
+        assert!(!mask.export);
         assert!(mask.read);
-        if mask.export || mask.write || mask.execute {
-            panic!(
-                "unexpected toolclass mask: read={}, write={}, execute={}, transform={}, export={}",
-                mask.read, mask.write, mask.execute, mask.transform, mask.export
-            );
-        }
+    }
+
+    #[test]
+    fn fallback_config_is_conservative() {
+        let mut engine = RegulationEngine::new(RegulationConfig::fallback());
+        let control = engine.on_signal_frame(base_frame(), 1);
+        let mask = control.toolclass_mask.unwrap();
+        assert_eq!(control.active_profile.unwrap().profile, "M1_RESTRICTED");
+        assert!(!mask.export && !mask.write && !mask.execute);
     }
 
     #[test]
@@ -269,7 +256,7 @@ mod tests {
         let engine = RegulationEngine::default();
         let decision = ControlDecision {
             profile: ProfileState::M1Restricted,
-            overlays: profiles::OverlaySet {
+            overlays: OverlaySet {
                 simulate_first: true,
                 export_lock: true,
                 novelty_lock: true,

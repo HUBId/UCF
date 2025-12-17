@@ -2,7 +2,9 @@
 
 use engine::RegulationEngine;
 use hex::encode as hex_encode;
-use ucf::v1::{ExecStats, IntegrityStateClass, PolicyStats, ReasonCode, SignalFrame, WindowKind};
+use ucf::v1::{
+    ExecStats, IntegrityStateClass, PolicyStats, ReasonCode, ReceiptStats, SignalFrame, WindowKind,
+};
 use wire::FrameIngestor;
 
 fn main() {
@@ -22,7 +24,10 @@ fn main() {
         integrity_state: IntegrityStateClass::Ok as i32,
         top_reason_codes: vec![ReasonCode::Unknown as i32],
         signal_frame_digest: None,
-        receipt_stats: None,
+        receipt_stats: Some(ReceiptStats {
+            receipt_missing_count: 0,
+            receipt_invalid_count: 0,
+        }),
     };
 
     ingestor

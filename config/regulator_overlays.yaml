@@ -1,2 +1,12 @@
-# Overlay configuration placeholder.
-# Define overlay stacks and activation criteria here.
+simulate_first:
+  toolclass_mask:
+    export: false
+export_lock:
+  toolclass_mask:
+    export: false
+    write: false
+novelty_lock:
+  toolclass_mask:
+    export: false
+    execute: false
+    transform: false

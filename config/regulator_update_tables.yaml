@@ -1,2 +1,43 @@
-# Regulation update tables placeholder.
-# Include update matrices or rule tables once available.
+profile_switch:
+  - name: integrity_fail
+    integrity_state: Fail
+    set_profile: M3_FORENSIC
+    deescalation_lock: true
+    reason_codes:
+      - ReIntegrityFail
+  - name: receipt_failure_high
+    receipt_failures: High
+    set_profile: M1_RESTRICTED
+    deescalation_lock: true
+    reason_codes:
+      - RcGeExecDispatchBlocked
+  - name: missing_frame
+    missing_frame: true
+    set_profile: M1_RESTRICTED
+    deescalation_lock: true
+    reason_codes:
+      - ReIntegrityDegraded
+  - name: default
+    any: true
+    set_profile: M0_RESEARCH
+    deescalation_lock: false
+    reason_codes: []
+overlay_enable:
+  - name: integrity_fail_overlays
+    integrity_state: Fail
+    overlays:
+      simulate_first: true
+      export_lock: true
+      novelty_lock: true
+  - name: receipt_failures_overlay
+    receipt_failures: Med
+    overlays:
+      simulate_first: true
+      export_lock: true
+      novelty_lock: true
+  - name: missing_frame_overlay
+    missing_frame: true
+    overlays:
+      simulate_first: true
+      export_lock: true
+      novelty_lock: true

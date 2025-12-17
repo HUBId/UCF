@@ -1,2 +1,50 @@
-# Class threshold placeholder.
-# Map classifier outputs to regulation buckets here.
+policy_pressure:
+  short:
+    med: 2
+    high: 5
+  medium:
+    med: 3
+    high: 6
+  long:
+    med: 4
+    high: 8
+receipt_missing:
+  short:
+    med: 1
+    high: 2
+  medium:
+    med: 1
+    high: 2
+  long:
+    med: 2
+    high: 3
+receipt_invalid:
+  short:
+    med: 1
+    high: 2
+  medium:
+    med: 1
+    high: 2
+  long:
+    med: 1
+    high: 2
+exec_timeouts:
+  short:
+    med: 1
+    high: 3
+  medium:
+    med: 2
+    high: 4
+  long:
+    med: 3
+    high: 6
+dlp_events:
+  short:
+    med: 1
+    high: 2
+  medium:
+    med: 1
+    high: 2
+  long:
+    med: 1
+    high: 2
