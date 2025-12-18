@@ -3,6 +3,13 @@ name = "pvgs_client"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+local-pvgs = ["chip4"]
+
 [dependencies]
 serde = { workspace = true }
 thiserror = { workspace = true }
+chip4 = { path = "../chip4", optional = true }
+
+[dev-dependencies]
+chip4 = { path = "../chip4" }

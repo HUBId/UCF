@@ -7,7 +7,7 @@ members = [
     "hpa",
     "pvgs_client",
     "app",
-    "ucf-protocol",
+    "ucf-protocol", "chip4",
 ]
 resolver = "2"
 

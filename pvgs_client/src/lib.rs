@@ -1,5 +1,10 @@
 #![forbid(unsafe_code)]
 
+#[cfg(any(test, feature = "local-pvgs"))]
+pub mod local;
+#[cfg(any(test, feature = "local-pvgs"))]
+pub use local::LocalPvgsReader;
+
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -128,6 +133,7 @@ impl PvgsWriter for PlaceholderPvgsClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chip4::pvgs::{Cbv, Digest32, InMemoryPvgs};
 
     #[test]
     fn mock_reader_exposes_cbv_digest() {
@@ -159,5 +165,46 @@ mod tests {
             placeholder.commit_control_frame_evidence("s", [0u8; 32]),
             Err(PvgsError::NotImplemented)
         ));
+    }
+
+    #[test]
+    fn local_reader_returns_none_without_cbv() {
+        let store = InMemoryPvgs::new();
+        let reader = LocalPvgsReader::new(store);
+
+        assert!(reader.get_latest_cbv_digest().is_none());
+    }
+
+    #[test]
+    fn local_reader_returns_latest_cbv_digest() {
+        let store = InMemoryPvgs::new();
+        let digest = [9u8; 32];
+        let cbv = Cbv {
+            epoch: 1,
+            cbv_digest: Some(Digest32::from_array(digest)),
+            proof_receipt_ref: Some(vec![1, 2, 3]),
+            signature: Some(vec![4, 5, 6]),
+        };
+        store.commit_cbv_update(cbv);
+
+        let reader = LocalPvgsReader::new(store);
+        assert_eq!(reader.get_latest_cbv_digest(), Some(digest));
+    }
+
+    #[test]
+    fn local_reader_rejects_short_digest() {
+        let store = InMemoryPvgs::new();
+        let cbv = Cbv {
+            epoch: 1,
+            cbv_digest: Some(Digest32 {
+                value: vec![1, 2, 3],
+            }),
+            proof_receipt_ref: None,
+            signature: None,
+        };
+        store.commit_cbv_update(cbv);
+
+        let reader = LocalPvgsReader::new(store);
+        assert!(reader.get_latest_cbv_digest().is_none());
     }
 }
