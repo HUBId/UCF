@@ -66,6 +66,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
+name = "chip4"
+version = "0.1.0"
+dependencies = [
+ "prost",
+]
+
+[[package]]
 name = "constant_time_eq"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -82,6 +89,7 @@ name = "engine"
 version = "0.1.0"
 dependencies = [
  "blake3",
+ "chip4",
  "profiles",
  "prost",
  "pvgs_client",
@@ -200,6 +208,7 @@ dependencies = [
 name = "pvgs_client"
 version = "0.1.0"
 dependencies = [
+ "chip4",
  "serde",
  "thiserror",
 ]
