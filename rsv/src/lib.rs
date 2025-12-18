@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
 use serde::{Deserialize, Serialize};
-use ucf::v1::{IntegrityStateClass, LevelClass, ReasonCode, SignalFrame};
+use ucf::v1::{IntegrityStateClass, LevelClass};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RsvState {
@@ -10,11 +10,14 @@ pub struct RsvState {
     pub threat: LevelClass,
     pub arousal: LevelClass,
     pub stability: LevelClass,
+    pub divergence: LevelClass,
+    pub budget_stress: LevelClass,
     pub receipt_failures: LevelClass,
     pub receipt_missing_count_window: u32,
     pub receipt_invalid_count_window: u32,
     pub last_seen_frame_ts_ms: Option<u64>,
     pub missing_frame_counter: u32,
+    pub missing_data: bool,
 }
 
 impl Default for RsvState {
@@ -25,102 +28,14 @@ impl Default for RsvState {
             threat: LevelClass::Low,
             arousal: LevelClass::Low,
             stability: LevelClass::Low,
+            divergence: LevelClass::Low,
+            budget_stress: LevelClass::Low,
             receipt_failures: LevelClass::Low,
             receipt_missing_count_window: 0,
             receipt_invalid_count_window: 0,
             last_seen_frame_ts_ms: None,
             missing_frame_counter: 0,
-        }
-    }
-}
-
-impl RsvState {
-    pub fn update_from_signal_frame(&mut self, frame: &SignalFrame) {
-        self.last_seen_frame_ts_ms = frame.timestamp_ms;
-        self.missing_frame_counter = 0;
-
-        let integrity_state = IntegrityStateClass::try_from(frame.integrity_state)
-            .unwrap_or(IntegrityStateClass::Unknown);
-
-        self.integrity = match integrity_state {
-            IntegrityStateClass::Fail => IntegrityStateClass::Fail,
-            IntegrityStateClass::Degraded => IntegrityStateClass::Degraded,
-            IntegrityStateClass::Ok => IntegrityStateClass::Ok,
-            _ => IntegrityStateClass::Unknown,
-        };
-
-        let deny_count = frame
-            .policy_stats
-            .as_ref()
-            .map(|stats| stats.deny_count)
-            .unwrap_or_default();
-
-        self.policy_pressure = if deny_count >= 5 {
-            LevelClass::High
-        } else if deny_count >= 2 {
-            LevelClass::Med
-        } else {
-            LevelClass::Low
-        };
-
-        let top_codes: Vec<ReasonCode> = frame
-            .top_reason_codes
-            .iter()
-            .filter_map(|code| ReasonCode::try_from(*code).ok())
-            .collect();
-
-        self.threat = if top_codes.iter().any(|code| {
-            matches!(
-                code,
-                ReasonCode::RcCdDlpSecretPattern
-                    | ReasonCode::RcCdDlpObfuscation
-                    | ReasonCode::RcCdDlpStegano
-            )
-        }) {
-            LevelClass::High
-        } else {
-            LevelClass::Low
-        };
-
-        let timeout_count = frame
-            .exec_stats
-            .as_ref()
-            .map(|stats| stats.timeout_count)
-            .unwrap_or_default();
-
-        self.arousal = if timeout_count >= 2 || self.policy_pressure == LevelClass::High {
-            LevelClass::High
-        } else if deny_count >= 2 {
-            LevelClass::Med
-        } else {
-            LevelClass::Low
-        };
-
-        self.stability = if self.integrity != IntegrityStateClass::Ok {
-            LevelClass::High
-        } else if self.policy_pressure == LevelClass::Med {
-            LevelClass::Med
-        } else {
-            LevelClass::Low
-        };
-
-        if let Some(receipt_stats) = frame.receipt_stats.as_ref() {
-            self.receipt_missing_count_window = receipt_stats.receipt_missing_count;
-            self.receipt_invalid_count_window = receipt_stats.receipt_invalid_count;
-
-            self.receipt_failures = if receipt_stats.receipt_invalid_count >= 1
-                || receipt_stats.receipt_missing_count >= 2
-            {
-                LevelClass::High
-            } else if receipt_stats.receipt_missing_count == 1 {
-                LevelClass::Med
-            } else {
-                LevelClass::Low
-            };
-        } else {
-            self.receipt_missing_count_window = 0;
-            self.receipt_invalid_count_window = 0;
-            self.receipt_failures = LevelClass::Low;
+            missing_data: false,
         }
     }
 }
@@ -128,7 +43,6 @@ impl RsvState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ucf::v1::{ExecStats, PolicyStats, ReceiptStats, WindowKind};
 
     #[test]
     fn default_state_is_low_and_ok() {
@@ -142,103 +56,14 @@ mod tests {
         assert_eq!(state.receipt_missing_count_window, 0);
         assert_eq!(state.receipt_invalid_count_window, 0);
         assert_eq!(state.missing_frame_counter, 0);
+        assert!(!state.missing_data);
     }
 
     #[test]
-    fn policy_stats_drive_pressure_and_arousal() {
+    fn missing_frame_counter_increments() {
         let mut state = RsvState::default();
-        let frame = SignalFrame {
-            window_kind: WindowKind::Short as i32,
-            window_index: Some(1),
-            timestamp_ms: Some(1),
-            policy_stats: Some(PolicyStats {
-                deny_count: 3,
-                allow_count: 0,
-            }),
-            exec_stats: Some(ExecStats { timeout_count: 0 }),
-            ..SignalFrame::default()
-        };
-
-        state.update_from_signal_frame(&frame);
-        assert_eq!(state.policy_pressure, LevelClass::Med);
-        assert_eq!(state.arousal, LevelClass::Med);
-    }
-
-    #[test]
-    fn threat_escalates_on_secret_patterns() {
-        let mut state = RsvState::default();
-        let frame = SignalFrame {
-            window_kind: WindowKind::Short as i32,
-            window_index: Some(1),
-            timestamp_ms: Some(1),
-            top_reason_codes: vec![ReasonCode::RcCdDlpStegano as i32],
-            ..SignalFrame::default()
-        };
-
-        state.update_from_signal_frame(&frame);
-        assert_eq!(state.threat, LevelClass::High);
-    }
-
-    #[test]
-    fn integrity_fail_drives_stability() {
-        let mut state = RsvState::default();
-        let frame = SignalFrame {
-            window_kind: WindowKind::Short as i32,
-            window_index: Some(1),
-            timestamp_ms: Some(1),
-            integrity_state: IntegrityStateClass::Fail as i32,
-            ..SignalFrame::default()
-        };
-
-        state.update_from_signal_frame(&frame);
-        assert_eq!(state.integrity, IntegrityStateClass::Fail);
-        assert_eq!(state.stability, LevelClass::High);
-    }
-
-    #[test]
-    fn receipt_stats_update_state() {
-        let mut state = RsvState::default();
-        let frame = SignalFrame {
-            window_kind: WindowKind::Short as i32,
-            window_index: Some(1),
-            timestamp_ms: Some(1),
-            receipt_stats: Some(ReceiptStats {
-                receipt_missing_count: 1,
-                receipt_invalid_count: 0,
-            }),
-            ..SignalFrame::default()
-        };
-
-        state.update_from_signal_frame(&frame);
-
-        assert_eq!(state.receipt_missing_count_window, 1);
-        assert_eq!(state.receipt_invalid_count_window, 0);
-        assert_eq!(state.receipt_failures, LevelClass::Med);
-    }
-
-    #[test]
-    fn missing_receipt_stats_reset_state() {
-        let mut state = RsvState::default();
-        let frame = SignalFrame {
-            window_kind: WindowKind::Short as i32,
-            window_index: Some(1),
-            timestamp_ms: Some(1),
-            receipt_stats: Some(ReceiptStats {
-                receipt_missing_count: 3,
-                receipt_invalid_count: 2,
-            }),
-            ..SignalFrame::default()
-        };
-
-        state.update_from_signal_frame(&frame);
-        assert_eq!(state.receipt_failures, LevelClass::High);
-
-        let mut next_frame = frame;
-        next_frame.receipt_stats = None;
-
-        state.update_from_signal_frame(&next_frame);
-        assert_eq!(state.receipt_missing_count_window, 0);
-        assert_eq!(state.receipt_invalid_count_window, 0);
-        assert_eq!(state.receipt_failures, LevelClass::Low);
+        state.missing_frame_counter = 2;
+        state.missing_frame_counter = state.missing_frame_counter.saturating_add(1);
+        assert_eq!(state.missing_frame_counter, 3);
     }
 }

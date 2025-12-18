@@ -1,2 +1,12 @@
-# Windowing configuration placeholder.
-# Describe time window sizes and aggregation strategies.
+short:
+  min_records: 1
+  max_records: 50
+  max_age_ms: 30000
+medium:
+  min_records: 1
+  max_records: 200
+  max_age_ms: 120000
+long:
+  min_records: 1
+  max_records: 500
+  max_age_ms: 300000
