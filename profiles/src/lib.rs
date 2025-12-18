@@ -200,7 +200,7 @@ pub fn apply_cbv_modifiers(
 
     if cbv.baseline_approval_strictness_offset >= 1 {
         cbv_triggered = true;
-        if base.approval_mode.to_ascii_uppercase() != "STRICT" {
+        if !base.approval_mode.eq_ignore_ascii_case("STRICT") {
             base.approval_mode = "STRICT".to_string();
         }
     }
