@@ -205,30 +205,17 @@ fn classify_dlp(
 fn has_replay_mismatch(frame: &SignalFrame) -> bool {
     let mismatch_code = ReasonCode::RcReReplayMismatch as i32;
 
-    frame
-        .top_reason_codes
-        .iter()
-        .any(|code| *code == mismatch_code)
-        || frame.reason_codes.iter().any(|code| *code == mismatch_code)
+    frame.top_reason_codes.contains(&mismatch_code)
+        || frame.reason_codes.contains(&mismatch_code)
         || frame
             .policy_stats
             .as_ref()
-            .map(|stats| {
-                stats
-                    .top_reason_codes
-                    .iter()
-                    .any(|code| *code == mismatch_code)
-            })
+            .map(|stats| stats.top_reason_codes.contains(&mismatch_code))
             .unwrap_or(false)
         || frame
             .exec_stats
             .as_ref()
-            .map(|stats| {
-                stats
-                    .top_reason_codes
-                    .iter()
-                    .any(|code| *code == mismatch_code)
-            })
+            .map(|stats| stats.top_reason_codes.contains(&mismatch_code))
             .unwrap_or(false)
 }
 
