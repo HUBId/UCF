@@ -365,6 +365,8 @@ mod tests {
         assert_eq!(config.windowing.short.max_records, 50);
         assert!(config.profiles.m0_research.toolclass_mask.export);
         assert!(!config.character_baselines.cbv_influence_enabled);
+        assert_eq!(config.anti_flapping.min_ms_between_profile_changes, 10_000);
+        assert_eq!(config.engine_limits.max_frames_per_tick, 8);
     }
 
     #[test]

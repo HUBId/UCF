@@ -1,0 +1,4 @@
+min_ms_between_profile_changes: 10000
+min_ms_between_overlay_changes: 5000
+max_switches_per_medium_window: 5
+flapping_penalty_mode: force_m1_lock

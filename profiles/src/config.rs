@@ -13,6 +13,8 @@ const REGULATOR_PROFILES_FILE: &str = "regulator_profiles.yaml";
 const REGULATOR_OVERLAYS_FILE: &str = "regulator_overlays.yaml";
 const REGULATOR_UPDATE_TABLES_FILE: &str = "regulator_update_tables.yaml";
 const BASELINE_MODIFIERS_FILE: &str = "baseline_modifiers.yaml";
+const ENGINE_LIMITS_FILE: &str = "engine_limits.yaml";
+const ANTI_FLAPPING_FILE: &str = "anti_flapping.yaml";
 
 #[derive(Debug, Error)]
 pub enum ConfigError {
@@ -358,6 +360,50 @@ pub struct OverlayEnableRule {
     pub overlays: OverlaySet,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum FlappingPenaltyMode {
+    #[default]
+    ForceM1Lock,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct AntiFlappingConfig {
+    pub min_ms_between_profile_changes: u64,
+    pub min_ms_between_overlay_changes: u64,
+    pub max_switches_per_medium_window: u32,
+    #[serde(default)]
+    pub flapping_penalty_mode: FlappingPenaltyMode,
+}
+
+impl Default for AntiFlappingConfig {
+    fn default() -> Self {
+        AntiFlappingConfig {
+            min_ms_between_profile_changes: 10_000,
+            min_ms_between_overlay_changes: 5_000,
+            max_switches_per_medium_window: 5,
+            flapping_penalty_mode: FlappingPenaltyMode::ForceM1Lock,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct EngineLimitsConfig {
+    pub max_frames_per_tick: usize,
+    pub max_queue_len: usize,
+}
+
+impl Default for EngineLimitsConfig {
+    fn default() -> Self {
+        EngineLimitsConfig {
+            max_frames_per_tick: 8,
+            max_queue_len: 256,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct UpdateTablesConfig {
@@ -375,6 +421,10 @@ pub struct RegulationConfig {
     pub update_tables: UpdateTablesConfig,
     #[serde(default)]
     pub character_baselines: CharacterBaselineConfig,
+    #[serde(default)]
+    pub anti_flapping: AntiFlappingConfig,
+    #[serde(default)]
+    pub engine_limits: EngineLimitsConfig,
 }
 
 impl RegulationConfig {
@@ -387,6 +437,8 @@ impl RegulationConfig {
             overlays: load_file(base.join(REGULATOR_OVERLAYS_FILE))?,
             update_tables: load_file(base.join(REGULATOR_UPDATE_TABLES_FILE))?,
             character_baselines: load_optional_file(base.join(BASELINE_MODIFIERS_FILE))?,
+            anti_flapping: load_optional_file(base.join(ANTI_FLAPPING_FILE))?,
+            engine_limits: load_optional_file(base.join(ENGINE_LIMITS_FILE))?,
         })
     }
 
@@ -655,6 +707,8 @@ impl RegulationConfig {
                 ],
             },
             character_baselines: CharacterBaselineConfig::default(),
+            anti_flapping: AntiFlappingConfig::default(),
+            engine_limits: EngineLimitsConfig::default(),
         }
     }
 }
