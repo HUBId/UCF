@@ -360,16 +360,11 @@ pub struct OverlayEnableRule {
     pub overlays: OverlaySet,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum FlappingPenaltyMode {
+    #[default]
     ForceM1Lock,
-}
-
-impl Default for FlappingPenaltyMode {
-    fn default() -> Self {
-        FlappingPenaltyMode::ForceM1Lock
-    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
