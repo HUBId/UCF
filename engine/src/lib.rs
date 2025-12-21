@@ -3,11 +3,13 @@
 use blake3::Hasher;
 use profiles::{
     apply_cbv_modifiers, apply_classification, apply_pev_modifiers, classify_signal_frame,
-    decide_with_fallback, ControlDecision, OverlaySet, ProfileState, RegulationConfig,
+    decide_with_fallback, ControlDecision, FlappingPenaltyMode, OverlaySet, ProfileState,
+    RegulationConfig,
 };
 use prost::Message;
 use pvgs_client::{PvgsReader, PvgsWriter};
 use rsv::RsvState;
+use std::collections::VecDeque;
 use std::path::PathBuf;
 use ucf::v1::{
     ActiveProfile, ControlFrame, IntegrityStateClass, LevelClass, Overlays, ToolClassMask,
@@ -15,12 +17,41 @@ use ucf::v1::{
 
 const CONTROL_FRAME_DOMAIN: &str = "UCF:HASH:CONTROL_FRAME";
 
+#[derive(Debug)]
+pub enum EngineError {
+    QueueSaturated,
+}
+
+impl std::fmt::Display for EngineError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EngineError::QueueSaturated => {
+                write!(f, "signal queue saturated; dropped oldest frame")
+            }
+        }
+    }
+}
+
+impl std::error::Error for EngineError {}
+
+#[derive(Debug, Default)]
+struct AntiFlappingState {
+    last_profile_change_ms: Option<u64>,
+    last_overlay_change_ms: Option<u64>,
+    switch_count_medium_window: u32,
+    medium_window_started_ms: Option<u64>,
+    current_profile: Option<ProfileState>,
+    current_overlays: Option<OverlaySet>,
+}
+
 pub struct RegulationEngine {
     pub rsv: RsvState,
     config: RegulationConfig,
     pvgs_reader: Option<Box<dyn PvgsReader + Send + Sync>>,
     pvgs_writer: Option<Box<dyn PvgsWriter + Send>>,
     session_id: Option<String>,
+    signal_queue: VecDeque<ucf::v1::SignalFrame>,
+    anti_flapping_state: AntiFlappingState,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -54,6 +85,8 @@ impl Default for RegulationEngine {
                 pvgs_reader: None,
                 pvgs_writer: None,
                 session_id: None,
+                signal_queue: VecDeque::new(),
+                anti_flapping_state: AntiFlappingState::default(),
             },
             Err(_) => RegulationEngine {
                 rsv: RsvState::default(),
@@ -61,6 +94,8 @@ impl Default for RegulationEngine {
                 pvgs_reader: None,
                 pvgs_writer: None,
                 session_id: None,
+                signal_queue: VecDeque::new(),
+                anti_flapping_state: AntiFlappingState::default(),
             },
         }
     }
@@ -74,6 +109,8 @@ impl RegulationEngine {
             pvgs_reader: None,
             pvgs_writer: None,
             session_id: None,
+            signal_queue: VecDeque::new(),
+            anti_flapping_state: AntiFlappingState::default(),
         }
     }
 
@@ -89,9 +126,10 @@ impl RegulationEngine {
         self.session_id = Some(session_id.into());
     }
 
-    pub fn snapshot(&self) -> RegulationSnapshot {
+    pub fn snapshot(&mut self) -> RegulationSnapshot {
         let now_ms = self.rsv.last_seen_frame_ts_ms.unwrap_or(0);
         let decision = decide_with_fallback(&self.rsv, now_ms, &self.config);
+        let decision = self.apply_anti_flapping(decision, now_ms);
         let (control_frame, _) = self.build_control_frame(decision.clone());
         let digest = control_frame
             .control_frame_digest
@@ -107,11 +145,63 @@ impl RegulationEngine {
         }
     }
 
-    pub fn on_signal_frame(
+    pub fn enqueue_signal_frame(&mut self, frame: ucf::v1::SignalFrame) -> Result<(), EngineError> {
+        if self.signal_queue.len() >= self.config.engine_limits.max_queue_len {
+            let _ = self.signal_queue.pop_front();
+            eprintln!(
+                "dropping oldest signal frame to honor max_queue_len={}",
+                self.config.engine_limits.max_queue_len
+            );
+            self.signal_queue.push_back(frame);
+            return Err(EngineError::QueueSaturated);
+        }
+
+        self.signal_queue.push_back(frame);
+        Ok(())
+    }
+
+    pub fn queued_frames(&self) -> usize {
+        self.signal_queue.len()
+    }
+
+    pub fn on_signal_frame(&mut self, frame: ucf::v1::SignalFrame, now_ms: u64) -> ControlFrame {
+        let decision = self.decide_from_frame(frame, now_ms);
+        self.apply_and_render(decision, now_ms)
+    }
+
+    pub fn on_tick(&mut self, now_ms: u64) -> ControlFrame {
+        let decision = self.decide_on_missing(now_ms);
+        self.apply_and_render(decision, now_ms)
+    }
+
+    pub fn tick(&mut self, now_ms: u64) -> ControlFrame {
+        let mut control_frame: Option<ControlFrame> = None;
+        let max_to_process = self
+            .config
+            .engine_limits
+            .max_frames_per_tick
+            .min(self.signal_queue.len());
+
+        for _ in 0..max_to_process {
+            if let Some(frame) = self.signal_queue.pop_front() {
+                let decision = self.decide_from_frame(frame, now_ms);
+                control_frame = Some(self.apply_and_render(decision, now_ms));
+            }
+        }
+
+        if let Some(control_frame) = control_frame {
+            return control_frame;
+        }
+
+        let decision = self.decide_on_missing(now_ms);
+        self.apply_and_render(decision, now_ms)
+    }
+
+    fn decide_from_frame(
         &mut self,
         mut frame: ucf::v1::SignalFrame,
         now_ms: u64,
-    ) -> ControlFrame {
+    ) -> ControlDecision {
         if frame.timestamp_ms.is_none() {
             frame.timestamp_ms = Some(now_ms);
         }
@@ -120,15 +210,188 @@ impl RegulationEngine {
         let classified = classify_signal_frame(&frame, &self.config.thresholds);
         apply_classification(&mut self.rsv, &classified, timestamp_ms);
 
-        let decision = decide_with_fallback(&self.rsv, now_ms, &self.config);
+        decide_with_fallback(&self.rsv, now_ms, &self.config)
+    }
+
+    fn decide_on_missing(&mut self, now_ms: u64) -> ControlDecision {
+        self.rsv.missing_frame_counter = self.rsv.missing_frame_counter.saturating_add(1);
+        decide_with_fallback(&self.rsv, now_ms, &self.config)
+    }
+
+    fn apply_and_render(&mut self, decision: ControlDecision, now_ms: u64) -> ControlFrame {
+        let decision = self.apply_anti_flapping(decision, now_ms);
         self.render_control_frame(decision)
     }
 
-    pub fn on_tick(&mut self, now_ms: u64) -> ControlFrame {
-        self.rsv.missing_frame_counter = self.rsv.missing_frame_counter.saturating_add(1);
+    fn apply_anti_flapping(
+        &mut self,
+        mut decision: ControlDecision,
+        now_ms: u64,
+    ) -> ControlDecision {
+        self.reset_switch_window_if_needed(now_ms);
 
-        let decision = decide_with_fallback(&self.rsv, now_ms, &self.config);
-        self.render_control_frame(decision)
+        let mut profile_changed = false;
+        let mut overlay_changed = false;
+
+        let current_profile = self
+            .anti_flapping_state
+            .current_profile
+            .unwrap_or(decision.profile);
+
+        if self.anti_flapping_state.current_profile.is_none() {
+            self.anti_flapping_state.current_profile = Some(decision.profile);
+            self.anti_flapping_state.last_profile_change_ms = Some(now_ms);
+        } else if decision.profile != current_profile {
+            let tightening = Self::is_tightening(decision.profile, current_profile);
+            let within_cooldown = self.within_profile_cooldown(now_ms);
+
+            if !tightening && within_cooldown {
+                decision.profile = current_profile;
+            } else {
+                profile_changed = true;
+                self.anti_flapping_state.current_profile = Some(decision.profile);
+                self.anti_flapping_state.last_profile_change_ms = Some(now_ms);
+            }
+        }
+
+        let current_overlays = self
+            .anti_flapping_state
+            .current_overlays
+            .clone()
+            .unwrap_or_else(|| decision.overlays.clone());
+
+        if self.anti_flapping_state.current_overlays.is_none() {
+            self.anti_flapping_state.current_overlays = Some(decision.overlays.clone());
+            self.anti_flapping_state.last_overlay_change_ms = Some(now_ms);
+        } else if decision.overlays != current_overlays {
+            let mut overlays = current_overlays.clone();
+            let overlay_cooldown_passed = self.overlay_cooldown_passed(now_ms);
+
+            if decision.overlays.simulate_first && !current_overlays.simulate_first {
+                overlay_changed = true;
+                overlays.simulate_first = true;
+            } else if !decision.overlays.simulate_first
+                && current_overlays.simulate_first
+                && overlay_cooldown_passed
+            {
+                overlay_changed = true;
+                overlays.simulate_first = false;
+            }
+
+            if decision.overlays.export_lock && !current_overlays.export_lock {
+                overlay_changed = true;
+                overlays.export_lock = true;
+            } else if !decision.overlays.export_lock
+                && current_overlays.export_lock
+                && overlay_cooldown_passed
+            {
+                overlay_changed = true;
+                overlays.export_lock = false;
+            }
+
+            if decision.overlays.novelty_lock && !current_overlays.novelty_lock {
+                overlay_changed = true;
+                overlays.novelty_lock = true;
+            } else if !decision.overlays.novelty_lock
+                && current_overlays.novelty_lock
+                && overlay_cooldown_passed
+            {
+                overlay_changed = true;
+                overlays.novelty_lock = false;
+            }
+
+            if decision.overlays.chain_tightening && !current_overlays.chain_tightening {
+                overlay_changed = true;
+                overlays.chain_tightening = true;
+            } else if !decision.overlays.chain_tightening
+                && current_overlays.chain_tightening
+                && overlay_cooldown_passed
+            {
+                overlay_changed = true;
+                overlays.chain_tightening = false;
+            }
+
+            if overlay_changed {
+                self.anti_flapping_state.current_overlays = Some(overlays.clone());
+                self.anti_flapping_state.last_overlay_change_ms = Some(now_ms);
+                decision.overlays = overlays;
+            } else {
+                decision.overlays = current_overlays;
+            }
+        }
+
+        if profile_changed || overlay_changed {
+            self.anti_flapping_state.switch_count_medium_window = self
+                .anti_flapping_state
+                .switch_count_medium_window
+                .saturating_add((profile_changed as u32) + (overlay_changed as u32));
+        }
+
+        if self.anti_flapping_state.switch_count_medium_window
+            > self.config.anti_flapping.max_switches_per_medium_window
+        {
+            if matches!(
+                self.config.anti_flapping.flapping_penalty_mode,
+                FlappingPenaltyMode::ForceM1Lock
+            ) {
+                decision.profile = ProfileState::M1Restricted;
+                decision.overlays = OverlaySet::all_enabled();
+                decision.deescalation_lock = true;
+            }
+
+            self.anti_flapping_state.current_profile = Some(decision.profile);
+            self.anti_flapping_state.current_overlays = Some(decision.overlays.clone());
+            self.anti_flapping_state.last_profile_change_ms = Some(now_ms);
+            self.anti_flapping_state.last_overlay_change_ms = Some(now_ms);
+        }
+
+        decision
+    }
+
+    fn reset_switch_window_if_needed(&mut self, now_ms: u64) {
+        let start = self
+            .anti_flapping_state
+            .medium_window_started_ms
+            .unwrap_or(now_ms);
+
+        if now_ms.saturating_sub(start) >= self.config.windowing.medium.max_age_ms {
+            self.anti_flapping_state.switch_count_medium_window = 0;
+            self.anti_flapping_state.medium_window_started_ms = Some(now_ms);
+        } else if self.anti_flapping_state.medium_window_started_ms.is_none() {
+            self.anti_flapping_state.medium_window_started_ms = Some(start);
+        }
+    }
+
+    fn within_profile_cooldown(&self, now_ms: u64) -> bool {
+        self.anti_flapping_state
+            .last_profile_change_ms
+            .map(|ts| {
+                now_ms.saturating_sub(ts) < self.config.anti_flapping.min_ms_between_profile_changes
+            })
+            .unwrap_or(false)
+    }
+
+    fn overlay_cooldown_passed(&self, now_ms: u64) -> bool {
+        self.anti_flapping_state
+            .last_overlay_change_ms
+            .map(|ts| {
+                now_ms.saturating_sub(ts)
+                    >= self.config.anti_flapping.min_ms_between_overlay_changes
+            })
+            .unwrap_or(true)
+    }
+
+    fn is_tightening(next: ProfileState, current: ProfileState) -> bool {
+        Self::profile_rank(next) >= Self::profile_rank(current)
+    }
+
+    fn profile_rank(profile: ProfileState) -> u8 {
+        match profile {
+            ProfileState::M0Research => 0,
+            ProfileState::M1Restricted => 1,
+            ProfileState::M2Quarantine => 2,
+            ProfileState::M3Forensic => 3,
+        }
     }
 
     fn render_control_frame(&mut self, decision: ControlDecision) -> ControlFrame {
@@ -265,7 +528,7 @@ impl RegulationEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use profiles::{OverlaySet, ProfileState, RegulationConfig};
+    use profiles::{OverlayEnableRule, OverlaySet, ProfileState, RegulationConfig, RuleCondition};
     use pvgs_client::{MockPvgsReader, PvgsError};
     use std::sync::{Arc, Mutex};
     use ucf::v1::{
@@ -317,6 +580,13 @@ mod tests {
             }),
             reason_codes: Vec::new(),
         }
+    }
+
+    fn replay_mismatch_frame(ts: u64) -> SignalFrame {
+        let mut frame = base_frame();
+        frame.timestamp_ms = Some(ts);
+        frame.top_reason_codes = vec![ReasonCode::RcReReplayMismatch as i32];
+        frame
     }
 
     fn cbv_digest(byte: u8) -> [u8; 32] {
@@ -669,6 +939,113 @@ mod tests {
         assert!(control
             .profile_reason_codes
             .contains(&(ReasonCode::ReIntegrityDegraded as i32)));
+    }
+
+    #[test]
+    fn bounded_tick_processing_respects_limit() {
+        let mut engine = RegulationEngine::default();
+        engine.config.engine_limits.max_frames_per_tick = 3;
+        engine.config.engine_limits.max_queue_len = 64;
+
+        for i in 0..20u64 {
+            let mut frame = base_frame();
+            frame.timestamp_ms = Some(i);
+            engine.enqueue_signal_frame(frame).unwrap();
+        }
+
+        let _ = engine.tick(100);
+        assert_eq!(engine.queued_frames(), 17);
+    }
+
+    #[test]
+    fn tighten_is_allowed_during_cooldown() {
+        let mut engine = RegulationEngine::default();
+        engine.config.anti_flapping.min_ms_between_profile_changes = 10_000;
+
+        let _ = engine.on_signal_frame(base_frame(), 0);
+        let control = engine.on_signal_frame(replay_mismatch_frame(1), 1);
+        assert_eq!(control.active_profile.unwrap().profile, "M1_RESTRICTED");
+
+        let control = engine.on_signal_frame(base_frame(), 2);
+        assert_eq!(control.active_profile.unwrap().profile, "M1_RESTRICTED");
+    }
+
+    #[test]
+    fn overlays_only_relax_after_cooldown() {
+        let mut engine = RegulationEngine::default();
+        engine.config.update_tables.overlay_enable.clear();
+        engine.config.anti_flapping.min_ms_between_overlay_changes = 10_000;
+
+        let control = engine.on_signal_frame(base_frame(), 0);
+        assert!(!control.overlays.unwrap().simulate_first);
+
+        engine
+            .config
+            .update_tables
+            .overlay_enable
+            .push(OverlayEnableRule {
+                name: "enable_all".to_string(),
+                conditions: RuleCondition {
+                    any: Some(true),
+                    ..Default::default()
+                },
+                overlays: OverlaySet {
+                    simulate_first: true,
+                    export_lock: true,
+                    novelty_lock: true,
+                    chain_tightening: true,
+                },
+            });
+
+        let control = engine.on_signal_frame(base_frame(), 1);
+        let overlays = control.overlays.unwrap();
+        assert!(overlays.simulate_first && overlays.export_lock && overlays.novelty_lock);
+
+        engine.config.update_tables.overlay_enable.clear();
+        let control = engine.on_signal_frame(base_frame(), 2);
+        assert!(control.overlays.unwrap().simulate_first);
+    }
+
+    #[test]
+    fn flapping_penalty_forces_restriction() {
+        let mut engine = RegulationEngine::default();
+        engine.config.anti_flapping.max_switches_per_medium_window = 1;
+        engine.config.anti_flapping.min_ms_between_profile_changes = 0;
+        engine.config.anti_flapping.min_ms_between_overlay_changes = 0;
+        engine.config.update_tables.overlay_enable.clear();
+
+        let _ = engine.on_signal_frame(base_frame(), 0);
+        let control = engine.on_signal_frame(replay_mismatch_frame(1), 1);
+        assert_eq!(control.active_profile.unwrap().profile, "M1_RESTRICTED");
+
+        let control = engine.on_signal_frame(base_frame(), 2);
+        let overlays = control.overlays.unwrap();
+        assert_eq!(control.active_profile.unwrap().profile, "M1_RESTRICTED");
+        assert!(overlays.simulate_first && overlays.export_lock && overlays.novelty_lock);
+        assert_eq!(control.deescalation_lock, Some(true));
+    }
+
+    #[test]
+    fn deterministic_control_frames_from_same_sequence() {
+        let mut engine_a = RegulationEngine::default();
+        let mut engine_b = RegulationEngine::default();
+
+        for ts in 0..5u64 {
+            let mut frame = base_frame();
+            frame.timestamp_ms = Some(ts);
+            engine_a.enqueue_signal_frame(frame.clone()).unwrap();
+            engine_b.enqueue_signal_frame(frame).unwrap();
+        }
+
+        let mut digests_a = Vec::new();
+        let mut digests_b = Vec::new();
+
+        for now in [10u64, 20u64] {
+            digests_a.push(engine_a.tick(now).control_frame_digest.unwrap());
+            digests_b.push(engine_b.tick(now).control_frame_digest.unwrap());
+        }
+
+        assert_eq!(digests_a, digests_b);
     }
 
     #[test]
