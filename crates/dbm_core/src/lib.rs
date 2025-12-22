@@ -51,18 +51,13 @@ impl Default for OrientTarget {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum DwmMode {
     Simulate,
+    #[default]
     ExecPlan,
     Stabilize,
     Report,
-}
-
-impl Default for DwmMode {
-    fn default() -> Self {
-        DwmMode::ExecPlan
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
