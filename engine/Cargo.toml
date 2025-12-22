@@ -19,7 +19,6 @@ dbm_6_dopamin_nacc = { path = "../crates/dbm_6_dopamin_nacc" }
 dbm_7_lc = { path = "../crates/dbm_7_lc" }
 dbm_8_serotonin = { path = "../crates/dbm_8_serotonin" }
 dbm_9_amygdala = { path = "../crates/dbm_9_amygdala" }
-dbm_6_dopamin_nacc = { path = "../crates/dbm_6_dopamin_nacc" }
 dbm_pag = { path = "../crates/dbm_pag" }
 dbm_stn = { path = "../crates/dbm_stn" }
 dbm_pmrf = { path = "../crates/dbm_pmrf" }
@@ -27,6 +26,7 @@ dbm_sc = { path = "../crates/dbm_sc" }
 dbm_pprf = { path = "../crates/dbm_pprf" }
 dbm_18_cerebellum = { path = "../crates/dbm_18_cerebellum" }
 emotion_field = { path = "../crates/emotion_field" }
+dbm_hpa = { path = "../crates/dbm_hpa" }
 
 [dev-dependencies]
 pvgs_client = { path = "../pvgs_client", features = ["local-pvgs"] }

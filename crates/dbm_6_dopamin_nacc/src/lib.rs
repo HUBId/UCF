@@ -22,6 +22,7 @@ pub struct DopaOutput {
     pub progress: LevelClass,
     pub incentive_focus_hint: LevelClass,
     pub replay_hint: bool,
+    pub reward_block: bool,
     pub reason_codes: ReasonSet,
 }
 
@@ -31,6 +32,7 @@ impl Default for DopaOutput {
             progress: LevelClass::Low,
             incentive_focus_hint: LevelClass::Low,
             replay_hint: false,
+            reward_block: false,
             reason_codes: ReasonSet::default(),
         }
     }
@@ -142,6 +144,7 @@ impl DbmModule for DopaminNacc {
             progress,
             incentive_focus_hint,
             replay_hint,
+            reward_block: self.reward_block,
             reason_codes,
         }
     }
