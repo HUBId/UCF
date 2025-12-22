@@ -73,6 +73,17 @@ struct WindowCounters {
     medium_replay_mismatch: bool,
 }
 
+#[derive(Debug)]
+struct RunSnContext {
+    isv: IsvSnapshot,
+    cooldown: Option<BrainLevel>,
+    cooldown_class: BrainCooldown,
+    stability: BrainLevel,
+    arousal: BrainLevel,
+    integrity: IntegrityState,
+    now_ms: u64,
+}
+
 pub struct RegulationEngine {
     pub rsv: RsvState,
     config: RegulationConfig,
@@ -382,15 +393,15 @@ impl RegulationEngine {
 
         let cooldown_level = Some(cooldown_to_level(ser_output.cooldown_class));
         let (sn_output, pprf_output, mut hypo_decision, previous_dwm) = self
-            .run_sn_sc_and_hypothalamus(
+            .run_sn_sc_and_hypothalamus(RunSnContext {
                 isv,
-                cooldown_level,
-                ser_output.cooldown_class,
-                ser_output.stability,
-                lc_output.arousal,
-                to_brain_integrity(classified.integrity_state),
-                timestamp_ms,
-            );
+                cooldown: cooldown_level,
+                cooldown_class: ser_output.cooldown_class,
+                stability: ser_output.stability,
+                arousal: lc_output.arousal,
+                integrity: to_brain_integrity(classified.integrity_state),
+                now_ms: timestamp_ms,
+            });
         merge_secondary_outputs(&mut hypo_decision, &lc_output, &ser_output, &sn_output);
         hypo_decision
             .reason_codes
@@ -493,15 +504,15 @@ impl RegulationEngine {
         });
         let cooldown_level = Some(cooldown_to_level(ser_output.cooldown_class));
         let (sn_output, pprf_output, mut hypo_decision, previous_dwm) = self
-            .run_sn_sc_and_hypothalamus(
+            .run_sn_sc_and_hypothalamus(RunSnContext {
                 isv,
-                cooldown_level,
-                ser_output.cooldown_class,
-                ser_output.stability,
-                lc_output.arousal,
-                to_brain_integrity(classified.integrity_state),
+                cooldown: cooldown_level,
+                cooldown_class: ser_output.cooldown_class,
+                stability: ser_output.stability,
+                arousal: lc_output.arousal,
+                integrity: to_brain_integrity(classified.integrity_state),
                 now_ms,
-            );
+            });
         merge_secondary_outputs(&mut hypo_decision, &lc_output, &ser_output, &sn_output);
         hypo_decision
             .reason_codes
@@ -529,19 +540,22 @@ impl RegulationEngine {
 
     fn run_sn_sc_and_hypothalamus(
         &mut self,
-        isv: IsvSnapshot,
-        cooldown: Option<BrainLevel>,
-        cooldown_class: BrainCooldown,
-        stability: BrainLevel,
-        arousal: BrainLevel,
-        integrity: IntegrityState,
-        now_ms: u64,
+        ctx: RunSnContext,
     ) -> (
         dbm_0_sn::SnOutput,
         dbm_pprf::PprfOutput,
         HypoDecision,
         DwmMode,
     ) {
+        let RunSnContext {
+            isv,
+            cooldown,
+            cooldown_class,
+            stability,
+            arousal,
+            integrity,
+            now_ms,
+        } = ctx;
         let previous_dwm = self.current_dwm;
         let sn_output = self.sn.tick(&SnInput {
             isv: isv.clone(),
