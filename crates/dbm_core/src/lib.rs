@@ -29,6 +29,44 @@ pub enum DwmMode {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SalienceSource {
+    Integrity,
+    Threat,
+    PolicyPressure,
+    Receipt,
+    Dlp,
+    ExecReliability,
+    Recovery,
+    Replay,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SalienceItem {
+    pub source: SalienceSource,
+    pub intensity: LevelClass,
+    pub rcs: Vec<String>,
+}
+
+impl SalienceItem {
+    pub const MAX_RCS: usize = 4;
+
+    pub fn new(source: SalienceSource, intensity: LevelClass, rcs: Vec<String>) -> Self {
+        let mut rcs = rcs;
+        rcs.sort();
+        rcs.dedup();
+        if rcs.len() > Self::MAX_RCS {
+            rcs.truncate(Self::MAX_RCS);
+        }
+
+        Self {
+            source,
+            intensity,
+            rcs,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ThreatVector {
     Exfil,
     Probing,

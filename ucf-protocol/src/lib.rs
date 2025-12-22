@@ -67,6 +67,10 @@ pub mod v1 {
         RcRxActionForensic = 30,
         RcGvRecoveryUnlockGranted = 31,
         RcRgProfileM1Restricted = 32,
+        RcGvDwmReport = 40,
+        RcGvDwmStabilize = 41,
+        RcGvDwmSimulate = 42,
+        RcGvDwmExecPlan = 43,
     }
 
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Enumeration)]
