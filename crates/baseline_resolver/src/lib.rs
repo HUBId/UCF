@@ -195,16 +195,18 @@ mod tests {
 
     #[test]
     fn max_merge_prefers_higher_offset() {
-        let mut inputs = BaselineInputs::default();
-        inputs.hbv = Some(hbv_offsets());
-        inputs.cbv = Some(CharacterBaselineVector {
-            baseline_caution_offset: 3,
-            baseline_novelty_dampening_offset: 0,
-            baseline_approval_strictness_offset: 0,
-            baseline_export_strictness_offset: 0,
-            baseline_chain_conservatism_offset: 0,
-            baseline_cooldown_multiplier_class: 0,
-        });
+        let inputs = BaselineInputs {
+            hbv: Some(hbv_offsets()),
+            cbv: Some(CharacterBaselineVector {
+                baseline_caution_offset: 3,
+                baseline_novelty_dampening_offset: 0,
+                baseline_approval_strictness_offset: 0,
+                baseline_export_strictness_offset: 0,
+                baseline_chain_conservatism_offset: 0,
+                baseline_cooldown_multiplier_class: 0,
+            }),
+            ..Default::default()
+        };
 
         let baseline = resolve_baseline(&inputs);
 
@@ -214,19 +216,21 @@ mod tests {
 
     #[test]
     fn negative_offsets_do_not_loosen_baseline() {
-        let mut inputs = BaselineInputs::default();
-        inputs.hbv = Some(HbvOffsets {
-            reward_block_bias: Some(LevelClass::High),
-            ..hbv_offsets()
-        });
-        inputs.cbv = Some(CharacterBaselineVector {
-            baseline_caution_offset: -4,
-            baseline_novelty_dampening_offset: -4,
-            baseline_approval_strictness_offset: -4,
-            baseline_export_strictness_offset: -4,
-            baseline_chain_conservatism_offset: -4,
-            baseline_cooldown_multiplier_class: -4,
-        });
+        let inputs = BaselineInputs {
+            hbv: Some(HbvOffsets {
+                reward_block_bias: Some(LevelClass::High),
+                ..hbv_offsets()
+            }),
+            cbv: Some(CharacterBaselineVector {
+                baseline_caution_offset: -4,
+                baseline_novelty_dampening_offset: -4,
+                baseline_approval_strictness_offset: -4,
+                baseline_export_strictness_offset: -4,
+                baseline_chain_conservatism_offset: -4,
+                baseline_cooldown_multiplier_class: -4,
+            }),
+            ..Default::default()
+        };
 
         let baseline = resolve_baseline(&inputs);
 
@@ -236,15 +240,17 @@ mod tests {
 
     #[test]
     fn resolution_is_deterministic() {
-        let mut inputs = BaselineInputs::default();
-        inputs.hbv = Some(hbv_offsets());
-        inputs.pev = Some(PolicyEcologyVector {
-            conservatism_bias: 1,
-            novelty_penalty_bias: 0,
-            manipulation_aversion_bias: 0,
-            reversibility_bias: 2,
-        });
-        inputs.integrity = Some(IntegrityState::Degraded);
+        let inputs = BaselineInputs {
+            hbv: Some(hbv_offsets()),
+            pev: Some(PolicyEcologyVector {
+                conservatism_bias: 1,
+                novelty_penalty_bias: 0,
+                manipulation_aversion_bias: 0,
+                reversibility_bias: 2,
+            }),
+            integrity: Some(IntegrityState::Degraded),
+            ..Default::default()
+        };
 
         let a = resolve_baseline(&inputs);
         let b = resolve_baseline(&inputs);
@@ -254,23 +260,25 @@ mod tests {
 
     #[test]
     fn reason_codes_are_sorted_and_truncated() {
-        let mut inputs = BaselineInputs::default();
-        inputs.hbv = Some(HbvOffsets {
-            reason_codes: vec![
-                "zeta".into(),
-                "alpha".into(),
-                "alpha".into(),
-                "theta".into(),
-                "beta".into(),
-                "gamma".into(),
-                "delta".into(),
-                "epsilon".into(),
-                "eta".into(),
-                "iota".into(),
-            ],
-            ..hbv_offsets()
-        });
-        inputs.integrity = Some(IntegrityState::Fail);
+        let inputs = BaselineInputs {
+            hbv: Some(HbvOffsets {
+                reason_codes: vec![
+                    "zeta".into(),
+                    "alpha".into(),
+                    "alpha".into(),
+                    "theta".into(),
+                    "beta".into(),
+                    "gamma".into(),
+                    "delta".into(),
+                    "epsilon".into(),
+                    "eta".into(),
+                    "iota".into(),
+                ],
+                ..hbv_offsets()
+            }),
+            integrity: Some(IntegrityState::Fail),
+            ..Default::default()
+        };
 
         let baseline = resolve_baseline(&inputs);
 
