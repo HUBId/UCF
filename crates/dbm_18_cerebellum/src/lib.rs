@@ -218,8 +218,6 @@ mod tests {
         }
 
         assert_eq!(cerebellum.anomaly_counter_per_tool.len(), 32);
-        assert!(!cerebellum
-            .anomaly_counter_per_tool
-            .contains_key("tool-31"));
+        assert!(!cerebellum.anomaly_counter_per_tool.contains_key("tool-31"));
     }
 }
