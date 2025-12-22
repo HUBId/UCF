@@ -14,6 +14,7 @@ pvgs_client = { path = "../pvgs_client" }
 dbm_core = { path = "../crates/dbm_core" }
 dbm_12_insula = { path = "../crates/dbm_12_insula" }
 dbm_13_hypothalamus = { path = "../crates/dbm_13_hypothalamus" }
+dbm_0_sn = { path = "../crates/dbm_0_sn" }
 
 [dev-dependencies]
 pvgs_client = { path = "../pvgs_client", features = ["local-pvgs"] }

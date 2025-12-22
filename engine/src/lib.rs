@@ -1,11 +1,12 @@
 #![forbid(unsafe_code)]
 
 use blake3::Hasher;
+use dbm_0_sn::{SnInput, SubstantiaNigra};
 use dbm_12_insula::{Insula, InsulaInput};
 use dbm_13_hypothalamus::{ControlDecision as HypoDecision, Hypothalamus, HypothalamusInput};
 use dbm_core::{
-    DbmModule, IntegrityState, LevelClass as BrainLevel, OverlaySet as BrainOverlay,
-    ProfileState as BrainProfile,
+    DbmModule, DwmMode, IntegrityState, IsvSnapshot, LevelClass as BrainLevel,
+    OverlaySet as BrainOverlay, ProfileState as BrainProfile,
 };
 use profiles::{
     apply_cbv_modifiers, apply_classification, apply_pev_modifiers, classify_signal_frame,
@@ -58,6 +59,8 @@ pub struct RegulationEngine {
     session_id: Option<String>,
     signal_queue: VecDeque<ucf::v1::SignalFrame>,
     anti_flapping_state: AntiFlappingState,
+    sn: SubstantiaNigra,
+    current_dwm: DwmMode,
     insula: Insula,
     hypothalamus: Hypothalamus,
 }
@@ -95,6 +98,8 @@ impl Default for RegulationEngine {
                 session_id: None,
                 signal_queue: VecDeque::new(),
                 anti_flapping_state: AntiFlappingState::default(),
+                sn: SubstantiaNigra::new(),
+                current_dwm: DwmMode::ExecPlan,
                 insula: Insula::new(),
                 hypothalamus: Hypothalamus::new(),
             },
@@ -106,6 +111,8 @@ impl Default for RegulationEngine {
                 session_id: None,
                 signal_queue: VecDeque::new(),
                 anti_flapping_state: AntiFlappingState::default(),
+                sn: SubstantiaNigra::new(),
+                current_dwm: DwmMode::ExecPlan,
                 insula: Insula::new(),
                 hypothalamus: Hypothalamus::new(),
             },
@@ -123,6 +130,8 @@ impl RegulationEngine {
             session_id: None,
             signal_queue: VecDeque::new(),
             anti_flapping_state: AntiFlappingState::default(),
+            sn: SubstantiaNigra::new(),
+            current_dwm: DwmMode::ExecPlan,
             insula: Insula::new(),
             hypothalamus: Hypothalamus::new(),
         }
@@ -245,14 +254,10 @@ impl RegulationEngine {
 
         let insula_input = build_insula_input(&frame, &classified, cbv_present, pev_present);
         let isv = self.insula.tick(&insula_input);
-        let hypo_input = HypothalamusInput {
-            isv,
-            cbv_offset: 0,
-            pev_offset: 0,
-            hbv_offset: 0,
-        };
-        let hypo_decision = self.hypothalamus.tick(&hypo_input);
-        translate_decision(hypo_decision, &self.config, false)
+        let (sn_output, hypo_decision, previous_dwm) = self.run_sn_and_hypothalamus(isv);
+        let mut translated = translate_decision(hypo_decision, &self.config, false);
+        self.append_dwm_reason_codes(previous_dwm, sn_output.dwm, &mut translated);
+        translated
     }
 
     fn decide_on_missing(&mut self, now_ms: u64) -> ControlDecision {
@@ -273,19 +278,51 @@ impl RegulationEngine {
         };
         let insula_input = build_insula_input(&frame, &classified, false, false);
         let isv = self.insula.tick(&insula_input);
-        let hypo_decision = self.hypothalamus.tick(&HypothalamusInput {
-            isv,
-            cbv_offset: 0,
-            pev_offset: 0,
-            hbv_offset: 0,
-        });
-        translate_decision(hypo_decision, &self.config, true)
+        let (sn_output, hypo_decision, previous_dwm) = self.run_sn_and_hypothalamus(isv);
+        let mut translated = translate_decision(hypo_decision, &self.config, true);
+        self.append_dwm_reason_codes(previous_dwm, sn_output.dwm, &mut translated);
+        translated
     }
 
     fn apply_and_render(&mut self, decision: ControlDecision, now_ms: u64) -> ControlFrame {
         let decision = self.apply_forensic_override(decision);
         let decision = self.apply_anti_flapping(decision, now_ms);
         self.render_control_frame(decision)
+    }
+
+    fn run_sn_and_hypothalamus(
+        &mut self,
+        isv: IsvSnapshot,
+    ) -> (dbm_0_sn::SnOutput, HypoDecision, DwmMode) {
+        let previous_dwm = self.current_dwm;
+        let sn_output = self.sn.tick(&SnInput {
+            isv: isv.clone(),
+            cooldown_class: None,
+            current_dwm: Some(previous_dwm),
+        });
+
+        let hypo_input = HypothalamusInput {
+            isv,
+            cbv_offset: 0,
+            pev_offset: 0,
+            hbv_offset: 0,
+        };
+
+        let hypo_decision = self.hypothalamus.tick(&hypo_input);
+        self.current_dwm = sn_output.dwm;
+
+        (sn_output, hypo_decision, previous_dwm)
+    }
+
+    fn append_dwm_reason_codes(
+        &self,
+        previous_dwm: DwmMode,
+        new_dwm: DwmMode,
+        decision: &mut ControlDecision,
+    ) {
+        if previous_dwm != new_dwm {
+            decision.profile_reason_codes.push(dwm_reason_code(new_dwm));
+        }
     }
 
     fn apply_forensic_override(&mut self, mut decision: ControlDecision) -> ControlDecision {
@@ -719,6 +756,15 @@ fn to_brain_integrity(state: ucf::v1::IntegrityStateClass) -> IntegrityState {
     }
 }
 
+fn dwm_reason_code(mode: DwmMode) -> ucf::v1::ReasonCode {
+    match mode {
+        DwmMode::Report => ucf::v1::ReasonCode::RcGvDwmReport,
+        DwmMode::Stabilize => ucf::v1::ReasonCode::RcGvDwmStabilize,
+        DwmMode::Simulate => ucf::v1::ReasonCode::RcGvDwmSimulate,
+        DwmMode::ExecPlan => ucf::v1::ReasonCode::RcGvDwmExecPlan,
+    }
+}
+
 fn translate_decision(
     decision: HypoDecision,
     config: &RegulationConfig,
@@ -791,6 +837,12 @@ fn translate_reason_set(reason_set: &dbm_core::ReasonSet) -> Vec<ucf::v1::Reason
             "RcThIntegrityCompromise" => Some(ucf::v1::ReasonCode::RcThIntegrityCompromise),
             "RcRxActionForensic" => Some(ucf::v1::ReasonCode::RcRxActionForensic),
             "RcRgProfileM1Restricted" => Some(ucf::v1::ReasonCode::RcRgProfileM1Restricted),
+            "RcGvDwmReport" | "RC.GV.DWM.REPORT" => Some(ucf::v1::ReasonCode::RcGvDwmReport),
+            "RcGvDwmStabilize" | "RC.GV.DWM.STABILIZE" => {
+                Some(ucf::v1::ReasonCode::RcGvDwmStabilize)
+            }
+            "RcGvDwmSimulate" | "RC.GV.DWM.SIMULATE" => Some(ucf::v1::ReasonCode::RcGvDwmSimulate),
+            "RcGvDwmExecPlan" | "RC.GV.DWM.EXEC_PLAN" => Some(ucf::v1::ReasonCode::RcGvDwmExecPlan),
             _ => None,
         })
         .collect();
@@ -1183,7 +1235,8 @@ mod tests {
             control.profile_reason_codes,
             vec![
                 ReasonCode::ReIntegrityFail as i32,
-                ReasonCode::RcRxActionForensic as i32
+                ReasonCode::RcRxActionForensic as i32,
+                ReasonCode::RcGvDwmReport as i32
             ]
         );
         assert_eq!(control.deescalation_lock, Some(true));
