@@ -14,6 +14,7 @@ use dbm_core::{
     LevelClass as BrainLevel, OrientTarget, OverlaySet as BrainOverlay,
     ProfileState as BrainProfile,
 };
+use dbm_hpa::{Hpa, HpaInput, HpaOutput};
 use dbm_pag::{DefensePattern, Pag, PagInput};
 use dbm_pmrf::{Pmrf, PmrfInput};
 use dbm_pprf::{Pprf, PprfInput};
@@ -29,6 +30,8 @@ use pvgs_client::{PvgsReader, PvgsWriter};
 use rsv::RsvState;
 use std::collections::VecDeque;
 use std::path::PathBuf;
+#[cfg(test)]
+use std::time::SystemTime;
 use ucf::v1::{
     ActiveProfile, ControlFrame, IntegrityStateClass, LevelClass, Overlays, ReasonCode,
     ToolClassMask,
@@ -85,6 +88,7 @@ struct RunSnContext {
     arousal: BrainLevel,
     integrity: IntegrityState,
     now_ms: u64,
+    hbv: HpaOutput,
 }
 
 pub struct RegulationEngine {
@@ -109,6 +113,10 @@ pub struct RegulationEngine {
     last_cerebellum_output: Option<CerOutput>,
     dopamin: DopaminNacc,
     last_dopa_output: Option<DopaOutput>,
+    hpa: Hpa,
+    last_hpa_output: HpaOutput,
+    emotion_field: EmotionFieldModule,
+    last_emotion_field: Option<dbm_core::EmotionField>,
     current_dwm: DwmMode,
     current_target: OrientTarget,
     insula: Insula,
@@ -140,66 +148,82 @@ impl Default for RegulationEngine {
             .unwrap()
             .join("config");
         match RegulationConfig::load_from_dir(config_dir) {
-            Ok(config) => RegulationEngine {
-                rsv: RsvState::default(),
-                config,
-                pvgs_reader: None,
-                pvgs_writer: None,
-                session_id: None,
-                signal_queue: VecDeque::new(),
-                anti_flapping_state: AntiFlappingState::default(),
-                lc: Lc::new(),
-                serotonin: Serotonin::new(),
-                amygdala: Amygdala::new(),
-                pag: Pag::new(),
-                stn: Stn::new(),
-                pmrf: Pmrf::new(),
-                counters: WindowCounters::default(),
-                sn: SubstantiaNigra::new(),
-                sc: Sc::new(),
-                pprf: Pprf::new(),
-                cerebellum: Cerebellum::new(),
-                last_cerebellum_output: None,
-                dopamin: DopaminNacc::new(),
-                last_dopa_output: None,
-                current_dwm: DwmMode::ExecPlan,
-                current_target: OrientTarget::Approval,
-                insula: Insula::new(),
-                hypothalamus: Hypothalamus::new(),
-            },
-            Err(_) => RegulationEngine {
-                rsv: RsvState::default(),
-                config: RegulationConfig::fallback(),
-                pvgs_reader: None,
-                pvgs_writer: None,
-                session_id: None,
-                signal_queue: VecDeque::new(),
-                anti_flapping_state: AntiFlappingState::default(),
-                lc: Lc::new(),
-                serotonin: Serotonin::new(),
-                amygdala: Amygdala::new(),
-                pag: Pag::new(),
-                stn: Stn::new(),
-                pmrf: Pmrf::new(),
-                counters: WindowCounters::default(),
-                sn: SubstantiaNigra::new(),
-                sc: Sc::new(),
-                pprf: Pprf::new(),
-                cerebellum: Cerebellum::new(),
-                last_cerebellum_output: None,
-                dopamin: DopaminNacc::new(),
-                last_dopa_output: None,
-                current_dwm: DwmMode::ExecPlan,
-                current_target: OrientTarget::Approval,
-                insula: Insula::new(),
-                hypothalamus: Hypothalamus::new(),
-            },
+            Ok(config) => {
+                let (hpa, last_hpa_output) = init_hpa();
+                RegulationEngine {
+                    rsv: RsvState::default(),
+                    config,
+                    pvgs_reader: None,
+                    pvgs_writer: None,
+                    session_id: None,
+                    signal_queue: VecDeque::new(),
+                    anti_flapping_state: AntiFlappingState::default(),
+                    lc: Lc::new(),
+                    serotonin: Serotonin::new(),
+                    amygdala: Amygdala::new(),
+                    pag: Pag::new(),
+                    stn: Stn::new(),
+                    pmrf: Pmrf::new(),
+                    counters: WindowCounters::default(),
+                    sn: SubstantiaNigra::new(),
+                    sc: Sc::new(),
+                    pprf: Pprf::new(),
+                    cerebellum: Cerebellum::new(),
+                    last_cerebellum_output: None,
+                    dopamin: DopaminNacc::new(),
+                    last_dopa_output: None,
+                    hpa,
+                    last_hpa_output,
+                    emotion_field: EmotionFieldModule::new(),
+                    last_emotion_field: None,
+                    current_dwm: DwmMode::ExecPlan,
+                    current_target: OrientTarget::Approval,
+                    insula: Insula::new(),
+                    hypothalamus: Hypothalamus::new(),
+                }
+            }
+            Err(_) => {
+                let (hpa, last_hpa_output) = init_hpa();
+                RegulationEngine {
+                    rsv: RsvState::default(),
+                    config: RegulationConfig::fallback(),
+                    pvgs_reader: None,
+                    pvgs_writer: None,
+                    session_id: None,
+                    signal_queue: VecDeque::new(),
+                    anti_flapping_state: AntiFlappingState::default(),
+                    lc: Lc::new(),
+                    serotonin: Serotonin::new(),
+                    amygdala: Amygdala::new(),
+                    pag: Pag::new(),
+                    stn: Stn::new(),
+                    pmrf: Pmrf::new(),
+                    counters: WindowCounters::default(),
+                    sn: SubstantiaNigra::new(),
+                    sc: Sc::new(),
+                    pprf: Pprf::new(),
+                    cerebellum: Cerebellum::new(),
+                    last_cerebellum_output: None,
+                    dopamin: DopaminNacc::new(),
+                    last_dopa_output: None,
+                    hpa,
+                    last_hpa_output,
+                    emotion_field: EmotionFieldModule::new(),
+                    last_emotion_field: None,
+                    current_dwm: DwmMode::ExecPlan,
+                    current_target: OrientTarget::Approval,
+                    insula: Insula::new(),
+                    hypothalamus: Hypothalamus::new(),
+                }
+            }
         }
     }
 }
 
 impl RegulationEngine {
     pub fn new(config: RegulationConfig) -> Self {
+        let (hpa, last_hpa_output) = init_hpa();
+
         RegulationEngine {
             rsv: RsvState::default(),
             config,
@@ -222,6 +246,10 @@ impl RegulationEngine {
             last_cerebellum_output: None,
             dopamin: DopaminNacc::new(),
             last_dopa_output: None,
+            hpa,
+            last_hpa_output,
+            emotion_field: EmotionFieldModule::new(),
+            last_emotion_field: None,
             current_dwm: DwmMode::ExecPlan,
             current_target: OrientTarget::Approval,
             insula: Insula::new(),
@@ -328,6 +356,36 @@ impl RegulationEngine {
         self.last_emotion_field = Some(field);
     }
 
+    fn update_hpa(
+        &mut self,
+        classified: &profiles::classification::ClassifiedSignals,
+    ) -> HpaOutput {
+        use ucf::v1::{IntegrityStateClass, LevelClass, WindowKind};
+
+        if classified.window_kind == WindowKind::Medium {
+            let stable_medium_window = classified.integrity_state == IntegrityStateClass::Ok
+                && classified.receipt_invalid_count == 0
+                && classified.replay_mismatch_class != LevelClass::High
+                && classified.dlp_severity_class != LevelClass::High;
+
+            let input = HpaInput {
+                integrity_state: to_brain_integrity(classified.integrity_state),
+                replay_mismatch_present: self.counters.medium_replay_mismatch,
+                dlp_critical_present: self.counters.medium_dlp_critical_count > 0,
+                receipt_invalid_present: self.counters.medium_receipt_invalid_count > 0,
+                deny_storm_present: classified.policy_deny_count >= 5,
+                timeouts_burst_present: classified.exec_timeout_count >= 2,
+                unlock_present: self.rsv.unlock_ready,
+                stable_medium_window,
+            };
+
+            let output = self.hpa.tick(&input);
+            self.last_hpa_output = output.clone();
+        }
+
+        self.last_hpa_output.clone()
+    }
+
     fn decide_from_frame(
         &mut self,
         mut frame: ucf::v1::SignalFrame,
@@ -347,6 +405,8 @@ impl RegulationEngine {
             self.pprf.on_medium_window_rollover();
         }
 
+        let hbv_output = self.update_hpa(&classified);
+
         let cerebellum_output = self.tick_cerebellum(&frame, &classified);
         let arousal_floor = if matches!(
             cerebellum_output.as_ref().map(|output| output.divergence),
@@ -356,6 +416,14 @@ impl RegulationEngine {
         } else {
             BrainLevel::Low
         };
+
+        let arousal_floor = level_max(arousal_floor, hbv_arousal_floor(&hbv_output));
+
+        let arousal_floor = level_max(arousal_floor, hbv_arousal_floor(&hbv_output));
+
+        let arousal_floor = level_max(arousal_floor, hbv_arousal_floor(&hbv_output));
+
+        let arousal_floor = level_max(arousal_floor, hbv_arousal_floor(&hbv_output));
 
         let lc_output = self.lc.tick(&LcInput {
             integrity: to_brain_integrity(classified.integrity_state),
@@ -374,8 +442,10 @@ impl RegulationEngine {
             dlp_critical_count_medium: self.counters.medium_dlp_critical_count,
             flapping_count_medium: self.counters.medium_flapping_count,
             unlock_present: self.rsv.unlock_ready,
-            stability_floor: BrainLevel::Low,
+            stability_floor: hbv_stability_floor(&hbv_output),
         });
+
+        let ser_output = apply_hbv_cooldown_bias(ser_output, &hbv_output);
 
         let amy_output =
             self.amygdala
@@ -389,9 +459,6 @@ impl RegulationEngine {
             unlock_present: self.rsv.unlock_ready,
             stability: ser_output.stability,
         });
-
-        let dopa_output = self.dopamin.tick();
-        self.last_dopa_output = Some(dopa_output.clone());
 
         let cbv_present = self
             .pvgs_reader
@@ -462,8 +529,12 @@ impl RegulationEngine {
                 arousal: lc_output.arousal,
                 integrity: to_brain_integrity(classified.integrity_state),
                 now_ms: timestamp_ms,
+                hbv: hbv_output.clone(),
             });
         merge_secondary_outputs(&mut hypo_decision, &lc_output, &ser_output, &sn_output);
+        hypo_decision
+            .reason_codes
+            .extend(hbv_output.reason_codes.codes.clone());
         hypo_decision
             .reason_codes
             .extend(pprf_output.reason_codes.codes.clone());
@@ -512,6 +583,7 @@ impl RegulationEngine {
             self.pprf.on_medium_window_rollover();
         }
 
+        let hbv_output = self.update_hpa(&classified);
         let cerebellum_output = self.last_cerebellum_output.clone();
         let arousal_floor = if matches!(
             cerebellum_output.as_ref().map(|output| output.divergence),
@@ -539,8 +611,10 @@ impl RegulationEngine {
             dlp_critical_count_medium: self.counters.medium_dlp_critical_count,
             flapping_count_medium: self.counters.medium_flapping_count,
             unlock_present: self.rsv.unlock_ready,
-            stability_floor: BrainLevel::Low,
+            stability_floor: hbv_stability_floor(&hbv_output),
         });
+
+        let ser_output = apply_hbv_cooldown_bias(ser_output, &hbv_output);
 
         let amy_output =
             self.amygdala
@@ -554,9 +628,6 @@ impl RegulationEngine {
             unlock_present: self.rsv.unlock_ready,
             stability: ser_output.stability,
         });
-
-        let dopa_output = self.dopamin.tick();
-        self.last_dopa_output = Some(dopa_output.clone());
 
         let insula_input = build_insula_input(&frame, &classified, false, false);
         let mut isv = self.insula.tick(&insula_input);
@@ -589,6 +660,8 @@ impl RegulationEngine {
         isv.dominant_reason_codes
             .extend(dopa_output.reason_codes.codes.clone());
 
+        let emotion_isv = isv.clone();
+
         let stn_output = self.stn.tick(&StnInput {
             policy_pressure: isv.policy_pressure,
             arousal: lc_output.arousal,
@@ -615,8 +688,12 @@ impl RegulationEngine {
                 arousal: lc_output.arousal,
                 integrity: to_brain_integrity(classified.integrity_state),
                 now_ms,
+                hbv: hbv_output.clone(),
             });
         merge_secondary_outputs(&mut hypo_decision, &lc_output, &ser_output, &sn_output);
+        hypo_decision
+            .reason_codes
+            .extend(hbv_output.reason_codes.codes.clone());
         hypo_decision
             .reason_codes
             .extend(pprf_output.reason_codes.codes.clone());
@@ -707,6 +784,7 @@ impl RegulationEngine {
             arousal,
             integrity,
             now_ms,
+            hbv,
         } = ctx;
         let previous_dwm = self.current_dwm;
         let sn_output = self.sn.tick(&SnInput {
@@ -738,6 +816,9 @@ impl RegulationEngine {
             cbv_offset: 0,
             pev_offset: 0,
             hbv_offset: 0,
+            hbv_export_lock_bias: hbv.baseline_export_strictness_offset >= 1,
+            hbv_simulate_first_bias: hbv.baseline_chain_conservatism_offset >= 2,
+            hbv_approval_strict: hbv.baseline_approval_strictness_offset >= 1,
         };
 
         let hypo_decision = self.hypothalamus.tick(&hypo_input);
@@ -1092,6 +1173,18 @@ impl RegulationEngine {
             .as_ref()
             .and_then(|reader| reader.get_latest_pev());
 
+        if self.last_hpa_output.baseline_export_strictness_offset >= 1 {
+            decision.overlays.export_lock = true;
+        }
+
+        if self.last_hpa_output.baseline_chain_conservatism_offset >= 2 {
+            decision.overlays.simulate_first = true;
+        }
+
+        if self.last_hpa_output.baseline_approval_strictness_offset >= 1 {
+            decision.approval_mode = self.config.character_baselines.strict_approval_mode.clone();
+        }
+
         if cbv_digest.is_some()
             && self.config.character_baselines.cbv_influence_enabled
             && self.config.character_baselines.novelty_lock_on_cbv
@@ -1365,6 +1458,38 @@ fn convert_reason_codes(codes: &[i32]) -> Vec<String> {
         .collect()
 }
 
+fn init_hpa() -> (Hpa, HpaOutput) {
+    if let Ok(path) = std::env::var("HPA_STATE_PATH") {
+        let hpa = Hpa::new(PathBuf::from(path));
+        let last_hpa_output = hpa.current_output();
+        return (hpa, last_hpa_output);
+    }
+
+    #[cfg(test)]
+    {
+        let nonce = SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "hpa_state_engine_{}_{}.json",
+            std::process::id(),
+            nonce
+        ));
+        let _ = std::fs::remove_file(&path);
+        let hpa = Hpa::new(&path);
+        let last_hpa_output = hpa.current_output();
+        (hpa, last_hpa_output)
+    }
+
+    #[cfg(not(test))]
+    {
+        let hpa = Hpa::default();
+        let last_hpa_output = hpa.current_output();
+        (hpa, last_hpa_output)
+    }
+}
+
 fn dlp_flags(frame: &ucf::v1::SignalFrame) -> (bool, bool, bool) {
     (
         frame_has_reason(frame, ReasonCode::RcCdDlpSecretPattern),
@@ -1420,6 +1545,42 @@ fn update_window_counters(
         }
         _ => {}
     }
+}
+
+fn hbv_arousal_floor(hbv: &HpaOutput) -> BrainLevel {
+    let offset = hbv
+        .baseline_caution_offset
+        .max(hbv.baseline_novelty_dampening_offset);
+
+    if offset >= 4 {
+        BrainLevel::High
+    } else if offset >= 2 {
+        BrainLevel::Med
+    } else {
+        BrainLevel::Low
+    }
+}
+
+fn hbv_stability_floor(hbv: &HpaOutput) -> BrainLevel {
+    if hbv.allostatic_load_class == BrainLevel::High {
+        BrainLevel::Med
+    } else {
+        BrainLevel::Low
+    }
+}
+
+fn apply_hbv_cooldown_bias(
+    mut ser_output: dbm_8_serotonin::SerOutput,
+    hbv: &HpaOutput,
+) -> dbm_8_serotonin::SerOutput {
+    if hbv.baseline_cooldown_multiplier_class >= 2 {
+        ser_output.cooldown_class = BrainCooldown::Longer;
+        ser_output
+            .reason_codes
+            .insert("hbv_cooldown_multiplier".to_string());
+    }
+
+    ser_output
 }
 
 fn merge_secondary_outputs(
@@ -1700,6 +1861,59 @@ mod tests {
             manipulation_aversion_bias: 0,
             reversibility_bias: 0,
         }
+    }
+
+    fn reset_hpa(engine: &mut RegulationEngine) {
+        let (hpa, last_hpa_output) = init_hpa();
+        engine.hpa = hpa;
+        engine.last_hpa_output = last_hpa_output;
+    }
+
+    #[test]
+    fn hbv_arousal_floor_enables_overlays() {
+        let mut engine = RegulationEngine::default();
+        engine.last_hpa_output.baseline_caution_offset = 4;
+
+        let control = engine.on_signal_frame(base_frame(), 1);
+
+        let overlays = control.overlays.expect("overlays present");
+        assert!(overlays.simulate_first);
+        assert!(overlays.novelty_lock);
+    }
+
+    #[test]
+    fn hbv_cooldown_bias_applies() {
+        let mut engine = RegulationEngine::default();
+        engine.last_hpa_output.baseline_cooldown_multiplier_class = 3;
+
+        let control = engine.on_signal_frame(base_frame(), 1);
+        assert_eq!(
+            control.cooldown_class,
+            Some(ucf::v1::LevelClass::High as i32)
+        );
+    }
+
+    #[test]
+    fn hbv_biases_hypothalamus_defaults() {
+        let mut engine = RegulationEngine::default();
+        engine.last_hpa_output.baseline_chain_conservatism_offset = 2;
+        engine.last_hpa_output.baseline_export_strictness_offset = 1;
+        engine.last_hpa_output.baseline_approval_strictness_offset = 1;
+
+        let control = engine.on_signal_frame(base_frame(), 1);
+        let overlays = control.overlays.expect("overlays present");
+        assert!(overlays.simulate_first);
+        assert!(overlays.export_lock);
+        assert_eq!(
+            control.approval_mode.as_deref(),
+            Some(
+                engine
+                    .config
+                    .character_baselines
+                    .strict_approval_mode
+                    .as_str()
+            )
+        );
     }
 
     #[test]
@@ -2250,6 +2464,7 @@ mod tests {
         let mut frame = base_frame();
         frame.top_reason_codes = vec![ReasonCode::RcReReplayMismatch as i32];
 
+        reset_hpa(&mut engine);
         let control = engine.on_signal_frame(frame, 1);
         let overlays = control.overlays.unwrap();
 
@@ -2317,6 +2532,7 @@ mod tests {
     #[test]
     fn overlays_only_relax_after_cooldown() {
         let mut engine = RegulationEngine::default();
+        reset_hpa(&mut engine);
         engine.config.update_tables.overlay_enable.clear();
         engine.config.anti_flapping.min_ms_between_overlay_changes = 10_000;
 
@@ -2353,6 +2569,7 @@ mod tests {
     #[test]
     fn flapping_penalty_forces_restriction() {
         let mut engine = RegulationEngine::default();
+        reset_hpa(&mut engine);
         engine.config.anti_flapping.max_switches_per_medium_window = 1;
         engine.config.anti_flapping.min_ms_between_profile_changes = 0;
         engine.config.anti_flapping.min_ms_between_overlay_changes = 0;

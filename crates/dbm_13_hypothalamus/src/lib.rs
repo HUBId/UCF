@@ -10,6 +10,9 @@ pub struct HypothalamusInput {
     pub cbv_offset: i32,
     pub pev_offset: i32,
     pub hbv_offset: i32,
+    pub hbv_export_lock_bias: bool,
+    pub hbv_simulate_first_bias: bool,
+    pub hbv_approval_strict: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,6 +54,24 @@ impl DbmModule for Hypothalamus {
             reason_codes: input.isv.dominant_reason_codes.clone(),
             ..ControlDecision::default()
         };
+
+        if input.hbv_export_lock_bias {
+            decision.overlays.export_lock = true;
+            decision.reason_codes.insert("hbv_export_lock".to_string());
+        }
+
+        if input.hbv_simulate_first_bias {
+            decision.overlays.simulate_first = true;
+            decision
+                .reason_codes
+                .insert("hbv_chain_conservatism".to_string());
+        }
+
+        if input.hbv_approval_strict {
+            decision
+                .reason_codes
+                .insert("hbv_approval_strict".to_string());
+        }
 
         if input.isv.integrity == IntegrityState::Fail {
             decision.profile_state = ProfileState::M3;

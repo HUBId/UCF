@@ -3,6 +3,7 @@ mod common;
 use common::{setup_pvgs_with_keys_and_ruleset, PvgsHandle};
 use engine::RegulationEngine;
 use pvgs_client::LocalPvgsReader;
+use std::time::{SystemTime, UNIX_EPOCH};
 use ucf::v1::{
     ConsistencyClass, ExecStats, IntegrityStateClass, LevelClass, MacroMilestone,
     MacroMilestoneState, PolicyStats, ReceiptStats, SignalFrame, TraitUpdate, TraitUpdateDirection,
@@ -59,6 +60,18 @@ fn finalized_macro_milestone() -> MacroMilestone {
 }
 
 fn build_engine_with_pvgs(handle: &PvgsHandle) -> RegulationEngine {
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let path = std::env::temp_dir().join(format!(
+        "hpa_state_macro_cbv_control_{}_{}.json",
+        std::process::id(),
+        nonce
+    ));
+    let _ = std::fs::remove_file(&path);
+    std::env::set_var("HPA_STATE_PATH", &path);
+
     let mut engine = RegulationEngine::default();
     engine.set_pvgs_reader(LocalPvgsReader::new(handle.store()));
     engine
