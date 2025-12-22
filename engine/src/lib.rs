@@ -19,6 +19,7 @@ use dbm_pmrf::{Pmrf, PmrfInput};
 use dbm_pprf::{Pprf, PprfInput};
 use dbm_sc::{Sc, ScInput};
 use dbm_stn::{Stn, StnInput};
+use emotion_field::{EmotionFieldInput, EmotionFieldModule};
 use profiles::{
     apply_cbv_modifiers, apply_classification, apply_pev_modifiers, classify_signal_frame,
     ControlDecision, FlappingPenaltyMode, OverlaySet, ProfileState, RegulationConfig,
@@ -260,6 +261,10 @@ impl RegulationEngine {
         }
     }
 
+    pub fn emotion_field_snapshot(&self) -> Option<dbm_core::EmotionField> {
+        self.last_emotion_field.clone()
+    }
+
     pub fn enqueue_signal_frame(&mut self, frame: ucf::v1::SignalFrame) -> Result<(), EngineError> {
         if self.signal_queue.len() >= self.config.engine_limits.max_queue_len {
             let _ = self.signal_queue.pop_front();
@@ -316,6 +321,11 @@ impl RegulationEngine {
         self.rsv.reset_forensic();
         self.anti_flapping_state.current_profile = None;
         self.anti_flapping_state.current_overlays = None;
+    }
+
+    fn update_emotion_field(&mut self, input: EmotionFieldInput) {
+        let field = self.emotion_field.tick(&input);
+        self.last_emotion_field = Some(field);
     }
 
     fn decide_from_frame(
@@ -379,6 +389,9 @@ impl RegulationEngine {
             unlock_present: self.rsv.unlock_ready,
             stability: ser_output.stability,
         });
+
+        let dopa_output = self.dopamin.tick();
+        self.last_dopa_output = Some(dopa_output.clone());
 
         let cbv_present = self
             .pvgs_reader
@@ -542,6 +555,9 @@ impl RegulationEngine {
             stability: ser_output.stability,
         });
 
+        let dopa_output = self.dopamin.tick();
+        self.last_dopa_output = Some(dopa_output.clone());
+
         let insula_input = build_insula_input(&frame, &classified, false, false);
         let mut isv = self.insula.tick(&insula_input);
         isv.threat = level_max(isv.threat, amy_output.threat);
@@ -609,6 +625,19 @@ impl RegulationEngine {
             &pag_output,
             to_brain_level(classified.policy_pressure_class),
         );
+        hypo_decision
+            .reason_codes
+            .extend(dopa_output.reason_codes.codes.clone());
+
+        self.update_emotion_field(EmotionFieldInput {
+            isv: emotion_isv,
+            dwm: pprf_output.active_dwm,
+            profile: hypo_decision.profile_state,
+            overlays: hypo_decision.overlays.clone(),
+            reward_block: dopa_output.reward_block,
+            defense_pattern: Some(pag_output.pattern),
+            replay_hint: dopa_output.replay_hint,
+        });
 
         let mut translated = translate_decision(hypo_decision, &self.config, true);
         self.extend_reason_codes(&mut translated, &stn_output.hold_reason_codes);
