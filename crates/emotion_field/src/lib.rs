@@ -58,10 +58,6 @@ impl EmotionFieldModule {
         if matches!(isv.policy_pressure, LevelClass::Med | LevelClass::High)
             || matches!(isv.arousal, LevelClass::Med | LevelClass::High)
         {
-            if isv.arousal == LevelClass::High {
-                reasons.insert("RC.RG.STATE.AROUSAL_UP");
-            }
-
             return NoiseClass::Med;
         }
 
@@ -106,7 +102,6 @@ impl EmotionFieldModule {
         }
 
         if isv.stability == LevelClass::High {
-            reasons.insert("RC.RG.STATE.STABILITY_UP");
             return RecursionDepthClass::Med;
         }
 
