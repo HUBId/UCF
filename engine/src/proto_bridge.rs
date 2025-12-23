@@ -24,7 +24,7 @@ use crate::{
 };
 
 const CONTROL_FRAME_DOMAIN: &str = "UCF:HASH:CONTROL_FRAME";
-const CONTROL_FRAME_REASON_MAX_LEN: usize = ReasonSet::DEFAULT_MAX_LEN;
+const CONTROL_FRAME_REASON_MAX_LEN: usize = 16;
 
 #[derive(Debug, Clone)]
 pub struct BaselineContext {
