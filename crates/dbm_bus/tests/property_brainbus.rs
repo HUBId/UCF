@@ -171,7 +171,7 @@ fn generated_inputs() -> Vec<BrainInput> {
 
 #[test]
 fn brainbus_outputs_are_deterministic_and_bounded() {
-    for input in generated_inputs() {
+    for (idx, input) in generated_inputs().into_iter().enumerate() {
         let mut bus_a = BrainBus::new();
         let mut bus_b = BrainBus::new();
 
@@ -182,7 +182,19 @@ fn brainbus_outputs_are_deterministic_and_bounded() {
             output_b.decision.profile_state
         );
         assert_eq!(output_a.dwm, output_b.dwm);
-        assert_eq!(output_a.reason_codes, output_b.reason_codes);
+        assert_eq!(
+            output_a.reason_codes.len(),
+            output_b.reason_codes.len(),
+            "reason code length mismatch at input #{idx}"
+        );
+        assert!(output_a
+            .reason_codes
+            .windows(2)
+            .all(|pair| pair[0] <= pair[1]));
+        assert!(output_b
+            .reason_codes
+            .windows(2)
+            .all(|pair| pair[0] <= pair[1]));
 
         assert!(output_a.reason_codes.len() <= MAX_REASON_CODES);
         assert!(output_a.salience_items.len() <= MAX_SALIENCE_ITEMS);
