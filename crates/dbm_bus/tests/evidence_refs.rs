@@ -15,8 +15,8 @@ mod microcircuit {
     use super::*;
     use dbm_0_sn::SubstantiaNigra;
     use dbm_7_lc::Lc;
-    use dbm_core::EvidenceKind;
     use dbm_core::limits::MAX_EVIDENCE_REFS;
+    use dbm_core::EvidenceKind;
     use microcircuit_core::CircuitConfig;
 
     fn micro_bus() -> BrainBus {
