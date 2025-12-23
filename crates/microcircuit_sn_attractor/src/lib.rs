@@ -434,7 +434,7 @@ mod tests {
     #[test]
     fn microcircuit_invariants_golden() {
         let mut circuit = SnAttractorMicrocircuit::new(CircuitConfig::default());
-        let inputs = vec![
+        let inputs = [
             base_input(),
             SnInput {
                 isv: dbm_core::IsvSnapshot {
