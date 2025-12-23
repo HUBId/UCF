@@ -111,9 +111,11 @@ impl DbmModule for Hypothalamus {
             return decision;
         }
 
-        let tool_side_effects = input.isv.threat_vectors.as_ref().map_or(false, |vectors| {
-            vectors.contains(&ThreatVector::ToolSideEffects)
-        });
+        let tool_side_effects = input
+            .isv
+            .threat_vectors
+            .as_ref()
+            .is_some_and(|vectors| vectors.contains(&ThreatVector::ToolSideEffects));
 
         if tool_side_effects || input.cerebellum_divergence == LevelClass::High {
             if !matches!(decision.profile_state, ProfileState::M2 | ProfileState::M3) {
