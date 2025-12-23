@@ -270,7 +270,7 @@ impl BrainBus {
         let amy_input = AmyInput {
             tool_anomaly_present: cerebellum_output
                 .as_ref()
-                .map_or(false, |output| !output.tool_anomalies.is_empty()),
+                .is_some_and(|output| !output.tool_anomalies.is_empty()),
             tool_anomalies: cerebellum_output
                 .as_ref()
                 .map(|output| output.tool_anomalies.clone())
