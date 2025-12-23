@@ -10,8 +10,8 @@ use dbm_7_lc::{Lc, LcInput};
 use dbm_8_serotonin::{SerInput, Serotonin};
 use dbm_9_amygdala::{AmyInput, Amygdala};
 use dbm_core::{
-    BaselineVector, CooldownClass, DbmModule, DwmMode, EmotionField, LevelClass, OrientTarget,
-    ReasonSet,
+    BaselineVector, CooldownClass, DbmModule, DwmMode, EmotionField, IsvSnapshot, LevelClass,
+    OrientTarget, ReasonSet,
 };
 use dbm_hpa::{Hpa, HpaInput, HpaOutput};
 use dbm_pag::{Pag, PagInput};
@@ -48,6 +48,11 @@ pub struct BrainOutput {
     pub emotion_field: EmotionField,
     pub dwm: DwmMode,
     pub focus_target: OrientTarget,
+    pub baseline: BaselineVector,
+    pub hpa: HpaOutput,
+    pub cerebellum: Option<dbm_18_cerebellum::CerOutput>,
+    pub dopamin: dbm_6_dopamin_nacc::DopaOutput,
+    pub isv: IsvSnapshot,
     pub reason_codes: Vec<String>,
 }
 
@@ -216,12 +221,16 @@ impl BrainBus {
 
     pub fn tick(&mut self, input: BrainInput) -> BrainOutput {
         let hpa_output = self.hpa.tick(&input.hpa);
+        self.set_last_hpa_output(hpa_output.clone());
+
         let baseline = self.resolve_baseline(&input, &hpa_output);
+        self.set_last_baseline_vector(baseline.clone());
 
         let cerebellum_output = input
             .cerebellum
             .as_ref()
             .map(|cer_input| self.cerebellum.tick(cer_input));
+        self.set_last_cerebellum_output(cerebellum_output.clone());
 
         let lc_input = LcInput {
             arousal_floor: level_max(
@@ -249,24 +258,31 @@ impl BrainBus {
         let pag_input = PagInput {
             threat: amy_output.threat,
             vectors: amy_output.vectors.clone(),
+            stability: ser_output.stability,
             ..input.pag
         };
         let pag_output = self.pag.tick(&pag_input);
 
         let stn_input = StnInput {
             threat: amy_output.threat,
+            arousal: lc_output.arousal,
             ..input.stn
         };
         let stn_output = self.stn.tick(&stn_input);
 
         let pmrf_input = PmrfInput {
             hold_active: stn_output.hold_active,
+            stability: ser_output.stability,
             ..input.pmrf
         };
         let pmrf_output = self.pmrf.tick(&pmrf_input);
 
-        let mut dopa_output = input
-            .dopamin
+        let dopamin_input = input.dopamin.map(|mut dopa_input| {
+            dopa_input.threat = amy_output.threat;
+            dopa_input
+        });
+
+        let mut dopa_output = dopamin_input
             .as_ref()
             .map(|dopa_input| self.dopamin.tick(dopa_input))
             .unwrap_or_default();
@@ -276,6 +292,7 @@ impl BrainBus {
                 .reason_codes
                 .insert("baseline_reward_block".to_string());
         }
+        self.set_last_dopa_output(Some(dopa_output.clone()));
 
         let mut insula_input = input.insula;
         insula_input.hbv_present = true;
@@ -316,11 +333,13 @@ impl BrainBus {
             integrity: isv.integrity,
         });
 
+        let isv_snapshot = isv.clone();
+
         let pprf_output = self.pprf.tick(&PprfInput {
             orient: sc_output.clone(),
             current_target: self.current_target,
             current_dwm: self.current_dwm,
-            cooldown_class: input.pprf_cooldown_class,
+            cooldown_class: ser_output.cooldown_class,
             stability: ser_output.stability,
             arousal: lc_output.arousal,
             now_ms: input.now_ms,
@@ -377,6 +396,7 @@ impl BrainBus {
         emotion_field
             .reason_codes
             .extend(decision.reason_codes.codes.clone());
+        self.set_last_emotion_field(Some(emotion_field.clone()));
 
         let reason_codes = merge_reason_codes([
             decision.reason_codes.codes.clone(),
@@ -391,6 +411,11 @@ impl BrainBus {
             emotion_field,
             dwm: pprf_output.active_dwm,
             focus_target: pprf_output.active_target,
+            baseline,
+            hpa: hpa_output,
+            cerebellum: cerebellum_output,
+            dopamin: dopa_output,
+            isv: isv_snapshot,
             reason_codes,
         }
     }

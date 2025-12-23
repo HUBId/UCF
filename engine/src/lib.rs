@@ -1,28 +1,22 @@
 #![forbid(unsafe_code)]
 
-use baseline_resolver::{resolve_baseline, BaselineInputs, HbvOffsets};
 use blake3::Hasher;
-use dbm_0_sn::SnInput;
 use dbm_12_insula::InsulaInput;
-use dbm_13_hypothalamus::{ControlDecision as HypoDecision, HypothalamusInput};
+use dbm_13_hypothalamus::ControlDecision as HypoDecision;
 use dbm_18_cerebellum::{CerInput, CerOutput};
 use dbm_6_dopamin_nacc::DopaInput;
 use dbm_7_lc::LcInput;
 use dbm_8_serotonin::SerInput;
 use dbm_9_amygdala::AmyInput;
-use dbm_bus::BrainBus;
+use dbm_bus::{BrainBus, BrainInput};
 use dbm_core::{
-    BaselineVector, CooldownClass as BrainCooldown, DbmModule, DwmMode, IntegrityState,
-    IsvSnapshot, LevelClass as BrainLevel, OverlaySet as BrainOverlay,
-    ProfileState as BrainProfile,
+    CooldownClass as BrainCooldown, DwmMode, IntegrityState, LevelClass as BrainLevel,
+    OverlaySet as BrainOverlay, ProfileState as BrainProfile,
 };
 use dbm_hpa::{Hpa, HpaInput, HpaOutput};
-use dbm_pag::{DefensePattern, PagInput};
+use dbm_pag::PagInput;
 use dbm_pmrf::PmrfInput;
-use dbm_pprf::PprfInput;
-use dbm_sc::ScInput;
 use dbm_stn::StnInput;
-use emotion_field::EmotionFieldInput;
 use profiles::{
     apply_cbv_modifiers, apply_classification, apply_pev_modifiers, classify_signal_frame,
     ControlDecision, FlappingPenaltyMode, OverlaySet, ProfileState, RegulationConfig,
@@ -79,20 +73,6 @@ struct WindowCounters {
     medium_dlp_critical_count: u32,
     medium_flapping_count: u32,
     medium_replay_mismatch: bool,
-}
-
-#[derive(Debug)]
-struct RunSnContext {
-    isv: IsvSnapshot,
-    cooldown: Option<BrainLevel>,
-    cooldown_class: BrainCooldown,
-    stability: BrainLevel,
-    arousal: BrainLevel,
-    integrity: IntegrityState,
-    now_ms: u64,
-    baseline: BaselineVector,
-    replay_hint: bool,
-    reward_block: bool,
 }
 
 pub struct RegulationEngine {
@@ -275,81 +255,6 @@ impl RegulationEngine {
         self.anti_flapping_state.current_overlays = None;
     }
 
-    fn update_emotion_field(&mut self, input: EmotionFieldInput) {
-        let field = self.brain_bus.emotion_field_mut().tick(&input);
-        self.brain_bus.set_last_emotion_field(Some(field));
-    }
-
-    fn update_hpa(
-        &mut self,
-        classified: &profiles::classification::ClassifiedSignals,
-    ) -> HpaOutput {
-        use ucf::v1::{IntegrityStateClass, LevelClass, WindowKind};
-
-        if classified.window_kind == WindowKind::Medium {
-            let stable_medium_window = classified.integrity_state == IntegrityStateClass::Ok
-                && classified.receipt_invalid_count == 0
-                && classified.replay_mismatch_class != LevelClass::High
-                && classified.dlp_severity_class != LevelClass::High;
-
-            let input = HpaInput {
-                integrity_state: to_brain_integrity(classified.integrity_state),
-                replay_mismatch_present: self.counters.medium_replay_mismatch,
-                dlp_critical_present: self.counters.medium_dlp_critical_count > 0,
-                receipt_invalid_present: self.counters.medium_receipt_invalid_count > 0,
-                deny_storm_present: classified.policy_deny_count >= 5,
-                timeouts_burst_present: classified.exec_timeout_count >= 2,
-                unlock_present: self.rsv.unlock_ready,
-                stable_medium_window,
-            };
-
-            let output = self.brain_bus.hpa_mut().tick(&input);
-            self.brain_bus.set_last_hpa_output(output.clone());
-        }
-
-        self.brain_bus.last_hpa_output()
-    }
-
-    fn resolve_baseline_vector(
-        &mut self,
-        classified: &profiles::classification::ClassifiedSignals,
-        hbv_output: &HpaOutput,
-    ) -> BaselineVector {
-        let cbv = self
-            .pvgs_reader
-            .as_ref()
-            .and_then(|reader| reader.get_latest_cbv());
-        let pev = self
-            .pvgs_reader
-            .as_ref()
-            .and_then(|reader| reader.get_latest_pev());
-
-        let hbv = HbvOffsets {
-            baseline_caution_offset: hbv_output.baseline_caution_offset as i32,
-            baseline_novelty_dampening_offset: hbv_output.baseline_novelty_dampening_offset as i32,
-            baseline_approval_strictness_offset: hbv_output.baseline_approval_strictness_offset
-                as i32,
-            baseline_export_strictness_offset: hbv_output.baseline_export_strictness_offset as i32,
-            baseline_chain_conservatism_offset: hbv_output.baseline_chain_conservatism_offset
-                as i32,
-            baseline_cooldown_multiplier_class: hbv_output.baseline_cooldown_multiplier_class
-                as i32,
-            reward_block_bias: None,
-            reason_codes: hbv_output.reason_codes.codes.clone(),
-        };
-
-        let inputs = BaselineInputs {
-            cbv,
-            pev,
-            hbv: Some(hbv),
-            integrity: Some(to_brain_integrity(classified.integrity_state)),
-        };
-
-        let baseline = resolve_baseline(&inputs);
-        self.brain_bus.set_last_baseline_vector(baseline.clone());
-        baseline
-    }
-
     fn decide_from_frame(
         &mut self,
         mut frame: ucf::v1::SignalFrame,
@@ -365,176 +270,14 @@ impl RegulationEngine {
         self.rsv.update_unlock_state(&frame);
 
         update_window_counters(&mut self.counters, &classified);
-        let hbv_output = self.update_hpa(&classified);
-        let baseline_vector = self.resolve_baseline_vector(&classified, &hbv_output);
-
-        let cerebellum_output = self.tick_cerebellum(&frame, &classified);
-        let mut arousal_floor = if matches!(
-            cerebellum_output.as_ref().map(|output| output.divergence),
-            Some(BrainLevel::High)
-        ) {
-            BrainLevel::High
-        } else {
-            BrainLevel::Low
-        };
-
-        arousal_floor = level_max(arousal_floor, baseline_vector.caution_floor);
-
         if classified.window_kind == ucf::v1::WindowKind::Medium {
             self.brain_bus.pprf_mut().on_medium_window_rollover();
         }
 
-        let lc_output = self.brain_bus.lc_mut().tick(&LcInput {
-            integrity: to_brain_integrity(classified.integrity_state),
-            receipt_invalid_count_short: self.counters.short_receipt_invalid_count,
-            receipt_missing_count_short: self.counters.short_receipt_missing_count,
-            dlp_critical_present_short: self.counters.short_dlp_critical_present,
-            timeout_count_short: self.counters.short_timeout_count,
-            deny_count_short: self.counters.short_deny_count,
-            arousal_floor,
-        });
-
-        let ser_output = self.brain_bus.serotonin_mut().tick(&SerInput {
-            integrity: to_brain_integrity(classified.integrity_state),
-            replay_mismatch_present: self.counters.medium_replay_mismatch,
-            receipt_invalid_count_medium: self.counters.medium_receipt_invalid_count,
-            dlp_critical_count_medium: self.counters.medium_dlp_critical_count,
-            flapping_count_medium: self.counters.medium_flapping_count,
-            unlock_present: self.rsv.unlock_ready,
-            stability_floor: baseline_vector.caution_floor,
-        });
-
-        let ser_output = apply_baseline_cooldown_bias(ser_output, &baseline_vector);
-
-        let amy_output = self.brain_bus.amygdala_mut().tick(&build_amygdala_input(
-            &frame,
-            &classified,
-            &self.counters,
-        ));
-        self.rsv.threat = translate_level(amy_output.threat);
-
-        let pag_output = self.brain_bus.pag_mut().tick(&PagInput {
-            integrity: to_brain_integrity(classified.integrity_state),
-            threat: amy_output.threat,
-            vectors: amy_output.vectors.clone(),
-            unlock_present: self.rsv.unlock_ready,
-            stability: ser_output.stability,
-        });
-
-        let mut dopa_output = self.brain_bus.last_dopa_output().unwrap_or_default();
-        if classified.window_kind == ucf::v1::WindowKind::Medium {
-            if let Some(input) = build_dopa_input(
-                &frame,
-                &classified,
-                &amy_output,
-                &self.counters,
-                to_brain_level(self.rsv.budget_stress),
-            ) {
-                dopa_output = self.brain_bus.dopamin_mut().tick(&input);
-                self.brain_bus
-                    .set_last_dopa_output(Some(dopa_output.clone()));
-            }
-        }
-
-        if level_at_least(baseline_vector.reward_block_bias, BrainLevel::Med) {
-            dopa_output.reward_block = true;
-            dopa_output
-                .reason_codes
-                .insert("baseline_reward_block".to_string());
-        }
-
-        let cbv_present = self
-            .pvgs_reader
-            .as_ref()
-            .and_then(|reader| reader.get_latest_cbv_digest())
-            .is_some();
-        let pev_present = self
-            .pvgs_reader
-            .as_ref()
-            .and_then(|reader| reader.get_latest_pev_digest())
-            .is_some();
-
-        let insula_input = build_insula_input(
-            &frame,
-            &classified,
-            cbv_present,
-            pev_present,
-            dopa_output.progress,
-        );
-        let mut isv = self.brain_bus.insula_mut().tick(&insula_input);
-        isv.threat = level_max(isv.threat, amy_output.threat);
-        isv.threat_vectors = Some(amy_output.vectors.clone());
-        isv.dominant_reason_codes
-            .extend(amy_output.reason_codes.codes.clone());
-        isv.dominant_reason_codes
-            .extend(pag_output.reason_codes.codes.clone());
-        isv.arousal = level_max(isv.arousal, lc_output.arousal);
-        isv.stability = level_max(isv.stability, ser_output.stability);
-        isv.replay_hint = dopa_output.replay_hint;
-        isv.dominant_reason_codes
-            .extend(dopa_output.reason_codes.codes.clone());
-
-        let stn_output = self.brain_bus.stn_mut().tick(&StnInput {
-            policy_pressure: isv.policy_pressure,
-            arousal: lc_output.arousal,
-            threat: amy_output.threat,
-            receipt_invalid_present: classified.receipt_invalid_count > 0,
-            dlp_critical_present: self.counters.short_dlp_critical_present,
-            integrity: to_brain_integrity(classified.integrity_state),
-        });
-
-        let pmrf_output = self.brain_bus.pmrf_mut().tick(&PmrfInput {
-            divergence: to_brain_level(self.rsv.divergence),
-            policy_pressure: isv.policy_pressure,
-            stability: ser_output.stability,
-            hold_active: stn_output.hold_active,
-            budget_stress: to_brain_level(self.rsv.budget_stress),
-        });
-
-        let cooldown_level = Some(cooldown_to_level(ser_output.cooldown_class));
-        let (sn_output, pprf_output, mut hypo_decision, previous_dwm) = self
-            .run_sn_sc_and_hypothalamus(RunSnContext {
-                isv,
-                cooldown: cooldown_level,
-                cooldown_class: ser_output.cooldown_class,
-                stability: ser_output.stability,
-                arousal: lc_output.arousal,
-                integrity: to_brain_integrity(classified.integrity_state),
-                now_ms: timestamp_ms,
-                baseline: baseline_vector.clone(),
-                replay_hint: dopa_output.replay_hint,
-                reward_block: dopa_output.reward_block,
-            });
-        merge_secondary_outputs(&mut hypo_decision, &lc_output, &ser_output, &sn_output);
-        hypo_decision
-            .reason_codes
-            .extend(baseline_vector.reason_codes.codes.clone());
-        hypo_decision
-            .reason_codes
-            .extend(pprf_output.reason_codes.codes.clone());
-        apply_defense_pattern(
-            &mut hypo_decision,
-            &pag_output,
-            to_brain_level(classified.policy_pressure_class),
-        );
-        hypo_decision
-            .reason_codes
-            .extend(dopa_output.reason_codes.codes.clone());
-
-        let mut translated = translate_decision(hypo_decision, &self.config, false);
-        self.extend_reason_codes(&mut translated, &stn_output.hold_reason_codes);
-        self.extend_reason_codes(&mut translated, &pmrf_output.reason_codes);
-        self.extend_reason_codes(&mut translated, &pprf_output.reason_codes);
-        self.extend_reason_codes(&mut translated, &dopa_output.reason_codes);
-        if let Some(output) = &cerebellum_output {
-            self.extend_reason_codes(&mut translated, &output.reason_codes);
-        }
-        self.extend_reason_codes(&mut translated, &baseline_vector.reason_codes);
-
-        translated = self.apply_stn_pmrf_overlays(translated, &stn_output, &pmrf_output);
-        translated = self.apply_cerebellum_overlays(translated, &cerebellum_output);
-        self.append_dwm_reason_codes(previous_dwm, pprf_output.active_dwm, &mut translated);
-        translated
+        let previous_dwm = self.brain_bus.current_dwm();
+        let brain_output = self.build_and_tick_brain(&frame, &classified, timestamp_ms);
+        self.update_rsv_from_brain(&brain_output);
+        self.translate_brain_output(brain_output, previous_dwm, false)
     }
 
     fn decide_on_missing(&mut self, now_ms: u64) -> ControlDecision {
@@ -558,267 +301,141 @@ impl RegulationEngine {
             self.brain_bus.pprf_mut().on_medium_window_rollover();
         }
 
-        let hbv_output = self.update_hpa(&classified);
-        let baseline_vector = self.resolve_baseline_vector(&classified, &hbv_output);
-        let cerebellum_output = self.brain_bus.last_cerebellum_output();
-        let arousal_floor = if matches!(
-            cerebellum_output.as_ref().map(|output| output.divergence),
-            Some(BrainLevel::High)
-        ) {
-            BrainLevel::High
-        } else {
-            BrainLevel::Low
+        let previous_dwm = self.brain_bus.current_dwm();
+        let brain_output = self.build_and_tick_brain(&frame, &classified, now_ms);
+        self.update_rsv_from_brain(&brain_output);
+        self.translate_brain_output(brain_output, previous_dwm, true)
+    }
+
+    fn build_and_tick_brain(
+        &mut self,
+        frame: &ucf::v1::SignalFrame,
+        classified: &profiles::classification::ClassifiedSignals,
+        now_ms: u64,
+    ) -> dbm_bus::BrainOutput {
+        let cbv = self
+            .pvgs_reader
+            .as_ref()
+            .and_then(|reader| reader.get_latest_cbv());
+        let pev = self
+            .pvgs_reader
+            .as_ref()
+            .and_then(|reader| reader.get_latest_pev());
+
+        let cbv_present = self
+            .pvgs_reader
+            .as_ref()
+            .and_then(|reader| reader.get_latest_cbv_digest())
+            .is_some();
+        let pev_present = self
+            .pvgs_reader
+            .as_ref()
+            .and_then(|reader| reader.get_latest_pev_digest())
+            .is_some();
+
+        let dopamin_input = build_dopa_input(
+            frame,
+            classified,
+            BrainLevel::Low,
+            &self.counters,
+            to_brain_level(self.rsv.budget_stress),
+        );
+
+        let brain_input = BrainInput {
+            now_ms,
+            hpa: build_hpa_input(classified, &self.counters, self.rsv.unlock_ready),
+            cbv,
+            pev,
+            lc: LcInput {
+                integrity: to_brain_integrity(classified.integrity_state),
+                receipt_invalid_count_short: self.counters.short_receipt_invalid_count,
+                receipt_missing_count_short: self.counters.short_receipt_missing_count,
+                dlp_critical_present_short: self.counters.short_dlp_critical_present,
+                timeout_count_short: self.counters.short_timeout_count,
+                deny_count_short: self.counters.short_deny_count,
+                arousal_floor: BrainLevel::Low,
+            },
+            serotonin: SerInput {
+                integrity: to_brain_integrity(classified.integrity_state),
+                replay_mismatch_present: self.counters.medium_replay_mismatch,
+                receipt_invalid_count_medium: self.counters.medium_receipt_invalid_count,
+                dlp_critical_count_medium: self.counters.medium_dlp_critical_count,
+                flapping_count_medium: self.counters.medium_flapping_count,
+                unlock_present: self.rsv.unlock_ready,
+                stability_floor: BrainLevel::Low,
+            },
+            amygdala: build_amygdala_input(frame, classified, &self.counters),
+            pag: PagInput {
+                integrity: to_brain_integrity(classified.integrity_state),
+                threat: BrainLevel::Low,
+                vectors: Vec::new(),
+                unlock_present: self.rsv.unlock_ready,
+                stability: BrainLevel::Low,
+            },
+            cerebellum: build_cerebellum_input(frame, classified),
+            stn: StnInput {
+                policy_pressure: to_brain_level(classified.policy_pressure_class),
+                arousal: BrainLevel::Low,
+                threat: BrainLevel::Low,
+                receipt_invalid_present: classified.receipt_invalid_count > 0,
+                dlp_critical_present: self.counters.short_dlp_critical_present,
+                integrity: to_brain_integrity(classified.integrity_state),
+            },
+            pmrf: PmrfInput {
+                divergence: to_brain_level(self.rsv.divergence),
+                policy_pressure: to_brain_level(classified.policy_pressure_class),
+                stability: BrainLevel::Low,
+                hold_active: false,
+                budget_stress: to_brain_level(self.rsv.budget_stress),
+            },
+            dopamin: dopamin_input,
+            insula: build_insula_input(
+                frame,
+                classified,
+                cbv_present,
+                pev_present,
+                BrainLevel::Low,
+            ),
+            sc_unlock_present: self.rsv.unlock_ready,
+            sc_replay_planned_present: false,
+            pprf_cooldown_class: BrainCooldown::Base,
         };
 
-        let lc_output = self.brain_bus.lc_mut().tick(&LcInput {
-            integrity: to_brain_integrity(classified.integrity_state),
-            receipt_invalid_count_short: self.counters.short_receipt_invalid_count,
-            receipt_missing_count_short: self.counters.short_receipt_missing_count,
-            dlp_critical_present_short: self.counters.short_dlp_critical_present,
-            timeout_count_short: self.counters.short_timeout_count,
-            deny_count_short: self.counters.short_deny_count,
-            arousal_floor: level_max(arousal_floor, baseline_vector.caution_floor),
-        });
+        self.brain_bus.tick(brain_input)
+    }
 
-        let ser_output = self.brain_bus.serotonin_mut().tick(&SerInput {
-            integrity: to_brain_integrity(classified.integrity_state),
-            replay_mismatch_present: self.counters.medium_replay_mismatch,
-            receipt_invalid_count_medium: self.counters.medium_receipt_invalid_count,
-            dlp_critical_count_medium: self.counters.medium_dlp_critical_count,
-            flapping_count_medium: self.counters.medium_flapping_count,
-            unlock_present: self.rsv.unlock_ready,
-            stability_floor: baseline_vector.caution_floor,
-        });
+    fn translate_brain_output(
+        &mut self,
+        brain_output: dbm_bus::BrainOutput,
+        previous_dwm: DwmMode,
+        missing_frame: bool,
+    ) -> ControlDecision {
+        let mut translated = translate_decision(brain_output.decision, &self.config, missing_frame);
 
-        let ser_output = apply_baseline_cooldown_bias(ser_output, &baseline_vector);
+        let mut reason_set = dbm_core::ReasonSet::default();
+        reason_set.extend(brain_output.reason_codes.clone());
+        self.extend_reason_codes(&mut translated, &reason_set);
 
-        let amy_output = self.brain_bus.amygdala_mut().tick(&build_amygdala_input(
-            &frame,
-            &classified,
-            &self.counters,
-        ));
-        self.rsv.threat = translate_level(amy_output.threat);
-
-        let pag_output = self.brain_bus.pag_mut().tick(&PagInput {
-            integrity: to_brain_integrity(classified.integrity_state),
-            threat: amy_output.threat,
-            vectors: amy_output.vectors.clone(),
-            unlock_present: self.rsv.unlock_ready,
-            stability: ser_output.stability,
-        });
-
-        let mut dopa_output = self.brain_bus.last_dopa_output().unwrap_or_default();
-        if classified.window_kind == ucf::v1::WindowKind::Medium {
-            if let Some(input) = build_dopa_input(
-                &frame,
-                &classified,
-                &amy_output,
-                &self.counters,
-                to_brain_level(self.rsv.budget_stress),
-            ) {
-                dopa_output = self.brain_bus.dopamin_mut().tick(&input);
-                self.brain_bus
-                    .set_last_dopa_output(Some(dopa_output.clone()));
-            }
-        }
-
-        if level_at_least(baseline_vector.reward_block_bias, BrainLevel::Med) {
-            dopa_output.reward_block = true;
-            dopa_output
-                .reason_codes
-                .insert("baseline_reward_block".to_string());
-        }
-
-        let insula_input =
-            build_insula_input(&frame, &classified, false, false, dopa_output.progress);
-        let mut isv = self.brain_bus.insula_mut().tick(&insula_input);
-        isv.threat = level_max(isv.threat, amy_output.threat);
-        isv.threat_vectors = Some(amy_output.vectors.clone());
-        isv.dominant_reason_codes
-            .extend(amy_output.reason_codes.codes.clone());
-        isv.dominant_reason_codes
-            .extend(pag_output.reason_codes.codes.clone());
-        isv.arousal = level_max(isv.arousal, lc_output.arousal);
-        isv.stability = level_max(isv.stability, ser_output.stability);
-        isv.replay_hint = dopa_output.replay_hint;
-        isv.dominant_reason_codes
-            .extend(dopa_output.reason_codes.codes.clone());
-
-        let emotion_isv = isv.clone();
-
-        let stn_output = self.brain_bus.stn_mut().tick(&StnInput {
-            policy_pressure: isv.policy_pressure,
-            arousal: lc_output.arousal,
-            threat: amy_output.threat,
-            receipt_invalid_present: classified.receipt_invalid_count > 0,
-            dlp_critical_present: self.counters.short_dlp_critical_present,
-            integrity: to_brain_integrity(classified.integrity_state),
-        });
-
-        let pmrf_output = self.brain_bus.pmrf_mut().tick(&PmrfInput {
-            divergence: to_brain_level(self.rsv.divergence),
-            policy_pressure: isv.policy_pressure,
-            stability: ser_output.stability,
-            hold_active: stn_output.hold_active,
-            budget_stress: to_brain_level(self.rsv.budget_stress),
-        });
-        let cooldown_level = Some(cooldown_to_level(ser_output.cooldown_class));
-        let (sn_output, pprf_output, mut hypo_decision, previous_dwm) = self
-            .run_sn_sc_and_hypothalamus(RunSnContext {
-                isv,
-                cooldown: cooldown_level,
-                cooldown_class: ser_output.cooldown_class,
-                stability: ser_output.stability,
-                arousal: lc_output.arousal,
-                integrity: to_brain_integrity(classified.integrity_state),
-                now_ms,
-                baseline: baseline_vector.clone(),
-                replay_hint: dopa_output.replay_hint,
-                reward_block: dopa_output.reward_block,
-            });
-        merge_secondary_outputs(&mut hypo_decision, &lc_output, &ser_output, &sn_output);
-        hypo_decision
-            .reason_codes
-            .extend(baseline_vector.reason_codes.codes.clone());
-        hypo_decision
-            .reason_codes
-            .extend(pprf_output.reason_codes.codes.clone());
-        apply_defense_pattern(
-            &mut hypo_decision,
-            &pag_output,
-            to_brain_level(classified.policy_pressure_class),
-        );
-        hypo_decision
-            .reason_codes
-            .extend(dopa_output.reason_codes.codes.clone());
-
-        self.update_emotion_field(EmotionFieldInput {
-            isv: emotion_isv,
-            dwm: pprf_output.active_dwm,
-            profile: hypo_decision.profile_state,
-            overlays: hypo_decision.overlays.clone(),
-            progress: dopa_output.progress,
-            reward_block: dopa_output.reward_block,
-            defense_pattern: Some(pag_output.pattern),
-            replay_hint: dopa_output.replay_hint,
-        });
-
-        let mut translated = translate_decision(hypo_decision, &self.config, true);
-        self.extend_reason_codes(&mut translated, &stn_output.hold_reason_codes);
-        self.extend_reason_codes(&mut translated, &pmrf_output.reason_codes);
-        self.extend_reason_codes(&mut translated, &pprf_output.reason_codes);
-        self.extend_reason_codes(&mut translated, &dopa_output.reason_codes);
-        if let Some(output) = &cerebellum_output {
-            self.extend_reason_codes(&mut translated, &output.reason_codes);
-        }
-        self.extend_reason_codes(&mut translated, &baseline_vector.reason_codes);
-
-        translated = self.apply_stn_pmrf_overlays(translated, &stn_output, &pmrf_output);
-        translated = self.apply_cerebellum_overlays(translated, &cerebellum_output);
-        self.append_dwm_reason_codes(previous_dwm, pprf_output.active_dwm, &mut translated);
+        translated = self.apply_cerebellum_overlays(translated, &brain_output.cerebellum);
+        self.append_dwm_reason_codes(previous_dwm, brain_output.dwm, &mut translated);
         translated
+    }
+
+    fn update_rsv_from_brain(&mut self, brain_output: &dbm_bus::BrainOutput) {
+        self.rsv.threat = translate_level(brain_output.isv.threat);
+        self.rsv.arousal = translate_level(brain_output.isv.arousal);
+        self.rsv.stability = translate_level(brain_output.isv.stability);
+        self.rsv.policy_pressure = translate_level(brain_output.isv.policy_pressure);
+
+        if let Some(cerebellum) = &brain_output.cerebellum {
+            self.rsv.divergence = translate_level(cerebellum.divergence);
+        }
     }
 
     fn apply_and_render(&mut self, decision: ControlDecision, now_ms: u64) -> ControlFrame {
         let decision = self.apply_forensic_override(decision);
         let decision = self.apply_anti_flapping(decision, now_ms);
         self.render_control_frame(decision)
-    }
-
-    fn tick_cerebellum(
-        &mut self,
-        frame: &ucf::v1::SignalFrame,
-        classified: &profiles::classification::ClassifiedSignals,
-    ) -> Option<CerOutput> {
-        if classified.window_kind != ucf::v1::WindowKind::Medium {
-            return None;
-        }
-
-        let exec_stats = frame.exec_stats.as_ref();
-        let cer_input = CerInput {
-            timeout_count_medium: exec_stats.map(|stats| stats.timeout_count).unwrap_or(0),
-            partial_failure_count_medium: exec_stats
-                .map(|stats| stats.partial_failure_count)
-                .unwrap_or(0),
-            tool_unavailable_count_medium: exec_stats
-                .map(|stats| stats.tool_unavailable_count)
-                .unwrap_or(0),
-            receipt_invalid_present: classified.receipt_invalid_count > 0,
-            integrity: to_brain_integrity(classified.integrity_state),
-            tool_id: exec_stats.and_then(|stats| stats.tool_id.clone()),
-            dlp_block_count_medium: exec_stats.map(|stats| stats.dlp_block_count).unwrap_or(0),
-        };
-
-        let output = self.brain_bus.cerebellum_mut().tick(&cer_input);
-        self.rsv.divergence = translate_level(output.divergence);
-        self.brain_bus
-            .set_last_cerebellum_output(Some(output.clone()));
-        Some(output)
-    }
-
-    fn run_sn_sc_and_hypothalamus(
-        &mut self,
-        ctx: RunSnContext,
-    ) -> (
-        dbm_0_sn::SnOutput,
-        dbm_pprf::PprfOutput,
-        HypoDecision,
-        DwmMode,
-    ) {
-        let bus = &mut self.brain_bus;
-        let RunSnContext {
-            isv,
-            cooldown,
-            cooldown_class,
-            stability,
-            arousal,
-            integrity,
-            now_ms,
-            baseline,
-            replay_hint,
-            reward_block,
-        } = ctx;
-        let previous_dwm = bus.current_dwm();
-        let sn_output = bus.sn_mut().tick(&SnInput {
-            isv: isv.clone(),
-            cooldown_class: cooldown,
-            current_dwm: Some(previous_dwm),
-            replay_hint,
-            reward_block,
-        });
-
-        let sc_output = bus.sc_mut().tick(&ScInput {
-            isv: isv.clone(),
-            salience_items: sn_output.salience_items.clone(),
-            unlock_present: self.rsv.unlock_ready,
-            replay_planned_present: false,
-            integrity,
-        });
-
-        let current_target = bus.current_target();
-        let pprf_output = bus.pprf_mut().tick(&PprfInput {
-            orient: sc_output,
-            current_target,
-            current_dwm: sn_output.dwm,
-            cooldown_class,
-            stability,
-            arousal,
-            now_ms,
-        });
-
-        let hypo_input = HypothalamusInput {
-            isv,
-            export_lock_bias: level_at_least(baseline.export_strictness, BrainLevel::Med),
-            simulate_first_bias: level_at_least(baseline.chain_conservatism, BrainLevel::High),
-            approval_strict: level_at_least(baseline.approval_strictness, BrainLevel::Med),
-            novelty_lock_bias: level_at_least(baseline.novelty_dampening, BrainLevel::Med),
-        };
-
-        let hypo_decision = bus.hypothalamus_mut().tick(&hypo_input);
-        bus.set_current_dwm(pprf_output.active_dwm);
-        bus.set_current_target(pprf_output.active_target);
-
-        (sn_output, pprf_output, hypo_decision, previous_dwm)
     }
 
     fn append_dwm_reason_codes(
@@ -843,34 +460,6 @@ impl RegulationEngine {
             .profile_reason_codes
             .sort_by_key(|code| *code as i32);
         decision.profile_reason_codes.dedup();
-    }
-
-    fn apply_stn_pmrf_overlays(
-        &self,
-        mut decision: ControlDecision,
-        stn_output: &dbm_stn::StnOutput,
-        pmrf_output: &dbm_pmrf::PmrfOutput,
-    ) -> ControlDecision {
-        decision.overlays.simulate_first |= stn_output.hint_simulate_first;
-        decision.overlays.novelty_lock |= stn_output.hint_novelty_lock;
-        decision.overlays.export_lock |= stn_output.hint_export_lock;
-
-        if pmrf_output.chain_tightening {
-            decision.overlays.chain_tightening = true;
-        }
-
-        if pmrf_output.checkpoint_required {
-            decision.overlays.simulate_first = true;
-        }
-
-        if decision.overlays.simulate_first
-            || decision.overlays.export_lock
-            || decision.overlays.novelty_lock
-        {
-            decision.overlays.chain_tightening = true;
-        }
-
-        decision
     }
 
     fn apply_cerebellum_overlays(
@@ -1316,10 +905,59 @@ fn build_insula_input(
     }
 }
 
+fn build_cerebellum_input(
+    frame: &ucf::v1::SignalFrame,
+    classified: &profiles::classification::ClassifiedSignals,
+) -> Option<CerInput> {
+    if classified.window_kind != ucf::v1::WindowKind::Medium {
+        return None;
+    }
+
+    let exec_stats = frame.exec_stats.as_ref();
+    Some(CerInput {
+        timeout_count_medium: exec_stats.map(|stats| stats.timeout_count).unwrap_or(0),
+        partial_failure_count_medium: exec_stats
+            .map(|stats| stats.partial_failure_count)
+            .unwrap_or(0),
+        tool_unavailable_count_medium: exec_stats
+            .map(|stats| stats.tool_unavailable_count)
+            .unwrap_or(0),
+        receipt_invalid_present: classified.receipt_invalid_count > 0,
+        integrity: to_brain_integrity(classified.integrity_state),
+        tool_id: exec_stats.and_then(|stats| stats.tool_id.clone()),
+        dlp_block_count_medium: exec_stats.map(|stats| stats.dlp_block_count).unwrap_or(0),
+    })
+}
+
+fn build_hpa_input(
+    classified: &profiles::classification::ClassifiedSignals,
+    counters: &WindowCounters,
+    unlock_ready: bool,
+) -> HpaInput {
+    use ucf::v1::{IntegrityStateClass, LevelClass, WindowKind};
+
+    let stable_medium_window = classified.window_kind == WindowKind::Medium
+        && classified.integrity_state == IntegrityStateClass::Ok
+        && classified.receipt_invalid_count == 0
+        && classified.replay_mismatch_class != LevelClass::High
+        && classified.dlp_severity_class != LevelClass::High;
+
+    HpaInput {
+        integrity_state: to_brain_integrity(classified.integrity_state),
+        replay_mismatch_present: counters.medium_replay_mismatch,
+        dlp_critical_present: counters.medium_dlp_critical_count > 0,
+        receipt_invalid_present: counters.medium_receipt_invalid_count > 0,
+        deny_storm_present: classified.policy_deny_count >= 5,
+        timeouts_burst_present: classified.exec_timeout_count >= 2,
+        unlock_present: unlock_ready,
+        stable_medium_window,
+    }
+}
+
 fn build_dopa_input(
     frame: &ucf::v1::SignalFrame,
     classified: &profiles::classification::ClassifiedSignals,
-    amy_output: &dbm_9_amygdala::AmyOutput,
+    threat: BrainLevel,
     counters: &WindowCounters,
     budget_stress: BrainLevel,
 ) -> Option<DopaInput> {
@@ -1347,7 +985,7 @@ fn build_dopa_input(
 
     Some(DopaInput {
         integrity: to_brain_integrity(classified.integrity_state),
-        threat: amy_output.threat,
+        threat,
         policy_pressure: to_brain_level(classified.policy_pressure_class),
         receipt_invalid_present: classified.receipt_invalid_count > 0,
         dlp_critical_present: counters.medium_dlp_critical_count > 0,
@@ -1379,45 +1017,6 @@ fn build_amygdala_input(
     }
 }
 
-fn apply_defense_pattern(
-    decision: &mut HypoDecision,
-    pag_output: &dbm_pag::PagOutput,
-    policy_pressure: BrainLevel,
-) {
-    decision
-        .reason_codes
-        .extend(pag_output.reason_codes.codes.clone());
-
-    match pag_output.pattern {
-        DefensePattern::DP3_FORENSIC => {
-            decision.profile_state = profile_max(decision.profile_state, BrainProfile::M3);
-            decision.overlays.simulate_first = true;
-            decision.overlays.export_lock = true;
-            decision.overlays.novelty_lock = true;
-            decision.deescalation_lock = true;
-        }
-        DefensePattern::DP2_QUARANTINE => {
-            decision.profile_state = profile_max(decision.profile_state, BrainProfile::M2);
-            decision.overlays.simulate_first = true;
-            decision.overlays.export_lock = true;
-            decision.overlays.novelty_lock = true;
-            decision.deescalation_lock = true;
-        }
-        DefensePattern::DP1_FREEZE | DefensePattern::DP4_CONTAINED_CONTINUE => {
-            if policy_pressure == BrainLevel::High {
-                decision.overlays.simulate_first = true;
-            }
-        }
-    }
-}
-
-fn cooldown_to_level(class: BrainCooldown) -> BrainLevel {
-    match class {
-        BrainCooldown::Base => BrainLevel::Low,
-        BrainCooldown::Longer => BrainLevel::High,
-    }
-}
-
 fn level_severity(level: BrainLevel) -> u8 {
     match level {
         BrainLevel::Low => 0,
@@ -1428,30 +1027,6 @@ fn level_severity(level: BrainLevel) -> u8 {
 
 fn level_at_least(level: BrainLevel, threshold: BrainLevel) -> bool {
     level_severity(level) >= level_severity(threshold)
-}
-
-fn level_max(a: BrainLevel, b: BrainLevel) -> BrainLevel {
-    if level_severity(a) >= level_severity(b) {
-        a
-    } else {
-        b
-    }
-}
-
-fn profile_max(a: BrainProfile, b: BrainProfile) -> BrainProfile {
-    use BrainProfile::*;
-    let severity = |profile: BrainProfile| match profile {
-        M0 => 0,
-        M1 => 1,
-        M2 => 2,
-        M3 => 3,
-    };
-
-    if severity(a) >= severity(b) {
-        a
-    } else {
-        b
-    }
 }
 
 fn convert_reason_codes(codes: &[i32]) -> Vec<String> {
@@ -1549,45 +1124,6 @@ fn update_window_counters(
         }
         _ => {}
     }
-}
-
-fn apply_baseline_cooldown_bias(
-    mut ser_output: dbm_8_serotonin::SerOutput,
-    baseline: &BaselineVector,
-) -> dbm_8_serotonin::SerOutput {
-    if matches!(baseline.cooldown_bias, BrainCooldown::Longer) {
-        ser_output.cooldown_class = BrainCooldown::Longer;
-        ser_output
-            .reason_codes
-            .insert("baseline_cooldown_bias".to_string());
-    }
-
-    ser_output
-}
-
-fn merge_secondary_outputs(
-    decision: &mut HypoDecision,
-    lc_output: &dbm_7_lc::LcOutput,
-    ser_output: &dbm_8_serotonin::SerOutput,
-    sn_output: &dbm_0_sn::SnOutput,
-) {
-    decision.overlays.simulate_first |= lc_output.hint_simulate_first;
-    decision.overlays.novelty_lock |= lc_output.hint_novelty_lock;
-    decision.deescalation_lock |= ser_output.deescalation_lock;
-    decision.cooldown_class = level_max(
-        decision.cooldown_class,
-        cooldown_to_level(ser_output.cooldown_class),
-    );
-
-    decision
-        .reason_codes
-        .extend(lc_output.reason_codes.codes.clone());
-    decision
-        .reason_codes
-        .extend(ser_output.reason_codes.codes.clone());
-    decision
-        .reason_codes
-        .extend(sn_output.reason_codes.codes.clone());
 }
 
 fn to_brain_level(level: ucf::v1::LevelClass) -> BrainLevel {
