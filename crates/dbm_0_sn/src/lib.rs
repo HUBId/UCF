@@ -213,7 +213,7 @@ pub struct SubstantiaNigra {
 impl SubstantiaNigra {
     pub fn new() -> Self {
         Self {
-            backend: SnBackend::Rules(SnRules::default()),
+            backend: SnBackend::Rules(SnRules),
         }
     }
 

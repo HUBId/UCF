@@ -90,7 +90,7 @@ pub struct Lc {
 impl Lc {
     pub fn new() -> Self {
         Self {
-            backend: LcBackend::Rules(LcRules::default()),
+            backend: LcBackend::Rules(LcRules),
         }
     }
 
