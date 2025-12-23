@@ -61,7 +61,6 @@ impl MicrocircuitPublisherState {
             }
         }
     }
-
 }
 
 fn publish_module(
