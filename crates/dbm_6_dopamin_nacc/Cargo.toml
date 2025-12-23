@@ -6,5 +6,12 @@ edition = "2021"
 [lib]
 path = "src/lib.rs"
 
+[features]
+microcircuit-dopamin = []
+microcircuit-dopamin-attractor = ["microcircuit-dopamin", "microcircuit_dopamin_attractor"]
+
 [dependencies]
 dbm_core = { path = "../dbm_core" }
+microcircuit_core = { path = "../microcircuit_core" }
+microcircuit_dopamin_attractor = { path = "../microcircuit_dopamin_attractor", optional = true }
+microcircuit_dopamin_stub = { path = "../microcircuit_dopamin_stub" }

@@ -1,105 +1,86 @@
 #![forbid(unsafe_code)]
 
-use dbm_core::{DbmModule, IntegrityState, LevelClass, ReasonSet};
+use dbm_core::DbmModule;
+#[cfg(feature = "microcircuit-dopamin")]
+use microcircuit_core::CircuitConfig;
+use microcircuit_core::MicrocircuitBackend;
+pub use microcircuit_dopamin_stub::{DopaInput, DopaOutput, DopaRules};
+use std::fmt;
 
-#[derive(Debug, Clone, Default)]
-pub struct DopaInput {
-    pub integrity: IntegrityState,
-    pub threat: LevelClass,
-    pub policy_pressure: LevelClass,
-    pub receipt_invalid_present: bool,
-    pub dlp_critical_present: bool,
-    pub replay_mismatch_present: bool,
-    pub exec_success_count_medium: u32,
-    pub exec_failure_count_medium: u32,
-    pub deny_count_medium: u32,
-    pub budget_stress: LevelClass,
-    pub macro_finalized_count_long: u32,
+pub enum DopaBackend {
+    Rules(DopaRules),
+    Micro(Box<dyn MicrocircuitBackend<DopaInput, DopaOutput>>),
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct DopaState {
-    pub utility_score: i32,
-    pub non_positive_streak: u32,
-    pub reward_block: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DopaOutput {
-    pub progress: LevelClass,
-    pub incentive_focus: LevelClass,
-    pub replay_hint: bool,
-    pub reward_block: bool,
-    pub reason_codes: ReasonSet,
-}
-
-impl Default for DopaOutput {
-    fn default() -> Self {
-        Self {
-            progress: LevelClass::Low,
-            incentive_focus: LevelClass::Low,
-            replay_hint: false,
-            reward_block: false,
-            reason_codes: ReasonSet::default(),
+impl fmt::Debug for DopaBackend {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            DopaBackend::Rules(_) => f.write_str("DopaBackend::Rules"),
+            DopaBackend::Micro(_) => f.write_str("DopaBackend::Micro"),
         }
     }
 }
 
-#[derive(Debug, Default)]
+impl DopaBackend {
+    fn tick(&mut self, input: &DopaInput) -> DopaOutput {
+        match self {
+            DopaBackend::Rules(rules) => rules.tick(input),
+            DopaBackend::Micro(backend) => backend.step(input, 0),
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct DopaminNacc {
-    state: DopaState,
+    backend: DopaBackend,
 }
 
 impl DopaminNacc {
-    const UTILITY_MIN: i32 = -100;
-    const UTILITY_MAX: i32 = 100;
-
     pub fn new() -> Self {
-        Self::default()
-    }
-
-    fn clamp_utility(score: i32) -> i32 {
-        score.clamp(Self::UTILITY_MIN, Self::UTILITY_MAX)
-    }
-
-    fn compute_delta(input: &DopaInput) -> i32 {
-        let budget_penalty = match input.budget_stress {
-            LevelClass::Low => 0,
-            LevelClass::Med => 1,
-            LevelClass::High => 2,
-        };
-
-        input.exec_success_count_medium as i32
-            - input.exec_failure_count_medium as i32
-            - (input.deny_count_medium as i32) / 5
-            - budget_penalty
-    }
-
-    fn reward_block(input: &DopaInput) -> bool {
-        input.integrity != IntegrityState::Ok
-            || input.threat == LevelClass::High
-            || input.policy_pressure == LevelClass::High
-            || input.receipt_invalid_present
-            || input.dlp_critical_present
-            || input.replay_mismatch_present
-    }
-
-    fn map_progress(utility_score: i32) -> LevelClass {
-        if utility_score >= 5 {
-            LevelClass::High
-        } else if utility_score >= 1 {
-            LevelClass::Med
-        } else {
-            LevelClass::Low
+        Self {
+            backend: DopaBackend::Rules(DopaRules::new()),
         }
     }
 
-    fn incentive_focus(progress: LevelClass, reward_block: bool) -> LevelClass {
-        if reward_block {
-            LevelClass::Low
-        } else {
-            progress
+    #[cfg(feature = "microcircuit-dopamin-attractor")]
+    pub fn new_micro(config: CircuitConfig) -> Self {
+        use microcircuit_dopamin_attractor::DopaAttractorMicrocircuit;
+
+        Self {
+            backend: DopaBackend::Micro(Box::new(DopaAttractorMicrocircuit::new(config))),
         }
+    }
+
+    #[cfg(all(
+        feature = "microcircuit-dopamin",
+        not(feature = "microcircuit-dopamin-attractor")
+    ))]
+    pub fn new_micro(config: CircuitConfig) -> Self {
+        use microcircuit_dopamin_stub::DopaMicrocircuit;
+
+        Self {
+            backend: DopaBackend::Micro(Box::new(DopaMicrocircuit::new(config))),
+        }
+    }
+
+    pub fn snapshot_digest(&self) -> Option<[u8; 32]> {
+        match &self.backend {
+            DopaBackend::Micro(backend) => Some(backend.snapshot_digest()),
+            DopaBackend::Rules(_) => None,
+        }
+    }
+
+    pub fn config_digest(&self) -> Option<[u8; 32]> {
+        match &self.backend {
+            DopaBackend::Micro(backend) => Some(backend.config_digest()),
+            DopaBackend::Rules(_) => None,
+        }
+    }
+}
+
+impl Default for DopaminNacc {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -108,47 +89,14 @@ impl DbmModule for DopaminNacc {
     type Output = DopaOutput;
 
     fn tick(&mut self, input: &Self::Input) -> Self::Output {
-        let mut reason_codes = ReasonSet::default();
-
-        self.state.reward_block = Self::reward_block(input);
-        if self.state.reward_block {
-            reason_codes.insert("RC.GV.PROGRESS.REWARD_BLOCKED");
-        }
-
-        let delta = Self::compute_delta(input);
-        if delta > 0 {
-            self.state.non_positive_streak = 0;
-        } else {
-            self.state.non_positive_streak = self.state.non_positive_streak.saturating_add(1);
-        }
-
-        self.state.utility_score = Self::clamp_utility(self.state.utility_score + delta);
-
-        let mut progress = Self::map_progress(self.state.utility_score);
-        if self.state.reward_block && progress == LevelClass::High {
-            progress = LevelClass::Med;
-        }
-
-        let replay_hint = self.state.non_positive_streak >= 3;
-        if replay_hint {
-            reason_codes.insert("RC.GV.REPLAY.DIMINISHING_RETURNS");
-        }
-
-        let incentive_focus = Self::incentive_focus(progress, self.state.reward_block);
-
-        DopaOutput {
-            progress,
-            incentive_focus,
-            replay_hint,
-            reward_block: self.state.reward_block,
-            reason_codes,
-        }
+        self.backend.tick(input)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dbm_core::{IntegrityState, LevelClass};
 
     fn base_input() -> DopaInput {
         DopaInput {
@@ -187,7 +135,6 @@ mod tests {
             ..base_input()
         });
 
-        assert_eq!(module.state.utility_score, 5);
         assert_eq!(output.progress, LevelClass::High);
     }
 
@@ -242,5 +189,18 @@ mod tests {
         let out_b = module_b.tick(&input);
 
         assert_eq!(out_a, out_b);
+    }
+
+    #[test]
+    fn noncritical_inputs_allow_progress() {
+        let mut module = DopaminNacc::new();
+        let output = module.tick(&DopaInput {
+            exec_success_count_medium: 3,
+            exec_failure_count_medium: 1,
+            integrity: IntegrityState::Ok,
+            ..base_input()
+        });
+
+        assert!(output.progress != LevelClass::Low);
     }
 }
