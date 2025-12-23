@@ -267,7 +267,6 @@ mod tests {
                 deny_count_short: 2,
                 receipt_missing_count_short: 1,
                 arousal_floor: LevelClass::High,
-                ..Default::default()
             },
             0,
         );
@@ -291,7 +290,6 @@ mod tests {
             deny_count_short: 2,
             receipt_missing_count_short: 1,
             arousal_floor: LevelClass::High,
-            ..Default::default()
         };
 
         circuit.step(&input, 0);
