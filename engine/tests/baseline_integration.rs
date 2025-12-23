@@ -102,6 +102,15 @@ fn mock_reader() -> MockPvgsReader {
     }
 }
 
+fn drive_frame(
+    engine: &mut RegulationEngine,
+    frame: SignalFrame,
+    now_ms: u64,
+) -> ucf::v1::ControlFrame {
+    engine.enqueue_signal_frame(frame).expect("frame enqueued");
+    engine.tick(now_ms)
+}
+
 #[test]
 fn baseline_resolver_max_merge_reaches_high_and_biases() {
     let hbv = hbv_from_hpa();
@@ -165,8 +174,8 @@ fn identical_frames_produce_deterministic_control_and_digest() {
 
     // Prime the baseline resolver by ensuring hbv offsets are present.
     let frame = medium_frame();
-    let control_a = engine_a.on_signal_frame(frame.clone(), 1_000);
-    let control_b = engine_b.on_signal_frame(frame, 1_000);
+    let control_a = drive_frame(&mut engine_a, frame.clone(), 1_000);
+    let control_b = drive_frame(&mut engine_b, frame, 1_000);
 
     let overlays_a = control_a.overlays.as_ref().expect("overlays present");
     assert!(overlays_a.simulate_first);

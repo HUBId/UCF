@@ -24,7 +24,10 @@ fn run_regulator_dump() {
     let mut engine = RegulationEngine::default();
     let now_ms = 1;
     let signal_frame = default_ok_signal_frame(now_ms);
-    let _ = engine.on_signal_frame(signal_frame, now_ms);
+    engine
+        .enqueue_signal_frame(signal_frame)
+        .expect("signal frame enqueued");
+    let _ = engine.tick(now_ms);
 
     let snapshot = engine.snapshot();
     println!("{}", format_snapshot(&snapshot));

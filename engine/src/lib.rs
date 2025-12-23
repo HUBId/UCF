@@ -20,7 +20,7 @@ use std::time::SystemTime;
 use ucf::v1::{ControlFrame, IntegrityStateClass, LevelClass, ReasonCode, ToolClassMask};
 
 mod proto_bridge;
-pub use proto_bridge::{
+use proto_bridge::{
     brain_input_from_signal_frame, control_frame_from_brain_output, BaselineContext,
     ControlFrameContext,
 };
@@ -53,7 +53,7 @@ pub(crate) struct AntiFlappingState {
 }
 
 #[derive(Debug, Default)]
-pub struct WindowCounters {
+pub(crate) struct WindowCounters {
     short_receipt_invalid_count: u32,
     short_receipt_missing_count: u32,
     short_dlp_critical_present: bool,
@@ -183,7 +183,8 @@ impl RegulationEngine {
         }
     }
 
-    pub fn emotion_field_snapshot(&self) -> Option<dbm_core::EmotionField> {
+    #[allow(dead_code)]
+    pub(crate) fn emotion_field_snapshot(&self) -> Option<dbm_core::EmotionField> {
         self.brain_bus.last_emotion_field()
     }
 
@@ -200,20 +201,6 @@ impl RegulationEngine {
 
         self.signal_queue.push_back(frame);
         Ok(())
-    }
-
-    pub fn queued_frames(&self) -> usize {
-        self.signal_queue.len()
-    }
-
-    pub fn on_signal_frame(&mut self, frame: ucf::v1::SignalFrame, now_ms: u64) -> ControlFrame {
-        let (decision, brain_output) = self.decide_from_frame(frame, now_ms);
-        self.apply_and_render(decision, &brain_output, now_ms)
-    }
-
-    pub fn on_tick(&mut self, now_ms: u64) -> ControlFrame {
-        let (decision, brain_output) = self.decide_on_missing(now_ms);
-        self.apply_and_render(decision, &brain_output, now_ms)
     }
 
     pub fn tick(&mut self, now_ms: u64) -> ControlFrame {
@@ -239,7 +226,8 @@ impl RegulationEngine {
         self.apply_and_render(decision, &brain_output, now_ms)
     }
 
-    pub fn reset_forensic(&mut self) {
+    #[cfg(test)]
+    pub(crate) fn reset_forensic(&mut self) {
         self.rsv.reset_forensic();
         self.anti_flapping_state.current_profile = None;
         self.anti_flapping_state.current_overlays = None;
@@ -1047,6 +1035,15 @@ mod tests {
 
     type EvidenceLog = Arc<Mutex<Vec<(String, [u8; 32])>>>;
 
+    fn drive_frame(engine: &mut RegulationEngine, frame: SignalFrame, now_ms: u64) -> ControlFrame {
+        engine.enqueue_signal_frame(frame).expect("frame enqueued");
+        engine.tick(now_ms)
+    }
+
+    fn pending_frames(engine: &RegulationEngine) -> usize {
+        engine.signal_queue.len()
+    }
+
     #[derive(Clone, Default)]
     struct RecordingWriter {
         calls: EvidenceLog,
@@ -1163,7 +1160,7 @@ mod tests {
         last_hpa_output.baseline_caution_offset = 4;
         engine.brain_bus.set_last_hpa_output(last_hpa_output);
 
-        let control = engine.on_signal_frame(base_frame(), 1);
+        let control = drive_frame(&mut engine, base_frame(), 1);
 
         let overlays = control.overlays.expect("overlays present");
         assert!(overlays.simulate_first);
@@ -1177,7 +1174,7 @@ mod tests {
         last_hpa_output.baseline_cooldown_multiplier_class = 3;
         engine.brain_bus.set_last_hpa_output(last_hpa_output);
 
-        let control = engine.on_signal_frame(base_frame(), 1);
+        let control = drive_frame(&mut engine, base_frame(), 1);
         assert_eq!(
             control.cooldown_class,
             Some(ucf::v1::LevelClass::High as i32)
@@ -1193,7 +1190,7 @@ mod tests {
         last_hpa_output.baseline_approval_strictness_offset = 1;
         engine.brain_bus.set_last_hpa_output(last_hpa_output);
 
-        let control = engine.on_signal_frame(base_frame(), 1);
+        let control = drive_frame(&mut engine, base_frame(), 1);
         let overlays = control.overlays.expect("overlays present");
         assert!(overlays.simulate_first);
         assert!(overlays.export_lock);
@@ -1214,8 +1211,8 @@ mod tests {
         let mut engine_a = RegulationEngine::default();
         let mut engine_b = RegulationEngine::default();
         let frame = base_frame();
-        let control_a = engine_a.on_signal_frame(frame.clone(), 1);
-        let control_b = engine_b.on_signal_frame(frame, 1);
+        let control_a = drive_frame(&mut engine_a, frame.clone(), 1);
+        let control_b = drive_frame(&mut engine_b, frame, 1);
         assert_eq!(
             control_a.control_frame_digest,
             control_b.control_frame_digest
@@ -1230,7 +1227,7 @@ mod tests {
         integrity_frame.integrity_state = IntegrityStateClass::Fail as i32;
         integrity_frame.timestamp_ms = Some(1);
 
-        let control_integrity = engine.on_signal_frame(integrity_frame, 1);
+        let control_integrity = drive_frame(&mut engine, integrity_frame, 1);
 
         assert_eq!(engine.brain_bus.current_target(), OrientTarget::Integrity);
         assert_eq!(engine.brain_bus.current_dwm(), DwmMode::Report);
@@ -1241,7 +1238,7 @@ mod tests {
 
         let mut calm_frame = base_frame();
         calm_frame.timestamp_ms = Some(2);
-        let control_blocked = engine.on_signal_frame(calm_frame, 2);
+        let control_blocked = drive_frame(&mut engine, calm_frame, 2);
 
         assert_eq!(engine.brain_bus.current_target(), OrientTarget::Integrity);
         assert!(control_blocked
@@ -1255,7 +1252,7 @@ mod tests {
 
         let mut initial_frame = base_frame();
         initial_frame.timestamp_ms = Some(10);
-        let _ = engine.on_signal_frame(initial_frame, 10);
+        let _ = drive_frame(&mut engine, initial_frame, 10);
 
         let initial_lock = engine.brain_bus.pprf().lock_until_ms;
         assert!(initial_lock > 10);
@@ -1264,7 +1261,7 @@ mod tests {
         let mut integrity_frame = base_frame();
         integrity_frame.integrity_state = IntegrityStateClass::Fail as i32;
         integrity_frame.timestamp_ms = Some(11);
-        let control = engine.on_signal_frame(integrity_frame, 11);
+        let control = drive_frame(&mut engine, integrity_frame, 11);
 
         assert_eq!(engine.brain_bus.current_target(), OrientTarget::Integrity);
         assert_eq!(engine.brain_bus.current_dwm(), DwmMode::Report);
@@ -1280,11 +1277,11 @@ mod tests {
 
         let mut engine_with_cbv_a = RegulationEngine::default();
         engine_with_cbv_a.set_pvgs_reader(MockPvgsReader::with_cbv(cbv_digest(1)));
-        let control_a = engine_with_cbv_a.on_signal_frame(frame.clone(), 1);
+        let control_a = drive_frame(&mut engine_with_cbv_a, frame.clone(), 1);
 
         let mut engine_with_cbv_b = RegulationEngine::default();
         engine_with_cbv_b.set_pvgs_reader(MockPvgsReader::with_cbv(cbv_digest(2)));
-        let control_b = engine_with_cbv_b.on_signal_frame(frame, 1);
+        let control_b = drive_frame(&mut engine_with_cbv_b, frame, 1);
 
         assert_eq!(control_a.character_epoch_digest, Some(vec![1u8; 32]));
         assert_eq!(control_b.character_epoch_digest, Some(vec![2u8; 32]));
@@ -1302,13 +1299,13 @@ mod tests {
         reader_a.pev = Some(pev_vector());
         let mut engine_with_pev_a = RegulationEngine::default();
         engine_with_pev_a.set_pvgs_reader(reader_a);
-        let control_a = engine_with_pev_a.on_signal_frame(frame.clone(), 1);
+        let control_a = drive_frame(&mut engine_with_pev_a, frame.clone(), 1);
 
         let mut reader_b = MockPvgsReader::with_pev_digest(pev_digest(9));
         reader_b.pev = Some(pev_vector());
         let mut engine_with_pev_b = RegulationEngine::default();
         engine_with_pev_b.set_pvgs_reader(reader_b);
-        let control_b = engine_with_pev_b.on_signal_frame(frame, 1);
+        let control_b = drive_frame(&mut engine_with_pev_b, frame, 1);
 
         assert_eq!(control_a.policy_ecology_digest, Some(vec![8u8; 32]));
         assert_eq!(control_b.policy_ecology_digest, Some(vec![9u8; 32]));
@@ -1323,10 +1320,10 @@ mod tests {
         let frame = base_frame();
 
         let mut engine_a = RegulationEngine::default();
-        let control_a = engine_a.on_signal_frame(frame.clone(), 1);
+        let control_a = drive_frame(&mut engine_a, frame.clone(), 1);
 
         let mut engine_b = RegulationEngine::default();
-        let control_b = engine_b.on_signal_frame(frame, 1);
+        let control_b = drive_frame(&mut engine_b, frame, 1);
 
         assert!(control_a.character_epoch_digest.is_none());
         assert_eq!(
@@ -1341,7 +1338,7 @@ mod tests {
 
         let mut frame = medium_frame(1, 12, 0);
         frame.integrity_state = IntegrityStateClass::Fail as i32;
-        let control = engine.on_signal_frame(frame, 1);
+        let control = drive_frame(&mut engine, frame, 1);
 
         let dopa = engine.brain_bus.last_dopa_output().unwrap();
         assert_eq!(dopa.progress, BrainLevel::Med);
@@ -1356,7 +1353,7 @@ mod tests {
 
         for ts in 1..=2 {
             let frame = medium_frame(ts, 4, 0);
-            let _ = engine.on_signal_frame(frame, ts);
+            let _ = drive_frame(&mut engine, frame, ts);
         }
 
         let dopa = engine.brain_bus.last_dopa_output().unwrap();
@@ -1371,7 +1368,7 @@ mod tests {
         for ts in 1..=3 {
             let mut frame = medium_frame(ts, 0, 5);
             frame.exec_stats.as_mut().unwrap().timeout_count = 1;
-            let control = engine.on_signal_frame(frame, ts);
+            let control = drive_frame(&mut engine, frame, ts);
             if ts == 3 {
                 assert!(engine
                     .brain_bus
@@ -1390,10 +1387,10 @@ mod tests {
         let frame = base_frame();
 
         let mut engine_a = RegulationEngine::default();
-        let control_a = engine_a.on_signal_frame(frame.clone(), 1);
+        let control_a = drive_frame(&mut engine_a, frame.clone(), 1);
 
         let mut engine_b = RegulationEngine::default();
-        let control_b = engine_b.on_signal_frame(frame, 1);
+        let control_b = drive_frame(&mut engine_b, frame, 1);
 
         assert!(control_a.policy_ecology_digest.is_none());
         assert_eq!(
@@ -1412,7 +1409,7 @@ mod tests {
         let mut engine = RegulationEngine::new(config);
         engine.set_pvgs_reader(MockPvgsReader::with_cbv(cbv_digest(3)));
 
-        let control = engine.on_signal_frame(base_frame(), 1);
+        let control = drive_frame(&mut engine, base_frame(), 1);
         assert_eq!(control.approval_mode.as_deref(), Some("STRICT"));
         assert!(control.overlays.unwrap().novelty_lock);
     }
@@ -1429,7 +1426,7 @@ mod tests {
         let mut engine = RegulationEngine::default();
         engine.set_pvgs_reader(reader);
 
-        let control = engine.on_signal_frame(base_frame(), 1);
+        let control = drive_frame(&mut engine, base_frame(), 1);
         assert_eq!(control.approval_mode.as_deref(), Some("STRICT"));
         assert_eq!(control.deescalation_lock, Some(true));
     }
@@ -1446,7 +1443,7 @@ mod tests {
         let mut engine = RegulationEngine::default();
         engine.set_pvgs_reader(reader);
 
-        let control = engine.on_signal_frame(base_frame(), 1);
+        let control = drive_frame(&mut engine, base_frame(), 1);
         assert!(control.overlays.unwrap().novelty_lock);
     }
 
@@ -1462,7 +1459,7 @@ mod tests {
         let mut engine = RegulationEngine::default();
         engine.set_pvgs_reader(reader);
 
-        let control = engine.on_signal_frame(base_frame(), 1);
+        let control = drive_frame(&mut engine, base_frame(), 1);
         assert!(control.overlays.unwrap().export_lock);
     }
 
@@ -1478,7 +1475,7 @@ mod tests {
         let mut engine = RegulationEngine::default();
         engine.set_pvgs_reader(reader);
 
-        let control = engine.on_signal_frame(base_frame(), 1);
+        let control = drive_frame(&mut engine, base_frame(), 1);
         let overlays = control.overlays.unwrap();
         assert!(overlays.simulate_first);
         assert!(overlays.chain_tightening);
@@ -1501,11 +1498,11 @@ mod tests {
 
         let mut engine_a = RegulationEngine::new(config.clone());
         engine_a.set_pvgs_reader(reader.clone());
-        let control_a = engine_a.on_signal_frame(base_frame(), 1);
+        let control_a = drive_frame(&mut engine_a, base_frame(), 1);
 
         let mut engine_b = RegulationEngine::new(config);
         engine_b.set_pvgs_reader(reader);
-        let control_b = engine_b.on_signal_frame(base_frame(), 1);
+        let control_b = drive_frame(&mut engine_b, base_frame(), 1);
 
         assert_eq!(
             control_a.control_frame_digest,
@@ -1525,11 +1522,11 @@ mod tests {
 
         let mut engine_a = RegulationEngine::default();
         engine_a.set_pvgs_reader(reader.clone());
-        let control_a = engine_a.on_signal_frame(base_frame(), 1);
+        let control_a = drive_frame(&mut engine_a, base_frame(), 1);
 
         let mut engine_b = RegulationEngine::default();
         engine_b.set_pvgs_reader(reader);
-        let control_b = engine_b.on_signal_frame(base_frame(), 1);
+        let control_b = drive_frame(&mut engine_b, base_frame(), 1);
 
         assert_eq!(control_a.policy_ecology_digest, Some(vec![7u8; 32]));
         assert_eq!(
@@ -1550,7 +1547,7 @@ mod tests {
         };
         engine.set_pvgs_writer(writer);
 
-        let control = engine.on_signal_frame(base_frame(), 1);
+        let control = drive_frame(&mut engine, base_frame(), 1);
 
         let recorded = calls.lock().unwrap();
         assert_eq!(recorded.len(), 1);
@@ -1570,7 +1567,7 @@ mod tests {
             receipt_invalid_count: 2,
         });
 
-        let control = engine.on_signal_frame(frame, 1);
+        let control = drive_frame(&mut engine, frame, 1);
         assert_eq!(control.active_profile.unwrap().profile, "M2_QUARANTINE");
         let overlays = control.overlays.unwrap();
         assert!(overlays.simulate_first && overlays.export_lock && overlays.novelty_lock);
@@ -1582,7 +1579,7 @@ mod tests {
         let mut engine = RegulationEngine::default();
         let mut frame = base_frame();
         frame.integrity_state = IntegrityStateClass::Fail as i32;
-        let control = engine.on_signal_frame(frame, 1);
+        let control = drive_frame(&mut engine, frame, 1);
 
         let mask = control.toolclass_mask.unwrap();
         assert!(!mask.export && !mask.write && !mask.execute);
@@ -1609,7 +1606,7 @@ mod tests {
         let mut frame = base_frame();
         frame.top_reason_codes = vec![ReasonCode::RcCdDlpSecretPattern as i32];
 
-        let control = engine.on_signal_frame(frame, 1);
+        let control = drive_frame(&mut engine, frame, 1);
         assert_eq!(control.active_profile.unwrap().profile, "M3_FORENSIC");
         let mut reasons = control.profile_reason_codes.clone();
         reasons.sort();
@@ -1625,10 +1622,10 @@ mod tests {
         frame.integrity_state = IntegrityStateClass::Fail as i32;
         frame.reason_codes = vec![ReasonCode::ReIntegrityFail as i32];
 
-        let control_first = engine.on_signal_frame(frame.clone(), 1);
+        let control_first = drive_frame(&mut engine, frame.clone(), 1);
         assert_eq!(control_first.active_profile.unwrap().profile, "M3_FORENSIC");
 
-        let control_second = engine.on_signal_frame(frame, 2);
+        let control_second = drive_frame(&mut engine, frame, 2);
         assert_eq!(
             control_second.active_profile.unwrap().profile,
             "M3_FORENSIC"
@@ -1645,7 +1642,7 @@ mod tests {
             top_reason_codes: Vec::new(),
         });
 
-        let control = engine.on_signal_frame(frame, 1);
+        let control = drive_frame(&mut engine, frame, 1);
         assert_eq!(control.active_profile.unwrap().profile, "M1_RESTRICTED");
         assert!(control
             .overlays
@@ -1663,7 +1660,7 @@ mod tests {
             vec![ReasonCode::ReIntegrityFail as i32],
         );
 
-        let control = engine.on_signal_frame(frame, 1);
+        let control = drive_frame(&mut engine, frame, 1);
         assert_eq!(control.active_profile.unwrap().profile, "M3_FORENSIC");
     }
 
@@ -1675,14 +1672,14 @@ mod tests {
             IntegrityStateClass::Fail,
             vec![ReasonCode::ReIntegrityFail as i32],
         );
-        let _ = engine.on_signal_frame(first, 1);
+        let _ = drive_frame(&mut engine, first, 1);
 
         let second = medium_unlock_frame(
             2,
             IntegrityStateClass::Degraded,
             vec![ReasonCode::ReIntegrityDegraded as i32],
         );
-        let control = engine.on_signal_frame(second, 2);
+        let control = drive_frame(&mut engine, second, 2);
 
         assert_eq!(control.active_profile.unwrap().profile, "M1_RESTRICTED");
         let overlays = control.overlays.unwrap();
@@ -1718,16 +1715,16 @@ mod tests {
         let mut engine = RegulationEngine::default();
         let mut frame = base_frame();
         frame.integrity_state = IntegrityStateClass::Fail as i32;
-        let _ = engine.on_signal_frame(frame, 1);
+        let _ = drive_frame(&mut engine, frame, 1);
 
         let mut ok_frame = base_frame();
         ok_frame.integrity_state = IntegrityStateClass::Ok as i32;
-        let control = engine.on_signal_frame(ok_frame, 2);
+        let control = drive_frame(&mut engine, ok_frame, 2);
         assert_eq!(control.active_profile.unwrap().profile, "M3_FORENSIC");
 
         engine.reset_forensic();
 
-        let control_after_reset = engine.on_signal_frame(base_frame(), 3);
+        let control_after_reset = drive_frame(&mut engine, base_frame(), 3);
         assert_ne!(
             control_after_reset.active_profile.unwrap().profile,
             "M3_FORENSIC"
@@ -1742,8 +1739,8 @@ mod tests {
         let mut engine_a = RegulationEngine::default();
         let mut engine_b = RegulationEngine::default();
 
-        let control_a = engine_a.on_signal_frame(frame.clone(), 1);
-        let control_b = engine_b.on_signal_frame(frame, 1);
+        let control_a = drive_frame(&mut engine_a, frame.clone(), 1);
+        let control_b = drive_frame(&mut engine_b, frame, 1);
 
         assert_eq!(
             control_a.control_frame_digest,
@@ -1758,7 +1755,7 @@ mod tests {
         frame.top_reason_codes = vec![ReasonCode::RcReReplayMismatch as i32];
 
         reset_hpa(&mut engine);
-        let control = engine.on_signal_frame(frame, 1);
+        let control = drive_frame(&mut engine, frame, 1);
         let overlays = control.overlays.unwrap();
 
         assert_eq!(control.active_profile.unwrap().profile, "M0_RESEARCH");
@@ -1775,7 +1772,7 @@ mod tests {
         frame.integrity_state = IntegrityStateClass::Degraded as i32;
         frame.top_reason_codes = vec![ReasonCode::RcReReplayMismatch as i32];
 
-        let control = engine.on_signal_frame(frame, 1);
+        let control = drive_frame(&mut engine, frame, 1);
 
         assert_eq!(control.active_profile.unwrap().profile, "M0_RESEARCH");
     }
@@ -1784,8 +1781,8 @@ mod tests {
     fn missing_frame_triggers_restriction() {
         let mut engine = RegulationEngine::default();
         let frame = base_frame();
-        let _ = engine.on_signal_frame(frame, 0);
-        let control = engine.on_tick(60_000);
+        let _ = drive_frame(&mut engine, frame, 0);
+        let control = engine.tick(60_000);
         assert_eq!(control.active_profile.unwrap().profile, "M1_RESTRICTED");
         assert!(control.overlays.unwrap().export_lock);
         assert!(control
@@ -1806,7 +1803,7 @@ mod tests {
         }
 
         let _ = engine.tick(100);
-        assert_eq!(engine.queued_frames(), 17);
+        assert_eq!(pending_frames(&engine), 17);
     }
 
     #[test]
@@ -1814,11 +1811,11 @@ mod tests {
         let mut engine = RegulationEngine::default();
         engine.config.anti_flapping.min_ms_between_profile_changes = 10_000;
 
-        let _ = engine.on_signal_frame(base_frame(), 0);
-        let control = engine.on_signal_frame(replay_mismatch_frame(1), 1);
+        let _ = drive_frame(&mut engine, base_frame(), 0);
+        let control = drive_frame(&mut engine, replay_mismatch_frame(1), 1);
         assert_eq!(control.active_profile.unwrap().profile, "M0_RESEARCH");
 
-        let control = engine.on_signal_frame(base_frame(), 2);
+        let control = drive_frame(&mut engine, base_frame(), 2);
         assert_eq!(control.active_profile.unwrap().profile, "M0_RESEARCH");
     }
 
@@ -1829,7 +1826,7 @@ mod tests {
         engine.config.update_tables.overlay_enable.clear();
         engine.config.anti_flapping.min_ms_between_overlay_changes = 10_000;
 
-        let control = engine.on_signal_frame(base_frame(), 0);
+        let control = drive_frame(&mut engine, base_frame(), 0);
         assert!(!control.overlays.unwrap().simulate_first);
 
         engine
@@ -1850,12 +1847,12 @@ mod tests {
                 },
             });
 
-        let control = engine.on_signal_frame(base_frame(), 1);
+        let control = drive_frame(&mut engine, base_frame(), 1);
         let overlays = control.overlays.unwrap();
         assert!(!overlays.simulate_first && !overlays.export_lock && !overlays.novelty_lock);
 
         engine.config.update_tables.overlay_enable.clear();
-        let control = engine.on_signal_frame(base_frame(), 2);
+        let control = drive_frame(&mut engine, base_frame(), 2);
         assert!(!control.overlays.unwrap().simulate_first);
     }
 
@@ -1868,11 +1865,11 @@ mod tests {
         engine.config.anti_flapping.min_ms_between_overlay_changes = 0;
         engine.config.update_tables.overlay_enable.clear();
 
-        let _ = engine.on_signal_frame(base_frame(), 0);
-        let control = engine.on_signal_frame(replay_mismatch_frame(1), 1);
+        let _ = drive_frame(&mut engine, base_frame(), 0);
+        let control = drive_frame(&mut engine, replay_mismatch_frame(1), 1);
         assert_eq!(control.active_profile.unwrap().profile, "M0_RESEARCH");
 
-        let control = engine.on_signal_frame(base_frame(), 2);
+        let control = drive_frame(&mut engine, base_frame(), 2);
         let overlays = control.overlays.unwrap();
         assert_eq!(control.active_profile.unwrap().profile, "M0_RESEARCH");
         assert!(!overlays.simulate_first && !overlays.export_lock && !overlays.novelty_lock);
@@ -1912,7 +1909,7 @@ mod tests {
         });
 
         let mut engine = RegulationEngine::default();
-        let control = engine.on_signal_frame(frame, 1);
+        let control = drive_frame(&mut engine, frame, 1);
         let overlays = control.overlays.unwrap();
 
         assert!(overlays.simulate_first);
@@ -1936,7 +1933,8 @@ mod tests {
             top_reason_codes: Vec::new(),
         });
 
-        let control = RegulationEngine::default().on_signal_frame(frame, 1);
+        let mut engine = RegulationEngine::default();
+        let control = drive_frame(&mut engine, frame, 1);
         let overlays = control.overlays.unwrap();
 
         assert!(overlays.simulate_first);
@@ -1964,10 +1962,10 @@ mod tests {
             top_reason_codes: Vec::new(),
         });
 
-        let _ = engine.on_signal_frame(frame.clone(), 1);
+        let _ = drive_frame(&mut engine, frame.clone(), 1);
         let mut second_frame = frame.clone();
         second_frame.window_index = Some(2);
-        let control = engine.on_signal_frame(second_frame, 2);
+        let control = drive_frame(&mut engine, second_frame, 2);
 
         assert!(control
             .profile_reason_codes
@@ -2003,7 +2001,7 @@ mod tests {
     #[test]
     fn fallback_config_is_conservative() {
         let mut engine = RegulationEngine::new(RegulationConfig::fallback());
-        let control = engine.on_signal_frame(base_frame(), 1);
+        let control = drive_frame(&mut engine, base_frame(), 1);
         let mask = control.toolclass_mask.unwrap();
         assert_eq!(control.active_profile.unwrap().profile, "M0_RESEARCH");
         assert!(mask.read || mask.transform);
