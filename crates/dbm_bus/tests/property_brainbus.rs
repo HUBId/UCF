@@ -7,11 +7,22 @@ use dbm_9_amygdala::AmyInput;
 use dbm_bus::{BrainBus, BrainInput};
 use dbm_core::limits::{MAX_LOCK_MS, MAX_REASON_CODES, MAX_SALIENCE_ITEMS, MAX_SUSPEND_RECS};
 use dbm_core::{CooldownClass, IntegrityState, LevelClass, ProfileState, ThreatVector};
-use dbm_hpa::HpaInput;
+use dbm_hpa::{Hpa, HpaInput, HpaOutput};
 use dbm_pag::PagInput;
 use dbm_pmrf::PmrfInput;
 use dbm_stn::StnInput;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use ucf::v1::{CharacterBaselineVector, PolicyEcologyVector, WindowKind};
+
+static HPA_STATE_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+fn make_bus() -> BrainBus {
+    let id = HPA_STATE_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let path =
+        std::env::temp_dir().join(format!("hpa_state_test_{}_{}.json", std::process::id(), id));
+    let _ = std::fs::remove_file(&path);
+    BrainBus::with_hpa(Hpa::new(path), HpaOutput::default())
+}
 
 #[allow(clippy::too_many_arguments)]
 fn make_input(
@@ -172,8 +183,8 @@ fn generated_inputs() -> Vec<BrainInput> {
 #[test]
 fn brainbus_outputs_are_deterministic_and_bounded() {
     for (idx, input) in generated_inputs().into_iter().enumerate() {
-        let mut bus_a = BrainBus::new();
-        let mut bus_b = BrainBus::new();
+        let mut bus_a = make_bus();
+        let mut bus_b = make_bus();
 
         let output_a = bus_a.tick(input.clone());
         let output_b = bus_b.tick(input);
@@ -205,7 +216,7 @@ fn brainbus_outputs_are_deterministic_and_bounded() {
 #[test]
 fn profile_does_not_downgrade_after_fail_without_unlock() {
     let inputs = generated_inputs();
-    let mut bus = BrainBus::new();
+    let mut bus = make_bus();
     let mut fail_seen = false;
 
     for input in inputs {
@@ -228,7 +239,7 @@ fn profile_does_not_downgrade_after_fail_without_unlock() {
 
 #[test]
 fn pprf_lock_is_bounded_in_generated_cases() {
-    let mut bus = BrainBus::new();
+    let mut bus = make_bus();
     let inputs = generated_inputs();
 
     for input in inputs.into_iter().take(8) {
