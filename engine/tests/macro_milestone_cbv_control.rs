@@ -39,6 +39,11 @@ fn base_frame() -> SignalFrame {
     }
 }
 
+fn drive_frame(engine: &mut RegulationEngine, frame: SignalFrame, now_ms: u64) -> ucf::v1::ControlFrame {
+    engine.enqueue_signal_frame(frame).expect("frame enqueued");
+    engine.tick(now_ms)
+}
+
 fn finalized_macro_milestone() -> MacroMilestone {
     MacroMilestone {
         state: MacroMilestoneState::Finalized as i32,
@@ -83,9 +88,9 @@ fn control_frame_unchanged_without_macro_cbv() {
     let frame = base_frame();
 
     let mut engine = build_engine_with_pvgs(&handle);
-    let control_a = engine.on_signal_frame(frame.clone(), 1_000);
+    let control_a = drive_frame(&mut engine, frame.clone(), 1_000);
     let mut engine_again = build_engine_with_pvgs(&handle);
-    let control_b = engine_again.on_signal_frame(frame, 1_000);
+    let control_b = drive_frame(&mut engine_again, frame, 1_000);
 
     let overlays = control_a.overlays.as_ref().expect("overlays present");
     assert!(!overlays.novelty_lock);
@@ -109,7 +114,7 @@ fn macro_milestone_commits_cbv_and_tightens_control_frame() {
 
     let frame = base_frame();
     let mut engine = build_engine_with_pvgs(&handle);
-    let control = engine.on_signal_frame(frame.clone(), 2_000);
+    let control = drive_frame(&mut engine, frame.clone(), 2_000);
 
     let overlays = control.overlays.as_ref().expect("overlays present");
     assert!(control
@@ -121,7 +126,7 @@ fn macro_milestone_commits_cbv_and_tightens_control_frame() {
     assert!(control.character_epoch_digest.is_some());
 
     let mut engine_again = build_engine_with_pvgs(&handle);
-    let control_repeat = engine_again.on_signal_frame(frame, 2_000);
+    let control_repeat = drive_frame(&mut engine_again, frame, 2_000);
 
     assert_eq!(
         control.control_frame_digest,

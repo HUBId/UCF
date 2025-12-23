@@ -32,6 +32,11 @@ fn base_frame() -> SignalFrame {
     }
 }
 
+fn drive_frame(engine: &mut RegulationEngine, frame: SignalFrame, now_ms: u64) -> ucf::v1::ControlFrame {
+    engine.enqueue_signal_frame(frame).expect("frame enqueued");
+    engine.tick(now_ms)
+}
+
 fn cbv_update(epoch: u64, byte: u8) -> Cbv {
     Cbv {
         epoch,
@@ -51,7 +56,7 @@ fn cbv_digest_roundtrip_in_control_frame() {
     let mut engine = RegulationEngine::default();
     engine.set_pvgs_reader(LocalPvgsReader::new(store.clone()));
 
-    let control_one = engine.on_signal_frame(base_frame(), 10);
+    let control_one = drive_frame(&mut engine, base_frame(), 10);
     assert_eq!(
         control_one.character_epoch_digest.as_deref(),
         Some(digest_epoch_one.as_slice())
@@ -60,7 +65,7 @@ fn cbv_digest_roundtrip_in_control_frame() {
 
     let digest_epoch_two = [2u8; 32];
     store.commit_cbv_update(cbv_update(2, 2));
-    let control_two = engine.on_signal_frame(base_frame(), 20);
+    let control_two = drive_frame(&mut engine, base_frame(), 20);
 
     assert_eq!(
         control_two.character_epoch_digest.as_deref(),
@@ -80,8 +85,8 @@ fn control_frame_stable_when_local_cbv_absent() {
     engine_b.set_pvgs_reader(reader_b);
 
     let frame = base_frame();
-    let control_a = engine_a.on_signal_frame(frame.clone(), 1);
-    let control_b = engine_b.on_signal_frame(frame, 1);
+    let control_a = drive_frame(&mut engine_a, frame.clone(), 1);
+    let control_b = drive_frame(&mut engine_b, frame, 1);
 
     assert!(control_a.character_epoch_digest.is_none());
     assert_eq!(

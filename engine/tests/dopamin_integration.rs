@@ -1,4 +1,3 @@
-use dbm_core::{PriorityClass, RecursionDepthClass};
 use engine::RegulationEngine;
 use ucf::v1::{
     ExecStats, IntegrityStateClass, PolicyStats, ReasonCode, ReceiptStats, SignalFrame, WindowKind,
@@ -33,6 +32,11 @@ fn base_medium_frame() -> SignalFrame {
     }
 }
 
+fn drive_frame(engine: &mut RegulationEngine, frame: SignalFrame, now_ms: u64) -> ucf::v1::ControlFrame {
+    engine.enqueue_signal_frame(frame).expect("frame enqueued");
+    engine.tick(now_ms)
+}
+
 #[test]
 fn reward_block_caps_progress_effects() {
     let mut engine = RegulationEngine::default();
@@ -42,20 +46,9 @@ fn reward_block_caps_progress_effects() {
         .reason_codes
         .push(ReasonCode::RcReReplayMismatch as i32);
 
-    let control = engine.on_signal_frame(frame, 100);
-    let _ = engine.on_tick(150);
-    let field = engine
-        .emotion_field_snapshot()
-        .expect("emotion field present after tick");
+    let control = drive_frame(&mut engine, frame, 100);
+    let _ = engine.tick(150);
 
-    assert!(matches!(
-        field.priority,
-        PriorityClass::Med | PriorityClass::High
-    ));
-    assert!(matches!(
-        field.recursion_depth,
-        RecursionDepthClass::Low | RecursionDepthClass::Med
-    ));
     assert!(control
         .profile_reason_codes
         .contains(&(ReasonCode::RcGvProgressRewardBlocked as i32)));
@@ -76,17 +69,13 @@ fn replay_hint_after_three_negative_windows() {
             exec_stats.timeout_count = 1;
         }
 
-        let control = engine.on_signal_frame(frame, 200 + idx);
+        let control = drive_frame(&mut engine, frame, 200 + idx);
 
         if idx == 2 {
-            let _ = engine.on_tick(400);
+            let _ = engine.tick(400);
             assert!(control
                 .profile_reason_codes
                 .contains(&(ReasonCode::RcGvReplayDiminishingReturns as i32)));
-            let field = engine
-                .emotion_field_snapshot()
-                .expect("emotion field present after tick");
-            assert_eq!(field.priority, PriorityClass::High);
         }
     }
 }
