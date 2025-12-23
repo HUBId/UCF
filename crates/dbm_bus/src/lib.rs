@@ -11,20 +11,21 @@ use dbm_8_serotonin::{SerInput, Serotonin};
 use dbm_9_amygdala::{AmyInput, Amygdala};
 use dbm_core::{
     BaselineVector, CooldownClass, DbmModule, DwmMode, EmotionField, IsvSnapshot, LevelClass,
-    OrientTarget, ReasonSet,
+    OrientTarget, ProfileState, ReasonSet,
 };
 use dbm_hpa::{Hpa, HpaInput, HpaOutput};
-use dbm_pag::{Pag, PagInput};
+use dbm_pag::{DefensePattern, Pag, PagInput};
 use dbm_pmrf::{Pmrf, PmrfInput};
 use dbm_pprf::{Pprf, PprfInput};
 use dbm_sc::{Sc, ScInput};
 use dbm_stn::{Stn, StnInput};
 use emotion_field::{EmotionFieldInput, EmotionFieldModule};
-use ucf::v1::{CharacterBaselineVector, PolicyEcologyVector};
+use ucf::v1::{CharacterBaselineVector, PolicyEcologyVector, WindowKind};
 
 #[derive(Debug, Clone, Default)]
 pub struct BrainInput {
     pub now_ms: u64,
+    pub window_kind: ucf::v1::WindowKind,
     pub hpa: HpaInput,
     pub cbv: Option<CharacterBaselineVector>,
     pub pev: Option<PolicyEcologyVector>,
@@ -220,8 +221,15 @@ impl BrainBus {
     }
 
     pub fn tick(&mut self, input: BrainInput) -> BrainOutput {
-        let hpa_output = self.hpa.tick(&input.hpa);
-        self.set_last_hpa_output(hpa_output.clone());
+        let medium_window = input.window_kind == WindowKind::Medium;
+
+        let hpa_output = if medium_window {
+            let output = self.hpa.tick(&input.hpa);
+            self.set_last_hpa_output(output.clone());
+            output
+        } else {
+            self.last_hpa_output()
+        };
 
         let baseline = self.resolve_baseline(&input, &hpa_output);
         self.set_last_baseline_vector(baseline.clone());
@@ -270,9 +278,14 @@ impl BrainBus {
         };
         let stn_output = self.stn.tick(&stn_input);
 
+        let cerebellum_divergence = cerebellum_output
+            .as_ref()
+            .map_or(LevelClass::Low, |output| output.divergence);
+
         let pmrf_input = PmrfInput {
             hold_active: stn_output.hold_active,
             stability: ser_output.stability,
+            divergence: level_max(input.pmrf.divergence, cerebellum_divergence),
             ..input.pmrf
         };
         let pmrf_output = self.pmrf.tick(&pmrf_input);
@@ -285,6 +298,7 @@ impl BrainBus {
         let mut dopa_output = dopamin_input
             .as_ref()
             .map(|dopa_input| self.dopamin.tick(dopa_input))
+            .or_else(|| self.last_dopa_output())
             .unwrap_or_default();
         if level_at_least(baseline.reward_block_bias, LevelClass::Med) {
             dopa_output.reward_block = true;
@@ -292,7 +306,9 @@ impl BrainBus {
                 .reason_codes
                 .insert("baseline_reward_block".to_string());
         }
-        self.set_last_dopa_output(Some(dopa_output.clone()));
+        if dopamin_input.is_some() {
+            self.set_last_dopa_output(Some(dopa_output.clone()));
+        }
 
         let mut insula_input = input.insula;
         insula_input.hbv_present = true;
@@ -361,6 +377,7 @@ impl BrainBus {
         decision
             .reason_codes
             .extend(pprf_output.reason_codes.codes.clone());
+        apply_defense_pattern(&mut decision, &pag_output, input.stn.policy_pressure);
         decision
             .reason_codes
             .extend(dopa_output.reason_codes.codes.clone());
@@ -478,6 +495,47 @@ fn merge_secondary_outputs(
     decision
         .reason_codes
         .extend(sn_output.reason_codes.codes.clone());
+}
+
+fn apply_defense_pattern(
+    decision: &mut ControlDecision,
+    pag_output: &dbm_pag::PagOutput,
+    policy_pressure: LevelClass,
+) {
+    decision
+        .reason_codes
+        .extend(pag_output.reason_codes.codes.clone());
+
+    match pag_output.pattern {
+        DefensePattern::DP3_FORENSIC => {
+            decision.profile_state = profile_max(decision.profile_state, ProfileState::M3);
+            decision.overlays.simulate_first = true;
+            decision.overlays.export_lock = true;
+            decision.overlays.novelty_lock = true;
+            decision.deescalation_lock = true;
+        }
+        DefensePattern::DP2_QUARANTINE => {
+            decision.profile_state = profile_max(decision.profile_state, ProfileState::M2);
+            decision.overlays.simulate_first = true;
+            decision.overlays.export_lock = true;
+            decision.overlays.novelty_lock = true;
+            decision.deescalation_lock = true;
+        }
+        DefensePattern::DP1_FREEZE | DefensePattern::DP4_CONTAINED_CONTINUE => {
+            if policy_pressure == LevelClass::High {
+                decision.overlays.simulate_first = true;
+            }
+        }
+    }
+}
+
+fn profile_max(a: ProfileState, b: ProfileState) -> ProfileState {
+    match (a, b) {
+        (ProfileState::M3, _) | (_, ProfileState::M3) => ProfileState::M3,
+        (ProfileState::M2, _) | (_, ProfileState::M2) => ProfileState::M2,
+        (ProfileState::M1, _) | (_, ProfileState::M1) => ProfileState::M1,
+        _ => ProfileState::M0,
+    }
 }
 
 fn cooldown_to_level(class: CooldownClass) -> LevelClass {

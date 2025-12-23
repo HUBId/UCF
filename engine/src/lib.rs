@@ -343,6 +343,7 @@ impl RegulationEngine {
 
         let brain_input = BrainInput {
             now_ms,
+            window_kind: classified.window_kind,
             hpa: build_hpa_input(classified, &self.counters, self.rsv.unlock_ready),
             cbv,
             pev,
