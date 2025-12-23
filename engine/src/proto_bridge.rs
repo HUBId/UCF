@@ -190,11 +190,14 @@ pub fn control_frame_from_brain_output(
 
     let toolclass_mask_config = toolclass_mask_for(config, &decision, forensic_latched);
 
-    let profile_reason_codes: Vec<i32> = decision
+    let mut profile_reason_codes: Vec<i32> = decision
         .profile_reason_codes
         .iter()
         .map(|code| *code as i32)
         .collect();
+
+    // Preserve all reason codes for callers while keeping a deterministic order.
+    sanitize_reason_codes(&mut profile_reason_codes, usize::MAX);
 
     let mut control_frame = ControlFrame {
         active_profile: Some(profile),
