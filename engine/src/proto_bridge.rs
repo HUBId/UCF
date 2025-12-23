@@ -25,19 +25,39 @@ use crate::{
 
 const CONTROL_FRAME_DOMAIN: &str = "UCF:HASH:CONTROL_FRAME";
 
+#[derive(Debug, Clone)]
+pub struct BaselineContext {
+    pub cbv: Option<CharacterBaselineVector>,
+    pub cbv_present: bool,
+    pub pev: Option<PolicyEcologyVector>,
+    pub pev_present: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct ControlFrameContext {
+    pub cbv: Option<CharacterBaselineVector>,
+    pub cbv_digest: Option<Vec<u8>>,
+    pub pev: Option<PolicyEcologyVector>,
+    pub pev_digest: Option<Vec<u8>>,
+    pub forensic_latched: bool,
+}
+
 pub fn brain_input_from_signal_frame(
     frame: &ucf::v1::SignalFrame,
     classified: &ClassifiedSignals,
     counters: &WindowCounters,
     rsv: &rsv::RsvState,
-    cbv: Option<CharacterBaselineVector>,
-    cbv_present: bool,
-    pev: Option<PolicyEcologyVector>,
-    pev_present: bool,
+    baselines: BaselineContext,
     sc_replay_planned_present: bool,
     now_ms: u64,
 ) -> BrainInput {
     let normalized_frame = normalize_signal_frame(frame);
+    let BaselineContext {
+        cbv,
+        cbv_present,
+        pev,
+        pev_present,
+    } = baselines;
 
     let dopamin_input = build_dopa_input(
         &normalized_frame,
@@ -115,12 +135,15 @@ pub fn control_frame_from_brain_output(
     mut decision: ControlDecision,
     brain_output: &dbm_bus::BrainOutput,
     config: &RegulationConfig,
-    cbv: Option<CharacterBaselineVector>,
-    cbv_digest: Option<Vec<u8>>,
-    pev: Option<PolicyEcologyVector>,
-    pev_digest: Option<Vec<u8>>,
-    forensic_latched: bool,
+    context: ControlFrameContext,
 ) -> (ControlFrame, [u8; 32]) {
+    let ControlFrameContext {
+        cbv,
+        cbv_digest,
+        pev,
+        pev_digest,
+        forensic_latched,
+    } = context;
     let last_baseline_vector = &brain_output.baseline;
 
     if level_at_least(last_baseline_vector.export_strictness, BrainLevel::Med) {
@@ -233,8 +256,7 @@ fn normalize_exec_stats(stats: &mut ExecStats) {
 }
 
 fn normalize_receipt_stats(stats: &mut ReceiptStats) {
-    stats.receipt_invalid_count = stats.receipt_invalid_count;
-    stats.receipt_missing_count = stats.receipt_missing_count;
+    let _ = stats;
 }
 
 fn default_policy_stats() -> PolicyStats {

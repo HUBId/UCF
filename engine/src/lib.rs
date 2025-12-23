@@ -20,7 +20,10 @@ use std::time::SystemTime;
 use ucf::v1::{ControlFrame, IntegrityStateClass, LevelClass, ReasonCode, ToolClassMask};
 
 mod proto_bridge;
-pub use proto_bridge::{brain_input_from_signal_frame, control_frame_from_brain_output};
+pub use proto_bridge::{
+    brain_input_from_signal_frame, control_frame_from_brain_output, BaselineContext,
+    ControlFrameContext,
+};
 
 #[derive(Debug)]
 pub enum EngineError {
@@ -324,15 +327,19 @@ impl RegulationEngine {
             .map(|output| output.replay_hint)
             .unwrap_or(false);
 
+        let baselines = BaselineContext {
+            cbv,
+            cbv_present,
+            pev,
+            pev_present,
+        };
+
         let brain_input = brain_input_from_signal_frame(
             frame,
             classified,
             &self.counters,
             &self.rsv,
-            cbv,
-            cbv_present,
-            pev,
-            pev_present,
+            baselines,
             sc_replay_planned_present,
             now_ms,
         );
@@ -719,16 +726,15 @@ impl RegulationEngine {
             .as_ref()
             .and_then(|reader| reader.get_latest_pev());
 
-        control_frame_from_brain_output(
-            decision,
-            brain_output,
-            &self.config,
+        let context = ControlFrameContext {
             cbv,
             cbv_digest,
             pev,
             pev_digest,
-            self.rsv.forensic_latched,
-        )
+            forensic_latched: self.rsv.forensic_latched,
+        };
+
+        control_frame_from_brain_output(decision, brain_output, &self.config, context)
     }
 
     fn rsv_summary(&self) -> RsvSummary {
