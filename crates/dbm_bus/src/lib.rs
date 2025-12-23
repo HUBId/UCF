@@ -11,7 +11,7 @@ use dbm_8_serotonin::{SerInput, Serotonin};
 use dbm_9_amygdala::{AmyInput, Amygdala};
 use dbm_core::{
     BaselineVector, CooldownClass, DbmModule, DwmMode, EmotionField, IsvSnapshot, LevelClass,
-    OrientTarget, ProfileState, ReasonSet, SuspendRecommendation, ThreatVector,
+    OrientTarget, ProfileState, ReasonSet, SalienceItem, SuspendRecommendation, ThreatVector,
 };
 use dbm_hpa::{Hpa, HpaInput, HpaOutput};
 use dbm_pag::{DefensePattern, Pag, PagInput};
@@ -47,6 +47,7 @@ pub struct BrainInput {
 pub struct BrainOutput {
     pub decision: ControlDecision,
     pub emotion_field: EmotionField,
+    pub salience_items: Vec<SalienceItem>,
     pub dwm: DwmMode,
     pub focus_target: OrientTarget,
     pub baseline: BaselineVector,
@@ -136,6 +137,10 @@ impl BrainBus {
 
     pub fn pprf(&self) -> &Pprf {
         &self.pprf
+    }
+
+    pub fn pprf_lock_until_ms(&self) -> u64 {
+        self.pprf.lock_until_ms
     }
 
     pub fn pprf_mut(&mut self) -> &mut Pprf {
@@ -460,6 +465,7 @@ impl BrainBus {
         BrainOutput {
             decision,
             emotion_field,
+            salience_items: sn_output.salience_items,
             dwm: pprf_output.active_dwm,
             focus_target: pprf_output.active_target,
             baseline,

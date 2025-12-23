@@ -2,6 +2,8 @@
 
 //! Kern-Typen und Traits für deterministische DBM-Komponenten.
 
+pub mod limits;
+
 use std::cmp::Ordering;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
