@@ -32,7 +32,11 @@ fn base_frame() -> SignalFrame {
     }
 }
 
-fn drive_frame(engine: &mut RegulationEngine, frame: SignalFrame, now_ms: u64) -> ucf::v1::ControlFrame {
+fn drive_frame(
+    engine: &mut RegulationEngine,
+    frame: SignalFrame,
+    now_ms: u64,
+) -> ucf::v1::ControlFrame {
     engine.enqueue_signal_frame(frame).expect("frame enqueued");
     engine.tick(now_ms)
 }
