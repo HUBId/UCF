@@ -222,14 +222,15 @@ impl MicrocircuitBackend<AmyInput, AmyOutput> for AmygdalaPopMicrocircuit {
     }
 
     fn snapshot_digest(&self) -> [u8; 32] {
-        let mut bytes = Vec::new();
-        bytes.push(self.state.pop_exfil);
-        bytes.push(self.state.pop_integrity);
-        bytes.push(self.state.pop_probing);
-        bytes.push(self.state.pop_tool_side_effects);
-        bytes.push(self.state.pop_escape);
-        bytes.push(self.state.latch_integrity);
-        bytes.push(self.state.latch_exfil);
+        let mut bytes = vec![
+            self.state.pop_exfil,
+            self.state.pop_integrity,
+            self.state.pop_probing,
+            self.state.pop_tool_side_effects,
+            self.state.pop_escape,
+            self.state.latch_integrity,
+            self.state.latch_exfil,
+        ];
         bytes.extend(self.state.step_count.to_le_bytes());
 
         digest_meta("UCF:MC:AMY", &bytes)
