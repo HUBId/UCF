@@ -1,8 +1,6 @@
 #![forbid(unsafe_code)]
 
-use biophys_core::{
-    clamp_usize, LifParams, LifState, NeuronId, PopCode, StpParams, SynapseEdge,
-};
+use biophys_core::{clamp_usize, LifParams, LifState, NeuronId, PopCode, StpParams, SynapseEdge};
 use biophys_solver::{LifSolver, StepSolver};
 
 pub trait BiophysCircuit<I: ?Sized, O> {
@@ -39,7 +37,15 @@ impl BiophysRuntime {
         dt_ms: u16,
         max_spikes_per_step: usize,
     ) -> Self {
-        Self::new_with_synapses(params, states, dt_ms, max_spikes_per_step, Vec::new(), Vec::new(), 50_000)
+        Self::new_with_synapses(
+            params,
+            states,
+            dt_ms,
+            max_spikes_per_step,
+            Vec::new(),
+            Vec::new(),
+            50_000,
+        )
     }
 
     pub fn new_with_synapses(

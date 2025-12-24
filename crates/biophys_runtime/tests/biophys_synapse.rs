@@ -35,15 +35,8 @@ fn delayed_delivery_arrives_after_delay() {
         tau_rec_steps: 1,
         tau_fac_steps: 1,
     };
-    let mut runtime = BiophysRuntime::new_with_synapses(
-        params,
-        states,
-        1,
-        10,
-        vec![edge],
-        vec![stp],
-        10_000,
-    );
+    let mut runtime =
+        BiophysRuntime::new_with_synapses(params, states, 1, 10, vec![edge], vec![stp], 10_000);
 
     let pop0 = runtime.step(&[10, 0]);
     assert_eq!(pop0.spikes, vec![NeuronId(0)]);
@@ -96,8 +89,15 @@ fn network_is_deterministic_across_runs() {
     };
     let stp_params = vec![stp; edges.len()];
 
-    let mut runtime_a =
-        BiophysRuntime::new_with_synapses(params.clone(), states.clone(), 1, 10, edges.clone(), stp_params.clone(), 1000);
+    let mut runtime_a = BiophysRuntime::new_with_synapses(
+        params.clone(),
+        states.clone(),
+        1,
+        10,
+        edges.clone(),
+        stp_params.clone(),
+        1000,
+    );
     let mut runtime_b =
         BiophysRuntime::new_with_synapses(params, states, 1, 10, edges, stp_params, 1000);
 
@@ -135,24 +135,14 @@ fn event_queue_is_bounded_and_deterministic() {
         tau_fac_steps: 1,
     };
     let stp_params = vec![stp; edges.len()];
-    let mut runtime = BiophysRuntime::new_with_synapses(
-        params,
-        states,
-        1,
-        10,
-        edges,
-        stp_params,
-        3,
-    );
+    let mut runtime =
+        BiophysRuntime::new_with_synapses(params, states, 1, 10, edges, stp_params, 3);
 
     let pop0 = runtime.step(&[10, 0, 0, 0, 0, 0]);
     assert_eq!(pop0.spikes, vec![NeuronId(0)]);
     assert_eq!(runtime.dropped_event_count, 2);
 
     let pop1 = runtime.step(&[0, 0, 0, 0, 0, 0]);
-    assert_eq!(
-        pop1.spikes,
-        vec![NeuronId(1), NeuronId(2), NeuronId(3)]
-    );
+    assert_eq!(pop1.spikes, vec![NeuronId(1), NeuronId(2), NeuronId(3)]);
     assert_eq!(runtime.dropped_event_count, 2);
 }
