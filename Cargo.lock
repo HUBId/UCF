@@ -41,6 +41,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "biophys_core"
+version = "0.1.0"
+
+[[package]]
+name = "biophys_runtime"
+version = "0.1.0"
+dependencies = [
+ "biophys_core",
+ "biophys_solver",
+ "blake3",
+]
+
+[[package]]
+name = "biophys_solver"
+version = "0.1.0"
+dependencies = [
+ "biophys_core",
+]
+
+[[package]]
 name = "blake3"
 version = "1.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"

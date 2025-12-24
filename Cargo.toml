@@ -52,6 +52,9 @@ members = [
     "crates/microcircuit_sc_attractor",
     "crates/microcircuit_insula_stub",
     "crates/microcircuit_insula_fusion",
+    "crates/biophys_core",
+    "crates/biophys_solver",
+    "crates/biophys_runtime",
 ]
 resolver = "2"
 

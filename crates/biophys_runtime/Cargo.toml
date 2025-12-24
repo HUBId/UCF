@@ -1,0 +1,12 @@
+[package]
+name = "biophys_runtime"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+biophys_core = { path = "../biophys_core" }
+biophys_solver = { path = "../biophys_solver" }
+blake3 = "1"
+
+[features]
+biophys = []
