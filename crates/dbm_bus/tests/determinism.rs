@@ -62,6 +62,7 @@ fn canonical_brain_input() -> BrainInput {
             vectors: vec![ThreatVector::Exfil],
             unlock_present: false,
             stability: LevelClass::Med,
+            serotonin_cooldown: CooldownClass::Base,
         },
         cerebellum: Some(CerInput {
             timeout_count_medium: 3,

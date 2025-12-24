@@ -1,16 +1,12 @@
 [package]
-name = "dbm_pag"
+name = "microcircuit_pag_attractor"
 version = "0.1.0"
 edition = "2021"
 
 [lib]
 path = "src/lib.rs"
 
-[features]
-microcircuit-pag-attractor = ["microcircuit_pag_attractor"]
-
 [dependencies]
 dbm_core = { path = "../dbm_core" }
 microcircuit_core = { path = "../microcircuit_core" }
-microcircuit_pag_attractor = { path = "../microcircuit_pag_attractor", optional = true }
 microcircuit_pag_stub = { path = "../microcircuit_pag_stub" }

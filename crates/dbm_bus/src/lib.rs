@@ -301,6 +301,7 @@ impl BrainBus {
             threat: amy_output.threat,
             vectors: amy_output.vectors.clone(),
             stability: ser_output.stability,
+            serotonin_cooldown: ser_output.cooldown_class,
             ..input.pag
         };
         let pag_output = self.pag.tick(&pag_input);

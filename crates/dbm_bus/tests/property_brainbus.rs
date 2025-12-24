@@ -82,6 +82,7 @@ fn make_input(
             vectors: vec![ThreatVector::Exfil],
             unlock_present,
             stability: LevelClass::Med,
+            serotonin_cooldown: CooldownClass::Base,
         },
         cerebellum: Some(CerInput {
             timeout_count_medium,
