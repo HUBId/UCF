@@ -9,6 +9,39 @@ pub struct SynapseId(pub u32);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct CompartmentId(pub u32);
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ModLevel {
+    Low = 0,
+    #[default]
+    Med = 1,
+    High = 2,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ModulatorField {
+    pub na: ModLevel,
+    pub da: ModLevel,
+    pub ht: ModLevel,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ModChannel {
+    #[default]
+    None,
+    Na,
+    Da,
+    Ht,
+    NaDa,
+}
+
+pub fn level_mul(level: ModLevel) -> i32 {
+    match level {
+        ModLevel::Low => 90,
+        ModLevel::Med => 100,
+        ModLevel::High => 110,
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LifParams {
     pub tau_ms: u16,
@@ -27,8 +60,10 @@ pub struct LifState {
 pub struct SynapseEdge {
     pub pre: NeuronId,
     pub post: NeuronId,
-    pub weight: i32,
+    pub weight_base: i32,
+    pub weight_effective: i32,
     pub delay_steps: u16,
+    pub mod_channel: ModChannel,
     pub stp: StpState,
 }
 
@@ -37,6 +72,7 @@ pub struct StpParams {
     pub u: u16,
     pub tau_rec_steps: u16,
     pub tau_fac_steps: u16,
+    pub mod_channel: Option<ModChannel>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

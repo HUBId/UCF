@@ -1,3 +1,4 @@
+use biophys_core::ModulatorField;
 use dbm_12_insula::InsulaInput;
 use dbm_18_cerebellum::CerInput;
 use dbm_6_dopamin_nacc::DopaInput;
@@ -59,6 +60,7 @@ fn make_input(
             timeout_count_short: timeout_count_medium.min(3),
             deny_count_short: deny_count_medium.min(3),
             arousal_floor: LevelClass::Low,
+            modulators: ModulatorField::default(),
         },
         serotonin: SerInput {
             integrity,
@@ -84,6 +86,7 @@ fn make_input(
             unlock_present,
             stability: LevelClass::Med,
             serotonin_cooldown: CooldownClass::Base,
+            modulators: ModulatorField::default(),
         },
         cerebellum: Some(CerInput {
             timeout_count_medium,
@@ -105,6 +108,7 @@ fn make_input(
             } else {
                 LevelClass::Med
             },
+            modulators: ModulatorField::default(),
             ..Default::default()
         },
         dopamin: Some(DopaInput {
