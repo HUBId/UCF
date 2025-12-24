@@ -114,6 +114,10 @@ name = "dbm_13_hypothalamus"
 version = "0.1.0"
 dependencies = [
  "dbm_core",
+ "microcircuit_core",
+ "microcircuit_hypothalamus_setpoint",
+ "microcircuit_pag_stub",
+ "microcircuit_pmrf_stub",
 ]
 
 [[package]]
@@ -421,6 +425,16 @@ version = "0.1.0"
 dependencies = [
  "dbm_core",
  "microcircuit_core",
+]
+
+[[package]]
+name = "microcircuit_hypothalamus_setpoint"
+version = "0.1.0"
+dependencies = [
+ "dbm_core",
+ "microcircuit_core",
+ "microcircuit_pag_stub",
+ "microcircuit_pmrf_stub",
 ]
 
 [[package]]

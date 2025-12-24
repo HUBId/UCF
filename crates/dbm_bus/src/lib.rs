@@ -420,10 +420,13 @@ impl BrainBus {
 
         let mut decision = self.hypothalamus.tick(&HypothalamusInput {
             isv: isv.clone(),
-            export_lock_bias: baseline.export_strictness == LevelClass::High,
-            simulate_first_bias: baseline.chain_conservatism == LevelClass::High,
-            approval_strict: baseline.approval_strictness == LevelClass::High,
-            novelty_lock_bias: baseline.novelty_dampening == LevelClass::High,
+            pag_pattern: Some(pag_output.pattern),
+            stn_hold_active: stn_output.hold_active,
+            pmrf_sequence_mode: pmrf_output.sequence_mode,
+            baseline: baseline.clone(),
+            unlock_present: input.hpa.unlock_present,
+            unlock_ready: input.sc_unlock_present,
+            now_ms: input.now_ms,
             cerebellum_divergence,
         });
         merge_secondary_outputs(&mut decision, &lc_output, &ser_output, &sn_output);
