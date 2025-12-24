@@ -3,6 +3,7 @@
 use blake3::Hasher;
 
 pub const DEFAULT_MAX_VALUE: u16 = 100;
+const DRIFT_PROFILE_VERSION: u8 = 1;
 
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -85,6 +86,7 @@ impl EmulatedMemristorBackend {
 
     fn config_bytes(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
+        bytes.push(DRIFT_PROFILE_VERSION);
         bytes.extend(self.seed.to_le_bytes());
         bytes.extend(self.max_value.to_le_bytes());
         for value in self.drift_bias.iter() {

@@ -245,4 +245,41 @@ mod tests {
         assert_eq!(commits[0].config_version, CONFIG_VERSION);
         assert_eq!(commits[0].created_at_ms, 100);
     }
+
+    #[test]
+    fn republishes_hpa_on_digest_change() {
+        let mut publisher = MicrocircuitPublisherState::default();
+        let writer = Arc::new(Mutex::new(Vec::new()));
+        let mut writer_impl = RecordingWriter {
+            commits: writer.clone(),
+        };
+        let digest_a = [4u8; 32];
+        let digest_b = [5u8; 32];
+
+        publisher.maybe_publish(
+            100,
+            MicrocircuitDigests {
+                lc: None,
+                sn: None,
+                hpa: Some(digest_a),
+            },
+            Some(&mut writer_impl),
+        );
+        publisher.maybe_publish(
+            200,
+            MicrocircuitDigests {
+                lc: None,
+                sn: None,
+                hpa: Some(digest_b),
+            },
+            Some(&mut writer_impl),
+        );
+
+        let commits = writer.lock().unwrap();
+        assert_eq!(commits.len(), 2);
+        assert_eq!(commits[1].module, MicrocircuitModule::Hpa as i32);
+        assert_eq!(commits[1].config_digest, digest_b.to_vec());
+        assert_eq!(commits[1].prev_config_digest, Some(digest_a.to_vec()));
+        assert_eq!(commits[1].created_at_ms, 100);
+    }
 }
