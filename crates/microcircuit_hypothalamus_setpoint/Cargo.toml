@@ -1,17 +1,13 @@
 [package]
-name = "dbm_13_hypothalamus"
+name = "microcircuit_hypothalamus_setpoint"
 version = "0.1.0"
 edition = "2021"
 
 [lib]
 path = "src/lib.rs"
 
-[features]
-microcircuit-hypothalamus-setpoint = []
-
 [dependencies]
 dbm_core = { path = "../dbm_core" }
 microcircuit_core = { path = "../microcircuit_core" }
-microcircuit_hypothalamus_setpoint = { path = "../microcircuit_hypothalamus_setpoint" }
 microcircuit_pag_stub = { path = "../microcircuit_pag_stub" }
 microcircuit_pmrf_stub = { path = "../microcircuit_pmrf_stub" }
