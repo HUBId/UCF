@@ -1,16 +1,9 @@
 [package]
-name = "dbm_18_cerebellum"
+name = "microcircuit_cerebellum_pop"
 version = "0.1.0"
 edition = "2021"
-
-[lib]
-path = "src/lib.rs"
-
-[features]
-microcircuit-cerebellum-pop = ["dep:microcircuit_cerebellum_pop"]
 
 [dependencies]
 dbm_core = { path = "../dbm_core" }
 microcircuit_cerebellum_stub = { path = "../microcircuit_cerebellum_stub" }
-microcircuit_cerebellum_pop = { path = "../microcircuit_cerebellum_pop", optional = true }
 microcircuit_core = { path = "../microcircuit_core" }

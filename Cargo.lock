@@ -118,6 +118,9 @@ name = "dbm_18_cerebellum"
 version = "0.1.0"
 dependencies = [
  "dbm_core",
+ "microcircuit_cerebellum_pop",
+ "microcircuit_cerebellum_stub",
+ "microcircuit_core",
 ]
 
 [[package]]
@@ -372,6 +375,22 @@ dependencies = [
 
 [[package]]
 name = "microcircuit_amygdala_stub"
+version = "0.1.0"
+dependencies = [
+ "dbm_core",
+]
+
+[[package]]
+name = "microcircuit_cerebellum_pop"
+version = "0.1.0"
+dependencies = [
+ "dbm_core",
+ "microcircuit_cerebellum_stub",
+ "microcircuit_core",
+]
+
+[[package]]
+name = "microcircuit_cerebellum_stub"
 version = "0.1.0"
 dependencies = [
  "dbm_core",
