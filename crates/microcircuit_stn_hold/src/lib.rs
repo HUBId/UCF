@@ -152,7 +152,7 @@ mod tests {
     fn determinism_same_sequence_same_outputs() {
         let mut left = StnHoldMicrocircuit::new(CircuitConfig::default());
         let mut right = StnHoldMicrocircuit::new(CircuitConfig::default());
-        let sequence = vec![
+        let sequence = [
             base_input(),
             StnInput {
                 receipt_invalid_present: true,
