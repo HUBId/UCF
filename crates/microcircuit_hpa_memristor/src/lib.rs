@@ -405,6 +405,25 @@ mod tests {
     }
 
     #[test]
+    fn config_digest_is_deterministic_for_same_inputs() {
+        let config = CircuitConfig::default();
+        let circuit_a = HpaCircuit::new_emulated(config, 7);
+        let circuit_b = HpaCircuit::new_emulated(config, 7);
+
+        assert_eq!(circuit_a.config_digest(), circuit_b.config_digest());
+    }
+
+    #[test]
+    fn config_digest_changes_with_version_bump() {
+        let mut config = CircuitConfig::default();
+        let circuit_a = HpaCircuit::new_emulated(config, 7);
+        config.version = config.version.saturating_add(1);
+        let circuit_b = HpaCircuit::new_emulated(config, 7);
+
+        assert_ne!(circuit_a.config_digest(), circuit_b.config_digest());
+    }
+
+    #[test]
     fn micro_is_no_less_conservative_than_rules_for_critical_inputs() {
         #[derive(Default)]
         struct HpaState {
