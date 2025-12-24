@@ -35,7 +35,10 @@ impl AssetsCard {
                 "channel_params_digest: {}",
                 format_digest(self.channel_params_digest)
             ),
-            format!("syn_params_digest: {}", format_digest(self.syn_params_digest)),
+            format!(
+                "syn_params_digest: {}",
+                format_digest(self.syn_params_digest)
+            ),
             format!(
                 "connectivity_digest: {}",
                 format_digest(self.connectivity_digest)
@@ -46,9 +49,7 @@ impl AssetsCard {
 }
 
 fn format_digest(digest: Option<[u8; 32]>) -> String {
-    digest
-        .map(hex_encode)
-        .unwrap_or_else(|| "NONE".to_string())
+    digest.map(hex_encode).unwrap_or_else(|| "NONE".to_string())
 }
 
 #[cfg(test)]
@@ -83,7 +84,10 @@ mod tests {
             .unwrap();
 
         let card = AssetsCard::from_store(&store);
-        assert_eq!(card.latest_manifest_digest, Some(compute_manifest_digest(&payload)));
+        assert_eq!(
+            card.latest_manifest_digest,
+            Some(compute_manifest_digest(&payload))
+        );
         assert_eq!(card.morph_digest, Some([2u8; 32]));
         assert_eq!(card.connectivity_digest, Some([5u8; 32]));
 

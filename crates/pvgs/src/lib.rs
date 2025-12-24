@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-use assets::{AssetManifestEvidence, AssetManifestError, AssetStore};
+use assets::{AssetManifestError, AssetManifestEvidence, AssetStore};
 use blake3::Hasher;
 use thiserror::Error;
 use ucf::v1::{PvgsReceipt, ReasonCode};
@@ -83,7 +83,9 @@ impl PvgsStore {
         }
 
         Ok(CommitResult {
-            pvgs_receipt: PvgsReceipt { receipt: Vec::new() },
+            pvgs_receipt: PvgsReceipt {
+                receipt: Vec::new(),
+            },
             proof_receipt: ProofReceipt {
                 receipt: Vec::new(),
                 ruleset_digest: self.ruleset_digest,
