@@ -242,9 +242,21 @@ impl MicrocircuitBackend<PmrfInput, PmrfOutput> for PmrfBiophysMicrocircuit {
         let drives = Self::encode_drives(input);
 
         let mut currents = [0i32; NEURON_COUNT];
-        Self::apply_pool_currents(&mut currents, NORMAL_POOL_START, drives.pool_currents[IDX_NORMAL]);
-        Self::apply_pool_currents(&mut currents, SLOW_POOL_START, drives.pool_currents[IDX_SLOW]);
-        Self::apply_pool_currents(&mut currents, SPLIT_POOL_START, drives.pool_currents[IDX_SPLIT]);
+        Self::apply_pool_currents(
+            &mut currents,
+            NORMAL_POOL_START,
+            drives.pool_currents[IDX_NORMAL],
+        );
+        Self::apply_pool_currents(
+            &mut currents,
+            SLOW_POOL_START,
+            drives.pool_currents[IDX_SLOW],
+        );
+        Self::apply_pool_currents(
+            &mut currents,
+            SPLIT_POOL_START,
+            drives.pool_currents[IDX_SPLIT],
+        );
 
         let PopCode { spikes } = self.runtime.step(&currents);
         let mut pool_spikes = [0usize; POOL_COUNT];
@@ -331,7 +343,10 @@ fn build_edges() -> (Vec<biophys_core::SynapseEdge>, Vec<StpParams>) {
                     post: NeuronId(post as u32),
                     weight: EXCITATORY_WEIGHT,
                     delay_steps: 1,
-                    stp: StpState { x: STP_SCALE, u: stp.u },
+                    stp: StpState {
+                        x: STP_SCALE,
+                        u: stp.u,
+                    },
                 });
                 params.push(stp);
             }
