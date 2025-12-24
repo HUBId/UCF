@@ -159,10 +159,7 @@ impl LcMicrocircuit {
         arousal
     }
 
-    fn step_neuron(
-        neuron: &mut L4Neuron,
-        currents: &[f32; COMPARTMENT_COUNT],
-    ) -> usize {
+    fn step_neuron(neuron: &mut L4Neuron, currents: &[f32; COMPARTMENT_COUNT]) -> usize {
         let mut spikes = 0;
         let mut prev_v = neuron.last_soma_v;
         for _ in 0..SUBSTEPS {
@@ -313,8 +310,7 @@ fn build_neuron(neuron_id: u32) -> L4Neuron {
         CompartmentChannels { leak, nak: None },
     ];
 
-    let solver =
-        L4Solver::new(morphology, channels, DT_MS, CLAMP_MIN, CLAMP_MAX).expect("solver");
+    let solver = L4Solver::new(morphology, channels, DT_MS, CLAMP_MIN, CLAMP_MAX).expect("solver");
     let state = L4State::new(-65.0, COMPARTMENT_COUNT);
     let last_soma_v = state.voltages[0];
 
