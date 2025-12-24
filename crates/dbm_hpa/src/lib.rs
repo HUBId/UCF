@@ -251,6 +251,7 @@ impl Hpa {
             baseline_chain_conservatism_offset: chain_offset,
             baseline_cooldown_multiplier_class: cooldown_multiplier_class,
             reason_codes: reasons,
+            mem_snapshot_digest: None,
         }
     }
 }
@@ -259,7 +260,12 @@ impl Hpa {
 impl Hpa {
     pub fn new(_store_path: impl Into<PathBuf>) -> Self {
         let config = CircuitConfig::default();
-        let circuit = HpaCircuit::new_emulated(config);
+        let circuit = HpaCircuit::new_emulated(config, config.seed);
+        Self { circuit }
+    }
+
+    pub fn new_micro(config: CircuitConfig, seed: u64) -> Self {
+        let circuit = HpaCircuit::new_emulated(config, seed);
         Self { circuit }
     }
 
@@ -270,9 +276,20 @@ impl Hpa {
     pub fn current_output(&self) -> HpaOutput {
         self.circuit.current_output()
     }
+
+    pub fn config_digest(&self) -> Option<[u8; 32]> {
+        Some(self.circuit.config_digest())
+    }
 }
 
 impl DbmComponent for Hpa {}
+
+#[cfg(not(feature = "microcircuit-hpa-emulated"))]
+impl Hpa {
+    pub fn config_digest(&self) -> Option<[u8; 32]> {
+        None
+    }
+}
 
 #[cfg(not(feature = "microcircuit-hpa-emulated"))]
 fn div_ceil(value: u16, divisor: u16) -> u16 {

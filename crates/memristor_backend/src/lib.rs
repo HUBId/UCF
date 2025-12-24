@@ -2,7 +2,7 @@
 
 use blake3::Hasher;
 
-pub const MAX_CELL_VALUE: u16 = 100;
+pub const DEFAULT_MAX_VALUE: u16 = 100;
 
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -41,6 +41,7 @@ impl CellKey {
 pub struct CalibrationReport {
     pub before_digest: [u8; 32],
     pub after_digest: [u8; 32],
+    pub applied: bool,
 }
 
 pub trait MemristorBackend {
@@ -50,37 +51,51 @@ pub trait MemristorBackend {
 
     fn calibrate(&mut self) -> CalibrationReport;
 
-    fn backend_digest(&self) -> [u8; 32];
+    fn config_digest(&self) -> [u8; 32];
+
+    fn snapshot_digest(&self) -> [u8; 32];
 }
 
 #[derive(Debug, Clone)]
 pub struct EmulatedMemristorBackend {
     cells: [u16; 6],
     drift_bias: [i16; 6],
+    max_value: u16,
     seed: u64,
 }
 
 impl EmulatedMemristorBackend {
-    pub fn new(seed: u64) -> Self {
+    pub fn new(seed: u64, max_value: u16) -> Self {
         let drift_bias = derive_drift_bias(seed);
         Self {
             cells: [0; 6],
             drift_bias,
+            max_value,
             seed,
         }
     }
 
-    fn clamp(value: u16) -> u16 {
-        value.min(MAX_CELL_VALUE)
+    pub fn max_value(&self) -> u16 {
+        self.max_value
     }
 
-    fn digest_bytes(&self) -> Vec<u8> {
+    fn clamp(&self, value: u16) -> u16 {
+        value.min(self.max_value)
+    }
+
+    fn config_bytes(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
         bytes.extend(self.seed.to_le_bytes());
-        for value in self.cells.iter() {
+        bytes.extend(self.max_value.to_le_bytes());
+        for value in self.drift_bias.iter() {
             bytes.extend(value.to_le_bytes());
         }
-        for value in self.drift_bias.iter() {
+        bytes
+    }
+
+    fn snapshot_bytes(&self) -> Vec<u8> {
+        let mut bytes = self.config_bytes();
+        for value in self.cells.iter() {
             bytes.extend(value.to_le_bytes());
         }
         bytes
@@ -89,7 +104,7 @@ impl EmulatedMemristorBackend {
 
 impl Default for EmulatedMemristorBackend {
     fn default() -> Self {
-        Self::new(0)
+        Self::new(0, DEFAULT_MAX_VALUE)
     }
 }
 
@@ -99,27 +114,31 @@ impl MemristorBackend for EmulatedMemristorBackend {
     }
 
     fn write_cell(&mut self, key: CellKey, value: u16) {
-        self.cells[key.index()] = Self::clamp(value);
+        self.cells[key.index()] = self.clamp(value);
     }
 
     fn calibrate(&mut self) -> CalibrationReport {
-        let before_digest = self.backend_digest();
-        for (idx, bias) in self.drift_bias.iter().enumerate() {
-            let bias = (*bias).max(0) as u16;
-            self.cells[idx] = self.cells[idx].saturating_sub(bias);
+        let before_digest = self.snapshot_digest();
+        let applied = true;
+        for (idx, bias) in self.drift_bias.iter().copied().enumerate() {
+            let adjusted = (self.cells[idx] as i32).saturating_sub(bias as i32);
+            let adjusted = adjusted.clamp(0, self.max_value as i32);
+            self.cells[idx] = adjusted as u16;
         }
-        let after_digest = self.backend_digest();
+        let after_digest = self.snapshot_digest();
         CalibrationReport {
             before_digest,
             after_digest,
+            applied,
         }
     }
 
-    fn backend_digest(&self) -> [u8; 32] {
-        let mut hasher = Hasher::new();
-        hasher.update(b"memristor-backend");
-        hasher.update(&self.digest_bytes());
-        *hasher.finalize().as_bytes()
+    fn config_digest(&self) -> [u8; 32] {
+        digest_with_domain("UCF:MEM:CFG", &self.config_bytes())
+    }
+
+    fn snapshot_digest(&self) -> [u8; 32] {
+        digest_with_domain("UCF:MEM:SNAP", &self.snapshot_bytes())
     }
 }
 
@@ -141,22 +160,38 @@ impl MemristorBackend for HardwareMemristorBackend {
         unimplemented!("Hardware memristor backend is not implemented yet")
     }
 
-    fn backend_digest(&self) -> [u8; 32] {
+    fn config_digest(&self) -> [u8; 32] {
+        unimplemented!("Hardware memristor backend is not implemented yet")
+    }
+
+    fn snapshot_digest(&self) -> [u8; 32] {
         unimplemented!("Hardware memristor backend is not implemented yet")
     }
 }
 
 fn derive_drift_bias(seed: u64) -> [i16; 6] {
-    let mut state = seed ^ 0x9e37_79b9_7f4a_7c15;
+    let mut hasher = Hasher::new();
+    hasher.update(b"UCF:MEM:BIAS");
+    hasher.update(&seed.to_le_bytes());
+    let digest = hasher.finalize();
+    let bytes = digest.as_bytes();
     let mut bias = [0i16; 6];
-    for slot in bias.iter_mut() {
-        state = state
-            .wrapping_mul(6364136223846793005)
-            .wrapping_add(1442695040888963407);
-        let magnitude = ((state >> 32) % 3) + 1;
-        *slot = magnitude as i16;
+    for (idx, slot) in bias.iter_mut().enumerate() {
+        let mapped = bytes[idx] % 3;
+        *slot = match mapped {
+            0 => -1,
+            1 => 0,
+            _ => 1,
+        };
     }
     bias
+}
+
+fn digest_with_domain(domain: &str, bytes: &[u8]) -> [u8; 32] {
+    let mut hasher = Hasher::new();
+    hasher.update(domain.as_bytes());
+    hasher.update(bytes);
+    *hasher.finalize().as_bytes()
 }
 
 #[cfg(test)]
@@ -167,25 +202,26 @@ mod tests {
     fn write_cell_clamps_values() {
         let mut backend = EmulatedMemristorBackend::default();
         backend.write_cell(CellKey::AL, 999);
-        assert_eq!(backend.read_cell(CellKey::AL), MAX_CELL_VALUE);
+        assert_eq!(backend.read_cell(CellKey::AL), backend.max_value());
     }
 
     #[test]
     fn calibrate_is_deterministic() {
-        let mut backend = EmulatedMemristorBackend::new(42);
+        let mut backend = EmulatedMemristorBackend::new(42, DEFAULT_MAX_VALUE);
         backend.write_cell(CellKey::AL, 20);
         let report_a = backend.calibrate();
         let report_b = backend.calibrate();
         assert_ne!(report_a.before_digest, report_a.after_digest);
         assert_ne!(report_a.after_digest, report_b.after_digest);
+        assert!(report_a.applied);
     }
 
     #[test]
-    fn backend_digest_depends_on_state() {
-        let mut backend = EmulatedMemristorBackend::new(7);
-        let digest_a = backend.backend_digest();
+    fn snapshot_digest_depends_on_state() {
+        let mut backend = EmulatedMemristorBackend::new(7, DEFAULT_MAX_VALUE);
+        let digest_a = backend.snapshot_digest();
         backend.write_cell(CellKey::EXFIL_SENS, 10);
-        let digest_b = backend.backend_digest();
+        let digest_b = backend.snapshot_digest();
         assert_ne!(digest_a, digest_b);
     }
 }
