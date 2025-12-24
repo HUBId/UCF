@@ -1,8 +1,6 @@
 #![forbid(unsafe_code)]
 
-use biophys_core::{
-    LifParams, LifState, ModChannel, NeuronId, StpParams, StpState, STP_SCALE,
-};
+use biophys_core::{LifParams, LifState, ModChannel, NeuronId, StpParams, StpState, STP_SCALE};
 use biophys_runtime::BiophysRuntime;
 use dbm_core::{DbmModule, IntegrityState, LevelClass, ReasonSet};
 use microcircuit_core::{digest_meta, CircuitConfig, MicrocircuitBackend};

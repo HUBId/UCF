@@ -208,8 +208,15 @@ fn na_modulation_changes_post_spike() {
         mod_channel: None,
     };
 
-    let mut low_runtime =
-        BiophysRuntime::new_with_synapses(params.clone(), states.clone(), 1, 10, vec![edge], vec![stp], 10_000);
+    let mut low_runtime = BiophysRuntime::new_with_synapses(
+        params.clone(),
+        states.clone(),
+        1,
+        10,
+        vec![edge],
+        vec![stp],
+        10_000,
+    );
     let mut high_runtime =
         BiophysRuntime::new_with_synapses(params, states, 1, 10, vec![edge], vec![stp], 10_000);
 

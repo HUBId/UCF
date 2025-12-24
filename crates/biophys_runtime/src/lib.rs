@@ -149,8 +149,7 @@ impl BiophysRuntime {
                     let params = self.stp_params[edge_idx];
                     let effective_params = Self::modulated_stp_params(mods, edge, params);
                     let released = edge.stp.on_spike(effective_params);
-                    let current =
-                        (edge.weight_effective as i64 * released as i64 / 1000) as i32;
+                    let current = (edge.weight_effective as i64 * released as i64 / 1000) as i32;
                     let deliver_at_step = self.step_count.saturating_add(edge.delay_steps as u64);
                     let bucket = (deliver_at_step as usize) % self.event_queue.len();
                     if self.event_queue[bucket].len() >= self.max_events_per_step {
@@ -190,7 +189,10 @@ impl BiophysRuntime {
             update_u16(&mut hasher, params.u);
             update_u16(&mut hasher, params.tau_rec_steps);
             update_u16(&mut hasher, params.tau_fac_steps);
-            update_u8(&mut hasher, mod_channel_code(params.mod_channel.unwrap_or_default()));
+            update_u8(
+                &mut hasher,
+                mod_channel_code(params.mod_channel.unwrap_or_default()),
+            );
         }
         update_u32(&mut hasher, self.max_events_per_step as u32);
         *hasher.finalize().as_bytes()

@@ -1,7 +1,7 @@
+use biophys_core::ModulatorField;
 use dbm_12_insula::InsulaInput;
 use dbm_18_cerebellum::CerInput;
 use dbm_6_dopamin_nacc::DopaInput;
-use biophys_core::ModulatorField;
 use dbm_7_lc::LcInput;
 use dbm_8_serotonin::SerInput;
 use dbm_9_amygdala::AmyInput;
