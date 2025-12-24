@@ -109,15 +109,12 @@ impl L4Solver {
         let mut parent_indices = Vec::with_capacity(morphology.compartments.len());
         for compartment in &morphology.compartments {
             let parent_index = match compartment.parent {
-                Some(parent_id) => {
-                    id_to_index
-                        .get(&parent_id)
-                        .copied()
-                        .ok_or(SolverError::MissingParent {
-                            child: compartment.id,
-                            parent: parent_id,
-                        })?
-                }
+                Some(parent_id) => Some(id_to_index.get(&parent_id).copied().ok_or(
+                    SolverError::MissingParent {
+                        child: compartment.id,
+                        parent: parent_id,
+                    },
+                )?),
                 None => None,
             };
             parent_indices.push(parent_index);
