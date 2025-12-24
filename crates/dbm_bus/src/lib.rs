@@ -141,6 +141,10 @@ impl BrainBus {
         self.sn.config_digest()
     }
 
+    pub fn hpa_config_digest(&self) -> Option<[u8; 32]> {
+        self.hpa.config_digest()
+    }
+
     pub fn sc_mut(&mut self) -> &mut Sc {
         &mut self.sc
     }
