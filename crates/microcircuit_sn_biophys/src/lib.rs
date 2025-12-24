@@ -199,10 +199,10 @@ impl SnBiophysMicrocircuit {
     fn build_inputs(input: &SnInput) -> ([i32; NEURON_COUNT], Vec<SalienceSource>) {
         let (drives, salience) = Self::rules_drives(input);
         let mut currents = [0i32; NEURON_COUNT];
-        for pool in 0..POOL_COUNT {
+        for (pool, drive) in drives.iter().enumerate().take(POOL_COUNT) {
             let (start, end) = Self::pool_bounds(pool);
-            for idx in start..end {
-                currents[idx] = currents[idx].saturating_add(drives[pool]);
+            for current in currents[start..end].iter_mut() {
+                *current = current.saturating_add(*drive);
             }
         }
         currents[GLOBAL_INHIBITORY_IDX] = 0;
