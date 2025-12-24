@@ -1,48 +1,74 @@
 #![forbid(unsafe_code)]
 
-use dbm_core::{DbmModule, IntegrityState, LevelClass, ReasonSet, ThreatVector};
+use dbm_core::DbmModule;
+#[cfg(feature = "microcircuit-pag-attractor")]
+use microcircuit_core::CircuitConfig;
+use microcircuit_core::MicrocircuitBackend;
+pub use microcircuit_pag_stub::{DefensePattern, PagInput, PagOutput, PagRules};
+use std::fmt;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(non_camel_case_types)]
-pub enum DefensePattern {
-    DP1_FREEZE,
-    DP2_QUARANTINE,
-    DP3_FORENSIC,
-    DP4_CONTAINED_CONTINUE,
+pub enum PagBackend {
+    Rules(PagRules),
+    Micro(Box<dyn MicrocircuitBackend<PagInput, PagOutput>>),
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct PagInput {
-    pub integrity: IntegrityState,
-    pub threat: LevelClass,
-    pub vectors: Vec<ThreatVector>,
-    pub unlock_present: bool,
-    pub stability: LevelClass,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PagOutput {
-    pub pattern: DefensePattern,
-    pub pattern_latched: bool,
-    pub reason_codes: ReasonSet,
-}
-
-impl Default for PagOutput {
-    fn default() -> Self {
-        Self {
-            pattern: DefensePattern::DP4_CONTAINED_CONTINUE,
-            pattern_latched: false,
-            reason_codes: ReasonSet::default(),
+impl fmt::Debug for PagBackend {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PagBackend::Rules(_) => f.write_str("PagBackend::Rules"),
+            PagBackend::Micro(_) => f.write_str("PagBackend::Micro"),
         }
     }
 }
 
-#[derive(Debug, Default)]
-pub struct Pag {}
+impl PagBackend {
+    fn tick(&mut self, input: &PagInput) -> PagOutput {
+        match self {
+            PagBackend::Rules(rules) => rules.tick(input),
+            PagBackend::Micro(backend) => backend.step(input, 0),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct Pag {
+    backend: PagBackend,
+}
 
 impl Pag {
     pub fn new() -> Self {
-        Self {}
+        Self {
+            backend: PagBackend::Rules(PagRules::new()),
+        }
+    }
+
+    #[cfg(feature = "microcircuit-pag-attractor")]
+    pub fn new_micro(config: CircuitConfig) -> Self {
+        use microcircuit_pag_attractor::PagAttractorMicrocircuit;
+
+        Self {
+            backend: PagBackend::Micro(Box::new(PagAttractorMicrocircuit::new(config))),
+        }
+    }
+
+    pub fn snapshot_digest(&self) -> Option<[u8; 32]> {
+        match &self.backend {
+            PagBackend::Micro(backend) => Some(backend.snapshot_digest()),
+            PagBackend::Rules(_) => None,
+        }
+    }
+
+    pub fn config_digest(&self) -> Option<[u8; 32]> {
+        match &self.backend {
+            PagBackend::Micro(backend) => Some(backend.config_digest()),
+            PagBackend::Rules(_) => None,
+        }
+    }
+}
+
+impl Default for Pag {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -51,54 +77,14 @@ impl DbmModule for Pag {
     type Output = PagOutput;
 
     fn tick(&mut self, input: &Self::Input) -> Self::Output {
-        let mut output = PagOutput::default();
-
-        let integrity_fail = matches!(input.integrity, IntegrityState::Fail);
-        let exfil_high =
-            input.vectors.contains(&ThreatVector::Exfil) && input.threat == LevelClass::High;
-
-        if integrity_fail {
-            output.pattern = DefensePattern::DP3_FORENSIC;
-            output.pattern_latched = true;
-            output
-                .reason_codes
-                .insert("RC.RX.ACTION.FORENSIC".to_string());
-            output.reason_codes.insert("RcRxActionForensic".to_string());
-            return output;
-        }
-
-        if exfil_high {
-            output.pattern = DefensePattern::DP3_FORENSIC;
-            output.pattern_latched = true;
-            output
-                .reason_codes
-                .insert("RC.RX.ACTION.FORENSIC".to_string());
-            output.reason_codes.insert("RcRxActionForensic".to_string());
-            return output;
-        }
-
-        if input.threat == LevelClass::High {
-            output.pattern = DefensePattern::DP2_QUARANTINE;
-            output.pattern_latched = true;
-            output
-                .reason_codes
-                .insert("RC.RX.ACTION.QUARANTINE".to_string());
-            return output;
-        }
-
-        if input.threat == LevelClass::Med {
-            output.pattern = DefensePattern::DP4_CONTAINED_CONTINUE;
-            return output;
-        }
-
-        output.pattern = DefensePattern::DP4_CONTAINED_CONTINUE;
-        output
+        self.backend.tick(input)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dbm_core::{CooldownClass, IntegrityState, LevelClass, ThreatVector};
 
     fn base_input() -> PagInput {
         PagInput {
@@ -107,6 +93,7 @@ mod tests {
             vectors: Vec::new(),
             unlock_present: false,
             stability: LevelClass::Low,
+            serotonin_cooldown: CooldownClass::Base,
         }
     }
 

@@ -104,6 +104,7 @@ pub fn brain_input_from_signal_frame(
             vectors: Vec::new(),
             unlock_present: rsv.unlock_ready,
             stability: BrainLevel::Low,
+            serotonin_cooldown: BrainCooldown::Base,
         },
         cerebellum: build_cerebellum_input(&normalized_frame, classified),
         stn: StnInput {
