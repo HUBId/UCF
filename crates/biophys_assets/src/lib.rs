@@ -194,7 +194,11 @@ pub fn demo_channel_params(morph: &MorphologySet) -> ChannelParamsSet {
                 } else {
                     0
                 },
-                k_g: if has_nak { 3 + (comp.comp_id as u16 % 4) } else { 0 },
+                k_g: if has_nak {
+                    3 + (comp.comp_id as u16 % 4)
+                } else {
+                    0
+                },
             });
         }
     }
@@ -442,9 +446,7 @@ fn build_tree_compartments(compartments_per_neuron: u16) -> Vec<Compartment> {
 
     debug_assert_eq!(compartments.len(), plan.total as usize);
     debug_assert!(compartments.len() <= MAX_COMPARTMENTS_PER_NEURON);
-    debug_assert!(compartments
-        .iter()
-        .all(|comp| comp.comp_id < plan.total));
+    debug_assert!(compartments.iter().all(|comp| comp.comp_id < plan.total));
     debug_assert!(compartments
         .iter()
         .all(|comp| comp.length_um > 0 && comp.diameter_um > 0));

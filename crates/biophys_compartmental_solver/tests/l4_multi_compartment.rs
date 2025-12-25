@@ -39,8 +39,14 @@ fn build_channels(morphology: &biophys_morphology::NeuronMorphology) -> Vec<Comp
 fn multi_compartment_determinism_and_stability() {
     let morphology = morphology_tree(NeuronId(1), 15);
     let channels = build_channels(&morphology);
-    let mut solver = L4Solver::new(morphology.clone(), channels.clone(), DT_MS, CLAMP_MIN, CLAMP_MAX)
-        .expect("solver");
+    let mut solver = L4Solver::new(
+        morphology.clone(),
+        channels.clone(),
+        DT_MS,
+        CLAMP_MIN,
+        CLAMP_MAX,
+    )
+    .expect("solver");
     let mut state = L4State::new(-65.0, morphology.compartments.len());
     let mut input = vec![0.0_f32; morphology.compartments.len()];
     input[0] = 1.5;

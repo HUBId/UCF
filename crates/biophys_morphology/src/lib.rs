@@ -167,10 +167,7 @@ pub fn compute_depths(neuron: &NeuronMorphology) -> Vec<u16> {
         }
     }
 
-    depths
-        .into_iter()
-        .map(|depth| depth.unwrap_or(0))
-        .collect()
+    depths.into_iter().map(|depth| depth.unwrap_or(0)).collect()
 }
 
 struct TreePlan {
