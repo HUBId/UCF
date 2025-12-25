@@ -222,10 +222,10 @@ impl PagL4Microcircuit {
     fn build_inputs(input: &PagInput) -> (DriveState, [f32; NEURON_COUNT]) {
         let (drive_state, pool_drive) = Self::drives_from_input(input);
         let mut currents = [0.0_f32; NEURON_COUNT];
-        for pool in 0..POOL_COUNT {
+        for (pool, drive) in pool_drive.iter().enumerate().take(POOL_COUNT) {
             let (start, end) = Self::pool_bounds(pool);
             for current in currents.iter_mut().take(end).skip(start) {
-                *current += pool_drive[pool];
+                *current += *drive;
             }
         }
         (drive_state, currents)
@@ -375,9 +375,9 @@ impl MicrocircuitBackend<PagInput, PagOutput> for PagL4Microcircuit {
             self.state.pool_acc[IDX_DP2] = self.state.pool_acc[IDX_DP2].max(LATCH_THRESHOLD);
         }
 
-        if drive_state.integrity_fail || drive_state.exfil_high {
-            self.state.latch_steps = LATCH_MAX;
-        } else if self.state.pool_acc[IDX_DP3] >= LATCH_THRESHOLD
+        if drive_state.integrity_fail
+            || drive_state.exfil_high
+            || self.state.pool_acc[IDX_DP3] >= LATCH_THRESHOLD
             || self.state.pool_acc[IDX_DP2] >= LATCH_THRESHOLD
         {
             self.state.latch_steps = LATCH_MAX;
