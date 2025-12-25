@@ -7,13 +7,13 @@
 
 use biophys_channels::Leak;
 use biophys_compartmental_solver::{CompartmentChannels, L4Solver, L4State};
+use biophys_core::ModChannel;
 use biophys_event_queue_l4::SpikeEventQueueL4;
 use biophys_morphology::{Compartment, CompartmentKind, NeuronMorphology};
 use biophys_synapses_l4::{
     decay_k, f32_to_fixed_u32, max_synapse_g_fixed, SynKind, SynapseAccumulator, SynapseL4,
     SynapseState,
 };
-use biophys_core::ModChannel;
 
 const DT_MS: f32 = 0.1;
 const THRESHOLD_MV: f32 = -20.0;

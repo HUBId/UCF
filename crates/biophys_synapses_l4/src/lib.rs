@@ -55,10 +55,7 @@ impl SynapseState {
     pub fn apply_spike(&mut self, g_max_eff_fixed: u32) {
         let max_fixed = max_synapse_g_fixed();
         let add_fixed = g_max_eff_fixed.min(max_fixed);
-        self.g_fixed = self
-            .g_fixed
-            .saturating_add(add_fixed)
-            .min(max_fixed);
+        self.g_fixed = self.g_fixed.saturating_add(add_fixed).min(max_fixed);
     }
 
     pub fn decay(&mut self, decay_k: u16) {
