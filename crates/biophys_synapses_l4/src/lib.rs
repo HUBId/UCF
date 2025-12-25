@@ -10,6 +10,8 @@ const FIXED_POINT_SCALE_I64: i64 = 1 << 16;
 const DECAY_SCALE: u32 = 1024;
 const MAX_SYNAPSE_G: f32 = 1000.0;
 const MAX_ACCUMULATOR_G: f32 = 5000.0;
+pub const INHIBITORY_BOOST_SCALE_Q: u16 = 1000;
+pub const INHIBITORY_BOOST_Q_MAX: u16 = 2000;
 /// STDP delta scaling: dw_q (0..1000) maps to Q16.16 by shifting left 6 bits.
 pub const STDP_WEIGHT_SHIFT: u32 = 6;
 
@@ -356,6 +358,23 @@ pub fn decay_k(dt_ms: f32, tau_decay_ms: f32) -> u16 {
 
 pub fn max_synapse_g_fixed() -> u32 {
     f32_to_fixed_u32(MAX_SYNAPSE_G)
+}
+
+pub fn clamp_inhibitory_boost_q(boost_q: u16) -> u16 {
+    boost_q.min(INHIBITORY_BOOST_Q_MAX)
+}
+
+pub fn apply_inhibitory_boost(g_max_eff_fixed: u32, kind: SynKind, inhibitory_boost_q: u16) -> u32 {
+    if kind != SynKind::GABA {
+        return g_max_eff_fixed;
+    }
+    let boost_q = clamp_inhibitory_boost_q(inhibitory_boost_q) as u64;
+    if boost_q == INHIBITORY_BOOST_SCALE_Q as u64 {
+        return g_max_eff_fixed;
+    }
+    let scaled = (g_max_eff_fixed as u64 * boost_q) / INHIBITORY_BOOST_SCALE_Q as u64;
+    let max_fixed = max_synapse_g_fixed() as u64;
+    scaled.min(max_fixed) as u32
 }
 
 fn syn_current(conductance: SynapseConductance, v: f32) -> f32 {
