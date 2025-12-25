@@ -1418,8 +1418,8 @@ impl CircuitBuilderFromAssets for HypothalamusL4Microcircuit {
 
             let solver = L4Solver::new(morphology.clone(), channels, DT_MS, CLAMP_MIN, CLAMP_MAX)
                 .map_err(|error| AssetBuildError::InvalidAssetData {
-                    message: format!("solver init failed: {error:?}"),
-                })?;
+                message: format!("solver init failed: {error:?}"),
+            })?;
             let state = L4State::new(-65.0, morphology.compartments.len());
             let last_soma_v = state.voltages[0];
             neurons.push(L4Neuron {
@@ -2323,11 +2323,9 @@ mod asset_tests {
         for (idx, (input, expected_profile)) in inputs.iter().zip(expected_floor.iter()).enumerate()
         {
             let mut hardcoded = HypothalamusL4Microcircuit::new(CircuitConfig::default());
-            let mut asset_backed = HypothalamusL4Microcircuit::new_from_asset_bundle(
-                &bundle,
-                &rehydrator,
-            )
-            .expect("asset");
+            let mut asset_backed =
+                HypothalamusL4Microcircuit::new_from_asset_bundle(&bundle, &rehydrator)
+                    .expect("asset");
             let hardcoded_output = (0..20)
                 .map(|_| hardcoded.step(input, 0))
                 .last()
@@ -2337,10 +2335,7 @@ mod asset_tests {
                 .last()
                 .expect("asset output");
             let floor = HypothalamusL4Microcircuit::rules_floor(input);
-            assert_eq!(
-                floor, *expected_profile,
-                "rules floor mismatch at {idx}"
-            );
+            assert_eq!(floor, *expected_profile, "rules floor mismatch at {idx}");
             assert_eq!(
                 hardcoded_output.profile_state, asset_output.profile_state,
                 "asset/hardcoded divergence at {idx}"
