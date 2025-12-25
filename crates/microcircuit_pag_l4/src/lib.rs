@@ -10,8 +10,8 @@ use biophys_homeostasis_l4::{
 use biophys_morphology::{Compartment, CompartmentKind, NeuronMorphology};
 use biophys_plasticity_l4::{plasticity_snapshot_digest, LearningMode, StdpConfig, StdpTrace};
 use biophys_synapses_l4::{
-    apply_stdp_updates, decay_k, f32_to_fixed_u32, max_synapse_g_fixed, StpParamsL4, StpStateL4,
-    SynKind, SynapseAccumulator, SynapseL4, SynapseState,
+    apply_stdp_updates, decay_k, f32_to_fixed_u32, max_synapse_g_fixed, NmdaVDepMode, StpParamsL4,
+    StpStateL4, SynKind, SynapseAccumulator, SynapseL4, SynapseState,
 };
 use dbm_core::{DbmModule, IntegrityState, LevelClass, ReasonSet, ThreatVector};
 use microcircuit_core::{CircuitConfig, MicrocircuitBackend};
@@ -339,20 +339,27 @@ impl PagL4Microcircuit {
     }
 
     fn substep(&mut self, injected_currents: &[f32; NEURON_COUNT]) -> Vec<usize> {
-        for (state, decay) in self.syn_states.iter_mut().zip(self.syn_decay.iter()) {
-            state.decay(*decay);
+        for (idx, state) in self.syn_states.iter_mut().enumerate() {
+            let synapse = &self.synapses[idx];
+            let decay = self.syn_decay[idx];
+            state.decay(synapse.kind, decay, synapse.tau_decay_nmda_steps);
         }
 
         let events = self.queue.drain_current(self.state.step_count);
         for event in events {
             let g_max_eff = self.syn_g_max_eff[event.synapse_index];
-            self.syn_states[event.synapse_index].apply_spike(g_max_eff, event.release_gain_q);
+            let synapse = &self.synapses[event.synapse_index];
+            self.syn_states[event.synapse_index].apply_spike(
+                synapse.kind,
+                g_max_eff,
+                event.release_gain_q,
+            );
         }
 
         let mut accumulators =
             vec![vec![SynapseAccumulator::default(); COMPARTMENT_COUNT]; NEURON_COUNT];
         for (idx, synapse) in self.synapses.iter().enumerate() {
-            let mut g_fixed = self.syn_states[idx].g_fixed;
+            let mut g_fixed = self.syn_states[idx].g_fixed_for(synapse.kind);
             if synapse.kind == SynKind::GABA {
                 g_fixed = scale_fixed_by_level(g_fixed, self.current_modulators.ht);
             }
@@ -361,7 +368,12 @@ impl PagL4Microcircuit {
             }
             let post = synapse.post_neuron as usize;
             let compartment = synapse.post_compartment as usize;
-            accumulators[post][compartment].add(synapse.kind, g_fixed, synapse.e_rev);
+            accumulators[post][compartment].add(
+                synapse.kind,
+                g_fixed,
+                synapse.e_rev,
+                synapse.nmda_vdep_mode,
+            );
         }
 
         let mut spikes = Vec::new();
@@ -636,7 +648,9 @@ impl MicrocircuitBackend<PagInput, PagOutput> for PagL4Microcircuit {
             }
         }
         for state in &self.syn_states {
-            update_u32(&mut hasher, state.g_fixed);
+            update_u32(&mut hasher, state.g_ampa_q);
+            update_u32(&mut hasher, state.g_nmda_q);
+            update_u32(&mut hasher, state.g_gaba_q);
         }
         update_u32(&mut hasher, mod_level_code(self.current_modulators.na));
         update_u32(&mut hasher, mod_level_code(self.current_modulators.da));
@@ -663,9 +677,12 @@ impl MicrocircuitBackend<PagInput, PagOutput> for PagL4Microcircuit {
             update_u32(&mut hasher, synapse.kind as u32);
             update_u32(&mut hasher, synapse.mod_channel as u32);
             update_u32(&mut hasher, synapse.g_max_base_q);
+            update_u32(&mut hasher, synapse.g_nmda_base_q);
             update_f32(&mut hasher, synapse.e_rev);
             update_f32(&mut hasher, synapse.tau_rise_ms);
             update_f32(&mut hasher, synapse.tau_decay_ms);
+            update_u32(&mut hasher, synapse.tau_decay_nmda_steps as u32);
+            update_u32(&mut hasher, synapse.nmda_vdep_mode as u32);
             update_u32(&mut hasher, synapse.delay_steps as u32);
         }
         *hasher.finalize().as_bytes()
@@ -764,11 +781,14 @@ fn build_synapses() -> Vec<SynapseL4> {
                     kind: SynKind::AMPA,
                     mod_channel: ModChannel::Na,
                     g_max_base_q: f32_to_fixed_u32(AMPA_G_MAX),
+                    g_nmda_base_q: 0,
                     g_max_min_q: 0,
                     g_max_max_q: max_synapse_g_fixed(),
                     e_rev: AMPA_E_REV,
                     tau_rise_ms: AMPA_TAU_RISE_MS,
                     tau_decay_ms: AMPA_TAU_DECAY_MS,
+                    tau_decay_nmda_steps: 100,
+                    nmda_vdep_mode: NmdaVDepMode::PiecewiseLinear,
                     delay_steps: 1,
                     stp_params,
                     stp_state,
@@ -789,11 +809,14 @@ fn build_synapses() -> Vec<SynapseL4> {
             kind: SynKind::AMPA,
             mod_channel: ModChannel::Na,
             g_max_base_q: f32_to_fixed_u32(AMPA_G_MAX),
+            g_nmda_base_q: 0,
             g_max_min_q: 0,
             g_max_max_q: max_synapse_g_fixed(),
             e_rev: AMPA_E_REV,
             tau_rise_ms: AMPA_TAU_RISE_MS,
             tau_decay_ms: AMPA_TAU_DECAY_MS,
+            tau_decay_nmda_steps: 100,
+            nmda_vdep_mode: NmdaVDepMode::PiecewiseLinear,
             delay_steps: 1,
             stp_params,
             stp_state,
@@ -812,11 +835,14 @@ fn build_synapses() -> Vec<SynapseL4> {
             kind: SynKind::GABA,
             mod_channel: ModChannel::Ht,
             g_max_base_q: f32_to_fixed_u32(GABA_G_MAX),
+            g_nmda_base_q: 0,
             g_max_min_q: 0,
             g_max_max_q: max_synapse_g_fixed(),
             e_rev: GABA_E_REV,
             tau_rise_ms: GABA_TAU_RISE_MS,
             tau_decay_ms: GABA_TAU_DECAY_MS,
+            tau_decay_nmda_steps: 100,
+            nmda_vdep_mode: NmdaVDepMode::PiecewiseLinear,
             delay_steps: 1,
             stp_params,
             stp_state,
@@ -844,11 +870,14 @@ fn build_synapses() -> Vec<SynapseL4> {
                 kind: SynKind::GABA,
                 mod_channel: ModChannel::Ht,
                 g_max_base_q: f32_to_fixed_u32(GABA_DOMINANCE_STRONG),
+                g_nmda_base_q: 0,
                 g_max_min_q: 0,
                 g_max_max_q: max_synapse_g_fixed(),
                 e_rev: GABA_E_REV,
                 tau_rise_ms: GABA_TAU_RISE_MS,
                 tau_decay_ms: GABA_TAU_DECAY_MS,
+                tau_decay_nmda_steps: 100,
+                nmda_vdep_mode: NmdaVDepMode::PiecewiseLinear,
                 delay_steps: 1,
                 stp_params,
                 stp_state,
@@ -868,11 +897,14 @@ fn build_synapses() -> Vec<SynapseL4> {
                 kind: SynKind::GABA,
                 mod_channel: ModChannel::Ht,
                 g_max_base_q: f32_to_fixed_u32(GABA_DOMINANCE_MODERATE),
+                g_nmda_base_q: 0,
                 g_max_min_q: 0,
                 g_max_max_q: max_synapse_g_fixed(),
                 e_rev: GABA_E_REV,
                 tau_rise_ms: GABA_TAU_RISE_MS,
                 tau_decay_ms: GABA_TAU_DECAY_MS,
+                tau_decay_nmda_steps: 100,
+                nmda_vdep_mode: NmdaVDepMode::PiecewiseLinear,
                 delay_steps: 1,
                 stp_params,
                 stp_state,
@@ -892,11 +924,14 @@ fn build_synapses() -> Vec<SynapseL4> {
                 kind: SynKind::GABA,
                 mod_channel: ModChannel::Ht,
                 g_max_base_q: f32_to_fixed_u32(GABA_DOMINANCE_LIGHT),
+                g_nmda_base_q: 0,
                 g_max_min_q: 0,
                 g_max_max_q: max_synapse_g_fixed(),
                 e_rev: GABA_E_REV,
                 tau_rise_ms: GABA_TAU_RISE_MS,
                 tau_decay_ms: GABA_TAU_DECAY_MS,
+                tau_decay_nmda_steps: 100,
+                nmda_vdep_mode: NmdaVDepMode::PiecewiseLinear,
                 delay_steps: 1,
                 stp_params,
                 stp_state,

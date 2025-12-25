@@ -8,7 +8,7 @@
 use biophys_core::{ModLevel, ModulatorField};
 use biophys_plasticity_l4::{plasticity_snapshot_digest, LearningMode, StdpConfig, StdpTrace};
 use biophys_synapses_l4::{
-    apply_stdp_updates, f32_to_fixed_u32, max_synapse_g_fixed, SynKind, SynapseL4,
+    apply_stdp_updates, f32_to_fixed_u32, max_synapse_g_fixed, NmdaVDepMode, SynKind, SynapseL4,
 };
 
 struct PlasticityHarness {
@@ -94,11 +94,14 @@ fn build_synapse(pre: u32, post: u32, g_max: f32, min: f32, max: f32) -> Synapse
         kind: SynKind::AMPA,
         mod_channel: biophys_core::ModChannel::None,
         g_max_base_q: f32_to_fixed_u32(g_max),
+        g_nmda_base_q: 0,
         g_max_min_q: f32_to_fixed_u32(min),
         g_max_max_q: f32_to_fixed_u32(max).min(max_synapse_g_fixed()),
         e_rev: 0.0,
         tau_rise_ms: 0.0,
         tau_decay_ms: 8.0,
+        tau_decay_nmda_steps: 100,
+        nmda_vdep_mode: NmdaVDepMode::PiecewiseLinear,
         delay_steps: 0,
         stp_params: Default::default(),
         stp_state: Default::default(),

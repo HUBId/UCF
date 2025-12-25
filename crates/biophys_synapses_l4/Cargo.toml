@@ -11,6 +11,7 @@ biophys_plasticity_l4 = { path = "../biophys_plasticity_l4" }
 biophys = []
 biophys-l4 = ["biophys"]
 biophys-l4-synapses = ["biophys-l4"]
+biophys-l4-nmda = ["biophys-l4-synapses"]
 biophys-l4-stp = ["biophys-l4-synapses"]
 biophys-l4-modulation = ["biophys-l4-synapses"]
 biophys-l4-plasticity = ["biophys-l4-synapses"]
