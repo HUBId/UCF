@@ -1,5 +1,7 @@
 #![forbid(unsafe_code)]
 
+use biophys_core::{level_mul, ModChannel, ModulatorField};
+
 pub const FIXED_POINT_SCALE: u32 = 1 << 16;
 const FIXED_POINT_SCALE_I64: i64 = 1 << 16;
 const DECAY_SCALE: u32 = 1024;
@@ -19,7 +21,8 @@ pub struct SynapseL4 {
     pub post_neuron: u32,
     pub post_compartment: u32,
     pub kind: SynKind,
-    pub g_max: f32,
+    pub mod_channel: ModChannel,
+    pub g_max_base_q: u32,
     pub e_rev: f32,
     pub tau_rise_ms: f32,
     pub tau_decay_ms: f32,
@@ -27,8 +30,15 @@ pub struct SynapseL4 {
 }
 
 impl SynapseL4 {
-    pub fn g_max_fixed(&self) -> u32 {
-        f32_to_fixed_u32(self.g_max)
+    pub fn g_max_base_fixed(&self) -> u32 {
+        self.g_max_base_q
+    }
+
+    pub fn effective_g_max_fixed(&self, mods: ModulatorField) -> u32 {
+        let mult = mod_channel_multiplier(self.mod_channel, self.kind, mods);
+        let scaled = (self.g_max_base_q as u64 * mult as u64) / 100;
+        let max_fixed = max_synapse_g_fixed();
+        scaled.min(max_fixed as u64) as u32
     }
 
     pub fn e_rev_fixed(&self) -> i32 {
@@ -42,10 +52,13 @@ pub struct SynapseState {
 }
 
 impl SynapseState {
-    pub fn apply_spike(&mut self, synapse: &SynapseL4) {
-        let g_max_fixed = synapse.g_max_fixed();
-        let max_fixed = f32_to_fixed_u32(MAX_SYNAPSE_G).max(g_max_fixed);
-        self.g_fixed = (self.g_fixed + g_max_fixed).min(max_fixed);
+    pub fn apply_spike(&mut self, g_max_eff_fixed: u32) {
+        let max_fixed = max_synapse_g_fixed();
+        let add_fixed = g_max_eff_fixed.min(max_fixed);
+        self.g_fixed = self
+            .g_fixed
+            .saturating_add(add_fixed)
+            .min(max_fixed);
     }
 
     pub fn decay(&mut self, decay_k: u16) {
@@ -104,6 +117,10 @@ pub fn decay_k(dt_ms: f32, tau_decay_ms: f32) -> u16 {
     scaled.clamp(0.0, DECAY_SCALE as f32) as u16
 }
 
+pub fn max_synapse_g_fixed() -> u32 {
+    f32_to_fixed_u32(MAX_SYNAPSE_G)
+}
+
 fn syn_current(conductance: SynapseConductance, v: f32) -> f32 {
     let g = fixed_to_f32(conductance.g_fixed);
     if g == 0.0 {
@@ -113,7 +130,7 @@ fn syn_current(conductance: SynapseConductance, v: f32) -> f32 {
     g_e_rev - g * v
 }
 
-fn f32_to_fixed_u32(value: f32) -> u32 {
+pub fn f32_to_fixed_u32(value: f32) -> u32 {
     if value <= 0.0 {
         return 0;
     }
@@ -130,4 +147,25 @@ fn fixed_to_f32(value: u32) -> f32 {
 
 fn fixed_to_f32_i64(value: i64) -> f32 {
     value as f32 / FIXED_POINT_SCALE_I64 as f32
+}
+
+fn mod_channel_multiplier(channel: ModChannel, kind: SynKind, mods: ModulatorField) -> u32 {
+    match kind {
+        SynKind::AMPA => match channel {
+            ModChannel::None => 100,
+            ModChannel::Na => level_mul(mods.na) as u32,
+            ModChannel::Da => level_mul(mods.da) as u32,
+            ModChannel::Ht => 100,
+            ModChannel::NaDa => {
+                let na = level_mul(mods.na) as u64;
+                let da = level_mul(mods.da) as u64;
+                ((na * da) / 100) as u32
+            }
+        },
+        SynKind::GABA => match channel {
+            ModChannel::Ht => level_mul(mods.ht) as u32,
+            _ => 100,
+        },
+        SynKind::NMDA => 100,
+    }
 }
