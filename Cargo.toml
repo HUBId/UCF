@@ -66,6 +66,7 @@ members = [
     "crates/microcircuit_insula_l4",
     "crates/biophys_core",
     "crates/biophys_assets",
+    "crates/biophys_asset_builder",
     "crates/biophys_solver",
     "crates/biophys_runtime",
     "crates/biophys_morphology",

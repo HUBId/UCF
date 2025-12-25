@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-use biophys_assets::{ConnectivityGraph, MorphologySet};
+use biophys_assets::{ChannelParamsSet, ConnectivityGraph, MorphologySet, SynapseParamsSet};
 use blake3::Hasher;
 use prost::Message;
 use thiserror::Error;
@@ -199,6 +199,82 @@ pub fn decode_morphology(bytes: &[u8]) -> Result<MorphologySet, RehydrationError
     Ok(morph)
 }
 
+pub fn decode_channel_params(bytes: &[u8]) -> Result<ChannelParamsSet, RehydrationError> {
+    let mut cursor = Cursor::new(bytes);
+    let version = cursor.take_u32()?;
+    let param_count = cursor.take_u32()?;
+    let mut per_compartment = Vec::with_capacity(param_count as usize);
+    for _ in 0..param_count {
+        let neuron_id = cursor.take_u32()?;
+        let comp_id = cursor.take_u32()?;
+        let leak_g = cursor.take_u16()?;
+        let na_g = cursor.take_u16()?;
+        let k_g = cursor.take_u16()?;
+        per_compartment.push(biophys_assets::ChannelParams {
+            neuron_id,
+            comp_id,
+            leak_g,
+            na_g,
+            k_g,
+        });
+    }
+    cursor.ensure_consumed()?;
+    let params = ChannelParamsSet {
+        version,
+        per_compartment,
+    };
+    if params.to_canonical_bytes() != bytes {
+        return Err(RehydrationError::CanonicalMismatch);
+    }
+    Ok(params)
+}
+
+pub fn decode_synapse_params(bytes: &[u8]) -> Result<SynapseParamsSet, RehydrationError> {
+    let mut cursor = Cursor::new(bytes);
+    let version = cursor.take_u32()?;
+    let param_count = cursor.take_u32()?;
+    let mut params = Vec::with_capacity(param_count as usize);
+    for _ in 0..param_count {
+        let syn_type = match cursor.take_u8()? {
+            0 => biophys_assets::SynType::Exc,
+            1 => biophys_assets::SynType::Inh,
+            other => {
+                return Err(RehydrationError::DecodeFailed {
+                    message: format!("invalid synapse type {other}"),
+                })
+            }
+        };
+        let weight_base = cursor.take_i32()?;
+        let stp_u = cursor.take_u16()?;
+        let tau_rec = cursor.take_u16()?;
+        let tau_fac = cursor.take_u16()?;
+        let mod_channel = match cursor.take_u8()? {
+            0 => biophys_assets::ModChannel::None,
+            1 => biophys_assets::ModChannel::A,
+            2 => biophys_assets::ModChannel::B,
+            other => {
+                return Err(RehydrationError::DecodeFailed {
+                    message: format!("invalid mod channel {other}"),
+                })
+            }
+        };
+        params.push(biophys_assets::SynapseParams {
+            syn_type,
+            weight_base,
+            stp_u,
+            tau_rec,
+            tau_fac,
+            mod_channel,
+        });
+    }
+    cursor.ensure_consumed()?;
+    let params = SynapseParamsSet { version, params };
+    if params.to_canonical_bytes() != bytes {
+        return Err(RehydrationError::CanonicalMismatch);
+    }
+    Ok(params)
+}
+
 pub fn decode_connectivity(bytes: &[u8]) -> Result<ConnectivityGraph, RehydrationError> {
     let mut cursor = Cursor::new(bytes);
     let version = cursor.take_u32()?;
@@ -232,6 +308,50 @@ pub fn decode_connectivity(bytes: &[u8]) -> Result<ConnectivityGraph, Rehydratio
         return Err(RehydrationError::CanonicalMismatch);
     }
     Ok(graph)
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct AssetRehydrator;
+
+impl AssetRehydrator {
+    pub fn new() -> Self {
+        Self
+    }
+
+    pub fn verify_bundle(&self, bundle: &AssetBundle) -> Result<(), RehydrationError> {
+        verify_asset_bundle(bundle)
+    }
+
+    pub fn reassemble(
+        &self,
+        bundle: &AssetBundle,
+        asset_kind: AssetKind,
+        asset_digest: [u8; 32],
+    ) -> Result<Vec<u8>, RehydrationError> {
+        reassemble_asset(bundle, asset_kind, asset_digest)
+    }
+
+    pub fn decode_morphology(&self, bytes: &[u8]) -> Result<MorphologySet, RehydrationError> {
+        decode_morphology(bytes)
+    }
+
+    pub fn decode_channel_params(
+        &self,
+        bytes: &[u8],
+    ) -> Result<ChannelParamsSet, RehydrationError> {
+        decode_channel_params(bytes)
+    }
+
+    pub fn decode_synapse_params(
+        &self,
+        bytes: &[u8],
+    ) -> Result<SynapseParamsSet, RehydrationError> {
+        decode_synapse_params(bytes)
+    }
+
+    pub fn decode_connectivity(&self, bytes: &[u8]) -> Result<ConnectivityGraph, RehydrationError> {
+        decode_connectivity(bytes)
+    }
 }
 
 fn compute_manifest_digest(manifest: &AssetManifest) -> [u8; 32] {
@@ -329,6 +449,11 @@ impl<'a> Cursor<'a> {
         Ok(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
     }
 
+    fn take_i32(&mut self) -> Result<i32, RehydrationError> {
+        let bytes = self.take_exact(4)?;
+        Ok(i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+    }
+
     fn take_exact(&mut self, len: usize) -> Result<&'a [u8], RehydrationError> {
         if self.offset + len > self.bytes.len() {
             return Err(RehydrationError::DecodeFailed {
@@ -348,7 +473,8 @@ mod tests {
         build_asset_bundle_with_policy, chunk_asset, BundleIdPolicy, ChunkerConfig,
     };
     use biophys_assets::{
-        demo_connectivity, demo_morphology_3comp, demo_syn_params, to_asset_digest,
+        demo_channel_params, demo_connectivity, demo_morphology_3comp, demo_syn_params,
+        to_asset_digest,
     };
     use biophys_core::{
         LifParams, LifState, ModChannel, NeuronId, StpParams, StpState, SynapseEdge, STP_SCALE,
@@ -451,6 +577,16 @@ mod tests {
         let bytes = morph.to_canonical_bytes();
         let decoded = decode_morphology(&bytes).expect("decode");
         assert_eq!(decoded, morph);
+
+        let channel = biophys_assets::demo_channel_params(&morph);
+        let bytes = channel.to_canonical_bytes();
+        let decoded = decode_channel_params(&bytes).expect("decode channel");
+        assert_eq!(decoded, channel);
+
+        let syn = demo_syn_params();
+        let bytes = syn.to_canonical_bytes();
+        let decoded = decode_synapse_params(&bytes).expect("decode syn");
+        assert_eq!(decoded, syn);
 
         let syn = demo_syn_params();
         let connectivity = demo_connectivity(2, &syn);
