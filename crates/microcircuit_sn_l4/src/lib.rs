@@ -10,8 +10,8 @@ use biophys_homeostasis_l4::{
 use biophys_morphology::{Compartment, CompartmentKind, NeuronMorphology};
 use biophys_plasticity_l4::{plasticity_snapshot_digest, LearningMode, StdpConfig, StdpTrace};
 use biophys_synapses_l4::{
-    apply_stdp_updates, decay_k, f32_to_fixed_u32, max_synapse_g_fixed, StpParamsL4, StpStateL4,
-    NmdaVDepMode, SynKind, SynapseAccumulator, SynapseL4, SynapseState,
+    apply_stdp_updates, decay_k, f32_to_fixed_u32, max_synapse_g_fixed, NmdaVDepMode, StpParamsL4,
+    StpStateL4, SynKind, SynapseAccumulator, SynapseL4, SynapseState,
 };
 use dbm_core::{
     DbmModule, DwmMode, IntegrityState, LevelClass, ReasonSet, SalienceItem, SalienceSource,

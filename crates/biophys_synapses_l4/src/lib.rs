@@ -219,9 +219,7 @@ impl SynapseState {
             SynKind::NMDA => &mut self.g_nmda_q,
             SynKind::GABA => &mut self.g_gaba_q,
         };
-        *target = target
-            .saturating_add(scaled_add as u32)
-            .min(max_fixed);
+        *target = target.saturating_add(scaled_add as u32).min(max_fixed);
     }
 
     pub fn decay(&mut self, kind: SynKind, decay_k: u16, tau_decay_nmda_steps: u16) {
@@ -324,13 +322,7 @@ pub struct SynapseAccumulator {
 }
 
 impl SynapseAccumulator {
-    pub fn add(
-        &mut self,
-        kind: SynKind,
-        g_fixed: u32,
-        e_rev: f32,
-        nmda_vdep_mode: NmdaVDepMode,
-    ) {
+    pub fn add(&mut self, kind: SynKind, g_fixed: u32, e_rev: f32, nmda_vdep_mode: NmdaVDepMode) {
         let e_rev_fixed = f32_to_fixed_i32(e_rev) as i64;
         let max_fixed = f32_to_fixed_u32(MAX_ACCUMULATOR_G);
         let target = match kind {
@@ -380,11 +372,7 @@ fn syn_current(conductance: SynapseConductance, v: f32) -> f32 {
     g_e_rev - g * v
 }
 
-fn syn_current_nmda(
-    conductance: SynapseConductance,
-    v: f32,
-    nmda_vdep_mode: NmdaVDepMode,
-) -> f32 {
+fn syn_current_nmda(conductance: SynapseConductance, v: f32, nmda_vdep_mode: NmdaVDepMode) -> f32 {
     if conductance.g_fixed == 0 {
         return 0.0;
     }

@@ -99,11 +99,7 @@ fn run_tick_nmda(
     for event in events {
         let synapse = &synapses[event.synapse_index];
         let g_max = synapse.g_max_base_fixed();
-        syn_states[event.synapse_index].apply_spike(
-            synapse.kind,
-            g_max,
-            event.release_gain_q,
-        );
+        syn_states[event.synapse_index].apply_spike(synapse.kind, g_max, event.release_gain_q);
     }
 
     let mut accumulators = vec![vec![SynapseAccumulator::default(); 1]; neurons.len()];
@@ -142,14 +138,8 @@ fn run_tick_nmda(
 
 #[test]
 fn nmda_lookup_table_bounds() {
-    assert_eq!(
-        nmda_alpha_q(-70.0, NmdaVDepMode::PiecewiseLinear),
-        200
-    );
-    assert_eq!(
-        nmda_alpha_q(-20.0, NmdaVDepMode::PiecewiseLinear),
-        1000
-    );
+    assert_eq!(nmda_alpha_q(-70.0, NmdaVDepMode::PiecewiseLinear), 200);
+    assert_eq!(nmda_alpha_q(-20.0, NmdaVDepMode::PiecewiseLinear), 1000);
 }
 
 #[test]

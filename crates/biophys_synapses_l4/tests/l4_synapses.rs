@@ -75,11 +75,7 @@ fn run_tick(
     for event in events {
         let synapse = &synapses[event.synapse_index];
         let g_max = synapse.g_max_base_fixed();
-        syn_states[event.synapse_index].apply_spike(
-            synapse.kind,
-            g_max,
-            event.release_gain_q,
-        );
+        syn_states[event.synapse_index].apply_spike(synapse.kind, g_max, event.release_gain_q);
     }
 
     let mut accumulators = vec![vec![SynapseAccumulator::default(); 1]; neurons.len()];

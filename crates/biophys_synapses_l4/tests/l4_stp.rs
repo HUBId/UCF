@@ -12,8 +12,8 @@ use biophys_event_queue_l4::SpikeEventQueueL4;
 use biophys_morphology::{Compartment, CompartmentKind, NeuronMorphology};
 use biophys_plasticity_l4::StdpTrace;
 use biophys_synapses_l4::{
-    decay_k, f32_to_fixed_u32, max_synapse_g_fixed, NmdaVDepMode, StpMode, StpParamsL4,
-    StpStateL4, SynKind, SynapseAccumulator, SynapseL4, SynapseState,
+    decay_k, f32_to_fixed_u32, max_synapse_g_fixed, NmdaVDepMode, StpMode, StpParamsL4, StpStateL4,
+    SynKind, SynapseAccumulator, SynapseL4, SynapseState,
 };
 
 const DT_MS: f32 = 0.1;
@@ -120,11 +120,7 @@ fn run_tick_stp(
     for event in events {
         let synapse = &synapses[event.synapse_index];
         let g_max = synapse.g_max_base_fixed();
-        syn_states[event.synapse_index].apply_spike(
-            synapse.kind,
-            g_max,
-            event.release_gain_q,
-        );
+        syn_states[event.synapse_index].apply_spike(synapse.kind, g_max, event.release_gain_q);
     }
 
     let mut accumulators = vec![vec![SynapseAccumulator::default(); 1]; neurons.len()];
