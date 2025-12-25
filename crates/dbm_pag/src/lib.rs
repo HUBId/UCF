@@ -62,10 +62,7 @@ impl Pag {
             };
         }
 
-        #[cfg(all(
-            not(feature = "biophys-pag"),
-            not(feature = "biophys-l4-pag")
-        ))]
+        #[cfg(all(not(feature = "biophys-pag"), not(feature = "biophys-l4-pag")))]
         {
             use microcircuit_pag_attractor::PagAttractorMicrocircuit;
 

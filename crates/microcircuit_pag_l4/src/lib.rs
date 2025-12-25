@@ -417,7 +417,8 @@ impl MicrocircuitBackend<PagInput, PagOutput> for PagL4Microcircuit {
         self.state.winner = winner;
 
         let pattern = Self::pattern_from_pool(winner);
-        let pattern_latched = (winner == IDX_DP2 || winner == IDX_DP3) && self.state.latch_steps > 0;
+        let pattern_latched =
+            (winner == IDX_DP2 || winner == IDX_DP3) && self.state.latch_steps > 0;
         let reason_codes = Self::build_reason_codes(input, winner);
 
         PagOutput {
