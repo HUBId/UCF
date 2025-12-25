@@ -343,7 +343,12 @@ fn update_f32(hasher: &mut blake3::Hasher, value: f32) {
     hasher.update(&value.to_bits().to_le_bytes());
 }
 
-#[cfg(all(test, feature = "biophys", feature = "biophys-l4", feature = "biophys-l4-lc"))]
+#[cfg(all(
+    test,
+    feature = "biophys",
+    feature = "biophys-l4",
+    feature = "biophys-l4-lc"
+))]
 mod tests {
     use super::*;
 
