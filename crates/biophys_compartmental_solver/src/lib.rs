@@ -3,6 +3,8 @@
 use biophys_channels::{leak_current, nak_current, GatingState, Leak, NaK};
 use biophys_core::{CompartmentId, NeuronId};
 use biophys_morphology::{Compartment, CompartmentKind, MorphologyError, NeuronMorphology};
+#[cfg(feature = "biophys-l4-synapses")]
+use biophys_synapses_l4::SynapseAccumulator;
 
 pub const MAX_COMPARTMENTS: usize = 1024;
 
@@ -180,6 +182,66 @@ impl L4Solver {
             let ext = input_current[index];
             let capacitance = compartment.capacitance.max(1e-6);
             let dv = self.dt_ms * (ext + axial - ionic) / capacitance;
+            let updated = (v + dv).clamp(self.clamp_min, self.clamp_max);
+            state.voltages[index] = updated;
+        }
+
+        self.step_count = self.step_count.saturating_add(1);
+    }
+
+    #[cfg(feature = "biophys-l4-synapses")]
+    pub fn step_with_synapses(
+        &mut self,
+        state: &mut L4State,
+        input_current: &[f32],
+        synaptic: &[SynapseAccumulator],
+    ) {
+        assert_eq!(
+            state.voltages.len(),
+            self.morphology.compartments.len(),
+            "state voltage count must match compartments"
+        );
+        assert_eq!(
+            input_current.len(),
+            self.morphology.compartments.len(),
+            "input current count must match compartments"
+        );
+        assert_eq!(
+            synaptic.len(),
+            self.morphology.compartments.len(),
+            "synaptic count must match compartments"
+        );
+
+        for (v, gates) in state.voltages.iter().copied().zip(state.gates.iter_mut()) {
+            gates.update(v, self.dt_ms);
+        }
+
+        let mut axial_currents = vec![0.0_f32; self.morphology.compartments.len()];
+        for (index, compartment) in self.morphology.compartments.iter().enumerate() {
+            if let Some(parent_index) = self.parent_indices[index] {
+                let v_child = state.voltages[index];
+                let v_parent = state.voltages[parent_index];
+                let resistance = compartment.axial_resistance.max(1e-6);
+                let current = (v_parent - v_child) / resistance;
+                axial_currents[index] += current;
+                axial_currents[parent_index] -= current;
+            }
+        }
+
+        for index in 0..self.morphology.compartments.len() {
+            let compartment = &self.morphology.compartments[index];
+            let channels = self.channels[index];
+            let v = state.voltages[index];
+            let gates = state.gates[index];
+            let mut ionic = leak_current(channels.leak, v);
+            if let Some(nak) = channels.nak {
+                ionic += nak_current(nak, gates, v);
+            }
+            let axial = axial_currents[index];
+            let ext = input_current[index];
+            let syn = synaptic[index].total_current(v);
+            let capacitance = compartment.capacitance.max(1e-6);
+            let dv = self.dt_ms * (ext + syn + axial - ionic) / capacitance;
             let updated = (v + dv).clamp(self.clamp_min, self.clamp_max);
             state.voltages[index] = updated;
         }

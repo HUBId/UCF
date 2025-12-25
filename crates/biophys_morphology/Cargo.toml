@@ -6,6 +6,7 @@ edition = "2021"
 [features]
 biophys = []
 biophys-l4 = ["biophys"]
+biophys-l4-synapses = ["biophys-l4"]
 
 [dependencies]
 biophys_core = { path = "../biophys_core" }
