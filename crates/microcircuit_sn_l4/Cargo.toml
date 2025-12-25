@@ -26,6 +26,13 @@ biophys-l4-plasticity = ["biophys-l4-synapses", "biophys_synapses_l4/biophys-l4-
 biophys-l4-homeostasis = ["biophys-l4-synapses", "biophys_homeostasis_l4/biophys-l4-homeostasis"]
 biophys-l4-targeting = ["biophys-l4-synapses", "biophys_targeting_l4/biophys-l4-targeting"]
 biophys-l4-sn = ["biophys-l4-modulation"]
+biophys-l4-sn-assets = [
+    "biophys-l4-sn",
+    "dep:asset_rehydration",
+    "dep:biophys_asset_builder",
+    "dep:biophys_assets",
+    "dep:ucf",
+]
 biophys-l4-ca-feedback = ["biophys-l4-ca", "biophys_synapses_l4/biophys-l4-ca-feedback"]
 
 [dependencies]
@@ -38,7 +45,15 @@ biophys_morphology = { path = "../biophys_morphology", features = ["biophys", "b
 biophys_plasticity_l4 = { path = "../biophys_plasticity_l4" }
 biophys_synapses_l4 = { path = "../biophys_synapses_l4", features = ["biophys", "biophys-l4", "biophys-l4-synapses", "biophys-l4-stp", "biophys-l4-modulation"] }
 biophys_targeting_l4 = { path = "../biophys_targeting_l4", features = ["biophys", "biophys-l4", "biophys-l4-targeting"] }
+asset_rehydration = { path = "../asset_rehydration", optional = true }
+biophys_asset_builder = { path = "../biophys_asset_builder", optional = true }
+biophys_assets = { path = "../biophys_assets", optional = true }
 blake3 = "1"
 dbm_core = { path = "../dbm_core" }
 microcircuit_core = { path = "../microcircuit_core" }
 microcircuit_sn_stub = { path = "../microcircuit_sn_stub" }
+ucf = { package = "ucf-protocol", path = "../../ucf-protocol", optional = true }
+
+[dev-dependencies]
+asset_chunker = { path = "../asset_chunker" }
+ucf = { package = "ucf-protocol", path = "../../ucf-protocol" }

@@ -1,0 +1,12 @@
+[package]
+name = "biophys_asset_builder"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+asset_rehydration = { path = "../asset_rehydration" }
+biophys_assets = { path = "../biophys_assets" }
+thiserror = { workspace = true }
