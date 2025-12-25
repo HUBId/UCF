@@ -92,6 +92,9 @@ fn l4_compartment_demo_is_deterministic_and_bounded() {
 
     for v in voltages_a {
         assert!(v.is_finite(), "voltage should be finite");
-        assert!(v >= -120.0 && v <= 60.0, "voltage should be clamped");
+        assert!(
+            (-120.0..=60.0).contains(&v),
+            "voltage should be clamped"
+        );
     }
 }
