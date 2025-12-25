@@ -1059,15 +1059,12 @@ fn build_synapses() -> Vec<SynapseL4> {
     }
 
     let mut specs = Vec::new();
-    let morphologies = (0..NEURON_COUNT)
-        .map(|idx| build_morphology(idx as u32))
-        .collect::<Vec<_>>();
     let policy = default_targeting_policy();
 
     for pool in 0..POOL_COUNT {
         let (start, end) = SnL4Microcircuit::pool_bounds(pool);
         for pre in start..end {
-            for (post, morphology) in morphologies.iter().enumerate().take(end).skip(start) {
+            for post in start..end {
                 if pre == post {
                     continue;
                 }
@@ -1114,7 +1111,7 @@ fn build_synapses() -> Vec<SynapseL4> {
 
     for inh in 0..INHIBITORY_COUNT {
         let pre = EXCITATORY_COUNT + inh;
-        for (post, morphology) in morphologies.iter().enumerate().take(EXCITATORY_COUNT) {
+        for post in 0..EXCITATORY_COUNT {
             let (stp_params, stp_state) = disabled_stp();
             specs.push(SynapseSpec {
                 pre: pre as u32,
@@ -1150,13 +1147,8 @@ fn build_synapses() -> Vec<SynapseL4> {
             post_neuron_id: NeuronId(spec.post),
             synapse_index: idx as u32,
         };
-        let post_compartment = select_post_compartment(
-            &morphologies[spec.post as usize],
-            spec.kind,
-            &policy,
-            edge_key,
-        )
-        .0;
+        let post_compartment =
+            select_post_compartment(&build_morphology(spec.post), spec.kind, &policy, edge_key).0;
         synapses.push(SynapseL4 {
             pre_neuron: spec.pre,
             post_neuron: spec.post,
