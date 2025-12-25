@@ -66,10 +66,12 @@ members = [
     "crates/biophys_morphology",
     "crates/biophys_channels",
     "crates/biophys_compartmental_solver",
+    "crates/biophys_event_queue_l4",
     "crates/assets",
     "crates/pvgs",
     "crates/query",
     "crates/scorecards",
+    "crates/biophys_synapses_l4",
 ]
 resolver = "2"
 

@@ -65,11 +65,16 @@ dependencies = [
  "biophys_channels",
  "biophys_core",
  "biophys_morphology",
+ "biophys_synapses_l4",
  "blake3",
 ]
 
 [[package]]
 name = "biophys_core"
+version = "0.1.0"
+
+[[package]]
+name = "biophys_event_queue_l4"
 version = "0.1.0"
 
 [[package]]
@@ -93,6 +98,17 @@ name = "biophys_solver"
 version = "0.1.0"
 dependencies = [
  "biophys_core",
+]
+
+[[package]]
+name = "biophys_synapses_l4"
+version = "0.1.0"
+dependencies = [
+ "biophys_channels",
+ "biophys_compartmental_solver",
+ "biophys_core",
+ "biophys_event_queue_l4",
+ "biophys_morphology",
 ]
 
 [[package]]

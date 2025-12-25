@@ -1,7 +1,9 @@
 [package]
-name = "biophys_core"
+name = "biophys_event_queue_l4"
 version = "0.1.0"
 edition = "2021"
+
+[dependencies]
 
 [features]
 biophys = []

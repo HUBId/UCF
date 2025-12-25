@@ -6,9 +6,11 @@ edition = "2021"
 [features]
 biophys = []
 biophys-l4 = ["biophys"]
+biophys-l4-synapses = ["biophys-l4", "dep:biophys_synapses_l4"]
 
 [dependencies]
 biophys_channels = { path = "../biophys_channels" }
 biophys_core = { path = "../biophys_core" }
 biophys_morphology = { path = "../biophys_morphology" }
+biophys_synapses_l4 = { path = "../biophys_synapses_l4", optional = true }
 blake3 = "1"
