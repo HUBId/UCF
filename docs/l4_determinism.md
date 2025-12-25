@@ -10,6 +10,8 @@ The following assumptions must hold to preserve repeatable results:
   - Avoid enabling fast-math or non-default FMA behavior that can reorder operations.
 - The solver clamps membrane voltages to a fixed range to prevent divergent numerical
   behavior.
+- L4 synaptic conductances are stored in fixed-point (Q16.16) and converted to `f32`
+  only when computing currents, so deterministic `g` updates remain integer-based.
 
 If these conditions are met, repeated runs should produce identical voltages, gating
 states, and digests.

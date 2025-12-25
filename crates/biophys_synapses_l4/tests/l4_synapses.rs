@@ -1,14 +1,19 @@
 #![cfg(all(
     feature = "biophys",
     feature = "biophys-l4",
-    feature = "biophys-l4-synapses"
+    feature = "biophys-l4-synapses",
+    feature = "biophys-l4-modulation"
 ))]
 
 use biophys_channels::Leak;
 use biophys_compartmental_solver::{CompartmentChannels, L4Solver, L4State};
+use biophys_core::ModChannel;
 use biophys_event_queue_l4::SpikeEventQueueL4;
 use biophys_morphology::{Compartment, CompartmentKind, NeuronMorphology};
-use biophys_synapses_l4::{decay_k, SynKind, SynapseAccumulator, SynapseL4, SynapseState};
+use biophys_synapses_l4::{
+    decay_k, f32_to_fixed_u32, max_synapse_g_fixed, SynKind, SynapseAccumulator, SynapseL4,
+    SynapseState,
+};
 
 const DT_MS: f32 = 0.1;
 const THRESHOLD_MV: f32 = -20.0;
@@ -68,7 +73,8 @@ fn run_tick(
 
     let events = queue.drain_current(step);
     for event in events {
-        syn_states[event.synapse_index].apply_spike(&synapses[event.synapse_index]);
+        let g_max = synapses[event.synapse_index].g_max_base_fixed();
+        syn_states[event.synapse_index].apply_spike(g_max);
     }
 
     let mut accumulators = vec![vec![SynapseAccumulator::default(); 1]; neurons.len()];
@@ -125,7 +131,8 @@ fn delay_is_applied_to_synaptic_conductance() {
         post_neuron: 1,
         post_compartment: 0,
         kind: SynKind::AMPA,
-        g_max: 4.0,
+        mod_channel: ModChannel::None,
+        g_max_base_q: f32_to_fixed_u32(4.0),
         e_rev: 0.0,
         tau_rise_ms: 0.0,
         tau_decay_ms: 8.0,
@@ -171,7 +178,8 @@ fn deterministic_runs_match() {
         post_neuron: 1,
         post_compartment: 0,
         kind: SynKind::AMPA,
-        g_max: 6.0,
+        mod_channel: ModChannel::None,
+        g_max_base_q: f32_to_fixed_u32(6.0),
         e_rev: 0.0,
         tau_rise_ms: 0.0,
         tau_decay_ms: 10.0,
@@ -237,7 +245,8 @@ fn synaptic_input_advances_spike_time() {
         post_neuron: 1,
         post_compartment: 0,
         kind: SynKind::AMPA,
-        g_max: 8.0,
+        mod_channel: ModChannel::None,
+        g_max_base_q: f32_to_fixed_u32(8.0),
         e_rev: 0.0,
         tau_rise_ms: 0.0,
         tau_decay_ms: 12.0,
@@ -296,4 +305,18 @@ fn synaptic_input_advances_spike_time() {
         spike_with_synapse.unwrap() < spike_without_synapse.unwrap(),
         "synaptic input should advance spike time"
     );
+}
+
+#[test]
+fn synapse_conductance_clamps_without_overflow() {
+    let max_fixed = max_synapse_g_fixed();
+    let mut state = SynapseState::default();
+
+    for _ in 0..5 {
+        state.apply_spike(u32::MAX);
+        assert!(
+            state.g_fixed <= max_fixed,
+            "conductance should remain clamped"
+        );
+    }
 }

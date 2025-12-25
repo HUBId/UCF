@@ -2,10 +2,12 @@
 
 use biophys_channels::{Leak, NaK};
 use biophys_compartmental_solver::{CompartmentChannels, L4Solver, L4State};
-use biophys_core::{CompartmentId, NeuronId};
+use biophys_core::{CompartmentId, ModChannel, ModLevel, ModulatorField, NeuronId};
 use biophys_event_queue_l4::SpikeEventQueueL4;
 use biophys_morphology::{Compartment, CompartmentKind, NeuronMorphology};
-use biophys_synapses_l4::{decay_k, SynKind, SynapseAccumulator, SynapseL4, SynapseState};
+use biophys_synapses_l4::{
+    decay_k, f32_to_fixed_u32, SynKind, SynapseAccumulator, SynapseL4, SynapseState,
+};
 use dbm_core::{
     DbmModule, DwmMode, IntegrityState, LevelClass, ReasonSet, SalienceItem, SalienceSource,
 };
@@ -90,10 +92,12 @@ pub struct SnL4Microcircuit {
     neurons: Vec<L4Neuron>,
     synapses: Vec<SynapseL4>,
     syn_states: Vec<SynapseState>,
+    syn_g_max_eff: Vec<u32>,
     syn_decay: Vec<u16>,
     pre_index: Vec<Vec<usize>>,
     queue: SpikeEventQueueL4,
     state: SnL4State,
+    current_modulators: ModulatorField,
 }
 
 impl SnL4Microcircuit {
@@ -103,6 +107,11 @@ impl SnL4Microcircuit {
             .collect::<Vec<_>>();
         let synapses = build_synapses();
         let syn_states = vec![SynapseState::default(); synapses.len()];
+        let current_modulators = ModulatorField::default();
+        let syn_g_max_eff = synapses
+            .iter()
+            .map(|synapse| synapse.effective_g_max_fixed(current_modulators))
+            .collect::<Vec<_>>();
         let syn_decay = synapses
             .iter()
             .map(|synapse| decay_k(DT_MS, synapse.tau_decay_ms))
@@ -119,10 +128,12 @@ impl SnL4Microcircuit {
             neurons,
             synapses,
             syn_states,
+            syn_g_max_eff,
             syn_decay,
             pre_index,
             queue,
             state: SnL4State::default(),
+            current_modulators,
         }
     }
 
@@ -194,10 +205,10 @@ impl SnL4Microcircuit {
             pool_drive[IDX_SIMULATE] += CURRENT_REPLAY;
         }
 
-        for pool in 0..POOL_COUNT {
+        for (pool, drive) in pool_drive.iter().enumerate().take(POOL_COUNT) {
             let (start, end) = Self::pool_bounds(pool);
-            for idx in start..end {
-                currents[idx] += pool_drive[pool];
+            for current in currents.iter_mut().take(end).skip(start) {
+                *current += *drive;
             }
         }
 
@@ -282,6 +293,35 @@ impl SnL4Microcircuit {
         items
     }
 
+    fn mod_level_from_class(level: LevelClass) -> ModLevel {
+        match level {
+            LevelClass::Low => ModLevel::Low,
+            LevelClass::Med => ModLevel::Med,
+            LevelClass::High => ModLevel::High,
+        }
+    }
+
+    fn modulators_from_input(input: &SnInput) -> ModulatorField {
+        let da_level = if input.reward_block {
+            LevelClass::Low
+        } else {
+            input.isv.progress
+        };
+        ModulatorField {
+            na: Self::mod_level_from_class(input.isv.arousal),
+            ht: Self::mod_level_from_class(input.isv.stability),
+            da: Self::mod_level_from_class(da_level),
+        }
+    }
+
+    fn update_modulators(&mut self, input: &SnInput) {
+        let mods = Self::modulators_from_input(input);
+        self.current_modulators = mods;
+        for (idx, synapse) in self.synapses.iter().enumerate() {
+            self.syn_g_max_eff[idx] = synapse.effective_g_max_fixed(mods);
+        }
+    }
+
     fn substep(&mut self, injected_currents: &[f32; NEURON_COUNT]) -> Vec<usize> {
         for (state, decay) in self.syn_states.iter_mut().zip(self.syn_decay.iter()) {
             state.decay(*decay);
@@ -289,13 +329,17 @@ impl SnL4Microcircuit {
 
         let events = self.queue.drain_current(self.state.step_count);
         for event in events {
-            self.syn_states[event.synapse_index].apply_spike(&self.synapses[event.synapse_index]);
+            let g_max_eff = self.syn_g_max_eff[event.synapse_index];
+            self.syn_states[event.synapse_index].apply_spike(g_max_eff);
         }
 
         let mut accumulators =
             vec![vec![SynapseAccumulator::default(); COMPARTMENT_COUNT]; NEURON_COUNT];
         for (idx, synapse) in self.synapses.iter().enumerate() {
-            let g_fixed = self.syn_states[idx].g_fixed;
+            let mut g_fixed = self.syn_states[idx].g_fixed;
+            if synapse.kind == SynKind::GABA {
+                g_fixed = scale_fixed_by_level(g_fixed, self.current_modulators.ht);
+            }
             if g_fixed == 0 {
                 continue;
             }
@@ -333,8 +377,14 @@ impl SnL4Microcircuit {
     }
 
     #[cfg(test)]
+    #[allow(dead_code)]
     fn rebuild_synapse_index(&mut self) {
         self.syn_states = vec![SynapseState::default(); self.synapses.len()];
+        self.syn_g_max_eff = self
+            .synapses
+            .iter()
+            .map(|synapse| synapse.effective_g_max_fixed(self.current_modulators))
+            .collect();
         self.syn_decay = self
             .synapses
             .iter()
@@ -354,6 +404,7 @@ impl SnL4Microcircuit {
 impl MicrocircuitBackend<SnInput, SnOutput> for SnL4Microcircuit {
     fn step(&mut self, input: &SnInput, _now_ms: u64) -> SnOutput {
         self.state.tick_count = self.state.tick_count.saturating_add(1);
+        self.update_modulators(input);
         let currents = Self::build_inputs(input);
 
         let mut spike_counts = [0usize; NEURON_COUNT];
@@ -448,6 +499,9 @@ impl MicrocircuitBackend<SnInput, SnOutput> for SnL4Microcircuit {
         for state in &self.syn_states {
             update_u32(&mut hasher, state.g_fixed);
         }
+        update_u32(&mut hasher, mod_level_code(self.current_modulators.na));
+        update_u32(&mut hasher, mod_level_code(self.current_modulators.da));
+        update_u32(&mut hasher, mod_level_code(self.current_modulators.ht));
         update_u64(&mut hasher, self.queue.dropped_event_count);
         *hasher.finalize().as_bytes()
     }
@@ -468,7 +522,8 @@ impl MicrocircuitBackend<SnInput, SnOutput> for SnL4Microcircuit {
             update_u32(&mut hasher, synapse.post_neuron);
             update_u32(&mut hasher, synapse.post_compartment);
             update_u32(&mut hasher, synapse.kind as u32);
-            update_f32(&mut hasher, synapse.g_max);
+            update_u32(&mut hasher, synapse.mod_channel as u32);
+            update_u32(&mut hasher, synapse.g_max_base_q);
             update_f32(&mut hasher, synapse.e_rev);
             update_f32(&mut hasher, synapse.tau_rise_ms);
             update_f32(&mut hasher, synapse.tau_decay_ms);
@@ -564,7 +619,8 @@ fn build_synapses() -> Vec<SynapseL4> {
                     post_neuron: post as u32,
                     post_compartment: 1,
                     kind: SynKind::AMPA,
-                    g_max: AMPA_G_MAX,
+                    mod_channel: ModChannel::NaDa,
+                    g_max_base_q: f32_to_fixed_u32(AMPA_G_MAX),
                     e_rev: AMPA_E_REV,
                     tau_rise_ms: AMPA_TAU_RISE_MS,
                     tau_decay_ms: AMPA_TAU_DECAY_MS,
@@ -582,7 +638,8 @@ fn build_synapses() -> Vec<SynapseL4> {
                 post_neuron: post as u32,
                 post_compartment: 0,
                 kind: SynKind::AMPA,
-                g_max: AMPA_G_MAX,
+                mod_channel: ModChannel::Na,
+                g_max_base_q: f32_to_fixed_u32(AMPA_G_MAX),
                 e_rev: AMPA_E_REV,
                 tau_rise_ms: AMPA_TAU_RISE_MS,
                 tau_decay_ms: AMPA_TAU_DECAY_MS,
@@ -599,7 +656,8 @@ fn build_synapses() -> Vec<SynapseL4> {
                 post_neuron: post as u32,
                 post_compartment: 0,
                 kind: SynKind::GABA,
-                g_max: GABA_G_MAX,
+                mod_channel: ModChannel::Ht,
+                g_max_base_q: f32_to_fixed_u32(GABA_G_MAX),
                 e_rev: GABA_E_REV,
                 tau_rise_ms: GABA_TAU_RISE_MS,
                 tau_decay_ms: GABA_TAU_DECAY_MS,
@@ -646,6 +704,23 @@ fn update_f32(hasher: &mut blake3::Hasher, value: f32) {
     hasher.update(&value.to_bits().to_le_bytes());
 }
 
+fn mod_level_code(level: ModLevel) -> u32 {
+    match level {
+        ModLevel::Low => 0,
+        ModLevel::Med => 1,
+        ModLevel::High => 2,
+    }
+}
+
+fn scale_fixed_by_level(value: u32, level: ModLevel) -> u32 {
+    let mult = match level {
+        ModLevel::Low => 90,
+        ModLevel::Med => 100,
+        ModLevel::High => 110,
+    };
+    ((value as u64 * mult as u64) / 100) as u32
+}
+
 fn quantize_f32(value: f32, scale: f32) -> i32 {
     (value * scale).round() as i32
 }
@@ -655,6 +730,7 @@ fn quantize_f32(value: f32, scale: f32) -> i32 {
     feature = "biophys",
     feature = "biophys-l4",
     feature = "biophys-l4-synapses",
+    feature = "biophys-l4-modulation",
     feature = "biophys-l4-sn"
 ))]
 mod tests {
@@ -684,12 +760,22 @@ mod tests {
                     } else {
                         LevelClass::Low
                     },
+                    stability: if idx % 6 == 0 {
+                        LevelClass::High
+                    } else {
+                        LevelClass::Low
+                    },
                     policy_pressure: if idx % 5 == 0 {
                         LevelClass::High
                     } else {
                         LevelClass::Low
                     },
                     arousal: if idx % 9 == 0 {
+                        LevelClass::High
+                    } else {
+                        LevelClass::Low
+                    },
+                    progress: if idx % 4 == 0 {
                         LevelClass::High
                     } else {
                         LevelClass::Low
@@ -822,5 +908,106 @@ mod tests {
             .iter()
             .all(|&acc| acc >= 0 && acc <= ACCUMULATOR_MAX));
         assert!(circuit.state.last_spike_count_total <= NEURON_COUNT * SUBSTEPS);
+    }
+
+    #[test]
+    fn na_high_increases_pool_accumulation() {
+        let mut low = SnL4Microcircuit::new(CircuitConfig::default());
+        let mut high = SnL4Microcircuit::new(CircuitConfig::default());
+
+        let base_isv = dbm_core::IsvSnapshot {
+            policy_pressure: LevelClass::High,
+            ..dbm_core::IsvSnapshot::default()
+        };
+
+        for _ in 0..6 {
+            let low_input = SnInput {
+                isv: dbm_core::IsvSnapshot {
+                    arousal: LevelClass::Low,
+                    ..base_isv.clone()
+                },
+                ..Default::default()
+            };
+            let high_input = SnInput {
+                isv: dbm_core::IsvSnapshot {
+                    arousal: LevelClass::High,
+                    ..base_isv.clone()
+                },
+                ..Default::default()
+            };
+            low.step(&low_input, 0);
+            high.step(&high_input, 0);
+        }
+
+        assert!(
+            high.state.pool_acc[IDX_SIMULATE] >= low.state.pool_acc[IDX_SIMULATE],
+            "NA high should not reduce pool accumulation"
+        );
+    }
+
+    #[test]
+    fn ht_high_reduces_spike_counts() {
+        let mut low = SnL4Microcircuit::new(CircuitConfig::default());
+        let mut high = SnL4Microcircuit::new(CircuitConfig::default());
+
+        let base_isv = dbm_core::IsvSnapshot {
+            policy_pressure: LevelClass::High,
+            ..dbm_core::IsvSnapshot::default()
+        };
+
+        let mut low_spikes = 0usize;
+        let mut high_spikes = 0usize;
+        for _ in 0..3 {
+            let low_input = SnInput {
+                isv: dbm_core::IsvSnapshot {
+                    stability: LevelClass::Low,
+                    ..base_isv.clone()
+                },
+                ..Default::default()
+            };
+            let high_input = SnInput {
+                isv: dbm_core::IsvSnapshot {
+                    stability: LevelClass::High,
+                    ..base_isv.clone()
+                },
+                ..Default::default()
+            };
+            low.step(&low_input, 0);
+            high.step(&high_input, 0);
+            low_spikes += low.state.last_pool_spikes.iter().sum::<usize>();
+            high_spikes += high.state.last_pool_spikes.iter().sum::<usize>();
+        }
+
+        assert!(
+            high_spikes <= low_spikes,
+            "HT high should not increase overall spike counts"
+        );
+    }
+
+    #[test]
+    fn reward_block_forces_da_low() {
+        let mut circuit = SnL4Microcircuit::new(CircuitConfig::default());
+        let input = SnInput {
+            isv: dbm_core::IsvSnapshot {
+                arousal: LevelClass::Med,
+                progress: LevelClass::High,
+                ..dbm_core::IsvSnapshot::default()
+            },
+            reward_block: true,
+            ..Default::default()
+        };
+
+        circuit.step(&input, 0);
+
+        assert_eq!(circuit.current_modulators.da, ModLevel::Low);
+
+        let (idx, synapse) = circuit
+            .synapses
+            .iter()
+            .enumerate()
+            .find(|(_, synapse)| synapse.mod_channel == ModChannel::NaDa)
+            .expect("expected a NA/DA synapse");
+        let expected = (synapse.g_max_base_q as u64 * 90) / 100;
+        assert_eq!(circuit.syn_g_max_eff[idx] as u64, expected);
     }
 }
