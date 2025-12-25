@@ -12,8 +12,8 @@ use biophys_event_queue_l4::SpikeEventQueueL4;
 use biophys_morphology::{Compartment, CompartmentKind, NeuronMorphology};
 use biophys_plasticity_l4::StdpTrace;
 use biophys_synapses_l4::{
-    decay_k, f32_to_fixed_u32, max_synapse_g_fixed, StpMode, StpParamsL4, StpStateL4, SynKind,
-    SynapseAccumulator, SynapseL4, SynapseState,
+    decay_k, f32_to_fixed_u32, max_synapse_g_fixed, NmdaVDepMode, StpMode, StpParamsL4,
+    StpStateL4, SynKind, SynapseAccumulator, SynapseL4, SynapseState,
 };
 
 const DT_MS: f32 = 0.1;
@@ -76,11 +76,14 @@ fn build_stp_synapse() -> SynapseL4 {
         kind: SynKind::AMPA,
         mod_channel: ModChannel::None,
         g_max_base_q: f32_to_fixed_u32(4.0),
+        g_nmda_base_q: 0,
         g_max_min_q: 0,
         g_max_max_q: max_synapse_g_fixed(),
         e_rev: 0.0,
         tau_rise_ms: 0.0,
         tau_decay_ms: 8.0,
+        tau_decay_nmda_steps: 100,
+        nmda_vdep_mode: NmdaVDepMode::PiecewiseLinear,
         delay_steps: 0,
         stp_params: params,
         stp_state: StpStateL4::new(params),
@@ -109,25 +112,35 @@ fn run_tick_stp(
 ) -> Vec<usize> {
     for (state, synapse) in syn_states.iter_mut().zip(synapses.iter_mut()) {
         let k = decay_k(DT_MS, synapse.tau_decay_ms);
-        state.decay(k);
+        state.decay(synapse.kind, k, synapse.tau_decay_nmda_steps);
         synapse.stp_recover_tick(synapse.stp_params);
     }
 
     let events = queue.drain_current(step);
     for event in events {
-        let g_max = synapses[event.synapse_index].g_max_base_fixed();
-        syn_states[event.synapse_index].apply_spike(g_max, event.release_gain_q);
+        let synapse = &synapses[event.synapse_index];
+        let g_max = synapse.g_max_base_fixed();
+        syn_states[event.synapse_index].apply_spike(
+            synapse.kind,
+            g_max,
+            event.release_gain_q,
+        );
     }
 
     let mut accumulators = vec![vec![SynapseAccumulator::default(); 1]; neurons.len()];
     for (idx, synapse) in synapses.iter().enumerate() {
-        let g_fixed = syn_states[idx].g_fixed;
+        let g_fixed = syn_states[idx].g_fixed_for(synapse.kind);
         if g_fixed == 0 {
             continue;
         }
         let post = synapse.post_neuron as usize;
         let compartment = synapse.post_compartment as usize;
-        accumulators[post][compartment].add(synapse.kind, g_fixed, synapse.e_rev);
+        accumulators[post][compartment].add(
+            synapse.kind,
+            g_fixed,
+            synapse.e_rev,
+            synapse.nmda_vdep_mode,
+        );
     }
 
     let mut spikes = Vec::new();
@@ -166,9 +179,9 @@ fn stp_depression_reduces_release_and_conductance() {
         synapse.stp_recover_tick(params);
         let release = synapse.stp_release_on_spike(params);
         release_gains.push(release);
-        let before = state.g_fixed;
-        state.apply_spike(synapse.g_max_base_fixed(), release);
-        increments.push(state.g_fixed - before);
+        let before = state.g_ampa_q;
+        state.apply_spike(synapse.kind, synapse.g_max_base_fixed(), release);
+        increments.push(state.g_ampa_q - before);
     }
 
     assert!(
@@ -213,7 +226,7 @@ fn stp_determinism_matches() {
             synapse.stp_recover_tick(params);
             if tick % 2 == 0 {
                 let release = synapse.stp_release_on_spike(params);
-                state.apply_spike(synapse.g_max_base_fixed(), release);
+                state.apply_spike(synapse.kind, synapse.g_max_base_fixed(), release);
             }
         }
         (synapse.stp_state, state)
@@ -236,10 +249,10 @@ fn stp_bounds_and_g_clamp_hold() {
     for _ in 0..50 {
         synapse.stp_recover_tick(params);
         let release = synapse.stp_release_on_spike(params);
-        state.apply_spike(u32::MAX, release);
+        state.apply_spike(SynKind::AMPA, u32::MAX, release);
         assert!(synapse.stp_state.x_q <= STP_SCALE);
         assert!(synapse.stp_state.u_q <= STP_SCALE);
-        assert!(state.g_fixed <= max_fixed);
+        assert!(state.g_ampa_q <= max_fixed);
     }
 }
 
@@ -257,7 +270,7 @@ fn stp_integration_shows_depression_over_repeated_spikes() {
     let mut g_increments = Vec::new();
     for step in 0..4 {
         let inputs = vec![1000.0, 0.0];
-        let before = syn_states[0].g_fixed;
+        let before = syn_states[0].g_ampa_q;
         run_tick_stp(
             step,
             &mut neurons,
@@ -267,7 +280,7 @@ fn stp_integration_shows_depression_over_repeated_spikes() {
             &mut queue,
             &inputs,
         );
-        g_increments.push(syn_states[0].g_fixed - before);
+        g_increments.push(syn_states[0].g_ampa_q - before);
     }
 
     assert!(

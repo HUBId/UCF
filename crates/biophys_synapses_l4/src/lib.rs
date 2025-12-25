@@ -20,6 +20,17 @@ pub enum SynKind {
     GABA,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NmdaVDepMode {
+    PiecewiseLinear,
+}
+
+impl Default for NmdaVDepMode {
+    fn default() -> Self {
+        Self::PiecewiseLinear
+    }
+}
+
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StpMode {
@@ -84,11 +95,14 @@ pub struct SynapseL4 {
     pub kind: SynKind,
     pub mod_channel: ModChannel,
     pub g_max_base_q: u32,
+    pub g_nmda_base_q: u32,
     pub g_max_min_q: u32,
     pub g_max_max_q: u32,
     pub e_rev: f32,
     pub tau_rise_ms: f32,
     pub tau_decay_ms: f32,
+    pub tau_decay_nmda_steps: u16,
+    pub nmda_vdep_mode: NmdaVDepMode,
     pub delay_steps: u16,
     pub stp_params: StpParamsL4,
     pub stp_state: StpStateL4,
@@ -98,12 +112,16 @@ pub struct SynapseL4 {
 
 impl SynapseL4 {
     pub fn g_max_base_fixed(&self) -> u32 {
-        self.g_max_base_q
+        match self.kind {
+            SynKind::NMDA => self.g_nmda_base_q,
+            _ => self.g_max_base_q,
+        }
     }
 
     pub fn effective_g_max_fixed(&self, mods: ModulatorField) -> u32 {
         let mult = mod_channel_multiplier(self.mod_channel, self.kind, mods);
-        let scaled = (self.g_max_base_q as u64 * mult as u64) / 100;
+        let base = self.g_max_base_fixed();
+        let scaled = (base as u64 * mult as u64) / 100;
         let max_fixed = max_synapse_g_fixed();
         scaled.min(max_fixed as u64) as u32
     }
@@ -178,27 +196,56 @@ impl SynapseL4 {
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct SynapseState {
-    pub g_fixed: u32,
+    pub g_ampa_q: u32,
+    pub g_nmda_q: u32,
+    pub g_gaba_q: u32,
 }
 
 impl SynapseState {
-    pub fn apply_spike(&mut self, g_max_eff_fixed: u32, release_gain_q: u16) {
+    pub fn g_fixed_for(&self, kind: SynKind) -> u32 {
+        match kind {
+            SynKind::AMPA => self.g_ampa_q,
+            SynKind::NMDA => self.g_nmda_q,
+            SynKind::GABA => self.g_gaba_q,
+        }
+    }
+
+    pub fn apply_spike(&mut self, kind: SynKind, g_max_eff_fixed: u32, release_gain_q: u16) {
         let max_fixed = max_synapse_g_fixed();
         let add_fixed = g_max_eff_fixed.min(max_fixed);
         let scaled_add = (add_fixed as u64 * release_gain_q as u64) / STP_SCALE as u64;
-        self.g_fixed = self
-            .g_fixed
+        let target = match kind {
+            SynKind::AMPA => &mut self.g_ampa_q,
+            SynKind::NMDA => &mut self.g_nmda_q,
+            SynKind::GABA => &mut self.g_gaba_q,
+        };
+        *target = target
             .saturating_add(scaled_add as u32)
             .min(max_fixed);
     }
 
-    pub fn decay(&mut self, decay_k: u16) {
-        if decay_k as u32 >= DECAY_SCALE {
-            self.g_fixed = 0;
+    pub fn decay(&mut self, kind: SynKind, decay_k: u16, tau_decay_nmda_steps: u16) {
+        if kind == SynKind::NMDA {
+            let tau_steps = tau_decay_nmda_steps.max(1) as u32;
+            let decay = self.g_nmda_q / tau_steps;
+            self.g_nmda_q = self.g_nmda_q.saturating_sub(decay);
             return;
         }
-        let decay = (self.g_fixed as u64 * decay_k as u64) / DECAY_SCALE as u64;
-        self.g_fixed = self.g_fixed.saturating_sub(decay as u32);
+        if decay_k as u32 >= DECAY_SCALE {
+            match kind {
+                SynKind::AMPA => self.g_ampa_q = 0,
+                SynKind::GABA => self.g_gaba_q = 0,
+                SynKind::NMDA => {}
+            }
+            return;
+        }
+        let decay_target = match kind {
+            SynKind::AMPA => &mut self.g_ampa_q,
+            SynKind::GABA => &mut self.g_gaba_q,
+            SynKind::NMDA => &mut self.g_nmda_q,
+        };
+        let decay = (*decay_target as u64 * decay_k as u64) / DECAY_SCALE as u64;
+        *decay_target = decay_target.saturating_sub(decay as u32);
     }
 }
 
@@ -214,6 +261,9 @@ pub fn apply_stdp_updates(
     let scale = TRACE_SCALE_Q as u32;
     for synapse in synapses.iter_mut() {
         if !synapse.stdp_enabled {
+            continue;
+        }
+        if synapse.kind == SynKind::NMDA {
             continue;
         }
         let pre = synapse.pre_neuron as usize;
@@ -235,6 +285,9 @@ pub fn apply_stdp_updates(
     }
     for synapse in synapses.iter_mut() {
         if !synapse.stdp_enabled {
+            continue;
+        }
+        if synapse.kind == SynKind::NMDA {
             continue;
         }
         let post = synapse.post_neuron as usize;
@@ -267,10 +320,17 @@ pub struct SynapseAccumulator {
     pub ampa: SynapseConductance,
     pub nmda: SynapseConductance,
     pub gaba: SynapseConductance,
+    pub nmda_vdep_mode: NmdaVDepMode,
 }
 
 impl SynapseAccumulator {
-    pub fn add(&mut self, kind: SynKind, g_fixed: u32, e_rev: f32) {
+    pub fn add(
+        &mut self,
+        kind: SynKind,
+        g_fixed: u32,
+        e_rev: f32,
+        nmda_vdep_mode: NmdaVDepMode,
+    ) {
         let e_rev_fixed = f32_to_fixed_i32(e_rev) as i64;
         let max_fixed = f32_to_fixed_u32(MAX_ACCUMULATOR_G);
         let target = match kind {
@@ -286,10 +346,15 @@ impl SynapseAccumulator {
         target.g_fixed = target.g_fixed.saturating_add(add_g);
         let delta = (add_g as i64 * e_rev_fixed) >> 16;
         target.g_e_rev_fixed = target.g_e_rev_fixed.saturating_add(delta);
+        if kind == SynKind::NMDA {
+            self.nmda_vdep_mode = nmda_vdep_mode;
+        }
     }
 
     pub fn total_current(&self, v: f32) -> f32 {
-        syn_current(self.ampa, v) + syn_current(self.nmda, v) + syn_current(self.gaba, v)
+        syn_current(self.ampa, v)
+            + syn_current_nmda(self.nmda, v, self.nmda_vdep_mode)
+            + syn_current(self.gaba, v)
     }
 }
 
@@ -315,6 +380,60 @@ fn syn_current(conductance: SynapseConductance, v: f32) -> f32 {
     g_e_rev - g * v
 }
 
+fn syn_current_nmda(
+    conductance: SynapseConductance,
+    v: f32,
+    nmda_vdep_mode: NmdaVDepMode,
+) -> f32 {
+    if conductance.g_fixed == 0 {
+        return 0.0;
+    }
+    let alpha_q = nmda_alpha_q(v, nmda_vdep_mode) as u64;
+    let g_eff_fixed = (conductance.g_fixed as u64 * alpha_q) / 1000;
+    if g_eff_fixed == 0 {
+        return 0.0;
+    }
+    let g_e_rev_eff = (conductance.g_e_rev_fixed as i64 * alpha_q as i64) / 1000;
+    let g = g_eff_fixed as f32 / FIXED_POINT_SCALE as f32;
+    let g_e_rev = fixed_to_f32_i64(g_e_rev_eff);
+    g_e_rev - g * v
+}
+
+const NMDA_MIN_MV: i32 = -120;
+const NMDA_MAX_MV: i32 = 60;
+const NMDA_ALPHA_TABLE_LEN: usize = (NMDA_MAX_MV - NMDA_MIN_MV + 1) as usize;
+
+const fn nmda_alpha_table() -> [u16; NMDA_ALPHA_TABLE_LEN] {
+    let mut table = [0_u16; NMDA_ALPHA_TABLE_LEN];
+    let mut idx = 0;
+    while idx < NMDA_ALPHA_TABLE_LEN {
+        let v_mv = NMDA_MIN_MV + idx as i32;
+        let alpha = if v_mv <= -70 {
+            200
+        } else if v_mv >= -20 {
+            1000
+        } else {
+            200 + ((v_mv + 70) * 800) / 50
+        };
+        table[idx] = alpha as u16;
+        idx += 1;
+    }
+    table
+}
+
+const NMDA_ALPHA_TABLE: [u16; NMDA_ALPHA_TABLE_LEN] = nmda_alpha_table();
+
+pub fn nmda_alpha_q(v: f32, mode: NmdaVDepMode) -> u16 {
+    match mode {
+        NmdaVDepMode::PiecewiseLinear => {
+            let rounded = v.round() as i32;
+            let clamped = rounded.clamp(NMDA_MIN_MV, NMDA_MAX_MV);
+            let index = (clamped - NMDA_MIN_MV) as usize;
+            NMDA_ALPHA_TABLE[index]
+        }
+    }
+}
+
 pub fn f32_to_fixed_u32(value: f32) -> u32 {
     if value <= 0.0 {
         return 0;
@@ -336,7 +455,7 @@ fn fixed_to_f32_i64(value: i64) -> f32 {
 
 fn mod_channel_multiplier(channel: ModChannel, kind: SynKind, mods: ModulatorField) -> u32 {
     match kind {
-        SynKind::AMPA => match channel {
+        SynKind::AMPA | SynKind::NMDA => match channel {
             ModChannel::None => 100,
             ModChannel::Na => level_mul(mods.na) as u32,
             ModChannel::Da => level_mul(mods.da) as u32,
@@ -351,7 +470,6 @@ fn mod_channel_multiplier(channel: ModChannel, kind: SynKind, mods: ModulatorFie
             ModChannel::Ht => level_mul(mods.ht) as u32,
             _ => 100,
         },
-        SynKind::NMDA => 100,
     }
 }
 

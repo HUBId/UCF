@@ -11,8 +11,8 @@ use biophys_event_queue_l4::SpikeEventQueueL4;
 use biophys_morphology::{Compartment, CompartmentKind, NeuronMorphology};
 use biophys_plasticity_l4::StdpTrace;
 use biophys_synapses_l4::{
-    decay_k, f32_to_fixed_u32, max_synapse_g_fixed, SynKind, SynapseAccumulator, SynapseL4,
-    SynapseState,
+    decay_k, f32_to_fixed_u32, max_synapse_g_fixed, NmdaVDepMode, SynKind, SynapseAccumulator,
+    SynapseL4, SynapseState,
 };
 
 const DT_MS: f32 = 0.1;
@@ -68,24 +68,34 @@ fn run_tick(
 ) -> Vec<usize> {
     for (state, synapse) in syn_states.iter_mut().zip(synapses.iter()) {
         let k = decay_k(DT_MS, synapse.tau_decay_ms);
-        state.decay(k);
+        state.decay(synapse.kind, k, synapse.tau_decay_nmda_steps);
     }
 
     let events = queue.drain_current(step);
     for event in events {
-        let g_max = synapses[event.synapse_index].g_max_base_fixed();
-        syn_states[event.synapse_index].apply_spike(g_max, event.release_gain_q);
+        let synapse = &synapses[event.synapse_index];
+        let g_max = synapse.g_max_base_fixed();
+        syn_states[event.synapse_index].apply_spike(
+            synapse.kind,
+            g_max,
+            event.release_gain_q,
+        );
     }
 
     let mut accumulators = vec![vec![SynapseAccumulator::default(); 1]; neurons.len()];
     for (idx, synapse) in synapses.iter().enumerate() {
-        let g_fixed = syn_states[idx].g_fixed;
+        let g_fixed = syn_states[idx].g_fixed_for(synapse.kind);
         if g_fixed == 0 {
             continue;
         }
         let post = synapse.post_neuron as usize;
         let compartment = synapse.post_compartment as usize;
-        accumulators[post][compartment].add(synapse.kind, g_fixed, synapse.e_rev);
+        accumulators[post][compartment].add(
+            synapse.kind,
+            g_fixed,
+            synapse.e_rev,
+            synapse.nmda_vdep_mode,
+        );
     }
 
     let mut spikes = Vec::new();
@@ -138,11 +148,14 @@ fn delay_is_applied_to_synaptic_conductance() {
         kind: SynKind::AMPA,
         mod_channel: ModChannel::None,
         g_max_base_q: f32_to_fixed_u32(4.0),
+        g_nmda_base_q: 0,
         g_max_min_q: 0,
         g_max_max_q: max_synapse_g_fixed(),
         e_rev: 0.0,
         tau_rise_ms: 0.0,
         tau_decay_ms: 8.0,
+        tau_decay_nmda_steps: 100,
+        nmda_vdep_mode: NmdaVDepMode::PiecewiseLinear,
         delay_steps: 2,
         stp_params: Default::default(),
         stp_state: Default::default(),
@@ -173,7 +186,7 @@ fn delay_is_applied_to_synaptic_conductance() {
         if spike_step.is_none() && spikes.contains(&0) {
             spike_step = Some(step);
         }
-        g_history.push(syn_states[0].g_fixed);
+        g_history.push(syn_states[0].g_fixed_for(SynKind::AMPA));
     }
 
     assert_eq!(spike_step, Some(0));
@@ -191,11 +204,14 @@ fn deterministic_runs_match() {
         kind: SynKind::AMPA,
         mod_channel: ModChannel::None,
         g_max_base_q: f32_to_fixed_u32(6.0),
+        g_nmda_base_q: 0,
         g_max_min_q: 0,
         g_max_max_q: max_synapse_g_fixed(),
         e_rev: 0.0,
         tau_rise_ms: 0.0,
         tau_decay_ms: 10.0,
+        tau_decay_nmda_steps: 100,
+        nmda_vdep_mode: NmdaVDepMode::PiecewiseLinear,
         delay_steps: 1,
         stp_params: Default::default(),
         stp_state: Default::default(),
@@ -264,11 +280,14 @@ fn synaptic_input_advances_spike_time() {
         kind: SynKind::AMPA,
         mod_channel: ModChannel::None,
         g_max_base_q: f32_to_fixed_u32(8.0),
+        g_nmda_base_q: 0,
         g_max_min_q: 0,
         g_max_max_q: max_synapse_g_fixed(),
         e_rev: 0.0,
         tau_rise_ms: 0.0,
         tau_decay_ms: 12.0,
+        tau_decay_nmda_steps: 100,
+        nmda_vdep_mode: NmdaVDepMode::PiecewiseLinear,
         delay_steps: 1,
         stp_params: Default::default(),
         stp_state: Default::default(),
@@ -336,9 +355,9 @@ fn synapse_conductance_clamps_without_overflow() {
     let mut state = SynapseState::default();
 
     for _ in 0..5 {
-        state.apply_spike(u32::MAX, STP_SCALE);
+        state.apply_spike(SynKind::AMPA, u32::MAX, STP_SCALE);
         assert!(
-            state.g_fixed <= max_fixed,
+            state.g_ampa_q <= max_fixed,
             "conductance should remain clamped"
         );
     }
