@@ -1,5 +1,7 @@
 #![forbid(unsafe_code)]
 
+#[cfg(feature = "biophys-l4-ca")]
+use biophys_channels::CaLike;
 use biophys_channels::{Leak, NaK};
 use biophys_compartmental_solver::{CompartmentChannels, L4Solver, L4State};
 use biophys_core::{CompartmentId, ModChannel, ModLevel, ModulatorField, NeuronId};
@@ -9,6 +11,8 @@ use biophys_homeostasis_l4::{
 };
 use biophys_morphology::{Compartment, CompartmentKind, NeuronMorphology};
 use biophys_plasticity_l4::{plasticity_snapshot_digest, LearningMode, StdpConfig, StdpTrace};
+#[cfg(feature = "biophys-l4-ca-feedback")]
+use biophys_synapses_l4::{apply_inhibitory_boost, INHIBITORY_BOOST_SCALE_Q};
 use biophys_synapses_l4::{
     apply_stdp_updates, decay_k, f32_to_fixed_u32, max_synapse_g_fixed, NmdaVDepMode, StpParamsL4,
     StpStateL4, SynKind, SynapseAccumulator, SynapseL4, SynapseState,
@@ -19,6 +23,12 @@ use dbm_core::{
 };
 use microcircuit_core::{CircuitConfig, MicrocircuitBackend};
 use microcircuit_sn_stub::{SnInput, SnOutput};
+
+#[cfg(feature = "biophys-l4-ca-feedback")]
+mod ca_feedback;
+
+#[cfg(feature = "biophys-l4-ca-feedback")]
+use ca_feedback::CaFeedbackPolicy;
 
 const POOL_COUNT: usize = 4;
 const POOL_SIZE: usize = 3;
@@ -75,6 +85,10 @@ struct SnL4State {
     winner: usize,
     hysteresis_count: u8,
     pending_winner: Option<usize>,
+    #[cfg(feature = "biophys-l4-ca-feedback")]
+    ca_hold_counter: u8,
+    #[cfg(feature = "biophys-l4-ca")]
+    ca_spike_neurons: Vec<u32>,
 }
 
 impl Default for SnL4State {
@@ -88,6 +102,10 @@ impl Default for SnL4State {
             winner: IDX_EXEC_PLAN,
             hysteresis_count: 0,
             pending_winner: None,
+            #[cfg(feature = "biophys-l4-ca-feedback")]
+            ca_hold_counter: 0,
+            #[cfg(feature = "biophys-l4-ca")]
+            ca_spike_neurons: Vec::new(),
         }
     }
 }
@@ -112,6 +130,10 @@ pub struct SnL4Microcircuit {
     in_replay_mode: bool,
     homeostasis_config: HomeostasisConfig,
     homeostasis_state: HomeostasisState,
+    #[cfg(feature = "biophys-l4-ca-feedback")]
+    ca_feedback_policy: CaFeedbackPolicy,
+    #[cfg(feature = "biophys-l4-ca-feedback")]
+    inhibitory_boost_q: u16,
 }
 
 impl SnL4Microcircuit {
@@ -175,6 +197,10 @@ impl SnL4Microcircuit {
             in_replay_mode: false,
             homeostasis_config,
             homeostasis_state,
+            #[cfg(feature = "biophys-l4-ca-feedback")]
+            ca_feedback_policy: CaFeedbackPolicy::default().normalized(),
+            #[cfg(feature = "biophys-l4-ca-feedback")]
+            inhibitory_boost_q: INHIBITORY_BOOST_SCALE_Q,
         }
     }
 
@@ -420,7 +446,11 @@ impl SnL4Microcircuit {
         self.learning_enabled = mode_allowed && da_allowed && !reward_block;
     }
 
-    fn substep(&mut self, injected_currents: &[f32; NEURON_COUNT]) -> Vec<usize> {
+    fn substep(
+        &mut self,
+        injected_currents: &[f32; NEURON_COUNT],
+        ca_spike_flags: &mut [bool; NEURON_COUNT],
+    ) -> Vec<usize> {
         for (idx, state) in self.syn_states.iter_mut().enumerate() {
             let synapse = &self.synapses[idx];
             let decay = self.syn_decay[idx];
@@ -429,8 +459,18 @@ impl SnL4Microcircuit {
 
         let events = self.queue.drain_current(self.state.step_count);
         for event in events {
-            let g_max_eff = self.syn_g_max_eff[event.synapse_index];
             let synapse = &self.synapses[event.synapse_index];
+            let g_max_eff = {
+                let base = self.syn_g_max_eff[event.synapse_index];
+                #[cfg(feature = "biophys-l4-ca-feedback")]
+                {
+                    apply_inhibitory_boost(base, synapse.kind, self.inhibitory_boost_q)
+                }
+                #[cfg(not(feature = "biophys-l4-ca-feedback"))]
+                {
+                    base
+                }
+            };
             self.syn_states[event.synapse_index].apply_spike(
                 synapse.kind,
                 g_max_eff,
@@ -463,13 +503,17 @@ impl SnL4Microcircuit {
             let mut input = [0.0_f32; COMPARTMENT_COUNT];
             input[0] = injected_currents[idx];
             let syn_input = &accumulators[idx];
-            neuron
-                .solver
-                .step_with_synapses(&mut neuron.state, &input, syn_input);
+            let output =
+                neuron
+                    .solver
+                    .step_with_synapses_output(&mut neuron.state, &input, syn_input);
             sanitize_voltages(&mut neuron.state);
             let v = neuron.state.voltages[0];
             if neuron.last_soma_v < THRESHOLD_MV && v >= THRESHOLD_MV {
                 spikes.push(idx);
+            }
+            if output.ca_spike {
+                ca_spike_flags[idx] = true;
             }
             neuron.last_soma_v = v;
         }
@@ -556,6 +600,11 @@ impl SnL4Microcircuit {
         }
     }
 
+    #[cfg(feature = "biophys-l4-ca-feedback")]
+    pub fn set_ca_feedback_policy(&mut self, policy: CaFeedbackPolicy) {
+        self.ca_feedback_policy = policy.normalized();
+    }
+
     #[cfg(test)]
     #[allow(dead_code)]
     fn rebuild_synapse_index(&mut self) {
@@ -604,10 +653,48 @@ impl MicrocircuitBackend<SnInput, SnOutput> for SnL4Microcircuit {
         let currents = Self::build_inputs(input);
 
         let mut spike_counts = [0usize; NEURON_COUNT];
+        let mut ca_spike_flags = [false; NEURON_COUNT];
+        #[cfg(feature = "biophys-l4-ca-feedback")]
+        {
+            let policy = self.ca_feedback_policy.normalized();
+            if policy.enabled && self.state.ca_hold_counter > 0 {
+                self.inhibitory_boost_q = policy.gaba_boost_q;
+                self.state.ca_hold_counter = self.state.ca_hold_counter.saturating_sub(1);
+            } else {
+                self.inhibitory_boost_q = INHIBITORY_BOOST_SCALE_Q;
+            }
+        }
         for _ in 0..SUBSTEPS {
-            let spikes = self.substep(&currents);
+            let spikes = self.substep(&currents, &mut ca_spike_flags);
             for spike in spikes {
                 spike_counts[spike] = spike_counts[spike].saturating_add(1);
+            }
+        }
+
+        #[cfg(feature = "biophys-l4-ca")]
+        {
+            let mut neurons = ca_spike_flags
+                .iter()
+                .enumerate()
+                .filter_map(|(idx, &flag)| flag.then_some(idx as u32))
+                .collect::<Vec<_>>();
+            neurons.sort_unstable();
+            if neurons.len() > NEURON_COUNT {
+                neurons.truncate(NEURON_COUNT);
+            }
+            self.state.ca_spike_neurons = neurons;
+        }
+
+        #[cfg(feature = "biophys-l4-ca-feedback")]
+        {
+            let policy = self.ca_feedback_policy.normalized();
+            if policy.enabled
+                && ca_spike_flags
+                    .iter()
+                    .take(EXCITATORY_COUNT)
+                    .any(|&flag| flag)
+            {
+                self.state.ca_hold_counter = policy.hold_bias_steps;
             }
         }
 
@@ -669,6 +756,8 @@ impl MicrocircuitBackend<SnInput, SnOutput> for SnL4Microcircuit {
         update_u64(&mut hasher, self.state.step_count);
         update_u32(&mut hasher, self.state.winner as u32);
         update_u32(&mut hasher, self.state.hysteresis_count as u32);
+        #[cfg(feature = "biophys-l4-ca-feedback")]
+        update_u32(&mut hasher, self.state.ca_hold_counter as u32);
         update_u32(
             &mut hasher,
             self.state
@@ -676,6 +765,13 @@ impl MicrocircuitBackend<SnInput, SnOutput> for SnL4Microcircuit {
                 .map(|value| value as u32 + 1)
                 .unwrap_or(0),
         );
+        #[cfg(feature = "biophys-l4-ca")]
+        {
+            update_u32(&mut hasher, self.state.ca_spike_neurons.len() as u32);
+            for neuron_id in &self.state.ca_spike_neurons {
+                update_u32(&mut hasher, *neuron_id);
+            }
+        }
         for value in self.state.pool_acc {
             update_i32(&mut hasher, value);
         }
@@ -712,6 +808,13 @@ impl MicrocircuitBackend<SnInput, SnOutput> for SnL4Microcircuit {
         update_u32(&mut hasher, SUBSTEPS as u32);
         update_f32(&mut hasher, CLAMP_MIN);
         update_f32(&mut hasher, CLAMP_MAX);
+        #[cfg(feature = "biophys-l4-ca-feedback")]
+        {
+            let policy = self.ca_feedback_policy.normalized();
+            update_u32(&mut hasher, policy.enabled as u32);
+            update_u32(&mut hasher, policy.gaba_boost_q as u32);
+            update_u32(&mut hasher, policy.hold_bias_steps as u32);
+        }
         for neuron in &self.neurons {
             hasher.update(&neuron.solver.config_digest());
         }
@@ -804,14 +907,31 @@ fn build_neuron(neuron_id: u32) -> L4Neuron {
         e_na: 50.0,
         e_k: -77.0,
     };
+    #[cfg(feature = "biophys-l4-ca")]
+    let ca = CaLike {
+        g_ca: 0.8,
+        e_ca: 120.0,
+    };
 
     let channels = vec![
         CompartmentChannels {
             leak,
             nak: Some(nak),
+            #[cfg(feature = "biophys-l4-ca")]
+            ca: Some(ca),
         },
-        CompartmentChannels { leak, nak: None },
-        CompartmentChannels { leak, nak: None },
+        CompartmentChannels {
+            leak,
+            nak: None,
+            #[cfg(feature = "biophys-l4-ca")]
+            ca: Some(ca),
+        },
+        CompartmentChannels {
+            leak,
+            nak: None,
+            #[cfg(feature = "biophys-l4-ca")]
+            ca: Some(ca),
+        },
     ];
 
     let solver = L4Solver::new(morphology, channels, DT_MS, CLAMP_MIN, CLAMP_MAX).expect("solver");
@@ -1017,7 +1137,11 @@ fn quantize_f32(value: f32, scale: f32) -> i32 {
     feature = "biophys-l4-sn"
 ))]
 mod tests {
+    #[cfg(all(feature = "biophys-l4-ca", feature = "biophys-l4-ca-feedback"))]
+    use super::ca_feedback::MAX_HOLD_BIAS_STEPS;
     use super::*;
+    #[cfg(all(feature = "biophys-l4-ca", feature = "biophys-l4-ca-feedback"))]
+    use biophys_synapses_l4::INHIBITORY_BOOST_Q_MAX;
 
     fn severity(mode: DwmMode) -> u8 {
         match mode {
@@ -1292,5 +1416,129 @@ mod tests {
             .expect("expected a NA/DA synapse");
         let expected = (synapse.g_max_base_q as u64 * 90) / 100;
         assert_eq!(circuit.syn_g_max_eff[idx] as u64, expected);
+    }
+
+    #[cfg(all(feature = "biophys-l4-ca", feature = "biophys-l4-ca-feedback"))]
+    #[test]
+    fn ca_feedback_determinism() {
+        let input = SnInput {
+            isv: dbm_core::IsvSnapshot {
+                policy_pressure: LevelClass::High,
+                ..dbm_core::IsvSnapshot::default()
+            },
+            replay_hint: true,
+            ..Default::default()
+        };
+        let inputs = vec![input; 8];
+
+        let run = |inputs: &[SnInput]| -> Vec<(DwmMode, Vec<u32>)> {
+            let mut circuit = SnL4Microcircuit::new(CircuitConfig::default());
+            inputs
+                .iter()
+                .map(|input| {
+                    let output = circuit.step(input, 0);
+                    (output.dwm, circuit.state.ca_spike_neurons.clone())
+                })
+                .collect()
+        };
+
+        let outputs_a = run(&inputs);
+        let outputs_b = run(&inputs);
+
+        assert_eq!(outputs_a, outputs_b);
+        assert!(
+            outputs_a.iter().any(|(_, spikes)| !spikes.is_empty()),
+            "expected at least one ca-spike event"
+        );
+    }
+
+    #[cfg(all(feature = "biophys-l4-ca", feature = "biophys-l4-ca-feedback"))]
+    #[test]
+    fn ca_feedback_reduces_spikes_and_switches() {
+        let mut enabled = SnL4Microcircuit::new(CircuitConfig::default());
+        let mut disabled = SnL4Microcircuit::new(CircuitConfig::default());
+        disabled.set_ca_feedback_policy(CaFeedbackPolicy::disabled());
+
+        let inputs = (0..10)
+            .map(|idx| SnInput {
+                isv: dbm_core::IsvSnapshot {
+                    policy_pressure: LevelClass::High,
+                    arousal: if idx % 2 == 0 {
+                        LevelClass::High
+                    } else {
+                        LevelClass::Low
+                    },
+                    ..dbm_core::IsvSnapshot::default()
+                },
+                replay_hint: idx % 3 == 0,
+                ..Default::default()
+            })
+            .collect::<Vec<_>>();
+
+        let mut enabled_spikes = 0usize;
+        let mut disabled_spikes = 0usize;
+        let mut enabled_switches = 0usize;
+        let mut disabled_switches = 0usize;
+        let mut enabled_any_ca = false;
+        let mut disabled_any_ca = false;
+
+        let mut prev_enabled = enabled.state.winner;
+        let mut prev_disabled = disabled.state.winner;
+
+        for input in &inputs {
+            enabled.step(input, 0);
+            disabled.step(input, 0);
+
+            enabled_spikes += enabled.state.last_spike_count_total;
+            disabled_spikes += disabled.state.last_spike_count_total;
+
+            if enabled.state.winner != prev_enabled {
+                enabled_switches = enabled_switches.saturating_add(1);
+                prev_enabled = enabled.state.winner;
+            }
+            if disabled.state.winner != prev_disabled {
+                disabled_switches = disabled_switches.saturating_add(1);
+                prev_disabled = disabled.state.winner;
+            }
+
+            enabled_any_ca |= !enabled.state.ca_spike_neurons.is_empty();
+            disabled_any_ca |= !disabled.state.ca_spike_neurons.is_empty();
+        }
+
+        assert!(enabled_any_ca && disabled_any_ca);
+        assert!(
+            enabled_spikes <= disabled_spikes,
+            "ca feedback should not increase excitatory spikes"
+        );
+        assert!(
+            enabled_switches <= disabled_switches,
+            "ca feedback should not increase winner switches"
+        );
+    }
+
+    #[cfg(all(feature = "biophys-l4-ca", feature = "biophys-l4-ca-feedback"))]
+    #[test]
+    fn ca_feedback_is_bounded() {
+        let mut circuit = SnL4Microcircuit::new(CircuitConfig::default());
+        circuit.set_ca_feedback_policy(CaFeedbackPolicy {
+            enabled: true,
+            gaba_boost_q: 4000,
+            hold_bias_steps: 100,
+        });
+
+        let input = SnInput {
+            isv: dbm_core::IsvSnapshot {
+                policy_pressure: LevelClass::High,
+                ..dbm_core::IsvSnapshot::default()
+            },
+            replay_hint: true,
+            ..Default::default()
+        };
+
+        circuit.step(&input, 0);
+
+        assert!(circuit.ca_feedback_policy.gaba_boost_q <= INHIBITORY_BOOST_Q_MAX);
+        assert!(circuit.ca_feedback_policy.hold_bias_steps <= MAX_HOLD_BIAS_STEPS);
+        assert!(circuit.state.ca_hold_counter <= MAX_HOLD_BIAS_STEPS);
     }
 }
