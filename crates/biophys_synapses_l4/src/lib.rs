@@ -1,8 +1,8 @@
 #![forbid(unsafe_code)]
 
-use biophys_core::{level_mul, ModChannel, ModulatorField, STP_SCALE};
 #[cfg(feature = "biophys-l4-modulation")]
 use biophys_core::ModLevel;
+use biophys_core::{level_mul, ModChannel, ModulatorField, STP_SCALE};
 
 pub const FIXED_POINT_SCALE: u32 = 1 << 16;
 const FIXED_POINT_SCALE_I64: i64 = 1 << 16;
@@ -178,8 +178,7 @@ impl SynapseState {
     pub fn apply_spike(&mut self, g_max_eff_fixed: u32, release_gain_q: u16) {
         let max_fixed = max_synapse_g_fixed();
         let add_fixed = g_max_eff_fixed.min(max_fixed);
-        let scaled_add =
-            (add_fixed as u64 * release_gain_q as u64) / STP_SCALE as u64;
+        let scaled_add = (add_fixed as u64 * release_gain_q as u64) / STP_SCALE as u64;
         self.g_fixed = self
             .g_fixed
             .saturating_add(scaled_add as u32)

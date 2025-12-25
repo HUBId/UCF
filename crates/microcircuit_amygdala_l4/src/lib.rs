@@ -273,8 +273,7 @@ impl AmygdalaL4Microcircuit {
         self.current_modulators = input.modulators;
         for (idx, synapse) in self.synapses.iter().enumerate() {
             self.syn_g_max_eff[idx] = synapse.effective_g_max_fixed(self.current_modulators);
-            self.syn_stp_params_eff[idx] =
-                synapse.stp_effective_params(self.current_modulators);
+            self.syn_stp_params_eff[idx] = synapse.stp_effective_params(self.current_modulators);
         }
     }
 
@@ -283,8 +282,7 @@ impl AmygdalaL4Microcircuit {
         self.current_modulators = ModulatorField::default();
         for (idx, synapse) in self.synapses.iter().enumerate() {
             self.syn_g_max_eff[idx] = synapse.effective_g_max_fixed(self.current_modulators);
-            self.syn_stp_params_eff[idx] =
-                synapse.stp_effective_params(self.current_modulators);
+            self.syn_stp_params_eff[idx] = synapse.stp_effective_params(self.current_modulators);
         }
     }
 
@@ -299,10 +297,7 @@ impl AmygdalaL4Microcircuit {
         let events = self.queue.drain_current(self.state.step_count);
         for event in events {
             let g_max_eff = self.syn_g_max_eff[event.synapse_index];
-            self.syn_states[event.synapse_index].apply_spike(
-                g_max_eff,
-                event.release_gain_q,
-            );
+            self.syn_states[event.synapse_index].apply_spike(g_max_eff, event.release_gain_q);
         }
 
         let mut accumulators =
@@ -337,23 +332,22 @@ impl AmygdalaL4Microcircuit {
 
         for spike_idx in &spikes {
             let indices = &self.pre_index[*spike_idx];
-            self.queue
-                .schedule_spike(
-                    self.state.step_count,
-                    indices,
-                    |idx| self.synapses[idx].delay_steps,
-                    |idx| {
-                        #[cfg(feature = "biophys-l4-stp")]
-                        {
-                            let params = self.syn_stp_params_eff[idx];
-                            return self.synapses[idx].stp_release_on_spike(params);
-                        }
-                        #[cfg(not(feature = "biophys-l4-stp"))]
-                        {
-                            return biophys_core::STP_SCALE;
-                        }
-                    },
-                );
+            self.queue.schedule_spike(
+                self.state.step_count,
+                indices,
+                |idx| self.synapses[idx].delay_steps,
+                |idx| {
+                    #[cfg(feature = "biophys-l4-stp")]
+                    {
+                        let params = self.syn_stp_params_eff[idx];
+                        return self.synapses[idx].stp_release_on_spike(params);
+                    }
+                    #[cfg(not(feature = "biophys-l4-stp"))]
+                    {
+                        return biophys_core::STP_SCALE;
+                    }
+                },
+            );
         }
 
         self.state.step_count = self.state.step_count.saturating_add(1);
