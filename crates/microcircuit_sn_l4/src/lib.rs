@@ -205,10 +205,10 @@ impl SnL4Microcircuit {
             pool_drive[IDX_SIMULATE] += CURRENT_REPLAY;
         }
 
-        for pool in 0..POOL_COUNT {
+        for (pool, drive) in pool_drive.iter().enumerate().take(POOL_COUNT) {
             let (start, end) = Self::pool_bounds(pool);
-            for idx in start..end {
-                currents[idx] += pool_drive[pool];
+            for current in currents.iter_mut().take(end).skip(start) {
+                *current += *drive;
             }
         }
 
@@ -377,6 +377,7 @@ impl SnL4Microcircuit {
     }
 
     #[cfg(test)]
+    #[allow(dead_code)]
     fn rebuild_synapse_index(&mut self) {
         self.syn_states = vec![SynapseState::default(); self.synapses.len()];
         self.syn_g_max_eff = self
