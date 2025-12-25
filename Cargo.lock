@@ -55,8 +55,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "biophys_channels"
+version = "0.1.0"
+
+[[package]]
+name = "biophys_compartmental_solver"
+version = "0.1.0"
+dependencies = [
+ "biophys_channels",
+ "biophys_core",
+ "biophys_morphology",
+ "blake3",
+]
+
+[[package]]
 name = "biophys_core"
 version = "0.1.0"
+
+[[package]]
+name = "biophys_morphology"
+version = "0.1.0"
+dependencies = [
+ "biophys_core",
+]
 
 [[package]]
 name = "biophys_runtime"
@@ -182,6 +203,7 @@ dependencies = [
  "dbm_core",
  "microcircuit_core",
  "microcircuit_lc_biophys",
+ "microcircuit_lc_l4",
  "microcircuit_lc_spike",
  "microcircuit_lc_stub",
 ]
@@ -539,6 +561,20 @@ version = "0.1.0"
 dependencies = [
  "biophys_core",
  "biophys_runtime",
+ "dbm_core",
+ "microcircuit_core",
+ "microcircuit_lc_stub",
+]
+
+[[package]]
+name = "microcircuit_lc_l4"
+version = "0.1.0"
+dependencies = [
+ "biophys_channels",
+ "biophys_compartmental_solver",
+ "biophys_core",
+ "biophys_morphology",
+ "blake3",
  "dbm_core",
  "microcircuit_core",
  "microcircuit_lc_stub",

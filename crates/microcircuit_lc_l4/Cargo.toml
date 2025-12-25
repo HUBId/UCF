@@ -1,0 +1,27 @@
+[package]
+name = "microcircuit_lc_l4"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+biophys = [
+    "biophys_channels/biophys",
+    "biophys_compartmental_solver/biophys",
+    "biophys_core/biophys",
+    "biophys_morphology/biophys",
+]
+biophys-l4 = ["biophys"]
+biophys-l4-lc = ["biophys-l4"]
+
+[dependencies]
+blake3 = "1"
+dbm_core = { path = "../dbm_core" }
+biophys_channels = { path = "../biophys_channels" }
+biophys_compartmental_solver = { path = "../biophys_compartmental_solver" }
+biophys_core = { path = "../biophys_core" }
+biophys_morphology = { path = "../biophys_morphology" }
+microcircuit_core = { path = "../microcircuit_core" }
+microcircuit_lc_stub = { path = "../microcircuit_lc_stub" }
