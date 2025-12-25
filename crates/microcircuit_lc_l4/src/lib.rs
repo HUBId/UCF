@@ -346,8 +346,8 @@ fn update_f32(hasher: &mut blake3::Hasher, value: f32) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use microcircuit_core::CircuitConfig;
 
+    #[cfg(all(feature = "biophys", feature = "biophys-l4", feature = "biophys-l4-lc"))]
     fn base_input() -> LcInput {
         LcInput {
             integrity: IntegrityState::Ok,
