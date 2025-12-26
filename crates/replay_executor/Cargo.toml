@@ -1,0 +1,41 @@
+[package]
+name = "replay_executor"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+biophys-l4 = [
+    "microcircuit_sn_l4/biophys-l4",
+    "microcircuit_sn_l4/biophys-l4-synapses",
+    "microcircuit_sn_l4/biophys-l4-sn-assets",
+    "microcircuit_amygdala_l4/biophys-l4",
+    "microcircuit_amygdala_l4/biophys-l4-synapses",
+    "microcircuit_amygdala_l4/biophys-l4-amygdala-assets",
+    "microcircuit_hypothalamus_l4/biophys-l4",
+    "microcircuit_hypothalamus_l4/biophys-l4-synapses",
+    "microcircuit_hypothalamus_l4/biophys-l4-hypothalamus-assets",
+]
+
+[dependencies]
+asset_rehydration = { path = "../asset_rehydration" }
+biophys_asset_builder = { path = "../biophys_asset_builder" }
+biophys_assets = { path = "../biophys_assets" }
+blake3 = "1"
+dbm_core = { path = "../dbm_core" }
+microcircuit_core = { path = "../microcircuit_core" }
+microcircuit_amygdala_l4 = { path = "../microcircuit_amygdala_l4", features = ["biophys-l4", "biophys-l4-synapses", "biophys-l4-amygdala-assets"] }
+microcircuit_amygdala_stub = { path = "../microcircuit_amygdala_stub" }
+microcircuit_hypothalamus_l4 = { path = "../microcircuit_hypothalamus_l4", features = ["biophys-l4", "biophys-l4-synapses", "biophys-l4-hypothalamus-assets"] }
+microcircuit_hypothalamus_setpoint = { path = "../microcircuit_hypothalamus_setpoint" }
+microcircuit_sn_l4 = { path = "../microcircuit_sn_l4", features = ["biophys-l4", "biophys-l4-synapses", "biophys-l4-sn-assets"] }
+microcircuit_sn_stub = { path = "../microcircuit_sn_stub" }
+pvgs_client = { path = "../../pvgs_client" }
+thiserror = "1"
+ucf = { package = "ucf-protocol", path = "../../ucf-protocol" }
+
+[dev-dependencies]
+asset_chunker = { path = "../asset_chunker" }
+prost = "0.12"

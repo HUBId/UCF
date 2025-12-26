@@ -56,4 +56,5 @@ ucf = { package = "ucf-protocol", path = "../../ucf-protocol", optional = true }
 
 [dev-dependencies]
 asset_chunker = { path = "../asset_chunker" }
+prost = "0.12"
 ucf = { package = "ucf-protocol", path = "../../ucf-protocol" }

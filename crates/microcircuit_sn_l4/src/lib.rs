@@ -1406,7 +1406,7 @@ fn compute_depth_for_comp(
 }
 
 #[cfg(feature = "biophys-l4-sn-assets")]
-type PoolMap = std::collections::BTreeMap<&'static str, Vec<u32>>;
+type PoolMap = std::collections::BTreeMap<String, Vec<u32>>;
 
 #[cfg(feature = "biophys-l4-sn-assets")]
 fn pool_map_from_labels(morph: &MorphologySet) -> Result<PoolMap, AssetBuildError> {
@@ -1427,12 +1427,10 @@ fn pool_map_from_labels(morph: &MorphologySet) -> Result<PoolMap, AssetBuildErro
                         message: format!("multiple pool labels for neuron {}", neuron.neuron_id),
                     });
                 }
-            } else if label.k == LABEL_KEY_ROLE {
-                if role_label.replace(label.v.as_str()).is_some() {
-                    return Err(AssetBuildError::InvalidAssetData {
-                        message: format!("multiple role labels for neuron {}", neuron.neuron_id),
-                    });
-                }
+            } else if label.k == LABEL_KEY_ROLE && role_label.replace(label.v.as_str()).is_some() {
+                return Err(AssetBuildError::InvalidAssetData {
+                    message: format!("multiple role labels for neuron {}", neuron.neuron_id),
+                });
             }
         }
         let pool = pool_label.ok_or_else(|| AssetBuildError::InvalidAssetData {
@@ -1459,7 +1457,10 @@ fn pool_map_from_labels(morph: &MorphologySet) -> Result<PoolMap, AssetBuildErro
                 message: format!("unknown pool label {pool} for neuron {}", neuron.neuron_id),
             });
         }
-        pool_map.entry(pool).or_default().push(neuron.neuron_id);
+        pool_map
+            .entry(pool.to_string())
+            .or_default()
+            .push(neuron.neuron_id);
     }
 
     for pool in POOL_LABELS {
@@ -1510,21 +1511,21 @@ fn pool_map_from_ranges(morph: &MorphologySet) -> Result<PoolMap, AssetBuildErro
     }
 
     let mut pool_map: PoolMap = std::collections::BTreeMap::new();
-    pool_map.insert("EXEC", (0..POOL_SIZE as u32).collect());
+    pool_map.insert("EXEC".to_string(), (0..POOL_SIZE as u32).collect());
     pool_map.insert(
-        "SIM",
+        "SIM".to_string(),
         ((POOL_SIZE as u32)..(2 * POOL_SIZE) as u32).collect(),
     );
     pool_map.insert(
-        "STAB",
+        "STAB".to_string(),
         ((2 * POOL_SIZE) as u32..(3 * POOL_SIZE) as u32).collect(),
     );
     pool_map.insert(
-        "REPORT",
+        "REPORT".to_string(),
         ((3 * POOL_SIZE) as u32..(4 * POOL_SIZE) as u32).collect(),
     );
     pool_map.insert(
-        "INH",
+        "INH".to_string(),
         (EXCITATORY_COUNT as u32..NEURON_COUNT as u32).collect(),
     );
     Ok(pool_map)
@@ -1993,7 +1994,7 @@ mod tests {
             .state
             .pool_acc
             .iter()
-            .all(|&acc| acc >= 0 && acc <= ACCUMULATOR_MAX));
+            .all(|&acc| (0..=ACCUMULATOR_MAX).contains(&acc)));
         assert!(circuit.state.last_spike_count_total <= NEURON_COUNT * SUBSTEPS);
     }
 
@@ -2476,7 +2477,7 @@ mod asset_tests {
         let chunker = ChunkerConfig {
             max_chunk_bytes: 128,
             compression: Compression::None,
-            max_chunks_total: 512,
+            max_chunks_total: 4096,
             bundle_id_policy: BundleIdPolicy::ManifestDigestPrefix { prefix_len: 8 },
         };
         let mut chunks = Vec::new();
@@ -2524,6 +2525,11 @@ mod asset_tests {
             )
             .expect("conn chunks"),
         );
+        chunks.sort_by(|a, b| {
+            a.asset_digest
+                .cmp(&b.asset_digest)
+                .then_with(|| a.chunk_index.cmp(&b.chunk_index))
+        });
 
         build_asset_bundle_with_policy(
             manifest,
@@ -2712,19 +2718,110 @@ mod asset_tests {
         let morph = sn_l4_morphology_assets();
         let chan = sn_l4_channel_params_assets(&morph);
         let syn = sn_l4_synapse_params_assets();
+        let mut mutated_syn = syn.clone();
+        mutated_syn.params[0].weight_base = (AMPA_G_MAX as i32) + 1;
         let conn = sn_l4_connectivity_assets();
-        let mut bundle = build_asset_bundle(&morph, &chan, &syn, &conn);
-        let mut manifest = bundle.manifest.clone().expect("manifest");
-        if let Some(component) = manifest
-            .components
-            .iter_mut()
-            .find(|component| component.kind == AssetKind::MorphologySet as i32)
-        {
-            component.digest[0] ^= 0xFF;
-        }
+        let created_at_ms = 10;
+        let mut manifest = AssetManifest {
+            manifest_version: 1,
+            created_at_ms,
+            manifest_digest: vec![0u8; 32],
+            components: vec![
+                to_asset_digest(
+                    AssetKind::MorphologySet,
+                    morph.version,
+                    morph.digest(),
+                    created_at_ms,
+                    None,
+                ),
+                to_asset_digest(
+                    AssetKind::ChannelParamsSet,
+                    chan.version,
+                    chan.digest(),
+                    created_at_ms,
+                    None,
+                ),
+                to_asset_digest(
+                    AssetKind::SynapseParamsSet,
+                    syn.version,
+                    syn.digest(),
+                    created_at_ms,
+                    None,
+                ),
+                to_asset_digest(
+                    AssetKind::ConnectivityGraph,
+                    conn.version,
+                    conn.digest(),
+                    created_at_ms,
+                    None,
+                ),
+            ],
+        };
         let manifest_digest = compute_manifest_digest(&manifest);
         manifest.manifest_digest = manifest_digest.to_vec();
-        bundle.manifest = Some(manifest);
+
+        let chunker = ChunkerConfig {
+            max_chunk_bytes: 128,
+            compression: Compression::None,
+            max_chunks_total: 4096,
+            bundle_id_policy: BundleIdPolicy::ManifestDigestPrefix { prefix_len: 8 },
+        };
+        let mut chunks = Vec::new();
+        chunks.extend(
+            chunk_asset(
+                AssetKind::MorphologySet,
+                morph.version,
+                morph.digest(),
+                &morph.to_canonical_bytes(),
+                &chunker,
+                created_at_ms,
+            )
+            .expect("morph chunks"),
+        );
+        chunks.extend(
+            chunk_asset(
+                AssetKind::ChannelParamsSet,
+                chan.version,
+                chan.digest(),
+                &chan.to_canonical_bytes(),
+                &chunker,
+                created_at_ms,
+            )
+            .expect("channel chunks"),
+        );
+        chunks.extend(
+            chunk_asset(
+                AssetKind::SynapseParamsSet,
+                syn.version,
+                syn.digest(),
+                &mutated_syn.to_canonical_bytes(),
+                &chunker,
+                created_at_ms,
+            )
+            .expect("syn chunks"),
+        );
+        chunks.extend(
+            chunk_asset(
+                AssetKind::ConnectivityGraph,
+                conn.version,
+                conn.digest(),
+                &conn.to_canonical_bytes(),
+                &chunker,
+                created_at_ms,
+            )
+            .expect("conn chunks"),
+        );
+        chunks.sort_by(|a, b| {
+            a.asset_digest
+                .cmp(&b.asset_digest)
+                .then_with(|| a.chunk_index.cmp(&b.chunk_index))
+        });
+        let bundle = build_asset_bundle_with_policy(
+            manifest,
+            chunks,
+            created_at_ms,
+            BundleIdPolicy::ManifestDigestPrefix { prefix_len: 8 },
+        );
 
         let rehydrator = AssetRehydrator::new();
         let err = SnL4Microcircuit::new_from_asset_bundle(&bundle, &rehydrator)

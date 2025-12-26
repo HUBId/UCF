@@ -1043,7 +1043,7 @@ fn build_synapses() -> Vec<SynapseL4> {
 }
 
 #[cfg(feature = "biophys-l4-amygdala-assets")]
-type PoolMap = std::collections::BTreeMap<&'static str, Vec<u32>>;
+type PoolMap = std::collections::BTreeMap<String, Vec<u32>>;
 
 #[cfg(feature = "biophys-l4-amygdala-assets")]
 fn pool_map_from_labels(morph: &MorphologySet) -> Result<PoolMap, AssetBuildError> {
@@ -1064,12 +1064,10 @@ fn pool_map_from_labels(morph: &MorphologySet) -> Result<PoolMap, AssetBuildErro
                         message: format!("multiple pool labels for neuron {}", neuron.neuron_id),
                     });
                 }
-            } else if label.k == LABEL_KEY_ROLE {
-                if role_label.replace(label.v.as_str()).is_some() {
-                    return Err(AssetBuildError::InvalidAssetData {
-                        message: format!("multiple role labels for neuron {}", neuron.neuron_id),
-                    });
-                }
+            } else if label.k == LABEL_KEY_ROLE && role_label.replace(label.v.as_str()).is_some() {
+                return Err(AssetBuildError::InvalidAssetData {
+                    message: format!("multiple role labels for neuron {}", neuron.neuron_id),
+                });
             }
         }
         let pool = pool_label.ok_or_else(|| AssetBuildError::InvalidAssetData {
@@ -1096,7 +1094,10 @@ fn pool_map_from_labels(morph: &MorphologySet) -> Result<PoolMap, AssetBuildErro
                 message: format!("unknown pool label {pool} for neuron {}", neuron.neuron_id),
             });
         }
-        pool_map.entry(pool).or_default().push(neuron.neuron_id);
+        pool_map
+            .entry(pool.to_string())
+            .or_default()
+            .push(neuron.neuron_id);
     }
 
     for pool in POOL_LABELS {
@@ -1147,21 +1148,21 @@ fn pool_map_from_ranges(morph: &MorphologySet) -> Result<PoolMap, AssetBuildErro
     }
 
     let mut pool_map: PoolMap = std::collections::BTreeMap::new();
-    pool_map.insert("INTEGRITY", (0..POOL_SIZE as u32).collect());
+    pool_map.insert("INTEGRITY".to_string(), (0..POOL_SIZE as u32).collect());
     pool_map.insert(
-        "EXFIL",
+        "EXFIL".to_string(),
         ((POOL_SIZE as u32)..(2 * POOL_SIZE) as u32).collect(),
     );
     pool_map.insert(
-        "PROBING",
+        "PROBING".to_string(),
         ((2 * POOL_SIZE) as u32..(3 * POOL_SIZE) as u32).collect(),
     );
     pool_map.insert(
-        "TOOLSE",
+        "TOOLSE".to_string(),
         ((3 * POOL_SIZE) as u32..(4 * POOL_SIZE) as u32).collect(),
     );
     pool_map.insert(
-        "INH",
+        "INH".to_string(),
         (EXCITATORY_COUNT as u32..NEURON_COUNT as u32).collect(),
     );
     Ok(pool_map)
@@ -1736,7 +1737,7 @@ mod tests {
             .state
             .pool_acc
             .iter()
-            .all(|&acc| acc >= 0 && acc <= ACCUMULATOR_MAX));
+            .all(|&acc| (0..=ACCUMULATOR_MAX).contains(&acc)));
         assert!(circuit
             .state
             .latch_steps
@@ -2018,7 +2019,7 @@ mod asset_tests {
         let chunker = ChunkerConfig {
             max_chunk_bytes: 128,
             compression: Compression::None,
-            max_chunks_total: 512,
+            max_chunks_total: 4096,
             bundle_id_policy: BundleIdPolicy::ManifestDigestPrefix { prefix_len: 8 },
         };
         let mut chunks = Vec::new();
@@ -2067,6 +2068,11 @@ mod asset_tests {
             )
             .expect("conn chunks"),
         );
+        chunks.sort_by(|a, b| {
+            a.asset_digest
+                .cmp(&b.asset_digest)
+                .then_with(|| a.chunk_index.cmp(&b.chunk_index))
+        });
 
         build_asset_bundle_with_policy(
             manifest,

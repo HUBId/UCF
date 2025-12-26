@@ -1590,7 +1590,7 @@ impl CircuitBuilderFromAssets for HypothalamusL4Microcircuit {
 }
 
 #[cfg(feature = "biophys-l4-hypothalamus-assets")]
-type PoolMap = std::collections::BTreeMap<&'static str, Vec<u32>>;
+type PoolMap = std::collections::BTreeMap<String, Vec<u32>>;
 
 #[cfg(feature = "biophys-l4-hypothalamus-assets")]
 fn pool_map_from_labels(morph: &MorphologySet) -> Result<PoolMap, AssetBuildError> {
@@ -1611,12 +1611,10 @@ fn pool_map_from_labels(morph: &MorphologySet) -> Result<PoolMap, AssetBuildErro
                         message: format!("multiple pool labels for neuron {}", neuron.neuron_id),
                     });
                 }
-            } else if label.k == LABEL_KEY_ROLE {
-                if role_label.replace(label.v.as_str()).is_some() {
-                    return Err(AssetBuildError::InvalidAssetData {
-                        message: format!("multiple role labels for neuron {}", neuron.neuron_id),
-                    });
-                }
+            } else if label.k == LABEL_KEY_ROLE && role_label.replace(label.v.as_str()).is_some() {
+                return Err(AssetBuildError::InvalidAssetData {
+                    message: format!("multiple role labels for neuron {}", neuron.neuron_id),
+                });
             }
         }
         let pool = pool_label.ok_or_else(|| AssetBuildError::InvalidAssetData {
@@ -1643,7 +1641,10 @@ fn pool_map_from_labels(morph: &MorphologySet) -> Result<PoolMap, AssetBuildErro
                 message: format!("unknown pool label {pool} for neuron {}", neuron.neuron_id),
             });
         }
-        pool_map.entry(pool).or_default().push(neuron.neuron_id);
+        pool_map
+            .entry(pool.to_string())
+            .or_default()
+            .push(neuron.neuron_id);
     }
 
     for pool in POOL_LABELS {
@@ -1694,30 +1695,33 @@ fn pool_map_from_ranges(morph: &MorphologySet) -> Result<PoolMap, AssetBuildErro
     }
 
     let mut pool_map: PoolMap = std::collections::BTreeMap::new();
-    pool_map.insert("P0", (0..POOL_SIZE as u32).collect());
-    pool_map.insert("P1", ((POOL_SIZE as u32)..(2 * POOL_SIZE) as u32).collect());
+    pool_map.insert("P0".to_string(), (0..POOL_SIZE as u32).collect());
     pool_map.insert(
-        "P2",
+        "P1".to_string(),
+        ((POOL_SIZE as u32)..(2 * POOL_SIZE) as u32).collect(),
+    );
+    pool_map.insert(
+        "P2".to_string(),
         ((2 * POOL_SIZE) as u32..(3 * POOL_SIZE) as u32).collect(),
     );
     pool_map.insert(
-        "P3",
+        "P3".to_string(),
         ((3 * POOL_SIZE) as u32..(4 * POOL_SIZE) as u32).collect(),
     );
     pool_map.insert(
-        "O_SIM",
+        "O_SIM".to_string(),
         ((4 * POOL_SIZE) as u32..(5 * POOL_SIZE) as u32).collect(),
     );
     pool_map.insert(
-        "O_EXP",
+        "O_EXP".to_string(),
         ((5 * POOL_SIZE) as u32..(6 * POOL_SIZE) as u32).collect(),
     );
     pool_map.insert(
-        "O_NOV",
+        "O_NOV".to_string(),
         ((6 * POOL_SIZE) as u32..(7 * POOL_SIZE) as u32).collect(),
     );
     pool_map.insert(
-        "INH",
+        "INH".to_string(),
         (EXCITATORY_COUNT as u32..NEURON_COUNT as u32).collect(),
     );
     Ok(pool_map)
@@ -2573,7 +2577,7 @@ mod asset_tests {
         let chan = hypo_channel_params_assets(&morph);
         let syn = hypo_synapse_params_assets();
         let conn = hypo_connectivity_assets();
-        let bundle = build_asset_bundle(&morph, &chan, &syn, &conn);
+        let bundle = build_asset_bundle(&morph, &chan, &syn, &conn, None, None);
         let rehydrator = AssetRehydrator::new();
 
         let circuit =
@@ -2691,8 +2695,11 @@ mod asset_tests {
         let chan = hypo_channel_params_assets(&morph);
         let syn = hypo_synapse_params_assets();
         let conn = hypo_connectivity_assets();
-        let mut mutated = conn.to_canonical_bytes();
-        mutated[0] ^= 0xFF;
+        let mut mutated_conn = conn.clone();
+        if let Some(edge) = mutated_conn.edges.get_mut(0) {
+            edge.delay_steps = edge.delay_steps.saturating_add(1);
+        }
+        let mutated = mutated_conn.to_canonical_bytes();
         let bundle = build_asset_bundle(
             &morph,
             &chan,
