@@ -53,7 +53,10 @@ pub struct ReplayPlan {
 }
 
 impl ReplayPlan {
-    fn require_manifest_ref(ref_opt: Option<[u8; 32]>, label: &'static str) -> Result<[u8; 32], Error> {
+    fn require_manifest_ref(
+        ref_opt: Option<[u8; 32]>,
+        label: &'static str,
+    ) -> Result<[u8; 32], Error> {
         ref_opt.ok_or(Error::MissingAssetManifestRef { label })
     }
 }
@@ -189,10 +192,7 @@ impl ReplayExecutor {
         let mut profile_sequence = Vec::with_capacity(clamped_steps as usize);
 
         for step in 0..clamped_steps as usize {
-            let input = input_sequence
-                .get(step)
-                .cloned()
-                .unwrap_or_default();
+            let input = input_sequence.get(step).cloned().unwrap_or_default();
             let now_ms = input.now_ms;
 
             let sn_output: SnOutput = prepared.sn.step(&input.sn, now_ms);
@@ -273,7 +273,10 @@ struct RehydratedAssets {
     conn: ConnectivityGraph,
 }
 
-fn rehydrate_assets(rehydrator: &AssetRehydrator, bundle: &AssetBundle) -> Result<RehydratedAssets, Error> {
+fn rehydrate_assets(
+    rehydrator: &AssetRehydrator,
+    bundle: &AssetBundle,
+) -> Result<RehydratedAssets, Error> {
     let manifest = bundle
         .manifest
         .as_ref()
@@ -424,7 +427,9 @@ fn profile_code(profile: dbm_core::ProfileState) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use asset_chunker::{build_asset_bundle_with_policy, chunk_asset, BundleIdPolicy, ChunkerConfig};
+    use asset_chunker::{
+        build_asset_bundle_with_policy, chunk_asset, BundleIdPolicy, ChunkerConfig,
+    };
     use asset_rehydration::ASSET_MANIFEST_DOMAIN;
     use biophys_assets::{
         demo_channel_params, demo_connectivity, demo_morphology_3comp, demo_syn_params,
