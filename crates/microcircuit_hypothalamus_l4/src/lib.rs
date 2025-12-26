@@ -2695,8 +2695,11 @@ mod asset_tests {
         let chan = hypo_channel_params_assets(&morph);
         let syn = hypo_synapse_params_assets();
         let conn = hypo_connectivity_assets();
-        let mut mutated = conn.to_canonical_bytes();
-        mutated[0] ^= 0xFF;
+        let mut mutated_conn = conn.clone();
+        if let Some(edge) = mutated_conn.edges.get_mut(0) {
+            edge.delay_steps = edge.delay_steps.saturating_add(1);
+        }
+        let mutated = mutated_conn.to_canonical_bytes();
         let bundle = build_asset_bundle(
             &morph,
             &chan,
