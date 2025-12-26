@@ -1590,7 +1590,7 @@ impl CircuitBuilderFromAssets for HypothalamusL4Microcircuit {
 }
 
 #[cfg(feature = "biophys-l4-hypothalamus-assets")]
-type PoolMap = std::collections::BTreeMap<&'static str, Vec<u32>>;
+type PoolMap = std::collections::BTreeMap<String, Vec<u32>>;
 
 #[cfg(feature = "biophys-l4-hypothalamus-assets")]
 fn pool_map_from_labels(morph: &MorphologySet) -> Result<PoolMap, AssetBuildError> {
@@ -1643,7 +1643,10 @@ fn pool_map_from_labels(morph: &MorphologySet) -> Result<PoolMap, AssetBuildErro
                 message: format!("unknown pool label {pool} for neuron {}", neuron.neuron_id),
             });
         }
-        pool_map.entry(pool).or_default().push(neuron.neuron_id);
+        pool_map
+            .entry(pool.to_string())
+            .or_default()
+            .push(neuron.neuron_id);
     }
 
     for pool in POOL_LABELS {
@@ -1694,30 +1697,33 @@ fn pool_map_from_ranges(morph: &MorphologySet) -> Result<PoolMap, AssetBuildErro
     }
 
     let mut pool_map: PoolMap = std::collections::BTreeMap::new();
-    pool_map.insert("P0", (0..POOL_SIZE as u32).collect());
-    pool_map.insert("P1", ((POOL_SIZE as u32)..(2 * POOL_SIZE) as u32).collect());
+    pool_map.insert("P0".to_string(), (0..POOL_SIZE as u32).collect());
     pool_map.insert(
-        "P2",
+        "P1".to_string(),
+        ((POOL_SIZE as u32)..(2 * POOL_SIZE) as u32).collect(),
+    );
+    pool_map.insert(
+        "P2".to_string(),
         ((2 * POOL_SIZE) as u32..(3 * POOL_SIZE) as u32).collect(),
     );
     pool_map.insert(
-        "P3",
+        "P3".to_string(),
         ((3 * POOL_SIZE) as u32..(4 * POOL_SIZE) as u32).collect(),
     );
     pool_map.insert(
-        "O_SIM",
+        "O_SIM".to_string(),
         ((4 * POOL_SIZE) as u32..(5 * POOL_SIZE) as u32).collect(),
     );
     pool_map.insert(
-        "O_EXP",
+        "O_EXP".to_string(),
         ((5 * POOL_SIZE) as u32..(6 * POOL_SIZE) as u32).collect(),
     );
     pool_map.insert(
-        "O_NOV",
+        "O_NOV".to_string(),
         ((6 * POOL_SIZE) as u32..(7 * POOL_SIZE) as u32).collect(),
     );
     pool_map.insert(
-        "INH",
+        "INH".to_string(),
         (EXCITATORY_COUNT as u32..NEURON_COUNT as u32).collect(),
     );
     Ok(pool_map)

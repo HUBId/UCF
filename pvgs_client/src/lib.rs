@@ -59,6 +59,38 @@ pub trait PvgsReader: Send + Sync {
     fn get_asset_bundle(&mut self, _digest: [u8; 32]) -> Result<Option<AssetBundle>, PvgsError> {
         Ok(None)
     }
+
+    fn list_asset_bundles(&mut self) -> Result<Vec<AssetBundle>, PvgsError> {
+        Ok(Vec::new())
+    }
+
+    fn find_asset_bundle_by_manifest_digest(
+        &mut self,
+        manifest_digest: [u8; 32],
+    ) -> Result<Option<AssetBundle>, PvgsError> {
+        let mut bundles = self.list_asset_bundles()?;
+        if bundles.is_empty() {
+            return Ok(self
+                .get_latest_asset_bundle()?
+                .filter(|bundle| manifest_matches(bundle, &manifest_digest)));
+        }
+
+        bundles.retain(|bundle| manifest_matches(bundle, &manifest_digest));
+        bundles.sort_by(|a, b| {
+            a.bundle_digest
+                .cmp(&b.bundle_digest)
+                .then_with(|| a.bundle_id.cmp(&b.bundle_id))
+        });
+        Ok(bundles.into_iter().next())
+    }
+}
+
+fn manifest_matches(bundle: &AssetBundle, digest: &[u8; 32]) -> bool {
+    bundle
+        .manifest
+        .as_ref()
+        .map(|manifest| manifest.manifest_digest.as_slice() == digest)
+        .unwrap_or(false)
 }
 
 pub trait PvgsWriter: Send {
@@ -199,6 +231,10 @@ impl PvgsReader for MockPvgsReader {
         }
         Ok(None)
     }
+
+    fn list_asset_bundles(&mut self) -> Result<Vec<AssetBundle>, PvgsError> {
+        Ok(self.asset_bundles.clone())
+    }
 }
 
 #[derive(Debug, Default)]
@@ -289,6 +325,10 @@ impl PvgsReader for PlaceholderPvgsClient {
     }
 
     fn get_asset_bundle(&mut self, _digest: [u8; 32]) -> Result<Option<AssetBundle>, PvgsError> {
+        Err(PvgsError::NotImplemented)
+    }
+
+    fn list_asset_bundles(&mut self) -> Result<Vec<AssetBundle>, PvgsError> {
         Err(PvgsError::NotImplemented)
     }
 }

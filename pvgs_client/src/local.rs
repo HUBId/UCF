@@ -62,6 +62,10 @@ impl<Q: CbvQuery + PevQuery + AssetBundleQuery> PvgsReader for LocalPvgsReader<Q
     fn get_asset_bundle(&mut self, digest: [u8; 32]) -> Result<Option<AssetBundle>, PvgsError> {
         Ok(self.query.get_asset_bundle(digest))
     }
+
+    fn list_asset_bundles(&mut self) -> Result<Vec<AssetBundle>, PvgsError> {
+        Ok(self.query.list_asset_bundles())
+    }
 }
 
 #[derive(Clone)]

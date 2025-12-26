@@ -86,6 +86,7 @@ pub mod pvgs {
     pub trait AssetBundleQuery: Clone + Send + Sync {
         fn get_latest_asset_bundle(&self) -> Option<AssetBundle>;
         fn get_asset_bundle(&self, digest: [u8; 32]) -> Option<AssetBundle>;
+        fn list_asset_bundles(&self) -> Vec<AssetBundle>;
     }
 
     #[derive(Clone, Default)]
@@ -192,6 +193,15 @@ pub mod pvgs {
 
         fn get_asset_bundle(&self, digest: [u8; 32]) -> Option<AssetBundle> {
             self.asset_bundles.lock().unwrap().get(&digest).cloned()
+        }
+
+        fn list_asset_bundles(&self) -> Vec<AssetBundle> {
+            self.asset_bundles
+                .lock()
+                .unwrap()
+                .values()
+                .cloned()
+                .collect()
         }
     }
 }

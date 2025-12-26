@@ -1043,7 +1043,7 @@ fn build_synapses() -> Vec<SynapseL4> {
 }
 
 #[cfg(feature = "biophys-l4-amygdala-assets")]
-type PoolMap = std::collections::BTreeMap<&'static str, Vec<u32>>;
+type PoolMap = std::collections::BTreeMap<String, Vec<u32>>;
 
 #[cfg(feature = "biophys-l4-amygdala-assets")]
 fn pool_map_from_labels(morph: &MorphologySet) -> Result<PoolMap, AssetBuildError> {
@@ -1096,7 +1096,10 @@ fn pool_map_from_labels(morph: &MorphologySet) -> Result<PoolMap, AssetBuildErro
                 message: format!("unknown pool label {pool} for neuron {}", neuron.neuron_id),
             });
         }
-        pool_map.entry(pool).or_default().push(neuron.neuron_id);
+        pool_map
+            .entry(pool.to_string())
+            .or_default()
+            .push(neuron.neuron_id);
     }
 
     for pool in POOL_LABELS {
@@ -1147,21 +1150,21 @@ fn pool_map_from_ranges(morph: &MorphologySet) -> Result<PoolMap, AssetBuildErro
     }
 
     let mut pool_map: PoolMap = std::collections::BTreeMap::new();
-    pool_map.insert("INTEGRITY", (0..POOL_SIZE as u32).collect());
+    pool_map.insert("INTEGRITY".to_string(), (0..POOL_SIZE as u32).collect());
     pool_map.insert(
-        "EXFIL",
+        "EXFIL".to_string(),
         ((POOL_SIZE as u32)..(2 * POOL_SIZE) as u32).collect(),
     );
     pool_map.insert(
-        "PROBING",
+        "PROBING".to_string(),
         ((2 * POOL_SIZE) as u32..(3 * POOL_SIZE) as u32).collect(),
     );
     pool_map.insert(
-        "TOOLSE",
+        "TOOLSE".to_string(),
         ((3 * POOL_SIZE) as u32..(4 * POOL_SIZE) as u32).collect(),
     );
     pool_map.insert(
-        "INH",
+        "INH".to_string(),
         (EXCITATORY_COUNT as u32..NEURON_COUNT as u32).collect(),
     );
     Ok(pool_map)

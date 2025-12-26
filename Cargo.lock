@@ -1071,6 +1071,29 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "69cdb34c158ceb288df11e18b4bd39de994f6657d83847bdffdbd7f346754b0f"
 
 [[package]]
+name = "replay_executor"
+version = "0.1.0"
+dependencies = [
+ "asset_chunker",
+ "asset_rehydration",
+ "biophys_asset_builder",
+ "biophys_assets",
+ "blake3",
+ "dbm_core",
+ "microcircuit_amygdala_l4",
+ "microcircuit_amygdala_stub",
+ "microcircuit_core",
+ "microcircuit_hypothalamus_l4",
+ "microcircuit_hypothalamus_setpoint",
+ "microcircuit_sn_l4",
+ "microcircuit_sn_stub",
+ "prost",
+ "pvgs_client",
+ "thiserror",
+ "ucf-protocol",
+]
+
+[[package]]
 name = "rsv"
 version = "0.1.0"
 dependencies = [
