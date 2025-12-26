@@ -186,6 +186,7 @@ dependencies = [
  "microcircuit_core",
  "microcircuit_sn_l4",
  "microcircuit_sn_stub",
+ "pvgs_client",
  "thiserror",
 ]
 

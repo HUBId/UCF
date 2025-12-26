@@ -25,8 +25,8 @@ mod proto_bridge;
 use asset_publisher::{AssetPublisherState, DEFAULT_ASSET_NEURONS};
 use microcircuit_publisher::{MicrocircuitDigests, MicrocircuitPublisherState};
 use proto_bridge::{
-    brain_input_from_signal_frame, control_frame_from_brain_output, BaselineContext,
-    ControlFrameContext,
+    brain_input_from_signal_frame, control_frame_from_brain_output, trace_flags_from_frame,
+    BaselineContext, ControlFrameContext,
 };
 
 #[derive(Debug)]
@@ -68,6 +68,8 @@ pub(crate) struct WindowCounters {
     medium_flapping_count: u32,
     medium_replay_mismatch: bool,
 }
+
+const TRACE_FAIL_STREAK_MAX: u8 = 3;
 
 pub struct RegulationEngine {
     pub rsv: RsvState,
@@ -260,6 +262,8 @@ impl RegulationEngine {
         let classified = classify_signal_frame(&frame, &self.config.thresholds);
         apply_classification(&mut self.rsv, &classified, timestamp_ms);
         self.rsv.update_unlock_state(&frame);
+        let (trace_fail_present, _) = trace_flags_from_frame(&frame);
+        self.update_trace_fail_streak(classified.window_kind, trace_fail_present);
 
         update_window_counters(&mut self.counters, &classified);
 
@@ -375,6 +379,26 @@ impl RegulationEngine {
 
         if let Some(cerebellum) = &brain_output.cerebellum {
             self.rsv.divergence = translate_level(cerebellum.divergence);
+        }
+    }
+
+    fn update_trace_fail_streak(
+        &mut self,
+        window_kind: ucf::v1::WindowKind,
+        trace_fail_present: bool,
+    ) {
+        if window_kind != ucf::v1::WindowKind::Medium {
+            return;
+        }
+
+        if trace_fail_present {
+            self.rsv.trace_fail_streak = self
+                .rsv
+                .trace_fail_streak
+                .saturating_add(1)
+                .min(TRACE_FAIL_STREAK_MAX);
+        } else {
+            self.rsv.trace_fail_streak = 0;
         }
     }
 
@@ -1041,6 +1065,8 @@ fn translate_reason_set(reason_set: &dbm_core::ReasonSet) -> Vec<ucf::v1::Reason
             "RC.GV.REPLAY.DIMINISHING_RETURNS" => {
                 Some(ucf::v1::ReasonCode::RcGvReplayDiminishingReturns)
             }
+            "RC.GV.TRACE.FAIL" => Some(ucf::v1::ReasonCode::RcGvTraceFail),
+            "RC.GV.TRACE.PASS" => Some(ucf::v1::ReasonCode::RcGvTracePass),
             reason if reason.starts_with("hpa_") => Some(ucf::v1::ReasonCode::RcGvPevUpdated),
             reason if reason.starts_with("baseline_") => Some(ucf::v1::ReasonCode::RcGvCbvUpdated),
             _ => None,

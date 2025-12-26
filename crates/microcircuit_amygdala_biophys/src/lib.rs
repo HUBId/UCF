@@ -406,6 +406,7 @@ mod tests {
             policy_pressure: LevelClass::Low,
             deny_storm_present: false,
             sealed: None,
+            trace_fail_present: false,
             tool_anomaly_present: false,
             cerebellum_tool_anomaly_present: None,
             tool_anomalies: Vec::new(),

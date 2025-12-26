@@ -47,6 +47,9 @@ impl SerAttractorMicrocircuit {
         if input.flapping_count_medium >= 2 {
             drive += 10;
         }
+        if input.trace_fail_present {
+            drive += 20;
+        }
         if input.integrity == IntegrityState::Ok && input.unlock_present {
             drive -= 10;
         }
@@ -98,8 +101,14 @@ impl MicrocircuitBackend<SerInput, SerOutput> for SerAttractorMicrocircuit {
         if critical {
             stability = LevelClass::High;
         }
+        if input.trace_fail_present && stability == LevelClass::Low {
+            stability = LevelClass::Med;
+        }
 
-        let cooldown_class = if stability == LevelClass::High || input.flapping_count_medium >= 2 {
+        let cooldown_class = if stability == LevelClass::High
+            || input.flapping_count_medium >= 2
+            || input.trace_fail_present
+        {
             CooldownClass::Longer
         } else {
             CooldownClass::Base
@@ -116,6 +125,9 @@ impl MicrocircuitBackend<SerInput, SerOutput> for SerAttractorMicrocircuit {
         }
         if input.flapping_count_medium >= 6 {
             reason_codes.insert("RC.GV.FLAPPING.PENALTY");
+        }
+        if input.trace_fail_present {
+            reason_codes.insert("RC.GV.TRACE.FAIL");
         }
         if input.integrity != IntegrityState::Ok {
             reason_codes.insert("RC.RE.INTEGRITY.DEGRADED/FAIL");

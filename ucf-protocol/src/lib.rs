@@ -88,6 +88,8 @@ pub mod v1 {
         RcGvProgressRewardBlocked = 58,
         RcGvReplayDiminishingReturns = 59,
         RcGvAssetManifestAppended = 60,
+        RcGvTraceFail = 61,
+        RcGvTracePass = 62,
     }
 
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Enumeration)]
