@@ -69,8 +69,8 @@ impl CsrAdjacency {
         let mut row_offsets = vec![0usize; neuron_count.saturating_add(1)];
         let mut col_indices = Vec::with_capacity(edges.len());
         let mut edge_idx = 0usize;
-        for neuron in 0..neuron_count {
-            row_offsets[neuron] = edge_idx;
+        for (neuron, row_offset) in row_offsets.iter_mut().enumerate().take(neuron_count) {
+            *row_offset = edge_idx;
             while edge_idx < edges.len() && edges[edge_idx].pre.0 as usize == neuron {
                 col_indices.push(edge_idx);
                 edge_idx = edge_idx.saturating_add(1);
@@ -898,7 +898,7 @@ fn sort_synapses(
     }
     let mut combined: Vec<(SynapseEdge, StpParams, usize)> = edges
         .into_iter()
-        .zip(stp_params.into_iter())
+        .zip(stp_params)
         .enumerate()
         .map(|(idx, (edge, params))| (edge, params, idx))
         .collect();
