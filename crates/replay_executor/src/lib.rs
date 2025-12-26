@@ -370,14 +370,12 @@ fn digest_from_vec(
 }
 
 fn verify_asset_digest(
-    label: &'static str,
+    _label: &'static str,
     computed: [u8; 32],
     expected: [u8; 32],
 ) -> Result<(), asset_rehydration::RehydrationError> {
     if computed != expected {
-        return Err(asset_rehydration::RehydrationError::DecodeFailed {
-            message: format!("{label} digest mismatch"),
-        });
+        return Err(asset_rehydration::RehydrationError::DecodeFailed);
     }
     Ok(())
 }

@@ -57,3 +57,15 @@ fn spikes_are_bounded_and_deterministic() {
     let expected: Vec<NeuronId> = (0..3).map(NeuronId).collect();
     assert_eq!(pop.spikes, expected);
 }
+
+#[test]
+fn counters_snapshot_is_deterministic() {
+    let mut runtime_a = make_runtime(5);
+    let mut runtime_b = make_runtime(5);
+    for input in [1, 2, 3, 4] {
+        let inputs = vec![input; 10];
+        runtime_a.step(&inputs);
+        runtime_b.step(&inputs);
+    }
+    assert_eq!(runtime_a.counters_snapshot(), runtime_b.counters_snapshot());
+}

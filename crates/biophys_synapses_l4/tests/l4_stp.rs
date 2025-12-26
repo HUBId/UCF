@@ -8,7 +8,7 @@
 use biophys_channels::Leak;
 use biophys_compartmental_solver::{CompartmentChannels, L4Solver, L4State};
 use biophys_core::{ModChannel, STP_SCALE};
-use biophys_event_queue_l4::SpikeEventQueueL4;
+use biophys_event_queue_l4::{QueueLimits, SpikeEventQueueL4};
 use biophys_morphology::{Compartment, CompartmentKind, NeuronMorphology};
 use biophys_plasticity_l4::StdpTrace;
 use biophys_synapses_l4::{
@@ -262,7 +262,7 @@ fn stp_integration_shows_depression_over_repeated_spikes() {
     let mut synapses = vec![build_stp_synapse()];
     let mut syn_states = vec![SynapseState::default()];
     let pre_index = build_pre_index(neurons.len(), &synapses);
-    let mut queue = SpikeEventQueueL4::new(0, 1000);
+    let mut queue = SpikeEventQueueL4::new(0, QueueLimits::new(100_000, 1000));
 
     let mut g_increments = Vec::new();
     for step in 0..4 {
