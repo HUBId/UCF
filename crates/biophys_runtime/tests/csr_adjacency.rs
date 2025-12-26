@@ -67,15 +67,8 @@ fn csr_adjacency_builds_expected_slices() {
         tau_fac_steps: 2,
         mod_channel: None,
     };
-    let runtime = BiophysRuntime::new_with_synapses(
-        params,
-        states,
-        1,
-        10,
-        edges,
-        vec![stp; 4],
-        1000,
-    );
+    let runtime =
+        BiophysRuntime::new_with_synapses(params, states, 1, 10, edges, vec![stp; 4], 1000);
     let sorted_pairs: Vec<(u32, u32)> = runtime
         .edges
         .iter()
