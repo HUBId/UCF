@@ -24,3 +24,7 @@ microcircuit_sn_stub = { path = "../microcircuit_sn_stub", optional = true }
 dbm_core = { path = "../dbm_core", optional = true }
 biophys_assets = { path = "../biophys_assets", optional = true }
 biophys_asset_builder = { path = "../biophys_asset_builder", optional = true }
+
+[[example]]
+name = "generate_sn_trace"
+required-features = ["biophys-trace"]
