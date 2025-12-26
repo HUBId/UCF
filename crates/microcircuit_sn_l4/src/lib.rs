@@ -2477,7 +2477,7 @@ mod asset_tests {
         let chunker = ChunkerConfig {
             max_chunk_bytes: 128,
             compression: Compression::None,
-            max_chunks_total: 512,
+            max_chunks_total: 4096,
             bundle_id_policy: BundleIdPolicy::ManifestDigestPrefix { prefix_len: 8 },
         };
         let mut chunks = Vec::new();
@@ -2525,6 +2525,11 @@ mod asset_tests {
             )
             .expect("conn chunks"),
         );
+        chunks.sort_by(|a, b| {
+            a.asset_digest
+                .cmp(&b.asset_digest)
+                .then_with(|| a.chunk_index.cmp(&b.chunk_index))
+        });
 
         build_asset_bundle_with_policy(
             manifest,
@@ -2713,19 +2718,110 @@ mod asset_tests {
         let morph = sn_l4_morphology_assets();
         let chan = sn_l4_channel_params_assets(&morph);
         let syn = sn_l4_synapse_params_assets();
+        let mut mutated_syn = syn.clone();
+        mutated_syn.params[0].weight_base = (AMPA_G_MAX as i32) + 1;
         let conn = sn_l4_connectivity_assets();
-        let mut bundle = build_asset_bundle(&morph, &chan, &syn, &conn);
-        let mut manifest = bundle.manifest.clone().expect("manifest");
-        if let Some(component) = manifest
-            .components
-            .iter_mut()
-            .find(|component| component.kind == AssetKind::MorphologySet as i32)
-        {
-            component.digest[0] ^= 0xFF;
-        }
+        let created_at_ms = 10;
+        let mut manifest = AssetManifest {
+            manifest_version: 1,
+            created_at_ms,
+            manifest_digest: vec![0u8; 32],
+            components: vec![
+                to_asset_digest(
+                    AssetKind::MorphologySet,
+                    morph.version,
+                    morph.digest(),
+                    created_at_ms,
+                    None,
+                ),
+                to_asset_digest(
+                    AssetKind::ChannelParamsSet,
+                    chan.version,
+                    chan.digest(),
+                    created_at_ms,
+                    None,
+                ),
+                to_asset_digest(
+                    AssetKind::SynapseParamsSet,
+                    syn.version,
+                    syn.digest(),
+                    created_at_ms,
+                    None,
+                ),
+                to_asset_digest(
+                    AssetKind::ConnectivityGraph,
+                    conn.version,
+                    conn.digest(),
+                    created_at_ms,
+                    None,
+                ),
+            ],
+        };
         let manifest_digest = compute_manifest_digest(&manifest);
         manifest.manifest_digest = manifest_digest.to_vec();
-        bundle.manifest = Some(manifest);
+
+        let chunker = ChunkerConfig {
+            max_chunk_bytes: 128,
+            compression: Compression::None,
+            max_chunks_total: 4096,
+            bundle_id_policy: BundleIdPolicy::ManifestDigestPrefix { prefix_len: 8 },
+        };
+        let mut chunks = Vec::new();
+        chunks.extend(
+            chunk_asset(
+                AssetKind::MorphologySet,
+                morph.version,
+                morph.digest(),
+                &morph.to_canonical_bytes(),
+                &chunker,
+                created_at_ms,
+            )
+            .expect("morph chunks"),
+        );
+        chunks.extend(
+            chunk_asset(
+                AssetKind::ChannelParamsSet,
+                chan.version,
+                chan.digest(),
+                &chan.to_canonical_bytes(),
+                &chunker,
+                created_at_ms,
+            )
+            .expect("channel chunks"),
+        );
+        chunks.extend(
+            chunk_asset(
+                AssetKind::SynapseParamsSet,
+                syn.version,
+                syn.digest(),
+                &mutated_syn.to_canonical_bytes(),
+                &chunker,
+                created_at_ms,
+            )
+            .expect("syn chunks"),
+        );
+        chunks.extend(
+            chunk_asset(
+                AssetKind::ConnectivityGraph,
+                conn.version,
+                conn.digest(),
+                &conn.to_canonical_bytes(),
+                &chunker,
+                created_at_ms,
+            )
+            .expect("conn chunks"),
+        );
+        chunks.sort_by(|a, b| {
+            a.asset_digest
+                .cmp(&b.asset_digest)
+                .then_with(|| a.chunk_index.cmp(&b.chunk_index))
+        });
+        let bundle = build_asset_bundle_with_policy(
+            manifest,
+            chunks,
+            created_at_ms,
+            BundleIdPolicy::ManifestDigestPrefix { prefix_len: 8 },
+        );
 
         let rehydrator = AssetRehydrator::new();
         let err = SnL4Microcircuit::new_from_asset_bundle(&bundle, &rehydrator)
