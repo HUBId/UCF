@@ -12,3 +12,4 @@ blake3 = "1"
 biophys = []
 biophys-l4 = ["biophys"]
 biophys-l4-synapses = ["biophys-l4"]
+biophys-parallel = []

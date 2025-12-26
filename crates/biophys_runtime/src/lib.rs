@@ -2,7 +2,7 @@
 
 use biophys_core::{
     clamp_i32, clamp_usize, level_mul, LifParams, LifState, ModChannel, ModLevel, ModulatorField,
-    NeuronId, PopCode, StpParams, SynapseEdge, STP_SCALE,
+    NeuronId, PartitionPlan, PopCode, StpParams, SynapseEdge, STP_SCALE,
 };
 use biophys_solver::{LifSolver, StepSolver};
 
@@ -49,6 +49,141 @@ pub struct RuntimeCounters {
     pub max_bucket_depth_seen: u32,
     pub compactions_run: u32,
     pub asset_bytes_decoded: u64,
+}
+
+fn compute_effective_weight(mods: ModulatorField, weight_base: i32, channel: ModChannel) -> i32 {
+    let mult = match channel {
+        ModChannel::None => 100,
+        ModChannel::Na => level_mul(mods.na),
+        ModChannel::Da => level_mul(mods.da),
+        ModChannel::Ht => level_mul(mods.ht),
+        ModChannel::NaDa => {
+            let na = level_mul(mods.na) as i64;
+            let da = level_mul(mods.da) as i64;
+            ((na * da) / 100) as i32
+        }
+    };
+    let scaled = (weight_base as i64 * mult as i64) / 100;
+    clamp_i32(scaled as i32, MIN_EFFECTIVE_WEIGHT, MAX_EFFECTIVE_WEIGHT)
+}
+
+fn modulated_stp_params(mods: ModulatorField, edge: &SynapseEdge, base: StpParams) -> StpParams {
+    let channel = base.mod_channel.unwrap_or(edge.mod_channel);
+    match channel {
+        ModChannel::Da | ModChannel::NaDa => {
+            if mods.da == ModLevel::High {
+                let u = (base.u as i32 + 50).clamp(0, STP_SCALE as i32) as u16;
+                StpParams { u, ..base }
+            } else {
+                base
+            }
+        }
+        ModChannel::Ht => {
+            if mods.ht == ModLevel::High {
+                let tau_rec_steps =
+                    (base.tau_rec_steps as u32 + 5).min(MAX_TAU_REC_STEPS as u32) as u16;
+                StpParams {
+                    tau_rec_steps,
+                    ..base
+                }
+            } else {
+                base
+            }
+        }
+        _ => base,
+    }
+}
+
+fn deliver_events(
+    step_count: u64,
+    event_queue: &mut [Vec<SpikeEvent>],
+    syn_inputs: &mut [i32],
+    counters: &mut RuntimeCounters,
+) {
+    if event_queue.is_empty() {
+        return;
+    }
+    let bucket = (step_count as usize) % event_queue.len();
+    let mut events = std::mem::take(&mut event_queue[bucket]);
+    counters.events_delivered = counters
+        .events_delivered
+        .saturating_add(events.len() as u64);
+    events.sort_by_key(|event| event.post.0);
+    for event in events {
+        let post_idx = event.post.0 as usize;
+        if post_idx < syn_inputs.len() {
+            syn_inputs[post_idx] = syn_inputs[post_idx].saturating_add(event.current);
+        }
+    }
+}
+
+fn schedule_spikes(
+    spikes: &[NeuronId],
+    step_count: u64,
+    pre_index: &[Vec<usize>],
+    edges: &mut [SynapseEdge],
+    stp_params: &[StpParams],
+    mods: ModulatorField,
+    event_queue: &mut [Vec<SpikeEvent>],
+    max_events_per_step: usize,
+    dropped_event_count: &mut u64,
+    counters: &mut RuntimeCounters,
+) {
+    if event_queue.is_empty() || edges.is_empty() {
+        return;
+    }
+    for spike in spikes {
+        let pre_idx = spike.0 as usize;
+        if pre_idx >= pre_index.len() {
+            continue;
+        }
+        for &edge_idx in &pre_index[pre_idx] {
+            let edge = &mut edges[edge_idx];
+            let params = stp_params[edge_idx];
+            let effective_params = modulated_stp_params(mods, edge, params);
+            let released = edge.stp.on_spike(effective_params);
+            let current = (edge.weight_effective as i64 * released as i64 / 1000) as i32;
+            let deliver_at_step = step_count.saturating_add(edge.delay_steps as u64);
+            let bucket = (deliver_at_step as usize) % event_queue.len();
+            if event_queue[bucket].len() >= max_events_per_step {
+                *dropped_event_count = dropped_event_count.saturating_add(1);
+                counters.events_dropped = counters.events_dropped.saturating_add(1);
+                continue;
+            }
+            event_queue[bucket].push(SpikeEvent {
+                deliver_at_step,
+                post: edge.post,
+                current,
+            });
+            counters.events_pushed = counters.events_pushed.saturating_add(1);
+            let depth = event_queue[bucket].len() as u32;
+            if depth > counters.max_bucket_depth_seen {
+                counters.max_bucket_depth_seen = depth;
+            }
+        }
+    }
+}
+
+fn step_partition(
+    dt_ms: u16,
+    params: &[LifParams],
+    states: &mut [LifState],
+    inputs: &[i32],
+    syn_inputs: &[i32],
+    spike_buffer: &mut Vec<NeuronId>,
+    neuron_start: u32,
+    max_spikes: usize,
+) {
+    spike_buffer.clear();
+    for idx in 0..states.len() {
+        let mut solver = LifSolver::new(params[idx], dt_ms);
+        let total_input = inputs[idx].saturating_add(syn_inputs[idx]);
+        if solver.step(&mut states[idx], &total_input) {
+            spike_buffer.push(NeuronId(neuron_start + idx as u32));
+        }
+    }
+    let max_spikes = clamp_usize(spike_buffer.len(), max_spikes);
+    spike_buffer.truncate(max_spikes);
 }
 
 impl BiophysRuntime {
@@ -123,28 +258,19 @@ impl BiophysRuntime {
         if !self.edges.is_empty() {
             for (edge, params) in self.edges.iter_mut().zip(self.stp_params.iter().copied()) {
                 edge.weight_effective =
-                    Self::compute_effective_weight(mods, edge.weight_base, edge.mod_channel);
-                let effective_params = Self::modulated_stp_params(mods, edge, params);
+                    compute_effective_weight(mods, edge.weight_base, edge.mod_channel);
+                let effective_params = modulated_stp_params(mods, edge, params);
                 edge.stp.update_between_spikes(effective_params);
             }
         }
 
         let mut syn_inputs = vec![0i32; self.states.len()];
-        if !self.event_queue.is_empty() {
-            let bucket = (self.step_count as usize) % self.event_queue.len();
-            let mut events = std::mem::take(&mut self.event_queue[bucket]);
-            self.counters.events_delivered = self
-                .counters
-                .events_delivered
-                .saturating_add(events.len() as u64);
-            events.sort_by_key(|event| event.post.0);
-            for event in events {
-                let post_idx = event.post.0 as usize;
-                if post_idx < syn_inputs.len() {
-                    syn_inputs[post_idx] = syn_inputs[post_idx].saturating_add(event.current);
-                }
-            }
-        }
+        deliver_events(
+            self.step_count,
+            &mut self.event_queue,
+            &mut syn_inputs,
+            &mut self.counters,
+        );
         let mut spikes = Vec::new();
         for (idx, (state, params)) in self.states.iter_mut().zip(self.params.iter()).enumerate() {
             let mut solver = LifSolver::new(*params, self.dt_ms);
@@ -161,39 +287,18 @@ impl BiophysRuntime {
             .spikes_total
             .saturating_add(spikes.len() as u64);
 
-        if !self.edges.is_empty() {
-            for spike in &spikes {
-                let pre_idx = spike.0 as usize;
-                if pre_idx >= self.pre_index.len() {
-                    continue;
-                }
-                for &edge_idx in &self.pre_index[pre_idx] {
-                    let edge = &mut self.edges[edge_idx];
-                    let params = self.stp_params[edge_idx];
-                    let effective_params = Self::modulated_stp_params(mods, edge, params);
-                    let released = edge.stp.on_spike(effective_params);
-                    let current = (edge.weight_effective as i64 * released as i64 / 1000) as i32;
-                    let deliver_at_step = self.step_count.saturating_add(edge.delay_steps as u64);
-                    let bucket = (deliver_at_step as usize) % self.event_queue.len();
-                    if self.event_queue[bucket].len() >= self.max_events_per_step {
-                        self.dropped_event_count = self.dropped_event_count.saturating_add(1);
-                        self.counters.events_dropped =
-                            self.counters.events_dropped.saturating_add(1);
-                        continue;
-                    }
-                    self.event_queue[bucket].push(SpikeEvent {
-                        deliver_at_step,
-                        post: edge.post,
-                        current,
-                    });
-                    self.counters.events_pushed = self.counters.events_pushed.saturating_add(1);
-                    let depth = self.event_queue[bucket].len() as u32;
-                    if depth > self.counters.max_bucket_depth_seen {
-                        self.counters.max_bucket_depth_seen = depth;
-                    }
-                }
-            }
-        }
+        schedule_spikes(
+            &spikes,
+            self.step_count,
+            &self.pre_index,
+            &mut self.edges,
+            &self.stp_params,
+            mods,
+            &mut self.event_queue,
+            self.max_events_per_step,
+            &mut self.dropped_event_count,
+            &mut self.counters,
+        );
         self.step_count = self.step_count.saturating_add(1);
         PopCode { spikes }
     }
@@ -252,56 +357,347 @@ impl BiophysRuntime {
         update_u64(&mut hasher, self.dropped_event_count);
         *hasher.finalize().as_bytes()
     }
+}
 
-    fn compute_effective_weight(
-        mods: ModulatorField,
-        weight_base: i32,
-        channel: ModChannel,
-    ) -> i32 {
-        let mult = match channel {
-            ModChannel::None => 100,
-            ModChannel::Na => level_mul(mods.na),
-            ModChannel::Da => level_mul(mods.da),
-            ModChannel::Ht => level_mul(mods.ht),
-            ModChannel::NaDa => {
-                let na = level_mul(mods.na) as i64;
-                let da = level_mul(mods.da) as i64;
-                ((na * da) / 100) as i32
-            }
-        };
-        let scaled = (weight_base as i64 * mult as i64) / 100;
-        clamp_i32(scaled as i32, MIN_EFFECTIVE_WEIGHT, MAX_EFFECTIVE_WEIGHT)
+#[derive(Debug, Clone)]
+pub struct PartitionedRuntime {
+    pub params: Vec<LifParams>,
+    pub states: Vec<LifState>,
+    pub dt_ms: u16,
+    pub step_count: u64,
+    pub max_spikes_per_step: usize,
+    pub current_modulators: ModulatorField,
+    pub edges: Vec<SynapseEdge>,
+    pub stp_params: Vec<StpParams>,
+    pub pre_index: Vec<Vec<usize>>,
+    pub event_queue: Vec<Vec<SpikeEvent>>,
+    pub max_events_per_step: usize,
+    pub dropped_event_count: u64,
+    counters: RuntimeCounters,
+    pub partition_plan: PartitionPlan,
+    partition_spike_buffers: Vec<Vec<NeuronId>>,
+    partition_input_buffers: Vec<Vec<i32>>,
+    partition_merge_order: Vec<usize>,
+}
+
+impl PartitionedRuntime {
+    pub fn new(
+        params: Vec<LifParams>,
+        states: Vec<LifState>,
+        dt_ms: u16,
+        max_spikes_per_step: usize,
+        partition_plan: PartitionPlan,
+    ) -> Self {
+        Self::new_with_synapses(
+            params,
+            states,
+            dt_ms,
+            max_spikes_per_step,
+            partition_plan,
+            Vec::new(),
+            Vec::new(),
+            50_000,
+        )
     }
 
-    fn modulated_stp_params(
-        mods: ModulatorField,
-        edge: &SynapseEdge,
-        base: StpParams,
-    ) -> StpParams {
-        let channel = base.mod_channel.unwrap_or(edge.mod_channel);
-        match channel {
-            ModChannel::Da | ModChannel::NaDa => {
-                if mods.da == ModLevel::High {
-                    let u = (base.u as i32 + 50).clamp(0, STP_SCALE as i32) as u16;
-                    StpParams { u, ..base }
-                } else {
-                    base
-                }
-            }
-            ModChannel::Ht => {
-                if mods.ht == ModLevel::High {
-                    let tau_rec_steps =
-                        (base.tau_rec_steps as u32 + 5).min(MAX_TAU_REC_STEPS as u32) as u16;
-                    StpParams {
-                        tau_rec_steps,
-                        ..base
-                    }
-                } else {
-                    base
-                }
-            }
-            _ => base,
+    pub fn new_with_synapses(
+        params: Vec<LifParams>,
+        states: Vec<LifState>,
+        dt_ms: u16,
+        max_spikes_per_step: usize,
+        partition_plan: PartitionPlan,
+        edges: Vec<SynapseEdge>,
+        stp_params: Vec<StpParams>,
+        max_events_per_step: usize,
+    ) -> Self {
+        assert!(dt_ms > 0, "dt_ms must be non-zero");
+        assert_eq!(params.len(), states.len(), "params/state mismatch");
+        assert!(
+            edges.is_empty() || edges.len() == stp_params.len(),
+            "edges/stp_params mismatch"
+        );
+        partition_plan
+            .validate(states.len() as u32)
+            .expect("invalid partition plan");
+        let mut pre_index = vec![Vec::new(); states.len()];
+        let mut max_delay = 0u16;
+        for (idx, edge) in edges.iter().enumerate() {
+            let pre_idx = edge.pre.0 as usize;
+            let post_idx = edge.post.0 as usize;
+            assert!(pre_idx < states.len(), "edge pre out of range");
+            assert!(post_idx < states.len(), "edge post out of range");
+            pre_index[pre_idx].push(idx);
+            max_delay = max_delay.max(edge.delay_steps);
         }
+        let queue_len = max_delay as usize + 1;
+        let partition_spike_buffers = vec![Vec::new(); partition_plan.partitions.len()];
+        let partition_input_buffers = partition_plan
+            .partitions
+            .iter()
+            .map(|partition| vec![0i32; partition.len() as usize])
+            .collect();
+        let mut partition_merge_order: Vec<usize> = (0..partition_plan.partitions.len()).collect();
+        partition_merge_order.sort_by_key(|idx| partition_plan.partitions[*idx].id);
+        Self {
+            params,
+            states,
+            dt_ms,
+            step_count: 0,
+            max_spikes_per_step,
+            current_modulators: ModulatorField::default(),
+            edges,
+            stp_params,
+            pre_index,
+            event_queue: vec![Vec::new(); queue_len.max(1)],
+            max_events_per_step,
+            dropped_event_count: 0,
+            counters: RuntimeCounters::default(),
+            partition_plan,
+            partition_spike_buffers,
+            partition_input_buffers,
+            partition_merge_order,
+        }
+    }
+
+    pub fn set_modulators(&mut self, mods: ModulatorField) {
+        self.current_modulators = mods;
+    }
+
+    pub fn step(&mut self, inputs: &[i32]) -> PopCode {
+        #[cfg(feature = "biophys-parallel")]
+        {
+            return self.step_parallel(inputs);
+        }
+        #[cfg(not(feature = "biophys-parallel"))]
+        {
+            return self.step_serial(inputs);
+        }
+    }
+
+    pub fn step_serial(&mut self, inputs: &[i32]) -> PopCode {
+        self.step_inner(inputs, false)
+    }
+
+    #[cfg(feature = "biophys-parallel")]
+    pub fn step_parallel(&mut self, inputs: &[i32]) -> PopCode {
+        self.step_inner(inputs, true)
+    }
+
+    pub fn partition_spike_buffer_sizes(&self) -> Vec<usize> {
+        self.partition_spike_buffers
+            .iter()
+            .map(|buffer| buffer.len())
+            .collect()
+    }
+
+    pub fn counters_snapshot(&self) -> RuntimeCounters {
+        self.counters
+    }
+
+    pub fn config_digest(&self) -> [u8; 32] {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(b"UCF:BIO:CFG");
+        update_u16(&mut hasher, self.dt_ms);
+        update_u32(&mut hasher, self.params.len() as u32);
+        for params in &self.params {
+            update_u16(&mut hasher, params.tau_ms);
+            update_i32(&mut hasher, params.v_rest);
+            update_i32(&mut hasher, params.v_reset);
+            update_i32(&mut hasher, params.v_threshold);
+        }
+        update_u32(&mut hasher, self.edges.len() as u32);
+        for (edge, params) in self.edges.iter().zip(self.stp_params.iter()) {
+            update_u32(&mut hasher, edge.pre.0);
+            update_u32(&mut hasher, edge.post.0);
+            update_i32(&mut hasher, edge.weight_base);
+            update_u16(&mut hasher, edge.delay_steps);
+            update_u8(&mut hasher, mod_channel_code(edge.mod_channel));
+            update_u16(&mut hasher, params.u);
+            update_u16(&mut hasher, params.tau_rec_steps);
+            update_u16(&mut hasher, params.tau_fac_steps);
+            update_u8(
+                &mut hasher,
+                mod_channel_code(params.mod_channel.unwrap_or_default()),
+            );
+        }
+        update_u32(&mut hasher, self.max_events_per_step as u32);
+        update_u32(&mut hasher, self.partition_plan.partitions.len() as u32);
+        for partition in &self.partition_plan.partitions {
+            update_u16(&mut hasher, partition.id);
+            update_u32(&mut hasher, partition.neuron_start);
+            update_u32(&mut hasher, partition.neuron_end);
+        }
+        *hasher.finalize().as_bytes()
+    }
+
+    pub fn snapshot_digest(&self) -> [u8; 32] {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(b"UCF:BIO:SNAP");
+        update_u64(&mut hasher, self.step_count);
+        update_u32(&mut hasher, self.states.len() as u32);
+        for state in &self.states {
+            update_i32(&mut hasher, state.v);
+            update_u16(&mut hasher, state.refractory_steps);
+        }
+        update_u32(&mut hasher, self.edges.len() as u32);
+        for edge in &self.edges {
+            update_u16(&mut hasher, edge.stp.x);
+            update_u16(&mut hasher, edge.stp.u);
+        }
+        update_u8(&mut hasher, mod_level_code(self.current_modulators.na));
+        update_u8(&mut hasher, mod_level_code(self.current_modulators.da));
+        update_u8(&mut hasher, mod_level_code(self.current_modulators.ht));
+        update_u64(&mut hasher, self.dropped_event_count);
+        *hasher.finalize().as_bytes()
+    }
+
+    fn step_inner(&mut self, inputs: &[i32], parallel: bool) -> PopCode {
+        assert_eq!(inputs.len(), self.states.len(), "input length mismatch");
+        self.counters.steps_executed = self.counters.steps_executed.saturating_add(1);
+        let mods = self.current_modulators;
+        if !self.edges.is_empty() {
+            for (edge, params) in self.edges.iter_mut().zip(self.stp_params.iter().copied()) {
+                edge.weight_effective =
+                    compute_effective_weight(mods, edge.weight_base, edge.mod_channel);
+                let effective_params = modulated_stp_params(mods, edge, params);
+                edge.stp.update_between_spikes(effective_params);
+            }
+        }
+
+        let mut syn_inputs = vec![0i32; self.states.len()];
+        deliver_events(
+            self.step_count,
+            &mut self.event_queue,
+            &mut syn_inputs,
+            &mut self.counters,
+        );
+        self.fill_partition_inputs(&syn_inputs);
+
+        #[cfg(feature = "biophys-parallel")]
+        if parallel {
+            self.step_partitions_parallel(inputs);
+        } else {
+            self.step_partitions_serial(inputs);
+        }
+        #[cfg(not(feature = "biophys-parallel"))]
+        {
+            let _ = parallel;
+            self.step_partitions_serial(inputs);
+        }
+
+        let mut merged_spikes = Vec::new();
+        for &partition_idx in &self.partition_merge_order {
+            merged_spikes.extend_from_slice(&self.partition_spike_buffers[partition_idx]);
+        }
+        merged_spikes.sort_by_key(|id| id.0);
+        let max_spikes = clamp_usize(merged_spikes.len(), self.max_spikes_per_step);
+        merged_spikes.truncate(max_spikes);
+        self.counters.spikes_total = self
+            .counters
+            .spikes_total
+            .saturating_add(merged_spikes.len() as u64);
+
+        schedule_spikes(
+            &merged_spikes,
+            self.step_count,
+            &self.pre_index,
+            &mut self.edges,
+            &self.stp_params,
+            mods,
+            &mut self.event_queue,
+            self.max_events_per_step,
+            &mut self.dropped_event_count,
+            &mut self.counters,
+        );
+        self.step_count = self.step_count.saturating_add(1);
+        PopCode {
+            spikes: merged_spikes,
+        }
+    }
+
+    fn fill_partition_inputs(&mut self, syn_inputs: &[i32]) {
+        for (partition, buffer) in self
+            .partition_plan
+            .partitions
+            .iter()
+            .zip(self.partition_input_buffers.iter_mut())
+        {
+            let start = partition.neuron_start as usize;
+            let end = partition.neuron_end as usize;
+            buffer.clear();
+            buffer.extend_from_slice(&syn_inputs[start..end]);
+        }
+    }
+
+    fn step_partitions_serial(&mut self, inputs: &[i32]) {
+        for (partition_idx, partition) in self.partition_plan.partitions.iter().enumerate() {
+            let start = partition.neuron_start as usize;
+            let end = partition.neuron_end as usize;
+            let params = &self.params[start..end];
+            let states = &mut self.states[start..end];
+            let inputs = &inputs[start..end];
+            let syn_inputs = &self.partition_input_buffers[partition_idx];
+            let buffer = &mut self.partition_spike_buffers[partition_idx];
+            step_partition(
+                self.dt_ms,
+                params,
+                states,
+                inputs,
+                syn_inputs,
+                buffer,
+                partition.neuron_start,
+                self.max_spikes_per_step,
+            );
+        }
+    }
+
+    #[cfg(feature = "biophys-parallel")]
+    fn step_partitions_parallel(&mut self, inputs: &[i32]) {
+        let mut offset = 0usize;
+        let mut params_slice = self.params.as_slice();
+        let mut states_slice = self.states.as_mut_slice();
+        let mut inputs_slice = inputs;
+        let mut syn_inputs_slice = self.partition_input_buffers.as_slice();
+        let mut spike_buffers_slice = self.partition_spike_buffers.as_mut_slice();
+
+        std::thread::scope(|scope| {
+            for partition in &self.partition_plan.partitions {
+                let partition_len = partition.len() as usize;
+                let start = partition.neuron_start as usize;
+                assert_eq!(start, offset, "partition order mismatch");
+                let (params_chunk, params_rest) = params_slice.split_at(partition_len);
+                let (states_chunk, states_rest) = states_slice.split_at_mut(partition_len);
+                let (inputs_chunk, inputs_rest) = inputs_slice.split_at(partition_len);
+                let (syn_inputs_chunk, syn_inputs_rest) = syn_inputs_slice.split_at(1);
+                let (spike_buffer_chunk, spike_buffer_rest) = spike_buffers_slice.split_at_mut(1);
+
+                let syn_inputs_chunk = &syn_inputs_chunk[0];
+                let spike_buffer_chunk = &mut spike_buffer_chunk[0];
+                let dt_ms = self.dt_ms;
+                let max_spikes = self.max_spikes_per_step;
+                let neuron_start = partition.neuron_start;
+
+                scope.spawn(move || {
+                    step_partition(
+                        dt_ms,
+                        params_chunk,
+                        states_chunk,
+                        inputs_chunk,
+                        syn_inputs_chunk,
+                        spike_buffer_chunk,
+                        neuron_start,
+                        max_spikes,
+                    );
+                });
+
+                offset = offset.saturating_add(partition_len);
+                params_slice = params_rest;
+                states_slice = states_rest;
+                inputs_slice = inputs_rest;
+                syn_inputs_slice = syn_inputs_rest;
+                spike_buffers_slice = spike_buffer_rest;
+            }
+        });
     }
 }
 
@@ -312,6 +708,16 @@ impl BiophysCircuit<[i32], PopCode> for BiophysRuntime {
 
     fn config_digest(&self) -> [u8; 32] {
         BiophysRuntime::config_digest(self)
+    }
+}
+
+impl BiophysCircuit<[i32], PopCode> for PartitionedRuntime {
+    fn step(&mut self, input: &[i32]) -> PopCode {
+        PartitionedRuntime::step(self, input)
+    }
+
+    fn config_digest(&self) -> [u8; 32] {
+        PartitionedRuntime::config_digest(self)
     }
 }
 
