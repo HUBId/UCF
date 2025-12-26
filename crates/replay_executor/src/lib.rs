@@ -280,7 +280,7 @@ fn rehydrate_assets(
     let manifest = bundle
         .manifest
         .as_ref()
-        .ok_or_else(|| asset_rehydration::RehydrationError::MissingManifest)?;
+        .ok_or(asset_rehydration::RehydrationError::MissingManifest)?;
     let morph_digest = manifest_digest_for_kind(manifest, AssetKind::MorphologySet)?;
     let chan_digest = manifest_digest_for_kind(manifest, AssetKind::ChannelParamsSet)?;
     let syn_digest = manifest_digest_for_kind(manifest, AssetKind::SynapseParamsSet)?;

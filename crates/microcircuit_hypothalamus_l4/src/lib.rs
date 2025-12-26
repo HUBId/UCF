@@ -2577,7 +2577,7 @@ mod asset_tests {
         let chan = hypo_channel_params_assets(&morph);
         let syn = hypo_synapse_params_assets();
         let conn = hypo_connectivity_assets();
-        let bundle = build_asset_bundle(&morph, &chan, &syn, &conn);
+        let bundle = build_asset_bundle(&morph, &chan, &syn, &conn, None, None);
         let rehydrator = AssetRehydrator::new();
 
         let circuit =
