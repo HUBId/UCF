@@ -8,7 +8,7 @@
 use biophys_channels::Leak;
 use biophys_compartmental_solver::{CompartmentChannels, L4Solver, L4State};
 use biophys_core::{ModChannel, STP_SCALE};
-use biophys_event_queue_l4::SpikeEventQueueL4;
+use biophys_event_queue_l4::{QueueLimits, SpikeEventQueueL4};
 use biophys_morphology::{Compartment, CompartmentKind, NeuronMorphology};
 use biophys_plasticity_l4::StdpTrace;
 use biophys_synapses_l4::{
@@ -180,7 +180,7 @@ fn nmda_determinism_matches_between_runs() {
             build_single_compartment_neuron(1, -65.0),
         ];
         let mut syn_states = vec![SynapseState::default(); synapses.len()];
-        let mut queue = SpikeEventQueueL4::new(1, 1000);
+        let mut queue = SpikeEventQueueL4::new(1, QueueLimits::new(100_000, 1000));
         let mut spikes = Vec::new();
 
         for step in 0..6 {

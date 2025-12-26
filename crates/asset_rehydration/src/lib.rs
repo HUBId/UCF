@@ -7,6 +7,7 @@ use biophys_assets::{
 };
 use blake3::Hasher;
 use prost::Message;
+use std::io::{Read, Result as IoResult};
 use thiserror::Error;
 use ucf::v1::{
     AssetBundle, AssetChunk, AssetKind, AssetManifest, ChannelParamsSetPayload, Compression,
@@ -16,11 +17,14 @@ use ucf::v1::{
 pub const ASSET_CHUNK_DOMAIN: &str = "UCF:ASSET:CHUNK";
 pub const ASSET_BUNDLE_DOMAIN: &str = "UCF:ASSET:BUNDLE";
 pub const ASSET_MANIFEST_DOMAIN: &str = "UCF:ASSET:MANIFEST";
+pub const MAX_ASSET_BYTES: usize = 8 * 1024 * 1024;
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum RehydrationError {
     #[error("invalid digest length for {label}: {len}")]
     InvalidDigestLength { label: &'static str, len: usize },
+    #[error("asset payload exceeds max bytes")]
+    AssetTooLarge,
     #[error("chunk digest mismatch at index {index}")]
     ChunkDigestMismatch { index: usize },
     #[error("bundle digest mismatch")]
@@ -38,19 +42,108 @@ pub enum RehydrationError {
     #[error("duplicate chunk index {index}")]
     DuplicateChunkIndex { index: u32 },
     #[error("missing chunk index {index}")]
-    MissingChunkIndex { index: u32 },
+    ChunkIndexGap { index: u32 },
     #[error("chunk count mismatch")]
     ChunkCountMismatch,
     #[error("asset version mismatch")]
     AssetVersionMismatch,
     #[error("unsupported compression {compression:?}")]
     UnsupportedCompression { compression: Compression },
-    #[error("decompression failed: {message}")]
-    DecompressionFailed { message: String },
-    #[error("decode failed: {message}")]
-    DecodeFailed { message: String },
+    #[error("decompression failed")]
+    DecompressionFailed,
+    #[error("decode failed")]
+    DecodeFailed,
     #[error("canonical bytes mismatch after decode")]
     CanonicalMismatch,
+}
+
+pub struct ChunkStream<'a> {
+    chunks: Vec<&'a AssetChunk>,
+    idx: usize,
+    reader: Option<ChunkReader<'a>>,
+}
+
+enum ChunkReader<'a> {
+    Raw {
+        data: &'a [u8],
+        offset: usize,
+    },
+    Zstd {
+        decoder: zstd::stream::Decoder<'a, std::io::BufReader<std::io::Cursor<&'a [u8]>>>,
+    },
+}
+
+impl<'a> ChunkStream<'a> {
+    pub fn new(chunks: Vec<&'a AssetChunk>) -> Self {
+        Self {
+            chunks,
+            idx: 0,
+            reader: None,
+        }
+    }
+
+    fn init_reader(&mut self) -> IoResult<()> {
+        let chunk = match self.chunks.get(self.idx) {
+            Some(chunk) => *chunk,
+            None => return Ok(()),
+        };
+        let compression = Compression::try_from(chunk.compression).unwrap_or(Compression::Unknown);
+        self.reader = Some(match compression {
+            Compression::None => ChunkReader::Raw {
+                data: &chunk.payload,
+                offset: 0,
+            },
+            Compression::Zstd => ChunkReader::Zstd {
+                decoder: zstd::stream::Decoder::new(std::io::Cursor::new(chunk.payload.as_slice()))
+                    .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))?,
+            },
+            Compression::Unknown => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "unsupported compression",
+                ))
+            }
+        });
+        Ok(())
+    }
+}
+
+impl Read for ChunkStream<'_> {
+    fn read(&mut self, buf: &mut [u8]) -> IoResult<usize> {
+        if self.reader.is_none() {
+            self.init_reader()?;
+        }
+        loop {
+            let reader = match self.reader.as_mut() {
+                Some(reader) => reader,
+                None => return Ok(0),
+            };
+            let read = match reader {
+                ChunkReader::Raw { data, offset } => {
+                    if *offset >= data.len() {
+                        0
+                    } else {
+                        let remaining = &data[*offset..];
+                        let to_copy = remaining.len().min(buf.len());
+                        buf[..to_copy].copy_from_slice(&remaining[..to_copy]);
+                        *offset += to_copy;
+                        to_copy
+                    }
+                }
+                ChunkReader::Zstd { decoder } => decoder.read(buf)?,
+            };
+            if read == 0 {
+                self.idx += 1;
+                self.reader = None;
+                if self.idx >= self.chunks.len() {
+                    return Ok(0);
+                }
+                self.init_reader()?;
+                continue;
+            }
+            return Ok(read);
+        }
+    }
 }
 
 pub fn verify_asset_bundle(bundle: &AssetBundle) -> Result<(), RehydrationError> {
@@ -123,6 +216,7 @@ pub fn reassemble_asset(
         return Err(RehydrationError::ChunkCountMismatch);
     }
 
+    let mut total_len = 0usize;
     let mut ordered = vec![None; expected_count as usize];
     for chunk in chunks {
         if chunk.chunk_count != expected_count {
@@ -134,34 +228,49 @@ pub fn reassemble_asset(
                 count: expected_count,
             });
         }
+        let compression = Compression::try_from(chunk.compression).unwrap_or(Compression::Unknown);
+        if compression == Compression::Unknown {
+            return Err(RehydrationError::UnsupportedCompression { compression });
+        }
+        if chunk.chunk_digest.len() != 32 {
+            return Err(RehydrationError::InvalidDigestLength {
+                label: "chunk_digest",
+                len: chunk.chunk_digest.len(),
+            });
+        }
+        let computed = chunk_digest(&chunk.payload);
+        if chunk.chunk_digest.as_slice() != computed.as_slice() {
+            return Err(RehydrationError::ChunkDigestMismatch {
+                index: chunk.chunk_index as usize,
+            });
+        }
         let slot = &mut ordered[chunk.chunk_index as usize];
         if slot.is_some() {
             return Err(RehydrationError::DuplicateChunkIndex {
                 index: chunk.chunk_index,
             });
         }
+        total_len = total_len.saturating_add(chunk.payload.len());
         *slot = Some(chunk);
     }
 
-    let mut payload = Vec::new();
-    for (idx, slot) in ordered.into_iter().enumerate() {
-        let chunk = slot.ok_or(RehydrationError::MissingChunkIndex { index: idx as u32 })?;
-        let compression = Compression::try_from(chunk.compression).unwrap_or(Compression::Unknown);
-        match compression {
-            Compression::None => payload.extend_from_slice(&chunk.payload),
-            Compression::Zstd => {
-                let decoded =
-                    zstd::stream::decode_all(chunk.payload.as_slice()).map_err(|err| {
-                        RehydrationError::DecompressionFailed {
-                            message: err.to_string(),
-                        }
-                    })?;
-                payload.extend_from_slice(&decoded);
-            }
-            Compression::Unknown => {
-                return Err(RehydrationError::UnsupportedCompression { compression });
-            }
-        }
+    if total_len > MAX_ASSET_BYTES {
+        return Err(RehydrationError::AssetTooLarge);
+    }
+
+    let chunks = ordered
+        .into_iter()
+        .enumerate()
+        .map(|(idx, slot)| slot.ok_or(RehydrationError::ChunkIndexGap { index: idx as u32 }))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let mut payload = Vec::with_capacity(total_len);
+    let mut stream = ChunkStream::new(chunks);
+    stream
+        .read_to_end(&mut payload)
+        .map_err(|_| RehydrationError::DecompressionFailed)?;
+    if payload.len() > MAX_ASSET_BYTES {
+        return Err(RehydrationError::AssetTooLarge);
     }
 
     Ok(payload)
@@ -217,63 +326,46 @@ pub fn load_connectivity_payload(
 
 pub fn decode_morphology(bytes: &[u8]) -> Result<MorphologySetPayload, RehydrationError> {
     let mut payload =
-        MorphologySetPayload::decode(bytes).map_err(|err| RehydrationError::DecodeFailed {
-            message: err.to_string(),
-        })?;
+        MorphologySetPayload::decode(bytes).map_err(|_| RehydrationError::DecodeFailed)?;
     normalize_payload_morphology(&mut payload);
     if payload.encode_to_vec() != bytes {
         return Err(RehydrationError::CanonicalMismatch);
     }
-    morphology_from_payload(&payload)
-        .map_err(|message| RehydrationError::DecodeFailed { message })?;
+    morphology_from_payload(&payload).map_err(|_| RehydrationError::DecodeFailed)?;
     Ok(payload)
 }
 
 pub fn decode_channel_params(bytes: &[u8]) -> Result<ChannelParamsSetPayload, RehydrationError> {
     let mut payload =
-        ChannelParamsSetPayload::decode(bytes).map_err(|err| RehydrationError::DecodeFailed {
-            message: err.to_string(),
-        })?;
+        ChannelParamsSetPayload::decode(bytes).map_err(|_| RehydrationError::DecodeFailed)?;
     normalize_payload_channel_params(&mut payload);
     if payload.encode_to_vec() != bytes {
         return Err(RehydrationError::CanonicalMismatch);
     }
-    channel_params_from_payload(&payload)
-        .map_err(|message| RehydrationError::DecodeFailed { message })?;
+    channel_params_from_payload(&payload).map_err(|_| RehydrationError::DecodeFailed)?;
     Ok(payload)
 }
 
 pub fn decode_synapse_params(bytes: &[u8]) -> Result<SynapseParamsSetPayload, RehydrationError> {
     let mut payload =
-        SynapseParamsSetPayload::decode(bytes).map_err(|err| RehydrationError::DecodeFailed {
-            message: err.to_string(),
-        })?;
+        SynapseParamsSetPayload::decode(bytes).map_err(|_| RehydrationError::DecodeFailed)?;
     normalize_payload_synapse_params(&mut payload);
     if payload.encode_to_vec() != bytes {
         return Err(RehydrationError::CanonicalMismatch);
     }
-    synapse_params_from_payload(&payload)
-        .map_err(|message| RehydrationError::DecodeFailed { message })?;
+    synapse_params_from_payload(&payload).map_err(|_| RehydrationError::DecodeFailed)?;
     Ok(payload)
 }
 
 pub fn decode_connectivity(bytes: &[u8]) -> Result<ConnectivityGraphPayload, RehydrationError> {
     let mut payload =
-        ConnectivityGraphPayload::decode(bytes).map_err(|err| RehydrationError::DecodeFailed {
-            message: err.to_string(),
-        })?;
+        ConnectivityGraphPayload::decode(bytes).map_err(|_| RehydrationError::DecodeFailed)?;
     normalize_payload_connectivity(&mut payload);
     if payload.encode_to_vec() != bytes {
         return Err(RehydrationError::CanonicalMismatch);
     }
     if payload.edges.len() > MAX_EDGES {
-        return Err(RehydrationError::DecodeFailed {
-            message: format!(
-                "edge count {} exceeds max {}",
-                payload.edges.len(),
-                MAX_EDGES
-            ),
-        });
+        return Err(RehydrationError::DecodeFailed);
     }
     Ok(payload)
 }
@@ -706,7 +798,7 @@ mod tests {
             .for_each(|(idx, neuron)| neuron.neuron_id = idx as u32);
         let bytes = morph_payload.encode_to_vec();
         let err = decode_morphology(&bytes).expect_err("expected morph bounds error");
-        assert!(matches!(err, RehydrationError::DecodeFailed { .. }));
+        assert!(matches!(err, RehydrationError::DecodeFailed));
 
         let conn_payload = ConnectivityGraphPayload {
             version: 1,
@@ -722,6 +814,33 @@ mod tests {
         };
         let bytes = conn_payload.encode_to_vec();
         let err = decode_connectivity(&bytes).expect_err("expected conn bounds error");
-        assert!(matches!(err, RehydrationError::DecodeFailed { .. }));
+        assert!(matches!(err, RehydrationError::DecodeFailed));
+    }
+
+    #[test]
+    fn asset_too_large_rejected() {
+        let payload = vec![1u8; MAX_ASSET_BYTES + 1];
+        let digest = [7u8; 32];
+        let chunk = AssetChunk {
+            kind: AssetKind::MorphologySet as i32,
+            version: 1,
+            asset_digest: digest.to_vec(),
+            chunk_index: 0,
+            chunk_count: 1,
+            compression: Compression::None as i32,
+            created_at_ms: 0,
+            chunk_digest: chunk_digest(&payload).to_vec(),
+            payload,
+        };
+        let bundle = AssetBundle {
+            bundle_digest: vec![0u8; 32],
+            bundle_id: String::new(),
+            created_at_ms: 0,
+            manifest: None,
+            chunks: vec![chunk],
+        };
+        let err =
+            reassemble_asset(&bundle, AssetKind::MorphologySet, digest).expect_err("too large");
+        assert!(matches!(err, RehydrationError::AssetTooLarge));
     }
 }

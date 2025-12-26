@@ -375,9 +375,7 @@ fn verify_asset_digest(
     expected: [u8; 32],
 ) -> Result<(), asset_rehydration::RehydrationError> {
     if computed != expected {
-        return Err(asset_rehydration::RehydrationError::DecodeFailed {
-            message: format!("{label} digest mismatch"),
-        });
+        return Err(asset_rehydration::RehydrationError::DecodeFailed);
     }
     Ok(())
 }

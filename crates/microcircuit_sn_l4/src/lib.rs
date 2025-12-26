@@ -5,7 +5,7 @@ use biophys_channels::CaLike;
 use biophys_channels::{Leak, NaK};
 use biophys_compartmental_solver::{CompartmentChannels, L4Solver, L4State};
 use biophys_core::{CompartmentId, ModChannel, ModLevel, ModulatorField, NeuronId};
-use biophys_event_queue_l4::SpikeEventQueueL4;
+use biophys_event_queue_l4::{QueueLimits, RuntimeHealth, SpikeEventQueueL4};
 use biophys_homeostasis_l4::{
     homeostasis_tick, scale_g_max_fixed, HomeoMode, HomeostasisConfig, HomeostasisState,
 };
@@ -126,6 +126,7 @@ struct SnL4State {
     ca_hold_counter: u8,
     #[cfg(feature = "biophys-l4-ca")]
     ca_spike_neurons: Vec<u32>,
+    last_queue_health: RuntimeHealth,
 }
 
 impl Default for SnL4State {
@@ -143,6 +144,7 @@ impl Default for SnL4State {
             ca_hold_counter: 0,
             #[cfg(feature = "biophys-l4-ca")]
             ca_spike_neurons: Vec::new(),
+            last_queue_health: RuntimeHealth::default(),
         }
     }
 }
@@ -315,7 +317,11 @@ impl SnL4Microcircuit {
             .map(|synapse| synapse.delay_steps)
             .max()
             .unwrap_or(0);
-        let queue = SpikeEventQueueL4::new(max_delay, MAX_EVENTS_PER_STEP);
+        let limits = QueueLimits::new(
+            MAX_EVENTS_PER_STEP.saturating_mul(max_delay as usize + 1),
+            MAX_EVENTS_PER_STEP,
+        );
+        let queue = SpikeEventQueueL4::new(max_delay, limits);
         let stdp_traces = vec![StdpTrace::default(); NEURON_COUNT];
         let stdp_spike_flags = vec![false; NEURON_COUNT];
         let mut stdp_config = StdpConfig::default();
@@ -778,7 +784,11 @@ impl SnL4Microcircuit {
             .map(|synapse| synapse.delay_steps)
             .max()
             .unwrap_or(0);
-        self.queue = SpikeEventQueueL4::new(max_delay, MAX_EVENTS_PER_STEP);
+        let limits = QueueLimits::new(
+            MAX_EVENTS_PER_STEP.saturating_mul(max_delay as usize + 1),
+            MAX_EVENTS_PER_STEP,
+        );
+        self.queue = SpikeEventQueueL4::new(max_delay, limits);
     }
 }
 
@@ -849,6 +859,8 @@ impl MicrocircuitBackend<SnInput, SnOutput> for SnL4Microcircuit {
             }
         }
 
+        self.state.last_queue_health = self.queue.finish_tick();
+
         self.update_homeostasis(&spike_counts);
         self.update_pool_accumulators(&spike_counts);
         let (winner_pool, mut switched) = self.select_winner();
@@ -876,6 +888,15 @@ impl MicrocircuitBackend<SnInput, SnOutput> for SnL4Microcircuit {
             DwmMode::Simulate => "RC.GV.DWM.SIMULATE",
             DwmMode::ExecPlan => "RC.GV.DWM.EXEC_PLAN",
         });
+        if self.state.last_queue_health.overflowed {
+            reason_codes.insert("RC.GV.BIO.QUEUE_OVERFLOW");
+        }
+        if self.state.last_queue_health.dropped_events > 0 {
+            reason_codes.insert("RC.GV.BIO.EVENTS_DROPPED");
+        }
+        if self.state.last_queue_health.compacted {
+            reason_codes.insert("RC.GV.BIO.QUEUE_COMPACTED");
+        }
 
         let mut sources = Vec::new();
         if input.isv.integrity == IntegrityState::Fail {

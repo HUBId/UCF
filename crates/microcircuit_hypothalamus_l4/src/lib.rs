@@ -3,7 +3,7 @@
 use biophys_channels::{Leak, NaK};
 use biophys_compartmental_solver::{CompartmentChannels, L4Solver, L4State};
 use biophys_core::{CompartmentId, ModChannel, ModLevel, ModulatorField, NeuronId, STP_SCALE};
-use biophys_event_queue_l4::SpikeEventQueueL4;
+use biophys_event_queue_l4::{QueueLimits, RuntimeHealth, SpikeEventQueueL4};
 use biophys_homeostasis_l4::{
     homeostasis_tick, scale_g_max_fixed, HomeoMode, HomeostasisConfig, HomeostasisState,
 };
@@ -122,6 +122,7 @@ struct HypoL4State {
     forensic_latched: bool,
     stable_counter: u8,
     recovery_guard: u8,
+    last_queue_health: RuntimeHealth,
 }
 
 impl Default for HypoL4State {
@@ -137,6 +138,7 @@ impl Default for HypoL4State {
             forensic_latched: false,
             stable_counter: 0,
             recovery_guard: 0,
+            last_queue_health: RuntimeHealth::default(),
         }
     }
 }
@@ -298,7 +300,11 @@ impl HypothalamusL4Microcircuit {
             .map(|synapse| synapse.delay_steps)
             .max()
             .unwrap_or(0);
-        let queue = SpikeEventQueueL4::new(max_delay, MAX_EVENTS_PER_STEP);
+        let limits = QueueLimits::new(
+            MAX_EVENTS_PER_STEP.saturating_mul(max_delay as usize + 1),
+            MAX_EVENTS_PER_STEP,
+        );
+        let queue = SpikeEventQueueL4::new(max_delay, limits);
         let stdp_traces = vec![StdpTrace::default(); NEURON_COUNT];
         let stdp_spike_flags = vec![false; NEURON_COUNT];
         let mut stdp_config = StdpConfig::default();
@@ -897,6 +903,15 @@ impl HypothalamusL4Microcircuit {
         if overlays.novelty_lock {
             codes.push("RC.RG.OVERLAY.NOVELTY_LOCK".to_string());
         }
+        if self.state.last_queue_health.overflowed {
+            codes.push("RC.GV.BIO.QUEUE_OVERFLOW".to_string());
+        }
+        if self.state.last_queue_health.dropped_events > 0 {
+            codes.push("RC.GV.BIO.EVENTS_DROPPED".to_string());
+        }
+        if self.state.last_queue_health.compacted {
+            codes.push("RC.GV.BIO.QUEUE_COMPACTED".to_string());
+        }
 
         codes.sort();
         codes.dedup();
@@ -937,6 +952,8 @@ impl MicrocircuitBackend<HypoInput, HypoOutput> for HypothalamusL4Microcircuit {
                 spike_counts[spike] = spike_counts[spike].saturating_add(1);
             }
         }
+
+        self.state.last_queue_health = self.queue.finish_tick();
 
         self.update_homeostasis(&spike_counts);
         self.update_pool_accumulators(&spike_counts);

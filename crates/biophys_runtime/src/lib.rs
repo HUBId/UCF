@@ -29,6 +29,7 @@ pub struct BiophysRuntime {
     pub event_queue: Vec<Vec<SpikeEvent>>,
     pub max_events_per_step: usize,
     pub dropped_event_count: u64,
+    counters: RuntimeCounters,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -36,6 +37,18 @@ pub struct SpikeEvent {
     pub deliver_at_step: u64,
     pub post: NeuronId,
     pub current: i32,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RuntimeCounters {
+    pub steps_executed: u64,
+    pub spikes_total: u64,
+    pub events_pushed: u64,
+    pub events_delivered: u64,
+    pub events_dropped: u64,
+    pub max_bucket_depth_seen: u32,
+    pub compactions_run: u32,
+    pub asset_bytes_decoded: u64,
 }
 
 impl BiophysRuntime {
@@ -95,6 +108,7 @@ impl BiophysRuntime {
             event_queue: vec![Vec::new(); queue_len.max(1)],
             max_events_per_step,
             dropped_event_count: 0,
+            counters: RuntimeCounters::default(),
         }
     }
 
@@ -104,6 +118,7 @@ impl BiophysRuntime {
 
     pub fn step(&mut self, inputs: &[i32]) -> PopCode {
         assert_eq!(inputs.len(), self.states.len(), "input length mismatch");
+        self.counters.steps_executed = self.counters.steps_executed.saturating_add(1);
         let mods = self.current_modulators;
         if !self.edges.is_empty() {
             for (edge, params) in self.edges.iter_mut().zip(self.stp_params.iter().copied()) {
@@ -118,6 +133,10 @@ impl BiophysRuntime {
         if !self.event_queue.is_empty() {
             let bucket = (self.step_count as usize) % self.event_queue.len();
             let mut events = std::mem::take(&mut self.event_queue[bucket]);
+            self.counters.events_delivered = self
+                .counters
+                .events_delivered
+                .saturating_add(events.len() as u64);
             events.sort_by_key(|event| event.post.0);
             for event in events {
                 let post_idx = event.post.0 as usize;
@@ -137,6 +156,10 @@ impl BiophysRuntime {
         spikes.sort_by_key(|id| id.0);
         let max_spikes = clamp_usize(spikes.len(), self.max_spikes_per_step);
         spikes.truncate(max_spikes);
+        self.counters.spikes_total = self
+            .counters
+            .spikes_total
+            .saturating_add(spikes.len() as u64);
 
         if !self.edges.is_empty() {
             for spike in &spikes {
@@ -154,6 +177,8 @@ impl BiophysRuntime {
                     let bucket = (deliver_at_step as usize) % self.event_queue.len();
                     if self.event_queue[bucket].len() >= self.max_events_per_step {
                         self.dropped_event_count = self.dropped_event_count.saturating_add(1);
+                        self.counters.events_dropped =
+                            self.counters.events_dropped.saturating_add(1);
                         continue;
                     }
                     self.event_queue[bucket].push(SpikeEvent {
@@ -161,11 +186,20 @@ impl BiophysRuntime {
                         post: edge.post,
                         current,
                     });
+                    self.counters.events_pushed = self.counters.events_pushed.saturating_add(1);
+                    let depth = self.event_queue[bucket].len() as u32;
+                    if depth > self.counters.max_bucket_depth_seen {
+                        self.counters.max_bucket_depth_seen = depth;
+                    }
                 }
             }
         }
         self.step_count = self.step_count.saturating_add(1);
         PopCode { spikes }
+    }
+
+    pub fn counters_snapshot(&self) -> RuntimeCounters {
+        self.counters
     }
 
     pub fn config_digest(&self) -> [u8; 32] {

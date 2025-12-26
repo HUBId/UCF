@@ -7,7 +7,7 @@
 use biophys_channels::Leak;
 use biophys_compartmental_solver::{CompartmentChannels, L4Solver, L4State};
 use biophys_core::{ModChannel, STP_SCALE};
-use biophys_event_queue_l4::SpikeEventQueueL4;
+use biophys_event_queue_l4::{QueueLimits, SpikeEventQueueL4};
 use biophys_morphology::{Compartment, CompartmentKind, NeuronMorphology};
 use biophys_plasticity_l4::StdpTrace;
 use biophys_synapses_l4::{
@@ -161,7 +161,7 @@ fn delay_is_applied_to_synaptic_conductance() {
     }];
     let mut syn_states = vec![SynapseState::default(); synapses.len()];
     let pre_index = build_pre_index(neurons.len(), &synapses);
-    let mut queue = SpikeEventQueueL4::new(2, 100_000);
+    let mut queue = SpikeEventQueueL4::new(2, QueueLimits::new(1_000_000, 100_000));
 
     let mut g_history = Vec::new();
     let mut spike_step = None;
@@ -223,7 +223,7 @@ fn deterministic_runs_match() {
         ];
         let mut syn_states = vec![SynapseState::default(); synapses.len()];
         let pre_index = build_pre_index(neurons.len(), &synapses);
-        let mut queue = SpikeEventQueueL4::new(1, 100_000);
+        let mut queue = SpikeEventQueueL4::new(1, QueueLimits::new(1_000_000, 100_000));
         let mut spikes = Vec::new();
 
         for step in 0..6 {
@@ -258,7 +258,7 @@ fn deterministic_runs_match() {
 
 #[test]
 fn bounded_queue_drops_highest_indices() {
-    let mut queue = SpikeEventQueueL4::new(0, 5);
+    let mut queue = SpikeEventQueueL4::new(0, QueueLimits::new(100, 5));
     let synapse_indices: Vec<usize> = (0..10).collect();
     queue.schedule_spike(0, &synapse_indices, |_| 0, |_| STP_SCALE);
 
@@ -307,7 +307,7 @@ fn synaptic_input_advances_spike_time() {
         } else {
             vec![Vec::new(); neurons.len()]
         };
-        let mut queue = SpikeEventQueueL4::new(1, 100_000);
+        let mut queue = SpikeEventQueueL4::new(1, QueueLimits::new(1_000_000, 100_000));
         let mut first_spike = None;
 
         for step in 0..6 {
