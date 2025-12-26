@@ -1737,7 +1737,7 @@ mod tests {
             .state
             .pool_acc
             .iter()
-            .all(|&acc| acc >= 0 && acc <= ACCUMULATOR_MAX));
+            .all(|&acc| (0..=ACCUMULATOR_MAX).contains(&acc)));
         assert!(circuit
             .state
             .latch_steps
