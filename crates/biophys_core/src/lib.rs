@@ -9,6 +9,71 @@ pub struct SynapseId(pub u32);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct CompartmentId(pub u32);
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Partition {
+    pub id: u16,
+    pub neuron_start: u32,
+    pub neuron_end: u32,
+}
+
+impl Partition {
+    pub fn len(&self) -> u32 {
+        self.neuron_end.saturating_sub(self.neuron_start)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.neuron_start >= self.neuron_end
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PartitionPlan {
+    pub partitions: Vec<Partition>,
+}
+
+impl PartitionPlan {
+    pub fn validate(&self, neuron_count: u32) -> Result<(), String> {
+        use std::collections::HashSet;
+
+        if neuron_count == 0 {
+            if self.partitions.is_empty() {
+                return Ok(());
+            }
+            return Err("partitions provided for empty neuron set".to_string());
+        }
+
+        let mut seen_ids = HashSet::new();
+        let mut expected_start = 0u32;
+        for (idx, partition) in self.partitions.iter().enumerate() {
+            if !seen_ids.insert(partition.id) {
+                return Err(format!("duplicate partition id {}", partition.id));
+            }
+            if partition.neuron_end < partition.neuron_start {
+                return Err(format!(
+                    "partition {} has invalid range {}..{}",
+                    idx, partition.neuron_start, partition.neuron_end
+                ));
+            }
+            if partition.neuron_start != expected_start {
+                return Err(format!(
+                    "partition {} starts at {}, expected {}",
+                    idx, partition.neuron_start, expected_start
+                ));
+            }
+            expected_start = partition.neuron_end;
+        }
+
+        if expected_start != neuron_count {
+            return Err(format!(
+                "partitions end at {}, expected {}",
+                expected_start, neuron_count
+            ));
+        }
+
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ModLevel {
     Low = 0,
