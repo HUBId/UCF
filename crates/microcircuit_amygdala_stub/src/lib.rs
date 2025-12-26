@@ -15,6 +15,7 @@ pub struct AmyInput {
     pub policy_pressure: LevelClass,
     pub deny_storm_present: bool,
     pub sealed: Option<bool>,
+    pub trace_fail_present: bool,
     pub tool_anomaly_present: bool,
     pub cerebellum_tool_anomaly_present: Option<bool>,
     pub tool_anomalies: Vec<(ToolKey, LevelClass)>,
@@ -58,6 +59,7 @@ impl AmyRules {
         let integrity_compromise = sealed
             || matches!(input.integrity, IntegrityState::Fail)
             || input.replay_mismatch_present;
+        let trace_compromise = input.trace_fail_present;
         let exfil_present =
             input.dlp_secret_present || input.dlp_obfuscation_present || input.dlp_stegano_present;
         let probing_present = input.policy_pressure == LevelClass::High;
@@ -79,7 +81,7 @@ impl AmyRules {
             let should_add = match vector {
                 ThreatVector::Exfil => exfil_present,
                 ThreatVector::Probing => probing_present,
-                ThreatVector::IntegrityCompromise => integrity_compromise,
+                ThreatVector::IntegrityCompromise => integrity_compromise || trace_compromise,
                 ThreatVector::RuntimeEscape => false,
                 ThreatVector::ToolSideEffects => tool_side_effects,
             };
@@ -91,6 +93,9 @@ impl AmyRules {
 
         if integrity_compromise {
             reason_codes.insert("RcThIntegrityCompromise");
+        }
+        if trace_compromise {
+            reason_codes.insert("RC.GV.TRACE.FAIL");
         }
 
         if exfil_present {
@@ -106,6 +111,12 @@ impl AmyRules {
 
         let threat = if integrity_compromise || exfil_present || input.receipt_invalid_medium >= 1 {
             LevelClass::High
+        } else if trace_compromise {
+            if input.integrity == IntegrityState::Ok {
+                LevelClass::Med
+            } else {
+                LevelClass::High
+            }
         } else if probing_present {
             LevelClass::Med
         } else if tool_side_effects {

@@ -23,6 +23,7 @@ pub struct RsvState {
     pub unlock_seen: bool,
     pub unlock_stable_windows: u32,
     pub unlock_ready: bool,
+    pub trace_fail_streak: u8,
 }
 
 impl Default for RsvState {
@@ -46,6 +47,7 @@ impl Default for RsvState {
             unlock_seen: false,
             unlock_stable_windows: 0,
             unlock_ready: false,
+            trace_fail_streak: 0,
         }
     }
 }
@@ -175,6 +177,7 @@ mod tests {
         assert!(!state.unlock_seen);
         assert_eq!(state.unlock_stable_windows, 0);
         assert!(!state.unlock_ready);
+        assert_eq!(state.trace_fail_streak, 0);
     }
 
     #[test]

@@ -14,6 +14,7 @@ pub struct SerInput {
     pub flapping_count_medium: u32,
     pub unlock_present: bool,
     pub stability_floor: LevelClass,
+    pub trace_fail_present: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -65,6 +66,9 @@ impl SerRules {
         {
             reason_codes.insert("ser_high_trigger");
             LevelClass::High
+        } else if input.trace_fail_present {
+            reason_codes.insert("RC.GV.TRACE.FAIL");
+            LevelClass::Med
         } else if input.flapping_count_medium >= 2 || input.dlp_critical_count_medium >= 1 {
             reason_codes.insert("ser_med_trigger");
             LevelClass::Med
@@ -104,12 +108,14 @@ impl SerRules {
         self.stability_current = stability.max(desired);
         self.last_was_high = desired == LevelClass::High;
 
-        let cooldown_class =
-            if self.stability_current == LevelClass::High || input.flapping_count_medium >= 2 {
-                CooldownClass::Longer
-            } else {
-                CooldownClass::Base
-            };
+        let cooldown_class = if self.stability_current == LevelClass::High
+            || input.flapping_count_medium >= 2
+            || input.trace_fail_present
+        {
+            CooldownClass::Longer
+        } else {
+            CooldownClass::Base
+        };
 
         let mut deescalation_lock = self.stability_current == LevelClass::High;
         if !input.unlock_present && input.integrity == IntegrityState::Fail {

@@ -26,6 +26,8 @@ use crate::{
 
 const CONTROL_FRAME_DOMAIN: &str = "UCF:HASH:CONTROL_FRAME";
 const CONTROL_FRAME_REASON_MAX_LEN: usize = 16;
+const TRACE_FAIL_REASON: &str = "RC.GV.TRACE.FAIL";
+const TRACE_PASS_REASON: &str = "RC.GV.TRACE.PASS";
 
 #[derive(Debug, Clone)]
 pub struct BaselineContext {
@@ -54,6 +56,7 @@ pub fn brain_input_from_signal_frame(
     now_ms: u64,
 ) -> BrainInput {
     let normalized_frame = normalize_signal_frame(frame);
+    let (trace_fail_present, trace_pass_present) = trace_flags_from_frame(&normalized_frame);
     let BaselineContext {
         cbv,
         cbv_present,
@@ -93,6 +96,7 @@ pub fn brain_input_from_signal_frame(
             flapping_count_medium: counters.medium_flapping_count,
             unlock_present: rsv.unlock_ready,
             stability_floor: BrainLevel::Low,
+            trace_fail_present,
         },
         amygdala: build_amygdala_input(
             &normalized_frame,
@@ -140,6 +144,9 @@ pub fn brain_input_from_signal_frame(
         sc_unlock_present: rsv.unlock_ready,
         sc_replay_planned_present,
         pprf_cooldown_class: BrainCooldown::Base,
+        trace_fail_present,
+        trace_pass_present,
+        trace_fail_streak: rsv.trace_fail_streak,
     }
 }
 
@@ -332,6 +339,56 @@ fn normalized_reason_strings(codes: &[i32]) -> Vec<String> {
         .collect()
 }
 
+pub(crate) fn trace_flags_from_frame(frame: &ucf::v1::SignalFrame) -> (bool, bool) {
+    let mut trace_fail_present = false;
+    let mut trace_pass_present = false;
+
+    let iter = frame
+        .reason_codes
+        .iter()
+        .chain(frame.top_reason_codes.iter())
+        .chain(
+            frame
+                .policy_stats
+                .as_ref()
+                .map(|stats| stats.top_reason_codes.as_slice())
+                .unwrap_or_default()
+                .iter(),
+        )
+        .chain(
+            frame
+                .exec_stats
+                .as_ref()
+                .map(|stats| stats.top_reason_codes.as_slice())
+                .unwrap_or_default()
+                .iter(),
+        );
+
+    for code in iter {
+        if let Ok(reason) = ReasonCode::try_from(*code) {
+            if matches_trace_reason(reason, TRACE_FAIL_REASON) {
+                trace_fail_present = true;
+            }
+            if matches_trace_reason(reason, TRACE_PASS_REASON) {
+                trace_pass_present = true;
+            }
+        }
+        if trace_fail_present && trace_pass_present {
+            break;
+        }
+    }
+
+    (trace_fail_present, trace_pass_present)
+}
+
+fn matches_trace_reason(reason: ReasonCode, target: &str) -> bool {
+    match reason {
+        ReasonCode::RcGvTraceFail => target == TRACE_FAIL_REASON,
+        ReasonCode::RcGvTracePass => target == TRACE_PASS_REASON,
+        _ => false,
+    }
+}
+
 fn build_insula_input(
     frame: &ucf::v1::SignalFrame,
     classified: &ClassifiedSignals,
@@ -477,6 +534,7 @@ fn build_amygdala_input(
 ) -> AmyInput {
     let (dlp_secret_present, dlp_obfuscation_present, dlp_stegano_present) =
         crate::dlp_flags(frame);
+    let (trace_fail_present, _) = trace_flags_from_frame(frame);
 
     AmyInput {
         integrity: to_brain_integrity(classified.integrity_state),
@@ -489,6 +547,7 @@ fn build_amygdala_input(
         policy_pressure: to_brain_level(classified.policy_pressure_class),
         deny_storm_present: classified.policy_deny_count >= 5,
         sealed: Some(classified.integrity_state == IntegrityStateClass::Fail),
+        trace_fail_present,
         tool_anomaly_present: false,
         cerebellum_tool_anomaly_present: None,
         tool_anomalies: Vec::new(),

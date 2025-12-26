@@ -41,6 +41,7 @@ fn serotonin_stability_does_not_exceed_high() {
         flapping_count_medium: 10,
         unlock_present: false,
         stability_floor: LevelClass::Low,
+        trace_fail_present: false,
     };
 
     for _ in 0..50 {

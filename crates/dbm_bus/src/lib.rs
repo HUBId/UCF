@@ -43,6 +43,9 @@ pub struct BrainInput {
     pub sc_unlock_present: bool,
     pub sc_replay_planned_present: bool,
     pub pprf_cooldown_class: CooldownClass,
+    pub trace_fail_present: bool,
+    pub trace_pass_present: bool,
+    pub trace_fail_streak: u8,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -469,6 +472,8 @@ impl BrainBus {
             unlock_ready: input.sc_unlock_present,
             now_ms: input.now_ms,
             cerebellum_divergence,
+            trace_fail_present: input.trace_fail_present,
+            trace_fail_streak: input.trace_fail_streak,
         });
         merge_secondary_outputs(&mut decision, &lc_output, &ser_output, &sn_output);
         decision

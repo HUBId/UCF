@@ -26,6 +26,8 @@ pub struct HypothalamusInput {
     pub unlock_ready: bool,
     pub now_ms: u64,
     pub cerebellum_divergence: LevelClass,
+    pub trace_fail_present: bool,
+    pub trace_fail_streak: u8,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -197,6 +199,18 @@ impl DbmModule for HypothalamusRules {
             decision
                 .reason_codes
                 .insert("baseline_approval_strict".to_string());
+        }
+
+        if input.trace_fail_present {
+            decision.reason_codes.insert("RC.GV.TRACE.FAIL".to_string());
+            decision.overlays.simulate_first = true;
+            decision.overlays.novelty_lock = true;
+            if !matches!(decision.profile_state, ProfileState::M2 | ProfileState::M3) {
+                decision.profile_state = ProfileState::M1;
+            }
+            if input.trace_fail_streak >= 2 {
+                decision.profile_state = ProfileState::M2;
+            }
         }
 
         if input.isv.integrity == IntegrityState::Fail {

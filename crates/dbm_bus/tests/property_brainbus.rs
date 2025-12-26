@@ -144,6 +144,9 @@ fn make_input(
         sc_unlock_present: unlock_present,
         sc_replay_planned_present: receipt_invalid_present,
         pprf_cooldown_class: CooldownClass::Base,
+        trace_fail_present: false,
+        trace_pass_present: false,
+        trace_fail_streak: 0,
     }
 }
 

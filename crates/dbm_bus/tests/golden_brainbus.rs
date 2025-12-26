@@ -49,6 +49,9 @@ fn base_input(now_ms: u64) -> BrainInput {
         sc_unlock_present: false,
         sc_replay_planned_present: false,
         pprf_cooldown_class: CooldownClass::Base,
+        trace_fail_present: false,
+        trace_pass_present: false,
+        trace_fail_streak: 0,
     }
 }
 

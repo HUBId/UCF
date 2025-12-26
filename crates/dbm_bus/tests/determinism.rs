@@ -113,6 +113,9 @@ fn canonical_brain_input() -> BrainInput {
         sc_unlock_present: false,
         sc_replay_planned_present: true,
         pprf_cooldown_class: CooldownClass::Longer,
+        trace_fail_present: false,
+        trace_pass_present: false,
+        trace_fail_streak: 0,
     }
 }
 
