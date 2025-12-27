@@ -165,7 +165,11 @@ fn tick_outputs_stable_and_reason_codes_sorted() {
             "RC.GV.SEQUENCE.SPLIT_REQUIRED".to_string(),
             "RC.RE.INTEGRITY.FAIL".to_string(),
         ]
-    } else {
+    } else if output_a
+        .reason_codes
+        .iter()
+        .any(|code| code == "RC.CD.DLP.EXPORT_BLOCKED")
+    {
         vec![
             "RC.CD.DLP.EXPORT_BLOCKED".to_string(),
             "RC.GV.DIVERGENCE.HIGH".to_string(),
@@ -175,6 +179,17 @@ fn tick_outputs_stable_and_reason_codes_sorted() {
             "RC.GV.ORIENT.TARGET_INTEGRITY".to_string(),
             "RC.GV.PROGRESS.REWARD_BLOCKED".to_string(),
             "RC.GV.SEQUENCE.SPLIT_REQUIRED".to_string(),
+        ]
+    } else {
+        vec![
+            "RC.GV.DIVERGENCE.HIGH".to_string(),
+            "RC.GV.DWM.REPORT".to_string(),
+            "RC.GV.FOCUS_SHIFT.EXECUTED".to_string(),
+            "RC.GV.HOLD.ON".to_string(),
+            "RC.GV.ORIENT.TARGET_INTEGRITY".to_string(),
+            "RC.GV.PROGRESS.REWARD_BLOCKED".to_string(),
+            "RC.GV.SEQUENCE.SPLIT_REQUIRED".to_string(),
+            "RC.RG.STATE.AROUSAL_UP".to_string(),
         ]
     };
     assert_eq!(output_a.reason_codes, expected);
