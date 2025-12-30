@@ -1,12 +1,12 @@
 #![forbid(unsafe_code)]
 
 use baseline_resolver::{resolve_baseline, BaselineInputs, HbvOffsets};
+use biophys_core::{ModLevel, ModulatorField};
 use biophys_feedback::{
     bound_session_id, normalize_reason_codes, spike_train_digest, BiophysFeedbackSnapshot,
     BiophysFeedbackState, MAX_MICRO_CFG_DIGESTS,
 };
 use biophys_injection::InjectionReport;
-use biophys_core::{ModLevel, ModulatorField};
 use dbm_0_sn::{SnInput, SubstantiaNigra};
 use dbm_12_insula::{Insula, InsulaInput};
 use dbm_13_hypothalamus::{ControlDecision, Hypothalamus, HypothalamusInput};

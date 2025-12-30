@@ -1,8 +1,8 @@
 #![forbid(unsafe_code)]
 
+use biophys_feedback::BiophysFeedbackState;
 #[cfg(test)]
 use dbm_core::IsvSnapshot;
-use biophys_feedback::BiophysFeedbackState;
 use dbm_core::{
     DbmModule, DwmMode, IntegrityState, LevelClass, ReasonSet, SalienceItem, SalienceSource,
 };
