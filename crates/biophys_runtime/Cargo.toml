@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 biophys_core = { path = "../biophys_core" }
+biophys_injection = { path = "../biophys_injection" }
 biophys_solver = { path = "../biophys_solver" }
 blake3 = "1"
 
