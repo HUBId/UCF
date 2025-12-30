@@ -3,6 +3,7 @@
 use biophys_core::{
     clamp_i32, LifParams, LifState, ModChannel, NeuronId, PopCode, StpParams, StpState, STP_SCALE,
 };
+use biophys_feedback::{BiophysFeedbackState, MAX_SPIKE_LIST_LEN};
 use biophys_runtime::BiophysRuntime;
 use dbm_core::{
     DbmModule, DwmMode, IntegrityState, LevelClass, ReasonSet, SalienceItem, SalienceSource,
@@ -335,6 +336,26 @@ impl MicrocircuitBackend<SnInput, SnOutput> for SnBiophysMicrocircuit {
 
     fn snapshot_digest(&self) -> [u8; 32] {
         digest_meta("UCF:BIO:SN:SNAP", &self.runtime.snapshot_digest())
+    }
+
+    fn feedback_state(&self) -> BiophysFeedbackState {
+        let mut spike_neuron_ids = self
+            .runtime
+            .last_spikes()
+            .iter()
+            .map(|id| id.0)
+            .collect::<Vec<_>>();
+        spike_neuron_ids.sort_unstable();
+        if spike_neuron_ids.len() > MAX_SPIKE_LIST_LEN {
+            spike_neuron_ids.truncate(MAX_SPIKE_LIST_LEN);
+        }
+        let counters = self.runtime.counters_snapshot();
+        BiophysFeedbackState {
+            spike_neuron_ids,
+            event_queue_overflowed: false,
+            events_dropped: counters.events_dropped.min(u32::MAX as u64) as u32,
+            ca_spike_count: 0,
+        }
     }
 
     fn config_digest(&self) -> [u8; 32] {

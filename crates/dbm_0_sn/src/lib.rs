@@ -2,6 +2,7 @@
 
 #[cfg(test)]
 use dbm_core::IsvSnapshot;
+use biophys_feedback::BiophysFeedbackState;
 use dbm_core::{
     DbmModule, DwmMode, IntegrityState, LevelClass, ReasonSet, SalienceItem, SalienceSource,
 };
@@ -277,6 +278,13 @@ impl SubstantiaNigra {
         match &self.backend {
             SnBackend::Micro(backend) => Some(backend.config_digest()),
             SnBackend::Rules(_) => None,
+        }
+    }
+
+    pub fn feedback_state(&self) -> BiophysFeedbackState {
+        match &self.backend {
+            SnBackend::Micro(backend) => backend.feedback_state(),
+            SnBackend::Rules(_) => BiophysFeedbackState::default(),
         }
     }
 }

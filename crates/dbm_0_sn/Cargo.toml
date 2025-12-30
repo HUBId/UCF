@@ -42,6 +42,7 @@ biophys-sn = [
 ]
 
 [dependencies]
+biophys_feedback = { path = "../biophys_feedback" }
 dbm_core = { path = "../dbm_core" }
 microcircuit_core = { path = "../microcircuit_core" }
 microcircuit_sn_attractor = { path = "../microcircuit_sn_attractor", optional = true }

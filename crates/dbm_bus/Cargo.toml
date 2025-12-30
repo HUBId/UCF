@@ -18,6 +18,8 @@ biophys-stn = ["dbm_stn/biophys-stn"]
 biophys-l4-insula = ["dbm_12_insula/biophys-l4-insula"]
 
 [dependencies]
+biophys_feedback = { path = "../biophys_feedback" }
+biophys_injection = { path = "../biophys_injection" }
 biophys_core = { path = "../biophys_core" }
 dbm_core = { path = "../dbm_core" }
 dbm_hpa = { path = "../dbm_hpa" }

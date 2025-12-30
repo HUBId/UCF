@@ -116,6 +116,13 @@ name = "biophys_event_queue_l4"
 version = "0.1.0"
 
 [[package]]
+name = "biophys_feedback"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+]
+
+[[package]]
 name = "biophys_homeostasis_l4"
 version = "0.1.0"
 dependencies = [
@@ -254,6 +261,7 @@ checksum = "7c74b8349d32d297c9134b8c88677813a227df8f779daa29bfc29c183fe3dca6"
 name = "dbm_0_sn"
 version = "0.1.0"
 dependencies = [
+ "biophys_feedback",
  "dbm_core",
  "microcircuit_core",
  "microcircuit_sn_attractor",
@@ -346,6 +354,8 @@ version = "0.1.0"
 dependencies = [
  "baseline_resolver",
  "biophys_core",
+ "biophys_feedback",
+ "biophys_injection",
  "dbm_0_sn",
  "dbm_12_insula",
  "dbm_13_hypothalamus",
@@ -664,6 +674,7 @@ dependencies = [
 name = "microcircuit_core"
 version = "0.1.0"
 dependencies = [
+ "biophys_feedback",
  "blake3",
 ]
 
@@ -935,6 +946,7 @@ name = "microcircuit_sn_biophys"
 version = "0.1.0"
 dependencies = [
  "biophys_core",
+ "biophys_feedback",
  "biophys_runtime",
  "dbm_core",
  "microcircuit_core",
@@ -953,6 +965,7 @@ dependencies = [
  "biophys_compartmental_solver",
  "biophys_core",
  "biophys_event_queue_l4",
+ "biophys_feedback",
  "biophys_homeostasis_l4",
  "biophys_injection",
  "biophys_morphology",
