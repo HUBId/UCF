@@ -9,6 +9,7 @@ use biophys_event_queue_l4::{QueueLimits, RuntimeHealth, SpikeEventQueueL4};
 use biophys_homeostasis_l4::{
     homeostasis_tick, scale_g_max_fixed, HomeoMode, HomeostasisConfig, HomeostasisState,
 };
+use biophys_injection::{prepare_spikes, ExternalSpike, SpikeRouter, MAX_TARGETS_PER_SPIKE};
 use biophys_morphology::{Compartment, CompartmentKind, NeuronMorphology};
 use biophys_plasticity_l4::{plasticity_snapshot_digest, LearningMode, StdpConfig, StdpTrace};
 #[cfg(feature = "biophys-l4-ca-feedback")]
@@ -112,6 +113,15 @@ struct L4Neuron {
     last_soma_v: f32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ExternalInputEvent {
+    deliver_step: u64,
+    neuron_id: NeuronId,
+    compartment_id: CompartmentId,
+    syn_kind: SynKind,
+    amplitude_q: u16,
+}
+
 #[derive(Debug, Clone)]
 struct SnL4State {
     tick_count: u64,
@@ -128,6 +138,10 @@ struct SnL4State {
     #[cfg(feature = "biophys-l4-ca")]
     ca_spike_neurons: Vec<u32>,
     last_queue_health: RuntimeHealth,
+    external_dropped_spikes_last_tick: u32,
+    external_dropped_targets_last_tick: u32,
+    external_dropped_spikes_total: u64,
+    external_dropped_targets_total: u64,
 }
 
 impl Default for SnL4State {
@@ -147,6 +161,10 @@ impl Default for SnL4State {
             #[cfg(feature = "biophys-l4-ca")]
             ca_spike_neurons: Vec::new(),
             last_queue_health: RuntimeHealth::default(),
+            external_dropped_spikes_last_tick: 0,
+            external_dropped_targets_last_tick: 0,
+            external_dropped_spikes_total: 0,
+            external_dropped_targets_total: 0,
         }
     }
 }
@@ -162,6 +180,7 @@ pub struct SnL4Microcircuit {
     syn_stp_params_eff: Vec<StpParamsL4>,
     pre_index: Vec<Vec<usize>>,
     queue: SpikeEventQueueL4,
+    external_input_events: Vec<ExternalInputEvent>,
     state: SnL4State,
     current_modulators: ModulatorField,
     stdp_config: StdpConfig,
@@ -324,6 +343,7 @@ impl SnL4Microcircuit {
             MAX_EVENTS_PER_STEP,
         );
         let queue = SpikeEventQueueL4::new(max_delay, limits);
+        let external_input_events = Vec::new();
         let stdp_traces = vec![StdpTrace::default(); NEURON_COUNT];
         let stdp_spike_flags = vec![false; NEURON_COUNT];
         let mut stdp_config = StdpConfig::default();
@@ -341,6 +361,7 @@ impl SnL4Microcircuit {
             syn_stp_params_eff,
             pre_index,
             queue,
+            external_input_events,
             state: SnL4State::default(),
             current_modulators,
             stdp_config,
@@ -653,6 +674,16 @@ impl SnL4Microcircuit {
             );
         }
 
+        let mut external_events = Vec::new();
+        self.external_input_events.retain(|event| {
+            if event.deliver_step == self.state.step_count {
+                external_events.push(*event);
+                false
+            } else {
+                true
+            }
+        });
+
         let mut accumulators =
             vec![vec![SynapseAccumulator::default(); COMPARTMENT_COUNT]; NEURON_COUNT];
         for (idx, synapse) in self.synapses.iter().enumerate() {
@@ -671,6 +702,20 @@ impl SnL4Microcircuit {
                 synapse.e_rev,
                 synapse.nmda_vdep_mode,
             );
+        }
+
+        for event in external_events {
+            let g_fixed = (max_synapse_g_fixed() as u64 * event.amplitude_q as u64 / 1000) as u32;
+            if g_fixed == 0 {
+                continue;
+            }
+            let (e_rev, nmda_vdep_mode) = match event.syn_kind {
+                SynKind::GABA => (GABA_E_REV, NmdaVDepMode::PiecewiseLinear),
+                _ => (AMPA_E_REV, NmdaVDepMode::PiecewiseLinear),
+            };
+            let post = event.neuron_id.0 as usize;
+            let compartment = event.compartment_id.0 as usize;
+            accumulators[post][compartment].add(event.syn_kind, g_fixed, e_rev, nmda_vdep_mode);
         }
 
         let mut spikes = Vec::new();
@@ -778,6 +823,70 @@ impl SnL4Microcircuit {
     #[cfg(feature = "biophys-l4-ca-feedback")]
     pub fn set_ca_feedback_policy(&mut self, policy: CaFeedbackPolicy) {
         self.ca_feedback_policy = policy.normalized();
+    }
+
+    pub fn inject_external_spikes(&mut self, spikes: &[ExternalSpike], router: &dyn SpikeRouter) {
+        let (spikes, dropped_spikes) = prepare_spikes(spikes);
+        if dropped_spikes > 0 {
+            self.state.external_dropped_spikes_last_tick = self
+                .state
+                .external_dropped_spikes_last_tick
+                .saturating_add(dropped_spikes);
+            self.state.external_dropped_spikes_total = self
+                .state
+                .external_dropped_spikes_total
+                .saturating_add(dropped_spikes as u64);
+        }
+
+        let mut dropped_targets = 0u32;
+        for spike in &spikes {
+            let mut targets = router.route(spike);
+            targets.sort_by_key(|(neuron_id, compartment_id, kind, amplitude)| {
+                (neuron_id.0, compartment_id.0, *kind as u8, *amplitude)
+            });
+            if targets.len() > MAX_TARGETS_PER_SPIKE {
+                dropped_targets =
+                    dropped_targets.saturating_add((targets.len() - MAX_TARGETS_PER_SPIKE) as u32);
+                targets.truncate(MAX_TARGETS_PER_SPIKE);
+            }
+            for (neuron_id, compartment_id, syn_kind, amplitude_q) in targets {
+                if neuron_id.0 as usize >= NEURON_COUNT
+                    || compartment_id.0 as usize >= COMPARTMENT_COUNT
+                {
+                    dropped_targets = dropped_targets.saturating_add(1);
+                    continue;
+                }
+                let event = ExternalInputEvent {
+                    deliver_step: self.state.step_count,
+                    neuron_id,
+                    compartment_id,
+                    syn_kind,
+                    amplitude_q: amplitude_q.min(1000),
+                };
+                self.external_input_events.push(event);
+            }
+        }
+
+        if dropped_targets > 0 {
+            self.state.external_dropped_targets_last_tick = self
+                .state
+                .external_dropped_targets_last_tick
+                .saturating_add(dropped_targets);
+            self.state.external_dropped_targets_total = self
+                .state
+                .external_dropped_targets_total
+                .saturating_add(dropped_targets as u64);
+        }
+
+        self.external_input_events.sort_by_key(|event| {
+            (
+                event.deliver_step,
+                event.neuron_id.0,
+                event.compartment_id.0,
+                event.syn_kind as u8,
+                event.amplitude_q,
+            )
+        });
     }
 
     #[cfg(test)]
@@ -915,6 +1024,13 @@ impl MicrocircuitBackend<SnInput, SnOutput> for SnL4Microcircuit {
         if self.state.last_queue_health.compacted {
             reason_codes.insert("RC.GV.BIO.QUEUE_COMPACTED");
         }
+        if self.state.external_dropped_spikes_last_tick > 0
+            || self.state.external_dropped_targets_last_tick > 0
+        {
+            reason_codes.insert("RC.GV.BIO.EXTERNAL_SPIKES_DROPPED");
+        }
+        self.state.external_dropped_spikes_last_tick = 0;
+        self.state.external_dropped_targets_last_tick = 0;
 
         let mut sources = Vec::new();
         if input.isv.integrity == IntegrityState::Fail {
@@ -988,6 +1104,9 @@ impl MicrocircuitBackend<SnInput, SnOutput> for SnL4Microcircuit {
         update_u32(&mut hasher, mod_level_code(self.current_modulators.da));
         update_u32(&mut hasher, mod_level_code(self.current_modulators.ht));
         update_u64(&mut hasher, self.queue.dropped_event_count);
+        update_u64(&mut hasher, self.state.external_dropped_spikes_total);
+        update_u64(&mut hasher, self.state.external_dropped_targets_total);
+        update_u32(&mut hasher, self.external_input_events.len() as u32);
         *hasher.finalize().as_bytes()
     }
 
@@ -2136,6 +2255,108 @@ mod tests {
             .expect("expected a NA/DA synapse");
         let expected = (synapse.g_max_base_q as u64 * 90) / 100;
         assert_eq!(circuit.syn_g_max_eff[idx] as u64, expected);
+    }
+
+    struct DirectRouter;
+
+    impl SpikeRouter for DirectRouter {
+        fn route(&self, spike: &ExternalSpike) -> Vec<(NeuronId, CompartmentId, SynKind, u16)> {
+            vec![(
+                NeuronId(spike.neuron_group),
+                CompartmentId(0),
+                spike.syn_kind,
+                spike.amplitude_q,
+            )]
+        }
+    }
+
+    #[test]
+    fn external_spike_injection_is_deterministic() {
+        let spikes = vec![
+            ExternalSpike {
+                region: "b".to_string(),
+                population: "z".to_string(),
+                neuron_group: 1,
+                syn_kind: SynKind::AMPA,
+                amplitude_q: 900,
+            },
+            ExternalSpike {
+                region: "a".to_string(),
+                population: "y".to_string(),
+                neuron_group: 0,
+                syn_kind: SynKind::GABA,
+                amplitude_q: 400,
+            },
+        ];
+        let router = DirectRouter;
+        let input = SnInput::default();
+
+        let mut first = SnL4Microcircuit::new(CircuitConfig::default());
+        let mut second = SnL4Microcircuit::new(CircuitConfig::default());
+
+        first.inject_external_spikes(&spikes, &router);
+        second.inject_external_spikes(&spikes, &router);
+        first.step(&input, 0);
+        second.step(&input, 0);
+
+        assert_eq!(first.snapshot_digest(), second.snapshot_digest());
+    }
+
+    #[test]
+    fn external_spike_injection_is_bounded() {
+        let spikes = (0..300u32)
+            .map(|idx| ExternalSpike {
+                region: format!("r{idx}"),
+                population: "p".to_string(),
+                neuron_group: idx % NEURON_COUNT as u32,
+                syn_kind: SynKind::AMPA,
+                amplitude_q: 700,
+            })
+            .collect::<Vec<_>>();
+        let router = DirectRouter;
+        let mut circuit = SnL4Microcircuit::new(CircuitConfig::default());
+        circuit.inject_external_spikes(&spikes, &router);
+        let output = circuit.step(&SnInput::default(), 0);
+
+        assert_eq!(circuit.state.external_dropped_spikes_total, 44);
+        assert!(output
+            .reason_codes
+            .codes
+            .iter()
+            .any(|code| code == "RC.GV.BIO.EXTERNAL_SPIKES_DROPPED"));
+    }
+
+    #[test]
+    fn external_spike_injection_depolarizes() {
+        let router = DirectRouter;
+        let high_spikes = vec![ExternalSpike {
+            region: "r".to_string(),
+            population: "p".to_string(),
+            neuron_group: 0,
+            syn_kind: SynKind::AMPA,
+            amplitude_q: 1000,
+        }];
+
+        let mut low = SnL4Microcircuit::new(CircuitConfig::default());
+        let mut high = SnL4Microcircuit::new(CircuitConfig::default());
+        low.synapses.clear();
+        high.synapses.clear();
+        low.rebuild_synapse_index();
+        high.rebuild_synapse_index();
+
+        high.inject_external_spikes(&high_spikes, &router);
+        let currents = SnL4Microcircuit::build_inputs(&SnInput::default());
+        let mut low_ca = [false; NEURON_COUNT];
+        let mut high_ca = [false; NEURON_COUNT];
+        low.substep(&currents, &mut low_ca);
+        high.substep(&currents, &mut high_ca);
+
+        let low_v = low.neurons[0].state.comp_v[0];
+        let high_v = high.neurons[0].state.comp_v[0];
+        assert!(
+            high_v >= low_v,
+            "expected external AMPA spikes to depolarize"
+        );
     }
 
     #[cfg(all(feature = "biophys-l4-ca", feature = "biophys-l4-ca-feedback"))]

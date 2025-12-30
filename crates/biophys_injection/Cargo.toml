@@ -1,0 +1,9 @@
+[package]
+name = "biophys_injection"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+biophys_core = { path = "../biophys_core" }
+biophys_synapses_l4 = { path = "../biophys_synapses_l4" }
+

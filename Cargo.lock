@@ -123,6 +123,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "biophys_injection"
+version = "0.1.0"
+dependencies = [
+ "biophys_core",
+ "biophys_synapses_l4",
+]
+
+[[package]]
 name = "biophys_morphology"
 version = "0.1.0"
 dependencies = [
@@ -141,6 +149,7 @@ name = "biophys_runtime"
 version = "0.1.0"
 dependencies = [
  "biophys_core",
+ "biophys_injection",
  "biophys_solver",
  "blake3",
 ]
@@ -945,6 +954,7 @@ dependencies = [
  "biophys_core",
  "biophys_event_queue_l4",
  "biophys_homeostasis_l4",
+ "biophys_injection",
  "biophys_morphology",
  "biophys_plasticity_l4",
  "biophys_synapses_l4",
