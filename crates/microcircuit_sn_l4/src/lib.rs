@@ -6,10 +6,10 @@ use biophys_channels::{Leak, NaK};
 use biophys_compartmental_solver::{CompartmentChannels, L4Solver, L4State};
 use biophys_core::{CompartmentId, ModChannel, ModLevel, ModulatorField, NeuronId};
 use biophys_event_queue_l4::{QueueLimits, RuntimeHealth, SpikeEventQueueL4};
-use biophys_injection::{prepare_spikes, ExternalSpike, SpikeRouter, MAX_TARGETS_PER_SPIKE};
 use biophys_homeostasis_l4::{
     homeostasis_tick, scale_g_max_fixed, HomeoMode, HomeostasisConfig, HomeostasisState,
 };
+use biophys_injection::{prepare_spikes, ExternalSpike, SpikeRouter, MAX_TARGETS_PER_SPIKE};
 use biophys_morphology::{Compartment, CompartmentKind, NeuronMorphology};
 use biophys_plasticity_l4::{plasticity_snapshot_digest, LearningMode, StdpConfig, StdpTrace};
 #[cfg(feature = "biophys-l4-ca-feedback")]
@@ -715,12 +715,7 @@ impl SnL4Microcircuit {
             };
             let post = event.neuron_id.0 as usize;
             let compartment = event.compartment_id.0 as usize;
-            accumulators[post][compartment].add(
-                event.syn_kind,
-                g_fixed,
-                e_rev,
-                nmda_vdep_mode,
-            );
+            accumulators[post][compartment].add(event.syn_kind, g_fixed, e_rev, nmda_vdep_mode);
         }
 
         let mut spikes = Vec::new();
@@ -850,8 +845,8 @@ impl SnL4Microcircuit {
                 (neuron_id.0, compartment_id.0, *kind as u8, *amplitude)
             });
             if targets.len() > MAX_TARGETS_PER_SPIKE {
-                dropped_targets = dropped_targets
-                    .saturating_add((targets.len() - MAX_TARGETS_PER_SPIKE) as u32);
+                dropped_targets =
+                    dropped_targets.saturating_add((targets.len() - MAX_TARGETS_PER_SPIKE) as u32);
                 targets.truncate(MAX_TARGETS_PER_SPIKE);
             }
             for (neuron_id, compartment_id, syn_kind, amplitude_q) in targets {
