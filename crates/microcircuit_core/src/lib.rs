@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+use biophys_feedback::BiophysFeedbackState;
 use blake3::Hasher;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,6 +35,10 @@ pub trait MicrocircuitBackend<I, O> {
 
     fn plasticity_snapshot_digest_opt(&self) -> Option<[u8; 32]> {
         None
+    }
+
+    fn feedback_state(&self) -> BiophysFeedbackState {
+        BiophysFeedbackState::default()
     }
 }
 

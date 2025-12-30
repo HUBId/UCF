@@ -508,6 +508,10 @@ impl BiophysRuntime {
         self.counters
     }
 
+    pub fn last_spikes(&self) -> &[NeuronId] {
+        &self.spike_output
+    }
+
     pub fn config_digest(&self) -> [u8; 32] {
         let mut hasher = blake3::Hasher::new();
         hasher.update(b"UCF:BIO:CFG");

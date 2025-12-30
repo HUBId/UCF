@@ -12,6 +12,7 @@ biophys = ["biophys_runtime/biophys", "biophys_core/biophys"]
 [dependencies]
 dbm_core = { path = "../dbm_core" }
 biophys_core = { path = "../biophys_core" }
+biophys_feedback = { path = "../biophys_feedback" }
 biophys_runtime = { path = "../biophys_runtime" }
 microcircuit_core = { path = "../microcircuit_core" }
 microcircuit_sn_stub = { path = "../microcircuit_sn_stub" }

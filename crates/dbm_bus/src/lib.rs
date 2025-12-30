@@ -2,6 +2,11 @@
 
 use baseline_resolver::{resolve_baseline, BaselineInputs, HbvOffsets};
 use biophys_core::{ModLevel, ModulatorField};
+use biophys_feedback::{
+    bound_session_id, normalize_reason_codes, spike_train_digest, BiophysFeedbackSnapshot,
+    BiophysFeedbackState, MAX_MICRO_CFG_DIGESTS,
+};
+use biophys_injection::InjectionReport;
 use dbm_0_sn::{SnInput, SubstantiaNigra};
 use dbm_12_insula::{Insula, InsulaInput};
 use dbm_13_hypothalamus::{ControlDecision, Hypothalamus, HypothalamusInput};
@@ -216,6 +221,46 @@ impl BrainBus {
 
     pub fn set_asset_manifest_digest(&mut self, digest: [u8; 32]) {
         self.asset_manifest_digest = Some(digest);
+    }
+
+    pub fn feedback_snapshot(
+        &self,
+        session_id: &str,
+        tick: u64,
+        last_injection: Option<&InjectionReport>,
+    ) -> BiophysFeedbackSnapshot {
+        let mut micro_cfg_digests = Vec::new();
+        if let Some(digest) = self.sn.config_digest() {
+            micro_cfg_digests.push((digest, "SN"));
+        }
+        if let Some(digest) = self.hypothalamus.config_digest() {
+            micro_cfg_digests.push((digest, "HYPO"));
+        }
+        if let Some(digest) = self.amygdala.config_digest() {
+            micro_cfg_digests.push((digest, "AMY"));
+        }
+        if let Some(digest) = self.lc.config_digest() {
+            micro_cfg_digests.push((digest, "LC"));
+        }
+        if let Some(digest) = self.insula.config_digest() {
+            micro_cfg_digests.push((digest, "INSULA"));
+        }
+        if micro_cfg_digests.len() > MAX_MICRO_CFG_DIGESTS {
+            micro_cfg_digests.truncate(MAX_MICRO_CFG_DIGESTS);
+        }
+
+        let feedback_state = self.sn.feedback_state();
+        let runtime_snapshot_digest = self.sn.snapshot_digest().unwrap_or([0u8; 32]);
+
+        build_feedback_snapshot(
+            session_id,
+            tick,
+            self.asset_manifest_digest,
+            micro_cfg_digests,
+            runtime_snapshot_digest,
+            feedback_state,
+            last_injection,
+        )
     }
 
     pub fn set_last_cerebellum_output(&mut self, output: Option<dbm_18_cerebellum::CerOutput>) {
@@ -591,6 +636,118 @@ impl BrainBus {
             hbv: Some(hbv),
             integrity: Some(input.lc.integrity),
         })
+    }
+}
+
+fn build_feedback_snapshot(
+    session_id: &str,
+    tick: u64,
+    asset_manifest_digest: Option<[u8; 32]>,
+    micro_cfg_digests: Vec<([u8; 32], &'static str)>,
+    runtime_snapshot_digest: [u8; 32],
+    feedback_state: BiophysFeedbackState,
+    last_injection: Option<&InjectionReport>,
+) -> BiophysFeedbackSnapshot {
+    let (injected_spikes_received, injected_targets_applied, dropped_spikes, injection_reasons) =
+        last_injection
+            .map(|report| {
+                (
+                    report.received_spikes,
+                    report.emitted_targets,
+                    report.dropped_spikes,
+                    report.reason_codes.clone(),
+                )
+            })
+            .unwrap_or((0, 0, 0, Vec::new()));
+
+    let mut reason_codes = Vec::new();
+    if feedback_state.event_queue_overflowed {
+        reason_codes.push("RC.GV.BIO.QUEUE_OVERFLOW".to_string());
+    }
+    if dropped_spikes > 0 {
+        reason_codes.push("RC.GV.INJECT.DROPPED_SPIKES".to_string());
+    }
+    reason_codes.extend(injection_reasons);
+    let reason_codes = normalize_reason_codes(reason_codes);
+
+    BiophysFeedbackSnapshot {
+        session_id: bound_session_id(session_id),
+        tick,
+        asset_manifest_digest,
+        micro_cfg_digests,
+        runtime_snapshot_digest,
+        spike_train_digest: spike_train_digest(&feedback_state.spike_neuron_ids),
+        ca_spike_count: feedback_state.ca_spike_count,
+        event_queue_overflowed: feedback_state.event_queue_overflowed,
+        events_dropped: feedback_state.events_dropped,
+        injected_spikes_received,
+        injected_targets_applied,
+        reason_codes,
+    }
+}
+
+#[cfg(test)]
+mod feedback_snapshot_tests {
+    use super::*;
+
+    #[test]
+    fn feedback_snapshot_is_deterministic_for_same_inputs() {
+        let feedback_state = BiophysFeedbackState {
+            spike_neuron_ids: vec![4, 2, 9],
+            event_queue_overflowed: false,
+            events_dropped: 0,
+            ca_spike_count: 0,
+        };
+        let snapshot_a = build_feedback_snapshot(
+            "session-1",
+            42,
+            None,
+            Vec::new(),
+            [1u8; 32],
+            feedback_state.clone(),
+            None,
+        );
+        let snapshot_b = build_feedback_snapshot(
+            "session-1",
+            42,
+            None,
+            Vec::new(),
+            [1u8; 32],
+            feedback_state,
+            None,
+        );
+        assert_eq!(snapshot_a, snapshot_b);
+    }
+
+    #[test]
+    fn overflow_and_injection_drop_surface_reason_codes() {
+        let feedback_state = BiophysFeedbackState {
+            spike_neuron_ids: Vec::new(),
+            event_queue_overflowed: true,
+            events_dropped: 2,
+            ca_spike_count: 0,
+        };
+        let report = InjectionReport::new(5, 2, 3, 0, vec!["RC.TEST".to_string()]);
+        let snapshot = build_feedback_snapshot(
+            "session-2",
+            7,
+            None,
+            Vec::new(),
+            [0u8; 32],
+            feedback_state,
+            Some(&report),
+        );
+        assert!(snapshot
+            .reason_codes
+            .iter()
+            .any(|code| code == "RC.GV.BIO.QUEUE_OVERFLOW"));
+        assert!(snapshot
+            .reason_codes
+            .iter()
+            .any(|code| code == "RC.GV.INJECT.DROPPED_SPIKES"));
+        let mut sorted = snapshot.reason_codes.clone();
+        sorted.sort();
+        assert_eq!(snapshot.reason_codes, sorted);
     }
 }
 

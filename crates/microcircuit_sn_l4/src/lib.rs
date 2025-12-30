@@ -6,6 +6,7 @@ use biophys_channels::{Leak, NaK};
 use biophys_compartmental_solver::{CompartmentChannels, L4Solver, L4State};
 use biophys_core::{CompartmentId, ModChannel, ModLevel, ModulatorField, NeuronId};
 use biophys_event_queue_l4::{QueueLimits, RuntimeHealth, SpikeEventQueueL4};
+use biophys_feedback::{BiophysFeedbackState, MAX_SPIKE_LIST_LEN};
 use biophys_homeostasis_l4::{
     homeostasis_tick, scale_g_max_fixed, HomeoMode, HomeostasisConfig, HomeostasisState,
 };
@@ -1150,6 +1151,34 @@ impl MicrocircuitBackend<SnInput, SnOutput> for SnL4Microcircuit {
         update_u64(&mut hasher, self.state.external_dropped_targets_total);
         update_u32(&mut hasher, self.external_targets.len() as u32);
         *hasher.finalize().as_bytes()
+    }
+
+    fn feedback_state(&self) -> BiophysFeedbackState {
+        let mut spike_neuron_ids = Vec::new();
+        for (idx, count) in self.state.last_spike_counts.iter().enumerate() {
+            if *count > 0 {
+                spike_neuron_ids.push(idx as u32);
+                if spike_neuron_ids.len() >= MAX_SPIKE_LIST_LEN {
+                    break;
+                }
+            }
+        }
+        let ca_spike_count = {
+            #[cfg(feature = "biophys-l4-ca")]
+            {
+                self.state.ca_spike_neurons.len() as u32
+            }
+            #[cfg(not(feature = "biophys-l4-ca"))]
+            {
+                0
+            }
+        };
+        BiophysFeedbackState {
+            spike_neuron_ids,
+            event_queue_overflowed: self.state.last_queue_health.overflowed,
+            events_dropped: self.state.last_queue_health.dropped_events,
+            ca_spike_count,
+        }
     }
 
     fn config_digest(&self) -> [u8; 32] {

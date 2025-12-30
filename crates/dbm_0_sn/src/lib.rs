@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+use biophys_feedback::BiophysFeedbackState;
 #[cfg(test)]
 use dbm_core::IsvSnapshot;
 use dbm_core::{
@@ -277,6 +278,13 @@ impl SubstantiaNigra {
         match &self.backend {
             SnBackend::Micro(backend) => Some(backend.config_digest()),
             SnBackend::Rules(_) => None,
+        }
+    }
+
+    pub fn feedback_state(&self) -> BiophysFeedbackState {
+        match &self.backend {
+            SnBackend::Micro(backend) => backend.feedback_state(),
+            SnBackend::Rules(_) => BiophysFeedbackState::default(),
         }
     }
 }
