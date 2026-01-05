@@ -6,6 +6,7 @@ use biophys_feedback::{
     bound_session_id, normalize_reason_codes, spike_train_digest, BiophysFeedbackSnapshot,
     BiophysFeedbackState, MAX_MICRO_CFG_DIGESTS,
 };
+use biophys_governance::GovernanceUpdateState;
 use biophys_injection::InjectionReport;
 use dbm_0_sn::{SnInput, SubstantiaNigra};
 use dbm_12_insula::{Insula, InsulaInput};
@@ -96,6 +97,8 @@ pub struct BrainBus {
     last_baseline_vector: BaselineVector,
     last_emotion_field: Option<EmotionField>,
     asset_manifest_digest: Option<[u8; 32]>,
+    governance: GovernanceUpdateState,
+    last_modulators: ModulatorField,
 }
 
 impl BrainBus {
@@ -113,6 +116,10 @@ impl BrainBus {
             last_hpa_output,
             ..Self::new()
         }
+    }
+
+    pub fn ingest_signal_frame(&mut self, frame: &ucf::v1::SignalFrame) {
+        self.governance.ingest_signal_frame(frame);
     }
 
     pub fn lc_mut(&mut self) -> &mut Lc {
@@ -252,15 +259,16 @@ impl BrainBus {
         let feedback_state = self.sn.feedback_state();
         let runtime_snapshot_digest = self.sn.snapshot_digest().unwrap_or([0u8; 32]);
 
-        build_feedback_snapshot(
+        build_feedback_snapshot(FeedbackSnapshotContext {
             session_id,
             tick,
-            self.asset_manifest_digest,
+            asset_manifest_digest: self.asset_manifest_digest,
             micro_cfg_digests,
             runtime_snapshot_digest,
             feedback_state,
             last_injection,
-        )
+            governance: &self.governance,
+        })
     }
 
     pub fn set_last_cerebellum_output(&mut self, output: Option<dbm_18_cerebellum::CerOutput>) {
@@ -300,6 +308,7 @@ impl BrainBus {
     }
 
     pub fn tick(&mut self, input: BrainInput) -> BrainOutput {
+        self.governance.tick();
         let medium_window = input.window_kind == WindowKind::Medium;
         if medium_window && self.last_window_kind != Some(WindowKind::Medium) {
             self.pprf.on_medium_window_rollover();
@@ -394,12 +403,16 @@ impl BrainBus {
             self.set_last_dopa_output(Some(dopa_output.clone()));
         }
 
-        let modulators = modulator_field_from_levels(
+        let target_modulators = modulator_field_from_levels(
             lc_output.arousal,
             ser_output.stability,
             dopa_output.progress,
             dopa_output.reward_block,
         );
+        let modulators = self
+            .governance
+            .stabilize_modulators(self.last_modulators, target_modulators);
+        self.last_modulators = modulators;
 
         let pag_input = PagInput {
             threat: amy_output.threat,
@@ -481,6 +494,8 @@ impl BrainBus {
             replay_hint: dopa_output.replay_hint,
             reward_block: dopa_output.reward_block,
             modulators,
+            plasticity_scale_q: self.governance.plasticity_scale_q(),
+            cooldown_ticks_remaining: self.governance.cooldown_ticks_remaining,
         });
 
         let sc_output = self.sc.tick(&ScInput {
@@ -639,17 +654,21 @@ impl BrainBus {
     }
 }
 
-fn build_feedback_snapshot(
-    session_id: &str,
+struct FeedbackSnapshotContext<'a> {
+    session_id: &'a str,
     tick: u64,
     asset_manifest_digest: Option<[u8; 32]>,
     micro_cfg_digests: Vec<([u8; 32], &'static str)>,
     runtime_snapshot_digest: [u8; 32],
     feedback_state: BiophysFeedbackState,
-    last_injection: Option<&InjectionReport>,
-) -> BiophysFeedbackSnapshot {
+    last_injection: Option<&'a InjectionReport>,
+    governance: &'a GovernanceUpdateState,
+}
+
+fn build_feedback_snapshot(context: FeedbackSnapshotContext<'_>) -> BiophysFeedbackSnapshot {
     let (injected_spikes_received, injected_targets_applied, dropped_spikes, injection_reasons) =
-        last_injection
+        context
+            .last_injection
             .map(|report| {
                 (
                     report.received_spikes,
@@ -661,27 +680,32 @@ fn build_feedback_snapshot(
             .unwrap_or((0, 0, 0, Vec::new()));
 
     let mut reason_codes = Vec::new();
-    if feedback_state.event_queue_overflowed {
+    if context.feedback_state.event_queue_overflowed {
         reason_codes.push("RC.GV.BIO.QUEUE_OVERFLOW".to_string());
     }
     if dropped_spikes > 0 {
         reason_codes.push("RC.GV.INJECT.DROPPED_SPIKES".to_string());
     }
     reason_codes.extend(injection_reasons);
+    if context.governance.cooldown_active() {
+        reason_codes.push("RC.GV.BIO.COOLDOWN_ACTIVE".to_string());
+    }
     let reason_codes = normalize_reason_codes(reason_codes);
 
     BiophysFeedbackSnapshot {
-        session_id: bound_session_id(session_id),
-        tick,
-        asset_manifest_digest,
-        micro_cfg_digests,
-        runtime_snapshot_digest,
-        spike_train_digest: spike_train_digest(&feedback_state.spike_neuron_ids),
-        ca_spike_count: feedback_state.ca_spike_count,
-        event_queue_overflowed: feedback_state.event_queue_overflowed,
-        events_dropped: feedback_state.events_dropped,
+        session_id: bound_session_id(context.session_id),
+        tick: context.tick,
+        asset_manifest_digest: context.asset_manifest_digest,
+        micro_cfg_digests: context.micro_cfg_digests,
+        runtime_snapshot_digest: context.runtime_snapshot_digest,
+        spike_train_digest: spike_train_digest(&context.feedback_state.spike_neuron_ids),
+        ca_spike_count: context.feedback_state.ca_spike_count,
+        event_queue_overflowed: context.feedback_state.event_queue_overflowed,
+        events_dropped: context.feedback_state.events_dropped,
         injected_spikes_received,
         injected_targets_applied,
+        cooldown_ticks_remaining: context.governance.cooldown_ticks_remaining,
+        last_update_kind: context.governance.last_update_kind,
         reason_codes,
     }
 }
@@ -698,24 +722,26 @@ mod feedback_snapshot_tests {
             events_dropped: 0,
             ca_spike_count: 0,
         };
-        let snapshot_a = build_feedback_snapshot(
-            "session-1",
-            42,
-            None,
-            Vec::new(),
-            [1u8; 32],
-            feedback_state.clone(),
-            None,
-        );
-        let snapshot_b = build_feedback_snapshot(
-            "session-1",
-            42,
-            None,
-            Vec::new(),
-            [1u8; 32],
+        let snapshot_a = build_feedback_snapshot(FeedbackSnapshotContext {
+            session_id: "session-1",
+            tick: 42,
+            asset_manifest_digest: None,
+            micro_cfg_digests: Vec::new(),
+            runtime_snapshot_digest: [1u8; 32],
+            feedback_state: feedback_state.clone(),
+            last_injection: None,
+            governance: &GovernanceUpdateState::default(),
+        });
+        let snapshot_b = build_feedback_snapshot(FeedbackSnapshotContext {
+            session_id: "session-1",
+            tick: 42,
+            asset_manifest_digest: None,
+            micro_cfg_digests: Vec::new(),
+            runtime_snapshot_digest: [1u8; 32],
             feedback_state,
-            None,
-        );
+            last_injection: None,
+            governance: &GovernanceUpdateState::default(),
+        });
         assert_eq!(snapshot_a, snapshot_b);
     }
 
@@ -728,15 +754,16 @@ mod feedback_snapshot_tests {
             ca_spike_count: 0,
         };
         let report = InjectionReport::new(5, 2, 3, 0, vec!["RC.TEST".to_string()]);
-        let snapshot = build_feedback_snapshot(
-            "session-2",
-            7,
-            None,
-            Vec::new(),
-            [0u8; 32],
+        let snapshot = build_feedback_snapshot(FeedbackSnapshotContext {
+            session_id: "session-2",
+            tick: 7,
+            asset_manifest_digest: None,
+            micro_cfg_digests: Vec::new(),
+            runtime_snapshot_digest: [0u8; 32],
             feedback_state,
-            Some(&report),
-        );
+            last_injection: Some(&report),
+            governance: &GovernanceUpdateState::default(),
+        });
         assert!(snapshot
             .reason_codes
             .iter()

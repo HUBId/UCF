@@ -178,6 +178,10 @@ impl RegulationEngine {
         self.session_id = Some(session_id.into());
     }
 
+    pub fn ingest_signal_frame(&mut self, frame: &ucf::v1::SignalFrame) {
+        self.brain_bus.ingest_signal_frame(frame);
+    }
+
     pub fn snapshot(&mut self) -> RegulationSnapshot {
         let now_ms = self.rsv.last_seen_frame_ts_ms.unwrap_or(0);
         let (decision, brain_output) = self.decide_on_missing(now_ms);
@@ -205,6 +209,7 @@ impl RegulationEngine {
     }
 
     pub fn enqueue_signal_frame(&mut self, frame: ucf::v1::SignalFrame) -> Result<(), EngineError> {
+        self.ingest_signal_frame(&frame);
         if self.signal_queue.len() >= self.config.engine_limits.max_queue_len {
             let _ = self.signal_queue.pop_front();
             eprintln!(

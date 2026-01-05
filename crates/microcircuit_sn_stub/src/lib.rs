@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-use biophys_core::ModulatorField;
+use biophys_core::{ModLevel, ModulatorField};
 use dbm_core::{
     DbmModule, DwmMode, IntegrityState, LevelClass, ReasonSet, SalienceItem, SalienceSource,
 };
@@ -8,7 +8,7 @@ use microcircuit_core::{
     digest_config, digest_meta, CircuitConfig, CircuitStateMeta, MicrocircuitBackend,
 };
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct SnInput {
     pub isv: dbm_core::IsvSnapshot,
     pub cooldown_class: Option<dbm_core::LevelClass>,
@@ -16,6 +16,27 @@ pub struct SnInput {
     pub replay_hint: bool,
     pub reward_block: bool,
     pub modulators: ModulatorField,
+    pub plasticity_scale_q: u16,
+    pub cooldown_ticks_remaining: u32,
+}
+
+impl Default for SnInput {
+    fn default() -> Self {
+        Self {
+            isv: dbm_core::IsvSnapshot::default(),
+            cooldown_class: None,
+            current_dwm: None,
+            replay_hint: false,
+            reward_block: false,
+            modulators: ModulatorField {
+                na: ModLevel::Low,
+                da: ModLevel::Low,
+                ht: ModLevel::Low,
+            },
+            plasticity_scale_q: 1000,
+            cooldown_ticks_remaining: 0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

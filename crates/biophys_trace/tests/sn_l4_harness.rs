@@ -58,6 +58,7 @@ fn sn_l4_trace_roundtrip() {
             in_replay: idx % 2 == 0,
             reward_block: idx % 5 == 0,
             da_level,
+            plasticity_scale_q: 1000,
         };
         let mods = ModulatorField {
             na: ModLevel::Med,

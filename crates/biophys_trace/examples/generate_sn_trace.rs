@@ -40,6 +40,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             in_replay: idx % 3 == 0,
             reward_block: idx % 4 == 0,
             da_level,
+            plasticity_scale_q: 1000,
         };
         let mods = ModulatorField {
             na: ModLevel::Med,

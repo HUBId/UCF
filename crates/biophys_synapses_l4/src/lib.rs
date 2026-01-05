@@ -249,10 +249,12 @@ pub fn apply_stdp_updates(
     spike_flags: &[bool],
     traces: &[StdpTrace],
     config: StdpConfig,
+    plasticity_scale_q: u16,
 ) {
     if spike_flags.len() != traces.len() {
         return;
     }
+    let scale_q = plasticity_scale_q.min(1000) as u32;
     let scale = TRACE_SCALE_Q as u32;
     for synapse in synapses.iter_mut() {
         if !synapse.stdp_enabled {
@@ -274,6 +276,7 @@ pub fn apply_stdp_updates(
         }
         let post_trace = traces[post].post_trace_q.min(TRACE_SCALE_Q) as u32;
         let dw_q = (config.a_minus_q as u32 * post_trace) / scale;
+        let dw_q = (dw_q as u64 * scale_q as u64 / 1000) as u32;
         let dw_g_q = dw_q << STDP_WEIGHT_SHIFT;
         let updated = synapse.g_max_base_q.saturating_sub(dw_g_q);
         synapse.g_max_base_q = updated.max(synapse.g_max_min_q).min(synapse.g_max_max_q);
@@ -298,6 +301,7 @@ pub fn apply_stdp_updates(
         }
         let pre_trace = traces[pre].pre_trace_q.min(TRACE_SCALE_Q) as u32;
         let dw_q = (config.a_plus_q as u32 * pre_trace) / scale;
+        let dw_q = (dw_q as u64 * scale_q as u64 / 1000) as u32;
         let dw_g_q = dw_q << STDP_WEIGHT_SHIFT;
         let updated = synapse.g_max_base_q.saturating_add(dw_g_q);
         synapse.g_max_base_q = updated.max(synapse.g_max_min_q).min(synapse.g_max_max_q);
