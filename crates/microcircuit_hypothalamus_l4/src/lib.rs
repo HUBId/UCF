@@ -759,6 +759,7 @@ impl HypothalamusL4Microcircuit {
             &self.stdp_spike_flags,
             &self.stdp_traces,
             self.stdp_config,
+            1000,
         );
         self.refresh_syn_g_max_eff();
     }

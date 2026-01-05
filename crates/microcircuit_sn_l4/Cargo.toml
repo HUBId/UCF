@@ -41,6 +41,7 @@ biophys_compartmental_solver = { path = "../biophys_compartmental_solver", featu
 biophys_core = { path = "../biophys_core", features = ["biophys", "biophys-l4"] }
 biophys_event_queue_l4 = { path = "../biophys_event_queue_l4", features = ["biophys", "biophys-l4", "biophys-l4-synapses", "biophys-l4-stp"] }
 biophys_feedback = { path = "../biophys_feedback" }
+biophys_governance = { path = "../biophys_governance" }
 biophys_injection = { path = "../biophys_injection" }
 biophys_homeostasis_l4 = { path = "../biophys_homeostasis_l4", features = ["biophys", "biophys-l4"] }
 biophys_morphology = { path = "../biophys_morphology", features = ["biophys", "biophys-l4"] }

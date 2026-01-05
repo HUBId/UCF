@@ -50,6 +50,7 @@ fn build_trace(init: &SnL4TraceInit, steps: u32) -> TraceFile {
             in_replay: idx % 3 == 0,
             reward_block: idx % 4 == 0,
             da_level,
+            plasticity_scale_q: 1000,
         };
         let mods = ModulatorField {
             na: ModLevel::Med,

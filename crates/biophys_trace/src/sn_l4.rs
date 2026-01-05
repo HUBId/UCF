@@ -115,6 +115,8 @@ impl CircuitInit for SnL4TraceInit {
             replay_hint: trace_input.replay_hint,
             reward_block: step.learning_context.reward_block,
             modulators: step.mods,
+            plasticity_scale_q: step.learning_context.plasticity_scale_q,
+            cooldown_ticks_remaining: 0,
         })
     }
 

@@ -3,8 +3,9 @@ name = "biophys_feedback"
 version = "0.1.0"
 edition = "2021"
 
+[dependencies]
+biophys_governance = { path = "../biophys_governance" }
+blake3 = "1"
+
 [lib]
 path = "src/lib.rs"
-
-[dependencies]
-blake3 = "1"

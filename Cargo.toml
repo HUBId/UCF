@@ -85,6 +85,7 @@ members = [
     "crates/biophys_targeting_l4",
     "crates/biophys_trace",
     "crates/biophys_injection",
+    "crates/biophys_governance",
     "crates/biophys_feedback",
     "crates/replay_executor",
     "crates/replay_evidence",

@@ -21,6 +21,7 @@ biophys-l4-insula = ["dbm_12_insula/biophys-l4-insula"]
 biophys_feedback = { path = "../biophys_feedback" }
 biophys_injection = { path = "../biophys_injection" }
 biophys_core = { path = "../biophys_core" }
+biophys_governance = { path = "../biophys_governance" }
 dbm_core = { path = "../dbm_core" }
 dbm_hpa = { path = "../dbm_hpa" }
 baseline_resolver = { path = "../baseline_resolver" }

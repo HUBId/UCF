@@ -6,7 +6,9 @@
 ))]
 
 use biophys_core::{ModLevel, ModulatorField};
-use biophys_plasticity_l4::{plasticity_snapshot_digest, LearningMode, StdpConfig, StdpTrace};
+use biophys_plasticity_l4::{
+    plasticity_snapshot_digest, LearningMode, StdpConfig, StdpTrace, TRACE_SCALE_Q,
+};
 use biophys_synapses_l4::{
     apply_stdp_updates, f32_to_fixed_u32, max_synapse_g_fixed, NmdaVDepMode, SynKind, SynapseL4,
 };
@@ -71,6 +73,7 @@ impl PlasticityHarness {
                 &self.spike_flags,
                 &self.traces,
                 self.config,
+                1000,
             );
         }
         self.step_count = self.step_count.saturating_add(1);
@@ -234,6 +237,31 @@ fn dopamine_gate_blocks_learning() {
 
     assert_eq!(weight_low, f32_to_fixed_u32(2.0));
     assert!(weight_high > weight_low);
+}
+
+#[test]
+fn plasticity_scale_reduces_weight_updates() {
+    let config = StdpConfig {
+        enabled: true,
+        learning_mode: LearningMode::ALWAYS,
+        a_plus_q: 500,
+        a_minus_q: 0,
+        tau_plus_steps: 6,
+        tau_minus_steps: 6,
+        w_min: 0,
+        w_max: 0,
+    };
+    let mut synapses_full = vec![build_synapse(0, 1, 2.0, 0.0, 10.0)];
+    let mut synapses_scaled = synapses_full.clone();
+    let mut traces = vec![StdpTrace::default(); 2];
+    traces[0].pre_trace_q = TRACE_SCALE_Q;
+    let mut spike_flags = vec![false; 2];
+    spike_flags[1] = true;
+
+    apply_stdp_updates(&mut synapses_full, &spike_flags, &traces, config, 1000);
+    apply_stdp_updates(&mut synapses_scaled, &spike_flags, &traces, config, 100);
+
+    assert!(synapses_scaled[0].g_max_base_q < synapses_full[0].g_max_base_q);
 }
 
 #[test]

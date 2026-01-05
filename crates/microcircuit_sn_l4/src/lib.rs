@@ -7,6 +7,7 @@ use biophys_compartmental_solver::{CompartmentChannels, L4Solver, L4State};
 use biophys_core::{CompartmentId, ModChannel, ModLevel, ModulatorField, NeuronId};
 use biophys_event_queue_l4::{QueueLimits, RuntimeHealth, SpikeEventQueueL4};
 use biophys_feedback::{BiophysFeedbackState, MAX_SPIKE_LIST_LEN};
+use biophys_governance::{COOLDOWN_INJECTION_AMPLITUDE_CAP_Q, COOLDOWN_MAX_TARGETS_PER_SPIKE};
 use biophys_homeostasis_l4::{
     homeostasis_tick, scale_g_max_fixed, HomeoMode, HomeostasisConfig, HomeostasisState,
 };
@@ -185,6 +186,8 @@ pub struct SnL4Microcircuit {
     stdp_spike_flags: Vec<bool>,
     learning_enabled: bool,
     in_replay_mode: bool,
+    plasticity_scale_q: u16,
+    governance_cooldown_active: bool,
     homeostasis_config: HomeostasisConfig,
     homeostasis_state: HomeostasisState,
     #[cfg(feature = "biophys-l4-ca-feedback")]
@@ -370,6 +373,8 @@ impl SnL4Microcircuit {
             stdp_spike_flags,
             learning_enabled: false,
             in_replay_mode: false,
+            plasticity_scale_q: 1000,
+            governance_cooldown_active: false,
             homeostasis_config,
             homeostasis_state,
             #[cfg(feature = "biophys-l4-ca-feedback")]
@@ -557,25 +562,8 @@ impl SnL4Microcircuit {
         items
     }
 
-    fn mod_level_from_class(level: LevelClass) -> ModLevel {
-        match level {
-            LevelClass::Low => ModLevel::Low,
-            LevelClass::Med => ModLevel::Med,
-            LevelClass::High => ModLevel::High,
-        }
-    }
-
     fn modulators_from_input(input: &SnInput) -> ModulatorField {
-        let da_level = if input.reward_block {
-            LevelClass::Low
-        } else {
-            input.isv.progress
-        };
-        ModulatorField {
-            na: Self::mod_level_from_class(input.isv.arousal),
-            ht: Self::mod_level_from_class(input.isv.stability),
-            da: Self::mod_level_from_class(da_level),
-        }
+        input.modulators
     }
 
     fn update_modulators(&mut self, input: &SnInput) {
@@ -795,6 +783,7 @@ impl SnL4Microcircuit {
             &self.stdp_spike_flags,
             &self.stdp_traces,
             self.stdp_config,
+            self.plasticity_scale_q,
         );
         self.refresh_syn_g_max_eff();
     }
@@ -836,6 +825,11 @@ impl SnL4Microcircuit {
         self.external_spike_buffer.clear();
         self.external_spike_buffer.reserve(spikes.len());
         self.external_spike_buffer.extend(spikes.iter().cloned());
+        if self.governance_cooldown_active {
+            for spike in &mut self.external_spike_buffer {
+                spike.amplitude_q = spike.amplitude_q.min(COOLDOWN_INJECTION_AMPLITUDE_CAP_Q);
+            }
+        }
         let dropped_spikes = normalize_spikes(&mut self.external_spike_buffer);
         self.external_spike_buffer.shrink_to(MAX_SPIKES_PER_TICK);
         if dropped_spikes > 0 {
@@ -850,8 +844,13 @@ impl SnL4Microcircuit {
         }
 
         self.external_target_buffer.clear();
+        let max_targets_per_spike = if self.governance_cooldown_active {
+            COOLDOWN_MAX_TARGETS_PER_SPIKE.min(MAX_TARGETS_PER_SPIKE)
+        } else {
+            MAX_TARGETS_PER_SPIKE
+        };
         self.external_target_buffer
-            .reserve(MAX_TARGETS_PER_SPIKE.saturating_mul(MAX_SPIKES_PER_TICK));
+            .reserve(max_targets_per_spike.saturating_mul(MAX_SPIKES_PER_TICK));
 
         let mut dropped_targets = 0u32;
         let mut emitted_targets = 0u32;
@@ -864,10 +863,10 @@ impl SnL4Microcircuit {
                     target.syn_kind as u8,
                 )
             });
-            if targets.len() > MAX_TARGETS_PER_SPIKE {
+            if targets.len() > max_targets_per_spike {
                 dropped_targets =
-                    dropped_targets.saturating_add((targets.len() - MAX_TARGETS_PER_SPIKE) as u32);
-                targets.truncate(MAX_TARGETS_PER_SPIKE);
+                    dropped_targets.saturating_add((targets.len() - max_targets_per_spike) as u32);
+                targets.truncate(max_targets_per_spike);
             }
             emitted_targets = emitted_targets.saturating_add(targets.len() as u32);
             self.external_target_buffer.extend(targets);
@@ -877,7 +876,7 @@ impl SnL4Microcircuit {
         dropped_targets = dropped_targets.saturating_add(self.apply_external_targets(&targets));
         self.external_target_buffer = targets;
         self.external_target_buffer
-            .shrink_to(MAX_TARGETS_PER_SPIKE.saturating_mul(MAX_SPIKES_PER_TICK));
+            .shrink_to(max_targets_per_spike.saturating_mul(MAX_SPIKES_PER_TICK));
 
         if dropped_targets > 0 {
             self.state.external_dropped_targets_last_tick = self
@@ -965,6 +964,8 @@ impl SnL4Microcircuit {
 impl MicrocircuitBackend<SnInput, SnOutput> for SnL4Microcircuit {
     fn step(&mut self, input: &SnInput, _now_ms: u64) -> SnOutput {
         self.state.tick_count = self.state.tick_count.saturating_add(1);
+        self.plasticity_scale_q = input.plasticity_scale_q.min(1000);
+        self.governance_cooldown_active = input.cooldown_ticks_remaining > 0;
         self.update_modulators(input);
         self.set_learning_context(
             input.replay_hint,
@@ -2311,6 +2312,11 @@ mod tests {
                 ..dbm_core::IsvSnapshot::default()
             },
             reward_block: true,
+            modulators: ModulatorField {
+                na: ModLevel::Med,
+                da: ModLevel::Low,
+                ht: ModLevel::Low,
+            },
             ..Default::default()
         };
 
@@ -2406,6 +2412,34 @@ mod tests {
             .codes
             .iter()
             .any(|code| code == "RC.GV.BIO.EXTERNAL_SPIKES_DROPPED"));
+    }
+
+    #[test]
+    fn cooldown_clamps_external_injection_amplitude() {
+        let router = DirectRouter;
+        let mut circuit = SnL4Microcircuit::new(CircuitConfig::default());
+        circuit.step(
+            &SnInput {
+                cooldown_ticks_remaining: 3,
+                ..Default::default()
+            },
+            0,
+        );
+
+        let spikes = vec![ExternalSpike {
+            region: "r".to_string(),
+            population: "p".to_string(),
+            neuron_group: 0,
+            syn_kind: SynKind::AMPA,
+            amplitude_q: 900,
+        }];
+
+        circuit.inject_external_spikes(&spikes, &router);
+
+        let expected = (max_synapse_g_fixed() as u64 * COOLDOWN_INJECTION_AMPLITUDE_CAP_Q as u64
+            / 1000) as u32;
+        assert_eq!(circuit.external_targets.len(), 1);
+        assert_eq!(circuit.external_targets[0].g_add_q, expected);
     }
 
     #[test]

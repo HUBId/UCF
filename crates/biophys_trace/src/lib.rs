@@ -30,6 +30,7 @@ pub struct LearningContext {
     pub in_replay: bool,
     pub reward_block: bool,
     pub da_level: ModLevel,
+    pub plasticity_scale_q: u16,
 }
 
 impl Default for LearningContext {
@@ -38,6 +39,7 @@ impl Default for LearningContext {
             in_replay: false,
             reward_block: false,
             da_level: ModLevel::Med,
+            plasticity_scale_q: 1000,
         }
     }
 }
@@ -292,6 +294,7 @@ fn write_learning_context(
     writer.write_all(&[context.in_replay as u8])?;
     writer.write_all(&[context.reward_block as u8])?;
     writer.write_all(&[mod_level_code(context.da_level)])?;
+    writer.write_all(&context.plasticity_scale_q.to_le_bytes())?;
     Ok(())
 }
 
@@ -299,10 +302,12 @@ fn read_learning_context(bytes: &[u8], cursor: &mut usize) -> Result<LearningCon
     let in_replay = read_u8(bytes, cursor)? != 0;
     let reward_block = read_u8(bytes, cursor)? != 0;
     let da_level = read_mod_level(bytes, cursor)?;
+    let plasticity_scale_q = read_u16(bytes, cursor)?;
     Ok(LearningContext {
         in_replay,
         reward_block,
         da_level,
+        plasticity_scale_q,
     })
 }
 
@@ -340,6 +345,23 @@ fn read_u32(bytes: &[u8], cursor: &mut usize) -> Result<u32, TraceError> {
     buf.copy_from_slice(&bytes[*cursor..end]);
     *cursor = end;
     Ok(u32::from_le_bytes(buf))
+}
+
+fn read_u16(bytes: &[u8], cursor: &mut usize) -> Result<u16, TraceError> {
+    let end = cursor
+        .checked_add(2)
+        .ok_or_else(|| TraceError::InvalidFormat {
+            message: "unexpected eof".to_string(),
+        })?;
+    if end > bytes.len() {
+        return Err(TraceError::InvalidFormat {
+            message: "unexpected eof".to_string(),
+        });
+    }
+    let mut buf = [0u8; 2];
+    buf.copy_from_slice(&bytes[*cursor..end]);
+    *cursor = end;
+    Ok(u16::from_le_bytes(buf))
 }
 
 fn read_u8(bytes: &[u8], cursor: &mut usize) -> Result<u8, TraceError> {

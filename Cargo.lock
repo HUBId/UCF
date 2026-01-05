@@ -119,7 +119,16 @@ version = "0.1.0"
 name = "biophys_feedback"
 version = "0.1.0"
 dependencies = [
+ "biophys_governance",
  "blake3",
+]
+
+[[package]]
+name = "biophys_governance"
+version = "0.1.0"
+dependencies = [
+ "biophys_core",
+ "ucf-protocol",
 ]
 
 [[package]]
@@ -355,6 +364,7 @@ dependencies = [
  "baseline_resolver",
  "biophys_core",
  "biophys_feedback",
+ "biophys_governance",
  "biophys_injection",
  "dbm_0_sn",
  "dbm_12_insula",
@@ -966,6 +976,7 @@ dependencies = [
  "biophys_core",
  "biophys_event_queue_l4",
  "biophys_feedback",
+ "biophys_governance",
  "biophys_homeostasis_l4",
  "biophys_injection",
  "biophys_morphology",

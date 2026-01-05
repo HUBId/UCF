@@ -18,6 +18,8 @@ pub struct BiophysFeedbackSnapshot {
     pub events_dropped: u32,
     pub injected_spikes_received: u32,
     pub injected_targets_applied: u32,
+    pub cooldown_ticks_remaining: u32,
+    pub last_update_kind: Option<biophys_governance::UpdateKind>,
     pub reason_codes: Vec<String>,
 }
 

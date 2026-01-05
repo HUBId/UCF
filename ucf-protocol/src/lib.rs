@@ -90,6 +90,10 @@ pub mod v1 {
         RcGvAssetManifestAppended = 60,
         RcGvTraceFail = 61,
         RcGvTracePass = 62,
+        RcGvSaePackUpdated = 63,
+        RcGvMapUpdated = 64,
+        RcGvLiquidParamsUpdated = 65,
+        RcGvInjectionLimitsUpdated = 66,
     }
 
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Enumeration)]

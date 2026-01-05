@@ -6,6 +6,7 @@ use biophys_feedback::{
     bound_session_id, normalize_reason_codes, spike_train_digest, BiophysFeedbackSnapshot,
     BiophysFeedbackState, MAX_MICRO_CFG_DIGESTS,
 };
+use biophys_governance::GovernanceUpdateState;
 use biophys_injection::InjectionReport;
 use dbm_0_sn::{SnInput, SubstantiaNigra};
 use dbm_12_insula::{Insula, InsulaInput};
@@ -96,6 +97,8 @@ pub struct BrainBus {
     last_baseline_vector: BaselineVector,
     last_emotion_field: Option<EmotionField>,
     asset_manifest_digest: Option<[u8; 32]>,
+    governance: GovernanceUpdateState,
+    last_modulators: ModulatorField,
 }
 
 impl BrainBus {
@@ -113,6 +116,10 @@ impl BrainBus {
             last_hpa_output,
             ..Self::new()
         }
+    }
+
+    pub fn ingest_signal_frame(&mut self, frame: &ucf::v1::SignalFrame) {
+        self.governance.ingest_signal_frame(frame);
     }
 
     pub fn lc_mut(&mut self) -> &mut Lc {
@@ -260,6 +267,7 @@ impl BrainBus {
             runtime_snapshot_digest,
             feedback_state,
             last_injection,
+            &self.governance,
         )
     }
 
@@ -300,6 +308,7 @@ impl BrainBus {
     }
 
     pub fn tick(&mut self, input: BrainInput) -> BrainOutput {
+        self.governance.tick();
         let medium_window = input.window_kind == WindowKind::Medium;
         if medium_window && self.last_window_kind != Some(WindowKind::Medium) {
             self.pprf.on_medium_window_rollover();
@@ -394,12 +403,16 @@ impl BrainBus {
             self.set_last_dopa_output(Some(dopa_output.clone()));
         }
 
-        let modulators = modulator_field_from_levels(
+        let target_modulators = modulator_field_from_levels(
             lc_output.arousal,
             ser_output.stability,
             dopa_output.progress,
             dopa_output.reward_block,
         );
+        let modulators = self
+            .governance
+            .stabilize_modulators(self.last_modulators, target_modulators);
+        self.last_modulators = modulators;
 
         let pag_input = PagInput {
             threat: amy_output.threat,
@@ -481,6 +494,8 @@ impl BrainBus {
             replay_hint: dopa_output.replay_hint,
             reward_block: dopa_output.reward_block,
             modulators,
+            plasticity_scale_q: self.governance.plasticity_scale_q(),
+            cooldown_ticks_remaining: self.governance.cooldown_ticks_remaining,
         });
 
         let sc_output = self.sc.tick(&ScInput {
@@ -647,6 +662,7 @@ fn build_feedback_snapshot(
     runtime_snapshot_digest: [u8; 32],
     feedback_state: BiophysFeedbackState,
     last_injection: Option<&InjectionReport>,
+    governance: &GovernanceUpdateState,
 ) -> BiophysFeedbackSnapshot {
     let (injected_spikes_received, injected_targets_applied, dropped_spikes, injection_reasons) =
         last_injection
@@ -668,6 +684,9 @@ fn build_feedback_snapshot(
         reason_codes.push("RC.GV.INJECT.DROPPED_SPIKES".to_string());
     }
     reason_codes.extend(injection_reasons);
+    if governance.cooldown_active() {
+        reason_codes.push("RC.GV.BIO.COOLDOWN_ACTIVE".to_string());
+    }
     let reason_codes = normalize_reason_codes(reason_codes);
 
     BiophysFeedbackSnapshot {
@@ -682,6 +701,8 @@ fn build_feedback_snapshot(
         events_dropped: feedback_state.events_dropped,
         injected_spikes_received,
         injected_targets_applied,
+        cooldown_ticks_remaining: governance.cooldown_ticks_remaining,
+        last_update_kind: governance.last_update_kind,
         reason_codes,
     }
 }
@@ -706,6 +727,7 @@ mod feedback_snapshot_tests {
             [1u8; 32],
             feedback_state.clone(),
             None,
+            &GovernanceUpdateState::default(),
         );
         let snapshot_b = build_feedback_snapshot(
             "session-1",
@@ -715,6 +737,7 @@ mod feedback_snapshot_tests {
             [1u8; 32],
             feedback_state,
             None,
+            &GovernanceUpdateState::default(),
         );
         assert_eq!(snapshot_a, snapshot_b);
     }
@@ -736,6 +759,7 @@ mod feedback_snapshot_tests {
             [0u8; 32],
             feedback_state,
             Some(&report),
+            &GovernanceUpdateState::default(),
         );
         assert!(snapshot
             .reason_codes
