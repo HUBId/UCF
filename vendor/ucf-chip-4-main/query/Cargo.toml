@@ -1,0 +1,51 @@
+[package]
+name = "query"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+serde = { workspace = true, optional = true }
+serde_yaml = { workspace = true, optional = true }
+pvgs = { path = "../pvgs" }
+receipts = { path = "../receipts" }
+sep = { path = "../sep" }
+vrf = { path = "../vrf" }
+cbv = { path = "../cbv" }
+pev = { path = "../pev" }
+keys = { path = "../keys" }
+wire = { path = "../wire" }
+ucf-protocol = { path = "../ucf-protocol" }
+dlp_store = { path = "../dlp_store" }
+milestones = { path = "../milestones" }
+replay_plan = { path = "../replay_plan" }
+replay_runs = { path = "../crates/replay_runs" }
+trace_runs = { path = "../crates/trace_runs" }
+proposals = { path = "../crates/proposals" }
+proposal_activations = { path = "../crates/proposal_activations" }
+hex = "0.4"
+prost = { workspace = true }
+recovery = { path = "../crates/recovery" }
+tool_events = { path = "../crates/tool_events" }
+
+[dev-dependencies]
+assets = { path = "../crates/assets" }
+micro_evidence = { path = "../crates/micro_evidence" }
+blake3 = { workspace = true }
+
+[features]
+serde = [
+    "dep:serde",
+    "dep:serde_yaml",
+    "pvgs/serde",
+    "milestones/serde",
+    "replay_plan/serde",
+    "replay_runs/serde",
+    "trace_runs/serde",
+    "proposals/serde",
+    "proposal_activations/serde",
+]
+
+[[test]]
+name = "proposal_activation_e2e"
+path = "../tests/proposal_activation_e2e.rs"

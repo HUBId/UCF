@@ -1,0 +1,49 @@
+[package]
+name = "pvgs"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+blake3.workspace = true
+bincode = "1.3"
+serde.workspace = true
+serde_yaml = { workspace = true, optional = true }
+sep = { path = "../sep" }
+ucf-protocol = { path = "../ucf-protocol" }
+replay_plan = { path = "../replay_plan" }
+replay_runs = { path = "../crates/replay_runs" }
+trace_runs = { path = "../crates/trace_runs" }
+proposals = { path = "../crates/proposals" }
+proposal_activations = { path = "../crates/proposal_activations" }
+dlp_store = { path = "../dlp_store" }
+pev = { path = "../pev" }
+receipts = { path = "../receipts" }
+keys = { path = "../keys" }
+vrf = { path = "../vrf" }
+prost = { workspace = true }
+cbv = { path = "../cbv" }
+thiserror.workspace = true
+ed25519-dalek.workspace = true
+tool_registry_state = { path = "../tool_registry_state" }
+tool_events = { path = "../crates/tool_events" }
+hex = "0.4"
+milestones = { path = "../milestones" }
+consistency = { path = "../crates/consistency" }
+limits = { workspace = true }
+recovery = { path = "../crates/recovery" }
+micro_evidence = { path = "../crates/micro_evidence" }
+assets = { path = "../crates/assets" }
+rpp-pruning = { path = "../vendor/ztate/rpp/pruning" }
+
+[features]
+default = []
+serde = [
+    "serde_yaml",
+    "ucf-protocol/serde",
+    "milestones/serde",
+    "replay_plan/serde",
+    "replay_runs/serde",
+    "trace_runs/serde",
+    "proposals/serde",
+    "proposal_activations/serde",
+]
