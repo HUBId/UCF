@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
 use biophys_core::{ModLevel, ModulatorField};
-use ucf::v1::{ReasonCode, SignalFrame};
+use ucf_protocol::v1::{ReasonCode, SignalFrame};
 
 /// Maximum governance reason codes retained per cooldown window.
 pub const MAX_GOVERNANCE_REASON_CODES: usize = 8;
@@ -91,7 +91,7 @@ impl GovernanceUpdateState {
             self.last_update_digest = frame
                 .signal_frame_digest
                 .as_ref()
-                .and_then(|bytes| <[u8; 32]>::try_from(bytes.as_slice()).ok());
+                .and_then(|digest| <[u8; 32]>::try_from(digest.value.as_slice()).ok());
         }
     }
 
@@ -211,7 +211,9 @@ mod tests {
             exec_stats: None,
             integrity_state: 0,
             top_reason_codes: vec![ReasonCode::RcGvSaePackUpdated as i32],
-            signal_frame_digest: Some(vec![7u8; 32]),
+            signal_frame_digest: Some(ucf_protocol::v1::Digest32 {
+                value: vec![7u8; 32],
+            }),
             receipt_stats: None,
             reason_codes: Vec::new(),
         };

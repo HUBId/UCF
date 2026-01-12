@@ -1,11 +1,12 @@
 #![forbid(unsafe_code)]
 
 use prost::Message;
-use ucf::v1::{
-    ChannelParamsPayload, ChannelParamsSetPayload, CompartmentKind as PayloadCompartmentKind,
-    CompartmentPayload, ConnectivityEdgePayload, ConnectivityGraphPayload, LabelKv,
-    ModChannel as PayloadModChannel, MorphNeuronPayload, MorphologySetPayload,
-    SynapseParamsPayload, SynapseParamsSetPayload, SynapseType as PayloadSynapseType,
+use ucf_protocol::v1::{
+    compartment::Parent as CompartmentParent, AssetDigest, AssetKind, ChannelParams,
+    ChannelParamsSetPayload, Compartment, CompartmentKind as PayloadCompartmentKind,
+    ConnEdge as ConnectivityEdgePayload, ConnectivityGraphPayload, Digest32, LabelKv,
+    ModChannel as PayloadModChannel, MorphNeuron, MorphologySetPayload, SynKind, SynapseParams,
+    SynapseParamsSetPayload, SynType as PayloadSynapseType,
 };
 
 const MAX_COMPARTMENTS_PER_NEURON: usize = 64;
@@ -74,11 +75,14 @@ pub struct SynapseParamsSet {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SynapseParams {
+    pub syn_kind: SynKind,
     pub syn_type: SynType,
-    pub weight_base: i32,
-    pub stp_u: u16,
-    pub tau_rec: u16,
-    pub tau_fac: u16,
+    pub g_max_q: u32,
+    pub e_rev_mv: i32,
+    pub tau_decay_steps: u32,
+    pub stp_u_q: u32,
+    pub tau_rec_steps: u32,
+    pub tau_fac_steps: u32,
     pub mod_channel: ModChannel,
 }
 
@@ -91,8 +95,11 @@ pub enum SynType {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Ord, PartialOrd)]
 pub enum ModChannel {
     None,
-    A,
-    B,
+    Na,
+    Da,
+    Ht,
+    NaDa,
+    HtNa,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -121,20 +128,25 @@ pub struct AssetManifest {
 }
 
 pub fn to_asset_digest(
-    kind: ucf::v1::AssetKind,
+    kind: AssetKind,
     version: u32,
     digest: [u8; 32],
     created_at_ms: u64,
     prev: Option<[u8; 32]>,
-) -> ucf::v1::AssetDigest {
-    let digest_bytes = digest.to_vec();
-    debug_assert_eq!(digest_bytes.len(), 32);
-    ucf::v1::AssetDigest {
+) -> AssetDigest {
+    let digest_bytes = Digest32 {
+        value: digest.to_vec(),
+    };
+    let prev_digest = prev.map(|bytes| Digest32 {
+        value: bytes.to_vec(),
+    });
+    AssetDigest {
         kind: kind as i32,
         version,
-        digest: digest_bytes,
+        digest: Some(digest_bytes),
         created_at_ms,
-        prev_digest: prev.map(|bytes| bytes.to_vec()),
+        prev_digest,
+        proof_receipt_ref: None,
     }
 }
 
@@ -235,20 +247,26 @@ pub fn demo_syn_params() -> SynapseParamsSet {
         version: 1,
         params: vec![
             SynapseParams {
+                syn_kind: SynKind::Ampa,
                 syn_type: SynType::Exc,
-                weight_base: 5,
-                stp_u: 100,
-                tau_rec: 200,
-                tau_fac: 50,
+                g_max_q: 500,
+                e_rev_mv: 0,
+                tau_decay_steps: 20,
+                stp_u_q: 100,
+                tau_rec_steps: 200,
+                tau_fac_steps: 50,
                 mod_channel: ModChannel::None,
             },
             SynapseParams {
+                syn_kind: SynKind::Gaba,
                 syn_type: SynType::Inh,
-                weight_base: -4,
-                stp_u: 80,
-                tau_rec: 180,
-                tau_fac: 40,
-                mod_channel: ModChannel::A,
+                g_max_q: 400,
+                e_rev_mv: -75,
+                tau_decay_steps: 18,
+                stp_u_q: 80,
+                tau_rec_steps: 180,
+                tau_fac_steps: 40,
+                mod_channel: ModChannel::Na,
             },
         ],
     }
@@ -307,9 +325,9 @@ pub fn build_morphology_payload(morph: &MorphologySet) -> MorphologySetPayload {
             let compartments = neuron
                 .compartments
                 .iter()
-                .map(|comp| CompartmentPayload {
+                .map(|comp| Compartment {
                     comp_id: comp.comp_id,
-                    parent: comp.parent,
+                    parent: comp.parent.map(CompartmentParent::ParentCompId),
                     kind: match comp.kind {
                         CompartmentKind::Soma => PayloadCompartmentKind::Soma as i32,
                         CompartmentKind::Dendrite => PayloadCompartmentKind::Dendrite as i32,
@@ -339,7 +357,7 @@ pub fn build_morphology_payload(morph: &MorphologySet) -> MorphologySetPayload {
                     }
                 })
                 .collect();
-            MorphNeuronPayload {
+            MorphNeuron {
                 neuron_id: neuron.neuron_id,
                 compartments,
                 labels,
@@ -349,6 +367,7 @@ pub fn build_morphology_payload(morph: &MorphologySet) -> MorphologySetPayload {
     let mut payload = MorphologySetPayload {
         version: morph.version,
         neurons,
+        payload_digest: None,
     };
     normalize_payload_morphology(&mut payload);
     payload
@@ -358,17 +377,20 @@ pub fn build_channel_params_payload(params: &ChannelParamsSet) -> ChannelParamsS
     let entries = params
         .per_compartment
         .iter()
-        .map(|param| ChannelParamsPayload {
+        .map(|param| ChannelParams {
             neuron_id: param.neuron_id,
             comp_id: param.comp_id,
             leak_g: param.leak_g as u32,
             na_g: param.na_g as u32,
             k_g: param.k_g as u32,
+            ca_g: None,
+            e_rev_leak: None,
         })
         .collect();
     let mut payload = ChannelParamsSetPayload {
         version: params.version,
         params: entries,
+        payload_digest: None,
     };
     normalize_payload_channel_params(&mut payload);
     payload
@@ -379,26 +401,33 @@ pub fn build_synapse_params_payload(params: &SynapseParamsSet) -> SynapseParamsS
         .params
         .iter()
         .enumerate()
-        .map(|(idx, param)| SynapseParamsPayload {
+        .map(|(idx, param)| SynapseParams {
             syn_param_id: idx as u32,
             syn_type: match param.syn_type {
                 SynType::Exc => PayloadSynapseType::Exc as i32,
                 SynType::Inh => PayloadSynapseType::Inh as i32,
             },
-            weight_base: param.weight_base,
-            stp_u: param.stp_u as u32,
-            tau_rec: param.tau_rec as u32,
-            tau_fac: param.tau_fac as u32,
+            syn_kind: param.syn_kind as i32,
+            g_max_q: param.g_max_q,
+            e_rev_mv: param.e_rev_mv,
+            tau_decay_steps: param.tau_decay_steps,
+            stp_u_q: param.stp_u_q,
+            tau_rec_steps: param.tau_rec_steps,
+            tau_fac_steps: param.tau_fac_steps,
             mod_channel: match param.mod_channel {
                 ModChannel::None => PayloadModChannel::None as i32,
-                ModChannel::A => PayloadModChannel::A as i32,
-                ModChannel::B => PayloadModChannel::B as i32,
+                ModChannel::Na => PayloadModChannel::Na as i32,
+                ModChannel::Da => PayloadModChannel::Da as i32,
+                ModChannel::Ht => PayloadModChannel::Ht as i32,
+                ModChannel::NaDa => PayloadModChannel::NaDa as i32,
+                ModChannel::HtNa => PayloadModChannel::HtNa as i32,
             },
         })
         .collect();
     let mut payload = SynapseParamsSetPayload {
         version: params.version,
         params: entries,
+        payload_digest: None,
     };
     normalize_payload_synapse_params(&mut payload);
     payload
@@ -425,6 +454,7 @@ pub fn build_connectivity_payload(graph: &ConnectivityGraph) -> ConnectivityGrap
     let mut payload = ConnectivityGraphPayload {
         version: graph.version,
         edges,
+        payload_digest: None,
     };
     normalize_payload_connectivity(&mut payload);
     payload
@@ -544,9 +574,13 @@ pub fn morphology_from_payload(payload: &MorphologySetPayload) -> Result<Morphol
                 .map_err(|_| format!("invalid compartment kind {}", comp.kind))?;
             let length_um = u16_from_u32(comp.length_um, "length_um")?;
             let diameter_um = u16_from_u32(comp.diameter_um, "diameter_um")?;
+            let parent = match &comp.parent {
+                Some(CompartmentParent::ParentCompId(parent_id)) => Some(*parent_id),
+                None => None,
+            };
             compartments.push(Compartment {
                 comp_id: comp.comp_id,
-                parent: comp.parent,
+                parent,
                 kind: match kind {
                     PayloadCompartmentKind::Soma => CompartmentKind::Soma,
                     PayloadCompartmentKind::Dendrite => CompartmentKind::Dendrite,
@@ -611,6 +645,14 @@ pub fn synapse_params_from_payload(
         }
         let syn_type = PayloadSynapseType::try_from(param.syn_type)
             .map_err(|_| format!("invalid synapse type {}", param.syn_type))?;
+        if syn_type == PayloadSynapseType::SynTypeUnspecified {
+            return Err("synapse type unspecified".to_string());
+        }
+        let syn_kind =
+            SynKind::try_from(param.syn_kind).map_err(|_| format!("invalid synapse kind {}", param.syn_kind))?;
+        if syn_kind == SynKind::SynKindUnspecified {
+            return Err("synapse kind unspecified".to_string());
+        }
         let mod_channel = PayloadModChannel::try_from(param.mod_channel)
             .map_err(|_| format!("invalid mod channel {}", param.mod_channel))?;
         entries.push((
@@ -620,14 +662,21 @@ pub fn synapse_params_from_payload(
                     PayloadSynapseType::Exc => SynType::Exc,
                     PayloadSynapseType::Inh => SynType::Inh,
                 },
-                weight_base: param.weight_base,
-                stp_u: u16_from_u32(param.stp_u, "stp_u")?,
-                tau_rec: u16_from_u32(param.tau_rec, "tau_rec")?,
-                tau_fac: u16_from_u32(param.tau_fac, "tau_fac")?,
+                syn_kind,
+                g_max_q: param.g_max_q,
+                e_rev_mv: param.e_rev_mv,
+                tau_decay_steps: param.tau_decay_steps,
+                stp_u_q: param.stp_u_q,
+                tau_rec_steps: param.tau_rec_steps,
+                tau_fac_steps: param.tau_fac_steps,
                 mod_channel: match mod_channel {
                     PayloadModChannel::None => ModChannel::None,
-                    PayloadModChannel::A => ModChannel::A,
-                    PayloadModChannel::B => ModChannel::B,
+                    PayloadModChannel::Na => ModChannel::Na,
+                    PayloadModChannel::Da => ModChannel::Da,
+                    PayloadModChannel::Ht => ModChannel::Ht,
+                    PayloadModChannel::NaDa => ModChannel::NaDa,
+                    PayloadModChannel::HtNa => ModChannel::HtNa,
+                    PayloadModChannel::ModChannelUnspecified => ModChannel::None,
                 },
             },
         ));
