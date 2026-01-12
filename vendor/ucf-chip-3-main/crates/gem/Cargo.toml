@@ -1,0 +1,26 @@
+[package]
+name = "gem"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+
+[dependencies]
+thiserror = { workspace = true }
+blake3 = { workspace = true }
+pbm = { path = "../pbm" }
+tam = { path = "../tam" }
+ucf-protocol = { workspace = true }
+frames = { path = "../frames" }
+control = { path = "../control" }
+pvgs_verify = { path = "../pvgs_verify" }
+pvgs_client = { path = "../pvgs_client" }
+rpp_checker = { path = "../rpp_checker" }
+ckm_orchestrator = { path = "../ckm_orchestrator" }
+trm = { path = "../trm" }
+cdm = { path = "../cdm" }
+hex = "0.4"
+
+[dev-dependencies]
+ed25519-dalek = "2"
+rand = "0.8"
+ucf-test-utils = { path = "../test-utils" }
