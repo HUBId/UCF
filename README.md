@@ -1,1 +1,1 @@
-# UCF-Chip-2
+# UCF (former Chip-2)
