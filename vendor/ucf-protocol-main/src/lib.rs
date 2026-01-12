@@ -10,6 +10,8 @@ pub mod ucf {
     }
 }
 
+pub use ucf::v1;
+
 pub use ucf::v1::{
     AssetDigest, AssetKind, AssetManifest, ChannelParams, ChannelParamsSetPayload, Compartment,
     CompartmentKind, ConnEdge, ConnectivityGraphPayload, LabelKv, ModChannel, MorphNeuron,
