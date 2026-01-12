@@ -7,7 +7,7 @@ members = [
     "hpa",
     "pvgs_client",
     "app",
-    "ucf-protocol", "chip4",
+    "vendor/ucf-protocol-main", "chip4",
     "crates/dbm_core",
     "crates/dbm_13_hypothalamus",
     "crates/dbm_12_insula",

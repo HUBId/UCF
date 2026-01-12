@@ -5,4 +5,4 @@ edition = "2021"
 
 [dependencies]
 dbm_core = { path = "../dbm_core" }
-ucf = { package = "ucf-protocol", path = "../../ucf-protocol" }
+ucf = { package = "ucf-protocol", path = "../../vendor/ucf-protocol-main" }

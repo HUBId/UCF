@@ -4,7 +4,7 @@ Die ZIP-Archive werden extern bereitgestellt und sind **nicht** im Repository en
 Bitte lege die folgenden Dateien in diesem Ordner ab, bevor du mit dem nächsten Schritt
 fortfährst:
 
-- `UCF-protocol-main.zip`
+- `vendor/ucf-protocol-main/` (bereits entpackt)
 
 Hinweis: Die Dateien liegen aktuell im Repo unter `vendor/` und können von dort kopiert
 werden (z. B. `cp vendor/<datei> chip-3/`).

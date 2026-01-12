@@ -34,7 +34,7 @@ microcircuit_sn_l4 = { path = "../microcircuit_sn_l4", features = ["biophys-l4",
 microcircuit_sn_stub = { path = "../microcircuit_sn_stub" }
 pvgs_client = { path = "../../pvgs_client" }
 thiserror = "1"
-ucf = { package = "ucf-protocol", path = "../../ucf-protocol" }
+ucf = { package = "ucf-protocol", path = "../../vendor/ucf-protocol-main" }
 
 [dev-dependencies]
 asset_chunker = { path = "../asset_chunker" }
