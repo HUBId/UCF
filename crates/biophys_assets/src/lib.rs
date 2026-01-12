@@ -5,8 +5,8 @@ use ucf_protocol::v1::{
     compartment::Parent as CompartmentParent, AssetDigest, AssetKind, ChannelParams,
     ChannelParamsSetPayload, Compartment, CompartmentKind as PayloadCompartmentKind,
     ConnEdge as ConnectivityEdgePayload, ConnectivityGraphPayload, Digest32, LabelKv,
-    ModChannel as PayloadModChannel, MorphNeuron, MorphologySetPayload, SynKind, SynapseParams,
-    SynapseParamsSetPayload, SynType as PayloadSynapseType,
+    ModChannel as PayloadModChannel, MorphNeuron, MorphologySetPayload, SynKind,
+    SynType as PayloadSynapseType, SynapseParams, SynapseParamsSetPayload,
 };
 
 const MAX_COMPARTMENTS_PER_NEURON: usize = 64;
@@ -648,8 +648,8 @@ pub fn synapse_params_from_payload(
         if syn_type == PayloadSynapseType::SynTypeUnspecified {
             return Err("synapse type unspecified".to_string());
         }
-        let syn_kind =
-            SynKind::try_from(param.syn_kind).map_err(|_| format!("invalid synapse kind {}", param.syn_kind))?;
+        let syn_kind = SynKind::try_from(param.syn_kind)
+            .map_err(|_| format!("invalid synapse kind {}", param.syn_kind))?;
         if syn_kind == SynKind::SynKindUnspecified {
             return Err("synapse kind unspecified".to_string());
         }
