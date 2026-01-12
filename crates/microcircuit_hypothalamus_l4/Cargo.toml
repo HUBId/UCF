@@ -48,9 +48,9 @@ microcircuit_core = { path = "../microcircuit_core" }
 microcircuit_hypothalamus_setpoint = { path = "../microcircuit_hypothalamus_setpoint" }
 microcircuit_pag_stub = { path = "../microcircuit_pag_stub" }
 microcircuit_pmrf_stub = { path = "../microcircuit_pmrf_stub" }
-ucf = { package = "ucf-protocol", path = "../../ucf-protocol", optional = true }
+ucf = { package = "ucf-protocol", path = "../../vendor/ucf-protocol", optional = true }
 
 [dev-dependencies]
 asset_chunker = { path = "../asset_chunker" }
 prost = "0.12"
-ucf = { package = "ucf-protocol", path = "../../ucf-protocol" }
+ucf = { package = "ucf-protocol", path = "../../vendor/ucf-protocol" }
