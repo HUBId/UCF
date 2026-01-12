@@ -28,7 +28,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut config = prost_build::Config::new();
     let protoc_path = protoc_bin_vendored::protoc_bin_path()?;
-    config.protoc_path(protoc_path);
+    std::env::set_var("PROTOC", protoc_path);
     config.out_dir(PathBuf::from(std::env::var("OUT_DIR").unwrap()));
     config.compile_protos(&protos, &[proto_dir])?;
     Ok(())
