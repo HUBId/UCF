@@ -1,0 +1,44 @@
+[workspace]
+members = [
+    "crates/control",
+    "crates/wire",
+    "crates/pbm",
+    "crates/cdm",
+    "crates/gem",
+    "crates/trm",
+    "crates/tom",
+    "crates/tam",
+    "crates/frames",
+    "crates/ckm_orchestrator",
+    "crates/pvgs_client",
+    "crates/pvgs_verify",
+    "crates/app",
+    "crates/chip2_client",
+    "crates/ucf-protocol",
+    "crates/test-utils",
+    "crates/ckm_client",
+    "crates/replay_orchestrator",
+    "crates/geist_stub", "crates/suspension",
+    "crates/scheduler",
+    "crates/rpp_checker",
+    "crates/lnss_frames_bridge",
+    "tests",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "Apache-2.0"
+rust-version = "1.76"
+
+[workspace.dependencies]
+thiserror = "1"
+blake3 = "1"
+hex = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ucf-protocol = { path = "crates/ucf-protocol" }
+control = { path = "crates/control" }
+
+[profile.release]
+opt-level = 3

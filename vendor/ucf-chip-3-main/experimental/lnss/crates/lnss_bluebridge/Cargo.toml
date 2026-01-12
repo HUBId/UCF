@@ -1,0 +1,20 @@
+[package]
+name = "lnss_bluebridge"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[features]
+default = []
+lnss = []
+lnss-pyo3 = []
+lnss-cxx = []
+lnss-chip2-bridge = []
+
+[dependencies]
+lnss_runtime = { path = "../lnss_runtime" }
+
+[dev-dependencies]
+chip2 = { path = "../chip2" }
+lnss_core = { path = "../lnss_core" }

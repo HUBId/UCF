@@ -1,0 +1,84 @@
+[package]
+name = "lnss"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[workspace]
+members = [
+    "crates/chip2",
+    "crates/lnss_core",
+    "crates/lnss_lifecycle",
+    "crates/lnss_worldmodulation",
+    "crates/lnss_worldmodel",
+    "crates/lnss_rlm",
+    "crates/lnss_triggers",
+    "crates/lnss_runtime",
+    "crates/lnss_hooks",
+    "crates/lnss_sae",
+    "crates/lnss_mechint",
+    "crates/lnss_rig",
+    "crates/lnss_bluebridge",
+    "crates/lnss_evolve",
+    "crates/lnss_approval",
+]
+resolver = "2"
+
+[features]
+default = []
+lnss = [
+    "lnss_lifecycle",
+    "lnss_core",
+    "lnss_worldmodulation",
+    "lnss_worldmodel",
+    "lnss_rlm",
+    "lnss_triggers",
+    "lnss_runtime",
+    "lnss_hooks",
+    "lnss_sae",
+    "lnss_mechint",
+    "lnss_rig",
+    "lnss_bluebridge",
+    "lnss_evolve",
+]
+lnss-candle = [
+    "lnss_runtime/lnss-candle",
+    "lnss_hooks/lnss-candle",
+    "lnss_sae/lnss-candle",
+]
+lnss-sae-real = ["lnss_sae/lnss-sae-real", "lnss-candle"]
+lnss-burn = ["lnss_runtime/lnss-burn"]
+lnss-liquid-ode = ["lnss-burn", "lnss_runtime/lnss-liquid-ode"]
+lnss-arrow = ["lnss_mechint/lnss-arrow"]
+lnss-pyo3 = ["lnss_bluebridge/lnss-pyo3"]
+lnss-cxx = ["lnss_bluebridge/lnss-cxx"]
+lnss-rig-sdk = ["lnss_rig/lnss-rig-sdk"]
+lnss-chip2-bridge = ["lnss_bluebridge/lnss-chip2-bridge"]
+lnss-chip4-query = ["lnss_lifecycle/lnss-chip4-query", "lnss_runtime/lnss-chip4-query"]
+
+[dependencies]
+lnss_core = { path = "crates/lnss_core", optional = true }
+lnss_lifecycle = { path = "crates/lnss_lifecycle", optional = true }
+lnss_worldmodulation = { path = "crates/lnss_worldmodulation", optional = true }
+lnss_worldmodel = { path = "crates/lnss_worldmodel", optional = true }
+lnss_rlm = { path = "crates/lnss_rlm", optional = true }
+lnss_triggers = { path = "crates/lnss_triggers", optional = true }
+lnss_runtime = { path = "crates/lnss_runtime", optional = true }
+lnss_hooks = { path = "crates/lnss_hooks", optional = true }
+lnss_sae = { path = "crates/lnss_sae", optional = true }
+lnss_mechint = { path = "crates/lnss_mechint", optional = true }
+lnss_rig = { path = "crates/lnss_rig", optional = true }
+lnss_bluebridge = { path = "crates/lnss_bluebridge", optional = true }
+lnss_evolve = { path = "crates/lnss_evolve", optional = true }
+
+[dev-dependencies]
+chip2 = { path = "crates/chip2" }
+serde_json = { workspace = true }
+
+[workspace.dependencies]
+blake3 = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+hex = "0.4"
