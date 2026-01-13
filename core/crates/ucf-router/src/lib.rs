@@ -32,6 +32,12 @@ pub struct Router {
     digital_brain: Option<Arc<dyn DigitalBrainPort + Send + Sync>>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RouterOutcome {
+    pub evidence_id: EvidenceId,
+    pub decision_kind: DecisionKind,
+}
+
 impl Router {
     pub fn new(
         policy: Arc<dyn PolicyEvaluator + Send + Sync>,
@@ -45,9 +51,14 @@ impl Router {
         }
     }
 
-    pub fn handle_control_frame(&self, cf: ControlFrame) -> Result<EvidenceId, RouterError> {
+    pub fn handle_control_frame(
+        &self,
+        cf: ControlFrame,
+    ) -> Result<RouterOutcome, RouterError> {
         let decision = self.policy.evaluate(cf.clone());
         self.ensure_allowed(&decision)?;
+        let decision_kind = DecisionKind::try_from(decision.kind)
+            .unwrap_or(DecisionKind::DecisionKindUnspecified);
 
         let record = self.build_experience_record(&cf, &decision);
         let evidence_id = self.archive.append(record.clone());
@@ -56,7 +67,10 @@ impl Router {
             brain.ingest(record);
         }
 
-        Ok(evidence_id)
+        Ok(RouterOutcome {
+            evidence_id,
+            decision_kind,
+        })
     }
 
     fn ensure_allowed(&self, decision: &PolicyDecision) -> Result<(), RouterError> {

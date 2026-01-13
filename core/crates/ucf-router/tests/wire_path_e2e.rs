@@ -5,7 +5,7 @@ use ucf_archive::InMemoryArchive;
 use ucf_digital_brain::InMemoryDigitalBrain;
 use ucf_policy_gateway::NoOpPolicyEvaluator;
 use ucf_router::Router;
-use ucf_types::v1::spec::ControlFrame;
+use ucf_types::v1::spec::{ControlFrame, DecisionKind};
 use ucf_types::v1::spec::ExperienceRecord;
 use ucf_types::EvidenceId;
 
@@ -24,11 +24,12 @@ fn handle_control_frame_routes_end_to_end() {
         policy_id: "policy-1".to_string(),
     };
 
-    let evidence_id = router
+    let outcome = router
         .handle_control_frame(frame.clone())
         .expect("route frame");
 
-    assert_eq!(evidence_id, EvidenceId::new("exp-frame-1"));
+    assert_eq!(outcome.evidence_id, EvidenceId::new("exp-frame-1"));
+    assert_eq!(outcome.decision_kind, DecisionKind::DecisionKindUnspecified);
     assert_eq!(archive.list().len(), 1);
     assert_eq!(brain.records().len(), 1);
 
