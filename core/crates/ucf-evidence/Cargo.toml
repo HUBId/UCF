@@ -1,0 +1,10 @@
+[package]
+name = "ucf-evidence"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ucf_protocol = { package = "ucf-protocol", path = "../../../ucf-protocol" }
+ucf-types = { path = "../ucf-types" }
+
+[dev-dependencies]

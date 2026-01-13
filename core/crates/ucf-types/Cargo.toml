@@ -1,0 +1,11 @@
+[package]
+name = "ucf-types"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ucf_protocol = { package = "ucf-protocol", path = "../../../ucf-protocol" }
+serde = { workspace = true, optional = true }
+
+[features]
+serde = ["dep:serde"]
