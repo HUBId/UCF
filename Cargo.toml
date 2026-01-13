@@ -93,6 +93,10 @@ members = [
     "crates/biophys_feedback",
     "crates/replay_executor",
     "crates/replay_evidence",
+    "domains/policy-gateway/crates/ucf-policy-gateway",
+    "domains/archive/crates/ucf-archive",
+    "domains/ai-sandbox/crates/ucf-ai-sandbox",
+    "domains/digital-brain/crates/ucf-digital-brain",
 ]
 resolver = "2"
 

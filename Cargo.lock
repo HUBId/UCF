@@ -1272,6 +1272,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucf-ai-sandbox"
+version = "0.1.0"
+dependencies = [
+ "ucf-types",
+]
+
+[[package]]
+name = "ucf-archive"
+version = "0.1.0"
+dependencies = [
+ "prost",
+ "ucf-evidence",
+ "ucf-types",
+]
+
+[[package]]
 name = "ucf-bus"
 version = "0.1.0"
 dependencies = [
@@ -1283,10 +1299,25 @@ name = "ucf-crypto"
 version = "0.1.0"
 
 [[package]]
+name = "ucf-digital-brain"
+version = "0.1.0"
+dependencies = [
+ "ucf-types",
+]
+
+[[package]]
 name = "ucf-evidence"
 version = "0.1.0"
 dependencies = [
  "ucf-protocol",
+ "ucf-types",
+]
+
+[[package]]
+name = "ucf-policy-gateway"
+version = "0.1.0"
+dependencies = [
+ "ucf-bus",
  "ucf-types",
 ]
 
