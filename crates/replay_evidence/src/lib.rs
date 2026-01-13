@@ -98,6 +98,7 @@ mod tests {
     use super::*;
     use prost::Message;
     use ucf::v1::MicrocircuitModule;
+    use ucf::v1::spec::{Digest, ExperienceRecord, VrfTag};
 
     fn micro_config(module: i32, created_at_ms: u64) -> MicrocircuitConfigEvidence {
         MicrocircuitConfigEvidence {
@@ -206,5 +207,29 @@ mod tests {
         assert_eq!(evidence.micro_configs.len(), 8);
         let modules: Vec<i32> = evidence.micro_configs.iter().map(|ev| ev.module).collect();
         assert_eq!(modules, (1..=8).collect::<Vec<i32>>());
+    }
+
+    #[test]
+    fn spec_experience_record_roundtrip() {
+        let record = ExperienceRecord {
+            record_id: "record-1".to_string(),
+            observed_at_ms: 1_700_000_000_123,
+            subject_id: "subject-1".to_string(),
+            payload: vec![1, 2, 3, 4],
+            digest: Some(Digest {
+                algorithm: "sha256".to_string(),
+                value: vec![9, 9, 9],
+            }),
+            vrf_tag: Some(VrfTag {
+                algorithm: "vrf".to_string(),
+                proof: vec![7, 8],
+                output: vec![6, 5],
+            }),
+        };
+
+        let bytes = record.encode_to_vec();
+        let decoded = ExperienceRecord::decode(bytes.as_slice()).expect("decode");
+
+        assert_eq!(record, decoded);
     }
 }
