@@ -97,8 +97,8 @@ fn select_micro_configs(
 mod tests {
     use super::*;
     use prost::Message;
-    use ucf::v1::MicrocircuitModule;
     use ucf::v1::spec::{Digest, ExperienceRecord, VrfTag};
+    use ucf::v1::MicrocircuitModule;
 
     fn micro_config(module: i32, created_at_ms: u64) -> MicrocircuitConfigEvidence {
         MicrocircuitConfigEvidence {
