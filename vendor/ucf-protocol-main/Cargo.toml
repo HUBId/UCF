@@ -19,3 +19,31 @@ protoc-bin-vendored = "3"
 
 [dev-dependencies]
 anyhow = "1"
+
+[features]
+legacy-examples = []
+
+[[example]]
+name = "gen_experience_fixtures"
+path = "examples/gen_experience_fixtures.rs"
+required-features = ["legacy-examples"]
+
+[[example]]
+name = "generate_frames"
+path = "examples/generate_frames.rs"
+required-features = ["legacy-examples"]
+
+[[example]]
+name = "generate_mc_cfg_hpa_bin"
+path = "examples/generate_mc_cfg_hpa_bin.rs"
+required-features = ["legacy-examples"]
+
+[[example]]
+name = "generate_new_fixtures"
+path = "examples/generate_new_fixtures.rs"
+required-features = ["legacy-examples"]
+
+[[example]]
+name = "generate_vectors"
+path = "examples/generate_vectors.rs"
+required-features = ["legacy-examples"]
