@@ -140,10 +140,7 @@ mod tests {
         assert_eq!(archive.list().len(), 1);
 
         let outcome = outcome_receiver.try_recv().expect("outcome event");
-        assert_eq!(
-            outcome.payload.evidence_id,
-            EvidenceId::new("exp-frame-1")
-        );
+        assert_eq!(outcome.payload.evidence_id, EvidenceId::new("exp-frame-1"));
         assert_eq!(
             outcome.payload.decision_kind,
             DecisionKind::DecisionKindUnspecified

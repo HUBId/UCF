@@ -5,8 +5,8 @@ use ucf_archive::InMemoryArchive;
 use ucf_digital_brain::InMemoryDigitalBrain;
 use ucf_policy_gateway::NoOpPolicyEvaluator;
 use ucf_router::Router;
-use ucf_types::v1::spec::{ControlFrame, DecisionKind};
 use ucf_types::v1::spec::ExperienceRecord;
+use ucf_types::v1::spec::{ControlFrame, DecisionKind};
 use ucf_types::EvidenceId;
 
 #[test]

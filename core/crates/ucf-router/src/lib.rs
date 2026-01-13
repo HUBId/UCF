@@ -51,14 +51,11 @@ impl Router {
         }
     }
 
-    pub fn handle_control_frame(
-        &self,
-        cf: ControlFrame,
-    ) -> Result<RouterOutcome, RouterError> {
+    pub fn handle_control_frame(&self, cf: ControlFrame) -> Result<RouterOutcome, RouterError> {
         let decision = self.policy.evaluate(cf.clone());
         self.ensure_allowed(&decision)?;
-        let decision_kind = DecisionKind::try_from(decision.kind)
-            .unwrap_or(DecisionKind::DecisionKindUnspecified);
+        let decision_kind =
+            DecisionKind::try_from(decision.kind).unwrap_or(DecisionKind::DecisionKindUnspecified);
 
         let record = self.build_experience_record(&cf, &decision);
         let evidence_id = self.archive.append(record.clone());
