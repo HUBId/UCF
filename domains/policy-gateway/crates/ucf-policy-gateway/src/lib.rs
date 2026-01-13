@@ -1,8 +1,8 @@
 #![forbid(unsafe_code)]
 
 use ucf_bus::MessageEnvelope;
-use ucf_types::{LogicalTime, NodeId, StreamId, WallTime};
 use ucf_types::v1::spec::{ActionCode, ControlFrame, DecisionKind, PolicyDecision};
+use ucf_types::{LogicalTime, NodeId, StreamId, WallTime};
 
 pub trait PolicyEvaluator {
     fn evaluate(&self, cf: ControlFrame) -> PolicyDecision;
