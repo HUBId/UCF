@@ -90,8 +90,8 @@ impl GovernanceUpdateState {
             self.last_update_kind = Some(kind);
             self.last_update_digest = frame
                 .signal_frame_digest
-                .as_ref()
-                .and_then(|bytes| <[u8; 32]>::try_from(bytes.as_slice()).ok());
+                .as_deref()
+                .and_then(|bytes| <[u8; 32]>::try_from(bytes).ok());
         }
     }
 
