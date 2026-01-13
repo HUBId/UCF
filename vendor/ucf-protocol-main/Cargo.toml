@@ -11,6 +11,7 @@ build = "build.rs"
 prost = "0.12"
 blake3 = "1"
 hex = "0.4"
+serde = { workspace = true, features = ["derive"] }
 
 [build-dependencies]
 prost-build = "0.12"

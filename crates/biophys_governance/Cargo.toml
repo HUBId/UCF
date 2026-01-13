@@ -5,4 +5,4 @@ edition = "2021"
 
 [dependencies]
 biophys_core = { path = "../biophys_core" }
-ucf_protocol = { package = "ucf-protocol", path = "../../vendor/ucf-protocol-main" }
+ucf-protocol = { path = "../../vendor/ucf-protocol-main" }

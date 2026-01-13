@@ -1548,20 +1548,20 @@ impl CircuitBuilderFromAssets for HypothalamusL4Microcircuit {
                 biophys_assets::SynType::Inh => SynKind::GABA,
             };
             let mod_channel = map_asset_mod_channel(syn_params.mod_channel, syn_params.syn_type);
-            let g_max_base_q = f32_to_fixed_u32(syn_params.g_max_q as f32);
+            let g_max_base_q = f32_to_fixed_u32(syn_params.weight_base.abs() as f32);
             let (e_rev, tau_rise_ms, tau_decay_ms, stdp_enabled) = match kind {
                 SynKind::AMPA => (AMPA_E_REV, AMPA_TAU_RISE_MS, AMPA_TAU_DECAY_MS, true),
                 SynKind::GABA => (GABA_E_REV, GABA_TAU_RISE_MS, GABA_TAU_DECAY_MS, false),
                 SynKind::NMDA => (AMPA_E_REV, AMPA_TAU_RISE_MS, AMPA_TAU_DECAY_MS, true),
             };
-            let (stp_params, stp_state) = if syn_params.stp_u_q == 0 {
+            let (stp_params, stp_state) = if syn_params.stp_u == 0 {
                 disabled_stp()
             } else {
                 let params = StpParamsL4 {
                     mode: biophys_synapses_l4::StpMode::STP_TM,
-                    u_base_q: syn_params.stp_u_q.min(STP_SCALE),
-                    tau_rec_steps: syn_params.tau_rec_steps.max(1),
-                    tau_fac_steps: syn_params.tau_fac_steps.max(1),
+                    u_base_q: syn_params.stp_u.min(STP_SCALE),
+                    tau_rec_steps: syn_params.tau_rec.max(1),
+                    tau_fac_steps: syn_params.tau_fac.max(1),
                 };
                 let state = StpStateL4::new(params);
                 (params, state)
@@ -1892,15 +1892,15 @@ fn verify_asset_digest(
 #[cfg(feature = "biophys-l4-hypothalamus-assets")]
 fn map_asset_mod_channel(
     mod_channel: biophys_assets::ModChannel,
-    _syn_type: biophys_assets::SynType,
+    syn_type: biophys_assets::SynType,
 ) -> ModChannel {
     match mod_channel {
         biophys_assets::ModChannel::None => ModChannel::None,
-        biophys_assets::ModChannel::Na => ModChannel::Na,
-        biophys_assets::ModChannel::Da => ModChannel::Da,
-        biophys_assets::ModChannel::Ht => ModChannel::Ht,
-        biophys_assets::ModChannel::NaDa => ModChannel::NaDa,
-        biophys_assets::ModChannel::HtNa => ModChannel::HtNa,
+        biophys_assets::ModChannel::A => ModChannel::NaDa,
+        biophys_assets::ModChannel::B => match syn_type {
+            biophys_assets::SynType::Exc => ModChannel::Na,
+            biophys_assets::SynType::Inh => ModChannel::Ht,
+        },
     }
 }
 
@@ -2258,59 +2258,44 @@ mod asset_tests {
             version: 1,
             params: vec![
                 SynapseParams {
-                    syn_kind: ucf::v1::SynKind::Ampa,
                     syn_type: SynType::Exc,
-                    g_max_q: AMPA_G_MAX_BASE as u32,
-                    e_rev_mv: 0,
-                    tau_decay_steps: 1,
-                    stp_u_q: 0,
-                    tau_rec_steps: 1,
-                    tau_fac_steps: 1,
-                    mod_channel: ModChannel::Na,
+                    weight_base: AMPA_G_MAX_BASE as i32,
+                    stp_u: 0,
+                    tau_rec: 1,
+                    tau_fac: 1,
+                    mod_channel: ModChannel::B,
                 },
                 SynapseParams {
-                    syn_kind: ucf::v1::SynKind::Ampa,
                     syn_type: SynType::Exc,
-                    g_max_q: p1_weight.abs() as u32,
-                    e_rev_mv: 0,
-                    tau_decay_steps: 1,
-                    stp_u_q: 0,
-                    tau_rec_steps: 1,
-                    tau_fac_steps: 1,
-                    mod_channel: ModChannel::Na,
+                    weight_base: p1_weight,
+                    stp_u: 0,
+                    tau_rec: 1,
+                    tau_fac: 1,
+                    mod_channel: ModChannel::B,
                 },
                 SynapseParams {
-                    syn_kind: ucf::v1::SynKind::Ampa,
                     syn_type: SynType::Exc,
-                    g_max_q: p2_weight.abs() as u32,
-                    e_rev_mv: 0,
-                    tau_decay_steps: 1,
-                    stp_u_q: 0,
-                    tau_rec_steps: 1,
-                    tau_fac_steps: 1,
-                    mod_channel: ModChannel::Na,
+                    weight_base: p2_weight,
+                    stp_u: 0,
+                    tau_rec: 1,
+                    tau_fac: 1,
+                    mod_channel: ModChannel::B,
                 },
                 SynapseParams {
-                    syn_kind: ucf::v1::SynKind::Ampa,
                     syn_type: SynType::Exc,
-                    g_max_q: AMPA_G_MAX_DOMINANT as u32,
-                    e_rev_mv: 0,
-                    tau_decay_steps: 1,
-                    stp_u_q: 0,
-                    tau_rec_steps: 1,
-                    tau_fac_steps: 1,
-                    mod_channel: ModChannel::Na,
+                    weight_base: AMPA_G_MAX_DOMINANT as i32,
+                    stp_u: 0,
+                    tau_rec: 1,
+                    tau_fac: 1,
+                    mod_channel: ModChannel::B,
                 },
                 SynapseParams {
-                    syn_kind: ucf::v1::SynKind::Gaba,
                     syn_type: SynType::Inh,
-                    g_max_q: GABA_G_MAX as u32,
-                    e_rev_mv: -75,
-                    tau_decay_steps: 1,
-                    stp_u_q: 0,
-                    tau_rec_steps: 1,
-                    tau_fac_steps: 1,
-                    mod_channel: ModChannel::Ht,
+                    weight_base: GABA_G_MAX as i32,
+                    stp_u: 0,
+                    tau_rec: 1,
+                    tau_fac: 1,
+                    mod_channel: ModChannel::B,
                 },
             ],
         }

@@ -777,9 +777,9 @@ mod tests {
         let mut morph_payload = MorphologySetPayload {
             version: 1,
             neurons: vec![
-                ucf::v1::MorphNeuron {
+                ucf::v1::MorphNeuronPayload {
                     neuron_id: 0,
-                    compartments: vec![ucf::v1::Compartment {
+                    compartments: vec![ucf::v1::CompartmentPayload {
                         comp_id: 0,
                         parent: None,
                         kind: ucf::v1::CompartmentKind::Soma as i32,
@@ -790,7 +790,6 @@ mod tests {
                 };
                 biophys_assets::MAX_NEURONS + 1
             ],
-            payload_digest: None,
         };
         morph_payload
             .neurons
@@ -804,7 +803,7 @@ mod tests {
         let conn_payload = ConnectivityGraphPayload {
             version: 1,
             edges: (0..(MAX_EDGES as u32 + 1))
-                .map(|_idx| ucf::v1::ConnEdge {
+                .map(|_idx| ucf::v1::ConnectivityEdgePayload {
                     pre: 0,
                     post: 0,
                     post_compartment: 0,
@@ -812,7 +811,6 @@ mod tests {
                     delay_steps: 1,
                 })
                 .collect(),
-            payload_digest: None,
         };
         let bytes = conn_payload.encode_to_vec();
         let err = decode_connectivity(&bytes).expect_err("expected conn bounds error");
