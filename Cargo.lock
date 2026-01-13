@@ -1314,6 +1314,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucf-ingestion"
+version = "0.1.0"
+dependencies = [
+ "ucf-archive",
+ "ucf-bus",
+ "ucf-digital-brain",
+ "ucf-policy-gateway",
+ "ucf-router",
+ "ucf-types",
+]
+
+[[package]]
 name = "ucf-policy-gateway"
 version = "0.1.0"
 dependencies = [
