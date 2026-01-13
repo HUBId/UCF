@@ -1331,6 +1331,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucf-router"
+version = "0.1.0"
+dependencies = [
+ "prost",
+ "ucf-archive",
+ "ucf-digital-brain",
+ "ucf-policy-gateway",
+ "ucf-types",
+]
+
+[[package]]
 name = "ucf-types"
 version = "0.1.0"
 dependencies = [

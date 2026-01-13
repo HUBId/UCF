@@ -1,0 +1,13 @@
+[package]
+name = "ucf-router"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ucf-types = { path = "../ucf-types" }
+ucf-policy-gateway = { path = "../../../domains/policy-gateway/crates/ucf-policy-gateway" }
+ucf-archive = { path = "../../../domains/archive/crates/ucf-archive" }
+ucf-digital-brain = { path = "../../../domains/digital-brain/crates/ucf-digital-brain" }
+
+[dev-dependencies]
+prost = "0.12"
