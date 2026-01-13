@@ -1,0 +1,7 @@
+[package]
+name = "ucf-digital-brain"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ucf-types = { path = "../../../../core/crates/ucf-types" }
