@@ -24,7 +24,9 @@ fn handle_control_frame_routes_end_to_end() {
         policy_id: "policy-1".to_string(),
     };
 
-    let evidence_id = router.handle_control_frame(frame.clone()).expect("route frame");
+    let evidence_id = router
+        .handle_control_frame(frame.clone())
+        .expect("route frame");
 
     assert_eq!(evidence_id, EvidenceId::new("exp-frame-1"));
     assert_eq!(archive.list().len(), 1);
