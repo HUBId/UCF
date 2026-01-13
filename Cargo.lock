@@ -1272,12 +1272,39 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucf-bus"
+version = "0.1.0"
+dependencies = [
+ "ucf-types",
+]
+
+[[package]]
+name = "ucf-crypto"
+version = "0.1.0"
+
+[[package]]
+name = "ucf-evidence"
+version = "0.1.0"
+dependencies = [
+ "ucf-protocol",
+ "ucf-types",
+]
+
+[[package]]
 name = "ucf-protocol"
 version = "0.1.0"
 dependencies = [
  "prost",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "ucf-types"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "ucf-protocol",
 ]
 
 [[package]]
