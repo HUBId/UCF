@@ -7,564 +7,183 @@ pub mod v1 {
 
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Enumeration)]
     #[repr(i32)]
-    pub enum MacroMilestoneState {
-        Unknown = 0,
-        Finalized = 1,
+    pub enum DecisionKind {
+        DecisionKindUnspecified = 0,
+        DecisionKindAllow = 1,
+        DecisionKindDeny = 2,
+        DecisionKindEscalate = 3,
+        DecisionKindObserve = 4,
     }
 
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Enumeration)]
     #[repr(i32)]
-    pub enum ConsistencyClass {
-        Unknown = 0,
-        ConsistencyLow = 1,
-        ConsistencyMed = 2,
-        ConsistencyHigh = 3,
-    }
-
-    #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Enumeration)]
-    #[repr(i32)]
-    pub enum WindowKind {
-        Unknown = 0,
-        Short = 1,
-        Medium = 2,
-        Long = 3,
-    }
-
-    #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Enumeration)]
-    #[repr(i32)]
-    pub enum IntegrityStateClass {
-        Unknown = 0,
-        Ok = 1,
-        Degraded = 2,
-        Fail = 3,
-    }
-
-    #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Enumeration)]
-    #[repr(i32)]
-    pub enum LevelClass {
-        Unknown = 0,
-        Low = 1,
-        Med = 2,
-        High = 3,
-    }
-
-    #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Enumeration)]
-    #[repr(i32)]
-    pub enum ReasonCode {
-        Unknown = 0,
-        ReIntegrityFail = 1,
-        ReIntegrityDegraded = 2,
-        RcGeExecDispatchBlocked = 3,
-        RcThIntegrityCompromise = 4,
-        RcReReplayMismatch = 5,
-        ThExfilHighConfidence = 10,
-        ThPolicyProbing = 11,
-        RcGvCbvUpdated = 12,
-        RcGvPevUpdated = 13,
-        RcCdDlpSecretPattern = 20,
-        RcCdDlpObfuscation = 21,
-        RcCdDlpStegano = 22,
-        RcRxActionForensic = 30,
-        RcGvRecoveryUnlockGranted = 31,
-        RcRgProfileM1Restricted = 32,
-        RcGvDwmReport = 40,
-        RcGvDwmStabilize = 41,
-        RcGvDwmSimulate = 42,
-        RcGvDwmExecPlan = 43,
-        RcGvHoldOn = 44,
-        RcGvSequenceSplitRequired = 45,
-        RcGvSequenceSlow = 46,
-        RcGvOrientTargetIntegrity = 47,
-        RcGvOrientTargetDlp = 48,
-        RcGvOrientTargetRecovery = 49,
-        RcGvOrientTargetApproval = 50,
-        RcGvOrientTargetReplay = 51,
-        RcGvOrientTargetPolicyPressure = 52,
-        RcGvFocusShiftExecuted = 53,
-        RcGvFocusShiftBlockedByLock = 54,
-        RcGvFlappingPenalty = 55,
-        RcGvDivergenceHigh = 56,
-        RcGvToolSuspendRecommended = 57,
-        RcGvProgressRewardBlocked = 58,
-        RcGvReplayDiminishingReturns = 59,
-        RcGvAssetManifestAppended = 60,
-        RcGvTraceFail = 61,
-        RcGvTracePass = 62,
-        RcGvSaePackUpdated = 63,
-        RcGvMapUpdated = 64,
-        RcGvLiquidParamsUpdated = 65,
-        RcGvInjectionLimitsUpdated = 66,
-    }
-
-    #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Enumeration)]
-    #[repr(i32)]
-    pub enum TraitUpdateDirection {
-        Unknown = 0,
-        IncreaseStrictness = 1,
-        DecreaseStrictness = 2,
-    }
-
-    #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Enumeration)]
-    #[repr(i32)]
-    pub enum MicrocircuitModule {
-        Unknown = 0,
-        Lc = 1,
-        Sn = 2,
-        Hpa = 3,
-        Amygdala = 4,
-        Hypothalamus = 5,
-    }
-
-    #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Enumeration)]
-    #[repr(i32)]
-    pub enum AssetKind {
-        Unknown = 0,
-        MorphologySet = 1,
-        ChannelParamsSet = 2,
-        SynapseParamsSet = 3,
-        ConnectivityGraph = 4,
-    }
-
-    #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Enumeration)]
-    #[repr(i32)]
-    pub enum CompartmentKind {
-        Soma = 0,
-        Dendrite = 1,
-        Axon = 2,
-    }
-
-    #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Enumeration)]
-    #[repr(i32)]
-    pub enum SynapseType {
-        Exc = 0,
-        Inh = 1,
-    }
-
-    #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Enumeration)]
-    #[repr(i32)]
-    pub enum ModChannel {
-        None = 0,
-        A = 1,
-        B = 2,
-    }
-
-    #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Enumeration)]
-    #[repr(i32)]
-    pub enum Compression {
-        Unknown = 0,
-        None = 1,
-        Zstd = 2,
-    }
-
-    #[derive(Clone, PartialEq, Serialize, Deserialize, Message)]
-    pub struct TraitUpdate {
-        #[prost(string, tag = "1")]
-        pub trait_name: ::prost::alloc::string::String,
-        #[prost(enumeration = "LevelClass", tag = "2")]
-        pub magnitude: i32,
-        #[prost(enumeration = "TraitUpdateDirection", tag = "3")]
-        pub direction: i32,
-    }
-
-    #[derive(Clone, PartialEq, Serialize, Deserialize, Message)]
-    pub struct MacroMilestone {
-        #[prost(enumeration = "MacroMilestoneState", tag = "1")]
-        pub state: i32,
-        #[prost(enumeration = "ConsistencyClass", tag = "2")]
-        pub consistency_class: i32,
-        #[prost(message, repeated, tag = "3")]
-        pub trait_updates: ::prost::alloc::vec::Vec<TraitUpdate>,
-        #[prost(bytes, optional, tag = "4")]
-        pub macro_digest: Option<::prost::alloc::vec::Vec<u8>>,
-    }
-
-    #[derive(Clone, PartialEq, Serialize, Deserialize, Message)]
-    pub struct MacroMilestoneAppend {
-        #[prost(message, optional, tag = "1")]
-        pub milestone: Option<MacroMilestone>,
-    }
-
-    #[derive(Clone, PartialEq, Serialize, Deserialize, Message)]
-    pub struct CharacterBaselineVector {
-        #[prost(int32, tag = "1")]
-        pub baseline_caution_offset: i32,
-        #[prost(int32, tag = "2")]
-        pub baseline_novelty_dampening_offset: i32,
-        #[prost(int32, tag = "3")]
-        pub baseline_approval_strictness_offset: i32,
-        #[prost(int32, tag = "4")]
-        pub baseline_export_strictness_offset: i32,
-        #[prost(int32, tag = "5")]
-        pub baseline_chain_conservatism_offset: i32,
-        #[prost(int32, tag = "6")]
-        pub baseline_cooldown_multiplier_class: i32,
-    }
-
-    #[derive(Clone, PartialEq, Serialize, Deserialize, Message)]
-    pub struct PolicyEcologyVector {
-        #[prost(int32, tag = "1")]
-        pub conservatism_bias: i32,
-        #[prost(int32, tag = "2")]
-        pub novelty_penalty_bias: i32,
-        #[prost(int32, tag = "3")]
-        pub manipulation_aversion_bias: i32,
-        #[prost(int32, tag = "4")]
-        pub reversibility_bias: i32,
-    }
-
-    #[derive(Clone, PartialEq, Serialize, Deserialize, Message)]
-    pub struct MicrocircuitConfigEvidence {
-        #[prost(enumeration = "MicrocircuitModule", tag = "1")]
-        pub module: i32,
-        #[prost(uint32, tag = "2")]
-        pub config_version: u32,
-        #[prost(bytes, tag = "3")]
-        pub config_digest: ::prost::alloc::vec::Vec<u8>,
-        #[prost(uint64, tag = "4")]
-        pub created_at_ms: u64,
-        #[prost(bytes, optional, tag = "5")]
-        pub prev_config_digest: Option<::prost::alloc::vec::Vec<u8>>,
-    }
-
-    #[derive(Clone, PartialEq, Serialize, Deserialize, Message)]
-    pub struct MicrocircuitConfigAppend {
-        #[prost(message, optional, tag = "1")]
-        pub evidence: Option<MicrocircuitConfigEvidence>,
-    }
-
-    #[derive(Clone, PartialEq, Serialize, Deserialize, Message)]
-    pub struct Digest32 {
-        #[prost(bytes, tag = "1")]
-        pub value: ::prost::alloc::vec::Vec<u8>,
-    }
-
-    #[derive(Clone, PartialEq, Serialize, Deserialize, Message)]
-    pub struct Ref {
-        #[prost(string, tag = "1")]
-        pub id: ::prost::alloc::string::String,
-        #[prost(bytes, tag = "2")]
-        pub digest: ::prost::alloc::vec::Vec<u8>,
-    }
-
-    #[derive(Clone, PartialEq, Serialize, Deserialize, Message)]
-    pub struct ReplayRunEvidence {
-        #[prost(string, tag = "1")]
-        pub run_id: ::prost::alloc::string::String,
-        #[prost(message, optional, tag = "2")]
-        pub run_digest: Option<Digest32>,
-        #[prost(message, optional, tag = "3")]
-        pub replay_plan_ref: Option<Ref>,
-        #[prost(message, optional, tag = "4")]
-        pub asset_manifest_ref: Option<Ref>,
-        #[prost(message, repeated, tag = "5")]
-        pub micro_configs: ::prost::alloc::vec::Vec<MicrocircuitConfigEvidence>,
-        #[prost(uint32, tag = "6")]
-        pub steps: u32,
-        #[prost(uint32, tag = "7")]
-        pub dt_us: u32,
-        #[prost(uint32, tag = "8")]
-        pub substeps_per_tick: u32,
-        #[prost(message, optional, tag = "9")]
-        pub summary_profile_seq_digest: Option<Digest32>,
-        #[prost(message, optional, tag = "10")]
-        pub summary_dwm_seq_digest: Option<Digest32>,
-        #[prost(uint64, tag = "11")]
-        pub created_at_ms: u64,
-        #[prost(bytes, optional, tag = "12")]
-        pub proof_receipt_ref: Option<::prost::alloc::vec::Vec<u8>>,
-        #[prost(bytes, repeated, tag = "13")]
-        pub signatures: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
-    }
-
-    #[derive(Clone, PartialEq, Serialize, Deserialize, Message)]
-    pub struct AssetDigest {
-        #[prost(enumeration = "AssetKind", tag = "1")]
-        pub kind: i32,
-        #[prost(uint32, tag = "2")]
-        pub version: u32,
-        #[prost(bytes, tag = "3")]
-        pub digest: ::prost::alloc::vec::Vec<u8>,
-        #[prost(uint64, tag = "4")]
-        pub created_at_ms: u64,
-        #[prost(bytes, optional, tag = "5")]
-        pub prev_digest: Option<::prost::alloc::vec::Vec<u8>>,
-    }
-
-    #[derive(Clone, PartialEq, Serialize, Deserialize, Message)]
-    pub struct AssetManifest {
-        #[prost(uint32, tag = "1")]
-        pub manifest_version: u32,
-        #[prost(uint64, tag = "2")]
-        pub created_at_ms: u64,
-        #[prost(bytes, tag = "3")]
-        pub manifest_digest: ::prost::alloc::vec::Vec<u8>,
-        #[prost(message, repeated, tag = "4")]
-        pub components: ::prost::alloc::vec::Vec<AssetDigest>,
-    }
-
-    #[derive(Clone, PartialEq, Serialize, Deserialize, Message)]
-    pub struct AssetChunk {
-        #[prost(enumeration = "AssetKind", tag = "1")]
-        pub kind: i32,
-        #[prost(uint32, tag = "2")]
-        pub version: u32,
-        #[prost(bytes, tag = "3")]
-        pub asset_digest: ::prost::alloc::vec::Vec<u8>,
-        #[prost(uint32, tag = "4")]
-        pub chunk_index: u32,
-        #[prost(uint32, tag = "5")]
-        pub chunk_count: u32,
-        #[prost(bytes, tag = "6")]
-        pub chunk_digest: ::prost::alloc::vec::Vec<u8>,
-        #[prost(enumeration = "Compression", tag = "7")]
-        pub compression: i32,
-        #[prost(bytes, tag = "8")]
-        pub payload: ::prost::alloc::vec::Vec<u8>,
-        #[prost(uint64, tag = "9")]
-        pub created_at_ms: u64,
-    }
-
-    #[derive(Clone, PartialEq, Serialize, Deserialize, Message)]
-    pub struct AssetBundle {
-        #[prost(string, tag = "1")]
-        pub bundle_id: ::prost::alloc::string::String,
-        #[prost(uint64, tag = "2")]
-        pub created_at_ms: u64,
-        #[prost(bytes, tag = "3")]
-        pub bundle_digest: ::prost::alloc::vec::Vec<u8>,
-        #[prost(message, optional, tag = "4")]
-        pub manifest: Option<AssetManifest>,
-        #[prost(message, repeated, tag = "5")]
-        pub chunks: ::prost::alloc::vec::Vec<AssetChunk>,
-    }
-
-    #[derive(Clone, PartialEq, Serialize, Deserialize, Message)]
-    pub struct MorphologySetPayload {
-        #[prost(uint32, tag = "1")]
-        pub version: u32,
-        #[prost(message, repeated, tag = "2")]
-        pub neurons: ::prost::alloc::vec::Vec<MorphNeuronPayload>,
-    }
-
-    #[derive(Clone, PartialEq, Serialize, Deserialize, Message)]
-    pub struct MorphNeuronPayload {
-        #[prost(uint32, tag = "1")]
-        pub neuron_id: u32,
-        #[prost(message, repeated, tag = "2")]
-        pub compartments: ::prost::alloc::vec::Vec<CompartmentPayload>,
-        #[prost(message, repeated, tag = "3")]
-        pub labels: ::prost::alloc::vec::Vec<LabelKv>,
-    }
-
-    #[derive(Clone, PartialEq, Serialize, Deserialize, Message)]
-    pub struct LabelKv {
-        #[prost(string, tag = "1")]
-        pub k: ::prost::alloc::string::String,
-        #[prost(string, tag = "2")]
-        pub v: ::prost::alloc::string::String,
-    }
-
-    #[derive(Clone, PartialEq, Serialize, Deserialize, Message)]
-    pub struct CompartmentPayload {
-        #[prost(uint32, tag = "1")]
-        pub comp_id: u32,
-        #[prost(uint32, optional, tag = "2")]
-        pub parent: Option<u32>,
-        #[prost(enumeration = "CompartmentKind", tag = "3")]
-        pub kind: i32,
-        #[prost(uint32, tag = "4")]
-        pub length_um: u32,
-        #[prost(uint32, tag = "5")]
-        pub diameter_um: u32,
-    }
-
-    #[derive(Clone, PartialEq, Serialize, Deserialize, Message)]
-    pub struct ChannelParamsSetPayload {
-        #[prost(uint32, tag = "1")]
-        pub version: u32,
-        #[prost(message, repeated, tag = "2")]
-        pub params: ::prost::alloc::vec::Vec<ChannelParamsPayload>,
-    }
-
-    #[derive(Clone, PartialEq, Serialize, Deserialize, Message)]
-    pub struct ChannelParamsPayload {
-        #[prost(uint32, tag = "1")]
-        pub neuron_id: u32,
-        #[prost(uint32, tag = "2")]
-        pub comp_id: u32,
-        #[prost(uint32, tag = "3")]
-        pub leak_g: u32,
-        #[prost(uint32, tag = "4")]
-        pub na_g: u32,
-        #[prost(uint32, tag = "5")]
-        pub k_g: u32,
-    }
-
-    #[derive(Clone, PartialEq, Serialize, Deserialize, Message)]
-    pub struct SynapseParamsSetPayload {
-        #[prost(uint32, tag = "1")]
-        pub version: u32,
-        #[prost(message, repeated, tag = "2")]
-        pub params: ::prost::alloc::vec::Vec<SynapseParamsPayload>,
-    }
-
-    #[derive(Clone, PartialEq, Serialize, Deserialize, Message)]
-    pub struct SynapseParamsPayload {
-        #[prost(uint32, tag = "1")]
-        pub syn_param_id: u32,
-        #[prost(enumeration = "SynapseType", tag = "2")]
-        pub syn_type: i32,
-        #[prost(int32, tag = "3")]
-        pub weight_base: i32,
-        #[prost(uint32, tag = "4")]
-        pub stp_u: u32,
-        #[prost(uint32, tag = "5")]
-        pub tau_rec: u32,
-        #[prost(uint32, tag = "6")]
-        pub tau_fac: u32,
-        #[prost(enumeration = "ModChannel", tag = "7")]
-        pub mod_channel: i32,
-    }
-
-    #[derive(Clone, PartialEq, Serialize, Deserialize, Message)]
-    pub struct ConnectivityGraphPayload {
-        #[prost(uint32, tag = "1")]
-        pub version: u32,
-        #[prost(message, repeated, tag = "2")]
-        pub edges: ::prost::alloc::vec::Vec<ConnectivityEdgePayload>,
-    }
-
-    #[derive(Clone, PartialEq, Serialize, Deserialize, Message)]
-    pub struct ConnectivityEdgePayload {
-        #[prost(uint32, tag = "1")]
-        pub pre: u32,
-        #[prost(uint32, tag = "2")]
-        pub post: u32,
-        #[prost(uint32, tag = "3")]
-        pub post_compartment: u32,
-        #[prost(uint32, tag = "4")]
-        pub syn_param_id: u32,
-        #[prost(uint32, tag = "5")]
-        pub delay_steps: u32,
-    }
-
-    #[derive(Clone, PartialEq, Serialize, Deserialize, Message)]
-    pub struct PvgsReceipt {
-        #[prost(bytes, tag = "1")]
-        pub receipt: ::prost::alloc::vec::Vec<u8>,
-    }
-
-    #[derive(Clone, PartialEq, Serialize, Deserialize, Message)]
-    pub struct ReceiptStats {
-        #[prost(uint32, tag = "1")]
-        pub receipt_missing_count: u32,
-        #[prost(uint32, tag = "2")]
-        pub receipt_invalid_count: u32,
-    }
-
-    #[derive(Clone, PartialEq, Serialize, Deserialize, Message)]
-    pub struct PolicyStats {
-        #[prost(uint32, tag = "1")]
-        pub deny_count: u32,
-        #[prost(uint32, tag = "2")]
-        pub allow_count: u32,
-        #[prost(enumeration = "ReasonCode", repeated, tag = "3")]
-        pub top_reason_codes: ::prost::alloc::vec::Vec<i32>,
-    }
-
-    #[derive(Clone, PartialEq, Serialize, Deserialize, Message)]
-    pub struct ExecStats {
-        #[prost(uint32, tag = "1")]
-        pub timeout_count: u32,
-        #[prost(uint32, tag = "2")]
-        pub partial_failure_count: u32,
-        #[prost(uint32, tag = "3")]
-        pub tool_unavailable_count: u32,
-        #[prost(string, optional, tag = "4")]
-        pub tool_id: Option<::prost::alloc::string::String>,
-        #[prost(uint32, tag = "5")]
-        pub dlp_block_count: u32,
-        #[prost(enumeration = "ReasonCode", repeated, tag = "6")]
-        pub top_reason_codes: ::prost::alloc::vec::Vec<i32>,
-    }
-
-    #[derive(Clone, PartialEq, Serialize, Deserialize, Message)]
-    pub struct SignalFrame {
-        #[prost(enumeration = "WindowKind", tag = "1")]
-        pub window_kind: i32,
-        #[prost(uint64, optional, tag = "2")]
-        pub window_index: Option<u64>,
-        #[prost(uint64, optional, tag = "3")]
-        pub timestamp_ms: Option<u64>,
-        #[prost(message, optional, tag = "4")]
-        pub policy_stats: Option<PolicyStats>,
-        #[prost(message, optional, tag = "5")]
-        pub exec_stats: Option<ExecStats>,
-        #[prost(enumeration = "IntegrityStateClass", tag = "6")]
-        pub integrity_state: i32,
-        #[prost(enumeration = "ReasonCode", repeated, tag = "7")]
-        pub top_reason_codes: ::prost::alloc::vec::Vec<i32>,
-        #[prost(bytes, optional, tag = "8")]
-        pub signal_frame_digest: Option<::prost::alloc::vec::Vec<u8>>,
-        #[prost(message, optional, tag = "9")]
-        pub receipt_stats: Option<ReceiptStats>,
-        #[prost(enumeration = "ReasonCode", repeated, tag = "10")]
-        pub reason_codes: ::prost::alloc::vec::Vec<i32>,
-    }
-
-    #[derive(Clone, PartialEq, Serialize, Deserialize, Message)]
-    pub struct ActiveProfile {
-        #[prost(string, tag = "1")]
-        pub profile: ::prost::alloc::string::String,
-    }
-
-    #[derive(Clone, PartialEq, Serialize, Deserialize, Message)]
-    pub struct Overlays {
-        #[prost(bool, tag = "1")]
-        pub simulate_first: bool,
-        #[prost(bool, tag = "2")]
-        pub export_lock: bool,
-        #[prost(bool, tag = "3")]
-        pub novelty_lock: bool,
-        #[prost(bool, tag = "4")]
-        pub chain_tightening: bool,
-    }
-
-    #[derive(Clone, PartialEq, Serialize, Deserialize, Message)]
-    pub struct ToolClassMask {
-        #[prost(bool, tag = "1")]
-        pub read: bool,
-        #[prost(bool, tag = "2")]
-        pub write: bool,
-        #[prost(bool, tag = "3")]
-        pub execute: bool,
-        #[prost(bool, tag = "4")]
-        pub transform: bool,
-        #[prost(bool, tag = "5")]
-        pub export: bool,
+    pub enum ActionCode {
+        ActionCodeUnspecified = 0,
+        ActionCodeContinue = 1,
+        ActionCodePause = 2,
+        ActionCodeTerminate = 3,
+        ActionCodeRequireHuman = 4,
     }
 
     #[derive(Clone, PartialEq, Serialize, Deserialize, Message)]
     pub struct ControlFrame {
-        #[prost(message, optional, tag = "1")]
-        pub active_profile: Option<ActiveProfile>,
-        #[prost(message, optional, tag = "2")]
-        pub overlays: Option<Overlays>,
+        #[prost(string, tag = "1")]
+        pub frame_id: ::prost::alloc::string::String,
+        #[prost(uint64, tag = "2")]
+        pub issued_at_ms: u64,
         #[prost(message, optional, tag = "3")]
-        pub toolclass_mask: Option<ToolClassMask>,
-        #[prost(enumeration = "ReasonCode", repeated, tag = "4")]
-        pub profile_reason_codes: ::prost::alloc::vec::Vec<i32>,
-        #[prost(bytes, optional, tag = "5")]
-        pub control_frame_digest: Option<::prost::alloc::vec::Vec<u8>>,
-        #[prost(bytes, optional, tag = "6")]
-        pub character_epoch_digest: Option<::prost::alloc::vec::Vec<u8>>,
-        #[prost(bytes, optional, tag = "7")]
-        pub policy_ecology_digest: Option<::prost::alloc::vec::Vec<u8>>,
-        #[prost(string, optional, tag = "8")]
-        pub approval_mode: Option<::prost::alloc::string::String>,
-        #[prost(bool, optional, tag = "9")]
-        pub deescalation_lock: Option<bool>,
-        #[prost(enumeration = "LevelClass", optional, tag = "10")]
-        pub cooldown_class: Option<i32>,
+        pub decision: Option<PolicyDecision>,
+        #[prost(string, repeated, tag = "4")]
+        pub evidence_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+        #[prost(string, tag = "5")]
+        pub policy_id: ::prost::alloc::string::String,
+    }
+
+    #[derive(Clone, PartialEq, Serialize, Deserialize, Message)]
+    pub struct PolicyDecision {
+        #[prost(enumeration = "DecisionKind", tag = "1")]
+        pub kind: i32,
+        #[prost(enumeration = "ActionCode", tag = "2")]
+        pub action: i32,
+        #[prost(string, tag = "3")]
+        pub rationale: ::prost::alloc::string::String,
+        #[prost(uint32, tag = "4")]
+        pub confidence_bp: u32,
+        #[prost(string, repeated, tag = "5")]
+        pub constraint_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    }
+
+    #[derive(Clone, PartialEq, Serialize, Deserialize, Message)]
+    pub struct ExperienceRecord {
+        #[prost(string, tag = "1")]
+        pub record_id: ::prost::alloc::string::String,
+        #[prost(uint64, tag = "2")]
+        pub observed_at_ms: u64,
+        #[prost(string, tag = "3")]
+        pub subject_id: ::prost::alloc::string::String,
+        #[prost(bytes, tag = "4")]
+        pub payload: ::prost::alloc::vec::Vec<u8>,
+        #[prost(message, optional, tag = "5")]
+        pub digest: Option<Digest>,
+        #[prost(message, optional, tag = "6")]
+        pub vrf_tag: Option<VrfTag>,
+    }
+
+    #[derive(Clone, PartialEq, Serialize, Deserialize, Message)]
+    pub struct Digest {
+        #[prost(string, tag = "1")]
+        pub algorithm: ::prost::alloc::string::String,
+        #[prost(bytes, tag = "2")]
+        pub value: ::prost::alloc::vec::Vec<u8>,
+    }
+
+    #[derive(Clone, PartialEq, Serialize, Deserialize, Message)]
+    pub struct VrfTag {
+        #[prost(string, tag = "1")]
+        pub algorithm: ::prost::alloc::string::String,
+        #[prost(bytes, tag = "2")]
+        pub proof: ::prost::alloc::vec::Vec<u8>,
+        #[prost(bytes, tag = "3")]
+        pub output: ::prost::alloc::vec::Vec<u8>,
+    }
+
+    #[derive(Clone, PartialEq, Serialize, Deserialize, Message)]
+    pub struct MicroMilestone {
+        #[prost(string, tag = "1")]
+        pub milestone_id: ::prost::alloc::string::String,
+        #[prost(uint64, tag = "2")]
+        pub achieved_at_ms: u64,
+        #[prost(string, tag = "3")]
+        pub label: ::prost::alloc::string::String,
+    }
+
+    #[derive(Clone, PartialEq, Serialize, Deserialize, Message)]
+    pub struct MesoMilestone {
+        #[prost(string, tag = "1")]
+        pub milestone_id: ::prost::alloc::string::String,
+        #[prost(uint64, tag = "2")]
+        pub achieved_at_ms: u64,
+        #[prost(string, tag = "3")]
+        pub label: ::prost::alloc::string::String,
+        #[prost(string, repeated, tag = "4")]
+        pub micro_milestone_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    }
+
+    #[derive(Clone, PartialEq, Serialize, Deserialize, Message)]
+    pub struct MacroMilestone {
+        #[prost(string, tag = "1")]
+        pub milestone_id: ::prost::alloc::string::String,
+        #[prost(uint64, tag = "2")]
+        pub achieved_at_ms: u64,
+        #[prost(string, tag = "3")]
+        pub label: ::prost::alloc::string::String,
+        #[prost(string, repeated, tag = "4")]
+        pub meso_milestone_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    }
+
+    #[derive(Clone, PartialEq, Serialize, Deserialize, Message)]
+    pub struct ProofEnvelope {
+        #[prost(string, tag = "1")]
+        pub envelope_id: ::prost::alloc::string::String,
+        #[prost(bytes, tag = "2")]
+        pub payload: ::prost::alloc::vec::Vec<u8>,
+        #[prost(message, optional, tag = "3")]
+        pub payload_digest: Option<Digest>,
+        #[prost(message, repeated, tag = "4")]
+        pub vrf_tags: ::prost::alloc::vec::Vec<VrfTag>,
+        #[prost(string, repeated, tag = "5")]
+        pub signature_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn serde_roundtrip_control_frame() {
+            let decision = PolicyDecision {
+                kind: DecisionKind::DecisionKindAllow as i32,
+                action: ActionCode::ActionCodeContinue as i32,
+                rationale: "ok".to_string(),
+                confidence_bp: 8_500,
+                constraint_ids: vec!["constraint-1".to_string()],
+            };
+            let frame = ControlFrame {
+                frame_id: "frame-1".to_string(),
+                issued_at_ms: 1_700_000_000_000,
+                decision: Some(decision),
+                evidence_ids: vec!["evidence-1".to_string(), "evidence-2".to_string()],
+                policy_id: "policy-1".to_string(),
+            };
+
+            let encoded = serde_json::to_string(&frame).expect("serialize");
+            let decoded: ControlFrame = serde_json::from_str(&encoded).expect("deserialize");
+
+            assert_eq!(frame, decoded);
+        }
+
+        #[test]
+        fn prost_roundtrip_experience_record() {
+            let record = ExperienceRecord {
+                record_id: "record-1".to_string(),
+                observed_at_ms: 1_700_000_000_123,
+                subject_id: "subject-1".to_string(),
+                payload: vec![1, 2, 3, 4],
+                digest: Some(Digest {
+                    algorithm: "sha256".to_string(),
+                    value: vec![9, 9, 9],
+                }),
+                vrf_tag: Some(VrfTag {
+                    algorithm: "vrf".to_string(),
+                    proof: vec![7, 8],
+                    output: vec![6, 5],
+                }),
+            };
+
+            let bytes = record.encode_to_vec();
+            let decoded = ExperienceRecord::decode(bytes.as_slice()).expect("decode");
+
+            assert_eq!(record, decoded);
+        }
     }
 }
