@@ -5,6 +5,17 @@ use std::sync::Mutex;
 use ucf_protocol::v1::spec::ProofEnvelope;
 use ucf_types::{EvidenceId, LogicalTime, WallTime};
 
+#[derive(Clone, Debug)]
+pub enum StoreError {
+    Unsupported(String),
+    Corrupt(String),
+    IOError(String),
+}
+
+pub type StoreResult<T> = Result<T, StoreError>;
+
+pub type AppendLogHash = [u8; 32];
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct EvidenceEnvelope {
     pub evidence_id: EvidenceId,
@@ -14,8 +25,19 @@ pub struct EvidenceEnvelope {
 }
 
 pub trait EvidenceStore {
-    fn append(&self, evidence: EvidenceEnvelope);
-    fn list(&self) -> Vec<EvidenceEnvelope>;
+    fn append(&self, evidence: EvidenceEnvelope) -> EvidenceId;
+
+    fn get(&self, evidence_id: EvidenceId) -> Option<EvidenceEnvelope> {
+        let _ = evidence_id;
+        None
+    }
+
+    fn len(&self) -> usize;
+}
+
+pub trait AppendLog {
+    fn append_bytes(&self, bytes: &[u8]) -> (u64, usize, AppendLogHash);
+    fn read_at(&self, offset: u64, len: usize) -> Vec<u8>;
 }
 
 #[derive(Default)]
@@ -32,12 +54,29 @@ impl InMemoryEvidenceStore {
 }
 
 impl EvidenceStore for InMemoryEvidenceStore {
-    fn append(&self, evidence: EvidenceEnvelope) {
+    fn append(&self, evidence: EvidenceEnvelope) -> EvidenceId {
+        let evidence_id = evidence.evidence_id.clone();
         let mut entries = self.entries.lock().expect("lock evidence store");
         entries.push(evidence);
+        evidence_id
     }
 
-    fn list(&self) -> Vec<EvidenceEnvelope> {
+    fn get(&self, evidence_id: EvidenceId) -> Option<EvidenceEnvelope> {
+        let entries = self.entries.lock().expect("lock evidence store");
+        entries
+            .iter()
+            .find(|entry| entry.evidence_id == evidence_id)
+            .cloned()
+    }
+
+    fn len(&self) -> usize {
+        let entries = self.entries.lock().expect("lock evidence store");
+        entries.len()
+    }
+}
+
+impl InMemoryEvidenceStore {
+    pub fn list(&self) -> Vec<EvidenceEnvelope> {
         let entries = self.entries.lock().expect("lock evidence store");
         entries.clone()
     }
@@ -63,10 +102,10 @@ mod tests {
             wall_time: WallTime::new(1_700_000_000_000),
         };
 
-        store.append(envelope.clone());
-        let entries = store.list();
+        let stored_id = store.append(envelope.clone());
 
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0], envelope);
+        assert_eq!(stored_id, envelope.evidence_id);
+        assert_eq!(store.len(), 1);
+        assert_eq!(store.get(stored_id), Some(envelope));
     }
 }

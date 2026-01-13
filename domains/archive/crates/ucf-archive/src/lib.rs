@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
 use prost::Message;
-use ucf_evidence::{EvidenceEnvelope, EvidenceStore, InMemoryEvidenceStore};
+use ucf_evidence::{EvidenceEnvelope, InMemoryEvidenceStore};
 use ucf_types::v1::spec::{ExperienceRecord, ProofEnvelope};
 use ucf_types::{EvidenceId, LogicalTime, WallTime};
 
@@ -42,8 +42,7 @@ impl ExperienceAppender for InMemoryArchive {
             wall_time: WallTime::new(rec.observed_at_ms),
         };
 
-        self.store.append(envelope);
-        evidence_id
+        self.store.append(envelope)
     }
 }
 
