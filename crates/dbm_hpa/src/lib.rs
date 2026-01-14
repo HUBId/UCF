@@ -325,6 +325,7 @@ fn save_state(path: &Path, state: &HpaState) -> std::io::Result<()> {
     let serialized = serde_json::to_string_pretty(state)?;
     file.write_all(serialized.as_bytes())?;
     file.flush()?;
+    file.sync_all()?;
     Ok(())
 }
 
@@ -332,20 +333,17 @@ fn save_state(path: &Path, state: &HpaState) -> std::io::Result<()> {
 #[cfg(not(feature = "microcircuit-hpa-emulated"))]
 mod tests {
     use super::*;
-    use std::fs;
+    use tempfile::TempDir;
 
-    fn temp_path(name: &str) -> PathBuf {
-        std::env::temp_dir().join(name)
-    }
-
-    fn clean_path(path: &Path) {
-        let _ = fs::remove_file(path);
+    fn temp_path(name: &str) -> (TempDir, PathBuf) {
+        let temp_dir = TempDir::new().expect("create temp dir");
+        let path = temp_dir.path().join(name);
+        (temp_dir, path)
     }
 
     #[test]
     fn integrity_fail_increases_sensitivity() {
-        let path = temp_path("hpa_integrity.json");
-        clean_path(&path);
+        let (_temp_dir, path) = temp_path("hpa_integrity.json");
         let mut hpa = Hpa::new(&path);
         let output = hpa.tick(&HpaInput {
             integrity_state: IntegrityState::Fail,
@@ -354,13 +352,11 @@ mod tests {
 
         assert!(output.baseline_caution_offset >= 1);
         assert!(hpa.state.integrity_sensitivity >= 5);
-        clean_path(&path);
     }
 
     #[test]
     fn stable_windows_reduce_allostatic_load() {
-        let path = temp_path("hpa_stable.json");
-        clean_path(&path);
+        let (_temp_dir, path) = temp_path("hpa_stable.json");
         let mut hpa = Hpa::new(&path);
         hpa.state.allostatic_load = 10;
         hpa.state.stable_window_counter = 4;
@@ -372,13 +368,11 @@ mod tests {
 
         assert!(output.baseline_caution_offset <= 1);
         assert_eq!(hpa.state.stable_window_counter, 0);
-        clean_path(&path);
     }
 
     #[test]
     fn persistence_round_trip_retains_state() {
-        let path = temp_path("hpa_persist.json");
-        clean_path(&path);
+        let (_temp_dir, path) = temp_path("hpa_persist.json");
         let mut hpa = Hpa::new(&path);
         hpa.tick(&HpaInput {
             integrity_state: IntegrityState::Fail,
@@ -388,6 +382,5 @@ mod tests {
         let hpa_reloaded = Hpa::new(&path);
         let output = hpa_reloaded.current_output();
         assert!(output.baseline_caution_offset > 0);
-        clean_path(&path);
     }
 }

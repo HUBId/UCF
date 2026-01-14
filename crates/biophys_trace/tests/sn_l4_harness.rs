@@ -9,6 +9,7 @@ use biophys_trace::sn_l4::{
 };
 use biophys_trace::{read_trace, run_trace, write_trace, LearningContext, TraceFile, TraceHeader};
 use microcircuit_core::MicrocircuitBackend;
+use tempfile::TempDir;
 
 const NEURON_COUNT: u32 = 14;
 
@@ -94,7 +95,8 @@ fn sn_l4_trace_roundtrip() {
         steps: trace_steps,
     };
 
-    let temp_path = std::env::temp_dir().join("sn_l4_trace_roundtrip.bin");
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let temp_path = temp_dir.path().join("sn_l4_trace_roundtrip.bin");
     write_trace(&temp_path, &trace).expect("write trace");
     let read_back = read_trace(&temp_path).expect("read trace");
 
