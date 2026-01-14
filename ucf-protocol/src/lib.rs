@@ -635,6 +635,8 @@ pub mod v1 {
             pub digest: Option<Digest>,
             #[prost(message, optional, tag = "6")]
             pub vrf_tag: Option<VrfTag>,
+            #[prost(message, optional, tag = "7")]
+            pub proof_ref: Option<ProofRef>,
         }
 
         #[derive(Clone, PartialEq, Serialize, Deserialize, Message)]
@@ -643,6 +645,12 @@ pub mod v1 {
             pub algorithm: ::prost::alloc::string::String,
             #[prost(bytes, tag = "2")]
             pub value: ::prost::alloc::vec::Vec<u8>,
+            #[prost(uint32, optional, tag = "3")]
+            pub algo_id: Option<u32>,
+            #[prost(uint32, optional, tag = "4")]
+            pub domain: Option<u32>,
+            #[prost(bytes, optional, tag = "5")]
+            pub value_32: Option<::prost::alloc::vec::Vec<u8>>,
         }
 
         #[derive(Clone, PartialEq, Serialize, Deserialize, Message)]
@@ -653,6 +661,24 @@ pub mod v1 {
             pub proof: ::prost::alloc::vec::Vec<u8>,
             #[prost(bytes, tag = "3")]
             pub output: ::prost::alloc::vec::Vec<u8>,
+            #[prost(uint32, optional, tag = "4")]
+            pub suite_id: Option<u32>,
+            #[prost(uint32, optional, tag = "5")]
+            pub domain: Option<u32>,
+            #[prost(bytes, optional, tag = "6")]
+            pub tag: Option<::prost::alloc::vec::Vec<u8>>,
+        }
+
+        #[derive(Clone, PartialEq, Serialize, Deserialize, Message)]
+        pub struct ProofRef {
+            #[prost(string, tag = "1")]
+            pub proof_id: ::prost::alloc::string::String,
+            #[prost(uint32, optional, tag = "2")]
+            pub algo_id: Option<u32>,
+            #[prost(uint32, optional, tag = "3")]
+            pub suite_id: Option<u32>,
+            #[prost(bytes, optional, tag = "4")]
+            pub opaque: Option<::prost::alloc::vec::Vec<u8>>,
         }
 
         #[derive(Clone, PartialEq, Serialize, Deserialize, Message)]
@@ -740,11 +766,23 @@ pub mod v1 {
                     digest: Some(Digest {
                         algorithm: "sha256".to_string(),
                         value: vec![9, 9, 9],
+                        algo_id: Some(2),
+                        domain: Some(42),
+                        value_32: Some(vec![1u8; 32]),
                     }),
                     vrf_tag: Some(VrfTag {
                         algorithm: "vrf".to_string(),
                         proof: vec![7, 8],
                         output: vec![6, 5],
+                        suite_id: Some(9),
+                        domain: Some(7),
+                        tag: Some(vec![2u8; 32]),
+                    }),
+                    proof_ref: Some(ProofRef {
+                        proof_id: "proof-1".to_string(),
+                        algo_id: Some(1),
+                        suite_id: Some(3),
+                        opaque: Some(vec![4, 5, 6]),
                     }),
                 };
 

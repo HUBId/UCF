@@ -22,7 +22,11 @@ use ucf_types::v1::spec::{ExperienceRecord, ProofEnvelope};
 use ucf_types::{EvidenceId, LogicalTime, WallTime};
 
 pub trait ExperienceAppender {
-    fn append(&self, rec: ExperienceRecord) -> EvidenceId;
+    fn append_with_proof(&self, rec: ExperienceRecord, proof: Option<ProofEnvelope>) -> EvidenceId;
+
+    fn append(&self, rec: ExperienceRecord) -> EvidenceId {
+        self.append_with_proof(rec, None)
+    }
 }
 
 #[derive(Default)]
@@ -56,17 +60,24 @@ impl FileArchive {
     }
 }
 
-fn append_record(store: &dyn EvidenceStore, rec: ExperienceRecord) -> EvidenceId {
+fn append_record(
+    store: &dyn EvidenceStore,
+    rec: ExperienceRecord,
+    proof: Option<ProofEnvelope>,
+) -> EvidenceId {
     let evidence_id = EvidenceId::new(rec.record_id.clone());
-    let envelope = EvidenceEnvelope {
-        evidence_id: evidence_id.clone(),
-        proof: ProofEnvelope {
+    let proof = proof.or_else(|| {
+        Some(ProofEnvelope {
             envelope_id: rec.record_id.clone(),
             payload: rec.encode_to_vec(),
             payload_digest: None,
             vrf_tags: Vec::new(),
             signature_ids: Vec::new(),
-        },
+        })
+    });
+    let envelope = EvidenceEnvelope {
+        evidence_id: evidence_id.clone(),
+        proof,
         logical_time: LogicalTime::new(0),
         wall_time: WallTime::new(rec.observed_at_ms),
     };
@@ -75,20 +86,21 @@ fn append_record(store: &dyn EvidenceStore, rec: ExperienceRecord) -> EvidenceId
 }
 
 impl ExperienceAppender for InMemoryArchive {
-    fn append(&self, rec: ExperienceRecord) -> EvidenceId {
-        append_record(&self.store, rec)
+    fn append_with_proof(&self, rec: ExperienceRecord, proof: Option<ProofEnvelope>) -> EvidenceId {
+        append_record(&self.store, rec, proof)
     }
 }
 
 impl ExperienceAppender for FileArchive {
-    fn append(&self, rec: ExperienceRecord) -> EvidenceId {
-        append_record(&self.store, rec)
+    fn append_with_proof(&self, rec: ExperienceRecord, proof: Option<ProofEnvelope>) -> EvidenceId {
+        append_record(&self.store, rec, proof)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::TempDir;
 
     #[test]
     fn append_returns_id_and_stores_record() {
@@ -100,6 +112,7 @@ mod tests {
             payload: vec![1, 2, 3],
             digest: None,
             vrf_tag: None,
+            proof_ref: None,
         };
 
         let id = archive.append(record);
@@ -108,5 +121,66 @@ mod tests {
         assert_eq!(id, EvidenceId::new("rec-1"));
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].evidence_id, id);
+    }
+
+    #[test]
+    fn append_with_proof_overrides_envelope() {
+        let archive = InMemoryArchive::new();
+        let record = ExperienceRecord {
+            record_id: "rec-2".to_string(),
+            observed_at_ms: 1_700_000_000_123,
+            subject_id: "subject-2".to_string(),
+            payload: vec![9, 8, 7],
+            digest: None,
+            vrf_tag: None,
+            proof_ref: None,
+        };
+        let proof = ProofEnvelope {
+            envelope_id: "proof-override".to_string(),
+            payload: vec![4, 5, 6],
+            payload_digest: None,
+            vrf_tags: Vec::new(),
+            signature_ids: vec!["sig-1".to_string()],
+        };
+
+        let id = archive.append_with_proof(record, Some(proof.clone()));
+        let entries = archive.list();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].evidence_id, id);
+        assert_eq!(entries[0].proof, Some(proof));
+    }
+
+    #[test]
+    fn file_archive_persists_proof_envelope() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let archive = FileArchive::open(temp_dir.path()).expect("open archive");
+        let record = ExperienceRecord {
+            record_id: "rec-3".to_string(),
+            observed_at_ms: 1_700_000_000_456,
+            subject_id: "subject-3".to_string(),
+            payload: vec![1, 1, 2, 3],
+            digest: None,
+            vrf_tag: None,
+            proof_ref: None,
+        };
+        let proof = ProofEnvelope {
+            envelope_id: "proof-rec-3".to_string(),
+            payload: vec![9, 9, 9],
+            payload_digest: None,
+            vrf_tags: Vec::new(),
+            signature_ids: vec!["sig-2".to_string()],
+        };
+
+        let evidence_id = archive.append_with_proof(record, Some(proof.clone()));
+        drop(archive);
+
+        let reopened = FileArchive::open(temp_dir.path()).expect("reopen archive");
+        let stored = reopened
+            .store
+            .get(evidence_id.clone())
+            .expect("load evidence");
+
+        assert_eq!(stored.proof, Some(proof));
     }
 }

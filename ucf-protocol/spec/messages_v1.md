@@ -49,6 +49,7 @@ Captures an observed experience that can be used for audit or learning.
 - `bytes payload` (tag 4): Canonical serialized payload for downstream parsing.
 - `Digest digest` (tag 5): Content digest for verification.
 - `VRFTag vrf_tag` (tag 6): Proof that the record was sampled/selected.
+- `ProofRef proof_ref` (tag 7): Optional reference to an external proof envelope.
 
 ## Digest
 
@@ -56,6 +57,9 @@ Represents a content digest for integrity checking.
 
 - `string algorithm` (tag 1): Hash algorithm identifier (e.g., "sha256").
 - `bytes value` (tag 2): Raw digest bytes.
+- `uint32 algo_id` (tag 3): Canonical algorithm identifier (e.g., 1 = Blake3-256, 2 = Sha256).
+- `uint32 domain` (tag 4): Domain separator (non-zero).
+- `bytes value_32` (tag 5): Canonical 32-byte digest payload.
 
 ## VRFTag
 
@@ -64,6 +68,9 @@ Verifiable random function tag for sampling/selection proofs.
 - `string algorithm` (tag 1): VRF algorithm identifier.
 - `bytes proof` (tag 2): VRF proof bytes.
 - `bytes output` (tag 3): VRF output bytes.
+- `uint32 suite_id` (tag 4): Canonical suite identifier (non-zero).
+- `uint32 domain` (tag 5): Domain separator (non-zero).
+- `bytes tag` (tag 6): Canonical 32-byte VRF tag output.
 
 ## Milestones
 
@@ -98,3 +105,12 @@ Container for attaching proofs to protocol messages.
 - `Digest payload_digest` (tag 3): Digest of the payload.
 - `repeated VRFTag vrf_tags` (tag 4): VRF tags associated with the payload.
 - `repeated string signature_ids` (tag 5): References to external signatures.
+
+## ProofRef
+
+Reference to a proof envelope stored elsewhere.
+
+- `string proof_id` (tag 1): Stable identifier for the referenced proof.
+- `uint32 algo_id` (tag 2): Canonical digest algorithm identifier (if applicable).
+- `uint32 suite_id` (tag 3): Canonical VRF suite identifier (if applicable).
+- `bytes opaque` (tag 4): Opaque proof metadata or locator.

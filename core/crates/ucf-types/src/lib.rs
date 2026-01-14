@@ -1,7 +1,200 @@
 #![forbid(unsafe_code)]
 
+use std::fmt;
+
 pub mod v1 {
     pub use ucf_protocol::v1::*;
+}
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub enum AlgoId {
+    Blake3_256,
+    Sha256,
+    Reserved(u16),
+}
+
+impl AlgoId {
+    pub const BLAKE3_256_ID: u16 = 1;
+    pub const SHA256_ID: u16 = 2;
+
+    pub fn id(self) -> u16 {
+        match self {
+            Self::Blake3_256 => Self::BLAKE3_256_ID,
+            Self::Sha256 => Self::SHA256_ID,
+            Self::Reserved(id) => id,
+        }
+    }
+
+    pub fn from_id(id: u16) -> Self {
+        match id {
+            Self::BLAKE3_256_ID => Self::Blake3_256,
+            Self::SHA256_ID => Self::Sha256,
+            other => Self::Reserved(other),
+        }
+    }
+}
+
+impl fmt::Display for AlgoId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Blake3_256 => write!(f, "blake3-256"),
+            Self::Sha256 => write!(f, "sha256"),
+            Self::Reserved(id) => write!(f, "reserved({id})"),
+        }
+    }
+}
+
+impl fmt::Debug for AlgoId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(self, f)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DigestInvariantError {
+    InvalidLength { expected: usize, actual: usize },
+    UnsetDomain,
+    UnsetSuite,
+}
+
+impl fmt::Display for DigestInvariantError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidLength { expected, actual } => {
+                write!(f, "expected {expected} bytes, got {actual}")
+            }
+            Self::UnsetDomain => write!(f, "domain id must be non-zero"),
+            Self::UnsetSuite => write!(f, "suite id must be non-zero"),
+        }
+    }
+}
+
+impl std::error::Error for DigestInvariantError {}
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Digest32([u8; 32]);
+
+impl Digest32 {
+    pub const LEN: usize = 32;
+
+    pub fn new(value: [u8; 32]) -> Self {
+        Self(value)
+    }
+
+    pub fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+
+impl TryFrom<Vec<u8>> for Digest32 {
+    type Error = DigestInvariantError;
+
+    fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
+        if value.len() != Self::LEN {
+            return Err(DigestInvariantError::InvalidLength {
+                expected: Self::LEN,
+                actual: value.len(),
+            });
+        }
+        let mut bytes = [0u8; 32];
+        bytes.copy_from_slice(&value);
+        Ok(Self(bytes))
+    }
+}
+
+impl fmt::Display for Digest32 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "0x{}..", hex_prefix(&self.0))
+    }
+}
+
+impl fmt::Debug for Digest32 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Digest32({})", self)
+    }
+}
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub struct DomainDigest {
+    pub algo: AlgoId,
+    pub domain: u16,
+    pub digest: Digest32,
+}
+
+impl DomainDigest {
+    pub fn new(algo: AlgoId, domain: u16, digest: Digest32) -> Result<Self, DigestInvariantError> {
+        if domain == 0 {
+            return Err(DigestInvariantError::UnsetDomain);
+        }
+        Ok(Self {
+            algo,
+            domain,
+            digest,
+        })
+    }
+}
+
+impl fmt::Display for DomainDigest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "DomainDigest(algo={}, domain={}, digest={})",
+            self.algo, self.domain, self.digest
+        )
+    }
+}
+
+impl fmt::Debug for DomainDigest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(self, f)
+    }
+}
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub struct VrfTag {
+    pub suite: u16,
+    pub domain: u16,
+    pub tag: Digest32,
+}
+
+impl VrfTag {
+    pub fn new(suite: u16, domain: u16, tag: Digest32) -> Result<Self, DigestInvariantError> {
+        if suite == 0 {
+            return Err(DigestInvariantError::UnsetSuite);
+        }
+        if domain == 0 {
+            return Err(DigestInvariantError::UnsetDomain);
+        }
+        Ok(Self { suite, domain, tag })
+    }
+}
+
+impl fmt::Display for VrfTag {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "VrfTag(suite={}, domain={}, tag={})",
+            self.suite, self.domain, self.tag
+        )
+    }
+}
+
+impl fmt::Debug for VrfTag {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(self, f)
+    }
+}
+
+fn hex_prefix(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .take(4)
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -149,5 +342,35 @@ mod tests {
     fn logical_time_value() {
         let time = LogicalTime::new(42);
         assert_eq!(time.tick, 42);
+    }
+
+    #[test]
+    fn digest32_enforces_length() {
+        let ok = Digest32::try_from(vec![0u8; 32]).expect("digest32");
+        assert_eq!(ok.as_bytes().len(), 32);
+
+        let err = Digest32::try_from(vec![0u8; 31]).expect_err("length error");
+        assert_eq!(
+            err,
+            DigestInvariantError::InvalidLength {
+                expected: 32,
+                actual: 31
+            }
+        );
+    }
+
+    #[test]
+    fn domain_digest_requires_domain() {
+        let digest = Digest32::new([0u8; 32]);
+        assert!(DomainDigest::new(AlgoId::Sha256, 0, digest).is_err());
+        assert!(DomainDigest::new(AlgoId::Sha256, 7, digest).is_ok());
+    }
+
+    #[test]
+    fn vrf_tag_requires_suite_and_domain() {
+        let tag = Digest32::new([1u8; 32]);
+        assert!(VrfTag::new(0, 1, tag).is_err());
+        assert!(VrfTag::new(1, 0, tag).is_err());
+        assert!(VrfTag::new(1, 1, tag).is_ok());
     }
 }

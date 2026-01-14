@@ -1419,6 +1419,7 @@ name = "ucf-archive"
 version = "0.1.0"
 dependencies = [
  "prost",
+ "tempfile",
  "ucf-evidence",
  "ucf-types",
 ]

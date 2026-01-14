@@ -27,7 +27,7 @@ pub type AppendLogHash = Vec<u8>;
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct EvidenceEnvelope {
     pub evidence_id: EvidenceId,
-    pub proof: ProofEnvelope,
+    pub proof: Option<ProofEnvelope>,
     pub logical_time: LogicalTime,
     pub wall_time: WallTime,
 }
@@ -103,13 +103,13 @@ mod tests {
         let store = InMemoryEvidenceStore::new();
         let envelope = EvidenceEnvelope {
             evidence_id: EvidenceId::new("evidence-1"),
-            proof: ProofEnvelope {
+            proof: Some(ProofEnvelope {
                 envelope_id: "proof-1".to_string(),
                 payload: vec![1, 2, 3],
                 payload_digest: None,
                 vrf_tags: Vec::new(),
                 signature_ids: Vec::new(),
-            },
+            }),
             logical_time: LogicalTime::new(5),
             wall_time: WallTime::new(1_700_000_000_000),
         };

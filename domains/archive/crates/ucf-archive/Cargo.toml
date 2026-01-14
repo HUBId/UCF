@@ -7,3 +7,6 @@ edition = "2021"
 prost = "0.12"
 ucf-evidence = { path = "../../../../core/crates/ucf-evidence" }
 ucf-types = { path = "../../../../core/crates/ucf-types" }
+
+[dev-dependencies]
+tempfile = "3"
