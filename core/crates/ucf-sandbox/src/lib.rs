@@ -207,16 +207,18 @@ pub struct ControlFrameNormalized {
 }
 
 impl ControlFrameNormalized {
-    pub fn as_ref(&self) -> &ControlFrame {
-        &self.inner
-    }
-
     pub fn into_inner(self) -> ControlFrame {
         self.inner
     }
 
     pub fn commitment(&self) -> Commitment {
         commit_control_frame(&self.inner)
+    }
+}
+
+impl AsRef<ControlFrame> for ControlFrameNormalized {
+    fn as_ref(&self) -> &ControlFrame {
+        &self.inner
     }
 }
 
