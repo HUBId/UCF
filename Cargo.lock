@@ -1590,6 +1590,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucf-terminal"
+version = "0.1.0"
+dependencies = [
+ "ucf-bus",
+ "ucf-ingestion",
+ "ucf-sandbox",
+ "ucf-types",
+]
+
+[[package]]
 name = "ucf-types"
 version = "0.1.0"
 dependencies = [
