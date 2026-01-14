@@ -1521,6 +1521,7 @@ dependencies = [
  "ucf-digital-brain",
  "ucf-policy-gateway",
  "ucf-router",
+ "ucf-sandbox",
  "ucf-types",
 ]
 
@@ -1558,6 +1559,16 @@ dependencies = [
  "ucf-archive",
  "ucf-digital-brain",
  "ucf-policy-gateway",
+ "ucf-types",
+]
+
+[[package]]
+name = "ucf-sandbox"
+version = "0.1.0"
+dependencies = [
+ "ucf-bus",
+ "ucf-commit",
+ "ucf-policy-ecology",
  "ucf-types",
 ]
 

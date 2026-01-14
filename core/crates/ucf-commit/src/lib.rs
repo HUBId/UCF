@@ -1,8 +1,8 @@
 #![forbid(unsafe_code)]
 
 use ucf_protocol::v1::spec::{
-    Digest as ProtoDigest, ExperienceRecord, MacroMilestone, MesoMilestone, MicroMilestone,
-    PolicyDecision, ProofRef, VrfTag,
+    ControlFrame, Digest as ProtoDigest, ExperienceRecord, MacroMilestone, MesoMilestone,
+    MicroMilestone, PolicyDecision, ProofRef, VrfTag,
 };
 use ucf_types::{AlgoId, Digest32, DomainDigest};
 
@@ -16,6 +16,7 @@ pub enum CommitDomain {
     MacroMilestone = 4,
     PolicyDecision = 5,
     ProofEnvelope = 6,
+    ControlFrame = 7,
 }
 
 impl CommitDomain {
@@ -62,6 +63,19 @@ pub fn commit_policy_decision(dec: &PolicyDecision) -> Commitment {
         algo: AlgoId::Blake3_256,
         digest: hash_bytes(&bytes),
     }
+}
+
+pub fn commit_control_frame(cf: &ControlFrame) -> Commitment {
+    let bytes = encode_control_frame(cf);
+    Commitment {
+        domain: CommitDomain::ControlFrame.id(),
+        algo: AlgoId::Blake3_256,
+        digest: hash_bytes(&bytes),
+    }
+}
+
+pub fn canonical_control_frame_len(cf: &ControlFrame) -> usize {
+    encode_control_frame(cf).len()
 }
 
 pub fn commit_milestone_micro(micro: &MicroMilestone) -> Commitment {
@@ -146,6 +160,20 @@ fn encode_milestone_macro(macro_ms: &MacroMilestone) -> Vec<u8> {
     enc.write_field(2, encode_u64(macro_ms.achieved_at_ms));
     enc.write_field(3, encode_string(&macro_ms.label));
     enc.write_field(4, encode_string_list_sorted(&macro_ms.meso_milestone_ids));
+    enc.into_bytes()
+}
+
+fn encode_control_frame(cf: &ControlFrame) -> Vec<u8> {
+    let mut enc = Encoder::new();
+    enc.write_u16(CommitDomain::ControlFrame.id());
+    enc.write_field(1, encode_string(&cf.frame_id));
+    enc.write_field(2, encode_u64(cf.issued_at_ms));
+    enc.write_field(
+        3,
+        encode_optional(cf.decision.as_ref(), encode_policy_decision),
+    );
+    enc.write_field(4, encode_string_list_sorted(&cf.evidence_ids));
+    enc.write_field(5, encode_string(&cf.policy_id));
     enc.into_bytes()
 }
 
