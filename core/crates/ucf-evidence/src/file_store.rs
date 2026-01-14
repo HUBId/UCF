@@ -35,8 +35,9 @@ impl DigestAlgo for Sha256Digest {
 fn digest_to_hash(digest: &dyn DigestAlgo, input: &[u8]) -> AppendLogHash {
     let bytes = digest.digest(input);
     let mut hash = [0u8; 32];
-    if bytes.len() >= hash.len() {
-        hash.copy_from_slice(&bytes[..hash.len()]);
+    let target_len = hash.len();
+    if bytes.len() >= target_len {
+        hash.copy_from_slice(&bytes[..target_len]);
     } else {
         hash[..bytes.len()].copy_from_slice(&bytes);
     }
