@@ -2,13 +2,21 @@
 
 use std::sync::Mutex;
 
+use serde::{Deserialize, Serialize};
 use ucf_protocol::v1::spec::ProofEnvelope;
 use ucf_types::{EvidenceId, LogicalTime, WallTime};
+
+pub mod file_store;
 
 #[derive(Clone, Debug)]
 pub enum StoreError {
     Unsupported(String),
-    Corrupt(String),
+    Corrupt {
+        evidence_id: EvidenceId,
+        offset: u64,
+        expected_hash: AppendLogHash,
+        actual_hash: AppendLogHash,
+    },
     IOError(String),
 }
 
@@ -16,7 +24,7 @@ pub type StoreResult<T> = Result<T, StoreError>;
 
 pub type AppendLogHash = [u8; 32];
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct EvidenceEnvelope {
     pub evidence_id: EvidenceId,
     pub proof: ProofEnvelope,

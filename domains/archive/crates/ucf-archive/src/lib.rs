@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
 use prost::Message;
-use ucf_evidence::{EvidenceEnvelope, InMemoryEvidenceStore};
+use ucf_evidence::{EvidenceEnvelope, EvidenceStore, InMemoryEvidenceStore};
 use ucf_types::v1::spec::{ExperienceRecord, ProofEnvelope};
 use ucf_types::{EvidenceId, LogicalTime, WallTime};
 
