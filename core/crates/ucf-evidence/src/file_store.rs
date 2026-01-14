@@ -342,20 +342,19 @@ mod tests {
         file.seek(SeekFrom::Start(0)).expect("seek log start");
         file.write_all(&byte).expect("write flipped byte");
 
-        let reopened = FileEvidenceStore::open(&log_path, &manifest_path)
-            .expect_err("expected corruption error");
-        match reopened {
-            StoreError::Corrupt {
+        match FileEvidenceStore::open(&log_path, &manifest_path) {
+            Err(StoreError::Corrupt {
                 evidence_id,
                 offset,
                 expected_hash,
                 actual_hash,
-            } => {
+            }) => {
                 assert_eq!(evidence_id, EvidenceId::new("evidence-1"));
                 assert_eq!(offset, 0);
                 assert_ne!(expected_hash, actual_hash);
             }
-            other => panic!("expected corruption error, got {other:?}"),
-        };
+            Err(other) => panic!("expected corruption error, got {other:?}"),
+            Ok(_) => panic!("expected corruption error, got Ok"),
+        }
     }
 }
