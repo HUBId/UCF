@@ -1420,10 +1420,16 @@ checksum = "562d481066bde0658276a35467c4af00bdc6ee726305698a55b86e61d7ad82bb"
 name = "ucf-ai-port"
 version = "0.1.0"
 dependencies = [
+ "blake3",
  "ucf-bus",
+ "ucf-cde-port",
  "ucf-commit",
+ "ucf-ncde-port",
+ "ucf-nsr-port",
  "ucf-policy-ecology",
  "ucf-sandbox",
+ "ucf-ssm-port",
+ "ucf-tcf-port",
  "ucf-types",
 ]
 
@@ -1452,6 +1458,14 @@ dependencies = [
 name = "ucf-bus"
 version = "0.1.0"
 dependencies = [
+ "ucf-types",
+]
+
+[[package]]
+name = "ucf-cde-port"
+version = "0.1.0"
+dependencies = [
+ "blake3",
  "ucf-types",
 ]
 
@@ -1540,6 +1554,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucf-ncde-port"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ucf-types",
+]
+
+[[package]]
+name = "ucf-nsr-port"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ucf-types",
+]
+
+[[package]]
 name = "ucf-policy-ecology"
 version = "0.1.0"
 dependencies = [
@@ -1586,6 +1616,22 @@ dependencies = [
  "ucf-bus",
  "ucf-commit",
  "ucf-policy-ecology",
+ "ucf-types",
+]
+
+[[package]]
+name = "ucf-ssm-port"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ucf-types",
+]
+
+[[package]]
+name = "ucf-tcf-port"
+version = "0.1.0"
+dependencies = [
+ "blake3",
  "ucf-types",
 ]
 
