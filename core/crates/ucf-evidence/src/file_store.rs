@@ -251,7 +251,7 @@ mod tests {
     use ucf_types::{EvidenceId, LogicalTime, WallTime};
 
     use super::FileEvidenceStore;
-    use crate::{EvidenceEnvelope, StoreError};
+    use crate::{EvidenceEnvelope, EvidenceStore, StoreError};
 
     fn sample_envelope(id: &str, payload: Vec<u8>) -> EvidenceEnvelope {
         EvidenceEnvelope {
@@ -297,15 +297,21 @@ mod tests {
 
         assert_eq!(reopened.len(), 3);
         assert_eq!(
-            reopened.get_envelope(EvidenceId::new("evidence-1")),
+            reopened
+                .get_envelope(EvidenceId::new("evidence-1"))
+                .expect("read evidence-1"),
             Some(sample_envelope("evidence-1", vec![1, 2, 3]))
         );
         assert_eq!(
-            reopened.get_envelope(EvidenceId::new("evidence-2")),
+            reopened
+                .get_envelope(EvidenceId::new("evidence-2"))
+                .expect("read evidence-2"),
             Some(sample_envelope("evidence-2", vec![4, 5, 6]))
         );
         assert_eq!(
-            reopened.get_envelope(EvidenceId::new("evidence-3")),
+            reopened
+                .get_envelope(EvidenceId::new("evidence-3"))
+                .expect("read evidence-3"),
             Some(sample_envelope("evidence-3", vec![7, 8, 9]))
         );
     }
@@ -336,19 +342,20 @@ mod tests {
         file.seek(SeekFrom::Start(0)).expect("seek log start");
         file.write_all(&byte).expect("write flipped byte");
 
-        let reopened = FileEvidenceStore::open(&log_path, &manifest_path);
+        let reopened = FileEvidenceStore::open(&log_path, &manifest_path)
+            .expect_err("expected corruption error");
         match reopened {
-            Err(StoreError::Corrupt {
+            StoreError::Corrupt {
                 evidence_id,
                 offset,
                 expected_hash,
                 actual_hash,
-            }) => {
+            } => {
                 assert_eq!(evidence_id, EvidenceId::new("evidence-1"));
                 assert_eq!(offset, 0);
                 assert_ne!(expected_hash, actual_hash);
             }
             other => panic!("expected corruption error, got {other:?}"),
-        }
+        };
     }
 }
