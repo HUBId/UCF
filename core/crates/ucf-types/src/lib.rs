@@ -325,6 +325,104 @@ impl WallTime {
     }
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WorldStateVec {
+    pub bytes: Vec<u8>,
+    pub dims: Vec<usize>,
+}
+
+impl WorldStateVec {
+    pub fn new(bytes: Vec<u8>, dims: Vec<usize>) -> Self {
+        Self { bytes, dims }
+    }
+}
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ThoughtVec {
+    pub bytes: Vec<u8>,
+}
+
+impl ThoughtVec {
+    pub fn new(bytes: Vec<u8>) -> Self {
+        Self { bytes }
+    }
+}
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Claim {
+    pub predicate: String,
+    pub args: Vec<String>,
+}
+
+impl Claim {
+    pub fn new(predicate: impl Into<String>, args: Vec<String>) -> Self {
+        Self {
+            predicate: predicate.into(),
+            args,
+        }
+    }
+
+    pub fn new_from_strs(predicate: impl Into<String>, args: Vec<&str>) -> Self {
+        Self::new(predicate, args.into_iter().map(String::from).collect())
+    }
+}
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SymbolicClaims {
+    pub claims: Vec<Claim>,
+}
+
+impl SymbolicClaims {
+    pub fn new(claims: Vec<Claim>) -> Self {
+        Self { claims }
+    }
+}
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CausalNode {
+    pub id: String,
+}
+
+impl CausalNode {
+    pub fn new(id: impl Into<String>) -> Self {
+        Self { id: id.into() }
+    }
+}
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CausalEdge {
+    pub from: String,
+    pub to: String,
+}
+
+impl CausalEdge {
+    pub fn new(from: impl Into<String>, to: impl Into<String>) -> Self {
+        Self {
+            from: from.into(),
+            to: to.into(),
+        }
+    }
+}
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CausalGraphStub {
+    pub nodes: Vec<CausalNode>,
+    pub edges: Vec<CausalEdge>,
+}
+
+impl CausalGraphStub {
+    pub fn new(nodes: Vec<CausalNode>, edges: Vec<CausalEdge>) -> Self {
+        Self { nodes, edges }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

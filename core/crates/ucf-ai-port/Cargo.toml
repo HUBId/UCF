@@ -9,6 +9,12 @@ ucf-commit = { path = "../ucf-commit" }
 ucf-policy-ecology = { path = "../ucf-policy-ecology" }
 ucf-sandbox = { path = "../ucf-sandbox" }
 ucf-bus = { path = "../ucf-bus", optional = true }
+ucf-cde-port = { path = "../ucf-cde-port" }
+ucf-ncde-port = { path = "../ucf-ncde-port" }
+ucf-nsr-port = { path = "../ucf-nsr-port" }
+ucf-ssm-port = { path = "../ucf-ssm-port" }
+ucf-tcf-port = { path = "../ucf-tcf-port" }
+blake3 = "1"
 
 [features]
 bus = ["ucf-bus"]
