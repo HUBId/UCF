@@ -1,0 +1,10 @@
+[package]
+name = "ucf-consolidation"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+prost = "0.12"
+ucf-archive = { path = "../../../../domains/archive/crates/ucf-archive" }
+ucf-commit = { path = "../../../../core/crates/ucf-commit" }
+ucf-types = { path = "../../../../core/crates/ucf-types" }
