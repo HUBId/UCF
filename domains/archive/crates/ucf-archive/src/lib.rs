@@ -1,4 +1,17 @@
 #![forbid(unsafe_code)]
+//! Dieses Archiv speichert Evidence in zwei Dateien: `evidence.log` enthält die
+//! binären Payloads, während `evidence.manifest` Metadaten (Offset, Länge und
+//! Hash) zu jedem Eintrag hält.
+//!
+//! Invarianten: Jeder Manifest-Eintrag muss auf einen gültigen Bereich im Log
+//! zeigen, und Offset/Länge/Hash müssen exakt mit dem entsprechenden Log-Chunk
+//! übereinstimmen. So wird sichergestellt, dass das Manifest die Log-Datei
+//! korrekt beschreibt und Integrität geprüft werden kann.
+//!
+//! Die Abstraktion orientiert sich bereits an zukünftigen Proof-Envelopes: Die
+//! gespeicherten Payloads werden als `ProofEnvelope` behandelt, sodass spätere
+//! Erweiterungen der Envelope-Struktur ohne Änderung des Archivformats möglich
+//! bleiben.
 
 use std::path::Path;
 
