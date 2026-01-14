@@ -330,12 +330,10 @@ mod tests {
             .open(&log_path)
             .expect("open log file");
         let mut byte = [0u8; 1];
-        file.seek(SeekFrom::Start(0))
-            .expect("seek log start");
+        file.seek(SeekFrom::Start(0)).expect("seek log start");
         file.read_exact(&mut byte).expect("read log byte");
         byte[0] ^= 0b0000_0001;
-        file.seek(SeekFrom::Start(0))
-            .expect("seek log start");
+        file.seek(SeekFrom::Start(0)).expect("seek log start");
         file.write_all(&byte).expect("write flipped byte");
 
         let reopened = FileEvidenceStore::open(&log_path, &manifest_path);
