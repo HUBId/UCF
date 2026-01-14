@@ -413,15 +413,15 @@ mod tests {
             commit_milestone_micro(&micro_b)
         );
 
-        let meso_a = build_meso(&[micro_a.clone()]);
-        let meso_b = build_meso(&[micro_b.clone()]);
+        let meso_a = build_meso(std::slice::from_ref(&micro_a));
+        let meso_b = build_meso(std::slice::from_ref(&micro_b));
         assert_eq!(
             commit_milestone_meso(&meso_a),
             commit_milestone_meso(&meso_b)
         );
 
-        let macro_a = build_macro(&[meso_a.clone()]);
-        let macro_b = build_macro(&[meso_b.clone()]);
+        let macro_a = build_macro(std::slice::from_ref(&meso_a));
+        let macro_b = build_macro(std::slice::from_ref(&meso_b));
         assert_eq!(
             commit_milestone_macro(&macro_a),
             commit_milestone_macro(&macro_b)
