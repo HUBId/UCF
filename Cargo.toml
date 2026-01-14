@@ -20,6 +20,8 @@ members = [
     "core/crates/ucf-router",
     "core/crates/ucf-crypto",
     "core/crates/ucf-bus",
+    "core/crates/ucf-rsa",
+    "core/crates/ucf-openevolve-port",
     "core/crates/ucf-ingestion",
     "core/crates/ucf-fold",
     "core/crates/ucf-evidence",
