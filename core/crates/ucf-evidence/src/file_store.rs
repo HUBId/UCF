@@ -248,13 +248,13 @@ mod tests {
     fn sample_envelope(id: &str, payload: Vec<u8>) -> EvidenceEnvelope {
         EvidenceEnvelope {
             evidence_id: EvidenceId::new(id),
-            proof: ProofEnvelope {
+            proof: Some(ProofEnvelope {
                 envelope_id: format!("proof-{id}"),
                 payload,
                 payload_digest: None,
                 vrf_tags: Vec::new(),
                 signature_ids: Vec::new(),
-            },
+            }),
             logical_time: LogicalTime::new(7),
             wall_time: WallTime::new(1_700_000_000_000),
         }

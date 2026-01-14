@@ -52,6 +52,7 @@ mod tests {
             payload: vec![9, 9, 9],
             digest: None,
             vrf_tag: None,
+            proof_ref: None,
         };
 
         brain.ingest(record.clone());

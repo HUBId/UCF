@@ -34,8 +34,9 @@ fn handle_control_frame_routes_end_to_end() {
     assert_eq!(brain.records().len(), 1);
 
     let envelope = &archive.list()[0];
-    let record = ExperienceRecord::decode(envelope.proof.payload.as_slice())
-        .expect("decode experience record");
+    let proof = envelope.proof.as_ref().expect("missing proof envelope");
+    let record =
+        ExperienceRecord::decode(proof.payload.as_slice()).expect("decode experience record");
     let payload_text = String::from_utf8(record.payload.clone()).expect("payload utf8");
 
     assert_eq!(record.record_id, "exp-frame-1");

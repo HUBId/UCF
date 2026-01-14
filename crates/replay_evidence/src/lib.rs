@@ -219,12 +219,19 @@ mod tests {
             digest: Some(Digest {
                 algorithm: "sha256".to_string(),
                 value: vec![9, 9, 9],
+                algo_id: None,
+                domain: None,
+                value_32: None,
             }),
             vrf_tag: Some(VrfTag {
                 algorithm: "vrf".to_string(),
                 proof: vec![7, 8],
                 output: vec![6, 5],
+                suite_id: None,
+                domain: None,
+                tag: None,
             }),
+            proof_ref: None,
         };
 
         let bytes = record.encode_to_vec();

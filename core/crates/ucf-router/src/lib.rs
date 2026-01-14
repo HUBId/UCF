@@ -100,6 +100,7 @@ impl Router {
             payload,
             digest: None,
             vrf_tag: None,
+            proof_ref: None,
         }
     }
 }
