@@ -10,6 +10,8 @@ members = [
     "ucf-protocol", "chip4",
     "core/crates/ucf-types",
     "core/crates/ucf-ai-port",
+    "core/crates/ucf-sle",
+    "core/crates/ucf-iit-monitor",
     "core/crates/ucf-ssm-port",
     "core/crates/ucf-ncde-port",
     "core/crates/ucf-tcf-port",

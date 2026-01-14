@@ -1,31 +1,21 @@
 #![forbid(unsafe_code)]
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use blake3::Hasher;
-use ucf_cde_port::CdePort;
+use ucf_cde_port::{CdeHypothesis, CdePort};
+use ucf_iit_monitor::IitMonitor;
 use ucf_ncde_port::{NcdeContext, NcdePort};
 use ucf_nsr_port::{NsrPort, NsrReport};
 use ucf_policy_ecology::{PolicyEcology, PolicyRule};
 use ucf_sandbox::ControlFrameNormalized;
+use ucf_sle::{LoopFrame, StrangeLoopEngine};
 use ucf_ssm_port::{SsmPort, SsmState};
 use ucf_tcf_port::{TcfPort, TcfSignal};
 use ucf_types::v1::spec::DecisionKind;
 use ucf_types::{CausalGraphStub, Claim, Digest32, SymbolicClaims, ThoughtVec, WorldStateVec};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum OutputChannel {
-    Thought,
-    Speech,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct AiOutput {
-    pub channel: OutputChannel,
-    pub content: String,
-    pub confidence: u16,
-    pub rationale_commit: Option<Digest32>,
-}
+pub use ucf_types::{AiOutput, OutputChannel};
 
 pub trait AiPort {
     fn infer(&self, input: &ControlFrameNormalized) -> Vec<AiOutput>;
@@ -38,6 +28,8 @@ pub struct AiPillars {
     pub cde: Option<Arc<dyn CdePort + Send + Sync>>,
     pub nsr: Option<Arc<dyn NsrPort + Send + Sync>>,
     pub ncde: Option<Arc<dyn NcdePort + Send + Sync>>,
+    pub sle: Option<Arc<StrangeLoopEngine>>,
+    pub iit_monitor: Option<Arc<Mutex<IitMonitor>>>,
 }
 
 impl AiPillars {
@@ -47,6 +39,8 @@ impl AiPillars {
             || self.cde.is_some()
             || self.nsr.is_some()
             || self.ncde.is_some()
+            || self.sle.is_some()
+            || self.iit_monitor.is_some()
     }
 }
 
@@ -67,26 +61,41 @@ impl MockAiPort {
 
 impl AiPort for MockAiPort {
     fn infer(&self, input: &ControlFrameNormalized) -> Vec<AiOutput> {
-        let (rationale_commit, nsr_report) = if self.pillars.enabled() {
+        let artifacts = if self.pillars.enabled() {
             run_pillars(&self.pillars, input)
         } else {
-            (input.commitment().digest, None)
+            PillarArtifacts::baseline(input.commitment().digest)
         };
-        let rationale_commit = Some(rationale_commit);
-        let thought = AiOutput {
+        let mut thought = AiOutput {
             channel: OutputChannel::Thought,
             content: "ok".to_string(),
             confidence: 1000,
-            rationale_commit,
+            rationale_commit: Some(artifacts.rationale_commit),
+            integration_score: None,
         };
 
-        let allow_speech = nsr_report.as_ref().is_none_or(|report| report.ok);
+        let loop_frame = reflect_sle(
+            &self.pillars,
+            input.commitment().digest,
+            &artifacts,
+            &thought,
+        );
+        if let Some(frame) = loop_frame {
+            thought.rationale_commit = Some(frame.report_commit);
+        }
+        let integration_score = sample_iit_monitor(&self.pillars, &artifacts, &thought);
+        if let Some(score) = integration_score {
+            thought.integration_score = Some(score);
+        }
+
+        let allow_speech = artifacts.nsr_report.as_ref().is_none_or(|report| report.ok);
         if input.as_ref().frame_id == "ping" && allow_speech {
             let speech = AiOutput {
                 channel: OutputChannel::Speech,
                 content: "ok".to_string(),
                 confidence: 1000,
-                rationale_commit,
+                rationale_commit: thought.rationale_commit,
+                integration_score: thought.integration_score,
             };
             vec![thought, speech]
         } else {
@@ -95,10 +104,27 @@ impl AiPort for MockAiPort {
     }
 }
 
-fn run_pillars(
-    pillars: &AiPillars,
-    input: &ControlFrameNormalized,
-) -> (Digest32, Option<NsrReport>) {
+struct PillarArtifacts {
+    rationale_commit: Digest32,
+    nsr_report: Option<NsrReport>,
+    ssm_digest: Option<Digest32>,
+    cde_hyp: Option<CdeHypothesis>,
+    nsr_digest: Option<Digest32>,
+}
+
+impl PillarArtifacts {
+    fn baseline(digest: Digest32) -> Self {
+        Self {
+            rationale_commit: digest,
+            nsr_report: None,
+            ssm_digest: None,
+            cde_hyp: None,
+            nsr_digest: None,
+        }
+    }
+}
+
+fn run_pillars(pillars: &AiPillars, input: &ControlFrameNormalized) -> PillarArtifacts {
     let base_digest = input.commitment().digest;
     let mut signal = TcfSignal::new(base_digest, 0);
     let mut ssm_state = SsmState::new(base_digest, 0);
@@ -113,6 +139,16 @@ fn run_pillars(
 
     let mut artifacts = Vec::new();
     let mut nsr_report = None;
+    let mut ssm_digest = None;
+    let mut cde_hyp = None;
+    let mut nsr_digest = None;
+
+    if let Some(monitor) = &pillars.iit_monitor {
+        if let Ok(guard) = monitor.lock() {
+            let intensity = tcf_intensity_stub(guard.aggregate());
+            signal.intensity = intensity;
+        }
+    }
 
     if let Some(tcf) = &pillars.tcf {
         let pulse = tcf.tick(&mut signal, &[base_digest]);
@@ -121,15 +157,19 @@ fn run_pillars(
     if let Some(ssm) = &pillars.ssm {
         let output = ssm.update(&mut ssm_state, &world_state);
         artifacts.push(output.digest);
+        ssm_digest = Some(output.digest);
     }
     if let Some(cde) = &pillars.cde {
         let hypothesis = cde.infer(&mut graph, &world_state);
         artifacts.push(hypothesis.digest);
+        cde_hyp = Some(hypothesis);
     }
     if let Some(nsr) = &pillars.nsr {
         let report = nsr.check(&claims);
-        artifacts.push(digest_nsr_report(&report));
+        let report_digest = digest_nsr_report(&report);
+        artifacts.push(report_digest);
         nsr_report = Some(report);
+        nsr_digest = Some(report_digest);
     }
     if let Some(ncde) = &pillars.ncde {
         thought = ncde.integrate(&ctx, &thought);
@@ -142,7 +182,90 @@ fn run_pillars(
         hash_digests(&artifacts)
     };
 
-    (rationale_commit, nsr_report)
+    PillarArtifacts {
+        rationale_commit,
+        nsr_report,
+        ssm_digest,
+        cde_hyp,
+        nsr_digest,
+    }
+}
+
+fn reflect_sle(
+    pillars: &AiPillars,
+    base_digest: Digest32,
+    artifacts: &PillarArtifacts,
+    output: &AiOutput,
+) -> Option<LoopFrame> {
+    pillars.sle.as_ref().map(|sle| {
+        let prev = sle.latest().unwrap_or_else(|| LoopFrame::seed(base_digest));
+        sle.reflect(
+            &prev,
+            output,
+            artifacts.nsr_report.as_ref(),
+            artifacts.cde_hyp.as_ref(),
+        )
+    })
+}
+
+fn sample_iit_monitor(
+    pillars: &AiPillars,
+    artifacts: &PillarArtifacts,
+    output: &AiOutput,
+) -> Option<u16> {
+    let monitor = pillars.iit_monitor.as_ref()?;
+    let mut guard = monitor.lock().ok()?;
+    if let (Some(ssm), Some(cde)) = (artifacts.ssm_digest, artifacts.cde_hyp.as_ref()) {
+        guard.sample(ssm, cde.digest);
+    }
+    if let (Some(cde), Some(nsr)) = (artifacts.cde_hyp.as_ref(), artifacts.nsr_digest) {
+        guard.sample(cde.digest, nsr);
+    }
+    if let Some(nsr) = artifacts.nsr_digest {
+        let output_digest = digest_ai_output(output);
+        guard.sample(nsr, output_digest);
+    }
+    Some(guard.aggregate())
+}
+
+fn digest_ai_output(output: &AiOutput) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(b"ucf.ai.output.v1");
+    let channel_tag: u8 = match output.channel {
+        OutputChannel::Thought => 0,
+        OutputChannel::Speech => 1,
+    };
+    hasher.update(&[channel_tag]);
+    hasher.update(&output.confidence.to_be_bytes());
+    hasher.update(
+        &u64::try_from(output.content.len())
+            .unwrap_or(0)
+            .to_be_bytes(),
+    );
+    hasher.update(output.content.as_bytes());
+    match output.rationale_commit {
+        Some(commit) => {
+            hasher.update(&[1]);
+            hasher.update(commit.as_bytes());
+        }
+        None => {
+            hasher.update(&[0]);
+        }
+    }
+    match output.integration_score {
+        Some(score) => {
+            hasher.update(&[1]);
+            hasher.update(&score.to_be_bytes());
+        }
+        None => {
+            hasher.update(&[0]);
+        }
+    }
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn tcf_intensity_stub(score: u16) -> u16 {
+    score / 100
 }
 
 fn hash_digests(digests: &[Digest32]) -> Digest32 {
@@ -230,10 +353,12 @@ mod tests {
     use ucf_types::ThoughtVec;
     use ucf_types::WorldStateVec;
 
-    use ucf_cde_port::{CdeHypothesis, CdePort};
+    use ucf_cde_port::{CdeHypothesis, CdePort, MockCdePort};
+    use ucf_iit_monitor::IitMonitor;
     use ucf_ncde_port::{NcdeContext, NcdePort};
-    use ucf_nsr_port::{NsrPort, NsrReport};
-    use ucf_ssm_port::{SsmOutput, SsmPort, SsmState};
+    use ucf_nsr_port::{MockNsrPort, NsrPort, NsrReport};
+    use ucf_sle::StrangeLoopEngine;
+    use ucf_ssm_port::{MockSsmPort, SsmOutput, SsmPort, SsmState};
     use ucf_tcf_port::{TcfPort, TcfPulse, TcfSignal};
 
     fn base_frame(frame_id: &str) -> ControlFrame {
@@ -361,6 +486,7 @@ mod tests {
             ncde: Some(Arc::new(OrderNcde {
                 order: order.clone(),
             })),
+            ..AiPillars::default()
         };
 
         let port = MockAiPort::with_pillars(pillars);
@@ -400,5 +526,40 @@ mod tests {
 
         assert_eq!(outputs.len(), 1);
         assert_eq!(outputs[0].channel, OutputChannel::Thought);
+    }
+
+    #[test]
+    fn pipeline_emits_stable_meta_observer_outputs() {
+        let build_port = || {
+            let pillars = AiPillars {
+                ssm: Some(Arc::new(MockSsmPort::new())),
+                cde: Some(Arc::new(MockCdePort::new())),
+                nsr: Some(Arc::new(MockNsrPort::new())),
+                sle: Some(Arc::new(StrangeLoopEngine::new(4))),
+                iit_monitor: Some(Arc::new(Mutex::new(IitMonitor::new(4)))),
+                ..AiPillars::default()
+            };
+            MockAiPort::with_pillars(pillars)
+        };
+
+        let normalized = normalize(base_frame("frame-1"));
+        let port_a = build_port();
+        let port_b = build_port();
+
+        let out_a = port_a.infer(&normalized);
+        let out_b = port_b.infer(&normalized);
+        let thought_a = out_a
+            .iter()
+            .find(|out| out.channel == OutputChannel::Thought)
+            .expect("thought output");
+        let thought_b = out_b
+            .iter()
+            .find(|out| out.channel == OutputChannel::Thought)
+            .expect("thought output");
+
+        assert!(thought_a.rationale_commit.is_some());
+        assert!(thought_a.integration_score.is_some());
+        assert_eq!(thought_a.rationale_commit, thought_b.rationale_commit);
+        assert_eq!(thought_a.integration_score, thought_b.integration_score);
     }
 }
