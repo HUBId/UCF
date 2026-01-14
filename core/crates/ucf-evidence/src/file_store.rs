@@ -45,8 +45,6 @@ fn digest_to_hash(digest: &dyn DigestAlgo, input: &[u8]) -> AppendLogHash {
 }
 
 pub struct FileAppendLog {
-    log_path: PathBuf,
-    manifest_path: PathBuf,
     log: Mutex<File>,
     manifest: Mutex<File>,
     digest: Box<dyn DigestAlgo + Send + Sync>,
@@ -67,13 +65,12 @@ impl FileAppendLog {
             .create(true)
             .read(true)
             .write(true)
+            .truncate(false)
             .open(&manifest_path)
             .map_err(|err| StoreError::IOError(format!("open manifest: {err}")))?;
         let digest: Box<dyn DigestAlgo + Send + Sync> = Box::new(Sha256Digest);
         let entries = load_manifest(&manifest_path)?;
         let store = Self {
-            log_path,
-            manifest_path,
             log: Mutex::new(log),
             manifest: Mutex::new(manifest),
             digest,
