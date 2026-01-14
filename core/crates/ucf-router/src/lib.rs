@@ -130,6 +130,13 @@ impl Router {
             let notes = format!(";ai_thoughts={thoughts}");
             payload.extend_from_slice(notes.as_bytes());
         }
+        if let Some(score) = thought_outputs
+            .iter()
+            .find_map(|output| output.integration_score)
+        {
+            let notes = format!(";integration_score={score}");
+            payload.extend_from_slice(notes.as_bytes());
+        }
 
         ExperienceRecord {
             record_id,

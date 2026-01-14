@@ -116,6 +116,21 @@ impl fmt::Debug for Digest32 {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OutputChannel {
+    Thought,
+    Speech,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AiOutput {
+    pub channel: OutputChannel,
+    pub content: String,
+    pub confidence: u16,
+    pub rationale_commit: Option<Digest32>,
+    pub integration_score: Option<u16>,
+}
+
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct DomainDigest {

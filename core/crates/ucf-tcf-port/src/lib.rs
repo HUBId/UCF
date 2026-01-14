@@ -7,11 +7,16 @@ use ucf_types::Digest32;
 pub struct TcfSignal {
     pub digest: Digest32,
     pub tick: u64,
+    pub intensity: u16,
 }
 
 impl TcfSignal {
     pub fn new(digest: Digest32, tick: u64) -> Self {
-        Self { digest, tick }
+        Self {
+            digest,
+            tick,
+            intensity: 0,
+        }
     }
 }
 
@@ -40,6 +45,7 @@ impl TcfPort for MockTcfPort {
         let mut hasher = Hasher::new();
         hasher.update(signal.digest.as_bytes());
         hasher.update(&signal.tick.to_be_bytes());
+        hasher.update(&signal.intensity.to_be_bytes());
         for input in inputs {
             hasher.update(input.as_bytes());
         }

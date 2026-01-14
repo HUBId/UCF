@@ -1424,10 +1424,12 @@ dependencies = [
  "ucf-bus",
  "ucf-cde-port",
  "ucf-commit",
+ "ucf-iit-monitor",
  "ucf-ncde-port",
  "ucf-nsr-port",
  "ucf-policy-ecology",
  "ucf-sandbox",
+ "ucf-sle",
  "ucf-ssm-port",
  "ucf-tcf-port",
  "ucf-types",
@@ -1538,6 +1540,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucf-iit-monitor"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ucf-types",
+]
+
+[[package]]
 name = "ucf-ingestion"
 version = "0.1.0"
 dependencies = [
@@ -1616,6 +1626,16 @@ dependencies = [
  "ucf-bus",
  "ucf-commit",
  "ucf-policy-ecology",
+ "ucf-types",
+]
+
+[[package]]
+name = "ucf-sle"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ucf-cde-port",
+ "ucf-nsr-port",
  "ucf-types",
 ]
 
