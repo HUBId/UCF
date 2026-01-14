@@ -729,6 +729,79 @@ pub mod v1 {
             pub signature_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
         }
 
+        #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+        pub struct ControlFrameNormalized {
+            inner: ControlFrame,
+        }
+
+        impl ControlFrameNormalized {
+            pub fn into_inner(self) -> ControlFrame {
+                self.inner
+            }
+        }
+
+        impl AsRef<ControlFrame> for ControlFrameNormalized {
+            fn as_ref(&self) -> &ControlFrame {
+                &self.inner
+            }
+        }
+
+        impl From<ControlFrameNormalized> for ControlFrame {
+            fn from(value: ControlFrameNormalized) -> Self {
+                value.inner
+            }
+        }
+
+        impl From<ControlFrame> for ControlFrameNormalized {
+            fn from(mut value: ControlFrame) -> Self {
+                value.evidence_ids.sort();
+                value.evidence_ids.dedup();
+                if let Some(decision) = value.decision.as_mut() {
+                    decision.constraint_ids.sort();
+                    decision.constraint_ids.dedup();
+                }
+                Self { inner: value }
+            }
+        }
+
+        #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+        pub struct SpeechEvent {
+            pub evidence_id: ::prost::alloc::string::String,
+            pub content: ::prost::alloc::string::String,
+            pub confidence_bp: u16,
+            pub rationale_commit: Option<::prost::alloc::vec::Vec<u8>>,
+        }
+
+        #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+        pub struct ExternalSpeechMessage {
+            pub evidence_id: ::prost::alloc::string::String,
+            pub content: ::prost::alloc::string::String,
+            pub confidence_bp: u16,
+            pub rationale_commit: Option<::prost::alloc::vec::Vec<u8>>,
+        }
+
+        impl From<SpeechEvent> for ExternalSpeechMessage {
+            fn from(value: SpeechEvent) -> Self {
+                Self {
+                    evidence_id: value.evidence_id,
+                    content: value.content,
+                    confidence_bp: value.confidence_bp,
+                    rationale_commit: value.rationale_commit,
+                }
+            }
+        }
+
+        impl From<ExternalSpeechMessage> for SpeechEvent {
+            fn from(value: ExternalSpeechMessage) -> Self {
+                Self {
+                    evidence_id: value.evidence_id,
+                    content: value.content,
+                    confidence_bp: value.confidence_bp,
+                    rationale_commit: value.rationale_commit,
+                }
+            }
+        }
+
         #[cfg(test)]
         mod tests {
             use super::*;
@@ -793,4 +866,723 @@ pub mod v1 {
             }
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DecodeError {
+    Truncated,
+    UnknownTag(u16),
+    DuplicateTag(u16),
+    InvalidLength {
+        tag: u16,
+        expected: usize,
+        actual: usize,
+    },
+    MissingField(&'static str),
+    InvalidValue(&'static str),
+}
+
+pub trait CanonicalEncode {
+    fn encode_canonical(&self, out: &mut Vec<u8>);
+}
+
+pub fn canonical_bytes<T: CanonicalEncode>(value: &T) -> Vec<u8> {
+    let mut out = Vec::new();
+    value.encode_canonical(&mut out);
+    out
+}
+
+impl v1::spec::ControlFrame {
+    pub fn decode_canonical(bytes: &[u8]) -> Result<Self, DecodeError> {
+        decode_control_frame(bytes)
+    }
+}
+
+impl v1::spec::ExperienceRecord {
+    pub fn decode_canonical(bytes: &[u8]) -> Result<Self, DecodeError> {
+        decode_experience_record(bytes)
+    }
+}
+
+pub fn decode_control_frame(bytes: &[u8]) -> Result<v1::spec::ControlFrame, DecodeError> {
+    let mut reader = FieldReader::new(bytes);
+    let mut frame_id = None;
+    let mut issued_at_ms = None;
+    let mut decision = None;
+    let mut evidence_ids = None;
+    let mut policy_id = None;
+
+    while let Some((tag, payload)) = reader.next_field()? {
+        match tag {
+            1 => assign_once(&mut frame_id, decode_string(payload)?, tag)?,
+            2 => assign_once(&mut issued_at_ms, decode_u64(payload)?, tag)?,
+            3 => assign_once(
+                &mut decision,
+                decode_optional(payload, decode_policy_decision)?,
+                tag,
+            )?,
+            4 => assign_once(&mut evidence_ids, decode_string_list(payload)?, tag)?,
+            5 => assign_once(&mut policy_id, decode_string(payload)?, tag)?,
+            other => return Err(DecodeError::UnknownTag(other)),
+        }
+    }
+
+    Ok(v1::spec::ControlFrame {
+        frame_id: frame_id.ok_or(DecodeError::MissingField("frame_id"))?,
+        issued_at_ms: issued_at_ms.ok_or(DecodeError::MissingField("issued_at_ms"))?,
+        decision: decision.ok_or(DecodeError::MissingField("decision"))?,
+        evidence_ids: evidence_ids.ok_or(DecodeError::MissingField("evidence_ids"))?,
+        policy_id: policy_id.ok_or(DecodeError::MissingField("policy_id"))?,
+    })
+}
+
+pub fn decode_experience_record(bytes: &[u8]) -> Result<v1::spec::ExperienceRecord, DecodeError> {
+    let mut reader = FieldReader::new(bytes);
+    let mut record_id = None;
+    let mut observed_at_ms = None;
+    let mut subject_id = None;
+    let mut payload = None;
+    let mut digest = None;
+    let mut vrf_tag = None;
+    let mut proof_ref = None;
+
+    while let Some((tag, payload_bytes)) = reader.next_field()? {
+        match tag {
+            1 => assign_once(&mut record_id, decode_string(payload_bytes)?, tag)?,
+            2 => assign_once(&mut observed_at_ms, decode_u64(payload_bytes)?, tag)?,
+            3 => assign_once(&mut subject_id, decode_string(payload_bytes)?, tag)?,
+            4 => assign_once(&mut payload, decode_bytes(payload_bytes)?, tag)?,
+            5 => assign_once(
+                &mut digest,
+                decode_optional(payload_bytes, decode_digest)?,
+                tag,
+            )?,
+            6 => assign_once(
+                &mut vrf_tag,
+                decode_optional(payload_bytes, decode_vrf_tag)?,
+                tag,
+            )?,
+            7 => assign_once(
+                &mut proof_ref,
+                decode_optional(payload_bytes, decode_proof_ref)?,
+                tag,
+            )?,
+            other => return Err(DecodeError::UnknownTag(other)),
+        }
+    }
+
+    Ok(v1::spec::ExperienceRecord {
+        record_id: record_id.ok_or(DecodeError::MissingField("record_id"))?,
+        observed_at_ms: observed_at_ms.ok_or(DecodeError::MissingField("observed_at_ms"))?,
+        subject_id: subject_id.ok_or(DecodeError::MissingField("subject_id"))?,
+        payload: payload.ok_or(DecodeError::MissingField("payload"))?,
+        digest: digest.ok_or(DecodeError::MissingField("digest"))?,
+        vrf_tag: vrf_tag.ok_or(DecodeError::MissingField("vrf_tag"))?,
+        proof_ref: proof_ref.ok_or(DecodeError::MissingField("proof_ref"))?,
+    })
+}
+
+impl CanonicalEncode for v1::spec::ControlFrame {
+    fn encode_canonical(&self, out: &mut Vec<u8>) {
+        let mut enc = CanonicalEncoder::new();
+        enc.write_field(1, encode_string(&self.frame_id));
+        enc.write_field(2, encode_u64(self.issued_at_ms));
+        enc.write_field(
+            3,
+            encode_optional(self.decision.as_ref(), encode_policy_decision),
+        );
+        enc.write_field(4, encode_string_list_sorted(&self.evidence_ids));
+        enc.write_field(5, encode_string(&self.policy_id));
+        out.extend_from_slice(&enc.into_bytes());
+    }
+}
+
+impl CanonicalEncode for v1::spec::ControlFrameNormalized {
+    fn encode_canonical(&self, out: &mut Vec<u8>) {
+        self.as_ref().encode_canonical(out);
+    }
+}
+
+impl CanonicalEncode for v1::spec::PolicyDecision {
+    fn encode_canonical(&self, out: &mut Vec<u8>) {
+        let mut enc = CanonicalEncoder::new();
+        enc.write_field(1, encode_i32(self.kind));
+        enc.write_field(2, encode_i32(self.action));
+        enc.write_field(3, encode_string(&self.rationale));
+        enc.write_field(4, encode_u32(self.confidence_bp));
+        enc.write_field(5, encode_string_list_sorted(&self.constraint_ids));
+        out.extend_from_slice(&enc.into_bytes());
+    }
+}
+
+impl CanonicalEncode for v1::spec::ExperienceRecord {
+    fn encode_canonical(&self, out: &mut Vec<u8>) {
+        let mut enc = CanonicalEncoder::new();
+        enc.write_field(1, encode_string(&self.record_id));
+        enc.write_field(2, encode_u64(self.observed_at_ms));
+        enc.write_field(3, encode_string(&self.subject_id));
+        enc.write_field(4, encode_bytes(&self.payload));
+        enc.write_field(5, encode_optional(self.digest.as_ref(), encode_digest));
+        enc.write_field(6, encode_optional(self.vrf_tag.as_ref(), encode_vrf_tag));
+        enc.write_field(
+            7,
+            encode_optional(self.proof_ref.as_ref(), encode_proof_ref),
+        );
+        out.extend_from_slice(&enc.into_bytes());
+    }
+}
+
+impl CanonicalEncode for v1::spec::Digest {
+    fn encode_canonical(&self, out: &mut Vec<u8>) {
+        let mut enc = CanonicalEncoder::new();
+        enc.write_field(1, encode_string(&self.algorithm));
+        enc.write_field(2, encode_bytes(&self.value));
+        enc.write_field(
+            3,
+            encode_optional(self.algo_id.as_ref(), |value| encode_u32(*value)),
+        );
+        enc.write_field(
+            4,
+            encode_optional(self.domain.as_ref(), |value| encode_u32(*value)),
+        );
+        enc.write_field(
+            5,
+            encode_optional(self.value_32.as_ref(), |value| encode_bytes(value)),
+        );
+        out.extend_from_slice(&enc.into_bytes());
+    }
+}
+
+impl CanonicalEncode for v1::spec::VrfTag {
+    fn encode_canonical(&self, out: &mut Vec<u8>) {
+        let mut enc = CanonicalEncoder::new();
+        enc.write_field(1, encode_string(&self.algorithm));
+        enc.write_field(2, encode_bytes(&self.proof));
+        enc.write_field(3, encode_bytes(&self.output));
+        enc.write_field(
+            4,
+            encode_optional(self.suite_id.as_ref(), |value| encode_u32(*value)),
+        );
+        enc.write_field(
+            5,
+            encode_optional(self.domain.as_ref(), |value| encode_u32(*value)),
+        );
+        enc.write_field(
+            6,
+            encode_optional(self.tag.as_ref(), |value| encode_bytes(value)),
+        );
+        out.extend_from_slice(&enc.into_bytes());
+    }
+}
+
+impl CanonicalEncode for v1::spec::ProofRef {
+    fn encode_canonical(&self, out: &mut Vec<u8>) {
+        let mut enc = CanonicalEncoder::new();
+        enc.write_field(1, encode_string(&self.proof_id));
+        enc.write_field(
+            2,
+            encode_optional(self.algo_id.as_ref(), |value| encode_u32(*value)),
+        );
+        enc.write_field(
+            3,
+            encode_optional(self.suite_id.as_ref(), |value| encode_u32(*value)),
+        );
+        enc.write_field(
+            4,
+            encode_optional(self.opaque.as_ref(), |value| encode_bytes(value)),
+        );
+        out.extend_from_slice(&enc.into_bytes());
+    }
+}
+
+impl CanonicalEncode for v1::spec::MicroMilestone {
+    fn encode_canonical(&self, out: &mut Vec<u8>) {
+        let mut enc = CanonicalEncoder::new();
+        enc.write_field(1, encode_string(&self.milestone_id));
+        enc.write_field(2, encode_u64(self.achieved_at_ms));
+        enc.write_field(3, encode_string(&self.label));
+        out.extend_from_slice(&enc.into_bytes());
+    }
+}
+
+impl CanonicalEncode for v1::spec::MesoMilestone {
+    fn encode_canonical(&self, out: &mut Vec<u8>) {
+        let mut enc = CanonicalEncoder::new();
+        enc.write_field(1, encode_string(&self.milestone_id));
+        enc.write_field(2, encode_u64(self.achieved_at_ms));
+        enc.write_field(3, encode_string(&self.label));
+        enc.write_field(4, encode_string_list_sorted(&self.micro_milestone_ids));
+        out.extend_from_slice(&enc.into_bytes());
+    }
+}
+
+impl CanonicalEncode for v1::spec::MacroMilestone {
+    fn encode_canonical(&self, out: &mut Vec<u8>) {
+        let mut enc = CanonicalEncoder::new();
+        enc.write_field(1, encode_string(&self.milestone_id));
+        enc.write_field(2, encode_u64(self.achieved_at_ms));
+        enc.write_field(3, encode_string(&self.label));
+        enc.write_field(4, encode_string_list_sorted(&self.meso_milestone_ids));
+        out.extend_from_slice(&enc.into_bytes());
+    }
+}
+
+impl CanonicalEncode for v1::spec::ProofEnvelope {
+    fn encode_canonical(&self, out: &mut Vec<u8>) {
+        let mut enc = CanonicalEncoder::new();
+        enc.write_field(1, encode_string(&self.envelope_id));
+        enc.write_field(2, encode_bytes(&self.payload));
+        enc.write_field(
+            3,
+            encode_optional(self.payload_digest.as_ref(), encode_digest),
+        );
+        enc.write_field(4, encode_message_list_sorted(&self.vrf_tags));
+        enc.write_field(5, encode_string_list_sorted(&self.signature_ids));
+        out.extend_from_slice(&enc.into_bytes());
+    }
+}
+
+impl CanonicalEncode for v1::spec::SpeechEvent {
+    fn encode_canonical(&self, out: &mut Vec<u8>) {
+        let mut enc = CanonicalEncoder::new();
+        enc.write_field(1, encode_string(&self.evidence_id));
+        enc.write_field(2, encode_string(&self.content));
+        enc.write_field(3, encode_u16(self.confidence_bp));
+        enc.write_field(
+            4,
+            encode_optional(self.rationale_commit.as_ref(), |value| encode_bytes(value)),
+        );
+        out.extend_from_slice(&enc.into_bytes());
+    }
+}
+
+impl CanonicalEncode for v1::spec::ExternalSpeechMessage {
+    fn encode_canonical(&self, out: &mut Vec<u8>) {
+        let mut enc = CanonicalEncoder::new();
+        enc.write_field(1, encode_string(&self.evidence_id));
+        enc.write_field(2, encode_string(&self.content));
+        enc.write_field(3, encode_u16(self.confidence_bp));
+        enc.write_field(
+            4,
+            encode_optional(self.rationale_commit.as_ref(), |value| encode_bytes(value)),
+        );
+        out.extend_from_slice(&enc.into_bytes());
+    }
+}
+
+fn encode_policy_decision(decision: &v1::spec::PolicyDecision) -> Vec<u8> {
+    canonical_bytes(decision)
+}
+
+fn encode_digest(digest: &v1::spec::Digest) -> Vec<u8> {
+    canonical_bytes(digest)
+}
+
+fn encode_vrf_tag(tag: &v1::spec::VrfTag) -> Vec<u8> {
+    canonical_bytes(tag)
+}
+
+fn encode_proof_ref(reference: &v1::spec::ProofRef) -> Vec<u8> {
+    canonical_bytes(reference)
+}
+
+fn encode_bytes(value: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(4 + value.len());
+    out.extend_from_slice(&(value.len() as u32).to_be_bytes());
+    out.extend_from_slice(value);
+    out
+}
+
+fn encode_string(value: &str) -> Vec<u8> {
+    encode_bytes(value.as_bytes())
+}
+
+fn encode_string_list_sorted(values: &[String]) -> Vec<u8> {
+    let mut sorted = values.to_vec();
+    sorted.sort();
+    encode_string_list(&sorted)
+}
+
+fn encode_string_list(values: &[String]) -> Vec<u8> {
+    let mut out = Vec::new();
+    out.extend_from_slice(&(values.len() as u32).to_be_bytes());
+    for value in values {
+        out.extend_from_slice(&encode_string(value));
+    }
+    out
+}
+
+fn encode_message_list_sorted<T: CanonicalEncode>(values: &[T]) -> Vec<u8> {
+    let mut encoded: Vec<Vec<u8>> = values.iter().map(canonical_bytes).collect();
+    encoded.sort();
+    let mut out = Vec::new();
+    out.extend_from_slice(&(encoded.len() as u32).to_be_bytes());
+    for value in encoded {
+        out.extend_from_slice(&encode_bytes(&value));
+    }
+    out
+}
+
+fn encode_optional<T>(value: Option<&T>, encode: impl FnOnce(&T) -> Vec<u8>) -> Vec<u8> {
+    match value {
+        Some(value) => {
+            let mut out = Vec::new();
+            out.push(1);
+            out.extend_from_slice(&encode(value));
+            out
+        }
+        None => vec![0],
+    }
+}
+
+fn encode_u16(value: u16) -> Vec<u8> {
+    value.to_be_bytes().to_vec()
+}
+
+fn encode_u32(value: u32) -> Vec<u8> {
+    value.to_be_bytes().to_vec()
+}
+
+fn encode_u64(value: u64) -> Vec<u8> {
+    value.to_be_bytes().to_vec()
+}
+
+fn encode_i32(value: i32) -> Vec<u8> {
+    value.to_be_bytes().to_vec()
+}
+
+struct CanonicalEncoder {
+    bytes: Vec<u8>,
+}
+
+impl CanonicalEncoder {
+    fn new() -> Self {
+        Self { bytes: Vec::new() }
+    }
+
+    fn write_field(&mut self, tag: u16, payload: Vec<u8>) {
+        self.bytes.extend_from_slice(&tag.to_be_bytes());
+        self.bytes
+            .extend_from_slice(&(payload.len() as u32).to_be_bytes());
+        self.bytes.extend_from_slice(&payload);
+    }
+
+    fn into_bytes(self) -> Vec<u8> {
+        self.bytes
+    }
+}
+
+struct FieldReader<'a> {
+    input: &'a [u8],
+    offset: usize,
+}
+
+impl<'a> FieldReader<'a> {
+    fn new(input: &'a [u8]) -> Self {
+        Self { input, offset: 0 }
+    }
+
+    fn next_field(&mut self) -> Result<Option<(u16, &'a [u8])>, DecodeError> {
+        if self.offset == self.input.len() {
+            return Ok(None);
+        }
+        if self.input.len() - self.offset < 6 {
+            return Err(DecodeError::Truncated);
+        }
+        let tag = u16::from_be_bytes([self.input[self.offset], self.input[self.offset + 1]]);
+        let len = u32::from_be_bytes([
+            self.input[self.offset + 2],
+            self.input[self.offset + 3],
+            self.input[self.offset + 4],
+            self.input[self.offset + 5],
+        ]) as usize;
+        self.offset += 6;
+        if self.input.len() - self.offset < len {
+            return Err(DecodeError::Truncated);
+        }
+        let payload = &self.input[self.offset..self.offset + len];
+        self.offset += len;
+        Ok(Some((tag, payload)))
+    }
+}
+
+fn assign_once<T>(slot: &mut Option<T>, value: T, tag: u16) -> Result<(), DecodeError> {
+    if slot.is_some() {
+        return Err(DecodeError::DuplicateTag(tag));
+    }
+    *slot = Some(value);
+    Ok(())
+}
+
+fn decode_u32(payload: &[u8]) -> Result<u32, DecodeError> {
+    if payload.len() != 4 {
+        return Err(DecodeError::InvalidLength {
+            tag: 0,
+            expected: 4,
+            actual: payload.len(),
+        });
+    }
+    Ok(u32::from_be_bytes([
+        payload[0], payload[1], payload[2], payload[3],
+    ]))
+}
+
+fn decode_u64(payload: &[u8]) -> Result<u64, DecodeError> {
+    if payload.len() != 8 {
+        return Err(DecodeError::InvalidLength {
+            tag: 0,
+            expected: 8,
+            actual: payload.len(),
+        });
+    }
+    Ok(u64::from_be_bytes([
+        payload[0], payload[1], payload[2], payload[3], payload[4], payload[5], payload[6],
+        payload[7],
+    ]))
+}
+
+fn decode_i32(payload: &[u8]) -> Result<i32, DecodeError> {
+    if payload.len() != 4 {
+        return Err(DecodeError::InvalidLength {
+            tag: 0,
+            expected: 4,
+            actual: payload.len(),
+        });
+    }
+    Ok(i32::from_be_bytes([
+        payload[0], payload[1], payload[2], payload[3],
+    ]))
+}
+
+fn decode_bytes(payload: &[u8]) -> Result<Vec<u8>, DecodeError> {
+    if payload.len() < 4 {
+        return Err(DecodeError::Truncated);
+    }
+    let len = u32::from_be_bytes([payload[0], payload[1], payload[2], payload[3]]) as usize;
+    if payload.len() - 4 != len {
+        return Err(DecodeError::InvalidLength {
+            tag: 0,
+            expected: len,
+            actual: payload.len() - 4,
+        });
+    }
+    Ok(payload[4..].to_vec())
+}
+
+fn decode_string(payload: &[u8]) -> Result<String, DecodeError> {
+    let bytes = decode_bytes(payload)?;
+    let value = String::from_utf8(bytes).map_err(|_| DecodeError::InvalidValue("string"))?;
+    Ok(value)
+}
+
+fn decode_string_list(payload: &[u8]) -> Result<Vec<String>, DecodeError> {
+    if payload.len() < 4 {
+        return Err(DecodeError::Truncated);
+    }
+    let mut offset = 0;
+    let count = u32::from_be_bytes([
+        payload[offset],
+        payload[offset + 1],
+        payload[offset + 2],
+        payload[offset + 3],
+    ]) as usize;
+    offset += 4;
+    let mut values = Vec::with_capacity(count);
+    for _ in 0..count {
+        if payload.len() - offset < 4 {
+            return Err(DecodeError::Truncated);
+        }
+        let len = u32::from_be_bytes([
+            payload[offset],
+            payload[offset + 1],
+            payload[offset + 2],
+            payload[offset + 3],
+        ]) as usize;
+        offset += 4;
+        if payload.len() - offset < len {
+            return Err(DecodeError::Truncated);
+        }
+        let slice = &payload[offset..offset + len];
+        offset += len;
+        let value =
+            String::from_utf8(slice.to_vec()).map_err(|_| DecodeError::InvalidValue("string"))?;
+        values.push(value);
+    }
+    if offset != payload.len() {
+        return Err(DecodeError::InvalidLength {
+            tag: 0,
+            expected: offset,
+            actual: payload.len(),
+        });
+    }
+    Ok(values)
+}
+
+fn decode_optional<T>(
+    payload: &[u8],
+    decode: impl FnOnce(&[u8]) -> Result<T, DecodeError>,
+) -> Result<Option<T>, DecodeError> {
+    let (flag, rest) = payload.split_first().ok_or(DecodeError::Truncated)?;
+    match flag {
+        0 => {
+            if !rest.is_empty() {
+                return Err(DecodeError::InvalidLength {
+                    tag: 0,
+                    expected: 0,
+                    actual: rest.len(),
+                });
+            }
+            Ok(None)
+        }
+        1 => Ok(Some(decode(rest)?)),
+        _ => Err(DecodeError::InvalidValue("optional flag")),
+    }
+}
+
+fn decode_policy_decision(payload: &[u8]) -> Result<v1::spec::PolicyDecision, DecodeError> {
+    let mut reader = FieldReader::new(payload);
+    let mut kind = None;
+    let mut action = None;
+    let mut rationale = None;
+    let mut confidence_bp = None;
+    let mut constraint_ids = None;
+
+    while let Some((tag, payload_bytes)) = reader.next_field()? {
+        match tag {
+            1 => assign_once(&mut kind, decode_i32(payload_bytes)?, tag)?,
+            2 => assign_once(&mut action, decode_i32(payload_bytes)?, tag)?,
+            3 => assign_once(&mut rationale, decode_string(payload_bytes)?, tag)?,
+            4 => assign_once(&mut confidence_bp, decode_u32(payload_bytes)?, tag)?,
+            5 => assign_once(&mut constraint_ids, decode_string_list(payload_bytes)?, tag)?,
+            other => return Err(DecodeError::UnknownTag(other)),
+        }
+    }
+
+    Ok(v1::spec::PolicyDecision {
+        kind: kind.ok_or(DecodeError::MissingField("kind"))?,
+        action: action.ok_or(DecodeError::MissingField("action"))?,
+        rationale: rationale.ok_or(DecodeError::MissingField("rationale"))?,
+        confidence_bp: confidence_bp.ok_or(DecodeError::MissingField("confidence_bp"))?,
+        constraint_ids: constraint_ids.ok_or(DecodeError::MissingField("constraint_ids"))?,
+    })
+}
+
+fn decode_digest(payload: &[u8]) -> Result<v1::spec::Digest, DecodeError> {
+    let mut reader = FieldReader::new(payload);
+    let mut algorithm = None;
+    let mut value = None;
+    let mut algo_id = None;
+    let mut domain = None;
+    let mut value_32 = None;
+
+    while let Some((tag, payload_bytes)) = reader.next_field()? {
+        match tag {
+            1 => assign_once(&mut algorithm, decode_string(payload_bytes)?, tag)?,
+            2 => assign_once(&mut value, decode_bytes(payload_bytes)?, tag)?,
+            3 => assign_once(
+                &mut algo_id,
+                decode_optional(payload_bytes, decode_u32)?,
+                tag,
+            )?,
+            4 => assign_once(
+                &mut domain,
+                decode_optional(payload_bytes, decode_u32)?,
+                tag,
+            )?,
+            5 => assign_once(
+                &mut value_32,
+                decode_optional(payload_bytes, decode_bytes)?,
+                tag,
+            )?,
+            other => return Err(DecodeError::UnknownTag(other)),
+        }
+    }
+
+    Ok(v1::spec::Digest {
+        algorithm: algorithm.ok_or(DecodeError::MissingField("algorithm"))?,
+        value: value.ok_or(DecodeError::MissingField("value"))?,
+        algo_id: algo_id.ok_or(DecodeError::MissingField("algo_id"))?,
+        domain: domain.ok_or(DecodeError::MissingField("domain"))?,
+        value_32: value_32.ok_or(DecodeError::MissingField("value_32"))?,
+    })
+}
+
+fn decode_vrf_tag(payload: &[u8]) -> Result<v1::spec::VrfTag, DecodeError> {
+    let mut reader = FieldReader::new(payload);
+    let mut algorithm = None;
+    let mut proof = None;
+    let mut output = None;
+    let mut suite_id = None;
+    let mut domain = None;
+    let mut tag_bytes = None;
+
+    while let Some((tag, payload_bytes)) = reader.next_field()? {
+        match tag {
+            1 => assign_once(&mut algorithm, decode_string(payload_bytes)?, tag)?,
+            2 => assign_once(&mut proof, decode_bytes(payload_bytes)?, tag)?,
+            3 => assign_once(&mut output, decode_bytes(payload_bytes)?, tag)?,
+            4 => assign_once(
+                &mut suite_id,
+                decode_optional(payload_bytes, decode_u32)?,
+                tag,
+            )?,
+            5 => assign_once(
+                &mut domain,
+                decode_optional(payload_bytes, decode_u32)?,
+                tag,
+            )?,
+            6 => assign_once(
+                &mut tag_bytes,
+                decode_optional(payload_bytes, decode_bytes)?,
+                tag,
+            )?,
+            other => return Err(DecodeError::UnknownTag(other)),
+        }
+    }
+
+    Ok(v1::spec::VrfTag {
+        algorithm: algorithm.ok_or(DecodeError::MissingField("algorithm"))?,
+        proof: proof.ok_or(DecodeError::MissingField("proof"))?,
+        output: output.ok_or(DecodeError::MissingField("output"))?,
+        suite_id: suite_id.ok_or(DecodeError::MissingField("suite_id"))?,
+        domain: domain.ok_or(DecodeError::MissingField("domain"))?,
+        tag: tag_bytes.ok_or(DecodeError::MissingField("tag"))?,
+    })
+}
+
+fn decode_proof_ref(payload: &[u8]) -> Result<v1::spec::ProofRef, DecodeError> {
+    let mut reader = FieldReader::new(payload);
+    let mut proof_id = None;
+    let mut algo_id = None;
+    let mut suite_id = None;
+    let mut opaque = None;
+
+    while let Some((tag, payload_bytes)) = reader.next_field()? {
+        match tag {
+            1 => assign_once(&mut proof_id, decode_string(payload_bytes)?, tag)?,
+            2 => assign_once(
+                &mut algo_id,
+                decode_optional(payload_bytes, decode_u32)?,
+                tag,
+            )?,
+            3 => assign_once(
+                &mut suite_id,
+                decode_optional(payload_bytes, decode_u32)?,
+                tag,
+            )?,
+            4 => assign_once(
+                &mut opaque,
+                decode_optional(payload_bytes, decode_bytes)?,
+                tag,
+            )?,
+            other => return Err(DecodeError::UnknownTag(other)),
+        }
+    }
+
+    Ok(v1::spec::ProofRef {
+        proof_id: proof_id.ok_or(DecodeError::MissingField("proof_id"))?,
+        algo_id: algo_id.ok_or(DecodeError::MissingField("algo_id"))?,
+        suite_id: suite_id.ok_or(DecodeError::MissingField("suite_id"))?,
+        opaque: opaque.ok_or(DecodeError::MissingField("opaque"))?,
+    })
 }
