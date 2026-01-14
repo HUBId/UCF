@@ -1455,6 +1455,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucf-consolidation"
+version = "0.1.0"
+dependencies = [
+ "prost",
+ "ucf-archive",
+ "ucf-commit",
+ "ucf-types",
+]
+
+[[package]]
 name = "ucf-crypto"
 version = "0.1.0"
 
