@@ -1,7 +1,10 @@
 #![forbid(unsafe_code)]
 
+use std::sync::Arc;
+
 use ucf_archive::ExperienceAppender;
 use ucf_commit::commit_milestone_macro;
+use ucf_policy_ecology::{ConsistencyReport, ConsistencyVerdict, DefaultPolicyEcology, GeistGate};
 use ucf_types::v1::spec::{ExperienceRecord, MacroMilestone};
 use ucf_types::{Digest32, EvidenceId};
 
@@ -19,30 +22,6 @@ pub struct SelfState {
     pub level: u8,
     pub anchor: Digest32,
     pub context: Vec<Digest32>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ConsistencyVerdict {
-    Accept,
-    Damp,
-    Reject,
-}
-
-impl ConsistencyVerdict {
-    fn as_u8(self) -> u8 {
-        match self {
-            Self::Accept => 1,
-            Self::Damp => 2,
-            Self::Reject => 3,
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ConsistencyReport {
-    pub score: u16,
-    pub verdict: ConsistencyVerdict,
-    pub matched_anchors: usize,
 }
 
 pub trait IsmStore {
@@ -84,11 +63,26 @@ pub struct GeistKernel<A: ExperienceAppender, I: IsmStore> {
     pub cfg: GeistConfig,
     pub archive: A,
     pub ism: I,
+    gate: Arc<dyn GeistGate + Send + Sync>,
 }
 
 impl<A: ExperienceAppender, I: IsmStore> GeistKernel<A, I> {
     pub fn new(cfg: GeistConfig, archive: A, ism: I) -> Self {
-        Self { cfg, archive, ism }
+        Self::new_with_gate(cfg, archive, ism, Arc::new(DefaultPolicyEcology::default()))
+    }
+
+    pub fn new_with_gate(
+        cfg: GeistConfig,
+        archive: A,
+        ism: I,
+        gate: Arc<dyn GeistGate + Send + Sync>,
+    ) -> Self {
+        Self {
+            cfg,
+            archive,
+            ism,
+            gate,
+        }
     }
 
     pub fn ingest_macro(
@@ -98,9 +92,13 @@ impl<A: ExperienceAppender, I: IsmStore> GeistKernel<A, I> {
         let macro_refs = derive_macro_refs(&macro_ms);
         let self_states = build_self_states(self.cfg.recursion_depth, &macro_refs);
         let base_state = self_states.first().expect("recursion_depth must be >= 1");
-        let report = compute_consistency_report(&self.cfg, base_state, &self.ism);
+        let mut report = compute_consistency_report(&self.cfg, base_state, &self.ism);
         if report.verdict == ConsistencyVerdict::Accept {
-            self.ism.upsert_anchor(base_state.anchor);
+            if self.gate.allow_ism_upsert(&report) {
+                self.ism.upsert_anchor(base_state.anchor);
+            } else {
+                report.verdict = ConsistencyVerdict::Damp;
+            }
         }
 
         let record = derived_record_for_macro(&macro_ms, &macro_refs, &self_states, &report);
@@ -287,7 +285,10 @@ impl Encoder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
+
     use ucf_archive::InMemoryArchive;
+    use ucf_policy_ecology::{PolicyEcology, PolicyRule, PolicyWeights};
 
     fn sample_macro(id: &str) -> MacroMilestone {
         MacroMilestone {
@@ -345,5 +346,28 @@ mod tests {
         assert_eq!(report.verdict, ConsistencyVerdict::Accept);
         assert_eq!(kernel.archive.list().len(), 1);
         assert!(kernel.ism.anchors().contains(&states[0].anchor));
+    }
+
+    #[test]
+    fn ingest_macro_dampens_when_gate_denies_upsert() {
+        let cfg = GeistConfig {
+            recursion_depth: 1,
+            consistency_threshold: 0,
+        };
+        let macro_ms = sample_macro("macro-2");
+        let archive = InMemoryArchive::new();
+        let ism = InMemoryIsm::new();
+        let policy = PolicyEcology::new(
+            1,
+            vec![PolicyRule::DenyIsmUpsertIfScoreBelow { min_score: 1 }],
+            PolicyWeights,
+        );
+        let mut kernel = GeistKernel::new_with_gate(cfg, archive, ism, Arc::new(policy));
+
+        let (_states, report, _evidence_id) = kernel.ingest_macro(macro_ms);
+
+        assert_eq!(report.verdict, ConsistencyVerdict::Damp);
+        assert_eq!(kernel.ism.anchors().len(), 0);
+        assert_eq!(kernel.archive.list().len(), 1);
     }
 }

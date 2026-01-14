@@ -1,0 +1,12 @@
+[package]
+name = "ucf-policy-ecology"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ucf-types = { path = "../ucf-types" }
+ucf-crypto = { path = "../ucf-crypto" }
+ucf-commit = { path = "../ucf-commit", optional = true }
+
+[features]
+commit = ["ucf-commit"]
