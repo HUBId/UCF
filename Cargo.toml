@@ -13,6 +13,7 @@ members = [
     "core/crates/ucf-crypto",
     "core/crates/ucf-bus",
     "core/crates/ucf-ingestion",
+    "core/crates/ucf-fold",
     "core/crates/ucf-evidence",
     "crates/dbm_core",
     "crates/dbm_13_hypothalamus",
