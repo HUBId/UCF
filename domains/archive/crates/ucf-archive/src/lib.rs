@@ -1,7 +1,10 @@
 #![forbid(unsafe_code)]
 
+use std::path::Path;
+
 use prost::Message;
-use ucf_evidence::{EvidenceEnvelope, EvidenceStore, InMemoryEvidenceStore};
+use ucf_evidence::file_store::FileEvidenceStore;
+use ucf_evidence::{EvidenceEnvelope, EvidenceStore, InMemoryEvidenceStore, StoreResult};
 use ucf_types::v1::spec::{ExperienceRecord, ProofEnvelope};
 use ucf_types::{EvidenceId, LogicalTime, WallTime};
 
@@ -26,23 +29,47 @@ impl InMemoryArchive {
     }
 }
 
+pub struct FileArchive {
+    store: FileEvidenceStore,
+}
+
+impl FileArchive {
+    pub fn open(path: impl AsRef<Path>) -> StoreResult<Self> {
+        let path = path.as_ref();
+        let log_path = path.join("evidence.log");
+        let manifest_path = path.join("evidence.manifest");
+        let store = FileEvidenceStore::open(log_path, manifest_path)?;
+        Ok(Self { store })
+    }
+}
+
+fn append_record(store: &dyn EvidenceStore, rec: ExperienceRecord) -> EvidenceId {
+    let evidence_id = EvidenceId::new(rec.record_id.clone());
+    let envelope = EvidenceEnvelope {
+        evidence_id: evidence_id.clone(),
+        proof: ProofEnvelope {
+            envelope_id: rec.record_id.clone(),
+            payload: rec.encode_to_vec(),
+            payload_digest: None,
+            vrf_tags: Vec::new(),
+            signature_ids: Vec::new(),
+        },
+        logical_time: LogicalTime::new(0),
+        wall_time: WallTime::new(rec.observed_at_ms),
+    };
+
+    store.append(envelope)
+}
+
 impl ExperienceAppender for InMemoryArchive {
     fn append(&self, rec: ExperienceRecord) -> EvidenceId {
-        let evidence_id = EvidenceId::new(rec.record_id.clone());
-        let envelope = EvidenceEnvelope {
-            evidence_id: evidence_id.clone(),
-            proof: ProofEnvelope {
-                envelope_id: rec.record_id.clone(),
-                payload: rec.encode_to_vec(),
-                payload_digest: None,
-                vrf_tags: Vec::new(),
-                signature_ids: Vec::new(),
-            },
-            logical_time: LogicalTime::new(0),
-            wall_time: WallTime::new(rec.observed_at_ms),
-        };
+        append_record(&self.store, rec)
+    }
+}
 
-        self.store.append(envelope)
+impl ExperienceAppender for FileArchive {
+    fn append(&self, rec: ExperienceRecord) -> EvidenceId {
+        append_record(&self.store, rec)
     }
 }
 
