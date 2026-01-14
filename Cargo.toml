@@ -106,6 +106,7 @@ members = [
     "domains/ai-sandbox/crates/ucf-ai-sandbox",
     "domains/digital-brain/crates/ucf-digital-brain",
     "domains/geist/crates/ucf-geist",
+    "adapters/terminal/crates/ucf-terminal",
 ]
 resolver = "2"
 
