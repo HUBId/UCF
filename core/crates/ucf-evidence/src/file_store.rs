@@ -240,3 +240,117 @@ fn load_manifest(path: &Path) -> StoreResult<HashMap<EvidenceId, ManifestEntry>>
         .map(|entry| (entry.evidence_id.clone(), entry))
         .collect())
 }
+
+#[cfg(test)]
+mod tests {
+    use std::fs::OpenOptions;
+    use std::io::{Read, Seek, SeekFrom, Write};
+
+    use tempfile::TempDir;
+    use ucf_protocol::v1::spec::ProofEnvelope;
+    use ucf_types::{EvidenceId, LogicalTime, WallTime};
+
+    use super::FileEvidenceStore;
+    use crate::{EvidenceEnvelope, StoreError};
+
+    fn sample_envelope(id: &str, payload: Vec<u8>) -> EvidenceEnvelope {
+        EvidenceEnvelope {
+            evidence_id: EvidenceId::new(id),
+            proof: ProofEnvelope {
+                envelope_id: format!("proof-{id}"),
+                payload,
+                payload_digest: None,
+                vrf_tags: Vec::new(),
+                signature_ids: Vec::new(),
+            },
+            logical_time: LogicalTime::new(7),
+            wall_time: WallTime::new(1_700_000_000_000),
+        }
+    }
+
+    #[test]
+    fn file_store_persists_records_across_reopen() {
+        let temp_dir = TempDir::new().expect("create temp dir");
+        let log_path = temp_dir.path().join("evidence.log");
+        let manifest_path = temp_dir.path().join("evidence.manifest");
+
+        {
+            let store =
+                FileEvidenceStore::open(&log_path, &manifest_path).expect("open file store");
+            let first = sample_envelope("evidence-1", vec![1, 2, 3]);
+            let second = sample_envelope("evidence-2", vec![4, 5, 6]);
+            let third = sample_envelope("evidence-3", vec![7, 8, 9]);
+
+            store
+                .append_envelope(first.clone())
+                .expect("append first envelope");
+            store
+                .append_envelope(second.clone())
+                .expect("append second envelope");
+            store
+                .append_envelope(third.clone())
+                .expect("append third envelope");
+        }
+
+        let reopened =
+            FileEvidenceStore::open(&log_path, &manifest_path).expect("reopen file store");
+
+        assert_eq!(reopened.len(), 3);
+        assert_eq!(
+            reopened.get_envelope(EvidenceId::new("evidence-1")),
+            Some(sample_envelope("evidence-1", vec![1, 2, 3]))
+        );
+        assert_eq!(
+            reopened.get_envelope(EvidenceId::new("evidence-2")),
+            Some(sample_envelope("evidence-2", vec![4, 5, 6]))
+        );
+        assert_eq!(
+            reopened.get_envelope(EvidenceId::new("evidence-3")),
+            Some(sample_envelope("evidence-3", vec![7, 8, 9]))
+        );
+    }
+
+    #[test]
+    fn file_store_detects_corruption_on_reopen() {
+        let temp_dir = TempDir::new().expect("create temp dir");
+        let log_path = temp_dir.path().join("evidence.log");
+        let manifest_path = temp_dir.path().join("evidence.manifest");
+
+        {
+            let store =
+                FileEvidenceStore::open(&log_path, &manifest_path).expect("open file store");
+            store
+                .append_envelope(sample_envelope("evidence-1", vec![1, 2, 3]))
+                .expect("append envelope");
+        }
+
+        let mut file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&log_path)
+            .expect("open log file");
+        let mut byte = [0u8; 1];
+        file.seek(SeekFrom::Start(0))
+            .expect("seek log start");
+        file.read_exact(&mut byte).expect("read log byte");
+        byte[0] ^= 0b0000_0001;
+        file.seek(SeekFrom::Start(0))
+            .expect("seek log start");
+        file.write_all(&byte).expect("write flipped byte");
+
+        let reopened = FileEvidenceStore::open(&log_path, &manifest_path);
+        match reopened {
+            Err(StoreError::Corrupt {
+                evidence_id,
+                offset,
+                expected_hash,
+                actual_hash,
+            }) => {
+                assert_eq!(evidence_id, EvidenceId::new("evidence-1"));
+                assert_eq!(offset, 0);
+                assert_ne!(expected_hash, actual_hash);
+            }
+            other => panic!("expected corruption error, got {other:?}"),
+        }
+    }
+}
