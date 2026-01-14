@@ -3,6 +3,7 @@
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
+use ucf_fold::FoldProof;
 use ucf_protocol::v1::spec::ProofEnvelope;
 use ucf_types::{EvidenceId, LogicalTime, WallTime};
 
@@ -28,6 +29,7 @@ pub type AppendLogHash = Vec<u8>;
 pub struct EvidenceEnvelope {
     pub evidence_id: EvidenceId,
     pub proof: Option<ProofEnvelope>,
+    pub fold_proof: Option<FoldProof>,
     pub logical_time: LogicalTime,
     pub wall_time: WallTime,
 }
@@ -110,6 +112,7 @@ mod tests {
                 vrf_tags: Vec::new(),
                 signature_ids: Vec::new(),
             }),
+            fold_proof: None,
             logical_time: LogicalTime::new(5),
             wall_time: WallTime::new(1_700_000_000_000),
         };

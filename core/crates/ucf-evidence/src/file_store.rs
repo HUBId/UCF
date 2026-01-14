@@ -255,6 +255,7 @@ mod tests {
                 vrf_tags: Vec::new(),
                 signature_ids: Vec::new(),
             }),
+            fold_proof: None,
             logical_time: LogicalTime::new(7),
             wall_time: WallTime::new(1_700_000_000_000),
         }
