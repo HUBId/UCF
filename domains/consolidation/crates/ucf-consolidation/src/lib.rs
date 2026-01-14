@@ -453,7 +453,7 @@ mod tests {
         let policy = PolicyEcology::new(
             1,
             vec![PolicyRule::DenyReplayIfIntensityBelow { min: 3 }],
-            PolicyWeights::default(),
+            PolicyWeights,
         );
         let scheduler = ReplayScheduler::new_with_gate(2, Arc::new(policy));
 

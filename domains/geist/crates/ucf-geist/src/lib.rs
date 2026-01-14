@@ -360,7 +360,7 @@ mod tests {
         let policy = PolicyEcology::new(
             1,
             vec![PolicyRule::DenyIsmUpsertIfScoreBelow { min_score: 1 }],
-            PolicyWeights::default(),
+            PolicyWeights,
         );
         let mut kernel = GeistKernel::new_with_gate(cfg, archive, ism, Arc::new(policy));
 
