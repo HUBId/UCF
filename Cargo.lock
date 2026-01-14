@@ -1430,8 +1430,8 @@ dependencies = [
  "bincode",
  "prost",
  "serde",
- "sha2",
  "tempfile",
+ "ucf-commit",
  "ucf-evidence",
  "ucf-fold",
  "ucf-types",
@@ -1441,6 +1441,16 @@ dependencies = [
 name = "ucf-bus"
 version = "0.1.0"
 dependencies = [
+ "ucf-types",
+]
+
+[[package]]
+name = "ucf-commit"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ucf-crypto",
+ "ucf-protocol",
  "ucf-types",
 ]
 

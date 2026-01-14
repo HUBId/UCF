@@ -22,6 +22,7 @@ Encodes a policy outcome with structured metadata.
 - `string rationale` (tag 3): Human-readable explanation.
 - `uint32 confidence_bp` (tag 4): Confidence in basis points (0-10,000).
 - `repeated string constraint_ids` (tag 5): References to active constraints.
+- `Digest commitment` (tag 6, optional): Canonical commitment over the decision contents.
 
 ### DecisionKind (enum)
 
@@ -50,6 +51,7 @@ Captures an observed experience that can be used for audit or learning.
 - `Digest digest` (tag 5): Content digest for verification.
 - `VRFTag vrf_tag` (tag 6): Proof that the record was sampled/selected.
 - `ProofRef proof_ref` (tag 7): Optional reference to an external proof envelope.
+- `Digest commitment` (tag 8, optional): Canonical commitment over the record contents.
 
 ## Digest
 
@@ -81,6 +83,7 @@ Milestones track lifecycle progress at different granularities.
 - `string milestone_id` (tag 1): Stable identifier.
 - `uint64 achieved_at_ms` (tag 2): Achievement timestamp.
 - `string label` (tag 3): Human-readable label.
+- `Digest commitment` (tag 4, optional): Canonical commitment over the milestone contents.
 
 ### MesoMilestone
 
@@ -88,6 +91,7 @@ Milestones track lifecycle progress at different granularities.
 - `uint64 achieved_at_ms` (tag 2): Achievement timestamp.
 - `string label` (tag 3): Human-readable label.
 - `repeated string micro_milestone_ids` (tag 4): References to micro milestones.
+- `Digest commitment` (tag 5, optional): Canonical commitment over the milestone contents.
 
 ### MacroMilestone
 
@@ -95,6 +99,7 @@ Milestones track lifecycle progress at different granularities.
 - `uint64 achieved_at_ms` (tag 2): Achievement timestamp.
 - `string label` (tag 3): Human-readable label.
 - `repeated string meso_milestone_ids` (tag 4): References to meso milestones.
+- `Digest commitment` (tag 5, optional): Canonical commitment over the milestone contents.
 
 ## ProofEnvelope
 
@@ -105,6 +110,13 @@ Container for attaching proofs to protocol messages.
 - `Digest payload_digest` (tag 3): Digest of the payload.
 - `repeated VRFTag vrf_tags` (tag 4): VRF tags associated with the payload.
 - `repeated string signature_ids` (tag 5): References to external signatures.
+- `Digest commitment` (tag 6, optional): Canonical commitment over the envelope contents.
+
+### Canonical commitments
+
+Commitment fields are derived from canonical bytes of the message contents and are treated as
+advisory metadata. Receivers must recompute commitments locally and must not trust externally
+provided commitment values without verification.
 
 ## ProofRef
 
