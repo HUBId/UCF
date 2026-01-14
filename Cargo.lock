@@ -1580,6 +1580,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucf-openevolve-port"
+version = "0.1.0"
+dependencies = [
+ "ucf-types",
+]
+
+[[package]]
 name = "ucf-policy-ecology"
 version = "0.1.0"
 dependencies = [
@@ -1616,6 +1623,19 @@ dependencies = [
  "ucf-policy-ecology",
  "ucf-policy-gateway",
  "ucf-sandbox",
+ "ucf-types",
+]
+
+[[package]]
+name = "ucf-rsa"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "prost",
+ "ucf-archive",
+ "ucf-bus",
+ "ucf-openevolve-port",
+ "ucf-policy-ecology",
  "ucf-types",
 ]
 

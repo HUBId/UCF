@@ -36,6 +36,8 @@ pub enum PolicyRule {
     DenyReplayIfIntensityBelow { min: u16 },
     DenyIsmUpsertIfScoreBelow { min_score: u16 },
     AllowExternalSpeechIfDecisionClass { class: u16 },
+    AllowSleepPhase,
+    DenySleepPhase,
     AllowAll,
 }
 
@@ -80,7 +82,11 @@ pub struct DefaultPolicyEcology {
 impl DefaultPolicyEcology {
     pub fn new() -> Self {
         Self {
-            inner: PolicyEcology::allow_all(),
+            inner: PolicyEcology::new(
+                1,
+                vec![PolicyRule::AllowAll, PolicyRule::DenySleepPhase],
+                PolicyWeights,
+            ),
         }
     }
 
@@ -103,6 +109,10 @@ pub trait GeistGate {
     fn allow_ism_upsert(&self, report: &ConsistencyReport) -> bool;
 }
 
+pub trait SleepPhaseGate {
+    fn allow_sleep(&self) -> bool;
+}
+
 impl ReplayGate for PolicyEcology {
     fn allow_replay(&self, rec: &ExperienceRecord) -> bool {
         let decision_class = record_decision_class(rec);
@@ -121,6 +131,8 @@ impl ReplayGate for PolicyEcology {
                 }
                 PolicyRule::DenyIsmUpsertIfScoreBelow { .. } => {}
                 PolicyRule::AllowExternalSpeechIfDecisionClass { .. } => {}
+                PolicyRule::AllowSleepPhase => {}
+                PolicyRule::DenySleepPhase => {}
                 PolicyRule::AllowAll => {}
             }
         }
@@ -146,6 +158,8 @@ impl GeistGate for PolicyEcology {
                 PolicyRule::DenyReplayIfDecisionClass { .. }
                 | PolicyRule::DenyReplayIfIntensityBelow { .. }
                 | PolicyRule::AllowExternalSpeechIfDecisionClass { .. }
+                | PolicyRule::AllowSleepPhase
+                | PolicyRule::DenySleepPhase
                 | PolicyRule::AllowAll => {}
             }
         }
@@ -156,6 +170,32 @@ impl GeistGate for PolicyEcology {
 impl GeistGate for DefaultPolicyEcology {
     fn allow_ism_upsert(&self, report: &ConsistencyReport) -> bool {
         self.inner.allow_ism_upsert(report)
+    }
+}
+
+impl PolicyEcology {
+    pub fn allow_sleep(&self) -> bool {
+        let mut allow = false;
+        for rule in &self.rules {
+            match rule {
+                PolicyRule::AllowSleepPhase => allow = true,
+                PolicyRule::DenySleepPhase => return false,
+                _ => {}
+            }
+        }
+        allow
+    }
+}
+
+impl SleepPhaseGate for PolicyEcology {
+    fn allow_sleep(&self) -> bool {
+        PolicyEcology::allow_sleep(self)
+    }
+}
+
+impl SleepPhaseGate for DefaultPolicyEcology {
+    fn allow_sleep(&self) -> bool {
+        self.inner.allow_sleep()
     }
 }
 
