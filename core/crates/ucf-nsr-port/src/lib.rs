@@ -87,9 +87,7 @@ fn hex_prefix(bytes: &[u8; 32]) -> String {
 
 impl MockNsrPort {
     fn matches_violation(&self, predicate: &str) -> bool {
-        self.violation_predicate
-            .as_deref()
-            .map_or(false, |match_predicate| match_predicate == predicate)
+        self.violation_predicate.as_deref() == Some(predicate)
     }
 }
 

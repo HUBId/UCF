@@ -80,7 +80,7 @@ impl AiPort for MockAiPort {
             rationale_commit,
         };
 
-        let allow_speech = nsr_report.as_ref().map_or(true, |report| report.ok);
+        let allow_speech = nsr_report.as_ref().is_none_or(|report| report.ok);
         if input.as_ref().frame_id == "ping" && allow_speech {
             let speech = AiOutput {
                 channel: OutputChannel::Speech,
