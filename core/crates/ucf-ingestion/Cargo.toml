@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 ucf-bus = { path = "../ucf-bus" }
 ucf-router = { path = "../ucf-router" }
+ucf-sandbox = { path = "../ucf-sandbox" }
 ucf-types = { path = "../ucf-types" }
 
 [dev-dependencies]

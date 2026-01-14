@@ -1,0 +1,14 @@
+[package]
+name = "ucf-sandbox"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ucf-commit = { path = "../ucf-commit" }
+ucf-types = { path = "../ucf-types" }
+ucf-policy-ecology = { path = "../ucf-policy-ecology", optional = true }
+ucf-bus = { path = "../ucf-bus", optional = true }
+
+[features]
+policy-ecology = ["dep:ucf-policy-ecology"]
+bus = ["dep:ucf-bus"]
