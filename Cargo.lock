@@ -1501,6 +1501,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucf-geist"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ucf-archive",
+ "ucf-commit",
+ "ucf-types",
+]
+
+[[package]]
 name = "ucf-ingestion"
 version = "0.1.0"
 dependencies = [
