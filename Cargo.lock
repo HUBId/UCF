@@ -1461,6 +1461,7 @@ dependencies = [
  "prost",
  "ucf-archive",
  "ucf-commit",
+ "ucf-policy-ecology",
  "ucf-types",
 ]
 
@@ -1507,6 +1508,7 @@ dependencies = [
  "blake3",
  "ucf-archive",
  "ucf-commit",
+ "ucf-policy-ecology",
  "ucf-types",
 ]
 
@@ -1519,6 +1521,15 @@ dependencies = [
  "ucf-digital-brain",
  "ucf-policy-gateway",
  "ucf-router",
+ "ucf-types",
+]
+
+[[package]]
+name = "ucf-policy-ecology"
+version = "0.1.0"
+dependencies = [
+ "ucf-commit",
+ "ucf-crypto",
  "ucf-types",
 ]
 

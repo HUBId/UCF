@@ -8,6 +8,46 @@ pub trait PolicyEvaluator {
     fn evaluate(&self, cf: ControlFrame) -> PolicyDecision;
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PolicyDecisionClass {
+    Unspecified,
+    Allow,
+    Deny,
+    Escalate,
+    Observe,
+    Unknown(i32),
+}
+
+impl PolicyDecisionClass {
+    pub fn as_u16(self) -> u16 {
+        match self {
+            Self::Unspecified => DecisionKind::DecisionKindUnspecified as u16,
+            Self::Allow => DecisionKind::DecisionKindAllow as u16,
+            Self::Deny => DecisionKind::DecisionKindDeny as u16,
+            Self::Escalate => DecisionKind::DecisionKindEscalate as u16,
+            Self::Observe => DecisionKind::DecisionKindObserve as u16,
+            Self::Unknown(value) => u16::try_from(value).unwrap_or(0),
+        }
+    }
+}
+
+impl From<&PolicyDecision> for PolicyDecisionClass {
+    fn from(decision: &PolicyDecision) -> Self {
+        match DecisionKind::try_from(decision.kind) {
+            Ok(DecisionKind::DecisionKindUnspecified) => Self::Unspecified,
+            Ok(DecisionKind::DecisionKindAllow) => Self::Allow,
+            Ok(DecisionKind::DecisionKindDeny) => Self::Deny,
+            Ok(DecisionKind::DecisionKindEscalate) => Self::Escalate,
+            Ok(DecisionKind::DecisionKindObserve) => Self::Observe,
+            Err(_) => Self::Unknown(decision.kind),
+        }
+    }
+}
+
+pub fn decision_class_id(decision: &PolicyDecision) -> u16 {
+    PolicyDecisionClass::from(decision).as_u16()
+}
+
 #[derive(Default)]
 pub struct NoOpPolicyEvaluator {
     rationale: String,

@@ -1,11 +1,14 @@
 #![forbid(unsafe_code)]
 
+use std::sync::Arc;
+
 use prost::Message;
 use ucf_archive::{ExperienceAppender, FileArchive, InMemoryArchive};
 use ucf_commit::{
     commit_experience_record, commit_milestone_macro, commit_milestone_meso,
     commit_milestone_micro, Commitment,
 };
+use ucf_policy_ecology::{DefaultPolicyEcology, ReplayGate};
 use ucf_types::v1::spec::{ExperienceRecord, MacroMilestone, MesoMilestone, MicroMilestone};
 
 #[derive(Clone, Debug)]
@@ -261,39 +264,32 @@ pub fn build_macro(mesos: &[MesoMilestone]) -> MacroMilestone {
     }
 }
 
-pub trait ReplayGate {
-    fn allow(&self, record: &ExperienceRecord) -> bool;
-}
-
-pub struct AllowAllReplayGate;
-
-impl ReplayGate for AllowAllReplayGate {
-    fn allow(&self, _record: &ExperienceRecord) -> bool {
-        true
-    }
-}
-
 pub struct ReplayScheduler {
     pub budget: usize,
+    gate: Arc<dyn ReplayGate + Send + Sync>,
 }
 
 impl ReplayScheduler {
     pub fn new(budget: usize) -> Self {
-        Self { budget }
+        Self::new_with_gate(budget, Arc::new(DefaultPolicyEcology::default()))
+    }
+
+    pub fn new_with_gate(budget: usize, gate: Arc<dyn ReplayGate + Send + Sync>) -> Self {
+        Self { budget, gate }
     }
 
     pub fn select_for_replay(&self, records: &[ExperienceRecord]) -> Vec<ExperienceRecord> {
-        self.select_for_replay_with_gate(records, &AllowAllReplayGate)
+        self.select_for_replay_with_gate(records, self.gate.as_ref())
     }
 
-    pub fn select_for_replay_with_gate<G: ReplayGate>(
+    pub fn select_for_replay_with_gate(
         &self,
         records: &[ExperienceRecord],
-        gate: &G,
+        gate: &dyn ReplayGate,
     ) -> Vec<ExperienceRecord> {
         let mut scored: Vec<(u64, [u8; 32], ExperienceRecord)> = records
             .iter()
-            .filter(|record| gate.allow(record))
+            .filter(|record| gate.allow_replay(record))
             .map(|record| {
                 let priority = record_priority(record);
                 let commitment = commit_experience_record(record);
@@ -377,7 +373,10 @@ fn derived_record_for_macro(macro_ms: &MacroMilestone) -> ExperienceRecord {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
+
     use ucf_archive::{ExperienceAppender, InMemoryArchive};
+    use ucf_policy_ecology::{PolicyEcology, PolicyRule, PolicyWeights};
     use ucf_types::v1::spec::Digest;
 
     fn sample_record(id: &str, observed_at_ms: u64, priority: Option<u32>) -> ExperienceRecord {
@@ -443,6 +442,25 @@ mod tests {
         assert_eq!(selected, selected_again);
         assert_eq!(selected.len(), 2);
         assert!(selected[0].record_id != selected[1].record_id);
+    }
+
+    #[test]
+    fn replay_selection_respects_intensity_gate() {
+        let records = vec![
+            sample_record("rec-low", 10, Some(1)),
+            sample_record("rec-high", 11, Some(5)),
+        ];
+        let policy = PolicyEcology::new(
+            1,
+            vec![PolicyRule::DenyReplayIfIntensityBelow { min: 3 }],
+            PolicyWeights::default(),
+        );
+        let scheduler = ReplayScheduler::new_with_gate(2, Arc::new(policy));
+
+        let selected = scheduler.select_for_replay(&records);
+
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].record_id, "rec-high");
     }
 
     #[test]

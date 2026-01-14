@@ -7,4 +7,5 @@ edition = "2021"
 prost = "0.12"
 ucf-archive = { path = "../../../../domains/archive/crates/ucf-archive" }
 ucf-commit = { path = "../../../../core/crates/ucf-commit" }
+ucf-policy-ecology = { path = "../../../../core/crates/ucf-policy-ecology" }
 ucf-types = { path = "../../../../core/crates/ucf-types" }
