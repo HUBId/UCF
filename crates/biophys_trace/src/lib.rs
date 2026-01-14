@@ -124,6 +124,7 @@ pub fn write_trace(path: impl AsRef<Path>, trace: &TraceFile) -> Result<(), Trac
         write_step(&mut file, step)?;
     }
     file.flush()?;
+    file.sync_all()?;
     Ok(())
 }
 

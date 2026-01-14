@@ -12,6 +12,7 @@ use biophys_trace::sn_l4::{
 use biophys_trace::{read_trace, run_trace, write_trace, LearningContext, TraceFile, TraceHeader};
 use microcircuit_core::MicrocircuitBackend;
 use pvgs_client::{MockPvgsWriter, PvgsWriter, TraceRunEvidenceLike, TraceRunStatus};
+use tempfile::TempDir;
 
 const NEURON_COUNT: u32 = 14;
 const MAX_TRACE_BYTES: u64 = 2 * 1024 * 1024;
@@ -99,7 +100,8 @@ fn build_trace(init: &SnL4TraceInit, steps: u32) -> TraceFile {
 fn trace_vector_matches_expected_digest() {
     let init = build_demo_init();
     let trace = build_trace(&init, 12);
-    let path = std::env::temp_dir().join("trace_sn_small.bin");
+    let temp_dir = TempDir::new().expect("create temp dir");
+    let path = temp_dir.path().join("trace_sn_small.bin");
     write_trace(&path, &trace).expect("write trace");
 
     let metadata = fs::metadata(&path).expect("trace vector exists");

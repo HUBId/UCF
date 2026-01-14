@@ -27,6 +27,7 @@ biophys_asset_builder = { path = "../biophys_asset_builder", optional = true }
 
 [dev-dependencies]
 pvgs_client = { path = "../../pvgs_client" }
+tempfile = "3"
 
 [[example]]
 name = "generate_sn_trace"

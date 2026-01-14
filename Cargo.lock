@@ -221,6 +221,7 @@ dependencies = [
  "microcircuit_sn_l4",
  "microcircuit_sn_stub",
  "pvgs_client",
+ "tempfile",
  "thiserror",
 ]
 
@@ -443,6 +444,7 @@ dependencies = [
  "microcircuit_hpa_memristor",
  "serde",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]
