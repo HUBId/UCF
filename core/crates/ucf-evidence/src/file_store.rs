@@ -147,9 +147,7 @@ impl FileAppendLog {
 impl AppendLog for FileAppendLog {
     fn append_bytes(&self, bytes: &[u8]) -> (u64, usize, AppendLogHash) {
         let mut file = self.log.lock().expect("lock log file");
-        let offset = file
-            .seek(SeekFrom::End(0))
-            .expect("seek log end");
+        let offset = file.seek(SeekFrom::End(0)).expect("seek log end");
         file.write_all(bytes).expect("write log");
         file.flush().expect("flush log");
         let hash = digest_to_hash(self.digest.as_ref(), bytes);
@@ -224,9 +222,7 @@ impl EvidenceStore for FileEvidenceStore {
 fn load_manifest(path: &Path) -> StoreResult<HashMap<EvidenceId, ManifestEntry>> {
     let mut file = match File::open(path) {
         Ok(file) => file,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(HashMap::new())
-        }
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(HashMap::new()),
         Err(err) => {
             return Err(StoreError::IOError(format!(
                 "open manifest for load: {err}"
@@ -239,8 +235,8 @@ fn load_manifest(path: &Path) -> StoreResult<HashMap<EvidenceId, ManifestEntry>>
     if bytes.is_empty() {
         return Ok(HashMap::new());
     }
-    let entries: Vec<ManifestEntry> =
-        deserialize(&bytes).map_err(|err| StoreError::IOError(format!("decode manifest: {err}")))?;
+    let entries: Vec<ManifestEntry> = deserialize(&bytes)
+        .map_err(|err| StoreError::IOError(format!("decode manifest: {err}")))?;
     Ok(entries
         .into_iter()
         .map(|entry| (entry.evidence_id.clone(), entry))
