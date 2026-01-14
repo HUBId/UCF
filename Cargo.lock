@@ -1417,6 +1417,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "562d481066bde0658276a35467c4af00bdc6ee726305698a55b86e61d7ad82bb"
 
 [[package]]
+name = "ucf-ai-port"
+version = "0.1.0"
+dependencies = [
+ "ucf-bus",
+ "ucf-commit",
+ "ucf-policy-ecology",
+ "ucf-sandbox",
+ "ucf-types",
+]
+
+[[package]]
 name = "ucf-ai-sandbox"
 version = "0.1.0"
 dependencies = [
@@ -1516,9 +1527,12 @@ dependencies = [
 name = "ucf-ingestion"
 version = "0.1.0"
 dependencies = [
+ "prost",
+ "ucf-ai-port",
  "ucf-archive",
  "ucf-bus",
  "ucf-digital-brain",
+ "ucf-policy-ecology",
  "ucf-policy-gateway",
  "ucf-router",
  "ucf-sandbox",
@@ -1556,9 +1570,12 @@ name = "ucf-router"
 version = "0.1.0"
 dependencies = [
  "prost",
+ "ucf-ai-port",
  "ucf-archive",
  "ucf-digital-brain",
+ "ucf-policy-ecology",
  "ucf-policy-gateway",
+ "ucf-sandbox",
  "ucf-types",
 ]
 

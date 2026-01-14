@@ -9,6 +9,7 @@ members = [
     "app",
     "ucf-protocol", "chip4",
     "core/crates/ucf-types",
+    "core/crates/ucf-ai-port",
     "core/crates/ucf-router",
     "core/crates/ucf-crypto",
     "core/crates/ucf-bus",

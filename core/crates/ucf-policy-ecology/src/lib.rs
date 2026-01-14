@@ -35,6 +35,7 @@ pub enum PolicyRule {
     DenyReplayIfDecisionClass { class: u16 },
     DenyReplayIfIntensityBelow { min: u16 },
     DenyIsmUpsertIfScoreBelow { min_score: u16 },
+    AllowExternalSpeechIfDecisionClass { class: u16 },
     AllowAll,
 }
 
@@ -119,6 +120,7 @@ impl ReplayGate for PolicyEcology {
                     }
                 }
                 PolicyRule::DenyIsmUpsertIfScoreBelow { .. } => {}
+                PolicyRule::AllowExternalSpeechIfDecisionClass { .. } => {}
                 PolicyRule::AllowAll => {}
             }
         }
@@ -143,6 +145,7 @@ impl GeistGate for PolicyEcology {
                 }
                 PolicyRule::DenyReplayIfDecisionClass { .. }
                 | PolicyRule::DenyReplayIfIntensityBelow { .. }
+                | PolicyRule::AllowExternalSpeechIfDecisionClass { .. }
                 | PolicyRule::AllowAll => {}
             }
         }
