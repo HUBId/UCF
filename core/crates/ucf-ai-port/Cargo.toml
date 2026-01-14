@@ -1,0 +1,14 @@
+[package]
+name = "ucf-ai-port"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ucf-types = { path = "../ucf-types" }
+ucf-commit = { path = "../ucf-commit" }
+ucf-policy-ecology = { path = "../ucf-policy-ecology" }
+ucf-sandbox = { path = "../ucf-sandbox" }
+ucf-bus = { path = "../ucf-bus", optional = true }
+
+[features]
+bus = ["ucf-bus"]

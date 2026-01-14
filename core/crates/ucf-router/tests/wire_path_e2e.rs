@@ -1,10 +1,13 @@
 use std::sync::Arc;
 
 use prost::Message;
+use ucf_ai_port::{MockAiPort, PolicySpeechGate};
 use ucf_archive::InMemoryArchive;
 use ucf_digital_brain::InMemoryDigitalBrain;
+use ucf_policy_ecology::PolicyEcology;
 use ucf_policy_gateway::NoOpPolicyEvaluator;
 use ucf_router::Router;
+use ucf_sandbox::normalize;
 use ucf_types::v1::spec::ExperienceRecord;
 use ucf_types::v1::spec::{ControlFrame, DecisionKind};
 use ucf_types::EvidenceId;
@@ -14,7 +17,15 @@ fn handle_control_frame_routes_end_to_end() {
     let policy = Arc::new(NoOpPolicyEvaluator::new());
     let archive = Arc::new(InMemoryArchive::new());
     let brain = Arc::new(InMemoryDigitalBrain::new());
-    let router = Router::new(policy, archive.clone(), Some(brain.clone()));
+    let ai_port = Arc::new(MockAiPort::new());
+    let speech_gate = Arc::new(PolicySpeechGate::new(PolicyEcology::allow_all()));
+    let router = Router::new(
+        policy,
+        archive.clone(),
+        Some(brain.clone()),
+        ai_port,
+        speech_gate,
+    );
 
     let frame = ControlFrame {
         frame_id: "frame-1".to_string(),
@@ -25,7 +36,7 @@ fn handle_control_frame_routes_end_to_end() {
     };
 
     let outcome = router
-        .handle_control_frame(frame.clone())
+        .handle_control_frame(normalize(frame.clone()))
         .expect("route frame");
 
     assert_eq!(outcome.evidence_id, EvidenceId::new("exp-frame-1"));
@@ -44,4 +55,5 @@ fn handle_control_frame_routes_end_to_end() {
     assert_eq!(record.subject_id, frame.policy_id);
     assert!(payload_text.contains("frame_id=frame-1"));
     assert!(payload_text.contains("decision_kind=0"));
+    assert!(payload_text.contains("ai_thoughts=ok"));
 }

@@ -2,11 +2,12 @@
 
 use std::sync::{mpsc, Arc};
 
+use ucf_ai_port::AiOutput;
 use ucf_bus::{BusPublisher, BusSubscriber, MessageEnvelope};
 use ucf_router::{Router, RouterOutcome};
 use ucf_sandbox::{ControlFrameValidator, SandboxError, SandboxErrorCode};
 use ucf_types::v1::spec::{ControlFrame, DecisionKind};
-use ucf_types::EvidenceId;
+use ucf_types::{Digest32, EvidenceId};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OutcomeEvent {
@@ -21,26 +22,37 @@ pub struct SandboxRejectEvent {
     pub field: Option<&'static str>,
 }
 
-pub struct IngestionService<S, P, R> {
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SpeechEvent {
+    pub evidence_id: EvidenceId,
+    pub content: String,
+    pub confidence: u16,
+    pub rationale_commit: Option<Digest32>,
+}
+
+pub struct IngestionService<S, P, R, E> {
     router: Arc<Router>,
     subscriber: S,
     publisher: Option<P>,
     reject_publisher: Option<R>,
+    speech_publisher: Option<E>,
     validator: ControlFrameValidator,
     receiver: Option<mpsc::Receiver<MessageEnvelope<ControlFrame>>>,
 }
 
-impl<S, P, R> IngestionService<S, P, R>
+impl<S, P, R, E> IngestionService<S, P, R, E>
 where
     S: BusSubscriber<MessageEnvelope<ControlFrame>>,
     P: BusPublisher<MessageEnvelope<OutcomeEvent>>,
     R: BusPublisher<MessageEnvelope<SandboxRejectEvent>>,
+    E: BusPublisher<MessageEnvelope<SpeechEvent>>,
 {
     pub fn new(
         router: Arc<Router>,
         subscriber: S,
         publisher: Option<P>,
         reject_publisher: Option<R>,
+        speech_publisher: Option<E>,
         validator: ControlFrameValidator,
     ) -> Self {
         Self {
@@ -48,6 +60,7 @@ where
             subscriber,
             publisher,
             reject_publisher,
+            speech_publisher,
             validator,
             receiver: None,
         }
@@ -77,13 +90,19 @@ where
                     } = message;
                     match self.validator.validate_and_normalize(payload) {
                         Ok(normalized) => {
-                            if let Ok(outcome) =
-                                self.router.handle_control_frame(normalized.into_inner())
-                            {
+                            if let Ok(outcome) = self.router.handle_control_frame(normalized) {
                                 self.publish_outcome(
-                                    outcome,
-                                    node_id,
-                                    stream_id,
+                                    &outcome,
+                                    &node_id,
+                                    &stream_id,
+                                    logical_time,
+                                    wall_time,
+                                );
+                                self.publish_speech(
+                                    &outcome.speech_outputs,
+                                    &outcome.evidence_id,
+                                    &node_id,
+                                    &stream_id,
                                     logical_time,
                                     wall_time,
                                 );
@@ -104,23 +123,50 @@ where
 
     fn publish_outcome(
         &self,
-        outcome: RouterOutcome,
-        node_id: ucf_types::NodeId,
-        stream_id: ucf_types::StreamId,
+        outcome: &RouterOutcome,
+        node_id: &ucf_types::NodeId,
+        stream_id: &ucf_types::StreamId,
         logical_time: ucf_types::LogicalTime,
         wall_time: ucf_types::WallTime,
     ) {
         if let Some(publisher) = &self.publisher {
             publisher.publish(MessageEnvelope {
-                node_id,
-                stream_id,
+                node_id: node_id.clone(),
+                stream_id: stream_id.clone(),
                 logical_time,
                 wall_time,
                 payload: OutcomeEvent {
-                    evidence_id: outcome.evidence_id,
+                    evidence_id: outcome.evidence_id.clone(),
                     decision_kind: outcome.decision_kind,
                 },
             });
+        }
+    }
+
+    fn publish_speech(
+        &self,
+        speech_outputs: &[AiOutput],
+        evidence_id: &EvidenceId,
+        node_id: &ucf_types::NodeId,
+        stream_id: &ucf_types::StreamId,
+        logical_time: ucf_types::LogicalTime,
+        wall_time: ucf_types::WallTime,
+    ) {
+        if let Some(publisher) = &self.speech_publisher {
+            for output in speech_outputs {
+                publisher.publish(MessageEnvelope {
+                    node_id: node_id.clone(),
+                    stream_id: stream_id.clone(),
+                    logical_time,
+                    wall_time,
+                    payload: SpeechEvent {
+                        evidence_id: evidence_id.clone(),
+                        content: output.content.clone(),
+                        confidence: output.confidence,
+                        rationale_commit: output.rationale_commit,
+                    },
+                });
+            }
         }
     }
 
@@ -154,12 +200,17 @@ mod tests {
 
     use std::sync::Arc;
 
+    use prost::Message;
+    use ucf_ai_port::{MockAiPort, PolicySpeechGate};
     use ucf_archive::InMemoryArchive;
     use ucf_bus::InMemoryBus;
     use ucf_digital_brain::InMemoryDigitalBrain;
+    use ucf_policy_ecology::{PolicyEcology, PolicyRule, PolicyWeights};
     use ucf_policy_gateway::NoOpPolicyEvaluator;
     use ucf_sandbox::{ControlFrameValidator, ValidatorLimits};
-    use ucf_types::v1::spec::{ActionCode, ControlFrame, DecisionKind, PolicyDecision};
+    use ucf_types::v1::spec::{
+        ActionCode, ControlFrame, DecisionKind, ExperienceRecord, PolicyDecision,
+    };
     use ucf_types::{LogicalTime, NodeId, StreamId, WallTime};
 
     #[test]
@@ -169,11 +220,21 @@ mod tests {
         let outcome_receiver = outcome_bus.subscribe();
         let reject_bus = InMemoryBus::new();
         let reject_receiver = reject_bus.subscribe();
+        let speech_bus = InMemoryBus::new();
+        let speech_receiver = speech_bus.subscribe();
 
         let policy = Arc::new(NoOpPolicyEvaluator::new());
         let archive = Arc::new(InMemoryArchive::new());
         let brain = Arc::new(InMemoryDigitalBrain::new());
-        let router = Arc::new(Router::new(policy, archive.clone(), Some(brain)));
+        let ai_port = Arc::new(MockAiPort::new());
+        let speech_gate = Arc::new(PolicySpeechGate::new(PolicyEcology::allow_all()));
+        let router = Arc::new(Router::new(
+            policy,
+            archive.clone(),
+            Some(brain),
+            ai_port,
+            speech_gate,
+        ));
 
         let validator = ControlFrameValidator::new(ValidatorLimits::default());
         let mut service = IngestionService::new(
@@ -181,6 +242,7 @@ mod tests {
             bus.clone(),
             Some(outcome_bus.clone()),
             Some(reject_bus.clone()),
+            Some(speech_bus.clone()),
             validator,
         );
         service.start();
@@ -221,6 +283,14 @@ mod tests {
         assert_eq!(outcome.logical_time.tick, 11);
 
         assert!(reject_receiver.try_recv().is_err());
+        assert!(speech_receiver.try_recv().is_err());
+
+        let envelope = &archive.list()[0];
+        let proof = envelope.proof.as_ref().expect("missing proof envelope");
+        let record =
+            ExperienceRecord::decode(proof.payload.as_slice()).expect("decode experience record");
+        let payload = String::from_utf8(record.payload.clone()).expect("payload utf8");
+        assert!(payload.contains("ai_thoughts=ok"));
     }
 
     #[test]
@@ -234,7 +304,15 @@ mod tests {
         let policy = Arc::new(NoOpPolicyEvaluator::new());
         let archive = Arc::new(InMemoryArchive::new());
         let brain = Arc::new(InMemoryDigitalBrain::new());
-        let router = Arc::new(Router::new(policy, archive.clone(), Some(brain)));
+        let ai_port = Arc::new(MockAiPort::new());
+        let speech_gate = Arc::new(PolicySpeechGate::new(PolicyEcology::allow_all()));
+        let router = Arc::new(Router::new(
+            policy,
+            archive.clone(),
+            Some(brain),
+            ai_port,
+            speech_gate,
+        ));
 
         let limits = ValidatorLimits {
             max_context_items: 1,
@@ -246,6 +324,7 @@ mod tests {
             bus.clone(),
             Some(outcome_bus.clone()),
             Some(reject_bus.clone()),
+            None::<InMemoryBus<MessageEnvelope<SpeechEvent>>>,
             validator,
         );
         service.start();
@@ -284,5 +363,76 @@ mod tests {
             SandboxErrorCode::INVALID_CONTEXT_BINDING
         );
         assert_eq!(reject.logical_time.tick, 12);
+    }
+
+    #[test]
+    fn ingestion_service_publishes_speech_event_when_gate_allows() {
+        let bus = InMemoryBus::new();
+        let outcome_bus = InMemoryBus::new();
+        let speech_bus = InMemoryBus::new();
+        let speech_receiver = speech_bus.subscribe();
+
+        let policy = Arc::new(NoOpPolicyEvaluator::new());
+        let archive = Arc::new(InMemoryArchive::new());
+        let brain = Arc::new(InMemoryDigitalBrain::new());
+        let ai_port = Arc::new(MockAiPort::new());
+        let speech_policy = PolicyEcology::new(
+            1,
+            vec![PolicyRule::AllowExternalSpeechIfDecisionClass {
+                class: DecisionKind::DecisionKindAllow as u16,
+            }],
+            PolicyWeights,
+        );
+        let speech_gate = Arc::new(PolicySpeechGate::new(speech_policy));
+        let router = Arc::new(Router::new(
+            policy,
+            archive.clone(),
+            Some(brain),
+            ai_port,
+            speech_gate,
+        ));
+
+        let validator = ControlFrameValidator::new(ValidatorLimits::default());
+        let mut service = IngestionService::new(
+            router,
+            bus.clone(),
+            Some(outcome_bus.clone()),
+            None::<InMemoryBus<MessageEnvelope<SandboxRejectEvent>>>,
+            Some(speech_bus.clone()),
+            validator,
+        );
+        service.start();
+
+        let frame = ControlFrame {
+            frame_id: "ping".to_string(),
+            issued_at_ms: 1_700_000_000_000,
+            decision: Some(PolicyDecision {
+                kind: DecisionKind::DecisionKindAllow as i32,
+                action: ActionCode::ActionCodeContinue as i32,
+                rationale: "ok".to_string(),
+                confidence_bp: 1000,
+                constraint_ids: Vec::new(),
+            }),
+            evidence_ids: Vec::new(),
+            policy_id: "policy-1".to_string(),
+        };
+
+        bus.publish(MessageEnvelope {
+            node_id: NodeId::new("node-a"),
+            stream_id: StreamId::new("stream-1"),
+            logical_time: LogicalTime::new(21),
+            wall_time: WallTime::new(1_700_000_000_000),
+            payload: frame,
+        });
+
+        let processed = service.drain();
+
+        assert_eq!(processed, 1);
+        assert_eq!(archive.list().len(), 1);
+
+        let speech = speech_receiver.try_recv().expect("speech event");
+        assert_eq!(speech.payload.content, "ok");
+        assert_eq!(speech.payload.evidence_id, EvidenceId::new("exp-ping"));
+        assert_eq!(speech.logical_time.tick, 21);
     }
 }
