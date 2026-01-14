@@ -22,7 +22,7 @@ pub enum StoreError {
 
 pub type StoreResult<T> = Result<T, StoreError>;
 
-pub type AppendLogHash = [u8; 32];
+pub type AppendLogHash = Vec<u8>;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct EvidenceEnvelope {
