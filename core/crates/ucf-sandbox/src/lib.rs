@@ -275,8 +275,10 @@ mod tests {
 
     #[test]
     fn validator_accepts_minimal_valid_control_frame() {
-        let mut limits = ValidatorLimits::default();
-        limits.max_context_items = 4;
+        let limits = ValidatorLimits {
+            max_context_items: 4,
+            ..ValidatorLimits::default()
+        };
         let validator = ControlFrameValidator::new(limits);
         let frame = ControlFrame {
             evidence_ids: vec!["e1".to_string()],
