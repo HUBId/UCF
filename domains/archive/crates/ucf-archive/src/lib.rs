@@ -20,14 +20,13 @@ use std::sync::Mutex;
 use bincode::{deserialize, serialize};
 use prost::Message;
 use serde::{Deserialize, Serialize};
-use sha2::Digest;
+use ucf_commit::commit_experience_record;
 use ucf_evidence::file_store::FileEvidenceStore;
 use ucf_evidence::{EvidenceEnvelope, EvidenceStore, InMemoryEvidenceStore, StoreResult};
 use ucf_fold::{DummyFolder, FoldProof, FoldState, FoldableProof};
 use ucf_types::v1::spec::{ExperienceRecord, ProofEnvelope};
-use ucf_types::{AlgoId, Digest32, DomainDigest, EvidenceId, LogicalTime, WallTime};
+use ucf_types::{DomainDigest, EvidenceId, LogicalTime, WallTime};
 
-const FOLD_DOMAIN: u16 = 1;
 const FOLD_SNAPSHOT_FILE: &str = "evidence.fold";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -160,11 +159,8 @@ fn append_record(
 }
 
 fn compute_evidence_digest(rec: &ExperienceRecord) -> DomainDigest {
-    let mut bytes = rec.encode_to_vec();
-    bytes.extend_from_slice(b"decision-summary:none");
-    let digest = sha2::Sha256::digest(&bytes);
-    let digest = Digest32::new(digest.into());
-    DomainDigest::new(AlgoId::Sha256, FOLD_DOMAIN, digest).expect("valid domain digest")
+    let commitment = commit_experience_record(rec);
+    commitment.to_domain_digest()
 }
 
 fn load_fold_snapshot(path: &Path) -> StoreResult<FoldSnapshot> {
@@ -209,7 +205,8 @@ impl ExperienceAppender for FileArchive {
 mod tests {
     use super::*;
     use tempfile::TempDir;
-    use ucf_fold::MAX_PROOF_BYTES;
+    use ucf_commit::commit_experience_record;
+    use ucf_fold::{DummyFolder, FoldState, MAX_PROOF_BYTES};
 
     #[test]
     fn append_returns_id_and_stores_record() {
@@ -325,6 +322,50 @@ mod tests {
             let proof = entry.fold_proof.expect("fold proof stored");
             assert_eq!(proof.as_bytes().len(), MAX_PROOF_BYTES);
         }
+    }
+
+    #[test]
+    fn append_and_fold_uses_commitment_digest() {
+        let archive = InMemoryArchive::new();
+        let record = ExperienceRecord {
+            record_id: "fold-commit-1".to_string(),
+            observed_at_ms: 1_700_000_000_111,
+            subject_id: "subject-fold-commit-1".to_string(),
+            payload: vec![9, 8, 7],
+            digest: None,
+            vrf_tag: None,
+            proof_ref: None,
+        };
+
+        let commitment = commit_experience_record(&record);
+        let expected_digest = commitment.to_domain_digest();
+        let (expected_state, _) =
+            DummyFolder::fold_step(&FoldState::genesis(), expected_digest, None);
+
+        let (_, state) = archive.append_and_fold(record);
+        assert_eq!(state.acc, expected_state.acc);
+    }
+
+    #[test]
+    fn append_and_fold_is_deterministic_across_runs() {
+        let record = ExperienceRecord {
+            record_id: "fold-commit-2".to_string(),
+            observed_at_ms: 1_700_000_000_222,
+            subject_id: "subject-fold-commit-2".to_string(),
+            payload: vec![5, 4, 3],
+            digest: None,
+            vrf_tag: None,
+            proof_ref: None,
+        };
+
+        let archive_a = InMemoryArchive::new();
+        let archive_b = InMemoryArchive::new();
+
+        let (_, state_a) = archive_a.append_and_fold(record.clone());
+        let (_, state_b) = archive_b.append_and_fold(record);
+
+        assert_eq!(state_a.acc, state_b.acc);
+        assert_eq!(state_a.epoch, state_b.epoch);
     }
 
     #[test]

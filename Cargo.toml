@@ -15,6 +15,7 @@ members = [
     "core/crates/ucf-ingestion",
     "core/crates/ucf-fold",
     "core/crates/ucf-evidence",
+    "core/crates/ucf-commit",
     "crates/dbm_core",
     "crates/dbm_13_hypothalamus",
     "crates/dbm_12_insula",
