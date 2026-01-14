@@ -33,15 +33,7 @@ impl DigestAlgo for Sha256Digest {
 }
 
 fn digest_to_hash(digest: &dyn DigestAlgo, input: &[u8]) -> AppendLogHash {
-    let bytes = digest.digest(input);
-    let mut hash = [0u8; 32];
-    let target_len = hash.len();
-    if bytes.len() >= target_len {
-        hash.copy_from_slice(&bytes[..target_len]);
-    } else {
-        hash[..bytes.len()].copy_from_slice(&bytes);
-    }
-    hash
+    digest.digest(input)
 }
 
 pub struct FileAppendLog {
@@ -89,7 +81,7 @@ impl FileAppendLog {
                 return Err(StoreError::Corrupt {
                     evidence_id: entry.evidence_id.clone(),
                     offset: entry.offset,
-                    expected_hash: entry.hash,
+                    expected_hash: entry.hash.clone(),
                     actual_hash,
                 });
             }
