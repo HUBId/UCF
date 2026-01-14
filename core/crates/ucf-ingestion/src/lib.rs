@@ -381,7 +381,7 @@ mod tests {
             vec![PolicyRule::AllowExternalSpeechIfDecisionClass {
                 class: DecisionKind::DecisionKindAllow as u16,
             }],
-            PolicyWeights::default(),
+            PolicyWeights,
         );
         let speech_gate = Arc::new(PolicySpeechGate::new(speech_policy));
         let router = Arc::new(Router::new(
