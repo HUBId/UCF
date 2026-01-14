@@ -55,7 +55,7 @@ impl PolicyEcology {
     }
 
     pub fn allow_all() -> Self {
-        Self::new(1, vec![PolicyRule::AllowAll], PolicyWeights::default())
+        Self::new(1, vec![PolicyRule::AllowAll], PolicyWeights)
     }
 
     pub fn version(&self) -> u32 {
@@ -207,7 +207,7 @@ mod tests {
         let ecology = PolicyEcology::new(
             1,
             vec![PolicyRule::DenyReplayIfIntensityBelow { min: 5 }],
-            PolicyWeights::default(),
+            PolicyWeights,
         );
         let record = record_with_intensity(3);
 
@@ -219,7 +219,7 @@ mod tests {
         let ecology = PolicyEcology::new(
             1,
             vec![PolicyRule::DenyIsmUpsertIfScoreBelow { min_score: 4 }],
-            PolicyWeights::default(),
+            PolicyWeights,
         );
         let report = ConsistencyReport {
             score: 2,
