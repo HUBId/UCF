@@ -1447,6 +1447,7 @@ name = "ucf-archive"
 version = "0.1.0"
 dependencies = [
  "bincode",
+ "blake3",
  "prost",
  "serde",
  "tempfile",
@@ -1489,6 +1490,7 @@ dependencies = [
  "ucf-archive",
  "ucf-commit",
  "ucf-policy-ecology",
+ "ucf-sleep-coordinator",
  "ucf-types",
 ]
 
@@ -1536,6 +1538,7 @@ dependencies = [
  "ucf-archive",
  "ucf-commit",
  "ucf-policy-ecology",
+ "ucf-sleep-coordinator",
  "ucf-types",
 ]
 
@@ -1560,6 +1563,7 @@ dependencies = [
  "ucf-policy-gateway",
  "ucf-router",
  "ucf-sandbox",
+ "ucf-sleep-coordinator",
  "ucf-types",
 ]
 
@@ -1656,6 +1660,19 @@ dependencies = [
  "blake3",
  "ucf-cde-port",
  "ucf-nsr-port",
+ "ucf-types",
+]
+
+[[package]]
+name = "ucf-sleep-coordinator"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ucf-archive",
+ "ucf-bus",
+ "ucf-openevolve-port",
+ "ucf-policy-ecology",
+ "ucf-rsa",
  "ucf-types",
 ]
 

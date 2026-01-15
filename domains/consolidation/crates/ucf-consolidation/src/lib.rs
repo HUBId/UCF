@@ -9,6 +9,7 @@ use ucf_commit::{
     commit_milestone_micro, Commitment,
 };
 use ucf_policy_ecology::{DefaultPolicyEcology, ReplayGate};
+use ucf_sleep_coordinator::{SleepStateHandle, SleepStateUpdater};
 use ucf_types::v1::spec::{ExperienceRecord, MacroMilestone, MesoMilestone, MicroMilestone};
 
 #[derive(Clone, Debug)]
@@ -95,28 +96,47 @@ impl RecordSource for FileArchive {
 
 pub struct ArchiveMilestoneSink<'a, A: ExperienceAppender> {
     appender: &'a A,
+    sleep_state: Option<SleepStateHandle>,
 }
 
 impl<'a, A: ExperienceAppender> ArchiveMilestoneSink<'a, A> {
-    pub fn new(appender: &'a A) -> Self {
-        Self { appender }
+    pub fn new(appender: &'a A, sleep_state: Option<SleepStateHandle>) -> Self {
+        Self {
+            appender,
+            sleep_state,
+        }
     }
 }
 
 impl<A: ExperienceAppender> MilestoneSink for ArchiveMilestoneSink<'_, A> {
     fn emit_micro(&self, mm: MicroMilestone) {
         let record = derived_record_for_micro(&mm);
-        self.appender.append(record);
+        let evidence_id = self.appender.append(record);
+        if let Some(state) = &self.sleep_state {
+            if let Ok(mut guard) = state.lock() {
+                guard.record_derived_record(evidence_id);
+            }
+        }
     }
 
     fn emit_meso(&self, mm: MesoMilestone) {
         let record = derived_record_for_meso(&mm);
-        self.appender.append(record);
+        let evidence_id = self.appender.append(record);
+        if let Some(state) = &self.sleep_state {
+            if let Ok(mut guard) = state.lock() {
+                guard.record_derived_record(evidence_id);
+            }
+        }
     }
 
     fn emit_macro(&self, mm: MacroMilestone) {
         let record = derived_record_for_macro(&mm);
-        self.appender.append(record);
+        let evidence_id = self.appender.append(record);
+        if let Some(state) = &self.sleep_state {
+            if let Ok(mut guard) = state.lock() {
+                guard.record_derived_record(evidence_id);
+            }
+        }
     }
 }
 
@@ -124,6 +144,7 @@ pub struct ConsolidationKernel<S: RecordSource, A: ExperienceAppender> {
     config: ConsolidationConfig,
     source: S,
     appender: A,
+    sleep_state: Option<SleepStateHandle>,
 }
 
 pub struct ConsolidationCycleSummary {
@@ -133,11 +154,17 @@ pub struct ConsolidationCycleSummary {
 }
 
 impl<S: RecordSource, A: ExperienceAppender> ConsolidationKernel<S, A> {
-    pub fn new(config: ConsolidationConfig, source: S, appender: A) -> Self {
+    pub fn new(
+        config: ConsolidationConfig,
+        source: S,
+        appender: A,
+        sleep_state: Option<SleepStateHandle>,
+    ) -> Self {
         Self {
             config,
             source,
             appender,
+            sleep_state,
         }
     }
 
@@ -175,7 +202,7 @@ impl<S: RecordSource, A: ExperienceAppender> ConsolidationKernel<S, A> {
             .map(build_macro)
             .collect();
 
-        let sink = ArchiveMilestoneSink::new(&self.appender);
+        let sink = ArchiveMilestoneSink::new(&self.appender, self.sleep_state.clone());
         for micro in &micros {
             sink.emit_micro(micro.clone());
         }
@@ -477,7 +504,7 @@ mod tests {
             macro_window: 2,
             replay_budget: 8,
         };
-        let kernel = ConsolidationKernel::new(config, handle, handle);
+        let kernel = ConsolidationKernel::new(config, handle, handle, None);
 
         let before_len = archive.list().len();
         let summary = kernel.run_one_cycle();

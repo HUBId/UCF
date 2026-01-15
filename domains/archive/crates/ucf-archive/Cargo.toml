@@ -7,6 +7,7 @@ edition = "2021"
 prost = "0.12"
 serde = { workspace = true }
 bincode = "1.3"
+blake3 = "1"
 ucf-commit = { path = "../../../../core/crates/ucf-commit" }
 ucf-evidence = { path = "../../../../core/crates/ucf-evidence" }
 ucf-fold = { path = "../../../../core/crates/ucf-fold" }

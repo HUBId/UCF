@@ -41,6 +41,7 @@ pub struct RouterOutcome {
     pub evidence_id: EvidenceId,
     pub decision_kind: DecisionKind,
     pub speech_outputs: Vec<AiOutput>,
+    pub integration_score: Option<u16>,
 }
 
 impl Router {
@@ -85,6 +86,9 @@ impl Router {
 
         let record = self.build_experience_record(cf.as_ref(), &decision, &thought_outputs);
         let evidence_id = self.archive.append(record.clone());
+        let integration_score = thought_outputs
+            .iter()
+            .find_map(|output| output.integration_score);
 
         if let Some(brain) = &self.digital_brain {
             brain.ingest(record);
@@ -94,6 +98,7 @@ impl Router {
             evidence_id,
             decision_kind,
             speech_outputs,
+            integration_score,
         })
     }
 
