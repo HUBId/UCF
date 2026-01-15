@@ -8,11 +8,13 @@ ucf-types = { path = "../ucf-types" }
 ucf-commit = { path = "../ucf-commit" }
 ucf-policy-ecology = { path = "../ucf-policy-ecology" }
 ucf-sandbox = { path = "../ucf-sandbox" }
+ucf-ai-runtime = { path = "../../../ai/crates/ucf-ai-runtime", optional = true }
 ucf-bus = { path = "../ucf-bus", optional = true }
 ucf-cde-port = { path = "../ucf-cde-port" }
 ucf-iit-monitor = { path = "../ucf-iit-monitor" }
 ucf-ncde-port = { path = "../ucf-ncde-port" }
 ucf-nsr-port = { path = "../ucf-nsr-port" }
+ucf-ode-port = { path = "../ucf-ode-port", optional = true }
 ucf-sle = { path = "../ucf-sle" }
 ucf-ssm-port = { path = "../ucf-ssm-port" }
 ucf-tcf-port = { path = "../ucf-tcf-port" }
@@ -20,3 +22,7 @@ blake3 = "1"
 
 [features]
 bus = ["ucf-bus"]
+ai-runtime = ["dep:ucf-ai-runtime", "ucf-ai-runtime/ai-runtime"]
+ode = ["dep:ucf-ode-port"]
+burn = []
+candle = []
