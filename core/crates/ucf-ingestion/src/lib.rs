@@ -6,6 +6,9 @@ use ucf_ai_port::AiOutput;
 use ucf_bus::{BusPublisher, BusSubscriber, MessageEnvelope};
 use ucf_router::{Router, RouterOutcome};
 use ucf_sandbox::{ControlFrameValidator, SandboxError, SandboxErrorCode};
+use ucf_sleep_coordinator::{
+    SleepPhaseRunner, SleepStateHandle, SleepStateUpdater, SleepTriggered,
+};
 use ucf_types::v1::spec::{ControlFrame, DecisionKind};
 use ucf_types::{Digest32, EvidenceId};
 
@@ -30,22 +33,30 @@ pub struct SpeechEvent {
     pub rationale_commit: Option<Digest32>,
 }
 
-pub struct IngestionService<S, P, R, E> {
+pub struct IngestionService<S, P, R, E, T> {
     router: Arc<Router>,
     subscriber: S,
     publisher: Option<P>,
     reject_publisher: Option<R>,
     speech_publisher: Option<E>,
+    sleep: Option<SleepLoop<T>>,
     validator: ControlFrameValidator,
     receiver: Option<mpsc::Receiver<MessageEnvelope<ControlFrame>>>,
 }
 
-impl<S, P, R, E> IngestionService<S, P, R, E>
+pub struct SleepLoop<T> {
+    pub state: SleepStateHandle,
+    pub runner: Arc<dyn SleepPhaseRunner + Send + Sync>,
+    pub trigger_bus: T,
+}
+
+impl<S, P, R, E, T> IngestionService<S, P, R, E, T>
 where
     S: BusSubscriber<MessageEnvelope<ControlFrame>>,
     P: BusPublisher<MessageEnvelope<OutcomeEvent>>,
     R: BusPublisher<MessageEnvelope<SandboxRejectEvent>>,
     E: BusPublisher<MessageEnvelope<SpeechEvent>>,
+    T: BusPublisher<MessageEnvelope<SleepTriggered>>,
 {
     pub fn new(
         router: Arc<Router>,
@@ -53,6 +64,7 @@ where
         publisher: Option<P>,
         reject_publisher: Option<R>,
         speech_publisher: Option<E>,
+        sleep: Option<SleepLoop<T>>,
         validator: ControlFrameValidator,
     ) -> Self {
         Self {
@@ -61,6 +73,7 @@ where
             publisher,
             reject_publisher,
             speech_publisher,
+            sleep,
             validator,
             receiver: None,
         }
@@ -92,6 +105,13 @@ where
                         Ok(normalized) => {
                             if let Ok(outcome) = self.router.handle_control_frame(normalized) {
                                 self.publish_outcome(
+                                    &outcome,
+                                    &node_id,
+                                    &stream_id,
+                                    logical_time,
+                                    wall_time,
+                                );
+                                self.update_sleep(
                                     &outcome,
                                     &node_id,
                                     &stream_id,
@@ -192,6 +212,57 @@ where
             });
         }
     }
+
+    fn update_sleep(
+        &self,
+        outcome: &RouterOutcome,
+        node_id: &ucf_types::NodeId,
+        stream_id: &ucf_types::StreamId,
+        logical_time: ucf_types::LogicalTime,
+        wall_time: ucf_types::WallTime,
+    ) {
+        let Some(sleep) = &self.sleep else {
+            return;
+        };
+        let Ok(mut guard) = sleep.state.lock() else {
+            return;
+        };
+        guard.record_derived_record(outcome.evidence_id.clone());
+        if let Some(score) = outcome.integration_score {
+            guard.record_integration_score(score);
+        }
+        let publisher = SleepEnvelopePublisher {
+            publisher: &sleep.trigger_bus,
+            node_id: node_id.clone(),
+            stream_id: stream_id.clone(),
+            logical_time,
+            wall_time,
+        };
+        let _ = guard.maybe_trigger(sleep.runner.as_ref(), &publisher);
+    }
+}
+
+struct SleepEnvelopePublisher<'a, T> {
+    publisher: &'a T,
+    node_id: ucf_types::NodeId,
+    stream_id: ucf_types::StreamId,
+    logical_time: ucf_types::LogicalTime,
+    wall_time: ucf_types::WallTime,
+}
+
+impl<T> BusPublisher<SleepTriggered> for SleepEnvelopePublisher<'_, T>
+where
+    T: BusPublisher<MessageEnvelope<SleepTriggered>>,
+{
+    fn publish(&self, message: SleepTriggered) {
+        self.publisher.publish(MessageEnvelope {
+            node_id: self.node_id.clone(),
+            stream_id: self.stream_id.clone(),
+            logical_time: self.logical_time,
+            wall_time: self.wall_time,
+            payload: message,
+        });
+    }
 }
 
 #[cfg(test)]
@@ -208,6 +279,7 @@ mod tests {
     use ucf_policy_ecology::{PolicyEcology, PolicyRule, PolicyWeights};
     use ucf_policy_gateway::NoOpPolicyEvaluator;
     use ucf_sandbox::{ControlFrameValidator, ValidatorLimits};
+    use ucf_sleep_coordinator::SleepTriggered;
     use ucf_types::v1::spec::{
         ActionCode, ControlFrame, DecisionKind, ExperienceRecord, PolicyDecision,
     };
@@ -243,6 +315,7 @@ mod tests {
             Some(outcome_bus.clone()),
             Some(reject_bus.clone()),
             Some(speech_bus.clone()),
+            None::<SleepLoop<InMemoryBus<MessageEnvelope<SleepTriggered>>>>,
             validator,
         );
         service.start();
@@ -325,6 +398,7 @@ mod tests {
             Some(outcome_bus.clone()),
             Some(reject_bus.clone()),
             None::<InMemoryBus<MessageEnvelope<SpeechEvent>>>,
+            None::<SleepLoop<InMemoryBus<MessageEnvelope<SleepTriggered>>>>,
             validator,
         );
         service.start();
@@ -399,6 +473,7 @@ mod tests {
             Some(outcome_bus.clone()),
             None::<InMemoryBus<MessageEnvelope<SandboxRejectEvent>>>,
             Some(speech_bus.clone()),
+            None::<SleepLoop<InMemoryBus<MessageEnvelope<SleepTriggered>>>>,
             validator,
         );
         service.start();

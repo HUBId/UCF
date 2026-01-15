@@ -5,6 +5,7 @@ use std::sync::Arc;
 use ucf_archive::ExperienceAppender;
 use ucf_commit::commit_milestone_macro;
 use ucf_policy_ecology::{ConsistencyReport, ConsistencyVerdict, DefaultPolicyEcology, GeistGate};
+use ucf_sleep_coordinator::{SleepStateHandle, SleepStateUpdater};
 use ucf_types::v1::spec::{ExperienceRecord, MacroMilestone};
 use ucf_types::{Digest32, EvidenceId};
 
@@ -64,11 +65,18 @@ pub struct GeistKernel<A: ExperienceAppender, I: IsmStore> {
     pub archive: A,
     pub ism: I,
     gate: Arc<dyn GeistGate + Send + Sync>,
+    sleep_state: Option<SleepStateHandle>,
 }
 
 impl<A: ExperienceAppender, I: IsmStore> GeistKernel<A, I> {
     pub fn new(cfg: GeistConfig, archive: A, ism: I) -> Self {
-        Self::new_with_gate(cfg, archive, ism, Arc::new(DefaultPolicyEcology::default()))
+        Self::new_with_gate_and_sleep(
+            cfg,
+            archive,
+            ism,
+            Arc::new(DefaultPolicyEcology::default()),
+            None,
+        )
     }
 
     pub fn new_with_gate(
@@ -77,11 +85,22 @@ impl<A: ExperienceAppender, I: IsmStore> GeistKernel<A, I> {
         ism: I,
         gate: Arc<dyn GeistGate + Send + Sync>,
     ) -> Self {
+        Self::new_with_gate_and_sleep(cfg, archive, ism, gate, None)
+    }
+
+    pub fn new_with_gate_and_sleep(
+        cfg: GeistConfig,
+        archive: A,
+        ism: I,
+        gate: Arc<dyn GeistGate + Send + Sync>,
+        sleep_state: Option<SleepStateHandle>,
+    ) -> Self {
         Self {
             cfg,
             archive,
             ism,
             gate,
+            sleep_state,
         }
     }
 
@@ -103,6 +122,12 @@ impl<A: ExperienceAppender, I: IsmStore> GeistKernel<A, I> {
 
         let record = derived_record_for_macro(&macro_ms, &macro_refs, &self_states, &report);
         let evidence_id = self.archive.append(record);
+        if let Some(state) = &self.sleep_state {
+            if let Ok(mut guard) = state.lock() {
+                guard.record_consistency_verdict(report.verdict);
+                guard.record_derived_record(evidence_id.clone());
+            }
+        }
         (self_states, report, evidence_id)
     }
 }

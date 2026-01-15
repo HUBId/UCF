@@ -23,16 +23,28 @@ use serde::{Deserialize, Serialize};
 use ucf_commit::commit_experience_record;
 use ucf_evidence::file_store::FileEvidenceStore;
 use ucf_evidence::{EvidenceEnvelope, EvidenceStore, InMemoryEvidenceStore, StoreResult};
-use ucf_fold::{DummyFolder, FoldProof, FoldState, FoldableProof};
+use ucf_fold::{DummyFolder, FoldProof, FoldState, FoldableProof, MAX_PROOF_BYTES};
 use ucf_types::v1::spec::{ExperienceRecord, ProofEnvelope};
-use ucf_types::{DomainDigest, EvidenceId, LogicalTime, WallTime};
+use ucf_types::{Digest32, DomainDigest, EvidenceId, LogicalTime, WallTime};
 
-const FOLD_SNAPSHOT_FILE: &str = "evidence.fold";
+const FOLD_SNAPSHOT_FILE: &str = "fold_state.bin";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct FoldSnapshot {
     state: FoldState,
     last_proof: Option<FoldProof>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct FoldSnapshotData {
+    state: FoldState,
+    last_proof: Option<Vec<u8>>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct FoldSnapshotFile {
+    data: FoldSnapshotData,
+    checksum: [u8; 32],
 }
 
 impl FoldSnapshot {
@@ -174,15 +186,60 @@ fn load_fold_snapshot(path: &Path) -> StoreResult<FoldSnapshot> {
         }
     };
     if bytes.is_empty() {
-        return Ok(FoldSnapshot::new());
+        return Err(ucf_evidence::StoreError::IOError(
+            "empty fold snapshot".to_string(),
+        ));
     }
-    let snapshot: FoldSnapshot = deserialize(&bytes)
+    let snapshot_file: FoldSnapshotFile = deserialize(&bytes)
         .map_err(|err| ucf_evidence::StoreError::IOError(format!("decode fold snapshot: {err}")))?;
-    Ok(snapshot)
+    let data_bytes = serialize(&snapshot_file.data)
+        .map_err(|err| ucf_evidence::StoreError::IOError(format!("encode fold snapshot: {err}")))?;
+    let expected = blake3::hash(&data_bytes);
+    if *expected.as_bytes() != snapshot_file.checksum {
+        return Err(ucf_evidence::StoreError::IOError(
+            "fold snapshot checksum mismatch".to_string(),
+        ));
+    }
+    if snapshot_file.data.state.acc.as_bytes().len() != Digest32::LEN {
+        return Err(ucf_evidence::StoreError::IOError(
+            "fold snapshot digest length invalid".to_string(),
+        ));
+    }
+    let last_proof = if let Some(bytes) = snapshot_file.data.last_proof {
+        if bytes.len() != MAX_PROOF_BYTES {
+            return Err(ucf_evidence::StoreError::IOError(format!(
+                "fold snapshot proof length invalid: {}",
+                bytes.len()
+            )));
+        }
+        let mut proof_bytes = [0u8; MAX_PROOF_BYTES];
+        proof_bytes.copy_from_slice(&bytes);
+        Some(FoldProof(proof_bytes))
+    } else {
+        None
+    };
+    Ok(FoldSnapshot {
+        state: snapshot_file.data.state,
+        last_proof,
+    })
 }
 
 fn persist_fold_snapshot(path: &Path, snapshot: &FoldSnapshot) -> StoreResult<()> {
-    let bytes = serialize(snapshot)
+    let data = FoldSnapshotData {
+        state: snapshot.state.clone(),
+        last_proof: snapshot
+            .last_proof
+            .as_ref()
+            .map(|proof| proof.as_bytes().to_vec()),
+    };
+    let data_bytes = serialize(&data)
+        .map_err(|err| ucf_evidence::StoreError::IOError(format!("encode fold snapshot: {err}")))?;
+    let checksum = blake3::hash(&data_bytes);
+    let file = FoldSnapshotFile {
+        data,
+        checksum: *checksum.as_bytes(),
+    };
+    let bytes = serialize(&file)
         .map_err(|err| ucf_evidence::StoreError::IOError(format!("encode fold snapshot: {err}")))?;
     fs::write(path, &bytes)
         .map_err(|err| ucf_evidence::StoreError::IOError(format!("write fold snapshot: {err}")))?;
@@ -428,11 +485,46 @@ mod tests {
         drop(archive);
 
         let fold_path = temp_dir.path().join(FOLD_SNAPSHOT_FILE);
-        fs::write(&fold_path, b"corrupt").expect("write corrupt snapshot");
+        let data = FoldSnapshotData {
+            state: FoldState::genesis(),
+            last_proof: None,
+        };
+        let corrupt = FoldSnapshotFile {
+            data,
+            checksum: [0u8; 32],
+        };
+        let bytes = serialize(&corrupt).expect("encode corrupt snapshot");
+        fs::write(&fold_path, bytes).expect("write corrupt snapshot");
 
         match FileArchive::open(temp_dir.path()) {
             Err(ucf_evidence::StoreError::IOError(message)) => {
-                assert!(message.contains("decode fold snapshot"));
+                assert!(message.contains("fold snapshot checksum mismatch"));
+            }
+            Err(other) => panic!("expected fold snapshot error, got {other:?}"),
+            Ok(_) => panic!("expected fold snapshot error, got Ok"),
+        }
+    }
+
+    #[test]
+    fn file_archive_rejects_invalid_proof_length_in_snapshot() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let fold_path = temp_dir.path().join(FOLD_SNAPSHOT_FILE);
+        let data = FoldSnapshotData {
+            state: FoldState::genesis(),
+            last_proof: Some(vec![0u8; MAX_PROOF_BYTES - 1]),
+        };
+        let data_bytes = serialize(&data).expect("encode snapshot data");
+        let checksum = blake3::hash(&data_bytes);
+        let file = FoldSnapshotFile {
+            data,
+            checksum: *checksum.as_bytes(),
+        };
+        let bytes = serialize(&file).expect("encode snapshot file");
+        fs::write(&fold_path, bytes).expect("write snapshot");
+
+        match FileArchive::open(temp_dir.path()) {
+            Err(ucf_evidence::StoreError::IOError(message)) => {
+                assert!(message.contains("fold snapshot proof length invalid"));
             }
             Err(other) => panic!("expected fold snapshot error, got {other:?}"),
             Ok(_) => panic!("expected fold snapshot error, got Ok"),

@@ -22,6 +22,7 @@ members = [
     "core/crates/ucf-bus",
     "core/crates/ucf-rsa",
     "core/crates/ucf-openevolve-port",
+    "core/crates/ucf-sleep-coordinator",
     "core/crates/ucf-ingestion",
     "core/crates/ucf-fold",
     "core/crates/ucf-evidence",

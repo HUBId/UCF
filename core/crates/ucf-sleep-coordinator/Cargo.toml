@@ -1,0 +1,17 @@
+[package]
+name = "ucf-sleep-coordinator"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+blake3 = "1"
+ucf-bus = { path = "../ucf-bus" }
+ucf-openevolve-port = { path = "../ucf-openevolve-port" }
+ucf-policy-ecology = { path = "../ucf-policy-ecology" }
+ucf-rsa = { path = "../ucf-rsa" }
+ucf-types = { path = "../ucf-types" }
+
+[dev-dependencies]
+ucf-archive = { path = "../../../domains/archive/crates/ucf-archive" }
+ucf-openevolve-port = { path = "../ucf-openevolve-port" }
+ucf-policy-ecology = { path = "../ucf-policy-ecology" }
