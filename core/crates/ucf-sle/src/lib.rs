@@ -159,6 +159,20 @@ fn encode_cde_hypothesis(hasher: &mut Hasher, hyp: Option<&CdeHypothesis>) {
             hasher.update(hyp.digest.as_bytes());
             hasher.update(&u64::try_from(hyp.nodes).unwrap_or(0).to_be_bytes());
             hasher.update(&u64::try_from(hyp.edges).unwrap_or(0).to_be_bytes());
+            hasher.update(&hyp.confidence.to_be_bytes());
+            hasher.update(
+                &u64::try_from(hyp.interventions.len())
+                    .unwrap_or(0)
+                    .to_be_bytes(),
+            );
+            for intervention in &hyp.interventions {
+                hasher.update(
+                    &u64::try_from(intervention.kind.len())
+                        .unwrap_or(0)
+                        .to_be_bytes(),
+                );
+                hasher.update(intervention.kind.as_bytes());
+            }
         }
         None => {
             hasher.update(&[0]);
@@ -189,6 +203,8 @@ mod tests {
             digest: Digest32::new([3u8; 32]),
             nodes: 2,
             edges: 1,
+            confidence: 9000,
+            interventions: vec![ucf_cde_port::InterventionStub::new("none")],
         };
 
         let first = engine.reflect(&prev, &output, Some(&report), Some(&hyp));

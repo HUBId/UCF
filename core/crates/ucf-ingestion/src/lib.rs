@@ -272,10 +272,11 @@ mod tests {
     use std::sync::Arc;
 
     use prost::Message;
-    use ucf_ai_port::{MockAiPort, PolicySpeechGate};
+    use ucf_ai_port::{AiPillars, MockAiPort, PolicySpeechGate};
     use ucf_archive::InMemoryArchive;
     use ucf_bus::InMemoryBus;
     use ucf_digital_brain::InMemoryDigitalBrain;
+    use ucf_nsr_port::NsrPort;
     use ucf_policy_ecology::{PolicyEcology, PolicyRule, PolicyWeights};
     use ucf_policy_gateway::NoOpPolicyEvaluator;
     use ucf_sandbox::{ControlFrameValidator, ValidatorLimits};
@@ -298,7 +299,10 @@ mod tests {
         let policy = Arc::new(NoOpPolicyEvaluator::new());
         let archive = Arc::new(InMemoryArchive::new());
         let brain = Arc::new(InMemoryDigitalBrain::new());
-        let ai_port = Arc::new(MockAiPort::new());
+        let ai_port = Arc::new(MockAiPort::with_pillars(AiPillars {
+            nsr: Some(Arc::new(NsrPort::default())),
+            ..AiPillars::default()
+        }));
         let speech_gate = Arc::new(PolicySpeechGate::new(PolicyEcology::allow_all()));
         let router = Arc::new(Router::new(
             policy,
@@ -377,7 +381,10 @@ mod tests {
         let policy = Arc::new(NoOpPolicyEvaluator::new());
         let archive = Arc::new(InMemoryArchive::new());
         let brain = Arc::new(InMemoryDigitalBrain::new());
-        let ai_port = Arc::new(MockAiPort::new());
+        let ai_port = Arc::new(MockAiPort::with_pillars(AiPillars {
+            nsr: Some(Arc::new(NsrPort::default())),
+            ..AiPillars::default()
+        }));
         let speech_gate = Arc::new(PolicySpeechGate::new(PolicyEcology::allow_all()));
         let router = Arc::new(Router::new(
             policy,
@@ -449,7 +456,10 @@ mod tests {
         let policy = Arc::new(NoOpPolicyEvaluator::new());
         let archive = Arc::new(InMemoryArchive::new());
         let brain = Arc::new(InMemoryDigitalBrain::new());
-        let ai_port = Arc::new(MockAiPort::new());
+        let ai_port = Arc::new(MockAiPort::with_pillars(AiPillars {
+            nsr: Some(Arc::new(NsrPort::default())),
+            ..AiPillars::default()
+        }));
         let speech_policy = PolicyEcology::new(
             1,
             vec![PolicyRule::AllowExternalSpeechIfDecisionClass {
