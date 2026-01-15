@@ -1776,10 +1776,12 @@ dependencies = [
  "ucf-commit",
  "ucf-digitalbrain-port",
  "ucf-iit-monitor",
+ "ucf-lens-port",
  "ucf-ncde-port",
  "ucf-nsr-port",
  "ucf-ode-port",
  "ucf-policy-ecology",
+ "ucf-sae-port",
  "ucf-sandbox",
  "ucf-sle",
  "ucf-ssm-port",
@@ -1883,7 +1885,6 @@ dependencies = [
 name = "ucf-digitalbrain-port"
 version = "0.1.0"
 dependencies = [
- "hex",
  "serde",
  "thiserror 1.0.69",
  "toml",
@@ -1949,6 +1950,15 @@ dependencies = [
  "ucf-router",
  "ucf-sandbox",
  "ucf-sleep-coordinator",
+ "ucf-types",
+]
+
+[[package]]
+name = "ucf-lens-port"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ucf-sandbox",
  "ucf-types",
 ]
 
@@ -2037,6 +2047,16 @@ dependencies = [
  "ucf-bus",
  "ucf-openevolve-port",
  "ucf-policy-ecology",
+ "ucf-types",
+]
+
+[[package]]
+name = "ucf-sae-port"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ucf-digitalbrain-port",
+ "ucf-lens-port",
  "ucf-types",
 ]
 
