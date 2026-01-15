@@ -1799,10 +1799,12 @@ version = "0.1.0"
 dependencies = [
  "prost",
  "ucf-archive",
+ "ucf-bus",
  "ucf-commit",
  "ucf-policy-ecology",
  "ucf-sleep-coordinator",
  "ucf-types",
+ "ucf-vector-index",
 ]
 
 [[package]]
@@ -2019,6 +2021,26 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "ucf-protocol",
+]
+
+[[package]]
+name = "ucf-vector-index"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "ucf-bus",
+ "ucf-commit",
+ "ucf-types",
+]
+
+[[package]]
+name = "ucf-vector-index-qdrant"
+version = "0.1.0"
+dependencies = [
+ "ucf-types",
+ "ucf-vector-index",
 ]
 
 [[package]]

@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use prost::Message;
 use ucf_archive::{ExperienceAppender, FileArchive, InMemoryArchive};
+use ucf_bus::{BusPublisher, MessageEnvelope};
 use ucf_commit::{
     commit_experience_record, commit_milestone_macro, commit_milestone_meso,
     commit_milestone_micro, Commitment,
@@ -11,6 +12,11 @@ use ucf_commit::{
 use ucf_policy_ecology::{DefaultPolicyEcology, ReplayGate};
 use ucf_sleep_coordinator::{SleepStateHandle, SleepStateUpdater};
 use ucf_types::v1::spec::{ExperienceRecord, MacroMilestone, MesoMilestone, MicroMilestone};
+use ucf_types::NodeId;
+use ucf_vector_index::{
+    build_macro_finalized_envelope, build_record_appended_envelope, MacroMilestoneFinalized,
+    RecordAppended,
+};
 
 #[derive(Clone, Debug)]
 pub struct ConsolidationConfig {
@@ -97,13 +103,19 @@ impl RecordSource for FileArchive {
 pub struct ArchiveMilestoneSink<'a, A: ExperienceAppender> {
     appender: &'a A,
     sleep_state: Option<SleepStateHandle>,
+    index_publishers: Option<IndexEventPublishers>,
 }
 
 impl<'a, A: ExperienceAppender> ArchiveMilestoneSink<'a, A> {
-    pub fn new(appender: &'a A, sleep_state: Option<SleepStateHandle>) -> Self {
+    pub fn new(
+        appender: &'a A,
+        sleep_state: Option<SleepStateHandle>,
+        index_publishers: Option<IndexEventPublishers>,
+    ) -> Self {
         Self {
             appender,
             sleep_state,
+            index_publishers,
         }
     }
 }
@@ -111,7 +123,8 @@ impl<'a, A: ExperienceAppender> ArchiveMilestoneSink<'a, A> {
 impl<A: ExperienceAppender> MilestoneSink for ArchiveMilestoneSink<'_, A> {
     fn emit_micro(&self, mm: MicroMilestone) {
         let record = derived_record_for_micro(&mm);
-        let evidence_id = self.appender.append(record);
+        let evidence_id = self.appender.append(record.clone());
+        self.publish_record_appended(&record);
         if let Some(state) = &self.sleep_state {
             if let Ok(mut guard) = state.lock() {
                 guard.record_derived_record(evidence_id);
@@ -121,7 +134,8 @@ impl<A: ExperienceAppender> MilestoneSink for ArchiveMilestoneSink<'_, A> {
 
     fn emit_meso(&self, mm: MesoMilestone) {
         let record = derived_record_for_meso(&mm);
-        let evidence_id = self.appender.append(record);
+        let evidence_id = self.appender.append(record.clone());
+        self.publish_record_appended(&record);
         if let Some(state) = &self.sleep_state {
             if let Ok(mut guard) = state.lock() {
                 guard.record_derived_record(evidence_id);
@@ -131,11 +145,62 @@ impl<A: ExperienceAppender> MilestoneSink for ArchiveMilestoneSink<'_, A> {
 
     fn emit_macro(&self, mm: MacroMilestone) {
         let record = derived_record_for_macro(&mm);
-        let evidence_id = self.appender.append(record);
+        let evidence_id = self.appender.append(record.clone());
+        self.publish_record_appended(&record);
+        self.publish_macro_finalized(&record, &mm);
         if let Some(state) = &self.sleep_state {
             if let Ok(mut guard) = state.lock() {
                 guard.record_derived_record(evidence_id);
             }
+        }
+    }
+}
+
+impl<A: ExperienceAppender> ArchiveMilestoneSink<'_, A> {
+    fn publish_record_appended(&self, record: &ExperienceRecord) {
+        let Some(publishers) = &self.index_publishers else {
+            return;
+        };
+        let Some(bus) = &publishers.record_appended else {
+            return;
+        };
+        let envelope = build_record_appended_envelope(record.clone(), publishers.node_id.clone());
+        bus.publish(envelope);
+    }
+
+    fn publish_macro_finalized(&self, record: &ExperienceRecord, milestone: &MacroMilestone) {
+        let Some(publishers) = &self.index_publishers else {
+            return;
+        };
+        let Some(bus) = &publishers.macro_finalized else {
+            return;
+        };
+        let envelope = build_macro_finalized_envelope(
+            record.clone(),
+            milestone.clone(),
+            publishers.node_id.clone(),
+            None,
+        );
+        bus.publish(envelope);
+    }
+}
+
+#[derive(Clone)]
+pub struct IndexEventPublishers {
+    pub node_id: NodeId,
+    pub macro_finalized: Option<
+        std::sync::Arc<dyn BusPublisher<MessageEnvelope<MacroMilestoneFinalized>> + Send + Sync>,
+    >,
+    pub record_appended:
+        Option<std::sync::Arc<dyn BusPublisher<MessageEnvelope<RecordAppended>> + Send + Sync>>,
+}
+
+impl IndexEventPublishers {
+    pub fn new(node_id: NodeId) -> Self {
+        Self {
+            node_id,
+            macro_finalized: None,
+            record_appended: None,
         }
     }
 }
@@ -145,6 +210,7 @@ pub struct ConsolidationKernel<S: RecordSource, A: ExperienceAppender> {
     source: S,
     appender: A,
     sleep_state: Option<SleepStateHandle>,
+    index_publishers: Option<IndexEventPublishers>,
 }
 
 pub struct ConsolidationCycleSummary {
@@ -159,12 +225,14 @@ impl<S: RecordSource, A: ExperienceAppender> ConsolidationKernel<S, A> {
         source: S,
         appender: A,
         sleep_state: Option<SleepStateHandle>,
+        index_publishers: Option<IndexEventPublishers>,
     ) -> Self {
         Self {
             config,
             source,
             appender,
             sleep_state,
+            index_publishers,
         }
     }
 
@@ -202,7 +270,11 @@ impl<S: RecordSource, A: ExperienceAppender> ConsolidationKernel<S, A> {
             .map(build_macro)
             .collect();
 
-        let sink = ArchiveMilestoneSink::new(&self.appender, self.sleep_state.clone());
+        let sink = ArchiveMilestoneSink::new(
+            &self.appender,
+            self.sleep_state.clone(),
+            self.index_publishers.clone(),
+        );
         for micro in &micros {
             sink.emit_micro(micro.clone());
         }
@@ -504,7 +576,7 @@ mod tests {
             macro_window: 2,
             replay_budget: 8,
         };
-        let kernel = ConsolidationKernel::new(config, handle, handle, None);
+        let kernel = ConsolidationKernel::new(config, handle, handle, None, None);
 
         let before_len = archive.list().len();
         let summary = kernel.run_one_cycle();
