@@ -438,6 +438,60 @@ impl CausalGraphStub {
     }
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CausalIntervention {
+    pub node: u32,
+    pub value: i32,
+}
+
+impl CausalIntervention {
+    pub fn new(node: u32, value: i32) -> Self {
+        Self { node, value }
+    }
+}
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CausalCounterfactual {
+    pub interventions: Vec<CausalIntervention>,
+    pub target: u32,
+    pub predicted: i32,
+    pub confidence: u16,
+}
+
+impl CausalCounterfactual {
+    pub fn new(
+        interventions: Vec<CausalIntervention>,
+        target: u32,
+        predicted: i32,
+        confidence: u16,
+    ) -> Self {
+        Self {
+            interventions,
+            target,
+            predicted,
+            confidence,
+        }
+    }
+}
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CausalReport {
+    pub dag_commit: Digest32,
+    pub counterfactual: Option<CausalCounterfactual>,
+}
+
+impl CausalReport {
+    pub fn new(dag_commit: Digest32, counterfactual: Option<CausalCounterfactual>) -> Self {
+        Self {
+            dag_commit,
+            counterfactual,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

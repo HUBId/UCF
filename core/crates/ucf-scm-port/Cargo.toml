@@ -1,0 +1,9 @@
+[package]
+name = "ucf-scm-port"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+blake3 = "1"
+ucf-cde-port = { path = "../ucf-cde-port" }
+ucf-types = { path = "../ucf-types" }

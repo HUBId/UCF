@@ -21,6 +21,7 @@ members = [
     "core/crates/ucf-nsr-smt",
     "core/crates/ucf-nsr-datalog",
     "core/crates/ucf-cde-port",
+    "core/crates/ucf-scm-port",
     "core/crates/ucf-lens-port",
     "core/crates/ucf-sae-port",
     "core/crates/ucf-router",

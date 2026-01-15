@@ -20,6 +20,7 @@ ucf-nsr-datalog = { path = "../ucf-nsr-datalog", optional = true }
 ucf-ode-port = { path = "../ucf-ode-port", optional = true }
 ucf-sae-port = { path = "../ucf-sae-port" }
 ucf-sle = { path = "../ucf-sle" }
+ucf-scm-port = { path = "../ucf-scm-port" }
 ucf-ssm-port = { path = "../ucf-ssm-port" }
 ucf-tcf-port = { path = "../ucf-tcf-port" }
 ucf-digitalbrain-port = { path = "../../../domains/digitalbrain/crates/ucf-digitalbrain-port" }
