@@ -32,18 +32,34 @@ pub trait AiPort {
     fn infer(&self, input: &ControlFrameNormalized) -> Vec<AiOutput>;
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SpeechSuppressionReason {
+    NsrViolation,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SpeechSuppressedEvent {
+    pub reason: SpeechSuppressionReason,
+    pub violations_hash: Digest32,
+}
+
+pub trait SpeechSuppressionSink {
+    fn publish(&self, event: SpeechSuppressedEvent);
+}
+
 #[derive(Clone)]
 pub struct AiPillars {
     pub tcf: Option<Arc<dyn TcfPort + Send + Sync>>,
     pub ssm: Option<Arc<dyn SsmPort + Send + Sync>>,
     pub cde: Option<Arc<dyn CdePort + Send + Sync>>,
-    pub nsr: Option<Arc<dyn NsrPort + Send + Sync>>,
+    pub nsr: Option<Arc<NsrPort>>,
     pub ncde: Option<Arc<dyn NcdePort + Send + Sync>>,
     pub sle: Option<Arc<StrangeLoopEngine>>,
     pub iit_monitor: Option<Arc<Mutex<IitMonitor>>>,
     pub lens: Option<Arc<dyn LensPort + Send + Sync>>,
     pub sae: Option<Arc<dyn SaePort + Send + Sync>>,
     pub digital_brain: Option<Arc<DigitalBrainBridge>>,
+    pub speech_suppression_sink: Option<Arc<dyn SpeechSuppressionSink + Send + Sync>>,
 }
 
 impl AiPillars {
@@ -80,6 +96,7 @@ impl Default for AiPillars {
             lens: Some(Arc::new(LensMock::new())),
             sae: Some(Arc::new(SaeMock::new())),
             digital_brain: None,
+            speech_suppression_sink: None,
         }
     }
 }
@@ -274,7 +291,11 @@ impl AiPort for MockAiPort {
             let _ = bridge.mirror_features(evidence_id, &sparse_features);
         }
 
-        let allow_speech = artifacts.nsr_report.as_ref().is_none_or(|report| report.ok);
+        // Hard gate speech: NSR must be explicitly ok (policy + sandbox gate upstream).
+        let allow_speech = artifacts
+            .nsr_report
+            .as_ref()
+            .is_some_and(|report| report.ok);
         if input.as_ref().frame_id == "ping" && allow_speech {
             let speech = AiOutput {
                 channel: OutputChannel::Speech,
@@ -363,6 +384,7 @@ fn run_pillars(pillars: &AiPillars, input: &ControlFrameNormalized) -> PillarArt
         let report = nsr.check(&claims);
         let report_digest = digest_nsr_report(&report);
         artifacts.push(report_digest);
+        publish_speech_suppressed(pillars, &report);
         nsr_report = Some(report);
         nsr_digest = Some(report_digest);
     }
@@ -508,6 +530,33 @@ fn digest_nsr_report(report: &NsrReport) -> Digest32 {
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
+fn digest_nsr_violations(report: &NsrReport) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(b"ucf.nsr.violations.v1");
+    hasher.update(
+        &u64::try_from(report.violations.len())
+            .unwrap_or(0)
+            .to_be_bytes(),
+    );
+    for violation in &report.violations {
+        hasher.update(violation.as_bytes());
+    }
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn publish_speech_suppressed(pillars: &AiPillars, report: &NsrReport) {
+    if report.ok {
+        return;
+    }
+    let Some(sink) = &pillars.speech_suppression_sink else {
+        return;
+    };
+    sink.publish(SpeechSuppressedEvent {
+        reason: SpeechSuppressionReason::NsrViolation,
+        violations_hash: digest_nsr_violations(report),
+    });
+}
+
 pub trait SpeechGate {
     fn allow_speech(&self, cf: &ControlFrameNormalized, out: &AiOutput) -> bool;
 }
@@ -563,6 +612,7 @@ mod tests {
     use ucf_ai_runtime::backend::{AiRuntimeBackend, NoopRuntimeBackend};
     use ucf_sandbox::normalize;
     use ucf_types::v1::spec::ControlFrame;
+    use ucf_types::Claim;
     use ucf_types::SymbolicClaims;
     use ucf_types::ThoughtVec;
     use ucf_types::WorldStateVec;
@@ -570,10 +620,23 @@ mod tests {
     use ucf_cde_port::{CdeHypothesis, CdePort, MockCdePort};
     use ucf_iit_monitor::IitMonitor;
     use ucf_ncde_port::{NcdeContext, NcdePort};
-    use ucf_nsr_port::{MockNsrPort, NsrPort, NsrReport};
+    use ucf_nsr_port::{NsrBackend, NsrPort, NsrReport, NsrStubBackend};
     use ucf_sle::StrangeLoopEngine;
     use ucf_ssm_port::{MockSsmPort, SsmOutput, SsmPort, SsmState};
     use ucf_tcf_port::{TcfPort, TcfPulse, TcfSignal};
+
+    #[derive(Clone, Default)]
+    struct CaptureSuppression {
+        events: Arc<Mutex<Vec<SpeechSuppressedEvent>>>,
+    }
+
+    impl SpeechSuppressionSink for CaptureSuppression {
+        fn publish(&self, event: SpeechSuppressedEvent) {
+            if let Ok(mut guard) = self.events.lock() {
+                guard.push(event);
+            }
+        }
+    }
 
     fn base_frame(frame_id: &str) -> ControlFrame {
         ControlFrame {
@@ -587,7 +650,11 @@ mod tests {
 
     #[test]
     fn mock_ai_port_emits_thought_and_speech_for_ping() {
-        let port = MockAiPort::new();
+        let pillars = AiPillars {
+            nsr: Some(Arc::new(NsrPort::default())),
+            ..AiPillars::default()
+        };
+        let port = MockAiPort::with_pillars(pillars);
         let normalized = normalize(base_frame("ping"));
 
         let outputs = port.infer(&normalized);
@@ -657,6 +724,8 @@ mod tests {
                     digest: Digest32::new([4u8; 32]),
                     nodes: 0,
                     edges: 0,
+                    confidence: 9000,
+                    interventions: Vec::new(),
                 }
             }
         }
@@ -664,7 +733,7 @@ mod tests {
         struct OrderNsr {
             order: Arc<std::sync::Mutex<Vec<&'static str>>>,
         }
-        impl NsrPort for OrderNsr {
+        impl NsrBackend for OrderNsr {
             fn check(&self, _claims: &SymbolicClaims) -> NsrReport {
                 self.order.lock().unwrap().push("nsr");
                 NsrReport {
@@ -694,9 +763,9 @@ mod tests {
             cde: Some(Arc::new(OrderCde {
                 order: order.clone(),
             })),
-            nsr: Some(Arc::new(OrderNsr {
+            nsr: Some(Arc::new(NsrPort::new(Arc::new(OrderNsr {
                 order: order.clone(),
-            })),
+            })))),
             ncde: Some(Arc::new(OrderNcde {
                 order: order.clone(),
             })),
@@ -715,7 +784,7 @@ mod tests {
     #[test]
     fn nsr_violations_can_deny_speech() {
         struct DenyNsr;
-        impl NsrPort for DenyNsr {
+        impl NsrBackend for DenyNsr {
             fn check(&self, claims: &SymbolicClaims) -> NsrReport {
                 let violations = claims
                     .claims
@@ -730,7 +799,7 @@ mod tests {
         }
 
         let pillars = AiPillars {
-            nsr: Some(Arc::new(DenyNsr)),
+            nsr: Some(Arc::new(NsrPort::new(Arc::new(DenyNsr)))),
             ..AiPillars::default()
         };
         let port = MockAiPort::with_pillars(pillars);
@@ -743,12 +812,39 @@ mod tests {
     }
 
     #[test]
+    fn nsr_stub_violation_emits_suppression_event() {
+        let sink = CaptureSuppression::default();
+        let sink_events = sink.events.clone();
+        let backend = NsrStubBackend::new().with_violation_predicate("frame");
+        let pillars = AiPillars {
+            nsr: Some(Arc::new(NsrPort::new(Arc::new(backend.clone())))),
+            speech_suppression_sink: Some(Arc::new(sink)),
+            ..AiPillars::default()
+        };
+        let port = MockAiPort::with_pillars(pillars);
+        let normalized = normalize(base_frame("ping"));
+
+        let outputs = port.infer(&normalized);
+
+        assert_eq!(outputs.len(), 1);
+        assert_eq!(outputs[0].channel, OutputChannel::Thought);
+
+        let claims = SymbolicClaims::new(vec![Claim::new_from_strs("frame", vec!["ping"])]);
+        let report = backend.check(&claims);
+        let expected_hash = digest_nsr_violations(&report);
+        let events = sink_events.lock().expect("events lock");
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].reason, SpeechSuppressionReason::NsrViolation);
+        assert_eq!(events[0].violations_hash, expected_hash);
+    }
+
+    #[test]
     fn pipeline_emits_stable_meta_observer_outputs() {
         let build_port = || {
             let pillars = AiPillars {
                 ssm: Some(Arc::new(MockSsmPort::new())),
                 cde: Some(Arc::new(MockCdePort::new())),
-                nsr: Some(Arc::new(MockNsrPort::new())),
+                nsr: Some(Arc::new(NsrPort::default())),
                 sle: Some(Arc::new(StrangeLoopEngine::new(4))),
                 iit_monitor: Some(Arc::new(Mutex::new(IitMonitor::new(4)))),
                 ..AiPillars::default()
@@ -787,6 +883,20 @@ mod tests {
         let outputs = backend.infer_runtime(&normalized);
 
         assert!(!outputs.is_empty());
+    }
+
+    #[cfg(feature = "nsr-smt")]
+    #[test]
+    fn nsr_smt_backend_compiles() {
+        let backend = ucf_nsr_smt::NsrSmtBackend::new();
+        let _port = NsrPort::new(Arc::new(backend));
+    }
+
+    #[cfg(feature = "nsr-datalog")]
+    #[test]
+    fn nsr_datalog_backend_compiles() {
+        let backend = ucf_nsr_datalog::NsrDatalogBackend::new();
+        let _port = NsrPort::new(Arc::new(backend));
     }
 
     #[cfg(feature = "digitalbrain")]

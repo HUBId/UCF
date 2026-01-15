@@ -8,6 +8,19 @@ pub struct CdeHypothesis {
     pub digest: Digest32,
     pub nodes: usize,
     pub edges: usize,
+    pub confidence: u16,
+    pub interventions: Vec<InterventionStub>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InterventionStub {
+    pub kind: String,
+}
+
+impl InterventionStub {
+    pub fn new(kind: impl Into<String>) -> Self {
+        Self { kind: kind.into() }
+    }
 }
 
 pub trait CdePort {
@@ -26,6 +39,7 @@ impl MockCdePort {
 impl CdePort for MockCdePort {
     fn infer(&self, graph: &mut CausalGraphStub, obs: &WorldStateVec) -> CdeHypothesis {
         let digest = digest_graph_obs(graph, obs);
+        let (confidence, interventions) = intervention_stub(obs);
         let node_id = format!("obs-{}", hex_prefix(digest.as_bytes()));
         if !graph.nodes.iter().any(|node| node.id == node_id) {
             graph.nodes.push(CausalNode::new(node_id.clone()));
@@ -40,6 +54,8 @@ impl CdePort for MockCdePort {
             digest,
             nodes: graph.nodes.len(),
             edges: graph.edges.len(),
+            confidence,
+            interventions,
         }
     }
 }
@@ -70,6 +86,26 @@ fn hex_prefix(bytes: &[u8; 32]) -> String {
         .collect()
 }
 
+fn intervention_stub(obs: &WorldStateVec) -> (u16, Vec<InterventionStub>) {
+    // Deterministic placeholder for future causal intervention checks.
+    let digest = digest_observation(obs);
+    if digest.as_bytes().starts_with(&[0x13, 0x37]) {
+        (1500, vec![InterventionStub::new("forbidden_obs_digest")])
+    } else {
+        (9000, Vec::new())
+    }
+}
+
+fn digest_observation(obs: &WorldStateVec) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(b"ucf.cde.obs.v1");
+    hasher.update(&obs.bytes);
+    for dim in &obs.dims {
+        hasher.update(&dim.to_be_bytes());
+    }
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -85,6 +121,8 @@ mod tests {
         let out_b = port.infer(&mut graph_b, &obs);
 
         assert_eq!(out_a.digest, out_b.digest);
+        assert_eq!(out_a.confidence, out_b.confidence);
+        assert_eq!(out_a.interventions, out_b.interventions);
         assert_eq!(graph_a, graph_b);
     }
 }

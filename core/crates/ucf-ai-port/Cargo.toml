@@ -15,6 +15,8 @@ ucf-iit-monitor = { path = "../ucf-iit-monitor" }
 ucf-lens-port = { path = "../ucf-lens-port" }
 ucf-ncde-port = { path = "../ucf-ncde-port" }
 ucf-nsr-port = { path = "../ucf-nsr-port" }
+ucf-nsr-smt = { path = "../ucf-nsr-smt", optional = true }
+ucf-nsr-datalog = { path = "../ucf-nsr-datalog", optional = true }
 ucf-ode-port = { path = "../ucf-ode-port", optional = true }
 ucf-sae-port = { path = "../ucf-sae-port" }
 ucf-sle = { path = "../ucf-sle" }
@@ -30,3 +32,5 @@ ode = ["dep:ucf-ode-port"]
 burn = []
 candle = []
 digitalbrain = ["dep:ucf-bus"]
+nsr-smt = ["dep:ucf-nsr-smt"]
+nsr-datalog = ["dep:ucf-nsr-datalog"]

@@ -1,5 +1,7 @@
 #![forbid(unsafe_code)]
 
+use std::sync::Arc;
+
 use blake3::Hasher;
 use ucf_types::{Digest32, SymbolicClaims};
 
@@ -9,16 +11,37 @@ pub struct NsrReport {
     pub violations: Vec<String>,
 }
 
-pub trait NsrPort {
+pub trait NsrBackend {
     fn check(&self, claims: &SymbolicClaims) -> NsrReport;
 }
 
+#[derive(Clone)]
+pub struct NsrPort {
+    backend: Arc<dyn NsrBackend + Send + Sync>,
+}
+
+impl NsrPort {
+    pub fn new(backend: Arc<dyn NsrBackend + Send + Sync>) -> Self {
+        Self { backend }
+    }
+
+    pub fn check(&self, claims: &SymbolicClaims) -> NsrReport {
+        self.backend.check(claims)
+    }
+}
+
+impl Default for NsrPort {
+    fn default() -> Self {
+        Self::new(Arc::new(NsrStubBackend::new()))
+    }
+}
+
 #[derive(Clone, Debug)]
-pub struct MockNsrPort {
+pub struct NsrStubBackend {
     violation_predicate: Option<String>,
 }
 
-impl MockNsrPort {
+impl NsrStubBackend {
     pub fn new() -> Self {
         Self {
             violation_predicate: None,
@@ -31,13 +54,13 @@ impl MockNsrPort {
     }
 }
 
-impl Default for MockNsrPort {
+impl Default for NsrStubBackend {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl NsrPort for MockNsrPort {
+impl NsrBackend for NsrStubBackend {
     fn check(&self, claims: &SymbolicClaims) -> NsrReport {
         let digest = digest_claims(claims);
         let violations = claims
@@ -85,7 +108,7 @@ fn hex_prefix(bytes: &[u8; 32]) -> String {
         .collect()
 }
 
-impl MockNsrPort {
+impl NsrStubBackend {
     fn matches_violation(&self, predicate: &str) -> bool {
         self.violation_predicate.as_deref() == Some(predicate)
     }
@@ -94,12 +117,13 @@ impl MockNsrPort {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
     use ucf_types::Claim;
 
     #[test]
     fn mock_nsr_is_deterministic() {
         let claims = SymbolicClaims::new(vec![Claim::new_from_strs("ok", vec!["a"])]);
-        let port = MockNsrPort::new();
+        let port = NsrPort::default();
 
         let out_a = port.check(&claims);
         let out_b = port.check(&claims);
@@ -111,7 +135,8 @@ mod tests {
     #[test]
     fn mock_nsr_flags_configured_predicate() {
         let claims = SymbolicClaims::new(vec![Claim::new_from_strs("deny", vec!["x"])]);
-        let port = MockNsrPort::new().with_violation_predicate("deny");
+        let backend = NsrStubBackend::new().with_violation_predicate("deny");
+        let port = NsrPort::new(Arc::new(backend));
 
         let out = port.check(&claims);
 
