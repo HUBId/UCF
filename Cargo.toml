@@ -117,6 +117,8 @@ members = [
     "domains/ai-sandbox/crates/ucf-ai-sandbox",
     "domains/digital-brain/crates/ucf-digital-brain",
     "domains/geist/crates/ucf-geist",
+    "domains/index/crates/ucf-vector-index",
+    "domains/index/crates/ucf-vector-index-qdrant",
     "adapters/terminal/crates/ucf-terminal",
 ]
 resolver = "2"
