@@ -1785,6 +1785,7 @@ dependencies = [
  "ucf-policy-ecology",
  "ucf-sae-port",
  "ucf-sandbox",
+ "ucf-scm-port",
  "ucf-sle",
  "ucf-ssm-port",
  "ucf-tcf-port",
@@ -2086,6 +2087,15 @@ dependencies = [
  "ucf-bus",
  "ucf-commit",
  "ucf-policy-ecology",
+ "ucf-types",
+]
+
+[[package]]
+name = "ucf-scm-port"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ucf-cde-port",
  "ucf-types",
 ]
 

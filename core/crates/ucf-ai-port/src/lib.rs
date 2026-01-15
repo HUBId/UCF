@@ -18,12 +18,14 @@ use ucf_nsr_port::{NsrPort, NsrReport};
 use ucf_policy_ecology::{PolicyEcology, PolicyRule};
 use ucf_sae_port::{SaeMock, SaePort, SparseFeature};
 use ucf_sandbox::ControlFrameNormalized;
+use ucf_scm_port::{CounterfactualQuery, Intervention, ScmDag, ScmPort};
 use ucf_sle::{LoopFrame, StrangeLoopEngine};
 use ucf_ssm_port::{SsmPort, SsmState};
 use ucf_tcf_port::{TcfPort, TcfSignal};
 use ucf_types::v1::spec::DecisionKind;
 use ucf_types::{
-    CausalGraphStub, Claim, Digest32, EvidenceId, SymbolicClaims, ThoughtVec, WorldStateVec,
+    CausalCounterfactual, CausalGraphStub, CausalIntervention, CausalReport, Claim, Digest32,
+    EvidenceId, SymbolicClaims, ThoughtVec, WorldStateVec,
 };
 
 pub use ucf_types::{AiOutput, OutputChannel};
@@ -52,6 +54,7 @@ pub struct AiPillars {
     pub tcf: Option<Arc<dyn TcfPort + Send + Sync>>,
     pub ssm: Option<Arc<dyn SsmPort + Send + Sync>>,
     pub cde: Option<Arc<dyn CdePort + Send + Sync>>,
+    pub scm: Option<Arc<Mutex<dyn ScmPort + Send + Sync>>>,
     pub nsr: Option<Arc<NsrPort>>,
     pub ncde: Option<Arc<dyn NcdePort + Send + Sync>>,
     pub sle: Option<Arc<StrangeLoopEngine>>,
@@ -67,6 +70,7 @@ impl AiPillars {
         self.tcf.is_some()
             || self.ssm.is_some()
             || self.cde.is_some()
+            || self.scm.is_some()
             || self.nsr.is_some()
             || self.ncde.is_some()
             || self.sle.is_some()
@@ -89,6 +93,7 @@ impl Default for AiPillars {
             tcf: None,
             ssm: None,
             cde: None,
+            scm: None,
             nsr: None,
             ncde: None,
             sle: None,
@@ -316,6 +321,7 @@ struct PillarArtifacts {
     nsr_report: Option<NsrReport>,
     ssm_digest: Option<Digest32>,
     cde_hyp: Option<CdeHypothesis>,
+    causal_report: Option<CausalReport>,
     nsr_digest: Option<Digest32>,
 }
 
@@ -326,6 +332,7 @@ impl PillarArtifacts {
             nsr_report: None,
             ssm_digest: None,
             cde_hyp: None,
+            causal_report: None,
             nsr_digest: None,
         }
     }
@@ -357,6 +364,7 @@ fn run_pillars(pillars: &AiPillars, input: &ControlFrameNormalized) -> PillarArt
     let mut nsr_report = None;
     let mut ssm_digest = None;
     let mut cde_hyp = None;
+    let mut causal_report = None;
     let mut nsr_digest = None;
 
     if let Some(monitor) = &pillars.iit_monitor {
@@ -379,6 +387,30 @@ fn run_pillars(pillars: &AiPillars, input: &ControlFrameNormalized) -> PillarArt
         let hypothesis = cde.infer(&mut graph, &world_state);
         artifacts.push(hypothesis.digest);
         cde_hyp = Some(hypothesis);
+    }
+    if let (Some(hypothesis), Some(scm)) = (cde_hyp.as_ref(), &pillars.scm) {
+        if let Ok(mut guard) = scm.lock() {
+            let dag = guard.update(&world_state, Some(hypothesis));
+            let dag_commit = ucf_scm_port::digest_dag(&dag);
+            let counterfactual = default_counterfactual(&dag).map(|query| {
+                let result = guard.counterfactual(&query);
+                CausalCounterfactual::new(
+                    query
+                        .interventions
+                        .iter()
+                        .map(|intervention| {
+                            CausalIntervention::new(intervention.node, intervention.value)
+                        })
+                        .collect(),
+                    query.target,
+                    result.predicted,
+                    result.confidence,
+                )
+            });
+            let report = CausalReport::new(dag_commit, counterfactual);
+            artifacts.push(digest_causal_report(&report));
+            causal_report = Some(report);
+        }
     }
     if let Some(nsr) = &pillars.nsr {
         let report = nsr.check(&claims);
@@ -404,6 +436,7 @@ fn run_pillars(pillars: &AiPillars, input: &ControlFrameNormalized) -> PillarArt
         nsr_report,
         ssm_digest,
         cde_hyp,
+        causal_report,
         nsr_digest,
     }
 }
@@ -438,6 +471,11 @@ fn sample_iit_monitor(
     if let (Some(cde), Some(nsr)) = (artifacts.cde_hyp.as_ref(), artifacts.nsr_digest) {
         guard.sample(cde.digest, nsr);
     }
+    if let (Some(report), Some(cde)) =
+        (artifacts.causal_report.as_ref(), artifacts.cde_hyp.as_ref())
+    {
+        guard.sample(cde.digest, report.dag_commit);
+    }
     if let Some(nsr) = artifacts.nsr_digest {
         let output_digest = digest_ai_output(output);
         guard.sample(nsr, output_digest);
@@ -460,6 +498,42 @@ fn extract_sparse_features(
     let plan = lens.plan(input);
     let taps = lens.tap(&plan);
     sae.extract(&taps)
+}
+
+fn default_counterfactual(dag: &ScmDag) -> Option<CounterfactualQuery> {
+    let first = dag.nodes.first()?;
+    let target = dag.nodes.get(1)?;
+    Some(CounterfactualQuery::new(
+        vec![Intervention::new(first.id, 1)],
+        target.id,
+    ))
+}
+
+fn digest_causal_report(report: &CausalReport) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(b"ucf.causal.report.v1");
+    hasher.update(report.dag_commit.as_bytes());
+    match &report.counterfactual {
+        Some(counterfactual) => {
+            hasher.update(&[1]);
+            hasher.update(&counterfactual.target.to_be_bytes());
+            hasher.update(&counterfactual.predicted.to_be_bytes());
+            hasher.update(&counterfactual.confidence.to_be_bytes());
+            hasher.update(
+                &u64::try_from(counterfactual.interventions.len())
+                    .unwrap_or(0)
+                    .to_be_bytes(),
+            );
+            for intervention in &counterfactual.interventions {
+                hasher.update(&intervention.node.to_be_bytes());
+                hasher.update(&intervention.value.to_be_bytes());
+            }
+        }
+        None => {
+            hasher.update(&[0]);
+        }
+    }
+    Digest32::new(*hasher.finalize().as_bytes())
 }
 
 fn digest_ai_output(output: &AiOutput) -> Digest32 {
@@ -621,6 +695,7 @@ mod tests {
     use ucf_iit_monitor::IitMonitor;
     use ucf_ncde_port::{NcdeContext, NcdePort};
     use ucf_nsr_port::{NsrBackend, NsrPort, NsrReport, NsrStubBackend};
+    use ucf_scm_port::{CounterfactualQuery, CounterfactualResult, MockScmPort, ScmDag, ScmPort};
     use ucf_sle::StrangeLoopEngine;
     use ucf_ssm_port::{MockSsmPort, SsmOutput, SsmPort, SsmState};
     use ucf_tcf_port::{TcfPort, TcfPulse, TcfSignal};
@@ -743,6 +818,23 @@ mod tests {
             }
         }
 
+        struct OrderScm {
+            order: Arc<std::sync::Mutex<Vec<&'static str>>>,
+        }
+        impl ScmPort for OrderScm {
+            fn update(&mut self, _obs: &WorldStateVec, _hint: Option<&CdeHypothesis>) -> ScmDag {
+                self.order.lock().unwrap().push("scm");
+                ScmDag::new(Vec::new(), Vec::new())
+            }
+
+            fn counterfactual(&self, _q: &CounterfactualQuery) -> CounterfactualResult {
+                CounterfactualResult {
+                    predicted: 0,
+                    confidence: 0,
+                }
+            }
+        }
+
         struct OrderNcde {
             order: Arc<std::sync::Mutex<Vec<&'static str>>>,
         }
@@ -763,6 +855,9 @@ mod tests {
             cde: Some(Arc::new(OrderCde {
                 order: order.clone(),
             })),
+            scm: Some(Arc::new(Mutex::new(OrderScm {
+                order: order.clone(),
+            }))),
             nsr: Some(Arc::new(NsrPort::new(Arc::new(OrderNsr {
                 order: order.clone(),
             })))),
@@ -778,7 +873,7 @@ mod tests {
         let _ = port.infer(&normalized);
 
         let collected = order.lock().unwrap().clone();
-        assert_eq!(collected, vec!["tcf", "ssm", "cde", "nsr", "ncde"]);
+        assert_eq!(collected, vec!["tcf", "ssm", "cde", "scm", "nsr", "ncde"]);
     }
 
     #[test]
@@ -871,6 +966,47 @@ mod tests {
         assert!(thought_a.integration_score.is_some());
         assert_eq!(thought_a.rationale_commit, thought_b.rationale_commit);
         assert_eq!(thought_a.integration_score, thought_b.integration_score);
+    }
+
+    #[test]
+    fn causal_report_influences_rationale_commit() {
+        let normalized_a = normalize(base_frame("frame-1"));
+        let normalized_b = normalize(base_frame("frame-2"));
+
+        let no_scm = MockAiPort::with_pillars(AiPillars {
+            cde: Some(Arc::new(MockCdePort::new())),
+            ..AiPillars::default()
+        });
+        let with_scm = MockAiPort::with_pillars(AiPillars {
+            cde: Some(Arc::new(MockCdePort::new())),
+            scm: Some(Arc::new(Mutex::new(MockScmPort::new()))),
+            ..AiPillars::default()
+        });
+
+        let thought_no_scm = no_scm
+            .infer(&normalized_a)
+            .into_iter()
+            .find(|out| out.channel == OutputChannel::Thought)
+            .expect("thought output");
+        let thought_with_scm_a = with_scm
+            .infer(&normalized_a)
+            .into_iter()
+            .find(|out| out.channel == OutputChannel::Thought)
+            .expect("thought output");
+        let thought_with_scm_b = with_scm
+            .infer(&normalized_b)
+            .into_iter()
+            .find(|out| out.channel == OutputChannel::Thought)
+            .expect("thought output");
+
+        assert_ne!(
+            thought_no_scm.rationale_commit,
+            thought_with_scm_a.rationale_commit
+        );
+        assert_ne!(
+            thought_with_scm_a.rationale_commit,
+            thought_with_scm_b.rationale_commit
+        );
     }
 
     #[cfg(feature = "ai-runtime")]
