@@ -10,11 +10,13 @@ use ucf_bus::{BusPublisher, MessageEnvelope};
 use ucf_cde_port::{CdeHypothesis, CdePort};
 use ucf_digitalbrain_port::BrainError;
 #[cfg(feature = "digitalbrain")]
-use ucf_digitalbrain_port::{BrainStimEvent, BrainStimulus, FeatureId, MappingTable, Spike};
+use ucf_digitalbrain_port::{BrainStimEvent, BrainStimulus, MappingTable, Spike};
 use ucf_iit_monitor::IitMonitor;
+use ucf_lens_port::{LensMock, LensPort};
 use ucf_ncde_port::{NcdeContext, NcdePort};
 use ucf_nsr_port::{NsrPort, NsrReport};
 use ucf_policy_ecology::{PolicyEcology, PolicyRule};
+use ucf_sae_port::{SaeMock, SaePort, SparseFeature};
 use ucf_sandbox::ControlFrameNormalized;
 use ucf_sle::{LoopFrame, StrangeLoopEngine};
 use ucf_ssm_port::{SsmPort, SsmState};
@@ -30,7 +32,7 @@ pub trait AiPort {
     fn infer(&self, input: &ControlFrameNormalized) -> Vec<AiOutput>;
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct AiPillars {
     pub tcf: Option<Arc<dyn TcfPort + Send + Sync>>,
     pub ssm: Option<Arc<dyn SsmPort + Send + Sync>>,
@@ -39,6 +41,8 @@ pub struct AiPillars {
     pub ncde: Option<Arc<dyn NcdePort + Send + Sync>>,
     pub sle: Option<Arc<StrangeLoopEngine>>,
     pub iit_monitor: Option<Arc<Mutex<IitMonitor>>>,
+    pub lens: Option<Arc<dyn LensPort + Send + Sync>>,
+    pub sae: Option<Arc<dyn SaePort + Send + Sync>>,
     pub digital_brain: Option<Arc<DigitalBrainBridge>>,
 }
 
@@ -55,10 +59,30 @@ impl AiPillars {
 }
 
 #[cfg(feature = "digitalbrain")]
-const DEFAULT_SPIKE_AMPLITUDE: u16 = 1;
+const DEFAULT_SPIKE_WIDTH_US: u16 = 100;
 
 #[cfg(feature = "digitalbrain")]
-const DEFAULT_SPIKE_WIDTH_US: u16 = 100;
+fn weight_to_amplitude(weight: i16) -> u16 {
+    let magnitude = weight.checked_abs().unwrap_or(i16::MAX);
+    magnitude as u16
+}
+
+impl Default for AiPillars {
+    fn default() -> Self {
+        Self {
+            tcf: None,
+            ssm: None,
+            cde: None,
+            nsr: None,
+            ncde: None,
+            sle: None,
+            iit_monitor: None,
+            lens: Some(Arc::new(LensMock::new())),
+            sae: Some(Arc::new(SaeMock::new())),
+            digital_brain: None,
+        }
+    }
+}
 
 #[cfg(feature = "digitalbrain")]
 #[derive(Clone)]
@@ -76,27 +100,44 @@ impl DigitalBrainBridge {
         Self { mapping, publisher }
     }
 
-    pub fn mirror_thought(
+    pub fn mirror_features(
         &self,
         evidence_id: EvidenceId,
-        feature_id: Digest32,
+        features: &[SparseFeature],
     ) -> Result<(), BrainError> {
-        let coords = self.mapping.resolve(&FeatureId::from(feature_id));
-        if coords.is_empty() {
+        let mut spikes: Vec<Spike> = Vec::new();
+        for feature in features {
+            let coords = self.mapping.resolve(&feature.id);
+            if coords.is_empty() {
+                continue;
+            }
+            let amplitude = weight_to_amplitude(feature.weight);
+            if amplitude == 0 {
+                continue;
+            }
+            for coord in coords {
+                if let Some(existing) = spikes.iter_mut().find(|spike| spike.coord == *coord) {
+                    existing.amplitude = existing.amplitude.saturating_add(amplitude);
+                } else {
+                    spikes.push(Spike {
+                        coord: *coord,
+                        amplitude,
+                        width_us: DEFAULT_SPIKE_WIDTH_US,
+                    });
+                }
+            }
+        }
+        if spikes.is_empty() {
             return Ok(());
         }
-        let spikes = coords
-            .iter()
-            .map(|coord| Spike {
-                coord: *coord,
-                amplitude: DEFAULT_SPIKE_AMPLITUDE,
-                width_us: DEFAULT_SPIKE_WIDTH_US,
-            })
-            .collect();
+        let rationale = features
+            .first()
+            .map(|feature| feature.id)
+            .unwrap_or_default();
         let stim = BrainStimulus {
             spikes,
             evidence_id,
-            rationale: feature_id,
+            rationale,
         };
         let event = BrainStimEvent { stim };
         self.publisher.publish(MessageEnvelope {
@@ -116,10 +157,10 @@ pub struct DigitalBrainBridge;
 
 #[cfg(not(feature = "digitalbrain"))]
 impl DigitalBrainBridge {
-    pub fn mirror_thought(
+    pub fn mirror_features(
         &self,
         _evidence_id: EvidenceId,
-        _feature_id: Digest32,
+        _features: &[SparseFeature],
     ) -> Result<(), BrainError> {
         Err(BrainError::FeatureDisabled)
     }
@@ -227,12 +268,10 @@ impl AiPort for MockAiPort {
         if let Some(score) = integration_score {
             thought.integration_score = Some(score);
         }
+        let sparse_features = extract_sparse_features(&self.pillars, input);
         if let Some(bridge) = &self.pillars.digital_brain {
             let evidence_id = evidence_id_from_frame(input);
-            let feature_id = thought
-                .rationale_commit
-                .unwrap_or(artifacts.rationale_commit);
-            let _ = bridge.mirror_thought(evidence_id, feature_id);
+            let _ = bridge.mirror_features(evidence_id, &sparse_features);
         }
 
         let allow_speech = artifacts.nsr_report.as_ref().is_none_or(|report| report.ok);
@@ -382,6 +421,23 @@ fn sample_iit_monitor(
         guard.sample(nsr, output_digest);
     }
     Some(guard.aggregate())
+}
+
+fn extract_sparse_features(
+    pillars: &AiPillars,
+    input: &ControlFrameNormalized,
+) -> Vec<SparseFeature> {
+    let lens = match &pillars.lens {
+        Some(port) => port,
+        None => return Vec::new(),
+    };
+    let sae = match &pillars.sae {
+        Some(port) => port,
+        None => return Vec::new(),
+    };
+    let plan = lens.plan(input);
+    let taps = lens.tap(&plan);
+    sae.extract(&taps)
 }
 
 fn digest_ai_output(output: &AiOutput) -> Digest32 {
@@ -744,13 +800,15 @@ mod tests {
         use ucf_digitalbrain_port::{
             BrainCoord, BrainRegion, BrainStimEvent, FeatureId, MappingTable,
         };
+        use ucf_lens_port::{LensMock, LensPort};
+        use ucf_sae_port::{SaeMock, SaePort, SparseFeature};
 
         #[test]
         fn mapping_emits_brain_stim_event() {
-            let feature_id = Digest32::new([1; Digest32::LEN]);
+            let feature_id: FeatureId = 42;
             let mut map = BTreeMap::new();
             map.insert(
-                FeatureId::from(feature_id),
+                feature_id,
                 vec![BrainCoord {
                     region: BrainRegion::Insula,
                     layer: 4,
@@ -764,8 +822,12 @@ mod tests {
             let receiver = bus.subscribe();
             let bridge = DigitalBrainBridge::new(table, Arc::new(bus.clone()));
 
+            let features = vec![SparseFeature {
+                id: feature_id,
+                weight: 3,
+            }];
             bridge
-                .mirror_thought(EvidenceId::new("ev-1"), feature_id)
+                .mirror_features(EvidenceId::new("ev-1"), &features)
                 .expect("mirror thought");
 
             let envelope = receiver.try_recv().expect("stim event");
@@ -775,20 +837,63 @@ mod tests {
 
         #[test]
         fn missing_mapping_emits_nothing() {
-            let feature_id = Digest32::new([2; Digest32::LEN]);
+            let feature_id: FeatureId = 7;
             let table = MappingTable::empty();
             let bus: InMemoryBus<MessageEnvelope<BrainStimEvent>> = InMemoryBus::new();
             let receiver = bus.subscribe();
             let bridge = DigitalBrainBridge::new(table, Arc::new(bus.clone()));
 
+            let features = vec![SparseFeature {
+                id: feature_id,
+                weight: 2,
+            }];
             bridge
-                .mirror_thought(EvidenceId::new("ev-2"), feature_id)
+                .mirror_features(EvidenceId::new("ev-2"), &features)
                 .expect("mirror thought");
 
             assert!(matches!(
                 receiver.try_recv(),
                 Err(mpsc::TryRecvError::Empty)
             ));
+        }
+
+        #[test]
+        fn pipeline_emits_brain_stim_event_for_mapped_feature() {
+            let normalized = normalize(base_frame("frame-1"));
+            let lens = Arc::new(LensMock::new());
+            let sae = Arc::new(SaeMock::new());
+            let plan = lens.plan(&normalized);
+            let taps = lens.tap(&plan);
+            let features = sae.extract(&taps);
+            let mapped_feature = features.first().expect("feature");
+
+            let mut map = BTreeMap::new();
+            let coord = BrainCoord {
+                region: BrainRegion::Thalamus,
+                layer: 1,
+                x: 9,
+                y: 8,
+                z: 7,
+            };
+            map.insert(mapped_feature.id, vec![coord]);
+            let table = MappingTable::from_map(map);
+            let bus: InMemoryBus<MessageEnvelope<BrainStimEvent>> = InMemoryBus::new();
+            let receiver = bus.subscribe();
+            let bridge = DigitalBrainBridge::new(table, Arc::new(bus.clone()));
+            let pillars = AiPillars {
+                lens: Some(lens),
+                sae: Some(sae),
+                digital_brain: Some(Arc::new(bridge)),
+                ..AiPillars::default()
+            };
+            let port = MockAiPort::with_pillars(pillars);
+
+            let _ = port.infer(&normalized);
+
+            let envelope = receiver.try_recv().expect("stim event");
+            assert_eq!(envelope.payload.stim.spikes.len(), 1);
+            assert_eq!(envelope.payload.stim.spikes[0].coord, coord);
+            assert_eq!(envelope.payload.stim.rationale, mapped_feature.id);
         }
     }
 }

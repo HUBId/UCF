@@ -19,6 +19,8 @@ members = [
     "core/crates/ucf-tcf-port",
     "core/crates/ucf-nsr-port",
     "core/crates/ucf-cde-port",
+    "core/crates/ucf-lens-port",
+    "core/crates/ucf-sae-port",
     "core/crates/ucf-router",
     "core/crates/ucf-crypto",
     "core/crates/ucf-bus",

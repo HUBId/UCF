@@ -1,6 +1,5 @@
 #![forbid(unsafe_code)]
 
-use std::cmp::Ordering;
 use std::collections::{BTreeMap, VecDeque};
 use std::fs;
 use std::path::Path;
@@ -8,44 +7,9 @@ use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use ucf_types::{Digest32, EvidenceId};
+use ucf_types::EvidenceId;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct FeatureId(Digest32);
-
-impl FeatureId {
-    pub fn new(digest: Digest32) -> Self {
-        Self(digest)
-    }
-
-    pub fn digest(self) -> Digest32 {
-        self.0
-    }
-}
-
-impl From<Digest32> for FeatureId {
-    fn from(value: Digest32) -> Self {
-        Self(value)
-    }
-}
-
-impl From<FeatureId> for Digest32 {
-    fn from(value: FeatureId) -> Self {
-        value.0
-    }
-}
-
-impl Ord for FeatureId {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.0.as_bytes().cmp(other.0.as_bytes())
-    }
-}
-
-impl PartialOrd for FeatureId {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
+pub type FeatureId = u32;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -77,7 +41,7 @@ pub struct Spike {
 pub struct BrainStimulus {
     pub spikes: Vec<Spike>,
     pub evidence_id: EvidenceId,
-    pub rationale: Digest32,
+    pub rationale: FeatureId,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -145,13 +109,15 @@ impl DigitalBrainPort for MockDigitalBrainPort {
     }
 }
 
-/// Mapping table from feature ids (Digest32 hex) to brain coordinates.
+/// Mapping table from feature ids (u32) to brain coordinates.
+///
+/// Breaking change: mapping keys are numeric FeatureId values, not digest hex strings.
 ///
 /// TOML format:
 ///
 /// ```toml
 /// [mapping]
-/// "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f" = [
+/// "1234" = [
 ///   { region = "hypothalamus", layer = 4, x = 10, y = 20, z = 30 }
 /// ]
 /// ```
@@ -208,12 +174,15 @@ pub enum MappingTableError {
 }
 
 fn parse_feature_id(value: &str) -> Result<FeatureId, MappingTableError> {
-    let trimmed = value.strip_prefix("0x").unwrap_or(value);
-    let bytes =
-        hex::decode(trimmed).map_err(|_| MappingTableError::InvalidFeatureId(value.to_string()))?;
-    let digest = Digest32::try_from(bytes)
-        .map_err(|_| MappingTableError::InvalidFeatureId(value.to_string()))?;
-    Ok(FeatureId::new(digest))
+    let trimmed = value.trim();
+    if let Some(hex_str) = trimmed.strip_prefix("0x") {
+        u32::from_str_radix(hex_str, 16)
+            .map_err(|_| MappingTableError::InvalidFeatureId(value.to_string()))
+    } else {
+        trimmed
+            .parse::<u32>()
+            .map_err(|_| MappingTableError::InvalidFeatureId(value.to_string()))
+    }
 }
 
 #[cfg(feature = "digitalbrain")]
@@ -235,7 +204,7 @@ mod tests {
                 width_us: 20,
             }],
             evidence_id: EvidenceId::new(format!("ev-{seed}")),
-            rationale: Digest32::new([seed; Digest32::LEN]),
+            rationale: FeatureId::from(seed as u32),
         }
     }
 
@@ -256,16 +225,13 @@ mod tests {
     fn mapping_table_parses_toml() {
         let toml = r#"
             [mapping]
-            "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f" = [
+            "1234" = [
               { region = "thalamus", layer = 3, x = 4, y = 5, z = 6 }
             ]
         "#;
 
         let table = MappingTable::load_toml_str(toml).expect("parse mapping");
-        let coords = table.resolve(&FeatureId::from(Digest32::new([
-            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
-            24, 25, 26, 27, 28, 29, 30, 31,
-        ])));
+        let coords = table.resolve(&1234);
         assert_eq!(coords.len(), 1);
         assert_eq!(coords[0].region, BrainRegion::Thalamus);
     }

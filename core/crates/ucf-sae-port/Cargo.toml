@@ -1,0 +1,14 @@
+[package]
+name = "ucf-sae-port"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+blake3 = "1"
+ucf-digitalbrain-port = { path = "../../../domains/digitalbrain/crates/ucf-digitalbrain-port" }
+ucf-lens-port = { path = "../ucf-lens-port" }
+
+[dev-dependencies]
+ucf-lens-port = { path = "../ucf-lens-port" }
+ucf-digitalbrain-port = { path = "../../../domains/digitalbrain/crates/ucf-digitalbrain-port" }
+ucf-types = { path = "../ucf-types" }

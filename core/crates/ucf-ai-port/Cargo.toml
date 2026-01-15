@@ -12,9 +12,11 @@ ucf-ai-runtime = { path = "../../../ai/crates/ucf-ai-runtime", optional = true }
 ucf-bus = { path = "../ucf-bus", optional = true }
 ucf-cde-port = { path = "../ucf-cde-port" }
 ucf-iit-monitor = { path = "../ucf-iit-monitor" }
+ucf-lens-port = { path = "../ucf-lens-port" }
 ucf-ncde-port = { path = "../ucf-ncde-port" }
 ucf-nsr-port = { path = "../ucf-nsr-port" }
 ucf-ode-port = { path = "../ucf-ode-port", optional = true }
+ucf-sae-port = { path = "../ucf-sae-port" }
 ucf-sle = { path = "../ucf-sle" }
 ucf-ssm-port = { path = "../ucf-ssm-port" }
 ucf-tcf-port = { path = "../ucf-tcf-port" }
