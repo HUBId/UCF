@@ -5,7 +5,12 @@ use std::sync::{Arc, Mutex};
 use blake3::Hasher;
 #[cfg(feature = "ai-runtime")]
 use ucf_ai_runtime::backend::{AiRuntimeBackend, NoopRuntimeBackend};
+#[cfg(feature = "digitalbrain")]
+use ucf_bus::{BusPublisher, MessageEnvelope};
 use ucf_cde_port::{CdeHypothesis, CdePort};
+use ucf_digitalbrain_port::BrainError;
+#[cfg(feature = "digitalbrain")]
+use ucf_digitalbrain_port::{BrainStimEvent, BrainStimulus, FeatureId, MappingTable, Spike};
 use ucf_iit_monitor::IitMonitor;
 use ucf_ncde_port::{NcdeContext, NcdePort};
 use ucf_nsr_port::{NsrPort, NsrReport};
@@ -15,7 +20,9 @@ use ucf_sle::{LoopFrame, StrangeLoopEngine};
 use ucf_ssm_port::{SsmPort, SsmState};
 use ucf_tcf_port::{TcfPort, TcfSignal};
 use ucf_types::v1::spec::DecisionKind;
-use ucf_types::{CausalGraphStub, Claim, Digest32, SymbolicClaims, ThoughtVec, WorldStateVec};
+use ucf_types::{
+    CausalGraphStub, Claim, Digest32, EvidenceId, SymbolicClaims, ThoughtVec, WorldStateVec,
+};
 
 pub use ucf_types::{AiOutput, OutputChannel};
 
@@ -32,6 +39,7 @@ pub struct AiPillars {
     pub ncde: Option<Arc<dyn NcdePort + Send + Sync>>,
     pub sle: Option<Arc<StrangeLoopEngine>>,
     pub iit_monitor: Option<Arc<Mutex<IitMonitor>>>,
+    pub digital_brain: Option<Arc<DigitalBrainBridge>>,
 }
 
 impl AiPillars {
@@ -43,6 +51,77 @@ impl AiPillars {
             || self.ncde.is_some()
             || self.sle.is_some()
             || self.iit_monitor.is_some()
+    }
+}
+
+#[cfg(feature = "digitalbrain")]
+const DEFAULT_SPIKE_AMPLITUDE: u16 = 1;
+
+#[cfg(feature = "digitalbrain")]
+const DEFAULT_SPIKE_WIDTH_US: u16 = 100;
+
+#[cfg(feature = "digitalbrain")]
+#[derive(Clone)]
+pub struct DigitalBrainBridge {
+    mapping: MappingTable,
+    publisher: Arc<dyn BusPublisher<MessageEnvelope<BrainStimEvent>> + Send + Sync>,
+}
+
+#[cfg(feature = "digitalbrain")]
+impl DigitalBrainBridge {
+    pub fn new(
+        mapping: MappingTable,
+        publisher: Arc<dyn BusPublisher<MessageEnvelope<BrainStimEvent>> + Send + Sync>,
+    ) -> Self {
+        Self { mapping, publisher }
+    }
+
+    pub fn mirror_thought(
+        &self,
+        evidence_id: EvidenceId,
+        feature_id: Digest32,
+    ) -> Result<(), BrainError> {
+        let coords = self.mapping.resolve(&FeatureId::from(feature_id));
+        if coords.is_empty() {
+            return Ok(());
+        }
+        let spikes = coords
+            .iter()
+            .map(|coord| Spike {
+                coord: *coord,
+                amplitude: DEFAULT_SPIKE_AMPLITUDE,
+                width_us: DEFAULT_SPIKE_WIDTH_US,
+            })
+            .collect();
+        let stim = BrainStimulus {
+            spikes,
+            evidence_id,
+            rationale: feature_id,
+        };
+        let event = BrainStimEvent { stim };
+        self.publisher.publish(MessageEnvelope {
+            node_id: ucf_types::NodeId::new("ai-port"),
+            stream_id: ucf_types::StreamId::new("digitalbrain"),
+            logical_time: ucf_types::LogicalTime::new(0),
+            wall_time: ucf_types::WallTime::new(0),
+            payload: event,
+        });
+        Ok(())
+    }
+}
+
+#[cfg(not(feature = "digitalbrain"))]
+#[derive(Clone, Default)]
+pub struct DigitalBrainBridge;
+
+#[cfg(not(feature = "digitalbrain"))]
+impl DigitalBrainBridge {
+    pub fn mirror_thought(
+        &self,
+        _evidence_id: EvidenceId,
+        _feature_id: Digest32,
+    ) -> Result<(), BrainError> {
+        Err(BrainError::FeatureDisabled)
     }
 }
 
@@ -148,6 +227,13 @@ impl AiPort for MockAiPort {
         if let Some(score) = integration_score {
             thought.integration_score = Some(score);
         }
+        if let Some(bridge) = &self.pillars.digital_brain {
+            let evidence_id = evidence_id_from_frame(input);
+            let feature_id = thought
+                .rationale_commit
+                .unwrap_or(artifacts.rationale_commit);
+            let _ = bridge.mirror_thought(evidence_id, feature_id);
+        }
 
         let allow_speech = artifacts.nsr_report.as_ref().is_none_or(|report| report.ok);
         if input.as_ref().frame_id == "ping" && allow_speech {
@@ -183,6 +269,15 @@ impl PillarArtifacts {
             nsr_digest: None,
         }
     }
+}
+
+fn evidence_id_from_frame(input: &ControlFrameNormalized) -> EvidenceId {
+    input
+        .as_ref()
+        .evidence_ids
+        .first()
+        .map(|id| EvidenceId::new(id.clone()))
+        .unwrap_or_else(|| EvidenceId::new("unknown"))
 }
 
 fn run_pillars(pillars: &AiPillars, input: &ControlFrameNormalized) -> PillarArtifacts {
@@ -636,5 +731,64 @@ mod tests {
         let outputs = backend.infer_runtime(&normalized);
 
         assert!(!outputs.is_empty());
+    }
+
+    #[cfg(feature = "digitalbrain")]
+    mod digitalbrain_tests {
+        use super::*;
+        use std::collections::BTreeMap;
+        use std::sync::mpsc;
+        use std::sync::Arc;
+
+        use ucf_bus::{BusSubscriber, InMemoryBus, MessageEnvelope};
+        use ucf_digitalbrain_port::{
+            BrainCoord, BrainRegion, BrainStimEvent, FeatureId, MappingTable,
+        };
+
+        #[test]
+        fn mapping_emits_brain_stim_event() {
+            let feature_id = Digest32::new([1; Digest32::LEN]);
+            let mut map = BTreeMap::new();
+            map.insert(
+                FeatureId::from(feature_id),
+                vec![BrainCoord {
+                    region: BrainRegion::Insula,
+                    layer: 4,
+                    x: 1,
+                    y: 2,
+                    z: 3,
+                }],
+            );
+            let table = MappingTable::from_map(map);
+            let bus: InMemoryBus<MessageEnvelope<BrainStimEvent>> = InMemoryBus::new();
+            let receiver = bus.subscribe();
+            let bridge = DigitalBrainBridge::new(table, Arc::new(bus.clone()));
+
+            bridge
+                .mirror_thought(EvidenceId::new("ev-1"), feature_id)
+                .expect("mirror thought");
+
+            let envelope = receiver.try_recv().expect("stim event");
+            assert_eq!(envelope.payload.stim.spikes.len(), 1);
+            assert_eq!(envelope.payload.stim.rationale, feature_id);
+        }
+
+        #[test]
+        fn missing_mapping_emits_nothing() {
+            let feature_id = Digest32::new([2; Digest32::LEN]);
+            let table = MappingTable::empty();
+            let bus: InMemoryBus<MessageEnvelope<BrainStimEvent>> = InMemoryBus::new();
+            let receiver = bus.subscribe();
+            let bridge = DigitalBrainBridge::new(table, Arc::new(bus.clone()));
+
+            bridge
+                .mirror_thought(EvidenceId::new("ev-2"), feature_id)
+                .expect("mirror thought");
+
+            assert!(matches!(
+                receiver.try_recv(),
+                Err(mpsc::TryRecvError::Empty)
+            ));
+        }
     }
 }

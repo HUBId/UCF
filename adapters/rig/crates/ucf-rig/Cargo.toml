@@ -1,0 +1,11 @@
+[package]
+name = "ucf-rig"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ucf-bus = { path = "../../../../core/crates/ucf-bus" }
+ucf-digitalbrain-port = { path = "../../../../domains/digitalbrain/crates/ucf-digitalbrain-port" }
+
+[features]
+digitalbrain = []

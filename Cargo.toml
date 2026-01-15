@@ -117,10 +117,12 @@ members = [
     "domains/archive/crates/ucf-archive-firewood",
     "domains/consolidation/crates/ucf-consolidation",
     "domains/ai-sandbox/crates/ucf-ai-sandbox",
+    "domains/digitalbrain/crates/ucf-digitalbrain-port",
     "domains/digital-brain/crates/ucf-digital-brain",
     "domains/geist/crates/ucf-geist",
     "domains/index/crates/ucf-vector-index",
     "domains/index/crates/ucf-vector-index-qdrant",
+    "adapters/rig/crates/ucf-rig",
     "adapters/terminal/crates/ucf-terminal",
 ]
 resolver = "2"
@@ -141,5 +143,12 @@ hex = "0.4.3"
 metrics = "0.24.2"
 sha2 = "0.10.9"
 tracing = "0.1.41"
+
+[workspace.features]
+digitalbrain = [
+    "ucf-ai-port/digitalbrain",
+    "ucf-digitalbrain-port/digitalbrain",
+    "ucf-rig/digitalbrain",
+]
 
 [workspace.lints]

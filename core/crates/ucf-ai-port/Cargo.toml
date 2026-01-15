@@ -18,11 +18,13 @@ ucf-ode-port = { path = "../ucf-ode-port", optional = true }
 ucf-sle = { path = "../ucf-sle" }
 ucf-ssm-port = { path = "../ucf-ssm-port" }
 ucf-tcf-port = { path = "../ucf-tcf-port" }
+ucf-digitalbrain-port = { path = "../../../domains/digitalbrain/crates/ucf-digitalbrain-port" }
 blake3 = "1"
 
 [features]
-bus = ["ucf-bus"]
+bus = ["dep:ucf-bus"]
 ai-runtime = ["dep:ucf-ai-runtime", "ucf-ai-runtime/ai-runtime"]
 ode = ["dep:ucf-ode-port"]
 burn = []
 candle = []
+digitalbrain = ["dep:ucf-bus"]
