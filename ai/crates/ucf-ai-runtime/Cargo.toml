@@ -1,0 +1,14 @@
+[package]
+name = "ucf-ai-runtime"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+ai-runtime = []
+
+[dependencies]
+ucf-sandbox = { path = "../../../core/crates/ucf-sandbox" }
+ucf-types = { path = "../../../core/crates/ucf-types" }
+
+[lib]
+required-features = ["ai-runtime"]

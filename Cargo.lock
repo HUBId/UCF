@@ -1720,17 +1720,27 @@ name = "ucf-ai-port"
 version = "0.1.0"
 dependencies = [
  "blake3",
+ "ucf-ai-runtime",
  "ucf-bus",
  "ucf-cde-port",
  "ucf-commit",
  "ucf-iit-monitor",
  "ucf-ncde-port",
  "ucf-nsr-port",
+ "ucf-ode-port",
  "ucf-policy-ecology",
  "ucf-sandbox",
  "ucf-sle",
  "ucf-ssm-port",
  "ucf-tcf-port",
+ "ucf-types",
+]
+
+[[package]]
+name = "ucf-ai-runtime"
+version = "0.1.0"
+dependencies = [
+ "ucf-sandbox",
  "ucf-types",
 ]
 
@@ -1895,6 +1905,10 @@ dependencies = [
  "blake3",
  "ucf-types",
 ]
+
+[[package]]
+name = "ucf-ode-port"
+version = "0.1.0"
 
 [[package]]
 name = "ucf-openevolve-port"

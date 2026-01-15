@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "ai/crates/ucf-ai-runtime",
     "wire",
     "rsv",
     "engine",
@@ -14,6 +15,7 @@ members = [
     "core/crates/ucf-iit-monitor",
     "core/crates/ucf-ssm-port",
     "core/crates/ucf-ncde-port",
+    "core/crates/ucf-ode-port",
     "core/crates/ucf-tcf-port",
     "core/crates/ucf-nsr-port",
     "core/crates/ucf-cde-port",

@@ -3,6 +3,8 @@
 use std::sync::{Arc, Mutex};
 
 use blake3::Hasher;
+#[cfg(feature = "ai-runtime")]
+use ucf_ai_runtime::backend::{AiRuntimeBackend, NoopRuntimeBackend};
 use ucf_cde_port::{CdeHypothesis, CdePort};
 use ucf_iit_monitor::IitMonitor;
 use ucf_ncde_port::{NcdeContext, NcdePort};
@@ -56,6 +58,65 @@ impl MockAiPort {
 
     pub fn with_pillars(pillars: AiPillars) -> Self {
         Self { pillars }
+    }
+}
+
+#[cfg(feature = "ai-runtime")]
+pub fn noop_runtime_backend(mock: MockAiPort) -> NoopRuntimeBackend {
+    let delegate = Arc::new(move |cf: &ControlFrameNormalized| mock.infer(cf));
+    NoopRuntimeBackend::new(delegate)
+}
+
+#[derive(Clone)]
+pub struct AiOrchestrator {
+    mock: MockAiPort,
+    #[cfg(feature = "ai-runtime")]
+    runtime_backend: Option<Arc<dyn AiRuntimeBackend + Send + Sync>>,
+}
+
+impl AiOrchestrator {
+    pub fn new(mock: MockAiPort) -> Self {
+        Self {
+            mock,
+            #[cfg(feature = "ai-runtime")]
+            runtime_backend: None,
+        }
+    }
+
+    pub fn with_pillars(pillars: AiPillars) -> Self {
+        Self::new(MockAiPort::with_pillars(pillars))
+    }
+
+    #[cfg(feature = "ai-runtime")]
+    pub fn with_runtime_backend(
+        mut self,
+        backend: Arc<dyn AiRuntimeBackend + Send + Sync>,
+    ) -> Self {
+        self.runtime_backend = Some(backend);
+        self
+    }
+
+    #[cfg(feature = "ai-runtime")]
+    pub fn with_noop_runtime(mut self) -> Self {
+        let backend = noop_runtime_backend(self.mock.clone());
+        self.runtime_backend = Some(Arc::new(backend));
+        self
+    }
+}
+
+impl Default for AiOrchestrator {
+    fn default() -> Self {
+        Self::new(MockAiPort::new())
+    }
+}
+
+impl AiPort for AiOrchestrator {
+    fn infer(&self, input: &ControlFrameNormalized) -> Vec<AiOutput> {
+        #[cfg(feature = "ai-runtime")]
+        if let Some(runtime) = &self.runtime_backend {
+            return runtime.infer_runtime(input);
+        }
+        self.mock.infer(input)
     }
 }
 
@@ -347,6 +408,8 @@ impl SpeechGate for PolicySpeechGate {
 mod tests {
     use super::*;
 
+    #[cfg(feature = "ai-runtime")]
+    use ucf_ai_runtime::backend::{AiRuntimeBackend, NoopRuntimeBackend};
     use ucf_sandbox::normalize;
     use ucf_types::v1::spec::ControlFrame;
     use ucf_types::SymbolicClaims;
@@ -561,5 +624,17 @@ mod tests {
         assert!(thought_a.integration_score.is_some());
         assert_eq!(thought_a.rationale_commit, thought_b.rationale_commit);
         assert_eq!(thought_a.integration_score, thought_b.integration_score);
+    }
+
+    #[cfg(feature = "ai-runtime")]
+    #[test]
+    fn noop_runtime_backend_compiles_and_delegates() {
+        let mock = MockAiPort::new();
+        let backend = NoopRuntimeBackend::new(Arc::new(move |cf| mock.infer(cf)));
+        let normalized = normalize(base_frame("ping"));
+
+        let outputs = backend.infer_runtime(&normalized);
+
+        assert!(!outputs.is_empty());
     }
 }
