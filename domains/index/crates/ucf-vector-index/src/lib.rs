@@ -279,8 +279,8 @@ fn build_macro_metadata(
 
 fn xor_digest(a: &Digest32, b: &Digest32) -> Digest32 {
     let mut out = [0u8; 32];
-    for i in 0..out.len() {
-        out[i] = a.as_bytes()[i] ^ b.as_bytes()[i];
+    for (i, byte) in out.iter_mut().enumerate() {
+        *byte = a.as_bytes()[i] ^ b.as_bytes()[i];
     }
     Digest32::new(out)
 }
