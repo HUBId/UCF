@@ -29,6 +29,14 @@ use ucf_types::{Digest32, DomainDigest, EvidenceId, LogicalTime, WallTime};
 
 const FOLD_SNAPSHOT_FILE: &str = "fold_state.bin";
 
+mod store;
+#[cfg(feature = "firewood")]
+pub use store::FirewoodRecordStore;
+pub use store::{
+    ArchiveBackend, ArchiveStore, FileArchiveStore, InMemoryArchiveStore, RecordStore,
+    SnapshotStore,
+};
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct FoldSnapshot {
     state: FoldState,

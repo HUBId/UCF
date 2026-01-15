@@ -112,6 +112,7 @@ members = [
     "crates/replay_evidence",
     "domains/policy-gateway/crates/ucf-policy-gateway",
     "domains/archive/crates/ucf-archive",
+    "domains/archive/crates/ucf-archive-firewood",
     "domains/consolidation/crates/ucf-consolidation",
     "domains/ai-sandbox/crates/ucf-ai-sandbox",
     "domains/digital-brain/crates/ucf-digital-brain",
@@ -122,8 +123,19 @@ resolver = "2"
 
 [workspace.package]
 edition = "2021"
+version = "0.1.0"
+license-file = "README.md"
+homepage = "https://example.invalid/ucf"
+repository = "https://example.invalid/ucf"
+readme = "README.md"
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
 thiserror = "1"
+hex = "0.4.3"
+metrics = "0.24.2"
+sha2 = "0.10.9"
+tracing = "0.1.41"
+
+[workspace.lints]
