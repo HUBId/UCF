@@ -471,7 +471,8 @@ fn sample_iit_monitor(
     if let (Some(cde), Some(nsr)) = (artifacts.cde_hyp.as_ref(), artifacts.nsr_digest) {
         guard.sample(cde.digest, nsr);
     }
-    if let (Some(report), Some(cde)) = (artifacts.causal_report.as_ref(), artifacts.cde_hyp.as_ref())
+    if let (Some(report), Some(cde)) =
+        (artifacts.causal_report.as_ref(), artifacts.cde_hyp.as_ref())
     {
         guard.sample(cde.digest, report.dag_commit);
     }
@@ -500,7 +501,7 @@ fn extract_sparse_features(
 }
 
 fn default_counterfactual(dag: &ScmDag) -> Option<CounterfactualQuery> {
-    let first = dag.nodes.get(0)?;
+    let first = dag.nodes.first()?;
     let target = dag.nodes.get(1)?;
     Some(CounterfactualQuery::new(
         vec![Intervention::new(first.id, 1)],
