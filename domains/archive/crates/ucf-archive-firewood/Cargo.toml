@@ -1,22 +1,15 @@
 [package]
-name = "ucf-archive"
+name = "ucf-archive-firewood"
 version = "0.1.0"
 edition = "2021"
 
 [features]
 default = []
-firewood = ["dep:storage-firewood"]
+firewood = ["ucf-archive/firewood", "dep:storage-firewood"]
 
 [dependencies]
-prost = "0.12"
-serde = { workspace = true }
-bincode = "1.3"
-blake3 = "1"
 storage-firewood = { path = "../../../../vendor/ucf-chip-4-main/vendor/ztate/storage-firewood", optional = true, default-features = false, features = ["rpp-firewood"] }
+ucf-archive = { path = "../ucf-archive" }
 ucf-commit = { path = "../../../../core/crates/ucf-commit" }
-ucf-evidence = { path = "../../../../core/crates/ucf-evidence" }
-ucf-fold = { path = "../../../../core/crates/ucf-fold" }
+ucf-protocol = { path = "../../../../ucf-protocol" }
 ucf-types = { path = "../../../../core/crates/ucf-types" }
-
-[dev-dependencies]
-tempfile = "3"
