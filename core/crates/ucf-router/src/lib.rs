@@ -5,7 +5,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use ucf_ai_port::{
-    AiOutput, AiPort, OutputChannel, OutputSuppressed, OutputSuppressionSink, SpeechGate,
+    AiInference, AiOutput, AiPort, OutputChannel, OutputSuppressed, OutputSuppressionSink,
+    SpeechGate,
 };
 use ucf_archive::ExperienceAppender;
 use ucf_attn_controller::{
@@ -21,6 +22,7 @@ use ucf_predictive_coding::{
 use ucf_risk_gate::{digest_reasons, RiskGate};
 use ucf_sandbox::ControlFrameNormalized;
 use ucf_ssm_port::SsmState;
+use ucf_tcf_port::{idle_attention, CyclePlan, CyclePlanned, DeterministicTcf, PulseKind, TcfPort};
 use ucf_tom_port::{IntentType, TomPort};
 use ucf_types::v1::spec::{ControlFrame, DecisionKind, Digest, ExperienceRecord, PolicyDecision};
 use ucf_types::{AlgoId, Digest32, EvidenceId};
@@ -59,6 +61,10 @@ pub struct Router {
     output_router: Mutex<OutputRouter>,
     workspace: Arc<Mutex<Workspace>>,
     cycle_counter: AtomicU64,
+    tcf_port: Mutex<Box<dyn TcfPort + Send + Sync>>,
+    last_attention: Mutex<AttentionWeights>,
+    last_surprise: Mutex<Option<SurpriseSignal>>,
+    stage_trace: Option<Arc<dyn StageTrace + Send + Sync>>,
     world_model: WorldModel,
     world_state: Mutex<Option<WorldStateVec>>,
 }
@@ -78,6 +84,46 @@ struct OutputSuppressionInfo {
     channel: OutputChannel,
     reason_digest: Digest32,
     risk: u16,
+}
+
+pub trait StageTrace {
+    fn record(&self, stage: PulseKind);
+}
+
+struct StageContext {
+    decision: Option<PolicyDecision>,
+    decision_kind: DecisionKind,
+    inference: Option<AiInference>,
+    tom_report: Option<ucf_tom_port::TomReport>,
+    attention_risk: u16,
+    thought_outputs: Vec<AiOutput>,
+    speech_outputs: Vec<AiOutput>,
+    suppressions: Vec<OutputSuppressionInfo>,
+    integration_score: Option<u16>,
+    predictive_result: Option<(PredictionError, SurpriseSignal)>,
+    attention_weights: Option<AttentionWeights>,
+    evidence_id: Option<EvidenceId>,
+    workspace_snapshot_commit: Option<Digest32>,
+}
+
+impl StageContext {
+    fn new() -> Self {
+        Self {
+            decision: None,
+            decision_kind: DecisionKind::DecisionKindUnspecified,
+            inference: None,
+            tom_report: None,
+            attention_risk: 0,
+            thought_outputs: Vec::new(),
+            speech_outputs: Vec::new(),
+            suppressions: Vec::new(),
+            integration_score: None,
+            predictive_result: None,
+            attention_weights: None,
+            evidence_id: None,
+            workspace_snapshot_commit: None,
+        }
+    }
 }
 
 impl Router {
@@ -113,6 +159,10 @@ impl Router {
                 broadcast_cap: 8,
             }))),
             cycle_counter: AtomicU64::new(0),
+            tcf_port: Mutex::new(Box::new(DeterministicTcf::default())),
+            last_attention: Mutex::new(idle_attention()),
+            last_surprise: Mutex::new(None),
+            stage_trace: None,
             world_model: WorldModel::default(),
             world_state: Mutex::new(None),
         }
@@ -120,6 +170,16 @@ impl Router {
 
     pub fn with_attention_sink(mut self, sink: Arc<dyn AttentionEventSink + Send + Sync>) -> Self {
         self.attention_sink = Some(sink);
+        self
+    }
+
+    pub fn with_tcf_port(mut self, port: Box<dyn TcfPort + Send + Sync>) -> Self {
+        self.tcf_port = Mutex::new(port);
+        self
+    }
+
+    pub fn with_stage_trace(mut self, trace: Arc<dyn StageTrace + Send + Sync>) -> Self {
+        self.stage_trace = Some(trace);
         self
     }
 
@@ -136,177 +196,268 @@ impl Router {
         &self,
         cf: ControlFrameNormalized,
     ) -> Result<RouterOutcome, RouterError> {
-        let cycle_id = self.cycle_counter.fetch_add(1, Ordering::SeqCst);
-        let decision = self.policy.evaluate(cf.as_ref().clone());
-        self.publish_workspace_signal(WorkspaceSignal::from_policy_decision(&decision, None));
-        self.ensure_allowed(&decision)?;
-        let decision_kind =
-            DecisionKind::try_from(decision.kind).unwrap_or(DecisionKind::DecisionKindUnspecified);
+        let _cycle_seed = self.cycle_counter.fetch_add(1, Ordering::SeqCst);
+        let plan_attn = self
+            .last_attention
+            .lock()
+            .map(|attn| attn.clone())
+            .unwrap_or_else(|_| idle_attention());
+        let plan_surprise = self
+            .last_surprise
+            .lock()
+            .ok()
+            .and_then(|guard| guard.clone());
 
-        let inference = self.ai_port.infer_with_context(&cf);
-        let tom_report = self.tom_port.analyze(&cf, &inference.outputs);
-        let mut thought_outputs = Vec::new();
-        let mut speech_outputs = Vec::new();
-        let mut suppressions = Vec::new();
-        let mut attention_risk = 0u16;
-        let outputs = inference.outputs;
-        let mut risk_results = Vec::with_capacity(outputs.len());
-        let mut speech_gate_results = Vec::with_capacity(outputs.len());
-        for output in &outputs {
-            let gate_result = self.risk_gate.evaluate(
-                inference.nsr_report.as_ref(),
-                inference.scm_dag.as_ref(),
-                output,
-                &cf,
-                Some(&tom_report),
-                inference.cde_confidence,
-            );
-            attention_risk = attention_risk.max(gate_result.risk);
-            risk_results.push(gate_result);
-            speech_gate_results.push(self.speech_gate.allow_speech(&cf, output));
-        }
-        self.publish_workspace_signals(
-            risk_results
-                .iter()
-                .map(|result| WorkspaceSignal::from_risk_result(result, None)),
-        );
-
-        let nsr_summary = NsrSummary {
-            ok: inference
-                .nsr_report
-                .as_ref()
-                .map(|report| report.ok)
-                .unwrap_or(true),
-            violations_digest: inference
-                .nsr_report
-                .as_ref()
-                .map(|report| digest_reasons(&report.violations))
-                .unwrap_or_else(|| digest_reasons(&[])),
+        let cycle_plan = {
+            let mut tcf = self.tcf_port.lock().expect("tcf lock");
+            tcf.step(&plan_attn, plan_surprise.as_ref())
         };
-        let gates = GateBundle {
-            policy_decision: decision.clone(),
-            sandbox: SandboxVerdict::Ok,
-            risk_results,
-            nsr_summary,
-            speech_gate: speech_gate_results,
-        };
-        let mut output_router = self.output_router.lock().expect("output router lock");
-        let decisions = output_router.route(&cf, outputs.clone(), &gates);
-        let events = output_router.drain_events();
-        self.publish_workspace_signals(
-            decisions
-                .iter()
-                .map(|decision| WorkspaceSignal::from_output_decision(decision, None))
-                .chain(
-                    events
-                        .iter()
-                        .map(|event| WorkspaceSignal::from_output_event(event, None)),
-                ),
-        );
+        let planned = DeterministicTcf::planned_event(&cycle_plan);
+        self.archive
+            .append(self.build_cycle_plan_record(&cycle_plan, &planned));
 
-        for (idx, output) in outputs.iter().enumerate() {
-            match output.channel {
-                OutputChannel::Thought => thought_outputs.push(output.clone()),
-                OutputChannel::Speech => {
-                    if decisions
-                        .get(idx)
-                        .map(|decision| decision.permitted)
-                        .unwrap_or(false)
-                    {
-                        speech_outputs.push(output.clone());
-                    } else if let Some(result) = gates.risk_results.get(idx) {
-                        let reason = decisions
-                            .get(idx)
-                            .map(|decision| decision.reason_code.clone())
-                            .unwrap_or_else(|| "risk_denied".to_string());
-                        let reason_digest = digest_reasons(&[reason]);
-                        suppressions.push(OutputSuppressionInfo {
-                            channel: OutputChannel::Speech,
-                            reason_digest,
-                            risk: result.risk,
-                        });
-                        if let Some(sink) = &self.output_suppression_sink {
-                            sink.publish(OutputSuppressed {
-                                channel: OutputChannel::Speech,
-                                reason_digest,
-                                risk: result.risk,
-                            });
+        let cycle_id = cycle_plan.cycle_id;
+        let mut ctx = StageContext::new();
+
+        for pulse in &cycle_plan.pulses {
+            self.emit_stage_trace(pulse.kind);
+            match pulse.kind {
+                PulseKind::Sense => {
+                    let decision = self.policy.evaluate(cf.as_ref().clone());
+                    self.publish_workspace_signal(WorkspaceSignal::from_policy_decision(
+                        &decision,
+                        None,
+                        Some(pulse.slot),
+                    ));
+                    self.ensure_allowed(&decision)?;
+                    ctx.decision_kind = DecisionKind::try_from(decision.kind)
+                        .unwrap_or(DecisionKind::DecisionKindUnspecified);
+                    ctx.decision = Some(decision);
+                }
+                PulseKind::Think => {
+                    self.run_think_stage(&cf, &mut ctx);
+                }
+                PulseKind::Verify => {
+                    if ctx.decision.is_none() {
+                        continue;
+                    }
+                    if ctx.inference.is_none() {
+                        self.run_think_stage(&cf, &mut ctx);
+                    }
+                    let decision = ctx.decision.as_ref().expect("decision available");
+                    let Some(inference) = ctx.inference.as_ref() else {
+                        continue;
+                    };
+                    let mut attention_risk = 0u16;
+                    let outputs = &inference.outputs;
+                    let mut risk_results = Vec::with_capacity(outputs.len());
+                    let mut speech_gate_results = Vec::with_capacity(outputs.len());
+                    let tom_report = ctx.tom_report.as_ref().expect("tom report available");
+                    for output in outputs {
+                        let gate_result = self.risk_gate.evaluate(
+                            inference.nsr_report.as_ref(),
+                            inference.scm_dag.as_ref(),
+                            output,
+                            &cf,
+                            Some(tom_report),
+                            inference.cde_confidence,
+                        );
+                        attention_risk = attention_risk.max(gate_result.risk);
+                        risk_results.push(gate_result);
+                        speech_gate_results.push(self.speech_gate.allow_speech(&cf, output));
+                    }
+                    self.publish_workspace_signals(risk_results.iter().map(|result| {
+                        WorkspaceSignal::from_risk_result(result, None, Some(pulse.slot))
+                    }));
+
+                    let nsr_summary = NsrSummary {
+                        ok: inference
+                            .nsr_report
+                            .as_ref()
+                            .map(|report| report.ok)
+                            .unwrap_or(true),
+                        violations_digest: inference
+                            .nsr_report
+                            .as_ref()
+                            .map(|report| digest_reasons(&report.violations))
+                            .unwrap_or_else(|| digest_reasons(&[])),
+                    };
+                    let gates = GateBundle {
+                        policy_decision: decision.clone(),
+                        sandbox: SandboxVerdict::Ok,
+                        risk_results,
+                        nsr_summary,
+                        speech_gate: speech_gate_results,
+                    };
+                    let mut output_router = self.output_router.lock().expect("output router lock");
+                    let decisions = output_router.route(&cf, outputs.clone(), &gates);
+                    let events = output_router.drain_events();
+                    self.publish_workspace_signals(
+                        decisions
+                            .iter()
+                            .map(|decision| {
+                                WorkspaceSignal::from_output_decision(
+                                    decision,
+                                    None,
+                                    Some(pulse.slot),
+                                )
+                            })
+                            .chain(events.iter().map(|event| {
+                                WorkspaceSignal::from_output_event(event, None, Some(pulse.slot))
+                            })),
+                    );
+
+                    for (idx, output) in outputs.iter().enumerate() {
+                        match output.channel {
+                            OutputChannel::Thought => ctx.thought_outputs.push(output.clone()),
+                            OutputChannel::Speech => {
+                                if decisions
+                                    .get(idx)
+                                    .map(|decision| decision.permitted)
+                                    .unwrap_or(false)
+                                {
+                                    ctx.speech_outputs.push(output.clone());
+                                } else if let Some(result) = gates.risk_results.get(idx) {
+                                    let reason = decisions
+                                        .get(idx)
+                                        .map(|decision| decision.reason_code.clone())
+                                        .unwrap_or_else(|| "risk_denied".to_string());
+                                    let reason_digest = digest_reasons(&[reason]);
+                                    ctx.suppressions.push(OutputSuppressionInfo {
+                                        channel: OutputChannel::Speech,
+                                        reason_digest,
+                                        risk: result.risk,
+                                    });
+                                    if let Some(sink) = &self.output_suppression_sink {
+                                        sink.publish(OutputSuppressed {
+                                            channel: OutputChannel::Speech,
+                                            reason_digest,
+                                            risk: result.risk,
+                                        });
+                                    }
+                                }
+                            }
                         }
                     }
+
+                    ctx.integration_score = ctx
+                        .thought_outputs
+                        .iter()
+                        .find_map(|output| output.integration_score);
+                    ctx.attention_risk = attention_risk;
+
+                    if let Some(state) = inference.ssm_state.as_ref() {
+                        self.publish_workspace_signal(WorkspaceSignal::from_world_state(
+                            state.commit,
+                            Some(pulse.slot),
+                        ));
+                    }
+                    let observation = inference
+                        .ssm_state
+                        .as_ref()
+                        .map(observation_from_ssm_state)
+                        .unwrap_or_else(|| observation_from_frame(&cf));
+                    let predictive_result = self.update_predictive_coding(&observation);
+                    if let Some((_, surprise_signal)) = predictive_result.as_ref() {
+                        let update = SurpriseUpdated::from(surprise_signal);
+                        self.publish_workspace_signal(WorkspaceSignal::from_surprise_update(
+                            &update,
+                            Some(pulse.slot),
+                        ));
+                    }
+                    ctx.predictive_result = predictive_result;
                 }
+                PulseKind::Consolidate => {
+                    if let Some(score) = ctx.integration_score {
+                        self.publish_workspace_signal(WorkspaceSignal::from_integration_score(
+                            score,
+                            None,
+                            Some(pulse.slot),
+                        ));
+                    }
+                    let Some(decision) = ctx.decision.as_ref() else {
+                        continue;
+                    };
+                    let Some(tom_report) = ctx.tom_report.as_ref() else {
+                        continue;
+                    };
+                    let surprise_score = ctx
+                        .predictive_result
+                        .as_ref()
+                        .map(|(_, signal)| signal.score)
+                        .unwrap_or(0);
+                    let attention_weights = self.compute_attention(
+                        decision.kind as u16,
+                        ctx.attention_risk,
+                        ctx.integration_score.unwrap_or(0),
+                        tom_report,
+                        surprise_score,
+                    );
+                    if let Some(weights) = attention_weights.as_ref() {
+                        self.ai_port.update_attention(weights);
+                        let update = AttentionUpdated {
+                            channel: weights.channel,
+                            gain: weights.gain,
+                            replay_bias: weights.replay_bias,
+                            commit: weights.commit,
+                        };
+                        self.publish_workspace_signal(WorkspaceSignal::from_attention_update(
+                            &update,
+                            Some(pulse.slot),
+                        ));
+                        if let Some(sink) = &self.attention_sink {
+                            sink.publish(update);
+                        }
+                        if let Ok(mut guard) = self.last_attention.lock() {
+                            *guard = weights.clone();
+                        }
+                    }
+                    if let Ok(mut guard) = self.last_surprise.lock() {
+                        *guard = ctx
+                            .predictive_result
+                            .as_ref()
+                            .map(|(_, signal)| signal.clone());
+                    }
+                    if let Some((error, surprise_signal)) = ctx.predictive_result.as_ref() {
+                        let record =
+                            self.build_predictive_record(cf.as_ref(), error, surprise_signal);
+                        self.archive.append(record);
+                    }
+                    let record = self.build_experience_record(
+                        cf.as_ref(),
+                        decision,
+                        &ctx.thought_outputs,
+                        &ctx.suppressions,
+                        Some(tom_summary(tom_report)),
+                        attention_weights.as_ref(),
+                    );
+                    let evidence_id = self.archive.append(record.clone());
+                    if let Some(brain) = &self.digital_brain {
+                        brain.ingest(record);
+                    }
+                    ctx.attention_weights = attention_weights;
+                    ctx.evidence_id = Some(evidence_id);
+                }
+                PulseKind::Broadcast => {
+                    let snapshot = self.arbitrate_workspace(cycle_id);
+                    let workspace_record = self.build_workspace_record(&snapshot);
+                    self.archive.append(workspace_record);
+                    ctx.workspace_snapshot_commit = Some(snapshot.commit);
+                }
+                PulseKind::Sleep => {}
             }
         }
 
-        let integration_score = thought_outputs
-            .iter()
-            .find_map(|output| output.integration_score);
-        if let Some(score) = integration_score {
-            self.publish_workspace_signal(WorkspaceSignal::from_integration_score(score, None));
-        }
-        if let Some(state) = inference.ssm_state.as_ref() {
-            self.publish_workspace_signal(WorkspaceSignal::from_world_state(state.commit));
-        }
-        let observation = inference
-            .ssm_state
-            .as_ref()
-            .map(observation_from_ssm_state)
-            .unwrap_or_else(|| observation_from_frame(&cf));
-        let predictive_result = self.update_predictive_coding(&observation);
-        if let Some((error, surprise_signal)) = predictive_result.as_ref() {
-            let update = SurpriseUpdated::from(surprise_signal);
-            self.publish_workspace_signal(WorkspaceSignal::from_surprise_update(&update));
-            let record = self.build_predictive_record(cf.as_ref(), error, surprise_signal);
-            self.archive.append(record);
-        }
-        let attention_weights = self.compute_attention(
-            decision.kind as u16,
-            attention_risk,
-            integration_score.unwrap_or(0),
-            &tom_report,
-            predictive_result
-                .as_ref()
-                .map(|(_, signal)| signal.score)
-                .unwrap_or(0),
-        );
-        if let Some(weights) = attention_weights.as_ref() {
-            self.ai_port.update_attention(weights);
-            let update = AttentionUpdated {
-                channel: weights.channel,
-                gain: weights.gain,
-                replay_bias: weights.replay_bias,
-                commit: weights.commit,
-            };
-            self.publish_workspace_signal(WorkspaceSignal::from_attention_update(&update));
-            if let Some(sink) = &self.attention_sink {
-                sink.publish(update);
-            }
-        }
-
-        let record = self.build_experience_record(
-            cf.as_ref(),
-            &decision,
-            &thought_outputs,
-            &suppressions,
-            Some(tom_summary(&tom_report)),
-            attention_weights.as_ref(),
-        );
-        let evidence_id = self.archive.append(record.clone());
-
-        if let Some(brain) = &self.digital_brain {
-            brain.ingest(record);
-        }
-
-        let snapshot = self.arbitrate_workspace(cycle_id);
-        let workspace_record = self.build_workspace_record(&snapshot);
-        self.archive.append(workspace_record);
-
+        let evidence_id = ctx
+            .evidence_id
+            .unwrap_or_else(|| EvidenceId::new(format!("cycle-{cycle_id}")));
         Ok(RouterOutcome {
             evidence_id,
-            decision_kind,
-            speech_outputs,
-            integration_score,
-            workspace_snapshot_commit: Some(snapshot.commit),
-            surprise_signal: predictive_result.map(|(_, signal)| signal),
+            decision_kind: ctx.decision_kind,
+            speech_outputs: ctx.speech_outputs,
+            integration_score: ctx.integration_score,
+            workspace_snapshot_commit: ctx.workspace_snapshot_commit,
+            surprise_signal: ctx.predictive_result.map(|(_, signal)| signal),
         })
     }
 
@@ -413,6 +564,29 @@ impl Router {
         }
     }
 
+    fn build_cycle_plan_record(
+        &self,
+        plan: &CyclePlan,
+        planned: &CyclePlanned,
+    ) -> ExperienceRecord {
+        let record_id = format!(
+            "cycle-plan-{}-{}",
+            planned.cycle_id,
+            hex::encode(plan.commit.as_bytes())
+        );
+        let payload = ucf_tcf_port::encode_cycle_plan(plan);
+
+        ExperienceRecord {
+            record_id,
+            observed_at_ms: planned.cycle_id,
+            subject_id: "tcf".to_string(),
+            payload,
+            digest: Some(digest32_to_proto(planned.commit)),
+            vrf_tag: None,
+            proof_ref: None,
+        }
+    }
+
     fn compute_attention(
         &self,
         policy_class: u16,
@@ -496,6 +670,22 @@ impl Router {
     fn arbitrate_workspace(&self, cycle_id: u64) -> WorkspaceSnapshot {
         let mut workspace = self.workspace.lock().expect("workspace lock");
         workspace.arbitrate(cycle_id)
+    }
+
+    fn emit_stage_trace(&self, stage: PulseKind) {
+        if let Some(trace) = self.stage_trace.as_ref() {
+            trace.record(stage);
+        }
+    }
+
+    fn run_think_stage(&self, cf: &ControlFrameNormalized, ctx: &mut StageContext) {
+        if ctx.inference.is_some() {
+            return;
+        }
+        let inference = self.ai_port.infer_with_context(cf);
+        let tom_report = self.tom_port.analyze(cf, &inference.outputs);
+        ctx.inference = Some(inference);
+        ctx.tom_report = Some(tom_report);
     }
 }
 

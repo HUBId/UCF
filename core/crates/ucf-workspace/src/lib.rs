@@ -39,6 +39,7 @@ pub struct WorkspaceSignal {
     pub priority: u16,
     pub digest: Digest32,
     pub summary: String,
+    pub slot: u8,
 }
 
 /// Workspace signal helpers.
@@ -54,7 +55,11 @@ pub struct WorkspaceSignal {
 /// - Summaries are compact, uppercase tokens like `RISK=4200 DENY` or `POLICY=DENY`.
 /// - Summaries never contain user-provided text; only categorical labels and digests.
 impl WorkspaceSignal {
-    pub fn from_policy_decision(decision: &PolicyDecision, attention_gain: Option<u16>) -> Self {
+    pub fn from_policy_decision(
+        decision: &PolicyDecision,
+        attention_gain: Option<u16>,
+        slot: Option<u8>,
+    ) -> Self {
         let kind = SignalKind::Policy;
         let decision_kind =
             DecisionKind::try_from(decision.kind).unwrap_or(DecisionKind::DecisionKindUnspecified);
@@ -72,10 +77,11 @@ impl WorkspaceSignal {
             priority,
             digest,
             summary,
+            slot: slot.unwrap_or(0),
         }
     }
 
-    pub fn from_world_state(digest: Digest32) -> Self {
+    pub fn from_world_state(digest: Digest32, slot: Option<u8>) -> Self {
         let kind = SignalKind::World;
         let summary = format!("SSM state={digest}");
         Self {
@@ -83,10 +89,15 @@ impl WorkspaceSignal {
             priority: 3000,
             digest,
             summary,
+            slot: slot.unwrap_or(0),
         }
     }
 
-    pub fn from_risk_result(result: &RiskGateResult, attention_gain: Option<u16>) -> Self {
+    pub fn from_risk_result(
+        result: &RiskGateResult,
+        attention_gain: Option<u16>,
+        slot: Option<u8>,
+    ) -> Self {
         let kind = SignalKind::Risk;
         let summary = format!(
             "RISK={} {}",
@@ -101,10 +112,11 @@ impl WorkspaceSignal {
             priority,
             digest,
             summary,
+            slot: slot.unwrap_or(0),
         }
     }
 
-    pub fn from_attention_update(update: &AttentionUpdated) -> Self {
+    pub fn from_attention_update(update: &AttentionUpdated, slot: Option<u8>) -> Self {
         let kind = SignalKind::Attention;
         let summary = format!(
             "ATTN={} GAIN={}",
@@ -117,10 +129,15 @@ impl WorkspaceSignal {
             priority,
             digest: update.commit,
             summary,
+            slot: slot.unwrap_or(0),
         }
     }
 
-    pub fn from_integration_score(score: u16, attention_gain: Option<u16>) -> Self {
+    pub fn from_integration_score(
+        score: u16,
+        attention_gain: Option<u16>,
+        slot: Option<u8>,
+    ) -> Self {
         let kind = SignalKind::Integration;
         let summary = format!("IIT={score}");
         let digest = digest_integration_score(score);
@@ -131,12 +148,14 @@ impl WorkspaceSignal {
             priority,
             digest,
             summary,
+            slot: slot.unwrap_or(0),
         }
     }
 
     pub fn from_consistency_report(
         report: &ConsistencyReport,
         attention_gain: Option<u16>,
+        slot: Option<u8>,
     ) -> Self {
         let kind = SignalKind::Consistency;
         let summary = format!(
@@ -152,12 +171,14 @@ impl WorkspaceSignal {
             priority,
             digest,
             summary,
+            slot: slot.unwrap_or(0),
         }
     }
 
     pub fn from_consistency_verdict(
         verdict: ConsistencyVerdict,
         attention_gain: Option<u16>,
+        slot: Option<u8>,
     ) -> Self {
         let kind = SignalKind::Consistency;
         let summary = format!("NSR={}", consistency_verdict_token(verdict));
@@ -169,10 +190,15 @@ impl WorkspaceSignal {
             priority,
             digest,
             summary,
+            slot: slot.unwrap_or(0),
         }
     }
 
-    pub fn from_output_event(event: &OutputRouterEvent, attention_gain: Option<u16>) -> Self {
+    pub fn from_output_event(
+        event: &OutputRouterEvent,
+        attention_gain: Option<u16>,
+        slot: Option<u8>,
+    ) -> Self {
         let kind = SignalKind::Output;
         let (summary, digest, base_priority) = output_event_payload(event);
         let priority = priority_with_attention(base_priority, attention_gain);
@@ -181,10 +207,15 @@ impl WorkspaceSignal {
             priority,
             digest,
             summary,
+            slot: slot.unwrap_or(0),
         }
     }
 
-    pub fn from_output_decision(decision: &RouteDecision, attention_gain: Option<u16>) -> Self {
+    pub fn from_output_decision(
+        decision: &RouteDecision,
+        attention_gain: Option<u16>,
+        slot: Option<u8>,
+    ) -> Self {
         let kind = SignalKind::Output;
         let reason = output_reason_token(&decision.reason_code);
         let summary = if decision.permitted {
@@ -200,10 +231,15 @@ impl WorkspaceSignal {
             priority,
             digest,
             summary,
+            slot: slot.unwrap_or(0),
         }
     }
 
-    pub fn from_sleep_triggered(triggered: &SleepTriggered, attention_gain: Option<u16>) -> Self {
+    pub fn from_sleep_triggered(
+        triggered: &SleepTriggered,
+        attention_gain: Option<u16>,
+        slot: Option<u8>,
+    ) -> Self {
         let kind = SignalKind::Sleep;
         let summary = format!(
             "SLEEP=TRIGGERED REASON={}",
@@ -217,10 +253,11 @@ impl WorkspaceSignal {
             priority,
             digest,
             summary,
+            slot: slot.unwrap_or(0),
         }
     }
 
-    pub fn from_world_state_digest(digest: Digest32) -> Self {
+    pub fn from_world_state_digest(digest: Digest32, slot: Option<u8>) -> Self {
         let kind = SignalKind::World;
         let summary = format!("WORLD=STATE DIG={digest}");
         let priority = 3000;
@@ -229,10 +266,11 @@ impl WorkspaceSignal {
             priority,
             digest,
             summary,
+            slot: slot.unwrap_or(0),
         }
     }
 
-    pub fn from_surprise_update(update: &SurpriseUpdated) -> Self {
+    pub fn from_surprise_update(update: &SurpriseUpdated, slot: Option<u8>) -> Self {
         let kind = SignalKind::World;
         let summary = format!(
             "SURPRISE={} BAND={}",
@@ -245,6 +283,7 @@ impl WorkspaceSignal {
             priority,
             digest: update.commit,
             summary,
+            slot: slot.unwrap_or(0),
         }
     }
 }
@@ -274,13 +313,14 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
         snapshot.broadcast.as_slice()
     };
     let mut payload = Vec::with_capacity(
-        2 + 8 + 2 + signals.len() * (1 + 2 + Digest32::LEN + 2 + SUMMARY_MAX_BYTES),
+        2 + 8 + 2 + signals.len() * (2 + 2 + Digest32::LEN + 2 + SUMMARY_MAX_BYTES),
     );
     payload.extend_from_slice(&SNAPSHOT_DOMAIN_TAG.to_be_bytes());
     payload.extend_from_slice(&snapshot.cycle_id.to_be_bytes());
     payload.extend_from_slice(&(signals.len() as u16).to_be_bytes());
     for signal in signals {
         payload.push(signal.kind as u8);
+        payload.push(signal.slot);
         payload.extend_from_slice(&signal.priority.to_be_bytes());
         payload.extend_from_slice(signal.digest.as_bytes());
         let summary_bytes = signal.summary.as_bytes();
@@ -687,6 +727,7 @@ fn commit_snapshot(cycle_id: u64, broadcast: &[WorkspaceSignal]) -> Digest32 {
     hasher.update(&cycle_id.to_be_bytes());
     for signal in broadcast {
         hasher.update(&[signal.kind as u8]);
+        hasher.update(&[signal.slot]);
         hasher.update(&signal.priority.to_be_bytes());
         hasher.update(signal.digest.as_bytes());
         hasher.update(signal.summary.as_bytes());
@@ -728,6 +769,7 @@ mod tests {
             priority,
             digest: Digest32::new([digest_byte; 32]),
             summary: summary.to_string(),
+            slot: 0,
         }
     }
 

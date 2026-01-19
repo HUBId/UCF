@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use blake3::Hasher;
 #[cfg(feature = "ai-runtime")]
 use ucf_ai_runtime::backend::{AiRuntimeBackend, NoopRuntimeBackend};
-use ucf_attn_controller::{AttentionWeights, FocusChannel};
+use ucf_attn_controller::AttentionWeights;
 #[cfg(feature = "digitalbrain")]
 use ucf_bus::{BusPublisher, MessageEnvelope};
 use ucf_cde_port::{CdeHypothesis, CdePort};
@@ -22,7 +22,7 @@ use ucf_sandbox::ControlFrameNormalized;
 use ucf_scm_port::{CounterfactualQuery, Intervention, ScmDag, ScmPort};
 use ucf_sle::{LoopFrame, StrangeLoopEngine};
 use ucf_ssm_port::{SsmInput, SsmPort, SsmState};
-use ucf_tcf_port::{TcfPort, TcfSignal};
+use ucf_tcf_port::{idle_attention, TcfPort};
 use ucf_types::v1::spec::DecisionKind;
 use ucf_types::{
     CausalCounterfactual, CausalGraphStub, CausalIntervention, CausalReport, Claim, Digest32,
@@ -75,7 +75,7 @@ pub trait OutputSuppressionSink {
 
 #[derive(Clone)]
 pub struct AiPillars {
-    pub tcf: Option<Arc<dyn TcfPort + Send + Sync>>,
+    pub tcf: Option<Arc<Mutex<dyn TcfPort + Send + Sync>>>,
     pub ssm: Option<Arc<Mutex<dyn SsmPort + Send + Sync>>>,
     pub cde: Option<Arc<dyn CdePort + Send + Sync>>,
     pub scm: Option<Arc<Mutex<dyn ScmPort + Send + Sync>>>,
@@ -430,7 +430,6 @@ fn run_pillars(
     attention: Option<&AttentionWeights>,
 ) -> PillarArtifacts {
     let base_digest = input.commitment().digest;
-    let mut signal = TcfSignal::new(base_digest, 0);
     let mut graph = CausalGraphStub::new(Vec::new(), Vec::new());
     let ctx = NcdeContext::new(base_digest);
     let world_state = WorldStateVec::new(base_digest.as_bytes().to_vec(), vec![Digest32::LEN]);
@@ -448,19 +447,13 @@ fn run_pillars(
     let mut causal_report = None;
     let mut nsr_digest = None;
 
-    if let Some(monitor) = &pillars.iit_monitor {
-        if let Ok(guard) = monitor.lock() {
-            let intensity = tcf_intensity_stub(guard.aggregate());
-            signal.intensity = intensity;
-        }
-    }
-    if let Some(attn) = attention {
-        signal.intensity = apply_attention_to_intensity(signal.intensity, attn);
-    }
-
     if let Some(tcf) = &pillars.tcf {
-        let pulse = tcf.tick(&mut signal, &[base_digest]);
-        artifacts.push(pulse.digest);
+        let fallback = idle_attention();
+        let attn = attention.unwrap_or(&fallback);
+        if let Ok(mut guard) = tcf.lock() {
+            let plan = guard.step(attn, None);
+            artifacts.push(plan.commit);
+        }
     }
     if let Some(ssm) = &pillars.ssm {
         if let Ok(mut guard) = ssm.lock() {
@@ -669,32 +662,6 @@ fn digest_ai_output(output: &AiOutput) -> Digest32 {
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
-fn tcf_intensity_stub(score: u16) -> u16 {
-    score / 100
-}
-
-fn apply_attention_to_intensity(intensity: u16, attention: &AttentionWeights) -> u16 {
-    let boost = channel_intensity_boost(attention.channel);
-    let boosted = intensity.saturating_add(boost);
-    scale_by_gain(boosted, attention.gain)
-}
-
-fn channel_intensity_boost(channel: FocusChannel) -> u16 {
-    match channel {
-        FocusChannel::Threat => 2500,
-        FocusChannel::Task => 1500,
-        FocusChannel::Social => 750,
-        FocusChannel::Memory => 1200,
-        FocusChannel::Exploration => 900,
-        FocusChannel::Idle => 0,
-    }
-}
-
-fn scale_by_gain(value: u16, gain: u16) -> u16 {
-    let scaled = (value as u32).saturating_mul(gain as u32) / 1000;
-    scaled.min(u16::MAX as u32) as u16
-}
-
 fn apply_attention_to_world_state(
     world_state: &WorldStateVec,
     attention: Option<&AttentionWeights>,
@@ -819,7 +786,7 @@ mod tests {
     use ucf_scm_port::{CounterfactualQuery, CounterfactualResult, MockScmPort, ScmDag, ScmPort};
     use ucf_sle::StrangeLoopEngine;
     use ucf_ssm_port::{DeterministicSsmPort, SsmConfig, SsmInput, SsmOutput, SsmPort, SsmState};
-    use ucf_tcf_port::{TcfPort, TcfPulse, TcfSignal};
+    use ucf_tcf_port::{CyclePlan, Pulse, PulseKind, TcfPort, TcfState};
 
     fn base_frame(frame_id: &str) -> ControlFrame {
         ControlFrame {
@@ -871,15 +838,29 @@ mod tests {
 
         struct OrderTcf {
             order: Arc<std::sync::Mutex<Vec<&'static str>>>,
+            state: TcfState,
         }
         impl TcfPort for OrderTcf {
-            fn tick(&self, _signal: &mut TcfSignal, _inputs: &[Digest32]) -> TcfPulse {
+            fn step(
+                &mut self,
+                _attn: &AttentionWeights,
+                _surprise: Option<&ucf_predictive_coding::SurpriseSignal>,
+            ) -> CyclePlan {
                 self.order.lock().unwrap().push("tcf");
-                TcfPulse {
-                    digest: Digest32::new([1u8; 32]),
-                    tick: 1,
-                    inputs: 0,
+                self.state.commit = Digest32::new([1u8; 32]);
+                CyclePlan {
+                    cycle_id: 0,
+                    pulses: vec![Pulse {
+                        kind: PulseKind::Sense,
+                        weight: 1,
+                        slot: 0,
+                    }],
+                    commit: Digest32::new([1u8; 32]),
                 }
+            }
+
+            fn state(&self) -> &TcfState {
+                &self.state
             }
         }
 
@@ -964,9 +945,14 @@ mod tests {
         }
 
         let pillars = AiPillars {
-            tcf: Some(Arc::new(OrderTcf {
+            tcf: Some(Arc::new(Mutex::new(OrderTcf {
                 order: order.clone(),
-            })),
+                state: TcfState {
+                    phase: ucf_tcf_port::Phase { q: 0 },
+                    energy: 0,
+                    commit: Digest32::new([0u8; 32]),
+                },
+            }))),
             ssm: Some(Arc::new(Mutex::new(OrderSsm {
                 order: order.clone(),
                 state: SsmState::new(vec![0, 0]),

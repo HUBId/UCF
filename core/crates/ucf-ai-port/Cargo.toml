@@ -36,3 +36,6 @@ candle = []
 digitalbrain = ["dep:ucf-bus"]
 nsr-smt = ["dep:ucf-nsr-smt"]
 nsr-datalog = ["dep:ucf-nsr-datalog"]
+
+[dev-dependencies]
+ucf-predictive-coding = { path = "../ucf-predictive-coding" }

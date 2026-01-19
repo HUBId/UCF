@@ -286,7 +286,7 @@ where
     fn publish(&self, message: SleepTriggered) {
         if let Some(workspace) = &self.workspace {
             if let Ok(mut guard) = workspace.lock() {
-                guard.publish(WorkspaceSignal::from_sleep_triggered(&message, None));
+                guard.publish(WorkspaceSignal::from_sleep_triggered(&message, None, None));
             }
         }
         self.publisher.publish(MessageEnvelope {
@@ -428,7 +428,7 @@ mod tests {
         let processed = service.drain();
 
         assert_eq!(processed, 1);
-        assert_eq!(archive.list().len(), 2);
+        assert_eq!(archive.list().len(), 3);
 
         let outcome = outcome_receiver.try_recv().expect("outcome event");
         assert_eq!(outcome.payload.evidence_id, EvidenceId::new("exp-frame-1"));
@@ -441,11 +441,16 @@ mod tests {
         assert!(reject_receiver.try_recv().is_err());
         assert!(speech_receiver.try_recv().is_err());
 
-        let envelope = &archive.list()[0];
-        let proof = envelope.proof.as_ref().expect("missing proof envelope");
-        let record =
-            ExperienceRecord::decode(proof.payload.as_slice()).expect("decode experience record");
-        let payload = String::from_utf8(record.payload.clone()).expect("payload utf8");
+        let payload = archive
+            .list()
+            .iter()
+            .find_map(|envelope| {
+                let proof = envelope.proof.as_ref()?;
+                let record = ExperienceRecord::decode(proof.payload.as_slice()).ok()?;
+                let payload = String::from_utf8(record.payload).ok()?;
+                payload.contains("ai_thoughts=ok").then_some(payload)
+            })
+            .expect("experience payload");
         assert!(payload.contains("ai_thoughts=ok"));
     }
 
@@ -604,7 +609,7 @@ mod tests {
         let processed = service.drain();
 
         assert_eq!(processed, 1);
-        assert_eq!(archive.list().len(), 2);
+        assert_eq!(archive.list().len(), 3);
 
         let speech = speech_receiver.try_recv().expect("speech event");
         assert_eq!(speech.payload.content, "ok");
@@ -677,7 +682,7 @@ mod tests {
         let processed = service.drain();
 
         assert_eq!(processed, 1);
-        assert_eq!(archive.list().len(), 2);
+        assert_eq!(archive.list().len(), 3);
 
         let mut workspace_records = Vec::new();
         for envelope in archive.list() {
