@@ -9,4 +9,5 @@ ucf-nsr-port = { path = "../ucf-nsr-port" }
 ucf-policy-ecology = { path = "../ucf-policy-ecology" }
 ucf-sandbox = { path = "../ucf-sandbox" }
 ucf-scm-port = { path = "../ucf-scm-port" }
+ucf-tom-port = { path = "../ucf-tom-port" }
 ucf-types = { path = "../ucf-types" }

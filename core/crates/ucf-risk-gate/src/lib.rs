@@ -5,6 +5,7 @@ use ucf_nsr_port::NsrReport;
 use ucf_policy_ecology::{PolicyEcology, RiskDecision, RiskGateResult};
 use ucf_sandbox::ControlFrameNormalized;
 use ucf_scm_port::{digest_dag, CounterfactualQuery, Intervention, ScmDag};
+use ucf_tom_port::TomReport;
 use ucf_types::{AiOutput, Digest32, OutputChannel};
 
 const BASE_RISK_THOUGHT: u16 = 400;
@@ -13,6 +14,8 @@ const SCM_UNSAFE_BAND: i32 = 100;
 const SCM_UNSAFE_PENALTY: u16 = 2000;
 const CDE_LOW_CONFIDENCE_THRESHOLD: u16 = 2000;
 const CDE_LOW_CONFIDENCE_PENALTY: u16 = 800;
+const TOM_SOCIAL_DIVISOR_THOUGHT: u16 = 4;
+const TOM_SOCIAL_DIVISOR_SPEECH: u16 = 2;
 
 pub trait RiskGate {
     fn evaluate(
@@ -21,6 +24,7 @@ pub trait RiskGate {
         scm: Option<&ScmDag>,
         output: &AiOutput,
         control_frame: &ControlFrameNormalized,
+        tom: Option<&TomReport>,
         cde_confidence: Option<u16>,
     ) -> RiskGateResult;
 }
@@ -47,6 +51,7 @@ impl RiskGate for PolicyRiskGate {
         scm: Option<&ScmDag>,
         output: &AiOutput,
         control_frame: &ControlFrameNormalized,
+        tom: Option<&TomReport>,
         cde_confidence: Option<u16>,
     ) -> RiskGateResult {
         evaluate_risk(
@@ -55,6 +60,7 @@ impl RiskGate for PolicyRiskGate {
             scm,
             output,
             control_frame,
+            tom,
             cde_confidence,
         )
     }
@@ -66,6 +72,7 @@ pub fn evaluate_risk(
     scm: Option<&ScmDag>,
     output: &AiOutput,
     control_frame: &ControlFrameNormalized,
+    tom: Option<&TomReport>,
     cde_confidence: Option<u16>,
 ) -> RiskGateResult {
     let risk_policy = policy.risk_policy();
@@ -90,6 +97,16 @@ pub fn evaluate_risk(
         }
     }
 
+    let risk_without_social = risk;
+    let mut social_penalty = 0;
+    if let Some(report) = tom {
+        social_penalty = tom_social_penalty(output.channel, report.risk.overall);
+        if social_penalty > 0 {
+            risk = risk.saturating_add(social_penalty);
+            reasons.push(format!("tom_social_penalty:{social_penalty}"));
+        }
+    }
+
     let mut decision = RiskDecision::Permit;
     if risk_policy.require_nsr_ok && nsr.is_some_and(|report| !report.ok) {
         decision = RiskDecision::Deny;
@@ -99,13 +116,16 @@ pub fn evaluate_risk(
     if risk > risk_policy.max_risk {
         decision = RiskDecision::Deny;
         reasons.push("risk_above_max".to_string());
+        if social_penalty > 0 && risk_without_social <= risk_policy.max_risk {
+            reasons.push("SOCIAL_RISK".to_string());
+        }
     }
 
     RiskGateResult {
         decision,
         risk,
         reasons,
-        evidence: evidence_digest(policy, nsr, scm, output, control_frame, cde_confidence),
+        evidence: evidence_digest(policy, nsr, scm, output, control_frame, tom, cde_confidence),
     }
 }
 
@@ -166,6 +186,7 @@ fn evidence_digest(
     scm: Option<&ScmDag>,
     output: &AiOutput,
     control_frame: &ControlFrameNormalized,
+    tom: Option<&TomReport>,
     cde_confidence: Option<u16>,
 ) -> Digest32 {
     let mut hasher = Hasher::new();
@@ -189,6 +210,15 @@ fn evidence_digest(
         Some(dag) => {
             hasher.update(&[1]);
             hasher.update(digest_dag(dag).as_bytes());
+        }
+        None => {
+            hasher.update(&[0]);
+        }
+    }
+    match tom {
+        Some(report) => {
+            hasher.update(&[1]);
+            hasher.update(report.commit.as_bytes());
         }
         None => {
             hasher.update(&[0]);
@@ -239,6 +269,17 @@ fn output_digest(output: &AiOutput) -> Digest32 {
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
+fn tom_social_penalty(channel: OutputChannel, overall: u16) -> u16 {
+    let divisor = match channel {
+        OutputChannel::Thought => TOM_SOCIAL_DIVISOR_THOUGHT,
+        OutputChannel::Speech => TOM_SOCIAL_DIVISOR_SPEECH,
+    };
+    if divisor == 0 {
+        return 0;
+    }
+    overall / divisor
+}
+
 fn nsr_digest(report: &NsrReport) -> Digest32 {
     let mut hasher = Hasher::new();
     hasher.update(&[report.ok as u8]);
@@ -260,7 +301,34 @@ mod tests {
     use ucf_policy_ecology::PolicyEcology;
     use ucf_sandbox::normalize;
     use ucf_scm_port::CausalNode;
+    use ucf_tom_port::{
+        ActorProfile, IntentHypothesis, IntentType, KnowledgeGap, SocialRiskSignals, TomReport,
+    };
     use ucf_types::v1::spec::ControlFrame;
+
+    fn sample_tom_report(overall: u16) -> TomReport {
+        TomReport {
+            actors: vec![ActorProfile {
+                id: 9,
+                label: "actor-9".to_string(),
+            }],
+            intent: IntentHypothesis {
+                intent: IntentType::Unknown,
+                confidence: 9000,
+            },
+            gaps: vec![KnowledgeGap {
+                topic: "context".to_string(),
+                uncertainty: 2000,
+            }],
+            risk: SocialRiskSignals {
+                deception_likelihood: overall,
+                consent_uncertainty: overall,
+                manipulation_risk: overall,
+                overall,
+            },
+            commit: Digest32::new([7u8; 32]),
+        }
+    }
 
     #[test]
     fn risk_gate_is_deterministic() {
@@ -288,12 +356,43 @@ mod tests {
             evidence_ids: Vec::new(),
             policy_id: "policy-1".to_string(),
         });
+        let tom = sample_tom_report(2000);
 
-        let result_a = gate.evaluate(Some(&nsr), Some(&dag), &output, &cf, Some(9000));
-        let result_b = gate.evaluate(Some(&nsr), Some(&dag), &output, &cf, Some(9000));
+        let result_a = gate.evaluate(Some(&nsr), Some(&dag), &output, &cf, Some(&tom), Some(9000));
+        let result_b = gate.evaluate(Some(&nsr), Some(&dag), &output, &cf, Some(&tom), Some(9000));
 
         assert_eq!(result_a.decision, result_b.decision);
         assert_eq!(result_a.risk, result_b.risk);
         assert_eq!(result_a.evidence, result_b.evidence);
+    }
+
+    #[test]
+    fn tom_risk_can_deny_speech() {
+        let policy = PolicyEcology::allow_all();
+        let output = AiOutput {
+            channel: OutputChannel::Speech,
+            content: "ok".to_string(),
+            confidence: 900,
+            rationale_commit: None,
+            integration_score: None,
+        };
+        let cf = normalize(ControlFrame {
+            frame_id: "frame-2".to_string(),
+            issued_at_ms: 1,
+            decision: None,
+            evidence_ids: Vec::new(),
+            policy_id: "policy-1".to_string(),
+        });
+        let tom = sample_tom_report(10000);
+
+        let base_result = evaluate_risk(&policy, None, None, &output, &cf, None, None);
+        let tom_result = evaluate_risk(&policy, None, None, &output, &cf, Some(&tom), None);
+
+        assert_eq!(base_result.decision, RiskDecision::Permit);
+        assert_eq!(tom_result.decision, RiskDecision::Deny);
+        assert!(tom_result
+            .reasons
+            .iter()
+            .any(|reason| reason == "SOCIAL_RISK"));
     }
 }
