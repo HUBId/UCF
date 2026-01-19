@@ -152,7 +152,7 @@ mod tests {
 
     #[test]
     fn attention_is_deterministic() {
-        let controller = AttnController::default();
+        let controller = AttnController;
         let inputs = AttnInputs {
             policy_class: 1,
             risk_score: 2500,
@@ -170,7 +170,7 @@ mod tests {
 
     #[test]
     fn threat_channel_selected_for_high_risk() {
-        let controller = AttnController::default();
+        let controller = AttnController;
         let inputs = AttnInputs {
             policy_class: 1,
             risk_score: 9000,
@@ -188,7 +188,7 @@ mod tests {
 
     #[test]
     fn replay_bias_increases_when_integration_low() {
-        let controller = AttnController::default();
+        let controller = AttnController;
         let low = AttnInputs {
             policy_class: 1,
             risk_score: 1000,
