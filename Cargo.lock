@@ -2083,6 +2083,7 @@ dependencies = [
 name = "ucf-router"
 version = "0.1.0"
 dependencies = [
+ "hex",
  "prost",
  "ucf-ai-port",
  "ucf-archive",

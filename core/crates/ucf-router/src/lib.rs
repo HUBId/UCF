@@ -19,7 +19,9 @@ use ucf_sandbox::ControlFrameNormalized;
 use ucf_tom_port::{IntentType, TomPort};
 use ucf_types::v1::spec::{ControlFrame, DecisionKind, Digest, ExperienceRecord, PolicyDecision};
 use ucf_types::{AlgoId, Digest32, EvidenceId};
-use ucf_workspace::{Workspace, WorkspaceConfig, WorkspaceSignal, WorkspaceSnapshot};
+use ucf_workspace::{
+    encode_workspace_snapshot, Workspace, WorkspaceConfig, WorkspaceSignal, WorkspaceSnapshot,
+};
 
 #[derive(Debug)]
 pub enum RouterError {
@@ -266,7 +268,7 @@ impl Router {
         }
 
         let snapshot = self.arbitrate_workspace(cycle_id);
-        let workspace_record = self.build_workspace_record(cf.as_ref(), &snapshot, &evidence_id);
+        let workspace_record = self.build_workspace_record(&snapshot);
         self.archive.append(workspace_record);
 
         Ok(RouterOutcome {
@@ -366,42 +368,14 @@ impl Router {
         }
     }
 
-    fn build_workspace_record(
-        &self,
-        cf: &ControlFrame,
-        snapshot: &WorkspaceSnapshot,
-        source_evidence: &EvidenceId,
-    ) -> ExperienceRecord {
-        let record_id = format!("exp-ws-{}", snapshot.cycle_id);
-        let mut payload = format!(
-            "workspace_cycle_id={};workspace_commit={};derived_from={}",
-            snapshot.cycle_id,
-            snapshot.commit,
-            source_evidence.as_str()
-        )
-        .into_bytes();
-        if !snapshot.broadcast.is_empty() {
-            let broadcast = snapshot
-                .broadcast
-                .iter()
-                .map(|signal| {
-                    format!(
-                        "{}:{}:{}",
-                        signal_kind_token(signal.kind),
-                        signal.summary,
-                        signal.digest
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join("|");
-            let notes = format!(";broadcast={broadcast}");
-            payload.extend_from_slice(notes.as_bytes());
-        }
+    fn build_workspace_record(&self, snapshot: &WorkspaceSnapshot) -> ExperienceRecord {
+        let record_id = format!("workspace-{}", hex::encode(snapshot.commit.as_bytes()));
+        let payload = encode_workspace_snapshot(snapshot);
 
         ExperienceRecord {
             record_id,
-            observed_at_ms: cf.issued_at_ms,
-            subject_id: cf.policy_id.clone(),
+            observed_at_ms: snapshot.cycle_id,
+            subject_id: "workspace".to_string(),
             payload,
             digest: Some(digest32_to_proto(snapshot.commit)),
             vrf_tag: None,
@@ -477,19 +451,6 @@ fn intent_type_code(intent: IntentType) -> u16 {
         IntentType::RequestAction => AttnController::INTENT_REQUEST_ACTION,
         IntentType::SocialBond => AttnController::INTENT_SOCIAL_BOND,
         IntentType::Unknown => AttnController::INTENT_UNKNOWN,
-    }
-}
-
-fn signal_kind_token(kind: ucf_workspace::SignalKind) -> &'static str {
-    match kind {
-        ucf_workspace::SignalKind::World => "WORLD",
-        ucf_workspace::SignalKind::Policy => "POLICY",
-        ucf_workspace::SignalKind::Risk => "RISK",
-        ucf_workspace::SignalKind::Attention => "ATTENTION",
-        ucf_workspace::SignalKind::Integration => "INTEGRATION",
-        ucf_workspace::SignalKind::Consistency => "CONSISTENCY",
-        ucf_workspace::SignalKind::Output => "OUTPUT",
-        ucf_workspace::SignalKind::Sleep => "SLEEP",
     }
 }
 

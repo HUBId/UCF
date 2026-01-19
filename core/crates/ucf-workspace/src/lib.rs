@@ -233,6 +233,35 @@ pub struct WorkspaceSnapshot {
     pub commit: Digest32,
 }
 
+/// Encode a workspace snapshot into a compact, deterministic payload for archiving.
+///
+/// Summaries included here are already sanitized and non-sensitive (categorical labels
+/// and digests only), making this safe to store without raw user content.
+pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
+    const SNAPSHOT_DOMAIN_TAG: u16 = 0x5753;
+    let signals = if snapshot.broadcast.len() > u16::MAX as usize {
+        &snapshot.broadcast[..u16::MAX as usize]
+    } else {
+        snapshot.broadcast.as_slice()
+    };
+    let mut payload = Vec::with_capacity(
+        2 + 8 + 2 + signals.len() * (1 + 2 + Digest32::LEN + 2 + SUMMARY_MAX_BYTES),
+    );
+    payload.extend_from_slice(&SNAPSHOT_DOMAIN_TAG.to_be_bytes());
+    payload.extend_from_slice(&snapshot.cycle_id.to_be_bytes());
+    payload.extend_from_slice(&(signals.len() as u16).to_be_bytes());
+    for signal in signals {
+        payload.push(signal.kind as u8);
+        payload.extend_from_slice(&signal.priority.to_be_bytes());
+        payload.extend_from_slice(signal.digest.as_bytes());
+        let summary_bytes = signal.summary.as_bytes();
+        let summary_len = summary_bytes.len().min(SUMMARY_MAX_BYTES);
+        payload.extend_from_slice(&(summary_len as u16).to_be_bytes());
+        payload.extend_from_slice(&summary_bytes[..summary_len]);
+    }
+    payload
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct DropCounters {
     pub total: u64,
