@@ -5,6 +5,7 @@ use ucf_ai_port::{
     AiPillars, MockAiPort, OutputSuppressed, OutputSuppressionSink, PolicySpeechGate,
 };
 use ucf_archive::InMemoryArchive;
+use ucf_attn_controller::{AttentionEventSink, AttentionUpdated};
 use ucf_cde_port::MockCdePort;
 use ucf_digital_brain::InMemoryDigitalBrain;
 use ucf_nsr_port::{NsrBackend, NsrPort, NsrReport};
@@ -28,6 +29,19 @@ struct CaptureSuppression {
 
 impl OutputSuppressionSink for CaptureSuppression {
     fn publish(&self, event: OutputSuppressed) {
+        if let Ok(mut guard) = self.events.lock() {
+            guard.push(event);
+        }
+    }
+}
+
+#[derive(Clone, Default)]
+struct CaptureAttention {
+    events: Arc<Mutex<Vec<AttentionUpdated>>>,
+}
+
+impl AttentionEventSink for CaptureAttention {
+    fn publish(&self, event: AttentionUpdated) {
         if let Ok(mut guard) = self.events.lock() {
             guard.push(event);
         }
@@ -279,4 +293,34 @@ fn risk_gate_permits_speech_when_risk_is_low() {
         .expect("route frame");
 
     assert_eq!(outcome.speech_outputs.len(), 1);
+}
+
+#[test]
+fn attention_event_is_emitted() {
+    let policy = Arc::new(NoOpPolicyEvaluator::new());
+    let archive = Arc::new(InMemoryArchive::new());
+    let ai_port = Arc::new(MockAiPort::new());
+    let speech_gate = Arc::new(PolicySpeechGate::new(allow_speech_policy()));
+    let risk_gate = Arc::new(PolicyRiskGate::new(PolicyEcology::allow_all()));
+    let tom_port = Arc::new(LowRiskTomPort);
+    let capture = CaptureAttention::default();
+    let router = Router::new(
+        policy,
+        archive,
+        None,
+        ai_port,
+        speech_gate,
+        risk_gate,
+        tom_port,
+        None,
+    )
+    .with_attention_sink(Arc::new(capture.clone()));
+
+    let _ = router
+        .handle_control_frame(normalize(decision_frame("ping")))
+        .expect("route frame");
+
+    let events = capture.events.lock().unwrap();
+    assert_eq!(events.len(), 1);
+    assert!(events[0].gain > 0);
 }

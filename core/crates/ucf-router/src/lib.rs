@@ -7,6 +7,9 @@ use ucf_ai_port::{
     AiOutput, AiPort, OutputChannel, OutputSuppressed, OutputSuppressionSink, SpeechGate,
 };
 use ucf_archive::ExperienceAppender;
+use ucf_attn_controller::{
+    AttentionEventSink, AttentionUpdated, AttentionWeights, AttnController, AttnInputs,
+};
 use ucf_digital_brain::DigitalBrainPort;
 use ucf_policy_ecology::RiskDecision;
 use ucf_policy_gateway::PolicyEvaluator;
@@ -42,6 +45,8 @@ pub struct Router {
     risk_gate: Arc<dyn RiskGate + Send + Sync>,
     tom_port: Arc<dyn TomPort + Send + Sync>,
     output_suppression_sink: Option<Arc<dyn OutputSuppressionSink + Send + Sync>>,
+    attention_controller: Option<AttnController>,
+    attention_sink: Option<Arc<dyn AttentionEventSink + Send + Sync>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -80,7 +85,19 @@ impl Router {
             risk_gate,
             tom_port,
             output_suppression_sink,
+            attention_controller: Some(AttnController),
+            attention_sink: None,
         }
+    }
+
+    pub fn with_attention_sink(mut self, sink: Arc<dyn AttentionEventSink + Send + Sync>) -> Self {
+        self.attention_sink = Some(sink);
+        self
+    }
+
+    pub fn disable_attention(mut self) -> Self {
+        self.attention_controller = None;
+        self
     }
 
     pub fn handle_control_frame(
@@ -97,6 +114,7 @@ impl Router {
         let mut thought_outputs = Vec::new();
         let mut speech_outputs = Vec::new();
         let mut suppressions = Vec::new();
+        let mut attention_risk = 0u16;
         for output in inference.outputs {
             let gate_result = self.risk_gate.evaluate(
                 inference.nsr_report.as_ref(),
@@ -106,6 +124,7 @@ impl Router {
                 Some(&tom_report),
                 inference.cde_confidence,
             );
+            attention_risk = attention_risk.max(gate_result.risk);
             match output.channel {
                 OutputChannel::Thought => thought_outputs.push(output),
                 OutputChannel::Speech => {
@@ -136,17 +155,36 @@ impl Router {
             }
         }
 
+        let integration_score = thought_outputs
+            .iter()
+            .find_map(|output| output.integration_score);
+        let attention_weights = self.compute_attention(
+            decision.kind as u16,
+            attention_risk,
+            integration_score.unwrap_or(0),
+            &tom_report,
+        );
+        if let Some(weights) = attention_weights.as_ref() {
+            self.ai_port.update_attention(weights);
+            if let Some(sink) = &self.attention_sink {
+                sink.publish(AttentionUpdated {
+                    channel: weights.channel,
+                    gain: weights.gain,
+                    replay_bias: weights.replay_bias,
+                    commit: weights.commit,
+                });
+            }
+        }
+
         let record = self.build_experience_record(
             cf.as_ref(),
             &decision,
             &thought_outputs,
             &suppressions,
             Some(tom_summary(&tom_report)),
+            attention_weights.as_ref(),
         );
         let evidence_id = self.archive.append(record.clone());
-        let integration_score = thought_outputs
-            .iter()
-            .find_map(|output| output.integration_score);
 
         if let Some(brain) = &self.digital_brain {
             brain.ingest(record);
@@ -178,6 +216,7 @@ impl Router {
         thought_outputs: &[AiOutput],
         suppressions: &[OutputSuppressionInfo],
         tom_summary: Option<String>,
+        attention: Option<&AttentionWeights>,
     ) -> ExperienceRecord {
         let record_id = format!("exp-{}", cf.frame_id);
         let mut payload = format!(
@@ -225,6 +264,16 @@ impl Router {
             let notes = format!(";tom_summary={summary}");
             payload.extend_from_slice(notes.as_bytes());
         }
+        if let Some(attn) = attention {
+            let notes = format!(
+                ";attn_channel={};attn_gain={};attn_replay_bias={};attn_commit={}",
+                attn.channel.as_str(),
+                attn.gain,
+                attn.replay_bias,
+                attn.commit
+            );
+            payload.extend_from_slice(notes.as_bytes());
+        }
 
         ExperienceRecord {
             record_id,
@@ -235,6 +284,24 @@ impl Router {
             vrf_tag: None,
             proof_ref: None,
         }
+    }
+
+    fn compute_attention(
+        &self,
+        policy_class: u16,
+        risk_score: u16,
+        integration_score: u16,
+        tom_report: &ucf_tom_port::TomReport,
+    ) -> Option<AttentionWeights> {
+        let controller = self.attention_controller.as_ref()?;
+        let inputs = AttnInputs {
+            policy_class,
+            risk_score,
+            integration_score,
+            consistency_instability: 0,
+            intent_type: intent_type_code(tom_report.intent.intent),
+        };
+        Some(controller.compute(&inputs))
     }
 }
 
@@ -255,5 +322,15 @@ fn risk_bucket(overall: u16) -> &'static str {
         0..=3333 => "low",
         3334..=6666 => "med",
         _ => "high",
+    }
+}
+
+fn intent_type_code(intent: IntentType) -> u16 {
+    match intent {
+        IntentType::AskInfo => AttnController::INTENT_ASK_INFO,
+        IntentType::Negotiate => AttnController::INTENT_NEGOTIATE,
+        IntentType::RequestAction => AttnController::INTENT_REQUEST_ACTION,
+        IntentType::SocialBond => AttnController::INTENT_SOCIAL_BOND,
+        IntentType::Unknown => AttnController::INTENT_UNKNOWN,
     }
 }
