@@ -291,7 +291,7 @@ mod tests {
     };
     use ucf_types::{LogicalTime, NodeId, StreamId, WallTime};
 
-    #[derive(Clone, Default)]
+    #[derive(Clone)]
     struct LowRiskTomPort;
 
     impl TomPort for LowRiskTomPort {
@@ -343,7 +343,7 @@ mod tests {
         }));
         let speech_gate = Arc::new(PolicySpeechGate::new(PolicyEcology::allow_all()));
         let risk_gate = Arc::new(PolicyRiskGate::new(PolicyEcology::allow_all()));
-        let tom_port = Arc::new(LowRiskTomPort::default());
+        let tom_port = Arc::new(LowRiskTomPort);
         let router = Arc::new(Router::new(
             policy,
             archive.clone(),
@@ -430,7 +430,7 @@ mod tests {
         }));
         let speech_gate = Arc::new(PolicySpeechGate::new(PolicyEcology::allow_all()));
         let risk_gate = Arc::new(PolicyRiskGate::new(PolicyEcology::allow_all()));
-        let tom_port = Arc::new(LowRiskTomPort::default());
+        let tom_port = Arc::new(LowRiskTomPort);
         let router = Arc::new(Router::new(
             policy,
             archive.clone(),
@@ -517,7 +517,7 @@ mod tests {
         );
         let speech_gate = Arc::new(PolicySpeechGate::new(speech_policy.clone()));
         let risk_gate = Arc::new(PolicyRiskGate::new(speech_policy));
-        let tom_port = Arc::new(LowRiskTomPort::default());
+        let tom_port = Arc::new(LowRiskTomPort);
         let router = Arc::new(Router::new(
             policy,
             archive.clone(),

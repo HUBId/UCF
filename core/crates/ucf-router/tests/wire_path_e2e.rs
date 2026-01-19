@@ -34,7 +34,7 @@ impl OutputSuppressionSink for CaptureSuppression {
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 struct LowRiskTomPort;
 
 impl TomPort for LowRiskTomPort {
@@ -101,7 +101,7 @@ fn handle_control_frame_routes_end_to_end() {
     let ai_port = Arc::new(MockAiPort::new());
     let speech_gate = Arc::new(PolicySpeechGate::new(PolicyEcology::allow_all()));
     let risk_gate = Arc::new(PolicyRiskGate::new(PolicyEcology::allow_all()));
-    let tom_port = Arc::new(LowRiskTomPort::default());
+    let tom_port = Arc::new(LowRiskTomPort);
     let router = Router::new(
         policy,
         archive.clone(),
@@ -165,7 +165,7 @@ fn risk_gate_denies_speech_when_nsr_not_ok() {
     let speech_gate = Arc::new(PolicySpeechGate::new(allow_speech_policy()));
     let risk_gate = Arc::new(PolicyRiskGate::new(PolicyEcology::allow_all()));
     let suppression = CaptureSuppression::default();
-    let tom_port = Arc::new(LowRiskTomPort::default());
+    let tom_port = Arc::new(LowRiskTomPort);
     let router = Router::new(
         policy,
         archive.clone(),
@@ -233,7 +233,7 @@ fn risk_gate_denies_speech_on_unsafe_scm_probe() {
     }));
     let speech_gate = Arc::new(PolicySpeechGate::new(allow_speech_policy()));
     let risk_gate = Arc::new(PolicyRiskGate::new(PolicyEcology::allow_all()));
-    let tom_port = Arc::new(LowRiskTomPort::default());
+    let tom_port = Arc::new(LowRiskTomPort);
     let router = Router::new(
         policy,
         archive,
@@ -262,7 +262,7 @@ fn risk_gate_permits_speech_when_risk_is_low() {
     }));
     let speech_gate = Arc::new(PolicySpeechGate::new(allow_speech_policy()));
     let risk_gate = Arc::new(PolicyRiskGate::new(PolicyEcology::allow_all()));
-    let tom_port = Arc::new(LowRiskTomPort::default());
+    let tom_port = Arc::new(LowRiskTomPort);
     let router = Router::new(
         policy,
         archive,
