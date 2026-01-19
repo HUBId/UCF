@@ -1949,6 +1949,7 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "ucf-types",
+ "ucf-workspace",
 ]
 
 [[package]]
@@ -2093,6 +2094,7 @@ dependencies = [
 name = "ucf-router"
 version = "0.1.0"
 dependencies = [
+ "blake3",
  "hex",
  "prost",
  "ucf-ai-port",
@@ -2100,14 +2102,18 @@ dependencies = [
  "ucf-attn-controller",
  "ucf-cde-port",
  "ucf-digital-brain",
+ "ucf-geist",
+ "ucf-iit-monitor",
  "ucf-nsr-port",
  "ucf-output-router",
  "ucf-policy-ecology",
  "ucf-policy-gateway",
  "ucf-predictive-coding",
  "ucf-risk-gate",
+ "ucf-rsa-hooks",
  "ucf-sandbox",
  "ucf-scm-port",
+ "ucf-sle",
  "ucf-ssm-port",
  "ucf-tcf-port",
  "ucf-tom-port",
@@ -2125,6 +2131,15 @@ dependencies = [
  "ucf-bus",
  "ucf-openevolve-port",
  "ucf-policy-ecology",
+ "ucf-types",
+]
+
+[[package]]
+name = "ucf-rsa-hooks"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ucf-tcf-port",
  "ucf-types",
 ]
 
@@ -2163,8 +2178,10 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "ucf-cde-port",
+ "ucf-geist",
  "ucf-nsr-port",
  "ucf-types",
+ "ucf-workspace",
 ]
 
 [[package]]

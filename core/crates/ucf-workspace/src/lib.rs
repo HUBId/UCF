@@ -194,6 +194,26 @@ impl WorkspaceSignal {
         }
     }
 
+    pub fn from_sle_reflex(
+        loop_level: u8,
+        delta: i16,
+        commit: Digest32,
+        attention_gain: Option<u16>,
+        slot: Option<u8>,
+    ) -> Self {
+        let kind = SignalKind::Consistency;
+        let summary = format!("SLE=LEVEL {loop_level} DELTA={delta}");
+        let base_priority = 4000u16.saturating_add(u16::from(loop_level).saturating_mul(500));
+        let priority = priority_with_attention(base_priority, attention_gain);
+        Self {
+            kind,
+            priority,
+            digest: commit,
+            summary,
+            slot: slot.unwrap_or(0),
+        }
+    }
+
     pub fn from_output_event(
         event: &OutputRouterEvent,
         attention_gain: Option<u16>,
@@ -247,6 +267,25 @@ impl WorkspaceSignal {
         );
         let digest = digest_sleep_triggered(triggered);
         let base_priority = sleep_priority(triggered.reason);
+        let priority = priority_with_attention(base_priority, attention_gain);
+        Self {
+            kind,
+            priority,
+            digest,
+            summary,
+            slot: slot.unwrap_or(0),
+        }
+    }
+
+    pub fn from_sleep_proposals(
+        proposal_count: usize,
+        digest: Digest32,
+        attention_gain: Option<u16>,
+        slot: Option<u8>,
+    ) -> Self {
+        let kind = SignalKind::Sleep;
+        let summary = format!("SLEEP=PROPOSALS COUNT={proposal_count}");
+        let base_priority = if proposal_count > 0 { 6500 } else { 2000 };
         let priority = priority_with_attention(base_priority, attention_gain);
         Self {
             kind,
@@ -356,6 +395,10 @@ impl Workspace {
 
     pub fn drop_counters(&self) -> DropCounters {
         self.drops
+    }
+
+    pub fn set_broadcast_cap(&mut self, broadcast_cap: usize) {
+        self.config.broadcast_cap = broadcast_cap.min(self.config.cap);
     }
 
     pub fn publish(&mut self, mut sig: WorkspaceSignal) {

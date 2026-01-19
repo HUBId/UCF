@@ -1,16 +1,134 @@
 #![forbid(unsafe_code)]
 
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::sync::Mutex;
 
 use blake3::Hasher;
 use ucf_cde_port::CdeHypothesis;
+use ucf_geist::{encode_self_state, SelfState};
 use ucf_nsr_port::NsrReport;
 use ucf_types::{AiOutput, Digest32, OutputChannel};
+use ucf_workspace::{SignalKind, WorkspaceSnapshot};
 
 const DOMAIN_INPUT: &[u8] = b"ucf.sle.input.v1";
 const DOMAIN_OUTPUT: &[u8] = b"ucf.sle.output.v1";
 const DOMAIN_REPORT: &[u8] = b"ucf.sle.report.v1";
+const DOMAIN_SELF_SYMBOL: &[u8] = b"ucf.sle.self_symbol.v1";
+const DOMAIN_SELF_REFLEX: &[u8] = b"ucf.sle.self_reflex.v1";
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SelfReflex {
+    pub loop_level: u8,
+    pub self_symbol: Digest32,
+    pub delta: i16,
+    pub commit: Digest32,
+}
+
+#[derive(Debug)]
+pub struct SleEngine {
+    max_level: u8,
+    history: Mutex<SleHistory>,
+}
+
+#[derive(Debug, Default)]
+struct SleHistory {
+    loop_level: u8,
+    last_high_priority: Vec<Digest32>,
+}
+
+impl SleEngine {
+    pub fn new(max_level: u8) -> Self {
+        Self {
+            max_level,
+            history: Mutex::new(SleHistory::default()),
+        }
+    }
+
+    pub fn evaluate(&self, snapshot: &WorkspaceSnapshot, last_state: &SelfState) -> SelfReflex {
+        let self_symbol = hash_with_domain(DOMAIN_SELF_SYMBOL, |hasher| {
+            hasher.update(&encode_self_state(last_state));
+            hasher.update(ucf_workspace::encode_workspace_snapshot(snapshot).as_slice());
+        });
+
+        let (stable_high_priority, instability) = {
+            let current = high_priority_digests(snapshot);
+            let stable = self
+                .history
+                .lock()
+                .ok()
+                .map(|history| has_stable_overlap(&history.last_high_priority, &current))
+                .unwrap_or(false);
+            (stable, has_instability(snapshot))
+        };
+
+        let mut loop_level = self
+            .history
+            .lock()
+            .map(|history| history.loop_level)
+            .unwrap_or(0);
+        let delta: i16 = if instability {
+            loop_level = loop_level.saturating_sub(1);
+            -1
+        } else if stable_high_priority {
+            loop_level = loop_level.saturating_add(1).min(self.max_level);
+            1
+        } else {
+            0
+        };
+
+        if let Ok(mut history) = self.history.lock() {
+            history.loop_level = loop_level;
+            history.last_high_priority = high_priority_digests(snapshot);
+        }
+
+        let commit = hash_with_domain(DOMAIN_SELF_REFLEX, |hasher| {
+            hasher.update(&[loop_level]);
+            hasher.update(&delta.to_be_bytes());
+            hasher.update(self_symbol.as_bytes());
+        });
+
+        SelfReflex {
+            loop_level,
+            self_symbol,
+            delta,
+            commit,
+        }
+    }
+}
+
+fn high_priority_digests(snapshot: &WorkspaceSnapshot) -> Vec<Digest32> {
+    let mut digests: Vec<Digest32> = snapshot
+        .broadcast
+        .iter()
+        .filter(|signal| signal.priority >= 8000)
+        .map(|signal| signal.digest)
+        .collect();
+    digests.sort_by(|a, b| a.as_bytes().cmp(b.as_bytes()));
+    digests.dedup();
+    digests
+}
+
+fn has_stable_overlap(previous: &[Digest32], current: &[Digest32]) -> bool {
+    if previous.is_empty() || current.is_empty() {
+        return false;
+    }
+    let prev: HashSet<Digest32> = previous.iter().copied().collect();
+    let overlap = current
+        .iter()
+        .filter(|digest| prev.contains(digest))
+        .count();
+    overlap * 2 >= previous.len().max(1)
+}
+
+fn has_instability(snapshot: &WorkspaceSnapshot) -> bool {
+    snapshot.broadcast.iter().any(|signal| {
+        (matches!(signal.kind, SignalKind::Consistency)
+            && (signal.summary.contains("NSR=DAMP") || signal.summary.contains("NSR=VIOL")))
+            || (matches!(signal.kind, SignalKind::World)
+                && (signal.summary.contains("SURPRISE=HIGH")
+                    || signal.summary.contains("SURPRISE=CRIT")))
+    })
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LoopFrame {
@@ -183,6 +301,7 @@ fn encode_cde_hypothesis(hasher: &mut Hasher, hyp: Option<&CdeHypothesis>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ucf_workspace::{SignalKind, WorkspaceSignal};
 
     #[test]
     fn reflect_is_deterministic() {
@@ -213,5 +332,75 @@ mod tests {
         assert_eq!(first, second);
         let latest = engine.latest().expect("frame stored");
         assert_eq!(latest, second);
+    }
+
+    #[test]
+    fn loop_level_increases_on_stable_high_priority() {
+        let engine = SleEngine::new(4);
+        let state = SelfState::builder(1).build();
+        let signal = WorkspaceSignal {
+            kind: SignalKind::Risk,
+            priority: 9000,
+            digest: Digest32::new([9u8; 32]),
+            summary: "RISK=9000 DENY".to_string(),
+            slot: 0,
+        };
+        let snapshot_a = WorkspaceSnapshot {
+            cycle_id: 1,
+            broadcast: vec![signal.clone()],
+            commit: Digest32::new([1u8; 32]),
+        };
+        let snapshot_b = WorkspaceSnapshot {
+            cycle_id: 2,
+            broadcast: vec![signal],
+            commit: Digest32::new([2u8; 32]),
+        };
+
+        let _ = engine.evaluate(&snapshot_a, &state);
+        let reflex = engine.evaluate(&snapshot_b, &state);
+
+        assert!(reflex.loop_level >= 1);
+        assert_eq!(reflex.delta, 1);
+    }
+
+    #[test]
+    fn loop_level_decreases_on_surprise_or_instability() {
+        let engine = SleEngine::new(4);
+        let state = SelfState::builder(1).build();
+        let stable_signal = WorkspaceSignal {
+            kind: SignalKind::Risk,
+            priority: 9000,
+            digest: Digest32::new([8u8; 32]),
+            summary: "RISK=9000 DENY".to_string(),
+            slot: 0,
+        };
+        let snapshot_a = WorkspaceSnapshot {
+            cycle_id: 1,
+            broadcast: vec![stable_signal.clone()],
+            commit: Digest32::new([1u8; 32]),
+        };
+        let snapshot_b = WorkspaceSnapshot {
+            cycle_id: 2,
+            broadcast: vec![stable_signal],
+            commit: Digest32::new([2u8; 32]),
+        };
+        let _ = engine.evaluate(&snapshot_a, &state);
+        let _ = engine.evaluate(&snapshot_b, &state);
+
+        let surprise_signal = WorkspaceSignal {
+            kind: SignalKind::World,
+            priority: 9000,
+            digest: Digest32::new([7u8; 32]),
+            summary: "SURPRISE=CRIT BAND=CRIT".to_string(),
+            slot: 0,
+        };
+        let snapshot_c = WorkspaceSnapshot {
+            cycle_id: 3,
+            broadcast: vec![surprise_signal],
+            commit: Digest32::new([3u8; 32]),
+        };
+
+        let reflex = engine.evaluate(&snapshot_c, &state);
+        assert_eq!(reflex.delta, -1);
     }
 }

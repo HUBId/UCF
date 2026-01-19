@@ -1,9 +1,9 @@
 [package]
-name = "ucf-iit-monitor"
+name = "ucf-rsa-hooks"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 blake3 = "1"
+ucf-tcf-port = { path = "../ucf-tcf-port" }
 ucf-types = { path = "../ucf-types" }
-ucf-workspace = { path = "../ucf-workspace" }

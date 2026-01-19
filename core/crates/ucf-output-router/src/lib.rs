@@ -155,6 +155,10 @@ impl OutputRouter {
         std::mem::take(&mut self.events)
     }
 
+    pub fn set_max_thought_frames_per_cycle(&mut self, max: u16) {
+        self.config.max_thought_frames_per_cycle = max.max(1);
+    }
+
     pub fn route(
         &mut self,
         cf: &ControlFrameNormalized,

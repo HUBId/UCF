@@ -11,7 +11,12 @@ ucf-archive = { path = "../../../domains/archive/crates/ucf-archive" }
 ucf-digital-brain = { path = "../../../domains/digital-brain/crates/ucf-digital-brain" }
 ucf-sandbox = { path = "../ucf-sandbox" }
 ucf-policy-ecology = { path = "../ucf-policy-ecology" }
+ucf-geist = { path = "../../../domains/geist/crates/ucf-geist" }
+ucf-iit-monitor = { path = "../ucf-iit-monitor" }
+ucf-nsr-port = { path = "../ucf-nsr-port" }
+ucf-rsa-hooks = { path = "../ucf-rsa-hooks" }
 ucf-risk-gate = { path = "../ucf-risk-gate" }
+ucf-sle = { path = "../ucf-sle" }
 ucf-tom-port = { path = "../ucf-tom-port" }
 ucf-attn-controller = { path = "../ucf-attn-controller" }
 ucf-output-router = { path = "../ucf-output-router" }
@@ -20,9 +25,9 @@ ucf-ssm-port = { path = "../ucf-ssm-port" }
 ucf-tcf-port = { path = "../ucf-tcf-port" }
 ucf-workspace = { path = "../ucf-workspace" }
 hex = { workspace = true }
+blake3 = "1"
 
 [dev-dependencies]
 prost = "0.12"
 ucf-cde-port = { path = "../ucf-cde-port" }
-ucf-nsr-port = { path = "../ucf-nsr-port" }
 ucf-scm-port = { path = "../ucf-scm-port" }

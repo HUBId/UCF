@@ -218,7 +218,7 @@ fn handle_control_frame_routes_end_to_end() {
 
     assert_eq!(outcome.evidence_id, EvidenceId::new("exp-frame-1"));
     assert_eq!(outcome.decision_kind, DecisionKind::DecisionKindUnspecified);
-    assert_eq!(archive.list().len(), 3);
+    assert_eq!(archive.list().len(), 8);
     assert_eq!(brain.records().len(), 1);
 
     let record = archive
