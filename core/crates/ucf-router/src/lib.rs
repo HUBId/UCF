@@ -543,22 +543,6 @@ fn risk_bucket(overall: u16) -> &'static str {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn predictive_observation_changes_with_ssm_state() {
-        let state_a = SsmState::new(vec![1, -2, 3]);
-        let state_b = SsmState::new(vec![2, -2, 3]);
-
-        let obs_a = observation_from_ssm_state(&state_a);
-        let obs_b = observation_from_ssm_state(&state_b);
-
-        assert_ne!(obs_a.commit, obs_b.commit);
-    }
-}
-
 fn intent_type_code(intent: IntentType) -> u16 {
     match intent {
         IntentType::AskInfo => AttnController::INTENT_ASK_INFO,
@@ -576,5 +560,21 @@ fn digest32_to_proto(digest: Digest32) -> Digest {
         algo_id: Some(AlgoId::BLAKE3_256_ID as u32),
         domain: None,
         value_32: Some(digest.as_bytes().to_vec()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn predictive_observation_changes_with_ssm_state() {
+        let state_a = SsmState::new(vec![1, -2, 3]);
+        let state_b = SsmState::new(vec![2, -2, 3]);
+
+        let obs_a = observation_from_ssm_state(&state_a);
+        let obs_b = observation_from_ssm_state(&state_b);
+
+        assert_ne!(obs_a.commit, obs_b.commit);
     }
 }
