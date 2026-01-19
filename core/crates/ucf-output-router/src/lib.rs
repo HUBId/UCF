@@ -97,6 +97,10 @@ impl SubVocalBuffer {
         self.frames.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.frames.is_empty()
+    }
+
     pub fn frames(&self) -> &VecDeque<OutputFrame> {
         &self.frames
     }
