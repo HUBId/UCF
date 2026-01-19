@@ -1951,6 +1951,7 @@ dependencies = [
  "ucf-nsr-port",
  "ucf-policy-ecology",
  "ucf-policy-gateway",
+ "ucf-risk-gate",
  "ucf-router",
  "ucf-sandbox",
  "ucf-sleep-coordinator",
@@ -2044,16 +2045,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucf-risk-gate"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ucf-nsr-port",
+ "ucf-policy-ecology",
+ "ucf-sandbox",
+ "ucf-scm-port",
+ "ucf-types",
+]
+
+[[package]]
 name = "ucf-router"
 version = "0.1.0"
 dependencies = [
  "prost",
  "ucf-ai-port",
  "ucf-archive",
+ "ucf-cde-port",
  "ucf-digital-brain",
+ "ucf-nsr-port",
  "ucf-policy-ecology",
  "ucf-policy-gateway",
+ "ucf-risk-gate",
  "ucf-sandbox",
+ "ucf-scm-port",
  "ucf-types",
 ]
 

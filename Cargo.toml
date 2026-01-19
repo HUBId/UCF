@@ -36,6 +36,7 @@ members = [
     "core/crates/ucf-commit",
     "core/crates/ucf-sandbox",
     "core/crates/ucf-policy-ecology",
+    "core/crates/ucf-risk-gate",
     "crates/dbm_core",
     "crates/dbm_13_hypothalamus",
     "crates/dbm_12_insula",

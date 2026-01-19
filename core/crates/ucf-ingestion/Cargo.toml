@@ -18,3 +18,4 @@ ucf-digital-brain = { path = "../../../domains/digital-brain/crates/ucf-digital-
 ucf-policy-ecology = { path = "../ucf-policy-ecology" }
 ucf-policy-gateway = { path = "../../../domains/policy-gateway/crates/ucf-policy-gateway" }
 ucf-nsr-port = { path = "../ucf-nsr-port" }
+ucf-risk-gate = { path = "../ucf-risk-gate" }
