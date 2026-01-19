@@ -300,6 +300,7 @@ where
 mod tests {
     use super::*;
 
+    use std::convert::TryInto;
     use std::sync::Arc;
 
     use prost::Message;
@@ -606,5 +607,95 @@ mod tests {
         assert_eq!(speech.payload.content, "ok");
         assert_eq!(speech.payload.evidence_id, EvidenceId::new("exp-ping"));
         assert_eq!(speech.logical_time.tick, 21);
+    }
+
+    #[test]
+    fn ingestion_service_emits_workspace_snapshot_event_and_archives_record() {
+        let bus = InMemoryBus::new();
+        let workspace_bus = InMemoryBus::new();
+        let workspace_receiver = workspace_bus.subscribe();
+
+        let policy = Arc::new(NoOpPolicyEvaluator::new());
+        let archive = Arc::new(InMemoryArchive::new());
+        let brain = Arc::new(InMemoryDigitalBrain::new());
+        let ai_port = Arc::new(MockAiPort::with_pillars(AiPillars {
+            nsr: Some(Arc::new(NsrPort::default())),
+            ..AiPillars::default()
+        }));
+        let speech_gate = Arc::new(PolicySpeechGate::new(PolicyEcology::allow_all()));
+        let risk_gate = Arc::new(PolicyRiskGate::new(PolicyEcology::allow_all()));
+        let tom_port = Arc::new(LowRiskTomPort);
+        let router = Arc::new(Router::new(
+            policy,
+            archive.clone(),
+            Some(brain),
+            ai_port,
+            speech_gate,
+            risk_gate,
+            tom_port,
+            None,
+        ));
+
+        let validator = ControlFrameValidator::new(ValidatorLimits::default());
+        let mut service = IngestionService::new(
+            router,
+            bus.clone(),
+            None::<InMemoryBus<MessageEnvelope<OutcomeEvent>>>,
+            None::<InMemoryBus<MessageEnvelope<SandboxRejectEvent>>>,
+            None::<InMemoryBus<MessageEnvelope<SpeechEvent>>>,
+            Some(workspace_bus.clone()),
+            None::<SleepLoop<InMemoryBus<MessageEnvelope<SleepTriggered>>>>,
+            validator,
+        );
+        service.start();
+
+        let frame = ControlFrame {
+            frame_id: "frame-workspace".to_string(),
+            issued_at_ms: 1_700_000_000_002,
+            decision: Some(PolicyDecision {
+                kind: DecisionKind::DecisionKindAllow as i32,
+                action: ActionCode::ActionCodeContinue as i32,
+                rationale: "ok".to_string(),
+                confidence_bp: 1000,
+                constraint_ids: Vec::new(),
+            }),
+            evidence_ids: Vec::new(),
+            policy_id: "policy-1".to_string(),
+        };
+
+        bus.publish(MessageEnvelope {
+            node_id: NodeId::new("node-c"),
+            stream_id: StreamId::new("stream-3"),
+            logical_time: LogicalTime::new(31),
+            wall_time: WallTime::new(1_700_000_000_002),
+            payload: frame,
+        });
+
+        let processed = service.drain();
+
+        assert_eq!(processed, 1);
+        assert_eq!(archive.list().len(), 2);
+
+        let mut workspace_records = Vec::new();
+        for envelope in archive.list() {
+            let proof = envelope.proof.as_ref().expect("missing proof envelope");
+            let record = ExperienceRecord::decode(proof.payload.as_slice()).expect("decode record");
+            if record.record_id.starts_with("workspace-") {
+                workspace_records.push(record);
+            }
+        }
+
+        assert_eq!(workspace_records.len(), 1);
+        let workspace_record = workspace_records.pop().expect("workspace record exists");
+        let digest = workspace_record.digest.expect("workspace digest");
+        let digest_bytes = digest
+            .value_32
+            .expect("workspace digest bytes")
+            .try_into()
+            .expect("digest length");
+        let workspace_commit = Digest32::new(digest_bytes);
+
+        let event = workspace_receiver.try_recv().expect("workspace broadcast");
+        assert_eq!(event.payload.snapshot_commit, workspace_commit);
     }
 }

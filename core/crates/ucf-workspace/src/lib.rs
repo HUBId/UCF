@@ -662,3 +662,90 @@ fn sanitize_summary(summary: &str) -> String {
         trimmed.to_string()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_signal(
+        kind: SignalKind,
+        priority: u16,
+        digest_byte: u8,
+        summary: &str,
+    ) -> WorkspaceSignal {
+        WorkspaceSignal {
+            kind,
+            priority,
+            digest: Digest32::new([digest_byte; 32]),
+            summary: summary.to_string(),
+        }
+    }
+
+    #[test]
+    fn publish_over_cap_drops_lowest_priority_then_kind_then_digest_then_seq() {
+        let mut workspace = Workspace::new(WorkspaceConfig {
+            cap: 2,
+            broadcast_cap: 2,
+        });
+
+        // Drop rule: remove the lowest priority, then lowest kind, then lowest digest, then seq.
+        workspace.publish(make_signal(SignalKind::World, 1000, 1, "WORLD=STATE DIG=1"));
+        workspace.publish(make_signal(SignalKind::Policy, 1000, 2, "POLICY=ALLOW"));
+        workspace.publish(make_signal(SignalKind::Risk, 1000, 3, "RISK=42 PERMIT"));
+
+        let snapshot = workspace.arbitrate(1);
+
+        assert_eq!(snapshot.broadcast.len(), 2);
+        assert_eq!(snapshot.broadcast[0].kind, SignalKind::Policy);
+        assert_eq!(snapshot.broadcast[1].kind, SignalKind::Risk);
+
+        let drops = workspace.drop_counters();
+        assert_eq!(drops.total, 1);
+        assert_eq!(drops.by_kind[SignalKind::World.index()], 1);
+    }
+
+    #[test]
+    fn arbitrate_orders_by_priority_then_kind_then_digest_and_enforces_broadcast_cap() {
+        let mut workspace = Workspace::new(WorkspaceConfig {
+            cap: 10,
+            broadcast_cap: 2,
+        });
+
+        workspace.publish(make_signal(SignalKind::Policy, 5000, 2, "POLICY=ALLOW"));
+        workspace.publish(make_signal(SignalKind::Policy, 5000, 1, "POLICY=ALLOW"));
+        workspace.publish(make_signal(SignalKind::Risk, 7000, 9, "RISK=9000 DENY"));
+        workspace.publish(make_signal(SignalKind::World, 1000, 4, "WORLD=STATE DIG=4"));
+
+        let snapshot = workspace.arbitrate(7);
+
+        assert_eq!(snapshot.broadcast.len(), 2);
+        assert_eq!(snapshot.broadcast[0].kind, SignalKind::Risk);
+        assert_eq!(snapshot.broadcast[1].digest, Digest32::new([1u8; 32]));
+
+        let drops = workspace.drop_counters();
+        assert_eq!(drops.total, 2);
+        assert_eq!(drops.by_kind[SignalKind::Policy.index()], 1);
+        assert_eq!(drops.by_kind[SignalKind::World.index()], 1);
+    }
+
+    #[test]
+    fn snapshot_commit_changes_when_signal_digest_changes() {
+        let mut workspace_a = Workspace::new(WorkspaceConfig {
+            cap: 2,
+            broadcast_cap: 2,
+        });
+        workspace_a.publish(make_signal(SignalKind::Policy, 5000, 1, "POLICY=ALLOW"));
+        workspace_a.publish(make_signal(SignalKind::Risk, 7000, 2, "RISK=100 DENY"));
+        let snapshot_a = workspace_a.arbitrate(12);
+
+        let mut workspace_b = Workspace::new(WorkspaceConfig {
+            cap: 2,
+            broadcast_cap: 2,
+        });
+        workspace_b.publish(make_signal(SignalKind::Policy, 5000, 1, "POLICY=ALLOW"));
+        workspace_b.publish(make_signal(SignalKind::Risk, 7000, 3, "RISK=100 DENY"));
+        let snapshot_b = workspace_b.arbitrate(12);
+
+        assert_ne!(snapshot_a.commit, snapshot_b.commit);
+    }
+}
