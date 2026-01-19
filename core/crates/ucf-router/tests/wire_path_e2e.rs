@@ -14,6 +14,9 @@ use ucf_risk_gate::PolicyRiskGate;
 use ucf_router::Router;
 use ucf_sandbox::normalize;
 use ucf_scm_port::{CausalNode, CounterfactualQuery, CounterfactualResult, ScmDag, ScmPort};
+use ucf_tom_port::{
+    ActorProfile, IntentHypothesis, IntentType, KnowledgeGap, SocialRiskSignals, TomPort, TomReport,
+};
 use ucf_types::v1::spec::ExperienceRecord;
 use ucf_types::v1::spec::{ActionCode, ControlFrame, DecisionKind, PolicyDecision};
 use ucf_types::EvidenceId;
@@ -27,6 +30,39 @@ impl OutputSuppressionSink for CaptureSuppression {
     fn publish(&self, event: OutputSuppressed) {
         if let Ok(mut guard) = self.events.lock() {
             guard.push(event);
+        }
+    }
+}
+
+#[derive(Clone)]
+struct LowRiskTomPort;
+
+impl TomPort for LowRiskTomPort {
+    fn analyze(
+        &self,
+        cf: &ucf_sandbox::ControlFrameNormalized,
+        _outputs: &[ucf_types::AiOutput],
+    ) -> TomReport {
+        TomReport {
+            actors: vec![ActorProfile {
+                id: 1,
+                label: "actor-1".to_string(),
+            }],
+            intent: IntentHypothesis {
+                intent: IntentType::Unknown,
+                confidence: 0,
+            },
+            gaps: vec![KnowledgeGap {
+                topic: "context".to_string(),
+                uncertainty: 0,
+            }],
+            risk: SocialRiskSignals {
+                deception_likelihood: 0,
+                consent_uncertainty: 0,
+                manipulation_risk: 0,
+                overall: 0,
+            },
+            commit: cf.commitment().digest,
         }
     }
 }
@@ -65,6 +101,7 @@ fn handle_control_frame_routes_end_to_end() {
     let ai_port = Arc::new(MockAiPort::new());
     let speech_gate = Arc::new(PolicySpeechGate::new(PolicyEcology::allow_all()));
     let risk_gate = Arc::new(PolicyRiskGate::new(PolicyEcology::allow_all()));
+    let tom_port = Arc::new(LowRiskTomPort);
     let router = Router::new(
         policy,
         archive.clone(),
@@ -72,6 +109,7 @@ fn handle_control_frame_routes_end_to_end() {
         ai_port,
         speech_gate,
         risk_gate,
+        tom_port,
         None,
     );
 
@@ -127,6 +165,7 @@ fn risk_gate_denies_speech_when_nsr_not_ok() {
     let speech_gate = Arc::new(PolicySpeechGate::new(allow_speech_policy()));
     let risk_gate = Arc::new(PolicyRiskGate::new(PolicyEcology::allow_all()));
     let suppression = CaptureSuppression::default();
+    let tom_port = Arc::new(LowRiskTomPort);
     let router = Router::new(
         policy,
         archive.clone(),
@@ -134,6 +173,7 @@ fn risk_gate_denies_speech_when_nsr_not_ok() {
         ai_port,
         speech_gate,
         risk_gate,
+        tom_port,
         Some(Arc::new(suppression.clone())),
     );
 
@@ -193,7 +233,17 @@ fn risk_gate_denies_speech_on_unsafe_scm_probe() {
     }));
     let speech_gate = Arc::new(PolicySpeechGate::new(allow_speech_policy()));
     let risk_gate = Arc::new(PolicyRiskGate::new(PolicyEcology::allow_all()));
-    let router = Router::new(policy, archive, None, ai_port, speech_gate, risk_gate, None);
+    let tom_port = Arc::new(LowRiskTomPort);
+    let router = Router::new(
+        policy,
+        archive,
+        None,
+        ai_port,
+        speech_gate,
+        risk_gate,
+        tom_port,
+        None,
+    );
 
     let outcome = router
         .handle_control_frame(normalize(decision_frame("ping")))
@@ -212,7 +262,17 @@ fn risk_gate_permits_speech_when_risk_is_low() {
     }));
     let speech_gate = Arc::new(PolicySpeechGate::new(allow_speech_policy()));
     let risk_gate = Arc::new(PolicyRiskGate::new(PolicyEcology::allow_all()));
-    let router = Router::new(policy, archive, None, ai_port, speech_gate, risk_gate, None);
+    let tom_port = Arc::new(LowRiskTomPort);
+    let router = Router::new(
+        policy,
+        archive,
+        None,
+        ai_port,
+        speech_gate,
+        risk_gate,
+        tom_port,
+        None,
+    );
 
     let outcome = router
         .handle_control_frame(normalize(decision_frame("ping")))

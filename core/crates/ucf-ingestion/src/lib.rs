@@ -280,12 +280,49 @@ mod tests {
     use ucf_policy_ecology::{PolicyEcology, PolicyRule, PolicyWeights};
     use ucf_policy_gateway::NoOpPolicyEvaluator;
     use ucf_risk_gate::PolicyRiskGate;
-    use ucf_sandbox::{ControlFrameValidator, ValidatorLimits};
+    use ucf_sandbox::{ControlFrameNormalized, ControlFrameValidator, ValidatorLimits};
     use ucf_sleep_coordinator::SleepTriggered;
+    use ucf_tom_port::{
+        ActorProfile, IntentHypothesis, IntentType, KnowledgeGap, SocialRiskSignals, TomPort,
+        TomReport,
+    };
     use ucf_types::v1::spec::{
         ActionCode, ControlFrame, DecisionKind, ExperienceRecord, PolicyDecision,
     };
     use ucf_types::{LogicalTime, NodeId, StreamId, WallTime};
+
+    #[derive(Clone)]
+    struct LowRiskTomPort;
+
+    impl TomPort for LowRiskTomPort {
+        fn analyze(
+            &self,
+            cf: &ControlFrameNormalized,
+            _outputs: &[ucf_types::AiOutput],
+        ) -> TomReport {
+            TomReport {
+                actors: vec![ActorProfile {
+                    id: 1,
+                    label: "actor-1".to_string(),
+                }],
+                intent: IntentHypothesis {
+                    intent: IntentType::Unknown,
+                    confidence: 0,
+                },
+                gaps: vec![KnowledgeGap {
+                    topic: "context".to_string(),
+                    uncertainty: 0,
+                }],
+                risk: SocialRiskSignals {
+                    deception_likelihood: 0,
+                    consent_uncertainty: 0,
+                    manipulation_risk: 0,
+                    overall: 0,
+                },
+                commit: cf.commitment().digest,
+            }
+        }
+    }
 
     #[test]
     fn ingestion_service_routes_control_frame_and_publishes_outcome() {
@@ -306,6 +343,7 @@ mod tests {
         }));
         let speech_gate = Arc::new(PolicySpeechGate::new(PolicyEcology::allow_all()));
         let risk_gate = Arc::new(PolicyRiskGate::new(PolicyEcology::allow_all()));
+        let tom_port = Arc::new(LowRiskTomPort);
         let router = Arc::new(Router::new(
             policy,
             archive.clone(),
@@ -313,6 +351,7 @@ mod tests {
             ai_port,
             speech_gate,
             risk_gate,
+            tom_port,
             None,
         ));
 
@@ -391,6 +430,7 @@ mod tests {
         }));
         let speech_gate = Arc::new(PolicySpeechGate::new(PolicyEcology::allow_all()));
         let risk_gate = Arc::new(PolicyRiskGate::new(PolicyEcology::allow_all()));
+        let tom_port = Arc::new(LowRiskTomPort);
         let router = Arc::new(Router::new(
             policy,
             archive.clone(),
@@ -398,6 +438,7 @@ mod tests {
             ai_port,
             speech_gate,
             risk_gate,
+            tom_port,
             None,
         ));
 
@@ -476,6 +517,7 @@ mod tests {
         );
         let speech_gate = Arc::new(PolicySpeechGate::new(speech_policy.clone()));
         let risk_gate = Arc::new(PolicyRiskGate::new(speech_policy));
+        let tom_port = Arc::new(LowRiskTomPort);
         let router = Arc::new(Router::new(
             policy,
             archive.clone(),
@@ -483,6 +525,7 @@ mod tests {
             ai_port,
             speech_gate,
             risk_gate,
+            tom_port,
             None,
         ));
 

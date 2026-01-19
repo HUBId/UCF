@@ -1955,6 +1955,7 @@ dependencies = [
  "ucf-router",
  "ucf-sandbox",
  "ucf-sleep-coordinator",
+ "ucf-tom-port",
  "ucf-types",
 ]
 
@@ -2053,6 +2054,7 @@ dependencies = [
  "ucf-policy-ecology",
  "ucf-sandbox",
  "ucf-scm-port",
+ "ucf-tom-port",
  "ucf-types",
 ]
 
@@ -2071,6 +2073,7 @@ dependencies = [
  "ucf-risk-gate",
  "ucf-sandbox",
  "ucf-scm-port",
+ "ucf-tom-port",
  "ucf-types",
 ]
 
@@ -2161,6 +2164,15 @@ version = "0.1.0"
 dependencies = [
  "ucf-bus",
  "ucf-ingestion",
+ "ucf-sandbox",
+ "ucf-types",
+]
+
+[[package]]
+name = "ucf-tom-port"
+version = "0.1.0"
+dependencies = [
+ "blake3",
  "ucf-sandbox",
  "ucf-types",
 ]
