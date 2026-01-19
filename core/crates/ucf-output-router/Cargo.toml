@@ -1,0 +1,13 @@
+[package]
+name = "ucf-output-router"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+blake3 = "1"
+ucf-policy-ecology = { path = "../ucf-policy-ecology" }
+ucf-sandbox = { path = "../ucf-sandbox" }
+ucf-types = { path = "../ucf-types" }
+
+[dev-dependencies]
+ucf-sandbox = { path = "../ucf-sandbox" }
