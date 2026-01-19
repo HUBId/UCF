@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 use std::fmt;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use ucf_ai_port::{
@@ -18,6 +19,7 @@ use ucf_sandbox::ControlFrameNormalized;
 use ucf_tom_port::{IntentType, TomPort};
 use ucf_types::v1::spec::{ControlFrame, DecisionKind, ExperienceRecord, PolicyDecision};
 use ucf_types::{Digest32, EvidenceId};
+use ucf_workspace::{Workspace, WorkspaceConfig, WorkspaceSignal, WorkspaceSnapshot};
 
 #[derive(Debug)]
 pub enum RouterError {
@@ -48,6 +50,8 @@ pub struct Router {
     attention_controller: Option<AttnController>,
     attention_sink: Option<Arc<dyn AttentionEventSink + Send + Sync>>,
     output_router: Mutex<OutputRouter>,
+    workspace: Arc<Mutex<Workspace>>,
+    cycle_counter: AtomicU64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -56,6 +60,7 @@ pub struct RouterOutcome {
     pub decision_kind: DecisionKind,
     pub speech_outputs: Vec<AiOutput>,
     pub integration_score: Option<u16>,
+    pub workspace_snapshot_commit: Option<Digest32>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -93,6 +98,11 @@ impl Router {
                 max_thought_frames_per_cycle: 32,
                 external_enabled: true,
             })),
+            workspace: Arc::new(Mutex::new(Workspace::new(WorkspaceConfig {
+                cap: 64,
+                broadcast_cap: 8,
+            }))),
+            cycle_counter: AtomicU64::new(0),
         }
     }
 
@@ -106,11 +116,17 @@ impl Router {
         self
     }
 
+    pub fn workspace_handle(&self) -> Arc<Mutex<Workspace>> {
+        Arc::clone(&self.workspace)
+    }
+
     pub fn handle_control_frame(
         &self,
         cf: ControlFrameNormalized,
     ) -> Result<RouterOutcome, RouterError> {
+        let cycle_id = self.cycle_counter.fetch_add(1, Ordering::SeqCst);
         let decision = self.policy.evaluate(cf.as_ref().clone());
+        self.publish_workspace_signal(WorkspaceSignal::from_policy_decision(&decision, None));
         self.ensure_allowed(&decision)?;
         let decision_kind =
             DecisionKind::try_from(decision.kind).unwrap_or(DecisionKind::DecisionKindUnspecified);
@@ -137,6 +153,11 @@ impl Router {
             risk_results.push(gate_result);
             speech_gate_results.push(self.speech_gate.allow_speech(&cf, output));
         }
+        self.publish_workspace_signals(
+            risk_results
+                .iter()
+                .map(|result| WorkspaceSignal::from_risk_result(result, None)),
+        );
 
         let nsr_summary = NsrSummary {
             ok: inference
@@ -159,7 +180,17 @@ impl Router {
         };
         let mut output_router = self.output_router.lock().expect("output router lock");
         let decisions = output_router.route(&cf, outputs.clone(), &gates);
-        let _events = output_router.drain_events();
+        let events = output_router.drain_events();
+        self.publish_workspace_signals(
+            decisions
+                .iter()
+                .map(|decision| WorkspaceSignal::from_output_decision(decision, None))
+                .chain(
+                    events
+                        .iter()
+                        .map(|event| WorkspaceSignal::from_output_event(event, None)),
+                ),
+        );
 
         for (idx, output) in outputs.iter().enumerate() {
             match output.channel {
@@ -197,6 +228,9 @@ impl Router {
         let integration_score = thought_outputs
             .iter()
             .find_map(|output| output.integration_score);
+        if let Some(score) = integration_score {
+            self.publish_workspace_signal(WorkspaceSignal::from_integration_score(score, None));
+        }
         let attention_weights = self.compute_attention(
             decision.kind as u16,
             attention_risk,
@@ -205,13 +239,15 @@ impl Router {
         );
         if let Some(weights) = attention_weights.as_ref() {
             self.ai_port.update_attention(weights);
+            let update = AttentionUpdated {
+                channel: weights.channel,
+                gain: weights.gain,
+                replay_bias: weights.replay_bias,
+                commit: weights.commit,
+            };
+            self.publish_workspace_signal(WorkspaceSignal::from_attention_update(&update));
             if let Some(sink) = &self.attention_sink {
-                sink.publish(AttentionUpdated {
-                    channel: weights.channel,
-                    gain: weights.gain,
-                    replay_bias: weights.replay_bias,
-                    commit: weights.commit,
-                });
+                sink.publish(update);
             }
         }
 
@@ -229,11 +265,16 @@ impl Router {
             brain.ingest(record);
         }
 
+        let snapshot = self.arbitrate_workspace(cycle_id);
+        let workspace_record = self.build_workspace_record(cf.as_ref(), &snapshot, &evidence_id);
+        self.archive.append(workspace_record);
+
         Ok(RouterOutcome {
             evidence_id,
             decision_kind,
             speech_outputs,
             integration_score,
+            workspace_snapshot_commit: Some(snapshot.commit),
         })
     }
 
@@ -325,6 +366,49 @@ impl Router {
         }
     }
 
+    fn build_workspace_record(
+        &self,
+        cf: &ControlFrame,
+        snapshot: &WorkspaceSnapshot,
+        source_evidence: &EvidenceId,
+    ) -> ExperienceRecord {
+        let record_id = format!("exp-ws-{}", snapshot.cycle_id);
+        let mut payload = format!(
+            "workspace_cycle_id={};workspace_commit={};derived_from={}",
+            snapshot.cycle_id,
+            snapshot.commit,
+            source_evidence.as_str()
+        )
+        .into_bytes();
+        if !snapshot.broadcast.is_empty() {
+            let broadcast = snapshot
+                .broadcast
+                .iter()
+                .map(|signal| {
+                    format!(
+                        "{}:{}:{}",
+                        signal_kind_token(signal.kind),
+                        signal.summary,
+                        signal.digest
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("|");
+            let notes = format!(";broadcast={broadcast}");
+            payload.extend_from_slice(notes.as_bytes());
+        }
+
+        ExperienceRecord {
+            record_id,
+            observed_at_ms: cf.issued_at_ms,
+            subject_id: cf.policy_id.clone(),
+            payload,
+            digest: Some(snapshot.commit),
+            vrf_tag: None,
+            proof_ref: None,
+        }
+    }
+
     fn compute_attention(
         &self,
         policy_class: u16,
@@ -341,6 +425,28 @@ impl Router {
             intent_type: intent_type_code(tom_report.intent.intent),
         };
         Some(controller.compute(&inputs))
+    }
+
+    fn publish_workspace_signal(&self, signal: WorkspaceSignal) {
+        if let Ok(mut workspace) = self.workspace.lock() {
+            workspace.publish(signal);
+        }
+    }
+
+    fn publish_workspace_signals<I>(&self, signals: I)
+    where
+        I: IntoIterator<Item = WorkspaceSignal>,
+    {
+        if let Ok(mut workspace) = self.workspace.lock() {
+            for signal in signals {
+                workspace.publish(signal);
+            }
+        }
+    }
+
+    fn arbitrate_workspace(&self, cycle_id: u64) -> WorkspaceSnapshot {
+        let mut workspace = self.workspace.lock().expect("workspace lock");
+        workspace.arbitrate(cycle_id)
     }
 }
 
@@ -371,5 +477,18 @@ fn intent_type_code(intent: IntentType) -> u16 {
         IntentType::RequestAction => AttnController::INTENT_REQUEST_ACTION,
         IntentType::SocialBond => AttnController::INTENT_SOCIAL_BOND,
         IntentType::Unknown => AttnController::INTENT_UNKNOWN,
+    }
+}
+
+fn signal_kind_token(kind: ucf_workspace::SignalKind) -> &'static str {
+    match kind {
+        ucf_workspace::SignalKind::World => "WORLD",
+        ucf_workspace::SignalKind::Policy => "POLICY",
+        ucf_workspace::SignalKind::Risk => "RISK",
+        ucf_workspace::SignalKind::Attention => "ATTENTION",
+        ucf_workspace::SignalKind::Integration => "INTEGRATION",
+        ucf_workspace::SignalKind::Consistency => "CONSISTENCY",
+        ucf_workspace::SignalKind::Output => "OUTPUT",
+        ucf_workspace::SignalKind::Sleep => "SLEEP",
     }
 }

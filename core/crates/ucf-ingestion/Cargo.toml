@@ -10,6 +10,7 @@ ucf-router = { path = "../ucf-router" }
 ucf-sandbox = { path = "../ucf-sandbox" }
 ucf-sleep-coordinator = { path = "../ucf-sleep-coordinator" }
 ucf-types = { path = "../ucf-types" }
+ucf-workspace = { path = "../ucf-workspace" }
 
 [dev-dependencies]
 prost = "0.12"

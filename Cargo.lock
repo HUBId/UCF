@@ -1967,6 +1967,7 @@ dependencies = [
  "ucf-sleep-coordinator",
  "ucf-tom-port",
  "ucf-types",
+ "ucf-workspace",
 ]
 
 [[package]]
@@ -2097,6 +2098,7 @@ dependencies = [
  "ucf-scm-port",
  "ucf-tom-port",
  "ucf-types",
+ "ucf-workspace",
 ]
 
 [[package]]
