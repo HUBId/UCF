@@ -2232,6 +2232,10 @@ name = "ucf-workspace"
 version = "0.1.0"
 dependencies = [
  "blake3",
+ "ucf-attn-controller",
+ "ucf-output-router",
+ "ucf-policy-ecology",
+ "ucf-sleep-coordinator",
  "ucf-types",
 ]
 
