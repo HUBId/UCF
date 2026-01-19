@@ -1771,6 +1771,7 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "ucf-ai-runtime",
+ "ucf-attn-controller",
  "ucf-bus",
  "ucf-cde-port",
  "ucf-commit",
@@ -1835,6 +1836,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucf-attn-controller"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ucf-types",
+]
+
+[[package]]
 name = "ucf-bus"
 version = "0.1.0"
 dependencies = [
@@ -1865,6 +1874,7 @@ version = "0.1.0"
 dependencies = [
  "prost",
  "ucf-archive",
+ "ucf-attn-controller",
  "ucf-bus",
  "ucf-commit",
  "ucf-policy-ecology",
@@ -2065,6 +2075,7 @@ dependencies = [
  "prost",
  "ucf-ai-port",
  "ucf-archive",
+ "ucf-attn-controller",
  "ucf-cde-port",
  "ucf-digital-brain",
  "ucf-nsr-port",

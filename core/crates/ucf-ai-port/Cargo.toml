@@ -23,6 +23,7 @@ ucf-sle = { path = "../ucf-sle" }
 ucf-scm-port = { path = "../ucf-scm-port" }
 ucf-ssm-port = { path = "../ucf-ssm-port" }
 ucf-tcf-port = { path = "../ucf-tcf-port" }
+ucf-attn-controller = { path = "../ucf-attn-controller" }
 ucf-digitalbrain-port = { path = "../../../domains/digitalbrain/crates/ucf-digitalbrain-port" }
 blake3 = "1"
 

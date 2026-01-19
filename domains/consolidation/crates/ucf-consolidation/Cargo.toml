@@ -12,3 +12,4 @@ ucf-policy-ecology = { path = "../../../../core/crates/ucf-policy-ecology" }
 ucf-sleep-coordinator = { path = "../../../../core/crates/ucf-sleep-coordinator" }
 ucf-types = { path = "../../../../core/crates/ucf-types" }
 ucf-vector-index = { path = "../../../../domains/index/crates/ucf-vector-index" }
+ucf-attn-controller = { path = "../../../../core/crates/ucf-attn-controller" }

@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use blake3::Hasher;
 #[cfg(feature = "ai-runtime")]
 use ucf_ai_runtime::backend::{AiRuntimeBackend, NoopRuntimeBackend};
+use ucf_attn_controller::{AttentionWeights, FocusChannel};
 #[cfg(feature = "digitalbrain")]
 use ucf_bus::{BusPublisher, MessageEnvelope};
 use ucf_cde_port::{CdeHypothesis, CdePort};
@@ -36,6 +37,8 @@ pub trait AiPort {
     fn infer_with_context(&self, input: &ControlFrameNormalized) -> AiInference {
         AiInference::new(self.infer(input))
     }
+
+    fn update_attention(&self, _weights: &AttentionWeights) {}
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -205,9 +208,10 @@ impl DigitalBrainBridge {
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct MockAiPort {
     pillars: AiPillars,
+    attention: Arc<Mutex<Option<AttentionWeights>>>,
 }
 
 impl MockAiPort {
@@ -216,7 +220,20 @@ impl MockAiPort {
     }
 
     pub fn with_pillars(pillars: AiPillars) -> Self {
-        Self { pillars }
+        Self {
+            pillars,
+            attention: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    fn set_attention(&self, weights: AttentionWeights) {
+        if let Ok(mut guard) = self.attention.lock() {
+            *guard = Some(weights);
+        }
+    }
+
+    fn attention_snapshot(&self) -> Option<AttentionWeights> {
+        self.attention.lock().ok().and_then(|guard| guard.clone())
     }
 }
 
@@ -277,6 +294,10 @@ impl AiPort for AiOrchestrator {
         }
         self.mock.infer(input)
     }
+
+    fn update_attention(&self, weights: &AttentionWeights) {
+        self.mock.set_attention(weights.clone());
+    }
 }
 
 impl AiPort for MockAiPort {
@@ -297,6 +318,19 @@ impl AiPort for MockAiPort {
                 .map(|hypothesis| hypothesis.confidence),
         }
     }
+
+    fn update_attention(&self, weights: &AttentionWeights) {
+        self.set_attention(weights.clone());
+    }
+}
+
+impl Default for MockAiPort {
+    fn default() -> Self {
+        Self {
+            pillars: AiPillars::default(),
+            attention: Arc::new(Mutex::new(None)),
+        }
+    }
 }
 
 impl MockAiPort {
@@ -304,8 +338,9 @@ impl MockAiPort {
         &self,
         input: &ControlFrameNormalized,
     ) -> (Vec<AiOutput>, PillarArtifacts) {
+        let attention = self.attention_snapshot();
         let artifacts = if self.pillars.enabled() {
-            run_pillars(&self.pillars, input)
+            run_pillars(&self.pillars, input, attention.as_ref())
         } else {
             PillarArtifacts::baseline(input.commitment().digest)
         };
@@ -386,7 +421,11 @@ fn evidence_id_from_frame(input: &ControlFrameNormalized) -> EvidenceId {
         .unwrap_or_else(|| EvidenceId::new("unknown"))
 }
 
-fn run_pillars(pillars: &AiPillars, input: &ControlFrameNormalized) -> PillarArtifacts {
+fn run_pillars(
+    pillars: &AiPillars,
+    input: &ControlFrameNormalized,
+    attention: Option<&AttentionWeights>,
+) -> PillarArtifacts {
     let base_digest = input.commitment().digest;
     let mut signal = TcfSignal::new(base_digest, 0);
     let mut ssm_state = SsmState::new(base_digest, 0);
@@ -413,13 +452,17 @@ fn run_pillars(pillars: &AiPillars, input: &ControlFrameNormalized) -> PillarArt
             signal.intensity = intensity;
         }
     }
+    if let Some(attn) = attention {
+        signal.intensity = apply_attention_to_intensity(signal.intensity, attn);
+    }
 
     if let Some(tcf) = &pillars.tcf {
         let pulse = tcf.tick(&mut signal, &[base_digest]);
         artifacts.push(pulse.digest);
     }
     if let Some(ssm) = &pillars.ssm {
-        let output = ssm.update(&mut ssm_state, &world_state);
+        let ssm_input = apply_attention_to_world_state(&world_state, attention);
+        let output = ssm.update(&mut ssm_state, &ssm_input);
         artifacts.push(output.digest);
         ssm_digest = Some(output.digest);
     }
@@ -615,6 +658,50 @@ fn digest_ai_output(output: &AiOutput) -> Digest32 {
 
 fn tcf_intensity_stub(score: u16) -> u16 {
     score / 100
+}
+
+fn apply_attention_to_intensity(intensity: u16, attention: &AttentionWeights) -> u16 {
+    let boost = channel_intensity_boost(attention.channel);
+    let boosted = intensity.saturating_add(boost);
+    scale_by_gain(boosted, attention.gain)
+}
+
+fn channel_intensity_boost(channel: FocusChannel) -> u16 {
+    match channel {
+        FocusChannel::Threat => 2500,
+        FocusChannel::Task => 1500,
+        FocusChannel::Social => 750,
+        FocusChannel::Memory => 1200,
+        FocusChannel::Exploration => 900,
+        FocusChannel::Idle => 0,
+    }
+}
+
+fn scale_by_gain(value: u16, gain: u16) -> u16 {
+    let scaled = (value as u32).saturating_mul(gain as u32) / 1000;
+    scaled.min(u16::MAX as u32) as u16
+}
+
+fn apply_attention_to_world_state(
+    world_state: &WorldStateVec,
+    attention: Option<&AttentionWeights>,
+) -> WorldStateVec {
+    let Some(attn) = attention else {
+        return world_state.clone();
+    };
+    if attn.gain == 1000 {
+        return world_state.clone();
+    }
+    let scale = attn.gain as u32;
+    let bytes = world_state
+        .bytes
+        .iter()
+        .map(|byte| {
+            let scaled = (*byte as u32).saturating_mul(scale) / 1000;
+            scaled.min(u8::MAX as u32) as u8
+        })
+        .collect();
+    WorldStateVec::new(bytes, world_state.dims.clone())
 }
 
 fn hash_digests(digests: &[Digest32]) -> Digest32 {

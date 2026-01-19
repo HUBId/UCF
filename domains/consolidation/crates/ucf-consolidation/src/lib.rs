@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use prost::Message;
 use ucf_archive::{ExperienceAppender, FileArchive, InMemoryArchive};
+use ucf_attn_controller::{AttentionWeights, FocusChannel};
 use ucf_bus::{BusPublisher, MessageEnvelope};
 use ucf_commit::{
     commit_experience_record, commit_milestone_macro, commit_milestone_meso,
@@ -366,6 +367,7 @@ pub fn build_macro(mesos: &[MesoMilestone]) -> MacroMilestone {
 pub struct ReplayScheduler {
     pub budget: usize,
     gate: Arc<dyn ReplayGate + Send + Sync>,
+    attention: Option<AttentionWeights>,
 }
 
 impl ReplayScheduler {
@@ -374,11 +376,19 @@ impl ReplayScheduler {
     }
 
     pub fn new_with_gate(budget: usize, gate: Arc<dyn ReplayGate + Send + Sync>) -> Self {
-        Self { budget, gate }
+        Self {
+            budget,
+            gate,
+            attention: None,
+        }
     }
 
     pub fn select_for_replay(&self, records: &[ExperienceRecord]) -> Vec<ExperienceRecord> {
-        self.select_for_replay_with_gate(records, self.gate.as_ref())
+        self.select_for_replay_with_gate_and_attention(
+            records,
+            self.gate.as_ref(),
+            self.attention.as_ref(),
+        )
     }
 
     pub fn select_for_replay_with_gate(
@@ -386,13 +396,39 @@ impl ReplayScheduler {
         records: &[ExperienceRecord],
         gate: &dyn ReplayGate,
     ) -> Vec<ExperienceRecord> {
+        self.select_for_replay_with_gate_and_attention(records, gate, None)
+    }
+
+    pub fn select_for_replay_with_attention(
+        &self,
+        records: &[ExperienceRecord],
+        attention: Option<&AttentionWeights>,
+    ) -> Vec<ExperienceRecord> {
+        self.select_for_replay_with_gate_and_attention(records, self.gate.as_ref(), attention)
+    }
+
+    pub fn set_attention(&mut self, attention: Option<AttentionWeights>) {
+        self.attention = attention;
+    }
+
+    pub fn select_for_replay_with_gate_and_attention(
+        &self,
+        records: &[ExperienceRecord],
+        gate: &dyn ReplayGate,
+        attention: Option<&AttentionWeights>,
+    ) -> Vec<ExperienceRecord> {
         let mut scored: Vec<(u64, [u8; 32], ExperienceRecord)> = records
             .iter()
             .filter(|record| gate.allow_replay(record))
             .map(|record| {
                 let priority = record_priority(record);
+                let bias = attention_bias(attention, record);
                 let commitment = commit_experience_record(record);
-                (priority, *commitment.digest.as_bytes(), record.clone())
+                (
+                    priority.saturating_add(bias),
+                    *commitment.digest.as_bytes(),
+                    record.clone(),
+                )
             })
             .collect();
 
@@ -416,6 +452,47 @@ fn record_priority(record: &ExperienceRecord) -> u64 {
         .as_ref()
         .and_then(|digest| digest.algo_id)
         .unwrap_or(0) as u64
+}
+
+fn attention_bias(attention: Option<&AttentionWeights>, record: &ExperienceRecord) -> u64 {
+    let Some(attention) = attention else {
+        return 0;
+    };
+    let metadata = parse_record_metadata(record);
+    let mut bias = 0u64;
+    if let Some(channel) = metadata.focus_channel {
+        if channel == attention.channel {
+            bias = bias.saturating_add(attention.replay_bias as u64);
+        }
+    }
+    if let Some(score) = metadata.integration_score {
+        if score <= 3000 {
+            bias = bias.saturating_add(attention.replay_bias as u64 / 2);
+        }
+    }
+    bias
+}
+
+fn parse_record_metadata(record: &ExperienceRecord) -> RecordMetadata {
+    let payload = match std::str::from_utf8(&record.payload) {
+        Ok(payload) => payload,
+        Err(_) => return RecordMetadata::default(),
+    };
+    let mut metadata = RecordMetadata::default();
+    for segment in payload.split(';') {
+        if let Some(value) = segment.strip_prefix("attn_channel=") {
+            metadata.focus_channel = FocusChannel::from_str(value);
+        } else if let Some(value) = segment.strip_prefix("integration_score=") {
+            metadata.integration_score = value.parse::<u16>().ok();
+        }
+    }
+    metadata
+}
+
+#[derive(Default)]
+struct RecordMetadata {
+    focus_channel: Option<FocusChannel>,
+    integration_score: Option<u16>,
 }
 
 fn commitment_hex(commitment: &Commitment) -> String {

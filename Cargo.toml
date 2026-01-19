@@ -19,6 +19,7 @@ members = [
     "core/crates/ucf-tcf-port",
     "core/crates/ucf-nsr-port",
     "core/crates/ucf-tom-port",
+    "core/crates/ucf-attn-controller",
     "core/crates/ucf-nsr-smt",
     "core/crates/ucf-nsr-datalog",
     "core/crates/ucf-cde-port",
