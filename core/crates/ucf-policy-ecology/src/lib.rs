@@ -2,6 +2,7 @@
 
 use ucf_crypto as _;
 use ucf_types::v1::spec::ExperienceRecord;
+use ucf_types::Digest32;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ConsistencyVerdict {
@@ -29,6 +30,26 @@ pub struct ConsistencyReport {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct PolicyWeights;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RiskPolicy {
+    pub max_risk: u16,
+    pub require_nsr_ok: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RiskDecision {
+    Permit,
+    Deny,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RiskGateResult {
+    pub decision: RiskDecision,
+    pub risk: u16,
+    pub reasons: Vec<String>,
+    pub evidence: Digest32,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PolicyRule {
@@ -72,6 +93,13 @@ impl PolicyEcology {
     pub fn weights(&self) -> &PolicyWeights {
         &self.weights
     }
+
+    pub fn risk_policy(&self) -> RiskPolicy {
+        RiskPolicy {
+            max_risk: 3000,
+            require_nsr_ok: true,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -92,6 +120,10 @@ impl DefaultPolicyEcology {
 
     pub fn inner(&self) -> &PolicyEcology {
         &self.inner
+    }
+
+    pub fn risk_policy(&self) -> RiskPolicy {
+        self.inner.risk_policy()
     }
 }
 

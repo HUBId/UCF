@@ -11,6 +11,10 @@ ucf-archive = { path = "../../../domains/archive/crates/ucf-archive" }
 ucf-digital-brain = { path = "../../../domains/digital-brain/crates/ucf-digital-brain" }
 ucf-sandbox = { path = "../ucf-sandbox" }
 ucf-policy-ecology = { path = "../ucf-policy-ecology" }
+ucf-risk-gate = { path = "../ucf-risk-gate" }
 
 [dev-dependencies]
 prost = "0.12"
+ucf-cde-port = { path = "../ucf-cde-port" }
+ucf-nsr-port = { path = "../ucf-nsr-port" }
+ucf-scm-port = { path = "../ucf-scm-port" }

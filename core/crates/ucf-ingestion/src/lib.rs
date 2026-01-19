@@ -279,6 +279,7 @@ mod tests {
     use ucf_nsr_port::NsrPort;
     use ucf_policy_ecology::{PolicyEcology, PolicyRule, PolicyWeights};
     use ucf_policy_gateway::NoOpPolicyEvaluator;
+    use ucf_risk_gate::PolicyRiskGate;
     use ucf_sandbox::{ControlFrameValidator, ValidatorLimits};
     use ucf_sleep_coordinator::SleepTriggered;
     use ucf_types::v1::spec::{
@@ -304,12 +305,15 @@ mod tests {
             ..AiPillars::default()
         }));
         let speech_gate = Arc::new(PolicySpeechGate::new(PolicyEcology::allow_all()));
+        let risk_gate = Arc::new(PolicyRiskGate::new(PolicyEcology::allow_all()));
         let router = Arc::new(Router::new(
             policy,
             archive.clone(),
             Some(brain),
             ai_port,
             speech_gate,
+            risk_gate,
+            None,
         ));
 
         let validator = ControlFrameValidator::new(ValidatorLimits::default());
@@ -386,12 +390,15 @@ mod tests {
             ..AiPillars::default()
         }));
         let speech_gate = Arc::new(PolicySpeechGate::new(PolicyEcology::allow_all()));
+        let risk_gate = Arc::new(PolicyRiskGate::new(PolicyEcology::allow_all()));
         let router = Arc::new(Router::new(
             policy,
             archive.clone(),
             Some(brain),
             ai_port,
             speech_gate,
+            risk_gate,
+            None,
         ));
 
         let limits = ValidatorLimits {
@@ -467,13 +474,16 @@ mod tests {
             }],
             PolicyWeights,
         );
-        let speech_gate = Arc::new(PolicySpeechGate::new(speech_policy));
+        let speech_gate = Arc::new(PolicySpeechGate::new(speech_policy.clone()));
+        let risk_gate = Arc::new(PolicyRiskGate::new(speech_policy));
         let router = Arc::new(Router::new(
             policy,
             archive.clone(),
             Some(brain),
             ai_port,
             speech_gate,
+            risk_gate,
+            None,
         ));
 
         let validator = ControlFrameValidator::new(ValidatorLimits::default());

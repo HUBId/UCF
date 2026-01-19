@@ -1,0 +1,12 @@
+[package]
+name = "ucf-risk-gate"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+blake3 = "1"
+ucf-nsr-port = { path = "../ucf-nsr-port" }
+ucf-policy-ecology = { path = "../ucf-policy-ecology" }
+ucf-sandbox = { path = "../ucf-sandbox" }
+ucf-scm-port = { path = "../ucf-scm-port" }
+ucf-types = { path = "../ucf-types" }
