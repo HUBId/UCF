@@ -85,7 +85,7 @@ impl Router {
             risk_gate,
             tom_port,
             output_suppression_sink,
-            attention_controller: Some(AttnController::default()),
+            attention_controller: Some(AttnController),
             attention_sink: None,
         }
     }

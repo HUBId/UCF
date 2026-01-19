@@ -481,7 +481,7 @@ fn parse_record_metadata(record: &ExperienceRecord) -> RecordMetadata {
     let mut metadata = RecordMetadata::default();
     for segment in payload.split(';') {
         if let Some(value) = segment.strip_prefix("attn_channel=") {
-            metadata.focus_channel = FocusChannel::from_str(value);
+            metadata.focus_channel = value.parse::<FocusChannel>().ok();
         } else if let Some(value) = segment.strip_prefix("integration_score=") {
             metadata.integration_score = value.parse::<u16>().ok();
         }

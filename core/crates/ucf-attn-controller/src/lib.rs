@@ -24,16 +24,20 @@ impl FocusChannel {
             Self::Idle => "idle",
         }
     }
+}
 
-    pub fn from_str(value: &str) -> Option<Self> {
+impl std::str::FromStr for FocusChannel {
+    type Err = ();
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
-            "threat" => Some(Self::Threat),
-            "task" => Some(Self::Task),
-            "social" => Some(Self::Social),
-            "memory" => Some(Self::Memory),
-            "exploration" => Some(Self::Exploration),
-            "idle" => Some(Self::Idle),
-            _ => None,
+            "threat" => Ok(Self::Threat),
+            "task" => Ok(Self::Task),
+            "social" => Ok(Self::Social),
+            "memory" => Ok(Self::Memory),
+            "exploration" => Ok(Self::Exploration),
+            "idle" => Ok(Self::Idle),
+            _ => Err(()),
         }
     }
 }
