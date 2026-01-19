@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-use std::sync::{mpsc, Arc};
+use std::sync::{mpsc, Arc, Mutex};
 
 use ucf_ai_port::AiOutput;
 use ucf_bus::{BusPublisher, BusSubscriber, MessageEnvelope};
@@ -11,6 +11,7 @@ use ucf_sleep_coordinator::{
 };
 use ucf_types::v1::spec::{ControlFrame, DecisionKind};
 use ucf_types::{Digest32, EvidenceId};
+use ucf_workspace::{Workspace, WorkspaceSignal};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OutcomeEvent {
@@ -33,12 +34,18 @@ pub struct SpeechEvent {
     pub rationale_commit: Option<Digest32>,
 }
 
-pub struct IngestionService<S, P, R, E, T> {
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WorkspaceBroadcast {
+    pub snapshot_commit: Digest32,
+}
+
+pub struct IngestionService<S, P, R, E, W, T> {
     router: Arc<Router>,
     subscriber: S,
     publisher: Option<P>,
     reject_publisher: Option<R>,
     speech_publisher: Option<E>,
+    workspace_publisher: Option<W>,
     sleep: Option<SleepLoop<T>>,
     validator: ControlFrameValidator,
     receiver: Option<mpsc::Receiver<MessageEnvelope<ControlFrame>>>,
@@ -50,20 +57,23 @@ pub struct SleepLoop<T> {
     pub trigger_bus: T,
 }
 
-impl<S, P, R, E, T> IngestionService<S, P, R, E, T>
+impl<S, P, R, E, W, T> IngestionService<S, P, R, E, W, T>
 where
     S: BusSubscriber<MessageEnvelope<ControlFrame>>,
     P: BusPublisher<MessageEnvelope<OutcomeEvent>>,
     R: BusPublisher<MessageEnvelope<SandboxRejectEvent>>,
     E: BusPublisher<MessageEnvelope<SpeechEvent>>,
+    W: BusPublisher<MessageEnvelope<WorkspaceBroadcast>>,
     T: BusPublisher<MessageEnvelope<SleepTriggered>>,
 {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         router: Arc<Router>,
         subscriber: S,
         publisher: Option<P>,
         reject_publisher: Option<R>,
         speech_publisher: Option<E>,
+        workspace_publisher: Option<W>,
         sleep: Option<SleepLoop<T>>,
         validator: ControlFrameValidator,
     ) -> Self {
@@ -73,6 +83,7 @@ where
             publisher,
             reject_publisher,
             speech_publisher,
+            workspace_publisher,
             sleep,
             validator,
             receiver: None,
@@ -161,6 +172,19 @@ where
                 },
             });
         }
+        if let (Some(commit), Some(publisher)) =
+            (outcome.workspace_snapshot_commit, &self.workspace_publisher)
+        {
+            publisher.publish(MessageEnvelope {
+                node_id: node_id.clone(),
+                stream_id: stream_id.clone(),
+                logical_time,
+                wall_time,
+                payload: WorkspaceBroadcast {
+                    snapshot_commit: commit,
+                },
+            });
+        }
     }
 
     fn publish_speech(
@@ -233,6 +257,7 @@ where
         }
         let publisher = SleepEnvelopePublisher {
             publisher: &sleep.trigger_bus,
+            workspace: Some(self.router.workspace_handle()),
             node_id: node_id.clone(),
             stream_id: stream_id.clone(),
             logical_time,
@@ -244,6 +269,7 @@ where
 
 struct SleepEnvelopePublisher<'a, T> {
     publisher: &'a T,
+    workspace: Option<Arc<Mutex<Workspace>>>,
     node_id: ucf_types::NodeId,
     stream_id: ucf_types::StreamId,
     logical_time: ucf_types::LogicalTime,
@@ -255,6 +281,11 @@ where
     T: BusPublisher<MessageEnvelope<SleepTriggered>>,
 {
     fn publish(&self, message: SleepTriggered) {
+        if let Some(workspace) = &self.workspace {
+            if let Ok(mut guard) = workspace.lock() {
+                guard.publish(WorkspaceSignal::from_sleep_triggered(&message, None));
+            }
+        }
         self.publisher.publish(MessageEnvelope {
             node_id: self.node_id.clone(),
             stream_id: self.stream_id.clone(),
@@ -362,6 +393,7 @@ mod tests {
             Some(outcome_bus.clone()),
             Some(reject_bus.clone()),
             Some(speech_bus.clone()),
+            None::<InMemoryBus<MessageEnvelope<WorkspaceBroadcast>>>,
             None::<SleepLoop<InMemoryBus<MessageEnvelope<SleepTriggered>>>>,
             validator,
         );
@@ -392,7 +424,7 @@ mod tests {
         let processed = service.drain();
 
         assert_eq!(processed, 1);
-        assert_eq!(archive.list().len(), 1);
+        assert_eq!(archive.list().len(), 2);
 
         let outcome = outcome_receiver.try_recv().expect("outcome event");
         assert_eq!(outcome.payload.evidence_id, EvidenceId::new("exp-frame-1"));
@@ -453,6 +485,7 @@ mod tests {
             Some(outcome_bus.clone()),
             Some(reject_bus.clone()),
             None::<InMemoryBus<MessageEnvelope<SpeechEvent>>>,
+            None::<InMemoryBus<MessageEnvelope<WorkspaceBroadcast>>>,
             None::<SleepLoop<InMemoryBus<MessageEnvelope<SleepTriggered>>>>,
             validator,
         );
@@ -536,6 +569,7 @@ mod tests {
             Some(outcome_bus.clone()),
             None::<InMemoryBus<MessageEnvelope<SandboxRejectEvent>>>,
             Some(speech_bus.clone()),
+            None::<InMemoryBus<MessageEnvelope<WorkspaceBroadcast>>>,
             None::<SleepLoop<InMemoryBus<MessageEnvelope<SleepTriggered>>>>,
             validator,
         );
@@ -566,7 +600,7 @@ mod tests {
         let processed = service.drain();
 
         assert_eq!(processed, 1);
-        assert_eq!(archive.list().len(), 1);
+        assert_eq!(archive.list().len(), 2);
 
         let speech = speech_receiver.try_recv().expect("speech event");
         assert_eq!(speech.payload.content, "ok");
