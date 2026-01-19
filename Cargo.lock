@@ -2238,6 +2238,7 @@ dependencies = [
  "ucf-attn-controller",
  "ucf-output-router",
  "ucf-policy-ecology",
+ "ucf-risk-gate",
  "ucf-sleep-coordinator",
  "ucf-types",
 ]
