@@ -75,6 +75,17 @@ impl WorkspaceSignal {
         }
     }
 
+    pub fn from_world_state(digest: Digest32) -> Self {
+        let kind = SignalKind::World;
+        let summary = format!("SSM state={digest}");
+        Self {
+            kind,
+            priority: 3000,
+            digest,
+            summary,
+        }
+    }
+
     pub fn from_risk_result(result: &RiskGateResult, attention_gain: Option<u16>) -> Self {
         let kind = SignalKind::Risk;
         let summary = format!(

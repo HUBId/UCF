@@ -2107,6 +2107,7 @@ dependencies = [
  "ucf-risk-gate",
  "ucf-sandbox",
  "ucf-scm-port",
+ "ucf-ssm-port",
  "ucf-tom-port",
  "ucf-types",
  "ucf-workspace",
@@ -2183,6 +2184,7 @@ name = "ucf-ssm-port"
 version = "0.1.0"
 dependencies = [
  "blake3",
+ "ucf-attn-controller",
  "ucf-types",
 ]
 

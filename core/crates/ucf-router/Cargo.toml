@@ -16,6 +16,7 @@ ucf-tom-port = { path = "../ucf-tom-port" }
 ucf-attn-controller = { path = "../ucf-attn-controller" }
 ucf-output-router = { path = "../ucf-output-router" }
 ucf-predictive-coding = { path = "../ucf-predictive-coding" }
+ucf-ssm-port = { path = "../ucf-ssm-port" }
 ucf-workspace = { path = "../ucf-workspace" }
 hex = { workspace = true }
 

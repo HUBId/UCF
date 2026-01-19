@@ -21,7 +21,7 @@ use ucf_sae_port::{SaeMock, SaePort, SparseFeature};
 use ucf_sandbox::ControlFrameNormalized;
 use ucf_scm_port::{CounterfactualQuery, Intervention, ScmDag, ScmPort};
 use ucf_sle::{LoopFrame, StrangeLoopEngine};
-use ucf_ssm_port::{SsmPort, SsmState};
+use ucf_ssm_port::{SsmInput, SsmPort, SsmState};
 use ucf_tcf_port::{TcfPort, TcfSignal};
 use ucf_types::v1::spec::DecisionKind;
 use ucf_types::{
@@ -47,6 +47,7 @@ pub struct AiInference {
     pub nsr_report: Option<NsrReport>,
     pub scm_dag: Option<ScmDag>,
     pub cde_confidence: Option<u16>,
+    pub ssm_state: Option<SsmState>,
 }
 
 impl AiInference {
@@ -56,6 +57,7 @@ impl AiInference {
             nsr_report: None,
             scm_dag: None,
             cde_confidence: None,
+            ssm_state: None,
         }
     }
 }
@@ -74,7 +76,7 @@ pub trait OutputSuppressionSink {
 #[derive(Clone)]
 pub struct AiPillars {
     pub tcf: Option<Arc<dyn TcfPort + Send + Sync>>,
-    pub ssm: Option<Arc<dyn SsmPort + Send + Sync>>,
+    pub ssm: Option<Arc<Mutex<dyn SsmPort + Send + Sync>>>,
     pub cde: Option<Arc<dyn CdePort + Send + Sync>>,
     pub scm: Option<Arc<Mutex<dyn ScmPort + Send + Sync>>>,
     pub nsr: Option<Arc<NsrPort>>,
@@ -316,6 +318,7 @@ impl AiPort for MockAiPort {
                 .cde_hyp
                 .as_ref()
                 .map(|hypothesis| hypothesis.confidence),
+            ssm_state: artifacts.ssm_state,
         }
     }
 
@@ -391,7 +394,7 @@ impl MockAiPort {
 struct PillarArtifacts {
     rationale_commit: Digest32,
     nsr_report: Option<NsrReport>,
-    ssm_digest: Option<Digest32>,
+    ssm_state: Option<SsmState>,
     cde_hyp: Option<CdeHypothesis>,
     scm_dag: Option<ScmDag>,
     causal_report: Option<CausalReport>,
@@ -403,7 +406,7 @@ impl PillarArtifacts {
         Self {
             rationale_commit: digest,
             nsr_report: None,
-            ssm_digest: None,
+            ssm_state: None,
             cde_hyp: None,
             scm_dag: None,
             causal_report: None,
@@ -428,7 +431,6 @@ fn run_pillars(
 ) -> PillarArtifacts {
     let base_digest = input.commitment().digest;
     let mut signal = TcfSignal::new(base_digest, 0);
-    let mut ssm_state = SsmState::new(base_digest, 0);
     let mut graph = CausalGraphStub::new(Vec::new(), Vec::new());
     let ctx = NcdeContext::new(base_digest);
     let world_state = WorldStateVec::new(base_digest.as_bytes().to_vec(), vec![Digest32::LEN]);
@@ -440,7 +442,7 @@ fn run_pillars(
 
     let mut artifacts = Vec::new();
     let mut nsr_report = None;
-    let mut ssm_digest = None;
+    let mut ssm_state = None;
     let mut cde_hyp = None;
     let mut scm_dag = None;
     let mut causal_report = None;
@@ -461,19 +463,30 @@ fn run_pillars(
         artifacts.push(pulse.digest);
     }
     if let Some(ssm) = &pillars.ssm {
-        let ssm_input = apply_attention_to_world_state(&world_state, attention);
-        let output = ssm.update(&mut ssm_state, &ssm_input);
-        artifacts.push(output.digest);
-        ssm_digest = Some(output.digest);
+        if let Ok(mut guard) = ssm.lock() {
+            let input_dim = guard.state().s.len().max(1);
+            if let Ok(ssm_input) = SsmInput::from_commitment(base_digest, input_dim) {
+                let output = guard.update(&ssm_input, attention);
+                artifacts.push(output.commit);
+            } else {
+                guard.reset();
+            }
+            let state = guard.state().clone();
+            ssm_state = Some(state);
+        }
     }
+    let context_state = ssm_state
+        .as_ref()
+        .map(world_state_from_ssm_state)
+        .unwrap_or_else(|| apply_attention_to_world_state(&world_state, attention));
     if let Some(cde) = &pillars.cde {
-        let hypothesis = cde.infer(&mut graph, &world_state);
+        let hypothesis = cde.infer(&mut graph, &context_state);
         artifacts.push(hypothesis.digest);
         cde_hyp = Some(hypothesis);
     }
     if let (Some(hypothesis), Some(scm)) = (cde_hyp.as_ref(), &pillars.scm) {
         if let Ok(mut guard) = scm.lock() {
-            let dag = guard.update(&world_state, Some(hypothesis));
+            let dag = guard.update(&context_state, Some(hypothesis));
             let dag_commit = ucf_scm_port::digest_dag(&dag);
             scm_dag = Some(dag.clone());
             let counterfactual = default_counterfactual(&dag).map(|query| {
@@ -517,7 +530,7 @@ fn run_pillars(
     PillarArtifacts {
         rationale_commit,
         nsr_report,
-        ssm_digest,
+        ssm_state,
         cde_hyp,
         scm_dag,
         causal_report,
@@ -549,8 +562,8 @@ fn sample_iit_monitor(
 ) -> Option<u16> {
     let monitor = pillars.iit_monitor.as_ref()?;
     let mut guard = monitor.lock().ok()?;
-    if let (Some(ssm), Some(cde)) = (artifacts.ssm_digest, artifacts.cde_hyp.as_ref()) {
-        guard.sample(ssm, cde.digest);
+    if let (Some(ssm), Some(cde)) = (artifacts.ssm_state.as_ref(), artifacts.cde_hyp.as_ref()) {
+        guard.sample(ssm.commit, cde.digest);
     }
     if let (Some(cde), Some(nsr)) = (artifacts.cde_hyp.as_ref(), artifacts.nsr_digest) {
         guard.sample(cde.digest, nsr);
@@ -704,6 +717,14 @@ fn apply_attention_to_world_state(
     WorldStateVec::new(bytes, world_state.dims.clone())
 }
 
+fn world_state_from_ssm_state(state: &SsmState) -> WorldStateVec {
+    let mut bytes = Vec::with_capacity(state.s.len().saturating_mul(4));
+    for value in &state.s {
+        bytes.extend_from_slice(&value.to_be_bytes());
+    }
+    WorldStateVec::new(bytes, vec![state.s.len()])
+}
+
 fn hash_digests(digests: &[Digest32]) -> Digest32 {
     let mut hasher = Hasher::new();
     for digest in digests {
@@ -797,7 +818,7 @@ mod tests {
     use ucf_nsr_port::{NsrBackend, NsrPort, NsrReport};
     use ucf_scm_port::{CounterfactualQuery, CounterfactualResult, MockScmPort, ScmDag, ScmPort};
     use ucf_sle::StrangeLoopEngine;
-    use ucf_ssm_port::{MockSsmPort, SsmOutput, SsmPort, SsmState};
+    use ucf_ssm_port::{DeterministicSsmPort, SsmConfig, SsmInput, SsmOutput, SsmPort, SsmState};
     use ucf_tcf_port::{TcfPort, TcfPulse, TcfSignal};
 
     fn base_frame(frame_id: &str) -> ControlFrame {
@@ -864,15 +885,25 @@ mod tests {
 
         struct OrderSsm {
             order: Arc<std::sync::Mutex<Vec<&'static str>>>,
+            state: SsmState,
         }
         impl SsmPort for OrderSsm {
-            fn update(&self, _state: &mut SsmState, _input: &WorldStateVec) -> SsmOutput {
+            fn reset(&mut self) {
+                self.state.s.fill(0);
+                self.state.commit = Digest32::new([0u8; 32]);
+            }
+
+            fn update(&mut self, _input: &SsmInput, _attn: Option<&AttentionWeights>) -> SsmOutput {
                 self.order.lock().unwrap().push("ssm");
+                self.state.commit = Digest32::new([3u8; 32]);
                 SsmOutput {
-                    digest: Digest32::new([2u8; 32]),
-                    state_digest: Digest32::new([3u8; 32]),
-                    step: 1,
+                    y: vec![1, 2],
+                    commit: Digest32::new([2u8; 32]),
                 }
+            }
+
+            fn state(&self) -> &SsmState {
+                &self.state
             }
         }
 
@@ -936,9 +967,10 @@ mod tests {
             tcf: Some(Arc::new(OrderTcf {
                 order: order.clone(),
             })),
-            ssm: Some(Arc::new(OrderSsm {
+            ssm: Some(Arc::new(Mutex::new(OrderSsm {
                 order: order.clone(),
-            })),
+                state: SsmState::new(vec![0, 0]),
+            }))),
             cde: Some(Arc::new(OrderCde {
                 order: order.clone(),
             })),
@@ -967,7 +999,9 @@ mod tests {
     fn pipeline_emits_stable_meta_observer_outputs() {
         let build_port = || {
             let pillars = AiPillars {
-                ssm: Some(Arc::new(MockSsmPort::new())),
+                ssm: Some(Arc::new(Mutex::new(DeterministicSsmPort::new(
+                    SsmConfig::new(4, 4, 2),
+                )))),
                 cde: Some(Arc::new(MockCdePort::new())),
                 nsr: Some(Arc::new(NsrPort::default())),
                 sle: Some(Arc::new(StrangeLoopEngine::new(4))),
@@ -1004,10 +1038,16 @@ mod tests {
         let normalized_b = normalize(base_frame("frame-2"));
 
         let no_scm = MockAiPort::with_pillars(AiPillars {
+            ssm: Some(Arc::new(Mutex::new(DeterministicSsmPort::new(
+                SsmConfig::new(4, 4, 2),
+            )))),
             cde: Some(Arc::new(MockCdePort::new())),
             ..AiPillars::default()
         });
         let with_scm = MockAiPort::with_pillars(AiPillars {
+            ssm: Some(Arc::new(Mutex::new(DeterministicSsmPort::new(
+                SsmConfig::new(4, 4, 2),
+            )))),
             cde: Some(Arc::new(MockCdePort::new())),
             scm: Some(Arc::new(Mutex::new(MockScmPort::new()))),
             ..AiPillars::default()

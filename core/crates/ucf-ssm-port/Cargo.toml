@@ -5,4 +5,5 @@ edition = "2021"
 
 [dependencies]
 blake3 = "1"
+ucf-attn-controller = { path = "../ucf-attn-controller" }
 ucf-types = { path = "../ucf-types" }
