@@ -5,6 +5,7 @@ use std::cmp::Ordering;
 use ucf_attn_controller::{AttentionUpdated, FocusChannel};
 use ucf_output_router::{OutputRouterEvent, RouteDecision};
 use ucf_policy_ecology::{ConsistencyReport, ConsistencyVerdict, RiskDecision, RiskGateResult};
+use ucf_predictive_coding::{SurpriseBand, SurpriseUpdated};
 use ucf_sleep_coordinator::{SleepTrigger, SleepTriggered};
 use ucf_types::v1::spec::{ActionCode, DecisionKind, PolicyDecision};
 use ucf_types::Digest32;
@@ -47,6 +48,7 @@ pub struct WorkspaceSignal {
 /// - High threat/risk (`risk >= 7000` or attention channel `Threat`) is raised to `>= 9000`.
 /// - Policy denials are raised to `>= 9500` to guarantee broadcast.
 /// - Attention gain boosts related signals by `gain / 5` (capped at `2000`).
+/// - Surprise signals follow the band priority scale.
 ///
 /// # Summary format
 /// - Summaries are compact, uppercase tokens like `RISK=4200 DENY` or `POLICY=DENY`.
@@ -215,6 +217,22 @@ impl WorkspaceSignal {
             kind,
             priority,
             digest,
+            summary,
+        }
+    }
+
+    pub fn from_surprise_update(update: &SurpriseUpdated) -> Self {
+        let kind = SignalKind::World;
+        let summary = format!(
+            "SURPRISE={} BAND={}",
+            update.score,
+            surprise_band_token(update.band)
+        );
+        let priority = surprise_priority(update.band);
+        Self {
+            kind,
+            priority,
+            digest: update.commit,
             summary,
         }
     }
@@ -409,7 +427,17 @@ fn sleep_priority(reason: SleepTrigger) -> u16 {
         SleepTrigger::Instability | SleepTrigger::LowIntegration => 7000,
         SleepTrigger::Density => 6000,
         SleepTrigger::Manual => 5500,
+        SleepTrigger::SurpriseCritical => 9000,
         SleepTrigger::None => 3000,
+    }
+}
+
+fn surprise_priority(band: SurpriseBand) -> u16 {
+    match band {
+        SurpriseBand::Low => 3000,
+        SurpriseBand::Medium => 5000,
+        SurpriseBand::High => 8000,
+        SurpriseBand::Critical => 9500,
     }
 }
 
@@ -497,6 +525,7 @@ fn sleep_trigger_token(trigger: SleepTrigger) -> &'static str {
         SleepTrigger::Density => "DENSITY",
         SleepTrigger::LowIntegration => "LOW_INTEGRATION",
         SleepTrigger::Manual => "MANUAL",
+        SleepTrigger::SurpriseCritical => "SURPRISE_CRITICAL",
     }
 }
 
@@ -507,6 +536,16 @@ fn sleep_trigger_code(trigger: SleepTrigger) -> u8 {
         SleepTrigger::Density => 2,
         SleepTrigger::LowIntegration => 3,
         SleepTrigger::Manual => 4,
+        SleepTrigger::SurpriseCritical => 5,
+    }
+}
+
+fn surprise_band_token(band: SurpriseBand) -> &'static str {
+    match band {
+        SurpriseBand::Low => "LOW",
+        SurpriseBand::Medium => "MED",
+        SurpriseBand::High => "HIGH",
+        SurpriseBand::Critical => "CRIT",
     }
 }
 

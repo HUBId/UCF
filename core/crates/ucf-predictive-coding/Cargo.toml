@@ -1,9 +1,10 @@
 [package]
-name = "ucf-attn-controller"
+name = "ucf-predictive-coding"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 blake3 = "1"
-ucf-predictive-coding = { path = "../ucf-predictive-coding" }
 ucf-types = { path = "../ucf-types" }
+
+[dev-dependencies]

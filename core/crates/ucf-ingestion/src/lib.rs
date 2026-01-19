@@ -255,6 +255,9 @@ where
         if let Some(score) = outcome.integration_score {
             guard.record_integration_score(score);
         }
+        if let Some(signal) = outcome.surprise_signal.as_ref() {
+            guard.record_surprise_band(signal.band);
+        }
         let publisher = SleepEnvelopePublisher {
             publisher: &sleep.trigger_bus,
             workspace: Some(self.router.workspace_handle()),
