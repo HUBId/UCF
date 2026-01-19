@@ -17,8 +17,8 @@ use ucf_policy_gateway::PolicyEvaluator;
 use ucf_risk_gate::{digest_reasons, RiskGate};
 use ucf_sandbox::ControlFrameNormalized;
 use ucf_tom_port::{IntentType, TomPort};
-use ucf_types::v1::spec::{ControlFrame, DecisionKind, ExperienceRecord, PolicyDecision};
-use ucf_types::{Digest32, EvidenceId};
+use ucf_types::v1::spec::{ControlFrame, DecisionKind, Digest, ExperienceRecord, PolicyDecision};
+use ucf_types::{AlgoId, Digest32, EvidenceId};
 use ucf_workspace::{Workspace, WorkspaceConfig, WorkspaceSignal, WorkspaceSnapshot};
 
 #[derive(Debug)]
@@ -403,7 +403,7 @@ impl Router {
             observed_at_ms: cf.issued_at_ms,
             subject_id: cf.policy_id.clone(),
             payload,
-            digest: Some(snapshot.commit),
+            digest: Some(digest32_to_proto(snapshot.commit)),
             vrf_tag: None,
             proof_ref: None,
         }
@@ -490,5 +490,15 @@ fn signal_kind_token(kind: ucf_workspace::SignalKind) -> &'static str {
         ucf_workspace::SignalKind::Consistency => "CONSISTENCY",
         ucf_workspace::SignalKind::Output => "OUTPUT",
         ucf_workspace::SignalKind::Sleep => "SLEEP",
+    }
+}
+
+fn digest32_to_proto(digest: Digest32) -> Digest {
+    Digest {
+        algorithm: AlgoId::Blake3_256.to_string(),
+        value: Vec::new(),
+        algo_id: Some(AlgoId::BLAKE3_256_ID as u32),
+        domain: None,
+        value_32: Some(digest.as_bytes().to_vec()),
     }
 }
