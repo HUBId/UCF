@@ -66,6 +66,7 @@ where
     W: BusPublisher<MessageEnvelope<WorkspaceBroadcast>>,
     T: BusPublisher<MessageEnvelope<SleepTriggered>>,
 {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         router: Arc<Router>,
         subscriber: S,
