@@ -14,6 +14,7 @@ ucf-policy-ecology = { path = "../ucf-policy-ecology" }
 ucf-risk-gate = { path = "../ucf-risk-gate" }
 ucf-tom-port = { path = "../ucf-tom-port" }
 ucf-attn-controller = { path = "../ucf-attn-controller" }
+ucf-output-router = { path = "../ucf-output-router" }
 
 [dev-dependencies]
 prost = "0.12"

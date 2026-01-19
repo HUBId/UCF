@@ -2022,6 +2022,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucf-output-router"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ucf-policy-ecology",
+ "ucf-sandbox",
+ "ucf-types",
+]
+
+[[package]]
 name = "ucf-policy-ecology"
 version = "0.1.0"
 dependencies = [
@@ -2079,6 +2089,7 @@ dependencies = [
  "ucf-cde-port",
  "ucf-digital-brain",
  "ucf-nsr-port",
+ "ucf-output-router",
  "ucf-policy-ecology",
  "ucf-policy-gateway",
  "ucf-risk-gate",

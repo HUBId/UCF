@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
 use std::fmt;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use ucf_ai_port::{
     AiOutput, AiPort, OutputChannel, OutputSuppressed, OutputSuppressionSink, SpeechGate,
@@ -11,7 +11,7 @@ use ucf_attn_controller::{
     AttentionEventSink, AttentionUpdated, AttentionWeights, AttnController, AttnInputs,
 };
 use ucf_digital_brain::DigitalBrainPort;
-use ucf_policy_ecology::RiskDecision;
+use ucf_output_router::{GateBundle, NsrSummary, OutputRouter, RouterConfig, SandboxVerdict};
 use ucf_policy_gateway::PolicyEvaluator;
 use ucf_risk_gate::{digest_reasons, RiskGate};
 use ucf_sandbox::ControlFrameNormalized;
@@ -47,6 +47,7 @@ pub struct Router {
     output_suppression_sink: Option<Arc<dyn OutputSuppressionSink + Send + Sync>>,
     attention_controller: Option<AttnController>,
     attention_sink: Option<Arc<dyn AttentionEventSink + Send + Sync>>,
+    output_router: Mutex<OutputRouter>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -87,6 +88,11 @@ impl Router {
             output_suppression_sink,
             attention_controller: Some(AttnController),
             attention_sink: None,
+            output_router: Mutex::new(OutputRouter::new(RouterConfig {
+                thought_capacity: 128,
+                max_thought_frames_per_cycle: 32,
+                external_enabled: true,
+            })),
         }
     }
 
@@ -115,39 +121,72 @@ impl Router {
         let mut speech_outputs = Vec::new();
         let mut suppressions = Vec::new();
         let mut attention_risk = 0u16;
-        for output in inference.outputs {
+        let outputs = inference.outputs;
+        let mut risk_results = Vec::with_capacity(outputs.len());
+        let mut speech_gate_results = Vec::with_capacity(outputs.len());
+        for output in &outputs {
             let gate_result = self.risk_gate.evaluate(
                 inference.nsr_report.as_ref(),
                 inference.scm_dag.as_ref(),
-                &output,
+                output,
                 &cf,
                 Some(&tom_report),
                 inference.cde_confidence,
             );
             attention_risk = attention_risk.max(gate_result.risk);
+            risk_results.push(gate_result);
+            speech_gate_results.push(self.speech_gate.allow_speech(&cf, output));
+        }
+
+        let nsr_summary = NsrSummary {
+            ok: inference
+                .nsr_report
+                .as_ref()
+                .map(|report| report.ok)
+                .unwrap_or(true),
+            violations_digest: inference
+                .nsr_report
+                .as_ref()
+                .map(|report| digest_reasons(&report.violations))
+                .unwrap_or_else(|| digest_reasons(&[])),
+        };
+        let gates = GateBundle {
+            policy_decision: decision.clone(),
+            sandbox: SandboxVerdict::Ok,
+            risk_results,
+            nsr_summary,
+            speech_gate: speech_gate_results,
+        };
+        let mut output_router = self.output_router.lock().expect("output router lock");
+        let decisions = output_router.route(&cf, outputs.clone(), &gates);
+        let _events = output_router.drain_events();
+
+        for (idx, output) in outputs.iter().enumerate() {
             match output.channel {
-                OutputChannel::Thought => thought_outputs.push(output),
+                OutputChannel::Thought => thought_outputs.push(output.clone()),
                 OutputChannel::Speech => {
-                    let mut reasons = gate_result.reasons.clone();
-                    let allow_speech = self.speech_gate.allow_speech(&cf, &output);
-                    if !allow_speech {
-                        reasons.push("speech_gate_denied".to_string());
-                    }
-                    let allow_risk = matches!(gate_result.decision, RiskDecision::Permit);
-                    if allow_speech && allow_risk {
-                        speech_outputs.push(output);
-                    } else {
-                        let reason_digest = digest_reasons(&reasons);
+                    if decisions
+                        .get(idx)
+                        .map(|decision| decision.permitted)
+                        .unwrap_or(false)
+                    {
+                        speech_outputs.push(output.clone());
+                    } else if let Some(result) = gates.risk_results.get(idx) {
+                        let reason = decisions
+                            .get(idx)
+                            .map(|decision| decision.reason_code.clone())
+                            .unwrap_or_else(|| "risk_denied".to_string());
+                        let reason_digest = digest_reasons(&[reason]);
                         suppressions.push(OutputSuppressionInfo {
                             channel: OutputChannel::Speech,
                             reason_digest,
-                            risk: gate_result.risk,
+                            risk: result.risk,
                         });
                         if let Some(sink) = &self.output_suppression_sink {
                             sink.publish(OutputSuppressed {
                                 channel: OutputChannel::Speech,
                                 reason_digest,
-                                risk: gate_result.risk,
+                                risk: result.risk,
                             });
                         }
                     }
