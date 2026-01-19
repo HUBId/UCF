@@ -20,6 +20,7 @@ use ucf_predictive_coding::{
 };
 use ucf_risk_gate::{digest_reasons, RiskGate};
 use ucf_sandbox::ControlFrameNormalized;
+use ucf_ssm_port::SsmState;
 use ucf_tom_port::{IntentType, TomPort};
 use ucf_types::v1::spec::{ControlFrame, DecisionKind, Digest, ExperienceRecord, PolicyDecision};
 use ucf_types::{AlgoId, Digest32, EvidenceId};
@@ -242,7 +243,14 @@ impl Router {
         if let Some(score) = integration_score {
             self.publish_workspace_signal(WorkspaceSignal::from_integration_score(score, None));
         }
-        let observation = observation_from_frame(&cf);
+        if let Some(state) = inference.ssm_state.as_ref() {
+            self.publish_workspace_signal(WorkspaceSignal::from_world_state(state.commit));
+        }
+        let observation = inference
+            .ssm_state
+            .as_ref()
+            .map(observation_from_ssm_state)
+            .unwrap_or_else(|| observation_from_frame(&cf));
         let predictive_result = self.update_predictive_coding(&observation);
         if let Some((error, surprise_signal)) = predictive_result.as_ref() {
             let update = SurpriseUpdated::from(surprise_signal);
@@ -514,6 +522,19 @@ fn observation_from_frame(cf: &ControlFrameNormalized) -> Observation {
     Observation::new(WorldStateVec::new(dims, data))
 }
 
+fn observation_from_ssm_state(state: &SsmState) -> Observation {
+    let mut data = Vec::with_capacity(state.s.len());
+    for value in &state.s {
+        data.push(clamp_i16(i64::from(*value)));
+    }
+    let dims = u16::try_from(data.len()).unwrap_or(0);
+    Observation::new(WorldStateVec::new(dims, data))
+}
+
+fn clamp_i16(value: i64) -> i16 {
+    value.clamp(i64::from(i16::MIN), i64::from(i16::MAX)) as i16
+}
+
 fn risk_bucket(overall: u16) -> &'static str {
     match overall {
         0..=3333 => "low",
@@ -539,5 +560,21 @@ fn digest32_to_proto(digest: Digest32) -> Digest {
         algo_id: Some(AlgoId::BLAKE3_256_ID as u32),
         domain: None,
         value_32: Some(digest.as_bytes().to_vec()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn predictive_observation_changes_with_ssm_state() {
+        let state_a = SsmState::new(vec![1, -2, 3]);
+        let state_b = SsmState::new(vec![2, -2, 3]);
+
+        let obs_a = observation_from_ssm_state(&state_a);
+        let obs_b = observation_from_ssm_state(&state_b);
+
+        assert_ne!(obs_a.commit, obs_b.commit);
     }
 }
