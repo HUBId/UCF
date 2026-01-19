@@ -5,12 +5,15 @@
 //! This is **not** a real IIT/Phi implementation. The score is a stable hash mapping
 //! into `0..=10000` and only serves as a repeatable integration/coupling proxy.
 
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 
 use blake3::Hasher;
 use ucf_types::Digest32;
+use ucf_workspace::{SignalKind, WorkspaceSnapshot};
 
 const DOMAIN_SCORE: &[u8] = b"ucf.iit.proxy.v1";
+const DOMAIN_REPORT: &[u8] = b"ucf.iit.report.v1";
+const DOMAIN_ACTION: &[u8] = b"ucf.iit.action.v1";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CouplingSample {
@@ -19,10 +22,40 @@ pub struct CouplingSample {
     pub score: u16,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IitBand {
+    Low,
+    Medium,
+    High,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct IitReport {
+    pub phi: u16,
+    pub band: IitBand,
+    pub commit: Digest32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IitActionKind {
+    Fusion,
+    Isolate,
+    ReplayBias,
+    Throttle,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct IitAction {
+    pub kind: IitActionKind,
+    pub intensity: u16,
+    pub commit: Digest32,
+}
+
 #[derive(Debug)]
 pub struct IitMonitor {
     pub window: usize,
     samples: VecDeque<CouplingSample>,
+    phi_history: VecDeque<u16>,
 }
 
 impl IitMonitor {
@@ -30,6 +63,7 @@ impl IitMonitor {
         Self {
             window,
             samples: VecDeque::new(),
+            phi_history: VecDeque::new(),
         }
     }
 
@@ -61,6 +95,28 @@ impl IitMonitor {
         let avg = sum / self.samples.len().max(1) as u32;
         u16::try_from(avg.min(u32::from(u16::MAX))).unwrap_or(u16::MAX)
     }
+
+    pub fn evaluate(
+        &mut self,
+        snapshot: &WorkspaceSnapshot,
+        risk: u16,
+    ) -> (IitReport, Vec<IitAction>) {
+        let phi = integration_score(snapshot, &self.phi_history);
+        if self.window > 0 {
+            self.phi_history.push_back(phi);
+            while self.phi_history.len() > self.window {
+                self.phi_history.pop_front();
+            }
+        }
+        let band = band_for_phi(phi);
+        let report = IitReport {
+            phi,
+            band,
+            commit: report_commit(phi, band),
+        };
+        let actions = actions_for_phi(phi, risk);
+        (report, actions)
+    }
 }
 
 fn coupling_score(a: &Digest32, b: &Digest32) -> u16 {
@@ -79,9 +135,101 @@ fn coupling_score(a: &Digest32, b: &Digest32) -> u16 {
     u16::try_from(scaled.min(10_000)).unwrap_or(10_000)
 }
 
+fn integration_score(snapshot: &WorkspaceSnapshot, history: &VecDeque<u16>) -> u16 {
+    let mut kinds: HashSet<SignalKind> = HashSet::new();
+    for signal in &snapshot.broadcast {
+        kinds.insert(signal.kind);
+    }
+    let kinds_count = u16::try_from(kinds.len()).unwrap_or(0);
+    let cross_module = kinds_count.saturating_sub(1).saturating_mul(1200);
+    let fusion = kinds_count.saturating_mul(800);
+    let density = u16::try_from(snapshot.broadcast.len().min(16)).unwrap_or(0) * 300;
+
+    let base = cross_module.saturating_add(fusion).saturating_add(density);
+    let stability_bonus = stability_bonus(base, history);
+    (base.saturating_add(stability_bonus)).min(10_000)
+}
+
+fn stability_bonus(base: u16, history: &VecDeque<u16>) -> u16 {
+    let Some(avg) = average(history) else {
+        return 0;
+    };
+    let delta = avg.abs_diff(base);
+    if delta <= 500 {
+        1500
+    } else if delta <= 1500 {
+        500
+    } else {
+        0
+    }
+}
+
+fn average(history: &VecDeque<u16>) -> Option<u16> {
+    if history.is_empty() {
+        return None;
+    }
+    let sum: u32 = history.iter().map(|value| u32::from(*value)).sum();
+    let avg = sum / history.len().max(1) as u32;
+    Some(u16::try_from(avg.min(u32::from(u16::MAX))).unwrap_or(u16::MAX))
+}
+
+fn band_for_phi(phi: u16) -> IitBand {
+    match phi {
+        0..=3299 => IitBand::Low,
+        3300..=6599 => IitBand::Medium,
+        _ => IitBand::High,
+    }
+}
+
+fn report_commit(phi: u16, band: IitBand) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(DOMAIN_REPORT);
+    hasher.update(&phi.to_be_bytes());
+    hasher.update(&[band as u8]);
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn actions_for_phi(phi: u16, risk: u16) -> Vec<IitAction> {
+    let mut actions = Vec::new();
+
+    if phi < 3000 {
+        let intensity = 3000u16.saturating_sub(phi).min(3000);
+        actions.push(build_action(IitActionKind::Fusion, intensity));
+        actions.push(build_action(
+            IitActionKind::ReplayBias,
+            intensity.saturating_add(500),
+        ));
+    }
+
+    if phi > 8000 && risk >= 7000 {
+        let intensity = phi
+            .saturating_sub(8000)
+            .saturating_add(risk.saturating_sub(7000));
+        actions.push(build_action(IitActionKind::Isolate, intensity.min(4000)));
+        actions.push(build_action(IitActionKind::Throttle, intensity.min(3000)));
+    }
+
+    actions
+}
+
+fn build_action(kind: IitActionKind, intensity: u16) -> IitAction {
+    let mut hasher = Hasher::new();
+    hasher.update(DOMAIN_ACTION);
+    hasher.update(&[kind as u8]);
+    hasher.update(&intensity.to_be_bytes());
+    let commit = Digest32::new(*hasher.finalize().as_bytes());
+    IitAction {
+        kind,
+        intensity,
+        commit,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ucf_types::Digest32;
+    use ucf_workspace::WorkspaceSignal;
 
     #[test]
     fn sample_is_deterministic_and_bounded() {
@@ -94,5 +242,55 @@ mod tests {
 
         assert_eq!(first.score, second.score);
         assert!(first.score <= 10_000);
+    }
+
+    #[test]
+    fn evaluation_is_deterministic_for_same_snapshot_history() {
+        let mut monitor_a = IitMonitor::new(3);
+        let mut monitor_b = IitMonitor::new(3);
+        let snapshot = WorkspaceSnapshot {
+            cycle_id: 1,
+            broadcast: vec![
+                WorkspaceSignal {
+                    kind: SignalKind::World,
+                    priority: 4000,
+                    digest: Digest32::new([1u8; 32]),
+                    summary: "WORLD=STATE".to_string(),
+                    slot: 0,
+                },
+                WorkspaceSignal {
+                    kind: SignalKind::Risk,
+                    priority: 5000,
+                    digest: Digest32::new([2u8; 32]),
+                    summary: "RISK=LOW".to_string(),
+                    slot: 0,
+                },
+            ],
+            commit: Digest32::new([9u8; 32]),
+        };
+
+        let (report_a, actions_a) = monitor_a.evaluate(&snapshot, 1000);
+        let (report_b, actions_b) = monitor_b.evaluate(&snapshot, 1000);
+
+        assert_eq!(report_a, report_b);
+        assert_eq!(actions_a, actions_b);
+    }
+
+    #[test]
+    fn low_phi_triggers_fusion_actions() {
+        let mut monitor = IitMonitor::new(2);
+        let snapshot = WorkspaceSnapshot {
+            cycle_id: 1,
+            broadcast: vec![],
+            commit: Digest32::new([3u8; 32]),
+        };
+        let (_report, actions) = monitor.evaluate(&snapshot, 0);
+
+        assert!(actions
+            .iter()
+            .any(|action| action.kind == IitActionKind::Fusion));
+        assert!(actions
+            .iter()
+            .any(|action| action.kind == IitActionKind::ReplayBias));
     }
 }

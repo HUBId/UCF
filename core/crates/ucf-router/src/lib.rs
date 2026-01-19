@@ -13,14 +13,20 @@ use ucf_attn_controller::{
     AttentionEventSink, AttentionUpdated, AttentionWeights, AttnController, AttnInputs,
 };
 use ucf_digital_brain::DigitalBrainPort;
+use ucf_geist::{encode_self_state, SelfState, SelfStateBuilder};
+use ucf_iit_monitor::{IitAction, IitActionKind, IitBand, IitMonitor, IitReport};
+use ucf_nsr_port::NsrReport;
 use ucf_output_router::{GateBundle, NsrSummary, OutputRouter, RouterConfig, SandboxVerdict};
+use ucf_policy_ecology::RiskGateResult;
 use ucf_policy_gateway::PolicyEvaluator;
 use ucf_predictive_coding::{
     error, surprise, Observation, PredictionError, SurpriseSignal, SurpriseUpdated, WorldModel,
     WorldStateVec,
 };
 use ucf_risk_gate::{digest_reasons, RiskGate};
+use ucf_rsa_hooks::{MockRsaHook, RsaContext, RsaHook, RsaProposal};
 use ucf_sandbox::ControlFrameNormalized;
+use ucf_sle::{SelfReflex, SleEngine};
 use ucf_ssm_port::SsmState;
 use ucf_tcf_port::{idle_attention, CyclePlan, CyclePlanned, DeterministicTcf, PulseKind, TcfPort};
 use ucf_tom_port::{IntentType, TomPort};
@@ -59,7 +65,9 @@ pub struct Router {
     attention_controller: Option<AttnController>,
     attention_sink: Option<Arc<dyn AttentionEventSink + Send + Sync>>,
     output_router: Mutex<OutputRouter>,
+    output_router_base: RouterConfig,
     workspace: Arc<Mutex<Workspace>>,
+    workspace_base: WorkspaceConfig,
     cycle_counter: AtomicU64,
     tcf_port: Mutex<Box<dyn TcfPort + Send + Sync>>,
     last_attention: Mutex<AttentionWeights>,
@@ -67,6 +75,11 @@ pub struct Router {
     stage_trace: Option<Arc<dyn StageTrace + Send + Sync>>,
     world_model: WorldModel,
     world_state: Mutex<Option<WorldStateVec>>,
+    sle_engine: Arc<SleEngine>,
+    iit_monitor: Mutex<IitMonitor>,
+    rsa_hooks: Vec<Arc<dyn RsaHook + Send + Sync>>,
+    last_self_state: Mutex<Option<SelfState>>,
+    last_workspace_snapshot: Mutex<Option<WorkspaceSnapshot>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -86,6 +99,13 @@ struct OutputSuppressionInfo {
     risk: u16,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct IitActionEffects {
+    integration_bias: i16,
+    broadcast_cap: usize,
+    max_thought_frames_per_cycle: u16,
+}
+
 pub trait StageTrace {
     fn record(&self, stage: PulseKind);
 }
@@ -100,10 +120,15 @@ struct StageContext {
     speech_outputs: Vec<AiOutput>,
     suppressions: Vec<OutputSuppressionInfo>,
     integration_score: Option<u16>,
+    integration_bias: i16,
     predictive_result: Option<(PredictionError, SurpriseSignal)>,
     attention_weights: Option<AttentionWeights>,
     evidence_id: Option<EvidenceId>,
     workspace_snapshot_commit: Option<Digest32>,
+    self_state: Option<SelfState>,
+    sle_reflex: Option<SelfReflex>,
+    iit_report: Option<IitReport>,
+    iit_actions: Vec<IitAction>,
 }
 
 impl StageContext {
@@ -118,10 +143,15 @@ impl StageContext {
             speech_outputs: Vec::new(),
             suppressions: Vec::new(),
             integration_score: None,
+            integration_bias: 0,
             predictive_result: None,
             attention_weights: None,
             evidence_id: None,
             workspace_snapshot_commit: None,
+            self_state: None,
+            sle_reflex: None,
+            iit_report: None,
+            iit_actions: Vec::new(),
         }
     }
 }
@@ -138,6 +168,15 @@ impl Router {
         tom_port: Arc<dyn TomPort + Send + Sync>,
         output_suppression_sink: Option<Arc<dyn OutputSuppressionSink + Send + Sync>>,
     ) -> Self {
+        let output_router_base = RouterConfig {
+            thought_capacity: 128,
+            max_thought_frames_per_cycle: 32,
+            external_enabled: true,
+        };
+        let workspace_base = WorkspaceConfig {
+            cap: 64,
+            broadcast_cap: 8,
+        };
         Self {
             policy,
             archive,
@@ -149,15 +188,10 @@ impl Router {
             output_suppression_sink,
             attention_controller: Some(AttnController),
             attention_sink: None,
-            output_router: Mutex::new(OutputRouter::new(RouterConfig {
-                thought_capacity: 128,
-                max_thought_frames_per_cycle: 32,
-                external_enabled: true,
-            })),
-            workspace: Arc::new(Mutex::new(Workspace::new(WorkspaceConfig {
-                cap: 64,
-                broadcast_cap: 8,
-            }))),
+            output_router_base: output_router_base.clone(),
+            output_router: Mutex::new(OutputRouter::new(output_router_base)),
+            workspace_base,
+            workspace: Arc::new(Mutex::new(Workspace::new(workspace_base))),
             cycle_counter: AtomicU64::new(0),
             tcf_port: Mutex::new(Box::new(DeterministicTcf::default())),
             last_attention: Mutex::new(idle_attention()),
@@ -165,6 +199,11 @@ impl Router {
             stage_trace: None,
             world_model: WorldModel::default(),
             world_state: Mutex::new(None),
+            sle_engine: Arc::new(SleEngine::new(6)),
+            iit_monitor: Mutex::new(IitMonitor::new(4)),
+            rsa_hooks: vec![Arc::new(MockRsaHook::new())],
+            last_self_state: Mutex::new(None),
+            last_workspace_snapshot: Mutex::new(None),
         }
     }
 
@@ -190,6 +229,18 @@ impl Router {
 
     pub fn workspace_handle(&self) -> Arc<Mutex<Workspace>> {
         Arc::clone(&self.workspace)
+    }
+
+    fn latest_workspace_snapshot(&self, cycle_id: u64) -> WorkspaceSnapshot {
+        self.last_workspace_snapshot
+            .lock()
+            .ok()
+            .and_then(|guard| guard.clone())
+            .unwrap_or(WorkspaceSnapshot {
+                cycle_id,
+                broadcast: Vec::new(),
+                commit: Digest32::new([0u8; 32]),
+            })
     }
 
     pub fn handle_control_frame(
@@ -270,6 +321,78 @@ impl Router {
                         WorkspaceSignal::from_risk_result(result, None, Some(pulse.slot))
                     }));
 
+                    let workspace_snapshot = self.latest_workspace_snapshot(cycle_id);
+                    let risk_commit = digest_risk_results(&risk_results);
+                    let ssm_commit = inference
+                        .ssm_state
+                        .as_ref()
+                        .map(|state| state.commit)
+                        .unwrap_or_else(|| Digest32::new([0u8; 32]));
+                    let attn_commit = self
+                        .last_attention
+                        .lock()
+                        .map(|attn| attn.commit)
+                        .unwrap_or_else(|_| Digest32::new([0u8; 32]));
+                    let consistency = consistency_score_from_nsr(inference.nsr_report.as_ref());
+                    let self_state = SelfStateBuilder::new(cycle_id)
+                        .ssm_commit(ssm_commit)
+                        .workspace_commit(workspace_snapshot.commit)
+                        .risk_commit(risk_commit)
+                        .attn_commit(attn_commit)
+                        .consistency(consistency)
+                        .build();
+                    let previous_state = self
+                        .last_self_state
+                        .lock()
+                        .ok()
+                        .and_then(|state| *state)
+                        .unwrap_or(self_state);
+                    let sle_reflex = self
+                        .sle_engine
+                        .evaluate(&workspace_snapshot, &previous_state);
+                    self.publish_workspace_signal(WorkspaceSignal::from_sle_reflex(
+                        sle_reflex.loop_level,
+                        sle_reflex.delta,
+                        sle_reflex.commit,
+                        None,
+                        Some(pulse.slot),
+                    ));
+                    self.archive
+                        .append(self.build_self_state_record(&self_state));
+                    self.archive
+                        .append(self.build_sle_reflex_record(cycle_id, &sle_reflex));
+                    if let Ok(mut guard) = self.last_self_state.lock() {
+                        *guard = Some(self_state);
+                    }
+                    ctx.self_state = Some(self_state);
+                    ctx.sle_reflex = Some(sle_reflex);
+
+                    let (iit_report, iit_actions) = {
+                        let mut monitor = self.iit_monitor.lock().expect("iit monitor lock");
+                        monitor.evaluate(&workspace_snapshot, attention_risk)
+                    };
+                    let effects = iit_action_effects(
+                        self.workspace_base,
+                        &self.output_router_base,
+                        &iit_actions,
+                    );
+                    ctx.integration_score = Some(iit_report.phi);
+                    ctx.integration_bias = effects.integration_bias;
+                    ctx.iit_actions = iit_actions.clone();
+                    self.apply_iit_effects(effects);
+                    self.publish_workspace_signal(WorkspaceSignal::from_integration_score(
+                        iit_report.phi,
+                        None,
+                        Some(pulse.slot),
+                    ));
+                    self.archive
+                        .append(self.build_iit_report_record(cycle_id, &iit_report));
+                    for action in &iit_actions {
+                        self.archive
+                            .append(self.build_iit_action_record(cycle_id, action));
+                    }
+                    ctx.iit_report = Some(iit_report);
+
                     let nsr_summary = NsrSummary {
                         ok: inference
                             .nsr_report
@@ -340,10 +463,12 @@ impl Router {
                         }
                     }
 
-                    ctx.integration_score = ctx
-                        .thought_outputs
-                        .iter()
-                        .find_map(|output| output.integration_score);
+                    if ctx.integration_score.is_none() {
+                        ctx.integration_score = ctx
+                            .thought_outputs
+                            .iter()
+                            .find_map(|output| output.integration_score);
+                    }
                     ctx.attention_risk = attention_risk;
 
                     if let Some(state) = inference.ssm_state.as_ref() {
@@ -368,7 +493,7 @@ impl Router {
                     ctx.predictive_result = predictive_result;
                 }
                 PulseKind::Consolidate => {
-                    if let Some(score) = ctx.integration_score {
+                    if let (Some(score), None) = (ctx.integration_score, ctx.iit_report.as_ref()) {
                         self.publish_workspace_signal(WorkspaceSignal::from_integration_score(
                             score,
                             None,
@@ -390,6 +515,7 @@ impl Router {
                         decision.kind as u16,
                         ctx.attention_risk,
                         ctx.integration_score.unwrap_or(0),
+                        ctx.integration_bias,
                         tom_report,
                         surprise_score,
                     );
@@ -442,9 +568,47 @@ impl Router {
                     let snapshot = self.arbitrate_workspace(cycle_id);
                     let workspace_record = self.build_workspace_record(&snapshot);
                     self.archive.append(workspace_record);
+                    if let Ok(mut guard) = self.last_workspace_snapshot.lock() {
+                        *guard = Some(snapshot.clone());
+                    }
                     ctx.workspace_snapshot_commit = Some(snapshot.commit);
                 }
-                PulseKind::Sleep => {}
+                PulseKind::Sleep => {
+                    let phi = ctx.integration_score.unwrap_or(0);
+                    let surprise_score = ctx
+                        .predictive_result
+                        .as_ref()
+                        .map(|(_, signal)| signal.score)
+                        .unwrap_or(0);
+                    let workspace_commit = ctx
+                        .workspace_snapshot_commit
+                        .unwrap_or_else(|| self.latest_workspace_snapshot(cycle_id).commit);
+                    let context = RsaContext {
+                        cycle_id,
+                        pulse_kind: PulseKind::Sleep,
+                        phi,
+                        surprise_score,
+                        workspace_commit,
+                    };
+                    let mut proposals: Vec<RsaProposal> = Vec::new();
+                    for hook in &self.rsa_hooks {
+                        proposals.extend(hook.propose(&context));
+                    }
+                    let proposal_digest = digest_rsa_proposals(&proposals);
+                    self.publish_workspace_signal(WorkspaceSignal::from_sleep_proposals(
+                        proposals.len(),
+                        proposal_digest,
+                        None,
+                        Some(pulse.slot),
+                    ));
+                    if !proposals.is_empty() {
+                        self.archive.append(self.build_rsa_proposals_record(
+                            cycle_id,
+                            &proposals,
+                            proposal_digest,
+                        ));
+                    }
+                }
             }
         }
 
@@ -587,15 +751,137 @@ impl Router {
         }
     }
 
+    fn build_self_state_record(&self, state: &SelfState) -> ExperienceRecord {
+        let record_id = format!(
+            "self-state-{}-{}",
+            state.cycle_id,
+            hex::encode(state.commit.as_bytes())
+        );
+        let payload = encode_self_state(state);
+        ExperienceRecord {
+            record_id,
+            observed_at_ms: state.cycle_id,
+            subject_id: "geist".to_string(),
+            payload,
+            digest: Some(digest32_to_proto(state.commit)),
+            vrf_tag: None,
+            proof_ref: None,
+        }
+    }
+
+    fn build_sle_reflex_record(&self, cycle_id: u64, reflex: &SelfReflex) -> ExperienceRecord {
+        let record_id = format!(
+            "sle-reflex-{}-{}",
+            cycle_id,
+            hex::encode(reflex.self_symbol.as_bytes())
+        );
+        let payload = format!(
+            "self_symbol={};loop_level={};delta={}",
+            reflex.self_symbol, reflex.loop_level, reflex.delta
+        )
+        .into_bytes();
+        ExperienceRecord {
+            record_id,
+            observed_at_ms: cycle_id,
+            subject_id: "sle".to_string(),
+            payload,
+            digest: Some(digest32_to_proto(reflex.self_symbol)),
+            vrf_tag: None,
+            proof_ref: None,
+        }
+    }
+
+    fn build_iit_report_record(&self, cycle_id: u64, report: &IitReport) -> ExperienceRecord {
+        let record_id = format!(
+            "iit-report-{}-{}",
+            cycle_id,
+            hex::encode(report.commit.as_bytes())
+        );
+        let band = match report.band {
+            IitBand::Low => "LOW",
+            IitBand::Medium => "MED",
+            IitBand::High => "HIGH",
+        };
+        let payload = format!("phi={};band={band}", report.phi).into_bytes();
+        ExperienceRecord {
+            record_id,
+            observed_at_ms: cycle_id,
+            subject_id: "iit".to_string(),
+            payload,
+            digest: Some(digest32_to_proto(report.commit)),
+            vrf_tag: None,
+            proof_ref: None,
+        }
+    }
+
+    fn build_iit_action_record(&self, cycle_id: u64, action: &IitAction) -> ExperienceRecord {
+        let record_id = format!(
+            "iit-action-{}-{}",
+            cycle_id,
+            hex::encode(action.commit.as_bytes())
+        );
+        let kind = match action.kind {
+            IitActionKind::Fusion => "FUSION",
+            IitActionKind::Isolate => "ISOLATE",
+            IitActionKind::ReplayBias => "REPLAY_BIAS",
+            IitActionKind::Throttle => "THROTTLE",
+        };
+        let payload = format!("kind={kind};intensity={}", action.intensity).into_bytes();
+        ExperienceRecord {
+            record_id,
+            observed_at_ms: cycle_id,
+            subject_id: "iit".to_string(),
+            payload,
+            digest: Some(digest32_to_proto(action.commit)),
+            vrf_tag: None,
+            proof_ref: None,
+        }
+    }
+
+    fn build_rsa_proposals_record(
+        &self,
+        cycle_id: u64,
+        proposals: &[RsaProposal],
+        digest: Digest32,
+    ) -> ExperienceRecord {
+        let record_id = format!(
+            "rsa-proposals-{}-{}",
+            cycle_id,
+            hex::encode(digest.as_bytes())
+        );
+        let payload = proposals
+            .iter()
+            .map(|proposal| {
+                format!(
+                    "{}|{}|{}|{}",
+                    proposal.id, proposal.target, proposal.expected_gain, proposal.risks
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(";")
+            .into_bytes();
+        ExperienceRecord {
+            record_id,
+            observed_at_ms: cycle_id,
+            subject_id: "rsa".to_string(),
+            payload,
+            digest: Some(digest32_to_proto(digest)),
+            vrf_tag: None,
+            proof_ref: None,
+        }
+    }
+
     fn compute_attention(
         &self,
         policy_class: u16,
         risk_score: u16,
         integration_score: u16,
+        integration_bias: i16,
         tom_report: &ucf_tom_port::TomReport,
         surprise_score: u16,
     ) -> Option<AttentionWeights> {
         let controller = self.attention_controller.as_ref()?;
+        let integration_score = apply_integration_bias(integration_score, integration_bias);
         let inputs = AttnInputs {
             policy_class,
             risk_score,
@@ -605,6 +891,15 @@ impl Router {
             surprise_score,
         };
         Some(controller.compute(&inputs))
+    }
+
+    fn apply_iit_effects(&self, effects: IitActionEffects) {
+        if let Ok(mut workspace) = self.workspace.lock() {
+            workspace.set_broadcast_cap(effects.broadcast_cap);
+        }
+        if let Ok(mut output_router) = self.output_router.lock() {
+            output_router.set_max_thought_frames_per_cycle(effects.max_thought_frames_per_cycle);
+        }
     }
 
     fn update_predictive_coding(
@@ -743,6 +1038,97 @@ fn intent_type_code(intent: IntentType) -> u16 {
     }
 }
 
+fn apply_integration_bias(score: u16, bias: i16) -> u16 {
+    if bias < 0 {
+        score.saturating_sub(bias.unsigned_abs())
+    } else {
+        score.saturating_add(bias as u16).min(10_000)
+    }
+}
+
+fn iit_action_effects(
+    base_workspace: WorkspaceConfig,
+    base_router: &RouterConfig,
+    actions: &[IitAction],
+) -> IitActionEffects {
+    let mut integration_bias: i16 = 0;
+    let mut broadcast_cap = base_workspace.broadcast_cap;
+    let mut max_thought_frames_per_cycle = base_router.max_thought_frames_per_cycle;
+
+    for action in actions {
+        match action.kind {
+            IitActionKind::Fusion => {
+                let bump = (action.intensity / 1000).max(1) as usize;
+                broadcast_cap = broadcast_cap.saturating_add(bump);
+                integration_bias = integration_bias.saturating_sub((action.intensity / 3) as i16);
+            }
+            IitActionKind::ReplayBias => {
+                integration_bias = integration_bias.saturating_sub((action.intensity / 2) as i16);
+            }
+            IitActionKind::Isolate => {
+                let reduction = action.intensity / 500 + 1;
+                max_thought_frames_per_cycle =
+                    max_thought_frames_per_cycle.saturating_sub(reduction);
+            }
+            IitActionKind::Throttle => {
+                let reduction = action.intensity / 1000 + 1;
+                max_thought_frames_per_cycle =
+                    max_thought_frames_per_cycle.saturating_sub(reduction);
+            }
+        }
+    }
+
+    let broadcast_cap_max = base_workspace.broadcast_cap.saturating_add(8);
+    let broadcast_cap = broadcast_cap.clamp(1, broadcast_cap_max.max(1));
+    let max_thought_frames_per_cycle = max_thought_frames_per_cycle.max(4);
+
+    IitActionEffects {
+        integration_bias,
+        broadcast_cap,
+        max_thought_frames_per_cycle,
+    }
+}
+
+fn consistency_score_from_nsr(report: Option<&NsrReport>) -> u16 {
+    match report {
+        Some(report) if report.ok => 10_000,
+        Some(_) => 2000,
+        None => 5000,
+    }
+}
+
+fn digest_risk_results(results: &[RiskGateResult]) -> Digest32 {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"ucf.router.risk_commit.v1");
+    hasher.update(&u64::try_from(results.len()).unwrap_or(0).to_be_bytes());
+    for result in results {
+        hasher.update(&[result.decision as u8]);
+        hasher.update(&result.risk.to_be_bytes());
+        let reasons_digest = digest_reasons(&result.reasons);
+        hasher.update(reasons_digest.as_bytes());
+    }
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn digest_rsa_proposals(proposals: &[RsaProposal]) -> Digest32 {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"ucf.router.rsa_proposals.v1");
+    hasher.update(&u64::try_from(proposals.len()).unwrap_or(0).to_be_bytes());
+    for proposal in proposals {
+        hasher.update(proposal.id.as_bytes());
+        hasher.update(&proposal.expected_gain.to_be_bytes());
+        hasher.update(&proposal.risks.to_be_bytes());
+        hasher.update(
+            &u16::try_from(proposal.target.len())
+                .unwrap_or(0)
+                .to_be_bytes(),
+        );
+        hasher.update(proposal.target.as_bytes());
+        hasher.update(proposal.commit.as_bytes());
+    }
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
 fn digest32_to_proto(digest: Digest32) -> Digest {
     Digest {
         algorithm: AlgoId::Blake3_256.to_string(),
@@ -766,5 +1152,45 @@ mod tests {
         let obs_b = observation_from_ssm_state(&state_b);
 
         assert_ne!(obs_a.commit, obs_b.commit);
+    }
+
+    #[test]
+    fn fusion_action_biases_attention_replay() {
+        let action = IitAction {
+            kind: IitActionKind::Fusion,
+            intensity: 2000,
+            commit: Digest32::new([9u8; 32]),
+        };
+        let effects = iit_action_effects(
+            WorkspaceConfig {
+                cap: 64,
+                broadcast_cap: 8,
+            },
+            &RouterConfig {
+                thought_capacity: 64,
+                max_thought_frames_per_cycle: 10,
+                external_enabled: true,
+            },
+            &[action],
+        );
+        let controller = AttnController;
+        let base_inputs = AttnInputs {
+            policy_class: 1,
+            risk_score: 1000,
+            integration_score: 6000,
+            consistency_instability: 0,
+            intent_type: AttnController::INTENT_ASK_INFO,
+            surprise_score: 0,
+        };
+        let base_weights = controller.compute(&base_inputs);
+        let biased_score =
+            apply_integration_bias(base_inputs.integration_score, effects.integration_bias);
+        let biased_inputs = AttnInputs {
+            integration_score: biased_score,
+            ..base_inputs
+        };
+        let biased_weights = controller.compute(&biased_inputs);
+
+        assert!(biased_weights.replay_bias >= base_weights.replay_bias);
     }
 }
