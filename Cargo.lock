@@ -1840,6 +1840,7 @@ name = "ucf-attn-controller"
 version = "0.1.0"
 dependencies = [
  "blake3",
+ "ucf-predictive-coding",
  "ucf-types",
 ]
 
@@ -2050,6 +2051,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucf-predictive-coding"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ucf-types",
+]
+
+[[package]]
 name = "ucf-protocol"
 version = "0.1.0"
 dependencies = [
@@ -2094,6 +2103,7 @@ dependencies = [
  "ucf-output-router",
  "ucf-policy-ecology",
  "ucf-policy-gateway",
+ "ucf-predictive-coding",
  "ucf-risk-gate",
  "ucf-sandbox",
  "ucf-scm-port",
@@ -2163,6 +2173,7 @@ dependencies = [
  "ucf-bus",
  "ucf-openevolve-port",
  "ucf-policy-ecology",
+ "ucf-predictive-coding",
  "ucf-rsa",
  "ucf-types",
 ]
@@ -2238,6 +2249,7 @@ dependencies = [
  "ucf-attn-controller",
  "ucf-output-router",
  "ucf-policy-ecology",
+ "ucf-predictive-coding",
  "ucf-risk-gate",
  "ucf-sleep-coordinator",
  "ucf-types",

@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 use blake3::Hasher;
 use ucf_bus::BusPublisher;
 use ucf_policy_ecology::{ConsistencyVerdict, SleepPhaseGate};
+use ucf_predictive_coding::SurpriseBand;
 use ucf_rsa::{RsaEngine, SleepCoordinator, SleepReportReady};
 use ucf_types::EvidenceId;
 
@@ -14,6 +15,7 @@ pub struct SleepHeuristics {
     pub min_records_since_last: u32,
     pub max_instability: u16,
     pub min_integration: u16,
+    pub critical_surprise_threshold: u16,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -21,6 +23,7 @@ pub struct SleepState {
     pub last_cycle_id: u64,
     pub last_evidence: Option<EvidenceId>,
     pub records_since_last: u32,
+    pub critical_surprise_count: u16,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -30,6 +33,7 @@ pub enum SleepTrigger {
     Density,
     LowIntegration,
     Manual,
+    SurpriseCritical,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -72,6 +76,7 @@ pub trait SleepStateUpdater {
     fn record_derived_record(&mut self, evidence_id: EvidenceId);
     fn record_consistency_verdict(&mut self, verdict: ConsistencyVerdict);
     fn record_integration_score(&mut self, score: u16);
+    fn record_surprise_band(&mut self, _band: SurpriseBand) {}
 }
 
 pub type SleepStateHandle = Arc<Mutex<WalSleepCoordinator>>;
@@ -133,6 +138,7 @@ impl WalSleepCoordinator {
                 last_cycle_id: 0,
                 last_evidence: None,
                 records_since_last: 0,
+                critical_surprise_count: 0,
             },
             window,
             consistency_verdicts: VecDeque::new(),
@@ -162,6 +168,12 @@ impl WalSleepCoordinator {
     }
 
     pub fn evaluate(&mut self, recent_metrics: &RecentMetrics) -> SleepTrigger {
+        if self.heuristics.critical_surprise_threshold > 0
+            && self.state.critical_surprise_count >= self.heuristics.critical_surprise_threshold
+        {
+            self.commit_trigger();
+            return SleepTrigger::SurpriseCritical;
+        }
         let instability = recent_metrics.instability_score();
         if instability > self.heuristics.max_instability {
             self.commit_trigger();
@@ -215,12 +227,14 @@ impl WalSleepCoordinator {
     fn commit_trigger(&mut self) {
         self.state.last_cycle_id = self.state.last_cycle_id.saturating_add(1);
         self.state.records_since_last = 0;
+        self.state.critical_surprise_count = 0;
     }
 
     fn reset_after_trigger(&mut self) {
         self.consistency_verdicts.clear();
         self.integration_scores.clear();
         self.recent_evidence.clear();
+        self.state.critical_surprise_count = 0;
     }
 
     fn push_bounded<T>(queue: &mut VecDeque<T>, window: usize, value: T) {
@@ -246,6 +260,15 @@ impl SleepStateUpdater for WalSleepCoordinator {
 
     fn record_integration_score(&mut self, score: u16) {
         Self::push_bounded(&mut self.integration_scores, self.window, score);
+    }
+
+    fn record_surprise_band(&mut self, band: SurpriseBand) {
+        if band == SurpriseBand::Critical {
+            self.state.critical_surprise_count =
+                self.state.critical_surprise_count.saturating_add(1);
+        } else {
+            self.state.critical_surprise_count = 0;
+        }
     }
 }
 
@@ -277,6 +300,7 @@ mod tests {
             min_records_since_last: 2,
             max_instability: 10_000,
             min_integration: 0,
+            critical_surprise_threshold: 0,
         };
         let mut coordinator = WalSleepCoordinator::new(heuristics, 4);
         coordinator.record_derived_record(EvidenceId::new("rec-1"));
@@ -298,6 +322,7 @@ mod tests {
             min_records_since_last: 10,
             max_instability: 2000,
             min_integration: 0,
+            critical_surprise_threshold: 0,
         };
         let mut coordinator = WalSleepCoordinator::new(heuristics, 4);
         coordinator.record_consistency_verdict(ConsistencyVerdict::Reject);
@@ -317,6 +342,7 @@ mod tests {
             min_records_since_last: 1,
             max_instability: 10_000,
             min_integration: 0,
+            critical_surprise_threshold: 0,
         };
         let mut coordinator = WalSleepCoordinator::new(heuristics, 4);
         coordinator.record_derived_record(EvidenceId::new("rec-1"));
@@ -346,6 +372,7 @@ mod tests {
             min_records_since_last: 1,
             max_instability: 10_000,
             min_integration: 0,
+            critical_surprise_threshold: 0,
         };
         let mut coordinator = WalSleepCoordinator::new(heuristics, 4);
         coordinator.record_derived_record(EvidenceId::new("rec-1"));
@@ -364,5 +391,25 @@ mod tests {
 
         assert!(result.is_some());
         assert_eq!(archive.list().len(), 1);
+    }
+
+    #[test]
+    fn repeated_critical_surprise_triggers_sleep() {
+        let heuristics = SleepHeuristics {
+            min_records_since_last: 10,
+            max_instability: 10_000,
+            min_integration: 0,
+            critical_surprise_threshold: 2,
+        };
+        let mut coordinator = WalSleepCoordinator::new(heuristics, 4);
+        coordinator.record_surprise_band(SurpriseBand::Critical);
+        coordinator.record_surprise_band(SurpriseBand::Critical);
+        coordinator.record_integration_score(9000);
+
+        let metrics = coordinator.recent_metrics();
+        let trigger = coordinator.evaluate(&metrics);
+
+        assert_eq!(trigger, SleepTrigger::SurpriseCritical);
+        assert_eq!(coordinator.state.last_cycle_id, 1);
     }
 }

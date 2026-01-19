@@ -14,6 +14,10 @@ use ucf_attn_controller::{
 use ucf_digital_brain::DigitalBrainPort;
 use ucf_output_router::{GateBundle, NsrSummary, OutputRouter, RouterConfig, SandboxVerdict};
 use ucf_policy_gateway::PolicyEvaluator;
+use ucf_predictive_coding::{
+    error, surprise, Observation, PredictionError, SurpriseSignal, SurpriseUpdated, WorldModel,
+    WorldStateVec,
+};
 use ucf_risk_gate::{digest_reasons, RiskGate};
 use ucf_sandbox::ControlFrameNormalized;
 use ucf_tom_port::{IntentType, TomPort};
@@ -54,6 +58,8 @@ pub struct Router {
     output_router: Mutex<OutputRouter>,
     workspace: Arc<Mutex<Workspace>>,
     cycle_counter: AtomicU64,
+    world_model: WorldModel,
+    world_state: Mutex<Option<WorldStateVec>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -63,6 +69,7 @@ pub struct RouterOutcome {
     pub speech_outputs: Vec<AiOutput>,
     pub integration_score: Option<u16>,
     pub workspace_snapshot_commit: Option<Digest32>,
+    pub surprise_signal: Option<SurpriseSignal>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -105,6 +112,8 @@ impl Router {
                 broadcast_cap: 8,
             }))),
             cycle_counter: AtomicU64::new(0),
+            world_model: WorldModel::default(),
+            world_state: Mutex::new(None),
         }
     }
 
@@ -233,11 +242,23 @@ impl Router {
         if let Some(score) = integration_score {
             self.publish_workspace_signal(WorkspaceSignal::from_integration_score(score, None));
         }
+        let observation = observation_from_frame(&cf);
+        let predictive_result = self.update_predictive_coding(&observation);
+        if let Some((error, surprise_signal)) = predictive_result.as_ref() {
+            let update = SurpriseUpdated::from(surprise_signal);
+            self.publish_workspace_signal(WorkspaceSignal::from_surprise_update(&update));
+            let record = self.build_predictive_record(cf.as_ref(), error, surprise_signal);
+            self.archive.append(record);
+        }
         let attention_weights = self.compute_attention(
             decision.kind as u16,
             attention_risk,
             integration_score.unwrap_or(0),
             &tom_report,
+            predictive_result
+                .as_ref()
+                .map(|(_, signal)| signal.score)
+                .unwrap_or(0),
         );
         if let Some(weights) = attention_weights.as_ref() {
             self.ai_port.update_attention(weights);
@@ -277,6 +298,7 @@ impl Router {
             speech_outputs,
             integration_score,
             workspace_snapshot_commit: Some(snapshot.commit),
+            surprise_signal: predictive_result.map(|(_, signal)| signal),
         })
     }
 
@@ -389,6 +411,7 @@ impl Router {
         risk_score: u16,
         integration_score: u16,
         tom_report: &ucf_tom_port::TomReport,
+        surprise_score: u16,
     ) -> Option<AttentionWeights> {
         let controller = self.attention_controller.as_ref()?;
         let inputs = AttnInputs {
@@ -397,8 +420,52 @@ impl Router {
             integration_score,
             consistency_instability: 0,
             intent_type: intent_type_code(tom_report.intent.intent),
+            surprise_score,
         };
         Some(controller.compute(&inputs))
+    }
+
+    fn update_predictive_coding(
+        &self,
+        observation: &Observation,
+    ) -> Option<(PredictionError, SurpriseSignal)> {
+        let mut guard = self.world_state.lock().ok()?;
+        let previous = guard.clone();
+        *guard = Some(observation.state.clone());
+        drop(guard);
+        let previous = previous?;
+        let prediction = self.world_model.predict(&previous);
+        let error = error(&prediction, observation);
+        let surprise_signal = surprise(&error);
+        Some((error, surprise_signal))
+    }
+
+    fn build_predictive_record(
+        &self,
+        cf: &ControlFrame,
+        error: &PredictionError,
+        surprise_signal: &SurpriseSignal,
+    ) -> ExperienceRecord {
+        let record_id = format!(
+            "predictive-{}-{}",
+            cf.frame_id,
+            hex::encode(error.commit.as_bytes())
+        );
+        let payload = format!(
+            "pred_error={};surprise={}",
+            error.commit, surprise_signal.commit
+        )
+        .into_bytes();
+
+        ExperienceRecord {
+            record_id,
+            observed_at_ms: cf.issued_at_ms,
+            subject_id: cf.policy_id.clone(),
+            payload,
+            digest: None,
+            vrf_tag: None,
+            proof_ref: None,
+        }
     }
 
     fn publish_workspace_signal(&self, signal: WorkspaceSignal) {
@@ -434,6 +501,17 @@ fn tom_summary(report: &ucf_tom_port::TomReport) -> String {
     };
     let bucket = risk_bucket(report.risk.overall);
     format!("intent={intent},overall={bucket}")
+}
+
+fn observation_from_frame(cf: &ControlFrameNormalized) -> Observation {
+    let digest = cf.commitment().digest;
+    let mut data = Vec::with_capacity(Digest32::LEN / 2);
+    for chunk in digest.as_bytes().chunks_exact(2) {
+        let pair = [chunk[0], chunk[1]];
+        data.push(i16::from_be_bytes(pair));
+    }
+    let dims = u16::try_from(data.len()).unwrap_or(0);
+    Observation::new(WorldStateVec::new(dims, data))
 }
 
 fn risk_bucket(overall: u16) -> &'static str {

@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 use blake3::Hasher;
+use ucf_predictive_coding::{band_for_score, SurpriseBand};
 use ucf_types::Digest32;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -58,6 +59,7 @@ pub struct AttnInputs {
     pub integration_score: u16,
     pub consistency_instability: u16,
     pub intent_type: u16,
+    pub surprise_score: u16,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -89,6 +91,7 @@ impl AttnController {
         let mut gain = 1000;
         let mut noise_suppress = 1000;
         let mut replay_bias = 1000;
+        let surprise_band = band_for_score(inputs.surprise_score);
 
         if inputs.risk_score >= 7000 || is_policy_high_risk(inputs.policy_class) {
             channel = FocusChannel::Threat;
@@ -117,6 +120,20 @@ impl AttnController {
             replay_bias = 3000;
         }
 
+        if matches!(surprise_band, SurpriseBand::High | SurpriseBand::Critical) {
+            let boost = u32::from(inputs.surprise_score) / 2;
+            noise_suppress = clamp_scale(u32::from(noise_suppress) + boost);
+            replay_bias = clamp_scale(u32::from(replay_bias) + boost);
+            if surprise_band == SurpriseBand::Critical {
+                channel = FocusChannel::Threat;
+            } else if channel != FocusChannel::Threat {
+                channel = FocusChannel::Exploration;
+            }
+        }
+        if inputs.surprise_score > 0 {
+            gain = clamp_scale(u32::from(gain) + u32::from(inputs.surprise_score) / 5);
+        }
+
         AttentionWeights {
             channel,
             gain,
@@ -143,6 +160,7 @@ fn commit_inputs(inputs: &AttnInputs) -> Digest32 {
     hasher.update(&inputs.integration_score.to_be_bytes());
     hasher.update(&inputs.consistency_instability.to_be_bytes());
     hasher.update(&inputs.intent_type.to_be_bytes());
+    hasher.update(&inputs.surprise_score.to_be_bytes());
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
@@ -159,6 +177,7 @@ mod tests {
             integration_score: 4200,
             consistency_instability: 1000,
             intent_type: AttnController::INTENT_ASK_INFO,
+            surprise_score: 0,
         };
 
         let first = controller.compute(&inputs);
@@ -177,6 +196,7 @@ mod tests {
             integration_score: 5000,
             consistency_instability: 0,
             intent_type: AttnController::INTENT_UNKNOWN,
+            surprise_score: 0,
         };
 
         let weights = controller.compute(&inputs);
@@ -195,6 +215,7 @@ mod tests {
             integration_score: 1000,
             consistency_instability: 0,
             intent_type: AttnController::INTENT_UNKNOWN,
+            surprise_score: 0,
         };
         let high = AttnInputs {
             integration_score: 9000,
@@ -206,5 +227,27 @@ mod tests {
 
         assert!(low_weights.replay_bias > high_weights.replay_bias);
         assert_eq!(low_weights.channel, FocusChannel::Memory);
+    }
+
+    #[test]
+    fn high_surprise_boosts_attention() {
+        let controller = AttnController;
+        let inputs = AttnInputs {
+            policy_class: 1,
+            risk_score: 1500,
+            integration_score: 6000,
+            consistency_instability: 0,
+            intent_type: AttnController::INTENT_UNKNOWN,
+            surprise_score: 9000,
+        };
+
+        let weights = controller.compute(&inputs);
+
+        assert!(matches!(
+            weights.channel,
+            FocusChannel::Threat | FocusChannel::Exploration
+        ));
+        assert!(weights.replay_bias > 1000);
+        assert!(weights.noise_suppress > 1000);
     }
 }
