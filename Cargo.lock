@@ -1784,6 +1784,7 @@ dependencies = [
  "ucf-nsr-smt",
  "ucf-ode-port",
  "ucf-policy-ecology",
+ "ucf-predictive-coding",
  "ucf-sae-port",
  "ucf-sandbox",
  "ucf-scm-port",
@@ -2108,6 +2109,7 @@ dependencies = [
  "ucf-sandbox",
  "ucf-scm-port",
  "ucf-ssm-port",
+ "ucf-tcf-port",
  "ucf-tom-port",
  "ucf-types",
  "ucf-workspace",
@@ -2193,6 +2195,8 @@ name = "ucf-tcf-port"
 version = "0.1.0"
 dependencies = [
  "blake3",
+ "ucf-attn-controller",
+ "ucf-predictive-coding",
  "ucf-types",
 ]
 

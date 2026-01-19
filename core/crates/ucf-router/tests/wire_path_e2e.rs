@@ -15,6 +15,7 @@ use ucf_risk_gate::PolicyRiskGate;
 use ucf_router::Router;
 use ucf_sandbox::normalize;
 use ucf_scm_port::{CausalNode, CounterfactualQuery, CounterfactualResult, ScmDag, ScmPort};
+use ucf_tcf_port::{CyclePlan, Pulse, PulseKind, TcfPort, TcfState};
 use ucf_tom_port::{
     ActorProfile, IntentHypothesis, IntentType, KnowledgeGap, SocialRiskSignals, TomPort, TomReport,
 };
@@ -45,6 +46,82 @@ impl AttentionEventSink for CaptureAttention {
         if let Ok(mut guard) = self.events.lock() {
             guard.push(event);
         }
+    }
+}
+
+#[derive(Clone, Default)]
+struct TraceStages {
+    stages: Arc<Mutex<Vec<PulseKind>>>,
+}
+
+impl ucf_router::StageTrace for TraceStages {
+    fn record(&self, stage: PulseKind) {
+        if let Ok(mut guard) = self.stages.lock() {
+            guard.push(stage);
+        }
+    }
+}
+
+struct FixedTcf {
+    plan: CyclePlan,
+    state: TcfState,
+}
+
+impl FixedTcf {
+    fn new() -> Self {
+        let pulses = vec![
+            Pulse {
+                kind: PulseKind::Think,
+                weight: 5000,
+                slot: 0,
+            },
+            Pulse {
+                kind: PulseKind::Sense,
+                weight: 4500,
+                slot: 1,
+            },
+            Pulse {
+                kind: PulseKind::Verify,
+                weight: 4000,
+                slot: 2,
+            },
+            Pulse {
+                kind: PulseKind::Consolidate,
+                weight: 3500,
+                slot: 3,
+            },
+            Pulse {
+                kind: PulseKind::Broadcast,
+                weight: 3000,
+                slot: 4,
+            },
+        ];
+        Self {
+            plan: CyclePlan {
+                cycle_id: 7,
+                pulses,
+                commit: ucf_types::Digest32::new([3u8; 32]),
+            },
+            state: TcfState {
+                phase: ucf_tcf_port::Phase { q: 0 },
+                energy: 0,
+                commit: ucf_types::Digest32::new([0u8; 32]),
+            },
+        }
+    }
+}
+
+impl TcfPort for FixedTcf {
+    fn step(
+        &mut self,
+        _attn: &ucf_attn_controller::AttentionWeights,
+        _surprise: Option<&ucf_predictive_coding::SurpriseSignal>,
+    ) -> CyclePlan {
+        self.plan.clone()
+    }
+
+    fn state(&self) -> &TcfState {
+        &self.state
     }
 }
 
@@ -141,13 +218,18 @@ fn handle_control_frame_routes_end_to_end() {
 
     assert_eq!(outcome.evidence_id, EvidenceId::new("exp-frame-1"));
     assert_eq!(outcome.decision_kind, DecisionKind::DecisionKindUnspecified);
-    assert_eq!(archive.list().len(), 2);
+    assert_eq!(archive.list().len(), 3);
     assert_eq!(brain.records().len(), 1);
 
-    let envelope = &archive.list()[0];
-    let proof = envelope.proof.as_ref().expect("missing proof envelope");
-    let record =
-        ExperienceRecord::decode(proof.payload.as_slice()).expect("decode experience record");
+    let record = archive
+        .list()
+        .iter()
+        .find_map(|envelope| {
+            let proof = envelope.proof.as_ref()?;
+            let record = ExperienceRecord::decode(proof.payload.as_slice()).ok()?;
+            (record.record_id == "exp-frame-1").then_some(record)
+        })
+        .expect("experience record");
     let payload_text = String::from_utf8(record.payload.clone()).expect("payload utf8");
 
     assert_eq!(record.record_id, "exp-frame-1");
@@ -156,6 +238,45 @@ fn handle_control_frame_routes_end_to_end() {
     assert!(payload_text.contains("frame_id=frame-1"));
     assert!(payload_text.contains("decision_kind=0"));
     assert!(payload_text.contains("ai_thoughts=ok"));
+}
+
+#[test]
+fn orchestrator_respects_cycle_plan_ordering() {
+    let policy = Arc::new(NoOpPolicyEvaluator::new());
+    let archive = Arc::new(InMemoryArchive::new());
+    let ai_port = Arc::new(MockAiPort::new());
+    let speech_gate = Arc::new(PolicySpeechGate::new(PolicyEcology::allow_all()));
+    let risk_gate = Arc::new(PolicyRiskGate::new(PolicyEcology::allow_all()));
+    let tom_port = Arc::new(LowRiskTomPort);
+    let trace = TraceStages::default();
+
+    let router = Router::new(
+        policy,
+        archive,
+        None,
+        ai_port,
+        speech_gate,
+        risk_gate,
+        tom_port,
+        None,
+    )
+    .with_stage_trace(Arc::new(trace.clone()))
+    .with_tcf_port(Box::new(FixedTcf::new()));
+
+    let frame = normalize(decision_frame("trace-1"));
+    let _ = router
+        .handle_control_frame(frame)
+        .expect("route control frame");
+
+    let recorded = trace.stages.lock().unwrap().clone();
+    let expected = vec![
+        PulseKind::Think,
+        PulseKind::Sense,
+        PulseKind::Verify,
+        PulseKind::Consolidate,
+        PulseKind::Broadcast,
+    ];
+    assert_eq!(recorded, expected);
 }
 
 #[test]
@@ -201,11 +322,18 @@ fn risk_gate_denies_speech_when_nsr_not_ok() {
     assert_eq!(events[0].channel, ucf_types::OutputChannel::Speech);
     assert!(events[0].risk > 0);
 
-    let envelope = &archive.list()[0];
-    let proof = envelope.proof.as_ref().expect("missing proof envelope");
-    let record =
-        ExperienceRecord::decode(proof.payload.as_slice()).expect("decode experience record");
-    let payload_text = String::from_utf8(record.payload.clone()).expect("payload utf8");
+    let payload_text = archive
+        .list()
+        .iter()
+        .find_map(|envelope| {
+            let proof = envelope.proof.as_ref()?;
+            let record = ExperienceRecord::decode(proof.payload.as_slice()).ok()?;
+            let payload_text = String::from_utf8(record.payload).ok()?;
+            payload_text
+                .contains("output_suppressed=")
+                .then_some(payload_text)
+        })
+        .expect("suppression payload");
     assert!(payload_text.contains("output_suppressed="));
 }
 
