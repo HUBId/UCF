@@ -60,6 +60,7 @@ struct OutputSuppressionInfo {
 }
 
 impl Router {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         policy: Arc<dyn PolicyEvaluator + Send + Sync>,
         archive: Arc<dyn ExperienceAppender + Send + Sync>,
