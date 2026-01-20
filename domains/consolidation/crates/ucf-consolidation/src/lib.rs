@@ -720,7 +720,7 @@ struct RankedDigest {
     commit: Digest32,
 }
 
-fn sort_ranked(values: &mut Vec<RankedDigest>) {
+fn sort_ranked(values: &mut [RankedDigest]) {
     values.sort_by(|a, b| {
         b.score
             .cmp(&a.score)
@@ -915,7 +915,7 @@ fn digest_list(domain: &[u8], digests: &[Digest32]) -> Digest32 {
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
-fn normalize_digests(digests: &mut Vec<Digest32>) {
+fn normalize_digests(digests: &mut [Digest32]) {
     digests.sort_by(|a, b| a.as_bytes().cmp(b.as_bytes()));
 }
 
