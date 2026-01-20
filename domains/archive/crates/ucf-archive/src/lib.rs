@@ -72,6 +72,23 @@ pub trait ExperienceAppender {
     }
 }
 
+pub fn build_compact_record(
+    record_id: impl Into<String>,
+    observed_at_ms: u64,
+    subject_id: impl Into<String>,
+    payload: Vec<u8>,
+) -> ExperienceRecord {
+    ExperienceRecord {
+        record_id: record_id.into(),
+        observed_at_ms,
+        subject_id: subject_id.into(),
+        payload,
+        digest: None,
+        vrf_tag: None,
+        proof_ref: None,
+    }
+}
+
 pub struct InMemoryArchive {
     store: InMemoryEvidenceStore,
     fold_state: Mutex<FoldSnapshot>,

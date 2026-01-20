@@ -1,23 +1,38 @@
 #![forbid(unsafe_code)]
 
-use std::sync::Arc;
+use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, Mutex};
 
+use blake3::Hasher;
 use prost::Message;
-use ucf_archive::{ExperienceAppender, FileArchive, InMemoryArchive};
-use ucf_attn_controller::{AttentionWeights, FocusChannel};
+use ucf_archive::{build_compact_record, ExperienceAppender, FileArchive, InMemoryArchive};
+use ucf_attn_controller::AttentionWeights;
 use ucf_bus::{BusPublisher, MessageEnvelope};
 use ucf_commit::{
-    commit_experience_record, commit_milestone_macro, commit_milestone_meso,
-    commit_milestone_micro, Commitment,
+    commit_experience_record, commit_memory_macro, commit_memory_meso, commit_memory_micro,
+    commit_milestone_macro, commit_milestone_meso, commit_milestone_micro, commit_replay_token,
+    Commitment,
 };
-use ucf_policy_ecology::{DefaultPolicyEcology, ReplayGate};
+use ucf_consistency_engine::{ConsistencyReport, DriftBand};
+use ucf_iit_monitor::IitReport;
+use ucf_predictive_coding::{SurpriseBand, SurpriseSignal};
 use ucf_sleep_coordinator::{SleepStateHandle, SleepStateUpdater};
-use ucf_types::v1::spec::{ExperienceRecord, MacroMilestone, MesoMilestone, MicroMilestone};
-use ucf_types::NodeId;
+use ucf_tcf_port::{PulseKind, RecursionBudget};
+use ucf_types::consolidation::{
+    MacroMilestone as MemoryMacroMilestone, MesoMilestone as MemoryMesoMilestone,
+    MicroMilestone as MemoryMicroMilestone, MilestoneTier, ReplayApplied, ReplayScheduled,
+    ReplayToken,
+};
+use ucf_types::v1::spec::{
+    ExperienceRecord, MacroMilestone as ProtoMacroMilestone, MesoMilestone as ProtoMesoMilestone,
+    MicroMilestone as ProtoMicroMilestone,
+};
+use ucf_types::{Digest32, NodeId};
 use ucf_vector_index::{
     build_macro_finalized_envelope, build_record_appended_envelope, MacroMilestoneFinalized,
     RecordAppended,
 };
+use ucf_workspace::{Workspace, WorkspaceSignal};
 
 #[derive(Clone, Debug)]
 pub struct ConsolidationConfig {
@@ -25,6 +40,9 @@ pub struct ConsolidationConfig {
     pub meso_window: usize,
     pub macro_window: usize,
     pub replay_budget: usize,
+    pub replay_micro_cap: usize,
+    pub replay_meso_cap: usize,
+    pub replay_macro_cap: usize,
 }
 
 impl ConsolidationConfig {
@@ -43,6 +61,9 @@ impl Default for ConsolidationConfig {
             meso_window: 8,
             macro_window: 8,
             replay_budget: 64,
+            replay_micro_cap: 8,
+            replay_meso_cap: 4,
+            replay_macro_cap: 2,
         }
     }
 }
@@ -52,9 +73,9 @@ pub trait RecordSource {
 }
 
 pub trait MilestoneSink {
-    fn emit_micro(&self, mm: MicroMilestone);
-    fn emit_meso(&self, mm: MesoMilestone);
-    fn emit_macro(&self, mm: MacroMilestone);
+    fn emit_micro(&self, mm: ProtoMicroMilestone);
+    fn emit_meso(&self, mm: ProtoMesoMilestone);
+    fn emit_macro(&self, mm: ProtoMacroMilestone);
 }
 
 #[derive(Clone, Copy)]
@@ -122,7 +143,7 @@ impl<'a, A: ExperienceAppender> ArchiveMilestoneSink<'a, A> {
 }
 
 impl<A: ExperienceAppender> MilestoneSink for ArchiveMilestoneSink<'_, A> {
-    fn emit_micro(&self, mm: MicroMilestone) {
+    fn emit_micro(&self, mm: ProtoMicroMilestone) {
         let record = derived_record_for_micro(&mm);
         let evidence_id = self.appender.append(record.clone());
         self.publish_record_appended(&record);
@@ -133,7 +154,7 @@ impl<A: ExperienceAppender> MilestoneSink for ArchiveMilestoneSink<'_, A> {
         }
     }
 
-    fn emit_meso(&self, mm: MesoMilestone) {
+    fn emit_meso(&self, mm: ProtoMesoMilestone) {
         let record = derived_record_for_meso(&mm);
         let evidence_id = self.appender.append(record.clone());
         self.publish_record_appended(&record);
@@ -144,7 +165,7 @@ impl<A: ExperienceAppender> MilestoneSink for ArchiveMilestoneSink<'_, A> {
         }
     }
 
-    fn emit_macro(&self, mm: MacroMilestone) {
+    fn emit_macro(&self, mm: ProtoMacroMilestone) {
         let record = derived_record_for_macro(&mm);
         let evidence_id = self.appender.append(record.clone());
         self.publish_record_appended(&record);
@@ -169,7 +190,7 @@ impl<A: ExperienceAppender> ArchiveMilestoneSink<'_, A> {
         bus.publish(envelope);
     }
 
-    fn publish_macro_finalized(&self, record: &ExperienceRecord, milestone: &MacroMilestone) {
+    fn publish_macro_finalized(&self, record: &ExperienceRecord, milestone: &ProtoMacroMilestone) {
         let Some(publishers) = &self.index_publishers else {
             return;
         };
@@ -212,6 +233,7 @@ pub struct ConsolidationKernel<S: RecordSource, A: ExperienceAppender> {
     appender: A,
     sleep_state: Option<SleepStateHandle>,
     index_publishers: Option<IndexEventPublishers>,
+    workspace: Option<Arc<Mutex<Workspace>>>,
 }
 
 pub struct ConsolidationCycleSummary {
@@ -227,6 +249,7 @@ impl<S: RecordSource, A: ExperienceAppender> ConsolidationKernel<S, A> {
         appender: A,
         sleep_state: Option<SleepStateHandle>,
         index_publishers: Option<IndexEventPublishers>,
+        workspace: Option<Arc<Mutex<Workspace>>>,
     ) -> Self {
         Self {
             config,
@@ -234,6 +257,7 @@ impl<S: RecordSource, A: ExperienceAppender> ConsolidationKernel<S, A> {
             appender,
             sleep_state,
             index_publishers,
+            workspace,
         }
     }
 
@@ -258,15 +282,15 @@ impl<S: RecordSource, A: ExperienceAppender> ConsolidationKernel<S, A> {
             };
         }
 
-        let micros: Vec<MicroMilestone> = records
+        let micros: Vec<ProtoMicroMilestone> = records
             .chunks(self.config.micro_window)
             .map(build_micro)
             .collect();
-        let mesos: Vec<MesoMilestone> = micros
+        let mesos: Vec<ProtoMesoMilestone> = micros
             .chunks(self.config.meso_window)
             .map(build_meso)
             .collect();
-        let macros: Vec<MacroMilestone> = mesos
+        let macros: Vec<ProtoMacroMilestone> = mesos
             .chunks(self.config.macro_window)
             .map(build_macro)
             .collect();
@@ -292,9 +316,62 @@ impl<S: RecordSource, A: ExperienceAppender> ConsolidationKernel<S, A> {
             macro_count: macros.len(),
         }
     }
+
+    pub fn run_sleep_replay(
+        &self,
+        pulse: PulseKind,
+        context: SleepReplayContext,
+        bias: &ReplayBias,
+        budget: RecursionBudget,
+    ) -> Option<ReplayOutcome> {
+        if pulse != PulseKind::Sleep {
+            return None;
+        }
+        let records = self.source.recent_records(self.config.total_window());
+        let graph = build_memory_graph(&records, &self.config);
+        let cascade = ReplayCascade::new(ReplayCascadeConfig::new(
+            self.config.replay_micro_cap,
+            self.config.replay_meso_cap,
+            self.config.replay_macro_cap,
+        ));
+        let outcome = cascade.schedule(&graph, bias, budget, &context);
+
+        for scheduled in &outcome.scheduled {
+            let record = replay_scheduled_record(scheduled, context.cycle_id);
+            self.appender.append(record);
+        }
+        for applied in &outcome.applied {
+            let record = replay_applied_record(applied, context.cycle_id);
+            self.appender.append(record);
+        }
+
+        let (micro_count, meso_count, macro_count) = outcome.counts();
+        if let Some(state) = &self.sleep_state {
+            if let Ok(mut guard) = state.lock() {
+                guard.record_replay_summary(ucf_sleep_coordinator::SleepReplaySummary {
+                    micro: u16::try_from(micro_count).unwrap_or(u16::MAX),
+                    meso: u16::try_from(meso_count).unwrap_or(u16::MAX),
+                    macro_: u16::try_from(macro_count).unwrap_or(u16::MAX),
+                });
+            }
+        }
+        if let Some(workspace) = &self.workspace {
+            if let Ok(mut guard) = workspace.lock() {
+                guard.publish(WorkspaceSignal::from_replay_summary(
+                    micro_count,
+                    meso_count,
+                    macro_count,
+                    Some(bias.attention.gain),
+                    None,
+                ));
+            }
+        }
+
+        Some(outcome)
+    }
 }
 
-pub fn build_micro(records: &[ExperienceRecord]) -> MicroMilestone {
+pub fn build_micro(records: &[ExperienceRecord]) -> ProtoMicroMilestone {
     let commitments: Vec<Commitment> = records.iter().map(commit_experience_record).collect();
     let commitment_hexes: Vec<String> = commitments.iter().map(commitment_hex).collect();
     let milestone_id = commitments
@@ -308,14 +385,14 @@ pub fn build_micro(records: &[ExperienceRecord]) -> MicroMilestone {
         .unwrap_or(0);
     let label = format!("micro:[{}]", commitment_hexes.join(","));
 
-    MicroMilestone {
+    ProtoMicroMilestone {
         milestone_id,
         achieved_at_ms,
         label,
     }
 }
 
-pub fn build_meso(micros: &[MicroMilestone]) -> MesoMilestone {
+pub fn build_meso(micros: &[ProtoMicroMilestone]) -> ProtoMesoMilestone {
     let micro_ids: Vec<String> = micros
         .iter()
         .map(|micro| micro.milestone_id.clone())
@@ -333,7 +410,7 @@ pub fn build_meso(micros: &[MicroMilestone]) -> MesoMilestone {
         .unwrap_or(0);
     let label = format!("meso:[{}]", commitment_hexes.join(","));
 
-    MesoMilestone {
+    ProtoMesoMilestone {
         milestone_id,
         achieved_at_ms,
         label,
@@ -341,7 +418,7 @@ pub fn build_meso(micros: &[MicroMilestone]) -> MesoMilestone {
     }
 }
 
-pub fn build_macro(mesos: &[MesoMilestone]) -> MacroMilestone {
+pub fn build_macro(mesos: &[ProtoMesoMilestone]) -> ProtoMacroMilestone {
     let meso_ids: Vec<String> = mesos.iter().map(|meso| meso.milestone_id.clone()).collect();
     let meso_commitments: Vec<Commitment> = mesos.iter().map(commit_milestone_meso).collect();
     let commitment_hexes: Vec<String> = meso_commitments.iter().map(commitment_hex).collect();
@@ -356,7 +433,7 @@ pub fn build_macro(mesos: &[MesoMilestone]) -> MacroMilestone {
         .unwrap_or(0);
     let label = format!("macro:[{}]", commitment_hexes.join(","));
 
-    MacroMilestone {
+    ProtoMacroMilestone {
         milestone_id,
         achieved_at_ms,
         label,
@@ -364,135 +441,531 @@ pub fn build_macro(mesos: &[MesoMilestone]) -> MacroMilestone {
     }
 }
 
-pub struct ReplayScheduler {
-    pub budget: usize,
-    gate: Arc<dyn ReplayGate + Send + Sync>,
-    attention: Option<AttentionWeights>,
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ReplayWeights {
+    pub surprise: u16,
+    pub drift: u16,
+    pub attention: u16,
+    pub age: u16,
 }
 
-impl ReplayScheduler {
-    pub fn new(budget: usize) -> Self {
-        Self::new_with_gate(budget, Arc::new(DefaultPolicyEcology::default()))
+impl Default for ReplayWeights {
+    fn default() -> Self {
+        Self {
+            surprise: 4,
+            drift: 3,
+            attention: 2,
+            age: 1,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReplayBias {
+    pub attention: AttentionWeights,
+    pub iit: IitReport,
+    pub consistency: ConsistencyReport,
+    pub surprise: SurpriseSignal,
+    pub rdc_bias: u16,
+}
+
+impl ReplayBias {
+    pub fn total_bias(&self) -> u16 {
+        let iit_bias = self.iit_bias();
+        let consistency_bias = self.consistency_bias();
+        let surprise_bias = self.surprise_bias();
+        self.attention
+            .replay_bias
+            .saturating_add(iit_bias)
+            .saturating_add(consistency_bias)
+            .saturating_add(surprise_bias)
+            .saturating_add(self.rdc_bias)
+            .min(10_000)
     }
 
-    pub fn new_with_gate(budget: usize, gate: Arc<dyn ReplayGate + Send + Sync>) -> Self {
-        Self {
-            budget,
-            gate,
-            attention: None,
+    pub fn priority_gain(&self) -> u16 {
+        self.attention
+            .gain
+            .saturating_add(self.iit_bias())
+            .saturating_add(self.rdc_bias)
+            .min(10_000)
+    }
+
+    fn iit_bias(&self) -> u16 {
+        match self.iit.band {
+            ucf_iit_monitor::IitBand::Low => 1600,
+            ucf_iit_monitor::IitBand::Medium => 800,
+            ucf_iit_monitor::IitBand::High => 200,
         }
     }
 
-    pub fn select_for_replay(&self, records: &[ExperienceRecord]) -> Vec<ExperienceRecord> {
-        self.select_for_replay_with_gate_and_attention(
-            records,
-            self.gate.as_ref(),
-            self.attention.as_ref(),
-        )
+    fn consistency_bias(&self) -> u16 {
+        match self.consistency.band {
+            DriftBand::Low => 200,
+            DriftBand::Medium => 900,
+            DriftBand::High => 1800,
+            DriftBand::Critical => 2500,
+        }
     }
 
-    pub fn select_for_replay_with_gate(
+    fn surprise_bias(&self) -> u16 {
+        let band_bias: u16 = match self.surprise.band {
+            SurpriseBand::Low => 300,
+            SurpriseBand::Medium => 1200,
+            SurpriseBand::High => 2400,
+            SurpriseBand::Critical => 3600,
+        };
+        band_bias.saturating_add(self.surprise.score / 4)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct ReplayCascadeConfig {
+    pub micro_cap: usize,
+    pub meso_cap: usize,
+    pub macro_cap: usize,
+    pub weights: ReplayWeights,
+}
+
+impl ReplayCascadeConfig {
+    pub fn new(micro_cap: usize, meso_cap: usize, macro_cap: usize) -> Self {
+        Self {
+            micro_cap,
+            meso_cap,
+            macro_cap,
+            weights: ReplayWeights::default(),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct ReplayCascade {
+    config: ReplayCascadeConfig,
+}
+
+impl ReplayCascade {
+    pub fn new(config: ReplayCascadeConfig) -> Self {
+        Self { config }
+    }
+
+    pub fn schedule(
         &self,
-        records: &[ExperienceRecord],
-        gate: &dyn ReplayGate,
-    ) -> Vec<ExperienceRecord> {
-        self.select_for_replay_with_gate_and_attention(records, gate, None)
-    }
+        graph: &MemoryMilestoneGraph,
+        bias: &ReplayBias,
+        budget: RecursionBudget,
+        context: &SleepReplayContext,
+    ) -> ReplayOutcome {
+        let micro_candidates = self.select_micro(graph, bias);
+        let meso_candidates = self.select_meso(graph, &micro_candidates);
+        let macro_candidates = self.select_macro(graph, bias, &meso_candidates);
 
-    pub fn select_for_replay_with_attention(
-        &self,
-        records: &[ExperienceRecord],
-        attention: Option<&AttentionWeights>,
-    ) -> Vec<ExperienceRecord> {
-        self.select_for_replay_with_gate_and_attention(records, self.gate.as_ref(), attention)
-    }
-
-    pub fn set_attention(&mut self, attention: Option<AttentionWeights>) {
-        self.attention = attention;
-    }
-
-    pub fn select_for_replay_with_gate_and_attention(
-        &self,
-        records: &[ExperienceRecord],
-        gate: &dyn ReplayGate,
-        attention: Option<&AttentionWeights>,
-    ) -> Vec<ExperienceRecord> {
-        let mut scored: Vec<(u64, [u8; 32], ExperienceRecord)> = records
+        let redaction = base_redaction(bias.total_bias());
+        let tokens = build_tokens(
+            &micro_candidates,
+            &meso_candidates,
+            &macro_candidates,
+            budget,
+            redaction,
+        );
+        let scheduled: Vec<ReplayScheduled> = tokens
             .iter()
-            .filter(|record| gate.allow_replay(record))
-            .map(|record| {
-                let priority = record_priority(record);
-                let bias = attention_bias(attention, record);
-                let commitment = commit_experience_record(record);
-                (
-                    priority.saturating_add(bias),
-                    *commitment.digest.as_bytes(),
-                    record.clone(),
-                )
+            .map(|token| ReplayScheduled {
+                tier: token.tier,
+                target: token.target,
+                budget: token.budget,
+                redaction: token.redaction,
+                commit: token.commit,
+            })
+            .collect();
+        let applied: Vec<ReplayApplied> = tokens
+            .iter()
+            .map(|token| ReplayApplied {
+                tier: token.tier,
+                target: token.target,
+                effect_digest: replay_effect_digest(
+                    token,
+                    &context.ssm_state,
+                    &context.workspace_commit,
+                ),
             })
             .collect();
 
-        scored.sort_by(|(priority_a, digest_a, _), (priority_b, digest_b, _)| {
-            priority_b
-                .cmp(priority_a)
-                .then_with(|| digest_a.cmp(digest_b))
-        });
+        ReplayOutcome {
+            tokens,
+            scheduled,
+            applied,
+            selected_micros: micro_candidates
+                .iter()
+                .map(|candidate| candidate.commit)
+                .collect(),
+            selected_mesos: meso_candidates
+                .iter()
+                .map(|candidate| candidate.commit)
+                .collect(),
+            selected_macros: macro_candidates
+                .iter()
+                .map(|candidate| candidate.commit)
+                .collect(),
+        }
+    }
 
+    fn select_micro(&self, graph: &MemoryMilestoneGraph, bias: &ReplayBias) -> Vec<RankedDigest> {
+        let mut scored: Vec<RankedDigest> = graph
+            .micros
+            .iter()
+            .enumerate()
+            .map(|(idx, micro)| {
+                let score = micro_score(
+                    bias,
+                    &self.config.weights,
+                    u16::try_from(idx).unwrap_or(u16::MAX),
+                );
+                RankedDigest {
+                    score,
+                    commit: micro.commit,
+                }
+            })
+            .collect();
+
+        sort_ranked(&mut scored);
+        scored.truncate(self.config.micro_cap);
         scored
-            .into_iter()
-            .take(self.budget)
-            .map(|(_, _, record)| record)
-            .collect()
+    }
+
+    fn select_meso(
+        &self,
+        graph: &MemoryMilestoneGraph,
+        micros: &[RankedDigest],
+    ) -> Vec<RankedDigest> {
+        let mut lookup = HashMap::new();
+        for micro in micros {
+            lookup.insert(micro.commit, micro.score);
+        }
+        let mut scored = Vec::new();
+        for meso in &graph.mesos {
+            let mut score = 0i64;
+            for micro in &meso.micros {
+                if let Some(value) = lookup.get(micro) {
+                    score = score.saturating_add(*value);
+                }
+            }
+            if score > 0 {
+                scored.push(RankedDigest {
+                    score,
+                    commit: meso.commit,
+                });
+            }
+        }
+
+        sort_ranked(&mut scored);
+        scored.truncate(self.config.meso_cap);
+        scored
+    }
+
+    fn select_macro(
+        &self,
+        graph: &MemoryMilestoneGraph,
+        bias: &ReplayBias,
+        mesos: &[RankedDigest],
+    ) -> Vec<RankedDigest> {
+        let drift_high = matches!(bias.consistency.band, DriftBand::High | DriftBand::Critical);
+        let selected_mesos: HashSet<Digest32> = mesos.iter().map(|meso| meso.commit).collect();
+        let mut scored = Vec::new();
+        for macro_ms in &graph.macros {
+            let contains = macro_ms
+                .mesos
+                .iter()
+                .any(|meso| selected_mesos.contains(meso));
+            if drift_high && !contains {
+                continue;
+            }
+            let score = if contains { 10_000 } else { 5_000 };
+            scored.push(RankedDigest {
+                score,
+                commit: macro_ms.commit,
+            });
+        }
+
+        sort_ranked(&mut scored);
+        if drift_high {
+            scored.truncate(self.config.macro_cap);
+            return scored;
+        }
+
+        let mut diversified = Vec::new();
+        let mut seen_traits = HashSet::new();
+        for macro_ms in &graph.macros {
+            if diversified.len() >= self.config.macro_cap {
+                break;
+            }
+            if seen_traits.insert(macro_ms.trait_updates) {
+                diversified.push(RankedDigest {
+                    score: 8_000,
+                    commit: macro_ms.commit,
+                });
+            }
+        }
+        if diversified.is_empty() {
+            scored.truncate(self.config.macro_cap);
+            scored
+        } else {
+            diversified
+        }
     }
 }
 
-fn record_priority(record: &ExperienceRecord) -> u64 {
-    record
-        .digest
-        .as_ref()
-        .and_then(|digest| digest.algo_id)
-        .unwrap_or(0) as u64
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct RankedDigest {
+    score: i64,
+    commit: Digest32,
 }
 
-fn attention_bias(attention: Option<&AttentionWeights>, record: &ExperienceRecord) -> u64 {
-    let Some(attention) = attention else {
-        return 0;
+fn sort_ranked(values: &mut [RankedDigest]) {
+    values.sort_by(|a, b| {
+        b.score
+            .cmp(&a.score)
+            .then_with(|| a.commit.as_bytes().cmp(b.commit.as_bytes()))
+    });
+}
+
+fn micro_score(bias: &ReplayBias, weights: &ReplayWeights, age_rank: u16) -> i64 {
+    let surprise = i64::from(bias.surprise.score);
+    let drift = i64::from(bias.consistency.drift_score);
+    let attention = i64::from(bias.priority_gain());
+    let age = i64::from(age_rank);
+    let w1 = i64::from(weights.surprise);
+    let w2 = i64::from(weights.drift);
+    let w3 = i64::from(weights.attention);
+    let w4 = i64::from(weights.age);
+    w1 * surprise + w2 * drift + w3 * attention - w4 * age
+}
+
+fn base_redaction(bias_total: u16) -> u16 {
+    10_000u16.saturating_sub(bias_total.min(10_000))
+}
+
+fn build_tokens(
+    micros: &[RankedDigest],
+    mesos: &[RankedDigest],
+    macros: &[RankedDigest],
+    budget: RecursionBudget,
+    redaction: u16,
+) -> Vec<ReplayToken> {
+    let mut tokens = Vec::new();
+    for micro in micros {
+        tokens.push(make_token(
+            MilestoneTier::Micro,
+            micro.commit,
+            budget.micro,
+            redaction.saturating_sub(800),
+        ));
+    }
+    for meso in mesos {
+        tokens.push(make_token(
+            MilestoneTier::Meso,
+            meso.commit,
+            budget.meso,
+            redaction,
+        ));
+    }
+    for macro_ms in macros {
+        tokens.push(make_token(
+            MilestoneTier::Macro,
+            macro_ms.commit,
+            budget.macro_,
+            redaction.saturating_add(600),
+        ));
+    }
+    tokens
+}
+
+fn make_token(tier: MilestoneTier, target: Digest32, budget: u16, redaction: u16) -> ReplayToken {
+    let redaction = redaction.min(10_000);
+    let mut token = ReplayToken {
+        tier,
+        target,
+        budget,
+        redaction,
+        commit: Digest32::new([0u8; 32]),
     };
-    let metadata = parse_record_metadata(record);
-    let mut bias = 0u64;
-    if let Some(channel) = metadata.focus_channel {
-        if channel == attention.channel {
-            bias = bias.saturating_add(attention.replay_bias as u64);
-        }
-    }
-    if let Some(score) = metadata.integration_score {
-        if score <= 3000 {
-            bias = bias.saturating_add(attention.replay_bias as u64 / 2);
-        }
-    }
-    bias
+    let commit = commit_replay_token(&token);
+    token.commit = commit.digest;
+    token
 }
 
-fn parse_record_metadata(record: &ExperienceRecord) -> RecordMetadata {
-    let payload = match std::str::from_utf8(&record.payload) {
-        Ok(payload) => payload,
-        Err(_) => return RecordMetadata::default(),
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReplayOutcome {
+    pub tokens: Vec<ReplayToken>,
+    pub scheduled: Vec<ReplayScheduled>,
+    pub applied: Vec<ReplayApplied>,
+    pub selected_micros: Vec<Digest32>,
+    pub selected_mesos: Vec<Digest32>,
+    pub selected_macros: Vec<Digest32>,
+}
+
+impl ReplayOutcome {
+    pub fn counts(&self) -> (usize, usize, usize) {
+        (
+            self.selected_micros.len(),
+            self.selected_mesos.len(),
+            self.selected_macros.len(),
+        )
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct MemoryMilestoneGraph {
+    pub micros: Vec<MemoryMicroMilestone>,
+    pub mesos: Vec<MemoryMesoMilestone>,
+    pub macros: Vec<MemoryMacroMilestone>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SleepReplayContext {
+    pub cycle_id: u64,
+    pub ssm_state: Digest32,
+    pub workspace_commit: Digest32,
+}
+
+fn build_memory_graph(
+    records: &[ExperienceRecord],
+    config: &ConsolidationConfig,
+) -> MemoryMilestoneGraph {
+    if records.is_empty()
+        || config.micro_window == 0
+        || config.meso_window == 0
+        || config.macro_window == 0
+    {
+        return MemoryMilestoneGraph {
+            micros: Vec::new(),
+            mesos: Vec::new(),
+            macros: Vec::new(),
+        };
+    }
+
+    let micros: Vec<MemoryMicroMilestone> = records
+        .chunks(config.micro_window)
+        .map(build_memory_micro)
+        .collect();
+    let mesos: Vec<MemoryMesoMilestone> = micros
+        .chunks(config.meso_window)
+        .map(build_memory_meso)
+        .collect();
+    let macros: Vec<MemoryMacroMilestone> = mesos
+        .chunks(config.macro_window)
+        .map(build_memory_macro)
+        .collect();
+
+    MemoryMilestoneGraph {
+        micros,
+        mesos,
+        macros,
+    }
+}
+
+fn build_memory_micro(records: &[ExperienceRecord]) -> MemoryMicroMilestone {
+    let mut items: Vec<Digest32> = records
+        .iter()
+        .map(commit_experience_record)
+        .map(|commitment| commitment.digest)
+        .collect();
+    normalize_digests(&mut items);
+    let horm_profile = digest_list(b"ucf.consolidation.horm_profile.v1", &items);
+    let mut micro = MemoryMicroMilestone {
+        items,
+        horm_profile,
+        commit: Digest32::new([0u8; 32]),
     };
-    let mut metadata = RecordMetadata::default();
-    for segment in payload.split(';') {
-        if let Some(value) = segment.strip_prefix("attn_channel=") {
-            metadata.focus_channel = value.parse::<FocusChannel>().ok();
-        } else if let Some(value) = segment.strip_prefix("integration_score=") {
-            metadata.integration_score = value.parse::<u16>().ok();
-        }
-    }
-    metadata
+    micro.commit = commit_memory_micro(&micro).digest;
+    micro
 }
 
-#[derive(Default)]
-struct RecordMetadata {
-    focus_channel: Option<FocusChannel>,
-    integration_score: Option<u16>,
+fn build_memory_meso(micros: &[MemoryMicroMilestone]) -> MemoryMesoMilestone {
+    let mut micro_commits: Vec<Digest32> = micros.iter().map(|micro| micro.commit).collect();
+    normalize_digests(&mut micro_commits);
+    let topic_commit = digest_list(b"ucf.consolidation.topic_commit.v1", &micro_commits);
+    let mut meso = MemoryMesoMilestone {
+        micros: micro_commits,
+        topic_commit,
+        commit: Digest32::new([0u8; 32]),
+    };
+    meso.commit = commit_memory_meso(&meso).digest;
+    meso
+}
+
+fn build_memory_macro(mesos: &[MemoryMesoMilestone]) -> MemoryMacroMilestone {
+    let mut meso_commits: Vec<Digest32> = mesos.iter().map(|meso| meso.commit).collect();
+    normalize_digests(&mut meso_commits);
+    let trait_updates = digest_list(b"ucf.consolidation.trait_updates.v1", &meso_commits);
+    let mut macro_ms = MemoryMacroMilestone {
+        mesos: meso_commits,
+        trait_updates,
+        commit: Digest32::new([0u8; 32]),
+    };
+    macro_ms.commit = commit_memory_macro(&macro_ms).digest;
+    macro_ms
+}
+
+fn digest_list(domain: &[u8], digests: &[Digest32]) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(domain);
+    for digest in digests {
+        hasher.update(digest.as_bytes());
+    }
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn normalize_digests(digests: &mut [Digest32]) {
+    digests.sort_by(|a, b| a.as_bytes().cmp(b.as_bytes()));
+}
+
+fn replay_effect_digest(
+    token: &ReplayToken,
+    ssm_state: &Digest32,
+    workspace: &Digest32,
+) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(b"ucf.replay.effect.v1");
+    hasher.update(token.commit.as_bytes());
+    hasher.update(ssm_state.as_bytes());
+    hasher.update(workspace.as_bytes());
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn replay_scheduled_record(event: &ReplayScheduled, cycle_id: u64) -> ExperienceRecord {
+    let payload = encode_replay_scheduled(event);
+    let record_id = format!("replay-scheduled-{}", hex_digest(event.commit));
+    build_compact_record(record_id, cycle_id, "replay", payload)
+}
+
+fn replay_applied_record(event: &ReplayApplied, cycle_id: u64) -> ExperienceRecord {
+    let payload = encode_replay_applied(event);
+    let record_id = format!("replay-applied-{}", hex_digest(event.effect_digest));
+    build_compact_record(record_id, cycle_id, "replay", payload)
+}
+
+fn encode_replay_scheduled(event: &ReplayScheduled) -> Vec<u8> {
+    let mut payload = Vec::with_capacity(2 + 1 + 2 + 2 + Digest32::LEN * 2);
+    payload.extend_from_slice(b"RS");
+    payload.push(event.tier as u8);
+    payload.extend_from_slice(&event.budget.to_be_bytes());
+    payload.extend_from_slice(&event.redaction.to_be_bytes());
+    payload.extend_from_slice(event.target.as_bytes());
+    payload.extend_from_slice(event.commit.as_bytes());
+    payload
+}
+
+fn encode_replay_applied(event: &ReplayApplied) -> Vec<u8> {
+    let mut payload = Vec::with_capacity(2 + 1 + Digest32::LEN * 2);
+    payload.extend_from_slice(b"RA");
+    payload.push(event.tier as u8);
+    payload.extend_from_slice(event.target.as_bytes());
+    payload.extend_from_slice(event.effect_digest.as_bytes());
+    payload
+}
+
+fn hex_digest(digest: Digest32) -> String {
+    hex_encode(digest.as_bytes())
 }
 
 fn commitment_hex(commitment: &Commitment) -> String {
@@ -507,7 +980,7 @@ fn hex_encode(bytes: &[u8]) -> String {
     out
 }
 
-fn derived_record_for_micro(micro: &MicroMilestone) -> ExperienceRecord {
+fn derived_record_for_micro(micro: &ProtoMicroMilestone) -> ExperienceRecord {
     let commitment = commit_milestone_micro(micro);
     ExperienceRecord {
         record_id: format!("derived-micro-{}", commitment_hex(&commitment)),
@@ -520,7 +993,7 @@ fn derived_record_for_micro(micro: &MicroMilestone) -> ExperienceRecord {
     }
 }
 
-fn derived_record_for_meso(meso: &MesoMilestone) -> ExperienceRecord {
+fn derived_record_for_meso(meso: &ProtoMesoMilestone) -> ExperienceRecord {
     let commitment = commit_milestone_meso(meso);
     ExperienceRecord {
         record_id: format!("derived-meso-{}", commitment_hex(&commitment)),
@@ -533,7 +1006,7 @@ fn derived_record_for_meso(meso: &MesoMilestone) -> ExperienceRecord {
     }
 }
 
-fn derived_record_for_macro(macro_ms: &MacroMilestone) -> ExperienceRecord {
+fn derived_record_for_macro(macro_ms: &ProtoMacroMilestone) -> ExperienceRecord {
     let commitment = commit_milestone_macro(macro_ms);
     ExperienceRecord {
         record_id: format!("derived-macro-{}", commitment_hex(&commitment)),
@@ -552,8 +1025,12 @@ mod tests {
     use std::sync::Arc;
 
     use ucf_archive::{ExperienceAppender, InMemoryArchive};
-    use ucf_policy_ecology::{PolicyEcology, PolicyRule, PolicyWeights};
-    use ucf_types::v1::spec::Digest;
+    use ucf_attn_controller::FocusChannel;
+    use ucf_consistency_engine::DriftBand;
+    use ucf_iit_monitor::IitBand;
+    use ucf_predictive_coding::{SurpriseBand, SurpriseSignal};
+    use ucf_types::v1::spec::{Digest, MacroMilestone};
+    use ucf_workspace::{Workspace, WorkspaceConfig};
 
     fn sample_record(id: &str, observed_at_ms: u64, priority: Option<u32>) -> ExperienceRecord {
         ExperienceRecord {
@@ -570,6 +1047,34 @@ mod tests {
             }),
             vrf_tag: None,
             proof_ref: None,
+        }
+    }
+
+    fn sample_bias(drift_band: DriftBand, drift_score: u16) -> ReplayBias {
+        ReplayBias {
+            attention: AttentionWeights {
+                channel: FocusChannel::Memory,
+                gain: 3200,
+                noise_suppress: 1000,
+                replay_bias: 4000,
+                commit: Digest32::new([1u8; 32]),
+            },
+            iit: IitReport {
+                phi: 2400,
+                band: IitBand::Low,
+                commit: Digest32::new([2u8; 32]),
+            },
+            consistency: ConsistencyReport {
+                drift_score,
+                band: drift_band,
+                commit: Digest32::new([3u8; 32]),
+            },
+            surprise: SurpriseSignal {
+                score: 4200,
+                band: SurpriseBand::Medium,
+                commit: Digest32::new([4u8; 32]),
+            },
+            rdc_bias: 600,
         }
     }
 
@@ -604,42 +1109,6 @@ mod tests {
     }
 
     #[test]
-    fn replay_selection_is_deterministic() {
-        let records = vec![
-            sample_record("rec-1", 10, Some(1)),
-            sample_record("rec-2", 11, Some(3)),
-            sample_record("rec-3", 12, Some(3)),
-        ];
-        let scheduler = ReplayScheduler::new(2);
-
-        let selected = scheduler.select_for_replay(&records);
-        let selected_again = scheduler.select_for_replay(&records);
-
-        assert_eq!(selected, selected_again);
-        assert_eq!(selected.len(), 2);
-        assert!(selected[0].record_id != selected[1].record_id);
-    }
-
-    #[test]
-    fn replay_selection_respects_intensity_gate() {
-        let records = vec![
-            sample_record("rec-low", 10, Some(1)),
-            sample_record("rec-high", 11, Some(5)),
-        ];
-        let policy = PolicyEcology::new(
-            1,
-            vec![PolicyRule::DenyReplayIfIntensityBelow { min: 3 }],
-            PolicyWeights,
-        );
-        let scheduler = ReplayScheduler::new_with_gate(2, Arc::new(policy));
-
-        let selected = scheduler.select_for_replay(&records);
-
-        assert_eq!(selected.len(), 1);
-        assert_eq!(selected[0].record_id, "rec-high");
-    }
-
-    #[test]
     fn kernel_appends_derived_milestones() {
         let archive = InMemoryArchive::new();
         for idx in 0..8 {
@@ -652,8 +1121,11 @@ mod tests {
             meso_window: 2,
             macro_window: 2,
             replay_budget: 8,
+            replay_micro_cap: 4,
+            replay_meso_cap: 2,
+            replay_macro_cap: 1,
         };
-        let kernel = ConsolidationKernel::new(config, handle, handle, None, None);
+        let kernel = ConsolidationKernel::new(config, handle, handle, None, None, None);
 
         let before_len = archive.list().len();
         let summary = kernel.run_one_cycle();
@@ -676,5 +1148,145 @@ mod tests {
         let macro_ms = MacroMilestone::decode(macro_records[0].payload.as_slice())
             .expect("decode macro milestone");
         assert_eq!(macro_ms.meso_milestone_ids.len(), 2);
+    }
+
+    #[test]
+    fn replay_selection_is_deterministic_for_same_inputs() {
+        let records: Vec<ExperienceRecord> = (0..12)
+            .map(|idx| sample_record(&format!("rec-{idx}"), 100 + idx, None))
+            .collect();
+        let config = ConsolidationConfig {
+            micro_window: 2,
+            meso_window: 2,
+            macro_window: 2,
+            replay_budget: 8,
+            replay_micro_cap: 3,
+            replay_meso_cap: 2,
+            replay_macro_cap: 1,
+        };
+        let graph = build_memory_graph(&records, &config);
+        let bias = sample_bias(DriftBand::Medium, 4200);
+        let cascade = ReplayCascade::new(ReplayCascadeConfig::new(3, 2, 1));
+        let context = SleepReplayContext {
+            cycle_id: 1,
+            ssm_state: Digest32::new([5u8; 32]),
+            workspace_commit: Digest32::new([6u8; 32]),
+        };
+        let budget = RecursionBudget::new(2, 2, 1);
+
+        let first = cascade.schedule(&graph, &bias, budget, &context);
+        let second = cascade.schedule(&graph, &bias, budget, &context);
+
+        assert_eq!(first.tokens, second.tokens);
+        assert_eq!(first.scheduled, second.scheduled);
+    }
+
+    #[test]
+    fn cascade_respects_caps() {
+        let records: Vec<ExperienceRecord> = (0..16)
+            .map(|idx| sample_record(&format!("rec-{idx}"), 100 + idx, None))
+            .collect();
+        let config = ConsolidationConfig {
+            micro_window: 2,
+            meso_window: 2,
+            macro_window: 2,
+            replay_budget: 8,
+            replay_micro_cap: 2,
+            replay_meso_cap: 1,
+            replay_macro_cap: 1,
+        };
+        let graph = build_memory_graph(&records, &config);
+        let bias = sample_bias(DriftBand::Medium, 3200);
+        let cascade = ReplayCascade::new(ReplayCascadeConfig::new(2, 1, 1));
+        let context = SleepReplayContext {
+            cycle_id: 2,
+            ssm_state: Digest32::new([7u8; 32]),
+            workspace_commit: Digest32::new([8u8; 32]),
+        };
+        let budget = RecursionBudget::new(2, 1, 1);
+        let outcome = cascade.schedule(&graph, &bias, budget, &context);
+
+        assert!(outcome.selected_micros.len() <= 2);
+        assert!(outcome.selected_mesos.len() <= 1);
+        assert!(outcome.selected_macros.len() <= 1);
+    }
+
+    #[test]
+    fn replay_token_contains_no_raw_text() {
+        let token = make_token(MilestoneTier::Micro, Digest32::new([9u8; 32]), 2, 5000);
+        let scheduled = ReplayScheduled {
+            tier: token.tier,
+            target: token.target,
+            budget: token.budget,
+            redaction: token.redaction,
+            commit: token.commit,
+        };
+        let payload = encode_replay_scheduled(&scheduled);
+        let secret = b"VERY_SECRET_RAW_TEXT_DO_NOT_INCLUDE";
+        assert!(!payload.windows(secret.len()).any(|window| window == secret));
+    }
+
+    #[test]
+    fn drift_high_prioritizes_macro_selection() {
+        let records: Vec<ExperienceRecord> = (0..12)
+            .map(|idx| sample_record(&format!("rec-{idx}"), 100 + idx, None))
+            .collect();
+        let config = ConsolidationConfig {
+            micro_window: 2,
+            meso_window: 2,
+            macro_window: 2,
+            replay_budget: 8,
+            replay_micro_cap: 3,
+            replay_meso_cap: 2,
+            replay_macro_cap: 1,
+        };
+        let graph = build_memory_graph(&records, &config);
+        let bias = sample_bias(DriftBand::High, 8000);
+        let cascade = ReplayCascade::new(ReplayCascadeConfig::new(3, 2, 1));
+        let context = SleepReplayContext {
+            cycle_id: 3,
+            ssm_state: Digest32::new([1u8; 32]),
+            workspace_commit: Digest32::new([2u8; 32]),
+        };
+        let budget = RecursionBudget::new(2, 2, 1);
+        let outcome = cascade.schedule(&graph, &bias, budget, &context);
+
+        assert!(!outcome.selected_macros.is_empty());
+    }
+
+    #[test]
+    fn sleep_pulse_produces_replay_scheduled_events() {
+        let archive = InMemoryArchive::new();
+        for idx in 0..8 {
+            archive.append(sample_record(&format!("rec-{idx}"), 100 + idx, None));
+        }
+        let handle = InMemoryArchiveHandle::new(&archive);
+        let workspace = Arc::new(Mutex::new(Workspace::new(WorkspaceConfig {
+            cap: 4,
+            broadcast_cap: 4,
+        })));
+        let config = ConsolidationConfig {
+            micro_window: 2,
+            meso_window: 2,
+            macro_window: 2,
+            replay_budget: 8,
+            replay_micro_cap: 2,
+            replay_meso_cap: 1,
+            replay_macro_cap: 1,
+        };
+        let kernel = ConsolidationKernel::new(config, handle, handle, None, None, Some(workspace));
+        let context = SleepReplayContext {
+            cycle_id: 42,
+            ssm_state: Digest32::new([3u8; 32]),
+            workspace_commit: Digest32::new([4u8; 32]),
+        };
+        let bias = sample_bias(DriftBand::Medium, 4200);
+        let budget = RecursionBudget::new(2, 1, 1);
+
+        let outcome = kernel
+            .run_sleep_replay(PulseKind::Sleep, context, &bias, budget)
+            .expect("sleep replay");
+
+        assert!(!outcome.scheduled.is_empty());
     }
 }

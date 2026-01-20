@@ -8,6 +8,7 @@ use ucf_commit::commit_milestone_macro;
 use ucf_policy_ecology::{ConsistencyReport, ConsistencyVerdict, DefaultPolicyEcology, GeistGate};
 use ucf_recursion_controller::RecursionBudget;
 use ucf_sleep_coordinator::{SleepStateHandle, SleepStateUpdater};
+use ucf_types::consolidation::ReplayApplied;
 use ucf_types::v1::spec::{ExperienceRecord, MacroMilestone};
 use ucf_types::{Digest32, EvidenceId};
 
@@ -130,6 +131,12 @@ pub struct GeistLoopState {
     pub context: Vec<Digest32>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ReplayStabilization {
+    pub drift_reduction: u16,
+    pub commit: Digest32,
+}
+
 pub trait IsmStore {
     fn anchors(&self) -> Vec<Digest32>;
     fn upsert_anchor(&mut self, anchor: Digest32);
@@ -240,9 +247,13 @@ impl<A: ExperienceAppender, I: IsmStore> GeistKernel<A, I> {
         (self_states, report, evidence_id)
     }
 
-    pub fn apply_recursion_budget(&mut self, budget: &RecursionBudget) {
-        self.cfg.recursion_depth = budget.max_depth.max(1);
-        self.cfg.per_cycle_steps = budget.per_cycle_steps.max(1);
+    pub fn apply_replay_effects(&mut self, effects: &[ReplayApplied]) -> ReplayStabilization {
+        let drift_reduction = replay_drift_reduction(effects);
+        let commit = commit_replay_stabilization(effects, drift_reduction);
+        ReplayStabilization {
+            drift_reduction,
+            commit,
+        }
     }
 }
 
@@ -251,13 +262,33 @@ fn derive_macro_refs(macro_ms: &MacroMilestone) -> Vec<Digest32> {
     vec![commitment.digest]
 }
 
-fn build_self_states(
-    recursion_depth: u8,
-    per_cycle_steps: u16,
-    macro_refs: &[Digest32],
-) -> Vec<GeistLoopState> {
-    let max_states = recursion_depth.min(per_cycle_steps.max(1).min(u16::from(u8::MAX)) as u8);
-    let mut states = Vec::with_capacity(max_states as usize);
+fn replay_drift_reduction(effects: &[ReplayApplied]) -> u16 {
+    if effects.is_empty() {
+        return 0;
+    }
+    let mut reduction = 0u16;
+    for effect in effects {
+        let bytes = effect.effect_digest.as_bytes();
+        let sample = u16::from_be_bytes([bytes[0], bytes[1]]);
+        reduction = reduction.saturating_add(sample % 1200);
+    }
+    reduction.min(6000)
+}
+
+fn commit_replay_stabilization(effects: &[ReplayApplied], reduction: u16) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(b"ucf.geist.replay.stabilization.v1");
+    for effect in effects {
+        hasher.update(&[effect.tier as u8]);
+        hasher.update(effect.target.as_bytes());
+        hasher.update(effect.effect_digest.as_bytes());
+    }
+    hasher.update(&reduction.to_be_bytes());
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn build_self_states(recursion_depth: u8, macro_refs: &[Digest32]) -> Vec<GeistLoopState> {
+    let mut states = Vec::with_capacity(recursion_depth as usize);
     let mut previous_anchor = None;
     for level in 1..=max_states {
         let state = build_self_state(level, macro_refs, previous_anchor);

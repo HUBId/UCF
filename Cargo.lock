@@ -1885,15 +1885,21 @@ dependencies = [
 name = "ucf-consolidation"
 version = "0.1.0"
 dependencies = [
+ "blake3",
  "prost",
  "ucf-archive",
  "ucf-attn-controller",
  "ucf-bus",
  "ucf-commit",
+ "ucf-consistency-engine",
+ "ucf-iit-monitor",
  "ucf-policy-ecology",
+ "ucf-predictive-coding",
  "ucf-sleep-coordinator",
+ "ucf-tcf-port",
  "ucf-types",
  "ucf-vector-index",
+ "ucf-workspace",
 ]
 
 [[package]]
