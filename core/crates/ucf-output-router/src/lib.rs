@@ -4,6 +4,7 @@ use std::collections::VecDeque;
 
 use blake3::Hasher;
 use ucf_policy_ecology::{RiskDecision, RiskGateResult};
+use ucf_recursion_controller::RecursionBudget;
 use ucf_sandbox::ControlFrameNormalized;
 use ucf_types::v1::spec::{DecisionKind, PolicyDecision};
 use ucf_types::{AiOutput, Digest32};
@@ -134,6 +135,9 @@ pub struct OutputRouter {
     subvocal: SubVocalBuffer,
     events: Vec<OutputRouterEvent>,
     cycle: u64,
+    recursion_thought_cap: Option<u16>,
+    suppress_verbose_thoughts: bool,
+    verbose_thought_limit: usize,
 }
 
 impl OutputRouter {
@@ -144,6 +148,9 @@ impl OutputRouter {
             subvocal,
             events: Vec::new(),
             cycle: 0,
+            recursion_thought_cap: None,
+            suppress_verbose_thoughts: false,
+            verbose_thought_limit: 480,
         }
     }
 
@@ -161,6 +168,16 @@ impl OutputRouter {
 
     pub fn set_max_thought_frames_per_cycle(&mut self, max: u16) {
         self.config.max_thought_frames_per_cycle = max.max(1);
+    }
+
+    pub fn apply_recursion_budget(&mut self, budget: &RecursionBudget) {
+        if budget.max_depth <= 1 {
+            self.recursion_thought_cap = Some(2);
+            self.suppress_verbose_thoughts = true;
+        } else {
+            self.recursion_thought_cap = None;
+            self.suppress_verbose_thoughts = false;
+        }
     }
 
     pub fn route(
@@ -202,7 +219,26 @@ impl OutputRouter {
         idx: usize,
         gates: &GateBundle,
     ) -> RouteDecision {
-        if *thought_count >= self.config.max_thought_frames_per_cycle {
+        if self.suppress_verbose_thoughts && frame.text.len() > self.verbose_thought_limit {
+            let reason_code = "thought_verbose_suppressed".to_string();
+            let evidence = decision_evidence(&frame, &reason_code, gates, idx, None);
+            self.events.push(OutputRouterEvent::OutputSuppressed {
+                frame,
+                reason_code: reason_code.clone(),
+                evidence,
+                risk: 0,
+            });
+            return RouteDecision {
+                permitted: false,
+                reason_code,
+                evidence,
+            };
+        }
+        let thought_cap = self
+            .recursion_thought_cap
+            .map(|cap| cap.min(self.config.max_thought_frames_per_cycle))
+            .unwrap_or(self.config.max_thought_frames_per_cycle);
+        if *thought_count >= thought_cap {
             let reason_code = "thought_cycle_cap".to_string();
             let evidence = decision_evidence(&frame, &reason_code, gates, idx, None);
             self.events.push(OutputRouterEvent::OutputSuppressed {

@@ -6,6 +6,7 @@ use blake3::Hasher;
 use ucf_archive::ExperienceAppender;
 use ucf_commit::commit_milestone_macro;
 use ucf_policy_ecology::{ConsistencyReport, ConsistencyVerdict, DefaultPolicyEcology, GeistGate};
+use ucf_recursion_controller::RecursionBudget;
 use ucf_sleep_coordinator::{SleepStateHandle, SleepStateUpdater};
 use ucf_types::v1::spec::{ExperienceRecord, MacroMilestone};
 use ucf_types::{Digest32, EvidenceId};
@@ -118,6 +119,7 @@ fn commit_self_state(builder: &SelfStateBuilder) -> Digest32 {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct GeistConfig {
     pub recursion_depth: u8,
+    pub per_cycle_steps: u16,
     pub consistency_threshold: u16,
 }
 
@@ -212,7 +214,11 @@ impl<A: ExperienceAppender, I: IsmStore> GeistKernel<A, I> {
         macro_ms: MacroMilestone,
     ) -> (Vec<GeistLoopState>, ConsistencyReport, EvidenceId) {
         let macro_refs = derive_macro_refs(&macro_ms);
-        let self_states = build_self_states(self.cfg.recursion_depth, &macro_refs);
+        let self_states = build_self_states(
+            self.cfg.recursion_depth,
+            self.cfg.per_cycle_steps,
+            &macro_refs,
+        );
         let base_state = self_states.first().expect("recursion_depth must be >= 1");
         let mut report = compute_consistency_report(&self.cfg, base_state, &self.ism);
         if report.verdict == ConsistencyVerdict::Accept {
@@ -233,6 +239,11 @@ impl<A: ExperienceAppender, I: IsmStore> GeistKernel<A, I> {
         }
         (self_states, report, evidence_id)
     }
+
+    pub fn apply_recursion_budget(&mut self, budget: &RecursionBudget) {
+        self.cfg.recursion_depth = budget.max_depth.max(1);
+        self.cfg.per_cycle_steps = budget.per_cycle_steps.max(1);
+    }
 }
 
 fn derive_macro_refs(macro_ms: &MacroMilestone) -> Vec<Digest32> {
@@ -240,10 +251,15 @@ fn derive_macro_refs(macro_ms: &MacroMilestone) -> Vec<Digest32> {
     vec![commitment.digest]
 }
 
-fn build_self_states(recursion_depth: u8, macro_refs: &[Digest32]) -> Vec<GeistLoopState> {
-    let mut states = Vec::with_capacity(recursion_depth as usize);
+fn build_self_states(
+    recursion_depth: u8,
+    per_cycle_steps: u16,
+    macro_refs: &[Digest32],
+) -> Vec<GeistLoopState> {
+    let max_states = recursion_depth.min(per_cycle_steps.max(1).min(u16::from(u8::MAX)) as u8);
+    let mut states = Vec::with_capacity(max_states as usize);
     let mut previous_anchor = None;
-    for level in 1..=recursion_depth {
+    for level in 1..=max_states {
         let state = build_self_state(level, macro_refs, previous_anchor);
         previous_anchor = Some(state.anchor);
         states.push(state);
@@ -431,8 +447,8 @@ mod tests {
     fn determinism_same_macro_same_anchors() {
         let macro_ms = sample_macro("macro-1");
         let macro_refs = derive_macro_refs(&macro_ms);
-        let states_a = build_self_states(3, &macro_refs);
-        let states_b = build_self_states(3, &macro_refs);
+        let states_a = build_self_states(3, 10, &macro_refs);
+        let states_b = build_self_states(3, 10, &macro_refs);
         let anchors_a: Vec<Digest32> = states_a.iter().map(|state| state.anchor).collect();
         let anchors_b: Vec<Digest32> = states_b.iter().map(|state| state.anchor).collect();
         assert_eq!(anchors_a, anchors_b);
@@ -442,6 +458,7 @@ mod tests {
     fn consistency_reports_accept_and_reject() {
         let cfg = GeistConfig {
             recursion_depth: 1,
+            per_cycle_steps: 1,
             consistency_threshold: 1,
         };
         let macro_ms = sample_macro("macro-1");
@@ -461,6 +478,7 @@ mod tests {
     fn ingest_macro_appends_record_and_updates_ism() {
         let cfg = GeistConfig {
             recursion_depth: 2,
+            per_cycle_steps: 4,
             consistency_threshold: 1,
         };
         let macro_ms = sample_macro("macro-1");
@@ -480,6 +498,7 @@ mod tests {
     fn ingest_macro_dampens_when_gate_denies_upsert() {
         let cfg = GeistConfig {
             recursion_depth: 1,
+            per_cycle_steps: 1,
             consistency_threshold: 0,
         };
         let macro_ms = sample_macro("macro-2");

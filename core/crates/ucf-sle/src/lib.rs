@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 use std::collections::{HashSet, VecDeque};
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Mutex;
 
 use blake3::Hasher;
@@ -26,7 +27,7 @@ pub struct SelfReflex {
 
 #[derive(Debug)]
 pub struct SleEngine {
-    max_level: u8,
+    max_level: AtomicU8,
     history: Mutex<SleHistory>,
 }
 
@@ -39,9 +40,13 @@ struct SleHistory {
 impl SleEngine {
     pub fn new(max_level: u8) -> Self {
         Self {
-            max_level,
+            max_level: AtomicU8::new(max_level),
             history: Mutex::new(SleHistory::default()),
         }
+    }
+
+    pub fn set_max_level(&self, max_level: u8) {
+        self.max_level.store(max_level, Ordering::Relaxed);
     }
 
     pub fn evaluate(&self, snapshot: &WorkspaceSnapshot, last_state: &SelfState) -> SelfReflex {
@@ -61,16 +66,18 @@ impl SleEngine {
             (stable, has_instability(snapshot))
         };
 
+        let max_level = self.max_level.load(Ordering::Relaxed);
         let mut loop_level = self
             .history
             .lock()
             .map(|history| history.loop_level)
-            .unwrap_or(0);
+            .unwrap_or(0)
+            .min(max_level);
         let delta: i16 = if instability {
             loop_level = loop_level.saturating_sub(1);
             -1
         } else if stable_high_priority {
-            loop_level = loop_level.saturating_add(1).min(self.max_level);
+            loop_level = loop_level.saturating_add(1).min(max_level);
             1
         } else {
             0
@@ -304,6 +311,7 @@ fn encode_cde_hypothesis(hasher: &mut Hasher, hyp: Option<&CdeHypothesis>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ucf_recursion_controller::{RecursionController, RecursionInputs};
     use ucf_workspace::{SignalKind, WorkspaceSignal};
 
     #[test]
@@ -351,11 +359,13 @@ mod tests {
         let snapshot_a = WorkspaceSnapshot {
             cycle_id: 1,
             broadcast: vec![signal.clone()],
+            recursion_used: 0,
             commit: Digest32::new([1u8; 32]),
         };
         let snapshot_b = WorkspaceSnapshot {
             cycle_id: 2,
             broadcast: vec![signal],
+            recursion_used: 0,
             commit: Digest32::new([2u8; 32]),
         };
 
@@ -380,11 +390,13 @@ mod tests {
         let snapshot_a = WorkspaceSnapshot {
             cycle_id: 1,
             broadcast: vec![stable_signal.clone()],
+            recursion_used: 0,
             commit: Digest32::new([1u8; 32]),
         };
         let snapshot_b = WorkspaceSnapshot {
             cycle_id: 2,
             broadcast: vec![stable_signal],
+            recursion_used: 0,
             commit: Digest32::new([2u8; 32]),
         };
         let _ = engine.evaluate(&snapshot_a, &state);
@@ -400,10 +412,51 @@ mod tests {
         let snapshot_c = WorkspaceSnapshot {
             cycle_id: 3,
             broadcast: vec![surprise_signal],
+            recursion_used: 0,
             commit: Digest32::new([3u8; 32]),
         };
 
         let reflex = engine.evaluate(&snapshot_c, &state);
         assert_eq!(reflex.delta, -1);
+    }
+
+    #[test]
+    fn loop_level_respects_recursion_budget_cap() {
+        let controller = RecursionController::default();
+        let budget = controller.compute(&RecursionInputs {
+            phi: 2000,
+            drift_score: 9000,
+            surprise: 9000,
+            risk: 9000,
+            attn_gain: 1000,
+            focus: 9000,
+        });
+        let engine = SleEngine::new(6);
+        engine.set_max_level(budget.max_depth);
+        let state = SelfState::builder(1).build();
+        let signal = WorkspaceSignal {
+            kind: SignalKind::Risk,
+            priority: 9000,
+            digest: Digest32::new([6u8; 32]),
+            summary: "RISK=9000 DENY".to_string(),
+            slot: 0,
+        };
+        let snapshot_a = WorkspaceSnapshot {
+            cycle_id: 1,
+            broadcast: vec![signal.clone()],
+            recursion_used: 0,
+            commit: Digest32::new([4u8; 32]),
+        };
+        let snapshot_b = WorkspaceSnapshot {
+            cycle_id: 2,
+            broadcast: vec![signal],
+            recursion_used: 0,
+            commit: Digest32::new([5u8; 32]),
+        };
+
+        let _ = engine.evaluate(&snapshot_a, &state);
+        let reflex = engine.evaluate(&snapshot_b, &state);
+
+        assert!(reflex.loop_level <= budget.max_depth);
     }
 }

@@ -11,6 +11,7 @@ use ucf_ai_port::{
 use ucf_archive::ExperienceAppender;
 use ucf_attn_controller::{
     AttentionEventSink, AttentionUpdated, AttentionWeights, AttnController, AttnInputs,
+    FocusChannel,
 };
 use ucf_consistency_engine::{
     ConsistencyAction, ConsistencyActionKind, ConsistencyEngine, ConsistencyInputs,
@@ -28,6 +29,7 @@ use ucf_predictive_coding::{
     band_for_score, error, surprise, Observation, PredictionError, SurpriseBand, SurpriseSignal,
     SurpriseUpdated, WorldModel, WorldStateVec,
 };
+use ucf_recursion_controller::{RecursionBudget, RecursionController, RecursionInputs};
 use ucf_risk_gate::{digest_reasons, RiskGate};
 use ucf_rsa_hooks::{MockRsaHook, RsaContext, RsaHook, RsaProposal};
 use ucf_sandbox::ControlFrameNormalized;
@@ -87,6 +89,7 @@ pub struct Router {
     consistency_engine: ConsistencyEngine,
     ism_store: Arc<Mutex<IsmStore>>,
     iit_monitor: Mutex<IitMonitor>,
+    recursion_controller: RecursionController,
     rsa_hooks: Vec<Arc<dyn RsaHook + Send + Sync>>,
     last_self_state: Mutex<Option<SelfState>>,
     last_workspace_snapshot: Mutex<Option<WorkspaceSnapshot>>,
@@ -160,6 +163,7 @@ struct StageContext {
     consistency_effects: Option<ConsistencyActionEffects>,
     iit_report: Option<IitReport>,
     iit_actions: Vec<IitAction>,
+    recursion_budget: Option<RecursionBudget>,
 }
 
 impl StageContext {
@@ -186,6 +190,7 @@ impl StageContext {
             consistency_effects: None,
             iit_report: None,
             iit_actions: Vec::new(),
+            recursion_budget: None,
         }
     }
 }
@@ -237,6 +242,7 @@ impl Router {
             consistency_engine: ConsistencyEngine,
             ism_store: Arc::new(Mutex::new(IsmStore::new(64))),
             iit_monitor: Mutex::new(IitMonitor::new(4)),
+            recursion_controller: RecursionController::default(),
             rsa_hooks: vec![Arc::new(MockRsaHook::new())],
             last_self_state: Mutex::new(None),
             last_workspace_snapshot: Mutex::new(None),
@@ -275,6 +281,7 @@ impl Router {
             .unwrap_or(WorkspaceSnapshot {
                 cycle_id,
                 broadcast: Vec::new(),
+                recursion_used: 0,
                 commit: Digest32::new([0u8; 32]),
             })
     }
@@ -358,6 +365,40 @@ impl Router {
                     }));
 
                     let workspace_snapshot = self.latest_workspace_snapshot(cycle_id);
+                    let (iit_report, iit_actions) = {
+                        let mut monitor = self.iit_monitor.lock().expect("iit monitor lock");
+                        monitor.evaluate(&workspace_snapshot, attention_risk)
+                    };
+                    let surprise_score = ctx
+                        .predictive_result
+                        .as_ref()
+                        .map(|(_, signal)| signal.score)
+                        .unwrap_or(0);
+                    let attention_weights = self
+                        .last_attention
+                        .lock()
+                        .map(|attn| attn.clone())
+                        .unwrap_or_else(|_| idle_attention());
+                    let recursion_inputs = RecursionInputs {
+                        phi: iit_report.phi,
+                        drift_score: drift_score_from_snapshot(&workspace_snapshot),
+                        surprise: surprise_score,
+                        risk: attention_risk,
+                        attn_gain: attention_weights.gain,
+                        focus: focus_channel_score(attention_weights.channel),
+                    };
+                    let recursion_budget = self.recursion_controller.compute(&recursion_inputs);
+                    self.sle_engine.set_max_level(recursion_budget.max_depth);
+                    self.publish_workspace_signal(WorkspaceSignal::from_recursion_budget(
+                        recursion_budget.max_depth,
+                        recursion_budget.per_cycle_steps,
+                        recursion_budget.commit,
+                        None,
+                        Some(pulse.slot),
+                    ));
+                    self.archive
+                        .append(self.build_recursion_budget_record(cycle_id, &recursion_budget));
+                    ctx.recursion_budget = Some(recursion_budget);
                     let risk_commit = digest_risk_results(&risk_results);
                     let ssm_commit = inference
                         .ssm_state
@@ -397,16 +438,15 @@ impl Router {
                         .append(self.build_self_state_record(&self_state));
                     self.archive
                         .append(self.build_sle_reflex_record(cycle_id, &sle_reflex));
+                    if let Ok(mut workspace) = self.workspace.lock() {
+                        workspace.record_recursion_used(u16::from(sle_reflex.loop_level));
+                    }
                     if let Ok(mut guard) = self.last_self_state.lock() {
                         *guard = Some(self_state);
                     }
                     ctx.self_state = Some(self_state);
                     ctx.sle_reflex = Some(sle_reflex);
 
-                    let (iit_report, iit_actions) = {
-                        let mut monitor = self.iit_monitor.lock().expect("iit monitor lock");
-                        monitor.evaluate(&workspace_snapshot, attention_risk)
-                    };
                     let effects = iit_action_effects(
                         self.workspace_base,
                         &self.output_router_base,
@@ -516,6 +556,9 @@ impl Router {
                         speech_gate: speech_gate_results,
                     };
                     let mut output_router = self.output_router.lock().expect("output router lock");
+                    if let Some(budget) = ctx.recursion_budget.as_ref() {
+                        output_router.apply_recursion_budget(budget);
+                    }
                     let decisions = output_router.route(&cf, outputs.clone(), &gates);
                     let events = output_router.drain_events();
                     self.publish_workspace_signals(
@@ -948,6 +991,32 @@ impl Router {
         }
     }
 
+    fn build_recursion_budget_record(
+        &self,
+        cycle_id: u64,
+        budget: &RecursionBudget,
+    ) -> ExperienceRecord {
+        let record_id = format!(
+            "rdc-budget-{}-{}",
+            cycle_id,
+            hex::encode(budget.commit.as_bytes())
+        );
+        let payload = format!(
+            "depth={};steps={};decay={};commit={}",
+            budget.max_depth, budget.per_cycle_steps, budget.level_decay, budget.commit
+        )
+        .into_bytes();
+        ExperienceRecord {
+            record_id,
+            observed_at_ms: cycle_id,
+            subject_id: "rdc".to_string(),
+            payload,
+            digest: Some(digest32_to_proto(budget.commit)),
+            vrf_tag: None,
+            proof_ref: None,
+        }
+    }
+
     fn build_consistency_report_record(
         &self,
         cycle_id: u64,
@@ -1218,6 +1287,37 @@ fn workspace_suppression_count(snapshot: &WorkspaceSnapshot) -> u16 {
         })
         .count()
         .min(u16::MAX as usize) as u16
+}
+
+fn drift_score_from_snapshot(snapshot: &WorkspaceSnapshot) -> u16 {
+    snapshot
+        .broadcast
+        .iter()
+        .find_map(|signal| {
+            if !matches!(signal.kind, SignalKind::Consistency) {
+                return None;
+            }
+            if !signal.summary.contains("DRIFT=") {
+                return None;
+            }
+            signal
+                .summary
+                .split_whitespace()
+                .find_map(|token| token.strip_prefix("SCORE="))
+                .and_then(|value| value.parse::<u16>().ok())
+        })
+        .unwrap_or(0)
+}
+
+fn focus_channel_score(channel: FocusChannel) -> u16 {
+    match channel {
+        FocusChannel::Threat => 9000,
+        FocusChannel::Task => 7000,
+        FocusChannel::Exploration => 6500,
+        FocusChannel::Memory => 5000,
+        FocusChannel::Social => 4500,
+        FocusChannel::Idle => 2000,
+    }
 }
 
 fn iit_action_effects(

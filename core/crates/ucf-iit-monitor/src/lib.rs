@@ -266,6 +266,7 @@ mod tests {
                     slot: 0,
                 },
             ],
+            recursion_used: 0,
             commit: Digest32::new([9u8; 32]),
         };
 
@@ -282,6 +283,7 @@ mod tests {
         let snapshot = WorkspaceSnapshot {
             cycle_id: 1,
             broadcast: vec![],
+            recursion_used: 0,
             commit: Digest32::new([3u8; 32]),
         };
         let (_report, actions) = monitor.evaluate(&snapshot, 0);

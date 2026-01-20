@@ -1950,6 +1950,7 @@ dependencies = [
  "ucf-archive",
  "ucf-commit",
  "ucf-policy-ecology",
+ "ucf-recursion-controller",
  "ucf-sleep-coordinator",
  "ucf-types",
 ]
@@ -2050,6 +2051,7 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "ucf-policy-ecology",
+ "ucf-recursion-controller",
  "ucf-sandbox",
  "ucf-types",
 ]
@@ -2086,6 +2088,14 @@ dependencies = [
  "prost",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "ucf-recursion-controller"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ucf-types",
 ]
 
 [[package]]
@@ -2130,6 +2140,7 @@ dependencies = [
  "ucf-policy-ecology",
  "ucf-policy-gateway",
  "ucf-predictive-coding",
+ "ucf-recursion-controller",
  "ucf-risk-gate",
  "ucf-rsa-hooks",
  "ucf-sandbox",
@@ -2201,6 +2212,7 @@ dependencies = [
  "ucf-cde-port",
  "ucf-geist",
  "ucf-nsr-port",
+ "ucf-recursion-controller",
  "ucf-types",
  "ucf-workspace",
 ]
