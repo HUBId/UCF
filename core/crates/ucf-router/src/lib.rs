@@ -1440,7 +1440,7 @@ mod tests {
 
     #[test]
     fn high_drift_reduces_output_router_thought_budget() {
-        let engine = ConsistencyEngine::default();
+        let engine = ConsistencyEngine;
         let anchor =
             ucf_ism::IsmAnchor::new(Digest32::new([1u8; 32]), Digest32::new([2u8; 32]), 1, 1);
         let self_state = SelfState {
