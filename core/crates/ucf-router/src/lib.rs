@@ -123,6 +123,17 @@ struct ConsistencyActionEffects {
     replay_boost: u16,
 }
 
+struct AttentionContext<'a> {
+    policy_class: u16,
+    risk_score: u16,
+    integration_score: u16,
+    integration_bias: i16,
+    consistency_instability: u16,
+    consistency_effects: Option<ConsistencyActionEffects>,
+    tom_report: &'a ucf_tom_port::TomReport,
+    surprise_score: u16,
+}
+
 pub trait StageTrace {
     fn record(&self, stage: PulseKind);
 }
@@ -223,7 +234,7 @@ impl Router {
             world_model: WorldModel::default(),
             world_state: Mutex::new(None),
             sle_engine: Arc::new(SleEngine::new(6)),
-            consistency_engine: ConsistencyEngine::default(),
+            consistency_engine: ConsistencyEngine,
             ism_store: Arc::new(Mutex::new(IsmStore::new(64))),
             iit_monitor: Mutex::new(IitMonitor::new(4)),
             rsa_hooks: vec![Arc::new(MockRsaHook::new())],
@@ -603,19 +614,21 @@ impl Router {
                         .as_ref()
                         .map(|(_, signal)| signal.score)
                         .unwrap_or(0);
-                    let attention_weights = self.compute_attention(
-                        decision.kind as u16,
-                        ctx.attention_risk,
-                        ctx.integration_score.unwrap_or(0),
-                        ctx.integration_bias,
-                        ctx.consistency_report
+                    let attention_ctx = AttentionContext {
+                        policy_class: decision.kind as u16,
+                        risk_score: ctx.attention_risk,
+                        integration_score: ctx.integration_score.unwrap_or(0),
+                        integration_bias: ctx.integration_bias,
+                        consistency_instability: ctx
+                            .consistency_report
                             .as_ref()
                             .map(|report| report.drift_score)
                             .unwrap_or(0),
-                        ctx.consistency_effects,
+                        consistency_effects: ctx.consistency_effects,
                         tom_report,
                         surprise_score,
-                    );
+                    };
+                    let attention_weights = self.compute_attention(attention_ctx);
                     if let Some(weights) = attention_weights.as_ref() {
                         self.ai_port.update_attention(weights);
                         let update = AttentionUpdated {
@@ -1024,29 +1037,19 @@ impl Router {
         }
     }
 
-    fn compute_attention(
-        &self,
-        policy_class: u16,
-        risk_score: u16,
-        integration_score: u16,
-        integration_bias: i16,
-        consistency_instability: u16,
-        consistency_effects: Option<ConsistencyActionEffects>,
-        tom_report: &ucf_tom_port::TomReport,
-        surprise_score: u16,
-    ) -> Option<AttentionWeights> {
+    fn compute_attention(&self, ctx: AttentionContext<'_>) -> Option<AttentionWeights> {
         let controller = self.attention_controller.as_ref()?;
-        let integration_score = apply_integration_bias(integration_score, integration_bias);
+        let integration_score = apply_integration_bias(ctx.integration_score, ctx.integration_bias);
         let inputs = AttnInputs {
-            policy_class,
-            risk_score,
+            policy_class: ctx.policy_class,
+            risk_score: ctx.risk_score,
             integration_score,
-            consistency_instability,
-            intent_type: intent_type_code(tom_report.intent.intent),
-            surprise_score,
+            consistency_instability: ctx.consistency_instability,
+            intent_type: intent_type_code(ctx.tom_report.intent.intent),
+            surprise_score: ctx.surprise_score,
         };
         let weights = controller.compute(&inputs);
-        Some(apply_consistency_effects(weights, consistency_effects))
+        Some(apply_consistency_effects(weights, ctx.consistency_effects))
     }
 
     fn apply_iit_effects(&self, effects: IitActionEffects) {
