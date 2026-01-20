@@ -6,6 +6,65 @@ pub mod v1 {
     pub use ucf_protocol::v1::*;
 }
 
+pub mod consolidation {
+    use super::Digest32;
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+    #[repr(u8)]
+    pub enum MilestoneTier {
+        Micro = 1,
+        Meso = 2,
+        Macro = 3,
+    }
+
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub struct MicroMilestone {
+        pub items: Vec<Digest32>,
+        pub horm_profile: Digest32,
+        pub commit: Digest32,
+    }
+
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub struct MesoMilestone {
+        pub micros: Vec<Digest32>,
+        pub topic_commit: Digest32,
+        pub commit: Digest32,
+    }
+
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub struct MacroMilestone {
+        pub mesos: Vec<Digest32>,
+        pub trait_updates: Digest32,
+        pub commit: Digest32,
+    }
+
+    /// ReplayToken never carries raw user content; only digests and bounded metadata.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub struct ReplayToken {
+        pub tier: MilestoneTier,
+        pub target: Digest32,
+        pub budget: u16,
+        pub redaction: u16,
+        pub commit: Digest32,
+    }
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub struct ReplayScheduled {
+        pub tier: MilestoneTier,
+        pub target: Digest32,
+        pub budget: u16,
+        pub redaction: u16,
+        pub commit: Digest32,
+    }
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub struct ReplayApplied {
+        pub tier: MilestoneTier,
+        pub target: Digest32,
+        pub effect_digest: Digest32,
+    }
+}
+
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AlgoId {

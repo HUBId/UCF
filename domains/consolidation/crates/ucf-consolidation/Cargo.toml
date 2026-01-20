@@ -4,12 +4,18 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+blake3 = "1"
 prost = "0.12"
 ucf-archive = { path = "../../../../domains/archive/crates/ucf-archive" }
 ucf-bus = { path = "../../../../core/crates/ucf-bus" }
 ucf-commit = { path = "../../../../core/crates/ucf-commit" }
+ucf-consistency-engine = { path = "../../../../core/crates/ucf-consistency-engine" }
+ucf-iit-monitor = { path = "../../../../core/crates/ucf-iit-monitor" }
 ucf-policy-ecology = { path = "../../../../core/crates/ucf-policy-ecology" }
+ucf-predictive-coding = { path = "../../../../core/crates/ucf-predictive-coding" }
 ucf-sleep-coordinator = { path = "../../../../core/crates/ucf-sleep-coordinator" }
+ucf-tcf-port = { path = "../../../../core/crates/ucf-tcf-port" }
 ucf-types = { path = "../../../../core/crates/ucf-types" }
+ucf-workspace = { path = "../../../../core/crates/ucf-workspace" }
 ucf-vector-index = { path = "../../../../domains/index/crates/ucf-vector-index" }
 ucf-attn-controller = { path = "../../../../core/crates/ucf-attn-controller" }

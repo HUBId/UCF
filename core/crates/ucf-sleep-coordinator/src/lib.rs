@@ -24,6 +24,7 @@ pub struct SleepState {
     pub last_evidence: Option<EvidenceId>,
     pub records_since_last: u32,
     pub critical_surprise_count: u16,
+    pub last_replay: Option<SleepReplaySummary>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -72,11 +73,19 @@ impl RecentMetrics {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SleepReplaySummary {
+    pub micro: u16,
+    pub meso: u16,
+    pub macro_: u16,
+}
+
 pub trait SleepStateUpdater {
     fn record_derived_record(&mut self, evidence_id: EvidenceId);
     fn record_consistency_verdict(&mut self, verdict: ConsistencyVerdict);
     fn record_integration_score(&mut self, score: u16);
     fn record_surprise_band(&mut self, _band: SurpriseBand) {}
+    fn record_replay_summary(&mut self, _summary: SleepReplaySummary) {}
 }
 
 pub type SleepStateHandle = Arc<Mutex<WalSleepCoordinator>>;
@@ -139,6 +148,7 @@ impl WalSleepCoordinator {
                 last_evidence: None,
                 records_since_last: 0,
                 critical_surprise_count: 0,
+                last_replay: None,
             },
             window,
             consistency_verdicts: VecDeque::new(),
@@ -269,6 +279,10 @@ impl SleepStateUpdater for WalSleepCoordinator {
         } else {
             self.state.critical_surprise_count = 0;
         }
+    }
+
+    fn record_replay_summary(&mut self, summary: SleepReplaySummary) {
+        self.state.last_replay = Some(summary);
     }
 }
 

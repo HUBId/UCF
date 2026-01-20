@@ -69,6 +69,23 @@ pub struct CyclePlanned {
     pub pulse_count: u8,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RecursionBudget {
+    pub micro: u16,
+    pub meso: u16,
+    pub macro_: u16,
+}
+
+impl RecursionBudget {
+    pub fn new(micro: u16, meso: u16, macro_: u16) -> Self {
+        Self {
+            micro,
+            meso,
+            macro_,
+        }
+    }
+}
+
 pub trait TcfPort {
     fn step(&mut self, attn: &AttentionWeights, surprise: Option<&SurpriseSignal>) -> CyclePlan;
     fn state(&self) -> &TcfState;
@@ -161,6 +178,21 @@ pub fn encode_cycle_plan(plan: &CyclePlan) -> Vec<u8> {
         payload.push(pulse.kind as u8);
     }
     payload
+}
+
+pub fn sleep_recursion_budget(
+    attn: &AttentionWeights,
+    surprise: Option<&SurpriseSignal>,
+) -> RecursionBudget {
+    let surprise_score = surprise.map(|signal| signal.score).unwrap_or(0);
+    let micro = 2u16
+        .saturating_add(attn.replay_bias / 1200)
+        .saturating_add(surprise_score / 2500);
+    let meso = 1u16
+        .saturating_add(attn.gain / 3000)
+        .saturating_add(surprise_score / 4000);
+    let macro_ = 1u16.saturating_add(attn.replay_bias / 5000);
+    RecursionBudget::new(micro.min(10), meso.min(8), macro_.min(6))
 }
 
 fn apply_lti(phase: Phase, freq: u16) -> Phase {

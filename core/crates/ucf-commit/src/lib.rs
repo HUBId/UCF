@@ -4,7 +4,13 @@ use ucf_protocol::v1::spec::{
     ControlFrame, Digest as ProtoDigest, ExperienceRecord, MacroMilestone, MesoMilestone,
     MicroMilestone, PolicyDecision, ProofRef, VrfTag,
 };
-use ucf_types::{AlgoId, Digest32, DomainDigest};
+use ucf_types::{
+    consolidation::{
+        MacroMilestone as MemoryMacroMilestone, MesoMilestone as MemoryMesoMilestone,
+        MicroMilestone as MemoryMicroMilestone, ReplayToken,
+    },
+    AlgoId, Digest32, DomainDigest,
+};
 
 /// Domain identifiers for canonical commitments.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -17,6 +23,10 @@ pub enum CommitDomain {
     PolicyDecision = 5,
     ProofEnvelope = 6,
     ControlFrame = 7,
+    MemoryMicroMilestone = 8,
+    MemoryMesoMilestone = 9,
+    MemoryMacroMilestone = 10,
+    ReplayToken = 11,
 }
 
 impl CommitDomain {
@@ -105,6 +115,42 @@ pub fn commit_milestone_macro(macro_ms: &MacroMilestone) -> Commitment {
     }
 }
 
+pub fn commit_memory_micro(micro: &MemoryMicroMilestone) -> Commitment {
+    let bytes = encode_memory_micro(micro);
+    Commitment {
+        domain: CommitDomain::MemoryMicroMilestone.id(),
+        algo: AlgoId::Blake3_256,
+        digest: hash_bytes(&bytes),
+    }
+}
+
+pub fn commit_memory_meso(meso: &MemoryMesoMilestone) -> Commitment {
+    let bytes = encode_memory_meso(meso);
+    Commitment {
+        domain: CommitDomain::MemoryMesoMilestone.id(),
+        algo: AlgoId::Blake3_256,
+        digest: hash_bytes(&bytes),
+    }
+}
+
+pub fn commit_memory_macro(macro_ms: &MemoryMacroMilestone) -> Commitment {
+    let bytes = encode_memory_macro(macro_ms);
+    Commitment {
+        domain: CommitDomain::MemoryMacroMilestone.id(),
+        algo: AlgoId::Blake3_256,
+        digest: hash_bytes(&bytes),
+    }
+}
+
+pub fn commit_replay_token(token: &ReplayToken) -> Commitment {
+    let bytes = encode_replay_token(token);
+    Commitment {
+        domain: CommitDomain::ReplayToken.id(),
+        algo: AlgoId::Blake3_256,
+        digest: hash_bytes(&bytes),
+    }
+}
+
 fn hash_bytes(input: &[u8]) -> Digest32 {
     let digest = blake3::hash(input);
     Digest32::new(*digest.as_bytes())
@@ -160,6 +206,40 @@ fn encode_milestone_macro(macro_ms: &MacroMilestone) -> Vec<u8> {
     enc.write_field(2, encode_u64(macro_ms.achieved_at_ms));
     enc.write_field(3, encode_string(&macro_ms.label));
     enc.write_field(4, encode_string_list_sorted(&macro_ms.meso_milestone_ids));
+    enc.into_bytes()
+}
+
+fn encode_memory_micro(micro: &MemoryMicroMilestone) -> Vec<u8> {
+    let mut enc = Encoder::new();
+    enc.write_u16(CommitDomain::MemoryMicroMilestone.id());
+    enc.write_field(1, encode_digest_list_sorted(&micro.items));
+    enc.write_field(2, encode_digest32(&micro.horm_profile));
+    enc.into_bytes()
+}
+
+fn encode_memory_meso(meso: &MemoryMesoMilestone) -> Vec<u8> {
+    let mut enc = Encoder::new();
+    enc.write_u16(CommitDomain::MemoryMesoMilestone.id());
+    enc.write_field(1, encode_digest_list_sorted(&meso.micros));
+    enc.write_field(2, encode_digest32(&meso.topic_commit));
+    enc.into_bytes()
+}
+
+fn encode_memory_macro(macro_ms: &MemoryMacroMilestone) -> Vec<u8> {
+    let mut enc = Encoder::new();
+    enc.write_u16(CommitDomain::MemoryMacroMilestone.id());
+    enc.write_field(1, encode_digest_list_sorted(&macro_ms.mesos));
+    enc.write_field(2, encode_digest32(&macro_ms.trait_updates));
+    enc.into_bytes()
+}
+
+fn encode_replay_token(token: &ReplayToken) -> Vec<u8> {
+    let mut enc = Encoder::new();
+    enc.write_u16(CommitDomain::ReplayToken.id());
+    enc.write_field(1, encode_u8(token.tier as u8));
+    enc.write_field(2, encode_digest32(&token.target));
+    enc.write_field(3, encode_u16(token.budget));
+    enc.write_field(4, encode_u16(token.redaction));
     enc.into_bytes()
 }
 
@@ -264,6 +344,26 @@ fn encode_bytes(value: &[u8]) -> Vec<u8> {
     out
 }
 
+fn encode_digest32(value: &Digest32) -> Vec<u8> {
+    encode_bytes(value.as_bytes())
+}
+
+fn encode_digest_list_sorted(values: &[Digest32]) -> Vec<u8> {
+    let mut sorted = values.to_vec();
+    sorted.sort_by(|a, b| a.as_bytes().cmp(b.as_bytes()));
+    encode_digest_list(&sorted)
+}
+
+fn encode_digest_list(values: &[Digest32]) -> Vec<u8> {
+    let mut out = Vec::new();
+    out.extend_from_slice(&(values.len() as u32).to_be_bytes());
+    for value in values {
+        let encoded = encode_digest32(value);
+        out.extend_from_slice(&encoded);
+    }
+    out
+}
+
 fn encode_string_list_sorted(values: &[String]) -> Vec<u8> {
     let mut sorted = values.to_vec();
     sorted.sort();
@@ -282,6 +382,14 @@ fn encode_string_list(values: &[String]) -> Vec<u8> {
 
 fn encode_u32(value: u32) -> Vec<u8> {
     value.to_be_bytes().to_vec()
+}
+
+fn encode_u16(value: u16) -> Vec<u8> {
+    value.to_be_bytes().to_vec()
+}
+
+fn encode_u8(value: u8) -> Vec<u8> {
+    vec![value]
 }
 
 fn encode_u64(value: u64) -> Vec<u8> {
