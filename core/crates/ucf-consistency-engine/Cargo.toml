@@ -1,0 +1,11 @@
+[package]
+name = "ucf-consistency-engine"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+blake3 = "1"
+ucf-ism = { path = "../ucf-ism" }
+ucf-geist = { path = "../../../domains/geist/crates/ucf-geist" }
+ucf-predictive-coding = { path = "../ucf-predictive-coding" }
+ucf-types = { path = "../ucf-types" }

@@ -3,8 +3,11 @@
 use blake3::Hasher;
 use std::cmp::Ordering;
 use ucf_attn_controller::{AttentionUpdated, FocusChannel};
+use ucf_consistency_engine::{ConsistencyReport as DriftReport, DriftBand};
 use ucf_output_router::{OutputRouterEvent, RouteDecision};
-use ucf_policy_ecology::{ConsistencyReport, ConsistencyVerdict, RiskDecision, RiskGateResult};
+use ucf_policy_ecology::{
+    ConsistencyReport as PolicyConsistencyReport, ConsistencyVerdict, RiskDecision, RiskGateResult,
+};
 use ucf_predictive_coding::{SurpriseBand, SurpriseUpdated};
 use ucf_sleep_coordinator::{SleepTrigger, SleepTriggered};
 use ucf_types::v1::spec::{ActionCode, DecisionKind, PolicyDecision};
@@ -153,7 +156,7 @@ impl WorkspaceSignal {
     }
 
     pub fn from_consistency_report(
-        report: &ConsistencyReport,
+        report: &PolicyConsistencyReport,
         attention_gain: Option<u16>,
         slot: Option<u8>,
     ) -> Self {
@@ -165,6 +168,29 @@ impl WorkspaceSignal {
         );
         let digest = digest_consistency_report(report);
         let base_priority = consistency_priority(report.verdict);
+        let priority = priority_with_attention(base_priority, attention_gain);
+        Self {
+            kind,
+            priority,
+            digest,
+            summary,
+            slot: slot.unwrap_or(0),
+        }
+    }
+
+    pub fn from_consistency_drift(
+        report: &DriftReport,
+        attention_gain: Option<u16>,
+        slot: Option<u8>,
+    ) -> Self {
+        let kind = SignalKind::Consistency;
+        let summary = format!(
+            "DRIFT={} SCORE={}",
+            drift_band_token(report.band),
+            report.drift_score
+        );
+        let digest = report.commit;
+        let base_priority = drift_priority(report.band);
         let priority = priority_with_attention(base_priority, attention_gain);
         Self {
             kind,
@@ -516,6 +542,15 @@ fn consistency_priority(verdict: ConsistencyVerdict) -> u16 {
     }
 }
 
+fn drift_priority(band: DriftBand) -> u16 {
+    match band {
+        DriftBand::Low => 3500,
+        DriftBand::Medium => 5000,
+        DriftBand::High => 8000,
+        DriftBand::Critical => 9500,
+    }
+}
+
 fn sleep_priority(reason: SleepTrigger) -> u16 {
     match reason {
         SleepTrigger::Instability | SleepTrigger::LowIntegration => 7000,
@@ -612,6 +647,15 @@ fn consistency_verdict_token(verdict: ConsistencyVerdict) -> &'static str {
     }
 }
 
+fn drift_band_token(band: DriftBand) -> &'static str {
+    match band {
+        DriftBand::Low => "LOW",
+        DriftBand::Medium => "MED",
+        DriftBand::High => "HIGH",
+        DriftBand::Critical => "CRIT",
+    }
+}
+
 fn sleep_trigger_token(trigger: SleepTrigger) -> &'static str {
     match trigger {
         SleepTrigger::None => "NONE",
@@ -683,7 +727,7 @@ fn digest_integration_score(score: u16) -> Digest32 {
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
-fn digest_consistency_report(report: &ConsistencyReport) -> Digest32 {
+fn digest_consistency_report(report: &PolicyConsistencyReport) -> Digest32 {
     let mut hasher = Hasher::new();
     hasher.update(b"ucf.workspace.consistency.v1");
     hasher.update(&report.score.to_be_bytes());

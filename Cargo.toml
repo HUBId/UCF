@@ -21,6 +21,8 @@ members = [
     "core/crates/ucf-nsr-port",
     "core/crates/ucf-tom-port",
     "core/crates/ucf-attn-controller",
+    "core/crates/ucf-ism",
+    "core/crates/ucf-consistency-engine",
     "core/crates/ucf-predictive-coding",
     "core/crates/ucf-nsr-smt",
     "core/crates/ucf-nsr-datalog",

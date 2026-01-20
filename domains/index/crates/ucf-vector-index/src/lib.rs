@@ -1,16 +1,20 @@
 #![forbid(unsafe_code)]
 
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
+use blake3::Hasher;
 use serde::Serialize;
 use thiserror::Error;
+use ucf_archive::ExperienceAppender;
 use ucf_bus::MessageEnvelope;
 use ucf_commit::{commit_experience_record, commit_milestone_macro};
+use ucf_ism::{IsmAnchor, IsmStore};
 use ucf_types::v1::spec::{ExperienceRecord, MacroMilestone};
 use ucf_types::{Digest32, LogicalTime, NodeId, StreamId, WallTime};
 
 pub const EMBEDDING_DIM: usize = 64;
+const ISM_TRAITS_DOMAIN: &[u8] = b"ucf.ism.traits.commit.v1";
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum IndexError {
@@ -231,6 +235,35 @@ where
     }
 }
 
+pub struct IsmAnchorSync<A: ExperienceAppender> {
+    ism: Arc<Mutex<IsmStore>>,
+    archive: A,
+}
+
+impl<A: ExperienceAppender> IsmAnchorSync<A> {
+    pub fn new(ism: Arc<Mutex<IsmStore>>, archive: A) -> Self {
+        Self { ism, archive }
+    }
+
+    pub fn handle_macro_finalized(&self, event: &MacroMilestoneFinalized) -> Option<IsmAnchor> {
+        let macro_commit = commit_milestone_macro(&event.milestone);
+        let traits_commit = traits_commit_from_record(&event.record);
+        let policy_class = policy_class_from_event(event.policy_class.as_ref());
+        let created_cycle = event.record.observed_at_ms;
+        let anchor = IsmAnchor::new(
+            macro_commit.digest,
+            traits_commit,
+            policy_class,
+            created_cycle,
+        );
+        if let Ok(mut store) = self.ism.lock() {
+            store.append(anchor);
+        }
+        self.archive.append(build_ism_anchor_record(&anchor));
+        Some(anchor)
+    }
+}
+
 pub fn build_record_appended_envelope(
     record: ExperienceRecord,
     node_id: NodeId,
@@ -263,6 +296,45 @@ pub fn build_macro_finalized_envelope(
     }
 }
 
+fn policy_class_from_event(policy_class: Option<&String>) -> u16 {
+    policy_class
+        .and_then(|value| value.parse::<u16>().ok())
+        .unwrap_or(0)
+}
+
+fn traits_commit_from_record(record: &ExperienceRecord) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(ISM_TRAITS_DOMAIN);
+    hasher.update(record.record_id.as_bytes());
+    hasher.update(&record.payload);
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn build_ism_anchor_record(anchor: &IsmAnchor) -> ExperienceRecord {
+    let record_id = format!(
+        "ism-anchor-{}-{}",
+        anchor.created_cycle,
+        hex::encode(anchor.commit.as_bytes())
+    );
+    let payload = format!(
+        "anchor={};source_macro={};traits={};policy_class={}",
+        hex::encode(anchor.commit.as_bytes()),
+        hex::encode(anchor.source_macro.as_bytes()),
+        hex::encode(anchor.traits_commit.as_bytes()),
+        anchor.policy_class
+    )
+    .into_bytes();
+    ExperienceRecord {
+        record_id,
+        observed_at_ms: anchor.created_cycle,
+        subject_id: "ism".to_string(),
+        payload,
+        digest: None,
+        vrf_tag: None,
+        proof_ref: None,
+    }
+}
+
 fn build_macro_metadata(
     milestone: &MacroMilestone,
     policy_class: Option<&String>,
@@ -291,10 +363,44 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
+    use ucf_archive::InMemoryArchive;
     use ucf_bus::{BusPublisher, InMemoryBus};
 
     fn digest_with_byte(byte: u8) -> Digest32 {
         Digest32::new([byte; 32])
+    }
+
+    #[test]
+    fn anchor_appended_on_macro_finalized_event() {
+        let archive = InMemoryArchive::new();
+        let ism_store = Arc::new(Mutex::new(IsmStore::new(4)));
+        let sync = IsmAnchorSync::new(ism_store.clone(), archive);
+        let record = ExperienceRecord {
+            record_id: "macro-record".to_string(),
+            observed_at_ms: 42,
+            subject_id: "consolidation".to_string(),
+            payload: vec![1, 2, 3],
+            digest: None,
+            vrf_tag: None,
+            proof_ref: None,
+        };
+        let milestone = MacroMilestone {
+            milestone_id: "macro-1".to_string(),
+            achieved_at_ms: 42,
+            label: "macro".to_string(),
+            meso_milestone_ids: vec!["meso-1".to_string()],
+        };
+        let event = MacroMilestoneFinalized {
+            record,
+            milestone,
+            policy_class: Some("2".to_string()),
+        };
+
+        let anchor = sync.handle_macro_finalized(&event);
+
+        assert!(anchor.is_some());
+        let store = ism_store.lock().expect("ism store lock");
+        assert_eq!(store.anchors().len(), 1);
     }
 
     #[test]

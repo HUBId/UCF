@@ -11,8 +11,12 @@ qdrant = []
 serde = { workspace = true, features = ["derive"] }
 serde_json = "1"
 thiserror = { workspace = true }
+hex = { workspace = true }
+blake3 = "1"
+ucf-archive = { path = "../../../archive/crates/ucf-archive" }
 ucf-bus = { path = "../../../../core/crates/ucf-bus" }
 ucf-commit = { path = "../../../../core/crates/ucf-commit" }
+ucf-ism = { path = "../../../../core/crates/ucf-ism" }
 ucf-types = { path = "../../../../core/crates/ucf-types" }
 
 [dev-dependencies]
