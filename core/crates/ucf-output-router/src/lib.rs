@@ -151,6 +151,10 @@ impl OutputRouter {
         &self.subvocal
     }
 
+    pub fn max_thought_frames_per_cycle(&self) -> u16 {
+        self.config.max_thought_frames_per_cycle
+    }
+
     pub fn drain_events(&mut self) -> Vec<OutputRouterEvent> {
         std::mem::take(&mut self.events)
     }

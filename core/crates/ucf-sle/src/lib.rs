@@ -123,7 +123,10 @@ fn has_stable_overlap(previous: &[Digest32], current: &[Digest32]) -> bool {
 fn has_instability(snapshot: &WorkspaceSnapshot) -> bool {
     snapshot.broadcast.iter().any(|signal| {
         (matches!(signal.kind, SignalKind::Consistency)
-            && (signal.summary.contains("NSR=DAMP") || signal.summary.contains("NSR=VIOL")))
+            && (signal.summary.contains("NSR=DAMP")
+                || signal.summary.contains("NSR=VIOL")
+                || signal.summary.contains("DRIFT=HIGH")
+                || signal.summary.contains("DRIFT=CRIT")))
             || (matches!(signal.kind, SignalKind::World)
                 && (signal.summary.contains("SURPRISE=HIGH")
                     || signal.summary.contains("SURPRISE=CRIT")))

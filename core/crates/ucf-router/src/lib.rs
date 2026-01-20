@@ -12,16 +12,21 @@ use ucf_archive::ExperienceAppender;
 use ucf_attn_controller::{
     AttentionEventSink, AttentionUpdated, AttentionWeights, AttnController, AttnInputs,
 };
+use ucf_consistency_engine::{
+    ConsistencyAction, ConsistencyActionKind, ConsistencyEngine, ConsistencyInputs,
+    ConsistencyReport, DriftBand,
+};
 use ucf_digital_brain::DigitalBrainPort;
 use ucf_geist::{encode_self_state, SelfState, SelfStateBuilder};
 use ucf_iit_monitor::{IitAction, IitActionKind, IitBand, IitMonitor, IitReport};
+use ucf_ism::IsmStore;
 use ucf_nsr_port::NsrReport;
 use ucf_output_router::{GateBundle, NsrSummary, OutputRouter, RouterConfig, SandboxVerdict};
 use ucf_policy_ecology::RiskGateResult;
 use ucf_policy_gateway::PolicyEvaluator;
 use ucf_predictive_coding::{
-    error, surprise, Observation, PredictionError, SurpriseSignal, SurpriseUpdated, WorldModel,
-    WorldStateVec,
+    band_for_score, error, surprise, Observation, PredictionError, SurpriseBand, SurpriseSignal,
+    SurpriseUpdated, WorldModel, WorldStateVec,
 };
 use ucf_risk_gate::{digest_reasons, RiskGate};
 use ucf_rsa_hooks::{MockRsaHook, RsaContext, RsaHook, RsaProposal};
@@ -33,8 +38,11 @@ use ucf_tom_port::{IntentType, TomPort};
 use ucf_types::v1::spec::{ControlFrame, DecisionKind, Digest, ExperienceRecord, PolicyDecision};
 use ucf_types::{AlgoId, Digest32, EvidenceId};
 use ucf_workspace::{
-    encode_workspace_snapshot, Workspace, WorkspaceConfig, WorkspaceSignal, WorkspaceSnapshot,
+    encode_workspace_snapshot, SignalKind, Workspace, WorkspaceConfig, WorkspaceSignal,
+    WorkspaceSnapshot,
 };
+
+const ISM_ANCHOR_TOP_K: usize = 4;
 
 #[derive(Debug)]
 pub enum RouterError {
@@ -76,6 +84,8 @@ pub struct Router {
     world_model: WorldModel,
     world_state: Mutex<Option<WorldStateVec>>,
     sle_engine: Arc<SleEngine>,
+    consistency_engine: ConsistencyEngine,
+    ism_store: Arc<Mutex<IsmStore>>,
     iit_monitor: Mutex<IitMonitor>,
     rsa_hooks: Vec<Arc<dyn RsaHook + Send + Sync>>,
     last_self_state: Mutex<Option<SelfState>>,
@@ -106,6 +116,13 @@ struct IitActionEffects {
     max_thought_frames_per_cycle: u16,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ConsistencyActionEffects {
+    max_thought_frames_per_cycle: u16,
+    noise_boost: u16,
+    replay_boost: u16,
+}
+
 pub trait StageTrace {
     fn record(&self, stage: PulseKind);
 }
@@ -127,6 +144,9 @@ struct StageContext {
     workspace_snapshot_commit: Option<Digest32>,
     self_state: Option<SelfState>,
     sle_reflex: Option<SelfReflex>,
+    consistency_report: Option<ConsistencyReport>,
+    consistency_actions: Vec<ConsistencyAction>,
+    consistency_effects: Option<ConsistencyActionEffects>,
     iit_report: Option<IitReport>,
     iit_actions: Vec<IitAction>,
 }
@@ -150,6 +170,9 @@ impl StageContext {
             workspace_snapshot_commit: None,
             self_state: None,
             sle_reflex: None,
+            consistency_report: None,
+            consistency_actions: Vec::new(),
+            consistency_effects: None,
             iit_report: None,
             iit_actions: Vec::new(),
         }
@@ -200,6 +223,8 @@ impl Router {
             world_model: WorldModel::default(),
             world_state: Mutex::new(None),
             sle_engine: Arc::new(SleEngine::new(6)),
+            consistency_engine: ConsistencyEngine::default(),
+            ism_store: Arc::new(Mutex::new(IsmStore::new(64))),
             iit_monitor: Mutex::new(IitMonitor::new(4)),
             rsa_hooks: vec![Arc::new(MockRsaHook::new())],
             last_self_state: Mutex::new(None),
@@ -393,6 +418,73 @@ impl Router {
                     }
                     ctx.iit_report = Some(iit_report);
 
+                    let surprise_band = self
+                        .last_surprise
+                        .lock()
+                        .ok()
+                        .and_then(|guard| guard.as_ref().map(|signal| band_for_score(signal.score)))
+                        .unwrap_or(SurpriseBand::Low);
+                    let suppression_count = workspace_suppression_count(&workspace_snapshot);
+                    let (ism_root, anchors) = self
+                        .ism_store
+                        .lock()
+                        .map(|store| {
+                            let anchors = store
+                                .anchors()
+                                .iter()
+                                .rev()
+                                .take(ISM_ANCHOR_TOP_K)
+                                .copied()
+                                .collect::<Vec<_>>();
+                            (store.root_commit(), anchors)
+                        })
+                        .unwrap_or_else(|_| (Digest32::new([0u8; 32]), Vec::new()));
+                    let sle_reflex = ctx.sle_reflex.clone().expect("sle reflex available");
+                    let self_state = ctx.self_state.expect("self state available");
+                    let consistency_inputs = ConsistencyInputs {
+                        self_state: &self_state,
+                        self_symbol: sle_reflex.self_symbol,
+                        ism_root,
+                        anchors: &anchors,
+                        suppression_count,
+                        policy_class: decision.kind as u16,
+                        policy_stable: decision.kind == DecisionKind::DecisionKindAllow as i32,
+                        risk_score: attention_risk,
+                        surprise_band,
+                        phi: iit_report.phi,
+                    };
+                    let (consistency_report, consistency_actions) =
+                        self.consistency_engine.evaluate(&consistency_inputs);
+                    self.publish_workspace_signal(WorkspaceSignal::from_consistency_drift(
+                        &consistency_report,
+                        None,
+                        Some(pulse.slot),
+                    ));
+                    self.archive.append(
+                        self.build_consistency_report_record(cycle_id, &consistency_report),
+                    );
+                    for action in &consistency_actions {
+                        self.archive
+                            .append(self.build_consistency_action_record(cycle_id, action));
+                    }
+                    let consistency_effects = self
+                        .output_router
+                        .lock()
+                        .map(|mut output_router| {
+                            let effects = consistency_action_effects(
+                                output_router.max_thought_frames_per_cycle(),
+                                &consistency_actions,
+                            );
+                            output_router.set_max_thought_frames_per_cycle(
+                                effects.max_thought_frames_per_cycle,
+                            );
+                            effects
+                        })
+                        .ok();
+                    ctx.consistency_report = Some(consistency_report);
+                    ctx.consistency_actions = consistency_actions;
+                    ctx.consistency_effects = consistency_effects;
+
                     let nsr_summary = NsrSummary {
                         ok: inference
                             .nsr_report
@@ -516,6 +608,11 @@ impl Router {
                         ctx.attention_risk,
                         ctx.integration_score.unwrap_or(0),
                         ctx.integration_bias,
+                        ctx.consistency_report
+                            .as_ref()
+                            .map(|report| report.drift_score)
+                            .unwrap_or(0),
+                        ctx.consistency_effects,
                         tom_report,
                         surprise_score,
                     );
@@ -838,6 +935,62 @@ impl Router {
         }
     }
 
+    fn build_consistency_report_record(
+        &self,
+        cycle_id: u64,
+        report: &ConsistencyReport,
+    ) -> ExperienceRecord {
+        let record_id = format!(
+            "consistency-report-{}-{}",
+            cycle_id,
+            hex::encode(report.commit.as_bytes())
+        );
+        let band = match report.band {
+            DriftBand::Low => "LOW",
+            DriftBand::Medium => "MED",
+            DriftBand::High => "HIGH",
+            DriftBand::Critical => "CRIT",
+        };
+        let payload = format!("drift_score={};band={band}", report.drift_score).into_bytes();
+        ExperienceRecord {
+            record_id,
+            observed_at_ms: cycle_id,
+            subject_id: "consistency".to_string(),
+            payload,
+            digest: Some(digest32_to_proto(report.commit)),
+            vrf_tag: None,
+            proof_ref: None,
+        }
+    }
+
+    fn build_consistency_action_record(
+        &self,
+        cycle_id: u64,
+        action: &ConsistencyAction,
+    ) -> ExperienceRecord {
+        let record_id = format!(
+            "consistency-action-{}-{}",
+            cycle_id,
+            hex::encode(action.commit.as_bytes())
+        );
+        let kind = match action.kind {
+            ConsistencyActionKind::DampNoise => "DAMP_NOISE",
+            ConsistencyActionKind::ReduceRecursion => "REDUCE_RECURSION",
+            ConsistencyActionKind::IncreaseReplay => "INCREASE_REPLAY",
+            ConsistencyActionKind::ThrottleOutput => "THROTTLE_OUTPUT",
+        };
+        let payload = format!("kind={kind};intensity={}", action.intensity).into_bytes();
+        ExperienceRecord {
+            record_id,
+            observed_at_ms: cycle_id,
+            subject_id: "consistency".to_string(),
+            payload,
+            digest: Some(digest32_to_proto(action.commit)),
+            vrf_tag: None,
+            proof_ref: None,
+        }
+    }
+
     fn build_rsa_proposals_record(
         &self,
         cycle_id: u64,
@@ -877,6 +1030,8 @@ impl Router {
         risk_score: u16,
         integration_score: u16,
         integration_bias: i16,
+        consistency_instability: u16,
+        consistency_effects: Option<ConsistencyActionEffects>,
         tom_report: &ucf_tom_port::TomReport,
         surprise_score: u16,
     ) -> Option<AttentionWeights> {
@@ -886,11 +1041,12 @@ impl Router {
             policy_class,
             risk_score,
             integration_score,
-            consistency_instability: 0,
+            consistency_instability,
             intent_type: intent_type_code(tom_report.intent.intent),
             surprise_score,
         };
-        Some(controller.compute(&inputs))
+        let weights = controller.compute(&inputs);
+        Some(apply_consistency_effects(weights, consistency_effects))
     }
 
     fn apply_iit_effects(&self, effects: IitActionEffects) {
@@ -1020,6 +1176,10 @@ fn clamp_i16(value: i64) -> i16 {
     value.clamp(i64::from(i16::MIN), i64::from(i16::MAX)) as i16
 }
 
+fn clamp_u16(value: u32) -> u16 {
+    value.min(10_000) as u16
+}
+
 fn risk_bucket(overall: u16) -> &'static str {
     match overall {
         0..=3333 => "low",
@@ -1044,6 +1204,17 @@ fn apply_integration_bias(score: u16, bias: i16) -> u16 {
     } else {
         score.saturating_add(bias as u16).min(10_000)
     }
+}
+
+fn workspace_suppression_count(snapshot: &WorkspaceSnapshot) -> u16 {
+    snapshot
+        .broadcast
+        .iter()
+        .filter(|signal| {
+            matches!(signal.kind, SignalKind::Output) && signal.summary.contains("OUTPUT=SUPPRESS")
+        })
+        .count()
+        .min(u16::MAX as usize) as u16
 }
 
 fn iit_action_effects(
@@ -1089,12 +1260,82 @@ fn iit_action_effects(
     }
 }
 
+fn consistency_action_effects(
+    base_max_thought_frames: u16,
+    actions: &[ConsistencyAction],
+) -> ConsistencyActionEffects {
+    let mut max_thought_frames_per_cycle = base_max_thought_frames;
+    let mut noise_boost = 0u16;
+    let mut replay_boost = 0u16;
+
+    for action in actions {
+        match action.kind {
+            ConsistencyActionKind::ReduceRecursion => {
+                let reduction = action.intensity / 2000 + 1;
+                max_thought_frames_per_cycle =
+                    max_thought_frames_per_cycle.saturating_sub(reduction);
+            }
+            ConsistencyActionKind::ThrottleOutput => {
+                let reduction = action.intensity / 2500 + 1;
+                max_thought_frames_per_cycle =
+                    max_thought_frames_per_cycle.saturating_sub(reduction);
+            }
+            ConsistencyActionKind::DampNoise => {
+                noise_boost = noise_boost.saturating_add(action.intensity / 2);
+            }
+            ConsistencyActionKind::IncreaseReplay => {
+                replay_boost = replay_boost.saturating_add(action.intensity / 2);
+            }
+        }
+    }
+
+    ConsistencyActionEffects {
+        max_thought_frames_per_cycle: max_thought_frames_per_cycle.max(1),
+        noise_boost,
+        replay_boost,
+    }
+}
+
+fn apply_consistency_effects(
+    mut weights: AttentionWeights,
+    effects: Option<ConsistencyActionEffects>,
+) -> AttentionWeights {
+    let Some(effects) = effects else {
+        return weights;
+    };
+    let mut changed = false;
+    if effects.noise_boost > 0 {
+        weights.noise_suppress =
+            clamp_u16(u32::from(weights.noise_suppress) + u32::from(effects.noise_boost));
+        changed = true;
+    }
+    if effects.replay_boost > 0 {
+        weights.replay_bias =
+            clamp_u16(u32::from(weights.replay_bias) + u32::from(effects.replay_boost));
+        changed = true;
+    }
+    if changed {
+        weights.commit = commit_attention_override(&weights);
+    }
+    weights
+}
+
 fn consistency_score_from_nsr(report: Option<&NsrReport>) -> u16 {
     match report {
         Some(report) if report.ok => 10_000,
         Some(_) => 2000,
         None => 5000,
     }
+}
+
+fn commit_attention_override(weights: &AttentionWeights) -> Digest32 {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"ucf.attn.override.v1");
+    hasher.update(weights.channel.as_str().as_bytes());
+    hasher.update(&weights.gain.to_be_bytes());
+    hasher.update(&weights.noise_suppress.to_be_bytes());
+    hasher.update(&weights.replay_bias.to_be_bytes());
+    Digest32::new(*hasher.finalize().as_bytes())
 }
 
 fn digest_risk_results(results: &[RiskGateResult]) -> Digest32 {
@@ -1192,5 +1433,69 @@ mod tests {
         let biased_weights = controller.compute(&biased_inputs);
 
         assert!(biased_weights.replay_bias >= base_weights.replay_bias);
+    }
+
+    #[test]
+    fn high_drift_reduces_output_router_thought_budget() {
+        let engine = ConsistencyEngine::default();
+        let anchor =
+            ucf_ism::IsmAnchor::new(Digest32::new([1u8; 32]), Digest32::new([2u8; 32]), 1, 1);
+        let self_state = SelfState {
+            cycle_id: 1,
+            ssm_commit: Digest32::new([1u8; 32]),
+            workspace_commit: Digest32::new([2u8; 32]),
+            risk_commit: Digest32::new([3u8; 32]),
+            attn_commit: Digest32::new([4u8; 32]),
+            consistency: 0,
+            commit: Digest32::new([5u8; 32]),
+        };
+        let anchors = [anchor];
+        let inputs = ConsistencyInputs {
+            self_state: &self_state,
+            self_symbol: Digest32::new([255u8; 32]),
+            ism_root: Digest32::new([0u8; 32]),
+            anchors: &anchors,
+            suppression_count: 3,
+            policy_class: 2,
+            policy_stable: false,
+            risk_score: 9000,
+            surprise_band: SurpriseBand::Critical,
+            phi: 1000,
+        };
+        let (report, actions) = engine.evaluate(&inputs);
+        assert!(matches!(report.band, DriftBand::High | DriftBand::Critical));
+
+        let mut output_router = OutputRouter::new(RouterConfig {
+            thought_capacity: 64,
+            max_thought_frames_per_cycle: 10,
+            external_enabled: true,
+        });
+        let effects =
+            consistency_action_effects(output_router.max_thought_frames_per_cycle(), &actions);
+        output_router.set_max_thought_frames_per_cycle(effects.max_thought_frames_per_cycle);
+        assert!(output_router.max_thought_frames_per_cycle() < 10);
+    }
+
+    #[test]
+    fn high_drift_increases_replay_bias() {
+        let action = ConsistencyAction {
+            kind: ConsistencyActionKind::IncreaseReplay,
+            intensity: 8000,
+            commit: Digest32::new([8u8; 32]),
+        };
+        let effects = consistency_action_effects(10, &[action]);
+        let controller = AttnController;
+        let inputs = AttnInputs {
+            policy_class: 1,
+            risk_score: 1000,
+            integration_score: 6000,
+            consistency_instability: 0,
+            intent_type: AttnController::INTENT_ASK_INFO,
+            surprise_score: 0,
+        };
+        let base_weights = controller.compute(&inputs);
+        let boosted = apply_consistency_effects(base_weights.clone(), Some(effects));
+
+        assert!(boosted.replay_bias > base_weights.replay_bias);
     }
 }

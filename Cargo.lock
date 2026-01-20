@@ -1871,6 +1871,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucf-consistency-engine"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ucf-geist",
+ "ucf-ism",
+ "ucf-predictive-coding",
+ "ucf-types",
+]
+
+[[package]]
 name = "ucf-consolidation"
 version = "0.1.0"
 dependencies = [
@@ -1971,6 +1982,14 @@ dependencies = [
  "ucf-tom-port",
  "ucf-types",
  "ucf-workspace",
+]
+
+[[package]]
+name = "ucf-ism"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ucf-types",
 ]
 
 [[package]]
@@ -2101,9 +2120,11 @@ dependencies = [
  "ucf-archive",
  "ucf-attn-controller",
  "ucf-cde-port",
+ "ucf-consistency-engine",
  "ucf-digital-brain",
  "ucf-geist",
  "ucf-iit-monitor",
+ "ucf-ism",
  "ucf-nsr-port",
  "ucf-output-router",
  "ucf-policy-ecology",
@@ -2248,11 +2269,15 @@ dependencies = [
 name = "ucf-vector-index"
 version = "0.1.0"
 dependencies = [
+ "blake3",
+ "hex",
  "serde",
  "serde_json",
  "thiserror 1.0.69",
+ "ucf-archive",
  "ucf-bus",
  "ucf-commit",
+ "ucf-ism",
  "ucf-types",
 ]
 
@@ -2270,6 +2295,7 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "ucf-attn-controller",
+ "ucf-consistency-engine",
  "ucf-output-router",
  "ucf-policy-ecology",
  "ucf-predictive-coding",
