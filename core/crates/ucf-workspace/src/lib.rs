@@ -322,6 +322,31 @@ impl WorkspaceSignal {
         }
     }
 
+    pub fn from_replay_summary(
+        micro_count: usize,
+        meso_count: usize,
+        macro_count: usize,
+        attention_gain: Option<u16>,
+        slot: Option<u8>,
+    ) -> Self {
+        let kind = SignalKind::Sleep;
+        let summary = format!("REPLAY micro={micro_count} meso={meso_count} macro={macro_count}");
+        let digest = digest_replay_summary(micro_count, meso_count, macro_count);
+        let base_priority = if micro_count + meso_count + macro_count > 0 {
+            7000
+        } else {
+            2500
+        };
+        let priority = priority_with_attention(base_priority, attention_gain);
+        Self {
+            kind,
+            priority,
+            digest,
+            summary,
+            slot: slot.unwrap_or(0),
+        }
+    }
+
     pub fn from_world_state_digest(digest: Digest32, slot: Option<u8>) -> Self {
         let kind = SignalKind::World;
         let summary = format!("WORLD=STATE DIG={digest}");
@@ -774,6 +799,15 @@ fn digest_sleep_triggered(triggered: &SleepTriggered) -> Digest32 {
     hasher.update(b"ucf.workspace.sleep.v1");
     hasher.update(&triggered.cycle_id.to_be_bytes());
     hasher.update(&[sleep_trigger_code(triggered.reason)]);
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn digest_replay_summary(micro: usize, meso: usize, macro_: usize) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(b"ucf.workspace.replay.summary.v1");
+    hasher.update(&(micro as u64).to_be_bytes());
+    hasher.update(&(meso as u64).to_be_bytes());
+    hasher.update(&(macro_ as u64).to_be_bytes());
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
