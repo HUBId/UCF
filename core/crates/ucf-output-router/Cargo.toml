@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 blake3 = "1"
 ucf-policy-ecology = { path = "../ucf-policy-ecology" }
+ucf-recursion-controller = { path = "../ucf-recursion-controller" }
 ucf-sandbox = { path = "../ucf-sandbox" }
 ucf-types = { path = "../ucf-types" }
 

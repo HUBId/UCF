@@ -240,6 +240,26 @@ impl WorkspaceSignal {
         }
     }
 
+    pub fn from_recursion_budget(
+        max_depth: u8,
+        per_cycle_steps: u16,
+        commit: Digest32,
+        attention_gain: Option<u16>,
+        slot: Option<u8>,
+    ) -> Self {
+        let kind = SignalKind::Consistency;
+        let summary = format!("RDC depth={max_depth} steps={per_cycle_steps}");
+        let base_priority = 4200u16.saturating_add(u16::from(max_depth).saturating_mul(250));
+        let priority = priority_with_attention(base_priority, attention_gain);
+        Self {
+            kind,
+            priority,
+            digest: commit,
+            summary,
+            slot: slot.unwrap_or(0),
+        }
+    }
+
     pub fn from_output_event(
         event: &OutputRouterEvent,
         attention_gain: Option<u16>,
@@ -388,6 +408,7 @@ pub struct WorkspaceConfig {
 pub struct WorkspaceSnapshot {
     pub cycle_id: u64,
     pub broadcast: Vec<WorkspaceSignal>,
+    pub recursion_used: u16,
     pub commit: Digest32,
 }
 
@@ -403,11 +424,12 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
         snapshot.broadcast.as_slice()
     };
     let mut payload = Vec::with_capacity(
-        2 + 8 + 2 + signals.len() * (2 + 2 + Digest32::LEN + 2 + SUMMARY_MAX_BYTES),
+        2 + 8 + 2 + 2 + signals.len() * (2 + 2 + Digest32::LEN + 2 + SUMMARY_MAX_BYTES),
     );
     payload.extend_from_slice(&SNAPSHOT_DOMAIN_TAG.to_be_bytes());
     payload.extend_from_slice(&snapshot.cycle_id.to_be_bytes());
     payload.extend_from_slice(&(signals.len() as u16).to_be_bytes());
+    payload.extend_from_slice(&snapshot.recursion_used.to_be_bytes());
     for signal in signals {
         payload.push(signal.kind as u8);
         payload.push(signal.slot);
@@ -432,6 +454,7 @@ pub struct Workspace {
     signals: Vec<SignalEntry>,
     next_seq: u64,
     drops: DropCounters,
+    recursion_used: u16,
 }
 
 impl Workspace {
@@ -441,11 +464,16 @@ impl Workspace {
             signals: Vec::new(),
             next_seq: 0,
             drops: DropCounters::default(),
+            recursion_used: 0,
         }
     }
 
     pub fn drop_counters(&self) -> DropCounters {
         self.drops
+    }
+
+    pub fn record_recursion_used(&mut self, used: u16) {
+        self.recursion_used = used;
     }
 
     pub fn set_broadcast_cap(&mut self, broadcast_cap: usize) {
@@ -477,10 +505,13 @@ impl Workspace {
             .iter()
             .map(|entry| entry.signal.clone())
             .collect();
-        let commit = commit_snapshot(cycle_id, &broadcast);
+        let recursion_used = self.recursion_used;
+        self.recursion_used = 0;
+        let commit = commit_snapshot(cycle_id, recursion_used, &broadcast);
         WorkspaceSnapshot {
             cycle_id,
             broadcast,
+            recursion_used,
             commit,
         }
     }
@@ -843,9 +874,10 @@ fn compare_for_broadcast(a: &SignalEntry, b: &SignalEntry) -> Ordering {
     a.seq.cmp(&b.seq)
 }
 
-fn commit_snapshot(cycle_id: u64, broadcast: &[WorkspaceSignal]) -> Digest32 {
+fn commit_snapshot(cycle_id: u64, recursion_used: u16, broadcast: &[WorkspaceSignal]) -> Digest32 {
     let mut hasher = Hasher::new();
     hasher.update(&cycle_id.to_be_bytes());
+    hasher.update(&recursion_used.to_be_bytes());
     for signal in broadcast {
         hasher.update(&[signal.kind as u8]);
         hasher.update(&[signal.slot]);

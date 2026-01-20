@@ -10,3 +10,6 @@ ucf-geist = { path = "../../../domains/geist/crates/ucf-geist" }
 ucf-nsr-port = { path = "../ucf-nsr-port" }
 ucf-types = { path = "../ucf-types" }
 ucf-workspace = { path = "../ucf-workspace" }
+
+[dev-dependencies]
+ucf-recursion-controller = { path = "../ucf-recursion-controller" }
