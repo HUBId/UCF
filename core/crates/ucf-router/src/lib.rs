@@ -22,6 +22,10 @@ use ucf_consistency_engine::{
     ConsistencyReport, DriftBand,
 };
 use ucf_digital_brain::DigitalBrainPort;
+use ucf_feature_translator::{
+    ActivationView, LensPort as FeatureLensPort, LensSelection, MockLensPort, MockSaePort,
+    SaePort as FeatureSaePort,
+};
 use ucf_geist::{SelfState, SelfStateBuilder};
 use ucf_iit_monitor::{IitAction, IitActionKind, IitBand, IitMonitor, IitReport};
 use ucf_ism::IsmStore;
@@ -50,6 +54,8 @@ use ucf_workspace::{
 };
 
 const ISM_ANCHOR_TOP_K: usize = 4;
+const FEATURE_SIGNAL_PRIORITY: u16 = 3200;
+const FEATURE_RECORD_KIND: u16 = 42;
 
 #[derive(Debug)]
 pub enum RouterError {
@@ -76,6 +82,8 @@ pub struct Router {
     digital_brain: Option<Arc<dyn DigitalBrainPort + Send + Sync>>,
     bluebrain_port: Mutex<Option<Box<dyn BlueBrainPort + Send + Sync>>>,
     ai_port: Arc<dyn AiPort + Send + Sync>,
+    feature_sae: Arc<dyn FeatureSaePort + Send + Sync>,
+    feature_lens: Arc<dyn FeatureLensPort + Send + Sync>,
     speech_gate: Arc<dyn SpeechGate + Send + Sync>,
     risk_gate: Arc<dyn RiskGate + Send + Sync>,
     tom_port: Arc<dyn TomPort + Send + Sync>,
@@ -234,6 +242,8 @@ impl Router {
             digital_brain,
             bluebrain_port: Mutex::new(None),
             ai_port,
+            feature_sae: Arc::new(MockSaePort::new()),
+            feature_lens: Arc::new(MockLensPort::new()),
             speech_gate,
             risk_gate,
             tom_port,
@@ -414,11 +424,20 @@ impl Router {
                     // Bluebrain stimulation occurs during the Verify pulse using the latest
                     // workspace snapshot, attention, and surprise context.
                     let surprise_signal = ctx.predictive_result.as_ref().map(|(_, signal)| signal);
+                    let lens_selection = ctx.inference.as_ref().and_then(|inference| {
+                        self.translate_features(
+                            inference.activation_view.as_ref(),
+                            &attention_weights,
+                            cycle_id,
+                            pulse.slot,
+                        )
+                    });
                     self.stimulate_bluebrain_port(
                         &cf,
                         &workspace_snapshot,
                         &attention_weights,
                         surprise_signal,
+                        lens_selection.as_ref(),
                         pulse.slot,
                     );
                     let recursion_inputs = RecursionInputs {
@@ -1213,12 +1232,44 @@ impl Router {
         }
     }
 
+    fn translate_features(
+        &self,
+        activation_view: Option<&ActivationView>,
+        attention: &AttentionWeights,
+        cycle_id: u64,
+        slot: u8,
+    ) -> Option<LensSelection> {
+        let activation_view = activation_view?;
+        let set = self.feature_sae.encode(activation_view);
+        let selection = self.feature_lens.select(&set, attention);
+        let summary = format!(
+            "FEATURES topk={} commit={}",
+            selection.topk.len(),
+            selection.commit
+        );
+        self.publish_workspace_signal(WorkspaceSignal {
+            kind: SignalKind::Integration,
+            priority: FEATURE_SIGNAL_PRIORITY,
+            digest: selection.commit,
+            summary,
+            slot,
+        });
+        self.append_feature_translation_record(
+            cycle_id,
+            activation_view.commit,
+            selection.commit,
+            selection.topk.len(),
+        );
+        Some(selection)
+    }
+
     fn stimulate_bluebrain_port(
         &self,
         cf: &ControlFrameNormalized,
         workspace_snapshot: &WorkspaceSnapshot,
         attention: &AttentionWeights,
         surprise: Option<&SurpriseSignal>,
+        lens_selection: Option<&LensSelection>,
         slot: u8,
     ) {
         let mut guard = match self.bluebrain_port.lock() {
@@ -1228,7 +1279,7 @@ impl Router {
         let Some(port) = guard.as_mut() else {
             return;
         };
-        let stimulus = map_to_stimulus(cf, workspace_snapshot, attention, surprise);
+        let stimulus = map_to_stimulus(cf, workspace_snapshot, attention, surprise, lens_selection);
         let response = port.stimulate(&stimulus);
         self.publish_workspace_signal(WorkspaceSignal::from_brain_stimulated(
             stimulus.commit,
@@ -1243,6 +1294,23 @@ impl Router {
         if let Ok(mut delta_guard) = self.pending_neuromod_delta.lock() {
             *delta_guard = Some(response.delta);
         }
+    }
+
+    fn append_feature_translation_record(
+        &self,
+        cycle_id: u64,
+        activation_commit: Digest32,
+        selection_commit: Digest32,
+        topk: usize,
+    ) {
+        let payload_commit = feature_translation_commit(activation_commit, selection_commit);
+        let meta = RecordMeta {
+            cycle_id,
+            tier: topk.min(u8::MAX as usize) as u8,
+            flags: 0,
+            boundary_commit: activation_commit,
+        };
+        self.append_archive_record(RecordKind::Other(FEATURE_RECORD_KIND), payload_commit, meta);
     }
 
     fn arbitrate_workspace(&self, cycle_id: u64) -> WorkspaceSnapshot {
@@ -1535,6 +1603,14 @@ fn commit_attention_override(weights: &AttentionWeights) -> Digest32 {
     hasher.update(&weights.gain.to_be_bytes());
     hasher.update(&weights.noise_suppress.to_be_bytes());
     hasher.update(&weights.replay_bias.to_be_bytes());
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn feature_translation_commit(activation_commit: Digest32, selection_commit: Digest32) -> Digest32 {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"ucf.router.feature_translation.v1");
+    hasher.update(activation_commit.as_bytes());
+    hasher.update(selection_commit.as_bytes());
     Digest32::new(*hasher.finalize().as_bytes())
 }
 

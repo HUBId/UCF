@@ -12,6 +12,7 @@ use ucf_cde_port::{CdeHypothesis, CdePort};
 use ucf_digitalbrain_port::BrainError;
 #[cfg(feature = "digitalbrain")]
 use ucf_digitalbrain_port::{BrainStimEvent, BrainStimulus, MappingTable, Spike};
+use ucf_feature_translator::ActivationView;
 use ucf_iit_monitor::IitMonitor;
 use ucf_lens_port::{LensMock, LensPort};
 use ucf_ncde_port::{NcdeContext, NcdePort};
@@ -48,6 +49,7 @@ pub struct AiInference {
     pub scm_dag: Option<ScmDag>,
     pub cde_confidence: Option<u16>,
     pub ssm_state: Option<SsmState>,
+    pub activation_view: Option<ActivationView>,
 }
 
 impl AiInference {
@@ -58,6 +60,7 @@ impl AiInference {
             scm_dag: None,
             cde_confidence: None,
             ssm_state: None,
+            activation_view: None,
         }
     }
 }
@@ -310,6 +313,7 @@ impl AiPort for MockAiPort {
 
     fn infer_with_context(&self, input: &ControlFrameNormalized) -> AiInference {
         let (outputs, artifacts) = self.infer_with_artifacts(input);
+        let activation_view = activation_view_from_outputs(input, &outputs);
         AiInference {
             outputs,
             nsr_report: artifacts.nsr_report,
@@ -319,6 +323,7 @@ impl AiPort for MockAiPort {
                 .as_ref()
                 .map(|hypothesis| hypothesis.confidence),
             ssm_state: artifacts.ssm_state,
+            activation_view: Some(activation_view),
         }
     }
 
@@ -662,6 +667,24 @@ fn digest_ai_output(output: &AiOutput) -> Digest32 {
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
+fn activation_view_from_outputs(
+    input: &ControlFrameNormalized,
+    outputs: &[AiOutput],
+) -> ActivationView {
+    let mut hasher = Hasher::new();
+    hasher.update(b"ucf.ai.activation.view.v1");
+    hasher.update(input.commitment().digest.as_bytes());
+    for output in outputs {
+        let digest = digest_ai_output(output);
+        hasher.update(digest.as_bytes());
+    }
+    let act_digest = Digest32::new(*hasher.finalize().as_bytes());
+    let bytes = act_digest.as_bytes();
+    let layer_id = u16::from_be_bytes([bytes[0], bytes[1]]);
+    let energy = u16::from_be_bytes([bytes[2], bytes[3]]);
+    ActivationView::new(layer_id, act_digest, energy)
+}
+
 fn apply_attention_to_world_state(
     world_state: &WorldStateVec,
     attention: Option<&AttentionWeights>,
@@ -829,6 +852,20 @@ mod tests {
         assert_eq!(outputs.len(), 1);
         assert_eq!(outputs[0].channel, OutputChannel::Thought);
         assert_eq!(outputs[0].content, "ok");
+    }
+
+    #[test]
+    fn mock_ai_port_emits_activation_view_without_raw_content() {
+        let port = MockAiPort::new();
+        let normalized = normalize(base_frame("frame-1"));
+
+        let inference = port.infer_with_context(&normalized);
+        let view = inference.activation_view.expect("activation view");
+        let expected = activation_view_from_outputs(&normalized, &inference.outputs);
+
+        assert_eq!(view, expected);
+        let debug = format!("{:?}", view);
+        assert!(!debug.contains("ok"));
     }
 
     #[test]

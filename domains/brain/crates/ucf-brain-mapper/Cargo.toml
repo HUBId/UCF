@@ -8,6 +8,7 @@ license-file = "../../../../README.md"
 blake3 = "1"
 ucf-attn-controller = { path = "../../../../core/crates/ucf-attn-controller" }
 ucf-bluebrain-port = { path = "../ucf-bluebrain-port" }
+ucf-feature-translator = { path = "../../../ai/crates/ucf-feature-translator" }
 ucf-predictive-coding = { path = "../../../../core/crates/ucf-predictive-coding" }
 ucf-sandbox = { path = "../../../../core/crates/ucf-sandbox" }
 ucf-types = { path = "../../../../core/crates/ucf-types" }
@@ -16,6 +17,7 @@ ucf-workspace = { path = "../../../../core/crates/ucf-workspace" }
 [dev-dependencies]
 ucf-attn-controller = { path = "../../../../core/crates/ucf-attn-controller" }
 ucf-bluebrain-port = { path = "../ucf-bluebrain-port" }
+ucf-feature-translator = { path = "../../../ai/crates/ucf-feature-translator" }
 ucf-predictive-coding = { path = "../../../../core/crates/ucf-predictive-coding" }
 ucf-sandbox = { path = "../../../../core/crates/ucf-sandbox" }
 ucf-types = { path = "../../../../core/crates/ucf-types" }
