@@ -308,7 +308,7 @@ mod tests {
     use prost::Message;
     use ucf_ai_port::{AiPillars, MockAiPort, PolicySpeechGate};
     use ucf_archive::InMemoryArchive;
-    use ucf_archive_store::{InMemoryArchiveStore, RecordKind};
+    use ucf_archive_store::{ArchiveStore, InMemoryArchiveStore, RecordKind};
     use ucf_bus::InMemoryBus;
     use ucf_digital_brain::InMemoryDigitalBrain;
     use ucf_nsr_port::NsrPort;
