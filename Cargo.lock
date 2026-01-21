@@ -2107,6 +2107,7 @@ dependencies = [
 name = "ucf-protocol"
 version = "0.1.0"
 dependencies = [
+ "blake3",
  "prost",
  "serde",
  "serde_json",
@@ -2163,6 +2164,7 @@ dependencies = [
  "ucf-policy-ecology",
  "ucf-policy-gateway",
  "ucf-predictive-coding",
+ "ucf-protocol",
  "ucf-recursion-controller",
  "ucf-risk-gate",
  "ucf-rsa-hooks",
@@ -2279,6 +2281,7 @@ version = "0.1.0"
 dependencies = [
  "ucf-bus",
  "ucf-events",
+ "ucf-protocol",
  "ucf-sandbox",
  "ucf-types",
 ]

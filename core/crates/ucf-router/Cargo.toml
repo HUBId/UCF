@@ -28,6 +28,7 @@ ucf-recursion-controller = { path = "../ucf-recursion-controller" }
 ucf-ssm-port = { path = "../ucf-ssm-port" }
 ucf-tcf-port = { path = "../ucf-tcf-port" }
 ucf-workspace = { path = "../ucf-workspace" }
+ucf-protocol = { path = "../../../protocol/crates/ucf-protocol" }
 hex = { workspace = true }
 blake3 = "1"
 

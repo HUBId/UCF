@@ -55,9 +55,9 @@ blake3 = "1"
 dbm_core = { path = "../dbm_core" }
 microcircuit_core = { path = "../microcircuit_core" }
 microcircuit_sn_stub = { path = "../microcircuit_sn_stub" }
-ucf = { package = "ucf-protocol", path = "../../ucf-protocol", optional = true }
+ucf = { package = "ucf-protocol", path = "../../protocol/crates/ucf-protocol", optional = true }
 
 [dev-dependencies]
 asset_chunker = { path = "../asset_chunker" }
 prost = "0.12"
-ucf = { package = "ucf-protocol", path = "../../ucf-protocol" }
+ucf = { package = "ucf-protocol", path = "../../protocol/crates/ucf-protocol" }

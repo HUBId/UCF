@@ -7,6 +7,6 @@ edition = "2021"
 engine = { path = "../engine" }
 wire = { path = "../wire" }
 hex = "0.4"
-ucf = { package = "ucf-protocol", path = "../ucf-protocol" }
+ucf = { package = "ucf-protocol", path = "../protocol/crates/ucf-protocol" }
 profiles = { path = "../profiles" }
 dbm_core = { path = "../crates/dbm_core" }

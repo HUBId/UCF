@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+ucf-protocol = { path = "../../../../protocol/crates/ucf-protocol" }
 ucf-bus = { path = "../../../../core/crates/ucf-bus" }
 ucf-events = { path = "../../../../core/crates/ucf-events" }
 ucf-sandbox = { path = "../../../../core/crates/ucf-sandbox" }

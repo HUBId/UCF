@@ -8,6 +8,7 @@ name = "ucf"
 path = "src/lib.rs"
 
 [dependencies]
+blake3 = "1"
 prost = "0.12"
 serde = { workspace = true, features = ["derive"] }
 

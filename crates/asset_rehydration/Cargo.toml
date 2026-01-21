@@ -7,7 +7,7 @@ edition = "2021"
 blake3 = "1"
 prost = "0.12"
 thiserror = { workspace = true }
-ucf = { package = "ucf-protocol", path = "../../ucf-protocol" }
+ucf = { package = "ucf-protocol", path = "../../protocol/crates/ucf-protocol" }
 biophys_assets = { path = "../biophys_assets" }
 zstd = "0.13"
 

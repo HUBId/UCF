@@ -7,4 +7,4 @@ edition = "2021"
 log = "0.4"
 serde = { workspace = true }
 thiserror = { workspace = true }
-ucf = { package = "ucf-protocol", path = "../ucf-protocol" }
+ucf = { package = "ucf-protocol", path = "../protocol/crates/ucf-protocol" }

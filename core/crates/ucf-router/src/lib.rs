@@ -4,6 +4,7 @@ use std::fmt;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
+use ucf::boundary::{self, v1::WorkspaceBroadcastV1, v1::WorkspaceSignalV1};
 use ucf_ai_port::{
     AiInference, AiOutput, AiPort, OutputChannel, OutputSuppressed, OutputSuppressionSink,
     SpeechGate,
@@ -878,10 +879,12 @@ impl Router {
 
     fn append_workspace_snapshot_record(&self, snapshot: &WorkspaceSnapshot) {
         let tier = snapshot.broadcast.len().min(u8::MAX as usize) as u8;
+        let boundary_commit = boundary_workspace_broadcast(snapshot);
         let meta = RecordMeta {
             cycle_id: snapshot.cycle_id,
             tier,
             flags: snapshot.recursion_used,
+            boundary_commit,
         };
         self.append_archive_record(RecordKind::WorkspaceSnapshot, snapshot.commit, meta);
     }
@@ -891,6 +894,7 @@ impl Router {
             cycle_id: planned.cycle_id,
             tier: planned.pulse_count,
             flags: 0,
+            boundary_commit: Digest32::new([0u8; 32]),
         };
         self.append_archive_record(RecordKind::CyclePlan, plan.commit, meta);
     }
@@ -900,6 +904,7 @@ impl Router {
             cycle_id: state.cycle_id,
             tier: 0,
             flags: state.consistency,
+            boundary_commit: Digest32::new([0u8; 32]),
         };
         self.append_archive_record(RecordKind::SelfState, state.commit, meta);
     }
@@ -909,6 +914,7 @@ impl Router {
             cycle_id,
             tier: iit_band_tier(report.band),
             flags: report.phi,
+            boundary_commit: Digest32::new([0u8; 32]),
         };
         self.append_archive_record(RecordKind::IitReport, report.commit, meta);
     }
@@ -918,6 +924,7 @@ impl Router {
             cycle_id,
             tier: drift_band_tier(report.band),
             flags: report.drift_score,
+            boundary_commit: Digest32::new([0u8; 32]),
         };
         self.append_archive_record(RecordKind::ConsistencyReport, report.commit, meta);
     }
@@ -949,6 +956,7 @@ impl Router {
             cycle_id,
             tier,
             flags,
+            boundary_commit: Digest32::new([0u8; 32]),
         };
         self.append_archive_record(RecordKind::OutputEvent, payload_commit, meta);
     }
@@ -1256,6 +1264,31 @@ fn apply_integration_bias(score: u16, bias: i16) -> u16 {
     } else {
         score.saturating_add(bias as u16).min(10_000)
     }
+}
+
+fn boundary_workspace_broadcast(snapshot: &WorkspaceSnapshot) -> Digest32 {
+    let top_signals = snapshot
+        .broadcast
+        .iter()
+        .map(|signal| WorkspaceSignalV1 {
+            kind: signal.kind as u16,
+            digest: boundary_digest32(&signal.digest),
+            priority: signal.priority,
+        })
+        .collect();
+    let message = WorkspaceBroadcastV1 {
+        snapshot_commit: boundary_digest32(&snapshot.commit),
+        top_signals,
+    };
+    boundary_to_types(message.digest())
+}
+
+fn boundary_digest32(digest: &Digest32) -> boundary::Digest32 {
+    boundary::Digest32::new(*digest.as_bytes())
+}
+
+fn boundary_to_types(digest: boundary::Digest32) -> Digest32 {
+    Digest32::new(*digest.as_bytes())
 }
 
 fn workspace_suppression_count(snapshot: &WorkspaceSnapshot) -> u16 {

@@ -25,6 +25,7 @@ pub struct RecordMeta {
     pub cycle_id: u64,
     pub tier: u8,
     pub flags: u16,
+    pub boundary_commit: Digest32,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -194,6 +195,7 @@ fn write_meta(hasher: &mut Hasher, meta: &RecordMeta) {
     hasher.update(&meta.cycle_id.to_be_bytes());
     hasher.update(&[meta.tier]);
     hasher.update(&meta.flags.to_be_bytes());
+    hasher.update(meta.boundary_commit.as_bytes());
 }
 
 fn digest_payload(payload: &[u8]) -> Digest32 {
@@ -238,6 +240,7 @@ mod tests {
             cycle_id: 42,
             tier: 2,
             flags: 0x0a0b,
+            boundary_commit: Digest32::new([0u8; 32]),
         };
         let record = appender.build_record(RecordKind::WorkspaceSnapshot, b"payload-1", meta);
 
@@ -254,6 +257,7 @@ mod tests {
             cycle_id: 7,
             tier: 1,
             flags: 0x0102,
+            boundary_commit: Digest32::new([0u8; 32]),
         };
         let record_a = appender.build_record(RecordKind::WorkspaceSnapshot, b"a", meta);
         let record_b = appender.build_record(RecordKind::SelfState, b"b", meta);
@@ -279,6 +283,7 @@ mod tests {
             cycle_id: 99,
             tier: 0,
             flags: 0x0f0f,
+            boundary_commit: Digest32::new([0u8; 32]),
         };
         let record_a = appender.build_record(RecordKind::OutputEvent, b"first", meta);
         let record_b = appender.build_record(RecordKind::OutputEvent, b"second", meta);

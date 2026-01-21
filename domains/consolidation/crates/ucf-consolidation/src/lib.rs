@@ -349,6 +349,7 @@ impl<S: RecordSource, A: ExperienceAppender> ConsolidationKernel<S, A> {
                     cycle_id: context.cycle_id,
                     tier: scheduled.tier as u8,
                     flags: scheduled.budget,
+                    boundary_commit: Digest32::new([0u8; 32]),
                 };
                 let record = appender.build_record_with_commit(
                     RecordKind::ReplayToken,
@@ -362,6 +363,7 @@ impl<S: RecordSource, A: ExperienceAppender> ConsolidationKernel<S, A> {
                     cycle_id: context.cycle_id,
                     tier: applied.tier as u8,
                     flags: 0,
+                    boundary_commit: Digest32::new([0u8; 32]),
                 };
                 let record = appender.build_record_with_commit(
                     RecordKind::ReplayApplied,
