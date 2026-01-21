@@ -63,13 +63,12 @@ impl ArchiveAppender {
         Self::default()
     }
 
-    pub fn build_record(
+    pub fn build_record_with_commit(
         &mut self,
         kind: RecordKind,
-        payload: &[u8],
+        payload_commit: Digest32,
         meta: RecordMeta,
     ) -> ArchiveRecord {
-        let payload_commit = digest_payload(payload);
         let seq_no = self.next_seq_no(meta.cycle_id);
         let key = record_key(kind, &payload_commit, meta.cycle_id, seq_no);
         ArchiveRecord {
@@ -78,6 +77,16 @@ impl ArchiveAppender {
             payload_commit,
             meta,
         }
+    }
+
+    pub fn build_record(
+        &mut self,
+        kind: RecordKind,
+        payload: &[u8],
+        meta: RecordMeta,
+    ) -> ArchiveRecord {
+        let payload_commit = digest_payload(payload);
+        self.build_record_with_commit(kind, payload_commit, meta)
     }
 
     fn next_seq_no(&mut self, cycle_id: u64) -> u64 {

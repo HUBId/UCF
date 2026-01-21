@@ -1829,10 +1829,7 @@ dependencies = [
 name = "ucf-archive-firewood"
 version = "0.1.0"
 dependencies = [
- "storage-firewood",
- "ucf-archive",
- "ucf-commit",
- "ucf-protocol",
+ "ucf-archive-store",
  "ucf-types",
 ]
 
@@ -1896,6 +1893,7 @@ dependencies = [
  "blake3",
  "prost",
  "ucf-archive",
+ "ucf-archive-store",
  "ucf-attn-controller",
  "ucf-bus",
  "ucf-commit",
@@ -1985,6 +1983,7 @@ dependencies = [
  "prost",
  "ucf-ai-port",
  "ucf-archive",
+ "ucf-archive-store",
  "ucf-bus",
  "ucf-digital-brain",
  "ucf-nsr-port",
@@ -2142,6 +2141,7 @@ dependencies = [
  "prost",
  "ucf-ai-port",
  "ucf-archive",
+ "ucf-archive-store",
  "ucf-attn-controller",
  "ucf-cde-port",
  "ucf-consistency-engine",
@@ -2296,11 +2296,10 @@ name = "ucf-vector-index"
 version = "0.1.0"
 dependencies = [
  "blake3",
- "hex",
  "serde",
  "serde_json",
  "thiserror 1.0.69",
- "ucf-archive",
+ "ucf-archive-store",
  "ucf-bus",
  "ucf-commit",
  "ucf-ism",

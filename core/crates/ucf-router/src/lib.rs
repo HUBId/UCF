@@ -9,6 +9,7 @@ use ucf_ai_port::{
     SpeechGate,
 };
 use ucf_archive::ExperienceAppender;
+use ucf_archive_store::{ArchiveAppender, ArchiveStore, RecordKind, RecordMeta};
 use ucf_attn_controller::{
     AttentionEventSink, AttentionUpdated, AttentionWeights, AttnController, AttnInputs,
     FocusChannel,
@@ -18,11 +19,13 @@ use ucf_consistency_engine::{
     ConsistencyReport, DriftBand,
 };
 use ucf_digital_brain::DigitalBrainPort;
-use ucf_geist::{encode_self_state, SelfState, SelfStateBuilder};
+use ucf_geist::{SelfState, SelfStateBuilder};
 use ucf_iit_monitor::{IitAction, IitActionKind, IitBand, IitMonitor, IitReport};
 use ucf_ism::IsmStore;
 use ucf_nsr_port::NsrReport;
-use ucf_output_router::{GateBundle, NsrSummary, OutputRouter, RouterConfig, SandboxVerdict};
+use ucf_output_router::{
+    GateBundle, NsrSummary, OutputRouter, OutputRouterEvent, RouterConfig, SandboxVerdict,
+};
 use ucf_policy_ecology::RiskGateResult;
 use ucf_policy_gateway::PolicyEvaluator;
 use ucf_predictive_coding::{
@@ -40,8 +43,7 @@ use ucf_tom_port::{IntentType, TomPort};
 use ucf_types::v1::spec::{ControlFrame, DecisionKind, Digest, ExperienceRecord, PolicyDecision};
 use ucf_types::{AlgoId, Digest32, EvidenceId};
 use ucf_workspace::{
-    encode_workspace_snapshot, SignalKind, Workspace, WorkspaceConfig, WorkspaceSignal,
-    WorkspaceSnapshot,
+    output_event_commit, SignalKind, Workspace, WorkspaceConfig, WorkspaceSignal, WorkspaceSnapshot,
 };
 
 const ISM_ANCHOR_TOP_K: usize = 4;
@@ -66,6 +68,8 @@ impl std::error::Error for RouterError {}
 pub struct Router {
     policy: Arc<dyn PolicyEvaluator + Send + Sync>,
     archive: Arc<dyn ExperienceAppender + Send + Sync>,
+    archive_store: Arc<dyn ArchiveStore + Send + Sync>,
+    archive_appender: Mutex<ArchiveAppender>,
     digital_brain: Option<Arc<dyn DigitalBrainPort + Send + Sync>>,
     ai_port: Arc<dyn AiPort + Send + Sync>,
     speech_gate: Arc<dyn SpeechGate + Send + Sync>,
@@ -200,6 +204,7 @@ impl Router {
     pub fn new(
         policy: Arc<dyn PolicyEvaluator + Send + Sync>,
         archive: Arc<dyn ExperienceAppender + Send + Sync>,
+        archive_store: Arc<dyn ArchiveStore + Send + Sync>,
         digital_brain: Option<Arc<dyn DigitalBrainPort + Send + Sync>>,
         ai_port: Arc<dyn AiPort + Send + Sync>,
         speech_gate: Arc<dyn SpeechGate + Send + Sync>,
@@ -219,6 +224,8 @@ impl Router {
         Self {
             policy,
             archive,
+            archive_store,
+            archive_appender: Mutex::new(ArchiveAppender::new()),
             digital_brain,
             ai_port,
             speech_gate,
@@ -307,8 +314,7 @@ impl Router {
             tcf.step(&plan_attn, plan_surprise.as_ref())
         };
         let planned = DeterministicTcf::planned_event(&cycle_plan);
-        self.archive
-            .append(self.build_cycle_plan_record(&cycle_plan, &planned));
+        self.append_cycle_plan_record(&cycle_plan, &planned);
 
         let cycle_id = cycle_plan.cycle_id;
         let mut ctx = StageContext::new();
@@ -434,8 +440,7 @@ impl Router {
                         None,
                         Some(pulse.slot),
                     ));
-                    self.archive
-                        .append(self.build_self_state_record(&self_state));
+                    self.append_self_state_record(&self_state);
                     self.archive
                         .append(self.build_sle_reflex_record(cycle_id, &sle_reflex));
                     if let Ok(mut workspace) = self.workspace.lock() {
@@ -461,8 +466,7 @@ impl Router {
                         None,
                         Some(pulse.slot),
                     ));
-                    self.archive
-                        .append(self.build_iit_report_record(cycle_id, &iit_report));
+                    self.append_iit_report_record(cycle_id, &iit_report);
                     for action in &iit_actions {
                         self.archive
                             .append(self.build_iit_action_record(cycle_id, action));
@@ -511,9 +515,7 @@ impl Router {
                         None,
                         Some(pulse.slot),
                     ));
-                    self.archive.append(
-                        self.build_consistency_report_record(cycle_id, &consistency_report),
-                    );
+                    self.append_consistency_report_record(cycle_id, &consistency_report);
                     for action in &consistency_actions {
                         self.archive
                             .append(self.build_consistency_action_record(cycle_id, action));
@@ -575,6 +577,9 @@ impl Router {
                                 WorkspaceSignal::from_output_event(event, None, Some(pulse.slot))
                             })),
                     );
+                    for event in &events {
+                        self.append_output_event_record(cycle_id, event);
+                    }
 
                     for (idx, output) in outputs.iter().enumerate() {
                         match output.channel {
@@ -719,8 +724,7 @@ impl Router {
                 }
                 PulseKind::Broadcast => {
                     let snapshot = self.arbitrate_workspace(cycle_id);
-                    let workspace_record = self.build_workspace_record(&snapshot);
-                    self.archive.append(workspace_record);
+                    self.append_workspace_snapshot_record(&snapshot);
                     if let Ok(mut guard) = self.last_workspace_snapshot.lock() {
                         *guard = Some(snapshot.clone());
                     }
@@ -866,60 +870,87 @@ impl Router {
         }
     }
 
-    fn build_workspace_record(&self, snapshot: &WorkspaceSnapshot) -> ExperienceRecord {
-        let record_id = format!("workspace-{}", hex::encode(snapshot.commit.as_bytes()));
-        let payload = encode_workspace_snapshot(snapshot);
-
-        ExperienceRecord {
-            record_id,
-            observed_at_ms: snapshot.cycle_id,
-            subject_id: "workspace".to_string(),
-            payload,
-            digest: Some(digest32_to_proto(snapshot.commit)),
-            vrf_tag: None,
-            proof_ref: None,
-        }
+    fn append_archive_record(&self, kind: RecordKind, payload_commit: Digest32, meta: RecordMeta) {
+        let mut appender = self.archive_appender.lock().expect("archive appender lock");
+        let record = appender.build_record_with_commit(kind, payload_commit, meta);
+        self.archive_store.append(record);
     }
 
-    fn build_cycle_plan_record(
-        &self,
-        plan: &CyclePlan,
-        planned: &CyclePlanned,
-    ) -> ExperienceRecord {
-        let record_id = format!(
-            "cycle-plan-{}-{}",
-            planned.cycle_id,
-            hex::encode(plan.commit.as_bytes())
-        );
-        let payload = ucf_tcf_port::encode_cycle_plan(plan);
-
-        ExperienceRecord {
-            record_id,
-            observed_at_ms: planned.cycle_id,
-            subject_id: "tcf".to_string(),
-            payload,
-            digest: Some(digest32_to_proto(planned.commit)),
-            vrf_tag: None,
-            proof_ref: None,
-        }
+    fn append_workspace_snapshot_record(&self, snapshot: &WorkspaceSnapshot) {
+        let tier = snapshot.broadcast.len().min(u8::MAX as usize) as u8;
+        let meta = RecordMeta {
+            cycle_id: snapshot.cycle_id,
+            tier,
+            flags: snapshot.recursion_used,
+        };
+        self.append_archive_record(RecordKind::WorkspaceSnapshot, snapshot.commit, meta);
     }
 
-    fn build_self_state_record(&self, state: &SelfState) -> ExperienceRecord {
-        let record_id = format!(
-            "self-state-{}-{}",
-            state.cycle_id,
-            hex::encode(state.commit.as_bytes())
-        );
-        let payload = encode_self_state(state);
-        ExperienceRecord {
-            record_id,
-            observed_at_ms: state.cycle_id,
-            subject_id: "geist".to_string(),
-            payload,
-            digest: Some(digest32_to_proto(state.commit)),
-            vrf_tag: None,
-            proof_ref: None,
-        }
+    fn append_cycle_plan_record(&self, plan: &CyclePlan, planned: &CyclePlanned) {
+        let meta = RecordMeta {
+            cycle_id: planned.cycle_id,
+            tier: planned.pulse_count,
+            flags: 0,
+        };
+        self.append_archive_record(RecordKind::CyclePlan, plan.commit, meta);
+    }
+
+    fn append_self_state_record(&self, state: &SelfState) {
+        let meta = RecordMeta {
+            cycle_id: state.cycle_id,
+            tier: 0,
+            flags: state.consistency,
+        };
+        self.append_archive_record(RecordKind::SelfState, state.commit, meta);
+    }
+
+    fn append_iit_report_record(&self, cycle_id: u64, report: &IitReport) {
+        let meta = RecordMeta {
+            cycle_id,
+            tier: iit_band_tier(report.band),
+            flags: report.phi,
+        };
+        self.append_archive_record(RecordKind::IitReport, report.commit, meta);
+    }
+
+    fn append_consistency_report_record(&self, cycle_id: u64, report: &ConsistencyReport) {
+        let meta = RecordMeta {
+            cycle_id,
+            tier: drift_band_tier(report.band),
+            flags: report.drift_score,
+        };
+        self.append_archive_record(RecordKind::ConsistencyReport, report.commit, meta);
+    }
+
+    fn append_output_event_record(&self, cycle_id: u64, event: &OutputRouterEvent) {
+        let (payload_commit, tier, flags) = match event {
+            OutputRouterEvent::ThoughtBuffered { frame } => (
+                output_event_commit(b"thought_buffered", frame.commit, None, 0),
+                1,
+                0,
+            ),
+            OutputRouterEvent::SpeechEmitted { frame } => (
+                output_event_commit(b"speech_emitted", frame.commit, None, 0),
+                2,
+                0,
+            ),
+            OutputRouterEvent::OutputSuppressed {
+                frame,
+                evidence,
+                risk,
+                ..
+            } => (
+                output_event_commit(b"output_suppressed", frame.commit, Some(*evidence), *risk),
+                3,
+                *risk,
+            ),
+        };
+        let meta = RecordMeta {
+            cycle_id,
+            tier,
+            flags,
+        };
+        self.append_archive_record(RecordKind::OutputEvent, payload_commit, meta);
     }
 
     fn build_sle_reflex_record(&self, cycle_id: u64, reflex: &SelfReflex) -> ExperienceRecord {
@@ -939,29 +970,6 @@ impl Router {
             subject_id: "sle".to_string(),
             payload,
             digest: Some(digest32_to_proto(reflex.self_symbol)),
-            vrf_tag: None,
-            proof_ref: None,
-        }
-    }
-
-    fn build_iit_report_record(&self, cycle_id: u64, report: &IitReport) -> ExperienceRecord {
-        let record_id = format!(
-            "iit-report-{}-{}",
-            cycle_id,
-            hex::encode(report.commit.as_bytes())
-        );
-        let band = match report.band {
-            IitBand::Low => "LOW",
-            IitBand::Medium => "MED",
-            IitBand::High => "HIGH",
-        };
-        let payload = format!("phi={};band={band}", report.phi).into_bytes();
-        ExperienceRecord {
-            record_id,
-            observed_at_ms: cycle_id,
-            subject_id: "iit".to_string(),
-            payload,
-            digest: Some(digest32_to_proto(report.commit)),
             vrf_tag: None,
             proof_ref: None,
         }
@@ -1012,34 +1020,6 @@ impl Router {
             subject_id: "rdc".to_string(),
             payload,
             digest: Some(digest32_to_proto(budget.commit)),
-            vrf_tag: None,
-            proof_ref: None,
-        }
-    }
-
-    fn build_consistency_report_record(
-        &self,
-        cycle_id: u64,
-        report: &ConsistencyReport,
-    ) -> ExperienceRecord {
-        let record_id = format!(
-            "consistency-report-{}-{}",
-            cycle_id,
-            hex::encode(report.commit.as_bytes())
-        );
-        let band = match report.band {
-            DriftBand::Low => "LOW",
-            DriftBand::Medium => "MED",
-            DriftBand::High => "HIGH",
-            DriftBand::Critical => "CRIT",
-        };
-        let payload = format!("drift_score={};band={band}", report.drift_score).into_bytes();
-        ExperienceRecord {
-            record_id,
-            observed_at_ms: cycle_id,
-            subject_id: "consistency".to_string(),
-            payload,
-            digest: Some(digest32_to_proto(report.commit)),
             vrf_tag: None,
             proof_ref: None,
         }
@@ -1307,6 +1287,23 @@ fn drift_score_from_snapshot(snapshot: &WorkspaceSnapshot) -> u16 {
                 .and_then(|value| value.parse::<u16>().ok())
         })
         .unwrap_or(0)
+}
+
+fn iit_band_tier(band: IitBand) -> u8 {
+    match band {
+        IitBand::Low => 1,
+        IitBand::Medium => 2,
+        IitBand::High => 3,
+    }
+}
+
+fn drift_band_tier(band: DriftBand) -> u8 {
+    match band {
+        DriftBand::Low => 1,
+        DriftBand::Medium => 2,
+        DriftBand::High => 3,
+        DriftBand::Critical => 4,
+    }
 }
 
 fn focus_channel_score(channel: FocusChannel) -> u16 {

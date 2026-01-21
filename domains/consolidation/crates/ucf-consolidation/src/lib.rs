@@ -5,7 +5,8 @@ use std::sync::{Arc, Mutex};
 
 use blake3::Hasher;
 use prost::Message;
-use ucf_archive::{build_compact_record, ExperienceAppender, FileArchive, InMemoryArchive};
+use ucf_archive::{ExperienceAppender, FileArchive, InMemoryArchive};
+use ucf_archive_store::{ArchiveAppender, ArchiveStore, RecordKind, RecordMeta};
 use ucf_attn_controller::AttentionWeights;
 use ucf_bus::{BusPublisher, MessageEnvelope};
 use ucf_commit::{
@@ -231,6 +232,8 @@ pub struct ConsolidationKernel<S: RecordSource, A: ExperienceAppender> {
     config: ConsolidationConfig,
     source: S,
     appender: A,
+    archive_store: Arc<dyn ArchiveStore + Send + Sync>,
+    archive_appender: Mutex<ArchiveAppender>,
     sleep_state: Option<SleepStateHandle>,
     index_publishers: Option<IndexEventPublishers>,
     workspace: Option<Arc<Mutex<Workspace>>>,
@@ -247,6 +250,7 @@ impl<S: RecordSource, A: ExperienceAppender> ConsolidationKernel<S, A> {
         config: ConsolidationConfig,
         source: S,
         appender: A,
+        archive_store: Arc<dyn ArchiveStore + Send + Sync>,
         sleep_state: Option<SleepStateHandle>,
         index_publishers: Option<IndexEventPublishers>,
         workspace: Option<Arc<Mutex<Workspace>>>,
@@ -255,6 +259,8 @@ impl<S: RecordSource, A: ExperienceAppender> ConsolidationKernel<S, A> {
             config,
             source,
             appender,
+            archive_store,
+            archive_appender: Mutex::new(ArchiveAppender::new()),
             sleep_state,
             index_publishers,
             workspace,
@@ -336,13 +342,34 @@ impl<S: RecordSource, A: ExperienceAppender> ConsolidationKernel<S, A> {
         ));
         let outcome = cascade.schedule(&graph, bias, budget, &context);
 
-        for scheduled in &outcome.scheduled {
-            let record = replay_scheduled_record(scheduled, context.cycle_id);
-            self.appender.append(record);
-        }
-        for applied in &outcome.applied {
-            let record = replay_applied_record(applied, context.cycle_id);
-            self.appender.append(record);
+        {
+            let mut appender = self.archive_appender.lock().expect("archive appender lock");
+            for scheduled in &outcome.scheduled {
+                let meta = RecordMeta {
+                    cycle_id: context.cycle_id,
+                    tier: scheduled.tier as u8,
+                    flags: scheduled.budget,
+                };
+                let record = appender.build_record_with_commit(
+                    RecordKind::ReplayToken,
+                    scheduled.commit,
+                    meta,
+                );
+                self.archive_store.append(record);
+            }
+            for applied in &outcome.applied {
+                let meta = RecordMeta {
+                    cycle_id: context.cycle_id,
+                    tier: applied.tier as u8,
+                    flags: 0,
+                };
+                let record = appender.build_record_with_commit(
+                    RecordKind::ReplayApplied,
+                    applied.effect_digest,
+                    meta,
+                );
+                self.archive_store.append(record);
+            }
         }
 
         let (micro_count, meso_count, macro_count) = outcome.counts();
@@ -932,18 +959,7 @@ fn replay_effect_digest(
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
-fn replay_scheduled_record(event: &ReplayScheduled, cycle_id: u64) -> ExperienceRecord {
-    let payload = encode_replay_scheduled(event);
-    let record_id = format!("replay-scheduled-{}", hex_digest(event.commit));
-    build_compact_record(record_id, cycle_id, "replay", payload)
-}
-
-fn replay_applied_record(event: &ReplayApplied, cycle_id: u64) -> ExperienceRecord {
-    let payload = encode_replay_applied(event);
-    let record_id = format!("replay-applied-{}", hex_digest(event.effect_digest));
-    build_compact_record(record_id, cycle_id, "replay", payload)
-}
-
+#[allow(dead_code)]
 fn encode_replay_scheduled(event: &ReplayScheduled) -> Vec<u8> {
     let mut payload = Vec::with_capacity(2 + 1 + 2 + 2 + Digest32::LEN * 2);
     payload.extend_from_slice(b"RS");
@@ -955,6 +971,7 @@ fn encode_replay_scheduled(event: &ReplayScheduled) -> Vec<u8> {
     payload
 }
 
+#[allow(dead_code)]
 fn encode_replay_applied(event: &ReplayApplied) -> Vec<u8> {
     let mut payload = Vec::with_capacity(2 + 1 + Digest32::LEN * 2);
     payload.extend_from_slice(b"RA");
@@ -962,10 +979,6 @@ fn encode_replay_applied(event: &ReplayApplied) -> Vec<u8> {
     payload.extend_from_slice(event.target.as_bytes());
     payload.extend_from_slice(event.effect_digest.as_bytes());
     payload
-}
-
-fn hex_digest(digest: Digest32) -> String {
-    hex_encode(digest.as_bytes())
 }
 
 fn commitment_hex(commitment: &Commitment) -> String {
@@ -1025,6 +1038,7 @@ mod tests {
     use std::sync::Arc;
 
     use ucf_archive::{ExperienceAppender, InMemoryArchive};
+    use ucf_archive_store::InMemoryArchiveStore;
     use ucf_attn_controller::FocusChannel;
     use ucf_consistency_engine::DriftBand;
     use ucf_iit_monitor::IitBand;
@@ -1116,6 +1130,7 @@ mod tests {
         }
 
         let handle = InMemoryArchiveHandle::new(&archive);
+        let archive_store = Arc::new(InMemoryArchiveStore::new());
         let config = ConsolidationConfig {
             micro_window: 2,
             meso_window: 2,
@@ -1125,7 +1140,8 @@ mod tests {
             replay_meso_cap: 2,
             replay_macro_cap: 1,
         };
-        let kernel = ConsolidationKernel::new(config, handle, handle, None, None, None);
+        let kernel =
+            ConsolidationKernel::new(config, handle, handle, archive_store, None, None, None);
 
         let before_len = archive.list().len();
         let summary = kernel.run_one_cycle();
@@ -1261,6 +1277,7 @@ mod tests {
             archive.append(sample_record(&format!("rec-{idx}"), 100 + idx, None));
         }
         let handle = InMemoryArchiveHandle::new(&archive);
+        let archive_store = Arc::new(InMemoryArchiveStore::new());
         let workspace = Arc::new(Mutex::new(Workspace::new(WorkspaceConfig {
             cap: 4,
             broadcast_cap: 4,
@@ -1274,7 +1291,15 @@ mod tests {
             replay_meso_cap: 1,
             replay_macro_cap: 1,
         };
-        let kernel = ConsolidationKernel::new(config, handle, handle, None, None, Some(workspace));
+        let kernel = ConsolidationKernel::new(
+            config,
+            handle,
+            handle,
+            archive_store,
+            None,
+            None,
+            Some(workspace),
+        );
         let context = SleepReplayContext {
             cycle_id: 42,
             ssm_state: Digest32::new([3u8; 32]),
