@@ -568,7 +568,7 @@ mod tests {
         let router = Arc::new(Router::new(
             policy,
             archive.clone(),
-            archive_store,
+            archive_store.clone(),
             Some(brain),
             ai_port,
             speech_gate,
@@ -643,7 +643,7 @@ mod tests {
         let router = Arc::new(Router::new(
             policy,
             archive.clone(),
-            archive_store,
+            archive_store.clone(),
             Some(brain),
             ai_port,
             speech_gate,
