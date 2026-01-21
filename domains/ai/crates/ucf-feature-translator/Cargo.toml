@@ -1,0 +1,10 @@
+[package]
+name = "ucf-feature-translator"
+version = "0.1.0"
+edition = "2021"
+license-file = "../../../../README.md"
+
+[dependencies]
+blake3 = "1"
+ucf-attn-controller = { path = "../../../../core/crates/ucf-attn-controller" }
+ucf-types = { path = "../../../../core/crates/ucf-types" }

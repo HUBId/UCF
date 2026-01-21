@@ -135,6 +135,7 @@ members = [
     "domains/archive/crates/ucf-archive-store",
     "domains/consolidation/crates/ucf-consolidation",
     "domains/ai-sandbox/crates/ucf-ai-sandbox",
+    "domains/ai/crates/ucf-feature-translator",
     "domains/digitalbrain/crates/ucf-digitalbrain-port",
     "domains/digital-brain/crates/ucf-digital-brain",
     "domains/brain/crates/ucf-bluebrain-port",

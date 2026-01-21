@@ -1776,6 +1776,7 @@ dependencies = [
  "ucf-cde-port",
  "ucf-commit",
  "ucf-digitalbrain-port",
+ "ucf-feature-translator",
  "ucf-iit-monitor",
  "ucf-lens-port",
  "ucf-ncde-port",
@@ -1865,6 +1866,7 @@ dependencies = [
  "blake3",
  "ucf-attn-controller",
  "ucf-bluebrain-port",
+ "ucf-feature-translator",
  "ucf-predictive-coding",
  "ucf-sandbox",
  "ucf-types",
@@ -1969,6 +1971,15 @@ dependencies = [
  "ucf-crypto",
  "ucf-fold",
  "ucf-protocol",
+ "ucf-types",
+]
+
+[[package]]
+name = "ucf-feature-translator"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ucf-attn-controller",
  "ucf-types",
 ]
 
@@ -2179,6 +2190,7 @@ dependencies = [
  "ucf-cde-port",
  "ucf-consistency-engine",
  "ucf-digital-brain",
+ "ucf-feature-translator",
  "ucf-geist",
  "ucf-iit-monitor",
  "ucf-ism",
