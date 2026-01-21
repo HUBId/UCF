@@ -8,7 +8,7 @@ ucf-ai-port = { path = "../ucf-ai-port" }
 ucf-types = { path = "../ucf-types" }
 ucf-policy-gateway = { path = "../../../domains/policy-gateway/crates/ucf-policy-gateway" }
 ucf-archive = { path = "../../../domains/archive/crates/ucf-archive" }
-ucf-archive-store = { path = "../../../domains/archive/crates/ucf-archive-store" }
+ucf-archive-store = { workspace = true }
 ucf-digital-brain = { path = "../../../domains/digital-brain/crates/ucf-digital-brain" }
 ucf-sandbox = { path = "../ucf-sandbox" }
 ucf-policy-ecology = { path = "../ucf-policy-ecology" }

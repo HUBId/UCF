@@ -12,7 +12,7 @@ serde = { workspace = true, features = ["derive"] }
 serde_json = "1"
 thiserror = { workspace = true }
 blake3 = "1"
-ucf-archive-store = { path = "../../../archive/crates/ucf-archive-store" }
+ucf-archive-store = { workspace = true }
 ucf-bus = { path = "../../../../core/crates/ucf-bus" }
 ucf-commit = { path = "../../../../core/crates/ucf-commit" }
 ucf-ism = { path = "../../../../core/crates/ucf-ism" }
