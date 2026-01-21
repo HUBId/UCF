@@ -1,0 +1,12 @@
+[package]
+name = "ucf-bluebrain-port"
+version = "0.1.0"
+edition = "2021"
+license-file = "../../../../README.md"
+
+[dependencies]
+blake3 = "1"
+ucf-types = { path = "../../../../core/crates/ucf-types" }
+
+[dev-dependencies]
+ucf-types = { path = "../../../../core/crates/ucf-types" }

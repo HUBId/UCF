@@ -15,6 +15,8 @@ use ucf_attn_controller::{
     AttentionEventSink, AttentionUpdated, AttentionWeights, AttnController, AttnInputs,
     FocusChannel,
 };
+use ucf_bluebrain_port::{BlueBrainPort, NeuromodDelta};
+use ucf_brain_mapper::map_to_stimulus;
 use ucf_consistency_engine::{
     ConsistencyAction, ConsistencyActionKind, ConsistencyEngine, ConsistencyInputs,
     ConsistencyReport, DriftBand,
@@ -72,6 +74,7 @@ pub struct Router {
     archive_store: Arc<dyn ArchiveStore + Send + Sync>,
     archive_appender: Mutex<ArchiveAppender>,
     digital_brain: Option<Arc<dyn DigitalBrainPort + Send + Sync>>,
+    bluebrain_port: Mutex<Option<Box<dyn BlueBrainPort + Send + Sync>>>,
     ai_port: Arc<dyn AiPort + Send + Sync>,
     speech_gate: Arc<dyn SpeechGate + Send + Sync>,
     risk_gate: Arc<dyn RiskGate + Send + Sync>,
@@ -98,6 +101,7 @@ pub struct Router {
     rsa_hooks: Vec<Arc<dyn RsaHook + Send + Sync>>,
     last_self_state: Mutex<Option<SelfState>>,
     last_workspace_snapshot: Mutex<Option<WorkspaceSnapshot>>,
+    pending_neuromod_delta: Mutex<Option<NeuromodDelta>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -228,6 +232,7 @@ impl Router {
             archive_store,
             archive_appender: Mutex::new(ArchiveAppender::new()),
             digital_brain,
+            bluebrain_port: Mutex::new(None),
             ai_port,
             speech_gate,
             risk_gate,
@@ -254,6 +259,7 @@ impl Router {
             rsa_hooks: vec![Arc::new(MockRsaHook::new())],
             last_self_state: Mutex::new(None),
             last_workspace_snapshot: Mutex::new(None),
+            pending_neuromod_delta: Mutex::new(None),
         }
     }
 
@@ -264,6 +270,11 @@ impl Router {
 
     pub fn with_tcf_port(mut self, port: Box<dyn TcfPort + Send + Sync>) -> Self {
         self.tcf_port = Mutex::new(port);
+        self
+    }
+
+    pub fn with_bluebrain_port(mut self, port: Box<dyn BlueBrainPort + Send + Sync>) -> Self {
+        self.bluebrain_port = Mutex::new(Some(port));
         self
     }
 
@@ -279,6 +290,20 @@ impl Router {
 
     pub fn workspace_handle(&self) -> Arc<Mutex<Workspace>> {
         Arc::clone(&self.workspace)
+    }
+
+    pub fn last_workspace_snapshot(&self) -> Option<WorkspaceSnapshot> {
+        self.last_workspace_snapshot
+            .lock()
+            .ok()
+            .and_then(|guard| guard.clone())
+    }
+
+    pub fn pending_neuromod_delta(&self) -> Option<NeuromodDelta> {
+        self.pending_neuromod_delta
+            .lock()
+            .ok()
+            .and_then(|guard| guard.clone())
     }
 
     fn latest_workspace_snapshot(&self, cycle_id: u64) -> WorkspaceSnapshot {
@@ -386,6 +411,16 @@ impl Router {
                         .lock()
                         .map(|attn| attn.clone())
                         .unwrap_or_else(|_| idle_attention());
+                    // Bluebrain stimulation occurs during the Verify pulse using the latest
+                    // workspace snapshot, attention, and surprise context.
+                    let surprise_signal = ctx.predictive_result.as_ref().map(|(_, signal)| signal);
+                    self.stimulate_bluebrain_port(
+                        &cf,
+                        &workspace_snapshot,
+                        &attention_weights,
+                        surprise_signal,
+                        pulse.slot,
+                    );
                     let recursion_inputs = RecursionInputs {
                         phi: iit_report.phi,
                         drift_score: drift_score_from_snapshot(&workspace_snapshot),
@@ -1175,6 +1210,38 @@ impl Router {
             for signal in signals {
                 workspace.publish(signal);
             }
+        }
+    }
+
+    fn stimulate_bluebrain_port(
+        &self,
+        cf: &ControlFrameNormalized,
+        workspace_snapshot: &WorkspaceSnapshot,
+        attention: &AttentionWeights,
+        surprise: Option<&SurpriseSignal>,
+        slot: u8,
+    ) {
+        let mut guard = match self.bluebrain_port.lock() {
+            Ok(guard) => guard,
+            Err(_) => return,
+        };
+        let Some(port) = guard.as_mut() else {
+            return;
+        };
+        let stimulus = map_to_stimulus(cf, workspace_snapshot, attention, surprise);
+        let response = port.stimulate(&stimulus);
+        self.publish_workspace_signal(WorkspaceSignal::from_brain_stimulated(
+            stimulus.commit,
+            Some(slot),
+        ));
+        self.publish_workspace_signal(WorkspaceSignal::from_brain_responded(
+            response.commit,
+            response.arousal,
+            response.valence,
+            Some(slot),
+        ));
+        if let Ok(mut delta_guard) = self.pending_neuromod_delta.lock() {
+            *delta_guard = Some(response.delta);
         }
     }
 
