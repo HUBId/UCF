@@ -6,8 +6,8 @@ use std::sync::{Arc, Mutex};
 
 use ucf::boundary::{self, v1::WorkspaceBroadcastV1, v1::WorkspaceSignalV1};
 use ucf_ai_port::{
-    AiInference, AiOutput, AiPort, OutputChannel, OutputSuppressed, OutputSuppressionSink,
-    SpeechGate,
+    AiInference, AiOutput, AiPort, AiPortWorker, OutputChannel, OutputSuppressed,
+    OutputSuppressionSink, SpeechGate,
 };
 use ucf_archive::ExperienceAppender;
 use ucf_archive_store::{ArchiveAppender, ArchiveStore, RecordKind, RecordMeta};
@@ -42,10 +42,16 @@ use ucf_predictive_coding::{
 use ucf_recursion_controller::{RecursionBudget, RecursionController, RecursionInputs};
 use ucf_risk_gate::{digest_reasons, RiskGate};
 use ucf_rsa_hooks::{MockRsaHook, RsaContext, RsaHook, RsaProposal};
-use ucf_sandbox::ControlFrameNormalized;
+use ucf_sandbox::{
+    AiCallRequest, ControlFrameNormalized, IntentSummary, MockWasmSandbox, SandboxBudget,
+    SandboxCaps, SandboxPort, SandboxReport,
+};
 use ucf_sle::{SelfReflex, SleEngine};
 use ucf_ssm_port::SsmState;
-use ucf_tcf_port::{idle_attention, CyclePlan, CyclePlanned, DeterministicTcf, PulseKind, TcfPort};
+use ucf_tcf_port::{
+    ai_mode_for_pulse, idle_attention, CyclePlan, CyclePlanned, DeterministicTcf, PulseKind,
+    TcfPort,
+};
 use ucf_tom_port::{IntentType, TomPort};
 use ucf_types::v1::spec::{ControlFrame, DecisionKind, Digest, ExperienceRecord, PolicyDecision};
 use ucf_types::{AlgoId, Digest32, EvidenceId};
@@ -56,6 +62,7 @@ use ucf_workspace::{
 const ISM_ANCHOR_TOP_K: usize = 4;
 const FEATURE_SIGNAL_PRIORITY: u16 = 3200;
 const FEATURE_RECORD_KIND: u16 = 42;
+const SANDBOX_DENIED_RECORD_KIND: u16 = 73;
 
 #[derive(Debug)]
 pub enum RouterError {
@@ -82,6 +89,8 @@ pub struct Router {
     digital_brain: Option<Arc<dyn DigitalBrainPort + Send + Sync>>,
     bluebrain_port: Mutex<Option<Box<dyn BlueBrainPort + Send + Sync>>>,
     ai_port: Arc<dyn AiPort + Send + Sync>,
+    sandbox_port: Mutex<Box<dyn SandboxPort + Send + Sync>>,
+    sandbox_inference_cache: Arc<Mutex<Option<AiInference>>>,
     feature_sae: Arc<dyn FeatureSaePort + Send + Sync>,
     feature_lens: Arc<dyn FeatureLensPort + Send + Sync>,
     speech_gate: Arc<dyn SpeechGate + Send + Sync>,
@@ -109,6 +118,7 @@ pub struct Router {
     rsa_hooks: Vec<Arc<dyn RsaHook + Send + Sync>>,
     last_self_state: Mutex<Option<SelfState>>,
     last_workspace_snapshot: Mutex<Option<WorkspaceSnapshot>>,
+    last_recursion_budget: Mutex<Option<RecursionBudget>>,
     pending_neuromod_delta: Mutex<Option<NeuromodDelta>>,
 }
 
@@ -162,6 +172,8 @@ struct StageContext {
     decision: Option<PolicyDecision>,
     decision_kind: DecisionKind,
     inference: Option<AiInference>,
+    sandbox_report: Option<SandboxReport>,
+    sandbox_verdict: Option<SandboxVerdict>,
     tom_report: Option<ucf_tom_port::TomReport>,
     attention_risk: u16,
     thought_outputs: Vec<AiOutput>,
@@ -189,6 +201,8 @@ impl StageContext {
             decision: None,
             decision_kind: DecisionKind::DecisionKindUnspecified,
             inference: None,
+            sandbox_report: None,
+            sandbox_verdict: None,
             tom_report: None,
             attention_risk: 0,
             thought_outputs: Vec::new(),
@@ -225,6 +239,12 @@ impl Router {
         tom_port: Arc<dyn TomPort + Send + Sync>,
         output_suppression_sink: Option<Arc<dyn OutputSuppressionSink + Send + Sync>>,
     ) -> Self {
+        let sandbox_worker = AiPortWorker::new(ai_port.clone());
+        let sandbox_inference_cache = sandbox_worker.inference_cache();
+        let sandbox_port: Box<dyn SandboxPort + Send + Sync> = Box::new(MockWasmSandbox::new(
+            Box::new(sandbox_worker),
+            SandboxCaps::default(),
+        ));
         let output_router_base = RouterConfig {
             thought_capacity: 128,
             max_thought_frames_per_cycle: 32,
@@ -242,6 +262,8 @@ impl Router {
             digital_brain,
             bluebrain_port: Mutex::new(None),
             ai_port,
+            sandbox_port: Mutex::new(sandbox_port),
+            sandbox_inference_cache,
             feature_sae: Arc::new(MockSaePort::new()),
             feature_lens: Arc::new(MockLensPort::new()),
             speech_gate,
@@ -269,12 +291,19 @@ impl Router {
             rsa_hooks: vec![Arc::new(MockRsaHook::new())],
             last_self_state: Mutex::new(None),
             last_workspace_snapshot: Mutex::new(None),
+            last_recursion_budget: Mutex::new(None),
             pending_neuromod_delta: Mutex::new(None),
         }
     }
 
     pub fn with_attention_sink(mut self, sink: Arc<dyn AttentionEventSink + Send + Sync>) -> Self {
         self.attention_sink = Some(sink);
+        self
+    }
+
+    pub fn with_sandbox_port(mut self, port: Box<dyn SandboxPort + Send + Sync>) -> Self {
+        self.sandbox_port = Mutex::new(port);
+        self.sandbox_inference_cache = Arc::new(Mutex::new(None));
         self
     }
 
@@ -371,14 +400,16 @@ impl Router {
                     ctx.decision = Some(decision);
                 }
                 PulseKind::Think => {
-                    self.run_think_stage(&cf, &mut ctx);
+                    let mode = ai_mode_for_pulse(pulse.kind);
+                    self.run_think_stage(&cf, &mut ctx, cycle_id, pulse.slot, mode);
                 }
                 PulseKind::Verify => {
                     if ctx.decision.is_none() {
                         continue;
                     }
                     if ctx.inference.is_none() {
-                        self.run_think_stage(&cf, &mut ctx);
+                        let mode = ai_mode_for_pulse(PulseKind::Think);
+                        self.run_think_stage(&cf, &mut ctx, cycle_id, pulse.slot, mode);
                     }
                     let decision = ctx.decision.as_ref().expect("decision available");
                     let Some(inference) = ctx.inference.as_ref() else {
@@ -460,6 +491,9 @@ impl Router {
                     self.archive
                         .append(self.build_recursion_budget_record(cycle_id, &recursion_budget));
                     ctx.recursion_budget = Some(recursion_budget);
+                    if let Ok(mut guard) = self.last_recursion_budget.lock() {
+                        *guard = Some(recursion_budget);
+                    }
                     let risk_commit = digest_risk_results(&risk_results);
                     let ssm_commit = inference
                         .ssm_state
@@ -607,7 +641,7 @@ impl Router {
                     };
                     let gates = GateBundle {
                         policy_decision: decision.clone(),
-                        sandbox: SandboxVerdict::Ok,
+                        sandbox: ctx.sandbox_verdict.clone().unwrap_or(SandboxVerdict::Allow),
                         risk_results,
                         nsr_summary,
                         speech_gate: speech_gate_results,
@@ -1313,6 +1347,21 @@ impl Router {
         self.append_archive_record(RecordKind::Other(FEATURE_RECORD_KIND), payload_commit, meta);
     }
 
+    fn append_sandbox_denied_record(&self, cycle_id: u64, report: &SandboxReport, reason: &str) {
+        let payload_commit = sandbox_denied_commit(reason, report.commit);
+        let meta = RecordMeta {
+            cycle_id,
+            tier: 0,
+            flags: 0,
+            boundary_commit: report.commit,
+        };
+        self.append_archive_record(
+            RecordKind::Other(SANDBOX_DENIED_RECORD_KIND),
+            payload_commit,
+            meta,
+        );
+    }
+
     fn arbitrate_workspace(&self, cycle_id: u64) -> WorkspaceSnapshot {
         let mut workspace = self.workspace.lock().expect("workspace lock");
         workspace.arbitrate(cycle_id)
@@ -1324,14 +1373,170 @@ impl Router {
         }
     }
 
-    fn run_think_stage(&self, cf: &ControlFrameNormalized, ctx: &mut StageContext) {
-        if ctx.inference.is_some() {
-            return;
+    fn take_sandbox_inference(&self) -> Option<AiInference> {
+        self.sandbox_inference_cache
+            .lock()
+            .ok()
+            .and_then(|mut guard| guard.take())
+    }
+
+    fn build_intent_summary(&self) -> IntentSummary {
+        let attention = self
+            .last_attention
+            .lock()
+            .map(|attn| attn.clone())
+            .unwrap_or_else(|_| idle_attention());
+        let stability = self
+            .last_self_state
+            .lock()
+            .ok()
+            .and_then(|state| *state)
+            .map(|state| state.stability_score())
+            .unwrap_or(0);
+        let drift = self
+            .last_workspace_snapshot
+            .lock()
+            .ok()
+            .and_then(|snapshot| snapshot.as_ref().map(drift_score_from_snapshot))
+            .unwrap_or(0);
+        let intent = focus_channel_score(attention.channel);
+        let risk = drift.max(10_000u16.saturating_sub(stability));
+        IntentSummary::new(intent, risk)
+    }
+
+    fn build_sandbox_budget(&self, mode: u16) -> SandboxBudget {
+        let attention = self
+            .last_attention
+            .lock()
+            .map(|attn| attn.clone())
+            .unwrap_or_else(|_| idle_attention());
+        let recursion = self
+            .last_recursion_budget
+            .lock()
+            .ok()
+            .and_then(|budget| *budget);
+        let stability = self
+            .last_self_state
+            .lock()
+            .ok()
+            .and_then(|state| *state)
+            .map(|state| state.stability_score())
+            .unwrap_or(0);
+        let drift = self
+            .last_workspace_snapshot
+            .lock()
+            .ok()
+            .and_then(|snapshot| snapshot.as_ref().map(drift_score_from_snapshot))
+            .unwrap_or(0);
+
+        let base_steps = recursion.map(|budget| budget.per_cycle_steps).unwrap_or(24);
+        let base_depth = recursion.map(|budget| budget.max_depth).unwrap_or(2);
+        let mut ops = u64::from(base_steps).saturating_mul(300);
+        ops = ops.saturating_add(u64::from(attention.gain));
+        let mut max_frames = u16::from(base_depth).saturating_add(2);
+        let mut max_output_chars = 240usize.saturating_add(attention.gain as usize / 6);
+
+        if drift >= 7000 {
+            ops = ops.saturating_sub(600);
+            max_frames = max_frames.saturating_sub(1);
         }
-        let inference = self.ai_port.infer_with_context(cf);
+        if drift >= 8500 {
+            ops = ops.saturating_sub(600);
+            max_frames = max_frames.saturating_sub(1);
+        }
+        if stability >= 8000 {
+            ops = ops.saturating_add(700);
+            max_frames = max_frames.saturating_add(1);
+        }
+        if matches!(attention.channel, FocusChannel::Threat) {
+            ops = ops.saturating_sub(600);
+            max_frames = max_frames.saturating_sub(1);
+        }
+
+        if mode == ucf_sandbox::AI_MODE_THOUGHT {
+            ops = ops.saturating_mul(70) / 100;
+            max_frames = max_frames.saturating_sub(1);
+            max_output_chars = max_output_chars.saturating_sub(80);
+        }
+
+        ops = ops.clamp(200, 12_000);
+        max_frames = max_frames.clamp(1, 20);
+        max_output_chars = max_output_chars.clamp(80, 2000);
+
+        SandboxBudget {
+            ops,
+            max_output_chars,
+            max_frames,
+        }
+    }
+
+    fn handle_sandbox_denied(
+        &self,
+        ctx: &mut StageContext,
+        report: &SandboxReport,
+        cf: &ControlFrameNormalized,
+        cycle_id: u64,
+        slot: u8,
+    ) {
+        let reason = match &report.verdict {
+            SandboxVerdict::Allow => "ALLOW",
+            SandboxVerdict::Deny { reason } => reason.as_str(),
+        };
+        let summary = format!("SANDBOX=DENY {}", reason);
+        self.publish_workspace_signal(WorkspaceSignal {
+            kind: SignalKind::Risk,
+            priority: 9500,
+            digest: report.commit,
+            summary,
+            slot,
+        });
+        self.append_sandbox_denied_record(cycle_id, report, reason);
+        ctx.sandbox_verdict = Some(report.verdict.clone());
+        let inference = AiInference::new(Vec::new());
         let tom_report = self.tom_port.analyze(cf, &inference.outputs);
         ctx.inference = Some(inference);
         ctx.tom_report = Some(tom_report);
+    }
+
+    fn run_think_stage(
+        &self,
+        cf: &ControlFrameNormalized,
+        ctx: &mut StageContext,
+        cycle_id: u64,
+        slot: u8,
+        mode: u16,
+    ) {
+        if ctx.inference.is_some() {
+            return;
+        }
+        if let Ok(mut guard) = self.sandbox_inference_cache.lock() {
+            *guard = None;
+        }
+        let intent = self.build_intent_summary();
+        let budget = self.build_sandbox_budget(mode);
+        let request = AiCallRequest::new(cycle_id, cf.commitment().digest, mode, budget);
+        let mut sandbox = self.sandbox_port.lock().expect("sandbox lock");
+        let report = sandbox.evaluate_call(cf, &intent, &request);
+        ctx.sandbox_report = Some(report.clone());
+        if !report.verdict.is_allow() {
+            self.handle_sandbox_denied(ctx, &report, cf, cycle_id, slot);
+            return;
+        }
+        match sandbox.run_ai(&request) {
+            Ok(call_result) => {
+                let inference = self
+                    .take_sandbox_inference()
+                    .unwrap_or_else(|| AiInference::new(call_result.outputs.clone()));
+                let tom_report = self.tom_port.analyze(cf, &inference.outputs);
+                ctx.inference = Some(inference);
+                ctx.tom_report = Some(tom_report);
+                ctx.sandbox_verdict = Some(SandboxVerdict::Allow);
+            }
+            Err(report) => {
+                ctx.sandbox_report = Some(report.clone());
+                self.handle_sandbox_denied(ctx, &report, cf, cycle_id, slot);
+            }
+        }
     }
 }
 
@@ -1611,6 +1816,14 @@ fn feature_translation_commit(activation_commit: Digest32, selection_commit: Dig
     hasher.update(b"ucf.router.feature_translation.v1");
     hasher.update(activation_commit.as_bytes());
     hasher.update(selection_commit.as_bytes());
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn sandbox_denied_commit(reason: &str, report_commit: Digest32) -> Digest32 {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"ucf.router.sandbox_denied.v1");
+    hasher.update(report_commit.as_bytes());
+    hasher.update(reason.as_bytes());
     Digest32::new(*hasher.finalize().as_bytes())
 }
 

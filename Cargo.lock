@@ -2249,6 +2249,7 @@ dependencies = [
 name = "ucf-sandbox"
 version = "0.1.0"
 dependencies = [
+ "blake3",
  "ucf-bus",
  "ucf-commit",
  "ucf-policy-ecology",
@@ -2307,6 +2308,7 @@ dependencies = [
  "blake3",
  "ucf-attn-controller",
  "ucf-predictive-coding",
+ "ucf-sandbox",
  "ucf-types",
 ]
 

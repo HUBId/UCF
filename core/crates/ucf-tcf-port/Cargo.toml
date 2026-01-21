@@ -7,4 +7,5 @@ edition = "2021"
 blake3 = "1"
 ucf-attn-controller = { path = "../ucf-attn-controller" }
 ucf-predictive-coding = { path = "../ucf-predictive-coding" }
+ucf-sandbox = { path = "../ucf-sandbox" }
 ucf-types = { path = "../ucf-types" }
