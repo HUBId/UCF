@@ -269,6 +269,7 @@ impl<A: ArchiveStore> IsmAnchorSync<A> {
             cycle_id: anchor.created_cycle,
             tier,
             flags: 0,
+            boundary_commit: Digest32::new([0u8; 32]),
         };
         let mut appender = self.archive_appender.lock().expect("archive appender lock");
         let record = appender.build_record_with_commit(RecordKind::IsmAnchor, anchor.commit, meta);

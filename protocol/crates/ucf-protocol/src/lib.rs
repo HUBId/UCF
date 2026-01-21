@@ -1,5 +1,7 @@
 #![forbid(unsafe_code)]
 
+pub mod boundary;
+
 pub mod v1 {
     use prost::Enumeration;
     use prost::Message;

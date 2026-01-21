@@ -7,4 +7,4 @@ edition = "2021"
 blake3 = "1"
 ucf-crypto = { path = "../ucf-crypto" }
 ucf-types = { path = "../ucf-types" }
-ucf_protocol = { package = "ucf-protocol", path = "../../../ucf-protocol" }
+ucf_protocol = { package = "ucf-protocol", path = "../../../protocol/crates/ucf-protocol" }

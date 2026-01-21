@@ -2,6 +2,7 @@
 
 use std::sync::{mpsc, Arc, Mutex};
 
+use ucf::boundary::Envelope as BoundaryEnvelope;
 use ucf_bus::{BusSubscriber, MessageEnvelope};
 use ucf_events::SpeechEvent;
 use ucf_types::EvidenceId;
@@ -12,6 +13,7 @@ pub mod external {
     //! This module is intentionally serialization-free for now. Protobuf support can be
     //! added here later without affecting the internal event types.
 
+    use ucf::boundary::{v1::ExternalSpeechV1, Envelope, MessageKind, ProtocolVersion};
     use ucf_events::SpeechEvent;
     use ucf_types::EvidenceId;
 
@@ -37,6 +39,21 @@ pub mod external {
                 text: event.content.clone(),
             }
         }
+    }
+
+    pub fn envelope_from_event(event: &SpeechEvent) -> Envelope {
+        let message = ExternalSpeechV1 {
+            evidence_id: event.evidence_id.as_str().to_string(),
+            text: event.content.clone(),
+            risk_bucket: 0,
+            nsr_ok: true,
+            tom_intent: String::new(),
+        };
+        Envelope::new(
+            ProtocolVersion::V1,
+            MessageKind::ExternalSpeech,
+            message.digest(),
+        )
     }
 }
 
@@ -114,6 +131,8 @@ where
             match receiver.try_recv() {
                 Ok(envelope) => {
                     processed += 1;
+                    let _boundary: BoundaryEnvelope =
+                        external::envelope_from_event(&envelope.payload);
                     let line = format_speech_line(&envelope.payload);
                     self.sink.emit(&line);
                 }

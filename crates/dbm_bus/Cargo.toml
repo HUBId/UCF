@@ -39,7 +39,7 @@ dbm_sc = { path = "../dbm_sc" }
 dbm_pprf = { path = "../dbm_pprf" }
 dbm_13_hypothalamus = { path = "../dbm_13_hypothalamus" }
 emotion_field = { path = "../emotion_field" }
-ucf = { package = "ucf-protocol", path = "../../ucf-protocol" }
+ucf = { package = "ucf-protocol", path = "../../protocol/crates/ucf-protocol" }
 
 [dev-dependencies]
 microcircuit_core = { path = "../microcircuit_core" }
