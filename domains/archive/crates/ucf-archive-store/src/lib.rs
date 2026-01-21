@@ -210,3 +210,92 @@ fn record_key(kind: RecordKind, payload_commit: &Digest32, cycle_id: u64, seq_no
     hasher.update(&seq_no.to_be_bytes());
     Digest32::new(*hasher.finalize().as_bytes())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn expected_root_commit(records: &[ArchiveRecord]) -> Option<Digest32> {
+        if records.is_empty() {
+            return None;
+        }
+        let mut hasher = Hasher::new();
+        hasher.update(ROOT_COMMIT_DOMAIN);
+        for record in records {
+            write_kind(&mut hasher, record.kind);
+            hasher.update(record.key.as_bytes());
+            hasher.update(record.payload_commit.as_bytes());
+            write_meta(&mut hasher, &record.meta);
+        }
+        Some(Digest32::new(*hasher.finalize().as_bytes()))
+    }
+
+    #[test]
+    fn append_get_roundtrip() {
+        let store = InMemoryArchiveStore::new();
+        let mut appender = ArchiveAppender::new();
+        let meta = RecordMeta {
+            cycle_id: 42,
+            tier: 2,
+            flags: 0x0a0b,
+        };
+        let record = appender.build_record(RecordKind::WorkspaceSnapshot, b"payload-1", meta);
+
+        store.append(record);
+
+        assert_eq!(store.get(record.key), Some(record));
+    }
+
+    #[test]
+    fn iter_kind_is_deterministic() {
+        let store = InMemoryArchiveStore::new();
+        let mut appender = ArchiveAppender::new();
+        let meta = RecordMeta {
+            cycle_id: 7,
+            tier: 1,
+            flags: 0x0102,
+        };
+        let record_a = appender.build_record(RecordKind::WorkspaceSnapshot, b"a", meta);
+        let record_b = appender.build_record(RecordKind::SelfState, b"b", meta);
+        let record_c = appender.build_record(RecordKind::WorkspaceSnapshot, b"c", meta);
+        let record_d = appender.build_record(RecordKind::WorkspaceSnapshot, b"d", meta);
+
+        store.append(record_a);
+        store.append(record_b);
+        store.append(record_c);
+        store.append(record_d);
+
+        let collected: Vec<ArchiveRecord> = store
+            .iter_kind(RecordKind::WorkspaceSnapshot, None)
+            .collect();
+        assert_eq!(collected, vec![record_a, record_c, record_d]);
+    }
+
+    #[test]
+    fn root_commit_changes_and_matches_fold_rules() {
+        let store = InMemoryArchiveStore::new();
+        let mut appender = ArchiveAppender::new();
+        let meta = RecordMeta {
+            cycle_id: 99,
+            tier: 0,
+            flags: 0x0f0f,
+        };
+        let record_a = appender.build_record(RecordKind::OutputEvent, b"first", meta);
+        let record_b = appender.build_record(RecordKind::OutputEvent, b"second", meta);
+
+        store.append(record_a);
+        store.append(record_b);
+
+        let expected_initial = expected_root_commit(&[record_a, record_b]);
+        let initial_commit = store.root_commit();
+        assert_eq!(initial_commit, expected_initial);
+
+        let record_c = appender.build_record(RecordKind::OutputEvent, b"third", meta);
+        store.append(record_c);
+
+        let expected_updated = expected_root_commit(&[record_a, record_b, record_c]);
+        let updated_commit = store.root_commit();
+        assert_ne!(updated_commit, initial_commit);
+        assert_eq!(updated_commit, expected_updated);
+    }
+}
