@@ -2,8 +2,10 @@
 
 use std::collections::HashSet;
 
+use blake3::Hasher;
 use ucf_commit::{canonical_control_frame_len, commit_control_frame, Commitment};
 use ucf_types::v1::spec::{ControlFrame, DecisionKind, PolicyDecision};
+use ucf_types::{AiOutput, Digest32};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[allow(non_camel_case_types)]
@@ -228,6 +230,337 @@ impl From<ControlFrameNormalized> for ControlFrame {
     }
 }
 
+pub const AI_MODE_THOUGHT: u16 = 1;
+pub const AI_MODE_SPEECH: u16 = 2;
+pub const AI_MODE_INTERNAL: u16 = 3;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SandboxBudget {
+    pub ops: u64,
+    pub max_output_chars: usize,
+    pub max_frames: u16,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SandboxCaps {
+    pub max_heap_bytes: usize,
+    pub max_stack_bytes: usize,
+}
+
+impl Default for SandboxCaps {
+    fn default() -> Self {
+        Self {
+            max_heap_bytes: 16 * 1024 * 1024,
+            max_stack_bytes: 512 * 1024,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SandboxVerdict {
+    Allow,
+    Deny { reason: String },
+}
+
+impl SandboxVerdict {
+    pub fn is_allow(&self) -> bool {
+        matches!(self, SandboxVerdict::Allow)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SandboxReport {
+    pub verdict: SandboxVerdict,
+    pub ops_used: u64,
+    pub commit: Digest32,
+}
+
+impl SandboxReport {
+    fn new(verdict: SandboxVerdict, ops_used: u64, request_commit: Digest32) -> Self {
+        let commit = sandbox_report_commit(&verdict, ops_used, request_commit);
+        Self {
+            verdict,
+            ops_used,
+            commit,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct IntentSummary {
+    pub intent: u16,
+    pub risk: u16,
+    pub commit: Digest32,
+}
+
+impl IntentSummary {
+    pub fn new(intent: u16, risk: u16) -> Self {
+        let commit = intent_summary_commit(intent, risk);
+        Self {
+            intent,
+            risk,
+            commit,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AiCallRequest {
+    pub cycle_id: u64,
+    pub input_commit: Digest32,
+    pub mode: u16,
+    pub budget: SandboxBudget,
+    pub commit: Digest32,
+}
+
+impl AiCallRequest {
+    pub fn new(cycle_id: u64, input_commit: Digest32, mode: u16, budget: SandboxBudget) -> Self {
+        let commit = sandbox_request_commit(cycle_id, input_commit, mode, budget);
+        Self {
+            cycle_id,
+            input_commit,
+            mode,
+            budget,
+            commit,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AiCallResult {
+    pub outputs: Vec<AiOutput>,
+    pub ops_used: u64,
+    pub commit: Digest32,
+}
+
+impl AiCallResult {
+    pub fn new(outputs: Vec<AiOutput>, ops_used: u64, request_commit: Digest32) -> Self {
+        let commit = sandbox_result_commit(&outputs, ops_used, request_commit);
+        Self {
+            outputs,
+            ops_used,
+            commit,
+        }
+    }
+}
+
+pub trait SandboxPort {
+    fn evaluate_call(
+        &mut self,
+        cf: &ControlFrameNormalized,
+        intent: &IntentSummary,
+        req: &AiCallRequest,
+    ) -> SandboxReport;
+    fn run_ai(&mut self, req: &AiCallRequest) -> Result<AiCallResult, SandboxReport>;
+}
+
+pub trait AiWorker: Send + Sync {
+    fn run(
+        &mut self,
+        cf: &ControlFrameNormalized,
+        intent: &IntentSummary,
+        req: &AiCallRequest,
+    ) -> Vec<AiOutput>;
+}
+
+struct PendingCall {
+    cf: ControlFrameNormalized,
+    intent: IntentSummary,
+    req: AiCallRequest,
+}
+
+pub struct MockWasmSandbox {
+    worker: Box<dyn AiWorker + Send + Sync>,
+    caps: SandboxCaps,
+    pending: Option<PendingCall>,
+}
+
+impl MockWasmSandbox {
+    pub fn new(worker: Box<dyn AiWorker + Send + Sync>, caps: SandboxCaps) -> Self {
+        Self {
+            worker,
+            caps,
+            pending: None,
+        }
+    }
+
+    pub fn caps(&self) -> SandboxCaps {
+        self.caps
+    }
+
+    fn estimate_ops(input_commit: Digest32, mode: u16) -> u64 {
+        const MAX_DETERMINISTIC_OPS: u64 = 5_000;
+        let mut bytes = [0u8; 8];
+        bytes.copy_from_slice(&input_commit.as_bytes()[0..8]);
+        let seed = u64::from_be_bytes(bytes) ^ (u64::from(mode) << 32);
+        seed % MAX_DETERMINISTIC_OPS + 1
+    }
+
+    fn enforce_output_caps(
+        &self,
+        outputs: &[AiOutput],
+        budget: SandboxBudget,
+        ops_used: u64,
+        request_commit: Digest32,
+    ) -> Result<(), SandboxReport> {
+        if outputs.len() > budget.max_frames as usize {
+            return Err(SandboxReport::new(
+                SandboxVerdict::Deny {
+                    reason: "FRAME_CAP".to_string(),
+                },
+                ops_used,
+                request_commit,
+            ));
+        }
+        if outputs
+            .iter()
+            .any(|output| output.content.len() > budget.max_output_chars)
+        {
+            return Err(SandboxReport::new(
+                SandboxVerdict::Deny {
+                    reason: "OUTPUT_CAP".to_string(),
+                },
+                ops_used,
+                request_commit,
+            ));
+        }
+        Ok(())
+    }
+}
+
+impl SandboxPort for MockWasmSandbox {
+    fn evaluate_call(
+        &mut self,
+        cf: &ControlFrameNormalized,
+        intent: &IntentSummary,
+        req: &AiCallRequest,
+    ) -> SandboxReport {
+        let ops_used = Self::estimate_ops(req.input_commit, req.mode);
+        if ops_used > req.budget.ops {
+            self.pending = None;
+            return SandboxReport::new(
+                SandboxVerdict::Deny {
+                    reason: "BUDGET_EXCEEDED".to_string(),
+                },
+                ops_used,
+                req.commit,
+            );
+        }
+        self.pending = Some(PendingCall {
+            cf: cf.clone(),
+            intent: intent.clone(),
+            req: *req,
+        });
+        SandboxReport::new(SandboxVerdict::Allow, ops_used, req.commit)
+    }
+
+    fn run_ai(&mut self, req: &AiCallRequest) -> Result<AiCallResult, SandboxReport> {
+        let pending = self.pending.take().ok_or_else(|| {
+            SandboxReport::new(
+                SandboxVerdict::Deny {
+                    reason: "NO_PENDING_CALL".to_string(),
+                },
+                0,
+                req.commit,
+            )
+        })?;
+        if pending.req.commit != req.commit {
+            return Err(SandboxReport::new(
+                SandboxVerdict::Deny {
+                    reason: "CALL_MISMATCH".to_string(),
+                },
+                0,
+                req.commit,
+            ));
+        }
+        let ops_used = Self::estimate_ops(req.input_commit, req.mode);
+        if ops_used > req.budget.ops {
+            return Err(SandboxReport::new(
+                SandboxVerdict::Deny {
+                    reason: "BUDGET_EXCEEDED".to_string(),
+                },
+                ops_used,
+                req.commit,
+            ));
+        }
+        let outputs = self.worker.run(&pending.cf, &pending.intent, req);
+        self.enforce_output_caps(&outputs, req.budget, ops_used, req.commit)?;
+        Ok(AiCallResult::new(outputs, ops_used, req.commit))
+    }
+}
+
+fn intent_summary_commit(intent: u16, risk: u16) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(b"ucf.sandbox.intent.v1");
+    hasher.update(&intent.to_be_bytes());
+    hasher.update(&risk.to_be_bytes());
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn sandbox_request_commit(
+    cycle_id: u64,
+    input_commit: Digest32,
+    mode: u16,
+    budget: SandboxBudget,
+) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(b"ucf.sandbox.req.v1");
+    hasher.update(&cycle_id.to_be_bytes());
+    hasher.update(input_commit.as_bytes());
+    hasher.update(&mode.to_be_bytes());
+    hasher.update(&budget.ops.to_be_bytes());
+    hasher.update(&usize_to_u64(budget.max_output_chars).to_be_bytes());
+    hasher.update(&budget.max_frames.to_be_bytes());
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn sandbox_result_commit(
+    outputs: &[AiOutput],
+    ops_used: u64,
+    request_commit: Digest32,
+) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(b"ucf.sandbox.result.v1");
+    hasher.update(request_commit.as_bytes());
+    hasher.update(&ops_used.to_be_bytes());
+    hasher.update(&u64::try_from(outputs.len()).unwrap_or(0).to_be_bytes());
+    for output in outputs {
+        hasher.update(&[output.channel as u8]);
+        hasher.update(
+            &u64::try_from(output.content.len())
+                .unwrap_or(0)
+                .to_be_bytes(),
+        );
+        hasher.update(output.content.as_bytes());
+    }
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn sandbox_report_commit(
+    verdict: &SandboxVerdict,
+    ops_used: u64,
+    request_commit: Digest32,
+) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(b"ucf.sandbox.report.v1");
+    hasher.update(request_commit.as_bytes());
+    hasher.update(&ops_used.to_be_bytes());
+    match verdict {
+        SandboxVerdict::Allow => {
+            hasher.update(&[1]);
+        }
+        SandboxVerdict::Deny { reason } => {
+            hasher.update(&[0]);
+            hasher.update(reason.as_bytes());
+        }
+    }
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn usize_to_u64(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
+}
+
 pub fn normalize(mut cf: ControlFrame) -> ControlFrameNormalized {
     cf.evidence_ids.sort();
     cf.evidence_ids.dedup();
@@ -256,6 +589,7 @@ fn recursion_depth_hint(_cf: &ControlFrame) -> Option<u8> {
 mod tests {
     use super::*;
     use ucf_types::v1::spec::{ActionCode, DecisionKind};
+    use ucf_types::OutputChannel;
 
     fn base_frame() -> ControlFrame {
         ControlFrame {
@@ -345,5 +679,78 @@ mod tests {
         let normalized_b = normalize(frame_b).commitment();
 
         assert_eq!(normalized_a, normalized_b);
+    }
+
+    struct EmptyWorker;
+
+    impl AiWorker for EmptyWorker {
+        fn run(
+            &mut self,
+            _cf: &ControlFrameNormalized,
+            _intent: &IntentSummary,
+            _req: &AiCallRequest,
+        ) -> Vec<AiOutput> {
+            Vec::new()
+        }
+    }
+
+    struct LoudWorker;
+
+    impl AiWorker for LoudWorker {
+        fn run(
+            &mut self,
+            _cf: &ControlFrameNormalized,
+            _intent: &IntentSummary,
+            _req: &AiCallRequest,
+        ) -> Vec<AiOutput> {
+            vec![AiOutput {
+                channel: OutputChannel::Speech,
+                content: "too-long".repeat(4),
+                confidence: 5000,
+                rationale_commit: None,
+                integration_score: None,
+            }]
+        }
+    }
+
+    fn test_request(budget: SandboxBudget) -> AiCallRequest {
+        AiCallRequest::new(1, Digest32::new([7u8; 32]), AI_MODE_THOUGHT, budget)
+    }
+
+    #[test]
+    fn deny_when_ops_budget_exceeded() {
+        let cf = normalize(base_frame());
+        let intent = IntentSummary::new(1000, 0);
+        let budget = SandboxBudget {
+            ops: 0,
+            max_output_chars: 256,
+            max_frames: 4,
+        };
+        let req = test_request(budget);
+        let mut sandbox = MockWasmSandbox::new(Box::new(EmptyWorker), SandboxCaps::default());
+
+        let report = sandbox.evaluate_call(&cf, &intent, &req);
+
+        assert!(matches!(report.verdict, SandboxVerdict::Deny { .. }));
+    }
+
+    #[test]
+    fn deny_when_output_char_cap_exceeded() {
+        let cf = normalize(base_frame());
+        let intent = IntentSummary::new(1000, 0);
+        let budget = SandboxBudget {
+            ops: 20_000,
+            max_output_chars: 4,
+            max_frames: 4,
+        };
+        let req = test_request(budget);
+        let mut sandbox = MockWasmSandbox::new(Box::new(LoudWorker), SandboxCaps::default());
+
+        let report = sandbox.evaluate_call(&cf, &intent, &req);
+        assert!(report.verdict.is_allow());
+
+        let result = sandbox.run_ai(&req);
+        let err = result.expect_err("expected output cap rejection");
+        assert!(matches!(err.verdict, SandboxVerdict::Deny { .. }));
     }
 }

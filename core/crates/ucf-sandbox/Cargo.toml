@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+blake3 = "1"
 ucf-commit = { path = "../ucf-commit" }
 ucf-types = { path = "../ucf-types" }
 ucf-policy-ecology = { path = "../ucf-policy-ecology", optional = true }

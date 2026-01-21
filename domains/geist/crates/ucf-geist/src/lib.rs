@@ -30,6 +30,10 @@ impl SelfState {
     pub fn builder(cycle_id: u64) -> SelfStateBuilder {
         SelfStateBuilder::new(cycle_id)
     }
+
+    pub fn stability_score(&self) -> u16 {
+        self.consistency
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

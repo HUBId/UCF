@@ -19,7 +19,7 @@ use ucf_ncde_port::{NcdeContext, NcdePort};
 use ucf_nsr_port::{NsrPort, NsrReport};
 use ucf_policy_ecology::{PolicyEcology, PolicyRule};
 use ucf_sae_port::{SaeMock, SaePort, SparseFeature};
-use ucf_sandbox::ControlFrameNormalized;
+use ucf_sandbox::{AiCallRequest, AiWorker, ControlFrameNormalized, IntentSummary};
 use ucf_scm_port::{CounterfactualQuery, Intervention, ScmDag, ScmPort};
 use ucf_sle::{LoopFrame, StrangeLoopEngine};
 use ucf_ssm_port::{SsmInput, SsmPort, SsmState};
@@ -62,6 +62,41 @@ impl AiInference {
             ssm_state: None,
             activation_view: None,
         }
+    }
+}
+
+#[derive(Clone)]
+pub struct AiPortWorker {
+    ai_port: Arc<dyn AiPort + Send + Sync>,
+    inference_cache: Arc<Mutex<Option<AiInference>>>,
+}
+
+impl AiPortWorker {
+    pub fn new(ai_port: Arc<dyn AiPort + Send + Sync>) -> Self {
+        Self {
+            ai_port,
+            inference_cache: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    pub fn inference_cache(&self) -> Arc<Mutex<Option<AiInference>>> {
+        Arc::clone(&self.inference_cache)
+    }
+}
+
+impl AiWorker for AiPortWorker {
+    fn run(
+        &mut self,
+        cf: &ControlFrameNormalized,
+        _intent: &IntentSummary,
+        _req: &AiCallRequest,
+    ) -> Vec<AiOutput> {
+        let inference = self.ai_port.infer_with_context(cf);
+        let outputs = inference.outputs.clone();
+        if let Ok(mut guard) = self.inference_cache.lock() {
+            *guard = Some(inference);
+        }
+        outputs
     }
 }
 

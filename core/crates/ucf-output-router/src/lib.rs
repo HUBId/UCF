@@ -38,17 +38,7 @@ pub struct NsrSummary {
     pub violations_digest: Digest32,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum SandboxVerdict {
-    Ok,
-    Denied { code: String },
-}
-
-impl SandboxVerdict {
-    pub fn is_ok(&self) -> bool {
-        matches!(self, SandboxVerdict::Ok)
-    }
-}
+pub use ucf_sandbox::SandboxVerdict;
 
 #[derive(Clone, Debug)]
 pub struct GateBundle {
@@ -276,7 +266,7 @@ impl OutputRouter {
         if !policy_allowed {
             return self.deny_speech(frame, idx, gates, "policy_denied", 0);
         }
-        if !gates.sandbox.is_ok() {
+        if !sandbox_allows(&gates.sandbox) {
             return self.deny_speech(frame, idx, gates, "sandbox_denied", 0);
         }
         if !self.config.external_enabled {
@@ -343,6 +333,10 @@ fn policy_allows(decision: &PolicyDecision) -> bool {
     )
 }
 
+fn sandbox_allows(verdict: &SandboxVerdict) -> bool {
+    matches!(verdict, SandboxVerdict::Allow)
+}
+
 fn risk_reason(result: &RiskGateResult) -> String {
     result
         .reasons
@@ -406,7 +400,7 @@ mod tests {
     fn gates_for(outputs: &[AiOutput], risk: Vec<RiskGateResult>) -> GateBundle {
         GateBundle {
             policy_decision: decision_allow(),
-            sandbox: SandboxVerdict::Ok,
+            sandbox: SandboxVerdict::Allow,
             risk_results: risk,
             nsr_summary: NsrSummary {
                 ok: true,

@@ -15,7 +15,10 @@ use ucf_policy_ecology::{PolicyEcology, PolicyRule, PolicyWeights};
 use ucf_policy_gateway::NoOpPolicyEvaluator;
 use ucf_risk_gate::PolicyRiskGate;
 use ucf_router::Router;
-use ucf_sandbox::normalize;
+use ucf_sandbox::{
+    normalize, AiCallRequest, AiCallResult, IntentSummary, SandboxPort, SandboxReport,
+    SandboxVerdict,
+};
 use ucf_scm_port::{CausalNode, CounterfactualQuery, CounterfactualResult, ScmDag, ScmPort};
 use ucf_tcf_port::{CyclePlan, Pulse, PulseKind, TcfPort, TcfState};
 use ucf_tom_port::{
@@ -433,6 +436,96 @@ fn risk_gate_denies_speech_on_unsafe_scm_probe() {
         tom_port,
         None,
     );
+
+    let outcome = router
+        .handle_control_frame(normalize(decision_frame("ping")))
+        .expect("route frame");
+
+    assert!(outcome.speech_outputs.is_empty());
+}
+
+#[test]
+fn sandbox_allows_speech_outputs() {
+    let policy = Arc::new(NoOpPolicyEvaluator::new());
+    let archive = Arc::new(InMemoryArchive::new());
+    let archive_store = Arc::new(InMemoryArchiveStore::new());
+    let ai_port = Arc::new(MockAiPort::new());
+    let speech_gate = Arc::new(PolicySpeechGate::new(allow_speech_policy()));
+    let risk_gate = Arc::new(PolicyRiskGate::new(PolicyEcology::allow_all()));
+    let tom_port = Arc::new(LowRiskTomPort);
+    let router = Router::new(
+        policy,
+        archive,
+        archive_store,
+        None,
+        ai_port,
+        speech_gate,
+        risk_gate,
+        tom_port,
+        None,
+    );
+
+    let outcome = router
+        .handle_control_frame(normalize(decision_frame("ping")))
+        .expect("route frame");
+
+    assert_eq!(outcome.speech_outputs.len(), 1);
+    assert!(outcome.speech_outputs.iter().all(|out| {
+        matches!(out.channel, ucf_types::OutputChannel::Speech) && out.content == "ok"
+    }));
+}
+
+#[test]
+fn sandbox_denied_blocks_external_speech() {
+    #[derive(Default)]
+    struct DenySandbox;
+
+    impl SandboxPort for DenySandbox {
+        fn evaluate_call(
+            &mut self,
+            _cf: &ucf_sandbox::ControlFrameNormalized,
+            _intent: &IntentSummary,
+            _req: &AiCallRequest,
+        ) -> SandboxReport {
+            SandboxReport {
+                verdict: SandboxVerdict::Deny {
+                    reason: "BUDGET_EXCEEDED".to_string(),
+                },
+                ops_used: 9001,
+                commit: ucf_types::Digest32::new([9u8; 32]),
+            }
+        }
+
+        fn run_ai(&mut self, _req: &AiCallRequest) -> Result<AiCallResult, SandboxReport> {
+            Err(SandboxReport {
+                verdict: SandboxVerdict::Deny {
+                    reason: "BUDGET_EXCEEDED".to_string(),
+                },
+                ops_used: 9001,
+                commit: ucf_types::Digest32::new([9u8; 32]),
+            })
+        }
+    }
+
+    let policy = Arc::new(NoOpPolicyEvaluator::new());
+    let archive = Arc::new(InMemoryArchive::new());
+    let archive_store = Arc::new(InMemoryArchiveStore::new());
+    let ai_port = Arc::new(MockAiPort::new());
+    let speech_gate = Arc::new(PolicySpeechGate::new(allow_speech_policy()));
+    let risk_gate = Arc::new(PolicyRiskGate::new(PolicyEcology::allow_all()));
+    let tom_port = Arc::new(LowRiskTomPort);
+    let router = Router::new(
+        policy,
+        archive,
+        archive_store,
+        None,
+        ai_port,
+        speech_gate,
+        risk_gate,
+        tom_port,
+        None,
+    )
+    .with_sandbox_port(Box::new(DenySandbox));
 
     let outcome = router
         .handle_control_frame(normalize(decision_frame("ping")))
