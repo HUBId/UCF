@@ -1,21 +1,47 @@
 #![forbid(unsafe_code)]
-//! Firewood backend für das Archiv.
-//!
-//! ## Aktivierung
-//! - Cargo Feature: `firewood`
-//! - Backend: `ArchiveBackend::Firewood`
-//!
-//! Beispiel:
-//! ```toml
-//! ucf-archive-firewood = { path = "domains/archive/crates/ucf-archive-firewood", features = ["firewood"] }
-//! ```
-//!
-//! Danach kann `FirewoodRecordStore::open(...)` genutzt werden.
+//! Stub Firewood backend for the archive store.
 
-#[cfg(feature = "firewood")]
-pub use ucf_archive::{
-    ArchiveBackend, ArchiveStore, FirewoodRecordStore, RecordStore, SnapshotStore,
-};
+use ucf_archive_store::{ArchiveRecord, ArchiveStore, RecordKind};
+use ucf_types::Digest32;
 
-#[cfg(not(feature = "firewood"))]
-pub struct FirewoodFeatureDisabled;
+#[derive(Clone, Copy, Debug, Default)]
+pub struct FirewoodArchiveStore;
+
+impl FirewoodArchiveStore {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl ArchiveStore for FirewoodArchiveStore {
+    fn append(&self, _record: ArchiveRecord) -> Digest32 {
+        panic!("backend unavailable")
+    }
+
+    fn get(&self, _key: Digest32) -> Option<ArchiveRecord> {
+        panic!("backend unavailable")
+    }
+
+    fn iter_kind(
+        &self,
+        _kind: RecordKind,
+        _limit: Option<usize>,
+    ) -> Box<dyn Iterator<Item = ArchiveRecord> + '_> {
+        panic!("backend unavailable")
+    }
+
+    fn root_commit(&self) -> Option<Digest32> {
+        panic!("backend unavailable")
+    }
+}
+
+#[cfg(feature = "archive-firewood")]
+#[cfg(test)]
+mod tests {
+    use super::FirewoodArchiveStore;
+
+    #[test]
+    fn constructs_firewood_store() {
+        let _store = FirewoodArchiveStore::new();
+    }
+}

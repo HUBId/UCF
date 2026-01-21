@@ -5,11 +5,8 @@ edition = "2021"
 
 [features]
 default = []
-firewood = ["ucf-archive/firewood", "dep:storage-firewood"]
+archive-firewood = []
 
 [dependencies]
-storage-firewood = { path = "../../../../vendor/ucf-chip-4-main/vendor/ztate/storage-firewood", optional = true, default-features = false, features = ["rpp-firewood"] }
-ucf-archive = { path = "../ucf-archive" }
-ucf-commit = { path = "../../../../core/crates/ucf-commit" }
-ucf-protocol = { path = "../../../../ucf-protocol" }
+ucf-archive-store = { path = "../ucf-archive-store" }
 ucf-types = { path = "../../../../core/crates/ucf-types" }
