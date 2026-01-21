@@ -1837,6 +1837,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucf-archive-store"
+version = "0.1.0"
+dependencies = [
+ "ucf-types",
+]
+
+[[package]]
 name = "ucf-attn-controller"
 version = "0.1.0"
 dependencies = [
