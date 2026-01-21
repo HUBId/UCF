@@ -3,7 +3,7 @@
 use std::sync::{mpsc, Arc, Mutex};
 
 use ucf_bus::{BusSubscriber, MessageEnvelope};
-use ucf_ingestion::SpeechEvent;
+use ucf_events::SpeechEvent;
 use ucf_types::EvidenceId;
 
 pub mod external {
@@ -12,7 +12,7 @@ pub mod external {
     //! This module is intentionally serialization-free for now. Protobuf support can be
     //! added here later without affecting the internal event types.
 
-    use ucf_ingestion::SpeechEvent;
+    use ucf_events::SpeechEvent;
     use ucf_types::EvidenceId;
 
     #[derive(Clone, Debug, PartialEq, Eq)]

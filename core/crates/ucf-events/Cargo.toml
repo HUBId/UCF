@@ -1,0 +1,8 @@
+[package]
+name = "ucf-events"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ucf-sandbox = { path = "../ucf-sandbox" }
+ucf-types = { path = "../ucf-types" }

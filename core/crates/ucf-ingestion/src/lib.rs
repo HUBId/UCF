@@ -4,40 +4,15 @@ use std::sync::{mpsc, Arc, Mutex};
 
 use ucf_ai_port::AiOutput;
 use ucf_bus::{BusPublisher, BusSubscriber, MessageEnvelope};
+use ucf_events::{OutcomeEvent, SandboxRejectEvent, SpeechEvent, WorkspaceBroadcast};
 use ucf_router::{Router, RouterOutcome};
-use ucf_sandbox::{ControlFrameValidator, SandboxError, SandboxErrorCode};
+use ucf_sandbox::{ControlFrameValidator, SandboxError};
 use ucf_sleep_coordinator::{
     SleepPhaseRunner, SleepStateHandle, SleepStateUpdater, SleepTriggered,
 };
-use ucf_types::v1::spec::{ControlFrame, DecisionKind};
-use ucf_types::{Digest32, EvidenceId};
+use ucf_types::v1::spec::ControlFrame;
+use ucf_types::EvidenceId;
 use ucf_workspace::{Workspace, WorkspaceSignal};
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct OutcomeEvent {
-    pub evidence_id: EvidenceId,
-    pub decision_kind: DecisionKind,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SandboxRejectEvent {
-    pub code: SandboxErrorCode,
-    pub message: String,
-    pub field: Option<&'static str>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SpeechEvent {
-    pub evidence_id: EvidenceId,
-    pub content: String,
-    pub confidence: u16,
-    pub rationale_commit: Option<Digest32>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct WorkspaceBroadcast {
-    pub snapshot_commit: Digest32,
-}
 
 pub struct IngestionService<S, P, R, E, W, T> {
     router: Arc<Router>,
@@ -315,7 +290,9 @@ mod tests {
     use ucf_policy_ecology::{PolicyEcology, PolicyRule, PolicyWeights};
     use ucf_policy_gateway::NoOpPolicyEvaluator;
     use ucf_risk_gate::PolicyRiskGate;
-    use ucf_sandbox::{ControlFrameNormalized, ControlFrameValidator, ValidatorLimits};
+    use ucf_sandbox::{
+        ControlFrameNormalized, ControlFrameValidator, SandboxErrorCode, ValidatorLimits,
+    };
     use ucf_sleep_coordinator::SleepTriggered;
     use ucf_tom_port::{
         ActorProfile, IntentHypothesis, IntentType, KnowledgeGap, SocialRiskSignals, TomPort,
