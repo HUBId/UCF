@@ -8,5 +8,5 @@ default = []
 archive-firewood = []
 
 [dependencies]
-ucf-archive-store = { path = "../ucf-archive-store" }
+ucf-archive-store = { workspace = true }
 ucf-types = { path = "../../../../core/crates/ucf-types" }

@@ -15,7 +15,7 @@ ucf-workspace = { path = "../ucf-workspace" }
 [dev-dependencies]
 prost = "0.12"
 ucf-archive = { path = "../../../domains/archive/crates/ucf-archive" }
-ucf-archive-store = { path = "../../../domains/archive/crates/ucf-archive-store" }
+ucf-archive-store = { workspace = true }
 ucf-digital-brain = { path = "../../../domains/digital-brain/crates/ucf-digital-brain" }
 ucf-policy-ecology = { path = "../ucf-policy-ecology" }
 ucf-policy-gateway = { path = "../../../domains/policy-gateway/crates/ucf-policy-gateway" }

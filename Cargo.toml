@@ -159,6 +159,7 @@ hex = "0.4.3"
 metrics = "0.24.2"
 sha2 = "0.10.9"
 tracing = "0.1.41"
+ucf-archive-store = { path = "domains/archive/crates/ucf-archive-store" }
 ucf-archive-firewood = { path = "domains/archive/crates/ucf-archive-firewood", default-features = false }
 
 [workspace.features]
