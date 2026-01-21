@@ -525,7 +525,7 @@ fn sandbox_denied_blocks_external_speech() {
         tom_port,
         None,
     )
-    .with_sandbox_port(Box::new(DenySandbox::default()));
+    .with_sandbox_port(Box::new(DenySandbox));
 
     let outcome = router
         .handle_control_frame(normalize(decision_frame("ping")))
