@@ -1,0 +1,9 @@
+[package]
+name = "ucf-nsr"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+blake3 = "1"
+ucf-sandbox = { path = "../../../../core/crates/ucf-sandbox" }
+ucf-types = { path = "../../../../core/crates/ucf-types" }

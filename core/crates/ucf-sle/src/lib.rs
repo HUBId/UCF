@@ -264,14 +264,18 @@ fn encode_nsr_report(hasher: &mut Hasher, report: Option<&NsrReport>) {
     match report {
         Some(report) => {
             hasher.update(&[1]);
-            hasher.update(&[report.ok as u8]);
+            hasher.update(&[report.verdict.as_u8()]);
+            hasher.update(report.proof_digest.as_bytes());
             hasher.update(
                 &u64::try_from(report.violations.len())
                     .unwrap_or(0)
                     .to_be_bytes(),
             );
             for violation in &report.violations {
-                hasher.update(violation.as_bytes());
+                hasher.update(violation.code.as_bytes());
+                hasher.update(violation.detail_digest.as_bytes());
+                hasher.update(&violation.severity.to_be_bytes());
+                hasher.update(violation.commit.as_bytes());
             }
         }
         None => {
@@ -326,8 +330,15 @@ mod tests {
             integration_score: Some(1234),
         };
         let report = NsrReport {
-            ok: true,
-            violations: vec!["rule-a".to_string()],
+            verdict: ucf_nsr_port::NsrVerdict::Ok,
+            violations: vec![ucf_nsr_port::NsrViolation {
+                code: "rule-a".to_string(),
+                detail_digest: Digest32::new([8u8; 32]),
+                severity: 100,
+                commit: Digest32::new([9u8; 32]),
+            }],
+            proof_digest: Digest32::new([7u8; 32]),
+            commit: Digest32::new([6u8; 32]),
         };
         let hyp = CdeHypothesis {
             digest: Digest32::new([3u8; 32]),

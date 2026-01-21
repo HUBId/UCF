@@ -3,6 +3,7 @@
 use std::collections::VecDeque;
 
 use blake3::Hasher;
+use ucf_nsr_port::NsrVerdict;
 use ucf_policy_ecology::{RiskDecision, RiskGateResult};
 use ucf_recursion_controller::RecursionBudget;
 use ucf_sandbox::ControlFrameNormalized;
@@ -34,7 +35,7 @@ pub struct RouterConfig {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NsrSummary {
-    pub ok: bool,
+    pub verdict: NsrVerdict,
     pub violations_digest: Digest32,
 }
 
@@ -179,6 +180,7 @@ impl OutputRouter {
         self.cycle = self.cycle.wrapping_add(1);
         let mut thought_count: u16 = 0;
         let mut decisions = Vec::with_capacity(outputs.len());
+        let mut speech_count = 0usize;
 
         for (idx, output) in outputs.into_iter().enumerate() {
             let commit = output_commit(cf, &output);
@@ -193,7 +195,8 @@ impl OutputRouter {
                     decisions.push(decision);
                 }
                 OutputChannel::Speech => {
-                    let decision = self.handle_speech(frame, idx, gates);
+                    let decision = self.handle_speech(frame, idx, speech_count, gates);
+                    speech_count = speech_count.saturating_add(1);
                     decisions.push(decision);
                 }
             }
@@ -260,8 +263,15 @@ impl OutputRouter {
         &mut self,
         frame: OutputFrame,
         idx: usize,
+        speech_index: usize,
         gates: &GateBundle,
     ) -> RouteDecision {
+        if matches!(gates.nsr_summary.verdict, NsrVerdict::Deny) {
+            return self.deny_speech(frame, idx, gates, "nsr_deny", 0);
+        }
+        if matches!(gates.nsr_summary.verdict, NsrVerdict::Warn) && speech_index > 0 {
+            return self.deny_speech(frame, idx, gates, "nsr_warn_throttle", 0);
+        }
         let policy_allowed = policy_allows(&gates.policy_decision);
         if !policy_allowed {
             return self.deny_speech(frame, idx, gates, "policy_denied", 0);
@@ -371,7 +381,7 @@ fn decision_evidence(
     hasher.update(b"ucf-output-router-decision/v1");
     hasher.update(frame.commit.as_bytes());
     hasher.update(reason_code.as_bytes());
-    hasher.update(&[gates.nsr_summary.ok as u8]);
+    hasher.update(&[gates.nsr_summary.verdict.as_u8()]);
     hasher.update(gates.nsr_summary.violations_digest.as_bytes());
     hasher.update(&(index as u64).to_be_bytes());
     if let Some(risk) = risk {
@@ -403,7 +413,7 @@ mod tests {
             sandbox: SandboxVerdict::Allow,
             risk_results: risk,
             nsr_summary: NsrSummary {
-                ok: true,
+                verdict: NsrVerdict::Ok,
                 violations_digest: Digest32::new([0u8; 32]),
             },
             speech_gate: outputs.iter().map(|_| true).collect(),
@@ -521,6 +531,24 @@ mod tests {
 
         assert!(decisions[0].permitted);
         assert_eq!(decisions[0].reason_code, "speech_permitted");
+    }
+
+    #[test]
+    fn speech_denied_when_nsr_denies() {
+        let config = RouterConfig {
+            thought_capacity: 2,
+            max_thought_frames_per_cycle: 2,
+            external_enabled: true,
+        };
+        let mut router = OutputRouter::new(config);
+        let outputs = vec![speech_output("nope")];
+        let mut gates = gates_for(&outputs, vec![permit_risk()]);
+        gates.nsr_summary.verdict = NsrVerdict::Deny;
+
+        let decisions = router.route(&cf(), outputs, &gates);
+
+        assert!(!decisions[0].permitted);
+        assert_eq!(decisions[0].reason_code, "nsr_deny");
     }
 
     #[test]

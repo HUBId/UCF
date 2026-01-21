@@ -10,7 +10,7 @@ use ucf_attn_controller::{AttentionEventSink, AttentionUpdated};
 use ucf_bluebrain_port::MockBlueBrainPort;
 use ucf_cde_port::MockCdePort;
 use ucf_digital_brain::InMemoryDigitalBrain;
-use ucf_nsr_port::{NsrBackend, NsrPort, NsrReport};
+use ucf_nsr_port::{NsrBackend, NsrInput, NsrPort, NsrReport, NsrVerdict, NsrViolation};
 use ucf_policy_ecology::{PolicyEcology, PolicyRule, PolicyWeights};
 use ucf_policy_gateway::NoOpPolicyEvaluator;
 use ucf_risk_gate::PolicyRiskGate;
@@ -26,7 +26,7 @@ use ucf_tom_port::{
 };
 use ucf_types::v1::spec::ExperienceRecord;
 use ucf_types::v1::spec::{ActionCode, ControlFrame, DecisionKind, PolicyDecision};
-use ucf_types::EvidenceId;
+use ucf_types::{Digest32, EvidenceId};
 
 #[derive(Clone, Default)]
 struct CaptureSuppression {
@@ -262,7 +262,7 @@ fn handle_control_frame_routes_end_to_end() {
 
     assert_eq!(outcome.evidence_id, EvidenceId::new("exp-frame-1"));
     assert_eq!(outcome.decision_kind, DecisionKind::DecisionKindUnspecified);
-    assert_eq!(archive.list().len(), 6);
+    assert_eq!(archive.list().len(), 7);
     assert_eq!(brain.records().len(), 1);
 
     let record = archive
@@ -329,10 +329,17 @@ fn orchestrator_respects_cycle_plan_ordering() {
 fn risk_gate_denies_speech_when_nsr_not_ok() {
     struct DenyNsr;
     impl NsrBackend for DenyNsr {
-        fn check(&self, _claims: &ucf_types::SymbolicClaims) -> NsrReport {
+        fn evaluate(&self, _input: &NsrInput) -> NsrReport {
             NsrReport {
-                ok: false,
-                violations: vec!["violation".to_string()],
+                verdict: NsrVerdict::Deny,
+                violations: vec![NsrViolation {
+                    code: "NSR_RULE_FORBIDDEN_INTENT".to_string(),
+                    detail_digest: Digest32::new([8u8; 32]),
+                    severity: 9000,
+                    commit: Digest32::new([9u8; 32]),
+                }],
+                proof_digest: Digest32::new([7u8; 32]),
+                commit: Digest32::new([6u8; 32]),
             }
         }
     }
@@ -341,7 +348,7 @@ fn risk_gate_denies_speech_when_nsr_not_ok() {
     let archive = Arc::new(InMemoryArchive::new());
     let archive_store = Arc::new(InMemoryArchiveStore::new());
     let ai_port = Arc::new(MockAiPort::with_pillars(AiPillars {
-        nsr: Some(Arc::new(NsrPort::new(Arc::new(DenyNsr)))),
+        nsr: Some(Arc::new(NsrPort::default())),
         ..AiPillars::default()
     }));
     let speech_gate = Arc::new(PolicySpeechGate::new(allow_speech_policy()));
@@ -358,7 +365,8 @@ fn risk_gate_denies_speech_when_nsr_not_ok() {
         risk_gate,
         tom_port,
         Some(Arc::new(suppression.clone())),
-    );
+    )
+    .with_nsr_port(Arc::new(NsrPort::new(Arc::new(DenyNsr))));
 
     let outcome = router
         .handle_control_frame(normalize(decision_frame("ping")))

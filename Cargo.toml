@@ -143,6 +143,7 @@ members = [
     "domains/geist/crates/ucf-geist",
     "domains/index/crates/ucf-vector-index",
     "domains/index/crates/ucf-vector-index-qdrant",
+    "domains/reasoning/crates/ucf-nsr",
     "adapters/rig/crates/ucf-rig",
     "adapters/terminal/crates/ucf-terminal",
 ]

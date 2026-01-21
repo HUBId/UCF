@@ -9,7 +9,7 @@ use ucf_ai_port::{
     AiInference, AiOutput, AiPort, AiPortWorker, OutputChannel, OutputSuppressed,
     OutputSuppressionSink, SpeechGate,
 };
-use ucf_archive::ExperienceAppender;
+use ucf_archive::{build_compact_record, ExperienceAppender};
 use ucf_archive_store::{ArchiveAppender, ArchiveStore, RecordKind, RecordMeta};
 use ucf_attn_controller::{
     AttentionEventSink, AttentionUpdated, AttentionWeights, AttnController, AttnInputs,
@@ -29,7 +29,7 @@ use ucf_feature_translator::{
 use ucf_geist::{SelfState, SelfStateBuilder};
 use ucf_iit_monitor::{IitAction, IitActionKind, IitBand, IitMonitor, IitReport};
 use ucf_ism::IsmStore;
-use ucf_nsr_port::NsrReport;
+use ucf_nsr_port::{ActionIntent, NsrInput, NsrPort, NsrReport, NsrVerdict};
 use ucf_output_router::{
     GateBundle, NsrSummary, OutputRouter, OutputRouterEvent, RouterConfig, SandboxVerdict,
 };
@@ -95,6 +95,7 @@ pub struct Router {
     feature_lens: Arc<dyn FeatureLensPort + Send + Sync>,
     speech_gate: Arc<dyn SpeechGate + Send + Sync>,
     risk_gate: Arc<dyn RiskGate + Send + Sync>,
+    nsr_port: Arc<NsrPort>,
     tom_port: Arc<dyn TomPort + Send + Sync>,
     output_suppression_sink: Option<Arc<dyn OutputSuppressionSink + Send + Sync>>,
     attention_controller: Option<AttnController>,
@@ -119,6 +120,7 @@ pub struct Router {
     last_self_state: Mutex<Option<SelfState>>,
     last_workspace_snapshot: Mutex<Option<WorkspaceSnapshot>>,
     last_recursion_budget: Mutex<Option<RecursionBudget>>,
+    last_nsr_report: Mutex<Option<NsrReport>>,
     pending_neuromod_delta: Mutex<Option<NeuromodDelta>>,
 }
 
@@ -175,6 +177,7 @@ struct StageContext {
     sandbox_report: Option<SandboxReport>,
     sandbox_verdict: Option<SandboxVerdict>,
     tom_report: Option<ucf_tom_port::TomReport>,
+    nsr_report: Option<NsrReport>,
     attention_risk: u16,
     thought_outputs: Vec<AiOutput>,
     speech_outputs: Vec<AiOutput>,
@@ -204,6 +207,7 @@ impl StageContext {
             sandbox_report: None,
             sandbox_verdict: None,
             tom_report: None,
+            nsr_report: None,
             attention_risk: 0,
             thought_outputs: Vec::new(),
             speech_outputs: Vec::new(),
@@ -268,6 +272,7 @@ impl Router {
             feature_lens: Arc::new(MockLensPort::new()),
             speech_gate,
             risk_gate,
+            nsr_port: Arc::new(NsrPort::default()),
             tom_port,
             output_suppression_sink,
             attention_controller: Some(AttnController),
@@ -292,6 +297,7 @@ impl Router {
             last_self_state: Mutex::new(None),
             last_workspace_snapshot: Mutex::new(None),
             last_recursion_budget: Mutex::new(None),
+            last_nsr_report: Mutex::new(None),
             pending_neuromod_delta: Mutex::new(None),
         }
     }
@@ -304,6 +310,11 @@ impl Router {
     pub fn with_sandbox_port(mut self, port: Box<dyn SandboxPort + Send + Sync>) -> Self {
         self.sandbox_port = Mutex::new(port);
         self.sandbox_inference_cache = Arc::new(Mutex::new(None));
+        self
+    }
+
+    pub fn with_nsr_port(mut self, port: Arc<NsrPort>) -> Self {
+        self.nsr_port = port;
         self
     }
 
@@ -415,6 +426,34 @@ impl Router {
                     let Some(inference) = ctx.inference.as_ref() else {
                         continue;
                     };
+                    let workspace_snapshot = self.latest_workspace_snapshot(cycle_id);
+                    let nsr_input = self.build_nsr_input(
+                        cycle_id,
+                        decision.kind as u16,
+                        &inference.outputs,
+                        &workspace_snapshot,
+                    );
+                    let nsr_report = self.nsr_port.evaluate(&nsr_input);
+                    ctx.nsr_report = Some(nsr_report.clone());
+                    if let Ok(mut guard) = self.last_nsr_report.lock() {
+                        *guard = Some(nsr_report.clone());
+                    }
+                    let nsr_summary = format!(
+                        "NSR={} v={}",
+                        nsr_verdict_token(nsr_report.verdict),
+                        nsr_report.violations.len()
+                    );
+                    self.publish_workspace_signal(WorkspaceSignal {
+                        kind: SignalKind::Risk,
+                        priority: nsr_signal_priority(nsr_report.verdict),
+                        digest: nsr_report.commit,
+                        summary: nsr_summary,
+                        slot: pulse.slot,
+                    });
+                    self.append_nsr_report_record(cycle_id, &nsr_report);
+                    if nsr_report.verdict == NsrVerdict::Deny {
+                        self.append_nsr_audit_notice(cycle_id, &nsr_report);
+                    }
                     let mut attention_risk = 0u16;
                     let outputs = &inference.outputs;
                     let mut risk_results = Vec::with_capacity(outputs.len());
@@ -422,7 +461,7 @@ impl Router {
                     let tom_report = ctx.tom_report.as_ref().expect("tom report available");
                     for output in outputs {
                         let gate_result = self.risk_gate.evaluate(
-                            inference.nsr_report.as_ref(),
+                            ctx.nsr_report.as_ref(),
                             inference.scm_dag.as_ref(),
                             output,
                             &cf,
@@ -437,7 +476,6 @@ impl Router {
                         WorkspaceSignal::from_risk_result(result, None, Some(pulse.slot))
                     }));
 
-                    let workspace_snapshot = self.latest_workspace_snapshot(cycle_id);
                     let (iit_report, iit_actions) = {
                         let mut monitor = self.iit_monitor.lock().expect("iit monitor lock");
                         monitor.evaluate(&workspace_snapshot, attention_risk)
@@ -505,7 +543,7 @@ impl Router {
                         .lock()
                         .map(|attn| attn.commit)
                         .unwrap_or_else(|_| Digest32::new([0u8; 32]));
-                    let consistency = consistency_score_from_nsr(inference.nsr_report.as_ref());
+                    let consistency = consistency_score_from_nsr(ctx.nsr_report.as_ref());
                     let self_state = SelfStateBuilder::new(cycle_id)
                         .ssm_commit(ssm_commit)
                         .workspace_commit(workspace_snapshot.commit)
@@ -628,15 +666,22 @@ impl Router {
                     ctx.consistency_effects = consistency_effects;
 
                     let nsr_summary = NsrSummary {
-                        ok: inference
+                        verdict: ctx
                             .nsr_report
                             .as_ref()
-                            .map(|report| report.ok)
-                            .unwrap_or(true),
-                        violations_digest: inference
+                            .map(|report| report.verdict)
+                            .unwrap_or(NsrVerdict::Ok),
+                        violations_digest: ctx
                             .nsr_report
                             .as_ref()
-                            .map(|report| digest_reasons(&report.violations))
+                            .map(|report| {
+                                let codes = report
+                                    .violations
+                                    .iter()
+                                    .map(|violation| violation.code.clone())
+                                    .collect::<Vec<_>>();
+                                digest_reasons(&codes)
+                            })
                             .unwrap_or_else(|| digest_reasons(&[])),
                     };
                     let gates = GateBundle {
@@ -1404,6 +1449,24 @@ impl Router {
         IntentSummary::new(intent, risk)
     }
 
+    fn build_nsr_input(
+        &self,
+        cycle_id: u64,
+        policy_class: u16,
+        outputs: &[AiOutput],
+        workspace_snapshot: &WorkspaceSnapshot,
+    ) -> NsrInput {
+        let intent = self.build_intent_summary();
+        let proposed_actions = action_intents_from_outputs(outputs);
+        NsrInput::new(
+            cycle_id,
+            intent,
+            policy_class,
+            proposed_actions,
+            workspace_snapshot.commit,
+        )
+    }
+
     fn build_sandbox_budget(&self, mode: u16) -> SandboxBudget {
         let attention = self
             .last_attention
@@ -1452,6 +1515,17 @@ impl Router {
             ops = ops.saturating_sub(600);
             max_frames = max_frames.saturating_sub(1);
         }
+        if self
+            .last_nsr_report
+            .lock()
+            .ok()
+            .and_then(|report| report.as_ref().map(|report| report.verdict))
+            == Some(NsrVerdict::Deny)
+        {
+            ops = ops.saturating_mul(60) / 100;
+            max_frames = max_frames.saturating_sub(1);
+            max_output_chars = max_output_chars.saturating_sub(120);
+        }
 
         if mode == ucf_sandbox::AI_MODE_THOUGHT {
             ops = ops.saturating_mul(70) / 100;
@@ -1468,6 +1542,41 @@ impl Router {
             max_output_chars,
             max_frames,
         }
+    }
+
+    fn append_nsr_report_record(&self, cycle_id: u64, report: &NsrReport) {
+        let codes = report
+            .violations
+            .iter()
+            .map(|violation| violation.code.as_str())
+            .collect::<Vec<_>>()
+            .join(",");
+        let payload = format!(
+            "commit={};verdict={};codes={}",
+            report.commit,
+            nsr_verdict_token(report.verdict),
+            codes
+        )
+        .into_bytes();
+        let record_id = format!(
+            "nsr-report-{cycle_id}-{}",
+            hex::encode(report.commit.as_bytes())
+        );
+        let record = build_compact_record(record_id, cycle_id, "nsr", payload);
+        self.archive.append(record);
+    }
+
+    fn append_nsr_audit_notice(&self, cycle_id: u64, report: &NsrReport) {
+        let notice = ucf::boundary::v1::AuditNoticeV1 {
+            event_kind: 1,
+            evidence_digest: ucf::boundary::Digest32::new(*report.commit.as_bytes()),
+            reason_code: 1,
+        };
+        let digest = notice.digest();
+        let record_id = format!("audit-notice-{cycle_id}-{}", hex::encode(digest.as_bytes()));
+        let payload = digest.as_bytes().to_vec();
+        let record = build_compact_record(record_id, cycle_id, "audit", payload);
+        self.archive.append(record);
     }
 
     fn handle_sandbox_denied(
@@ -1793,9 +1902,39 @@ fn apply_consistency_effects(
     weights
 }
 
+fn action_intents_from_outputs(outputs: &[AiOutput]) -> Vec<ActionIntent> {
+    outputs
+        .iter()
+        .map(|output| {
+            let tag = match output.channel {
+                OutputChannel::Speech => "external_effect",
+                OutputChannel::Thought => "internal_thought",
+            };
+            ActionIntent::new(tag)
+        })
+        .collect()
+}
+
+fn nsr_verdict_token(verdict: NsrVerdict) -> &'static str {
+    match verdict {
+        NsrVerdict::Ok => "Ok",
+        NsrVerdict::Warn => "Warn",
+        NsrVerdict::Deny => "Deny",
+    }
+}
+
+fn nsr_signal_priority(verdict: NsrVerdict) -> u16 {
+    match verdict {
+        NsrVerdict::Ok => 4200,
+        NsrVerdict::Warn => 7600,
+        NsrVerdict::Deny => 9500,
+    }
+}
+
 fn consistency_score_from_nsr(report: Option<&NsrReport>) -> u16 {
     match report {
-        Some(report) if report.ok => 10_000,
+        Some(report) if report.verdict == NsrVerdict::Ok => 10_000,
+        Some(report) if report.verdict == NsrVerdict::Warn => 4500,
         Some(_) => 2000,
         None => 5000,
     }
