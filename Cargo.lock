@@ -2065,11 +2065,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucf-nsr"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ucf-sandbox",
+ "ucf-types",
+]
+
+[[package]]
 name = "ucf-nsr-datalog"
 version = "0.1.0"
 dependencies = [
+ "ucf-nsr",
  "ucf-nsr-port",
- "ucf-types",
 ]
 
 [[package]]
@@ -2077,6 +2086,8 @@ name = "ucf-nsr-port"
 version = "0.1.0"
 dependencies = [
  "blake3",
+ "ucf-nsr",
+ "ucf-sandbox",
  "ucf-types",
 ]
 
@@ -2084,8 +2095,8 @@ dependencies = [
 name = "ucf-nsr-smt"
 version = "0.1.0"
 dependencies = [
+ "ucf-nsr",
  "ucf-nsr-port",
- "ucf-types",
 ]
 
 [[package]]
@@ -2104,6 +2115,7 @@ name = "ucf-output-router"
 version = "0.1.0"
 dependencies = [
  "blake3",
+ "ucf-nsr-port",
  "ucf-policy-ecology",
  "ucf-recursion-controller",
  "ucf-sandbox",

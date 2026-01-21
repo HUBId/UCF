@@ -407,7 +407,7 @@ mod tests {
         let processed = service.drain();
 
         assert_eq!(processed, 1);
-        assert_eq!(archive.list().len(), 6);
+        assert_eq!(archive.list().len(), 7);
 
         let outcome = outcome_receiver.try_recv().expect("outcome event");
         assert_eq!(outcome.payload.evidence_id, EvidenceId::new("exp-frame-1"));
@@ -592,7 +592,7 @@ mod tests {
         let processed = service.drain();
 
         assert_eq!(processed, 1);
-        assert_eq!(archive.list().len(), 6);
+        assert_eq!(archive.list().len(), 7);
 
         let speech = speech_receiver.try_recv().expect("speech event");
         assert_eq!(speech.payload.content, "ok");
@@ -667,7 +667,7 @@ mod tests {
         let processed = service.drain();
 
         assert_eq!(processed, 1);
-        assert_eq!(archive.list().len(), 6);
+        assert_eq!(archive.list().len(), 7);
 
         let event = workspace_receiver.try_recv().expect("workspace broadcast");
 
