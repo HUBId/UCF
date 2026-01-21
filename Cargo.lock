@@ -1930,6 +1930,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucf-events"
+version = "0.1.0"
+dependencies = [
+ "ucf-sandbox",
+ "ucf-types",
+]
+
+[[package]]
 name = "ucf-evidence"
 version = "0.1.0"
 dependencies = [
@@ -1986,6 +1994,7 @@ dependencies = [
  "ucf-archive-store",
  "ucf-bus",
  "ucf-digital-brain",
+ "ucf-events",
  "ucf-nsr-port",
  "ucf-policy-ecology",
  "ucf-policy-gateway",
@@ -2269,7 +2278,7 @@ name = "ucf-terminal"
 version = "0.1.0"
 dependencies = [
  "ucf-bus",
- "ucf-ingestion",
+ "ucf-events",
  "ucf-sandbox",
  "ucf-types",
 ]

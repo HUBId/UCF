@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 ucf-ai-port = { path = "../ucf-ai-port" }
 ucf-bus = { path = "../ucf-bus" }
+ucf-events = { path = "../ucf-events" }
 ucf-router = { path = "../ucf-router" }
 ucf-sandbox = { path = "../ucf-sandbox" }
 ucf-sleep-coordinator = { path = "../ucf-sleep-coordinator" }
