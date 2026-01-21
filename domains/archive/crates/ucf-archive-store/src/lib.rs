@@ -49,8 +49,44 @@ pub trait ArchiveStore {
     fn root_commit(&self) -> Option<Digest32>;
 }
 
+const ARCHIVE_KEY_DOMAIN: &[u8] = b"ucf.archive.record.key.v1";
 const ROOT_COMMIT_DOMAIN: &[u8] = b"ucf.archive.store.root.v1";
 const KIND_OTHER_BASE: u16 = 0x8000;
+
+#[derive(Default)]
+pub struct ArchiveAppender {
+    seq_by_cycle: HashMap<u64, u64>,
+}
+
+impl ArchiveAppender {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn build_record(
+        &mut self,
+        kind: RecordKind,
+        payload: &[u8],
+        meta: RecordMeta,
+    ) -> ArchiveRecord {
+        let payload_commit = digest_payload(payload);
+        let seq_no = self.next_seq_no(meta.cycle_id);
+        let key = record_key(kind, &payload_commit, meta.cycle_id, seq_no);
+        ArchiveRecord {
+            kind,
+            key,
+            payload_commit,
+            meta,
+        }
+    }
+
+    fn next_seq_no(&mut self, cycle_id: u64) -> u64 {
+        let entry = self.seq_by_cycle.entry(cycle_id).or_insert(0);
+        let seq_no = *entry;
+        *entry = seq_no.saturating_add(1);
+        seq_no
+    }
+}
 
 #[derive(Default)]
 struct InMemoryState {
@@ -149,4 +185,19 @@ fn write_meta(hasher: &mut Hasher, meta: &RecordMeta) {
     hasher.update(&meta.cycle_id.to_be_bytes());
     hasher.update(&[meta.tier]);
     hasher.update(&meta.flags.to_be_bytes());
+}
+
+fn digest_payload(payload: &[u8]) -> Digest32 {
+    let digest = blake3::hash(payload);
+    Digest32::new(*digest.as_bytes())
+}
+
+fn record_key(kind: RecordKind, payload_commit: &Digest32, cycle_id: u64, seq_no: u64) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(ARCHIVE_KEY_DOMAIN);
+    write_kind(&mut hasher, kind);
+    hasher.update(payload_commit.as_bytes());
+    hasher.update(&cycle_id.to_be_bytes());
+    hasher.update(&seq_no.to_be_bytes());
+    Digest32::new(*hasher.finalize().as_bytes())
 }
