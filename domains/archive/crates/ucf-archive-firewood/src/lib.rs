@@ -44,4 +44,9 @@ mod tests {
     fn constructs_firewood_store() {
         let _store = FirewoodArchiveStore::new();
     }
+
+    #[test]
+    fn constructs_firewood_store_default() {
+        let _store = FirewoodArchiveStore::default();
+    }
 }
