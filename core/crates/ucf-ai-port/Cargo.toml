@@ -25,6 +25,7 @@ ucf-ssm-port = { path = "../ucf-ssm-port" }
 ucf-tcf-port = { path = "../ucf-tcf-port" }
 ucf-attn-controller = { path = "../ucf-attn-controller" }
 ucf-digitalbrain-port = { path = "../../../domains/digitalbrain/crates/ucf-digitalbrain-port" }
+ucf-feature-translator = { path = "../../../domains/ai/crates/ucf-feature-translator" }
 blake3 = "1"
 
 [features]
