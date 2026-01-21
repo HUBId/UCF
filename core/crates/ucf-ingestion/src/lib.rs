@@ -303,13 +303,12 @@ where
 mod tests {
     use super::*;
 
-    use std::convert::TryInto;
     use std::sync::Arc;
 
     use prost::Message;
     use ucf_ai_port::{AiPillars, MockAiPort, PolicySpeechGate};
     use ucf_archive::InMemoryArchive;
-    use ucf_archive_store::InMemoryArchiveStore;
+    use ucf_archive_store::{InMemoryArchiveStore, RecordKind};
     use ucf_bus::InMemoryBus;
     use ucf_digital_brain::InMemoryDigitalBrain;
     use ucf_nsr_port::NsrPort;
@@ -693,26 +692,12 @@ mod tests {
         assert_eq!(processed, 1);
         assert_eq!(archive.list().len(), 6);
 
-        let mut workspace_records = Vec::new();
-        for envelope in archive.list() {
-            let proof = envelope.proof.as_ref().expect("missing proof envelope");
-            let record = ExperienceRecord::decode(proof.payload.as_slice()).expect("decode record");
-            if record.record_id.starts_with("workspace-") {
-                workspace_records.push(record);
-            }
-        }
-
-        assert_eq!(workspace_records.len(), 1);
-        let workspace_record = workspace_records.pop().expect("workspace record exists");
-        let digest = workspace_record.digest.expect("workspace digest");
-        let digest_bytes = digest
-            .value_32
-            .expect("workspace digest bytes")
-            .try_into()
-            .expect("digest length");
-        let workspace_commit = Digest32::new(digest_bytes);
-
         let event = workspace_receiver.try_recv().expect("workspace broadcast");
-        assert_eq!(event.payload.snapshot_commit, workspace_commit);
+
+        let records: Vec<_> = archive_store
+            .iter_kind(RecordKind::WorkspaceSnapshot, None)
+            .collect();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].payload_commit, event.payload.snapshot_commit);
     }
 }
