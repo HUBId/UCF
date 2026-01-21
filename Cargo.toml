@@ -130,6 +130,7 @@ members = [
     "domains/policy-gateway/crates/ucf-policy-gateway",
     "domains/archive/crates/ucf-archive",
     "domains/archive/crates/ucf-archive-firewood",
+    "domains/archive/crates/ucf-archive-store",
     "domains/consolidation/crates/ucf-consolidation",
     "domains/ai-sandbox/crates/ucf-ai-sandbox",
     "domains/digitalbrain/crates/ucf-digitalbrain-port",
