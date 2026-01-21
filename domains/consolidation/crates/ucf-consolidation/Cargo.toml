@@ -7,6 +7,7 @@ edition = "2021"
 blake3 = "1"
 prost = "0.12"
 ucf-archive = { path = "../../../../domains/archive/crates/ucf-archive" }
+ucf-archive-store = { path = "../../../../domains/archive/crates/ucf-archive-store" }
 ucf-bus = { path = "../../../../core/crates/ucf-bus" }
 ucf-commit = { path = "../../../../core/crates/ucf-commit" }
 ucf-consistency-engine = { path = "../../../../core/crates/ucf-consistency-engine" }

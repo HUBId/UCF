@@ -5,6 +5,7 @@ use ucf_ai_port::{
     AiPillars, MockAiPort, OutputSuppressed, OutputSuppressionSink, PolicySpeechGate,
 };
 use ucf_archive::InMemoryArchive;
+use ucf_archive_store::InMemoryArchiveStore;
 use ucf_attn_controller::{AttentionEventSink, AttentionUpdated};
 use ucf_cde_port::MockCdePort;
 use ucf_digital_brain::InMemoryDigitalBrain;
@@ -188,6 +189,7 @@ fn decision_frame(frame_id: &str) -> ControlFrame {
 fn handle_control_frame_routes_end_to_end() {
     let policy = Arc::new(NoOpPolicyEvaluator::new());
     let archive = Arc::new(InMemoryArchive::new());
+    let archive_store = Arc::new(InMemoryArchiveStore::new());
     let brain = Arc::new(InMemoryDigitalBrain::new());
     let ai_port = Arc::new(MockAiPort::new());
     let speech_gate = Arc::new(PolicySpeechGate::new(PolicyEcology::allow_all()));
@@ -196,6 +198,7 @@ fn handle_control_frame_routes_end_to_end() {
     let router = Router::new(
         policy,
         archive.clone(),
+        archive_store,
         Some(brain.clone()),
         ai_port,
         speech_gate,
@@ -218,7 +221,7 @@ fn handle_control_frame_routes_end_to_end() {
 
     assert_eq!(outcome.evidence_id, EvidenceId::new("exp-frame-1"));
     assert_eq!(outcome.decision_kind, DecisionKind::DecisionKindUnspecified);
-    assert_eq!(archive.list().len(), 11);
+    assert_eq!(archive.list().len(), 6);
     assert_eq!(brain.records().len(), 1);
 
     let record = archive
@@ -244,6 +247,7 @@ fn handle_control_frame_routes_end_to_end() {
 fn orchestrator_respects_cycle_plan_ordering() {
     let policy = Arc::new(NoOpPolicyEvaluator::new());
     let archive = Arc::new(InMemoryArchive::new());
+    let archive_store = Arc::new(InMemoryArchiveStore::new());
     let ai_port = Arc::new(MockAiPort::new());
     let speech_gate = Arc::new(PolicySpeechGate::new(PolicyEcology::allow_all()));
     let risk_gate = Arc::new(PolicyRiskGate::new(PolicyEcology::allow_all()));
@@ -253,6 +257,7 @@ fn orchestrator_respects_cycle_plan_ordering() {
     let router = Router::new(
         policy,
         archive,
+        archive_store,
         None,
         ai_port,
         speech_gate,
@@ -293,6 +298,7 @@ fn risk_gate_denies_speech_when_nsr_not_ok() {
 
     let policy = Arc::new(NoOpPolicyEvaluator::new());
     let archive = Arc::new(InMemoryArchive::new());
+    let archive_store = Arc::new(InMemoryArchiveStore::new());
     let ai_port = Arc::new(MockAiPort::with_pillars(AiPillars {
         nsr: Some(Arc::new(NsrPort::new(Arc::new(DenyNsr)))),
         ..AiPillars::default()
@@ -304,6 +310,7 @@ fn risk_gate_denies_speech_when_nsr_not_ok() {
     let router = Router::new(
         policy,
         archive.clone(),
+        archive_store,
         None,
         ai_port,
         speech_gate,
@@ -367,6 +374,7 @@ fn risk_gate_denies_speech_on_unsafe_scm_probe() {
 
     let policy = Arc::new(NoOpPolicyEvaluator::new());
     let archive = Arc::new(InMemoryArchive::new());
+    let archive_store = Arc::new(InMemoryArchiveStore::new());
     let ai_port = Arc::new(MockAiPort::with_pillars(AiPillars {
         cde: Some(Arc::new(MockCdePort::new())),
         scm: Some(Arc::new(Mutex::new(LargeDagScm { dag }))),
@@ -379,6 +387,7 @@ fn risk_gate_denies_speech_on_unsafe_scm_probe() {
     let router = Router::new(
         policy,
         archive,
+        archive_store,
         None,
         ai_port,
         speech_gate,
@@ -398,6 +407,7 @@ fn risk_gate_denies_speech_on_unsafe_scm_probe() {
 fn risk_gate_permits_speech_when_risk_is_low() {
     let policy = Arc::new(NoOpPolicyEvaluator::new());
     let archive = Arc::new(InMemoryArchive::new());
+    let archive_store = Arc::new(InMemoryArchiveStore::new());
     let ai_port = Arc::new(MockAiPort::with_pillars(AiPillars {
         nsr: Some(Arc::new(NsrPort::default())),
         ..AiPillars::default()
@@ -408,6 +418,7 @@ fn risk_gate_permits_speech_when_risk_is_low() {
     let router = Router::new(
         policy,
         archive,
+        archive_store,
         None,
         ai_port,
         speech_gate,
@@ -427,6 +438,7 @@ fn risk_gate_permits_speech_when_risk_is_low() {
 fn attention_event_is_emitted() {
     let policy = Arc::new(NoOpPolicyEvaluator::new());
     let archive = Arc::new(InMemoryArchive::new());
+    let archive_store = Arc::new(InMemoryArchiveStore::new());
     let ai_port = Arc::new(MockAiPort::new());
     let speech_gate = Arc::new(PolicySpeechGate::new(allow_speech_policy()));
     let risk_gate = Arc::new(PolicyRiskGate::new(PolicyEcology::allow_all()));
@@ -435,6 +447,7 @@ fn attention_event_is_emitted() {
     let router = Router::new(
         policy,
         archive,
+        archive_store,
         None,
         ai_port,
         speech_gate,

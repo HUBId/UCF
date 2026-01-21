@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use blake3::Hasher;
 use serde::Serialize;
 use thiserror::Error;
-use ucf_archive::ExperienceAppender;
+use ucf_archive_store::{ArchiveAppender, ArchiveStore, RecordKind, RecordMeta};
 use ucf_bus::MessageEnvelope;
 use ucf_commit::{commit_experience_record, commit_milestone_macro};
 use ucf_ism::{IsmAnchor, IsmStore};
@@ -235,14 +235,19 @@ where
     }
 }
 
-pub struct IsmAnchorSync<A: ExperienceAppender> {
+pub struct IsmAnchorSync<A: ArchiveStore> {
     ism: Arc<Mutex<IsmStore>>,
     archive: A,
+    archive_appender: Mutex<ArchiveAppender>,
 }
 
-impl<A: ExperienceAppender> IsmAnchorSync<A> {
+impl<A: ArchiveStore> IsmAnchorSync<A> {
     pub fn new(ism: Arc<Mutex<IsmStore>>, archive: A) -> Self {
-        Self { ism, archive }
+        Self {
+            ism,
+            archive,
+            archive_appender: Mutex::new(ArchiveAppender::new()),
+        }
     }
 
     pub fn handle_macro_finalized(&self, event: &MacroMilestoneFinalized) -> Option<IsmAnchor> {
@@ -259,7 +264,15 @@ impl<A: ExperienceAppender> IsmAnchorSync<A> {
         if let Ok(mut store) = self.ism.lock() {
             store.append(anchor);
         }
-        self.archive.append(build_ism_anchor_record(&anchor));
+        let tier = u8::try_from(anchor.policy_class).unwrap_or(u8::MAX);
+        let meta = RecordMeta {
+            cycle_id: anchor.created_cycle,
+            tier,
+            flags: 0,
+        };
+        let mut appender = self.archive_appender.lock().expect("archive appender lock");
+        let record = appender.build_record_with_commit(RecordKind::IsmAnchor, anchor.commit, meta);
+        self.archive.append(record);
         Some(anchor)
     }
 }
@@ -310,31 +323,6 @@ fn traits_commit_from_record(record: &ExperienceRecord) -> Digest32 {
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
-fn build_ism_anchor_record(anchor: &IsmAnchor) -> ExperienceRecord {
-    let record_id = format!(
-        "ism-anchor-{}-{}",
-        anchor.created_cycle,
-        hex::encode(anchor.commit.as_bytes())
-    );
-    let payload = format!(
-        "anchor={};source_macro={};traits={};policy_class={}",
-        hex::encode(anchor.commit.as_bytes()),
-        hex::encode(anchor.source_macro.as_bytes()),
-        hex::encode(anchor.traits_commit.as_bytes()),
-        anchor.policy_class
-    )
-    .into_bytes();
-    ExperienceRecord {
-        record_id,
-        observed_at_ms: anchor.created_cycle,
-        subject_id: "ism".to_string(),
-        payload,
-        digest: None,
-        vrf_tag: None,
-        proof_ref: None,
-    }
-}
-
 fn build_macro_metadata(
     milestone: &MacroMilestone,
     policy_class: Option<&String>,
@@ -363,7 +351,7 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
-    use ucf_archive::InMemoryArchive;
+    use ucf_archive_store::InMemoryArchiveStore;
     use ucf_bus::{BusPublisher, InMemoryBus};
 
     fn digest_with_byte(byte: u8) -> Digest32 {
@@ -372,7 +360,7 @@ mod tests {
 
     #[test]
     fn anchor_appended_on_macro_finalized_event() {
-        let archive = InMemoryArchive::new();
+        let archive = InMemoryArchiveStore::new();
         let ism_store = Arc::new(Mutex::new(IsmStore::new(4)));
         let sync = IsmAnchorSync::new(ism_store.clone(), archive);
         let record = ExperienceRecord {

@@ -799,6 +799,15 @@ fn digest_consistency_verdict(verdict: ConsistencyVerdict) -> Digest32 {
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
+pub fn output_event_commit(
+    tag: &[u8],
+    frame_commit: Digest32,
+    evidence: Option<Digest32>,
+    risk: u16,
+) -> Digest32 {
+    digest_output_event(tag, frame_commit, evidence, risk)
+}
+
 fn digest_output_event(
     tag: &[u8],
     frame_commit: Digest32,

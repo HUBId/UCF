@@ -303,12 +303,12 @@ where
 mod tests {
     use super::*;
 
-    use std::convert::TryInto;
     use std::sync::Arc;
 
     use prost::Message;
     use ucf_ai_port::{AiPillars, MockAiPort, PolicySpeechGate};
     use ucf_archive::InMemoryArchive;
+    use ucf_archive_store::{ArchiveStore, InMemoryArchiveStore, RecordKind};
     use ucf_bus::InMemoryBus;
     use ucf_digital_brain::InMemoryDigitalBrain;
     use ucf_nsr_port::NsrPort;
@@ -371,6 +371,7 @@ mod tests {
 
         let policy = Arc::new(NoOpPolicyEvaluator::new());
         let archive = Arc::new(InMemoryArchive::new());
+        let archive_store = Arc::new(InMemoryArchiveStore::new());
         let brain = Arc::new(InMemoryDigitalBrain::new());
         let ai_port = Arc::new(MockAiPort::with_pillars(AiPillars {
             nsr: Some(Arc::new(NsrPort::default())),
@@ -382,6 +383,7 @@ mod tests {
         let router = Arc::new(Router::new(
             policy,
             archive.clone(),
+            archive_store.clone(),
             Some(brain),
             ai_port,
             speech_gate,
@@ -428,7 +430,7 @@ mod tests {
         let processed = service.drain();
 
         assert_eq!(processed, 1);
-        assert_eq!(archive.list().len(), 11);
+        assert_eq!(archive.list().len(), 6);
 
         let outcome = outcome_receiver.try_recv().expect("outcome event");
         assert_eq!(outcome.payload.evidence_id, EvidenceId::new("exp-frame-1"));
@@ -464,6 +466,7 @@ mod tests {
 
         let policy = Arc::new(NoOpPolicyEvaluator::new());
         let archive = Arc::new(InMemoryArchive::new());
+        let archive_store = Arc::new(InMemoryArchiveStore::new());
         let brain = Arc::new(InMemoryDigitalBrain::new());
         let ai_port = Arc::new(MockAiPort::with_pillars(AiPillars {
             nsr: Some(Arc::new(NsrPort::default())),
@@ -475,6 +478,7 @@ mod tests {
         let router = Arc::new(Router::new(
             policy,
             archive.clone(),
+            archive_store.clone(),
             Some(brain),
             ai_port,
             speech_gate,
@@ -545,6 +549,7 @@ mod tests {
 
         let policy = Arc::new(NoOpPolicyEvaluator::new());
         let archive = Arc::new(InMemoryArchive::new());
+        let archive_store = Arc::new(InMemoryArchiveStore::new());
         let brain = Arc::new(InMemoryDigitalBrain::new());
         let ai_port = Arc::new(MockAiPort::with_pillars(AiPillars {
             nsr: Some(Arc::new(NsrPort::default())),
@@ -563,6 +568,7 @@ mod tests {
         let router = Arc::new(Router::new(
             policy,
             archive.clone(),
+            archive_store.clone(),
             Some(brain),
             ai_port,
             speech_gate,
@@ -609,7 +615,7 @@ mod tests {
         let processed = service.drain();
 
         assert_eq!(processed, 1);
-        assert_eq!(archive.list().len(), 11);
+        assert_eq!(archive.list().len(), 6);
 
         let speech = speech_receiver.try_recv().expect("speech event");
         assert_eq!(speech.payload.content, "ok");
@@ -625,6 +631,7 @@ mod tests {
 
         let policy = Arc::new(NoOpPolicyEvaluator::new());
         let archive = Arc::new(InMemoryArchive::new());
+        let archive_store = Arc::new(InMemoryArchiveStore::new());
         let brain = Arc::new(InMemoryDigitalBrain::new());
         let ai_port = Arc::new(MockAiPort::with_pillars(AiPillars {
             nsr: Some(Arc::new(NsrPort::default())),
@@ -636,6 +643,7 @@ mod tests {
         let router = Arc::new(Router::new(
             policy,
             archive.clone(),
+            archive_store.clone(),
             Some(brain),
             ai_port,
             speech_gate,
@@ -682,28 +690,14 @@ mod tests {
         let processed = service.drain();
 
         assert_eq!(processed, 1);
-        assert_eq!(archive.list().len(), 11);
-
-        let mut workspace_records = Vec::new();
-        for envelope in archive.list() {
-            let proof = envelope.proof.as_ref().expect("missing proof envelope");
-            let record = ExperienceRecord::decode(proof.payload.as_slice()).expect("decode record");
-            if record.record_id.starts_with("workspace-") {
-                workspace_records.push(record);
-            }
-        }
-
-        assert_eq!(workspace_records.len(), 1);
-        let workspace_record = workspace_records.pop().expect("workspace record exists");
-        let digest = workspace_record.digest.expect("workspace digest");
-        let digest_bytes = digest
-            .value_32
-            .expect("workspace digest bytes")
-            .try_into()
-            .expect("digest length");
-        let workspace_commit = Digest32::new(digest_bytes);
+        assert_eq!(archive.list().len(), 6);
 
         let event = workspace_receiver.try_recv().expect("workspace broadcast");
-        assert_eq!(event.payload.snapshot_commit, workspace_commit);
+
+        let records: Vec<_> = archive_store
+            .iter_kind(RecordKind::WorkspaceSnapshot, None)
+            .collect();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].payload_commit, event.payload.snapshot_commit);
     }
 }
