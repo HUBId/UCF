@@ -25,11 +25,12 @@ pub enum SignalKind {
     Integration,
     Consistency,
     Output,
+    Brain,
     Sleep,
 }
 
 impl SignalKind {
-    const COUNT: usize = 8;
+    const COUNT: usize = 9;
 
     fn index(self) -> usize {
         self as usize
@@ -296,6 +297,36 @@ impl WorkspaceSignal {
             kind,
             priority,
             digest,
+            summary,
+            slot: slot.unwrap_or(0),
+        }
+    }
+
+    pub fn from_brain_stimulated(stim_commit: Digest32, slot: Option<u8>) -> Self {
+        let kind = SignalKind::Brain;
+        let summary = format!("BRAIN_STIM={stim_commit}");
+        Self {
+            kind,
+            priority: 7000,
+            digest: stim_commit,
+            summary,
+            slot: slot.unwrap_or(0),
+        }
+    }
+
+    pub fn from_brain_responded(
+        resp_commit: Digest32,
+        arousal: u16,
+        valence: i16,
+        slot: Option<u8>,
+    ) -> Self {
+        let kind = SignalKind::Brain;
+        let summary = format!("BRAIN_RESP={resp_commit} AROUSAL={arousal} VALENCE={valence}");
+        let priority = 7500u16.saturating_add(arousal / 2).min(10_000);
+        Self {
+            kind,
+            priority,
+            digest: resp_commit,
             summary,
             slot: slot.unwrap_or(0),
         }

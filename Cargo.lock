@@ -1851,6 +1851,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucf-bluebrain-port"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ucf-types",
+]
+
+[[package]]
+name = "ucf-brain-mapper"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ucf-attn-controller",
+ "ucf-bluebrain-port",
+ "ucf-predictive-coding",
+ "ucf-sandbox",
+ "ucf-types",
+ "ucf-workspace",
+]
+
+[[package]]
 name = "ucf-bus"
 version = "0.1.0"
 dependencies = [
@@ -2153,6 +2174,8 @@ dependencies = [
  "ucf-archive",
  "ucf-archive-store",
  "ucf-attn-controller",
+ "ucf-bluebrain-port",
+ "ucf-brain-mapper",
  "ucf-cde-port",
  "ucf-consistency-engine",
  "ucf-digital-brain",

@@ -7,6 +7,7 @@ use ucf_ai_port::{
 use ucf_archive::InMemoryArchive;
 use ucf_archive_store::InMemoryArchiveStore;
 use ucf_attn_controller::{AttentionEventSink, AttentionUpdated};
+use ucf_bluebrain_port::MockBlueBrainPort;
 use ucf_cde_port::MockCdePort;
 use ucf_digital_brain::InMemoryDigitalBrain;
 use ucf_nsr_port::{NsrBackend, NsrPort, NsrReport};
@@ -183,6 +184,43 @@ fn decision_frame(frame_id: &str) -> ControlFrame {
         evidence_ids: Vec::new(),
         policy_id: "policy-1".to_string(),
     }
+}
+
+#[test]
+fn brain_response_updates_pending_delta() {
+    let policy = Arc::new(NoOpPolicyEvaluator::new());
+    let archive = Arc::new(InMemoryArchive::new());
+    let archive_store = Arc::new(InMemoryArchiveStore::new());
+    let ai_port = Arc::new(MockAiPort::new());
+    let speech_gate = Arc::new(PolicySpeechGate::new(PolicyEcology::allow_all()));
+    let risk_gate = Arc::new(PolicyRiskGate::new(PolicyEcology::allow_all()));
+    let tom_port = Arc::new(LowRiskTomPort);
+    let router = Router::new(
+        policy,
+        archive,
+        archive_store,
+        None,
+        ai_port,
+        speech_gate,
+        risk_gate,
+        tom_port,
+        None,
+    )
+    .with_tcf_port(Box::new(FixedTcf::new()))
+    .with_bluebrain_port(Box::new(MockBlueBrainPort::new()));
+
+    router
+        .handle_control_frame(normalize(decision_frame("brain-1")))
+        .expect("route frame");
+
+    let snapshot = router
+        .last_workspace_snapshot()
+        .expect("workspace snapshot");
+    assert!(snapshot
+        .broadcast
+        .iter()
+        .any(|signal| signal.summary.contains("BRAIN_RESP")));
+    assert!(router.pending_neuromod_delta().is_some());
 }
 
 #[test]

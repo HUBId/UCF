@@ -137,6 +137,8 @@ members = [
     "domains/ai-sandbox/crates/ucf-ai-sandbox",
     "domains/digitalbrain/crates/ucf-digitalbrain-port",
     "domains/digital-brain/crates/ucf-digital-brain",
+    "domains/brain/crates/ucf-bluebrain-port",
+    "domains/brain/crates/ucf-brain-mapper",
     "domains/geist/crates/ucf-geist",
     "domains/index/crates/ucf-vector-index",
     "domains/index/crates/ucf-vector-index-qdrant",
