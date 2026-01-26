@@ -12,4 +12,5 @@ ucf-policy-ecology = { path = "../ucf-policy-ecology" }
 ucf-predictive-coding = { path = "../ucf-predictive-coding" }
 ucf-risk-gate = { path = "../ucf-risk-gate" }
 ucf-sleep-coordinator = { path = "../ucf-sleep-coordinator" }
+ucf-spikebus = { path = "../ucf-spikebus" }
 ucf-types = { path = "../ucf-types" }

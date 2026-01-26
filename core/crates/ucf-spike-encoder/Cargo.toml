@@ -1,0 +1,14 @@
+[package]
+name = "ucf-spike-encoder"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+blake3 = "1"
+ucf-feature-translator = { path = "../../../domains/ai/crates/ucf-feature-translator" }
+ucf-onn = { path = "../ucf-onn" }
+ucf-spikebus = { path = "../ucf-spikebus" }
+ucf-types = { path = "../ucf-types" }
+
+[dev-dependencies]
+ucf-feature-translator = { path = "../../../domains/ai/crates/ucf-feature-translator" }

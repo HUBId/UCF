@@ -2237,6 +2237,8 @@ dependencies = [
  "ucf-sandbox",
  "ucf-scm-port",
  "ucf-sle",
+ "ucf-spike-encoder",
+ "ucf-spikebus",
  "ucf-ssm-port",
  "ucf-tcf-port",
  "ucf-tom-port",
@@ -2324,6 +2326,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucf-spike-encoder"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ucf-feature-translator",
+ "ucf-onn",
+ "ucf-spikebus",
+ "ucf-types",
+]
+
+[[package]]
+name = "ucf-spikebus"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ucf-onn",
+ "ucf-types",
+]
+
+[[package]]
 name = "ucf-ssm-port"
 version = "0.1.0"
 dependencies = [
@@ -2406,6 +2428,7 @@ dependencies = [
  "ucf-predictive-coding",
  "ucf-risk-gate",
  "ucf-sleep-coordinator",
+ "ucf-spikebus",
  "ucf-types",
 ]
 
