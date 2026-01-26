@@ -67,6 +67,7 @@ pub struct AttentionUpdated {
     pub channel: FocusChannel,
     pub gain: u16,
     pub replay_bias: u16,
+    pub wm_commit: Option<Digest32>,
     pub commit: Digest32,
 }
 

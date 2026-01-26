@@ -508,6 +508,7 @@ pub struct ReplayBias {
     pub consistency: ConsistencyReport,
     pub surprise: SurpriseSignal,
     pub rdc_bias: u16,
+    pub wm_novelty: u16,
     pub influence: Option<InfluenceOutputs>,
 }
 
@@ -834,12 +835,13 @@ fn micro_score(bias: &ReplayBias, weights: &ReplayWeights, age_rank: u16) -> i64
     let drift = i64::from(bias.consistency.drift_score);
     let attention = i64::from(bias.priority_gain());
     let influence = bias.influence_priority_boost();
+    let wm_bias = i64::from(bias.wm_novelty) / 10;
     let age = i64::from(age_rank);
     let w1 = i64::from(weights.surprise);
     let w2 = i64::from(weights.drift);
     let w3 = i64::from(weights.attention);
     let w4 = i64::from(weights.age);
-    w1 * surprise + w2 * drift + w3 * attention + influence - w4 * age
+    w1 * surprise + w2 * drift + w3 * attention + influence + wm_bias - w4 * age
 }
 
 fn base_redaction(bias_total: u16) -> u16 {
@@ -1164,6 +1166,7 @@ mod tests {
                 commit: Digest32::new([4u8; 32]),
             },
             rdc_bias: 600,
+            wm_novelty: 0,
             influence: None,
         }
     }

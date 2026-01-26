@@ -2262,6 +2262,7 @@ dependencies = [
  "ucf-sle",
  "ucf-spike-encoder",
  "ucf-spikebus",
+ "ucf-ssm",
  "ucf-ssm-port",
  "ucf-structural-store",
  "ucf-tcf-port",
@@ -2370,6 +2371,16 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "ucf-onn",
+ "ucf-types",
+]
+
+[[package]]
+name = "ucf-ssm"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ucf-onn",
+ "ucf-spikebus",
  "ucf-types",
 ]
 
