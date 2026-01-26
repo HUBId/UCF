@@ -185,6 +185,7 @@ struct StageContext {
     sandbox_verdict: Option<SandboxVerdict>,
     tom_report: Option<ucf_tom_port::TomReport>,
     nsr_report: Option<NsrReport>,
+    causal_report: Option<CausalReport>,
     attention_risk: u16,
     thought_outputs: Vec<AiOutput>,
     speech_outputs: Vec<AiOutput>,
@@ -215,6 +216,7 @@ impl StageContext {
             sandbox_verdict: None,
             tom_report: None,
             nsr_report: None,
+            causal_report: None,
             attention_risk: 0,
             thought_outputs: Vec::new(),
             speech_outputs: Vec::new(),
@@ -436,11 +438,68 @@ impl Router {
                         continue;
                     };
                     let workspace_snapshot = self.latest_workspace_snapshot(cycle_id);
+                    let intent = self.build_intent_summary();
+                    let surprise_score = ctx
+                        .predictive_result
+                        .as_ref()
+                        .map(|(_, signal)| signal.score)
+                        .unwrap_or(0);
+                    let drift_score = drift_score_from_snapshot(&workspace_snapshot);
+                    let causal_attention_risk = intent.risk;
+                    let causal_report = {
+                        let brain_commit = self
+                            .last_brain_response_commit
+                            .lock()
+                            .ok()
+                            .and_then(|guard| *guard);
+                        let world_commit = inference
+                            .ssm_state
+                            .as_ref()
+                            .map(|state| state.commit)
+                            .unwrap_or(workspace_snapshot.commit);
+                        let observation = ObservationPoint::new(
+                            cycle_id,
+                            world_commit,
+                            brain_commit,
+                            causal_attention_risk,
+                            surprise_score,
+                            drift_score,
+                        );
+                        let queries = vec![
+                            CounterfactualQuery::new(
+                                observation.clone(),
+                                vec![Intervention::new(VAR_REPLAY_BIAS, 1)],
+                            ),
+                            CounterfactualQuery::new(
+                                observation.clone(),
+                                vec![Intervention::new(VAR_OUTPUT_SUPPRESSED, 1)],
+                            ),
+                        ];
+                        let mut engine = self.causal_engine.lock().expect("causal engine lock");
+                        engine.update_dag(&observation);
+                        engine.report(&observation, &queries)
+                    };
+                    let summary = format!(
+                        "CDE ok cf={} dag={}",
+                        causal_report.counterfactuals.len(),
+                        short_digest(causal_report.dag_commit)
+                    );
+                    self.publish_workspace_signal(WorkspaceSignal {
+                        kind: SignalKind::Integration,
+                        priority: 3100,
+                        digest: causal_report.commit,
+                        summary,
+                        slot: pulse.slot,
+                    });
+                    self.append_causal_report_record(cycle_id, &causal_report);
+                    ctx.causal_report = Some(causal_report.clone());
                     let nsr_input = self.build_nsr_input(
                         cycle_id,
                         decision.kind as u16,
                         &inference.outputs,
                         &workspace_snapshot,
+                        intent,
+                        Some(&causal_report),
                     );
                     let nsr_report = self.nsr_port.evaluate(&nsr_input);
                     ctx.nsr_report = Some(nsr_report.clone());
@@ -448,9 +507,10 @@ impl Router {
                         *guard = Some(nsr_report.clone());
                     }
                     let nsr_summary = format!(
-                        "NSR={} v={}",
+                        "NSR={} v={} causal={}",
                         nsr_verdict_token(nsr_report.verdict),
-                        nsr_report.violations.len()
+                        nsr_report.violations.len(),
+                        nsr_verdict_token_lower(nsr_report.causal_verdict())
                     );
                     self.publish_workspace_signal(WorkspaceSignal {
                         kind: SignalKind::Risk,
@@ -462,6 +522,9 @@ impl Router {
                     self.append_nsr_report_record(cycle_id, &nsr_report);
                     if nsr_report.verdict == NsrVerdict::Deny {
                         self.append_nsr_audit_notice(cycle_id, &nsr_report);
+                    }
+                    if nsr_report.causal_verdict() == NsrVerdict::Deny {
+                        self.append_causal_audit_notice(cycle_id, &nsr_report);
                     }
                     let mut attention_risk = 0u16;
                     let outputs = &inference.outputs;
@@ -489,11 +552,6 @@ impl Router {
                         let mut monitor = self.iit_monitor.lock().expect("iit monitor lock");
                         monitor.evaluate(&workspace_snapshot, attention_risk)
                     };
-                    let surprise_score = ctx
-                        .predictive_result
-                        .as_ref()
-                        .map(|(_, signal)| signal.score)
-                        .unwrap_or(0);
                     let attention_weights = self
                         .last_attention
                         .lock()
@@ -518,53 +576,6 @@ impl Router {
                         lens_selection.as_ref(),
                         pulse.slot,
                     );
-                    let brain_commit = self
-                        .last_brain_response_commit
-                        .lock()
-                        .ok()
-                        .and_then(|guard| *guard);
-                    let world_commit = inference
-                        .ssm_state
-                        .as_ref()
-                        .map(|state| state.commit)
-                        .unwrap_or(workspace_snapshot.commit);
-                    let drift_score = drift_score_from_snapshot(&workspace_snapshot);
-                    let observation = ObservationPoint::new(
-                        cycle_id,
-                        world_commit,
-                        brain_commit,
-                        attention_risk,
-                        surprise_score,
-                        drift_score,
-                    );
-                    let queries = vec![
-                        CounterfactualQuery::new(
-                            observation.clone(),
-                            vec![Intervention::new(VAR_REPLAY_BIAS, 1)],
-                        ),
-                        CounterfactualQuery::new(
-                            observation.clone(),
-                            vec![Intervention::new(VAR_OUTPUT_SUPPRESSED, 1)],
-                        ),
-                    ];
-                    let causal_report = {
-                        let mut engine = self.causal_engine.lock().expect("causal engine lock");
-                        engine.update_dag(&observation);
-                        engine.report(&observation, &queries)
-                    };
-                    let summary = format!(
-                        "CDE ok cf={} dag={}",
-                        causal_report.counterfactuals.len(),
-                        short_digest(causal_report.dag_commit)
-                    );
-                    self.publish_workspace_signal(WorkspaceSignal {
-                        kind: SignalKind::Integration,
-                        priority: 3100,
-                        digest: causal_report.commit,
-                        summary,
-                        slot: pulse.slot,
-                    });
-                    self.append_causal_report_record(cycle_id, &causal_report);
                     let recursion_inputs = RecursionInputs {
                         phi: iit_report.phi,
                         drift_score,
@@ -1514,15 +1525,24 @@ impl Router {
         policy_class: u16,
         outputs: &[AiOutput],
         workspace_snapshot: &WorkspaceSnapshot,
+        intent: IntentSummary,
+        causal_report: Option<&CausalReport>,
     ) -> NsrInput {
-        let intent = self.build_intent_summary();
         let proposed_actions = action_intents_from_outputs(outputs);
+        let causal_report_commit = causal_report
+            .map(|report| report.commit)
+            .unwrap_or_else(|| Digest32::new([0u8; 32]));
+        let counterfactuals = causal_report
+            .map(|report| report.counterfactuals.clone())
+            .unwrap_or_default();
         NsrInput::new(
             cycle_id,
             intent,
             policy_class,
             proposed_actions,
             workspace_snapshot.commit,
+            causal_report_commit,
+            counterfactuals,
         )
     }
 
@@ -1610,11 +1630,20 @@ impl Router {
             .map(|violation| violation.code.as_str())
             .collect::<Vec<_>>()
             .join(",");
+        let causal_codes = report
+            .violations
+            .iter()
+            .filter(|violation| is_causal_violation_code(&violation.code))
+            .map(|violation| violation.code.as_str())
+            .collect::<Vec<_>>()
+            .join(",");
         let payload = format!(
-            "commit={};verdict={};codes={}",
+            "commit={};verdict={};causal_report={};codes={};causal_codes={}",
             report.commit,
             nsr_verdict_token(report.verdict),
-            codes
+            report.causal_report_commit,
+            codes,
+            causal_codes
         )
         .into_bytes();
         let record_id = format!(
@@ -1658,6 +1687,19 @@ impl Router {
             event_kind: 1,
             evidence_digest: ucf::boundary::Digest32::new(*report.commit.as_bytes()),
             reason_code: 1,
+        };
+        let digest = notice.digest();
+        let record_id = format!("audit-notice-{cycle_id}-{}", hex::encode(digest.as_bytes()));
+        let payload = digest.as_bytes().to_vec();
+        let record = build_compact_record(record_id, cycle_id, "audit", payload);
+        self.archive.append(record);
+    }
+
+    fn append_causal_audit_notice(&self, cycle_id: u64, report: &NsrReport) {
+        let notice = ucf::boundary::v1::AuditNoticeV1 {
+            event_kind: 2,
+            evidence_digest: ucf::boundary::Digest32::new(*report.causal_report_commit.as_bytes()),
+            reason_code: 2,
         };
         let digest = notice.digest();
         let record_id = format!("audit-notice-{cycle_id}-{}", hex::encode(digest.as_bytes()));
@@ -2014,12 +2056,29 @@ fn nsr_verdict_token(verdict: NsrVerdict) -> &'static str {
     }
 }
 
+fn nsr_verdict_token_lower(verdict: NsrVerdict) -> &'static str {
+    match verdict {
+        NsrVerdict::Ok => "ok",
+        NsrVerdict::Warn => "warn",
+        NsrVerdict::Deny => "deny",
+    }
+}
+
 fn nsr_signal_priority(verdict: NsrVerdict) -> u16 {
     match verdict {
         NsrVerdict::Ok => 4200,
         NsrVerdict::Warn => 7600,
         NsrVerdict::Deny => 9500,
     }
+}
+
+fn is_causal_violation_code(code: &str) -> bool {
+    matches!(
+        code,
+        "NSR_CAUSAL_RISK_INCREASE"
+            | "NSR_CAUSAL_CONFIDENCE_HIGH_DENY"
+            | "NSR_CAUSAL_UNCERTAIN_WARN"
+    )
 }
 
 fn consistency_score_from_nsr(report: Option<&NsrReport>) -> u16 {

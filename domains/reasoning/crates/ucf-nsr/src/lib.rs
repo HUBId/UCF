@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 use blake3::Hasher;
+use ucf_cde_scm::CounterfactualResult;
 use ucf_sandbox::IntentSummary;
 use ucf_types::Digest32;
 
@@ -43,9 +44,16 @@ pub struct NsrViolation {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NsrReport {
     pub verdict: NsrVerdict,
+    pub causal_report_commit: Digest32,
     pub violations: Vec<NsrViolation>,
     pub proof_digest: Digest32,
     pub commit: Digest32,
+}
+
+impl NsrReport {
+    pub fn causal_verdict(&self) -> NsrVerdict {
+        causal_verdict_from_violations(&self.violations)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -55,6 +63,8 @@ pub struct NsrInput {
     pub policy_class: u16,
     pub proposed_actions: Vec<ActionIntent>,
     pub world_state_commit: Digest32,
+    pub causal_report_commit: Digest32,
+    pub counterfactuals: Vec<CounterfactualResult>,
     pub commit: Digest32,
 }
 
@@ -65,6 +75,8 @@ impl NsrInput {
         policy_class: u16,
         proposed_actions: Vec<ActionIntent>,
         world_state_commit: Digest32,
+        causal_report_commit: Digest32,
+        counterfactuals: Vec<CounterfactualResult>,
     ) -> Self {
         let commit = digest_nsr_input(
             cycle_id,
@@ -72,6 +84,8 @@ impl NsrInput {
             policy_class,
             &proposed_actions,
             world_state_commit,
+            causal_report_commit,
+            &counterfactuals,
         );
         Self {
             cycle_id,
@@ -79,6 +93,8 @@ impl NsrInput {
             policy_class,
             proposed_actions,
             world_state_commit,
+            causal_report_commit,
+            counterfactuals,
             commit,
         }
     }
@@ -98,12 +114,15 @@ impl NsrEngine {
     pub fn evaluate(&self, input: &NsrInput) -> NsrReport {
         let rule_result = self.rule_checker.evaluate(input);
         let constraint_result = self.constraint_checker.evaluate(input);
+        let causal_result = evaluate_causal(input);
         let mut violations = rule_result.violations;
         violations.extend(constraint_result.violations);
+        violations.extend(causal_result.violations);
         let proof_digest = compute_proof_digest(
             input,
             &rule_result.rules_fired,
             &constraint_result.constraints_checked,
+            &causal_result.causal_checks,
         );
         finalize_report(input, violations, proof_digest)
     }
@@ -212,13 +231,19 @@ pub struct ConstraintCheckResult {
     pub constraints_checked: Vec<String>,
 }
 
+pub struct CausalCheckResult {
+    pub violations: Vec<NsrViolation>,
+    pub causal_checks: Vec<String>,
+}
+
 pub fn compute_proof_digest(
     input: &NsrInput,
     rules_fired: &[String],
     constraints_checked: &[String],
+    causal_checks: &[String],
 ) -> Digest32 {
     let mut hasher = Hasher::new();
-    hasher.update(b"ucf.nsr.proof.v1");
+    hasher.update(b"ucf.nsr.proof.v2");
     hasher.update(input.commit.as_bytes());
     hasher.update(&u64::try_from(rules_fired.len()).unwrap_or(0).to_be_bytes());
     for rule in rules_fired {
@@ -234,6 +259,15 @@ pub fn compute_proof_digest(
         hasher.update(&u64::try_from(check.len()).unwrap_or(0).to_be_bytes());
         hasher.update(check.as_bytes());
     }
+    hasher.update(
+        &u64::try_from(causal_checks.len())
+            .unwrap_or(0)
+            .to_be_bytes(),
+    );
+    for check in causal_checks {
+        hasher.update(&u64::try_from(check.len()).unwrap_or(0).to_be_bytes());
+        hasher.update(check.as_bytes());
+    }
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
@@ -243,9 +277,16 @@ pub fn finalize_report(
     proof_digest: Digest32,
 ) -> NsrReport {
     let verdict = verdict_from_violations(&violations);
-    let commit = digest_nsr_report(&verdict, &violations, proof_digest, input.commit);
+    let commit = digest_nsr_report(
+        &verdict,
+        input.causal_report_commit,
+        &violations,
+        proof_digest,
+        input.commit,
+    );
     NsrReport {
         verdict,
+        causal_report_commit: input.causal_report_commit,
         violations,
         proof_digest,
         commit,
@@ -263,6 +304,23 @@ fn verdict_from_violations(violations: &[NsrViolation]) -> NsrVerdict {
         return NsrVerdict::Deny;
     }
     NsrVerdict::Warn
+}
+
+fn causal_verdict_from_violations(violations: &[NsrViolation]) -> NsrVerdict {
+    if violations
+        .iter()
+        .any(|violation| is_causal_violation(&violation.code))
+    {
+        if violations
+            .iter()
+            .filter(|violation| is_causal_violation(&violation.code))
+            .any(|violation| violation.severity >= 9000)
+        {
+            return NsrVerdict::Deny;
+        }
+        return NsrVerdict::Warn;
+    }
+    NsrVerdict::Ok
 }
 
 fn build_violation(
@@ -307,13 +365,15 @@ fn digest_violation_commit(
 
 fn digest_nsr_report(
     verdict: &NsrVerdict,
+    causal_report_commit: Digest32,
     violations: &[NsrViolation],
     proof_digest: Digest32,
     input_commit: Digest32,
 ) -> Digest32 {
     let mut hasher = Hasher::new();
-    hasher.update(b"ucf.nsr.report.v1");
+    hasher.update(b"ucf.nsr.report.v2");
     hasher.update(&[verdict.as_u8()]);
+    hasher.update(causal_report_commit.as_bytes());
     hasher.update(proof_digest.as_bytes());
     hasher.update(input_commit.as_bytes());
     hasher.update(&u64::try_from(violations.len()).unwrap_or(0).to_be_bytes());
@@ -329,9 +389,11 @@ fn digest_nsr_input(
     policy_class: u16,
     proposed_actions: &[ActionIntent],
     world_state_commit: Digest32,
+    causal_report_commit: Digest32,
+    counterfactuals: &[CounterfactualResult],
 ) -> Digest32 {
     let mut hasher = Hasher::new();
-    hasher.update(b"ucf.nsr.input.v1");
+    hasher.update(b"ucf.nsr.input.v2");
     hasher.update(&cycle_id.to_be_bytes());
     hasher.update(&intent.intent.to_be_bytes());
     hasher.update(&intent.risk.to_be_bytes());
@@ -347,6 +409,17 @@ fn digest_nsr_input(
         hasher.update(action.tag.as_bytes());
     }
     hasher.update(world_state_commit.as_bytes());
+    hasher.update(causal_report_commit.as_bytes());
+    hasher.update(
+        &u64::try_from(counterfactuals.len())
+            .unwrap_or(0)
+            .to_be_bytes(),
+    );
+    for counterfactual in counterfactuals {
+        hasher.update(&counterfactual.predicted_delta.to_be_bytes());
+        hasher.update(&counterfactual.confidence.to_be_bytes());
+        hasher.update(counterfactual.commit.as_bytes());
+    }
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
@@ -377,6 +450,26 @@ fn constraint_thresholds(policy_class: u16) -> ConstraintThresholds {
             drift_max: 10_000,
             surprise_max: 10_000,
             ops_min: 500,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct CausalThresholds {
+    warn: u16,
+    deny: u16,
+}
+
+fn causal_thresholds(policy_class: u16) -> CausalThresholds {
+    if policy_class >= 2 {
+        CausalThresholds {
+            warn: 4000,
+            deny: 7500,
+        }
+    } else {
+        CausalThresholds {
+            warn: 5000,
+            deny: 8500,
         }
     }
 }
@@ -459,6 +552,77 @@ fn has_sequence(tags: &[&str], first: &str, second: &str) -> bool {
     false
 }
 
+fn evaluate_causal(input: &NsrInput) -> CausalCheckResult {
+    let thresholds = causal_thresholds(input.policy_class);
+    let mut violations = Vec::new();
+    let mut causal_checks = Vec::new();
+
+    for counterfactual in &input.counterfactuals {
+        let delta = counterfactual.predicted_delta;
+        let confidence = counterfactual.confidence;
+        let verdict = if delta > 0 {
+            if confidence >= thresholds.deny {
+                "deny"
+            } else if confidence >= thresholds.warn {
+                "warn"
+            } else {
+                "uncertain"
+            }
+        } else if delta < 0 {
+            "decrease"
+        } else {
+            "flat"
+        };
+        let detail = format!(
+            "delta={};confidence={};cf={}",
+            delta, confidence, counterfactual.commit
+        );
+        causal_checks.push(format!(
+            "causal:{}:{}:{}",
+            verdict, detail, input.causal_report_commit
+        ));
+        if delta <= 0 {
+            continue;
+        }
+        if confidence >= thresholds.deny {
+            violations.push(build_violation(
+                "NSR_CAUSAL_CONFIDENCE_HIGH_DENY",
+                &detail,
+                9500,
+                input.commit,
+            ));
+        } else if confidence >= thresholds.warn {
+            violations.push(build_violation(
+                "NSR_CAUSAL_RISK_INCREASE",
+                &detail,
+                8200,
+                input.commit,
+            ));
+        } else {
+            violations.push(build_violation(
+                "NSR_CAUSAL_UNCERTAIN_WARN",
+                &detail,
+                7000,
+                input.commit,
+            ));
+        }
+    }
+
+    CausalCheckResult {
+        violations,
+        causal_checks,
+    }
+}
+
+fn is_causal_violation(code: &str) -> bool {
+    matches!(
+        code,
+        "NSR_CAUSAL_RISK_INCREASE"
+            | "NSR_CAUSAL_CONFIDENCE_HIGH_DENY"
+            | "NSR_CAUSAL_UNCERTAIN_WARN"
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -470,6 +634,8 @@ mod tests {
             1,
             vec![ActionIntent::new("internal")],
             Digest32::new([3u8; 32]),
+            Digest32::new([0u8; 32]),
+            Vec::new(),
         )
     }
 
@@ -493,6 +659,8 @@ mod tests {
             1,
             Vec::new(),
             Digest32::new([9u8; 32]),
+            Digest32::new([0u8; 32]),
+            Vec::new(),
         );
 
         let report = engine.evaluate(&input);
@@ -510,6 +678,8 @@ mod tests {
             2,
             vec![ActionIntent::new("internal")],
             Digest32::new([250u8; 32]),
+            Digest32::new([0u8; 32]),
+            Vec::new(),
         );
 
         let report = engine.evaluate(&input);
@@ -530,11 +700,89 @@ mod tests {
             1,
             vec![ActionIntent::new("internal")],
             Digest32::new([0u8; 32]),
+            Digest32::new([0u8; 32]),
+            Vec::new(),
         );
 
         let report = engine.evaluate(&input);
 
         assert_eq!(report.verdict, NsrVerdict::Ok);
         assert!(report.violations.is_empty());
+    }
+
+    #[test]
+    fn causal_high_confidence_delta_denies() {
+        let engine = NsrEngine::new();
+        let counterfactuals = vec![CounterfactualResult::new(
+            12,
+            9000,
+            Digest32::new([1u8; 32]),
+        )];
+        let input = NsrInput::new(
+            10,
+            IntentSummary::new(100, 100),
+            1,
+            vec![ActionIntent::new("internal")],
+            Digest32::new([5u8; 32]),
+            Digest32::new([8u8; 32]),
+            counterfactuals,
+        );
+
+        let report = engine.evaluate(&input);
+
+        assert_eq!(report.verdict, NsrVerdict::Deny);
+        assert!(report
+            .violations
+            .iter()
+            .any(|violation| violation.code == "NSR_CAUSAL_CONFIDENCE_HIGH_DENY"));
+    }
+
+    #[test]
+    fn causal_medium_confidence_delta_warns() {
+        let engine = NsrEngine::new();
+        let counterfactuals = vec![CounterfactualResult::new(4, 6000, Digest32::new([2u8; 32]))];
+        let input = NsrInput::new(
+            11,
+            IntentSummary::new(100, 100),
+            1,
+            vec![ActionIntent::new("internal")],
+            Digest32::new([6u8; 32]),
+            Digest32::new([9u8; 32]),
+            counterfactuals,
+        );
+
+        let report = engine.evaluate(&input);
+
+        assert_eq!(report.verdict, NsrVerdict::Warn);
+        assert!(report
+            .violations
+            .iter()
+            .any(|violation| violation.code == "NSR_CAUSAL_RISK_INCREASE"));
+    }
+
+    #[test]
+    fn causal_non_positive_delta_is_ignored() {
+        let engine = NsrEngine::new();
+        let counterfactuals = vec![
+            CounterfactualResult::new(-3, 9000, Digest32::new([3u8; 32])),
+            CounterfactualResult::new(0, 9000, Digest32::new([4u8; 32])),
+        ];
+        let input = NsrInput::new(
+            12,
+            IntentSummary::new(100, 100),
+            1,
+            vec![ActionIntent::new("internal")],
+            Digest32::new([7u8; 32]),
+            Digest32::new([0u8; 32]),
+            counterfactuals,
+        );
+
+        let report = engine.evaluate(&input);
+
+        assert_eq!(report.verdict, NsrVerdict::Ok);
+        assert!(report
+            .violations
+            .iter()
+            .all(|violation| !is_causal_violation(&violation.code)));
     }
 }

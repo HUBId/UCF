@@ -181,6 +181,12 @@ impl OutputRouter {
         let mut thought_count: u16 = 0;
         let mut decisions = Vec::with_capacity(outputs.len());
         let mut speech_count = 0usize;
+        let max_thought_frames_per_cycle = if matches!(gates.nsr_summary.verdict, NsrVerdict::Warn)
+        {
+            (self.config.max_thought_frames_per_cycle / 2).max(1)
+        } else {
+            self.config.max_thought_frames_per_cycle
+        };
 
         for (idx, output) in outputs.into_iter().enumerate() {
             let commit = output_commit(cf, &output);
@@ -191,7 +197,13 @@ impl OutputRouter {
             };
             match frame.channel {
                 OutputChannel::Thought => {
-                    let decision = self.handle_thought(frame, &mut thought_count, idx, gates);
+                    let decision = self.handle_thought(
+                        frame,
+                        &mut thought_count,
+                        idx,
+                        gates,
+                        max_thought_frames_per_cycle,
+                    );
                     decisions.push(decision);
                 }
                 OutputChannel::Speech => {
@@ -211,6 +223,7 @@ impl OutputRouter {
         thought_count: &mut u16,
         idx: usize,
         gates: &GateBundle,
+        max_thought_frames_per_cycle: u16,
     ) -> RouteDecision {
         if self.suppress_verbose_thoughts && frame.text.len() > self.verbose_thought_limit {
             let reason_code = "thought_verbose_suppressed".to_string();
@@ -229,8 +242,8 @@ impl OutputRouter {
         }
         let thought_cap = self
             .recursion_thought_cap
-            .map(|cap| cap.min(self.config.max_thought_frames_per_cycle))
-            .unwrap_or(self.config.max_thought_frames_per_cycle);
+            .map(|cap| cap.min(max_thought_frames_per_cycle))
+            .unwrap_or(max_thought_frames_per_cycle);
         if *thought_count >= thought_cap {
             let reason_code = "thought_cycle_cap".to_string();
             let evidence = decision_evidence(&frame, &reason_code, gates, idx, None);
@@ -269,8 +282,13 @@ impl OutputRouter {
         if matches!(gates.nsr_summary.verdict, NsrVerdict::Deny) {
             return self.deny_speech(frame, idx, gates, "nsr_deny", 0);
         }
-        if matches!(gates.nsr_summary.verdict, NsrVerdict::Warn) && speech_index > 0 {
-            return self.deny_speech(frame, idx, gates, "nsr_warn_throttle", 0);
+        if matches!(gates.nsr_summary.verdict, NsrVerdict::Warn) {
+            let reason_code = if speech_index == 0 {
+                "nsr_warn_thought_only"
+            } else {
+                "nsr_warn_throttle"
+            };
+            return self.deny_speech(frame, idx, gates, reason_code, 0);
         }
         let policy_allowed = policy_allows(&gates.policy_decision);
         if !policy_allowed {
@@ -549,6 +567,36 @@ mod tests {
 
         assert!(!decisions[0].permitted);
         assert_eq!(decisions[0].reason_code, "nsr_deny");
+    }
+
+    #[test]
+    fn warn_forces_thought_only_and_throttles() {
+        let config = RouterConfig {
+            thought_capacity: 4,
+            max_thought_frames_per_cycle: 4,
+            external_enabled: true,
+        };
+        let mut router = OutputRouter::new(config);
+        let outputs = vec![
+            thought_output("t1"),
+            thought_output("t2"),
+            thought_output("t3"),
+            speech_output("hi"),
+        ];
+        let mut gates = gates_for(
+            &outputs,
+            vec![permit_risk(), permit_risk(), permit_risk(), permit_risk()],
+        );
+        gates.nsr_summary.verdict = NsrVerdict::Warn;
+
+        let decisions = router.route(&cf(), outputs, &gates);
+
+        assert!(decisions[0].permitted);
+        assert!(decisions[1].permitted);
+        assert!(!decisions[2].permitted);
+        assert_eq!(decisions[2].reason_code, "thought_cycle_cap");
+        assert!(!decisions[3].permitted);
+        assert_eq!(decisions[3].reason_code, "nsr_warn_thought_only");
     }
 
     #[test]

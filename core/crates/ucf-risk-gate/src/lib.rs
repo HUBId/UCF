@@ -341,6 +341,7 @@ mod tests {
         let gate = PolicyRiskGate::new(policy);
         let nsr = NsrReport {
             verdict: NsrVerdict::Ok,
+            causal_report_commit: Digest32::new([0u8; 32]),
             violations: Vec::new(),
             proof_digest: Digest32::new([0u8; 32]),
             commit: Digest32::new([0u8; 32]),

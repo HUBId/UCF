@@ -286,7 +286,7 @@ mod tests {
     use ucf_archive_store::{ArchiveStore, InMemoryArchiveStore, RecordKind};
     use ucf_bus::InMemoryBus;
     use ucf_digital_brain::InMemoryDigitalBrain;
-    use ucf_nsr_port::NsrPort;
+    use ucf_nsr_port::{NsrPort, NsrStubBackend};
     use ucf_policy_ecology::{PolicyEcology, PolicyRule, PolicyWeights};
     use ucf_policy_gateway::NoOpPolicyEvaluator;
     use ucf_risk_gate::PolicyRiskGate;
@@ -357,17 +357,21 @@ mod tests {
         let speech_gate = Arc::new(PolicySpeechGate::new(PolicyEcology::allow_all()));
         let risk_gate = Arc::new(PolicyRiskGate::new(PolicyEcology::allow_all()));
         let tom_port = Arc::new(LowRiskTomPort);
-        let router = Arc::new(Router::new(
-            policy,
-            archive.clone(),
-            archive_store.clone(),
-            Some(brain),
-            ai_port,
-            speech_gate,
-            risk_gate,
-            tom_port,
-            None,
-        ));
+        let nsr_backend = Arc::new(NsrStubBackend::new());
+        let router = Arc::new(
+            Router::new(
+                policy,
+                archive.clone(),
+                archive_store.clone(),
+                Some(brain),
+                ai_port,
+                speech_gate,
+                risk_gate,
+                tom_port,
+                None,
+            )
+            .with_nsr_port(Arc::new(NsrPort::new(nsr_backend))),
+        );
 
         let validator = ControlFrameValidator::new(ValidatorLimits::default());
         let mut service = IngestionService::new(
@@ -542,17 +546,21 @@ mod tests {
         let speech_gate = Arc::new(PolicySpeechGate::new(speech_policy.clone()));
         let risk_gate = Arc::new(PolicyRiskGate::new(speech_policy));
         let tom_port = Arc::new(LowRiskTomPort);
-        let router = Arc::new(Router::new(
-            policy,
-            archive.clone(),
-            archive_store.clone(),
-            Some(brain),
-            ai_port,
-            speech_gate,
-            risk_gate,
-            tom_port,
-            None,
-        ));
+        let nsr_backend = Arc::new(NsrStubBackend::new());
+        let router = Arc::new(
+            Router::new(
+                policy,
+                archive.clone(),
+                archive_store.clone(),
+                Some(brain),
+                ai_port,
+                speech_gate,
+                risk_gate,
+                tom_port,
+                None,
+            )
+            .with_nsr_port(Arc::new(NsrPort::new(nsr_backend))),
+        );
 
         let validator = ControlFrameValidator::new(ValidatorLimits::default());
         let mut service = IngestionService::new(

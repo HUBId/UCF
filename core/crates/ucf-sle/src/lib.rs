@@ -331,6 +331,7 @@ mod tests {
         };
         let report = NsrReport {
             verdict: ucf_nsr_port::NsrVerdict::Ok,
+            causal_report_commit: Digest32::new([0u8; 32]),
             violations: vec![ucf_nsr_port::NsrViolation {
                 code: "rule-a".to_string(),
                 detail_digest: Digest32::new([8u8; 32]),
