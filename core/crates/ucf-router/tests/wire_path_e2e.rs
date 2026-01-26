@@ -262,7 +262,7 @@ fn handle_control_frame_routes_end_to_end() {
 
     assert_eq!(outcome.evidence_id, EvidenceId::new("exp-frame-1"));
     assert_eq!(outcome.decision_kind, DecisionKind::DecisionKindUnspecified);
-    assert_eq!(archive.list().len(), 7);
+    assert_eq!(archive.list().len(), 8);
     assert_eq!(brain.records().len(), 1);
 
     let record = archive
@@ -571,6 +571,54 @@ fn risk_gate_permits_speech_when_risk_is_low() {
         .expect("route frame");
 
     assert_eq!(outcome.speech_outputs.len(), 1);
+}
+
+#[test]
+fn verify_pulse_emits_causal_report() {
+    let policy = Arc::new(NoOpPolicyEvaluator::new());
+    let archive = Arc::new(InMemoryArchive::new());
+    let archive_store = Arc::new(InMemoryArchiveStore::new());
+    let ai_port = Arc::new(MockAiPort::new());
+    let speech_gate = Arc::new(PolicySpeechGate::new(PolicyEcology::allow_all()));
+    let risk_gate = Arc::new(PolicyRiskGate::new(PolicyEcology::allow_all()));
+    let tom_port = Arc::new(LowRiskTomPort);
+    let router = Router::new(
+        policy,
+        archive.clone(),
+        archive_store,
+        None,
+        ai_port,
+        speech_gate,
+        risk_gate,
+        tom_port,
+        None,
+    )
+    .with_tcf_port(Box::new(FixedTcf::new()));
+
+    let frame = normalize(decision_frame("causal-1"));
+    router
+        .handle_control_frame(frame)
+        .expect("route control frame");
+
+    let snapshot = router
+        .last_workspace_snapshot()
+        .expect("workspace snapshot");
+    assert!(snapshot
+        .broadcast
+        .iter()
+        .any(|signal| signal.summary.contains("CDE ok")));
+
+    let record = archive
+        .list()
+        .iter()
+        .find_map(|envelope| {
+            let proof = envelope.proof.as_ref()?;
+            let record = ExperienceRecord::decode(proof.payload.as_slice()).ok()?;
+            (record.subject_id == "causal").then_some(record)
+        })
+        .expect("causal record");
+    let payload_text = String::from_utf8(record.payload).expect("payload utf8");
+    assert!(payload_text.contains("dag="));
 }
 
 #[test]

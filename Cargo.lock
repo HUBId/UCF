@@ -1889,6 +1889,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucf-cde-scm"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ucf-types",
+]
+
+[[package]]
 name = "ucf-commit"
 version = "0.1.0"
 dependencies = [
@@ -2200,6 +2208,7 @@ dependencies = [
  "ucf-bluebrain-port",
  "ucf-brain-mapper",
  "ucf-cde-port",
+ "ucf-cde-scm",
  "ucf-consistency-engine",
  "ucf-digital-brain",
  "ucf-feature-translator",

@@ -17,6 +17,10 @@ use ucf_attn_controller::{
 };
 use ucf_bluebrain_port::{BlueBrainPort, NeuromodDelta};
 use ucf_brain_mapper::map_to_stimulus;
+use ucf_cde_scm::{
+    CausalReport, CdeScmEngine, CounterfactualQuery, Intervention, ObservationPoint,
+    VAR_OUTPUT_SUPPRESSED, VAR_REPLAY_BIAS,
+};
 use ucf_consistency_engine::{
     ConsistencyAction, ConsistencyActionKind, ConsistencyEngine, ConsistencyInputs,
     ConsistencyReport, DriftBand,
@@ -63,6 +67,7 @@ const ISM_ANCHOR_TOP_K: usize = 4;
 const FEATURE_SIGNAL_PRIORITY: u16 = 3200;
 const FEATURE_RECORD_KIND: u16 = 42;
 const SANDBOX_DENIED_RECORD_KIND: u16 = 73;
+const CAUSAL_REPORT_RECORD_KIND: u16 = 91;
 
 #[derive(Debug)]
 pub enum RouterError {
@@ -122,6 +127,8 @@ pub struct Router {
     last_recursion_budget: Mutex<Option<RecursionBudget>>,
     last_nsr_report: Mutex<Option<NsrReport>>,
     pending_neuromod_delta: Mutex<Option<NeuromodDelta>>,
+    last_brain_response_commit: Mutex<Option<Digest32>>,
+    causal_engine: Mutex<CdeScmEngine>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -299,6 +306,8 @@ impl Router {
             last_recursion_budget: Mutex::new(None),
             last_nsr_report: Mutex::new(None),
             pending_neuromod_delta: Mutex::new(None),
+            last_brain_response_commit: Mutex::new(None),
+            causal_engine: Mutex::new(CdeScmEngine::new()),
         }
     }
 
@@ -509,9 +518,56 @@ impl Router {
                         lens_selection.as_ref(),
                         pulse.slot,
                     );
+                    let brain_commit = self
+                        .last_brain_response_commit
+                        .lock()
+                        .ok()
+                        .and_then(|guard| *guard);
+                    let world_commit = inference
+                        .ssm_state
+                        .as_ref()
+                        .map(|state| state.commit)
+                        .unwrap_or(workspace_snapshot.commit);
+                    let drift_score = drift_score_from_snapshot(&workspace_snapshot);
+                    let observation = ObservationPoint::new(
+                        cycle_id,
+                        world_commit,
+                        brain_commit,
+                        attention_risk,
+                        surprise_score,
+                        drift_score,
+                    );
+                    let queries = vec![
+                        CounterfactualQuery::new(
+                            observation.clone(),
+                            vec![Intervention::new(VAR_REPLAY_BIAS, 1)],
+                        ),
+                        CounterfactualQuery::new(
+                            observation.clone(),
+                            vec![Intervention::new(VAR_OUTPUT_SUPPRESSED, 1)],
+                        ),
+                    ];
+                    let causal_report = {
+                        let mut engine = self.causal_engine.lock().expect("causal engine lock");
+                        engine.update_dag(&observation);
+                        engine.report(&observation, &queries)
+                    };
+                    let summary = format!(
+                        "CDE ok cf={} dag={}",
+                        causal_report.counterfactuals.len(),
+                        short_digest(causal_report.dag_commit)
+                    );
+                    self.publish_workspace_signal(WorkspaceSignal {
+                        kind: SignalKind::Integration,
+                        priority: 3100,
+                        digest: causal_report.commit,
+                        summary,
+                        slot: pulse.slot,
+                    });
+                    self.append_causal_report_record(cycle_id, &causal_report);
                     let recursion_inputs = RecursionInputs {
                         phi: iit_report.phi,
-                        drift_score: drift_score_from_snapshot(&workspace_snapshot),
+                        drift_score,
                         surprise: surprise_score,
                         risk: attention_risk,
                         attn_gain: attention_weights.gain,
@@ -1373,6 +1429,9 @@ impl Router {
         if let Ok(mut delta_guard) = self.pending_neuromod_delta.lock() {
             *delta_guard = Some(response.delta);
         }
+        if let Ok(mut guard) = self.last_brain_response_commit.lock() {
+            *guard = Some(response.commit);
+        }
     }
 
     fn append_feature_translation_record(
@@ -1564,6 +1623,34 @@ impl Router {
         );
         let record = build_compact_record(record_id, cycle_id, "nsr", payload);
         self.archive.append(record);
+    }
+
+    fn append_causal_report_record(&self, cycle_id: u64, report: &CausalReport) {
+        let payload = format!(
+            "commit={};dag={};cf={};flags={}",
+            report.commit,
+            report.dag_commit,
+            report.counterfactuals.len(),
+            report.flags
+        )
+        .into_bytes();
+        let record_id = format!(
+            "causal-report-{cycle_id}-{}",
+            hex::encode(report.commit.as_bytes())
+        );
+        let record = build_compact_record(record_id, cycle_id, "causal", payload);
+        self.archive.append(record);
+        let meta = RecordMeta {
+            cycle_id,
+            tier: report.counterfactuals.len().min(u8::MAX as usize) as u8,
+            flags: report.flags,
+            boundary_commit: report.commit,
+        };
+        self.append_archive_record(
+            RecordKind::Other(CAUSAL_REPORT_RECORD_KIND),
+            report.commit,
+            meta,
+        );
     }
 
     fn append_nsr_audit_notice(&self, cycle_id: u64, report: &NsrReport) {
@@ -1769,6 +1856,10 @@ fn drift_score_from_snapshot(snapshot: &WorkspaceSnapshot) -> u16 {
                 .and_then(|value| value.parse::<u16>().ok())
         })
         .unwrap_or(0)
+}
+
+fn short_digest(digest: Digest32) -> String {
+    hex::encode(digest.as_bytes()).chars().take(8).collect()
 }
 
 fn iit_band_tier(band: IitBand) -> u8 {
