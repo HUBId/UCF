@@ -12,6 +12,8 @@ use ucf_types::{AiOutput, Digest32};
 
 pub use ucf_types::OutputChannel;
 
+const COHERENCE_THOUGHT_CAP: u16 = 1;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OutputFrame {
     pub channel: OutputChannel,
@@ -127,6 +129,8 @@ pub struct OutputRouter {
     events: Vec<OutputRouterEvent>,
     cycle: u64,
     recursion_thought_cap: Option<u16>,
+    coherence_thought_cap: Option<u16>,
+    force_thought_only: bool,
     suppress_verbose_thoughts: bool,
     verbose_thought_limit: usize,
 }
@@ -140,6 +144,8 @@ impl OutputRouter {
             events: Vec::new(),
             cycle: 0,
             recursion_thought_cap: None,
+            coherence_thought_cap: None,
+            force_thought_only: false,
             suppress_verbose_thoughts: false,
             verbose_thought_limit: 480,
         }
@@ -171,6 +177,16 @@ impl OutputRouter {
         }
     }
 
+    pub fn apply_coherence(&mut self, coherence_plv: u16, threshold: u16) {
+        if coherence_plv < threshold {
+            self.force_thought_only = true;
+            self.coherence_thought_cap = Some(COHERENCE_THOUGHT_CAP);
+        } else {
+            self.force_thought_only = false;
+            self.coherence_thought_cap = None;
+        }
+    }
+
     pub fn route(
         &mut self,
         cf: &ControlFrameNormalized,
@@ -181,12 +197,15 @@ impl OutputRouter {
         let mut thought_count: u16 = 0;
         let mut decisions = Vec::with_capacity(outputs.len());
         let mut speech_count = 0usize;
-        let max_thought_frames_per_cycle = if matches!(gates.nsr_summary.verdict, NsrVerdict::Warn)
-        {
-            (self.config.max_thought_frames_per_cycle / 2).max(1)
-        } else {
-            self.config.max_thought_frames_per_cycle
-        };
+        let mut max_thought_frames_per_cycle =
+            if matches!(gates.nsr_summary.verdict, NsrVerdict::Warn) {
+                (self.config.max_thought_frames_per_cycle / 2).max(1)
+            } else {
+                self.config.max_thought_frames_per_cycle
+            };
+        if let Some(cap) = self.coherence_thought_cap {
+            max_thought_frames_per_cycle = max_thought_frames_per_cycle.min(cap).max(1);
+        }
 
         for (idx, output) in outputs.into_iter().enumerate() {
             let commit = output_commit(cf, &output);
@@ -279,6 +298,9 @@ impl OutputRouter {
         speech_index: usize,
         gates: &GateBundle,
     ) -> RouteDecision {
+        if self.force_thought_only {
+            return self.deny_speech(frame, idx, gates, "onn_low_coherence", 0);
+        }
         if matches!(gates.nsr_summary.verdict, NsrVerdict::Deny) {
             return self.deny_speech(frame, idx, gates, "nsr_deny", 0);
         }
@@ -597,6 +619,29 @@ mod tests {
         assert_eq!(decisions[2].reason_code, "thought_cycle_cap");
         assert!(!decisions[3].permitted);
         assert_eq!(decisions[3].reason_code, "nsr_warn_thought_only");
+    }
+
+    #[test]
+    fn low_coherence_forces_thought_only_and_caps_thoughts() {
+        let config = RouterConfig {
+            thought_capacity: 4,
+            max_thought_frames_per_cycle: 4,
+            external_enabled: true,
+        };
+        let mut router = OutputRouter::new(config);
+        router.apply_coherence(1000, 3000);
+        let outputs = vec![
+            thought_output("t1"),
+            thought_output("t2"),
+            speech_output("hi"),
+        ];
+        let gates = gates_for(&outputs, vec![permit_risk(), permit_risk(), permit_risk()]);
+
+        let decisions = router.route(&cf(), outputs, &gates);
+
+        assert!(decisions[0].permitted);
+        assert_eq!(decisions[1].reason_code, "thought_cycle_cap");
+        assert_eq!(decisions[2].reason_code, "onn_low_coherence");
     }
 
     #[test]

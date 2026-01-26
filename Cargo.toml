@@ -19,6 +19,7 @@ members = [
     "core/crates/ucf-ncde-port",
     "core/crates/ucf-ode-port",
     "core/crates/ucf-tcf-port",
+    "core/crates/ucf-onn",
     "core/crates/ucf-nsr-port",
     "core/crates/ucf-events",
     "core/crates/ucf-tom-port",

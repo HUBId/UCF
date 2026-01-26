@@ -100,8 +100,10 @@ impl IitMonitor {
         &mut self,
         snapshot: &WorkspaceSnapshot,
         risk: u16,
+        coherence_plv: Option<u16>,
     ) -> (IitReport, Vec<IitAction>) {
-        let phi = integration_score(snapshot, &self.phi_history);
+        let coherence_plv = coherence_plv.or_else(|| coherence_from_snapshot(snapshot));
+        let phi = integration_score(snapshot, &self.phi_history, coherence_plv);
         if self.window > 0 {
             self.phi_history.push_back(phi);
             while self.phi_history.len() > self.window {
@@ -135,7 +137,11 @@ fn coupling_score(a: &Digest32, b: &Digest32) -> u16 {
     u16::try_from(scaled.min(10_000)).unwrap_or(10_000)
 }
 
-fn integration_score(snapshot: &WorkspaceSnapshot, history: &VecDeque<u16>) -> u16 {
+fn integration_score(
+    snapshot: &WorkspaceSnapshot,
+    history: &VecDeque<u16>,
+    coherence_plv: Option<u16>,
+) -> u16 {
     let mut kinds: HashSet<SignalKind> = HashSet::new();
     for signal in &snapshot.broadcast {
         kinds.insert(signal.kind);
@@ -145,9 +151,30 @@ fn integration_score(snapshot: &WorkspaceSnapshot, history: &VecDeque<u16>) -> u
     let fusion = kinds_count.saturating_mul(800);
     let density = u16::try_from(snapshot.broadcast.len().min(16)).unwrap_or(0) * 300;
 
-    let base = cross_module.saturating_add(fusion).saturating_add(density);
+    let coherence_bonus = coherence_bonus(coherence_plv);
+    let base = cross_module
+        .saturating_add(fusion)
+        .saturating_add(density)
+        .saturating_add(coherence_bonus);
     let stability_bonus = stability_bonus(base, history);
     (base.saturating_add(stability_bonus)).min(10_000)
+}
+
+fn coherence_bonus(coherence_plv: Option<u16>) -> u16 {
+    let Some(coherence) = coherence_plv else {
+        return 0;
+    };
+    (coherence / 4).min(2500)
+}
+
+fn coherence_from_snapshot(snapshot: &WorkspaceSnapshot) -> Option<u16> {
+    snapshot.broadcast.iter().find_map(|signal| {
+        signal
+            .summary
+            .split_whitespace()
+            .find_map(|token| token.strip_prefix("COH="))
+            .and_then(|value| value.parse::<u16>().ok())
+    })
 }
 
 fn stability_bonus(base: u16, history: &VecDeque<u16>) -> u16 {
@@ -270,8 +297,8 @@ mod tests {
             commit: Digest32::new([9u8; 32]),
         };
 
-        let (report_a, actions_a) = monitor_a.evaluate(&snapshot, 1000);
-        let (report_b, actions_b) = monitor_b.evaluate(&snapshot, 1000);
+        let (report_a, actions_a) = monitor_a.evaluate(&snapshot, 1000, None);
+        let (report_b, actions_b) = monitor_b.evaluate(&snapshot, 1000, None);
 
         assert_eq!(report_a, report_b);
         assert_eq!(actions_a, actions_b);
@@ -286,7 +313,7 @@ mod tests {
             recursion_used: 0,
             commit: Digest32::new([3u8; 32]),
         };
-        let (_report, actions) = monitor.evaluate(&snapshot, 0);
+        let (_report, actions) = monitor.evaluate(&snapshot, 0, None);
 
         assert!(actions
             .iter()

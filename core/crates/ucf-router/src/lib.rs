@@ -34,6 +34,7 @@ use ucf_geist::{SelfState, SelfStateBuilder};
 use ucf_iit_monitor::{IitAction, IitActionKind, IitBand, IitMonitor, IitReport};
 use ucf_ism::IsmStore;
 use ucf_nsr_port::{ActionIntent, NsrInput, NsrPort, NsrReport, NsrVerdict};
+use ucf_onn::{OnnCore, OnnInputs, PhaseFrame};
 use ucf_output_router::{
     GateBundle, NsrSummary, OutputRouter, OutputRouterEvent, RouterConfig, SandboxVerdict,
 };
@@ -68,6 +69,8 @@ const FEATURE_SIGNAL_PRIORITY: u16 = 3200;
 const FEATURE_RECORD_KIND: u16 = 42;
 const SANDBOX_DENIED_RECORD_KIND: u16 = 73;
 const CAUSAL_REPORT_RECORD_KIND: u16 = 91;
+const PHASE_FRAME_RECORD_KIND: u16 = 118;
+const ONN_COHERENCE_THROTTLE: u16 = 2000;
 
 #[derive(Debug)]
 pub enum RouterError {
@@ -111,6 +114,7 @@ pub struct Router {
     workspace_base: WorkspaceConfig,
     cycle_counter: AtomicU64,
     tcf_port: Mutex<Box<dyn TcfPort + Send + Sync>>,
+    onn_core: Mutex<OnnCore>,
     last_attention: Mutex<AttentionWeights>,
     last_surprise: Mutex<Option<SurpriseSignal>>,
     stage_trace: Option<Arc<dyn StageTrace + Send + Sync>>,
@@ -128,6 +132,7 @@ pub struct Router {
     last_nsr_report: Mutex<Option<NsrReport>>,
     pending_neuromod_delta: Mutex<Option<NeuromodDelta>>,
     last_brain_response_commit: Mutex<Option<Digest32>>,
+    last_brain_arousal: Mutex<u16>,
     causal_engine: Mutex<CdeScmEngine>,
 }
 
@@ -292,6 +297,7 @@ impl Router {
             workspace: Arc::new(Mutex::new(Workspace::new(workspace_base))),
             cycle_counter: AtomicU64::new(0),
             tcf_port: Mutex::new(Box::new(DeterministicTcf::default())),
+            onn_core: Mutex::new(OnnCore::default()),
             last_attention: Mutex::new(idle_attention()),
             last_surprise: Mutex::new(None),
             stage_trace: None,
@@ -309,6 +315,7 @@ impl Router {
             last_nsr_report: Mutex::new(None),
             pending_neuromod_delta: Mutex::new(None),
             last_brain_response_commit: Mutex::new(None),
+            last_brain_arousal: Mutex::new(0),
             causal_engine: Mutex::new(CdeScmEngine::new()),
         }
     }
@@ -526,6 +533,18 @@ impl Router {
                     if nsr_report.causal_verdict() == NsrVerdict::Deny {
                         self.append_causal_audit_notice(cycle_id, &nsr_report);
                     }
+                    let phase_frame = self.tick_onn_phase(
+                        cycle_id,
+                        cycle_plan.commit,
+                        drift_score,
+                        plan_surprise
+                            .as_ref()
+                            .map(|signal| signal.score)
+                            .unwrap_or(0),
+                        plan_attn.gain,
+                        nsr_report.verdict,
+                        pulse.slot,
+                    );
                     let mut attention_risk = 0u16;
                     let outputs = &inference.outputs;
                     let mut risk_results = Vec::with_capacity(outputs.len());
@@ -550,7 +569,11 @@ impl Router {
 
                     let (iit_report, iit_actions) = {
                         let mut monitor = self.iit_monitor.lock().expect("iit monitor lock");
-                        monitor.evaluate(&workspace_snapshot, attention_risk)
+                        monitor.evaluate(
+                            &workspace_snapshot,
+                            attention_risk,
+                            Some(phase_frame.coherence_plv),
+                        )
                     };
                     let attention_weights = self
                         .last_attention
@@ -762,6 +785,8 @@ impl Router {
                     if let Some(budget) = ctx.recursion_budget.as_ref() {
                         output_router.apply_recursion_budget(budget);
                     }
+                    output_router
+                        .apply_coherence(phase_frame.coherence_plv, ONN_COHERENCE_THROTTLE);
                     let decisions = output_router.route(&cf, outputs.clone(), &gates);
                     let events = output_router.drain_events();
                     self.publish_workspace_signals(
@@ -1099,6 +1124,20 @@ impl Router {
         self.append_archive_record(RecordKind::CyclePlan, plan.commit, meta);
     }
 
+    fn append_phase_frame_record(&self, cycle_id: u64, frame: &PhaseFrame) {
+        let meta = RecordMeta {
+            cycle_id,
+            tier: frame.module_phase.len().min(u8::MAX as usize) as u8,
+            flags: frame.coherence_plv,
+            boundary_commit: Digest32::new([0u8; 32]),
+        };
+        self.append_archive_record(
+            RecordKind::Other(PHASE_FRAME_RECORD_KIND),
+            frame.commit,
+            meta,
+        );
+    }
+
     fn append_self_state_record(&self, state: &SelfState) {
         let meta = RecordMeta {
             cycle_id: state.cycle_id,
@@ -1159,6 +1198,50 @@ impl Router {
             boundary_commit: Digest32::new([0u8; 32]),
         };
         self.append_archive_record(RecordKind::OutputEvent, payload_commit, meta);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn tick_onn_phase(
+        &self,
+        cycle_id: u64,
+        cycle_commit: Digest32,
+        drift_score: u16,
+        surprise_score: u16,
+        attn_gain: u16,
+        nsr_verdict: NsrVerdict,
+        slot: u8,
+    ) -> PhaseFrame {
+        let brain_arousal = self
+            .last_brain_arousal
+            .lock()
+            .ok()
+            .map(|value| *value)
+            .unwrap_or(0);
+        let inputs = OnnInputs::new(
+            drift_score,
+            surprise_score,
+            attn_gain,
+            nsr_verdict.as_u8(),
+            brain_arousal,
+        );
+        let frame = {
+            let mut onn = self.onn_core.lock().expect("onn core lock");
+            onn.tick(cycle_id, cycle_commit, &inputs)
+        };
+        let priority = 3200u16.saturating_add(frame.coherence_plv / 5).min(10_000);
+        let summary = format!(
+            "PHASE COH={} GP={}",
+            frame.coherence_plv, frame.global_phase
+        );
+        self.publish_workspace_signal(WorkspaceSignal {
+            kind: SignalKind::Brain,
+            priority,
+            digest: frame.commit,
+            summary,
+            slot,
+        });
+        self.append_phase_frame_record(cycle_id, &frame);
+        frame
     }
 
     fn build_sle_reflex_record(&self, cycle_id: u64, reflex: &SelfReflex) -> ExperienceRecord {
@@ -1442,6 +1525,9 @@ impl Router {
         }
         if let Ok(mut guard) = self.last_brain_response_commit.lock() {
             *guard = Some(response.commit);
+        }
+        if let Ok(mut guard) = self.last_brain_arousal.lock() {
+            *guard = response.arousal;
         }
     }
 
