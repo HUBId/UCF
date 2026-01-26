@@ -27,6 +27,7 @@ ucf-cde-scm = { path = "../../../domains/causal/crates/ucf-cde-scm" }
 ucf-feature-translator = { path = "../../../domains/ai/crates/ucf-feature-translator" }
 ucf-consistency-engine = { path = "../ucf-consistency-engine" }
 ucf-ism = { path = "../ucf-ism" }
+ucf-influence = { path = "../ucf-influence" }
 ucf-output-router = { path = "../ucf-output-router" }
 ucf-predictive-coding = { path = "../ucf-predictive-coding" }
 ucf-recursion-controller = { path = "../ucf-recursion-controller" }

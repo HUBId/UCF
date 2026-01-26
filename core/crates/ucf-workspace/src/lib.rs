@@ -157,6 +157,26 @@ impl WorkspaceSignal {
         }
     }
 
+    pub fn from_influence_update(
+        node_count: usize,
+        root_commit: Digest32,
+        outputs_commit: Digest32,
+        attention_gain: Option<u16>,
+        slot: Option<u8>,
+    ) -> Self {
+        let kind = SignalKind::Integration;
+        let summary = format!("INFL nodes={node_count} root={root_commit}");
+        let base_priority = 2400;
+        let priority = priority_with_attention(base_priority, attention_gain);
+        Self {
+            kind,
+            priority,
+            digest: outputs_commit,
+            summary,
+            slot: slot.unwrap_or(0),
+        }
+    }
+
     pub fn from_consistency_report(
         report: &PolicyConsistencyReport,
         attention_gain: Option<u16>,
