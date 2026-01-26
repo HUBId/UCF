@@ -2113,6 +2113,14 @@ name = "ucf-ode-port"
 version = "0.1.0"
 
 [[package]]
+name = "ucf-onn"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ucf-types",
+]
+
+[[package]]
 name = "ucf-openevolve-port"
 version = "0.1.0"
 dependencies = [
@@ -2217,6 +2225,7 @@ dependencies = [
  "ucf-iit-monitor",
  "ucf-ism",
  "ucf-nsr-port",
+ "ucf-onn",
  "ucf-output-router",
  "ucf-policy-ecology",
  "ucf-policy-gateway",
