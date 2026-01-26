@@ -8,6 +8,7 @@ blake3 = "1"
 ucf-feature-translator = { path = "../../../domains/ai/crates/ucf-feature-translator" }
 ucf-onn = { path = "../ucf-onn" }
 ucf-spikebus = { path = "../ucf-spikebus" }
+ucf-structural-store = { path = "../ucf-structural-store" }
 ucf-types = { path = "../ucf-types" }
 
 [dev-dependencies]

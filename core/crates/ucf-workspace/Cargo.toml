@@ -13,4 +13,5 @@ ucf-predictive-coding = { path = "../ucf-predictive-coding" }
 ucf-risk-gate = { path = "../ucf-risk-gate" }
 ucf-sleep-coordinator = { path = "../ucf-sleep-coordinator" }
 ucf-spikebus = { path = "../ucf-spikebus" }
+ucf-structural-store = { path = "../ucf-structural-store" }
 ucf-types = { path = "../ucf-types" }

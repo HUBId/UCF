@@ -19,6 +19,7 @@ use ucf_iit_monitor::IitReport;
 use ucf_influence::{InfluenceOutputs, NodeId as InfluenceNodeId};
 use ucf_predictive_coding::{SurpriseBand, SurpriseSignal};
 use ucf_sleep_coordinator::{SleepStateHandle, SleepStateUpdater};
+use ucf_structural_store::ReplayCaps;
 use ucf_tcf_port::{PulseKind, RecursionBudget};
 use ucf_types::consolidation::{
     MacroMilestone as MemoryMacroMilestone, MesoMilestone as MemoryMesoMilestone,
@@ -53,6 +54,12 @@ impl ConsolidationConfig {
             .saturating_mul(self.meso_window)
             .saturating_mul(self.macro_window)
             .max(self.micro_window)
+    }
+
+    pub fn apply_replay_caps(&mut self, caps: &ReplayCaps) {
+        self.replay_micro_cap = usize::from(caps.micro_k);
+        self.replay_meso_cap = usize::from(caps.meso_m);
+        self.replay_macro_cap = usize::from(caps.macro_n);
     }
 }
 
@@ -266,6 +273,10 @@ impl<S: RecordSource, A: ExperienceAppender> ConsolidationKernel<S, A> {
             index_publishers,
             workspace,
         }
+    }
+
+    pub fn update_replay_caps(&mut self, caps: &ReplayCaps) {
+        self.config.apply_replay_caps(caps);
     }
 
     pub fn run_one_cycle(&self) -> ConsolidationCycleSummary {

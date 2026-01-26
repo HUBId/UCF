@@ -233,6 +233,12 @@ where
         if let Some(signal) = outcome.surprise_signal.as_ref() {
             guard.record_surprise_band(signal.band);
         }
+        if let Some(stats) = outcome.structural_stats.clone() {
+            guard.record_structural_stats(stats);
+        }
+        if let Some(proposal) = outcome.structural_proposal.clone() {
+            guard.record_structural_proposal(proposal);
+        }
         let publisher = SleepEnvelopePublisher {
             publisher: &sleep.trigger_bus,
             workspace: Some(self.router.workspace_handle()),

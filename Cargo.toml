@@ -22,6 +22,7 @@ members = [
     "core/crates/ucf-onn",
     "core/crates/ucf-spikebus",
     "core/crates/ucf-spike-encoder",
+    "core/crates/ucf-structural-store",
     "core/crates/ucf-nsr-port",
     "core/crates/ucf-events",
     "core/crates/ucf-tom-port",

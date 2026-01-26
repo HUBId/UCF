@@ -10,6 +10,7 @@ ucf-openevolve-port = { path = "../ucf-openevolve-port" }
 ucf-policy-ecology = { path = "../ucf-policy-ecology" }
 ucf-predictive-coding = { path = "../ucf-predictive-coding" }
 ucf-rsa = { path = "../ucf-rsa" }
+ucf-structural-store = { path = "../ucf-structural-store" }
 ucf-types = { path = "../ucf-types" }
 
 [dev-dependencies]
