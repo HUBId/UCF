@@ -2075,6 +2075,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucf-ncde"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ucf-onn",
+ "ucf-spikebus",
+ "ucf-types",
+]
+
+[[package]]
 name = "ucf-ncde-port"
 version = "0.1.0"
 dependencies = [
@@ -2235,6 +2245,7 @@ dependencies = [
  "ucf-iit-monitor",
  "ucf-influence",
  "ucf-ism",
+ "ucf-ncde",
  "ucf-nsr-port",
  "ucf-onn",
  "ucf-output-router",

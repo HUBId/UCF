@@ -16,6 +16,7 @@ ucf-geist = { path = "../../../domains/geist/crates/ucf-geist" }
 ucf-iit-monitor = { path = "../ucf-iit-monitor" }
 ucf-onn = { path = "../ucf-onn" }
 ucf-nsr-port = { path = "../ucf-nsr-port" }
+ucf-ncde = { path = "../ucf-ncde" }
 ucf-rsa = { path = "../ucf-rsa" }
 ucf-rsa-hooks = { path = "../ucf-rsa-hooks" }
 ucf-risk-gate = { path = "../ucf-risk-gate" }
