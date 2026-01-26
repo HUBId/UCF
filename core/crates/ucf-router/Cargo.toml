@@ -16,6 +16,7 @@ ucf-geist = { path = "../../../domains/geist/crates/ucf-geist" }
 ucf-iit-monitor = { path = "../ucf-iit-monitor" }
 ucf-onn = { path = "../ucf-onn" }
 ucf-nsr-port = { path = "../ucf-nsr-port" }
+ucf-rsa = { path = "../ucf-rsa" }
 ucf-rsa-hooks = { path = "../ucf-rsa-hooks" }
 ucf-risk-gate = { path = "../ucf-risk-gate" }
 ucf-sle = { path = "../ucf-sle" }
@@ -36,6 +37,7 @@ ucf-tcf-port = { path = "../ucf-tcf-port" }
 ucf-workspace = { path = "../ucf-workspace" }
 ucf-spike-encoder = { path = "../ucf-spike-encoder" }
 ucf-spikebus = { path = "../ucf-spikebus" }
+ucf-structural-store = { path = "../ucf-structural-store" }
 ucf-protocol = { path = "../../../protocol/crates/ucf-protocol" }
 hex = { workspace = true }
 blake3 = "1"

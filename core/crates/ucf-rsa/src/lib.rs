@@ -4,11 +4,19 @@ use std::sync::Arc;
 
 use blake3::Hasher;
 use ucf_archive::ExperienceAppender;
+use ucf_archive_store::{ArchiveAppender, ArchiveStore, RecordKind, RecordMeta};
 use ucf_bus::BusPublisher;
 use ucf_openevolve_port::{EvolutionProposal, OpenEvolvePort, SleepContext, SleepReport};
 use ucf_policy_ecology::SleepPhaseGate;
+use ucf_structural_store::{
+    ReasonCode, StructuralCommitResult, StructuralCycleStats, StructuralDeltaProposal,
+    StructuralGates, StructuralStore,
+};
 use ucf_types::v1::spec::ExperienceRecord;
 use ucf_types::{Digest32, EvidenceId};
+
+const STRUCTURAL_SEED_DOMAIN: &[u8] = b"ucf.rsa.structural.seed.v1";
+const NSR_DENY_VERDICT: u8 = 2;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SleepReportReady {
@@ -78,6 +86,9 @@ where
     openevolve: O,
     archive: Arc<dyn ExperienceAppender + Send + Sync>,
     bus: B,
+    structural_store: Option<Arc<std::sync::Mutex<StructuralStore>>>,
+    structural_archive_store: Option<Arc<dyn ArchiveStore + Send + Sync>>,
+    structural_archive_appender: std::sync::Mutex<ArchiveAppender>,
 }
 
 impl<P, R, O, B> SleepCoordinator<P, R, O, B>
@@ -100,7 +111,20 @@ where
             openevolve,
             archive,
             bus,
+            structural_store: None,
+            structural_archive_store: None,
+            structural_archive_appender: std::sync::Mutex::new(ArchiveAppender::new()),
         }
+    }
+
+    pub fn with_structural_store(
+        mut self,
+        store: Arc<std::sync::Mutex<StructuralStore>>,
+        archive_store: Arc<dyn ArchiveStore + Send + Sync>,
+    ) -> Self {
+        self.structural_store = Some(store);
+        self.structural_archive_store = Some(archive_store);
+        self
     }
 
     pub fn run_sleep_phase(
@@ -109,6 +133,8 @@ where
         fixed_seed: [u8; 32],
         integration_score: u16,
         recent_evidence: &[EvidenceId],
+        structural_stats: Option<StructuralCycleStats>,
+        structural_proposal: Option<StructuralDeltaProposal>,
     ) -> Option<SleepReportReady> {
         if !self.policy.allow_sleep() {
             return None;
@@ -126,6 +152,7 @@ where
         let report = SleepReport { proposals, metrics };
         let record = build_sleep_record(&ctx, &report);
         let evidence_id = self.archive.append(record);
+        self.maybe_commit_structural(cycle_id, structural_stats, structural_proposal);
         let event = SleepReportReady {
             evidence_id,
             cycle_id,
@@ -133,6 +160,124 @@ where
         self.bus.publish(event.clone());
         Some(event)
     }
+
+    fn maybe_commit_structural(
+        &self,
+        cycle_id: u64,
+        structural_stats: Option<StructuralCycleStats>,
+        structural_proposal: Option<StructuralDeltaProposal>,
+    ) {
+        let (Some(stats), Some(proposal)) = (structural_stats, structural_proposal) else {
+            return;
+        };
+        let Some(store_handle) = self.structural_store.as_ref() else {
+            return;
+        };
+        let mut store = match store_handle.lock() {
+            Ok(store) => store,
+            Err(err) => err.into_inner(),
+        };
+        let gates = StructuralGates::new(
+            stats.nsr_verdict != NSR_DENY_VERDICT,
+            stats.policy_ok,
+            stats.consistency_ok,
+            stats.coherence_plv,
+            stats.drift,
+            stats.surprise,
+        );
+        let result = store.evaluate_and_commit(&proposal, &gates);
+        self.append_structural_records(cycle_id, &proposal, &result, &store);
+    }
+
+    fn append_structural_records(
+        &self,
+        cycle_id: u64,
+        proposal: &StructuralDeltaProposal,
+        result: &StructuralCommitResult,
+        store: &StructuralStore,
+    ) {
+        let Some(archive_store) = self.structural_archive_store.as_ref() else {
+            return;
+        };
+        let mut appender = self
+            .structural_archive_appender
+            .lock()
+            .unwrap_or_else(|err| err.into_inner());
+        let decision_flag = matches!(result, StructuralCommitResult::Committed { .. }) as u16;
+        let meta = RecordMeta {
+            cycle_id,
+            tier: 0,
+            flags: decision_flag,
+            boundary_commit: Digest32::new([0u8; 32]),
+        };
+        let proposal_record = appender.build_record_with_commit(
+            RecordKind::StructuralProposal,
+            proposal.commit,
+            meta,
+        );
+        archive_store.append(proposal_record);
+        if let StructuralCommitResult::Committed { .. } = result {
+            let params_record = appender.build_record_with_commit(
+                RecordKind::StructuralParams,
+                store.current.commit,
+                meta,
+            );
+            archive_store.append(params_record);
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct StructuralProposalEngine {
+    coherence_floor: u16,
+    drift_ceiling: u16,
+    nsr_warn_repeats: u16,
+}
+
+impl Default for StructuralProposalEngine {
+    fn default() -> Self {
+        Self {
+            coherence_floor: 5200,
+            drift_ceiling: 6800,
+            nsr_warn_repeats: 2,
+        }
+    }
+}
+
+impl StructuralProposalEngine {
+    pub fn maybe_propose(
+        &self,
+        store: &StructuralStore,
+        cycle_id: u64,
+        stats: &StructuralCycleStats,
+        nsr_warn_streak: u16,
+        evidence: Vec<Digest32>,
+    ) -> Option<StructuralDeltaProposal> {
+        let mut reasons = Vec::new();
+        if stats.coherence_plv < self.coherence_floor {
+            reasons.push(ReasonCode::CoherenceLow);
+        }
+        if stats.drift > self.drift_ceiling {
+            reasons.push(ReasonCode::DriftHigh);
+        }
+        if nsr_warn_streak >= self.nsr_warn_repeats {
+            reasons.push(ReasonCode::NsrWarn);
+        }
+        if reasons.is_empty() {
+            return None;
+        }
+
+        let seed = structural_seed(store.current.commit, stats.commit);
+        Some(store.propose(cycle_id, reasons, evidence, seed))
+    }
+}
+
+fn structural_seed(current_commit: Digest32, stats_commit: Digest32) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(STRUCTURAL_SEED_DOMAIN);
+    hasher.update(current_commit.as_bytes());
+    hasher.update(stats_commit.as_bytes());
+    Digest32::new(*hasher.finalize().as_bytes())
 }
 
 fn build_sleep_record(ctx: &SleepContext, report: &SleepReport) -> ExperienceRecord {
@@ -198,7 +343,7 @@ mod tests {
         let receiver = bus.subscribe();
         let coordinator = SleepCoordinator::new(policy, rsa, openevolve, archive.clone(), bus);
 
-        let result = coordinator.run_sleep_phase(1, [1u8; 32], 9, &[]);
+        let result = coordinator.run_sleep_phase(1, [1u8; 32], 9, &[], None, None);
 
         assert!(result.is_none());
         assert!(archive.list().is_empty());
@@ -216,7 +361,7 @@ mod tests {
         let coordinator = SleepCoordinator::new(policy, rsa, openevolve, archive.clone(), bus);
         let evidence = vec![EvidenceId::new("ev-1"), EvidenceId::new("ev-2")];
 
-        let result = coordinator.run_sleep_phase(42, [7u8; 32], 12, &evidence);
+        let result = coordinator.run_sleep_phase(42, [7u8; 32], 12, &evidence, None, None);
 
         assert!(result.is_some());
         assert_eq!(archive.list().len(), 1);

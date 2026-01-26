@@ -67,6 +67,8 @@ pub struct NsrInput {
     pub world_state_commit: Digest32,
     pub causal_report_commit: Digest32,
     pub counterfactuals: Vec<CounterfactualResult>,
+    pub nsr_warn_threshold: Option<u16>,
+    pub nsr_deny_threshold: Option<u16>,
     pub commit: Digest32,
 }
 
@@ -88,6 +90,8 @@ impl NsrInput {
             world_state_commit,
             causal_report_commit,
             &counterfactuals,
+            None,
+            None,
         );
         Self {
             cycle_id,
@@ -97,8 +101,29 @@ impl NsrInput {
             world_state_commit,
             causal_report_commit,
             counterfactuals,
+            nsr_warn_threshold: None,
+            nsr_deny_threshold: None,
             commit,
         }
+    }
+
+    pub fn with_nsr_thresholds(mut self, warn: u16, deny: u16) -> Self {
+        let warn = warn.min(10_000);
+        let deny = deny.min(10_000).max(warn);
+        self.nsr_warn_threshold = Some(warn);
+        self.nsr_deny_threshold = Some(deny);
+        self.commit = digest_nsr_input(
+            self.cycle_id,
+            &self.intent,
+            self.policy_class,
+            &self.proposed_actions,
+            self.world_state_commit,
+            self.causal_report_commit,
+            &self.counterfactuals,
+            self.nsr_warn_threshold,
+            self.nsr_deny_threshold,
+        );
+        self
     }
 }
 
@@ -401,6 +426,8 @@ fn digest_nsr_input(
     world_state_commit: Digest32,
     causal_report_commit: Digest32,
     counterfactuals: &[CounterfactualResult],
+    nsr_warn_threshold: Option<u16>,
+    nsr_deny_threshold: Option<u16>,
 ) -> Digest32 {
     let mut hasher = Hasher::new();
     hasher.update(b"ucf.nsr.input.v2");
@@ -420,6 +447,8 @@ fn digest_nsr_input(
     }
     hasher.update(world_state_commit.as_bytes());
     hasher.update(causal_report_commit.as_bytes());
+    hasher.update(&nsr_warn_threshold.unwrap_or(0).to_be_bytes());
+    hasher.update(&nsr_deny_threshold.unwrap_or(0).to_be_bytes());
     hasher.update(
         &u64::try_from(counterfactuals.len())
             .unwrap_or(0)
@@ -481,6 +510,16 @@ fn causal_thresholds(policy_class: u16) -> CausalThresholds {
             warn: 5000,
             deny: 8500,
         }
+    }
+}
+
+fn input_causal_thresholds(input: &NsrInput) -> CausalThresholds {
+    match (input.nsr_warn_threshold, input.nsr_deny_threshold) {
+        (Some(warn), Some(deny)) => CausalThresholds {
+            warn: warn.min(10_000),
+            deny: deny.min(10_000).max(warn),
+        },
+        _ => causal_thresholds(input.policy_class),
     }
 }
 
@@ -563,7 +602,7 @@ fn has_sequence(tags: &[&str], first: &str, second: &str) -> bool {
 }
 
 fn evaluate_causal(input: &NsrInput) -> CausalCheckResult {
-    let thresholds = causal_thresholds(input.policy_class);
+    let thresholds = input_causal_thresholds(input);
     let mut violations = Vec::new();
     let mut causal_checks = Vec::new();
 

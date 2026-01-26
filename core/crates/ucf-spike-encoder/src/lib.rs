@@ -4,6 +4,7 @@ use blake3::Hasher;
 use ucf_feature_translator::LensSelection;
 use ucf_onn::{ModuleId, PhaseFrame};
 use ucf_spikebus::{SpikeEvent, SpikeKind};
+use ucf_structural_store::SnnKnobs;
 use ucf_types::Digest32;
 
 const TTFS_DOMAIN: &[u8] = b"ucf.spike_encoder.ttfs.v1";
@@ -15,6 +16,7 @@ pub fn encode_from_features(
     phase: &PhaseFrame,
     src: ModuleId,
     lens: Option<&LensSelection>,
+    snn: &SnnKnobs,
     surprise: u16,
     drift: u16,
     risk: u16,
@@ -30,12 +32,33 @@ pub fn encode_from_features(
             let amplitude = clamp_signal(weight);
             let payload_commit = feature.commit;
             for dst in [ModuleId::Cde, ModuleId::Nsr] {
+                if meets_threshold(snn, SpikeKind::CausalLink, amplitude) {
+                    events.push(build_spike(
+                        cycle_id,
+                        phase,
+                        src,
+                        dst,
+                        SpikeKind::CausalLink,
+                        amplitude,
+                        attention_gain,
+                        payload_commit,
+                    ));
+                }
+            }
+        }
+    }
+
+    if surprise > 0 {
+        let amplitude = clamp_signal(surprise);
+        if meets_threshold(snn, SpikeKind::Novelty, amplitude) {
+            let payload_commit = commit_signal_payload(phase.commit, SpikeKind::Novelty, surprise);
+            for dst in [ModuleId::Ai, ModuleId::Ssm] {
                 events.push(build_spike(
                     cycle_id,
                     phase,
                     src,
                     dst,
-                    SpikeKind::CausalLink,
+                    SpikeKind::Novelty,
                     amplitude,
                     attention_gain,
                     payload_commit,
@@ -44,55 +67,42 @@ pub fn encode_from_features(
         }
     }
 
-    if surprise > 0 {
-        let amplitude = clamp_signal(surprise);
-        let payload_commit = commit_signal_payload(phase.commit, SpikeKind::Novelty, surprise);
-        for dst in [ModuleId::Ai, ModuleId::Ssm] {
-            events.push(build_spike(
-                cycle_id,
-                phase,
-                src,
-                dst,
-                SpikeKind::Novelty,
-                amplitude,
-                attention_gain,
-                payload_commit,
-            ));
-        }
-    }
-
     if drift > 0 {
         let amplitude = clamp_signal(drift);
-        let payload_commit =
-            commit_signal_payload(phase.commit, SpikeKind::ConsistencyAlert, drift);
-        for dst in [ModuleId::Geist, ModuleId::Replay] {
-            events.push(build_spike(
-                cycle_id,
-                phase,
-                src,
-                dst,
-                SpikeKind::ConsistencyAlert,
-                amplitude,
-                attention_gain,
-                payload_commit,
-            ));
+        if meets_threshold(snn, SpikeKind::ConsistencyAlert, amplitude) {
+            let payload_commit =
+                commit_signal_payload(phase.commit, SpikeKind::ConsistencyAlert, drift);
+            for dst in [ModuleId::Geist, ModuleId::Replay] {
+                events.push(build_spike(
+                    cycle_id,
+                    phase,
+                    src,
+                    dst,
+                    SpikeKind::ConsistencyAlert,
+                    amplitude,
+                    attention_gain,
+                    payload_commit,
+                ));
+            }
         }
     }
 
     if risk > 0 {
         let amplitude = clamp_signal(risk);
-        let payload_commit = commit_signal_payload(phase.commit, SpikeKind::Threat, risk);
-        for dst in [ModuleId::BlueBrain, ModuleId::Geist] {
-            events.push(build_spike(
-                cycle_id,
-                phase,
-                src,
-                dst,
-                SpikeKind::Threat,
-                amplitude,
-                attention_gain,
-                payload_commit,
-            ));
+        if meets_threshold(snn, SpikeKind::Threat, amplitude) {
+            let payload_commit = commit_signal_payload(phase.commit, SpikeKind::Threat, risk);
+            for dst in [ModuleId::BlueBrain, ModuleId::Geist] {
+                events.push(build_spike(
+                    cycle_id,
+                    phase,
+                    src,
+                    dst,
+                    SpikeKind::Threat,
+                    amplitude,
+                    attention_gain,
+                    payload_commit,
+                ));
+            }
         }
     }
 
@@ -189,6 +199,10 @@ fn clamp_signal(value: u16) -> u16 {
     value.min(MAX_SIGNAL)
 }
 
+fn meets_threshold(snn: &SnnKnobs, kind: SpikeKind, amplitude: u16) -> bool {
+    amplitude >= snn.threshold_for(kind)
+}
+
 fn commit_signal_payload(phase_commit: Digest32, kind: SpikeKind, value: u16) -> Digest32 {
     let mut hasher = Hasher::new();
     hasher.update(PAYLOAD_DOMAIN);
@@ -221,8 +235,10 @@ mod tests {
             vec![SparseFeature::new(42, 1200, phase.commit)],
             phase.commit,
         );
-        let first = encode_from_features(1, &phase, ModuleId::Ai, Some(&lens), 100, 200, 300);
-        let second = encode_from_features(1, &phase, ModuleId::Ai, Some(&lens), 100, 200, 300);
+        let snn = SnnKnobs::default();
+        let first = encode_from_features(1, &phase, ModuleId::Ai, Some(&lens), &snn, 100, 200, 300);
+        let second =
+            encode_from_features(1, &phase, ModuleId::Ai, Some(&lens), &snn, 100, 200, 300);
         assert_eq!(
             first.iter().map(|ev| ev.commit).collect::<Vec<_>>(),
             second.iter().map(|ev| ev.commit).collect::<Vec<_>>()

@@ -48,6 +48,7 @@ use ucf_predictive_coding::{
 };
 use ucf_recursion_controller::{RecursionBudget, RecursionController, RecursionInputs};
 use ucf_risk_gate::{digest_reasons, RiskGate};
+use ucf_rsa::StructuralProposalEngine;
 use ucf_rsa_hooks::{MockRsaHook, RsaContext, RsaHook, RsaProposal};
 use ucf_sandbox::{
     AiCallRequest, ControlFrameNormalized, IntentSummary, MockWasmSandbox, SandboxBudget,
@@ -57,6 +58,9 @@ use ucf_sle::{SelfReflex, SleEngine};
 use ucf_spike_encoder::encode_from_features;
 use ucf_spikebus::{SpikeEvent, SpikeKind};
 use ucf_ssm_port::SsmState;
+use ucf_structural_store::{
+    SnnKnobs, StructuralCycleStats, StructuralDeltaProposal, StructuralStore,
+};
 use ucf_tcf_port::{
     ai_mode_for_pulse, idle_attention, CyclePlan, CyclePlanned, DeterministicTcf, PulseKind,
     TcfPort,
@@ -76,7 +80,6 @@ const CAUSAL_REPORT_RECORD_KIND: u16 = 91;
 const PHASE_FRAME_RECORD_KIND: u16 = 118;
 const SPIKE_RECORD_KIND: u16 = 131;
 const ONN_COHERENCE_THROTTLE: u16 = 2000;
-const SPIKE_DRAIN_LIMIT: usize = 32;
 const CAUSAL_REPORT_FLAG_LIGHT: u16 = 0b1000;
 
 #[derive(Debug)]
@@ -133,6 +136,9 @@ pub struct Router {
     iit_monitor: Mutex<IitMonitor>,
     recursion_controller: RecursionController,
     rsa_hooks: Vec<Arc<dyn RsaHook + Send + Sync>>,
+    structural_store: Mutex<StructuralStore>,
+    structural_proposer: StructuralProposalEngine,
+    nsr_warn_streak: Mutex<u16>,
     last_self_state: Mutex<Option<SelfState>>,
     last_workspace_snapshot: Mutex<Option<WorkspaceSnapshot>>,
     last_recursion_budget: Mutex<Option<RecursionBudget>>,
@@ -154,6 +160,8 @@ pub struct RouterOutcome {
     pub integration_score: Option<u16>,
     pub workspace_snapshot_commit: Option<Digest32>,
     pub surprise_signal: Option<SurpriseSignal>,
+    pub structural_stats: Option<StructuralCycleStats>,
+    pub structural_proposal: Option<StructuralDeltaProposal>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -224,6 +232,8 @@ struct StageContext {
     phase_commit: Option<Digest32>,
     spike_root_commit: Option<Digest32>,
     influence_outputs: Option<InfluenceOutputs>,
+    structural_stats: Option<StructuralCycleStats>,
+    structural_proposal: Option<StructuralDeltaProposal>,
 }
 
 impl StageContext {
@@ -259,6 +269,8 @@ impl StageContext {
             phase_commit: None,
             spike_root_commit: None,
             influence_outputs: None,
+            structural_stats: None,
+            structural_proposal: None,
         }
     }
 }
@@ -328,6 +340,9 @@ impl Router {
             iit_monitor: Mutex::new(IitMonitor::new(4)),
             recursion_controller: RecursionController::default(),
             rsa_hooks: vec![Arc::new(MockRsaHook::new())],
+            structural_store: Mutex::new(StructuralStore::default()),
+            structural_proposer: StructuralProposalEngine::default(),
+            nsr_warn_streak: Mutex::new(0),
             last_self_state: Mutex::new(None),
             last_workspace_snapshot: Mutex::new(None),
             last_recursion_budget: Mutex::new(None),
@@ -493,11 +508,13 @@ impl Router {
                     ctx.lens_selection = lens_selection.clone();
                     let phase_frame = self.latest_phase_frame(cycle_id);
                     ctx.phase_commit = Some(phase_frame.commit);
+                    let snn_knobs = self.current_snn_knobs();
                     let spikes = encode_from_features(
                         cycle_id,
                         &phase_frame,
                         ModuleId::Ai,
                         lens_selection.as_ref(),
+                        &snn_knobs,
                         surprise_score,
                         drift_score,
                         causal_attention_risk,
@@ -510,13 +527,14 @@ impl Router {
                     };
                     ctx.spike_root_commit = Some(spike_root_commit);
                     self.append_spike_bus_record(cycle_id, spike_root_commit, &spikes);
+                    let verify_limit = usize::from(snn_knobs.verify_limit.max(1));
                     let phase_window = self.onn_phase_window();
                     let (nsr_spikes, cde_spikes) = if let Ok(mut workspace) = self.workspace.lock()
                     {
                         let nsr_spikes =
-                            workspace.drain_spikes_for(ModuleId::Nsr, cycle_id, SPIKE_DRAIN_LIMIT);
+                            workspace.drain_spikes_for(ModuleId::Nsr, cycle_id, verify_limit);
                         let cde_spikes =
-                            workspace.drain_spikes_for(ModuleId::Cde, cycle_id, SPIKE_DRAIN_LIMIT);
+                            workspace.drain_spikes_for(ModuleId::Cde, cycle_id, verify_limit);
                         (nsr_spikes, cde_spikes)
                     } else {
                         (Vec::new(), Vec::new())
@@ -590,6 +608,7 @@ impl Router {
                         light_report(&nsr_input)
                     };
                     ctx.nsr_report = Some(nsr_report.clone());
+                    let nsr_warn_streak = self.update_nsr_warn_streak(nsr_report.verdict);
                     if let Ok(mut guard) = self.last_nsr_report.lock() {
                         *guard = Some(nsr_report.clone());
                     }
@@ -824,6 +843,47 @@ impl Router {
                     ctx.consistency_report = Some(consistency_report);
                     ctx.consistency_actions = consistency_actions;
                     ctx.consistency_effects = consistency_effects;
+
+                    let policy_ok = decision.kind == DecisionKind::DecisionKindAllow as i32;
+                    let nsr_verdict = ctx
+                        .nsr_report
+                        .as_ref()
+                        .map(|report| report.verdict)
+                        .unwrap_or(NsrVerdict::Ok);
+                    let consistency_ok = !matches!(
+                        ctx.consistency_report,
+                        Some(ref report) if report.band == DriftBand::Critical
+                    );
+                    let structural_stats = StructuralCycleStats::new(
+                        phase_frame.coherence_plv,
+                        drift_score,
+                        surprise_score,
+                        nsr_verdict.as_u8(),
+                        policy_ok,
+                        consistency_ok,
+                    );
+                    let mut evidence = vec![phase_frame.commit];
+                    if let Some(report) = ctx.nsr_report.as_ref() {
+                        evidence.push(report.commit);
+                    }
+                    if let Some(report) = ctx.causal_report.as_ref() {
+                        evidence.push(report.commit);
+                    }
+                    if let Some(report) = ctx.consistency_report.as_ref() {
+                        evidence.push(report.commit);
+                    }
+                    if let Some(proposal) = self.maybe_structural_proposal(
+                        cycle_id,
+                        &structural_stats,
+                        nsr_warn_streak,
+                        evidence,
+                    ) {
+                        if let Ok(mut workspace) = self.workspace.lock() {
+                            workspace.set_structural_proposal(proposal.clone());
+                        }
+                        ctx.structural_proposal = Some(proposal);
+                    }
+                    ctx.structural_stats = Some(structural_stats);
 
                     let nsr_summary = NsrSummary {
                         verdict: ctx
@@ -1135,6 +1195,8 @@ impl Router {
             integration_score: ctx.integration_score,
             workspace_snapshot_commit: ctx.workspace_snapshot_commit,
             surprise_signal: ctx.predictive_result.map(|(_, signal)| signal),
+            structural_stats: ctx.structural_stats,
+            structural_proposal: ctx.structural_proposal,
         })
     }
 
@@ -1347,6 +1409,7 @@ impl Router {
             .ok()
             .map(|value| *value)
             .unwrap_or(0);
+        self.sync_onn_params();
         let inputs = OnnInputs::new(
             drift_score,
             surprise_score,
@@ -1728,10 +1791,60 @@ impl Router {
     }
 
     fn onn_phase_window(&self) -> u16 {
+        self.sync_onn_params();
         self.onn_core
             .lock()
             .map(|core| core.params.phase_window)
             .unwrap_or(0)
+    }
+
+    fn sync_onn_params(&self) {
+        let knobs = match self.structural_store.lock() {
+            Ok(store) => store.current.onn.clone(),
+            Err(_) => return,
+        };
+        if let Ok(mut core) = self.onn_core.lock() {
+            if core.params.commit != knobs.commit {
+                core.params = ucf_onn::OnnParams::new(
+                    knobs.k_global,
+                    knobs.k_pairs.clone(),
+                    knobs.phase_window,
+                );
+            }
+        }
+    }
+
+    fn current_snn_knobs(&self) -> SnnKnobs {
+        self.structural_store
+            .lock()
+            .map(|store| store.current.snn.clone())
+            .unwrap_or_else(|_| SnnKnobs::default())
+    }
+
+    fn update_nsr_warn_streak(&self, verdict: NsrVerdict) -> u16 {
+        let mut streak = self
+            .nsr_warn_streak
+            .lock()
+            .unwrap_or_else(|err| err.into_inner());
+        if verdict == NsrVerdict::Warn {
+            *streak = streak.saturating_add(1);
+        } else {
+            *streak = 0;
+        }
+        *streak
+    }
+
+    fn maybe_structural_proposal(
+        &self,
+        cycle_id: u64,
+        stats: &StructuralCycleStats,
+        nsr_warn_streak: u16,
+        mut evidence: Vec<Digest32>,
+    ) -> Option<StructuralDeltaProposal> {
+        evidence.sort_by(|left, right| left.as_bytes().cmp(right.as_bytes()));
+        let store = self.structural_store.lock().ok()?;
+        self.structural_proposer
+            .maybe_propose(&store, cycle_id, stats, nsr_warn_streak, evidence)
     }
 
     fn arbitrate_workspace(&self, cycle_id: u64) -> WorkspaceSnapshot {
@@ -1792,7 +1905,12 @@ impl Router {
         let counterfactuals = causal_report
             .map(|report| report.counterfactuals.clone())
             .unwrap_or_default();
-        NsrInput::new(
+        let thresholds = self
+            .structural_store
+            .lock()
+            .map(|store| store.current.nsr.clone())
+            .ok();
+        let input = NsrInput::new(
             cycle_id,
             intent,
             policy_class,
@@ -1800,7 +1918,12 @@ impl Router {
             workspace_snapshot.commit,
             causal_report_commit,
             counterfactuals,
-        )
+        );
+        if let Some(thresholds) = thresholds {
+            input.with_nsr_thresholds(thresholds.warn, thresholds.deny)
+        } else {
+            input
+        }
     }
 
     fn build_sandbox_budget(&self, mode: u16) -> SandboxBudget {
@@ -2542,6 +2665,39 @@ fn digest32_to_proto(digest: Digest32) -> Digest {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
+
+    use ucf_ai_port::{MockAiPort, PolicySpeechGate};
+    use ucf_archive::InMemoryArchive;
+    use ucf_archive_store::InMemoryArchiveStore;
+    use ucf_policy_ecology::PolicyEcology;
+    use ucf_policy_gateway::NoOpPolicyEvaluator;
+    use ucf_risk_gate::PolicyRiskGate;
+    use ucf_structural_store::{OnnKnobs, SnnKnobs, StructuralParams, StructuralStore};
+    use ucf_tom_port::MockTomPort;
+
+    fn build_router() -> Router {
+        let policy = Arc::new(NoOpPolicyEvaluator::new());
+        let archive = Arc::new(InMemoryArchive::new());
+        let archive_store = Arc::new(InMemoryArchiveStore::new());
+        let ai_port = Arc::new(MockAiPort::default());
+        let policy_ecology = PolicyEcology::allow_all();
+        let speech_gate = Arc::new(PolicySpeechGate::new(policy_ecology.clone()));
+        let risk_gate = Arc::new(PolicyRiskGate::new(policy_ecology));
+        let tom_port = Arc::new(MockTomPort::new());
+
+        Router::new(
+            policy,
+            archive,
+            archive_store,
+            None,
+            ai_port,
+            speech_gate,
+            risk_gate,
+            tom_port,
+            None,
+        )
+    }
 
     #[test]
     fn predictive_observation_changes_with_ssm_state() {
@@ -2675,6 +2831,25 @@ mod tests {
 
         assert!(updated.gain > base.gain);
         assert_eq!(updated.channel, FocusChannel::Exploration);
+    }
+
+    #[test]
+    fn structural_params_drive_onn_window_and_snn_verify_limit() {
+        let router = build_router();
+        let base = StructuralStore::default_params();
+        let onn = OnnKnobs::new(base.onn.k_global, 12_000, base.onn.k_pairs.clone());
+        let snn = SnnKnobs::new(base.snn.kind_thresholds.clone(), 12);
+        let params = StructuralParams::new(onn, snn, base.nsr, base.replay);
+        {
+            let mut store = router
+                .structural_store
+                .lock()
+                .expect("structural store lock");
+            *store = StructuralStore::new(params);
+        }
+
+        assert_eq!(router.onn_phase_window(), 12_000);
+        assert_eq!(router.current_snn_knobs().verify_limit, 12);
     }
 
     #[test]

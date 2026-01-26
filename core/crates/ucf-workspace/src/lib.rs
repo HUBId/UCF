@@ -11,6 +11,7 @@ use ucf_policy_ecology::{
 use ucf_predictive_coding::{SurpriseBand, SurpriseUpdated};
 use ucf_sleep_coordinator::{SleepTrigger, SleepTriggered};
 use ucf_spikebus::{SpikeBusState, SpikeEvent, SpikeModuleId};
+use ucf_structural_store::StructuralDeltaProposal;
 use ucf_types::v1::spec::{ActionCode, DecisionKind, PolicyDecision};
 use ucf_types::Digest32;
 
@@ -514,6 +515,7 @@ pub struct Workspace {
     drops: DropCounters,
     recursion_used: u16,
     spike_bus: SpikeBusState,
+    structural_proposal: Option<StructuralDeltaProposal>,
 }
 
 impl Workspace {
@@ -525,6 +527,7 @@ impl Workspace {
             drops: DropCounters::default(),
             recursion_used: 0,
             spike_bus: SpikeBusState::new(),
+            structural_proposal: None,
         }
     }
 
@@ -556,6 +559,14 @@ impl Workspace {
         limit: usize,
     ) -> Vec<SpikeEvent> {
         self.spike_bus.drain_for(dst, cycle_id, limit)
+    }
+
+    pub fn set_structural_proposal(&mut self, proposal: StructuralDeltaProposal) {
+        self.structural_proposal = Some(proposal);
+    }
+
+    pub fn take_structural_proposal(&mut self) -> Option<StructuralDeltaProposal> {
+        self.structural_proposal.take()
     }
 
     pub fn spike_root_commit(&self) -> Digest32 {

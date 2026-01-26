@@ -16,6 +16,7 @@ ucf-influence = { path = "../../../../core/crates/ucf-influence" }
 ucf-policy-ecology = { path = "../../../../core/crates/ucf-policy-ecology" }
 ucf-predictive-coding = { path = "../../../../core/crates/ucf-predictive-coding" }
 ucf-sleep-coordinator = { path = "../../../../core/crates/ucf-sleep-coordinator" }
+ucf-structural-store = { path = "../../../../core/crates/ucf-structural-store" }
 ucf-tcf-port = { path = "../../../../core/crates/ucf-tcf-port" }
 ucf-types = { path = "../../../../core/crates/ucf-types" }
 ucf-workspace = { path = "../../../../core/crates/ucf-workspace" }
