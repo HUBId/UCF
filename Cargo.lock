@@ -2108,6 +2108,8 @@ dependencies = [
  "blake3",
  "ucf-cde-scm",
  "ucf-sandbox",
+ "ucf-spikebus",
+ "ucf-structural-store",
  "ucf-types",
 ]
 
@@ -2247,6 +2249,7 @@ dependencies = [
  "ucf-brain-mapper",
  "ucf-cde-port",
  "ucf-cde-scm",
+ "ucf-commit",
  "ucf-consistency-engine",
  "ucf-digital-brain",
  "ucf-feature-translator",
@@ -2256,6 +2259,7 @@ dependencies = [
  "ucf-influence",
  "ucf-ism",
  "ucf-ncde",
+ "ucf-nsr",
  "ucf-nsr-port",
  "ucf-onn",
  "ucf-output-router",

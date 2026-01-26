@@ -330,7 +330,7 @@ mod tests {
             integration_score: Some(1234),
         };
         let report = NsrReport {
-            verdict: ucf_nsr_port::NsrVerdict::Ok,
+            verdict: ucf_nsr_port::NsrVerdict::Allow,
             causal_report_commit: Digest32::new([0u8; 32]),
             violations: vec![ucf_nsr_port::NsrViolation {
                 code: "rule-a".to_string(),
@@ -377,6 +377,8 @@ mod tests {
             ssm_commit: Digest32::new([0u8; 32]),
             ssm_state_commit: Digest32::new([0u8; 32]),
             iit_output: None,
+            nsr_trace_commit: None,
+            nsr_verdict: None,
             commit: Digest32::new([1u8; 32]),
         };
         let snapshot_b = WorkspaceSnapshot {
@@ -388,6 +390,8 @@ mod tests {
             ssm_commit: Digest32::new([0u8; 32]),
             ssm_state_commit: Digest32::new([0u8; 32]),
             iit_output: None,
+            nsr_trace_commit: None,
+            nsr_verdict: None,
             commit: Digest32::new([2u8; 32]),
         };
 
@@ -418,6 +422,8 @@ mod tests {
             ssm_commit: Digest32::new([0u8; 32]),
             ssm_state_commit: Digest32::new([0u8; 32]),
             iit_output: None,
+            nsr_trace_commit: None,
+            nsr_verdict: None,
             commit: Digest32::new([1u8; 32]),
         };
         let snapshot_b = WorkspaceSnapshot {
@@ -429,6 +435,8 @@ mod tests {
             ssm_commit: Digest32::new([0u8; 32]),
             ssm_state_commit: Digest32::new([0u8; 32]),
             iit_output: None,
+            nsr_trace_commit: None,
+            nsr_verdict: None,
             commit: Digest32::new([2u8; 32]),
         };
         let _ = engine.evaluate(&snapshot_a, &state);
@@ -450,6 +458,8 @@ mod tests {
             ssm_commit: Digest32::new([0u8; 32]),
             ssm_state_commit: Digest32::new([0u8; 32]),
             iit_output: None,
+            nsr_trace_commit: None,
+            nsr_verdict: None,
             commit: Digest32::new([3u8; 32]),
         };
 
@@ -487,6 +497,8 @@ mod tests {
             ssm_commit: Digest32::new([0u8; 32]),
             ssm_state_commit: Digest32::new([0u8; 32]),
             iit_output: None,
+            nsr_trace_commit: None,
+            nsr_verdict: None,
             commit: Digest32::new([4u8; 32]),
         };
         let snapshot_b = WorkspaceSnapshot {
@@ -498,6 +510,8 @@ mod tests {
             ssm_commit: Digest32::new([0u8; 32]),
             ssm_state_commit: Digest32::new([0u8; 32]),
             iit_output: None,
+            nsr_trace_commit: None,
+            nsr_verdict: None,
             commit: Digest32::new([5u8; 32]),
         };
 

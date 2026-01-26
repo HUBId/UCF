@@ -977,7 +977,7 @@ mod tests {
             fn evaluate(&self, _input: &NsrInput) -> NsrReport {
                 self.order.lock().unwrap().push("nsr");
                 NsrReport {
-                    verdict: NsrVerdict::Ok,
+                    verdict: NsrVerdict::Allow,
                     causal_report_commit: Digest32::new([0u8; 32]),
                     violations: Vec::new(),
                     proof_digest: Digest32::new([0u8; 32]),

@@ -136,7 +136,7 @@ mod tests {
         let out_b = port.check(&claims);
 
         assert_eq!(out_a, out_b);
-        assert_eq!(out_a.verdict, NsrVerdict::Ok);
+        assert_eq!(out_a.verdict, NsrVerdict::Allow);
     }
 
     #[test]
