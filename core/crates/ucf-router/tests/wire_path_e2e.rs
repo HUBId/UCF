@@ -10,7 +10,9 @@ use ucf_attn_controller::{AttentionEventSink, AttentionUpdated};
 use ucf_bluebrain_port::MockBlueBrainPort;
 use ucf_cde_port::MockCdePort;
 use ucf_digital_brain::InMemoryDigitalBrain;
-use ucf_nsr_port::{NsrBackend, NsrInput, NsrPort, NsrReport, NsrVerdict, NsrViolation};
+use ucf_nsr_port::{
+    NsrBackend, NsrInput, NsrPort, NsrReport, NsrStubBackend, NsrVerdict, NsrViolation,
+};
 use ucf_policy_ecology::{PolicyEcology, PolicyRule, PolicyWeights};
 use ucf_policy_gateway::NoOpPolicyEvaluator;
 use ucf_risk_gate::PolicyRiskGate;
@@ -332,6 +334,7 @@ fn risk_gate_denies_speech_when_nsr_not_ok() {
         fn evaluate(&self, _input: &NsrInput) -> NsrReport {
             NsrReport {
                 verdict: NsrVerdict::Deny,
+                causal_report_commit: Digest32::new([0u8; 32]),
                 violations: vec![NsrViolation {
                     code: "NSR_RULE_FORBIDDEN_INTENT".to_string(),
                     detail_digest: Digest32::new([8u8; 32]),
@@ -394,6 +397,66 @@ fn risk_gate_denies_speech_when_nsr_not_ok() {
 }
 
 #[test]
+fn cde_runs_before_nsr_in_verify() {
+    #[derive(Clone)]
+    struct CaptureNsr {
+        seen: Arc<Mutex<Option<NsrInput>>>,
+    }
+
+    impl NsrBackend for CaptureNsr {
+        fn evaluate(&self, input: &NsrInput) -> NsrReport {
+            if let Ok(mut guard) = self.seen.lock() {
+                *guard = Some(input.clone());
+            }
+            NsrReport {
+                verdict: NsrVerdict::Ok,
+                causal_report_commit: input.causal_report_commit,
+                violations: Vec::new(),
+                proof_digest: Digest32::new([0u8; 32]),
+                commit: input.commit,
+            }
+        }
+    }
+
+    let policy = Arc::new(NoOpPolicyEvaluator::new());
+    let archive = Arc::new(InMemoryArchive::new());
+    let archive_store = Arc::new(InMemoryArchiveStore::new());
+    let ai_port = Arc::new(MockAiPort::new());
+    let speech_gate = Arc::new(PolicySpeechGate::new(PolicyEcology::allow_all()));
+    let risk_gate = Arc::new(PolicyRiskGate::new(PolicyEcology::allow_all()));
+    let tom_port = Arc::new(LowRiskTomPort);
+    let capture = CaptureNsr {
+        seen: Arc::new(Mutex::new(None)),
+    };
+    let router = Router::new(
+        policy,
+        archive,
+        archive_store,
+        None,
+        ai_port,
+        speech_gate,
+        risk_gate,
+        tom_port,
+        None,
+    )
+    .with_tcf_port(Box::new(FixedTcf::new()))
+    .with_nsr_port(Arc::new(NsrPort::new(Arc::new(capture.clone()))));
+
+    let _ = router
+        .handle_control_frame(normalize(decision_frame("order-1")))
+        .expect("route frame");
+
+    let input = capture
+        .seen
+        .lock()
+        .expect("lock input")
+        .clone()
+        .expect("nsr input captured");
+    assert_ne!(input.causal_report_commit, Digest32::new([0u8; 32]));
+    assert_eq!(input.counterfactuals.len(), 2);
+}
+
+#[test]
 fn risk_gate_denies_speech_on_unsafe_scm_probe() {
     struct LargeDagScm {
         dag: ScmDag,
@@ -433,6 +496,7 @@ fn risk_gate_denies_speech_on_unsafe_scm_probe() {
     let speech_gate = Arc::new(PolicySpeechGate::new(allow_speech_policy()));
     let risk_gate = Arc::new(PolicyRiskGate::new(PolicyEcology::allow_all()));
     let tom_port = Arc::new(LowRiskTomPort);
+    let nsr_backend = Arc::new(NsrStubBackend::new());
     let router = Router::new(
         policy,
         archive,
@@ -443,7 +507,8 @@ fn risk_gate_denies_speech_on_unsafe_scm_probe() {
         risk_gate,
         tom_port,
         None,
-    );
+    )
+    .with_nsr_port(Arc::new(NsrPort::new(nsr_backend)));
 
     let outcome = router
         .handle_control_frame(normalize(decision_frame("ping")))
@@ -461,6 +526,7 @@ fn sandbox_allows_speech_outputs() {
     let speech_gate = Arc::new(PolicySpeechGate::new(allow_speech_policy()));
     let risk_gate = Arc::new(PolicyRiskGate::new(PolicyEcology::allow_all()));
     let tom_port = Arc::new(LowRiskTomPort);
+    let nsr_backend = Arc::new(NsrStubBackend::new());
     let router = Router::new(
         policy,
         archive,
@@ -471,7 +537,8 @@ fn sandbox_allows_speech_outputs() {
         risk_gate,
         tom_port,
         None,
-    );
+    )
+    .with_nsr_port(Arc::new(NsrPort::new(nsr_backend)));
 
     let outcome = router
         .handle_control_frame(normalize(decision_frame("ping")))
@@ -554,6 +621,7 @@ fn risk_gate_permits_speech_when_risk_is_low() {
     let speech_gate = Arc::new(PolicySpeechGate::new(allow_speech_policy()));
     let risk_gate = Arc::new(PolicyRiskGate::new(PolicyEcology::allow_all()));
     let tom_port = Arc::new(LowRiskTomPort);
+    let nsr_backend = Arc::new(NsrStubBackend::new());
     let router = Router::new(
         policy,
         archive,
@@ -564,7 +632,8 @@ fn risk_gate_permits_speech_when_risk_is_low() {
         risk_gate,
         tom_port,
         None,
-    );
+    )
+    .with_nsr_port(Arc::new(NsrPort::new(nsr_backend)));
 
     let outcome = router
         .handle_control_frame(normalize(decision_frame("ping")))

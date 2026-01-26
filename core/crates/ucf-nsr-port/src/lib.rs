@@ -87,7 +87,7 @@ impl NsrBackend for NsrStubBackend {
             });
             rules_fired.push("NSR_STUB_MATCH".to_string());
         }
-        let proof_digest = compute_proof_digest(input, &rules_fired, &[]);
+        let proof_digest = compute_proof_digest(input, &rules_fired, &[], &[]);
         ucf_nsr::finalize_report(input, violations, proof_digest)
     }
 }
@@ -127,6 +127,8 @@ mod tests {
             1,
             vec![ActionIntent::new("ok")],
             Digest32::new([9u8; 32]),
+            Digest32::new([0u8; 32]),
+            Vec::new(),
         );
         let port = NsrPort::default();
 
@@ -145,6 +147,8 @@ mod tests {
             1,
             vec![ActionIntent::new("deny")],
             Digest32::new([2u8; 32]),
+            Digest32::new([0u8; 32]),
+            Vec::new(),
         );
         let backend = NsrStubBackend::new().with_violation_predicate("deny");
         let port = NsrPort::new(Arc::new(backend));

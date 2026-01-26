@@ -16,7 +16,7 @@ impl NsrBackend for NsrDatalogBackend {
     fn evaluate(&self, input: &NsrInput) -> NsrReport {
         let rule_checker = RuleChecker;
         let rule_result = rule_checker.evaluate(input);
-        let proof_digest = compute_proof_digest(input, &rule_result.rules_fired, &[]);
+        let proof_digest = compute_proof_digest(input, &rule_result.rules_fired, &[], &[]);
         finalize_report(input, rule_result.violations, proof_digest)
     }
 }

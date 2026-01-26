@@ -5,5 +5,6 @@ edition = "2021"
 
 [dependencies]
 blake3 = "1"
+ucf-cde-scm = { path = "../../../causal/crates/ucf-cde-scm" }
 ucf-sandbox = { path = "../../../../core/crates/ucf-sandbox" }
 ucf-types = { path = "../../../../core/crates/ucf-types" }

@@ -16,7 +16,8 @@ impl NsrBackend for NsrSmtBackend {
     fn evaluate(&self, input: &NsrInput) -> NsrReport {
         let checker = ConstraintChecker;
         let constraint_result = checker.evaluate(input);
-        let proof_digest = compute_proof_digest(input, &[], &constraint_result.constraints_checked);
+        let proof_digest =
+            compute_proof_digest(input, &[], &constraint_result.constraints_checked, &[]);
         finalize_report(input, constraint_result.violations, proof_digest)
     }
 }
