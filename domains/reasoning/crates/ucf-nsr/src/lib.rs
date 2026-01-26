@@ -5,6 +5,8 @@ use ucf_cde_scm::CounterfactualResult;
 use ucf_sandbox::IntentSummary;
 use ucf_types::Digest32;
 
+const LIGHT_PROOF_DOMAIN: &[u8] = b"ucf.nsr.proof.light.v1";
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NsrVerdict {
     Ok,
@@ -291,6 +293,14 @@ pub fn finalize_report(
         proof_digest,
         commit,
     }
+}
+
+pub fn light_report(input: &NsrInput) -> NsrReport {
+    let mut hasher = Hasher::new();
+    hasher.update(LIGHT_PROOF_DOMAIN);
+    hasher.update(input.commit.as_bytes());
+    let proof_digest = Digest32::new(*hasher.finalize().as_bytes());
+    finalize_report(input, Vec::new(), proof_digest)
 }
 
 fn verdict_from_violations(violations: &[NsrViolation]) -> NsrVerdict {

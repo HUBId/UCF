@@ -372,12 +372,14 @@ mod tests {
             cycle_id: 1,
             broadcast: vec![signal.clone()],
             recursion_used: 0,
+            spike_root_commit: Digest32::new([0u8; 32]),
             commit: Digest32::new([1u8; 32]),
         };
         let snapshot_b = WorkspaceSnapshot {
             cycle_id: 2,
             broadcast: vec![signal],
             recursion_used: 0,
+            spike_root_commit: Digest32::new([0u8; 32]),
             commit: Digest32::new([2u8; 32]),
         };
 
@@ -403,12 +405,14 @@ mod tests {
             cycle_id: 1,
             broadcast: vec![stable_signal.clone()],
             recursion_used: 0,
+            spike_root_commit: Digest32::new([0u8; 32]),
             commit: Digest32::new([1u8; 32]),
         };
         let snapshot_b = WorkspaceSnapshot {
             cycle_id: 2,
             broadcast: vec![stable_signal],
             recursion_used: 0,
+            spike_root_commit: Digest32::new([0u8; 32]),
             commit: Digest32::new([2u8; 32]),
         };
         let _ = engine.evaluate(&snapshot_a, &state);
@@ -425,6 +429,7 @@ mod tests {
             cycle_id: 3,
             broadcast: vec![surprise_signal],
             recursion_used: 0,
+            spike_root_commit: Digest32::new([0u8; 32]),
             commit: Digest32::new([3u8; 32]),
         };
 
@@ -457,12 +462,14 @@ mod tests {
             cycle_id: 1,
             broadcast: vec![signal.clone()],
             recursion_used: 0,
+            spike_root_commit: Digest32::new([0u8; 32]),
             commit: Digest32::new([4u8; 32]),
         };
         let snapshot_b = WorkspaceSnapshot {
             cycle_id: 2,
             broadcast: vec![signal],
             recursion_used: 0,
+            spike_root_commit: Digest32::new([0u8; 32]),
             commit: Digest32::new([5u8; 32]),
         };
 

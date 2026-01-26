@@ -294,6 +294,7 @@ mod tests {
                 },
             ],
             recursion_used: 0,
+            spike_root_commit: Digest32::new([0u8; 32]),
             commit: Digest32::new([9u8; 32]),
         };
 
@@ -311,6 +312,7 @@ mod tests {
             cycle_id: 1,
             broadcast: vec![],
             recursion_used: 0,
+            spike_root_commit: Digest32::new([0u8; 32]),
             commit: Digest32::new([3u8; 32]),
         };
         let (_report, actions) = monitor.evaluate(&snapshot, 0, None);

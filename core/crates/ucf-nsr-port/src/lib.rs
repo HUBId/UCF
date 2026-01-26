@@ -5,7 +5,7 @@ use std::sync::Arc;
 use ucf_nsr::{compute_proof_digest, NsrEngine};
 use ucf_types::Digest32;
 
-pub use ucf_nsr::{ActionIntent, NsrInput, NsrReport, NsrVerdict, NsrViolation};
+pub use ucf_nsr::{light_report, ActionIntent, NsrInput, NsrReport, NsrVerdict, NsrViolation};
 
 pub trait NsrBackend {
     fn evaluate(&self, input: &NsrInput) -> NsrReport;

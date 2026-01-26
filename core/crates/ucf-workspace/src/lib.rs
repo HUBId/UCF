@@ -10,6 +10,7 @@ use ucf_policy_ecology::{
 };
 use ucf_predictive_coding::{SurpriseBand, SurpriseUpdated};
 use ucf_sleep_coordinator::{SleepTrigger, SleepTriggered};
+use ucf_spikebus::{SpikeBusState, SpikeEvent, SpikeModuleId};
 use ucf_types::v1::spec::{ActionCode, DecisionKind, PolicyDecision};
 use ucf_types::Digest32;
 
@@ -440,6 +441,7 @@ pub struct WorkspaceSnapshot {
     pub cycle_id: u64,
     pub broadcast: Vec<WorkspaceSignal>,
     pub recursion_used: u16,
+    pub spike_root_commit: Digest32,
     pub commit: Digest32,
 }
 
@@ -455,12 +457,17 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
         snapshot.broadcast.as_slice()
     };
     let mut payload = Vec::with_capacity(
-        2 + 8 + 2 + 2 + signals.len() * (2 + 2 + Digest32::LEN + 2 + SUMMARY_MAX_BYTES),
+        2 + 8
+            + 2
+            + 2
+            + Digest32::LEN
+            + signals.len() * (2 + 2 + Digest32::LEN + 2 + SUMMARY_MAX_BYTES),
     );
     payload.extend_from_slice(&SNAPSHOT_DOMAIN_TAG.to_be_bytes());
     payload.extend_from_slice(&snapshot.cycle_id.to_be_bytes());
     payload.extend_from_slice(&(signals.len() as u16).to_be_bytes());
     payload.extend_from_slice(&snapshot.recursion_used.to_be_bytes());
+    payload.extend_from_slice(snapshot.spike_root_commit.as_bytes());
     for signal in signals {
         payload.push(signal.kind as u8);
         payload.push(signal.slot);
@@ -486,6 +493,7 @@ pub struct Workspace {
     next_seq: u64,
     drops: DropCounters,
     recursion_used: u16,
+    spike_bus: SpikeBusState,
 }
 
 impl Workspace {
@@ -496,6 +504,7 @@ impl Workspace {
             next_seq: 0,
             drops: DropCounters::default(),
             recursion_used: 0,
+            spike_bus: SpikeBusState::new(),
         }
     }
 
@@ -509,6 +518,28 @@ impl Workspace {
 
     pub fn set_broadcast_cap(&mut self, broadcast_cap: usize) {
         self.config.broadcast_cap = broadcast_cap.min(self.config.cap);
+    }
+
+    pub fn append_spikes<I>(&mut self, spikes: I)
+    where
+        I: IntoIterator<Item = SpikeEvent>,
+    {
+        for ev in spikes {
+            self.spike_bus.append(ev);
+        }
+    }
+
+    pub fn drain_spikes_for(
+        &mut self,
+        dst: SpikeModuleId,
+        cycle_id: u64,
+        limit: usize,
+    ) -> Vec<SpikeEvent> {
+        self.spike_bus.drain_for(dst, cycle_id, limit)
+    }
+
+    pub fn spike_root_commit(&self) -> Digest32 {
+        self.spike_bus.root_commit()
     }
 
     pub fn publish(&mut self, mut sig: WorkspaceSignal) {
@@ -538,11 +569,13 @@ impl Workspace {
             .collect();
         let recursion_used = self.recursion_used;
         self.recursion_used = 0;
-        let commit = commit_snapshot(cycle_id, recursion_used, &broadcast);
+        let spike_root_commit = self.spike_bus.root_commit();
+        let commit = commit_snapshot(cycle_id, recursion_used, spike_root_commit, &broadcast);
         WorkspaceSnapshot {
             cycle_id,
             broadcast,
             recursion_used,
+            spike_root_commit,
             commit,
         }
     }
@@ -914,10 +947,16 @@ fn compare_for_broadcast(a: &SignalEntry, b: &SignalEntry) -> Ordering {
     a.seq.cmp(&b.seq)
 }
 
-fn commit_snapshot(cycle_id: u64, recursion_used: u16, broadcast: &[WorkspaceSignal]) -> Digest32 {
+fn commit_snapshot(
+    cycle_id: u64,
+    recursion_used: u16,
+    spike_root_commit: Digest32,
+    broadcast: &[WorkspaceSignal],
+) -> Digest32 {
     let mut hasher = Hasher::new();
     hasher.update(&cycle_id.to_be_bytes());
     hasher.update(&recursion_used.to_be_bytes());
+    hasher.update(spike_root_commit.as_bytes());
     for signal in broadcast {
         hasher.update(&[signal.kind as u8]);
         hasher.update(&[signal.slot]);
