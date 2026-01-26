@@ -7,6 +7,7 @@ edition = "2021"
 blake3 = "1"
 ucf-attn-controller = { path = "../ucf-attn-controller" }
 ucf-consistency-engine = { path = "../ucf-consistency-engine" }
+ucf-iit = { path = "../ucf-iit" }
 ucf-output-router = { path = "../ucf-output-router" }
 ucf-policy-ecology = { path = "../ucf-policy-ecology" }
 ucf-predictive-coding = { path = "../ucf-predictive-coding" }

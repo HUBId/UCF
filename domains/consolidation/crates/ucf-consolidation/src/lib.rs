@@ -515,11 +515,13 @@ pub struct ReplayBias {
 impl ReplayBias {
     pub fn total_bias(&self) -> u16 {
         let iit_bias = self.iit_bias();
+        let reconciliation_bias = reconciliation_bias(self.iit.phi);
         let consistency_bias = self.consistency_bias();
         let surprise_bias = self.surprise_bias();
         self.attention
             .replay_bias
             .saturating_add(iit_bias)
+            .saturating_add(reconciliation_bias)
             .saturating_add(consistency_bias)
             .saturating_add(surprise_bias)
             .saturating_add(self.rdc_bias)
@@ -530,6 +532,7 @@ impl ReplayBias {
         self.attention
             .gain
             .saturating_add(self.iit_bias())
+            .saturating_add(reconciliation_bias(self.iit.phi))
             .saturating_add(self.rdc_bias)
             .min(10_000)
     }
@@ -797,10 +800,11 @@ impl ReplayCascade {
 
     fn adjust_caps(&self, bias: &ReplayBias) -> (usize, usize, usize) {
         let (replay_shift, learning_shift) = bias.influence_window_shift();
+        let reconcile_shift = reconciliation_shift(bias.iit.phi);
         let micro_cap = adjust_cap(self.config.micro_cap, replay_shift);
-        let macro_cap = adjust_cap(self.config.macro_cap, learning_shift);
+        let macro_cap = adjust_cap(self.config.macro_cap, learning_shift + reconcile_shift);
         let meso_shift = (replay_shift + learning_shift) / 2;
-        let meso_cap = adjust_cap(self.config.meso_cap, meso_shift);
+        let meso_cap = adjust_cap(self.config.meso_cap, meso_shift + reconcile_shift);
         (micro_cap, meso_cap, macro_cap)
     }
 }
@@ -828,6 +832,24 @@ fn adjust_cap(base: usize, delta: i16) -> usize {
 fn influence_shift(value: i16) -> i16 {
     let scaled = value / 3000;
     scaled.clamp(-1, 1)
+}
+
+fn reconciliation_bias(phi: u16) -> u16 {
+    if phi < 3_500 {
+        1_200
+    } else if phi < 5_000 {
+        600
+    } else {
+        0
+    }
+}
+
+fn reconciliation_shift(phi: u16) -> i16 {
+    if reconciliation_bias(phi) >= 1_000 {
+        1
+    } else {
+        0
+    }
 }
 
 fn micro_score(bias: &ReplayBias, weights: &ReplayWeights, age_rank: u16) -> i64 {
@@ -1172,6 +1194,11 @@ mod tests {
     }
 
     #[test]
+    fn low_phi_increases_replay_bias() {
+        assert!(reconciliation_bias(2000) > reconciliation_bias(8000));
+    }
+
+    #[test]
     fn builds_milestones_deterministically() {
         let records = vec![
             sample_record("rec-1", 10, None),
@@ -1333,7 +1360,9 @@ mod tests {
             replay_macro_cap: 1,
         };
         let graph = build_memory_graph(&records, &config);
-        let bias = sample_bias(DriftBand::Medium, 3200);
+        let mut bias = sample_bias(DriftBand::Medium, 3200);
+        bias.iit.phi = 8000;
+        bias.iit.band = IitBand::High;
         let cascade = ReplayCascade::new(ReplayCascadeConfig::new(2, 1, 1));
         let context = SleepReplayContext {
             cycle_id: 2,

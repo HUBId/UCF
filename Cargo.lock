@@ -2018,6 +2018,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucf-iit"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ucf-spikebus",
+ "ucf-types",
+]
+
+[[package]]
 name = "ucf-iit-monitor"
 version = "0.1.0"
 dependencies = [
@@ -2242,6 +2251,7 @@ dependencies = [
  "ucf-digital-brain",
  "ucf-feature-translator",
  "ucf-geist",
+ "ucf-iit",
  "ucf-iit-monitor",
  "ucf-influence",
  "ucf-ism",
@@ -2472,6 +2482,7 @@ dependencies = [
  "blake3",
  "ucf-attn-controller",
  "ucf-consistency-engine",
+ "ucf-iit",
  "ucf-output-router",
  "ucf-policy-ecology",
  "ucf-predictive-coding",

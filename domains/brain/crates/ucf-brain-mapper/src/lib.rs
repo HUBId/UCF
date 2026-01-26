@@ -209,6 +209,7 @@ mod tests {
             ncde_commit: Digest32::new([0u8; 32]),
             ssm_commit: Digest32::new([0u8; 32]),
             ssm_state_commit: Digest32::new([0u8; 32]),
+            iit_output: None,
             commit: Digest32::new([2u8; 32]),
         }
     }
@@ -222,6 +223,7 @@ mod tests {
             ncde_commit: Digest32::new([0u8; 32]),
             ssm_commit: Digest32::new([0u8; 32]),
             ssm_state_commit: Digest32::new([0u8; 32]),
+            iit_output: None,
             commit: Digest32::new([2u8; 32]),
         }
     }
