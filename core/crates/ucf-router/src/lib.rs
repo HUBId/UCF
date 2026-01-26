@@ -35,6 +35,7 @@ use ucf_geist::{SelfState, SelfStateBuilder};
 use ucf_iit_monitor::{IitAction, IitActionKind, IitBand, IitMonitor, IitReport};
 use ucf_influence::{InfluenceInputs, InfluenceOutputs, InfluenceState, NodeId};
 use ucf_ism::IsmStore;
+use ucf_ncde::{ControlFrame as NcdeControlFrame, NcdeCore, NcdeOutput, NcdeParams};
 use ucf_nsr_port::{light_report, ActionIntent, NsrInput, NsrPort, NsrReport, NsrVerdict};
 use ucf_onn::{ModuleId, OnnCore, OnnInputs, PhaseFrame};
 use ucf_output_router::{
@@ -79,6 +80,7 @@ const SANDBOX_DENIED_RECORD_KIND: u16 = 73;
 const CAUSAL_REPORT_RECORD_KIND: u16 = 91;
 const PHASE_FRAME_RECORD_KIND: u16 = 118;
 const SPIKE_RECORD_KIND: u16 = 131;
+const NCDE_RECORD_KIND: u16 = 142;
 const ONN_COHERENCE_THROTTLE: u16 = 2000;
 const CAUSAL_REPORT_FLAG_LIGHT: u16 = 0b1000;
 
@@ -150,6 +152,8 @@ pub struct Router {
     influence_state: Mutex<InfluenceState>,
     last_influence_outputs: Mutex<Option<InfluenceOutputs>>,
     last_influence_root_commit: Mutex<Option<Digest32>>,
+    ncde_core: Mutex<NcdeCore>,
+    last_ncde_output: Mutex<Option<NcdeOutput>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -234,6 +238,7 @@ struct StageContext {
     influence_outputs: Option<InfluenceOutputs>,
     structural_stats: Option<StructuralCycleStats>,
     structural_proposal: Option<StructuralDeltaProposal>,
+    ncde_output: Option<NcdeOutput>,
 }
 
 impl StageContext {
@@ -271,6 +276,7 @@ impl StageContext {
             influence_outputs: None,
             structural_stats: None,
             structural_proposal: None,
+            ncde_output: None,
         }
     }
 }
@@ -354,6 +360,8 @@ impl Router {
             influence_state: Mutex::new(InfluenceState::new_default()),
             last_influence_outputs: Mutex::new(None),
             last_influence_root_commit: Mutex::new(None),
+            ncde_core: Mutex::new(NcdeCore::new(NcdeParams::default())),
+            last_ncde_output: Mutex::new(None),
         }
     }
 
@@ -421,6 +429,7 @@ impl Router {
                 broadcast: Vec::new(),
                 recursion_used: 0,
                 spike_root_commit: Digest32::new([0u8; 32]),
+                ncde_commit: Digest32::new([0u8; 32]),
                 commit: Digest32::new([0u8; 32]),
             })
     }
@@ -666,6 +675,35 @@ impl Router {
                         WorkspaceSignal::from_risk_result(result, None, Some(pulse.slot))
                     }));
 
+                    let spike_root_commit = ctx
+                        .spike_root_commit
+                        .unwrap_or_else(|| Digest32::new([0u8; 32]));
+                    let spike_counts = summarize_spike_counts(&spikes);
+                    let attn_gain = ctx
+                        .attention_weights
+                        .as_ref()
+                        .map(|weights| weights.gain)
+                        .unwrap_or(0);
+                    if let Some(ncde_output) = self.tick_ncde(
+                        cycle_id,
+                        &phase_frame,
+                        spike_root_commit,
+                        spike_counts,
+                        drift_score,
+                        surprise_score,
+                        attention_risk,
+                        attn_gain,
+                    ) {
+                        ctx.ncde_output = Some(ncde_output.clone());
+                        if let Ok(mut guard) = self.last_ncde_output.lock() {
+                            *guard = Some(ncde_output.clone());
+                        }
+                        if let Ok(mut workspace) = self.workspace.lock() {
+                            workspace.set_ncde_commit(ncde_output.commit);
+                        }
+                        self.append_ncde_output_record(cycle_id, &ncde_output);
+                    }
+
                     let (iit_report, iit_actions) = {
                         let mut monitor = self.iit_monitor.lock().expect("iit monitor lock");
                         monitor.evaluate(
@@ -722,12 +760,18 @@ impl Router {
                         .lock()
                         .map(|attn| attn.commit)
                         .unwrap_or_else(|_| Digest32::new([0u8; 32]));
+                    let ncde_commit = ctx
+                        .ncde_output
+                        .as_ref()
+                        .map(|output| output.h_commit)
+                        .unwrap_or_else(|| Digest32::new([0u8; 32]));
                     let consistency = consistency_score_from_nsr(ctx.nsr_report.as_ref());
                     let self_state = SelfStateBuilder::new(cycle_id)
                         .ssm_commit(ssm_commit)
                         .workspace_commit(workspace_snapshot.commit)
                         .risk_commit(risk_commit)
                         .attn_commit(attn_commit)
+                        .ncde_commit(ncde_commit)
                         .consistency(consistency)
                         .build();
                     let previous_state = self
@@ -1583,7 +1627,25 @@ impl Router {
         };
         let weights = controller.compute(&inputs);
         let weights = apply_consistency_effects(weights, ctx.consistency_effects);
-        Some(apply_influence_effects(weights, ctx.influence))
+        let weights = apply_influence_effects(weights, ctx.influence);
+        Some(self.apply_ncde_attention_bias(weights))
+    }
+
+    fn apply_ncde_attention_bias(&self, mut weights: AttentionWeights) -> AttentionWeights {
+        let energy = self
+            .last_ncde_output
+            .lock()
+            .ok()
+            .and_then(|guard| guard.as_ref().map(|output| output.energy));
+        let Some(energy) = energy else {
+            return weights;
+        };
+        let bias = (energy / 100).min(200);
+        if bias > 0 {
+            weights.gain = clamp_u16(u32::from(weights.gain) + u32::from(bias));
+            weights.commit = commit_attention_override(&weights);
+        }
+        weights
     }
 
     fn apply_iit_effects(&self, effects: IitActionEffects) {
@@ -1758,6 +1820,53 @@ impl Router {
             boundary_commit: spike_root_commit,
         };
         self.append_archive_record(RecordKind::Other(SPIKE_RECORD_KIND), payload_commit, meta);
+    }
+
+    fn append_ncde_output_record(&self, cycle_id: u64, output: &NcdeOutput) {
+        let payload = format!(
+            "commit={};energy={};h_commit={}",
+            output.commit, output.energy, output.h_commit
+        )
+        .into_bytes();
+        let record_id = format!("ncde-{cycle_id}-{}", hex::encode(output.commit.as_bytes()));
+        let record = build_compact_record(record_id, cycle_id, "ncde", payload);
+        self.archive.append(record);
+
+        let meta = RecordMeta {
+            cycle_id,
+            tier: 0,
+            flags: 0,
+            boundary_commit: output.commit,
+        };
+        self.append_archive_record(RecordKind::Other(NCDE_RECORD_KIND), output.commit, meta);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn tick_ncde(
+        &self,
+        cycle_id: u64,
+        phase_frame: &PhaseFrame,
+        spike_root_commit: Digest32,
+        spike_counts: Vec<(SpikeKind, u16)>,
+        drift: u16,
+        surprise: u16,
+        risk: u16,
+        attn_gain: u16,
+    ) -> Option<NcdeOutput> {
+        let mut core = self.ncde_core.lock().ok()?;
+        let control = NcdeControlFrame::new(
+            cycle_id,
+            phase_frame.commit,
+            phase_frame.global_phase,
+            phase_frame.coherence_plv,
+            spike_root_commit,
+            spike_counts,
+            drift,
+            surprise,
+            risk,
+            attn_gain,
+        );
+        Some(core.tick(&control))
     }
 
     fn append_sandbox_denied_record(&self, cycle_id: u64, report: &SandboxReport, reason: &str) {
@@ -2302,6 +2411,20 @@ fn top_spike_kinds(spikes: &[SpikeEvent], limit: usize) -> Vec<SpikeKind> {
         .collect()
 }
 
+fn summarize_spike_counts(spikes: &[SpikeEvent]) -> Vec<(SpikeKind, u16)> {
+    if spikes.is_empty() {
+        return Vec::new();
+    }
+    let mut counts: HashMap<SpikeKind, u16> = HashMap::new();
+    for spike in spikes {
+        let entry = counts.entry(spike.kind).or_insert(0);
+        *entry = entry.saturating_add(1);
+    }
+    let mut pairs = counts.into_iter().collect::<Vec<_>>();
+    pairs.sort_by(|(kind_a, _), (kind_b, _)| kind_a.cmp(kind_b));
+    pairs
+}
+
 fn spike_record_commit(
     spike_root_commit: Digest32,
     count: u16,
@@ -2761,6 +2884,7 @@ mod tests {
             workspace_commit: Digest32::new([2u8; 32]),
             risk_commit: Digest32::new([3u8; 32]),
             attn_commit: Digest32::new([4u8; 32]),
+            ncde_commit: Digest32::new([6u8; 32]),
             consistency: 0,
             commit: Digest32::new([5u8; 32]),
         };
@@ -2831,6 +2955,56 @@ mod tests {
 
         assert!(updated.gain > base.gain);
         assert_eq!(updated.channel, FocusChannel::Exploration);
+    }
+
+    #[test]
+    fn ncde_commit_flows_into_workspace_and_self_state() {
+        let router = build_router();
+        let phase_frame = PhaseFrame {
+            cycle_id: 1,
+            global_phase: 12_000,
+            module_phase: Vec::new(),
+            module_freq: Vec::new(),
+            coherence_plv: 6000,
+            commit: Digest32::new([1u8; 32]),
+        };
+        let output = router
+            .tick_ncde(
+                1,
+                &phase_frame,
+                Digest32::new([2u8; 32]),
+                vec![(SpikeKind::Novelty, 2)],
+                1000,
+                2000,
+                1500,
+                1800,
+            )
+            .expect("ncde output");
+        {
+            let mut workspace = router.workspace.lock().expect("workspace lock");
+            workspace.set_ncde_commit(output.commit);
+        }
+        let snapshot = router.arbitrate_workspace(1);
+        assert_eq!(snapshot.ncde_commit, output.commit);
+
+        let base = AttentionWeights {
+            channel: FocusChannel::Task,
+            gain: 3000,
+            noise_suppress: 1200,
+            replay_bias: 1500,
+            commit: Digest32::new([3u8; 32]),
+        };
+        {
+            let mut guard = router.last_ncde_output.lock().expect("ncde lock");
+            *guard = Some(output.clone());
+        }
+        let biased = router.apply_ncde_attention_bias(base.clone());
+        assert!(biased.gain >= base.gain);
+
+        let state = SelfStateBuilder::new(1)
+            .ncde_commit(output.h_commit)
+            .build();
+        assert_eq!(state.ncde_commit, output.h_commit);
     }
 
     #[test]

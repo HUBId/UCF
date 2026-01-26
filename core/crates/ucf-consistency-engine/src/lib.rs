@@ -200,6 +200,7 @@ mod tests {
             workspace_commit: Digest32::new([2u8; 32]),
             risk_commit: Digest32::new([3u8; 32]),
             attn_commit: Digest32::new([4u8; 32]),
+            ncde_commit: Digest32::new([5u8; 32]),
             consistency: 0,
             commit: Digest32::new([9u8; 32]),
         };

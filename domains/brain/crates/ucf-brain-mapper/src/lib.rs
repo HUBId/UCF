@@ -206,6 +206,7 @@ mod tests {
             }],
             recursion_used: 0,
             spike_root_commit: Digest32::new([0u8; 32]),
+            ncde_commit: Digest32::new([0u8; 32]),
             commit: Digest32::new([2u8; 32]),
         }
     }
@@ -216,6 +217,7 @@ mod tests {
             broadcast: Vec::new(),
             recursion_used: 0,
             spike_root_commit: Digest32::new([0u8; 32]),
+            ncde_commit: Digest32::new([0u8; 32]),
             commit: Digest32::new([2u8; 32]),
         }
     }

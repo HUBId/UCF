@@ -463,6 +463,7 @@ pub struct WorkspaceSnapshot {
     pub broadcast: Vec<WorkspaceSignal>,
     pub recursion_used: u16,
     pub spike_root_commit: Digest32,
+    pub ncde_commit: Digest32,
     pub commit: Digest32,
 }
 
@@ -482,6 +483,7 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
             + 2
             + 2
             + Digest32::LEN
+            + Digest32::LEN
             + signals.len() * (2 + 2 + Digest32::LEN + 2 + SUMMARY_MAX_BYTES),
     );
     payload.extend_from_slice(&SNAPSHOT_DOMAIN_TAG.to_be_bytes());
@@ -489,6 +491,7 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
     payload.extend_from_slice(&(signals.len() as u16).to_be_bytes());
     payload.extend_from_slice(&snapshot.recursion_used.to_be_bytes());
     payload.extend_from_slice(snapshot.spike_root_commit.as_bytes());
+    payload.extend_from_slice(snapshot.ncde_commit.as_bytes());
     for signal in signals {
         payload.push(signal.kind as u8);
         payload.push(signal.slot);
@@ -516,6 +519,7 @@ pub struct Workspace {
     recursion_used: u16,
     spike_bus: SpikeBusState,
     structural_proposal: Option<StructuralDeltaProposal>,
+    ncde_commit: Digest32,
 }
 
 impl Workspace {
@@ -528,6 +532,7 @@ impl Workspace {
             recursion_used: 0,
             spike_bus: SpikeBusState::new(),
             structural_proposal: None,
+            ncde_commit: Digest32::new([0u8; 32]),
         }
     }
 
@@ -573,6 +578,14 @@ impl Workspace {
         self.spike_bus.root_commit()
     }
 
+    pub fn set_ncde_commit(&mut self, commit: Digest32) {
+        self.ncde_commit = commit;
+    }
+
+    pub fn ncde_commit(&self) -> Digest32 {
+        self.ncde_commit
+    }
+
     pub fn publish(&mut self, mut sig: WorkspaceSignal) {
         sig.summary = sanitize_summary(&sig.summary);
         let entry = SignalEntry {
@@ -601,12 +614,20 @@ impl Workspace {
         let recursion_used = self.recursion_used;
         self.recursion_used = 0;
         let spike_root_commit = self.spike_bus.root_commit();
-        let commit = commit_snapshot(cycle_id, recursion_used, spike_root_commit, &broadcast);
+        let ncde_commit = self.ncde_commit;
+        let commit = commit_snapshot(
+            cycle_id,
+            recursion_used,
+            spike_root_commit,
+            ncde_commit,
+            &broadcast,
+        );
         WorkspaceSnapshot {
             cycle_id,
             broadcast,
             recursion_used,
             spike_root_commit,
+            ncde_commit,
             commit,
         }
     }
@@ -982,12 +1003,14 @@ fn commit_snapshot(
     cycle_id: u64,
     recursion_used: u16,
     spike_root_commit: Digest32,
+    ncde_commit: Digest32,
     broadcast: &[WorkspaceSignal],
 ) -> Digest32 {
     let mut hasher = Hasher::new();
     hasher.update(&cycle_id.to_be_bytes());
     hasher.update(&recursion_used.to_be_bytes());
     hasher.update(spike_root_commit.as_bytes());
+    hasher.update(ncde_commit.as_bytes());
     for signal in broadcast {
         hasher.update(&[signal.kind as u8]);
         hasher.update(&[signal.slot]);
