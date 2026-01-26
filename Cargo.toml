@@ -139,6 +139,7 @@ members = [
     "domains/digitalbrain/crates/ucf-digitalbrain-port",
     "domains/digital-brain/crates/ucf-digital-brain",
     "domains/brain/crates/ucf-bluebrain-port",
+    "domains/causal/crates/ucf-cde-scm",
     "domains/brain/crates/ucf-brain-mapper",
     "domains/geist/crates/ucf-geist",
     "domains/index/crates/ucf-vector-index",
