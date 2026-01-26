@@ -25,6 +25,7 @@ members = [
     "core/crates/ucf-nsr-port",
     "core/crates/ucf-events",
     "core/crates/ucf-tom-port",
+    "core/crates/ucf-influence",
     "core/crates/ucf-attn-controller",
     "core/crates/ucf-recursion-controller",
     "core/crates/ucf-ism",

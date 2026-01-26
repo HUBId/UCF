@@ -12,6 +12,7 @@ ucf-bus = { path = "../../../../core/crates/ucf-bus" }
 ucf-commit = { path = "../../../../core/crates/ucf-commit" }
 ucf-consistency-engine = { path = "../../../../core/crates/ucf-consistency-engine" }
 ucf-iit-monitor = { path = "../../../../core/crates/ucf-iit-monitor" }
+ucf-influence = { path = "../../../../core/crates/ucf-influence" }
 ucf-policy-ecology = { path = "../../../../core/crates/ucf-policy-ecology" }
 ucf-predictive-coding = { path = "../../../../core/crates/ucf-predictive-coding" }
 ucf-sleep-coordinator = { path = "../../../../core/crates/ucf-sleep-coordinator" }

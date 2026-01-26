@@ -1930,6 +1930,7 @@ dependencies = [
  "ucf-commit",
  "ucf-consistency-engine",
  "ucf-iit-monitor",
+ "ucf-influence",
  "ucf-policy-ecology",
  "ucf-predictive-coding",
  "ucf-sleep-coordinator",
@@ -2022,6 +2023,14 @@ dependencies = [
  "blake3",
  "ucf-types",
  "ucf-workspace",
+]
+
+[[package]]
+name = "ucf-influence"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ucf-types",
 ]
 
 [[package]]
@@ -2223,6 +2232,7 @@ dependencies = [
  "ucf-feature-translator",
  "ucf-geist",
  "ucf-iit-monitor",
+ "ucf-influence",
  "ucf-ism",
  "ucf-nsr-port",
  "ucf-onn",

@@ -33,6 +33,7 @@ use ucf_feature_translator::{
 };
 use ucf_geist::{SelfState, SelfStateBuilder};
 use ucf_iit_monitor::{IitAction, IitActionKind, IitBand, IitMonitor, IitReport};
+use ucf_influence::{InfluenceInputs, InfluenceOutputs, InfluenceState, NodeId};
 use ucf_ism::IsmStore;
 use ucf_nsr_port::{light_report, ActionIntent, NsrInput, NsrPort, NsrReport, NsrVerdict};
 use ucf_onn::{ModuleId, OnnCore, OnnInputs, PhaseFrame};
@@ -140,6 +141,9 @@ pub struct Router {
     last_brain_response_commit: Mutex<Option<Digest32>>,
     last_brain_arousal: Mutex<u16>,
     causal_engine: Mutex<CdeScmEngine>,
+    influence_state: Mutex<InfluenceState>,
+    last_influence_outputs: Mutex<Option<InfluenceOutputs>>,
+    last_influence_root_commit: Mutex<Option<Digest32>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -182,6 +186,7 @@ struct AttentionContext<'a> {
     consistency_effects: Option<ConsistencyActionEffects>,
     tom_report: &'a ucf_tom_port::TomReport,
     surprise_score: u16,
+    influence: Option<&'a InfluenceOutputs>,
 }
 
 pub trait StageTrace {
@@ -216,6 +221,9 @@ struct StageContext {
     iit_report: Option<IitReport>,
     iit_actions: Vec<IitAction>,
     recursion_budget: Option<RecursionBudget>,
+    phase_commit: Option<Digest32>,
+    spike_root_commit: Option<Digest32>,
+    influence_outputs: Option<InfluenceOutputs>,
 }
 
 impl StageContext {
@@ -248,6 +256,9 @@ impl StageContext {
             iit_report: None,
             iit_actions: Vec::new(),
             recursion_budget: None,
+            phase_commit: None,
+            spike_root_commit: None,
+            influence_outputs: None,
         }
     }
 }
@@ -325,6 +336,9 @@ impl Router {
             last_brain_response_commit: Mutex::new(None),
             last_brain_arousal: Mutex::new(0),
             causal_engine: Mutex::new(CdeScmEngine::new()),
+            influence_state: Mutex::new(InfluenceState::new_default()),
+            last_influence_outputs: Mutex::new(None),
+            last_influence_root_commit: Mutex::new(None),
         }
     }
 
@@ -478,6 +492,7 @@ impl Router {
                     });
                     ctx.lens_selection = lens_selection.clone();
                     let phase_frame = self.latest_phase_frame(cycle_id);
+                    ctx.phase_commit = Some(phase_frame.commit);
                     let spikes = encode_from_features(
                         cycle_id,
                         &phase_frame,
@@ -493,6 +508,7 @@ impl Router {
                     } else {
                         Digest32::new([0u8; 32])
                     };
+                    ctx.spike_root_commit = Some(spike_root_commit);
                     self.append_spike_bus_record(cycle_id, spike_root_commit, &spikes);
                     let phase_window = self.onn_phase_window();
                     let (nsr_spikes, cde_spikes) = if let Ok(mut workspace) = self.workspace.lock()
@@ -942,6 +958,65 @@ impl Router {
                         .as_ref()
                         .map(|(_, signal)| signal.score)
                         .unwrap_or(0);
+                    let drift_score = ctx
+                        .consistency_report
+                        .as_ref()
+                        .map(|report| report.drift_score)
+                        .unwrap_or(0);
+                    let phase_commit = ctx.phase_commit.unwrap_or(Digest32::new([0u8; 32]));
+                    let spike_root_commit =
+                        ctx.spike_root_commit.unwrap_or(Digest32::new([0u8; 32]));
+                    let attn_gain = self
+                        .last_attention
+                        .lock()
+                        .map(|attn| attn.gain)
+                        .unwrap_or(0);
+                    let influence_inputs = InfluenceInputs {
+                        cycle_id,
+                        phase_commit,
+                        spike_root: spike_root_commit,
+                        drift: drift_score,
+                        surprise: surprise_score,
+                        risk: ctx.attention_risk,
+                        attn_gain,
+                        commit: influence_inputs_commit(
+                            cycle_id,
+                            phase_commit,
+                            spike_root_commit,
+                            drift_score,
+                            surprise_score,
+                            ctx.attention_risk,
+                            attn_gain,
+                        ),
+                    };
+                    let influence_result = self
+                        .influence_state
+                        .lock()
+                        .ok()
+                        .map(|mut state| (state.root_commit, state.tick(&influence_inputs)));
+                    if let Some((root_commit, outputs)) = influence_result.clone() {
+                        ctx.influence_outputs = Some(outputs.clone());
+                        if let Ok(mut guard) = self.last_influence_outputs.lock() {
+                            *guard = Some(outputs.clone());
+                        }
+                        if let Ok(mut guard) = self.last_influence_root_commit.lock() {
+                            *guard = Some(root_commit);
+                        }
+                        let signal = WorkspaceSignal::from_influence_update(
+                            outputs.node_in.len(),
+                            root_commit,
+                            outputs.commit,
+                            Some(attn_gain),
+                            Some(pulse.slot),
+                        );
+                        self.publish_workspace_signal(signal);
+                        self.append_influence_record(
+                            cycle_id,
+                            root_commit,
+                            outputs.commit,
+                            outputs.node_in.len(),
+                        );
+                    }
                     let attention_ctx = AttentionContext {
                         policy_class: decision.kind as u16,
                         risk_score: ctx.attention_risk,
@@ -955,6 +1030,7 @@ impl Router {
                         consistency_effects: ctx.consistency_effects,
                         tom_report,
                         surprise_score,
+                        influence: influence_result.as_ref().map(|(_, outputs)| outputs),
                     };
                     let attention_weights = self.compute_attention(attention_ctx);
                     if let Some(weights) = attention_weights.as_ref() {
@@ -1443,7 +1519,8 @@ impl Router {
             surprise_score: ctx.surprise_score,
         };
         let weights = controller.compute(&inputs);
-        Some(apply_consistency_effects(weights, ctx.consistency_effects))
+        let weights = apply_consistency_effects(weights, ctx.consistency_effects);
+        Some(apply_influence_effects(weights, ctx.influence))
     }
 
     fn apply_iit_effects(&self, effects: IitActionEffects) {
@@ -1862,6 +1939,26 @@ impl Router {
         );
     }
 
+    fn append_influence_record(
+        &self,
+        cycle_id: u64,
+        root_commit: Digest32,
+        outputs_commit: Digest32,
+        edge_count: usize,
+    ) {
+        let payload = format!(
+            "root={};outputs={};edges={edge_count}",
+            root_commit, outputs_commit
+        )
+        .into_bytes();
+        let record_id = format!(
+            "influence-{cycle_id}-{}",
+            hex::encode(outputs_commit.as_bytes())
+        );
+        let record = build_compact_record(record_id, cycle_id, "influence", payload);
+        self.archive.append(record);
+    }
+
     fn append_nsr_audit_notice(&self, cycle_id: u64, report: &NsrReport) {
         let notice = ucf::boundary::v1::AuditNoticeV1 {
             event_kind: 1,
@@ -2264,6 +2361,40 @@ fn apply_consistency_effects(
     weights
 }
 
+fn apply_influence_effects(
+    mut weights: AttentionWeights,
+    influence: Option<&InfluenceOutputs>,
+) -> AttentionWeights {
+    let Some(influence) = influence else {
+        return weights;
+    };
+    let attention_in = influence.node_value(NodeId::Attention);
+    let memory_in = influence.node_value(NodeId::Memory);
+    let mut changed = false;
+    let delta = (i32::from(attention_in) + i32::from(memory_in)) / 4;
+    if delta != 0 {
+        let adjusted = (i32::from(weights.gain) + delta).clamp(0, 10_000);
+        weights.gain = adjusted as u16;
+        changed = true;
+    }
+    if attention_in <= -2000 {
+        if weights.channel != FocusChannel::Threat {
+            weights.channel = FocusChannel::Threat;
+            changed = true;
+        }
+    } else if (attention_in >= 2000 || memory_in >= 2000)
+        && weights.channel != FocusChannel::Threat
+        && weights.channel != FocusChannel::Exploration
+    {
+        weights.channel = FocusChannel::Exploration;
+        changed = true;
+    }
+    if changed {
+        weights.commit = commit_attention_override(&weights);
+    }
+    weights
+}
+
 fn action_intents_from_outputs(outputs: &[AiOutput]) -> Vec<ActionIntent> {
     outputs
         .iter()
@@ -2326,6 +2457,27 @@ fn commit_attention_override(weights: &AttentionWeights) -> Digest32 {
     hasher.update(&weights.gain.to_be_bytes());
     hasher.update(&weights.noise_suppress.to_be_bytes());
     hasher.update(&weights.replay_bias.to_be_bytes());
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn influence_inputs_commit(
+    cycle_id: u64,
+    phase_commit: Digest32,
+    spike_root_commit: Digest32,
+    drift: u16,
+    surprise: u16,
+    risk: u16,
+    attn_gain: u16,
+) -> Digest32 {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"ucf.influence.inputs.v1");
+    hasher.update(&cycle_id.to_be_bytes());
+    hasher.update(phase_commit.as_bytes());
+    hasher.update(spike_root_commit.as_bytes());
+    hasher.update(&drift.to_be_bytes());
+    hasher.update(&surprise.to_be_bytes());
+    hasher.update(&risk.to_be_bytes());
+    hasher.update(&attn_gain.to_be_bytes());
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
@@ -2504,6 +2656,25 @@ mod tests {
         let boosted = apply_consistency_effects(base_weights.clone(), Some(effects));
 
         assert!(boosted.replay_bias > base_weights.replay_bias);
+    }
+
+    #[test]
+    fn influence_adjusts_attention_gain_and_channel() {
+        let base = AttentionWeights {
+            channel: FocusChannel::Task,
+            gain: 3000,
+            noise_suppress: 1200,
+            replay_bias: 1500,
+            commit: Digest32::new([1u8; 32]),
+        };
+        let influence = InfluenceOutputs {
+            node_in: vec![(NodeId::Attention, 4200), (NodeId::Memory, 800)],
+            commit: Digest32::new([2u8; 32]),
+        };
+        let updated = apply_influence_effects(base.clone(), Some(&influence));
+
+        assert!(updated.gain > base.gain);
+        assert_eq!(updated.channel, FocusChannel::Exploration);
     }
 
     #[test]
