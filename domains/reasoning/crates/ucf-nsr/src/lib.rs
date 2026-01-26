@@ -433,6 +433,7 @@ struct NsrInputDigestFields<'a> {
 }
 
 impl<'a> NsrInputDigestFields<'a> {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         cycle_id: u64,
         intent: &'a IntentSummary,

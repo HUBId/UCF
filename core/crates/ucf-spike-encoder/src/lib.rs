@@ -11,6 +11,7 @@ const TTFS_DOMAIN: &[u8] = b"ucf.spike_encoder.ttfs.v1";
 const PAYLOAD_DOMAIN: &[u8] = b"ucf.spike_encoder.payload.v1";
 const MAX_SIGNAL: u16 = 10_000;
 
+#[allow(clippy::too_many_arguments)]
 pub fn encode_from_features(
     cycle_id: u64,
     phase: &PhaseFrame,
