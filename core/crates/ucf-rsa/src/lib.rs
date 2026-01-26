@@ -230,6 +230,7 @@ where
 #[derive(Clone, Debug)]
 pub struct StructuralProposalEngine {
     coherence_floor: u16,
+    integration_floor: u16,
     drift_ceiling: u16,
     nsr_warn_repeats: u16,
 }
@@ -238,6 +239,7 @@ impl Default for StructuralProposalEngine {
     fn default() -> Self {
         Self {
             coherence_floor: 5200,
+            integration_floor: 4200,
             drift_ceiling: 6800,
             nsr_warn_repeats: 2,
         }
@@ -256,6 +258,9 @@ impl StructuralProposalEngine {
         let mut reasons = Vec::new();
         if stats.coherence_plv < self.coherence_floor {
             reasons.push(ReasonCode::CoherenceLow);
+        }
+        if stats.integration_phi < self.integration_floor {
+            reasons.push(ReasonCode::IntegrationLow);
         }
         if stats.drift > self.drift_ceiling {
             reasons.push(ReasonCode::DriftHigh);

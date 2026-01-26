@@ -13,6 +13,7 @@ ucf-digital-brain = { path = "../../../domains/digital-brain/crates/ucf-digital-
 ucf-sandbox = { path = "../ucf-sandbox" }
 ucf-policy-ecology = { path = "../ucf-policy-ecology" }
 ucf-geist = { path = "../../../domains/geist/crates/ucf-geist" }
+ucf-iit = { path = "../ucf-iit" }
 ucf-iit-monitor = { path = "../ucf-iit-monitor" }
 ucf-onn = { path = "../ucf-onn" }
 ucf-nsr-port = { path = "../ucf-nsr-port" }

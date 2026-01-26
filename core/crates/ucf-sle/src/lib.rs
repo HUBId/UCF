@@ -376,6 +376,7 @@ mod tests {
             ncde_commit: Digest32::new([0u8; 32]),
             ssm_commit: Digest32::new([0u8; 32]),
             ssm_state_commit: Digest32::new([0u8; 32]),
+            iit_output: None,
             commit: Digest32::new([1u8; 32]),
         };
         let snapshot_b = WorkspaceSnapshot {
@@ -386,6 +387,7 @@ mod tests {
             ncde_commit: Digest32::new([0u8; 32]),
             ssm_commit: Digest32::new([0u8; 32]),
             ssm_state_commit: Digest32::new([0u8; 32]),
+            iit_output: None,
             commit: Digest32::new([2u8; 32]),
         };
 
@@ -415,6 +417,7 @@ mod tests {
             ncde_commit: Digest32::new([0u8; 32]),
             ssm_commit: Digest32::new([0u8; 32]),
             ssm_state_commit: Digest32::new([0u8; 32]),
+            iit_output: None,
             commit: Digest32::new([1u8; 32]),
         };
         let snapshot_b = WorkspaceSnapshot {
@@ -425,6 +428,7 @@ mod tests {
             ncde_commit: Digest32::new([0u8; 32]),
             ssm_commit: Digest32::new([0u8; 32]),
             ssm_state_commit: Digest32::new([0u8; 32]),
+            iit_output: None,
             commit: Digest32::new([2u8; 32]),
         };
         let _ = engine.evaluate(&snapshot_a, &state);
@@ -445,6 +449,7 @@ mod tests {
             ncde_commit: Digest32::new([0u8; 32]),
             ssm_commit: Digest32::new([0u8; 32]),
             ssm_state_commit: Digest32::new([0u8; 32]),
+            iit_output: None,
             commit: Digest32::new([3u8; 32]),
         };
 
@@ -481,6 +486,7 @@ mod tests {
             ncde_commit: Digest32::new([0u8; 32]),
             ssm_commit: Digest32::new([0u8; 32]),
             ssm_state_commit: Digest32::new([0u8; 32]),
+            iit_output: None,
             commit: Digest32::new([4u8; 32]),
         };
         let snapshot_b = WorkspaceSnapshot {
@@ -491,6 +497,7 @@ mod tests {
             ncde_commit: Digest32::new([0u8; 32]),
             ssm_commit: Digest32::new([0u8; 32]),
             ssm_state_commit: Digest32::new([0u8; 32]),
+            iit_output: None,
             commit: Digest32::new([5u8; 32]),
         };
 

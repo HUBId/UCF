@@ -200,7 +200,7 @@ fn average(history: &VecDeque<u16>) -> Option<u16> {
     Some(u16::try_from(avg.min(u32::from(u16::MAX))).unwrap_or(u16::MAX))
 }
 
-fn band_for_phi(phi: u16) -> IitBand {
+pub fn band_for_phi(phi: u16) -> IitBand {
     match phi {
         0..=3299 => IitBand::Low,
         3300..=6599 => IitBand::Medium,
@@ -208,7 +208,16 @@ fn band_for_phi(phi: u16) -> IitBand {
     }
 }
 
-fn report_commit(phi: u16, band: IitBand) -> Digest32 {
+pub fn report_for_phi(phi: u16) -> IitReport {
+    let band = band_for_phi(phi);
+    IitReport {
+        phi,
+        band,
+        commit: report_commit(phi, band),
+    }
+}
+
+pub fn report_commit(phi: u16, band: IitBand) -> Digest32 {
     let mut hasher = Hasher::new();
     hasher.update(DOMAIN_REPORT);
     hasher.update(&phi.to_be_bytes());
@@ -216,7 +225,7 @@ fn report_commit(phi: u16, band: IitBand) -> Digest32 {
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
-fn actions_for_phi(phi: u16, risk: u16) -> Vec<IitAction> {
+pub fn actions_for_phi(phi: u16, risk: u16) -> Vec<IitAction> {
     let mut actions = Vec::new();
 
     if phi < 3000 {
@@ -298,6 +307,7 @@ mod tests {
             ncde_commit: Digest32::new([0u8; 32]),
             ssm_commit: Digest32::new([0u8; 32]),
             ssm_state_commit: Digest32::new([0u8; 32]),
+            iit_output: None,
             commit: Digest32::new([9u8; 32]),
         };
 
@@ -319,6 +329,7 @@ mod tests {
             ncde_commit: Digest32::new([0u8; 32]),
             ssm_commit: Digest32::new([0u8; 32]),
             ssm_state_commit: Digest32::new([0u8; 32]),
+            iit_output: None,
             commit: Digest32::new([3u8; 32]),
         };
         let (_report, actions) = monitor.evaluate(&snapshot, 0, None);

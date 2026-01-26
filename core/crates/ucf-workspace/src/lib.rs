@@ -4,6 +4,7 @@ use blake3::Hasher;
 use std::cmp::Ordering;
 use ucf_attn_controller::{AttentionUpdated, FocusChannel};
 use ucf_consistency_engine::{ConsistencyReport as DriftReport, DriftBand};
+use ucf_iit::IitOutput;
 use ucf_output_router::{OutputRouterEvent, RouteDecision};
 use ucf_policy_ecology::{
     ConsistencyReport as PolicyConsistencyReport, ConsistencyVerdict, RiskDecision, RiskGateResult,
@@ -469,6 +470,7 @@ pub struct WorkspaceSnapshot {
     pub ncde_commit: Digest32,
     pub ssm_commit: Digest32,
     pub ssm_state_commit: Digest32,
+    pub iit_output: Option<IitOutput>,
     pub commit: Digest32,
 }
 
@@ -491,6 +493,8 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
             + Digest32::LEN
             + Digest32::LEN
             + Digest32::LEN
+            + 1
+            + Digest32::LEN
             + signals.len() * (2 + 2 + Digest32::LEN + 2 + SUMMARY_MAX_BYTES),
     );
     payload.extend_from_slice(&SNAPSHOT_DOMAIN_TAG.to_be_bytes());
@@ -501,6 +505,16 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
     payload.extend_from_slice(snapshot.ncde_commit.as_bytes());
     payload.extend_from_slice(snapshot.ssm_commit.as_bytes());
     payload.extend_from_slice(snapshot.ssm_state_commit.as_bytes());
+    match snapshot.iit_output.as_ref() {
+        Some(output) => {
+            payload.push(1);
+            payload.extend_from_slice(output.commit.as_bytes());
+        }
+        None => {
+            payload.push(0);
+            payload.extend_from_slice(&[0u8; Digest32::LEN]);
+        }
+    }
     for signal in signals {
         payload.push(signal.kind as u8);
         payload.push(signal.slot);
@@ -531,6 +545,7 @@ pub struct Workspace {
     ncde_commit: Digest32,
     ssm_commit: Digest32,
     ssm_state_commit: Digest32,
+    iit_output: Option<IitOutput>,
 }
 
 impl Workspace {
@@ -546,6 +561,7 @@ impl Workspace {
             ncde_commit: Digest32::new([0u8; 32]),
             ssm_commit: Digest32::new([0u8; 32]),
             ssm_state_commit: Digest32::new([0u8; 32]),
+            iit_output: None,
         }
     }
 
@@ -604,6 +620,10 @@ impl Workspace {
         self.ssm_state_commit = state_commit;
     }
 
+    pub fn set_iit_output(&mut self, output: IitOutput) {
+        self.iit_output = Some(output);
+    }
+
     pub fn ssm_commit(&self) -> Digest32 {
         self.ssm_commit
     }
@@ -643,6 +663,7 @@ impl Workspace {
         let ncde_commit = self.ncde_commit;
         let ssm_commit = self.ssm_commit;
         let ssm_state_commit = self.ssm_state_commit;
+        let iit_output = self.iit_output.take();
         let commit = commit_snapshot(
             cycle_id,
             recursion_used,
@@ -650,6 +671,7 @@ impl Workspace {
             ncde_commit,
             ssm_commit,
             ssm_state_commit,
+            iit_output.as_ref(),
             &broadcast,
         );
         WorkspaceSnapshot {
@@ -660,6 +682,7 @@ impl Workspace {
             ncde_commit,
             ssm_commit,
             ssm_state_commit,
+            iit_output,
             commit,
         }
     }
@@ -1031,6 +1054,7 @@ fn compare_for_broadcast(a: &SignalEntry, b: &SignalEntry) -> Ordering {
     a.seq.cmp(&b.seq)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn commit_snapshot(
     cycle_id: u64,
     recursion_used: u16,
@@ -1038,6 +1062,7 @@ fn commit_snapshot(
     ncde_commit: Digest32,
     ssm_commit: Digest32,
     ssm_state_commit: Digest32,
+    iit_output: Option<&IitOutput>,
     broadcast: &[WorkspaceSignal],
 ) -> Digest32 {
     let mut hasher = Hasher::new();
@@ -1047,6 +1072,15 @@ fn commit_snapshot(
     hasher.update(ncde_commit.as_bytes());
     hasher.update(ssm_commit.as_bytes());
     hasher.update(ssm_state_commit.as_bytes());
+    match iit_output {
+        Some(output) => {
+            hasher.update(&[1]);
+            hasher.update(output.commit.as_bytes());
+        }
+        None => {
+            hasher.update(&[0]);
+        }
+    }
     for signal in broadcast {
         hasher.update(&[signal.kind as u8]);
         hasher.update(&[signal.slot]);

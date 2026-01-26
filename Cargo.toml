@@ -14,6 +14,7 @@ members = [
     "core/crates/ucf-workspace",
     "core/crates/ucf-ai-port",
     "core/crates/ucf-sle",
+    "core/crates/ucf-iit",
     "core/crates/ucf-iit-monitor",
     "core/crates/ucf-ssm-port",
     "core/crates/ucf-ssm",

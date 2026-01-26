@@ -185,6 +185,7 @@ pub enum ReasonCode {
     DriftHigh,
     SurpriseHigh,
     CoherenceLow,
+    IntegrationLow,
     NsrWarn,
     ReplayInstability,
     Unknown(u16),
@@ -369,6 +370,7 @@ pub enum StructuralCommitResult {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StructuralCycleStats {
     pub coherence_plv: u16,
+    pub integration_phi: u16,
     pub drift: u16,
     pub surprise: u16,
     pub nsr_verdict: u8,
@@ -380,6 +382,7 @@ pub struct StructuralCycleStats {
 impl StructuralCycleStats {
     pub fn new(
         coherence_plv: u16,
+        integration_phi: u16,
         drift: u16,
         surprise: u16,
         nsr_verdict: u8,
@@ -388,6 +391,7 @@ impl StructuralCycleStats {
     ) -> Self {
         let commit = commit_cycle_stats(
             coherence_plv,
+            integration_phi,
             drift,
             surprise,
             nsr_verdict,
@@ -396,6 +400,7 @@ impl StructuralCycleStats {
         );
         Self {
             coherence_plv,
+            integration_phi,
             drift,
             surprise,
             nsr_verdict,
@@ -544,6 +549,7 @@ fn commit_structural_gates(
 
 fn commit_cycle_stats(
     coherence_plv: u16,
+    integration_phi: u16,
     drift: u16,
     surprise: u16,
     nsr_verdict: u8,
@@ -553,6 +559,7 @@ fn commit_cycle_stats(
     let mut hasher = Hasher::new();
     hasher.update(STRUCTURAL_STATS_DOMAIN);
     hasher.update(&coherence_plv.to_be_bytes());
+    hasher.update(&integration_phi.to_be_bytes());
     hasher.update(&drift.to_be_bytes());
     hasher.update(&surprise.to_be_bytes());
     hasher.update(&[nsr_verdict, policy_ok as u8, consistency_ok as u8]);
@@ -562,11 +569,12 @@ fn commit_cycle_stats(
 fn reason_rank(reason: &ReasonCode) -> u8 {
     match reason {
         ReasonCode::CoherenceLow => 0,
-        ReasonCode::DriftHigh => 1,
-        ReasonCode::SurpriseHigh => 2,
-        ReasonCode::NsrWarn => 3,
-        ReasonCode::ReplayInstability => 4,
-        ReasonCode::Unknown(_) => 5,
+        ReasonCode::IntegrationLow => 1,
+        ReasonCode::DriftHigh => 2,
+        ReasonCode::SurpriseHigh => 3,
+        ReasonCode::NsrWarn => 4,
+        ReasonCode::ReplayInstability => 5,
+        ReasonCode::Unknown(_) => 6,
     }
 }
 
@@ -575,8 +583,9 @@ fn reason_to_u16(reason: ReasonCode) -> u16 {
         ReasonCode::DriftHigh => 1,
         ReasonCode::SurpriseHigh => 2,
         ReasonCode::CoherenceLow => 3,
-        ReasonCode::NsrWarn => 4,
-        ReasonCode::ReplayInstability => 5,
+        ReasonCode::IntegrationLow => 4,
+        ReasonCode::NsrWarn => 5,
+        ReasonCode::ReplayInstability => 6,
         ReasonCode::Unknown(value) => 0x8000 | value,
     }
 }
@@ -598,6 +607,10 @@ fn apply_reasons(base: &StructuralParams, reasons: &[ReasonCode]) -> StructuralP
                         .saturating_sub(ONN_PHASE_WINDOW_STEP)
                         .max(ONN_PHASE_WINDOW_MIN);
                 }
+            }
+            ReasonCode::IntegrationLow => {
+                replay.meso_m = (replay.meso_m + 1).min(REPLAY_MESO_MAX);
+                replay.macro_n = (replay.macro_n + 1).min(REPLAY_MACRO_MAX);
             }
             ReasonCode::DriftHigh | ReasonCode::ReplayInstability => {
                 replay.macro_n = replay.macro_n.saturating_sub(1).max(REPLAY_MACRO_MIN);

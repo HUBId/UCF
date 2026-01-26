@@ -32,7 +32,10 @@ use ucf_feature_translator::{
     SaePort as FeatureSaePort,
 };
 use ucf_geist::{SelfState, SelfStateBuilder};
-use ucf_iit_monitor::{IitAction, IitActionKind, IitBand, IitMonitor, IitReport};
+use ucf_iit::{IitInputs, IitMonitor as IitProxyMonitor, IitOutput};
+use ucf_iit_monitor::{
+    actions_for_phi, report_for_phi, IitAction, IitActionKind, IitBand, IitReport,
+};
 use ucf_influence::{InfluenceInputs, InfluenceOutputs, InfluenceState, NodeId};
 use ucf_ism::IsmStore;
 use ucf_ncde::{ControlFrame as NcdeControlFrame, NcdeCore, NcdeOutput, NcdeParams};
@@ -137,7 +140,7 @@ pub struct Router {
     sle_engine: Arc<SleEngine>,
     consistency_engine: ConsistencyEngine,
     ism_store: Arc<Mutex<IsmStore>>,
-    iit_monitor: Mutex<IitMonitor>,
+    iit_monitor: Mutex<IitProxyMonitor>,
     recursion_controller: RecursionController,
     rsa_hooks: Vec<Arc<dyn RsaHook + Send + Sync>>,
     structural_store: Mutex<StructuralStore>,
@@ -350,7 +353,7 @@ impl Router {
             sle_engine: Arc::new(SleEngine::new(6)),
             consistency_engine: ConsistencyEngine,
             ism_store: Arc::new(Mutex::new(IsmStore::new(64))),
-            iit_monitor: Mutex::new(IitMonitor::new(4)),
+            iit_monitor: Mutex::new(IitProxyMonitor::new()),
             recursion_controller: RecursionController::default(),
             rsa_hooks: vec![Arc::new(MockRsaHook::new())],
             structural_store: Mutex::new(StructuralStore::default()),
@@ -441,6 +444,7 @@ impl Router {
                 ncde_commit: Digest32::new([0u8; 32]),
                 ssm_commit: Digest32::new([0u8; 32]),
                 ssm_state_commit: Digest32::new([0u8; 32]),
+                iit_output: None,
                 commit: Digest32::new([0u8; 32]),
             })
     }
@@ -690,6 +694,7 @@ impl Router {
                         .spike_root_commit
                         .unwrap_or_else(|| Digest32::new([0u8; 32]));
                     let spike_counts = summarize_spike_counts(&spikes);
+                    let spike_counts_iit = spike_counts.clone();
                     let spike_counts_ssm = spike_counts.clone();
                     let attn_gain = ctx
                         .attention_weights
@@ -734,14 +739,56 @@ impl Router {
                         }
                     }
 
-                    let (iit_report, iit_actions) = {
-                        let mut monitor = self.iit_monitor.lock().expect("iit monitor lock");
-                        monitor.evaluate(
-                            &workspace_snapshot,
-                            attention_risk,
-                            Some(phase_frame.coherence_plv),
-                        )
-                    };
+                    let iit_output =
+                        {
+                            let ssm_output = ctx.ssm_output.clone().or_else(|| {
+                                self.last_ssm_output.lock().ok().and_then(|g| g.clone())
+                            });
+                            let ncde_output = ctx.ncde_output.clone().or_else(|| {
+                                self.last_ncde_output.lock().ok().and_then(|g| g.clone())
+                            });
+                            let inputs = IitInputs::new(
+                                cycle_id,
+                                phase_frame.commit,
+                                phase_frame.coherence_plv,
+                                spike_root_commit,
+                                spike_counts_iit,
+                                ssm_output
+                                    .as_ref()
+                                    .map(|output| output.commit)
+                                    .unwrap_or_else(|| Digest32::new([0u8; 32])),
+                                ssm_output
+                                    .as_ref()
+                                    .map(|output| output.wm_salience)
+                                    .unwrap_or(0),
+                                ssm_output
+                                    .as_ref()
+                                    .map(|output| output.wm_novelty)
+                                    .unwrap_or(0),
+                                ncde_output
+                                    .as_ref()
+                                    .map(|output| output.commit)
+                                    .unwrap_or_else(|| Digest32::new([0u8; 32])),
+                                ncde_output
+                                    .as_ref()
+                                    .map(|output| output.energy)
+                                    .unwrap_or(0),
+                                ctx.nsr_report.as_ref().map(|report| report.commit),
+                                ctx.nsr_report.as_ref().map(|report| report.verdict.as_u8()),
+                                ctx.causal_report.as_ref().map(|report| report.commit),
+                                drift_score,
+                                surprise_score,
+                                attention_risk,
+                            );
+                            let mut monitor = self.iit_monitor.lock().expect("iit monitor lock");
+                            monitor.tick(&inputs)
+                        };
+                    let iit_report = report_for_phi(iit_output.phi_proxy);
+                    let iit_actions = actions_for_phi(iit_output.phi_proxy, attention_risk);
+                    if let Ok(mut workspace) = self.workspace.lock() {
+                        workspace.set_iit_output(iit_output.clone());
+                    }
+                    self.append_iit_output_record(cycle_id, &iit_output);
                     let attention_weights =
                         ctx.attention_weights.clone().unwrap_or_else(idle_attention);
                     // Bluebrain stimulation occurs during the Verify pulse using the latest
@@ -757,7 +804,7 @@ impl Router {
                         pulse.slot,
                     );
                     let recursion_inputs = RecursionInputs {
-                        phi: iit_report.phi,
+                        phi: iit_output.phi_proxy,
                         drift_score,
                         surprise: surprise_score,
                         risk: attention_risk,
@@ -837,12 +884,12 @@ impl Router {
                         &self.output_router_base,
                         &iit_actions,
                     );
-                    ctx.integration_score = Some(iit_report.phi);
+                    ctx.integration_score = Some(iit_output.phi_proxy);
                     ctx.integration_bias = effects.integration_bias;
                     ctx.iit_actions = iit_actions.clone();
                     self.apply_iit_effects(effects);
                     self.publish_workspace_signal(WorkspaceSignal::from_integration_score(
-                        iit_report.phi,
+                        iit_output.phi_proxy,
                         None,
                         Some(pulse.slot),
                     ));
@@ -930,6 +977,7 @@ impl Router {
                     );
                     let structural_stats = StructuralCycleStats::new(
                         phase_frame.coherence_plv,
+                        iit_output.phi_proxy,
                         drift_score,
                         surprise_score,
                         nsr_verdict.as_u8(),
@@ -1414,6 +1462,17 @@ impl Router {
             boundary_commit: Digest32::new([0u8; 32]),
         };
         self.append_archive_record(RecordKind::SelfState, state.commit, meta);
+    }
+
+    fn append_iit_output_record(&self, cycle_id: u64, output: &IitOutput) {
+        let payload = format!(
+            "commit={};phi_proxy={};coupling_proxy={};coherence={}",
+            output.commit, output.phi_proxy, output.coupling_proxy, output.coherence
+        )
+        .into_bytes();
+        let record_id = format!("iit-{cycle_id}-{}", hex::encode(output.commit.as_bytes()));
+        let record = build_compact_record(record_id, cycle_id, "iit", payload);
+        self.archive.append(record);
     }
 
     fn append_iit_report_record(&self, cycle_id: u64, report: &IitReport) {
