@@ -13,6 +13,7 @@ use ucf_types::{AiOutput, Digest32};
 pub use ucf_types::OutputChannel;
 
 const COHERENCE_THOUGHT_CAP: u16 = 1;
+const NSR_WARN_VERBOSE_LIMIT: usize = 240;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OutputFrame {
@@ -197,12 +198,18 @@ impl OutputRouter {
         let mut thought_count: u16 = 0;
         let mut decisions = Vec::with_capacity(outputs.len());
         let mut speech_count = 0usize;
-        let mut max_thought_frames_per_cycle =
-            if matches!(gates.nsr_summary.verdict, NsrVerdict::Warn) {
-                (self.config.max_thought_frames_per_cycle / 2).max(1)
-            } else {
-                self.config.max_thought_frames_per_cycle
-            };
+        let nsr_warn = matches!(gates.nsr_summary.verdict, NsrVerdict::Warn);
+        let suppress_verbose = self.suppress_verbose_thoughts || nsr_warn;
+        let verbose_limit = if nsr_warn {
+            self.verbose_thought_limit.min(NSR_WARN_VERBOSE_LIMIT)
+        } else {
+            self.verbose_thought_limit
+        };
+        let mut max_thought_frames_per_cycle = if nsr_warn {
+            (self.config.max_thought_frames_per_cycle / 2).max(1)
+        } else {
+            self.config.max_thought_frames_per_cycle
+        };
         if let Some(cap) = self.coherence_thought_cap {
             max_thought_frames_per_cycle = max_thought_frames_per_cycle.min(cap).max(1);
         }
@@ -222,6 +229,8 @@ impl OutputRouter {
                         idx,
                         gates,
                         max_thought_frames_per_cycle,
+                        suppress_verbose,
+                        verbose_limit,
                     );
                     decisions.push(decision);
                 }
@@ -236,6 +245,7 @@ impl OutputRouter {
         decisions
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn handle_thought(
         &mut self,
         frame: OutputFrame,
@@ -243,8 +253,10 @@ impl OutputRouter {
         idx: usize,
         gates: &GateBundle,
         max_thought_frames_per_cycle: u16,
+        suppress_verbose: bool,
+        verbose_limit: usize,
     ) -> RouteDecision {
-        if self.suppress_verbose_thoughts && frame.text.len() > self.verbose_thought_limit {
+        if suppress_verbose && frame.text.len() > verbose_limit {
             let reason_code = "thought_verbose_suppressed".to_string();
             let evidence = decision_evidence(&frame, &reason_code, gates, idx, None);
             self.events.push(OutputRouterEvent::OutputSuppressed {
@@ -298,19 +310,19 @@ impl OutputRouter {
         speech_index: usize,
         gates: &GateBundle,
     ) -> RouteDecision {
-        if self.force_thought_only {
-            return self.deny_speech(frame, idx, gates, "onn_low_coherence", 0);
-        }
         if matches!(gates.nsr_summary.verdict, NsrVerdict::Deny) {
             return self.deny_speech(frame, idx, gates, "nsr_deny", 0);
         }
         if matches!(gates.nsr_summary.verdict, NsrVerdict::Warn) {
-            let reason_code = if speech_index == 0 {
-                "nsr_warn_thought_only"
-            } else {
-                "nsr_warn_throttle"
-            };
-            return self.deny_speech(frame, idx, gates, reason_code, 0);
+            if self.force_thought_only {
+                return self.deny_speech(frame, idx, gates, "nsr_warn_thought_only", 0);
+            }
+            if speech_index > 0 {
+                return self.deny_speech(frame, idx, gates, "nsr_warn_throttle", 0);
+            }
+        }
+        if self.force_thought_only {
+            return self.deny_speech(frame, idx, gates, "onn_low_coherence", 0);
         }
         let policy_allowed = policy_allows(&gates.policy_decision);
         if !policy_allowed {
@@ -453,7 +465,7 @@ mod tests {
             sandbox: SandboxVerdict::Allow,
             risk_results: risk,
             nsr_summary: NsrSummary {
-                verdict: NsrVerdict::Ok,
+                verdict: NsrVerdict::Allow,
                 violations_digest: Digest32::new([0u8; 32]),
             },
             speech_gate: outputs.iter().map(|_| true).collect(),
@@ -599,6 +611,7 @@ mod tests {
             external_enabled: true,
         };
         let mut router = OutputRouter::new(config);
+        router.apply_coherence(1000, 3000);
         let outputs = vec![
             thought_output("t1"),
             thought_output("t2"),
@@ -614,7 +627,8 @@ mod tests {
         let decisions = router.route(&cf(), outputs, &gates);
 
         assert!(decisions[0].permitted);
-        assert!(decisions[1].permitted);
+        assert!(!decisions[1].permitted);
+        assert_eq!(decisions[1].reason_code, "thought_cycle_cap");
         assert!(!decisions[2].permitted);
         assert_eq!(decisions[2].reason_code, "thought_cycle_cap");
         assert!(!decisions[3].permitted);

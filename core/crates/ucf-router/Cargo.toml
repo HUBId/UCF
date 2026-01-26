@@ -17,6 +17,7 @@ ucf-iit = { path = "../ucf-iit" }
 ucf-iit-monitor = { path = "../ucf-iit-monitor" }
 ucf-onn = { path = "../ucf-onn" }
 ucf-nsr-port = { path = "../ucf-nsr-port" }
+ucf-nsr = { path = "../../../domains/reasoning/crates/ucf-nsr" }
 ucf-ncde = { path = "../ucf-ncde" }
 ucf-ssm = { path = "../ucf-ssm" }
 ucf-rsa = { path = "../ucf-rsa" }
@@ -41,6 +42,7 @@ ucf-workspace = { path = "../ucf-workspace" }
 ucf-spike-encoder = { path = "../ucf-spike-encoder" }
 ucf-spikebus = { path = "../ucf-spikebus" }
 ucf-structural-store = { path = "../ucf-structural-store" }
+ucf-commit = { path = "../ucf-commit" }
 ucf-protocol = { path = "../../../protocol/crates/ucf-protocol" }
 hex = { workspace = true }
 blake3 = "1"

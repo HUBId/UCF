@@ -3,13 +3,19 @@
 use blake3::Hasher;
 use ucf_cde_scm::CounterfactualResult;
 use ucf_sandbox::IntentSummary;
+use ucf_spikebus::SpikeKind;
+use ucf_structural_store::NsrThresholds;
 use ucf_types::Digest32;
 
 const LIGHT_PROOF_DOMAIN: &[u8] = b"ucf.nsr.proof.light.v1";
+const NSR_INPUTS_DOMAIN: &[u8] = b"ucf.nsr.inputs.v1";
+const NSR_ATOM_DOMAIN: &[u8] = b"ucf.nsr.reasoning.atom.v1";
+const NSR_TRACE_DOMAIN: &[u8] = b"ucf.nsr.reasoning.trace.v1";
+const NSR_ENGINE_DOMAIN: &[u8] = b"ucf.nsr.engine.mvp.v1";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NsrVerdict {
-    Ok,
+    Allow,
     Warn,
     Deny,
 }
@@ -17,10 +23,278 @@ pub enum NsrVerdict {
 impl NsrVerdict {
     pub fn as_u8(self) -> u8 {
         match self {
-            Self::Ok => 0,
+            Self::Allow => 0,
             Self::Warn => 1,
             Self::Deny => 2,
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NsrReasonCode {
+    PolicyConflict,
+    UnsafeToolRequest,
+    LowCoherence,
+    HighRisk,
+    InconsistentSelfState,
+    StructuralCommitBlocked,
+    Unknown(u16),
+}
+
+impl NsrReasonCode {
+    pub fn as_u16(self) -> u16 {
+        match self {
+            Self::PolicyConflict => 1,
+            Self::UnsafeToolRequest => 2,
+            Self::LowCoherence => 3,
+            Self::HighRisk => 4,
+            Self::InconsistentSelfState => 5,
+            Self::StructuralCommitBlocked => 6,
+            Self::Unknown(code) => code,
+        }
+    }
+
+    pub fn token(self) -> String {
+        match self {
+            Self::PolicyConflict => "policy_conflict".to_string(),
+            Self::UnsafeToolRequest => "unsafe_tool_request".to_string(),
+            Self::LowCoherence => "low_coherence".to_string(),
+            Self::HighRisk => "high_risk".to_string(),
+            Self::InconsistentSelfState => "inconsistent_self_state".to_string(),
+            Self::StructuralCommitBlocked => "structural_commit_blocked".to_string(),
+            Self::Unknown(code) => format!("unknown_{code}"),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReasoningAtom {
+    pub key: u16,
+    pub value: i16,
+    pub commit: Digest32,
+}
+
+impl ReasoningAtom {
+    pub fn new(key: u16, value: i16, input_commit: Digest32) -> Self {
+        let commit = digest_reasoning_atom(key, value, input_commit);
+        Self { key, value, commit }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReasoningTrace {
+    pub cycle_id: u64,
+    pub inputs_commit: Digest32,
+    pub rule_hits: Vec<(u16, NsrReasonCode, u16)>,
+    pub derived_atoms: Vec<ReasoningAtom>,
+    pub verdict: NsrVerdict,
+    pub commit: Digest32,
+}
+
+impl ReasoningTrace {
+    pub fn new(
+        cycle_id: u64,
+        inputs_commit: Digest32,
+        rule_hits: Vec<(u16, NsrReasonCode, u16)>,
+        derived_atoms: Vec<ReasoningAtom>,
+        verdict: NsrVerdict,
+    ) -> Self {
+        let commit =
+            digest_reasoning_trace(cycle_id, inputs_commit, &rule_hits, &derived_atoms, verdict);
+        Self {
+            cycle_id,
+            inputs_commit,
+            rule_hits,
+            derived_atoms,
+            verdict,
+            commit,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NsrInputs {
+    pub cycle_id: u64,
+    pub phase_commit: Digest32,
+    pub coherence_plv: u16,
+    pub phi_proxy: u16,
+    pub risk: u16,
+    pub drift: u16,
+    pub surprise: u16,
+    pub ssm_salience: u16,
+    pub ncde_energy: u16,
+    pub spike_counts: Vec<(SpikeKind, u16)>,
+    pub policy_decision_commit: Option<Digest32>,
+    pub self_consistency_ok: Option<bool>,
+    pub commit: Digest32,
+}
+
+impl NsrInputs {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        cycle_id: u64,
+        phase_commit: Digest32,
+        coherence_plv: u16,
+        phi_proxy: u16,
+        risk: u16,
+        drift: u16,
+        surprise: u16,
+        ssm_salience: u16,
+        ncde_energy: u16,
+        spike_counts: Vec<(SpikeKind, u16)>,
+        policy_decision_commit: Option<Digest32>,
+        self_consistency_ok: Option<bool>,
+    ) -> Self {
+        let mut inputs = Self {
+            cycle_id,
+            phase_commit,
+            coherence_plv,
+            phi_proxy,
+            risk,
+            drift,
+            surprise,
+            ssm_salience,
+            ncde_energy,
+            spike_counts,
+            policy_decision_commit,
+            self_consistency_ok,
+            commit: Digest32::new([0u8; 32]),
+        };
+        inputs.commit = digest_nsr_inputs(&inputs);
+        inputs
+    }
+}
+
+pub trait ConstraintEngine {
+    fn evaluate(&self, inp: &NsrInputs) -> ReasoningTrace;
+}
+
+#[derive(Clone, Debug)]
+pub struct NsrEngineMvp {
+    pub thresholds: NsrThresholds,
+    pub commit: Digest32,
+}
+
+impl NsrEngineMvp {
+    pub fn new(thresholds: NsrThresholds) -> Self {
+        let commit = digest_nsr_engine_mvp(&thresholds);
+        Self { thresholds, commit }
+    }
+}
+
+impl ConstraintEngine for NsrEngineMvp {
+    fn evaluate(&self, inp: &NsrInputs) -> ReasoningTrace {
+        const COHERENCE_MIN: u16 = 3_000;
+        const PHI_MIN: u16 = 3_500;
+        const THREAT_SPIKE_HIGH: u16 = 5;
+        const SEVERITY_WARN: u16 = 4_000;
+        const SEVERITY_DENY: u16 = 9_000;
+
+        let mut rule_hits = Vec::new();
+        let mut derived_atoms = Vec::new();
+        let mut verdict = NsrVerdict::Allow;
+        let warn_threshold = self.thresholds.warn.min(10_000);
+        let deny_threshold = self.thresholds.deny.min(10_000).max(warn_threshold);
+
+        if inp.risk >= deny_threshold {
+            rule_hits.push((1, NsrReasonCode::HighRisk, SEVERITY_DENY));
+            derived_atoms.push(ReasoningAtom::new(1, inp.risk as i16, inp.commit));
+            verdict = NsrVerdict::Deny;
+        }
+
+        if inp.coherence_plv < COHERENCE_MIN && inp.phi_proxy < PHI_MIN {
+            rule_hits.push((2, NsrReasonCode::LowCoherence, SEVERITY_WARN));
+            derived_atoms.push(ReasoningAtom::new(2, inp.coherence_plv as i16, inp.commit));
+            derived_atoms.push(ReasoningAtom::new(3, inp.phi_proxy as i16, inp.commit));
+            if verdict == NsrVerdict::Allow {
+                verdict = NsrVerdict::Warn;
+            }
+        }
+
+        if inp.drift > deny_threshold && inp.self_consistency_ok == Some(false) {
+            rule_hits.push((3, NsrReasonCode::InconsistentSelfState, SEVERITY_DENY));
+            derived_atoms.push(ReasoningAtom::new(4, inp.drift as i16, inp.commit));
+            verdict = NsrVerdict::Deny;
+        }
+
+        let threat_count = inp
+            .spike_counts
+            .iter()
+            .find(|(kind, _)| *kind == SpikeKind::Threat)
+            .map(|(_, count)| *count)
+            .unwrap_or(0);
+        if threat_count >= THREAT_SPIKE_HIGH && inp.coherence_plv < COHERENCE_MIN {
+            rule_hits.push((4, NsrReasonCode::LowCoherence, SEVERITY_WARN));
+            derived_atoms.push(ReasoningAtom::new(5, threat_count as i16, inp.commit));
+            if verdict == NsrVerdict::Allow {
+                verdict = NsrVerdict::Warn;
+            }
+        }
+
+        if inp.policy_decision_commit.is_some() {
+            rule_hits.push((5, NsrReasonCode::PolicyConflict, SEVERITY_DENY));
+            derived_atoms.push(ReasoningAtom::new(6, 1, inp.commit));
+            verdict = NsrVerdict::Deny;
+        }
+
+        ReasoningTrace::new(inp.cycle_id, inp.commit, rule_hits, derived_atoms, verdict)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct MockConstraintEngine {
+    verdict: NsrVerdict,
+}
+
+impl MockConstraintEngine {
+    pub fn new(verdict: NsrVerdict) -> Self {
+        Self { verdict }
+    }
+}
+
+impl Default for MockConstraintEngine {
+    fn default() -> Self {
+        Self::new(NsrVerdict::Allow)
+    }
+}
+
+impl ConstraintEngine for MockConstraintEngine {
+    fn evaluate(&self, inp: &NsrInputs) -> ReasoningTrace {
+        let (rule_hits, derived_atoms) = match self.verdict {
+            NsrVerdict::Allow => (Vec::new(), Vec::new()),
+            NsrVerdict::Warn => (
+                vec![(1, NsrReasonCode::LowCoherence, 4_000)],
+                vec![ReasoningAtom::new(7, 1, inp.commit)],
+            ),
+            NsrVerdict::Deny => (
+                vec![(1, NsrReasonCode::HighRisk, 9_000)],
+                vec![ReasoningAtom::new(8, 1, inp.commit)],
+            ),
+        };
+        ReasoningTrace::new(
+            inp.cycle_id,
+            inp.commit,
+            rule_hits,
+            derived_atoms,
+            self.verdict,
+        )
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct ConstraintEngineAdapter<E> {
+    backend: E,
+}
+
+impl<E> ConstraintEngineAdapter<E> {
+    pub fn new(backend: E) -> Self {
+        Self { backend }
+    }
+}
+
+impl<E: ConstraintEngine> ConstraintEngine for ConstraintEngineAdapter<E> {
+    fn evaluate(&self, inp: &NsrInputs) -> ReasoningTrace {
+        self.backend.evaluate(inp)
     }
 }
 
@@ -332,7 +606,7 @@ pub fn light_report(input: &NsrInput) -> NsrReport {
 
 fn verdict_from_violations(violations: &[NsrViolation]) -> NsrVerdict {
     if violations.is_empty() {
-        return NsrVerdict::Ok;
+        return NsrVerdict::Allow;
     }
     if violations
         .iter()
@@ -357,7 +631,7 @@ fn causal_verdict_from_violations(violations: &[NsrViolation]) -> NsrVerdict {
         }
         return NsrVerdict::Warn;
     }
-    NsrVerdict::Ok
+    NsrVerdict::Allow
 }
 
 fn build_violation(
@@ -490,6 +764,93 @@ fn digest_nsr_input(fields: &NsrInputDigestFields<'_>) -> Digest32 {
         hasher.update(&counterfactual.confidence.to_be_bytes());
         hasher.update(counterfactual.commit.as_bytes());
     }
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn digest_nsr_inputs(inputs: &NsrInputs) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(NSR_INPUTS_DOMAIN);
+    hasher.update(&inputs.cycle_id.to_be_bytes());
+    hasher.update(inputs.phase_commit.as_bytes());
+    hasher.update(&inputs.coherence_plv.to_be_bytes());
+    hasher.update(&inputs.phi_proxy.to_be_bytes());
+    hasher.update(&inputs.risk.to_be_bytes());
+    hasher.update(&inputs.drift.to_be_bytes());
+    hasher.update(&inputs.surprise.to_be_bytes());
+    hasher.update(&inputs.ssm_salience.to_be_bytes());
+    hasher.update(&inputs.ncde_energy.to_be_bytes());
+    hasher.update(
+        &u64::try_from(inputs.spike_counts.len())
+            .unwrap_or(0)
+            .to_be_bytes(),
+    );
+    for (kind, count) in &inputs.spike_counts {
+        hasher.update(&kind.as_u16().to_be_bytes());
+        hasher.update(&count.to_be_bytes());
+    }
+    match inputs.policy_decision_commit {
+        Some(commit) => {
+            hasher.update(&[1]);
+            hasher.update(commit.as_bytes());
+        }
+        None => {
+            hasher.update(&[0]);
+        }
+    }
+    match inputs.self_consistency_ok {
+        Some(ok) => {
+            hasher.update(&[1]);
+            hasher.update(&[ok as u8]);
+        }
+        None => {
+            hasher.update(&[0]);
+        }
+    }
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn digest_reasoning_atom(key: u16, value: i16, input_commit: Digest32) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(NSR_ATOM_DOMAIN);
+    hasher.update(&key.to_be_bytes());
+    hasher.update(&value.to_be_bytes());
+    hasher.update(input_commit.as_bytes());
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn digest_reasoning_trace(
+    cycle_id: u64,
+    inputs_commit: Digest32,
+    rule_hits: &[(u16, NsrReasonCode, u16)],
+    derived_atoms: &[ReasoningAtom],
+    verdict: NsrVerdict,
+) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(NSR_TRACE_DOMAIN);
+    hasher.update(&cycle_id.to_be_bytes());
+    hasher.update(inputs_commit.as_bytes());
+    hasher.update(&[verdict.as_u8()]);
+    hasher.update(&u64::try_from(rule_hits.len()).unwrap_or(0).to_be_bytes());
+    for (rule_id, reason, severity) in rule_hits {
+        hasher.update(&rule_id.to_be_bytes());
+        hasher.update(&reason.as_u16().to_be_bytes());
+        hasher.update(&severity.to_be_bytes());
+    }
+    hasher.update(
+        &u64::try_from(derived_atoms.len())
+            .unwrap_or(0)
+            .to_be_bytes(),
+    );
+    for atom in derived_atoms {
+        hasher.update(atom.commit.as_bytes());
+    }
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn digest_nsr_engine_mvp(thresholds: &NsrThresholds) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(NSR_ENGINE_DOMAIN);
+    hasher.update(thresholds.commit.as_bytes());
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
@@ -786,7 +1147,7 @@ mod tests {
 
         let report = engine.evaluate(&input);
 
-        assert_eq!(report.verdict, NsrVerdict::Ok);
+        assert_eq!(report.verdict, NsrVerdict::Allow);
         assert!(report.violations.is_empty());
     }
 
@@ -859,10 +1220,66 @@ mod tests {
 
         let report = engine.evaluate(&input);
 
-        assert_eq!(report.verdict, NsrVerdict::Ok);
+        assert_eq!(report.verdict, NsrVerdict::Allow);
         assert!(report
             .violations
             .iter()
             .all(|violation| !is_causal_violation(&violation.code)));
+    }
+
+    fn base_nsr_inputs() -> NsrInputs {
+        NsrInputs::new(
+            1,
+            Digest32::new([1u8; 32]),
+            6_000,
+            6_000,
+            1_000,
+            1_000,
+            1_000,
+            2_000,
+            2_000,
+            Vec::new(),
+            None,
+            Some(true),
+        )
+    }
+
+    #[test]
+    fn hard_constraint_trace_is_deterministic() {
+        let engine = NsrEngineMvp::new(NsrThresholds::new(5_000, 8_000));
+        let inputs = base_nsr_inputs();
+
+        let first = engine.evaluate(&inputs);
+        let second = engine.evaluate(&inputs);
+
+        assert_eq!(first.commit, second.commit);
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn high_risk_denies_in_mvp() {
+        let engine = NsrEngineMvp::new(NsrThresholds::new(5_000, 8_000));
+        let mut inputs = base_nsr_inputs();
+        inputs.risk = 9_000;
+        inputs.commit = digest_nsr_inputs(&inputs);
+
+        let trace = engine.evaluate(&inputs);
+
+        assert_eq!(trace.verdict, NsrVerdict::Deny);
+        assert!(!trace.rule_hits.is_empty());
+    }
+
+    #[test]
+    fn low_coherence_low_phi_warns_in_mvp() {
+        let engine = NsrEngineMvp::new(NsrThresholds::new(5_000, 8_000));
+        let mut inputs = base_nsr_inputs();
+        inputs.coherence_plv = 2_000;
+        inputs.phi_proxy = 2_000;
+        inputs.commit = digest_nsr_inputs(&inputs);
+
+        let trace = engine.evaluate(&inputs);
+
+        assert_eq!(trace.verdict, NsrVerdict::Warn);
+        assert!(!trace.rule_hits.is_empty());
     }
 }

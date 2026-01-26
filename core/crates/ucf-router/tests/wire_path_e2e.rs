@@ -264,7 +264,7 @@ fn handle_control_frame_routes_end_to_end() {
 
     assert_eq!(outcome.evidence_id, EvidenceId::new("exp-frame-1"));
     assert_eq!(outcome.decision_kind, DecisionKind::DecisionKindUnspecified);
-    assert_eq!(archive.list().len(), 10);
+    assert_eq!(archive.list().len(), 11);
     assert_eq!(brain.records().len(), 1);
 
     let record = archive
@@ -409,7 +409,7 @@ fn cde_runs_before_nsr_in_verify() {
                 *guard = Some(input.clone());
             }
             NsrReport {
-                verdict: NsrVerdict::Ok,
+                verdict: NsrVerdict::Allow,
                 causal_report_commit: input.causal_report_commit,
                 violations: Vec::new(),
                 proof_digest: Digest32::new([0u8; 32]),

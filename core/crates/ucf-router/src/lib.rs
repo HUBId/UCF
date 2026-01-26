@@ -22,6 +22,7 @@ use ucf_cde_scm::{
     CausalReport, CdeScmEngine, CounterfactualQuery, Intervention, ObservationPoint,
     VAR_OUTPUT_SUPPRESSED, VAR_REPLAY_BIAS,
 };
+use ucf_commit::commit_policy_decision;
 use ucf_consistency_engine::{
     ConsistencyAction, ConsistencyActionKind, ConsistencyEngine, ConsistencyInputs,
     ConsistencyReport, DriftBand,
@@ -39,6 +40,7 @@ use ucf_iit_monitor::{
 use ucf_influence::{InfluenceInputs, InfluenceOutputs, InfluenceState, NodeId};
 use ucf_ism::IsmStore;
 use ucf_ncde::{ControlFrame as NcdeControlFrame, NcdeCore, NcdeOutput, NcdeParams};
+use ucf_nsr::{ConstraintEngine, NsrEngineMvp, NsrInputs, ReasoningTrace};
 use ucf_nsr_port::{light_report, ActionIntent, NsrInput, NsrPort, NsrReport, NsrVerdict};
 use ucf_onn::{ModuleId, OnnCore, OnnInputs, PhaseFrame};
 use ucf_output_router::{
@@ -64,7 +66,7 @@ use ucf_spikebus::{SpikeEvent, SpikeKind};
 use ucf_ssm::{SsmCore, SsmInput as WmSsmInput, SsmOutput as WmSsmOutput, SsmParams};
 use ucf_ssm_port::SsmState;
 use ucf_structural_store::{
-    SnnKnobs, StructuralCycleStats, StructuralDeltaProposal, StructuralStore,
+    NsrThresholds, SnnKnobs, StructuralCycleStats, StructuralDeltaProposal, StructuralStore,
 };
 use ucf_tcf_port::{
     ai_mode_for_pulse, idle_attention, CyclePlan, CyclePlanned, DeterministicTcf, PulseKind,
@@ -87,7 +89,9 @@ const SPIKE_RECORD_KIND: u16 = 131;
 const NCDE_RECORD_KIND: u16 = 142;
 const SSM_RECORD_KIND: u16 = 149;
 const ONN_COHERENCE_THROTTLE: u16 = 2000;
+const ONN_COHERENCE_THROTTLE_WARN: u16 = 3500;
 const CAUSAL_REPORT_FLAG_LIGHT: u16 = 0b1000;
+const SELF_CONSISTENCY_OK_THRESHOLD: u16 = 5000;
 
 #[derive(Debug)]
 pub enum RouterError {
@@ -221,6 +225,7 @@ struct StageContext {
     sandbox_verdict: Option<SandboxVerdict>,
     tom_report: Option<ucf_tom_port::TomReport>,
     nsr_report: Option<NsrReport>,
+    nsr_trace: Option<ReasoningTrace>,
     causal_report: Option<CausalReport>,
     attention_risk: u16,
     thought_outputs: Vec<AiOutput>,
@@ -260,6 +265,7 @@ impl StageContext {
             sandbox_verdict: None,
             tom_report: None,
             nsr_report: None,
+            nsr_trace: None,
             causal_report: None,
             attention_risk: 0,
             thought_outputs: Vec::new(),
@@ -445,6 +451,8 @@ impl Router {
                 ssm_commit: Digest32::new([0u8; 32]),
                 ssm_state_commit: Digest32::new([0u8; 32]),
                 iit_output: None,
+                nsr_trace_commit: None,
+                nsr_verdict: None,
                 commit: Digest32::new([0u8; 32]),
             })
     }
@@ -632,7 +640,6 @@ impl Router {
                         light_report(&nsr_input)
                     };
                     ctx.nsr_report = Some(nsr_report.clone());
-                    let nsr_warn_streak = self.update_nsr_warn_streak(nsr_report.verdict);
                     if let Ok(mut guard) = self.last_nsr_report.lock() {
                         *guard = Some(nsr_report.clone());
                     }
@@ -752,7 +759,7 @@ impl Router {
                                 phase_frame.commit,
                                 phase_frame.coherence_plv,
                                 spike_root_commit,
-                                spike_counts_iit,
+                                spike_counts_iit.clone(),
                                 ssm_output
                                     .as_ref()
                                     .map(|output| output.commit)
@@ -773,8 +780,8 @@ impl Router {
                                     .as_ref()
                                     .map(|output| output.energy)
                                     .unwrap_or(0),
-                                ctx.nsr_report.as_ref().map(|report| report.commit),
-                                ctx.nsr_report.as_ref().map(|report| report.verdict.as_u8()),
+                                workspace_snapshot.nsr_trace_commit,
+                                workspace_snapshot.nsr_verdict,
                                 ctx.causal_report.as_ref().map(|report| report.commit),
                                 drift_score,
                                 surprise_score,
@@ -878,6 +885,31 @@ impl Router {
                     }
                     ctx.self_state = Some(self_state);
                     ctx.sle_reflex = Some(sle_reflex);
+                    let nsr_thresholds = self
+                        .structural_store
+                        .lock()
+                        .map(|store| store.current.nsr.clone())
+                        .unwrap_or_else(|_| NsrThresholds::default());
+                    let nsr_inputs = self.build_nsr_trace_inputs(
+                        cycle_id,
+                        &phase_frame,
+                        &iit_output,
+                        drift_score,
+                        surprise_score,
+                        attention_risk,
+                        spike_counts_iit.clone(),
+                        ctx.ssm_output.as_ref(),
+                        ctx.ncde_output.as_ref(),
+                        decision,
+                        ctx.self_state.as_ref(),
+                    );
+                    let nsr_trace = NsrEngineMvp::new(nsr_thresholds).evaluate(&nsr_inputs);
+                    ctx.nsr_trace = Some(nsr_trace.clone());
+                    if let Ok(mut workspace) = self.workspace.lock() {
+                        workspace.set_nsr_trace(nsr_trace.commit, nsr_trace.verdict.as_u8());
+                    }
+                    self.append_nsr_trace_record(cycle_id, &nsr_trace);
+                    let nsr_warn_streak = self.update_nsr_warn_streak(nsr_trace.verdict);
 
                     let effects = iit_action_effects(
                         self.workspace_base,
@@ -967,10 +999,10 @@ impl Router {
 
                     let policy_ok = decision.kind == DecisionKind::DecisionKindAllow as i32;
                     let nsr_verdict = ctx
-                        .nsr_report
+                        .nsr_trace
                         .as_ref()
-                        .map(|report| report.verdict)
-                        .unwrap_or(NsrVerdict::Ok);
+                        .map(|trace| trace.verdict)
+                        .unwrap_or(NsrVerdict::Allow);
                     let consistency_ok = !matches!(
                         ctx.consistency_report,
                         Some(ref report) if report.band == DriftBand::Critical
@@ -987,6 +1019,9 @@ impl Router {
                     let mut evidence = vec![phase_frame.commit];
                     if let Some(report) = ctx.nsr_report.as_ref() {
                         evidence.push(report.commit);
+                    }
+                    if let Some(trace) = ctx.nsr_trace.as_ref() {
+                        evidence.push(trace.commit);
                     }
                     if let Some(report) = ctx.causal_report.as_ref() {
                         evidence.push(report.commit);
@@ -1008,19 +1043,15 @@ impl Router {
                     ctx.structural_stats = Some(structural_stats);
 
                     let nsr_summary = NsrSummary {
-                        verdict: ctx
-                            .nsr_report
-                            .as_ref()
-                            .map(|report| report.verdict)
-                            .unwrap_or(NsrVerdict::Ok),
+                        verdict: nsr_verdict,
                         violations_digest: ctx
-                            .nsr_report
+                            .nsr_trace
                             .as_ref()
-                            .map(|report| {
-                                let codes = report
-                                    .violations
+                            .map(|trace| {
+                                let codes = trace
+                                    .rule_hits
                                     .iter()
-                                    .map(|violation| violation.code.clone())
+                                    .map(|(_, reason, _)| reason.token())
                                     .collect::<Vec<_>>();
                                 digest_reasons(&codes)
                             })
@@ -1037,8 +1068,12 @@ impl Router {
                     if let Some(budget) = ctx.recursion_budget.as_ref() {
                         output_router.apply_recursion_budget(budget);
                     }
-                    output_router
-                        .apply_coherence(phase_frame.coherence_plv, ONN_COHERENCE_THROTTLE);
+                    let coherence_threshold = if nsr_verdict == NsrVerdict::Warn {
+                        ONN_COHERENCE_THROTTLE_WARN
+                    } else {
+                        ONN_COHERENCE_THROTTLE
+                    };
+                    output_router.apply_coherence(phase_frame.coherence_plv, coherence_threshold);
                     let decisions = output_router.route(&cf, outputs.clone(), &gates);
                     let events = output_router.drain_events();
                     self.publish_workspace_signals(
@@ -2196,6 +2231,44 @@ impl Router {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
+    fn build_nsr_trace_inputs(
+        &self,
+        cycle_id: u64,
+        phase_frame: &PhaseFrame,
+        iit_output: &IitOutput,
+        drift_score: u16,
+        surprise_score: u16,
+        risk_score: u16,
+        spike_counts: Vec<(SpikeKind, u16)>,
+        ssm_output: Option<&WmSsmOutput>,
+        ncde_output: Option<&NcdeOutput>,
+        decision: &PolicyDecision,
+        self_state: Option<&SelfState>,
+    ) -> NsrInputs {
+        let policy_decision_commit = if decision.kind == DecisionKind::DecisionKindDeny as i32 {
+            Some(commit_policy_decision(decision).digest)
+        } else {
+            None
+        };
+        let self_consistency_ok =
+            self_state.map(|state| state.consistency >= SELF_CONSISTENCY_OK_THRESHOLD);
+        NsrInputs::new(
+            cycle_id,
+            phase_frame.commit,
+            phase_frame.coherence_plv,
+            iit_output.phi_proxy,
+            risk_score,
+            drift_score,
+            surprise_score,
+            ssm_output.map(|output| output.wm_salience).unwrap_or(0),
+            ncde_output.map(|output| output.energy).unwrap_or(0),
+            spike_counts,
+            policy_decision_commit,
+            self_consistency_ok,
+        )
+    }
+
     fn build_sandbox_budget(&self, mode: u16) -> SandboxBudget {
         let attention = self
             .last_attention
@@ -2301,6 +2374,22 @@ impl Router {
             hex::encode(report.commit.as_bytes())
         );
         let record = build_compact_record(record_id, cycle_id, "nsr", payload);
+        self.archive.append(record);
+    }
+
+    fn append_nsr_trace_record(&self, cycle_id: u64, trace: &ReasoningTrace) {
+        let payload = format!(
+            "commit={};verdict={};hits={}",
+            trace.commit,
+            nsr_verdict_token(trace.verdict),
+            trace.rule_hits.len()
+        )
+        .into_bytes();
+        let record_id = format!(
+            "nsr-trace-{cycle_id}-{}",
+            hex::encode(trace.commit.as_bytes())
+        );
+        let record = build_compact_record(record_id, cycle_id, "nsr-trace", payload);
         self.archive.append(record);
     }
 
@@ -2817,7 +2906,7 @@ fn action_intents_from_outputs(outputs: &[AiOutput]) -> Vec<ActionIntent> {
 
 fn nsr_verdict_token(verdict: NsrVerdict) -> &'static str {
     match verdict {
-        NsrVerdict::Ok => "Ok",
+        NsrVerdict::Allow => "Allow",
         NsrVerdict::Warn => "Warn",
         NsrVerdict::Deny => "Deny",
     }
@@ -2825,7 +2914,7 @@ fn nsr_verdict_token(verdict: NsrVerdict) -> &'static str {
 
 fn nsr_verdict_token_lower(verdict: NsrVerdict) -> &'static str {
     match verdict {
-        NsrVerdict::Ok => "ok",
+        NsrVerdict::Allow => "allow",
         NsrVerdict::Warn => "warn",
         NsrVerdict::Deny => "deny",
     }
@@ -2833,7 +2922,7 @@ fn nsr_verdict_token_lower(verdict: NsrVerdict) -> &'static str {
 
 fn nsr_signal_priority(verdict: NsrVerdict) -> u16 {
     match verdict {
-        NsrVerdict::Ok => 4200,
+        NsrVerdict::Allow => 4200,
         NsrVerdict::Warn => 7600,
         NsrVerdict::Deny => 9500,
     }
@@ -2850,7 +2939,7 @@ fn is_causal_violation_code(code: &str) -> bool {
 
 fn consistency_score_from_nsr(report: Option<&NsrReport>) -> u16 {
     match report {
-        Some(report) if report.verdict == NsrVerdict::Ok => 10_000,
+        Some(report) if report.verdict == NsrVerdict::Allow => 10_000,
         Some(report) if report.verdict == NsrVerdict::Warn => 4500,
         Some(_) => 2000,
         None => 5000,
