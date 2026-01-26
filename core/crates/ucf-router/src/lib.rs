@@ -58,6 +58,7 @@ use ucf_sandbox::{
 use ucf_sle::{SelfReflex, SleEngine};
 use ucf_spike_encoder::encode_from_features;
 use ucf_spikebus::{SpikeEvent, SpikeKind};
+use ucf_ssm::{SsmCore, SsmInput as WmSsmInput, SsmOutput as WmSsmOutput, SsmParams};
 use ucf_ssm_port::SsmState;
 use ucf_structural_store::{
     SnnKnobs, StructuralCycleStats, StructuralDeltaProposal, StructuralStore,
@@ -81,6 +82,7 @@ const CAUSAL_REPORT_RECORD_KIND: u16 = 91;
 const PHASE_FRAME_RECORD_KIND: u16 = 118;
 const SPIKE_RECORD_KIND: u16 = 131;
 const NCDE_RECORD_KIND: u16 = 142;
+const SSM_RECORD_KIND: u16 = 149;
 const ONN_COHERENCE_THROTTLE: u16 = 2000;
 const CAUSAL_REPORT_FLAG_LIGHT: u16 = 0b1000;
 
@@ -152,6 +154,8 @@ pub struct Router {
     influence_state: Mutex<InfluenceState>,
     last_influence_outputs: Mutex<Option<InfluenceOutputs>>,
     last_influence_root_commit: Mutex<Option<Digest32>>,
+    ssm_core: Mutex<SsmCore>,
+    last_ssm_output: Mutex<Option<WmSsmOutput>>,
     ncde_core: Mutex<NcdeCore>,
     last_ncde_output: Mutex<Option<NcdeOutput>>,
 }
@@ -199,6 +203,7 @@ struct AttentionContext<'a> {
     tom_report: &'a ucf_tom_port::TomReport,
     surprise_score: u16,
     influence: Option<&'a InfluenceOutputs>,
+    ssm_salience: Option<u16>,
 }
 
 pub trait StageTrace {
@@ -239,6 +244,7 @@ struct StageContext {
     structural_stats: Option<StructuralCycleStats>,
     structural_proposal: Option<StructuralDeltaProposal>,
     ncde_output: Option<NcdeOutput>,
+    ssm_output: Option<WmSsmOutput>,
 }
 
 impl StageContext {
@@ -277,6 +283,7 @@ impl StageContext {
             structural_stats: None,
             structural_proposal: None,
             ncde_output: None,
+            ssm_output: None,
         }
     }
 }
@@ -360,6 +367,8 @@ impl Router {
             influence_state: Mutex::new(InfluenceState::new_default()),
             last_influence_outputs: Mutex::new(None),
             last_influence_root_commit: Mutex::new(None),
+            ssm_core: Mutex::new(SsmCore::new(SsmParams::default())),
+            last_ssm_output: Mutex::new(None),
             ncde_core: Mutex::new(NcdeCore::new(NcdeParams::default())),
             last_ncde_output: Mutex::new(None),
         }
@@ -430,6 +439,8 @@ impl Router {
                 recursion_used: 0,
                 spike_root_commit: Digest32::new([0u8; 32]),
                 ncde_commit: Digest32::new([0u8; 32]),
+                ssm_commit: Digest32::new([0u8; 32]),
+                ssm_state_commit: Digest32::new([0u8; 32]),
                 commit: Digest32::new([0u8; 32]),
             })
     }
@@ -679,6 +690,7 @@ impl Router {
                         .spike_root_commit
                         .unwrap_or_else(|| Digest32::new([0u8; 32]));
                     let spike_counts = summarize_spike_counts(&spikes);
+                    let spike_counts_ssm = spike_counts.clone();
                     let attn_gain = ctx
                         .attention_weights
                         .as_ref()
@@ -702,6 +714,24 @@ impl Router {
                             workspace.set_ncde_commit(ncde_output.commit);
                         }
                         self.append_ncde_output_record(cycle_id, &ncde_output);
+                        if let Some(ssm_output) = self.tick_ssm(
+                            &phase_frame,
+                            &ncde_output,
+                            spike_root_commit,
+                            spike_counts_ssm,
+                            drift_score,
+                            surprise_score,
+                            attention_risk,
+                        ) {
+                            ctx.ssm_output = Some(ssm_output.clone());
+                            if let Ok(mut guard) = self.last_ssm_output.lock() {
+                                *guard = Some(ssm_output.clone());
+                            }
+                            if let Ok(mut workspace) = self.workspace.lock() {
+                                workspace.set_ssm_commits(ssm_output.commit, ssm_output.x_commit);
+                            }
+                            self.append_ssm_output_record(cycle_id, &ssm_output);
+                        }
                     }
 
                     let (iit_report, iit_actions) = {
@@ -1135,6 +1165,7 @@ impl Router {
                         tom_report,
                         surprise_score,
                         influence: influence_result.as_ref().map(|(_, outputs)| outputs),
+                        ssm_salience: ctx.ssm_output.as_ref().map(|output| output.wm_salience),
                     };
                     let attention_weights = self.compute_attention(attention_ctx);
                     if let Some(weights) = attention_weights.as_ref() {
@@ -1143,6 +1174,7 @@ impl Router {
                             channel: weights.channel,
                             gain: weights.gain,
                             replay_bias: weights.replay_bias,
+                            wm_commit: ctx.ssm_output.as_ref().map(|output| output.commit),
                             commit: weights.commit,
                         };
                         self.publish_workspace_signal(WorkspaceSignal::from_attention_update(
@@ -1628,7 +1660,8 @@ impl Router {
         let weights = controller.compute(&inputs);
         let weights = apply_consistency_effects(weights, ctx.consistency_effects);
         let weights = apply_influence_effects(weights, ctx.influence);
-        Some(self.apply_ncde_attention_bias(weights))
+        let weights = self.apply_ncde_attention_bias(weights);
+        Some(self.apply_ssm_attention_bias(weights, ctx.ssm_salience))
     }
 
     fn apply_ncde_attention_bias(&self, mut weights: AttentionWeights) -> AttentionWeights {
@@ -1643,6 +1676,27 @@ impl Router {
         let bias = (energy / 100).min(200);
         if bias > 0 {
             weights.gain = clamp_u16(u32::from(weights.gain) + u32::from(bias));
+            weights.commit = commit_attention_override(&weights);
+        }
+        weights
+    }
+
+    fn apply_ssm_attention_bias(
+        &self,
+        mut weights: AttentionWeights,
+        wm_salience: Option<u16>,
+    ) -> AttentionWeights {
+        let Some(wm_salience) = wm_salience else {
+            return weights;
+        };
+        if wm_salience == 0 {
+            return weights;
+        }
+        let multiplier = (10_000u32 + u32::from(wm_salience) / 5).min(12_000);
+        let scaled = (u32::from(weights.gain).saturating_mul(multiplier)) / 10_000;
+        let updated = clamp_u16(scaled);
+        if updated != weights.gain {
+            weights.gain = updated;
             weights.commit = commit_attention_override(&weights);
         }
         weights
@@ -1841,6 +1895,25 @@ impl Router {
         self.append_archive_record(RecordKind::Other(NCDE_RECORD_KIND), output.commit, meta);
     }
 
+    fn append_ssm_output_record(&self, cycle_id: u64, output: &WmSsmOutput) {
+        let payload = format!(
+            "commit={};x_commit={};salience={};novelty={}",
+            output.commit, output.x_commit, output.wm_salience, output.wm_novelty
+        )
+        .into_bytes();
+        let record_id = format!("ssm-{cycle_id}-{}", hex::encode(output.commit.as_bytes()));
+        let record = build_compact_record(record_id, cycle_id, "ssm", payload);
+        self.archive.append(record);
+
+        let meta = RecordMeta {
+            cycle_id,
+            tier: 0,
+            flags: output.wm_salience,
+            boundary_commit: output.x_commit,
+        };
+        self.append_archive_record(RecordKind::Other(SSM_RECORD_KIND), output.commit, meta);
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn tick_ncde(
         &self,
@@ -1867,6 +1940,35 @@ impl Router {
             attn_gain,
         );
         Some(core.tick(&control))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn tick_ssm(
+        &self,
+        phase_frame: &PhaseFrame,
+        ncde_output: &NcdeOutput,
+        spike_root_commit: Digest32,
+        spike_counts: Vec<(SpikeKind, u16)>,
+        drift: u16,
+        surprise: u16,
+        risk: u16,
+    ) -> Option<WmSsmOutput> {
+        let mut core = self.ssm_core.lock().ok()?;
+        let input = WmSsmInput::new(
+            ncde_output.cycle_id,
+            phase_frame.commit,
+            phase_frame.global_phase,
+            phase_frame.coherence_plv,
+            ncde_output.commit,
+            ncde_output.energy,
+            ncde_output.h_summary.clone(),
+            spike_root_commit,
+            spike_counts,
+            drift,
+            surprise,
+            risk,
+        );
+        Some(core.tick(&input))
     }
 
     fn append_sandbox_denied_record(&self, cycle_id: u64, report: &SandboxReport, reason: &str) {
@@ -3005,6 +3107,59 @@ mod tests {
             .ncde_commit(output.h_commit)
             .build();
         assert_eq!(state.ncde_commit, output.h_commit);
+    }
+
+    #[test]
+    fn ssm_commit_flows_into_workspace_and_attention() {
+        let router = build_router();
+        let phase_frame = PhaseFrame {
+            cycle_id: 1,
+            global_phase: 12_000,
+            module_phase: Vec::new(),
+            module_freq: Vec::new(),
+            coherence_plv: 7000,
+            commit: Digest32::new([1u8; 32]),
+        };
+        let ncde_output = router
+            .tick_ncde(
+                1,
+                &phase_frame,
+                Digest32::new([2u8; 32]),
+                vec![(SpikeKind::Novelty, 2)],
+                1000,
+                2000,
+                1500,
+                1800,
+            )
+            .expect("ncde output");
+        let ssm_output = router
+            .tick_ssm(
+                &phase_frame,
+                &ncde_output,
+                Digest32::new([2u8; 32]),
+                vec![(SpikeKind::Threat, 3)],
+                1000,
+                2000,
+                1500,
+            )
+            .expect("ssm output");
+        {
+            let mut workspace = router.workspace.lock().expect("workspace lock");
+            workspace.set_ssm_commits(ssm_output.commit, ssm_output.x_commit);
+        }
+        let snapshot = router.arbitrate_workspace(1);
+        assert_eq!(snapshot.ssm_commit, ssm_output.commit);
+        assert_eq!(snapshot.ssm_state_commit, ssm_output.x_commit);
+
+        let base = AttentionWeights {
+            channel: FocusChannel::Task,
+            gain: 3000,
+            noise_suppress: 1200,
+            replay_bias: 1500,
+            commit: Digest32::new([4u8; 32]),
+        };
+        let biased = router.apply_ssm_attention_bias(base.clone(), Some(ssm_output.wm_salience));
+        assert!(biased.gain >= base.gain);
     }
 
     #[test]
