@@ -82,7 +82,7 @@ impl NsrInput {
         causal_report_commit: Digest32,
         counterfactuals: Vec<CounterfactualResult>,
     ) -> Self {
-        let commit = digest_nsr_input(
+        let digest_fields = NsrInputDigestFields::new(
             cycle_id,
             &intent,
             policy_class,
@@ -93,6 +93,7 @@ impl NsrInput {
             None,
             None,
         );
+        let commit = digest_nsr_input(&digest_fields);
         Self {
             cycle_id,
             intent,
@@ -112,7 +113,7 @@ impl NsrInput {
         let deny = deny.min(10_000).max(warn);
         self.nsr_warn_threshold = Some(warn);
         self.nsr_deny_threshold = Some(deny);
-        self.commit = digest_nsr_input(
+        let digest_fields = NsrInputDigestFields::new(
             self.cycle_id,
             &self.intent,
             self.policy_class,
@@ -123,6 +124,7 @@ impl NsrInput {
             self.nsr_warn_threshold,
             self.nsr_deny_threshold,
         );
+        self.commit = digest_nsr_input(&digest_fields);
         self
     }
 }
@@ -418,43 +420,71 @@ fn digest_nsr_report(
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
-fn digest_nsr_input(
+struct NsrInputDigestFields<'a> {
     cycle_id: u64,
-    intent: &IntentSummary,
+    intent: &'a IntentSummary,
     policy_class: u16,
-    proposed_actions: &[ActionIntent],
+    proposed_actions: &'a [ActionIntent],
     world_state_commit: Digest32,
     causal_report_commit: Digest32,
-    counterfactuals: &[CounterfactualResult],
+    counterfactuals: &'a [CounterfactualResult],
     nsr_warn_threshold: Option<u16>,
     nsr_deny_threshold: Option<u16>,
-) -> Digest32 {
+}
+
+impl<'a> NsrInputDigestFields<'a> {
+    fn new(
+        cycle_id: u64,
+        intent: &'a IntentSummary,
+        policy_class: u16,
+        proposed_actions: &'a [ActionIntent],
+        world_state_commit: Digest32,
+        causal_report_commit: Digest32,
+        counterfactuals: &'a [CounterfactualResult],
+        nsr_warn_threshold: Option<u16>,
+        nsr_deny_threshold: Option<u16>,
+    ) -> Self {
+        Self {
+            cycle_id,
+            intent,
+            policy_class,
+            proposed_actions,
+            world_state_commit,
+            causal_report_commit,
+            counterfactuals,
+            nsr_warn_threshold,
+            nsr_deny_threshold,
+        }
+    }
+}
+
+fn digest_nsr_input(fields: &NsrInputDigestFields<'_>) -> Digest32 {
     let mut hasher = Hasher::new();
     hasher.update(b"ucf.nsr.input.v2");
-    hasher.update(&cycle_id.to_be_bytes());
-    hasher.update(&intent.intent.to_be_bytes());
-    hasher.update(&intent.risk.to_be_bytes());
-    hasher.update(intent.commit.as_bytes());
-    hasher.update(&policy_class.to_be_bytes());
+    hasher.update(&fields.cycle_id.to_be_bytes());
+    hasher.update(&fields.intent.intent.to_be_bytes());
+    hasher.update(&fields.intent.risk.to_be_bytes());
+    hasher.update(fields.intent.commit.as_bytes());
+    hasher.update(&fields.policy_class.to_be_bytes());
     hasher.update(
-        &u64::try_from(proposed_actions.len())
+        &u64::try_from(fields.proposed_actions.len())
             .unwrap_or(0)
             .to_be_bytes(),
     );
-    for action in proposed_actions {
+    for action in fields.proposed_actions {
         hasher.update(&u64::try_from(action.tag.len()).unwrap_or(0).to_be_bytes());
         hasher.update(action.tag.as_bytes());
     }
-    hasher.update(world_state_commit.as_bytes());
-    hasher.update(causal_report_commit.as_bytes());
-    hasher.update(&nsr_warn_threshold.unwrap_or(0).to_be_bytes());
-    hasher.update(&nsr_deny_threshold.unwrap_or(0).to_be_bytes());
+    hasher.update(fields.world_state_commit.as_bytes());
+    hasher.update(fields.causal_report_commit.as_bytes());
+    hasher.update(&fields.nsr_warn_threshold.unwrap_or(0).to_be_bytes());
+    hasher.update(&fields.nsr_deny_threshold.unwrap_or(0).to_be_bytes());
     hasher.update(
-        &u64::try_from(counterfactuals.len())
+        &u64::try_from(fields.counterfactuals.len())
             .unwrap_or(0)
             .to_be_bytes(),
     );
-    for counterfactual in counterfactuals {
+    for counterfactual in fields.counterfactuals {
         hasher.update(&counterfactual.predicted_delta.to_be_bytes());
         hasher.update(&counterfactual.confidence.to_be_bytes());
         hasher.update(counterfactual.commit.as_bytes());
