@@ -17,6 +17,7 @@ use ucf_types::v1::spec::{ActionCode, DecisionKind, PolicyDecision};
 use ucf_types::Digest32;
 
 const SUMMARY_MAX_BYTES: usize = 160;
+const CDE_TOP_EDGES_MAX: usize = 8;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[repr(u8)]
@@ -468,6 +469,9 @@ pub struct WorkspaceSnapshot {
     pub recursion_used: u16,
     pub spike_root_commit: Digest32,
     pub ncde_commit: Digest32,
+    pub cde_commit: Digest32,
+    pub cde_graph_commit: Digest32,
+    pub cde_top_edges: Vec<(u16, u16, u16, u8)>,
     pub ssm_commit: Digest32,
     pub ssm_state_commit: Digest32,
     pub iit_output: Option<IitOutput>,
@@ -482,6 +486,11 @@ pub struct WorkspaceSnapshot {
 /// and digests only), making this safe to store without raw user content.
 pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
     const SNAPSHOT_DOMAIN_TAG: u16 = 0x5753;
+    let cde_edges = if snapshot.cde_top_edges.len() > CDE_TOP_EDGES_MAX {
+        &snapshot.cde_top_edges[..CDE_TOP_EDGES_MAX]
+    } else {
+        snapshot.cde_top_edges.as_slice()
+    };
     let signals = if snapshot.broadcast.len() > u16::MAX as usize {
         &snapshot.broadcast[..u16::MAX as usize]
     } else {
@@ -493,6 +502,10 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
             + 2
             + Digest32::LEN
             + Digest32::LEN
+            + Digest32::LEN
+            + Digest32::LEN
+            + 2
+            + cde_edges.len() * (2 + 2 + 2 + 1)
             + Digest32::LEN
             + Digest32::LEN
             + 1
@@ -508,6 +521,15 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
     payload.extend_from_slice(&snapshot.recursion_used.to_be_bytes());
     payload.extend_from_slice(snapshot.spike_root_commit.as_bytes());
     payload.extend_from_slice(snapshot.ncde_commit.as_bytes());
+    payload.extend_from_slice(snapshot.cde_commit.as_bytes());
+    payload.extend_from_slice(snapshot.cde_graph_commit.as_bytes());
+    payload.extend_from_slice(&(cde_edges.len() as u16).to_be_bytes());
+    for (from, to, conf, lag) in cde_edges {
+        payload.extend_from_slice(&from.to_be_bytes());
+        payload.extend_from_slice(&to.to_be_bytes());
+        payload.extend_from_slice(&conf.to_be_bytes());
+        payload.push(*lag);
+    }
     payload.extend_from_slice(snapshot.ssm_commit.as_bytes());
     payload.extend_from_slice(snapshot.ssm_state_commit.as_bytes());
     match snapshot.iit_output.as_ref() {
@@ -559,6 +581,9 @@ pub struct Workspace {
     spike_bus: SpikeBusState,
     structural_proposal: Option<StructuralDeltaProposal>,
     ncde_commit: Digest32,
+    cde_commit: Digest32,
+    cde_graph_commit: Digest32,
+    cde_top_edges: Vec<(u16, u16, u16, u8)>,
     ssm_commit: Digest32,
     ssm_state_commit: Digest32,
     iit_output: Option<IitOutput>,
@@ -577,6 +602,9 @@ impl Workspace {
             spike_bus: SpikeBusState::new(),
             structural_proposal: None,
             ncde_commit: Digest32::new([0u8; 32]),
+            cde_commit: Digest32::new([0u8; 32]),
+            cde_graph_commit: Digest32::new([0u8; 32]),
+            cde_top_edges: Vec::new(),
             ssm_commit: Digest32::new([0u8; 32]),
             ssm_state_commit: Digest32::new([0u8; 32]),
             iit_output: None,
@@ -635,6 +663,17 @@ impl Workspace {
         self.ncde_commit
     }
 
+    pub fn set_cde_output(
+        &mut self,
+        commit: Digest32,
+        graph_commit: Digest32,
+        top_edges: Vec<(u16, u16, u16, u8)>,
+    ) {
+        self.cde_commit = commit;
+        self.cde_graph_commit = graph_commit;
+        self.cde_top_edges = top_edges;
+    }
+
     pub fn set_ssm_commits(&mut self, commit: Digest32, state_commit: Digest32) {
         self.ssm_commit = commit;
         self.ssm_state_commit = state_commit;
@@ -686,6 +725,9 @@ impl Workspace {
         self.recursion_used = 0;
         let spike_root_commit = self.spike_bus.root_commit();
         let ncde_commit = self.ncde_commit;
+        let cde_commit = self.cde_commit;
+        let cde_graph_commit = self.cde_graph_commit;
+        let cde_top_edges = std::mem::take(&mut self.cde_top_edges);
         let ssm_commit = self.ssm_commit;
         let ssm_state_commit = self.ssm_state_commit;
         let iit_output = self.iit_output.take();
@@ -696,6 +738,9 @@ impl Workspace {
             recursion_used,
             spike_root_commit,
             ncde_commit,
+            cde_commit,
+            cde_graph_commit,
+            &cde_top_edges,
             ssm_commit,
             ssm_state_commit,
             iit_output.as_ref(),
@@ -709,6 +754,9 @@ impl Workspace {
             recursion_used,
             spike_root_commit,
             ncde_commit,
+            cde_commit,
+            cde_graph_commit,
+            cde_top_edges,
             ssm_commit,
             ssm_state_commit,
             iit_output,
@@ -1091,6 +1139,9 @@ fn commit_snapshot(
     recursion_used: u16,
     spike_root_commit: Digest32,
     ncde_commit: Digest32,
+    cde_commit: Digest32,
+    cde_graph_commit: Digest32,
+    cde_top_edges: &[(u16, u16, u16, u8)],
     ssm_commit: Digest32,
     ssm_state_commit: Digest32,
     iit_output: Option<&IitOutput>,
@@ -1103,6 +1154,19 @@ fn commit_snapshot(
     hasher.update(&recursion_used.to_be_bytes());
     hasher.update(spike_root_commit.as_bytes());
     hasher.update(ncde_commit.as_bytes());
+    hasher.update(cde_commit.as_bytes());
+    hasher.update(cde_graph_commit.as_bytes());
+    hasher.update(
+        &u64::try_from(cde_top_edges.len())
+            .unwrap_or(0)
+            .to_be_bytes(),
+    );
+    for (from, to, conf, lag) in cde_top_edges {
+        hasher.update(&from.to_be_bytes());
+        hasher.update(&to.to_be_bytes());
+        hasher.update(&conf.to_be_bytes());
+        hasher.update(&[*lag]);
+    }
     hasher.update(ssm_commit.as_bytes());
     hasher.update(ssm_state_commit.as_bytes());
     match iit_output {

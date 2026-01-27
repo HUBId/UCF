@@ -1893,6 +1893,8 @@ name = "ucf-cde-scm"
 version = "0.1.0"
 dependencies = [
  "blake3",
+ "ucf-influence",
+ "ucf-spikebus",
  "ucf-types",
 ]
 
