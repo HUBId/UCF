@@ -887,10 +887,20 @@ mod tests {
         let out = engine.tick(&inputs);
 
         assert!(out.interventions.len() <= 3);
-        assert!(out
-            .counterfactual_delta
-            .iter()
-            .all(|(_, delta)| delta.abs() <= i16::MAX));
+        assert!(out.counterfactual_delta.len() <= MAX_COUNTERFACTUAL_DELTAS);
+        let has_only_zero = out.counterfactual_delta.len() == 1
+            && out
+                .counterfactual_delta
+                .first()
+                .map(|(_, delta)| *delta == 0)
+                .unwrap_or(false);
+        assert!(
+            has_only_zero
+                || out
+                    .counterfactual_delta
+                    .iter()
+                    .all(|(_, delta)| *delta != 0)
+        );
     }
 
     #[test]
