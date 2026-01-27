@@ -40,7 +40,7 @@ pub struct IitInputs {
     pub wm_novelty: u16,
     pub ncde_commit: Digest32,
     pub ncde_energy: u16,
-    pub nsr_commit: Option<Digest32>,
+    pub nsr_trace_root: Option<Digest32>,
     pub nsr_verdict: Option<u8>,
     pub cde_commit: Option<Digest32>,
     pub drift: u16,
@@ -62,7 +62,7 @@ impl IitInputs {
         wm_novelty: u16,
         ncde_commit: Digest32,
         ncde_energy: u16,
-        nsr_commit: Option<Digest32>,
+        nsr_trace_root: Option<Digest32>,
         nsr_verdict: Option<u8>,
         cde_commit: Option<Digest32>,
         drift: u16,
@@ -80,7 +80,7 @@ impl IitInputs {
             wm_novelty,
             ncde_commit,
             ncde_energy,
-            nsr_commit,
+            nsr_trace_root,
             nsr_verdict,
             cde_commit,
             drift,
@@ -305,7 +305,7 @@ fn commit_inputs(inputs: &IitInputs) -> Digest32 {
     hasher.update(&inputs.wm_novelty.to_be_bytes());
     hasher.update(inputs.ncde_commit.as_bytes());
     hasher.update(&inputs.ncde_energy.to_be_bytes());
-    match inputs.nsr_commit {
+    match inputs.nsr_trace_root {
         Some(commit) => {
             hasher.update(&[1]);
             hasher.update(commit.as_bytes());

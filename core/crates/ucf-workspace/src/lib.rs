@@ -475,7 +475,8 @@ pub struct WorkspaceSnapshot {
     pub ssm_commit: Digest32,
     pub ssm_state_commit: Digest32,
     pub iit_output: Option<IitOutput>,
-    pub nsr_trace_commit: Option<Digest32>,
+    pub nsr_trace_root: Option<Digest32>,
+    pub nsr_prev_commit: Option<Digest32>,
     pub nsr_verdict: Option<u8>,
     pub commit: Digest32,
 }
@@ -513,6 +514,8 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
             + 1
             + Digest32::LEN
             + 1
+            + Digest32::LEN
+            + 1
             + signals.len() * (2 + 2 + Digest32::LEN + 2 + SUMMARY_MAX_BYTES),
     );
     payload.extend_from_slice(&SNAPSHOT_DOMAIN_TAG.to_be_bytes());
@@ -542,7 +545,17 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
             payload.extend_from_slice(&[0u8; Digest32::LEN]);
         }
     }
-    match snapshot.nsr_trace_commit {
+    match snapshot.nsr_trace_root {
+        Some(commit) => {
+            payload.push(1);
+            payload.extend_from_slice(commit.as_bytes());
+        }
+        None => {
+            payload.push(0);
+            payload.extend_from_slice(&[0u8; Digest32::LEN]);
+        }
+    }
+    match snapshot.nsr_prev_commit {
         Some(commit) => {
             payload.push(1);
             payload.extend_from_slice(commit.as_bytes());
@@ -587,7 +600,8 @@ pub struct Workspace {
     ssm_commit: Digest32,
     ssm_state_commit: Digest32,
     iit_output: Option<IitOutput>,
-    nsr_trace_commit: Option<Digest32>,
+    nsr_trace_root: Option<Digest32>,
+    nsr_prev_commit: Option<Digest32>,
     nsr_verdict: Option<u8>,
 }
 
@@ -608,7 +622,8 @@ impl Workspace {
             ssm_commit: Digest32::new([0u8; 32]),
             ssm_state_commit: Digest32::new([0u8; 32]),
             iit_output: None,
-            nsr_trace_commit: None,
+            nsr_trace_root: None,
+            nsr_prev_commit: None,
             nsr_verdict: None,
         }
     }
@@ -683,8 +698,14 @@ impl Workspace {
         self.iit_output = Some(output);
     }
 
-    pub fn set_nsr_trace(&mut self, commit: Digest32, verdict: u8) {
-        self.nsr_trace_commit = Some(commit);
+    pub fn set_nsr_trace(
+        &mut self,
+        trace_root: Digest32,
+        prev_commit: Option<Digest32>,
+        verdict: u8,
+    ) {
+        self.nsr_trace_root = Some(trace_root);
+        self.nsr_prev_commit = prev_commit;
         self.nsr_verdict = Some(verdict);
     }
 
@@ -731,7 +752,8 @@ impl Workspace {
         let ssm_commit = self.ssm_commit;
         let ssm_state_commit = self.ssm_state_commit;
         let iit_output = self.iit_output.take();
-        let nsr_trace_commit = self.nsr_trace_commit.take();
+        let nsr_trace_root = self.nsr_trace_root.take();
+        let nsr_prev_commit = self.nsr_prev_commit.take();
         let nsr_verdict = self.nsr_verdict.take();
         let commit = commit_snapshot(
             cycle_id,
@@ -744,7 +766,8 @@ impl Workspace {
             ssm_commit,
             ssm_state_commit,
             iit_output.as_ref(),
-            nsr_trace_commit,
+            nsr_trace_root,
+            nsr_prev_commit,
             nsr_verdict,
             &broadcast,
         );
@@ -760,7 +783,8 @@ impl Workspace {
             ssm_commit,
             ssm_state_commit,
             iit_output,
-            nsr_trace_commit,
+            nsr_trace_root,
+            nsr_prev_commit,
             nsr_verdict,
             commit,
         }
@@ -1145,7 +1169,8 @@ fn commit_snapshot(
     ssm_commit: Digest32,
     ssm_state_commit: Digest32,
     iit_output: Option<&IitOutput>,
-    nsr_trace_commit: Option<Digest32>,
+    nsr_trace_root: Option<Digest32>,
+    nsr_prev_commit: Option<Digest32>,
     nsr_verdict: Option<u8>,
     broadcast: &[WorkspaceSignal],
 ) -> Digest32 {
@@ -1178,7 +1203,16 @@ fn commit_snapshot(
             hasher.update(&[0]);
         }
     }
-    match nsr_trace_commit {
+    match nsr_trace_root {
+        Some(commit) => {
+            hasher.update(&[1]);
+            hasher.update(commit.as_bytes());
+        }
+        None => {
+            hasher.update(&[0]);
+        }
+    }
+    match nsr_prev_commit {
         Some(commit) => {
             hasher.update(&[1]);
             hasher.update(commit.as_bytes());

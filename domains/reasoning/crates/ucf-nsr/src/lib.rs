@@ -7,11 +7,20 @@ use ucf_spikebus::SpikeKind;
 use ucf_structural_store::NsrThresholds;
 use ucf_types::Digest32;
 
+#[cfg(feature = "nsr_datalog")]
+mod backend_datalog;
+#[cfg(feature = "nsr_smt")]
+mod backend_smt;
+
 const LIGHT_PROOF_DOMAIN: &[u8] = b"ucf.nsr.proof.light.v1";
 const NSR_INPUTS_DOMAIN: &[u8] = b"ucf.nsr.inputs.v1";
 const NSR_ATOM_DOMAIN: &[u8] = b"ucf.nsr.reasoning.atom.v1";
-const NSR_TRACE_DOMAIN: &[u8] = b"ucf.nsr.reasoning.trace.v1";
-const NSR_ENGINE_DOMAIN: &[u8] = b"ucf.nsr.engine.mvp.v1";
+const NSR_TRACE_COMMIT_DOMAIN: &[u8] = b"ucf.nsr.reasoning.trace.commit.v1";
+const NSR_TRACE_LEAF_DOMAIN: &[u8] = b"ucf.nsr.reasoning.trace.leaf.v1";
+const NSR_TRACE_ROOT_DOMAIN: &[u8] = b"ucf.nsr.reasoning.trace.root.v1";
+const NSR_BACKEND_DOMAIN: &[u8] = b"ucf.nsr.backend.config.v1";
+const NSR_ENGINE_DOMAIN: &[u8] = b"ucf.nsr.engine.v1";
+const NSR_ENGINE_MVP_DOMAIN: &[u8] = b"ucf.nsr.engine.mvp.v1";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NsrVerdict {
@@ -67,6 +76,52 @@ impl NsrReasonCode {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BackendKind {
+    Mvp,
+    Smt,
+    Datalog,
+}
+
+impl BackendKind {
+    pub fn as_u8(self) -> u8 {
+        match self {
+            Self::Mvp => 0,
+            Self::Smt => 1,
+            Self::Datalog => 2,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BackendConfig {
+    pub kind: BackendKind,
+    pub commit: Digest32,
+}
+
+impl BackendConfig {
+    pub fn new(kind: BackendKind) -> Self {
+        let commit = digest_backend_config(kind);
+        Self { kind, commit }
+    }
+
+    pub fn mvp() -> Self {
+        Self::new(BackendKind::Mvp)
+    }
+}
+
+pub trait SymbolicBackend {
+    fn check(&mut self, facts: &[ReasoningAtom], inp: &NsrInputs) -> SymbolicResult;
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SymbolicResult {
+    pub ok: bool,
+    pub contradictions: Vec<(u16, NsrReasonCode, u16)>,
+    pub derived_atoms: Vec<ReasoningAtom>,
+    pub commit: Digest32,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ReasoningAtom {
     pub key: u16,
@@ -88,6 +143,8 @@ pub struct ReasoningTrace {
     pub rule_hits: Vec<(u16, NsrReasonCode, u16)>,
     pub derived_atoms: Vec<ReasoningAtom>,
     pub verdict: NsrVerdict,
+    pub prev_commit: Option<Digest32>,
+    pub trace_root: Digest32,
     pub commit: Digest32,
 }
 
@@ -95,18 +152,29 @@ impl ReasoningTrace {
     pub fn new(
         cycle_id: u64,
         inputs_commit: Digest32,
-        rule_hits: Vec<(u16, NsrReasonCode, u16)>,
-        derived_atoms: Vec<ReasoningAtom>,
+        mut rule_hits: Vec<(u16, NsrReasonCode, u16)>,
+        mut derived_atoms: Vec<ReasoningAtom>,
         verdict: NsrVerdict,
+        prev_commit: Option<Digest32>,
     ) -> Self {
-        let commit =
-            digest_reasoning_trace(cycle_id, inputs_commit, &rule_hits, &derived_atoms, verdict);
+        sort_rule_hits(&mut rule_hits);
+        sort_reasoning_atoms(&mut derived_atoms);
+        let trace_root = digest_trace_root(
+            inputs_commit,
+            &rule_hits,
+            &derived_atoms,
+            verdict,
+            prev_commit,
+        );
+        let commit = digest_reasoning_trace_commit(cycle_id, trace_root, verdict);
         Self {
             cycle_id,
             inputs_commit,
             rule_hits,
             derived_atoms,
             verdict,
+            prev_commit,
+            trace_root,
             commit,
         }
     }
@@ -181,7 +249,7 @@ impl NsrInputs {
 }
 
 pub trait ConstraintEngine {
-    fn evaluate(&self, inp: &NsrInputs) -> ReasoningTrace;
+    fn evaluate(&mut self, inp: &NsrInputs) -> ReasoningTrace;
 }
 
 #[derive(Clone, Debug)]
@@ -195,10 +263,15 @@ impl NsrEngineMvp {
         let commit = digest_nsr_engine_mvp(&thresholds);
         Self { thresholds, commit }
     }
-}
 
-impl ConstraintEngine for NsrEngineMvp {
-    fn evaluate(&self, inp: &NsrInputs) -> ReasoningTrace {
+    pub fn evaluate_components(
+        &self,
+        inp: &NsrInputs,
+    ) -> (
+        Vec<(u16, NsrReasonCode, u16)>,
+        Vec<ReasoningAtom>,
+        NsrVerdict,
+    ) {
         const COHERENCE_MIN: u16 = 3_000;
         const PHI_MIN: u16 = 3_500;
         const THREAT_SPIKE_HIGH: u16 = 5;
@@ -266,7 +339,132 @@ impl ConstraintEngine for NsrEngineMvp {
             }
         }
 
-        ReasoningTrace::new(inp.cycle_id, inp.commit, rule_hits, derived_atoms, verdict)
+        (rule_hits, derived_atoms, verdict)
+    }
+}
+
+impl ConstraintEngine for NsrEngineMvp {
+    fn evaluate(&mut self, inp: &NsrInputs) -> ReasoningTrace {
+        let (rule_hits, derived_atoms, verdict) = self.evaluate_components(inp);
+        ReasoningTrace::new(
+            inp.cycle_id,
+            inp.commit,
+            rule_hits,
+            derived_atoms,
+            verdict,
+            None,
+        )
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct NsrEngine {
+    pub mvp: NsrEngineMvp,
+    pub backend: BackendConfig,
+    pub prev_trace_commit: Option<Digest32>,
+    pub commit: Digest32,
+}
+
+impl NsrEngine {
+    pub fn new(thresholds: NsrThresholds) -> Self {
+        Self::with_backend(thresholds, BackendConfig::mvp())
+    }
+
+    pub fn with_backend(thresholds: NsrThresholds, backend: BackendConfig) -> Self {
+        let mvp = NsrEngineMvp::new(thresholds);
+        let commit = digest_nsr_engine(&mvp, &backend);
+        Self {
+            mvp,
+            backend,
+            prev_trace_commit: None,
+            commit,
+        }
+    }
+
+    pub fn set_thresholds(&mut self, thresholds: NsrThresholds) {
+        self.mvp = NsrEngineMvp::new(thresholds);
+        self.commit = digest_nsr_engine(&self.mvp, &self.backend);
+    }
+
+    pub fn set_backend(&mut self, backend: BackendConfig) {
+        self.backend = backend;
+        self.commit = digest_nsr_engine(&self.mvp, &self.backend);
+    }
+}
+
+impl ConstraintEngine for NsrEngine {
+    fn evaluate(&mut self, inp: &NsrInputs) -> ReasoningTrace {
+        const MAX_FACTS: usize = 16;
+        const MAX_DERIVED: usize = 16;
+
+        let (mut rule_hits, mut derived_atoms, mut verdict) = self.mvp.evaluate_components(inp);
+        let mut facts = Vec::new();
+        let mut input_atoms = inp.reasoning_atoms.clone();
+        sort_reasoning_atoms(&mut input_atoms);
+        for atom in input_atoms {
+            if facts.len() >= MAX_FACTS {
+                break;
+            }
+            facts.push(atom);
+        }
+        let mut mvp_atoms = derived_atoms.clone();
+        sort_reasoning_atoms(&mut mvp_atoms);
+        for atom in mvp_atoms {
+            if facts.len() >= MAX_FACTS {
+                break;
+            }
+            facts.push(atom);
+        }
+
+        let backend_result: Option<SymbolicResult> = match self.backend.kind {
+            BackendKind::Mvp => None,
+            BackendKind::Smt => {
+                #[cfg(feature = "nsr_smt")]
+                {
+                    let mut backend = backend_smt::SmtBackend::new(self.mvp.thresholds);
+                    Some(backend.check(&facts, inp))
+                }
+                #[cfg(not(feature = "nsr_smt"))]
+                {
+                    None
+                }
+            }
+            BackendKind::Datalog => {
+                #[cfg(feature = "nsr_datalog")]
+                {
+                    let mut backend = backend_datalog::DatalogBackend::new(self.mvp.thresholds);
+                    Some(backend.check(&facts, inp))
+                }
+                #[cfg(not(feature = "nsr_datalog"))]
+                {
+                    None
+                }
+            }
+        };
+
+        if let Some(result) = backend_result {
+            rule_hits.extend(result.contradictions);
+            derived_atoms.extend(result.derived_atoms);
+            if !result.ok {
+                verdict = NsrVerdict::Deny;
+            }
+        }
+
+        sort_reasoning_atoms(&mut derived_atoms);
+        if derived_atoms.len() > MAX_DERIVED {
+            derived_atoms.truncate(MAX_DERIVED);
+        }
+
+        let trace = ReasoningTrace::new(
+            inp.cycle_id,
+            inp.commit,
+            rule_hits,
+            derived_atoms,
+            verdict,
+            self.prev_trace_commit,
+        );
+        self.prev_trace_commit = Some(trace.commit);
+        trace
     }
 }
 
@@ -288,7 +486,7 @@ impl Default for MockConstraintEngine {
 }
 
 impl ConstraintEngine for MockConstraintEngine {
-    fn evaluate(&self, inp: &NsrInputs) -> ReasoningTrace {
+    fn evaluate(&mut self, inp: &NsrInputs) -> ReasoningTrace {
         let (rule_hits, derived_atoms) = match self.verdict {
             NsrVerdict::Allow => (Vec::new(), Vec::new()),
             NsrVerdict::Warn => (
@@ -306,6 +504,7 @@ impl ConstraintEngine for MockConstraintEngine {
             rule_hits,
             derived_atoms,
             self.verdict,
+            None,
         )
     }
 }
@@ -322,7 +521,7 @@ impl<E> ConstraintEngineAdapter<E> {
 }
 
 impl<E: ConstraintEngine> ConstraintEngine for ConstraintEngineAdapter<E> {
-    fn evaluate(&self, inp: &NsrInputs) -> ReasoningTrace {
+    fn evaluate(&mut self, inp: &NsrInputs) -> ReasoningTrace {
         self.backend.evaluate(inp)
     }
 }
@@ -433,12 +632,12 @@ impl NsrInput {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct NsrEngine {
+pub struct NsrPolicyEngine {
     rule_checker: RuleChecker,
     constraint_checker: ConstraintChecker,
 }
 
-impl NsrEngine {
+impl NsrPolicyEngine {
     pub fn new() -> Self {
         Self::default()
     }
@@ -856,38 +1055,98 @@ fn digest_reasoning_atom(key: u16, value: i16, input_commit: Digest32) -> Digest
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
-fn digest_reasoning_trace(
-    cycle_id: u64,
+fn sort_rule_hits(rule_hits: &mut [(u16, NsrReasonCode, u16)]) {
+    rule_hits.sort_by(|(rule_a, reason_a, sev_a), (rule_b, reason_b, sev_b)| {
+        rule_a
+            .cmp(rule_b)
+            .then_with(|| sev_b.cmp(sev_a))
+            .then_with(|| reason_a.as_u16().cmp(&reason_b.as_u16()))
+    });
+}
+
+fn sort_reasoning_atoms(atoms: &mut [ReasoningAtom]) {
+    atoms.sort_by(|a, b| {
+        a.key
+            .cmp(&b.key)
+            .then_with(|| a.commit.as_bytes().cmp(b.commit.as_bytes()))
+    });
+}
+
+fn digest_rule_hit(rule_id: u16, reason: NsrReasonCode, severity: u16) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(NSR_TRACE_LEAF_DOMAIN);
+    hasher.update(&[1]);
+    hasher.update(&rule_id.to_be_bytes());
+    hasher.update(&reason.as_u16().to_be_bytes());
+    hasher.update(&severity.to_be_bytes());
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn digest_verdict_leaf(verdict: NsrVerdict) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(NSR_TRACE_LEAF_DOMAIN);
+    hasher.update(&[2]);
+    hasher.update(&[verdict.as_u8()]);
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn digest_trace_root(
     inputs_commit: Digest32,
     rule_hits: &[(u16, NsrReasonCode, u16)],
     derived_atoms: &[ReasoningAtom],
     verdict: NsrVerdict,
+    prev_commit: Option<Digest32>,
 ) -> Digest32 {
     let mut hasher = Hasher::new();
-    hasher.update(NSR_TRACE_DOMAIN);
-    hasher.update(&cycle_id.to_be_bytes());
+    hasher.update(NSR_TRACE_ROOT_DOMAIN);
     hasher.update(inputs_commit.as_bytes());
-    hasher.update(&[verdict.as_u8()]);
-    hasher.update(&u64::try_from(rule_hits.len()).unwrap_or(0).to_be_bytes());
     for (rule_id, reason, severity) in rule_hits {
-        hasher.update(&rule_id.to_be_bytes());
-        hasher.update(&reason.as_u16().to_be_bytes());
-        hasher.update(&severity.to_be_bytes());
+        let leaf = digest_rule_hit(*rule_id, *reason, *severity);
+        hasher.update(leaf.as_bytes());
     }
-    hasher.update(
-        &u64::try_from(derived_atoms.len())
-            .unwrap_or(0)
-            .to_be_bytes(),
-    );
     for atom in derived_atoms {
         hasher.update(atom.commit.as_bytes());
     }
+    hasher.update(digest_verdict_leaf(verdict).as_bytes());
+    hasher.update(
+        prev_commit
+            .unwrap_or_else(|| Digest32::new([0u8; 32]))
+            .as_bytes(),
+    );
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn digest_reasoning_trace_commit(
+    cycle_id: u64,
+    trace_root: Digest32,
+    verdict: NsrVerdict,
+) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(NSR_TRACE_COMMIT_DOMAIN);
+    hasher.update(trace_root.as_bytes());
+    hasher.update(&[verdict.as_u8()]);
+    hasher.update(&cycle_id.to_be_bytes());
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn digest_backend_config(kind: BackendKind) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(NSR_BACKEND_DOMAIN);
+    hasher.update(&[kind.as_u8()]);
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn digest_nsr_engine(mvp: &NsrEngineMvp, backend: &BackendConfig) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(NSR_ENGINE_DOMAIN);
+    hasher.update(mvp.commit.as_bytes());
+    hasher.update(backend.commit.as_bytes());
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
 fn digest_nsr_engine_mvp(thresholds: &NsrThresholds) -> Digest32 {
     let mut hasher = Hasher::new();
-    hasher.update(NSR_ENGINE_DOMAIN);
+    hasher.update(NSR_ENGINE_MVP_DOMAIN);
     hasher.update(thresholds.commit.as_bytes());
     Digest32::new(*hasher.finalize().as_bytes())
 }
@@ -1120,7 +1379,7 @@ mod tests {
 
     #[test]
     fn evaluation_is_deterministic() {
-        let engine = NsrEngine::new();
+        let engine = NsrPolicyEngine::new();
         let input = base_input();
 
         let first = engine.evaluate(&input);
@@ -1131,7 +1390,7 @@ mod tests {
 
     #[test]
     fn forbidden_intent_produces_deny() {
-        let engine = NsrEngine::new();
+        let engine = NsrPolicyEngine::new();
         let input = NsrInput::new(
             9,
             IntentSummary::new(9500, 100),
@@ -1150,7 +1409,7 @@ mod tests {
 
     #[test]
     fn constraint_fail_produces_deny() {
-        let engine = NsrEngine::new();
+        let engine = NsrPolicyEngine::new();
         let input = NsrInput::new(
             7,
             IntentSummary::new(100, 9000),
@@ -1172,7 +1431,7 @@ mod tests {
 
     #[test]
     fn ok_path_has_no_violations() {
-        let engine = NsrEngine::new();
+        let engine = NsrPolicyEngine::new();
         let input = NsrInput::new(
             2,
             IntentSummary::new(100, 100),
@@ -1191,7 +1450,7 @@ mod tests {
 
     #[test]
     fn causal_high_confidence_delta_denies() {
-        let engine = NsrEngine::new();
+        let engine = NsrPolicyEngine::new();
         let counterfactuals = vec![CounterfactualResult::new(
             12,
             9000,
@@ -1218,7 +1477,7 @@ mod tests {
 
     #[test]
     fn causal_medium_confidence_delta_warns() {
-        let engine = NsrEngine::new();
+        let engine = NsrPolicyEngine::new();
         let counterfactuals = vec![CounterfactualResult::new(4, 6000, Digest32::new([2u8; 32]))];
         let input = NsrInput::new(
             11,
@@ -1241,7 +1500,7 @@ mod tests {
 
     #[test]
     fn causal_non_positive_delta_is_ignored() {
-        let engine = NsrEngine::new();
+        let engine = NsrPolicyEngine::new();
         let counterfactuals = vec![
             CounterfactualResult::new(-3, 9000, Digest32::new([3u8; 32])),
             CounterfactualResult::new(0, 9000, Digest32::new([4u8; 32])),
@@ -1265,9 +1524,9 @@ mod tests {
             .all(|violation| !is_causal_violation(&violation.code)));
     }
 
-    fn base_nsr_inputs() -> NsrInputs {
+    fn base_nsr_inputs(cycle_id: u64) -> NsrInputs {
         NsrInputs::new(
-            1,
+            cycle_id,
             Digest32::new([1u8; 32]),
             6_000,
             6_000,
@@ -1281,6 +1540,28 @@ mod tests {
             Some(true),
             Vec::new(),
         )
+    }
+
+    #[test]
+    fn reasoning_trace_is_deterministic() {
+        let inputs = base_nsr_inputs(1);
+        let mut engine_a = NsrEngine::new(NsrThresholds::new(5_000, 8_000));
+        let mut engine_b = NsrEngine::new(NsrThresholds::new(5_000, 8_000));
+
+        let first = engine_a.evaluate(&inputs);
+        let second = engine_b.evaluate(&inputs);
+
+        assert_eq!(first.trace_root, second.trace_root);
+        assert_eq!(first.commit, second.commit);
+    }
+
+    #[test]
+    fn reasoning_trace_merkle_chain_links_prev_commit() {
+        let mut engine = NsrEngine::new(NsrThresholds::new(5_000, 8_000));
+        let first = engine.evaluate(&base_nsr_inputs(1));
+        let second = engine.evaluate(&base_nsr_inputs(2));
+
+        assert_eq!(second.prev_commit, Some(first.commit));
     }
 
     #[test]
@@ -1303,7 +1584,8 @@ mod tests {
             vec![(atom_key, NSR_ATOM_MIN as i16)],
         );
 
-        let trace = NsrEngineMvp::new(thresholds).evaluate(&inputs);
+        let mut engine = NsrEngineMvp::new(thresholds);
+        let trace = engine.evaluate(&inputs);
 
         assert_eq!(trace.verdict, NsrVerdict::Warn);
         assert!(trace
@@ -1314,11 +1596,12 @@ mod tests {
 
     #[test]
     fn hard_constraint_trace_is_deterministic() {
-        let engine = NsrEngineMvp::new(NsrThresholds::new(5_000, 8_000));
-        let inputs = base_nsr_inputs();
+        let mut engine = NsrEngineMvp::new(NsrThresholds::new(5_000, 8_000));
+        let inputs = base_nsr_inputs(1);
 
         let first = engine.evaluate(&inputs);
-        let second = engine.evaluate(&inputs);
+        let mut engine_second = NsrEngineMvp::new(NsrThresholds::new(5_000, 8_000));
+        let second = engine_second.evaluate(&inputs);
 
         assert_eq!(first.commit, second.commit);
         assert_eq!(first, second);
@@ -1326,8 +1609,8 @@ mod tests {
 
     #[test]
     fn high_risk_denies_in_mvp() {
-        let engine = NsrEngineMvp::new(NsrThresholds::new(5_000, 8_000));
-        let mut inputs = base_nsr_inputs();
+        let mut engine = NsrEngineMvp::new(NsrThresholds::new(5_000, 8_000));
+        let mut inputs = base_nsr_inputs(1);
         inputs.risk = 9_000;
         inputs.commit = digest_nsr_inputs(&inputs);
 
@@ -1339,8 +1622,8 @@ mod tests {
 
     #[test]
     fn low_coherence_low_phi_warns_in_mvp() {
-        let engine = NsrEngineMvp::new(NsrThresholds::new(5_000, 8_000));
-        let mut inputs = base_nsr_inputs();
+        let mut engine = NsrEngineMvp::new(NsrThresholds::new(5_000, 8_000));
+        let mut inputs = base_nsr_inputs(1);
         inputs.coherence_plv = 2_000;
         inputs.phi_proxy = 2_000;
         inputs.commit = digest_nsr_inputs(&inputs);
@@ -1349,5 +1632,29 @@ mod tests {
 
         assert_eq!(trace.verdict, NsrVerdict::Warn);
         assert!(!trace.rule_hits.is_empty());
+    }
+
+    #[cfg(feature = "nsr_smt")]
+    #[test]
+    fn smt_backend_compiles() {
+        use super::backend_smt::SmtBackend;
+        use super::SymbolicBackend;
+
+        let mut backend = SmtBackend::new(NsrThresholds::new(5_000, 8_000));
+        let inputs = base_nsr_inputs(1);
+
+        let _result = backend.check(&[], &inputs);
+    }
+
+    #[cfg(feature = "nsr_datalog")]
+    #[test]
+    fn datalog_backend_compiles() {
+        use super::backend_datalog::DatalogBackend;
+        use super::SymbolicBackend;
+
+        let mut backend = DatalogBackend::new(NsrThresholds::new(5_000, 8_000));
+        let inputs = base_nsr_inputs(1);
+
+        let _result = backend.check(&[], &inputs);
     }
 }

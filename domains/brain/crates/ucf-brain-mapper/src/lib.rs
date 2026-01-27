@@ -213,7 +213,8 @@ mod tests {
             ssm_commit: Digest32::new([0u8; 32]),
             ssm_state_commit: Digest32::new([0u8; 32]),
             iit_output: None,
-            nsr_trace_commit: None,
+            nsr_trace_root: None,
+            nsr_prev_commit: None,
             nsr_verdict: None,
             commit: Digest32::new([2u8; 32]),
         }
@@ -232,7 +233,8 @@ mod tests {
             ssm_commit: Digest32::new([0u8; 32]),
             ssm_state_commit: Digest32::new([0u8; 32]),
             iit_output: None,
-            nsr_trace_commit: None,
+            nsr_trace_root: None,
+            nsr_prev_commit: None,
             nsr_verdict: None,
             commit: Digest32::new([2u8; 32]),
         }
