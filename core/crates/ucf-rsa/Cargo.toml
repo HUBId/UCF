@@ -10,6 +10,7 @@ ucf-archive-store = { workspace = true }
 ucf-bus = { path = "../ucf-bus" }
 ucf-openevolve-port = { path = "../ucf-openevolve-port" }
 ucf-policy-ecology = { path = "../ucf-policy-ecology" }
+ucf-spikebus = { path = "../ucf-spikebus" }
 ucf-structural-store = { path = "../ucf-structural-store" }
 ucf-types = { path = "../ucf-types" }
 

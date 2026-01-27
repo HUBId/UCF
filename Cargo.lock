@@ -2298,6 +2298,7 @@ dependencies = [
  "ucf-bus",
  "ucf-openevolve-port",
  "ucf-policy-ecology",
+ "ucf-spikebus",
  "ucf-structural-store",
  "ucf-types",
 ]
@@ -2414,8 +2415,10 @@ name = "ucf-structural-store"
 version = "0.1.0"
 dependencies = [
  "blake3",
+ "ucf-ncde",
  "ucf-onn",
  "ucf-spikebus",
+ "ucf-ssm",
  "ucf-types",
 ]
 

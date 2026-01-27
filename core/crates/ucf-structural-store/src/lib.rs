@@ -1,8 +1,10 @@
 #![forbid(unsafe_code)]
 
 use blake3::Hasher;
+use ucf_ncde::NcdeParams;
 use ucf_onn::{ModuleId, OnnParams};
 use ucf_spikebus::SpikeKind;
+use ucf_ssm::SsmParams;
 use ucf_types::Digest32;
 
 const REPLAY_CAPS_DOMAIN: &[u8] = b"ucf.structural.replay_caps.v1";
@@ -16,6 +18,8 @@ const STRUCTURAL_HISTORY_DOMAIN: &[u8] = b"ucf.structural.history.v1";
 const STRUCTURAL_GATES_DOMAIN: &[u8] = b"ucf.structural.gates.v1";
 const STRUCTURAL_EVAL_DOMAIN: &[u8] = b"ucf.structural.eval.v1";
 const STRUCTURAL_STATS_DOMAIN: &[u8] = b"ucf.structural.cycle_stats.v1";
+const PARAM_KEY_DOMAIN: &[u8] = b"ucf.structural.param_key.v1";
+const RSA_LIMITS_DOMAIN: &[u8] = b"ucf.structural.rsa_limits.v1";
 
 const REPLAY_MICRO_MIN: u16 = 1;
 const REPLAY_MESO_MIN: u16 = 1;
@@ -39,6 +43,40 @@ const SNN_VERIFY_MAX: u16 = 128;
 const SNN_VERIFY_STEP: u16 = 1;
 
 const EVAL_TICKS: u8 = 4;
+
+const RSA_PHI_MIN_DEFAULT: u16 = 2800;
+const RSA_RISK_MAX_DEFAULT: u16 = 7000;
+
+const PARAM_LABEL_NSR_WARN: &str = "nsr.warn";
+const PARAM_LABEL_NSR_DENY: &str = "nsr.deny";
+const PARAM_LABEL_ONN_K_GLOBAL: &str = "onn.k_global";
+const PARAM_LABEL_ONN_PHASE_WINDOW: &str = "onn.phase_window";
+const PARAM_LABEL_SNN_VERIFY_LIMIT: &str = "snn.verify_limit";
+const PARAM_LABEL_SNN_ATTENTION_SHIFT: &str = "snn.threshold.attention_shift";
+const PARAM_LABEL_SNN_REPLAY_TRIGGER: &str = "snn.threshold.replay_trigger";
+const PARAM_LABEL_REPLAY_MICRO: &str = "replay.micro_k";
+const PARAM_LABEL_REPLAY_MESO: &str = "replay.meso_m";
+const PARAM_LABEL_REPLAY_MACRO: &str = "replay.macro_n";
+const PARAM_LABEL_SSM_SELECTIVITY: &str = "ssm.selectivity";
+const PARAM_LABEL_NCDE_ATTRACTOR: &str = "ncde.attractor_strength";
+const PARAM_LABEL_IIT_PHI_MIN_APPLY: &str = "iit.phi_min_apply";
+const PARAM_LABEL_RSA_RISK_MAX_APPLY: &str = "rsa.risk_max_apply";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ParamDeltaRef {
+    pub key: u16,
+    pub from: i32,
+    pub to: i32,
+}
+
+pub fn param_key(label: &str) -> u16 {
+    let mut hasher = Hasher::new();
+    hasher.update(PARAM_KEY_DOMAIN);
+    hasher.update(label.as_bytes());
+    let digest = hasher.finalize();
+    let bytes = digest.as_bytes();
+    u16::from_be_bytes([bytes[0], bytes[1]])
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ReplayCaps {
@@ -160,22 +198,62 @@ impl Default for SnnKnobs {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RsaLimits {
+    pub phi_min_apply: u16,
+    pub risk_max_apply: u16,
+    pub commit: Digest32,
+}
+
+impl RsaLimits {
+    pub fn new(phi_min_apply: u16, risk_max_apply: u16) -> Self {
+        let phi_min_apply = phi_min_apply.min(10_000);
+        let risk_max_apply = risk_max_apply.min(10_000);
+        let commit = commit_rsa_limits(phi_min_apply, risk_max_apply);
+        Self {
+            phi_min_apply,
+            risk_max_apply,
+            commit,
+        }
+    }
+}
+
+impl Default for RsaLimits {
+    fn default() -> Self {
+        Self::new(RSA_PHI_MIN_DEFAULT, RSA_RISK_MAX_DEFAULT)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StructuralParams {
     pub onn: OnnKnobs,
     pub snn: SnnKnobs,
     pub nsr: NsrThresholds,
     pub replay: ReplayCaps,
+    pub ssm: SsmParams,
+    pub ncde: NcdeParams,
+    pub rsa: RsaLimits,
     pub commit: Digest32,
 }
 
 impl StructuralParams {
-    pub fn new(onn: OnnKnobs, snn: SnnKnobs, nsr: NsrThresholds, replay: ReplayCaps) -> Self {
-        let commit = commit_structural_params(&onn, &snn, &nsr, &replay);
+    pub fn new(
+        onn: OnnKnobs,
+        snn: SnnKnobs,
+        nsr: NsrThresholds,
+        replay: ReplayCaps,
+        ssm: SsmParams,
+        ncde: NcdeParams,
+        rsa: RsaLimits,
+    ) -> Self {
+        let commit = commit_structural_params(&onn, &snn, &nsr, &replay, &ssm, &ncde, &rsa);
         Self {
             onn,
             snn,
             nsr,
             replay,
+            ssm,
+            ncde,
+            rsa,
             commit,
         }
     }
@@ -220,6 +298,9 @@ impl StructuralStore {
             SnnKnobs::default(),
             NsrThresholds::default(),
             ReplayCaps::default(),
+            SsmParams::default(),
+            NcdeParams::default(),
+            RsaLimits::default(),
         )
     }
 
@@ -235,6 +316,16 @@ impl StructuralStore {
 
     pub fn current(&self) -> &StructuralParams {
         &self.current
+    }
+
+    pub fn apply_deltas(&self, deltas: &[ParamDeltaRef]) -> Option<StructuralParams> {
+        apply_deltas_to_params(&self.current, deltas)
+    }
+
+    pub fn apply_params(&mut self, params: StructuralParams) {
+        self.history_root = commit_history_root(self.history_root, params.commit);
+        self.current = params;
+        self.commit = commit_structural_store(&self.current, self.history_root);
     }
 
     pub fn propose(
@@ -472,6 +563,9 @@ fn commit_structural_params(
     snn: &SnnKnobs,
     nsr: &NsrThresholds,
     replay: &ReplayCaps,
+    ssm: &SsmParams,
+    ncde: &NcdeParams,
+    rsa: &RsaLimits,
 ) -> Digest32 {
     let mut hasher = Hasher::new();
     hasher.update(STRUCTURAL_PARAMS_DOMAIN);
@@ -479,6 +573,9 @@ fn commit_structural_params(
     hasher.update(snn.commit.as_bytes());
     hasher.update(nsr.commit.as_bytes());
     hasher.update(replay.commit.as_bytes());
+    hasher.update(ssm.commit.as_bytes());
+    hasher.update(ncde.commit.as_bytes());
+    hasher.update(rsa.commit.as_bytes());
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
@@ -567,6 +664,14 @@ fn commit_cycle_stats(
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
+fn commit_rsa_limits(phi_min_apply: u16, risk_max_apply: u16) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(RSA_LIMITS_DOMAIN);
+    hasher.update(&phi_min_apply.to_be_bytes());
+    hasher.update(&risk_max_apply.to_be_bytes());
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
 fn reason_rank(reason: &ReasonCode) -> u8 {
     match reason {
         ReasonCode::CoherenceLow => 0,
@@ -596,6 +701,9 @@ fn apply_reasons(base: &StructuralParams, reasons: &[ReasonCode]) -> StructuralP
     let mut snn = base.snn.clone();
     let mut nsr = base.nsr.clone();
     let mut replay = base.replay.clone();
+    let ssm = base.ssm;
+    let ncde = base.ncde;
+    let rsa = base.rsa.clone();
 
     for reason in reasons {
         match reason {
@@ -644,7 +752,193 @@ fn apply_reasons(base: &StructuralParams, reasons: &[ReasonCode]) -> StructuralP
     nsr.commit = commit_nsr_thresholds(nsr.warn, nsr.deny);
     replay.commit = commit_replay_caps(replay.micro_k, replay.meso_m, replay.macro_n);
 
-    StructuralParams::new(onn, snn, nsr, replay)
+    StructuralParams::new(onn, snn, nsr, replay, ssm, ncde, rsa)
+}
+
+fn apply_deltas_to_params(
+    params: &StructuralParams,
+    deltas: &[ParamDeltaRef],
+) -> Option<StructuralParams> {
+    let mut onn = params.onn.clone();
+    let mut snn = params.snn.clone();
+    let mut nsr = params.nsr.clone();
+    let mut replay = params.replay.clone();
+    let mut ssm = params.ssm;
+    let mut ncde = params.ncde;
+    let mut rsa = params.rsa.clone();
+
+    for delta in deltas {
+        if delta.key == param_key(PARAM_LABEL_NSR_WARN) {
+            let current = i32::from(nsr.warn);
+            if delta.from != current {
+                return None;
+            }
+            let next = clamp_i32(delta.to, 0, i32::from(u16::MAX));
+            nsr.warn = next as u16;
+            continue;
+        }
+        if delta.key == param_key(PARAM_LABEL_NSR_DENY) {
+            let current = i32::from(nsr.deny);
+            if delta.from != current {
+                return None;
+            }
+            let next = clamp_i32(delta.to, 0, i32::from(u16::MAX));
+            nsr.deny = next as u16;
+            continue;
+        }
+        if delta.key == param_key(PARAM_LABEL_ONN_K_GLOBAL) {
+            let current = i32::from(onn.k_global);
+            if delta.from != current {
+                return None;
+            }
+            let next = clamp_i32(delta.to, 1, i32::from(ONN_K_GLOBAL_MAX));
+            onn.k_global = next as u16;
+            continue;
+        }
+        if delta.key == param_key(PARAM_LABEL_ONN_PHASE_WINDOW) {
+            let current = i32::from(onn.phase_window);
+            if delta.from != current {
+                return None;
+            }
+            let next = clamp_i32(
+                delta.to,
+                i32::from(ONN_PHASE_WINDOW_MIN),
+                i32::from(u16::MAX),
+            );
+            onn.phase_window = next as u16;
+            continue;
+        }
+        if delta.key == param_key(PARAM_LABEL_SNN_VERIFY_LIMIT) {
+            let current = i32::from(snn.verify_limit);
+            if delta.from != current {
+                return None;
+            }
+            let next = clamp_i32(delta.to, 0, i32::from(u16::MAX));
+            snn.verify_limit = next as u16;
+            continue;
+        }
+        if delta.key == param_key(PARAM_LABEL_SNN_ATTENTION_SHIFT) {
+            let current = i32::from(snn.threshold_for(SpikeKind::AttentionShift));
+            if delta.from != current {
+                return None;
+            }
+            let next = clamp_i32(delta.to, 0, 10_000);
+            set_snn_threshold(&mut snn, SpikeKind::AttentionShift, next as u16);
+            continue;
+        }
+        if delta.key == param_key(PARAM_LABEL_SNN_REPLAY_TRIGGER) {
+            let current = i32::from(snn.threshold_for(SpikeKind::ReplayTrigger));
+            if delta.from != current {
+                return None;
+            }
+            let next = clamp_i32(delta.to, 0, 10_000);
+            set_snn_threshold(&mut snn, SpikeKind::ReplayTrigger, next as u16);
+            continue;
+        }
+        if delta.key == param_key(PARAM_LABEL_REPLAY_MICRO) {
+            let current = i32::from(replay.micro_k);
+            if delta.from != current {
+                return None;
+            }
+            let next = clamp_i32(delta.to, 0, i32::from(u16::MAX));
+            replay.micro_k = next as u16;
+            continue;
+        }
+        if delta.key == param_key(PARAM_LABEL_REPLAY_MESO) {
+            let current = i32::from(replay.meso_m);
+            if delta.from != current {
+                return None;
+            }
+            let next = clamp_i32(delta.to, 0, i32::from(u16::MAX));
+            replay.meso_m = next as u16;
+            continue;
+        }
+        if delta.key == param_key(PARAM_LABEL_REPLAY_MACRO) {
+            let current = i32::from(replay.macro_n);
+            if delta.from != current {
+                return None;
+            }
+            let next = clamp_i32(delta.to, 0, i32::from(u16::MAX));
+            replay.macro_n = next as u16;
+            continue;
+        }
+        if delta.key == param_key(PARAM_LABEL_SSM_SELECTIVITY) {
+            let current = i32::from(ssm.selectivity);
+            if delta.from != current {
+                return None;
+            }
+            let next = clamp_i32(delta.to, 0, 10_000);
+            ssm.selectivity = next as u16;
+            continue;
+        }
+        if delta.key == param_key(PARAM_LABEL_NCDE_ATTRACTOR) {
+            let current = i32::from(ncde.attractor_strength);
+            if delta.from != current {
+                return None;
+            }
+            let next = clamp_i32(delta.to, 0, 10_000);
+            ncde.attractor_strength = next as u16;
+            continue;
+        }
+        if delta.key == param_key(PARAM_LABEL_IIT_PHI_MIN_APPLY) {
+            let current = i32::from(rsa.phi_min_apply);
+            if delta.from != current {
+                return None;
+            }
+            let next = clamp_i32(delta.to, 0, 10_000);
+            rsa.phi_min_apply = next as u16;
+            continue;
+        }
+        if delta.key == param_key(PARAM_LABEL_RSA_RISK_MAX_APPLY) {
+            let current = i32::from(rsa.risk_max_apply);
+            if delta.from != current {
+                return None;
+            }
+            let next = clamp_i32(delta.to, 0, 10_000);
+            rsa.risk_max_apply = next as u16;
+            continue;
+        }
+        return None;
+    }
+
+    let onn = OnnKnobs::new(onn.k_global, onn.phase_window, onn.k_pairs);
+    let snn = SnnKnobs::new(snn.kind_thresholds, snn.verify_limit);
+    let nsr = NsrThresholds::new(nsr.warn, nsr.deny);
+    let replay = ReplayCaps::new(replay.micro_k, replay.meso_m, replay.macro_n);
+    let ssm = SsmParams::new(
+        ssm.dim_x,
+        ssm.dim_u,
+        ssm.scan_blocks,
+        ssm.dt_q,
+        ssm.leak,
+        ssm.selectivity,
+    );
+    let ncde = NcdeParams::new(
+        ncde.dim_h,
+        ncde.dim_u,
+        ncde.dt_q,
+        ncde.steps,
+        ncde.attractor_strength,
+    );
+    let rsa = RsaLimits::new(rsa.phi_min_apply, rsa.risk_max_apply);
+
+    Some(StructuralParams::new(onn, snn, nsr, replay, ssm, ncde, rsa))
+}
+
+fn clamp_i32(value: i32, min: i32, max: i32) -> i32 {
+    value.clamp(min, max)
+}
+
+fn set_snn_threshold(snn: &mut SnnKnobs, kind: SpikeKind, value: u16) {
+    if let Some(entry) = snn
+        .kind_thresholds
+        .iter_mut()
+        .find(|(entry_kind, _)| *entry_kind == kind)
+    {
+        entry.1 = value;
+    } else {
+        snn.kind_thresholds.push((kind, value));
+    }
 }
 
 fn eval_seed(proposal_commit: Digest32, current_commit: Digest32) -> Digest32 {
@@ -788,5 +1082,20 @@ mod tests {
             }
             _ => panic!("expected commit"),
         }
+    }
+
+    #[test]
+    fn apply_deltas_clamps_and_recomputes_commit() {
+        let store = StructuralStore::default();
+        let delta = ParamDeltaRef {
+            key: param_key("nsr.warn"),
+            from: i32::from(store.current.nsr.warn),
+            to: 10,
+        };
+
+        let updated = store.apply_deltas(&[delta]).expect("apply deltas");
+
+        assert_ne!(updated.commit, store.current.commit);
+        assert!(updated.nsr.warn >= 2000);
     }
 }
