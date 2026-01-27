@@ -55,7 +55,7 @@ use ucf_predictive_coding::{
 };
 use ucf_recursion_controller::{RecursionBudget, RecursionController, RecursionInputs};
 use ucf_risk_gate::{digest_reasons, RiskGate};
-use ucf_rsa::StructuralProposalEngine;
+use ucf_rsa::{rsa_gates_allow, RsaCore, RsaInputs, RsaOutputs};
 use ucf_rsa_hooks::{MockRsaHook, RsaContext, RsaHook, RsaProposal};
 use ucf_sandbox::{
     AiCallRequest, ControlFrameNormalized, IntentSummary, MockWasmSandbox, SandboxBudget,
@@ -67,7 +67,8 @@ use ucf_spikebus::{SpikeEvent, SpikeKind};
 use ucf_ssm::{SsmCore, SsmInput as WmSsmInput, SsmOutput as WmSsmOutput, SsmParams};
 use ucf_ssm_port::SsmState;
 use ucf_structural_store::{
-    NsrThresholds, SnnKnobs, StructuralCycleStats, StructuralDeltaProposal, StructuralStore,
+    NsrThresholds, ParamDeltaRef, SnnKnobs, StructuralCycleStats, StructuralDeltaProposal,
+    StructuralParams, StructuralStore,
 };
 use ucf_tcf_port::{
     ai_mode_for_pulse, idle_attention, CyclePlan, CyclePlanned, DeterministicTcf, PulseKind,
@@ -154,7 +155,6 @@ pub struct Router {
     recursion_controller: RecursionController,
     rsa_hooks: Vec<Arc<dyn RsaHook + Send + Sync>>,
     structural_store: Mutex<StructuralStore>,
-    structural_proposer: StructuralProposalEngine,
     nsr_warn_streak: Mutex<u16>,
     last_self_state: Mutex<Option<SelfState>>,
     last_workspace_snapshot: Mutex<Option<WorkspaceSnapshot>>,
@@ -172,6 +172,7 @@ pub struct Router {
     last_ssm_output: Mutex<Option<WmSsmOutput>>,
     ncde_core: Mutex<NcdeCore>,
     last_ncde_output: Mutex<Option<NcdeOutput>>,
+    rsa_core: Mutex<RsaCore>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -253,9 +254,14 @@ struct StageContext {
     consistency_effects: Option<ConsistencyActionEffects>,
     iit_report: Option<IitReport>,
     iit_actions: Vec<IitAction>,
+    nsr_warn_streak: Option<u16>,
     recursion_budget: Option<RecursionBudget>,
     phase_commit: Option<Digest32>,
+    coherence_plv: Option<u16>,
     spike_root_commit: Option<Digest32>,
+    replay_pressure: Option<u16>,
+    drift_score: Option<u16>,
+    surprise_score: Option<u16>,
     influence_outputs: Option<InfluenceOutputs>,
     structural_stats: Option<StructuralCycleStats>,
     structural_proposal: Option<StructuralDeltaProposal>,
@@ -295,9 +301,14 @@ impl StageContext {
             consistency_effects: None,
             iit_report: None,
             iit_actions: Vec::new(),
+            nsr_warn_streak: None,
             recursion_budget: None,
             phase_commit: None,
+            coherence_plv: None,
             spike_root_commit: None,
+            replay_pressure: None,
+            drift_score: None,
+            surprise_score: None,
             influence_outputs: None,
             structural_stats: None,
             structural_proposal: None,
@@ -376,7 +387,6 @@ impl Router {
             recursion_controller: RecursionController::default(),
             rsa_hooks: vec![Arc::new(MockRsaHook::new())],
             structural_store: Mutex::new(StructuralStore::default()),
-            structural_proposer: StructuralProposalEngine::default(),
             nsr_warn_streak: Mutex::new(0),
             last_self_state: Mutex::new(None),
             last_workspace_snapshot: Mutex::new(None),
@@ -394,6 +404,7 @@ impl Router {
             last_ssm_output: Mutex::new(None),
             ncde_core: Mutex::new(NcdeCore::new(NcdeParams::default())),
             last_ncde_output: Mutex::new(None),
+            rsa_core: Mutex::new(RsaCore::default()),
         }
     }
 
@@ -471,6 +482,10 @@ impl Router {
                 nsr_trace_root: None,
                 nsr_prev_commit: None,
                 nsr_verdict: None,
+                rsa_commit: Digest32::new([0u8; 32]),
+                rsa_chosen: None,
+                rsa_applied: false,
+                rsa_new_params_commit: None,
                 sle_commit: Digest32::new([0u8; 32]),
                 sle_self_symbol_commit: Digest32::new([0u8; 32]),
                 sle_rate_limited: false,
@@ -684,6 +699,8 @@ impl Router {
                         nsr_report.verdict,
                         pulse.slot,
                     );
+                    ctx.phase_commit = Some(phase_frame.commit);
+                    ctx.coherence_plv = Some(phase_frame.coherence_plv);
                     let mut attention_risk = 0u16;
                     let outputs = &inference.outputs;
                     let mut risk_results = Vec::with_capacity(outputs.len());
@@ -702,6 +719,7 @@ impl Router {
                         risk_results.push(gate_result);
                         speech_gate_results.push(self.speech_gate.allow_speech(&cf, output));
                     }
+                    ctx.attention_risk = attention_risk;
                     self.publish_workspace_signals(risk_results.iter().map(|result| {
                         WorkspaceSignal::from_risk_result(result, None, Some(pulse.slot))
                     }));
@@ -712,6 +730,7 @@ impl Router {
                     let spike_counts = summarize_spike_counts(&spikes);
                     let spike_counts_iit = spike_counts.clone();
                     let spike_counts_ssm = spike_counts.clone();
+                    ctx.replay_pressure = Some(replay_pressure_from_spikes(&spike_counts));
                     let attn_gain = ctx
                         .attention_weights
                         .as_ref()
@@ -971,6 +990,7 @@ impl Router {
                     }
                     self.append_nsr_trace_record(cycle_id, &nsr_trace);
                     let nsr_warn_streak = self.update_nsr_warn_streak(nsr_trace.verdict);
+                    ctx.nsr_warn_streak = Some(nsr_warn_streak);
 
                     let effects = iit_action_effects(
                         self.workspace_base,
@@ -1095,30 +1115,8 @@ impl Router {
                         policy_ok,
                         consistency_ok,
                     );
-                    let mut evidence = vec![phase_frame.commit];
-                    if let Some(report) = ctx.nsr_report.as_ref() {
-                        evidence.push(report.commit);
-                    }
-                    if let Some(trace) = ctx.nsr_trace.as_ref() {
-                        evidence.push(trace.commit);
-                    }
-                    if let Some(report) = ctx.causal_report.as_ref() {
-                        evidence.push(report.commit);
-                    }
-                    if let Some(report) = ctx.consistency_report.as_ref() {
-                        evidence.push(report.commit);
-                    }
-                    if let Some(proposal) = self.maybe_structural_proposal(
-                        cycle_id,
-                        &structural_stats,
-                        nsr_warn_streak,
-                        evidence,
-                    ) {
-                        if let Ok(mut workspace) = self.workspace.lock() {
-                            workspace.set_structural_proposal(proposal.clone());
-                        }
-                        ctx.structural_proposal = Some(proposal);
-                    }
+                    ctx.drift_score = Some(drift_score);
+                    ctx.surprise_score = Some(surprise_score);
                     ctx.structural_stats = Some(structural_stats);
 
                     let nsr_summary = NsrSummary {
@@ -1389,6 +1387,102 @@ impl Router {
                     ctx.workspace_snapshot_commit = Some(snapshot.commit);
                 }
                 PulseKind::Sleep => {
+                    if let Ok(mut store) = self.structural_store.lock() {
+                        let params = store.current.clone();
+                        let nsr_verdict = ctx
+                            .nsr_trace
+                            .as_ref()
+                            .map(|trace| trace.verdict.as_u8())
+                            .unwrap_or(0);
+                        let nsr_warn_streak = ctx.nsr_warn_streak.unwrap_or(0).min(63) as u8;
+                        let nsr_encoded = (nsr_warn_streak << 2) | (nsr_verdict & 0b11);
+                        let policy_ok = matches!(
+                            ctx.decision_kind,
+                            DecisionKind::DecisionKindAllow | DecisionKind::DecisionKindUnspecified
+                        );
+                        let replay_pressure = ctx.replay_pressure.unwrap_or(0);
+                        let phi_proxy = ctx.integration_score.unwrap_or(0);
+                        let sleep_active = derive_sleep_active(
+                            matches!(pulse.kind, PulseKind::Sleep),
+                            replay_pressure,
+                            phi_proxy,
+                            &params,
+                        );
+                        let inputs = RsaInputs::new(
+                            cycle_id,
+                            sleep_active,
+                            ctx.phase_commit.unwrap_or_else(|| Digest32::new([0u8; 32])),
+                            ctx.coherence_plv.unwrap_or(0),
+                            phi_proxy,
+                            nsr_encoded,
+                            ctx.nsr_trace
+                                .as_ref()
+                                .map(|trace| trace.trace_root)
+                                .unwrap_or_else(|| Digest32::new([0u8; 32])),
+                            policy_ok,
+                            ctx.attention_risk,
+                            ctx.drift_score.unwrap_or(0),
+                            ctx.surprise_score.unwrap_or(0),
+                            replay_pressure,
+                            ctx.ssm_output
+                                .as_ref()
+                                .map(|output| output.wm_salience)
+                                .unwrap_or(0),
+                            ctx.ncde_output
+                                .as_ref()
+                                .map(|output| output.energy)
+                                .unwrap_or(0),
+                            params.commit,
+                        );
+                        let mut rsa_core =
+                            self.rsa_core.lock().unwrap_or_else(|err| err.into_inner());
+                        let mut outputs = rsa_core.tick_with_params(&inputs, &params);
+                        let mut applied = false;
+                        let mut new_params_commit = None;
+                        if let Some(chosen_commit) = outputs.chosen {
+                            if let Some(chosen) = outputs
+                                .proposals
+                                .iter()
+                                .find(|proposal| proposal.commit == chosen_commit)
+                            {
+                                let score =
+                                    i32::from(chosen.expected_gain) - i32::from(chosen.risk_cost);
+                                if score > 0
+                                    && rsa_core.can_apply(cycle_id)
+                                    && rsa_gates_allow(&inputs, &params)
+                                {
+                                    let deltas = chosen
+                                        .deltas
+                                        .iter()
+                                        .map(|delta| ParamDeltaRef {
+                                            key: delta.key,
+                                            from: delta.from,
+                                            to: delta.to,
+                                        })
+                                        .collect::<Vec<_>>();
+                                    if let Some(updated) = store.apply_deltas(&deltas) {
+                                        let commit = updated.commit;
+                                        store.apply_params(updated);
+                                        applied = true;
+                                        new_params_commit = Some(commit);
+                                        rsa_core.mark_applied(cycle_id);
+                                    }
+                                }
+                            }
+                        }
+                        outputs.applied = applied;
+                        outputs.new_params_commit = new_params_commit;
+                        outputs.recompute_commit();
+                        if let Ok(mut workspace) = self.workspace.lock() {
+                            workspace.set_rsa_output(
+                                outputs.commit,
+                                outputs.chosen,
+                                outputs.applied,
+                                outputs.new_params_commit,
+                            );
+                        }
+                        self.append_rsa_outputs_record(cycle_id, &outputs);
+                    }
                     let phi = ctx.integration_score.unwrap_or(0);
                     let surprise_score = ctx
                         .predictive_result
@@ -1546,6 +1640,29 @@ impl Router {
             boundary_commit,
         };
         self.append_archive_record(RecordKind::WorkspaceSnapshot, snapshot.commit, meta);
+    }
+
+    fn append_rsa_outputs_record(&self, cycle_id: u64, outputs: &RsaOutputs) {
+        let chosen = outputs
+            .chosen
+            .map(|commit| commit.to_string())
+            .unwrap_or_else(|| "none".to_string());
+        let new_params = outputs
+            .new_params_commit
+            .map(|commit| commit.to_string())
+            .unwrap_or_else(|| "none".to_string());
+        let payload = format!(
+            "rsa_commit={};proposal_count={};chosen={};applied={};new_params_commit={}",
+            outputs.commit,
+            outputs.proposals.len(),
+            chosen,
+            outputs.applied as u8,
+            new_params
+        )
+        .into_bytes();
+        let record_id = format!("rsa-{}", cycle_id);
+        let record = build_compact_record(record_id, cycle_id, "rsa", payload);
+        self.archive.append(record);
     }
 
     fn append_cycle_plan_record(&self, plan: &CyclePlan, planned: &CyclePlanned) {
@@ -2307,6 +2424,7 @@ impl Router {
         risk: u16,
         attn_gain: u16,
     ) -> Option<NcdeOutput> {
+        self.sync_ncde_params();
         let mut core = self.ncde_core.lock().ok()?;
         let control = NcdeControlFrame::new(
             cycle_id,
@@ -2334,6 +2452,7 @@ impl Router {
         surprise: u16,
         risk: u16,
     ) -> Option<WmSsmOutput> {
+        self.sync_ssm_params();
         let mut core = self.ssm_core.lock().ok()?;
         let input = WmSsmInput::new(
             ncde_output.cycle_id,
@@ -2406,6 +2525,34 @@ impl Router {
         }
     }
 
+    fn sync_ssm_params(&self) {
+        let params = match self.structural_store.lock() {
+            Ok(store) => store.current.ssm,
+            Err(_) => return,
+        };
+        if let Ok(mut core) = self.ssm_core.lock() {
+            if core.params.commit != params.commit {
+                let updated = params;
+                core.params = updated;
+                core.state.reset_if_dim_mismatch(&updated);
+            }
+        }
+    }
+
+    fn sync_ncde_params(&self) {
+        let params = match self.structural_store.lock() {
+            Ok(store) => store.current.ncde,
+            Err(_) => return,
+        };
+        if let Ok(mut core) = self.ncde_core.lock() {
+            if core.params.commit != params.commit {
+                let updated = params;
+                core.params = updated;
+                core.state.reset_if_dim_mismatch(&updated);
+            }
+        }
+    }
+
     fn current_snn_knobs(&self) -> SnnKnobs {
         self.structural_store
             .lock()
@@ -2424,19 +2571,6 @@ impl Router {
             *streak = 0;
         }
         *streak
-    }
-
-    fn maybe_structural_proposal(
-        &self,
-        cycle_id: u64,
-        stats: &StructuralCycleStats,
-        nsr_warn_streak: u16,
-        mut evidence: Vec<Digest32>,
-    ) -> Option<StructuralDeltaProposal> {
-        evidence.sort_by(|left, right| left.as_bytes().cmp(right.as_bytes()));
-        let store = self.structural_store.lock().ok()?;
-        self.structural_proposer
-            .maybe_propose(&store, cycle_id, stats, nsr_warn_streak, evidence)
     }
 
     fn arbitrate_workspace(&self, cycle_id: u64) -> WorkspaceSnapshot {
@@ -3085,6 +3219,26 @@ fn summarize_spike_counts(spikes: &[SpikeEvent]) -> Vec<(SpikeKind, u16)> {
     let mut pairs = counts.into_iter().collect::<Vec<_>>();
     pairs.sort_by(|(kind_a, _), (kind_b, _)| kind_a.cmp(kind_b));
     pairs
+}
+
+fn replay_pressure_from_spikes(spike_counts: &[(SpikeKind, u16)]) -> u16 {
+    spike_counts
+        .iter()
+        .find_map(|(kind, count)| (*kind == SpikeKind::ReplayTrigger).then_some(*count))
+        .unwrap_or(0)
+}
+
+fn derive_sleep_active(
+    sleep_pulse: bool,
+    replay_pressure: u16,
+    phi_proxy: u16,
+    params: &StructuralParams,
+) -> bool {
+    if sleep_pulse {
+        return true;
+    }
+    let phi_low = params.rsa.phi_min_apply.saturating_sub(400);
+    replay_pressure >= 5000 || phi_proxy < phi_low
 }
 
 fn spike_record_commit(
@@ -3816,7 +3970,15 @@ mod tests {
         let base = StructuralStore::default_params();
         let onn = OnnKnobs::new(base.onn.k_global, 12_000, base.onn.k_pairs.clone());
         let snn = SnnKnobs::new(base.snn.kind_thresholds.clone(), 12);
-        let params = StructuralParams::new(onn, snn, base.nsr, base.replay);
+        let params = StructuralParams::new(
+            onn,
+            snn,
+            base.nsr,
+            base.replay,
+            base.ssm,
+            base.ncde,
+            base.rsa,
+        );
         {
             let mut store = router
                 .structural_store

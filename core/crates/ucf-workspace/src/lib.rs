@@ -496,6 +496,10 @@ pub struct WorkspaceSnapshot {
     pub nsr_trace_root: Option<Digest32>,
     pub nsr_prev_commit: Option<Digest32>,
     pub nsr_verdict: Option<u8>,
+    pub rsa_commit: Digest32,
+    pub rsa_chosen: Option<Digest32>,
+    pub rsa_applied: bool,
+    pub rsa_new_params_commit: Option<Digest32>,
     pub sle_commit: Digest32,
     pub sle_self_symbol_commit: Digest32,
     pub sle_rate_limited: bool,
@@ -535,6 +539,11 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
             + Digest32::LEN
             + 1
             + Digest32::LEN
+            + 1
+            + Digest32::LEN
+            + 1
+            + Digest32::LEN
+            + 1
             + 1
             + Digest32::LEN
             + Digest32::LEN
@@ -593,6 +602,28 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
         }
     }
     payload.push(snapshot.nsr_verdict.unwrap_or(0));
+    payload.extend_from_slice(snapshot.rsa_commit.as_bytes());
+    match snapshot.rsa_chosen {
+        Some(commit) => {
+            payload.push(1);
+            payload.extend_from_slice(commit.as_bytes());
+        }
+        None => {
+            payload.push(0);
+            payload.extend_from_slice(&[0u8; Digest32::LEN]);
+        }
+    }
+    payload.push(snapshot.rsa_applied as u8);
+    match snapshot.rsa_new_params_commit {
+        Some(commit) => {
+            payload.push(1);
+            payload.extend_from_slice(commit.as_bytes());
+        }
+        None => {
+            payload.push(0);
+            payload.extend_from_slice(&[0u8; Digest32::LEN]);
+        }
+    }
     payload.extend_from_slice(snapshot.sle_commit.as_bytes());
     payload.extend_from_slice(snapshot.sle_self_symbol_commit.as_bytes());
     payload.push(snapshot.sle_rate_limited as u8);
@@ -633,6 +664,10 @@ pub struct Workspace {
     recursion_used: u16,
     spike_bus: SpikeBusState,
     structural_proposal: Option<StructuralDeltaProposal>,
+    rsa_commit: Digest32,
+    rsa_chosen: Option<Digest32>,
+    rsa_applied: bool,
+    rsa_new_params_commit: Option<Digest32>,
     ncde_commit: Digest32,
     cde_commit: Digest32,
     cde_graph_commit: Digest32,
@@ -659,6 +694,10 @@ impl Workspace {
             recursion_used: 0,
             spike_bus: SpikeBusState::new(),
             structural_proposal: None,
+            rsa_commit: Digest32::new([0u8; 32]),
+            rsa_chosen: None,
+            rsa_applied: false,
+            rsa_new_params_commit: None,
             ncde_commit: Digest32::new([0u8; 32]),
             cde_commit: Digest32::new([0u8; 32]),
             cde_graph_commit: Digest32::new([0u8; 32]),
@@ -712,6 +751,19 @@ impl Workspace {
 
     pub fn take_structural_proposal(&mut self) -> Option<StructuralDeltaProposal> {
         self.structural_proposal.take()
+    }
+
+    pub fn set_rsa_output(
+        &mut self,
+        rsa_commit: Digest32,
+        chosen: Option<Digest32>,
+        applied: bool,
+        new_params_commit: Option<Digest32>,
+    ) {
+        self.rsa_commit = rsa_commit;
+        self.rsa_chosen = chosen;
+        self.rsa_applied = applied;
+        self.rsa_new_params_commit = new_params_commit;
     }
 
     pub fn spike_root_commit(&self) -> Digest32 {
@@ -818,6 +870,10 @@ impl Workspace {
         let nsr_trace_root = self.nsr_trace_root.take();
         let nsr_prev_commit = self.nsr_prev_commit.take();
         let nsr_verdict = self.nsr_verdict.take();
+        let rsa_commit = self.rsa_commit;
+        let rsa_chosen = self.rsa_chosen;
+        let rsa_applied = self.rsa_applied;
+        let rsa_new_params_commit = self.rsa_new_params_commit;
         let sle_commit = self.sle_commit;
         let sle_self_symbol_commit = self.sle_self_symbol_commit;
         let sle_rate_limited = self.sle_rate_limited;
@@ -836,6 +892,10 @@ impl Workspace {
             nsr_trace_root,
             nsr_prev_commit,
             nsr_verdict,
+            rsa_commit,
+            rsa_chosen,
+            rsa_applied,
+            rsa_new_params_commit,
             sle_commit,
             sle_self_symbol_commit,
             sle_rate_limited,
@@ -857,6 +917,10 @@ impl Workspace {
             nsr_trace_root,
             nsr_prev_commit,
             nsr_verdict,
+            rsa_commit,
+            rsa_chosen,
+            rsa_applied,
+            rsa_new_params_commit,
             sle_commit,
             sle_self_symbol_commit,
             sle_rate_limited,
@@ -1255,6 +1319,10 @@ fn commit_snapshot(
     nsr_trace_root: Option<Digest32>,
     nsr_prev_commit: Option<Digest32>,
     nsr_verdict: Option<u8>,
+    rsa_commit: Digest32,
+    rsa_chosen: Option<Digest32>,
+    rsa_applied: bool,
+    rsa_new_params_commit: Option<Digest32>,
     sle_commit: Digest32,
     sle_self_symbol_commit: Digest32,
     sle_rate_limited: bool,
@@ -1309,6 +1377,26 @@ fn commit_snapshot(
         }
     }
     hasher.update(&[nsr_verdict.unwrap_or(0)]);
+    hasher.update(rsa_commit.as_bytes());
+    match rsa_chosen {
+        Some(commit) => {
+            hasher.update(&[1]);
+            hasher.update(commit.as_bytes());
+        }
+        None => {
+            hasher.update(&[0]);
+        }
+    }
+    hasher.update(&[rsa_applied as u8]);
+    match rsa_new_params_commit {
+        Some(commit) => {
+            hasher.update(&[1]);
+            hasher.update(commit.as_bytes());
+        }
+        None => {
+            hasher.update(&[0]);
+        }
+    }
     hasher.update(sle_commit.as_bytes());
     hasher.update(sle_self_symbol_commit.as_bytes());
     hasher.update(&[sle_rate_limited as u8]);
