@@ -50,6 +50,24 @@ pub struct WorkspaceSignal {
     pub slot: u8,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InternalUtterance {
+    pub commit: Digest32,
+    pub src: Digest32,
+    pub severity: u16,
+}
+
+impl InternalUtterance {
+    pub fn new(src: Digest32, severity: u16) -> Self {
+        let commit = digest_internal_utterance(src, severity);
+        Self {
+            commit,
+            src,
+            severity,
+        }
+    }
+}
+
 /// Workspace signal helpers.
 ///
 /// # Priority scheme
@@ -478,6 +496,10 @@ pub struct WorkspaceSnapshot {
     pub nsr_trace_root: Option<Digest32>,
     pub nsr_prev_commit: Option<Digest32>,
     pub nsr_verdict: Option<u8>,
+    pub sle_commit: Digest32,
+    pub sle_self_symbol_commit: Digest32,
+    pub sle_rate_limited: bool,
+    pub internal_utterances: Vec<InternalUtterance>,
     pub commit: Digest32,
 }
 
@@ -515,6 +537,11 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
             + Digest32::LEN
             + 1
             + Digest32::LEN
+            + Digest32::LEN
+            + Digest32::LEN
+            + 1
+            + 2
+            + snapshot.internal_utterances.len() * (Digest32::LEN + Digest32::LEN + 2)
             + 1
             + signals.len() * (2 + 2 + Digest32::LEN + 2 + SUMMARY_MAX_BYTES),
     );
@@ -566,6 +593,19 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
         }
     }
     payload.push(snapshot.nsr_verdict.unwrap_or(0));
+    payload.extend_from_slice(snapshot.sle_commit.as_bytes());
+    payload.extend_from_slice(snapshot.sle_self_symbol_commit.as_bytes());
+    payload.push(snapshot.sle_rate_limited as u8);
+    payload.extend_from_slice(
+        &u16::try_from(snapshot.internal_utterances.len())
+            .unwrap_or(u16::MAX)
+            .to_be_bytes(),
+    );
+    for utterance in &snapshot.internal_utterances {
+        payload.extend_from_slice(utterance.commit.as_bytes());
+        payload.extend_from_slice(utterance.src.as_bytes());
+        payload.extend_from_slice(&utterance.severity.to_be_bytes());
+    }
     for signal in signals {
         payload.push(signal.kind as u8);
         payload.push(signal.slot);
@@ -603,6 +643,10 @@ pub struct Workspace {
     nsr_trace_root: Option<Digest32>,
     nsr_prev_commit: Option<Digest32>,
     nsr_verdict: Option<u8>,
+    sle_commit: Digest32,
+    sle_self_symbol_commit: Digest32,
+    sle_rate_limited: bool,
+    internal_utterances: Vec<InternalUtterance>,
 }
 
 impl Workspace {
@@ -625,6 +669,10 @@ impl Workspace {
             nsr_trace_root: None,
             nsr_prev_commit: None,
             nsr_verdict: None,
+            sle_commit: Digest32::new([0u8; 32]),
+            sle_self_symbol_commit: Digest32::new([0u8; 32]),
+            sle_rate_limited: false,
+            internal_utterances: Vec::new(),
         }
     }
 
@@ -709,6 +757,21 @@ impl Workspace {
         self.nsr_verdict = Some(verdict);
     }
 
+    pub fn set_sle_outputs(
+        &mut self,
+        sle_commit: Digest32,
+        self_symbol_commit: Digest32,
+        rate_limited: bool,
+    ) {
+        self.sle_commit = sle_commit;
+        self.sle_self_symbol_commit = self_symbol_commit;
+        self.sle_rate_limited = rate_limited;
+    }
+
+    pub fn push_internal_utterance(&mut self, utterance: InternalUtterance) {
+        self.internal_utterances.push(utterance);
+    }
+
     pub fn ssm_commit(&self) -> Digest32 {
         self.ssm_commit
     }
@@ -755,6 +818,10 @@ impl Workspace {
         let nsr_trace_root = self.nsr_trace_root.take();
         let nsr_prev_commit = self.nsr_prev_commit.take();
         let nsr_verdict = self.nsr_verdict.take();
+        let sle_commit = self.sle_commit;
+        let sle_self_symbol_commit = self.sle_self_symbol_commit;
+        let sle_rate_limited = self.sle_rate_limited;
+        let internal_utterances = std::mem::take(&mut self.internal_utterances);
         let commit = commit_snapshot(
             cycle_id,
             recursion_used,
@@ -769,6 +836,10 @@ impl Workspace {
             nsr_trace_root,
             nsr_prev_commit,
             nsr_verdict,
+            sle_commit,
+            sle_self_symbol_commit,
+            sle_rate_limited,
+            &internal_utterances,
             &broadcast,
         );
         WorkspaceSnapshot {
@@ -786,6 +857,10 @@ impl Workspace {
             nsr_trace_root,
             nsr_prev_commit,
             nsr_verdict,
+            sle_commit,
+            sle_self_symbol_commit,
+            sle_rate_limited,
+            internal_utterances,
             commit,
         }
     }
@@ -1116,6 +1191,14 @@ fn digest_sleep_triggered(triggered: &SleepTriggered) -> Digest32 {
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
+fn digest_internal_utterance(src: Digest32, severity: u16) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(b"ucf.workspace.internal_utterance.v1");
+    hasher.update(src.as_bytes());
+    hasher.update(&severity.to_be_bytes());
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
 fn digest_replay_summary(micro: usize, meso: usize, macro_: usize) -> Digest32 {
     let mut hasher = Hasher::new();
     hasher.update(b"ucf.workspace.replay.summary.v1");
@@ -1172,6 +1255,10 @@ fn commit_snapshot(
     nsr_trace_root: Option<Digest32>,
     nsr_prev_commit: Option<Digest32>,
     nsr_verdict: Option<u8>,
+    sle_commit: Digest32,
+    sle_self_symbol_commit: Digest32,
+    sle_rate_limited: bool,
+    internal_utterances: &[InternalUtterance],
     broadcast: &[WorkspaceSignal],
 ) -> Digest32 {
     let mut hasher = Hasher::new();
@@ -1222,6 +1309,19 @@ fn commit_snapshot(
         }
     }
     hasher.update(&[nsr_verdict.unwrap_or(0)]);
+    hasher.update(sle_commit.as_bytes());
+    hasher.update(sle_self_symbol_commit.as_bytes());
+    hasher.update(&[sle_rate_limited as u8]);
+    hasher.update(
+        &u32::try_from(internal_utterances.len())
+            .unwrap_or(u32::MAX)
+            .to_be_bytes(),
+    );
+    for utterance in internal_utterances {
+        hasher.update(utterance.commit.as_bytes());
+        hasher.update(utterance.src.as_bytes());
+        hasher.update(&utterance.severity.to_be_bytes());
+    }
     for signal in broadcast {
         hasher.update(&[signal.kind as u8]);
         hasher.update(&[signal.slot]);

@@ -72,6 +72,12 @@ pub fn map_to_stimulus(
         }
     }
 
+    let internal_severity = internal_utterance_severity(ws);
+    if internal_severity > 0 {
+        let pfc_amp = scaled_amp(1800, internal_severity / 2);
+        add_spike(&mut spikes, BrainRegion::PFC, pfc_amp, WIDTH_SHORT);
+    }
+
     let spikes = spikes
         .into_values()
         .map(|acc| Spike::new(acc.region, acc.amplitude, acc.width))
@@ -150,6 +156,15 @@ fn output_suppression_count(ws: &WorkspaceSnapshot) -> u16 {
         .min(u16::MAX as usize) as u16
 }
 
+fn internal_utterance_severity(ws: &WorkspaceSnapshot) -> u16 {
+    let total: u32 = ws
+        .internal_utterances
+        .iter()
+        .map(|utterance| u32::from(utterance.severity))
+        .sum();
+    total.min(10_000) as u16
+}
+
 fn stimulus_seed(
     cf: &ControlFrameNormalized,
     ws: &WorkspaceSnapshot,
@@ -216,6 +231,10 @@ mod tests {
             nsr_trace_root: None,
             nsr_prev_commit: None,
             nsr_verdict: None,
+            sle_commit: Digest32::new([0u8; 32]),
+            sle_self_symbol_commit: Digest32::new([0u8; 32]),
+            sle_rate_limited: false,
+            internal_utterances: Vec::new(),
             commit: Digest32::new([2u8; 32]),
         }
     }
@@ -236,6 +255,10 @@ mod tests {
             nsr_trace_root: None,
             nsr_prev_commit: None,
             nsr_verdict: None,
+            sle_commit: Digest32::new([0u8; 32]),
+            sle_self_symbol_commit: Digest32::new([0u8; 32]),
+            sle_rate_limited: false,
+            internal_utterances: Vec::new(),
             commit: Digest32::new([2u8; 32]),
         }
     }

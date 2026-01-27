@@ -153,6 +153,7 @@ impl Default for SnnKnobs {
             (SpikeKind::ConsistencyAlert, 0),
             (SpikeKind::ReplayTrigger, 0),
             (SpikeKind::AttentionShift, 0),
+            (SpikeKind::Thought, 0),
         ];
         Self::new(thresholds, 32)
     }

@@ -314,6 +314,10 @@ mod tests {
             nsr_trace_root: None,
             nsr_prev_commit: None,
             nsr_verdict: None,
+            sle_commit: Digest32::new([0u8; 32]),
+            sle_self_symbol_commit: Digest32::new([0u8; 32]),
+            sle_rate_limited: false,
+            internal_utterances: Vec::new(),
             commit: Digest32::new([9u8; 32]),
         };
 
@@ -342,6 +346,10 @@ mod tests {
             nsr_trace_root: None,
             nsr_prev_commit: None,
             nsr_verdict: None,
+            sle_commit: Digest32::new([0u8; 32]),
+            sle_self_symbol_commit: Digest32::new([0u8; 32]),
+            sle_rate_limited: false,
+            internal_utterances: Vec::new(),
             commit: Digest32::new([3u8; 32]),
         };
         let (_report, actions) = monitor.evaluate(&snapshot, 0, None);

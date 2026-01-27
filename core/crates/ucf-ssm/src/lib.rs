@@ -266,7 +266,7 @@ fn spike_summary(spike_counts: &[(SpikeKind, u16)]) -> (u16, u16, u16, u16, u16)
             SpikeKind::CausalLink => causal = causal.saturating_add(*count),
             SpikeKind::ReplayTrigger => replay = replay.saturating_add(*count),
             SpikeKind::AttentionShift => attention = attention.saturating_add(*count),
-            SpikeKind::ConsistencyAlert | SpikeKind::Unknown(_) => {}
+            SpikeKind::ConsistencyAlert | SpikeKind::Thought | SpikeKind::Unknown(_) => {}
         }
     }
     (
