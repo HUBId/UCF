@@ -16,7 +16,7 @@ use ucf_commit::{
 };
 use ucf_consistency_engine::{ConsistencyReport, DriftBand};
 use ucf_iit_monitor::IitReport;
-use ucf_influence::{InfluenceOutputs, NodeId as InfluenceNodeId};
+use ucf_influence::{InfluenceNodeId, InfluenceOutputs};
 use ucf_predictive_coding::{SurpriseBand, SurpriseSignal};
 use ucf_sleep_coordinator::{SleepStateHandle, SleepStateUpdater};
 use ucf_structural_store::ReplayCaps;
@@ -589,8 +589,8 @@ impl ReplayBias {
             return (0, 0);
         };
         (
-            outputs.node_value(InfluenceNodeId::Replay),
-            outputs.node_value(InfluenceNodeId::Learning),
+            outputs.node_value(InfluenceNodeId::ReplayPressure),
+            outputs.node_value(InfluenceNodeId::LearningRate),
         )
     }
 }
@@ -1330,9 +1330,12 @@ mod tests {
         let base_outcome = cascade.schedule(&graph, &base_bias, budget, &context);
 
         let influence = InfluenceOutputs {
-            node_in: vec![
-                (InfluenceNodeId::Replay, 6000),
-                (InfluenceNodeId::Learning, -500),
+            cycle_id: 3,
+            pulses_root: Digest32::new([4u8; 32]),
+            pulses: Vec::new(),
+            node_values: vec![
+                (InfluenceNodeId::ReplayPressure, 6000),
+                (InfluenceNodeId::LearningRate, -500),
             ],
             commit: Digest32::new([11u8; 32]),
         };

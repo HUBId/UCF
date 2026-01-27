@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
 use blake3::Hasher;
-use ucf_influence::NodeId;
+use ucf_influence::InfluenceNodeId;
 use ucf_spikebus::SpikeKind;
 use ucf_types::Digest32;
 
@@ -146,7 +146,7 @@ pub struct CdeInputs {
     pub spike_root: Digest32,
     pub spike_counts: Vec<(SpikeKind, u16)>,
     pub influence_commit: Digest32,
-    pub influence_node_in: Vec<(NodeId, i16)>,
+    pub influence_node_in: Vec<(InfluenceNodeId, i16)>,
     pub ssm_salience: u16,
     pub ncde_energy: u16,
     pub drift: u16,
@@ -166,7 +166,7 @@ impl CdeInputs {
         spike_root: Digest32,
         spike_counts: Vec<(SpikeKind, u16)>,
         influence_commit: Digest32,
-        influence_node_in: Vec<(NodeId, i16)>,
+        influence_node_in: Vec<(InfluenceNodeId, i16)>,
         ssm_salience: u16,
         ncde_energy: u16,
         drift: u16,
@@ -473,24 +473,24 @@ fn node_value(node: CdeNodeId, inp: &CdeInputs) -> i32 {
     .min(i32::from(CONF_MAX))
 }
 
-fn influence_for_node(node: CdeNodeId, influence: &[(NodeId, i16)]) -> i16 {
+fn influence_for_node(node: CdeNodeId, influence: &[(InfluenceNodeId, i16)]) -> i16 {
     // Minimal mapping from InfluenceGraph nodes into CDE nodes.
     match node {
-        CdeNodeId::AttentionGain => influence_value(influence, NodeId::Attention),
-        CdeNodeId::ReplayPressure => influence_value(influence, NodeId::Replay),
-        CdeNodeId::OutputSuppression => influence_value(influence, NodeId::Output),
-        CdeNodeId::Drift => {
-            let structure = influence_value(influence, NodeId::Structure);
-            let geist = influence_value(influence, NodeId::Geist);
-            structure.saturating_add(geist / 2)
+        CdeNodeId::AttentionGain => influence_value(influence, InfluenceNodeId::AttentionGain),
+        CdeNodeId::ReplayPressure => influence_value(influence, InfluenceNodeId::ReplayPressure),
+        CdeNodeId::OutputSuppression => {
+            influence_value(influence, InfluenceNodeId::OutputSuppression)
         }
-        CdeNodeId::Risk => influence_value(influence, NodeId::Geist),
-        CdeNodeId::BlueBrainArousal => influence_value(influence, NodeId::BlueBrain),
+        CdeNodeId::Drift => influence_value(influence, InfluenceNodeId::Drift),
+        CdeNodeId::Risk => influence_value(influence, InfluenceNodeId::Risk),
+        CdeNodeId::BlueBrainArousal => {
+            influence_value(influence, InfluenceNodeId::BlueBrainArousal)
+        }
         _ => 0,
     }
 }
 
-fn influence_value(influence: &[(NodeId, i16)], node: NodeId) -> i16 {
+fn influence_value(influence: &[(InfluenceNodeId, i16)], node: InfluenceNodeId) -> i16 {
     influence
         .iter()
         .find_map(|(id, value)| (*id == node).then_some(*value))
@@ -824,9 +824,9 @@ mod tests {
             vec![(SpikeKind::Novelty, 1)],
             Digest32::new([seed.wrapping_add(2); 32]),
             vec![
-                (NodeId::Attention, 6_000),
-                (NodeId::Replay, 2_500),
-                (NodeId::Output, 1_000),
+                (InfluenceNodeId::AttentionGain, 6_000),
+                (InfluenceNodeId::ReplayPressure, 2_500),
+                (InfluenceNodeId::OutputSuppression, 1_000),
             ],
             3_000,
             2_000,
@@ -854,7 +854,7 @@ mod tests {
         let mut engine = CdeEngine::new();
         let mut inputs = base_inputs(9);
         inputs.surprise = 9_000;
-        inputs.influence_node_in = vec![(NodeId::Attention, 9_000)];
+        inputs.influence_node_in = vec![(InfluenceNodeId::AttentionGain, 9_000)];
 
         let before = engine
             .graph

@@ -84,6 +84,7 @@ pub struct SsmInput {
     pub phase_commit: Digest32,
     pub global_phase: u16,
     pub coherence_plv: u16,
+    pub influence_pulses_root: Digest32,
     pub ncde_commit: Digest32,
     pub ncde_energy: u16,
     pub ncde_summary: Vec<i16>,
@@ -102,6 +103,7 @@ impl SsmInput {
         phase_commit: Digest32,
         global_phase: u16,
         coherence_plv: u16,
+        influence_pulses_root: Digest32,
         ncde_commit: Digest32,
         ncde_energy: u16,
         ncde_summary: Vec<i16>,
@@ -116,6 +118,7 @@ impl SsmInput {
             phase_commit,
             global_phase,
             coherence_plv,
+            influence_pulses_root,
             ncde_commit,
             ncde_energy,
             &ncde_summary,
@@ -130,6 +133,7 @@ impl SsmInput {
             phase_commit,
             global_phase,
             coherence_plv,
+            influence_pulses_root,
             ncde_commit,
             ncde_energy,
             ncde_summary,
@@ -395,6 +399,7 @@ fn commit_input(
     phase_commit: Digest32,
     global_phase: u16,
     coherence_plv: u16,
+    influence_pulses_root: Digest32,
     ncde_commit: Digest32,
     ncde_energy: u16,
     ncde_summary: &[i16],
@@ -410,6 +415,7 @@ fn commit_input(
     hasher.update(phase_commit.as_bytes());
     hasher.update(&global_phase.to_be_bytes());
     hasher.update(&coherence_plv.to_be_bytes());
+    hasher.update(influence_pulses_root.as_bytes());
     hasher.update(ncde_commit.as_bytes());
     hasher.update(&ncde_energy.to_be_bytes());
     hasher.update(&(ncde_summary.len() as u16).to_be_bytes());
@@ -470,6 +476,7 @@ mod tests {
             Digest32::new([1u8; 32]),
             42_000,
             coherence_plv,
+            Digest32::new([2u8; 32]),
             Digest32::new([2u8; 32]),
             3200,
             vec![10, -5, 12, 1],

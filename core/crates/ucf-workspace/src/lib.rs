@@ -184,12 +184,13 @@ impl WorkspaceSignal {
     pub fn from_influence_update(
         node_count: usize,
         root_commit: Digest32,
+        pulses_root: Digest32,
         outputs_commit: Digest32,
         attention_gain: Option<u16>,
         slot: Option<u8>,
     ) -> Self {
         let kind = SignalKind::Integration;
-        let summary = format!("INFL nodes={node_count} root={root_commit}");
+        let summary = format!("INFL nodes={node_count} root={root_commit} pulses={pulses_root}");
         let base_priority = 2400;
         let priority = priority_with_attention(base_priority, attention_gain);
         Self {
@@ -492,6 +493,9 @@ pub struct WorkspaceSnapshot {
     pub cde_top_edges: Vec<(u16, u16, u16, u8)>,
     pub ssm_commit: Digest32,
     pub ssm_state_commit: Digest32,
+    pub influence_v2_commit: Digest32,
+    pub influence_pulses_root: Digest32,
+    pub influence_node_values: Vec<(u16, i16)>,
     pub iit_output: Option<IitOutput>,
     pub nsr_trace_root: Option<Digest32>,
     pub nsr_prev_commit: Option<Digest32>,
@@ -535,6 +539,10 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
             + cde_edges.len() * (2 + 2 + 2 + 1)
             + Digest32::LEN
             + Digest32::LEN
+            + Digest32::LEN
+            + Digest32::LEN
+            + 2
+            + snapshot.influence_node_values.len() * (2 + 2)
             + 1
             + Digest32::LEN
             + 1
@@ -571,6 +579,13 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
     }
     payload.extend_from_slice(snapshot.ssm_commit.as_bytes());
     payload.extend_from_slice(snapshot.ssm_state_commit.as_bytes());
+    payload.extend_from_slice(snapshot.influence_v2_commit.as_bytes());
+    payload.extend_from_slice(snapshot.influence_pulses_root.as_bytes());
+    payload.extend_from_slice(&(snapshot.influence_node_values.len() as u16).to_be_bytes());
+    for (node, value) in &snapshot.influence_node_values {
+        payload.extend_from_slice(&node.to_be_bytes());
+        payload.extend_from_slice(&value.to_be_bytes());
+    }
     match snapshot.iit_output.as_ref() {
         Some(output) => {
             payload.push(1);
@@ -674,6 +689,9 @@ pub struct Workspace {
     cde_top_edges: Vec<(u16, u16, u16, u8)>,
     ssm_commit: Digest32,
     ssm_state_commit: Digest32,
+    influence_v2_commit: Digest32,
+    influence_pulses_root: Digest32,
+    influence_node_values: Vec<(u16, i16)>,
     iit_output: Option<IitOutput>,
     nsr_trace_root: Option<Digest32>,
     nsr_prev_commit: Option<Digest32>,
@@ -704,6 +722,9 @@ impl Workspace {
             cde_top_edges: Vec::new(),
             ssm_commit: Digest32::new([0u8; 32]),
             ssm_state_commit: Digest32::new([0u8; 32]),
+            influence_v2_commit: Digest32::new([0u8; 32]),
+            influence_pulses_root: Digest32::new([0u8; 32]),
+            influence_node_values: Vec::new(),
             iit_output: None,
             nsr_trace_root: None,
             nsr_prev_commit: None,
@@ -794,6 +815,17 @@ impl Workspace {
         self.ssm_state_commit = state_commit;
     }
 
+    pub fn set_influence_snapshot(
+        &mut self,
+        influence_commit: Digest32,
+        pulses_root: Digest32,
+        node_values: Vec<(u16, i16)>,
+    ) {
+        self.influence_v2_commit = influence_commit;
+        self.influence_pulses_root = pulses_root;
+        self.influence_node_values = node_values;
+    }
+
     pub fn set_iit_output(&mut self, output: IitOutput) {
         self.iit_output = Some(output);
     }
@@ -818,6 +850,10 @@ impl Workspace {
         self.sle_commit = sle_commit;
         self.sle_self_symbol_commit = self_symbol_commit;
         self.sle_rate_limited = rate_limited;
+    }
+
+    pub fn rsa_applied(&self) -> bool {
+        self.rsa_applied
     }
 
     pub fn push_internal_utterance(&mut self, utterance: InternalUtterance) {
@@ -866,6 +902,9 @@ impl Workspace {
         let cde_top_edges = std::mem::take(&mut self.cde_top_edges);
         let ssm_commit = self.ssm_commit;
         let ssm_state_commit = self.ssm_state_commit;
+        let influence_v2_commit = self.influence_v2_commit;
+        let influence_pulses_root = self.influence_pulses_root;
+        let influence_node_values = std::mem::take(&mut self.influence_node_values);
         let iit_output = self.iit_output.take();
         let nsr_trace_root = self.nsr_trace_root.take();
         let nsr_prev_commit = self.nsr_prev_commit.take();
@@ -888,6 +927,9 @@ impl Workspace {
             &cde_top_edges,
             ssm_commit,
             ssm_state_commit,
+            influence_v2_commit,
+            influence_pulses_root,
+            &influence_node_values,
             iit_output.as_ref(),
             nsr_trace_root,
             nsr_prev_commit,
@@ -913,6 +955,9 @@ impl Workspace {
             cde_top_edges,
             ssm_commit,
             ssm_state_commit,
+            influence_v2_commit,
+            influence_pulses_root,
+            influence_node_values,
             iit_output,
             nsr_trace_root,
             nsr_prev_commit,
@@ -1315,6 +1360,9 @@ fn commit_snapshot(
     cde_top_edges: &[(u16, u16, u16, u8)],
     ssm_commit: Digest32,
     ssm_state_commit: Digest32,
+    influence_v2_commit: Digest32,
+    influence_pulses_root: Digest32,
+    influence_node_values: &[(u16, i16)],
     iit_output: Option<&IitOutput>,
     nsr_trace_root: Option<Digest32>,
     nsr_prev_commit: Option<Digest32>,
@@ -1349,6 +1397,17 @@ fn commit_snapshot(
     }
     hasher.update(ssm_commit.as_bytes());
     hasher.update(ssm_state_commit.as_bytes());
+    hasher.update(influence_v2_commit.as_bytes());
+    hasher.update(influence_pulses_root.as_bytes());
+    hasher.update(
+        &u64::try_from(influence_node_values.len())
+            .unwrap_or(0)
+            .to_be_bytes(),
+    );
+    for (node, value) in influence_node_values {
+        hasher.update(&node.to_be_bytes());
+        hasher.update(&value.to_be_bytes());
+    }
     match iit_output {
         Some(output) => {
             hasher.update(&[1]);

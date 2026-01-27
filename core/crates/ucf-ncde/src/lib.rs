@@ -94,6 +94,7 @@ pub struct ControlFrame {
     pub phase_commit: Digest32,
     pub global_phase: u16,
     pub coherence_plv: u16,
+    pub influence_pulses_root: Digest32,
     pub spike_root: Digest32,
     pub spike_counts: Vec<(SpikeKind, u16)>,
     pub drift: u16,
@@ -110,6 +111,7 @@ impl ControlFrame {
         phase_commit: Digest32,
         global_phase: u16,
         coherence_plv: u16,
+        influence_pulses_root: Digest32,
         spike_root: Digest32,
         mut spike_counts: Vec<(SpikeKind, u16)>,
         drift: u16,
@@ -123,6 +125,7 @@ impl ControlFrame {
             phase_commit,
             global_phase,
             coherence_plv,
+            influence_pulses_root,
             spike_root,
             &spike_counts,
             drift,
@@ -135,6 +138,7 @@ impl ControlFrame {
             phase_commit,
             global_phase,
             coherence_plv,
+            influence_pulses_root,
             spike_root,
             spike_counts,
             drift,
@@ -269,6 +273,7 @@ fn commit_control(
     phase_commit: Digest32,
     global_phase: u16,
     coherence_plv: u16,
+    influence_pulses_root: Digest32,
     spike_root: Digest32,
     spike_counts: &[(SpikeKind, u16)],
     drift: u16,
@@ -282,6 +287,7 @@ fn commit_control(
     hasher.update(phase_commit.as_bytes());
     hasher.update(&global_phase.to_be_bytes());
     hasher.update(&coherence_plv.to_be_bytes());
+    hasher.update(influence_pulses_root.as_bytes());
     hasher.update(spike_root.as_bytes());
     for (kind, count) in spike_counts {
         hasher.update(&kind.as_u16().to_be_bytes());
@@ -473,6 +479,7 @@ mod tests {
             12_000,
             8000,
             Digest32::new([2u8; 32]),
+            Digest32::new([2u8; 32]),
             vec![(SpikeKind::Novelty, 3), (SpikeKind::Threat, 1)],
             1200,
             4200,
@@ -504,6 +511,7 @@ mod tests {
                 Digest32::new([1u8; 32]),
                 *phase,
                 6000,
+                Digest32::new([2u8; 32]),
                 Digest32::new([2u8; 32]),
                 vec![(SpikeKind::Novelty, 2), (SpikeKind::ConsistencyAlert, 1)],
                 1000,
