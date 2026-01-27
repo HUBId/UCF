@@ -1043,8 +1043,10 @@ mod tests {
 
     #[test]
     fn rsa_apply_gap_blocks_repeated_commit() {
-        let mut core = RsaCore::default();
-        core.min_apply_gap = 3;
+        let mut core = RsaCore {
+            min_apply_gap: 3,
+            ..Default::default()
+        };
         core.mark_applied(10);
 
         assert!(!core.can_apply(11));
