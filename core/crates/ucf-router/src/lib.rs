@@ -41,7 +41,7 @@ use ucf_iit_monitor::{
 use ucf_influence::{InfluenceInputs, InfluenceOutputs, InfluenceState, NodeId};
 use ucf_ism::IsmStore;
 use ucf_ncde::{ControlFrame as NcdeControlFrame, NcdeCore, NcdeOutput, NcdeParams};
-use ucf_nsr::{ConstraintEngine, NsrEngineMvp, NsrInputs, ReasoningTrace};
+use ucf_nsr::{ConstraintEngine, NsrEngine, NsrInputs, ReasoningTrace};
 use ucf_nsr_port::{light_report, ActionIntent, NsrInput, NsrPort, NsrReport, NsrVerdict};
 use ucf_onn::{ModuleId, OnnCore, OnnInputs, PhaseFrame};
 use ucf_output_router::{
@@ -127,6 +127,7 @@ pub struct Router {
     speech_gate: Arc<dyn SpeechGate + Send + Sync>,
     risk_gate: Arc<dyn RiskGate + Send + Sync>,
     nsr_port: Arc<NsrPort>,
+    nsr_engine: Mutex<NsrEngine>,
     tom_port: Arc<dyn TomPort + Send + Sync>,
     output_suppression_sink: Option<Arc<dyn OutputSuppressionSink + Send + Sync>>,
     attention_controller: Option<AttnController>,
@@ -345,6 +346,7 @@ impl Router {
             speech_gate,
             risk_gate,
             nsr_port: Arc::new(NsrPort::default()),
+            nsr_engine: Mutex::new(NsrEngine::new(NsrThresholds::default())),
             tom_port,
             output_suppression_sink,
             attention_controller: Some(AttnController),
@@ -460,7 +462,8 @@ impl Router {
                 ssm_commit: Digest32::new([0u8; 32]),
                 ssm_state_commit: Digest32::new([0u8; 32]),
                 iit_output: None,
-                nsr_trace_commit: None,
+                nsr_trace_root: None,
+                nsr_prev_commit: None,
                 nsr_verdict: None,
                 commit: Digest32::new([0u8; 32]),
             })
@@ -776,7 +779,7 @@ impl Router {
                                     .as_ref()
                                     .map(|output| output.energy)
                                     .unwrap_or(0),
-                                workspace_snapshot.nsr_trace_commit,
+                                workspace_snapshot.nsr_trace_root,
                                 workspace_snapshot.nsr_verdict,
                                 self.last_cde_output
                                     .lock()
@@ -943,10 +946,18 @@ impl Router {
                         ctx.self_state.as_ref(),
                         cde_atoms,
                     );
-                    let nsr_trace = NsrEngineMvp::new(nsr_thresholds).evaluate(&nsr_inputs);
+                    let nsr_trace = {
+                        let mut engine = self.nsr_engine.lock().expect("nsr engine lock");
+                        engine.set_thresholds(nsr_thresholds);
+                        engine.evaluate(&nsr_inputs)
+                    };
                     ctx.nsr_trace = Some(nsr_trace.clone());
                     if let Ok(mut workspace) = self.workspace.lock() {
-                        workspace.set_nsr_trace(nsr_trace.commit, nsr_trace.verdict.as_u8());
+                        workspace.set_nsr_trace(
+                            nsr_trace.trace_root,
+                            nsr_trace.prev_commit,
+                            nsr_trace.verdict.as_u8(),
+                        );
                     }
                     self.append_nsr_trace_record(cycle_id, &nsr_trace);
                     let nsr_warn_streak = self.update_nsr_warn_streak(nsr_trace.verdict);
@@ -2497,15 +2508,15 @@ impl Router {
 
     fn append_nsr_trace_record(&self, cycle_id: u64, trace: &ReasoningTrace) {
         let payload = format!(
-            "commit={};verdict={};hits={}",
-            trace.commit,
+            "trace_root={};verdict={};hits={}",
+            trace.trace_root,
             nsr_verdict_token(trace.verdict),
             trace.rule_hits.len()
         )
         .into_bytes();
         let record_id = format!(
             "nsr-trace-{cycle_id}-{}",
-            hex::encode(trace.commit.as_bytes())
+            hex::encode(trace.trace_root.as_bytes())
         );
         let record = build_compact_record(record_id, cycle_id, "nsr-trace", payload);
         self.archive.append(record);

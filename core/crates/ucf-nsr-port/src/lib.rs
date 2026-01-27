@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use ucf_nsr::{compute_proof_digest, NsrEngine};
+use ucf_nsr::{compute_proof_digest, NsrPolicyEngine};
 use ucf_types::Digest32;
 
 pub use ucf_nsr::{light_report, ActionIntent, NsrInput, NsrReport, NsrVerdict, NsrViolation};
@@ -32,7 +32,7 @@ impl NsrPort {
 
 impl Default for NsrPort {
     fn default() -> Self {
-        Self::new(Arc::new(NsrEngine::new()))
+        Self::new(Arc::new(NsrPolicyEngine::new()))
     }
 }
 
@@ -92,9 +92,9 @@ impl NsrBackend for NsrStubBackend {
     }
 }
 
-impl NsrBackend for ucf_nsr::NsrEngine {
+impl NsrBackend for ucf_nsr::NsrPolicyEngine {
     fn evaluate(&self, input: &NsrInput) -> NsrReport {
-        NsrEngine::evaluate(self, input)
+        NsrPolicyEngine::evaluate(self, input)
     }
 }
 

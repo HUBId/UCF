@@ -10,3 +10,8 @@ ucf-sandbox = { path = "../../../../core/crates/ucf-sandbox" }
 ucf-spikebus = { path = "../../../../core/crates/ucf-spikebus" }
 ucf-structural-store = { path = "../../../../core/crates/ucf-structural-store" }
 ucf-types = { path = "../../../../core/crates/ucf-types" }
+
+[features]
+default = []
+nsr_smt = []
+nsr_datalog = []
