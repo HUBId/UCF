@@ -578,7 +578,7 @@ fn compute_self_summary(
     let anchor = if has_anchor { 300 } else { -150 };
     let drift_penalty = i32::from(drift) / 5;
     let risk_penalty = i32::from(risk) / 6;
-    let raw = i32::from(base) + i32::from(anchor) - drift_penalty - risk_penalty;
+    let raw = base + anchor - drift_penalty - risk_penalty;
     clamp_sle_value(raw as i16)
 }
 

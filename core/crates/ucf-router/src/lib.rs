@@ -1786,7 +1786,7 @@ impl Router {
                 .iter()
                 .find(|stim| matches!(stim.kind, SleStimulusKind::ThoughtOnlyPulse))
             {
-                let severity = pulse.value.unsigned_abs().min(u16::MAX);
+                let severity = pulse.value.unsigned_abs();
                 workspace.push_internal_utterance(InternalUtterance::new(
                     outputs.self_symbol_commit,
                     severity,
