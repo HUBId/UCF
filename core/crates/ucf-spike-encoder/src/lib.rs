@@ -111,6 +111,29 @@ pub fn encode_from_features(
 }
 
 #[allow(clippy::too_many_arguments)]
+pub fn encode_causal_link_spike(
+    cycle_id: u64,
+    phase: &PhaseFrame,
+    src: ModuleId,
+    dst: ModuleId,
+    amplitude: u16,
+    attention_gain: u16,
+    payload_commit: Digest32,
+) -> SpikeEvent {
+    let amplitude = clamp_signal(amplitude);
+    build_spike(
+        cycle_id,
+        phase,
+        src,
+        dst,
+        SpikeKind::CausalLink,
+        amplitude,
+        attention_gain.min(MAX_SIGNAL),
+        payload_commit,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
 fn build_spike(
     cycle_id: u64,
     phase: &PhaseFrame,

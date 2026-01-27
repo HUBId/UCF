@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
 use blake3::Hasher;
-use ucf_cde_scm::CounterfactualResult;
+use ucf_cde_scm::{edge_key, CdeNodeId, CounterfactualResult, NSR_ATOM_MIN};
 use ucf_sandbox::IntentSummary;
 use ucf_spikebus::SpikeKind;
 use ucf_structural_store::NsrThresholds;
@@ -126,6 +126,7 @@ pub struct NsrInputs {
     pub spike_counts: Vec<(SpikeKind, u16)>,
     pub policy_decision_commit: Option<Digest32>,
     pub self_consistency_ok: Option<bool>,
+    pub reasoning_atoms: Vec<ReasoningAtom>,
     pub commit: Digest32,
 }
 
@@ -144,7 +145,16 @@ impl NsrInputs {
         spike_counts: Vec<(SpikeKind, u16)>,
         policy_decision_commit: Option<Digest32>,
         self_consistency_ok: Option<bool>,
+        reasoning_atoms: Vec<(u16, i16)>,
     ) -> Self {
+        let atoms = reasoning_atoms
+            .iter()
+            .map(|(key, value)| ReasoningAtom {
+                key: *key,
+                value: *value,
+                commit: Digest32::new([0u8; 32]),
+            })
+            .collect::<Vec<_>>();
         let mut inputs = Self {
             cycle_id,
             phase_commit,
@@ -158,9 +168,14 @@ impl NsrInputs {
             spike_counts,
             policy_decision_commit,
             self_consistency_ok,
+            reasoning_atoms: atoms,
             commit: Digest32::new([0u8; 32]),
         };
         inputs.commit = digest_nsr_inputs(&inputs);
+        inputs.reasoning_atoms = reasoning_atoms
+            .into_iter()
+            .map(|(key, value)| ReasoningAtom::new(key, value, inputs.commit))
+            .collect();
         inputs
     }
 }
@@ -187,6 +202,7 @@ impl ConstraintEngine for NsrEngineMvp {
         const COHERENCE_MIN: u16 = 3_000;
         const PHI_MIN: u16 = 3_500;
         const THREAT_SPIKE_HIGH: u16 = 5;
+        const CAUSAL_SEVERITY_WARN: u16 = 7_800;
         const SEVERITY_WARN: u16 = 4_000;
         const SEVERITY_DENY: u16 = 9_000;
 
@@ -235,6 +251,19 @@ impl ConstraintEngine for NsrEngineMvp {
             rule_hits.push((5, NsrReasonCode::PolicyConflict, SEVERITY_DENY));
             derived_atoms.push(ReasoningAtom::new(6, 1, inp.commit));
             verdict = NsrVerdict::Deny;
+        }
+
+        let causal_key = edge_key(CdeNodeId::Risk, CdeNodeId::OutputSuppression);
+        if let Some(atom) = inp
+            .reasoning_atoms
+            .iter()
+            .find(|atom| atom.key == causal_key && atom.value >= NSR_ATOM_MIN as i16)
+        {
+            rule_hits.push((6, NsrReasonCode::HighRisk, CAUSAL_SEVERITY_WARN));
+            derived_atoms.push(atom.clone());
+            if verdict == NsrVerdict::Allow {
+                verdict = NsrVerdict::Warn;
+            }
         }
 
         ReasoningTrace::new(inp.cycle_id, inp.commit, rule_hits, derived_atoms, verdict)
@@ -806,6 +835,15 @@ fn digest_nsr_inputs(inputs: &NsrInputs) -> Digest32 {
             hasher.update(&[0]);
         }
     }
+    hasher.update(
+        &u64::try_from(inputs.reasoning_atoms.len())
+            .unwrap_or(0)
+            .to_be_bytes(),
+    );
+    for atom in &inputs.reasoning_atoms {
+        hasher.update(&atom.key.to_be_bytes());
+        hasher.update(&atom.value.to_be_bytes());
+    }
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
@@ -1241,7 +1279,37 @@ mod tests {
             Vec::new(),
             None,
             Some(true),
+            Vec::new(),
         )
+    }
+
+    #[test]
+    fn causal_atoms_raise_risk_warning() {
+        let thresholds = NsrThresholds::default();
+        let atom_key = edge_key(CdeNodeId::Risk, CdeNodeId::OutputSuppression);
+        let inputs = NsrInputs::new(
+            1,
+            Digest32::new([2u8; 32]),
+            6_500,
+            6_500,
+            1_000,
+            1_000,
+            1_000,
+            2_000,
+            2_000,
+            Vec::new(),
+            None,
+            Some(true),
+            vec![(atom_key, NSR_ATOM_MIN as i16)],
+        );
+
+        let trace = NsrEngineMvp::new(thresholds).evaluate(&inputs);
+
+        assert_eq!(trace.verdict, NsrVerdict::Warn);
+        assert!(trace
+            .rule_hits
+            .iter()
+            .any(|(_, code, _)| *code == NsrReasonCode::HighRisk));
     }
 
     #[test]
