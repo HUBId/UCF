@@ -38,7 +38,7 @@ use ucf_iit::{IitInputs, IitMonitor as IitProxyMonitor, IitOutput};
 use ucf_iit_monitor::{
     actions_for_phi, report_for_phi, IitAction, IitActionKind, IitBand, IitReport,
 };
-use ucf_influence::{InfluenceInputs, InfluenceOutputs, InfluenceState, NodeId};
+use ucf_influence::{InfluenceGraphV2, InfluenceInputs, InfluenceNodeId, InfluenceOutputs};
 use ucf_ism::IsmStore;
 use ucf_ncde::{ControlFrame as NcdeControlFrame, NcdeCore, NcdeOutput, NcdeParams};
 use ucf_nsr::{ConstraintEngine, NsrEngine, NsrInputs, ReasoningTrace};
@@ -165,7 +165,7 @@ pub struct Router {
     last_brain_arousal: Mutex<u16>,
     cde_engine: Mutex<CdeEngine>,
     last_cde_output: Mutex<Option<CdeOutputs>>,
-    influence_state: Mutex<InfluenceState>,
+    influence_state: Mutex<InfluenceGraphV2>,
     last_influence_outputs: Mutex<Option<InfluenceOutputs>>,
     last_influence_root_commit: Mutex<Option<Digest32>>,
     ssm_core: Mutex<SsmCore>,
@@ -397,7 +397,7 @@ impl Router {
             last_brain_arousal: Mutex::new(0),
             cde_engine: Mutex::new(CdeEngine::new()),
             last_cde_output: Mutex::new(None),
-            influence_state: Mutex::new(InfluenceState::new_default()),
+            influence_state: Mutex::new(InfluenceGraphV2::new_default()),
             last_influence_outputs: Mutex::new(None),
             last_influence_root_commit: Mutex::new(None),
             ssm_core: Mutex::new(SsmCore::new(SsmParams::default())),
@@ -478,6 +478,9 @@ impl Router {
                 cde_top_edges: Vec::new(),
                 ssm_commit: Digest32::new([0u8; 32]),
                 ssm_state_commit: Digest32::new([0u8; 32]),
+                influence_v2_commit: Digest32::new([0u8; 32]),
+                influence_pulses_root: Digest32::new([0u8; 32]),
+                influence_node_values: Vec::new(),
                 iit_output: None,
                 nsr_trace_root: None,
                 nsr_prev_commit: None,
@@ -687,9 +690,16 @@ impl Router {
                     if nsr_report.causal_verdict() == NsrVerdict::Deny {
                         self.append_causal_audit_notice(cycle_id, &nsr_report);
                     }
+                    let influence_pulses_root = self
+                        .last_influence_outputs
+                        .lock()
+                        .ok()
+                        .and_then(|guard| guard.as_ref().map(|out| out.pulses_root))
+                        .unwrap_or_else(|| Digest32::new([0u8; 32]));
                     let phase_frame = self.tick_onn_phase(
                         cycle_id,
                         cycle_plan.commit,
+                        influence_pulses_root,
                         drift_score,
                         plan_surprise
                             .as_ref()
@@ -719,6 +729,16 @@ impl Router {
                         risk_results.push(gate_result);
                         speech_gate_results.push(self.speech_gate.allow_speech(&cf, output));
                     }
+                    let influence_for_output = self
+                        .last_influence_outputs
+                        .lock()
+                        .ok()
+                        .and_then(|guard| guard.clone());
+                    apply_influence_output_suppression(
+                        &mut speech_gate_results,
+                        outputs,
+                        influence_for_output.as_ref(),
+                    );
                     ctx.attention_risk = attention_risk;
                     self.publish_workspace_signals(risk_results.iter().map(|result| {
                         WorkspaceSignal::from_risk_result(result, None, Some(pulse.slot))
@@ -739,6 +759,7 @@ impl Router {
                     if let Some(ncde_output) = self.tick_ncde(
                         cycle_id,
                         &phase_frame,
+                        influence_pulses_root,
                         spike_root_commit,
                         spike_counts,
                         drift_score,
@@ -757,6 +778,7 @@ impl Router {
                         if let Some(ssm_output) = self.tick_ssm(
                             &phase_frame,
                             &ncde_output,
+                            influence_pulses_root,
                             spike_root_commit,
                             spike_counts_ssm,
                             drift_score,
@@ -1262,47 +1284,104 @@ impl Router {
                         .map(|report| report.drift_score)
                         .unwrap_or(0);
                     let phase_commit = ctx.phase_commit.unwrap_or(Digest32::new([0u8; 32]));
-                    let spike_root_commit =
-                        ctx.spike_root_commit.unwrap_or(Digest32::new([0u8; 32]));
                     let attn_gain = self
                         .last_attention
                         .lock()
                         .map(|attn| attn.gain)
                         .unwrap_or(0);
+                    let ssm_salience = ctx
+                        .ssm_output
+                        .as_ref()
+                        .map(|output| output.wm_salience)
+                        .unwrap_or(0);
+                    let ssm_novelty = ctx
+                        .ssm_output
+                        .as_ref()
+                        .map(|output| output.wm_novelty)
+                        .unwrap_or(0);
+                    let ncde_energy = ctx
+                        .ncde_output
+                        .as_ref()
+                        .map(|output| output.energy)
+                        .unwrap_or(0);
+                    let nsr_verdict = ctx
+                        .nsr_report
+                        .as_ref()
+                        .map(|report| report.verdict.as_u8())
+                        .unwrap_or(0);
+                    let coherence_plv = ctx.coherence_plv.unwrap_or(0);
+                    let phi_proxy = ctx.integration_score.unwrap_or(0);
+                    let cde_commit = ctx.cde_output.as_ref().map(|output| output.commit);
+                    let sle_self_symbol = ctx
+                        .sle_outputs
+                        .as_ref()
+                        .map(|output| output.self_symbol_commit);
+                    let rsa_applied = self
+                        .workspace
+                        .lock()
+                        .ok()
+                        .map(|workspace| workspace.rsa_applied())
+                        .unwrap_or(false);
                     let influence_inputs = InfluenceInputs {
                         cycle_id,
                         phase_commit,
-                        spike_root: spike_root_commit,
+                        coherence_plv,
+                        phi_proxy,
+                        ssm_salience,
+                        ssm_novelty,
+                        ncde_energy,
+                        nsr_verdict,
+                        risk: ctx.attention_risk,
                         drift: drift_score,
                         surprise: surprise_score,
-                        risk: ctx.attention_risk,
-                        attn_gain,
+                        cde_commit,
+                        sle_self_symbol,
+                        rsa_applied,
                         commit: influence_inputs_commit(
                             cycle_id,
                             phase_commit,
-                            spike_root_commit,
+                            coherence_plv,
+                            phi_proxy,
+                            ssm_salience,
+                            ssm_novelty,
+                            ncde_energy,
+                            nsr_verdict,
+                            ctx.attention_risk,
                             drift_score,
                             surprise_score,
-                            ctx.attention_risk,
-                            attn_gain,
+                            cde_commit,
+                            sle_self_symbol,
+                            rsa_applied,
                         ),
                     };
-                    let influence_result = self
-                        .influence_state
-                        .lock()
-                        .ok()
-                        .map(|mut state| (state.root_commit, state.tick(&influence_inputs)));
-                    if let Some((root_commit, outputs)) = influence_result.clone() {
+                    let influence_result = self.influence_state.lock().ok().map(|mut state| {
+                        let outputs = state.tick(&influence_inputs);
+                        (state.commit, outputs)
+                    });
+                    if let Some((graph_commit, outputs)) = influence_result.clone() {
                         ctx.influence_outputs = Some(outputs.clone());
                         if let Ok(mut guard) = self.last_influence_outputs.lock() {
                             *guard = Some(outputs.clone());
                         }
                         if let Ok(mut guard) = self.last_influence_root_commit.lock() {
-                            *guard = Some(root_commit);
+                            *guard = Some(graph_commit);
+                        }
+                        if let Ok(mut workspace) = self.workspace.lock() {
+                            let compact_nodes = outputs
+                                .node_values
+                                .iter()
+                                .map(|(node, value)| (node.to_u16(), *value))
+                                .collect();
+                            workspace.set_influence_snapshot(
+                                graph_commit,
+                                outputs.pulses_root,
+                                compact_nodes,
+                            );
                         }
                         let signal = WorkspaceSignal::from_influence_update(
-                            outputs.node_in.len(),
-                            root_commit,
+                            outputs.node_values.len(),
+                            graph_commit,
+                            outputs.pulses_root,
                             outputs.commit,
                             Some(attn_gain),
                             Some(pulse.slot),
@@ -1310,10 +1389,17 @@ impl Router {
                         self.publish_workspace_signal(signal);
                         self.append_influence_record(
                             cycle_id,
-                            root_commit,
+                            graph_commit,
+                            outputs.pulses_root,
                             outputs.commit,
-                            outputs.node_in.len(),
+                            outputs.pulses.len(),
+                            outputs.node_values.len(),
                         );
+                    }
+                    if let Some(outputs) = influence_result.as_ref().map(|(_, outputs)| outputs) {
+                        let base_pressure = ctx.replay_pressure.unwrap_or(0);
+                        ctx.replay_pressure =
+                            Some(apply_influence_replay_pressure(base_pressure, outputs));
                     }
                     let attention_ctx = AttentionContext {
                         policy_class: decision.kind as u16,
@@ -1400,12 +1486,23 @@ impl Router {
                             ctx.decision_kind,
                             DecisionKind::DecisionKindAllow | DecisionKind::DecisionKindUnspecified
                         );
+                        let influence_outputs = ctx.influence_outputs.clone().or_else(|| {
+                            self.last_influence_outputs
+                                .lock()
+                                .ok()
+                                .and_then(|guard| guard.clone())
+                        });
                         let replay_pressure = ctx.replay_pressure.unwrap_or(0);
+                        let sleep_drive = influence_outputs
+                            .as_ref()
+                            .map(|outputs| outputs.node_value(InfluenceNodeId::SleepDrive))
+                            .unwrap_or(0);
                         let phi_proxy = ctx.integration_score.unwrap_or(0);
                         let sleep_active = derive_sleep_active(
                             matches!(pulse.kind, PulseKind::Sleep),
                             replay_pressure,
                             phi_proxy,
+                            sleep_drive,
                             &params,
                         );
                         let inputs = RsaInputs::new(
@@ -1437,6 +1534,13 @@ impl Router {
                         let mut rsa_core =
                             self.rsa_core.lock().unwrap_or_else(|err| err.into_inner());
                         let mut outputs = rsa_core.tick_with_params(&inputs, &params);
+                        if let Some(influence) = influence_outputs.as_ref() {
+                            let bias =
+                                influence.node_value(InfluenceNodeId::StructuralPlasticity) / 4;
+                            let chosen = choose_best_proposal_with_bias(&outputs.proposals, bias);
+                            outputs.chosen = chosen;
+                            outputs.recompute_commit();
+                        }
                         let mut applied = false;
                         let mut new_params_commit = None;
                         if let Some(chosen_commit) = outputs.chosen {
@@ -1767,6 +1871,7 @@ impl Router {
         &self,
         cycle_id: u64,
         cycle_commit: Digest32,
+        influence_pulses_root: Digest32,
         drift_score: u16,
         surprise_score: u16,
         attn_gain: u16,
@@ -1787,9 +1892,10 @@ impl Router {
             nsr_verdict.as_u8(),
             brain_arousal,
         );
+        let bound_commit = influence_cycle_commit(cycle_commit, influence_pulses_root);
         let frame = {
             let mut onn = self.onn_core.lock().expect("onn core lock");
-            onn.tick(cycle_id, cycle_commit, &inputs)
+            onn.tick(cycle_id, bound_commit, &inputs)
         };
         let priority = 3200u16.saturating_add(frame.coherence_plv / 5).min(10_000);
         let summary = format!(
@@ -2390,7 +2496,7 @@ impl Router {
             .map(|outputs| outputs.commit)
             .unwrap_or_else(|| Digest32::new([0u8; 32]));
         let influence_node_in = influence_outputs
-            .map(|outputs| outputs.node_in.clone())
+            .map(|outputs| outputs.node_values.clone())
             .unwrap_or_default();
         let inputs = CdeInputs::new(
             cycle_id,
@@ -2417,6 +2523,7 @@ impl Router {
         &self,
         cycle_id: u64,
         phase_frame: &PhaseFrame,
+        influence_pulses_root: Digest32,
         spike_root_commit: Digest32,
         spike_counts: Vec<(SpikeKind, u16)>,
         drift: u16,
@@ -2431,6 +2538,7 @@ impl Router {
             phase_frame.commit,
             phase_frame.global_phase,
             phase_frame.coherence_plv,
+            influence_pulses_root,
             spike_root_commit,
             spike_counts,
             drift,
@@ -2446,6 +2554,7 @@ impl Router {
         &self,
         phase_frame: &PhaseFrame,
         ncde_output: &NcdeOutput,
+        influence_pulses_root: Digest32,
         spike_root_commit: Digest32,
         spike_counts: Vec<(SpikeKind, u16)>,
         drift: u16,
@@ -2459,6 +2568,7 @@ impl Router {
             phase_frame.commit,
             phase_frame.global_phase,
             phase_frame.coherence_plv,
+            influence_pulses_root,
             ncde_output.commit,
             ncde_output.energy,
             ncde_output.h_summary.clone(),
@@ -2862,13 +2972,15 @@ impl Router {
     fn append_influence_record(
         &self,
         cycle_id: u64,
-        root_commit: Digest32,
+        graph_commit: Digest32,
+        pulses_root: Digest32,
         outputs_commit: Digest32,
-        edge_count: usize,
+        pulse_count: usize,
+        node_count: usize,
     ) {
         let payload = format!(
-            "root={};outputs={};edges={edge_count}",
-            root_commit, outputs_commit
+            "graph={};pulses={};outputs={};pulse_count={pulse_count};nodes={node_count}",
+            graph_commit, pulses_root, outputs_commit
         )
         .into_bytes();
         let record_id = format!(
@@ -3228,17 +3340,28 @@ fn replay_pressure_from_spikes(spike_counts: &[(SpikeKind, u16)]) -> u16 {
         .unwrap_or(0)
 }
 
+fn apply_influence_replay_pressure(base: u16, influence: &InfluenceOutputs) -> u16 {
+    let pressure = influence.node_value(InfluenceNodeId::ReplayPressure);
+    if pressure <= 0 {
+        return base;
+    }
+    let boost = (i32::from(pressure) / 2).clamp(0, 5000) as u16;
+    base.saturating_add(boost).min(10_000)
+}
+
 fn derive_sleep_active(
     sleep_pulse: bool,
     replay_pressure: u16,
     phi_proxy: u16,
+    sleep_drive: i16,
     params: &StructuralParams,
 ) -> bool {
     if sleep_pulse {
         return true;
     }
     let phi_low = params.rsa.phi_min_apply.saturating_sub(400);
-    replay_pressure >= 5000 || phi_proxy < phi_low
+    let drive = sleep_drive.max(0) as u16;
+    replay_pressure >= 5000 || phi_proxy < phi_low || drive >= 2500
 }
 
 fn spike_record_commit(
@@ -3430,8 +3553,8 @@ fn apply_influence_effects(
     let Some(influence) = influence else {
         return weights;
     };
-    let attention_in = influence.node_value(NodeId::Attention);
-    let memory_in = influence.node_value(NodeId::Memory);
+    let attention_in = influence.node_value(InfluenceNodeId::AttentionGain);
+    let memory_in = influence.node_value(InfluenceNodeId::WorkingMemory);
     let mut changed = false;
     let delta = (i32::from(attention_in) + i32::from(memory_in)) / 4;
     if delta != 0 {
@@ -3455,6 +3578,49 @@ fn apply_influence_effects(
         weights.commit = commit_attention_override(&weights);
     }
     weights
+}
+
+fn apply_influence_output_suppression(
+    speech_gate: &mut [bool],
+    outputs: &[AiOutput],
+    influence: Option<&InfluenceOutputs>,
+) {
+    let Some(influence) = influence else {
+        return;
+    };
+    let suppression = influence.node_value(InfluenceNodeId::OutputSuppression);
+    if suppression < 1500 {
+        return;
+    }
+    for (idx, output) in outputs.iter().enumerate() {
+        if output.channel == OutputChannel::Speech {
+            if let Some(entry) = speech_gate.get_mut(idx) {
+                *entry = false;
+            }
+        }
+    }
+}
+
+fn choose_best_proposal_with_bias(
+    proposals: &[ucf_rsa::StructuralProposal],
+    bias: i16,
+) -> Option<Digest32> {
+    if proposals.is_empty() {
+        return None;
+    }
+    let bias = bias.clamp(-2000, 2000);
+    proposals
+        .iter()
+        .max_by(|left, right| {
+            let left_score =
+                i32::from(left.expected_gain) + i32::from(bias) - i32::from(left.risk_cost);
+            let right_score =
+                i32::from(right.expected_gain) + i32::from(bias) - i32::from(right.risk_cost);
+            left_score
+                .cmp(&right_score)
+                .then_with(|| left.commit.as_bytes().cmp(right.commit.as_bytes()))
+        })
+        .map(|proposal| proposal.commit)
 }
 
 fn action_intents_from_outputs(outputs: &[AiOutput]) -> Vec<ActionIntent> {
@@ -3522,24 +3688,54 @@ fn commit_attention_override(weights: &AttentionWeights) -> Digest32 {
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn influence_inputs_commit(
     cycle_id: u64,
     phase_commit: Digest32,
-    spike_root_commit: Digest32,
+    coherence_plv: u16,
+    phi_proxy: u16,
+    ssm_salience: u16,
+    ssm_novelty: u16,
+    ncde_energy: u16,
+    nsr_verdict: u8,
+    risk: u16,
     drift: u16,
     surprise: u16,
-    risk: u16,
-    attn_gain: u16,
+    cde_commit: Option<Digest32>,
+    sle_self_symbol: Option<Digest32>,
+    rsa_applied: bool,
 ) -> Digest32 {
     let mut hasher = blake3::Hasher::new();
-    hasher.update(b"ucf.influence.inputs.v1");
+    hasher.update(b"ucf.influence.inputs.v2");
     hasher.update(&cycle_id.to_be_bytes());
     hasher.update(phase_commit.as_bytes());
-    hasher.update(spike_root_commit.as_bytes());
+    hasher.update(&coherence_plv.to_be_bytes());
+    hasher.update(&phi_proxy.to_be_bytes());
+    hasher.update(&ssm_salience.to_be_bytes());
+    hasher.update(&ssm_novelty.to_be_bytes());
+    hasher.update(&ncde_energy.to_be_bytes());
+    hasher.update(&[nsr_verdict]);
+    hasher.update(&risk.to_be_bytes());
     hasher.update(&drift.to_be_bytes());
     hasher.update(&surprise.to_be_bytes());
-    hasher.update(&risk.to_be_bytes());
-    hasher.update(&attn_gain.to_be_bytes());
+    if let Some(commit) = cde_commit {
+        hasher.update(commit.as_bytes());
+    }
+    if let Some(commit) = sle_self_symbol {
+        hasher.update(commit.as_bytes());
+    }
+    hasher.update(&[rsa_applied as u8]);
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn influence_cycle_commit(cycle_commit: Digest32, pulses_root: Digest32) -> Digest32 {
+    if pulses_root == Digest32::new([0u8; 32]) {
+        return cycle_commit;
+    }
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"ucf.influence.cycle_bind.v1");
+    hasher.update(cycle_commit.as_bytes());
+    hasher.update(pulses_root.as_bytes());
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
@@ -3765,13 +3961,33 @@ mod tests {
             commit: Digest32::new([1u8; 32]),
         };
         let influence = InfluenceOutputs {
-            node_in: vec![(NodeId::Attention, 4200), (NodeId::Memory, 800)],
+            cycle_id: 1,
+            pulses_root: Digest32::new([9u8; 32]),
+            pulses: Vec::new(),
+            node_values: vec![
+                (InfluenceNodeId::AttentionGain, 4200),
+                (InfluenceNodeId::WorkingMemory, 800),
+            ],
             commit: Digest32::new([2u8; 32]),
         };
         let updated = apply_influence_effects(base.clone(), Some(&influence));
 
         assert!(updated.gain > base.gain);
         assert_eq!(updated.channel, FocusChannel::Exploration);
+    }
+
+    #[test]
+    fn replay_pressure_influence_boosts_pressure() {
+        let base = 1200;
+        let influence = InfluenceOutputs {
+            cycle_id: 2,
+            pulses_root: Digest32::new([5u8; 32]),
+            pulses: Vec::new(),
+            node_values: vec![(InfluenceNodeId::ReplayPressure, 4200)],
+            commit: Digest32::new([6u8; 32]),
+        };
+        let boosted = apply_influence_replay_pressure(base, &influence);
+        assert!(boosted > base);
     }
 
     #[test]
@@ -3789,6 +4005,7 @@ mod tests {
             .tick_ncde(
                 1,
                 &phase_frame,
+                Digest32::new([9u8; 32]),
                 Digest32::new([2u8; 32]),
                 vec![(SpikeKind::Novelty, 2)],
                 1000,
@@ -3926,6 +4143,7 @@ mod tests {
             .tick_ncde(
                 1,
                 &phase_frame,
+                Digest32::new([9u8; 32]),
                 Digest32::new([2u8; 32]),
                 vec![(SpikeKind::Novelty, 2)],
                 1000,
@@ -3938,6 +4156,7 @@ mod tests {
             .tick_ssm(
                 &phase_frame,
                 &ncde_output,
+                Digest32::new([9u8; 32]),
                 Digest32::new([2u8; 32]),
                 vec![(SpikeKind::Threat, 3)],
                 1000,
