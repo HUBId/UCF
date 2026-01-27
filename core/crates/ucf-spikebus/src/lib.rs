@@ -19,6 +19,7 @@ pub enum SpikeKind {
     ConsistencyAlert,
     ReplayTrigger,
     AttentionShift,
+    Thought,
     Unknown(u16),
 }
 
@@ -31,6 +32,7 @@ impl SpikeKind {
             Self::ConsistencyAlert => 4,
             Self::ReplayTrigger => 5,
             Self::AttentionShift => 6,
+            Self::Thought => 7,
             Self::Unknown(code) => code,
         }
     }

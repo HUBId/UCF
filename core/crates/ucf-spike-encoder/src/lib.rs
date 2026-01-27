@@ -134,6 +134,29 @@ pub fn encode_causal_link_spike(
 }
 
 #[allow(clippy::too_many_arguments)]
+pub fn encode_thought_spike(
+    cycle_id: u64,
+    phase: &PhaseFrame,
+    src: ModuleId,
+    dst: ModuleId,
+    amplitude: u16,
+    attention_gain: u16,
+    payload_commit: Digest32,
+) -> SpikeEvent {
+    let amplitude = clamp_signal(amplitude);
+    build_spike(
+        cycle_id,
+        phase,
+        src,
+        dst,
+        SpikeKind::Thought,
+        amplitude,
+        attention_gain.min(MAX_SIGNAL),
+        payload_commit,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
 fn build_spike(
     cycle_id: u64,
     phase: &PhaseFrame,
@@ -202,6 +225,7 @@ fn spike_width(kind: SpikeKind, attention_gain: u16) -> u16 {
         SpikeKind::Novelty => 4_000,
         SpikeKind::ReplayTrigger => 4_500,
         SpikeKind::AttentionShift => 3_500,
+        SpikeKind::Thought => 4_200,
         SpikeKind::Unknown(_) => 3_000,
     };
     base.saturating_add(attention_gain / 4).min(MAX_SIGNAL)
