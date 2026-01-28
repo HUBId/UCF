@@ -55,6 +55,8 @@ pub struct GateBundle {
     pub coherence_threshold: u16,
     pub phi_proxy: u16,
     pub phi_threshold: u16,
+    pub speak_lock: u16,
+    pub speak_lock_min: u16,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -323,6 +325,9 @@ impl OutputRouter {
         if gates.phi_proxy < gates.phi_threshold {
             return self.deny_speech(frame, idx, gates, "phi_low", 0);
         }
+        if gates.speak_lock < gates.speak_lock_min {
+            return self.deny_speech(frame, idx, gates, "speak_lock_low", 0);
+        }
         let policy_allowed = policy_allows(&gates.policy_decision);
         if !policy_allowed {
             return self.deny_speech(frame, idx, gates, "policy_denied", 0);
@@ -472,6 +477,8 @@ mod tests {
             coherence_threshold: 3000,
             phi_proxy: 4000,
             phi_threshold: 3200,
+            speak_lock: 8000,
+            speak_lock_min: 6000,
         }
     }
 
@@ -697,6 +704,25 @@ mod tests {
 
         assert!(!decisions[0].permitted);
         assert_eq!(decisions[0].reason_code, "phi_low");
+    }
+
+    #[test]
+    fn speech_denied_when_speak_lock_below_threshold() {
+        let config = RouterConfig {
+            thought_capacity: 2,
+            max_thought_frames_per_cycle: 2,
+            external_enabled: true,
+        };
+        let mut router = OutputRouter::new(config);
+        let outputs = vec![speech_output("hi")];
+        let mut gates = gates_for(&outputs, vec![permit_risk()]);
+        gates.speak_lock = 1000;
+        gates.speak_lock_min = 6000;
+
+        let decisions = router.route(&cf(), outputs, &gates);
+
+        assert!(!decisions[0].permitted);
+        assert_eq!(decisions[0].reason_code, "speak_lock_low");
     }
 
     #[test]

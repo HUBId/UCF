@@ -528,7 +528,7 @@ mod tests {
     }
 
     #[test]
-    fn ingestion_service_publishes_speech_event_when_gate_allows() {
+    fn ingestion_service_suppresses_speech_event_when_lock_low() {
         let bus = InMemoryBus::new();
         let outcome_bus = InMemoryBus::new();
         let speech_bus = InMemoryBus::new();
@@ -608,10 +608,7 @@ mod tests {
         assert_eq!(processed, 1);
         assert_eq!(archive.list().len(), 13);
 
-        let speech = speech_receiver.try_recv().expect("speech event");
-        assert_eq!(speech.payload.content, "ok");
-        assert_eq!(speech.payload.evidence_id, EvidenceId::new("exp-ping"));
-        assert_eq!(speech.logical_time.tick, 21);
+        assert!(speech_receiver.try_recv().is_err());
     }
 
     #[test]

@@ -496,6 +496,10 @@ pub struct WorkspaceSnapshot {
     pub influence_v2_commit: Digest32,
     pub influence_pulses_root: Digest32,
     pub influence_node_values: Vec<(u16, i16)>,
+    pub onn_states_commit: Digest32,
+    pub onn_global_plv: u16,
+    pub onn_pair_locks_commit: Digest32,
+    pub onn_phase_frame_commit: Digest32,
     pub iit_output: Option<IitOutput>,
     pub nsr_trace_root: Option<Digest32>,
     pub nsr_prev_commit: Option<Digest32>,
@@ -543,6 +547,10 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
             + Digest32::LEN
             + 2
             + snapshot.influence_node_values.len() * (2 + 2)
+            + Digest32::LEN
+            + 2
+            + Digest32::LEN
+            + Digest32::LEN
             + 1
             + Digest32::LEN
             + 1
@@ -586,6 +594,10 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
         payload.extend_from_slice(&node.to_be_bytes());
         payload.extend_from_slice(&value.to_be_bytes());
     }
+    payload.extend_from_slice(snapshot.onn_states_commit.as_bytes());
+    payload.extend_from_slice(&snapshot.onn_global_plv.to_be_bytes());
+    payload.extend_from_slice(snapshot.onn_pair_locks_commit.as_bytes());
+    payload.extend_from_slice(snapshot.onn_phase_frame_commit.as_bytes());
     match snapshot.iit_output.as_ref() {
         Some(output) => {
             payload.push(1);
@@ -692,6 +704,10 @@ pub struct Workspace {
     influence_v2_commit: Digest32,
     influence_pulses_root: Digest32,
     influence_node_values: Vec<(u16, i16)>,
+    onn_states_commit: Digest32,
+    onn_global_plv: u16,
+    onn_pair_locks_commit: Digest32,
+    onn_phase_frame_commit: Digest32,
     iit_output: Option<IitOutput>,
     nsr_trace_root: Option<Digest32>,
     nsr_prev_commit: Option<Digest32>,
@@ -725,6 +741,10 @@ impl Workspace {
             influence_v2_commit: Digest32::new([0u8; 32]),
             influence_pulses_root: Digest32::new([0u8; 32]),
             influence_node_values: Vec::new(),
+            onn_states_commit: Digest32::new([0u8; 32]),
+            onn_global_plv: 0,
+            onn_pair_locks_commit: Digest32::new([0u8; 32]),
+            onn_phase_frame_commit: Digest32::new([0u8; 32]),
             iit_output: None,
             nsr_trace_root: None,
             nsr_prev_commit: None,
@@ -826,6 +846,19 @@ impl Workspace {
         self.influence_node_values = node_values;
     }
 
+    pub fn set_onn_snapshot(
+        &mut self,
+        states_commit: Digest32,
+        global_plv: u16,
+        pair_locks_commit: Digest32,
+        phase_frame_commit: Digest32,
+    ) {
+        self.onn_states_commit = states_commit;
+        self.onn_global_plv = global_plv;
+        self.onn_pair_locks_commit = pair_locks_commit;
+        self.onn_phase_frame_commit = phase_frame_commit;
+    }
+
     pub fn set_iit_output(&mut self, output: IitOutput) {
         self.iit_output = Some(output);
     }
@@ -905,6 +938,10 @@ impl Workspace {
         let influence_v2_commit = self.influence_v2_commit;
         let influence_pulses_root = self.influence_pulses_root;
         let influence_node_values = std::mem::take(&mut self.influence_node_values);
+        let onn_states_commit = self.onn_states_commit;
+        let onn_global_plv = self.onn_global_plv;
+        let onn_pair_locks_commit = self.onn_pair_locks_commit;
+        let onn_phase_frame_commit = self.onn_phase_frame_commit;
         let iit_output = self.iit_output.take();
         let nsr_trace_root = self.nsr_trace_root.take();
         let nsr_prev_commit = self.nsr_prev_commit.take();
@@ -930,6 +967,10 @@ impl Workspace {
             influence_v2_commit,
             influence_pulses_root,
             &influence_node_values,
+            onn_states_commit,
+            onn_global_plv,
+            onn_pair_locks_commit,
+            onn_phase_frame_commit,
             iit_output.as_ref(),
             nsr_trace_root,
             nsr_prev_commit,
@@ -958,6 +999,10 @@ impl Workspace {
             influence_v2_commit,
             influence_pulses_root,
             influence_node_values,
+            onn_states_commit,
+            onn_global_plv,
+            onn_pair_locks_commit,
+            onn_phase_frame_commit,
             iit_output,
             nsr_trace_root,
             nsr_prev_commit,
@@ -1363,6 +1408,10 @@ fn commit_snapshot(
     influence_v2_commit: Digest32,
     influence_pulses_root: Digest32,
     influence_node_values: &[(u16, i16)],
+    onn_states_commit: Digest32,
+    onn_global_plv: u16,
+    onn_pair_locks_commit: Digest32,
+    onn_phase_frame_commit: Digest32,
     iit_output: Option<&IitOutput>,
     nsr_trace_root: Option<Digest32>,
     nsr_prev_commit: Option<Digest32>,
@@ -1408,6 +1457,10 @@ fn commit_snapshot(
         hasher.update(&node.to_be_bytes());
         hasher.update(&value.to_be_bytes());
     }
+    hasher.update(onn_states_commit.as_bytes());
+    hasher.update(&onn_global_plv.to_be_bytes());
+    hasher.update(onn_pair_locks_commit.as_bytes());
+    hasher.update(onn_phase_frame_commit.as_bytes());
     match iit_output {
         Some(output) => {
             hasher.update(&[1]);
