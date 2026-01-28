@@ -195,6 +195,7 @@ pub struct NsrInputs {
     pub policy_decision_commit: Option<Digest32>,
     pub self_consistency_ok: Option<bool>,
     pub reasoning_atoms: Vec<ReasoningAtom>,
+    pub causal_context: Option<Digest32>,
     pub commit: Digest32,
 }
 
@@ -214,6 +215,7 @@ impl NsrInputs {
         policy_decision_commit: Option<Digest32>,
         self_consistency_ok: Option<bool>,
         reasoning_atoms: Vec<(u16, i16)>,
+        causal_context: Option<Digest32>,
     ) -> Self {
         let atoms = reasoning_atoms
             .iter()
@@ -237,6 +239,7 @@ impl NsrInputs {
             policy_decision_commit,
             self_consistency_ok,
             reasoning_atoms: atoms,
+            causal_context,
             commit: Digest32::new([0u8; 32]),
         };
         inputs.commit = digest_nsr_inputs(&inputs);
@@ -1034,6 +1037,15 @@ fn digest_nsr_inputs(inputs: &NsrInputs) -> Digest32 {
             hasher.update(&[0]);
         }
     }
+    match inputs.causal_context {
+        Some(commit) => {
+            hasher.update(&[1]);
+            hasher.update(commit.as_bytes());
+        }
+        None => {
+            hasher.update(&[0]);
+        }
+    }
     hasher.update(
         &u64::try_from(inputs.reasoning_atoms.len())
             .unwrap_or(0)
@@ -1539,6 +1551,7 @@ mod tests {
             None,
             Some(true),
             Vec::new(),
+            None,
         )
     }
 
@@ -1582,6 +1595,7 @@ mod tests {
             None,
             Some(true),
             vec![(atom_key, NSR_ATOM_MIN as i16)],
+            None,
         );
 
         let mut engine = NsrEngineMvp::new(thresholds);

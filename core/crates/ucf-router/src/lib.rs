@@ -18,9 +18,13 @@ use ucf_attn_controller::{
 };
 use ucf_bluebrain_port::{BlueBrainPort, NeuromodDelta};
 use ucf_brain_mapper::map_to_stimulus;
+use ucf_cde::{
+    CausalEdge as CdeV1Edge, CdeCore as CdeV1Core, CdeInputs as CdeV1Inputs,
+    CdeOutputs as CdeV1Outputs,
+};
 use ucf_cde_scm::{
     edge_key, CausalReport, CdeEngine, CdeInputs, CdeNodeId, CdeOutputs, CounterfactualResult,
-    Intervention, NSR_ATOM_MIN,
+    NSR_ATOM_MIN,
 };
 use ucf_commit::commit_policy_decision;
 use ucf_consistency_engine::{
@@ -168,6 +172,8 @@ pub struct Router {
     last_brain_arousal: Mutex<u16>,
     cde_engine: Mutex<CdeEngine>,
     last_cde_output: Mutex<Option<CdeOutputs>>,
+    cde_v1_core: Mutex<CdeV1Core>,
+    last_cde_v1_output: Mutex<Option<CdeV1Outputs>>,
     influence_state: Mutex<InfluenceGraphV2>,
     last_influence_outputs: Mutex<Option<InfluenceOutputs>>,
     last_influence_root_commit: Mutex<Option<Digest32>>,
@@ -271,6 +277,7 @@ struct StageContext {
     structural_stats: Option<StructuralCycleStats>,
     structural_proposal: Option<StructuralDeltaProposal>,
     cde_output: Option<CdeOutputs>,
+    cde_v1_output: Option<CdeV1Outputs>,
     ncde_output: Option<NcdeOutputs>,
     ssm_output: Option<WmSsmOutput>,
 }
@@ -320,6 +327,7 @@ impl StageContext {
             structural_stats: None,
             structural_proposal: None,
             cde_output: None,
+            cde_v1_output: None,
             ncde_output: None,
             ssm_output: None,
         }
@@ -404,6 +412,8 @@ impl Router {
             last_brain_arousal: Mutex::new(0),
             cde_engine: Mutex::new(CdeEngine::new()),
             last_cde_output: Mutex::new(None),
+            cde_v1_core: Mutex::new(CdeV1Core::new()),
+            last_cde_v1_output: Mutex::new(None),
             influence_state: Mutex::new(InfluenceGraphV2::new_default()),
             last_influence_outputs: Mutex::new(None),
             last_influence_root_commit: Mutex::new(None),
@@ -492,6 +502,8 @@ impl Router {
                 cde_commit: Digest32::new([0u8; 32]),
                 cde_graph_commit: Digest32::new([0u8; 32]),
                 cde_top_edges: Vec::new(),
+                cde_top_edge_commits: Vec::new(),
+                cde_intervention_commit: None,
                 ssm_commit: Digest32::new([0u8; 32]),
                 ssm_state_commit: Digest32::new([0u8; 32]),
                 influence_v2_commit: Digest32::new([0u8; 32]),
@@ -1015,23 +1027,37 @@ impl Router {
                         if let Ok(mut guard) = self.last_cde_output.lock() {
                             *guard = Some(output.clone());
                         }
+                    }
+                    let replay_pressure = ctx.replay_pressure.unwrap_or(0);
+                    let cde_v1_output = self.tick_cde_v1(
+                        cycle_id,
+                        &phase_frame,
+                        spike_root_commit,
+                        ctx.ssm_output.as_ref(),
+                        ctx.ncde_output.as_ref(),
+                        &iit_output,
+                        influence_outputs.as_ref(),
+                        replay_pressure,
+                        drift_score,
+                        surprise_score,
+                        attention_risk,
+                    );
+                    if let Some(output) = cde_v1_output.clone() {
+                        ctx.cde_v1_output = Some(output.clone());
+                        if let Ok(mut guard) = self.last_cde_v1_output.lock() {
+                            *guard = Some(output.clone());
+                        }
                         if let Ok(mut workspace) = self.workspace.lock() {
                             workspace.set_cde_output(
-                                output.commit,
-                                output.graph_commit,
-                                compress_cde_edges(&output.top_edges),
+                                output.summary_commit,
+                                output.dag_commit,
+                                compress_cde_v1_edges(&output.top_edges),
+                                collect_cde_v1_edge_commits(&output.top_edges),
+                                output.intervention.as_ref().map(|item| item.commit),
                             );
                         }
                         self.append_cde_output_record(cycle_id, &output);
-                        if output.emit_spikes {
-                            self.queue_cde_spikes(
-                                cycle_id,
-                                &phase_frame,
-                                &output,
-                                &attention_weights,
-                                &mut ctx,
-                            );
-                        }
+                        self.queue_cde_spikes(cycle_id, &phase_frame, &output, &mut ctx);
                     }
                     let cde_atoms = cde_atoms_from_outputs(cde_output.as_ref());
                     let nsr_thresholds = self
@@ -1052,6 +1078,9 @@ impl Router {
                         &decision,
                         ctx.self_state.as_ref(),
                         cde_atoms,
+                        ctx.cde_v1_output
+                            .as_ref()
+                            .map(|output| output.summary_commit),
                     );
                     let nsr_trace = {
                         let mut engine = self.nsr_engine.lock().expect("nsr engine lock");
@@ -1475,7 +1504,10 @@ impl Router {
                         .unwrap_or(0);
                     let coherence_plv = ctx.coherence_plv.unwrap_or(0);
                     let phi_proxy = ctx.integration_score.unwrap_or(0);
-                    let cde_commit = ctx.cde_output.as_ref().map(|output| output.commit);
+                    let cde_commit = ctx
+                        .cde_v1_output
+                        .as_ref()
+                        .map(|output| output.summary_commit);
                     let sle_self_symbol = ctx
                         .sle_outputs
                         .as_ref()
@@ -2729,19 +2761,12 @@ impl Router {
         self.append_archive_record(RecordKind::Other(NCDE_RECORD_KIND), output.commit, meta);
     }
 
-    fn append_cde_output_record(&self, cycle_id: u64, output: &CdeOutputs) {
-        let stable_edges = output
-            .top_edges
-            .iter()
-            .filter(|(_, _, conf, _)| *conf >= NSR_ATOM_MIN)
-            .count()
-            .min(u16::MAX as usize) as u16;
+    fn append_cde_output_record(&self, cycle_id: u64, output: &CdeV1Outputs) {
+        let top_edge_count = output.top_edges.len().min(u16::MAX as usize) as u16;
+        let intervention_flag = output.intervention.is_some();
         let payload = format!(
-            "commit={};graph={};stable_edges={};interventions={}",
-            output.commit,
-            output.graph_commit,
-            stable_edges,
-            output.interventions.len()
+            "commit={};dag={};summary={};top_edges={top_edge_count};intervention={intervention_flag}",
+            output.commit, output.dag_commit, output.summary_commit
         )
         .into_bytes();
         let record_id = format!(
@@ -2753,8 +2778,8 @@ impl Router {
 
         let meta = RecordMeta {
             cycle_id,
-            tier: stable_edges.min(u8::MAX as u16) as u8,
-            flags: output.interventions.len().min(u16::MAX as usize) as u16,
+            tier: top_edge_count.min(u8::MAX as u16) as u8,
+            flags: u16::from(intervention_flag),
             boundary_commit: output.commit,
         };
         self.append_archive_record(
@@ -2781,6 +2806,69 @@ impl Router {
             boundary_commit: output.x_commit,
         };
         self.append_archive_record(RecordKind::Other(SSM_RECORD_KIND), output.commit, meta);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn tick_cde_v1(
+        &self,
+        cycle_id: u64,
+        phase_frame: &PhaseFrame,
+        spike_accepted_root: Digest32,
+        ssm_output: Option<&WmSsmOutput>,
+        ncde_output: Option<&NcdeOutputs>,
+        iit_output: &IitOutput,
+        influence_outputs: Option<&InfluenceOutputs>,
+        replay_pressure: u16,
+        drift: u16,
+        surprise: u16,
+        risk: u16,
+    ) -> Option<CdeV1Outputs> {
+        let attention_gain = self
+            .last_attention
+            .lock()
+            .map(|attn| attn.gain)
+            .unwrap_or(0);
+        let learning_rate = 0;
+        let sleep_drive_raw = influence_outputs
+            .map(|outputs| outputs.node_value(InfluenceNodeId::SleepDrive))
+            .unwrap_or(0);
+        let sleep_drive = sleep_drive_raw.clamp(0, 10_000) as u16;
+        let ncde_energy = ncde_output.map(|output| output.energy).unwrap_or(0);
+        let params = self
+            .structural_store
+            .lock()
+            .map(|store| store.current.clone())
+            .unwrap_or_else(|_| StructuralStore::default().current);
+        let sleep_active = derive_sleep_active(
+            false,
+            replay_pressure,
+            iit_output.phi_proxy,
+            sleep_drive_raw,
+            ncde_energy,
+            &params,
+        );
+        let replay_active = replay_pressure >= 5_000;
+        let inputs = CdeV1Inputs::new(
+            cycle_id,
+            phase_frame.commit,
+            ssm_output.map(|output| output.wm_salience).unwrap_or(0),
+            ssm_output.map(|output| output.wm_novelty).unwrap_or(0),
+            attention_gain,
+            learning_rate,
+            replay_pressure,
+            sleep_drive,
+            ncde_energy,
+            phase_frame.coherence_plv,
+            iit_output.phi_proxy,
+            risk,
+            drift,
+            surprise,
+            sleep_active,
+            replay_active,
+            spike_accepted_root,
+        );
+        let mut core = self.cde_v1_core.lock().ok()?;
+        Some(core.tick(&inputs))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -3105,6 +3193,7 @@ impl Router {
         decision: &PolicyDecision,
         self_state: Option<&SelfState>,
         reasoning_atoms: Vec<(u16, i16)>,
+        causal_context: Option<Digest32>,
     ) -> NsrInputs {
         let policy_decision_commit = if decision.kind == DecisionKind::DecisionKindDeny as i32 {
             Some(commit_policy_decision(decision).digest)
@@ -3127,6 +3216,7 @@ impl Router {
             policy_decision_commit,
             self_consistency_ok,
             reasoning_atoms,
+            causal_context,
         )
     }
 
@@ -3258,16 +3348,20 @@ impl Router {
         &self,
         cycle_id: u64,
         phase_frame: &PhaseFrame,
-        output: &CdeOutputs,
-        _attention_weights: &AttentionWeights,
+        output: &CdeV1Outputs,
         ctx: &mut StageContext,
     ) {
-        let phase_window = self.onn_phase_window();
-        let spikes = cde_spikes_from_outputs(output, phase_frame, phase_window);
-        if spikes.is_empty() {
+        if output.causal_link_spikes.is_empty() {
             return;
         }
-        self.append_spike_events(cycle_id, phase_frame, spikes, true, NsrVerdict::Allow, ctx);
+        self.append_spike_events(
+            cycle_id,
+            phase_frame,
+            output.causal_link_spikes.clone(),
+            true,
+            NsrVerdict::Allow,
+            ctx,
+        );
     }
 
     fn append_causal_report_record(&self, cycle_id: u64, report: &CausalReport) {
@@ -3516,12 +3610,19 @@ fn boundary_to_types(digest: boundary::Digest32) -> Digest32 {
     Digest32::new(*digest.as_bytes())
 }
 
-fn compress_cde_edges(edges: &[(CdeNodeId, CdeNodeId, u16, u8)]) -> Vec<(u16, u16, u16, u8)> {
+fn compress_cde_v1_edges(edges: &[CdeV1Edge]) -> Vec<(u16, u16, u16, u8)> {
     edges
         .iter()
         .take(8)
-        .map(|(from, to, conf, lag)| (from.to_u16(), to.to_u16(), *conf, *lag))
+        .map(|edge| {
+            let score = i32::from(edge.score).abs().min(i32::from(u16::MAX)) as u16;
+            (edge.from.to_u16(), edge.to.to_u16(), score, edge.lag)
+        })
         .collect()
+}
+
+fn collect_cde_v1_edge_commits(edges: &[CdeV1Edge]) -> Vec<Digest32> {
+    edges.iter().take(8).map(|edge| edge.commit).collect()
 }
 
 fn cde_atoms_from_outputs(output: Option<&CdeOutputs>) -> Vec<(u16, i16)> {
@@ -3564,64 +3665,6 @@ fn cde_counterfactual_seed(node: CdeNodeId, output_commit: Digest32) -> Digest32
     hasher.update(b"ucf.cde.counterfactual.seed.v1");
     hasher.update(&node.to_u16().to_be_bytes());
     hasher.update(output_commit.as_bytes());
-    Digest32::new(*hasher.finalize().as_bytes())
-}
-
-fn cde_spikes_from_outputs(
-    output: &CdeOutputs,
-    phase_frame: &PhaseFrame,
-    phase_window: u16,
-) -> Vec<SpikeEvent> {
-    let mut spikes = Vec::new();
-    for edge in &output.top_edges {
-        if !cde_edge_is_spike_candidate(edge) {
-            continue;
-        }
-        let payload_commit = cde_spike_payload_commit(edge, &output.interventions, output.commit);
-        let amplitude = edge.2;
-        for dst in [OscId::Cde, OscId::Nsr] {
-            spikes.push(encode_spike_with_window(
-                output.cycle_id,
-                SpikeKind::CausalLink,
-                OscId::Cde,
-                dst,
-                amplitude,
-                phase_frame.commit,
-                payload_commit,
-                phase_window,
-            ));
-        }
-    }
-    spikes
-}
-
-fn cde_edge_is_spike_candidate(edge: &(CdeNodeId, CdeNodeId, u16, u8)) -> bool {
-    let (from, to, conf, _) = *edge;
-    conf >= ucf_cde_scm::CONF_SPIKE
-        && ((from == CdeNodeId::Risk && to == CdeNodeId::OutputSuppression)
-            || (from == CdeNodeId::Drift && to == CdeNodeId::ReplayPressure))
-}
-
-fn cde_spike_payload_commit(
-    edge: &(CdeNodeId, CdeNodeId, u16, u8),
-    interventions: &[Intervention],
-    output_commit: Digest32,
-) -> Digest32 {
-    let mut hasher = Hasher::new();
-    hasher.update(b"ucf.cde.spike.payload.v1");
-    hasher.update(output_commit.as_bytes());
-    hasher.update(&edge.0.to_u16().to_be_bytes());
-    hasher.update(&edge.1.to_u16().to_be_bytes());
-    hasher.update(&edge.2.to_be_bytes());
-    hasher.update(&[edge.3]);
-    hasher.update(
-        &u64::try_from(interventions.len())
-            .unwrap_or(0)
-            .to_be_bytes(),
-    );
-    for intervention in interventions {
-        hasher.update(intervention.commit.as_bytes());
-    }
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
@@ -4175,6 +4218,7 @@ mod tests {
     use ucf_ai_port::{MockAiPort, PolicySpeechGate};
     use ucf_archive::InMemoryArchive;
     use ucf_archive_store::InMemoryArchiveStore;
+    use ucf_cde::VarId as CdeVarId;
     use ucf_policy_ecology::PolicyEcology;
     use ucf_policy_gateway::NoOpPolicyEvaluator;
     use ucf_risk_gate::PolicyRiskGate;
@@ -4434,30 +4478,19 @@ mod tests {
             phase_frame_commit: Digest32::new([0u8; 32]),
             commit: Digest32::new([3u8; 32]),
         };
-        let output = CdeOutputs::new(
+        let edge = CdeV1Edge::new(CdeVarId::Risk, CdeVarId::OutputSuppression, 7_000, 0);
+        let spike = SpikeEvent::new(
             1,
-            Digest32::new([4u8; 32]),
-            vec![(
-                CdeNodeId::Risk,
-                CdeNodeId::OutputSuppression,
-                ucf_cde_scm::CONF_SPIKE,
-                0,
-            )],
-            Vec::new(),
-            Vec::new(),
-            true,
+            SpikeKind::CausalLink,
+            OscId::Cde,
+            OscId::Nsr,
+            10,
+            phase_frame.commit,
+            Digest32::new([9u8; 32]),
         );
-        let attention = AttentionWeights {
-            channel: FocusChannel::Task,
-            gain: 3000,
-            noise_suppress: 1200,
-            replay_bias: 1500,
-            commit: Digest32::new([5u8; 32]),
-        };
-        if output.emit_spikes {
-            let mut ctx = StageContext::new();
-            router.queue_cde_spikes(1, &phase_frame, &output, &attention, &mut ctx);
-        }
+        let output = CdeV1Outputs::new(1, Digest32::new([4u8; 32]), vec![edge], None, vec![spike]);
+        let mut ctx = StageContext::new();
+        router.queue_cde_spikes(1, &phase_frame, &output, &mut ctx);
         let spikes = router
             .workspace
             .lock()
@@ -4482,30 +4515,10 @@ mod tests {
             phase_frame_commit: Digest32::new([0u8; 32]),
             commit: Digest32::new([6u8; 32]),
         };
-        let output = CdeOutputs::new(
-            2,
-            Digest32::new([7u8; 32]),
-            vec![(
-                CdeNodeId::Risk,
-                CdeNodeId::OutputSuppression,
-                ucf_cde_scm::CONF_SPIKE,
-                0,
-            )],
-            Vec::new(),
-            Vec::new(),
-            false,
-        );
-        let attention = AttentionWeights {
-            channel: FocusChannel::Task,
-            gain: 2500,
-            noise_suppress: 1100,
-            replay_bias: 1400,
-            commit: Digest32::new([8u8; 32]),
-        };
-        if output.emit_spikes {
-            let mut ctx = StageContext::new();
-            router.queue_cde_spikes(2, &phase_frame, &output, &attention, &mut ctx);
-        }
+        let edge = CdeV1Edge::new(CdeVarId::Risk, CdeVarId::OutputSuppression, 2_000, 0);
+        let output = CdeV1Outputs::new(2, Digest32::new([7u8; 32]), vec![edge], None, Vec::new());
+        let mut ctx = StageContext::new();
+        router.queue_cde_spikes(2, &phase_frame, &output, &mut ctx);
         let spikes = router
             .workspace
             .lock()

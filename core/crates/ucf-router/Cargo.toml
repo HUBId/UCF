@@ -29,6 +29,7 @@ ucf-attn-controller = { path = "../ucf-attn-controller" }
 ucf-bluebrain-port = { path = "../../../domains/brain/crates/ucf-bluebrain-port" }
 ucf-brain-mapper = { path = "../../../domains/brain/crates/ucf-brain-mapper" }
 ucf-cde-scm = { path = "../../../domains/causal/crates/ucf-cde-scm" }
+ucf-cde = { path = "../ucf-cde" }
 ucf-feature-translator = { path = "../../../domains/ai/crates/ucf-feature-translator" }
 ucf-consistency-engine = { path = "../ucf-consistency-engine" }
 ucf-ism = { path = "../ucf-ism" }
