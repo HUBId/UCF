@@ -183,16 +183,15 @@ impl IitCore {
         let phi_proxy = phi_raw.saturating_sub(penalties).min(MAX_SCORE);
 
         let hints = build_hints(inp, phi_proxy, self.params.phi_low, self.params.phi_high);
-        let integration_report_commit = commit_report(
-            inp,
-            phi_proxy,
+        let report_inputs = IitReportInputs {
+            phi: phi_proxy,
             phase_score,
             influence_score,
             spike_score,
             dependency_score,
             penalties,
-            &hints,
-        );
+        };
+        let integration_report_commit = commit_report(inp, &report_inputs, &hints);
         let commit = commit_outputs(inp.cycle_id, phi_proxy, integration_report_commit, &hints);
 
         IitOutputs {
@@ -440,26 +439,26 @@ fn commit_hints(cycle_id: u64, phi: u16, flags: u8) -> Digest32 {
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
-fn commit_report(
-    inputs: &IitInputs,
+struct IitReportInputs {
     phi: u16,
     phase_score: u16,
     influence_score: u16,
     spike_score: u16,
     dependency_score: u16,
     penalties: u16,
-    hints: &IitHints,
-) -> Digest32 {
+}
+
+fn commit_report(inputs: &IitInputs, report: &IitReportInputs, hints: &IitHints) -> Digest32 {
     let mut hasher = Hasher::new();
     hasher.update(DOMAIN_REPORT);
     hasher.update(&inputs.cycle_id.to_be_bytes());
     hasher.update(inputs.phase_commit.as_bytes());
-    hasher.update(&phi.to_be_bytes());
-    hasher.update(&phase_score.to_be_bytes());
-    hasher.update(&influence_score.to_be_bytes());
-    hasher.update(&spike_score.to_be_bytes());
-    hasher.update(&dependency_score.to_be_bytes());
-    hasher.update(&penalties.to_be_bytes());
+    hasher.update(&report.phi.to_be_bytes());
+    hasher.update(&report.phase_score.to_be_bytes());
+    hasher.update(&report.influence_score.to_be_bytes());
+    hasher.update(&report.spike_score.to_be_bytes());
+    hasher.update(&report.dependency_score.to_be_bytes());
+    hasher.update(&report.penalties.to_be_bytes());
     hasher.update(hints.commit.as_bytes());
     hasher.update(inputs.pair_locks_commit.as_bytes());
     hasher.update(inputs.influence_pulses_root.as_bytes());
