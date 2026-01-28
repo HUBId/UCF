@@ -36,7 +36,7 @@ use ucf_feature_translator::{
     SaePort as FeatureSaePort,
 };
 use ucf_geist::{SelfState, SelfStateBuilder};
-use ucf_iit::{IitInputs, IitMonitor as IitProxyMonitor, IitOutput};
+use ucf_iit::{IitCore, IitHints, IitInputs, IitOutput};
 use ucf_iit_monitor::{
     actions_for_phi, report_for_phi, IitAction, IitActionKind, IitBand, IitReport,
 };
@@ -155,7 +155,8 @@ pub struct Router {
     sle_core: Mutex<SleCore>,
     consistency_engine: ConsistencyEngine,
     ism_store: Arc<Mutex<IsmStore>>,
-    iit_monitor: Mutex<IitProxyMonitor>,
+    iit_monitor: Mutex<IitCore>,
+    last_iit_hints: Mutex<IitHints>,
     recursion_controller: RecursionController,
     rsa_hooks: Vec<Arc<dyn RsaHook + Send + Sync>>,
     structural_store: Mutex<StructuralStore>,
@@ -248,6 +249,7 @@ struct StageContext {
     suppressions: Vec<OutputSuppressionInfo>,
     integration_score: Option<u16>,
     integration_bias: i16,
+    iit_hints: Option<IitHints>,
     predictive_result: Option<(PredictionError, SurpriseSignal)>,
     attention_weights: Option<AttentionWeights>,
     lens_selection: Option<LensSelection>,
@@ -299,6 +301,7 @@ impl StageContext {
             suppressions: Vec::new(),
             integration_score: None,
             integration_bias: 0,
+            iit_hints: None,
             predictive_result: None,
             attention_weights: None,
             lens_selection: None,
@@ -397,7 +400,14 @@ impl Router {
             sle_core: Mutex::new(SleCore::default()),
             consistency_engine: ConsistencyEngine,
             ism_store: Arc::new(Mutex::new(IsmStore::new(64))),
-            iit_monitor: Mutex::new(IitProxyMonitor::new()),
+            iit_monitor: Mutex::new(IitCore::default()),
+            last_iit_hints: Mutex::new(IitHints {
+                tighten_sync: false,
+                damp_output: false,
+                damp_learning: false,
+                request_replay: false,
+                commit: Digest32::new([0u8; 32]),
+            }),
             recursion_controller: RecursionController::default(),
             rsa_hooks: vec![Arc::new(MockRsaHook::new())],
             structural_store: Mutex::new(StructuralStore::default()),
@@ -541,6 +551,11 @@ impl Router {
             .lock()
             .map(|attn| attn.clone())
             .unwrap_or_else(|_| idle_attention());
+        let tighten_sync = self
+            .last_iit_hints
+            .lock()
+            .map(|hints| hints.tighten_sync)
+            .unwrap_or(false);
         let plan_surprise = self
             .last_surprise
             .lock()
@@ -549,6 +564,7 @@ impl Router {
 
         let (cycle_plan, tcf_energy_smooth) = {
             let mut tcf = self.tcf_port.lock().expect("tcf lock");
+            tcf.apply_sync_hint(tighten_sync);
             let plan = tcf.step(&plan_attn, plan_surprise.as_ref());
             let energy = tcf.state().energy;
             (plan, energy)
@@ -753,11 +769,22 @@ impl Router {
                                 .map(|out| (out.pulses_root, out.node_values.clone()))
                         })
                         .unwrap_or_else(|| (Digest32::new([0u8; 32]), Vec::new()));
+                    let tighten_sync = self
+                        .last_iit_hints
+                        .lock()
+                        .map(|hints| hints.tighten_sync)
+                        .unwrap_or(false);
+                    let coherence_hint = ctx.integration_score.unwrap_or(0);
+                    let coherence_hint = if tighten_sync {
+                        coherence_hint.saturating_add(1200).min(10_000)
+                    } else {
+                        coherence_hint
+                    };
                     let phase_frame = self.tick_onn_phase(
                         cycle_id,
                         influence_pulses_root,
                         influence_nodes,
-                        ctx.integration_score.unwrap_or(0),
+                        coherence_hint,
                         ctx.attention_risk,
                         drift_score,
                         plan_surprise
@@ -862,56 +889,70 @@ impl Router {
                     }
 
                     let iit_output = {
-                        let ssm_output = ctx
-                            .ssm_output
-                            .clone()
-                            .or_else(|| self.last_ssm_output.lock().ok().and_then(|g| g.clone()));
                         let ncde_output = ctx
                             .ncde_output
                             .or_else(|| self.last_ncde_output.lock().ok().and_then(|g| *g));
+                        let influence_snapshot = self
+                            .last_influence_outputs
+                            .lock()
+                            .ok()
+                            .and_then(|guard| guard.clone());
+                        let (influence_pulses_root, influence_nodes) = influence_snapshot
+                            .as_ref()
+                            .map(|output| (output.pulses_root, output.node_values.clone()))
+                            .unwrap_or_else(|| (Digest32::new([0u8; 32]), Vec::new()));
+                        let geist_consistency = self
+                            .last_self_state
+                            .lock()
+                            .ok()
+                            .and_then(|guard| guard.as_ref().map(|state| state.consistency))
+                            .map(|score| score < SELF_CONSISTENCY_OK_THRESHOLD)
+                            .unwrap_or(false);
                         let inputs = IitInputs::new(
                             cycle_id,
                             phase_frame.commit,
                             phase_frame.coherence_plv,
-                            spike_root_commit,
+                            pair_locks_commit(&phase_frame.pair_locks),
+                            influence_pulses_root,
+                            influence_nodes,
+                            spike_summary.seen_root,
+                            spike_summary.accepted_root,
                             spike_counts_iit.clone(),
-                            ssm_output
-                                .as_ref()
-                                .map(|output| output.commit)
+                            self.last_cde_output
+                                .lock()
+                                .ok()
+                                .and_then(|guard| guard.as_ref().map(|out| out.commit)),
+                            workspace_snapshot
+                                .nsr_trace_root
                                 .unwrap_or_else(|| Digest32::new([0u8; 32])),
-                            ssm_output
-                                .as_ref()
-                                .map(|output| output.wm_salience)
-                                .unwrap_or(0),
-                            ssm_output
-                                .as_ref()
-                                .map(|output| output.wm_novelty)
-                                .unwrap_or(0),
+                            geist_consistency,
                             ncde_output
                                 .as_ref()
-                                .map(|output| output.commit)
+                                .map(|output| output.state_digest)
                                 .unwrap_or_else(|| Digest32::new([0u8; 32])),
                             ncde_output
                                 .as_ref()
                                 .map(|output| output.energy)
                                 .unwrap_or(0),
-                            workspace_snapshot.nsr_trace_root,
-                            workspace_snapshot.nsr_verdict,
-                            self.last_cde_output
-                                .lock()
-                                .ok()
-                                .and_then(|guard| guard.as_ref().map(|out| out.commit)),
                             drift_score,
                             surprise_score,
                             attention_risk,
                         );
-                        let mut monitor = self.iit_monitor.lock().expect("iit monitor lock");
+                        let monitor = self.iit_monitor.lock().expect("iit monitor lock");
                         monitor.tick(&inputs)
                     };
                     let iit_report = report_for_phi(iit_output.phi_proxy);
                     let iit_actions = actions_for_phi(iit_output.phi_proxy, attention_risk);
+                    ctx.iit_hints = Some(iit_output.hints);
                     if let Ok(mut workspace) = self.workspace.lock() {
                         workspace.set_iit_output(iit_output.clone());
+                    }
+                    if let Ok(mut guard) = self.last_iit_hints.lock() {
+                        *guard = iit_output.hints;
+                    }
+                    if iit_output.hints.request_replay {
+                        let current = ctx.replay_pressure.unwrap_or(0);
+                        ctx.replay_pressure = Some(current.saturating_add(800).min(10_000));
                     }
                     self.append_iit_output_record(cycle_id, &iit_output);
                     let attention_weights =
@@ -1283,6 +1324,7 @@ impl Router {
                         phi_threshold: PHI_OUTPUT_THRESHOLD,
                         speak_lock: output_lock,
                         speak_lock_min: LOCK_MIN_SPEAK,
+                        damp_output: iit_output.hints.damp_output,
                     };
                     let mut output_router = self.output_router.lock().expect("output router lock");
                     if let Some(budget) = ctx.recursion_budget.as_ref() {
@@ -2050,8 +2092,8 @@ impl Router {
 
     fn append_iit_output_record(&self, cycle_id: u64, output: &IitOutput) {
         let payload = format!(
-            "commit={};phi_proxy={};coupling_proxy={};coherence={}",
-            output.commit, output.phi_proxy, output.coupling_proxy, output.coherence
+            "commit={};phi_proxy={};report_commit={};hints_commit={}",
+            output.commit, output.phi_proxy, output.integration_report_commit, output.hints.commit
         )
         .into_bytes();
         let record_id = format!("iit-{cycle_id}-{}", hex::encode(output.commit.as_bytes()));
@@ -4708,13 +4750,19 @@ mod tests {
     fn sle_thought_pulse_routes_to_internal_spikes_only() {
         let router = build_router();
         let phase_commit = Digest32::new([1u8; 32]);
+        let hints = IitHints {
+            tighten_sync: false,
+            damp_output: false,
+            damp_learning: false,
+            request_replay: false,
+            commit: Digest32::new([9u8; 32]),
+        };
         let iit_output = IitOutput {
             cycle_id: 3,
             phi_proxy: 5200,
-            coupling_proxy: 4000,
-            coherence: 6000,
-            warnings: 0,
-            commit: Digest32::new([2u8; 32]),
+            integration_report_commit: Digest32::new([2u8; 32]),
+            hints,
+            commit: Digest32::new([3u8; 32]),
         };
         let snapshot = router.arbitrate_workspace(3);
 
