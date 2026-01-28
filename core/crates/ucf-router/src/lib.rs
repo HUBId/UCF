@@ -2515,13 +2515,28 @@ impl Router {
             summary,
             slot,
         });
-        self.append_feature_translation_archive_record(
+        self.append_feature_translation_record(
             cycle_id,
             activation_view.commit,
             selection.commit,
             selection.topk.len(),
         );
         Some(selection)
+    }
+
+    fn append_feature_translation_record(
+        &self,
+        cycle_id: u64,
+        activation_commit: Digest32,
+        selection_commit: Digest32,
+        topk: usize,
+    ) {
+        self.append_feature_translation_archive_record(
+            cycle_id,
+            activation_commit,
+            selection_commit,
+            topk,
+        );
     }
 
     fn stimulate_bluebrain_port(
