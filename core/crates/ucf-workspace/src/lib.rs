@@ -510,6 +510,9 @@ pub struct WorkspaceSnapshot {
     pub onn_global_plv: u16,
     pub onn_pair_locks_commit: Digest32,
     pub onn_phase_frame_commit: Digest32,
+    pub tcf_commit: Digest32,
+    pub tcf_tick_plan_commit: Digest32,
+    pub tcf_tick_plan_entries: Vec<(u8, u16, u16)>,
     pub iit_output: Option<IitOutput>,
     pub nsr_trace_root: Option<Digest32>,
     pub nsr_prev_commit: Option<Digest32>,
@@ -569,6 +572,10 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
             + 2
             + Digest32::LEN
             + Digest32::LEN
+            + Digest32::LEN
+            + Digest32::LEN
+            + 2
+            + snapshot.tcf_tick_plan_entries.len() * (1 + 2 + 2)
             + 1
             + Digest32::LEN
             + 1
@@ -631,6 +638,18 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
     payload.extend_from_slice(&snapshot.onn_global_plv.to_be_bytes());
     payload.extend_from_slice(snapshot.onn_pair_locks_commit.as_bytes());
     payload.extend_from_slice(snapshot.onn_phase_frame_commit.as_bytes());
+    payload.extend_from_slice(snapshot.tcf_commit.as_bytes());
+    payload.extend_from_slice(snapshot.tcf_tick_plan_commit.as_bytes());
+    payload.extend_from_slice(
+        &u16::try_from(snapshot.tcf_tick_plan_entries.len())
+            .unwrap_or(u16::MAX)
+            .to_be_bytes(),
+    );
+    for (slot, begin, end) in &snapshot.tcf_tick_plan_entries {
+        payload.push(*slot);
+        payload.extend_from_slice(&begin.to_be_bytes());
+        payload.extend_from_slice(&end.to_be_bytes());
+    }
     match snapshot.iit_output.as_ref() {
         Some(output) => {
             payload.push(1);
@@ -741,6 +760,9 @@ pub struct Workspace {
     onn_global_plv: u16,
     onn_pair_locks_commit: Digest32,
     onn_phase_frame_commit: Digest32,
+    tcf_commit: Digest32,
+    tcf_tick_plan_commit: Digest32,
+    tcf_tick_plan_entries: Vec<(u8, u16, u16)>,
     iit_output: Option<IitOutput>,
     nsr_trace_root: Option<Digest32>,
     nsr_prev_commit: Option<Digest32>,
@@ -778,6 +800,9 @@ impl Workspace {
             onn_global_plv: 0,
             onn_pair_locks_commit: Digest32::new([0u8; 32]),
             onn_phase_frame_commit: Digest32::new([0u8; 32]),
+            tcf_commit: Digest32::new([0u8; 32]),
+            tcf_tick_plan_commit: Digest32::new([0u8; 32]),
+            tcf_tick_plan_entries: Vec::new(),
             iit_output: None,
             nsr_trace_root: None,
             nsr_prev_commit: None,
@@ -891,6 +916,17 @@ impl Workspace {
         self.onn_phase_frame_commit = phase_frame_commit;
     }
 
+    pub fn set_tcf_snapshot(
+        &mut self,
+        tcf_commit: Digest32,
+        tick_plan_commit: Digest32,
+        tick_plan_entries: Vec<(u8, u16, u16)>,
+    ) {
+        self.tcf_commit = tcf_commit;
+        self.tcf_tick_plan_commit = tick_plan_commit;
+        self.tcf_tick_plan_entries = tick_plan_entries;
+    }
+
     pub fn set_iit_output(&mut self, output: IitOutput) {
         self.iit_output = Some(output);
     }
@@ -974,6 +1010,9 @@ impl Workspace {
         let onn_global_plv = self.onn_global_plv;
         let onn_pair_locks_commit = self.onn_pair_locks_commit;
         let onn_phase_frame_commit = self.onn_phase_frame_commit;
+        let tcf_commit = self.tcf_commit;
+        let tcf_tick_plan_commit = self.tcf_tick_plan_commit;
+        let tcf_tick_plan_entries = std::mem::take(&mut self.tcf_tick_plan_entries);
         let iit_output = self.iit_output.take();
         let nsr_trace_root = self.nsr_trace_root.take();
         let nsr_prev_commit = self.nsr_prev_commit.take();
@@ -1010,6 +1049,9 @@ impl Workspace {
             onn_global_plv,
             onn_pair_locks_commit,
             onn_phase_frame_commit,
+            tcf_commit,
+            tcf_tick_plan_commit,
+            &tcf_tick_plan_entries,
             iit_output.as_ref(),
             nsr_trace_root,
             nsr_prev_commit,
@@ -1049,6 +1091,9 @@ impl Workspace {
             onn_global_plv,
             onn_pair_locks_commit,
             onn_phase_frame_commit,
+            tcf_commit,
+            tcf_tick_plan_commit,
+            tcf_tick_plan_entries,
             iit_output,
             nsr_trace_root,
             nsr_prev_commit,
@@ -1465,6 +1510,9 @@ fn commit_snapshot(
     onn_global_plv: u16,
     onn_pair_locks_commit: Digest32,
     onn_phase_frame_commit: Digest32,
+    tcf_commit: Digest32,
+    tcf_tick_plan_commit: Digest32,
+    tcf_tick_plan_entries: &[(u8, u16, u16)],
     iit_output: Option<&IitOutput>,
     nsr_trace_root: Option<Digest32>,
     nsr_prev_commit: Option<Digest32>,
@@ -1529,6 +1577,18 @@ fn commit_snapshot(
     hasher.update(&onn_global_plv.to_be_bytes());
     hasher.update(onn_pair_locks_commit.as_bytes());
     hasher.update(onn_phase_frame_commit.as_bytes());
+    hasher.update(tcf_commit.as_bytes());
+    hasher.update(tcf_tick_plan_commit.as_bytes());
+    hasher.update(
+        &u32::try_from(tcf_tick_plan_entries.len())
+            .unwrap_or(u32::MAX)
+            .to_be_bytes(),
+    );
+    for (slot, begin, end) in tcf_tick_plan_entries {
+        hasher.update(&[*slot]);
+        hasher.update(&begin.to_be_bytes());
+        hasher.update(&end.to_be_bytes());
+    }
     match iit_output {
         Some(output) => {
             hasher.update(&[1]);

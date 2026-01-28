@@ -27,12 +27,15 @@ pub struct FeatureSpikeSummary {
     pub cap_hit: bool,
 }
 
-pub fn build_feature_spike_batch(
+pub fn build_feature_spike_batch<F>(
     cycle_id: u64,
     phase: &PhaseFrame,
-    phase_window: u16,
+    phase_window_for_dst: F,
     inputs: FeatureSpikerInputs,
-) -> (SpikeBatch, FeatureSpikeSummary) {
+) -> (SpikeBatch, FeatureSpikeSummary)
+where
+    F: Fn(OscId) -> u16,
+{
     let mut events = Vec::new();
     let mut candidates = Vec::new();
 
@@ -114,6 +117,7 @@ pub fn build_feature_spike_batch(
             continue;
         }
         let salt = feature_salt(candidate.label, candidate.strength, phase.commit);
+        let phase_window = phase_window_for_dst(candidate.dst);
         let event = encode_spike_with_window(
             cycle_id,
             candidate.kind,
@@ -198,8 +202,8 @@ mod tests {
             surprise: 2500,
             cde_top_conf: Some(6000),
         };
-        let (batch_a, _) = build_feature_spike_batch(1, &phase, 1024, inputs);
-        let (batch_b, _) = build_feature_spike_batch(1, &phase, 1024, inputs);
+        let (batch_a, _) = build_feature_spike_batch(1, &phase, |_| 1024, inputs);
+        let (batch_b, _) = build_feature_spike_batch(1, &phase, |_| 1024, inputs);
         assert_eq!(batch_a.root, batch_b.root);
         assert_eq!(batch_a.commit, batch_b.commit);
     }
