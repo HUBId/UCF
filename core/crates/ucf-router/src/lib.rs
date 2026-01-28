@@ -25,6 +25,7 @@ use ucf_cde::{
 use ucf_cde_scm::{
     CausalReport, CdeEngine, CdeInputs, CdeNodeId, CdeOutputs, CounterfactualResult,
 };
+use ucf_commit::canonical_control_frame_len;
 use ucf_consistency_engine::{
     ConsistencyAction, ConsistencyActionKind, ConsistencyEngine, ConsistencyInputs,
     ConsistencyReport, DriftBand,
@@ -76,7 +77,7 @@ use ucf_sandbox::{
 use ucf_sle::{SelfReflex, SleCore, SleEngine, SleInputs, SleOutputs};
 use ucf_spike_encoder::encode_spike_with_window;
 use ucf_spikebus::{SpikeBatch, SpikeBusSummary, SpikeEvent, SpikeKind, SpikeSuppression};
-use ucf_ssm::{SsmCore, SsmInput as WmSsmInput, SsmOutput as WmSsmOutput, SsmParams};
+use ucf_ssm::{SsmCore, SsmInputs, SsmOutputs, SsmParams};
 use ucf_ssm_port::SsmState;
 use ucf_structural_store::{
     OnnKnobs, SnnKnobs, StructuralCycleStats, StructuralDeltaProposal, StructuralParams,
@@ -187,7 +188,7 @@ pub struct Router {
     last_influence_outputs: Mutex<Option<InfluenceOutputs>>,
     last_influence_root_commit: Mutex<Option<Digest32>>,
     ssm_core: Mutex<SsmCore>,
-    last_ssm_output: Mutex<Option<WmSsmOutput>>,
+    last_ssm_output: Mutex<Option<SsmOutputs>>,
     ncde_core: Mutex<NcdeCore>,
     last_ncde_output: Mutex<Option<NcdeOutputs>>,
     rsa_core: Mutex<RsaCore>,
@@ -236,7 +237,7 @@ struct AttentionContext<'a> {
     tom_report: &'a ucf_tom_port::TomReport,
     surprise_score: u16,
     influence: Option<&'a InfluenceOutputs>,
-    ssm_salience: Option<u16>,
+    ssm_attention_gain: Option<u16>,
 }
 
 pub trait StageTrace {
@@ -290,7 +291,7 @@ struct StageContext {
     cde_output: Option<CdeOutputs>,
     cde_v1_output: Option<CdeV1Outputs>,
     ncde_output: Option<NcdeOutputs>,
-    ssm_output: Option<WmSsmOutput>,
+    ssm_output: Option<SsmOutputs>,
 }
 
 impl StageContext {
@@ -527,6 +528,9 @@ impl Router {
                 cde_intervention_commit: None,
                 ssm_commit: Digest32::new([0u8; 32]),
                 ssm_state_commit: Digest32::new([0u8; 32]),
+                ssm_salience: 0,
+                ssm_novelty: 0,
+                ssm_attention_gain: 0,
                 influence_v2_commit: Digest32::new([0u8; 32]),
                 influence_pulses_root: Digest32::new([0u8; 32]),
                 influence_node_values: Vec::new(),
@@ -636,6 +640,9 @@ impl Router {
                         .map(|attn| attn.clone())
                         .unwrap_or_else(|_| idle_attention());
                     ctx.attention_weights = Some(attention_weights.clone());
+                    let percept_commit = cf.commitment().digest;
+                    let percept_energy =
+                        canonical_control_frame_len(cf.as_ref()).min(10_000) as u16;
                     let lens_selection = ctx.inference.as_ref().and_then(|inference| {
                         self.translate_features(
                             inference.activation_view.as_ref(),
@@ -653,15 +660,15 @@ impl Router {
                         .ssm_output
                         .clone()
                         .or_else(|| self.last_ssm_output.lock().ok().and_then(|g| g.clone()));
-                    let (wm_salience, wm_novelty) = ssm_output
+                    let (ssm_salience, ssm_novelty) = ssm_output
                         .as_ref()
-                        .map(|output| (output.wm_salience, output.wm_novelty))
+                        .map(|output| (output.salience, output.novelty))
                         .unwrap_or((0, 0));
                     let feature_inputs = FeatureSpikerInputs {
-                        ssm_salience: wm_salience,
-                        ssm_novelty: wm_novelty,
-                        wm_salience,
-                        wm_novelty,
+                        ssm_salience,
+                        ssm_novelty,
+                        wm_salience: ssm_salience,
+                        wm_novelty: ssm_novelty,
                         risk: causal_attention_risk,
                         surprise: surprise_score,
                         cde_top_conf: workspace_snapshot
@@ -889,8 +896,10 @@ impl Router {
                         self.append_ncde_output_record(cycle_id, &ncde_output);
                         if let Some(ssm_output) = self.tick_ssm(
                             &phase_frame,
+                            percept_commit,
+                            percept_energy,
+                            attention_weights.gain,
                             &ncde_output,
-                            influence_pulses_root,
                             spike_root_commit,
                             spike_counts_ssm,
                             drift_score,
@@ -902,7 +911,13 @@ impl Router {
                                 *guard = Some(ssm_output.clone());
                             }
                             if let Ok(mut workspace) = self.workspace.lock() {
-                                workspace.set_ssm_commits(ssm_output.commit, ssm_output.x_commit);
+                                workspace.set_ssm_snapshot(
+                                    ssm_output.commit,
+                                    ssm_output.ssm_state_commit,
+                                    ssm_output.salience,
+                                    ssm_output.novelty,
+                                    ssm_output.attention_gain,
+                                );
                             }
                             self.append_ssm_output_record(cycle_id, &ssm_output);
                         }
@@ -1524,12 +1539,12 @@ impl Router {
                     let ssm_salience = ctx
                         .ssm_output
                         .as_ref()
-                        .map(|output| output.wm_salience)
+                        .map(|output| output.salience)
                         .unwrap_or(0);
                     let ssm_novelty = ctx
                         .ssm_output
                         .as_ref()
-                        .map(|output| output.wm_novelty)
+                        .map(|output| output.novelty)
                         .unwrap_or(0);
                     let ncde_energy = ctx
                         .ncde_output
@@ -1670,7 +1685,10 @@ impl Router {
                         tom_report,
                         surprise_score,
                         influence: influence_result.as_ref().map(|(_, outputs)| outputs),
-                        ssm_salience: ctx.ssm_output.as_ref().map(|output| output.wm_salience),
+                        ssm_attention_gain: ctx
+                            .ssm_output
+                            .as_ref()
+                            .map(|output| output.attention_gain),
                     };
                     let attention_weights = self.compute_attention(attention_ctx);
                     if let Some(weights) = attention_weights.as_ref() {
@@ -2576,7 +2594,7 @@ impl Router {
         let weights = apply_consistency_effects(weights, ctx.consistency_effects);
         let weights = apply_influence_effects(weights, ctx.influence);
         let weights = self.apply_ncde_attention_bias(weights);
-        Some(self.apply_ssm_attention_bias(weights, ctx.ssm_salience))
+        Some(self.apply_ssm_attention_bias(weights, ctx.ssm_attention_gain))
     }
 
     fn apply_ncde_attention_bias(&self, mut weights: AttentionWeights) -> AttentionWeights {
@@ -2599,19 +2617,17 @@ impl Router {
     fn apply_ssm_attention_bias(
         &self,
         mut weights: AttentionWeights,
-        wm_salience: Option<u16>,
+        ssm_attention_gain: Option<u16>,
     ) -> AttentionWeights {
-        let Some(wm_salience) = wm_salience else {
+        let Some(ssm_attention_gain) = ssm_attention_gain else {
             return weights;
         };
-        if wm_salience == 0 {
+        if ssm_attention_gain == 0 {
             return weights;
         }
-        let multiplier = (10_000u32 + u32::from(wm_salience) / 5).min(12_000);
-        let scaled = (u32::from(weights.gain).saturating_mul(multiplier)) / 10_000;
-        let updated = clamp_u16(scaled);
-        if updated != weights.gain {
-            weights.gain = updated;
+        let combined = weights.gain.max(ssm_attention_gain);
+        if combined != weights.gain {
+            weights.gain = combined;
             weights.commit = commit_attention_override(&weights);
         }
         weights
@@ -2926,10 +2942,14 @@ impl Router {
         );
     }
 
-    fn append_ssm_output_record(&self, cycle_id: u64, output: &WmSsmOutput) {
+    fn append_ssm_output_record(&self, cycle_id: u64, output: &SsmOutputs) {
         let payload = format!(
-            "commit={};x_commit={};salience={};novelty={}",
-            output.commit, output.x_commit, output.wm_salience, output.wm_novelty
+            "commit={};state_commit={};salience={};novelty={};attn_gain={}",
+            output.commit,
+            output.ssm_state_commit,
+            output.salience,
+            output.novelty,
+            output.attention_gain
         )
         .into_bytes();
         let record_id = format!("ssm-{cycle_id}-{}", hex::encode(output.commit.as_bytes()));
@@ -2939,8 +2959,8 @@ impl Router {
         let meta = RecordMeta {
             cycle_id,
             tier: 0,
-            flags: output.wm_salience,
-            boundary_commit: output.x_commit,
+            flags: output.salience,
+            boundary_commit: output.ssm_state_commit,
         };
         self.append_archive_record(RecordKind::Other(SSM_RECORD_KIND), output.commit, meta);
     }
@@ -2951,7 +2971,7 @@ impl Router {
         cycle_id: u64,
         phase_frame: &PhaseFrame,
         spike_accepted_root: Digest32,
-        ssm_output: Option<&WmSsmOutput>,
+        ssm_output: Option<&SsmOutputs>,
         ncde_output: Option<&NcdeOutputs>,
         iit_output: &IitOutput,
         influence_outputs: Option<&InfluenceOutputs>,
@@ -2988,8 +3008,8 @@ impl Router {
         let inputs = CdeV1Inputs::new(
             cycle_id,
             phase_frame.commit,
-            ssm_output.map(|output| output.wm_salience).unwrap_or(0),
-            ssm_output.map(|output| output.wm_novelty).unwrap_or(0),
+            ssm_output.map(|output| output.salience).unwrap_or(0),
+            ssm_output.map(|output| output.novelty).unwrap_or(0),
             attention_gain,
             learning_rate,
             replay_pressure,
@@ -3017,7 +3037,7 @@ impl Router {
         spike_counts: Vec<(SpikeKind, u16)>,
         influence_outputs: Option<&InfluenceOutputs>,
         iit_output: &IitOutput,
-        ssm_output: Option<&WmSsmOutput>,
+        ssm_output: Option<&SsmOutputs>,
         ncde_output: Option<&NcdeOutputs>,
         drift: u16,
         surprise: u16,
@@ -3039,7 +3059,7 @@ impl Router {
             spike_counts,
             influence_commit,
             influence_node_in,
-            ssm_output.map(|output| output.wm_salience).unwrap_or(0),
+            ssm_output.map(|output| output.salience).unwrap_or(0),
             ncde_output.map(|output| output.energy).unwrap_or(0),
             drift,
             surprise,
@@ -3084,31 +3104,31 @@ impl Router {
     fn tick_ssm(
         &self,
         phase_frame: &PhaseFrame,
+        percept_commit: Digest32,
+        percept_energy: u16,
+        prev_attention_gain: u16,
         ncde_output: &NcdeOutputs,
-        influence_pulses_root: Digest32,
         spike_root_commit: Digest32,
         spike_counts: Vec<(SpikeKind, u16)>,
         drift: u16,
         surprise: u16,
         risk: u16,
-    ) -> Option<WmSsmOutput> {
+    ) -> Option<SsmOutputs> {
         self.sync_ssm_params();
         let mut core = self.ssm_core.lock().ok()?;
-        let ncde_summary = ncde_summary_from_digest(ncde_output.state_digest);
-        let input = WmSsmInput::new(
+        let input = SsmInputs::new(
             ncde_output.cycle_id,
             phase_frame.commit,
-            phase_frame.global_phase,
-            phase_frame.coherence_plv,
-            influence_pulses_root,
-            ncde_output.state_commit,
-            ncde_output.energy,
-            ncde_summary,
+            percept_commit,
+            percept_energy,
             spike_root_commit,
             spike_counts,
+            prev_attention_gain,
+            ncde_output.state_digest,
+            ncde_output.energy,
+            risk,
             drift,
             surprise,
-            risk,
         );
         Some(core.tick(&input))
     }
@@ -3692,15 +3712,6 @@ fn observation_from_ssm_state(state: &SsmState) -> Observation {
     }
     let dims = u16::try_from(data.len()).unwrap_or(0);
     Observation::new(WorldStateVec::new(dims, data))
-}
-
-fn ncde_summary_from_digest(digest: Digest32) -> Vec<i16> {
-    digest
-        .as_bytes()
-        .chunks_exact(2)
-        .take(4)
-        .map(|chunk| i16::from_be_bytes([chunk[0], chunk[1]]))
-        .collect()
 }
 
 fn clamp_i16(value: i64) -> i16 {
@@ -4733,8 +4744,10 @@ mod tests {
         let ssm_output = router
             .tick_ssm(
                 &phase_frame,
+                Digest32::new([4u8; 32]),
+                1200,
+                2000,
                 &ncde_output,
-                Digest32::new([9u8; 32]),
                 Digest32::new([2u8; 32]),
                 vec![(SpikeKind::Threat, 3)],
                 1000,
@@ -4744,11 +4757,17 @@ mod tests {
             .expect("ssm output");
         {
             let mut workspace = router.workspace.lock().expect("workspace lock");
-            workspace.set_ssm_commits(ssm_output.commit, ssm_output.x_commit);
+            workspace.set_ssm_snapshot(
+                ssm_output.commit,
+                ssm_output.ssm_state_commit,
+                ssm_output.salience,
+                ssm_output.novelty,
+                ssm_output.attention_gain,
+            );
         }
         let snapshot = router.arbitrate_workspace(1);
         assert_eq!(snapshot.ssm_commit, ssm_output.commit);
-        assert_eq!(snapshot.ssm_state_commit, ssm_output.x_commit);
+        assert_eq!(snapshot.ssm_state_commit, ssm_output.ssm_state_commit);
 
         let base = AttentionWeights {
             channel: FocusChannel::Task,
@@ -4757,7 +4776,7 @@ mod tests {
             replay_bias: 1500,
             commit: Digest32::new([4u8; 32]),
         };
-        let biased = router.apply_ssm_attention_bias(base.clone(), Some(ssm_output.wm_salience));
+        let biased = router.apply_ssm_attention_bias(base.clone(), Some(ssm_output.attention_gain));
         assert!(biased.gain >= base.gain);
     }
 

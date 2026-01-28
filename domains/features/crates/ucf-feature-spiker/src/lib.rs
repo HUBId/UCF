@@ -296,4 +296,23 @@ mod tests {
         let updated = apply_threat_thresh_delta(&params, -20_000);
         assert_eq!(updated.threat_thresh, THREAT_THRESH_MIN);
     }
+
+    #[test]
+    fn ssm_metrics_drive_spikes() {
+        let phase = phase_frame();
+        let params = FeatureSpikeParams::new(800, 1200);
+        let inputs = FeatureSpikerInputs {
+            ssm_salience: 9000,
+            ssm_novelty: 8800,
+            wm_salience: 0,
+            wm_novelty: 0,
+            risk: 0,
+            surprise: 0,
+            cde_top_conf: None,
+        };
+
+        let (batch, summary) = build_feature_spike_batch(2, &phase, 1024, params, inputs);
+        assert!(summary.produced > 0);
+        assert!(batch.events.iter().any(|event| event.dst == OscId::Ssm));
+    }
 }

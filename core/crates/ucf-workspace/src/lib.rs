@@ -507,6 +507,9 @@ pub struct WorkspaceSnapshot {
     pub cde_intervention_commit: Option<Digest32>,
     pub ssm_commit: Digest32,
     pub ssm_state_commit: Digest32,
+    pub ssm_salience: u16,
+    pub ssm_novelty: u16,
+    pub ssm_attention_gain: u16,
     pub influence_v2_commit: Digest32,
     pub influence_pulses_root: Digest32,
     pub influence_node_values: Vec<(u16, i16)>,
@@ -666,6 +669,9 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
     }
     payload.extend_from_slice(snapshot.ssm_commit.as_bytes());
     payload.extend_from_slice(snapshot.ssm_state_commit.as_bytes());
+    payload.extend_from_slice(&snapshot.ssm_salience.to_be_bytes());
+    payload.extend_from_slice(&snapshot.ssm_novelty.to_be_bytes());
+    payload.extend_from_slice(&snapshot.ssm_attention_gain.to_be_bytes());
     payload.extend_from_slice(snapshot.influence_v2_commit.as_bytes());
     payload.extend_from_slice(snapshot.influence_pulses_root.as_bytes());
     payload.extend_from_slice(&(snapshot.influence_node_values.len() as u16).to_be_bytes());
@@ -815,6 +821,9 @@ pub struct Workspace {
     cde_intervention_commit: Option<Digest32>,
     ssm_commit: Digest32,
     ssm_state_commit: Digest32,
+    ssm_salience: u16,
+    ssm_novelty: u16,
+    ssm_attention_gain: u16,
     influence_v2_commit: Digest32,
     influence_pulses_root: Digest32,
     influence_node_values: Vec<(u16, i16)>,
@@ -861,6 +870,9 @@ impl Workspace {
             cde_intervention_commit: None,
             ssm_commit: Digest32::new([0u8; 32]),
             ssm_state_commit: Digest32::new([0u8; 32]),
+            ssm_salience: 0,
+            ssm_novelty: 0,
+            ssm_attention_gain: 0,
             influence_v2_commit: Digest32::new([0u8; 32]),
             influence_pulses_root: Digest32::new([0u8; 32]),
             influence_node_values: Vec::new(),
@@ -973,9 +985,29 @@ impl Workspace {
         self.cde_intervention_commit = intervention_commit;
     }
 
-    pub fn set_ssm_commits(&mut self, commit: Digest32, state_commit: Digest32) {
+    pub fn set_ssm_snapshot(
+        &mut self,
+        commit: Digest32,
+        state_commit: Digest32,
+        salience: u16,
+        novelty: u16,
+        attention_gain: u16,
+    ) {
         self.ssm_commit = commit;
         self.ssm_state_commit = state_commit;
+        self.ssm_salience = salience;
+        self.ssm_novelty = novelty;
+        self.ssm_attention_gain = attention_gain;
+    }
+
+    pub fn set_ssm_commits(&mut self, commit: Digest32, state_commit: Digest32) {
+        self.set_ssm_snapshot(
+            commit,
+            state_commit,
+            self.ssm_salience,
+            self.ssm_novelty,
+            self.ssm_attention_gain,
+        );
     }
 
     pub fn set_influence_snapshot(
@@ -1092,6 +1124,9 @@ impl Workspace {
         let cde_intervention_commit = self.cde_intervention_commit.take();
         let ssm_commit = self.ssm_commit;
         let ssm_state_commit = self.ssm_state_commit;
+        let ssm_salience = self.ssm_salience;
+        let ssm_novelty = self.ssm_novelty;
+        let ssm_attention_gain = self.ssm_attention_gain;
         let influence_v2_commit = self.influence_v2_commit;
         let influence_pulses_root = self.influence_pulses_root;
         let influence_node_values = std::mem::take(&mut self.influence_node_values);
@@ -1137,6 +1172,9 @@ impl Workspace {
             cde_intervention_commit,
             ssm_commit,
             ssm_state_commit,
+            ssm_salience,
+            ssm_novelty,
+            ssm_attention_gain,
             influence_v2_commit,
             influence_pulses_root,
             &influence_node_values,
@@ -1185,6 +1223,9 @@ impl Workspace {
             cde_intervention_commit,
             ssm_commit,
             ssm_state_commit,
+            ssm_salience,
+            ssm_novelty,
+            ssm_attention_gain,
             influence_v2_commit,
             influence_pulses_root,
             influence_node_values,
@@ -1610,6 +1651,9 @@ fn commit_snapshot(
     cde_intervention_commit: Option<Digest32>,
     ssm_commit: Digest32,
     ssm_state_commit: Digest32,
+    ssm_salience: u16,
+    ssm_novelty: u16,
+    ssm_attention_gain: u16,
     influence_v2_commit: Digest32,
     influence_pulses_root: Digest32,
     influence_node_values: &[(u16, i16)],
@@ -1690,6 +1734,9 @@ fn commit_snapshot(
     }
     hasher.update(ssm_commit.as_bytes());
     hasher.update(ssm_state_commit.as_bytes());
+    hasher.update(&ssm_salience.to_be_bytes());
+    hasher.update(&ssm_novelty.to_be_bytes());
+    hasher.update(&ssm_attention_gain.to_be_bytes());
     hasher.update(influence_v2_commit.as_bytes());
     hasher.update(influence_pulses_root.as_bytes());
     hasher.update(

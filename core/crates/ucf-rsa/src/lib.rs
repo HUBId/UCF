@@ -546,7 +546,7 @@ fn tune_thresholds(inp: &RsaInputs, params: &StructuralParams) -> Option<Structu
 
 fn tune_coupling(inp: &RsaInputs, params: &StructuralParams) -> Option<StructuralProposal> {
     let coupling_next = params.onn.coupling.saturating_add(200).min(10_000);
-    let ssm_next = params.ssm.selectivity.saturating_add(200).min(10_000);
+    let ssm_next = params.ssm.k_novelty.saturating_add(200).min(10_000);
     let deltas = vec![
         ParamDelta::new(
             param_key("onn.coupling"),
@@ -554,8 +554,8 @@ fn tune_coupling(inp: &RsaInputs, params: &StructuralParams) -> Option<Structura
             i32::from(coupling_next),
         ),
         ParamDelta::new(
-            param_key("ssm.selectivity"),
-            i32::from(params.ssm.selectivity),
+            param_key("ssm.k_novelty"),
+            i32::from(params.ssm.k_novelty),
             i32::from(ssm_next),
         ),
     ];
