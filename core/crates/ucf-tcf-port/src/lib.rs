@@ -98,6 +98,9 @@ impl RecursionBudget {
 pub trait TcfPort {
     fn step(&mut self, attn: &AttentionWeights, surprise: Option<&SurpriseSignal>) -> CyclePlan;
     fn state(&self) -> &TcfState;
+    fn apply_sync_hint(&mut self, tighten_sync: bool) {
+        let _ = tighten_sync;
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -105,6 +108,7 @@ pub struct DeterministicTcf {
     config: TcfConfig,
     state: TcfState,
     cycle_id: u64,
+    sync_tighten: bool,
 }
 
 impl DeterministicTcf {
@@ -118,6 +122,7 @@ impl DeterministicTcf {
             config,
             state: refresh_commit(state),
             cycle_id: 0,
+            sync_tighten: false,
         }
     }
 
@@ -138,7 +143,8 @@ impl Default for DeterministicTcf {
 
 impl TcfPort for DeterministicTcf {
     fn step(&mut self, attn: &AttentionWeights, surprise: Option<&SurpriseSignal>) -> CyclePlan {
-        let (freq, energy) = apply_ltv(self.config, &self.state, attn, surprise);
+        let config = self.effective_config();
+        let (freq, energy) = apply_ltv(config, &self.state, attn, surprise);
         let phase = apply_lti(self.state.phase, freq);
         let state = refresh_commit(TcfState {
             phase,
@@ -161,6 +167,25 @@ impl TcfPort for DeterministicTcf {
 
     fn state(&self) -> &TcfState {
         &self.state
+    }
+
+    fn apply_sync_hint(&mut self, tighten_sync: bool) {
+        self.sync_tighten = tighten_sync;
+    }
+}
+
+impl DeterministicTcf {
+    fn effective_config(&self) -> TcfConfig {
+        if !self.sync_tighten {
+            return self.config;
+        }
+        let jitter_guard = self.config.jitter_guard.saturating_sub(150).max(100);
+        let damping = self.config.damping.saturating_add(80);
+        TcfConfig {
+            base_freq: self.config.base_freq,
+            damping,
+            jitter_guard,
+        }
     }
 }
 
@@ -413,6 +438,20 @@ mod tests {
 
         assert!(threat_verify.weight > idle_verify.weight);
         assert!(threat_verify.slot < idle_verify.slot);
+    }
+
+    #[test]
+    fn tighten_sync_increases_damping_effect() {
+        let mut tcf_loose = DeterministicTcf::default();
+        let mut tcf_tight = DeterministicTcf::default();
+        let attn = make_attention(FocusChannel::Idle);
+        let surprise = make_surprise(SurpriseBand::Low, 800);
+
+        let _ = tcf_loose.step(&attn, Some(&surprise));
+        tcf_tight.apply_sync_hint(true);
+        let _ = tcf_tight.step(&attn, Some(&surprise));
+
+        assert!(tcf_tight.state().energy < tcf_loose.state().energy);
     }
 
     #[test]

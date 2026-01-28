@@ -1,51 +1,50 @@
 #![forbid(unsafe_code)]
 
 use blake3::Hasher;
+use ucf_influence::InfluenceNodeId;
 use ucf_spikebus::SpikeKind;
 use ucf_types::Digest32;
 
-const DOMAIN_INPUT: &[u8] = b"ucf.iit.inputs.v2";
-const DOMAIN_OUTPUT: &[u8] = b"ucf.iit.output.v2";
-const DOMAIN_STATE: &[u8] = b"ucf.iit.state.v2";
+const DOMAIN_INPUT: &[u8] = b"ucf.iit.inputs.v1";
+const DOMAIN_HINTS: &[u8] = b"ucf.iit.hints.v1";
+const DOMAIN_REPORT: &[u8] = b"ucf.iit.report.v1";
+const DOMAIN_OUTPUT: &[u8] = b"ucf.iit.output.v1";
+const DOMAIN_PARAMS: &[u8] = b"ucf.iit.params.v1";
+const DOMAIN_CORE: &[u8] = b"ucf.iit.core.v1";
 
 const MAX_SCORE: u16 = 10_000;
-const SPIKE_TOTAL_CAP: u32 = 200;
-const SPIKE_KIND_CAP: u32 = 8;
-const SPIKE_CROSS_CAP: u32 = 5;
+const SPIKE_REWARD_CAP: u32 = 24;
+const SPIKE_THREAT_CAP: u32 = 12;
+const SPIKE_SUPPRESS_PENALTY: u16 = 1000;
+const DEPENDENCY_UNIT: u16 = 2500;
+const NCDE_ENERGY_MIN: u16 = 1200;
+const NCDE_ENERGY_MAX: u16 = 8500;
 
-const COUPLING_LOW_THRESHOLD: u16 = 3_500;
-const COUPLING_LOW_STREAK: u16 = 3;
-const COUPLING_LOW_PENALTY: u16 = 900;
-
-const SURPRISE_EXTREME: u16 = 9_000;
-const COHERENCE_LOW: u16 = 3_000;
-const SURPRISE_COHERENCE_PENALTY: u16 = 1_200;
-
-const REASONING_BASE: u16 = 5_000;
-const REASONING_NO_NSR: u16 = 4_200;
-
-const WARN_SURPRISE_COHERENCE: u16 = 0b0001;
-const WARN_LOW_COUPLING: u16 = 0b0010;
-const WARN_NSR_DENY_SURPRISE: u16 = 0b0100;
+const DRIFT_HIGH: u16 = 7000;
+const RISK_HIGH: u16 = 7000;
+const SURPRISE_HIGH: u16 = 7000;
+const PLV_LOW: u16 = 3500;
+const REPLAY_PRESSURE_MIN: i16 = 3000;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct IitInputs {
     pub cycle_id: u64,
     pub phase_commit: Digest32,
-    pub coherence_plv: u16,
-    pub spike_root: Digest32,
+    pub global_plv: u16,
+    pub pair_locks_commit: Digest32,
+    pub influence_pulses_root: Digest32,
+    pub influence_nodes: Vec<(InfluenceNodeId, i16)>,
+    pub spike_seen_root: Digest32,
+    pub spike_accepted_root: Digest32,
     pub spike_counts: Vec<(SpikeKind, u16)>,
-    pub ssm_commit: Digest32,
-    pub wm_salience: u16,
-    pub wm_novelty: u16,
-    pub ncde_commit: Digest32,
+    pub cde_summary_commit: Option<Digest32>,
+    pub nsr_trace_root: Digest32,
+    pub geist_consistency: bool,
+    pub ncde_state_digest: Digest32,
     pub ncde_energy: u16,
-    pub nsr_trace_root: Option<Digest32>,
-    pub nsr_verdict: Option<u8>,
-    pub cde_commit: Option<Digest32>,
+    pub risk: u16,
     pub drift: u16,
     pub surprise: u16,
-    pub risk: u16,
     pub commit: Digest32,
 }
 
@@ -54,38 +53,40 @@ impl IitInputs {
     pub fn new(
         cycle_id: u64,
         phase_commit: Digest32,
-        coherence_plv: u16,
-        spike_root: Digest32,
+        global_plv: u16,
+        pair_locks_commit: Digest32,
+        influence_pulses_root: Digest32,
+        influence_nodes: Vec<(InfluenceNodeId, i16)>,
+        spike_seen_root: Digest32,
+        spike_accepted_root: Digest32,
         spike_counts: Vec<(SpikeKind, u16)>,
-        ssm_commit: Digest32,
-        wm_salience: u16,
-        wm_novelty: u16,
-        ncde_commit: Digest32,
+        cde_summary_commit: Option<Digest32>,
+        nsr_trace_root: Digest32,
+        geist_consistency: bool,
+        ncde_state_digest: Digest32,
         ncde_energy: u16,
-        nsr_trace_root: Option<Digest32>,
-        nsr_verdict: Option<u8>,
-        cde_commit: Option<Digest32>,
+        risk: u16,
         drift: u16,
         surprise: u16,
-        risk: u16,
     ) -> Self {
         let mut inputs = Self {
             cycle_id,
             phase_commit,
-            coherence_plv,
-            spike_root,
+            global_plv,
+            pair_locks_commit,
+            influence_pulses_root,
+            influence_nodes,
+            spike_seen_root,
+            spike_accepted_root,
             spike_counts,
-            ssm_commit,
-            wm_salience,
-            wm_novelty,
-            ncde_commit,
-            ncde_energy,
+            cde_summary_commit,
             nsr_trace_root,
-            nsr_verdict,
-            cde_commit,
+            geist_consistency,
+            ncde_state_digest,
+            ncde_energy,
+            risk,
             drift,
             surprise,
-            risk,
             commit: Digest32::new([0u8; 32]),
         };
         inputs.commit = commit_inputs(&inputs);
@@ -93,180 +94,257 @@ impl IitInputs {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct IitOutput {
-    pub cycle_id: u64,
-    pub phi_proxy: u16,
-    pub coupling_proxy: u16,
-    pub coherence: u16,
-    pub warnings: u16,
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct IitHints {
+    pub tighten_sync: bool,
+    pub damp_output: bool,
+    pub damp_learning: bool,
+    pub request_replay: bool,
     pub commit: Digest32,
 }
 
-#[derive(Debug)]
-pub struct IitMonitor {
-    pub state_commit: Digest32,
-    low_coupling_streak: u16,
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct IitOutputs {
+    pub cycle_id: u64,
+    pub phi_proxy: u16,
+    pub integration_report_commit: Digest32,
+    pub hints: IitHints,
+    pub commit: Digest32,
 }
 
-impl IitMonitor {
-    pub fn new() -> Self {
-        Self {
-            state_commit: Digest32::new([0u8; 32]),
-            low_coupling_streak: 0,
-        }
+pub type IitOutput = IitOutputs;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct IitParams {
+    pub w_plv: u16,
+    pub w_influence: u16,
+    pub w_spike: u16,
+    pub w_dependency: u16,
+    pub penalty_risk: u16,
+    pub penalty_drift: u16,
+    pub penalty_surprise: u16,
+    pub phi_low: u16,
+    pub phi_high: u16,
+    pub commit: Digest32,
+}
+
+impl Default for IitParams {
+    fn default() -> Self {
+        let mut params = Self {
+            w_plv: 3,
+            w_influence: 3,
+            w_spike: 3,
+            w_dependency: 1,
+            penalty_risk: 3500,
+            penalty_drift: 2800,
+            penalty_surprise: 2200,
+            phi_low: 3200,
+            phi_high: 7200,
+            commit: Digest32::new([0u8; 32]),
+        };
+        params.commit = commit_params(&params);
+        params
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct IitCore {
+    pub params: IitParams,
+    pub commit: Digest32,
+}
+
+impl IitCore {
+    pub fn new(params: IitParams) -> Self {
+        let commit = commit_core(&params);
+        Self { params, commit }
     }
 
-    pub fn tick(&mut self, inp: &IitInputs) -> IitOutput {
-        let (coupling_spike, cross_checks) = coupling_from_spikes(&inp.spike_counts);
-        let coupling_state = coupling_state(inp.wm_salience, inp.ncde_energy);
-        let (coupling_reasoning, mut warnings) = coupling_reasoning(inp, cross_checks);
+    pub fn tick(&self, inp: &IitInputs) -> IitOutputs {
+        let phase_score = inp.global_plv.min(MAX_SCORE);
+        let influence_score = influence_score(&inp.influence_nodes);
+        let spike_score = spike_score(inp);
+        let dependency_score = dependency_score(inp);
 
-        let coupling_proxy = weighted_avg(&[
-            (coupling_spike, 4),
-            (coupling_state, 3),
-            (coupling_reasoning, 3),
+        let weighted_sum = weighted_sum(&[
+            (phase_score, self.params.w_plv),
+            (influence_score, self.params.w_influence),
+            (spike_score, self.params.w_spike),
+            (dependency_score, self.params.w_dependency),
         ]);
+        let penalties = penalty_score(
+            inp.risk,
+            inp.drift,
+            inp.surprise,
+            self.params.penalty_risk,
+            self.params.penalty_drift,
+            self.params.penalty_surprise,
+        );
+        let phi_raw = weighted_sum.min(MAX_SCORE);
+        let phi_proxy = phi_raw.saturating_sub(penalties).min(MAX_SCORE);
 
-        self.low_coupling_streak = if coupling_proxy < COUPLING_LOW_THRESHOLD {
-            self.low_coupling_streak.saturating_add(1)
-        } else {
-            0
-        };
+        let hints = build_hints(inp, phi_proxy, self.params.phi_low, self.params.phi_high);
+        let integration_report_commit = commit_report(
+            inp,
+            phi_proxy,
+            phase_score,
+            influence_score,
+            spike_score,
+            dependency_score,
+            penalties,
+            &hints,
+        );
+        let commit = commit_outputs(inp.cycle_id, phi_proxy, integration_report_commit, &hints);
 
-        let drift_scaled = inp.drift.min(MAX_SCORE);
-        let risk_scaled = inp.risk.min(MAX_SCORE);
-        let drift_inverse = MAX_SCORE.saturating_sub(drift_scaled);
-        let risk_inverse = MAX_SCORE.saturating_sub(risk_scaled);
-
-        let mut phi_proxy = weighted_avg(&[
-            (inp.coherence_plv.min(MAX_SCORE), 3),
-            (coupling_proxy, 4),
-            (drift_inverse, 2),
-            (risk_inverse, 1),
-        ]);
-
-        if inp.surprise >= SURPRISE_EXTREME && inp.coherence_plv <= COHERENCE_LOW {
-            phi_proxy = phi_proxy.saturating_sub(SURPRISE_COHERENCE_PENALTY);
-            warnings |= WARN_SURPRISE_COHERENCE;
-        }
-
-        if self.low_coupling_streak >= COUPLING_LOW_STREAK {
-            phi_proxy = phi_proxy.saturating_sub(COUPLING_LOW_PENALTY);
-            warnings |= WARN_LOW_COUPLING;
-        }
-
-        phi_proxy = phi_proxy.min(MAX_SCORE);
-
-        let output = IitOutput {
+        IitOutputs {
             cycle_id: inp.cycle_id,
             phi_proxy,
-            coupling_proxy,
-            coherence: inp.coherence_plv,
-            warnings,
-            commit: commit_output(inp, phi_proxy, coupling_proxy, warnings),
-        };
-
-        self.state_commit = commit_state(self.state_commit, inp.commit, output.commit);
-        output
+            integration_report_commit,
+            hints,
+            commit,
+        }
     }
 }
 
-impl Default for IitMonitor {
+impl Default for IitCore {
     fn default() -> Self {
-        Self::new()
+        Self::new(IitParams::default())
     }
 }
 
-fn coupling_from_spikes(spike_counts: &[(SpikeKind, u16)]) -> (u16, u16) {
-    if spike_counts.is_empty() {
-        return (0, 0);
-    }
-    let mut total: u32 = 0;
-    let mut kinds: u32 = 0;
-    let mut cross_total: u32 = 0;
+fn influence_score(nodes: &[(InfluenceNodeId, i16)]) -> u16 {
+    let integration = node_value(nodes, InfluenceNodeId::Integration);
+    let coherence = node_value(nodes, InfluenceNodeId::Coherence);
+    let attention = node_value(nodes, InfluenceNodeId::AttentionGain);
+    weighted_sum(&[(integration, 4), (coherence, 3), (attention, 3)])
+}
 
-    for (kind, count) in spike_counts {
+fn node_value(nodes: &[(InfluenceNodeId, i16)], target: InfluenceNodeId) -> u16 {
+    let value = nodes
+        .iter()
+        .find_map(|(id, value)| (*id == target).then_some(*value))
+        .unwrap_or(0);
+    let clamped = value.clamp(-10_000, 10_000) as i32;
+    let normalized = (clamped + 10_000) as u32 * 10_000 / 20_000;
+    clamp_score(normalized)
+}
+
+fn spike_score(inp: &IitInputs) -> u16 {
+    let mut reward_total: u32 = 0;
+    let mut threat_total: u32 = 0;
+
+    for (kind, count) in &inp.spike_counts {
         if *count == 0 {
             continue;
         }
-        kinds = kinds.saturating_add(1);
-        total = total.saturating_add(u32::from(*count));
         match kind {
-            SpikeKind::CausalLink | SpikeKind::ConsistencyAlert => {
-                cross_total = cross_total.saturating_add(u32::from(*count));
+            SpikeKind::CausalLink
+            | SpikeKind::ConsistencyAlert
+            | SpikeKind::Feature
+            | SpikeKind::Novelty => {
+                reward_total = reward_total.saturating_add(u32::from(*count));
+            }
+            SpikeKind::Threat => {
+                threat_total = threat_total.saturating_add(u32::from(*count));
             }
             _ => {}
         }
     }
 
-    let total_scaled = scale_to_max(total, SPIKE_TOTAL_CAP);
-    let kinds_scaled = scale_to_max(kinds, SPIKE_KIND_CAP);
-    let cross_pairs = cross_total / 2;
-    let cross_scaled = scale_to_max(cross_pairs, SPIKE_CROSS_CAP);
-
-    (
-        weighted_avg(&[(total_scaled, 4), (kinds_scaled, 3), (cross_scaled, 3)]),
-        cross_pairs.min(u32::from(u16::MAX)) as u16,
-    )
-}
-
-fn coupling_state(wm_salience: u16, ncde_energy: u16) -> u16 {
-    let stability = MAX_SCORE.saturating_sub(ncde_energy.min(MAX_SCORE));
-    let diff = wm_salience.min(MAX_SCORE).abs_diff(stability);
-    let alignment = MAX_SCORE.saturating_sub(diff);
-    let avg = (u32::from(wm_salience.min(MAX_SCORE)) + u32::from(stability)) / 2;
-    clamp_score((avg * u32::from(alignment)) / u32::from(MAX_SCORE))
-}
-
-fn coupling_reasoning(inp: &IitInputs, cross_checks: u16) -> (u16, u16) {
-    let mut warnings = 0u16;
-    let mut score = if inp.nsr_verdict.is_some() {
-        REASONING_BASE
+    let reward_score = scale_to_max(reward_total, SPIKE_REWARD_CAP);
+    let threat_penalty = scale_to_max(threat_total, SPIKE_THREAT_CAP) / 2;
+    let suppression_penalty = if inp.spike_seen_root != inp.spike_accepted_root {
+        SPIKE_SUPPRESS_PENALTY
     } else {
-        REASONING_NO_NSR
+        0
     };
 
-    if let Some(verdict) = inp.nsr_verdict {
-        match verdict {
-            0 => {
-                if inp.drift <= 3_000 {
-                    score = score.saturating_add(1_500);
-                } else {
-                    score = score.saturating_add(600);
-                }
-            }
-            1 => {
-                score = score.saturating_sub(300);
-            }
-            _ => {
-                score = score.saturating_sub(2_000);
-            }
-        }
-    }
-
-    if inp.risk >= 7_000 {
-        score = score.saturating_sub(1_200);
-    }
-    if inp.drift >= 7_000 {
-        score = score.saturating_sub(800);
-    }
-
-    if inp.nsr_verdict == Some(2) && inp.cde_commit.is_some() {
-        let surprise_gate = inp.surprise >= 7_000 || cross_checks >= 4;
-        if surprise_gate {
-            warnings |= WARN_NSR_DENY_SURPRISE;
-            score = score.saturating_sub(800);
-        }
-    }
-
-    (score.min(MAX_SCORE), warnings)
+    reward_score
+        .saturating_sub(threat_penalty)
+        .saturating_sub(suppression_penalty)
+        .min(MAX_SCORE)
 }
 
-fn weighted_avg(values: &[(u16, u16)]) -> u16 {
+fn dependency_score(inp: &IitInputs) -> u16 {
+    let mut score = 0u16;
+    if inp.cde_summary_commit.is_some() {
+        score = score.saturating_add(DEPENDENCY_UNIT);
+    }
+    if !is_zero_digest(&inp.nsr_trace_root) {
+        score = score.saturating_add(DEPENDENCY_UNIT);
+    }
+    if inp.geist_consistency {
+        score = score.saturating_add(DEPENDENCY_UNIT);
+    }
+    if inp.ncde_energy >= NCDE_ENERGY_MIN && inp.ncde_energy <= NCDE_ENERGY_MAX {
+        score = score.saturating_add(DEPENDENCY_UNIT);
+    }
+    score.min(MAX_SCORE)
+}
+
+fn penalty_score(
+    risk: u16,
+    drift: u16,
+    surprise: u16,
+    penalty_risk: u16,
+    penalty_drift: u16,
+    penalty_surprise: u16,
+) -> u16 {
+    let risk_term = u32::from(risk.min(MAX_SCORE)) * u32::from(penalty_risk);
+    let drift_term = u32::from(drift.min(MAX_SCORE)) * u32::from(penalty_drift);
+    let surprise_term = u32::from(surprise.min(MAX_SCORE)) * u32::from(penalty_surprise);
+    let total = risk_term
+        .saturating_add(drift_term)
+        .saturating_add(surprise_term);
+    clamp_score(total / u32::from(MAX_SCORE))
+}
+
+fn build_hints(inp: &IitInputs, phi: u16, phi_low: u16, _phi_high: u16) -> IitHints {
+    let tighten_sync = phi < phi_low || inp.global_plv < PLV_LOW || inp.drift >= DRIFT_HIGH;
+    let damp_output = phi < phi_low || inp.risk >= RISK_HIGH || !inp.geist_consistency;
+    let damp_learning = inp.risk >= RISK_HIGH || (inp.surprise >= SURPRISE_HIGH && phi < phi_low);
+    let replay_pressure = replay_pressure_present(&inp.influence_nodes);
+    let request_replay = phi < phi_low
+        && (inp.drift >= DRIFT_HIGH || inp.surprise >= SURPRISE_HIGH)
+        && replay_pressure;
+    let flags = hints_flags(tighten_sync, damp_output, damp_learning, request_replay);
+    let commit = commit_hints(inp.cycle_id, phi, flags);
+
+    IitHints {
+        tighten_sync,
+        damp_output,
+        damp_learning,
+        request_replay,
+        commit,
+    }
+}
+
+fn replay_pressure_present(nodes: &[(InfluenceNodeId, i16)]) -> bool {
+    nodes
+        .iter()
+        .find_map(|(id, value)| (*id == InfluenceNodeId::ReplayPressure).then_some(*value))
+        .unwrap_or(0)
+        >= REPLAY_PRESSURE_MIN
+}
+
+fn hints_flags(
+    tighten_sync: bool,
+    damp_output: bool,
+    damp_learning: bool,
+    request_replay: bool,
+) -> u8 {
+    (tighten_sync as u8)
+        | ((damp_output as u8) << 1)
+        | ((damp_learning as u8) << 2)
+        | ((request_replay as u8) << 3)
+}
+
+fn weighted_sum(values: &[(u16, u16)]) -> u16 {
     let mut sum: u32 = 0;
     let mut weight: u32 = 0;
     for (value, w) in values {
+        if *w == 0 {
+            continue;
+        }
         sum = sum.saturating_add(u32::from(*value) * u32::from(*w));
         weight = weight.saturating_add(u32::from(*w));
     }
@@ -276,11 +354,11 @@ fn weighted_avg(values: &[(u16, u16)]) -> u16 {
     clamp_score(sum / weight)
 }
 
-fn scale_to_max(value: u32, max: u32) -> u16 {
-    if max == 0 {
+fn scale_to_max(value: u32, cap: u32) -> u16 {
+    if cap == 0 {
         return 0;
     }
-    let scaled = (value.min(max) * u32::from(MAX_SCORE)) / max;
+    let scaled = (value.min(cap) * u32::from(MAX_SCORE)) / cap;
     clamp_score(scaled)
 }
 
@@ -288,74 +366,143 @@ fn clamp_score(value: u32) -> u16 {
     u16::try_from(value.min(u32::from(MAX_SCORE))).unwrap_or(MAX_SCORE)
 }
 
+fn is_zero_digest(digest: &Digest32) -> bool {
+    digest.as_bytes().iter().all(|value| *value == 0)
+}
+
 fn commit_inputs(inputs: &IitInputs) -> Digest32 {
     let mut hasher = Hasher::new();
     hasher.update(DOMAIN_INPUT);
     hasher.update(&inputs.cycle_id.to_be_bytes());
     hasher.update(inputs.phase_commit.as_bytes());
-    hasher.update(&inputs.coherence_plv.to_be_bytes());
-    hasher.update(inputs.spike_root.as_bytes());
-    hasher.update(&(inputs.spike_counts.len() as u32).to_be_bytes());
-    for (kind, count) in &inputs.spike_counts {
+    hasher.update(&inputs.global_plv.to_be_bytes());
+    hasher.update(inputs.pair_locks_commit.as_bytes());
+    hasher.update(inputs.influence_pulses_root.as_bytes());
+    let mut influence_nodes = inputs.influence_nodes.clone();
+    influence_nodes.sort_by(|(left_id, left_value), (right_id, right_value)| {
+        left_id
+            .to_u16()
+            .cmp(&right_id.to_u16())
+            .then_with(|| left_value.cmp(right_value))
+    });
+    hasher.update(
+        &u32::try_from(influence_nodes.len())
+            .unwrap_or(u32::MAX)
+            .to_be_bytes(),
+    );
+    for (node, value) in influence_nodes {
+        hasher.update(&node.to_u16().to_be_bytes());
+        hasher.update(&value.to_be_bytes());
+    }
+    hasher.update(inputs.spike_seen_root.as_bytes());
+    hasher.update(inputs.spike_accepted_root.as_bytes());
+    let mut spike_counts = inputs.spike_counts.clone();
+    spike_counts.sort_by(|(left_kind, left_count), (right_kind, right_count)| {
+        left_kind
+            .as_u16()
+            .cmp(&right_kind.as_u16())
+            .then_with(|| left_count.cmp(right_count))
+    });
+    hasher.update(
+        &u32::try_from(spike_counts.len())
+            .unwrap_or(u32::MAX)
+            .to_be_bytes(),
+    );
+    for (kind, count) in spike_counts {
         hasher.update(&kind.as_u16().to_be_bytes());
         hasher.update(&count.to_be_bytes());
     }
-    hasher.update(inputs.ssm_commit.as_bytes());
-    hasher.update(&inputs.wm_salience.to_be_bytes());
-    hasher.update(&inputs.wm_novelty.to_be_bytes());
-    hasher.update(inputs.ncde_commit.as_bytes());
+    match inputs.cde_summary_commit {
+        Some(commit) => {
+            hasher.update(&[1]);
+            hasher.update(commit.as_bytes());
+        }
+        None => {
+            hasher.update(&[0]);
+        }
+    }
+    hasher.update(inputs.nsr_trace_root.as_bytes());
+    hasher.update(&[inputs.geist_consistency as u8]);
+    hasher.update(inputs.ncde_state_digest.as_bytes());
     hasher.update(&inputs.ncde_energy.to_be_bytes());
-    match inputs.nsr_trace_root {
-        Some(commit) => {
-            hasher.update(&[1]);
-            hasher.update(commit.as_bytes());
-        }
-        None => {
-            hasher.update(&[0]);
-        }
-    }
-    match inputs.nsr_verdict {
-        Some(verdict) => {
-            hasher.update(&[1]);
-            hasher.update(&[verdict]);
-        }
-        None => {
-            hasher.update(&[0]);
-        }
-    }
-    match inputs.cde_commit {
-        Some(commit) => {
-            hasher.update(&[1]);
-            hasher.update(commit.as_bytes());
-        }
-        None => {
-            hasher.update(&[0]);
-        }
-    }
+    hasher.update(&inputs.risk.to_be_bytes());
     hasher.update(&inputs.drift.to_be_bytes());
     hasher.update(&inputs.surprise.to_be_bytes());
-    hasher.update(&inputs.risk.to_be_bytes());
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
-fn commit_output(inputs: &IitInputs, phi: u16, coupling: u16, warnings: u16) -> Digest32 {
+fn commit_hints(cycle_id: u64, phi: u16, flags: u8) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(DOMAIN_HINTS);
+    hasher.update(&cycle_id.to_be_bytes());
+    hasher.update(&phi.to_be_bytes());
+    hasher.update(&[flags]);
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn commit_report(
+    inputs: &IitInputs,
+    phi: u16,
+    phase_score: u16,
+    influence_score: u16,
+    spike_score: u16,
+    dependency_score: u16,
+    penalties: u16,
+    hints: &IitHints,
+) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(DOMAIN_REPORT);
+    hasher.update(&inputs.cycle_id.to_be_bytes());
+    hasher.update(inputs.phase_commit.as_bytes());
+    hasher.update(&phi.to_be_bytes());
+    hasher.update(&phase_score.to_be_bytes());
+    hasher.update(&influence_score.to_be_bytes());
+    hasher.update(&spike_score.to_be_bytes());
+    hasher.update(&dependency_score.to_be_bytes());
+    hasher.update(&penalties.to_be_bytes());
+    hasher.update(hints.commit.as_bytes());
+    hasher.update(inputs.pair_locks_commit.as_bytes());
+    hasher.update(inputs.influence_pulses_root.as_bytes());
+    hasher.update(inputs.spike_seen_root.as_bytes());
+    hasher.update(inputs.spike_accepted_root.as_bytes());
+    if let Some(commit) = inputs.cde_summary_commit {
+        hasher.update(commit.as_bytes());
+    }
+    hasher.update(inputs.nsr_trace_root.as_bytes());
+    hasher.update(inputs.ncde_state_digest.as_bytes());
+    hasher.update(&[inputs.geist_consistency as u8]);
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn commit_outputs(cycle_id: u64, phi: u16, report_commit: Digest32, hints: &IitHints) -> Digest32 {
     let mut hasher = Hasher::new();
     hasher.update(DOMAIN_OUTPUT);
-    hasher.update(inputs.commit.as_bytes());
-    hasher.update(&inputs.cycle_id.to_be_bytes());
+    hasher.update(&cycle_id.to_be_bytes());
     hasher.update(&phi.to_be_bytes());
-    hasher.update(&coupling.to_be_bytes());
-    hasher.update(&inputs.coherence_plv.to_be_bytes());
-    hasher.update(&warnings.to_be_bytes());
+    hasher.update(report_commit.as_bytes());
+    hasher.update(hints.commit.as_bytes());
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
-fn commit_state(prev: Digest32, input_commit: Digest32, output_commit: Digest32) -> Digest32 {
+fn commit_params(params: &IitParams) -> Digest32 {
     let mut hasher = Hasher::new();
-    hasher.update(DOMAIN_STATE);
-    hasher.update(prev.as_bytes());
-    hasher.update(input_commit.as_bytes());
-    hasher.update(output_commit.as_bytes());
+    hasher.update(DOMAIN_PARAMS);
+    hasher.update(&params.w_plv.to_be_bytes());
+    hasher.update(&params.w_influence.to_be_bytes());
+    hasher.update(&params.w_spike.to_be_bytes());
+    hasher.update(&params.w_dependency.to_be_bytes());
+    hasher.update(&params.penalty_risk.to_be_bytes());
+    hasher.update(&params.penalty_drift.to_be_bytes());
+    hasher.update(&params.penalty_surprise.to_be_bytes());
+    hasher.update(&params.phi_low.to_be_bytes());
+    hasher.update(&params.phi_high.to_be_bytes());
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn commit_core(params: &IitParams) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(DOMAIN_CORE);
+    hasher.update(params.commit.as_bytes());
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
@@ -363,52 +510,80 @@ fn commit_state(prev: Digest32, input_commit: Digest32, output_commit: Digest32)
 mod tests {
     use super::*;
 
-    fn sample_inputs(coherence: u16, coupling_bump: u16) -> IitInputs {
-        let spike_counts = vec![
-            (SpikeKind::CausalLink, 4u16 + coupling_bump / 1000),
-            (SpikeKind::ConsistencyAlert, 2u16 + coupling_bump / 2000),
-        ];
+    fn sample_inputs(global_plv: u16, risk: u16) -> IitInputs {
         IitInputs::new(
             42,
             Digest32::new([1u8; 32]),
-            coherence,
+            global_plv,
             Digest32::new([2u8; 32]),
-            spike_counts,
             Digest32::new([3u8; 32]),
-            6_500,
-            1_200,
+            vec![
+                (InfluenceNodeId::Integration, 4000),
+                (InfluenceNodeId::Coherence, 2500),
+                (InfluenceNodeId::AttentionGain, 1500),
+                (InfluenceNodeId::ReplayPressure, 4000),
+            ],
             Digest32::new([4u8; 32]),
-            3_200,
-            Some(Digest32::new([5u8; 32])),
-            Some(0),
+            Digest32::new([5u8; 32]),
+            vec![
+                (SpikeKind::CausalLink, 4),
+                (SpikeKind::ConsistencyAlert, 2),
+                (SpikeKind::Feature, 1),
+                (SpikeKind::Threat, 0),
+            ],
             Some(Digest32::new([6u8; 32])),
-            2_000,
-            1_500,
-            2_500,
+            Digest32::new([7u8; 32]),
+            true,
+            Digest32::new([8u8; 32]),
+            4200,
+            risk,
+            1200,
+            1500,
         )
     }
 
     #[test]
-    fn output_commit_is_deterministic() {
-        let inputs = sample_inputs(4_200, 0);
-        let mut monitor_a = IitMonitor::new();
-        let mut monitor_b = IitMonitor::new();
+    fn deterministic_outputs_for_same_inputs() {
+        let core = IitCore::default();
+        let inputs = sample_inputs(5000, 2000);
+        let out_a = core.tick(&inputs);
+        let out_b = core.tick(&inputs);
 
-        let out_a = monitor_a.tick(&inputs);
-        let out_b = monitor_b.tick(&inputs);
-
+        assert_eq!(out_a.phi_proxy, out_b.phi_proxy);
         assert_eq!(out_a.commit, out_b.commit);
+        assert_eq!(
+            out_a.integration_report_commit,
+            out_b.integration_report_commit
+        );
+        assert_eq!(out_a.hints.commit, out_b.hints.commit);
     }
 
     #[test]
-    fn phi_proxy_rises_with_coherence_and_coupling() {
-        let mut monitor = IitMonitor::new();
-        let low = sample_inputs(3_000, 0);
-        let high = sample_inputs(7_500, 4_000);
+    fn higher_plv_increases_phi_proxy() {
+        let core = IitCore::default();
+        let low = sample_inputs(2000, 2000);
+        let high = sample_inputs(8000, 2000);
 
-        let out_low = monitor.tick(&low);
-        let out_high = monitor.tick(&high);
+        assert!(core.tick(&high).phi_proxy > core.tick(&low).phi_proxy);
+    }
 
-        assert!(out_high.phi_proxy > out_low.phi_proxy);
+    #[test]
+    fn higher_risk_decreases_phi_proxy() {
+        let core = IitCore::default();
+        let low_risk = sample_inputs(6000, 1000);
+        let high_risk = sample_inputs(6000, 9000);
+
+        assert!(core.tick(&low_risk).phi_proxy > core.tick(&high_risk).phi_proxy);
+    }
+
+    #[test]
+    fn low_phi_sets_tighten_and_damp_output() {
+        let core = IitCore::default();
+        let mut inputs = sample_inputs(1500, 2000);
+        inputs.drift = 8000;
+        let output = core.tick(&inputs);
+
+        assert!(output.hints.tighten_sync);
+        assert!(output.hints.damp_output);
     }
 }

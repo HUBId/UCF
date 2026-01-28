@@ -57,6 +57,7 @@ pub struct GateBundle {
     pub phi_threshold: u16,
     pub speak_lock: u16,
     pub speak_lock_min: u16,
+    pub damp_output: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -325,6 +326,9 @@ impl OutputRouter {
         if gates.phi_proxy < gates.phi_threshold {
             return self.deny_speech(frame, idx, gates, "phi_low", 0);
         }
+        if gates.damp_output {
+            return self.deny_speech(frame, idx, gates, "iit_damp_output", 0);
+        }
         if gates.speak_lock < gates.speak_lock_min {
             return self.deny_speech(frame, idx, gates, "speak_lock_low", 0);
         }
@@ -479,6 +483,7 @@ mod tests {
             phi_threshold: 3200,
             speak_lock: 8000,
             speak_lock_min: 6000,
+            damp_output: false,
         }
     }
 
