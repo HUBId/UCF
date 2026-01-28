@@ -4437,7 +4437,7 @@ mod tests {
             Digest32::new([4u8; 32]),
         );
         let (accepted, suppressed) = filter_spikes_by_lock(
-            &[spike.clone()],
+            std::slice::from_ref(&spike),
             OscId::Cde,
             OscId::Nsr,
             SpikeKind::CausalLink,
@@ -4462,7 +4462,7 @@ mod tests {
             Digest32::new([6u8; 32]),
         );
         let (accepted, suppressed) = filter_spikes_by_lock(
-            &[spike.clone()],
+            std::slice::from_ref(&spike),
             OscId::Cde,
             OscId::Nsr,
             SpikeKind::CausalLink,
@@ -4487,7 +4487,7 @@ mod tests {
             Digest32::new([8u8; 32]),
         );
         let (accepted, suppressed) = filter_spikes_by_lock(
-            &[spike.clone()],
+            std::slice::from_ref(&spike),
             OscId::Geist,
             OscId::Nsr,
             SpikeKind::ConsistencyAlert,
@@ -4512,7 +4512,7 @@ mod tests {
             Digest32::new([10u8; 32]),
         );
         let (accepted, suppressed) = filter_spikes_by_lock(
-            &[spike.clone()],
+            std::slice::from_ref(&spike),
             OscId::Geist,
             OscId::Nsr,
             SpikeKind::ConsistencyAlert,
