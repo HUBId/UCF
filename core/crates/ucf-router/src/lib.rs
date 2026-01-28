@@ -1,6 +1,5 @@
 #![forbid(unsafe_code)]
 
-use std::collections::HashMap;
 use std::fmt;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -29,6 +28,7 @@ use ucf_consistency_engine::{
     ConsistencyReport, DriftBand,
 };
 use ucf_digital_brain::DigitalBrainPort;
+use ucf_feature_spiker::{build_feature_spike_batch, FeatureSpikerInputs};
 use ucf_feature_translator::{
     ActivationView, LensPort as FeatureLensPort, LensSelection, MockLensPort, MockSaePort,
     SaePort as FeatureSaePort,
@@ -62,8 +62,8 @@ use ucf_sandbox::{
     SandboxCaps, SandboxPort, SandboxReport,
 };
 use ucf_sle::{SelfReflex, SleCore, SleEngine, SleInputs, SleOutputs, SleStimulusKind};
-use ucf_spike_encoder::{encode_causal_link_spike, encode_from_features, encode_thought_spike};
-use ucf_spikebus::{SpikeEvent, SpikeKind};
+use ucf_spike_encoder::encode_spike_with_window;
+use ucf_spikebus::{SpikeBatch, SpikeBusSummary, SpikeEvent, SpikeKind, SpikeSuppression};
 use ucf_ssm::{SsmCore, SsmInput as WmSsmInput, SsmOutput as WmSsmOutput, SsmParams};
 use ucf_ssm_port::SsmState;
 use ucf_structural_store::{
@@ -262,7 +262,7 @@ struct StageContext {
     phase_commit: Option<Digest32>,
     coherence_plv: Option<u16>,
     onn_outputs: Option<ucf_onn::OnnOutputs>,
-    spike_root_commit: Option<Digest32>,
+    spike_summary: Option<SpikeBusSummary>,
     replay_pressure: Option<u16>,
     drift_score: Option<u16>,
     surprise_score: Option<u16>,
@@ -310,7 +310,7 @@ impl StageContext {
             phase_commit: None,
             coherence_plv: None,
             onn_outputs: None,
-            spike_root_commit: None,
+            spike_summary: None,
             replay_pressure: None,
             drift_score: None,
             surprise_score: None,
@@ -476,7 +476,14 @@ impl Router {
                 cycle_id,
                 broadcast: Vec::new(),
                 recursion_used: 0,
-                spike_root_commit: Digest32::new([0u8; 32]),
+                spike_seen_root: Digest32::new([0u8; 32]),
+                spike_accepted_root: Digest32::new([0u8; 32]),
+                spike_counts: Vec::new(),
+                spike_causal_link_count: 0,
+                spike_consistency_alert_count: 0,
+                spike_thought_only_count: 0,
+                spike_output_intent_count: 0,
+                spike_cap_hit: false,
                 ncde_commit: Digest32::new([0u8; 32]),
                 cde_commit: Digest32::new([0u8; 32]),
                 cde_graph_commit: Digest32::new([0u8; 32]),
@@ -559,8 +566,8 @@ impl Router {
                         let mode = ai_mode_for_pulse(PulseKind::Think);
                         self.run_think_stage(&cf, &mut ctx, cycle_id, pulse.slot, mode);
                     }
-                    let decision = ctx.decision.as_ref().expect("decision available");
-                    let Some(inference) = ctx.inference.as_ref() else {
+                    let decision = ctx.decision.clone().expect("decision available");
+                    let Some(inference) = ctx.inference.clone() else {
                         continue;
                     };
                     let workspace_snapshot = self.latest_workspace_snapshot(cycle_id);
@@ -590,71 +597,52 @@ impl Router {
                     let phase_frame = self.latest_phase_frame(cycle_id);
                     ctx.phase_commit = Some(phase_frame.commit);
                     let snn_knobs = self.current_snn_knobs();
-                    let spikes = encode_from_features(
+                    let phase_window = self.onn_phase_window();
+                    let ssm_output = ctx
+                        .ssm_output
+                        .clone()
+                        .or_else(|| self.last_ssm_output.lock().ok().and_then(|g| g.clone()));
+                    let (wm_salience, wm_novelty) = ssm_output
+                        .as_ref()
+                        .map(|output| (output.wm_salience, output.wm_novelty))
+                        .unwrap_or((0, 0));
+                    let feature_inputs = FeatureSpikerInputs {
+                        ssm_salience: wm_salience,
+                        ssm_novelty: wm_novelty,
+                        wm_salience,
+                        wm_novelty,
+                        risk: causal_attention_risk,
+                        surprise: surprise_score,
+                        cde_top_conf: workspace_snapshot
+                            .cde_top_edges
+                            .iter()
+                            .map(|(_, _, conf, _)| *conf)
+                            .max(),
+                    };
+                    let (feature_batch, _) = build_feature_spike_batch(
                         cycle_id,
                         &phase_frame,
-                        OscId::Jepa,
-                        lens_selection.as_ref(),
-                        &snn_knobs,
-                        surprise_score,
-                        drift_score,
-                        causal_attention_risk,
+                        phase_window,
+                        feature_inputs,
                     );
-                    let spike_root_commit = if let Ok(mut workspace) = self.workspace.lock() {
-                        workspace.append_spikes(spikes.clone());
-                        workspace.spike_root_commit()
-                    } else {
-                        Digest32::new([0u8; 32])
-                    };
-                    ctx.spike_root_commit = Some(spike_root_commit);
-                    self.append_spike_bus_record(cycle_id, spike_root_commit, &spikes);
+                    let feature_batch_len = feature_batch.events.len();
+                    self.append_spike_batch(
+                        cycle_id,
+                        feature_batch,
+                        vec![SpikeSuppression::default(); feature_batch_len],
+                        &mut ctx,
+                    );
                     let verify_limit = usize::from(snn_knobs.verify_limit.max(1));
-                    let phase_window = self.onn_phase_window();
-                    let (mut nsr_spikes, cde_spikes) =
-                        if let Ok(mut workspace) = self.workspace.lock() {
-                            let nsr_spikes =
-                                workspace.drain_spikes_for(OscId::Nsr, cycle_id, verify_limit);
-                            let cde_spikes =
-                                workspace.drain_spikes_for(OscId::Cde, cycle_id, verify_limit);
-                            (nsr_spikes, cde_spikes)
-                        } else {
-                            (Vec::new(), Vec::new())
-                        };
-                    let lock_cde_nsr =
-                        pair_lock_for(&phase_frame, OscId::Cde, OscId::Nsr).unwrap_or(0);
-                    let lock_geist_iit =
-                        pair_lock_for(&phase_frame, OscId::Geist, OscId::Iit).unwrap_or(0);
-                    let (filtered_nsr, suppressed_causal) = filter_spikes_by_lock(
-                        &nsr_spikes,
-                        OscId::Cde,
-                        OscId::Nsr,
-                        SpikeKind::CausalLink,
-                        lock_cde_nsr,
-                        LOCK_MIN_CAUSAL,
-                    );
-                    let (filtered_nsr, suppressed_consistency) = filter_spikes_by_lock(
-                        &filtered_nsr,
-                        OscId::Geist,
-                        OscId::Nsr,
-                        SpikeKind::ConsistencyAlert,
-                        lock_geist_iit,
-                        LOCK_MIN_CONSIST,
-                    );
-                    nsr_spikes = filtered_nsr;
-                    let suppressed_total = suppressed_causal.len() + suppressed_consistency.len();
-                    if suppressed_total > 0 {
-                        let summary = format!(
-                            "spike_suppressed count={} cde_nsr_lock={} geist_iit_lock={}",
-                            suppressed_total, lock_cde_nsr, lock_geist_iit
-                        );
-                        self.publish_workspace_signal(WorkspaceSignal {
-                            kind: SignalKind::Risk,
-                            priority: 2800,
-                            digest: phase_frame.commit,
-                            summary,
-                            slot: pulse.slot,
-                        });
-                    }
+                    let nsr_spikes = if let Ok(mut workspace) = self.workspace.lock() {
+                        workspace.drain_spikes_for(OscId::Nsr, cycle_id, verify_limit)
+                    } else {
+                        Vec::new()
+                    };
+                    let cde_spikes = if let Ok(mut workspace) = self.workspace.lock() {
+                        workspace.drain_spikes_for(OscId::Cde, cycle_id, verify_limit)
+                    } else {
+                        Vec::new()
+                    };
                     let nsr_full =
                         spikes_in_phase(&nsr_spikes, phase_frame.global_phase, phase_window);
                     let cde_full =
@@ -795,10 +783,12 @@ impl Router {
                         WorkspaceSignal::from_risk_result(result, None, Some(pulse.slot))
                     }));
 
-                    let spike_root_commit = ctx
-                        .spike_root_commit
-                        .unwrap_or_else(|| Digest32::new([0u8; 32]));
-                    let spike_counts = summarize_spike_counts(&spikes);
+                    let spike_summary = ctx
+                        .spike_summary
+                        .clone()
+                        .unwrap_or_else(empty_spike_summary);
+                    let spike_root_commit = spike_summary.accepted_root;
+                    let spike_counts = spike_summary.counts.clone();
                     let spike_counts_iit = spike_counts.clone();
                     let spike_counts_ssm = spike_counts.clone();
                     ctx.replay_pressure = Some(replay_pressure_from_spikes(&spike_counts));
@@ -995,9 +985,11 @@ impl Router {
                             .ok()
                             .and_then(|guard| guard.clone())
                     });
-                    let spike_root_commit = ctx
-                        .spike_root_commit
-                        .unwrap_or_else(|| Digest32::new([0u8; 32]));
+                    let spike_summary = ctx
+                        .spike_summary
+                        .clone()
+                        .unwrap_or_else(empty_spike_summary);
+                    let spike_root_commit = spike_summary.accepted_root;
                     let cde_output = self.tick_cde(
                         cycle_id,
                         &phase_frame,
@@ -1025,7 +1017,13 @@ impl Router {
                         }
                         self.append_cde_output_record(cycle_id, &output);
                         if output.emit_spikes {
-                            self.emit_cde_spikes(&phase_frame, &output, &attention_weights);
+                            self.queue_cde_spikes(
+                                cycle_id,
+                                &phase_frame,
+                                &output,
+                                &attention_weights,
+                                &mut ctx,
+                            );
                         }
                     }
                     let cde_atoms = cde_atoms_from_outputs(cde_output.as_ref());
@@ -1044,7 +1042,7 @@ impl Router {
                         spike_counts_iit.clone(),
                         ctx.ssm_output.as_ref(),
                         ctx.ncde_output.as_ref(),
-                        decision,
+                        &decision,
                         ctx.self_state.as_ref(),
                         cde_atoms,
                     );
@@ -1129,6 +1127,39 @@ impl Router {
                         Some(pulse.slot),
                     ));
                     self.append_consistency_report_record(cycle_id, &consistency_report);
+                    if consistency_report.drift_score > 0 {
+                        let phase_window = self.onn_phase_window();
+                        let spikes = vec![
+                            encode_spike_with_window(
+                                cycle_id,
+                                SpikeKind::ConsistencyAlert,
+                                OscId::Geist,
+                                OscId::Geist,
+                                consistency_report.drift_score,
+                                phase_frame.commit,
+                                consistency_report.commit,
+                                phase_window,
+                            ),
+                            encode_spike_with_window(
+                                cycle_id,
+                                SpikeKind::ConsistencyAlert,
+                                OscId::Geist,
+                                OscId::Nsr,
+                                consistency_report.drift_score,
+                                phase_frame.commit,
+                                consistency_report.commit,
+                                phase_window,
+                            ),
+                        ];
+                        self.append_spike_events(
+                            cycle_id,
+                            &phase_frame,
+                            spikes,
+                            true,
+                            NsrVerdict::Allow,
+                            &mut ctx,
+                        );
+                    }
                     for action in &consistency_actions {
                         self.archive
                             .append(self.build_consistency_action_record(cycle_id, action));
@@ -1159,7 +1190,7 @@ impl Router {
                         drift_score,
                         surprise_score,
                         attention_risk,
-                        decision,
+                        &decision,
                         ctx.ssm_output.as_ref(),
                         ctx.ncde_output.as_ref(),
                         ctx.self_state.as_ref(),
@@ -1167,6 +1198,9 @@ impl Router {
                         ism_anchor_commit,
                     ) {
                         ctx.sle_outputs = Some(sle_outputs);
+                    }
+                    if let Ok(workspace) = self.workspace.lock() {
+                        ctx.spike_summary = Some(workspace.spike_summary());
                     }
 
                     let policy_ok = decision.kind == DecisionKind::DecisionKindAllow as i32;
@@ -1252,6 +1286,8 @@ impl Router {
                         self.append_output_event_record(cycle_id, event);
                     }
 
+                    let mut output_intent_events = Vec::new();
+                    let mut output_intent_suppressions = Vec::new();
                     for (idx, output) in outputs.iter().enumerate() {
                         match output.channel {
                             OutputChannel::Thought => ctx.thought_outputs.push(output.clone()),
@@ -1261,7 +1297,52 @@ impl Router {
                                     .map(|decision| decision.permitted)
                                     .unwrap_or(false)
                                 {
-                                    ctx.speech_outputs.push(output.clone());
+                                    let strength = gates
+                                        .risk_results
+                                        .get(idx)
+                                        .map(|result| result.risk)
+                                        .unwrap_or(0);
+                                    let spike = encode_spike_with_window(
+                                        cycle_id,
+                                        SpikeKind::OutputIntent,
+                                        OscId::Output,
+                                        OscId::Nsr,
+                                        strength,
+                                        phase_frame.commit,
+                                        output
+                                            .rationale_commit
+                                            .unwrap_or_else(|| Digest32::new([0u8; 32])),
+                                        self.onn_phase_window(),
+                                    );
+                                    let suppression = self.suppression_for_event(
+                                        &phase_frame,
+                                        &spike,
+                                        policy_ok,
+                                        nsr_verdict,
+                                    );
+                                    output_intent_events.push(spike);
+                                    output_intent_suppressions.push(suppression);
+                                    if suppression.is_suppressed() {
+                                        if let Some(result) = gates.risk_results.get(idx) {
+                                            let reason_digest = digest_reasons(&[
+                                                "output_intent_suppressed".to_string(),
+                                            ]);
+                                            ctx.suppressions.push(OutputSuppressionInfo {
+                                                channel: OutputChannel::Speech,
+                                                reason_digest,
+                                                risk: result.risk,
+                                            });
+                                            if let Some(sink) = &self.output_suppression_sink {
+                                                sink.publish(OutputSuppressed {
+                                                    channel: OutputChannel::Speech,
+                                                    reason_digest,
+                                                    risk: result.risk,
+                                                });
+                                            }
+                                        }
+                                    } else {
+                                        ctx.speech_outputs.push(output.clone());
+                                    }
                                 } else if let Some(result) = gates.risk_results.get(idx) {
                                     let reason = decisions
                                         .get(idx)
@@ -1283,6 +1364,17 @@ impl Router {
                                 }
                             }
                         }
+                    }
+                    if !output_intent_events.is_empty() {
+                        let batch =
+                            SpikeBatch::new(cycle_id, phase_frame.commit, output_intent_events);
+                        let summary = if let Ok(mut workspace) = self.workspace.lock() {
+                            workspace.append_spike_batch(batch.clone(), output_intent_suppressions)
+                        } else {
+                            empty_spike_summary()
+                        };
+                        ctx.spike_summary = Some(summary.clone());
+                        self.append_spike_bus_record(cycle_id, &summary, batch.commit);
                     }
 
                     if ctx.integration_score.is_none() {
@@ -2093,6 +2185,7 @@ impl Router {
             .map(|mut core| core.tick(&inputs))
             .ok()?;
 
+        let mut spike_record = None;
         if let Ok(mut workspace) = self.workspace.lock() {
             workspace.set_sle_outputs(
                 outputs.commit,
@@ -2110,33 +2203,39 @@ impl Router {
                     severity,
                 ));
                 let amplitude = severity.min(10_000);
-                let attention_gain = self
-                    .last_attention
-                    .lock()
-                    .map(|attn| attn.gain)
-                    .unwrap_or(0);
-                let spikes = [
-                    encode_thought_spike(
+                let phase_window = self.onn_phase_window();
+                let spikes = vec![
+                    encode_spike_with_window(
                         cycle_id,
-                        phase_frame,
+                        SpikeKind::ThoughtOnly,
                         OscId::Jepa,
                         OscId::BlueBrain,
                         amplitude,
-                        attention_gain,
+                        phase_frame.commit,
                         pulse.commit,
+                        phase_window,
                     ),
-                    encode_thought_spike(
+                    encode_spike_with_window(
                         cycle_id,
-                        phase_frame,
+                        SpikeKind::ThoughtOnly,
                         OscId::Jepa,
                         OscId::Geist,
                         amplitude,
-                        attention_gain,
+                        phase_frame.commit,
                         pulse.commit,
+                        phase_window,
                     ),
                 ];
-                workspace.append_spikes(spikes);
+                let batch = SpikeBatch::new(cycle_id, phase_frame.commit, spikes);
+                let summary = workspace.append_spike_batch(
+                    batch.clone(),
+                    vec![SpikeSuppression::default(); batch.events.len()],
+                );
+                spike_record = Some((summary, batch.commit));
             }
+        }
+        if let Some((summary, batch_commit)) = spike_record {
+            self.append_spike_bus_record(cycle_id, &summary, batch_commit);
         }
 
         self.append_sle_outputs_record(cycle_id, &outputs);
@@ -2484,19 +2583,92 @@ impl Router {
     fn append_spike_bus_record(
         &self,
         cycle_id: u64,
-        spike_root_commit: Digest32,
-        spikes: &[SpikeEvent],
+        summary: &SpikeBusSummary,
+        batch_commit: Digest32,
     ) {
-        let count = spikes.len().min(u16::MAX as usize) as u16;
-        let top_kinds = top_spike_kinds(spikes, 3);
-        let payload_commit = spike_record_commit(spike_root_commit, count, &top_kinds);
+        let counts = summarize_spike_counts(&summary.counts);
+        let payload_commit = spike_record_commit(
+            summary.accepted_root,
+            summary.seen_root,
+            counts.total,
+            counts.top_kinds.as_slice(),
+            summary.cap_hit,
+        );
         let meta = RecordMeta {
             cycle_id,
-            tier: count.min(u8::MAX as u16) as u8,
-            flags: 0,
-            boundary_commit: spike_root_commit,
+            tier: counts.total.min(u8::MAX as u16) as u8,
+            flags: summary.cap_hit as u16,
+            boundary_commit: batch_commit,
         };
         self.append_archive_record(RecordKind::Other(SPIKE_RECORD_KIND), payload_commit, meta);
+    }
+
+    fn append_spike_batch(
+        &self,
+        cycle_id: u64,
+        batch: SpikeBatch,
+        suppressions: Vec<SpikeSuppression>,
+        ctx: &mut StageContext,
+    ) -> SpikeBusSummary {
+        let summary = if let Ok(mut workspace) = self.workspace.lock() {
+            workspace.append_spike_batch(batch.clone(), suppressions)
+        } else {
+            empty_spike_summary()
+        };
+        ctx.spike_summary = Some(summary.clone());
+        self.append_spike_bus_record(cycle_id, &summary, batch.commit);
+        summary
+    }
+
+    fn append_spike_events(
+        &self,
+        cycle_id: u64,
+        phase_frame: &PhaseFrame,
+        events: Vec<SpikeEvent>,
+        policy_ok: bool,
+        nsr_verdict: NsrVerdict,
+        ctx: &mut StageContext,
+    ) -> SpikeBusSummary {
+        if events.is_empty() {
+            return ctx
+                .spike_summary
+                .clone()
+                .unwrap_or_else(empty_spike_summary);
+        }
+        let suppressions = events
+            .iter()
+            .map(|event| self.suppression_for_event(phase_frame, event, policy_ok, nsr_verdict))
+            .collect::<Vec<_>>();
+        let batch = SpikeBatch::new(cycle_id, phase_frame.commit, events);
+        self.append_spike_batch(cycle_id, batch, suppressions, ctx)
+    }
+
+    fn suppression_for_event(
+        &self,
+        phase_frame: &PhaseFrame,
+        event: &SpikeEvent,
+        policy_ok: bool,
+        nsr_verdict: NsrVerdict,
+    ) -> SpikeSuppression {
+        let mut suppression = SpikeSuppression::default();
+        match event.kind {
+            SpikeKind::CausalLink if event.dst == OscId::Nsr => {
+                let lock = pair_lock_for(phase_frame, OscId::Cde, OscId::Nsr).unwrap_or(0);
+                suppression.suppressed_by_onn = lock < LOCK_MIN_CAUSAL;
+            }
+            SpikeKind::ConsistencyAlert if event.dst == OscId::Nsr => {
+                let lock = pair_lock_for(phase_frame, OscId::Geist, OscId::Iit).unwrap_or(0);
+                suppression.suppressed_by_onn = lock < LOCK_MIN_CONSIST;
+            }
+            SpikeKind::OutputIntent => {
+                let lock = pair_lock_for(phase_frame, OscId::Output, OscId::Nsr).unwrap_or(0);
+                suppression.suppressed_by_onn = lock < LOCK_MIN_SPEAK;
+                suppression.suppressed_by_policy =
+                    !policy_ok || !matches!(nsr_verdict, NsrVerdict::Allow);
+            }
+            _ => {}
+        }
+        suppression
     }
 
     fn append_ncde_output_record(&self, cycle_id: u64, output: &NcdeOutput) {
@@ -3044,19 +3216,20 @@ impl Router {
         self.archive.append(record);
     }
 
-    fn emit_cde_spikes(
+    fn queue_cde_spikes(
         &self,
+        cycle_id: u64,
         phase_frame: &PhaseFrame,
         output: &CdeOutputs,
-        attention_weights: &AttentionWeights,
+        _attention_weights: &AttentionWeights,
+        ctx: &mut StageContext,
     ) {
-        let spikes = cde_spikes_from_outputs(output, phase_frame, attention_weights.gain);
+        let phase_window = self.onn_phase_window();
+        let spikes = cde_spikes_from_outputs(output, phase_frame, phase_window);
         if spikes.is_empty() {
             return;
         }
-        if let Ok(mut workspace) = self.workspace.lock() {
-            workspace.append_spikes(spikes);
-        }
+        self.append_spike_events(cycle_id, phase_frame, spikes, true, NsrVerdict::Allow, ctx);
     }
 
     fn append_causal_report_record(&self, cycle_id: u64, report: &CausalReport) {
@@ -3350,10 +3523,9 @@ fn cde_counterfactual_seed(node: CdeNodeId, output_commit: Digest32) -> Digest32
 fn cde_spikes_from_outputs(
     output: &CdeOutputs,
     phase_frame: &PhaseFrame,
-    attention_gain: u16,
+    phase_window: u16,
 ) -> Vec<SpikeEvent> {
     let mut spikes = Vec::new();
-    let lock_cde_nsr = pair_lock_for(phase_frame, OscId::Cde, OscId::Nsr).unwrap_or(0);
     for edge in &output.top_edges {
         if !cde_edge_is_spike_candidate(edge) {
             continue;
@@ -3361,17 +3533,15 @@ fn cde_spikes_from_outputs(
         let payload_commit = cde_spike_payload_commit(edge, &output.interventions, output.commit);
         let amplitude = edge.2;
         for dst in [OscId::Cde, OscId::Nsr] {
-            if dst == OscId::Nsr && lock_cde_nsr < LOCK_MIN_CAUSAL {
-                continue;
-            }
-            spikes.push(encode_causal_link_spike(
+            spikes.push(encode_spike_with_window(
                 output.cycle_id,
-                phase_frame,
+                SpikeKind::CausalLink,
                 OscId::Cde,
                 dst,
                 amplitude,
-                attention_gain,
+                phase_frame.commit,
                 payload_commit,
+                phase_window,
             ));
         }
     }
@@ -3411,7 +3581,7 @@ fn cde_spike_payload_commit(
 fn spikes_in_phase(spikes: &[SpikeEvent], global_phase: u16, phase_window: u16) -> bool {
     spikes
         .iter()
-        .any(|spike| in_phase(spike.ttfs_code, global_phase, phase_window))
+        .any(|spike| in_phase(spike.ttfs, global_phase, phase_window))
 }
 
 fn in_phase(ttfs_code: u16, global_phase: u16, phase_window: u16) -> bool {
@@ -3448,68 +3618,48 @@ fn pair_locks_commit(pairs: &[ucf_onn::PairLock]) -> Digest32 {
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
-fn filter_spikes_by_lock(
-    spikes: &[SpikeEvent],
-    src: OscId,
-    dst: OscId,
-    kind: SpikeKind,
-    lock_value: u16,
-    threshold: u16,
-) -> (Vec<SpikeEvent>, Vec<SpikeEvent>) {
-    let mut accepted = Vec::new();
-    let mut suppressed = Vec::new();
-    for spike in spikes {
-        if spike.src == src && spike.dst == dst && spike.kind == kind {
-            if lock_value >= threshold {
-                accepted.push(spike.clone());
-            } else {
-                suppressed.push(spike.clone());
-            }
-        } else {
-            accepted.push(spike.clone());
-        }
-    }
-    (accepted, suppressed)
+struct SpikeCountSummary {
+    total: u16,
+    top_kinds: Vec<SpikeKind>,
 }
 
-fn top_spike_kinds(spikes: &[SpikeEvent], limit: usize) -> Vec<SpikeKind> {
-    if spikes.is_empty() || limit == 0 {
-        return Vec::new();
+fn summarize_spike_counts(counts: &[(SpikeKind, u16)]) -> SpikeCountSummary {
+    if counts.is_empty() {
+        return SpikeCountSummary {
+            total: 0,
+            top_kinds: Vec::new(),
+        };
     }
-    let mut counts: HashMap<SpikeKind, u16> = HashMap::new();
-    for spike in spikes {
-        let entry = counts.entry(spike.kind).or_insert(0);
-        *entry = entry.saturating_add(1);
-    }
-    let mut kinds = counts.into_iter().collect::<Vec<_>>();
-    kinds.sort_by(|(kind_a, count_a), (kind_b, count_b)| {
+    let total = counts
+        .iter()
+        .map(|(_, count)| *count as u32)
+        .sum::<u32>()
+        .min(u32::from(u16::MAX)) as u16;
+    let mut sorted = counts.to_vec();
+    sorted.sort_by(|(kind_a, count_a), (kind_b, count_b)| {
         count_b.cmp(count_a).then_with(|| kind_a.cmp(kind_b))
     });
-    kinds
-        .into_iter()
-        .take(limit)
-        .map(|(kind, _)| kind)
-        .collect()
+    let top_kinds = sorted.iter().take(3).map(|(kind, _)| *kind).collect();
+    SpikeCountSummary { total, top_kinds }
 }
 
-fn summarize_spike_counts(spikes: &[SpikeEvent]) -> Vec<(SpikeKind, u16)> {
-    if spikes.is_empty() {
-        return Vec::new();
+fn empty_spike_summary() -> SpikeBusSummary {
+    SpikeBusSummary {
+        seen_root: Digest32::new([0u8; 32]),
+        accepted_root: Digest32::new([0u8; 32]),
+        counts: Vec::new(),
+        causal_link_count: 0,
+        consistency_alert_count: 0,
+        thought_only_count: 0,
+        output_intent_count: 0,
+        cap_hit: false,
     }
-    let mut counts: HashMap<SpikeKind, u16> = HashMap::new();
-    for spike in spikes {
-        let entry = counts.entry(spike.kind).or_insert(0);
-        *entry = entry.saturating_add(1);
-    }
-    let mut pairs = counts.into_iter().collect::<Vec<_>>();
-    pairs.sort_by(|(kind_a, _), (kind_b, _)| kind_a.cmp(kind_b));
-    pairs
 }
 
 fn replay_pressure_from_spikes(spike_counts: &[(SpikeKind, u16)]) -> u16 {
     spike_counts
         .iter()
-        .find_map(|(kind, count)| (*kind == SpikeKind::ReplayTrigger).then_some(*count))
+        .find_map(|(kind, count)| (*kind == SpikeKind::ReplayCue).then_some(*count))
         .unwrap_or(0)
 }
 
@@ -3538,14 +3688,18 @@ fn derive_sleep_active(
 }
 
 fn spike_record_commit(
-    spike_root_commit: Digest32,
+    accepted_root: Digest32,
+    seen_root: Digest32,
     count: u16,
     top_kinds: &[SpikeKind],
+    cap_hit: bool,
 ) -> Digest32 {
     let mut hasher = blake3::Hasher::new();
     hasher.update(b"ucf.spikebus.record.v1");
-    hasher.update(spike_root_commit.as_bytes());
+    hasher.update(accepted_root.as_bytes());
+    hasher.update(seen_root.as_bytes());
     hasher.update(&count.to_be_bytes());
+    hasher.update(&[cap_hit as u8]);
     hasher.update(&(top_kinds.len() as u16).to_be_bytes());
     for kind in top_kinds {
         hasher.update(&kind.as_u16().to_be_bytes());
@@ -4245,7 +4399,8 @@ mod tests {
             commit: Digest32::new([5u8; 32]),
         };
         if output.emit_spikes {
-            router.emit_cde_spikes(&phase_frame, &output, &attention);
+            let mut ctx = StageContext::new();
+            router.queue_cde_spikes(1, &phase_frame, &output, &attention, &mut ctx);
         }
         let spikes = router
             .workspace
@@ -4292,7 +4447,8 @@ mod tests {
             commit: Digest32::new([8u8; 32]),
         };
         if output.emit_spikes {
-            router.emit_cde_spikes(&phase_frame, &output, &attention);
+            let mut ctx = StageContext::new();
+            router.queue_cde_spikes(2, &phase_frame, &output, &attention, &mut ctx);
         }
         let spikes = router
             .workspace
@@ -4395,12 +4551,10 @@ mod tests {
     fn spikes_in_phase_trigger_full_checks() {
         let spike = SpikeEvent::new(
             1,
+            SpikeKind::Threat,
             OscId::Jepa,
             OscId::Nsr,
-            SpikeKind::Threat,
             1020,
-            9000,
-            4000,
             Digest32::new([1u8; 32]),
             Digest32::new([2u8; 32]),
         );
@@ -4411,12 +4565,10 @@ mod tests {
     fn spikes_out_of_phase_do_not_trigger_full_checks() {
         let spike = SpikeEvent::new(
             1,
+            SpikeKind::Threat,
             OscId::Jepa,
             OscId::Nsr,
-            SpikeKind::Threat,
             2000,
-            9000,
-            4000,
             Digest32::new([1u8; 32]),
             Digest32::new([2u8; 32]),
         );
@@ -4425,102 +4577,75 @@ mod tests {
 
     #[test]
     fn causal_spikes_suppressed_when_lock_low() {
+        let router = build_router();
+        let phase_frame = PhaseFrame {
+            cycle_id: 1,
+            global_phase: 0,
+            module_phase: Vec::new(),
+            coherence_plv: 0,
+            pair_locks: vec![ucf_onn::PairLock {
+                a: OscId::Cde,
+                b: OscId::Nsr,
+                lock: LOCK_MIN_CAUSAL.saturating_sub(1),
+                phase_diff: 0,
+                commit: Digest32::new([1u8; 32]),
+            }],
+            states_commit: Digest32::new([0u8; 32]),
+            phase_frame_commit: Digest32::new([0u8; 32]),
+            commit: Digest32::new([2u8; 32]),
+        };
         let spike = SpikeEvent::new(
             1,
+            SpikeKind::CausalLink,
             OscId::Cde,
             OscId::Nsr,
-            SpikeKind::CausalLink,
             1200,
-            9000,
-            4000,
             Digest32::new([3u8; 32]),
             Digest32::new([4u8; 32]),
         );
-        let (accepted, suppressed) = filter_spikes_by_lock(
-            std::slice::from_ref(&spike),
-            OscId::Cde,
-            OscId::Nsr,
-            SpikeKind::CausalLink,
-            LOCK_MIN_CAUSAL.saturating_sub(1),
-            LOCK_MIN_CAUSAL,
+        let mut ctx = StageContext::new();
+        let summary = router.append_spike_events(
+            1,
+            &phase_frame,
+            vec![spike],
+            true,
+            NsrVerdict::Allow,
+            &mut ctx,
         );
-        assert!(accepted.is_empty());
-        assert_eq!(suppressed, vec![spike]);
+        assert_ne!(summary.seen_root, summary.accepted_root);
     }
 
     #[test]
-    fn causal_spikes_pass_when_lock_high() {
+    fn output_intent_suppressed_when_policy_denied() {
+        let router = build_router();
+        let phase_frame = PhaseFrame {
+            cycle_id: 1,
+            global_phase: 0,
+            module_phase: Vec::new(),
+            coherence_plv: 0,
+            pair_locks: vec![ucf_onn::PairLock {
+                a: OscId::Output,
+                b: OscId::Nsr,
+                lock: LOCK_MIN_SPEAK,
+                phase_diff: 0,
+                commit: Digest32::new([4u8; 32]),
+            }],
+            states_commit: Digest32::new([0u8; 32]),
+            phase_frame_commit: Digest32::new([0u8; 32]),
+            commit: Digest32::new([5u8; 32]),
+        };
         let spike = SpikeEvent::new(
             1,
-            OscId::Cde,
+            SpikeKind::OutputIntent,
+            OscId::Output,
             OscId::Nsr,
-            SpikeKind::CausalLink,
-            1200,
-            9000,
-            4000,
-            Digest32::new([5u8; 32]),
+            500,
             Digest32::new([6u8; 32]),
-        );
-        let (accepted, suppressed) = filter_spikes_by_lock(
-            std::slice::from_ref(&spike),
-            OscId::Cde,
-            OscId::Nsr,
-            SpikeKind::CausalLink,
-            LOCK_MIN_CAUSAL,
-            LOCK_MIN_CAUSAL,
-        );
-        assert!(suppressed.is_empty());
-        assert_eq!(accepted, vec![spike]);
-    }
-
-    #[test]
-    fn consistency_spikes_suppressed_when_lock_low() {
-        let spike = SpikeEvent::new(
-            1,
-            OscId::Geist,
-            OscId::Nsr,
-            SpikeKind::ConsistencyAlert,
-            1300,
-            9000,
-            4000,
             Digest32::new([7u8; 32]),
-            Digest32::new([8u8; 32]),
         );
-        let (accepted, suppressed) = filter_spikes_by_lock(
-            std::slice::from_ref(&spike),
-            OscId::Geist,
-            OscId::Nsr,
-            SpikeKind::ConsistencyAlert,
-            LOCK_MIN_CONSIST.saturating_sub(1),
-            LOCK_MIN_CONSIST,
-        );
-        assert!(accepted.is_empty());
-        assert_eq!(suppressed, vec![spike]);
-    }
-
-    #[test]
-    fn consistency_spikes_pass_when_lock_high() {
-        let spike = SpikeEvent::new(
-            1,
-            OscId::Geist,
-            OscId::Nsr,
-            SpikeKind::ConsistencyAlert,
-            1300,
-            9000,
-            4000,
-            Digest32::new([9u8; 32]),
-            Digest32::new([10u8; 32]),
-        );
-        let (accepted, suppressed) = filter_spikes_by_lock(
-            std::slice::from_ref(&spike),
-            OscId::Geist,
-            OscId::Nsr,
-            SpikeKind::ConsistencyAlert,
-            LOCK_MIN_CONSIST,
-            LOCK_MIN_CONSIST,
-        );
-        assert!(suppressed.is_empty());
-        assert_eq!(accepted, vec![spike]);
+        let suppression =
+            router.suppression_for_event(&phase_frame, &spike, false, NsrVerdict::Allow);
+        assert!(suppression.suppressed_by_policy);
     }
 
     #[test]
@@ -4582,7 +4707,9 @@ mod tests {
             .lock()
             .expect("workspace lock")
             .drain_spikes_for(OscId::BlueBrain, 3, 8);
-        assert!(spikes.iter().any(|spike| spike.kind == SpikeKind::Thought));
+        assert!(spikes
+            .iter()
+            .any(|spike| spike.kind == SpikeKind::ThoughtOnly));
 
         let events = router
             .output_router

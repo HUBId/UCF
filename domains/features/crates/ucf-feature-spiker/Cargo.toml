@@ -1,0 +1,11 @@
+[package]
+name = "ucf-feature-spiker"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+blake3 = "1"
+ucf-onn = { path = "../../../../core/crates/ucf-onn" }
+ucf-spike-encoder = { path = "../../../../core/crates/ucf-spike-encoder" }
+ucf-spikebus = { path = "../../../../core/crates/ucf-spikebus" }
+ucf-types = { path = "../../../../core/crates/ucf-types" }
