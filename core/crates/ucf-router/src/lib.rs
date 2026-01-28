@@ -2515,7 +2515,7 @@ impl Router {
             summary,
             slot,
         });
-        self.append_feature_translation_record(
+        self.append_feature_translation_archive_record(
             cycle_id,
             activation_view.commit,
             selection.commit,
@@ -2563,7 +2563,7 @@ impl Router {
         }
     }
 
-    fn append_feature_translation_record(
+    fn append_feature_translation_archive_record(
         &self,
         cycle_id: u64,
         activation_commit: Digest32,
@@ -2971,23 +2971,6 @@ impl Router {
             *streak = 0;
         }
         *streak
-    }
-
-    fn append_feature_translation_record(
-        &self,
-        cycle_id: u64,
-        activation_commit: Digest32,
-        selection_commit: Digest32,
-        topk: usize,
-    ) {
-        let payload_commit = feature_translation_commit(activation_commit, selection_commit);
-        let meta = RecordMeta {
-            cycle_id,
-            tier: topk.min(u8::MAX as usize) as u8,
-            flags: 0,
-            boundary_commit: activation_commit,
-        };
-        self.append_archive_record(RecordKind::Other(FEATURE_RECORD_KIND), payload_commit, meta);
     }
 
     fn arbitrate_workspace(&self, cycle_id: u64) -> WorkspaceSnapshot {
