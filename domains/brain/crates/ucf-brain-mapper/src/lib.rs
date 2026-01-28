@@ -299,6 +299,15 @@ mod tests {
         }
     }
 
+    fn workspace_snapshot_empty() -> WorkspaceSnapshot {
+        WorkspaceSnapshot {
+            cycle_id: 9,
+            broadcast: Vec::new(),
+            recursion_used: 0,
+            commit: Digest32::new([2u8; 32]),
+        }
+    }
+
     fn attention(channel: FocusChannel) -> AttentionWeights {
         AttentionWeights {
             channel,
