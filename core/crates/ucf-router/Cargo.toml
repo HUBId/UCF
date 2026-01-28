@@ -17,7 +17,7 @@ ucf-iit = { path = "../ucf-iit" }
 ucf-iit-monitor = { path = "../ucf-iit-monitor" }
 ucf-onn = { path = "../ucf-onn" }
 ucf-nsr-port = { path = "../ucf-nsr-port" }
-ucf-nsr = { path = "../../../domains/reasoning/crates/ucf-nsr" }
+ucf-nsr = { path = "../ucf-nsr" }
 ucf-ncde = { path = "../ucf-ncde" }
 ucf-ssm = { path = "../ucf-ssm" }
 ucf-rsa = { path = "../ucf-rsa" }

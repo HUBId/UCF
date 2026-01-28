@@ -2,6 +2,7 @@
 
 use blake3::Hasher;
 use ucf_cde_scm::{edge_key, CdeNodeId, CounterfactualResult, NSR_ATOM_MIN};
+use ucf_influence::InfluenceNodeId;
 use ucf_sandbox::IntentSummary;
 use ucf_spikebus::SpikeKind;
 use ucf_structural_store::NsrThresholds;
@@ -13,7 +14,15 @@ mod backend_datalog;
 mod backend_smt;
 
 const LIGHT_PROOF_DOMAIN: &[u8] = b"ucf.nsr.proof.light.v1";
-const NSR_INPUTS_DOMAIN: &[u8] = b"ucf.nsr.inputs.v1";
+const NSR_TRACE_INPUTS_DOMAIN: &[u8] = b"ucf.nsr.inputs.v1";
+const NSR_V1_INPUT_DOMAIN: &[u8] = b"ucf.nsr.v1.inputs";
+const NSR_V1_FACT_DOMAIN: &[u8] = b"ucf.nsr.v1.fact";
+const NSR_V1_RULE_DOMAIN: &[u8] = b"ucf.nsr.v1.rule";
+const NSR_V1_DERIVED_ROOT_DOMAIN: &[u8] = b"ucf.nsr.v1.derived.root";
+const NSR_V1_TRACE_ROOT_DOMAIN: &[u8] = b"ucf.nsr.v1.trace.root";
+const NSR_V1_OUTPUT_DOMAIN: &[u8] = b"ucf.nsr.v1.outputs";
+const NSR_V1_CORE_DOMAIN: &[u8] = b"ucf.nsr.v1.core";
+const NSR_V1_TRIGGERED_RULES_DOMAIN: &[u8] = b"ucf.nsr.v1.triggered.rules";
 const NSR_ATOM_DOMAIN: &[u8] = b"ucf.nsr.reasoning.atom.v1";
 const NSR_TRACE_COMMIT_DOMAIN: &[u8] = b"ucf.nsr.reasoning.trace.commit.v1";
 const NSR_TRACE_LEAF_DOMAIN: &[u8] = b"ucf.nsr.reasoning.trace.leaf.v1";
@@ -37,6 +46,664 @@ impl NsrVerdict {
             Self::Deny => 2,
         }
     }
+}
+
+const MAX_FACTS_V1: usize = 256;
+const MAX_RULES_V1: usize = 128;
+const MAX_ITERS_V1: usize = 16;
+const MAX_TRIGGERED_RULES_V1: usize = 32;
+const RISK_HI: i16 = 7_000;
+const DRIFT_HI: i16 = 7_000;
+const SURPRISE_HI: i16 = 7_000;
+const COH_LO: i16 = 3_000;
+const PHI_LO: i16 = 3_000;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum FactId {
+    RiskHigh,
+    DriftHigh,
+    SurpriseHigh,
+    CoherenceLow,
+    PhiLow,
+    CausalLinkPresent,
+    ConsistencyAlert,
+    OutputIntent,
+    RsaApplyProposed,
+    SleepActive,
+    ReplayActive,
+    Unknown(u16),
+}
+
+impl FactId {
+    pub fn as_u16(self) -> u16 {
+        match self {
+            Self::RiskHigh => 1,
+            Self::DriftHigh => 2,
+            Self::SurpriseHigh => 3,
+            Self::CoherenceLow => 4,
+            Self::PhiLow => 5,
+            Self::CausalLinkPresent => 6,
+            Self::ConsistencyAlert => 7,
+            Self::OutputIntent => 8,
+            Self::RsaApplyProposed => 9,
+            Self::SleepActive => 10,
+            Self::ReplayActive => 11,
+            Self::Unknown(code) => code,
+        }
+    }
+}
+
+impl Ord for FactId {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.as_u16().cmp(&other.as_u16())
+    }
+}
+
+impl PartialOrd for FactId {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Fact {
+    pub id: FactId,
+    pub value: i16,
+    pub commit: Digest32,
+}
+
+impl Fact {
+    pub fn new(id: FactId, value: i16, input_commit: Digest32) -> Self {
+        let commit = digest_nsr_fact(id, value, input_commit);
+        Self { id, value, commit }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct RuleId(pub u16);
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Rule {
+    pub id: RuleId,
+    pub requires: Vec<(FactId, i16)>,
+    pub implies: Vec<(FactId, i16)>,
+    pub deny: bool,
+    pub warn: bool,
+    pub commit: Digest32,
+}
+
+impl Rule {
+    pub fn new(
+        id: RuleId,
+        requires: Vec<(FactId, i16)>,
+        implies: Vec<(FactId, i16)>,
+        deny: bool,
+        warn: bool,
+    ) -> Self {
+        let commit = digest_nsr_rule(id, &requires, &implies, deny, warn);
+        Self {
+            id,
+            requires,
+            implies,
+            deny,
+            warn,
+            commit,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NsrInputs {
+    pub cycle_id: u64,
+    pub phase_commit: Digest32,
+    pub influence_nodes: Vec<(InfluenceNodeId, i16)>,
+    pub spike_accepted_root: Digest32,
+    pub spike_counts: Vec<(SpikeKind, u16)>,
+    pub cde_summary_commit: Option<Digest32>,
+    pub geist_consistency: bool,
+    pub sleep_active: bool,
+    pub replay_active: bool,
+    pub output_intent: bool,
+    pub rsa_apply_proposed: bool,
+    pub policy_ok: bool,
+    pub commit: Digest32,
+}
+
+impl NsrInputs {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        cycle_id: u64,
+        phase_commit: Digest32,
+        mut influence_nodes: Vec<(InfluenceNodeId, i16)>,
+        spike_accepted_root: Digest32,
+        mut spike_counts: Vec<(SpikeKind, u16)>,
+        cde_summary_commit: Option<Digest32>,
+        geist_consistency: bool,
+        sleep_active: bool,
+        replay_active: bool,
+        output_intent: bool,
+        rsa_apply_proposed: bool,
+        policy_ok: bool,
+    ) -> Self {
+        influence_nodes.sort_by(|(left, left_value), (right, right_value)| {
+            left.to_u16()
+                .cmp(&right.to_u16())
+                .then_with(|| left_value.cmp(right_value))
+        });
+        spike_counts.sort_by(|(left, left_count), (right, right_count)| {
+            left.as_u16()
+                .cmp(&right.as_u16())
+                .then_with(|| left_count.cmp(right_count))
+        });
+        let mut inputs = Self {
+            cycle_id,
+            phase_commit,
+            influence_nodes,
+            spike_accepted_root,
+            spike_counts,
+            cde_summary_commit,
+            geist_consistency,
+            sleep_active,
+            replay_active,
+            output_intent,
+            rsa_apply_proposed,
+            policy_ok,
+            commit: Digest32::new([0u8; 32]),
+        };
+        inputs.commit = digest_nsr_inputs_v1(&inputs);
+        inputs
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NsrOutputs {
+    pub cycle_id: u64,
+    pub verdict: NsrVerdict,
+    pub trace_root: Digest32,
+    pub triggered_rules: Vec<RuleId>,
+    pub derived_facts_root: Digest32,
+    pub commit: Digest32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NsrCore {
+    pub rules: Vec<Rule>,
+    pub commit: Digest32,
+}
+
+impl NsrCore {
+    pub fn new(mut rules: Vec<Rule>) -> Self {
+        rules.sort_by(|left, right| left.id.cmp(&right.id));
+        if rules.len() > MAX_RULES_V1 {
+            rules.truncate(MAX_RULES_V1);
+        }
+        let commit = digest_nsr_core(&rules);
+        Self { rules, commit }
+    }
+
+    pub fn tick(&self, inp: &NsrInputs) -> NsrOutputs {
+        let mut facts = extract_facts_v1(inp);
+        let mut fired_rule_ids: Vec<RuleId> = Vec::new();
+        let mut fired_rule_set: std::collections::HashSet<RuleId> =
+            std::collections::HashSet::new();
+        let mut fact_map = facts
+            .drain(..)
+            .map(|fact| (fact.id, fact))
+            .collect::<std::collections::BTreeMap<_, _>>();
+
+        for _ in 0..MAX_ITERS_V1 {
+            let mut changed = false;
+            for rule in &self.rules {
+                if fired_rule_set.contains(&rule.id) {
+                    continue;
+                }
+                if !rule_satisfied(&fact_map, &rule.requires) {
+                    continue;
+                }
+                fired_rule_set.insert(rule.id);
+                fired_rule_ids.push(rule.id);
+                for (fact_id, value) in &rule.implies {
+                    let apply_value = *value;
+                    let update = match fact_map.get(fact_id) {
+                        Some(existing) => apply_value > existing.value,
+                        None => true,
+                    };
+                    if update {
+                        fact_map.insert(*fact_id, Fact::new(*fact_id, apply_value, inp.commit));
+                        changed = true;
+                    }
+                }
+            }
+            if fact_map.len() > MAX_FACTS_V1 {
+                fact_map = cap_fact_map(&fact_map);
+            }
+            if !changed {
+                break;
+            }
+        }
+
+        let mut facts = fact_map.into_values().collect::<Vec<_>>();
+        if facts.len() > MAX_FACTS_V1 {
+            facts.sort_by(|left, right| {
+                right
+                    .value
+                    .cmp(&left.value)
+                    .then_with(|| left.id.cmp(&right.id))
+            });
+            facts.truncate(MAX_FACTS_V1);
+        }
+        let derived_facts_root = digest_derived_facts_root(&facts);
+
+        let mut triggered_rules = fired_rule_ids;
+        triggered_rules.sort();
+        triggered_rules.dedup();
+        if triggered_rules.len() > MAX_TRIGGERED_RULES_V1 {
+            triggered_rules.truncate(MAX_TRIGGERED_RULES_V1);
+        }
+
+        let fired_rule_commits = triggered_rules
+            .iter()
+            .filter_map(|rule_id| self.rules.iter().find(|rule| rule.id == *rule_id))
+            .map(|rule| rule.commit)
+            .collect::<Vec<_>>();
+        let trace_root = digest_trace_root_v1(derived_facts_root, &fired_rule_commits);
+
+        let deny = !inp.policy_ok
+            || self
+                .rules
+                .iter()
+                .any(|rule| rule.deny && fired_rule_set.contains(&rule.id));
+        let verdict = if deny {
+            NsrVerdict::Deny
+        } else if self
+            .rules
+            .iter()
+            .any(|rule| rule.warn && fired_rule_set.contains(&rule.id))
+        {
+            NsrVerdict::Warn
+        } else {
+            NsrVerdict::Allow
+        };
+
+        let commit = digest_nsr_outputs(inp.cycle_id, verdict, trace_root, derived_facts_root);
+        NsrOutputs {
+            cycle_id: inp.cycle_id,
+            verdict,
+            trace_root,
+            triggered_rules,
+            derived_facts_root,
+            commit,
+        }
+    }
+}
+
+impl Default for NsrCore {
+    fn default() -> Self {
+        Self::new(default_rules_v1())
+    }
+}
+
+fn default_rules_v1() -> Vec<Rule> {
+    vec![
+        Rule::new(
+            RuleId(1),
+            vec![(FactId::OutputIntent, 1), (FactId::RiskHigh, RISK_HI)],
+            Vec::new(),
+            true,
+            false,
+        ),
+        Rule::new(
+            RuleId(2),
+            vec![(FactId::OutputIntent, 1), (FactId::CoherenceLow, 1)],
+            Vec::new(),
+            false,
+            true,
+        ),
+        Rule::new(
+            RuleId(3),
+            vec![
+                (FactId::OutputIntent, 1),
+                (FactId::CoherenceLow, 1),
+                (FactId::PhiLow, 1),
+            ],
+            Vec::new(),
+            true,
+            false,
+        ),
+        Rule::new(
+            RuleId(4),
+            vec![(FactId::RsaApplyProposed, 1), (FactId::RiskHigh, RISK_HI)],
+            Vec::new(),
+            true,
+            false,
+        ),
+        Rule::new(
+            RuleId(5),
+            vec![(FactId::RsaApplyProposed, 1), (FactId::CoherenceLow, 1)],
+            Vec::new(),
+            true,
+            false,
+        ),
+        Rule::new(
+            RuleId(6),
+            vec![(FactId::ConsistencyAlert, 1), (FactId::DriftHigh, DRIFT_HI)],
+            Vec::new(),
+            true,
+            false,
+        ),
+        Rule::new(
+            RuleId(7),
+            vec![(FactId::CausalLinkPresent, 1), (FactId::CoherenceLow, 1)],
+            Vec::new(),
+            false,
+            true,
+        ),
+        Rule::new(
+            RuleId(8),
+            vec![
+                (FactId::SurpriseHigh, SURPRISE_HI),
+                (FactId::OutputIntent, 1),
+            ],
+            Vec::new(),
+            false,
+            true,
+        ),
+        Rule::new(
+            RuleId(9),
+            vec![(FactId::SleepActive, 1), (FactId::OutputIntent, 1)],
+            Vec::new(),
+            true,
+            false,
+        ),
+    ]
+}
+
+fn extract_facts_v1(inp: &NsrInputs) -> Vec<Fact> {
+    let mut facts: std::collections::BTreeMap<FactId, Fact> = std::collections::BTreeMap::new();
+    let mut risk = None;
+    let mut drift = None;
+    let mut surprise = None;
+    let mut coherence = None;
+    let mut phi = None;
+    for (node, value) in &inp.influence_nodes {
+        match node {
+            InfluenceNodeId::Risk => risk = Some(*value),
+            InfluenceNodeId::Drift => drift = Some(*value),
+            InfluenceNodeId::Surprise => surprise = Some(*value),
+            InfluenceNodeId::Coherence => coherence = Some(*value),
+            InfluenceNodeId::Integration => phi = Some(*value),
+            _ => {}
+        }
+    }
+
+    if let Some(value) = risk.filter(|value| *value >= RISK_HI) {
+        facts.insert(
+            FactId::RiskHigh,
+            Fact::new(FactId::RiskHigh, value, inp.commit),
+        );
+    }
+    if let Some(value) = drift.filter(|value| *value >= DRIFT_HI) {
+        facts.insert(
+            FactId::DriftHigh,
+            Fact::new(FactId::DriftHigh, value, inp.commit),
+        );
+    }
+    if let Some(value) = surprise.filter(|value| *value >= SURPRISE_HI) {
+        facts.insert(
+            FactId::SurpriseHigh,
+            Fact::new(FactId::SurpriseHigh, value, inp.commit),
+        );
+    }
+    if let Some(value) = coherence.filter(|value| *value <= COH_LO) {
+        let strength = (i32::from(COH_LO) - i32::from(value)).max(1) as i16;
+        facts.insert(
+            FactId::CoherenceLow,
+            Fact::new(FactId::CoherenceLow, strength, inp.commit),
+        );
+    }
+    if let Some(value) = phi.filter(|value| *value <= PHI_LO) {
+        let strength = (i32::from(PHI_LO) - i32::from(value)).max(1) as i16;
+        facts.insert(
+            FactId::PhiLow,
+            Fact::new(FactId::PhiLow, strength, inp.commit),
+        );
+    }
+
+    let mut causal_link_count = 0u16;
+    let mut consistency_count = 0u16;
+    for (kind, count) in &inp.spike_counts {
+        match kind {
+            SpikeKind::CausalLink => causal_link_count = causal_link_count.saturating_add(*count),
+            SpikeKind::ConsistencyAlert => {
+                consistency_count = consistency_count.saturating_add(*count);
+            }
+            _ => {}
+        }
+    }
+    if causal_link_count > 0 {
+        facts.insert(
+            FactId::CausalLinkPresent,
+            Fact::new(
+                FactId::CausalLinkPresent,
+                causal_link_count.min(i16::MAX as u16) as i16,
+                inp.commit,
+            ),
+        );
+    }
+    if inp.geist_consistency || consistency_count > 0 {
+        facts.insert(
+            FactId::ConsistencyAlert,
+            Fact::new(
+                FactId::ConsistencyAlert,
+                consistency_count.max(1).min(i16::MAX as u16) as i16,
+                inp.commit,
+            ),
+        );
+    }
+    if inp.output_intent {
+        facts.insert(
+            FactId::OutputIntent,
+            Fact::new(FactId::OutputIntent, 1, inp.commit),
+        );
+    }
+    if inp.rsa_apply_proposed {
+        facts.insert(
+            FactId::RsaApplyProposed,
+            Fact::new(FactId::RsaApplyProposed, 1, inp.commit),
+        );
+    }
+    if inp.sleep_active {
+        facts.insert(
+            FactId::SleepActive,
+            Fact::new(FactId::SleepActive, 1, inp.commit),
+        );
+    }
+    if inp.replay_active {
+        facts.insert(
+            FactId::ReplayActive,
+            Fact::new(FactId::ReplayActive, 1, inp.commit),
+        );
+    }
+
+    facts.into_values().collect()
+}
+
+fn rule_satisfied(
+    facts: &std::collections::BTreeMap<FactId, Fact>,
+    requires: &[(FactId, i16)],
+) -> bool {
+    requires.iter().all(|(id, threshold)| {
+        facts
+            .get(id)
+            .map(|fact| fact.value >= *threshold)
+            .unwrap_or(false)
+    })
+}
+
+fn cap_fact_map(
+    facts: &std::collections::BTreeMap<FactId, Fact>,
+) -> std::collections::BTreeMap<FactId, Fact> {
+    let mut entries = facts.values().cloned().collect::<Vec<_>>();
+    entries.sort_by(|left, right| {
+        right
+            .value
+            .cmp(&left.value)
+            .then_with(|| left.id.cmp(&right.id))
+    });
+    entries.truncate(MAX_FACTS_V1);
+    entries.into_iter().map(|fact| (fact.id, fact)).collect()
+}
+
+fn digest_nsr_fact(id: FactId, value: i16, input_commit: Digest32) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(NSR_V1_FACT_DOMAIN);
+    hasher.update(&id.as_u16().to_be_bytes());
+    hasher.update(&value.to_be_bytes());
+    hasher.update(input_commit.as_bytes());
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn digest_nsr_rule(
+    id: RuleId,
+    requires: &[(FactId, i16)],
+    implies: &[(FactId, i16)],
+    deny: bool,
+    warn: bool,
+) -> Digest32 {
+    let mut reqs = requires.to_vec();
+    reqs.sort_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)));
+    let mut imps = implies.to_vec();
+    imps.sort_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)));
+
+    let mut hasher = Hasher::new();
+    hasher.update(NSR_V1_RULE_DOMAIN);
+    hasher.update(&id.0.to_be_bytes());
+    hasher.update(&[deny as u8, warn as u8]);
+    hasher.update(&u16::try_from(reqs.len()).unwrap_or(u16::MAX).to_be_bytes());
+    for (fact_id, threshold) in &reqs {
+        hasher.update(&fact_id.as_u16().to_be_bytes());
+        hasher.update(&threshold.to_be_bytes());
+    }
+    hasher.update(&u16::try_from(imps.len()).unwrap_or(u16::MAX).to_be_bytes());
+    for (fact_id, value) in &imps {
+        hasher.update(&fact_id.as_u16().to_be_bytes());
+        hasher.update(&value.to_be_bytes());
+    }
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn digest_nsr_inputs_v1(inputs: &NsrInputs) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(NSR_V1_INPUT_DOMAIN);
+    hasher.update(&inputs.cycle_id.to_be_bytes());
+    hasher.update(inputs.phase_commit.as_bytes());
+    hasher.update(inputs.spike_accepted_root.as_bytes());
+    hasher.update(&[inputs.geist_consistency as u8]);
+    hasher.update(&[inputs.sleep_active as u8, inputs.replay_active as u8]);
+    hasher.update(&[inputs.output_intent as u8, inputs.rsa_apply_proposed as u8]);
+    hasher.update(&[inputs.policy_ok as u8]);
+    hasher.update(
+        &u16::try_from(inputs.influence_nodes.len())
+            .unwrap_or(u16::MAX)
+            .to_be_bytes(),
+    );
+    for (node, value) in &inputs.influence_nodes {
+        hasher.update(&node.to_u16().to_be_bytes());
+        hasher.update(&value.to_be_bytes());
+    }
+    hasher.update(
+        &u16::try_from(inputs.spike_counts.len())
+            .unwrap_or(u16::MAX)
+            .to_be_bytes(),
+    );
+    for (kind, count) in &inputs.spike_counts {
+        hasher.update(&kind.as_u16().to_be_bytes());
+        hasher.update(&count.to_be_bytes());
+    }
+    match inputs.cde_summary_commit {
+        Some(commit) => {
+            hasher.update(&[1]);
+            hasher.update(commit.as_bytes());
+        }
+        None => {
+            hasher.update(&[0]);
+            hasher.update(&[0u8; Digest32::LEN]);
+        }
+    }
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn digest_derived_facts_root(facts: &[Fact]) -> Digest32 {
+    let mut ordered = facts.to_vec();
+    ordered.sort_by(|left, right| left.id.cmp(&right.id));
+    let mut hasher = Hasher::new();
+    hasher.update(NSR_V1_DERIVED_ROOT_DOMAIN);
+    hasher.update(
+        &u16::try_from(ordered.len())
+            .unwrap_or(u16::MAX)
+            .to_be_bytes(),
+    );
+    for fact in &ordered {
+        hasher.update(fact.commit.as_bytes());
+    }
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn digest_trace_root_v1(derived_facts_root: Digest32, rule_commits: &[Digest32]) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(NSR_V1_TRACE_ROOT_DOMAIN);
+    hasher.update(derived_facts_root.as_bytes());
+    hasher.update(
+        &u16::try_from(rule_commits.len())
+            .unwrap_or(u16::MAX)
+            .to_be_bytes(),
+    );
+    for commit in rule_commits {
+        hasher.update(commit.as_bytes());
+    }
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn digest_nsr_outputs(
+    cycle_id: u64,
+    verdict: NsrVerdict,
+    trace_root: Digest32,
+    derived_facts_root: Digest32,
+) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(NSR_V1_OUTPUT_DOMAIN);
+    hasher.update(&cycle_id.to_be_bytes());
+    hasher.update(&[verdict.as_u8()]);
+    hasher.update(trace_root.as_bytes());
+    hasher.update(derived_facts_root.as_bytes());
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn digest_nsr_core(rules: &[Rule]) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(NSR_V1_CORE_DOMAIN);
+    hasher.update(&u16::try_from(rules.len()).unwrap_or(u16::MAX).to_be_bytes());
+    for rule in rules {
+        hasher.update(rule.commit.as_bytes());
+    }
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+pub fn digest_triggered_rules(triggered_rules: &[RuleId]) -> Digest32 {
+    let mut ordered = triggered_rules.to_vec();
+    ordered.sort();
+    ordered.dedup();
+    let mut hasher = Hasher::new();
+    hasher.update(NSR_V1_TRIGGERED_RULES_DOMAIN);
+    hasher.update(
+        &u16::try_from(ordered.len())
+            .unwrap_or(u16::MAX)
+            .to_be_bytes(),
+    );
+    for rule_id in ordered {
+        hasher.update(&rule_id.0.to_be_bytes());
+    }
+    Digest32::new(*hasher.finalize().as_bytes())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -111,7 +778,7 @@ impl BackendConfig {
 }
 
 pub trait SymbolicBackend {
-    fn check(&mut self, facts: &[ReasoningAtom], inp: &NsrInputs) -> SymbolicResult;
+    fn check(&mut self, facts: &[ReasoningAtom], inp: &NsrTraceInputs) -> SymbolicResult;
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -181,7 +848,7 @@ impl ReasoningTrace {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct NsrInputs {
+pub struct NsrTraceInputs {
     pub cycle_id: u64,
     pub phase_commit: Digest32,
     pub coherence_plv: u16,
@@ -199,7 +866,7 @@ pub struct NsrInputs {
     pub commit: Digest32,
 }
 
-impl NsrInputs {
+impl NsrTraceInputs {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         cycle_id: u64,
@@ -242,7 +909,7 @@ impl NsrInputs {
             causal_context,
             commit: Digest32::new([0u8; 32]),
         };
-        inputs.commit = digest_nsr_inputs(&inputs);
+        inputs.commit = digest_nsr_trace_inputs(&inputs);
         inputs.reasoning_atoms = reasoning_atoms
             .into_iter()
             .map(|(key, value)| ReasoningAtom::new(key, value, inputs.commit))
@@ -252,7 +919,7 @@ impl NsrInputs {
 }
 
 pub trait ConstraintEngine {
-    fn evaluate(&mut self, inp: &NsrInputs) -> ReasoningTrace;
+    fn evaluate(&mut self, inp: &NsrTraceInputs) -> ReasoningTrace;
 }
 
 #[derive(Clone, Debug)]
@@ -269,7 +936,7 @@ impl NsrEngineMvp {
 
     pub fn evaluate_components(
         &self,
-        inp: &NsrInputs,
+        inp: &NsrTraceInputs,
     ) -> (
         Vec<(u16, NsrReasonCode, u16)>,
         Vec<ReasoningAtom>,
@@ -347,7 +1014,7 @@ impl NsrEngineMvp {
 }
 
 impl ConstraintEngine for NsrEngineMvp {
-    fn evaluate(&mut self, inp: &NsrInputs) -> ReasoningTrace {
+    fn evaluate(&mut self, inp: &NsrTraceInputs) -> ReasoningTrace {
         let (rule_hits, derived_atoms, verdict) = self.evaluate_components(inp);
         ReasoningTrace::new(
             inp.cycle_id,
@@ -396,7 +1063,7 @@ impl NsrEngine {
 }
 
 impl ConstraintEngine for NsrEngine {
-    fn evaluate(&mut self, inp: &NsrInputs) -> ReasoningTrace {
+    fn evaluate(&mut self, inp: &NsrTraceInputs) -> ReasoningTrace {
         const MAX_FACTS: usize = 16;
         const MAX_DERIVED: usize = 16;
 
@@ -489,7 +1156,7 @@ impl Default for MockConstraintEngine {
 }
 
 impl ConstraintEngine for MockConstraintEngine {
-    fn evaluate(&mut self, inp: &NsrInputs) -> ReasoningTrace {
+    fn evaluate(&mut self, inp: &NsrTraceInputs) -> ReasoningTrace {
         let (rule_hits, derived_atoms) = match self.verdict {
             NsrVerdict::Allow => (Vec::new(), Vec::new()),
             NsrVerdict::Warn => (
@@ -524,7 +1191,7 @@ impl<E> ConstraintEngineAdapter<E> {
 }
 
 impl<E: ConstraintEngine> ConstraintEngine for ConstraintEngineAdapter<E> {
-    fn evaluate(&mut self, inp: &NsrInputs) -> ReasoningTrace {
+    fn evaluate(&mut self, inp: &NsrTraceInputs) -> ReasoningTrace {
         self.backend.evaluate(inp)
     }
 }
@@ -998,9 +1665,9 @@ fn digest_nsr_input(fields: &NsrInputDigestFields<'_>) -> Digest32 {
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
-fn digest_nsr_inputs(inputs: &NsrInputs) -> Digest32 {
+fn digest_nsr_trace_inputs(inputs: &NsrTraceInputs) -> Digest32 {
     let mut hasher = Hasher::new();
-    hasher.update(NSR_INPUTS_DOMAIN);
+    hasher.update(NSR_TRACE_INPUTS_DOMAIN);
     hasher.update(&inputs.cycle_id.to_be_bytes());
     hasher.update(inputs.phase_commit.as_bytes());
     hasher.update(&inputs.coherence_plv.to_be_bytes());
@@ -1244,14 +1911,14 @@ fn intent_kind_for_score(score: u16) -> IntentKind {
     }
 }
 
-struct Rule {
+struct PolicyRule {
     code: &'static str,
     severity: u16,
     matcher: fn(IntentKind, &[&str]) -> Option<String>,
 }
 
-fn rules_for_policy(policy_class: u16) -> Vec<Rule> {
-    let mut rules = vec![Rule {
+fn rules_for_policy(policy_class: u16) -> Vec<PolicyRule> {
+    let mut rules = vec![PolicyRule {
         code: "NSR_RULE_FORBIDDEN_INTENT",
         severity: 9000,
         matcher: |intent, _| match intent {
@@ -1261,7 +1928,7 @@ fn rules_for_policy(policy_class: u16) -> Vec<Rule> {
     }];
 
     if policy_class >= 2 {
-        rules.push(Rule {
+        rules.push(PolicyRule {
             code: "NSR_RULE_FORBIDDEN_INTENT",
             severity: 9000,
             matcher: |intent, _| match intent {
@@ -1271,7 +1938,7 @@ fn rules_for_policy(policy_class: u16) -> Vec<Rule> {
         });
     }
 
-    rules.push(Rule {
+    rules.push(PolicyRule {
         code: "NSR_RULE_UNSAFE_SEQUENCE",
         severity: 8000,
         matcher: |_, tags| {
@@ -1536,8 +2203,8 @@ mod tests {
             .all(|violation| !is_causal_violation(&violation.code)));
     }
 
-    fn base_nsr_inputs(cycle_id: u64) -> NsrInputs {
-        NsrInputs::new(
+    fn base_nsr_inputs(cycle_id: u64) -> NsrTraceInputs {
+        NsrTraceInputs::new(
             cycle_id,
             Digest32::new([1u8; 32]),
             6_000,
@@ -1581,7 +2248,7 @@ mod tests {
     fn causal_atoms_raise_risk_warning() {
         let thresholds = NsrThresholds::default();
         let atom_key = edge_key(CdeNodeId::Risk, CdeNodeId::OutputSuppression);
-        let inputs = NsrInputs::new(
+        let inputs = NsrTraceInputs::new(
             1,
             Digest32::new([2u8; 32]),
             6_500,
@@ -1626,7 +2293,7 @@ mod tests {
         let mut engine = NsrEngineMvp::new(NsrThresholds::new(5_000, 8_000));
         let mut inputs = base_nsr_inputs(1);
         inputs.risk = 9_000;
-        inputs.commit = digest_nsr_inputs(&inputs);
+        inputs.commit = digest_nsr_trace_inputs(&inputs);
 
         let trace = engine.evaluate(&inputs);
 
@@ -1640,7 +2307,7 @@ mod tests {
         let mut inputs = base_nsr_inputs(1);
         inputs.coherence_plv = 2_000;
         inputs.phi_proxy = 2_000;
-        inputs.commit = digest_nsr_inputs(&inputs);
+        inputs.commit = digest_nsr_trace_inputs(&inputs);
 
         let trace = engine.evaluate(&inputs);
 
@@ -1670,5 +2337,150 @@ mod tests {
         let inputs = base_nsr_inputs(1);
 
         let _result = backend.check(&[], &inputs);
+    }
+
+    fn base_v1_inputs() -> NsrInputs {
+        NsrInputs::new(
+            1,
+            Digest32::new([9u8; 32]),
+            vec![
+                (InfluenceNodeId::Risk, 2_000),
+                (InfluenceNodeId::Coherence, 4_000),
+                (InfluenceNodeId::Integration, 4_000),
+            ],
+            Digest32::new([3u8; 32]),
+            vec![(SpikeKind::CausalLink, 1)],
+            None,
+            false,
+            false,
+            false,
+            false,
+            false,
+            true,
+        )
+    }
+
+    #[test]
+    fn nsr_v1_is_deterministic() {
+        let core = NsrCore::default();
+        let inputs = base_v1_inputs();
+
+        let first = core.tick(&inputs);
+        let second = core.tick(&inputs);
+
+        assert_eq!(first.commit, second.commit);
+        assert_eq!(first.trace_root, second.trace_root);
+    }
+
+    #[test]
+    fn output_intent_risk_high_denies() {
+        let core = NsrCore::default();
+        let inputs = NsrInputs::new(
+            2,
+            Digest32::new([8u8; 32]),
+            vec![
+                (InfluenceNodeId::Risk, 9_000),
+                (InfluenceNodeId::Coherence, 4_000),
+            ],
+            Digest32::new([4u8; 32]),
+            Vec::new(),
+            None,
+            false,
+            false,
+            false,
+            true,
+            false,
+            true,
+        );
+
+        let outputs = core.tick(&inputs);
+
+        assert_eq!(outputs.verdict, NsrVerdict::Deny);
+    }
+
+    #[test]
+    fn rsa_apply_low_coherence_denies() {
+        let core = NsrCore::default();
+        let inputs = NsrInputs::new(
+            3,
+            Digest32::new([7u8; 32]),
+            vec![
+                (InfluenceNodeId::Risk, 2_000),
+                (InfluenceNodeId::Coherence, 2_000),
+            ],
+            Digest32::new([5u8; 32]),
+            Vec::new(),
+            None,
+            false,
+            false,
+            false,
+            false,
+            true,
+            true,
+        );
+
+        let outputs = core.tick(&inputs);
+
+        assert_eq!(outputs.verdict, NsrVerdict::Deny);
+    }
+
+    #[test]
+    fn sleep_active_output_intent_denies() {
+        let core = NsrCore::default();
+        let inputs = NsrInputs::new(
+            4,
+            Digest32::new([6u8; 32]),
+            vec![(InfluenceNodeId::Coherence, 4_000)],
+            Digest32::new([6u8; 32]),
+            Vec::new(),
+            None,
+            false,
+            true,
+            false,
+            true,
+            false,
+            true,
+        );
+
+        let outputs = core.tick(&inputs);
+
+        assert_eq!(outputs.verdict, NsrVerdict::Deny);
+    }
+
+    #[test]
+    fn policy_gate_denies() {
+        let core = NsrCore::default();
+        let inputs = NsrInputs::new(
+            5,
+            Digest32::new([1u8; 32]),
+            Vec::new(),
+            Digest32::new([1u8; 32]),
+            Vec::new(),
+            None,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+        );
+
+        let outputs = core.tick(&inputs);
+
+        assert_eq!(outputs.verdict, NsrVerdict::Deny);
+    }
+
+    #[test]
+    fn fact_cap_is_deterministic() {
+        let mut facts = std::collections::BTreeMap::new();
+        for idx in 0..(MAX_FACTS_V1 + 16) {
+            let id = FactId::Unknown(100 + idx as u16);
+            facts.insert(id, Fact::new(id, 1, Digest32::new([2u8; 32])));
+        }
+        let capped = cap_fact_map(&facts);
+
+        assert_eq!(capped.len(), MAX_FACTS_V1);
+        assert!(capped.contains_key(&FactId::Unknown(100)));
+        assert!(!capped.contains_key(&FactId::Unknown(100 + MAX_FACTS_V1 as u16 + 5)));
     }
 }

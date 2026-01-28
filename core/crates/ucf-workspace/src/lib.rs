@@ -518,6 +518,8 @@ pub struct WorkspaceSnapshot {
     pub nsr_trace_root: Option<Digest32>,
     pub nsr_prev_commit: Option<Digest32>,
     pub nsr_verdict: Option<u8>,
+    pub nsr_triggered_rules_root: Option<Digest32>,
+    pub nsr_derived_facts_root: Option<Digest32>,
     pub rsa_commit: Digest32,
     pub rsa_chosen: Option<Digest32>,
     pub rsa_applied: bool,
@@ -602,6 +604,7 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
             + 1
             + 2
             + snapshot.internal_utterances.len() * (Digest32::LEN + Digest32::LEN + 2)
+            + 2 * (1 + Digest32::LEN)
             + 1
             + signals.len() * (2 + 2 + Digest32::LEN + 2 + SUMMARY_MAX_BYTES),
     );
@@ -695,6 +698,26 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
         }
     }
     payload.push(snapshot.nsr_verdict.unwrap_or(0));
+    match snapshot.nsr_triggered_rules_root {
+        Some(commit) => {
+            payload.push(1);
+            payload.extend_from_slice(commit.as_bytes());
+        }
+        None => {
+            payload.push(0);
+            payload.extend_from_slice(&[0u8; Digest32::LEN]);
+        }
+    }
+    match snapshot.nsr_derived_facts_root {
+        Some(commit) => {
+            payload.push(1);
+            payload.extend_from_slice(commit.as_bytes());
+        }
+        None => {
+            payload.push(0);
+            payload.extend_from_slice(&[0u8; Digest32::LEN]);
+        }
+    }
     payload.extend_from_slice(snapshot.rsa_commit.as_bytes());
     match snapshot.rsa_chosen {
         Some(commit) => {
@@ -782,6 +805,8 @@ pub struct Workspace {
     nsr_trace_root: Option<Digest32>,
     nsr_prev_commit: Option<Digest32>,
     nsr_verdict: Option<u8>,
+    nsr_triggered_rules_root: Option<Digest32>,
+    nsr_derived_facts_root: Option<Digest32>,
     sle_commit: Digest32,
     sle_self_symbol_commit: Digest32,
     sle_rate_limited: bool,
@@ -823,6 +848,8 @@ impl Workspace {
             nsr_trace_root: None,
             nsr_prev_commit: None,
             nsr_verdict: None,
+            nsr_triggered_rules_root: None,
+            nsr_derived_facts_root: None,
             sle_commit: Digest32::new([0u8; 32]),
             sle_self_symbol_commit: Digest32::new([0u8; 32]),
             sle_rate_limited: false,
@@ -955,10 +982,14 @@ impl Workspace {
         trace_root: Digest32,
         prev_commit: Option<Digest32>,
         verdict: u8,
+        derived_facts_root: Digest32,
+        triggered_rules_root: Digest32,
     ) {
         self.nsr_trace_root = Some(trace_root);
         self.nsr_prev_commit = prev_commit;
         self.nsr_verdict = Some(verdict);
+        self.nsr_derived_facts_root = Some(derived_facts_root);
+        self.nsr_triggered_rules_root = Some(triggered_rules_root);
     }
 
     pub fn set_sle_outputs(
@@ -1037,6 +1068,8 @@ impl Workspace {
         let nsr_trace_root = self.nsr_trace_root.take();
         let nsr_prev_commit = self.nsr_prev_commit.take();
         let nsr_verdict = self.nsr_verdict.take();
+        let nsr_triggered_rules_root = self.nsr_triggered_rules_root.take();
+        let nsr_derived_facts_root = self.nsr_derived_facts_root.take();
         let rsa_commit = self.rsa_commit;
         let rsa_chosen = self.rsa_chosen;
         let rsa_applied = self.rsa_applied;
@@ -1077,6 +1110,8 @@ impl Workspace {
             nsr_trace_root,
             nsr_prev_commit,
             nsr_verdict,
+            nsr_triggered_rules_root,
+            nsr_derived_facts_root,
             rsa_commit,
             rsa_chosen,
             rsa_applied,
@@ -1120,6 +1155,8 @@ impl Workspace {
             nsr_trace_root,
             nsr_prev_commit,
             nsr_verdict,
+            nsr_triggered_rules_root,
+            nsr_derived_facts_root,
             rsa_commit,
             rsa_chosen,
             rsa_applied,
@@ -1540,6 +1577,8 @@ fn commit_snapshot(
     nsr_trace_root: Option<Digest32>,
     nsr_prev_commit: Option<Digest32>,
     nsr_verdict: Option<u8>,
+    nsr_triggered_rules_root: Option<Digest32>,
+    nsr_derived_facts_root: Option<Digest32>,
     rsa_commit: Digest32,
     rsa_chosen: Option<Digest32>,
     rsa_applied: bool,
@@ -1647,6 +1686,24 @@ fn commit_snapshot(
         }
     }
     hasher.update(&[nsr_verdict.unwrap_or(0)]);
+    match nsr_triggered_rules_root {
+        Some(commit) => {
+            hasher.update(&[1]);
+            hasher.update(commit.as_bytes());
+        }
+        None => {
+            hasher.update(&[0]);
+        }
+    }
+    match nsr_derived_facts_root {
+        Some(commit) => {
+            hasher.update(&[1]);
+            hasher.update(commit.as_bytes());
+        }
+        None => {
+            hasher.update(&[0]);
+        }
+    }
     hasher.update(rsa_commit.as_bytes());
     match rsa_chosen {
         Some(commit) => {
