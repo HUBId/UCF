@@ -25,7 +25,6 @@ use ucf_cde::{
 use ucf_cde_scm::{
     CausalReport, CdeEngine, CdeInputs, CdeNodeId, CdeOutputs, CounterfactualResult,
 };
-use ucf_commit::commit_policy_decision;
 use ucf_consistency_engine::{
     ConsistencyAction, ConsistencyActionKind, ConsistencyEngine, ConsistencyInputs,
     ConsistencyReport, DriftBand,
@@ -64,7 +63,7 @@ use ucf_sandbox::{
     AiCallRequest, ControlFrameNormalized, IntentSummary, MockWasmSandbox, SandboxBudget,
     SandboxCaps, SandboxPort, SandboxReport,
 };
-use ucf_sle::{SelfReflex, SleCore, SleEngine, SleInputs, SleOutputs, SleStimulusKind};
+use ucf_sle::{SelfReflex, SleCore, SleEngine, SleInputs, SleOutputs};
 use ucf_spike_encoder::encode_spike_with_window;
 use ucf_spikebus::{SpikeBatch, SpikeBusSummary, SpikeEvent, SpikeKind, SpikeSuppression};
 use ucf_ssm::{SsmCore, SsmInput as WmSsmInput, SsmOutput as WmSsmOutput, SsmParams};
@@ -81,8 +80,7 @@ use ucf_tom_port::{IntentType, TomPort};
 use ucf_types::v1::spec::{ControlFrame, DecisionKind, Digest, ExperienceRecord, PolicyDecision};
 use ucf_types::{AlgoId, Digest32, EvidenceId};
 use ucf_workspace::{
-    output_event_commit, InternalUtterance, SignalKind, Workspace, WorkspaceConfig,
-    WorkspaceSignal, WorkspaceSnapshot,
+    output_event_commit, SignalKind, Workspace, WorkspaceConfig, WorkspaceSignal, WorkspaceSnapshot,
 };
 
 const ISM_ANCHOR_TOP_K: usize = 4;
@@ -525,6 +523,7 @@ impl Router {
                 rsa_applied: false,
                 rsa_new_params_commit: None,
                 sle_commit: Digest32::new([0u8; 32]),
+                sle_self_observation_commit: Digest32::new([0u8; 32]),
                 sle_self_symbol_commit: Digest32::new([0u8; 32]),
                 sle_rate_limited: false,
                 internal_utterances: Vec::new(),
@@ -1230,23 +1229,6 @@ impl Router {
                     ctx.consistency_actions = consistency_actions;
                     ctx.consistency_effects = consistency_effects;
 
-                    let ism_anchor_commit = anchors.first().map(|anchor| anchor.commit);
-                    if let Some(sle_outputs) = self.tick_sle(
-                        cycle_id,
-                        &phase_frame,
-                        &iit_output,
-                        drift_score,
-                        surprise_score,
-                        attention_risk,
-                        &decision,
-                        ctx.ssm_output.as_ref(),
-                        ctx.ncde_output.as_ref(),
-                        ctx.self_state.as_ref(),
-                        ctx.nsr_output.as_ref(),
-                        ism_anchor_commit,
-                    ) {
-                        ctx.sle_outputs = Some(sle_outputs);
-                    }
                     if let Ok(workspace) = self.workspace.lock() {
                         ctx.spike_summary = Some(workspace.spike_summary());
                     }
@@ -1513,16 +1495,22 @@ impl Router {
                         .cde_v1_output
                         .as_ref()
                         .map(|output| output.summary_commit);
-                    let sle_self_symbol = ctx
-                        .sle_outputs
-                        .as_ref()
-                        .map(|output| output.self_symbol_commit);
-                    let rsa_applied = self
+                    let (workspace_sle_symbol, rsa_applied) = self
                         .workspace
                         .lock()
                         .ok()
-                        .map(|workspace| workspace.rsa_applied())
-                        .unwrap_or(false);
+                        .map(|workspace| {
+                            (
+                                Some(workspace.sle_self_symbol_commit()),
+                                workspace.rsa_applied(),
+                            )
+                        })
+                        .unwrap_or((None, false));
+                    let sle_self_symbol = ctx
+                        .sle_outputs
+                        .as_ref()
+                        .map(|output| output.self_symbol_commit)
+                        .or(workspace_sle_symbol);
                     let influence_inputs = InfluenceInputs {
                         cycle_id,
                         phase_commit,
@@ -1671,6 +1659,19 @@ impl Router {
                 }
                 PulseKind::Broadcast => {
                     let snapshot = self.arbitrate_workspace(cycle_id);
+                    let sle_outputs = self.tick_sle(
+                        cycle_id,
+                        snapshot.onn_phase_frame_commit,
+                        snapshot.iit_output.as_ref(),
+                        ctx.drift_score.unwrap_or(0),
+                        ctx.surprise_score.unwrap_or(0),
+                        ctx.attention_risk,
+                        ctx.ncde_output.as_ref(),
+                        &snapshot,
+                    );
+                    if let Some(outputs) = sle_outputs {
+                        ctx.sle_outputs = Some(outputs);
+                    }
                     self.append_workspace_snapshot_record(&snapshot);
                     if let Ok(mut guard) = self.last_workspace_snapshot.lock() {
                         *guard = Some(snapshot.clone());
@@ -2218,57 +2219,41 @@ impl Router {
     fn tick_sle(
         &self,
         cycle_id: u64,
-        phase_frame: &PhaseFrame,
-        iit_output: &IitOutput,
+        phase_commit: Digest32,
+        iit_output: Option<&IitOutput>,
         drift_score: u16,
         surprise_score: u16,
         attention_risk: u16,
-        decision: &PolicyDecision,
-        ssm_output: Option<&WmSsmOutput>,
         ncde_output: Option<&NcdeOutputs>,
-        self_state: Option<&SelfState>,
-        nsr_output: Option<&NsrOutputs>,
-        ism_anchor_commit: Option<Digest32>,
+        workspace_snapshot: &WorkspaceSnapshot,
     ) -> Option<SleOutputs> {
-        let ssm_commit = ssm_output
-            .map(|output| output.commit)
+        let phi_proxy = iit_output.map(|output| output.phi_proxy).unwrap_or(0);
+        let nsr_trace_root = workspace_snapshot
+            .nsr_trace_root
             .unwrap_or_else(|| Digest32::new([0u8; 32]));
-        let wm_salience = ssm_output.map(|output| output.wm_salience).unwrap_or(0);
-        let wm_novelty = ssm_output.map(|output| output.wm_novelty).unwrap_or(0);
-        let ncde_commit = ncde_output
-            .map(|output| output.state_commit)
+        let nsr_verdict = workspace_snapshot.nsr_verdict.unwrap_or(0);
+        let ncde_state_digest = ncde_output
+            .map(|output| output.state_digest)
             .unwrap_or_else(|| Digest32::new([0u8; 32]));
-        let ncde_energy = ncde_output.map(|output| output.energy).unwrap_or(0);
-        let geist_commit = self_state.map(|state| state.commit);
-        let geist_consistency_ok =
-            self_state.map(|state| state.consistency >= SELF_CONSISTENCY_OK_THRESHOLD);
-        let nsr_trace_root = nsr_output.map(|output| output.trace_root);
-        let nsr_verdict = nsr_output.map(|output| output.verdict.as_u8());
-        let policy_decision_commit = if decision.kind == DecisionKind::DecisionKindDeny as i32 {
-            Some(commit_policy_decision(decision).digest)
-        } else {
-            None
-        };
-
+        let ncde_energy = ncde_output
+            .map(|output| output.energy)
+            .unwrap_or(workspace_snapshot.ncde_energy);
         let inputs = SleInputs::new(
             cycle_id,
-            phase_frame.commit,
-            phase_frame.coherence_plv,
-            iit_output.phi_proxy,
-            ssm_commit,
-            wm_salience,
-            wm_novelty,
-            ncde_commit,
-            ncde_energy,
-            geist_commit,
-            geist_consistency_ok,
-            ism_anchor_commit,
-            nsr_trace_root,
-            nsr_verdict,
-            policy_decision_commit,
+            phase_commit,
+            workspace_snapshot.onn_global_plv,
+            phi_proxy,
             attention_risk,
             drift_score,
             surprise_score,
+            nsr_verdict,
+            nsr_trace_root,
+            ncde_state_digest,
+            ncde_energy,
+            workspace_snapshot.influence_pulses_root,
+            workspace_snapshot.spike_seen_root,
+            workspace_snapshot.spike_accepted_root,
+            workspace_snapshot.commit,
         );
 
         let outputs = self
@@ -2281,44 +2266,12 @@ impl Router {
         if let Ok(mut workspace) = self.workspace.lock() {
             workspace.set_sle_outputs(
                 outputs.commit,
+                outputs.self_observation_commit,
                 outputs.self_symbol_commit,
-                outputs.rate_limited,
+                false,
             );
-            if let Some(pulse) = outputs
-                .stimuli
-                .iter()
-                .find(|stim| matches!(stim.kind, SleStimulusKind::ThoughtOnlyPulse))
-            {
-                let severity = pulse.value.unsigned_abs();
-                workspace.push_internal_utterance(InternalUtterance::new(
-                    outputs.self_symbol_commit,
-                    severity,
-                ));
-                let amplitude = severity.min(10_000);
-                let phase_window = self.onn_phase_window();
-                let spikes = vec![
-                    encode_spike_with_window(
-                        cycle_id,
-                        SpikeKind::ThoughtOnly,
-                        OscId::Jepa,
-                        OscId::BlueBrain,
-                        amplitude,
-                        phase_frame.commit,
-                        pulse.commit,
-                        phase_window,
-                    ),
-                    encode_spike_with_window(
-                        cycle_id,
-                        SpikeKind::ThoughtOnly,
-                        OscId::Jepa,
-                        OscId::Geist,
-                        amplitude,
-                        phase_frame.commit,
-                        pulse.commit,
-                        phase_window,
-                    ),
-                ];
-                let batch = SpikeBatch::new(cycle_id, phase_frame.commit, spikes);
+            if !outputs.thought_spikes.is_empty() {
+                let batch = SpikeBatch::new(cycle_id, phase_commit, outputs.thought_spikes.clone());
                 let summary = workspace.append_spike_batch(
                     batch.clone(),
                     vec![SpikeSuppression::default(); batch.events.len()],
@@ -2336,15 +2289,15 @@ impl Router {
 
     fn append_sle_outputs_record(&self, cycle_id: u64, outputs: &SleOutputs) {
         let record_id = format!("sle-{}", cycle_id);
-        let mut payload = Vec::with_capacity(Digest32::LEN * 2 + 2 + 1);
+        let mut payload = Vec::with_capacity(Digest32::LEN * 3 + 2);
         payload.extend_from_slice(outputs.commit.as_bytes());
+        payload.extend_from_slice(outputs.self_observation_commit.as_bytes());
         payload.extend_from_slice(outputs.self_symbol_commit.as_bytes());
         payload.extend_from_slice(
-            &u16::try_from(outputs.stimuli.len())
+            &u16::try_from(outputs.thought_spikes.len())
                 .unwrap_or(u16::MAX)
                 .to_be_bytes(),
         );
-        payload.push(outputs.rate_limited as u8);
         let record = build_compact_record(record_id, cycle_id, "sle", payload);
         self.archive.append(record);
     }
@@ -4259,7 +4212,6 @@ mod tests {
     use ucf_risk_gate::PolicyRiskGate;
     use ucf_structural_store::{OnnKnobs, SnnKnobs, StructuralParams, StructuralStore};
     use ucf_tom_port::MockTomPort;
-    use ucf_types::v1::spec::{ActionCode, DecisionKind, PolicyDecision};
 
     fn build_router() -> Router {
         let policy = Arc::new(NoOpPolicyEvaluator::new());
@@ -4755,16 +4707,7 @@ mod tests {
     #[test]
     fn sle_thought_pulse_routes_to_internal_spikes_only() {
         let router = build_router();
-        let phase_frame = PhaseFrame {
-            cycle_id: 3,
-            global_phase: 12_000,
-            module_phase: Vec::new(),
-            coherence_plv: 6500,
-            pair_locks: Vec::new(),
-            states_commit: Digest32::new([0u8; 32]),
-            phase_frame_commit: Digest32::new([0u8; 32]),
-            commit: Digest32::new([1u8; 32]),
-        };
+        let phase_commit = Digest32::new([1u8; 32]);
         let iit_output = IitOutput {
             cycle_id: 3,
             phi_proxy: 5200,
@@ -4773,38 +4716,26 @@ mod tests {
             warnings: 0,
             commit: Digest32::new([2u8; 32]),
         };
-        let decision = PolicyDecision {
-            kind: DecisionKind::DecisionKindAllow as i32,
-            action: ActionCode::ActionCodeContinue as i32,
-            rationale: "ok".to_string(),
-            confidence_bp: 1000,
-            constraint_ids: Vec::new(),
-        };
+        let snapshot = router.arbitrate_workspace(3);
 
         let outputs = router
             .tick_sle(
                 3,
-                &phase_frame,
-                &iit_output,
+                phase_commit,
+                Some(&iit_output),
                 1200,
                 800,
                 1500,
-                &decision,
                 None,
-                None,
-                None,
-                None,
-                None,
+                &snapshot,
             )
             .expect("sle outputs");
 
-        assert!(outputs
-            .stimuli
-            .iter()
-            .any(|stim| matches!(stim.kind, SleStimulusKind::ThoughtOnlyPulse)));
-
-        let snapshot = router.arbitrate_workspace(3);
-        assert!(!snapshot.internal_utterances.is_empty());
+        assert!(!outputs.thought_spikes.is_empty());
+        assert!(outputs.thought_spikes.iter().all(|spike| {
+            matches!(spike.dst, OscId::Geist | OscId::BlueBrain)
+                && spike.kind == SpikeKind::ThoughtOnly
+        }));
 
         let spikes = router
             .workspace

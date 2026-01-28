@@ -8,6 +8,7 @@ blake3 = "1"
 ucf-cde-port = { path = "../ucf-cde-port" }
 ucf-geist = { path = "../../../domains/geist/crates/ucf-geist" }
 ucf-nsr-port = { path = "../ucf-nsr-port" }
+ucf-spikebus = { path = "../ucf-spikebus" }
 ucf-types = { path = "../ucf-types" }
 ucf-workspace = { path = "../ucf-workspace" }
 
