@@ -56,8 +56,8 @@ const PARAM_LABEL_ONN_COUPLING: &str = "onn.coupling";
 const PARAM_LABEL_ONN_MAX_DELTA: &str = "onn.max_delta";
 const PARAM_LABEL_ONN_LOCK_WINDOW: &str = "onn.lock_window";
 const PARAM_LABEL_SNN_VERIFY_LIMIT: &str = "snn.verify_limit";
-const PARAM_LABEL_SNN_ATTENTION_SHIFT: &str = "snn.threshold.attention_shift";
-const PARAM_LABEL_SNN_REPLAY_TRIGGER: &str = "snn.threshold.replay_trigger";
+const PARAM_LABEL_SNN_FEATURE: &str = "snn.threshold.feature";
+const PARAM_LABEL_SNN_REPLAY_CUE: &str = "snn.threshold.replay_cue";
 const PARAM_LABEL_REPLAY_MICRO: &str = "replay.micro_k";
 const PARAM_LABEL_REPLAY_MESO: &str = "replay.meso_m";
 const PARAM_LABEL_REPLAY_MACRO: &str = "replay.macro_n";
@@ -196,13 +196,15 @@ impl SnnKnobs {
 impl Default for SnnKnobs {
     fn default() -> Self {
         let thresholds = vec![
+            (SpikeKind::Feature, 0),
             (SpikeKind::Novelty, 0),
             (SpikeKind::Threat, 0),
             (SpikeKind::CausalLink, 0),
             (SpikeKind::ConsistencyAlert, 0),
-            (SpikeKind::ReplayTrigger, 0),
-            (SpikeKind::AttentionShift, 0),
-            (SpikeKind::Thought, 0),
+            (SpikeKind::ThoughtOnly, 0),
+            (SpikeKind::MemoryCue, 0),
+            (SpikeKind::ReplayCue, 0),
+            (SpikeKind::OutputIntent, 0),
         ];
         Self::new(thresholds, 32)
     }
@@ -836,22 +838,22 @@ fn apply_deltas_to_params(
             snn.verify_limit = next as u16;
             continue;
         }
-        if delta.key == param_key(PARAM_LABEL_SNN_ATTENTION_SHIFT) {
-            let current = i32::from(snn.threshold_for(SpikeKind::AttentionShift));
+        if delta.key == param_key(PARAM_LABEL_SNN_FEATURE) {
+            let current = i32::from(snn.threshold_for(SpikeKind::Feature));
             if delta.from != current {
                 return None;
             }
             let next = clamp_i32(delta.to, 0, 10_000);
-            set_snn_threshold(&mut snn, SpikeKind::AttentionShift, next as u16);
+            set_snn_threshold(&mut snn, SpikeKind::Feature, next as u16);
             continue;
         }
-        if delta.key == param_key(PARAM_LABEL_SNN_REPLAY_TRIGGER) {
-            let current = i32::from(snn.threshold_for(SpikeKind::ReplayTrigger));
+        if delta.key == param_key(PARAM_LABEL_SNN_REPLAY_CUE) {
+            let current = i32::from(snn.threshold_for(SpikeKind::ReplayCue));
             if delta.from != current {
                 return None;
             }
             let next = clamp_i32(delta.to, 0, 10_000);
-            set_snn_threshold(&mut snn, SpikeKind::ReplayTrigger, next as u16);
+            set_snn_threshold(&mut snn, SpikeKind::ReplayCue, next as u16);
             continue;
         }
         if delta.key == param_key(PARAM_LABEL_REPLAY_MICRO) {

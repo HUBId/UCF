@@ -562,9 +562,7 @@ fn tune_coupling(inp: &RsaInputs, params: &StructuralParams) -> Option<Structura
 
 fn tune_replay(inp: &RsaInputs, params: &StructuralParams) -> Option<StructuralProposal> {
     let micro_next = params.replay.micro_k.saturating_sub(1).max(1);
-    let replay_trigger = params
-        .snn
-        .threshold_for(ucf_spikebus::SpikeKind::ReplayTrigger);
+    let replay_trigger = params.snn.threshold_for(ucf_spikebus::SpikeKind::ReplayCue);
     let replay_trigger_next = replay_trigger.saturating_add(300).min(10_000);
     let deltas = vec![
         ParamDelta::new(
@@ -573,7 +571,7 @@ fn tune_replay(inp: &RsaInputs, params: &StructuralParams) -> Option<StructuralP
             i32::from(micro_next),
         ),
         ParamDelta::new(
-            param_key("snn.threshold.replay_trigger"),
+            param_key("snn.threshold.replay_cue"),
             i32::from(replay_trigger),
             i32::from(replay_trigger_next),
         ),
@@ -582,12 +580,10 @@ fn tune_replay(inp: &RsaInputs, params: &StructuralParams) -> Option<StructuralP
 }
 
 fn tune_attention(inp: &RsaInputs, params: &StructuralParams) -> Option<StructuralProposal> {
-    let attention = params
-        .snn
-        .threshold_for(ucf_spikebus::SpikeKind::AttentionShift);
+    let attention = params.snn.threshold_for(ucf_spikebus::SpikeKind::Feature);
     let attention_next = attention.saturating_add(250).min(10_000);
     let deltas = vec![ParamDelta::new(
-        param_key("snn.threshold.attention_shift"),
+        param_key("snn.threshold.feature"),
         i32::from(attention),
         i32::from(attention_next),
     )];

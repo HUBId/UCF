@@ -41,6 +41,7 @@ ucf-tcf-port = { path = "../ucf-tcf-port" }
 ucf-workspace = { path = "../ucf-workspace" }
 ucf-spike-encoder = { path = "../ucf-spike-encoder" }
 ucf-spikebus = { path = "../ucf-spikebus" }
+ucf-feature-spiker = { path = "../../../domains/features/crates/ucf-feature-spiker" }
 ucf-structural-store = { path = "../ucf-structural-store" }
 ucf-commit = { path = "../ucf-commit" }
 ucf-protocol = { path = "../../../protocol/crates/ucf-protocol" }

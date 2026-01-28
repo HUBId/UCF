@@ -268,9 +268,13 @@ fn spike_summary(spike_counts: &[(SpikeKind, u16)]) -> (u16, u16, u16, u16, u16)
             SpikeKind::Novelty => novelty = novelty.saturating_add(*count),
             SpikeKind::Threat => threat = threat.saturating_add(*count),
             SpikeKind::CausalLink => causal = causal.saturating_add(*count),
-            SpikeKind::ReplayTrigger => replay = replay.saturating_add(*count),
-            SpikeKind::AttentionShift => attention = attention.saturating_add(*count),
-            SpikeKind::ConsistencyAlert | SpikeKind::Thought | SpikeKind::Unknown(_) => {}
+            SpikeKind::ReplayCue => replay = replay.saturating_add(*count),
+            SpikeKind::Feature => attention = attention.saturating_add(*count),
+            SpikeKind::ConsistencyAlert
+            | SpikeKind::ThoughtOnly
+            | SpikeKind::MemoryCue
+            | SpikeKind::OutputIntent
+            | SpikeKind::Unknown(_) => {}
         }
     }
     (

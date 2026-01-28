@@ -1987,6 +1987,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucf-feature-spiker"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ucf-onn",
+ "ucf-spike-encoder",
+ "ucf-spikebus",
+ "ucf-types",
+]
+
+[[package]]
 name = "ucf-feature-translator"
 version = "0.1.0"
 dependencies = [
@@ -2255,6 +2266,7 @@ dependencies = [
  "ucf-commit",
  "ucf-consistency-engine",
  "ucf-digital-brain",
+ "ucf-feature-spiker",
  "ucf-feature-translator",
  "ucf-geist",
  "ucf-iit",
@@ -2376,10 +2388,8 @@ name = "ucf-spike-encoder"
 version = "0.1.0"
 dependencies = [
  "blake3",
- "ucf-feature-translator",
  "ucf-onn",
  "ucf-spikebus",
- "ucf-structural-store",
  "ucf-types",
 ]
 
