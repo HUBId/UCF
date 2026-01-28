@@ -4,5 +4,5 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-ucf-nsr = { path = "../../../domains/reasoning/crates/ucf-nsr" }
+ucf-nsr = { path = "../ucf-nsr" }
 ucf-nsr-port = { path = "../ucf-nsr-port" }

@@ -5,7 +5,7 @@ use ucf_cde_scm::{edge_key, CdeNodeId, NSR_ATOM_MIN};
 use ucf_structural_store::NsrThresholds;
 use ucf_types::Digest32;
 
-use crate::{NsrInputs, NsrReasonCode, ReasoningAtom, SymbolicBackend, SymbolicResult};
+use crate::{NsrReasonCode, NsrTraceInputs, ReasoningAtom, SymbolicBackend, SymbolicResult};
 
 const DATALOG_DOMAIN: &[u8] = b"ucf.nsr.backend.datalog.v1";
 const RISK_CAUSED_KEY: u16 = 9_101;
@@ -26,7 +26,7 @@ impl DatalogBackend {
 }
 
 impl SymbolicBackend for DatalogBackend {
-    fn check(&mut self, facts: &[ReasoningAtom], inp: &NsrInputs) -> SymbolicResult {
+    fn check(&mut self, facts: &[ReasoningAtom], inp: &NsrTraceInputs) -> SymbolicResult {
         let warn_threshold = self.thresholds.warn.min(10_000);
         let deny_threshold = self.thresholds.deny.min(10_000).max(warn_threshold);
 

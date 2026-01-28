@@ -2129,6 +2129,7 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "ucf-cde-scm",
+ "ucf-influence",
  "ucf-sandbox",
  "ucf-spikebus",
  "ucf-structural-store",

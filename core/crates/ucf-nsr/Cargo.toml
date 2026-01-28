@@ -1,0 +1,18 @@
+[package]
+name = "ucf-nsr"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+blake3 = "1"
+ucf-cde-scm = { path = "../../../domains/causal/crates/ucf-cde-scm" }
+ucf-influence = { path = "../ucf-influence" }
+ucf-sandbox = { path = "../ucf-sandbox" }
+ucf-spikebus = { path = "../ucf-spikebus" }
+ucf-structural-store = { path = "../ucf-structural-store" }
+ucf-types = { path = "../ucf-types" }
+
+[features]
+default = []
+nsr_smt = []
+nsr_datalog = []

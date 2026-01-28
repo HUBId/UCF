@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 blake3 = "1"
-ucf-nsr = { path = "../../../domains/reasoning/crates/ucf-nsr" }
+ucf-nsr = { path = "../ucf-nsr" }
 ucf-types = { path = "../ucf-types" }
 
 [dev-dependencies]
