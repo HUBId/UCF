@@ -1,296 +1,141 @@
 #![forbid(unsafe_code)]
 
 use blake3::Hasher;
-use ucf_feature_translator::LensSelection;
-use ucf_onn::{OscId, PhaseFrame};
+use ucf_onn::{OnnParams, OscId};
 use ucf_spikebus::{SpikeEvent, SpikeKind};
-use ucf_structural_store::SnnKnobs;
 use ucf_types::Digest32;
 
-const TTFS_DOMAIN: &[u8] = b"ucf.spike_encoder.ttfs.v1";
-const PAYLOAD_DOMAIN: &[u8] = b"ucf.spike_encoder.payload.v1";
-const MAX_SIGNAL: u16 = 10_000;
-
-#[allow(clippy::too_many_arguments)]
-pub fn encode_from_features(
-    cycle_id: u64,
-    phase: &PhaseFrame,
-    src: OscId,
-    lens: Option<&LensSelection>,
-    snn: &SnnKnobs,
-    surprise: u16,
-    drift: u16,
-    risk: u16,
-) -> Vec<SpikeEvent> {
-    let attention_gain = lens
-        .map(attention_gain_from_lens)
-        .unwrap_or(0)
-        .min(MAX_SIGNAL);
-    let mut events = Vec::new();
-    if let Some(selection) = lens {
-        for feature in &selection.topk {
-            let weight = feature.weight.unsigned_abs();
-            let amplitude = clamp_signal(weight);
-            let payload_commit = feature.commit;
-            for dst in [OscId::Cde, OscId::Nsr] {
-                if meets_threshold(snn, SpikeKind::CausalLink, amplitude) {
-                    events.push(build_spike(
-                        cycle_id,
-                        phase,
-                        src,
-                        dst,
-                        SpikeKind::CausalLink,
-                        amplitude,
-                        attention_gain,
-                        payload_commit,
-                    ));
-                }
-            }
-        }
-    }
-
-    if surprise > 0 {
-        let amplitude = clamp_signal(surprise);
-        if meets_threshold(snn, SpikeKind::Novelty, amplitude) {
-            let payload_commit = commit_signal_payload(phase.commit, SpikeKind::Novelty, surprise);
-            for dst in [OscId::Jepa, OscId::Ssm] {
-                events.push(build_spike(
-                    cycle_id,
-                    phase,
-                    src,
-                    dst,
-                    SpikeKind::Novelty,
-                    amplitude,
-                    attention_gain,
-                    payload_commit,
-                ));
-            }
-        }
-    }
-
-    if drift > 0 {
-        let amplitude = clamp_signal(drift);
-        if meets_threshold(snn, SpikeKind::ConsistencyAlert, amplitude) {
-            let payload_commit =
-                commit_signal_payload(phase.commit, SpikeKind::ConsistencyAlert, drift);
-            for dst in [OscId::Geist, OscId::Iit] {
-                events.push(build_spike(
-                    cycle_id,
-                    phase,
-                    src,
-                    dst,
-                    SpikeKind::ConsistencyAlert,
-                    amplitude,
-                    attention_gain,
-                    payload_commit,
-                ));
-            }
-        }
-    }
-
-    if risk > 0 {
-        let amplitude = clamp_signal(risk);
-        if meets_threshold(snn, SpikeKind::Threat, amplitude) {
-            let payload_commit = commit_signal_payload(phase.commit, SpikeKind::Threat, risk);
-            for dst in [OscId::BlueBrain, OscId::Geist] {
-                events.push(build_spike(
-                    cycle_id,
-                    phase,
-                    src,
-                    dst,
-                    SpikeKind::Threat,
-                    amplitude,
-                    attention_gain,
-                    payload_commit,
-                ));
-            }
-        }
-    }
-
-    events
+const PAYLOAD_DOMAIN: &[u8] = b"ucf.spike_encoder.payload.v2";
+const MAX_STRENGTH: u16 = 10_000;
+fn default_phase_window() -> u16 {
+    OnnParams::default().lock_window
 }
 
-#[allow(clippy::too_many_arguments)]
-pub fn encode_causal_link_spike(
-    cycle_id: u64,
-    phase: &PhaseFrame,
-    src: OscId,
-    dst: OscId,
-    amplitude: u16,
-    attention_gain: u16,
-    payload_commit: Digest32,
-) -> SpikeEvent {
-    let amplitude = clamp_signal(amplitude);
-    build_spike(
-        cycle_id,
-        phase,
-        src,
-        dst,
-        SpikeKind::CausalLink,
-        amplitude,
-        attention_gain.min(MAX_SIGNAL),
-        payload_commit,
-    )
-}
-
-#[allow(clippy::too_many_arguments)]
-pub fn encode_thought_spike(
-    cycle_id: u64,
-    phase: &PhaseFrame,
-    src: OscId,
-    dst: OscId,
-    amplitude: u16,
-    attention_gain: u16,
-    payload_commit: Digest32,
-) -> SpikeEvent {
-    let amplitude = clamp_signal(amplitude);
-    build_spike(
-        cycle_id,
-        phase,
-        src,
-        dst,
-        SpikeKind::Thought,
-        amplitude,
-        attention_gain.min(MAX_SIGNAL),
-        payload_commit,
-    )
-}
-
-#[allow(clippy::too_many_arguments)]
-fn build_spike(
-    cycle_id: u64,
-    phase: &PhaseFrame,
-    src: OscId,
-    dst: OscId,
-    kind: SpikeKind,
-    amplitude: u16,
-    attention_gain: u16,
-    payload_commit: Digest32,
-) -> SpikeEvent {
-    let ttfs_code = ttfs_code(phase.global_phase, payload_commit, kind, dst, amplitude);
-    let width = spike_width(kind, attention_gain);
-    SpikeEvent::new(
-        cycle_id,
-        src,
-        dst,
-        kind,
-        ttfs_code,
-        amplitude,
-        width,
-        phase.commit,
-        payload_commit,
-    )
-}
-
-fn ttfs_code(
-    base: u16,
-    payload_commit: Digest32,
-    kind: SpikeKind,
-    dst: OscId,
-    amplitude: u16,
-) -> u16 {
-    let offset_seed = hash16(payload_commit, kind, dst);
-    let window = offset_window(amplitude);
-    let offset = if window == 0 {
-        offset_seed
-    } else {
-        offset_seed % window
-    };
-    base.wrapping_add(offset)
-}
-
-fn hash16(payload_commit: Digest32, kind: SpikeKind, dst: OscId) -> u16 {
-    let mut hasher = Hasher::new();
-    hasher.update(TTFS_DOMAIN);
-    hasher.update(payload_commit.as_bytes());
-    hasher.update(&kind.as_u16().to_be_bytes());
-    hasher.update(&dst.as_u16().to_be_bytes());
-    let bytes = hasher.finalize();
-    let raw = bytes.as_bytes();
-    u16::from_be_bytes([raw[0], raw[1]])
-}
-
-fn offset_window(amplitude: u16) -> u16 {
-    let strength = u32::from(amplitude.min(MAX_SIGNAL));
-    let reduction = strength.saturating_mul(6).min(60_000);
-    let window = 65_535u32.saturating_sub(reduction);
-    window.clamp(256, 65_535) as u16
-}
-
-fn spike_width(kind: SpikeKind, attention_gain: u16) -> u16 {
-    let base: u16 = match kind {
-        SpikeKind::Threat => 7_000,
-        SpikeKind::ConsistencyAlert => 6_000,
-        SpikeKind::CausalLink => 5_000,
-        SpikeKind::Novelty => 4_000,
-        SpikeKind::ReplayTrigger => 4_500,
-        SpikeKind::AttentionShift => 3_500,
-        SpikeKind::Thought => 4_200,
-        SpikeKind::Unknown(_) => 3_000,
-    };
-    base.saturating_add(attention_gain / 4).min(MAX_SIGNAL)
-}
-
-fn attention_gain_from_lens(selection: &LensSelection) -> u16 {
-    if selection.topk.is_empty() {
+pub fn ttfs_from_strength(strength: u16, phase_window: u16) -> u16 {
+    if phase_window == 0 {
         return 0;
     }
-    let sum: u32 = selection
-        .topk
-        .iter()
-        .map(|feature| u32::from(feature.weight.unsigned_abs()))
-        .sum();
-    (sum / selection.topk.len() as u32).min(u32::from(MAX_SIGNAL)) as u16
+    let clamped = strength.min(MAX_STRENGTH);
+    let inverted = MAX_STRENGTH.saturating_sub(clamped) as u32;
+    let window = u32::from(phase_window);
+    let ttfs = (window.saturating_mul(inverted)) / u32::from(MAX_STRENGTH);
+    ttfs.min(window) as u16
 }
 
-fn clamp_signal(value: u16) -> u16 {
-    value.min(MAX_SIGNAL)
+pub fn encode_spike(
+    kind: SpikeKind,
+    src: OscId,
+    dst: OscId,
+    strength: u16,
+    phase_commit: Digest32,
+    salt_commit: Digest32,
+) -> SpikeEvent {
+    encode_spike_with_window(
+        0,
+        kind,
+        src,
+        dst,
+        strength,
+        phase_commit,
+        salt_commit,
+        default_phase_window(),
+    )
 }
 
-fn meets_threshold(snn: &SnnKnobs, kind: SpikeKind, amplitude: u16) -> bool {
-    amplitude >= snn.threshold_for(kind)
+pub fn encode_spike_with_ttfs(
+    cycle_id: u64,
+    kind: SpikeKind,
+    src: OscId,
+    dst: OscId,
+    ttfs: u16,
+    phase_commit: Digest32,
+    payload_commit: Digest32,
+) -> SpikeEvent {
+    SpikeEvent::new(cycle_id, kind, src, dst, ttfs, phase_commit, payload_commit)
 }
 
-fn commit_signal_payload(phase_commit: Digest32, kind: SpikeKind, value: u16) -> Digest32 {
+#[allow(clippy::too_many_arguments)]
+pub fn encode_spike_with_payload_commit(
+    cycle_id: u64,
+    kind: SpikeKind,
+    src: OscId,
+    dst: OscId,
+    strength: u16,
+    phase_commit: Digest32,
+    payload_commit: Digest32,
+    phase_window: u16,
+) -> SpikeEvent {
+    let ttfs = ttfs_from_strength(strength, phase_window);
+    encode_spike_with_ttfs(cycle_id, kind, src, dst, ttfs, phase_commit, payload_commit)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn encode_spike_with_window(
+    cycle_id: u64,
+    kind: SpikeKind,
+    src: OscId,
+    dst: OscId,
+    strength: u16,
+    phase_commit: Digest32,
+    salt_commit: Digest32,
+    phase_window: u16,
+) -> SpikeEvent {
+    let ttfs = ttfs_from_strength(strength, phase_window);
+    let payload_commit = commit_payload(kind, strength, phase_commit, salt_commit);
+    encode_spike_with_ttfs(cycle_id, kind, src, dst, ttfs, phase_commit, payload_commit)
+}
+
+pub fn commit_payload(
+    kind: SpikeKind,
+    strength: u16,
+    phase_commit: Digest32,
+    salt_commit: Digest32,
+) -> Digest32 {
     let mut hasher = Hasher::new();
     hasher.update(PAYLOAD_DOMAIN);
-    hasher.update(phase_commit.as_bytes());
     hasher.update(&kind.as_u16().to_be_bytes());
-    hasher.update(&value.to_be_bytes());
+    hasher.update(&strength.to_be_bytes());
+    hasher.update(salt_commit.as_bytes());
+    hasher.update(phase_commit.as_bytes());
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ucf_feature_translator::{LensSelection, SparseFeature};
 
-    fn make_phase() -> PhaseFrame {
-        PhaseFrame {
-            cycle_id: 1,
-            global_phase: 32000,
-            module_phase: Vec::new(),
-            coherence_plv: 9000,
-            pair_locks: Vec::new(),
-            states_commit: Digest32::new([0u8; 32]),
-            phase_frame_commit: Digest32::new([0u8; 32]),
-            commit: Digest32::new([5u8; 32]),
-        }
+    #[test]
+    fn ttfs_monotonic_for_strength() {
+        let window = 1_000;
+        let low = ttfs_from_strength(100, window);
+        let high = ttfs_from_strength(9000, window);
+        assert!(high < low);
     }
 
     #[test]
-    fn encoding_is_deterministic_for_same_inputs() {
-        let phase = make_phase();
-        let lens = LensSelection::new(
-            vec![SparseFeature::new(42, 1200, phase.commit)],
-            phase.commit,
+    fn encode_spike_deterministic() {
+        let phase_commit = Digest32::new([3u8; 32]);
+        let salt_commit = Digest32::new([7u8; 32]);
+        let first = encode_spike_with_window(
+            1,
+            SpikeKind::Feature,
+            OscId::Jepa,
+            OscId::Ssm,
+            2400,
+            phase_commit,
+            salt_commit,
+            1024,
         );
-        let snn = SnnKnobs::default();
-        let first = encode_from_features(1, &phase, OscId::Jepa, Some(&lens), &snn, 100, 200, 300);
-        let second = encode_from_features(1, &phase, OscId::Jepa, Some(&lens), &snn, 100, 200, 300);
-        assert_eq!(
-            first.iter().map(|ev| ev.commit).collect::<Vec<_>>(),
-            second.iter().map(|ev| ev.commit).collect::<Vec<_>>()
+        let second = encode_spike_with_window(
+            1,
+            SpikeKind::Feature,
+            OscId::Jepa,
+            OscId::Ssm,
+            2400,
+            phase_commit,
+            salt_commit,
+            1024,
         );
+        assert_eq!(first.commit, second.commit);
     }
 }
