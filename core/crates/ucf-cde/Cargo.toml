@@ -1,0 +1,9 @@
+[package]
+name = "ucf-cde"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+blake3 = "1"
+ucf-types = { path = "../ucf-types" }
+ucf-spikebus = { path = "../ucf-spikebus" }

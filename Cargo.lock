@@ -1881,6 +1881,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucf-cde"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ucf-spikebus",
+ "ucf-types",
+]
+
+[[package]]
 name = "ucf-cde-port"
 version = "0.1.0"
 dependencies = [
@@ -2261,6 +2270,7 @@ dependencies = [
  "ucf-attn-controller",
  "ucf-bluebrain-port",
  "ucf-brain-mapper",
+ "ucf-cde",
  "ucf-cde-port",
  "ucf-cde-scm",
  "ucf-commit",

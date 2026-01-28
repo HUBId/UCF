@@ -503,6 +503,8 @@ pub struct WorkspaceSnapshot {
     pub cde_commit: Digest32,
     pub cde_graph_commit: Digest32,
     pub cde_top_edges: Vec<(u16, u16, u16, u8)>,
+    pub cde_top_edge_commits: Vec<Digest32>,
+    pub cde_intervention_commit: Option<Digest32>,
     pub ssm_commit: Digest32,
     pub ssm_state_commit: Digest32,
     pub influence_v2_commit: Digest32,
@@ -538,6 +540,11 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
     } else {
         snapshot.cde_top_edges.as_slice()
     };
+    let cde_edge_commits = if snapshot.cde_top_edge_commits.len() > CDE_TOP_EDGES_MAX {
+        &snapshot.cde_top_edge_commits[..CDE_TOP_EDGES_MAX]
+    } else {
+        snapshot.cde_top_edge_commits.as_slice()
+    };
     let signals = if snapshot.broadcast.len() > u16::MAX as usize {
         &snapshot.broadcast[..u16::MAX as usize]
     } else {
@@ -563,6 +570,10 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
             + Digest32::LEN
             + 2
             + cde_edges.len() * (2 + 2 + 2 + 1)
+            + 2
+            + cde_edge_commits.len() * Digest32::LEN
+            + 1
+            + Digest32::LEN
             + Digest32::LEN
             + Digest32::LEN
             + Digest32::LEN
@@ -625,6 +636,20 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
         payload.extend_from_slice(&to.to_be_bytes());
         payload.extend_from_slice(&conf.to_be_bytes());
         payload.push(*lag);
+    }
+    payload.extend_from_slice(&(cde_edge_commits.len() as u16).to_be_bytes());
+    for commit in cde_edge_commits {
+        payload.extend_from_slice(commit.as_bytes());
+    }
+    match snapshot.cde_intervention_commit {
+        Some(commit) => {
+            payload.push(1);
+            payload.extend_from_slice(commit.as_bytes());
+        }
+        None => {
+            payload.push(0);
+            payload.extend_from_slice(&[0u8; Digest32::LEN]);
+        }
     }
     payload.extend_from_slice(snapshot.ssm_commit.as_bytes());
     payload.extend_from_slice(snapshot.ssm_state_commit.as_bytes());
@@ -742,6 +767,8 @@ pub struct Workspace {
     cde_commit: Digest32,
     cde_graph_commit: Digest32,
     cde_top_edges: Vec<(u16, u16, u16, u8)>,
+    cde_top_edge_commits: Vec<Digest32>,
+    cde_intervention_commit: Option<Digest32>,
     ssm_commit: Digest32,
     ssm_state_commit: Digest32,
     influence_v2_commit: Digest32,
@@ -781,6 +808,8 @@ impl Workspace {
             cde_commit: Digest32::new([0u8; 32]),
             cde_graph_commit: Digest32::new([0u8; 32]),
             cde_top_edges: Vec::new(),
+            cde_top_edge_commits: Vec::new(),
+            cde_intervention_commit: None,
             ssm_commit: Digest32::new([0u8; 32]),
             ssm_state_commit: Digest32::new([0u8; 32]),
             influence_v2_commit: Digest32::new([0u8; 32]),
@@ -878,10 +907,14 @@ impl Workspace {
         commit: Digest32,
         graph_commit: Digest32,
         top_edges: Vec<(u16, u16, u16, u8)>,
+        top_edge_commits: Vec<Digest32>,
+        intervention_commit: Option<Digest32>,
     ) {
         self.cde_commit = commit;
         self.cde_graph_commit = graph_commit;
         self.cde_top_edges = top_edges;
+        self.cde_top_edge_commits = top_edge_commits;
+        self.cde_intervention_commit = intervention_commit;
     }
 
     pub fn set_ssm_commits(&mut self, commit: Digest32, state_commit: Digest32) {
@@ -989,6 +1022,8 @@ impl Workspace {
         let cde_commit = self.cde_commit;
         let cde_graph_commit = self.cde_graph_commit;
         let cde_top_edges = std::mem::take(&mut self.cde_top_edges);
+        let cde_top_edge_commits = std::mem::take(&mut self.cde_top_edge_commits);
+        let cde_intervention_commit = self.cde_intervention_commit.take();
         let ssm_commit = self.ssm_commit;
         let ssm_state_commit = self.ssm_state_commit;
         let influence_v2_commit = self.influence_v2_commit;
@@ -1027,6 +1062,8 @@ impl Workspace {
             cde_commit,
             cde_graph_commit,
             &cde_top_edges,
+            &cde_top_edge_commits,
+            cde_intervention_commit,
             ssm_commit,
             ssm_state_commit,
             influence_v2_commit,
@@ -1068,6 +1105,8 @@ impl Workspace {
             cde_commit,
             cde_graph_commit,
             cde_top_edges,
+            cde_top_edge_commits,
+            cde_intervention_commit,
             ssm_commit,
             ssm_state_commit,
             influence_v2_commit,
@@ -1486,6 +1525,8 @@ fn commit_snapshot(
     cde_commit: Digest32,
     cde_graph_commit: Digest32,
     cde_top_edges: &[(u16, u16, u16, u8)],
+    cde_top_edge_commits: &[Digest32],
+    cde_intervention_commit: Option<Digest32>,
     ssm_commit: Digest32,
     ssm_state_commit: Digest32,
     influence_v2_commit: Digest32,
@@ -1543,6 +1584,23 @@ fn commit_snapshot(
         hasher.update(&to.to_be_bytes());
         hasher.update(&conf.to_be_bytes());
         hasher.update(&[*lag]);
+    }
+    hasher.update(
+        &u64::try_from(cde_top_edge_commits.len())
+            .unwrap_or(0)
+            .to_be_bytes(),
+    );
+    for commit in cde_top_edge_commits {
+        hasher.update(commit.as_bytes());
+    }
+    match cde_intervention_commit {
+        Some(commit) => {
+            hasher.update(&[1]);
+            hasher.update(commit.as_bytes());
+        }
+        None => {
+            hasher.update(&[0]);
+        }
     }
     hasher.update(ssm_commit.as_bytes());
     hasher.update(ssm_state_commit.as_bytes());
