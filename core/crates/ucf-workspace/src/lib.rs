@@ -521,9 +521,11 @@ pub struct WorkspaceSnapshot {
     pub nsr_triggered_rules_root: Option<Digest32>,
     pub nsr_derived_facts_root: Option<Digest32>,
     pub rsa_commit: Digest32,
-    pub rsa_chosen: Option<Digest32>,
-    pub rsa_applied: bool,
-    pub rsa_new_params_commit: Option<Digest32>,
+    pub rsa_proposal_commit: Option<Digest32>,
+    pub rsa_decision_apply: bool,
+    pub rsa_reason_mask: u32,
+    pub rsa_applied_params_root: Digest32,
+    pub rsa_snapshot_chain_commit: Digest32,
     pub sle_commit: Digest32,
     pub sle_self_observation_commit: Digest32,
     pub sle_self_symbol_commit: Digest32,
@@ -603,6 +605,8 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
             + Digest32::LEN
             + 1
             + 1
+            + Digest32::LEN
+            + 4
             + Digest32::LEN
             + Digest32::LEN
             + Digest32::LEN
@@ -733,7 +737,7 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
         }
     }
     payload.extend_from_slice(snapshot.rsa_commit.as_bytes());
-    match snapshot.rsa_chosen {
+    match snapshot.rsa_proposal_commit {
         Some(commit) => {
             payload.push(1);
             payload.extend_from_slice(commit.as_bytes());
@@ -743,17 +747,10 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
             payload.extend_from_slice(&[0u8; Digest32::LEN]);
         }
     }
-    payload.push(snapshot.rsa_applied as u8);
-    match snapshot.rsa_new_params_commit {
-        Some(commit) => {
-            payload.push(1);
-            payload.extend_from_slice(commit.as_bytes());
-        }
-        None => {
-            payload.push(0);
-            payload.extend_from_slice(&[0u8; Digest32::LEN]);
-        }
-    }
+    payload.push(snapshot.rsa_decision_apply as u8);
+    payload.extend_from_slice(&snapshot.rsa_reason_mask.to_be_bytes());
+    payload.extend_from_slice(snapshot.rsa_applied_params_root.as_bytes());
+    payload.extend_from_slice(snapshot.rsa_snapshot_chain_commit.as_bytes());
     payload.extend_from_slice(snapshot.sle_commit.as_bytes());
     payload.extend_from_slice(snapshot.sle_self_observation_commit.as_bytes());
     payload.extend_from_slice(snapshot.sle_self_symbol_commit.as_bytes());
@@ -803,9 +800,11 @@ pub struct Workspace {
     spike_bus: SpikeBusState,
     structural_proposal: Option<StructuralDeltaProposal>,
     rsa_commit: Digest32,
-    rsa_chosen: Option<Digest32>,
-    rsa_applied: bool,
-    rsa_new_params_commit: Option<Digest32>,
+    rsa_proposal_commit: Option<Digest32>,
+    rsa_decision_apply: bool,
+    rsa_reason_mask: u32,
+    rsa_applied_params_root: Digest32,
+    rsa_snapshot_chain_commit: Digest32,
     ncde_commit: Digest32,
     ncde_state_commit: Digest32,
     ncde_energy: u16,
@@ -847,9 +846,11 @@ impl Workspace {
             spike_bus: SpikeBusState::new(),
             structural_proposal: None,
             rsa_commit: Digest32::new([0u8; 32]),
-            rsa_chosen: None,
-            rsa_applied: false,
-            rsa_new_params_commit: None,
+            rsa_proposal_commit: None,
+            rsa_decision_apply: false,
+            rsa_reason_mask: 0,
+            rsa_applied_params_root: Digest32::new([0u8; 32]),
+            rsa_snapshot_chain_commit: Digest32::new([0u8; 32]),
             ncde_commit: Digest32::new([0u8; 32]),
             ncde_state_commit: Digest32::new([0u8; 32]),
             ncde_energy: 0,
@@ -921,14 +922,18 @@ impl Workspace {
     pub fn set_rsa_output(
         &mut self,
         rsa_commit: Digest32,
-        chosen: Option<Digest32>,
-        applied: bool,
-        new_params_commit: Option<Digest32>,
+        proposal_commit: Option<Digest32>,
+        decision_apply: bool,
+        reason_mask: u32,
+        applied_params_root: Digest32,
+        snapshot_chain_commit: Digest32,
     ) {
         self.rsa_commit = rsa_commit;
-        self.rsa_chosen = chosen;
-        self.rsa_applied = applied;
-        self.rsa_new_params_commit = new_params_commit;
+        self.rsa_proposal_commit = proposal_commit;
+        self.rsa_decision_apply = decision_apply;
+        self.rsa_reason_mask = reason_mask;
+        self.rsa_applied_params_root = applied_params_root;
+        self.rsa_snapshot_chain_commit = snapshot_chain_commit;
     }
 
     pub fn spike_summary(&self) -> SpikeBusSummary {
@@ -1030,7 +1035,7 @@ impl Workspace {
     }
 
     pub fn rsa_applied(&self) -> bool {
-        self.rsa_applied
+        self.rsa_decision_apply
     }
 
     pub fn sle_self_symbol_commit(&self) -> Digest32 {
@@ -1101,9 +1106,11 @@ impl Workspace {
         let nsr_triggered_rules_root = self.nsr_triggered_rules_root.take();
         let nsr_derived_facts_root = self.nsr_derived_facts_root.take();
         let rsa_commit = self.rsa_commit;
-        let rsa_chosen = self.rsa_chosen;
-        let rsa_applied = self.rsa_applied;
-        let rsa_new_params_commit = self.rsa_new_params_commit;
+        let rsa_proposal_commit = self.rsa_proposal_commit;
+        let rsa_decision_apply = self.rsa_decision_apply;
+        let rsa_reason_mask = self.rsa_reason_mask;
+        let rsa_applied_params_root = self.rsa_applied_params_root;
+        let rsa_snapshot_chain_commit = self.rsa_snapshot_chain_commit;
         let sle_commit = self.sle_commit;
         let sle_self_observation_commit = self.sle_self_observation_commit;
         let sle_self_symbol_commit = self.sle_self_symbol_commit;
@@ -1144,9 +1151,11 @@ impl Workspace {
             nsr_triggered_rules_root,
             nsr_derived_facts_root,
             rsa_commit,
-            rsa_chosen,
-            rsa_applied,
-            rsa_new_params_commit,
+            rsa_proposal_commit,
+            rsa_decision_apply,
+            rsa_reason_mask,
+            rsa_applied_params_root,
+            rsa_snapshot_chain_commit,
             sle_commit,
             sle_self_observation_commit,
             sle_self_symbol_commit,
@@ -1190,9 +1199,11 @@ impl Workspace {
             nsr_triggered_rules_root,
             nsr_derived_facts_root,
             rsa_commit,
-            rsa_chosen,
-            rsa_applied,
-            rsa_new_params_commit,
+            rsa_proposal_commit,
+            rsa_decision_apply,
+            rsa_reason_mask,
+            rsa_applied_params_root,
+            rsa_snapshot_chain_commit,
             sle_commit,
             sle_self_observation_commit,
             sle_self_symbol_commit,
@@ -1613,9 +1624,11 @@ fn commit_snapshot(
     nsr_triggered_rules_root: Option<Digest32>,
     nsr_derived_facts_root: Option<Digest32>,
     rsa_commit: Digest32,
-    rsa_chosen: Option<Digest32>,
-    rsa_applied: bool,
-    rsa_new_params_commit: Option<Digest32>,
+    rsa_proposal_commit: Option<Digest32>,
+    rsa_decision_apply: bool,
+    rsa_reason_mask: u32,
+    rsa_applied_params_root: Digest32,
+    rsa_snapshot_chain_commit: Digest32,
     sle_commit: Digest32,
     sle_self_observation_commit: Digest32,
     sle_self_symbol_commit: Digest32,
@@ -1743,7 +1756,7 @@ fn commit_snapshot(
         }
     }
     hasher.update(rsa_commit.as_bytes());
-    match rsa_chosen {
+    match rsa_proposal_commit {
         Some(commit) => {
             hasher.update(&[1]);
             hasher.update(commit.as_bytes());
@@ -1752,16 +1765,10 @@ fn commit_snapshot(
             hasher.update(&[0]);
         }
     }
-    hasher.update(&[rsa_applied as u8]);
-    match rsa_new_params_commit {
-        Some(commit) => {
-            hasher.update(&[1]);
-            hasher.update(commit.as_bytes());
-        }
-        None => {
-            hasher.update(&[0]);
-        }
-    }
+    hasher.update(&[rsa_decision_apply as u8]);
+    hasher.update(&rsa_reason_mask.to_be_bytes());
+    hasher.update(rsa_applied_params_root.as_bytes());
+    hasher.update(rsa_snapshot_chain_commit.as_bytes());
     hasher.update(sle_commit.as_bytes());
     hasher.update(sle_self_observation_commit.as_bytes());
     hasher.update(sle_self_symbol_commit.as_bytes());

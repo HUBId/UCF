@@ -9,6 +9,7 @@ use ucf_types::Digest32;
 const PHASE_MAX: i32 = 1_000_000;
 const ENERGY_MAX: u16 = 10_000;
 const MAX_PULSES: usize = 8;
+const TCF_K_SCALE: u16 = 10_000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Phase {
@@ -20,14 +21,36 @@ pub struct TcfConfig {
     pub base_freq: u16,
     pub damping: u16,
     pub jitter_guard: u16,
+    pub attn_k: u16,
+    pub replay_k: u16,
+    pub energy_k: u16,
+    pub commit: Digest32,
 }
 
 impl Default for TcfConfig {
     fn default() -> Self {
+        Self::new(1200, 120, 400, TCF_K_SCALE, TCF_K_SCALE, TCF_K_SCALE)
+    }
+}
+
+impl TcfConfig {
+    pub fn new(
+        base_freq: u16,
+        damping: u16,
+        jitter_guard: u16,
+        attn_k: u16,
+        replay_k: u16,
+        energy_k: u16,
+    ) -> Self {
+        let commit = commit_config(base_freq, damping, jitter_guard, attn_k, replay_k, energy_k);
         Self {
-            base_freq: 1200,
-            damping: 120,
-            jitter_guard: 400,
+            base_freq,
+            damping,
+            jitter_guard,
+            attn_k,
+            replay_k,
+            energy_k,
+            commit,
         }
     }
 }
@@ -101,6 +124,10 @@ pub trait TcfPort {
     fn apply_sync_hint(&mut self, tighten_sync: bool) {
         let _ = tighten_sync;
     }
+    fn params(&self) -> TcfConfig {
+        TcfConfig::default()
+    }
+    fn set_params(&mut self, _params: TcfConfig) {}
 }
 
 #[derive(Clone, Debug)]
@@ -153,7 +180,7 @@ impl TcfPort for DeterministicTcf {
         });
         self.state = state;
 
-        let pulses = build_pulse_plan(attn, surprise);
+        let pulses = build_pulse_plan(attn, surprise, config);
         let cycle_id = self.cycle_id;
         self.cycle_id = self.cycle_id.saturating_add(1);
         let commit = commit_cycle_plan(cycle_id, &self.state, &pulses);
@@ -172,6 +199,14 @@ impl TcfPort for DeterministicTcf {
     fn apply_sync_hint(&mut self, tighten_sync: bool) {
         self.sync_tighten = tighten_sync;
     }
+
+    fn params(&self) -> TcfConfig {
+        self.config
+    }
+
+    fn set_params(&mut self, params: TcfConfig) {
+        self.config = params;
+    }
 }
 
 impl DeterministicTcf {
@@ -181,11 +216,14 @@ impl DeterministicTcf {
         }
         let jitter_guard = self.config.jitter_guard.saturating_sub(150).max(100);
         let damping = self.config.damping.saturating_add(80);
-        TcfConfig {
-            base_freq: self.config.base_freq,
+        TcfConfig::new(
+            self.config.base_freq,
             damping,
             jitter_guard,
-        }
+            self.config.attn_k,
+            self.config.replay_k,
+            self.config.energy_k,
+        )
     }
 }
 
@@ -247,20 +285,82 @@ fn apply_ltv(
     let surprise_score = surprise.map(|signal| signal.score).unwrap_or(0);
     let attn_gain = attn.gain;
     let freq_delta = (i32::from(attn_gain) / 20) + (i32::from(surprise_score) / 40);
+    let freq_delta = scale_i32(freq_delta, config.attn_k);
     let jitter_guard = i32::from(config.jitter_guard);
     let freq_delta = freq_delta.clamp(0, jitter_guard);
     let freq = clamp_u16(i32::from(config.base_freq) + freq_delta);
 
     let mut energy = state.energy.saturating_sub(config.damping);
-    energy = energy.saturating_add(attn_gain / 4);
-    energy = energy.saturating_sub(surprise_score / 5);
+    let energy_boost = scale_u16(attn_gain / 4, config.energy_k);
+    let energy_drop = scale_u16(surprise_score / 5, config.energy_k);
+    energy = energy.saturating_add(energy_boost);
+    energy = energy.saturating_sub(energy_drop);
     if energy > ENERGY_MAX {
         energy = ENERGY_MAX;
     }
     (freq, energy)
 }
 
-fn build_pulse_plan(attn: &AttentionWeights, surprise: Option<&SurpriseSignal>) -> Vec<Pulse> {
+pub fn apply_attn_k_delta(config: &TcfConfig, delta: i16) -> TcfConfig {
+    let attn_k = apply_i16_delta(config.attn_k, delta, 2000, 20_000);
+    TcfConfig::new(
+        config.base_freq,
+        config.damping,
+        config.jitter_guard,
+        attn_k,
+        config.replay_k,
+        config.energy_k,
+    )
+}
+
+pub fn apply_replay_k_delta(config: &TcfConfig, delta: i16) -> TcfConfig {
+    let replay_k = apply_i16_delta(config.replay_k, delta, 2000, 20_000);
+    TcfConfig::new(
+        config.base_freq,
+        config.damping,
+        config.jitter_guard,
+        config.attn_k,
+        replay_k,
+        config.energy_k,
+    )
+}
+
+pub fn apply_energy_k_delta(config: &TcfConfig, delta: i16) -> TcfConfig {
+    let energy_k = apply_i16_delta(config.energy_k, delta, 2000, 20_000);
+    TcfConfig::new(
+        config.base_freq,
+        config.damping,
+        config.jitter_guard,
+        config.attn_k,
+        config.replay_k,
+        energy_k,
+    )
+}
+
+fn apply_i16_delta(value: u16, delta: i16, min: u16, max: u16) -> u16 {
+    let value = i32::from(value);
+    let delta = i32::from(delta);
+    let updated = value
+        .saturating_add(delta)
+        .clamp(i32::from(min), i32::from(max));
+    updated as u16
+}
+
+fn scale_u16(value: u16, k: u16) -> u16 {
+    let scaled = (u32::from(value) * u32::from(k)) / u32::from(TCF_K_SCALE);
+    u16::try_from(scaled.min(u32::from(u16::MAX))).unwrap_or(u16::MAX)
+}
+
+fn scale_i32(value: i32, k: u16) -> i32 {
+    let scaled = (i64::from(value) * i64::from(k)) / i64::from(TCF_K_SCALE);
+    scaled.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32
+}
+
+fn build_pulse_plan(
+    attn: &AttentionWeights,
+    surprise: Option<&SurpriseSignal>,
+    config: TcfConfig,
+) -> Vec<Pulse> {
     let mut sense = 5000u16;
     let mut think = 4500u16;
     let mut verify = 3000u16;
@@ -298,7 +398,8 @@ fn build_pulse_plan(attn: &AttentionWeights, surprise: Option<&SurpriseSignal>) 
         }
     }
 
-    consolidate = consolidate.saturating_add(attn.replay_bias / 6);
+    let replay_boost = scale_u16(attn.replay_bias / 6, config.replay_k);
+    consolidate = consolidate.saturating_add(replay_boost);
     think = think.saturating_add(attn.gain / 30);
 
     let mut pulses = vec![
@@ -353,6 +454,25 @@ fn should_add_sleep(attn: &AttentionWeights, surprise: Option<&SurpriseSignal>) 
         surprise.map(|signal| signal.band),
         Some(SurpriseBand::High | SurpriseBand::Critical)
     )
+}
+
+fn commit_config(
+    base_freq: u16,
+    damping: u16,
+    jitter_guard: u16,
+    attn_k: u16,
+    replay_k: u16,
+    energy_k: u16,
+) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(b"ucf.tcf.config.v2");
+    hasher.update(&base_freq.to_be_bytes());
+    hasher.update(&damping.to_be_bytes());
+    hasher.update(&jitter_guard.to_be_bytes());
+    hasher.update(&attn_k.to_be_bytes());
+    hasher.update(&replay_k.to_be_bytes());
+    hasher.update(&energy_k.to_be_bytes());
+    Digest32::new(*hasher.finalize().as_bytes())
 }
 
 fn commit_cycle_plan(cycle_id: u64, state: &TcfState, pulses: &[Pulse]) -> Digest32 {
@@ -486,5 +606,15 @@ mod tests {
 
         assert!(crit_sense.weight > base_sense.weight);
         assert!(crit_consolidate.weight > base_consolidate.weight);
+    }
+
+    #[test]
+    fn rsa_param_updates_are_clamped() {
+        let config = TcfConfig::default();
+        let updated = apply_attn_k_delta(&config, 30_000);
+        assert_eq!(updated.attn_k, 20_000);
+
+        let updated = apply_replay_k_delta(&config, -30_000);
+        assert_eq!(updated.replay_k, 2000);
     }
 }

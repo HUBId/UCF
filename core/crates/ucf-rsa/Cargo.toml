@@ -9,6 +9,7 @@ ucf-archive = { path = "../../../domains/archive/crates/ucf-archive" }
 ucf-archive-store = { workspace = true }
 ucf-bus = { path = "../ucf-bus" }
 ucf-openevolve-port = { path = "../ucf-openevolve-port" }
+ucf-params-registry = { path = "../ucf-params-registry" }
 ucf-policy-ecology = { path = "../ucf-policy-ecology" }
 ucf-spikebus = { path = "../ucf-spikebus" }
 ucf-structural-store = { path = "../ucf-structural-store" }

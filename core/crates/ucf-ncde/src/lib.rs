@@ -15,6 +15,8 @@ const GAIN_MAX: u16 = 10_000;
 const DEFAULT_MAX_STATE: i32 = 50_000;
 const PHASE_MAX: i32 = 65_536;
 const SPIKE_NORM_MAX: u16 = 16;
+const GAIN_MIN: u16 = 0;
+const LEAK_MIN: u16 = 0;
 
 const PARAMS_DOMAIN: &[u8] = b"ucf.ncde.params.v1";
 const STATE_DOMAIN: &[u8] = b"ucf.ncde.state.v1";
@@ -61,6 +63,51 @@ impl NcdeParams {
             commit,
         }
     }
+}
+
+pub fn apply_gain_phase_delta(params: &NcdeParams, delta: i16) -> NcdeParams {
+    let gain_phase = apply_i16_delta(params.gain_phase, delta, GAIN_MIN, GAIN_MAX);
+    NcdeParams::new(
+        params.dt,
+        gain_phase,
+        params.gain_spike,
+        params.gain_influence,
+        params.leak,
+        params.max_state,
+    )
+}
+
+pub fn apply_gain_spike_delta(params: &NcdeParams, delta: i16) -> NcdeParams {
+    let gain_spike = apply_i16_delta(params.gain_spike, delta, GAIN_MIN, GAIN_MAX);
+    NcdeParams::new(
+        params.dt,
+        params.gain_phase,
+        gain_spike,
+        params.gain_influence,
+        params.leak,
+        params.max_state,
+    )
+}
+
+pub fn apply_leak_delta(params: &NcdeParams, delta: i16) -> NcdeParams {
+    let leak = apply_i16_delta(params.leak, delta, LEAK_MIN, LEAK_MAX);
+    NcdeParams::new(
+        params.dt,
+        params.gain_phase,
+        params.gain_spike,
+        params.gain_influence,
+        leak,
+        params.max_state,
+    )
+}
+
+fn apply_i16_delta(value: u16, delta: i16, min: u16, max: u16) -> u16 {
+    let value = i32::from(value);
+    let delta = i32::from(delta);
+    let updated = value
+        .saturating_add(delta)
+        .clamp(i32::from(min), i32::from(max));
+    updated as u16
 }
 
 impl Default for NcdeParams {
@@ -655,5 +702,15 @@ mod tests {
         let out_high = core_high.tick(&inputs_high);
 
         assert!(out_high.energy < out_low.energy);
+    }
+
+    #[test]
+    fn rsa_param_updates_are_clamped() {
+        let params = NcdeParams::default();
+        let updated = apply_gain_phase_delta(&params, 30_000);
+        assert_eq!(updated.gain_phase, GAIN_MAX);
+
+        let updated = apply_leak_delta(&params, -30_000);
+        assert_eq!(updated.leak, LEAK_MIN);
     }
 }

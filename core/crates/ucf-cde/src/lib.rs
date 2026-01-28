@@ -13,6 +13,7 @@ const SUMMARY_DOMAIN: &[u8] = b"ucf.cde.v1.summary";
 const CORE_DOMAIN: &[u8] = b"ucf.cde.v1.core";
 const SPIKE_PAYLOAD_DOMAIN: &[u8] = b"ucf.cde.v1.spike.payload";
 const DELTA_DOMAIN: &[u8] = b"ucf.cde.v1.delta";
+const PARAM_DOMAIN: &[u8] = b"ucf.cde.v1.params";
 
 const MAX_NODES: usize = 24;
 const MAX_EDGES: usize = 64;
@@ -26,9 +27,73 @@ const INTERVENTION_SCORE_BOOST: i16 = 1_200;
 const INTERVENTION_SCORE_PENALTY: i16 = 2_000;
 const PROXY_SCALE: i32 = 64;
 const DECAY_DIV: i32 = 12;
+const SCORE_STEP_BASE: i32 = 1000;
 const CENTER_VALUE: i32 = 5_000;
 const TTFS_MAX: u16 = 180;
 const TTFS_MIN: u16 = 6;
+const SCORE_STEP_MIN: u16 = 200;
+const SCORE_STEP_MAX: u16 = 2000;
+const EDGE_THRESH_MIN: i16 = 2000;
+const EDGE_THRESH_MAX: i16 = 9000;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CdeParams {
+    pub score_step: u16,
+    pub edge_threshold: i16,
+    pub commit: Digest32,
+}
+
+impl CdeParams {
+    pub fn new(score_step: u16, edge_threshold: i16) -> Self {
+        let score_step = score_step.clamp(SCORE_STEP_MIN, SCORE_STEP_MAX);
+        let edge_threshold = edge_threshold.clamp(EDGE_THRESH_MIN, EDGE_THRESH_MAX);
+        let commit = digest_params(score_step, edge_threshold);
+        Self {
+            score_step,
+            edge_threshold,
+            commit,
+        }
+    }
+}
+
+impl Default for CdeParams {
+    fn default() -> Self {
+        Self::new(1000, SCORE_SPIKE_THRESHOLD)
+    }
+}
+
+pub fn apply_score_step_delta(params: &CdeParams, delta: i16) -> CdeParams {
+    let score_step = apply_i16_delta_u16(params.score_step, delta, SCORE_STEP_MIN, SCORE_STEP_MAX);
+    CdeParams::new(score_step, params.edge_threshold)
+}
+
+pub fn apply_edge_thresh_delta(params: &CdeParams, delta: i16) -> CdeParams {
+    let edge_threshold = apply_i16_delta_i16(
+        params.edge_threshold,
+        delta,
+        EDGE_THRESH_MIN,
+        EDGE_THRESH_MAX,
+    );
+    CdeParams::new(params.score_step, edge_threshold)
+}
+
+fn apply_i16_delta_u16(value: u16, delta: i16, min: u16, max: u16) -> u16 {
+    let value = i32::from(value);
+    let delta = i32::from(delta);
+    let updated = value
+        .saturating_add(delta)
+        .clamp(i32::from(min), i32::from(max));
+    updated as u16
+}
+
+fn apply_i16_delta_i16(value: i16, delta: i16, min: i16, max: i16) -> i16 {
+    let value = i32::from(value);
+    let delta = i32::from(delta);
+    let updated = value
+        .saturating_add(delta)
+        .clamp(i32::from(min), i32::from(max));
+    updated as i16
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum VarId {
@@ -246,6 +311,7 @@ pub struct CdeCore {
     pub prev_values: [u16; 12],
     pub last_intervention_cycle: u64,
     pub min_intervention_gap: u16,
+    pub params: CdeParams,
     pub commit: Digest32,
     edge_scores: Vec<CausalEdge>,
     delta_history: Vec<[i16; 12]>,
@@ -263,12 +329,14 @@ impl CdeCore {
         let nodes = default_nodes();
         let edge_scores = default_edge_scores();
         let dag = CausalDag::new(nodes, Vec::new());
-        let commit = digest_core(dag.commit, Digest32::new([0u8; 32]));
+        let params = CdeParams::default();
+        let commit = digest_core(dag.commit, Digest32::new([0u8; 32]), params.commit);
         Self {
             dag,
             prev_values: [0; 12],
             last_intervention_cycle: 0,
             min_intervention_gap: 3,
+            params,
             commit,
             edge_scores,
             delta_history: Vec::new(),
@@ -289,7 +357,7 @@ impl CdeCore {
         let mut updated_edges = Vec::with_capacity(self.edge_scores.len());
         for edge in &self.edge_scores {
             let proxy = edge_proxy(edge, &self.delta_history);
-            let updated = update_edge_score(edge, proxy, &self.dag);
+            let updated = update_edge_score(edge, proxy, &self.dag, &self.params);
             updated_edges.push(updated);
         }
         if let Some((edge_key, outcome)) = intervention_feedback {
@@ -308,7 +376,7 @@ impl CdeCore {
         let top_edges = select_top_edges(&self.dag.edges);
         let intervention = self.select_intervention(inp, &top_edges);
         let summary_commit = digest_summary(self.dag.commit, &top_edges, intervention.as_ref());
-        let spikes = build_spikes(inp, &top_edges, summary_commit);
+        let spikes = build_spikes(inp, &top_edges, summary_commit, &self.params);
         let outputs = CdeOutputs::new(
             inp.cycle_id,
             self.dag.commit,
@@ -316,8 +384,17 @@ impl CdeCore {
             intervention,
             spikes,
         );
-        self.commit = digest_core(self.dag.commit, inp.commit);
+        self.commit = digest_core(self.dag.commit, inp.commit, self.params.commit);
         outputs
+    }
+
+    pub fn apply_params(&mut self, params: CdeParams) {
+        self.params = params;
+        self.commit = digest_core(
+            self.dag.commit,
+            Digest32::new([0u8; 32]),
+            self.params.commit,
+        );
     }
 
     fn select_intervention(
@@ -503,10 +580,16 @@ fn has_observed_delta(var: VarId) -> bool {
     observed_index(var).is_some()
 }
 
-fn update_edge_score(edge: &CausalEdge, proxy: i16, dag: &CausalDag) -> CausalEdge {
+fn update_edge_score(
+    edge: &CausalEdge,
+    proxy: i16,
+    dag: &CausalDag,
+    params: &CdeParams,
+) -> CausalEdge {
     let mut score = i32::from(edge.score);
     let decay = score / DECAY_DIV;
-    let delta = i32::from(proxy) / PROXY_SCALE;
+    let scaled = i32::from(proxy) * i32::from(params.score_step);
+    let delta = scaled / (PROXY_SCALE * SCORE_STEP_BASE);
     if delta > 0 && would_create_cycle(dag, edge.from, edge.to) {
         score -= decay;
     } else {
@@ -609,10 +692,11 @@ fn build_spikes(
     inp: &CdeInputs,
     edges: &[CausalEdge],
     summary_commit: Digest32,
+    params: &CdeParams,
 ) -> Vec<SpikeEvent> {
     let mut spikes = Vec::new();
     for edge in edges {
-        if edge.score.abs() < SCORE_SPIKE_THRESHOLD {
+        if edge.score.abs() < params.edge_threshold {
             continue;
         }
         if spikes.len() >= MAX_TOP_EDGES {
@@ -680,6 +764,14 @@ fn digest_intervention(cycle_id: u64, var: VarId, delta: i16, basis_commit: Dige
     hasher.update(&var.to_u16().to_be_bytes());
     hasher.update(&delta.to_be_bytes());
     hasher.update(basis_commit.as_bytes());
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn digest_params(score_step: u16, edge_threshold: i16) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(PARAM_DOMAIN);
+    hasher.update(&score_step.to_be_bytes());
+    hasher.update(&edge_threshold.to_be_bytes());
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
@@ -763,11 +855,12 @@ fn digest_outputs(
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
-fn digest_core(dag_commit: Digest32, input_commit: Digest32) -> Digest32 {
+fn digest_core(dag_commit: Digest32, input_commit: Digest32, params_commit: Digest32) -> Digest32 {
     let mut hasher = Hasher::new();
     hasher.update(CORE_DOMAIN);
     hasher.update(dag_commit.as_bytes());
     hasher.update(input_commit.as_bytes());
+    hasher.update(params_commit.as_bytes());
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
@@ -870,5 +963,15 @@ mod tests {
         core.dag = CausalDag::new(core.dag.nodes.clone(), core.edge_scores.clone());
         let outputs = core.tick(&base_inputs(3));
         assert!(!outputs.causal_link_spikes.is_empty());
+    }
+
+    #[test]
+    fn rsa_param_updates_are_clamped() {
+        let params = CdeParams::default();
+        let updated = apply_score_step_delta(&params, 5000);
+        assert_eq!(updated.score_step, SCORE_STEP_MAX);
+
+        let updated = apply_edge_thresh_delta(&params, -5000);
+        assert_eq!(updated.edge_threshold, EDGE_THRESH_MIN);
     }
 }

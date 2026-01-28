@@ -19,6 +19,7 @@ ucf-onn = { path = "../ucf-onn" }
 ucf-nsr-port = { path = "../ucf-nsr-port" }
 ucf-nsr = { path = "../ucf-nsr" }
 ucf-ncde = { path = "../ucf-ncde" }
+ucf-params-registry = { path = "../ucf-params-registry" }
 ucf-ssm = { path = "../ucf-ssm" }
 ucf-rsa = { path = "../ucf-rsa" }
 ucf-rsa-hooks = { path = "../ucf-rsa-hooks" }
