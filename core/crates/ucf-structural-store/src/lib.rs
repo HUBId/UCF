@@ -62,7 +62,7 @@ const PARAM_LABEL_REPLAY_MICRO: &str = "replay.micro_k";
 const PARAM_LABEL_REPLAY_MESO: &str = "replay.meso_m";
 const PARAM_LABEL_REPLAY_MACRO: &str = "replay.macro_n";
 const PARAM_LABEL_SSM_SELECTIVITY: &str = "ssm.selectivity";
-const PARAM_LABEL_NCDE_ATTRACTOR: &str = "ncde.attractor_strength";
+const PARAM_LABEL_NCDE_LEAK: &str = "ncde.leak";
 const PARAM_LABEL_IIT_PHI_MIN_APPLY: &str = "iit.phi_min_apply";
 const PARAM_LABEL_RSA_RISK_MAX_APPLY: &str = "rsa.risk_max_apply";
 
@@ -892,13 +892,13 @@ fn apply_deltas_to_params(
             ssm.selectivity = next as u16;
             continue;
         }
-        if delta.key == param_key(PARAM_LABEL_NCDE_ATTRACTOR) {
-            let current = i32::from(ncde.attractor_strength);
+        if delta.key == param_key(PARAM_LABEL_NCDE_LEAK) {
+            let current = i32::from(ncde.leak);
             if delta.from != current {
                 return None;
             }
             let next = clamp_i32(delta.to, 0, 10_000);
-            ncde.attractor_strength = next as u16;
+            ncde.leak = next as u16;
             continue;
         }
         if delta.key == param_key(PARAM_LABEL_IIT_PHI_MIN_APPLY) {
@@ -935,11 +935,12 @@ fn apply_deltas_to_params(
         ssm.selectivity,
     );
     let ncde = NcdeParams::new(
-        ncde.dim_h,
-        ncde.dim_u,
-        ncde.dt_q,
-        ncde.steps,
-        ncde.attractor_strength,
+        ncde.dt,
+        ncde.gain_phase,
+        ncde.gain_spike,
+        ncde.gain_influence,
+        ncde.leak,
+        ncde.max_state,
     );
     let rsa = RsaLimits::new(rsa.phi_min_apply, rsa.risk_max_apply);
 

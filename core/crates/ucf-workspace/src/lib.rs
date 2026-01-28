@@ -498,6 +498,8 @@ pub struct WorkspaceSnapshot {
     pub spike_output_intent_count: u16,
     pub spike_cap_hit: bool,
     pub ncde_commit: Digest32,
+    pub ncde_state_commit: Digest32,
+    pub ncde_energy: u16,
     pub cde_commit: Digest32,
     pub cde_graph_commit: Digest32,
     pub cde_top_edges: Vec<(u16, u16, u16, u8)>,
@@ -556,11 +558,15 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
             + 1
             + Digest32::LEN
             + Digest32::LEN
+            + 2
+            + Digest32::LEN
             + Digest32::LEN
             + 2
             + cde_edges.len() * (2 + 2 + 2 + 1)
             + Digest32::LEN
             + Digest32::LEN
+            + Digest32::LEN
+            + 2
             + Digest32::LEN
             + Digest32::LEN
             + 2
@@ -609,6 +615,8 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
     payload.extend_from_slice(&snapshot.spike_output_intent_count.to_be_bytes());
     payload.push(snapshot.spike_cap_hit as u8);
     payload.extend_from_slice(snapshot.ncde_commit.as_bytes());
+    payload.extend_from_slice(snapshot.ncde_state_commit.as_bytes());
+    payload.extend_from_slice(&snapshot.ncde_energy.to_be_bytes());
     payload.extend_from_slice(snapshot.cde_commit.as_bytes());
     payload.extend_from_slice(snapshot.cde_graph_commit.as_bytes());
     payload.extend_from_slice(&(cde_edges.len() as u16).to_be_bytes());
@@ -729,6 +737,8 @@ pub struct Workspace {
     rsa_applied: bool,
     rsa_new_params_commit: Option<Digest32>,
     ncde_commit: Digest32,
+    ncde_state_commit: Digest32,
+    ncde_energy: u16,
     cde_commit: Digest32,
     cde_graph_commit: Digest32,
     cde_top_edges: Vec<(u16, u16, u16, u8)>,
@@ -766,6 +776,8 @@ impl Workspace {
             rsa_applied: false,
             rsa_new_params_commit: None,
             ncde_commit: Digest32::new([0u8; 32]),
+            ncde_state_commit: Digest32::new([0u8; 32]),
+            ncde_energy: 0,
             cde_commit: Digest32::new([0u8; 32]),
             cde_graph_commit: Digest32::new([0u8; 32]),
             cde_top_edges: Vec::new(),
@@ -843,12 +855,22 @@ impl Workspace {
         self.spike_bus.summary()
     }
 
-    pub fn set_ncde_commit(&mut self, commit: Digest32) {
+    pub fn set_ncde_snapshot(&mut self, commit: Digest32, state_commit: Digest32, energy: u16) {
         self.ncde_commit = commit;
+        self.ncde_state_commit = state_commit;
+        self.ncde_energy = energy.min(10_000);
     }
 
     pub fn ncde_commit(&self) -> Digest32 {
         self.ncde_commit
+    }
+
+    pub fn ncde_state_commit(&self) -> Digest32 {
+        self.ncde_state_commit
+    }
+
+    pub fn ncde_energy(&self) -> u16 {
+        self.ncde_energy
     }
 
     pub fn set_cde_output(
@@ -962,6 +984,8 @@ impl Workspace {
         self.recursion_used = 0;
         let spike_summary = self.spike_bus.summary();
         let ncde_commit = self.ncde_commit;
+        let ncde_state_commit = self.ncde_state_commit;
+        let ncde_energy = self.ncde_energy;
         let cde_commit = self.cde_commit;
         let cde_graph_commit = self.cde_graph_commit;
         let cde_top_edges = std::mem::take(&mut self.cde_top_edges);
@@ -998,6 +1022,8 @@ impl Workspace {
             spike_summary.output_intent_count,
             spike_summary.cap_hit,
             ncde_commit,
+            ncde_state_commit,
+            ncde_energy,
             cde_commit,
             cde_graph_commit,
             &cde_top_edges,
@@ -1037,6 +1063,8 @@ impl Workspace {
             spike_output_intent_count: spike_summary.output_intent_count,
             spike_cap_hit: spike_summary.cap_hit,
             ncde_commit,
+            ncde_state_commit,
+            ncde_energy,
             cde_commit,
             cde_graph_commit,
             cde_top_edges,
@@ -1453,6 +1481,8 @@ fn commit_snapshot(
     spike_output_intent_count: u16,
     spike_cap_hit: bool,
     ncde_commit: Digest32,
+    ncde_state_commit: Digest32,
+    ncde_energy: u16,
     cde_commit: Digest32,
     cde_graph_commit: Digest32,
     cde_top_edges: &[(u16, u16, u16, u8)],
@@ -1499,6 +1529,8 @@ fn commit_snapshot(
     hasher.update(&spike_output_intent_count.to_be_bytes());
     hasher.update(&[spike_cap_hit as u8]);
     hasher.update(ncde_commit.as_bytes());
+    hasher.update(ncde_state_commit.as_bytes());
+    hasher.update(&ncde_energy.to_be_bytes());
     hasher.update(cde_commit.as_bytes());
     hasher.update(cde_graph_commit.as_bytes());
     hasher.update(

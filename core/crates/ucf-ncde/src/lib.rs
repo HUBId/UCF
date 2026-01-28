@@ -4,221 +4,215 @@ use blake3::Hasher;
 use ucf_spikebus::SpikeKind;
 use ucf_types::Digest32;
 
-const DIM_H_MIN: u16 = 16;
-const DIM_H_MAX: u16 = 64;
-const DIM_U_MIN: u16 = 8;
-const DIM_U_MAX: u16 = 32;
-const DT_Q_MIN: u16 = 1;
-const DT_Q_MAX: u16 = 1000;
-const STEPS_MIN: u8 = 1;
-const STEPS_MAX: u8 = 8;
+const DIM: usize = 16;
 const CONTROL_SCALE: i32 = 1024;
-const DT_SCALE: i32 = 1000;
-const MAX_COEFF: i32 = 64;
-const MAX_H: i32 = 4_194_304;
-const SUMMARY_LEN: usize = 8;
-const STRENGTH_MAX: u16 = 10_000;
+const GAIN_SCALE: i32 = 10_000;
+const ENERGY_MAX: i32 = 10_000;
+const DT_MIN: u16 = 1;
+const DT_MAX: u16 = 10_000;
+const LEAK_MAX: u16 = 10_000;
+const GAIN_MAX: u16 = 10_000;
+const DEFAULT_MAX_STATE: i32 = 50_000;
+const PHASE_MAX: i32 = 65_536;
+const SPIKE_NORM_MAX: u16 = 16;
 
 const PARAMS_DOMAIN: &[u8] = b"ucf.ncde.params.v1";
 const STATE_DOMAIN: &[u8] = b"ucf.ncde.state.v1";
+const INPUT_DOMAIN: &[u8] = b"ucf.ncde.inputs.v1";
+const OUTPUT_DOMAIN: &[u8] = b"ucf.ncde.outputs.v1";
+const DIGEST_DOMAIN: &[u8] = b"ucf.ncde.state.digest.v1";
 const CONTROL_DOMAIN: &[u8] = b"ucf.ncde.control.v1";
-const OUTPUT_DOMAIN: &[u8] = b"ucf.ncde.output.v1";
-const COEFF_A_DOMAIN: &[u8] = b"ucf.ncde.coeff.a";
-const COEFF_B_DOMAIN: &[u8] = b"ucf.ncde.coeff.b";
-const COEFF_C_DOMAIN: &[u8] = b"ucf.ncde.coeff.c";
+const CORE_DOMAIN: &[u8] = b"ucf.ncde.core.v1";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct NcdeParams {
-    pub dim_h: u16,
-    pub dim_u: u16,
-    pub dt_q: u16,
-    pub steps: u8,
-    pub attractor_strength: u16,
+    pub dt: u16,
+    pub gain_phase: u16,
+    pub gain_spike: u16,
+    pub gain_influence: u16,
+    pub leak: u16,
+    pub max_state: i32,
     pub commit: Digest32,
 }
 
 impl NcdeParams {
-    pub fn new(dim_h: u16, dim_u: u16, dt_q: u16, steps: u8, attractor_strength: u16) -> Self {
-        let dim_h = dim_h.clamp(DIM_H_MIN, DIM_H_MAX);
-        let dim_u = dim_u.clamp(DIM_U_MIN, DIM_U_MAX);
-        let dt_q = dt_q.clamp(DT_Q_MIN, DT_Q_MAX);
-        let steps = steps.clamp(STEPS_MIN, STEPS_MAX);
-        let attractor_strength = attractor_strength.min(STRENGTH_MAX);
-        let commit = commit_params(dim_h, dim_u, dt_q, steps, attractor_strength);
+    pub fn new(
+        dt: u16,
+        gain_phase: u16,
+        gain_spike: u16,
+        gain_influence: u16,
+        leak: u16,
+        max_state: i32,
+    ) -> Self {
+        let dt = dt.clamp(DT_MIN, DT_MAX);
+        let gain_phase = gain_phase.min(GAIN_MAX);
+        let gain_spike = gain_spike.min(GAIN_MAX);
+        let gain_influence = gain_influence.min(GAIN_MAX);
+        let leak = leak.min(LEAK_MAX);
+        let max_state = max_state.abs().max(1);
+        let commit = commit_params(dt, gain_phase, gain_spike, gain_influence, leak, max_state);
         Self {
-            dim_h,
-            dim_u,
-            dt_q,
-            steps,
-            attractor_strength,
+            dt,
+            gain_phase,
+            gain_spike,
+            gain_influence,
+            leak,
+            max_state,
             commit,
         }
-    }
-
-    pub fn dims(&self) -> (usize, usize) {
-        (self.dim_h as usize, self.dim_u as usize)
     }
 }
 
 impl Default for NcdeParams {
     fn default() -> Self {
-        Self::new(32, 16, 100, 2, 2500)
+        Self::new(400, 3500, 4200, 2200, 600, DEFAULT_MAX_STATE)
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct NcdeState {
-    pub h: Vec<i32>,
-    pub t_q: u64,
+    pub x: [i32; DIM],
+    pub energy: u16,
     pub commit: Digest32,
 }
 
 impl NcdeState {
     pub fn new(params: &NcdeParams) -> Self {
-        let h = vec![0; params.dim_h as usize];
-        let t_q = 0;
-        let commit = commit_state(&h, t_q, params.commit);
-        Self { h, t_q, commit }
-    }
-
-    pub fn reset_if_dim_mismatch(&mut self, params: &NcdeParams) {
-        if self.h.len() != params.dim_h as usize {
-            *self = Self::new(params);
-        }
+        let x = [0; DIM];
+        let energy = ENERGY_MAX as u16 / 2;
+        let commit = commit_state(&x, energy, params.commit);
+        Self { x, energy, commit }
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ControlFrame {
+pub struct NcdeInputs {
     pub cycle_id: u64,
-    pub phase_commit: Digest32,
-    pub global_phase: u16,
-    pub coherence_plv: u16,
-    pub influence_pulses_root: Digest32,
-    pub spike_root: Digest32,
+    pub phase_frame_commit: Digest32,
+    pub phase_u16: u16,
+    pub tcf_energy_smooth: u16,
+    pub spike_accepted_root: Digest32,
     pub spike_counts: Vec<(SpikeKind, u16)>,
+    pub influence_pulses_root: Digest32,
+    pub coherence_plv: u16,
+    pub risk: u16,
     pub drift: u16,
     pub surprise: u16,
-    pub risk: u16,
-    pub attn_gain: u16,
     pub commit: Digest32,
 }
 
-impl ControlFrame {
+impl NcdeInputs {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         cycle_id: u64,
-        phase_commit: Digest32,
-        global_phase: u16,
-        coherence_plv: u16,
-        influence_pulses_root: Digest32,
-        spike_root: Digest32,
+        phase_frame_commit: Digest32,
+        phase_u16: u16,
+        tcf_energy_smooth: u16,
+        spike_accepted_root: Digest32,
         mut spike_counts: Vec<(SpikeKind, u16)>,
+        influence_pulses_root: Digest32,
+        coherence_plv: u16,
+        risk: u16,
         drift: u16,
         surprise: u16,
-        risk: u16,
-        attn_gain: u16,
     ) -> Self {
         spike_counts.sort_by(|(kind_a, _), (kind_b, _)| kind_a.cmp(kind_b));
-        let commit = commit_control(
+        let commit = commit_inputs(
             cycle_id,
-            phase_commit,
-            global_phase,
-            coherence_plv,
-            influence_pulses_root,
-            spike_root,
+            phase_frame_commit,
+            phase_u16,
+            tcf_energy_smooth,
+            spike_accepted_root,
             &spike_counts,
+            influence_pulses_root,
+            coherence_plv,
+            risk,
             drift,
             surprise,
-            risk,
-            attn_gain,
         );
         Self {
             cycle_id,
-            phase_commit,
-            global_phase,
-            coherence_plv,
-            influence_pulses_root,
-            spike_root,
+            phase_frame_commit,
+            phase_u16,
+            tcf_energy_smooth,
+            spike_accepted_root,
             spike_counts,
+            influence_pulses_root,
+            coherence_plv,
+            risk,
             drift,
             surprise,
-            risk,
-            attn_gain,
             commit,
         }
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct NcdeOutput {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NcdeOutputs {
     pub cycle_id: u64,
-    pub h_commit: Digest32,
-    pub h_summary: Vec<i16>,
+    pub state_commit: Digest32,
     pub energy: u16,
+    pub state_digest: Digest32,
     pub commit: Digest32,
 }
 
 pub struct NcdeCore {
     pub params: NcdeParams,
     pub state: NcdeState,
+    pub commit: Digest32,
 }
 
 impl NcdeCore {
     pub fn new(params: NcdeParams) -> Self {
         let state = NcdeState::new(&params);
-        Self { params, state }
+        let commit = commit_core(params.commit, state.commit);
+        Self {
+            params,
+            state,
+            commit,
+        }
     }
 
-    pub fn tick(&mut self, ctrl: &ControlFrame) -> NcdeOutput {
-        self.state.reset_if_dim_mismatch(&self.params);
-        let (dim_h, dim_u) = self.params.dims();
-        let mut h = self.state.h.clone();
-        let u = build_control_vector(ctrl, dim_u);
-        let attractor = triangle_wave(ctrl.global_phase, CONTROL_SCALE);
-        let dt_q = i64::from(self.params.dt_q);
-        let steps = self.params.steps.max(1);
+    pub fn tick(&mut self, inp: &NcdeInputs) -> NcdeOutputs {
+        let control = build_control_vector(inp, &self.params);
+        let mut next_x = self.state.x;
+        let tcf_centered = centered_value(inp.tcf_energy_smooth, GAIN_MAX);
 
-        for _ in 0..steps {
-            let k1 = derivative(&h, &u, attractor, &self.params);
-            let h_tmp = apply_step(&h, &k1, dt_q);
-            let k2 = derivative(&h_tmp, &u, attractor, &self.params);
-            h = apply_heun(&h, &k1, &k2, dt_q);
-            clamp_vec(&mut h);
+        for (idx, next_value) in next_x.iter_mut().enumerate().take(DIM) {
+            let f = compute_flow(idx, &self.state.x, &control.u, tcf_centered, &self.params);
+            let dt = i64::from(self.params.dt);
+            let leak = i64::from(self.params.leak);
+            let current = i64::from(self.state.x[idx]);
+            let delta = (dt * i64::from(f)) / i64::from(GAIN_SCALE);
+            let leak_term = (leak * current) / i64::from(GAIN_SCALE);
+            let updated = current + delta - leak_term;
+            *next_value = clamp_i32(updated, self.params.max_state);
         }
 
-        if h.len() != dim_h {
-            h.resize(dim_h, 0);
-        }
-
-        let t_q = self
-            .state
-            .t_q
-            .saturating_add(u64::from(self.params.dt_q) * u64::from(self.params.steps));
-        let state_commit = commit_state(&h, t_q, self.params.commit);
+        let next_energy = update_energy(&self.state, &control, inp, &self.params);
+        let state_commit = commit_state(&next_x, next_energy, self.params.commit);
+        let state_digest = commit_state_digest(&next_x);
         self.state = NcdeState {
-            h: h.clone(),
-            t_q,
+            x: next_x,
+            energy: next_energy,
             commit: state_commit,
         };
+        self.commit = commit_core(self.params.commit, self.state.commit);
 
-        let h_commit = commit_h(&h);
-        let energy = energy_from_state(&h);
-        let h_summary = summarize_h(&h);
-        let commit = commit_output(
-            ctrl.cycle_id,
-            h_commit,
-            energy,
-            ctrl.commit,
+        let commit = commit_outputs(
+            inp.cycle_id,
             state_commit,
+            next_energy,
+            state_digest,
+            inp.commit,
             self.params.commit,
         );
 
-        NcdeOutput {
-            cycle_id: ctrl.cycle_id,
-            h_commit,
-            h_summary,
-            energy,
+        NcdeOutputs {
+            cycle_id: inp.cycle_id,
+            state_commit,
+            energy: next_energy,
+            state_digest,
             commit,
         }
     }
@@ -230,196 +224,236 @@ impl Default for NcdeCore {
     }
 }
 
+struct ControlSignal {
+    u: [i32; DIM],
+    feature_norm: i32,
+    novelty_norm: i32,
+    threat_norm: i32,
+}
+
 fn commit_params(
-    dim_h: u16,
-    dim_u: u16,
-    dt_q: u16,
-    steps: u8,
-    attractor_strength: u16,
+    dt: u16,
+    gain_phase: u16,
+    gain_spike: u16,
+    gain_influence: u16,
+    leak: u16,
+    max_state: i32,
 ) -> Digest32 {
     let mut hasher = Hasher::new();
     hasher.update(PARAMS_DOMAIN);
-    hasher.update(&dim_h.to_be_bytes());
-    hasher.update(&dim_u.to_be_bytes());
-    hasher.update(&dt_q.to_be_bytes());
-    hasher.update(&[steps]);
-    hasher.update(&attractor_strength.to_be_bytes());
+    hasher.update(&dt.to_be_bytes());
+    hasher.update(&gain_phase.to_be_bytes());
+    hasher.update(&gain_spike.to_be_bytes());
+    hasher.update(&gain_influence.to_be_bytes());
+    hasher.update(&leak.to_be_bytes());
+    hasher.update(&max_state.to_be_bytes());
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
-fn commit_state(h: &[i32], t_q: u64, params_commit: Digest32) -> Digest32 {
+fn commit_state(x: &[i32; DIM], energy: u16, params_commit: Digest32) -> Digest32 {
     let mut hasher = Hasher::new();
     hasher.update(STATE_DOMAIN);
     hasher.update(params_commit.as_bytes());
-    hasher.update(&t_q.to_be_bytes());
-    for value in h {
-        hasher.update(&value.to_be_bytes());
-    }
-    Digest32::new(*hasher.finalize().as_bytes())
-}
-
-fn commit_h(h: &[i32]) -> Digest32 {
-    let mut hasher = Hasher::new();
-    hasher.update(b"ucf.ncde.state.h.v1");
-    for value in h {
+    hasher.update(&energy.to_be_bytes());
+    for value in x.iter() {
         hasher.update(&value.to_be_bytes());
     }
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
 #[allow(clippy::too_many_arguments)]
-fn commit_control(
+fn commit_inputs(
     cycle_id: u64,
-    phase_commit: Digest32,
-    global_phase: u16,
-    coherence_plv: u16,
-    influence_pulses_root: Digest32,
-    spike_root: Digest32,
+    phase_frame_commit: Digest32,
+    phase_u16: u16,
+    tcf_energy_smooth: u16,
+    spike_accepted_root: Digest32,
     spike_counts: &[(SpikeKind, u16)],
+    influence_pulses_root: Digest32,
+    coherence_plv: u16,
+    risk: u16,
     drift: u16,
     surprise: u16,
-    risk: u16,
-    attn_gain: u16,
 ) -> Digest32 {
     let mut hasher = Hasher::new();
-    hasher.update(CONTROL_DOMAIN);
+    hasher.update(INPUT_DOMAIN);
     hasher.update(&cycle_id.to_be_bytes());
-    hasher.update(phase_commit.as_bytes());
-    hasher.update(&global_phase.to_be_bytes());
-    hasher.update(&coherence_plv.to_be_bytes());
-    hasher.update(influence_pulses_root.as_bytes());
-    hasher.update(spike_root.as_bytes());
+    hasher.update(phase_frame_commit.as_bytes());
+    hasher.update(&phase_u16.to_be_bytes());
+    hasher.update(&tcf_energy_smooth.to_be_bytes());
+    hasher.update(spike_accepted_root.as_bytes());
+    hasher.update(
+        &u32::try_from(spike_counts.len())
+            .unwrap_or(u32::MAX)
+            .to_be_bytes(),
+    );
     for (kind, count) in spike_counts {
         hasher.update(&kind.as_u16().to_be_bytes());
         hasher.update(&count.to_be_bytes());
     }
+    hasher.update(influence_pulses_root.as_bytes());
+    hasher.update(&coherence_plv.to_be_bytes());
+    hasher.update(&risk.to_be_bytes());
     hasher.update(&drift.to_be_bytes());
     hasher.update(&surprise.to_be_bytes());
-    hasher.update(&risk.to_be_bytes());
-    hasher.update(&attn_gain.to_be_bytes());
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
-fn commit_output(
+fn commit_state_digest(x: &[i32; DIM]) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(DIGEST_DOMAIN);
+    for value in x.iter() {
+        hasher.update(&value.to_be_bytes());
+    }
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn commit_outputs(
     cycle_id: u64,
-    h_commit: Digest32,
-    energy: u16,
-    control_commit: Digest32,
     state_commit: Digest32,
+    energy: u16,
+    state_digest: Digest32,
+    input_commit: Digest32,
     params_commit: Digest32,
 ) -> Digest32 {
     let mut hasher = Hasher::new();
     hasher.update(OUTPUT_DOMAIN);
     hasher.update(&cycle_id.to_be_bytes());
-    hasher.update(h_commit.as_bytes());
-    hasher.update(&energy.to_be_bytes());
-    hasher.update(control_commit.as_bytes());
     hasher.update(state_commit.as_bytes());
+    hasher.update(&energy.to_be_bytes());
+    hasher.update(state_digest.as_bytes());
+    hasher.update(input_commit.as_bytes());
     hasher.update(params_commit.as_bytes());
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
-fn build_control_vector(ctrl: &ControlFrame, dim_u: usize) -> Vec<i32> {
-    let mut values = Vec::with_capacity(dim_u);
-    values.push(centered_value(ctrl.global_phase, u16::MAX));
-    values.push(centered_value(ctrl.coherence_plv, STRENGTH_MAX));
-    values.push(centered_value(ctrl.drift, STRENGTH_MAX));
-    values.push(centered_value(ctrl.surprise, STRENGTH_MAX));
-    values.push(centered_value(ctrl.risk, STRENGTH_MAX));
-    values.push(centered_value(ctrl.attn_gain, STRENGTH_MAX));
+fn commit_core(params_commit: Digest32, state_commit: Digest32) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(CORE_DOMAIN);
+    hasher.update(params_commit.as_bytes());
+    hasher.update(state_commit.as_bytes());
+    Digest32::new(*hasher.finalize().as_bytes())
+}
 
-    let total_spikes: u32 = ctrl
+fn build_control_vector(inp: &NcdeInputs, params: &NcdeParams) -> ControlSignal {
+    let mut u = [0i32; DIM];
+    let total_spikes: u32 = inp
         .spike_counts
         .iter()
         .map(|(_, count)| u32::from(*count))
         .sum();
-    for (_, count) in ctrl.spike_counts.iter() {
-        if values.len() >= dim_u {
-            break;
-        }
-        let norm = if total_spikes == 0 {
-            0
-        } else {
-            (i32::from(*count) * CONTROL_SCALE) / total_spikes as i32
-        };
-        values.push(norm);
+    let feature = spike_count(inp, SpikeKind::Feature);
+    let novelty = spike_count(inp, SpikeKind::Novelty);
+    let threat = spike_count(inp, SpikeKind::Threat);
+    let feature_norm = normalize_spike(feature, total_spikes);
+    let novelty_norm = normalize_spike(novelty, total_spikes);
+    let threat_norm = normalize_spike(threat, total_spikes);
+
+    let phase_signal = scale_gain(phase_signal(inp.phase_u16), params.gain_phase);
+    let coherence = scale_gain(
+        centered_value(inp.coherence_plv, GAIN_MAX),
+        params.gain_phase,
+    );
+    let surprise = scale_gain(centered_value(inp.surprise, GAIN_MAX), params.gain_phase);
+
+    u[0] = phase_signal;
+    u[1] = scale_gain(feature_norm, params.gain_spike);
+    u[2] = scale_gain(novelty_norm, params.gain_spike);
+    u[3] = -scale_gain(threat_norm, params.gain_spike);
+    u[4] = coherence;
+    u[5] = surprise;
+
+    for (idx, value) in u.iter_mut().enumerate().take(DIM).skip(6) {
+        let hashed = influence_hash(inp.influence_pulses_root, idx as u16);
+        *value = scale_gain(hashed, params.gain_influence);
     }
 
-    while values.len() < dim_u {
-        values.push(0);
+    ControlSignal {
+        u,
+        feature_norm,
+        novelty_norm,
+        threat_norm,
     }
-
-    values
 }
 
-fn derivative(h: &[i32], u: &[i32], attractor: i32, params: &NcdeParams) -> Vec<i32> {
-    let dim_h = params.dim_h as usize;
-    let dim_u = params.dim_u as usize;
-    let strength = params.attractor_strength.min(STRENGTH_MAX) as i64;
-    let strength_scale = i64::from(STRENGTH_MAX);
-    let mut out = vec![0; dim_h];
-
-    for i in 0..dim_h {
-        let a_coeff = coeff_signed(params.commit, COEFF_A_DOMAIN, i as u32) as i64;
-        let mut acc = (a_coeff * h[i] as i64) / i64::from(CONTROL_SCALE);
-        for (j, value) in u.iter().take(dim_u).enumerate() {
-            let b_coeff =
-                coeff_signed(params.commit, COEFF_B_DOMAIN, (i * dim_u + j) as u32) as i64;
-            acc = acc.saturating_add((b_coeff * i64::from(*value)) / i64::from(CONTROL_SCALE));
-        }
-        let c_coeff = coeff_abs(params.commit, COEFF_C_DOMAIN, i as u32) as i64;
-        let pull = i64::from(attractor) - h[i] as i64;
-        let pull_term =
-            (c_coeff * pull * strength) / (i64::from(CONTROL_SCALE) * strength_scale.max(1));
-        acc = acc.saturating_add(pull_term);
-        out[i] = clamp_i32(acc);
-    }
-
-    out
+fn compute_flow(
+    idx: usize,
+    x: &[i32; DIM],
+    u: &[i32; DIM],
+    tcf_centered: i32,
+    params: &NcdeParams,
+) -> i32 {
+    let a_coeff = -512;
+    let b_coeff = 768;
+    let c_coeff = 256;
+    let x_i = x[idx];
+    let u_i = u[idx];
+    let cross =
+        (i64::from(u[(idx + 1) % DIM]) * i64::from(x[(idx + 2) % DIM])) / i64::from(CONTROL_SCALE);
+    let linear = (i64::from(a_coeff) * i64::from(x_i)) / i64::from(CONTROL_SCALE);
+    let input = (i64::from(b_coeff) * i64::from(u_i)) / i64::from(CONTROL_SCALE);
+    let cross_term = (i64::from(c_coeff) * cross) / i64::from(CONTROL_SCALE);
+    let tcf_term = i64::from(tcf_centered) / 4;
+    let gain = i64::from(params.gain_phase.max(1));
+    let combined = linear + input + cross_term + (tcf_term * gain / i64::from(GAIN_SCALE));
+    clamp_i32(combined, params.max_state)
 }
 
-fn apply_step(h: &[i32], k: &[i32], dt_q: i64) -> Vec<i32> {
-    let mut out = Vec::with_capacity(h.len());
-    for (value, deriv) in h.iter().zip(k.iter()) {
-        let delta = (dt_q * i64::from(*deriv)) / i64::from(DT_SCALE);
-        out.push(clamp_i32(i64::from(*value).saturating_add(delta)));
-    }
-    out
+fn update_energy(
+    state: &NcdeState,
+    control: &ControlSignal,
+    inp: &NcdeInputs,
+    params: &NcdeParams,
+) -> u16 {
+    let control_mag: i32 = control.u.iter().map(|value| value.abs()).sum::<i32>() / DIM as i32;
+    let control_drive = (control_mag * ENERGY_MAX / CONTROL_SCALE).min(ENERGY_MAX);
+    let feature_drive = (control.feature_norm * ENERGY_MAX / CONTROL_SCALE) / 2;
+    let novelty_drive = (control.novelty_norm * ENERGY_MAX / CONTROL_SCALE) / 4;
+    let threat_penalty = (control.threat_norm * ENERGY_MAX / CONTROL_SCALE) / 2;
+    let tcf_drive = i32::from(inp.tcf_energy_smooth) / 4;
+    let risk_penalty = i32::from(inp.risk) / 3;
+    let leak_penalty = (i32::from(params.leak) * i32::from(state.energy)) / GAIN_SCALE.max(1);
+
+    let mut energy =
+        i32::from(state.energy) + control_drive / 3 + feature_drive + novelty_drive + tcf_drive
+            - threat_penalty
+            - risk_penalty
+            - leak_penalty;
+
+    energy = energy.clamp(0, ENERGY_MAX);
+    energy as u16
 }
 
-fn apply_heun(h: &[i32], k1: &[i32], k2: &[i32], dt_q: i64) -> Vec<i32> {
-    let mut out = Vec::with_capacity(h.len());
-    for ((value, deriv1), deriv2) in h.iter().zip(k1.iter()).zip(k2.iter()) {
-        let avg = i64::from(*deriv1).saturating_add(i64::from(*deriv2)) / 2;
-        let delta = (dt_q * avg) / i64::from(DT_SCALE);
-        out.push(clamp_i32(i64::from(*value).saturating_add(delta)));
-    }
-    out
+fn spike_count(inp: &NcdeInputs, kind: SpikeKind) -> u16 {
+    inp.spike_counts
+        .iter()
+        .find_map(|(entry_kind, count)| (*entry_kind == kind).then_some(*count))
+        .unwrap_or(0)
 }
 
-fn summarize_h(h: &[i32]) -> Vec<i16> {
-    h.iter()
-        .take(SUMMARY_LEN)
-        .map(|value| clamp_i16(i64::from(*value) / 8))
-        .collect()
-}
-
-fn energy_from_state(h: &[i32]) -> u16 {
-    if h.is_empty() {
+fn normalize_spike(count: u16, total: u32) -> i32 {
+    if total == 0 {
         return 0;
     }
-    let total: i64 = h.iter().map(|value| i64::from(value.abs())).sum();
-    let avg = total / h.len() as i64;
-    clamp_u16(avg / 32)
+    let denom = total.max(u32::from(SPIKE_NORM_MAX));
+    let value = (i32::from(count) * CONTROL_SCALE) / denom as i32;
+    value.clamp(0, CONTROL_SCALE)
 }
 
-fn triangle_wave(phase: u16, scale: i32) -> i32 {
+fn scale_gain(value: i32, gain: u16) -> i32 {
+    (i64::from(value) * i64::from(gain) / i64::from(GAIN_SCALE)) as i32
+}
+
+fn phase_signal(phase: u16) -> i32 {
     let phase = i32::from(phase);
-    let span = 65_536i32;
-    let half = span / 2;
-    let value = if phase < half { phase } else { span - phase };
+    let half = PHASE_MAX / 2;
+    let value = if phase < half {
+        phase
+    } else {
+        PHASE_MAX - phase
+    };
     let signed = value * 2 - half;
-    (signed * scale) / half
+    (signed * CONTROL_SCALE) / half
 }
 
 fn centered_value(value: u16, max: u16) -> i32 {
@@ -431,116 +465,195 @@ fn centered_value(value: u16, max: u16) -> i32 {
     (doubled * CONTROL_SCALE) / max_i32
 }
 
-fn coeff_signed(seed: Digest32, domain: &[u8], idx: u32) -> i32 {
+fn influence_hash(root: Digest32, idx: u16) -> i32 {
     let mut hasher = Hasher::new();
-    hasher.update(domain);
-    hasher.update(seed.as_bytes());
+    hasher.update(CONTROL_DOMAIN);
+    hasher.update(root.as_bytes());
     hasher.update(&idx.to_be_bytes());
     let bytes = hasher.finalize();
     let raw = i16::from_be_bytes([bytes.as_bytes()[0], bytes.as_bytes()[1]]);
-    (raw as i32).rem_euclid(MAX_COEFF * 2 + 1) - MAX_COEFF
+    (i32::from(raw) * CONTROL_SCALE) / i32::from(i16::MAX)
 }
 
-fn coeff_abs(seed: Digest32, domain: &[u8], idx: u32) -> i32 {
-    let value = coeff_signed(seed, domain, idx).abs();
-    value.max(1)
-}
-
-fn clamp_vec(values: &mut [i32]) {
-    for value in values {
-        *value = (*value).clamp(-MAX_H, MAX_H);
-    }
-}
-
-fn clamp_i32(value: i64) -> i32 {
-    value.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32
-}
-
-fn clamp_i16(value: i64) -> i16 {
-    value.clamp(i64::from(i16::MIN), i64::from(i16::MAX)) as i16
-}
-
-fn clamp_u16(value: i64) -> u16 {
-    value.clamp(0, 10_000) as u16
+fn clamp_i32(value: i64, max_state: i32) -> i32 {
+    let max_state = i64::from(max_state.abs().max(1));
+    value.clamp(-max_state, max_state) as i32
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn base_inputs() -> NcdeInputs {
+        NcdeInputs::new(
+            1,
+            Digest32::new([1u8; 32]),
+            16_384,
+            5000,
+            Digest32::new([2u8; 32]),
+            vec![(SpikeKind::Feature, 2), (SpikeKind::Threat, 1)],
+            Digest32::new([3u8; 32]),
+            5000,
+            2000,
+            1200,
+            4000,
+        )
+    }
+
     #[test]
-    fn ncde_is_deterministic_for_same_control() {
-        let params = NcdeParams::new(24, 10, 80, 2, 1800);
+    fn ncde_is_deterministic_for_same_inputs() {
+        let params = NcdeParams::new(400, 3000, 3500, 2000, 500, 20_000);
         let mut core_a = NcdeCore::new(params);
         let mut core_b = NcdeCore::new(params);
-        let control = ControlFrame::new(
-            7,
-            Digest32::new([1u8; 32]),
-            12_000,
-            8000,
-            Digest32::new([2u8; 32]),
-            Digest32::new([2u8; 32]),
-            vec![(SpikeKind::Novelty, 3), (SpikeKind::Threat, 1)],
-            1200,
-            4200,
-            2000,
-            1500,
-        );
+        let inputs = base_inputs();
 
-        let out_a = core_a.tick(&control);
-        let out_b = core_b.tick(&control);
+        let out_a = core_a.tick(&inputs);
+        let out_b = core_b.tick(&inputs);
 
         assert_eq!(out_a.commit, out_b.commit);
+        assert_eq!(out_a.state_commit, out_b.state_commit);
     }
 
     #[test]
-    fn stronger_attractor_reduces_energy_variance() {
-        let base = NcdeParams::new(24, 10, 80, 2, 500);
-        let mut weak = NcdeCore::new(base);
-        let strong_params = NcdeParams::new(24, 10, 80, 2, 4500);
-        let mut strong = NcdeCore::new(strong_params);
-        let mut weak_energy = Vec::new();
-        let mut strong_energy = Vec::new();
+    fn state_decays_with_leak_and_zero_control() {
+        let params = NcdeParams::new(400, 0, 0, 0, 2000, 50_000);
+        let mut core = NcdeCore::new(params);
+        core.state.x = [10_000; DIM];
+        core.state.commit = commit_state(&core.state.x, core.state.energy, core.params.commit);
+        let inputs = NcdeInputs::new(
+            1,
+            Digest32::new([1u8; 32]),
+            16_384,
+            5000,
+            Digest32::new([2u8; 32]),
+            vec![],
+            Digest32::new([3u8; 32]),
+            5000,
+            0,
+            0,
+            5000,
+        );
 
-        for (idx, phase) in [1000u16, 8000, 16000, 24000, 32000, 40000]
-            .iter()
-            .enumerate()
-        {
-            let control = ControlFrame::new(
-                idx as u64,
-                Digest32::new([1u8; 32]),
-                *phase,
-                6000,
-                Digest32::new([2u8; 32]),
-                Digest32::new([2u8; 32]),
-                vec![(SpikeKind::Novelty, 2), (SpikeKind::ConsistencyAlert, 1)],
-                1000,
-                2000,
-                1500,
-                1800,
-            );
-            weak_energy.push(weak.tick(&control).energy as i64);
-            strong_energy.push(strong.tick(&control).energy as i64);
-        }
+        let before = core.state.x[0].abs();
+        let out = core.tick(&inputs);
+        let after = core.state.x[0].abs();
 
-        let weak_var = variance(&weak_energy);
-        let strong_var = variance(&strong_energy);
-
-        assert!(strong_var <= weak_var);
+        assert!(after < before, "state should decay with leak");
+        assert_eq!(out.energy, core.state.energy);
     }
 
-    fn variance(values: &[i64]) -> i64 {
-        if values.is_empty() {
-            return 0;
-        }
-        let mean: i64 = values.iter().sum::<i64>() / values.len() as i64;
-        values
-            .iter()
-            .map(|value| {
-                let diff = value - mean;
-                diff * diff
-            })
-            .sum::<i64>()
-            / values.len() as i64
+    #[test]
+    fn feature_spikes_increase_energy() {
+        let params = NcdeParams::new(400, 3000, 5000, 2000, 500, 50_000);
+        let inputs_low = NcdeInputs::new(
+            1,
+            Digest32::new([1u8; 32]),
+            16_384,
+            5000,
+            Digest32::new([2u8; 32]),
+            vec![(SpikeKind::Feature, 1)],
+            Digest32::new([3u8; 32]),
+            5000,
+            1000,
+            1000,
+            5000,
+        );
+        let inputs_high = NcdeInputs::new(
+            1,
+            Digest32::new([1u8; 32]),
+            16_384,
+            5000,
+            Digest32::new([2u8; 32]),
+            vec![(SpikeKind::Feature, 6)],
+            Digest32::new([3u8; 32]),
+            5000,
+            1000,
+            1000,
+            5000,
+        );
+        let mut core_low = NcdeCore::new(params);
+        let mut core_high = NcdeCore::new(params);
+
+        let out_low = core_low.tick(&inputs_low);
+        let out_high = core_high.tick(&inputs_high);
+
+        assert!(out_high.energy > out_low.energy);
+        assert_ne!(out_high.state_digest, out_low.state_digest);
+    }
+
+    #[test]
+    fn threat_spikes_reduce_energy() {
+        let params = NcdeParams::new(400, 3000, 5000, 2000, 500, 50_000);
+        let inputs_feature = NcdeInputs::new(
+            1,
+            Digest32::new([1u8; 32]),
+            16_384,
+            5000,
+            Digest32::new([2u8; 32]),
+            vec![(SpikeKind::Feature, 4)],
+            Digest32::new([3u8; 32]),
+            5000,
+            1000,
+            1000,
+            5000,
+        );
+        let inputs_threat = NcdeInputs::new(
+            1,
+            Digest32::new([1u8; 32]),
+            16_384,
+            5000,
+            Digest32::new([2u8; 32]),
+            vec![(SpikeKind::Threat, 4)],
+            Digest32::new([3u8; 32]),
+            5000,
+            1000,
+            1000,
+            5000,
+        );
+        let mut core_feature = NcdeCore::new(params);
+        let mut core_threat = NcdeCore::new(params);
+
+        let out_feature = core_feature.tick(&inputs_feature);
+        let out_threat = core_threat.tick(&inputs_threat);
+
+        assert!(out_threat.energy < out_feature.energy);
+    }
+
+    #[test]
+    fn risk_inhibits_energy() {
+        let params = NcdeParams::new(400, 3000, 5000, 2000, 500, 50_000);
+        let inputs_low = NcdeInputs::new(
+            1,
+            Digest32::new([1u8; 32]),
+            16_384,
+            5000,
+            Digest32::new([2u8; 32]),
+            vec![(SpikeKind::Feature, 3)],
+            Digest32::new([3u8; 32]),
+            5000,
+            1000,
+            1000,
+            5000,
+        );
+        let inputs_high = NcdeInputs::new(
+            1,
+            Digest32::new([1u8; 32]),
+            16_384,
+            5000,
+            Digest32::new([2u8; 32]),
+            vec![(SpikeKind::Feature, 3)],
+            Digest32::new([3u8; 32]),
+            5000,
+            8000,
+            1000,
+            5000,
+        );
+        let mut core_low = NcdeCore::new(params);
+        let mut core_high = NcdeCore::new(params);
+
+        let out_low = core_low.tick(&inputs_low);
+        let out_high = core_high.tick(&inputs_high);
+
+        assert!(out_high.energy < out_low.energy);
     }
 }

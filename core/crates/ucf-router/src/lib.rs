@@ -40,7 +40,7 @@ use ucf_iit_monitor::{
 };
 use ucf_influence::{InfluenceGraphV2, InfluenceInputs, InfluenceNodeId, InfluenceOutputs};
 use ucf_ism::IsmStore;
-use ucf_ncde::{ControlFrame as NcdeControlFrame, NcdeCore, NcdeOutput, NcdeParams};
+use ucf_ncde::{NcdeCore, NcdeInputs, NcdeOutputs, NcdeParams};
 use ucf_nsr::{ConstraintEngine, NsrEngine, NsrInputs, ReasoningTrace};
 use ucf_nsr_port::{light_report, ActionIntent, NsrInput, NsrPort, NsrReport, NsrVerdict};
 use ucf_onn::{OnnCore, OnnInputs, OscId, PhaseFrame};
@@ -174,7 +174,7 @@ pub struct Router {
     ssm_core: Mutex<SsmCore>,
     last_ssm_output: Mutex<Option<WmSsmOutput>>,
     ncde_core: Mutex<NcdeCore>,
-    last_ncde_output: Mutex<Option<NcdeOutput>>,
+    last_ncde_output: Mutex<Option<NcdeOutputs>>,
     rsa_core: Mutex<RsaCore>,
 }
 
@@ -266,11 +266,12 @@ struct StageContext {
     replay_pressure: Option<u16>,
     drift_score: Option<u16>,
     surprise_score: Option<u16>,
+    tcf_energy_smooth: Option<u16>,
     influence_outputs: Option<InfluenceOutputs>,
     structural_stats: Option<StructuralCycleStats>,
     structural_proposal: Option<StructuralDeltaProposal>,
     cde_output: Option<CdeOutputs>,
-    ncde_output: Option<NcdeOutput>,
+    ncde_output: Option<NcdeOutputs>,
     ssm_output: Option<WmSsmOutput>,
 }
 
@@ -314,6 +315,7 @@ impl StageContext {
             replay_pressure: None,
             drift_score: None,
             surprise_score: None,
+            tcf_energy_smooth: None,
             influence_outputs: None,
             structural_stats: None,
             structural_proposal: None,
@@ -485,6 +487,8 @@ impl Router {
                 spike_output_intent_count: 0,
                 spike_cap_hit: false,
                 ncde_commit: Digest32::new([0u8; 32]),
+                ncde_state_commit: Digest32::new([0u8; 32]),
+                ncde_energy: 0,
                 cde_commit: Digest32::new([0u8; 32]),
                 cde_graph_commit: Digest32::new([0u8; 32]),
                 cde_top_edges: Vec::new(),
@@ -529,15 +533,18 @@ impl Router {
             .ok()
             .and_then(|guard| guard.clone());
 
-        let cycle_plan = {
+        let (cycle_plan, tcf_energy_smooth) = {
             let mut tcf = self.tcf_port.lock().expect("tcf lock");
-            tcf.step(&plan_attn, plan_surprise.as_ref())
+            let plan = tcf.step(&plan_attn, plan_surprise.as_ref());
+            let energy = tcf.state().energy;
+            (plan, energy)
         };
         let planned = DeterministicTcf::planned_event(&cycle_plan);
         self.append_cycle_plan_record(&cycle_plan, &planned);
 
         let cycle_id = cycle_plan.cycle_id;
         let mut ctx = StageContext::new();
+        ctx.tcf_energy_smooth = Some(tcf_energy_smooth);
 
         for pulse in &cycle_plan.pulses {
             self.emit_stage_trace(pulse.kind);
@@ -792,28 +799,28 @@ impl Router {
                     let spike_counts_iit = spike_counts.clone();
                     let spike_counts_ssm = spike_counts.clone();
                     ctx.replay_pressure = Some(replay_pressure_from_spikes(&spike_counts));
-                    let attn_gain = ctx
-                        .attention_weights
-                        .as_ref()
-                        .map(|weights| weights.gain)
-                        .unwrap_or(0);
+                    let tcf_energy_smooth = ctx.tcf_energy_smooth.unwrap_or(0);
                     if let Some(ncde_output) = self.tick_ncde(
                         cycle_id,
                         &phase_frame,
+                        tcf_energy_smooth,
                         influence_pulses_root,
                         spike_root_commit,
                         spike_counts,
                         drift_score,
                         surprise_score,
                         attention_risk,
-                        attn_gain,
                     ) {
-                        ctx.ncde_output = Some(ncde_output.clone());
+                        ctx.ncde_output = Some(ncde_output);
                         if let Ok(mut guard) = self.last_ncde_output.lock() {
-                            *guard = Some(ncde_output.clone());
+                            *guard = Some(ncde_output);
                         }
                         if let Ok(mut workspace) = self.workspace.lock() {
-                            workspace.set_ncde_commit(ncde_output.commit);
+                            workspace.set_ncde_snapshot(
+                                ncde_output.commit,
+                                ncde_output.state_commit,
+                                ncde_output.energy,
+                            );
                         }
                         self.append_ncde_output_record(cycle_id, &ncde_output);
                         if let Some(ssm_output) = self.tick_ssm(
@@ -837,53 +844,53 @@ impl Router {
                         }
                     }
 
-                    let iit_output =
-                        {
-                            let ssm_output = ctx.ssm_output.clone().or_else(|| {
-                                self.last_ssm_output.lock().ok().and_then(|g| g.clone())
-                            });
-                            let ncde_output = ctx.ncde_output.clone().or_else(|| {
-                                self.last_ncde_output.lock().ok().and_then(|g| g.clone())
-                            });
-                            let inputs = IitInputs::new(
-                                cycle_id,
-                                phase_frame.commit,
-                                phase_frame.coherence_plv,
-                                spike_root_commit,
-                                spike_counts_iit.clone(),
-                                ssm_output
-                                    .as_ref()
-                                    .map(|output| output.commit)
-                                    .unwrap_or_else(|| Digest32::new([0u8; 32])),
-                                ssm_output
-                                    .as_ref()
-                                    .map(|output| output.wm_salience)
-                                    .unwrap_or(0),
-                                ssm_output
-                                    .as_ref()
-                                    .map(|output| output.wm_novelty)
-                                    .unwrap_or(0),
-                                ncde_output
-                                    .as_ref()
-                                    .map(|output| output.commit)
-                                    .unwrap_or_else(|| Digest32::new([0u8; 32])),
-                                ncde_output
-                                    .as_ref()
-                                    .map(|output| output.energy)
-                                    .unwrap_or(0),
-                                workspace_snapshot.nsr_trace_root,
-                                workspace_snapshot.nsr_verdict,
-                                self.last_cde_output
-                                    .lock()
-                                    .ok()
-                                    .and_then(|guard| guard.as_ref().map(|out| out.commit)),
-                                drift_score,
-                                surprise_score,
-                                attention_risk,
-                            );
-                            let mut monitor = self.iit_monitor.lock().expect("iit monitor lock");
-                            monitor.tick(&inputs)
-                        };
+                    let iit_output = {
+                        let ssm_output = ctx
+                            .ssm_output
+                            .clone()
+                            .or_else(|| self.last_ssm_output.lock().ok().and_then(|g| g.clone()));
+                        let ncde_output = ctx
+                            .ncde_output
+                            .or_else(|| self.last_ncde_output.lock().ok().and_then(|g| *g));
+                        let inputs = IitInputs::new(
+                            cycle_id,
+                            phase_frame.commit,
+                            phase_frame.coherence_plv,
+                            spike_root_commit,
+                            spike_counts_iit.clone(),
+                            ssm_output
+                                .as_ref()
+                                .map(|output| output.commit)
+                                .unwrap_or_else(|| Digest32::new([0u8; 32])),
+                            ssm_output
+                                .as_ref()
+                                .map(|output| output.wm_salience)
+                                .unwrap_or(0),
+                            ssm_output
+                                .as_ref()
+                                .map(|output| output.wm_novelty)
+                                .unwrap_or(0),
+                            ncde_output
+                                .as_ref()
+                                .map(|output| output.commit)
+                                .unwrap_or_else(|| Digest32::new([0u8; 32])),
+                            ncde_output
+                                .as_ref()
+                                .map(|output| output.energy)
+                                .unwrap_or(0),
+                            workspace_snapshot.nsr_trace_root,
+                            workspace_snapshot.nsr_verdict,
+                            self.last_cde_output
+                                .lock()
+                                .ok()
+                                .and_then(|guard| guard.as_ref().map(|out| out.commit)),
+                            drift_score,
+                            surprise_score,
+                            attention_risk,
+                        );
+                        let mut monitor = self.iit_monitor.lock().expect("iit monitor lock");
+                        monitor.tick(&inputs)
+                    };
                     let iit_report = report_for_phi(iit_output.phi_proxy);
                     let iit_actions = actions_for_phi(iit_output.phi_proxy, attention_risk);
                     if let Ok(mut workspace) = self.workspace.lock() {
@@ -941,7 +948,7 @@ impl Router {
                     let ncde_commit = ctx
                         .ncde_output
                         .as_ref()
-                        .map(|output| output.h_commit)
+                        .map(|output| output.state_commit)
                         .unwrap_or_else(|| Digest32::new([0u8; 32]));
                     let consistency = consistency_score_from_nsr(ctx.nsr_report.as_ref());
                     let self_state = SelfStateBuilder::new(cycle_id)
@@ -1451,6 +1458,16 @@ impl Router {
                         .as_ref()
                         .map(|output| output.energy)
                         .unwrap_or(0);
+                    let ncde_commit = ctx
+                        .ncde_output
+                        .as_ref()
+                        .map(|output| output.state_commit)
+                        .unwrap_or_else(|| Digest32::new([0u8; 32]));
+                    let ncde_state_digest = ctx
+                        .ncde_output
+                        .as_ref()
+                        .map(|output| output.state_digest)
+                        .unwrap_or_else(|| Digest32::new([0u8; 32]));
                     let nsr_verdict = ctx
                         .nsr_report
                         .as_ref()
@@ -1477,6 +1494,8 @@ impl Router {
                         ssm_salience,
                         ssm_novelty,
                         ncde_energy,
+                        ncde_commit,
+                        ncde_state_digest,
                         nsr_verdict,
                         risk: ctx.attention_risk,
                         drift: drift_score,
@@ -1492,6 +1511,8 @@ impl Router {
                             ssm_salience,
                             ssm_novelty,
                             ncde_energy,
+                            ncde_commit,
+                            ncde_state_digest,
                             nsr_verdict,
                             ctx.attention_risk,
                             drift_score,
@@ -1645,11 +1666,17 @@ impl Router {
                             .map(|outputs| outputs.node_value(InfluenceNodeId::SleepDrive))
                             .unwrap_or(0);
                         let phi_proxy = ctx.integration_score.unwrap_or(0);
+                        let ncde_energy = ctx
+                            .ncde_output
+                            .as_ref()
+                            .map(|output| output.energy)
+                            .unwrap_or(0);
                         let sleep_active = derive_sleep_active(
                             matches!(pulse.kind, PulseKind::Sleep),
                             replay_pressure,
                             phi_proxy,
                             sleep_drive,
+                            ncde_energy,
                             &params,
                         );
                         let inputs = RsaInputs::new(
@@ -1672,10 +1699,7 @@ impl Router {
                                 .as_ref()
                                 .map(|output| output.wm_salience)
                                 .unwrap_or(0),
-                            ctx.ncde_output
-                                .as_ref()
-                                .map(|output| output.energy)
-                                .unwrap_or(0),
+                            ncde_energy,
                             params.commit,
                         );
                         let mut rsa_core =
@@ -2133,7 +2157,7 @@ impl Router {
         attention_risk: u16,
         decision: &PolicyDecision,
         ssm_output: Option<&WmSsmOutput>,
-        ncde_output: Option<&NcdeOutput>,
+        ncde_output: Option<&NcdeOutputs>,
         self_state: Option<&SelfState>,
         nsr_trace: Option<&ReasoningTrace>,
         ism_anchor_commit: Option<Digest32>,
@@ -2144,7 +2168,7 @@ impl Router {
         let wm_salience = ssm_output.map(|output| output.wm_salience).unwrap_or(0);
         let wm_novelty = ssm_output.map(|output| output.wm_novelty).unwrap_or(0);
         let ncde_commit = ncde_output
-            .map(|output| output.h_commit)
+            .map(|output| output.state_commit)
             .unwrap_or_else(|| Digest32::new([0u8; 32]));
         let ncde_energy = ncde_output.map(|output| output.energy).unwrap_or(0);
         let geist_commit = self_state.map(|state| state.commit);
@@ -2671,10 +2695,10 @@ impl Router {
         suppression
     }
 
-    fn append_ncde_output_record(&self, cycle_id: u64, output: &NcdeOutput) {
+    fn append_ncde_output_record(&self, cycle_id: u64, output: &NcdeOutputs) {
         let payload = format!(
-            "commit={};energy={};h_commit={}",
-            output.commit, output.energy, output.h_commit
+            "commit={};energy={};state_digest={}",
+            output.commit, output.energy, output.state_digest
         )
         .into_bytes();
         let record_id = format!("ncde-{cycle_id}-{}", hex::encode(output.commit.as_bytes()));
@@ -2754,7 +2778,7 @@ impl Router {
         influence_outputs: Option<&InfluenceOutputs>,
         iit_output: &IitOutput,
         ssm_output: Option<&WmSsmOutput>,
-        ncde_output: Option<&NcdeOutput>,
+        ncde_output: Option<&NcdeOutputs>,
         drift: u16,
         surprise: u16,
         risk: u16,
@@ -2790,37 +2814,37 @@ impl Router {
         &self,
         cycle_id: u64,
         phase_frame: &PhaseFrame,
+        tcf_energy_smooth: u16,
         influence_pulses_root: Digest32,
         spike_root_commit: Digest32,
         spike_counts: Vec<(SpikeKind, u16)>,
         drift: u16,
         surprise: u16,
         risk: u16,
-        attn_gain: u16,
-    ) -> Option<NcdeOutput> {
+    ) -> Option<NcdeOutputs> {
         self.sync_ncde_params();
         let mut core = self.ncde_core.lock().ok()?;
-        let control = NcdeControlFrame::new(
+        let inputs = NcdeInputs::new(
             cycle_id,
             phase_frame.commit,
             phase_frame.global_phase,
-            phase_frame.coherence_plv,
-            influence_pulses_root,
+            tcf_energy_smooth,
             spike_root_commit,
             spike_counts,
+            influence_pulses_root,
+            phase_frame.coherence_plv,
+            risk,
             drift,
             surprise,
-            risk,
-            attn_gain,
         );
-        Some(core.tick(&control))
+        Some(core.tick(&inputs))
     }
 
     #[allow(clippy::too_many_arguments)]
     fn tick_ssm(
         &self,
         phase_frame: &PhaseFrame,
-        ncde_output: &NcdeOutput,
+        ncde_output: &NcdeOutputs,
         influence_pulses_root: Digest32,
         spike_root_commit: Digest32,
         spike_counts: Vec<(SpikeKind, u16)>,
@@ -2830,15 +2854,16 @@ impl Router {
     ) -> Option<WmSsmOutput> {
         self.sync_ssm_params();
         let mut core = self.ssm_core.lock().ok()?;
+        let ncde_summary = ncde_summary_from_digest(ncde_output.state_digest);
         let input = WmSsmInput::new(
             ncde_output.cycle_id,
             phase_frame.commit,
             phase_frame.global_phase,
             phase_frame.coherence_plv,
             influence_pulses_root,
-            ncde_output.commit,
+            ncde_output.state_commit,
             ncde_output.energy,
-            ncde_output.h_summary.clone(),
+            ncde_summary,
             spike_root_commit,
             spike_counts,
             drift,
@@ -2946,9 +2971,7 @@ impl Router {
         };
         if let Ok(mut core) = self.ncde_core.lock() {
             if core.params.commit != params.commit {
-                let updated = params;
-                core.params = updated;
-                core.state.reset_if_dim_mismatch(&updated);
+                *core = NcdeCore::new(params);
             }
         }
     }
@@ -3063,7 +3086,7 @@ impl Router {
         risk_score: u16,
         spike_counts: Vec<(SpikeKind, u16)>,
         ssm_output: Option<&WmSsmOutput>,
-        ncde_output: Option<&NcdeOutput>,
+        ncde_output: Option<&NcdeOutputs>,
         decision: &PolicyDecision,
         self_state: Option<&SelfState>,
         reasoning_atoms: Vec<(u16, i16)>,
@@ -3410,6 +3433,15 @@ fn observation_from_ssm_state(state: &SsmState) -> Observation {
     Observation::new(WorldStateVec::new(dims, data))
 }
 
+fn ncde_summary_from_digest(digest: Digest32) -> Vec<i16> {
+    digest
+        .as_bytes()
+        .chunks_exact(2)
+        .take(4)
+        .map(|chunk| i16::from_be_bytes([chunk[0], chunk[1]]))
+        .collect()
+}
+
 fn clamp_i16(value: i64) -> i16 {
     value.clamp(i64::from(i16::MIN), i64::from(i16::MAX)) as i16
 }
@@ -3677,6 +3709,7 @@ fn derive_sleep_active(
     replay_pressure: u16,
     phi_proxy: u16,
     sleep_drive: i16,
+    ncde_energy: u16,
     params: &StructuralParams,
 ) -> bool {
     if sleep_pulse {
@@ -3684,7 +3717,9 @@ fn derive_sleep_active(
     }
     let phi_low = params.rsa.phi_min_apply.saturating_sub(400);
     let drive = sleep_drive.max(0) as u16;
-    replay_pressure >= 5000 || phi_proxy < phi_low || drive >= 2500
+    let energy_drive = ncde_energy / 2;
+    let composite_drive = drive.saturating_add(energy_drive).min(10_000);
+    replay_pressure >= 5000 || phi_proxy < phi_low || composite_drive >= 2500
 }
 
 fn spike_record_commit(
@@ -4024,6 +4059,8 @@ fn influence_inputs_commit(
     ssm_salience: u16,
     ssm_novelty: u16,
     ncde_energy: u16,
+    ncde_commit: Digest32,
+    ncde_state_digest: Digest32,
     nsr_verdict: u8,
     risk: u16,
     drift: u16,
@@ -4041,6 +4078,8 @@ fn influence_inputs_commit(
     hasher.update(&ssm_salience.to_be_bytes());
     hasher.update(&ssm_novelty.to_be_bytes());
     hasher.update(&ncde_energy.to_be_bytes());
+    hasher.update(ncde_commit.as_bytes());
+    hasher.update(ncde_state_digest.as_bytes());
     hasher.update(&[nsr_verdict]);
     hasher.update(&risk.to_be_bytes());
     hasher.update(&drift.to_be_bytes());
@@ -4323,21 +4362,23 @@ mod tests {
             .tick_ncde(
                 1,
                 &phase_frame,
+                4500,
                 Digest32::new([9u8; 32]),
                 Digest32::new([2u8; 32]),
                 vec![(SpikeKind::Novelty, 2)],
                 1000,
                 2000,
                 1500,
-                1800,
             )
             .expect("ncde output");
         {
             let mut workspace = router.workspace.lock().expect("workspace lock");
-            workspace.set_ncde_commit(output.commit);
+            workspace.set_ncde_snapshot(output.commit, output.state_commit, output.energy);
         }
         let snapshot = router.arbitrate_workspace(1);
         assert_eq!(snapshot.ncde_commit, output.commit);
+        assert_eq!(snapshot.ncde_state_commit, output.state_commit);
+        assert_eq!(snapshot.ncde_energy, output.energy);
 
         let base = AttentionWeights {
             channel: FocusChannel::Task,
@@ -4354,9 +4395,9 @@ mod tests {
         assert!(biased.gain >= base.gain);
 
         let state = SelfStateBuilder::new(1)
-            .ncde_commit(output.h_commit)
+            .ncde_commit(output.state_commit)
             .build();
-        assert_eq!(state.ncde_commit, output.h_commit);
+        assert_eq!(state.ncde_commit, output.state_commit);
     }
 
     #[test]
@@ -4475,13 +4516,13 @@ mod tests {
             .tick_ncde(
                 1,
                 &phase_frame,
+                4500,
                 Digest32::new([9u8; 32]),
                 Digest32::new([2u8; 32]),
                 vec![(SpikeKind::Novelty, 2)],
                 1000,
                 2000,
                 1500,
-                1800,
             )
             .expect("ncde output");
         let ssm_output = router
