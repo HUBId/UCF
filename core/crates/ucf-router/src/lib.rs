@@ -2642,7 +2642,7 @@ impl Router {
             summary,
             slot,
         });
-        self.append_feature_translation_record(
+        self.append_feature_translation_archive_record(
             cycle_id,
             activation_view.commit,
             selection.commit,
@@ -2705,21 +2705,6 @@ impl Router {
             boundary_commit: activation_commit,
         };
         self.append_archive_record(RecordKind::Other(FEATURE_RECORD_KIND), payload_commit, meta);
-    }
-
-    fn append_feature_translation_record(
-        &self,
-        cycle_id: u64,
-        activation_commit: Digest32,
-        selection_commit: Digest32,
-        topk: usize,
-    ) {
-        self.append_feature_translation_archive_record(
-            cycle_id,
-            activation_commit,
-            selection_commit,
-            topk,
-        );
     }
 
     fn append_spike_bus_record(
