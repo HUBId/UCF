@@ -606,7 +606,7 @@ mod tests {
         let processed = service.drain();
 
         assert_eq!(processed, 1);
-        assert_eq!(archive.list().len(), 12);
+        assert_eq!(archive.list().len(), 13);
 
         assert!(speech_receiver.try_recv().is_err());
     }

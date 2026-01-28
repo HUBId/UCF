@@ -8,6 +8,7 @@ use blake3::Hasher;
 use ucf_cde_port::CdeHypothesis;
 use ucf_geist::{encode_self_state, SelfState};
 use ucf_nsr_port::NsrReport;
+use ucf_spikebus::{SpikeEvent, SpikeKind, SpikeModuleId};
 use ucf_types::{AiOutput, Digest32, OutputChannel};
 use ucf_workspace::{SignalKind, WorkspaceSnapshot};
 
@@ -20,11 +21,382 @@ const DOMAIN_SLE_INPUTS: &[u8] = b"ucf.sle.inputs.v2";
 const DOMAIN_SLE_STIMULUS: &[u8] = b"ucf.sle.stimulus.v2";
 const DOMAIN_SLE_OUTPUTS: &[u8] = b"ucf.sle.outputs.v2";
 const DOMAIN_SLE_SELF_SYMBOL: &[u8] = b"ucf.sle.self_symbol.v2";
+const DOMAIN_SELF_TOKEN_V1: &[u8] = b"ucf.sle.self_token.v1";
+const DOMAIN_SELF_OBSERVATION_V1: &[u8] = b"ucf.sle.self_observation.v1";
+const DOMAIN_SLE_INPUTS_V1: &[u8] = b"ucf.sle.inputs.v3";
+const DOMAIN_SELF_SYMBOL_V1: &[u8] = b"ucf.sle.self_symbol.v3";
+const DOMAIN_THOUGHT_SPIKE_V1: &[u8] = b"ucf.sle.thought_spike.v1";
+const DOMAIN_SLE_OUTPUTS_V1: &[u8] = b"ucf.sle.outputs.v3";
 
 const SLE_MAX_VALUE: i16 = 2000;
 const SLE_MAX_STIMULI: usize = 8;
 const SLE_HIGH_RISK: u16 = 9000;
 const SLE_DECAY_MAX: u16 = 10_000;
+const SLE_ITEMS_MAX: usize = 24;
+const SLE_THOUGHT_SPIKES_MAX: usize = 8;
+const SLE_SELF_SYMBOL_UPDATES_MAX: u8 = 2;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum SelfToken {
+    Cycle,
+    Phase,
+    Coherence,
+    Risk,
+    Drift,
+    Surprise,
+    NsrVerdict,
+    NsrTrace,
+    NcdeEnergy,
+    InfluenceRoot,
+    SpikeSeenRoot,
+    SpikeAcceptedRoot,
+    WorkspaceCommit,
+    Unknown(u16),
+}
+
+impl SelfToken {
+    fn as_u16(self) -> u16 {
+        match self {
+            SelfToken::Cycle => 1,
+            SelfToken::Phase => 2,
+            SelfToken::Coherence => 3,
+            SelfToken::Risk => 4,
+            SelfToken::Drift => 5,
+            SelfToken::Surprise => 6,
+            SelfToken::NsrVerdict => 7,
+            SelfToken::NsrTrace => 8,
+            SelfToken::NcdeEnergy => 9,
+            SelfToken::InfluenceRoot => 10,
+            SelfToken::SpikeSeenRoot => 11,
+            SelfToken::SpikeAcceptedRoot => 12,
+            SelfToken::WorkspaceCommit => 13,
+            SelfToken::Unknown(code) => code,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SelfObservation {
+    pub cycle_id: u64,
+    pub items: Vec<(SelfToken, Digest32)>,
+    pub intensity: u16,
+    pub commit: Digest32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SleInputs {
+    pub cycle_id: u64,
+    pub phase_commit: Digest32,
+    pub global_plv: u16,
+    pub phi_proxy: u16,
+    pub risk: u16,
+    pub drift: u16,
+    pub surprise: u16,
+    pub nsr_verdict: u8,
+    pub nsr_trace_root: Digest32,
+    pub ncde_state_digest: Digest32,
+    pub ncde_energy: u16,
+    pub influence_pulses_root: Digest32,
+    pub spike_seen_root: Digest32,
+    pub spike_accepted_root: Digest32,
+    pub workspace_commit: Digest32,
+    pub commit: Digest32,
+}
+
+impl SleInputs {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        cycle_id: u64,
+        phase_commit: Digest32,
+        global_plv: u16,
+        phi_proxy: u16,
+        risk: u16,
+        drift: u16,
+        surprise: u16,
+        nsr_verdict: u8,
+        nsr_trace_root: Digest32,
+        ncde_state_digest: Digest32,
+        ncde_energy: u16,
+        influence_pulses_root: Digest32,
+        spike_seen_root: Digest32,
+        spike_accepted_root: Digest32,
+        workspace_commit: Digest32,
+    ) -> Self {
+        let commit = hash_with_domain(DOMAIN_SLE_INPUTS_V1, |hasher| {
+            hasher.update(&cycle_id.to_be_bytes());
+            hasher.update(phase_commit.as_bytes());
+            hasher.update(&global_plv.to_be_bytes());
+            hasher.update(&phi_proxy.to_be_bytes());
+            hasher.update(&risk.to_be_bytes());
+            hasher.update(&drift.to_be_bytes());
+            hasher.update(&surprise.to_be_bytes());
+            hasher.update(&[nsr_verdict]);
+            hasher.update(nsr_trace_root.as_bytes());
+            hasher.update(ncde_state_digest.as_bytes());
+            hasher.update(&ncde_energy.to_be_bytes());
+            hasher.update(influence_pulses_root.as_bytes());
+            hasher.update(spike_seen_root.as_bytes());
+            hasher.update(spike_accepted_root.as_bytes());
+            hasher.update(workspace_commit.as_bytes());
+        });
+        Self {
+            cycle_id,
+            phase_commit,
+            global_plv,
+            phi_proxy,
+            risk,
+            drift,
+            surprise,
+            nsr_verdict,
+            nsr_trace_root,
+            ncde_state_digest,
+            ncde_energy,
+            influence_pulses_root,
+            spike_seen_root,
+            spike_accepted_root,
+            workspace_commit,
+            commit,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SleOutputs {
+    pub cycle_id: u64,
+    pub self_observation_commit: Digest32,
+    pub self_symbol_commit: Digest32,
+    pub thought_spikes: Vec<SpikeEvent>,
+    pub commit: Digest32,
+}
+
+#[derive(Clone, Debug)]
+pub struct SleCore {
+    pub self_symbol_commit: Digest32,
+    pub last_obs_commit: Digest32,
+    pub commit: Digest32,
+}
+
+impl SleCore {
+    pub fn new(self_symbol_commit: Digest32) -> Self {
+        let mut core = Self {
+            self_symbol_commit,
+            last_obs_commit: Digest32::new([0u8; 32]),
+            commit: Digest32::new([0u8; 32]),
+        };
+        core.commit = core.commit_state();
+        core
+    }
+
+    pub fn tick(&mut self, inp: &SleInputs) -> SleOutputs {
+        let observation = build_self_observation(inp);
+        let (self_symbol_commit, _) = compute_self_symbol(
+            self.self_symbol_commit,
+            observation.commit,
+            inp.nsr_trace_root,
+        );
+        let thought_spikes = build_thought_spikes(
+            inp.cycle_id,
+            inp.phase_commit,
+            observation.commit,
+            self_symbol_commit,
+            observation.intensity,
+        );
+        let commit = hash_with_domain(DOMAIN_SLE_OUTPUTS_V1, |hasher| {
+            hasher.update(&inp.cycle_id.to_be_bytes());
+            hasher.update(observation.commit.as_bytes());
+            hasher.update(self_symbol_commit.as_bytes());
+            hasher.update(
+                &u16::try_from(thought_spikes.len())
+                    .unwrap_or(u16::MAX)
+                    .to_be_bytes(),
+            );
+            for spike in &thought_spikes {
+                hasher.update(spike.commit.as_bytes());
+            }
+        });
+
+        self.self_symbol_commit = self_symbol_commit;
+        self.last_obs_commit = observation.commit;
+        self.commit = self.commit_state();
+
+        SleOutputs {
+            cycle_id: inp.cycle_id,
+            self_observation_commit: observation.commit,
+            self_symbol_commit,
+            thought_spikes,
+            commit,
+        }
+    }
+
+    fn commit_state(&self) -> Digest32 {
+        hash_with_domain(DOMAIN_SLE_OUTPUTS_V1, |hasher| {
+            hasher.update(self.self_symbol_commit.as_bytes());
+            hasher.update(self.last_obs_commit.as_bytes());
+        })
+    }
+}
+
+impl Default for SleCore {
+    fn default() -> Self {
+        Self::new(Digest32::new([0u8; 32]))
+    }
+}
+
+fn build_self_observation(inp: &SleInputs) -> SelfObservation {
+    let mut items = Vec::with_capacity(SLE_ITEMS_MAX.min(16));
+    items.push((
+        SelfToken::Cycle,
+        hash_self_token_u64(SelfToken::Cycle, inp.cycle_id),
+    ));
+    items.push((SelfToken::Phase, inp.phase_commit));
+    items.push((
+        SelfToken::Coherence,
+        hash_self_token_bucket(SelfToken::Coherence, bucketize(inp.global_plv)),
+    ));
+    items.push((
+        SelfToken::Risk,
+        hash_self_token_bucket(SelfToken::Risk, bucketize(inp.risk)),
+    ));
+    items.push((
+        SelfToken::Drift,
+        hash_self_token_bucket(SelfToken::Drift, bucketize(inp.drift)),
+    ));
+    items.push((
+        SelfToken::Surprise,
+        hash_self_token_bucket(SelfToken::Surprise, bucketize(inp.surprise)),
+    ));
+    items.push((
+        SelfToken::NsrVerdict,
+        hash_self_token_u8(SelfToken::NsrVerdict, inp.nsr_verdict),
+    ));
+    items.push((SelfToken::NsrTrace, inp.nsr_trace_root));
+    items.push((
+        SelfToken::NcdeEnergy,
+        hash_self_token_u16(SelfToken::NcdeEnergy, inp.ncde_energy),
+    ));
+    items.push((SelfToken::Unknown(14), inp.ncde_state_digest));
+    items.push((SelfToken::InfluenceRoot, inp.influence_pulses_root));
+    items.push((SelfToken::SpikeSeenRoot, inp.spike_seen_root));
+    items.push((SelfToken::SpikeAcceptedRoot, inp.spike_accepted_root));
+    items.push((SelfToken::WorkspaceCommit, inp.workspace_commit));
+
+    items.truncate(SLE_ITEMS_MAX);
+
+    let intensity = compute_intensity(inp.global_plv, inp.drift, inp.surprise);
+    let commit = hash_with_domain(DOMAIN_SELF_OBSERVATION_V1, |hasher| {
+        hasher.update(&inp.cycle_id.to_be_bytes());
+        for (token, digest) in &items {
+            hasher.update(&token.as_u16().to_be_bytes());
+            hasher.update(digest.as_bytes());
+        }
+        hasher.update(&intensity.to_be_bytes());
+    });
+
+    SelfObservation {
+        cycle_id: inp.cycle_id,
+        items,
+        intensity,
+        commit,
+    }
+}
+
+fn compute_intensity(coherence: u16, drift: u16, surprise: u16) -> u16 {
+    let coherence_penalty = 10_000u32.saturating_sub(u32::from(coherence.min(10_000)));
+    let combined = u32::from(drift).saturating_add(u32::from(surprise));
+    let total = combined.saturating_add(coherence_penalty);
+    total.min(10_000) as u16
+}
+
+fn compute_self_symbol(
+    prev: Digest32,
+    observation_commit: Digest32,
+    nsr_trace_root: Digest32,
+) -> (Digest32, u8) {
+    let base = hash_with_domain(DOMAIN_SELF_SYMBOL_V1, |hasher| {
+        hasher.update(prev.as_bytes());
+        hasher.update(observation_commit.as_bytes());
+        hasher.update(nsr_trace_root.as_bytes());
+    });
+    let mut current = base;
+    let mut updates = 1;
+    if updates < SLE_SELF_SYMBOL_UPDATES_MAX {
+        current = hash_with_domain(DOMAIN_SELF_SYMBOL_V1, |hasher| {
+            hasher.update(current.as_bytes());
+            hasher.update(base.as_bytes());
+        });
+        updates += 1;
+    }
+    (current, updates)
+}
+
+fn build_thought_spikes(
+    cycle_id: u64,
+    phase_commit: Digest32,
+    observation_commit: Digest32,
+    self_symbol_commit: Digest32,
+    intensity: u16,
+) -> Vec<SpikeEvent> {
+    let mut spikes = Vec::with_capacity(2);
+    let base_ttfs = base_ttfs(intensity);
+    let targets = [SpikeModuleId::Geist, SpikeModuleId::BlueBrain];
+    for (idx, dst) in targets.iter().enumerate() {
+        let payload_commit = hash_with_domain(DOMAIN_THOUGHT_SPIKE_V1, |hasher| {
+            hasher.update(observation_commit.as_bytes());
+            hasher.update(self_symbol_commit.as_bytes());
+            hasher.update(&dst.as_u16().to_be_bytes());
+        });
+        let ttfs = base_ttfs.saturating_add((idx as u16) * 3).max(1);
+        spikes.push(SpikeEvent::new(
+            cycle_id,
+            SpikeKind::ThoughtOnly,
+            SpikeModuleId::Jepa,
+            *dst,
+            ttfs,
+            phase_commit,
+            payload_commit,
+        ));
+    }
+    spikes.truncate(SLE_THOUGHT_SPIKES_MAX);
+    spikes
+}
+
+fn base_ttfs(intensity: u16) -> u16 {
+    let scaled = (intensity / 100).min(180);
+    200u16.saturating_sub(scaled).max(1)
+}
+
+fn bucketize(value: u16) -> u8 {
+    let bucket = value / 1250;
+    bucket.min(7) as u8
+}
+
+fn hash_self_token_u8(token: SelfToken, value: u8) -> Digest32 {
+    hash_with_domain(DOMAIN_SELF_TOKEN_V1, |hasher| {
+        hasher.update(&token.as_u16().to_be_bytes());
+        hasher.update(&[value]);
+    })
+}
+
+fn hash_self_token_u16(token: SelfToken, value: u16) -> Digest32 {
+    hash_with_domain(DOMAIN_SELF_TOKEN_V1, |hasher| {
+        hasher.update(&token.as_u16().to_be_bytes());
+        hasher.update(&value.to_be_bytes());
+    })
+}
+
+fn hash_self_token_u64(token: SelfToken, value: u64) -> Digest32 {
+    hash_with_domain(DOMAIN_SELF_TOKEN_V1, |hasher| {
+        hasher.update(&token.as_u16().to_be_bytes());
+        hasher.update(&value.to_be_bytes());
+    })
+}
+
+fn hash_self_token_bucket(token: SelfToken, bucket: u8) -> Digest32 {
+    hash_with_domain(DOMAIN_SELF_TOKEN_V1, |hasher| {
+        hasher.update(&token.as_u16().to_be_bytes());
+        hasher.update(&[bucket]);
+    })
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SelfReflex {
@@ -230,24 +602,24 @@ impl StrangeLoopEngine {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SleLevel {
+pub enum LegacySleLevel {
     L1,
     L2,
     L3,
 }
 
-impl SleLevel {
+impl LegacySleLevel {
     fn as_u8(self) -> u8 {
         match self {
-            SleLevel::L1 => 1,
-            SleLevel::L2 => 2,
-            SleLevel::L3 => 3,
+            LegacySleLevel::L1 => 1,
+            LegacySleLevel::L2 => 2,
+            LegacySleLevel::L3 => 3,
         }
     }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SleStimulusKind {
+pub enum LegacySleStimulusKind {
     WorldSummary,
     ReasoningSummary,
     SelfSummary,
@@ -255,29 +627,34 @@ pub enum SleStimulusKind {
     Unknown(u16),
 }
 
-impl SleStimulusKind {
+impl LegacySleStimulusKind {
     fn as_u16(self) -> u16 {
         match self {
-            SleStimulusKind::WorldSummary => 1,
-            SleStimulusKind::ReasoningSummary => 2,
-            SleStimulusKind::SelfSummary => 3,
-            SleStimulusKind::ThoughtOnlyPulse => 4,
-            SleStimulusKind::Unknown(code) => code,
+            LegacySleStimulusKind::WorldSummary => 1,
+            LegacySleStimulusKind::ReasoningSummary => 2,
+            LegacySleStimulusKind::SelfSummary => 3,
+            LegacySleStimulusKind::ThoughtOnlyPulse => 4,
+            LegacySleStimulusKind::Unknown(code) => code,
         }
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SleStimulus {
-    pub kind: SleStimulusKind,
-    pub level: SleLevel,
+pub struct LegacySleStimulus {
+    pub kind: LegacySleStimulusKind,
+    pub level: LegacySleLevel,
     pub value: i16,
     pub src_commit: Digest32,
     pub commit: Digest32,
 }
 
-impl SleStimulus {
-    fn new(kind: SleStimulusKind, level: SleLevel, value: i16, src_commit: Digest32) -> Self {
+impl LegacySleStimulus {
+    fn new(
+        kind: LegacySleStimulusKind,
+        level: LegacySleLevel,
+        value: i16,
+        src_commit: Digest32,
+    ) -> Self {
         let value = clamp_sle_value(value);
         let commit = hash_with_domain(DOMAIN_SLE_STIMULUS, |hasher| {
             hasher.update(&kind.as_u16().to_be_bytes());
@@ -296,7 +673,7 @@ impl SleStimulus {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SleInputs {
+pub struct LegacySleInputs {
     pub cycle_id: u64,
     pub phase_commit: Digest32,
     pub coherence_plv: u16,
@@ -318,7 +695,7 @@ pub struct SleInputs {
     pub commit: Digest32,
 }
 
-impl SleInputs {
+impl LegacySleInputs {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         cycle_id: u64,
@@ -385,16 +762,16 @@ impl SleInputs {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SleOutputs {
+pub struct LegacySleOutputs {
     pub cycle_id: u64,
-    pub stimuli: Vec<SleStimulus>,
+    pub stimuli: Vec<LegacySleStimulus>,
     pub self_symbol_commit: Digest32,
     pub rate_limited: bool,
     pub commit: Digest32,
 }
 
 #[derive(Clone, Debug)]
-pub struct SleCore {
+pub struct LegacySleCore {
     pub last_fire_cycle: u64,
     pub cooldown: u8,
     pub decay: u16,
@@ -403,7 +780,7 @@ pub struct SleCore {
     last_pulse: i16,
 }
 
-impl SleCore {
+impl LegacySleCore {
     pub fn new(cooldown: u8, decay: u16) -> Self {
         let mut core = Self {
             last_fire_cycle: 0,
@@ -417,7 +794,7 @@ impl SleCore {
         core
     }
 
-    pub fn tick(&mut self, inp: &SleInputs) -> SleOutputs {
+    pub fn tick(&mut self, inp: &LegacySleInputs) -> LegacySleOutputs {
         let l1_src = resolve_src_commit(inp.ssm_commit, inp.phase_commit);
         let l2_src = inp
             .nsr_trace_root
@@ -440,19 +817,24 @@ impl SleCore {
         let l2_value = apply_decay(l2_raw, self.last_values[1], self.decay);
         let l3_value = apply_decay(l3_raw, self.last_values[2], self.decay);
 
-        let l1 = SleStimulus::new(
-            SleStimulusKind::WorldSummary,
-            SleLevel::L1,
+        let l1 = LegacySleStimulus::new(
+            LegacySleStimulusKind::WorldSummary,
+            LegacySleLevel::L1,
             l1_value,
             l1_src,
         );
-        let l2 = SleStimulus::new(
-            SleStimulusKind::ReasoningSummary,
-            SleLevel::L2,
+        let l2 = LegacySleStimulus::new(
+            LegacySleStimulusKind::ReasoningSummary,
+            LegacySleLevel::L2,
             l2_value,
             l2_src,
         );
-        let l3 = SleStimulus::new(SleStimulusKind::SelfSummary, SleLevel::L3, l3_value, l3_src);
+        let l3 = LegacySleStimulus::new(
+            LegacySleStimulusKind::SelfSummary,
+            LegacySleLevel::L3,
+            l3_value,
+            l3_src,
+        );
 
         self.last_values = [l1_value, l2_value, l3_value];
 
@@ -479,9 +861,9 @@ impl SleCore {
         {
             rate_limited = true;
         } else {
-            let pulse = SleStimulus::new(
-                SleStimulusKind::ThoughtOnlyPulse,
-                SleLevel::L3,
+            let pulse = LegacySleStimulus::new(
+                LegacySleStimulusKind::ThoughtOnlyPulse,
+                LegacySleLevel::L3,
                 pulse_value,
                 self_symbol_commit,
             );
@@ -508,7 +890,7 @@ impl SleCore {
 
         self.commit = self.commit_state();
 
-        SleOutputs {
+        LegacySleOutputs {
             cycle_id: inp.cycle_id,
             stimuli,
             self_symbol_commit,
@@ -530,7 +912,7 @@ impl SleCore {
     }
 }
 
-impl Default for SleCore {
+impl Default for LegacySleCore {
     fn default() -> Self {
         Self::new(2, 1200)
     }
@@ -822,6 +1204,7 @@ mod tests {
             rsa_applied: false,
             rsa_new_params_commit: None,
             sle_commit: Digest32::new([0u8; 32]),
+            sle_self_observation_commit: Digest32::new([0u8; 32]),
             sle_self_symbol_commit: Digest32::new([0u8; 32]),
             sle_rate_limited: false,
             internal_utterances: Vec::new(),
@@ -867,6 +1250,7 @@ mod tests {
             rsa_applied: false,
             rsa_new_params_commit: None,
             sle_commit: Digest32::new([0u8; 32]),
+            sle_self_observation_commit: Digest32::new([0u8; 32]),
             sle_self_symbol_commit: Digest32::new([0u8; 32]),
             sle_rate_limited: false,
             internal_utterances: Vec::new(),
@@ -931,6 +1315,7 @@ mod tests {
             rsa_applied: false,
             rsa_new_params_commit: None,
             sle_commit: Digest32::new([0u8; 32]),
+            sle_self_observation_commit: Digest32::new([0u8; 32]),
             sle_self_symbol_commit: Digest32::new([0u8; 32]),
             sle_rate_limited: false,
             internal_utterances: Vec::new(),
@@ -976,6 +1361,7 @@ mod tests {
             rsa_applied: false,
             rsa_new_params_commit: None,
             sle_commit: Digest32::new([0u8; 32]),
+            sle_self_observation_commit: Digest32::new([0u8; 32]),
             sle_self_symbol_commit: Digest32::new([0u8; 32]),
             sle_rate_limited: false,
             internal_utterances: Vec::new(),
@@ -1031,6 +1417,7 @@ mod tests {
             rsa_applied: false,
             rsa_new_params_commit: None,
             sle_commit: Digest32::new([0u8; 32]),
+            sle_self_observation_commit: Digest32::new([0u8; 32]),
             sle_self_symbol_commit: Digest32::new([0u8; 32]),
             sle_rate_limited: false,
             internal_utterances: Vec::new(),
@@ -1102,6 +1489,7 @@ mod tests {
             rsa_applied: false,
             rsa_new_params_commit: None,
             sle_commit: Digest32::new([0u8; 32]),
+            sle_self_observation_commit: Digest32::new([0u8; 32]),
             sle_self_symbol_commit: Digest32::new([0u8; 32]),
             sle_rate_limited: false,
             internal_utterances: Vec::new(),
@@ -1147,6 +1535,7 @@ mod tests {
             rsa_applied: false,
             rsa_new_params_commit: None,
             sle_commit: Digest32::new([0u8; 32]),
+            sle_self_observation_commit: Digest32::new([0u8; 32]),
             sle_self_symbol_commit: Digest32::new([0u8; 32]),
             sle_rate_limited: false,
             internal_utterances: Vec::new(),
@@ -1159,8 +1548,8 @@ mod tests {
         assert!(reflex.loop_level <= budget.max_depth);
     }
 
-    fn base_inputs(cycle_id: u64) -> SleInputs {
-        SleInputs::new(
+    fn base_inputs(cycle_id: u64) -> LegacySleInputs {
+        LegacySleInputs::new(
             cycle_id,
             Digest32::new([1u8; 32]),
             5000,
@@ -1184,8 +1573,8 @@ mod tests {
 
     #[test]
     fn sle_tick_is_deterministic() {
-        let mut core = SleCore::new(2, 1200);
-        let mut core_clone = SleCore::new(2, 1200);
+        let mut core = LegacySleCore::new(2, 1200);
+        let mut core_clone = LegacySleCore::new(2, 1200);
         let inputs = base_inputs(10);
         let first = core.tick(&inputs);
         let second = core_clone.tick(&inputs);
@@ -1196,32 +1585,108 @@ mod tests {
 
     #[test]
     fn sle_cooldown_suppresses_thought_pulse() {
-        let mut core = SleCore::new(3, 1200);
+        let mut core = LegacySleCore::new(3, 1200);
         let first = core.tick(&base_inputs(4));
         assert!(first
             .stimuli
             .iter()
-            .any(|stim| matches!(stim.kind, SleStimulusKind::ThoughtOnlyPulse)));
+            .any(|stim| matches!(stim.kind, LegacySleStimulusKind::ThoughtOnlyPulse)));
 
         let second = core.tick(&base_inputs(5));
         assert!(second.rate_limited);
         assert!(!second
             .stimuli
             .iter()
-            .any(|stim| matches!(stim.kind, SleStimulusKind::ThoughtOnlyPulse)));
+            .any(|stim| matches!(stim.kind, LegacySleStimulusKind::ThoughtOnlyPulse)));
     }
 
     #[test]
     fn sle_deny_forces_inhibitory_pulse() {
-        let mut core = SleCore::new(1, 1200);
+        let mut core = LegacySleCore::new(1, 1200);
         let mut inputs = base_inputs(5);
         inputs.nsr_verdict = Some(2);
         let outputs = core.tick(&inputs);
         let pulse = outputs
             .stimuli
             .iter()
-            .find(|stim| matches!(stim.kind, SleStimulusKind::ThoughtOnlyPulse))
+            .find(|stim| matches!(stim.kind, LegacySleStimulusKind::ThoughtOnlyPulse))
             .expect("pulse emitted");
         assert!(pulse.value < 0);
+    }
+
+    fn sle_inputs(cycle_id: u64, coherence: u16, drift: u16, surprise: u16) -> SleInputs {
+        SleInputs::new(
+            cycle_id,
+            Digest32::new([1u8; 32]),
+            coherence,
+            4200,
+            1200,
+            drift,
+            surprise,
+            1,
+            Digest32::new([2u8; 32]),
+            Digest32::new([3u8; 32]),
+            2400,
+            Digest32::new([4u8; 32]),
+            Digest32::new([5u8; 32]),
+            Digest32::new([6u8; 32]),
+            Digest32::new([7u8; 32]),
+        )
+    }
+
+    #[test]
+    fn sle_v1_tick_is_deterministic() {
+        let inputs = sle_inputs(7, 6000, 1200, 900);
+        let mut core_a = SleCore::default();
+        let mut core_b = SleCore::default();
+        let out_a = core_a.tick(&inputs);
+        let out_b = core_b.tick(&inputs);
+
+        assert_eq!(out_a.commit, out_b.commit);
+        assert_eq!(out_a.self_symbol_commit, out_b.self_symbol_commit);
+    }
+
+    #[test]
+    fn sle_v1_self_symbol_recursion_is_bounded() {
+        let prev = Digest32::new([8u8; 32]);
+        let obs = Digest32::new([9u8; 32]);
+        let trace = Digest32::new([10u8; 32]);
+        let (_commit, updates) = compute_self_symbol(prev, obs, trace);
+        assert!(updates <= SLE_SELF_SYMBOL_UPDATES_MAX);
+    }
+
+    #[test]
+    fn sle_v1_thought_spikes_target_internal_modules() {
+        let inputs = sle_inputs(10, 4000, 2000, 3000);
+        let mut core = SleCore::default();
+        let outputs = core.tick(&inputs);
+
+        assert!(!outputs.thought_spikes.is_empty());
+        assert!(outputs
+            .thought_spikes
+            .iter()
+            .all(|spike| { matches!(spike.dst, SpikeModuleId::Geist | SpikeModuleId::BlueBrain) }));
+    }
+
+    #[test]
+    fn sle_v1_higher_intensity_fires_earlier() {
+        let low_inputs = sle_inputs(11, 9000, 100, 100);
+        let high_inputs = sle_inputs(12, 1000, 4500, 4500);
+        let mut core_low = SleCore::default();
+        let mut core_high = SleCore::default();
+        let low_out = core_low.tick(&low_inputs);
+        let high_out = core_high.tick(&high_inputs);
+
+        let low_ttfs = low_out
+            .thought_spikes
+            .first()
+            .map(|spike| spike.ttfs)
+            .unwrap_or(u16::MAX);
+        let high_ttfs = high_out
+            .thought_spikes
+            .first()
+            .map(|spike| spike.ttfs)
+            .unwrap_or(u16::MAX);
+        assert!(high_ttfs < low_ttfs);
     }
 }

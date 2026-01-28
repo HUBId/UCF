@@ -2375,6 +2375,7 @@ dependencies = [
  "ucf-geist",
  "ucf-nsr-port",
  "ucf-recursion-controller",
+ "ucf-spikebus",
  "ucf-types",
  "ucf-workspace",
 ]
