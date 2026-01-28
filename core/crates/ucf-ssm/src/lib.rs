@@ -227,7 +227,7 @@ fn build_control_vector(inp: &SsmInputs, dim: usize) -> Vec<i64> {
     let spike_mix = i64::from(feature)
         .saturating_add(i64::from(novelty).saturating_mul(2))
         .saturating_add(i64::from(threat).saturating_mul(3))
-        .min(SCALE as i64);
+        .min(SCALE);
     let energy_mix = i64::from(inp.ncde_energy).saturating_add(i64::from(inp.percept_energy) / 2);
     let attn_mix = i64::from(inp.prev_attention_gain) / 3;
     let bias = spike_mix
