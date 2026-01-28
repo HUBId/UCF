@@ -601,7 +601,7 @@ fn derive_intervention_delta(seed_commit: Digest32, var: VarId) -> i16 {
     let bytes = hasher.finalize();
     let raw = bytes.as_bytes();
     let magnitude = 200 + (u16::from(raw[0]) % 600);
-    let sign = if raw[1] % 2 == 0 { 1 } else { -1 };
+    let sign = if raw[1].is_multiple_of(2) { 1 } else { -1 };
     (sign as i16).saturating_mul(magnitude as i16)
 }
 
