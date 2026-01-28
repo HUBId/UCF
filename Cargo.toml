@@ -46,6 +46,7 @@ members = [
     "core/crates/ucf-router",
     "core/crates/ucf-crypto",
     "core/crates/ucf-bus",
+    "core/crates/ucf-params-registry",
     "core/crates/ucf-rsa",
     "core/crates/ucf-rsa-hooks",
     "core/crates/ucf-openevolve-port",

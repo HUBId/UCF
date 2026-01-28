@@ -8,6 +8,9 @@ const PHASE_WRAP: i32 = 65_536;
 const MAX_SIGNAL: u16 = 10_000;
 const MAX_OSCILLATORS: usize = 16;
 const SIN_LUT_SCALE: i16 = 10_000;
+const COUPLING_MAX: u16 = 10_000;
+const LOCK_WINDOW_MIN: u16 = 512;
+const LOCK_WINDOW_MAX: u16 = 60_000;
 const SIN_LUT: [i16; 256] = [
     0, -245, -491, -736, -980, -1224, -1467, -1710, -1951, -2191, -2430, -2667, -2903, -3137,
     -3369, -3599, -3827, -4052, -4276, -4496, -4714, -4929, -5141, -5350, -5556, -5758, -5957,
@@ -106,6 +109,35 @@ impl OnnParams {
             commit,
         }
     }
+}
+
+pub fn apply_coupling_delta(params: &OnnParams, delta: i16) -> OnnParams {
+    let coupling = apply_i16_delta(params.coupling, delta, 0, COUPLING_MAX);
+    OnnParams::new(
+        params.base_step,
+        coupling,
+        params.max_delta,
+        params.lock_window,
+    )
+}
+
+pub fn apply_lock_window_delta(params: &OnnParams, delta: i16) -> OnnParams {
+    let lock_window = apply_i16_delta(params.lock_window, delta, LOCK_WINDOW_MIN, LOCK_WINDOW_MAX);
+    OnnParams::new(
+        params.base_step,
+        params.coupling,
+        params.max_delta,
+        lock_window,
+    )
+}
+
+fn apply_i16_delta(value: u16, delta: i16, min: u16, max: u16) -> u16 {
+    let value = i32::from(value);
+    let delta = i32::from(delta);
+    let updated = value
+        .saturating_add(delta)
+        .clamp(i32::from(min), i32::from(max));
+    updated as u16
 }
 
 impl Default for OnnParams {
@@ -686,5 +718,15 @@ mod tests {
             plv_low = core_low.tick(&inputs_low).global_plv;
         }
         assert!(plv_high > plv_low);
+    }
+
+    #[test]
+    fn rsa_param_updates_are_clamped() {
+        let params = OnnParams::new(128, 3200, 512, 16_384);
+        let updated = apply_coupling_delta(&params, 20_000);
+        assert_eq!(updated.coupling, COUPLING_MAX);
+
+        let updated = apply_lock_window_delta(&params, -20_000);
+        assert_eq!(updated.lock_window, LOCK_WINDOW_MIN);
     }
 }

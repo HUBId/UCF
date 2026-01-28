@@ -15,6 +15,8 @@ use ucf_structural_store::{
 use ucf_types::v1::spec::ExperienceRecord;
 use ucf_types::{Digest32, EvidenceId};
 
+pub mod v0;
+
 const STRUCTURAL_SEED_DOMAIN: &[u8] = b"ucf.rsa.structural.seed.v1";
 const NSR_DENY_VERDICT: u8 = 2;
 const RSA_PARAM_DELTA_DOMAIN: &[u8] = b"ucf.rsa.param_delta.v1";

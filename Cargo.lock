@@ -2196,6 +2196,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucf-params-registry"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ucf-types",
+]
+
+[[package]]
 name = "ucf-policy-ecology"
 version = "0.1.0"
 dependencies = [
@@ -2290,6 +2298,7 @@ dependencies = [
  "ucf-nsr-port",
  "ucf-onn",
  "ucf-output-router",
+ "ucf-params-registry",
  "ucf-policy-ecology",
  "ucf-policy-gateway",
  "ucf-predictive-coding",
@@ -2322,6 +2331,7 @@ dependencies = [
  "ucf-archive-store",
  "ucf-bus",
  "ucf-openevolve-port",
+ "ucf-params-registry",
  "ucf-policy-ecology",
  "ucf-spikebus",
  "ucf-structural-store",
