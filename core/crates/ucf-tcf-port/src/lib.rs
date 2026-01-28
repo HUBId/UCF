@@ -3,6 +3,7 @@
 use blake3::Hasher;
 use ucf_attn_controller::{AttentionWeights, FocusChannel};
 use ucf_predictive_coding::{SurpriseBand, SurpriseSignal};
+use ucf_sandbox::{AI_MODE_INTERNAL, AI_MODE_SPEECH, AI_MODE_THOUGHT};
 use ucf_types::Digest32;
 
 const PHASE_MAX: i32 = 1_000_000;
@@ -46,6 +47,14 @@ pub enum PulseKind {
     Consolidate,
     Broadcast,
     Sleep,
+}
+
+pub fn ai_mode_for_pulse(pulse: PulseKind) -> u16 {
+    match pulse {
+        PulseKind::Think | PulseKind::Verify => AI_MODE_THOUGHT,
+        PulseKind::Broadcast => AI_MODE_SPEECH,
+        PulseKind::Sense | PulseKind::Consolidate | PulseKind::Sleep => AI_MODE_INTERNAL,
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

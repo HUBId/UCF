@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
 use blake3::Hasher;
-use ucf_nsr_port::NsrReport;
+use ucf_nsr_port::{NsrReport, NsrVerdict};
 use ucf_policy_ecology::{PolicyEcology, RiskDecision, RiskGateResult};
 use ucf_sandbox::ControlFrameNormalized;
 use ucf_scm_port::{digest_dag, CounterfactualQuery, Intervention, ScmDag};
@@ -16,6 +16,7 @@ const CDE_LOW_CONFIDENCE_THRESHOLD: u16 = 2000;
 const CDE_LOW_CONFIDENCE_PENALTY: u16 = 800;
 const TOM_SOCIAL_DIVISOR_THOUGHT: u16 = 4;
 const TOM_SOCIAL_DIVISOR_SPEECH: u16 = 2;
+const NSR_WARN_PENALTY: u16 = 600;
 
 pub trait RiskGate {
     fn evaluate(
@@ -108,9 +109,23 @@ pub fn evaluate_risk(
     }
 
     let mut decision = RiskDecision::Permit;
-    if risk_policy.require_nsr_ok && nsr.is_some_and(|report| !report.ok) {
-        decision = RiskDecision::Deny;
-        reasons.push("nsr_not_ok".to_string());
+    if let Some(report) = nsr {
+        match report.verdict {
+            NsrVerdict::Deny => {
+                decision = RiskDecision::Deny;
+                reasons.push("nsr_deny".to_string());
+            }
+            NsrVerdict::Warn => {
+                risk = risk.saturating_add(NSR_WARN_PENALTY);
+                reasons.push("nsr_warn".to_string());
+            }
+            NsrVerdict::Allow => {}
+        }
+
+        if risk_policy.require_nsr_ok && report.verdict != NsrVerdict::Allow {
+            decision = RiskDecision::Deny;
+            reasons.push("nsr_not_ok".to_string());
+        }
     }
 
     if risk > risk_policy.max_risk {
@@ -281,17 +296,7 @@ fn tom_social_penalty(channel: OutputChannel, overall: u16) -> u16 {
 }
 
 fn nsr_digest(report: &NsrReport) -> Digest32 {
-    let mut hasher = Hasher::new();
-    hasher.update(&[report.ok as u8]);
-    hasher.update(
-        &u64::try_from(report.violations.len())
-            .unwrap_or(0)
-            .to_be_bytes(),
-    );
-    for violation in &report.violations {
-        hasher.update(violation.as_bytes());
-    }
-    Digest32::new(*hasher.finalize().as_bytes())
+    report.commit
 }
 
 #[cfg(test)]
@@ -335,8 +340,11 @@ mod tests {
         let policy = PolicyEcology::allow_all();
         let gate = PolicyRiskGate::new(policy);
         let nsr = NsrReport {
-            ok: true,
+            verdict: NsrVerdict::Allow,
+            causal_report_commit: Digest32::new([0u8; 32]),
             violations: Vec::new(),
+            proof_digest: Digest32::new([0u8; 32]),
+            commit: Digest32::new([0u8; 32]),
         };
         let dag = ScmDag::new(
             vec![CausalNode::new(0, "a"), CausalNode::new(1, "b")],

@@ -22,6 +22,7 @@ pub struct SelfState {
     pub workspace_commit: Digest32,
     pub risk_commit: Digest32,
     pub attn_commit: Digest32,
+    pub ncde_commit: Digest32,
     pub consistency: u16,
     pub commit: Digest32,
 }
@@ -29,6 +30,10 @@ pub struct SelfState {
 impl SelfState {
     pub fn builder(cycle_id: u64) -> SelfStateBuilder {
         SelfStateBuilder::new(cycle_id)
+    }
+
+    pub fn stability_score(&self) -> u16 {
+        self.consistency
     }
 }
 
@@ -39,6 +44,7 @@ pub struct SelfStateBuilder {
     workspace_commit: Digest32,
     risk_commit: Digest32,
     attn_commit: Digest32,
+    ncde_commit: Digest32,
     consistency: u16,
 }
 
@@ -50,6 +56,7 @@ impl SelfStateBuilder {
             workspace_commit: Digest32::new([0u8; 32]),
             risk_commit: Digest32::new([0u8; 32]),
             attn_commit: Digest32::new([0u8; 32]),
+            ncde_commit: Digest32::new([0u8; 32]),
             consistency: 0,
         }
     }
@@ -74,6 +81,11 @@ impl SelfStateBuilder {
         self
     }
 
+    pub fn ncde_commit(mut self, commit: Digest32) -> Self {
+        self.ncde_commit = commit;
+        self
+    }
+
     pub fn consistency(mut self, consistency: u16) -> Self {
         self.consistency = consistency.min(10_000);
         self
@@ -87,6 +99,7 @@ impl SelfStateBuilder {
             workspace_commit: self.workspace_commit,
             risk_commit: self.risk_commit,
             attn_commit: self.attn_commit,
+            ncde_commit: self.ncde_commit,
             consistency: self.consistency,
             commit,
         }
@@ -94,12 +107,13 @@ impl SelfStateBuilder {
 }
 
 pub fn encode_self_state(state: &SelfState) -> Vec<u8> {
-    let mut payload = Vec::with_capacity(8 + 5 * Digest32::LEN + 2);
+    let mut payload = Vec::with_capacity(8 + 6 * Digest32::LEN + 2);
     payload.extend_from_slice(&state.cycle_id.to_be_bytes());
     payload.extend_from_slice(state.ssm_commit.as_bytes());
     payload.extend_from_slice(state.workspace_commit.as_bytes());
     payload.extend_from_slice(state.risk_commit.as_bytes());
     payload.extend_from_slice(state.attn_commit.as_bytes());
+    payload.extend_from_slice(state.ncde_commit.as_bytes());
     payload.extend_from_slice(&state.consistency.to_be_bytes());
     payload
 }
@@ -112,6 +126,7 @@ fn commit_self_state(builder: &SelfStateBuilder) -> Digest32 {
     hasher.update(builder.workspace_commit.as_bytes());
     hasher.update(builder.risk_commit.as_bytes());
     hasher.update(builder.attn_commit.as_bytes());
+    hasher.update(builder.ncde_commit.as_bytes());
     hasher.update(&builder.consistency.to_be_bytes());
     Digest32::new(*hasher.finalize().as_bytes())
 }
@@ -551,6 +566,7 @@ mod tests {
             .workspace_commit(Digest32::new([2u8; 32]))
             .risk_commit(Digest32::new([3u8; 32]))
             .attn_commit(Digest32::new([4u8; 32]))
+            .ncde_commit(Digest32::new([5u8; 32]))
             .consistency(9000)
             .build();
         let state_b = SelfState::builder(42)
@@ -558,6 +574,7 @@ mod tests {
             .workspace_commit(Digest32::new([2u8; 32]))
             .risk_commit(Digest32::new([3u8; 32]))
             .attn_commit(Digest32::new([4u8; 32]))
+            .ncde_commit(Digest32::new([5u8; 32]))
             .consistency(9000)
             .build();
         assert_eq!(state_a, state_b);

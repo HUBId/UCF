@@ -1,0 +1,15 @@
+[package]
+name = "ucf-structural-store"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+blake3 = "1"
+ucf-ncde = { path = "../ucf-ncde" }
+ucf-onn = { path = "../ucf-onn" }
+ucf-ssm = { path = "../ucf-ssm" }
+ucf-spikebus = { path = "../ucf-spikebus" }
+ucf-types = { path = "../ucf-types" }
+
+[dev-dependencies]
+ucf-onn = { path = "../ucf-onn" }

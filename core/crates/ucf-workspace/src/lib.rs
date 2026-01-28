@@ -4,16 +4,23 @@ use blake3::Hasher;
 use std::cmp::Ordering;
 use ucf_attn_controller::{AttentionUpdated, FocusChannel};
 use ucf_consistency_engine::{ConsistencyReport as DriftReport, DriftBand};
+use ucf_iit::IitOutput;
 use ucf_output_router::{OutputRouterEvent, RouteDecision};
 use ucf_policy_ecology::{
     ConsistencyReport as PolicyConsistencyReport, ConsistencyVerdict, RiskDecision, RiskGateResult,
 };
 use ucf_predictive_coding::{SurpriseBand, SurpriseUpdated};
 use ucf_sleep_coordinator::{SleepTrigger, SleepTriggered};
+use ucf_spikebus::{
+    SpikeBatch, SpikeBusState, SpikeBusSummary, SpikeEvent, SpikeKind, SpikeModuleId,
+    SpikeSuppression,
+};
+use ucf_structural_store::StructuralDeltaProposal;
 use ucf_types::v1::spec::{ActionCode, DecisionKind, PolicyDecision};
 use ucf_types::Digest32;
 
 const SUMMARY_MAX_BYTES: usize = 160;
+const CDE_TOP_EDGES_MAX: usize = 8;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[repr(u8)]
@@ -44,6 +51,24 @@ pub struct WorkspaceSignal {
     pub digest: Digest32,
     pub summary: String,
     pub slot: u8,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InternalUtterance {
+    pub commit: Digest32,
+    pub src: Digest32,
+    pub severity: u16,
+}
+
+impl InternalUtterance {
+    pub fn new(src: Digest32, severity: u16) -> Self {
+        let commit = digest_internal_utterance(src, severity);
+        Self {
+            commit,
+            src,
+            severity,
+        }
+    }
 }
 
 /// Workspace signal helpers.
@@ -122,11 +147,14 @@ impl WorkspaceSignal {
 
     pub fn from_attention_update(update: &AttentionUpdated, slot: Option<u8>) -> Self {
         let kind = SignalKind::Attention;
-        let summary = format!(
+        let mut summary = format!(
             "ATTN={} GAIN={}",
             focus_channel_token(update.channel),
             update.gain
         );
+        if let Some(commit) = update.wm_commit {
+            summary.push_str(&format!(" WM={commit}"));
+        }
         let priority = attention_priority(update.channel, update.gain);
         Self {
             kind,
@@ -151,6 +179,27 @@ impl WorkspaceSignal {
             kind,
             priority,
             digest,
+            summary,
+            slot: slot.unwrap_or(0),
+        }
+    }
+
+    pub fn from_influence_update(
+        node_count: usize,
+        root_commit: Digest32,
+        pulses_root: Digest32,
+        outputs_commit: Digest32,
+        attention_gain: Option<u16>,
+        slot: Option<u8>,
+    ) -> Self {
+        let kind = SignalKind::Integration;
+        let summary = format!("INFL nodes={node_count} root={root_commit} pulses={pulses_root}");
+        let base_priority = 2400;
+        let priority = priority_with_attention(base_priority, attention_gain);
+        Self {
+            kind,
+            priority,
+            digest: outputs_commit,
             summary,
             slot: slot.unwrap_or(0),
         }
@@ -440,6 +489,39 @@ pub struct WorkspaceSnapshot {
     pub cycle_id: u64,
     pub broadcast: Vec<WorkspaceSignal>,
     pub recursion_used: u16,
+    pub spike_seen_root: Digest32,
+    pub spike_accepted_root: Digest32,
+    pub spike_counts: Vec<(SpikeKind, u16)>,
+    pub spike_causal_link_count: u16,
+    pub spike_consistency_alert_count: u16,
+    pub spike_thought_only_count: u16,
+    pub spike_output_intent_count: u16,
+    pub spike_cap_hit: bool,
+    pub ncde_commit: Digest32,
+    pub cde_commit: Digest32,
+    pub cde_graph_commit: Digest32,
+    pub cde_top_edges: Vec<(u16, u16, u16, u8)>,
+    pub ssm_commit: Digest32,
+    pub ssm_state_commit: Digest32,
+    pub influence_v2_commit: Digest32,
+    pub influence_pulses_root: Digest32,
+    pub influence_node_values: Vec<(u16, i16)>,
+    pub onn_states_commit: Digest32,
+    pub onn_global_plv: u16,
+    pub onn_pair_locks_commit: Digest32,
+    pub onn_phase_frame_commit: Digest32,
+    pub iit_output: Option<IitOutput>,
+    pub nsr_trace_root: Option<Digest32>,
+    pub nsr_prev_commit: Option<Digest32>,
+    pub nsr_verdict: Option<u8>,
+    pub rsa_commit: Digest32,
+    pub rsa_chosen: Option<Digest32>,
+    pub rsa_applied: bool,
+    pub rsa_new_params_commit: Option<Digest32>,
+    pub sle_commit: Digest32,
+    pub sle_self_symbol_commit: Digest32,
+    pub sle_rate_limited: bool,
+    pub internal_utterances: Vec<InternalUtterance>,
     pub commit: Digest32,
 }
 
@@ -449,18 +531,172 @@ pub struct WorkspaceSnapshot {
 /// and digests only), making this safe to store without raw user content.
 pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
     const SNAPSHOT_DOMAIN_TAG: u16 = 0x5753;
+    let cde_edges = if snapshot.cde_top_edges.len() > CDE_TOP_EDGES_MAX {
+        &snapshot.cde_top_edges[..CDE_TOP_EDGES_MAX]
+    } else {
+        snapshot.cde_top_edges.as_slice()
+    };
     let signals = if snapshot.broadcast.len() > u16::MAX as usize {
         &snapshot.broadcast[..u16::MAX as usize]
     } else {
         snapshot.broadcast.as_slice()
     };
     let mut payload = Vec::with_capacity(
-        2 + 8 + 2 + 2 + signals.len() * (2 + 2 + Digest32::LEN + 2 + SUMMARY_MAX_BYTES),
+        2 + 8
+            + 2
+            + 2
+            + Digest32::LEN
+            + Digest32::LEN
+            + 2
+            + snapshot.spike_counts.len() * (2 + 2)
+            + 2
+            + 2
+            + 2
+            + 2
+            + 1
+            + Digest32::LEN
+            + Digest32::LEN
+            + Digest32::LEN
+            + 2
+            + cde_edges.len() * (2 + 2 + 2 + 1)
+            + Digest32::LEN
+            + Digest32::LEN
+            + Digest32::LEN
+            + Digest32::LEN
+            + 2
+            + snapshot.influence_node_values.len() * (2 + 2)
+            + Digest32::LEN
+            + 2
+            + Digest32::LEN
+            + Digest32::LEN
+            + 1
+            + Digest32::LEN
+            + 1
+            + Digest32::LEN
+            + 1
+            + Digest32::LEN
+            + 1
+            + Digest32::LEN
+            + 1
+            + 1
+            + Digest32::LEN
+            + Digest32::LEN
+            + Digest32::LEN
+            + 1
+            + 2
+            + snapshot.internal_utterances.len() * (Digest32::LEN + Digest32::LEN + 2)
+            + 1
+            + signals.len() * (2 + 2 + Digest32::LEN + 2 + SUMMARY_MAX_BYTES),
     );
     payload.extend_from_slice(&SNAPSHOT_DOMAIN_TAG.to_be_bytes());
     payload.extend_from_slice(&snapshot.cycle_id.to_be_bytes());
     payload.extend_from_slice(&(signals.len() as u16).to_be_bytes());
     payload.extend_from_slice(&snapshot.recursion_used.to_be_bytes());
+    payload.extend_from_slice(snapshot.spike_seen_root.as_bytes());
+    payload.extend_from_slice(snapshot.spike_accepted_root.as_bytes());
+    payload.extend_from_slice(
+        &u16::try_from(snapshot.spike_counts.len())
+            .unwrap_or(u16::MAX)
+            .to_be_bytes(),
+    );
+    for (kind, count) in &snapshot.spike_counts {
+        payload.extend_from_slice(&kind.as_u16().to_be_bytes());
+        payload.extend_from_slice(&count.to_be_bytes());
+    }
+    payload.extend_from_slice(&snapshot.spike_causal_link_count.to_be_bytes());
+    payload.extend_from_slice(&snapshot.spike_consistency_alert_count.to_be_bytes());
+    payload.extend_from_slice(&snapshot.spike_thought_only_count.to_be_bytes());
+    payload.extend_from_slice(&snapshot.spike_output_intent_count.to_be_bytes());
+    payload.push(snapshot.spike_cap_hit as u8);
+    payload.extend_from_slice(snapshot.ncde_commit.as_bytes());
+    payload.extend_from_slice(snapshot.cde_commit.as_bytes());
+    payload.extend_from_slice(snapshot.cde_graph_commit.as_bytes());
+    payload.extend_from_slice(&(cde_edges.len() as u16).to_be_bytes());
+    for (from, to, conf, lag) in cde_edges {
+        payload.extend_from_slice(&from.to_be_bytes());
+        payload.extend_from_slice(&to.to_be_bytes());
+        payload.extend_from_slice(&conf.to_be_bytes());
+        payload.push(*lag);
+    }
+    payload.extend_from_slice(snapshot.ssm_commit.as_bytes());
+    payload.extend_from_slice(snapshot.ssm_state_commit.as_bytes());
+    payload.extend_from_slice(snapshot.influence_v2_commit.as_bytes());
+    payload.extend_from_slice(snapshot.influence_pulses_root.as_bytes());
+    payload.extend_from_slice(&(snapshot.influence_node_values.len() as u16).to_be_bytes());
+    for (node, value) in &snapshot.influence_node_values {
+        payload.extend_from_slice(&node.to_be_bytes());
+        payload.extend_from_slice(&value.to_be_bytes());
+    }
+    payload.extend_from_slice(snapshot.onn_states_commit.as_bytes());
+    payload.extend_from_slice(&snapshot.onn_global_plv.to_be_bytes());
+    payload.extend_from_slice(snapshot.onn_pair_locks_commit.as_bytes());
+    payload.extend_from_slice(snapshot.onn_phase_frame_commit.as_bytes());
+    match snapshot.iit_output.as_ref() {
+        Some(output) => {
+            payload.push(1);
+            payload.extend_from_slice(output.commit.as_bytes());
+        }
+        None => {
+            payload.push(0);
+            payload.extend_from_slice(&[0u8; Digest32::LEN]);
+        }
+    }
+    match snapshot.nsr_trace_root {
+        Some(commit) => {
+            payload.push(1);
+            payload.extend_from_slice(commit.as_bytes());
+        }
+        None => {
+            payload.push(0);
+            payload.extend_from_slice(&[0u8; Digest32::LEN]);
+        }
+    }
+    match snapshot.nsr_prev_commit {
+        Some(commit) => {
+            payload.push(1);
+            payload.extend_from_slice(commit.as_bytes());
+        }
+        None => {
+            payload.push(0);
+            payload.extend_from_slice(&[0u8; Digest32::LEN]);
+        }
+    }
+    payload.push(snapshot.nsr_verdict.unwrap_or(0));
+    payload.extend_from_slice(snapshot.rsa_commit.as_bytes());
+    match snapshot.rsa_chosen {
+        Some(commit) => {
+            payload.push(1);
+            payload.extend_from_slice(commit.as_bytes());
+        }
+        None => {
+            payload.push(0);
+            payload.extend_from_slice(&[0u8; Digest32::LEN]);
+        }
+    }
+    payload.push(snapshot.rsa_applied as u8);
+    match snapshot.rsa_new_params_commit {
+        Some(commit) => {
+            payload.push(1);
+            payload.extend_from_slice(commit.as_bytes());
+        }
+        None => {
+            payload.push(0);
+            payload.extend_from_slice(&[0u8; Digest32::LEN]);
+        }
+    }
+    payload.extend_from_slice(snapshot.sle_commit.as_bytes());
+    payload.extend_from_slice(snapshot.sle_self_symbol_commit.as_bytes());
+    payload.push(snapshot.sle_rate_limited as u8);
+    payload.extend_from_slice(
+        &u16::try_from(snapshot.internal_utterances.len())
+            .unwrap_or(u16::MAX)
+            .to_be_bytes(),
+    );
+    for utterance in &snapshot.internal_utterances {
+        payload.extend_from_slice(utterance.commit.as_bytes());
+        payload.extend_from_slice(utterance.src.as_bytes());
+        payload.extend_from_slice(&utterance.severity.to_be_bytes());
+    }
     for signal in signals {
         payload.push(signal.kind as u8);
         payload.push(signal.slot);
@@ -486,6 +722,33 @@ pub struct Workspace {
     next_seq: u64,
     drops: DropCounters,
     recursion_used: u16,
+    spike_bus: SpikeBusState,
+    structural_proposal: Option<StructuralDeltaProposal>,
+    rsa_commit: Digest32,
+    rsa_chosen: Option<Digest32>,
+    rsa_applied: bool,
+    rsa_new_params_commit: Option<Digest32>,
+    ncde_commit: Digest32,
+    cde_commit: Digest32,
+    cde_graph_commit: Digest32,
+    cde_top_edges: Vec<(u16, u16, u16, u8)>,
+    ssm_commit: Digest32,
+    ssm_state_commit: Digest32,
+    influence_v2_commit: Digest32,
+    influence_pulses_root: Digest32,
+    influence_node_values: Vec<(u16, i16)>,
+    onn_states_commit: Digest32,
+    onn_global_plv: u16,
+    onn_pair_locks_commit: Digest32,
+    onn_phase_frame_commit: Digest32,
+    iit_output: Option<IitOutput>,
+    nsr_trace_root: Option<Digest32>,
+    nsr_prev_commit: Option<Digest32>,
+    nsr_verdict: Option<u8>,
+    sle_commit: Digest32,
+    sle_self_symbol_commit: Digest32,
+    sle_rate_limited: bool,
+    internal_utterances: Vec<InternalUtterance>,
 }
 
 impl Workspace {
@@ -496,6 +759,33 @@ impl Workspace {
             next_seq: 0,
             drops: DropCounters::default(),
             recursion_used: 0,
+            spike_bus: SpikeBusState::new(),
+            structural_proposal: None,
+            rsa_commit: Digest32::new([0u8; 32]),
+            rsa_chosen: None,
+            rsa_applied: false,
+            rsa_new_params_commit: None,
+            ncde_commit: Digest32::new([0u8; 32]),
+            cde_commit: Digest32::new([0u8; 32]),
+            cde_graph_commit: Digest32::new([0u8; 32]),
+            cde_top_edges: Vec::new(),
+            ssm_commit: Digest32::new([0u8; 32]),
+            ssm_state_commit: Digest32::new([0u8; 32]),
+            influence_v2_commit: Digest32::new([0u8; 32]),
+            influence_pulses_root: Digest32::new([0u8; 32]),
+            influence_node_values: Vec::new(),
+            onn_states_commit: Digest32::new([0u8; 32]),
+            onn_global_plv: 0,
+            onn_pair_locks_commit: Digest32::new([0u8; 32]),
+            onn_phase_frame_commit: Digest32::new([0u8; 32]),
+            iit_output: None,
+            nsr_trace_root: None,
+            nsr_prev_commit: None,
+            nsr_verdict: None,
+            sle_commit: Digest32::new([0u8; 32]),
+            sle_self_symbol_commit: Digest32::new([0u8; 32]),
+            sle_rate_limited: false,
+            internal_utterances: Vec::new(),
         }
     }
 
@@ -509,6 +799,138 @@ impl Workspace {
 
     pub fn set_broadcast_cap(&mut self, broadcast_cap: usize) {
         self.config.broadcast_cap = broadcast_cap.min(self.config.cap);
+    }
+
+    pub fn append_spike_batch(
+        &mut self,
+        batch: SpikeBatch,
+        suppressions: Vec<SpikeSuppression>,
+    ) -> SpikeBusSummary {
+        self.spike_bus.append_batch(batch, suppressions)
+    }
+
+    pub fn drain_spikes_for(
+        &mut self,
+        dst: SpikeModuleId,
+        cycle_id: u64,
+        limit: usize,
+    ) -> Vec<SpikeEvent> {
+        self.spike_bus.drain_for(dst, cycle_id, limit)
+    }
+
+    pub fn set_structural_proposal(&mut self, proposal: StructuralDeltaProposal) {
+        self.structural_proposal = Some(proposal);
+    }
+
+    pub fn take_structural_proposal(&mut self) -> Option<StructuralDeltaProposal> {
+        self.structural_proposal.take()
+    }
+
+    pub fn set_rsa_output(
+        &mut self,
+        rsa_commit: Digest32,
+        chosen: Option<Digest32>,
+        applied: bool,
+        new_params_commit: Option<Digest32>,
+    ) {
+        self.rsa_commit = rsa_commit;
+        self.rsa_chosen = chosen;
+        self.rsa_applied = applied;
+        self.rsa_new_params_commit = new_params_commit;
+    }
+
+    pub fn spike_summary(&self) -> SpikeBusSummary {
+        self.spike_bus.summary()
+    }
+
+    pub fn set_ncde_commit(&mut self, commit: Digest32) {
+        self.ncde_commit = commit;
+    }
+
+    pub fn ncde_commit(&self) -> Digest32 {
+        self.ncde_commit
+    }
+
+    pub fn set_cde_output(
+        &mut self,
+        commit: Digest32,
+        graph_commit: Digest32,
+        top_edges: Vec<(u16, u16, u16, u8)>,
+    ) {
+        self.cde_commit = commit;
+        self.cde_graph_commit = graph_commit;
+        self.cde_top_edges = top_edges;
+    }
+
+    pub fn set_ssm_commits(&mut self, commit: Digest32, state_commit: Digest32) {
+        self.ssm_commit = commit;
+        self.ssm_state_commit = state_commit;
+    }
+
+    pub fn set_influence_snapshot(
+        &mut self,
+        influence_commit: Digest32,
+        pulses_root: Digest32,
+        node_values: Vec<(u16, i16)>,
+    ) {
+        self.influence_v2_commit = influence_commit;
+        self.influence_pulses_root = pulses_root;
+        self.influence_node_values = node_values;
+    }
+
+    pub fn set_onn_snapshot(
+        &mut self,
+        states_commit: Digest32,
+        global_plv: u16,
+        pair_locks_commit: Digest32,
+        phase_frame_commit: Digest32,
+    ) {
+        self.onn_states_commit = states_commit;
+        self.onn_global_plv = global_plv;
+        self.onn_pair_locks_commit = pair_locks_commit;
+        self.onn_phase_frame_commit = phase_frame_commit;
+    }
+
+    pub fn set_iit_output(&mut self, output: IitOutput) {
+        self.iit_output = Some(output);
+    }
+
+    pub fn set_nsr_trace(
+        &mut self,
+        trace_root: Digest32,
+        prev_commit: Option<Digest32>,
+        verdict: u8,
+    ) {
+        self.nsr_trace_root = Some(trace_root);
+        self.nsr_prev_commit = prev_commit;
+        self.nsr_verdict = Some(verdict);
+    }
+
+    pub fn set_sle_outputs(
+        &mut self,
+        sle_commit: Digest32,
+        self_symbol_commit: Digest32,
+        rate_limited: bool,
+    ) {
+        self.sle_commit = sle_commit;
+        self.sle_self_symbol_commit = self_symbol_commit;
+        self.sle_rate_limited = rate_limited;
+    }
+
+    pub fn rsa_applied(&self) -> bool {
+        self.rsa_applied
+    }
+
+    pub fn push_internal_utterance(&mut self, utterance: InternalUtterance) {
+        self.internal_utterances.push(utterance);
+    }
+
+    pub fn ssm_commit(&self) -> Digest32 {
+        self.ssm_commit
+    }
+
+    pub fn ssm_state_commit(&self) -> Digest32 {
+        self.ssm_state_commit
     }
 
     pub fn publish(&mut self, mut sig: WorkspaceSignal) {
@@ -538,11 +960,107 @@ impl Workspace {
             .collect();
         let recursion_used = self.recursion_used;
         self.recursion_used = 0;
-        let commit = commit_snapshot(cycle_id, recursion_used, &broadcast);
+        let spike_summary = self.spike_bus.summary();
+        let ncde_commit = self.ncde_commit;
+        let cde_commit = self.cde_commit;
+        let cde_graph_commit = self.cde_graph_commit;
+        let cde_top_edges = std::mem::take(&mut self.cde_top_edges);
+        let ssm_commit = self.ssm_commit;
+        let ssm_state_commit = self.ssm_state_commit;
+        let influence_v2_commit = self.influence_v2_commit;
+        let influence_pulses_root = self.influence_pulses_root;
+        let influence_node_values = std::mem::take(&mut self.influence_node_values);
+        let onn_states_commit = self.onn_states_commit;
+        let onn_global_plv = self.onn_global_plv;
+        let onn_pair_locks_commit = self.onn_pair_locks_commit;
+        let onn_phase_frame_commit = self.onn_phase_frame_commit;
+        let iit_output = self.iit_output.take();
+        let nsr_trace_root = self.nsr_trace_root.take();
+        let nsr_prev_commit = self.nsr_prev_commit.take();
+        let nsr_verdict = self.nsr_verdict.take();
+        let rsa_commit = self.rsa_commit;
+        let rsa_chosen = self.rsa_chosen;
+        let rsa_applied = self.rsa_applied;
+        let rsa_new_params_commit = self.rsa_new_params_commit;
+        let sle_commit = self.sle_commit;
+        let sle_self_symbol_commit = self.sle_self_symbol_commit;
+        let sle_rate_limited = self.sle_rate_limited;
+        let internal_utterances = std::mem::take(&mut self.internal_utterances);
+        let commit = commit_snapshot(
+            cycle_id,
+            recursion_used,
+            spike_summary.seen_root,
+            spike_summary.accepted_root,
+            &spike_summary.counts,
+            spike_summary.causal_link_count,
+            spike_summary.consistency_alert_count,
+            spike_summary.thought_only_count,
+            spike_summary.output_intent_count,
+            spike_summary.cap_hit,
+            ncde_commit,
+            cde_commit,
+            cde_graph_commit,
+            &cde_top_edges,
+            ssm_commit,
+            ssm_state_commit,
+            influence_v2_commit,
+            influence_pulses_root,
+            &influence_node_values,
+            onn_states_commit,
+            onn_global_plv,
+            onn_pair_locks_commit,
+            onn_phase_frame_commit,
+            iit_output.as_ref(),
+            nsr_trace_root,
+            nsr_prev_commit,
+            nsr_verdict,
+            rsa_commit,
+            rsa_chosen,
+            rsa_applied,
+            rsa_new_params_commit,
+            sle_commit,
+            sle_self_symbol_commit,
+            sle_rate_limited,
+            &internal_utterances,
+            &broadcast,
+        );
         WorkspaceSnapshot {
             cycle_id,
             broadcast,
             recursion_used,
+            spike_seen_root: spike_summary.seen_root,
+            spike_accepted_root: spike_summary.accepted_root,
+            spike_counts: spike_summary.counts,
+            spike_causal_link_count: spike_summary.causal_link_count,
+            spike_consistency_alert_count: spike_summary.consistency_alert_count,
+            spike_thought_only_count: spike_summary.thought_only_count,
+            spike_output_intent_count: spike_summary.output_intent_count,
+            spike_cap_hit: spike_summary.cap_hit,
+            ncde_commit,
+            cde_commit,
+            cde_graph_commit,
+            cde_top_edges,
+            ssm_commit,
+            ssm_state_commit,
+            influence_v2_commit,
+            influence_pulses_root,
+            influence_node_values,
+            onn_states_commit,
+            onn_global_plv,
+            onn_pair_locks_commit,
+            onn_phase_frame_commit,
+            iit_output,
+            nsr_trace_root,
+            nsr_prev_commit,
+            nsr_verdict,
+            rsa_commit,
+            rsa_chosen,
+            rsa_applied,
+            rsa_new_params_commit,
+            sle_commit,
+            sle_self_symbol_commit,
+            sle_rate_limited,
+            internal_utterances,
             commit,
         }
     }
@@ -873,6 +1391,14 @@ fn digest_sleep_triggered(triggered: &SleepTriggered) -> Digest32 {
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
+fn digest_internal_utterance(src: Digest32, severity: u16) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(b"ucf.workspace.internal_utterance.v1");
+    hasher.update(src.as_bytes());
+    hasher.update(&severity.to_be_bytes());
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
 fn digest_replay_summary(micro: usize, meso: usize, macro_: usize) -> Digest32 {
     let mut hasher = Hasher::new();
     hasher.update(b"ucf.workspace.replay.summary.v1");
@@ -914,10 +1440,156 @@ fn compare_for_broadcast(a: &SignalEntry, b: &SignalEntry) -> Ordering {
     a.seq.cmp(&b.seq)
 }
 
-fn commit_snapshot(cycle_id: u64, recursion_used: u16, broadcast: &[WorkspaceSignal]) -> Digest32 {
+#[allow(clippy::too_many_arguments)]
+fn commit_snapshot(
+    cycle_id: u64,
+    recursion_used: u16,
+    spike_seen_root: Digest32,
+    spike_accepted_root: Digest32,
+    spike_counts: &[(SpikeKind, u16)],
+    spike_causal_link_count: u16,
+    spike_consistency_alert_count: u16,
+    spike_thought_only_count: u16,
+    spike_output_intent_count: u16,
+    spike_cap_hit: bool,
+    ncde_commit: Digest32,
+    cde_commit: Digest32,
+    cde_graph_commit: Digest32,
+    cde_top_edges: &[(u16, u16, u16, u8)],
+    ssm_commit: Digest32,
+    ssm_state_commit: Digest32,
+    influence_v2_commit: Digest32,
+    influence_pulses_root: Digest32,
+    influence_node_values: &[(u16, i16)],
+    onn_states_commit: Digest32,
+    onn_global_plv: u16,
+    onn_pair_locks_commit: Digest32,
+    onn_phase_frame_commit: Digest32,
+    iit_output: Option<&IitOutput>,
+    nsr_trace_root: Option<Digest32>,
+    nsr_prev_commit: Option<Digest32>,
+    nsr_verdict: Option<u8>,
+    rsa_commit: Digest32,
+    rsa_chosen: Option<Digest32>,
+    rsa_applied: bool,
+    rsa_new_params_commit: Option<Digest32>,
+    sle_commit: Digest32,
+    sle_self_symbol_commit: Digest32,
+    sle_rate_limited: bool,
+    internal_utterances: &[InternalUtterance],
+    broadcast: &[WorkspaceSignal],
+) -> Digest32 {
     let mut hasher = Hasher::new();
     hasher.update(&cycle_id.to_be_bytes());
     hasher.update(&recursion_used.to_be_bytes());
+    hasher.update(spike_seen_root.as_bytes());
+    hasher.update(spike_accepted_root.as_bytes());
+    hasher.update(
+        &u32::try_from(spike_counts.len())
+            .unwrap_or(u32::MAX)
+            .to_be_bytes(),
+    );
+    for (kind, count) in spike_counts {
+        hasher.update(&kind.as_u16().to_be_bytes());
+        hasher.update(&count.to_be_bytes());
+    }
+    hasher.update(&spike_causal_link_count.to_be_bytes());
+    hasher.update(&spike_consistency_alert_count.to_be_bytes());
+    hasher.update(&spike_thought_only_count.to_be_bytes());
+    hasher.update(&spike_output_intent_count.to_be_bytes());
+    hasher.update(&[spike_cap_hit as u8]);
+    hasher.update(ncde_commit.as_bytes());
+    hasher.update(cde_commit.as_bytes());
+    hasher.update(cde_graph_commit.as_bytes());
+    hasher.update(
+        &u64::try_from(cde_top_edges.len())
+            .unwrap_or(0)
+            .to_be_bytes(),
+    );
+    for (from, to, conf, lag) in cde_top_edges {
+        hasher.update(&from.to_be_bytes());
+        hasher.update(&to.to_be_bytes());
+        hasher.update(&conf.to_be_bytes());
+        hasher.update(&[*lag]);
+    }
+    hasher.update(ssm_commit.as_bytes());
+    hasher.update(ssm_state_commit.as_bytes());
+    hasher.update(influence_v2_commit.as_bytes());
+    hasher.update(influence_pulses_root.as_bytes());
+    hasher.update(
+        &u64::try_from(influence_node_values.len())
+            .unwrap_or(0)
+            .to_be_bytes(),
+    );
+    for (node, value) in influence_node_values {
+        hasher.update(&node.to_be_bytes());
+        hasher.update(&value.to_be_bytes());
+    }
+    hasher.update(onn_states_commit.as_bytes());
+    hasher.update(&onn_global_plv.to_be_bytes());
+    hasher.update(onn_pair_locks_commit.as_bytes());
+    hasher.update(onn_phase_frame_commit.as_bytes());
+    match iit_output {
+        Some(output) => {
+            hasher.update(&[1]);
+            hasher.update(output.commit.as_bytes());
+        }
+        None => {
+            hasher.update(&[0]);
+        }
+    }
+    match nsr_trace_root {
+        Some(commit) => {
+            hasher.update(&[1]);
+            hasher.update(commit.as_bytes());
+        }
+        None => {
+            hasher.update(&[0]);
+        }
+    }
+    match nsr_prev_commit {
+        Some(commit) => {
+            hasher.update(&[1]);
+            hasher.update(commit.as_bytes());
+        }
+        None => {
+            hasher.update(&[0]);
+        }
+    }
+    hasher.update(&[nsr_verdict.unwrap_or(0)]);
+    hasher.update(rsa_commit.as_bytes());
+    match rsa_chosen {
+        Some(commit) => {
+            hasher.update(&[1]);
+            hasher.update(commit.as_bytes());
+        }
+        None => {
+            hasher.update(&[0]);
+        }
+    }
+    hasher.update(&[rsa_applied as u8]);
+    match rsa_new_params_commit {
+        Some(commit) => {
+            hasher.update(&[1]);
+            hasher.update(commit.as_bytes());
+        }
+        None => {
+            hasher.update(&[0]);
+        }
+    }
+    hasher.update(sle_commit.as_bytes());
+    hasher.update(sle_self_symbol_commit.as_bytes());
+    hasher.update(&[sle_rate_limited as u8]);
+    hasher.update(
+        &u32::try_from(internal_utterances.len())
+            .unwrap_or(u32::MAX)
+            .to_be_bytes(),
+    );
+    for utterance in internal_utterances {
+        hasher.update(utterance.commit.as_bytes());
+        hasher.update(utterance.src.as_bytes());
+        hasher.update(&utterance.severity.to_be_bytes());
+    }
     for signal in broadcast {
         hasher.update(&[signal.kind as u8]);
         hasher.update(&[signal.slot]);

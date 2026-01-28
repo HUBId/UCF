@@ -233,6 +233,12 @@ where
         if let Some(signal) = outcome.surprise_signal.as_ref() {
             guard.record_surprise_band(signal.band);
         }
+        if let Some(stats) = outcome.structural_stats.clone() {
+            guard.record_structural_stats(stats);
+        }
+        if let Some(proposal) = outcome.structural_proposal.clone() {
+            guard.record_structural_proposal(proposal);
+        }
         let publisher = SleepEnvelopePublisher {
             publisher: &sleep.trigger_bus,
             workspace: Some(self.router.workspace_handle()),
@@ -286,7 +292,7 @@ mod tests {
     use ucf_archive_store::{ArchiveStore, InMemoryArchiveStore, RecordKind};
     use ucf_bus::InMemoryBus;
     use ucf_digital_brain::InMemoryDigitalBrain;
-    use ucf_nsr_port::NsrPort;
+    use ucf_nsr_port::{NsrPort, NsrStubBackend};
     use ucf_policy_ecology::{PolicyEcology, PolicyRule, PolicyWeights};
     use ucf_policy_gateway::NoOpPolicyEvaluator;
     use ucf_risk_gate::PolicyRiskGate;
@@ -357,17 +363,21 @@ mod tests {
         let speech_gate = Arc::new(PolicySpeechGate::new(PolicyEcology::allow_all()));
         let risk_gate = Arc::new(PolicyRiskGate::new(PolicyEcology::allow_all()));
         let tom_port = Arc::new(LowRiskTomPort);
-        let router = Arc::new(Router::new(
-            policy,
-            archive.clone(),
-            archive_store.clone(),
-            Some(brain),
-            ai_port,
-            speech_gate,
-            risk_gate,
-            tom_port,
-            None,
-        ));
+        let nsr_backend = Arc::new(NsrStubBackend::new());
+        let router = Arc::new(
+            Router::new(
+                policy,
+                archive.clone(),
+                archive_store.clone(),
+                Some(brain),
+                ai_port,
+                speech_gate,
+                risk_gate,
+                tom_port,
+                None,
+            )
+            .with_nsr_port(Arc::new(NsrPort::new(nsr_backend))),
+        );
 
         let validator = ControlFrameValidator::new(ValidatorLimits::default());
         let mut service = IngestionService::new(
@@ -407,7 +417,7 @@ mod tests {
         let processed = service.drain();
 
         assert_eq!(processed, 1);
-        assert_eq!(archive.list().len(), 6);
+        assert_eq!(archive.list().len(), 13);
 
         let outcome = outcome_receiver.try_recv().expect("outcome event");
         assert_eq!(outcome.payload.evidence_id, EvidenceId::new("exp-frame-1"));
@@ -518,7 +528,7 @@ mod tests {
     }
 
     #[test]
-    fn ingestion_service_publishes_speech_event_when_gate_allows() {
+    fn ingestion_service_suppresses_speech_event_when_lock_low() {
         let bus = InMemoryBus::new();
         let outcome_bus = InMemoryBus::new();
         let speech_bus = InMemoryBus::new();
@@ -542,17 +552,21 @@ mod tests {
         let speech_gate = Arc::new(PolicySpeechGate::new(speech_policy.clone()));
         let risk_gate = Arc::new(PolicyRiskGate::new(speech_policy));
         let tom_port = Arc::new(LowRiskTomPort);
-        let router = Arc::new(Router::new(
-            policy,
-            archive.clone(),
-            archive_store.clone(),
-            Some(brain),
-            ai_port,
-            speech_gate,
-            risk_gate,
-            tom_port,
-            None,
-        ));
+        let nsr_backend = Arc::new(NsrStubBackend::new());
+        let router = Arc::new(
+            Router::new(
+                policy,
+                archive.clone(),
+                archive_store.clone(),
+                Some(brain),
+                ai_port,
+                speech_gate,
+                risk_gate,
+                tom_port,
+                None,
+            )
+            .with_nsr_port(Arc::new(NsrPort::new(nsr_backend))),
+        );
 
         let validator = ControlFrameValidator::new(ValidatorLimits::default());
         let mut service = IngestionService::new(
@@ -592,12 +606,9 @@ mod tests {
         let processed = service.drain();
 
         assert_eq!(processed, 1);
-        assert_eq!(archive.list().len(), 6);
+        assert_eq!(archive.list().len(), 12);
 
-        let speech = speech_receiver.try_recv().expect("speech event");
-        assert_eq!(speech.payload.content, "ok");
-        assert_eq!(speech.payload.evidence_id, EvidenceId::new("exp-ping"));
-        assert_eq!(speech.logical_time.tick, 21);
+        assert!(speech_receiver.try_recv().is_err());
     }
 
     #[test]
@@ -667,7 +678,7 @@ mod tests {
         let processed = service.drain();
 
         assert_eq!(processed, 1);
-        assert_eq!(archive.list().len(), 6);
+        assert_eq!(archive.list().len(), 13);
 
         let event = workspace_receiver.try_recv().expect("workspace broadcast");
 

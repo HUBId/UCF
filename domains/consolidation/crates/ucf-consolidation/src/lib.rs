@@ -16,8 +16,10 @@ use ucf_commit::{
 };
 use ucf_consistency_engine::{ConsistencyReport, DriftBand};
 use ucf_iit_monitor::IitReport;
+use ucf_influence::{InfluenceNodeId, InfluenceOutputs};
 use ucf_predictive_coding::{SurpriseBand, SurpriseSignal};
 use ucf_sleep_coordinator::{SleepStateHandle, SleepStateUpdater};
+use ucf_structural_store::ReplayCaps;
 use ucf_tcf_port::{PulseKind, RecursionBudget};
 use ucf_types::consolidation::{
     MacroMilestone as MemoryMacroMilestone, MesoMilestone as MemoryMesoMilestone,
@@ -52,6 +54,12 @@ impl ConsolidationConfig {
             .saturating_mul(self.meso_window)
             .saturating_mul(self.macro_window)
             .max(self.micro_window)
+    }
+
+    pub fn apply_replay_caps(&mut self, caps: &ReplayCaps) {
+        self.replay_micro_cap = usize::from(caps.micro_k);
+        self.replay_meso_cap = usize::from(caps.meso_m);
+        self.replay_macro_cap = usize::from(caps.macro_n);
     }
 }
 
@@ -265,6 +273,10 @@ impl<S: RecordSource, A: ExperienceAppender> ConsolidationKernel<S, A> {
             index_publishers,
             workspace,
         }
+    }
+
+    pub fn update_replay_caps(&mut self, caps: &ReplayCaps) {
+        self.config.apply_replay_caps(caps);
     }
 
     pub fn run_one_cycle(&self) -> ConsolidationCycleSummary {
@@ -496,16 +508,20 @@ pub struct ReplayBias {
     pub consistency: ConsistencyReport,
     pub surprise: SurpriseSignal,
     pub rdc_bias: u16,
+    pub wm_novelty: u16,
+    pub influence: Option<InfluenceOutputs>,
 }
 
 impl ReplayBias {
     pub fn total_bias(&self) -> u16 {
         let iit_bias = self.iit_bias();
+        let reconciliation_bias = reconciliation_bias(self.iit.phi);
         let consistency_bias = self.consistency_bias();
         let surprise_bias = self.surprise_bias();
         self.attention
             .replay_bias
             .saturating_add(iit_bias)
+            .saturating_add(reconciliation_bias)
             .saturating_add(consistency_bias)
             .saturating_add(surprise_bias)
             .saturating_add(self.rdc_bias)
@@ -516,8 +532,29 @@ impl ReplayBias {
         self.attention
             .gain
             .saturating_add(self.iit_bias())
+            .saturating_add(reconciliation_bias(self.iit.phi))
             .saturating_add(self.rdc_bias)
             .min(10_000)
+    }
+
+    pub fn influence_priority_boost(&self) -> i64 {
+        let (replay_in, learning_in) = self.influence_values();
+        let combined = i32::from(replay_in) + i32::from(learning_in);
+        let scaled = combined / 4;
+        i64::from(scaled.clamp(-2000, 2000))
+    }
+
+    pub fn influence_window_shift(&self) -> (i16, i16) {
+        let (replay_in, learning_in) = self.influence_values();
+        let replay_shift = influence_shift(replay_in);
+        let learning_shift = influence_shift(learning_in);
+        (replay_shift, learning_shift)
+    }
+
+    pub fn influence_macro_boost(&self) -> i64 {
+        let (_, learning_in) = self.influence_values();
+        let scaled = i32::from(learning_in) / 4;
+        i64::from(scaled.clamp(-2000, 2000))
     }
 
     fn iit_bias(&self) -> u16 {
@@ -545,6 +582,16 @@ impl ReplayBias {
             SurpriseBand::Critical => 3600,
         };
         band_bias.saturating_add(self.surprise.score / 4)
+    }
+
+    fn influence_values(&self) -> (i16, i16) {
+        let Some(outputs) = self.influence.as_ref() else {
+            return (0, 0);
+        };
+        (
+            outputs.node_value(InfluenceNodeId::ReplayPressure),
+            outputs.node_value(InfluenceNodeId::LearningRate),
+        )
     }
 }
 
@@ -584,9 +631,10 @@ impl ReplayCascade {
         budget: RecursionBudget,
         context: &SleepReplayContext,
     ) -> ReplayOutcome {
-        let micro_candidates = self.select_micro(graph, bias);
-        let meso_candidates = self.select_meso(graph, &micro_candidates);
-        let macro_candidates = self.select_macro(graph, bias, &meso_candidates);
+        let (micro_cap, meso_cap, macro_cap) = self.adjust_caps(bias);
+        let micro_candidates = self.select_micro(graph, bias, micro_cap);
+        let meso_candidates = self.select_meso(graph, &micro_candidates, meso_cap);
+        let macro_candidates = self.select_macro(graph, bias, &meso_candidates, macro_cap);
 
         let redaction = base_redaction(bias.total_bias());
         let tokens = build_tokens(
@@ -638,7 +686,12 @@ impl ReplayCascade {
         }
     }
 
-    fn select_micro(&self, graph: &MemoryMilestoneGraph, bias: &ReplayBias) -> Vec<RankedDigest> {
+    fn select_micro(
+        &self,
+        graph: &MemoryMilestoneGraph,
+        bias: &ReplayBias,
+        cap: usize,
+    ) -> Vec<RankedDigest> {
         let mut scored: Vec<RankedDigest> = graph
             .micros
             .iter()
@@ -657,7 +710,7 @@ impl ReplayCascade {
             .collect();
 
         sort_ranked(&mut scored);
-        scored.truncate(self.config.micro_cap);
+        scored.truncate(cap);
         scored
     }
 
@@ -665,6 +718,7 @@ impl ReplayCascade {
         &self,
         graph: &MemoryMilestoneGraph,
         micros: &[RankedDigest],
+        cap: usize,
     ) -> Vec<RankedDigest> {
         let mut lookup = HashMap::new();
         for micro in micros {
@@ -687,7 +741,7 @@ impl ReplayCascade {
         }
 
         sort_ranked(&mut scored);
-        scored.truncate(self.config.meso_cap);
+        scored.truncate(cap);
         scored
     }
 
@@ -696,9 +750,11 @@ impl ReplayCascade {
         graph: &MemoryMilestoneGraph,
         bias: &ReplayBias,
         mesos: &[RankedDigest],
+        cap: usize,
     ) -> Vec<RankedDigest> {
         let drift_high = matches!(bias.consistency.band, DriftBand::High | DriftBand::Critical);
         let selected_mesos: HashSet<Digest32> = mesos.iter().map(|meso| meso.commit).collect();
+        let boost = bias.influence_macro_boost();
         let mut scored = Vec::new();
         for macro_ms in &graph.macros {
             let contains = macro_ms
@@ -708,38 +764,48 @@ impl ReplayCascade {
             if drift_high && !contains {
                 continue;
             }
-            let score = if contains { 10_000 } else { 5_000 };
+            let score: i64 = if contains { 10_000 } else { 5_000 };
             scored.push(RankedDigest {
-                score,
+                score: score.saturating_add(boost),
                 commit: macro_ms.commit,
             });
         }
 
         sort_ranked(&mut scored);
         if drift_high {
-            scored.truncate(self.config.macro_cap);
+            scored.truncate(cap);
             return scored;
         }
 
         let mut diversified = Vec::new();
         let mut seen_traits = HashSet::new();
         for macro_ms in &graph.macros {
-            if diversified.len() >= self.config.macro_cap {
+            if diversified.len() >= cap {
                 break;
             }
             if seen_traits.insert(macro_ms.trait_updates) {
                 diversified.push(RankedDigest {
-                    score: 8_000,
+                    score: 8_000i64.saturating_add(boost),
                     commit: macro_ms.commit,
                 });
             }
         }
         if diversified.is_empty() {
-            scored.truncate(self.config.macro_cap);
+            scored.truncate(cap);
             scored
         } else {
             diversified
         }
+    }
+
+    fn adjust_caps(&self, bias: &ReplayBias) -> (usize, usize, usize) {
+        let (replay_shift, learning_shift) = bias.influence_window_shift();
+        let reconcile_shift = reconciliation_shift(bias.iit.phi);
+        let micro_cap = adjust_cap(self.config.micro_cap, replay_shift);
+        let macro_cap = adjust_cap(self.config.macro_cap, learning_shift + reconcile_shift);
+        let meso_shift = (replay_shift + learning_shift) / 2;
+        let meso_cap = adjust_cap(self.config.meso_cap, meso_shift + reconcile_shift);
+        (micro_cap, meso_cap, macro_cap)
     }
 }
 
@@ -757,16 +823,47 @@ fn sort_ranked(values: &mut [RankedDigest]) {
     });
 }
 
+fn adjust_cap(base: usize, delta: i16) -> usize {
+    let base_i = base as i32;
+    let adjusted = (base_i + i32::from(delta)).clamp(0, base_i + 2);
+    adjusted as usize
+}
+
+fn influence_shift(value: i16) -> i16 {
+    let scaled = value / 3000;
+    scaled.clamp(-1, 1)
+}
+
+fn reconciliation_bias(phi: u16) -> u16 {
+    if phi < 3_500 {
+        1_200
+    } else if phi < 5_000 {
+        600
+    } else {
+        0
+    }
+}
+
+fn reconciliation_shift(phi: u16) -> i16 {
+    if reconciliation_bias(phi) >= 1_000 {
+        1
+    } else {
+        0
+    }
+}
+
 fn micro_score(bias: &ReplayBias, weights: &ReplayWeights, age_rank: u16) -> i64 {
     let surprise = i64::from(bias.surprise.score);
     let drift = i64::from(bias.consistency.drift_score);
     let attention = i64::from(bias.priority_gain());
+    let influence = bias.influence_priority_boost();
+    let wm_bias = i64::from(bias.wm_novelty) / 10;
     let age = i64::from(age_rank);
     let w1 = i64::from(weights.surprise);
     let w2 = i64::from(weights.drift);
     let w3 = i64::from(weights.attention);
     let w4 = i64::from(weights.age);
-    w1 * surprise + w2 * drift + w3 * attention - w4 * age
+    w1 * surprise + w2 * drift + w3 * attention + influence + wm_bias - w4 * age
 }
 
 fn base_redaction(bias_total: u16) -> u16 {
@@ -1091,7 +1188,14 @@ mod tests {
                 commit: Digest32::new([4u8; 32]),
             },
             rdc_bias: 600,
+            wm_novelty: 0,
+            influence: None,
         }
+    }
+
+    #[test]
+    fn low_phi_increases_replay_bias() {
+        assert!(reconciliation_bias(2000) > reconciliation_bias(8000));
     }
 
     #[test]
@@ -1200,6 +1304,51 @@ mod tests {
     }
 
     #[test]
+    fn replay_influence_biases_selection() {
+        let records: Vec<ExperienceRecord> = (0..12)
+            .map(|idx| sample_record(&format!("rec-{idx}"), 100 + idx, None))
+            .collect();
+        let config = ConsolidationConfig {
+            micro_window: 2,
+            meso_window: 2,
+            macro_window: 2,
+            replay_budget: 8,
+            replay_micro_cap: 2,
+            replay_meso_cap: 1,
+            replay_macro_cap: 1,
+        };
+        let graph = build_memory_graph(&records, &config);
+        let cascade = ReplayCascade::new(ReplayCascadeConfig::new(2, 1, 1));
+        let context = SleepReplayContext {
+            cycle_id: 3,
+            ssm_state: Digest32::new([9u8; 32]),
+            workspace_commit: Digest32::new([10u8; 32]),
+        };
+        let budget = RecursionBudget::new(2, 1, 1);
+
+        let base_bias = sample_bias(DriftBand::Low, 1200);
+        let base_outcome = cascade.schedule(&graph, &base_bias, budget, &context);
+
+        let influence = InfluenceOutputs {
+            cycle_id: 3,
+            pulses_root: Digest32::new([4u8; 32]),
+            pulses: Vec::new(),
+            node_values: vec![
+                (InfluenceNodeId::ReplayPressure, 6000),
+                (InfluenceNodeId::LearningRate, -500),
+            ],
+            commit: Digest32::new([11u8; 32]),
+        };
+        let biased = ReplayBias {
+            influence: Some(influence),
+            ..base_bias
+        };
+        let influenced_outcome = cascade.schedule(&graph, &biased, budget, &context);
+
+        assert!(influenced_outcome.selected_micros.len() >= base_outcome.selected_micros.len());
+    }
+
+    #[test]
     fn cascade_respects_caps() {
         let records: Vec<ExperienceRecord> = (0..16)
             .map(|idx| sample_record(&format!("rec-{idx}"), 100 + idx, None))
@@ -1214,7 +1363,9 @@ mod tests {
             replay_macro_cap: 1,
         };
         let graph = build_memory_graph(&records, &config);
-        let bias = sample_bias(DriftBand::Medium, 3200);
+        let mut bias = sample_bias(DriftBand::Medium, 3200);
+        bias.iit.phi = 8000;
+        bias.iit.band = IitBand::High;
         let cascade = ReplayCascade::new(ReplayCascadeConfig::new(2, 1, 1));
         let context = SleepReplayContext {
             cycle_id: 2,

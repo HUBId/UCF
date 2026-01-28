@@ -8,6 +8,7 @@ use ucf_bus::BusPublisher;
 use ucf_policy_ecology::{ConsistencyVerdict, SleepPhaseGate};
 use ucf_predictive_coding::SurpriseBand;
 use ucf_rsa::{RsaEngine, SleepCoordinator, SleepReportReady};
+use ucf_structural_store::{StructuralCycleStats, StructuralDeltaProposal};
 use ucf_types::EvidenceId;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -25,6 +26,8 @@ pub struct SleepState {
     pub records_since_last: u32,
     pub critical_surprise_count: u16,
     pub last_replay: Option<SleepReplaySummary>,
+    pub structural_stats: Option<StructuralCycleStats>,
+    pub structural_proposal: Option<StructuralDeltaProposal>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -86,6 +89,8 @@ pub trait SleepStateUpdater {
     fn record_integration_score(&mut self, score: u16);
     fn record_surprise_band(&mut self, _band: SurpriseBand) {}
     fn record_replay_summary(&mut self, _summary: SleepReplaySummary) {}
+    fn record_structural_stats(&mut self, _stats: StructuralCycleStats) {}
+    fn record_structural_proposal(&mut self, _proposal: StructuralDeltaProposal) {}
 }
 
 pub type SleepStateHandle = Arc<Mutex<WalSleepCoordinator>>;
@@ -103,6 +108,8 @@ pub trait SleepPhaseRunner {
         fixed_seed: [u8; 32],
         integration_score: u16,
         recent_evidence: &[EvidenceId],
+        structural_stats: Option<StructuralCycleStats>,
+        structural_proposal: Option<StructuralDeltaProposal>,
     ) -> Option<SleepReportReady>;
 }
 
@@ -119,6 +126,8 @@ where
         fixed_seed: [u8; 32],
         integration_score: u16,
         recent_evidence: &[EvidenceId],
+        structural_stats: Option<StructuralCycleStats>,
+        structural_proposal: Option<StructuralDeltaProposal>,
     ) -> Option<SleepReportReady> {
         SleepCoordinator::run_sleep_phase(
             self,
@@ -126,6 +135,8 @@ where
             fixed_seed,
             integration_score,
             recent_evidence,
+            structural_stats,
+            structural_proposal,
         )
     }
 }
@@ -149,6 +160,8 @@ impl WalSleepCoordinator {
                 records_since_last: 0,
                 critical_surprise_count: 0,
                 last_replay: None,
+                structural_stats: None,
+                structural_proposal: None,
             },
             window,
             consistency_verdicts: VecDeque::new(),
@@ -219,12 +232,20 @@ impl WalSleepCoordinator {
         let cycle_id = self.state.last_cycle_id;
         let fixed_seed = derive_fixed_seed(cycle_id, self.state.last_evidence.as_ref());
         let integration_score = recent_metrics.average_integration_score();
+        let structural_stats = self.state.structural_stats.clone();
+        let structural_proposal = self.state.structural_proposal.clone();
         bus.publish(SleepTriggered {
             cycle_id,
             reason: trigger,
         });
-        let result =
-            runner.run_sleep_phase(cycle_id, fixed_seed, integration_score, &recent_evidence);
+        let result = runner.run_sleep_phase(
+            cycle_id,
+            fixed_seed,
+            integration_score,
+            &recent_evidence,
+            structural_stats,
+            structural_proposal,
+        );
         self.reset_after_trigger();
         result
     }
@@ -245,6 +266,8 @@ impl WalSleepCoordinator {
         self.integration_scores.clear();
         self.recent_evidence.clear();
         self.state.critical_surprise_count = 0;
+        self.state.structural_stats = None;
+        self.state.structural_proposal = None;
     }
 
     fn push_bounded<T>(queue: &mut VecDeque<T>, window: usize, value: T) {
@@ -283,6 +306,14 @@ impl SleepStateUpdater for WalSleepCoordinator {
 
     fn record_replay_summary(&mut self, summary: SleepReplaySummary) {
         self.state.last_replay = Some(summary);
+    }
+
+    fn record_structural_stats(&mut self, stats: StructuralCycleStats) {
+        self.state.structural_stats = Some(stats);
+    }
+
+    fn record_structural_proposal(&mut self, proposal: StructuralDeltaProposal) {
+        self.state.structural_proposal = Some(proposal);
     }
 }
 

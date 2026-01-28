@@ -1,0 +1,10 @@
+[package]
+name = "ucf-cde-scm"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+blake3 = "1"
+ucf-influence = { path = "../../../../core/crates/ucf-influence" }
+ucf-spikebus = { path = "../../../../core/crates/ucf-spikebus" }
+ucf-types = { path = "../../../../core/crates/ucf-types" }

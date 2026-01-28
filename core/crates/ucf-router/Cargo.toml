@@ -13,8 +13,14 @@ ucf-digital-brain = { path = "../../../domains/digital-brain/crates/ucf-digital-
 ucf-sandbox = { path = "../ucf-sandbox" }
 ucf-policy-ecology = { path = "../ucf-policy-ecology" }
 ucf-geist = { path = "../../../domains/geist/crates/ucf-geist" }
+ucf-iit = { path = "../ucf-iit" }
 ucf-iit-monitor = { path = "../ucf-iit-monitor" }
+ucf-onn = { path = "../ucf-onn" }
 ucf-nsr-port = { path = "../ucf-nsr-port" }
+ucf-nsr = { path = "../../../domains/reasoning/crates/ucf-nsr" }
+ucf-ncde = { path = "../ucf-ncde" }
+ucf-ssm = { path = "../ucf-ssm" }
+ucf-rsa = { path = "../ucf-rsa" }
 ucf-rsa-hooks = { path = "../ucf-rsa-hooks" }
 ucf-risk-gate = { path = "../ucf-risk-gate" }
 ucf-sle = { path = "../ucf-sle" }
@@ -22,15 +28,22 @@ ucf-tom-port = { path = "../ucf-tom-port" }
 ucf-attn-controller = { path = "../ucf-attn-controller" }
 ucf-bluebrain-port = { path = "../../../domains/brain/crates/ucf-bluebrain-port" }
 ucf-brain-mapper = { path = "../../../domains/brain/crates/ucf-brain-mapper" }
+ucf-cde-scm = { path = "../../../domains/causal/crates/ucf-cde-scm" }
 ucf-feature-translator = { path = "../../../domains/ai/crates/ucf-feature-translator" }
 ucf-consistency-engine = { path = "../ucf-consistency-engine" }
 ucf-ism = { path = "../ucf-ism" }
+ucf-influence = { path = "../ucf-influence" }
 ucf-output-router = { path = "../ucf-output-router" }
 ucf-predictive-coding = { path = "../ucf-predictive-coding" }
 ucf-recursion-controller = { path = "../ucf-recursion-controller" }
 ucf-ssm-port = { path = "../ucf-ssm-port" }
 ucf-tcf-port = { path = "../ucf-tcf-port" }
 ucf-workspace = { path = "../ucf-workspace" }
+ucf-spike-encoder = { path = "../ucf-spike-encoder" }
+ucf-spikebus = { path = "../ucf-spikebus" }
+ucf-feature-spiker = { path = "../../../domains/features/crates/ucf-feature-spiker" }
+ucf-structural-store = { path = "../ucf-structural-store" }
+ucf-commit = { path = "../ucf-commit" }
 ucf-protocol = { path = "../../../protocol/crates/ucf-protocol" }
 hex = { workspace = true }
 blake3 = "1"

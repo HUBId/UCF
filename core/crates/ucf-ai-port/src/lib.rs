@@ -16,18 +16,18 @@ use ucf_feature_translator::ActivationView;
 use ucf_iit_monitor::IitMonitor;
 use ucf_lens_port::{LensMock, LensPort};
 use ucf_ncde_port::{NcdeContext, NcdePort};
-use ucf_nsr_port::{NsrPort, NsrReport};
+use ucf_nsr_port::{ActionIntent, NsrInput, NsrPort, NsrReport};
 use ucf_policy_ecology::{PolicyEcology, PolicyRule};
 use ucf_sae_port::{SaeMock, SaePort, SparseFeature};
-use ucf_sandbox::ControlFrameNormalized;
+use ucf_sandbox::{AiCallRequest, AiWorker, ControlFrameNormalized, IntentSummary};
 use ucf_scm_port::{CounterfactualQuery, Intervention, ScmDag, ScmPort};
 use ucf_sle::{LoopFrame, StrangeLoopEngine};
 use ucf_ssm_port::{SsmInput, SsmPort, SsmState};
 use ucf_tcf_port::{idle_attention, TcfPort};
 use ucf_types::v1::spec::DecisionKind;
 use ucf_types::{
-    CausalCounterfactual, CausalGraphStub, CausalIntervention, CausalReport, Claim, Digest32,
-    EvidenceId, SymbolicClaims, ThoughtVec, WorldStateVec,
+    CausalCounterfactual, CausalGraphStub, CausalIntervention, CausalReport, Digest32, EvidenceId,
+    ThoughtVec, WorldStateVec,
 };
 
 pub use ucf_types::{AiOutput, OutputChannel};
@@ -62,6 +62,41 @@ impl AiInference {
             ssm_state: None,
             activation_view: None,
         }
+    }
+}
+
+#[derive(Clone)]
+pub struct AiPortWorker {
+    ai_port: Arc<dyn AiPort + Send + Sync>,
+    inference_cache: Arc<Mutex<Option<AiInference>>>,
+}
+
+impl AiPortWorker {
+    pub fn new(ai_port: Arc<dyn AiPort + Send + Sync>) -> Self {
+        Self {
+            ai_port,
+            inference_cache: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    pub fn inference_cache(&self) -> Arc<Mutex<Option<AiInference>>> {
+        Arc::clone(&self.inference_cache)
+    }
+}
+
+impl AiWorker for AiPortWorker {
+    fn run(
+        &mut self,
+        cf: &ControlFrameNormalized,
+        _intent: &IntentSummary,
+        _req: &AiCallRequest,
+    ) -> Vec<AiOutput> {
+        let inference = self.ai_port.infer_with_context(cf);
+        let outputs = inference.outputs.clone();
+        if let Ok(mut guard) = self.inference_cache.lock() {
+            *guard = Some(inference);
+        }
+        outputs
     }
 }
 
@@ -439,10 +474,15 @@ fn run_pillars(
     let ctx = NcdeContext::new(base_digest);
     let world_state = WorldStateVec::new(base_digest.as_bytes().to_vec(), vec![Digest32::LEN]);
     let mut thought = ThoughtVec::new(base_digest.as_bytes().to_vec());
-    let claims = SymbolicClaims::new(vec![Claim::new_from_strs(
-        "frame",
-        vec![input.as_ref().frame_id.as_str()],
-    )]);
+    let nsr_input = NsrInput::new(
+        0,
+        IntentSummary::new(0, 0),
+        0,
+        vec![ActionIntent::new("frame")],
+        base_digest,
+        Digest32::new([0u8; 32]),
+        Vec::new(),
+    );
 
     let mut artifacts = Vec::new();
     let mut nsr_report = None;
@@ -508,7 +548,7 @@ fn run_pillars(
         }
     }
     if let Some(nsr) = &pillars.nsr {
-        let report = nsr.check(&claims);
+        let report = nsr.evaluate(&nsr_input);
         let report_digest = digest_nsr_report(&report);
         artifacts.push(report_digest);
         nsr_report = Some(report);
@@ -730,17 +770,7 @@ fn digest_thought(thought: &ThoughtVec) -> Digest32 {
 }
 
 fn digest_nsr_report(report: &NsrReport) -> Digest32 {
-    let mut hasher = Hasher::new();
-    hasher.update(&[report.ok as u8]);
-    hasher.update(
-        &u64::try_from(report.violations.len())
-            .unwrap_or(0)
-            .to_be_bytes(),
-    );
-    for violation in &report.violations {
-        hasher.update(violation.as_bytes());
-    }
-    Digest32::new(*hasher.finalize().as_bytes())
+    report.commit
 }
 
 pub trait SpeechGate {
@@ -798,14 +828,13 @@ mod tests {
     use ucf_ai_runtime::backend::{AiRuntimeBackend, NoopRuntimeBackend};
     use ucf_sandbox::normalize;
     use ucf_types::v1::spec::ControlFrame;
-    use ucf_types::SymbolicClaims;
     use ucf_types::ThoughtVec;
     use ucf_types::WorldStateVec;
 
     use ucf_cde_port::{CdeHypothesis, CdePort, MockCdePort};
     use ucf_iit_monitor::IitMonitor;
     use ucf_ncde_port::{NcdeContext, NcdePort};
-    use ucf_nsr_port::{NsrBackend, NsrPort, NsrReport};
+    use ucf_nsr_port::{NsrBackend, NsrInput, NsrPort, NsrReport, NsrVerdict};
     use ucf_scm_port::{CounterfactualQuery, CounterfactualResult, MockScmPort, ScmDag, ScmPort};
     use ucf_sle::StrangeLoopEngine;
     use ucf_ssm_port::{DeterministicSsmPort, SsmConfig, SsmInput, SsmOutput, SsmPort, SsmState};
@@ -945,11 +974,14 @@ mod tests {
             order: Arc<std::sync::Mutex<Vec<&'static str>>>,
         }
         impl NsrBackend for OrderNsr {
-            fn check(&self, _claims: &SymbolicClaims) -> NsrReport {
+            fn evaluate(&self, _input: &NsrInput) -> NsrReport {
                 self.order.lock().unwrap().push("nsr");
                 NsrReport {
-                    ok: true,
+                    verdict: NsrVerdict::Allow,
+                    causal_report_commit: Digest32::new([0u8; 32]),
                     violations: Vec::new(),
+                    proof_digest: Digest32::new([0u8; 32]),
+                    commit: Digest32::new([0u8; 32]),
                 }
             }
         }

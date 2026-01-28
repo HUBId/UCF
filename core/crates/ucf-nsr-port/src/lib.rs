@@ -2,17 +2,13 @@
 
 use std::sync::Arc;
 
-use blake3::Hasher;
-use ucf_types::{Digest32, SymbolicClaims};
+use ucf_nsr::{compute_proof_digest, NsrPolicyEngine};
+use ucf_types::Digest32;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct NsrReport {
-    pub ok: bool,
-    pub violations: Vec<String>,
-}
+pub use ucf_nsr::{light_report, ActionIntent, NsrInput, NsrReport, NsrVerdict, NsrViolation};
 
 pub trait NsrBackend {
-    fn check(&self, claims: &SymbolicClaims) -> NsrReport;
+    fn evaluate(&self, input: &NsrInput) -> NsrReport;
 }
 
 #[derive(Clone)]
@@ -25,14 +21,18 @@ impl NsrPort {
         Self { backend }
     }
 
-    pub fn check(&self, claims: &SymbolicClaims) -> NsrReport {
-        self.backend.check(claims)
+    pub fn evaluate(&self, input: &NsrInput) -> NsrReport {
+        self.backend.evaluate(input)
+    }
+
+    pub fn check(&self, input: &NsrInput) -> NsrReport {
+        self.evaluate(input)
     }
 }
 
 impl Default for NsrPort {
     fn default() -> Self {
-        Self::new(Arc::new(NsrStubBackend::new()))
+        Self::new(Arc::new(NsrPolicyEngine::new()))
     }
 }
 
@@ -61,86 +61,101 @@ impl Default for NsrStubBackend {
 }
 
 impl NsrBackend for NsrStubBackend {
-    fn check(&self, claims: &SymbolicClaims) -> NsrReport {
-        let digest = digest_claims(claims);
-        let violations = claims
-            .claims
-            .iter()
-            .filter(|claim| self.matches_violation(claim.predicate.as_str()))
-            .map(|claim| {
-                format!(
-                    "violation:{}:{}",
-                    claim.predicate,
-                    hex_prefix(digest.as_bytes())
-                )
-            })
-            .collect::<Vec<_>>();
-
-        NsrReport {
-            ok: violations.is_empty(),
-            violations,
+    fn evaluate(&self, input: &NsrInput) -> NsrReport {
+        let predicate = self.violation_predicate.as_deref();
+        let mut violations = Vec::new();
+        let mut rules_fired = Vec::new();
+        for action in &input.proposed_actions {
+            if predicate == Some(action.tag.as_str()) {
+                let detail = format!("action_tag={}", action.tag);
+                violations.push(NsrViolation {
+                    code: "NSR_STUB_MATCH".to_string(),
+                    detail_digest: digest_violation_detail(&detail, input.commit),
+                    severity: 9000,
+                    commit: digest_violation_commit(&detail, input.commit),
+                });
+                rules_fired.push("NSR_STUB_MATCH".to_string());
+            }
         }
+        if violations.is_empty() && predicate == Some("deny") {
+            let detail = "predicate=deny".to_string();
+            violations.push(NsrViolation {
+                code: "NSR_STUB_MATCH".to_string(),
+                detail_digest: digest_violation_detail(&detail, input.commit),
+                severity: 9000,
+                commit: digest_violation_commit(&detail, input.commit),
+            });
+            rules_fired.push("NSR_STUB_MATCH".to_string());
+        }
+        let proof_digest = compute_proof_digest(input, &rules_fired, &[], &[]);
+        ucf_nsr::finalize_report(input, violations, proof_digest)
     }
 }
 
-fn digest_claims(claims: &SymbolicClaims) -> Digest32 {
-    let mut hasher = Hasher::new();
-    hasher.update(
-        &u64::try_from(claims.claims.len())
-            .unwrap_or(0)
-            .to_be_bytes(),
-    );
-    for claim in &claims.claims {
-        hasher.update(claim.predicate.as_bytes());
-        hasher.update(&u64::try_from(claim.args.len()).unwrap_or(0).to_be_bytes());
-        for arg in &claim.args {
-            hasher.update(arg.as_bytes());
-        }
+impl NsrBackend for ucf_nsr::NsrPolicyEngine {
+    fn evaluate(&self, input: &NsrInput) -> NsrReport {
+        NsrPolicyEngine::evaluate(self, input)
     }
+}
+
+fn digest_violation_detail(detail: &str, input_commit: Digest32) -> Digest32 {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"ucf.nsr.stub.detail.v1");
+    hasher.update(detail.as_bytes());
+    hasher.update(input_commit.as_bytes());
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
-fn hex_prefix(bytes: &[u8; 32]) -> String {
-    bytes
-        .iter()
-        .take(4)
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
-}
-
-impl NsrStubBackend {
-    fn matches_violation(&self, predicate: &str) -> bool {
-        self.violation_predicate.as_deref() == Some(predicate)
-    }
+fn digest_violation_commit(detail: &str, input_commit: Digest32) -> Digest32 {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"ucf.nsr.stub.violation.v1");
+    hasher.update(detail.as_bytes());
+    hasher.update(input_commit.as_bytes());
+    Digest32::new(*hasher.finalize().as_bytes())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::sync::Arc;
-    use ucf_types::Claim;
 
     #[test]
     fn mock_nsr_is_deterministic() {
-        let claims = SymbolicClaims::new(vec![Claim::new_from_strs("ok", vec!["a"])]);
+        let claims = NsrInput::new(
+            1,
+            ucf_sandbox::IntentSummary::new(1, 1),
+            1,
+            vec![ActionIntent::new("ok")],
+            Digest32::new([9u8; 32]),
+            Digest32::new([0u8; 32]),
+            Vec::new(),
+        );
         let port = NsrPort::default();
 
         let out_a = port.check(&claims);
         let out_b = port.check(&claims);
 
         assert_eq!(out_a, out_b);
-        assert!(out_a.ok);
+        assert_eq!(out_a.verdict, NsrVerdict::Allow);
     }
 
     #[test]
     fn mock_nsr_flags_configured_predicate() {
-        let claims = SymbolicClaims::new(vec![Claim::new_from_strs("deny", vec!["x"])]);
+        let claims = NsrInput::new(
+            2,
+            ucf_sandbox::IntentSummary::new(1, 1),
+            1,
+            vec![ActionIntent::new("deny")],
+            Digest32::new([2u8; 32]),
+            Digest32::new([0u8; 32]),
+            Vec::new(),
+        );
         let backend = NsrStubBackend::new().with_violation_predicate("deny");
         let port = NsrPort::new(Arc::new(backend));
 
         let out = port.check(&claims);
 
-        assert!(!out.ok);
+        assert_eq!(out.verdict, NsrVerdict::Deny);
         assert_eq!(out.violations.len(), 1);
     }
 }

@@ -100,8 +100,10 @@ impl IitMonitor {
         &mut self,
         snapshot: &WorkspaceSnapshot,
         risk: u16,
+        coherence_plv: Option<u16>,
     ) -> (IitReport, Vec<IitAction>) {
-        let phi = integration_score(snapshot, &self.phi_history);
+        let coherence_plv = coherence_plv.or_else(|| coherence_from_snapshot(snapshot));
+        let phi = integration_score(snapshot, &self.phi_history, coherence_plv);
         if self.window > 0 {
             self.phi_history.push_back(phi);
             while self.phi_history.len() > self.window {
@@ -135,7 +137,11 @@ fn coupling_score(a: &Digest32, b: &Digest32) -> u16 {
     u16::try_from(scaled.min(10_000)).unwrap_or(10_000)
 }
 
-fn integration_score(snapshot: &WorkspaceSnapshot, history: &VecDeque<u16>) -> u16 {
+fn integration_score(
+    snapshot: &WorkspaceSnapshot,
+    history: &VecDeque<u16>,
+    coherence_plv: Option<u16>,
+) -> u16 {
     let mut kinds: HashSet<SignalKind> = HashSet::new();
     for signal in &snapshot.broadcast {
         kinds.insert(signal.kind);
@@ -145,9 +151,30 @@ fn integration_score(snapshot: &WorkspaceSnapshot, history: &VecDeque<u16>) -> u
     let fusion = kinds_count.saturating_mul(800);
     let density = u16::try_from(snapshot.broadcast.len().min(16)).unwrap_or(0) * 300;
 
-    let base = cross_module.saturating_add(fusion).saturating_add(density);
+    let coherence_bonus = coherence_bonus(coherence_plv);
+    let base = cross_module
+        .saturating_add(fusion)
+        .saturating_add(density)
+        .saturating_add(coherence_bonus);
     let stability_bonus = stability_bonus(base, history);
     (base.saturating_add(stability_bonus)).min(10_000)
+}
+
+fn coherence_bonus(coherence_plv: Option<u16>) -> u16 {
+    let Some(coherence) = coherence_plv else {
+        return 0;
+    };
+    (coherence / 4).min(2500)
+}
+
+fn coherence_from_snapshot(snapshot: &WorkspaceSnapshot) -> Option<u16> {
+    snapshot.broadcast.iter().find_map(|signal| {
+        signal
+            .summary
+            .split_whitespace()
+            .find_map(|token| token.strip_prefix("COH="))
+            .and_then(|value| value.parse::<u16>().ok())
+    })
 }
 
 fn stability_bonus(base: u16, history: &VecDeque<u16>) -> u16 {
@@ -173,7 +200,7 @@ fn average(history: &VecDeque<u16>) -> Option<u16> {
     Some(u16::try_from(avg.min(u32::from(u16::MAX))).unwrap_or(u16::MAX))
 }
 
-fn band_for_phi(phi: u16) -> IitBand {
+pub fn band_for_phi(phi: u16) -> IitBand {
     match phi {
         0..=3299 => IitBand::Low,
         3300..=6599 => IitBand::Medium,
@@ -181,7 +208,16 @@ fn band_for_phi(phi: u16) -> IitBand {
     }
 }
 
-fn report_commit(phi: u16, band: IitBand) -> Digest32 {
+pub fn report_for_phi(phi: u16) -> IitReport {
+    let band = band_for_phi(phi);
+    IitReport {
+        phi,
+        band,
+        commit: report_commit(phi, band),
+    }
+}
+
+pub fn report_commit(phi: u16, band: IitBand) -> Digest32 {
     let mut hasher = Hasher::new();
     hasher.update(DOMAIN_REPORT);
     hasher.update(&phi.to_be_bytes());
@@ -189,7 +225,7 @@ fn report_commit(phi: u16, band: IitBand) -> Digest32 {
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
-fn actions_for_phi(phi: u16, risk: u16) -> Vec<IitAction> {
+pub fn actions_for_phi(phi: u16, risk: u16) -> Vec<IitAction> {
     let mut actions = Vec::new();
 
     if phi < 3000 {
@@ -267,11 +303,44 @@ mod tests {
                 },
             ],
             recursion_used: 0,
+            spike_seen_root: Digest32::new([0u8; 32]),
+            spike_accepted_root: Digest32::new([0u8; 32]),
+            spike_counts: Vec::new(),
+            spike_causal_link_count: 0,
+            spike_consistency_alert_count: 0,
+            spike_thought_only_count: 0,
+            spike_output_intent_count: 0,
+            spike_cap_hit: false,
+            ncde_commit: Digest32::new([0u8; 32]),
+            cde_commit: Digest32::new([0u8; 32]),
+            cde_graph_commit: Digest32::new([0u8; 32]),
+            cde_top_edges: Vec::new(),
+            ssm_commit: Digest32::new([0u8; 32]),
+            ssm_state_commit: Digest32::new([0u8; 32]),
+            influence_v2_commit: Digest32::new([0u8; 32]),
+            influence_pulses_root: Digest32::new([0u8; 32]),
+            influence_node_values: Vec::new(),
+            onn_states_commit: Digest32::new([0u8; 32]),
+            onn_global_plv: 0,
+            onn_pair_locks_commit: Digest32::new([0u8; 32]),
+            onn_phase_frame_commit: Digest32::new([0u8; 32]),
+            iit_output: None,
+            nsr_trace_root: None,
+            nsr_prev_commit: None,
+            nsr_verdict: None,
+            rsa_commit: Digest32::new([0u8; 32]),
+            rsa_chosen: None,
+            rsa_applied: false,
+            rsa_new_params_commit: None,
+            sle_commit: Digest32::new([0u8; 32]),
+            sle_self_symbol_commit: Digest32::new([0u8; 32]),
+            sle_rate_limited: false,
+            internal_utterances: Vec::new(),
             commit: Digest32::new([9u8; 32]),
         };
 
-        let (report_a, actions_a) = monitor_a.evaluate(&snapshot, 1000);
-        let (report_b, actions_b) = monitor_b.evaluate(&snapshot, 1000);
+        let (report_a, actions_a) = monitor_a.evaluate(&snapshot, 1000, None);
+        let (report_b, actions_b) = monitor_b.evaluate(&snapshot, 1000, None);
 
         assert_eq!(report_a, report_b);
         assert_eq!(actions_a, actions_b);
@@ -284,9 +353,42 @@ mod tests {
             cycle_id: 1,
             broadcast: vec![],
             recursion_used: 0,
+            spike_seen_root: Digest32::new([0u8; 32]),
+            spike_accepted_root: Digest32::new([0u8; 32]),
+            spike_counts: Vec::new(),
+            spike_causal_link_count: 0,
+            spike_consistency_alert_count: 0,
+            spike_thought_only_count: 0,
+            spike_output_intent_count: 0,
+            spike_cap_hit: false,
+            ncde_commit: Digest32::new([0u8; 32]),
+            cde_commit: Digest32::new([0u8; 32]),
+            cde_graph_commit: Digest32::new([0u8; 32]),
+            cde_top_edges: Vec::new(),
+            ssm_commit: Digest32::new([0u8; 32]),
+            ssm_state_commit: Digest32::new([0u8; 32]),
+            influence_v2_commit: Digest32::new([0u8; 32]),
+            influence_pulses_root: Digest32::new([0u8; 32]),
+            influence_node_values: Vec::new(),
+            onn_states_commit: Digest32::new([0u8; 32]),
+            onn_global_plv: 0,
+            onn_pair_locks_commit: Digest32::new([0u8; 32]),
+            onn_phase_frame_commit: Digest32::new([0u8; 32]),
+            iit_output: None,
+            nsr_trace_root: None,
+            nsr_prev_commit: None,
+            nsr_verdict: None,
+            rsa_commit: Digest32::new([0u8; 32]),
+            rsa_chosen: None,
+            rsa_applied: false,
+            rsa_new_params_commit: None,
+            sle_commit: Digest32::new([0u8; 32]),
+            sle_self_symbol_commit: Digest32::new([0u8; 32]),
+            sle_rate_limited: false,
+            internal_utterances: Vec::new(),
             commit: Digest32::new([3u8; 32]),
         };
-        let (_report, actions) = monitor.evaluate(&snapshot, 0);
+        let (_report, actions) = monitor.evaluate(&snapshot, 0, None);
 
         assert!(actions
             .iter()

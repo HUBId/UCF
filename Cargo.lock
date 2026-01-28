@@ -1889,6 +1889,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucf-cde-scm"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ucf-influence",
+ "ucf-spikebus",
+ "ucf-types",
+]
+
+[[package]]
 name = "ucf-commit"
 version = "0.1.0"
 dependencies = [
@@ -1922,9 +1932,11 @@ dependencies = [
  "ucf-commit",
  "ucf-consistency-engine",
  "ucf-iit-monitor",
+ "ucf-influence",
  "ucf-policy-ecology",
  "ucf-predictive-coding",
  "ucf-sleep-coordinator",
+ "ucf-structural-store",
  "ucf-tcf-port",
  "ucf-types",
  "ucf-vector-index",
@@ -1975,6 +1987,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucf-feature-spiker"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ucf-onn",
+ "ucf-spike-encoder",
+ "ucf-spikebus",
+ "ucf-types",
+]
+
+[[package]]
 name = "ucf-feature-translator"
 version = "0.1.0"
 dependencies = [
@@ -2008,12 +2031,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucf-iit"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ucf-spikebus",
+ "ucf-types",
+]
+
+[[package]]
 name = "ucf-iit-monitor"
 version = "0.1.0"
 dependencies = [
  "blake3",
  "ucf-types",
  "ucf-workspace",
+]
+
+[[package]]
+name = "ucf-influence"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ucf-types",
 ]
 
 [[package]]
@@ -2057,6 +2097,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucf-ncde"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ucf-onn",
+ "ucf-spikebus",
+ "ucf-types",
+]
+
+[[package]]
 name = "ucf-ncde-port"
 version = "0.1.0"
 dependencies = [
@@ -2065,11 +2115,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucf-nsr"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ucf-cde-scm",
+ "ucf-sandbox",
+ "ucf-spikebus",
+ "ucf-structural-store",
+ "ucf-types",
+]
+
+[[package]]
 name = "ucf-nsr-datalog"
 version = "0.1.0"
 dependencies = [
+ "ucf-nsr",
  "ucf-nsr-port",
- "ucf-types",
 ]
 
 [[package]]
@@ -2077,6 +2139,8 @@ name = "ucf-nsr-port"
 version = "0.1.0"
 dependencies = [
  "blake3",
+ "ucf-nsr",
+ "ucf-sandbox",
  "ucf-types",
 ]
 
@@ -2084,13 +2148,22 @@ dependencies = [
 name = "ucf-nsr-smt"
 version = "0.1.0"
 dependencies = [
+ "ucf-nsr",
  "ucf-nsr-port",
- "ucf-types",
 ]
 
 [[package]]
 name = "ucf-ode-port"
 version = "0.1.0"
+
+[[package]]
+name = "ucf-onn"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ucf-influence",
+ "ucf-types",
+]
 
 [[package]]
 name = "ucf-openevolve-port"
@@ -2104,6 +2177,7 @@ name = "ucf-output-router"
 version = "0.1.0"
 dependencies = [
  "blake3",
+ "ucf-nsr-port",
  "ucf-policy-ecology",
  "ucf-recursion-controller",
  "ucf-sandbox",
@@ -2188,13 +2262,21 @@ dependencies = [
  "ucf-bluebrain-port",
  "ucf-brain-mapper",
  "ucf-cde-port",
+ "ucf-cde-scm",
+ "ucf-commit",
  "ucf-consistency-engine",
  "ucf-digital-brain",
+ "ucf-feature-spiker",
  "ucf-feature-translator",
  "ucf-geist",
+ "ucf-iit",
  "ucf-iit-monitor",
+ "ucf-influence",
  "ucf-ism",
+ "ucf-ncde",
+ "ucf-nsr",
  "ucf-nsr-port",
+ "ucf-onn",
  "ucf-output-router",
  "ucf-policy-ecology",
  "ucf-policy-gateway",
@@ -2202,11 +2284,16 @@ dependencies = [
  "ucf-protocol",
  "ucf-recursion-controller",
  "ucf-risk-gate",
+ "ucf-rsa",
  "ucf-rsa-hooks",
  "ucf-sandbox",
  "ucf-scm-port",
  "ucf-sle",
+ "ucf-spike-encoder",
+ "ucf-spikebus",
+ "ucf-ssm",
  "ucf-ssm-port",
+ "ucf-structural-store",
  "ucf-tcf-port",
  "ucf-tom-port",
  "ucf-types",
@@ -2220,9 +2307,12 @@ dependencies = [
  "blake3",
  "prost",
  "ucf-archive",
+ "ucf-archive-store",
  "ucf-bus",
  "ucf-openevolve-port",
  "ucf-policy-ecology",
+ "ucf-spikebus",
+ "ucf-structural-store",
  "ucf-types",
 ]
 
@@ -2249,6 +2339,7 @@ dependencies = [
 name = "ucf-sandbox"
 version = "0.1.0"
 dependencies = [
+ "blake3",
  "ucf-bus",
  "ucf-commit",
  "ucf-policy-ecology",
@@ -2288,6 +2379,36 @@ dependencies = [
  "ucf-policy-ecology",
  "ucf-predictive-coding",
  "ucf-rsa",
+ "ucf-structural-store",
+ "ucf-types",
+]
+
+[[package]]
+name = "ucf-spike-encoder"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ucf-onn",
+ "ucf-spikebus",
+ "ucf-types",
+]
+
+[[package]]
+name = "ucf-spikebus"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ucf-onn",
+ "ucf-types",
+]
+
+[[package]]
+name = "ucf-ssm"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ucf-onn",
+ "ucf-spikebus",
  "ucf-types",
 ]
 
@@ -2301,12 +2422,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucf-structural-store"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ucf-ncde",
+ "ucf-onn",
+ "ucf-spikebus",
+ "ucf-ssm",
+ "ucf-types",
+]
+
+[[package]]
 name = "ucf-tcf-port"
 version = "0.1.0"
 dependencies = [
  "blake3",
  "ucf-attn-controller",
  "ucf-predictive-coding",
+ "ucf-sandbox",
  "ucf-types",
 ]
 
@@ -2368,11 +2502,14 @@ dependencies = [
  "blake3",
  "ucf-attn-controller",
  "ucf-consistency-engine",
+ "ucf-iit",
  "ucf-output-router",
  "ucf-policy-ecology",
  "ucf-predictive-coding",
  "ucf-risk-gate",
  "ucf-sleep-coordinator",
+ "ucf-spikebus",
+ "ucf-structural-store",
  "ucf-types",
 ]
 
