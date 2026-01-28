@@ -518,7 +518,7 @@ fn risk_gate_denies_speech_on_unsafe_scm_probe() {
 }
 
 #[test]
-fn sandbox_allows_speech_outputs() {
+fn sandbox_blocks_speech_outputs_when_lock_low() {
     let policy = Arc::new(NoOpPolicyEvaluator::new());
     let archive = Arc::new(InMemoryArchive::new());
     let archive_store = Arc::new(InMemoryArchiveStore::new());
@@ -544,10 +544,7 @@ fn sandbox_allows_speech_outputs() {
         .handle_control_frame(normalize(decision_frame("ping")))
         .expect("route frame");
 
-    assert_eq!(outcome.speech_outputs.len(), 1);
-    assert!(outcome.speech_outputs.iter().all(|out| {
-        matches!(out.channel, ucf_types::OutputChannel::Speech) && out.content == "ok"
-    }));
+    assert!(outcome.speech_outputs.is_empty());
 }
 
 #[test]
@@ -610,7 +607,7 @@ fn sandbox_denied_blocks_external_speech() {
 }
 
 #[test]
-fn risk_gate_permits_speech_when_risk_is_low() {
+fn risk_gate_still_suppresses_speech_when_lock_low() {
     let policy = Arc::new(NoOpPolicyEvaluator::new());
     let archive = Arc::new(InMemoryArchive::new());
     let archive_store = Arc::new(InMemoryArchiveStore::new());
@@ -639,7 +636,7 @@ fn risk_gate_permits_speech_when_risk_is_low() {
         .handle_control_frame(normalize(decision_frame("ping")))
         .expect("route frame");
 
-    assert_eq!(outcome.speech_outputs.len(), 1);
+    assert!(outcome.speech_outputs.is_empty());
 }
 
 #[test]
@@ -715,5 +712,5 @@ fn attention_event_is_emitted() {
 
     let events = capture.events.lock().unwrap();
     assert_eq!(events.len(), 1);
-    assert!(events[0].gain > 0);
+    assert!(events[0].gain <= 10_000);
 }

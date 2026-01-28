@@ -3,10 +3,10 @@
 use std::cmp::Ordering;
 
 use blake3::Hasher;
-use ucf_onn::ModuleId;
+use ucf_onn::OscId;
 use ucf_types::Digest32;
 
-pub use ucf_onn::ModuleId as SpikeModuleId;
+pub use ucf_onn::OscId as SpikeModuleId;
 
 const SPIKE_EVENT_DOMAIN: &[u8] = b"ucf.spikebus.event.v1";
 const SPIKE_ROOT_DOMAIN: &[u8] = b"ucf.spikebus.root.v1";
@@ -41,8 +41,8 @@ impl SpikeKind {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SpikeEvent {
     pub cycle_id: u64,
-    pub src: ModuleId,
-    pub dst: ModuleId,
+    pub src: OscId,
+    pub dst: OscId,
     pub kind: SpikeKind,
     pub ttfs_code: u16,
     pub amplitude: u16,
@@ -56,8 +56,8 @@ impl SpikeEvent {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         cycle_id: u64,
-        src: ModuleId,
-        dst: ModuleId,
+        src: OscId,
+        dst: OscId,
         kind: SpikeKind,
         ttfs_code: u16,
         amplitude: u16,
@@ -120,7 +120,7 @@ impl SpikeBusState {
         self.events.push(ev);
     }
 
-    pub fn drain_for(&mut self, dst: ModuleId, cycle_id: u64, limit: usize) -> Vec<SpikeEvent> {
+    pub fn drain_for(&mut self, dst: OscId, cycle_id: u64, limit: usize) -> Vec<SpikeEvent> {
         if limit == 0 {
             return Vec::new();
         }
@@ -189,8 +189,8 @@ fn compare_spikes(a: &SpikeEvent, b: &SpikeEvent) -> Ordering {
 #[allow(clippy::too_many_arguments)]
 fn commit_spike_event(
     cycle_id: u64,
-    src: ModuleId,
-    dst: ModuleId,
+    src: OscId,
+    dst: OscId,
     kind: SpikeKind,
     ttfs_code: u16,
     amplitude: u16,
@@ -216,16 +216,10 @@ fn commit_spike_event(
 mod tests {
     use super::*;
 
-    fn make_event(
-        cycle_id: u64,
-        dst: ModuleId,
-        kind: SpikeKind,
-        ttfs: u16,
-        seed: u8,
-    ) -> SpikeEvent {
+    fn make_event(cycle_id: u64, dst: OscId, kind: SpikeKind, ttfs: u16, seed: u8) -> SpikeEvent {
         SpikeEvent::new(
             cycle_id,
-            ModuleId::Ai,
+            OscId::Jepa,
             dst,
             kind,
             ttfs,
@@ -239,16 +233,16 @@ mod tests {
     #[test]
     fn drain_orders_by_cycle_then_dst_then_kind_then_ttfs_then_commit() {
         let mut bus = SpikeBusState::new();
-        let ev_a = make_event(2, ModuleId::Nsr, SpikeKind::Threat, 30, 1);
-        let ev_b = make_event(1, ModuleId::Nsr, SpikeKind::CausalLink, 25, 2);
-        let ev_c = make_event(1, ModuleId::Nsr, SpikeKind::CausalLink, 10, 3);
-        let ev_d = make_event(1, ModuleId::Cde, SpikeKind::Novelty, 5, 4);
+        let ev_a = make_event(2, OscId::Nsr, SpikeKind::Threat, 30, 1);
+        let ev_b = make_event(1, OscId::Nsr, SpikeKind::CausalLink, 25, 2);
+        let ev_c = make_event(1, OscId::Nsr, SpikeKind::CausalLink, 10, 3);
+        let ev_d = make_event(1, OscId::Cde, SpikeKind::Novelty, 5, 4);
         bus.append(ev_a.clone());
         bus.append(ev_b.clone());
         bus.append(ev_c.clone());
         bus.append(ev_d.clone());
 
-        let drained = bus.drain_for(ModuleId::Nsr, 2, 10);
+        let drained = bus.drain_for(OscId::Nsr, 2, 10);
         assert_eq!(drained, vec![ev_c, ev_b, ev_a]);
         assert_eq!(bus.len(), 1);
     }
@@ -257,7 +251,7 @@ mod tests {
     fn root_commit_advances_on_append() {
         let mut bus = SpikeBusState::new();
         let root_before = bus.root_commit();
-        bus.append(make_event(1, ModuleId::Nsr, SpikeKind::Threat, 12, 9));
+        bus.append(make_event(1, OscId::Nsr, SpikeKind::Threat, 12, 9));
         assert_ne!(root_before, bus.root_commit());
     }
 }

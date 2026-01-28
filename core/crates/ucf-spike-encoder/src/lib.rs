@@ -2,7 +2,7 @@
 
 use blake3::Hasher;
 use ucf_feature_translator::LensSelection;
-use ucf_onn::{ModuleId, PhaseFrame};
+use ucf_onn::{OscId, PhaseFrame};
 use ucf_spikebus::{SpikeEvent, SpikeKind};
 use ucf_structural_store::SnnKnobs;
 use ucf_types::Digest32;
@@ -15,7 +15,7 @@ const MAX_SIGNAL: u16 = 10_000;
 pub fn encode_from_features(
     cycle_id: u64,
     phase: &PhaseFrame,
-    src: ModuleId,
+    src: OscId,
     lens: Option<&LensSelection>,
     snn: &SnnKnobs,
     surprise: u16,
@@ -32,7 +32,7 @@ pub fn encode_from_features(
             let weight = feature.weight.unsigned_abs();
             let amplitude = clamp_signal(weight);
             let payload_commit = feature.commit;
-            for dst in [ModuleId::Cde, ModuleId::Nsr] {
+            for dst in [OscId::Cde, OscId::Nsr] {
                 if meets_threshold(snn, SpikeKind::CausalLink, amplitude) {
                     events.push(build_spike(
                         cycle_id,
@@ -53,7 +53,7 @@ pub fn encode_from_features(
         let amplitude = clamp_signal(surprise);
         if meets_threshold(snn, SpikeKind::Novelty, amplitude) {
             let payload_commit = commit_signal_payload(phase.commit, SpikeKind::Novelty, surprise);
-            for dst in [ModuleId::Ai, ModuleId::Ssm] {
+            for dst in [OscId::Jepa, OscId::Ssm] {
                 events.push(build_spike(
                     cycle_id,
                     phase,
@@ -73,7 +73,7 @@ pub fn encode_from_features(
         if meets_threshold(snn, SpikeKind::ConsistencyAlert, amplitude) {
             let payload_commit =
                 commit_signal_payload(phase.commit, SpikeKind::ConsistencyAlert, drift);
-            for dst in [ModuleId::Geist, ModuleId::Replay] {
+            for dst in [OscId::Geist, OscId::Iit] {
                 events.push(build_spike(
                     cycle_id,
                     phase,
@@ -92,7 +92,7 @@ pub fn encode_from_features(
         let amplitude = clamp_signal(risk);
         if meets_threshold(snn, SpikeKind::Threat, amplitude) {
             let payload_commit = commit_signal_payload(phase.commit, SpikeKind::Threat, risk);
-            for dst in [ModuleId::BlueBrain, ModuleId::Geist] {
+            for dst in [OscId::BlueBrain, OscId::Geist] {
                 events.push(build_spike(
                     cycle_id,
                     phase,
@@ -114,8 +114,8 @@ pub fn encode_from_features(
 pub fn encode_causal_link_spike(
     cycle_id: u64,
     phase: &PhaseFrame,
-    src: ModuleId,
-    dst: ModuleId,
+    src: OscId,
+    dst: OscId,
     amplitude: u16,
     attention_gain: u16,
     payload_commit: Digest32,
@@ -137,8 +137,8 @@ pub fn encode_causal_link_spike(
 pub fn encode_thought_spike(
     cycle_id: u64,
     phase: &PhaseFrame,
-    src: ModuleId,
-    dst: ModuleId,
+    src: OscId,
+    dst: OscId,
     amplitude: u16,
     attention_gain: u16,
     payload_commit: Digest32,
@@ -160,8 +160,8 @@ pub fn encode_thought_spike(
 fn build_spike(
     cycle_id: u64,
     phase: &PhaseFrame,
-    src: ModuleId,
-    dst: ModuleId,
+    src: OscId,
+    dst: OscId,
     kind: SpikeKind,
     amplitude: u16,
     attention_gain: u16,
@@ -186,7 +186,7 @@ fn ttfs_code(
     base: u16,
     payload_commit: Digest32,
     kind: SpikeKind,
-    dst: ModuleId,
+    dst: OscId,
     amplitude: u16,
 ) -> u16 {
     let offset_seed = hash16(payload_commit, kind, dst);
@@ -199,7 +199,7 @@ fn ttfs_code(
     base.wrapping_add(offset)
 }
 
-fn hash16(payload_commit: Digest32, kind: SpikeKind, dst: ModuleId) -> u16 {
+fn hash16(payload_commit: Digest32, kind: SpikeKind, dst: OscId) -> u16 {
     let mut hasher = Hasher::new();
     hasher.update(TTFS_DOMAIN);
     hasher.update(payload_commit.as_bytes());
@@ -270,8 +270,10 @@ mod tests {
             cycle_id: 1,
             global_phase: 32000,
             module_phase: Vec::new(),
-            module_freq: Vec::new(),
             coherence_plv: 9000,
+            pair_locks: Vec::new(),
+            states_commit: Digest32::new([0u8; 32]),
+            phase_frame_commit: Digest32::new([0u8; 32]),
             commit: Digest32::new([5u8; 32]),
         }
     }
@@ -284,9 +286,8 @@ mod tests {
             phase.commit,
         );
         let snn = SnnKnobs::default();
-        let first = encode_from_features(1, &phase, ModuleId::Ai, Some(&lens), &snn, 100, 200, 300);
-        let second =
-            encode_from_features(1, &phase, ModuleId::Ai, Some(&lens), &snn, 100, 200, 300);
+        let first = encode_from_features(1, &phase, OscId::Jepa, Some(&lens), &snn, 100, 200, 300);
+        let second = encode_from_features(1, &phase, OscId::Jepa, Some(&lens), &snn, 100, 200, 300);
         assert_eq!(
             first.iter().map(|ev| ev.commit).collect::<Vec<_>>(),
             second.iter().map(|ev| ev.commit).collect::<Vec<_>>()
