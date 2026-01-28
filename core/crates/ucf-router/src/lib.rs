@@ -4389,7 +4389,7 @@ mod tests {
         };
         {
             let mut guard = router.last_ncde_output.lock().expect("ncde lock");
-            *guard = Some(output.clone());
+            *guard = Some(output);
         }
         let biased = router.apply_ncde_attention_bias(base.clone());
         assert!(biased.gain >= base.gain);
