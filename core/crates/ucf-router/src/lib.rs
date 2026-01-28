@@ -2642,7 +2642,7 @@ impl Router {
             summary,
             slot,
         });
-        self.append_feature_translation_record(
+        self.append_feature_translation_archive_record(
             cycle_id,
             activation_view.commit,
             selection.commit,
@@ -2690,7 +2690,7 @@ impl Router {
         }
     }
 
-    fn append_feature_translation_record(
+    fn append_feature_translation_archive_record(
         &self,
         cycle_id: u64,
         activation_commit: Digest32,
