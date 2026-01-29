@@ -94,7 +94,8 @@ use ucf_tom_port::{IntentType, TomPort};
 use ucf_types::v1::spec::{ControlFrame, DecisionKind, Digest, ExperienceRecord, PolicyDecision};
 use ucf_types::{AlgoId, Digest32, EvidenceId};
 use ucf_workspace::{
-    output_event_commit, SignalKind, Workspace, WorkspaceConfig, WorkspaceSignal, WorkspaceSnapshot,
+    output_event_commit, SignalKind, SleOutputsSnapshot, Workspace, WorkspaceConfig,
+    WorkspaceSignal, WorkspaceSnapshot,
 };
 
 const ISM_ANCHOR_TOP_K: usize = 4;
@@ -595,9 +596,13 @@ impl Router {
                 rsa_applied_params_root: Digest32::new([0u8; 32]),
                 rsa_snapshot_chain_commit: Digest32::new([0u8; 32]),
                 sle_commit: Digest32::new([0u8; 32]),
-                sle_self_observation_commit: Digest32::new([0u8; 32]),
-                sle_self_symbol_commit: Digest32::new([0u8; 32]),
-                sle_rate_limited: false,
+                sle_reflection_commit: Digest32::new([0u8; 32]),
+                sle_reflection_class: 0,
+                sle_reflection_intensity: 0,
+                sle_thought_only_root: Digest32::new([0u8; 32]),
+                sle_ssm_bias: 0,
+                sle_cde_bias: 0,
+                sle_request_replay: false,
                 internal_utterances: Vec::new(),
                 commit: Digest32::new([0u8; 32]),
             })
@@ -921,6 +926,20 @@ impl Router {
                         .unwrap_or_else(empty_spike_summary);
                     let spike_counts = spike_summary.counts.clone();
                     ctx.replay_pressure = Some(replay_pressure_from_spikes(&spike_counts));
+                    let sle_request_replay = self
+                        .last_workspace_snapshot
+                        .lock()
+                        .ok()
+                        .and_then(|snapshot| {
+                            snapshot
+                                .as_ref()
+                                .map(|snapshot| snapshot.sle_request_replay)
+                        })
+                        .unwrap_or(false);
+                    if sle_request_replay {
+                        let current = ctx.replay_pressure.unwrap_or(0);
+                        ctx.replay_pressure = Some(current.max(5_000));
+                    }
                     let iit_output = {
                         let ncde_output = ctx
                             .ncde_output
@@ -1615,13 +1634,13 @@ impl Router {
                         .cde_v1_output
                         .as_ref()
                         .map(|output| output.summary_commit);
-                    let (workspace_sle_symbol, rsa_applied) = self
+                    let (workspace_sle_reflection, rsa_applied) = self
                         .workspace
                         .lock()
                         .ok()
                         .map(|workspace| {
                             (
-                                Some(workspace.sle_self_symbol_commit()),
+                                Some(workspace.sle_reflection_commit()),
                                 workspace.rsa_applied(),
                             )
                         })
@@ -1629,8 +1648,8 @@ impl Router {
                     let sle_self_symbol = ctx
                         .sle_outputs
                         .as_ref()
-                        .map(|output| output.self_symbol_commit)
-                        .or(workspace_sle_symbol);
+                        .map(|output| output.reflection.commit)
+                        .or(workspace_sle_reflection);
                     let influence_inputs = InfluenceInputs {
                         cycle_id,
                         phase_commit,
@@ -2605,23 +2624,26 @@ impl Router {
         let ncde_energy = ncde_output
             .map(|output| output.ncde_energy)
             .unwrap_or(workspace_snapshot.ncde_energy);
+        let cde_commit = workspace_snapshot.cde_commit;
         let inputs = SleInputs::new(
             cycle_id,
             phase_commit,
             phase_bucket,
-            workspace_snapshot.onn_global_plv,
+            workspace_snapshot.ssm_state_commit,
+            workspace_snapshot.ssm_salience,
+            workspace_snapshot.ssm_novelty,
+            ncde_state_digest,
+            ncde_energy,
+            cde_commit,
+            nsr_verdict,
+            nsr_trace_root,
             phi_proxy,
+            workspace_snapshot.onn_global_plv,
+            workspace_snapshot.tcf_sleep_active,
+            workspace_snapshot.tcf_replay_active,
             attention_risk,
             drift_score,
             surprise_score,
-            nsr_verdict,
-            nsr_trace_root,
-            ncde_state_digest,
-            ncde_energy,
-            workspace_snapshot.influence_pulses_root,
-            workspace_snapshot.spike_seen_root,
-            workspace_snapshot.spike_accepted_root,
-            workspace_snapshot.commit,
         );
 
         let outputs = self
@@ -2630,25 +2652,17 @@ impl Router {
             .map(|mut core| core.tick(&inputs))
             .ok()?;
 
-        let mut spike_record = None;
         if let Ok(mut workspace) = self.workspace.lock() {
-            workspace.set_sle_outputs(
-                outputs.commit,
-                outputs.self_observation_commit,
-                outputs.self_symbol_commit,
-                false,
-            );
-            if !outputs.thought_spikes.is_empty() {
-                let batch = SpikeBatch::new(cycle_id, phase_commit, outputs.thought_spikes.clone());
-                let summary = workspace.append_spike_batch(
-                    batch.clone(),
-                    vec![SpikeSuppression::default(); batch.events.len()],
-                );
-                spike_record = Some((summary, batch.commit));
-            }
-        }
-        if let Some((summary, batch_commit)) = spike_record {
-            self.append_spike_bus_record(cycle_id, &summary, batch_commit);
+            workspace.set_sle_outputs(SleOutputsSnapshot {
+                sle_commit: outputs.commit,
+                reflection_commit: outputs.reflection.commit,
+                reflection_class: outputs.reflection.class as u8,
+                reflection_intensity: outputs.reflection.intensity,
+                thought_only_root: outputs.thought_only_root,
+                ssm_bias: outputs.ssm_bias,
+                cde_bias: outputs.cde_bias,
+                request_replay: outputs.request_replay,
+            });
         }
 
         self.append_sle_outputs_record(cycle_id, &outputs);
@@ -2657,15 +2671,11 @@ impl Router {
 
     fn append_sle_outputs_record(&self, cycle_id: u64, outputs: &SleOutputs) {
         let record_id = format!("sle-{}", cycle_id);
-        let mut payload = Vec::with_capacity(Digest32::LEN * 3 + 2);
-        payload.extend_from_slice(outputs.commit.as_bytes());
-        payload.extend_from_slice(outputs.self_observation_commit.as_bytes());
-        payload.extend_from_slice(outputs.self_symbol_commit.as_bytes());
-        payload.extend_from_slice(
-            &u16::try_from(outputs.thought_spikes.len())
-                .unwrap_or(u16::MAX)
-                .to_be_bytes(),
-        );
+        let mut payload = Vec::with_capacity(Digest32::LEN * 2 + 3);
+        payload.extend_from_slice(outputs.reflection.commit.as_bytes());
+        payload.push(outputs.reflection.class as u8);
+        payload.extend_from_slice(&outputs.reflection.intensity.to_be_bytes());
+        payload.extend_from_slice(outputs.thought_only_root.as_bytes());
         let record = build_compact_record(record_id, cycle_id, "sle", payload);
         self.archive.append(record);
     }
@@ -3482,12 +3492,19 @@ impl Router {
                 let replay_active = replay_pressure >= 5_000;
                 (sleep_active, replay_active)
             });
+        let sle_cde_bias = self
+            .last_workspace_snapshot
+            .lock()
+            .ok()
+            .and_then(|snapshot| snapshot.as_ref().map(|snapshot| snapshot.sle_cde_bias))
+            .unwrap_or(0);
         let inputs = CdeV1Inputs::new(
             cycle_id,
             phase_bus.commit,
             phase_bus.gamma_bucket,
             ssm_output.map(|output| output.salience).unwrap_or(0),
             ssm_output.map(|output| output.novelty).unwrap_or(0),
+            sle_cde_bias,
             attention_gain,
             learning_rate,
             replay_pressure,
@@ -3622,6 +3639,12 @@ impl Router {
         self.sync_ssm_params();
         let mut core = self.ssm_core.lock().ok()?;
         let coupling_u = self.coupling_influence(SignalId::SsmSalience);
+        let sle_bias = self
+            .last_workspace_snapshot
+            .lock()
+            .ok()
+            .and_then(|snapshot| snapshot.as_ref().map(|snapshot| snapshot.sle_ssm_bias))
+            .unwrap_or(0);
         let input = SsmInputs::new(
             phase_bus.cycle_id,
             phase_bus.commit,
@@ -3629,6 +3652,7 @@ impl Router {
             percept_commit,
             percept_energy,
             coupling_u,
+            sle_bias,
             spike_root_commit,
             spike_counts,
             prev_attention_gain,
@@ -5466,6 +5490,92 @@ mod tests {
     }
 
     #[test]
+    fn sle_bias_applies_to_next_ssm_cycle() {
+        let router_low = build_router();
+        let router_high = build_router();
+        let phase_frame = PhaseFrame {
+            cycle_id: 1,
+            global_phase: 12_000,
+            module_phase: Vec::new(),
+            coherence_plv: 7000,
+            pair_locks: Vec::new(),
+            states_commit: Digest32::new([0u8; 32]),
+            phase_frame_commit: Digest32::new([0u8; 32]),
+            commit: Digest32::new([1u8; 32]),
+        };
+        let phase_bus = phase_bus_for_frame(&phase_frame, 4);
+        let sle_commit = Digest32::new([5u8; 32]);
+        let reflection_commit = Digest32::new([6u8; 32]);
+        {
+            let mut workspace = router_low.workspace.lock().expect("workspace lock");
+            workspace.set_sle_outputs(SleOutputsSnapshot {
+                sle_commit,
+                reflection_commit,
+                reflection_class: 0,
+                reflection_intensity: 0,
+                thought_only_root: Digest32::new([0u8; 32]),
+                ssm_bias: 0,
+                cde_bias: 0,
+                request_replay: false,
+            });
+        }
+        let snapshot_low = router_low.arbitrate_workspace(1);
+        if let Ok(mut guard) = router_low.last_workspace_snapshot.lock() {
+            *guard = Some(snapshot_low);
+        }
+        {
+            let mut workspace = router_high.workspace.lock().expect("workspace lock");
+            workspace.set_sle_outputs(SleOutputsSnapshot {
+                sle_commit,
+                reflection_commit,
+                reflection_class: 0,
+                reflection_intensity: 0,
+                thought_only_root: Digest32::new([0u8; 32]),
+                ssm_bias: 1500,
+                cde_bias: 0,
+                request_replay: false,
+            });
+        }
+        let snapshot_high = router_high.arbitrate_workspace(1);
+        if let Ok(mut guard) = router_high.last_workspace_snapshot.lock() {
+            *guard = Some(snapshot_high);
+        }
+
+        let output_low = router_low
+            .tick_ssm(
+                &phase_bus,
+                Digest32::new([4u8; 32]),
+                1200,
+                2000,
+                Digest32::new([7u8; 32]),
+                2200,
+                Digest32::new([2u8; 32]),
+                vec![(SpikeKind::Threat, 3)],
+                1000,
+                2000,
+                1500,
+            )
+            .expect("ssm output low");
+        let output_high = router_high
+            .tick_ssm(
+                &phase_bus,
+                Digest32::new([4u8; 32]),
+                1200,
+                2000,
+                Digest32::new([7u8; 32]),
+                2200,
+                Digest32::new([2u8; 32]),
+                vec![(SpikeKind::Threat, 3)],
+                1000,
+                2000,
+                1500,
+            )
+            .expect("ssm output high");
+
+        assert_ne!(output_low.ssm_state_commit, output_high.ssm_state_commit);
+    }
+
+    #[test]
     fn structural_params_drive_onn_window_and_snn_verify_limit() {
         let router = build_router();
         let base = StructuralStore::default_params();
@@ -5950,7 +6060,7 @@ mod tests {
     }
 
     #[test]
-    fn sle_thought_pulse_routes_to_internal_spikes_only() {
+    fn sle_thought_only_root_stays_internal() {
         let router = build_router();
         let phase_commit = Digest32::new([1u8; 32]);
         let iit_output = IitOutput {
@@ -5963,7 +6073,10 @@ mod tests {
             hints_commit: Digest32::new([9u8; 32]),
             commit: Digest32::new([3u8; 32]),
         };
-        let snapshot = router.arbitrate_workspace(3);
+        let mut snapshot = router.arbitrate_workspace(3);
+        snapshot.ssm_salience = 8200;
+        snapshot.ssm_novelty = 4200;
+        snapshot.ncde_energy = 2400;
 
         let outputs = router
             .tick_sle(
@@ -5972,27 +6085,21 @@ mod tests {
                 0,
                 Some(&iit_output),
                 1200,
-                800,
+                9000,
                 1500,
                 None,
                 &snapshot,
             )
             .expect("sle outputs");
 
-        assert!(!outputs.thought_spikes.is_empty());
-        assert!(outputs.thought_spikes.iter().all(|spike| {
-            matches!(spike.dst, OscId::Geist | OscId::BlueBrain)
-                && spike.kind == SpikeKind::ThoughtOnly
-        }));
+        assert_ne!(outputs.thought_only_root, Digest32::new([0u8; 32]));
 
         let spikes = router
             .workspace
             .lock()
             .expect("workspace lock")
             .drain_spikes_for(OscId::BlueBrain, 3, 8);
-        assert!(spikes
-            .iter()
-            .any(|spike| spike.kind == SpikeKind::ThoughtOnly));
+        assert!(spikes.is_empty());
 
         let events = router
             .output_router

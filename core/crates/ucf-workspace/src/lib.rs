@@ -543,11 +543,27 @@ pub struct WorkspaceSnapshot {
     pub rsa_applied_params_root: Digest32,
     pub rsa_snapshot_chain_commit: Digest32,
     pub sle_commit: Digest32,
-    pub sle_self_observation_commit: Digest32,
-    pub sle_self_symbol_commit: Digest32,
-    pub sle_rate_limited: bool,
+    pub sle_reflection_commit: Digest32,
+    pub sle_reflection_class: u8,
+    pub sle_reflection_intensity: u16,
+    pub sle_thought_only_root: Digest32,
+    pub sle_ssm_bias: i16,
+    pub sle_cde_bias: i16,
+    pub sle_request_replay: bool,
     pub internal_utterances: Vec<InternalUtterance>,
     pub commit: Digest32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SleOutputsSnapshot {
+    pub sle_commit: Digest32,
+    pub reflection_commit: Digest32,
+    pub reflection_class: u8,
+    pub reflection_intensity: u16,
+    pub thought_only_root: Digest32,
+    pub ssm_bias: i16,
+    pub cde_bias: i16,
+    pub request_replay: bool,
 }
 
 /// Encode a workspace snapshot into a compact, deterministic payload for archiving.
@@ -639,8 +655,11 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
             + 4
             + Digest32::LEN
             + Digest32::LEN
+            + 1
+            + 2
             + Digest32::LEN
-            + Digest32::LEN
+            + 2
+            + 2
             + 1
             + 2
             + snapshot.internal_utterances.len() * (Digest32::LEN + Digest32::LEN + 2)
@@ -804,9 +823,13 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
     payload.extend_from_slice(snapshot.rsa_applied_params_root.as_bytes());
     payload.extend_from_slice(snapshot.rsa_snapshot_chain_commit.as_bytes());
     payload.extend_from_slice(snapshot.sle_commit.as_bytes());
-    payload.extend_from_slice(snapshot.sle_self_observation_commit.as_bytes());
-    payload.extend_from_slice(snapshot.sle_self_symbol_commit.as_bytes());
-    payload.push(snapshot.sle_rate_limited as u8);
+    payload.extend_from_slice(snapshot.sle_reflection_commit.as_bytes());
+    payload.push(snapshot.sle_reflection_class);
+    payload.extend_from_slice(&snapshot.sle_reflection_intensity.to_be_bytes());
+    payload.extend_from_slice(snapshot.sle_thought_only_root.as_bytes());
+    payload.extend_from_slice(&snapshot.sle_ssm_bias.to_be_bytes());
+    payload.extend_from_slice(&snapshot.sle_cde_bias.to_be_bytes());
+    payload.push(snapshot.sle_request_replay as u8);
     payload.extend_from_slice(
         &u16::try_from(snapshot.internal_utterances.len())
             .unwrap_or(u16::MAX)
@@ -897,9 +920,13 @@ pub struct Workspace {
     nsr_triggered_rules_root: Option<Digest32>,
     nsr_derived_facts_root: Option<Digest32>,
     sle_commit: Digest32,
-    sle_self_observation_commit: Digest32,
-    sle_self_symbol_commit: Digest32,
-    sle_rate_limited: bool,
+    sle_reflection_commit: Digest32,
+    sle_reflection_class: u8,
+    sle_reflection_intensity: u16,
+    sle_thought_only_root: Digest32,
+    sle_ssm_bias: i16,
+    sle_cde_bias: i16,
+    sle_request_replay: bool,
     internal_utterances: Vec<InternalUtterance>,
 }
 
@@ -959,9 +986,13 @@ impl Workspace {
             nsr_triggered_rules_root: None,
             nsr_derived_facts_root: None,
             sle_commit: Digest32::new([0u8; 32]),
-            sle_self_observation_commit: Digest32::new([0u8; 32]),
-            sle_self_symbol_commit: Digest32::new([0u8; 32]),
-            sle_rate_limited: false,
+            sle_reflection_commit: Digest32::new([0u8; 32]),
+            sle_reflection_class: 0,
+            sle_reflection_intensity: 0,
+            sle_thought_only_root: Digest32::new([0u8; 32]),
+            sle_ssm_bias: 0,
+            sle_cde_bias: 0,
+            sle_request_replay: false,
             internal_utterances: Vec::new(),
         }
     }
@@ -1171,25 +1202,35 @@ impl Workspace {
         self.nsr_triggered_rules_root = triggered_rules_root;
     }
 
-    pub fn set_sle_outputs(
-        &mut self,
-        sle_commit: Digest32,
-        self_observation_commit: Digest32,
-        self_symbol_commit: Digest32,
-        rate_limited: bool,
-    ) {
-        self.sle_commit = sle_commit;
-        self.sle_self_observation_commit = self_observation_commit;
-        self.sle_self_symbol_commit = self_symbol_commit;
-        self.sle_rate_limited = rate_limited;
+    pub fn set_sle_outputs(&mut self, outputs: SleOutputsSnapshot) {
+        self.sle_commit = outputs.sle_commit;
+        self.sle_reflection_commit = outputs.reflection_commit;
+        self.sle_reflection_class = outputs.reflection_class;
+        self.sle_reflection_intensity = outputs.reflection_intensity;
+        self.sle_thought_only_root = outputs.thought_only_root;
+        self.sle_ssm_bias = outputs.ssm_bias;
+        self.sle_cde_bias = outputs.cde_bias;
+        self.sle_request_replay = outputs.request_replay;
     }
 
     pub fn rsa_applied(&self) -> bool {
         self.rsa_decision_apply
     }
 
-    pub fn sle_self_symbol_commit(&self) -> Digest32 {
-        self.sle_self_symbol_commit
+    pub fn sle_reflection_commit(&self) -> Digest32 {
+        self.sle_reflection_commit
+    }
+
+    pub fn sle_ssm_bias(&self) -> i16 {
+        self.sle_ssm_bias
+    }
+
+    pub fn sle_cde_bias(&self) -> i16 {
+        self.sle_cde_bias
+    }
+
+    pub fn sle_request_replay(&self) -> bool {
+        self.sle_request_replay
     }
 
     pub fn push_internal_utterance(&mut self, utterance: InternalUtterance) {
@@ -1278,9 +1319,13 @@ impl Workspace {
         let rsa_applied_params_root = self.rsa_applied_params_root;
         let rsa_snapshot_chain_commit = self.rsa_snapshot_chain_commit;
         let sle_commit = self.sle_commit;
-        let sle_self_observation_commit = self.sle_self_observation_commit;
-        let sle_self_symbol_commit = self.sle_self_symbol_commit;
-        let sle_rate_limited = self.sle_rate_limited;
+        let sle_reflection_commit = self.sle_reflection_commit;
+        let sle_reflection_class = self.sle_reflection_class;
+        let sle_reflection_intensity = self.sle_reflection_intensity;
+        let sle_thought_only_root = self.sle_thought_only_root;
+        let sle_ssm_bias = self.sle_ssm_bias;
+        let sle_cde_bias = self.sle_cde_bias;
+        let sle_request_replay = self.sle_request_replay;
         let internal_utterances = std::mem::take(&mut self.internal_utterances);
         let commit = commit_snapshot(
             cycle_id,
@@ -1339,9 +1384,13 @@ impl Workspace {
             rsa_applied_params_root,
             rsa_snapshot_chain_commit,
             sle_commit,
-            sle_self_observation_commit,
-            sle_self_symbol_commit,
-            sle_rate_limited,
+            sle_reflection_commit,
+            sle_reflection_class,
+            sle_reflection_intensity,
+            sle_thought_only_root,
+            sle_ssm_bias,
+            sle_cde_bias,
+            sle_request_replay,
             &internal_utterances,
             &broadcast,
         );
@@ -1403,9 +1452,13 @@ impl Workspace {
             rsa_applied_params_root,
             rsa_snapshot_chain_commit,
             sle_commit,
-            sle_self_observation_commit,
-            sle_self_symbol_commit,
-            sle_rate_limited,
+            sle_reflection_commit,
+            sle_reflection_class,
+            sle_reflection_intensity,
+            sle_thought_only_root,
+            sle_ssm_bias,
+            sle_cde_bias,
+            sle_request_replay,
             internal_utterances,
             commit,
         }
@@ -1844,9 +1897,13 @@ fn commit_snapshot(
     rsa_applied_params_root: Digest32,
     rsa_snapshot_chain_commit: Digest32,
     sle_commit: Digest32,
-    sle_self_observation_commit: Digest32,
-    sle_self_symbol_commit: Digest32,
-    sle_rate_limited: bool,
+    sle_reflection_commit: Digest32,
+    sle_reflection_class: u8,
+    sle_reflection_intensity: u16,
+    sle_thought_only_root: Digest32,
+    sle_ssm_bias: i16,
+    sle_cde_bias: i16,
+    sle_request_replay: bool,
     internal_utterances: &[InternalUtterance],
     broadcast: &[WorkspaceSignal],
 ) -> Digest32 {
@@ -2015,9 +2072,13 @@ fn commit_snapshot(
     hasher.update(rsa_applied_params_root.as_bytes());
     hasher.update(rsa_snapshot_chain_commit.as_bytes());
     hasher.update(sle_commit.as_bytes());
-    hasher.update(sle_self_observation_commit.as_bytes());
-    hasher.update(sle_self_symbol_commit.as_bytes());
-    hasher.update(&[sle_rate_limited as u8]);
+    hasher.update(sle_reflection_commit.as_bytes());
+    hasher.update(&[sle_reflection_class]);
+    hasher.update(&sle_reflection_intensity.to_be_bytes());
+    hasher.update(sle_thought_only_root.as_bytes());
+    hasher.update(&sle_ssm_bias.to_be_bytes());
+    hasher.update(&sle_cde_bias.to_be_bytes());
+    hasher.update(&[sle_request_replay as u8]);
     hasher.update(
         &u32::try_from(internal_utterances.len())
             .unwrap_or(u32::MAX)
