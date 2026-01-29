@@ -41,6 +41,7 @@ ucf-predictive-coding = { path = "../ucf-predictive-coding" }
 ucf-recursion-controller = { path = "../ucf-recursion-controller" }
 ucf-ssm-port = { path = "../ucf-ssm-port" }
 ucf-tcf-port = { path = "../ucf-tcf-port" }
+ucf-tcf = { path = "../ucf-tcf" }
 ucf-workspace = { path = "../ucf-workspace" }
 ucf-spike-encoder = { path = "../ucf-spike-encoder" }
 ucf-spikebus = { path = "../ucf-spikebus" }

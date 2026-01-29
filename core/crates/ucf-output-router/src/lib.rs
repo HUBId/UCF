@@ -58,6 +58,7 @@ pub struct GateBundle {
     pub speak_lock: u16,
     pub speak_lock_min: u16,
     pub damp_output: bool,
+    pub output_gain_cap: u16,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -295,6 +296,21 @@ impl OutputRouter {
                 evidence,
             };
         }
+        if !output_gain_allows(frame.commit, gates.output_gain_cap) {
+            let reason_code = "tcf_output_cap".to_string();
+            let evidence = decision_evidence(&frame, &reason_code, gates, idx, None);
+            self.events.push(OutputRouterEvent::OutputSuppressed {
+                frame,
+                reason_code: reason_code.clone(),
+                evidence,
+                risk: 0,
+            });
+            return RouteDecision {
+                permitted: false,
+                reason_code,
+                evidence,
+            };
+        }
         *thought_count = thought_count.saturating_add(1);
         let reason_code = "thought_buffered".to_string();
         let evidence = decision_evidence(&frame, &reason_code, gates, idx, None);
@@ -328,6 +344,9 @@ impl OutputRouter {
         }
         if gates.damp_output {
             return self.deny_speech(frame, idx, gates, "iit_damp_output", 0);
+        }
+        if !output_gain_allows(frame.commit, gates.output_gain_cap) {
+            return self.deny_speech(frame, idx, gates, "tcf_output_cap", 0);
         }
         if gates.speak_lock < gates.speak_lock_min {
             return self.deny_speech(frame, idx, gates, "speak_lock_low", 0);
@@ -430,6 +449,18 @@ fn output_commit(cf: &ControlFrameNormalized, output: &AiOutput) -> Digest32 {
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
+fn output_gain_allows(commit: Digest32, cap: u16) -> bool {
+    if cap >= 10_000 {
+        return true;
+    }
+    if cap == 0 {
+        return false;
+    }
+    let bytes = commit.as_bytes();
+    let sample = u16::from_be_bytes([bytes[0], bytes[1]]) % 10_000;
+    sample < cap
+}
+
 fn decision_evidence(
     frame: &OutputFrame,
     reason_code: &str,
@@ -484,6 +515,7 @@ mod tests {
             speak_lock: 8000,
             speak_lock_min: 6000,
             damp_output: false,
+            output_gain_cap: 10_000,
         }
     }
 

@@ -85,6 +85,7 @@ use ucf_structural_store::{
     OnnKnobs, SnnKnobs, StructuralCycleStats, StructuralDeltaProposal, StructuralParams,
     StructuralStore,
 };
+use ucf_tcf::{TcfCore, TcfInputs, TcfPlan};
 use ucf_tcf_port::{
     ai_mode_for_pulse, apply_attn_k_delta, apply_energy_k_delta, apply_replay_k_delta,
     idle_attention, CyclePlan, CyclePlanned, DeterministicTcf, PulseKind, TcfConfig, TcfPort,
@@ -158,6 +159,8 @@ pub struct Router {
     workspace_base: WorkspaceConfig,
     cycle_counter: AtomicU64,
     tcf_port: Mutex<Box<dyn TcfPort + Send + Sync>>,
+    tcf_core: Mutex<TcfCore>,
+    last_tcf_plan: Mutex<Option<TcfPlan>>,
     onn_core: Mutex<OnnCore>,
     feature_params: Mutex<FeatureSpikeParams>,
     last_attention: Mutex<AttentionWeights>,
@@ -279,6 +282,7 @@ struct StageContext {
     consistency_effects: Option<ConsistencyActionEffects>,
     iit_report: Option<IitReport>,
     iit_actions: Vec<IitAction>,
+    iit_output: Option<IitOutput>,
     nsr_warn_streak: Option<u16>,
     recursion_budget: Option<RecursionBudget>,
     phase_commit: Option<Digest32>,
@@ -292,6 +296,7 @@ struct StageContext {
     drift_score: Option<u16>,
     surprise_score: Option<u16>,
     tcf_energy_smooth: Option<u16>,
+    tcf_plan: Option<TcfPlan>,
     influence_outputs: Option<InfluenceOutputs>,
     coupling_outputs: Option<CouplingOutputs>,
     structural_stats: Option<StructuralCycleStats>,
@@ -335,6 +340,7 @@ impl StageContext {
             consistency_effects: None,
             iit_report: None,
             iit_actions: Vec::new(),
+            iit_output: None,
             nsr_warn_streak: None,
             recursion_budget: None,
             phase_commit: None,
@@ -348,6 +354,7 @@ impl StageContext {
             drift_score: None,
             surprise_score: None,
             tcf_energy_smooth: None,
+            tcf_plan: None,
             influence_outputs: None,
             coupling_outputs: None,
             structural_stats: None,
@@ -414,6 +421,8 @@ impl Router {
             workspace: Arc::new(Mutex::new(Workspace::new(workspace_base))),
             cycle_counter: AtomicU64::new(0),
             tcf_port: Mutex::new(Box::new(DeterministicTcf::default())),
+            tcf_core: Mutex::new(TcfCore::default()),
+            last_tcf_plan: Mutex::new(None),
             onn_core: Mutex::new(OnnCore::default()),
             feature_params: Mutex::new(FeatureSpikeParams::default()),
             last_attention: Mutex::new(idle_attention()),
@@ -552,6 +561,13 @@ impl Router {
                 coupling_influences_root: Digest32::new([0u8; 32]),
                 coupling_top_influences: Vec::new(),
                 coupling_lag_commits: Vec::new(),
+                tcf_plan_commit: Digest32::new([0u8; 32]),
+                tcf_attention_gain_cap: 0,
+                tcf_learning_gain_cap: 0,
+                tcf_output_gain_cap: 0,
+                tcf_sleep_active: false,
+                tcf_replay_active: false,
+                tcf_lock_window_buckets: 0,
                 onn_states_commit: Digest32::new([0u8; 32]),
                 onn_global_plv: 0,
                 onn_phase_bus_commit: Digest32::new([0u8; 32]),
@@ -954,6 +970,7 @@ impl Router {
                     let iit_report = report_for_phi(iit_output.phi_proxy);
                     let iit_actions = actions_for_phi(iit_output.phi_proxy, attention_risk);
                     ctx.iit_hints = Some(iit_output.hints);
+                    ctx.iit_output = Some(iit_output.clone());
                     if let Ok(mut workspace) = self.workspace.lock() {
                         workspace.set_iit_output(iit_output.clone());
                     }
@@ -1102,6 +1119,7 @@ impl Router {
                         drift_score,
                         surprise_score,
                         attention_risk,
+                        self.tcf_plan_for(Some(&ctx)),
                     );
                     if let Some(output) = cde_v1_output.clone() {
                         ctx.cde_v1_output = Some(output.clone());
@@ -1165,6 +1183,7 @@ impl Router {
                         false,
                         policy_ok,
                         matches!(pulse.kind, PulseKind::Sleep),
+                        self.tcf_plan_for(Some(&ctx)),
                     );
                     let nsr_output = self.nsr_core.tick(&nsr_inputs);
                     ctx.nsr_output = Some(nsr_output.clone());
@@ -1282,6 +1301,7 @@ impl Router {
                             spikes,
                             true,
                             NsrVerdict::Allow,
+                            self.tcf_plan_for(Some(&ctx)),
                             &mut ctx,
                         );
                     }
@@ -1349,6 +1369,10 @@ impl Router {
                     };
                     let output_lock =
                         pair_lock_for(&phase_frame, OscId::Output, OscId::Nsr).unwrap_or(0);
+                    let output_gain_cap = self
+                        .tcf_plan_for(Some(&ctx))
+                        .map(|plan| plan.output_gain_cap)
+                        .unwrap_or(10_000);
                     let gates = GateBundle {
                         policy_decision: decision.clone(),
                         sandbox: ctx.sandbox_verdict.clone().unwrap_or(SandboxVerdict::Allow),
@@ -1362,6 +1386,7 @@ impl Router {
                         speak_lock: output_lock,
                         speak_lock_min: LOCK_MIN_SPEAK,
                         damp_output: iit_output.hints.damp_output,
+                        output_gain_cap,
                     };
                     let mut output_router = self.output_router.lock().expect("output router lock");
                     if let Some(budget) = ctx.recursion_budget.as_ref() {
@@ -1427,6 +1452,7 @@ impl Router {
                                         &spike,
                                         policy_ok,
                                         nsr_verdict,
+                                        self.tcf_plan_for(Some(&ctx)),
                                     );
                                     output_intent_events.push(spike);
                                     output_intent_suppressions.push(suppression);
@@ -1794,6 +1820,35 @@ impl Router {
                     }
                     ctx.attention_weights = attention_weights;
                     self.tick_coupling(&mut ctx, cycle_id);
+                    let policy_ok = matches!(
+                        ctx.decision_kind,
+                        DecisionKind::DecisionKindAllow | DecisionKind::DecisionKindUnspecified
+                    );
+                    let phase_bus = ctx
+                        .phase_bus
+                        .clone()
+                        .unwrap_or_else(|| self.latest_phase_bus(cycle_id));
+                    if let Some(iit_output) = ctx.iit_output.as_ref() {
+                        if let Some(plan) =
+                            self.tick_tcf_plan(&ctx, cycle_id, &phase_bus, iit_output, policy_ok)
+                        {
+                            ctx.tcf_plan = Some(plan);
+                            if let Ok(mut guard) = self.last_tcf_plan.lock() {
+                                *guard = Some(plan);
+                            }
+                            if let Ok(mut workspace) = self.workspace.lock() {
+                                workspace.set_tcf_plan(
+                                    plan.commit,
+                                    plan.attention_gain_cap,
+                                    plan.learning_gain_cap,
+                                    plan.output_gain_cap,
+                                    plan.sleep_active,
+                                    plan.replay_active,
+                                    plan.lock_window_buckets,
+                                );
+                            }
+                        }
+                    }
                     let coupling_snapshot = ctx.coupling_outputs.clone().or_else(|| {
                         self.last_coupling_outputs
                             .lock()
@@ -1805,6 +1860,15 @@ impl Router {
                         .clone()
                         .or_else(|| self.last_ssm_output.lock().ok().and_then(|g| g.clone()));
                     let spike_counts_ncde = spike_summary.counts.clone();
+                    let learning_gain_cap =
+                        ctx.tcf_plan
+                            .map(|plan| plan.learning_gain_cap)
+                            .or_else(|| {
+                                self.last_tcf_plan.lock().ok().and_then(|plan| {
+                                    plan.as_ref().map(|plan| plan.learning_gain_cap)
+                                })
+                            })
+                            .unwrap_or(10_000);
                     if let Some(ncde_output) = self.tick_ncde(
                         cycle_id,
                         &phase_bus,
@@ -1816,6 +1880,7 @@ impl Router {
                         ctx.attention_risk,
                         drift_score,
                         surprise_score,
+                        learning_gain_cap,
                     ) {
                         ctx.ncde_output = Some(ncde_output);
                         if let Ok(mut guard) = self.last_ncde_output.lock() {
@@ -1889,15 +1954,19 @@ impl Router {
                         .lock()
                         .map(|store| store.current.clone())
                         .unwrap_or_else(|_| StructuralStore::default().current);
-                    let sleep_active = derive_sleep_active(
-                        matches!(pulse.kind, PulseKind::Sleep),
-                        replay_pressure,
-                        phi_proxy,
-                        sleep_drive,
-                        ncde_energy,
-                        &params,
-                    );
-                    let replay_active = replay_pressure >= 5_000;
+                    let (sleep_active, replay_active) =
+                        self.tcf_sleep_replay(Some(&ctx)).unwrap_or_else(|| {
+                            let sleep_active = derive_sleep_active(
+                                matches!(pulse.kind, PulseKind::Sleep),
+                                replay_pressure,
+                                phi_proxy,
+                                sleep_drive,
+                                ncde_energy,
+                                &params,
+                            );
+                            let replay_active = replay_pressure >= 5_000;
+                            (sleep_active, replay_active)
+                        });
                     let prev_snapshot = self
                         .last_workspace_snapshot
                         .lock()
@@ -1991,6 +2060,7 @@ impl Router {
                             true,
                             policy_ok,
                             matches!(pulse.kind, PulseKind::Sleep),
+                            self.tcf_plan_for(Some(&ctx)),
                         );
                         Some(self.nsr_core.tick(&nsr_inputs))
                     } else {
@@ -2698,7 +2768,8 @@ impl Router {
         let weights = apply_influence_effects(weights, ctx.influence);
         let weights = self.apply_ncde_attention_bias(weights);
         let weights = self.apply_ssm_attention_bias(weights, ctx.ssm_attention_gain);
-        Some(self.apply_coupling_attention_bias(weights))
+        let weights = self.apply_coupling_attention_bias(weights);
+        Some(self.apply_tcf_attention_cap(weights))
     }
 
     fn apply_coupling_attention_bias(&self, mut weights: AttentionWeights) -> AttentionWeights {
@@ -2712,6 +2783,35 @@ impl Router {
             weights.commit = commit_attention_override(&weights);
         }
         weights
+    }
+
+    fn apply_tcf_attention_cap(&self, mut weights: AttentionWeights) -> AttentionWeights {
+        let cap = self
+            .last_tcf_plan
+            .lock()
+            .ok()
+            .and_then(|plan| plan.as_ref().map(|plan| plan.attention_gain_cap))
+            .unwrap_or(10_000);
+        if cap == 0 {
+            weights.gain = 0;
+            weights.commit = commit_attention_override(&weights);
+            return weights;
+        }
+        if weights.gain > cap {
+            weights.gain = cap;
+            weights.commit = commit_attention_override(&weights);
+        }
+        weights
+    }
+
+    fn tcf_plan_for(&self, ctx: Option<&StageContext>) -> Option<TcfPlan> {
+        ctx.and_then(|ctx| ctx.tcf_plan)
+            .or_else(|| self.last_tcf_plan.lock().ok().and_then(|plan| *plan))
+    }
+
+    fn tcf_sleep_replay(&self, ctx: Option<&StageContext>) -> Option<(bool, bool)> {
+        self.tcf_plan_for(ctx)
+            .map(|plan| (plan.sleep_active, plan.replay_active))
     }
 
     fn apply_ncde_attention_bias(&self, mut weights: AttentionWeights) -> AttentionWeights {
@@ -2778,6 +2878,53 @@ impl Router {
             }
             self.append_coupling_record(cycle_id, &outputs);
         }
+    }
+
+    fn tick_tcf_plan(
+        &self,
+        ctx: &StageContext,
+        cycle_id: u64,
+        phase_bus: &PhaseBus,
+        iit_output: &IitOutput,
+        policy_ok: bool,
+    ) -> Option<TcfPlan> {
+        let coupling_root = ctx
+            .coupling_outputs
+            .as_ref()
+            .map(|outputs| outputs.influences_root)
+            .or_else(|| {
+                self.last_coupling_outputs
+                    .lock()
+                    .ok()
+                    .and_then(|guard| guard.as_ref().map(|outputs| outputs.influences_root))
+            })
+            .unwrap_or_else(|| Digest32::new([0u8; 32]));
+        let nsr_verdict = ctx
+            .nsr_output
+            .as_ref()
+            .map(|output| output.verdict.as_u8())
+            .or_else(|| ctx.nsr_report.as_ref().map(|report| report.verdict.as_u8()))
+            .unwrap_or(0);
+        let inputs = TcfInputs::new(
+            cycle_id,
+            phase_bus.commit,
+            phase_bus.gamma_bucket,
+            ctx.coherence_plv.unwrap_or(0),
+            iit_output.phi_proxy,
+            ctx.attention_risk,
+            ctx.drift_score.unwrap_or(0),
+            ctx.surprise_score.unwrap_or(0),
+            iit_output.hints.commit,
+            iit_output.hints.tighten_sync,
+            iit_output.hints.damp_output,
+            iit_output.hints.damp_learning,
+            iit_output.hints.request_replay,
+            coupling_root,
+            nsr_verdict,
+            policy_ok,
+        );
+        let mut core = self.tcf_core.lock().ok()?;
+        Some(core.tick(&inputs))
     }
 
     fn collect_coupling_samples(&self, ctx: &StageContext, cycle_id: u64) -> Vec<SignalSample> {
@@ -3118,6 +3265,7 @@ impl Router {
         events: Vec<SpikeEvent>,
         policy_ok: bool,
         nsr_verdict: NsrVerdict,
+        tcf_plan: Option<TcfPlan>,
         ctx: &mut StageContext,
     ) -> SpikeBusSummary {
         if events.is_empty() {
@@ -3129,7 +3277,14 @@ impl Router {
         let suppressions = events
             .iter()
             .map(|event| {
-                self.suppression_for_event(phase_frame, phase_bus, event, policy_ok, nsr_verdict)
+                self.suppression_for_event(
+                    phase_frame,
+                    phase_bus,
+                    event,
+                    policy_ok,
+                    nsr_verdict,
+                    tcf_plan,
+                )
             })
             .collect::<Vec<_>>();
         let batch = SpikeBatch::new(cycle_id, phase_bus.commit, events);
@@ -3143,10 +3298,13 @@ impl Router {
         event: &SpikeEvent,
         policy_ok: bool,
         nsr_verdict: NsrVerdict,
+        tcf_plan: Option<TcfPlan>,
     ) -> SpikeSuppression {
         let mut suppression = SpikeSuppression::default();
-        let lock_window = self.onn_phase_window();
-        let base_window = lock_window_buckets(lock_window);
+        let base_window = tcf_plan
+            .map(|plan| plan.lock_window_buckets)
+            .filter(|value| *value > 0)
+            .unwrap_or_else(|| lock_window_buckets(self.onn_phase_window()));
         let phase_window = match event.kind {
             SpikeKind::Threat => 1,
             SpikeKind::ThoughtOnly => base_window.clamp(3, 4),
@@ -3262,6 +3420,7 @@ impl Router {
         drift: u16,
         surprise: u16,
         risk: u16,
+        tcf_plan: Option<TcfPlan>,
     ) -> Option<CdeV1Outputs> {
         let attention_gain = self
             .last_attention
@@ -3279,15 +3438,21 @@ impl Router {
             .lock()
             .map(|store| store.current.clone())
             .unwrap_or_else(|_| StructuralStore::default().current);
-        let sleep_active = derive_sleep_active(
-            false,
-            replay_pressure,
-            iit_output.phi_proxy,
-            sleep_drive_raw,
-            ncde_energy,
-            &params,
-        );
-        let replay_active = replay_pressure >= 5_000;
+        let (sleep_active, replay_active) = tcf_plan
+            .map(|plan| (plan.sleep_active, plan.replay_active))
+            .or_else(|| self.tcf_sleep_replay(None))
+            .unwrap_or_else(|| {
+                let sleep_active = derive_sleep_active(
+                    false,
+                    replay_pressure,
+                    iit_output.phi_proxy,
+                    sleep_drive_raw,
+                    ncde_energy,
+                    &params,
+                );
+                let replay_active = replay_pressure >= 5_000;
+                (sleep_active, replay_active)
+            });
         let inputs = CdeV1Inputs::new(
             cycle_id,
             phase_bus.commit,
@@ -3368,6 +3533,7 @@ impl Router {
         risk: u16,
         drift: u16,
         surprise: u16,
+        learning_gain_cap: u16,
     ) -> Option<NcdeOutputs> {
         self.sync_ncde_params();
         let mut core = self.ncde_core.lock().ok()?;
@@ -3404,6 +3570,7 @@ impl Router {
             risk,
             drift,
             surprise,
+            learning_gain_cap,
         );
         Some(core.tick(&inputs))
     }
@@ -3679,6 +3846,7 @@ impl Router {
         rsa_apply_proposed: bool,
         policy_ok: bool,
         sleep_pulse: bool,
+        tcf_plan: Option<TcfPlan>,
     ) -> NsrInputs {
         let influence_nodes = influence_outputs
             .map(|outputs| outputs.node_values.clone())
@@ -3691,15 +3859,21 @@ impl Router {
             .lock()
             .map(|store| store.current.clone())
             .unwrap_or_else(|_| StructuralStore::default().current);
-        let sleep_active = derive_sleep_active(
-            sleep_pulse,
-            replay_pressure,
-            phi_proxy,
-            sleep_drive,
-            ncde_energy,
-            &params,
-        );
-        let replay_active = replay_pressure >= 5_000;
+        let (sleep_active, replay_active) = tcf_plan
+            .map(|plan| (plan.sleep_active, plan.replay_active))
+            .or_else(|| self.tcf_sleep_replay(None))
+            .unwrap_or_else(|| {
+                let sleep_active = derive_sleep_active(
+                    sleep_pulse,
+                    replay_pressure,
+                    phi_proxy,
+                    sleep_drive,
+                    ncde_energy,
+                    &params,
+                );
+                let replay_active = replay_pressure >= 5_000;
+                (sleep_active, replay_active)
+            });
         let geist_consistency =
             self_state.map(|state| state.consistency < SELF_CONSISTENCY_OK_THRESHOLD);
         NsrInputs::new(
@@ -3863,6 +4037,7 @@ impl Router {
             output.causal_link_spikes.clone(),
             true,
             NsrVerdict::Allow,
+            self.tcf_plan_for(Some(ctx)),
             ctx,
         );
     }
@@ -5024,6 +5199,7 @@ mod tests {
                 1500,
                 1000,
                 2000,
+                10_000,
             )
             .expect("ncde output");
         {
@@ -5155,6 +5331,7 @@ mod tests {
                 1500,
                 1000,
                 2000,
+                10_000,
             )
             .expect("ncde output");
         let ssm_output = router
@@ -5290,8 +5467,14 @@ mod tests {
             phase_bus.commit,
             Digest32::new([4u8; 32]),
         );
-        let suppression =
-            router.suppression_for_event(&phase_frame, &phase_bus, &spike, true, NsrVerdict::Allow);
+        let suppression = router.suppression_for_event(
+            &phase_frame,
+            &phase_bus,
+            &spike,
+            true,
+            NsrVerdict::Allow,
+            None,
+        );
         assert!(suppression.suppressed_by_phase);
     }
 
@@ -5342,6 +5525,7 @@ mod tests {
             &feature,
             true,
             NsrVerdict::Allow,
+            None,
         );
         let threat_suppression = router.suppression_for_event(
             &phase_frame,
@@ -5349,6 +5533,7 @@ mod tests {
             &threat,
             true,
             NsrVerdict::Allow,
+            None,
         );
         assert!(!feature_suppression.suppressed_by_phase);
         assert!(threat_suppression.suppressed_by_phase);
@@ -5424,6 +5609,7 @@ mod tests {
             &thought,
             true,
             NsrVerdict::Allow,
+            None,
         );
         let feature_suppression = router.suppression_for_event(
             &phase_frame,
@@ -5431,9 +5617,91 @@ mod tests {
             &feature,
             true,
             NsrVerdict::Allow,
+            None,
         );
         assert!(!thought_suppression.suppressed_by_phase);
         assert!(feature_suppression.suppressed_by_phase);
+    }
+
+    #[test]
+    fn tcf_plan_tightens_spike_phase_window() {
+        let router = build_router();
+        {
+            let base = StructuralStore::default_params();
+            let onn = OnnKnobs::new(
+                base.onn.base_step,
+                base.onn.coupling,
+                base.onn.max_delta,
+                16_384,
+            );
+            let params = StructuralParams::new(
+                onn,
+                base.snn.clone(),
+                base.nsr,
+                base.replay,
+                base.ssm,
+                base.ncde,
+                base.rsa,
+            );
+            let mut store = router
+                .structural_store
+                .lock()
+                .expect("structural store lock");
+            *store = StructuralStore::new(params);
+        }
+        if let Ok(mut guard) = router.last_tcf_plan.lock() {
+            *guard = Some(TcfPlan {
+                cycle_id: 1,
+                attention_gain_cap: 10_000,
+                learning_gain_cap: 10_000,
+                output_gain_cap: 10_000,
+                sleep_active: false,
+                replay_active: false,
+                lock_window_buckets: 1,
+                smoothing_override: 0,
+                commit: Digest32::new([9u8; 32]),
+            });
+        }
+        let phase_frame = PhaseFrame {
+            cycle_id: 1,
+            global_phase: 0,
+            module_phase: Vec::new(),
+            coherence_plv: 0,
+            pair_locks: Vec::new(),
+            states_commit: Digest32::new([0u8; 32]),
+            phase_frame_commit: Digest32::new([0u8; 32]),
+            commit: Digest32::new([7u8; 32]),
+        };
+        let phase_bus = PhaseBus {
+            cycle_id: 1,
+            global_phase_u16: 0,
+            gamma_bucket: 0,
+            global_plv: 0,
+            pair_locks_commit: Digest32::new([6u8; 32]),
+            commit: Digest32::new([5u8; 32]),
+        };
+        let spike = SpikeEvent::new(
+            1,
+            SpikeKind::Feature,
+            OscId::Jepa,
+            OscId::Nsr,
+            3,
+            900,
+            phase_bus.commit,
+            Digest32::new([4u8; 32]),
+        );
+        let mut ctx = StageContext::new();
+        let summary = router.append_spike_events(
+            1,
+            &phase_frame,
+            &phase_bus,
+            vec![spike],
+            true,
+            NsrVerdict::Allow,
+            None,
+            &mut ctx,
+        );
+        assert_ne!(summary.seen_root, summary.accepted_root);
     }
 
     #[test]
@@ -5489,6 +5757,7 @@ mod tests {
             spikes.clone(),
             true,
             NsrVerdict::Allow,
+            None,
             &mut ctx_a,
         );
         let summary_b = router_b.append_spike_events(
@@ -5498,6 +5767,7 @@ mod tests {
             spikes,
             true,
             NsrVerdict::Allow,
+            None,
             &mut ctx_b,
         );
         assert_eq!(summary_a.accepted_root, summary_b.accepted_root);
@@ -5541,6 +5811,7 @@ mod tests {
             vec![spike],
             true,
             NsrVerdict::Allow,
+            None,
             &mut ctx,
         );
         assert_ne!(summary.seen_root, summary.accepted_root);
@@ -5582,6 +5853,7 @@ mod tests {
             &spike,
             false,
             NsrVerdict::Allow,
+            None,
         );
         assert!(suppression.suppressed_by_policy);
     }

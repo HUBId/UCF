@@ -517,6 +517,13 @@ pub struct WorkspaceSnapshot {
     pub coupling_influences_root: Digest32,
     pub coupling_top_influences: Vec<(u16, i16)>,
     pub coupling_lag_commits: Vec<(u16, Digest32)>,
+    pub tcf_plan_commit: Digest32,
+    pub tcf_attention_gain_cap: u16,
+    pub tcf_learning_gain_cap: u16,
+    pub tcf_output_gain_cap: u16,
+    pub tcf_sleep_active: bool,
+    pub tcf_replay_active: bool,
+    pub tcf_lock_window_buckets: u8,
     pub onn_states_commit: Digest32,
     pub onn_global_plv: u16,
     pub onn_phase_bus_commit: Digest32,
@@ -601,6 +608,13 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
             + snapshot.coupling_top_influences.len() * (2 + 2)
             + 2
             + snapshot.coupling_lag_commits.len() * (2 + Digest32::LEN)
+            + Digest32::LEN
+            + 2
+            + 2
+            + 2
+            + 1
+            + 1
+            + 1
             + Digest32::LEN
             + 2
             + Digest32::LEN
@@ -704,6 +718,13 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
         payload.extend_from_slice(&signal.to_be_bytes());
         payload.extend_from_slice(commit.as_bytes());
     }
+    payload.extend_from_slice(snapshot.tcf_plan_commit.as_bytes());
+    payload.extend_from_slice(&snapshot.tcf_attention_gain_cap.to_be_bytes());
+    payload.extend_from_slice(&snapshot.tcf_learning_gain_cap.to_be_bytes());
+    payload.extend_from_slice(&snapshot.tcf_output_gain_cap.to_be_bytes());
+    payload.push(snapshot.tcf_sleep_active as u8);
+    payload.push(snapshot.tcf_replay_active as u8);
+    payload.push(snapshot.tcf_lock_window_buckets);
     payload.extend_from_slice(snapshot.onn_states_commit.as_bytes());
     payload.extend_from_slice(&snapshot.onn_global_plv.to_be_bytes());
     payload.extend_from_slice(snapshot.onn_phase_bus_commit.as_bytes());
@@ -858,6 +879,13 @@ pub struct Workspace {
     coupling_influences_root: Digest32,
     coupling_top_influences: Vec<(u16, i16)>,
     coupling_lag_commits: Vec<(u16, Digest32)>,
+    tcf_plan_commit: Digest32,
+    tcf_attention_gain_cap: u16,
+    tcf_learning_gain_cap: u16,
+    tcf_output_gain_cap: u16,
+    tcf_sleep_active: bool,
+    tcf_replay_active: bool,
+    tcf_lock_window_buckets: u8,
     onn_states_commit: Digest32,
     onn_global_plv: u16,
     onn_phase_bus_commit: Digest32,
@@ -913,6 +941,13 @@ impl Workspace {
             coupling_influences_root: Digest32::new([0u8; 32]),
             coupling_top_influences: Vec::new(),
             coupling_lag_commits: Vec::new(),
+            tcf_plan_commit: Digest32::new([0u8; 32]),
+            tcf_attention_gain_cap: 0,
+            tcf_learning_gain_cap: 0,
+            tcf_output_gain_cap: 0,
+            tcf_sleep_active: false,
+            tcf_replay_active: false,
+            tcf_lock_window_buckets: 0,
             onn_states_commit: Digest32::new([0u8; 32]),
             onn_global_plv: 0,
             onn_phase_bus_commit: Digest32::new([0u8; 32]),
@@ -1082,6 +1117,26 @@ impl Workspace {
         self.coupling_lag_commits = lag_commits;
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub fn set_tcf_plan(
+        &mut self,
+        plan_commit: Digest32,
+        attention_gain_cap: u16,
+        learning_gain_cap: u16,
+        output_gain_cap: u16,
+        sleep_active: bool,
+        replay_active: bool,
+        lock_window_buckets: u8,
+    ) {
+        self.tcf_plan_commit = plan_commit;
+        self.tcf_attention_gain_cap = attention_gain_cap.min(10_000);
+        self.tcf_learning_gain_cap = learning_gain_cap.min(10_000);
+        self.tcf_output_gain_cap = output_gain_cap.min(10_000);
+        self.tcf_sleep_active = sleep_active;
+        self.tcf_replay_active = replay_active;
+        self.tcf_lock_window_buckets = lock_window_buckets;
+    }
+
     pub fn set_onn_snapshot(
         &mut self,
         states_commit: Digest32,
@@ -1199,6 +1254,13 @@ impl Workspace {
         let coupling_influences_root = self.coupling_influences_root;
         let coupling_top_influences = std::mem::take(&mut self.coupling_top_influences);
         let coupling_lag_commits = std::mem::take(&mut self.coupling_lag_commits);
+        let tcf_plan_commit = self.tcf_plan_commit;
+        let tcf_attention_gain_cap = self.tcf_attention_gain_cap;
+        let tcf_learning_gain_cap = self.tcf_learning_gain_cap;
+        let tcf_output_gain_cap = self.tcf_output_gain_cap;
+        let tcf_sleep_active = self.tcf_sleep_active;
+        let tcf_replay_active = self.tcf_replay_active;
+        let tcf_lock_window_buckets = self.tcf_lock_window_buckets;
         let onn_states_commit = self.onn_states_commit;
         let onn_global_plv = self.onn_global_plv;
         let onn_phase_bus_commit = self.onn_phase_bus_commit;
@@ -1253,6 +1315,13 @@ impl Workspace {
             coupling_influences_root,
             &coupling_top_influences,
             &coupling_lag_commits,
+            tcf_plan_commit,
+            tcf_attention_gain_cap,
+            tcf_learning_gain_cap,
+            tcf_output_gain_cap,
+            tcf_sleep_active,
+            tcf_replay_active,
+            tcf_lock_window_buckets,
             onn_states_commit,
             onn_global_plv,
             onn_phase_bus_commit,
@@ -1310,6 +1379,13 @@ impl Workspace {
             coupling_influences_root,
             coupling_top_influences,
             coupling_lag_commits,
+            tcf_plan_commit,
+            tcf_attention_gain_cap,
+            tcf_learning_gain_cap,
+            tcf_output_gain_cap,
+            tcf_sleep_active,
+            tcf_replay_active,
+            tcf_lock_window_buckets,
             onn_states_commit,
             onn_global_plv,
             onn_phase_bus_commit,
@@ -1744,6 +1820,13 @@ fn commit_snapshot(
     coupling_influences_root: Digest32,
     coupling_top_influences: &[(u16, i16)],
     coupling_lag_commits: &[(u16, Digest32)],
+    tcf_plan_commit: Digest32,
+    tcf_attention_gain_cap: u16,
+    tcf_learning_gain_cap: u16,
+    tcf_output_gain_cap: u16,
+    tcf_sleep_active: bool,
+    tcf_replay_active: bool,
+    tcf_lock_window_buckets: u8,
     onn_states_commit: Digest32,
     onn_global_plv: u16,
     onn_phase_bus_commit: Digest32,
@@ -1857,6 +1940,13 @@ fn commit_snapshot(
         hasher.update(&signal.to_be_bytes());
         hasher.update(commit.as_bytes());
     }
+    hasher.update(tcf_plan_commit.as_bytes());
+    hasher.update(&tcf_attention_gain_cap.to_be_bytes());
+    hasher.update(&tcf_learning_gain_cap.to_be_bytes());
+    hasher.update(&tcf_output_gain_cap.to_be_bytes());
+    hasher.update(&[tcf_sleep_active as u8]);
+    hasher.update(&[tcf_replay_active as u8]);
+    hasher.update(&[tcf_lock_window_buckets]);
     hasher.update(onn_states_commit.as_bytes());
     hasher.update(&onn_global_plv.to_be_bytes());
     hasher.update(onn_phase_bus_commit.as_bytes());
