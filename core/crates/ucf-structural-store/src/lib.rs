@@ -61,7 +61,7 @@ const PARAM_LABEL_SNN_REPLAY_CUE: &str = "snn.threshold.replay_cue";
 const PARAM_LABEL_REPLAY_MICRO: &str = "replay.micro_k";
 const PARAM_LABEL_REPLAY_MESO: &str = "replay.meso_m";
 const PARAM_LABEL_REPLAY_MACRO: &str = "replay.macro_n";
-const PARAM_LABEL_SSM_K_NOVELTY: &str = "ssm.k_novelty";
+const PARAM_LABEL_SSM_NOVELTY_HI: &str = "ssm.novelty_hi";
 const PARAM_LABEL_NCDE_LEAK: &str = "ncde.leak";
 const PARAM_LABEL_IIT_PHI_MIN_APPLY: &str = "iit.phi_min_apply";
 const PARAM_LABEL_RSA_RISK_MAX_APPLY: &str = "rsa.risk_max_apply";
@@ -883,13 +883,13 @@ fn apply_deltas_to_params(
             replay.macro_n = next as u16;
             continue;
         }
-        if delta.key == param_key(PARAM_LABEL_SSM_K_NOVELTY) {
-            let current = i32::from(ssm.k_novelty);
+        if delta.key == param_key(PARAM_LABEL_SSM_NOVELTY_HI) {
+            let current = i32::from(ssm.novelty_hi);
             if delta.from != current {
                 return None;
             }
             let next = clamp_i32(delta.to, 0, 10_000);
-            ssm.k_novelty = next as u16;
+            ssm.novelty_hi = next as u16;
             continue;
         }
         if delta.key == param_key(PARAM_LABEL_NCDE_LEAK) {
@@ -928,11 +928,17 @@ fn apply_deltas_to_params(
     let replay = ReplayCaps::new(replay.micro_k, replay.meso_m, replay.macro_n);
     let ssm = SsmParams::new(
         ssm.dim,
-        ssm.dt,
-        ssm.k_att,
-        ssm.k_novelty,
-        ssm.leak,
-        ssm.max_state,
+        ssm.a_q15,
+        ssm.b_q15,
+        ssm.k_phase,
+        ssm.k_spike,
+        ssm.k_coupling,
+        ssm.k_sle,
+        ssm.k_ncde,
+        ssm.novelty_hi,
+        ssm.novelty_lo,
+        ssm.salience_hi,
+        ssm.clamp,
     );
     let ncde = NcdeParams::new(
         ncde.dim,

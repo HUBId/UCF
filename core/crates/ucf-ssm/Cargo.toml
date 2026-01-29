@@ -7,3 +7,4 @@ edition = "2021"
 blake3 = "1"
 ucf-types = { path = "../ucf-types" }
 ucf-spikebus = { path = "../ucf-spikebus" }
+ucf-coupling = { path = "../ucf-coupling" }
