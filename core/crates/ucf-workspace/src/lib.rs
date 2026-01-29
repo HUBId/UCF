@@ -525,12 +525,9 @@ pub struct WorkspaceSnapshot {
     pub tcf_sleep_active: bool,
     pub tcf_replay_active: bool,
     pub tcf_lock_window_buckets: u8,
-    pub onn_states_commit: Digest32,
+    pub onn_phase_commit: Digest32,
+    pub onn_gamma_bucket: u8,
     pub onn_global_plv: u16,
-    pub onn_phase_bus_commit: Digest32,
-    pub onn_phase_bucket: u8,
-    pub onn_pair_locks_commit: Digest32,
-    pub onn_phase_frame_commit: Digest32,
     pub iit_output: Option<IitOutput>,
     pub nsr_trace_root: Option<Digest32>,
     pub nsr_prev_commit: Option<Digest32>,
@@ -747,12 +744,9 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
     payload.push(snapshot.tcf_sleep_active as u8);
     payload.push(snapshot.tcf_replay_active as u8);
     payload.push(snapshot.tcf_lock_window_buckets);
-    payload.extend_from_slice(snapshot.onn_states_commit.as_bytes());
+    payload.extend_from_slice(snapshot.onn_phase_commit.as_bytes());
+    payload.push(snapshot.onn_gamma_bucket);
     payload.extend_from_slice(&snapshot.onn_global_plv.to_be_bytes());
-    payload.extend_from_slice(snapshot.onn_phase_bus_commit.as_bytes());
-    payload.push(snapshot.onn_phase_bucket);
-    payload.extend_from_slice(snapshot.onn_pair_locks_commit.as_bytes());
-    payload.extend_from_slice(snapshot.onn_phase_frame_commit.as_bytes());
     match snapshot.iit_output.as_ref() {
         Some(output) => {
             payload.push(1);
@@ -911,12 +905,9 @@ pub struct Workspace {
     tcf_sleep_active: bool,
     tcf_replay_active: bool,
     tcf_lock_window_buckets: u8,
-    onn_states_commit: Digest32,
+    onn_phase_commit: Digest32,
+    onn_gamma_bucket: u8,
     onn_global_plv: u16,
-    onn_phase_bus_commit: Digest32,
-    onn_phase_bucket: u8,
-    onn_pair_locks_commit: Digest32,
-    onn_phase_frame_commit: Digest32,
     iit_output: Option<IitOutput>,
     nsr_trace_root: Option<Digest32>,
     nsr_prev_commit: Option<Digest32>,
@@ -978,12 +969,9 @@ impl Workspace {
             tcf_sleep_active: false,
             tcf_replay_active: false,
             tcf_lock_window_buckets: 0,
-            onn_states_commit: Digest32::new([0u8; 32]),
+            onn_phase_commit: Digest32::new([0u8; 32]),
+            onn_gamma_bucket: 0,
             onn_global_plv: 0,
-            onn_phase_bus_commit: Digest32::new([0u8; 32]),
-            onn_phase_bucket: 0,
-            onn_pair_locks_commit: Digest32::new([0u8; 32]),
-            onn_phase_frame_commit: Digest32::new([0u8; 32]),
             iit_output: None,
             nsr_trace_root: None,
             nsr_prev_commit: None,
@@ -1174,21 +1162,10 @@ impl Workspace {
         self.tcf_lock_window_buckets = lock_window_buckets;
     }
 
-    pub fn set_onn_snapshot(
-        &mut self,
-        states_commit: Digest32,
-        global_plv: u16,
-        phase_bus_commit: Digest32,
-        phase_bucket: u8,
-        pair_locks_commit: Digest32,
-        phase_frame_commit: Digest32,
-    ) {
-        self.onn_states_commit = states_commit;
+    pub fn set_onn_snapshot(&mut self, phase_commit: Digest32, gamma_bucket: u8, global_plv: u16) {
+        self.onn_phase_commit = phase_commit;
+        self.onn_gamma_bucket = gamma_bucket;
         self.onn_global_plv = global_plv;
-        self.onn_phase_bus_commit = phase_bus_commit;
-        self.onn_phase_bucket = phase_bucket;
-        self.onn_pair_locks_commit = pair_locks_commit;
-        self.onn_phase_frame_commit = phase_frame_commit;
     }
 
     pub fn set_iit_output(&mut self, output: IitOutput) {
@@ -1313,12 +1290,9 @@ impl Workspace {
         let tcf_sleep_active = self.tcf_sleep_active;
         let tcf_replay_active = self.tcf_replay_active;
         let tcf_lock_window_buckets = self.tcf_lock_window_buckets;
-        let onn_states_commit = self.onn_states_commit;
+        let onn_phase_commit = self.onn_phase_commit;
+        let onn_gamma_bucket = self.onn_gamma_bucket;
         let onn_global_plv = self.onn_global_plv;
-        let onn_phase_bus_commit = self.onn_phase_bus_commit;
-        let onn_phase_bucket = self.onn_phase_bucket;
-        let onn_pair_locks_commit = self.onn_pair_locks_commit;
-        let onn_phase_frame_commit = self.onn_phase_frame_commit;
         let iit_output = self.iit_output.take();
         let nsr_trace_root = self.nsr_trace_root.take();
         let nsr_prev_commit = self.nsr_prev_commit.take();
@@ -1379,12 +1353,9 @@ impl Workspace {
             tcf_sleep_active,
             tcf_replay_active,
             tcf_lock_window_buckets,
-            onn_states_commit,
+            onn_phase_commit,
+            onn_gamma_bucket,
             onn_global_plv,
-            onn_phase_bus_commit,
-            onn_phase_bucket,
-            onn_pair_locks_commit,
-            onn_phase_frame_commit,
             iit_output.as_ref(),
             nsr_trace_root,
             nsr_prev_commit,
@@ -1448,12 +1419,9 @@ impl Workspace {
             tcf_sleep_active,
             tcf_replay_active,
             tcf_lock_window_buckets,
-            onn_states_commit,
+            onn_phase_commit,
+            onn_gamma_bucket,
             onn_global_plv,
-            onn_phase_bus_commit,
-            onn_phase_bucket,
-            onn_pair_locks_commit,
-            onn_phase_frame_commit,
             iit_output,
             nsr_trace_root,
             nsr_prev_commit,
@@ -1894,12 +1862,9 @@ fn commit_snapshot(
     tcf_sleep_active: bool,
     tcf_replay_active: bool,
     tcf_lock_window_buckets: u8,
-    onn_states_commit: Digest32,
+    onn_phase_commit: Digest32,
+    onn_gamma_bucket: u8,
     onn_global_plv: u16,
-    onn_phase_bus_commit: Digest32,
-    onn_phase_bucket: u8,
-    onn_pair_locks_commit: Digest32,
-    onn_phase_frame_commit: Digest32,
     iit_output: Option<&IitOutput>,
     nsr_trace_root: Option<Digest32>,
     nsr_prev_commit: Option<Digest32>,
@@ -2019,12 +1984,9 @@ fn commit_snapshot(
     hasher.update(&[tcf_sleep_active as u8]);
     hasher.update(&[tcf_replay_active as u8]);
     hasher.update(&[tcf_lock_window_buckets]);
-    hasher.update(onn_states_commit.as_bytes());
+    hasher.update(onn_phase_commit.as_bytes());
+    hasher.update(&[onn_gamma_bucket]);
     hasher.update(&onn_global_plv.to_be_bytes());
-    hasher.update(onn_phase_bus_commit.as_bytes());
-    hasher.update(&[onn_phase_bucket]);
-    hasher.update(onn_pair_locks_commit.as_bytes());
-    hasher.update(onn_phase_frame_commit.as_bytes());
     match iit_output {
         Some(output) => {
             hasher.update(&[1]);

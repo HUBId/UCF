@@ -33,12 +33,11 @@ const NSR_DENY_MIN: u16 = 4000;
 const NSR_WARN_STEP: u16 = 200;
 const NSR_DENY_STEP: u16 = 200;
 
-const ONN_BASE_STEP_MAX: u16 = 1024;
 const ONN_COUPLING_MAX: u16 = 10_000;
-const ONN_MAX_DELTA_MAX: u16 = 2048;
-const ONN_LOCK_WINDOW_MIN: u16 = 4096;
-const ONN_LOCK_WINDOW_STEP: u16 = 512;
+const ONN_DITHER_MAX: u16 = 10_000;
+const ONN_COUPLE_CLAMP_MAX: i16 = 2048;
 const ONN_COUPLING_STEP: u16 = 200;
+const ONN_DITHER_STEP: u16 = 200;
 
 const SNN_VERIFY_MIN: u16 = 4;
 const SNN_VERIFY_MAX: u16 = 128;
@@ -51,10 +50,9 @@ const RSA_RISK_MAX_DEFAULT: u16 = 7000;
 
 const PARAM_LABEL_NSR_WARN: &str = "nsr.warn";
 const PARAM_LABEL_NSR_DENY: &str = "nsr.deny";
-const PARAM_LABEL_ONN_BASE_STEP: &str = "onn.base_step";
-const PARAM_LABEL_ONN_COUPLING: &str = "onn.coupling";
-const PARAM_LABEL_ONN_MAX_DELTA: &str = "onn.max_delta";
-const PARAM_LABEL_ONN_LOCK_WINDOW: &str = "onn.lock_window";
+const PARAM_LABEL_ONN_COUPLING: &str = "onn.k_couple";
+const PARAM_LABEL_ONN_DITHER: &str = "onn.k_dither";
+const PARAM_LABEL_ONN_COUPLE_CLAMP: &str = "onn.couple_clamp_q12";
 const PARAM_LABEL_SNN_VERIFY_LIMIT: &str = "snn.verify_limit";
 const PARAM_LABEL_SNN_FEATURE: &str = "snn.threshold.feature";
 const PARAM_LABEL_SNN_REPLAY_CUE: &str = "snn.threshold.replay_cue";
@@ -135,21 +133,22 @@ impl Default for NsrThresholds {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OnnKnobs {
-    pub base_step: u16,
-    pub coupling: u16,
-    pub max_delta: u16,
-    pub lock_window: u16,
+    pub k_couple: u16,
+    pub k_dither: u16,
+    pub couple_clamp_q12: i16,
     pub commit: Digest32,
 }
 
 impl OnnKnobs {
-    pub fn new(base_step: u16, coupling: u16, max_delta: u16, lock_window: u16) -> Self {
-        let commit = commit_onn_knobs(base_step, coupling, max_delta, lock_window);
+    pub fn new(k_couple: u16, k_dither: u16, couple_clamp_q12: i16) -> Self {
+        let k_couple = k_couple.min(ONN_COUPLING_MAX);
+        let k_dither = k_dither.min(ONN_DITHER_MAX);
+        let couple_clamp_q12 = couple_clamp_q12.clamp(-ONN_COUPLE_CLAMP_MAX, ONN_COUPLE_CLAMP_MAX);
+        let commit = commit_onn_knobs(k_couple, k_dither, couple_clamp_q12);
         Self {
-            base_step,
-            coupling,
-            max_delta,
-            lock_window,
+            k_couple,
+            k_dither,
+            couple_clamp_q12,
             commit,
         }
     }
@@ -158,12 +157,7 @@ impl OnnKnobs {
 impl Default for OnnKnobs {
     fn default() -> Self {
         let params = OnnParams::default();
-        Self::new(
-            params.base_step,
-            params.coupling,
-            params.max_delta,
-            params.lock_window,
-        )
+        Self::new(params.k_couple, params.k_dither, params.couple_clamp_q12)
     }
 }
 
@@ -533,13 +527,12 @@ fn commit_nsr_thresholds(warn: u16, deny: u16) -> Digest32 {
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
-fn commit_onn_knobs(base_step: u16, coupling: u16, max_delta: u16, lock_window: u16) -> Digest32 {
+fn commit_onn_knobs(k_couple: u16, k_dither: u16, couple_clamp_q12: i16) -> Digest32 {
     let mut hasher = Hasher::new();
     hasher.update(ONN_KNOBS_DOMAIN);
-    hasher.update(&base_step.to_be_bytes());
-    hasher.update(&coupling.to_be_bytes());
-    hasher.update(&max_delta.to_be_bytes());
-    hasher.update(&lock_window.to_be_bytes());
+    hasher.update(&k_couple.to_be_bytes());
+    hasher.update(&k_dither.to_be_bytes());
+    hasher.update(&couple_clamp_q12.to_be_bytes());
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
@@ -711,13 +704,10 @@ fn apply_reasons(base: &StructuralParams, reasons: &[ReasonCode]) -> StructuralP
     for reason in reasons {
         match reason {
             ReasonCode::CoherenceLow => {
-                if onn.coupling < ONN_COUPLING_MAX {
-                    onn.coupling = (onn.coupling + ONN_COUPLING_STEP).min(ONN_COUPLING_MAX);
+                if onn.k_couple < ONN_COUPLING_MAX {
+                    onn.k_couple = (onn.k_couple + ONN_COUPLING_STEP).min(ONN_COUPLING_MAX);
                 } else {
-                    onn.lock_window = onn
-                        .lock_window
-                        .saturating_sub(ONN_LOCK_WINDOW_STEP)
-                        .max(ONN_LOCK_WINDOW_MIN);
+                    onn.k_dither = onn.k_dither.saturating_sub(ONN_DITHER_STEP);
                 }
             }
             ReasonCode::IntegrationLow => {
@@ -741,16 +731,16 @@ fn apply_reasons(base: &StructuralParams, reasons: &[ReasonCode]) -> StructuralP
                     .max(nsr.warn);
             }
             ReasonCode::SurpriseHigh => {
-                onn.lock_window = onn
-                    .lock_window
-                    .saturating_sub(ONN_LOCK_WINDOW_STEP)
-                    .max(ONN_LOCK_WINDOW_MIN);
+                onn.k_dither = onn
+                    .k_dither
+                    .saturating_add(ONN_DITHER_STEP)
+                    .min(ONN_DITHER_MAX);
             }
             ReasonCode::Unknown(_) => {}
         }
     }
 
-    onn.commit = commit_onn_knobs(onn.base_step, onn.coupling, onn.max_delta, onn.lock_window);
+    onn.commit = commit_onn_knobs(onn.k_couple, onn.k_dither, onn.couple_clamp_q12);
     snn.commit = commit_snn_knobs(&snn.kind_thresholds, snn.verify_limit);
     nsr.commit = commit_nsr_thresholds(nsr.warn, nsr.deny);
     replay.commit = commit_replay_caps(replay.micro_k, replay.meso_m, replay.macro_n);
@@ -789,44 +779,35 @@ fn apply_deltas_to_params(
             nsr.deny = next as u16;
             continue;
         }
-        if delta.key == param_key(PARAM_LABEL_ONN_BASE_STEP) {
-            let current = i32::from(onn.base_step);
-            if delta.from != current {
-                return None;
-            }
-            let next = clamp_i32(delta.to, 1, i32::from(ONN_BASE_STEP_MAX));
-            onn.base_step = next as u16;
-            continue;
-        }
         if delta.key == param_key(PARAM_LABEL_ONN_COUPLING) {
-            let current = i32::from(onn.coupling);
+            let current = i32::from(onn.k_couple);
             if delta.from != current {
                 return None;
             }
             let next = clamp_i32(delta.to, 0, i32::from(ONN_COUPLING_MAX));
-            onn.coupling = next as u16;
+            onn.k_couple = next as u16;
             continue;
         }
-        if delta.key == param_key(PARAM_LABEL_ONN_MAX_DELTA) {
-            let current = i32::from(onn.max_delta);
+        if delta.key == param_key(PARAM_LABEL_ONN_DITHER) {
+            let current = i32::from(onn.k_dither);
             if delta.from != current {
                 return None;
             }
-            let next = clamp_i32(delta.to, 0, i32::from(ONN_MAX_DELTA_MAX));
-            onn.max_delta = next as u16;
+            let next = clamp_i32(delta.to, 0, i32::from(ONN_DITHER_MAX));
+            onn.k_dither = next as u16;
             continue;
         }
-        if delta.key == param_key(PARAM_LABEL_ONN_LOCK_WINDOW) {
-            let current = i32::from(onn.lock_window);
+        if delta.key == param_key(PARAM_LABEL_ONN_COUPLE_CLAMP) {
+            let current = i32::from(onn.couple_clamp_q12);
             if delta.from != current {
                 return None;
             }
             let next = clamp_i32(
                 delta.to,
-                i32::from(ONN_LOCK_WINDOW_MIN),
-                i32::from(u16::MAX),
+                i32::from(-ONN_COUPLE_CLAMP_MAX),
+                i32::from(ONN_COUPLE_CLAMP_MAX),
             );
-            onn.lock_window = next as u16;
+            onn.couple_clamp_q12 = next as i16;
             continue;
         }
         if delta.key == param_key(PARAM_LABEL_SNN_VERIFY_LIMIT) {
@@ -922,7 +903,7 @@ fn apply_deltas_to_params(
         return None;
     }
 
-    let onn = OnnKnobs::new(onn.base_step, onn.coupling, onn.max_delta, onn.lock_window);
+    let onn = OnnKnobs::new(onn.k_couple, onn.k_dither, onn.couple_clamp_q12);
     let snn = SnnKnobs::new(snn.kind_thresholds, snn.verify_limit);
     let nsr = NsrThresholds::new(nsr.warn, nsr.deny);
     let replay = ReplayCaps::new(replay.micro_k, replay.meso_m, replay.macro_n);
@@ -1021,12 +1002,11 @@ fn simulate_metrics(params: &StructuralParams, seed: Digest32, ticks: u8) -> Sim
 }
 
 fn coherence_proxy(params: &StructuralParams) -> u16 {
-    let coupling_boost = i32::from(params.onn.coupling) / 2;
-    let base_step_boost = i32::from(params.onn.base_step) / 2;
-    let max_delta_boost = i32::from(params.onn.max_delta) / 4;
-    let window_penalty = i32::from(params.onn.lock_window) / 64;
+    let coupling_boost = i32::from(params.onn.k_couple) / 2;
+    let dither_penalty = i32::from(params.onn.k_dither) / 4;
+    let clamp_boost = i32::from(params.onn.couple_clamp_q12.unsigned_abs()) / 4;
     let verify_bonus = i32::from(params.snn.verify_limit) * 2;
-    let score = coupling_boost + base_step_boost + max_delta_boost + verify_bonus - window_penalty;
+    let score = coupling_boost + clamp_boost + verify_bonus - dither_penalty;
     score.clamp(0, 10_000) as u16
 }
 
