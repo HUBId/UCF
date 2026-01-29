@@ -533,8 +533,9 @@ impl Router {
                 spike_output_intent_count: 0,
                 spike_cap_hit: false,
                 ncde_commit: Digest32::new([0u8; 32]),
-                ncde_state_commit: Digest32::new([0u8; 32]),
+                ncde_state_digest: Digest32::new([0u8; 32]),
                 ncde_energy: 0,
+                replay_pressure_hint: 0,
                 cde_commit: Digest32::new([0u8; 32]),
                 cde_graph_commit: Digest32::new([0u8; 32]),
                 cde_top_edges: Vec::new(),
@@ -889,70 +890,9 @@ impl Router {
                         .spike_summary
                         .clone()
                         .unwrap_or_else(empty_spike_summary);
-                    let spike_root_commit = spike_summary.accepted_root;
                     let spike_counts = spike_summary.counts.clone();
                     let spike_counts_iit = spike_counts.clone();
-                    let spike_counts_ssm = spike_counts.clone();
                     ctx.replay_pressure = Some(replay_pressure_from_spikes(&spike_counts));
-                    let tcf_energy_smooth = ctx.tcf_energy_smooth.unwrap_or(0);
-                    let phase_bus = ctx
-                        .phase_bus
-                        .clone()
-                        .unwrap_or_else(|| self.latest_phase_bus(cycle_id));
-                    if let Some(ncde_output) = self.tick_ncde(
-                        cycle_id,
-                        &phase_frame,
-                        &phase_bus,
-                        tcf_energy_smooth,
-                        influence_pulses_root,
-                        spike_root_commit,
-                        spike_counts,
-                        drift_score,
-                        surprise_score,
-                        attention_risk,
-                    ) {
-                        ctx.ncde_output = Some(ncde_output);
-                        if let Ok(mut guard) = self.last_ncde_output.lock() {
-                            *guard = Some(ncde_output);
-                        }
-                        if let Ok(mut workspace) = self.workspace.lock() {
-                            workspace.set_ncde_snapshot(
-                                ncde_output.commit,
-                                ncde_output.state_commit,
-                                ncde_output.energy,
-                            );
-                        }
-                        self.append_ncde_output_record(cycle_id, &ncde_output);
-                        if let Some(ssm_output) = self.tick_ssm(
-                            &phase_frame,
-                            &phase_bus,
-                            percept_commit,
-                            percept_energy,
-                            attention_weights.gain,
-                            &ncde_output,
-                            spike_root_commit,
-                            spike_counts_ssm,
-                            drift_score,
-                            surprise_score,
-                            attention_risk,
-                        ) {
-                            ctx.ssm_output = Some(ssm_output.clone());
-                            if let Ok(mut guard) = self.last_ssm_output.lock() {
-                                *guard = Some(ssm_output.clone());
-                            }
-                            if let Ok(mut workspace) = self.workspace.lock() {
-                                workspace.set_ssm_snapshot(
-                                    ssm_output.commit,
-                                    ssm_output.ssm_state_commit,
-                                    ssm_output.salience,
-                                    ssm_output.novelty,
-                                    ssm_output.attention_gain,
-                                );
-                            }
-                            self.append_ssm_output_record(cycle_id, &ssm_output);
-                        }
-                    }
-
                     let iit_output = {
                         let ncde_output = ctx
                             .ncde_output
@@ -998,11 +938,11 @@ impl Router {
                             geist_consistency,
                             ncde_output
                                 .as_ref()
-                                .map(|output| output.state_digest)
+                                .map(|output| output.ncde_state_digest)
                                 .unwrap_or_else(|| Digest32::new([0u8; 32])),
                             ncde_output
                                 .as_ref()
-                                .map(|output| output.energy)
+                                .map(|output| output.ncde_energy)
                                 .unwrap_or(0),
                             drift_score,
                             surprise_score,
@@ -1076,7 +1016,7 @@ impl Router {
                     let ncde_commit = ctx
                         .ncde_output
                         .as_ref()
-                        .map(|output| output.state_commit)
+                        .map(|output| output.commit)
                         .unwrap_or_else(|| Digest32::new([0u8; 32]));
                     let consistency = consistency_score_from_nsr(ctx.nsr_report.as_ref());
                     let self_state = SelfStateBuilder::new(cycle_id)
@@ -1125,6 +1065,9 @@ impl Router {
                         .clone()
                         .unwrap_or_else(empty_spike_summary);
                     let spike_root_commit = spike_summary.accepted_root;
+                    let ncde_snapshot = ctx
+                        .ncde_output
+                        .or_else(|| self.last_ncde_output.lock().ok().and_then(|g| *g));
                     let cde_output = self.tick_cde(
                         cycle_id,
                         &phase_frame,
@@ -1134,7 +1077,7 @@ impl Router {
                         influence_outputs.as_ref(),
                         &iit_output,
                         ctx.ssm_output.as_ref(),
-                        ctx.ncde_output.as_ref(),
+                        ncde_snapshot.as_ref(),
                         drift_score,
                         surprise_score,
                         attention_risk,
@@ -1152,7 +1095,7 @@ impl Router {
                         &phase_bus,
                         spike_root_commit,
                         ctx.ssm_output.as_ref(),
-                        ctx.ncde_output.as_ref(),
+                        ncde_snapshot.as_ref(),
                         &iit_output,
                         influence_outputs.as_ref(),
                         replay_pressure,
@@ -1216,7 +1159,7 @@ impl Router {
                         iit_output.phi_proxy,
                         ctx.ncde_output
                             .as_ref()
-                            .map(|output| output.energy)
+                            .map(|output| output.ncde_energy)
                             .unwrap_or(0),
                         ctx.output_intent,
                         false,
@@ -1611,20 +1554,15 @@ impl Router {
                         .as_ref()
                         .map(|output| output.novelty)
                         .unwrap_or(0);
-                    let ncde_energy = ctx
+                    let ncde_output = ctx
                         .ncde_output
-                        .as_ref()
-                        .map(|output| output.energy)
-                        .unwrap_or(0);
-                    let ncde_commit = ctx
-                        .ncde_output
-                        .as_ref()
-                        .map(|output| output.state_commit)
+                        .or_else(|| self.last_ncde_output.lock().ok().and_then(|g| *g));
+                    let ncde_energy = ncde_output.map(|output| output.ncde_energy).unwrap_or(0);
+                    let ncde_commit = ncde_output
+                        .map(|output| output.commit)
                         .unwrap_or_else(|| Digest32::new([0u8; 32]));
-                    let ncde_state_digest = ctx
-                        .ncde_output
-                        .as_ref()
-                        .map(|output| output.state_digest)
+                    let ncde_state_digest = ncde_output
+                        .map(|output| output.ncde_state_digest)
                         .unwrap_or_else(|| Digest32::new([0u8; 32]));
                     let nsr_verdict = ctx
                         .nsr_output
@@ -1778,6 +1716,59 @@ impl Router {
                             *guard = weights.clone();
                         }
                     }
+                    let attention_gain = attention_weights
+                        .as_ref()
+                        .map(|weights| weights.gain)
+                        .unwrap_or(0);
+                    let phase_bus = ctx
+                        .phase_bus
+                        .clone()
+                        .unwrap_or_else(|| self.latest_phase_bus(cycle_id));
+                    let spike_summary = ctx
+                        .spike_summary
+                        .clone()
+                        .unwrap_or_else(empty_spike_summary);
+                    let spike_root_commit = spike_summary.accepted_root;
+                    let spike_counts_ssm = spike_summary.counts.clone();
+                    let percept_commit = ctx
+                        .percept_commit
+                        .unwrap_or_else(|| Digest32::new([0u8; 32]));
+                    let percept_energy = ctx.percept_energy.unwrap_or(0);
+                    let prior_ncde = ctx
+                        .ncde_output
+                        .or_else(|| self.last_ncde_output.lock().ok().and_then(|g| *g));
+                    let ncde_state_digest = prior_ncde
+                        .map(|output| output.ncde_state_digest)
+                        .unwrap_or_else(|| Digest32::new([0u8; 32]));
+                    let ncde_energy = prior_ncde.map(|output| output.ncde_energy).unwrap_or(0);
+                    if let Some(ssm_output) = self.tick_ssm(
+                        &phase_bus,
+                        percept_commit,
+                        percept_energy,
+                        attention_gain,
+                        ncde_state_digest,
+                        ncde_energy,
+                        spike_root_commit,
+                        spike_counts_ssm,
+                        drift_score,
+                        surprise_score,
+                        ctx.attention_risk,
+                    ) {
+                        ctx.ssm_output = Some(ssm_output.clone());
+                        if let Ok(mut guard) = self.last_ssm_output.lock() {
+                            *guard = Some(ssm_output.clone());
+                        }
+                        if let Ok(mut workspace) = self.workspace.lock() {
+                            workspace.set_ssm_snapshot(
+                                ssm_output.commit,
+                                ssm_output.ssm_state_commit,
+                                ssm_output.salience,
+                                ssm_output.novelty,
+                                ssm_output.attention_gain,
+                            );
+                        }
+                        self.append_ssm_output_record(cycle_id, &ssm_output);
+                    }
                     if let Ok(mut guard) = self.last_surprise.lock() {
                         *guard = ctx
                             .predictive_result
@@ -1803,6 +1794,48 @@ impl Router {
                     }
                     ctx.attention_weights = attention_weights;
                     self.tick_coupling(&mut ctx, cycle_id);
+                    let coupling_snapshot = ctx.coupling_outputs.clone().or_else(|| {
+                        self.last_coupling_outputs
+                            .lock()
+                            .ok()
+                            .and_then(|g| g.clone())
+                    });
+                    let ssm_snapshot = ctx
+                        .ssm_output
+                        .clone()
+                        .or_else(|| self.last_ssm_output.lock().ok().and_then(|g| g.clone()));
+                    let spike_counts_ncde = spike_summary.counts.clone();
+                    if let Some(ncde_output) = self.tick_ncde(
+                        cycle_id,
+                        &phase_bus,
+                        attention_gain,
+                        coupling_snapshot.as_ref(),
+                        ssm_snapshot.as_ref(),
+                        spike_root_commit,
+                        spike_counts_ncde,
+                        ctx.attention_risk,
+                        drift_score,
+                        surprise_score,
+                    ) {
+                        ctx.ncde_output = Some(ncde_output);
+                        if let Ok(mut guard) = self.last_ncde_output.lock() {
+                            *guard = Some(ncde_output);
+                        }
+                        if let Ok(mut workspace) = self.workspace.lock() {
+                            workspace.set_ncde_snapshot(
+                                ncde_output.commit,
+                                ncde_output.ncde_state_digest,
+                                ncde_output.ncde_energy,
+                                ncde_output.replay_pressure_hint,
+                            );
+                        }
+                        self.append_ncde_output_record(cycle_id, &ncde_output);
+                        let base_pressure = ctx.replay_pressure.unwrap_or(0);
+                        let combined = base_pressure
+                            .saturating_add(ncde_output.replay_pressure_hint)
+                            .min(10_000);
+                        ctx.replay_pressure = Some(combined);
+                    }
                     ctx.evidence_id = Some(evidence_id);
                 }
                 PulseKind::Broadcast => {
@@ -1843,7 +1876,7 @@ impl Router {
                     let ncde_energy = ctx
                         .ncde_output
                         .as_ref()
-                        .map(|output| output.energy)
+                        .map(|output| output.ncde_energy)
                         .unwrap_or(0);
                     let sleep_drive = influence_outputs
                         .as_ref()
@@ -2468,10 +2501,10 @@ impl Router {
             .unwrap_or_else(|| Digest32::new([0u8; 32]));
         let nsr_verdict = workspace_snapshot.nsr_verdict.unwrap_or(0);
         let ncde_state_digest = ncde_output
-            .map(|output| output.state_digest)
+            .map(|output| output.ncde_state_digest)
             .unwrap_or_else(|| Digest32::new([0u8; 32]));
         let ncde_energy = ncde_output
-            .map(|output| output.energy)
+            .map(|output| output.ncde_energy)
             .unwrap_or(workspace_snapshot.ncde_energy);
         let inputs = SleInputs::new(
             cycle_id,
@@ -2686,7 +2719,7 @@ impl Router {
             .last_ncde_output
             .lock()
             .ok()
-            .and_then(|guard| guard.as_ref().map(|output| output.energy));
+            .and_then(|guard| guard.as_ref().map(|output| output.ncde_energy));
         let Some(energy) = energy else {
             return weights;
         };
@@ -2773,7 +2806,7 @@ impl Router {
             push_u16(SignalId::AttentionFinalGain, weights.gain, &mut samples);
         }
         if let Some(output) = ctx.ncde_output.as_ref() {
-            push_u16(SignalId::NcdeEnergy, output.energy, &mut samples);
+            push_u16(SignalId::NcdeEnergy, output.ncde_energy, &mut samples);
         }
         if let Some(phi) = ctx.integration_score {
             push_u16(SignalId::PhiProxy, phi, &mut samples);
@@ -3143,8 +3176,11 @@ impl Router {
 
     fn append_ncde_output_record(&self, cycle_id: u64, output: &NcdeOutputs) {
         let payload = format!(
-            "commit={};energy={};state_digest={}",
-            output.commit, output.energy, output.state_digest
+            "commit={};energy={};state_digest={};replay_hint={}",
+            output.commit,
+            output.ncde_energy,
+            output.ncde_state_digest,
+            output.replay_pressure_hint
         )
         .into_bytes();
         let record_id = format!("ncde-{cycle_id}-{}", hex::encode(output.commit.as_bytes()));
@@ -3237,7 +3273,7 @@ impl Router {
             .map(|outputs| outputs.node_value(InfluenceNodeId::SleepDrive))
             .unwrap_or(0);
         let sleep_drive = sleep_drive_raw.clamp(0, 10_000) as u16;
-        let ncde_energy = ncde_output.map(|output| output.energy).unwrap_or(0);
+        let ncde_energy = ncde_output.map(|output| output.ncde_energy).unwrap_or(0);
         let params = self
             .structural_store
             .lock()
@@ -3310,7 +3346,7 @@ impl Router {
             influence_commit,
             influence_node_in,
             ssm_output.map(|output| output.salience).unwrap_or(0),
-            ncde_output.map(|output| output.energy).unwrap_or(0),
+            ncde_output.map(|output| output.ncde_energy).unwrap_or(0),
             drift,
             surprise,
             risk,
@@ -3323,30 +3359,48 @@ impl Router {
     fn tick_ncde(
         &self,
         cycle_id: u64,
-        phase_frame: &PhaseFrame,
         phase_bus: &PhaseBus,
-        tcf_energy_smooth: u16,
-        influence_pulses_root: Digest32,
+        attention_gain: u16,
+        coupling_outputs: Option<&CouplingOutputs>,
+        ssm_output: Option<&SsmOutputs>,
         spike_root_commit: Digest32,
         spike_counts: Vec<(SpikeKind, u16)>,
+        risk: u16,
         drift: u16,
         surprise: u16,
-        risk: u16,
     ) -> Option<NcdeOutputs> {
         self.sync_ncde_params();
         let mut core = self.ncde_core.lock().ok()?;
-        let coupling_boost = self.coupling_influence(SignalId::NcdeEnergy);
-        let tcf_energy_smooth = apply_coupling_bias(tcf_energy_smooth, coupling_boost, 2000);
+        let (coupling_influences_root, coupling_influences) = coupling_outputs
+            .map(|outputs| {
+                let subset = outputs
+                    .influences
+                    .iter()
+                    .filter(|(id, _)| {
+                        matches!(id, SignalId::AttentionFinalGain | SignalId::PhiProxy)
+                    })
+                    .cloned()
+                    .collect::<Vec<_>>();
+                (outputs.influences_root, subset)
+            })
+            .unwrap_or_else(|| (Digest32::new([0u8; 32]), Vec::new()));
+        let ssm_state_commit = ssm_output
+            .map(|output| output.ssm_state_commit)
+            .unwrap_or_else(|| Digest32::new([0u8; 32]));
+        let ssm_salience = ssm_output.map(|output| output.salience).unwrap_or(0);
+        let ssm_novelty = ssm_output.map(|output| output.novelty).unwrap_or(0);
         let inputs = NcdeInputs::new(
             cycle_id,
             phase_bus.commit,
             phase_bus.gamma_bucket,
-            phase_frame.global_phase,
-            tcf_energy_smooth,
             spike_root_commit,
             spike_counts,
-            influence_pulses_root,
-            phase_frame.coherence_plv,
+            attention_gain,
+            coupling_influences_root,
+            coupling_influences,
+            ssm_state_commit,
+            ssm_salience,
+            ssm_novelty,
             risk,
             drift,
             surprise,
@@ -3357,12 +3411,12 @@ impl Router {
     #[allow(clippy::too_many_arguments)]
     fn tick_ssm(
         &self,
-        _phase_frame: &PhaseFrame,
         phase_bus: &PhaseBus,
         percept_commit: Digest32,
         percept_energy: u16,
         prev_attention_gain: u16,
-        ncde_output: &NcdeOutputs,
+        ncde_state_digest: Digest32,
+        ncde_energy: u16,
         spike_root_commit: Digest32,
         spike_counts: Vec<(SpikeKind, u16)>,
         drift: u16,
@@ -3373,7 +3427,7 @@ impl Router {
         let mut core = self.ssm_core.lock().ok()?;
         let coupling_u = self.coupling_influence(SignalId::SsmSalience);
         let input = SsmInputs::new(
-            ncde_output.cycle_id,
+            phase_bus.cycle_id,
             phase_bus.commit,
             phase_bus.gamma_bucket,
             percept_commit,
@@ -3382,8 +3436,8 @@ impl Router {
             spike_root_commit,
             spike_counts,
             prev_attention_gain,
-            ncde_output.state_digest,
-            ncde_output.energy,
+            ncde_state_digest,
+            ncde_energy,
             risk,
             drift,
             surprise,
@@ -4961,25 +5015,30 @@ mod tests {
         let output = router
             .tick_ncde(
                 1,
-                &phase_frame,
                 &phase_bus,
                 4500,
-                Digest32::new([9u8; 32]),
+                None,
+                None,
                 Digest32::new([2u8; 32]),
                 vec![(SpikeKind::Novelty, 2)],
+                1500,
                 1000,
                 2000,
-                1500,
             )
             .expect("ncde output");
         {
             let mut workspace = router.workspace.lock().expect("workspace lock");
-            workspace.set_ncde_snapshot(output.commit, output.state_commit, output.energy);
+            workspace.set_ncde_snapshot(
+                output.commit,
+                output.ncde_state_digest,
+                output.ncde_energy,
+                output.replay_pressure_hint,
+            );
         }
         let snapshot = router.arbitrate_workspace(1);
         assert_eq!(snapshot.ncde_commit, output.commit);
-        assert_eq!(snapshot.ncde_state_commit, output.state_commit);
-        assert_eq!(snapshot.ncde_energy, output.energy);
+        assert_eq!(snapshot.ncde_state_digest, output.ncde_state_digest);
+        assert_eq!(snapshot.ncde_energy, output.ncde_energy);
 
         let base = AttentionWeights {
             channel: FocusChannel::Task,
@@ -4995,10 +5054,8 @@ mod tests {
         let biased = router.apply_ncde_attention_bias(base.clone());
         assert!(biased.gain >= base.gain);
 
-        let state = SelfStateBuilder::new(1)
-            .ncde_commit(output.state_commit)
-            .build();
-        assert_eq!(state.ncde_commit, output.state_commit);
+        let state = SelfStateBuilder::new(1).ncde_commit(output.commit).build();
+        assert_eq!(state.ncde_commit, output.commit);
     }
 
     #[test]
@@ -5089,25 +5146,25 @@ mod tests {
         let ncde_output = router
             .tick_ncde(
                 1,
-                &phase_frame,
                 &phase_bus,
                 4500,
-                Digest32::new([9u8; 32]),
+                None,
+                None,
                 Digest32::new([2u8; 32]),
                 vec![(SpikeKind::Novelty, 2)],
+                1500,
                 1000,
                 2000,
-                1500,
             )
             .expect("ncde output");
         let ssm_output = router
             .tick_ssm(
-                &phase_frame,
                 &phase_bus,
                 Digest32::new([4u8; 32]),
                 1200,
                 2000,
-                &ncde_output,
+                ncde_output.ncde_state_digest,
+                ncde_output.ncde_energy,
                 Digest32::new([2u8; 32]),
                 vec![(SpikeKind::Threat, 3)],
                 1000,

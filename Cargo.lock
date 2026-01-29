@@ -2119,7 +2119,7 @@ name = "ucf-ncde"
 version = "0.1.0"
 dependencies = [
  "blake3",
- "ucf-onn",
+ "ucf-coupling",
  "ucf-spikebus",
  "ucf-types",
 ]

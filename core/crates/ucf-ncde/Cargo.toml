@@ -5,8 +5,6 @@ edition = "2021"
 
 [dependencies]
 blake3 = "1"
+ucf-coupling = { path = "../ucf-coupling" }
 ucf-types = { path = "../ucf-types" }
 ucf-spikebus = { path = "../ucf-spikebus" }
-
-[dev-dependencies]
-ucf-onn = { path = "../ucf-onn" }
