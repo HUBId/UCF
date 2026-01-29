@@ -689,6 +689,16 @@ mod tests {
     }
 
     #[test]
+    fn gating_blocks_on_nsr_restrict() {
+        let mut inputs = base_inputs();
+        inputs.nsr_verdict = 1;
+        let mut core = RsaCore::default();
+        let out = core.tick(&inputs);
+        assert!(!out.decision.apply);
+        assert_eq!(out.decision.reason_mask & 2, 2);
+    }
+
+    #[test]
     fn rollback_triggers_inverse_proposal_next_sleep() {
         let inputs = base_inputs();
         let mut core = RsaCore::default();

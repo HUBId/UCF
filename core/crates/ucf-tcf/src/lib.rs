@@ -657,7 +657,7 @@ mod tests {
         let mut inputs = base_inputs();
         inputs.phi_proxy = 9_000;
         inputs.drift = 1_000;
-        inputs.nsr_verdict = NsrVerdict::Warn.as_u8();
+        inputs.nsr_verdict = NsrVerdict::Restrict.as_u8();
         let plan = core.tick(&inputs);
         assert_eq!(plan.output_gain_cap, 0);
     }

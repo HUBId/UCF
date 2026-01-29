@@ -1163,14 +1163,14 @@ impl Workspace {
         trace_root: Digest32,
         prev_commit: Option<Digest32>,
         verdict: u8,
-        derived_facts_root: Digest32,
-        triggered_rules_root: Digest32,
+        derived_facts_root: Option<Digest32>,
+        triggered_rules_root: Option<Digest32>,
     ) {
         self.nsr_trace_root = Some(trace_root);
         self.nsr_prev_commit = prev_commit;
         self.nsr_verdict = Some(verdict);
-        self.nsr_derived_facts_root = Some(derived_facts_root);
-        self.nsr_triggered_rules_root = Some(triggered_rules_root);
+        self.nsr_derived_facts_root = derived_facts_root;
+        self.nsr_triggered_rules_root = triggered_rules_root;
     }
 
     pub fn set_sle_outputs(

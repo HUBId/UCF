@@ -13,7 +13,7 @@ use ucf_types::{AiOutput, Digest32};
 pub use ucf_types::OutputChannel;
 
 const COHERENCE_THOUGHT_CAP: u16 = 1;
-const NSR_WARN_VERBOSE_LIMIT: usize = 240;
+const NSR_RESTRICT_VERBOSE_LIMIT: usize = 240;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OutputFrame {
@@ -205,14 +205,14 @@ impl OutputRouter {
         self.cycle = self.cycle.wrapping_add(1);
         let mut thought_count: u16 = 0;
         let mut decisions = Vec::with_capacity(outputs.len());
-        let nsr_warn = matches!(gates.nsr_summary.verdict, NsrVerdict::Warn);
-        let suppress_verbose = self.suppress_verbose_thoughts || nsr_warn;
-        let verbose_limit = if nsr_warn {
-            self.verbose_thought_limit.min(NSR_WARN_VERBOSE_LIMIT)
+        let nsr_restrict = matches!(gates.nsr_summary.verdict, NsrVerdict::Restrict);
+        let suppress_verbose = self.suppress_verbose_thoughts || nsr_restrict;
+        let verbose_limit = if nsr_restrict {
+            self.verbose_thought_limit.min(NSR_RESTRICT_VERBOSE_LIMIT)
         } else {
             self.verbose_thought_limit
         };
-        let mut max_thought_frames_per_cycle = if nsr_warn {
+        let mut max_thought_frames_per_cycle = if nsr_restrict {
             (self.config.max_thought_frames_per_cycle / 2).max(1)
         } else {
             self.config.max_thought_frames_per_cycle
@@ -262,6 +262,21 @@ impl OutputRouter {
         suppress_verbose: bool,
         verbose_limit: usize,
     ) -> RouteDecision {
+        if matches!(gates.nsr_summary.verdict, NsrVerdict::Deny) {
+            let reason_code = "nsr_denied".to_string();
+            let evidence = decision_evidence(&frame, &reason_code, gates, idx, None);
+            self.events.push(OutputRouterEvent::OutputSuppressed {
+                frame,
+                reason_code: reason_code.clone(),
+                evidence,
+                risk: 0,
+            });
+            return RouteDecision {
+                permitted: false,
+                reason_code,
+                evidence,
+            };
+        }
         if suppress_verbose && frame.text.len() > verbose_limit {
             let reason_code = "thought_verbose_suppressed".to_string();
             let evidence = decision_evidence(&frame, &reason_code, gates, idx, None);
@@ -330,8 +345,14 @@ impl OutputRouter {
         idx: usize,
         gates: &GateBundle,
     ) -> RouteDecision {
-        if !matches!(gates.nsr_summary.verdict, NsrVerdict::Allow) {
-            return self.deny_speech(frame, idx, gates, "nsr_not_allow", 0);
+        match gates.nsr_summary.verdict {
+            NsrVerdict::Allow => {}
+            NsrVerdict::Restrict => {
+                return self.deny_speech(frame, idx, gates, "nsr_restrict", 0);
+            }
+            NsrVerdict::Deny => {
+                return self.deny_speech(frame, idx, gates, "nsr_denied", 0);
+            }
         }
         if self.force_thought_only {
             return self.deny_speech(frame, idx, gates, "onn_low_coherence", 0);
@@ -647,11 +668,11 @@ mod tests {
         let decisions = router.route(&cf(), outputs, &gates);
 
         assert!(!decisions[0].permitted);
-        assert_eq!(decisions[0].reason_code, "nsr_not_allow");
+        assert_eq!(decisions[0].reason_code, "nsr_denied");
     }
 
     #[test]
-    fn warn_forces_thought_only_and_throttles() {
+    fn restrict_forces_thought_only_and_throttles() {
         let config = RouterConfig {
             thought_capacity: 4,
             max_thought_frames_per_cycle: 4,
@@ -669,7 +690,7 @@ mod tests {
             &outputs,
             vec![permit_risk(), permit_risk(), permit_risk(), permit_risk()],
         );
-        gates.nsr_summary.verdict = NsrVerdict::Warn;
+        gates.nsr_summary.verdict = NsrVerdict::Restrict;
 
         let decisions = router.route(&cf(), outputs, &gates);
 
@@ -679,7 +700,7 @@ mod tests {
         assert!(!decisions[2].permitted);
         assert_eq!(decisions[2].reason_code, "thought_cycle_cap");
         assert!(!decisions[3].permitted);
-        assert_eq!(decisions[3].reason_code, "nsr_not_allow");
+        assert_eq!(decisions[3].reason_code, "nsr_restrict");
     }
 
     #[test]
