@@ -1004,7 +1004,7 @@ fn simulate_metrics(params: &StructuralParams, seed: Digest32, ticks: u8) -> Sim
 fn coherence_proxy(params: &StructuralParams) -> u16 {
     let coupling_boost = i32::from(params.onn.k_couple) / 2;
     let dither_penalty = i32::from(params.onn.k_dither) / 4;
-    let clamp_boost = i32::from(params.onn.couple_clamp_q12.abs() as u16) / 4;
+    let clamp_boost = i32::from(params.onn.couple_clamp_q12.unsigned_abs()) / 4;
     let verify_bonus = i32::from(params.snn.verify_limit) * 2;
     let score = coupling_boost + clamp_boost + verify_bonus - dither_penalty;
     score.clamp(0, 10_000) as u16

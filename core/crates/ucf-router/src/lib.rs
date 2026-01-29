@@ -963,7 +963,6 @@ impl Router {
                             .unwrap_or_else(|| Digest32::new([0u8; 32]));
                         let phase_bus = ctx
                             .phase_bus
-                            .clone()
                             .unwrap_or_else(|| self.latest_phase_bus(cycle_id));
                         let inputs = IitInputs::new(
                             cycle_id,
@@ -1168,11 +1167,9 @@ impl Router {
                         self.append_cde_output_record(cycle_id, &output);
                         let phase_bus = ctx
                             .phase_bus
-                            .clone()
                             .unwrap_or_else(|| self.latest_phase_bus(cycle_id));
                         let phase_lock = ctx
                             .phase_lock
-                            .clone()
                             .unwrap_or_else(|| self.latest_phase_lock(cycle_id));
                         self.queue_cde_spikes(cycle_id, &phase_bus, &phase_lock, &output, &mut ctx);
                     }
@@ -1186,7 +1183,6 @@ impl Router {
                     let policy_commit = digest_policy_commit(&decision);
                     let phase_bus = ctx
                         .phase_bus
-                        .clone()
                         .unwrap_or_else(|| self.latest_phase_bus(cycle_id));
                     let nsr_inputs = self.build_nsr_inputs(
                         cycle_id,
@@ -1292,11 +1288,9 @@ impl Router {
                     if consistency_report.drift_score > 0 {
                         let phase_bus = ctx
                             .phase_bus
-                            .clone()
                             .unwrap_or_else(|| self.latest_phase_bus(cycle_id));
                         let phase_lock = ctx
                             .phase_lock
-                            .clone()
                             .unwrap_or_else(|| self.latest_phase_lock(cycle_id));
                         let phase_window =
                             phase_window_from_buckets(phase_lock.lock_window_buckets);
@@ -1445,11 +1439,9 @@ impl Router {
 
                     let phase_bus = ctx
                         .phase_bus
-                        .clone()
                         .unwrap_or_else(|| self.latest_phase_bus(cycle_id));
                     let phase_lock = ctx
                         .phase_lock
-                        .clone()
                         .unwrap_or_else(|| self.latest_phase_lock(cycle_id));
                     let phase_window = phase_window_from_buckets(phase_lock.lock_window_buckets);
                     let mut output_intent_events = Vec::new();
@@ -1783,7 +1775,6 @@ impl Router {
                         .unwrap_or(0);
                     let phase_bus = ctx
                         .phase_bus
-                        .clone()
                         .unwrap_or_else(|| self.latest_phase_bus(cycle_id));
                     let spike_summary = ctx
                         .spike_summary
@@ -1857,7 +1848,6 @@ impl Router {
                     );
                     let phase_bus = ctx
                         .phase_bus
-                        .clone()
                         .unwrap_or_else(|| self.latest_phase_bus(cycle_id));
                     if let Some(iit_output) = ctx.iit_output.as_ref() {
                         if let Some(plan) =
@@ -2068,7 +2058,6 @@ impl Router {
                     let nsr_apply_output = if outputs.proposal.is_some() {
                         let phase_bus = ctx
                             .phase_bus
-                            .clone()
                             .unwrap_or_else(|| self.latest_phase_bus(cycle_id));
                         let policy_commit = ctx
                             .decision
@@ -2123,7 +2112,7 @@ impl Router {
                             let onn_params = self
                                 .onn_core
                                 .lock()
-                                .map(|core| core.params.clone())
+                                .map(|core| core.params)
                                 .unwrap_or_else(|_| OnnParams::default());
                             let tcf_params = self
                                 .tcf_port
@@ -2176,7 +2165,7 @@ impl Router {
                                 snapshot.commit,
                             );
 
-                            let next_onn_for_store = next_onn.clone();
+                            let next_onn_for_store = next_onn;
                             if let Ok(mut core) = self.onn_core.lock() {
                                 core.params = next_onn;
                             }
@@ -2892,7 +2881,6 @@ impl Router {
     fn tick_coupling(&self, ctx: &mut StageContext, cycle_id: u64) {
         let phase_bus = ctx
             .phase_bus
-            .clone()
             .unwrap_or_else(|| self.latest_phase_bus(cycle_id));
         let samples = self.collect_coupling_samples(ctx, cycle_id);
         if samples.is_empty() {

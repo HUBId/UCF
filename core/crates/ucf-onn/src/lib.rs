@@ -68,7 +68,7 @@ impl OnnParams {
         buckets: u8,
         couple_clamp_q12: i16,
     ) -> Self {
-        let n = n.min(MAX_OSCILLATORS).max(1);
+        let n = n.clamp(1, MAX_OSCILLATORS);
         let buckets = if buckets == BUCKETS { buckets } else { BUCKETS };
         let k_couple = k_couple.min(10_000);
         let k_dither = k_dither.min(10_000);
@@ -228,12 +228,12 @@ impl OnnCore {
     }
 
     pub fn tick(&mut self, inp: &OnnInputs) -> OnnOutputs {
-        let n = self.params.n.max(1).min(MAX_OSCILLATORS);
+        let n = self.params.n.clamp(1, MAX_OSCILLATORS);
         let effective_k =
             adjusted_coupling(self.params.k_couple, inp.risk, inp.drift, inp.surprise);
         let mut next_theta = self.state.theta_q12;
 
-        for i in 0..n {
+        for (i, theta_next) in next_theta.iter_mut().enumerate().take(n) {
             let omega = i32::from(self.params.omega_q12[i]);
             let sum = coupling_sum_q12(i, n, &self.state.theta_q12);
             let mut couple_q12 = (i32::from(effective_k) * sum) / 10_000;
@@ -244,7 +244,7 @@ impl OnnCore {
             let dither = dither_for(i, inp, self.params.k_dither);
             let theta = i32::from(self.state.theta_q12[i]);
             let updated = theta + omega + couple_q12 + dither;
-            next_theta[i] = wrap_q12(updated);
+            *theta_next = wrap_q12(updated);
         }
 
         self.state.theta_q12 = next_theta;
@@ -294,7 +294,7 @@ impl OnnCore {
     }
 
     pub fn phase_bus(&self, cycle_id: u64, inputs_commit: Digest32) -> PhaseBus {
-        let n = self.params.n.max(1).min(MAX_OSCILLATORS);
+        let n = self.params.n.clamp(1, MAX_OSCILLATORS);
         let osc_buckets = buckets_for(&self.state.theta_q12, n);
         let gamma_bucket = self.state.last_bucket;
         let global_plv = self.state.last_plv;
@@ -366,7 +366,11 @@ fn apply_i16_delta(value: u16, delta: i16, min: u16, max: u16) -> u16 {
 
 fn seed_theta(params: &OnnParams) -> [u16; 16] {
     let mut theta = [0u16; 16];
-    for i in 0..params.n.min(MAX_OSCILLATORS) {
+    for (i, theta_value) in theta
+        .iter_mut()
+        .enumerate()
+        .take(params.n.min(MAX_OSCILLATORS))
+    {
         let mut hasher = Hasher::new();
         hasher.update(b"ucf.onn.seed.theta.v1");
         hasher.update(&[i as u8]);
@@ -374,7 +378,7 @@ fn seed_theta(params: &OnnParams) -> [u16; 16] {
         let hash = hasher.finalize();
         let bytes = hash.as_bytes();
         let raw = u16::from_be_bytes([bytes[0], bytes[1]]);
-        theta[i] = raw & 0x0fff;
+        *theta_value = raw & 0x0fff;
     }
     theta
 }
@@ -390,8 +394,8 @@ fn adjusted_coupling(k_couple: u16, risk: u16, drift: u16, surprise: u16) -> u16
 fn coupling_sum_q12(i: usize, n: usize, theta_q12: &[u16; 16]) -> i32 {
     let mut sum = 0i32;
     let theta_i = theta_q12[i];
-    for j in 0..n {
-        let delta = (theta_q12[j].wrapping_sub(theta_i)) & 0x0fff;
+    for theta_j in theta_q12.iter().take(n) {
+        let delta = (theta_j.wrapping_sub(theta_i)) & 0x0fff;
         let idx = (delta >> 6) as usize;
         let sin_val = i32::from(SIN_LUT[idx]);
         sum = sum.saturating_add(sin_val);
@@ -425,8 +429,8 @@ fn wrap_q12(value: i32) -> u16 {
 
 fn buckets_for(theta_q12: &[u16; 16], n: usize) -> [u8; 16] {
     let mut buckets = [0u8; 16];
-    for i in 0..n.min(MAX_OSCILLATORS) {
-        buckets[i] = ((u32::from(theta_q12[i]) * u32::from(BUCKETS)) >> 12) as u8;
+    for (i, bucket) in buckets.iter_mut().enumerate().take(n.min(MAX_OSCILLATORS)) {
+        *bucket = ((u32::from(theta_q12[i]) * u32::from(BUCKETS)) >> 12) as u8;
     }
     buckets
 }
