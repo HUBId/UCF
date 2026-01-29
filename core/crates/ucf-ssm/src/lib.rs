@@ -75,6 +75,7 @@ pub struct SsmInputs {
     pub percept_commit: Digest32,
     pub percept_energy: u16,
     pub coupling_u: i16,
+    pub sle_bias: i16,
     pub spike_accepted_root: Digest32,
     pub spike_counts: Vec<(SpikeKind, u16)>,
     pub prev_attention_gain: u16,
@@ -95,6 +96,7 @@ impl SsmInputs {
         percept_commit: Digest32,
         percept_energy: u16,
         coupling_u: i16,
+        sle_bias: i16,
         spike_accepted_root: Digest32,
         spike_counts: Vec<(SpikeKind, u16)>,
         prev_attention_gain: u16,
@@ -111,6 +113,7 @@ impl SsmInputs {
             percept_commit,
             percept_energy,
             coupling_u,
+            sle_bias,
             spike_accepted_root,
             &spike_counts,
             prev_attention_gain,
@@ -127,6 +130,7 @@ impl SsmInputs {
             percept_commit,
             percept_energy,
             coupling_u,
+            sle_bias,
             spike_accepted_root,
             spike_counts,
             prev_attention_gain,
@@ -239,10 +243,12 @@ fn build_control_vector(inp: &SsmInputs, dim: usize) -> Vec<i64> {
     let energy_mix = i64::from(inp.ncde_energy).saturating_add(i64::from(inp.percept_energy) / 2);
     let attn_mix = i64::from(inp.prev_attention_gain) / 3;
     let coupling_mix = i64::from(inp.coupling_u).clamp(-SCALE, SCALE);
+    let sle_mix = i64::from(inp.sle_bias).clamp(-SCALE, SCALE);
     let bias = spike_mix
         .saturating_add(energy_mix)
         .saturating_add(attn_mix)
-        .saturating_add(coupling_mix);
+        .saturating_add(coupling_mix)
+        .saturating_add(sle_mix);
 
     for value in &mut components {
         let signed_bias = sign_i64(*value) * bias;
@@ -340,6 +346,7 @@ fn is_zero_input(inp: &SsmInputs) -> bool {
         && inp.ncde_energy == 0
         && inp.percept_energy == 0
         && inp.coupling_u == 0
+        && inp.sle_bias == 0
         && inp.risk == 0
         && inp.drift == 0
         && inp.surprise == 0
@@ -401,6 +408,7 @@ fn commit_inputs(
     percept_commit: Digest32,
     percept_energy: u16,
     coupling_u: i16,
+    sle_bias: i16,
     spike_accepted_root: Digest32,
     spike_counts: &[(SpikeKind, u16)],
     prev_attention_gain: u16,
@@ -418,6 +426,7 @@ fn commit_inputs(
     hasher.update(percept_commit.as_bytes());
     hasher.update(&percept_energy.to_be_bytes());
     hasher.update(&coupling_u.to_be_bytes());
+    hasher.update(&sle_bias.to_be_bytes());
     hasher.update(spike_accepted_root.as_bytes());
     hasher.update(&(spike_counts.len() as u16).to_be_bytes());
     for (kind, count) in spike_counts {
@@ -475,6 +484,7 @@ mod tests {
             percept_commit,
             1200,
             0,
+            0,
             Digest32::new([4u8; 32]),
             vec![
                 (SpikeKind::Feature, 4),
@@ -513,6 +523,7 @@ mod tests {
             Digest32::new([2u8; 32]),
             1200,
             0,
+            0,
             Digest32::new([4u8; 32]),
             vec![(SpikeKind::Feature, 4)],
             2400,
@@ -528,6 +539,7 @@ mod tests {
             2,
             Digest32::new([2u8; 32]),
             1200,
+            0,
             0,
             Digest32::new([4u8; 32]),
             vec![(SpikeKind::Feature, 4)],
@@ -552,6 +564,7 @@ mod tests {
             Digest32::new([0u8; 32]),
             1,
             Digest32::new([0u8; 32]),
+            0,
             0,
             0,
             Digest32::new([0u8; 32]),
@@ -606,6 +619,7 @@ mod tests {
             Digest32::new([2u8; 32]),
             200,
             0,
+            0,
             Digest32::new([3u8; 32]),
             vec![(SpikeKind::Feature, 1)],
             0,
@@ -621,6 +635,7 @@ mod tests {
             2,
             Digest32::new([9u8; 32]),
             6000,
+            0,
             0,
             Digest32::new([3u8; 32]),
             vec![

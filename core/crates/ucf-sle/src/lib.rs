@@ -8,7 +8,6 @@ use blake3::Hasher;
 use ucf_cde_port::CdeHypothesis;
 use ucf_geist::{encode_self_state, SelfState};
 use ucf_nsr_port::NsrReport;
-use ucf_spikebus::{SpikeEvent, SpikeKind, SpikeModuleId};
 use ucf_types::{AiOutput, Digest32, OutputChannel};
 use ucf_workspace::{SignalKind, WorkspaceSnapshot};
 
@@ -21,86 +20,123 @@ const DOMAIN_SLE_INPUTS: &[u8] = b"ucf.sle.inputs.v2";
 const DOMAIN_SLE_STIMULUS: &[u8] = b"ucf.sle.stimulus.v2";
 const DOMAIN_SLE_OUTPUTS: &[u8] = b"ucf.sle.outputs.v2";
 const DOMAIN_SLE_SELF_SYMBOL: &[u8] = b"ucf.sle.self_symbol.v2";
-const DOMAIN_SELF_TOKEN_V1: &[u8] = b"ucf.sle.self_token.v1";
-const DOMAIN_SELF_OBSERVATION_V1: &[u8] = b"ucf.sle.self_observation.v1";
-const DOMAIN_SLE_INPUTS_V1: &[u8] = b"ucf.sle.inputs.v3";
-const DOMAIN_SELF_SYMBOL_V1: &[u8] = b"ucf.sle.self_symbol.v3";
-const DOMAIN_THOUGHT_SPIKE_V1: &[u8] = b"ucf.sle.thought_spike.v1";
-const DOMAIN_SLE_OUTPUTS_V1: &[u8] = b"ucf.sle.outputs.v3";
+const DOMAIN_SLE_PARAMS_V1: &[u8] = b"ucf.sle.params.v1";
+const DOMAIN_SLE_INPUTS_V1: &[u8] = b"ucf.sle.inputs.v1";
+const DOMAIN_SLE_REFLECTION_V1: &[u8] = b"ucf.sle.reflection.v1";
+const DOMAIN_SLE_SELF_SYMBOL_V1: &[u8] = b"ucf.sle.self_symbol.v1";
+const DOMAIN_SLE_THOUGHT_PAYLOAD_V1: &[u8] = b"ucf.sle.thought_payload.v1";
+const DOMAIN_SLE_THOUGHT_EVENT_V1: &[u8] = b"ucf.sle.thought_event.v1";
+const DOMAIN_SLE_THOUGHT_ROOT_V1: &[u8] = b"ucf.sle.thought_root.v1";
+const DOMAIN_SLE_OUTPUTS_V1: &[u8] = b"ucf.sle.outputs.v1";
+const DOMAIN_SLE_CORE_V1: &[u8] = b"ucf.sle.core.v1";
 
 const SLE_MAX_VALUE: i16 = 2000;
 const SLE_MAX_STIMULI: usize = 8;
 const SLE_HIGH_RISK: u16 = 9000;
 const SLE_DECAY_MAX: u16 = 10_000;
-const SLE_ITEMS_MAX: usize = 24;
-const SLE_THOUGHT_SPIKES_MAX: usize = 8;
-const SLE_SELF_SYMBOL_UPDATES_MAX: u8 = 2;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum SelfToken {
-    Cycle,
-    Phase,
-    Coherence,
-    Risk,
-    Drift,
-    Surprise,
-    NsrVerdict,
-    NsrTrace,
-    NcdeEnergy,
-    InfluenceRoot,
-    SpikeSeenRoot,
-    SpikeAcceptedRoot,
-    WorkspaceCommit,
-    Unknown(u16),
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReflectionClass {
+    Stable = 0,
+    Uncertain = 1,
+    Conflicted = 2,
+    Surprised = 3,
+    Risky = 4,
+    Drifting = 5,
+    RequestReplay = 6,
 }
 
-impl SelfToken {
-    fn as_u16(self) -> u16 {
-        match self {
-            SelfToken::Cycle => 1,
-            SelfToken::Phase => 2,
-            SelfToken::Coherence => 3,
-            SelfToken::Risk => 4,
-            SelfToken::Drift => 5,
-            SelfToken::Surprise => 6,
-            SelfToken::NsrVerdict => 7,
-            SelfToken::NsrTrace => 8,
-            SelfToken::NcdeEnergy => 9,
-            SelfToken::InfluenceRoot => 10,
-            SelfToken::SpikeSeenRoot => 11,
-            SelfToken::SpikeAcceptedRoot => 12,
-            SelfToken::WorkspaceCommit => 13,
-            SelfToken::Unknown(code) => code,
-        }
+impl ReflectionClass {
+    fn as_u8(self) -> u8 {
+        self as u8
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SelfObservation {
-    pub cycle_id: u64,
-    pub items: Vec<(SelfToken, Digest32)>,
+pub struct ReflectionDigest {
+    pub class: ReflectionClass,
+    pub self_symbol: [u8; 16],
     pub intensity: u16,
     pub commit: Digest32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SleParams {
+    pub phi_low: u16,
+    pub drift_hi: u16,
+    pub surprise_hi: u16,
+    pub risk_hi: u16,
+    pub k_ssm: u16,
+    pub k_cde: u16,
+    pub max_inject: u16,
+    pub commit: Digest32,
+}
+
+impl SleParams {
+    pub fn new(
+        phi_low: u16,
+        drift_hi: u16,
+        surprise_hi: u16,
+        risk_hi: u16,
+        k_ssm: u16,
+        k_cde: u16,
+        max_inject: u16,
+    ) -> Self {
+        let phi_low = phi_low.min(10_000);
+        let drift_hi = drift_hi.min(10_000);
+        let surprise_hi = surprise_hi.min(10_000);
+        let risk_hi = risk_hi.min(10_000);
+        let k_ssm = k_ssm.min(10_000);
+        let k_cde = k_cde.min(10_000);
+        let max_inject = max_inject.min(10_000);
+        let commit = hash_with_domain(DOMAIN_SLE_PARAMS_V1, |hasher| {
+            hasher.update(&phi_low.to_be_bytes());
+            hasher.update(&drift_hi.to_be_bytes());
+            hasher.update(&surprise_hi.to_be_bytes());
+            hasher.update(&risk_hi.to_be_bytes());
+            hasher.update(&k_ssm.to_be_bytes());
+            hasher.update(&k_cde.to_be_bytes());
+            hasher.update(&max_inject.to_be_bytes());
+        });
+        Self {
+            phi_low,
+            drift_hi,
+            surprise_hi,
+            risk_hi,
+            k_ssm,
+            k_cde,
+            max_inject,
+            commit,
+        }
+    }
+}
+
+impl Default for SleParams {
+    fn default() -> Self {
+        Self::new(3200, 6500, 6800, 7000, 6000, 5000, 2000)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SleInputs {
     pub cycle_id: u64,
-    pub phase_commit: Digest32,
-    pub phase_bucket: u8,
-    pub global_plv: u16,
+    pub phase_bus_commit: Digest32,
+    pub gamma_bucket: u8,
+    pub ssm_state_commit: Digest32,
+    pub ssm_salience: u16,
+    pub ssm_novelty: u16,
+    pub ncde_state_digest: Digest32,
+    pub ncde_energy: u16,
+    pub cde_commit: Digest32,
+    pub nsr_verdict: u8,
+    pub nsr_trace_root: Digest32,
     pub phi_proxy: u16,
+    pub global_plv: u16,
+    pub tcf_sleep_active: bool,
+    pub tcf_replay_active: bool,
     pub risk: u16,
     pub drift: u16,
     pub surprise: u16,
-    pub nsr_verdict: u8,
-    pub nsr_trace_root: Digest32,
-    pub ncde_state_digest: Digest32,
-    pub ncde_energy: u16,
-    pub influence_pulses_root: Digest32,
-    pub spike_seen_root: Digest32,
-    pub spike_accepted_root: Digest32,
-    pub workspace_commit: Digest32,
     pub commit: Digest32,
 }
 
@@ -108,57 +144,103 @@ impl SleInputs {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         cycle_id: u64,
-        phase_commit: Digest32,
-        phase_bucket: u8,
-        global_plv: u16,
+        phase_bus_commit: Digest32,
+        gamma_bucket: u8,
+        ssm_state_commit: Digest32,
+        ssm_salience: u16,
+        ssm_novelty: u16,
+        ncde_state_digest: Digest32,
+        ncde_energy: u16,
+        cde_commit: Digest32,
+        nsr_verdict: u8,
+        nsr_trace_root: Digest32,
         phi_proxy: u16,
+        global_plv: u16,
+        tcf_sleep_active: bool,
+        tcf_replay_active: bool,
         risk: u16,
         drift: u16,
         surprise: u16,
-        nsr_verdict: u8,
-        nsr_trace_root: Digest32,
-        ncde_state_digest: Digest32,
-        ncde_energy: u16,
-        influence_pulses_root: Digest32,
-        spike_seen_root: Digest32,
-        spike_accepted_root: Digest32,
-        workspace_commit: Digest32,
     ) -> Self {
         let commit = hash_with_domain(DOMAIN_SLE_INPUTS_V1, |hasher| {
             hasher.update(&cycle_id.to_be_bytes());
-            hasher.update(phase_commit.as_bytes());
-            hasher.update(&[phase_bucket]);
-            hasher.update(&global_plv.to_be_bytes());
+            hasher.update(phase_bus_commit.as_bytes());
+            hasher.update(&[gamma_bucket]);
+            hasher.update(ssm_state_commit.as_bytes());
+            hasher.update(&ssm_salience.to_be_bytes());
+            hasher.update(&ssm_novelty.to_be_bytes());
+            hasher.update(ncde_state_digest.as_bytes());
+            hasher.update(&ncde_energy.to_be_bytes());
+            hasher.update(cde_commit.as_bytes());
+            hasher.update(&[nsr_verdict]);
+            hasher.update(nsr_trace_root.as_bytes());
             hasher.update(&phi_proxy.to_be_bytes());
+            hasher.update(&global_plv.to_be_bytes());
+            hasher.update(&[tcf_sleep_active as u8]);
+            hasher.update(&[tcf_replay_active as u8]);
             hasher.update(&risk.to_be_bytes());
             hasher.update(&drift.to_be_bytes());
             hasher.update(&surprise.to_be_bytes());
-            hasher.update(&[nsr_verdict]);
-            hasher.update(nsr_trace_root.as_bytes());
-            hasher.update(ncde_state_digest.as_bytes());
-            hasher.update(&ncde_energy.to_be_bytes());
-            hasher.update(influence_pulses_root.as_bytes());
-            hasher.update(spike_seen_root.as_bytes());
-            hasher.update(spike_accepted_root.as_bytes());
-            hasher.update(workspace_commit.as_bytes());
         });
         Self {
             cycle_id,
-            phase_commit,
-            phase_bucket,
-            global_plv,
+            phase_bus_commit,
+            gamma_bucket,
+            ssm_state_commit,
+            ssm_salience,
+            ssm_novelty,
+            ncde_state_digest,
+            ncde_energy,
+            cde_commit,
+            nsr_verdict,
+            nsr_trace_root,
             phi_proxy,
+            global_plv,
+            tcf_sleep_active,
+            tcf_replay_active,
             risk,
             drift,
             surprise,
-            nsr_verdict,
-            nsr_trace_root,
-            ncde_state_digest,
-            ncde_energy,
-            influence_pulses_root,
-            spike_seen_root,
-            spike_accepted_root,
-            workspace_commit,
+            commit,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SleThoughtOnlyEvent {
+    pub cycle_id: u64,
+    pub gamma_bucket: u8,
+    pub class: ReflectionClass,
+    pub intensity: u16,
+    pub self_symbol: [u8; 16],
+    pub payload_commit: Digest32,
+    pub commit: Digest32,
+}
+
+impl SleThoughtOnlyEvent {
+    fn new(
+        cycle_id: u64,
+        gamma_bucket: u8,
+        class: ReflectionClass,
+        intensity: u16,
+        self_symbol: [u8; 16],
+        payload_commit: Digest32,
+    ) -> Self {
+        let commit = hash_with_domain(DOMAIN_SLE_THOUGHT_EVENT_V1, |hasher| {
+            hasher.update(&cycle_id.to_be_bytes());
+            hasher.update(&[gamma_bucket]);
+            hasher.update(&[class.as_u8()]);
+            hasher.update(&intensity.to_be_bytes());
+            hasher.update(&self_symbol);
+            hasher.update(payload_commit.as_bytes());
+        });
+        Self {
+            cycle_id,
+            gamma_bucket,
+            class,
+            intensity,
+            self_symbol,
+            payload_commit,
             commit,
         }
     }
@@ -167,24 +249,29 @@ impl SleInputs {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SleOutputs {
     pub cycle_id: u64,
-    pub self_observation_commit: Digest32,
-    pub self_symbol_commit: Digest32,
-    pub thought_spikes: Vec<SpikeEvent>,
+    pub reflection_commit: Digest32,
+    pub reflection: ReflectionDigest,
+    pub ssm_bias: i16,
+    pub cde_bias: i16,
+    pub request_replay: bool,
+    pub thought_only_root: Digest32,
     pub commit: Digest32,
 }
 
 #[derive(Clone, Debug)]
 pub struct SleCore {
-    pub self_symbol_commit: Digest32,
-    pub last_obs_commit: Digest32,
+    pub params: SleParams,
+    pub last_self_symbol: [u8; 16],
+    pub last_commit: Digest32,
     pub commit: Digest32,
 }
 
 impl SleCore {
-    pub fn new(self_symbol_commit: Digest32) -> Self {
+    pub fn new(params: SleParams) -> Self {
         let mut core = Self {
-            self_symbol_commit,
-            last_obs_commit: Digest32::new([0u8; 32]),
+            params,
+            last_self_symbol: [0u8; 16],
+            last_commit: Digest32::new([0u8; 32]),
             commit: Digest32::new([0u8; 32]),
         };
         core.commit = core.commit_state();
@@ -192,217 +279,185 @@ impl SleCore {
     }
 
     pub fn tick(&mut self, inp: &SleInputs) -> SleOutputs {
-        let observation = build_self_observation(inp);
-        let (self_symbol_commit, _) = compute_self_symbol(
-            self.self_symbol_commit,
-            observation.commit,
-            inp.nsr_trace_root,
-        );
-        let thought_spikes = build_thought_spikes(
-            inp.cycle_id,
-            inp.phase_commit,
-            inp.phase_bucket,
-            observation.commit,
-            self_symbol_commit,
-            observation.intensity,
-        );
+        let class = select_reflection_class(inp, &self.params);
+        let intensity = compute_intensity(inp);
+        let self_symbol = compute_self_symbol(self.last_self_symbol, inp, class, intensity);
+        let reflection_commit = hash_with_domain(DOMAIN_SLE_REFLECTION_V1, |hasher| {
+            hasher.update(&[class.as_u8()]);
+            hasher.update(&intensity.to_be_bytes());
+            hasher.update(&self_symbol);
+            hasher.update(inp.phase_bus_commit.as_bytes());
+        });
+        let reflection = ReflectionDigest {
+            class,
+            self_symbol,
+            intensity,
+            commit: reflection_commit,
+        };
+        let (ssm_bias, cde_bias) = compute_biases(class, intensity, &self.params);
+        let request_replay = class == ReflectionClass::RequestReplay;
+        let thought_only_events = build_thought_only_events(inp, &reflection);
+        let thought_only_root = thought_only_root(&thought_only_events);
         let commit = hash_with_domain(DOMAIN_SLE_OUTPUTS_V1, |hasher| {
             hasher.update(&inp.cycle_id.to_be_bytes());
-            hasher.update(observation.commit.as_bytes());
-            hasher.update(self_symbol_commit.as_bytes());
-            hasher.update(
-                &u16::try_from(thought_spikes.len())
-                    .unwrap_or(u16::MAX)
-                    .to_be_bytes(),
-            );
-            for spike in &thought_spikes {
-                hasher.update(spike.commit.as_bytes());
-            }
+            hasher.update(reflection.commit.as_bytes());
+            hasher.update(&ssm_bias.to_be_bytes());
+            hasher.update(&cde_bias.to_be_bytes());
+            hasher.update(&[request_replay as u8]);
+            hasher.update(thought_only_root.as_bytes());
         });
 
-        self.self_symbol_commit = self_symbol_commit;
-        self.last_obs_commit = observation.commit;
+        self.last_self_symbol = self_symbol;
+        self.last_commit = reflection.commit;
         self.commit = self.commit_state();
 
         SleOutputs {
             cycle_id: inp.cycle_id,
-            self_observation_commit: observation.commit,
-            self_symbol_commit,
-            thought_spikes,
+            reflection_commit,
+            reflection,
+            ssm_bias,
+            cde_bias,
+            request_replay,
+            thought_only_root,
             commit,
         }
     }
 
     fn commit_state(&self) -> Digest32 {
-        hash_with_domain(DOMAIN_SLE_OUTPUTS_V1, |hasher| {
-            hasher.update(self.self_symbol_commit.as_bytes());
-            hasher.update(self.last_obs_commit.as_bytes());
+        hash_with_domain(DOMAIN_SLE_CORE_V1, |hasher| {
+            hasher.update(self.params.commit.as_bytes());
+            hasher.update(&self.last_self_symbol);
+            hasher.update(self.last_commit.as_bytes());
         })
     }
 }
 
 impl Default for SleCore {
     fn default() -> Self {
-        Self::new(Digest32::new([0u8; 32]))
+        Self::new(SleParams::default())
     }
 }
 
-fn build_self_observation(inp: &SleInputs) -> SelfObservation {
-    let mut items = Vec::with_capacity(SLE_ITEMS_MAX.min(16));
-    items.push((
-        SelfToken::Cycle,
-        hash_self_token_u64(SelfToken::Cycle, inp.cycle_id),
-    ));
-    items.push((SelfToken::Phase, inp.phase_commit));
-    items.push((
-        SelfToken::Coherence,
-        hash_self_token_bucket(SelfToken::Coherence, bucketize(inp.global_plv)),
-    ));
-    items.push((
-        SelfToken::Risk,
-        hash_self_token_bucket(SelfToken::Risk, bucketize(inp.risk)),
-    ));
-    items.push((
-        SelfToken::Drift,
-        hash_self_token_bucket(SelfToken::Drift, bucketize(inp.drift)),
-    ));
-    items.push((
-        SelfToken::Surprise,
-        hash_self_token_bucket(SelfToken::Surprise, bucketize(inp.surprise)),
-    ));
-    items.push((
-        SelfToken::NsrVerdict,
-        hash_self_token_u8(SelfToken::NsrVerdict, inp.nsr_verdict),
-    ));
-    items.push((SelfToken::NsrTrace, inp.nsr_trace_root));
-    items.push((
-        SelfToken::NcdeEnergy,
-        hash_self_token_u16(SelfToken::NcdeEnergy, inp.ncde_energy),
-    ));
-    items.push((SelfToken::Unknown(14), inp.ncde_state_digest));
-    items.push((SelfToken::InfluenceRoot, inp.influence_pulses_root));
-    items.push((SelfToken::SpikeSeenRoot, inp.spike_seen_root));
-    items.push((SelfToken::SpikeAcceptedRoot, inp.spike_accepted_root));
-    items.push((SelfToken::WorkspaceCommit, inp.workspace_commit));
-
-    items.truncate(SLE_ITEMS_MAX);
-
-    let intensity = compute_intensity(inp.global_plv, inp.drift, inp.surprise);
-    let commit = hash_with_domain(DOMAIN_SELF_OBSERVATION_V1, |hasher| {
-        hasher.update(&inp.cycle_id.to_be_bytes());
-        for (token, digest) in &items {
-            hasher.update(&token.as_u16().to_be_bytes());
-            hasher.update(digest.as_bytes());
-        }
-        hasher.update(&intensity.to_be_bytes());
-    });
-
-    SelfObservation {
-        cycle_id: inp.cycle_id,
-        items,
-        intensity,
-        commit,
+fn select_reflection_class(inp: &SleInputs, params: &SleParams) -> ReflectionClass {
+    let phi_low = inp.phi_proxy <= params.phi_low;
+    let surprised = inp.surprise >= params.surprise_hi;
+    if inp.tcf_replay_active || (surprised && phi_low) {
+        return ReflectionClass::RequestReplay;
     }
+    if inp.tcf_sleep_active {
+        return ReflectionClass::Drifting;
+    }
+    if inp.risk >= params.risk_hi {
+        return ReflectionClass::Risky;
+    }
+    if inp.drift >= params.drift_hi {
+        return ReflectionClass::Drifting;
+    }
+    if surprised {
+        return ReflectionClass::Surprised;
+    }
+    if phi_low {
+        return ReflectionClass::Uncertain;
+    }
+    ReflectionClass::Stable
 }
 
-fn compute_intensity(coherence: u16, drift: u16, surprise: u16) -> u16 {
-    let coherence_penalty = 10_000u32.saturating_sub(u32::from(coherence.min(10_000)));
-    let combined = u32::from(drift).saturating_add(u32::from(surprise));
-    let total = combined.saturating_add(coherence_penalty);
-    total.min(10_000) as u16
+fn compute_intensity(inp: &SleInputs) -> u16 {
+    let base = u32::from(inp.ssm_salience.max(inp.ncde_energy));
+    let blended = base.saturating_add(u32::from(inp.ssm_novelty) / 2);
+    let penalty = u32::from(inp.risk) / 2 + u32::from(inp.drift) / 2;
+    blended.saturating_sub(penalty).min(10_000) as u16
 }
 
 fn compute_self_symbol(
-    prev: Digest32,
-    observation_commit: Digest32,
-    nsr_trace_root: Digest32,
-) -> (Digest32, u8) {
-    let base = hash_with_domain(DOMAIN_SELF_SYMBOL_V1, |hasher| {
-        hasher.update(prev.as_bytes());
-        hasher.update(observation_commit.as_bytes());
-        hasher.update(nsr_trace_root.as_bytes());
-    });
-    let mut current = base;
-    let mut updates = 1;
-    if updates < SLE_SELF_SYMBOL_UPDATES_MAX {
-        current = hash_with_domain(DOMAIN_SELF_SYMBOL_V1, |hasher| {
-            hasher.update(current.as_bytes());
-            hasher.update(base.as_bytes());
-        });
-        updates += 1;
-    }
-    (current, updates)
-}
-
-fn build_thought_spikes(
-    cycle_id: u64,
-    phase_commit: Digest32,
-    phase_bucket: u8,
-    observation_commit: Digest32,
-    self_symbol_commit: Digest32,
+    last_self_symbol: [u8; 16],
+    inp: &SleInputs,
+    class: ReflectionClass,
     intensity: u16,
-) -> Vec<SpikeEvent> {
-    let mut spikes = Vec::with_capacity(2);
-    let base_ttfs = base_ttfs(intensity);
-    let targets = [SpikeModuleId::Geist, SpikeModuleId::BlueBrain];
-    for (idx, dst) in targets.iter().enumerate() {
-        let payload_commit = hash_with_domain(DOMAIN_THOUGHT_SPIKE_V1, |hasher| {
-            hasher.update(observation_commit.as_bytes());
-            hasher.update(self_symbol_commit.as_bytes());
-            hasher.update(&dst.as_u16().to_be_bytes());
-        });
-        let ttfs = base_ttfs.saturating_add((idx as u16) * 3).max(1);
-        spikes.push(SpikeEvent::new(
-            cycle_id,
-            SpikeKind::ThoughtOnly,
-            SpikeModuleId::Jepa,
-            *dst,
-            phase_bucket,
-            ttfs,
-            phase_commit,
-            payload_commit,
-        ));
+) -> [u8; 16] {
+    let digest = hash_with_domain(DOMAIN_SLE_SELF_SYMBOL_V1, |hasher| {
+        hasher.update(&last_self_symbol);
+        hasher.update(inp.ssm_state_commit.as_bytes());
+        hasher.update(inp.ncde_state_digest.as_bytes());
+        hasher.update(inp.cde_commit.as_bytes());
+        hasher.update(inp.nsr_trace_root.as_bytes());
+        hasher.update(inp.phase_bus_commit.as_bytes());
+        hasher.update(&inp.phi_proxy.to_be_bytes());
+        hasher.update(&inp.global_plv.to_be_bytes());
+        hasher.update(&[inp.gamma_bucket]);
+        hasher.update(&[class.as_u8()]);
+        hasher.update(&intensity.to_be_bytes());
+    });
+    let mut symbol = [0u8; 16];
+    symbol.copy_from_slice(&digest.as_bytes()[..16]);
+    symbol
+}
+
+fn compute_biases(class: ReflectionClass, intensity: u16, params: &SleParams) -> (i16, i16) {
+    let small = i32::from(intensity) / 4;
+    let medium = i32::from(intensity) / 2;
+    let ssm_base = match class {
+        ReflectionClass::Stable => small,
+        ReflectionClass::Uncertain | ReflectionClass::Conflicted => -small,
+        ReflectionClass::Surprised => medium,
+        ReflectionClass::Risky => -medium,
+        ReflectionClass::Drifting => -medium,
+        ReflectionClass::RequestReplay => medium,
+    };
+    let cde_base = match class {
+        ReflectionClass::Surprised | ReflectionClass::RequestReplay => medium,
+        ReflectionClass::Risky => -medium,
+        _ => 0,
+    };
+    let ssm_bias = scale_bias(ssm_base, params.k_ssm, params.max_inject);
+    let cde_bias = scale_bias(cde_base, params.k_cde, params.max_inject);
+    (ssm_bias, cde_bias)
+}
+
+fn scale_bias(base: i32, gain: u16, max_inject: u16) -> i16 {
+    let scaled = base.saturating_mul(i32::from(gain)) / 10_000;
+    let cap = i32::from(max_inject);
+    scaled.clamp(-cap, cap) as i16
+}
+
+fn build_thought_only_events(
+    inp: &SleInputs,
+    reflection: &ReflectionDigest,
+) -> Vec<SleThoughtOnlyEvent> {
+    let should_emit = matches!(
+        reflection.class,
+        ReflectionClass::Surprised | ReflectionClass::Conflicted | ReflectionClass::RequestReplay
+    ) && reflection.intensity >= 3000;
+    if !should_emit {
+        return Vec::new();
     }
-    spikes.truncate(SLE_THOUGHT_SPIKES_MAX);
-    spikes
+    let payload_commit = hash_with_domain(DOMAIN_SLE_THOUGHT_PAYLOAD_V1, |hasher| {
+        hasher.update(reflection.commit.as_bytes());
+        hasher.update(b"thought-only");
+        hasher.update(&inp.cycle_id.to_be_bytes());
+    });
+    vec![SleThoughtOnlyEvent::new(
+        inp.cycle_id,
+        inp.gamma_bucket,
+        reflection.class,
+        reflection.intensity,
+        reflection.self_symbol,
+        payload_commit,
+    )]
 }
 
-fn base_ttfs(intensity: u16) -> u16 {
-    let scaled = (intensity / 100).min(180);
-    200u16.saturating_sub(scaled).max(1)
-}
-
-fn bucketize(value: u16) -> u8 {
-    let bucket = value / 1250;
-    bucket.min(7) as u8
-}
-
-fn hash_self_token_u8(token: SelfToken, value: u8) -> Digest32 {
-    hash_with_domain(DOMAIN_SELF_TOKEN_V1, |hasher| {
-        hasher.update(&token.as_u16().to_be_bytes());
-        hasher.update(&[value]);
-    })
-}
-
-fn hash_self_token_u16(token: SelfToken, value: u16) -> Digest32 {
-    hash_with_domain(DOMAIN_SELF_TOKEN_V1, |hasher| {
-        hasher.update(&token.as_u16().to_be_bytes());
-        hasher.update(&value.to_be_bytes());
-    })
-}
-
-fn hash_self_token_u64(token: SelfToken, value: u64) -> Digest32 {
-    hash_with_domain(DOMAIN_SELF_TOKEN_V1, |hasher| {
-        hasher.update(&token.as_u16().to_be_bytes());
-        hasher.update(&value.to_be_bytes());
-    })
-}
-
-fn hash_self_token_bucket(token: SelfToken, bucket: u8) -> Digest32 {
-    hash_with_domain(DOMAIN_SELF_TOKEN_V1, |hasher| {
-        hasher.update(&token.as_u16().to_be_bytes());
-        hasher.update(&[bucket]);
-    })
+fn thought_only_root(events: &[SleThoughtOnlyEvent]) -> Digest32 {
+    if events.is_empty() {
+        return Digest32::new([0u8; 32]);
+    }
+    let mut root = Digest32::new([0u8; 32]);
+    for event in events {
+        root = hash_with_domain(DOMAIN_SLE_THOUGHT_ROOT_V1, |hasher| {
+            hasher.update(root.as_bytes());
+            hasher.update(event.commit.as_bytes());
+        });
+    }
+    root
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1233,9 +1288,13 @@ mod tests {
             rsa_applied_params_root: Digest32::new([0u8; 32]),
             rsa_snapshot_chain_commit: Digest32::new([0u8; 32]),
             sle_commit: Digest32::new([0u8; 32]),
-            sle_self_observation_commit: Digest32::new([0u8; 32]),
-            sle_self_symbol_commit: Digest32::new([0u8; 32]),
-            sle_rate_limited: false,
+            sle_reflection_commit: Digest32::new([0u8; 32]),
+            sle_reflection_class: 0,
+            sle_reflection_intensity: 0,
+            sle_thought_only_root: Digest32::new([0u8; 32]),
+            sle_ssm_bias: 0,
+            sle_cde_bias: 0,
+            sle_request_replay: false,
             internal_utterances: Vec::new(),
             commit: Digest32::new([1u8; 32]),
         };
@@ -1297,9 +1356,13 @@ mod tests {
             rsa_applied_params_root: Digest32::new([0u8; 32]),
             rsa_snapshot_chain_commit: Digest32::new([0u8; 32]),
             sle_commit: Digest32::new([0u8; 32]),
-            sle_self_observation_commit: Digest32::new([0u8; 32]),
-            sle_self_symbol_commit: Digest32::new([0u8; 32]),
-            sle_rate_limited: false,
+            sle_reflection_commit: Digest32::new([0u8; 32]),
+            sle_reflection_class: 0,
+            sle_reflection_intensity: 0,
+            sle_thought_only_root: Digest32::new([0u8; 32]),
+            sle_ssm_bias: 0,
+            sle_cde_bias: 0,
+            sle_request_replay: false,
             internal_utterances: Vec::new(),
             commit: Digest32::new([2u8; 32]),
         };
@@ -1380,9 +1443,13 @@ mod tests {
             rsa_applied_params_root: Digest32::new([0u8; 32]),
             rsa_snapshot_chain_commit: Digest32::new([0u8; 32]),
             sle_commit: Digest32::new([0u8; 32]),
-            sle_self_observation_commit: Digest32::new([0u8; 32]),
-            sle_self_symbol_commit: Digest32::new([0u8; 32]),
-            sle_rate_limited: false,
+            sle_reflection_commit: Digest32::new([0u8; 32]),
+            sle_reflection_class: 0,
+            sle_reflection_intensity: 0,
+            sle_thought_only_root: Digest32::new([0u8; 32]),
+            sle_ssm_bias: 0,
+            sle_cde_bias: 0,
+            sle_request_replay: false,
             internal_utterances: Vec::new(),
             commit: Digest32::new([1u8; 32]),
         };
@@ -1444,9 +1511,13 @@ mod tests {
             rsa_applied_params_root: Digest32::new([0u8; 32]),
             rsa_snapshot_chain_commit: Digest32::new([0u8; 32]),
             sle_commit: Digest32::new([0u8; 32]),
-            sle_self_observation_commit: Digest32::new([0u8; 32]),
-            sle_self_symbol_commit: Digest32::new([0u8; 32]),
-            sle_rate_limited: false,
+            sle_reflection_commit: Digest32::new([0u8; 32]),
+            sle_reflection_class: 0,
+            sle_reflection_intensity: 0,
+            sle_thought_only_root: Digest32::new([0u8; 32]),
+            sle_ssm_bias: 0,
+            sle_cde_bias: 0,
+            sle_request_replay: false,
             internal_utterances: Vec::new(),
             commit: Digest32::new([2u8; 32]),
         };
@@ -1518,9 +1589,13 @@ mod tests {
             rsa_applied_params_root: Digest32::new([0u8; 32]),
             rsa_snapshot_chain_commit: Digest32::new([0u8; 32]),
             sle_commit: Digest32::new([0u8; 32]),
-            sle_self_observation_commit: Digest32::new([0u8; 32]),
-            sle_self_symbol_commit: Digest32::new([0u8; 32]),
-            sle_rate_limited: false,
+            sle_reflection_commit: Digest32::new([0u8; 32]),
+            sle_reflection_class: 0,
+            sle_reflection_intensity: 0,
+            sle_thought_only_root: Digest32::new([0u8; 32]),
+            sle_ssm_bias: 0,
+            sle_cde_bias: 0,
+            sle_request_replay: false,
             internal_utterances: Vec::new(),
             commit: Digest32::new([3u8; 32]),
         };
@@ -1608,9 +1683,13 @@ mod tests {
             rsa_applied_params_root: Digest32::new([0u8; 32]),
             rsa_snapshot_chain_commit: Digest32::new([0u8; 32]),
             sle_commit: Digest32::new([0u8; 32]),
-            sle_self_observation_commit: Digest32::new([0u8; 32]),
-            sle_self_symbol_commit: Digest32::new([0u8; 32]),
-            sle_rate_limited: false,
+            sle_reflection_commit: Digest32::new([0u8; 32]),
+            sle_reflection_class: 0,
+            sle_reflection_intensity: 0,
+            sle_thought_only_root: Digest32::new([0u8; 32]),
+            sle_ssm_bias: 0,
+            sle_cde_bias: 0,
+            sle_request_replay: false,
             internal_utterances: Vec::new(),
             commit: Digest32::new([4u8; 32]),
         };
@@ -1672,9 +1751,13 @@ mod tests {
             rsa_applied_params_root: Digest32::new([0u8; 32]),
             rsa_snapshot_chain_commit: Digest32::new([0u8; 32]),
             sle_commit: Digest32::new([0u8; 32]),
-            sle_self_observation_commit: Digest32::new([0u8; 32]),
-            sle_self_symbol_commit: Digest32::new([0u8; 32]),
-            sle_rate_limited: false,
+            sle_reflection_commit: Digest32::new([0u8; 32]),
+            sle_reflection_class: 0,
+            sle_reflection_intensity: 0,
+            sle_thought_only_root: Digest32::new([0u8; 32]),
+            sle_ssm_bias: 0,
+            sle_cde_bias: 0,
+            sle_request_replay: false,
             internal_utterances: Vec::new(),
             commit: Digest32::new([5u8; 32]),
         };
@@ -1710,7 +1793,7 @@ mod tests {
     }
 
     #[test]
-    fn sle_tick_is_deterministic() {
+    fn sle_v1_tick_is_deterministic() {
         let mut core = LegacySleCore::new(2, 1200);
         let mut core_clone = LegacySleCore::new(2, 1200);
         let inputs = base_inputs(10);
@@ -1752,29 +1835,31 @@ mod tests {
         assert!(pulse.value < 0);
     }
 
-    fn sle_inputs(cycle_id: u64, coherence: u16, drift: u16, surprise: u16) -> SleInputs {
+    fn sle_inputs(cycle_id: u64, phi_proxy: u16, drift: u16, surprise: u16) -> SleInputs {
         SleInputs::new(
             cycle_id,
             Digest32::new([1u8; 32]),
-            1,
-            coherence,
+            2,
+            Digest32::new([2u8; 32]),
             4200,
             1200,
-            drift,
-            surprise,
-            1,
-            Digest32::new([2u8; 32]),
             Digest32::new([3u8; 32]),
             2400,
             Digest32::new([4u8; 32]),
+            1,
             Digest32::new([5u8; 32]),
-            Digest32::new([6u8; 32]),
-            Digest32::new([7u8; 32]),
+            phi_proxy,
+            6200,
+            false,
+            false,
+            1100,
+            drift,
+            surprise,
         )
     }
 
     #[test]
-    fn sle_v1_tick_is_deterministic() {
+    fn sle_tick_is_deterministic() {
         let inputs = sle_inputs(7, 6000, 1200, 900);
         let mut core_a = SleCore::default();
         let mut core_b = SleCore::default();
@@ -1782,50 +1867,129 @@ mod tests {
         let out_b = core_b.tick(&inputs);
 
         assert_eq!(out_a.commit, out_b.commit);
-        assert_eq!(out_a.self_symbol_commit, out_b.self_symbol_commit);
+        assert_eq!(out_a.reflection.self_symbol, out_b.reflection.self_symbol);
+        assert_eq!(out_a.reflection.commit, out_b.reflection.commit);
     }
 
     #[test]
-    fn sle_v1_self_symbol_recursion_is_bounded() {
-        let prev = Digest32::new([8u8; 32]);
-        let obs = Digest32::new([9u8; 32]);
-        let trace = Digest32::new([10u8; 32]);
-        let (_commit, updates) = compute_self_symbol(prev, obs, trace);
-        assert!(updates <= SLE_SELF_SYMBOL_UPDATES_MAX);
+    fn sle_loop_closure_depends_on_last_symbol() {
+        let inputs = sle_inputs(9, 6000, 1200, 900);
+        let mut core_a = SleCore::default();
+        let mut core_b = SleCore::default();
+        core_a.last_self_symbol = [1u8; 16];
+        core_b.last_self_symbol = [2u8; 16];
+        let out_a = core_a.tick(&inputs);
+        let out_b = core_b.tick(&inputs);
+        assert_ne!(out_a.reflection.self_symbol, out_b.reflection.self_symbol);
     }
 
     #[test]
-    fn sle_v1_thought_spikes_target_internal_modules() {
-        let inputs = sle_inputs(10, 4000, 2000, 3000);
+    fn sle_class_selection_tracks_phi_surprise_and_replay() {
         let mut core = SleCore::default();
-        let outputs = core.tick(&inputs);
+        let low_phi = sle_inputs(11, 1000, 500, 200);
+        let low_phi_out = core.tick(&low_phi);
+        assert_eq!(low_phi_out.reflection.class, ReflectionClass::Uncertain);
 
-        assert!(!outputs.thought_spikes.is_empty());
-        assert!(outputs
-            .thought_spikes
-            .iter()
-            .all(|spike| { matches!(spike.dst, SpikeModuleId::Geist | SpikeModuleId::BlueBrain) }));
+        let surprised = SleInputs::new(
+            12,
+            Digest32::new([2u8; 32]),
+            3,
+            Digest32::new([4u8; 32]),
+            6500,
+            2500,
+            Digest32::new([6u8; 32]),
+            8000,
+            Digest32::new([7u8; 32]),
+            1,
+            Digest32::new([8u8; 32]),
+            6000,
+            7000,
+            false,
+            false,
+            1200,
+            1200,
+            9000,
+        );
+        let surprised_out = core.tick(&surprised);
+        assert_eq!(surprised_out.reflection.class, ReflectionClass::Surprised);
+
+        let replay = SleInputs::new(
+            13,
+            Digest32::new([3u8; 32]),
+            4,
+            Digest32::new([9u8; 32]),
+            6400,
+            2400,
+            Digest32::new([10u8; 32]),
+            7600,
+            Digest32::new([11u8; 32]),
+            1,
+            Digest32::new([12u8; 32]),
+            2500,
+            7000,
+            false,
+            true,
+            1200,
+            500,
+            1200,
+        );
+        let replay_out = core.tick(&replay);
+        assert_eq!(replay_out.reflection.class, ReflectionClass::RequestReplay);
     }
 
     #[test]
-    fn sle_v1_higher_intensity_fires_earlier() {
-        let low_inputs = sle_inputs(11, 9000, 100, 100);
-        let high_inputs = sle_inputs(12, 1000, 4500, 4500);
-        let mut core_low = SleCore::default();
-        let mut core_high = SleCore::default();
-        let low_out = core_low.tick(&low_inputs);
-        let high_out = core_high.tick(&high_inputs);
+    fn sle_biases_respect_bounds() {
+        let params = SleParams::new(3000, 6000, 6000, 6000, 10_000, 10_000, 500);
+        let mut core = SleCore::new(params);
+        let inputs = SleInputs::new(
+            20,
+            Digest32::new([4u8; 32]),
+            1,
+            Digest32::new([5u8; 32]),
+            9000,
+            4000,
+            Digest32::new([6u8; 32]),
+            9000,
+            Digest32::new([7u8; 32]),
+            1,
+            Digest32::new([8u8; 32]),
+            8000,
+            7200,
+            false,
+            false,
+            9000,
+            2000,
+            8000,
+        );
+        let outputs = core.tick(&inputs);
+        assert!(outputs.ssm_bias.abs() <= 500);
+        assert!(outputs.cde_bias.abs() <= 500);
+    }
 
-        let low_ttfs = low_out
-            .thought_spikes
-            .first()
-            .map(|spike| spike.ttfs)
-            .unwrap_or(u16::MAX);
-        let high_ttfs = high_out
-            .thought_spikes
-            .first()
-            .map(|spike| spike.ttfs)
-            .unwrap_or(u16::MAX);
-        assert!(high_ttfs < low_ttfs);
+    #[test]
+    fn sle_thought_only_emits_root_on_surprise() {
+        let mut core = SleCore::default();
+        let inputs = SleInputs::new(
+            21,
+            Digest32::new([9u8; 32]),
+            2,
+            Digest32::new([10u8; 32]),
+            8200,
+            4000,
+            Digest32::new([11u8; 32]),
+            7800,
+            Digest32::new([12u8; 32]),
+            1,
+            Digest32::new([13u8; 32]),
+            6200,
+            7200,
+            false,
+            false,
+            1000,
+            1200,
+            9000,
+        );
+        let outputs = core.tick(&inputs);
+        assert_ne!(outputs.thought_only_root, Digest32::new([0u8; 32]));
     }
 }

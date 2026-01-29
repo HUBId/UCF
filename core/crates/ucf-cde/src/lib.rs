@@ -205,6 +205,7 @@ pub struct CdeInputs {
     pub phase_bucket: u8,
     pub ssm_salience: u16,
     pub ssm_novelty: u16,
+    pub cde_bias: i16,
     pub attention_gain: u16,
     pub learning_rate: u16,
     pub replay_pressure: u16,
@@ -229,6 +230,7 @@ impl CdeInputs {
         phase_bucket: u8,
         ssm_salience: u16,
         ssm_novelty: u16,
+        cde_bias: i16,
         attention_gain: u16,
         learning_rate: u16,
         replay_pressure: u16,
@@ -249,6 +251,7 @@ impl CdeInputs {
             phase_bucket,
             ssm_salience,
             ssm_novelty,
+            cde_bias,
             attention_gain,
             learning_rate,
             replay_pressure,
@@ -360,7 +363,7 @@ impl CdeCore {
         let mut updated_edges = Vec::with_capacity(self.edge_scores.len());
         for edge in &self.edge_scores {
             let proxy = edge_proxy(edge, &self.delta_history);
-            let updated = update_edge_score(edge, proxy, &self.dag, &self.params);
+            let updated = update_edge_score(edge, proxy, inp.cde_bias, &self.dag, &self.params);
             updated_edges.push(updated);
         }
         if let Some((edge_key, outcome)) = intervention_feedback {
@@ -586,6 +589,7 @@ fn has_observed_delta(var: VarId) -> bool {
 fn update_edge_score(
     edge: &CausalEdge,
     proxy: i16,
+    cde_bias: i16,
     dag: &CausalDag,
     params: &CdeParams,
 ) -> CausalEdge {
@@ -598,6 +602,7 @@ fn update_edge_score(
     } else {
         score = score - decay + delta;
     }
+    score = score.saturating_add(i32::from(cde_bias));
     let score = score.clamp(i32::from(MIN_SCORE), i32::from(MAX_SCORE)) as i16;
     CausalEdge::new(edge.from, edge.to, score, edge.lag)
 }
@@ -787,6 +792,7 @@ fn digest_inputs(inputs: &CdeInputs) -> Digest32 {
     hasher.update(&[inputs.phase_bucket]);
     hasher.update(&inputs.ssm_salience.to_be_bytes());
     hasher.update(&inputs.ssm_novelty.to_be_bytes());
+    hasher.update(&inputs.cde_bias.to_be_bytes());
     hasher.update(&inputs.attention_gain.to_be_bytes());
     hasher.update(&inputs.learning_rate.to_be_bytes());
     hasher.update(&inputs.replay_pressure.to_be_bytes());
@@ -888,6 +894,7 @@ mod tests {
             2,
             5_000,
             4_800,
+            0,
             5_200,
             4_900,
             4_500,
