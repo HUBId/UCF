@@ -156,6 +156,7 @@ impl Rule {
 pub struct NsrInputs {
     pub cycle_id: u64,
     pub phase_commit: Digest32,
+    pub phase_bucket: u8,
     pub influence_nodes: Vec<(InfluenceNodeId, i16)>,
     pub spike_accepted_root: Digest32,
     pub spike_counts: Vec<(SpikeKind, u16)>,
@@ -174,6 +175,7 @@ impl NsrInputs {
     pub fn new(
         cycle_id: u64,
         phase_commit: Digest32,
+        phase_bucket: u8,
         mut influence_nodes: Vec<(InfluenceNodeId, i16)>,
         spike_accepted_root: Digest32,
         mut spike_counts: Vec<(SpikeKind, u16)>,
@@ -198,6 +200,7 @@ impl NsrInputs {
         let mut inputs = Self {
             cycle_id,
             phase_commit,
+            phase_bucket,
             influence_nodes,
             spike_accepted_root,
             spike_counts,
@@ -597,6 +600,7 @@ fn digest_nsr_inputs_v1(inputs: &NsrInputs) -> Digest32 {
     hasher.update(NSR_V1_INPUT_DOMAIN);
     hasher.update(&inputs.cycle_id.to_be_bytes());
     hasher.update(inputs.phase_commit.as_bytes());
+    hasher.update(&[inputs.phase_bucket]);
     hasher.update(inputs.spike_accepted_root.as_bytes());
     hasher.update(&[inputs.geist_consistency as u8]);
     hasher.update(&[inputs.sleep_active as u8, inputs.replay_active as u8]);
@@ -851,6 +855,7 @@ impl ReasoningTrace {
 pub struct NsrTraceInputs {
     pub cycle_id: u64,
     pub phase_commit: Digest32,
+    pub phase_bucket: u8,
     pub coherence_plv: u16,
     pub phi_proxy: u16,
     pub risk: u16,
@@ -871,6 +876,7 @@ impl NsrTraceInputs {
     pub fn new(
         cycle_id: u64,
         phase_commit: Digest32,
+        phase_bucket: u8,
         coherence_plv: u16,
         phi_proxy: u16,
         risk: u16,
@@ -895,6 +901,7 @@ impl NsrTraceInputs {
         let mut inputs = Self {
             cycle_id,
             phase_commit,
+            phase_bucket,
             coherence_plv,
             phi_proxy,
             risk,
@@ -1670,6 +1677,7 @@ fn digest_nsr_trace_inputs(inputs: &NsrTraceInputs) -> Digest32 {
     hasher.update(NSR_TRACE_INPUTS_DOMAIN);
     hasher.update(&inputs.cycle_id.to_be_bytes());
     hasher.update(inputs.phase_commit.as_bytes());
+    hasher.update(&[inputs.phase_bucket]);
     hasher.update(&inputs.coherence_plv.to_be_bytes());
     hasher.update(&inputs.phi_proxy.to_be_bytes());
     hasher.update(&inputs.risk.to_be_bytes());
@@ -2207,6 +2215,7 @@ mod tests {
         NsrTraceInputs::new(
             cycle_id,
             Digest32::new([1u8; 32]),
+            2,
             6_000,
             6_000,
             1_000,
@@ -2251,6 +2260,7 @@ mod tests {
         let inputs = NsrTraceInputs::new(
             1,
             Digest32::new([2u8; 32]),
+            2,
             6_500,
             6_500,
             1_000,
@@ -2343,6 +2353,7 @@ mod tests {
         NsrInputs::new(
             1,
             Digest32::new([9u8; 32]),
+            2,
             vec![
                 (InfluenceNodeId::Risk, 2_000),
                 (InfluenceNodeId::Coherence, 4_000),
@@ -2378,6 +2389,7 @@ mod tests {
         let inputs = NsrInputs::new(
             2,
             Digest32::new([8u8; 32]),
+            2,
             vec![
                 (InfluenceNodeId::Risk, 9_000),
                 (InfluenceNodeId::Coherence, 4_000),
@@ -2404,6 +2416,7 @@ mod tests {
         let inputs = NsrInputs::new(
             3,
             Digest32::new([7u8; 32]),
+            2,
             vec![
                 (InfluenceNodeId::Risk, 2_000),
                 (InfluenceNodeId::Coherence, 2_000),
@@ -2430,6 +2443,7 @@ mod tests {
         let inputs = NsrInputs::new(
             4,
             Digest32::new([6u8; 32]),
+            1,
             vec![(InfluenceNodeId::Coherence, 4_000)],
             Digest32::new([6u8; 32]),
             Vec::new(),
@@ -2453,6 +2467,7 @@ mod tests {
         let inputs = NsrInputs::new(
             5,
             Digest32::new([1u8; 32]),
+            0,
             Vec::new(),
             Digest32::new([1u8; 32]),
             Vec::new(),

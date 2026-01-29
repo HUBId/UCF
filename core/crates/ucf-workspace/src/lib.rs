@@ -518,6 +518,8 @@ pub struct WorkspaceSnapshot {
     pub coupling_lag_commits: Vec<(u16, Digest32)>,
     pub onn_states_commit: Digest32,
     pub onn_global_plv: u16,
+    pub onn_phase_bus_commit: Digest32,
+    pub onn_phase_bucket: u8,
     pub onn_pair_locks_commit: Digest32,
     pub onn_phase_frame_commit: Digest32,
     pub iit_output: Option<IitOutput>,
@@ -600,6 +602,8 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
             + snapshot.coupling_lag_commits.len() * (2 + Digest32::LEN)
             + Digest32::LEN
             + 2
+            + Digest32::LEN
+            + 1
             + Digest32::LEN
             + Digest32::LEN
             + 1
@@ -700,6 +704,8 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
     }
     payload.extend_from_slice(snapshot.onn_states_commit.as_bytes());
     payload.extend_from_slice(&snapshot.onn_global_plv.to_be_bytes());
+    payload.extend_from_slice(snapshot.onn_phase_bus_commit.as_bytes());
+    payload.push(snapshot.onn_phase_bucket);
     payload.extend_from_slice(snapshot.onn_pair_locks_commit.as_bytes());
     payload.extend_from_slice(snapshot.onn_phase_frame_commit.as_bytes());
     match snapshot.iit_output.as_ref() {
@@ -851,6 +857,8 @@ pub struct Workspace {
     coupling_lag_commits: Vec<(u16, Digest32)>,
     onn_states_commit: Digest32,
     onn_global_plv: u16,
+    onn_phase_bus_commit: Digest32,
+    onn_phase_bucket: u8,
     onn_pair_locks_commit: Digest32,
     onn_phase_frame_commit: Digest32,
     iit_output: Option<IitOutput>,
@@ -903,6 +911,8 @@ impl Workspace {
             coupling_lag_commits: Vec::new(),
             onn_states_commit: Digest32::new([0u8; 32]),
             onn_global_plv: 0,
+            onn_phase_bus_commit: Digest32::new([0u8; 32]),
+            onn_phase_bucket: 0,
             onn_pair_locks_commit: Digest32::new([0u8; 32]),
             onn_phase_frame_commit: Digest32::new([0u8; 32]),
             iit_output: None,
@@ -1061,11 +1071,15 @@ impl Workspace {
         &mut self,
         states_commit: Digest32,
         global_plv: u16,
+        phase_bus_commit: Digest32,
+        phase_bucket: u8,
         pair_locks_commit: Digest32,
         phase_frame_commit: Digest32,
     ) {
         self.onn_states_commit = states_commit;
         self.onn_global_plv = global_plv;
+        self.onn_phase_bus_commit = phase_bus_commit;
+        self.onn_phase_bucket = phase_bucket;
         self.onn_pair_locks_commit = pair_locks_commit;
         self.onn_phase_frame_commit = phase_frame_commit;
     }
@@ -1171,6 +1185,8 @@ impl Workspace {
         let coupling_lag_commits = std::mem::take(&mut self.coupling_lag_commits);
         let onn_states_commit = self.onn_states_commit;
         let onn_global_plv = self.onn_global_plv;
+        let onn_phase_bus_commit = self.onn_phase_bus_commit;
+        let onn_phase_bucket = self.onn_phase_bucket;
         let onn_pair_locks_commit = self.onn_pair_locks_commit;
         let onn_phase_frame_commit = self.onn_phase_frame_commit;
         let iit_output = self.iit_output.take();
@@ -1222,6 +1238,8 @@ impl Workspace {
             &coupling_lag_commits,
             onn_states_commit,
             onn_global_plv,
+            onn_phase_bus_commit,
+            onn_phase_bucket,
             onn_pair_locks_commit,
             onn_phase_frame_commit,
             iit_output.as_ref(),
@@ -1276,6 +1294,8 @@ impl Workspace {
             coupling_lag_commits,
             onn_states_commit,
             onn_global_plv,
+            onn_phase_bus_commit,
+            onn_phase_bucket,
             onn_pair_locks_commit,
             onn_phase_frame_commit,
             iit_output,
@@ -1707,6 +1727,8 @@ fn commit_snapshot(
     coupling_lag_commits: &[(u16, Digest32)],
     onn_states_commit: Digest32,
     onn_global_plv: u16,
+    onn_phase_bus_commit: Digest32,
+    onn_phase_bucket: u8,
     onn_pair_locks_commit: Digest32,
     onn_phase_frame_commit: Digest32,
     iit_output: Option<&IitOutput>,
@@ -1817,6 +1839,8 @@ fn commit_snapshot(
     }
     hasher.update(onn_states_commit.as_bytes());
     hasher.update(&onn_global_plv.to_be_bytes());
+    hasher.update(onn_phase_bus_commit.as_bytes());
+    hasher.update(&[onn_phase_bucket]);
     hasher.update(onn_pair_locks_commit.as_bytes());
     hasher.update(onn_phase_frame_commit.as_bytes());
     match iit_output {

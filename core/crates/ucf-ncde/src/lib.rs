@@ -136,6 +136,7 @@ impl NcdeState {
 pub struct NcdeInputs {
     pub cycle_id: u64,
     pub phase_frame_commit: Digest32,
+    pub phase_bucket: u8,
     pub phase_u16: u16,
     pub tcf_energy_smooth: u16,
     pub spike_accepted_root: Digest32,
@@ -153,6 +154,7 @@ impl NcdeInputs {
     pub fn new(
         cycle_id: u64,
         phase_frame_commit: Digest32,
+        phase_bucket: u8,
         phase_u16: u16,
         tcf_energy_smooth: u16,
         spike_accepted_root: Digest32,
@@ -167,6 +169,7 @@ impl NcdeInputs {
         let commit = commit_inputs(
             cycle_id,
             phase_frame_commit,
+            phase_bucket,
             phase_u16,
             tcf_energy_smooth,
             spike_accepted_root,
@@ -180,6 +183,7 @@ impl NcdeInputs {
         Self {
             cycle_id,
             phase_frame_commit,
+            phase_bucket,
             phase_u16,
             tcf_energy_smooth,
             spike_accepted_root,
@@ -312,6 +316,7 @@ fn commit_state(x: &[i32; DIM], energy: u16, params_commit: Digest32) -> Digest3
 fn commit_inputs(
     cycle_id: u64,
     phase_frame_commit: Digest32,
+    phase_bucket: u8,
     phase_u16: u16,
     tcf_energy_smooth: u16,
     spike_accepted_root: Digest32,
@@ -326,6 +331,7 @@ fn commit_inputs(
     hasher.update(INPUT_DOMAIN);
     hasher.update(&cycle_id.to_be_bytes());
     hasher.update(phase_frame_commit.as_bytes());
+    hasher.update(&[phase_bucket]);
     hasher.update(&phase_u16.to_be_bytes());
     hasher.update(&tcf_energy_smooth.to_be_bytes());
     hasher.update(spike_accepted_root.as_bytes());
@@ -535,6 +541,7 @@ mod tests {
         NcdeInputs::new(
             1,
             Digest32::new([1u8; 32]),
+            2,
             16_384,
             5000,
             Digest32::new([2u8; 32]),
@@ -570,6 +577,7 @@ mod tests {
         let inputs = NcdeInputs::new(
             1,
             Digest32::new([1u8; 32]),
+            2,
             16_384,
             5000,
             Digest32::new([2u8; 32]),
@@ -595,6 +603,7 @@ mod tests {
         let inputs_low = NcdeInputs::new(
             1,
             Digest32::new([1u8; 32]),
+            2,
             16_384,
             5000,
             Digest32::new([2u8; 32]),
@@ -608,6 +617,7 @@ mod tests {
         let inputs_high = NcdeInputs::new(
             1,
             Digest32::new([1u8; 32]),
+            2,
             16_384,
             5000,
             Digest32::new([2u8; 32]),
@@ -634,6 +644,7 @@ mod tests {
         let inputs_feature = NcdeInputs::new(
             1,
             Digest32::new([1u8; 32]),
+            2,
             16_384,
             5000,
             Digest32::new([2u8; 32]),
@@ -647,6 +658,7 @@ mod tests {
         let inputs_threat = NcdeInputs::new(
             1,
             Digest32::new([1u8; 32]),
+            2,
             16_384,
             5000,
             Digest32::new([2u8; 32]),
@@ -672,6 +684,7 @@ mod tests {
         let inputs_low = NcdeInputs::new(
             1,
             Digest32::new([1u8; 32]),
+            2,
             16_384,
             5000,
             Digest32::new([2u8; 32]),
@@ -685,6 +698,7 @@ mod tests {
         let inputs_high = NcdeInputs::new(
             1,
             Digest32::new([1u8; 32]),
+            2,
             16_384,
             5000,
             Digest32::new([2u8; 32]),

@@ -54,7 +54,8 @@ use ucf_ncde::{
 use ucf_nsr::{NsrCore, NsrInputs, NsrOutputs};
 use ucf_nsr_port::{light_report, ActionIntent, NsrInput, NsrPort, NsrReport, NsrVerdict};
 use ucf_onn::{
-    apply_coupling_delta, apply_lock_window_delta, OnnCore, OnnInputs, OnnParams, OscId, PhaseFrame,
+    apply_coupling_delta, apply_lock_window_delta, OnnCore, OnnInputs, OnnParams, OscId, PhaseBus,
+    PhaseFrame,
 };
 use ucf_output_router::{
     GateBundle, NsrSummary, OutputRouter, OutputRouterEvent, RouterConfig, SandboxVerdict,
@@ -281,6 +282,7 @@ struct StageContext {
     nsr_warn_streak: Option<u16>,
     recursion_budget: Option<RecursionBudget>,
     phase_commit: Option<Digest32>,
+    phase_bus: Option<PhaseBus>,
     percept_commit: Option<Digest32>,
     percept_energy: Option<u16>,
     coherence_plv: Option<u16>,
@@ -336,6 +338,7 @@ impl StageContext {
             nsr_warn_streak: None,
             recursion_budget: None,
             phase_commit: None,
+            phase_bus: None,
             percept_commit: None,
             percept_energy: None,
             coherence_plv: None,
@@ -550,6 +553,8 @@ impl Router {
                 coupling_lag_commits: Vec::new(),
                 onn_states_commit: Digest32::new([0u8; 32]),
                 onn_global_plv: 0,
+                onn_phase_bus_commit: Digest32::new([0u8; 32]),
+                onn_phase_bucket: 0,
                 onn_pair_locks_commit: Digest32::new([0u8; 32]),
                 onn_phase_frame_commit: Digest32::new([0u8; 32]),
                 iit_output: None,
@@ -669,7 +674,9 @@ impl Router {
                     });
                     ctx.lens_selection = lens_selection.clone();
                     let phase_frame = self.latest_phase_frame(cycle_id);
-                    ctx.phase_commit = Some(phase_frame.commit);
+                    let phase_bus = self.latest_phase_bus(cycle_id);
+                    ctx.phase_commit = Some(phase_bus.commit);
+                    ctx.phase_bus = Some(phase_bus.clone());
                     let snn_knobs = self.current_snn_knobs();
                     let phase_window = self.onn_phase_window();
                     let ssm_output = ctx
@@ -700,7 +707,7 @@ impl Router {
                         .unwrap_or_else(|_| FeatureSpikeParams::default());
                     let (feature_batch, _) = build_feature_spike_batch(
                         cycle_id,
-                        &phase_frame,
+                        &phase_bus,
                         phase_window,
                         feature_params,
                         feature_inputs,
@@ -823,7 +830,7 @@ impl Router {
                     } else {
                         coherence_hint
                     };
-                    let phase_frame = self.tick_onn_phase(
+                    let (phase_frame, phase_bus) = self.tick_onn_phase(
                         cycle_id,
                         influence_pulses_root,
                         influence_nodes,
@@ -838,7 +845,8 @@ impl Router {
                         nsr_report.verdict,
                         pulse.slot,
                     );
-                    ctx.phase_commit = Some(phase_frame.commit);
+                    ctx.phase_commit = Some(phase_bus.commit);
+                    ctx.phase_bus = Some(phase_bus.clone());
                     ctx.coherence_plv = Some(phase_frame.coherence_plv);
                     ctx.onn_outputs = Some(onn_outputs_from_phase(&phase_frame));
                     let mut attention_risk = 0u16;
@@ -887,9 +895,14 @@ impl Router {
                     let spike_counts_ssm = spike_counts.clone();
                     ctx.replay_pressure = Some(replay_pressure_from_spikes(&spike_counts));
                     let tcf_energy_smooth = ctx.tcf_energy_smooth.unwrap_or(0);
+                    let phase_bus = ctx
+                        .phase_bus
+                        .clone()
+                        .unwrap_or_else(|| self.latest_phase_bus(cycle_id));
                     if let Some(ncde_output) = self.tick_ncde(
                         cycle_id,
                         &phase_frame,
+                        &phase_bus,
                         tcf_energy_smooth,
                         influence_pulses_root,
                         spike_root_commit,
@@ -912,6 +925,7 @@ impl Router {
                         self.append_ncde_output_record(cycle_id, &ncde_output);
                         if let Some(ssm_output) = self.tick_ssm(
                             &phase_frame,
+                            &phase_bus,
                             percept_commit,
                             percept_energy,
                             attention_weights.gain,
@@ -959,11 +973,16 @@ impl Router {
                             .and_then(|guard| guard.as_ref().map(|state| state.consistency))
                             .map(|score| score < SELF_CONSISTENCY_OK_THRESHOLD)
                             .unwrap_or(false);
+                        let phase_bus = ctx
+                            .phase_bus
+                            .clone()
+                            .unwrap_or_else(|| self.latest_phase_bus(cycle_id));
                         let inputs = IitInputs::new(
                             cycle_id,
-                            phase_frame.commit,
+                            phase_bus.commit,
+                            phase_bus.gamma_bucket,
                             phase_frame.coherence_plv,
-                            pair_locks_commit(&phase_frame.pair_locks),
+                            phase_bus.pair_locks_commit,
                             influence_pulses_root,
                             influence_nodes,
                             spike_summary.seen_root,
@@ -1109,6 +1128,7 @@ impl Router {
                     let cde_output = self.tick_cde(
                         cycle_id,
                         &phase_frame,
+                        &phase_bus,
                         spike_root_commit,
                         spike_counts_iit.clone(),
                         influence_outputs.as_ref(),
@@ -1129,6 +1149,7 @@ impl Router {
                     let cde_v1_output = self.tick_cde_v1(
                         cycle_id,
                         &phase_frame,
+                        &phase_bus,
                         spike_root_commit,
                         ctx.ssm_output.as_ref(),
                         ctx.ncde_output.as_ref(),
@@ -1154,7 +1175,17 @@ impl Router {
                             );
                         }
                         self.append_cde_output_record(cycle_id, &output);
-                        self.queue_cde_spikes(cycle_id, &phase_frame, &output, &mut ctx);
+                        let phase_bus = ctx
+                            .phase_bus
+                            .clone()
+                            .unwrap_or_else(|| self.latest_phase_bus(cycle_id));
+                        self.queue_cde_spikes(
+                            cycle_id,
+                            &phase_frame,
+                            &phase_bus,
+                            &output,
+                            &mut ctx,
+                        );
                     }
                     let influence_for_nsr = ctx.influence_outputs.clone().or_else(|| {
                         self.last_influence_outputs
@@ -1167,9 +1198,14 @@ impl Router {
                         .clone()
                         .unwrap_or_else(empty_spike_summary);
                     let policy_ok = decision.kind == DecisionKind::DecisionKindAllow as i32;
+                    let phase_bus = ctx
+                        .phase_bus
+                        .clone()
+                        .unwrap_or_else(|| self.latest_phase_bus(cycle_id));
                     let nsr_inputs = self.build_nsr_inputs(
                         cycle_id,
-                        phase_frame.commit,
+                        phase_bus.commit,
+                        phase_bus.gamma_bucket,
                         influence_for_nsr.as_ref(),
                         &spike_summary,
                         ctx.cde_v1_output
@@ -1268,6 +1304,10 @@ impl Router {
                     self.append_consistency_report_record(cycle_id, &consistency_report);
                     if consistency_report.drift_score > 0 {
                         let phase_window = self.onn_phase_window();
+                        let phase_bus = ctx
+                            .phase_bus
+                            .clone()
+                            .unwrap_or_else(|| self.latest_phase_bus(cycle_id));
                         let spikes = vec![
                             encode_spike_with_window(
                                 cycle_id,
@@ -1275,7 +1315,8 @@ impl Router {
                                 OscId::Geist,
                                 OscId::Geist,
                                 consistency_report.drift_score,
-                                phase_frame.commit,
+                                phase_bus.commit,
+                                phase_bus.gamma_bucket,
                                 consistency_report.commit,
                                 phase_window,
                             ),
@@ -1285,7 +1326,8 @@ impl Router {
                                 OscId::Geist,
                                 OscId::Nsr,
                                 consistency_report.drift_score,
-                                phase_frame.commit,
+                                phase_bus.commit,
+                                phase_bus.gamma_bucket,
                                 consistency_report.commit,
                                 phase_window,
                             ),
@@ -1293,6 +1335,7 @@ impl Router {
                         self.append_spike_events(
                             cycle_id,
                             &phase_frame,
+                            &phase_bus,
                             spikes,
                             true,
                             NsrVerdict::Allow,
@@ -1402,6 +1445,10 @@ impl Router {
                         self.append_output_event_record(cycle_id, event);
                     }
 
+                    let phase_bus = ctx
+                        .phase_bus
+                        .clone()
+                        .unwrap_or_else(|| self.latest_phase_bus(cycle_id));
                     let mut output_intent_events = Vec::new();
                     let mut output_intent_suppressions = Vec::new();
                     for (idx, output) in outputs.iter().enumerate() {
@@ -1424,7 +1471,8 @@ impl Router {
                                         OscId::Output,
                                         OscId::Nsr,
                                         strength,
-                                        phase_frame.commit,
+                                        phase_bus.commit,
+                                        phase_bus.gamma_bucket,
                                         output
                                             .rationale_commit
                                             .unwrap_or_else(|| Digest32::new([0u8; 32])),
@@ -1432,6 +1480,7 @@ impl Router {
                                     );
                                     let suppression = self.suppression_for_event(
                                         &phase_frame,
+                                        &phase_bus,
                                         &spike,
                                         policy_ok,
                                         nsr_verdict,
@@ -1483,7 +1532,7 @@ impl Router {
                     }
                     if !output_intent_events.is_empty() {
                         let batch =
-                            SpikeBatch::new(cycle_id, phase_frame.commit, output_intent_events);
+                            SpikeBatch::new(cycle_id, phase_bus.commit, output_intent_events);
                         let summary = if let Ok(mut workspace) = self.workspace.lock() {
                             workspace.append_spike_batch(batch.clone(), output_intent_suppressions)
                         } else {
@@ -1760,7 +1809,8 @@ impl Router {
                     let snapshot = self.arbitrate_workspace(cycle_id);
                     let sle_outputs = self.tick_sle(
                         cycle_id,
-                        snapshot.onn_phase_frame_commit,
+                        snapshot.onn_phase_bus_commit,
+                        snapshot.onn_phase_bucket,
                         snapshot.iit_output.as_ref(),
                         ctx.drift_score.unwrap_or(0),
                         ctx.surprise_score.unwrap_or(0),
@@ -1887,9 +1937,14 @@ impl Router {
                             .spike_summary
                             .clone()
                             .unwrap_or_else(empty_spike_summary);
+                        let phase_bus = ctx
+                            .phase_bus
+                            .clone()
+                            .unwrap_or_else(|| self.latest_phase_bus(cycle_id));
                         let nsr_inputs = self.build_nsr_inputs(
                             cycle_id,
-                            ctx.phase_commit.unwrap_or_else(|| Digest32::new([0u8; 32])),
+                            phase_bus.commit,
+                            phase_bus.gamma_bucket,
                             influence_outputs.as_ref(),
                             &spike_summary,
                             ctx.cde_v1_output
@@ -2207,21 +2262,16 @@ impl Router {
         self.append_archive_record(RecordKind::CyclePlan, plan.commit, meta);
     }
 
-    fn append_phase_frame_record(&self, cycle_id: u64, frame: &PhaseFrame) {
-        let locked_pairs = frame
-            .pair_locks
-            .iter()
-            .filter(|pair| pair.lock >= LOCK_MIN_CAUSAL)
-            .count();
+    fn append_phase_frame_record(&self, cycle_id: u64, phase_bus: &PhaseBus) {
         let meta = RecordMeta {
             cycle_id,
-            tier: locked_pairs.min(u8::MAX as usize) as u8,
-            flags: frame.coherence_plv,
-            boundary_commit: frame.phase_frame_commit,
+            tier: phase_bus.gamma_bucket,
+            flags: phase_bus.global_plv,
+            boundary_commit: phase_bus.pair_locks_commit,
         };
         self.append_archive_record(
             RecordKind::Other(PHASE_FRAME_RECORD_KIND),
-            frame.commit,
+            phase_bus.commit,
             meta,
         );
     }
@@ -2312,7 +2362,7 @@ impl Router {
         attn_gain: u16,
         nsr_verdict: NsrVerdict,
         slot: u8,
-    ) -> PhaseFrame {
+    ) -> (PhaseFrame, PhaseBus) {
         let brain_arousal = self
             .last_brain_arousal
             .lock()
@@ -2333,19 +2383,14 @@ impl Router {
             drift_score,
             nsr_verdict.as_u8(),
         );
-        let outputs = {
+        let (outputs, module_phase, phase_bus) = {
             let mut onn = self.onn_core.lock().expect("onn core lock");
-            onn.tick(&inputs)
+            let outputs = onn.tick(&inputs);
+            let module_phase = onn.states.iter().map(|s| (s.id, s.phase)).collect();
+            let phase_bus = onn.phase_bus(cycle_id);
+            (outputs, module_phase, phase_bus)
         };
-        let module_phase = self
-            .onn_core
-            .lock()
-            .map(|core| core.states.iter().map(|s| (s.id, s.phase)).collect())
-            .unwrap_or_else(|_| Vec::new());
-        let global_phase = module_phase
-            .iter()
-            .find_map(|(id, phase)| (*id == OscId::Iit).then_some(*phase))
-            .unwrap_or(0);
+        let global_phase = phase_bus.global_phase_u16;
         let frame = PhaseFrame {
             cycle_id,
             global_phase,
@@ -2369,16 +2414,17 @@ impl Router {
             slot,
         });
         if let Ok(mut workspace) = self.workspace.lock() {
-            let pair_commit = pair_locks_commit(&frame.pair_locks);
             workspace.set_onn_snapshot(
                 frame.states_commit,
                 frame.coherence_plv,
-                pair_commit,
+                phase_bus.commit,
+                phase_bus.gamma_bucket,
+                phase_bus.pair_locks_commit,
                 frame.phase_frame_commit,
             );
         }
-        self.append_phase_frame_record(cycle_id, &frame);
-        frame
+        self.append_phase_frame_record(cycle_id, &phase_bus);
+        (frame, phase_bus)
     }
 
     fn build_sle_reflex_record(&self, cycle_id: u64, reflex: &SelfReflex) -> ExperienceRecord {
@@ -2408,6 +2454,7 @@ impl Router {
         &self,
         cycle_id: u64,
         phase_commit: Digest32,
+        phase_bucket: u8,
         iit_output: Option<&IitOutput>,
         drift_score: u16,
         surprise_score: u16,
@@ -2429,6 +2476,7 @@ impl Router {
         let inputs = SleInputs::new(
             cycle_id,
             phase_commit,
+            phase_bucket,
             workspace_snapshot.onn_global_plv,
             phi_proxy,
             attention_risk,
@@ -2663,12 +2711,16 @@ impl Router {
     }
 
     fn tick_coupling(&self, ctx: &mut StageContext, cycle_id: u64) {
-        let phase_commit = ctx.phase_commit.unwrap_or_else(|| Digest32::new([0u8; 32]));
+        let phase_bus = ctx
+            .phase_bus
+            .clone()
+            .unwrap_or_else(|| self.latest_phase_bus(cycle_id));
         let samples = self.collect_coupling_samples(ctx, cycle_id);
         if samples.is_empty() {
             return;
         }
-        let inputs = CouplingInputs::new(cycle_id, phase_commit, samples);
+        let inputs =
+            CouplingInputs::new(cycle_id, phase_bus.commit, phase_bus.gamma_bucket, samples);
         let coupling_result = self.coupling_core.lock().ok().map(|mut core| {
             let outputs = core.tick(&inputs);
             let buffer_commits = core.buffer_commits();
@@ -3024,10 +3076,12 @@ impl Router {
         summary
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn append_spike_events(
         &self,
         cycle_id: u64,
         phase_frame: &PhaseFrame,
+        phase_bus: &PhaseBus,
         events: Vec<SpikeEvent>,
         policy_ok: bool,
         nsr_verdict: NsrVerdict,
@@ -3041,20 +3095,32 @@ impl Router {
         }
         let suppressions = events
             .iter()
-            .map(|event| self.suppression_for_event(phase_frame, event, policy_ok, nsr_verdict))
+            .map(|event| {
+                self.suppression_for_event(phase_frame, phase_bus, event, policy_ok, nsr_verdict)
+            })
             .collect::<Vec<_>>();
-        let batch = SpikeBatch::new(cycle_id, phase_frame.commit, events);
+        let batch = SpikeBatch::new(cycle_id, phase_bus.commit, events);
         self.append_spike_batch(cycle_id, batch, suppressions, ctx)
     }
 
     fn suppression_for_event(
         &self,
         phase_frame: &PhaseFrame,
+        phase_bus: &PhaseBus,
         event: &SpikeEvent,
         policy_ok: bool,
         nsr_verdict: NsrVerdict,
     ) -> SpikeSuppression {
         let mut suppression = SpikeSuppression::default();
+        let lock_window = self.onn_phase_window();
+        let base_window = lock_window_buckets(lock_window);
+        let phase_window = match event.kind {
+            SpikeKind::Threat => 1,
+            SpikeKind::ThoughtOnly => base_window.clamp(3, 4),
+            _ => base_window,
+        };
+        let phase_dist = phase_bucket_distance(event.phase_bucket, phase_bus.gamma_bucket);
+        suppression.suppressed_by_phase = phase_dist > phase_window;
         match event.kind {
             SpikeKind::CausalLink if event.dst == OscId::Nsr => {
                 let lock = pair_lock_for(phase_frame, OscId::Cde, OscId::Nsr).unwrap_or(0);
@@ -3150,6 +3216,7 @@ impl Router {
         &self,
         cycle_id: u64,
         phase_frame: &PhaseFrame,
+        phase_bus: &PhaseBus,
         spike_accepted_root: Digest32,
         ssm_output: Option<&SsmOutputs>,
         ncde_output: Option<&NcdeOutputs>,
@@ -3187,7 +3254,8 @@ impl Router {
         let replay_active = replay_pressure >= 5_000;
         let inputs = CdeV1Inputs::new(
             cycle_id,
-            phase_frame.commit,
+            phase_bus.commit,
+            phase_bus.gamma_bucket,
             ssm_output.map(|output| output.salience).unwrap_or(0),
             ssm_output.map(|output| output.novelty).unwrap_or(0),
             attention_gain,
@@ -3213,6 +3281,7 @@ impl Router {
         &self,
         cycle_id: u64,
         phase_frame: &PhaseFrame,
+        phase_bus: &PhaseBus,
         spike_root_commit: Digest32,
         spike_counts: Vec<(SpikeKind, u16)>,
         influence_outputs: Option<&InfluenceOutputs>,
@@ -3231,7 +3300,8 @@ impl Router {
             .unwrap_or_default();
         let inputs = CdeInputs::new(
             cycle_id,
-            phase_frame.commit,
+            phase_bus.commit,
+            phase_bus.gamma_bucket,
             phase_frame.global_phase,
             phase_frame.coherence_plv,
             iit_output.phi_proxy,
@@ -3254,6 +3324,7 @@ impl Router {
         &self,
         cycle_id: u64,
         phase_frame: &PhaseFrame,
+        phase_bus: &PhaseBus,
         tcf_energy_smooth: u16,
         influence_pulses_root: Digest32,
         spike_root_commit: Digest32,
@@ -3268,7 +3339,8 @@ impl Router {
         let tcf_energy_smooth = apply_coupling_bias(tcf_energy_smooth, coupling_boost, 2000);
         let inputs = NcdeInputs::new(
             cycle_id,
-            phase_frame.commit,
+            phase_bus.commit,
+            phase_bus.gamma_bucket,
             phase_frame.global_phase,
             tcf_energy_smooth,
             spike_root_commit,
@@ -3285,7 +3357,8 @@ impl Router {
     #[allow(clippy::too_many_arguments)]
     fn tick_ssm(
         &self,
-        phase_frame: &PhaseFrame,
+        _phase_frame: &PhaseFrame,
+        phase_bus: &PhaseBus,
         percept_commit: Digest32,
         percept_energy: u16,
         prev_attention_gain: u16,
@@ -3301,7 +3374,8 @@ impl Router {
         let coupling_u = self.coupling_influence(SignalId::SsmSalience);
         let input = SsmInputs::new(
             ncde_output.cycle_id,
-            phase_frame.commit,
+            phase_bus.commit,
+            phase_bus.gamma_bucket,
             percept_commit,
             percept_energy,
             coupling_u,
@@ -3365,6 +3439,21 @@ impl Router {
                 pair_locks: Vec::new(),
                 states_commit: Digest32::new([0u8; 32]),
                 phase_frame_commit: Digest32::new([0u8; 32]),
+                commit: Digest32::new([0u8; 32]),
+            })
+    }
+
+    fn latest_phase_bus(&self, cycle_id: u64) -> PhaseBus {
+        self.onn_core
+            .lock()
+            .ok()
+            .map(|core| core.phase_bus(cycle_id))
+            .unwrap_or(PhaseBus {
+                cycle_id,
+                global_phase_u16: 0,
+                gamma_bucket: 0,
+                global_plv: 0,
+                pair_locks_commit: Digest32::new([0u8; 32]),
                 commit: Digest32::new([0u8; 32]),
             })
     }
@@ -3524,6 +3613,7 @@ impl Router {
         &self,
         cycle_id: u64,
         phase_commit: Digest32,
+        phase_bucket: u8,
         influence_outputs: Option<&InfluenceOutputs>,
         spike_summary: &SpikeBusSummary,
         cde_summary_commit: Option<Digest32>,
@@ -3561,6 +3651,7 @@ impl Router {
         NsrInputs::new(
             cycle_id,
             phase_commit,
+            phase_bucket,
             influence_nodes,
             spike_summary.accepted_root,
             spike_summary.counts.clone(),
@@ -3704,6 +3795,7 @@ impl Router {
         &self,
         cycle_id: u64,
         phase_frame: &PhaseFrame,
+        phase_bus: &PhaseBus,
         output: &CdeV1Outputs,
         ctx: &mut StageContext,
     ) {
@@ -3713,6 +3805,7 @@ impl Router {
         self.append_spike_events(
             cycle_id,
             phase_frame,
+            phase_bus,
             output.causal_link_spikes.clone(),
             true,
             NsrVerdict::Allow,
@@ -4012,6 +4105,17 @@ fn in_phase(ttfs_code: u16, global_phase: u16, phase_window: u16) -> bool {
     distance <= u32::from(phase_window)
 }
 
+fn lock_window_buckets(lock_window: u16) -> u8 {
+    let buckets = lock_window / 4096;
+    buckets.clamp(1, 4) as u8
+}
+
+fn phase_bucket_distance(a: u8, b: u8) -> u8 {
+    let diff = a.abs_diff(b);
+    let wrap = 16u8.saturating_sub(diff);
+    diff.min(wrap)
+}
+
 fn onn_outputs_from_phase(phase_frame: &PhaseFrame) -> ucf_onn::OnnOutputs {
     ucf_onn::OnnOutputs {
         cycle_id: phase_frame.cycle_id,
@@ -4027,16 +4131,6 @@ fn pair_lock_for(phase_frame: &PhaseFrame, a: OscId, b: OscId) -> Option<u16> {
     phase_frame.pair_locks.iter().find_map(|pair| {
         ((pair.a == a && pair.b == b) || (pair.a == b && pair.b == a)).then_some(pair.lock)
     })
-}
-
-fn pair_locks_commit(pairs: &[ucf_onn::PairLock]) -> Digest32 {
-    let mut hasher = Hasher::new();
-    hasher.update(b"ucf.onn.pair_locks.root.v2");
-    hasher.update(&u32::try_from(pairs.len()).unwrap_or(u32::MAX).to_be_bytes());
-    for pair in pairs {
-        hasher.update(pair.commit.as_bytes());
-    }
-    Digest32::new(*hasher.finalize().as_bytes())
 }
 
 struct SpikeCountSummary {
@@ -4684,6 +4778,17 @@ mod tests {
         )
     }
 
+    fn phase_bus_for_frame(frame: &PhaseFrame, seed: u8) -> PhaseBus {
+        PhaseBus {
+            cycle_id: frame.cycle_id,
+            global_phase_u16: frame.global_phase,
+            gamma_bucket: (frame.global_phase / 4096) as u8,
+            global_plv: frame.coherence_plv,
+            pair_locks_commit: Digest32::new([seed; 32]),
+            commit: Digest32::new([seed.wrapping_add(1); 32]),
+        }
+    }
+
     #[test]
     fn predictive_observation_changes_with_ssm_state() {
         let state_a = SsmState::new(vec![1, -2, 3]);
@@ -4852,10 +4957,12 @@ mod tests {
             phase_frame_commit: Digest32::new([0u8; 32]),
             commit: Digest32::new([1u8; 32]),
         };
+        let phase_bus = phase_bus_for_frame(&phase_frame, 9);
         let output = router
             .tick_ncde(
                 1,
                 &phase_frame,
+                &phase_bus,
                 4500,
                 Digest32::new([9u8; 32]),
                 Digest32::new([2u8; 32]),
@@ -4913,19 +5020,21 @@ mod tests {
             phase_frame_commit: Digest32::new([0u8; 32]),
             commit: Digest32::new([3u8; 32]),
         };
+        let phase_bus = phase_bus_for_frame(&phase_frame, 2);
         let edge = CdeV1Edge::new(CdeVarId::Risk, CdeVarId::OutputSuppression, 7_000, 0);
         let spike = SpikeEvent::new(
             1,
             SpikeKind::CausalLink,
             OscId::Cde,
             OscId::Nsr,
+            phase_bus.gamma_bucket,
             10,
-            phase_frame.commit,
+            phase_bus.commit,
             Digest32::new([9u8; 32]),
         );
         let output = CdeV1Outputs::new(1, Digest32::new([4u8; 32]), vec![edge], None, vec![spike]);
         let mut ctx = StageContext::new();
-        router.queue_cde_spikes(1, &phase_frame, &output, &mut ctx);
+        router.queue_cde_spikes(1, &phase_frame, &phase_bus, &output, &mut ctx);
         let spikes = router
             .workspace
             .lock()
@@ -4950,10 +5059,11 @@ mod tests {
             phase_frame_commit: Digest32::new([0u8; 32]),
             commit: Digest32::new([6u8; 32]),
         };
+        let phase_bus = phase_bus_for_frame(&phase_frame, 3);
         let edge = CdeV1Edge::new(CdeVarId::Risk, CdeVarId::OutputSuppression, 2_000, 0);
         let output = CdeV1Outputs::new(2, Digest32::new([7u8; 32]), vec![edge], None, Vec::new());
         let mut ctx = StageContext::new();
-        router.queue_cde_spikes(2, &phase_frame, &output, &mut ctx);
+        router.queue_cde_spikes(2, &phase_frame, &phase_bus, &output, &mut ctx);
         let spikes = router
             .workspace
             .lock()
@@ -4975,10 +5085,12 @@ mod tests {
             phase_frame_commit: Digest32::new([0u8; 32]),
             commit: Digest32::new([1u8; 32]),
         };
+        let phase_bus = phase_bus_for_frame(&phase_frame, 4);
         let ncde_output = router
             .tick_ncde(
                 1,
                 &phase_frame,
+                &phase_bus,
                 4500,
                 Digest32::new([9u8; 32]),
                 Digest32::new([2u8; 32]),
@@ -4991,6 +5103,7 @@ mod tests {
         let ssm_output = router
             .tick_ssm(
                 &phase_frame,
+                &phase_bus,
                 Digest32::new([4u8; 32]),
                 1200,
                 2000,
@@ -5066,6 +5179,7 @@ mod tests {
             SpikeKind::Threat,
             OscId::Jepa,
             OscId::Nsr,
+            0,
             1020,
             Digest32::new([1u8; 32]),
             Digest32::new([2u8; 32]),
@@ -5080,11 +5194,256 @@ mod tests {
             SpikeKind::Threat,
             OscId::Jepa,
             OscId::Nsr,
+            0,
             2000,
             Digest32::new([1u8; 32]),
             Digest32::new([2u8; 32]),
         );
         assert!(!spikes_in_phase(&[spike], 1000, 50));
+    }
+
+    #[test]
+    fn spike_phase_gating_rejects_out_of_window() {
+        let router = build_router();
+        let phase_frame = PhaseFrame {
+            cycle_id: 1,
+            global_phase: 0,
+            module_phase: Vec::new(),
+            coherence_plv: 0,
+            pair_locks: Vec::new(),
+            states_commit: Digest32::new([0u8; 32]),
+            phase_frame_commit: Digest32::new([0u8; 32]),
+            commit: Digest32::new([1u8; 32]),
+        };
+        let phase_bus = PhaseBus {
+            cycle_id: 1,
+            global_phase_u16: 0,
+            gamma_bucket: 0,
+            global_plv: 0,
+            pair_locks_commit: Digest32::new([2u8; 32]),
+            commit: Digest32::new([3u8; 32]),
+        };
+        let spike = SpikeEvent::new(
+            1,
+            SpikeKind::Feature,
+            OscId::Jepa,
+            OscId::Nsr,
+            8,
+            1200,
+            phase_bus.commit,
+            Digest32::new([4u8; 32]),
+        );
+        let suppression =
+            router.suppression_for_event(&phase_frame, &phase_bus, &spike, true, NsrVerdict::Allow);
+        assert!(suppression.suppressed_by_phase);
+    }
+
+    #[test]
+    fn threat_spikes_have_tighter_phase_window_than_feature() {
+        let router = build_router();
+        let phase_frame = PhaseFrame {
+            cycle_id: 1,
+            global_phase: 0,
+            module_phase: Vec::new(),
+            coherence_plv: 0,
+            pair_locks: Vec::new(),
+            states_commit: Digest32::new([0u8; 32]),
+            phase_frame_commit: Digest32::new([0u8; 32]),
+            commit: Digest32::new([2u8; 32]),
+        };
+        let phase_bus = PhaseBus {
+            cycle_id: 1,
+            global_phase_u16: 0,
+            gamma_bucket: 0,
+            global_plv: 0,
+            pair_locks_commit: Digest32::new([3u8; 32]),
+            commit: Digest32::new([4u8; 32]),
+        };
+        let feature = SpikeEvent::new(
+            1,
+            SpikeKind::Feature,
+            OscId::Jepa,
+            OscId::Nsr,
+            2,
+            1000,
+            phase_bus.commit,
+            Digest32::new([5u8; 32]),
+        );
+        let threat = SpikeEvent::new(
+            1,
+            SpikeKind::Threat,
+            OscId::Jepa,
+            OscId::Nsr,
+            2,
+            1000,
+            phase_bus.commit,
+            Digest32::new([6u8; 32]),
+        );
+        let feature_suppression = router.suppression_for_event(
+            &phase_frame,
+            &phase_bus,
+            &feature,
+            true,
+            NsrVerdict::Allow,
+        );
+        let threat_suppression = router.suppression_for_event(
+            &phase_frame,
+            &phase_bus,
+            &threat,
+            true,
+            NsrVerdict::Allow,
+        );
+        assert!(!feature_suppression.suppressed_by_phase);
+        assert!(threat_suppression.suppressed_by_phase);
+    }
+
+    #[test]
+    fn thought_only_allows_looser_phase_window() {
+        let router = build_router();
+        {
+            let base = StructuralStore::default_params();
+            let onn = OnnKnobs::new(
+                base.onn.base_step,
+                base.onn.coupling,
+                base.onn.max_delta,
+                1024,
+            );
+            let params = StructuralParams::new(
+                onn,
+                base.snn.clone(),
+                base.nsr,
+                base.replay,
+                base.ssm,
+                base.ncde,
+                base.rsa,
+            );
+            let mut store = router
+                .structural_store
+                .lock()
+                .expect("structural store lock");
+            *store = StructuralStore::new(params);
+        }
+        let phase_frame = PhaseFrame {
+            cycle_id: 1,
+            global_phase: 0,
+            module_phase: Vec::new(),
+            coherence_plv: 0,
+            pair_locks: Vec::new(),
+            states_commit: Digest32::new([0u8; 32]),
+            phase_frame_commit: Digest32::new([0u8; 32]),
+            commit: Digest32::new([3u8; 32]),
+        };
+        let phase_bus = PhaseBus {
+            cycle_id: 1,
+            global_phase_u16: 0,
+            gamma_bucket: 0,
+            global_plv: 0,
+            pair_locks_commit: Digest32::new([4u8; 32]),
+            commit: Digest32::new([5u8; 32]),
+        };
+        let thought = SpikeEvent::new(
+            1,
+            SpikeKind::ThoughtOnly,
+            OscId::Jepa,
+            OscId::BlueBrain,
+            3,
+            900,
+            phase_bus.commit,
+            Digest32::new([6u8; 32]),
+        );
+        let feature = SpikeEvent::new(
+            1,
+            SpikeKind::Feature,
+            OscId::Jepa,
+            OscId::Nsr,
+            3,
+            900,
+            phase_bus.commit,
+            Digest32::new([7u8; 32]),
+        );
+        let thought_suppression = router.suppression_for_event(
+            &phase_frame,
+            &phase_bus,
+            &thought,
+            true,
+            NsrVerdict::Allow,
+        );
+        let feature_suppression = router.suppression_for_event(
+            &phase_frame,
+            &phase_bus,
+            &feature,
+            true,
+            NsrVerdict::Allow,
+        );
+        assert!(!thought_suppression.suppressed_by_phase);
+        assert!(feature_suppression.suppressed_by_phase);
+    }
+
+    #[test]
+    fn spike_acceptance_is_deterministic_for_phase_bus() {
+        let router_a = build_router();
+        let router_b = build_router();
+        let phase_frame = PhaseFrame {
+            cycle_id: 1,
+            global_phase: 0,
+            module_phase: Vec::new(),
+            coherence_plv: 0,
+            pair_locks: Vec::new(),
+            states_commit: Digest32::new([0u8; 32]),
+            phase_frame_commit: Digest32::new([0u8; 32]),
+            commit: Digest32::new([4u8; 32]),
+        };
+        let phase_bus = PhaseBus {
+            cycle_id: 1,
+            global_phase_u16: 0,
+            gamma_bucket: 0,
+            global_plv: 0,
+            pair_locks_commit: Digest32::new([8u8; 32]),
+            commit: Digest32::new([9u8; 32]),
+        };
+        let spikes = vec![
+            SpikeEvent::new(
+                1,
+                SpikeKind::Feature,
+                OscId::Jepa,
+                OscId::Nsr,
+                phase_bus.gamma_bucket,
+                100,
+                phase_bus.commit,
+                Digest32::new([10u8; 32]),
+            ),
+            SpikeEvent::new(
+                1,
+                SpikeKind::Novelty,
+                OscId::Jepa,
+                OscId::Nsr,
+                phase_bus.gamma_bucket,
+                200,
+                phase_bus.commit,
+                Digest32::new([11u8; 32]),
+            ),
+        ];
+        let mut ctx_a = StageContext::new();
+        let mut ctx_b = StageContext::new();
+        let summary_a = router_a.append_spike_events(
+            1,
+            &phase_frame,
+            &phase_bus,
+            spikes.clone(),
+            true,
+            NsrVerdict::Allow,
+            &mut ctx_a,
+        );
+        let summary_b = router_b.append_spike_events(
+            1,
+            &phase_frame,
+            &phase_bus,
+            spikes,
+            true,
+            NsrVerdict::Allow,
+            &mut ctx_b,
+        );
+        assert_eq!(summary_a.accepted_root, summary_b.accepted_root);
     }
 
     #[test]
@@ -5106,19 +5465,22 @@ mod tests {
             phase_frame_commit: Digest32::new([0u8; 32]),
             commit: Digest32::new([2u8; 32]),
         };
+        let phase_bus = phase_bus_for_frame(&phase_frame, 2);
         let spike = SpikeEvent::new(
             1,
             SpikeKind::CausalLink,
             OscId::Cde,
             OscId::Nsr,
+            phase_bus.gamma_bucket,
             1200,
-            Digest32::new([3u8; 32]),
+            phase_bus.commit,
             Digest32::new([4u8; 32]),
         );
         let mut ctx = StageContext::new();
         let summary = router.append_spike_events(
             1,
             &phase_frame,
+            &phase_bus,
             vec![spike],
             true,
             NsrVerdict::Allow,
@@ -5146,17 +5508,24 @@ mod tests {
             phase_frame_commit: Digest32::new([0u8; 32]),
             commit: Digest32::new([5u8; 32]),
         };
+        let phase_bus = phase_bus_for_frame(&phase_frame, 3);
         let spike = SpikeEvent::new(
             1,
             SpikeKind::OutputIntent,
             OscId::Output,
             OscId::Nsr,
+            phase_bus.gamma_bucket,
             500,
-            Digest32::new([6u8; 32]),
+            phase_bus.commit,
             Digest32::new([7u8; 32]),
         );
-        let suppression =
-            router.suppression_for_event(&phase_frame, &spike, false, NsrVerdict::Allow);
+        let suppression = router.suppression_for_event(
+            &phase_frame,
+            &phase_bus,
+            &spike,
+            false,
+            NsrVerdict::Allow,
+        );
         assert!(suppression.suppressed_by_policy);
     }
 
@@ -5184,6 +5553,7 @@ mod tests {
             .tick_sle(
                 3,
                 phase_commit,
+                0,
                 Some(&iit_output),
                 1200,
                 800,

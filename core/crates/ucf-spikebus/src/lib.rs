@@ -9,7 +9,7 @@ use ucf_types::Digest32;
 
 pub use ucf_onn::OscId as SpikeModuleId;
 
-const SPIKE_EVENT_DOMAIN: &[u8] = b"ucf.spikebus.event.v2";
+const SPIKE_EVENT_DOMAIN: &[u8] = b"ucf.spikebus.event.v3";
 const SPIKE_BATCH_ROOT_DOMAIN: &[u8] = b"ucf.spikebus.batch.root.v1";
 const SPIKE_BATCH_COMMIT_DOMAIN: &[u8] = b"ucf.spikebus.batch.commit.v1";
 const SPIKE_SEEN_ROOT_DOMAIN: &[u8] = b"ucf.spikebus.seen.root.v1";
@@ -54,6 +54,7 @@ pub struct SpikeEvent {
     pub kind: SpikeKind,
     pub src: OscId,
     pub dst: OscId,
+    pub phase_bucket: u8,
     pub ttfs: u16,
     pub phase_commit: Digest32,
     pub payload_commit: Digest32,
@@ -67,6 +68,7 @@ impl SpikeEvent {
         kind: SpikeKind,
         src: OscId,
         dst: OscId,
+        phase_bucket: u8,
         ttfs: u16,
         phase_commit: Digest32,
         payload_commit: Digest32,
@@ -77,13 +79,22 @@ impl SpikeEvent {
                 "ThoughtOnly spikes must target BlueBrain or Geist"
             );
         }
-        let commit =
-            commit_spike_event(cycle_id, kind, src, dst, ttfs, phase_commit, payload_commit);
+        let commit = commit_spike_event(
+            cycle_id,
+            kind,
+            src,
+            dst,
+            phase_bucket,
+            ttfs,
+            phase_commit,
+            payload_commit,
+        );
         Self {
             cycle_id,
             kind,
             src,
             dst,
+            phase_bucket,
             ttfs,
             phase_commit,
             payload_commit,
@@ -136,11 +147,12 @@ impl SpikeBatch {
 pub struct SpikeSuppression {
     pub suppressed_by_onn: bool,
     pub suppressed_by_policy: bool,
+    pub suppressed_by_phase: bool,
 }
 
 impl SpikeSuppression {
     pub fn is_suppressed(self) -> bool {
-        self.suppressed_by_onn || self.suppressed_by_policy
+        self.suppressed_by_onn || self.suppressed_by_policy || self.suppressed_by_phase
     }
 }
 
@@ -332,6 +344,10 @@ fn compare_spikes(a: &SpikeEvent, b: &SpikeEvent) -> Ordering {
     if kind_cmp != Ordering::Equal {
         return kind_cmp;
     }
+    let bucket_cmp = a.phase_bucket.cmp(&b.phase_bucket);
+    if bucket_cmp != Ordering::Equal {
+        return bucket_cmp;
+    }
     let ttfs_cmp = a.ttfs.cmp(&b.ttfs);
     if ttfs_cmp != Ordering::Equal {
         return ttfs_cmp;
@@ -374,6 +390,7 @@ fn commit_spike_event(
     kind: SpikeKind,
     src: OscId,
     dst: OscId,
+    phase_bucket: u8,
     ttfs: u16,
     phase_commit: Digest32,
     payload_commit: Digest32,
@@ -384,6 +401,7 @@ fn commit_spike_event(
     hasher.update(&kind.as_u16().to_be_bytes());
     hasher.update(&src.as_u16().to_be_bytes());
     hasher.update(&dst.as_u16().to_be_bytes());
+    hasher.update(&[phase_bucket]);
     hasher.update(&ttfs.to_be_bytes());
     hasher.update(phase_commit.as_bytes());
     hasher.update(payload_commit.as_bytes());
@@ -408,6 +426,7 @@ mod tests {
             kind,
             OscId::Jepa,
             dst,
+            3,
             ttfs,
             Digest32::new([seed; 32]),
             Digest32::new([seed.wrapping_add(1); 32]),
@@ -424,6 +443,31 @@ mod tests {
         let batch_b = SpikeBatch::new(1, Digest32::new([9u8; 32]), events);
         assert_eq!(batch_a.root, batch_b.root);
         assert_eq!(batch_a.commit, batch_b.commit);
+    }
+
+    #[test]
+    fn spike_commit_changes_with_ttfs() {
+        let base = SpikeEvent::new(
+            1,
+            SpikeKind::Feature,
+            OscId::Jepa,
+            OscId::Ssm,
+            4,
+            12,
+            Digest32::new([3u8; 32]),
+            Digest32::new([4u8; 32]),
+        );
+        let shifted = SpikeEvent::new(
+            1,
+            SpikeKind::Feature,
+            OscId::Jepa,
+            OscId::Ssm,
+            4,
+            14,
+            Digest32::new([3u8; 32]),
+            Digest32::new([4u8; 32]),
+        );
+        assert_ne!(base.commit, shifted.commit);
     }
 
     #[test]
@@ -455,6 +499,7 @@ mod tests {
             vec![SpikeSuppression {
                 suppressed_by_onn: true,
                 suppressed_by_policy: false,
+                suppressed_by_phase: false,
             }],
         );
         assert_ne!(summary.seen_root, summary.accepted_root);
@@ -483,6 +528,7 @@ mod tests {
             SpikeKind::ThoughtOnly,
             OscId::Jepa,
             OscId::Output,
+            2,
             1,
             Digest32::new([0u8; 32]),
             Digest32::new([1u8; 32]),

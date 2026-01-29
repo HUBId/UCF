@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
 use blake3::Hasher;
-use ucf_onn::{OscId, PhaseFrame};
+use ucf_onn::{OscId, PhaseBus};
 use ucf_spike_encoder::encode_spike_with_window;
 use ucf_spikebus::{SpikeBatch, SpikeKind};
 use ucf_types::Digest32;
@@ -60,7 +60,7 @@ pub struct FeatureSpikeSummary {
 
 pub fn build_feature_spike_batch(
     cycle_id: u64,
-    phase: &PhaseFrame,
+    phase_bus: &PhaseBus,
     phase_window: u16,
     params: FeatureSpikeParams,
     inputs: FeatureSpikerInputs,
@@ -154,14 +154,15 @@ pub fn build_feature_spike_batch(
         if candidate.strength == 0 {
             continue;
         }
-        let salt = feature_salt(candidate.label, candidate.strength, phase.commit);
+        let salt = feature_salt(candidate.label, candidate.strength, phase_bus.commit);
         let event = encode_spike_with_window(
             cycle_id,
             candidate.kind,
             OscId::Jepa,
             candidate.dst,
             candidate.strength,
-            phase.commit,
+            phase_bus.commit,
+            phase_bus.gamma_bucket,
             salt,
             phase_window,
         );
@@ -169,7 +170,7 @@ pub fn build_feature_spike_batch(
     }
 
     let cap_hit = events.len() >= FEATURE_SPIKE_CAP;
-    let batch = SpikeBatch::new(cycle_id, phase.commit, events);
+    let batch = SpikeBatch::new(cycle_id, phase_bus.commit, events);
     let produced = batch.events.len();
     (batch, FeatureSpikeSummary { produced, cap_hit })
 }
@@ -255,22 +256,20 @@ fn commit_params(feature_thresh: u16, threat_thresh: u16) -> Digest32 {
 mod tests {
     use super::*;
 
-    fn phase_frame() -> PhaseFrame {
-        PhaseFrame {
+    fn phase_bus() -> PhaseBus {
+        PhaseBus {
             cycle_id: 1,
-            global_phase: 1200,
-            module_phase: Vec::new(),
-            coherence_plv: 9000,
-            pair_locks: Vec::new(),
-            states_commit: Digest32::new([0u8; 32]),
-            phase_frame_commit: Digest32::new([0u8; 32]),
+            global_phase_u16: 1200,
+            gamma_bucket: 0,
+            global_plv: 9000,
+            pair_locks_commit: Digest32::new([0u8; 32]),
             commit: Digest32::new([4u8; 32]),
         }
     }
 
     #[test]
     fn feature_spiker_is_deterministic() {
-        let phase = phase_frame();
+        let phase = phase_bus();
         let params = FeatureSpikeParams::default();
         let inputs = FeatureSpikerInputs {
             ssm_salience: 2000,
@@ -299,7 +298,7 @@ mod tests {
 
     #[test]
     fn ssm_metrics_drive_spikes() {
-        let phase = phase_frame();
+        let phase = phase_bus();
         let params = FeatureSpikeParams::new(800, 1200);
         let inputs = FeatureSpikerInputs {
             ssm_salience: 9000,

@@ -87,6 +87,7 @@ pub struct SelfObservation {
 pub struct SleInputs {
     pub cycle_id: u64,
     pub phase_commit: Digest32,
+    pub phase_bucket: u8,
     pub global_plv: u16,
     pub phi_proxy: u16,
     pub risk: u16,
@@ -108,6 +109,7 @@ impl SleInputs {
     pub fn new(
         cycle_id: u64,
         phase_commit: Digest32,
+        phase_bucket: u8,
         global_plv: u16,
         phi_proxy: u16,
         risk: u16,
@@ -125,6 +127,7 @@ impl SleInputs {
         let commit = hash_with_domain(DOMAIN_SLE_INPUTS_V1, |hasher| {
             hasher.update(&cycle_id.to_be_bytes());
             hasher.update(phase_commit.as_bytes());
+            hasher.update(&[phase_bucket]);
             hasher.update(&global_plv.to_be_bytes());
             hasher.update(&phi_proxy.to_be_bytes());
             hasher.update(&risk.to_be_bytes());
@@ -142,6 +145,7 @@ impl SleInputs {
         Self {
             cycle_id,
             phase_commit,
+            phase_bucket,
             global_plv,
             phi_proxy,
             risk,
@@ -197,6 +201,7 @@ impl SleCore {
         let thought_spikes = build_thought_spikes(
             inp.cycle_id,
             inp.phase_commit,
+            inp.phase_bucket,
             observation.commit,
             self_symbol_commit,
             observation.intensity,
@@ -332,6 +337,7 @@ fn compute_self_symbol(
 fn build_thought_spikes(
     cycle_id: u64,
     phase_commit: Digest32,
+    phase_bucket: u8,
     observation_commit: Digest32,
     self_symbol_commit: Digest32,
     intensity: u16,
@@ -351,6 +357,7 @@ fn build_thought_spikes(
             SpikeKind::ThoughtOnly,
             SpikeModuleId::Jepa,
             *dst,
+            phase_bucket,
             ttfs,
             phase_commit,
             payload_commit,
@@ -676,6 +683,7 @@ impl LegacySleStimulus {
 pub struct LegacySleInputs {
     pub cycle_id: u64,
     pub phase_commit: Digest32,
+    pub phase_bucket: u8,
     pub coherence_plv: u16,
     pub phi_proxy: u16,
     pub ssm_commit: Digest32,
@@ -700,6 +708,7 @@ impl LegacySleInputs {
     pub fn new(
         cycle_id: u64,
         phase_commit: Digest32,
+        phase_bucket: u8,
         coherence_plv: u16,
         phi_proxy: u16,
         ssm_commit: Digest32,
@@ -720,6 +729,7 @@ impl LegacySleInputs {
         let commit = hash_with_domain(DOMAIN_SLE_INPUTS, |hasher| {
             hasher.update(&cycle_id.to_be_bytes());
             hasher.update(phase_commit.as_bytes());
+            hasher.update(&[phase_bucket]);
             hasher.update(&coherence_plv.to_be_bytes());
             hasher.update(&phi_proxy.to_be_bytes());
             hasher.update(ssm_commit.as_bytes());
@@ -740,6 +750,7 @@ impl LegacySleInputs {
         Self {
             cycle_id,
             phase_commit,
+            phase_bucket,
             coherence_plv,
             phi_proxy,
             ssm_commit,
@@ -1197,6 +1208,8 @@ mod tests {
             coupling_lag_commits: Vec::new(),
             onn_states_commit: Digest32::new([0u8; 32]),
             onn_global_plv: 0,
+            onn_phase_bus_commit: Digest32::new([0u8; 32]),
+            onn_phase_bucket: 0,
             onn_pair_locks_commit: Digest32::new([0u8; 32]),
             onn_phase_frame_commit: Digest32::new([0u8; 32]),
             iit_output: None,
@@ -1251,6 +1264,8 @@ mod tests {
             coupling_lag_commits: Vec::new(),
             onn_states_commit: Digest32::new([0u8; 32]),
             onn_global_plv: 0,
+            onn_phase_bus_commit: Digest32::new([0u8; 32]),
+            onn_phase_bucket: 0,
             onn_pair_locks_commit: Digest32::new([0u8; 32]),
             onn_phase_frame_commit: Digest32::new([0u8; 32]),
             iit_output: None,
@@ -1324,6 +1339,8 @@ mod tests {
             coupling_lag_commits: Vec::new(),
             onn_states_commit: Digest32::new([0u8; 32]),
             onn_global_plv: 0,
+            onn_phase_bus_commit: Digest32::new([0u8; 32]),
+            onn_phase_bucket: 0,
             onn_pair_locks_commit: Digest32::new([0u8; 32]),
             onn_phase_frame_commit: Digest32::new([0u8; 32]),
             iit_output: None,
@@ -1378,6 +1395,8 @@ mod tests {
             coupling_lag_commits: Vec::new(),
             onn_states_commit: Digest32::new([0u8; 32]),
             onn_global_plv: 0,
+            onn_phase_bus_commit: Digest32::new([0u8; 32]),
+            onn_phase_bucket: 0,
             onn_pair_locks_commit: Digest32::new([0u8; 32]),
             onn_phase_frame_commit: Digest32::new([0u8; 32]),
             iit_output: None,
@@ -1442,6 +1461,8 @@ mod tests {
             coupling_lag_commits: Vec::new(),
             onn_states_commit: Digest32::new([0u8; 32]),
             onn_global_plv: 0,
+            onn_phase_bus_commit: Digest32::new([0u8; 32]),
+            onn_phase_bucket: 0,
             onn_pair_locks_commit: Digest32::new([0u8; 32]),
             onn_phase_frame_commit: Digest32::new([0u8; 32]),
             iit_output: None,
@@ -1522,6 +1543,8 @@ mod tests {
             coupling_lag_commits: Vec::new(),
             onn_states_commit: Digest32::new([0u8; 32]),
             onn_global_plv: 0,
+            onn_phase_bus_commit: Digest32::new([0u8; 32]),
+            onn_phase_bucket: 0,
             onn_pair_locks_commit: Digest32::new([0u8; 32]),
             onn_phase_frame_commit: Digest32::new([0u8; 32]),
             iit_output: None,
@@ -1576,6 +1599,8 @@ mod tests {
             coupling_lag_commits: Vec::new(),
             onn_states_commit: Digest32::new([0u8; 32]),
             onn_global_plv: 0,
+            onn_phase_bus_commit: Digest32::new([0u8; 32]),
+            onn_phase_bucket: 0,
             onn_pair_locks_commit: Digest32::new([0u8; 32]),
             onn_phase_frame_commit: Digest32::new([0u8; 32]),
             iit_output: None,
@@ -1608,6 +1633,7 @@ mod tests {
         LegacySleInputs::new(
             cycle_id,
             Digest32::new([1u8; 32]),
+            2,
             5000,
             4200,
             Digest32::new([2u8; 32]),
@@ -1674,6 +1700,7 @@ mod tests {
         SleInputs::new(
             cycle_id,
             Digest32::new([1u8; 32]),
+            1,
             coherence,
             4200,
             1200,

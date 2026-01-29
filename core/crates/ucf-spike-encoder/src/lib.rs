@@ -28,6 +28,7 @@ pub fn encode_spike(
     dst: OscId,
     strength: u16,
     phase_commit: Digest32,
+    phase_bucket: u8,
     salt_commit: Digest32,
 ) -> SpikeEvent {
     encode_spike_with_window(
@@ -37,21 +38,33 @@ pub fn encode_spike(
         dst,
         strength,
         phase_commit,
+        phase_bucket,
         salt_commit,
         default_phase_window(),
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn encode_spike_with_ttfs(
     cycle_id: u64,
     kind: SpikeKind,
     src: OscId,
     dst: OscId,
+    phase_bucket: u8,
     ttfs: u16,
     phase_commit: Digest32,
     payload_commit: Digest32,
 ) -> SpikeEvent {
-    SpikeEvent::new(cycle_id, kind, src, dst, ttfs, phase_commit, payload_commit)
+    SpikeEvent::new(
+        cycle_id,
+        kind,
+        src,
+        dst,
+        phase_bucket,
+        ttfs,
+        phase_commit,
+        payload_commit,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -62,11 +75,21 @@ pub fn encode_spike_with_payload_commit(
     dst: OscId,
     strength: u16,
     phase_commit: Digest32,
+    phase_bucket: u8,
     payload_commit: Digest32,
     phase_window: u16,
 ) -> SpikeEvent {
     let ttfs = ttfs_from_strength(strength, phase_window);
-    encode_spike_with_ttfs(cycle_id, kind, src, dst, ttfs, phase_commit, payload_commit)
+    encode_spike_with_ttfs(
+        cycle_id,
+        kind,
+        src,
+        dst,
+        phase_bucket,
+        ttfs,
+        phase_commit,
+        payload_commit,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -77,12 +100,22 @@ pub fn encode_spike_with_window(
     dst: OscId,
     strength: u16,
     phase_commit: Digest32,
+    phase_bucket: u8,
     salt_commit: Digest32,
     phase_window: u16,
 ) -> SpikeEvent {
     let ttfs = ttfs_from_strength(strength, phase_window);
     let payload_commit = commit_payload(kind, strength, phase_commit, salt_commit);
-    encode_spike_with_ttfs(cycle_id, kind, src, dst, ttfs, phase_commit, payload_commit)
+    encode_spike_with_ttfs(
+        cycle_id,
+        kind,
+        src,
+        dst,
+        phase_bucket,
+        ttfs,
+        phase_commit,
+        payload_commit,
+    )
 }
 
 pub fn commit_payload(
@@ -123,6 +156,7 @@ mod tests {
             OscId::Ssm,
             2400,
             phase_commit,
+            4,
             salt_commit,
             1024,
         );
@@ -133,6 +167,7 @@ mod tests {
             OscId::Ssm,
             2400,
             phase_commit,
+            4,
             salt_commit,
             1024,
         );

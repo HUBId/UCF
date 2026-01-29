@@ -202,6 +202,7 @@ impl Intervention {
 pub struct CdeInputs {
     pub cycle_id: u64,
     pub phase_commit: Digest32,
+    pub phase_bucket: u8,
     pub ssm_salience: u16,
     pub ssm_novelty: u16,
     pub attention_gain: u16,
@@ -225,6 +226,7 @@ impl CdeInputs {
     pub fn new(
         cycle_id: u64,
         phase_commit: Digest32,
+        phase_bucket: u8,
         ssm_salience: u16,
         ssm_novelty: u16,
         attention_gain: u16,
@@ -244,6 +246,7 @@ impl CdeInputs {
         let mut inputs = Self {
             cycle_id,
             phase_commit,
+            phase_bucket,
             ssm_salience,
             ssm_novelty,
             attention_gain,
@@ -709,6 +712,7 @@ fn build_spikes(
             SpikeKind::CausalLink,
             SpikeModuleId::Cde,
             SpikeModuleId::Nsr,
+            inp.phase_bucket,
             ttfs,
             inp.phase_commit,
             payload_commit,
@@ -780,6 +784,7 @@ fn digest_inputs(inputs: &CdeInputs) -> Digest32 {
     hasher.update(INPUT_DOMAIN);
     hasher.update(&inputs.cycle_id.to_be_bytes());
     hasher.update(inputs.phase_commit.as_bytes());
+    hasher.update(&[inputs.phase_bucket]);
     hasher.update(&inputs.ssm_salience.to_be_bytes());
     hasher.update(&inputs.ssm_novelty.to_be_bytes());
     hasher.update(&inputs.attention_gain.to_be_bytes());
@@ -880,6 +885,7 @@ mod tests {
         CdeInputs::new(
             cycle_id,
             Digest32::new([1u8; 32]),
+            2,
             5_000,
             4_800,
             5_200,
