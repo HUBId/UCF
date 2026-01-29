@@ -340,7 +340,7 @@ fn max_lag_for(id: SignalId, rules: &[CouplingRule]) -> u8 {
             max_lag = max_lag.max(rule.lag);
         }
     }
-    max_lag.min(MAX_LAG).max(1)
+    max_lag.clamp(1, MAX_LAG)
 }
 
 fn mixing_alpha(
