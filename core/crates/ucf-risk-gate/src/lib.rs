@@ -115,9 +115,9 @@ pub fn evaluate_risk(
                 decision = RiskDecision::Deny;
                 reasons.push("nsr_deny".to_string());
             }
-            NsrVerdict::Warn => {
+            NsrVerdict::Restrict => {
                 risk = risk.saturating_add(NSR_WARN_PENALTY);
-                reasons.push("nsr_warn".to_string());
+                reasons.push("nsr_restrict".to_string());
             }
             NsrVerdict::Allow => {}
         }

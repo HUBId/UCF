@@ -51,7 +51,7 @@ use ucf_ncde::{
     apply_gain_phase_delta, apply_gain_spike_delta, apply_leak_delta, NcdeCore, NcdeInputs,
     NcdeOutputs, NcdeParams,
 };
-use ucf_nsr::{NsrCore, NsrInputs, NsrOutputs};
+use ucf_nsr::{Fact, NsrCore, NsrInputs, NsrOutputs};
 use ucf_nsr_port::{light_report, ActionIntent, NsrInput, NsrPort, NsrReport, NsrVerdict};
 use ucf_onn::{
     apply_coupling_delta, apply_lock_window_delta, OnnCore, OnnInputs, OnnParams, OscId, PhaseBus,
@@ -108,13 +108,14 @@ const SPIKE_RECORD_KIND: u16 = 131;
 const NCDE_RECORD_KIND: u16 = 142;
 const SSM_RECORD_KIND: u16 = 149;
 const ONN_COHERENCE_THROTTLE: u16 = 2000;
-const ONN_COHERENCE_THROTTLE_WARN: u16 = 3500;
+const ONN_COHERENCE_THROTTLE_RESTRICT: u16 = 3500;
 const LOCK_MIN_CAUSAL: u16 = 5200;
 const LOCK_MIN_CONSIST: u16 = 5600;
 const LOCK_MIN_SPEAK: u16 = 3000;
 const PHI_OUTPUT_THRESHOLD: u16 = 3200;
 const CAUSAL_REPORT_FLAG_LIGHT: u16 = 0b1000;
 const SELF_CONSISTENCY_OK_THRESHOLD: u16 = 5000;
+const NSR_POLICY_COMMIT_DOMAIN: &[u8] = b"ucf.nsr.policy.commit.v1";
 
 #[derive(Debug)]
 pub enum RouterError {
@@ -871,6 +872,11 @@ impl Router {
                     ctx.output_intent = outputs
                         .iter()
                         .any(|output| matches!(output.channel, OutputChannel::Speech));
+                    let thought_only = !outputs.is_empty()
+                        && outputs
+                            .iter()
+                            .all(|output| matches!(output.channel, OutputChannel::Thought));
+                    let tool_req = false;
                     let mut risk_results = Vec::with_capacity(outputs.len());
                     let mut speech_gate_results = Vec::with_capacity(outputs.len());
                     let tom_report = ctx.tom_report.as_ref().expect("tom report available");
@@ -1154,33 +1160,30 @@ impl Router {
                             .ok()
                             .and_then(|guard| guard.clone())
                     });
-                    let spike_summary = ctx
-                        .spike_summary
-                        .clone()
-                        .unwrap_or_else(empty_spike_summary);
                     let policy_ok = decision.kind == DecisionKind::DecisionKindAllow as i32;
+                    let policy_commit = digest_policy_commit(&decision);
                     let phase_bus = ctx
                         .phase_bus
                         .clone()
                         .unwrap_or_else(|| self.latest_phase_bus(cycle_id));
                     let nsr_inputs = self.build_nsr_inputs(
                         cycle_id,
-                        phase_bus.commit,
-                        phase_bus.gamma_bucket,
+                        &phase_bus,
                         influence_for_nsr.as_ref(),
-                        &spike_summary,
-                        ctx.cde_v1_output
-                            .as_ref()
-                            .map(|output| output.summary_commit),
+                        ctx.cde_v1_output.as_ref(),
+                        ctx.cde_output.as_ref(),
+                        ctx.ssm_output.as_ref(),
+                        ctx.ncde_output.as_ref(),
+                        &iit_output,
                         ctx.self_state.as_ref(),
                         ctx.replay_pressure.unwrap_or(0),
-                        iit_output.phi_proxy,
-                        ctx.ncde_output
-                            .as_ref()
-                            .map(|output| output.ncde_energy)
-                            .unwrap_or(0),
+                        drift_score,
+                        surprise_score,
+                        attention_risk,
                         ctx.output_intent,
-                        false,
+                        thought_only,
+                        tool_req,
+                        policy_commit,
                         policy_ok,
                         matches!(pulse.kind, PulseKind::Sleep),
                         self.tcf_plan_for(Some(&ctx)),
@@ -1192,8 +1195,8 @@ impl Router {
                             nsr_output.trace_root,
                             None,
                             nsr_output.verdict.as_u8(),
-                            nsr_output.derived_facts_root,
-                            ucf_nsr::digest_triggered_rules(&nsr_output.triggered_rules),
+                            None,
+                            None,
                         );
                     }
                     self.append_nsr_output_record(cycle_id, &nsr_output);
@@ -1359,11 +1362,11 @@ impl Router {
                         violations_digest: ctx
                             .nsr_output
                             .as_ref()
-                            .map(|output| ucf_nsr::digest_triggered_rules(&output.triggered_rules))
+                            .map(|output| output.trace_root)
                             .unwrap_or_else(|| digest_reasons(&[])),
                     };
-                    let coherence_threshold = if nsr_verdict == NsrVerdict::Warn {
-                        ONN_COHERENCE_THROTTLE_WARN
+                    let coherence_threshold = if nsr_verdict == NsrVerdict::Restrict {
+                        ONN_COHERENCE_THROTTLE_RESTRICT
                     } else {
                         ONN_COHERENCE_THROTTLE
                     };
@@ -2035,29 +2038,47 @@ impl Router {
                     let mut outputs = rsa_core.tick(&inputs);
                     let proposal_commit = outputs.proposal.as_ref().map(|proposal| proposal.commit);
                     let nsr_apply_output = if outputs.proposal.is_some() {
-                        let spike_summary = ctx
-                            .spike_summary
-                            .clone()
-                            .unwrap_or_else(empty_spike_summary);
                         let phase_bus = ctx
                             .phase_bus
                             .clone()
                             .unwrap_or_else(|| self.latest_phase_bus(cycle_id));
+                        let policy_commit = ctx
+                            .decision
+                            .as_ref()
+                            .map(digest_policy_commit)
+                            .unwrap_or_else(|| Digest32::new([0u8; 32]));
+                        let fallback_iit = IitOutput {
+                            cycle_id,
+                            phi_proxy: 0,
+                            integration_report_commit: Digest32::new([0u8; 32]),
+                            hints: IitHints {
+                                tighten_sync: false,
+                                damp_output: false,
+                                damp_learning: false,
+                                request_replay: false,
+                                commit: Digest32::new([0u8; 32]),
+                            },
+                            commit: Digest32::new([0u8; 32]),
+                        };
+                        let iit_output = ctx.iit_output.as_ref().unwrap_or(&fallback_iit);
                         let nsr_inputs = self.build_nsr_inputs(
                             cycle_id,
-                            phase_bus.commit,
-                            phase_bus.gamma_bucket,
+                            &phase_bus,
                             influence_outputs.as_ref(),
-                            &spike_summary,
-                            ctx.cde_v1_output
-                                .as_ref()
-                                .map(|output| output.summary_commit),
+                            ctx.cde_v1_output.as_ref(),
+                            ctx.cde_output.as_ref(),
+                            ctx.ssm_output.as_ref(),
+                            ctx.ncde_output.as_ref(),
+                            iit_output,
                             ctx.self_state.as_ref(),
                             replay_pressure,
-                            phi_proxy,
-                            ncde_energy,
+                            ctx.drift_score.unwrap_or(0),
+                            ctx.surprise_score.unwrap_or(0),
+                            ctx.attention_risk,
                             false,
-                            true,
+                            false,
+                            false,
+                            policy_commit,
                             policy_ok,
                             matches!(pulse.kind, PulseKind::Sleep),
                             self.tcf_plan_for(Some(&ctx)),
@@ -3742,7 +3763,7 @@ impl Router {
             .nsr_warn_streak
             .lock()
             .unwrap_or_else(|err| err.into_inner());
-        if verdict == NsrVerdict::Warn {
+        if verdict == NsrVerdict::Restrict {
             *streak = streak.saturating_add(1);
         } else {
             *streak = 0;
@@ -3833,24 +3854,26 @@ impl Router {
     fn build_nsr_inputs(
         &self,
         cycle_id: u64,
-        phase_commit: Digest32,
-        phase_bucket: u8,
+        phase_bus: &PhaseBus,
         influence_outputs: Option<&InfluenceOutputs>,
-        spike_summary: &SpikeBusSummary,
-        cde_summary_commit: Option<Digest32>,
+        cde_v1_output: Option<&CdeV1Outputs>,
+        cde_output: Option<&CdeOutputs>,
+        ssm_output: Option<&SsmOutputs>,
+        ncde_output: Option<&NcdeOutputs>,
+        iit_output: &IitOutput,
         self_state: Option<&SelfState>,
         replay_pressure: u16,
-        phi_proxy: u16,
-        ncde_energy: u16,
-        output_intent: bool,
-        rsa_apply_proposed: bool,
-        policy_ok: bool,
+        drift_score: u16,
+        surprise_score: u16,
+        risk_score: u16,
+        _output_intent: bool,
+        thought_only: bool,
+        tool_req: bool,
+        policy_commit: Digest32,
+        _policy_ok: bool,
         sleep_pulse: bool,
         tcf_plan: Option<TcfPlan>,
     ) -> NsrInputs {
-        let influence_nodes = influence_outputs
-            .map(|outputs| outputs.node_values.clone())
-            .unwrap_or_default();
         let sleep_drive = influence_outputs
             .map(|outputs| outputs.node_value(InfluenceNodeId::SleepDrive))
             .unwrap_or(0);
@@ -3859,6 +3882,8 @@ impl Router {
             .lock()
             .map(|store| store.current.clone())
             .unwrap_or_else(|_| StructuralStore::default().current);
+        let phi_proxy = iit_output.phi_proxy;
+        let ncde_energy = ncde_output.map(|output| output.ncde_energy).unwrap_or(0);
         let (sleep_active, replay_active) = tcf_plan
             .map(|plan| (plan.sleep_active, plan.replay_active))
             .or_else(|| self.tcf_sleep_replay(None))
@@ -3876,21 +3901,72 @@ impl Router {
             });
         let geist_consistency =
             self_state.map(|state| state.consistency < SELF_CONSISTENCY_OK_THRESHOLD);
-        NsrInputs::new(
-            cycle_id,
-            phase_commit,
-            phase_bucket,
-            influence_nodes,
-            spike_summary.accepted_root,
-            spike_summary.counts.clone(),
-            cde_summary_commit,
-            geist_consistency.unwrap_or(false),
-            sleep_active,
-            replay_active,
-            output_intent,
-            rsa_apply_proposed,
-            policy_ok,
-        )
+        let mut facts = vec![
+            Fact::Phi(iit_output.phi_proxy),
+            Fact::Plv(phase_bus.global_plv),
+            Fact::Drift(drift_score),
+            Fact::Surprise(surprise_score),
+            Fact::Risk(risk_score),
+            Fact::OnnPhase {
+                gamma_bucket: phase_bus.gamma_bucket,
+            },
+        ];
+        let lock_window_buckets = tcf_plan
+            .as_ref()
+            .map(|plan| plan.lock_window_buckets)
+            .unwrap_or(1);
+        facts.push(Fact::OnnLocked {
+            global_plv: phase_bus.global_plv,
+            lock_window_buckets,
+        });
+        if sleep_active {
+            facts.push(Fact::TcfSleepActive);
+        }
+        if replay_active {
+            facts.push(Fact::TcfReplayActive);
+        }
+        if let Some(output) = cde_output {
+            if !output.counterfactual_delta.is_empty() {
+                facts.push(Fact::CdeCounterfactualOk {
+                    commit: output.commit,
+                });
+            }
+        }
+        if let Some(output) = ssm_output {
+            facts.push(Fact::SsmNovelty(output.novelty));
+            facts.push(Fact::SsmSalience(output.salience));
+        }
+        if let Some(output) = ncde_output {
+            facts.push(Fact::NcdeEnergy(output.ncde_energy));
+        }
+        let _ = geist_consistency;
+        facts.push(Fact::IitHints {
+            tighten_sync: iit_output.hints.tighten_sync,
+            damp_output: iit_output.hints.damp_output,
+            damp_learning: iit_output.hints.damp_learning,
+            request_replay: iit_output.hints.request_replay,
+        });
+        facts.push(Fact::PolicyCommit {
+            commit: policy_commit,
+        });
+        if tool_req {
+            facts.push(Fact::ToolCallRequested);
+        }
+        if thought_only {
+            facts.push(Fact::ThoughtOnlyRequested);
+        }
+        if let Some(output) = cde_v1_output {
+            let mut edges = output.top_edges.clone();
+            edges.sort_by(|left, right| left.commit.as_bytes().cmp(right.commit.as_bytes()));
+            for edge in edges {
+                let score = edge.score.unsigned_abs();
+                facts.push(Fact::CdeEdge {
+                    edge_commit: edge.commit,
+                    score,
+                });
+            }
+        }
+        NsrInputs::new(cycle_id, phase_bus.commit, policy_commit, facts)
     }
 
     fn build_sandbox_budget(&self, mode: u16) -> SandboxBudget {
@@ -4003,12 +4079,10 @@ impl Router {
 
     fn append_nsr_output_record(&self, cycle_id: u64, output: &NsrOutputs) {
         let payload = format!(
-            "commit={};verdict={};trace_root={};derived_facts_root={};fired_rules={}",
+            "commit={};verdict={};trace_root={}",
             output.commit,
             nsr_verdict_token(output.verdict),
-            output.trace_root,
-            output.derived_facts_root,
-            output.triggered_rules.len()
+            output.trace_root
         )
         .into_bytes();
         let record_id = format!(
@@ -4337,6 +4411,15 @@ fn in_phase(ttfs_code: u16, global_phase: u16, phase_window: u16) -> bool {
 fn lock_window_buckets(lock_window: u16) -> u8 {
     let buckets = lock_window / 4096;
     buckets.clamp(1, 4) as u8
+}
+
+fn digest_policy_commit(decision: &PolicyDecision) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(NSR_POLICY_COMMIT_DOMAIN);
+    hasher.update(&decision.kind.to_be_bytes());
+    hasher.update(&decision.action.to_be_bytes());
+    hasher.update(&decision.confidence_bp.to_be_bytes());
+    Digest32::new(*hasher.finalize().as_bytes())
 }
 
 fn phase_bucket_distance(a: u8, b: u8) -> u8 {
@@ -4754,7 +4837,7 @@ fn action_intents_from_outputs(outputs: &[AiOutput]) -> Vec<ActionIntent> {
 fn nsr_verdict_token(verdict: NsrVerdict) -> &'static str {
     match verdict {
         NsrVerdict::Allow => "Allow",
-        NsrVerdict::Warn => "Warn",
+        NsrVerdict::Restrict => "Restrict",
         NsrVerdict::Deny => "Deny",
     }
 }
@@ -4762,7 +4845,7 @@ fn nsr_verdict_token(verdict: NsrVerdict) -> &'static str {
 fn nsr_verdict_token_lower(verdict: NsrVerdict) -> &'static str {
     match verdict {
         NsrVerdict::Allow => "allow",
-        NsrVerdict::Warn => "warn",
+        NsrVerdict::Restrict => "restrict",
         NsrVerdict::Deny => "deny",
     }
 }
@@ -4770,7 +4853,7 @@ fn nsr_verdict_token_lower(verdict: NsrVerdict) -> &'static str {
 fn nsr_signal_priority(verdict: NsrVerdict) -> u16 {
     match verdict {
         NsrVerdict::Allow => 4200,
-        NsrVerdict::Warn => 7600,
+        NsrVerdict::Restrict => 7600,
         NsrVerdict::Deny => 9500,
     }
 }
@@ -4787,7 +4870,7 @@ fn is_causal_violation_code(code: &str) -> bool {
 fn consistency_score_from_nsr(report: Option<&NsrReport>) -> u16 {
     match report {
         Some(report) if report.verdict == NsrVerdict::Allow => 10_000,
-        Some(report) if report.verdict == NsrVerdict::Warn => 4500,
+        Some(report) if report.verdict == NsrVerdict::Restrict => 4500,
         Some(_) => 2000,
         None => 5000,
     }
