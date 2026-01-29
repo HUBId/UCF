@@ -935,12 +935,12 @@ fn apply_deltas_to_params(
         ssm.max_state,
     );
     let ncde = NcdeParams::new(
-        ncde.dt,
-        ncde.gain_phase,
+        ncde.dim,
+        ncde.dt_q,
         ncde.gain_spike,
-        ncde.gain_influence,
+        ncde.gain_phase,
         ncde.leak,
-        ncde.max_state,
+        ncde.clamp,
     );
     let rsa = RsaLimits::new(rsa.phi_min_apply, rsa.risk_max_apply);
 

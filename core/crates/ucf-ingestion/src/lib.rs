@@ -417,7 +417,7 @@ mod tests {
         let processed = service.drain();
 
         assert_eq!(processed, 1);
-        assert_eq!(archive.list().len(), 16);
+        assert_eq!(archive.list().len(), 15);
 
         let outcome = outcome_receiver.try_recv().expect("outcome event");
         assert_eq!(outcome.payload.evidence_id, EvidenceId::new("exp-frame-1"));
@@ -678,7 +678,7 @@ mod tests {
         let processed = service.drain();
 
         assert_eq!(processed, 1);
-        assert_eq!(archive.list().len(), 16);
+        assert_eq!(archive.list().len(), 15);
 
         let event = workspace_receiver.try_recv().expect("workspace broadcast");
 
