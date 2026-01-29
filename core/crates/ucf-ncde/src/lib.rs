@@ -151,6 +151,7 @@ pub struct NcdeInputs {
     pub risk: u16,
     pub drift: u16,
     pub surprise: u16,
+    pub learning_gain_cap: u16,
     pub commit: Digest32,
 }
 
@@ -171,9 +172,11 @@ impl NcdeInputs {
         risk: u16,
         drift: u16,
         surprise: u16,
+        learning_gain_cap: u16,
     ) -> Self {
         spike_counts.sort_by(|(kind_a, _), (kind_b, _)| kind_a.cmp(kind_b));
         coupling_influences.sort_by(|(id_a, _), (id_b, _)| id_a.cmp(id_b));
+        let learning_gain_cap = learning_gain_cap.min(GAIN_MAX);
         let commit = commit_inputs(
             cycle_id,
             phase_bus_commit,
@@ -189,6 +192,7 @@ impl NcdeInputs {
             risk,
             drift,
             surprise,
+            learning_gain_cap,
         );
         Self {
             cycle_id,
@@ -205,6 +209,7 @@ impl NcdeInputs {
             risk,
             drift,
             surprise,
+            learning_gain_cap,
             commit,
         }
     }
@@ -242,7 +247,8 @@ impl NcdeCore {
         self.reset_state_if_dim_mismatch();
         let dim = self.params.dim;
         let control = build_control_vector(inp, &self.params, dim);
-        let phase_terms = build_phase_terms(inp.gamma_bucket, &self.params, dim);
+        let phase_terms =
+            build_phase_terms(inp.gamma_bucket, &self.params, inp.learning_gain_cap, dim);
         let mut next_y = self.state.y.clone();
 
         for (idx, value) in next_y.iter_mut().enumerate().take(dim) {
@@ -352,6 +358,7 @@ fn commit_inputs(
     risk: u16,
     drift: u16,
     surprise: u16,
+    learning_gain_cap: u16,
 ) -> Digest32 {
     let mut hasher = Hasher::new();
     hasher.update(INPUT_DOMAIN);
@@ -385,6 +392,7 @@ fn commit_inputs(
     hasher.update(&risk.to_be_bytes());
     hasher.update(&drift.to_be_bytes());
     hasher.update(&surprise.to_be_bytes());
+    hasher.update(&learning_gain_cap.to_be_bytes());
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
@@ -450,7 +458,8 @@ fn build_control_vector(inp: &NcdeInputs, params: &NcdeParams, dim: usize) -> Co
 
     let (phi_influence, attention_influence) = coupling_biases(inp);
     let attention_gain = apply_gain_influence(inp.attention_gain, attention_influence);
-    let spike_gain = i32::from(params.gain_spike).max(1);
+    let spike_gain = (i32::from(params.gain_spike) * i32::from(inp.learning_gain_cap)) / GAIN_SCALE;
+    let spike_gain = spike_gain.max(1);
     let mut base = (combined * spike_gain) / GAIN_SCALE;
     base = (base * i32::from(attention_gain)) / GAIN_SCALE;
 
@@ -487,12 +496,18 @@ fn apply_gain_influence(base: u16, influence: i16) -> u16 {
     updated.clamp(0, GAIN_SCALE) as u16
 }
 
-fn build_phase_terms(gamma_bucket: u8, params: &NcdeParams, dim: usize) -> Vec<i32> {
+fn build_phase_terms(
+    gamma_bucket: u8,
+    params: &NcdeParams,
+    learning_gain_cap: u16,
+    dim: usize,
+) -> Vec<i32> {
     let mut terms = vec![0i32; dim];
     for (idx, value) in terms.iter_mut().enumerate() {
         let table_idx = ((gamma_bucket as usize).wrapping_add(idx)) & 0x0f;
         let coeff = i32::from(PHASE_TABLE[table_idx]);
-        let scaled = (coeff * i32::from(params.gain_phase)) / GAIN_SCALE;
+        let gain_phase = (i32::from(params.gain_phase) * i32::from(learning_gain_cap)) / GAIN_SCALE;
+        let scaled = (coeff * gain_phase) / GAIN_SCALE;
         *value = scaled;
     }
     terms
@@ -636,6 +651,7 @@ mod tests {
             1200,
             800,
             4200,
+            10_000,
         )
     }
 
@@ -674,6 +690,7 @@ mod tests {
             0,
             0,
             0,
+            10_000,
         );
 
         let before = core.state.y[0].abs();
@@ -718,6 +735,7 @@ mod tests {
             200,
             100,
             2000,
+            10_000,
         );
         let inputs_high = NcdeInputs::new(
             1,
@@ -734,6 +752,7 @@ mod tests {
             200,
             100,
             2000,
+            10_000,
         );
         let mut core_low = NcdeCore::new(params);
         let mut core_high = NcdeCore::new(params);

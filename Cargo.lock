@@ -2324,6 +2324,7 @@ dependencies = [
  "ucf-ssm",
  "ucf-ssm-port",
  "ucf-structural-store",
+ "ucf-tcf",
  "ucf-tcf-port",
  "ucf-tom-port",
  "ucf-types",
@@ -2461,6 +2462,15 @@ dependencies = [
  "ucf-onn",
  "ucf-spikebus",
  "ucf-ssm",
+ "ucf-types",
+]
+
+[[package]]
+name = "ucf-tcf"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ucf-nsr",
  "ucf-types",
 ]
 
