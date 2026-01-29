@@ -3901,15 +3901,16 @@ impl Router {
             });
         let geist_consistency =
             self_state.map(|state| state.consistency < SELF_CONSISTENCY_OK_THRESHOLD);
-        let mut facts = Vec::new();
-        facts.push(Fact::Phi(iit_output.phi_proxy));
-        facts.push(Fact::Plv(phase_bus.global_plv));
-        facts.push(Fact::Drift(drift_score));
-        facts.push(Fact::Surprise(surprise_score));
-        facts.push(Fact::Risk(risk_score));
-        facts.push(Fact::OnnPhase {
-            gamma_bucket: phase_bus.gamma_bucket,
-        });
+        let mut facts = vec![
+            Fact::Phi(iit_output.phi_proxy),
+            Fact::Plv(phase_bus.global_plv),
+            Fact::Drift(drift_score),
+            Fact::Surprise(surprise_score),
+            Fact::Risk(risk_score),
+            Fact::OnnPhase {
+                gamma_bucket: phase_bus.gamma_bucket,
+            },
+        ];
         let lock_window_buckets = tcf_plan
             .as_ref()
             .map(|plan| plan.lock_window_buckets)
