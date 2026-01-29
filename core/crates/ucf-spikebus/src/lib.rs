@@ -75,8 +75,8 @@ impl SpikeEvent {
     ) -> Self {
         if kind == SpikeKind::ThoughtOnly {
             assert!(
-                matches!(dst, OscId::BlueBrain | OscId::Geist),
-                "ThoughtOnly spikes must target BlueBrain or Geist"
+                matches!(dst, OscId::Reserved8 | OscId::Reserved9),
+                "ThoughtOnly spikes must target Reserved8 or Reserved9"
             );
         }
         let commit = commit_spike_event(
@@ -336,7 +336,7 @@ fn compare_spikes(a: &SpikeEvent, b: &SpikeEvent) -> Ordering {
     if cycle_cmp != Ordering::Equal {
         return cycle_cmp;
     }
-    let dst_cmp = a.dst.as_u16().cmp(&b.dst.as_u16());
+    let dst_cmp = a.dst.as_u8().cmp(&b.dst.as_u8());
     if dst_cmp != Ordering::Equal {
         return dst_cmp;
     }
@@ -399,8 +399,8 @@ fn commit_spike_event(
     hasher.update(SPIKE_EVENT_DOMAIN);
     hasher.update(&cycle_id.to_be_bytes());
     hasher.update(&kind.as_u16().to_be_bytes());
-    hasher.update(&src.as_u16().to_be_bytes());
-    hasher.update(&dst.as_u16().to_be_bytes());
+    hasher.update(&[src.as_u8()]);
+    hasher.update(&[dst.as_u8()]);
     hasher.update(&[phase_bucket]);
     hasher.update(&ttfs.to_be_bytes());
     hasher.update(phase_commit.as_bytes());
@@ -424,7 +424,7 @@ mod tests {
         SpikeEvent::new(
             cycle_id,
             kind,
-            OscId::Jepa,
+            OscId::Reserved7,
             dst,
             3,
             ttfs,
@@ -450,7 +450,7 @@ mod tests {
         let base = SpikeEvent::new(
             1,
             SpikeKind::Feature,
-            OscId::Jepa,
+            OscId::Reserved7,
             OscId::Ssm,
             4,
             12,
@@ -460,7 +460,7 @@ mod tests {
         let shifted = SpikeEvent::new(
             1,
             SpikeKind::Feature,
-            OscId::Jepa,
+            OscId::Reserved7,
             OscId::Ssm,
             4,
             14,
@@ -526,7 +526,7 @@ mod tests {
         let _ = SpikeEvent::new(
             1,
             SpikeKind::ThoughtOnly,
-            OscId::Jepa,
+            OscId::Reserved7,
             OscId::Output,
             2,
             1,

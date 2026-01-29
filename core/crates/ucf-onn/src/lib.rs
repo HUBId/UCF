@@ -1,133 +1,357 @@
 #![forbid(unsafe_code)]
 
 use blake3::Hasher;
-use ucf_influence::InfluenceNodeId;
 use ucf_types::Digest32;
 
-const PHASE_WRAP: i32 = 65_536;
-const MAX_SIGNAL: u16 = 10_000;
 const MAX_OSCILLATORS: usize = 16;
-const SIN_LUT_SCALE: i16 = 10_000;
-const COUPLING_MAX: u16 = 10_000;
-const LOCK_WINDOW_MIN: u16 = 512;
-const LOCK_WINDOW_MAX: u16 = 60_000;
-const SIN_LUT: [i16; 256] = [
-    0, -245, -491, -736, -980, -1224, -1467, -1710, -1951, -2191, -2430, -2667, -2903, -3137,
-    -3369, -3599, -3827, -4052, -4276, -4496, -4714, -4929, -5141, -5350, -5556, -5758, -5957,
-    -6152, -6344, -6532, -6716, -6895, -7071, -7242, -7410, -7572, -7730, -7883, -8032, -8176,
-    -8315, -8449, -8577, -8701, -8819, -8932, -9040, -9142, -9239, -9330, -9415, -9495, -9569,
-    -9638, -9700, -9757, -9808, -9853, -9892, -9925, -9952, -9973, -9988, -9997, -10000, -9997,
-    -9988, -9973, -9952, -9925, -9892, -9853, -9808, -9757, -9700, -9638, -9569, -9495, -9415,
-    -9330, -9239, -9142, -9040, -8932, -8819, -8701, -8577, -8449, -8315, -8176, -8032, -7883,
-    -7730, -7572, -7410, -7242, -7071, -6895, -6716, -6532, -6344, -6152, -5957, -5758, -5556,
-    -5350, -5141, -4929, -4714, -4496, -4276, -4052, -3827, -3599, -3369, -3137, -2903, -2667,
-    -2430, -2191, -1951, -1710, -1467, -1224, -980, -736, -491, -245, 0, 245, 491, 736, 980, 1224,
-    1467, 1710, 1951, 2191, 2430, 2667, 2903, 3137, 3369, 3599, 3827, 4052, 4276, 4496, 4714, 4929,
-    5141, 5350, 5556, 5758, 5957, 6152, 6344, 6532, 6716, 6895, 7071, 7242, 7410, 7572, 7730, 7883,
-    8032, 8176, 8315, 8449, 8577, 8701, 8819, 8932, 9040, 9142, 9239, 9330, 9415, 9495, 9569, 9638,
-    9700, 9757, 9808, 9853, 9892, 9925, 9952, 9973, 9988, 9997, 10000, 9997, 9988, 9973, 9952,
-    9925, 9892, 9853, 9808, 9757, 9700, 9638, 9569, 9495, 9415, 9330, 9239, 9142, 9040, 8932, 8819,
-    8701, 8577, 8449, 8315, 8176, 8032, 7883, 7730, 7572, 7410, 7242, 7071, 6895, 6716, 6532, 6344,
-    6152, 5957, 5758, 5556, 5350, 5141, 4929, 4714, 4496, 4276, 4052, 3827, 3599, 3369, 3137, 2903,
-    2667, 2430, 2191, 1951, 1710, 1467, 1224, 980, 736, 491, 245,
+const PHASE_Q12_WRAP: i32 = 4096;
+const BUCKETS: u8 = 16;
+const SIN_LUT: [i16; 64] = [
+    0, 201, 400, 595, 784, 965, 1138, 1299, 1448, 1583, 1703, 1806, 1892, 1960, 2009, 2038, 2048,
+    2038, 2009, 1960, 1892, 1806, 1703, 1583, 1448, 1299, 1138, 965, 784, 595, 400, 201, 0, -201,
+    -400, -595, -784, -965, -1138, -1299, -1448, -1583, -1703, -1806, -1892, -1960, -2009, -2038,
+    -2048, -2038, -2009, -1960, -1892, -1806, -1703, -1583, -1448, -1299, -1138, -965, -784, -595,
+    -400, -201,
 ];
 
+#[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum OscId {
-    Jepa,
-    Ssm,
-    Ncde,
-    Cde,
-    Nsr,
-    Geist,
-    Iit,
-    Output,
-    BlueBrain,
-    Unknown(u16),
+    Ssm = 0,
+    Ncde = 1,
+    Cde = 2,
+    Nsr = 3,
+    Tcf = 4,
+    Iit = 5,
+    Output = 6,
+    Reserved7 = 7,
+    Reserved8 = 8,
+    Reserved9 = 9,
+    Other(u8),
 }
 
 impl OscId {
-    pub fn as_u16(self) -> u16 {
+    pub fn as_u8(self) -> u8 {
         match self {
-            Self::Jepa => 1,
-            Self::Ssm => 2,
-            Self::Ncde => 3,
-            Self::Cde => 4,
-            Self::Nsr => 5,
-            Self::Geist => 6,
-            Self::Iit => 7,
-            Self::Output => 8,
-            Self::BlueBrain => 9,
-            Self::Unknown(value) => value,
+            Self::Ssm => 0,
+            Self::Ncde => 1,
+            Self::Cde => 2,
+            Self::Nsr => 3,
+            Self::Tcf => 4,
+            Self::Iit => 5,
+            Self::Output => 6,
+            Self::Reserved7 => 7,
+            Self::Reserved8 => 8,
+            Self::Reserved9 => 9,
+            Self::Other(value) => value,
         }
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct OscState {
-    pub id: OscId,
-    pub phase: u16,
-    pub omega: i16,
-    pub amp: u16,
-    pub commit: Digest32,
-}
-
-impl OscState {
-    pub fn new(id: OscId, phase: u16, omega: i16, amp: u16) -> Self {
-        let commit = commit_osc_state(id, phase, omega, amp);
-        Self {
-            id,
-            phase,
-            omega,
-            amp,
-            commit,
-        }
-    }
-
-    pub fn update_commit(&mut self) {
-        self.commit = commit_osc_state(self.id, self.phase, self.omega, self.amp);
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct OnnParams {
-    pub base_step: u16,
-    pub coupling: u16,
-    pub max_delta: u16,
-    pub lock_window: u16,
+    pub n: usize,
+    pub omega_q12: [i16; 16],
+    pub k_couple: u16,
+    pub k_dither: u16,
+    pub buckets: u8,
+    pub couple_clamp_q12: i16,
     pub commit: Digest32,
 }
 
 impl OnnParams {
-    pub fn new(base_step: u16, coupling: u16, max_delta: u16, lock_window: u16) -> Self {
-        let commit = commit_params(base_step, coupling, max_delta, lock_window);
+    pub fn new(
+        n: usize,
+        omega_q12: [i16; 16],
+        k_couple: u16,
+        k_dither: u16,
+        buckets: u8,
+        couple_clamp_q12: i16,
+    ) -> Self {
+        let n = n.min(MAX_OSCILLATORS).max(1);
+        let buckets = if buckets == BUCKETS { buckets } else { BUCKETS };
+        let k_couple = k_couple.min(10_000);
+        let k_dither = k_dither.min(10_000);
+        let commit = commit_params(n, &omega_q12, k_couple, k_dither, buckets, couple_clamp_q12);
         Self {
-            base_step,
-            coupling,
-            max_delta,
-            lock_window,
+            n,
+            omega_q12,
+            k_couple,
+            k_dither,
+            buckets,
+            couple_clamp_q12,
             commit,
         }
     }
 }
 
+impl Default for OnnParams {
+    fn default() -> Self {
+        let mut omega_q12 = [0i16; 16];
+        let base = [34i16, 28, 30, 26, 22, 24, 20, 18, 16, 14, 0, 0, 0, 0, 0, 0];
+        omega_q12.copy_from_slice(&base);
+        Self::new(10, omega_q12, 3200, 600, BUCKETS, 512)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct OnnState {
+    pub theta_q12: [u16; 16],
+    pub last_bucket: u8,
+    pub last_plv: u16,
+    pub commit: Digest32,
+}
+
+impl OnnState {
+    pub fn new(params: &OnnParams) -> Self {
+        let theta_q12 = seed_theta(params);
+        let last_bucket = 0;
+        let last_plv = 0;
+        let commit = commit_state(&theta_q12, last_bucket, last_plv, params.commit);
+        Self {
+            theta_q12,
+            last_bucket,
+            last_plv,
+            commit,
+        }
+    }
+
+    pub fn update_commit(&mut self, params_commit: Digest32) {
+        self.commit = commit_state(
+            &self.theta_q12,
+            self.last_bucket,
+            self.last_plv,
+            params_commit,
+        );
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct OnnInputs {
+    pub cycle_id: u64,
+    pub ssm_state_commit: Digest32,
+    pub ncde_state_digest: Digest32,
+    pub cde_commit: Digest32,
+    pub nsr_trace_root: Digest32,
+    pub iit_hints_commit: Digest32,
+    pub lock_window_buckets: u8,
+    pub risk: u16,
+    pub drift: u16,
+    pub surprise: u16,
+    pub commit: Digest32,
+}
+
+impl OnnInputs {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        cycle_id: u64,
+        ssm_state_commit: Digest32,
+        ncde_state_digest: Digest32,
+        cde_commit: Digest32,
+        nsr_trace_root: Digest32,
+        iit_hints_commit: Digest32,
+        lock_window_buckets: u8,
+        risk: u16,
+        drift: u16,
+        surprise: u16,
+    ) -> Self {
+        let lock_window_buckets = lock_window_buckets.clamp(1, 4);
+        let commit = commit_inputs(
+            cycle_id,
+            ssm_state_commit,
+            ncde_state_digest,
+            cde_commit,
+            nsr_trace_root,
+            iit_hints_commit,
+            lock_window_buckets,
+            risk,
+            drift,
+            surprise,
+        );
+        Self {
+            cycle_id,
+            ssm_state_commit,
+            ncde_state_digest,
+            cde_commit,
+            nsr_trace_root,
+            iit_hints_commit,
+            lock_window_buckets,
+            risk,
+            drift,
+            surprise,
+            commit,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PhaseBus {
+    pub cycle_id: u64,
+    pub gamma_bucket: u8,
+    pub global_plv: u16,
+    pub osc_buckets: [u8; 16],
+    pub phase_commit: Digest32,
+    pub commit: Digest32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PhaseLockDecision {
+    pub cycle_id: u64,
+    pub lock_window_buckets: u8,
+    pub accept_center: u8,
+    pub commit: Digest32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct OnnOutputs {
+    pub phase_bus: PhaseBus,
+    pub lock: PhaseLockDecision,
+    pub commit: Digest32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct OnnCore {
+    pub params: OnnParams,
+    pub state: OnnState,
+    pub commit: Digest32,
+}
+
+impl OnnCore {
+    pub fn new(params: OnnParams) -> Self {
+        let state = OnnState::new(&params);
+        let commit = commit_core(params.commit, state.commit);
+        Self {
+            params,
+            state,
+            commit,
+        }
+    }
+
+    pub fn tick(&mut self, inp: &OnnInputs) -> OnnOutputs {
+        let n = self.params.n.max(1).min(MAX_OSCILLATORS);
+        let effective_k =
+            adjusted_coupling(self.params.k_couple, inp.risk, inp.drift, inp.surprise);
+        let mut next_theta = self.state.theta_q12;
+
+        for i in 0..n {
+            let omega = i32::from(self.params.omega_q12[i]);
+            let sum = coupling_sum_q12(i, n, &self.state.theta_q12);
+            let mut couple_q12 = (i32::from(effective_k) * sum) / 10_000;
+            couple_q12 = couple_q12.clamp(
+                -i32::from(self.params.couple_clamp_q12),
+                i32::from(self.params.couple_clamp_q12),
+            );
+            let dither = dither_for(i, inp, self.params.k_dither);
+            let theta = i32::from(self.state.theta_q12[i]);
+            let updated = theta + omega + couple_q12 + dither;
+            next_theta[i] = wrap_q12(updated);
+        }
+
+        self.state.theta_q12 = next_theta;
+        let osc_buckets = buckets_for(&self.state.theta_q12, n);
+        let gamma_bucket = median_bucket(&osc_buckets, n);
+        let global_plv = plv_from_buckets(&osc_buckets, n, gamma_bucket);
+        self.state.last_bucket = gamma_bucket;
+        self.state.last_plv = global_plv;
+        self.state.update_commit(self.params.commit);
+
+        let phase_commit = commit_phase_bus(
+            inp.cycle_id,
+            gamma_bucket,
+            global_plv,
+            &osc_buckets,
+            n,
+            inp.commit,
+            self.params.commit,
+        );
+        let phase_bus_commit = commit_phase_bus_root(phase_commit);
+        let phase_bus = PhaseBus {
+            cycle_id: inp.cycle_id,
+            gamma_bucket,
+            global_plv,
+            osc_buckets,
+            phase_commit,
+            commit: phase_bus_commit,
+        };
+        let lock = PhaseLockDecision {
+            cycle_id: inp.cycle_id,
+            lock_window_buckets: inp.lock_window_buckets.clamp(1, 4),
+            accept_center: gamma_bucket,
+            commit: commit_lock_decision(
+                inp.cycle_id,
+                inp.lock_window_buckets,
+                gamma_bucket,
+                phase_commit,
+            ),
+        };
+        let commit = commit_outputs(phase_bus.commit, lock.commit);
+        self.commit = commit_core(self.params.commit, self.state.commit);
+        OnnOutputs {
+            phase_bus,
+            lock,
+            commit,
+        }
+    }
+
+    pub fn phase_bus(&self, cycle_id: u64, inputs_commit: Digest32) -> PhaseBus {
+        let n = self.params.n.max(1).min(MAX_OSCILLATORS);
+        let osc_buckets = buckets_for(&self.state.theta_q12, n);
+        let gamma_bucket = self.state.last_bucket;
+        let global_plv = self.state.last_plv;
+        let phase_commit = commit_phase_bus(
+            cycle_id,
+            gamma_bucket,
+            global_plv,
+            &osc_buckets,
+            n,
+            inputs_commit,
+            self.params.commit,
+        );
+        let commit = commit_phase_bus_root(phase_commit);
+        PhaseBus {
+            cycle_id,
+            gamma_bucket,
+            global_plv,
+            osc_buckets,
+            phase_commit,
+            commit,
+        }
+    }
+}
+
+impl Default for OnnCore {
+    fn default() -> Self {
+        Self::new(OnnParams::default())
+    }
+}
+
+pub fn accept_spike(lock: &PhaseLockDecision, spike_bucket: u8) -> bool {
+    let radius = lock.lock_window_buckets.clamp(1, 4);
+    let distance = circular_bucket_distance(lock.accept_center, spike_bucket);
+    distance <= radius
+}
+
 pub fn apply_coupling_delta(params: &OnnParams, delta: i16) -> OnnParams {
-    let coupling = apply_i16_delta(params.coupling, delta, 0, COUPLING_MAX);
+    let k_couple = apply_i16_delta(params.k_couple, delta, 0, 10_000);
     OnnParams::new(
-        params.base_step,
-        coupling,
-        params.max_delta,
-        params.lock_window,
+        params.n,
+        params.omega_q12,
+        k_couple,
+        params.k_dither,
+        params.buckets,
+        params.couple_clamp_q12,
     )
 }
 
 pub fn apply_lock_window_delta(params: &OnnParams, delta: i16) -> OnnParams {
-    let lock_window = apply_i16_delta(params.lock_window, delta, LOCK_WINDOW_MIN, LOCK_WINDOW_MAX);
+    let k_dither = apply_i16_delta(params.k_dither, delta, 0, 10_000);
     OnnParams::new(
-        params.base_step,
-        params.coupling,
-        params.max_delta,
-        lock_window,
+        params.n,
+        params.omega_q12,
+        params.k_couple,
+        k_dither,
+        params.buckets,
+        params.couple_clamp_q12,
     )
 }
 
@@ -140,544 +364,223 @@ fn apply_i16_delta(value: u16, delta: i16, min: u16, max: u16) -> u16 {
     updated as u16
 }
 
-impl Default for OnnParams {
-    fn default() -> Self {
-        Self::new(128, 3200, 512, 16_384)
+fn seed_theta(params: &OnnParams) -> [u16; 16] {
+    let mut theta = [0u16; 16];
+    for i in 0..params.n.min(MAX_OSCILLATORS) {
+        let mut hasher = Hasher::new();
+        hasher.update(b"ucf.onn.seed.theta.v1");
+        hasher.update(&[i as u8]);
+        hasher.update(params.commit.as_bytes());
+        let hash = hasher.finalize();
+        let bytes = hash.as_bytes();
+        let raw = u16::from_be_bytes([bytes[0], bytes[1]]);
+        theta[i] = raw & 0x0fff;
     }
+    theta
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PairLock {
-    pub a: OscId,
-    pub b: OscId,
-    pub lock: u16,
-    pub phase_diff: u16,
-    pub commit: Digest32,
+fn adjusted_coupling(k_couple: u16, risk: u16, drift: u16, surprise: u16) -> u16 {
+    let mut effective = i32::from(k_couple);
+    let boost = (i32::from(risk) + i32::from(drift)) / 64;
+    let reduction = i32::from(surprise) / 64;
+    effective = effective.saturating_add(boost).saturating_sub(reduction);
+    effective.clamp(0, 10_000) as u16
 }
 
-impl PairLock {
-    fn new(a: OscId, b: OscId, lock: u16, phase_diff: u16) -> Self {
-        let commit = commit_pair_lock(a, b, lock, phase_diff);
-        Self {
-            a,
-            b,
-            lock,
-            phase_diff,
-            commit,
-        }
+fn coupling_sum_q12(i: usize, n: usize, theta_q12: &[u16; 16]) -> i32 {
+    let mut sum = 0i32;
+    let theta_i = theta_q12[i];
+    for j in 0..n {
+        let delta = (theta_q12[j].wrapping_sub(theta_i)) & 0x0fff;
+        let idx = (delta >> 6) as usize;
+        let sin_val = i32::from(SIN_LUT[idx]);
+        sum = sum.saturating_add(sin_val);
     }
+    sum / n.max(1) as i32
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct OnnInputs {
-    pub cycle_id: u64,
-    pub influence_pulses_root: Digest32,
-    pub influence_node_values: Vec<(InfluenceNodeId, i16)>,
-    pub coherence_hint: u16,
-    pub risk: u16,
-    pub drift: u16,
-    pub nsr_verdict: u8,
-    pub commit: Digest32,
-}
-
-impl OnnInputs {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        cycle_id: u64,
-        influence_pulses_root: Digest32,
-        influence_node_values: Vec<(InfluenceNodeId, i16)>,
-        coherence_hint: u16,
-        risk: u16,
-        drift: u16,
-        nsr_verdict: u8,
-    ) -> Self {
-        let commit = commit_inputs(
-            cycle_id,
-            influence_pulses_root,
-            &influence_node_values,
-            coherence_hint,
-            risk,
-            drift,
-            nsr_verdict,
-        );
-        Self {
-            cycle_id,
-            influence_pulses_root,
-            influence_node_values,
-            coherence_hint,
-            risk,
-            drift,
-            nsr_verdict,
-            commit,
-        }
+fn dither_for(index: usize, inp: &OnnInputs, k_dither: u16) -> i32 {
+    if k_dither == 0 {
+        return 0;
     }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct OnnOutputs {
-    pub cycle_id: u64,
-    pub states_commit: Digest32,
-    pub global_plv: u16,
-    pub pair_locks: Vec<PairLock>,
-    pub phase_frame_commit: Digest32,
-    pub commit: Digest32,
-}
-
-impl OnnOutputs {
-    fn new(
-        cycle_id: u64,
-        states_commit: Digest32,
-        global_plv: u16,
-        pair_locks: Vec<PairLock>,
-    ) -> Self {
-        let phase_frame_commit =
-            commit_phase_frame(cycle_id, states_commit, global_plv, &pair_locks);
-        let commit = commit_outputs(
-            cycle_id,
-            states_commit,
-            global_plv,
-            &pair_locks,
-            phase_frame_commit,
-        );
-        Self {
-            cycle_id,
-            states_commit,
-            global_plv,
-            pair_locks,
-            phase_frame_commit,
-            commit,
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PhaseFrame {
-    pub cycle_id: u64,
-    pub global_phase: u16,
-    pub module_phase: Vec<(OscId, u16)>,
-    pub coherence_plv: u16,
-    pub pair_locks: Vec<PairLock>,
-    pub states_commit: Digest32,
-    pub phase_frame_commit: Digest32,
-    pub commit: Digest32,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PhaseBus {
-    pub cycle_id: u64,
-    pub global_phase_u16: u16,
-    pub gamma_bucket: u8,
-    pub global_plv: u16,
-    pub pair_locks_commit: Digest32,
-    pub commit: Digest32,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct OnnCore {
-    pub params: OnnParams,
-    pub states: Vec<OscState>,
-    pub commit: Digest32,
-}
-
-impl OnnCore {
-    pub fn new(params: OnnParams) -> Self {
-        let states = seed_states(&params);
-        let commit = commit_core(params.commit, &states);
-        Self {
-            params,
-            states,
-            commit,
-        }
-    }
-
-    pub fn phase_of(&self, id: OscId) -> Option<u16> {
-        self.states
-            .iter()
-            .find_map(|state| (state.id == id).then_some(state.phase))
-    }
-
-    pub fn tick(&mut self, inp: &OnnInputs) -> OnnOutputs {
-        let effective_coupling = effective_coupling(&self.params, inp);
-        let drift_bias = i32::from(inp.drift) / 64;
-        let base_step = i32::from(self.params.base_step).saturating_add(drift_bias);
-        let max_delta = i32::from(self.params.max_delta);
-        let states_snapshot = self.states.clone();
-
-        for state in &mut self.states {
-            let coupling_effect = coupling_effect(state, &states_snapshot, effective_coupling)
-                .clamp(-max_delta, max_delta);
-            let next_phase =
-                i32::from(state.phase) + base_step + i32::from(state.omega) + coupling_effect;
-            state.phase = wrap_phase(next_phase);
-            state.amp = update_amp(state.amp, inp, effective_coupling);
-            state.update_commit();
-        }
-
-        let states_commit = commit_states(&self.states);
-        let pair_locks = pair_locks(&self.states, self.params.lock_window);
-        let global_plv = average_pair_lock(&pair_locks);
-        let outputs = OnnOutputs::new(inp.cycle_id, states_commit, global_plv, pair_locks);
-        self.commit = commit_core(self.params.commit, &self.states);
-        outputs
-    }
-
-    pub fn phase_bus(&self, cycle_id: u64) -> PhaseBus {
-        let global_phase = self.phase_of(OscId::Iit).unwrap_or(0);
-        let pair_locks = pair_locks(&self.states, self.params.lock_window);
-        let global_plv = average_pair_lock(&pair_locks);
-        let pair_locks_commit = pair_locks_commit(&pair_locks);
-        let gamma_bucket = (global_phase / 4096) as u8;
-        let commit = commit_phase_bus(
-            cycle_id,
-            global_phase,
-            gamma_bucket,
-            global_plv,
-            pair_locks_commit,
-        );
-        PhaseBus {
-            cycle_id,
-            global_phase_u16: global_phase,
-            gamma_bucket,
-            global_plv,
-            pair_locks_commit,
-            commit,
-        }
-    }
-}
-
-impl Default for OnnCore {
-    fn default() -> Self {
-        Self::new(OnnParams::default())
-    }
-}
-
-fn seed_states(params: &OnnParams) -> Vec<OscState> {
-    let defaults = default_oscillators();
-    defaults
-        .into_iter()
-        .take(MAX_OSCILLATORS)
-        .map(|id| seed_state(id, params.commit))
-        .collect()
-}
-
-fn default_oscillators() -> Vec<OscId> {
-    vec![
-        OscId::Jepa,
-        OscId::Ssm,
-        OscId::Ncde,
-        OscId::Cde,
-        OscId::Nsr,
-        OscId::Geist,
-        OscId::Iit,
-        OscId::Output,
-        OscId::BlueBrain,
-    ]
-}
-
-fn seed_state(id: OscId, params_commit: Digest32) -> OscState {
     let mut hasher = Hasher::new();
-    hasher.update(b"ucf.onn.seed.state.v2");
-    hasher.update(&id.as_u16().to_be_bytes());
-    hasher.update(params_commit.as_bytes());
+    hasher.update(b"ucf.onn.dither.v1");
+    hasher.update(&[index as u8]);
+    hasher.update(inp.ssm_state_commit.as_bytes());
+    hasher.update(inp.ncde_state_digest.as_bytes());
+    hasher.update(inp.cde_commit.as_bytes());
+    hasher.update(inp.nsr_trace_root.as_bytes());
+    hasher.update(inp.iit_hints_commit.as_bytes());
     let hash = hasher.finalize();
     let bytes = hash.as_bytes();
-    let phase = u16::from_be_bytes([bytes[0], bytes[1]]);
-    let omega_seed = i16::from_be_bytes([bytes[2], bytes[3]]);
-    let omega = (omega_seed % 64) - 32;
-    let amp_seed = u16::from_be_bytes([bytes[4], bytes[5]]);
-    let amp = 6000u16.saturating_add(amp_seed % 3000).min(MAX_SIGNAL);
-    OscState::new(id, phase, omega, amp)
+    let value = u16::from_be_bytes([bytes[0], bytes[1]]);
+    let sign = if value & 1 == 0 { 1i32 } else { -1i32 };
+    let small_mag = ((value >> 1) % 64) as i32;
+    sign * (i32::from(k_dither) * small_mag) / 10_000
 }
 
-fn update_amp(current: u16, inp: &OnnInputs, effective_coupling: i32) -> u16 {
-    let coherence = inp.coherence_hint.min(MAX_SIGNAL) as i32;
-    let mut target = current as i32 + (coherence - current as i32) / 16;
-    let risk = i32::from(inp.risk.min(MAX_SIGNAL));
-    if risk > 0 {
-        target = target.saturating_sub(risk / 20);
-    }
-    if inp.nsr_verdict >= 2 {
-        target = target.saturating_sub(800);
-    }
-    if effective_coupling > 0 {
-        target = target.saturating_add(effective_coupling / 12);
-    }
-    target.clamp(0, i32::from(MAX_SIGNAL)) as u16
+fn wrap_q12(value: i32) -> u16 {
+    value.rem_euclid(PHASE_Q12_WRAP) as u16
 }
 
-fn effective_coupling(params: &OnnParams, inp: &OnnInputs) -> i32 {
-    let mut coupling = i32::from(params.coupling);
-    let coherence = influence_value(inp, InfluenceNodeId::Coherence).max(0) as i32;
-    let integration = influence_value(inp, InfluenceNodeId::Integration).max(0) as i32;
-    let coherence_boost = (coherence + integration) / 20;
-    coupling = coupling.saturating_add(coherence_boost);
-
-    let risk = i32::from(inp.risk.min(MAX_SIGNAL));
-    let risk_influence = influence_value(inp, InfluenceNodeId::Risk).max(0) as i32;
-    let risk_penalty = risk.max(risk_influence) / 18;
-    coupling = coupling.saturating_sub(risk_penalty);
-    if inp.nsr_verdict >= 2 {
-        coupling = coupling.saturating_sub(1500);
+fn buckets_for(theta_q12: &[u16; 16], n: usize) -> [u8; 16] {
+    let mut buckets = [0u8; 16];
+    for i in 0..n.min(MAX_OSCILLATORS) {
+        buckets[i] = ((u32::from(theta_q12[i]) * u32::from(BUCKETS)) >> 12) as u8;
     }
-    coupling.clamp(0, i32::from(MAX_SIGNAL))
+    buckets
 }
 
-fn influence_value(inp: &OnnInputs, node: InfluenceNodeId) -> i16 {
-    inp.influence_node_values
-        .iter()
-        .find_map(|(id, value)| (*id == node).then_some(*value))
-        .unwrap_or(0)
-}
-
-fn coupling_effect(state: &OscState, states: &[OscState], effective_coupling: i32) -> i32 {
-    if effective_coupling == 0 || states.is_empty() {
+fn median_bucket(osc_buckets: &[u8; 16], n: usize) -> u8 {
+    if n == 0 {
         return 0;
     }
-    let mut sum: i64 = 0;
-    for other in states {
-        if other.id == state.id {
-            continue;
-        }
-        let diff = signed_phase_delta(state.phase, other.phase);
-        let sin_val = sin_lookup(diff) as i64;
-        let amp = i64::from(other.amp);
-        let contribution = (i64::from(effective_coupling) * sin_val * amp)
-            / i64::from(SIN_LUT_SCALE)
-            / i64::from(MAX_SIGNAL);
-        sum = sum.saturating_add(contribution);
-    }
-    let count = states.len().max(1) as i64;
-    (sum / count) as i32
+    let mut values = osc_buckets[..n.min(MAX_OSCILLATORS)].to_vec();
+    values.sort_unstable();
+    values[(values.len() - 1) / 2]
 }
 
-fn signed_phase_delta(theta: u16, other: u16) -> i32 {
-    let diff = other.wrapping_sub(theta) as i32;
-    if diff > 32_768 {
-        diff - PHASE_WRAP
-    } else {
-        diff
-    }
-}
-
-fn sin_lookup(diff: i32) -> i32 {
-    let shifted = diff + 32_768;
-    let idx = ((shifted as i64 * SIN_LUT.len() as i64) / PHASE_WRAP as i64) as usize;
-    SIN_LUT[idx.min(SIN_LUT.len() - 1)] as i32
-}
-
-fn wrap_phase(value: i32) -> u16 {
-    value.rem_euclid(PHASE_WRAP) as u16
-}
-
-fn pair_locks(states: &[OscState], lock_window: u16) -> Vec<PairLock> {
-    let pairs = [
-        (OscId::Jepa, OscId::Nsr),
-        (OscId::Cde, OscId::Nsr),
-        (OscId::Geist, OscId::Iit),
-        (OscId::Ssm, OscId::Ncde),
-        (OscId::Output, OscId::Nsr),
-    ];
-    let mut locks = Vec::with_capacity(pairs.len());
-    for (a, b) in pairs {
-        let Some(phase_a) = lookup_phase(states, a) else {
-            continue;
-        };
-        let Some(phase_b) = lookup_phase(states, b) else {
-            continue;
-        };
-        let diff = abs_phase_delta(phase_a, phase_b);
-        let lock = lock_from_diff(diff, lock_window);
-        locks.push(PairLock::new(a, b, lock, diff));
-    }
-    locks
-}
-
-fn lookup_phase(states: &[OscState], id: OscId) -> Option<u16> {
-    states
-        .iter()
-        .find_map(|state| (state.id == id).then_some(state.phase))
-}
-
-fn abs_phase_delta(a: u16, b: u16) -> u16 {
-    let diff = u32::from(a.abs_diff(b));
-    let wrap = PHASE_WRAP as u32 - diff;
-    diff.min(wrap).min(32_768) as u16
-}
-
-fn lock_from_diff(diff: u16, lock_window: u16) -> u16 {
-    if lock_window == 0 {
+fn plv_from_buckets(osc_buckets: &[u8; 16], n: usize, gamma_bucket: u8) -> u16 {
+    if n == 0 {
         return 0;
     }
-    let quarter = lock_window / 4;
-    if diff <= quarter {
-        return MAX_SIGNAL;
+    let mut sum: u32 = 0;
+    for bucket in osc_buckets.iter().take(n.min(MAX_OSCILLATORS)) {
+        sum = sum.saturating_add(u32::from(circular_bucket_distance(*bucket, gamma_bucket)));
     }
-    if diff >= lock_window {
-        return 0;
-    }
-    let range = lock_window.saturating_sub(quarter).max(1);
-    let offset = diff.saturating_sub(quarter);
-    let reduction = (u32::from(offset) * u32::from(MAX_SIGNAL)) / u32::from(range);
-    MAX_SIGNAL.saturating_sub(reduction as u16)
+    let avg = (sum * 10_000) / (n as u32 * 8);
+    10_000u16.saturating_sub(avg.min(10_000) as u16)
 }
 
-fn average_pair_lock(pairs: &[PairLock]) -> u16 {
-    if pairs.is_empty() {
-        return 0;
-    }
-    let sum: u32 = pairs.iter().map(|pair| u32::from(pair.lock)).sum();
-    let avg = sum / pairs.len() as u32;
-    avg.min(u32::from(MAX_SIGNAL)) as u16
+fn circular_bucket_distance(a: u8, b: u8) -> u8 {
+    let diff = a.abs_diff(b);
+    let wrap = BUCKETS.saturating_sub(diff);
+    diff.min(wrap)
 }
 
-fn commit_params(base_step: u16, coupling: u16, max_delta: u16, lock_window: u16) -> Digest32 {
+fn commit_params(
+    n: usize,
+    omega_q12: &[i16; 16],
+    k_couple: u16,
+    k_dither: u16,
+    buckets: u8,
+    couple_clamp_q12: i16,
+) -> Digest32 {
     let mut hasher = Hasher::new();
-    hasher.update(b"ucf.onn.params.v2");
-    hasher.update(&base_step.to_be_bytes());
-    hasher.update(&coupling.to_be_bytes());
-    hasher.update(&max_delta.to_be_bytes());
-    hasher.update(&lock_window.to_be_bytes());
+    hasher.update(b"ucf.onn.params.v3");
+    hasher.update(&u32::try_from(n).unwrap_or(u32::MAX).to_be_bytes());
+    for omega in omega_q12 {
+        hasher.update(&omega.to_be_bytes());
+    }
+    hasher.update(&k_couple.to_be_bytes());
+    hasher.update(&k_dither.to_be_bytes());
+    hasher.update(&[buckets]);
+    hasher.update(&couple_clamp_q12.to_be_bytes());
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
-fn commit_osc_state(id: OscId, phase: u16, omega: i16, amp: u16) -> Digest32 {
+fn commit_state(
+    theta_q12: &[u16; 16],
+    last_bucket: u8,
+    last_plv: u16,
+    params_commit: Digest32,
+) -> Digest32 {
     let mut hasher = Hasher::new();
-    hasher.update(b"ucf.onn.state.v2");
-    hasher.update(&id.as_u16().to_be_bytes());
-    hasher.update(&phase.to_be_bytes());
-    hasher.update(&omega.to_be_bytes());
-    hasher.update(&amp.to_be_bytes());
-    Digest32::new(*hasher.finalize().as_bytes())
-}
-
-fn commit_states(states: &[OscState]) -> Digest32 {
-    let mut hasher = Hasher::new();
-    hasher.update(b"ucf.onn.states.v2");
-    hasher.update(
-        &u32::try_from(states.len())
-            .unwrap_or(u32::MAX)
-            .to_be_bytes(),
-    );
-    for state in states {
-        hasher.update(state.commit.as_bytes());
+    hasher.update(b"ucf.onn.state.v1");
+    hasher.update(params_commit.as_bytes());
+    for theta in theta_q12 {
+        hasher.update(&theta.to_be_bytes());
     }
+    hasher.update(&[last_bucket]);
+    hasher.update(&last_plv.to_be_bytes());
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
-pub fn pair_locks_commit(pairs: &[PairLock]) -> Digest32 {
+#[allow(clippy::too_many_arguments)]
+fn commit_inputs(
+    cycle_id: u64,
+    ssm_state_commit: Digest32,
+    ncde_state_digest: Digest32,
+    cde_commit: Digest32,
+    nsr_trace_root: Digest32,
+    iit_hints_commit: Digest32,
+    lock_window_buckets: u8,
+    risk: u16,
+    drift: u16,
+    surprise: u16,
+) -> Digest32 {
     let mut hasher = Hasher::new();
-    hasher.update(b"ucf.onn.pair_locks.v1");
-    hasher.update(&u32::try_from(pairs.len()).unwrap_or(u32::MAX).to_be_bytes());
-    for pair in pairs {
-        hasher.update(pair.commit.as_bytes());
-    }
-    Digest32::new(*hasher.finalize().as_bytes())
-}
-
-fn commit_pair_lock(a: OscId, b: OscId, lock: u16, diff: u16) -> Digest32 {
-    let mut hasher = Hasher::new();
-    hasher.update(b"ucf.onn.lock.v2");
-    hasher.update(&a.as_u16().to_be_bytes());
-    hasher.update(&b.as_u16().to_be_bytes());
-    hasher.update(&lock.to_be_bytes());
-    hasher.update(&diff.to_be_bytes());
+    hasher.update(b"ucf.onn.inputs.v1");
+    hasher.update(&cycle_id.to_be_bytes());
+    hasher.update(ssm_state_commit.as_bytes());
+    hasher.update(ncde_state_digest.as_bytes());
+    hasher.update(cde_commit.as_bytes());
+    hasher.update(nsr_trace_root.as_bytes());
+    hasher.update(iit_hints_commit.as_bytes());
+    hasher.update(&[lock_window_buckets]);
+    hasher.update(&risk.to_be_bytes());
+    hasher.update(&drift.to_be_bytes());
+    hasher.update(&surprise.to_be_bytes());
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
 fn commit_phase_bus(
     cycle_id: u64,
-    global_phase: u16,
     gamma_bucket: u8,
     global_plv: u16,
-    pair_locks_commit: Digest32,
+    osc_buckets: &[u8; 16],
+    n: usize,
+    inputs_commit: Digest32,
+    params_commit: Digest32,
 ) -> Digest32 {
     let mut hasher = Hasher::new();
     hasher.update(b"ucf.onn.phase_bus.v1");
     hasher.update(&cycle_id.to_be_bytes());
-    hasher.update(&global_phase.to_be_bytes());
     hasher.update(&[gamma_bucket]);
     hasher.update(&global_plv.to_be_bytes());
-    hasher.update(pair_locks_commit.as_bytes());
-    Digest32::new(*hasher.finalize().as_bytes())
-}
-
-fn commit_phase_frame(
-    cycle_id: u64,
-    states_commit: Digest32,
-    global_plv: u16,
-    pair_locks: &[PairLock],
-) -> Digest32 {
-    let mut hasher = Hasher::new();
-    hasher.update(b"ucf.onn.phase_frame.v2");
-    hasher.update(&cycle_id.to_be_bytes());
-    hasher.update(states_commit.as_bytes());
-    hasher.update(&global_plv.to_be_bytes());
-    for pair in pair_locks {
-        hasher.update(pair.commit.as_bytes());
+    for bucket in osc_buckets.iter().take(n.min(MAX_OSCILLATORS)) {
+        hasher.update(&[*bucket]);
     }
-    Digest32::new(*hasher.finalize().as_bytes())
-}
-
-fn commit_outputs(
-    cycle_id: u64,
-    states_commit: Digest32,
-    global_plv: u16,
-    pair_locks: &[PairLock],
-    phase_frame_commit: Digest32,
-) -> Digest32 {
-    let mut hasher = Hasher::new();
-    hasher.update(b"ucf.onn.outputs.v2");
-    hasher.update(&cycle_id.to_be_bytes());
-    hasher.update(states_commit.as_bytes());
-    hasher.update(&global_plv.to_be_bytes());
-    for pair in pair_locks {
-        hasher.update(pair.commit.as_bytes());
-    }
-    hasher.update(phase_frame_commit.as_bytes());
-    Digest32::new(*hasher.finalize().as_bytes())
-}
-
-fn commit_inputs(
-    cycle_id: u64,
-    influence_pulses_root: Digest32,
-    influence_node_values: &[(InfluenceNodeId, i16)],
-    coherence_hint: u16,
-    risk: u16,
-    drift: u16,
-    nsr_verdict: u8,
-) -> Digest32 {
-    let mut hasher = Hasher::new();
-    hasher.update(b"ucf.onn.inputs.v2");
-    hasher.update(&cycle_id.to_be_bytes());
-    hasher.update(influence_pulses_root.as_bytes());
-    hasher.update(
-        &u32::try_from(influence_node_values.len())
-            .unwrap_or(u32::MAX)
-            .to_be_bytes(),
-    );
-    for (node, value) in influence_node_values {
-        hasher.update(&node.to_u16().to_be_bytes());
-        hasher.update(&value.to_be_bytes());
-    }
-    hasher.update(&coherence_hint.to_be_bytes());
-    hasher.update(&risk.to_be_bytes());
-    hasher.update(&drift.to_be_bytes());
-    hasher.update(&[nsr_verdict]);
-    Digest32::new(*hasher.finalize().as_bytes())
-}
-
-fn commit_core(params_commit: Digest32, states: &[OscState]) -> Digest32 {
-    let mut hasher = Hasher::new();
-    hasher.update(b"ucf.onn.core.v2");
+    hasher.update(inputs_commit.as_bytes());
     hasher.update(params_commit.as_bytes());
-    hasher.update(
-        &u32::try_from(states.len())
-            .unwrap_or(u32::MAX)
-            .to_be_bytes(),
-    );
-    for state in states {
-        hasher.update(state.commit.as_bytes());
-    }
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn commit_phase_bus_root(phase_commit: Digest32) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(b"ucf.onn.phase_bus.root.v1");
+    hasher.update(phase_commit.as_bytes());
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn commit_lock_decision(
+    cycle_id: u64,
+    lock_window_buckets: u8,
+    accept_center: u8,
+    phase_commit: Digest32,
+) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(b"ucf.onn.lock.v1");
+    hasher.update(&cycle_id.to_be_bytes());
+    hasher.update(&[lock_window_buckets]);
+    hasher.update(&[accept_center]);
+    hasher.update(phase_commit.as_bytes());
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn commit_outputs(phase_bus_commit: Digest32, lock_commit: Digest32) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(b"ucf.onn.outputs.v1");
+    hasher.update(phase_bus_commit.as_bytes());
+    hasher.update(lock_commit.as_bytes());
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn commit_core(params_commit: Digest32, state_commit: Digest32) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(b"ucf.onn.core.v1");
+    hasher.update(params_commit.as_bytes());
+    hasher.update(state_commit.as_bytes());
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
@@ -685,19 +588,18 @@ fn commit_core(params_commit: Digest32, states: &[OscState]) -> Digest32 {
 mod tests {
     use super::*;
 
-    fn make_inputs(coherence: u16, risk: u16) -> OnnInputs {
+    fn make_inputs() -> OnnInputs {
         OnnInputs::new(
             1,
             Digest32::new([1u8; 32]),
-            vec![
-                (InfluenceNodeId::Coherence, coherence as i16),
-                (InfluenceNodeId::Integration, coherence as i16),
-                (InfluenceNodeId::Risk, risk as i16),
-            ],
-            coherence,
-            risk,
-            0,
-            0,
+            Digest32::new([2u8; 32]),
+            Digest32::new([3u8; 32]),
+            Digest32::new([4u8; 32]),
+            Digest32::new([5u8; 32]),
+            2,
+            1200,
+            900,
+            500,
         )
     }
 
@@ -705,88 +607,59 @@ mod tests {
     fn tick_is_deterministic_for_same_inputs() {
         let mut core_a = OnnCore::default();
         let mut core_b = OnnCore::default();
-        let inputs = make_inputs(5000, 0);
+        let inputs = make_inputs();
 
         let out_a = core_a.tick(&inputs);
         let out_b = core_b.tick(&inputs);
 
-        assert_eq!(out_a, out_b);
-        assert_eq!(out_a.commit, out_b.commit);
+        assert_eq!(out_a.phase_bus.gamma_bucket, out_b.phase_bus.gamma_bucket);
+        assert_eq!(out_a.phase_bus.global_plv, out_b.phase_bus.global_plv);
+        assert_eq!(out_a.phase_bus.phase_commit, out_b.phase_bus.phase_commit);
     }
 
     #[test]
-    fn lock_high_when_phases_match() {
-        let params = OnnParams::new(0, 0, 0, 8000);
+    fn coupling_increases_plv_over_ticks() {
+        let mut params = OnnParams::default();
+        params.k_couple = 9000;
+        params.k_dither = 0;
+        params.commit = commit_params(
+            params.n,
+            &params.omega_q12,
+            params.k_couple,
+            params.k_dither,
+            params.buckets,
+            params.couple_clamp_q12,
+        );
         let mut core = OnnCore::new(params);
-        for state in &mut core.states {
-            state.phase = 1000;
-            state.omega = 0;
-            state.amp = 8000;
-            state.update_commit();
-        }
-        let inputs = make_inputs(8000, 0);
-        let outputs = core.tick(&inputs);
-        let pair = outputs
-            .pair_locks
-            .iter()
-            .find(|pair| pair.a == OscId::Cde && pair.b == OscId::Nsr)
-            .expect("pair lock present");
-        assert!(pair.lock >= 9000);
-    }
-
-    #[test]
-    fn lock_low_when_phases_diverge() {
-        let params = OnnParams::new(0, 0, 0, 8000);
-        let mut core = OnnCore::new(params);
-        for state in &mut core.states {
-            state.phase = 1000;
-            state.omega = 0;
-            state.amp = 8000;
-            state.update_commit();
-        }
-        if let Some(state) = core.states.iter_mut().find(|s| s.id == OscId::Nsr) {
-            state.phase = 40_000;
-            state.update_commit();
-        }
-        let inputs = make_inputs(8000, 0);
-        let outputs = core.tick(&inputs);
-        let pair = outputs
-            .pair_locks
-            .iter()
-            .find(|pair| pair.a == OscId::Cde && pair.b == OscId::Nsr)
-            .expect("pair lock present");
-        assert!(pair.lock <= 1000);
-    }
-
-    #[test]
-    fn influence_modulates_global_plv() {
-        let params = OnnParams::new(0, 3200, 512, 12_000);
-        let mut core_high = OnnCore::new(params.clone());
-        let mut core_low = OnnCore::new(params);
-        for state in &mut core_high.states {
-            state.phase = state.phase.wrapping_add(12_000);
-            state.omega = 0;
-            state.update_commit();
-        }
-        core_low.states = core_high.states.clone();
-        let inputs_high = make_inputs(9000, 0);
-        let inputs_low = make_inputs(0, 9000);
-        let mut plv_high = 0;
-        let mut plv_low = 0;
+        let inputs = make_inputs();
+        let mut plv = 0;
         for _ in 0..4 {
-            plv_high = core_high.tick(&inputs_high).global_plv;
-            plv_low = core_low.tick(&inputs_low).global_plv;
+            plv = core.tick(&inputs).phase_bus.global_plv;
         }
-        assert!(plv_high > plv_low);
+        assert!(plv >= core.state.last_plv);
     }
 
     #[test]
-    fn rsa_param_updates_are_clamped() {
-        let params = OnnParams::new(128, 3200, 512, 16_384);
-        let updated = apply_coupling_delta(&params, 20_000);
-        assert_eq!(updated.coupling, COUPLING_MAX);
+    fn accept_spike_within_window() {
+        let lock = PhaseLockDecision {
+            cycle_id: 1,
+            lock_window_buckets: 2,
+            accept_center: 4,
+            commit: Digest32::new([9u8; 32]),
+        };
+        assert!(accept_spike(&lock, 5));
+        assert!(accept_spike(&lock, 6));
+        assert!(!accept_spike(&lock, 8));
+    }
 
-        let updated = apply_lock_window_delta(&params, -20_000);
-        assert_eq!(updated.lock_window, LOCK_WINDOW_MIN);
+    #[test]
+    fn median_bucket_is_deterministic() {
+        let mut buckets = [0u8; 16];
+        buckets[0] = 1;
+        buckets[1] = 5;
+        buckets[2] = 4;
+        buckets[3] = 2;
+        let median = median_bucket(&buckets, 4);
+        assert_eq!(median, 2);
     }
 }

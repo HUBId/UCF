@@ -87,7 +87,7 @@ pub fn build_feature_spike_batch(
     push_candidate(
         &mut candidates,
         SpikeKind::Feature,
-        OscId::BlueBrain,
+        OscId::Reserved9,
         inputs.wm_salience,
         params.feature_thresh,
         b"wm.salience",
@@ -95,7 +95,7 @@ pub fn build_feature_spike_batch(
     push_candidate(
         &mut candidates,
         SpikeKind::Novelty,
-        OscId::BlueBrain,
+        OscId::Reserved9,
         inputs.wm_novelty,
         params.feature_thresh,
         b"wm.novelty",
@@ -111,7 +111,7 @@ pub fn build_feature_spike_batch(
     push_candidate(
         &mut candidates,
         SpikeKind::Threat,
-        OscId::Geist,
+        OscId::Reserved8,
         inputs.risk,
         params.threat_thresh,
         b"risk.geist",
@@ -119,7 +119,7 @@ pub fn build_feature_spike_batch(
     push_candidate(
         &mut candidates,
         SpikeKind::Novelty,
-        OscId::Jepa,
+        OscId::Reserved7,
         inputs.surprise,
         params.feature_thresh,
         b"surprise.replay",
@@ -127,7 +127,7 @@ pub fn build_feature_spike_batch(
     push_candidate(
         &mut candidates,
         SpikeKind::Feature,
-        OscId::Geist,
+        OscId::Reserved8,
         inputs.ssm_salience,
         params.feature_thresh,
         b"ssm.salience.geist",
@@ -158,7 +158,7 @@ pub fn build_feature_spike_batch(
         let event = encode_spike_with_window(
             cycle_id,
             candidate.kind,
-            OscId::Jepa,
+            OscId::Reserved7,
             candidate.dst,
             candidate.strength,
             phase_bus.commit,
@@ -259,10 +259,10 @@ mod tests {
     fn phase_bus() -> PhaseBus {
         PhaseBus {
             cycle_id: 1,
-            global_phase_u16: 1200,
             gamma_bucket: 0,
             global_plv: 9000,
-            pair_locks_commit: Digest32::new([0u8; 32]),
+            osc_buckets: [0u8; 16],
+            phase_commit: Digest32::new([3u8; 32]),
             commit: Digest32::new([4u8; 32]),
         }
     }

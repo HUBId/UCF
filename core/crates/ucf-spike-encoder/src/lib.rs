@@ -1,14 +1,16 @@
 #![forbid(unsafe_code)]
 
 use blake3::Hasher;
-use ucf_onn::{OnnParams, OscId};
+use ucf_onn::OscId;
 use ucf_spikebus::{SpikeEvent, SpikeKind};
 use ucf_types::Digest32;
 
 const PAYLOAD_DOMAIN: &[u8] = b"ucf.spike_encoder.payload.v2";
 const MAX_STRENGTH: u16 = 10_000;
+const DEFAULT_PHASE_WINDOW: u16 = 4096;
+
 fn default_phase_window() -> u16 {
-    OnnParams::default().lock_window
+    DEFAULT_PHASE_WINDOW
 }
 
 pub fn ttfs_from_strength(strength: u16, phase_window: u16) -> u16 {
@@ -152,7 +154,7 @@ mod tests {
         let first = encode_spike_with_window(
             1,
             SpikeKind::Feature,
-            OscId::Jepa,
+            OscId::Reserved7,
             OscId::Ssm,
             2400,
             phase_commit,
@@ -163,7 +165,7 @@ mod tests {
         let second = encode_spike_with_window(
             1,
             SpikeKind::Feature,
-            OscId::Jepa,
+            OscId::Reserved7,
             OscId::Ssm,
             2400,
             phase_commit,
