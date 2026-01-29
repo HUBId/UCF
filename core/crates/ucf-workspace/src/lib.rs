@@ -736,15 +736,13 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
             payload.push(1);
             payload.extend_from_slice(output.commit.as_bytes());
             payload.extend_from_slice(&output.phi_proxy.to_be_bytes());
-            payload.extend_from_slice(output.integration_report_commit.as_bytes());
-            payload.push(iit_hint_flags(&output.hints));
-            payload.extend_from_slice(output.hints.commit.as_bytes());
+            payload.push(iit_hint_flags(output));
+            payload.extend_from_slice(output.hints_commit.as_bytes());
         }
         None => {
             payload.push(0);
             payload.extend_from_slice(&[0u8; Digest32::LEN]);
             payload.extend_from_slice(&0u16.to_be_bytes());
-            payload.extend_from_slice(&[0u8; Digest32::LEN]);
             payload.push(0);
             payload.extend_from_slice(&[0u8; Digest32::LEN]);
         }
@@ -832,11 +830,11 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
     payload
 }
 
-fn iit_hint_flags(hints: &ucf_iit::IitHints) -> u8 {
-    (hints.tighten_sync as u8)
-        | ((hints.damp_output as u8) << 1)
-        | ((hints.damp_learning as u8) << 2)
-        | ((hints.request_replay as u8) << 3)
+fn iit_hint_flags(output: &IitOutput) -> u8 {
+    (output.tighten_sync as u8)
+        | ((output.damp_output as u8) << 1)
+        | ((output.damp_learning as u8) << 2)
+        | ((output.request_replay as u8) << 3)
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -1958,9 +1956,8 @@ fn commit_snapshot(
             hasher.update(&[1]);
             hasher.update(output.commit.as_bytes());
             hasher.update(&output.phi_proxy.to_be_bytes());
-            hasher.update(output.integration_report_commit.as_bytes());
-            hasher.update(&[iit_hint_flags(&output.hints)]);
-            hasher.update(output.hints.commit.as_bytes());
+            hasher.update(&[iit_hint_flags(output)]);
+            hasher.update(output.hints_commit.as_bytes());
         }
         None => {
             hasher.update(&[0]);

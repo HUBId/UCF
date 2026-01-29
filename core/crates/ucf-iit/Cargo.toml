@@ -5,6 +5,4 @@ edition = "2021"
 
 [dependencies]
 blake3 = "1"
-ucf-influence = { path = "../ucf-influence" }
-ucf-spikebus = { path = "../ucf-spikebus" }
 ucf-types = { path = "../ucf-types" }

@@ -41,7 +41,7 @@ use ucf_feature_translator::{
     SaePort as FeatureSaePort,
 };
 use ucf_geist::{SelfState, SelfStateBuilder};
-use ucf_iit::{IitCore, IitHints, IitInputs, IitOutput};
+use ucf_iit::{IitCore, IitInputs, IitOutput};
 use ucf_iit_monitor::{
     actions_for_phi, report_for_phi, IitAction, IitActionKind, IitBand, IitReport,
 };
@@ -174,7 +174,7 @@ pub struct Router {
     consistency_engine: ConsistencyEngine,
     ism_store: Arc<Mutex<IsmStore>>,
     iit_monitor: Mutex<IitCore>,
-    last_iit_hints: Mutex<IitHints>,
+    last_iit_hints: Mutex<IitHintState>,
     recursion_controller: RecursionController,
     rsa_hooks: Vec<Arc<dyn RsaHook + Send + Sync>>,
     structural_store: Mutex<StructuralStore>,
@@ -229,6 +229,15 @@ struct IitActionEffects {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct IitHintState {
+    tighten_sync: bool,
+    damp_output: bool,
+    damp_learning: bool,
+    request_replay: bool,
+    hints_commit: Digest32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct ConsistencyActionEffects {
     max_thought_frames_per_cycle: u16,
     noise_boost: u16,
@@ -269,7 +278,6 @@ struct StageContext {
     suppressions: Vec<OutputSuppressionInfo>,
     integration_score: Option<u16>,
     integration_bias: i16,
-    iit_hints: Option<IitHints>,
     predictive_result: Option<(PredictionError, SurpriseSignal)>,
     attention_weights: Option<AttentionWeights>,
     lens_selection: Option<LensSelection>,
@@ -327,7 +335,6 @@ impl StageContext {
             suppressions: Vec::new(),
             integration_score: None,
             integration_bias: 0,
-            iit_hints: None,
             predictive_result: None,
             attention_weights: None,
             lens_selection: None,
@@ -436,12 +443,12 @@ impl Router {
             consistency_engine: ConsistencyEngine,
             ism_store: Arc::new(Mutex::new(IsmStore::new(64))),
             iit_monitor: Mutex::new(IitCore::default()),
-            last_iit_hints: Mutex::new(IitHints {
+            last_iit_hints: Mutex::new(IitHintState {
                 tighten_sync: false,
                 damp_output: false,
                 damp_learning: false,
                 request_replay: false,
-                commit: Digest32::new([0u8; 32]),
+                hints_commit: Digest32::new([0u8; 32]),
             }),
             recursion_controller: RecursionController::default(),
             rsa_hooks: vec![Arc::new(MockRsaHook::new())],
@@ -913,28 +920,32 @@ impl Router {
                         .clone()
                         .unwrap_or_else(empty_spike_summary);
                     let spike_counts = spike_summary.counts.clone();
-                    let spike_counts_iit = spike_counts.clone();
                     ctx.replay_pressure = Some(replay_pressure_from_spikes(&spike_counts));
                     let iit_output = {
                         let ncde_output = ctx
                             .ncde_output
                             .or_else(|| self.last_ncde_output.lock().ok().and_then(|g| *g));
-                        let influence_snapshot = self
-                            .last_influence_outputs
-                            .lock()
-                            .ok()
-                            .and_then(|guard| guard.clone());
-                        let (influence_pulses_root, influence_nodes) = influence_snapshot
+                        let ssm_output = ctx
+                            .ssm_output
+                            .clone()
+                            .or_else(|| self.last_ssm_output.lock().ok().and_then(|g| g.clone()));
+                        let coupling_outputs = ctx.coupling_outputs.clone().or_else(|| {
+                            self.last_coupling_outputs
+                                .lock()
+                                .ok()
+                                .and_then(|g| g.clone())
+                        });
+                        let cde_commit = ctx
+                            .cde_output
                             .as_ref()
-                            .map(|output| (output.pulses_root, output.node_values.clone()))
-                            .unwrap_or_else(|| (Digest32::new([0u8; 32]), Vec::new()));
-                        let geist_consistency = self
-                            .last_self_state
-                            .lock()
-                            .ok()
-                            .and_then(|guard| guard.as_ref().map(|state| state.consistency))
-                            .map(|score| score < SELF_CONSISTENCY_OK_THRESHOLD)
-                            .unwrap_or(false);
+                            .map(|output| output.commit)
+                            .or_else(|| {
+                                self.last_cde_output
+                                    .lock()
+                                    .ok()
+                                    .and_then(|guard| guard.as_ref().map(|out| out.commit))
+                            })
+                            .unwrap_or_else(|| Digest32::new([0u8; 32]));
                         let phase_bus = ctx
                             .phase_bus
                             .clone()
@@ -943,47 +954,46 @@ impl Router {
                             cycle_id,
                             phase_bus.commit,
                             phase_bus.gamma_bucket,
-                            phase_frame.coherence_plv,
-                            phase_bus.pair_locks_commit,
-                            influence_pulses_root,
-                            influence_nodes,
-                            spike_summary.seen_root,
-                            spike_summary.accepted_root,
-                            spike_counts_iit.clone(),
-                            self.last_cde_output
-                                .lock()
-                                .ok()
-                                .and_then(|guard| guard.as_ref().map(|out| out.commit)),
-                            workspace_snapshot
-                                .nsr_trace_root
+                            phase_bus.global_plv,
+                            ssm_output
+                                .as_ref()
+                                .map(|output| output.ssm_state_commit)
                                 .unwrap_or_else(|| Digest32::new([0u8; 32])),
-                            geist_consistency,
                             ncde_output
                                 .as_ref()
                                 .map(|output| output.ncde_state_digest)
                                 .unwrap_or_else(|| Digest32::new([0u8; 32])),
-                            ncde_output
+                            cde_commit,
+                            workspace_snapshot
+                                .nsr_trace_root
+                                .unwrap_or_else(|| Digest32::new([0u8; 32])),
+                            coupling_outputs
                                 .as_ref()
-                                .map(|output| output.ncde_energy)
-                                .unwrap_or(0),
+                                .map(|output| output.influences_root)
+                                .unwrap_or_else(|| Digest32::new([0u8; 32])),
+                            attention_risk,
                             drift_score,
                             surprise_score,
-                            attention_risk,
                         );
-                        let monitor = self.iit_monitor.lock().expect("iit monitor lock");
+                        let mut monitor = self.iit_monitor.lock().expect("iit monitor lock");
                         monitor.tick(&inputs)
                     };
                     let iit_report = report_for_phi(iit_output.phi_proxy);
                     let iit_actions = actions_for_phi(iit_output.phi_proxy, attention_risk);
-                    ctx.iit_hints = Some(iit_output.hints);
-                    ctx.iit_output = Some(iit_output.clone());
+                    ctx.iit_output = Some(iit_output);
                     if let Ok(mut workspace) = self.workspace.lock() {
-                        workspace.set_iit_output(iit_output.clone());
+                        workspace.set_iit_output(iit_output);
                     }
                     if let Ok(mut guard) = self.last_iit_hints.lock() {
-                        *guard = iit_output.hints;
+                        *guard = IitHintState {
+                            tighten_sync: iit_output.tighten_sync,
+                            damp_output: iit_output.damp_output,
+                            damp_learning: iit_output.damp_learning,
+                            request_replay: iit_output.request_replay,
+                            hints_commit: iit_output.hints_commit,
+                        };
                     }
-                    if iit_output.hints.request_replay {
+                    if iit_output.request_replay {
                         let current = ctx.replay_pressure.unwrap_or(0);
                         ctx.replay_pressure = Some(current.saturating_add(800).min(10_000));
                     }
@@ -1087,6 +1097,7 @@ impl Router {
                         .spike_summary
                         .clone()
                         .unwrap_or_else(empty_spike_summary);
+                    let spike_counts = spike_summary.counts.clone();
                     let spike_root_commit = spike_summary.accepted_root;
                     let ncde_snapshot = ctx
                         .ncde_output
@@ -1096,7 +1107,7 @@ impl Router {
                         &phase_frame,
                         &phase_bus,
                         spike_root_commit,
-                        spike_counts_iit.clone(),
+                        spike_counts.clone(),
                         influence_outputs.as_ref(),
                         &iit_output,
                         ctx.ssm_output.as_ref(),
@@ -1388,7 +1399,7 @@ impl Router {
                         phi_threshold: PHI_OUTPUT_THRESHOLD,
                         speak_lock: output_lock,
                         speak_lock_min: LOCK_MIN_SPEAK,
-                        damp_output: iit_output.hints.damp_output,
+                        damp_output: iit_output.damp_output,
                         output_gain_cap,
                     };
                     let mut output_router = self.output_router.lock().expect("output router lock");
@@ -2050,14 +2061,11 @@ impl Router {
                         let fallback_iit = IitOutput {
                             cycle_id,
                             phi_proxy: 0,
-                            integration_report_commit: Digest32::new([0u8; 32]),
-                            hints: IitHints {
-                                tighten_sync: false,
-                                damp_output: false,
-                                damp_learning: false,
-                                request_replay: false,
-                                commit: Digest32::new([0u8; 32]),
-                            },
+                            tighten_sync: false,
+                            damp_output: false,
+                            damp_learning: false,
+                            request_replay: false,
+                            hints_commit: Digest32::new([0u8; 32]),
                             commit: Digest32::new([0u8; 32]),
                         };
                         let iit_output = ctx.iit_output.as_ref().unwrap_or(&fallback_iit);
@@ -2412,8 +2420,8 @@ impl Router {
 
     fn append_iit_output_record(&self, cycle_id: u64, output: &IitOutput) {
         let payload = format!(
-            "commit={};phi_proxy={};report_commit={};hints_commit={}",
-            output.commit, output.phi_proxy, output.integration_report_commit, output.hints.commit
+            "commit={};phi_proxy={};hints_commit={}",
+            output.commit, output.phi_proxy, output.hints_commit
         )
         .into_bytes();
         let record_id = format!("iit-{cycle_id}-{}", hex::encode(output.commit.as_bytes()));
@@ -2935,11 +2943,11 @@ impl Router {
             ctx.attention_risk,
             ctx.drift_score.unwrap_or(0),
             ctx.surprise_score.unwrap_or(0),
-            iit_output.hints.commit,
-            iit_output.hints.tighten_sync,
-            iit_output.hints.damp_output,
-            iit_output.hints.damp_learning,
-            iit_output.hints.request_replay,
+            iit_output.hints_commit,
+            iit_output.tighten_sync,
+            iit_output.damp_output,
+            iit_output.damp_learning,
+            iit_output.request_replay,
             coupling_root,
             nsr_verdict,
             policy_ok,
@@ -3941,10 +3949,10 @@ impl Router {
         }
         let _ = geist_consistency;
         facts.push(Fact::IitHints {
-            tighten_sync: iit_output.hints.tighten_sync,
-            damp_output: iit_output.hints.damp_output,
-            damp_learning: iit_output.hints.damp_learning,
-            request_replay: iit_output.hints.request_replay,
+            tighten_sync: iit_output.tighten_sync,
+            damp_output: iit_output.damp_output,
+            damp_learning: iit_output.damp_learning,
+            request_replay: iit_output.request_replay,
         });
         facts.push(Fact::PolicyCommit {
             commit: policy_commit,
@@ -5945,18 +5953,14 @@ mod tests {
     fn sle_thought_pulse_routes_to_internal_spikes_only() {
         let router = build_router();
         let phase_commit = Digest32::new([1u8; 32]);
-        let hints = IitHints {
+        let iit_output = IitOutput {
+            cycle_id: 3,
+            phi_proxy: 5200,
             tighten_sync: false,
             damp_output: false,
             damp_learning: false,
             request_replay: false,
-            commit: Digest32::new([9u8; 32]),
-        };
-        let iit_output = IitOutput {
-            cycle_id: 3,
-            phi_proxy: 5200,
-            integration_report_commit: Digest32::new([2u8; 32]),
-            hints,
+            hints_commit: Digest32::new([9u8; 32]),
             commit: Digest32::new([3u8; 32]),
         };
         let snapshot = router.arbitrate_workspace(3);
