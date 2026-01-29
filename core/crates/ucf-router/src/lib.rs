@@ -94,7 +94,8 @@ use ucf_tom_port::{IntentType, TomPort};
 use ucf_types::v1::spec::{ControlFrame, DecisionKind, Digest, ExperienceRecord, PolicyDecision};
 use ucf_types::{AlgoId, Digest32, EvidenceId};
 use ucf_workspace::{
-    output_event_commit, SignalKind, Workspace, WorkspaceConfig, WorkspaceSignal, WorkspaceSnapshot,
+    output_event_commit, SignalKind, SleOutputsSnapshot, Workspace, WorkspaceConfig,
+    WorkspaceSignal, WorkspaceSnapshot,
 };
 
 const ISM_ANCHOR_TOP_K: usize = 4;
@@ -2652,16 +2653,16 @@ impl Router {
             .ok()?;
 
         if let Ok(mut workspace) = self.workspace.lock() {
-            workspace.set_sle_outputs(
-                outputs.commit,
-                outputs.reflection.commit,
-                outputs.reflection.class as u8,
-                outputs.reflection.intensity,
-                outputs.thought_only_root,
-                outputs.ssm_bias,
-                outputs.cde_bias,
-                outputs.request_replay,
-            );
+            workspace.set_sle_outputs(SleOutputsSnapshot {
+                sle_commit: outputs.commit,
+                reflection_commit: outputs.reflection.commit,
+                reflection_class: outputs.reflection.class as u8,
+                reflection_intensity: outputs.reflection.intensity,
+                thought_only_root: outputs.thought_only_root,
+                ssm_bias: outputs.ssm_bias,
+                cde_bias: outputs.cde_bias,
+                request_replay: outputs.request_replay,
+            });
         }
 
         self.append_sle_outputs_record(cycle_id, &outputs);
@@ -5507,16 +5508,16 @@ mod tests {
         let reflection_commit = Digest32::new([6u8; 32]);
         {
             let mut workspace = router_low.workspace.lock().expect("workspace lock");
-            workspace.set_sle_outputs(
+            workspace.set_sle_outputs(SleOutputsSnapshot {
                 sle_commit,
                 reflection_commit,
-                0,
-                0,
-                Digest32::new([0u8; 32]),
-                0,
-                0,
-                false,
-            );
+                reflection_class: 0,
+                reflection_intensity: 0,
+                thought_only_root: Digest32::new([0u8; 32]),
+                ssm_bias: 0,
+                cde_bias: 0,
+                request_replay: false,
+            });
         }
         let snapshot_low = router_low.arbitrate_workspace(1);
         if let Ok(mut guard) = router_low.last_workspace_snapshot.lock() {
@@ -5524,16 +5525,16 @@ mod tests {
         }
         {
             let mut workspace = router_high.workspace.lock().expect("workspace lock");
-            workspace.set_sle_outputs(
+            workspace.set_sle_outputs(SleOutputsSnapshot {
                 sle_commit,
                 reflection_commit,
-                0,
-                0,
-                Digest32::new([0u8; 32]),
-                1500,
-                0,
-                false,
-            );
+                reflection_class: 0,
+                reflection_intensity: 0,
+                thought_only_root: Digest32::new([0u8; 32]),
+                ssm_bias: 1500,
+                cde_bias: 0,
+                request_replay: false,
+            });
         }
         let snapshot_high = router_high.arbitrate_workspace(1);
         if let Ok(mut guard) = router_high.last_workspace_snapshot.lock() {

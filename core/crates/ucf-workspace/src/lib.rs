@@ -554,6 +554,18 @@ pub struct WorkspaceSnapshot {
     pub commit: Digest32,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SleOutputsSnapshot {
+    pub sle_commit: Digest32,
+    pub reflection_commit: Digest32,
+    pub reflection_class: u8,
+    pub reflection_intensity: u16,
+    pub thought_only_root: Digest32,
+    pub ssm_bias: i16,
+    pub cde_bias: i16,
+    pub request_replay: bool,
+}
+
 /// Encode a workspace snapshot into a compact, deterministic payload for archiving.
 ///
 /// Summaries included here are already sanitized and non-sensitive (categorical labels
@@ -1190,25 +1202,15 @@ impl Workspace {
         self.nsr_triggered_rules_root = triggered_rules_root;
     }
 
-    pub fn set_sle_outputs(
-        &mut self,
-        sle_commit: Digest32,
-        reflection_commit: Digest32,
-        reflection_class: u8,
-        reflection_intensity: u16,
-        thought_only_root: Digest32,
-        ssm_bias: i16,
-        cde_bias: i16,
-        request_replay: bool,
-    ) {
-        self.sle_commit = sle_commit;
-        self.sle_reflection_commit = reflection_commit;
-        self.sle_reflection_class = reflection_class;
-        self.sle_reflection_intensity = reflection_intensity;
-        self.sle_thought_only_root = thought_only_root;
-        self.sle_ssm_bias = ssm_bias;
-        self.sle_cde_bias = cde_bias;
-        self.sle_request_replay = request_replay;
+    pub fn set_sle_outputs(&mut self, outputs: SleOutputsSnapshot) {
+        self.sle_commit = outputs.sle_commit;
+        self.sle_reflection_commit = outputs.reflection_commit;
+        self.sle_reflection_class = outputs.reflection_class;
+        self.sle_reflection_intensity = outputs.reflection_intensity;
+        self.sle_thought_only_root = outputs.thought_only_root;
+        self.sle_ssm_bias = outputs.ssm_bias;
+        self.sle_cde_bias = outputs.cde_bias;
+        self.sle_request_replay = outputs.request_replay;
     }
 
     pub fn rsa_applied(&self) -> bool {
