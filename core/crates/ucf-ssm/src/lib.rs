@@ -71,6 +71,7 @@ impl SsmState {
 pub struct SsmInputs {
     pub cycle_id: u64,
     pub phase_commit: Digest32,
+    pub phase_bucket: u8,
     pub percept_commit: Digest32,
     pub percept_energy: u16,
     pub coupling_u: i16,
@@ -90,6 +91,7 @@ impl SsmInputs {
     pub fn new(
         cycle_id: u64,
         phase_commit: Digest32,
+        phase_bucket: u8,
         percept_commit: Digest32,
         percept_energy: u16,
         coupling_u: i16,
@@ -105,6 +107,7 @@ impl SsmInputs {
         let commit = commit_inputs(
             cycle_id,
             phase_commit,
+            phase_bucket,
             percept_commit,
             percept_energy,
             coupling_u,
@@ -120,6 +123,7 @@ impl SsmInputs {
         Self {
             cycle_id,
             phase_commit,
+            phase_bucket,
             percept_commit,
             percept_energy,
             coupling_u,
@@ -393,6 +397,7 @@ fn digest_state(state: &[i32]) -> Digest32 {
 fn commit_inputs(
     cycle_id: u64,
     phase_commit: Digest32,
+    phase_bucket: u8,
     percept_commit: Digest32,
     percept_energy: u16,
     coupling_u: i16,
@@ -409,6 +414,7 @@ fn commit_inputs(
     hasher.update(b"ucf.ssm.input.v1");
     hasher.update(&cycle_id.to_be_bytes());
     hasher.update(phase_commit.as_bytes());
+    hasher.update(&[phase_bucket]);
     hasher.update(percept_commit.as_bytes());
     hasher.update(&percept_energy.to_be_bytes());
     hasher.update(&coupling_u.to_be_bytes());
@@ -465,6 +471,7 @@ mod tests {
         SsmInputs::new(
             7,
             Digest32::new([1u8; 32]),
+            2,
             percept_commit,
             1200,
             0,
@@ -498,6 +505,43 @@ mod tests {
     }
 
     #[test]
+    fn input_commit_changes_with_phase_bucket() {
+        let base = SsmInputs::new(
+            9,
+            Digest32::new([1u8; 32]),
+            1,
+            Digest32::new([2u8; 32]),
+            1200,
+            0,
+            Digest32::new([4u8; 32]),
+            vec![(SpikeKind::Feature, 4)],
+            2400,
+            Digest32::new([5u8; 32]),
+            3200,
+            800,
+            600,
+            1200,
+        );
+        let shifted = SsmInputs::new(
+            9,
+            Digest32::new([1u8; 32]),
+            2,
+            Digest32::new([2u8; 32]),
+            1200,
+            0,
+            Digest32::new([4u8; 32]),
+            vec![(SpikeKind::Feature, 4)],
+            2400,
+            Digest32::new([5u8; 32]),
+            3200,
+            800,
+            600,
+            1200,
+        );
+        assert_ne!(base.commit, shifted.commit);
+    }
+
+    #[test]
     fn leak_drives_state_toward_zero_for_zero_input() {
         let params = SsmParams::new(8, 8000, 0, 0, 9000, 20_000);
         let mut core = SsmCore::new(params);
@@ -506,6 +550,7 @@ mod tests {
         let input = SsmInputs::new(
             1,
             Digest32::new([0u8; 32]),
+            1,
             Digest32::new([0u8; 32]),
             0,
             0,
@@ -557,6 +602,7 @@ mod tests {
         let low = SsmInputs::new(
             1,
             Digest32::new([1u8; 32]),
+            2,
             Digest32::new([2u8; 32]),
             200,
             0,
@@ -572,6 +618,7 @@ mod tests {
         let high = SsmInputs::new(
             2,
             Digest32::new([1u8; 32]),
+            2,
             Digest32::new([9u8; 32]),
             6000,
             0,

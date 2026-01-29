@@ -30,6 +30,7 @@ const REPLAY_PRESSURE_MIN: i16 = 3000;
 pub struct IitInputs {
     pub cycle_id: u64,
     pub phase_commit: Digest32,
+    pub phase_bucket: u8,
     pub global_plv: u16,
     pub pair_locks_commit: Digest32,
     pub influence_pulses_root: Digest32,
@@ -53,6 +54,7 @@ impl IitInputs {
     pub fn new(
         cycle_id: u64,
         phase_commit: Digest32,
+        phase_bucket: u8,
         global_plv: u16,
         pair_locks_commit: Digest32,
         influence_pulses_root: Digest32,
@@ -72,6 +74,7 @@ impl IitInputs {
         let mut inputs = Self {
             cycle_id,
             phase_commit,
+            phase_bucket,
             global_plv,
             pair_locks_commit,
             influence_pulses_root,
@@ -374,6 +377,7 @@ fn commit_inputs(inputs: &IitInputs) -> Digest32 {
     hasher.update(DOMAIN_INPUT);
     hasher.update(&inputs.cycle_id.to_be_bytes());
     hasher.update(inputs.phase_commit.as_bytes());
+    hasher.update(&[inputs.phase_bucket]);
     hasher.update(&inputs.global_plv.to_be_bytes());
     hasher.update(inputs.pair_locks_commit.as_bytes());
     hasher.update(inputs.influence_pulses_root.as_bytes());
@@ -453,6 +457,7 @@ fn commit_report(inputs: &IitInputs, report: &IitReportInputs, hints: &IitHints)
     hasher.update(DOMAIN_REPORT);
     hasher.update(&inputs.cycle_id.to_be_bytes());
     hasher.update(inputs.phase_commit.as_bytes());
+    hasher.update(&[inputs.phase_bucket]);
     hasher.update(&report.phi.to_be_bytes());
     hasher.update(&report.phase_score.to_be_bytes());
     hasher.update(&report.influence_score.to_be_bytes());
@@ -513,6 +518,7 @@ mod tests {
         IitInputs::new(
             42,
             Digest32::new([1u8; 32]),
+            3,
             global_plv,
             Digest32::new([2u8; 32]),
             Digest32::new([3u8; 32]),

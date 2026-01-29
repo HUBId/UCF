@@ -140,6 +140,7 @@ impl Intervention {
 pub struct CdeInputs {
     pub cycle_id: u64,
     pub phase_commit: Digest32,
+    pub phase_bucket: u8,
     pub global_phase: u16,
     pub coherence_plv: u16,
     pub phi_proxy: u16,
@@ -160,6 +161,7 @@ impl CdeInputs {
     pub fn new(
         cycle_id: u64,
         phase_commit: Digest32,
+        phase_bucket: u8,
         global_phase: u16,
         coherence_plv: u16,
         phi_proxy: u16,
@@ -176,6 +178,7 @@ impl CdeInputs {
         let mut inputs = Self {
             cycle_id,
             phase_commit,
+            phase_bucket,
             global_phase,
             coherence_plv,
             phi_proxy,
@@ -730,6 +733,7 @@ fn digest_inputs(inputs: &CdeInputs) -> Digest32 {
     hasher.update(b"ucf.cde.inputs.v1");
     hasher.update(&inputs.cycle_id.to_be_bytes());
     hasher.update(inputs.phase_commit.as_bytes());
+    hasher.update(&[inputs.phase_bucket]);
     hasher.update(&inputs.global_phase.to_be_bytes());
     hasher.update(&inputs.coherence_plv.to_be_bytes());
     hasher.update(&inputs.phi_proxy.to_be_bytes());
@@ -817,6 +821,7 @@ mod tests {
         CdeInputs::new(
             1,
             Digest32::new([seed; 32]),
+            2,
             200,
             4_500,
             4_000,

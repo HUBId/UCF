@@ -195,17 +195,24 @@ impl CouplingRule {
 pub struct CouplingInputs {
     pub cycle_id: u64,
     pub phase_commit: Digest32,
+    pub phase_bucket: u8,
     pub samples: Vec<SignalSample>,
     pub commit: Digest32,
 }
 
 impl CouplingInputs {
-    pub fn new(cycle_id: u64, phase_commit: Digest32, mut samples: Vec<SignalSample>) -> Self {
+    pub fn new(
+        cycle_id: u64,
+        phase_commit: Digest32,
+        phase_bucket: u8,
+        mut samples: Vec<SignalSample>,
+    ) -> Self {
         samples.sort_by(|a, b| a.id.cmp(&b.id).then_with(|| a.cycle_id.cmp(&b.cycle_id)));
-        let commit = commit_inputs(cycle_id, phase_commit, &samples);
+        let commit = commit_inputs(cycle_id, phase_commit, phase_bucket, &samples);
         Self {
             cycle_id,
             phase_commit,
+            phase_bucket,
             samples,
             commit,
         }
@@ -424,11 +431,17 @@ fn commit_rule(src: SignalId, dst: SignalId, lag: u8, gain: i16, mix_k: u16) -> 
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
-fn commit_inputs(cycle_id: u64, phase_commit: Digest32, samples: &[SignalSample]) -> Digest32 {
+fn commit_inputs(
+    cycle_id: u64,
+    phase_commit: Digest32,
+    phase_bucket: u8,
+    samples: &[SignalSample],
+) -> Digest32 {
     let mut hasher = Hasher::new();
     hasher.update(INPUT_DOMAIN);
     hasher.update(&cycle_id.to_be_bytes());
     hasher.update(phase_commit.as_bytes());
+    hasher.update(&[phase_bucket]);
     hasher.update(
         &u32::try_from(samples.len())
             .unwrap_or(u32::MAX)
@@ -559,6 +572,7 @@ mod tests {
         let inputs = CouplingInputs::new(
             7,
             Digest32::new([1u8; 32]),
+            2,
             vec![sample(7, SignalId::SsmSalience, 4200)],
         );
         let mut core_a = CouplingCore::new_default();
@@ -585,6 +599,7 @@ mod tests {
         let inputs_1 = CouplingInputs::new(
             1,
             Digest32::new([2u8; 32]),
+            2,
             vec![sample(1, SignalId::PerceptEnergy, 5000)],
         );
         let out_1 = core.tick(&inputs_1);
@@ -593,6 +608,7 @@ mod tests {
         let inputs_2 = CouplingInputs::new(
             2,
             Digest32::new([2u8; 32]),
+            2,
             vec![sample(2, SignalId::PerceptEnergy, 5000)],
         );
         let out_2 = core.tick(&inputs_2);
@@ -617,6 +633,7 @@ mod tests {
         let seed = CouplingInputs::new(
             1,
             Digest32::new([2u8; 32]),
+            3,
             vec![sample(1, SignalId::SsmSalience, 6000)],
         );
         core_a.tick(&seed);
@@ -625,11 +642,13 @@ mod tests {
         let inputs_a = CouplingInputs::new(
             2,
             Digest32::new([3u8; 32]),
+            3,
             vec![sample(2, SignalId::SsmSalience, 6000)],
         );
         let inputs_b = CouplingInputs::new(
             2,
             Digest32::new([4u8; 32]),
+            3,
             vec![sample(2, SignalId::SsmSalience, 6000)],
         );
 
@@ -652,6 +671,7 @@ mod tests {
         let inputs = CouplingInputs::new(
             1,
             Digest32::new([5u8; 32]),
+            1,
             vec![sample(1, SignalId::PerceptEnergy, i16::MAX)],
         );
 
@@ -666,6 +686,7 @@ mod tests {
         let inputs_1 = CouplingInputs::new(
             1,
             Digest32::new([6u8; 32]),
+            2,
             vec![sample(1, SignalId::SsmSalience, 4000)],
         );
         let out_1 = core.tick(&inputs_1);

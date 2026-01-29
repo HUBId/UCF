@@ -263,6 +263,16 @@ pub struct PhaseFrame {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PhaseBus {
+    pub cycle_id: u64,
+    pub global_phase_u16: u16,
+    pub gamma_bucket: u8,
+    pub global_plv: u16,
+    pub pair_locks_commit: Digest32,
+    pub commit: Digest32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OnnCore {
     pub params: OnnParams,
     pub states: Vec<OscState>,
@@ -309,6 +319,29 @@ impl OnnCore {
         let outputs = OnnOutputs::new(inp.cycle_id, states_commit, global_plv, pair_locks);
         self.commit = commit_core(self.params.commit, &self.states);
         outputs
+    }
+
+    pub fn phase_bus(&self, cycle_id: u64) -> PhaseBus {
+        let global_phase = self.phase_of(OscId::Iit).unwrap_or(0);
+        let pair_locks = pair_locks(&self.states, self.params.lock_window);
+        let global_plv = average_pair_lock(&pair_locks);
+        let pair_locks_commit = pair_locks_commit(&pair_locks);
+        let gamma_bucket = (global_phase / 4096) as u8;
+        let commit = commit_phase_bus(
+            cycle_id,
+            global_phase,
+            gamma_bucket,
+            global_plv,
+            pair_locks_commit,
+        );
+        PhaseBus {
+            cycle_id,
+            global_phase_u16: global_phase,
+            gamma_bucket,
+            global_plv,
+            pair_locks_commit,
+            commit,
+        }
     }
 }
 
@@ -531,6 +564,16 @@ fn commit_states(states: &[OscState]) -> Digest32 {
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
+pub fn pair_locks_commit(pairs: &[PairLock]) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(b"ucf.onn.pair_locks.v1");
+    hasher.update(&u32::try_from(pairs.len()).unwrap_or(u32::MAX).to_be_bytes());
+    for pair in pairs {
+        hasher.update(pair.commit.as_bytes());
+    }
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
 fn commit_pair_lock(a: OscId, b: OscId, lock: u16, diff: u16) -> Digest32 {
     let mut hasher = Hasher::new();
     hasher.update(b"ucf.onn.lock.v2");
@@ -538,6 +581,23 @@ fn commit_pair_lock(a: OscId, b: OscId, lock: u16, diff: u16) -> Digest32 {
     hasher.update(&b.as_u16().to_be_bytes());
     hasher.update(&lock.to_be_bytes());
     hasher.update(&diff.to_be_bytes());
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn commit_phase_bus(
+    cycle_id: u64,
+    global_phase: u16,
+    gamma_bucket: u8,
+    global_plv: u16,
+    pair_locks_commit: Digest32,
+) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(b"ucf.onn.phase_bus.v1");
+    hasher.update(&cycle_id.to_be_bytes());
+    hasher.update(&global_phase.to_be_bytes());
+    hasher.update(&[gamma_bucket]);
+    hasher.update(&global_plv.to_be_bytes());
+    hasher.update(pair_locks_commit.as_bytes());
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
