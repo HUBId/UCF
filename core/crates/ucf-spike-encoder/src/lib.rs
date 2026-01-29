@@ -44,6 +44,7 @@ pub fn encode_spike(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn encode_spike_with_ttfs(
     cycle_id: u64,
     kind: SpikeKind,

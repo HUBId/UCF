@@ -3076,6 +3076,7 @@ impl Router {
         summary
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn append_spike_events(
         &self,
         cycle_id: u64,
@@ -3115,7 +3116,7 @@ impl Router {
         let base_window = lock_window_buckets(lock_window);
         let phase_window = match event.kind {
             SpikeKind::Threat => 1,
-            SpikeKind::ThoughtOnly => base_window.max(3).min(4),
+            SpikeKind::ThoughtOnly => base_window.clamp(3, 4),
             _ => base_window,
         };
         let phase_dist = phase_bucket_distance(event.phase_bucket, phase_bus.gamma_bucket);
@@ -4106,11 +4107,11 @@ fn in_phase(ttfs_code: u16, global_phase: u16, phase_window: u16) -> bool {
 
 fn lock_window_buckets(lock_window: u16) -> u8 {
     let buckets = lock_window / 4096;
-    buckets.max(1).min(4) as u8
+    buckets.clamp(1, 4) as u8
 }
 
 fn phase_bucket_distance(a: u8, b: u8) -> u8 {
-    let diff = if a >= b { a - b } else { b - a };
+    let diff = a.abs_diff(b);
     let wrap = 16u8.saturating_sub(diff);
     diff.min(wrap)
 }
