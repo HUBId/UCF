@@ -55,6 +55,7 @@ members = [
     "core/crates/ucf-fold",
     "core/crates/ucf-evidence",
     "core/crates/ucf-commit",
+    "core/crates/ucf-coupling",
     "core/crates/ucf-output-router",
     "core/crates/ucf-sandbox",
     "core/crates/ucf-policy-ecology",

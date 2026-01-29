@@ -153,6 +153,7 @@ pub struct RsaInputs {
     pub prev_phi: u16,
     pub prev_plv: u16,
     pub prev_drift: u16,
+    pub proposal_strength_hint: i16,
     pub onn_params_commit: Digest32,
     pub tcf_params_commit: Digest32,
     pub ncde_params_commit: Digest32,
@@ -177,6 +178,7 @@ impl RsaInputs {
         prev_phi: u16,
         prev_plv: u16,
         prev_drift: u16,
+        proposal_strength_hint: i16,
         onn_params_commit: Digest32,
         tcf_params_commit: Digest32,
         ncde_params_commit: Digest32,
@@ -197,6 +199,7 @@ impl RsaInputs {
             prev_phi,
             prev_plv,
             prev_drift,
+            proposal_strength_hint,
             onn_params_commit,
             tcf_params_commit,
             ncde_params_commit,
@@ -217,6 +220,7 @@ impl RsaInputs {
             prev_phi,
             prev_plv,
             prev_drift,
+            proposal_strength_hint,
             onn_params_commit,
             tcf_params_commit,
             ncde_params_commit,
@@ -393,6 +397,7 @@ impl RsaCore {
         if deltas.is_empty() {
             return None;
         }
+        apply_hint_to_deltas(&mut deltas, inp.proposal_strength_hint);
         let delta_list = deltas
             .into_iter()
             .map(|(target, delta)| ParamDelta::new(target, delta))
@@ -488,6 +493,17 @@ fn bump_delta(deltas: &mut BTreeMap<ParamTarget, i16>, target: ParamTarget, delt
     *entry = entry.saturating_add(delta);
 }
 
+fn apply_hint_to_deltas(deltas: &mut BTreeMap<ParamTarget, i16>, hint: i16) {
+    if hint == 0 {
+        return;
+    }
+    let hint = i32::from(hint.clamp(-5000, 5000));
+    for value in deltas.values_mut() {
+        let scaled = i32::from(*value) + (i32::from(*value) * hint / 10_000);
+        *value = scaled.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16;
+    }
+}
+
 fn commit_param_delta(target: ParamTarget, delta: i16) -> Digest32 {
     let mut hasher = Hasher::new();
     hasher.update(RSA_PARAM_DELTA_DOMAIN);
@@ -537,6 +553,7 @@ fn commit_inputs(
     prev_phi: u16,
     prev_plv: u16,
     prev_drift: u16,
+    proposal_strength_hint: i16,
     onn_params_commit: Digest32,
     tcf_params_commit: Digest32,
     ncde_params_commit: Digest32,
@@ -558,6 +575,7 @@ fn commit_inputs(
     hasher.update(&prev_phi.to_be_bytes());
     hasher.update(&prev_plv.to_be_bytes());
     hasher.update(&prev_drift.to_be_bytes());
+    hasher.update(&proposal_strength_hint.to_be_bytes());
     hasher.update(onn_params_commit.as_bytes());
     hasher.update(tcf_params_commit.as_bytes());
     hasher.update(ncde_params_commit.as_bytes());
@@ -614,6 +632,7 @@ fn commit_rationale(inp: &RsaInputs, rollback: bool) -> Digest32 {
     hasher.update(&inp.prev_phi.to_be_bytes());
     hasher.update(&inp.prev_plv.to_be_bytes());
     hasher.update(&inp.prev_drift.to_be_bytes());
+    hasher.update(&inp.proposal_strength_hint.to_be_bytes());
     hasher.update(&[bucket_surprise(inp.surprise)]);
     hasher.update(&[bucket_risk(inp.risk)]);
     hasher.update(&[rollback as u8]);
@@ -639,6 +658,7 @@ mod tests {
             4300,
             5400,
             2200,
+            0,
             Digest32::new([1u8; 32]),
             Digest32::new([2u8; 32]),
             Digest32::new([3u8; 32]),
