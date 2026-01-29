@@ -30,6 +30,7 @@ use ucf_consistency_engine::{
     ConsistencyAction, ConsistencyActionKind, ConsistencyEngine, ConsistencyInputs,
     ConsistencyReport, DriftBand,
 };
+use ucf_coupling::{CouplingCore, CouplingInputs, CouplingOutputs, SignalId, SignalSample};
 use ucf_digital_brain::DigitalBrainPort;
 use ucf_feature_spiker::{
     apply_feature_thresh_delta, apply_threat_thresh_delta, build_feature_spike_batch,
@@ -187,6 +188,8 @@ pub struct Router {
     influence_state: Mutex<InfluenceGraphV2>,
     last_influence_outputs: Mutex<Option<InfluenceOutputs>>,
     last_influence_root_commit: Mutex<Option<Digest32>>,
+    coupling_core: Mutex<CouplingCore>,
+    last_coupling_outputs: Mutex<Option<CouplingOutputs>>,
     ssm_core: Mutex<SsmCore>,
     last_ssm_output: Mutex<Option<SsmOutputs>>,
     ncde_core: Mutex<NcdeCore>,
@@ -278,6 +281,8 @@ struct StageContext {
     nsr_warn_streak: Option<u16>,
     recursion_budget: Option<RecursionBudget>,
     phase_commit: Option<Digest32>,
+    percept_commit: Option<Digest32>,
+    percept_energy: Option<u16>,
     coherence_plv: Option<u16>,
     onn_outputs: Option<ucf_onn::OnnOutputs>,
     spike_summary: Option<SpikeBusSummary>,
@@ -286,6 +291,7 @@ struct StageContext {
     surprise_score: Option<u16>,
     tcf_energy_smooth: Option<u16>,
     influence_outputs: Option<InfluenceOutputs>,
+    coupling_outputs: Option<CouplingOutputs>,
     structural_stats: Option<StructuralCycleStats>,
     structural_proposal: Option<StructuralDeltaProposal>,
     cde_output: Option<CdeOutputs>,
@@ -330,6 +336,8 @@ impl StageContext {
             nsr_warn_streak: None,
             recursion_budget: None,
             phase_commit: None,
+            percept_commit: None,
+            percept_energy: None,
             coherence_plv: None,
             onn_outputs: None,
             spike_summary: None,
@@ -338,6 +346,7 @@ impl StageContext {
             surprise_score: None,
             tcf_energy_smooth: None,
             influence_outputs: None,
+            coupling_outputs: None,
             structural_stats: None,
             structural_proposal: None,
             cde_output: None,
@@ -439,6 +448,8 @@ impl Router {
             influence_state: Mutex::new(InfluenceGraphV2::new_default()),
             last_influence_outputs: Mutex::new(None),
             last_influence_root_commit: Mutex::new(None),
+            coupling_core: Mutex::new(CouplingCore::new_default()),
+            last_coupling_outputs: Mutex::new(None),
             ssm_core: Mutex::new(SsmCore::new(SsmParams::default())),
             last_ssm_output: Mutex::new(None),
             ncde_core: Mutex::new(NcdeCore::new(NcdeParams::default())),
@@ -534,6 +545,9 @@ impl Router {
                 influence_v2_commit: Digest32::new([0u8; 32]),
                 influence_pulses_root: Digest32::new([0u8; 32]),
                 influence_node_values: Vec::new(),
+                coupling_influences_root: Digest32::new([0u8; 32]),
+                coupling_top_influences: Vec::new(),
+                coupling_lag_commits: Vec::new(),
                 onn_states_commit: Digest32::new([0u8; 32]),
                 onn_global_plv: 0,
                 onn_pair_locks_commit: Digest32::new([0u8; 32]),
@@ -643,6 +657,8 @@ impl Router {
                     let percept_commit = cf.commitment().digest;
                     let percept_energy =
                         canonical_control_frame_len(cf.as_ref()).min(10_000) as u16;
+                    ctx.percept_commit = Some(percept_commit);
+                    ctx.percept_energy = Some(percept_energy);
                     let lens_selection = ctx.inference.as_ref().and_then(|inference| {
                         self.translate_features(
                             inference.activation_view.as_ref(),
@@ -1668,8 +1684,10 @@ impl Router {
                     }
                     if let Some(outputs) = influence_result.as_ref().map(|(_, outputs)| outputs) {
                         let base_pressure = ctx.replay_pressure.unwrap_or(0);
+                        let influenced = apply_influence_replay_pressure(base_pressure, outputs);
+                        let coupling_pressure = self.coupling_influence(SignalId::ReplayPressure);
                         ctx.replay_pressure =
-                            Some(apply_influence_replay_pressure(base_pressure, outputs));
+                            Some(apply_coupling_bias(influenced, coupling_pressure, 2000));
                     }
                     let attention_ctx = AttentionContext {
                         policy_class: decision.kind as u16,
@@ -1735,6 +1753,7 @@ impl Router {
                         brain.ingest(record);
                     }
                     ctx.attention_weights = attention_weights;
+                    self.tick_coupling(&mut ctx, cycle_id);
                     ctx.evidence_id = Some(evidence_id);
                 }
                 PulseKind::Broadcast => {
@@ -1780,6 +1799,8 @@ impl Router {
                         .as_ref()
                         .map(|outputs| outputs.node_value(InfluenceNodeId::SleepDrive))
                         .unwrap_or(0);
+                    let coupling_sleep = self.coupling_influence(SignalId::SleepDrive);
+                    let sleep_drive = apply_coupling_bias_i16(sleep_drive, coupling_sleep, 2000);
                     let params = self
                         .structural_store
                         .lock()
@@ -1851,6 +1872,7 @@ impl Router {
                         prev_phi,
                         prev_plv,
                         prev_drift,
+                        self.coupling_influence(SignalId::RsaProposalStrength),
                         onn_params_commit,
                         tcf_params_commit,
                         ncde_params_commit,
@@ -2594,7 +2616,21 @@ impl Router {
         let weights = apply_consistency_effects(weights, ctx.consistency_effects);
         let weights = apply_influence_effects(weights, ctx.influence);
         let weights = self.apply_ncde_attention_bias(weights);
-        Some(self.apply_ssm_attention_bias(weights, ctx.ssm_attention_gain))
+        let weights = self.apply_ssm_attention_bias(weights, ctx.ssm_attention_gain);
+        Some(self.apply_coupling_attention_bias(weights))
+    }
+
+    fn apply_coupling_attention_bias(&self, mut weights: AttentionWeights) -> AttentionWeights {
+        let influence = self.coupling_influence(SignalId::AttentionFinalGain);
+        if influence == 0 {
+            return weights;
+        }
+        let gain = apply_coupling_bias(weights.gain, influence, 2000);
+        if gain != weights.gain {
+            weights.gain = gain;
+            weights.commit = commit_attention_override(&weights);
+        }
+        weights
     }
 
     fn apply_ncde_attention_bias(&self, mut weights: AttentionWeights) -> AttentionWeights {
@@ -2612,6 +2648,150 @@ impl Router {
             weights.commit = commit_attention_override(&weights);
         }
         weights
+    }
+
+    fn coupling_influence(&self, signal: SignalId) -> i16 {
+        self.last_coupling_outputs
+            .lock()
+            .ok()
+            .and_then(|guard| {
+                guard
+                    .as_ref()
+                    .map(|outputs| coupling_influence_value(Some(outputs), signal))
+            })
+            .unwrap_or(0)
+    }
+
+    fn tick_coupling(&self, ctx: &mut StageContext, cycle_id: u64) {
+        let phase_commit = ctx.phase_commit.unwrap_or_else(|| Digest32::new([0u8; 32]));
+        let samples = self.collect_coupling_samples(ctx, cycle_id);
+        if samples.is_empty() {
+            return;
+        }
+        let inputs = CouplingInputs::new(cycle_id, phase_commit, samples);
+        let coupling_result = self.coupling_core.lock().ok().map(|mut core| {
+            let outputs = core.tick(&inputs);
+            let buffer_commits = core.buffer_commits();
+            (outputs, buffer_commits)
+        });
+        if let Some((outputs, buffer_commits)) = coupling_result {
+            ctx.coupling_outputs = Some(outputs.clone());
+            if let Ok(mut guard) = self.last_coupling_outputs.lock() {
+                *guard = Some(outputs.clone());
+            }
+            let top_influences = top_coupling_influences(&outputs.influences, 6);
+            let lag_commits = buffer_commits
+                .into_iter()
+                .map(|(id, commit)| (id.as_u16(), commit))
+                .collect::<Vec<_>>();
+            if let Ok(mut workspace) = self.workspace.lock() {
+                workspace.set_coupling_snapshot(
+                    outputs.influences_root,
+                    top_influences,
+                    lag_commits,
+                );
+            }
+            self.append_coupling_record(cycle_id, &outputs);
+        }
+    }
+
+    fn collect_coupling_samples(&self, ctx: &StageContext, cycle_id: u64) -> Vec<SignalSample> {
+        let mut samples = Vec::new();
+        let push_i16 = |id: SignalId, value: i16, samples: &mut Vec<SignalSample>| {
+            samples.push(SignalSample::new(cycle_id, id, value));
+        };
+        let push_u16 = |id: SignalId, value: u16, samples: &mut Vec<SignalSample>| {
+            let value = value.min(i16::MAX as u16) as i16;
+            samples.push(SignalSample::new(cycle_id, id, value));
+        };
+
+        if let Some(value) = ctx.percept_energy {
+            push_u16(SignalId::PerceptEnergy, value, &mut samples);
+        }
+        if let Some(output) = ctx.ssm_output.as_ref() {
+            push_u16(SignalId::SsmSalience, output.salience, &mut samples);
+            push_u16(SignalId::SsmNovelty, output.novelty, &mut samples);
+            push_u16(
+                SignalId::SsmAttentionGain,
+                output.attention_gain,
+                &mut samples,
+            );
+        }
+        if let Some(weights) = ctx.attention_weights.as_ref() {
+            push_u16(SignalId::AttentionFinalGain, weights.gain, &mut samples);
+        }
+        if let Some(output) = ctx.ncde_output.as_ref() {
+            push_u16(SignalId::NcdeEnergy, output.energy, &mut samples);
+        }
+        if let Some(phi) = ctx.integration_score {
+            push_u16(SignalId::PhiProxy, phi, &mut samples);
+        }
+        if let Some(plv) = ctx.coherence_plv {
+            push_u16(SignalId::GlobalPlv, plv, &mut samples);
+        }
+        push_u16(SignalId::Risk, ctx.attention_risk, &mut samples);
+        if let Some(drift) = ctx.drift_score {
+            push_u16(SignalId::Drift, drift, &mut samples);
+        }
+        if let Some(surprise) = ctx.surprise_score {
+            push_u16(SignalId::Surprise, surprise, &mut samples);
+        }
+        if let Some(replay_pressure) = ctx.replay_pressure {
+            push_u16(SignalId::ReplayPressure, replay_pressure, &mut samples);
+        }
+        let sleep_drive = ctx
+            .influence_outputs
+            .as_ref()
+            .map(|outputs| outputs.node_value(InfluenceNodeId::SleepDrive))
+            .or_else(|| {
+                self.last_influence_outputs.lock().ok().and_then(|guard| {
+                    guard
+                        .as_ref()
+                        .map(|outputs| outputs.node_value(InfluenceNodeId::SleepDrive))
+                })
+            })
+            .unwrap_or(0);
+        push_i16(SignalId::SleepDrive, sleep_drive, &mut samples);
+        let nsr_verdict = ctx
+            .nsr_output
+            .as_ref()
+            .map(|output| i16::from(output.verdict.as_u8()))
+            .or_else(|| {
+                ctx.nsr_report
+                    .as_ref()
+                    .map(|report| i16::from(report.verdict.as_u8()))
+            })
+            .unwrap_or(0);
+        push_i16(SignalId::NsrVerdict, nsr_verdict, &mut samples);
+
+        let last_coupling = self
+            .last_coupling_outputs
+            .lock()
+            .ok()
+            .and_then(|guard| guard.clone());
+        let learning_hint =
+            coupling_influence_value(last_coupling.as_ref(), SignalId::LearningHint);
+        let rsa_strength =
+            coupling_influence_value(last_coupling.as_ref(), SignalId::RsaProposalStrength);
+        push_i16(SignalId::LearningHint, learning_hint, &mut samples);
+        push_i16(SignalId::RsaProposalStrength, rsa_strength, &mut samples);
+
+        samples
+    }
+
+    fn append_coupling_record(&self, cycle_id: u64, outputs: &CouplingOutputs) {
+        let checksum = coupling_checksum(&outputs.influences);
+        let count = u16::try_from(outputs.influences.len()).unwrap_or(u16::MAX);
+        let mut payload = Vec::with_capacity(Digest32::LEN * 2 + 2);
+        payload.extend_from_slice(outputs.influences_root.as_bytes());
+        payload.extend_from_slice(&count.to_be_bytes());
+        payload.extend_from_slice(checksum.as_bytes());
+        let record_id = format!(
+            "coupling-{cycle_id}-{}",
+            hex::encode(outputs.influences_root.as_bytes())
+        );
+        let record = build_compact_record(record_id, cycle_id, "coupling", payload);
+        self.archive.append(record);
     }
 
     fn apply_ssm_attention_bias(
@@ -3084,6 +3264,8 @@ impl Router {
     ) -> Option<NcdeOutputs> {
         self.sync_ncde_params();
         let mut core = self.ncde_core.lock().ok()?;
+        let coupling_boost = self.coupling_influence(SignalId::NcdeEnergy);
+        let tcf_energy_smooth = apply_coupling_bias(tcf_energy_smooth, coupling_boost, 2000);
         let inputs = NcdeInputs::new(
             cycle_id,
             phase_frame.commit,
@@ -3116,11 +3298,13 @@ impl Router {
     ) -> Option<SsmOutputs> {
         self.sync_ssm_params();
         let mut core = self.ssm_core.lock().ok()?;
+        let coupling_u = self.coupling_influence(SignalId::SsmSalience);
         let input = SsmInputs::new(
             ncde_output.cycle_id,
             phase_frame.commit,
             percept_commit,
             percept_energy,
+            coupling_u,
             spike_root_commit,
             spike_counts,
             prev_attention_gain,
@@ -3907,6 +4091,69 @@ fn apply_influence_replay_pressure(base: u16, influence: &InfluenceOutputs) -> u
     }
     let boost = (i32::from(pressure) / 2).clamp(0, 5000) as u16;
     base.saturating_add(boost).min(10_000)
+}
+
+fn coupling_influence_value(outputs: Option<&CouplingOutputs>, signal: SignalId) -> i16 {
+    outputs
+        .and_then(|outputs| {
+            outputs
+                .influences
+                .iter()
+                .find(|(id, _)| *id == signal)
+                .map(|(_, value)| *value)
+        })
+        .unwrap_or(0)
+}
+
+fn apply_coupling_bias(base: u16, influence: i16, cap: u16) -> u16 {
+    if influence == 0 {
+        return base;
+    }
+    let cap_i16 = cap.min(10_000) as i16;
+    let bias = influence.clamp(-cap_i16, cap_i16);
+    if bias < 0 {
+        base.saturating_sub(bias.unsigned_abs())
+    } else {
+        base.saturating_add(bias as u16).min(10_000)
+    }
+}
+
+fn apply_coupling_bias_i16(base: i16, influence: i16, cap: i16) -> i16 {
+    if influence == 0 {
+        return base;
+    }
+    let cap = cap.abs();
+    let bias = influence.clamp(-cap, cap);
+    base.saturating_add(bias)
+}
+
+fn top_coupling_influences(influences: &[(SignalId, i16)], limit: usize) -> Vec<(u16, i16)> {
+    let mut ranked = influences.to_vec();
+    ranked.sort_by(|(id_a, value_a), (id_b, value_b)| {
+        let mag_a = i32::from(*value_a).abs();
+        let mag_b = i32::from(*value_b).abs();
+        mag_b.cmp(&mag_a).then_with(|| id_a.cmp(id_b))
+    });
+    ranked
+        .into_iter()
+        .take(limit)
+        .map(|(id, value)| (id.as_u16(), value))
+        .collect()
+}
+
+fn coupling_checksum(influences: &[(SignalId, i16)]) -> Digest32 {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"ucf.coupling.checksum.v1");
+    hasher.update(
+        &u32::try_from(influences.len())
+            .unwrap_or(u32::MAX)
+            .to_be_bytes(),
+    );
+    for (id, value) in influences {
+        hasher.update(&id.as_u16().to_be_bytes());
+        hasher.update(&value.to_be_bytes());
+    }
+    Digest32::new(*hasher.finalize().as_bytes())
 }
 
 fn derive_sleep_active(

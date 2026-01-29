@@ -1953,6 +1953,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucf-coupling"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ucf-types",
+]
+
+[[package]]
 name = "ucf-crypto"
 version = "0.1.0"
 
@@ -2285,6 +2293,7 @@ dependencies = [
  "ucf-cde-scm",
  "ucf-commit",
  "ucf-consistency-engine",
+ "ucf-coupling",
  "ucf-digital-brain",
  "ucf-feature-spiker",
  "ucf-feature-translator",

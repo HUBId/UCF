@@ -513,6 +513,9 @@ pub struct WorkspaceSnapshot {
     pub influence_v2_commit: Digest32,
     pub influence_pulses_root: Digest32,
     pub influence_node_values: Vec<(u16, i16)>,
+    pub coupling_influences_root: Digest32,
+    pub coupling_top_influences: Vec<(u16, i16)>,
+    pub coupling_lag_commits: Vec<(u16, Digest32)>,
     pub onn_states_commit: Digest32,
     pub onn_global_plv: u16,
     pub onn_pair_locks_commit: Digest32,
@@ -590,6 +593,11 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
             + Digest32::LEN
             + 2
             + snapshot.influence_node_values.len() * (2 + 2)
+            + Digest32::LEN
+            + 2
+            + snapshot.coupling_top_influences.len() * (2 + 2)
+            + 2
+            + snapshot.coupling_lag_commits.len() * (2 + Digest32::LEN)
             + Digest32::LEN
             + 2
             + Digest32::LEN
@@ -678,6 +686,17 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
     for (node, value) in &snapshot.influence_node_values {
         payload.extend_from_slice(&node.to_be_bytes());
         payload.extend_from_slice(&value.to_be_bytes());
+    }
+    payload.extend_from_slice(snapshot.coupling_influences_root.as_bytes());
+    payload.extend_from_slice(&(snapshot.coupling_top_influences.len() as u16).to_be_bytes());
+    for (signal, value) in &snapshot.coupling_top_influences {
+        payload.extend_from_slice(&signal.to_be_bytes());
+        payload.extend_from_slice(&value.to_be_bytes());
+    }
+    payload.extend_from_slice(&(snapshot.coupling_lag_commits.len() as u16).to_be_bytes());
+    for (signal, commit) in &snapshot.coupling_lag_commits {
+        payload.extend_from_slice(&signal.to_be_bytes());
+        payload.extend_from_slice(commit.as_bytes());
     }
     payload.extend_from_slice(snapshot.onn_states_commit.as_bytes());
     payload.extend_from_slice(&snapshot.onn_global_plv.to_be_bytes());
@@ -827,6 +846,9 @@ pub struct Workspace {
     influence_v2_commit: Digest32,
     influence_pulses_root: Digest32,
     influence_node_values: Vec<(u16, i16)>,
+    coupling_influences_root: Digest32,
+    coupling_top_influences: Vec<(u16, i16)>,
+    coupling_lag_commits: Vec<(u16, Digest32)>,
     onn_states_commit: Digest32,
     onn_global_plv: u16,
     onn_pair_locks_commit: Digest32,
@@ -876,6 +898,9 @@ impl Workspace {
             influence_v2_commit: Digest32::new([0u8; 32]),
             influence_pulses_root: Digest32::new([0u8; 32]),
             influence_node_values: Vec::new(),
+            coupling_influences_root: Digest32::new([0u8; 32]),
+            coupling_top_influences: Vec::new(),
+            coupling_lag_commits: Vec::new(),
             onn_states_commit: Digest32::new([0u8; 32]),
             onn_global_plv: 0,
             onn_pair_locks_commit: Digest32::new([0u8; 32]),
@@ -1021,6 +1046,17 @@ impl Workspace {
         self.influence_node_values = node_values;
     }
 
+    pub fn set_coupling_snapshot(
+        &mut self,
+        influences_root: Digest32,
+        top_influences: Vec<(u16, i16)>,
+        lag_commits: Vec<(u16, Digest32)>,
+    ) {
+        self.coupling_influences_root = influences_root;
+        self.coupling_top_influences = top_influences;
+        self.coupling_lag_commits = lag_commits;
+    }
+
     pub fn set_onn_snapshot(
         &mut self,
         states_commit: Digest32,
@@ -1130,6 +1166,9 @@ impl Workspace {
         let influence_v2_commit = self.influence_v2_commit;
         let influence_pulses_root = self.influence_pulses_root;
         let influence_node_values = std::mem::take(&mut self.influence_node_values);
+        let coupling_influences_root = self.coupling_influences_root;
+        let coupling_top_influences = std::mem::take(&mut self.coupling_top_influences);
+        let coupling_lag_commits = std::mem::take(&mut self.coupling_lag_commits);
         let onn_states_commit = self.onn_states_commit;
         let onn_global_plv = self.onn_global_plv;
         let onn_pair_locks_commit = self.onn_pair_locks_commit;
@@ -1178,6 +1217,9 @@ impl Workspace {
             influence_v2_commit,
             influence_pulses_root,
             &influence_node_values,
+            coupling_influences_root,
+            &coupling_top_influences,
+            &coupling_lag_commits,
             onn_states_commit,
             onn_global_plv,
             onn_pair_locks_commit,
@@ -1229,6 +1271,9 @@ impl Workspace {
             influence_v2_commit,
             influence_pulses_root,
             influence_node_values,
+            coupling_influences_root,
+            coupling_top_influences,
+            coupling_lag_commits,
             onn_states_commit,
             onn_global_plv,
             onn_pair_locks_commit,
@@ -1657,6 +1702,9 @@ fn commit_snapshot(
     influence_v2_commit: Digest32,
     influence_pulses_root: Digest32,
     influence_node_values: &[(u16, i16)],
+    coupling_influences_root: Digest32,
+    coupling_top_influences: &[(u16, i16)],
+    coupling_lag_commits: &[(u16, Digest32)],
     onn_states_commit: Digest32,
     onn_global_plv: u16,
     onn_pair_locks_commit: Digest32,
@@ -1747,6 +1795,25 @@ fn commit_snapshot(
     for (node, value) in influence_node_values {
         hasher.update(&node.to_be_bytes());
         hasher.update(&value.to_be_bytes());
+    }
+    hasher.update(coupling_influences_root.as_bytes());
+    hasher.update(
+        &u64::try_from(coupling_top_influences.len())
+            .unwrap_or(0)
+            .to_be_bytes(),
+    );
+    for (signal, value) in coupling_top_influences {
+        hasher.update(&signal.to_be_bytes());
+        hasher.update(&value.to_be_bytes());
+    }
+    hasher.update(
+        &u64::try_from(coupling_lag_commits.len())
+            .unwrap_or(0)
+            .to_be_bytes(),
+    );
+    for (signal, commit) in coupling_lag_commits {
+        hasher.update(&signal.to_be_bytes());
+        hasher.update(commit.as_bytes());
     }
     hasher.update(onn_states_commit.as_bytes());
     hasher.update(&onn_global_plv.to_be_bytes());
