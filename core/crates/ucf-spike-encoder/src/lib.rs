@@ -1,8 +1,7 @@
 #![forbid(unsafe_code)]
 
 use blake3::Hasher;
-use ucf_onn::OscId;
-use ucf_spikebus::{SpikeEvent, SpikeKind};
+use ucf_spikebus::{ModuleId, Spike, SpikeKind};
 use ucf_types::Digest32;
 
 const PAYLOAD_DOMAIN: &[u8] = b"ucf.spike_encoder.payload.v2";
@@ -26,18 +25,16 @@ pub fn ttfs_from_strength(strength: u16, phase_window: u16) -> u16 {
 
 pub fn encode_spike(
     kind: SpikeKind,
-    src: OscId,
-    dst: OscId,
+    source: ModuleId,
     strength: u16,
     phase_commit: Digest32,
     phase_bucket: u8,
     salt_commit: Digest32,
-) -> SpikeEvent {
+) -> Spike {
     encode_spike_with_window(
         0,
         kind,
-        src,
-        dst,
+        source,
         strength,
         phase_commit,
         phase_bucket,
@@ -50,21 +47,19 @@ pub fn encode_spike(
 pub fn encode_spike_with_ttfs(
     cycle_id: u64,
     kind: SpikeKind,
-    src: OscId,
-    dst: OscId,
+    source: ModuleId,
     phase_bucket: u8,
     ttfs: u16,
-    phase_commit: Digest32,
+    _phase_commit: Digest32,
     payload_commit: Digest32,
-) -> SpikeEvent {
-    SpikeEvent::new(
+) -> Spike {
+    let intensity = MAX_STRENGTH.saturating_sub(ttfs.min(MAX_STRENGTH));
+    Spike::new(
         cycle_id,
         kind,
-        src,
-        dst,
+        intensity,
         phase_bucket,
-        ttfs,
-        phase_commit,
+        source,
         payload_commit,
     )
 }
@@ -73,20 +68,18 @@ pub fn encode_spike_with_ttfs(
 pub fn encode_spike_with_payload_commit(
     cycle_id: u64,
     kind: SpikeKind,
-    src: OscId,
-    dst: OscId,
+    source: ModuleId,
     strength: u16,
     phase_commit: Digest32,
     phase_bucket: u8,
     payload_commit: Digest32,
     phase_window: u16,
-) -> SpikeEvent {
+) -> Spike {
     let ttfs = ttfs_from_strength(strength, phase_window);
     encode_spike_with_ttfs(
         cycle_id,
         kind,
-        src,
-        dst,
+        source,
         phase_bucket,
         ttfs,
         phase_commit,
@@ -98,21 +91,19 @@ pub fn encode_spike_with_payload_commit(
 pub fn encode_spike_with_window(
     cycle_id: u64,
     kind: SpikeKind,
-    src: OscId,
-    dst: OscId,
+    source: ModuleId,
     strength: u16,
     phase_commit: Digest32,
     phase_bucket: u8,
     salt_commit: Digest32,
     phase_window: u16,
-) -> SpikeEvent {
+) -> Spike {
     let ttfs = ttfs_from_strength(strength, phase_window);
     let payload_commit = commit_payload(kind, strength, phase_commit, salt_commit);
     encode_spike_with_ttfs(
         cycle_id,
         kind,
-        src,
-        dst,
+        source,
         phase_bucket,
         ttfs,
         phase_commit,
@@ -128,7 +119,7 @@ pub fn commit_payload(
 ) -> Digest32 {
     let mut hasher = Hasher::new();
     hasher.update(PAYLOAD_DOMAIN);
-    hasher.update(&kind.as_u16().to_be_bytes());
+    hasher.update(&[kind.discriminant()]);
     hasher.update(&strength.to_be_bytes());
     hasher.update(salt_commit.as_bytes());
     hasher.update(phase_commit.as_bytes());
@@ -154,8 +145,7 @@ mod tests {
         let first = encode_spike_with_window(
             1,
             SpikeKind::Feature,
-            OscId::Reserved7,
-            OscId::Ssm,
+            ModuleId::Sae,
             2400,
             phase_commit,
             4,
@@ -165,8 +155,7 @@ mod tests {
         let second = encode_spike_with_window(
             1,
             SpikeKind::Feature,
-            OscId::Reserved7,
-            OscId::Ssm,
+            ModuleId::Sae,
             2400,
             phase_commit,
             4,

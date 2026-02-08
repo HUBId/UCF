@@ -362,27 +362,32 @@ fn spike_scalar(spike_counts: &[(SpikeKind, u16)]) -> u16 {
     let mut feature = 0u32;
     let mut novelty = 0u32;
     let mut threat = 0u32;
+    let mut reward = 0u32;
     let mut causal = 0u32;
+    let mut policy = 0u32;
     let mut thought_only = 0u32;
+    let mut replay = 0u32;
     for (kind, count) in spike_counts {
         match kind {
             SpikeKind::Feature => feature = feature.saturating_add(u32::from(*count)),
             SpikeKind::Novelty => novelty = novelty.saturating_add(u32::from(*count)),
             SpikeKind::Threat => threat = threat.saturating_add(u32::from(*count)),
+            SpikeKind::Reward => reward = reward.saturating_add(u32::from(*count)),
             SpikeKind::CausalLink => causal = causal.saturating_add(u32::from(*count)),
+            SpikeKind::PolicySignal => policy = policy.saturating_add(u32::from(*count)),
             SpikeKind::ThoughtOnly => thought_only = thought_only.saturating_add(u32::from(*count)),
-            SpikeKind::ConsistencyAlert
-            | SpikeKind::MemoryCue
-            | SpikeKind::ReplayCue
-            | SpikeKind::OutputIntent
-            | SpikeKind::Unknown(_) => {}
+            SpikeKind::ReplayHint => replay = replay.saturating_add(u32::from(*count)),
+            SpikeKind::Unknown(_) => {}
         }
     }
     let combined = feature
         .saturating_add(novelty.saturating_mul(2))
         .saturating_add(threat.saturating_mul(3))
+        .saturating_add(reward.saturating_mul(2))
         .saturating_add(causal)
-        .saturating_add(thought_only);
+        .saturating_add(policy)
+        .saturating_add(thought_only)
+        .saturating_add(replay);
     combined.min(u32::from(MAX_U16)) as u16
 }
 

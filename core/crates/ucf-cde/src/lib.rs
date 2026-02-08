@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
 use blake3::Hasher;
-use ucf_spikebus::{SpikeEvent, SpikeKind, SpikeModuleId};
+use ucf_spikebus::{ModuleId, Spike, SpikeKind};
 use ucf_types::Digest32;
 
 const INPUT_DOMAIN: &[u8] = b"ucf.cde.v1.inputs";
@@ -29,8 +29,6 @@ const PROXY_SCALE: i32 = 64;
 const DECAY_DIV: i32 = 12;
 const SCORE_STEP_BASE: i32 = 1000;
 const CENTER_VALUE: i32 = 5_000;
-const TTFS_MAX: u16 = 180;
-const TTFS_MIN: u16 = 6;
 const SCORE_STEP_MIN: u16 = 200;
 const SCORE_STEP_MAX: u16 = 2000;
 const EDGE_THRESH_MIN: i16 = 2000;
@@ -279,7 +277,7 @@ pub struct CdeOutputs {
     pub top_edges: Vec<CausalEdge>,
     pub intervention: Option<Intervention>,
     pub summary_commit: Digest32,
-    pub causal_link_spikes: Vec<SpikeEvent>,
+    pub causal_link_spikes: Vec<Spike>,
     pub commit: Digest32,
 }
 
@@ -289,7 +287,7 @@ impl CdeOutputs {
         dag_commit: Digest32,
         top_edges: Vec<CausalEdge>,
         intervention: Option<Intervention>,
-        causal_link_spikes: Vec<SpikeEvent>,
+        causal_link_spikes: Vec<Spike>,
     ) -> Self {
         let summary_commit = digest_summary(dag_commit, &top_edges, intervention.as_ref());
         let commit = digest_outputs(
@@ -701,7 +699,7 @@ fn build_spikes(
     edges: &[CausalEdge],
     summary_commit: Digest32,
     params: &CdeParams,
-) -> Vec<SpikeEvent> {
+) -> Vec<Spike> {
     let mut spikes = Vec::new();
     for edge in edges {
         if edge.score.abs() < params.edge_threshold {
@@ -710,26 +708,23 @@ fn build_spikes(
         if spikes.len() >= MAX_TOP_EDGES {
             break;
         }
-        let ttfs = score_to_ttfs(edge.score);
         let payload_commit = spike_payload_commit(edge.commit, summary_commit);
-        spikes.push(SpikeEvent::new(
+        let intensity = score_to_intensity(edge.score);
+        spikes.push(Spike::new(
             inp.cycle_id,
             SpikeKind::CausalLink,
-            SpikeModuleId::Cde,
-            SpikeModuleId::Nsr,
+            intensity,
             inp.phase_bucket,
-            ttfs,
-            inp.phase_commit,
+            ModuleId::Cde,
             payload_commit,
         ));
     }
     spikes
 }
 
-fn score_to_ttfs(score: i16) -> u16 {
+fn score_to_intensity(score: i16) -> u16 {
     let magnitude = score.abs().min(MAX_SCORE) as u16;
-    let scaled = (magnitude / 60).min(TTFS_MAX - TTFS_MIN);
-    TTFS_MAX.saturating_sub(scaled).max(TTFS_MIN)
+    (magnitude / 2).min(10_000)
 }
 
 fn digest_edge(from: VarId, to: VarId, score: i16, lag: u8) -> Digest32 {
@@ -839,7 +834,7 @@ fn digest_outputs(
     summary_commit: Digest32,
     edges: &[CausalEdge],
     intervention: Option<&Intervention>,
-    spikes: &[SpikeEvent],
+    spikes: &[Spike],
 ) -> Digest32 {
     let mut hasher = Hasher::new();
     hasher.update(OUTPUT_DOMAIN);

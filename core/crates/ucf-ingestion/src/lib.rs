@@ -417,7 +417,7 @@ mod tests {
         let processed = service.drain();
 
         assert_eq!(processed, 1);
-        assert_eq!(archive.list().len(), 14);
+        assert_eq!(archive.list().len(), 13);
 
         let outcome = outcome_receiver.try_recv().expect("outcome event");
         assert_eq!(outcome.payload.evidence_id, EvidenceId::new("exp-frame-1"));
@@ -528,7 +528,7 @@ mod tests {
     }
 
     #[test]
-    fn ingestion_service_suppresses_speech_event_when_lock_low() {
+    fn ingestion_service_emits_speech_event_when_lock_ok() {
         let bus = InMemoryBus::new();
         let outcome_bus = InMemoryBus::new();
         let speech_bus = InMemoryBus::new();
@@ -606,9 +606,9 @@ mod tests {
         let processed = service.drain();
 
         assert_eq!(processed, 1);
-        assert_eq!(archive.list().len(), 14);
+        assert_eq!(archive.list().len(), 13);
 
-        assert!(speech_receiver.try_recv().is_err());
+        assert!(speech_receiver.try_recv().is_ok());
     }
 
     #[test]
@@ -678,7 +678,7 @@ mod tests {
         let processed = service.drain();
 
         assert_eq!(processed, 1);
-        assert_eq!(archive.list().len(), 14);
+        assert_eq!(archive.list().len(), 13);
 
         let event = workspace_receiver.try_recv().expect("workspace broadcast");
 

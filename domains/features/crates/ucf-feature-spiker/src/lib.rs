@@ -1,9 +1,9 @@
 #![forbid(unsafe_code)]
 
 use blake3::Hasher;
-use ucf_onn::{OscId, PhaseBus};
+use ucf_onn::PhaseBus;
 use ucf_spike_encoder::encode_spike_with_window;
-use ucf_spikebus::{SpikeBatch, SpikeKind};
+use ucf_spikebus::{ModuleId, Spike, SpikeKind};
 use ucf_types::Digest32;
 
 const FEATURE_SPIKE_CAP: usize = 32;
@@ -64,14 +64,14 @@ pub fn build_feature_spike_batch(
     phase_window: u16,
     params: FeatureSpikeParams,
     inputs: FeatureSpikerInputs,
-) -> (SpikeBatch, FeatureSpikeSummary) {
+) -> (Vec<Spike>, FeatureSpikeSummary) {
     let mut events = Vec::new();
     let mut candidates = Vec::new();
 
     push_candidate(
         &mut candidates,
         SpikeKind::Feature,
-        OscId::Ssm,
+        ModuleId::Ssm,
         inputs.ssm_salience,
         params.feature_thresh,
         b"ssm.salience",
@@ -79,7 +79,7 @@ pub fn build_feature_spike_batch(
     push_candidate(
         &mut candidates,
         SpikeKind::Novelty,
-        OscId::Ssm,
+        ModuleId::Ssm,
         inputs.ssm_novelty,
         params.feature_thresh,
         b"ssm.novelty",
@@ -87,7 +87,7 @@ pub fn build_feature_spike_batch(
     push_candidate(
         &mut candidates,
         SpikeKind::Feature,
-        OscId::Reserved9,
+        ModuleId::Lens,
         inputs.wm_salience,
         params.feature_thresh,
         b"wm.salience",
@@ -95,7 +95,7 @@ pub fn build_feature_spike_batch(
     push_candidate(
         &mut candidates,
         SpikeKind::Novelty,
-        OscId::Reserved9,
+        ModuleId::Lens,
         inputs.wm_novelty,
         params.feature_thresh,
         b"wm.novelty",
@@ -103,7 +103,7 @@ pub fn build_feature_spike_batch(
     push_candidate(
         &mut candidates,
         SpikeKind::Threat,
-        OscId::Nsr,
+        ModuleId::Nsr,
         inputs.risk,
         params.threat_thresh,
         b"risk.nsr",
@@ -111,7 +111,7 @@ pub fn build_feature_spike_batch(
     push_candidate(
         &mut candidates,
         SpikeKind::Threat,
-        OscId::Reserved8,
+        ModuleId::Sle,
         inputs.risk,
         params.threat_thresh,
         b"risk.geist",
@@ -119,7 +119,7 @@ pub fn build_feature_spike_batch(
     push_candidate(
         &mut candidates,
         SpikeKind::Novelty,
-        OscId::Reserved7,
+        ModuleId::Iit,
         inputs.surprise,
         params.feature_thresh,
         b"surprise.replay",
@@ -127,7 +127,7 @@ pub fn build_feature_spike_batch(
     push_candidate(
         &mut candidates,
         SpikeKind::Feature,
-        OscId::Reserved8,
+        ModuleId::Sle,
         inputs.ssm_salience,
         params.feature_thresh,
         b"ssm.salience.geist",
@@ -137,7 +137,7 @@ pub fn build_feature_spike_batch(
         push_candidate(
             &mut candidates,
             SpikeKind::Feature,
-            OscId::Cde,
+            ModuleId::Cde,
             conf,
             params.feature_thresh,
             b"cde.edge.conf",
@@ -158,8 +158,7 @@ pub fn build_feature_spike_batch(
         let event = encode_spike_with_window(
             cycle_id,
             candidate.kind,
-            OscId::Reserved7,
-            candidate.dst,
+            candidate.source,
             candidate.strength,
             phase_bus.commit,
             phase_bus.gamma_bucket,
@@ -170,15 +169,14 @@ pub fn build_feature_spike_batch(
     }
 
     let cap_hit = events.len() >= FEATURE_SPIKE_CAP;
-    let batch = SpikeBatch::new(cycle_id, phase_bus.commit, events);
-    let produced = batch.events.len();
-    (batch, FeatureSpikeSummary { produced, cap_hit })
+    let produced = events.len();
+    (events, FeatureSpikeSummary { produced, cap_hit })
 }
 
 #[derive(Clone)]
 struct Candidate {
     kind: SpikeKind,
-    dst: OscId,
+    source: ModuleId,
     strength: u16,
     label: &'static [u8],
 }
@@ -186,7 +184,7 @@ struct Candidate {
 fn push_candidate(
     candidates: &mut Vec<Candidate>,
     kind: SpikeKind,
-    dst: OscId,
+    source: ModuleId,
     strength: u16,
     threshold: u16,
     label: &'static [u8],
@@ -196,7 +194,7 @@ fn push_candidate(
     }
     candidates.push(Candidate {
         kind,
-        dst,
+        source,
         strength: clamp_signal(strength),
         label,
     });
@@ -282,8 +280,7 @@ mod tests {
         };
         let (batch_a, _) = build_feature_spike_batch(1, &phase, 1024, params, inputs);
         let (batch_b, _) = build_feature_spike_batch(1, &phase, 1024, params, inputs);
-        assert_eq!(batch_a.root, batch_b.root);
-        assert_eq!(batch_a.commit, batch_b.commit);
+        assert_eq!(batch_a, batch_b);
     }
 
     #[test]
@@ -312,6 +309,6 @@ mod tests {
 
         let (batch, summary) = build_feature_spike_batch(2, &phase, 1024, params, inputs);
         assert!(summary.produced > 0);
-        assert!(batch.events.iter().any(|event| event.dst == OscId::Ssm));
+        assert!(batch.iter().any(|event| event.source == ModuleId::Ssm));
     }
 }

@@ -564,7 +564,9 @@ fn tune_coupling(inp: &RsaInputs, params: &StructuralParams) -> Option<Structura
 
 fn tune_replay(inp: &RsaInputs, params: &StructuralParams) -> Option<StructuralProposal> {
     let micro_next = params.replay.micro_k.saturating_sub(1).max(1);
-    let replay_trigger = params.snn.threshold_for(ucf_spikebus::SpikeKind::ReplayCue);
+    let replay_trigger = params
+        .snn
+        .threshold_for(ucf_spikebus::SpikeKind::ReplayHint);
     let replay_trigger_next = replay_trigger.saturating_add(300).min(10_000);
     let deltas = vec![
         ParamDelta::new(
@@ -573,7 +575,7 @@ fn tune_replay(inp: &RsaInputs, params: &StructuralParams) -> Option<StructuralP
             i32::from(micro_next),
         ),
         ParamDelta::new(
-            param_key("snn.threshold.replay_cue"),
+            param_key("snn.threshold.replay_hint"),
             i32::from(replay_trigger),
             i32::from(replay_trigger_next),
         ),
