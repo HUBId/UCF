@@ -40,7 +40,7 @@ use ucf_feature_translator::{
     SaePort as FeatureSaePort,
 };
 use ucf_geist::{SelfState, SelfStateBuilder};
-use ucf_iit::{IitCore, IitInputs, IitOutput};
+use ucf_iit::{IitCore, IitInputs, IitOutput, IitParams};
 use ucf_iit_monitor::{
     actions_for_phi, report_for_phi, IitAction, IitActionKind, IitBand, IitReport,
 };
@@ -109,10 +109,15 @@ const PHASE_FRAME_RECORD_KIND: u16 = 118;
 const SPIKE_RECORD_KIND: u16 = 131;
 const NCDE_RECORD_KIND: u16 = 142;
 const SSM_RECORD_KIND: u16 = 149;
+const UPDATE_MODE_RECORD_KIND: u16 = 156;
 const ONN_COHERENCE_THROTTLE: u16 = 2000;
 const ONN_COHERENCE_THROTTLE_RESTRICT: u16 = 3500;
 const LOCK_MIN_SPEAK: u16 = 3000;
 const PHI_OUTPUT_THRESHOLD: u16 = 3200;
+const COHERENCE_LAG_LEN: usize = 4;
+const COHERENCE_RISK_HIGH: u16 = 7000;
+const COHERENCE_PLV_LOW: u16 = 3200;
+const RSA_REASON_MODE_BLOCK: u32 = 1 << 4;
 const CAUSAL_REPORT_FLAG_LIGHT: u16 = 0b1000;
 const SELF_CONSISTENCY_OK_THRESHOLD: u16 = 5000;
 const NSR_POLICY_COMMIT_DOMAIN: &[u8] = b"ucf.nsr.policy.commit.v1";
@@ -197,6 +202,8 @@ pub struct Router {
     last_influence_root_commit: Mutex<Option<Digest32>>,
     coupling_core: Mutex<CouplingCore>,
     last_coupling_outputs: Mutex<Option<CouplingOutputs>>,
+    coherence_lag: Mutex<CoherenceLag>,
+    last_update_mode: Mutex<UpdateMode>,
     ssm_core: Mutex<SsmCore>,
     last_ssm_output: Mutex<Option<SsmOutputs>>,
     ncde_core: Mutex<NcdeCore>,
@@ -257,10 +264,103 @@ struct AttentionContext<'a> {
     surprise_score: u16,
     influence: Option<&'a InfluenceOutputs>,
     ssm_attention_gain: Option<u16>,
+    lagged_plv: Option<u16>,
 }
 
 pub trait StageTrace {
     fn record(&self, stage: PulseKind);
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum UpdateMode {
+    Conservative = 0,
+    Normal = 1,
+    Exploratory = 2,
+    Stabilize = 3,
+}
+
+impl UpdateMode {
+    fn from_u8(value: u8) -> Self {
+        match value {
+            0 => Self::Conservative,
+            1 => Self::Normal,
+            2 => Self::Exploratory,
+            _ => Self::Stabilize,
+        }
+    }
+
+    fn as_u8(self) -> u8 {
+        self as u8
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct CoherenceLag {
+    phase_commit: [Digest32; COHERENCE_LAG_LEN],
+    ssm_commit: [Digest32; COHERENCE_LAG_LEN],
+    iit_commit: [Digest32; COHERENCE_LAG_LEN],
+    nsr_verdict: [u8; COHERENCE_LAG_LEN],
+    novelty: [u16; COHERENCE_LAG_LEN],
+    salience: [u16; COHERENCE_LAG_LEN],
+    plv: [u16; COHERENCE_LAG_LEN],
+    commit: Digest32,
+}
+
+impl CoherenceLag {
+    fn new() -> Self {
+        let mut lag = Self {
+            phase_commit: [Digest32::new([0u8; 32]); COHERENCE_LAG_LEN],
+            ssm_commit: [Digest32::new([0u8; 32]); COHERENCE_LAG_LEN],
+            iit_commit: [Digest32::new([0u8; 32]); COHERENCE_LAG_LEN],
+            nsr_verdict: [0u8; COHERENCE_LAG_LEN],
+            novelty: [0u16; COHERENCE_LAG_LEN],
+            salience: [0u16; COHERENCE_LAG_LEN],
+            plv: [0u16; COHERENCE_LAG_LEN],
+            commit: Digest32::new([0u8; 32]),
+        };
+        lag.commit = commit_coherence_lag(&lag);
+        lag
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn push(
+        &mut self,
+        phase_commit: Digest32,
+        ssm_commit: Digest32,
+        iit_commit: Digest32,
+        nsr_verdict: u8,
+        novelty: u16,
+        salience: u16,
+        plv: u16,
+    ) {
+        self.phase_commit.rotate_right(1);
+        self.ssm_commit.rotate_right(1);
+        self.iit_commit.rotate_right(1);
+        self.nsr_verdict.rotate_right(1);
+        self.novelty.rotate_right(1);
+        self.salience.rotate_right(1);
+        self.plv.rotate_right(1);
+        self.phase_commit[0] = phase_commit;
+        self.ssm_commit[0] = ssm_commit;
+        self.iit_commit[0] = iit_commit;
+        self.nsr_verdict[0] = nsr_verdict;
+        self.novelty[0] = novelty.min(10_000);
+        self.salience[0] = salience.min(10_000);
+        self.plv[0] = plv.min(10_000);
+        self.commit = commit_coherence_lag(self);
+    }
+
+    fn avg_salience(&self) -> u16 {
+        avg_u16(&self.salience)
+    }
+
+    fn avg_plv(&self) -> u16 {
+        avg_u16(&self.plv)
+    }
+
+    fn novelty_trend_up(&self) -> bool {
+        avg_recent(&self.novelty) > avg_prior(&self.novelty)
+    }
 }
 
 struct StageContext {
@@ -317,6 +417,8 @@ struct StageContext {
     cde_v1_output: Option<CdeV1Outputs>,
     ncde_output: Option<NcdeOutputs>,
     ssm_output: Option<SsmOutputs>,
+    update_mode: Option<UpdateMode>,
+    coherence_request_replay: bool,
 }
 
 impl StageContext {
@@ -375,6 +477,8 @@ impl StageContext {
             cde_v1_output: None,
             ncde_output: None,
             ssm_output: None,
+            update_mode: None,
+            coherence_request_replay: false,
         }
     }
 }
@@ -476,6 +580,8 @@ impl Router {
             last_influence_root_commit: Mutex::new(None),
             coupling_core: Mutex::new(CouplingCore::new_default()),
             last_coupling_outputs: Mutex::new(None),
+            coherence_lag: Mutex::new(CoherenceLag::new()),
+            last_update_mode: Mutex::new(UpdateMode::Normal),
             ssm_core: Mutex::new(SsmCore::new(SsmParams::default())),
             last_ssm_output: Mutex::new(None),
             ncde_core: Mutex::new(NcdeCore::new(NcdeParams::default())),
@@ -578,6 +684,8 @@ impl Router {
                 tcf_sleep_active: false,
                 tcf_replay_active: false,
                 tcf_lock_window_buckets: 0,
+                coherence_lag_commit: Digest32::new([0u8; 32]),
+                update_mode: 0,
                 onn_phase_commit: Digest32::new([0u8; 32]),
                 onn_gamma_bucket: 0,
                 onn_global_plv: 0,
@@ -590,6 +698,8 @@ impl Router {
                 rsa_commit: Digest32::new([0u8; 32]),
                 rsa_proposal_commit: None,
                 rsa_decision_apply: false,
+                rsa_apply_allowed: false,
+                rsa_apply_commit: Digest32::new([0u8; 32]),
                 rsa_reason_mask: 0,
                 rsa_applied_params_root: Digest32::new([0u8; 32]),
                 rsa_snapshot_chain_commit: Digest32::new([0u8; 32]),
@@ -929,6 +1039,7 @@ impl Router {
                         let current = ctx.replay_pressure.unwrap_or(0);
                         ctx.replay_pressure = Some(current.max(5_000));
                     }
+                    self.tick_coupling(&mut ctx, cycle_id);
                     let iit_output = {
                         let ncde_output = ctx
                             .ncde_output
@@ -1005,6 +1116,33 @@ impl Router {
                         ctx.replay_pressure = Some(current.saturating_add(800).min(10_000));
                     }
                     self.append_iit_output_record(cycle_id, &iit_output);
+                    let mode_lag_snapshot = self.coherence_lag_snapshot();
+                    let nsr_verdict = ctx
+                        .nsr_report
+                        .as_ref()
+                        .map(|report| report.verdict)
+                        .unwrap_or(NsrVerdict::Allow);
+                    let update_mode = self.compute_update_mode(
+                        &mode_lag_snapshot,
+                        nsr_verdict,
+                        attention_risk,
+                        surprise_score,
+                        drift_score,
+                        iit_output.phi_proxy,
+                    );
+                    ctx.update_mode = Some(update_mode);
+                    ctx.coherence_request_replay = self.coherence_request_replay(
+                        update_mode,
+                        surprise_score,
+                        iit_output.phi_proxy,
+                    );
+                    if ctx.coherence_request_replay {
+                        let current = ctx.replay_pressure.unwrap_or(0);
+                        ctx.replay_pressure = Some(current.max(5_000));
+                    }
+                    if let Ok(mut guard) = self.last_update_mode.lock() {
+                        *guard = update_mode;
+                    }
                     let attention_weights =
                         ctx.attention_weights.clone().unwrap_or_else(idle_attention);
                     // Bluebrain stimulation occurs during the Verify pulse using the latest
@@ -1129,6 +1267,24 @@ impl Router {
                         }
                     }
                     let replay_pressure = ctx.replay_pressure.unwrap_or(0);
+                    let base_learning_cap = self
+                        .tcf_plan_for(Some(&ctx))
+                        .map(|plan| plan.learning_gain_cap)
+                        .unwrap_or(10_000);
+                    let update_mode = ctx.update_mode.unwrap_or(UpdateMode::Normal);
+                    let nsr_verdict = ctx
+                        .nsr_report
+                        .as_ref()
+                        .map(|report| report.verdict)
+                        .unwrap_or(NsrVerdict::Allow);
+                    let phi_high = self.iit_params().phi_high;
+                    let learning_gain_cap = self.adjust_learning_cap(
+                        update_mode,
+                        base_learning_cap,
+                        nsr_verdict,
+                        iit_output.phi_proxy,
+                        phi_high,
+                    );
                     let cde_v1_output = self.tick_cde_v1(
                         cycle_id,
                         &phase_bus,
@@ -1142,6 +1298,7 @@ impl Router {
                         surprise_score,
                         attention_risk,
                         self.tcf_plan_for(Some(&ctx)),
+                        learning_gain_cap,
                     );
                     if let Some(output) = cde_v1_output.clone() {
                         ctx.cde_v1_output = Some(output.clone());
@@ -1206,6 +1363,23 @@ impl Router {
                     self.append_nsr_output_record(cycle_id, &nsr_output);
                     let nsr_warn_streak = self.update_nsr_warn_streak(nsr_output.verdict);
                     ctx.nsr_warn_streak = Some(nsr_warn_streak);
+                    if nsr_output.verdict != NsrVerdict::Allow {
+                        ctx.update_mode = Some(UpdateMode::Stabilize);
+                    }
+                    if let Some(mode) = ctx.update_mode {
+                        ctx.coherence_request_replay = self.coherence_request_replay(
+                            mode,
+                            surprise_score,
+                            iit_output.phi_proxy,
+                        );
+                        if ctx.coherence_request_replay {
+                            let current = ctx.replay_pressure.unwrap_or(0);
+                            ctx.replay_pressure = Some(current.max(5_000));
+                        }
+                        if let Ok(mut guard) = self.last_update_mode.lock() {
+                            *guard = mode;
+                        }
+                    }
 
                     let effects = iit_action_effects(
                         self.workspace_base,
@@ -1603,6 +1777,7 @@ impl Router {
                         ctx.replay_pressure =
                             Some(apply_coupling_bias(influenced, coupling_pressure, 2000));
                     }
+                    let lag_snapshot = self.coherence_lag_snapshot();
                     let attention_ctx = AttentionContext {
                         policy_class: decision.kind as u16,
                         risk_score: ctx.attention_risk,
@@ -1620,7 +1795,13 @@ impl Router {
                         ssm_attention_gain: ctx
                             .ssm_output
                             .as_ref()
-                            .map(|output| output.ssm_attention_gain),
+                            .map(|output| output.ssm_attention_gain)
+                            .or_else(|| {
+                                self.last_ssm_output.lock().ok().and_then(|guard| {
+                                    guard.as_ref().map(|output| output.ssm_attention_gain)
+                                })
+                            }),
+                        lagged_plv: Some(lag_snapshot.avg_plv()),
                     };
                     let attention_weights = self.compute_attention(attention_ctx);
                     if let Some(weights) = attention_weights.as_ref() {
@@ -1664,6 +1845,7 @@ impl Router {
                         .ncde_output
                         .or_else(|| self.last_ncde_output.lock().ok().and_then(|g| *g));
                     let ncde_energy = prior_ncde.map(|output| output.ncde_energy).unwrap_or(0);
+                    let b_q15_bias = self.coherence_b_q15_bias(&lag_snapshot);
                     if let Some(ssm_output) = self.tick_ssm(
                         &phase_bus,
                         percept_commit,
@@ -1671,6 +1853,7 @@ impl Router {
                         ncde_energy,
                         spike_root_commit,
                         spike_counts_ssm,
+                        b_q15_bias,
                         drift_score,
                         surprise_score,
                         ctx.attention_risk,
@@ -1715,7 +1898,6 @@ impl Router {
                         brain.ingest(record);
                     }
                     ctx.attention_weights = attention_weights;
-                    self.tick_coupling(&mut ctx, cycle_id);
                     let policy_ok = matches!(
                         ctx.decision_kind,
                         DecisionKind::DecisionKindAllow | DecisionKind::DecisionKindUnspecified
@@ -1724,9 +1906,14 @@ impl Router {
                         .phase_bus
                         .unwrap_or_else(|| self.latest_phase_bus(cycle_id));
                     if let Some(iit_output) = ctx.iit_output.as_ref() {
-                        if let Some(plan) =
-                            self.tick_tcf_plan(&ctx, cycle_id, &phase_bus, iit_output, policy_ok)
-                        {
+                        if let Some(plan) = self.tick_tcf_plan(
+                            &ctx,
+                            cycle_id,
+                            &phase_bus,
+                            iit_output,
+                            policy_ok,
+                            ctx.coherence_request_replay,
+                        ) {
                             ctx.tcf_plan = Some(plan);
                             if let Ok(mut guard) = self.last_tcf_plan.lock() {
                                 *guard = Some(plan);
@@ -1764,6 +1951,22 @@ impl Router {
                                 })
                             })
                             .unwrap_or(10_000);
+                    let update_mode = ctx.update_mode.unwrap_or(UpdateMode::Normal);
+                    let nsr_verdict = ctx
+                        .nsr_output
+                        .as_ref()
+                        .map(|output| output.verdict)
+                        .or_else(|| ctx.nsr_report.as_ref().map(|report| report.verdict))
+                        .unwrap_or(NsrVerdict::Allow);
+                    let phi_proxy = ctx.integration_score.unwrap_or(0);
+                    let phi_high = self.iit_params().phi_high;
+                    let learning_gain_cap = self.adjust_learning_cap(
+                        update_mode,
+                        learning_gain_cap,
+                        nsr_verdict,
+                        phi_proxy,
+                        phi_high,
+                    );
                     if let Some(ncde_output) = self.tick_ncde(
                         cycle_id,
                         &phase_bus,
@@ -1796,6 +1999,60 @@ impl Router {
                             .min(10_000);
                         ctx.replay_pressure = Some(combined);
                     }
+                    let phase_commit = ctx
+                        .phase_commit
+                        .unwrap_or_else(|| self.latest_phase_bus(cycle_id).commit);
+                    let ssm_snapshot = ctx.ssm_output.as_ref().cloned().or_else(|| {
+                        self.last_ssm_output
+                            .lock()
+                            .ok()
+                            .and_then(|guard| guard.clone())
+                    });
+                    let ssm_commit = ssm_snapshot
+                        .as_ref()
+                        .map(|output| output.commit)
+                        .unwrap_or_else(|| Digest32::new([0u8; 32]));
+                    let ssm_novelty = ssm_snapshot
+                        .as_ref()
+                        .map(|output| output.ssm_novelty)
+                        .unwrap_or(0);
+                    let ssm_salience = ssm_snapshot
+                        .as_ref()
+                        .map(|output| output.ssm_salience)
+                        .unwrap_or(0);
+                    let iit_commit = ctx
+                        .iit_output
+                        .as_ref()
+                        .map(|output| output.commit)
+                        .unwrap_or_else(|| Digest32::new([0u8; 32]));
+                    let nsr_verdict = ctx
+                        .nsr_output
+                        .as_ref()
+                        .map(|output| output.verdict.as_u8())
+                        .or_else(|| ctx.nsr_report.as_ref().map(|report| report.verdict.as_u8()))
+                        .unwrap_or(0);
+                    let plv = ctx
+                        .coherence_plv
+                        .unwrap_or_else(|| self.latest_phase_bus(cycle_id).global_plv);
+                    let lag_commit = self.update_coherence_lag(
+                        phase_commit,
+                        ssm_commit,
+                        iit_commit,
+                        nsr_verdict,
+                        ssm_novelty,
+                        ssm_salience,
+                        plv,
+                    );
+                    let update_mode = ctx.update_mode.unwrap_or_else(|| {
+                        self.last_update_mode
+                            .lock()
+                            .map(|mode| *mode)
+                            .unwrap_or(UpdateMode::Normal)
+                    });
+                    if let Ok(mut workspace) = self.workspace.lock() {
+                        workspace.set_coherence_state(lag_commit, update_mode.as_u8());
+                    }
+                    self.append_update_mode_record(cycle_id, update_mode, lag_commit);
                     ctx.evidence_id = Some(evidence_id);
                 }
                 PulseKind::Broadcast => {
@@ -1981,6 +2238,35 @@ impl Router {
                                 rsa_v0::RsaDecision::new(false, outputs.decision.reason_mask | 2);
                         }
                     }
+                    let update_mode = ctx.update_mode.unwrap_or_else(|| {
+                        self.last_update_mode
+                            .lock()
+                            .map(|mode| *mode)
+                            .unwrap_or(UpdateMode::Normal)
+                    });
+                    let tcf_budget = self
+                        .tcf_plan_for(Some(&ctx))
+                        .map(|plan| plan.learning_gain_cap)
+                        .unwrap_or(0);
+                    let phi_high = self.iit_params().phi_high;
+                    let nsr_verdict = ctx
+                        .nsr_output
+                        .as_ref()
+                        .map(|output| output.verdict)
+                        .unwrap_or(NsrVerdict::Allow);
+                    let (rsa_apply_allowed, rsa_apply_commit) = self.rsa_apply_gate(
+                        update_mode,
+                        nsr_verdict,
+                        phi_proxy,
+                        phi_high,
+                        tcf_budget,
+                    );
+                    if !rsa_apply_allowed {
+                        outputs.decision = rsa_v0::RsaDecision::new(
+                            false,
+                            outputs.decision.reason_mask | RSA_REASON_MODE_BLOCK,
+                        );
+                    }
                     if outputs.decision.apply {
                         if let Some(proposal) = outputs.proposal.clone() {
                             let onn_params = self
@@ -2086,6 +2372,8 @@ impl Router {
                             outputs.commit,
                             proposal_commit,
                             outputs.decision.apply,
+                            rsa_apply_allowed,
+                            rsa_apply_commit,
                             outputs.decision.reason_mask,
                             outputs.applied_params_root,
                             outputs.snapshot_chain_commit,
@@ -2678,7 +2966,10 @@ impl Router {
         let weights = self.apply_ncde_attention_bias(weights);
         let weights = self.apply_ssm_attention_bias(weights, ctx.ssm_attention_gain);
         let weights = self.apply_coupling_attention_bias(weights);
-        Some(self.apply_tcf_attention_cap(weights))
+        let tcf_cap = self.tcf_attention_cap();
+        let memory_cap =
+            self.attention_cap_from_memory(ctx.ssm_attention_gain, ctx.lagged_plv, tcf_cap);
+        Some(self.apply_tcf_attention_cap(weights, tcf_cap, Some(memory_cap)))
     }
 
     fn apply_coupling_attention_bias(&self, mut weights: AttentionWeights) -> AttentionWeights {
@@ -2694,13 +2985,13 @@ impl Router {
         weights
     }
 
-    fn apply_tcf_attention_cap(&self, mut weights: AttentionWeights) -> AttentionWeights {
-        let cap = self
-            .last_tcf_plan
-            .lock()
-            .ok()
-            .and_then(|plan| plan.as_ref().map(|plan| plan.attention_gain_cap))
-            .unwrap_or(10_000);
+    fn apply_tcf_attention_cap(
+        &self,
+        mut weights: AttentionWeights,
+        tcf_cap: u16,
+        memory_cap: Option<u16>,
+    ) -> AttentionWeights {
+        let cap = memory_cap.unwrap_or(tcf_cap).min(tcf_cap);
         if cap == 0 {
             weights.gain = 0;
             weights.commit = commit_attention_override(&weights);
@@ -2713,6 +3004,29 @@ impl Router {
         weights
     }
 
+    fn tcf_attention_cap(&self) -> u16 {
+        self.last_tcf_plan
+            .lock()
+            .ok()
+            .and_then(|plan| plan.as_ref().map(|plan| plan.attention_gain_cap))
+            .unwrap_or(10_000)
+    }
+
+    fn attention_cap_from_memory(
+        &self,
+        ssm_attention_gain: Option<u16>,
+        lagged_plv: Option<u16>,
+        tcf_cap: u16,
+    ) -> u16 {
+        let mut cap = ssm_attention_gain.unwrap_or(tcf_cap).min(tcf_cap);
+        if let Some(plv) = lagged_plv {
+            if plv < COHERENCE_PLV_LOW {
+                cap = cap.saturating_sub(cap / 5);
+            }
+        }
+        cap
+    }
+
     fn tcf_plan_for(&self, ctx: Option<&StageContext>) -> Option<TcfPlan> {
         ctx.and_then(|ctx| ctx.tcf_plan)
             .or_else(|| self.last_tcf_plan.lock().ok().and_then(|plan| *plan))
@@ -2721,6 +3035,146 @@ impl Router {
     fn tcf_sleep_replay(&self, ctx: Option<&StageContext>) -> Option<(bool, bool)> {
         self.tcf_plan_for(ctx)
             .map(|plan| (plan.sleep_active, plan.replay_active))
+    }
+
+    fn iit_params(&self) -> IitParams {
+        self.iit_monitor
+            .lock()
+            .map(|core| core.params)
+            .unwrap_or_else(|_| IitParams::default())
+    }
+
+    fn coherence_lag_snapshot(&self) -> CoherenceLag {
+        self.coherence_lag
+            .lock()
+            .map(|lag| *lag)
+            .unwrap_or_else(|_| CoherenceLag::new())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn update_coherence_lag(
+        &self,
+        phase_commit: Digest32,
+        ssm_commit: Digest32,
+        iit_commit: Digest32,
+        nsr_verdict: u8,
+        novelty: u16,
+        salience: u16,
+        plv: u16,
+    ) -> Digest32 {
+        let mut lag = self
+            .coherence_lag
+            .lock()
+            .unwrap_or_else(|err| err.into_inner());
+        lag.push(
+            phase_commit,
+            ssm_commit,
+            iit_commit,
+            nsr_verdict,
+            novelty,
+            salience,
+            plv,
+        );
+        lag.commit
+    }
+
+    fn compute_update_mode(
+        &self,
+        lag: &CoherenceLag,
+        nsr_verdict: NsrVerdict,
+        risk: u16,
+        surprise: u16,
+        drift: u16,
+        phi: u16,
+    ) -> UpdateMode {
+        let base = update_mode_seed(lag.phase_commit[0], lag.ssm_commit[0], lag.iit_commit[0]);
+        let params = self.iit_params();
+        if nsr_verdict != NsrVerdict::Allow {
+            return UpdateMode::Stabilize;
+        }
+        if risk >= COHERENCE_RISK_HIGH {
+            return UpdateMode::Conservative;
+        }
+        if surprise >= params.surprise_hi && phi >= params.phi_high {
+            return UpdateMode::Exploratory;
+        }
+        if drift >= params.drift_hi || phi < params.phi_low {
+            return UpdateMode::Stabilize;
+        }
+        base
+    }
+
+    fn coherence_b_q15_bias(&self, lag: &CoherenceLag) -> i16 {
+        let mut bias = 0i16;
+        if lag.novelty_trend_up() {
+            bias = bias.saturating_add(64);
+        }
+        if lag.avg_salience() < 2000 {
+            bias = bias.saturating_sub(64);
+        }
+        bias
+    }
+
+    fn adjust_learning_cap(
+        &self,
+        mode: UpdateMode,
+        base_cap: u16,
+        nsr_verdict: NsrVerdict,
+        phi: u16,
+        phi_high: u16,
+    ) -> u16 {
+        let mut cap = base_cap;
+        match mode {
+            UpdateMode::Conservative => {
+                cap = ((u32::from(base_cap) * 70) / 100).min(u32::from(u16::MAX)) as u16;
+            }
+            UpdateMode::Exploratory => {
+                if nsr_verdict == NsrVerdict::Allow && phi >= phi_high {
+                    cap = ((u32::from(base_cap) * 120) / 100).min(10_000u32) as u16;
+                }
+            }
+            UpdateMode::Stabilize => {
+                cap = cap.min(3000);
+            }
+            UpdateMode::Normal => {}
+        }
+        cap
+    }
+
+    fn coherence_request_replay(&self, mode: UpdateMode, surprise: u16, phi: u16) -> bool {
+        let params = self.iit_params();
+        (mode == UpdateMode::Stabilize && surprise >= params.surprise_hi) || phi < params.phi_low
+    }
+
+    fn append_update_mode_record(&self, cycle_id: u64, mode: UpdateMode, lag_commit: Digest32) {
+        let meta = RecordMeta {
+            cycle_id,
+            tier: mode.as_u8(),
+            flags: 0,
+            boundary_commit: lag_commit,
+        };
+        let payload_commit = update_mode_commit(mode, lag_commit);
+        self.append_archive_record(
+            RecordKind::Other(UPDATE_MODE_RECORD_KIND),
+            payload_commit,
+            meta,
+        );
+    }
+
+    fn rsa_apply_gate(
+        &self,
+        mode: UpdateMode,
+        nsr_verdict: NsrVerdict,
+        phi_proxy: u16,
+        phi_high: u16,
+        tcf_budget: u16,
+    ) -> (bool, Digest32) {
+        let allowed = mode != UpdateMode::Stabilize
+            && nsr_verdict == NsrVerdict::Allow
+            && phi_proxy >= phi_high
+            && tcf_budget > 0;
+        let commit = commit_rsa_apply_gate(mode, nsr_verdict, phi_proxy, phi_high, tcf_budget);
+        (allowed, commit)
     }
 
     fn apply_ncde_attention_bias(&self, mut weights: AttentionWeights) -> AttentionWeights {
@@ -2795,6 +3249,7 @@ impl Router {
         phase_bus: &PhaseBus,
         iit_output: &IitOutput,
         policy_ok: bool,
+        request_replay_override: bool,
     ) -> Option<TcfPlan> {
         let coupling_root = ctx
             .coupling_outputs
@@ -2826,7 +3281,7 @@ impl Router {
             iit_output.tighten_sync,
             iit_output.damp_output,
             iit_output.damp_learning,
-            iit_output.request_replay,
+            iit_output.request_replay || request_replay_override,
             coupling_root,
             nsr_verdict,
             policy_ok,
@@ -2848,7 +3303,13 @@ impl Router {
         if let Some(value) = ctx.percept_energy {
             push_u16(SignalId::PerceptEnergy, value, &mut samples);
         }
-        if let Some(output) = ctx.ssm_output.as_ref() {
+        let ssm_output = ctx.ssm_output.as_ref().cloned().or_else(|| {
+            self.last_ssm_output
+                .lock()
+                .ok()
+                .and_then(|guard| guard.clone())
+        });
+        if let Some(output) = ssm_output.as_ref() {
             push_u16(SignalId::SsmSalience, output.ssm_salience, &mut samples);
             push_u16(SignalId::SsmNovelty, output.ssm_novelty, &mut samples);
             push_u16(
@@ -2857,13 +3318,33 @@ impl Router {
                 &mut samples,
             );
         }
-        if let Some(weights) = ctx.attention_weights.as_ref() {
+        let attention_weights = ctx
+            .attention_weights
+            .as_ref()
+            .cloned()
+            .or_else(|| self.last_attention.lock().ok().map(|attn| attn.clone()));
+        if let Some(weights) = attention_weights.as_ref() {
             push_u16(SignalId::AttentionFinalGain, weights.gain, &mut samples);
         }
-        if let Some(output) = ctx.ncde_output.as_ref() {
+        let ncde_output = ctx
+            .ncde_output
+            .as_ref()
+            .cloned()
+            .or_else(|| self.last_ncde_output.lock().ok().and_then(|guard| *guard));
+        if let Some(output) = ncde_output.as_ref() {
             push_u16(SignalId::NcdeEnergy, output.ncde_energy, &mut samples);
         }
-        if let Some(phi) = ctx.integration_score {
+        let phi = ctx.integration_score.or_else(|| {
+            self.last_workspace_snapshot
+                .lock()
+                .ok()
+                .and_then(|snapshot| {
+                    snapshot
+                        .as_ref()
+                        .and_then(|snapshot| snapshot.iit_output.as_ref().map(|out| out.phi_proxy))
+                })
+        });
+        if let Some(phi) = phi {
             push_u16(SignalId::PhiProxy, phi, &mut samples);
         }
         if let Some(plv) = ctx.coherence_plv {
@@ -3229,13 +3710,14 @@ impl Router {
         surprise: u16,
         risk: u16,
         tcf_plan: Option<TcfPlan>,
+        learning_gain_cap: u16,
     ) -> Option<CdeV1Outputs> {
         let attention_gain = self
             .last_attention
             .lock()
             .map(|attn| attn.gain)
             .unwrap_or(0);
-        let learning_rate = 0;
+        let learning_rate = learning_gain_cap.min(10_000);
         let sleep_drive_raw = influence_outputs
             .map(|outputs| outputs.node_value(InfluenceNodeId::SleepDrive))
             .unwrap_or(0);
@@ -3399,6 +3881,7 @@ impl Router {
         ncde_energy: u16,
         spike_root_commit: Digest32,
         spike_counts: Vec<(SpikeKind, u16)>,
+        b_q15_bias: i16,
         drift: u16,
         surprise: u16,
         risk: u16,
@@ -3443,6 +3926,7 @@ impl Router {
             coupling_influences,
             tcf_attention_cap,
             tcf_learning_cap,
+            b_q15_bias,
             sle_bias,
             ncde_energy,
             risk,
@@ -4608,6 +5092,92 @@ fn commit_attention_override(weights: &AttentionWeights) -> Digest32 {
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
+fn avg_u16(values: &[u16; COHERENCE_LAG_LEN]) -> u16 {
+    let sum: u32 = values.iter().map(|value| u32::from(*value)).sum();
+    let avg = sum / values.len().max(1) as u32;
+    u16::try_from(avg.min(u32::from(u16::MAX))).unwrap_or(u16::MAX)
+}
+
+fn avg_recent(values: &[u16; COHERENCE_LAG_LEN]) -> u16 {
+    let sum = u32::from(values[0]).saturating_add(u32::from(values[1]));
+    u16::try_from(sum / 2).unwrap_or(0)
+}
+
+fn avg_prior(values: &[u16; COHERENCE_LAG_LEN]) -> u16 {
+    let sum = u32::from(values[2]).saturating_add(u32::from(values[3]));
+    u16::try_from(sum / 2).unwrap_or(0)
+}
+
+fn commit_coherence_lag(lag: &CoherenceLag) -> Digest32 {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"ucf.router.coherence.lag.v1");
+    for commit in &lag.phase_commit {
+        hasher.update(commit.as_bytes());
+    }
+    for commit in &lag.ssm_commit {
+        hasher.update(commit.as_bytes());
+    }
+    for commit in &lag.iit_commit {
+        hasher.update(commit.as_bytes());
+    }
+    hasher.update(&lag.nsr_verdict);
+    for value in &lag.novelty {
+        hasher.update(&value.to_be_bytes());
+    }
+    for value in &lag.salience {
+        hasher.update(&value.to_be_bytes());
+    }
+    for value in &lag.plv {
+        hasher.update(&value.to_be_bytes());
+    }
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn update_mode_seed(
+    phase_commit: Digest32,
+    ssm_commit: Digest32,
+    iit_commit: Digest32,
+) -> UpdateMode {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"ucf.router.update.mode.v1");
+    hasher.update(phase_commit.as_bytes());
+    hasher.update(ssm_commit.as_bytes());
+    hasher.update(iit_commit.as_bytes());
+    let bytes = hasher.finalize();
+    let raw = u32::from_be_bytes([
+        bytes.as_bytes()[0],
+        bytes.as_bytes()[1],
+        bytes.as_bytes()[2],
+        bytes.as_bytes()[3],
+    ]);
+    UpdateMode::from_u8((raw % 4) as u8)
+}
+
+fn update_mode_commit(mode: UpdateMode, lag_commit: Digest32) -> Digest32 {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"ucf.router.update.mode.commit.v1");
+    hasher.update(&[mode.as_u8()]);
+    hasher.update(lag_commit.as_bytes());
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn commit_rsa_apply_gate(
+    mode: UpdateMode,
+    nsr_verdict: NsrVerdict,
+    phi_proxy: u16,
+    phi_high: u16,
+    tcf_budget: u16,
+) -> Digest32 {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"ucf.router.rsa.apply.gate.v1");
+    hasher.update(&[mode.as_u8()]);
+    hasher.update(&[nsr_verdict.as_u8()]);
+    hasher.update(&phi_proxy.to_be_bytes());
+    hasher.update(&phi_high.to_be_bytes());
+    hasher.update(&tcf_budget.to_be_bytes());
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
 #[allow(clippy::too_many_arguments)]
 fn influence_inputs_commit(
     cycle_id: u64,
@@ -5057,6 +5627,7 @@ mod tests {
                 ncde_output.ncde_energy,
                 Digest32::new([2u8; 32]),
                 vec![(SpikeKind::Threat, 3)],
+                0,
                 1000,
                 2000,
                 1500,
@@ -5139,6 +5710,7 @@ mod tests {
                 2200,
                 Digest32::new([2u8; 32]),
                 vec![(SpikeKind::Threat, 3)],
+                0,
                 1000,
                 2000,
                 1500,
@@ -5152,6 +5724,7 @@ mod tests {
                 2200,
                 Digest32::new([2u8; 32]),
                 vec![(SpikeKind::Threat, 3)],
+                0,
                 1000,
                 2000,
                 1500,
@@ -5159,6 +5732,27 @@ mod tests {
             .expect("ssm output high");
 
         assert_ne!(output_low.ssm_state_commit, output_high.ssm_state_commit);
+    }
+
+    #[test]
+    fn attention_cap_does_not_increase_when_ssm_gain_drops() {
+        let router = build_router();
+        let tcf_cap = 8000;
+        let cap_high = router.attention_cap_from_memory(Some(7000), Some(7000), tcf_cap);
+        let cap_low = router.attention_cap_from_memory(Some(3000), Some(7000), tcf_cap);
+        assert!(cap_low <= cap_high);
+    }
+
+    #[test]
+    fn nsr_restrict_forces_stabilize_and_blocks_rsa() {
+        let router = build_router();
+        let lag = CoherenceLag::new();
+        let mode = router.compute_update_mode(&lag, NsrVerdict::Restrict, 1000, 500, 500, 8000);
+        assert_eq!(mode, UpdateMode::Stabilize);
+        let phi_high = router.iit_params().phi_high;
+        let (allowed, _) =
+            router.rsa_apply_gate(mode, NsrVerdict::Restrict, phi_high, phi_high, 5000);
+        assert!(!allowed);
     }
 
     #[test]

@@ -517,6 +517,8 @@ pub struct WorkspaceSnapshot {
     pub tcf_sleep_active: bool,
     pub tcf_replay_active: bool,
     pub tcf_lock_window_buckets: u8,
+    pub coherence_lag_commit: Digest32,
+    pub update_mode: u8,
     pub onn_phase_commit: Digest32,
     pub onn_gamma_bucket: u8,
     pub onn_global_plv: u16,
@@ -529,6 +531,8 @@ pub struct WorkspaceSnapshot {
     pub rsa_commit: Digest32,
     pub rsa_proposal_commit: Option<Digest32>,
     pub rsa_decision_apply: bool,
+    pub rsa_apply_allowed: bool,
+    pub rsa_apply_commit: Digest32,
     pub rsa_reason_mask: u32,
     pub rsa_applied_params_root: Digest32,
     pub rsa_snapshot_chain_commit: Digest32,
@@ -651,6 +655,8 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
     payload.push(snapshot.tcf_sleep_active as u8);
     payload.push(snapshot.tcf_replay_active as u8);
     payload.push(snapshot.tcf_lock_window_buckets);
+    payload.extend_from_slice(snapshot.coherence_lag_commit.as_bytes());
+    payload.push(snapshot.update_mode);
     payload.extend_from_slice(snapshot.onn_phase_commit.as_bytes());
     payload.push(snapshot.onn_gamma_bucket);
     payload.extend_from_slice(&snapshot.onn_global_plv.to_be_bytes());
@@ -723,6 +729,8 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
         }
     }
     payload.push(snapshot.rsa_decision_apply as u8);
+    payload.push(snapshot.rsa_apply_allowed as u8);
+    payload.extend_from_slice(snapshot.rsa_apply_commit.as_bytes());
     payload.extend_from_slice(&snapshot.rsa_reason_mask.to_be_bytes());
     payload.extend_from_slice(snapshot.rsa_applied_params_root.as_bytes());
     payload.extend_from_slice(snapshot.rsa_snapshot_chain_commit.as_bytes());
@@ -784,6 +792,8 @@ pub struct Workspace {
     rsa_commit: Digest32,
     rsa_proposal_commit: Option<Digest32>,
     rsa_decision_apply: bool,
+    rsa_apply_allowed: bool,
+    rsa_apply_commit: Digest32,
     rsa_reason_mask: u32,
     rsa_applied_params_root: Digest32,
     rsa_snapshot_chain_commit: Digest32,
@@ -815,6 +825,8 @@ pub struct Workspace {
     tcf_sleep_active: bool,
     tcf_replay_active: bool,
     tcf_lock_window_buckets: u8,
+    coherence_lag_commit: Digest32,
+    update_mode: u8,
     onn_phase_commit: Digest32,
     onn_gamma_bucket: u8,
     onn_global_plv: u16,
@@ -851,6 +863,8 @@ impl Workspace {
             rsa_commit: Digest32::new([0u8; 32]),
             rsa_proposal_commit: None,
             rsa_decision_apply: false,
+            rsa_apply_allowed: false,
+            rsa_apply_commit: Digest32::new([0u8; 32]),
             rsa_reason_mask: 0,
             rsa_applied_params_root: Digest32::new([0u8; 32]),
             rsa_snapshot_chain_commit: Digest32::new([0u8; 32]),
@@ -882,6 +896,8 @@ impl Workspace {
             tcf_sleep_active: false,
             tcf_replay_active: false,
             tcf_lock_window_buckets: 0,
+            coherence_lag_commit: Digest32::new([0u8; 32]),
+            update_mode: 0,
             onn_phase_commit: Digest32::new([0u8; 32]),
             onn_gamma_bucket: 0,
             onn_global_plv: 0,
@@ -930,11 +946,14 @@ impl Workspace {
         self.structural_proposal.take()
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn set_rsa_output(
         &mut self,
         rsa_commit: Digest32,
         proposal_commit: Option<Digest32>,
         decision_apply: bool,
+        apply_allowed: bool,
+        apply_commit: Digest32,
         reason_mask: u32,
         applied_params_root: Digest32,
         snapshot_chain_commit: Digest32,
@@ -942,9 +961,16 @@ impl Workspace {
         self.rsa_commit = rsa_commit;
         self.rsa_proposal_commit = proposal_commit;
         self.rsa_decision_apply = decision_apply;
+        self.rsa_apply_allowed = apply_allowed;
+        self.rsa_apply_commit = apply_commit;
         self.rsa_reason_mask = reason_mask;
         self.rsa_applied_params_root = applied_params_root;
         self.rsa_snapshot_chain_commit = snapshot_chain_commit;
+    }
+
+    pub fn set_coherence_state(&mut self, lag_commit: Digest32, update_mode: u8) {
+        self.coherence_lag_commit = lag_commit;
+        self.update_mode = update_mode;
     }
 
     pub fn spike_summary(&self) -> SpikeOutputs {
@@ -1200,6 +1226,8 @@ impl Workspace {
         let tcf_sleep_active = self.tcf_sleep_active;
         let tcf_replay_active = self.tcf_replay_active;
         let tcf_lock_window_buckets = self.tcf_lock_window_buckets;
+        let coherence_lag_commit = self.coherence_lag_commit;
+        let update_mode = self.update_mode;
         let onn_phase_commit = self.onn_phase_commit;
         let onn_gamma_bucket = self.onn_gamma_bucket;
         let onn_global_plv = self.onn_global_plv;
@@ -1212,6 +1240,8 @@ impl Workspace {
         let rsa_commit = self.rsa_commit;
         let rsa_proposal_commit = self.rsa_proposal_commit;
         let rsa_decision_apply = self.rsa_decision_apply;
+        let rsa_apply_allowed = self.rsa_apply_allowed;
+        let rsa_apply_commit = self.rsa_apply_commit;
         let rsa_reason_mask = self.rsa_reason_mask;
         let rsa_applied_params_root = self.rsa_applied_params_root;
         let rsa_snapshot_chain_commit = self.rsa_snapshot_chain_commit;
@@ -1258,6 +1288,8 @@ impl Workspace {
             tcf_sleep_active,
             tcf_replay_active,
             tcf_lock_window_buckets,
+            coherence_lag_commit,
+            update_mode,
             onn_phase_commit,
             onn_gamma_bucket,
             onn_global_plv,
@@ -1270,6 +1302,8 @@ impl Workspace {
             rsa_commit,
             rsa_proposal_commit,
             rsa_decision_apply,
+            rsa_apply_allowed,
+            rsa_apply_commit,
             rsa_reason_mask,
             rsa_applied_params_root,
             rsa_snapshot_chain_commit,
@@ -1319,6 +1353,8 @@ impl Workspace {
             tcf_sleep_active,
             tcf_replay_active,
             tcf_lock_window_buckets,
+            coherence_lag_commit,
+            update_mode,
             onn_phase_commit,
             onn_gamma_bucket,
             onn_global_plv,
@@ -1331,6 +1367,8 @@ impl Workspace {
             rsa_commit,
             rsa_proposal_commit,
             rsa_decision_apply,
+            rsa_apply_allowed,
+            rsa_apply_commit,
             rsa_reason_mask,
             rsa_applied_params_root,
             rsa_snapshot_chain_commit,
@@ -1757,6 +1795,8 @@ fn commit_snapshot(
     tcf_sleep_active: bool,
     tcf_replay_active: bool,
     tcf_lock_window_buckets: u8,
+    coherence_lag_commit: Digest32,
+    update_mode: u8,
     onn_phase_commit: Digest32,
     onn_gamma_bucket: u8,
     onn_global_plv: u16,
@@ -1769,6 +1809,8 @@ fn commit_snapshot(
     rsa_commit: Digest32,
     rsa_proposal_commit: Option<Digest32>,
     rsa_decision_apply: bool,
+    rsa_apply_allowed: bool,
+    rsa_apply_commit: Digest32,
     rsa_reason_mask: u32,
     rsa_applied_params_root: Digest32,
     rsa_snapshot_chain_commit: Digest32,
@@ -1874,6 +1916,8 @@ fn commit_snapshot(
     hasher.update(&[tcf_sleep_active as u8]);
     hasher.update(&[tcf_replay_active as u8]);
     hasher.update(&[tcf_lock_window_buckets]);
+    hasher.update(coherence_lag_commit.as_bytes());
+    hasher.update(&[update_mode]);
     hasher.update(onn_phase_commit.as_bytes());
     hasher.update(&[onn_gamma_bucket]);
     hasher.update(&onn_global_plv.to_be_bytes());
@@ -1937,6 +1981,8 @@ fn commit_snapshot(
         }
     }
     hasher.update(&[rsa_decision_apply as u8]);
+    hasher.update(&[rsa_apply_allowed as u8]);
+    hasher.update(rsa_apply_commit.as_bytes());
     hasher.update(&rsa_reason_mask.to_be_bytes());
     hasher.update(rsa_applied_params_root.as_bytes());
     hasher.update(rsa_snapshot_chain_commit.as_bytes());
