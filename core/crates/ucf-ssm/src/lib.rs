@@ -132,6 +132,7 @@ pub struct SsmInputs {
     pub coupling_influences: Vec<(SignalId, i16)>,
     pub tcf_attention_cap: u16,
     pub tcf_learning_cap: u16,
+    pub b_q15_bias: i16,
     pub sle_ssm_bias: i16,
     pub ncde_energy: u16,
     pub risk: u16,
@@ -154,6 +155,7 @@ impl SsmInputs {
         coupling_influences: Vec<(SignalId, i16)>,
         tcf_attention_cap: u16,
         tcf_learning_cap: u16,
+        b_q15_bias: i16,
         sle_ssm_bias: i16,
         ncde_energy: u16,
         risk: u16,
@@ -172,6 +174,7 @@ impl SsmInputs {
             &coupling_influences,
             tcf_attention_cap,
             tcf_learning_cap,
+            b_q15_bias,
             sle_ssm_bias,
             ncde_energy,
             risk,
@@ -190,6 +193,7 @@ impl SsmInputs {
             coupling_influences,
             tcf_attention_cap,
             tcf_learning_cap,
+            b_q15_bias,
             sle_ssm_bias,
             ncde_energy,
             risk,
@@ -340,7 +344,7 @@ fn build_sign_pattern(
 }
 
 fn effective_b_q15(inp: &SsmInputs, params: &SsmParams) -> i16 {
-    let base = i64::from(params.b_q15);
+    let base = i64::from(params.b_q15).saturating_add(i64::from(inp.b_q15_bias));
     let cap = u16::min(inp.tcf_attention_cap, inp.tcf_learning_cap).min(MAX_U16);
     let cap_scale = i64::from(cap);
     let risk_scale = 10_000i64
@@ -552,6 +556,7 @@ fn commit_inputs(
     coupling_influences: &[(SignalId, i16)],
     tcf_attention_cap: u16,
     tcf_learning_cap: u16,
+    b_q15_bias: i16,
     sle_ssm_bias: i16,
     ncde_energy: u16,
     risk: u16,
@@ -579,6 +584,7 @@ fn commit_inputs(
     }
     hasher.update(&tcf_attention_cap.to_be_bytes());
     hasher.update(&tcf_learning_cap.to_be_bytes());
+    hasher.update(&b_q15_bias.to_be_bytes());
     hasher.update(&sle_ssm_bias.to_be_bytes());
     hasher.update(&ncde_energy.to_be_bytes());
     hasher.update(&risk.to_be_bytes());
@@ -634,6 +640,7 @@ mod tests {
             vec![(SignalId::SsmSalience, 600)],
             4000,
             3000,
+            0,
             200,
             3200,
             800,
@@ -678,6 +685,7 @@ mod tests {
             0,
             0,
             0,
+            0,
         );
         let before: i64 = core
             .state
@@ -711,6 +719,7 @@ mod tests {
             vec![(SignalId::SsmSalience, 300)],
             5000,
             5000,
+            0,
             100,
             1000,
             200,
@@ -729,6 +738,7 @@ mod tests {
             vec![(SignalId::SsmSalience, 300)],
             5000,
             5000,
+            0,
             100,
             1000,
             200,
@@ -767,6 +777,37 @@ mod tests {
     }
 
     #[test]
+    fn salience_increases_with_percept_energy_and_spikes() {
+        let params = SsmParams::default();
+        let mut core = SsmCore::new(params);
+        let mut last_salience = 0;
+        for (idx, energy) in [900u16, 1400, 2200, 3200].iter().enumerate() {
+            let input = SsmInputs::new(
+                idx as u64,
+                Digest32::new([1u8; 32]),
+                120,
+                Digest32::new([2u8; 32]),
+                *energy,
+                Digest32::new([3u8; 32]),
+                vec![(SpikeKind::Threat, 2)],
+                Digest32::new([4u8; 32]),
+                vec![(SignalId::SsmSalience, 300)],
+                5000,
+                5000,
+                0,
+                100,
+                1000,
+                200,
+                100,
+                200,
+            );
+            let output = core.tick(&input);
+            assert!(output.ssm_salience >= last_salience);
+            last_salience = output.ssm_salience;
+        }
+    }
+
+    #[test]
     fn attention_gain_respects_tcf_cap() {
         let params = SsmParams::default();
         let mut core = SsmCore::new(params);
@@ -782,6 +823,7 @@ mod tests {
             vec![(SignalId::SsmSalience, 500)],
             3000,
             8000,
+            0,
             0,
             4000,
             200,
