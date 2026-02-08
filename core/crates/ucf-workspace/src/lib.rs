@@ -11,10 +11,7 @@ use ucf_policy_ecology::{
 };
 use ucf_predictive_coding::{SurpriseBand, SurpriseUpdated};
 use ucf_sleep_coordinator::{SleepTrigger, SleepTriggered};
-use ucf_spikebus::{
-    SpikeBatch, SpikeBusState, SpikeBusSummary, SpikeEvent, SpikeKind, SpikeModuleId,
-    SpikeSuppression,
-};
+use ucf_spikebus::{SpikeKind, SpikeOutputs};
 use ucf_structural_store::StructuralDeltaProposal;
 use ucf_types::v1::spec::{ActionCode, DecisionKind, PolicyDecision};
 use ucf_types::Digest32;
@@ -489,14 +486,9 @@ pub struct WorkspaceSnapshot {
     pub cycle_id: u64,
     pub broadcast: Vec<WorkspaceSignal>,
     pub recursion_used: u16,
-    pub spike_seen_root: Digest32,
     pub spike_accepted_root: Digest32,
     pub spike_counts: Vec<(SpikeKind, u16)>,
-    pub spike_causal_link_count: u16,
-    pub spike_consistency_alert_count: u16,
-    pub spike_thought_only_count: u16,
-    pub spike_output_intent_count: u16,
-    pub spike_cap_hit: bool,
+    pub spike_max_intensity: u16,
     pub ncde_commit: Digest32,
     pub ncde_state_digest: Digest32,
     pub ncde_energy: u16,
@@ -585,92 +577,11 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
     } else {
         snapshot.broadcast.as_slice()
     };
-    let mut payload = Vec::with_capacity(
-        2 + 8
-            + 2
-            + 2
-            + Digest32::LEN
-            + Digest32::LEN
-            + 2
-            + snapshot.spike_counts.len() * (2 + 2)
-            + 2
-            + 2
-            + 2
-            + 2
-            + 1
-            + Digest32::LEN
-            + Digest32::LEN
-            + 2
-            + Digest32::LEN
-            + Digest32::LEN
-            + 2
-            + cde_edges.len() * (2 + 2 + 2 + 1)
-            + 2
-            + cde_edge_commits.len() * Digest32::LEN
-            + 1
-            + Digest32::LEN
-            + Digest32::LEN
-            + Digest32::LEN
-            + Digest32::LEN
-            + Digest32::LEN
-            + 2
-            + Digest32::LEN
-            + Digest32::LEN
-            + 2
-            + snapshot.influence_node_values.len() * (2 + 2)
-            + Digest32::LEN
-            + 2
-            + snapshot.coupling_top_influences.len() * (2 + 2)
-            + 2
-            + snapshot.coupling_lag_commits.len() * (2 + Digest32::LEN)
-            + Digest32::LEN
-            + 2
-            + 2
-            + 2
-            + 1
-            + 1
-            + 1
-            + Digest32::LEN
-            + 2
-            + Digest32::LEN
-            + 1
-            + Digest32::LEN
-            + Digest32::LEN
-            + 1
-            + Digest32::LEN
-            + 2
-            + Digest32::LEN
-            + 1
-            + Digest32::LEN
-            + 1
-            + Digest32::LEN
-            + 1
-            + Digest32::LEN
-            + 1
-            + Digest32::LEN
-            + 1
-            + 1
-            + Digest32::LEN
-            + 4
-            + Digest32::LEN
-            + Digest32::LEN
-            + 1
-            + 2
-            + Digest32::LEN
-            + 2
-            + 2
-            + 1
-            + 2
-            + snapshot.internal_utterances.len() * (Digest32::LEN + Digest32::LEN + 2)
-            + 2 * (1 + Digest32::LEN)
-            + 1
-            + signals.len() * (2 + 2 + Digest32::LEN + 2 + SUMMARY_MAX_BYTES),
-    );
+    let mut payload = Vec::new();
     payload.extend_from_slice(&SNAPSHOT_DOMAIN_TAG.to_be_bytes());
     payload.extend_from_slice(&snapshot.cycle_id.to_be_bytes());
     payload.extend_from_slice(&(signals.len() as u16).to_be_bytes());
     payload.extend_from_slice(&snapshot.recursion_used.to_be_bytes());
-    payload.extend_from_slice(snapshot.spike_seen_root.as_bytes());
     payload.extend_from_slice(snapshot.spike_accepted_root.as_bytes());
     payload.extend_from_slice(
         &u16::try_from(snapshot.spike_counts.len())
@@ -681,11 +592,7 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
         payload.extend_from_slice(&kind.as_u16().to_be_bytes());
         payload.extend_from_slice(&count.to_be_bytes());
     }
-    payload.extend_from_slice(&snapshot.spike_causal_link_count.to_be_bytes());
-    payload.extend_from_slice(&snapshot.spike_consistency_alert_count.to_be_bytes());
-    payload.extend_from_slice(&snapshot.spike_thought_only_count.to_be_bytes());
-    payload.extend_from_slice(&snapshot.spike_output_intent_count.to_be_bytes());
-    payload.push(snapshot.spike_cap_hit as u8);
+    payload.extend_from_slice(&snapshot.spike_max_intensity.to_be_bytes());
     payload.extend_from_slice(snapshot.ncde_commit.as_bytes());
     payload.extend_from_slice(snapshot.ncde_state_digest.as_bytes());
     payload.extend_from_slice(&snapshot.ncde_energy.to_be_bytes());
@@ -869,7 +776,10 @@ pub struct Workspace {
     next_seq: u64,
     drops: DropCounters,
     recursion_used: u16,
-    spike_bus: SpikeBusState,
+    spike_cycle_id: u64,
+    spike_accepted_root: Digest32,
+    spike_counts: Vec<(SpikeKind, u16)>,
+    spike_max_intensity: u16,
     structural_proposal: Option<StructuralDeltaProposal>,
     rsa_commit: Digest32,
     rsa_proposal_commit: Option<Digest32>,
@@ -933,7 +843,10 @@ impl Workspace {
             next_seq: 0,
             drops: DropCounters::default(),
             recursion_used: 0,
-            spike_bus: SpikeBusState::new(),
+            spike_cycle_id: 0,
+            spike_accepted_root: Digest32::new([0u8; 32]),
+            spike_counts: Vec::new(),
+            spike_max_intensity: 0,
             structural_proposal: None,
             rsa_commit: Digest32::new([0u8; 32]),
             rsa_proposal_commit: None,
@@ -1002,21 +915,11 @@ impl Workspace {
         self.config.broadcast_cap = broadcast_cap.min(self.config.cap);
     }
 
-    pub fn append_spike_batch(
-        &mut self,
-        batch: SpikeBatch,
-        suppressions: Vec<SpikeSuppression>,
-    ) -> SpikeBusSummary {
-        self.spike_bus.append_batch(batch, suppressions)
-    }
-
-    pub fn drain_spikes_for(
-        &mut self,
-        dst: SpikeModuleId,
-        cycle_id: u64,
-        limit: usize,
-    ) -> Vec<SpikeEvent> {
-        self.spike_bus.drain_for(dst, cycle_id, limit)
+    pub fn set_spike_outputs(&mut self, outputs: SpikeOutputs) {
+        self.spike_cycle_id = outputs.cycle_id;
+        self.spike_accepted_root = outputs.accepted_root;
+        self.spike_counts = outputs.counts;
+        self.spike_max_intensity = outputs.max_intensity;
     }
 
     pub fn set_structural_proposal(&mut self, proposal: StructuralDeltaProposal) {
@@ -1044,8 +947,15 @@ impl Workspace {
         self.rsa_snapshot_chain_commit = snapshot_chain_commit;
     }
 
-    pub fn spike_summary(&self) -> SpikeBusSummary {
-        self.spike_bus.summary()
+    pub fn spike_summary(&self) -> SpikeOutputs {
+        SpikeOutputs {
+            cycle_id: self.spike_cycle_id,
+            accepted_root: self.spike_accepted_root,
+            accepted: Vec::new(),
+            counts: self.spike_counts.clone(),
+            max_intensity: self.spike_max_intensity,
+            commit: Digest32::new([0u8; 32]),
+        }
     }
 
     pub fn set_ncde_snapshot(
@@ -1261,7 +1171,7 @@ impl Workspace {
             .collect();
         let recursion_used = self.recursion_used;
         self.recursion_used = 0;
-        let spike_summary = self.spike_bus.summary();
+        let spike_summary = self.spike_summary();
         let ncde_commit = self.ncde_commit;
         let ncde_state_digest = self.ncde_state_digest;
         let ncde_energy = self.ncde_energy;
@@ -1317,14 +1227,9 @@ impl Workspace {
         let commit = commit_snapshot(
             cycle_id,
             recursion_used,
-            spike_summary.seen_root,
             spike_summary.accepted_root,
             &spike_summary.counts,
-            spike_summary.causal_link_count,
-            spike_summary.consistency_alert_count,
-            spike_summary.thought_only_count,
-            spike_summary.output_intent_count,
-            spike_summary.cap_hit,
+            spike_summary.max_intensity,
             ncde_commit,
             ncde_state_digest,
             ncde_energy,
@@ -1383,14 +1288,9 @@ impl Workspace {
             cycle_id,
             broadcast,
             recursion_used,
-            spike_seen_root: spike_summary.seen_root,
             spike_accepted_root: spike_summary.accepted_root,
             spike_counts: spike_summary.counts,
-            spike_causal_link_count: spike_summary.causal_link_count,
-            spike_consistency_alert_count: spike_summary.consistency_alert_count,
-            spike_thought_only_count: spike_summary.thought_only_count,
-            spike_output_intent_count: spike_summary.output_intent_count,
-            spike_cap_hit: spike_summary.cap_hit,
+            spike_max_intensity: spike_summary.max_intensity,
             ncde_commit,
             ncde_state_digest,
             ncde_energy,
@@ -1826,14 +1726,9 @@ fn compare_for_broadcast(a: &SignalEntry, b: &SignalEntry) -> Ordering {
 fn commit_snapshot(
     cycle_id: u64,
     recursion_used: u16,
-    spike_seen_root: Digest32,
     spike_accepted_root: Digest32,
     spike_counts: &[(SpikeKind, u16)],
-    spike_causal_link_count: u16,
-    spike_consistency_alert_count: u16,
-    spike_thought_only_count: u16,
-    spike_output_intent_count: u16,
-    spike_cap_hit: bool,
+    spike_max_intensity: u16,
     ncde_commit: Digest32,
     ncde_state_digest: Digest32,
     ncde_energy: u16,
@@ -1891,7 +1786,6 @@ fn commit_snapshot(
     let mut hasher = Hasher::new();
     hasher.update(&cycle_id.to_be_bytes());
     hasher.update(&recursion_used.to_be_bytes());
-    hasher.update(spike_seen_root.as_bytes());
     hasher.update(spike_accepted_root.as_bytes());
     hasher.update(
         &u32::try_from(spike_counts.len())
@@ -1902,11 +1796,7 @@ fn commit_snapshot(
         hasher.update(&kind.as_u16().to_be_bytes());
         hasher.update(&count.to_be_bytes());
     }
-    hasher.update(&spike_causal_link_count.to_be_bytes());
-    hasher.update(&spike_consistency_alert_count.to_be_bytes());
-    hasher.update(&spike_thought_only_count.to_be_bytes());
-    hasher.update(&spike_output_intent_count.to_be_bytes());
-    hasher.update(&[spike_cap_hit as u8]);
+    hasher.update(&spike_max_intensity.to_be_bytes());
     hasher.update(ncde_commit.as_bytes());
     hasher.update(ncde_state_digest.as_bytes());
     hasher.update(&ncde_energy.to_be_bytes());

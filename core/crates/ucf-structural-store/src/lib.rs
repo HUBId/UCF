@@ -55,7 +55,13 @@ const PARAM_LABEL_ONN_DITHER: &str = "onn.k_dither";
 const PARAM_LABEL_ONN_COUPLE_CLAMP: &str = "onn.couple_clamp_q12";
 const PARAM_LABEL_SNN_VERIFY_LIMIT: &str = "snn.verify_limit";
 const PARAM_LABEL_SNN_FEATURE: &str = "snn.threshold.feature";
-const PARAM_LABEL_SNN_REPLAY_CUE: &str = "snn.threshold.replay_cue";
+const PARAM_LABEL_SNN_NOVELTY: &str = "snn.threshold.novelty";
+const PARAM_LABEL_SNN_THREAT: &str = "snn.threshold.threat";
+const PARAM_LABEL_SNN_REWARD: &str = "snn.threshold.reward";
+const PARAM_LABEL_SNN_CAUSAL: &str = "snn.threshold.causal_link";
+const PARAM_LABEL_SNN_POLICY: &str = "snn.threshold.policy_signal";
+const PARAM_LABEL_SNN_THOUGHT: &str = "snn.threshold.thought_only";
+const PARAM_LABEL_SNN_REPLAY: &str = "snn.threshold.replay_hint";
 const PARAM_LABEL_REPLAY_MICRO: &str = "replay.micro_k";
 const PARAM_LABEL_REPLAY_MESO: &str = "replay.meso_m";
 const PARAM_LABEL_REPLAY_MACRO: &str = "replay.macro_n";
@@ -193,12 +199,11 @@ impl Default for SnnKnobs {
             (SpikeKind::Feature, 0),
             (SpikeKind::Novelty, 0),
             (SpikeKind::Threat, 0),
+            (SpikeKind::Reward, 0),
             (SpikeKind::CausalLink, 0),
-            (SpikeKind::ConsistencyAlert, 0),
+            (SpikeKind::PolicySignal, 0),
             (SpikeKind::ThoughtOnly, 0),
-            (SpikeKind::MemoryCue, 0),
-            (SpikeKind::ReplayCue, 0),
-            (SpikeKind::OutputIntent, 0),
+            (SpikeKind::ReplayHint, 0),
         ];
         Self::new(thresholds, 32)
     }
@@ -828,13 +833,67 @@ fn apply_deltas_to_params(
             set_snn_threshold(&mut snn, SpikeKind::Feature, next as u16);
             continue;
         }
-        if delta.key == param_key(PARAM_LABEL_SNN_REPLAY_CUE) {
-            let current = i32::from(snn.threshold_for(SpikeKind::ReplayCue));
+        if delta.key == param_key(PARAM_LABEL_SNN_NOVELTY) {
+            let current = i32::from(snn.threshold_for(SpikeKind::Novelty));
             if delta.from != current {
                 return None;
             }
             let next = clamp_i32(delta.to, 0, 10_000);
-            set_snn_threshold(&mut snn, SpikeKind::ReplayCue, next as u16);
+            set_snn_threshold(&mut snn, SpikeKind::Novelty, next as u16);
+            continue;
+        }
+        if delta.key == param_key(PARAM_LABEL_SNN_THREAT) {
+            let current = i32::from(snn.threshold_for(SpikeKind::Threat));
+            if delta.from != current {
+                return None;
+            }
+            let next = clamp_i32(delta.to, 0, 10_000);
+            set_snn_threshold(&mut snn, SpikeKind::Threat, next as u16);
+            continue;
+        }
+        if delta.key == param_key(PARAM_LABEL_SNN_REWARD) {
+            let current = i32::from(snn.threshold_for(SpikeKind::Reward));
+            if delta.from != current {
+                return None;
+            }
+            let next = clamp_i32(delta.to, 0, 10_000);
+            set_snn_threshold(&mut snn, SpikeKind::Reward, next as u16);
+            continue;
+        }
+        if delta.key == param_key(PARAM_LABEL_SNN_CAUSAL) {
+            let current = i32::from(snn.threshold_for(SpikeKind::CausalLink));
+            if delta.from != current {
+                return None;
+            }
+            let next = clamp_i32(delta.to, 0, 10_000);
+            set_snn_threshold(&mut snn, SpikeKind::CausalLink, next as u16);
+            continue;
+        }
+        if delta.key == param_key(PARAM_LABEL_SNN_POLICY) {
+            let current = i32::from(snn.threshold_for(SpikeKind::PolicySignal));
+            if delta.from != current {
+                return None;
+            }
+            let next = clamp_i32(delta.to, 0, 10_000);
+            set_snn_threshold(&mut snn, SpikeKind::PolicySignal, next as u16);
+            continue;
+        }
+        if delta.key == param_key(PARAM_LABEL_SNN_THOUGHT) {
+            let current = i32::from(snn.threshold_for(SpikeKind::ThoughtOnly));
+            if delta.from != current {
+                return None;
+            }
+            let next = clamp_i32(delta.to, 0, 10_000);
+            set_snn_threshold(&mut snn, SpikeKind::ThoughtOnly, next as u16);
+            continue;
+        }
+        if delta.key == param_key(PARAM_LABEL_SNN_REPLAY) {
+            let current = i32::from(snn.threshold_for(SpikeKind::ReplayHint));
+            if delta.from != current {
+                return None;
+            }
+            let next = clamp_i32(delta.to, 0, 10_000);
+            set_snn_threshold(&mut snn, SpikeKind::ReplayHint, next as u16);
             continue;
         }
         if delta.key == param_key(PARAM_LABEL_REPLAY_MICRO) {

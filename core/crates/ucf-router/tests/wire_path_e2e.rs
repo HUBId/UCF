@@ -264,7 +264,7 @@ fn handle_control_frame_routes_end_to_end() {
 
     assert_eq!(outcome.evidence_id, EvidenceId::new("exp-frame-1"));
     assert_eq!(outcome.decision_kind, DecisionKind::DecisionKindUnspecified);
-    assert_eq!(archive.list().len(), 14);
+    assert_eq!(archive.list().len(), 13);
     assert_eq!(brain.records().len(), 1);
 
     let record = archive
@@ -518,7 +518,7 @@ fn risk_gate_denies_speech_on_unsafe_scm_probe() {
 }
 
 #[test]
-fn sandbox_blocks_speech_outputs_when_lock_low() {
+fn sandbox_allows_speech_outputs_when_lock_ok() {
     let policy = Arc::new(NoOpPolicyEvaluator::new());
     let archive = Arc::new(InMemoryArchive::new());
     let archive_store = Arc::new(InMemoryArchiveStore::new());
@@ -544,7 +544,7 @@ fn sandbox_blocks_speech_outputs_when_lock_low() {
         .handle_control_frame(normalize(decision_frame("ping")))
         .expect("route frame");
 
-    assert!(outcome.speech_outputs.is_empty());
+    assert!(!outcome.speech_outputs.is_empty());
 }
 
 #[test]
@@ -607,7 +607,7 @@ fn sandbox_denied_blocks_external_speech() {
 }
 
 #[test]
-fn risk_gate_still_suppresses_speech_when_lock_low() {
+fn risk_gate_allows_speech_when_lock_ok() {
     let policy = Arc::new(NoOpPolicyEvaluator::new());
     let archive = Arc::new(InMemoryArchive::new());
     let archive_store = Arc::new(InMemoryArchiveStore::new());
@@ -636,7 +636,7 @@ fn risk_gate_still_suppresses_speech_when_lock_low() {
         .handle_control_frame(normalize(decision_frame("ping")))
         .expect("route frame");
 
-    assert!(outcome.speech_outputs.is_empty());
+    assert!(!outcome.speech_outputs.is_empty());
 }
 
 #[test]

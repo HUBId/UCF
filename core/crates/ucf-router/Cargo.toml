@@ -56,3 +56,7 @@ blake3 = "1"
 prost = "0.12"
 ucf-cde-port = { path = "../ucf-cde-port" }
 ucf-scm-port = { path = "../ucf-scm-port" }
+
+[features]
+default = ["mock-spike-producers"]
+mock-spike-producers = []
