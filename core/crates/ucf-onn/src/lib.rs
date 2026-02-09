@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
 use blake3::Hasher;
-use ucf_types::Digest32;
+use ucf_types::{Digest32, GainBudget};
 
 const MAX_OSCILLATORS: usize = 16;
 const PHASE_Q12_WRAP: i32 = 4096;
@@ -227,10 +227,11 @@ impl OnnCore {
         }
     }
 
-    pub fn tick(&mut self, inp: &OnnInputs) -> OnnOutputs {
+    pub fn tick(&mut self, inp: &OnnInputs, budget: &GainBudget) -> OnnOutputs {
         let n = self.params.n.clamp(1, MAX_OSCILLATORS);
-        let effective_k =
-            adjusted_coupling(self.params.k_couple, inp.risk, inp.drift, inp.surprise);
+        let mut k_couple = GainBudget::apply(self.params.k_couple, budget.onn_coupling);
+        k_couple = GainBudget::apply(k_couple, budget.master);
+        let effective_k = adjusted_coupling(k_couple, inp.risk, inp.drift, inp.surprise);
         let mut next_theta = self.state.theta_q12;
 
         for (i, theta_next) in next_theta.iter_mut().enumerate().take(n) {
@@ -613,8 +614,9 @@ mod tests {
         let mut core_b = OnnCore::default();
         let inputs = make_inputs();
 
-        let out_a = core_a.tick(&inputs);
-        let out_b = core_b.tick(&inputs);
+        let budget = GainBudget::default();
+        let out_a = core_a.tick(&inputs, &budget);
+        let out_b = core_b.tick(&inputs, &budget);
 
         assert_eq!(out_a.phase_bus.gamma_bucket, out_b.phase_bus.gamma_bucket);
         assert_eq!(out_a.phase_bus.global_plv, out_b.phase_bus.global_plv);
@@ -636,9 +638,10 @@ mod tests {
         );
         let mut core = OnnCore::new(params);
         let inputs = make_inputs();
+        let budget = GainBudget::default();
         let mut plv = 0;
         for _ in 0..4 {
-            plv = core.tick(&inputs).phase_bus.global_plv;
+            plv = core.tick(&inputs, &budget).phase_bus.global_plv;
         }
         assert!(plv >= core.state.last_plv);
     }

@@ -3,7 +3,7 @@
 use blake3::Hasher;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
-use ucf_types::Digest32;
+use ucf_types::{Digest32, GainBudget};
 
 const MAX_LAG: u8 = 8;
 const MIX_SCALE: i32 = 10_000;
@@ -262,7 +262,7 @@ impl CouplingCore {
         Self::new(default_rules())
     }
 
-    pub fn tick(&mut self, inp: &CouplingInputs) -> CouplingOutputs {
+    pub fn tick(&mut self, inp: &CouplingInputs, budget: &GainBudget) -> CouplingOutputs {
         let mut current_map: BTreeMap<SignalId, i16> = BTreeMap::new();
         for sample in &inp.samples {
             current_map.insert(sample.id, sample.value);
@@ -288,7 +288,11 @@ impl CouplingCore {
                 rule.mix_k,
             );
             let mixed = mix_values(lagged, current, alpha);
-            let influence = apply_gain(mixed, rule.gain);
+            let mut influence = apply_gain(mixed, rule.gain);
+            if influence != 0 {
+                influence = GainBudget::apply_i16(influence, budget.coupling);
+                influence = GainBudget::apply_i16(influence, budget.master);
+            }
             if influence != 0 {
                 let entry = influences.entry(rule.dst).or_insert(0);
                 let updated = i32::from(*entry).saturating_add(i32::from(influence));
@@ -577,9 +581,10 @@ mod tests {
         );
         let mut core_a = CouplingCore::new_default();
         let mut core_b = CouplingCore::new_default();
+        let budget = GainBudget::default();
 
-        let out_a = core_a.tick(&inputs);
-        let out_b = core_b.tick(&inputs);
+        let out_a = core_a.tick(&inputs, &budget);
+        let out_b = core_b.tick(&inputs, &budget);
 
         assert_eq!(out_a, out_b);
         assert_eq!(out_a.commit, out_b.commit);
@@ -595,6 +600,7 @@ mod tests {
             10_000,
         );
         let mut core = CouplingCore::new(vec![rule]);
+        let budget = GainBudget::default();
 
         let inputs_1 = CouplingInputs::new(
             1,
@@ -602,7 +608,7 @@ mod tests {
             2,
             vec![sample(1, SignalId::PerceptEnergy, 5000)],
         );
-        let out_1 = core.tick(&inputs_1);
+        let out_1 = core.tick(&inputs_1, &budget);
         assert!(out_1.influences.is_empty());
 
         let inputs_2 = CouplingInputs::new(
@@ -611,7 +617,7 @@ mod tests {
             2,
             vec![sample(2, SignalId::PerceptEnergy, 5000)],
         );
-        let out_2 = core.tick(&inputs_2);
+        let out_2 = core.tick(&inputs_2, &budget);
         assert!(out_2
             .influences
             .iter()
@@ -629,6 +635,7 @@ mod tests {
         );
         let mut core_a = CouplingCore::new(vec![rule.clone()]);
         let mut core_b = CouplingCore::new(vec![rule]);
+        let budget = GainBudget::default();
 
         let seed = CouplingInputs::new(
             1,
@@ -636,8 +643,8 @@ mod tests {
             3,
             vec![sample(1, SignalId::SsmSalience, 6000)],
         );
-        core_a.tick(&seed);
-        core_b.tick(&seed);
+        core_a.tick(&seed, &budget);
+        core_b.tick(&seed, &budget);
 
         let inputs_a = CouplingInputs::new(
             2,
@@ -652,8 +659,8 @@ mod tests {
             vec![sample(2, SignalId::SsmSalience, 6000)],
         );
 
-        let out_a = core_a.tick(&inputs_a);
-        let out_b = core_b.tick(&inputs_b);
+        let out_a = core_a.tick(&inputs_a, &budget);
+        let out_b = core_b.tick(&inputs_b, &budget);
 
         assert_ne!(out_a.influences_root, out_b.influences_root);
     }
@@ -668,6 +675,7 @@ mod tests {
             10_000,
         );
         let mut core = CouplingCore::new(vec![rule]);
+        let budget = GainBudget::default();
         let inputs = CouplingInputs::new(
             1,
             Digest32::new([5u8; 32]),
@@ -675,7 +683,7 @@ mod tests {
             vec![sample(1, SignalId::PerceptEnergy, i16::MAX)],
         );
 
-        let outputs = core.tick(&inputs);
+        let outputs = core.tick(&inputs, &budget);
         let (_, value) = outputs.influences.first().expect("influence present");
         assert_eq!(*value, INFLUENCE_CAP);
     }
@@ -683,13 +691,14 @@ mod tests {
     #[test]
     fn attention_gain_influenced_by_ssm_with_lag() {
         let mut core = CouplingCore::new_default();
+        let budget = GainBudget::default();
         let inputs_1 = CouplingInputs::new(
             1,
             Digest32::new([6u8; 32]),
             2,
             vec![sample(1, SignalId::SsmSalience, 4000)],
         );
-        let out_1 = core.tick(&inputs_1);
+        let out_1 = core.tick(&inputs_1, &budget);
         assert!(out_1
             .influences
             .iter()

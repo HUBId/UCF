@@ -176,6 +176,70 @@ impl fmt::Debug for Digest32 {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GainBudget {
+    /// master multiplier 0..10000 (10000 = no reduction)
+    pub master: u16,
+    /// per-channel caps 0..10000
+    pub coupling: u16,
+    pub ssm_update: u16,
+    pub ncde: u16,
+    pub tcf_attention: u16,
+    pub tcf_learning: u16,
+    pub onn_coupling: u16,
+    pub commit: Digest32,
+}
+
+impl GainBudget {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        master: u16,
+        coupling: u16,
+        ssm_update: u16,
+        ncde: u16,
+        tcf_attention: u16,
+        tcf_learning: u16,
+        onn_coupling: u16,
+        commit: Digest32,
+    ) -> Self {
+        Self {
+            master,
+            coupling,
+            ssm_update,
+            ncde,
+            tcf_attention,
+            tcf_learning,
+            onn_coupling,
+            commit,
+        }
+    }
+
+    pub fn apply(value: u16, budget: u16) -> u16 {
+        let scaled = (u32::from(value) * u32::from(budget)) / 10_000;
+        u16::try_from(scaled.min(u32::from(u16::MAX))).unwrap_or(u16::MAX)
+    }
+
+    pub fn apply_i16(value: i16, budget: u16) -> i16 {
+        let scaled = (i32::from(value) * i32::from(budget)) / 10_000;
+        scaled.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16
+    }
+}
+
+impl Default for GainBudget {
+    fn default() -> Self {
+        Self {
+            master: 10_000,
+            coupling: 10_000,
+            ssm_update: 10_000,
+            ncde: 10_000,
+            tcf_attention: 10_000,
+            tcf_learning: 10_000,
+            onn_coupling: 10_000,
+            commit: Digest32::new([0u8; 32]),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum OutputChannel {
     Thought,
     Speech,
