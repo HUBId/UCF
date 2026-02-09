@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use blake3::Hasher;
 use ucf::boundary::{self, v1::WorkspaceBroadcastV1, v1::WorkspaceSignalV1};
+use ucf_ai_host::{AiHost, AiInputFrame, ChannelLabel, MockAiHost};
 use ucf_ai_port::{
     AiInference, AiOutput, AiPort, AiPortWorker, OutputChannel, OutputSuppressed,
     OutputSuppressionSink, SpeechGate,
@@ -107,6 +108,7 @@ const FEATURE_RECORD_KIND: u16 = 42;
 const SANDBOX_DENIED_RECORD_KIND: u16 = 73;
 const CAUSAL_REPORT_RECORD_KIND: u16 = 91;
 const CDE_OUTPUT_RECORD_KIND: u16 = 92;
+const AI_HOST_MODULE_ID: u8 = 11;
 const PHASE_FRAME_RECORD_KIND: u16 = 118;
 const SPIKE_RECORD_KIND: u16 = 131;
 const NCDE_RECORD_KIND: u16 = 142;
@@ -155,6 +157,7 @@ pub struct RuntimeModules {
     pub tcf: Box<dyn TemporalCoordinator + Send>,
     pub iit: Box<dyn IntegrationMonitor + Send>,
     pub sle: Box<dyn StrangeLoop + Send>,
+    pub ai_host: Box<dyn AiHost + Send + Sync>,
 }
 
 impl RuntimeModules {
@@ -170,6 +173,7 @@ impl RuntimeModules {
             tcf: Box::new(TcfCore::default()),
             iit: Box::new(IitCore::default()),
             sle: Box::new(SleCore::default()),
+            ai_host: Box::new(MockAiHost::default()),
         }
     }
 }
@@ -253,6 +257,7 @@ pub struct Router {
     last_ssm_output: Mutex<Option<SsmOutputs>>,
     last_ncde_output: Mutex<Option<NcdeOutputs>>,
     runtime_modules: Mutex<RuntimeModules>,
+    pending_ai_spikes: Mutex<Vec<Spike>>,
     rsa_core: Mutex<RsaCore>,
 }
 
@@ -802,6 +807,7 @@ impl Router {
             last_ssm_output: Mutex::new(None),
             last_ncde_output: Mutex::new(None),
             runtime_modules: Mutex::new(RuntimeModules::v1_defaults()),
+            pending_ai_spikes: Mutex::new(Vec::new()),
             rsa_core: Mutex::new(RsaCore::default()),
         }
     }
@@ -1122,6 +1128,9 @@ impl Router {
                     let snn_knobs = self.current_snn_knobs();
                     let spike_params = spike_params_from_knobs(&snn_knobs);
                     let mut candidates: Vec<Spike> = Vec::new();
+                    if let Ok(mut pending) = self.pending_ai_spikes.lock() {
+                        candidates.extend(pending.drain(..));
+                    }
                     #[cfg(feature = "mock-spike-producers")]
                     {
                         let sae = MockSaeProducer::new(Digest32::new([1u8; 32]));
@@ -1260,7 +1269,7 @@ impl Router {
                         ctx.coherence_plv = Some(phase_bus.global_plv);
                     }
                     let mut attention_risk = 0u16;
-                    let outputs = &inference.outputs;
+                    let mut outputs = inference.outputs.clone();
                     ctx.output_intent = outputs
                         .iter()
                         .any(|output| matches!(output.channel, OutputChannel::Speech));
@@ -1284,7 +1293,7 @@ impl Router {
                     let mut risk_results = Vec::with_capacity(outputs.len());
                     let mut speech_gate_results = Vec::with_capacity(outputs.len());
                     let tom_report = ctx.tom_report.as_ref().expect("tom report available");
-                    for output in outputs {
+                    for output in outputs.iter() {
                         let gate_result = self.risk_gate.evaluate(
                             ctx.nsr_report.as_ref(),
                             inference.scm_dag.as_ref(),
@@ -1297,16 +1306,6 @@ impl Router {
                         risk_results.push(gate_result);
                         speech_gate_results.push(self.speech_gate.allow_speech(&cf, output));
                     }
-                    let influence_for_output = self
-                        .last_influence_outputs
-                        .lock()
-                        .ok()
-                        .and_then(|guard| guard.clone());
-                    apply_influence_output_suppression(
-                        &mut speech_gate_results,
-                        outputs,
-                        influence_for_output.as_ref(),
-                    );
                     ctx.attention_risk = attention_risk;
                     self.publish_workspace_signals(risk_results.iter().map(|result| {
                         WorkspaceSignal::from_risk_result(result, None, Some(pulse.slot))
@@ -1723,6 +1722,117 @@ impl Router {
                             *guard = mode;
                         }
                     }
+
+                    let ai_host_outputs = {
+                        let policy_snapshot_commit = ctx
+                            .decision
+                            .as_ref()
+                            .map(digest_policy_commit)
+                            .unwrap_or_else(|| Digest32::new([0u8; 32]));
+                        let nsr_verdict = ctx
+                            .nsr_report
+                            .as_ref()
+                            .map(|report| report.verdict)
+                            .unwrap_or(nsr_output.verdict);
+                        let external_commit = digest_ai_external_commit(
+                            ctx.percept_commit
+                                .unwrap_or_else(|| Digest32::new([0u8; 32])),
+                            nsr_verdict,
+                        );
+                        let (attention_cap, learning_cap) = self
+                            .tcf_plan_for(Some(&ctx))
+                            .map(|plan| (plan.attention_gain_cap, plan.learning_gain_cap))
+                            .unwrap_or((10_000, 10_000));
+                        let ai_input = AiInputFrame::new(
+                            cycle_id,
+                            external_commit,
+                            phase_bus.commit,
+                            phase_bus.gamma_bucket,
+                            phase_bus.global_plv,
+                            ssm_state_digest,
+                            world_state_commit,
+                            policy_snapshot_commit,
+                            attention_cap,
+                            learning_cap,
+                        );
+                        let mut modules =
+                            self.runtime_modules.lock().expect("runtime modules lock");
+                        modules.ai_host.tick(&ai_input)
+                    };
+
+                    let mut ai_spike_candidates = Vec::new();
+                    for event in &ai_host_outputs.features {
+                        ai_spike_candidates.push(Spike::new(
+                            cycle_id,
+                            event.kind,
+                            event.intensity,
+                            event.bucket,
+                            ModuleId::Other(AI_HOST_MODULE_ID),
+                            event.commit,
+                        ));
+                    }
+                    for thought in &ai_host_outputs.internal_thoughts {
+                        ai_spike_candidates.push(Spike::new(
+                            cycle_id,
+                            SpikeKind::ThoughtOnly,
+                            thought.salience,
+                            phase_bus.gamma_bucket,
+                            ModuleId::Other(AI_HOST_MODULE_ID),
+                            thought.thought_root,
+                        ));
+                    }
+                    if !ai_spike_candidates.is_empty() {
+                        if let Ok(mut pending) = self.pending_ai_spikes.lock() {
+                            pending.extend(ai_spike_candidates);
+                        }
+                    }
+
+                    let base_output_len = outputs.len();
+                    let nsr_allows_output = ctx
+                        .nsr_report
+                        .as_ref()
+                        .map(|report| report.verdict == NsrVerdict::Allow)
+                        .unwrap_or(nsr_output.verdict == NsrVerdict::Allow);
+                    if nsr_allows_output {
+                        for candidate in &ai_host_outputs.outputs {
+                            if candidate.label == ChannelLabel::External {
+                                outputs.push(ai_output_from_candidate(candidate));
+                            }
+                        }
+                    }
+                    if outputs.len() > base_output_len {
+                        let tom_report = ctx.tom_report.as_ref().expect("tom report available");
+                        let base_risk_len = risk_results.len();
+                        for output in outputs.iter().skip(base_output_len) {
+                            let gate_result = self.risk_gate.evaluate(
+                                ctx.nsr_report.as_ref(),
+                                inference.scm_dag.as_ref(),
+                                output,
+                                &cf,
+                                Some(tom_report),
+                                inference.cde_confidence,
+                            );
+                            attention_risk = attention_risk.max(gate_result.risk);
+                            risk_results.push(gate_result);
+                            speech_gate_results.push(self.speech_gate.allow_speech(&cf, output));
+                        }
+                        self.publish_workspace_signals(
+                            risk_results.iter().skip(base_risk_len).map(|result| {
+                                WorkspaceSignal::from_risk_result(result, None, Some(pulse.slot))
+                            }),
+                        );
+                    }
+
+                    let influence_for_output = self
+                        .last_influence_outputs
+                        .lock()
+                        .ok()
+                        .and_then(|guard| guard.clone());
+                    apply_influence_output_suppression(
+                        &mut speech_gate_results,
+                        &outputs,
+                        influence_for_output.as_ref(),
+                    );
 
                     let effects = iit_action_effects(
                         self.workspace_base,
@@ -5885,11 +5995,31 @@ fn digest32_to_proto(digest: Digest32) -> Digest {
     }
 }
 
+fn digest_ai_external_commit(percept_commit: Digest32, verdict: NsrVerdict) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(b"ucf.ai.host.external.v1");
+    hasher.update(percept_commit.as_bytes());
+    hasher.update(&[verdict.as_u8()]);
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn ai_output_from_candidate(candidate: &ucf_ai_host::AiOutputCandidate) -> AiOutput {
+    let payload = hex::encode(candidate.payload_commit.as_bytes());
+    AiOutput {
+        channel: OutputChannel::Speech,
+        content: format!("ai-host:{payload}"),
+        confidence: candidate.confidence,
+        rationale_commit: Some(candidate.payload_commit),
+        integration_score: None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::sync::Arc;
 
+    use ucf_ai_host::MockAiHost;
     use ucf_ai_port::{MockAiPort, PolicySpeechGate};
     use ucf_archive::InMemoryArchive;
     use ucf_archive_store::InMemoryArchiveStore;
@@ -5943,6 +6073,24 @@ mod tests {
             phase_commit: Digest32::new([seed; 32]),
             commit: Digest32::new([seed.wrapping_add(1); 32]),
         }
+    }
+
+    fn test_control_frame(frame_id: &str) -> ControlFrameNormalized {
+        let decision = PolicyDecision {
+            kind: DecisionKind::DecisionKindAllow as i32,
+            action: ucf_types::v1::spec::ActionCode::ActionCodeContinue as i32,
+            rationale: "ok".to_string(),
+            confidence_bp: 10_000,
+            constraint_ids: Vec::new(),
+        };
+        let cf = ControlFrame {
+            frame_id: frame_id.to_string(),
+            issued_at_ms: 0,
+            decision: Some(decision),
+            evidence_ids: Vec::new(),
+            policy_id: "policy-allow".to_string(),
+        };
+        ucf_sandbox::normalize(cf)
     }
 
     fn run_runtime_cycle(modules: &mut RuntimeModules, cycle_id: u64) {
@@ -6565,8 +6713,26 @@ mod tests {
             tcf: Box::new(MockTemporalCoordinator::default()),
             iit: Box::new(MockIntegrationMonitor::default()),
             sle: Box::new(MockStrangeLoop::default()),
+            ai_host: Box::new(MockAiHost::default()),
         };
         run_runtime_cycle(&mut modules, 42);
+    }
+
+    #[test]
+    fn ai_host_internal_thoughts_are_stored_without_speech_output() {
+        let router = build_router();
+        let cf = test_control_frame("frame-ai-host-internal");
+        let outcome = router
+            .handle_control_frame(cf)
+            .expect("router should accept control frame");
+        assert!(outcome.speech_outputs.is_empty());
+        let pending = router
+            .pending_ai_spikes
+            .lock()
+            .expect("pending ai spikes lock");
+        assert!(pending
+            .iter()
+            .any(|spike| spike.kind == SpikeKind::ThoughtOnly));
     }
 
     #[test]
