@@ -500,6 +500,7 @@ pub struct WorkspaceSnapshot {
     pub cde_top_edge_commits: Vec<Digest32>,
     pub cde_intervention_commit: Option<Digest32>,
     pub cde_observation_commit: Digest32,
+    pub cde_last_query_result: Option<Digest32>,
     pub ssm_commit: Digest32,
     pub ssm_state_commit: Digest32,
     pub ssm_state_digest: Digest32,
@@ -659,6 +660,16 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
         }
     }
     payload.extend_from_slice(snapshot.cde_observation_commit.as_bytes());
+    match snapshot.cde_last_query_result {
+        Some(commit) => {
+            payload.push(1);
+            payload.extend_from_slice(commit.as_bytes());
+        }
+        None => {
+            payload.push(0);
+            payload.extend_from_slice(&[0u8; Digest32::LEN]);
+        }
+    }
     payload.extend_from_slice(snapshot.ssm_commit.as_bytes());
     payload.extend_from_slice(snapshot.ssm_state_commit.as_bytes());
     payload.extend_from_slice(snapshot.ssm_state_digest.as_bytes());
@@ -866,6 +877,7 @@ pub struct Workspace {
     cde_top_edge_commits: Vec<Digest32>,
     cde_intervention_commit: Option<Digest32>,
     cde_observation_commit: Digest32,
+    cde_last_query_result: Option<Digest32>,
     ssm_commit: Digest32,
     ssm_state_commit: Digest32,
     ssm_state_digest: Digest32,
@@ -950,6 +962,7 @@ impl Workspace {
             cde_top_edge_commits: Vec::new(),
             cde_intervention_commit: None,
             cde_observation_commit: Digest32::new([0u8; 32]),
+            cde_last_query_result: None,
             ssm_commit: Digest32::new([0u8; 32]),
             ssm_state_commit: Digest32::new([0u8; 32]),
             ssm_state_digest: Digest32::new([0u8; 32]),
@@ -1098,6 +1111,7 @@ impl Workspace {
         self.replay_pressure_hint
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn set_cde_output(
         &mut self,
         commit: Digest32,
@@ -1106,6 +1120,7 @@ impl Workspace {
         top_edge_commits: Vec<Digest32>,
         intervention_commit: Option<Digest32>,
         observation_commit: Digest32,
+        last_query_result: Option<Digest32>,
     ) {
         self.cde_commit = commit;
         self.cde_graph_commit = graph_commit;
@@ -1113,6 +1128,7 @@ impl Workspace {
         self.cde_top_edge_commits = top_edge_commits;
         self.cde_intervention_commit = intervention_commit;
         self.cde_observation_commit = observation_commit;
+        self.cde_last_query_result = last_query_result;
     }
 
     pub fn set_ssm_snapshot(
@@ -1327,6 +1343,7 @@ impl Workspace {
         let cde_top_edge_commits = std::mem::take(&mut self.cde_top_edge_commits);
         let cde_intervention_commit = self.cde_intervention_commit.take();
         let cde_observation_commit = self.cde_observation_commit;
+        let cde_last_query_result = self.cde_last_query_result.take();
         let ssm_commit = self.ssm_commit;
         let ssm_state_commit = self.ssm_state_commit;
         let ssm_state_digest = self.ssm_state_digest;
@@ -1402,6 +1419,7 @@ impl Workspace {
             &cde_top_edge_commits,
             cde_intervention_commit,
             cde_observation_commit,
+            cde_last_query_result,
             ssm_commit,
             ssm_state_commit,
             ssm_state_digest,
@@ -1480,6 +1498,7 @@ impl Workspace {
             cde_top_edge_commits,
             cde_intervention_commit,
             cde_observation_commit,
+            cde_last_query_result,
             ssm_commit,
             ssm_state_commit,
             ssm_state_digest,
@@ -1935,6 +1954,7 @@ fn commit_snapshot(
     cde_top_edge_commits: &[Digest32],
     cde_intervention_commit: Option<Digest32>,
     cde_observation_commit: Digest32,
+    cde_last_query_result: Option<Digest32>,
     ssm_commit: Digest32,
     ssm_state_commit: Digest32,
     ssm_state_digest: Digest32,
@@ -2045,6 +2065,15 @@ fn commit_snapshot(
         }
     }
     hasher.update(cde_observation_commit.as_bytes());
+    match cde_last_query_result {
+        Some(commit) => {
+            hasher.update(&[1]);
+            hasher.update(commit.as_bytes());
+        }
+        None => {
+            hasher.update(&[0]);
+        }
+    }
     hasher.update(ssm_commit.as_bytes());
     hasher.update(ssm_state_commit.as_bytes());
     hasher.update(ssm_state_digest.as_bytes());
