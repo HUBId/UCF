@@ -222,7 +222,7 @@ impl AiHost for MockAiHost {
         }
 
         let mut outputs = Vec::new();
-        let policy_even = inp.policy_snapshot_commit.as_bytes()[31] % 2 == 0;
+        let policy_even = inp.policy_snapshot_commit.as_bytes()[31].is_multiple_of(2);
         if inp.global_plv >= 7000 && policy_even {
             let payload_commit = digest_mock_output_commit(self.commit, inp);
             let confidence = 7000u16.saturating_add((inp.global_plv % 2000).min(1000));
