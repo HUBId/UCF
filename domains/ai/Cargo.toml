@@ -1,0 +1,9 @@
+[package]
+name = "ucf-ai-host"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+blake3 = "1"
+ucf-spikebus = { path = "../../core/crates/ucf-spikebus" }
+ucf-types = { path = "../../core/crates/ucf-types" }
