@@ -34,6 +34,23 @@ This document lists the canonical inputs, outputs, and hash dependencies for key
 
 【F:core/crates/ucf-spikebus/src/lib.rs†L196-L279】【F:core/crates/ucf-spikebus/src/lib.rs†L366-L406】
 
+## JEPA (world model placeholder)
+**Inputs**
+- `cycle_id`, `percept_commit`, `percept_energy`
+- `ssm_state_digest`, `phase_bus_commit`, `gamma_bucket`
+- `last_world_state`, `coupling_root`
+
+**Outputs**
+- `world_state`, `prediction`, `surprise`, `JepaOutputs.commit`
+
+**Hash dependency summary**
+- `inputs.commit = H(cycle_id, percept_commit, percept_energy, ssm_state_digest, phase_bus_commit, gamma_bucket, last_world_state, coupling_root)`
+- `world_state = H(percept_commit, ssm_state_digest, phase_bus_commit, coupling_root)`
+- `prediction = H(last_world_state, phase_bus_commit, gamma_bucket)`
+- `outputs.commit = H(cycle_id, world_state, prediction, surprise, params.commit, inputs.commit)`
+
+【F:core/crates/ucf-jepa/src/lib.rs†L1-L210】
+
 ## IIT (Coherence regulator)
 **Inputs**
 - `phase_bus_commit`, `gamma_bucket`, `global_plv`
@@ -160,7 +177,7 @@ This document lists the canonical inputs, outputs, and hash dependencies for key
 
 ## Workspace (integration ledger)
 **Inputs**
-- Aggregated module outputs: SpikeBus, NCDE, CDE, SSM, Coupling, TCF, ONN, IIT, NSR, RSA, SLE
+- Aggregated module outputs: SpikeBus, JEPA, NCDE, CDE, SSM, Coupling, TCF, ONN, IIT, NSR, RSA, SLE
 - Cycle metadata and broadcast signals
 
 **Outputs**
@@ -197,6 +214,13 @@ ONN (PhaseBus, Lock)
         ├─> SSM (spike_accepted_root, counts)
         ├─> NCDE (spike_accepted_root, counts)
         └─> CDE (spike_accepted_root)
+
+Coupling
+  └─> JEPA (coupling_root, phase_bus_commit, gamma_bucket, last_world_state)
+
+JEPA
+  ├─> IIT/TCF/SLE/SSM/ONN (surprise)
+  └─> CDE (world_state)
 
 NCDE
   ├─> ONN (ncde_state_digest)

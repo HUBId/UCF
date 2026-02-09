@@ -46,6 +46,7 @@ use ucf_iit_monitor::{
 };
 use ucf_influence::{InfluenceGraphV2, InfluenceInputs, InfluenceNodeId, InfluenceOutputs};
 use ucf_ism::IsmStore;
+use ucf_jepa::{JepaCore, JepaInputs, JepaOutputs};
 use ucf_ncde::{
     apply_gain_phase_delta, apply_gain_spike_delta, apply_leak_delta, NcdeCore, NcdeInputs,
     NcdeOutputs, NcdeParams,
@@ -110,6 +111,7 @@ const SPIKE_RECORD_KIND: u16 = 131;
 const NCDE_RECORD_KIND: u16 = 142;
 const SSM_RECORD_KIND: u16 = 149;
 const UPDATE_MODE_RECORD_KIND: u16 = 156;
+const JEPA_RECORD_KIND: u16 = 160;
 const ONN_COHERENCE_THROTTLE: u16 = 2000;
 const ONN_COHERENCE_THROTTLE_RESTRICT: u16 = 3500;
 const LOCK_MIN_SPEAK: u16 = 3000;
@@ -173,6 +175,8 @@ pub struct Router {
     feature_params: Mutex<FeatureSpikeParams>,
     last_attention: Mutex<AttentionWeights>,
     last_surprise: Mutex<Option<SurpriseSignal>>,
+    jepa_core: Mutex<JepaCore>,
+    last_jepa_output: Mutex<Option<JepaOutputs>>,
     stage_trace: Option<Arc<dyn StageTrace + Send + Sync>>,
     world_model: WorldModel,
     world_state: Mutex<Option<WorldStateVec>>,
@@ -381,6 +385,7 @@ struct StageContext {
     integration_score: Option<u16>,
     integration_bias: i16,
     predictive_result: Option<(PredictionError, SurpriseSignal)>,
+    jepa_outputs: Option<JepaOutputs>,
     attention_weights: Option<AttentionWeights>,
     lens_selection: Option<LensSelection>,
     evidence_id: Option<EvidenceId>,
@@ -441,6 +446,7 @@ impl StageContext {
             integration_score: None,
             integration_bias: 0,
             predictive_result: None,
+            jepa_outputs: None,
             attention_weights: None,
             lens_selection: None,
             evidence_id: None,
@@ -545,6 +551,8 @@ impl Router {
             feature_params: Mutex::new(FeatureSpikeParams::default()),
             last_attention: Mutex::new(idle_attention()),
             last_surprise: Mutex::new(None),
+            jepa_core: Mutex::new(JepaCore::default()),
+            last_jepa_output: Mutex::new(None),
             stage_trace: None,
             world_model: WorldModel::default(),
             world_state: Mutex::new(None),
@@ -671,6 +679,9 @@ impl Router {
                 ssm_salience: 0,
                 ssm_novelty: 0,
                 ssm_attention_gain: 0,
+                jepa_world_state: Digest32::new([0u8; 32]),
+                jepa_prediction: Digest32::new([0u8; 32]),
+                jepa_surprise: 0,
                 influence_v2_commit: Digest32::new([0u8; 32]),
                 influence_pulses_root: Digest32::new([0u8; 32]),
                 influence_node_values: Vec::new(),
@@ -784,11 +795,7 @@ impl Router {
                     };
                     let workspace_snapshot = self.latest_workspace_snapshot(cycle_id);
                     let intent = self.build_intent_summary();
-                    let surprise_score = ctx
-                        .predictive_result
-                        .as_ref()
-                        .map(|(_, signal)| signal.score)
-                        .unwrap_or(0);
+                    let surprise_score = self.surprise_score_from_ctx(&ctx);
                     let drift_score = drift_score_from_snapshot(&workspace_snapshot);
                     let causal_attention_risk = intent.risk;
                     let attention_weights = self
@@ -811,6 +818,7 @@ impl Router {
                         )
                     });
                     ctx.lens_selection = lens_selection.clone();
+                    ctx.surprise_score = Some(surprise_score);
                     let lock_window_buckets = self
                         .tcf_plan_for(None)
                         .map(|plan| plan.lock_window_buckets)
@@ -1040,6 +1048,11 @@ impl Router {
                         ctx.replay_pressure = Some(current.max(5_000));
                     }
                     self.tick_coupling(&mut ctx, cycle_id);
+                    let phase_bus = ctx
+                        .phase_bus
+                        .unwrap_or_else(|| self.latest_phase_bus(cycle_id));
+                    self.tick_jepa(&mut ctx, cycle_id, &phase_bus);
+                    let surprise_score = self.surprise_score_from_ctx(&ctx);
                     let iit_output = {
                         let ncde_output = ctx
                             .ncde_output
@@ -1252,6 +1265,7 @@ impl Router {
                         &phase_bus,
                         spike_root_commit,
                         spike_counts.clone(),
+                        self.world_state_commit_from_ctx(&ctx),
                         influence_outputs.as_ref(),
                         &iit_output,
                         ctx.ssm_output.as_ref(),
@@ -1629,11 +1643,7 @@ impl Router {
                     let Some(tom_report) = ctx.tom_report.as_ref() else {
                         continue;
                     };
-                    let surprise_score = ctx
-                        .predictive_result
-                        .as_ref()
-                        .map(|(_, signal)| signal.score)
-                        .unwrap_or(0);
+                    let surprise_score = self.surprise_score_from_ctx(&ctx);
                     let drift_score = ctx
                         .consistency_report
                         .as_ref()
@@ -2381,11 +2391,7 @@ impl Router {
                     }
                     self.append_rsa_outputs_record(cycle_id, &outputs);
                     let phi = ctx.integration_score.unwrap_or(0);
-                    let surprise_score = ctx
-                        .predictive_result
-                        .as_ref()
-                        .map(|(_, signal)| signal.score)
-                        .unwrap_or(0);
+                    let surprise_score = self.surprise_score_from_ctx(&ctx);
                     let workspace_commit = ctx
                         .workspace_snapshot_commit
                         .unwrap_or_else(|| self.latest_workspace_snapshot(cycle_id).commit);
@@ -2648,6 +2654,41 @@ impl Router {
         self.append_archive_record(RecordKind::OutputEvent, payload_commit, meta);
     }
 
+    fn surprise_score_from_ctx(&self, ctx: &StageContext) -> u16 {
+        if let Some(output) = ctx.jepa_outputs.as_ref() {
+            return output.surprise;
+        }
+        if let Ok(guard) = self.last_jepa_output.lock() {
+            if let Some(output) = guard.as_ref() {
+                return output.surprise;
+            }
+        }
+        if let Some(score) = ctx.surprise_score {
+            return score;
+        }
+        if let Some((_, signal)) = ctx.predictive_result.as_ref() {
+            return signal.score;
+        }
+        self.last_surprise
+            .lock()
+            .ok()
+            .and_then(|guard| guard.as_ref().map(|signal| signal.score))
+            .unwrap_or(0)
+    }
+
+    fn world_state_commit_from_ctx(&self, ctx: &StageContext) -> Digest32 {
+        ctx.jepa_outputs
+            .as_ref()
+            .map(|output| output.world_state)
+            .or_else(|| {
+                self.last_jepa_output
+                    .lock()
+                    .ok()
+                    .and_then(|guard| guard.as_ref().map(|output| output.world_state))
+            })
+            .unwrap_or_else(|| Digest32::new([0u8; 32]))
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn tick_onn_phase(
         &self,
@@ -2734,6 +2775,58 @@ impl Router {
         }
         self.append_phase_frame_record(cycle_id, &outputs.phase_bus);
         outputs
+    }
+
+    fn tick_jepa(&self, ctx: &mut StageContext, cycle_id: u64, phase_bus: &PhaseBus) {
+        let percept_commit = ctx
+            .percept_commit
+            .unwrap_or_else(|| Digest32::new([0u8; 32]));
+        let percept_energy = ctx.percept_energy.unwrap_or(0);
+        let ssm_state_digest = ctx
+            .ssm_output
+            .as_ref()
+            .map(|output| output.ssm_state_digest)
+            .or_else(|| {
+                self.last_ssm_output
+                    .lock()
+                    .ok()
+                    .and_then(|guard| guard.as_ref().map(|output| output.ssm_state_digest))
+            })
+            .unwrap_or_else(|| Digest32::new([0u8; 32]));
+        let coupling_root = ctx
+            .coupling_outputs
+            .as_ref()
+            .map(|outputs| outputs.influences_root)
+            .or_else(|| {
+                self.last_coupling_outputs
+                    .lock()
+                    .ok()
+                    .and_then(|guard| guard.as_ref().map(|outputs| outputs.influences_root))
+            })
+            .unwrap_or_else(|| Digest32::new([0u8; 32]));
+        let outputs = {
+            let mut core = self.jepa_core.lock().expect("jepa core lock");
+            let inputs = JepaInputs::new(
+                cycle_id,
+                percept_commit,
+                percept_energy,
+                ssm_state_digest,
+                phase_bus.commit,
+                phase_bus.gamma_bucket,
+                core.last_world_state,
+                coupling_root,
+            );
+            core.tick(&inputs)
+        };
+        ctx.surprise_score = Some(outputs.surprise);
+        ctx.jepa_outputs = Some(outputs);
+        if let Ok(mut guard) = self.last_jepa_output.lock() {
+            *guard = Some(outputs);
+        }
+        if let Ok(mut workspace) = self.workspace.lock() {
+            workspace.set_jepa_snapshot(outputs.world_state, outputs.prediction, outputs.surprise);
+        }
+        self.append_jepa_output_record(cycle_id, &outputs);
     }
 
     fn build_sle_reflex_record(&self, cycle_id: u64, reflex: &SelfReflex) -> ExperienceRecord {
@@ -3695,6 +3788,25 @@ impl Router {
         self.append_archive_record(RecordKind::Other(SSM_RECORD_KIND), output.commit, meta);
     }
 
+    fn append_jepa_output_record(&self, cycle_id: u64, output: &JepaOutputs) {
+        let payload = format!(
+            "commit={};world_state={};prediction={};surprise={}",
+            output.commit, output.world_state, output.prediction, output.surprise
+        )
+        .into_bytes();
+        let record_id = format!("jepa-{cycle_id}-{}", hex::encode(output.commit.as_bytes()));
+        let record = build_compact_record(record_id, cycle_id, "jepa", payload);
+        self.archive.append(record);
+
+        let meta = RecordMeta {
+            cycle_id,
+            tier: 0,
+            flags: output.surprise,
+            boundary_commit: output.world_state,
+        };
+        self.append_archive_record(RecordKind::Other(JEPA_RECORD_KIND), output.commit, meta);
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn tick_cde_v1(
         &self,
@@ -3781,6 +3893,7 @@ impl Router {
         phase_bus: &PhaseBus,
         spike_root_commit: Digest32,
         spike_counts: Vec<(SpikeKind, u16)>,
+        world_state_commit: Digest32,
         influence_outputs: Option<&InfluenceOutputs>,
         iit_output: &IitOutput,
         ssm_output: Option<&SsmOutputs>,
@@ -3805,6 +3918,7 @@ impl Router {
             iit_output.phi_proxy,
             spike_root_commit,
             spike_counts,
+            world_state_commit,
             influence_commit,
             influence_node_in,
             ssm_output.map(|output| output.ssm_salience).unwrap_or(0),
