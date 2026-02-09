@@ -215,6 +215,25 @@ pub struct SsmOutputs {
     pub commit: Digest32,
 }
 
+/// Working-memory boundary for percept integration.
+///
+/// # Commit formula
+/// - `SsmOutputs.commit = H(cycle_id, ssm_state_commit, ssm_salience, ssm_novelty, ssm_attention_gain)`
+pub trait WorkingMemory {
+    fn tick(&mut self, inp: &SsmInputs) -> SsmOutputs;
+
+    fn tick_with_budget(&mut self, inp: &SsmInputs, budget: &GainBudget) -> SsmOutputs {
+        let _ = budget;
+        self.tick(inp)
+    }
+
+    fn params(&self) -> SsmParams;
+
+    fn set_params(&mut self, params: SsmParams);
+
+    fn reset_if_dim_mismatch(&mut self, params: &SsmParams);
+}
+
 pub struct SsmCore {
     pub params: SsmParams,
     pub state: SsmState,
@@ -290,6 +309,94 @@ impl SsmCore {
             commit,
         }
     }
+}
+
+impl Default for SsmCore {
+    fn default() -> Self {
+        Self::new(SsmParams::default())
+    }
+}
+
+impl WorkingMemory for SsmCore {
+    fn tick(&mut self, inp: &SsmInputs) -> SsmOutputs {
+        SsmCore::tick(self, inp, &GainBudget::default())
+    }
+
+    fn tick_with_budget(&mut self, inp: &SsmInputs, budget: &GainBudget) -> SsmOutputs {
+        SsmCore::tick(self, inp, budget)
+    }
+
+    fn params(&self) -> SsmParams {
+        self.params
+    }
+
+    fn set_params(&mut self, params: SsmParams) {
+        self.params = params;
+    }
+
+    fn reset_if_dim_mismatch(&mut self, params: &SsmParams) {
+        self.state.reset_if_dim_mismatch(params);
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MockWorkingMemory {
+    params: SsmParams,
+    ssm_state_commit: Digest32,
+    ssm_state_digest: Digest32,
+    ssm_salience: u16,
+    ssm_novelty: u16,
+    ssm_attention_gain: u16,
+}
+
+impl MockWorkingMemory {
+    pub fn new(ssm_state_commit: Digest32) -> Self {
+        Self {
+            params: SsmParams::default(),
+            ssm_state_commit,
+            ssm_state_digest: ssm_state_commit,
+            ssm_salience: 1200,
+            ssm_novelty: 800,
+            ssm_attention_gain: 1500,
+        }
+    }
+}
+
+impl Default for MockWorkingMemory {
+    fn default() -> Self {
+        Self::new(Digest32::new([9u8; 32]))
+    }
+}
+
+impl WorkingMemory for MockWorkingMemory {
+    fn tick(&mut self, inp: &SsmInputs) -> SsmOutputs {
+        let commit = commit_outputs(
+            inp.cycle_id,
+            self.ssm_state_commit,
+            self.ssm_salience,
+            self.ssm_novelty,
+            self.ssm_attention_gain,
+        );
+        SsmOutputs {
+            cycle_id: inp.cycle_id,
+            ssm_state_commit: self.ssm_state_commit,
+            ssm_state_digest: self.ssm_state_digest,
+            ssm_salience: self.ssm_salience,
+            ssm_novelty: self.ssm_novelty,
+            ssm_attention_gain: self.ssm_attention_gain,
+            commit,
+        }
+    }
+
+    fn params(&self) -> SsmParams {
+        self.params
+    }
+
+    fn set_params(&mut self, params: SsmParams) {
+        self.params = params;
+    }
+
+    fn reset_if_dim_mismatch(&mut self, _params: &SsmParams) {}
 }
 
 fn build_input_drive(inp: &SsmInputs, params: &SsmParams) -> i32 {

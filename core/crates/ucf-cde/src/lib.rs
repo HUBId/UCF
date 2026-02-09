@@ -331,6 +331,18 @@ impl CdeOutputs {
     }
 }
 
+/// Causal engine boundary for DAG inference.
+///
+/// # Commit formula
+/// - `CdeOutputs.commit = H(cycle_id, dag_commit, summary_commit, top_edges[..], intervention?, spikes[..])`
+pub trait CausalEngine {
+    fn tick(&mut self, inp: &CdeInputs) -> CdeOutputs;
+
+    fn params(&self) -> CdeParams;
+
+    fn apply_params(&mut self, params: CdeParams);
+}
+
 pub struct CdeCore {
     pub dag: CausalDag,
     pub prev_values: [u16; 12],
@@ -348,6 +360,55 @@ pub struct CdeCore {
 impl Default for CdeCore {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl CausalEngine for CdeCore {
+    fn tick(&mut self, inp: &CdeInputs) -> CdeOutputs {
+        Self::tick(self, inp)
+    }
+
+    fn params(&self) -> CdeParams {
+        self.params
+    }
+
+    fn apply_params(&mut self, params: CdeParams) {
+        CdeCore::apply_params(self, params);
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MockCausalEngine {
+    params: CdeParams,
+    dag_commit: Digest32,
+}
+
+impl MockCausalEngine {
+    pub fn new(dag_commit: Digest32) -> Self {
+        Self {
+            params: CdeParams::default(),
+            dag_commit,
+        }
+    }
+}
+
+impl Default for MockCausalEngine {
+    fn default() -> Self {
+        Self::new(Digest32::new([5u8; 32]))
+    }
+}
+
+impl CausalEngine for MockCausalEngine {
+    fn tick(&mut self, inp: &CdeInputs) -> CdeOutputs {
+        CdeOutputs::new(inp.cycle_id, self.dag_commit, Vec::new(), None, Vec::new())
+    }
+
+    fn params(&self) -> CdeParams {
+        self.params
+    }
+
+    fn apply_params(&mut self, params: CdeParams) {
+        self.params = params;
     }
 }
 

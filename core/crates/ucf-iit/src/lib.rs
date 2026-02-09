@@ -170,6 +170,16 @@ pub struct IitOutputs {
 
 pub type IitOutput = IitOutputs;
 
+/// Integration monitor boundary for coherence scoring.
+///
+/// # Commit formula
+/// - `IitOutputs.commit = H(cycle_id, phi_proxy, tighten_sync, damp_output, damp_learning, request_replay, hints_commit, inputs.commit, params.commit, state.commit)`
+pub trait IntegrationMonitor {
+    fn tick(&mut self, inp: &IitInputs) -> IitOutputs;
+
+    fn params(&self) -> IitParams;
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct IitCore {
     pub params: IitParams,
@@ -256,6 +266,56 @@ impl IitCore {
 impl Default for IitCore {
     fn default() -> Self {
         Self::new(IitParams::default())
+    }
+}
+
+impl IntegrationMonitor for IitCore {
+    fn tick(&mut self, inp: &IitInputs) -> IitOutputs {
+        IitCore::tick(self, inp)
+    }
+
+    fn params(&self) -> IitParams {
+        self.params
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MockIntegrationMonitor {
+    phi_proxy: u16,
+}
+
+impl MockIntegrationMonitor {
+    pub fn new(phi_proxy: u16) -> Self {
+        Self {
+            phi_proxy: phi_proxy.min(MAX_SCORE),
+        }
+    }
+}
+
+impl Default for MockIntegrationMonitor {
+    fn default() -> Self {
+        Self::new(2_000)
+    }
+}
+
+impl IntegrationMonitor for MockIntegrationMonitor {
+    fn tick(&mut self, inp: &IitInputs) -> IitOutputs {
+        let hints_commit = commit_hints(inp.cycle_id, self.phi_proxy, false, false, false, false);
+        let commit = commit_outputs(inp.cycle_id, self.phi_proxy, hints_commit, inp.commit);
+        IitOutputs {
+            cycle_id: inp.cycle_id,
+            phi_proxy: self.phi_proxy,
+            tighten_sync: false,
+            damp_output: false,
+            damp_learning: false,
+            request_replay: false,
+            hints_commit,
+            commit,
+        }
+    }
+
+    fn params(&self) -> IitParams {
+        IitParams::default()
     }
 }
 

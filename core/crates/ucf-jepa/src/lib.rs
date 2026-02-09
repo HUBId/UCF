@@ -100,6 +100,16 @@ pub struct JepaOutputs {
     pub commit: Digest32,
 }
 
+/// World model boundary for temporal prediction.
+///
+/// # Commit formula
+/// - `JepaOutputs.commit = H(cycle_id, world_state, prediction, surprise, params.commit, inputs.commit)`
+pub trait WorldModel {
+    fn tick(&mut self, inp: &JepaInputs) -> JepaOutputs;
+
+    fn last_world_state(&self) -> Digest32;
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct JepaCore {
     pub params: JepaParams,
@@ -155,6 +165,76 @@ impl JepaCore {
 impl Default for JepaCore {
     fn default() -> Self {
         Self::new(JepaParams::default())
+    }
+}
+
+impl WorldModel for JepaCore {
+    fn tick(&mut self, inp: &JepaInputs) -> JepaOutputs {
+        Self::tick(self, inp)
+    }
+
+    fn last_world_state(&self) -> Digest32 {
+        self.last_world_state
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MockWorldModel {
+    params: JepaParams,
+    surprise: u16,
+    last_world_state: Digest32,
+    last_prediction: Digest32,
+}
+
+impl MockWorldModel {
+    pub fn new(surprise: u16) -> Self {
+        Self {
+            params: JepaParams::default(),
+            surprise: surprise.min(10_000),
+            last_world_state: Digest32::new([0u8; 32]),
+            last_prediction: Digest32::new([0u8; 32]),
+        }
+    }
+}
+
+impl Default for MockWorldModel {
+    fn default() -> Self {
+        Self::new(1_000)
+    }
+}
+
+impl WorldModel for MockWorldModel {
+    fn tick(&mut self, inp: &JepaInputs) -> JepaOutputs {
+        let world_state = digest_world_state(
+            inp.percept_commit,
+            inp.ssm_state_digest,
+            inp.phase_bus_commit,
+            inp.coupling_root,
+        );
+        let prediction =
+            digest_prediction(inp.last_world_state, inp.phase_bus_commit, inp.gamma_bucket);
+        let surprise = self.surprise;
+        let commit = commit_outputs(
+            inp.cycle_id,
+            world_state,
+            prediction,
+            surprise,
+            self.params.commit,
+            inp.commit,
+        );
+        self.last_world_state = world_state;
+        self.last_prediction = prediction;
+        JepaOutputs {
+            cycle_id: inp.cycle_id,
+            world_state,
+            prediction,
+            surprise,
+            commit,
+        }
+    }
+
+    fn last_world_state(&self) -> Digest32 {
+        self.last_world_state
     }
 }
 

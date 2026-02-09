@@ -20,7 +20,7 @@ use ucf_bluebrain_port::{BlueBrainPort, NeuromodDelta};
 use ucf_brain_mapper::map_to_stimulus;
 use ucf_cde::{
     apply_edge_thresh_delta, apply_score_step_delta, derive_observation_commit,
-    CausalEdge as CdeV1Edge, CdeCore as CdeV1Core, CdeInputs as CdeV1Inputs,
+    CausalEdge as CdeV1Edge, CausalEngine, CdeCore as CdeV1Core, CdeInputs as CdeV1Inputs,
     CdeOutputs as CdeV1Outputs, CdeParams,
 };
 use ucf_cde_scm::{
@@ -41,22 +41,22 @@ use ucf_feature_translator::{
     SaePort as FeatureSaePort,
 };
 use ucf_geist::{SelfState, SelfStateBuilder};
-use ucf_iit::{IitCore, IitInputs, IitOutput, IitParams};
+use ucf_iit::{IitCore, IitInputs, IitOutput, IitParams, IntegrationMonitor};
 use ucf_iit_monitor::{
     actions_for_phi, report_for_phi, IitAction, IitActionKind, IitBand, IitReport,
 };
 use ucf_influence::{InfluenceGraphV2, InfluenceInputs, InfluenceNodeId, InfluenceOutputs};
 use ucf_ism::IsmStore;
-use ucf_jepa::{JepaCore, JepaInputs, JepaOutputs};
+use ucf_jepa::{JepaCore, JepaInputs, JepaOutputs, WorldModel as JepaWorldModel};
 use ucf_ncde::{
-    apply_gain_phase_delta, apply_gain_spike_delta, apply_leak_delta, NcdeCore, NcdeInputs,
-    NcdeOutputs, NcdeParams,
+    apply_gain_phase_delta, apply_gain_spike_delta, apply_leak_delta, ContinuousDynamics, NcdeCore,
+    NcdeInputs, NcdeOutputs, NcdeParams,
 };
-use ucf_nsr::{Fact, NsrCore, NsrInputs, NsrOutputs};
+use ucf_nsr::{Fact, NeuroSymbolicReasoner, NsrCore, NsrInputs, NsrOutputs};
 use ucf_nsr_port::{light_report, ActionIntent, NsrInput, NsrPort, NsrReport, NsrVerdict};
 use ucf_onn::{
     apply_coupling_delta, apply_lock_window_delta, OnnCore, OnnInputs, OnnParams, PhaseBus,
-    PhaseLockDecision,
+    PhaseLockDecision, PhaseProvider,
 };
 use ucf_output_router::{
     GateBundle, NsrSummary, OutputRouter, OutputRouterEvent, RouterConfig, SandboxVerdict,
@@ -77,18 +77,18 @@ use ucf_sandbox::{
     AiCallRequest, ControlFrameNormalized, IntentSummary, MockWasmSandbox, SandboxBudget,
     SandboxCaps, SandboxPort, SandboxReport,
 };
-use ucf_sle::{SelfReflex, SleCore, SleEngine, SleInputs, SleOutputs};
+use ucf_sle::{SelfReflex, SleCore, SleEngine, SleInputs, SleOutputs, StrangeLoop};
 use ucf_spikebus::{
     producers::{MockLensProducer, MockSaeProducer, SpikeProducer},
-    ModuleId, Spike, SpikeBus, SpikeInputs, SpikeKind, SpikeOutputs, SpikeParams,
+    ModuleId, Spike, SpikeBus, SpikeInputs, SpikeKind, SpikeOutputs, SpikeParams, SpikeRouter,
 };
-use ucf_ssm::{SsmCore, SsmInputs, SsmOutputs, SsmParams};
+use ucf_ssm::{SsmCore, SsmInputs, SsmOutputs, SsmParams, WorkingMemory};
 use ucf_ssm_port::SsmState;
 use ucf_structural_store::{
     OnnKnobs, SnnKnobs, StructuralCycleStats, StructuralDeltaProposal, StructuralParams,
     StructuralStore,
 };
-use ucf_tcf::{TcfCore, TcfInputs, TcfPlan};
+use ucf_tcf::{TcfCore, TcfInputs, TcfPlan, TemporalCoordinator};
 use ucf_tcf_port::{
     ai_mode_for_pulse, apply_attn_k_delta, apply_energy_k_delta, apply_replay_k_delta,
     idle_attention, CyclePlan, CyclePlanned, DeterministicTcf, PulseKind, TcfConfig, TcfPort,
@@ -144,6 +144,36 @@ pub enum RouterError {
     PolicyDenied(i32),
 }
 
+pub struct RuntimeModules {
+    pub phase: Box<dyn PhaseProvider + Send>,
+    pub spikes: Box<dyn SpikeRouter + Send + Sync>,
+    pub world: Box<dyn JepaWorldModel + Send>,
+    pub ssm: Box<dyn WorkingMemory + Send>,
+    pub ncde: Box<dyn ContinuousDynamics + Send>,
+    pub cde: Box<dyn CausalEngine + Send>,
+    pub nsr: Box<dyn NeuroSymbolicReasoner + Send + Sync>,
+    pub tcf: Box<dyn TemporalCoordinator + Send>,
+    pub iit: Box<dyn IntegrationMonitor + Send>,
+    pub sle: Box<dyn StrangeLoop + Send>,
+}
+
+impl RuntimeModules {
+    pub fn v1_defaults() -> Self {
+        Self {
+            phase: Box::new(OnnCore::default()),
+            spikes: Box::new(SpikeBus::default()),
+            world: Box::new(JepaCore::default()),
+            ssm: Box::new(SsmCore::new(SsmParams::default())),
+            ncde: Box::new(NcdeCore::new(NcdeParams::default())),
+            cde: Box::new(CdeV1Core::new()),
+            nsr: Box::new(NsrCore::default()),
+            tcf: Box::new(TcfCore::default()),
+            iit: Box::new(IitCore::default()),
+            sle: Box::new(SleCore::default()),
+        }
+    }
+}
+
 impl fmt::Display for RouterError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -171,7 +201,6 @@ pub struct Router {
     speech_gate: Arc<dyn SpeechGate + Send + Sync>,
     risk_gate: Arc<dyn RiskGate + Send + Sync>,
     nsr_port: Arc<NsrPort>,
-    nsr_core: NsrCore,
     tom_port: Arc<dyn TomPort + Send + Sync>,
     output_suppression_sink: Option<Arc<dyn OutputSuppressionSink + Send + Sync>>,
     attention_controller: Option<AttnController>,
@@ -183,24 +212,19 @@ pub struct Router {
     cycle_counter: AtomicU64,
     force_stabilize_cycles: AtomicU16,
     tcf_port: Mutex<Box<dyn TcfPort + Send + Sync>>,
-    tcf_core: Mutex<TcfCore>,
     last_tcf_plan: Mutex<Option<TcfPlan>>,
-    onn_core: Mutex<OnnCore>,
     last_phase_bus: Mutex<Option<PhaseBus>>,
     last_phase_lock: Mutex<Option<PhaseLockDecision>>,
     feature_params: Mutex<FeatureSpikeParams>,
     last_attention: Mutex<AttentionWeights>,
     last_surprise: Mutex<Option<SurpriseSignal>>,
-    jepa_core: Mutex<JepaCore>,
     last_jepa_output: Mutex<Option<JepaOutputs>>,
     stage_trace: Option<Arc<dyn StageTrace + Send + Sync>>,
     world_model: WorldModel,
     world_state: Mutex<Option<WorldStateVec>>,
     sle_engine: Arc<SleEngine>,
-    sle_core: Mutex<SleCore>,
     consistency_engine: ConsistencyEngine,
     ism_store: Arc<Mutex<IsmStore>>,
-    iit_monitor: Mutex<IitCore>,
     last_iit_hints: Mutex<IitHintState>,
     recursion_controller: RecursionController,
     rsa_hooks: Vec<Arc<dyn RsaHook + Send + Sync>>,
@@ -215,7 +239,6 @@ pub struct Router {
     last_brain_arousal: Mutex<u16>,
     cde_engine: Mutex<CdeEngine>,
     last_cde_output: Mutex<Option<CdeOutputs>>,
-    cde_v1_core: Mutex<CdeV1Core>,
     last_cde_v1_output: Mutex<Option<CdeV1Outputs>>,
     influence_state: Mutex<InfluenceGraphV2>,
     last_influence_outputs: Mutex<Option<InfluenceOutputs>>,
@@ -227,10 +250,9 @@ pub struct Router {
     gain_budget_state: Mutex<BudgetState>,
     gain_budget_stable_cycles: Mutex<u8>,
     gain_budget_last_violation_count: Mutex<u16>,
-    ssm_core: Mutex<SsmCore>,
     last_ssm_output: Mutex<Option<SsmOutputs>>,
-    ncde_core: Mutex<NcdeCore>,
     last_ncde_output: Mutex<Option<NcdeOutputs>>,
+    runtime_modules: Mutex<RuntimeModules>,
     rsa_core: Mutex<RsaCore>,
 }
 
@@ -722,7 +744,6 @@ impl Router {
             speech_gate,
             risk_gate,
             nsr_port: Arc::new(NsrPort::default()),
-            nsr_core: NsrCore::default(),
             tom_port,
             output_suppression_sink,
             attention_controller: Some(AttnController),
@@ -734,24 +755,19 @@ impl Router {
             cycle_counter: AtomicU64::new(0),
             force_stabilize_cycles: AtomicU16::new(0),
             tcf_port: Mutex::new(Box::new(DeterministicTcf::default())),
-            tcf_core: Mutex::new(TcfCore::default()),
             last_tcf_plan: Mutex::new(None),
-            onn_core: Mutex::new(OnnCore::default()),
             last_phase_bus: Mutex::new(None),
             last_phase_lock: Mutex::new(None),
             feature_params: Mutex::new(FeatureSpikeParams::default()),
             last_attention: Mutex::new(idle_attention()),
             last_surprise: Mutex::new(None),
-            jepa_core: Mutex::new(JepaCore::default()),
             last_jepa_output: Mutex::new(None),
             stage_trace: None,
             world_model: WorldModel::default(),
             world_state: Mutex::new(None),
             sle_engine: Arc::new(SleEngine::new(6)),
-            sle_core: Mutex::new(SleCore::default()),
             consistency_engine: ConsistencyEngine,
             ism_store: Arc::new(Mutex::new(IsmStore::new(64))),
-            iit_monitor: Mutex::new(IitCore::default()),
             last_iit_hints: Mutex::new(IitHintState {
                 tighten_sync: false,
                 damp_output: false,
@@ -772,7 +788,6 @@ impl Router {
             last_brain_arousal: Mutex::new(0),
             cde_engine: Mutex::new(CdeEngine::new()),
             last_cde_output: Mutex::new(None),
-            cde_v1_core: Mutex::new(CdeV1Core::new()),
             last_cde_v1_output: Mutex::new(None),
             influence_state: Mutex::new(InfluenceGraphV2::new_default()),
             last_influence_outputs: Mutex::new(None),
@@ -784,10 +799,9 @@ impl Router {
             gain_budget_state: Mutex::new(default_budget_state()),
             gain_budget_stable_cycles: Mutex::new(0),
             gain_budget_last_violation_count: Mutex::new(0),
-            ssm_core: Mutex::new(SsmCore::new(SsmParams::default())),
             last_ssm_output: Mutex::new(None),
-            ncde_core: Mutex::new(NcdeCore::new(NcdeParams::default())),
             last_ncde_output: Mutex::new(None),
+            runtime_modules: Mutex::new(RuntimeModules::v1_defaults()),
             rsa_core: Mutex::new(RsaCore::default()),
         }
     }
@@ -1150,9 +1164,13 @@ impl Router {
                             digest_policy_commit(decision),
                         ));
                     }
-                    let spike_bus = SpikeBus::new(spike_params);
                     let spike_inputs = SpikeInputs::new(cycle_id, phase_lock, candidates);
-                    let spike_outputs = spike_bus.tick(&spike_inputs);
+                    let spike_outputs = {
+                        let mut modules =
+                            self.runtime_modules.lock().expect("runtime modules lock");
+                        modules.spikes.set_params(spike_params);
+                        modules.spikes.tick(&spike_inputs)
+                    };
                     if let Ok(mut workspace) = self.workspace.lock() {
                         workspace.set_spike_outputs(spike_outputs.clone());
                     }
@@ -1373,8 +1391,9 @@ impl Router {
                             drift_score,
                             surprise_score,
                         );
-                        let mut monitor = self.iit_monitor.lock().expect("iit monitor lock");
-                        monitor.tick(&inputs)
+                        let mut modules =
+                            self.runtime_modules.lock().expect("runtime modules lock");
+                        modules.iit.tick(&inputs)
                     };
                     let iit_report = report_for_phi(iit_output.phi_proxy);
                     let iit_actions = actions_for_phi(iit_output.phi_proxy, attention_risk);
@@ -1665,7 +1684,12 @@ impl Router {
                         matches!(pulse.kind, PulseKind::Sleep),
                         self.tcf_plan_for(Some(&ctx)),
                     );
-                    let nsr_output = self.nsr_core.tick(&nsr_inputs);
+                    let nsr_output = self
+                        .runtime_modules
+                        .lock()
+                        .expect("runtime modules lock")
+                        .nsr
+                        .tick(&nsr_inputs);
                     ctx.nsr_output = Some(nsr_output.clone());
                     if let Ok(mut workspace) = self.workspace.lock() {
                         let nsr_fact_flags =
@@ -2447,26 +2471,28 @@ impl Router {
                         .unwrap_or(0);
                     let prev_plv = prev_snapshot.onn_global_plv;
                     let prev_drift = drift_score_from_snapshot(&prev_snapshot);
-                    let onn_params_commit = self
-                        .onn_core
+                    let (onn_params_commit, ncde_params_commit, cde_params_commit) = self
+                        .runtime_modules
                         .lock()
-                        .map(|core| core.params.commit)
-                        .unwrap_or_else(|_| OnnParams::default().commit);
+                        .map(|modules| {
+                            (
+                                modules.phase.params().commit,
+                                modules.ncde.params().commit,
+                                modules.cde.params().commit,
+                            )
+                        })
+                        .unwrap_or_else(|_| {
+                            (
+                                OnnParams::default().commit,
+                                NcdeParams::default().commit,
+                                CdeParams::default().commit,
+                            )
+                        });
                     let tcf_params_commit = self
                         .tcf_port
                         .lock()
                         .map(|tcf| tcf.params().commit)
                         .unwrap_or_else(|_| TcfConfig::default().commit);
-                    let ncde_params_commit = self
-                        .ncde_core
-                        .lock()
-                        .map(|core| core.params.commit)
-                        .unwrap_or_else(|_| NcdeParams::default().commit);
-                    let cde_params_commit = self
-                        .cde_v1_core
-                        .lock()
-                        .map(|core| core.params.commit)
-                        .unwrap_or_else(|_| CdeParams::default().commit);
                     let feature_params_commit = self
                         .feature_params
                         .lock()
@@ -2556,7 +2582,10 @@ impl Router {
                             matches!(pulse.kind, PulseKind::Sleep),
                             self.tcf_plan_for(Some(&ctx)),
                         );
-                        Some(self.nsr_core.tick(&nsr_inputs))
+                        self.runtime_modules
+                            .lock()
+                            .ok()
+                            .map(|modules| modules.nsr.tick(&nsr_inputs))
                     } else {
                         None
                     };
@@ -2597,26 +2626,28 @@ impl Router {
                     }
                     if outputs.decision.apply {
                         if let Some(proposal) = outputs.proposal.clone() {
-                            let onn_params = self
-                                .onn_core
+                            let (onn_params, ncde_params, cde_params) = self
+                                .runtime_modules
                                 .lock()
-                                .map(|core| core.params)
-                                .unwrap_or_else(|_| OnnParams::default());
+                                .map(|modules| {
+                                    (
+                                        modules.phase.params(),
+                                        modules.ncde.params(),
+                                        modules.cde.params(),
+                                    )
+                                })
+                                .unwrap_or_else(|_| {
+                                    (
+                                        OnnParams::default(),
+                                        NcdeParams::default(),
+                                        CdeParams::default(),
+                                    )
+                                });
                             let tcf_params = self
                                 .tcf_port
                                 .lock()
                                 .map(|tcf| tcf.params())
                                 .unwrap_or_else(|_| TcfConfig::default());
-                            let ncde_params = self
-                                .ncde_core
-                                .lock()
-                                .map(|core| core.params)
-                                .unwrap_or_else(|_| NcdeParams::default());
-                            let cde_params = self
-                                .cde_v1_core
-                                .lock()
-                                .map(|core| core.params)
-                                .unwrap_or_else(|_| CdeParams::default());
                             let feature_params = self
                                 .feature_params
                                 .lock()
@@ -2654,17 +2685,13 @@ impl Router {
                             );
 
                             let next_onn_for_store = next_onn;
-                            if let Ok(mut core) = self.onn_core.lock() {
-                                core.params = next_onn;
+                            if let Ok(mut modules) = self.runtime_modules.lock() {
+                                modules.phase.set_params(next_onn);
+                                modules.ncde.set_params(next_ncde);
+                                modules.cde.apply_params(next_cde);
                             }
                             if let Ok(mut tcf) = self.tcf_port.lock() {
                                 tcf.set_params(next_tcf);
-                            }
-                            if let Ok(mut core) = self.ncde_core.lock() {
-                                *core = NcdeCore::new(next_ncde);
-                            }
-                            if let Ok(mut core) = self.cde_v1_core.lock() {
-                                core.apply_params(next_cde);
                             }
                             if let Ok(mut params) = self.feature_params.lock() {
                                 *params = next_feature;
@@ -3062,8 +3089,8 @@ impl Router {
         );
         let outputs = {
             let budget = self.current_gain_budget();
-            let mut onn = self.onn_core.lock().expect("onn core lock");
-            onn.tick(&inputs, &budget)
+            let mut modules = self.runtime_modules.lock().expect("runtime modules lock");
+            modules.phase.tick_with_budget(&inputs, &budget)
         };
         if let Ok(mut guard) = self.last_phase_bus.lock() {
             *guard = Some(outputs.phase_bus);
@@ -3126,7 +3153,8 @@ impl Router {
             })
             .unwrap_or_else(|| Digest32::new([0u8; 32]));
         let outputs = {
-            let mut core = self.jepa_core.lock().expect("jepa core lock");
+            let mut modules = self.runtime_modules.lock().expect("runtime modules lock");
+            let last_world_state = modules.world.last_world_state();
             let inputs = JepaInputs::new(
                 cycle_id,
                 percept_commit,
@@ -3134,10 +3162,10 @@ impl Router {
                 ssm_state_digest,
                 phase_bus.commit,
                 phase_bus.gamma_bucket,
-                core.last_world_state,
+                last_world_state,
                 coupling_root,
             );
-            core.tick(&inputs)
+            modules.world.tick(&inputs)
         };
         ctx.surprise_score = Some(outputs.surprise);
         ctx.jepa_outputs = Some(outputs);
@@ -3219,10 +3247,10 @@ impl Router {
         );
 
         let outputs = self
-            .sle_core
+            .runtime_modules
             .lock()
-            .map(|mut core| core.tick(&inputs))
-            .ok()?;
+            .ok()
+            .map(|mut modules| modules.sle.tick(&inputs))?;
 
         if let Ok(mut workspace) = self.workspace.lock() {
             workspace.set_sle_outputs(SleOutputsSnapshot {
@@ -3460,9 +3488,9 @@ impl Router {
     }
 
     fn iit_params(&self) -> IitParams {
-        self.iit_monitor
+        self.runtime_modules
             .lock()
-            .map(|core| core.params)
+            .map(|modules| modules.iit.params())
             .unwrap_or_else(|_| IitParams::default())
     }
 
@@ -3729,8 +3757,8 @@ impl Router {
             policy_ok,
         );
         let budget = self.current_gain_budget();
-        let mut core = self.tcf_core.lock().ok()?;
-        Some(core.tick(&inputs, &budget))
+        let mut modules = self.runtime_modules.lock().ok()?;
+        Some(modules.tcf.tick_with_budget(&inputs, &budget))
     }
 
     fn collect_coupling_samples(&self, ctx: &StageContext, cycle_id: u64) -> Vec<SignalSample> {
@@ -4234,8 +4262,8 @@ impl Router {
             spike_accepted_root,
             observation_commit,
         );
-        let mut core = self.cde_v1_core.lock().ok()?;
-        Some(core.tick(&inputs))
+        let mut modules = self.runtime_modules.lock().ok()?;
+        Some(modules.cde.tick(&inputs))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -4299,7 +4327,7 @@ impl Router {
         learning_gain_cap: u16,
     ) -> Option<NcdeOutputs> {
         self.sync_ncde_params();
-        let mut core = self.ncde_core.lock().ok()?;
+        let mut modules = self.runtime_modules.lock().ok()?;
         let (coupling_influences_root, coupling_influences) = coupling_outputs
             .map(|outputs| {
                 let subset = outputs
@@ -4336,7 +4364,7 @@ impl Router {
             learning_gain_cap,
         );
         let budget = self.current_gain_budget();
-        Some(core.tick(&inputs, &budget))
+        Some(modules.ncde.tick_with_budget(&inputs, &budget))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -4354,7 +4382,7 @@ impl Router {
         risk: u16,
     ) -> Option<SsmOutputs> {
         self.sync_ssm_params();
-        let mut core = self.ssm_core.lock().ok()?;
+        let mut modules = self.runtime_modules.lock().ok()?;
         let coupling_outputs = self
             .last_coupling_outputs
             .lock()
@@ -4401,7 +4429,7 @@ impl Router {
             surprise,
         );
         let budget = self.current_gain_budget();
-        Some(core.tick(&input, &budget))
+        Some(modules.ssm.tick_with_budget(&input, &budget))
     }
 
     fn append_sandbox_denied_record(&self, cycle_id: u64, report: &SandboxReport, reason: &str) {
@@ -4439,16 +4467,18 @@ impl Router {
             Ok(store) => store.current.onn.clone(),
             Err(_) => return,
         };
-        if let Ok(mut core) = self.onn_core.lock() {
-            if core.params.commit != knobs.commit {
-                core.params = ucf_onn::OnnParams::new(
-                    core.params.n,
-                    core.params.omega_q12,
+        if let Ok(mut modules) = self.runtime_modules.lock() {
+            let params = modules.phase.params();
+            if params.commit != knobs.commit {
+                let updated = ucf_onn::OnnParams::new(
+                    params.n,
+                    params.omega_q12,
                     knobs.k_couple,
                     knobs.k_dither,
-                    core.params.buckets,
+                    params.buckets,
                     knobs.couple_clamp_q12,
                 );
+                modules.phase.set_params(updated);
             }
         }
     }
@@ -4458,11 +4488,11 @@ impl Router {
             Ok(store) => store.current.ssm,
             Err(_) => return,
         };
-        if let Ok(mut core) = self.ssm_core.lock() {
-            if core.params.commit != params.commit {
-                let updated = params;
-                core.params = updated;
-                core.state.reset_if_dim_mismatch(&updated);
+        if let Ok(mut modules) = self.runtime_modules.lock() {
+            let current = modules.ssm.params();
+            if current.commit != params.commit {
+                modules.ssm.set_params(params);
+                modules.ssm.reset_if_dim_mismatch(&params);
             }
         }
     }
@@ -4472,9 +4502,10 @@ impl Router {
             Ok(store) => store.current.ncde,
             Err(_) => return,
         };
-        if let Ok(mut core) = self.ncde_core.lock() {
-            if core.params.commit != params.commit {
-                *core = NcdeCore::new(params);
+        if let Ok(mut modules) = self.runtime_modules.lock() {
+            let current = modules.ncde.params();
+            if current.commit != params.commit {
+                modules.ncde.set_params(params);
             }
         }
     }
@@ -5862,10 +5893,20 @@ mod tests {
     use ucf_ai_port::{MockAiPort, PolicySpeechGate};
     use ucf_archive::InMemoryArchive;
     use ucf_archive_store::InMemoryArchiveStore;
+    use ucf_cde::MockCausalEngine;
+    use ucf_iit::MockIntegrationMonitor;
+    use ucf_jepa::MockWorldModel;
+    use ucf_ncde::MockContinuousDynamics;
+    use ucf_nsr::MockNeuroSymbolicReasoner;
+    use ucf_onn::MockPhaseProvider;
     use ucf_policy_ecology::PolicyEcology;
     use ucf_policy_gateway::NoOpPolicyEvaluator;
     use ucf_risk_gate::PolicyRiskGate;
+    use ucf_sle::MockStrangeLoop;
+    use ucf_spikebus::MockSpikeRouter;
+    use ucf_ssm::MockWorkingMemory;
     use ucf_structural_store::{OnnKnobs, SnnKnobs, StructuralParams, StructuralStore};
+    use ucf_tcf::MockTemporalCoordinator;
     use ucf_tom_port::MockTomPort;
 
     fn build_router() -> Router {
@@ -5902,6 +5943,171 @@ mod tests {
             phase_commit: Digest32::new([seed; 32]),
             commit: Digest32::new([seed.wrapping_add(1); 32]),
         }
+    }
+
+    fn run_runtime_cycle(modules: &mut RuntimeModules, cycle_id: u64) {
+        let budget = GainBudget::default();
+        let onn_inputs = OnnInputs::new(
+            cycle_id,
+            Digest32::new([1u8; 32]),
+            Digest32::new([2u8; 32]),
+            Digest32::new([3u8; 32]),
+            Digest32::new([4u8; 32]),
+            Digest32::new([5u8; 32]),
+            2,
+            1200,
+            900,
+            700,
+        );
+        let onn_outputs = modules.phase.tick_with_budget(&onn_inputs, &budget);
+        let spike_inputs = SpikeInputs::new(cycle_id, onn_outputs.lock, Vec::new());
+        modules.spikes.set_params(SpikeParams::default());
+        let spike_outputs = modules.spikes.tick(&spike_inputs);
+
+        let last_world_state = modules.world.last_world_state();
+        let jepa_inputs = JepaInputs::new(
+            cycle_id,
+            Digest32::new([6u8; 32]),
+            1100,
+            Digest32::new([7u8; 32]),
+            onn_outputs.phase_bus.commit,
+            onn_outputs.phase_bus.gamma_bucket,
+            last_world_state,
+            Digest32::new([8u8; 32]),
+        );
+        let jepa_outputs = modules.world.tick(&jepa_inputs);
+
+        let ssm_inputs = SsmInputs::new(
+            cycle_id,
+            onn_outputs.phase_bus.commit,
+            onn_outputs.phase_bus.gamma_bucket,
+            Digest32::new([9u8; 32]),
+            900,
+            spike_outputs.accepted_root,
+            spike_outputs.counts.clone(),
+            Digest32::new([10u8; 32]),
+            Vec::new(),
+            10_000,
+            10_000,
+            0,
+            0,
+            1200,
+            800,
+            600,
+            400,
+        );
+        let ssm_outputs = modules.ssm.tick_with_budget(&ssm_inputs, &budget);
+
+        let ncde_inputs = NcdeInputs::new(
+            cycle_id,
+            onn_outputs.phase_bus.commit,
+            onn_outputs.phase_bus.gamma_bucket,
+            spike_outputs.accepted_root,
+            spike_outputs.counts.clone(),
+            1000,
+            Digest32::new([11u8; 32]),
+            Vec::new(),
+            ssm_outputs.ssm_state_commit,
+            ssm_outputs.ssm_salience,
+            ssm_outputs.ssm_novelty,
+            1000,
+            900,
+            800,
+            10_000,
+        );
+        let ncde_outputs = modules.ncde.tick_with_budget(&ncde_inputs, &budget);
+
+        let cde_inputs = CdeV1Inputs::new(
+            cycle_id,
+            onn_outputs.phase_bus.commit,
+            onn_outputs.phase_bus.gamma_bucket,
+            ssm_outputs.ssm_salience,
+            ssm_outputs.ssm_novelty,
+            0,
+            1000,
+            900,
+            800,
+            1200,
+            ncde_outputs.ncde_energy,
+            onn_outputs.phase_bus.global_plv,
+            1500,
+            700,
+            600,
+            500,
+            false,
+            false,
+            spike_outputs.accepted_root,
+            Digest32::new([12u8; 32]),
+        );
+        let cde_outputs = modules.cde.tick(&cde_inputs);
+
+        let iit_inputs = IitInputs::new(
+            cycle_id,
+            onn_outputs.phase_bus.commit,
+            onn_outputs.phase_bus.gamma_bucket,
+            onn_outputs.phase_bus.global_plv,
+            ssm_outputs.ssm_state_commit,
+            ncde_outputs.ncde_state_digest,
+            cde_outputs.commit,
+            Digest32::new([13u8; 32]),
+            Digest32::new([14u8; 32]),
+            800,
+            700,
+            600,
+        );
+        let iit_outputs = modules.iit.tick(&iit_inputs);
+
+        let tcf_inputs = TcfInputs::new(
+            cycle_id,
+            onn_outputs.phase_bus.commit,
+            onn_outputs.phase_bus.gamma_bucket,
+            onn_outputs.phase_bus.global_plv,
+            iit_outputs.phi_proxy,
+            800,
+            700,
+            600,
+            iit_outputs.hints_commit,
+            iit_outputs.tighten_sync,
+            iit_outputs.damp_output,
+            iit_outputs.damp_learning,
+            iit_outputs.request_replay,
+            Digest32::new([15u8; 32]),
+            0,
+            true,
+        );
+        let tcf_plan = modules.tcf.tick_with_budget(&tcf_inputs, &budget);
+
+        let nsr_inputs = NsrInputs::new(
+            cycle_id,
+            onn_outputs.phase_bus.commit,
+            Digest32::new([16u8; 32]),
+            Vec::new(),
+        );
+        let nsr_outputs = modules.nsr.tick(&nsr_inputs);
+
+        let sle_inputs = SleInputs::new(
+            cycle_id,
+            onn_outputs.phase_bus.commit,
+            onn_outputs.phase_bus.gamma_bucket,
+            ssm_outputs.ssm_state_commit,
+            ssm_outputs.ssm_salience,
+            ssm_outputs.ssm_novelty,
+            ncde_outputs.ncde_state_digest,
+            ncde_outputs.ncde_energy,
+            cde_outputs.commit,
+            nsr_outputs.verdict.as_u8(),
+            nsr_outputs.trace_root,
+            iit_outputs.phi_proxy,
+            onn_outputs.phase_bus.global_plv,
+            tcf_plan.sleep_active,
+            tcf_plan.replay_active,
+            700,
+            600,
+            500,
+        );
+        let _ = modules.sle.tick(&sle_inputs);
+
+        let _ = jepa_outputs;
     }
 
     #[test]
@@ -6290,9 +6496,9 @@ mod tests {
 
         router.sync_onn_params();
         let onn_dither = router
-            .onn_core
+            .runtime_modules
             .lock()
-            .map(|core| core.params.k_dither)
+            .map(|modules| modules.phase.params().k_dither)
             .unwrap_or(0);
         assert_eq!(onn_dither, 8000);
         assert_eq!(router.current_snn_knobs().verify_limit, 12);
@@ -6337,6 +6543,30 @@ mod tests {
         assert!(cycle.stabilize_cycles >= 8);
         assert_eq!(state.current.onn_coupling, 5000);
         assert_eq!(state.current.master, 7000);
+    }
+
+    #[test]
+    fn runtime_modules_v1_defaults_run_cycles() {
+        let mut modules = RuntimeModules::v1_defaults();
+        run_runtime_cycle(&mut modules, 1);
+        run_runtime_cycle(&mut modules, 2);
+    }
+
+    #[test]
+    fn runtime_modules_mock_bundle_compiles() {
+        let mut modules = RuntimeModules {
+            phase: Box::new(MockPhaseProvider::default()),
+            spikes: Box::new(MockSpikeRouter::default()),
+            world: Box::new(MockWorldModel::default()),
+            ssm: Box::new(MockWorkingMemory::default()),
+            ncde: Box::new(MockContinuousDynamics::default()),
+            cde: Box::new(MockCausalEngine::default()),
+            nsr: Box::new(MockNeuroSymbolicReasoner::default()),
+            tcf: Box::new(MockTemporalCoordinator::default()),
+            iit: Box::new(MockIntegrationMonitor::default()),
+            sle: Box::new(MockStrangeLoop::default()),
+        };
+        run_runtime_cycle(&mut modules, 42);
     }
 
     #[test]
