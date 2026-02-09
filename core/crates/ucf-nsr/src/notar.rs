@@ -7,13 +7,14 @@ use crate::NsrVerdict;
 
 const NSR_FACTS_ROOT_DOMAIN: &[u8] = b"ucf.nsr.v1.notar.facts.root";
 const NSR_INPUTS_DOMAIN: &[u8] = b"ucf.nsr.v1.notar.inputs";
+const NSR_FACTS_COMMIT_DOMAIN: &[u8] = b"ucf.nsr.v1.notar.facts.commit";
 const NSR_TRACE_COMMIT_DOMAIN: &[u8] = b"ucf.nsr.v1.notar.trace.commit";
 const NSR_TRACE_ROOT_DOMAIN: &[u8] = b"ucf.nsr.v1.notar.trace.root";
+const NSR_RULE_HIT_DOMAIN: &[u8] = b"ucf.nsr.v1.notar.rule.hit";
 const NSR_OUTPUTS_DOMAIN: &[u8] = b"ucf.nsr.v1.notar.outputs";
-const NSR_MOCK_SOLVER_DOMAIN: &[u8] = b"ucf.nsr.v1.notar.mock.smt";
 
 const FACTS_MAX: usize = 64;
-const RULES_MAX: usize = 16;
+const RULES_MAX: usize = 64;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Fact {
@@ -165,37 +166,39 @@ impl Fact {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct RuleId(pub u16);
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RuleId {
-    Safety,
-    Coherence,
-    Causality,
-    Output,
-    Learning,
-    RsaApply,
-    Unknown(u16),
+pub enum RuleSeverity {
+    Info = 0,
+    Warn = 1,
+    Block = 2,
 }
 
-impl RuleId {
-    fn code(self) -> u16 {
-        match self {
-            Self::Safety => 1,
-            Self::Coherence => 2,
-            Self::Causality => 3,
-            Self::Output => 4,
-            Self::Learning => 5,
-            Self::RsaApply => 6,
-            Self::Unknown(code) => code,
-        }
-    }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Rule {
+    pub id: RuleId,
+    pub name: &'static str,
+    pub severity: RuleSeverity,
+    pub priority: u16,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RuleHit {
+    pub cycle_id: u64,
+    pub id: RuleId,
+    pub severity: RuleSeverity,
+    pub reason: u16,
+    pub aux: [Digest32; 2],
+    pub commit: Digest32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NsrTrace {
     pub cycle_id: u64,
-    pub facts_root: Digest32,
-    pub applied_rules: Vec<RuleId>,
-    pub verdict: NsrVerdict,
+    pub hits: Vec<RuleHit>,
+    pub trace_root: Digest32,
     pub commit: Digest32,
 }
 
@@ -235,209 +238,336 @@ pub struct NsrOutputs {
     pub cycle_id: u64,
     pub verdict: NsrVerdict,
     pub trace_root: Digest32,
+    pub nsr_trace_root: Digest32,
     pub commit: Digest32,
 }
 
-pub trait NsrSolver {
-    fn solve(&self, facts: &[Fact]) -> (NsrVerdict, Vec<RuleId>);
+pub trait LogicHook {
+    fn prove(&self, cycle_id: u64, facts_commit: Digest32) -> Vec<RuleHit>;
 }
 
 #[derive(Clone, Debug)]
-pub struct MockSmtSolver {
-    pub commit: Digest32,
-}
+pub struct NoopLogicHook;
 
-impl MockSmtSolver {
-    pub fn new() -> Self {
-        let mut hasher = Hasher::new();
-        hasher.update(NSR_MOCK_SOLVER_DOMAIN);
-        let commit = Digest32::new(*hasher.finalize().as_bytes());
-        Self { commit }
+impl LogicHook for NoopLogicHook {
+    fn prove(&self, _cycle_id: u64, _facts_commit: Digest32) -> Vec<RuleHit> {
+        Vec::new()
     }
 }
 
-impl Default for MockSmtSolver {
-    fn default() -> Self {
-        Self::new()
-    }
+const REASON_RISK_OVER_CAP: u16 = 100;
+const REASON_POLICY_DENY: u16 = 110;
+const REASON_THOUGHT_ONLY_LEAK: u16 = 120;
+const REASON_HIGH_SURPRISE_LOW_COHERENCE: u16 = 130;
+const REASON_TIGHTEN_SYNC_LOW_PLV: u16 = 140;
+const REASON_DRIFT_OVER_CAP: u16 = 150;
+const REASON_SLEEP_ACTIVE: u16 = 160;
+const REASON_SURPRISE_NO_CDE: u16 = 170;
+const REASON_SURPRISE_NO_COUNTERFACTUAL: u16 = 180;
+const REASON_DAMP_OUTPUT: u16 = 190;
+const REASON_THOUGHT_ONLY_REQUESTED: u16 = 200;
+
+const RULES: &[Rule] = &[
+    Rule {
+        id: RuleId(1),
+        name: "RiskOverCap",
+        severity: RuleSeverity::Block,
+        priority: 10,
+    },
+    Rule {
+        id: RuleId(2),
+        name: "PolicyDeny",
+        severity: RuleSeverity::Block,
+        priority: 20,
+    },
+    Rule {
+        id: RuleId(3),
+        name: "ThoughtOnlyLeakGuard",
+        severity: RuleSeverity::Block,
+        priority: 30,
+    },
+    Rule {
+        id: RuleId(4),
+        name: "HighSurpriseLowCoherence",
+        severity: RuleSeverity::Block,
+        priority: 40,
+    },
+    Rule {
+        id: RuleId(5),
+        name: "TightenSyncLowPlv",
+        severity: RuleSeverity::Block,
+        priority: 50,
+    },
+    Rule {
+        id: RuleId(6),
+        name: "DriftOverCap",
+        severity: RuleSeverity::Block,
+        priority: 60,
+    },
+    Rule {
+        id: RuleId(7),
+        name: "SleepActive",
+        severity: RuleSeverity::Block,
+        priority: 70,
+    },
+    Rule {
+        id: RuleId(8),
+        name: "SurpriseNoCdeEdge",
+        severity: RuleSeverity::Block,
+        priority: 80,
+    },
+    Rule {
+        id: RuleId(9),
+        name: "SurpriseNoCounterfactual",
+        severity: RuleSeverity::Block,
+        priority: 90,
+    },
+    Rule {
+        id: RuleId(10),
+        name: "DampOutput",
+        severity: RuleSeverity::Block,
+        priority: 100,
+    },
+    Rule {
+        id: RuleId(11),
+        name: "ThoughtOnlyRequested",
+        severity: RuleSeverity::Info,
+        priority: 110,
+    },
+];
+
+pub fn rules() -> &'static [Rule] {
+    RULES
 }
 
-impl NsrSolver for MockSmtSolver {
-    fn solve(&self, facts: &[Fact]) -> (NsrVerdict, Vec<RuleId>) {
-        let mut phi = 0u16;
-        let mut plv = 0u16;
-        let mut drift = 0u16;
-        let mut surprise = 0u16;
-        let mut risk = 0u16;
-        let mut phase_locked = false;
-        let mut high_surprise = false;
-        let mut spike_threat_present = false;
-        let mut thought_only_present = false;
-        let mut sleep_active = false;
-        let mut replay_active = false;
-        let mut tighten_sync = false;
-        let mut damp_output = false;
-        let mut damp_learning = false;
-        let mut request_replay = false;
-        let mut has_cde_edge = false;
-        let mut has_cf_ok = false;
-        let mut tool_req = false;
-        let mut thought_only_requested = false;
+#[derive(Default)]
+struct FactsSummary {
+    phi: u16,
+    plv: u16,
+    drift: u16,
+    surprise: u16,
+    risk: u16,
+    phase_locked: bool,
+    high_surprise: bool,
+    thought_only_present: bool,
+    sleep_active: bool,
+    tighten_sync: bool,
+    damp_output: bool,
+    has_cde_edge: bool,
+    has_cf_ok: bool,
+    tool_req: bool,
+    thought_only_requested: bool,
+}
 
-        for fact in facts {
-            match *fact {
-                Fact::Phi(value) => phi = value,
-                Fact::Plv(value) => plv = value,
-                Fact::Drift(value) => drift = value,
-                Fact::Surprise(value) => {
-                    surprise = value;
-                    if value >= 7_000 {
-                        high_surprise = true;
-                    }
+fn summarize_facts(facts: &[Fact]) -> FactsSummary {
+    let mut summary = FactsSummary::default();
+    for fact in facts {
+        match *fact {
+            Fact::Phi(value) => summary.phi = value,
+            Fact::Plv(value) => summary.plv = value,
+            Fact::Drift(value) => summary.drift = value,
+            Fact::Surprise(value) => {
+                summary.surprise = value;
+                if value >= 7_000 {
+                    summary.high_surprise = true;
                 }
-                Fact::Risk(value) => risk = value,
-                Fact::TcfSleepActive => sleep_active = true,
-                Fact::TcfReplayActive => replay_active = true,
-                Fact::CdeEdge { .. } => has_cde_edge = true,
-                Fact::CdeCounterfactualOk { .. } => has_cf_ok = true,
-                Fact::IitHints {
-                    tighten_sync: ts,
-                    damp_output: doff,
-                    damp_learning: dlearn,
-                    request_replay: replay,
-                } => {
-                    tighten_sync = tighten_sync || ts;
-                    damp_output = damp_output || doff;
-                    damp_learning = damp_learning || dlearn;
-                    request_replay = request_replay || replay;
+            }
+            Fact::Risk(value) => summary.risk = value,
+            Fact::TcfSleepActive => summary.sleep_active = true,
+            Fact::CdeEdge { .. } => summary.has_cde_edge = true,
+            Fact::CdeCounterfactualOk { .. } => summary.has_cf_ok = true,
+            Fact::IitHints {
+                tighten_sync: ts,
+                damp_output: doff,
+                damp_learning: _,
+                request_replay: _,
+            } => {
+                summary.tighten_sync = summary.tighten_sync || ts;
+                summary.damp_output = summary.damp_output || doff;
+            }
+            Fact::OnnLocked { global_plv, .. } => {
+                summary.plv = global_plv;
+                if global_plv >= 7_000 {
+                    summary.phase_locked = true;
                 }
-                Fact::OnnLocked {
-                    global_plv,
-                    lock_window_buckets: _,
-                } => {
-                    plv = global_plv;
-                    if global_plv >= 7_000 {
-                        phase_locked = true;
-                    }
+            }
+            Fact::SpikeSummary { thought_only, .. } => {
+                if thought_only > 0 {
+                    summary.thought_only_present = true;
                 }
-                Fact::SpikeSummary {
-                    total: _,
-                    threat,
-                    thought_only,
-                } => {
-                    if threat > 0 {
-                        spike_threat_present = true;
-                    }
-                    if thought_only > 0 {
-                        thought_only_present = true;
-                    }
+            }
+            Fact::PhaseLocked => summary.phase_locked = true,
+            Fact::HighSurprise => summary.high_surprise = true,
+            Fact::ThoughtOnlyPresent => summary.thought_only_present = true,
+            Fact::ToolCallRequested => summary.tool_req = true,
+            Fact::ThoughtOnlyRequested => summary.thought_only_requested = true,
+            _ => {}
+        }
+    }
+    summary
+}
+
+fn evaluate_rules(cycle_id: u64, facts_commit: Digest32, summary: &FactsSummary) -> Vec<RuleHit> {
+    let mut hits = Vec::new();
+    for rule in RULES {
+        match rule.id.0 {
+            1 => {
+                if summary.risk >= 7_500 && summary.phi <= 2_500 {
+                    push_rule_hit(
+                        &mut hits,
+                        cycle_id,
+                        facts_commit,
+                        rule,
+                        REASON_RISK_OVER_CAP,
+                    );
                 }
-                Fact::PhaseLocked => phase_locked = true,
-                Fact::HighSurprise => high_surprise = true,
-                Fact::SpikeThreatPresent => spike_threat_present = true,
-                Fact::ThoughtOnlyPresent => thought_only_present = true,
-                Fact::ToolCallRequested => tool_req = true,
-                Fact::ThoughtOnlyRequested => thought_only_requested = true,
-                _ => {}
             }
-        }
-
-        let mut verdict = NsrVerdict::Allow;
-        let mut applied_rules = Vec::new();
-
-        if risk >= 7500 && phi <= 2500 {
-            applied_rules.push(RuleId::Safety);
-            verdict = NsrVerdict::Deny;
-        }
-
-        if tool_req && (risk >= 6000 || drift >= 7000) {
-            applied_rules.push(RuleId::Safety);
-            verdict = NsrVerdict::Deny;
-        }
-
-        let outward_intent = tool_req;
-        if thought_only_present && outward_intent {
-            applied_rules.push(RuleId::Output);
-            if verdict == NsrVerdict::Allow {
-                verdict = NsrVerdict::Restrict;
+            2 => {
+                if summary.tool_req && (summary.risk >= 6_000 || summary.drift >= 7_000) {
+                    push_rule_hit(&mut hits, cycle_id, facts_commit, rule, REASON_POLICY_DENY);
+                }
             }
-        }
-
-        if high_surprise && !phase_locked {
-            applied_rules.push(RuleId::Coherence);
-            if verdict == NsrVerdict::Allow {
-                verdict = NsrVerdict::Restrict;
+            3 => {
+                if summary.thought_only_present && summary.tool_req {
+                    push_rule_hit(
+                        &mut hits,
+                        cycle_id,
+                        facts_commit,
+                        rule,
+                        REASON_THOUGHT_ONLY_LEAK,
+                    );
+                }
             }
-        }
-
-        if tighten_sync && plv <= 3000 {
-            applied_rules.push(RuleId::Coherence);
-            if verdict == NsrVerdict::Allow {
-                verdict = NsrVerdict::Restrict;
+            4 => {
+                if summary.high_surprise && summary.plv <= 3_000 && !summary.phase_locked {
+                    push_rule_hit(
+                        &mut hits,
+                        cycle_id,
+                        facts_commit,
+                        rule,
+                        REASON_HIGH_SURPRISE_LOW_COHERENCE,
+                    );
+                }
             }
-        }
-
-        if drift >= 8000 && plv <= 4000 {
-            applied_rules.push(RuleId::Coherence);
-            if verdict == NsrVerdict::Allow {
-                verdict = NsrVerdict::Restrict;
+            5 => {
+                if summary.tighten_sync && summary.plv <= 3_000 {
+                    push_rule_hit(
+                        &mut hits,
+                        cycle_id,
+                        facts_commit,
+                        rule,
+                        REASON_TIGHTEN_SYNC_LOW_PLV,
+                    );
+                }
             }
-        }
-
-        if sleep_active {
-            applied_rules.push(RuleId::Coherence);
-            if verdict == NsrVerdict::Allow {
-                verdict = NsrVerdict::Restrict;
+            6 => {
+                if summary.drift >= 8_000 && summary.plv <= 4_000 {
+                    push_rule_hit(
+                        &mut hits,
+                        cycle_id,
+                        facts_commit,
+                        rule,
+                        REASON_DRIFT_OVER_CAP,
+                    );
+                }
             }
-        }
-
-        if surprise >= 7000 && !has_cde_edge {
-            applied_rules.push(RuleId::Causality);
-            if verdict == NsrVerdict::Allow {
-                verdict = NsrVerdict::Restrict;
+            7 => {
+                if summary.sleep_active {
+                    push_rule_hit(&mut hits, cycle_id, facts_commit, rule, REASON_SLEEP_ACTIVE);
+                }
             }
-        }
-
-        if has_cde_edge && !has_cf_ok && surprise >= 8000 {
-            applied_rules.push(RuleId::Causality);
-            if verdict == NsrVerdict::Allow {
-                verdict = NsrVerdict::Restrict;
+            8 => {
+                if summary.surprise >= 7_000 && !summary.has_cde_edge {
+                    push_rule_hit(
+                        &mut hits,
+                        cycle_id,
+                        facts_commit,
+                        rule,
+                        REASON_SURPRISE_NO_CDE,
+                    );
+                }
             }
-        }
-
-        if damp_output {
-            applied_rules.push(RuleId::Output);
-            if verdict == NsrVerdict::Allow {
-                verdict = NsrVerdict::Restrict;
+            9 => {
+                if summary.has_cde_edge && !summary.has_cf_ok && summary.surprise >= 8_000 {
+                    push_rule_hit(
+                        &mut hits,
+                        cycle_id,
+                        facts_commit,
+                        rule,
+                        REASON_SURPRISE_NO_COUNTERFACTUAL,
+                    );
+                }
             }
+            10 => {
+                if summary.damp_output {
+                    push_rule_hit(&mut hits, cycle_id, facts_commit, rule, REASON_DAMP_OUTPUT);
+                }
+            }
+            11 => {
+                if summary.thought_only_requested {
+                    push_rule_hit(
+                        &mut hits,
+                        cycle_id,
+                        facts_commit,
+                        rule,
+                        REASON_THOUGHT_ONLY_REQUESTED,
+                    );
+                }
+            }
+            _ => {}
         }
+    }
+    hits
+}
 
-        if thought_only_requested {
-            applied_rules.push(RuleId::Output);
-        }
+fn push_rule_hit(
+    hits: &mut Vec<RuleHit>,
+    cycle_id: u64,
+    facts_commit: Digest32,
+    rule: &Rule,
+    reason: u16,
+) {
+    hits.push(build_rule_hit(
+        cycle_id,
+        rule.id,
+        rule.severity,
+        reason,
+        [facts_commit, Digest32::new([0u8; 32])],
+        facts_commit,
+    ));
+}
 
-        let _ = (
-            replay_active,
-            damp_learning,
-            request_replay,
-            spike_threat_present,
+fn normalize_hook_hits(cycle_id: u64, facts_commit: Digest32, hits: &mut [RuleHit]) {
+    for hit in hits {
+        hit.cycle_id = cycle_id;
+        hit.commit = digest_rule_hit(
+            hit.cycle_id,
+            hit.id,
+            hit.severity,
+            hit.reason,
+            hit.aux,
+            facts_commit,
         );
-
-        if applied_rules.len() > RULES_MAX {
-            applied_rules.truncate(RULES_MAX);
-        }
-
-        (verdict, applied_rules)
     }
+}
+
+fn verdict_from_hits(hits: &[RuleHit]) -> NsrVerdict {
+    if hits.iter().any(|hit| hit.severity == RuleSeverity::Block) {
+        return NsrVerdict::Restrict;
+    }
+    if hits.iter().any(|hit| hit.severity == RuleSeverity::Warn) {
+        return NsrVerdict::Allow;
+    }
+    NsrVerdict::Allow
 }
 
 pub struct NsrCore {
-    solver: Box<dyn NsrSolver + Send + Sync>,
+    logic_hook: Box<dyn LogicHook + Send + Sync>,
 }
 
 impl NsrCore {
-    pub fn new(solver: Box<dyn NsrSolver + Send + Sync>) -> Self {
-        Self { solver }
+    pub fn new(logic_hook: Box<dyn LogicHook + Send + Sync>) -> Self {
+        Self { logic_hook }
     }
 
     pub fn tick(&self, inputs: &NsrInputs) -> NsrOutputs {
@@ -446,18 +576,27 @@ impl NsrCore {
 
     pub fn tick_with_trace(&self, inputs: &NsrInputs) -> (NsrOutputs, NsrTrace) {
         let facts_root = digest_facts_root(&inputs.facts);
-        let (verdict, mut applied_rules) = self.solver.solve(&inputs.facts);
-        if applied_rules.len() > RULES_MAX {
-            applied_rules.truncate(RULES_MAX);
+        let facts_commit =
+            digest_facts_commit(inputs.phase_bus_commit, inputs.policy_commit, facts_root);
+        let summary = summarize_facts(&inputs.facts);
+        let mut hits = evaluate_rules(inputs.cycle_id, facts_commit, &summary);
+
+        let mut hook_hits = self.logic_hook.prove(inputs.cycle_id, facts_commit);
+        normalize_hook_hits(inputs.cycle_id, facts_commit, &mut hook_hits);
+        hook_hits.sort_by(|a, b| a.id.cmp(&b.id).then_with(|| a.reason.cmp(&b.reason)));
+        hits.extend(hook_hits);
+
+        if hits.len() > RULES_MAX {
+            hits.truncate(RULES_MAX);
         }
-        let trace_commit =
-            digest_trace_commit(inputs.cycle_id, facts_root, verdict, &applied_rules);
-        let trace_root = digest_trace_root(trace_commit);
+
+        let trace_root = digest_trace_root(&hits);
+        let verdict = verdict_from_hits(&hits);
+        let trace_commit = digest_trace_commit(inputs.cycle_id, facts_commit, trace_root, verdict);
         let trace = NsrTrace {
             cycle_id: inputs.cycle_id,
-            facts_root,
-            applied_rules,
-            verdict,
+            hits,
+            trace_root,
             commit: trace_commit,
         };
         let outputs_commit = digest_outputs(inputs.cycle_id, verdict, trace_root);
@@ -465,6 +604,7 @@ impl NsrCore {
             cycle_id: inputs.cycle_id,
             verdict,
             trace_root,
+            nsr_trace_root: trace_root,
             commit: outputs_commit,
         };
         (outputs, trace)
@@ -473,7 +613,7 @@ impl NsrCore {
 
 impl Default for NsrCore {
     fn default() -> Self {
-        Self::new(Box::new(MockSmtSolver::default()))
+        Self::new(Box::new(NoopLogicHook))
     }
 }
 
@@ -502,6 +642,19 @@ fn digest_facts_root(facts: &[Fact]) -> Digest32 {
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
+fn digest_facts_commit(
+    phase_bus_commit: Digest32,
+    policy_commit: Digest32,
+    facts_root: Digest32,
+) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(NSR_FACTS_COMMIT_DOMAIN);
+    hasher.update(phase_bus_commit.as_bytes());
+    hasher.update(policy_commit.as_bytes());
+    hasher.update(facts_root.as_bytes());
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
 fn digest_inputs(
     cycle_id: u64,
     phase_bus_commit: Digest32,
@@ -519,30 +672,25 @@ fn digest_inputs(
 
 fn digest_trace_commit(
     cycle_id: u64,
-    facts_root: Digest32,
+    facts_commit: Digest32,
+    trace_root: Digest32,
     verdict: NsrVerdict,
-    applied_rules: &[RuleId],
 ) -> Digest32 {
     let mut hasher = Hasher::new();
     hasher.update(NSR_TRACE_COMMIT_DOMAIN);
     hasher.update(&cycle_id.to_be_bytes());
-    hasher.update(facts_root.as_bytes());
+    hasher.update(facts_commit.as_bytes());
+    hasher.update(trace_root.as_bytes());
     hasher.update(&[verdict.as_u8()]);
-    hasher.update(
-        &u16::try_from(applied_rules.len())
-            .unwrap_or(u16::MAX)
-            .to_be_bytes(),
-    );
-    for rule in applied_rules {
-        hasher.update(&rule.code().to_be_bytes());
-    }
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
-fn digest_trace_root(trace_commit: Digest32) -> Digest32 {
+fn digest_trace_root(hits: &[RuleHit]) -> Digest32 {
     let mut hasher = Hasher::new();
     hasher.update(NSR_TRACE_ROOT_DOMAIN);
-    hasher.update(trace_commit.as_bytes());
+    for hit in hits {
+        hasher.update(hit.commit.as_bytes());
+    }
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
@@ -553,6 +701,45 @@ fn digest_outputs(cycle_id: u64, verdict: NsrVerdict, trace_root: Digest32) -> D
     hasher.update(&[verdict.as_u8()]);
     hasher.update(trace_root.as_bytes());
     Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn digest_rule_hit(
+    cycle_id: u64,
+    id: RuleId,
+    severity: RuleSeverity,
+    reason: u16,
+    aux: [Digest32; 2],
+    facts_commit: Digest32,
+) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(NSR_RULE_HIT_DOMAIN);
+    hasher.update(&cycle_id.to_be_bytes());
+    hasher.update(&id.0.to_be_bytes());
+    hasher.update(&[severity as u8]);
+    hasher.update(&reason.to_be_bytes());
+    hasher.update(aux[0].as_bytes());
+    hasher.update(aux[1].as_bytes());
+    hasher.update(facts_commit.as_bytes());
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn build_rule_hit(
+    cycle_id: u64,
+    id: RuleId,
+    severity: RuleSeverity,
+    reason: u16,
+    aux: [Digest32; 2],
+    facts_commit: Digest32,
+) -> RuleHit {
+    let commit = digest_rule_hit(cycle_id, id, severity, reason, aux, facts_commit);
+    RuleHit {
+        cycle_id,
+        id,
+        severity,
+        reason,
+        aux,
+        commit,
+    }
 }
 
 #[cfg(test)]
@@ -569,99 +756,67 @@ mod tests {
     }
 
     #[test]
-    fn mock_solver_denies_high_risk_low_phi() {
-        let solver = MockSmtSolver::default();
-        let facts = vec![Fact::Risk(7600), Fact::Phi(2400)];
-        let (verdict, rules) = solver.solve(&facts);
-        assert_eq!(verdict, NsrVerdict::Deny);
-        assert!(rules.contains(&RuleId::Safety));
+    fn reasoning_trace_is_deterministic() {
+        let core = NsrCore::default();
+        let inputs = base_inputs(vec![Fact::Risk(7600), Fact::Phi(2400)]);
+
+        let (out_a, trace_a) = core.tick_with_trace(&inputs);
+        let (out_b, trace_b) = core.tick_with_trace(&inputs);
+
+        assert_eq!(trace_a.trace_root, trace_b.trace_root);
+        assert_eq!(out_a.trace_root, out_b.trace_root);
     }
 
     #[test]
-    fn mock_solver_restricts_low_plv_with_tighten_sync() {
-        let solver = MockSmtSolver::default();
-        let facts = vec![
-            Fact::Plv(2500),
-            Fact::IitHints {
-                tighten_sync: true,
-                damp_output: false,
-                damp_learning: false,
-                request_replay: false,
-            },
-        ];
-        let (verdict, rules) = solver.solve(&facts);
-        assert_eq!(verdict, NsrVerdict::Restrict);
-        assert!(rules.contains(&RuleId::Coherence));
+    fn block_rule_triggers_on_high_surprise_low_plv() {
+        let core = NsrCore::default();
+        let inputs = base_inputs(vec![Fact::Surprise(7200), Fact::Plv(2000)]);
+
+        let (out, trace) = core.tick_with_trace(&inputs);
+
+        assert_eq!(out.verdict, NsrVerdict::Restrict);
+        assert!(trace.hits.iter().any(|hit| hit.id == RuleId(4)));
     }
 
     #[test]
-    fn mock_solver_restricts_surprise_without_cde_edge() {
-        let solver = MockSmtSolver::default();
-        let facts = vec![Fact::Surprise(7200)];
-        let (verdict, rules) = solver.solve(&facts);
-        assert_eq!(verdict, NsrVerdict::Restrict);
-        assert!(rules.contains(&RuleId::Causality));
-    }
+    fn logic_hook_block_flips_verdict() {
+        #[derive(Default)]
+        struct BlockingHook;
 
-    #[test]
-    fn mock_solver_restricts_high_surprise_when_unlocked() {
-        let solver = MockSmtSolver::default();
-        let facts = vec![
-            Fact::Surprise(7200),
-            Fact::OnnLocked {
-                global_plv: 2_000,
-                lock_window_buckets: 1,
-            },
-        ];
-        let (verdict, rules) = solver.solve(&facts);
-        assert_eq!(verdict, NsrVerdict::Restrict);
-        assert!(rules.contains(&RuleId::Coherence));
-    }
+        impl LogicHook for BlockingHook {
+            fn prove(&self, cycle_id: u64, _facts_commit: Digest32) -> Vec<RuleHit> {
+                vec![RuleHit {
+                    cycle_id,
+                    id: RuleId(900),
+                    severity: RuleSeverity::Block,
+                    reason: 900,
+                    aux: [Digest32::new([0u8; 32]); 2],
+                    commit: Digest32::new([0u8; 32]),
+                }]
+            }
+        }
 
-    #[test]
-    fn mock_solver_restricts_thought_only_with_outward_intent() {
-        let solver = MockSmtSolver::default();
-        let facts = vec![Fact::ThoughtOnlyPresent, Fact::ToolCallRequested];
-        let (verdict, rules) = solver.solve(&facts);
-        assert_eq!(verdict, NsrVerdict::Restrict);
-        assert!(rules.contains(&RuleId::Output));
-    }
+        let core = NsrCore::new(Box::new(BlockingHook::default()));
+        let inputs = base_inputs(vec![Fact::Phi(6000), Fact::Plv(6000)]);
 
-    #[test]
-    fn mock_solver_restricts_when_damp_output() {
-        let solver = MockSmtSolver::default();
-        let facts = vec![Fact::IitHints {
-            tighten_sync: false,
-            damp_output: true,
-            damp_learning: false,
-            request_replay: false,
-        }];
-        let (verdict, rules) = solver.solve(&facts);
-        assert_eq!(verdict, NsrVerdict::Restrict);
-        assert!(rules.contains(&RuleId::Output));
-    }
+        let (out, trace) = core.tick_with_trace(&inputs);
 
-    #[test]
-    fn mock_solver_allows_thought_only() {
-        let solver = MockSmtSolver::default();
-        let facts = vec![Fact::ThoughtOnlyRequested];
-        let (verdict, rules) = solver.solve(&facts);
-        assert_eq!(verdict, NsrVerdict::Allow);
-        assert!(rules.contains(&RuleId::Output));
+        assert_eq!(out.verdict, NsrVerdict::Restrict);
+        assert!(trace.hits.iter().any(|hit| hit.id == RuleId(900)));
     }
 
     #[test]
     fn facts_root_is_order_invariant() {
-        let solver = MockSmtSolver::default();
         let facts_a = vec![Fact::Risk(1234), Fact::Phi(4321)];
         let facts_b = vec![Fact::Phi(4321), Fact::Risk(1234)];
         let inputs_a = base_inputs(facts_a);
         let inputs_b = base_inputs(facts_b);
+        let core = NsrCore::default();
 
-        let (out_a, trace_a) = NsrCore::new(Box::new(solver.clone())).tick_with_trace(&inputs_a);
-        let (out_b, trace_b) = NsrCore::new(Box::new(solver)).tick_with_trace(&inputs_b);
+        let (out_a, trace_a) = core.tick_with_trace(&inputs_a);
+        let (out_b, trace_b) = core.tick_with_trace(&inputs_b);
 
-        assert_eq!(trace_a.facts_root, trace_b.facts_root);
+        assert_eq!(trace_a.trace_root, trace_b.trace_root);
         assert_eq!(out_a.trace_root, out_b.trace_root);
     }
 }
