@@ -21,3 +21,5 @@ jobs:
         run: cargo build --workspace --all-targets
       - name: Cargo test
         run: cargo test --workspace --all-targets
+      - name: Cargo test (quiet)
+        run: cargo test -q
