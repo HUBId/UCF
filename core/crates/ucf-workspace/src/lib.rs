@@ -17,6 +17,7 @@ use ucf_types::v1::spec::{ActionCode, DecisionKind, PolicyDecision};
 use ucf_types::Digest32;
 
 const SUMMARY_MAX_BYTES: usize = 160;
+const NSR_HIT_SUMMARY_MAX: usize = 8;
 const CDE_TOP_EDGES_MAX: usize = 8;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -539,6 +540,8 @@ pub struct WorkspaceSnapshot {
     pub nsr_triggered_rules_root: Option<Digest32>,
     pub nsr_derived_facts_root: Option<Digest32>,
     pub nsr_fact_flags: u8,
+    pub nsr_hit_counts: [u16; 3],
+    pub nsr_hit_summaries: Vec<NsrHitSummary>,
     pub rsa_commit: Digest32,
     pub rsa_proposal_commit: Option<Digest32>,
     pub rsa_decision_apply: bool,
@@ -569,6 +572,26 @@ pub struct SleOutputsSnapshot {
     pub ssm_bias: i16,
     pub cde_bias: i16,
     pub request_replay: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NsrHitSummary {
+    pub rule_id: u16,
+    pub severity: u8,
+    pub reason: u16,
+    pub commit: Digest32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NsrTraceSummary {
+    pub trace_root: Digest32,
+    pub prev_commit: Option<Digest32>,
+    pub verdict: u8,
+    pub derived_facts_root: Option<Digest32>,
+    pub triggered_rules_root: Option<Digest32>,
+    pub fact_flags: u8,
+    pub hit_counts: [u16; 3],
+    pub hit_summaries: Vec<NsrHitSummary>,
 }
 
 /// Encode a workspace snapshot into a compact, deterministic payload for archiving.
@@ -739,6 +762,20 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
         }
     }
     payload.push(snapshot.nsr_fact_flags);
+    for count in snapshot.nsr_hit_counts {
+        payload.extend_from_slice(&count.to_be_bytes());
+    }
+    payload.extend_from_slice(
+        &u16::try_from(snapshot.nsr_hit_summaries.len())
+            .unwrap_or(u16::MAX)
+            .to_be_bytes(),
+    );
+    for summary in &snapshot.nsr_hit_summaries {
+        payload.extend_from_slice(&summary.rule_id.to_be_bytes());
+        payload.push(summary.severity);
+        payload.extend_from_slice(&summary.reason.to_be_bytes());
+        payload.extend_from_slice(summary.commit.as_bytes());
+    }
     payload.extend_from_slice(snapshot.rsa_commit.as_bytes());
     match snapshot.rsa_proposal_commit {
         Some(commit) => {
@@ -869,6 +906,8 @@ pub struct Workspace {
     nsr_triggered_rules_root: Option<Digest32>,
     nsr_derived_facts_root: Option<Digest32>,
     nsr_fact_flags: u8,
+    nsr_hit_counts: [u16; 3],
+    nsr_hit_summaries: Vec<NsrHitSummary>,
     sle_commit: Digest32,
     sle_reflection_commit: Digest32,
     sle_reflection_class: u8,
@@ -951,6 +990,8 @@ impl Workspace {
             nsr_triggered_rules_root: None,
             nsr_derived_facts_root: None,
             nsr_fact_flags: 0,
+            nsr_hit_counts: [0u16; 3],
+            nsr_hit_summaries: Vec::new(),
             sle_commit: Digest32::new([0u8; 32]),
             sle_reflection_commit: Digest32::new([0u8; 32]),
             sle_reflection_class: 0,
@@ -1187,21 +1228,18 @@ impl Workspace {
         self.iit_output = Some(output);
     }
 
-    pub fn set_nsr_trace(
-        &mut self,
-        trace_root: Digest32,
-        prev_commit: Option<Digest32>,
-        verdict: u8,
-        derived_facts_root: Option<Digest32>,
-        triggered_rules_root: Option<Digest32>,
-        fact_flags: u8,
-    ) {
-        self.nsr_trace_root = Some(trace_root);
-        self.nsr_prev_commit = prev_commit;
-        self.nsr_verdict = Some(verdict);
-        self.nsr_derived_facts_root = derived_facts_root;
-        self.nsr_triggered_rules_root = triggered_rules_root;
-        self.nsr_fact_flags = fact_flags;
+    pub fn set_nsr_trace(&mut self, mut summary: NsrTraceSummary) {
+        self.nsr_trace_root = Some(summary.trace_root);
+        self.nsr_prev_commit = summary.prev_commit;
+        self.nsr_verdict = Some(summary.verdict);
+        self.nsr_derived_facts_root = summary.derived_facts_root;
+        self.nsr_triggered_rules_root = summary.triggered_rules_root;
+        self.nsr_fact_flags = summary.fact_flags;
+        self.nsr_hit_counts = summary.hit_counts;
+        if summary.hit_summaries.len() > NSR_HIT_SUMMARY_MAX {
+            summary.hit_summaries.truncate(NSR_HIT_SUMMARY_MAX);
+        }
+        self.nsr_hit_summaries = summary.hit_summaries;
     }
 
     pub fn set_sle_outputs(&mut self, outputs: SleOutputsSnapshot) {
@@ -1329,6 +1367,8 @@ impl Workspace {
         let nsr_triggered_rules_root = self.nsr_triggered_rules_root.take();
         let nsr_derived_facts_root = self.nsr_derived_facts_root.take();
         let nsr_fact_flags = self.nsr_fact_flags;
+        let nsr_hit_counts = self.nsr_hit_counts;
+        let nsr_hit_summaries = std::mem::take(&mut self.nsr_hit_summaries);
         let rsa_commit = self.rsa_commit;
         let rsa_proposal_commit = self.rsa_proposal_commit;
         let rsa_decision_apply = self.rsa_decision_apply;
@@ -1402,6 +1442,8 @@ impl Workspace {
             nsr_triggered_rules_root,
             nsr_derived_facts_root,
             nsr_fact_flags,
+            nsr_hit_counts,
+            &nsr_hit_summaries,
             rsa_commit,
             rsa_proposal_commit,
             rsa_decision_apply,
@@ -1478,6 +1520,8 @@ impl Workspace {
             nsr_triggered_rules_root,
             nsr_derived_facts_root,
             nsr_fact_flags,
+            nsr_hit_counts,
+            nsr_hit_summaries,
             rsa_commit,
             rsa_proposal_commit,
             rsa_decision_apply,
@@ -1931,6 +1975,8 @@ fn commit_snapshot(
     nsr_triggered_rules_root: Option<Digest32>,
     nsr_derived_facts_root: Option<Digest32>,
     nsr_fact_flags: u8,
+    nsr_hit_counts: [u16; 3],
+    nsr_hit_summaries: &[NsrHitSummary],
     rsa_commit: Digest32,
     rsa_proposal_commit: Option<Digest32>,
     rsa_decision_apply: bool,
@@ -2108,6 +2154,20 @@ fn commit_snapshot(
         }
     }
     hasher.update(&[nsr_fact_flags]);
+    for count in nsr_hit_counts {
+        hasher.update(&count.to_be_bytes());
+    }
+    hasher.update(
+        &u32::try_from(nsr_hit_summaries.len())
+            .unwrap_or(u32::MAX)
+            .to_be_bytes(),
+    );
+    for summary in nsr_hit_summaries {
+        hasher.update(&summary.rule_id.to_be_bytes());
+        hasher.update(&[summary.severity]);
+        hasher.update(&summary.reason.to_be_bytes());
+        hasher.update(summary.commit.as_bytes());
+    }
     hasher.update(rsa_commit.as_bytes());
     match rsa_proposal_commit {
         Some(commit) => {

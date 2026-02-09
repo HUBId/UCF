@@ -53,7 +53,7 @@ use ucf_ncde::{
     apply_gain_phase_delta, apply_gain_spike_delta, apply_leak_delta, ContinuousDynamics, NcdeCore,
     NcdeInputs, NcdeOutputs, NcdeParams,
 };
-use ucf_nsr::{Fact, NeuroSymbolicReasoner, NsrCore, NsrInputs, NsrOutputs};
+use ucf_nsr::{Fact, NeuroSymbolicReasoner, NsrCore, NsrInputs, NsrOutputs, RuleHit, RuleSeverity};
 use ucf_nsr_port::{light_report, ActionIntent, NsrInput, NsrPort, NsrReport, NsrVerdict};
 use ucf_onn::{
     apply_coupling_delta, apply_lock_window_delta, OnnCore, OnnInputs, OnnParams, PhaseBus,
@@ -98,8 +98,8 @@ use ucf_tom_port::{IntentType, TomPort};
 use ucf_types::v1::spec::{ControlFrame, DecisionKind, Digest, ExperienceRecord, PolicyDecision};
 use ucf_types::{AlgoId, Digest32, EvidenceId, GainBudget};
 use ucf_workspace::{
-    output_event_commit, SignalKind, SleOutputsSnapshot, Workspace, WorkspaceConfig,
-    WorkspaceSignal, WorkspaceSnapshot,
+    output_event_commit, NsrHitSummary, NsrTraceSummary, SignalKind, SleOutputsSnapshot, Workspace,
+    WorkspaceConfig, WorkspaceSignal, WorkspaceSnapshot,
 };
 
 const ISM_ANCHOR_TOP_K: usize = 4;
@@ -115,6 +115,7 @@ const NCDE_RECORD_KIND: u16 = 142;
 const SSM_RECORD_KIND: u16 = 149;
 const UPDATE_MODE_RECORD_KIND: u16 = 156;
 const JEPA_RECORD_KIND: u16 = 160;
+const NSR_HIT_SUMMARY_MAX: usize = 8;
 const ONN_COHERENCE_THROTTLE: u16 = 2000;
 const ONN_COHERENCE_THROTTLE_RESTRICT: u16 = 3500;
 const LOCK_MIN_SPEAK: u16 = 3000;
@@ -995,6 +996,8 @@ impl Router {
                 nsr_triggered_rules_root: None,
                 nsr_derived_facts_root: None,
                 nsr_fact_flags: 0,
+                nsr_hit_counts: [0u16; 3],
+                nsr_hit_summaries: Vec::new(),
                 rsa_commit: Digest32::new([0u8; 32]),
                 rsa_proposal_commit: None,
                 rsa_decision_apply: false,
@@ -1683,29 +1686,33 @@ impl Router {
                         matches!(pulse.kind, PulseKind::Sleep),
                         self.tcf_plan_for(Some(&ctx)),
                     );
-                    let nsr_output = self
+                    let (nsr_output, nsr_trace) = self
                         .runtime_modules
                         .lock()
                         .expect("runtime modules lock")
                         .nsr
-                        .tick(&nsr_inputs);
+                        .tick_with_trace(&nsr_inputs);
+                    let (nsr_hit_counts, nsr_hit_summaries, nsr_warned) =
+                        summarize_nsr_hits(&nsr_trace.hits);
                     ctx.nsr_output = Some(nsr_output.clone());
                     if let Ok(mut workspace) = self.workspace.lock() {
                         let nsr_fact_flags =
                             nsr_fact_flags(phase_bus.global_plv >= 7_000, surprise_score >= 7_000);
-                        workspace.set_nsr_trace(
-                            nsr_output.trace_root,
-                            None,
-                            nsr_output.verdict.as_u8(),
-                            None,
-                            None,
-                            nsr_fact_flags,
-                        );
+                        workspace.set_nsr_trace(NsrTraceSummary {
+                            trace_root: nsr_output.trace_root,
+                            prev_commit: None,
+                            verdict: nsr_output.verdict.as_u8(),
+                            derived_facts_root: None,
+                            triggered_rules_root: None,
+                            fact_flags: nsr_fact_flags,
+                            hit_counts: nsr_hit_counts,
+                            hit_summaries: nsr_hit_summaries,
+                        });
                     }
                     self.append_nsr_output_record(cycle_id, &nsr_output);
                     let nsr_warn_streak = self.update_nsr_warn_streak(nsr_output.verdict);
                     ctx.nsr_warn_streak = Some(nsr_warn_streak);
-                    if nsr_output.verdict != NsrVerdict::Allow {
+                    if nsr_output.verdict != NsrVerdict::Allow || nsr_warned {
                         ctx.update_mode = Some(UpdateMode::Stabilize);
                     }
                     if let Some(mode) = ctx.update_mode {
@@ -5290,6 +5297,31 @@ fn digest_policy_commit(decision: &PolicyDecision) -> Digest32 {
 
 fn nsr_fact_flags(phase_locked: bool, high_surprise: bool) -> u8 {
     (phase_locked as u8) | ((high_surprise as u8) << 1)
+}
+
+fn summarize_nsr_hits(hits: &[RuleHit]) -> ([u16; 3], Vec<NsrHitSummary>, bool) {
+    let mut counts = [0u16; 3];
+    let mut summaries = Vec::new();
+    let mut warned = false;
+    for hit in hits {
+        match hit.severity {
+            RuleSeverity::Info => counts[0] = counts[0].saturating_add(1),
+            RuleSeverity::Warn => {
+                counts[1] = counts[1].saturating_add(1);
+                warned = true;
+            }
+            RuleSeverity::Block => counts[2] = counts[2].saturating_add(1),
+        }
+        if summaries.len() < NSR_HIT_SUMMARY_MAX {
+            summaries.push(NsrHitSummary {
+                rule_id: hit.id.0,
+                severity: hit.severity as u8,
+                reason: hit.reason,
+                commit: hit.commit,
+            });
+        }
+    }
+    (counts, summaries, warned)
 }
 
 struct SpikeCountSummary {

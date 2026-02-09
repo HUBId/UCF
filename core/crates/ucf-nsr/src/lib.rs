@@ -13,7 +13,10 @@ mod backend_datalog;
 mod backend_smt;
 mod notar;
 
-pub use notar::{Fact, MockSmtSolver, NsrCore, NsrInputs, NsrOutputs, NsrSolver, NsrTrace, RuleId};
+pub use notar::{
+    rules, Fact, LogicHook, NoopLogicHook, NsrCore, NsrInputs, NsrOutputs, NsrTrace, Rule, RuleHit,
+    RuleId, RuleSeverity,
+};
 
 const LIGHT_PROOF_DOMAIN: &[u8] = b"ucf.nsr.proof.light.v1";
 const NSR_TRACE_INPUTS_DOMAIN: &[u8] = b"ucf.nsr.inputs.v1";
@@ -123,11 +126,16 @@ pub trait SymbolicBackend {
 /// - `NsrOutputs.commit = H(cycle_id, verdict, trace_root)`
 pub trait NeuroSymbolicReasoner {
     fn tick(&self, inputs: &NsrInputs) -> NsrOutputs;
+    fn tick_with_trace(&self, inputs: &NsrInputs) -> (NsrOutputs, NsrTrace);
 }
 
 impl NeuroSymbolicReasoner for NsrCore {
     fn tick(&self, inputs: &NsrInputs) -> NsrOutputs {
         NsrCore::tick(self, inputs)
+    }
+
+    fn tick_with_trace(&self, inputs: &NsrInputs) -> (NsrOutputs, NsrTrace) {
+        NsrCore::tick_with_trace(self, inputs)
     }
 }
 
@@ -137,9 +145,9 @@ pub struct MockNeuroSymbolicReasoner {
 
 impl MockNeuroSymbolicReasoner {
     pub fn new(verdict: NsrVerdict) -> Self {
-        let solver = Box::new(FixedVerdictSolver { verdict });
+        let hook = Box::new(FixedVerdictHook { verdict });
         Self {
-            core: NsrCore::new(solver),
+            core: NsrCore::new(hook),
         }
     }
 }
@@ -154,15 +162,29 @@ impl NeuroSymbolicReasoner for MockNeuroSymbolicReasoner {
     fn tick(&self, inputs: &NsrInputs) -> NsrOutputs {
         self.core.tick(inputs)
     }
+
+    fn tick_with_trace(&self, inputs: &NsrInputs) -> (NsrOutputs, NsrTrace) {
+        self.core.tick_with_trace(inputs)
+    }
 }
 
-struct FixedVerdictSolver {
+struct FixedVerdictHook {
     verdict: NsrVerdict,
 }
 
-impl NsrSolver for FixedVerdictSolver {
-    fn solve(&self, _facts: &[Fact]) -> (NsrVerdict, Vec<RuleId>) {
-        (self.verdict, Vec::new())
+impl LogicHook for FixedVerdictHook {
+    fn prove(&self, cycle_id: u64, _facts_commit: Digest32) -> Vec<RuleHit> {
+        match self.verdict {
+            NsrVerdict::Allow => Vec::new(),
+            NsrVerdict::Restrict | NsrVerdict::Deny => vec![RuleHit {
+                cycle_id,
+                id: RuleId(u16::MAX),
+                severity: RuleSeverity::Block,
+                reason: 999,
+                aux: [Digest32::new([0u8; 32]); 2],
+                commit: Digest32::new([0u8; 32]),
+            }],
+        }
     }
 }
 
