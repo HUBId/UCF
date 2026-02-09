@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
 use std::fmt;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU16, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use blake3::Hasher;
@@ -125,6 +125,11 @@ const CAUSAL_REPORT_FLAG_LIGHT: u16 = 0b1000;
 const SELF_CONSISTENCY_OK_THRESHOLD: u16 = 5000;
 const NSR_POLICY_COMMIT_DOMAIN: &[u8] = b"ucf.nsr.policy.commit.v1";
 
+pub const PIPELINE: &[&str] = &[
+    "onn", "spikebus", "coupling", "jepa", "iit", "tcf", "nsr", "sle", "ncde", "ssm", "cde",
+    "output", "archive",
+];
+
 #[derive(Debug)]
 pub enum RouterError {
     PolicyDenied(i32),
@@ -167,6 +172,7 @@ pub struct Router {
     workspace: Arc<Mutex<Workspace>>,
     workspace_base: WorkspaceConfig,
     cycle_counter: AtomicU64,
+    force_stabilize_cycles: AtomicU16,
     tcf_port: Mutex<Box<dyn TcfPort + Send + Sync>>,
     tcf_core: Mutex<TcfCore>,
     last_tcf_plan: Mutex<Option<TcfPlan>>,
@@ -543,6 +549,7 @@ impl Router {
             workspace_base,
             workspace: Arc::new(Mutex::new(Workspace::new(workspace_base))),
             cycle_counter: AtomicU64::new(0),
+            force_stabilize_cycles: AtomicU16::new(0),
             tcf_port: Mutex::new(Box::new(DeterministicTcf::default())),
             tcf_core: Mutex::new(TcfCore::default()),
             last_tcf_plan: Mutex::new(None),
@@ -644,6 +651,10 @@ impl Router {
             .lock()
             .ok()
             .and_then(|guard| guard.clone())
+    }
+
+    pub fn force_stabilize_cycles(&self) -> u16 {
+        self.force_stabilize_cycles.load(Ordering::Relaxed)
     }
 
     pub fn pending_neuromod_delta(&self) -> Option<NeuromodDelta> {
@@ -1144,6 +1155,9 @@ impl Router {
                         drift_score,
                         iit_output.phi_proxy,
                     );
+                    if update_mode == UpdateMode::Stabilize {
+                        self.force_stabilize_cycles.fetch_add(1, Ordering::Relaxed);
+                    }
                     ctx.update_mode = Some(update_mode);
                     ctx.coherence_request_replay = self.coherence_request_replay(
                         update_mode,

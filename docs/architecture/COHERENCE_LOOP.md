@@ -74,12 +74,26 @@ The loop relies on explicit signals and commits (all hashed) with clear directio
 - **Promotion attempt handling**: Any attempt to promote restricted output **must** result in policy/NSR gating and, when coherence degrades, a Stabilize override for update mode to damp outputs and learning caps.【F:core/crates/ucf-router/src/lib.rs†L3081-L3119】【F:core/crates/ucf-tcf/src/lib.rs†L340-L410】
 - **Policy ecology read-only assumption**: Policy evaluation is treated as immutable input (policy commit is read-only for the cycle) and NSR decisions are computed against that committed policy state.【F:core/crates/ucf-router/src/lib.rs†L742-L781】【F:core/crates/ucf-nsr/src/notar.rs†L160-L210】
 
-## 8. Failure modes & expected system response
+## 8. Coherence Gate (CI guardrails)
+The coherence gate is a lightweight CI guardrail that asserts:
+
+- **Pipeline order** is fixed and matches the authoritative `PIPELINE` list used by the runtime orchestrator.
+- **Determinism**: running the same fixed input sequence produces identical workspace snapshot commits and archive roots.
+- **ThoughtOnly non-leak**: ThoughtOnly emission and a speech escape attempt are rejected by the output router, while stabilization counters advance.
+
+### Extending the pipeline safely
+If you add or reorder coherence stages:
+
+1. Update `ucf_router::PIPELINE` to match the new canonical sequence.
+2. Update the coherence-gate tests to assert the new order.
+3. Keep changes additive and deterministic (no wall-clock or random inputs in tests).
+
+## 9. Failure modes & expected system response
 - **Low coherence / high drift** → **Stabilize**: Update mode is forced to Stabilize, lowering learning caps and dampening outputs via TCF and IIT hints.【F:core/crates/ucf-router/src/lib.rs†L3081-L3173】【F:core/crates/ucf-tcf/src/lib.rs†L340-L410】【F:core/crates/ucf-iit/src/lib.rs†L170-L246】
 - **High surprise + low phi** → **Replay request**: IIT/SLE can request replay; TCF and router honor replay-active state when thresholds are crossed.【F:core/crates/ucf-iit/src/lib.rs†L170-L246】【F:core/crates/ucf-sle/src/lib.rs†L250-L330】【F:core/crates/ucf-tcf/src/lib.rs†L340-L410】
 - **Policy/NSR denial** → **Output suppression**: TCF output caps drop to zero when policy is not OK or NSR verdict is restrictive/deny, and the router blocks outward emissions.【F:core/crates/ucf-tcf/src/lib.rs†L340-L410】【F:core/crates/ucf-router/src/lib.rs†L2058-L2125】
 
-## 9. Glossary (short)
+## 10. Glossary (short)
 - **Commit**: Blake3 digest binding a structured input/output to deterministic bytes.
 - **PhaseBus**: ONN output with `gamma_bucket`, `global_plv`, and `phase_commit` shared across coherence modules.【F:core/crates/ucf-onn/src/lib.rs†L170-L210】
 - **Coherence lag**: 4-slot ring buffer of phase/SSM/IIT/NSR state used to seed update modes.【F:core/crates/ucf-router/src/lib.rs†L117-L140】【F:core/crates/ucf-router/src/lib.rs†L293-L340】
