@@ -642,7 +642,8 @@ fn update_budget_state(
 
     if low_plv_streak == 0 && high_novelty_streak == 0 && violation_streak == 0 {
         stable_cycles = stable_cycles.saturating_add(1);
-        if stable_cycles >= GAIN_BUDGET_STABLE_MIN && stable_cycles % GAIN_BUDGET_RELAX_WINDOW == 0
+        if stable_cycles >= GAIN_BUDGET_STABLE_MIN
+            && stable_cycles.is_multiple_of(GAIN_BUDGET_RELAX_WINDOW)
         {
             budget.master = relax_budget(budget.master);
             budget.coupling = relax_budget(budget.coupling);
