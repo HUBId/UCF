@@ -796,7 +796,7 @@ mod tests {
             }
         }
 
-        let core = NsrCore::new(Box::new(BlockingHook::default()));
+        let core = NsrCore::new(Box::new(BlockingHook));
         let inputs = base_inputs(vec![Fact::Phi(6000), Fact::Plv(6000)]);
 
         let (out, trace) = core.tick_with_trace(&inputs);
