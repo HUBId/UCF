@@ -6341,10 +6341,11 @@ mod tests {
 
     #[test]
     fn relaxation_requires_stable_window() {
-        let mut budget = GainBudget::default();
-        budget.master = 9000;
-        budget.coupling = 9000;
-        budget = finalize_gain_budget(budget);
+        let budget = finalize_gain_budget(GainBudget {
+            master: 9000,
+            coupling: 9000,
+            ..GainBudget::default()
+        });
         let mut state = BudgetState {
             current: budget,
             low_plv_streak: 0,
