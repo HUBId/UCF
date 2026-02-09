@@ -582,6 +582,18 @@ pub struct NsrHitSummary {
     pub commit: Digest32,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NsrTraceSummary {
+    pub trace_root: Digest32,
+    pub prev_commit: Option<Digest32>,
+    pub verdict: u8,
+    pub derived_facts_root: Option<Digest32>,
+    pub triggered_rules_root: Option<Digest32>,
+    pub fact_flags: u8,
+    pub hit_counts: [u16; 3],
+    pub hit_summaries: Vec<NsrHitSummary>,
+}
+
 /// Encode a workspace snapshot into a compact, deterministic payload for archiving.
 ///
 /// Summaries included here are already sanitized and non-sensitive (categorical labels
@@ -1216,28 +1228,18 @@ impl Workspace {
         self.iit_output = Some(output);
     }
 
-    pub fn set_nsr_trace(
-        &mut self,
-        trace_root: Digest32,
-        prev_commit: Option<Digest32>,
-        verdict: u8,
-        derived_facts_root: Option<Digest32>,
-        triggered_rules_root: Option<Digest32>,
-        fact_flags: u8,
-        hit_counts: [u16; 3],
-        mut hit_summaries: Vec<NsrHitSummary>,
-    ) {
-        self.nsr_trace_root = Some(trace_root);
-        self.nsr_prev_commit = prev_commit;
-        self.nsr_verdict = Some(verdict);
-        self.nsr_derived_facts_root = derived_facts_root;
-        self.nsr_triggered_rules_root = triggered_rules_root;
-        self.nsr_fact_flags = fact_flags;
-        self.nsr_hit_counts = hit_counts;
-        if hit_summaries.len() > NSR_HIT_SUMMARY_MAX {
-            hit_summaries.truncate(NSR_HIT_SUMMARY_MAX);
+    pub fn set_nsr_trace(&mut self, mut summary: NsrTraceSummary) {
+        self.nsr_trace_root = Some(summary.trace_root);
+        self.nsr_prev_commit = summary.prev_commit;
+        self.nsr_verdict = Some(summary.verdict);
+        self.nsr_derived_facts_root = summary.derived_facts_root;
+        self.nsr_triggered_rules_root = summary.triggered_rules_root;
+        self.nsr_fact_flags = summary.fact_flags;
+        self.nsr_hit_counts = summary.hit_counts;
+        if summary.hit_summaries.len() > NSR_HIT_SUMMARY_MAX {
+            summary.hit_summaries.truncate(NSR_HIT_SUMMARY_MAX);
         }
-        self.nsr_hit_summaries = hit_summaries;
+        self.nsr_hit_summaries = summary.hit_summaries;
     }
 
     pub fn set_sle_outputs(&mut self, outputs: SleOutputsSnapshot) {

@@ -98,8 +98,8 @@ use ucf_tom_port::{IntentType, TomPort};
 use ucf_types::v1::spec::{ControlFrame, DecisionKind, Digest, ExperienceRecord, PolicyDecision};
 use ucf_types::{AlgoId, Digest32, EvidenceId, GainBudget};
 use ucf_workspace::{
-    output_event_commit, NsrHitSummary, SignalKind, SleOutputsSnapshot, Workspace, WorkspaceConfig,
-    WorkspaceSignal, WorkspaceSnapshot,
+    output_event_commit, NsrHitSummary, NsrTraceSummary, SignalKind, SleOutputsSnapshot, Workspace,
+    WorkspaceConfig, WorkspaceSignal, WorkspaceSnapshot,
 };
 
 const ISM_ANCHOR_TOP_K: usize = 4;
@@ -1698,16 +1698,16 @@ impl Router {
                     if let Ok(mut workspace) = self.workspace.lock() {
                         let nsr_fact_flags =
                             nsr_fact_flags(phase_bus.global_plv >= 7_000, surprise_score >= 7_000);
-                        workspace.set_nsr_trace(
-                            nsr_output.trace_root,
-                            None,
-                            nsr_output.verdict.as_u8(),
-                            None,
-                            None,
-                            nsr_fact_flags,
-                            nsr_hit_counts,
-                            nsr_hit_summaries,
-                        );
+                        workspace.set_nsr_trace(NsrTraceSummary {
+                            trace_root: nsr_output.trace_root,
+                            prev_commit: None,
+                            verdict: nsr_output.verdict.as_u8(),
+                            derived_facts_root: None,
+                            triggered_rules_root: None,
+                            fact_flags: nsr_fact_flags,
+                            hit_counts: nsr_hit_counts,
+                            hit_summaries: nsr_hit_summaries,
+                        });
                     }
                     self.append_nsr_output_record(cycle_id, &nsr_output);
                     let nsr_warn_streak = self.update_nsr_warn_streak(nsr_output.verdict);
