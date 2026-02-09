@@ -19,8 +19,9 @@ use ucf_attn_controller::{
 use ucf_bluebrain_port::{BlueBrainPort, NeuromodDelta};
 use ucf_brain_mapper::map_to_stimulus;
 use ucf_cde::{
-    apply_edge_thresh_delta, apply_score_step_delta, CausalEdge as CdeV1Edge, CdeCore as CdeV1Core,
-    CdeInputs as CdeV1Inputs, CdeOutputs as CdeV1Outputs, CdeParams,
+    apply_edge_thresh_delta, apply_score_step_delta, derive_observation_commit,
+    CausalEdge as CdeV1Edge, CdeCore as CdeV1Core, CdeInputs as CdeV1Inputs,
+    CdeOutputs as CdeV1Outputs, CdeParams,
 };
 use ucf_cde_scm::{
     CausalReport, CdeEngine, CdeInputs, CdeNodeId, CdeOutputs, CounterfactualResult,
@@ -673,6 +674,7 @@ impl Router {
                 cde_top_edges: Vec::new(),
                 cde_top_edge_commits: Vec::new(),
                 cde_intervention_commit: None,
+                cde_observation_commit: Digest32::new([0u8; 32]),
                 ssm_commit: Digest32::new([0u8; 32]),
                 ssm_state_commit: Digest32::new([0u8; 32]),
                 ssm_state_digest: Digest32::new([0u8; 32]),
@@ -695,6 +697,7 @@ impl Router {
                 tcf_sleep_active: false,
                 tcf_replay_active: false,
                 tcf_lock_window_buckets: 0,
+                lock_window_source_cycle: 0,
                 coherence_lag_commit: Digest32::new([0u8; 32]),
                 update_mode: 0,
                 onn_phase_commit: Digest32::new([0u8; 32]),
@@ -706,6 +709,7 @@ impl Router {
                 nsr_verdict: None,
                 nsr_triggered_rules_root: None,
                 nsr_derived_facts_root: None,
+                nsr_fact_flags: 0,
                 rsa_commit: Digest32::new([0u8; 32]),
                 rsa_proposal_commit: None,
                 rsa_decision_apply: false,
@@ -819,10 +823,7 @@ impl Router {
                     });
                     ctx.lens_selection = lens_selection.clone();
                     ctx.surprise_score = Some(surprise_score);
-                    let lock_window_buckets = self
-                        .tcf_plan_for(None)
-                        .map(|plan| plan.lock_window_buckets)
-                        .unwrap_or(1);
+                    let lock_window_buckets = self.lagged_lock_window_buckets();
                     let onn_outputs = self.tick_onn_phase(
                         cycle_id,
                         causal_attention_risk,
@@ -1299,10 +1300,33 @@ impl Router {
                         iit_output.phi_proxy,
                         phi_high,
                     );
+                    let jepa_surprise = ctx
+                        .jepa_outputs
+                        .as_ref()
+                        .map(|output| output.surprise)
+                        .unwrap_or(surprise_score);
+                    let ssm_state_digest =
+                        ctx.ssm_output
+                            .as_ref()
+                            .map(|output| output.ssm_state_digest)
+                            .or_else(|| {
+                                self.last_ssm_output.lock().ok().and_then(|guard| {
+                                    guard.as_ref().map(|out| out.ssm_state_digest)
+                                })
+                            })
+                            .unwrap_or_else(|| Digest32::new([0u8; 32]));
+                    let world_state_commit = self.world_state_commit_from_ctx(&ctx);
+                    let observation_commit = derive_observation_commit(
+                        world_state_commit,
+                        ssm_state_digest,
+                        spike_root_commit,
+                        phase_bus.commit,
+                    );
                     let cde_v1_output = self.tick_cde_v1(
                         cycle_id,
                         &phase_bus,
                         spike_root_commit,
+                        observation_commit,
                         ctx.ssm_output.as_ref(),
                         ncde_snapshot.as_ref(),
                         &iit_output,
@@ -1326,6 +1350,7 @@ impl Router {
                                 compress_cde_v1_edges(&output.top_edges),
                                 collect_cde_v1_edge_commits(&output.top_edges),
                                 output.intervention.as_ref().map(|item| item.commit),
+                                observation_commit,
                             );
                         }
                         self.append_cde_output_record(cycle_id, &output);
@@ -1351,9 +1376,12 @@ impl Router {
                         ctx.ncde_output.as_ref(),
                         &iit_output,
                         ctx.self_state.as_ref(),
+                        spike_counts.clone(),
+                        spike_outputs.max_intensity,
                         ctx.replay_pressure.unwrap_or(0),
                         drift_score,
                         surprise_score,
+                        jepa_surprise,
                         attention_risk,
                         ctx.output_intent,
                         thought_only,
@@ -1366,12 +1394,15 @@ impl Router {
                     let nsr_output = self.nsr_core.tick(&nsr_inputs);
                     ctx.nsr_output = Some(nsr_output.clone());
                     if let Ok(mut workspace) = self.workspace.lock() {
+                        let nsr_fact_flags =
+                            nsr_fact_flags(phase_bus.global_plv >= 7_000, surprise_score >= 7_000);
                         workspace.set_nsr_trace(
                             nsr_output.trace_root,
                             None,
                             nsr_output.verdict.as_u8(),
                             None,
                             None,
+                            nsr_fact_flags,
                         );
                     }
                     self.append_nsr_output_record(cycle_id, &nsr_output);
@@ -2216,6 +2247,16 @@ impl Router {
                             commit: Digest32::new([0u8; 32]),
                         };
                         let iit_output = ctx.iit_output.as_ref().unwrap_or(&fallback_iit);
+                        let spike_outputs = ctx
+                            .spike_outputs
+                            .clone()
+                            .unwrap_or_else(|| empty_spike_outputs(cycle_id));
+                        let jepa_surprise = ctx
+                            .jepa_outputs
+                            .as_ref()
+                            .map(|output| output.surprise)
+                            .or_else(|| ctx.surprise_score)
+                            .unwrap_or(0);
                         let nsr_inputs = self.build_nsr_inputs(
                             cycle_id,
                             &phase_bus,
@@ -2226,9 +2267,12 @@ impl Router {
                             ctx.ncde_output.as_ref(),
                             iit_output,
                             ctx.self_state.as_ref(),
+                            spike_outputs.counts.clone(),
+                            spike_outputs.max_intensity,
                             replay_pressure,
                             ctx.drift_score.unwrap_or(0),
                             ctx.surprise_score.unwrap_or(0),
+                            jepa_surprise,
                             ctx.attention_risk,
                             false,
                             false,
@@ -2767,10 +2811,12 @@ impl Router {
             slot,
         });
         if let Ok(mut workspace) = self.workspace.lock() {
+            let lock_window_source_cycle = cycle_id.saturating_sub(1);
             workspace.set_onn_snapshot(
                 outputs.phase_bus.phase_commit,
                 outputs.phase_bus.gamma_bucket,
                 outputs.phase_bus.global_plv,
+                lock_window_source_cycle,
             );
         }
         self.append_phase_frame_record(cycle_id, &outputs.phase_bus);
@@ -3123,6 +3169,14 @@ impl Router {
     fn tcf_plan_for(&self, ctx: Option<&StageContext>) -> Option<TcfPlan> {
         ctx.and_then(|ctx| ctx.tcf_plan)
             .or_else(|| self.last_tcf_plan.lock().ok().and_then(|plan| *plan))
+    }
+
+    fn lagged_lock_window_buckets(&self) -> u8 {
+        self.last_tcf_plan
+            .lock()
+            .ok()
+            .and_then(|plan| plan.as_ref().map(|plan| plan.lock_window_buckets))
+            .unwrap_or(1)
     }
 
     fn tcf_sleep_replay(&self, ctx: Option<&StageContext>) -> Option<(bool, bool)> {
@@ -3813,6 +3867,7 @@ impl Router {
         cycle_id: u64,
         phase_bus: &PhaseBus,
         spike_accepted_root: Digest32,
+        observation_commit: Digest32,
         ssm_output: Option<&SsmOutputs>,
         ncde_output: Option<&NcdeOutputs>,
         iit_output: &IitOutput,
@@ -3881,6 +3936,7 @@ impl Router {
             sleep_active,
             replay_active,
             spike_accepted_root,
+            observation_commit,
         );
         let mut core = self.cde_v1_core.lock().ok()?;
         Some(core.tick(&inputs))
@@ -4236,9 +4292,12 @@ impl Router {
         ncde_output: Option<&NcdeOutputs>,
         iit_output: &IitOutput,
         self_state: Option<&SelfState>,
+        spike_counts: Vec<(SpikeKind, u16)>,
+        spike_max_intensity: u16,
         replay_pressure: u16,
         drift_score: u16,
         surprise_score: u16,
+        jepa_surprise: u16,
         risk_score: u16,
         _output_intent: bool,
         thought_only: bool,
@@ -4293,6 +4352,41 @@ impl Router {
             global_plv: phase_bus.global_plv,
             lock_window_buckets,
         });
+        let mut total_spikes = 0u16;
+        let mut threat_spikes = 0u16;
+        let mut thought_only_spikes = 0u16;
+        for (kind, count) in &spike_counts {
+            total_spikes = total_spikes.saturating_add(*count);
+            if *kind == SpikeKind::Threat {
+                threat_spikes = threat_spikes.saturating_add(*count);
+            }
+            if *kind == SpikeKind::ThoughtOnly {
+                thought_only_spikes = thought_only_spikes.saturating_add(*count);
+            }
+        }
+        facts.push(Fact::SpikeSummary {
+            total: total_spikes,
+            threat: threat_spikes,
+            thought_only: thought_only_spikes,
+        });
+        facts.push(Fact::SpikeMaxIntensity(spike_max_intensity));
+        facts.push(Fact::JepaSurprise(jepa_surprise));
+        let phase_locked = phase_bus.global_plv >= 7_000;
+        let high_surprise = surprise_score >= 7_000;
+        let spike_threat_present = threat_spikes > 0;
+        let thought_only_present = thought_only_spikes > 0;
+        if phase_locked {
+            facts.push(Fact::PhaseLocked);
+        }
+        if high_surprise {
+            facts.push(Fact::HighSurprise);
+        }
+        if spike_threat_present {
+            facts.push(Fact::SpikeThreatPresent);
+        }
+        if thought_only_present {
+            facts.push(Fact::ThoughtOnlyPresent);
+        }
         if sleep_active {
             facts.push(Fact::TcfSleepActive);
         }
@@ -4753,6 +4847,10 @@ fn digest_policy_commit(decision: &PolicyDecision) -> Digest32 {
     hasher.update(&decision.action.to_be_bytes());
     hasher.update(&decision.confidence_bp.to_be_bytes());
     Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn nsr_fact_flags(phase_locked: bool, high_surprise: bool) -> u8 {
+    (phase_locked as u8) | ((high_surprise as u8) << 1)
 }
 
 struct SpikeCountSummary {

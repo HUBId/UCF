@@ -498,6 +498,7 @@ pub struct WorkspaceSnapshot {
     pub cde_top_edges: Vec<(u16, u16, u16, u8)>,
     pub cde_top_edge_commits: Vec<Digest32>,
     pub cde_intervention_commit: Option<Digest32>,
+    pub cde_observation_commit: Digest32,
     pub ssm_commit: Digest32,
     pub ssm_state_commit: Digest32,
     pub ssm_state_digest: Digest32,
@@ -520,6 +521,7 @@ pub struct WorkspaceSnapshot {
     pub tcf_sleep_active: bool,
     pub tcf_replay_active: bool,
     pub tcf_lock_window_buckets: u8,
+    pub lock_window_source_cycle: u64,
     pub coherence_lag_commit: Digest32,
     pub update_mode: u8,
     pub onn_phase_commit: Digest32,
@@ -531,6 +533,7 @@ pub struct WorkspaceSnapshot {
     pub nsr_verdict: Option<u8>,
     pub nsr_triggered_rules_root: Option<Digest32>,
     pub nsr_derived_facts_root: Option<Digest32>,
+    pub nsr_fact_flags: u8,
     pub rsa_commit: Digest32,
     pub rsa_proposal_commit: Option<Digest32>,
     pub rsa_decision_apply: bool,
@@ -627,6 +630,7 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
             payload.extend_from_slice(&[0u8; Digest32::LEN]);
         }
     }
+    payload.extend_from_slice(snapshot.cde_observation_commit.as_bytes());
     payload.extend_from_slice(snapshot.ssm_commit.as_bytes());
     payload.extend_from_slice(snapshot.ssm_state_commit.as_bytes());
     payload.extend_from_slice(snapshot.ssm_state_digest.as_bytes());
@@ -661,6 +665,7 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
     payload.push(snapshot.tcf_sleep_active as u8);
     payload.push(snapshot.tcf_replay_active as u8);
     payload.push(snapshot.tcf_lock_window_buckets);
+    payload.extend_from_slice(&snapshot.lock_window_source_cycle.to_be_bytes());
     payload.extend_from_slice(snapshot.coherence_lag_commit.as_bytes());
     payload.push(snapshot.update_mode);
     payload.extend_from_slice(snapshot.onn_phase_commit.as_bytes());
@@ -723,6 +728,7 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
             payload.extend_from_slice(&[0u8; Digest32::LEN]);
         }
     }
+    payload.push(snapshot.nsr_fact_flags);
     payload.extend_from_slice(snapshot.rsa_commit.as_bytes());
     match snapshot.rsa_proposal_commit {
         Some(commit) => {
@@ -812,6 +818,7 @@ pub struct Workspace {
     cde_top_edges: Vec<(u16, u16, u16, u8)>,
     cde_top_edge_commits: Vec<Digest32>,
     cde_intervention_commit: Option<Digest32>,
+    cde_observation_commit: Digest32,
     ssm_commit: Digest32,
     ssm_state_commit: Digest32,
     ssm_state_digest: Digest32,
@@ -834,6 +841,7 @@ pub struct Workspace {
     tcf_sleep_active: bool,
     tcf_replay_active: bool,
     tcf_lock_window_buckets: u8,
+    lock_window_source_cycle: u64,
     coherence_lag_commit: Digest32,
     update_mode: u8,
     onn_phase_commit: Digest32,
@@ -845,6 +853,7 @@ pub struct Workspace {
     nsr_verdict: Option<u8>,
     nsr_triggered_rules_root: Option<Digest32>,
     nsr_derived_facts_root: Option<Digest32>,
+    nsr_fact_flags: u8,
     sle_commit: Digest32,
     sle_reflection_commit: Digest32,
     sle_reflection_class: u8,
@@ -886,6 +895,7 @@ impl Workspace {
             cde_top_edges: Vec::new(),
             cde_top_edge_commits: Vec::new(),
             cde_intervention_commit: None,
+            cde_observation_commit: Digest32::new([0u8; 32]),
             ssm_commit: Digest32::new([0u8; 32]),
             ssm_state_commit: Digest32::new([0u8; 32]),
             ssm_state_digest: Digest32::new([0u8; 32]),
@@ -908,6 +918,7 @@ impl Workspace {
             tcf_sleep_active: false,
             tcf_replay_active: false,
             tcf_lock_window_buckets: 0,
+            lock_window_source_cycle: 0,
             coherence_lag_commit: Digest32::new([0u8; 32]),
             update_mode: 0,
             onn_phase_commit: Digest32::new([0u8; 32]),
@@ -919,6 +930,7 @@ impl Workspace {
             nsr_verdict: None,
             nsr_triggered_rules_root: None,
             nsr_derived_facts_root: None,
+            nsr_fact_flags: 0,
             sle_commit: Digest32::new([0u8; 32]),
             sle_reflection_commit: Digest32::new([0u8; 32]),
             sle_reflection_class: 0,
@@ -1032,12 +1044,14 @@ impl Workspace {
         top_edges: Vec<(u16, u16, u16, u8)>,
         top_edge_commits: Vec<Digest32>,
         intervention_commit: Option<Digest32>,
+        observation_commit: Digest32,
     ) {
         self.cde_commit = commit;
         self.cde_graph_commit = graph_commit;
         self.cde_top_edges = top_edges;
         self.cde_top_edge_commits = top_edge_commits;
         self.cde_intervention_commit = intervention_commit;
+        self.cde_observation_commit = observation_commit;
     }
 
     pub fn set_ssm_snapshot(
@@ -1121,10 +1135,17 @@ impl Workspace {
         self.tcf_lock_window_buckets = lock_window_buckets;
     }
 
-    pub fn set_onn_snapshot(&mut self, phase_commit: Digest32, gamma_bucket: u8, global_plv: u16) {
+    pub fn set_onn_snapshot(
+        &mut self,
+        phase_commit: Digest32,
+        gamma_bucket: u8,
+        global_plv: u16,
+        lock_window_source_cycle: u64,
+    ) {
         self.onn_phase_commit = phase_commit;
         self.onn_gamma_bucket = gamma_bucket;
         self.onn_global_plv = global_plv;
+        self.lock_window_source_cycle = lock_window_source_cycle;
     }
 
     pub fn set_iit_output(&mut self, output: IitOutput) {
@@ -1138,12 +1159,14 @@ impl Workspace {
         verdict: u8,
         derived_facts_root: Option<Digest32>,
         triggered_rules_root: Option<Digest32>,
+        fact_flags: u8,
     ) {
         self.nsr_trace_root = Some(trace_root);
         self.nsr_prev_commit = prev_commit;
         self.nsr_verdict = Some(verdict);
         self.nsr_derived_facts_root = derived_facts_root;
         self.nsr_triggered_rules_root = triggered_rules_root;
+        self.nsr_fact_flags = fact_flags;
     }
 
     pub fn set_sle_outputs(&mut self, outputs: SleOutputsSnapshot) {
@@ -1230,6 +1253,7 @@ impl Workspace {
         let cde_top_edges = std::mem::take(&mut self.cde_top_edges);
         let cde_top_edge_commits = std::mem::take(&mut self.cde_top_edge_commits);
         let cde_intervention_commit = self.cde_intervention_commit.take();
+        let cde_observation_commit = self.cde_observation_commit;
         let ssm_commit = self.ssm_commit;
         let ssm_state_commit = self.ssm_state_commit;
         let ssm_state_digest = self.ssm_state_digest;
@@ -1252,6 +1276,7 @@ impl Workspace {
         let tcf_sleep_active = self.tcf_sleep_active;
         let tcf_replay_active = self.tcf_replay_active;
         let tcf_lock_window_buckets = self.tcf_lock_window_buckets;
+        let lock_window_source_cycle = self.lock_window_source_cycle;
         let coherence_lag_commit = self.coherence_lag_commit;
         let update_mode = self.update_mode;
         let onn_phase_commit = self.onn_phase_commit;
@@ -1263,6 +1288,7 @@ impl Workspace {
         let nsr_verdict = self.nsr_verdict.take();
         let nsr_triggered_rules_root = self.nsr_triggered_rules_root.take();
         let nsr_derived_facts_root = self.nsr_derived_facts_root.take();
+        let nsr_fact_flags = self.nsr_fact_flags;
         let rsa_commit = self.rsa_commit;
         let rsa_proposal_commit = self.rsa_proposal_commit;
         let rsa_decision_apply = self.rsa_decision_apply;
@@ -1295,6 +1321,7 @@ impl Workspace {
             &cde_top_edges,
             &cde_top_edge_commits,
             cde_intervention_commit,
+            cde_observation_commit,
             ssm_commit,
             ssm_state_commit,
             ssm_state_digest,
@@ -1317,6 +1344,7 @@ impl Workspace {
             tcf_sleep_active,
             tcf_replay_active,
             tcf_lock_window_buckets,
+            lock_window_source_cycle,
             coherence_lag_commit,
             update_mode,
             onn_phase_commit,
@@ -1328,6 +1356,7 @@ impl Workspace {
             nsr_verdict,
             nsr_triggered_rules_root,
             nsr_derived_facts_root,
+            nsr_fact_flags,
             rsa_commit,
             rsa_proposal_commit,
             rsa_decision_apply,
@@ -1363,6 +1392,7 @@ impl Workspace {
             cde_top_edges,
             cde_top_edge_commits,
             cde_intervention_commit,
+            cde_observation_commit,
             ssm_commit,
             ssm_state_commit,
             ssm_state_digest,
@@ -1385,6 +1415,7 @@ impl Workspace {
             tcf_sleep_active,
             tcf_replay_active,
             tcf_lock_window_buckets,
+            lock_window_source_cycle,
             coherence_lag_commit,
             update_mode,
             onn_phase_commit,
@@ -1396,6 +1427,7 @@ impl Workspace {
             nsr_verdict,
             nsr_triggered_rules_root,
             nsr_derived_facts_root,
+            nsr_fact_flags,
             rsa_commit,
             rsa_proposal_commit,
             rsa_decision_apply,
@@ -1808,6 +1840,7 @@ fn commit_snapshot(
     cde_top_edges: &[(u16, u16, u16, u8)],
     cde_top_edge_commits: &[Digest32],
     cde_intervention_commit: Option<Digest32>,
+    cde_observation_commit: Digest32,
     ssm_commit: Digest32,
     ssm_state_commit: Digest32,
     ssm_state_digest: Digest32,
@@ -1830,6 +1863,7 @@ fn commit_snapshot(
     tcf_sleep_active: bool,
     tcf_replay_active: bool,
     tcf_lock_window_buckets: u8,
+    lock_window_source_cycle: u64,
     coherence_lag_commit: Digest32,
     update_mode: u8,
     onn_phase_commit: Digest32,
@@ -1841,6 +1875,7 @@ fn commit_snapshot(
     nsr_verdict: Option<u8>,
     nsr_triggered_rules_root: Option<Digest32>,
     nsr_derived_facts_root: Option<Digest32>,
+    nsr_fact_flags: u8,
     rsa_commit: Digest32,
     rsa_proposal_commit: Option<Digest32>,
     rsa_decision_apply: bool,
@@ -1908,6 +1943,7 @@ fn commit_snapshot(
             hasher.update(&[0]);
         }
     }
+    hasher.update(cde_observation_commit.as_bytes());
     hasher.update(ssm_commit.as_bytes());
     hasher.update(ssm_state_commit.as_bytes());
     hasher.update(ssm_state_digest.as_bytes());
@@ -1954,6 +1990,7 @@ fn commit_snapshot(
     hasher.update(&[tcf_sleep_active as u8]);
     hasher.update(&[tcf_replay_active as u8]);
     hasher.update(&[tcf_lock_window_buckets]);
+    hasher.update(&lock_window_source_cycle.to_be_bytes());
     hasher.update(coherence_lag_commit.as_bytes());
     hasher.update(&[update_mode]);
     hasher.update(onn_phase_commit.as_bytes());
@@ -2008,6 +2045,7 @@ fn commit_snapshot(
             hasher.update(&[0]);
         }
     }
+    hasher.update(&[nsr_fact_flags]);
     hasher.update(rsa_commit.as_bytes());
     match rsa_proposal_commit {
         Some(commit) => {
