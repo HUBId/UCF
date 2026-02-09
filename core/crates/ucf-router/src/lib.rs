@@ -2255,7 +2255,7 @@ impl Router {
                             .jepa_outputs
                             .as_ref()
                             .map(|output| output.surprise)
-                            .or_else(|| ctx.surprise_score)
+                            .or(ctx.surprise_score)
                             .unwrap_or(0);
                         let nsr_inputs = self.build_nsr_inputs(
                             cycle_id,
