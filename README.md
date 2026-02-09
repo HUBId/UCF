@@ -1,4 +1,4 @@
-# UCF (former Chip-2)
+# UCF UNIFIED COGNITIVE FABRIC
 
 ## Feature flags
 - `ai-runtime`: enables the optional AI runtime backend glue (still mocked).
