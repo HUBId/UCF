@@ -224,6 +224,18 @@ pub struct SpikeOutputs {
     pub commit: Digest32,
 }
 
+/// Spike router boundary for coherence gating.
+///
+/// # Commit formula
+/// - `SpikeOutputs.commit = H(cycle_id, accepted_root, max_intensity, counts, params.commit, inputs.commit)`
+pub trait SpikeRouter {
+    fn tick(&self, inp: &SpikeInputs) -> SpikeOutputs;
+
+    fn params(&self) -> SpikeParams;
+
+    fn set_params(&mut self, params: SpikeParams);
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SpikeBus {
     pub params: SpikeParams,
@@ -279,6 +291,94 @@ impl SpikeBus {
 impl Default for SpikeBus {
     fn default() -> Self {
         Self::new(SpikeParams::default())
+    }
+}
+
+impl SpikeRouter for SpikeBus {
+    fn tick(&self, inp: &SpikeInputs) -> SpikeOutputs {
+        Self::tick(self, inp)
+    }
+
+    fn params(&self) -> SpikeParams {
+        self.params
+    }
+
+    fn set_params(&mut self, params: SpikeParams) {
+        self.params = params;
+        self.commit = commit_bus(self.params.commit);
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MockSpikeRouter {
+    params: SpikeParams,
+    accept_all: bool,
+}
+
+impl MockSpikeRouter {
+    pub fn new_accept_all() -> Self {
+        Self {
+            params: SpikeParams::default(),
+            accept_all: true,
+        }
+    }
+
+    pub fn new_accept_none() -> Self {
+        Self {
+            params: SpikeParams::default(),
+            accept_all: false,
+        }
+    }
+}
+
+impl Default for MockSpikeRouter {
+    fn default() -> Self {
+        Self::new_accept_all()
+    }
+}
+
+impl SpikeRouter for MockSpikeRouter {
+    fn tick(&self, inp: &SpikeInputs) -> SpikeOutputs {
+        let mut accepted = if self.accept_all {
+            inp.candidates.clone()
+        } else {
+            Vec::new()
+        };
+        accepted.sort_by(compare_spikes);
+        if accepted.len() > self.params.max_spikes {
+            accepted.truncate(self.params.max_spikes);
+        }
+        let accepted_root = fold_root(&accepted);
+        let max_intensity = accepted
+            .iter()
+            .map(|spike| spike.intensity)
+            .max()
+            .unwrap_or(0);
+        let counts = spike_counts(&accepted);
+        let commit = commit_outputs(
+            inp.cycle_id,
+            accepted_root,
+            max_intensity,
+            &counts,
+            self.params.commit,
+            inp.commit,
+        );
+        SpikeOutputs {
+            cycle_id: inp.cycle_id,
+            accepted_root,
+            accepted,
+            counts,
+            max_intensity,
+            commit,
+        }
+    }
+
+    fn params(&self) -> SpikeParams {
+        self.params
+    }
+
+    fn set_params(&mut self, params: SpikeParams) {
+        self.params = params;
     }
 }
 

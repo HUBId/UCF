@@ -209,6 +209,28 @@ pub struct OnnOutputs {
     pub commit: Digest32,
 }
 
+/// Phase provider boundary for coherence clocking.
+///
+/// # Commit formula
+/// - `OnnOutputs.commit = H(phase_bus.commit, lock.commit)`
+/// - `phase_bus.commit = H(phase_bus.phase_commit)`
+/// - `phase_bus.phase_commit = H(cycle_id, gamma_bucket, global_plv, osc_buckets[..], inputs.commit, params.commit)`
+/// - `lock.commit = H(cycle_id, lock_window_buckets, accept_center, phase_bus.phase_commit)`
+pub trait PhaseProvider {
+    fn tick(&mut self, inp: &OnnInputs) -> OnnOutputs;
+
+    fn tick_with_budget(&mut self, inp: &OnnInputs, budget: &GainBudget) -> OnnOutputs {
+        let _ = budget;
+        self.tick(inp)
+    }
+
+    fn params(&self) -> OnnParams;
+
+    fn set_params(&mut self, params: OnnParams);
+
+    fn phase_bus(&self, cycle_id: u64, inputs_commit: Digest32) -> PhaseBus;
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct OnnCore {
     pub params: OnnParams,
@@ -323,6 +345,127 @@ impl OnnCore {
 impl Default for OnnCore {
     fn default() -> Self {
         Self::new(OnnParams::default())
+    }
+}
+
+impl PhaseProvider for OnnCore {
+    fn tick(&mut self, inp: &OnnInputs) -> OnnOutputs {
+        OnnCore::tick(self, inp, &GainBudget::default())
+    }
+
+    fn tick_with_budget(&mut self, inp: &OnnInputs, budget: &GainBudget) -> OnnOutputs {
+        OnnCore::tick(self, inp, budget)
+    }
+
+    fn params(&self) -> OnnParams {
+        self.params
+    }
+
+    fn set_params(&mut self, params: OnnParams) {
+        self.params = params;
+    }
+
+    fn phase_bus(&self, cycle_id: u64, inputs_commit: Digest32) -> PhaseBus {
+        self.phase_bus(cycle_id, inputs_commit)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MockPhaseProvider {
+    params: OnnParams,
+    gamma_bucket: u8,
+    global_plv: u16,
+    osc_buckets: [u8; 16],
+}
+
+impl MockPhaseProvider {
+    pub fn new(gamma_bucket: u8, global_plv: u16) -> Self {
+        let gamma_bucket = gamma_bucket.min(BUCKETS - 1);
+        let global_plv = global_plv.min(10_000);
+        let osc_buckets = [gamma_bucket; 16];
+        Self {
+            params: OnnParams::default(),
+            gamma_bucket,
+            global_plv,
+            osc_buckets,
+        }
+    }
+}
+
+impl Default for MockPhaseProvider {
+    fn default() -> Self {
+        Self::new(2, 5_000)
+    }
+}
+
+impl PhaseProvider for MockPhaseProvider {
+    fn tick(&mut self, inp: &OnnInputs) -> OnnOutputs {
+        let n = self.params.n.clamp(1, MAX_OSCILLATORS);
+        let phase_commit = commit_phase_bus(
+            inp.cycle_id,
+            self.gamma_bucket,
+            self.global_plv,
+            &self.osc_buckets,
+            n,
+            inp.commit,
+            self.params.commit,
+        );
+        let phase_bus_commit = commit_phase_bus_root(phase_commit);
+        let phase_bus = PhaseBus {
+            cycle_id: inp.cycle_id,
+            gamma_bucket: self.gamma_bucket,
+            global_plv: self.global_plv,
+            osc_buckets: self.osc_buckets,
+            phase_commit,
+            commit: phase_bus_commit,
+        };
+        let lock = PhaseLockDecision {
+            cycle_id: inp.cycle_id,
+            lock_window_buckets: inp.lock_window_buckets.clamp(1, 4),
+            accept_center: self.gamma_bucket,
+            commit: commit_lock_decision(
+                inp.cycle_id,
+                inp.lock_window_buckets,
+                self.gamma_bucket,
+                phase_commit,
+            ),
+        };
+        let commit = commit_outputs(phase_bus.commit, lock.commit);
+        OnnOutputs {
+            phase_bus,
+            lock,
+            commit,
+        }
+    }
+
+    fn params(&self) -> OnnParams {
+        self.params
+    }
+
+    fn set_params(&mut self, params: OnnParams) {
+        self.params = params;
+    }
+
+    fn phase_bus(&self, cycle_id: u64, inputs_commit: Digest32) -> PhaseBus {
+        let n = self.params.n.clamp(1, MAX_OSCILLATORS);
+        let phase_commit = commit_phase_bus(
+            cycle_id,
+            self.gamma_bucket,
+            self.global_plv,
+            &self.osc_buckets,
+            n,
+            inputs_commit,
+            self.params.commit,
+        );
+        let commit = commit_phase_bus_root(phase_commit);
+        PhaseBus {
+            cycle_id,
+            gamma_bucket: self.gamma_bucket,
+            global_plv: self.global_plv,
+            osc_buckets: self.osc_buckets,
+            phase_commit,
+            commit,
+        }
     }
 }
 

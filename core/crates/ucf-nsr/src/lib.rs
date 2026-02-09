@@ -117,6 +117,55 @@ pub trait SymbolicBackend {
     fn check(&mut self, facts: &[ReasoningAtom], inp: &NsrTraceInputs) -> SymbolicResult;
 }
 
+/// Neuro-symbolic reasoning boundary for policy gating.
+///
+/// # Commit formula
+/// - `NsrOutputs.commit = H(cycle_id, verdict, trace_root)`
+pub trait NeuroSymbolicReasoner {
+    fn tick(&self, inputs: &NsrInputs) -> NsrOutputs;
+}
+
+impl NeuroSymbolicReasoner for NsrCore {
+    fn tick(&self, inputs: &NsrInputs) -> NsrOutputs {
+        NsrCore::tick(self, inputs)
+    }
+}
+
+pub struct MockNeuroSymbolicReasoner {
+    core: NsrCore,
+}
+
+impl MockNeuroSymbolicReasoner {
+    pub fn new(verdict: NsrVerdict) -> Self {
+        let solver = Box::new(FixedVerdictSolver { verdict });
+        Self {
+            core: NsrCore::new(solver),
+        }
+    }
+}
+
+impl Default for MockNeuroSymbolicReasoner {
+    fn default() -> Self {
+        Self::new(NsrVerdict::Allow)
+    }
+}
+
+impl NeuroSymbolicReasoner for MockNeuroSymbolicReasoner {
+    fn tick(&self, inputs: &NsrInputs) -> NsrOutputs {
+        self.core.tick(inputs)
+    }
+}
+
+struct FixedVerdictSolver {
+    verdict: NsrVerdict,
+}
+
+impl NsrSolver for FixedVerdictSolver {
+    fn solve(&self, _facts: &[Fact]) -> (NsrVerdict, Vec<RuleId>) {
+        (self.verdict, Vec::new())
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SymbolicResult {
     pub ok: bool,

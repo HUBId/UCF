@@ -224,6 +224,23 @@ pub struct NcdeOutputs {
     pub commit: Digest32,
 }
 
+/// Continuous dynamics boundary for temporal integration.
+///
+/// # Commit formula
+/// - `NcdeOutputs.commit = H(cycle_id, ncde_state_digest, ncde_energy, replay_pressure_hint, inputs.commit, params.commit, state.commit)`
+pub trait ContinuousDynamics {
+    fn tick(&mut self, inp: &NcdeInputs) -> NcdeOutputs;
+
+    fn tick_with_budget(&mut self, inp: &NcdeInputs, budget: &GainBudget) -> NcdeOutputs {
+        let _ = budget;
+        self.tick(inp)
+    }
+
+    fn params(&self) -> NcdeParams;
+
+    fn set_params(&mut self, params: NcdeParams);
+}
+
 pub struct NcdeCore {
     pub params: NcdeParams,
     pub state: NcdeState,
@@ -307,6 +324,78 @@ impl NcdeCore {
 impl Default for NcdeCore {
     fn default() -> Self {
         Self::new(NcdeParams::default())
+    }
+}
+
+impl ContinuousDynamics for NcdeCore {
+    fn tick(&mut self, inp: &NcdeInputs) -> NcdeOutputs {
+        NcdeCore::tick(self, inp, &GainBudget::default())
+    }
+
+    fn tick_with_budget(&mut self, inp: &NcdeInputs, budget: &GainBudget) -> NcdeOutputs {
+        NcdeCore::tick(self, inp, budget)
+    }
+
+    fn params(&self) -> NcdeParams {
+        self.params
+    }
+
+    fn set_params(&mut self, params: NcdeParams) {
+        *self = NcdeCore::new(params);
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MockContinuousDynamics {
+    params: NcdeParams,
+    ncde_state_digest: Digest32,
+    ncde_energy: u16,
+    replay_pressure_hint: u16,
+}
+
+impl MockContinuousDynamics {
+    pub fn new(ncde_state_digest: Digest32) -> Self {
+        Self {
+            params: NcdeParams::default(),
+            ncde_state_digest,
+            ncde_energy: 1200,
+            replay_pressure_hint: 500,
+        }
+    }
+}
+
+impl Default for MockContinuousDynamics {
+    fn default() -> Self {
+        Self::new(Digest32::new([7u8; 32]))
+    }
+}
+
+impl ContinuousDynamics for MockContinuousDynamics {
+    fn tick(&mut self, inp: &NcdeInputs) -> NcdeOutputs {
+        let commit = commit_outputs(
+            inp.cycle_id,
+            self.ncde_state_digest,
+            self.ncde_energy,
+            self.replay_pressure_hint,
+            inp.commit,
+            self.params.commit,
+            Digest32::new([0u8; 32]),
+        );
+        NcdeOutputs {
+            cycle_id: inp.cycle_id,
+            ncde_state_digest: self.ncde_state_digest,
+            ncde_energy: self.ncde_energy,
+            replay_pressure_hint: self.replay_pressure_hint,
+            commit,
+        }
+    }
+
+    fn params(&self) -> NcdeParams {
+        self.params
+    }
+
+    fn set_params(&mut self, params: NcdeParams) {
+        self.params = params;
     }
 }
 

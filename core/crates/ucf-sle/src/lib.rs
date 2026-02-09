@@ -258,6 +258,14 @@ pub struct SleOutputs {
     pub commit: Digest32,
 }
 
+/// Strange-loop boundary for self-reflection.
+///
+/// # Commit formula
+/// - `SleOutputs.commit = H(cycle_id, reflection.commit, ssm_bias, cde_bias, request_replay, thought_only_root)`
+pub trait StrangeLoop {
+    fn tick(&mut self, inp: &SleInputs) -> SleOutputs;
+}
+
 #[derive(Clone, Debug)]
 pub struct SleCore {
     pub params: SleParams,
@@ -335,6 +343,76 @@ impl SleCore {
 impl Default for SleCore {
     fn default() -> Self {
         Self::new(SleParams::default())
+    }
+}
+
+impl StrangeLoop for SleCore {
+    fn tick(&mut self, inp: &SleInputs) -> SleOutputs {
+        SleCore::tick(self, inp)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MockStrangeLoop {
+    reflection_class: ReflectionClass,
+    intensity: u16,
+}
+
+impl MockStrangeLoop {
+    pub fn new(reflection_class: ReflectionClass, intensity: u16) -> Self {
+        Self {
+            reflection_class,
+            intensity,
+        }
+    }
+}
+
+impl Default for MockStrangeLoop {
+    fn default() -> Self {
+        Self::new(ReflectionClass::Stable, 900)
+    }
+}
+
+impl StrangeLoop for MockStrangeLoop {
+    fn tick(&mut self, inp: &SleInputs) -> SleOutputs {
+        let self_symbol = [0u8; 16];
+        let reflection_commit = hash_with_domain(DOMAIN_SLE_REFLECTION_V1, |hasher| {
+            hasher.update(&[self.reflection_class.as_u8()]);
+            hasher.update(&self.intensity.to_be_bytes());
+            hasher.update(&self_symbol);
+            hasher.update(inp.phase_bus_commit.as_bytes());
+        });
+        let reflection = ReflectionDigest {
+            class: self.reflection_class,
+            self_symbol,
+            intensity: self.intensity,
+            commit: reflection_commit,
+        };
+        let (ssm_bias, cde_bias) = compute_biases(
+            reflection.class,
+            reflection.intensity,
+            &SleParams::default(),
+        );
+        let request_replay = reflection.class == ReflectionClass::RequestReplay;
+        let thought_only_root = Digest32::new([0u8; 32]);
+        let commit = hash_with_domain(DOMAIN_SLE_OUTPUTS_V1, |hasher| {
+            hasher.update(&inp.cycle_id.to_be_bytes());
+            hasher.update(reflection.commit.as_bytes());
+            hasher.update(&ssm_bias.to_be_bytes());
+            hasher.update(&cde_bias.to_be_bytes());
+            hasher.update(&[request_replay as u8]);
+            hasher.update(thought_only_root.as_bytes());
+        });
+        SleOutputs {
+            cycle_id: inp.cycle_id,
+            reflection_commit: reflection.commit,
+            reflection,
+            ssm_bias,
+            cde_bias,
+            request_replay,
+            thought_only_root,
+            commit,
+        }
     }
 }
 

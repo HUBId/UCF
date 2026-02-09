@@ -241,6 +241,19 @@ pub struct TcfPlan {
     pub commit: Digest32,
 }
 
+/// Temporal coordination boundary for replay/sleep gating.
+///
+/// # Commit formula
+/// - `TcfPlan.commit = H(cycle_id, attention_gain_cap, learning_gain_cap, output_gain_cap, sleep_active, replay_active, lock_window_buckets, smoothing_override, inputs.commit, params.commit, state.commit)`
+pub trait TemporalCoordinator {
+    fn tick(&mut self, inp: &TcfInputs) -> TcfPlan;
+
+    fn tick_with_budget(&mut self, inp: &TcfInputs, budget: &GainBudget) -> TcfPlan {
+        let _ = budget;
+        self.tick(inp)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TcfCore {
     pub params: TcfParams,
@@ -402,6 +415,70 @@ impl TcfCore {
 impl Default for TcfCore {
     fn default() -> Self {
         Self::new(TcfParams::default())
+    }
+}
+
+impl TemporalCoordinator for TcfCore {
+    fn tick(&mut self, inp: &TcfInputs) -> TcfPlan {
+        TcfCore::tick(self, inp, &GainBudget::default())
+    }
+
+    fn tick_with_budget(&mut self, inp: &TcfInputs, budget: &GainBudget) -> TcfPlan {
+        TcfCore::tick(self, inp, budget)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MockTemporalCoordinator {
+    attention_gain_cap: u16,
+    learning_gain_cap: u16,
+    output_gain_cap: u16,
+    lock_window_buckets: u8,
+}
+
+impl MockTemporalCoordinator {
+    pub fn new(attention_gain_cap: u16) -> Self {
+        Self {
+            attention_gain_cap: attention_gain_cap.min(10_000),
+            learning_gain_cap: 6_000,
+            output_gain_cap: 7_000,
+            lock_window_buckets: 2,
+        }
+    }
+}
+
+impl Default for MockTemporalCoordinator {
+    fn default() -> Self {
+        Self::new(5_000)
+    }
+}
+
+impl TemporalCoordinator for MockTemporalCoordinator {
+    fn tick(&mut self, inp: &TcfInputs) -> TcfPlan {
+        let commit = commit_plan(
+            inp.cycle_id,
+            self.attention_gain_cap,
+            self.learning_gain_cap,
+            self.output_gain_cap,
+            false,
+            false,
+            self.lock_window_buckets,
+            0,
+            inp.commit,
+            TcfParams::default().commit,
+            Digest32::new([0u8; 32]),
+        );
+        TcfPlan {
+            cycle_id: inp.cycle_id,
+            attention_gain_cap: self.attention_gain_cap,
+            learning_gain_cap: self.learning_gain_cap,
+            output_gain_cap: self.output_gain_cap,
+            sleep_active: false,
+            replay_active: false,
+            lock_window_buckets: self.lock_window_buckets,
+            smoothing_override: 0,
+            commit,
+        }
     }
 }
 
