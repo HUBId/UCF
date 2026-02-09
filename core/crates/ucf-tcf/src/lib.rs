@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
 use blake3::Hasher;
-use ucf_types::Digest32;
+use ucf_types::{Digest32, GainBudget};
 
 const SCALE: i32 = 10_000;
 const MAX_GAIN: u16 = 10_000;
@@ -259,7 +259,7 @@ impl TcfCore {
         }
     }
 
-    pub fn tick(&mut self, inp: &TcfInputs) -> TcfPlan {
+    pub fn tick(&mut self, inp: &TcfInputs, budget: &GainBudget) -> TcfPlan {
         let mut next_state = self.state;
         next_state.f_risk = ema(
             next_state.f_risk,
@@ -339,6 +339,8 @@ impl TcfCore {
             attention_gain_cap = scale_gain(attention_gain_cap, 9_000);
         }
         attention_gain_cap = attention_gain_cap.min(self.params.max_gain);
+        attention_gain_cap = GainBudget::apply(attention_gain_cap, budget.tcf_attention);
+        attention_gain_cap = GainBudget::apply(attention_gain_cap, budget.master);
 
         let mut learning_gain_cap = self.params.max_gain;
         if inp.damp_learning {
@@ -351,6 +353,8 @@ impl TcfCore {
             learning_gain_cap = learning_gain_cap.min(self.params.max_gain / 2);
         }
         learning_gain_cap = learning_gain_cap.min(self.params.max_gain);
+        learning_gain_cap = GainBudget::apply(learning_gain_cap, budget.tcf_learning);
+        learning_gain_cap = GainBudget::apply(learning_gain_cap, budget.master);
 
         let output_gain_cap =
             if !inp.policy_ok || inp.nsr_verdict != 0 || inp.damp_output || next_state.sleep_active
@@ -626,8 +630,9 @@ mod tests {
         let mut core_a = TcfCore::default();
         let mut core_b = TcfCore::default();
         let inputs = base_inputs();
-        let plan_a = core_a.tick(&inputs);
-        let plan_b = core_b.tick(&inputs);
+        let budget = GainBudget::default();
+        let plan_a = core_a.tick(&inputs, &budget);
+        let plan_b = core_b.tick(&inputs, &budget);
         assert_eq!(plan_a.commit, plan_b.commit);
     }
 
@@ -638,16 +643,17 @@ mod tests {
         let mut inputs = base_inputs();
         inputs.phi_proxy = 1_000;
         inputs.drift = 8_000;
-        let plan = core.tick(&inputs);
+        let budget = GainBudget::default();
+        let plan = core.tick(&inputs, &budget);
         assert!(plan.sleep_active);
 
         inputs.phi_proxy = 9_000;
         inputs.drift = 1_000;
-        let plan_next = core.tick(&inputs);
+        let plan_next = core.tick(&inputs, &budget);
         assert!(plan_next.sleep_active);
-        let plan_final = core.tick(&inputs);
+        let plan_final = core.tick(&inputs, &budget);
         assert!(plan_final.sleep_active);
-        let plan_done = core.tick(&inputs);
+        let plan_done = core.tick(&inputs, &budget);
         assert!(!plan_done.sleep_active);
     }
 
@@ -658,7 +664,8 @@ mod tests {
         let mut inputs = base_inputs();
         inputs.phi_proxy = 1_000;
         inputs.drift = 9_000;
-        let plan = core.tick(&inputs);
+        let budget = GainBudget::default();
+        let plan = core.tick(&inputs, &budget);
         assert_eq!(plan.output_gain_cap, 0);
 
         let mut core = TcfCore::new(params);
@@ -666,7 +673,7 @@ mod tests {
         inputs.phi_proxy = 9_000;
         inputs.drift = 1_000;
         inputs.nsr_verdict = NsrVerdict::Restrict.as_u8();
-        let plan = core.tick(&inputs);
+        let plan = core.tick(&inputs, &budget);
         assert_eq!(plan.output_gain_cap, 0);
     }
 

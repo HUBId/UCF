@@ -95,7 +95,7 @@ use ucf_tcf_port::{
 };
 use ucf_tom_port::{IntentType, TomPort};
 use ucf_types::v1::spec::{ControlFrame, DecisionKind, Digest, ExperienceRecord, PolicyDecision};
-use ucf_types::{AlgoId, Digest32, EvidenceId};
+use ucf_types::{AlgoId, Digest32, EvidenceId, GainBudget};
 use ucf_workspace::{
     output_event_commit, SignalKind, SleOutputsSnapshot, Workspace, WorkspaceConfig,
     WorkspaceSignal, WorkspaceSnapshot,
@@ -118,6 +118,15 @@ const ONN_COHERENCE_THROTTLE_RESTRICT: u16 = 3500;
 const LOCK_MIN_SPEAK: u16 = 3000;
 const PHI_OUTPUT_THRESHOLD: u16 = 3200;
 const COHERENCE_LAG_LEN: usize = 4;
+const GAIN_BUDGET_MAX: u16 = 10_000;
+const GAIN_BUDGET_RELAX_STEP: u16 = 200;
+const GAIN_BUDGET_RELAX_WINDOW: u8 = 4;
+const GAIN_BUDGET_STABLE_MIN: u8 = 12;
+const LOW_PLV_THRESHOLD: u16 = 2500;
+const HIGH_NOVELTY_THRESHOLD: u16 = 8000;
+const TRIGGER_VIOLATION: u8 = 1;
+const TRIGGER_LOW_PLV: u8 = 1 << 1;
+const TRIGGER_HIGH_NOVELTY: u8 = 1 << 2;
 const COHERENCE_RISK_HIGH: u16 = 7000;
 const COHERENCE_PLV_LOW: u16 = 3200;
 const RSA_REASON_MODE_BLOCK: u32 = 1 << 4;
@@ -215,6 +224,9 @@ pub struct Router {
     last_coupling_outputs: Mutex<Option<CouplingOutputs>>,
     coherence_lag: Mutex<CoherenceLag>,
     last_update_mode: Mutex<UpdateMode>,
+    gain_budget_state: Mutex<BudgetState>,
+    gain_budget_stable_cycles: Mutex<u8>,
+    gain_budget_last_violation_count: Mutex<u16>,
     ssm_core: Mutex<SsmCore>,
     last_ssm_output: Mutex<Option<SsmOutputs>>,
     ncde_core: Mutex<NcdeCore>,
@@ -374,6 +386,65 @@ impl CoherenceLag {
     }
 }
 
+fn commit_gain_budget(budget: &GainBudget) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(b"ucf.gain.budget.v1");
+    hasher.update(&budget.master.to_be_bytes());
+    hasher.update(&budget.coupling.to_be_bytes());
+    hasher.update(&budget.ssm_update.to_be_bytes());
+    hasher.update(&budget.ncde.to_be_bytes());
+    hasher.update(&budget.tcf_attention.to_be_bytes());
+    hasher.update(&budget.tcf_learning.to_be_bytes());
+    hasher.update(&budget.onn_coupling.to_be_bytes());
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn finalize_gain_budget(mut budget: GainBudget) -> GainBudget {
+    budget.master = budget.master.min(GAIN_BUDGET_MAX);
+    budget.coupling = budget.coupling.min(GAIN_BUDGET_MAX);
+    budget.ssm_update = budget.ssm_update.min(GAIN_BUDGET_MAX);
+    budget.ncde = budget.ncde.min(GAIN_BUDGET_MAX);
+    budget.tcf_attention = budget.tcf_attention.min(GAIN_BUDGET_MAX);
+    budget.tcf_learning = budget.tcf_learning.min(GAIN_BUDGET_MAX);
+    budget.onn_coupling = budget.onn_coupling.min(GAIN_BUDGET_MAX);
+    budget.commit = commit_gain_budget(&budget);
+    budget
+}
+
+fn commit_budget_state(state: &BudgetState) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(b"ucf.gain.budget.state.v1");
+    hasher.update(state.current.commit.as_bytes());
+    hasher.update(&[
+        state.low_plv_streak,
+        state.high_novelty_streak,
+        state.violation_streak,
+    ]);
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn default_budget_state() -> BudgetState {
+    let budget = finalize_gain_budget(GainBudget::default());
+    let mut state = BudgetState {
+        current: budget,
+        low_plv_streak: 0,
+        high_novelty_streak: 0,
+        violation_streak: 0,
+        commit: Digest32::new([0u8; 32]),
+    };
+    state.commit = commit_budget_state(&state);
+    state
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct BudgetState {
+    current: GainBudget,
+    low_plv_streak: u8,
+    high_novelty_streak: u8,
+    violation_streak: u8,
+    commit: Digest32,
+}
+
 struct StageContext {
     decision: Option<PolicyDecision>,
     decision_kind: DecisionKind,
@@ -496,6 +567,118 @@ impl StageContext {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct BudgetCycle {
+    budget: GainBudget,
+    low_plv_streak: u8,
+    high_novelty_streak: u8,
+    violation_streak: u8,
+    triggers: u8,
+    request_replay: bool,
+    stabilize_cycles: u16,
+}
+
+fn relax_budget(value: u16) -> u16 {
+    value
+        .saturating_add(GAIN_BUDGET_RELAX_STEP)
+        .min(GAIN_BUDGET_MAX)
+}
+
+fn update_budget_state(
+    mut state: BudgetState,
+    mut stable_cycles: u8,
+    mut last_violation_count: u16,
+    global_plv: u16,
+    ssm_novelty: u16,
+    leakage_violations: u16,
+) -> (BudgetState, u8, u16, BudgetCycle) {
+    let low_plv = global_plv < LOW_PLV_THRESHOLD;
+    let high_novelty = ssm_novelty > HIGH_NOVELTY_THRESHOLD;
+    let violation_increased = leakage_violations > last_violation_count;
+    last_violation_count = leakage_violations;
+
+    let low_plv_streak = if low_plv {
+        state.low_plv_streak.saturating_add(1)
+    } else {
+        state.low_plv_streak.saturating_sub(1)
+    };
+    let high_novelty_streak = if high_novelty {
+        state.high_novelty_streak.saturating_add(1)
+    } else {
+        state.high_novelty_streak.saturating_sub(1)
+    };
+    let violation_streak = if violation_increased {
+        state.violation_streak.saturating_add(1)
+    } else {
+        state.violation_streak.saturating_sub(1)
+    };
+
+    let mut triggers = 0u8;
+    let mut request_replay = false;
+    let mut stabilize_cycles = 0u16;
+
+    let mut budget = state.current;
+    if violation_increased {
+        triggers |= TRIGGER_VIOLATION;
+    }
+    if violation_streak >= 1 {
+        budget.master = budget.master.min(6000);
+        budget.coupling = budget.coupling.min(5000);
+        budget.tcf_learning = budget.tcf_learning.min(4000);
+        stabilize_cycles = stabilize_cycles.saturating_add(1);
+    }
+    if low_plv_streak >= 6 {
+        triggers |= TRIGGER_LOW_PLV;
+        budget.master = budget.master.min(7000);
+        budget.onn_coupling = budget.onn_coupling.min(5000);
+        request_replay = true;
+        stabilize_cycles = stabilize_cycles.saturating_add(8);
+    }
+    if high_novelty_streak >= 6 {
+        triggers |= TRIGGER_HIGH_NOVELTY;
+        budget.tcf_attention = budget.tcf_attention.min(5000);
+        budget.ssm_update = budget.ssm_update.min(6000);
+    }
+
+    if low_plv_streak == 0 && high_novelty_streak == 0 && violation_streak == 0 {
+        stable_cycles = stable_cycles.saturating_add(1);
+        if stable_cycles >= GAIN_BUDGET_STABLE_MIN
+            && stable_cycles.is_multiple_of(GAIN_BUDGET_RELAX_WINDOW)
+        {
+            budget.master = relax_budget(budget.master);
+            budget.coupling = relax_budget(budget.coupling);
+            budget.ssm_update = relax_budget(budget.ssm_update);
+            budget.ncde = relax_budget(budget.ncde);
+            budget.tcf_attention = relax_budget(budget.tcf_attention);
+            budget.tcf_learning = relax_budget(budget.tcf_learning);
+            budget.onn_coupling = relax_budget(budget.onn_coupling);
+        }
+    } else {
+        stable_cycles = 0;
+    }
+
+    budget = finalize_gain_budget(budget);
+    state = BudgetState {
+        current: budget,
+        low_plv_streak,
+        high_novelty_streak,
+        violation_streak,
+        commit: Digest32::new([0u8; 32]),
+    };
+    state.commit = commit_budget_state(&state);
+
+    let cycle = BudgetCycle {
+        budget,
+        low_plv_streak,
+        high_novelty_streak,
+        violation_streak,
+        triggers,
+        request_replay,
+        stabilize_cycles,
+    };
+    (state, stable_cycles, last_violation_count, cycle)
+}
+
 impl Router {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -598,6 +781,9 @@ impl Router {
             last_coupling_outputs: Mutex::new(None),
             coherence_lag: Mutex::new(CoherenceLag::new()),
             last_update_mode: Mutex::new(UpdateMode::Normal),
+            gain_budget_state: Mutex::new(default_budget_state()),
+            gain_budget_stable_cycles: Mutex::new(0),
+            gain_budget_last_violation_count: Mutex::new(0),
             ssm_core: Mutex::new(SsmCore::new(SsmParams::default())),
             last_ssm_output: Mutex::new(None),
             ncde_core: Mutex::new(NcdeCore::new(NcdeParams::default())),
@@ -664,6 +850,69 @@ impl Router {
             .and_then(|guard| guard.clone())
     }
 
+    fn current_gain_budget(&self) -> GainBudget {
+        self.gain_budget_state
+            .lock()
+            .map(|state| state.current)
+            .unwrap_or_else(|err| err.into_inner().current)
+    }
+
+    fn refresh_gain_budget(&self) -> BudgetCycle {
+        let snapshot = self.last_workspace_snapshot();
+        let global_plv = snapshot
+            .as_ref()
+            .map(|snap| snap.onn_global_plv)
+            .unwrap_or(0);
+        let ssm_novelty = snapshot.as_ref().map(|snap| snap.ssm_novelty).unwrap_or(0);
+        let leakage_violations = self
+            .last_nsr_report
+            .lock()
+            .ok()
+            .and_then(|guard| guard.as_ref().map(|report| report.violations.len()))
+            .unwrap_or(0)
+            .min(usize::from(u16::MAX)) as u16;
+
+        let mut state_guard = self
+            .gain_budget_state
+            .lock()
+            .unwrap_or_else(|err| err.into_inner());
+        let mut stable_guard = self
+            .gain_budget_stable_cycles
+            .lock()
+            .unwrap_or_else(|err| err.into_inner());
+        let mut violation_guard = self
+            .gain_budget_last_violation_count
+            .lock()
+            .unwrap_or_else(|err| err.into_inner());
+
+        let (next_state, next_stable, next_violation_count, cycle) = update_budget_state(
+            *state_guard,
+            *stable_guard,
+            *violation_guard,
+            global_plv,
+            ssm_novelty,
+            leakage_violations,
+        );
+        *state_guard = next_state;
+        *stable_guard = next_stable;
+        *violation_guard = next_violation_count;
+
+        if cycle.stabilize_cycles > 0 {
+            self.force_stabilize_cycles
+                .fetch_add(cycle.stabilize_cycles, Ordering::Relaxed);
+        }
+        if let Ok(mut workspace) = self.workspace.lock() {
+            workspace.set_gain_budget_state(
+                cycle.budget.commit,
+                cycle.low_plv_streak,
+                cycle.high_novelty_streak,
+                cycle.violation_streak,
+                cycle.triggers,
+            );
+        }
+        cycle
+    }
+
     fn latest_workspace_snapshot(&self, cycle_id: u64) -> WorkspaceSnapshot {
         self.last_workspace_snapshot
             .lock()
@@ -701,6 +950,11 @@ impl Router {
                 coupling_influences_root: Digest32::new([0u8; 32]),
                 coupling_top_influences: Vec::new(),
                 coupling_lag_commits: Vec::new(),
+                gain_budget_commit: Digest32::new([0u8; 32]),
+                budget_low_plv_streak: 0,
+                budget_high_novelty_streak: 0,
+                budget_violation_streak: 0,
+                budget_triggers: 0,
                 tcf_plan_commit: Digest32::new([0u8; 32]),
                 tcf_attention_gain_cap: 0,
                 tcf_learning_gain_cap: 0,
@@ -774,6 +1028,7 @@ impl Router {
         self.append_cycle_plan_record(&cycle_plan, &planned);
 
         let cycle_id = cycle_plan.cycle_id;
+        let budget_cycle = self.refresh_gain_budget();
         let mut ctx = StageContext::new();
         ctx.tcf_energy_smooth = Some(tcf_energy_smooth);
 
@@ -1165,6 +1420,11 @@ impl Router {
                         iit_output.phi_proxy,
                     );
                     if ctx.coherence_request_replay {
+                        let current = ctx.replay_pressure.unwrap_or(0);
+                        ctx.replay_pressure = Some(current.max(5_000));
+                    }
+                    if budget_cycle.request_replay {
+                        ctx.coherence_request_replay = true;
                         let current = ctx.replay_pressure.unwrap_or(0);
                         ctx.replay_pressure = Some(current.max(5_000));
                     }
@@ -2801,8 +3061,9 @@ impl Router {
             surprise_score,
         );
         let outputs = {
+            let budget = self.current_gain_budget();
             let mut onn = self.onn_core.lock().expect("onn core lock");
-            onn.tick(&inputs)
+            onn.tick(&inputs, &budget)
         };
         if let Ok(mut guard) = self.last_phase_bus.lock() {
             *guard = Some(outputs.phase_bus);
@@ -3239,6 +3500,22 @@ impl Router {
         lag.commit
     }
 
+    fn consume_force_stabilize(&self) -> bool {
+        let mut current = self.force_stabilize_cycles.load(Ordering::Relaxed);
+        while current > 0 {
+            match self.force_stabilize_cycles.compare_exchange(
+                current,
+                current - 1,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            ) {
+                Ok(_) => return true,
+                Err(actual) => current = actual,
+            }
+        }
+        false
+    }
+
     fn compute_update_mode(
         &self,
         lag: &CoherenceLag,
@@ -3250,6 +3527,9 @@ impl Router {
     ) -> UpdateMode {
         let base = update_mode_seed(lag.phase_commit[0], lag.ssm_commit[0], lag.iit_commit[0]);
         let params = self.iit_params();
+        if self.consume_force_stabilize() {
+            return UpdateMode::Stabilize;
+        }
         if nsr_verdict != NsrVerdict::Allow {
             return UpdateMode::Stabilize;
         }
@@ -3377,8 +3657,9 @@ impl Router {
         }
         let inputs =
             CouplingInputs::new(cycle_id, phase_bus.commit, phase_bus.gamma_bucket, samples);
+        let budget = self.current_gain_budget();
         let coupling_result = self.coupling_core.lock().ok().map(|mut core| {
-            let outputs = core.tick(&inputs);
+            let outputs = core.tick(&inputs, &budget);
             let buffer_commits = core.buffer_commits();
             (outputs, buffer_commits)
         });
@@ -3447,8 +3728,9 @@ impl Router {
             nsr_verdict,
             policy_ok,
         );
+        let budget = self.current_gain_budget();
         let mut core = self.tcf_core.lock().ok()?;
-        Some(core.tick(&inputs))
+        Some(core.tick(&inputs, &budget))
     }
 
     fn collect_coupling_samples(&self, ctx: &StageContext, cycle_id: u64) -> Vec<SignalSample> {
@@ -4053,7 +4335,8 @@ impl Router {
             surprise,
             learning_gain_cap,
         );
-        Some(core.tick(&inputs))
+        let budget = self.current_gain_budget();
+        Some(core.tick(&inputs, &budget))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -4117,7 +4400,8 @@ impl Router {
             drift,
             surprise,
         );
-        Some(core.tick(&input))
+        let budget = self.current_gain_budget();
+        Some(core.tick(&input, &budget))
     }
 
     fn append_sandbox_denied_record(&self, cycle_id: u64, report: &SandboxReport, reason: &str) {
@@ -6012,5 +6296,79 @@ mod tests {
             .unwrap_or(0);
         assert_eq!(onn_dither, 8000);
         assert_eq!(router.current_snn_knobs().verify_limit, 12);
+    }
+
+    #[test]
+    fn violation_shrinks_budget_deterministically() {
+        let state = default_budget_state();
+        let (next_state, _, _, cycle) = update_budget_state(state, 0, 0, 5000, 0, 1);
+        assert!(cycle.triggers & TRIGGER_VIOLATION != 0);
+        assert_eq!(next_state.current.master, 6000);
+        assert_eq!(next_state.current.coupling, 5000);
+        assert_eq!(next_state.current.tcf_learning, 4000);
+    }
+
+    #[test]
+    fn low_plv_triggers_replay_and_stabilize() {
+        let mut state = default_budget_state();
+        let mut stable = 0;
+        let mut last_violation = 0;
+        let mut cycle = BudgetCycle {
+            budget: state.current,
+            low_plv_streak: 0,
+            high_novelty_streak: 0,
+            violation_streak: 0,
+            triggers: 0,
+            request_replay: false,
+            stabilize_cycles: 0,
+        };
+
+        for _ in 0..6 {
+            let (next_state, next_stable, next_violation, next_cycle) =
+                update_budget_state(state, stable, last_violation, 2000, 0, 0);
+            state = next_state;
+            stable = next_stable;
+            last_violation = next_violation;
+            cycle = next_cycle;
+        }
+
+        assert!(cycle.triggers & TRIGGER_LOW_PLV != 0);
+        assert!(cycle.request_replay);
+        assert!(cycle.stabilize_cycles >= 8);
+        assert_eq!(state.current.onn_coupling, 5000);
+        assert_eq!(state.current.master, 7000);
+    }
+
+    #[test]
+    fn relaxation_requires_stable_window() {
+        let budget = finalize_gain_budget(GainBudget {
+            master: 9000,
+            coupling: 9000,
+            ..GainBudget::default()
+        });
+        let mut state = BudgetState {
+            current: budget,
+            low_plv_streak: 0,
+            high_novelty_streak: 0,
+            violation_streak: 0,
+            commit: Digest32::new([0u8; 32]),
+        };
+        state.commit = commit_budget_state(&state);
+
+        let (state_no_relax, stable_no_relax, _, _) = update_budget_state(state, 10, 0, 5000, 0, 0);
+        assert_eq!(stable_no_relax, 11);
+        assert_eq!(state_no_relax.current.master, 9000);
+
+        let mut state_relax = BudgetState {
+            current: budget,
+            low_plv_streak: 0,
+            high_novelty_streak: 0,
+            violation_streak: 0,
+            commit: Digest32::new([0u8; 32]),
+        };
+        state_relax.commit = commit_budget_state(&state_relax);
+        let (state_relax, stable_relax, _, _) = update_budget_state(state_relax, 11, 0, 5000, 0, 0);
+        assert_eq!(stable_relax, 12);
+        assert_eq!(state_relax.current.master, 9200);
     }
 }

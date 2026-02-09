@@ -514,6 +514,11 @@ pub struct WorkspaceSnapshot {
     pub coupling_influences_root: Digest32,
     pub coupling_top_influences: Vec<(u16, i16)>,
     pub coupling_lag_commits: Vec<(u16, Digest32)>,
+    pub gain_budget_commit: Digest32,
+    pub budget_low_plv_streak: u8,
+    pub budget_high_novelty_streak: u8,
+    pub budget_violation_streak: u8,
+    pub budget_triggers: u8,
     pub tcf_plan_commit: Digest32,
     pub tcf_attention_gain_cap: u16,
     pub tcf_learning_gain_cap: u16,
@@ -658,6 +663,11 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
         payload.extend_from_slice(&signal.to_be_bytes());
         payload.extend_from_slice(commit.as_bytes());
     }
+    payload.extend_from_slice(snapshot.gain_budget_commit.as_bytes());
+    payload.push(snapshot.budget_low_plv_streak);
+    payload.push(snapshot.budget_high_novelty_streak);
+    payload.push(snapshot.budget_violation_streak);
+    payload.push(snapshot.budget_triggers);
     payload.extend_from_slice(snapshot.tcf_plan_commit.as_bytes());
     payload.extend_from_slice(&snapshot.tcf_attention_gain_cap.to_be_bytes());
     payload.extend_from_slice(&snapshot.tcf_learning_gain_cap.to_be_bytes());
@@ -834,6 +844,11 @@ pub struct Workspace {
     coupling_influences_root: Digest32,
     coupling_top_influences: Vec<(u16, i16)>,
     coupling_lag_commits: Vec<(u16, Digest32)>,
+    gain_budget_commit: Digest32,
+    budget_low_plv_streak: u8,
+    budget_high_novelty_streak: u8,
+    budget_violation_streak: u8,
+    budget_triggers: u8,
     tcf_plan_commit: Digest32,
     tcf_attention_gain_cap: u16,
     tcf_learning_gain_cap: u16,
@@ -911,6 +926,11 @@ impl Workspace {
             coupling_influences_root: Digest32::new([0u8; 32]),
             coupling_top_influences: Vec::new(),
             coupling_lag_commits: Vec::new(),
+            gain_budget_commit: Digest32::new([0u8; 32]),
+            budget_low_plv_streak: 0,
+            budget_high_novelty_streak: 0,
+            budget_violation_streak: 0,
+            budget_triggers: 0,
             tcf_plan_commit: Digest32::new([0u8; 32]),
             tcf_attention_gain_cap: 0,
             tcf_learning_gain_cap: 0,
@@ -1115,6 +1135,21 @@ impl Workspace {
         self.coupling_lag_commits = lag_commits;
     }
 
+    pub fn set_gain_budget_state(
+        &mut self,
+        gain_budget_commit: Digest32,
+        low_plv_streak: u8,
+        high_novelty_streak: u8,
+        violation_streak: u8,
+        triggers: u8,
+    ) {
+        self.gain_budget_commit = gain_budget_commit;
+        self.budget_low_plv_streak = low_plv_streak;
+        self.budget_high_novelty_streak = high_novelty_streak;
+        self.budget_violation_streak = violation_streak;
+        self.budget_triggers = triggers;
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn set_tcf_plan(
         &mut self,
@@ -1269,6 +1304,11 @@ impl Workspace {
         let coupling_influences_root = self.coupling_influences_root;
         let coupling_top_influences = std::mem::take(&mut self.coupling_top_influences);
         let coupling_lag_commits = std::mem::take(&mut self.coupling_lag_commits);
+        let gain_budget_commit = self.gain_budget_commit;
+        let budget_low_plv_streak = self.budget_low_plv_streak;
+        let budget_high_novelty_streak = self.budget_high_novelty_streak;
+        let budget_violation_streak = self.budget_violation_streak;
+        let budget_triggers = self.budget_triggers;
         let tcf_plan_commit = self.tcf_plan_commit;
         let tcf_attention_gain_cap = self.tcf_attention_gain_cap;
         let tcf_learning_gain_cap = self.tcf_learning_gain_cap;
@@ -1337,6 +1377,11 @@ impl Workspace {
             coupling_influences_root,
             &coupling_top_influences,
             &coupling_lag_commits,
+            gain_budget_commit,
+            budget_low_plv_streak,
+            budget_high_novelty_streak,
+            budget_violation_streak,
+            budget_triggers,
             tcf_plan_commit,
             tcf_attention_gain_cap,
             tcf_learning_gain_cap,
@@ -1408,6 +1453,11 @@ impl Workspace {
             coupling_influences_root,
             coupling_top_influences,
             coupling_lag_commits,
+            gain_budget_commit,
+            budget_low_plv_streak,
+            budget_high_novelty_streak,
+            budget_violation_streak,
+            budget_triggers,
             tcf_plan_commit,
             tcf_attention_gain_cap,
             tcf_learning_gain_cap,
@@ -1856,6 +1906,11 @@ fn commit_snapshot(
     coupling_influences_root: Digest32,
     coupling_top_influences: &[(u16, i16)],
     coupling_lag_commits: &[(u16, Digest32)],
+    gain_budget_commit: Digest32,
+    budget_low_plv_streak: u8,
+    budget_high_novelty_streak: u8,
+    budget_violation_streak: u8,
+    budget_triggers: u8,
     tcf_plan_commit: Digest32,
     tcf_attention_gain_cap: u16,
     tcf_learning_gain_cap: u16,
@@ -1983,6 +2038,13 @@ fn commit_snapshot(
         hasher.update(&signal.to_be_bytes());
         hasher.update(commit.as_bytes());
     }
+    hasher.update(gain_budget_commit.as_bytes());
+    hasher.update(&[
+        budget_low_plv_streak,
+        budget_high_novelty_streak,
+        budget_violation_streak,
+        budget_triggers,
+    ]);
     hasher.update(tcf_plan_commit.as_bytes());
     hasher.update(&tcf_attention_gain_cap.to_be_bytes());
     hasher.update(&tcf_learning_gain_cap.to_be_bytes());

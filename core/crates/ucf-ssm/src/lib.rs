@@ -3,7 +3,7 @@
 use blake3::Hasher;
 use ucf_coupling::SignalId;
 use ucf_spikebus::SpikeKind;
-use ucf_types::Digest32;
+use ucf_types::{Digest32, GainBudget};
 
 const MAX_DIM: usize = 64;
 const Q15_SCALE: i64 = 1 << 15;
@@ -236,7 +236,7 @@ impl SsmCore {
         }
     }
 
-    pub fn tick(&mut self, inp: &SsmInputs) -> SsmOutputs {
+    pub fn tick(&mut self, inp: &SsmInputs, budget: &GainBudget) -> SsmOutputs {
         self.state.reset_if_dim_mismatch(&self.params);
         let dim = self.params.dim;
         let u_q15 = build_input_drive(inp, &self.params);
@@ -246,7 +246,9 @@ impl SsmCore {
             inp.spike_accepted_root,
             inp.phase_bus_commit,
         );
-        let effective_b = effective_b_q15(inp, &self.params);
+        let mut effective_b = effective_b_q15(inp, &self.params);
+        effective_b = GainBudget::apply_i16(effective_b, budget.ssm_update);
+        effective_b = GainBudget::apply_i16(effective_b, budget.master);
 
         for (idx, value) in self.state.x.iter_mut().enumerate().take(dim) {
             let u_i = u_q15.saturating_mul(sign_pattern[idx]);
@@ -656,8 +658,9 @@ mod tests {
         let mut core_b = SsmCore::new(params);
         let input = sample_inputs(Digest32::new([9u8; 32]));
 
-        let out_a = core_a.tick(&input);
-        let out_b = core_b.tick(&input);
+        let budget = GainBudget::default();
+        let out_a = core_a.tick(&input, &budget);
+        let out_b = core_b.tick(&input, &budget);
 
         assert_eq!(out_a.commit, out_b.commit);
         assert_eq!(out_a.ssm_state_digest, out_b.ssm_state_digest);
@@ -693,7 +696,8 @@ mod tests {
             .iter()
             .map(|value| i64::from(value.abs()))
             .sum();
-        core.tick(&input);
+        let budget = GainBudget::default();
+        core.tick(&input, &budget);
         let after: i64 = core
             .state
             .x
@@ -746,10 +750,11 @@ mod tests {
             8000,
         );
         let before = core.state.x.clone();
-        let out_low = core.tick(&low_surprise);
+        let budget = GainBudget::default();
+        let out_low = core.tick(&low_surprise, &budget);
         let after_low = core.state.x.clone();
         let _ = out_low;
-        let out_high = core.tick(&high_surprise);
+        let out_high = core.tick(&high_surprise, &budget);
         let after_high = core.state.x.clone();
         let magnitude_low: i64 = before
             .iter()
@@ -770,8 +775,9 @@ mod tests {
         let params = SsmParams::default();
         let mut core = SsmCore::new(params);
         let first = sample_inputs(Digest32::new([2u8; 32]));
-        let out_a = core.tick(&first);
-        let out_b = core.tick(&first);
+        let budget = GainBudget::default();
+        let out_a = core.tick(&first, &budget);
+        let out_b = core.tick(&first, &budget);
 
         assert!(out_b.ssm_novelty <= out_a.ssm_novelty);
     }
@@ -801,7 +807,8 @@ mod tests {
                 100,
                 200,
             );
-            let output = core.tick(&input);
+            let budget = GainBudget::default();
+            let output = core.tick(&input, &budget);
             assert!(output.ssm_salience >= last_salience);
             last_salience = output.ssm_salience;
         }
@@ -830,7 +837,8 @@ mod tests {
             200,
             200,
         );
-        let output = core.tick(&input);
+        let budget = GainBudget::default();
+        let output = core.tick(&input, &budget);
         assert!(output.ssm_attention_gain <= 3000);
     }
 }

@@ -3,7 +3,7 @@
 use blake3::Hasher;
 use ucf_coupling::SignalId;
 use ucf_spikebus::SpikeKind;
-use ucf_types::Digest32;
+use ucf_types::{Digest32, GainBudget};
 
 const MAX_DIM: usize = 32;
 const GAIN_SCALE: i32 = 10_000;
@@ -243,7 +243,7 @@ impl NcdeCore {
         }
     }
 
-    pub fn tick(&mut self, inp: &NcdeInputs) -> NcdeOutputs {
+    pub fn tick(&mut self, inp: &NcdeInputs, budget: &GainBudget) -> NcdeOutputs {
         self.reset_state_if_dim_mismatch();
         let dim = self.params.dim;
         let control = build_control_vector(inp, &self.params, dim);
@@ -262,8 +262,10 @@ impl NcdeCore {
         }
 
         let ncde_state_digest = commit_state_digest(&next_y);
-        let ncde_energy =
+        let mut ncde_energy =
             update_energy(&next_y, &control, inp, self.prev_energy, self.params.clamp);
+        ncde_energy = GainBudget::apply(ncde_energy, budget.ncde);
+        ncde_energy = GainBudget::apply(ncde_energy, budget.master);
         let replay_pressure_hint = replay_pressure_hint(ncde_energy, inp, control.phi_influence);
 
         let state_commit = commit_state(&next_y, self.params.commit);
@@ -662,8 +664,9 @@ mod tests {
         let mut core_b = NcdeCore::new(params);
         let inputs = base_inputs();
 
-        let out_a = core_a.tick(&inputs);
-        let out_b = core_b.tick(&inputs);
+        let budget = GainBudget::default();
+        let out_a = core_a.tick(&inputs, &budget);
+        let out_b = core_b.tick(&inputs, &budget);
 
         assert_eq!(out_a.commit, out_b.commit);
         assert_eq!(out_a.ncde_state_digest, out_b.ncde_state_digest);
@@ -694,7 +697,8 @@ mod tests {
         );
 
         let before = core.state.y[0].abs();
-        let out = core.tick(&inputs);
+        let budget = GainBudget::default();
+        let out = core.tick(&inputs, &budget);
         let after = core.state.y[0].abs();
 
         assert!(after < before, "state should decay with leak");
@@ -711,8 +715,9 @@ mod tests {
         inputs_a.gamma_bucket = 1;
         inputs_b.gamma_bucket = 9;
 
-        let out_a = core_a.tick(&inputs_a);
-        let out_b = core_b.tick(&inputs_b);
+        let budget = GainBudget::default();
+        let out_a = core_a.tick(&inputs_a, &budget);
+        let out_b = core_b.tick(&inputs_b, &budget);
 
         assert_ne!(out_a.ncde_state_digest, out_b.ncde_state_digest);
     }
@@ -757,8 +762,9 @@ mod tests {
         let mut core_low = NcdeCore::new(params);
         let mut core_high = NcdeCore::new(params);
 
-        let out_low = core_low.tick(&inputs_low);
-        let out_high = core_high.tick(&inputs_high);
+        let budget = GainBudget::default();
+        let out_low = core_low.tick(&inputs_low, &budget);
+        let out_high = core_high.tick(&inputs_high, &budget);
 
         assert!(out_high.ncde_energy > out_low.ncde_energy);
     }
