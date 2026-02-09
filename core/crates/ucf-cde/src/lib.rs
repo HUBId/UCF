@@ -8,6 +8,17 @@ const INPUT_DOMAIN: &[u8] = b"ucf.cde.v1.inputs";
 const EDGE_DOMAIN: &[u8] = b"ucf.cde.v1.edge";
 const DAG_DOMAIN: &[u8] = b"ucf.cde.v1.dag";
 const INTERVENTION_DOMAIN: &[u8] = b"ucf.cde.v1.intervention";
+const GRAPH_EDGE_DOMAIN: &[u8] = b"ucf.cde.v1.graph.edge";
+const GRAPH_DOMAIN: &[u8] = b"ucf.cde.v1.graph";
+const QUERY_DOMAIN: &[u8] = b"ucf.cde.v1.query";
+const QUERY_RESULT_DOMAIN: &[u8] = b"ucf.cde.v1.query.result";
+const QUERY_PROOF_DOMAIN: &[u8] = b"ucf.cde.v1.query.proof";
+const QUERY_EFFECT_DOMAIN: &[u8] = b"ucf.cde.v1.query.effect";
+const QUERY_INTERVENTION_DOMAIN: &[u8] = b"ucf.cde.v1.query.intervention";
+const OBSERVATION_KEY_DOMAIN: &[u8] = b"ucf.cde.v1.observation.key";
+const OBSERVATION_RING_DOMAIN: &[u8] = b"ucf.cde.v1.observation.ring";
+const OBSERVATION_INDEX_DOMAIN: &[u8] = b"ucf.cde.v1.observation.index";
+const SURPRISE_BUCKET_DOMAIN: &[u8] = b"ucf.cde.v1.surprise.bucket";
 const OUTPUT_DOMAIN: &[u8] = b"ucf.cde.v1.outputs";
 const SUMMARY_DOMAIN: &[u8] = b"ucf.cde.v1.summary";
 const CORE_DOMAIN: &[u8] = b"ucf.cde.v1.core";
@@ -15,7 +26,6 @@ const SPIKE_PAYLOAD_DOMAIN: &[u8] = b"ucf.cde.v1.spike.payload";
 const DELTA_DOMAIN: &[u8] = b"ucf.cde.v1.delta";
 const PARAM_DOMAIN: &[u8] = b"ucf.cde.v1.params";
 const OBSERVATION_COMMIT_DOMAIN: &[u8] = b"ucf.cde.v1.observation.commit";
-const OBSERVATION_HISTORY_DOMAIN: &[u8] = b"ucf.cde.v1.observation.history";
 
 const MAX_NODES: usize = 24;
 const MAX_EDGES: usize = 64;
@@ -35,7 +45,7 @@ const SCORE_STEP_MIN: u16 = 200;
 const SCORE_STEP_MAX: u16 = 2000;
 const EDGE_THRESH_MIN: i16 = 2000;
 const EDGE_THRESH_MAX: i16 = 9000;
-const MAX_OBSERVATION_HISTORY: usize = 8;
+const MAX_OBSERVATION_KEYS: usize = 64;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CdeParams {
@@ -111,41 +121,177 @@ fn apply_i16_delta_i16(value: i16, delta: i16, min: i16, max: i16) -> i16 {
     updated as i16
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum VarId {
-    PerceptionSalience,
-    PerceptionNovelty,
-    AttentionGain,
-    LearningRate,
-    ReplayPressure,
-    SleepDrive,
-    NcdeEnergy,
-    CoherencePlv,
-    PhiProxy,
-    Risk,
-    Drift,
-    Surprise,
-    OutputSuppression,
-    Unknown(u16),
-}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct VarId(pub u16);
 
 impl VarId {
+    pub const WORLD_STATE: VarId = VarId(1);
+    pub const SSM_STATE: VarId = VarId(2);
+    pub const SPIKE_ROOT: VarId = VarId(3);
+    pub const NSR_TRACE_ROOT: VarId = VarId(4);
+    pub const PHASE_COMMIT: VarId = VarId(5);
+    pub const SURPRISE_BUCKET: VarId = VarId(6);
+    pub const TCF_ATTENTION_CAP: VarId = VarId(7);
+
+    pub const PERCEPTION_SALIENCE: VarId = VarId(101);
+    pub const PERCEPTION_NOVELTY: VarId = VarId(102);
+    pub const ATTENTION_GAIN: VarId = VarId(103);
+    pub const LEARNING_RATE: VarId = VarId(104);
+    pub const REPLAY_PRESSURE: VarId = VarId(105);
+    pub const SLEEP_DRIVE: VarId = VarId(106);
+    pub const NCDE_ENERGY: VarId = VarId(107);
+    pub const COHERENCE_PLV: VarId = VarId(108);
+    pub const PHI_PROXY: VarId = VarId(109);
+    pub const RISK: VarId = VarId(110);
+    pub const DRIFT: VarId = VarId(111);
+    pub const SURPRISE: VarId = VarId(112);
+    pub const OUTPUT_SUPPRESSION: VarId = VarId(113);
+
     pub fn to_u16(self) -> u16 {
-        match self {
-            Self::PerceptionSalience => 1,
-            Self::PerceptionNovelty => 2,
-            Self::AttentionGain => 3,
-            Self::LearningRate => 4,
-            Self::ReplayPressure => 5,
-            Self::SleepDrive => 6,
-            Self::NcdeEnergy => 7,
-            Self::CoherencePlv => 8,
-            Self::PhiProxy => 9,
-            Self::Risk => 10,
-            Self::Drift => 11,
-            Self::Surprise => 12,
-            Self::OutputSuppression => 13,
-            Self::Unknown(value) => value,
+        self.0
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Edge {
+    pub from: VarId,
+    pub to: VarId,
+    pub weight_q15: i16,
+    pub commit: Digest32,
+}
+
+impl Edge {
+    pub fn new(from: VarId, to: VarId, weight_q15: i16) -> Self {
+        let commit = digest_graph_edge(from, to, weight_q15);
+        Self {
+            from,
+            to,
+            weight_q15,
+            commit,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ObservationKey {
+    pub cycle_id: u64,
+    pub observation_commit: Digest32,
+    pub world_state: Digest32,
+    pub ssm_state: Digest32,
+    pub spike_root: Digest32,
+    pub phase_commit: Digest32,
+    pub nsr_trace_root: Digest32,
+    pub jepa_surprise: u16,
+    pub commit: Digest32,
+}
+
+impl ObservationKey {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        cycle_id: u64,
+        observation_commit: Digest32,
+        world_state: Digest32,
+        ssm_state: Digest32,
+        spike_root: Digest32,
+        phase_commit: Digest32,
+        nsr_trace_root: Digest32,
+        jepa_surprise: u16,
+    ) -> Self {
+        let mut obs = Self {
+            cycle_id,
+            observation_commit,
+            world_state,
+            ssm_state,
+            spike_root,
+            phase_commit,
+            nsr_trace_root,
+            jepa_surprise,
+            commit: Digest32::new([0u8; 32]),
+        };
+        obs.commit = digest_observation_key(&obs);
+        obs
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CausalGraph {
+    pub vars: Vec<VarId>,
+    pub edges: Vec<Edge>,
+    pub commit: Digest32,
+}
+
+impl CausalGraph {
+    pub fn new(vars: Vec<VarId>, edges: Vec<Edge>) -> Self {
+        let commit = digest_graph(&vars, &edges);
+        Self {
+            vars,
+            edges,
+            commit,
+        }
+    }
+
+    fn refresh_commit(&mut self) {
+        self.commit = digest_graph(&self.vars, &self.edges);
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Intervention {
+    pub var: VarId,
+    pub value_commit: Digest32,
+    pub strength_q15: i16,
+    pub commit: Digest32,
+}
+
+impl Intervention {
+    pub fn new(var: VarId, value_commit: Digest32, strength_q15: i16) -> Self {
+        let commit = digest_query_intervention(var, value_commit, strength_q15);
+        Self {
+            var,
+            value_commit,
+            strength_q15,
+            commit,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Query {
+    pub target: VarId,
+    pub given: Vec<Intervention>,
+    pub horizon: u8,
+    pub commit: Digest32,
+}
+
+impl Query {
+    pub fn new(target: VarId, given: Vec<Intervention>, horizon: u8) -> Self {
+        let mut query = Self {
+            target,
+            given,
+            horizon,
+            commit: Digest32::new([0u8; 32]),
+        };
+        query.commit = digest_query(&query);
+        query
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct QueryResult {
+    pub target: VarId,
+    pub effect: u16,
+    pub proof_root: Digest32,
+    pub commit: Digest32,
+}
+
+impl QueryResult {
+    pub fn new(target: VarId, effect: u16, proof_root: Digest32, query_commit: Digest32) -> Self {
+        let commit = digest_query_result(effect, proof_root, query_commit);
+        Self {
+            target,
+            effect,
+            proof_root,
+            commit,
         }
     }
 }
@@ -193,7 +339,7 @@ impl CausalDag {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Intervention {
+pub struct CdeIntervention {
     pub cycle_id: u64,
     pub var: VarId,
     pub delta: i16,
@@ -201,7 +347,7 @@ pub struct Intervention {
     pub commit: Digest32,
 }
 
-impl Intervention {
+impl CdeIntervention {
     pub fn new(cycle_id: u64, var: VarId, delta: i16, basis_commit: Digest32) -> Self {
         let commit = digest_intervention(cycle_id, var, delta, basis_commit);
         Self {
@@ -296,7 +442,7 @@ pub struct CdeOutputs {
     pub cycle_id: u64,
     pub dag_commit: Digest32,
     pub top_edges: Vec<CausalEdge>,
-    pub intervention: Option<Intervention>,
+    pub intervention: Option<CdeIntervention>,
     pub summary_commit: Digest32,
     pub causal_link_spikes: Vec<Spike>,
     pub commit: Digest32,
@@ -307,7 +453,7 @@ impl CdeOutputs {
         cycle_id: u64,
         dag_commit: Digest32,
         top_edges: Vec<CausalEdge>,
-        intervention: Option<Intervention>,
+        intervention: Option<CdeIntervention>,
         causal_link_spikes: Vec<Spike>,
     ) -> Self {
         let summary_commit = digest_summary(dag_commit, &top_edges, intervention.as_ref());
@@ -338,23 +484,95 @@ impl CdeOutputs {
 pub trait CausalEngine {
     fn tick(&mut self, inp: &CdeInputs) -> CdeOutputs;
 
+    fn register_observation(&mut self, obs: ObservationKey);
+
+    fn propose_edge(&mut self, e: Edge);
+
+    fn query(&self, q: &Query) -> QueryResult;
+
+    fn graph_commit(&self) -> Digest32;
+
     fn params(&self) -> CdeParams;
 
     fn apply_params(&mut self, params: CdeParams);
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ObservationIndex {
+    world_state: Digest32,
+    ssm_state: Digest32,
+    spike_root: Digest32,
+    nsr_trace_root: Digest32,
+    phase_commit: Digest32,
+    surprise_bucket: Digest32,
+    commit: Digest32,
+}
+
+impl ObservationIndex {
+    fn new() -> Self {
+        let zero = Digest32::new([0u8; 32]);
+        let mut index = Self {
+            world_state: zero,
+            ssm_state: zero,
+            spike_root: zero,
+            nsr_trace_root: zero,
+            phase_commit: zero,
+            surprise_bucket: zero,
+            commit: zero,
+        };
+        index.refresh_commit();
+        index
+    }
+
+    fn update_from_observation(&mut self, obs: &ObservationKey) {
+        self.world_state = obs.world_state;
+        self.ssm_state = obs.ssm_state;
+        self.spike_root = obs.spike_root;
+        self.nsr_trace_root = obs.nsr_trace_root;
+        self.phase_commit = obs.phase_commit;
+        self.surprise_bucket = digest_surprise_bucket(obs.jepa_surprise);
+        self.refresh_commit();
+    }
+
+    fn last_commit_for(&self, var: VarId) -> Option<Digest32> {
+        match var {
+            VarId::WORLD_STATE => Some(self.world_state),
+            VarId::SSM_STATE => Some(self.ssm_state),
+            VarId::SPIKE_ROOT => Some(self.spike_root),
+            VarId::NSR_TRACE_ROOT => Some(self.nsr_trace_root),
+            VarId::PHASE_COMMIT => Some(self.phase_commit),
+            VarId::SURPRISE_BUCKET => Some(self.surprise_bucket),
+            _ => None,
+        }
+    }
+
+    fn refresh_commit(&mut self) {
+        self.commit = digest_observation_index(
+            self.world_state,
+            self.ssm_state,
+            self.spike_root,
+            self.nsr_trace_root,
+            self.phase_commit,
+            self.surprise_bucket,
+        );
+    }
+}
+
 pub struct CdeCore {
     pub dag: CausalDag,
+    pub graph: CausalGraph,
     pub prev_values: [u16; 12],
     pub last_intervention_cycle: u64,
     pub min_intervention_gap: u16,
     pub params: CdeParams,
     pub commit: Digest32,
+    pub observation_keys: Vec<ObservationKey>,
     edge_scores: Vec<CausalEdge>,
     delta_history: Vec<[i16; 12]>,
     pending_intervention: Option<PendingIntervention>,
-    observation_commits: Vec<Digest32>,
     observation_commit_root: Digest32,
+    observation_index: ObservationIndex,
+    last_input_commit: Digest32,
 }
 
 impl Default for CdeCore {
@@ -366,6 +584,22 @@ impl Default for CdeCore {
 impl CausalEngine for CdeCore {
     fn tick(&mut self, inp: &CdeInputs) -> CdeOutputs {
         Self::tick(self, inp)
+    }
+
+    fn register_observation(&mut self, obs: ObservationKey) {
+        CdeCore::register_observation(self, obs);
+    }
+
+    fn propose_edge(&mut self, e: Edge) {
+        CdeCore::propose_edge(self, e);
+    }
+
+    fn query(&self, q: &Query) -> QueryResult {
+        CdeCore::query(self, q)
+    }
+
+    fn graph_commit(&self) -> Digest32 {
+        self.graph.commit
     }
 
     fn params(&self) -> CdeParams {
@@ -381,13 +615,34 @@ impl CausalEngine for CdeCore {
 pub struct MockCausalEngine {
     params: CdeParams,
     dag_commit: Digest32,
+    graph: CausalGraph,
+    observation_keys: Vec<ObservationKey>,
+    observation_index: ObservationIndex,
+    last_input_commit: Digest32,
+    commit: Digest32,
 }
 
 impl MockCausalEngine {
     pub fn new(dag_commit: Digest32) -> Self {
+        let graph = CausalGraph::new(default_graph_vars(), Vec::new());
+        let observation_index = ObservationIndex::new();
+        let last_input_commit = Digest32::new([0u8; 32]);
+        let commit = digest_core(
+            graph.commit,
+            dag_commit,
+            last_input_commit,
+            CdeParams::default().commit,
+            Digest32::new([0u8; 32]),
+            observation_index.commit,
+        );
         Self {
             params: CdeParams::default(),
             dag_commit,
+            graph,
+            observation_keys: Vec::new(),
+            observation_index,
+            last_input_commit,
+            commit,
         }
     }
 }
@@ -400,7 +655,52 @@ impl Default for MockCausalEngine {
 
 impl CausalEngine for MockCausalEngine {
     fn tick(&mut self, inp: &CdeInputs) -> CdeOutputs {
+        self.last_input_commit = inp.commit;
         CdeOutputs::new(inp.cycle_id, self.dag_commit, Vec::new(), None, Vec::new())
+    }
+
+    fn register_observation(&mut self, obs: ObservationKey) {
+        self.observation_keys.insert(0, obs);
+        if self.observation_keys.len() > MAX_OBSERVATION_KEYS {
+            self.observation_keys.truncate(MAX_OBSERVATION_KEYS);
+        }
+        if let Some(latest) = self.observation_keys.first() {
+            self.observation_index.update_from_observation(latest);
+        }
+        let observation_root = digest_observation_ring(&self.observation_keys);
+        self.commit = digest_core(
+            self.graph.commit,
+            self.dag_commit,
+            self.last_input_commit,
+            self.params.commit,
+            observation_root,
+            self.observation_index.commit,
+        );
+    }
+
+    fn propose_edge(&mut self, e: Edge) {
+        update_graph_with_edge(&mut self.graph, e);
+        self.commit = digest_core(
+            self.graph.commit,
+            self.dag_commit,
+            self.last_input_commit,
+            self.params.commit,
+            digest_observation_ring(&self.observation_keys),
+            self.observation_index.commit,
+        );
+    }
+
+    fn query(&self, q: &Query) -> QueryResult {
+        query_result_from(
+            self.graph.commit,
+            &self.observation_keys,
+            &self.observation_index,
+            q,
+        )
+    }
+
+    fn graph_commit(&self) -> Digest32 {
+        self.graph.commit
     }
 
     fn params(&self) -> CdeParams {
@@ -409,6 +709,14 @@ impl CausalEngine for MockCausalEngine {
 
     fn apply_params(&mut self, params: CdeParams) {
         self.params = params;
+        self.commit = digest_core(
+            self.graph.commit,
+            self.dag_commit,
+            self.last_input_commit,
+            self.params.commit,
+            digest_observation_ring(&self.observation_keys),
+            self.observation_index.commit,
+        );
     }
 }
 
@@ -417,31 +725,39 @@ impl CdeCore {
         let nodes = default_nodes();
         let edge_scores = default_edge_scores();
         let dag = CausalDag::new(nodes, Vec::new());
+        let graph = CausalGraph::new(default_graph_vars(), Vec::new());
         let params = CdeParams::default();
         let observation_commit_root = Digest32::new([0u8; 32]);
+        let observation_index = ObservationIndex::new();
+        let last_input_commit = Digest32::new([0u8; 32]);
         let commit = digest_core(
+            graph.commit,
             dag.commit,
-            Digest32::new([0u8; 32]),
+            last_input_commit,
             params.commit,
             observation_commit_root,
+            observation_index.commit,
         );
         Self {
             dag,
+            graph,
             prev_values: [0; 12],
             last_intervention_cycle: 0,
             min_intervention_gap: 3,
             params,
             commit,
+            observation_keys: Vec::new(),
             edge_scores,
             delta_history: Vec::new(),
             pending_intervention: None,
-            observation_commits: Vec::new(),
             observation_commit_root,
+            observation_index,
+            last_input_commit,
         }
     }
 
     pub fn tick(&mut self, inp: &CdeInputs) -> CdeOutputs {
-        self.track_observation_commit(inp.observation_commit);
+        self.last_input_commit = inp.commit;
         let current_values = observed_values(inp);
         let deltas = compute_deltas(current_values, self.prev_values);
         self.prev_values = current_values;
@@ -482,10 +798,12 @@ impl CdeCore {
             spikes,
         );
         self.commit = digest_core(
+            self.graph.commit,
             self.dag.commit,
-            inp.commit,
+            self.last_input_commit,
             self.params.commit,
             self.observation_commit_root,
+            self.observation_index.commit,
         );
         outputs
     }
@@ -493,18 +811,53 @@ impl CdeCore {
     pub fn apply_params(&mut self, params: CdeParams) {
         self.params = params;
         self.commit = digest_core(
+            self.graph.commit,
             self.dag.commit,
-            Digest32::new([0u8; 32]),
+            self.last_input_commit,
             self.params.commit,
             self.observation_commit_root,
+            self.observation_index.commit,
         );
+    }
+
+    pub fn register_observation(&mut self, obs: ObservationKey) {
+        self.track_observation_key(obs);
+        self.commit = digest_core(
+            self.graph.commit,
+            self.dag.commit,
+            self.last_input_commit,
+            self.params.commit,
+            self.observation_commit_root,
+            self.observation_index.commit,
+        );
+    }
+
+    pub fn propose_edge(&mut self, e: Edge) {
+        update_graph_with_edge(&mut self.graph, e);
+        self.commit = digest_core(
+            self.graph.commit,
+            self.dag.commit,
+            self.last_input_commit,
+            self.params.commit,
+            self.observation_commit_root,
+            self.observation_index.commit,
+        );
+    }
+
+    pub fn query(&self, q: &Query) -> QueryResult {
+        query_result_from(
+            self.graph.commit,
+            &self.observation_keys,
+            &self.observation_index,
+            q,
+        )
     }
 
     fn select_intervention(
         &mut self,
         inp: &CdeInputs,
         top_edges: &[CausalEdge],
-    ) -> Option<Intervention> {
+    ) -> Option<CdeIntervention> {
         if !(inp.sleep_active || inp.replay_active) {
             return None;
         }
@@ -524,7 +877,8 @@ impl CdeCore {
             })?
             .clone();
         let delta = derive_intervention_delta(inp.commit, candidate.from);
-        let intervention = Intervention::new(inp.cycle_id, candidate.from, delta, self.dag.commit);
+        let intervention =
+            CdeIntervention::new(inp.cycle_id, candidate.from, delta, self.dag.commit);
         self.last_intervention_cycle = inp.cycle_id;
         self.pending_intervention = Some(PendingIntervention {
             edge_key: candidate.key(),
@@ -541,12 +895,15 @@ impl CdeCore {
         }
     }
 
-    fn track_observation_commit(&mut self, observation_commit: Digest32) {
-        self.observation_commits.insert(0, observation_commit);
-        if self.observation_commits.len() > MAX_OBSERVATION_HISTORY {
-            self.observation_commits.truncate(MAX_OBSERVATION_HISTORY);
+    fn track_observation_key(&mut self, obs: ObservationKey) {
+        self.observation_keys.insert(0, obs);
+        if self.observation_keys.len() > MAX_OBSERVATION_KEYS {
+            self.observation_keys.truncate(MAX_OBSERVATION_KEYS);
         }
-        self.observation_commit_root = digest_observation_history(&self.observation_commits);
+        if let Some(latest) = self.observation_keys.first() {
+            self.observation_index.update_from_observation(latest);
+        }
+        self.observation_commit_root = digest_observation_ring(&self.observation_keys);
     }
 }
 
@@ -575,45 +932,45 @@ impl CausalEdge {
 }
 
 const OBSERVED_VARS: [VarId; 12] = [
-    VarId::PerceptionSalience,
-    VarId::PerceptionNovelty,
-    VarId::AttentionGain,
-    VarId::LearningRate,
-    VarId::ReplayPressure,
-    VarId::SleepDrive,
-    VarId::NcdeEnergy,
-    VarId::CoherencePlv,
-    VarId::PhiProxy,
-    VarId::Risk,
-    VarId::Drift,
-    VarId::Surprise,
+    VarId::PERCEPTION_SALIENCE,
+    VarId::PERCEPTION_NOVELTY,
+    VarId::ATTENTION_GAIN,
+    VarId::LEARNING_RATE,
+    VarId::REPLAY_PRESSURE,
+    VarId::SLEEP_DRIVE,
+    VarId::NCDE_ENERGY,
+    VarId::COHERENCE_PLV,
+    VarId::PHI_PROXY,
+    VarId::RISK,
+    VarId::DRIFT,
+    VarId::SURPRISE,
 ];
 
 const CANDIDATE_EDGES: &[(VarId, VarId, u8)] = &[
-    (VarId::PerceptionSalience, VarId::AttentionGain, 0),
-    (VarId::PerceptionNovelty, VarId::AttentionGain, 0),
-    (VarId::AttentionGain, VarId::LearningRate, 0),
-    (VarId::LearningRate, VarId::AttentionGain, 1),
-    (VarId::AttentionGain, VarId::ReplayPressure, 1),
-    (VarId::ReplayPressure, VarId::SleepDrive, 1),
-    (VarId::SleepDrive, VarId::ReplayPressure, 2),
-    (VarId::ReplayPressure, VarId::NcdeEnergy, 1),
-    (VarId::NcdeEnergy, VarId::CoherencePlv, 1),
-    (VarId::CoherencePlv, VarId::PhiProxy, 0),
-    (VarId::PhiProxy, VarId::AttentionGain, 2),
-    (VarId::Risk, VarId::OutputSuppression, 0),
-    (VarId::Risk, VarId::ReplayPressure, 1),
-    (VarId::Drift, VarId::ReplayPressure, 1),
-    (VarId::Surprise, VarId::AttentionGain, 0),
-    (VarId::Surprise, VarId::ReplayPressure, 1),
-    (VarId::PerceptionNovelty, VarId::Surprise, 1),
-    (VarId::PerceptionSalience, VarId::Surprise, 1),
-    (VarId::ReplayPressure, VarId::Surprise, 2),
-    (VarId::AttentionGain, VarId::Risk, 2),
-    (VarId::Risk, VarId::AttentionGain, 1),
-    (VarId::Drift, VarId::Risk, 1),
-    (VarId::CoherencePlv, VarId::Risk, 2),
-    (VarId::PhiProxy, VarId::Risk, 2),
+    (VarId::PERCEPTION_SALIENCE, VarId::ATTENTION_GAIN, 0),
+    (VarId::PERCEPTION_NOVELTY, VarId::ATTENTION_GAIN, 0),
+    (VarId::ATTENTION_GAIN, VarId::LEARNING_RATE, 0),
+    (VarId::LEARNING_RATE, VarId::ATTENTION_GAIN, 1),
+    (VarId::ATTENTION_GAIN, VarId::REPLAY_PRESSURE, 1),
+    (VarId::REPLAY_PRESSURE, VarId::SLEEP_DRIVE, 1),
+    (VarId::SLEEP_DRIVE, VarId::REPLAY_PRESSURE, 2),
+    (VarId::REPLAY_PRESSURE, VarId::NCDE_ENERGY, 1),
+    (VarId::NCDE_ENERGY, VarId::COHERENCE_PLV, 1),
+    (VarId::COHERENCE_PLV, VarId::PHI_PROXY, 0),
+    (VarId::PHI_PROXY, VarId::ATTENTION_GAIN, 2),
+    (VarId::RISK, VarId::OUTPUT_SUPPRESSION, 0),
+    (VarId::RISK, VarId::REPLAY_PRESSURE, 1),
+    (VarId::DRIFT, VarId::REPLAY_PRESSURE, 1),
+    (VarId::SURPRISE, VarId::ATTENTION_GAIN, 0),
+    (VarId::SURPRISE, VarId::REPLAY_PRESSURE, 1),
+    (VarId::PERCEPTION_NOVELTY, VarId::SURPRISE, 1),
+    (VarId::PERCEPTION_SALIENCE, VarId::SURPRISE, 1),
+    (VarId::REPLAY_PRESSURE, VarId::SURPRISE, 2),
+    (VarId::ATTENTION_GAIN, VarId::RISK, 2),
+    (VarId::RISK, VarId::ATTENTION_GAIN, 1),
+    (VarId::DRIFT, VarId::RISK, 1),
+    (VarId::COHERENCE_PLV, VarId::RISK, 2),
+    (VarId::PHI_PROXY, VarId::RISK, 2),
 ];
 
 fn default_nodes() -> Vec<VarId> {
@@ -621,9 +978,21 @@ fn default_nodes() -> Vec<VarId> {
     for var in OBSERVED_VARS {
         nodes.push(var);
     }
-    nodes.push(VarId::OutputSuppression);
+    nodes.push(VarId::OUTPUT_SUPPRESSION);
     nodes.truncate(MAX_NODES);
     nodes
+}
+
+fn default_graph_vars() -> Vec<VarId> {
+    vec![
+        VarId::WORLD_STATE,
+        VarId::SSM_STATE,
+        VarId::SPIKE_ROOT,
+        VarId::NSR_TRACE_ROOT,
+        VarId::PHASE_COMMIT,
+        VarId::SURPRISE_BUCKET,
+        VarId::TCF_ATTENTION_CAP,
+    ]
 }
 
 fn default_edge_scores() -> Vec<CausalEdge> {
@@ -781,6 +1150,39 @@ fn select_top_edges(edges: &[CausalEdge]) -> Vec<CausalEdge> {
     sorted
 }
 
+fn update_graph_with_edge(graph: &mut CausalGraph, edge: Edge) {
+    let mut replaced = false;
+    for existing in &mut graph.edges {
+        if existing.from == edge.from && existing.to == edge.to {
+            let edge_abs = i32::from(edge.weight_q15).abs();
+            let existing_abs = i32::from(existing.weight_q15).abs();
+            if edge_abs > existing_abs {
+                *existing = edge;
+            }
+            replaced = true;
+            break;
+        }
+    }
+    if !replaced {
+        graph.edges.push(edge);
+    }
+    if !graph.vars.contains(&edge.from) {
+        graph.vars.push(edge.from);
+    }
+    if !graph.vars.contains(&edge.to) {
+        graph.vars.push(edge.to);
+    }
+    graph.vars.sort_by_key(|var| var.to_u16());
+    graph.vars.dedup();
+    graph.edges.sort_by(|a, b| {
+        a.from
+            .to_u16()
+            .cmp(&b.from.to_u16())
+            .then_with(|| a.to.to_u16().cmp(&b.to.to_u16()))
+    });
+    graph.refresh_commit();
+}
+
 fn evaluate_intervention(pending: &PendingIntervention, history: &[[i16; 12]]) -> bool {
     let delta = delta_for_var(pending.target, history, 0);
     if delta == 0 || pending.expected_sign == 0 {
@@ -834,6 +1236,20 @@ fn score_to_intensity(score: i16) -> u16 {
     (magnitude / 2).min(10_000)
 }
 
+fn query_result_from(
+    graph_commit: Digest32,
+    observation_keys: &[ObservationKey],
+    observation_index: &ObservationIndex,
+    q: &Query,
+) -> QueryResult {
+    let last_obs_commit = observation_index
+        .last_commit_for(q.target)
+        .unwrap_or_else(|| Digest32::new([0u8; 32]));
+    let effect = digest_query_effect(graph_commit, q.commit, last_obs_commit);
+    let proof_root = digest_query_proof(graph_commit, q, observation_keys);
+    QueryResult::new(q.target, effect, proof_root, q.commit)
+}
+
 fn digest_edge(from: VarId, to: VarId, score: i16, lag: u8) -> Digest32 {
     let mut hasher = Hasher::new();
     hasher.update(EDGE_DOMAIN);
@@ -868,6 +1284,38 @@ fn digest_dag(nodes: &[VarId], edges: &[CausalEdge]) -> Digest32 {
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
+fn digest_graph_edge(from: VarId, to: VarId, weight_q15: i16) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(GRAPH_EDGE_DOMAIN);
+    hasher.update(&from.to_u16().to_be_bytes());
+    hasher.update(&to.to_u16().to_be_bytes());
+    hasher.update(&weight_q15.to_be_bytes());
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn digest_graph(vars: &[VarId], edges: &[Edge]) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(GRAPH_DOMAIN);
+    hasher.update(&(vars.len() as u16).to_be_bytes());
+    let mut sorted_vars = vars.to_vec();
+    sorted_vars.sort_by_key(|var| var.to_u16());
+    for var in sorted_vars {
+        hasher.update(&var.to_u16().to_be_bytes());
+    }
+    let mut sorted_edges = edges.to_vec();
+    sorted_edges.sort_by(|a, b| {
+        a.from
+            .to_u16()
+            .cmp(&b.from.to_u16())
+            .then_with(|| a.to.to_u16().cmp(&b.to.to_u16()))
+    });
+    hasher.update(&(sorted_edges.len() as u16).to_be_bytes());
+    for edge in sorted_edges {
+        hasher.update(edge.commit.as_bytes());
+    }
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
 fn digest_intervention(cycle_id: u64, var: VarId, delta: i16, basis_commit: Digest32) -> Digest32 {
     let mut hasher = Hasher::new();
     hasher.update(INTERVENTION_DOMAIN);
@@ -878,11 +1326,125 @@ fn digest_intervention(cycle_id: u64, var: VarId, delta: i16, basis_commit: Dige
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
+fn digest_query_intervention(var: VarId, value_commit: Digest32, strength_q15: i16) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(QUERY_INTERVENTION_DOMAIN);
+    hasher.update(&var.to_u16().to_be_bytes());
+    hasher.update(value_commit.as_bytes());
+    hasher.update(&strength_q15.to_be_bytes());
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn digest_query(query: &Query) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(QUERY_DOMAIN);
+    hasher.update(&query.target.to_u16().to_be_bytes());
+    hasher.update(&[query.horizon]);
+    hasher.update(&(query.given.len() as u16).to_be_bytes());
+    for intervention in &query.given {
+        hasher.update(intervention.commit.as_bytes());
+    }
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn digest_query_effect(graph_commit: Digest32, query_commit: Digest32, last_obs: Digest32) -> u16 {
+    let mut hasher = Hasher::new();
+    hasher.update(QUERY_EFFECT_DOMAIN);
+    hasher.update(graph_commit.as_bytes());
+    hasher.update(query_commit.as_bytes());
+    hasher.update(last_obs.as_bytes());
+    let bytes = hasher.finalize();
+    let raw = bytes.as_bytes();
+    let effect_seed = u32::from_be_bytes([raw[0], raw[1], raw[2], raw[3]]);
+    (effect_seed % 10_001) as u16
+}
+
+fn digest_query_proof(
+    graph_commit: Digest32,
+    query: &Query,
+    observation_keys: &[ObservationKey],
+) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(QUERY_PROOF_DOMAIN);
+    hasher.update(graph_commit.as_bytes());
+    hasher.update(query.commit.as_bytes());
+    for obs in observation_keys.iter().take(4) {
+        hasher.update(obs.commit.as_bytes());
+    }
+    for intervention in &query.given {
+        hasher.update(intervention.commit.as_bytes());
+    }
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn digest_query_result(effect: u16, proof_root: Digest32, query_commit: Digest32) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(QUERY_RESULT_DOMAIN);
+    hasher.update(&effect.to_be_bytes());
+    hasher.update(proof_root.as_bytes());
+    hasher.update(query_commit.as_bytes());
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
 fn digest_params(score_step: u16, edge_threshold: i16) -> Digest32 {
     let mut hasher = Hasher::new();
     hasher.update(PARAM_DOMAIN);
     hasher.update(&score_step.to_be_bytes());
     hasher.update(&edge_threshold.to_be_bytes());
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn digest_observation_key(obs: &ObservationKey) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(OBSERVATION_KEY_DOMAIN);
+    hasher.update(&obs.cycle_id.to_be_bytes());
+    hasher.update(obs.observation_commit.as_bytes());
+    hasher.update(obs.world_state.as_bytes());
+    hasher.update(obs.ssm_state.as_bytes());
+    hasher.update(obs.spike_root.as_bytes());
+    hasher.update(obs.phase_commit.as_bytes());
+    hasher.update(obs.nsr_trace_root.as_bytes());
+    hasher.update(&obs.jepa_surprise.to_be_bytes());
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn digest_observation_ring(observations: &[ObservationKey]) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(OBSERVATION_RING_DOMAIN);
+    hasher.update(
+        &u16::try_from(observations.len())
+            .unwrap_or(u16::MAX)
+            .to_be_bytes(),
+    );
+    for obs in observations {
+        hasher.update(obs.commit.as_bytes());
+    }
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn digest_observation_index(
+    world_state: Digest32,
+    ssm_state: Digest32,
+    spike_root: Digest32,
+    nsr_trace_root: Digest32,
+    phase_commit: Digest32,
+    surprise_bucket: Digest32,
+) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(OBSERVATION_INDEX_DOMAIN);
+    hasher.update(world_state.as_bytes());
+    hasher.update(ssm_state.as_bytes());
+    hasher.update(spike_root.as_bytes());
+    hasher.update(nsr_trace_root.as_bytes());
+    hasher.update(phase_commit.as_bytes());
+    hasher.update(surprise_bucket.as_bytes());
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn digest_surprise_bucket(surprise: u16) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(SURPRISE_BUCKET_DOMAIN);
+    hasher.update(&surprise.to_be_bytes());
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
@@ -915,7 +1477,7 @@ fn digest_inputs(inputs: &CdeInputs) -> Digest32 {
 fn digest_summary(
     dag_commit: Digest32,
     edges: &[CausalEdge],
-    intervention: Option<&Intervention>,
+    intervention: Option<&CdeIntervention>,
 ) -> Digest32 {
     let mut hasher = Hasher::new();
     hasher.update(SUMMARY_DOMAIN);
@@ -941,7 +1503,7 @@ fn digest_outputs(
     dag_commit: Digest32,
     summary_commit: Digest32,
     edges: &[CausalEdge],
-    intervention: Option<&Intervention>,
+    intervention: Option<&CdeIntervention>,
     spikes: &[Spike],
 ) -> Digest32 {
     let mut hasher = Hasher::new();
@@ -969,32 +1531,22 @@ fn digest_outputs(
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
-fn digest_observation_history(commits: &[Digest32]) -> Digest32 {
-    let mut hasher = Hasher::new();
-    hasher.update(OBSERVATION_HISTORY_DOMAIN);
-    hasher.update(
-        &u16::try_from(commits.len())
-            .unwrap_or(u16::MAX)
-            .to_be_bytes(),
-    );
-    for commit in commits {
-        hasher.update(commit.as_bytes());
-    }
-    Digest32::new(*hasher.finalize().as_bytes())
-}
-
 fn digest_core(
+    graph_commit: Digest32,
     dag_commit: Digest32,
     input_commit: Digest32,
     params_commit: Digest32,
     observation_commit_root: Digest32,
+    observation_index_commit: Digest32,
 ) -> Digest32 {
     let mut hasher = Hasher::new();
     hasher.update(CORE_DOMAIN);
+    hasher.update(graph_commit.as_bytes());
     hasher.update(dag_commit.as_bytes());
     hasher.update(input_commit.as_bytes());
     hasher.update(params_commit.as_bytes());
     hasher.update(observation_commit_root.as_bytes());
+    hasher.update(observation_index_commit.as_bytes());
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
@@ -1035,6 +1587,19 @@ mod tests {
         )
     }
 
+    fn base_observation(cycle_id: u64) -> ObservationKey {
+        ObservationKey::new(
+            cycle_id,
+            Digest32::new([1u8; 32]),
+            Digest32::new([2u8; 32]),
+            Digest32::new([3u8; 32]),
+            Digest32::new([4u8; 32]),
+            Digest32::new([5u8; 32]),
+            Digest32::new([6u8; 32]),
+            4_200,
+        )
+    }
+
     #[test]
     fn cde_is_deterministic_for_same_inputs() {
         let mut core_a = CdeCore::new();
@@ -1052,8 +1617,8 @@ mod tests {
     #[test]
     fn cycle_edges_are_rejected() {
         let mut core = CdeCore::new();
-        let edge_ab = CausalEdge::new(VarId::Risk, VarId::Drift, 5_000, 0);
-        let edge_ba = CausalEdge::new(VarId::Drift, VarId::Risk, 5_000, 0);
+        let edge_ab = CausalEdge::new(VarId::RISK, VarId::DRIFT, 5_000, 0);
+        let edge_ba = CausalEdge::new(VarId::DRIFT, VarId::RISK, 5_000, 0);
         core.dag = CausalDag::new(core.dag.nodes.clone(), vec![edge_ab.clone()]);
         let mut edges = vec![edge_ab, edge_ba];
         let selected = select_dag_edges(&edges);
@@ -1066,23 +1631,23 @@ mod tests {
     #[test]
     fn intervention_feedback_adjusts_score() {
         let mut core = CdeCore::new();
-        core.edge_scores = vec![CausalEdge::new(VarId::Risk, VarId::Drift, 2_500, 0)];
+        core.edge_scores = vec![CausalEdge::new(VarId::RISK, VarId::DRIFT, 2_500, 0)];
         core.dag = CausalDag::new(core.dag.nodes.clone(), core.edge_scores.clone());
         core.pending_intervention = Some(PendingIntervention {
             edge_key: EdgeKey {
-                from: VarId::Risk,
-                to: VarId::Drift,
+                from: VarId::RISK,
+                to: VarId::DRIFT,
                 lag: 0,
             },
             expected_sign: 1,
-            target: VarId::Drift,
+            target: VarId::DRIFT,
         });
         core.delta_history = vec![[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10, 0]];
         let out = core.tick(&base_inputs(2));
         let boosted = out
             .top_edges
             .iter()
-            .find(|edge| edge.from == VarId::Risk && edge.to == VarId::Drift)
+            .find(|edge| edge.from == VarId::RISK && edge.to == VarId::DRIFT)
             .map(|edge| edge.score)
             .unwrap_or(0);
         assert!(boosted >= 2_500);
@@ -1092,8 +1657,8 @@ mod tests {
     fn high_score_emits_spike() {
         let mut core = CdeCore::new();
         core.edge_scores = vec![CausalEdge::new(
-            VarId::Risk,
-            VarId::Drift,
+            VarId::RISK,
+            VarId::DRIFT,
             SCORE_SPIKE_THRESHOLD + 3_000,
             0,
         )];
@@ -1127,5 +1692,47 @@ mod tests {
             Digest32::new([4u8; 32]),
         );
         assert_eq!(commit_a, commit_b);
+    }
+
+    #[test]
+    fn propose_edge_dedup_and_sort() {
+        let mut core = CdeCore::new();
+        let edge_low = Edge::new(VarId::WORLD_STATE, VarId::SPIKE_ROOT, 1_000);
+        let edge_high = Edge::new(VarId::WORLD_STATE, VarId::SPIKE_ROOT, 5_000);
+        let edge_other = Edge::new(VarId::NSR_TRACE_ROOT, VarId::TCF_ATTENTION_CAP, -3_000);
+        core.propose_edge(edge_low);
+        core.propose_edge(edge_other);
+        core.propose_edge(edge_high);
+        assert_eq!(core.graph.edges.len(), 2);
+        let edge = &core.graph.edges[0];
+        assert_eq!(edge.from, VarId::WORLD_STATE);
+        assert_eq!(edge.to, VarId::SPIKE_ROOT);
+        assert_eq!(edge.weight_q15, 5_000);
+    }
+
+    #[test]
+    fn query_is_deterministic() {
+        let mut core = CdeCore::new();
+        core.register_observation(base_observation(1));
+        core.propose_edge(Edge::new(VarId::WORLD_STATE, VarId::SPIKE_ROOT, 2_000));
+        let intervention = Intervention::new(VarId::WORLD_STATE, Digest32::new([9u8; 32]), 3_000);
+        let query = Query::new(VarId::WORLD_STATE, vec![intervention], 1);
+        let result_a = core.query(&query);
+        let result_b = core.query(&query);
+        assert_eq!(result_a, result_b);
+    }
+
+    #[test]
+    fn register_observation_updates_commit() {
+        let mut core = CdeCore::new();
+        let initial_graph_commit = core.graph.commit;
+        let initial_commit = core.commit;
+        let obs = base_observation(9);
+        core.register_observation(obs);
+        assert_ne!(core.commit, initial_commit);
+        assert_eq!(core.graph.commit, initial_graph_commit);
+        let mut other = CdeCore::new();
+        other.register_observation(base_observation(9));
+        assert_eq!(core.commit, other.commit);
     }
 }

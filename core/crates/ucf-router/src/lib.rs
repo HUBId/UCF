@@ -22,7 +22,7 @@ use ucf_brain_mapper::map_to_stimulus;
 use ucf_cde::{
     apply_edge_thresh_delta, apply_score_step_delta, derive_observation_commit,
     CausalEdge as CdeV1Edge, CausalEngine, CdeCore as CdeV1Core, CdeInputs as CdeV1Inputs,
-    CdeOutputs as CdeV1Outputs, CdeParams,
+    CdeOutputs as CdeV1Outputs, CdeParams, Edge as CdeGraphEdge, ObservationKey, VarId as CdeVarId,
 };
 use ucf_cde_scm::{
     CausalReport, CdeEngine, CdeInputs, CdeNodeId, CdeOutputs, CounterfactualResult,
@@ -121,6 +121,9 @@ const ONN_COHERENCE_THROTTLE_RESTRICT: u16 = 3500;
 const LOCK_MIN_SPEAK: u16 = 3000;
 const PHI_OUTPUT_THRESHOLD: u16 = 3200;
 const COHERENCE_LAG_LEN: usize = 4;
+const CDE_SURPRISE_HIGH_THRESHOLD: u16 = 8_000;
+const CDE_EDGE_WEIGHT_POSITIVE: i16 = 6_000;
+const CDE_EDGE_WEIGHT_NEGATIVE: i16 = -6_000;
 const GAIN_BUDGET_MAX: u16 = 10_000;
 const GAIN_BUDGET_RELAX_STEP: u16 = 200;
 const GAIN_BUDGET_RELAX_WINDOW: u8 = 4;
@@ -956,6 +959,7 @@ impl Router {
                 cde_top_edge_commits: Vec::new(),
                 cde_intervention_commit: None,
                 cde_observation_commit: Digest32::new([0u8; 32]),
+                cde_last_query_result: None,
                 ssm_commit: Digest32::new([0u8; 32]),
                 ssm_state_commit: Digest32::new([0u8; 32]),
                 ssm_state_digest: Digest32::new([0u8; 32]),
@@ -1617,11 +1621,38 @@ impl Router {
                         spike_root_commit,
                         phase_bus.commit,
                     );
+                    let nsr_trace_root = ctx
+                        .nsr_output
+                        .as_ref()
+                        .map(|output| output.trace_root)
+                        .or_else(|| {
+                            self.last_workspace_snapshot.lock().ok().and_then(|guard| {
+                                guard.as_ref().and_then(|snap| snap.nsr_trace_root)
+                            })
+                        })
+                        .unwrap_or_else(|| Digest32::new([0u8; 32]));
+                    let observation_key = ObservationKey::new(
+                        cycle_id,
+                        observation_commit,
+                        world_state_commit,
+                        ssm_state_digest,
+                        spike_root_commit,
+                        phase_bus.commit,
+                        nsr_trace_root,
+                        jepa_surprise,
+                    );
+                    let policy_restrict = matches!(
+                        ctx.decision_kind,
+                        DecisionKind::DecisionKindDeny
+                            | DecisionKind::DecisionKindEscalate
+                            | DecisionKind::DecisionKindObserve
+                    );
                     let cde_v1_output = self.tick_cde_v1(
                         cycle_id,
                         &phase_bus,
                         spike_root_commit,
                         observation_commit,
+                        observation_key,
                         ctx.ssm_output.as_ref(),
                         ncde_snapshot.as_ref(),
                         &iit_output,
@@ -1632,8 +1663,10 @@ impl Router {
                         attention_risk,
                         self.tcf_plan_for(Some(&ctx)),
                         learning_gain_cap,
+                        &spike_counts,
+                        policy_restrict,
                     );
-                    if let Some(output) = cde_v1_output.clone() {
+                    if let Some((output, graph_commit)) = cde_v1_output.clone() {
                         ctx.cde_v1_output = Some(output.clone());
                         if let Ok(mut guard) = self.last_cde_v1_output.lock() {
                             *guard = Some(output.clone());
@@ -1641,14 +1674,21 @@ impl Router {
                         if let Ok(mut workspace) = self.workspace.lock() {
                             workspace.set_cde_output(
                                 output.summary_commit,
-                                output.dag_commit,
+                                graph_commit,
                                 compress_cde_v1_edges(&output.top_edges),
                                 collect_cde_v1_edge_commits(&output.top_edges),
                                 output.intervention.as_ref().map(|item| item.commit),
-                                observation_commit,
+                                observation_key.commit,
+                                None,
                             );
                         }
-                        self.append_cde_output_record(cycle_id, &output);
+                        self.append_cde_output_record(
+                            cycle_id,
+                            &output,
+                            graph_commit,
+                            observation_key.commit,
+                            None,
+                        );
                     }
                     let influence_for_nsr = ctx.influence_outputs.clone().or_else(|| {
                         self.last_influence_outputs
@@ -4232,12 +4272,26 @@ impl Router {
         self.append_archive_record(RecordKind::Other(NCDE_RECORD_KIND), output.commit, meta);
     }
 
-    fn append_cde_output_record(&self, cycle_id: u64, output: &CdeV1Outputs) {
+    fn append_cde_output_record(
+        &self,
+        cycle_id: u64,
+        output: &CdeV1Outputs,
+        graph_commit: Digest32,
+        observation_commit: Digest32,
+        last_query_result: Option<Digest32>,
+    ) {
         let top_edge_count = output.top_edges.len().min(u16::MAX as usize) as u16;
         let intervention_flag = output.intervention.is_some();
+        let last_query_flag = last_query_result.is_some();
+        let last_query_commit = last_query_result.unwrap_or_else(|| Digest32::new([0u8; 32]));
         let payload = format!(
-            "commit={};dag={};summary={};top_edges={top_edge_count};intervention={intervention_flag}",
-            output.commit, output.dag_commit, output.summary_commit
+            "commit={};dag={};graph={};summary={};observation={};top_edges={top_edge_count};intervention={intervention_flag};last_query={last_query_flag};last_query_commit={}",
+            output.commit,
+            output.dag_commit,
+            graph_commit,
+            output.summary_commit,
+            observation_commit,
+            last_query_commit
         )
         .into_bytes();
         let record_id = format!(
@@ -4309,6 +4363,7 @@ impl Router {
         phase_bus: &PhaseBus,
         spike_accepted_root: Digest32,
         observation_commit: Digest32,
+        observation_key: ObservationKey,
         ssm_output: Option<&SsmOutputs>,
         ncde_output: Option<&NcdeOutputs>,
         iit_output: &IitOutput,
@@ -4319,7 +4374,9 @@ impl Router {
         risk: u16,
         tcf_plan: Option<TcfPlan>,
         learning_gain_cap: u16,
-    ) -> Option<CdeV1Outputs> {
+        spike_counts: &[(SpikeKind, u16)],
+        policy_restrict: bool,
+    ) -> Option<(CdeV1Outputs, Digest32)> {
         let attention_gain = self
             .last_attention
             .lock()
@@ -4380,7 +4437,28 @@ impl Router {
             observation_commit,
         );
         let mut modules = self.runtime_modules.lock().ok()?;
-        Some(modules.cde.tick(&inputs))
+        modules.cde.register_observation(observation_key);
+        let surprise_high = surprise >= CDE_SURPRISE_HIGH_THRESHOLD;
+        let threat_spike = spike_counts
+            .iter()
+            .any(|(kind, count)| *kind == SpikeKind::Threat && *count > 0);
+        if surprise_high && threat_spike {
+            modules.cde.propose_edge(CdeGraphEdge::new(
+                CdeVarId::WORLD_STATE,
+                CdeVarId::SPIKE_ROOT,
+                CDE_EDGE_WEIGHT_POSITIVE,
+            ));
+        }
+        if policy_restrict {
+            modules.cde.propose_edge(CdeGraphEdge::new(
+                CdeVarId::NSR_TRACE_ROOT,
+                CdeVarId::TCF_ATTENTION_CAP,
+                CDE_EDGE_WEIGHT_NEGATIVE,
+            ));
+        }
+        let outputs = modules.cde.tick(&inputs);
+        let graph_commit = modules.cde.graph_commit();
+        Some((outputs, graph_commit))
     }
 
     #[allow(clippy::too_many_arguments)]
