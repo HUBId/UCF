@@ -7,11 +7,7 @@ const SCALE: i32 = 10_000;
 const MAX_GAIN: u16 = 10_000;
 const WINDOW_MIN: u8 = 1;
 const WINDOW_MAX: u8 = 8;
-const BUCKET_MIN: u8 = 1;
-const BUCKET_MAX: u8 = 4;
 const RISK_HIGH: u16 = 7_000;
-const PHI_HIGH: u16 = 7_000;
-const PLV_HIGH: u16 = 7_000;
 
 const PARAMS_DOMAIN: &[u8] = b"ucf.tcf.params.v1";
 const STATE_DOMAIN: &[u8] = b"ucf.tcf.state.v1";
@@ -319,13 +315,7 @@ impl TcfCore {
         }
         next_state.replay_active = next_state.replay_ctr > 0;
 
-        let mut lock_window_buckets = map_focus_to_bucket(self.params.win_focus);
-        if inp.tighten_sync || phi_low {
-            lock_window_buckets = lock_window_buckets.saturating_sub(1).max(BUCKET_MIN);
-        }
-        if phi_val >= PHI_HIGH && plv_val >= PLV_HIGH {
-            lock_window_buckets = lock_window_buckets.saturating_add(1).min(BUCKET_MAX);
-        }
+        let lock_window_buckets = derive_lock_window(plv_val, surprise_val, risk_val, drift_val);
 
         let smoothing_base = self
             .params
@@ -419,9 +409,27 @@ fn clamp_window(value: u8) -> u8 {
     value.clamp(WINDOW_MIN, WINDOW_MAX)
 }
 
-fn map_focus_to_bucket(win_focus: u8) -> u8 {
-    let mapped = (u16::from(win_focus).saturating_add(1) / 2) as u8;
-    mapped.clamp(BUCKET_MIN, BUCKET_MAX)
+pub fn derive_lock_window(plv: u16, surprise: u16, risk: u16, drift: u16) -> u8 {
+    let mut window = 2i16;
+    if plv < 4_000 {
+        window += 1;
+    }
+    if plv < 2_000 {
+        window += 1;
+    }
+    if surprise > 7_000 {
+        window += 1;
+    }
+    if risk > 6_000 {
+        window += 1;
+    }
+    if drift > 6_000 {
+        window += 1;
+    }
+    if plv > 8_500 && surprise < 3_000 && risk < 3_000 {
+        window -= 1;
+    }
+    window.clamp(1, 4) as u8
 }
 
 fn u16_to_i16(value: u16) -> i16 {
@@ -663,20 +671,14 @@ mod tests {
     }
 
     #[test]
-    fn tighten_sync_reduces_lock_window() {
-        let params = TcfParams::new(0, 0, 0, 6, 4, 2, 2, 3_000, 6_000, 7_000, 10_000);
-        let mut core = TcfCore::new(params);
-        let mut inputs = base_inputs();
-        inputs.phi_proxy = 5_000;
-        inputs.global_plv = 5_000;
-        let plan = core.tick(&inputs);
-        let base_window = plan.lock_window_buckets;
-        let mut core = TcfCore::new(params);
-        let mut inputs = base_inputs();
-        inputs.phi_proxy = 5_000;
-        inputs.global_plv = 5_000;
-        inputs.tighten_sync = true;
-        let tightened = core.tick(&inputs);
-        assert!(tightened.lock_window_buckets < base_window);
+    fn low_plv_increases_lock_window() {
+        let window = derive_lock_window(1_500, 0, 0, 0);
+        assert_eq!(window, 4);
+    }
+
+    #[test]
+    fn high_plv_reduces_lock_window() {
+        let window = derive_lock_window(9_000, 2_000, 2_000, 0);
+        assert_eq!(window, 1);
     }
 }

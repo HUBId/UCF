@@ -29,6 +29,17 @@ pub enum Fact {
         global_plv: u16,
         lock_window_buckets: u8,
     },
+    SpikeSummary {
+        total: u16,
+        threat: u16,
+        thought_only: u16,
+    },
+    SpikeMaxIntensity(u16),
+    JepaSurprise(u16),
+    PhaseLocked,
+    HighSurprise,
+    SpikeThreatPresent,
+    ThoughtOnlyPresent,
     TcfSleepActive,
     TcfReplayActive,
     CdeEdge {
@@ -65,17 +76,24 @@ impl Fact {
             Self::Risk(_) => 5,
             Self::OnnPhase { .. } => 6,
             Self::OnnLocked { .. } => 7,
-            Self::TcfSleepActive => 8,
-            Self::TcfReplayActive => 9,
-            Self::CdeEdge { .. } => 10,
-            Self::CdeCounterfactualOk { .. } => 11,
-            Self::SsmNovelty(_) => 12,
-            Self::SsmSalience(_) => 13,
-            Self::NcdeEnergy(_) => 14,
-            Self::IitHints { .. } => 15,
-            Self::PolicyCommit { .. } => 16,
-            Self::ToolCallRequested => 17,
-            Self::ThoughtOnlyRequested => 18,
+            Self::SpikeSummary { .. } => 8,
+            Self::SpikeMaxIntensity(_) => 9,
+            Self::JepaSurprise(_) => 10,
+            Self::PhaseLocked => 11,
+            Self::HighSurprise => 12,
+            Self::SpikeThreatPresent => 13,
+            Self::ThoughtOnlyPresent => 14,
+            Self::TcfSleepActive => 15,
+            Self::TcfReplayActive => 16,
+            Self::CdeEdge { .. } => 17,
+            Self::CdeCounterfactualOk { .. } => 18,
+            Self::SsmNovelty(_) => 19,
+            Self::SsmSalience(_) => 20,
+            Self::NcdeEnergy(_) => 21,
+            Self::IitHints { .. } => 22,
+            Self::PolicyCommit { .. } => 23,
+            Self::ToolCallRequested => 24,
+            Self::ThoughtOnlyRequested => 25,
             Self::Unknown(code, _) => *code,
         }
     }
@@ -100,10 +118,28 @@ impl Fact {
                 bytes.push(*lock_window_buckets);
                 bytes
             }
+            Self::SpikeSummary {
+                total,
+                threat,
+                thought_only,
+            } => {
+                let mut bytes = Vec::with_capacity(6);
+                bytes.extend_from_slice(&total.to_be_bytes());
+                bytes.extend_from_slice(&threat.to_be_bytes());
+                bytes.extend_from_slice(&thought_only.to_be_bytes());
+                bytes
+            }
+            Self::SpikeMaxIntensity(value) | Self::JepaSurprise(value) => {
+                value.to_be_bytes().to_vec()
+            }
             Self::TcfSleepActive
             | Self::TcfReplayActive
             | Self::ToolCallRequested
-            | Self::ThoughtOnlyRequested => vec![1],
+            | Self::ThoughtOnlyRequested
+            | Self::PhaseLocked
+            | Self::HighSurprise
+            | Self::SpikeThreatPresent
+            | Self::ThoughtOnlyPresent => vec![1],
             Self::CdeEdge { edge_commit, score } => {
                 let mut bytes = Vec::with_capacity(34);
                 bytes.extend_from_slice(edge_commit.as_bytes());
@@ -233,6 +269,10 @@ impl NsrSolver for MockSmtSolver {
         let mut drift = 0u16;
         let mut surprise = 0u16;
         let mut risk = 0u16;
+        let mut phase_locked = false;
+        let mut high_surprise = false;
+        let mut spike_threat_present = false;
+        let mut thought_only_present = false;
         let mut sleep_active = false;
         let mut replay_active = false;
         let mut tighten_sync = false;
@@ -242,14 +282,19 @@ impl NsrSolver for MockSmtSolver {
         let mut has_cde_edge = false;
         let mut has_cf_ok = false;
         let mut tool_req = false;
-        let mut thought_only = false;
+        let mut thought_only_requested = false;
 
         for fact in facts {
             match *fact {
                 Fact::Phi(value) => phi = value,
                 Fact::Plv(value) => plv = value,
                 Fact::Drift(value) => drift = value,
-                Fact::Surprise(value) => surprise = value,
+                Fact::Surprise(value) => {
+                    surprise = value;
+                    if value >= 7_000 {
+                        high_surprise = true;
+                    }
+                }
                 Fact::Risk(value) => risk = value,
                 Fact::TcfSleepActive => sleep_active = true,
                 Fact::TcfReplayActive => replay_active = true,
@@ -266,8 +311,33 @@ impl NsrSolver for MockSmtSolver {
                     damp_learning = damp_learning || dlearn;
                     request_replay = request_replay || replay;
                 }
+                Fact::OnnLocked {
+                    global_plv,
+                    lock_window_buckets: _,
+                } => {
+                    plv = global_plv;
+                    if global_plv >= 7_000 {
+                        phase_locked = true;
+                    }
+                }
+                Fact::SpikeSummary {
+                    total: _,
+                    threat,
+                    thought_only,
+                } => {
+                    if threat > 0 {
+                        spike_threat_present = true;
+                    }
+                    if thought_only > 0 {
+                        thought_only_present = true;
+                    }
+                }
+                Fact::PhaseLocked => phase_locked = true,
+                Fact::HighSurprise => high_surprise = true,
+                Fact::SpikeThreatPresent => spike_threat_present = true,
+                Fact::ThoughtOnlyPresent => thought_only_present = true,
                 Fact::ToolCallRequested => tool_req = true,
-                Fact::ThoughtOnlyRequested => thought_only = true,
+                Fact::ThoughtOnlyRequested => thought_only_requested = true,
                 _ => {}
             }
         }
@@ -283,6 +353,21 @@ impl NsrSolver for MockSmtSolver {
         if tool_req && (risk >= 6000 || drift >= 7000) {
             applied_rules.push(RuleId::Safety);
             verdict = NsrVerdict::Deny;
+        }
+
+        let outward_intent = tool_req;
+        if thought_only_present && outward_intent {
+            applied_rules.push(RuleId::Output);
+            if verdict == NsrVerdict::Allow {
+                verdict = NsrVerdict::Restrict;
+            }
+        }
+
+        if high_surprise && !phase_locked {
+            applied_rules.push(RuleId::Coherence);
+            if verdict == NsrVerdict::Allow {
+                verdict = NsrVerdict::Restrict;
+            }
         }
 
         if tighten_sync && plv <= 3000 {
@@ -327,11 +412,16 @@ impl NsrSolver for MockSmtSolver {
             }
         }
 
-        if thought_only {
+        if thought_only_requested {
             applied_rules.push(RuleId::Output);
         }
 
-        let _ = (replay_active, damp_learning, request_replay);
+        let _ = (
+            replay_active,
+            damp_learning,
+            request_replay,
+            spike_threat_present,
+        );
 
         if applied_rules.len() > RULES_MAX {
             applied_rules.truncate(RULES_MAX);
@@ -511,6 +601,30 @@ mod tests {
         let (verdict, rules) = solver.solve(&facts);
         assert_eq!(verdict, NsrVerdict::Restrict);
         assert!(rules.contains(&RuleId::Causality));
+    }
+
+    #[test]
+    fn mock_solver_restricts_high_surprise_when_unlocked() {
+        let solver = MockSmtSolver::default();
+        let facts = vec![
+            Fact::Surprise(7200),
+            Fact::OnnLocked {
+                global_plv: 2_000,
+                lock_window_buckets: 1,
+            },
+        ];
+        let (verdict, rules) = solver.solve(&facts);
+        assert_eq!(verdict, NsrVerdict::Restrict);
+        assert!(rules.contains(&RuleId::Coherence));
+    }
+
+    #[test]
+    fn mock_solver_restricts_thought_only_with_outward_intent() {
+        let solver = MockSmtSolver::default();
+        let facts = vec![Fact::ThoughtOnlyPresent, Fact::ToolCallRequested];
+        let (verdict, rules) = solver.solve(&facts);
+        assert_eq!(verdict, NsrVerdict::Restrict);
+        assert!(rules.contains(&RuleId::Output));
     }
 
     #[test]

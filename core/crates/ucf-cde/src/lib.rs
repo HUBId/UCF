@@ -14,6 +14,8 @@ const CORE_DOMAIN: &[u8] = b"ucf.cde.v1.core";
 const SPIKE_PAYLOAD_DOMAIN: &[u8] = b"ucf.cde.v1.spike.payload";
 const DELTA_DOMAIN: &[u8] = b"ucf.cde.v1.delta";
 const PARAM_DOMAIN: &[u8] = b"ucf.cde.v1.params";
+const OBSERVATION_COMMIT_DOMAIN: &[u8] = b"ucf.cde.v1.observation.commit";
+const OBSERVATION_HISTORY_DOMAIN: &[u8] = b"ucf.cde.v1.observation.history";
 
 const MAX_NODES: usize = 24;
 const MAX_EDGES: usize = 64;
@@ -33,6 +35,7 @@ const SCORE_STEP_MIN: u16 = 200;
 const SCORE_STEP_MAX: u16 = 2000;
 const EDGE_THRESH_MIN: i16 = 2000;
 const EDGE_THRESH_MAX: i16 = 9000;
+const MAX_OBSERVATION_HISTORY: usize = 8;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CdeParams {
@@ -73,6 +76,21 @@ pub fn apply_edge_thresh_delta(params: &CdeParams, delta: i16) -> CdeParams {
         EDGE_THRESH_MAX,
     );
     CdeParams::new(params.score_step, edge_threshold)
+}
+
+pub fn derive_observation_commit(
+    world_state: Digest32,
+    ssm_state_digest: Digest32,
+    spike_accepted_root: Digest32,
+    phase_commit: Digest32,
+) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(OBSERVATION_COMMIT_DOMAIN);
+    hasher.update(world_state.as_bytes());
+    hasher.update(ssm_state_digest.as_bytes());
+    hasher.update(spike_accepted_root.as_bytes());
+    hasher.update(phase_commit.as_bytes());
+    Digest32::new(*hasher.finalize().as_bytes())
 }
 
 fn apply_i16_delta_u16(value: u16, delta: i16, min: u16, max: u16) -> u16 {
@@ -217,6 +235,7 @@ pub struct CdeInputs {
     pub sleep_active: bool,
     pub replay_active: bool,
     pub spike_accepted_root: Digest32,
+    pub observation_commit: Digest32,
     pub commit: Digest32,
 }
 
@@ -242,6 +261,7 @@ impl CdeInputs {
         sleep_active: bool,
         replay_active: bool,
         spike_accepted_root: Digest32,
+        observation_commit: Digest32,
     ) -> Self {
         let mut inputs = Self {
             cycle_id,
@@ -263,6 +283,7 @@ impl CdeInputs {
             sleep_active,
             replay_active,
             spike_accepted_root,
+            observation_commit,
             commit: Digest32::new([0u8; 32]),
         };
         inputs.commit = digest_inputs(&inputs);
@@ -320,6 +341,8 @@ pub struct CdeCore {
     edge_scores: Vec<CausalEdge>,
     delta_history: Vec<[i16; 12]>,
     pending_intervention: Option<PendingIntervention>,
+    observation_commits: Vec<Digest32>,
+    observation_commit_root: Digest32,
 }
 
 impl Default for CdeCore {
@@ -334,7 +357,13 @@ impl CdeCore {
         let edge_scores = default_edge_scores();
         let dag = CausalDag::new(nodes, Vec::new());
         let params = CdeParams::default();
-        let commit = digest_core(dag.commit, Digest32::new([0u8; 32]), params.commit);
+        let observation_commit_root = Digest32::new([0u8; 32]);
+        let commit = digest_core(
+            dag.commit,
+            Digest32::new([0u8; 32]),
+            params.commit,
+            observation_commit_root,
+        );
         Self {
             dag,
             prev_values: [0; 12],
@@ -345,10 +374,13 @@ impl CdeCore {
             edge_scores,
             delta_history: Vec::new(),
             pending_intervention: None,
+            observation_commits: Vec::new(),
+            observation_commit_root,
         }
     }
 
     pub fn tick(&mut self, inp: &CdeInputs) -> CdeOutputs {
+        self.track_observation_commit(inp.observation_commit);
         let current_values = observed_values(inp);
         let deltas = compute_deltas(current_values, self.prev_values);
         self.prev_values = current_values;
@@ -388,7 +420,12 @@ impl CdeCore {
             intervention,
             spikes,
         );
-        self.commit = digest_core(self.dag.commit, inp.commit, self.params.commit);
+        self.commit = digest_core(
+            self.dag.commit,
+            inp.commit,
+            self.params.commit,
+            self.observation_commit_root,
+        );
         outputs
     }
 
@@ -398,6 +435,7 @@ impl CdeCore {
             self.dag.commit,
             Digest32::new([0u8; 32]),
             self.params.commit,
+            self.observation_commit_root,
         );
     }
 
@@ -440,6 +478,14 @@ impl CdeCore {
         if self.delta_history.len() > MAX_LAG {
             self.delta_history.truncate(MAX_LAG);
         }
+    }
+
+    fn track_observation_commit(&mut self, observation_commit: Digest32) {
+        self.observation_commits.insert(0, observation_commit);
+        if self.observation_commits.len() > MAX_OBSERVATION_HISTORY {
+            self.observation_commits.truncate(MAX_OBSERVATION_HISTORY);
+        }
+        self.observation_commit_root = digest_observation_history(&self.observation_commits);
     }
 }
 
@@ -801,6 +847,7 @@ fn digest_inputs(inputs: &CdeInputs) -> Digest32 {
     hasher.update(&[inputs.sleep_active as u8]);
     hasher.update(&[inputs.replay_active as u8]);
     hasher.update(inputs.spike_accepted_root.as_bytes());
+    hasher.update(inputs.observation_commit.as_bytes());
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
@@ -861,12 +908,32 @@ fn digest_outputs(
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
-fn digest_core(dag_commit: Digest32, input_commit: Digest32, params_commit: Digest32) -> Digest32 {
+fn digest_observation_history(commits: &[Digest32]) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(OBSERVATION_HISTORY_DOMAIN);
+    hasher.update(
+        &u16::try_from(commits.len())
+            .unwrap_or(u16::MAX)
+            .to_be_bytes(),
+    );
+    for commit in commits {
+        hasher.update(commit.as_bytes());
+    }
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+fn digest_core(
+    dag_commit: Digest32,
+    input_commit: Digest32,
+    params_commit: Digest32,
+    observation_commit_root: Digest32,
+) -> Digest32 {
     let mut hasher = Hasher::new();
     hasher.update(CORE_DOMAIN);
     hasher.update(dag_commit.as_bytes());
     hasher.update(input_commit.as_bytes());
     hasher.update(params_commit.as_bytes());
+    hasher.update(observation_commit_root.as_bytes());
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
@@ -903,6 +970,7 @@ mod tests {
             true,
             false,
             Digest32::new([9u8; 32]),
+            Digest32::new([8u8; 32]),
         )
     }
 
@@ -981,5 +1049,22 @@ mod tests {
 
         let updated = apply_edge_thresh_delta(&params, -5000);
         assert_eq!(updated.edge_threshold, EDGE_THRESH_MIN);
+    }
+
+    #[test]
+    fn observation_commit_is_deterministic() {
+        let commit_a = derive_observation_commit(
+            Digest32::new([1u8; 32]),
+            Digest32::new([2u8; 32]),
+            Digest32::new([3u8; 32]),
+            Digest32::new([4u8; 32]),
+        );
+        let commit_b = derive_observation_commit(
+            Digest32::new([1u8; 32]),
+            Digest32::new([2u8; 32]),
+            Digest32::new([3u8; 32]),
+            Digest32::new([4u8; 32]),
+        );
+        assert_eq!(commit_a, commit_b);
     }
 }
