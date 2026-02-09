@@ -2104,6 +2104,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucf-jepa"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ucf-types",
+]
+
+[[package]]
 name = "ucf-lens-port"
 version = "0.1.0"
 dependencies = [
@@ -2299,6 +2307,7 @@ dependencies = [
  "ucf-iit-monitor",
  "ucf-influence",
  "ucf-ism",
+ "ucf-jepa",
  "ucf-ncde",
  "ucf-nsr",
  "ucf-nsr-port",

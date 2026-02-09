@@ -504,6 +504,9 @@ pub struct WorkspaceSnapshot {
     pub ssm_salience: u16,
     pub ssm_novelty: u16,
     pub ssm_attention_gain: u16,
+    pub jepa_world_state: Digest32,
+    pub jepa_prediction: Digest32,
+    pub jepa_surprise: u16,
     pub influence_v2_commit: Digest32,
     pub influence_pulses_root: Digest32,
     pub influence_node_values: Vec<(u16, i16)>,
@@ -630,6 +633,9 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
     payload.extend_from_slice(&snapshot.ssm_salience.to_be_bytes());
     payload.extend_from_slice(&snapshot.ssm_novelty.to_be_bytes());
     payload.extend_from_slice(&snapshot.ssm_attention_gain.to_be_bytes());
+    payload.extend_from_slice(snapshot.jepa_world_state.as_bytes());
+    payload.extend_from_slice(snapshot.jepa_prediction.as_bytes());
+    payload.extend_from_slice(&snapshot.jepa_surprise.to_be_bytes());
     payload.extend_from_slice(snapshot.influence_v2_commit.as_bytes());
     payload.extend_from_slice(snapshot.influence_pulses_root.as_bytes());
     payload.extend_from_slice(&(snapshot.influence_node_values.len() as u16).to_be_bytes());
@@ -812,6 +818,9 @@ pub struct Workspace {
     ssm_salience: u16,
     ssm_novelty: u16,
     ssm_attention_gain: u16,
+    jepa_world_state: Digest32,
+    jepa_prediction: Digest32,
+    jepa_surprise: u16,
     influence_v2_commit: Digest32,
     influence_pulses_root: Digest32,
     influence_node_values: Vec<(u16, i16)>,
@@ -883,6 +892,9 @@ impl Workspace {
             ssm_salience: 0,
             ssm_novelty: 0,
             ssm_attention_gain: 0,
+            jepa_world_state: Digest32::new([0u8; 32]),
+            jepa_prediction: Digest32::new([0u8; 32]),
+            jepa_surprise: 0,
             influence_v2_commit: Digest32::new([0u8; 32]),
             influence_pulses_root: Digest32::new([0u8; 32]),
             influence_node_values: Vec::new(),
@@ -1043,6 +1055,17 @@ impl Workspace {
         self.ssm_salience = salience;
         self.ssm_novelty = novelty;
         self.ssm_attention_gain = attention_gain;
+    }
+
+    pub fn set_jepa_snapshot(
+        &mut self,
+        world_state: Digest32,
+        prediction: Digest32,
+        surprise: u16,
+    ) {
+        self.jepa_world_state = world_state;
+        self.jepa_prediction = prediction;
+        self.jepa_surprise = surprise.min(10_000);
     }
 
     pub fn set_ssm_commits(&mut self, commit: Digest32, state_commit: Digest32) {
@@ -1213,6 +1236,9 @@ impl Workspace {
         let ssm_salience = self.ssm_salience;
         let ssm_novelty = self.ssm_novelty;
         let ssm_attention_gain = self.ssm_attention_gain;
+        let jepa_world_state = self.jepa_world_state;
+        let jepa_prediction = self.jepa_prediction;
+        let jepa_surprise = self.jepa_surprise;
         let influence_v2_commit = self.influence_v2_commit;
         let influence_pulses_root = self.influence_pulses_root;
         let influence_node_values = std::mem::take(&mut self.influence_node_values);
@@ -1275,6 +1301,9 @@ impl Workspace {
             ssm_salience,
             ssm_novelty,
             ssm_attention_gain,
+            jepa_world_state,
+            jepa_prediction,
+            jepa_surprise,
             influence_v2_commit,
             influence_pulses_root,
             &influence_node_values,
@@ -1340,6 +1369,9 @@ impl Workspace {
             ssm_salience,
             ssm_novelty,
             ssm_attention_gain,
+            jepa_world_state,
+            jepa_prediction,
+            jepa_surprise,
             influence_v2_commit,
             influence_pulses_root,
             influence_node_values,
@@ -1782,6 +1814,9 @@ fn commit_snapshot(
     ssm_salience: u16,
     ssm_novelty: u16,
     ssm_attention_gain: u16,
+    jepa_world_state: Digest32,
+    jepa_prediction: Digest32,
+    jepa_surprise: u16,
     influence_v2_commit: Digest32,
     influence_pulses_root: Digest32,
     influence_node_values: &[(u16, i16)],
@@ -1879,6 +1914,9 @@ fn commit_snapshot(
     hasher.update(&ssm_salience.to_be_bytes());
     hasher.update(&ssm_novelty.to_be_bytes());
     hasher.update(&ssm_attention_gain.to_be_bytes());
+    hasher.update(jepa_world_state.as_bytes());
+    hasher.update(jepa_prediction.as_bytes());
+    hasher.update(&jepa_surprise.to_be_bytes());
     hasher.update(influence_v2_commit.as_bytes());
     hasher.update(influence_pulses_root.as_bytes());
     hasher.update(

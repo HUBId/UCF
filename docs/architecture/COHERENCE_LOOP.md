@@ -22,6 +22,11 @@ The router executes cycle stages in the **exact order listed in the cycle plan**
 
 This order is authoritative for documentation; the router iterates pulses in-order and emits the stage trace in that order.【F:core/crates/ucf-router/tests/wire_path_e2e.rs†L72-L142】【F:core/crates/ucf-router/tests/wire_path_e2e.rs†L290-L307】【F:core/crates/ucf-router/src/lib.rs†L742-L781】
 
+### 3.1 Module order inside the coherence loop (System-1 path)
+Within the Verify→Consolidate/Broadcast flow, the coherence loop is wired in the following order:
+
+`ONN → SpikeBus → (Coupling) → JEPA → IIT → TCF → NSR → SLE → NCDE → SSM → CDE → Output → Archive`【F:core/crates/ucf-router/src/lib.rs†L798-L1510】【F:core/crates/ucf-router/src/lib.rs†L1730-L2085】【F:core/crates/ucf-router/src/lib.rs†L3608-L3703】
+
 ## 4. Signals and their directions
 The loop relies on explicit signals and commits (all hashed) with clear directionality:
 
@@ -37,6 +42,10 @@ The loop relies on explicit signals and commits (all hashed) with clear directio
 
 - **Memory signals** → Attention/Learning
   - `ssm_state_digest/commit`, `salience`, `novelty`, `attention_gain` → ONN/NCDE/IIT/SLE/CDE inputs.【F:core/crates/ucf-ssm/src/lib.rs†L170-L238】【F:core/crates/ucf-onn/src/lib.rs†L118-L176】【F:core/crates/ucf-ncde/src/lib.rs†L120-L210】【F:core/crates/ucf-iit/src/lib.rs†L108-L178】【F:core/crates/ucf-sle/src/lib.rs†L110-L190】【F:core/crates/ucf-cde/src/lib.rs†L170-L260】
+
+- **World-model signals** → Causal loop
+  - `jepa.world_state` → CDE hypothesis input (observation commit).【F:core/crates/ucf-jepa/src/lib.rs†L1-L210】【F:core/crates/ucf-router/src/lib.rs†L1244-L1285】
+  - `jepa.surprise` → ONN/TCF/SLE/SSM surprise inputs.【F:core/crates/ucf-jepa/src/lib.rs†L1-L210】【F:core/crates/ucf-router/src/lib.rs†L798-L2105】
 
 - **Structural signals** → Learning/Policy gating
   - `nsr_verdict` + `nsr_trace_root` → TCF/SLE/ONN inputs.【F:core/crates/ucf-nsr/src/notar.rs†L160-L210】【F:core/crates/ucf-tcf/src/lib.rs†L120-L210】【F:core/crates/ucf-sle/src/lib.rs†L110-L190】【F:core/crates/ucf-onn/src/lib.rs†L118-L176】

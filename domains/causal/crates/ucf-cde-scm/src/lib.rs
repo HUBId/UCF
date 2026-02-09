@@ -146,6 +146,7 @@ pub struct CdeInputs {
     pub phi_proxy: u16,
     pub spike_root: Digest32,
     pub spike_counts: Vec<(SpikeKind, u16)>,
+    pub world_state_commit: Digest32,
     pub influence_commit: Digest32,
     pub influence_node_in: Vec<(InfluenceNodeId, i16)>,
     pub ssm_salience: u16,
@@ -167,6 +168,7 @@ impl CdeInputs {
         phi_proxy: u16,
         spike_root: Digest32,
         spike_counts: Vec<(SpikeKind, u16)>,
+        world_state_commit: Digest32,
         influence_commit: Digest32,
         influence_node_in: Vec<(InfluenceNodeId, i16)>,
         ssm_salience: u16,
@@ -184,6 +186,7 @@ impl CdeInputs {
             phi_proxy,
             spike_root,
             spike_counts,
+            world_state_commit,
             influence_commit,
             influence_node_in,
             ssm_salience,
@@ -747,6 +750,7 @@ fn digest_inputs(inputs: &CdeInputs) -> Digest32 {
         hasher.update(&kind.as_u16().to_be_bytes());
         hasher.update(&count.to_be_bytes());
     }
+    hasher.update(inputs.world_state_commit.as_bytes());
     hasher.update(inputs.influence_commit.as_bytes());
     hasher.update(
         &u64::try_from(inputs.influence_node_in.len())
@@ -828,6 +832,7 @@ mod tests {
             Digest32::new([seed.wrapping_add(1); 32]),
             vec![(SpikeKind::Novelty, 1)],
             Digest32::new([seed.wrapping_add(2); 32]),
+            Digest32::new([seed.wrapping_add(3); 32]),
             vec![
                 (InfluenceNodeId::AttentionGain, 6_000),
                 (InfluenceNodeId::ReplayPressure, 2_500),
