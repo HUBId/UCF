@@ -4,3 +4,7 @@
 - `ai-runtime`: enables the optional AI runtime backend glue (still mocked).
 - `ode`: enables the ODE/NCDE solver ports (mock implementations only).
 - `burn`/`candle`: placeholders for future ML backends (no crates wired yet).
+
+## Architecture
+- See `docs/architecture/COHERENCE_LOOP.md`.
+- See `docs/architecture/MODULE_COMMITS.md`.
