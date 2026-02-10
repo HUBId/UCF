@@ -2,6 +2,7 @@ use ucf_core::types::{SimTime, Tick, WindowId};
 use ucf_frames::v1::{
     BrainStimulusKind, BrainStimulusPayload, ChannelCode, ControlFrame, ControlPayload,
     CorrelationId, DecisionCode, DecisionFrame, Intent, IntentId, IntentKind, IntentType,
+    NeuromodulatorSnapshot,
 };
 use ucf_policy::{adapter::MockAdapter, errors::PolicyError, gem::Gem, pbm::Pbm};
 
@@ -44,7 +45,7 @@ fn pbm_allows_external_output_text_and_gem_emits() {
         intent(),
         "allow-me",
     );
-    let decision = Pbm::decide(&ctrl);
+    let decision = Pbm::decide(&ctrl, None);
     let mut adapter = MockAdapter::default();
 
     let result = Gem::execute(&mut adapter, &ctrl, Some(&decision));
@@ -67,7 +68,7 @@ fn internal_thought_allowed_but_not_externalized() {
         intent(),
         "private-thought",
     );
-    let decision = Pbm::decide(&ctrl);
+    let decision = Pbm::decide(&ctrl, None);
     let mut adapter = MockAdapter::default();
 
     let result = Gem::execute(&mut adapter, &ctrl, Some(&decision));
@@ -152,9 +153,43 @@ fn pbm_denies_external_output_text_over_512_bytes() {
         oversized,
     );
 
-    let decision = Pbm::decide(&ctrl);
+    let decision = Pbm::decide(&ctrl, None);
 
     assert_eq!(decision.decision, DecisionCode::Deny);
     assert_eq!(decision.intent, IntentType::ExternalCommunicate);
     assert_eq!(decision.reason_code.0, "deny_external_too_long");
+}
+
+#[test]
+fn pbm_meta_baseline_when_neuromod_none() {
+    let ctrl = ControlFrame::new_text(
+        sim_time(),
+        CorrelationId(30),
+        ChannelCode::ExternalOutput,
+        intent(),
+        "meta-baseline",
+    );
+
+    let decision = Pbm::decide(&ctrl, None);
+
+    assert_eq!(decision.meta.attention_gain, 0.5);
+    assert_eq!(decision.meta.learning_gate, 0.5);
+    assert_eq!(decision.meta.recursion_budget, 1);
+}
+
+#[test]
+fn pbm_meta_high_stress_sets_recursion_budget_zero() {
+    let ctrl = ControlFrame::new_text(
+        sim_time(),
+        CorrelationId(31),
+        ChannelCode::ExternalOutput,
+        intent(),
+        "meta-stress",
+    );
+    let mut neuromod = NeuromodulatorSnapshot::baseline();
+    neuromod.stress = 0.95;
+
+    let decision = Pbm::decide(&ctrl, Some(neuromod));
+
+    assert_eq!(decision.meta.recursion_budget, 0);
 }
