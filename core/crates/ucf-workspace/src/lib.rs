@@ -601,6 +601,47 @@ pub struct NsrTraceSummary {
     pub hit_summaries: Vec<NsrHitSummary>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CoherenceSummary {
+    pub cycle_id: u64,
+    pub gamma_bucket: u8,
+    pub plv: u16,
+    pub lock_window: u8,
+    pub surprise: u16,
+    pub novelty: u16,
+    pub salience: u16,
+    pub attention_gain: u16,
+    pub learn_rate: u16,
+    pub learn_mode: u8,
+    pub delta_mass: u16,
+    pub delta_targets: [u16; 4],
+    pub nsr_verdict: Option<u8>,
+    pub nsr_hit_counts: [u16; 3],
+    pub violations: Vec<NsrHitSummary>,
+}
+
+impl CoherenceSummary {
+    pub fn from_snapshot(snapshot: &WorkspaceSnapshot) -> Self {
+        Self {
+            cycle_id: snapshot.cycle_id,
+            gamma_bucket: snapshot.onn_gamma_bucket,
+            plv: snapshot.onn_global_plv,
+            lock_window: snapshot.tcf_lock_window_buckets,
+            surprise: snapshot.jepa_surprise,
+            novelty: snapshot.ssm_novelty,
+            salience: snapshot.ssm_salience,
+            attention_gain: snapshot.ssm_attention_gain,
+            learn_rate: snapshot.learning_signal_learn_rate,
+            learn_mode: snapshot.learning_signal_mode,
+            delta_mass: snapshot.structural_delta_mass,
+            delta_targets: snapshot.structural_delta_targets,
+            nsr_verdict: snapshot.nsr_verdict,
+            nsr_hit_counts: snapshot.nsr_hit_counts,
+            violations: snapshot.nsr_hit_summaries.clone(),
+        }
+    }
+}
+
 /// Encode a workspace snapshot into a compact, deterministic payload for archiving.
 ///
 /// Summaries included here are already sanitized and non-sensitive (categorical labels
@@ -1045,6 +1086,26 @@ impl Workspace {
 
     pub fn drop_counters(&self) -> DropCounters {
         self.drops
+    }
+
+    pub fn coherence_summary(&self) -> CoherenceSummary {
+        CoherenceSummary {
+            cycle_id: self.spike_cycle_id,
+            gamma_bucket: self.onn_gamma_bucket,
+            plv: self.onn_global_plv,
+            lock_window: self.tcf_lock_window_buckets,
+            surprise: self.jepa_surprise,
+            novelty: self.ssm_novelty,
+            salience: self.ssm_salience,
+            attention_gain: self.ssm_attention_gain,
+            learn_rate: self.learning_signal_learn_rate,
+            learn_mode: self.learning_signal_mode,
+            delta_mass: self.structural_delta_mass,
+            delta_targets: self.structural_delta_targets,
+            nsr_verdict: self.nsr_verdict,
+            nsr_hit_counts: self.nsr_hit_counts,
+            violations: self.nsr_hit_summaries.clone(),
+        }
     }
 
     pub fn record_recursion_used(&mut self, used: u16) {

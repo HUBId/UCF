@@ -1974,6 +1974,24 @@ name = "ucf-crypto"
 version = "0.1.0"
 
 [[package]]
+name = "ucf-demo"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ucf-ai-port",
+ "ucf-archive",
+ "ucf-archive-store",
+ "ucf-policy-ecology",
+ "ucf-policy-gateway",
+ "ucf-risk-gate",
+ "ucf-router",
+ "ucf-sandbox",
+ "ucf-tom-port",
+ "ucf-types",
+ "ucf-workspace",
+]
+
+[[package]]
 name = "ucf-digital-brain"
 version = "0.1.0"
 dependencies = [
