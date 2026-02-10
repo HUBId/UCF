@@ -1,0 +1,18 @@
+[package]
+name = "ucf-demo"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+blake3 = "1"
+ucf-router = { path = "../ucf-router" }
+ucf-policy-gateway = { path = "../../../domains/policy-gateway/crates/ucf-policy-gateway" }
+ucf-archive = { path = "../../../domains/archive/crates/ucf-archive" }
+ucf-archive-store = { path = "../../../domains/archive/crates/ucf-archive-store" }
+ucf-ai-port = { path = "../ucf-ai-port" }
+ucf-policy-ecology = { path = "../ucf-policy-ecology" }
+ucf-risk-gate = { path = "../ucf-risk-gate" }
+ucf-tom-port = { path = "../ucf-tom-port" }
+ucf-sandbox = { path = "../ucf-sandbox" }
+ucf-types = { path = "../ucf-types" }
+ucf-workspace = { path = "../ucf-workspace" }
