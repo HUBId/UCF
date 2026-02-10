@@ -167,6 +167,7 @@ members = [
     "domains/index/crates/ucf-vector-index-qdrant",
     "adapters/rig/crates/ucf-rig",
     "adapters/terminal/crates/ucf-terminal",
+    "runtime/*",
 ]
 resolver = "2"
 

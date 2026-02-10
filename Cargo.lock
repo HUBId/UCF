@@ -2270,6 +2270,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucf-policy"
+version = "0.1.0"
+dependencies = [
+ "ucf-core",
+ "ucf-frames",
+]
+
+[[package]]
 name = "ucf-policy-ecology"
 version = "0.1.0"
 dependencies = [
