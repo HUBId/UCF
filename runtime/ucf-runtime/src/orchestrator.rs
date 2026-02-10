@@ -1,6 +1,7 @@
 use crate::errors::RuntimeError;
 use ucf_ess::v1::{ExperienceRecord, ExperienceStore, IdAllocator, InMemoryEss};
 use ucf_frames::v1::{ControlFrame, DecisionFrame};
+use ucf_neuromod::v0::{NeuromodInputs, NeuromodScheduler, NeuromodulatorField};
 use ucf_policy::{adapter::ActionAdapter, gem::Gem, pbm::Pbm};
 
 pub struct RuntimeOrchestrator {
@@ -8,6 +9,8 @@ pub struct RuntimeOrchestrator {
     pub ids: IdAllocator,
     pub pbm: Pbm,
     pub gem: Gem,
+    neuromod_field: NeuromodulatorField,
+    neuromod_scheduler: NeuromodScheduler,
 }
 
 impl RuntimeOrchestrator {
@@ -17,6 +20,8 @@ impl RuntimeOrchestrator {
             ids: IdAllocator::new(1),
             pbm: Pbm,
             gem: Gem,
+            neuromod_field: NeuromodulatorField::new_baseline(),
+            neuromod_scheduler: NeuromodScheduler::new(1),
         }
     }
 
@@ -35,13 +40,19 @@ impl RuntimeOrchestrator {
         ctrl: ControlFrame,
         decision: DecisionFrame,
     ) -> Result<DecisionFrame, RuntimeError> {
+        let inputs = NeuromodInputs::baseline();
+        self.neuromod_scheduler
+            .advance(ctrl.time.tick.get(), &mut self.neuromod_field, inputs);
+        let snapshot = self.neuromod_field.snapshot();
+
         let eid1 = self.ids.next();
         self.ess
-            .append(ExperienceRecord::from_control(eid1, ctrl.clone()))?;
+            .append(ExperienceRecord::from_control(eid1, ctrl.clone()).with_neuromod(snapshot))?;
 
         let eid2 = self.ids.next();
-        self.ess
-            .append(ExperienceRecord::from_decision(eid2, decision.clone()))?;
+        self.ess.append(
+            ExperienceRecord::from_decision(eid2, decision.clone()).with_neuromod(snapshot),
+        )?;
 
         if let Err(error) = Gem::execute(adapter, &ctrl, Some(&decision)) {
             let mut note = format!("gem_error:{error}");

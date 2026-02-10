@@ -2,7 +2,7 @@ use ucf_core::types::{SimTime, Tick, WindowId};
 use ucf_ess::v1::{ExperienceKind, ExperiencePayload, ExperienceStore};
 use ucf_frames::v1::{
     BrainStimulusKind, BrainStimulusPayload, ChannelCode, ControlFrame, ControlPayload,
-    CorrelationId, DecisionFrame, Intent, IntentId, IntentKind,
+    CorrelationId, DecisionFrame, Intent, IntentId, IntentKind, NeuromodulatorSnapshot,
 };
 use ucf_policy::{adapter::MockAdapter, gem::Gem};
 use ucf_runtime::RuntimeOrchestrator;
@@ -44,6 +44,15 @@ fn external_output_text_is_allowed_emitted_and_audited() {
     assert_eq!(
         orchestrator.ess.get(1).map(|r| r.kind),
         Some(ExperienceKind::DecisionOut)
+    );
+    let baseline = NeuromodulatorSnapshot::baseline();
+    assert_eq!(
+        orchestrator.ess.get(0).and_then(|r| r.neuromod),
+        Some(baseline)
+    );
+    assert_eq!(
+        orchestrator.ess.get(1).and_then(|r| r.neuromod),
+        Some(baseline)
     );
 }
 

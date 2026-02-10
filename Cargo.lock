@@ -2218,6 +2218,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucf-neuromod"
+version = "0.1.0"
+dependencies = [
+ "ucf-core",
+ "ucf-ess",
+ "ucf-frames",
+]
+
+[[package]]
 name = "ucf-nsr"
 version = "0.1.0"
 dependencies = [
@@ -2460,6 +2469,7 @@ dependencies = [
  "ucf-core",
  "ucf-ess",
  "ucf-frames",
+ "ucf-neuromod",
  "ucf-policy",
 ]
 

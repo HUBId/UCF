@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
 use ucf_core::types::SimTime;
-use ucf_frames::v1::{BrainFrame, ControlFrame, CorrelationId, DecisionFrame};
+use ucf_frames::v1::{
+    BrainFrame, ControlFrame, CorrelationId, DecisionFrame, NeuromodulatorSnapshot,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ExperienceId(pub u64);
@@ -14,13 +16,14 @@ pub enum ExperienceKind {
     Note,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ExperienceRecord {
     pub id: ExperienceId,
     pub time: SimTime,
     pub corr: CorrelationId,
     pub kind: ExperienceKind,
     pub payload: ExperiencePayload,
+    pub neuromod: Option<NeuromodulatorSnapshot>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -40,6 +43,7 @@ impl ExperienceRecord {
             corr: ctrl.corr,
             kind: ExperienceKind::ControlIn,
             payload: ExperiencePayload::Control(ctrl),
+            neuromod: None,
         }
     }
 
@@ -50,6 +54,7 @@ impl ExperienceRecord {
             corr: decision.corr,
             kind: ExperienceKind::DecisionOut,
             payload: ExperiencePayload::Decision(decision),
+            neuromod: None,
         }
     }
 
@@ -60,6 +65,7 @@ impl ExperienceRecord {
             corr: brain.corr,
             kind: ExperienceKind::BrainOut,
             payload: ExperiencePayload::Brain(brain),
+            neuromod: None,
         }
     }
 
@@ -75,6 +81,12 @@ impl ExperienceRecord {
             corr,
             kind: ExperienceKind::Note,
             payload: ExperiencePayload::Text(text.into()),
+            neuromod: None,
         }
+    }
+
+    pub fn with_neuromod(mut self, neuromod: NeuromodulatorSnapshot) -> Self {
+        self.neuromod = Some(neuromod);
+        self
     }
 }

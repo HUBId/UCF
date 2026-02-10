@@ -173,3 +173,32 @@ fn decision_ledger_queries_are_indexed_by_correlation_id() {
     assert!(ess.trail_by_corr(corr_y).is_empty());
     assert!(ess.last_decision_for_corr(corr_y).is_none());
 }
+
+#[test]
+fn constructors_default_neuromod_to_none() {
+    let mut ids = IdAllocator::new(1000);
+    let corr = CorrelationId(303);
+    let t = time(99, 1);
+
+    let control = ControlFrame::new_text(
+        t,
+        corr,
+        ChannelCode::ExternalOutput,
+        Intent::new(IntentId(9), IntentKind::Speak, "control"),
+        "ctrl",
+    );
+    let decision = DecisionFrame::allow(time(99, 2), corr, "allowed");
+
+    assert_eq!(
+        ExperienceRecord::from_control(ids.next(), control).neuromod,
+        None
+    );
+    assert_eq!(
+        ExperienceRecord::from_decision(ids.next(), decision).neuromod,
+        None
+    );
+    assert_eq!(
+        ExperienceRecord::note(ids.next(), time(99, 3), corr, "note").neuromod,
+        None
+    );
+}
