@@ -1,10 +1,12 @@
 [package]
-name = "ucf-ai-host"
+name = "ucf-ai-backends"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = []
+ai-candle = []
+ai-burn = []
+
 [dependencies]
 ucf-ai-host-abi = { path = "../ai-host-abi" }
-
-[dev-dependencies]
-ucf-types = { path = "../../core/crates/ucf-types" }
