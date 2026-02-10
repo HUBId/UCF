@@ -8,3 +8,4 @@ ucf-core = { path = "../../core/ucf-core" }
 ucf-frames = { path = "../../domains/ucf-frames" }
 ucf-policy = { path = "../ucf-policy" }
 ucf-ess = { path = "../../domains/ucf-ess" }
+ucf-neuromod = { path = "../../domains/ucf-neuromod" }

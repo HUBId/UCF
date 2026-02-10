@@ -151,6 +151,7 @@ members = [
     "domains/ucf-brainbus",
     "domains/ucf-bluebrain-bridge",
     "domains/ucf-ess",
+    "domains/ucf-neuromod",
     "domains/archive/crates/ucf-archive",
     "domains/archive/crates/ucf-archive-firewood",
     "domains/archive/crates/ucf-archive-store",
