@@ -11,3 +11,4 @@ ucf-ess = { path = "../../domains/ucf-ess" }
 ucf-neuromod = { path = "../../domains/ucf-neuromod" }
 ucf-onn = { path = "../../core/crates/ucf-onn" }
 ucf-iit-proxy = { path = "../../domains/ucf-iit" }
+ucf-snn = { path = "../../domains/ucf-snn" }
