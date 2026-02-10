@@ -930,7 +930,6 @@ mod tests {
             0,
             0,
             0,
-            0,
             Digest32::new([0u8; 32]),
         );
         let before: i64 = core
