@@ -2332,6 +2332,7 @@ impl Router {
                         .clone()
                         .unwrap_or_else(|| empty_spike_outputs(cycle_id));
                     let spike_root_commit = spike_outputs.accepted_root;
+                    let spike_max_intensity = spike_outputs.max_intensity;
                     let spike_counts_ssm = spike_outputs.counts.clone();
                     let percept_commit = ctx
                         .percept_commit
@@ -2342,17 +2343,35 @@ impl Router {
                         .or_else(|| self.last_ncde_output.lock().ok().and_then(|g| *g));
                     let ncde_energy = prior_ncde.map(|output| output.ncde_energy).unwrap_or(0);
                     let b_q15_bias = self.coherence_b_q15_bias(&lag_snapshot);
+                    let jepa_surprise = ctx
+                        .jepa_outputs
+                        .as_ref()
+                        .map(|output| output.surprise)
+                        .unwrap_or(surprise_score);
+                    let nsr_trace_root = ctx
+                        .nsr_output
+                        .as_ref()
+                        .map(|output| output.trace_root)
+                        .or_else(|| {
+                            self.last_workspace_snapshot.lock().ok().and_then(|guard| {
+                                guard.as_ref().and_then(|snap| snap.nsr_trace_root)
+                            })
+                        })
+                        .unwrap_or_else(|| Digest32::new([0u8; 32]));
                     if let Some(ssm_output) = self.tick_ssm(
                         &phase_bus,
                         percept_commit,
                         percept_energy,
                         ncde_energy,
                         spike_root_commit,
+                        spike_max_intensity,
                         spike_counts_ssm,
                         b_q15_bias,
                         drift_score,
                         surprise_score,
+                        jepa_surprise,
                         ctx.attention_risk,
+                        nsr_trace_root,
                     ) {
                         ctx.ssm_output = Some(ssm_output.clone());
                         if let Ok(mut guard) = self.last_ssm_output.lock() {
@@ -4570,11 +4589,14 @@ impl Router {
         percept_energy: u16,
         ncde_energy: u16,
         spike_root_commit: Digest32,
+        spike_max_intensity: u16,
         spike_counts: Vec<(SpikeKind, u16)>,
         b_q15_bias: i16,
         drift: u16,
         surprise: u16,
+        jepa_surprise: u16,
         risk: u16,
+        nsr_trace_root: Digest32,
     ) -> Option<SsmOutputs> {
         self.sync_ssm_params();
         let mut modules = self.runtime_modules.lock().ok()?;
@@ -4604,6 +4626,16 @@ impl Router {
             .ok()
             .and_then(|plan| plan.as_ref().map(|plan| plan.learning_gain_cap))
             .unwrap_or(10_000);
+        let gain_budget_commit = self
+            .last_workspace_snapshot
+            .lock()
+            .ok()
+            .and_then(|snapshot| {
+                snapshot
+                    .as_ref()
+                    .map(|snapshot| snapshot.gain_budget_commit)
+            })
+            .unwrap_or_else(|| Digest32::new([0u8; 32]));
         let input = SsmInputs::new(
             phase_bus.cycle_id,
             phase_bus.commit,
@@ -4611,17 +4643,21 @@ impl Router {
             percept_commit,
             percept_energy,
             spike_root_commit,
+            spike_max_intensity,
             spike_counts,
             coupling_root,
             coupling_influences,
             tcf_attention_cap,
             tcf_learning_cap,
+            gain_budget_commit,
             b_q15_bias,
             sle_bias,
             ncde_energy,
             risk,
             drift,
             surprise,
+            jepa_surprise,
+            nsr_trace_root,
         );
         let budget = self.current_gain_budget();
         Some(modules.ssm.tick_with_budget(&input, &budget))
@@ -6242,17 +6278,21 @@ mod tests {
             Digest32::new([9u8; 32]),
             900,
             spike_outputs.accepted_root,
+            spike_outputs.max_intensity,
             spike_outputs.counts.clone(),
             Digest32::new([10u8; 32]),
             Vec::new(),
             10_000,
             10_000,
+            Digest32::new([15u8; 32]),
             0,
             0,
             1200,
             800,
             600,
             400,
+            700,
+            Digest32::new([16u8; 32]),
         );
         let ssm_outputs = modules.ssm.tick_with_budget(&ssm_inputs, &budget);
 
@@ -6600,11 +6640,14 @@ mod tests {
                 1200,
                 ncde_output.ncde_energy,
                 Digest32::new([2u8; 32]),
+                2400,
                 vec![(SpikeKind::Threat, 3)],
                 0,
                 1000,
                 2000,
                 1500,
+                1500,
+                Digest32::new([7u8; 32]),
             )
             .expect("ssm output");
         {
@@ -6683,11 +6726,14 @@ mod tests {
                 1200,
                 2200,
                 Digest32::new([2u8; 32]),
+                2400,
                 vec![(SpikeKind::Threat, 3)],
                 0,
                 1000,
                 2000,
                 1500,
+                1500,
+                Digest32::new([7u8; 32]),
             )
             .expect("ssm output low");
         let output_high = router_high
@@ -6697,11 +6743,14 @@ mod tests {
                 1200,
                 2200,
                 Digest32::new([2u8; 32]),
+                2400,
                 vec![(SpikeKind::Threat, 3)],
                 0,
                 1000,
                 2000,
                 1500,
+                1500,
+                Digest32::new([7u8; 32]),
             )
             .expect("ssm output high");
 
