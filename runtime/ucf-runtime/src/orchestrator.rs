@@ -25,11 +25,19 @@ impl RuntimeOrchestrator {
         adapter: &mut A,
         ctrl: ControlFrame,
     ) -> Result<DecisionFrame, RuntimeError> {
+        let decision = Pbm::decide(&ctrl);
+        self.ingest_with_decision(adapter, ctrl, decision)
+    }
+
+    pub fn ingest_with_decision<A: ActionAdapter>(
+        &mut self,
+        adapter: &mut A,
+        ctrl: ControlFrame,
+        decision: DecisionFrame,
+    ) -> Result<DecisionFrame, RuntimeError> {
         let eid1 = self.ids.next();
         self.ess
             .append(ExperienceRecord::from_control(eid1, ctrl.clone()))?;
-
-        let decision = Pbm::decide(&ctrl);
 
         let eid2 = self.ids.next();
         self.ess

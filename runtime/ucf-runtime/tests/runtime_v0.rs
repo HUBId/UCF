@@ -136,30 +136,13 @@ fn orchestrator_appends_note_when_brain_spikes_emitted() {
     let mut orchestrator = RuntimeOrchestrator::new();
     let mut adapter = MockAdapter::default();
 
-    let _decision = DecisionFrame::allow(sim_time(), CorrelationId(6), "allow_brain");
-    Gem::execute(
-        &mut adapter,
-        &ctrl,
-        Some(&DecisionFrame::allow(
-            sim_time(),
-            CorrelationId(6),
-            "allow_brain",
-        )),
-    )
-    .expect("gem should emit brain spikes");
-
-    let note_text = adapter
-        .take_brain_spike_meta()
-        .map(|(count, dst)| format!("brain_spikes:n={count},dst={dst}"))
-        .expect("meta should exist");
-
-    let eid = orchestrator.ids.next();
     orchestrator
-        .ess
-        .append(ucf_ess::v1::ExperienceRecord::note(
-            eid, ctrl.time, ctrl.corr, note_text,
-        ))
-        .expect("append note");
+        .ingest_with_decision(
+            &mut adapter,
+            ctrl,
+            DecisionFrame::allow(sim_time(), CorrelationId(6), "allow_brain"),
+        )
+        .expect("orchestration should succeed");
 
     let last = orchestrator
         .ess
