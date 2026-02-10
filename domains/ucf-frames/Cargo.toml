@@ -1,0 +1,7 @@
+[package]
+name = "ucf-frames"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ucf-core = { path = "../../core/ucf-core" }

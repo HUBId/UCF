@@ -2081,6 +2081,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucf-frames"
+version = "0.1.0"
+dependencies = [
+ "ucf-core",
+]
+
+[[package]]
 name = "ucf-geist"
 version = "0.1.0"
 dependencies = [
