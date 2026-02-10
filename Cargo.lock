@@ -1898,6 +1898,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucf-brainbus"
+version = "0.1.0"
+dependencies = [
+ "ucf-core",
+ "ucf-frames",
+]
+
+[[package]]
 name = "ucf-bus"
 version = "0.1.0"
 dependencies = [
