@@ -3897,6 +3897,17 @@ impl Router {
             .map(|output| output.verdict.as_u8())
             .or_else(|| ctx.nsr_report.as_ref().map(|report| report.verdict.as_u8()))
             .unwrap_or(0);
+        let flow_energy_hint = ctx
+            .ncde_output
+            .as_ref()
+            .map(|output| output.flow_energy)
+            .or_else(|| {
+                self.last_ncde_output
+                    .lock()
+                    .ok()
+                    .and_then(|g| g.map(|o| o.flow_energy))
+            })
+            .unwrap_or(0);
         let attention_gain =
             ctx.ssm_output
                 .as_ref()
@@ -3917,6 +3928,7 @@ impl Router {
             ctx.drift_score.unwrap_or(0),
             ctx.surprise_score.unwrap_or(0),
             attention_gain,
+            flow_energy_hint,
             iit_output.hints_commit,
             iit_output.tighten_sync,
             iit_output.damp_output,
@@ -4555,40 +4567,22 @@ impl Router {
     ) -> Option<NcdeOutputs> {
         self.sync_ncde_params();
         let mut modules = self.runtime_modules.lock().ok()?;
-        let (coupling_influences_root, coupling_influences) = coupling_outputs
-            .map(|outputs| {
-                let subset = outputs
-                    .influences
-                    .iter()
-                    .filter(|(id, _)| {
-                        matches!(id, SignalId::AttentionFinalGain | SignalId::PhiProxy)
-                    })
-                    .cloned()
-                    .collect::<Vec<_>>();
-                (outputs.influences_root, subset)
-            })
-            .unwrap_or_else(|| (Digest32::new([0u8; 32]), Vec::new()));
-        let ssm_state_commit = ssm_output
-            .map(|output| output.ssm_state_commit)
-            .unwrap_or_else(|| Digest32::new([0u8; 32]));
-        let ssm_salience = ssm_output.map(|output| output.ssm_salience).unwrap_or(0);
-        let ssm_novelty = ssm_output.map(|output| output.ssm_novelty).unwrap_or(0);
+        let _ = coupling_outputs;
+        let _ = ssm_output;
+        let _ = risk;
+        let _ = drift;
+        let spike_counts = ucf_ncde::SpikeCountsSummary::from_counts(&spike_counts);
+        let budget_commit = self.current_gain_budget().commit;
         let inputs = NcdeInputs::new(
             cycle_id,
             phase_bus.commit,
             phase_bus.gamma_bucket,
+            phase_bus.global_plv,
             spike_root_commit,
             spike_counts,
-            attention_gain,
-            coupling_influences_root,
-            coupling_influences,
-            ssm_state_commit,
-            ssm_salience,
-            ssm_novelty,
-            risk,
-            drift,
+            attention_gain.min(learning_gain_cap),
             surprise,
-            learning_gain_cap,
+            budget_commit,
         );
         let budget = self.current_gain_budget();
         Some(modules.ncde.tick_with_budget(&inputs, &budget))
@@ -6325,18 +6319,12 @@ mod tests {
             cycle_id,
             onn_outputs.phase_bus.commit,
             onn_outputs.phase_bus.gamma_bucket,
+            onn_outputs.phase_bus.global_plv,
             spike_outputs.accepted_root,
-            spike_outputs.counts.clone(),
+            ucf_ncde::SpikeCountsSummary::from_counts(&spike_outputs.counts),
             1000,
-            Digest32::new([11u8; 32]),
-            Vec::new(),
-            ssm_outputs.ssm_state_commit,
-            ssm_outputs.ssm_salience,
-            ssm_outputs.ssm_novelty,
-            1000,
-            900,
             800,
-            10_000,
+            Digest32::new([11u8; 32]),
         );
         let ncde_outputs = modules.ncde.tick_with_budget(&ncde_inputs, &budget);
 
@@ -6390,6 +6378,7 @@ mod tests {
             700,
             600,
             ssm_outputs.ssm_attention_gain,
+            ncde_outputs.flow_energy,
             iit_outputs.hints_commit,
             iit_outputs.tighten_sync,
             iit_outputs.damp_output,

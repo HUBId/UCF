@@ -147,6 +147,7 @@ pub struct TcfInputs {
     pub drift: u16,
     pub surprise: u16,
     pub attention_gain: u16,
+    pub flow_energy_hint: u16,
     /// upstream hints:
     pub iit_hints_commit: Digest32,
     pub tighten_sync: bool,
@@ -173,6 +174,7 @@ impl TcfInputs {
         drift: u16,
         surprise: u16,
         attention_gain: u16,
+        flow_energy_hint: u16,
         iit_hints_commit: Digest32,
         tighten_sync: bool,
         damp_output: bool,
@@ -188,6 +190,7 @@ impl TcfInputs {
         let drift = clamp_gain(drift);
         let surprise = clamp_gain(surprise);
         let attention_gain = clamp_gain(attention_gain);
+        let flow_energy_hint = clamp_gain(flow_energy_hint);
         let commit = commit_inputs(
             cycle_id,
             phase_bus_commit,
@@ -198,6 +201,7 @@ impl TcfInputs {
             drift,
             surprise,
             attention_gain,
+            flow_energy_hint,
             iit_hints_commit,
             tighten_sync,
             damp_output,
@@ -217,6 +221,7 @@ impl TcfInputs {
             drift,
             surprise,
             attention_gain,
+            flow_energy_hint,
             iit_hints_commit,
             tighten_sync,
             damp_output,
@@ -383,6 +388,7 @@ impl TcfCore {
                 scale_gain(self.params.max_gain, coherence)
             };
 
+        let output_gain_cap = output_gain_cap.saturating_sub(inp.flow_energy_hint / 20);
         let output_gain_cap = output_gain_cap.min(self.params.max_gain);
 
         next_state = refresh_state_commit(next_state, self.params.commit);
@@ -614,6 +620,7 @@ fn commit_inputs(
     drift: u16,
     surprise: u16,
     attention_gain: u16,
+    flow_energy_hint: u16,
     iit_hints_commit: Digest32,
     tighten_sync: bool,
     damp_output: bool,
@@ -634,6 +641,7 @@ fn commit_inputs(
     hasher.update(&drift.to_be_bytes());
     hasher.update(&surprise.to_be_bytes());
     hasher.update(&attention_gain.to_be_bytes());
+    hasher.update(&flow_energy_hint.to_be_bytes());
     hasher.update(iit_hints_commit.as_bytes());
     hasher.update(&[tighten_sync as u8]);
     hasher.update(&[damp_output as u8]);
@@ -699,6 +707,7 @@ mod tests {
             2_000,
             2_000,
             5_000,
+            0,
             Digest32::new([2u8; 32]),
             false,
             false,
