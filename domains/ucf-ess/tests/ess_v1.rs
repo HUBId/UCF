@@ -1,6 +1,8 @@
 use ucf_core::types::{SimTime, Tick, WindowId};
 use ucf_ess::v1::{EssError, ExperienceRecord, ExperienceStore, IdAllocator, InMemoryEss};
-use ucf_frames::v1::CorrelationId;
+use ucf_frames::v1::{
+    ChannelCode, ControlFrame, CorrelationId, DecisionFrame, Intent, IntentId, IntentKind,
+};
 
 fn time(tick: u64, window: u64) -> SimTime {
     SimTime {
@@ -125,4 +127,49 @@ fn tail_time_returns_last_appended_time() {
     .expect("second append should succeed");
 
     assert_eq!(ess.tail_time(), Some(second));
+}
+
+#[test]
+fn decision_ledger_queries_are_indexed_by_correlation_id() {
+    let mut ess = InMemoryEss::new();
+    let mut ids = IdAllocator::new(50);
+    let corr_x = CorrelationId(101);
+    let corr_y = CorrelationId(202);
+
+    let control = ControlFrame::new_text(
+        time(20, 0),
+        corr_x,
+        ChannelCode::ExternalOutput,
+        Intent::new(IntentId(1), IntentKind::Speak, "control"),
+        "ctrl",
+    );
+    let decision = DecisionFrame::allow(time(20, 1), corr_x, "allowed");
+    let note = ExperienceRecord::note(ids.next(), time(20, 2), corr_x, "note");
+
+    ess.append(ExperienceRecord::from_control(ids.next(), control))
+        .expect("control append should succeed");
+    ess.append(ExperienceRecord::from_decision(
+        ids.next(),
+        decision.clone(),
+    ))
+    .expect("decision append should succeed");
+    ess.append(note).expect("note append should succeed");
+
+    let indices = ess.indices_by_corr(corr_x);
+    assert_eq!(indices, &[0, 1, 2]);
+
+    let trail = ess.trail_by_corr(corr_x);
+    assert_eq!(trail.len(), 3);
+    assert_eq!(trail[0].kind, ucf_ess::v1::ExperienceKind::ControlIn);
+    assert_eq!(trail[1].kind, ucf_ess::v1::ExperienceKind::DecisionOut);
+    assert_eq!(trail[2].kind, ucf_ess::v1::ExperienceKind::Note);
+
+    let last_decision = ess
+        .last_decision_for_corr(corr_x)
+        .expect("decision should be present for corr_x");
+    assert_eq!(last_decision, &decision);
+
+    assert!(ess.indices_by_corr(corr_y).is_empty());
+    assert!(ess.trail_by_corr(corr_y).is_empty());
+    assert!(ess.last_decision_for_corr(corr_y).is_none());
 }
