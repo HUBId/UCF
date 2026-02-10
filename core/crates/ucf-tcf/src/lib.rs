@@ -146,6 +146,7 @@ pub struct TcfInputs {
     pub risk: u16,
     pub drift: u16,
     pub surprise: u16,
+    pub attention_gain: u16,
     /// upstream hints:
     pub iit_hints_commit: Digest32,
     pub tighten_sync: bool,
@@ -171,6 +172,7 @@ impl TcfInputs {
         risk: u16,
         drift: u16,
         surprise: u16,
+        attention_gain: u16,
         iit_hints_commit: Digest32,
         tighten_sync: bool,
         damp_output: bool,
@@ -185,6 +187,7 @@ impl TcfInputs {
         let risk = clamp_gain(risk);
         let drift = clamp_gain(drift);
         let surprise = clamp_gain(surprise);
+        let attention_gain = clamp_gain(attention_gain);
         let commit = commit_inputs(
             cycle_id,
             phase_bus_commit,
@@ -194,6 +197,7 @@ impl TcfInputs {
             risk,
             drift,
             surprise,
+            attention_gain,
             iit_hints_commit,
             tighten_sync,
             damp_output,
@@ -212,6 +216,7 @@ impl TcfInputs {
             risk,
             drift,
             surprise,
+            attention_gain,
             iit_hints_commit,
             tighten_sync,
             damp_output,
@@ -341,7 +346,7 @@ impl TcfCore {
             smoothing_base
         };
 
-        let mut attention_gain_cap = self.params.max_gain;
+        let mut attention_gain_cap = inp.attention_gain.max(self.params.max_gain / 10);
         if risk_val >= RISK_HIGH {
             attention_gain_cap = scale_gain(attention_gain_cap, 8_000);
         }
@@ -608,6 +613,7 @@ fn commit_inputs(
     risk: u16,
     drift: u16,
     surprise: u16,
+    attention_gain: u16,
     iit_hints_commit: Digest32,
     tighten_sync: bool,
     damp_output: bool,
@@ -627,6 +633,7 @@ fn commit_inputs(
     hasher.update(&risk.to_be_bytes());
     hasher.update(&drift.to_be_bytes());
     hasher.update(&surprise.to_be_bytes());
+    hasher.update(&attention_gain.to_be_bytes());
     hasher.update(iit_hints_commit.as_bytes());
     hasher.update(&[tighten_sync as u8]);
     hasher.update(&[damp_output as u8]);
@@ -691,6 +698,7 @@ mod tests {
             2_000,
             2_000,
             2_000,
+            5_000,
             Digest32::new([2u8; 32]),
             false,
             false,
