@@ -148,6 +148,7 @@ members = [
     "crates/replay_evidence",
     "domains/policy-gateway/crates/ucf-policy-gateway",
     "domains/ucf-frames",
+    "domains/ucf-ess",
     "domains/archive/crates/ucf-archive",
     "domains/archive/crates/ucf-archive-firewood",
     "domains/archive/crates/ucf-archive-store",
