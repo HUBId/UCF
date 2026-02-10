@@ -152,6 +152,8 @@ members = [
     "domains/consolidation/crates/ucf-consolidation",
     "domains/ai-sandbox/crates/ucf-ai-sandbox",
     "domains/ai",
+    "domains/ai-host-abi",
+    "domains/ai-backends",
     "domains/ai/crates/ucf-feature-translator",
     "domains/digitalbrain/crates/ucf-digitalbrain-port",
     "domains/digital-brain/crates/ucf-digital-brain",
@@ -184,9 +186,12 @@ sha2 = "0.10.9"
 tracing = "0.1.41"
 ucf-archive-store = { path = "domains/archive/crates/ucf-archive-store" }
 ucf-archive-firewood = { path = "domains/archive/crates/ucf-archive-firewood", default-features = false }
+ucf-ai-backends = { path = "domains/ai-backends", default-features = false }
 
 [workspace.features]
 archive-firewood = ["ucf-archive-firewood/archive-firewood"]
+ai-candle = ["ucf-ai-backends/ai-candle"]
+ai-burn = ["ucf-ai-backends/ai-burn"]
 digitalbrain = [
     "ucf-ai-port/digitalbrain",
     "ucf-digitalbrain-port/digitalbrain",
