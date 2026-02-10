@@ -1,11 +1,12 @@
 use crate::errors::RuntimeError;
 use ucf_biophys::v0::{
     hpa_step, modulate_hh, FieldEvent, FieldEventKind, FieldUpdateCfg, HhParams, HpaCfg, HpaState,
-    ModulationCfg, NeuromodulatorField as BiophysField,
+    Microcircuit, ModulationCfg, NeuromodulatorField as BiophysField,
 };
 use ucf_ess::v1::{ExperienceRecord, ExperienceStore, IdAllocator, InMemoryEss};
 use ucf_frames::v1::{
-    BiophysFrame, BiophysHhParams, ControlFrame, DecisionFrame, NeuromodulatorSnapshot,
+    BiophysFrame, BiophysHhParams, ControlFrame, DecisionFrame, MicrocircuitFrame,
+    NeuromodulatorSnapshot,
 };
 use ucf_iit_proxy::v0::{
     IitConfig, IitMonitor, MOD_BLUE, MOD_GEIST, MOD_JEPA, MOD_NSR, MOD_PBM, MOD_SSM,
@@ -34,6 +35,8 @@ pub struct RuntimeOrchestrator {
     hpa_cfg: HpaCfg,
     last_biophys_tick_ms: Option<u64>,
     last_biophys_frame: Option<BiophysFrame>,
+    microcircuit: Microcircuit,
+    last_microcircuit_frame: Option<MicrocircuitFrame>,
 }
 
 impl RuntimeOrchestrator {
@@ -62,6 +65,8 @@ impl RuntimeOrchestrator {
             hpa_cfg: HpaCfg::default(),
             last_biophys_tick_ms: None,
             last_biophys_frame: None,
+            microcircuit: Microcircuit::new_ring(32),
+            last_microcircuit_frame: None,
         }
     }
 
@@ -71,6 +76,10 @@ impl RuntimeOrchestrator {
 
     pub fn last_biophys_frame(&self) -> Option<BiophysFrame> {
         self.last_biophys_frame
+    }
+
+    pub fn last_microcircuit_frame(&self) -> Option<MicrocircuitFrame> {
+        self.last_microcircuit_frame
     }
 
     pub fn ingest_and_process<A: ActionAdapter>(
@@ -145,6 +154,7 @@ impl RuntimeOrchestrator {
 
         let field = self.biophys_field.with_hpa(self.hpa_state);
         let hh = modulate_hh(HhParams::default(), field, self.biophys_mod_cfg);
+        let micro = self.microcircuit.step(field, dt_s);
         self.last_biophys_frame = Some(BiophysFrame {
             now_ms,
             field: ucf_biophys::v0::summarize(field),
@@ -156,6 +166,12 @@ impl RuntimeOrchestrator {
                 max_firing_hz: hh.max_firing_hz,
             },
             hpa_cortisol: self.hpa_state.cortisol,
+        });
+        self.last_microcircuit_frame = Some(MicrocircuitFrame {
+            now_ms,
+            n: self.microcircuit.neurons.len() as u32,
+            spike_count: micro.spikes.len() as u32,
+            avg_v: micro.avg_v,
         });
     }
 
