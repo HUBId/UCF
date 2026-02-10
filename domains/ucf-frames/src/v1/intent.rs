@@ -13,6 +13,15 @@ pub enum IntentKind {
     System,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IntentType {
+    InternalThought,
+    ExternalCommunicate,
+    WriteMemory,
+    StimulateBrain,
+    Unknown,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Intent {
     pub id: IntentId,

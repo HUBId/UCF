@@ -1,7 +1,7 @@
 use ucf_core::types::{SimTime, Tick, WindowId};
 use ucf_frames::v1::{
     ChannelCode, ControlFrame, ControlPayload, CorrelationId, DecisionCode, DecisionFrame, Intent,
-    IntentId, IntentKind,
+    IntentId, IntentKind, IntentType,
 };
 use ucf_policy::{adapter::MockAdapter, errors::PolicyError, gem::Gem, pbm::Pbm};
 
@@ -36,22 +36,24 @@ fn no_decision_no_action() {
 }
 
 #[test]
-fn pbm_denies_external_output_and_gem_noops_on_deny() {
+fn pbm_allows_external_output_text_and_gem_emits() {
     let ctrl = ControlFrame::new_text(
         sim_time(),
         CorrelationId(2),
         ChannelCode::ExternalOutput,
         intent(),
-        "deny-me",
+        "allow-me",
     );
     let decision = Pbm::decide(&ctrl);
     let mut adapter = MockAdapter::default();
 
     let result = Gem::execute(&mut adapter, &ctrl, Some(&decision));
 
-    assert_eq!(decision.decision, DecisionCode::Deny);
+    assert_eq!(decision.decision, DecisionCode::Allow);
+    assert_eq!(decision.intent, IntentType::ExternalCommunicate);
+    assert_eq!(decision.reason_code.0, "allow_text_external");
     assert!(result.is_ok());
-    assert!(adapter.emitted.is_empty());
+    assert_eq!(adapter.emitted, vec!["allow-me".to_string()]);
     assert_eq!(adapter.brain_events, 0);
     assert_eq!(adapter.mem_writes, 0);
 }
@@ -113,4 +115,22 @@ fn memory_write_bytes_with_allow_writes_memory() {
     assert!(result.is_ok());
     assert_eq!(adapter.mem_writes, 1);
     assert!(adapter.emitted.is_empty());
+}
+
+#[test]
+fn pbm_denies_external_output_text_over_512_bytes() {
+    let oversized = "x".repeat(513);
+    let ctrl = ControlFrame::new_text(
+        sim_time(),
+        CorrelationId(22),
+        ChannelCode::ExternalOutput,
+        intent(),
+        oversized,
+    );
+
+    let decision = Pbm::decide(&ctrl);
+
+    assert_eq!(decision.decision, DecisionCode::Deny);
+    assert_eq!(decision.intent, IntentType::ExternalCommunicate);
+    assert_eq!(decision.reason_code.0, "deny_external_too_long");
 }

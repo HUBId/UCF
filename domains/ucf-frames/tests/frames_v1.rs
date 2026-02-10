@@ -1,7 +1,7 @@
 use ucf_core::types::{SimTime, Tick, WindowId};
 use ucf_frames::v1::{
     ChannelCode, ControlFrame, ControlPayload, CorrelationId, DecisionCode, DecisionFrame,
-    DenyReasonCode, Intent, IntentId, IntentKind,
+    DenyReasonCode, Intent, IntentId, IntentKind, IntentType, ReasonCode,
 };
 
 #[test]
@@ -77,4 +77,19 @@ fn code_display_strings_are_stable() {
     assert_eq!(ChannelCode::InternalThought.to_string(), "internal_thought");
     assert_eq!(ChannelCode::MemoryWrite.to_string(), "memory_write");
     assert_eq!(ChannelCode::BrainStimulus.to_string(), "brain_stimulus");
+}
+
+#[test]
+fn decision_defaults_include_intent_and_reason_code() {
+    let frame = DecisionFrame::allow(
+        SimTime {
+            tick: Tick::new(1),
+            window: WindowId::new(0),
+        },
+        CorrelationId(1),
+        "ok",
+    );
+
+    assert_eq!(frame.intent, IntentType::Unknown);
+    assert_eq!(frame.reason_code, ReasonCode("allow_default"));
 }
