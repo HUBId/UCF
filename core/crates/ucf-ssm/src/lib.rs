@@ -605,8 +605,7 @@ fn hash16(digest: Digest32) -> u16 {
 
 fn conflict_score(nsr_trace_root: Digest32) -> u16 {
     let hash = hash16(nsr_trace_root);
-    let first_byte = (hash >> 8) as u8;
-    u16::from(first_byte) % 3000
+    hash % 3000
 }
 
 fn salience_score(inp: &SsmInputs, conflict: u16) -> u16 {
@@ -1034,19 +1033,19 @@ mod tests {
     }
 
     #[test]
-    fn salience_increases_with_percept_energy_and_spikes() {
+    fn salience_does_not_decrease_when_spike_max_intensity_increases() {
         let params = SsmParams::default();
         let mut core = SsmCore::new(params);
         let mut last_salience = 0;
-        for (idx, energy) in [900u16, 1400, 2200, 3200].iter().enumerate() {
+        for (idx, intensity) in [900u16, 1400, 2200, 3200].iter().enumerate() {
             let input = SsmInputs::new(
                 idx as u64,
                 Digest32::new([1u8; 32]),
                 120,
                 Digest32::new([2u8; 32]),
-                *energy,
+                1000,
                 Digest32::new([3u8; 32]),
-                *energy,
+                *intensity,
                 vec![(SpikeKind::Threat, 2)],
                 Digest32::new([4u8; 32]),
                 vec![(SignalId::SsmSalience, 300)],
@@ -1067,6 +1066,154 @@ mod tests {
             assert!(output.ssm_salience >= last_salience);
             last_salience = output.ssm_salience;
         }
+    }
+
+    #[test]
+    fn attention_gain_decreases_when_conflict_score_rises() {
+        let params = SsmParams::default();
+        let budget = GainBudget::default();
+        let base_root = Digest32::new([0u8; 32]);
+        let mut elevated_root = None;
+        for byte in u8::MIN..=u8::MAX {
+            let mut raw = [0u8; 32];
+            raw[0] = byte;
+            let candidate = Digest32::new(raw);
+            if conflict_score(candidate) > conflict_score(base_root)
+                && conflict_score(candidate) > 2_000
+            {
+                elevated_root = Some(candidate);
+                break;
+            }
+        }
+        let high_conflict_root = elevated_root.expect("must find nsr root with higher conflict");
+
+        let low_conflict_input = SsmInputs::new(
+            1,
+            Digest32::new([1u8; 32]),
+            120,
+            Digest32::new([2u8; 32]),
+            1000,
+            Digest32::new([3u8; 32]),
+            1000,
+            vec![(SpikeKind::Feature, 1)],
+            Digest32::new([4u8; 32]),
+            vec![(SignalId::SsmSalience, 100)],
+            5000,
+            5000,
+            Digest32::new([5u8; 32]),
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            base_root,
+        );
+        let high_conflict_input = SsmInputs::new(
+            1,
+            Digest32::new([1u8; 32]),
+            120,
+            Digest32::new([2u8; 32]),
+            1000,
+            Digest32::new([3u8; 32]),
+            1000,
+            vec![(SpikeKind::Feature, 1)],
+            Digest32::new([4u8; 32]),
+            vec![(SignalId::SsmSalience, 100)],
+            5000,
+            5000,
+            Digest32::new([5u8; 32]),
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            high_conflict_root,
+        );
+
+        let mut core_low = SsmCore::new(params);
+        let out_low = core_low.tick(&low_conflict_input, &budget);
+        let mut core_high = SsmCore::new(params);
+        let out_high = core_high.tick(&high_conflict_input, &budget);
+
+        assert!(conflict_score(high_conflict_root) > conflict_score(base_root));
+        assert!(out_high.ssm_attention_gain < out_low.ssm_attention_gain);
+    }
+
+    #[test]
+    fn deterministic_repeated_runs_with_identical_input_and_state() {
+        let params = SsmParams::default();
+        let budget = GainBudget::default();
+        let input = sample_inputs(Digest32::new([9u8; 32]));
+
+        let mut core_a = SsmCore::new(params);
+        let out_a = core_a.tick(&input, &budget);
+
+        let mut core_b = SsmCore {
+            params: core_a.params,
+            state: core_a.state.clone(),
+            last_salience: core_a.last_salience,
+            last_novelty: core_a.last_novelty,
+            commit: core_a.commit,
+        };
+        let out_b = core_b.tick(&input, &budget);
+
+        let mut core_c = SsmCore {
+            params: core_a.params,
+            state: core_a.state.clone(),
+            last_salience: core_a.last_salience,
+            last_novelty: core_a.last_novelty,
+            commit: core_a.commit,
+        };
+        let out_c = core_c.tick(&input, &budget);
+
+        assert_eq!(out_b, out_c);
+        assert_eq!(out_b.ssm_state_digest, out_c.ssm_state_digest);
+        assert_eq!(out_b.ssm_state_commit, out_c.ssm_state_commit);
+        assert_eq!(core_b.state.commit, core_c.state.commit);
+        assert_eq!(
+            core_b.state.last_state_digest,
+            core_c.state.last_state_digest
+        );
+        assert_ne!(out_a.ssm_state_digest, out_b.ssm_state_digest);
+    }
+
+    #[test]
+    fn novelty_base_matches_popcount_hash_xor() {
+        let spike_root = Digest32::new([0xAB; 32]);
+        let prev_digest = Digest32::new([0x10; 32]);
+        let input = SsmInputs::new(
+            3,
+            Digest32::new([1u8; 32]),
+            128,
+            Digest32::new([2u8; 32]),
+            500,
+            spike_root,
+            500,
+            vec![(SpikeKind::Feature, 1)],
+            Digest32::new([4u8; 32]),
+            vec![(SignalId::SsmSalience, 0)],
+            5000,
+            5000,
+            Digest32::new([5u8; 32]),
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            Digest32::new([6u8; 32]),
+        );
+
+        let expected =
+            ((hash16(spike_root) ^ hash16(prev_digest)).count_ones() * 10_000 / 16) as u16;
+        let novelty = novelty_score(&input, prev_digest);
+
+        assert_eq!(novelty, expected);
     }
 
     #[test]
