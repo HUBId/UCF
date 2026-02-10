@@ -370,3 +370,71 @@ fn orchestrator_tick_emits_iit_frame() {
     assert!((0.0..=1.0).contains(&frame.integration));
     assert!(frame.state <= 2);
 }
+
+#[test]
+fn orchestrator_tick_emits_cde_and_nsr_frames() {
+    let mut orchestrator = RuntimeOrchestrator::new();
+    let mut adapter = MockAdapter::default();
+
+    for tick in 80..90 {
+        let ctrl = ControlFrame::new_text(
+            SimTime {
+                tick: Tick::new(tick),
+                window: WindowId::new(0),
+            },
+            CorrelationId(300 + tick),
+            ChannelCode::InternalThought,
+            intent(),
+            "cde-nsr",
+        );
+
+        orchestrator
+            .ingest_and_process(&mut adapter, ctrl)
+            .expect("cde/nsr tick should succeed");
+    }
+
+    let cde = orchestrator
+        .last_cde_frame()
+        .expect("cde frame should be present");
+    assert!(cde.hyps <= 4);
+    assert!((0.0..=1.0).contains(&cde.top_conf));
+
+    let nsr = orchestrator
+        .last_nsr_frame()
+        .expect("nsr frame should be present");
+    assert!(nsr.verdict <= 2);
+    assert!((0.0..=1.0).contains(&nsr.verified_ratio));
+}
+
+#[test]
+fn forced_cycle_rejects_nsr_and_forces_fragmenting_coherence() {
+    let mut orchestrator = RuntimeOrchestrator::new();
+    let mut adapter = MockAdapter::default();
+
+    orchestrator.force_causal_cycle_for_test(1);
+
+    let ctrl = ControlFrame::new_text(
+        SimTime {
+            tick: Tick::new(120),
+            window: WindowId::new(0),
+        },
+        CorrelationId(444),
+        ChannelCode::InternalThought,
+        intent(),
+        "cycle",
+    );
+
+    orchestrator
+        .ingest_and_process(&mut adapter, ctrl)
+        .expect("cycle tick should succeed");
+
+    let nsr = orchestrator
+        .last_nsr_frame()
+        .expect("nsr frame should be present");
+    assert_eq!(nsr.verdict, 1);
+
+    let iit = orchestrator
+        .last_iit_frame()
+        .expect("iit frame should be present");
+    assert_eq!(iit.state, 2);
+}

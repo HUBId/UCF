@@ -1,14 +1,15 @@
 use crate::errors::RuntimeError;
 use ucf_biophys::v0::{
-    apply_coherence_feedback, couple_pair, hpa_step, modulate_hh, osc_step, phase_lock,
-    spikes_from_ids, ttfs_phase, CoherenceState, FieldEvent, FieldEventKind, FieldUpdateCfg,
-    HhParams, HpaCfg, HpaState, IITCfg, IITInputs, IITState, Microcircuit, ModulationCfg,
-    NeuromodulatorField as BiophysField, Osc, PhaseCfg, SpikeCodecCfg,
+    apply_coherence_feedback, classify, compute_integration, couple_pair, hpa_step, modulate_hh,
+    osc_step, phase_lock, spikes_from_ids, ttfs_phase, verify_graph, CausalGraph, CoherenceState,
+    Edge, FieldEvent, FieldEventKind, FieldUpdateCfg, HhParams, HpaCfg, HpaState, IITCfg,
+    IITInputs, IITState, Microcircuit, ModulationCfg, NeuromodulatorField as BiophysField, Osc,
+    PhaseCfg, RuleCfg, SpikeCodecCfg, VerifyVerdict,
 };
 use ucf_ess::v1::{ExperienceRecord, ExperienceStore, IdAllocator, InMemoryEss};
 use ucf_frames::v1::{
-    BiophysFrame, BiophysHhParams, ControlFrame, DecisionFrame, IitFrame, MicrocircuitFrame,
-    NeuromodulatorSnapshot, PhaseFrame,
+    BiophysFrame, BiophysHhParams, CdeFrame, ControlFrame, DecisionFrame, IitFrame,
+    MicrocircuitFrame, NeuromodulatorSnapshot, NsrFrame, PhaseFrame,
 };
 use ucf_iit_proxy::v0::{
     IitConfig, IitMonitor, MOD_BLUE, MOD_GEIST, MOD_JEPA, MOD_NSR, MOD_PBM, MOD_SSM,
@@ -53,6 +54,10 @@ pub struct RuntimeOrchestrator {
     iit_cfg: IITCfg,
     iit_state: IITState,
     last_iit_frame: Option<IitFrame>,
+    cde_graph: CausalGraph,
+    nsr_cfg: RuleCfg,
+    last_cde_frame: Option<CdeFrame>,
+    last_nsr_frame: Option<NsrFrame>,
 }
 
 impl RuntimeOrchestrator {
@@ -90,6 +95,10 @@ impl RuntimeOrchestrator {
             iit_cfg: IITCfg::default(),
             iit_state: IITState::default(),
             last_iit_frame: None,
+            cde_graph: CausalGraph::default(),
+            nsr_cfg: RuleCfg::default(),
+            last_cde_frame: None,
+            last_nsr_frame: None,
         }
     }
 
@@ -111,6 +120,23 @@ impl RuntimeOrchestrator {
 
     pub fn last_iit_frame(&self) -> Option<IitFrame> {
         self.last_iit_frame
+    }
+
+    pub fn last_cde_frame(&self) -> Option<CdeFrame> {
+        self.last_cde_frame
+    }
+
+    pub fn last_nsr_frame(&self) -> Option<NsrFrame> {
+        self.last_nsr_frame
+    }
+
+    pub fn force_causal_cycle_for_test(&mut self, now_ms: u64) {
+        self.cde_graph
+            .upsert_hypothesis(Edge { from: 1, to: 2 }, now_ms, 0.2);
+        self.cde_graph
+            .upsert_hypothesis(Edge { from: 2, to: 3 }, now_ms, 0.2);
+        self.cde_graph
+            .upsert_hypothesis(Edge { from: 3, to: 1 }, now_ms, 0.2);
     }
 
     pub fn ingest_and_process<A: ActionAdapter>(
@@ -226,7 +252,54 @@ impl RuntimeOrchestrator {
         let lock_micro_nsr = phase_lock(self.phase_bus.osc_microcircuit, self.phase_bus.osc_nsr);
 
         let spike_rate_hz = spike_events.len() as f32 / dt_s;
-        let (integration, coherence_state) = self.iit_state.step(
+        self.cde_graph.upsert_var(1);
+        self.cde_graph.upsert_var(2);
+        self.cde_graph.upsert_var(3);
+        self.cde_graph.upsert_var(4);
+
+        let lock_nsr_bucket = bucket_value(lock_nsr_jepa);
+        let lock_micro_bucket = bucket_value(lock_micro_nsr);
+        let spike_bucket =
+            bucket_value((spike_rate_hz / self.iit_cfg.spike_rate_norm_hz).clamp(0.0, 1.0));
+        let integration_bucket = bucket_value(self.iit_state.integration_ema);
+
+        let edge_spike_micro = Edge { from: 3, to: 2 };
+        if spike_bucket >= 1.0 && lock_micro_bucket <= 0.0 {
+            self.cde_graph
+                .upsert_hypothesis(edge_spike_micro, now_ms, 0.02);
+        } else if self
+            .cde_graph
+            .hyps
+            .iter()
+            .any(|h| h.edge == edge_spike_micro)
+        {
+            self.cde_graph
+                .upsert_hypothesis(edge_spike_micro, now_ms, -0.005);
+        }
+
+        let edge_lock_integration = Edge { from: 1, to: 4 };
+        if integration_bucket <= 0.0 && lock_nsr_bucket <= 0.0 {
+            self.cde_graph
+                .upsert_hypothesis(edge_lock_integration, now_ms, 0.02);
+        } else if self
+            .cde_graph
+            .hyps
+            .iter()
+            .any(|h| h.edge == edge_lock_integration)
+        {
+            self.cde_graph
+                .upsert_hypothesis(edge_lock_integration, now_ms, -0.005);
+        }
+
+        let (verdict, verified_ratio) = verify_graph(&self.cde_graph, self.nsr_cfg);
+        let top_conf = self
+            .cde_graph
+            .top_edges(1)
+            .first()
+            .map(|h| h.confidence)
+            .unwrap_or(0.0);
+
+        let mut integration = compute_integration(
             IITInputs {
                 lock_nsr_jepa,
                 lock_micro_nsr,
@@ -234,7 +307,25 @@ impl RuntimeOrchestrator {
             },
             self.iit_cfg,
         );
-        apply_coherence_feedback(&mut self.biophys_field, integration, coherence_state);
+
+        if verdict == VerifyVerdict::Verified && verified_ratio >= 0.85 {
+            integration = (integration + 0.05).clamp(0.0, 1.0);
+        }
+
+        let alpha = self.iit_cfg.ema_alpha.clamp(0.0, 1.0);
+        self.iit_state.integration_ema =
+            (1.0 - alpha) * self.iit_state.integration_ema + alpha * integration;
+
+        let mut coherence_state = classify(self.iit_state.integration_ema, self.iit_cfg);
+        if verdict == VerifyVerdict::Rejected {
+            coherence_state = CoherenceState::Fragmenting;
+        }
+
+        apply_coherence_feedback(
+            &mut self.biophys_field,
+            self.iit_state.integration_ema,
+            coherence_state,
+        );
         let state = match coherence_state {
             CoherenceState::Stable => 0,
             CoherenceState::Drifting => 1,
@@ -269,8 +360,23 @@ impl RuntimeOrchestrator {
         });
         self.last_iit_frame = Some(IitFrame {
             now_ms,
-            integration,
+            integration: self.iit_state.integration_ema,
             state,
+        });
+        self.last_cde_frame = Some(CdeFrame {
+            now_ms,
+            hyps: self.cde_graph.hyps.len() as u32,
+            top_conf,
+            acyclic: self.cde_graph.is_acyclic(),
+        });
+        self.last_nsr_frame = Some(NsrFrame {
+            now_ms,
+            verdict: match verdict {
+                VerifyVerdict::Verified => 0,
+                VerifyVerdict::Rejected => 1,
+                VerifyVerdict::Unknown => 2,
+            },
+            verified_ratio,
         });
     }
 
@@ -376,5 +482,15 @@ impl RuntimeOrchestrator {
 impl Default for RuntimeOrchestrator {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+fn bucket_value(value: f32) -> f32 {
+    if value < 0.33 {
+        0.0
+    } else if value < 0.66 {
+        0.5
+    } else {
+        1.0
     }
 }
