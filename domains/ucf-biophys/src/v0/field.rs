@@ -1,4 +1,4 @@
-use crate::v0::HpaState;
+use crate::v0::{CoherenceState, HpaState};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Unit01(pub f32);
@@ -25,6 +25,8 @@ pub struct NeuromodulatorField {
     pub glutamate: Unit01,
     pub gaba: Unit01,
     pub acetylcholine: Unit01,
+    pub noise: Unit01,
+    pub stress: Unit01,
 }
 
 impl Default for NeuromodulatorField {
@@ -37,6 +39,8 @@ impl Default for NeuromodulatorField {
             glutamate: Unit01::new(0.2),
             gaba: Unit01::new(0.2),
             acetylcholine: Unit01::new(0.1),
+            noise: Unit01::new(0.1),
+            stress: Unit01::new(0.0),
         }
     }
 }
@@ -121,6 +125,8 @@ impl NeuromodulatorField {
                 alpha,
                 cfg.max_delta_per_tick,
             ),
+            noise: step_towards(self.noise, baseline.noise, alpha, cfg.max_delta_per_tick),
+            stress: step_towards(self.stress, baseline.stress, alpha, cfg.max_delta_per_tick),
         }
     }
 
@@ -154,6 +160,7 @@ impl NeuromodulatorField {
                 next.serotonin =
                     rate_limited_add(self.serotonin, -0.5 * mag, cfg.max_delta_per_tick);
                 next.gaba = rate_limited_add(self.gaba, 0.3 * mag, cfg.max_delta_per_tick);
+                next.stress = rate_limited_add(self.stress, 0.3 * mag, cfg.max_delta_per_tick);
             }
             FieldEventKind::SocialBond => {
                 next.oxytocin = rate_limited_add(self.oxytocin, mag, cfg.max_delta_per_tick);
@@ -185,4 +192,27 @@ fn rate_limited_add(current: Unit01, delta: f32, max_delta_per_tick: f32) -> Uni
 fn step_towards(current: Unit01, target: Unit01, alpha: f32, max_delta_per_tick: f32) -> Unit01 {
     let desired_delta = (target.get() - current.get()) * alpha;
     rate_limited_add(current, desired_delta, max_delta_per_tick)
+}
+
+pub fn apply_coherence_feedback(
+    field: &mut NeuromodulatorField,
+    integration: f32,
+    state: CoherenceState,
+) {
+    let frag_factor = (1.0 - integration).clamp(0.0, 1.0);
+    match state {
+        CoherenceState::Stable => {
+            field.noise = Unit01::new(field.noise.get() - 0.01);
+            field.serotonin = Unit01::new(field.serotonin.get() + 0.01);
+        }
+        CoherenceState::Drifting => {
+            field.noise = Unit01::new(field.noise.get() + 0.02 * frag_factor);
+            field.dopamine = Unit01::new(field.dopamine.get() - 0.01 * frag_factor);
+        }
+        CoherenceState::Fragmenting => {
+            field.noise = Unit01::new(field.noise.get() + 0.05 * frag_factor);
+            field.dopamine = Unit01::new(field.dopamine.get() - 0.03 * frag_factor);
+            field.stress = Unit01::new(field.stress.get() + 0.03 * frag_factor);
+        }
+    }
 }

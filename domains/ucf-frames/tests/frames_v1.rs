@@ -1,8 +1,8 @@
 use ucf_core::types::{SimTime, Tick, WindowId};
 use ucf_frames::v1::{
     BiophysFrame, BiophysHhParams, ChannelCode, ControlFrame, ControlPayload, CorrelationId,
-    DecisionCode, DecisionFrame, DenyReasonCode, Intent, IntentId, IntentKind, IntentType,
-    ReasonCode,
+    DecisionCode, DecisionFrame, DenyReasonCode, IitFrame, Intent, IntentId, IntentKind,
+    IntentType, ReasonCode,
 };
 
 #[test]
@@ -112,4 +112,16 @@ fn biophys_frame_can_be_constructed() {
 
     assert_eq!(frame.now_ms, 42);
     assert_eq!(frame.field.len(), 7);
+}
+
+#[test]
+fn iit_frame_can_be_constructed() {
+    let frame = IitFrame {
+        now_ms: 123,
+        integration: 0.42,
+        state: 1,
+    };
+
+    assert_eq!(frame.now_ms, 123);
+    assert_eq!(frame.state, 1);
 }
