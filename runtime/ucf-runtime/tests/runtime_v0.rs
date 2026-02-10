@@ -190,3 +190,23 @@ fn orchestrator_tick_records_iit_phi_snapshot() {
     let control_record = orchestrator.ess.get(0).expect("control record");
     assert!(control_record.iit_phi.is_some());
 }
+
+#[test]
+fn orchestrator_tick_emits_snn_spikes_to_brainbus_sink() {
+    let ctrl = ControlFrame::new_text(
+        sim_time(),
+        CorrelationId(8),
+        ChannelCode::InternalThought,
+        intent(),
+        "snn",
+    );
+    let mut orchestrator = RuntimeOrchestrator::new();
+    let mut adapter = MockAdapter::default();
+
+    orchestrator
+        .ingest_and_process(&mut adapter, ctrl)
+        .expect("orchestration should succeed");
+
+    assert!(orchestrator.last_snn_spike_count() >= 1);
+    assert!(!adapter.brain_spikes().is_empty());
+}

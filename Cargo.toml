@@ -150,6 +150,7 @@ members = [
     "domains/policy-gateway/crates/ucf-policy-gateway",
     "domains/ucf-frames",
     "domains/ucf-brainbus",
+    "domains/ucf-snn",
     "domains/ucf-bluebrain-bridge",
     "domains/ucf-ess",
     "domains/ucf-neuromod",

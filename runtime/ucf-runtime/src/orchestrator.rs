@@ -7,6 +7,7 @@ use ucf_iit_proxy::v0::{
 use ucf_neuromod::v0::{NeuromodInputs, NeuromodScheduler, NeuromodulatorField};
 use ucf_onn::v0::{OnnCore, PhaseDeg};
 use ucf_policy::{adapter::ActionAdapter, gem::Gem, pbm::Pbm};
+use ucf_snn::v0::{encode, to_brainbus, FeatureEvent, SnnEncodeCfg};
 
 pub struct RuntimeOrchestrator {
     pub ess: InMemoryEss,
@@ -17,6 +18,9 @@ pub struct RuntimeOrchestrator {
     neuromod_scheduler: NeuromodScheduler,
     onn: OnnCore,
     iit_monitor: IitMonitor,
+    snn_encode_cfg: SnnEncodeCfg,
+    snn_tick_counter: u64,
+    last_snn_spike_count: usize,
 }
 
 impl RuntimeOrchestrator {
@@ -35,7 +39,14 @@ impl RuntimeOrchestrator {
             neuromod_scheduler: NeuromodScheduler::new(1),
             onn,
             iit_monitor: IitMonitor::new(IitConfig::default()),
+            snn_encode_cfg: SnnEncodeCfg::default(),
+            snn_tick_counter: 0,
+            last_snn_spike_count: 0,
         }
+    }
+
+    pub fn last_snn_spike_count(&self) -> usize {
+        self.last_snn_spike_count
     }
 
     pub fn ingest_and_process<A: ActionAdapter>(
@@ -69,6 +80,45 @@ impl RuntimeOrchestrator {
         self.ingest_with_decision_and_snapshot(adapter, ctrl, decision, snapshot, phi)
     }
 
+    fn deterministic_features(&mut self) -> [FeatureEvent; 3] {
+        let k = self.snn_tick_counter as f32;
+        self.snn_tick_counter = self.snn_tick_counter.wrapping_add(1);
+
+        [
+            FeatureEvent {
+                chan: 10,
+                intensity: 0.9,
+                novelty: 0.85,
+            },
+            FeatureEvent {
+                chan: 11,
+                intensity: ((k % 5.0) / 4.0),
+                novelty: 0.15,
+            },
+            FeatureEvent {
+                chan: 12,
+                intensity: ((k + 1.0) % 4.0) / 3.0,
+                novelty: 0.65,
+            },
+        ]
+    }
+
+    fn emit_snn_signals<A: ActionAdapter>(
+        &mut self,
+        adapter: &mut A,
+        now_ms: u64,
+    ) -> Result<(), RuntimeError> {
+        let phase = self.onn.phase(MOD_PBM);
+        let features = self.deterministic_features();
+        let snn_spikes = encode(now_ms, phase, self.snn_encode_cfg, &features);
+        self.last_snn_spike_count = snn_spikes.len();
+
+        let brainbus_spikes = to_brainbus(&snn_spikes);
+        adapter.emit_brain_spikes(brainbus_spikes)?;
+        let _ = adapter.take_brain_spike_meta();
+        Ok(())
+    }
+
     fn ingest_with_decision_and_snapshot<A: ActionAdapter>(
         &mut self,
         adapter: &mut A,
@@ -77,6 +127,8 @@ impl RuntimeOrchestrator {
         snapshot: NeuromodulatorSnapshot,
         phi: ucf_frames::v1::PhiProxySnapshot,
     ) -> Result<DecisionFrame, RuntimeError> {
+        self.emit_snn_signals(adapter, ctrl.time.tick.get())?;
+
         let eid1 = self.ids.next();
         self.ess.append(
             ExperienceRecord::from_control(eid1, ctrl.clone())
