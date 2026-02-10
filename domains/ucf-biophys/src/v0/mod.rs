@@ -1,6 +1,7 @@
 mod field;
 mod hh;
 mod hpa;
+mod iit;
 mod microcircuit;
 mod modulation;
 mod ode;
@@ -8,9 +9,13 @@ mod phase;
 mod spike;
 mod synapse;
 
-pub use field::{FieldEvent, FieldEventKind, FieldUpdateCfg, NeuromodulatorField, Unit01};
+pub use field::{
+    apply_coherence_feedback, FieldEvent, FieldEventKind, FieldUpdateCfg, NeuromodulatorField,
+    Unit01,
+};
 pub use hh::{HHNeuron, HHState, HhStepIn, HhStepOut};
 pub use hpa::{cortisol_unit, hpa_step, HpaCfg, HpaState};
+pub use iit::{classify, compute_integration, CoherenceState, IITCfg, IITInputs, IITState};
 pub use microcircuit::{MicroStepOut, Microcircuit};
 pub use modulation::{modulate_hh, summarize, HhParams, ModulationCfg};
 pub use ode::{clamp01, prod_clear_step, step_euler, Integrator};

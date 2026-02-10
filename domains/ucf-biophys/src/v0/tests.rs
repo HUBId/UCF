@@ -1,5 +1,6 @@
 use super::{
-    hpa_step, modulate_hh, FieldEvent, FieldEventKind, FieldUpdateCfg, HhParams, HpaCfg, HpaState,
+    apply_coherence_feedback, classify, compute_integration, hpa_step, modulate_hh, CoherenceState,
+    FieldEvent, FieldEventKind, FieldUpdateCfg, HhParams, HpaCfg, HpaState, IITCfg, IITInputs,
     ModulationCfg, NeuromodulatorField, Unit01,
 };
 
@@ -214,4 +215,60 @@ fn ttfs_phase_maps_window_bounds() {
 
     assert!((start - cfg.min_phase).abs() <= 1e-6);
     assert!((end - cfg.max_phase).abs() <= 1e-6);
+}
+
+#[test]
+fn iit_compute_integration_clamps_to_unit_interval() {
+    let cfg = IITCfg::default();
+    let high = compute_integration(
+        IITInputs {
+            lock_nsr_jepa: 2.0,
+            lock_micro_nsr: 2.0,
+            spike_rate_hz: 400.0,
+        },
+        cfg,
+    );
+    let low = compute_integration(
+        IITInputs {
+            lock_nsr_jepa: -1.0,
+            lock_micro_nsr: -1.0,
+            spike_rate_hz: -20.0,
+        },
+        cfg,
+    );
+
+    assert_eq!(high, 1.0);
+    assert_eq!(low, 0.0);
+}
+
+#[test]
+fn iit_classification_thresholds_are_stable() {
+    let cfg = IITCfg::default();
+
+    assert_eq!(classify(cfg.stable_th, cfg), CoherenceState::Stable);
+    assert_eq!(
+        classify((cfg.stable_th + cfg.drifting_th) * 0.5, cfg),
+        CoherenceState::Drifting
+    );
+    assert_eq!(
+        classify(cfg.drifting_th - 0.001, cfg),
+        CoherenceState::Fragmenting
+    );
+}
+
+#[test]
+fn coherence_feedback_adjusts_noise_and_dopamine_by_state() {
+    let mut field = NeuromodulatorField {
+        noise: Unit01::new(0.5),
+        dopamine: Unit01::new(0.5),
+        ..NeuromodulatorField::default()
+    };
+
+    apply_coherence_feedback(&mut field, 0.2, CoherenceState::Fragmenting);
+    assert!(field.noise.get() > 0.5);
+    assert!(field.dopamine.get() < 0.5);
+
+    let noise_after_fragmenting = field.noise.get();
+    apply_coherence_feedback(&mut field, 0.9, CoherenceState::Stable);
+    assert!(field.noise.get() < noise_after_fragmenting);
 }

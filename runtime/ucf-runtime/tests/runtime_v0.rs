@@ -341,3 +341,32 @@ fn orchestrator_tick_updates_phase_frame_with_valid_locks() {
     assert!((0.0..=1.0).contains(&phase.lock_nsr_jepa));
     assert!((0.0..=1.0).contains(&phase.lock_micro_nsr));
 }
+
+#[test]
+fn orchestrator_tick_emits_iit_frame() {
+    let mut orchestrator = RuntimeOrchestrator::new();
+    let mut adapter = MockAdapter::default();
+
+    for tick in 50..55 {
+        let ctrl = ControlFrame::new_text(
+            SimTime {
+                tick: Tick::new(tick),
+                window: WindowId::new(0),
+            },
+            CorrelationId(200 + tick),
+            ChannelCode::InternalThought,
+            intent(),
+            "iit-frame",
+        );
+
+        orchestrator
+            .ingest_and_process(&mut adapter, ctrl)
+            .expect("iit tick should succeed");
+    }
+
+    let frame = orchestrator
+        .last_iit_frame()
+        .expect("iit frame should exist");
+    assert!((0.0..=1.0).contains(&frame.integration));
+    assert!(frame.state <= 2);
+}

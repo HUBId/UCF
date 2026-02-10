@@ -1,12 +1,13 @@
 use crate::errors::RuntimeError;
 use ucf_biophys::v0::{
-    couple_pair, hpa_step, modulate_hh, osc_step, phase_lock, spikes_from_ids, ttfs_phase,
-    FieldEvent, FieldEventKind, FieldUpdateCfg, HhParams, HpaCfg, HpaState, Microcircuit,
-    ModulationCfg, NeuromodulatorField as BiophysField, Osc, PhaseCfg, SpikeCodecCfg,
+    apply_coherence_feedback, couple_pair, hpa_step, modulate_hh, osc_step, phase_lock,
+    spikes_from_ids, ttfs_phase, CoherenceState, FieldEvent, FieldEventKind, FieldUpdateCfg,
+    HhParams, HpaCfg, HpaState, IITCfg, IITInputs, IITState, Microcircuit, ModulationCfg,
+    NeuromodulatorField as BiophysField, Osc, PhaseCfg, SpikeCodecCfg,
 };
 use ucf_ess::v1::{ExperienceRecord, ExperienceStore, IdAllocator, InMemoryEss};
 use ucf_frames::v1::{
-    BiophysFrame, BiophysHhParams, ControlFrame, DecisionFrame, MicrocircuitFrame,
+    BiophysFrame, BiophysHhParams, ControlFrame, DecisionFrame, IitFrame, MicrocircuitFrame,
     NeuromodulatorSnapshot, PhaseFrame,
 };
 use ucf_iit_proxy::v0::{
@@ -49,6 +50,9 @@ pub struct RuntimeOrchestrator {
     phase_cfg: PhaseCfg,
     spike_codec_cfg: SpikeCodecCfg,
     last_phase_frame: Option<PhaseFrame>,
+    iit_cfg: IITCfg,
+    iit_state: IITState,
+    last_iit_frame: Option<IitFrame>,
 }
 
 impl RuntimeOrchestrator {
@@ -83,6 +87,9 @@ impl RuntimeOrchestrator {
             phase_cfg: PhaseCfg::default(),
             spike_codec_cfg: SpikeCodecCfg::default(),
             last_phase_frame: None,
+            iit_cfg: IITCfg::default(),
+            iit_state: IITState::default(),
+            last_iit_frame: None,
         }
     }
 
@@ -100,6 +107,10 @@ impl RuntimeOrchestrator {
 
     pub fn last_phase_frame(&self) -> Option<PhaseFrame> {
         self.last_phase_frame
+    }
+
+    pub fn last_iit_frame(&self) -> Option<IitFrame> {
+        self.last_iit_frame
     }
 
     pub fn ingest_and_process<A: ActionAdapter>(
@@ -143,6 +154,7 @@ impl RuntimeOrchestrator {
             .map(|last| now_ms.saturating_sub(last) as f32 / 1000.0)
             .unwrap_or(0.001);
         self.last_biophys_tick_ms = Some(now_ms);
+        let dt_s = dt_s.max(0.001);
 
         self.phase_bus.osc_jepa = osc_step(self.phase_bus.osc_jepa, dt_s);
         self.phase_bus.osc_nsr = osc_step(self.phase_bus.osc_nsr, dt_s);
@@ -213,6 +225,22 @@ impl RuntimeOrchestrator {
         let lock_nsr_jepa = phase_lock(self.phase_bus.osc_nsr, self.phase_bus.osc_jepa);
         let lock_micro_nsr = phase_lock(self.phase_bus.osc_microcircuit, self.phase_bus.osc_nsr);
 
+        let spike_rate_hz = spike_events.len() as f32 / dt_s;
+        let (integration, coherence_state) = self.iit_state.step(
+            IITInputs {
+                lock_nsr_jepa,
+                lock_micro_nsr,
+                spike_rate_hz,
+            },
+            self.iit_cfg,
+        );
+        apply_coherence_feedback(&mut self.biophys_field, integration, coherence_state);
+        let state = match coherence_state {
+            CoherenceState::Stable => 0,
+            CoherenceState::Drifting => 1,
+            CoherenceState::Fragmenting => 2,
+        };
+
         self.last_biophys_frame = Some(BiophysFrame {
             now_ms,
             field: ucf_biophys::v0::summarize(field),
@@ -238,6 +266,11 @@ impl RuntimeOrchestrator {
             micro_phase: self.phase_bus.osc_microcircuit.phase,
             lock_nsr_jepa,
             lock_micro_nsr,
+        });
+        self.last_iit_frame = Some(IitFrame {
+            now_ms,
+            integration,
+            state,
         });
     }
 
