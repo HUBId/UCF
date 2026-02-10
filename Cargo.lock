@@ -2028,6 +2028,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucf-ess"
+version = "0.1.0"
+dependencies = [
+ "ucf-core",
+ "ucf-frames",
+]
+
+[[package]]
 name = "ucf-events"
 version = "0.1.0"
 dependencies = [

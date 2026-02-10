@@ -1,0 +1,8 @@
+[package]
+name = "ucf-ess"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ucf-core = { path = "../../core/ucf-core" }
+ucf-frames = { path = "../ucf-frames" }
