@@ -1,0 +1,10 @@
+[package]
+name = "ucf-runtime"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ucf-core = { path = "../../core/ucf-core" }
+ucf-frames = { path = "../../domains/ucf-frames" }
+ucf-policy = { path = "../ucf-policy" }
+ucf-ess = { path = "../../domains/ucf-ess" }

@@ -1,0 +1,119 @@
+use ucf_core::types::{SimTime, Tick, WindowId};
+use ucf_ess::v1::{ExperienceKind, ExperienceStore};
+use ucf_frames::v1::{
+    ChannelCode, ControlFrame, ControlPayload, CorrelationId, DecisionFrame, Intent, IntentId,
+    IntentKind,
+};
+use ucf_policy::{adapter::MockAdapter, gem::Gem};
+use ucf_runtime::RuntimeOrchestrator;
+
+fn sim_time() -> SimTime {
+    SimTime {
+        tick: Tick::new(10),
+        window: WindowId::new(0),
+    }
+}
+
+fn intent() -> Intent {
+    Intent::new(IntentId(1), IntentKind::System, "runtime-test")
+}
+
+#[test]
+fn external_output_text_is_denied_and_audited() {
+    let ctrl = ControlFrame::new_text(
+        sim_time(),
+        CorrelationId(1),
+        ChannelCode::ExternalOutput,
+        intent(),
+        "hi",
+    );
+    let mut orchestrator = RuntimeOrchestrator::new();
+    let mut adapter = MockAdapter::default();
+
+    let decision = orchestrator
+        .ingest_and_process(&mut adapter, ctrl)
+        .expect("orchestration should succeed");
+
+    assert_eq!(decision.decision, ucf_frames::v1::DecisionCode::Deny);
+    assert!(adapter.emitted.is_empty());
+    assert_eq!(orchestrator.ess.len(), 2);
+    assert_eq!(
+        orchestrator.ess.get(0).map(|r| r.kind),
+        Some(ExperienceKind::ControlIn)
+    );
+    assert_eq!(
+        orchestrator.ess.get(1).map(|r| r.kind),
+        Some(ExperienceKind::DecisionOut)
+    );
+}
+
+#[test]
+fn internal_thought_text_is_allowed_without_adapter_effects() {
+    let ctrl = ControlFrame::new_text(
+        sim_time(),
+        CorrelationId(2),
+        ChannelCode::InternalThought,
+        intent(),
+        "private",
+    );
+    let mut orchestrator = RuntimeOrchestrator::new();
+    let mut adapter = MockAdapter::default();
+
+    let decision = orchestrator
+        .ingest_and_process(&mut adapter, ctrl)
+        .expect("orchestration should succeed");
+
+    assert_eq!(decision.decision, ucf_frames::v1::DecisionCode::Allow);
+    assert!(adapter.emitted.is_empty());
+    assert_eq!(adapter.mem_writes, 0);
+    assert_eq!(orchestrator.ess.len(), 2);
+}
+
+#[test]
+fn memory_write_bytes_is_denied_by_default_policy() {
+    let ctrl = ControlFrame {
+        time: sim_time(),
+        corr: CorrelationId(3),
+        channel: ChannelCode::MemoryWrite,
+        intent: intent(),
+        payload: ControlPayload::Bytes(vec![1, 2, 3].into()),
+    };
+    let mut orchestrator = RuntimeOrchestrator::new();
+    let mut adapter = MockAdapter::default();
+
+    let decision = orchestrator
+        .ingest_and_process(&mut adapter, ctrl)
+        .expect("orchestration should succeed");
+
+    assert_eq!(decision.decision, ucf_frames::v1::DecisionCode::Deny);
+    assert_eq!(adapter.mem_writes, 0);
+    assert_eq!(orchestrator.ess.len(), 2);
+}
+
+#[test]
+fn gem_allow_path_emits_and_writes_when_invoked_directly() {
+    let mut adapter = MockAdapter::default();
+
+    let output_ctrl = ControlFrame::new_text(
+        sim_time(),
+        CorrelationId(4),
+        ChannelCode::ExternalOutput,
+        intent(),
+        "allowed",
+    );
+    let allow_output = DecisionFrame::allow(sim_time(), CorrelationId(4), "allow_output");
+    Gem::execute(&mut adapter, &output_ctrl, Some(&allow_output)).expect("gem should emit text");
+
+    let memory_ctrl = ControlFrame {
+        time: sim_time(),
+        corr: CorrelationId(5),
+        channel: ChannelCode::MemoryWrite,
+        intent: intent(),
+        payload: ControlPayload::Bytes(vec![9, 9].into()),
+    };
+    let allow_memory = DecisionFrame::allow(sim_time(), CorrelationId(5), "allow_memory");
+    Gem::execute(&mut adapter, &memory_ctrl, Some(&allow_memory)).expect("gem should write memory");
+
+    assert_eq!(adapter.emitted, vec!["allowed".to_string()]);
+    assert_eq!(adapter.mem_writes, 1);
+}
