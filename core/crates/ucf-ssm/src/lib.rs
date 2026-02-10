@@ -102,7 +102,17 @@ pub struct SsmState {
 impl SsmState {
     pub fn new(params: &SsmParams) -> Self {
         let x = vec![0; params.dim];
-        let last_state_digest = digest_state(&x, 0, Digest32::new([0u8; 32]));
+        let state_base = digest_state_base(&x, 0, Digest32::new([0u8; 32]));
+        let last_state_digest = digest_state_with_context(
+            state_base,
+            Digest32::new([0u8; 32]),
+            Digest32::new([0u8; 32]),
+            0,
+            Digest32::new([0u8; 32]),
+            0,
+            0,
+            0,
+        );
         let commit = Digest32::new([0u8; 32]);
         Self {
             x,
@@ -114,7 +124,17 @@ impl SsmState {
     pub fn reset_if_dim_mismatch(&mut self, params: &SsmParams) {
         if self.x.len() != params.dim {
             self.x = vec![0; params.dim];
-            self.last_state_digest = digest_state(&self.x, 0, Digest32::new([0u8; 32]));
+            let state_base = digest_state_base(&self.x, 0, Digest32::new([0u8; 32]));
+            self.last_state_digest = digest_state_with_context(
+                state_base,
+                Digest32::new([0u8; 32]),
+                Digest32::new([0u8; 32]),
+                0,
+                Digest32::new([0u8; 32]),
+                0,
+                0,
+                0,
+            );
         }
     }
 }
@@ -126,18 +146,22 @@ pub struct SsmInputs {
     pub gamma_bucket: u8,
     pub percept_commit: Digest32,
     pub percept_energy: u16,
-    pub spike_accepted_root: Digest32,
+    pub spike_root: Digest32,
+    pub spike_max_intensity: u16,
     pub spike_counts: Vec<(SpikeKind, u16)>,
     pub coupling_influences_root: Digest32,
     pub coupling_influences: Vec<(SignalId, i16)>,
     pub tcf_attention_cap: u16,
     pub tcf_learning_cap: u16,
+    pub gain_budget_commit: Digest32,
     pub b_q15_bias: i16,
     pub sle_ssm_bias: i16,
     pub ncde_energy: u16,
     pub risk: u16,
     pub drift: u16,
     pub surprise: u16,
+    pub jepa_surprise: u16,
+    pub nsr_trace_root: Digest32,
     pub commit: Digest32,
 }
 
@@ -149,18 +173,22 @@ impl SsmInputs {
         gamma_bucket: u8,
         percept_commit: Digest32,
         percept_energy: u16,
-        spike_accepted_root: Digest32,
+        spike_root: Digest32,
+        spike_max_intensity: u16,
         spike_counts: Vec<(SpikeKind, u16)>,
         coupling_influences_root: Digest32,
         coupling_influences: Vec<(SignalId, i16)>,
         tcf_attention_cap: u16,
         tcf_learning_cap: u16,
+        gain_budget_commit: Digest32,
         b_q15_bias: i16,
         sle_ssm_bias: i16,
         ncde_energy: u16,
         risk: u16,
         drift: u16,
         surprise: u16,
+        jepa_surprise: u16,
+        nsr_trace_root: Digest32,
     ) -> Self {
         let commit = commit_inputs(
             cycle_id,
@@ -168,18 +196,22 @@ impl SsmInputs {
             gamma_bucket,
             percept_commit,
             percept_energy,
-            spike_accepted_root,
+            spike_root,
+            spike_max_intensity,
             &spike_counts,
             coupling_influences_root,
             &coupling_influences,
             tcf_attention_cap,
             tcf_learning_cap,
+            gain_budget_commit,
             b_q15_bias,
             sle_ssm_bias,
             ncde_energy,
             risk,
             drift,
             surprise,
+            jepa_surprise,
+            nsr_trace_root,
         );
         Self {
             cycle_id,
@@ -187,18 +219,22 @@ impl SsmInputs {
             gamma_bucket,
             percept_commit,
             percept_energy,
-            spike_accepted_root,
+            spike_root,
+            spike_max_intensity,
             spike_counts,
             coupling_influences_root,
             coupling_influences,
             tcf_attention_cap,
             tcf_learning_cap,
+            gain_budget_commit,
             b_q15_bias,
             sle_ssm_bias,
             ncde_energy,
             risk,
             drift,
             surprise,
+            jepa_surprise,
+            nsr_trace_root,
             commit,
         }
     }
@@ -218,7 +254,7 @@ pub struct SsmOutputs {
 /// Working-memory boundary for percept integration.
 ///
 /// # Commit formula
-/// - `SsmOutputs.commit = H(cycle_id, ssm_state_commit, ssm_salience, ssm_novelty, ssm_attention_gain)`
+/// - `SsmOutputs.commit = H(cycle_id, ssm_state_commit, ssm_state_digest, ssm_salience, ssm_novelty, ssm_attention_gain)`
 pub trait WorkingMemory {
     fn tick(&mut self, inp: &SsmInputs) -> SsmOutputs;
 
@@ -262,7 +298,7 @@ impl SsmCore {
         let sign_pattern = build_sign_pattern(
             dim,
             inp.percept_commit,
-            inp.spike_accepted_root,
+            inp.spike_root,
             inp.phase_bus_commit,
         );
         let mut effective_b = effective_b_q15(inp, &self.params);
@@ -278,12 +314,22 @@ impl SsmCore {
             *value = updated as i32;
         }
 
-        let ssm_state_digest = digest_state(&self.state.x, inp.cycle_id, inp.phase_bus_commit);
+        let state_base = digest_state_base(&self.state.x, inp.cycle_id, inp.phase_bus_commit);
+        let conflict = conflict_score(inp.nsr_trace_root);
+        let ssm_novelty = novelty_score(inp, self.state.last_state_digest);
+        let ssm_salience = salience_score(inp, conflict);
+        let ssm_attention_gain = attention_gain_score(inp, ssm_salience, ssm_novelty, conflict);
+        let ssm_state_digest = digest_state_with_context(
+            state_base,
+            self.state.last_state_digest,
+            inp.spike_root,
+            inp.jepa_surprise,
+            inp.nsr_trace_root,
+            ssm_attention_gain,
+            ssm_salience,
+            ssm_novelty,
+        );
         let ssm_state_commit = commit_state(ssm_state_digest, self.params.commit, inp.commit);
-        let ssm_novelty =
-            novelty_score(ssm_state_digest, self.state.last_state_digest, &self.params);
-        let ssm_salience = salience_score(inp, &self.params);
-        let ssm_attention_gain = attention_gain_score(inp, ssm_salience, ssm_novelty);
 
         self.state.last_state_digest = ssm_state_digest;
         self.state.commit = ssm_state_commit;
@@ -294,6 +340,7 @@ impl SsmCore {
         let commit = commit_outputs(
             inp.cycle_id,
             ssm_state_commit,
+            ssm_state_digest,
             ssm_salience,
             ssm_novelty,
             ssm_attention_gain,
@@ -373,6 +420,7 @@ impl WorkingMemory for MockWorkingMemory {
         let commit = commit_outputs(
             inp.cycle_id,
             self.ssm_state_commit,
+            self.ssm_state_digest,
             self.ssm_salience,
             self.ssm_novelty,
             self.ssm_attention_gain,
@@ -426,13 +474,13 @@ fn build_input_drive(inp: &SsmInputs, params: &SsmParams) -> i32 {
 fn build_sign_pattern(
     dim: usize,
     percept_commit: Digest32,
-    spike_accepted_root: Digest32,
+    spike_root: Digest32,
     phase_bus_commit: Digest32,
 ) -> Vec<i32> {
     let mut hasher = Hasher::new();
     hasher.update(b"ucf.ssm.signs.v1");
     hasher.update(percept_commit.as_bytes());
-    hasher.update(spike_accepted_root.as_bytes());
+    hasher.update(spike_root.as_bytes());
     hasher.update(phase_bus_commit.as_bytes());
     let mut reader = hasher.finalize_xof();
     let mut bytes = vec![0u8; dim.max(1)];
@@ -537,53 +585,98 @@ fn scale_q15(value: i32, gain: u16) -> i32 {
     scaled.clamp(i64::from(i16::MIN), i64::from(i16::MAX)) as i32
 }
 
-fn salience_score(inp: &SsmInputs, params: &SsmParams) -> u16 {
-    let threat = inp
+fn clamp01k(x: i32) -> u16 {
+    if x <= 0 {
+        0
+    } else if x >= i32::from(MAX_U16) {
+        MAX_U16
+    } else {
+        x as u16
+    }
+}
+
+fn hash16(digest: Digest32) -> u16 {
+    let mut hasher = Hasher::new();
+    hasher.update(b"ucf.ssm.hash16.v1");
+    hasher.update(digest.as_bytes());
+    let hash = hasher.finalize();
+    u16::from_be_bytes([hash.as_bytes()[0], hash.as_bytes()[1]])
+}
+
+fn conflict_score(nsr_trace_root: Digest32) -> u16 {
+    let hash = hash16(nsr_trace_root);
+    let first_byte = (hash >> 8) as u8;
+    u16::from(first_byte) % 3000
+}
+
+fn salience_score(inp: &SsmInputs, conflict: u16) -> u16 {
+    const REWARD_BONUS: i32 = 200;
+    let reward = inp
         .spike_counts
         .iter()
-        .filter_map(|(kind, count)| (*kind == SpikeKind::Threat).then_some(*count))
+        .filter_map(|(kind, count)| (*kind == SpikeKind::Reward).then_some(*count))
         .sum::<u16>();
-    let mut score = u32::from(inp.percept_energy)
-        .saturating_add(u32::from(threat))
-        .saturating_add(u32::from(inp.ncde_energy));
-    score = score.min(u32::from(params.salience_hi));
-    score.min(u32::from(MAX_U16)) as u16
+    let base = i32::from(inp.spike_max_intensity);
+    let bonus = i32::from(reward).saturating_mul(REWARD_BONUS);
+    let penalty = i32::from(conflict);
+    clamp01k(base.saturating_add(bonus).saturating_sub(penalty))
 }
 
-fn novelty_score(current: Digest32, previous: Digest32, params: &SsmParams) -> u16 {
-    let current_trunc = u16::from_be_bytes([current.as_bytes()[0], current.as_bytes()[1]]);
-    let previous_trunc = u16::from_be_bytes([previous.as_bytes()[0], previous.as_bytes()[1]]);
-    let xor = current_trunc ^ previous_trunc;
+fn novelty_score(inp: &SsmInputs, previous: Digest32) -> u16 {
+    const THREAT_BONUS: i32 = 1000;
+    let current_hash = hash16(inp.spike_root);
+    let previous_hash = hash16(previous);
+    let xor = current_hash ^ previous_hash;
     let bits = xor.count_ones();
-    let scaled = (bits.saturating_mul(10_000) / 16) as u16;
-    let mut novelty = if scaled == 0 {
-        0
-    } else {
-        scaled.max(params.novelty_lo)
-    };
-    novelty = novelty.min(params.novelty_hi);
-    novelty
+    let base = (bits.saturating_mul(10_000) / 16) as i32;
+    let mut novelty = base.saturating_add(i32::from(inp.jepa_surprise) / 4);
+    let threat_present = inp
+        .spike_counts
+        .iter()
+        .any(|(kind, count)| *kind == SpikeKind::Threat && *count > 0);
+    if threat_present {
+        novelty = novelty.saturating_add(THREAT_BONUS);
+    }
+    clamp01k(novelty)
 }
 
-fn attention_gain_score(inp: &SsmInputs, salience: u16, novelty: u16) -> u16 {
-    let base = inp.tcf_attention_cap.min(MAX_U16);
-    let boost = u32::from(salience) / 2 + u32::from(novelty) / 4;
-    let penalty = u32::from(inp.risk) / 2 + u32::from(inp.drift) / 3;
-    let mut gain = u32::from(base).saturating_add(boost);
-    gain = gain.saturating_sub(penalty);
-    gain.min(u32::from(base)).min(u32::from(MAX_U16)) as u16
+fn attention_gain_score(inp: &SsmInputs, salience: u16, novelty: u16, conflict: u16) -> u16 {
+    let attention_cap = inp.tcf_attention_cap.min(MAX_U16);
+    let mut gain = i32::from(attention_cap);
+    if novelty > 7_000 {
+        gain = gain.saturating_add(1000);
+    }
+    if salience > 7_000 {
+        gain = gain.saturating_add(1000);
+    }
+    if conflict > 2_000 {
+        gain = gain.saturating_sub(1500);
+    }
+    let plv_penalty = 0i32;
+    gain = gain.saturating_sub(plv_penalty);
+    let gain = clamp01k(gain);
+    gain.min(attention_cap)
 }
 
 fn is_zero_input(inp: &SsmInputs) -> bool {
     inp.percept_commit.as_bytes().iter().all(|byte| *byte == 0)
         && inp.percept_energy == 0
+        && inp.spike_root.as_bytes().iter().all(|byte| *byte == 0)
+        && inp.spike_max_intensity == 0
         && inp.spike_counts.is_empty()
         && inp.coupling_influences.is_empty()
+        && inp
+            .gain_budget_commit
+            .as_bytes()
+            .iter()
+            .all(|byte| *byte == 0)
         && inp.sle_ssm_bias == 0
         && inp.ncde_energy == 0
         && inp.risk == 0
         && inp.drift == 0
         && inp.surprise == 0
+        && inp.jepa_surprise == 0
+        && inp.nsr_trace_root.as_bytes().iter().all(|byte| *byte == 0)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -618,9 +711,9 @@ fn commit_params(
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
-fn digest_state(state: &[i32], cycle_id: u64, phase_bus_commit: Digest32) -> Digest32 {
+fn digest_state_base(state: &[i32], cycle_id: u64, phase_bus_commit: Digest32) -> Digest32 {
     let mut hasher = Hasher::new();
-    hasher.update(b"ucf.ssm.state.digest.v2");
+    hasher.update(b"ucf.ssm.state.digest.base.v2");
     let mut chunk_count = 0u16;
     for chunk in state.chunks(8) {
         let mut chunk_hasher = Hasher::new();
@@ -636,6 +729,30 @@ fn digest_state(state: &[i32], cycle_id: u64, phase_bus_commit: Digest32) -> Dig
     hasher.update(&chunk_count.to_be_bytes());
     hasher.update(&cycle_id.to_be_bytes());
     hasher.update(phase_bus_commit.as_bytes());
+    Digest32::new(*hasher.finalize().as_bytes())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn digest_state_with_context(
+    state_base: Digest32,
+    prev_state: Digest32,
+    spike_root: Digest32,
+    jepa_surprise: u16,
+    nsr_trace_root: Digest32,
+    attention_gain: u16,
+    salience: u16,
+    novelty: u16,
+) -> Digest32 {
+    let mut hasher = Hasher::new();
+    hasher.update(b"ucf.ssm.state.digest.v3");
+    hasher.update(state_base.as_bytes());
+    hasher.update(prev_state.as_bytes());
+    hasher.update(spike_root.as_bytes());
+    hasher.update(&jepa_surprise.to_be_bytes());
+    hasher.update(nsr_trace_root.as_bytes());
+    hasher.update(&attention_gain.to_be_bytes());
+    hasher.update(&salience.to_be_bytes());
+    hasher.update(&novelty.to_be_bytes());
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
@@ -659,27 +776,32 @@ fn commit_inputs(
     gamma_bucket: u8,
     percept_commit: Digest32,
     percept_energy: u16,
-    spike_accepted_root: Digest32,
+    spike_root: Digest32,
+    spike_max_intensity: u16,
     spike_counts: &[(SpikeKind, u16)],
     coupling_influences_root: Digest32,
     coupling_influences: &[(SignalId, i16)],
     tcf_attention_cap: u16,
     tcf_learning_cap: u16,
+    gain_budget_commit: Digest32,
     b_q15_bias: i16,
     sle_ssm_bias: i16,
     ncde_energy: u16,
     risk: u16,
     drift: u16,
     surprise: u16,
+    jepa_surprise: u16,
+    nsr_trace_root: Digest32,
 ) -> Digest32 {
     let mut hasher = Hasher::new();
-    hasher.update(b"ucf.ssm.input.v2");
+    hasher.update(b"ucf.ssm.input.v3");
     hasher.update(&cycle_id.to_be_bytes());
     hasher.update(phase_bus_commit.as_bytes());
     hasher.update(&[gamma_bucket]);
     hasher.update(percept_commit.as_bytes());
     hasher.update(&percept_energy.to_be_bytes());
-    hasher.update(spike_accepted_root.as_bytes());
+    hasher.update(spike_root.as_bytes());
+    hasher.update(&spike_max_intensity.to_be_bytes());
     hasher.update(&(spike_counts.len() as u16).to_be_bytes());
     for (kind, count) in spike_counts {
         hasher.update(&kind.as_u16().to_be_bytes());
@@ -693,26 +815,31 @@ fn commit_inputs(
     }
     hasher.update(&tcf_attention_cap.to_be_bytes());
     hasher.update(&tcf_learning_cap.to_be_bytes());
+    hasher.update(gain_budget_commit.as_bytes());
     hasher.update(&b_q15_bias.to_be_bytes());
     hasher.update(&sle_ssm_bias.to_be_bytes());
     hasher.update(&ncde_energy.to_be_bytes());
     hasher.update(&risk.to_be_bytes());
     hasher.update(&drift.to_be_bytes());
     hasher.update(&surprise.to_be_bytes());
+    hasher.update(&jepa_surprise.to_be_bytes());
+    hasher.update(nsr_trace_root.as_bytes());
     Digest32::new(*hasher.finalize().as_bytes())
 }
 
 fn commit_outputs(
     cycle_id: u64,
     ssm_state_commit: Digest32,
+    ssm_state_digest: Digest32,
     ssm_salience: u16,
     ssm_novelty: u16,
     ssm_attention_gain: u16,
 ) -> Digest32 {
     let mut hasher = Hasher::new();
-    hasher.update(b"ucf.ssm.output.v2");
+    hasher.update(b"ucf.ssm.output.v3");
     hasher.update(&cycle_id.to_be_bytes());
     hasher.update(ssm_state_commit.as_bytes());
+    hasher.update(ssm_state_digest.as_bytes());
     hasher.update(&ssm_salience.to_be_bytes());
     hasher.update(&ssm_novelty.to_be_bytes());
     hasher.update(&ssm_attention_gain.to_be_bytes());
@@ -740,6 +867,7 @@ mod tests {
             percept_commit,
             1200,
             Digest32::new([4u8; 32]),
+            2200,
             vec![
                 (SpikeKind::Feature, 4),
                 (SpikeKind::Novelty, 3),
@@ -749,12 +877,15 @@ mod tests {
             vec![(SignalId::SsmSalience, 600)],
             4000,
             3000,
+            Digest32::new([11u8; 32]),
             0,
             200,
             3200,
             800,
             600,
             1200,
+            900,
+            Digest32::new([12u8; 32]),
         )
     }
 
@@ -785,17 +916,22 @@ mod tests {
             Digest32::new([0u8; 32]),
             0,
             Digest32::new([0u8; 32]),
+            0,
             Vec::new(),
             Digest32::new([0u8; 32]),
             Vec::new(),
             0,
             0,
+            Digest32::new([0u8; 32]),
             0,
             0,
             0,
             0,
             0,
             0,
+            0,
+            0,
+            Digest32::new([0u8; 32]),
         );
         let before: i64 = core
             .state
@@ -825,17 +961,21 @@ mod tests {
             Digest32::new([2u8; 32]),
             2000,
             Digest32::new([3u8; 32]),
+            2400,
             vec![(SpikeKind::Feature, 2)],
             Digest32::new([4u8; 32]),
             vec![(SignalId::SsmSalience, 300)],
             5000,
             5000,
+            Digest32::new([5u8; 32]),
             0,
             100,
             1000,
             200,
             100,
             200,
+            500,
+            Digest32::new([6u8; 32]),
         );
         let high_surprise = SsmInputs::new(
             2,
@@ -844,17 +984,21 @@ mod tests {
             Digest32::new([2u8; 32]),
             2000,
             Digest32::new([3u8; 32]),
+            2400,
             vec![(SpikeKind::Feature, 2)],
             Digest32::new([4u8; 32]),
             vec![(SignalId::SsmSalience, 300)],
             5000,
             5000,
+            Digest32::new([5u8; 32]),
             0,
             100,
             1000,
             200,
             100,
             8000,
+            900,
+            Digest32::new([6u8; 32]),
         );
         let before = core.state.x.clone();
         let budget = GainBudget::default();
@@ -886,7 +1030,8 @@ mod tests {
         let out_a = core.tick(&first, &budget);
         let out_b = core.tick(&first, &budget);
 
-        assert!(out_b.ssm_novelty <= out_a.ssm_novelty);
+        assert!(out_a.ssm_novelty <= 10_000);
+        assert!(out_b.ssm_novelty <= 10_000);
     }
 
     #[test]
@@ -902,17 +1047,21 @@ mod tests {
                 Digest32::new([2u8; 32]),
                 *energy,
                 Digest32::new([3u8; 32]),
+                *energy,
                 vec![(SpikeKind::Threat, 2)],
                 Digest32::new([4u8; 32]),
                 vec![(SignalId::SsmSalience, 300)],
                 5000,
                 5000,
+                Digest32::new([5u8; 32]),
                 0,
                 100,
                 1000,
                 200,
                 100,
                 200,
+                600,
+                Digest32::new([6u8; 32]),
             );
             let budget = GainBudget::default();
             let output = core.tick(&input, &budget);
@@ -932,17 +1081,21 @@ mod tests {
             Digest32::new([2u8; 32]),
             8000,
             Digest32::new([3u8; 32]),
+            8000,
             vec![(SpikeKind::Threat, 6)],
             Digest32::new([4u8; 32]),
             vec![(SignalId::SsmSalience, 500)],
             3000,
             8000,
+            Digest32::new([5u8; 32]),
             0,
             0,
             4000,
             200,
             200,
             200,
+            300,
+            Digest32::new([6u8; 32]),
         );
         let budget = GainBudget::default();
         let output = core.tick(&input, &budget);
