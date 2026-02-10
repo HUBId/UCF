@@ -19,7 +19,7 @@ fn intent() -> Intent {
 }
 
 #[test]
-fn external_output_text_is_denied_and_audited() {
+fn external_output_text_is_allowed_emitted_and_audited() {
     let ctrl = ControlFrame::new_text(
         sim_time(),
         CorrelationId(1),
@@ -34,8 +34,8 @@ fn external_output_text_is_denied_and_audited() {
         .ingest_and_process(&mut adapter, ctrl)
         .expect("orchestration should succeed");
 
-    assert_eq!(decision.decision, ucf_frames::v1::DecisionCode::Deny);
-    assert!(adapter.emitted.is_empty());
+    assert_eq!(decision.decision, ucf_frames::v1::DecisionCode::Allow);
+    assert_eq!(adapter.emitted, vec!["hi".to_string()]);
     assert_eq!(orchestrator.ess.len(), 2);
     assert_eq!(
         orchestrator.ess.get(0).map(|r| r.kind),
