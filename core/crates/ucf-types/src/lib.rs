@@ -240,6 +240,30 @@ impl Default for GainBudget {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LearningSignal {
+    pub cycle_id: u64,
+    /// 0..10000
+    pub learn_rate: u16,
+    /// 0..10000
+    pub update_mass: u16,
+    /// derived severity: 0..2 (0=stable,1=adapt,2=consolidate)
+    pub mode: u8,
+    pub commit: Digest32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StructuralDelta {
+    pub cycle_id: u64,
+    /// deterministic structure change proxy
+    pub delta_root: Digest32,
+    /// 0..10000
+    pub delta_mass: u16,
+    /// top-k deterministic targets (0=none,1=onn,2=ssm,3=spike,4=tcf)
+    pub targets: [u16; 4],
+    pub commit: Digest32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum OutputChannel {
     Thought,
     Speech,
