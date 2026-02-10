@@ -14,7 +14,7 @@ use ucf_sleep_coordinator::{SleepTrigger, SleepTriggered};
 use ucf_spikebus::{SpikeKind, SpikeOutputs};
 use ucf_structural_store::StructuralDeltaProposal;
 use ucf_types::v1::spec::{ActionCode, DecisionKind, PolicyDecision};
-use ucf_types::Digest32;
+use ucf_types::{Digest32, LearningSignal, StructuralDelta};
 
 const SUMMARY_MAX_BYTES: usize = 160;
 const NSR_HIT_SUMMARY_MAX: usize = 8;
@@ -510,6 +510,12 @@ pub struct WorkspaceSnapshot {
     pub jepa_world_state: Digest32,
     pub jepa_prediction: Digest32,
     pub jepa_surprise: u16,
+    pub learning_signal_commit: Digest32,
+    pub learning_signal_learn_rate: u16,
+    pub learning_signal_mode: u8,
+    pub structural_delta_commit: Digest32,
+    pub structural_delta_mass: u16,
+    pub structural_delta_targets: [u16; 4],
     pub influence_v2_commit: Digest32,
     pub influence_pulses_root: Digest32,
     pub influence_node_values: Vec<(u16, i16)>,
@@ -679,6 +685,14 @@ pub fn encode_workspace_snapshot(snapshot: &WorkspaceSnapshot) -> Vec<u8> {
     payload.extend_from_slice(snapshot.jepa_world_state.as_bytes());
     payload.extend_from_slice(snapshot.jepa_prediction.as_bytes());
     payload.extend_from_slice(&snapshot.jepa_surprise.to_be_bytes());
+    payload.extend_from_slice(snapshot.learning_signal_commit.as_bytes());
+    payload.extend_from_slice(&snapshot.learning_signal_learn_rate.to_be_bytes());
+    payload.push(snapshot.learning_signal_mode);
+    payload.extend_from_slice(snapshot.structural_delta_commit.as_bytes());
+    payload.extend_from_slice(&snapshot.structural_delta_mass.to_be_bytes());
+    for target in snapshot.structural_delta_targets {
+        payload.extend_from_slice(&target.to_be_bytes());
+    }
     payload.extend_from_slice(snapshot.influence_v2_commit.as_bytes());
     payload.extend_from_slice(snapshot.influence_pulses_root.as_bytes());
     payload.extend_from_slice(&(snapshot.influence_node_values.len() as u16).to_be_bytes());
@@ -887,6 +901,12 @@ pub struct Workspace {
     jepa_world_state: Digest32,
     jepa_prediction: Digest32,
     jepa_surprise: u16,
+    learning_signal_commit: Digest32,
+    learning_signal_learn_rate: u16,
+    learning_signal_mode: u8,
+    structural_delta_commit: Digest32,
+    structural_delta_mass: u16,
+    structural_delta_targets: [u16; 4],
     influence_v2_commit: Digest32,
     influence_pulses_root: Digest32,
     influence_node_values: Vec<(u16, i16)>,
@@ -972,6 +992,12 @@ impl Workspace {
             jepa_world_state: Digest32::new([0u8; 32]),
             jepa_prediction: Digest32::new([0u8; 32]),
             jepa_surprise: 0,
+            learning_signal_commit: Digest32::new([0u8; 32]),
+            learning_signal_learn_rate: 0,
+            learning_signal_mode: 0,
+            structural_delta_commit: Digest32::new([0u8; 32]),
+            structural_delta_mass: 0,
+            structural_delta_targets: [0; 4],
             influence_v2_commit: Digest32::new([0u8; 32]),
             influence_pulses_root: Digest32::new([0u8; 32]),
             influence_node_values: Vec::new(),
@@ -1170,6 +1196,18 @@ impl Workspace {
         );
     }
 
+    pub fn set_learning_signal(&mut self, signal: LearningSignal) {
+        self.learning_signal_commit = signal.commit;
+        self.learning_signal_learn_rate = signal.learn_rate.min(10_000);
+        self.learning_signal_mode = signal.mode.min(2);
+    }
+
+    pub fn set_structural_delta(&mut self, delta: StructuralDelta) {
+        self.structural_delta_commit = delta.commit;
+        self.structural_delta_mass = delta.delta_mass.min(10_000);
+        self.structural_delta_targets = delta.targets;
+    }
+
     pub fn set_influence_snapshot(
         &mut self,
         influence_commit: Digest32,
@@ -1353,6 +1391,12 @@ impl Workspace {
         let jepa_world_state = self.jepa_world_state;
         let jepa_prediction = self.jepa_prediction;
         let jepa_surprise = self.jepa_surprise;
+        let learning_signal_commit = self.learning_signal_commit;
+        let learning_signal_learn_rate = self.learning_signal_learn_rate;
+        let learning_signal_mode = self.learning_signal_mode;
+        let structural_delta_commit = self.structural_delta_commit;
+        let structural_delta_mass = self.structural_delta_mass;
+        let structural_delta_targets = self.structural_delta_targets;
         let influence_v2_commit = self.influence_v2_commit;
         let influence_pulses_root = self.influence_pulses_root;
         let influence_node_values = std::mem::take(&mut self.influence_node_values);
@@ -1429,6 +1473,12 @@ impl Workspace {
             jepa_world_state,
             jepa_prediction,
             jepa_surprise,
+            learning_signal_commit,
+            learning_signal_learn_rate,
+            learning_signal_mode,
+            structural_delta_commit,
+            structural_delta_mass,
+            structural_delta_targets,
             influence_v2_commit,
             influence_pulses_root,
             &influence_node_values,
@@ -1508,6 +1558,12 @@ impl Workspace {
             jepa_world_state,
             jepa_prediction,
             jepa_surprise,
+            learning_signal_commit,
+            learning_signal_learn_rate,
+            learning_signal_mode,
+            structural_delta_commit,
+            structural_delta_mass,
+            structural_delta_targets,
             influence_v2_commit,
             influence_pulses_root,
             influence_node_values,
@@ -1964,6 +2020,12 @@ fn commit_snapshot(
     jepa_world_state: Digest32,
     jepa_prediction: Digest32,
     jepa_surprise: u16,
+    learning_signal_commit: Digest32,
+    learning_signal_learn_rate: u16,
+    learning_signal_mode: u8,
+    structural_delta_commit: Digest32,
+    structural_delta_mass: u16,
+    structural_delta_targets: [u16; 4],
     influence_v2_commit: Digest32,
     influence_pulses_root: Digest32,
     influence_node_values: &[(u16, i16)],
@@ -2083,6 +2145,14 @@ fn commit_snapshot(
     hasher.update(jepa_world_state.as_bytes());
     hasher.update(jepa_prediction.as_bytes());
     hasher.update(&jepa_surprise.to_be_bytes());
+    hasher.update(learning_signal_commit.as_bytes());
+    hasher.update(&learning_signal_learn_rate.to_be_bytes());
+    hasher.update(&[learning_signal_mode]);
+    hasher.update(structural_delta_commit.as_bytes());
+    hasher.update(&structural_delta_mass.to_be_bytes());
+    for target in structural_delta_targets {
+        hasher.update(&target.to_be_bytes());
+    }
     hasher.update(influence_v2_commit.as_bytes());
     hasher.update(influence_pulses_root.as_bytes());
     hasher.update(

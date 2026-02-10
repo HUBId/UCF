@@ -96,7 +96,7 @@ use ucf_tcf_port::{
 };
 use ucf_tom_port::{IntentType, TomPort};
 use ucf_types::v1::spec::{ControlFrame, DecisionKind, Digest, ExperienceRecord, PolicyDecision};
-use ucf_types::{AlgoId, Digest32, EvidenceId, GainBudget};
+use ucf_types::{AlgoId, Digest32, EvidenceId, GainBudget, LearningSignal, StructuralDelta};
 use ucf_workspace::{
     output_event_commit, NsrHitSummary, NsrTraceSummary, SignalKind, SleOutputsSnapshot, Workspace,
     WorkspaceConfig, WorkspaceSignal, WorkspaceSnapshot,
@@ -130,6 +130,7 @@ const GAIN_BUDGET_RELAX_WINDOW: u8 = 4;
 const GAIN_BUDGET_STABLE_MIN: u8 = 12;
 const LOW_PLV_THRESHOLD: u16 = 2500;
 const HIGH_NOVELTY_THRESHOLD: u16 = 8000;
+const LEARNING_SURPRISE_HIGH: u16 = 7000;
 const TRIGGER_VIOLATION: u8 = 1;
 const TRIGGER_LOW_PLV: u8 = 1 << 1;
 const TRIGGER_HIGH_NOVELTY: u8 = 1 << 2;
@@ -450,6 +451,9 @@ fn commit_budget_state(state: &BudgetState) -> Digest32 {
         state.low_plv_streak,
         state.high_novelty_streak,
         state.violation_streak,
+        state.adapt_cooldown,
+        state.spike_threshold_cooldown,
+        state.tcf_learning_cooldown,
     ]);
     Digest32::new(*hasher.finalize().as_bytes())
 }
@@ -461,6 +465,9 @@ fn default_budget_state() -> BudgetState {
         low_plv_streak: 0,
         high_novelty_streak: 0,
         violation_streak: 0,
+        adapt_cooldown: 0,
+        spike_threshold_cooldown: 0,
+        tcf_learning_cooldown: 0,
         commit: Digest32::new([0u8; 32]),
     };
     state.commit = commit_budget_state(&state);
@@ -473,6 +480,9 @@ struct BudgetState {
     low_plv_streak: u8,
     high_novelty_streak: u8,
     violation_streak: u8,
+    adapt_cooldown: u8,
+    spike_threshold_cooldown: u8,
+    tcf_learning_cooldown: u8,
     commit: Digest32,
 }
 
@@ -607,6 +617,9 @@ struct BudgetCycle {
     triggers: u8,
     request_replay: bool,
     stabilize_cycles: u16,
+    learning_signal: LearningSignal,
+    structural_delta: StructuralDelta,
+    spike_novelty_threshold_bump: u16,
 }
 
 fn relax_budget(value: u16) -> u16 {
@@ -615,18 +628,197 @@ fn relax_budget(value: u16) -> u16 {
         .min(GAIN_BUDGET_MAX)
 }
 
+#[allow(clippy::too_many_arguments)]
+fn commit_learning_signal(
+    cycle_id: u64,
+    learn_rate: u16,
+    update_mass: u16,
+    mode: u8,
+    attention_gain: u16,
+    novelty: u16,
+    salience: u16,
+    surprise: u16,
+    plv: u16,
+    nsr_trace_root: Digest32,
+    ssm_commit: Digest32,
+    jepa_commit: Digest32,
+    onn_phase_commit: Digest32,
+    cde_graph_commit: Digest32,
+    tcf_attention_cap: u16,
+    tcf_learning_cap: u16,
+) -> LearningSignal {
+    let mut hasher = Hasher::new();
+    hasher.update(b"ucf.learning.signal.v1");
+    hasher.update(&cycle_id.to_be_bytes());
+    hasher.update(&learn_rate.to_be_bytes());
+    hasher.update(&update_mass.to_be_bytes());
+    hasher.update(&[mode]);
+    hasher.update(&attention_gain.to_be_bytes());
+    hasher.update(&novelty.to_be_bytes());
+    hasher.update(&salience.to_be_bytes());
+    hasher.update(&surprise.to_be_bytes());
+    hasher.update(&plv.to_be_bytes());
+    hasher.update(&tcf_attention_cap.to_be_bytes());
+    hasher.update(&tcf_learning_cap.to_be_bytes());
+    hasher.update(ssm_commit.as_bytes());
+    hasher.update(jepa_commit.as_bytes());
+    hasher.update(onn_phase_commit.as_bytes());
+    hasher.update(nsr_trace_root.as_bytes());
+    hasher.update(cde_graph_commit.as_bytes());
+    LearningSignal {
+        cycle_id,
+        learn_rate,
+        update_mass,
+        mode,
+        commit: Digest32::new(*hasher.finalize().as_bytes()),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn commit_structural_delta(
+    cycle_id: u64,
+    learning: LearningSignal,
+    ssm_state_digest: Digest32,
+    world_state: Digest32,
+    cde_graph_commit: Digest32,
+    nsr_trace_root: Digest32,
+    phase_commit: Digest32,
+    plv: u16,
+    novelty: u16,
+    surprise: u16,
+    nsr_warn_or_block: bool,
+) -> StructuralDelta {
+    let mut root_hasher = Hasher::new();
+    root_hasher.update(b"ucf.structural.delta.root.v1");
+    root_hasher.update(learning.commit.as_bytes());
+    root_hasher.update(ssm_state_digest.as_bytes());
+    root_hasher.update(world_state.as_bytes());
+    root_hasher.update(cde_graph_commit.as_bytes());
+    root_hasher.update(nsr_trace_root.as_bytes());
+    root_hasher.update(phase_commit.as_bytes());
+    let delta_root = Digest32::new(*root_hasher.finalize().as_bytes());
+
+    let mut targets = [0u16; 4];
+    targets[0] = if plv < 2500 { 1 } else { 0 };
+    targets[1] = if novelty > 7000 { 2 } else { 0 };
+    targets[2] = if surprise > 7000 { 3 } else { 0 };
+    targets[3] = if nsr_warn_or_block { 4 } else { 0 };
+    let delta_mass = learning.update_mass.min(learning.learn_rate);
+
+    let mut hasher = Hasher::new();
+    hasher.update(b"ucf.structural.delta.v1");
+    hasher.update(&cycle_id.to_be_bytes());
+    hasher.update(delta_root.as_bytes());
+    hasher.update(&delta_mass.to_be_bytes());
+    for target in targets {
+        hasher.update(&target.to_be_bytes());
+    }
+    hasher.update(learning.commit.as_bytes());
+    StructuralDelta {
+        cycle_id,
+        delta_root,
+        delta_mass,
+        targets,
+        commit: Digest32::new(*hasher.finalize().as_bytes()),
+    }
+}
+
 fn update_budget_state(
     mut state: BudgetState,
     mut stable_cycles: u8,
     mut last_violation_count: u16,
-    global_plv: u16,
+    cycle_id: u64,
+    attention_gain: u16,
     ssm_novelty: u16,
+    ssm_salience: u16,
+    surprise: u16,
+    global_plv: u16,
+    nsr_rule_hits: &[(u16, u16, u16)],
+    tcf_attention_cap: u16,
+    tcf_learning_cap: u16,
+    ssm_commit: Digest32,
+    jepa_commit: Digest32,
+    onn_phase_commit: Digest32,
+    nsr_trace_root: Digest32,
+    cde_graph_commit: Digest32,
+    ssm_state_digest: Digest32,
+    world_state: Digest32,
+    phase_commit: Digest32,
     leakage_violations: u16,
 ) -> (BudgetState, u8, u16, BudgetCycle) {
     let low_plv = global_plv < LOW_PLV_THRESHOLD;
     let high_novelty = ssm_novelty > HIGH_NOVELTY_THRESHOLD;
     let violation_increased = leakage_violations > last_violation_count;
     last_violation_count = leakage_violations;
+    let nsr_has_block = nsr_rule_hits.iter().any(|(_, _, severity)| *severity >= 2);
+    let nsr_has_warn = nsr_rule_hits.iter().any(|(_, _, severity)| *severity == 1);
+
+    let base = i32::from(
+        (attention_gain / 2)
+            .saturating_add(ssm_novelty / 4)
+            .saturating_add(ssm_salience / 4),
+    );
+    let mut coherence_penalty = 0i32;
+    if global_plv < 2500 {
+        coherence_penalty -= 2000;
+    }
+    if global_plv < 1500 {
+        coherence_penalty -= 2000;
+    }
+    let nsr_penalty = if nsr_has_block {
+        -3000
+    } else if nsr_has_warn {
+        -1000
+    } else {
+        0
+    };
+    let surprise_boost = if surprise > LEARNING_SURPRISE_HIGH {
+        1500
+    } else {
+        0
+    };
+    let learn_rate =
+        (base + coherence_penalty + nsr_penalty + surprise_boost).clamp(0, 10_000) as u16;
+    let update_mass = ((u32::from(ssm_novelty) + u32::from(ssm_salience)) / 2).min(10_000) as u16;
+    let mode = if learn_rate < 2500 {
+        0
+    } else if surprise > LEARNING_SURPRISE_HIGH || ssm_novelty > LEARNING_SURPRISE_HIGH {
+        1
+    } else {
+        2
+    };
+    let learning_signal = commit_learning_signal(
+        cycle_id,
+        learn_rate,
+        update_mass,
+        mode,
+        attention_gain,
+        ssm_novelty,
+        ssm_salience,
+        surprise,
+        global_plv,
+        nsr_trace_root,
+        ssm_commit,
+        jepa_commit,
+        onn_phase_commit,
+        cde_graph_commit,
+        tcf_attention_cap,
+        tcf_learning_cap,
+    );
+
+    let structural_delta = commit_structural_delta(
+        cycle_id,
+        learning_signal,
+        ssm_state_digest,
+        world_state,
+        cde_graph_commit,
+        nsr_trace_root,
+        phase_commit,
+        global_plv,
+        ssm_novelty,
+        surprise,
+        nsr_has_warn || nsr_has_block,
+    );
 
     let low_plv_streak = if low_plv {
         state.low_plv_streak.saturating_add(1)
@@ -671,6 +863,31 @@ fn update_budget_state(
         budget.ssm_update = budget.ssm_update.min(6000);
     }
 
+    if state.adapt_cooldown > 0 {
+        state.adapt_cooldown = state.adapt_cooldown.saturating_sub(1);
+    }
+    if state.spike_threshold_cooldown > 0 {
+        state.spike_threshold_cooldown = state.spike_threshold_cooldown.saturating_sub(1);
+    }
+    if state.tcf_learning_cooldown > 0 {
+        state.tcf_learning_cooldown = state.tcf_learning_cooldown.saturating_sub(1);
+    }
+
+    if learning_signal.mode == 1 && structural_delta.delta_mass > 6000 {
+        budget.master = budget.master.saturating_sub(500).max(6000);
+        state.adapt_cooldown = 4;
+    }
+    if learning_signal.mode == 2 && global_plv > 8500 && !nsr_has_warn && !nsr_has_block {
+        budget.master = budget.master.saturating_add(200).min(10_000);
+    }
+    if structural_delta.targets.contains(&1) && structural_delta.delta_mass > 6000 {
+        budget.onn_coupling = budget.onn_coupling.saturating_sub(500).max(3000);
+    }
+    if structural_delta.targets.contains(&4) && nsr_has_warn {
+        budget.tcf_learning = budget.tcf_learning.saturating_sub(500);
+        state.tcf_learning_cooldown = 4;
+    }
+
     if low_plv_streak == 0 && high_novelty_streak == 0 && violation_streak == 0 {
         stable_cycles = stable_cycles.saturating_add(1);
         if stable_cycles >= GAIN_BUDGET_STABLE_MIN
@@ -694,6 +911,9 @@ fn update_budget_state(
         low_plv_streak,
         high_novelty_streak,
         violation_streak,
+        adapt_cooldown: state.adapt_cooldown,
+        spike_threshold_cooldown: state.spike_threshold_cooldown,
+        tcf_learning_cooldown: state.tcf_learning_cooldown,
         commit: Digest32::new([0u8; 32]),
     };
     state.commit = commit_budget_state(&state);
@@ -706,6 +926,13 @@ fn update_budget_state(
         triggers,
         request_replay,
         stabilize_cycles,
+        learning_signal,
+        structural_delta,
+        spike_novelty_threshold_bump: if structural_delta.targets.contains(&3) {
+            500
+        } else {
+            0
+        },
     };
     (state, stable_cycles, last_violation_count, cycle)
 }
@@ -881,13 +1108,89 @@ impl Router {
             .unwrap_or_else(|err| err.into_inner().current)
     }
 
-    fn refresh_gain_budget(&self) -> BudgetCycle {
+    fn refresh_gain_budget(&self, cycle_id: u64, ctx: Option<&StageContext>) -> BudgetCycle {
         let snapshot = self.last_workspace_snapshot();
-        let global_plv = snapshot
-            .as_ref()
-            .map(|snap| snap.onn_global_plv)
+        let global_plv = ctx
+            .and_then(|c| c.coherence_plv)
+            .or_else(|| snapshot.as_ref().map(|snap| snap.onn_global_plv))
             .unwrap_or(0);
-        let ssm_novelty = snapshot.as_ref().map(|snap| snap.ssm_novelty).unwrap_or(0);
+        let ssm_novelty = ctx
+            .and_then(|c| c.ssm_output.as_ref().map(|o| o.ssm_novelty))
+            .or_else(|| snapshot.as_ref().map(|snap| snap.ssm_novelty))
+            .unwrap_or(0);
+        let ssm_salience = ctx
+            .and_then(|c| c.ssm_output.as_ref().map(|o| o.ssm_salience))
+            .or_else(|| snapshot.as_ref().map(|snap| snap.ssm_salience))
+            .unwrap_or(0);
+        let attention_gain = ctx
+            .and_then(|c| c.ssm_output.as_ref().map(|o| o.ssm_attention_gain))
+            .or_else(|| snapshot.as_ref().map(|snap| snap.ssm_attention_gain))
+            .unwrap_or(0);
+        let surprise = ctx
+            .and_then(|c| c.jepa_outputs.as_ref().map(|o| o.surprise))
+            .or_else(|| snapshot.as_ref().map(|snap| snap.jepa_surprise))
+            .unwrap_or(0);
+        let tcf_attention_cap = snapshot
+            .as_ref()
+            .map(|snap| snap.tcf_attention_gain_cap)
+            .unwrap_or(10_000);
+        let tcf_learning_cap = snapshot
+            .as_ref()
+            .map(|snap| snap.tcf_learning_gain_cap)
+            .unwrap_or(10_000);
+        let ssm_commit = ctx
+            .and_then(|c| c.ssm_output.as_ref().map(|o| o.commit))
+            .or_else(|| snapshot.as_ref().map(|snap| snap.ssm_commit))
+            .unwrap_or_else(|| Digest32::new([0u8; 32]));
+        let jepa_commit = ctx
+            .and_then(|c| c.jepa_outputs.as_ref().map(|o| o.commit))
+            .unwrap_or_else(|| Digest32::new([0u8; 32]));
+        let onn_phase_commit = snapshot
+            .as_ref()
+            .map(|snap| snap.onn_phase_commit)
+            .unwrap_or_else(|| Digest32::new([0u8; 32]));
+        let nsr_trace_root = ctx
+            .and_then(|c| c.nsr_output.as_ref().map(|o| o.trace_root))
+            .or_else(|| snapshot.as_ref().and_then(|snap| snap.nsr_trace_root))
+            .unwrap_or_else(|| Digest32::new([0u8; 32]));
+        let cde_graph_commit = snapshot
+            .as_ref()
+            .map(|snap| snap.cde_graph_commit)
+            .unwrap_or_else(|| Digest32::new([0u8; 32]));
+        let ssm_state_digest = ctx
+            .and_then(|c| c.ssm_output.as_ref().map(|o| o.ssm_state_digest))
+            .or_else(|| snapshot.as_ref().map(|snap| snap.ssm_state_digest))
+            .unwrap_or_else(|| Digest32::new([0u8; 32]));
+        let world_state = ctx
+            .and_then(|c| c.jepa_outputs.as_ref().map(|o| o.world_state))
+            .or_else(|| snapshot.as_ref().map(|snap| snap.jepa_world_state))
+            .unwrap_or_else(|| Digest32::new([0u8; 32]));
+        let phase_commit = snapshot
+            .as_ref()
+            .map(|snap| snap.onn_phase_commit)
+            .unwrap_or_else(|| Digest32::new([0u8; 32]));
+        let nsr_rule_hits: Vec<(u16, u16, u16)> = ctx
+            .and_then(|c| {
+                c.nsr_report.as_ref().map(|r| {
+                    r.violations
+                        .iter()
+                        .map(|v| {
+                            (
+                                0u16,
+                                0u16,
+                                if v.severity >= 2 {
+                                    2
+                                } else if v.severity >= 1 {
+                                    1
+                                } else {
+                                    0
+                                },
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                })
+            })
+            .unwrap_or_default();
         let leakage_violations = self
             .last_nsr_report
             .lock()
@@ -913,8 +1216,23 @@ impl Router {
             *state_guard,
             *stable_guard,
             *violation_guard,
-            global_plv,
+            cycle_id,
+            attention_gain,
             ssm_novelty,
+            ssm_salience,
+            surprise,
+            global_plv,
+            &nsr_rule_hits,
+            tcf_attention_cap,
+            tcf_learning_cap,
+            ssm_commit,
+            jepa_commit,
+            onn_phase_commit,
+            nsr_trace_root,
+            cde_graph_commit,
+            ssm_state_digest,
+            world_state,
+            phase_commit,
             leakage_violations,
         );
         *state_guard = next_state;
@@ -933,6 +1251,8 @@ impl Router {
                 cycle.violation_streak,
                 cycle.triggers,
             );
+            workspace.set_learning_signal(cycle.learning_signal);
+            workspace.set_structural_delta(cycle.structural_delta);
         }
         cycle
     }
@@ -969,6 +1289,12 @@ impl Router {
                 jepa_world_state: Digest32::new([0u8; 32]),
                 jepa_prediction: Digest32::new([0u8; 32]),
                 jepa_surprise: 0,
+                learning_signal_commit: Digest32::new([0u8; 32]),
+                learning_signal_learn_rate: 0,
+                learning_signal_mode: 0,
+                structural_delta_commit: Digest32::new([0u8; 32]),
+                structural_delta_mass: 0,
+                structural_delta_targets: [0; 4],
                 influence_v2_commit: Digest32::new([0u8; 32]),
                 influence_pulses_root: Digest32::new([0u8; 32]),
                 influence_node_values: Vec::new(),
@@ -1055,9 +1381,9 @@ impl Router {
         self.append_cycle_plan_record(&cycle_plan, &planned);
 
         let cycle_id = cycle_plan.cycle_id;
-        let budget_cycle = self.refresh_gain_budget();
         let mut ctx = StageContext::new();
         ctx.tcf_energy_smooth = Some(tcf_energy_smooth);
+        let budget_cycle = self.refresh_gain_budget(cycle_id, Some(&ctx));
 
         for pulse in &cycle_plan.pulses {
             self.emit_stage_trace(pulse.kind);
@@ -6820,7 +7146,29 @@ mod tests {
     #[test]
     fn violation_shrinks_budget_deterministically() {
         let state = default_budget_state();
-        let (next_state, _, _, cycle) = update_budget_state(state, 0, 0, 5000, 0, 1);
+        let (next_state, _, _, cycle) = update_budget_state(
+            state,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+            5000,
+            &[],
+            10_000,
+            10_000,
+            Digest32::new([0u8; 32]),
+            Digest32::new([0u8; 32]),
+            Digest32::new([0u8; 32]),
+            Digest32::new([0u8; 32]),
+            Digest32::new([0u8; 32]),
+            Digest32::new([0u8; 32]),
+            Digest32::new([0u8; 32]),
+            Digest32::new([0u8; 32]),
+            1,
+        );
         assert!(cycle.triggers & TRIGGER_VIOLATION != 0);
         assert_eq!(next_state.current.master, 6000);
         assert_eq!(next_state.current.coupling, 5000);
@@ -6840,11 +7188,47 @@ mod tests {
             triggers: 0,
             request_replay: false,
             stabilize_cycles: 0,
+            learning_signal: LearningSignal {
+                cycle_id: 0,
+                learn_rate: 0,
+                update_mass: 0,
+                mode: 0,
+                commit: Digest32::new([0u8; 32]),
+            },
+            structural_delta: StructuralDelta {
+                cycle_id: 0,
+                delta_root: Digest32::new([0u8; 32]),
+                delta_mass: 0,
+                targets: [0; 4],
+                commit: Digest32::new([0u8; 32]),
+            },
+            spike_novelty_threshold_bump: 0,
         };
 
         for _ in 0..6 {
-            let (next_state, next_stable, next_violation, next_cycle) =
-                update_budget_state(state, stable, last_violation, 2000, 0, 0);
+            let (next_state, next_stable, next_violation, next_cycle) = update_budget_state(
+                state,
+                stable,
+                last_violation,
+                1,
+                0,
+                0,
+                0,
+                0,
+                2000,
+                &[],
+                10_000,
+                10_000,
+                Digest32::new([0u8; 32]),
+                Digest32::new([0u8; 32]),
+                Digest32::new([0u8; 32]),
+                Digest32::new([0u8; 32]),
+                Digest32::new([0u8; 32]),
+                Digest32::new([0u8; 32]),
+                Digest32::new([0u8; 32]),
+                Digest32::new([0u8; 32]),
+                0,
+            );
             state = next_state;
             stable = next_stable;
             last_violation = next_violation;
@@ -6856,6 +7240,148 @@ mod tests {
         assert!(cycle.stabilize_cycles >= 8);
         assert_eq!(state.current.onn_coupling, 5000);
         assert_eq!(state.current.master, 7000);
+    }
+
+    #[test]
+    fn low_plv_reduces_learning_rate() {
+        let state = default_budget_state();
+        let (_, _, _, low) = update_budget_state(
+            state,
+            0,
+            0,
+            1,
+            4000,
+            6000,
+            6000,
+            2000,
+            1200,
+            &[],
+            10_000,
+            10_000,
+            Digest32::new([1u8; 32]),
+            Digest32::new([2u8; 32]),
+            Digest32::new([3u8; 32]),
+            Digest32::new([4u8; 32]),
+            Digest32::new([5u8; 32]),
+            Digest32::new([6u8; 32]),
+            Digest32::new([7u8; 32]),
+            Digest32::new([8u8; 32]),
+            0,
+        );
+        let (_, _, _, high) = update_budget_state(
+            state,
+            0,
+            0,
+            1,
+            4000,
+            6000,
+            6000,
+            2000,
+            9000,
+            &[],
+            10_000,
+            10_000,
+            Digest32::new([1u8; 32]),
+            Digest32::new([2u8; 32]),
+            Digest32::new([3u8; 32]),
+            Digest32::new([4u8; 32]),
+            Digest32::new([5u8; 32]),
+            Digest32::new([6u8; 32]),
+            Digest32::new([7u8; 32]),
+            Digest32::new([8u8; 32]),
+            0,
+        );
+        assert!(low.learning_signal.learn_rate < high.learning_signal.learn_rate);
+    }
+
+    #[test]
+    fn high_surprise_increases_learning_unless_nsr_block() {
+        let state = default_budget_state();
+        let (_, _, _, boosted) = update_budget_state(
+            state,
+            0,
+            0,
+            1,
+            4000,
+            5000,
+            5000,
+            8001,
+            9000,
+            &[],
+            10_000,
+            10_000,
+            Digest32::new([1u8; 32]),
+            Digest32::new([2u8; 32]),
+            Digest32::new([3u8; 32]),
+            Digest32::new([4u8; 32]),
+            Digest32::new([5u8; 32]),
+            Digest32::new([6u8; 32]),
+            Digest32::new([7u8; 32]),
+            Digest32::new([8u8; 32]),
+            0,
+        );
+        let (_, _, _, blocked) = update_budget_state(
+            state,
+            0,
+            0,
+            1,
+            4000,
+            5000,
+            5000,
+            8001,
+            9000,
+            &[(1, 1, 2)],
+            10_000,
+            10_000,
+            Digest32::new([1u8; 32]),
+            Digest32::new([2u8; 32]),
+            Digest32::new([3u8; 32]),
+            Digest32::new([4u8; 32]),
+            Digest32::new([5u8; 32]),
+            Digest32::new([6u8; 32]),
+            Digest32::new([7u8; 32]),
+            Digest32::new([8u8; 32]),
+            1,
+        );
+        assert!(blocked.learning_signal.learn_rate < boosted.learning_signal.learn_rate);
+    }
+
+    #[test]
+    fn structural_delta_is_deterministic() {
+        let learning = LearningSignal {
+            cycle_id: 9,
+            learn_rate: 7000,
+            update_mass: 6500,
+            mode: 1,
+            commit: Digest32::new([9u8; 32]),
+        };
+        let a = commit_structural_delta(
+            9,
+            learning,
+            Digest32::new([1u8; 32]),
+            Digest32::new([2u8; 32]),
+            Digest32::new([3u8; 32]),
+            Digest32::new([4u8; 32]),
+            Digest32::new([5u8; 32]),
+            2000,
+            8000,
+            8001,
+            true,
+        );
+        let b = commit_structural_delta(
+            9,
+            learning,
+            Digest32::new([1u8; 32]),
+            Digest32::new([2u8; 32]),
+            Digest32::new([3u8; 32]),
+            Digest32::new([4u8; 32]),
+            Digest32::new([5u8; 32]),
+            2000,
+            8000,
+            8001,
+            true,
+        );
+        assert_eq!(a, b);
     }
 
     #[test]
@@ -6912,11 +7438,36 @@ mod tests {
             low_plv_streak: 0,
             high_novelty_streak: 0,
             violation_streak: 0,
+            adapt_cooldown: 0,
+            spike_threshold_cooldown: 0,
+            tcf_learning_cooldown: 0,
             commit: Digest32::new([0u8; 32]),
         };
         state.commit = commit_budget_state(&state);
 
-        let (state_no_relax, stable_no_relax, _, _) = update_budget_state(state, 10, 0, 5000, 0, 0);
+        let (state_no_relax, stable_no_relax, _, _) = update_budget_state(
+            state,
+            10,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+            5000,
+            &[],
+            10_000,
+            10_000,
+            Digest32::new([0u8; 32]),
+            Digest32::new([0u8; 32]),
+            Digest32::new([0u8; 32]),
+            Digest32::new([0u8; 32]),
+            Digest32::new([0u8; 32]),
+            Digest32::new([0u8; 32]),
+            Digest32::new([0u8; 32]),
+            Digest32::new([0u8; 32]),
+            0,
+        );
         assert_eq!(stable_no_relax, 11);
         assert_eq!(state_no_relax.current.master, 9000);
 
@@ -6925,10 +7476,35 @@ mod tests {
             low_plv_streak: 0,
             high_novelty_streak: 0,
             violation_streak: 0,
+            adapt_cooldown: 0,
+            spike_threshold_cooldown: 0,
+            tcf_learning_cooldown: 0,
             commit: Digest32::new([0u8; 32]),
         };
         state_relax.commit = commit_budget_state(&state_relax);
-        let (state_relax, stable_relax, _, _) = update_budget_state(state_relax, 11, 0, 5000, 0, 0);
+        let (state_relax, stable_relax, _, _) = update_budget_state(
+            state_relax,
+            11,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+            5000,
+            &[],
+            10_000,
+            10_000,
+            Digest32::new([0u8; 32]),
+            Digest32::new([0u8; 32]),
+            Digest32::new([0u8; 32]),
+            Digest32::new([0u8; 32]),
+            Digest32::new([0u8; 32]),
+            Digest32::new([0u8; 32]),
+            Digest32::new([0u8; 32]),
+            Digest32::new([0u8; 32]),
+            0,
+        );
         assert_eq!(stable_relax, 12);
         assert_eq!(state_relax.current.master, 9200);
     }
