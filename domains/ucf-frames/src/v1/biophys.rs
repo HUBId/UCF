@@ -12,4 +12,5 @@ pub struct BiophysFrame {
     pub now_ms: u64,
     pub field: [f32; 7],
     pub hh_params: BiophysHhParams,
+    pub hpa_cortisol: f32,
 }

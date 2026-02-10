@@ -1,6 +1,6 @@
 use super::{
-    modulate_hh, FieldEvent, FieldEventKind, FieldUpdateCfg, HhParams, ModulationCfg,
-    NeuromodulatorField, Unit01,
+    hpa_step, modulate_hh, FieldEvent, FieldEventKind, FieldUpdateCfg, HhParams, HpaCfg, HpaState,
+    ModulationCfg, NeuromodulatorField, Unit01,
 };
 
 #[test]
@@ -82,4 +82,44 @@ fn modulate_hh_applies_expected_directional_effects() {
     };
     let excite = modulate_hh(base, field_excite_only, ModulationCfg::default());
     assert!(excite.threshold_shift_mv < base.threshold_shift_mv);
+}
+
+#[test]
+fn hpa_step_increases_cortisol_under_sustained_stress() {
+    let cfg = HpaCfg::default();
+    let mut st = HpaState::default();
+
+    for _ in 0..200 {
+        st = hpa_step(st, 0.9, 0.1, cfg);
+    }
+
+    assert!(st.cortisol > 0.1);
+}
+
+#[test]
+fn cortisol_negative_feedback_reduces_crh_when_cortisol_high() {
+    let cfg = HpaCfg::default();
+    let mut st = HpaState {
+        crh: 0.9,
+        acth: 0.6,
+        cortisol: 1.0,
+    };
+
+    for _ in 0..50 {
+        st = hpa_step(st, 0.1, 0.1, cfg);
+    }
+
+    assert!(st.crh < 0.9);
+}
+
+#[test]
+fn with_hpa_lowers_serotonin_and_raises_gaba_when_cortisol_high() {
+    let field = NeuromodulatorField::default();
+    let out = field.with_hpa(HpaState {
+        cortisol: 1.0,
+        ..HpaState::default()
+    });
+
+    assert!(out.serotonin.get() < field.serotonin.get());
+    assert!(out.gaba.get() > field.gaba.get());
 }
