@@ -19,5 +19,8 @@ fn seed_1_three_cycles_final_summary_constants() {
     assert_eq!(final_summary.nsr_verdict, Some(0));
     assert_eq!(final_summary.nsr_hit_counts, [1, 0, 0]);
     assert_eq!(final_summary.violations.len(), 1);
-    assert_eq!(&final_summary.violations[0].commit.as_bytes()[..4], &[0x9f, 0x5d, 0x67, 0x67]);
+    assert_eq!(
+        &final_summary.violations[0].commit.as_bytes()[..4],
+        &[0x9f, 0x5d, 0x67, 0x67]
+    );
 }
