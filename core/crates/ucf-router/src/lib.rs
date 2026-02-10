@@ -2332,7 +2332,6 @@ impl Router {
                         .clone()
                         .unwrap_or_else(|| empty_spike_outputs(cycle_id));
                     let spike_root_commit = spike_outputs.accepted_root;
-                    let spike_max_intensity = spike_outputs.max_intensity;
                     let spike_counts_ssm = spike_outputs.counts.clone();
                     let percept_commit = ctx
                         .percept_commit
@@ -2343,35 +2342,17 @@ impl Router {
                         .or_else(|| self.last_ncde_output.lock().ok().and_then(|g| *g));
                     let ncde_energy = prior_ncde.map(|output| output.ncde_energy).unwrap_or(0);
                     let b_q15_bias = self.coherence_b_q15_bias(&lag_snapshot);
-                    let jepa_surprise = ctx
-                        .jepa_outputs
-                        .as_ref()
-                        .map(|output| output.surprise)
-                        .unwrap_or(surprise_score);
-                    let nsr_trace_root = ctx
-                        .nsr_output
-                        .as_ref()
-                        .map(|output| output.trace_root)
-                        .or_else(|| {
-                            self.last_workspace_snapshot.lock().ok().and_then(|guard| {
-                                guard.as_ref().and_then(|snap| snap.nsr_trace_root)
-                            })
-                        })
-                        .unwrap_or_else(|| Digest32::new([0u8; 32]));
                     if let Some(ssm_output) = self.tick_ssm(
                         &phase_bus,
                         percept_commit,
                         percept_energy,
                         ncde_energy,
                         spike_root_commit,
-                        spike_max_intensity,
                         spike_counts_ssm,
                         b_q15_bias,
                         drift_score,
                         surprise_score,
-                        jepa_surprise,
                         ctx.attention_risk,
-                        nsr_trace_root,
                     ) {
                         ctx.ssm_output = Some(ssm_output.clone());
                         if let Ok(mut guard) = self.last_ssm_output.lock() {
@@ -3584,6 +3565,7 @@ impl Router {
         let weights = self.apply_ncde_attention_bias(weights);
         let weights = self.apply_ssm_attention_bias(weights, ctx.ssm_attention_gain);
         let weights = self.apply_coupling_attention_bias(weights);
+        let weights = self.enforce_ssm_attention_dominance(weights, ctx.ssm_attention_gain);
         let tcf_cap = self.tcf_attention_cap();
         let memory_cap =
             self.attention_cap_from_memory(ctx.ssm_attention_gain, ctx.lagged_plv, tcf_cap);
@@ -3639,7 +3621,8 @@ impl Router {
         let mut cap = ssm_attention_gain.unwrap_or(tcf_cap).min(tcf_cap);
         if let Some(plv) = lagged_plv {
             if plv < COHERENCE_PLV_LOW {
-                cap = cap.saturating_sub(cap / 5);
+                let plv_penalty_cap = cap.saturating_sub(cap / 5);
+                cap = cap.max(plv_penalty_cap);
             }
         }
         cap
@@ -3914,6 +3897,16 @@ impl Router {
             .map(|output| output.verdict.as_u8())
             .or_else(|| ctx.nsr_report.as_ref().map(|report| report.verdict.as_u8()))
             .unwrap_or(0);
+        let attention_gain =
+            ctx.ssm_output
+                .as_ref()
+                .map(|output| output.ssm_attention_gain)
+                .or_else(|| {
+                    self.last_workspace_snapshot.lock().ok().and_then(|guard| {
+                        guard.as_ref().map(|snapshot| snapshot.ssm_attention_gain)
+                    })
+                })
+                .unwrap_or(0);
         let inputs = TcfInputs::new(
             cycle_id,
             phase_bus.commit,
@@ -3923,6 +3916,7 @@ impl Router {
             ctx.attention_risk,
             ctx.drift_score.unwrap_or(0),
             ctx.surprise_score.unwrap_or(0),
+            attention_gain,
             iit_output.hints_commit,
             iit_output.tighten_sync,
             iit_output.damp_output,
@@ -4076,6 +4070,25 @@ impl Router {
         let combined = weights.gain.max(ssm_attention_gain);
         if combined != weights.gain {
             weights.gain = combined;
+            weights.commit = commit_attention_override(&weights);
+        }
+        weights
+    }
+
+    fn enforce_ssm_attention_dominance(
+        &self,
+        mut weights: AttentionWeights,
+        ssm_attention_gain: Option<u16>,
+    ) -> AttentionWeights {
+        let Some(ssm_attention_gain) = ssm_attention_gain else {
+            return weights;
+        };
+        if ssm_attention_gain == 0 {
+            return weights;
+        }
+        let dominant = ssm_attention_gain.max(weights.gain / 4);
+        if dominant != weights.gain {
+            weights.gain = dominant;
             weights.commit = commit_attention_override(&weights);
         }
         weights
@@ -4589,14 +4602,11 @@ impl Router {
         percept_energy: u16,
         ncde_energy: u16,
         spike_root_commit: Digest32,
-        spike_max_intensity: u16,
         spike_counts: Vec<(SpikeKind, u16)>,
         b_q15_bias: i16,
         drift: u16,
         surprise: u16,
-        jepa_surprise: u16,
         risk: u16,
-        nsr_trace_root: Digest32,
     ) -> Option<SsmOutputs> {
         self.sync_ssm_params();
         let mut modules = self.runtime_modules.lock().ok()?;
@@ -4608,11 +4618,26 @@ impl Router {
         let (coupling_root, coupling_influences) = coupling_outputs
             .map(|outputs| (outputs.influences_root, outputs.influences.clone()))
             .unwrap_or_else(|| (Digest32::new([0u8; 32]), Vec::new()));
-        let sle_bias = self
+        let workspace_snapshot = self
             .last_workspace_snapshot
             .lock()
             .ok()
-            .and_then(|snapshot| snapshot.as_ref().map(|snapshot| snapshot.sle_ssm_bias))
+            .and_then(|snapshot| snapshot.as_ref().cloned());
+        let spike_max_intensity = workspace_snapshot
+            .as_ref()
+            .map(|snapshot| snapshot.spike_max_intensity)
+            .unwrap_or(0);
+        let jepa_surprise = workspace_snapshot
+            .as_ref()
+            .map(|snapshot| snapshot.jepa_surprise)
+            .unwrap_or(0);
+        let nsr_trace_root = workspace_snapshot
+            .as_ref()
+            .and_then(|snapshot| snapshot.nsr_trace_root)
+            .unwrap_or_else(|| Digest32::new([0u8; 32]));
+        let sle_bias = workspace_snapshot
+            .as_ref()
+            .map(|snapshot| snapshot.sle_ssm_bias)
             .unwrap_or(0);
         let tcf_attention_cap = self
             .last_tcf_plan
@@ -6364,6 +6389,7 @@ mod tests {
             800,
             700,
             600,
+            ssm_outputs.ssm_attention_gain,
             iit_outputs.hints_commit,
             iit_outputs.tighten_sync,
             iit_outputs.damp_output,
@@ -6640,14 +6666,11 @@ mod tests {
                 1200,
                 ncde_output.ncde_energy,
                 Digest32::new([2u8; 32]),
-                2400,
                 vec![(SpikeKind::Threat, 3)],
                 0,
                 1000,
                 2000,
                 1500,
-                1500,
-                Digest32::new([7u8; 32]),
             )
             .expect("ssm output");
         {
@@ -6726,14 +6749,11 @@ mod tests {
                 1200,
                 2200,
                 Digest32::new([2u8; 32]),
-                2400,
                 vec![(SpikeKind::Threat, 3)],
                 0,
                 1000,
                 2000,
                 1500,
-                1500,
-                Digest32::new([7u8; 32]),
             )
             .expect("ssm output low");
         let output_high = router_high
@@ -6743,14 +6763,11 @@ mod tests {
                 1200,
                 2200,
                 Digest32::new([2u8; 32]),
-                2400,
                 vec![(SpikeKind::Threat, 3)],
                 0,
                 1000,
                 2000,
                 1500,
-                1500,
-                Digest32::new([7u8; 32]),
             )
             .expect("ssm output high");
 
