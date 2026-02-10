@@ -1,7 +1,7 @@
 use ucf_core::types::{SimTime, Tick, WindowId};
 use ucf_frames::v1::{
-    ChannelCode, ControlFrame, ControlPayload, CorrelationId, DecisionCode, DecisionFrame, Intent,
-    IntentId, IntentKind, IntentType,
+    BrainStimulusKind, BrainStimulusPayload, ChannelCode, ControlFrame, ControlPayload,
+    CorrelationId, DecisionCode, DecisionFrame, Intent, IntentId, IntentKind, IntentType,
 };
 use ucf_policy::{adapter::MockAdapter, errors::PolicyError, gem::Gem, pbm::Pbm};
 
@@ -115,6 +115,30 @@ fn memory_write_bytes_with_allow_writes_memory() {
     assert!(result.is_ok());
     assert_eq!(adapter.mem_writes, 1);
     assert!(adapter.emitted.is_empty());
+}
+
+#[test]
+fn gem_allow_brain_stimulus_emits_spikes() {
+    let ctrl = ControlFrame {
+        time: sim_time(),
+        corr: CorrelationId(6),
+        channel: ChannelCode::BrainStimulus,
+        intent: intent(),
+        payload: ControlPayload::BrainStimulus(BrainStimulusPayload {
+            kind: BrainStimulusKind::SpikeTrain,
+            target: 23,
+            intensity: 77,
+            duration_ms: 25,
+        }),
+    };
+    let decision = DecisionFrame::allow(sim_time(), CorrelationId(6), "allow_brain");
+    let mut adapter = MockAdapter::default();
+
+    let result = Gem::execute(&mut adapter, &ctrl, Some(&decision));
+
+    assert!(result.is_ok());
+    assert_eq!(adapter.brain_spikes().len(), 2);
+    assert_eq!(adapter.take_brain_spike_meta(), Some((2, 23)));
 }
 
 #[test]

@@ -1,8 +1,8 @@
 use ucf_core::types::{SimTime, Tick, WindowId};
-use ucf_ess::v1::{ExperienceKind, ExperienceStore};
+use ucf_ess::v1::{ExperienceKind, ExperiencePayload, ExperienceStore};
 use ucf_frames::v1::{
-    ChannelCode, ControlFrame, ControlPayload, CorrelationId, DecisionFrame, Intent, IntentId,
-    IntentKind,
+    BrainStimulusKind, BrainStimulusPayload, ChannelCode, ControlFrame, ControlPayload,
+    CorrelationId, DecisionFrame, Intent, IntentId, IntentKind,
 };
 use ucf_policy::{adapter::MockAdapter, gem::Gem};
 use ucf_runtime::RuntimeOrchestrator;
@@ -116,4 +116,59 @@ fn gem_allow_path_emits_and_writes_when_invoked_directly() {
 
     assert_eq!(adapter.emitted, vec!["allowed".to_string()]);
     assert_eq!(adapter.mem_writes, 1);
+}
+
+#[test]
+fn orchestrator_appends_note_when_brain_spikes_emitted() {
+    let ctrl = ControlFrame {
+        time: sim_time(),
+        corr: CorrelationId(6),
+        channel: ChannelCode::BrainStimulus,
+        intent: intent(),
+        payload: ControlPayload::BrainStimulus(BrainStimulusPayload {
+            kind: BrainStimulusKind::SpikeTrain,
+            target: 44,
+            intensity: 255,
+            duration_ms: 90,
+        }),
+    };
+
+    let mut orchestrator = RuntimeOrchestrator::new();
+    let mut adapter = MockAdapter::default();
+
+    let _decision = DecisionFrame::allow(sim_time(), CorrelationId(6), "allow_brain");
+    Gem::execute(
+        &mut adapter,
+        &ctrl,
+        Some(&DecisionFrame::allow(
+            sim_time(),
+            CorrelationId(6),
+            "allow_brain",
+        )),
+    )
+    .expect("gem should emit brain spikes");
+
+    let note_text = adapter
+        .take_brain_spike_meta()
+        .map(|(count, dst)| format!("brain_spikes:n={count},dst={dst}"))
+        .expect("meta should exist");
+
+    let eid = orchestrator.ids.next();
+    orchestrator
+        .ess
+        .append(ucf_ess::v1::ExperienceRecord::note(
+            eid, ctrl.time, ctrl.corr, note_text,
+        ))
+        .expect("append note");
+
+    let last = orchestrator
+        .ess
+        .get(orchestrator.ess.len() - 1)
+        .expect("note record");
+    assert_eq!(last.kind, ExperienceKind::Note);
+    if let ExperiencePayload::Text(text) = &last.payload {
+        assert_eq!(text.as_ref(), "brain_spikes:n=8,dst=44");
+    } else {
+        panic!("expected text note payload");
+    }
 }

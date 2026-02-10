@@ -1876,6 +1876,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucf-bluebrain-bridge"
+version = "0.1.0"
+dependencies = [
+ "ucf-brainbus",
+ "ucf-core",
+ "ucf-ess",
+ "ucf-frames",
+]
+
+[[package]]
 name = "ucf-bluebrain-port"
 version = "0.1.0"
 dependencies = [
@@ -2289,6 +2299,8 @@ dependencies = [
 name = "ucf-policy"
 version = "0.1.0"
 dependencies = [
+ "ucf-bluebrain-bridge",
+ "ucf-brainbus",
  "ucf-core",
  "ucf-frames",
 ]
