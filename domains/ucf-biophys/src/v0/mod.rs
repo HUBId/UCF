@@ -9,6 +9,7 @@ mod nsr;
 mod ode;
 mod phase;
 mod spike;
+mod ssm;
 mod synapse;
 
 pub use cde::{CausalGraph, Counterfactual, Edge, Hypothesis, Intervention, VarId};
@@ -25,6 +26,7 @@ pub use nsr::{verify_graph, RuleCfg, VerifyVerdict};
 pub use ode::{clamp01, prod_clear_step, step_euler, Integrator};
 pub use phase::{couple_pair, osc_step, phase_lock, wrap_phase, Osc, PhaseCfg, TAU};
 pub use spike::{spikes_from_ids, ttfs_phase, SpikeCodecCfg, SpikeEvent};
+pub use ssm::{mix_inputs, step as ssm_step, SsmCfg, SsmInputs, SsmOut, SsmState, D as SSM_D};
 pub use synapse::{stp_step, NeuronId, NoPlasticity, PlasticityRule, SynKind, Synapse};
 
 #[cfg(test)]

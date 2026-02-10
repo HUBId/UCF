@@ -14,3 +14,11 @@ pub struct BiophysFrame {
     pub hh_params: BiophysHhParams,
     pub hpa_cortisol: f32,
 }
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SsmFrame {
+    pub now_ms: u64,
+    pub gate: f32,
+    pub norm_l2: f32,
+    pub sparsity: f32,
+}
