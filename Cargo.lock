@@ -2144,6 +2144,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucf-iit-proxy"
+version = "0.1.0"
+dependencies = [
+ "ucf-core",
+ "ucf-ess",
+ "ucf-frames",
+ "ucf-onn",
+]
+
+[[package]]
 name = "ucf-influence"
 version = "0.1.0"
 dependencies = [
@@ -2471,7 +2481,9 @@ dependencies = [
  "ucf-core",
  "ucf-ess",
  "ucf-frames",
+ "ucf-iit-proxy",
  "ucf-neuromod",
+ "ucf-onn",
  "ucf-policy",
 ]
 
