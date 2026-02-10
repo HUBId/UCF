@@ -52,6 +52,21 @@ impl RuntimeOrchestrator {
             return Err(error.into());
         }
 
+        if let Some((count, target)) = adapter.take_brain_spike_meta() {
+            let mut note = format!("brain_spikes:n={count},dst={target}");
+            if note.chars().count() > 120 {
+                note = note.chars().take(120).collect();
+            }
+
+            let eid3 = self.ids.next();
+            self.ess.append(ExperienceRecord::note(
+                eid3,
+                decision.time,
+                decision.corr,
+                note,
+            ))?;
+        }
+
         Ok(decision)
     }
 }

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use ucf_core::types::SimTime;
 
-use crate::v1::{ChannelCode, Intent};
+use crate::v1::{BrainStimulusPayload, ChannelCode, Intent};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct CorrelationId(pub u64);
@@ -20,6 +20,7 @@ pub struct ControlFrame {
 pub enum ControlPayload {
     Text(Arc<str>),
     Bytes(Arc<[u8]>),
+    BrainStimulus(BrainStimulusPayload),
     Empty,
 }
 

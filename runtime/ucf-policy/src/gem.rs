@@ -1,4 +1,5 @@
 use crate::{adapter::ActionAdapter, errors::PolicyError};
+use ucf_bluebrain_bridge::BrainStimulusEncoder;
 use ucf_frames::v1::{ChannelCode, ControlFrame, ControlPayload, DecisionCode, DecisionFrame};
 
 pub struct Gem;
@@ -22,9 +23,11 @@ impl Gem {
                     (ChannelCode::ExternalOutput, _) => {
                         Err(PolicyError::InvalidFrame("payload/channel mismatch"))
                     }
-                    (ChannelCode::BrainStimulus, ControlPayload::Bytes(_))
-                    | (ChannelCode::BrainStimulus, ControlPayload::Empty) => Ok(()),
-                    (ChannelCode::BrainStimulus, ControlPayload::Text(_)) => {
+                    (ChannelCode::BrainStimulus, ControlPayload::BrainStimulus(payload)) => {
+                        let spikes = BrainStimulusEncoder::encode_to_spikes(ctrl, payload);
+                        adapter.emit_brain_spikes(spikes)
+                    }
+                    (ChannelCode::BrainStimulus, _) => {
                         Err(PolicyError::InvalidFrame("payload/channel mismatch"))
                     }
                     (ChannelCode::MemoryWrite, ControlPayload::Bytes(bytes)) => {
