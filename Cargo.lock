@@ -1977,6 +1977,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucf-core"
+version = "0.1.0"
+
+[[package]]
 name = "ucf-coupling"
 version = "0.1.0"
 dependencies = [

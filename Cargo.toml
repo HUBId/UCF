@@ -11,6 +11,7 @@ members = [
     "protocol/crates/ucf-protocol",
     "chip4",
     "core/crates/ucf-types",
+    "core/ucf-core",
     "core/crates/ucf-workspace",
     "core/crates/ucf-ai-port",
     "core/crates/ucf-sle",
