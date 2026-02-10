@@ -272,3 +272,50 @@ fn coherence_feedback_adjusts_noise_and_dopamine_by_state() {
     apply_coherence_feedback(&mut field, 0.9, CoherenceState::Stable);
     assert!(field.noise.get() < noise_after_fragmenting);
 }
+
+#[test]
+fn cde_cycle_detection_rejects_strong_cycle() {
+    use super::{CausalGraph, Edge};
+
+    let mut g = CausalGraph::default();
+    g.upsert_hypothesis(Edge { from: 1, to: 2 }, 1, 0.3);
+    g.upsert_hypothesis(Edge { from: 2, to: 3 }, 2, 0.3);
+    g.upsert_hypothesis(Edge { from: 3, to: 1 }, 3, 0.3);
+
+    assert!(!g.is_acyclic());
+}
+
+#[test]
+fn nsr_verify_rejects_cyclic_graph() {
+    use super::{verify_graph, CausalGraph, Edge, RuleCfg, VerifyVerdict};
+
+    let mut g = CausalGraph::default();
+    g.upsert_hypothesis(Edge { from: 1, to: 2 }, 1, 0.2);
+    g.upsert_hypothesis(Edge { from: 2, to: 3 }, 2, 0.2);
+    g.upsert_hypothesis(Edge { from: 3, to: 1 }, 3, 0.2);
+
+    let (verdict, ratio) = verify_graph(&g, RuleCfg::default());
+    assert_eq!(verdict, VerifyVerdict::Rejected);
+    assert_eq!(ratio, 0.0);
+}
+
+#[test]
+fn cde_intervention_simulation_is_deterministic_and_sorted() {
+    use super::{CausalGraph, Edge, Intervention};
+
+    let mut g = CausalGraph::default();
+    g.upsert_hypothesis(Edge { from: 5, to: 9 }, 1, 0.4);
+    g.upsert_hypothesis(Edge { from: 5, to: 2 }, 2, 0.1);
+    g.upsert_hypothesis(Edge { from: 4, to: 7 }, 3, 0.4);
+
+    let cf = g.simulate_intervention(Intervention {
+        var: 5,
+        set_to: 0.8,
+    });
+
+    assert_eq!(cf.affected.len(), 2);
+    assert_eq!(cf.affected[0].0, 2);
+    assert!((cf.affected[0].1 - 0.48).abs() < 1e-5);
+    assert_eq!(cf.affected[1].0, 9);
+    assert!((cf.affected[1].1 - 0.72).abs() < 1e-5);
+}

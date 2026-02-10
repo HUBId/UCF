@@ -56,7 +56,7 @@ pub fn brain_input_from_signal_frame(
     now_ms: u64,
 ) -> BrainInput {
     let normalized_frame = normalize_signal_frame(frame);
-    let (trace_fail_present, trace_pass_present) = trace_flags_from_frame(&normalized_frame);
+    let (trace_fail_present, _trace_pass_present) = trace_flags_from_frame(&normalized_frame);
     let BaselineContext {
         cbv,
         cbv_present,
@@ -145,7 +145,8 @@ pub fn brain_input_from_signal_frame(
         sc_replay_planned_present,
         pprf_cooldown_class: BrainCooldown::Base,
         trace_fail_present,
-        trace_pass_present,
+        // Trace pass is informational-only for now and must not modulate control behavior.
+        trace_pass_present: false,
         trace_fail_streak: rsv.trace_fail_streak,
     }
 }
