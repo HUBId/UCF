@@ -1,6 +1,9 @@
-use ucf_core::types::SimTime;
+use std::collections::BTreeMap;
 
-use crate::v1::{EssError, ExperienceId, ExperienceRecord};
+use ucf_core::types::SimTime;
+use ucf_frames::v1::{CorrelationId, DecisionFrame};
+
+use crate::v1::{EssError, ExperienceId, ExperiencePayload, ExperienceRecord};
 
 #[allow(clippy::len_without_is_empty)]
 pub trait ExperienceStore {
@@ -8,12 +11,16 @@ pub trait ExperienceStore {
     fn len(&self) -> usize;
     fn get(&self, idx: usize) -> Option<&ExperienceRecord>;
     fn tail_time(&self) -> Option<SimTime>;
+    fn indices_by_corr(&self, corr: CorrelationId) -> &[usize];
+    fn trail_by_corr(&self, corr: CorrelationId) -> Vec<&ExperienceRecord>;
+    fn last_decision_for_corr(&self, corr: CorrelationId) -> Option<&DecisionFrame>;
 }
 
 #[derive(Debug, Default)]
 pub struct InMemoryEss {
     records: Vec<ExperienceRecord>,
     last_time: Option<SimTime>,
+    by_corr: BTreeMap<CorrelationId, Vec<usize>>,
 }
 
 impl InMemoryEss {
@@ -36,8 +43,11 @@ impl ExperienceStore for InMemoryEss {
             }
         }
 
+        let rec_idx = self.records.len();
+        let rec_corr = rec.corr;
         self.last_time = Some(rec.time);
         self.records.push(rec);
+        self.by_corr.entry(rec_corr).or_default().push(rec_idx);
         Ok(())
     }
 
@@ -51,6 +61,29 @@ impl ExperienceStore for InMemoryEss {
 
     fn tail_time(&self) -> Option<SimTime> {
         self.last_time
+    }
+
+    fn indices_by_corr(&self, corr: CorrelationId) -> &[usize] {
+        const EMPTY: [usize; 0] = [];
+        self.by_corr.get(&corr).map_or(&EMPTY, Vec::as_slice)
+    }
+
+    fn trail_by_corr(&self, corr: CorrelationId) -> Vec<&ExperienceRecord> {
+        self.indices_by_corr(corr)
+            .iter()
+            .filter_map(|idx| self.records.get(*idx))
+            .collect()
+    }
+
+    fn last_decision_for_corr(&self, corr: CorrelationId) -> Option<&DecisionFrame> {
+        self.indices_by_corr(corr)
+            .iter()
+            .rev()
+            .filter_map(|idx| self.records.get(*idx))
+            .find_map(|record| match &record.payload {
+                ExperiencePayload::Decision(decision) => Some(decision),
+                _ => None,
+            })
     }
 }
 
