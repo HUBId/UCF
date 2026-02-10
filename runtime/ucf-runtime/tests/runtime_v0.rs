@@ -210,3 +210,30 @@ fn orchestrator_tick_emits_snn_spikes_to_brainbus_sink() {
     assert!(orchestrator.last_snn_spike_count() >= 1);
     assert!(!adapter.brain_spikes().is_empty());
 }
+
+#[test]
+fn orchestrator_tick_updates_biophys_frame() {
+    let ctrl = ControlFrame::new_text(
+        SimTime {
+            tick: Tick::new(30),
+            window: WindowId::new(0),
+        },
+        CorrelationId(9),
+        ChannelCode::InternalThought,
+        intent(),
+        "biophys",
+    );
+    let mut orchestrator = RuntimeOrchestrator::new();
+    let mut adapter = MockAdapter::default();
+
+    orchestrator
+        .ingest_and_process(&mut adapter, ctrl)
+        .expect("orchestration should succeed");
+
+    let biophys = orchestrator
+        .last_biophys_frame()
+        .expect("biophys frame should be present");
+    assert_eq!(biophys.now_ms, 30);
+    assert!(biophys.field[0] > 0.1);
+    assert!(biophys.field[1] < 0.1);
+}

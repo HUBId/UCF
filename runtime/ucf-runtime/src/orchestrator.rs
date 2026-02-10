@@ -1,6 +1,12 @@
 use crate::errors::RuntimeError;
+use ucf_biophys::v0::{
+    modulate_hh, FieldEvent, FieldEventKind, FieldUpdateCfg, HhParams, ModulationCfg,
+    NeuromodulatorField as BiophysField,
+};
 use ucf_ess::v1::{ExperienceRecord, ExperienceStore, IdAllocator, InMemoryEss};
-use ucf_frames::v1::{ControlFrame, DecisionFrame, NeuromodulatorSnapshot};
+use ucf_frames::v1::{
+    BiophysFrame, BiophysHhParams, ControlFrame, DecisionFrame, NeuromodulatorSnapshot,
+};
 use ucf_iit_proxy::v0::{
     IitConfig, IitMonitor, MOD_BLUE, MOD_GEIST, MOD_JEPA, MOD_NSR, MOD_PBM, MOD_SSM,
 };
@@ -21,6 +27,10 @@ pub struct RuntimeOrchestrator {
     snn_encode_cfg: SnnEncodeCfg,
     snn_tick_counter: u64,
     last_snn_spike_count: usize,
+    biophys_field: BiophysField,
+    biophys_cfg: FieldUpdateCfg,
+    biophys_mod_cfg: ModulationCfg,
+    last_biophys_frame: Option<BiophysFrame>,
 }
 
 impl RuntimeOrchestrator {
@@ -42,6 +52,10 @@ impl RuntimeOrchestrator {
             snn_encode_cfg: SnnEncodeCfg::default(),
             snn_tick_counter: 0,
             last_snn_spike_count: 0,
+            biophys_field: BiophysField::default(),
+            biophys_cfg: FieldUpdateCfg::default(),
+            biophys_mod_cfg: ModulationCfg::default(),
+            last_biophys_frame: None,
         }
     }
 
@@ -49,11 +63,17 @@ impl RuntimeOrchestrator {
         self.last_snn_spike_count
     }
 
+    pub fn last_biophys_frame(&self) -> Option<BiophysFrame> {
+        self.last_biophys_frame
+    }
+
     pub fn ingest_and_process<A: ActionAdapter>(
         &mut self,
         adapter: &mut A,
         ctrl: ControlFrame,
     ) -> Result<DecisionFrame, RuntimeError> {
+        self.update_biophys_tick(ctrl.time.tick.get());
+
         let inputs = NeuromodInputs::baseline();
         self.neuromod_scheduler
             .advance(ctrl.time.tick.get(), &mut self.neuromod_field, inputs);
@@ -71,6 +91,8 @@ impl RuntimeOrchestrator {
         ctrl: ControlFrame,
         decision: DecisionFrame,
     ) -> Result<DecisionFrame, RuntimeError> {
+        self.update_biophys_tick(ctrl.time.tick.get());
+
         let inputs = NeuromodInputs::baseline();
         self.neuromod_scheduler
             .advance(ctrl.time.tick.get(), &mut self.neuromod_field, inputs);
@@ -78,6 +100,50 @@ impl RuntimeOrchestrator {
         let phi = self.iit_monitor.compute(&self.onn);
         let snapshot = self.neuromod_field.snapshot();
         self.ingest_with_decision_and_snapshot(adapter, ctrl, decision, snapshot, phi)
+    }
+
+    fn update_biophys_tick(&mut self, now_ms: u64) {
+        let baseline = BiophysField::default();
+        self.biophys_field = self
+            .biophys_field
+            .decay_towards(baseline, 0.001, self.biophys_cfg);
+
+        if now_ms.is_multiple_of(10) {
+            self.biophys_field = self.biophys_field.apply_event(
+                FieldEvent {
+                    kind: FieldEventKind::Reward,
+                    magnitude: ucf_biophys::v0::Unit01::new(0.4),
+                },
+                self.biophys_cfg,
+            );
+        }
+
+        if now_ms.is_multiple_of(15) {
+            self.biophys_field = self.biophys_field.apply_event(
+                FieldEvent {
+                    kind: FieldEventKind::Stress,
+                    magnitude: ucf_biophys::v0::Unit01::new(0.3),
+                },
+                self.biophys_cfg,
+            );
+        }
+
+        let hh = modulate_hh(
+            HhParams::default(),
+            self.biophys_field,
+            self.biophys_mod_cfg,
+        );
+        self.last_biophys_frame = Some(BiophysFrame {
+            now_ms,
+            field: ucf_biophys::v0::summarize(self.biophys_field),
+            hh_params: BiophysHhParams {
+                g_na: hh.g_na,
+                g_k: hh.g_k,
+                g_l: hh.g_l,
+                threshold_shift_mv: hh.threshold_shift_mv,
+                max_firing_hz: hh.max_firing_hz,
+            },
+        });
     }
 
     fn deterministic_features(&mut self) -> [FeatureEvent; 3] {

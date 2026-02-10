@@ -1,3 +1,4 @@
+mod biophys;
 mod brain;
 mod codes;
 mod control;
@@ -7,6 +8,7 @@ mod neuromod;
 mod phi;
 mod stimulus;
 
+pub use biophys::{BiophysFrame, BiophysHhParams};
 pub use brain::{BrainFrame, BrainSignal};
 pub use codes::{ChannelCode, DecisionCode, DenyReasonCode};
 pub use control::{ControlFrame, ControlPayload, CorrelationId};

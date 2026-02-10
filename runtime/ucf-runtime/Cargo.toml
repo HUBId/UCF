@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 ucf-core = { path = "../../core/ucf-core" }
 ucf-frames = { path = "../../domains/ucf-frames" }
+ucf-biophys = { path = "../../domains/ucf-biophys" }
 ucf-policy = { path = "../ucf-policy" }
 ucf-ess = { path = "../../domains/ucf-ess" }
 ucf-neuromod = { path = "../../domains/ucf-neuromod" }
