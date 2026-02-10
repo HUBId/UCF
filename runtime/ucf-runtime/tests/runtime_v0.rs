@@ -237,3 +237,50 @@ fn orchestrator_tick_updates_biophys_frame() {
     assert!(biophys.field[0] > 0.1);
     assert!(biophys.field[1] < 0.1);
 }
+
+#[test]
+fn orchestrator_hpa_cortisol_differs_between_baseline_and_stress_ticks() {
+    let mut orchestrator = RuntimeOrchestrator::new();
+    let mut adapter = MockAdapter::default();
+
+    let baseline_ctrl = ControlFrame::new_text(
+        SimTime {
+            tick: Tick::new(14),
+            window: WindowId::new(0),
+        },
+        CorrelationId(10),
+        ChannelCode::InternalThought,
+        intent(),
+        "baseline",
+    );
+
+    orchestrator
+        .ingest_and_process(&mut adapter, baseline_ctrl)
+        .expect("baseline tick should succeed");
+
+    let baseline = orchestrator
+        .last_biophys_frame()
+        .expect("biophys frame should exist at baseline");
+
+    let stress_ctrl = ControlFrame::new_text(
+        SimTime {
+            tick: Tick::new(15),
+            window: WindowId::new(0),
+        },
+        CorrelationId(11),
+        ChannelCode::InternalThought,
+        intent(),
+        "stress",
+    );
+
+    orchestrator
+        .ingest_and_process(&mut adapter, stress_ctrl)
+        .expect("stress tick should succeed");
+
+    let stress = orchestrator
+        .last_biophys_frame()
+        .expect("biophys frame should exist at stress tick");
+
+    assert_ne!(baseline.hpa_cortisol, stress.hpa_cortisol);
+    assert_eq!(stress.now_ms, 15);
+}

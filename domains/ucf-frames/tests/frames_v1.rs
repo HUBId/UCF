@@ -107,6 +107,7 @@ fn biophys_frame_can_be_constructed() {
             threshold_shift_mv: 0.0,
             max_firing_hz: 200.0,
         },
+        hpa_cortisol: 0.1,
     };
 
     assert_eq!(frame.now_ms, 42);

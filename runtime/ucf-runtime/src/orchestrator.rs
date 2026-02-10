@@ -1,7 +1,7 @@
 use crate::errors::RuntimeError;
 use ucf_biophys::v0::{
-    modulate_hh, FieldEvent, FieldEventKind, FieldUpdateCfg, HhParams, ModulationCfg,
-    NeuromodulatorField as BiophysField,
+    hpa_step, modulate_hh, FieldEvent, FieldEventKind, FieldUpdateCfg, HhParams, HpaCfg, HpaState,
+    ModulationCfg, NeuromodulatorField as BiophysField,
 };
 use ucf_ess::v1::{ExperienceRecord, ExperienceStore, IdAllocator, InMemoryEss};
 use ucf_frames::v1::{
@@ -30,6 +30,9 @@ pub struct RuntimeOrchestrator {
     biophys_field: BiophysField,
     biophys_cfg: FieldUpdateCfg,
     biophys_mod_cfg: ModulationCfg,
+    hpa_state: HpaState,
+    hpa_cfg: HpaCfg,
+    last_biophys_tick_ms: Option<u64>,
     last_biophys_frame: Option<BiophysFrame>,
 }
 
@@ -55,6 +58,9 @@ impl RuntimeOrchestrator {
             biophys_field: BiophysField::default(),
             biophys_cfg: FieldUpdateCfg::default(),
             biophys_mod_cfg: ModulationCfg::default(),
+            hpa_state: HpaState::default(),
+            hpa_cfg: HpaCfg::default(),
+            last_biophys_tick_ms: None,
             last_biophys_frame: None,
         }
     }
@@ -103,10 +109,16 @@ impl RuntimeOrchestrator {
     }
 
     fn update_biophys_tick(&mut self, now_ms: u64) {
+        let dt_s = self
+            .last_biophys_tick_ms
+            .map(|last| now_ms.saturating_sub(last) as f32 / 1000.0)
+            .unwrap_or(0.001);
+        self.last_biophys_tick_ms = Some(now_ms);
+
         let baseline = BiophysField::default();
         self.biophys_field = self
             .biophys_field
-            .decay_towards(baseline, 0.001, self.biophys_cfg);
+            .decay_towards(baseline, dt_s, self.biophys_cfg);
 
         if now_ms.is_multiple_of(10) {
             self.biophys_field = self.biophys_field.apply_event(
@@ -128,14 +140,14 @@ impl RuntimeOrchestrator {
             );
         }
 
-        let hh = modulate_hh(
-            HhParams::default(),
-            self.biophys_field,
-            self.biophys_mod_cfg,
-        );
+        let stress = if now_ms.is_multiple_of(15) { 0.7 } else { 0.05 };
+        self.hpa_state = hpa_step(self.hpa_state, stress, dt_s, self.hpa_cfg);
+
+        let field = self.biophys_field.with_hpa(self.hpa_state);
+        let hh = modulate_hh(HhParams::default(), field, self.biophys_mod_cfg);
         self.last_biophys_frame = Some(BiophysFrame {
             now_ms,
-            field: ucf_biophys::v0::summarize(self.biophys_field),
+            field: ucf_biophys::v0::summarize(field),
             hh_params: BiophysHhParams {
                 g_na: hh.g_na,
                 g_k: hh.g_k,
@@ -143,6 +155,7 @@ impl RuntimeOrchestrator {
                 threshold_shift_mv: hh.threshold_shift_mv,
                 max_firing_hz: hh.max_firing_hz,
             },
+            hpa_cortisol: self.hpa_state.cortisol,
         });
     }
 

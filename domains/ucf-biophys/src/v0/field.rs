@@ -1,3 +1,5 @@
+use crate::v0::HpaState;
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Unit01(pub f32);
 
@@ -122,6 +124,14 @@ impl NeuromodulatorField {
         }
     }
 
+    pub fn with_hpa(self, hpa: HpaState) -> NeuromodulatorField {
+        let cortisol = Unit01::new(hpa.cortisol).get();
+        NeuromodulatorField {
+            serotonin: Unit01::new(self.serotonin.get() - 0.2 * cortisol),
+            gaba: Unit01::new(self.gaba.get() + 0.2 * cortisol),
+            ..self
+        }
+    }
     pub fn apply_event(self, event: FieldEvent, cfg: FieldUpdateCfg) -> Self {
         let mag = event.magnitude.get();
         let mut next = self;
