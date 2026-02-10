@@ -1,15 +1,15 @@
 use crate::errors::RuntimeError;
 use ucf_biophys::v0::{
     apply_coherence_feedback, classify, compute_integration, couple_pair, hpa_step, modulate_hh,
-    osc_step, phase_lock, spikes_from_ids, ttfs_phase, verify_graph, CausalGraph, CoherenceState,
-    Edge, FieldEvent, FieldEventKind, FieldUpdateCfg, HhParams, HpaCfg, HpaState, IITCfg,
-    IITInputs, IITState, Microcircuit, ModulationCfg, NeuromodulatorField as BiophysField, Osc,
-    PhaseCfg, RuleCfg, SpikeCodecCfg, VerifyVerdict,
+    osc_step, phase_lock, spikes_from_ids, ssm_step, ttfs_phase, verify_graph, CausalGraph,
+    CoherenceState, Edge, FieldEvent, FieldEventKind, FieldUpdateCfg, HhParams, HpaCfg, HpaState,
+    IITCfg, IITInputs, IITState, Microcircuit, ModulationCfg, NeuromodulatorField as BiophysField,
+    Osc, PhaseCfg, RuleCfg, SpikeCodecCfg, SsmCfg, SsmInputs, SsmState, VerifyVerdict, SSM_D,
 };
 use ucf_ess::v1::{ExperienceRecord, ExperienceStore, IdAllocator, InMemoryEss};
 use ucf_frames::v1::{
     BiophysFrame, BiophysHhParams, CdeFrame, ControlFrame, DecisionFrame, IitFrame,
-    MicrocircuitFrame, NeuromodulatorSnapshot, NsrFrame, PhaseFrame,
+    MicrocircuitFrame, NeuromodulatorSnapshot, NsrFrame, PhaseFrame, SsmFrame,
 };
 use ucf_iit_proxy::v0::{
     IitConfig, IitMonitor, MOD_BLUE, MOD_GEIST, MOD_JEPA, MOD_NSR, MOD_PBM, MOD_SSM,
@@ -24,6 +24,17 @@ struct PhaseBus {
     osc_jepa: Osc,
     osc_nsr: Osc,
     osc_microcircuit: Osc,
+}
+
+#[derive(Clone, Debug)]
+struct WorkingContext {
+    ctx: [f32; SSM_D],
+}
+
+impl Default for WorkingContext {
+    fn default() -> Self {
+        Self { ctx: [0.0; SSM_D] }
+    }
 }
 
 pub struct RuntimeOrchestrator {
@@ -58,6 +69,11 @@ pub struct RuntimeOrchestrator {
     nsr_cfg: RuleCfg,
     last_cde_frame: Option<CdeFrame>,
     last_nsr_frame: Option<NsrFrame>,
+    ssm_state: SsmState,
+    ssm_cfg: SsmCfg,
+    ssm_last_u: [f32; SSM_D],
+    working_context: WorkingContext,
+    last_ssm_frame: Option<SsmFrame>,
 }
 
 impl RuntimeOrchestrator {
@@ -99,6 +115,11 @@ impl RuntimeOrchestrator {
             nsr_cfg: RuleCfg::default(),
             last_cde_frame: None,
             last_nsr_frame: None,
+            ssm_state: SsmState::default(),
+            ssm_cfg: SsmCfg::default(),
+            ssm_last_u: [0.0; SSM_D],
+            working_context: WorkingContext::default(),
+            last_ssm_frame: None,
         }
     }
 
@@ -128,6 +149,10 @@ impl RuntimeOrchestrator {
 
     pub fn last_nsr_frame(&self) -> Option<NsrFrame> {
         self.last_nsr_frame
+    }
+
+    pub fn last_ssm_frame(&self) -> Option<SsmFrame> {
+        self.last_ssm_frame
     }
 
     pub fn force_causal_cycle_for_test(&mut self, now_ms: u64) {
@@ -332,6 +357,33 @@ impl RuntimeOrchestrator {
             CoherenceState::Fragmenting => 2,
         };
 
+        let attention = attention_from_coherence(coherence_state);
+
+        let mut u = self.ssm_last_u;
+        for value in &mut u[6..] {
+            *value *= 0.95;
+        }
+        u[0] = self.iit_state.integration_ema.clamp(0.0, 1.0);
+        u[1] = lock_nsr_jepa.clamp(0.0, 1.0);
+        u[2] = lock_micro_nsr.clamp(0.0, 1.0);
+        u[3] = (spike_rate_hz / self.iit_cfg.spike_rate_norm_hz).clamp(0.0, 1.0);
+        u[4] = field.dopamine.get();
+        u[5] = field.serotonin.get();
+
+        let ssm_out = ssm_step(
+            &mut self.ssm_state,
+            &u,
+            SsmInputs {
+                attention,
+                integration: self.iit_state.integration_ema.clamp(0.0, 1.0),
+                dopamine: field.dopamine.get(),
+                noise: (1.0 - lock_nsr_jepa).clamp(0.0, 1.0),
+            },
+            self.ssm_cfg,
+        );
+        self.ssm_last_u = u;
+        self.working_context.ctx = ssm_out.ctx;
+
         self.last_biophys_frame = Some(BiophysFrame {
             now_ms,
             field: ucf_biophys::v0::summarize(field),
@@ -357,6 +409,12 @@ impl RuntimeOrchestrator {
             micro_phase: self.phase_bus.osc_microcircuit.phase,
             lock_nsr_jepa,
             lock_micro_nsr,
+        });
+        self.last_ssm_frame = Some(SsmFrame {
+            now_ms,
+            gate: ssm_out.gate,
+            norm_l2: ssm_out.norm_l2,
+            sparsity: ssm_out.sparsity,
         });
         self.last_iit_frame = Some(IitFrame {
             now_ms,
@@ -492,5 +550,13 @@ fn bucket_value(value: f32) -> f32 {
         0.5
     } else {
         1.0
+    }
+}
+
+fn attention_from_coherence(state: CoherenceState) -> f32 {
+    match state {
+        CoherenceState::Stable => 0.55,
+        CoherenceState::Drifting => 0.45,
+        CoherenceState::Fragmenting => 0.35,
     }
 }

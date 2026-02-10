@@ -319,3 +319,101 @@ fn cde_intervention_simulation_is_deterministic_and_sorted() {
     assert_eq!(cf.affected[1].0, 9);
     assert!((cf.affected[1].1 - 0.72).abs() < 1e-5);
 }
+
+#[test]
+fn ssm_gate_rises_with_stronger_inputs() {
+    let u = [0.0; super::SSM_D];
+    let cfg = super::SsmCfg::default();
+
+    let mut low = super::SsmState::default();
+    let out_low = super::ssm_step(
+        &mut low,
+        &u,
+        super::SsmInputs {
+            attention: 0.1,
+            integration: 0.1,
+            dopamine: 0.1,
+            noise: 0.0,
+        },
+        cfg,
+    );
+
+    let mut high = super::SsmState::default();
+    let out_high = super::ssm_step(
+        &mut high,
+        &u,
+        super::SsmInputs {
+            attention: 0.9,
+            integration: 0.9,
+            dopamine: 0.9,
+            noise: 0.0,
+        },
+        cfg,
+    );
+
+    assert!(out_high.gate > out_low.gate);
+}
+
+#[test]
+fn ssm_noise_slows_state_updates() {
+    let mut u = [0.0; super::SSM_D];
+    u[0] = 1.0;
+    let cfg = super::SsmCfg::default();
+
+    let mut low_noise = super::SsmState::default();
+    let out_low_noise = super::ssm_step(
+        &mut low_noise,
+        &u,
+        super::SsmInputs {
+            attention: 1.0,
+            integration: 1.0,
+            dopamine: 1.0,
+            noise: 0.0,
+        },
+        cfg,
+    );
+
+    let mut high_noise = super::SsmState::default();
+    let out_high_noise = super::ssm_step(
+        &mut high_noise,
+        &u,
+        super::SsmInputs {
+            attention: 1.0,
+            integration: 1.0,
+            dopamine: 1.0,
+            noise: 0.9,
+        },
+        cfg,
+    );
+
+    assert!(out_high_noise.ctx[0] < out_low_noise.ctx[0]);
+}
+
+#[test]
+fn ssm_norm_and_sparsity_are_reported() {
+    let mut state = super::SsmState {
+        x: [0.0; super::SSM_D],
+    };
+    state.x[0] = 3.0;
+    state.x[1] = 4.0;
+
+    let out = super::ssm_step(
+        &mut state,
+        &[0.0; super::SSM_D],
+        super::SsmInputs {
+            attention: 0.0,
+            integration: 0.0,
+            dopamine: 0.0,
+            noise: 1.0,
+        },
+        super::SsmCfg {
+            alpha: 1.0,
+            beta: 0.0,
+            leak: 0.0,
+            gate_k: 1.0,
+        },
+    );
+
+    assert!((out.norm_l2 - 5.0).abs() < 1e-6);
+    assert!((out.sparsity - ((super::SSM_D - 2) as f32 / super::SSM_D as f32)).abs() < 1e-6);
+}

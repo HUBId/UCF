@@ -438,3 +438,66 @@ fn forced_cycle_rejects_nsr_and_forces_fragmenting_coherence() {
         .expect("iit frame should be present");
     assert_eq!(iit.state, 2);
 }
+
+#[test]
+fn orchestrator_tick_emits_ssm_frame_each_tick() {
+    let mut orchestrator = RuntimeOrchestrator::new();
+    let mut adapter = MockAdapter::default();
+
+    for tick in 130..136 {
+        let ctrl = ControlFrame::new_text(
+            SimTime {
+                tick: Tick::new(tick),
+                window: WindowId::new(0),
+            },
+            CorrelationId(500 + tick),
+            ChannelCode::InternalThought,
+            intent(),
+            "ssm",
+        );
+
+        orchestrator
+            .ingest_and_process(&mut adapter, ctrl)
+            .expect("ssm tick should succeed");
+
+        let frame = orchestrator
+            .last_ssm_frame()
+            .expect("ssm frame should be present");
+        assert_eq!(frame.now_ms, tick);
+        assert!((0.0..=1.0).contains(&frame.gate));
+    }
+}
+
+#[test]
+fn ssm_gate_is_lower_for_fragmenting_than_stable_given_same_inputs() {
+    let cfg = ucf_biophys::v0::SsmCfg::default();
+    let mut stable_state = ucf_biophys::v0::SsmState::default();
+    let mut fragmenting_state = ucf_biophys::v0::SsmState::default();
+    let u = [0.5; ucf_biophys::v0::SSM_D];
+
+    let stable = ucf_biophys::v0::ssm_step(
+        &mut stable_state,
+        &u,
+        ucf_biophys::v0::SsmInputs {
+            attention: 0.55,
+            integration: 0.5,
+            dopamine: 0.5,
+            noise: 0.2,
+        },
+        cfg,
+    );
+
+    let fragmenting = ucf_biophys::v0::ssm_step(
+        &mut fragmenting_state,
+        &u,
+        ucf_biophys::v0::SsmInputs {
+            attention: 0.35,
+            integration: 0.5,
+            dopamine: 0.5,
+            noise: 0.2,
+        },
+        cfg,
+    );
+
+    assert!(fragmenting.gate < stable.gate);
+}

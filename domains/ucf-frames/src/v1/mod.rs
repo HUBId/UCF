@@ -13,7 +13,7 @@ mod phase;
 mod phi;
 mod stimulus;
 
-pub use biophys::{BiophysFrame, BiophysHhParams};
+pub use biophys::{BiophysFrame, BiophysHhParams, SsmFrame};
 pub use brain::{BrainFrame, BrainSignal};
 pub use cde::CdeFrame;
 pub use codes::{ChannelCode, DecisionCode, DenyReasonCode};
