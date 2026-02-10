@@ -7,4 +7,5 @@
 
 ## Architecture
 - See `docs/architecture/COHERENCE_LOOP.md`.
+- See `docs/architecture/DELTA_ONN_SNN.md` (ONN/SNN delta spec).
 - See `docs/architecture/MODULE_COMMITS.md`.

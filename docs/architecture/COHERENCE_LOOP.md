@@ -1,5 +1,8 @@
 # Dynamic Coherence Loop (Canonical)
 
+## 0. Related delta specification
+For ONN/SNN-specific architecture deltas and remaining implementation work, see `docs/architecture/DELTA_ONN_SNN.md`.
+
 ## 1. Purpose & scope (UCF core loop, timing backbone)
 This document codifies the canonical dynamic coherence loop for UCF. It defines the deterministic timing backbone that governs how perception, memory, attention, learning, and structural adaptation interact per cycle. The intent is to make the loop auditable and replayable by tying every stage to explicit commitments and update modes rather than emergent or stochastic behavior.【F:core/crates/ucf-router/src/lib.rs†L700-L840】【F:core/crates/ucf-router/src/lib.rs†L3081-L3173】
 
