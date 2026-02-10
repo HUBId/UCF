@@ -1,4 +1,4 @@
-use ucf_brainbus::v0::Spike;
+use ucf_brainbus::v0::{OscPhase, Spike};
 use ucf_core::types::Tick;
 use ucf_frames::v1::{BrainStimulusPayload, ControlFrame};
 
@@ -21,6 +21,13 @@ impl BrainStimulusEncoder {
                 phase: None,
             })
             .collect()
+    }
+
+    pub fn attach_phase(spikes: &mut [Spike], cycle_hz: f32, theta_deg: f32) {
+        let phase = OscPhase::new(cycle_hz, theta_deg);
+        for spike in spikes {
+            spike.phase = Some(phase);
+        }
     }
 }
 
@@ -69,5 +76,32 @@ mod tests {
         assert_eq!(first[0].time.tick.get(), 100);
         assert_eq!(first[1].time.tick.get(), 101);
         assert_eq!(first[2].time.tick.get(), 102);
+    }
+
+    #[test]
+    fn attach_phase_normalizes_theta() {
+        let ctrl = ControlFrame {
+            time: sim_time(),
+            corr: CorrelationId(7),
+            channel: ChannelCode::BrainStimulus,
+            intent: intent(),
+            payload: ControlPayload::Empty,
+        };
+        let payload = BrainStimulusPayload {
+            kind: BrainStimulusKind::SpikeTrain,
+            target: 42,
+            intensity: 300,
+            duration_ms: 20,
+        };
+
+        let mut spikes = BrainStimulusEncoder::encode_to_spikes(&ctrl, &payload);
+        BrainStimulusEncoder::attach_phase(&mut spikes, 40.0, -90.0);
+
+        assert_eq!(spikes.len(), 2);
+        for spike in spikes {
+            let phase = spike.phase.expect("phase must be set");
+            assert_eq!(phase.cycle_hz, 40.0);
+            assert!((phase.theta_deg - 270.0).abs() < 1e-6);
+        }
     }
 }
