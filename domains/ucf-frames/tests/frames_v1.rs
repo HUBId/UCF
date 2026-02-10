@@ -1,7 +1,8 @@
 use ucf_core::types::{SimTime, Tick, WindowId};
 use ucf_frames::v1::{
-    ChannelCode, ControlFrame, ControlPayload, CorrelationId, DecisionCode, DecisionFrame,
-    DenyReasonCode, Intent, IntentId, IntentKind, IntentType, ReasonCode,
+    BiophysFrame, BiophysHhParams, ChannelCode, ControlFrame, ControlPayload, CorrelationId,
+    DecisionCode, DecisionFrame, DenyReasonCode, Intent, IntentId, IntentKind, IntentType,
+    ReasonCode,
 };
 
 #[test]
@@ -92,4 +93,22 @@ fn decision_defaults_include_intent_and_reason_code() {
 
     assert_eq!(frame.intent, IntentType::Unknown);
     assert_eq!(frame.reason_code, ReasonCode("allow_default"));
+}
+
+#[test]
+fn biophys_frame_can_be_constructed() {
+    let frame = BiophysFrame {
+        now_ms: 42,
+        field: [0.1; 7],
+        hh_params: BiophysHhParams {
+            g_na: 120.0,
+            g_k: 36.0,
+            g_l: 0.3,
+            threshold_shift_mv: 0.0,
+            max_firing_hz: 200.0,
+        },
+    };
+
+    assert_eq!(frame.now_ms, 42);
+    assert_eq!(frame.field.len(), 7);
 }

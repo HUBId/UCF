@@ -149,6 +149,7 @@ members = [
     "crates/replay_evidence",
     "domains/policy-gateway/crates/ucf-policy-gateway",
     "domains/ucf-frames",
+    "domains/ucf-biophys",
     "domains/ucf-brainbus",
     "domains/ucf-snn",
     "domains/ucf-bluebrain-bridge",
