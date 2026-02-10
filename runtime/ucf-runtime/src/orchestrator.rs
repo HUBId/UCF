@@ -1,12 +1,13 @@
 use crate::errors::RuntimeError;
 use ucf_biophys::v0::{
-    hpa_step, modulate_hh, FieldEvent, FieldEventKind, FieldUpdateCfg, HhParams, HpaCfg, HpaState,
-    Microcircuit, ModulationCfg, NeuromodulatorField as BiophysField,
+    couple_pair, hpa_step, modulate_hh, osc_step, phase_lock, spikes_from_ids, ttfs_phase,
+    FieldEvent, FieldEventKind, FieldUpdateCfg, HhParams, HpaCfg, HpaState, Microcircuit,
+    ModulationCfg, NeuromodulatorField as BiophysField, Osc, PhaseCfg, SpikeCodecCfg,
 };
 use ucf_ess::v1::{ExperienceRecord, ExperienceStore, IdAllocator, InMemoryEss};
 use ucf_frames::v1::{
     BiophysFrame, BiophysHhParams, ControlFrame, DecisionFrame, MicrocircuitFrame,
-    NeuromodulatorSnapshot,
+    NeuromodulatorSnapshot, PhaseFrame,
 };
 use ucf_iit_proxy::v0::{
     IitConfig, IitMonitor, MOD_BLUE, MOD_GEIST, MOD_JEPA, MOD_NSR, MOD_PBM, MOD_SSM,
@@ -15,6 +16,13 @@ use ucf_neuromod::v0::{NeuromodInputs, NeuromodScheduler, NeuromodulatorField};
 use ucf_onn::v0::{OnnCore, PhaseDeg};
 use ucf_policy::{adapter::ActionAdapter, gem::Gem, pbm::Pbm};
 use ucf_snn::v0::{encode, to_brainbus, FeatureEvent, SnnEncodeCfg};
+
+#[derive(Clone, Copy, Debug, Default)]
+struct PhaseBus {
+    osc_jepa: Osc,
+    osc_nsr: Osc,
+    osc_microcircuit: Osc,
+}
 
 pub struct RuntimeOrchestrator {
     pub ess: InMemoryEss,
@@ -37,6 +45,10 @@ pub struct RuntimeOrchestrator {
     last_biophys_frame: Option<BiophysFrame>,
     microcircuit: Microcircuit,
     last_microcircuit_frame: Option<MicrocircuitFrame>,
+    phase_bus: PhaseBus,
+    phase_cfg: PhaseCfg,
+    spike_codec_cfg: SpikeCodecCfg,
+    last_phase_frame: Option<PhaseFrame>,
 }
 
 impl RuntimeOrchestrator {
@@ -67,6 +79,10 @@ impl RuntimeOrchestrator {
             last_biophys_frame: None,
             microcircuit: Microcircuit::new_ring(32),
             last_microcircuit_frame: None,
+            phase_bus: PhaseBus::default(),
+            phase_cfg: PhaseCfg::default(),
+            spike_codec_cfg: SpikeCodecCfg::default(),
+            last_phase_frame: None,
         }
     }
 
@@ -80,6 +96,10 @@ impl RuntimeOrchestrator {
 
     pub fn last_microcircuit_frame(&self) -> Option<MicrocircuitFrame> {
         self.last_microcircuit_frame
+    }
+
+    pub fn last_phase_frame(&self) -> Option<PhaseFrame> {
+        self.last_phase_frame
     }
 
     pub fn ingest_and_process<A: ActionAdapter>(
@@ -124,6 +144,23 @@ impl RuntimeOrchestrator {
             .unwrap_or(0.001);
         self.last_biophys_tick_ms = Some(now_ms);
 
+        self.phase_bus.osc_jepa = osc_step(self.phase_bus.osc_jepa, dt_s);
+        self.phase_bus.osc_nsr = osc_step(self.phase_bus.osc_nsr, dt_s);
+        self.phase_bus.osc_microcircuit = osc_step(self.phase_bus.osc_microcircuit, dt_s);
+
+        (self.phase_bus.osc_microcircuit, self.phase_bus.osc_nsr) = couple_pair(
+            self.phase_bus.osc_microcircuit,
+            self.phase_bus.osc_nsr,
+            dt_s,
+            self.phase_cfg,
+        );
+        (self.phase_bus.osc_nsr, self.phase_bus.osc_jepa) = couple_pair(
+            self.phase_bus.osc_nsr,
+            self.phase_bus.osc_jepa,
+            dt_s,
+            self.phase_cfg,
+        );
+
         let baseline = BiophysField::default();
         self.biophys_field = self
             .biophys_field
@@ -155,6 +192,27 @@ impl RuntimeOrchestrator {
         let field = self.biophys_field.with_hpa(self.hpa_state);
         let hh = modulate_hh(HhParams::default(), field, self.biophys_mod_cfg);
         let micro = self.microcircuit.step(field, dt_s);
+
+        let _ttfs_zero_phase = ttfs_phase(0, self.spike_codec_cfg);
+        let spike_events =
+            spikes_from_ids(now_ms, &micro.spikes, self.phase_bus.osc_microcircuit.phase);
+
+        if !spike_events.is_empty() {
+            let boost_cfg = PhaseCfg {
+                coupling: (self.phase_cfg.coupling * 2.0).min(1.0),
+                ..self.phase_cfg
+            };
+            (self.phase_bus.osc_microcircuit, self.phase_bus.osc_nsr) = couple_pair(
+                self.phase_bus.osc_microcircuit,
+                self.phase_bus.osc_nsr,
+                dt_s,
+                boost_cfg,
+            );
+        }
+
+        let lock_nsr_jepa = phase_lock(self.phase_bus.osc_nsr, self.phase_bus.osc_jepa);
+        let lock_micro_nsr = phase_lock(self.phase_bus.osc_microcircuit, self.phase_bus.osc_nsr);
+
         self.last_biophys_frame = Some(BiophysFrame {
             now_ms,
             field: ucf_biophys::v0::summarize(field),
@@ -170,8 +228,16 @@ impl RuntimeOrchestrator {
         self.last_microcircuit_frame = Some(MicrocircuitFrame {
             now_ms,
             n: self.microcircuit.neurons.len() as u32,
-            spike_count: micro.spikes.len() as u32,
+            spike_count: spike_events.len() as u32,
             avg_v: micro.avg_v,
+        });
+        self.last_phase_frame = Some(PhaseFrame {
+            now_ms,
+            jepa_phase: self.phase_bus.osc_jepa.phase,
+            nsr_phase: self.phase_bus.osc_nsr.phase,
+            micro_phase: self.phase_bus.osc_microcircuit.phase,
+            lock_nsr_jepa,
+            lock_micro_nsr,
         });
     }
 
@@ -187,7 +253,7 @@ impl RuntimeOrchestrator {
             },
             FeatureEvent {
                 chan: 11,
-                intensity: ((k % 5.0) / 4.0),
+                intensity: (k % 5.0) / 4.0,
                 novelty: 0.15,
             },
             FeatureEvent {

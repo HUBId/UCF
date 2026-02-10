@@ -170,3 +170,48 @@ fn microcircuit_stays_quiet_under_high_gaba_low_glutamate() {
 
     assert!(total_spikes <= 2);
 }
+
+#[test]
+fn wrap_phase_normalizes_to_tau_interval() {
+    use super::{wrap_phase, TAU};
+
+    let xs = [-9.0, -0.1, 0.0, 0.1, TAU, TAU + 0.2, 42.0];
+    for x in xs {
+        let w = wrap_phase(x);
+        assert!((0.0..TAU).contains(&w));
+    }
+}
+
+#[test]
+fn phase_lock_identity_and_pi_offset() {
+    use super::{phase_lock, Osc};
+
+    let a = Osc {
+        phase: 0.7,
+        omega_hz: 40.0,
+    };
+    let same = phase_lock(a, a);
+    assert!((same - 1.0).abs() <= 1e-6);
+
+    let b = Osc {
+        phase: a.phase + core::f32::consts::PI,
+        omega_hz: a.omega_hz,
+    };
+    let opposite = phase_lock(a, b);
+    assert!(opposite <= 1e-5);
+}
+
+#[test]
+fn ttfs_phase_maps_window_bounds() {
+    use super::{ttfs_phase, SpikeCodecCfg};
+
+    let cfg = SpikeCodecCfg {
+        max_phase: core::f32::consts::PI * 2.0 - 0.001,
+        ..SpikeCodecCfg::default()
+    };
+    let start = ttfs_phase(0, cfg);
+    let end = ttfs_phase(cfg.window_ms, cfg);
+
+    assert!((start - cfg.min_phase).abs() <= 1e-6);
+    assert!((end - cfg.max_phase).abs() <= 1e-6);
+}
