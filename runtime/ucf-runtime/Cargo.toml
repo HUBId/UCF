@@ -9,3 +9,5 @@ ucf-frames = { path = "../../domains/ucf-frames" }
 ucf-policy = { path = "../ucf-policy" }
 ucf-ess = { path = "../../domains/ucf-ess" }
 ucf-neuromod = { path = "../../domains/ucf-neuromod" }
+ucf-onn = { path = "../../core/crates/ucf-onn" }
+ucf-iit-proxy = { path = "../../domains/ucf-iit" }

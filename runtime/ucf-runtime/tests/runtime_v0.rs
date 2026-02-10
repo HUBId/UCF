@@ -50,6 +50,7 @@ fn external_output_text_is_allowed_emitted_and_audited() {
         orchestrator.ess.get(0).and_then(|r| r.neuromod),
         Some(baseline)
     );
+    assert!(orchestrator.ess.get(0).and_then(|r| r.iit_phi).is_some());
     assert_eq!(
         orchestrator.ess.get(1).and_then(|r| r.neuromod),
         Some(baseline)
@@ -168,4 +169,24 @@ fn orchestrator_appends_note_when_brain_spikes_emitted() {
     } else {
         panic!("expected text note payload");
     }
+}
+
+#[test]
+fn orchestrator_tick_records_iit_phi_snapshot() {
+    let ctrl = ControlFrame::new_text(
+        sim_time(),
+        CorrelationId(7),
+        ChannelCode::ExternalOutput,
+        intent(),
+        "iit",
+    );
+    let mut orchestrator = RuntimeOrchestrator::new();
+    let mut adapter = MockAdapter::default();
+
+    orchestrator
+        .ingest_and_process(&mut adapter, ctrl)
+        .expect("orchestration should succeed");
+
+    let control_record = orchestrator.ess.get(0).expect("control record");
+    assert!(control_record.iit_phi.is_some());
 }

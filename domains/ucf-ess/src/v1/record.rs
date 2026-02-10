@@ -3,6 +3,7 @@ use std::sync::Arc;
 use ucf_core::types::SimTime;
 use ucf_frames::v1::{
     BrainFrame, ControlFrame, CorrelationId, DecisionFrame, DecisionMeta, NeuromodulatorSnapshot,
+    PhiProxySnapshot,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -24,6 +25,7 @@ pub struct ExperienceRecord {
     pub kind: ExperienceKind,
     pub payload: ExperiencePayload,
     pub neuromod: Option<NeuromodulatorSnapshot>,
+    pub iit_phi: Option<PhiProxySnapshot>,
     pub decision_meta: Option<DecisionMeta>,
 }
 
@@ -45,6 +47,7 @@ impl ExperienceRecord {
             kind: ExperienceKind::ControlIn,
             payload: ExperiencePayload::Control(ctrl),
             neuromod: None,
+            iit_phi: None,
             decision_meta: None,
         }
     }
@@ -57,6 +60,7 @@ impl ExperienceRecord {
             kind: ExperienceKind::DecisionOut,
             payload: ExperiencePayload::Decision(decision.clone()),
             neuromod: None,
+            iit_phi: None,
             decision_meta: Some(decision.meta),
         }
     }
@@ -69,6 +73,7 @@ impl ExperienceRecord {
             kind: ExperienceKind::BrainOut,
             payload: ExperiencePayload::Brain(brain),
             neuromod: None,
+            iit_phi: None,
             decision_meta: None,
         }
     }
@@ -86,12 +91,20 @@ impl ExperienceRecord {
             kind: ExperienceKind::Note,
             payload: ExperiencePayload::Text(text.into()),
             neuromod: None,
+            iit_phi: None,
             decision_meta: None,
         }
     }
 
     pub fn with_neuromod(mut self, neuromod: NeuromodulatorSnapshot) -> Self {
         self.neuromod = Some(neuromod);
+        self
+    }
+}
+
+impl ExperienceRecord {
+    pub fn with_iit_phi(mut self, iit_phi: PhiProxySnapshot) -> Self {
+        self.iit_phi = Some(iit_phi);
         self
     }
 }
