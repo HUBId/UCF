@@ -723,6 +723,7 @@ fn commit_structural_delta(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn update_budget_state(
     mut state: BudgetState,
     mut stable_cycles: u8,
