@@ -6,6 +6,7 @@ mod decision;
 mod intent;
 mod microcircuit;
 mod neuromod;
+mod phase;
 mod phi;
 mod stimulus;
 
@@ -17,5 +18,6 @@ pub use decision::{DecisionFrame, DecisionMeta, ReasonCode};
 pub use intent::{Intent, IntentId, IntentKind, IntentType};
 pub use microcircuit::MicrocircuitFrame;
 pub use neuromod::NeuromodulatorSnapshot;
+pub use phase::PhaseFrame;
 pub use phi::PhiProxySnapshot;
 pub use stimulus::{BrainStimulusKind, BrainStimulusPayload};

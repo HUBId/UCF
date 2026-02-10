@@ -309,3 +309,35 @@ fn orchestrator_tick_updates_microcircuit_frame() {
         .expect("microcircuit frame should be present");
     assert_eq!(frame.n, 32);
 }
+
+#[test]
+fn orchestrator_tick_updates_phase_frame_with_valid_locks() {
+    let mut orchestrator = RuntimeOrchestrator::new();
+    let mut adapter = MockAdapter::default();
+
+    for tick in 40..45 {
+        let ctrl = ControlFrame::new_text(
+            SimTime {
+                tick: Tick::new(tick),
+                window: WindowId::new(0),
+            },
+            CorrelationId(100 + tick),
+            ChannelCode::InternalThought,
+            intent(),
+            "phase",
+        );
+
+        orchestrator
+            .ingest_and_process(&mut adapter, ctrl)
+            .expect("phase tick should succeed");
+    }
+
+    let phase = orchestrator
+        .last_phase_frame()
+        .expect("phase frame should be present");
+    assert!(phase.jepa_phase >= 0.0);
+    assert!(phase.nsr_phase >= 0.0);
+    assert!(phase.micro_phase >= 0.0);
+    assert!((0.0..=1.0).contains(&phase.lock_nsr_jepa));
+    assert!((0.0..=1.0).contains(&phase.lock_micro_nsr));
+}
