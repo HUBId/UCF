@@ -4,7 +4,24 @@ use ucf_core::types::SimTime;
 
 use crate::v1::{CorrelationId, DecisionCode, DenyReasonCode, IntentType};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DecisionMeta {
+    pub attention_gain: f32,
+    pub learning_gate: f32,
+    pub recursion_budget: u8,
+}
+
+impl DecisionMeta {
+    pub fn baseline() -> Self {
+        Self {
+            attention_gain: 0.5,
+            learning_gate: 0.5,
+            recursion_budget: 1,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct DecisionFrame {
     pub time: SimTime,
     pub corr: CorrelationId,
@@ -13,6 +30,7 @@ pub struct DecisionFrame {
     pub reason_code: ReasonCode,
     pub deny_reason: Option<DenyReasonCode>,
     pub rationale: Arc<str>,
+    pub meta: DecisionMeta,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -28,6 +46,7 @@ impl DecisionFrame {
             reason_code: ReasonCode("allow_default"),
             deny_reason: None,
             rationale: rationale.into(),
+            meta: DecisionMeta::baseline(),
         }
     }
 
@@ -45,6 +64,7 @@ impl DecisionFrame {
             reason_code: ReasonCode("deny_default"),
             deny_reason: Some(reason),
             rationale: rationale.into(),
+            meta: DecisionMeta::baseline(),
         }
     }
 
@@ -57,6 +77,7 @@ impl DecisionFrame {
             reason_code: ReasonCode("defer_default"),
             deny_reason: None,
             rationale: rationale.into(),
+            meta: DecisionMeta::baseline(),
         }
     }
 
@@ -75,6 +96,7 @@ impl DecisionFrame {
             reason_code,
             deny_reason: None,
             rationale: rationale.into(),
+            meta: DecisionMeta::baseline(),
         }
     }
 
@@ -94,6 +116,7 @@ impl DecisionFrame {
             reason_code,
             deny_reason: Some(deny_reason),
             rationale: rationale.into(),
+            meta: DecisionMeta::baseline(),
         }
     }
 
@@ -112,6 +135,12 @@ impl DecisionFrame {
             reason_code,
             deny_reason: None,
             rationale: rationale.into(),
+            meta: DecisionMeta::baseline(),
         }
+    }
+
+    pub fn with_meta(mut self, meta: DecisionMeta) -> Self {
+        self.meta = meta;
+        self
     }
 }

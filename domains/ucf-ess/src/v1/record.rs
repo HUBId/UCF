@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use ucf_core::types::SimTime;
 use ucf_frames::v1::{
-    BrainFrame, ControlFrame, CorrelationId, DecisionFrame, NeuromodulatorSnapshot,
+    BrainFrame, ControlFrame, CorrelationId, DecisionFrame, DecisionMeta, NeuromodulatorSnapshot,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -24,9 +24,10 @@ pub struct ExperienceRecord {
     pub kind: ExperienceKind,
     pub payload: ExperiencePayload,
     pub neuromod: Option<NeuromodulatorSnapshot>,
+    pub decision_meta: Option<DecisionMeta>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ExperiencePayload {
     Control(ControlFrame),
     Decision(DecisionFrame),
@@ -44,6 +45,7 @@ impl ExperienceRecord {
             kind: ExperienceKind::ControlIn,
             payload: ExperiencePayload::Control(ctrl),
             neuromod: None,
+            decision_meta: None,
         }
     }
 
@@ -53,8 +55,9 @@ impl ExperienceRecord {
             time: decision.time,
             corr: decision.corr,
             kind: ExperienceKind::DecisionOut,
-            payload: ExperiencePayload::Decision(decision),
+            payload: ExperiencePayload::Decision(decision.clone()),
             neuromod: None,
+            decision_meta: Some(decision.meta),
         }
     }
 
@@ -66,6 +69,7 @@ impl ExperienceRecord {
             kind: ExperienceKind::BrainOut,
             payload: ExperiencePayload::Brain(brain),
             neuromod: None,
+            decision_meta: None,
         }
     }
 
@@ -82,6 +86,7 @@ impl ExperienceRecord {
             kind: ExperienceKind::Note,
             payload: ExperiencePayload::Text(text.into()),
             neuromod: None,
+            decision_meta: None,
         }
     }
 

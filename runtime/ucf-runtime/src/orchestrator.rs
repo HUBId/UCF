@@ -1,6 +1,6 @@
 use crate::errors::RuntimeError;
 use ucf_ess::v1::{ExperienceRecord, ExperienceStore, IdAllocator, InMemoryEss};
-use ucf_frames::v1::{ControlFrame, DecisionFrame};
+use ucf_frames::v1::{ControlFrame, DecisionFrame, NeuromodulatorSnapshot};
 use ucf_neuromod::v0::{NeuromodInputs, NeuromodScheduler, NeuromodulatorField};
 use ucf_policy::{adapter::ActionAdapter, gem::Gem, pbm::Pbm};
 
@@ -30,8 +30,13 @@ impl RuntimeOrchestrator {
         adapter: &mut A,
         ctrl: ControlFrame,
     ) -> Result<DecisionFrame, RuntimeError> {
-        let decision = Pbm::decide(&ctrl);
-        self.ingest_with_decision(adapter, ctrl, decision)
+        let inputs = NeuromodInputs::baseline();
+        self.neuromod_scheduler
+            .advance(ctrl.time.tick.get(), &mut self.neuromod_field, inputs);
+        let snapshot = self.neuromod_field.snapshot();
+
+        let decision = Pbm::decide(&ctrl, Some(snapshot));
+        self.ingest_with_decision_and_snapshot(adapter, ctrl, decision, snapshot)
     }
 
     pub fn ingest_with_decision<A: ActionAdapter>(
@@ -44,7 +49,16 @@ impl RuntimeOrchestrator {
         self.neuromod_scheduler
             .advance(ctrl.time.tick.get(), &mut self.neuromod_field, inputs);
         let snapshot = self.neuromod_field.snapshot();
+        self.ingest_with_decision_and_snapshot(adapter, ctrl, decision, snapshot)
+    }
 
+    fn ingest_with_decision_and_snapshot<A: ActionAdapter>(
+        &mut self,
+        adapter: &mut A,
+        ctrl: ControlFrame,
+        decision: DecisionFrame,
+        snapshot: NeuromodulatorSnapshot,
+    ) -> Result<DecisionFrame, RuntimeError> {
         let eid1 = self.ids.next();
         self.ess
             .append(ExperienceRecord::from_control(eid1, ctrl.clone()).with_neuromod(snapshot))?;

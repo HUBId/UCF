@@ -54,6 +54,11 @@ fn external_output_text_is_allowed_emitted_and_audited() {
         orchestrator.ess.get(1).and_then(|r| r.neuromod),
         Some(baseline)
     );
+    let decision_record = orchestrator.ess.get(1).expect("decision record");
+    assert_eq!(decision_record.decision_meta, Some(decision.meta));
+    assert_eq!(decision.meta.attention_gain, 0.70000005);
+    assert_eq!(decision.meta.learning_gate, 0.65);
+    assert_eq!(decision.meta.recursion_budget, 1);
 }
 
 #[test]
