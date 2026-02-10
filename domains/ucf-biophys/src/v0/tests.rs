@@ -123,3 +123,50 @@ fn with_hpa_lowers_serotonin_and_raises_gaba_when_cortisol_high() {
     assert!(out.serotonin.get() < field.serotonin.get());
     assert!(out.gaba.get() > field.gaba.get());
 }
+
+#[test]
+fn microcircuit_new_ring_has_expected_counts_and_adjacency() {
+    let n = 32;
+    let micro = super::Microcircuit::new_ring(n);
+
+    assert_eq!(micro.neurons.len(), n);
+    assert_eq!(micro.synapses.len(), n * 2);
+    assert_eq!(micro.outgoing.len(), n);
+    assert!(micro.outgoing.iter().all(|edges| !edges.is_empty()));
+}
+
+#[test]
+fn microcircuit_spikes_under_high_glutamate_low_gaba() {
+    let mut micro = super::Microcircuit::new_ring(32);
+    let field = NeuromodulatorField {
+        glutamate: Unit01::new(1.0),
+        gaba: Unit01::new(0.0),
+        ..NeuromodulatorField::default()
+    };
+
+    let mut total_spikes = 0_usize;
+    for _ in 0..100 {
+        let out = micro.step(field, 0.01);
+        total_spikes += out.spikes.len();
+    }
+
+    assert!(total_spikes > 0);
+}
+
+#[test]
+fn microcircuit_stays_quiet_under_high_gaba_low_glutamate() {
+    let mut micro = super::Microcircuit::new_ring(32);
+    let field = NeuromodulatorField {
+        glutamate: Unit01::new(0.0),
+        gaba: Unit01::new(1.0),
+        ..NeuromodulatorField::default()
+    };
+
+    let mut total_spikes = 0_usize;
+    for _ in 0..100 {
+        let out = micro.step(field, 0.01);
+        total_spikes += out.spikes.len();
+    }
+
+    assert!(total_spikes <= 2);
+}

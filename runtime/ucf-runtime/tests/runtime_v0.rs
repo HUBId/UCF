@@ -284,3 +284,28 @@ fn orchestrator_hpa_cortisol_differs_between_baseline_and_stress_ticks() {
     assert_ne!(baseline.hpa_cortisol, stress.hpa_cortisol);
     assert_eq!(stress.now_ms, 15);
 }
+
+#[test]
+fn orchestrator_tick_updates_microcircuit_frame() {
+    let ctrl = ControlFrame::new_text(
+        SimTime {
+            tick: Tick::new(31),
+            window: WindowId::new(0),
+        },
+        CorrelationId(12),
+        ChannelCode::InternalThought,
+        intent(),
+        "microcircuit",
+    );
+    let mut orchestrator = RuntimeOrchestrator::new();
+    let mut adapter = MockAdapter::default();
+
+    orchestrator
+        .ingest_and_process(&mut adapter, ctrl)
+        .expect("orchestration should succeed");
+
+    let frame = orchestrator
+        .last_microcircuit_frame()
+        .expect("microcircuit frame should be present");
+    assert_eq!(frame.n, 32);
+}
