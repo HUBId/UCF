@@ -2492,6 +2492,7 @@ name = "ucf-runtime"
 version = "0.1.0"
 dependencies = [
  "ucf-biophys",
+ "ucf-cde",
  "ucf-core",
  "ucf-ess",
  "ucf-frames",

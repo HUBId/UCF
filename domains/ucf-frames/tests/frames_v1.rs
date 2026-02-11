@@ -1,8 +1,8 @@
 use ucf_core::types::{SimTime, Tick, WindowId};
 use ucf_frames::v1::{
-    BiophysFrame, BiophysHhParams, ChannelCode, ControlFrame, ControlPayload, CorrelationId,
-    DecisionCode, DecisionFrame, DenyReasonCode, IitFrame, Intent, IntentId, IntentKind,
-    IntentType, OnnFrame, ReasonCode, SnnFrame,
+    BiophysFrame, BiophysHhParams, CdeFrame, ChannelCode, ControlFrame, ControlPayload,
+    CorrelationId, DecisionCode, DecisionFrame, DenyReasonCode, IitFrame, Intent, IntentId,
+    IntentKind, IntentType, OnnFrame, ReasonCode, SnnFrame,
 };
 
 #[test]
@@ -144,4 +144,19 @@ fn onn_and_snn_frames_can_be_constructed() {
 
     assert_eq!(onn.now_ms, 7);
     assert_eq!(snn.spikes, 3);
+}
+
+#[test]
+fn cde_frame_can_be_constructed() {
+    let cde = CdeFrame {
+        now_ms: 77,
+        hyps: 3,
+        changed: 1,
+        pruned: 0,
+        top_conf_q: 200,
+    };
+
+    assert_eq!(cde.now_ms, 77);
+    assert_eq!(cde.hyps, 3);
+    assert_eq!(cde.top_conf_q, 200);
 }

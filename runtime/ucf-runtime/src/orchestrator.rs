@@ -8,6 +8,10 @@ use ucf_biophys::v0::{
     PhaseCfg, RuleCfg, SnnSpikeEvent, SpikeCodecCfg, SpikeKind, SsmCfg, SsmInputs, SsmState,
     VerifyVerdict, SSM_D,
 };
+use ucf_cde::v0::{
+    on_intervention, on_observation, tick_decay, CdeCfg, CdeState, CdeUpdateKind, Intervention,
+    Observation, VarId,
+};
 use ucf_core::archive_log::ArchiveLog;
 use ucf_core::storage::{ArchiveCfg, FlushPolicy, MemArchiveStore};
 use ucf_ess::v1::{ExperienceRecord, ExperienceStore, IdAllocator, InMemoryEss};
@@ -93,6 +97,8 @@ pub struct RuntimeOrchestrator {
     iit_state: IITState,
     last_iit_frame: Option<IitFrame>,
     cde_graph: CausalGraph,
+    cde_cfg: CdeCfg,
+    cde_state: CdeState,
     nsr_cfg: RuleCfg,
     last_cde_frame: Option<CdeFrame>,
     last_nsr_frame: Option<NsrFrame>,
@@ -154,6 +160,8 @@ impl RuntimeOrchestrator {
             iit_state: IITState::default(),
             last_iit_frame: None,
             cde_graph: CausalGraph::default(),
+            cde_cfg: CdeCfg::default(),
+            cde_state: CdeState::default(),
             nsr_cfg: RuleCfg::default(),
             last_cde_frame: None,
             last_nsr_frame: None,
@@ -229,12 +237,41 @@ impl RuntimeOrchestrator {
     }
 
     pub fn force_causal_cycle_for_test(&mut self, now_ms: u64) {
+        self.cde_state.hyps.clear();
+        for (src, dst) in [(1_u16, 2_u16), (2, 3), (3, 1)] {
+            self.cde_state.hyps.push(ucf_cde::v0::Hypothesis {
+                edge: ucf_cde::v0::Edge { src, dst },
+                score: 0.9,
+                conf: 0.9,
+                last_update_ms: now_ms,
+                seen_obs: 0,
+                seen_int: 1,
+            });
+        }
+        sync_graph_from_cde_state(&mut self.cde_graph, &self.cde_state);
         self.cde_graph
             .upsert_hypothesis(Edge { from: 1, to: 2 }, now_ms, 0.2);
         self.cde_graph
             .upsert_hypothesis(Edge { from: 2, to: 3 }, now_ms, 0.2);
         self.cde_graph
             .upsert_hypothesis(Edge { from: 3, to: 1 }, now_ms, 0.2);
+    }
+
+    pub fn feed_cde_intervention_for_test(
+        &mut self,
+        now_ms: u64,
+        do_set: Vec<(VarId, f32)>,
+        measured: Vec<(VarId, f32)>,
+    ) -> CdeUpdateKind {
+        on_intervention(
+            &mut self.cde_state,
+            self.cde_cfg,
+            Intervention {
+                now_ms,
+                do_set,
+                measured,
+            },
+        )
     }
 
     pub fn ingest_and_process<A: ActionAdapter>(
@@ -343,51 +380,42 @@ impl RuntimeOrchestrator {
         let lock_micro_nsr = phase_lock(self.phase_bus.osc_microcircuit, self.phase_bus.osc_nsr);
 
         let spike_rate_hz = micro.spikes.len() as f32 / dt_s;
-        self.cde_graph.upsert_var(1);
-        self.cde_graph.upsert_var(2);
-        self.cde_graph.upsert_var(3);
-        self.cde_graph.upsert_var(4);
+        let ssm_gate = self
+            .last_ssm_frame
+            .map(|frame| frame.gate)
+            .unwrap_or(0.0)
+            .clamp(0.0, 1.0);
+        let nsr_verified_ratio = self
+            .last_nsr_frame
+            .map(|frame| frame.verified_ratio)
+            .unwrap_or(0.0)
+            .clamp(0.0, 1.0);
+        let archive_append_bytes_q =
+            ((self.last_archive_payload_len as f32) / 1024.0).clamp(0.0, 1.0);
 
-        let lock_nsr_bucket = bucket_value(lock_nsr_jepa);
-        let lock_micro_bucket = bucket_value(lock_micro_nsr);
-        let spike_bucket =
-            bucket_value((spike_rate_hz / self.iit_cfg.spike_rate_norm_hz).clamp(0.0, 1.0));
-        let integration_bucket = bucket_value(self.iit_state.integration_ema);
-
-        let edge_spike_micro = Edge { from: 3, to: 2 };
-        if spike_bucket >= 1.0 && lock_micro_bucket <= 0.0 {
-            self.cde_graph
-                .upsert_hypothesis(edge_spike_micro, now_ms, 0.02);
-        } else if self
-            .cde_graph
-            .hyps
-            .iter()
-            .any(|h| h.edge == edge_spike_micro)
-        {
-            self.cde_graph
-                .upsert_hypothesis(edge_spike_micro, now_ms, -0.005);
-        }
-
-        let edge_lock_integration = Edge { from: 1, to: 4 };
-        if integration_bucket <= 0.0 && lock_nsr_bucket <= 0.0 {
-            self.cde_graph
-                .upsert_hypothesis(edge_lock_integration, now_ms, 0.02);
-        } else if self
-            .cde_graph
-            .hyps
-            .iter()
-            .any(|h| h.edge == edge_lock_integration)
-        {
-            self.cde_graph
-                .upsert_hypothesis(edge_lock_integration, now_ms, -0.005);
-        }
+        let obs_update = on_observation(
+            &mut self.cde_state,
+            self.cde_cfg,
+            Observation {
+                now_ms,
+                vars: vec![
+                    (1, onn_out.mean_lock.clamp(0.0, 1.0)),
+                    (2, ssm_gate),
+                    (3, nsr_verified_ratio),
+                    (4, archive_append_bytes_q),
+                ],
+            },
+        );
+        let decay_update = tick_decay(&mut self.cde_state, self.cde_cfg, now_ms);
+        sync_graph_from_cde_state(&mut self.cde_graph, &self.cde_state);
 
         let (verdict, verified_ratio) = verify_graph(&self.cde_graph, self.nsr_cfg);
         let top_conf = self
-            .cde_graph
-            .top_edges(1)
-            .first()
-            .map(|h| h.confidence)
+            .cde_state
+            .hyps
+            .iter()
+            .map(|h| h.conf)
+            .max_by(|a, b| a.total_cmp(b))
             .unwrap_or(0.0);
 
         let mut integration = compute_integration(
@@ -475,9 +503,8 @@ impl RuntimeOrchestrator {
             ));
         }
 
-        let cde_hyp_count = self.cde_graph.hyps.len() as u32;
-        if cde_hyp_count > 0 {
-            let magnitude = top_conf.min(1.0);
+        if matches!(obs_update, CdeUpdateKind::Updated { .. }) {
+            let magnitude = top_conf.clamp(0.0, 1.0);
             tick_spikes.push(self.make_spike(
                 now_ms,
                 OSC_CDE,
@@ -577,11 +604,20 @@ impl RuntimeOrchestrator {
             integration: self.iit_state.integration_ema,
             state,
         });
+        let changed = match obs_update {
+            CdeUpdateKind::Updated { changed, .. } => changed as u16,
+            _ => 0,
+        };
+        let pruned = match decay_update {
+            CdeUpdateKind::Pruned { pruned } => pruned as u16,
+            _ => 0,
+        };
         self.last_cde_frame = Some(CdeFrame {
             now_ms,
-            hyps: self.cde_graph.hyps.len() as u32,
-            top_conf,
-            acyclic: self.cde_graph.is_acyclic(),
+            hyps: self.cde_state.hyps.len() as u16,
+            changed,
+            pruned,
+            top_conf_q: (top_conf.clamp(0.0, 1.0) * 255.0).round() as u8,
         });
         self.last_nsr_frame = Some(NsrFrame {
             now_ms,
@@ -764,21 +800,28 @@ impl Default for RuntimeOrchestrator {
     }
 }
 
-fn bucket_value(value: f32) -> f32 {
-    if value < 0.33 {
-        0.0
-    } else if value < 0.66 {
-        0.5
-    } else {
-        1.0
-    }
-}
-
 fn attention_from_coherence(state: CoherenceState) -> f32 {
     match state {
         CoherenceState::Stable => 0.55,
         CoherenceState::Drifting => 0.45,
         CoherenceState::Fragmenting => 0.35,
+    }
+}
+
+fn sync_graph_from_cde_state(graph: &mut CausalGraph, state: &CdeState) {
+    graph.vars.clear();
+    graph.hyps.clear();
+    for hyp in &state.hyps {
+        graph.upsert_var(u32::from(hyp.edge.src));
+        graph.upsert_var(u32::from(hyp.edge.dst));
+        graph.upsert_hypothesis(
+            Edge {
+                from: u32::from(hyp.edge.src),
+                to: u32::from(hyp.edge.dst),
+            },
+            hyp.last_update_ms,
+            hyp.conf.clamp(0.0, 1.0),
+        );
     }
 }
 
