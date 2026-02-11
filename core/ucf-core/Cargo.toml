@@ -3,4 +3,11 @@ name = "ucf-core"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = []
+firewood = ["dep:storage-firewood"]
+
 [dependencies]
+anyhow = "1"
+blake3 = "1"
+storage-firewood = { path = "../../vendor/ucf-chip-4-main/vendor/ztate/storage-firewood", optional = true, default-features = false, features = ["rpp-firewood"] }

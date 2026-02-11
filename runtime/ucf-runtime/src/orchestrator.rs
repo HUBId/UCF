@@ -8,10 +8,13 @@ use ucf_biophys::v0::{
     PhaseCfg, RuleCfg, SnnSpikeEvent, SpikeCodecCfg, SpikeKind, SsmCfg, SsmInputs, SsmState,
     VerifyVerdict, SSM_D,
 };
+use ucf_core::archive_log::ArchiveLog;
+use ucf_core::storage::{ArchiveCfg, FlushPolicy, MemArchiveStore};
 use ucf_ess::v1::{ExperienceRecord, ExperienceStore, IdAllocator, InMemoryEss};
 use ucf_frames::v1::{
-    BiophysFrame, BiophysHhParams, CdeFrame, ControlFrame, DecisionFrame, IitFrame,
-    MicrocircuitFrame, NeuromodulatorSnapshot, NsrFrame, OnnFrame, PhaseFrame, SnnFrame, SsmFrame,
+    ArchiveAppendFrame, BiophysFrame, BiophysHhParams, CdeFrame, ControlFrame, DecisionFrame,
+    IitFrame, MicrocircuitFrame, NeuromodulatorSnapshot, NsrFrame, OnnFrame, PhaseFrame, SnnFrame,
+    SsmFrame,
 };
 use ucf_iit_proxy::v0::{
     IitConfig, IitMonitor, MOD_BLUE, MOD_GEIST, MOD_JEPA, MOD_NSR, MOD_PBM, MOD_SSM,
@@ -98,6 +101,9 @@ pub struct RuntimeOrchestrator {
     ssm_last_u: [f32; SSM_D],
     working_context: WorkingContext,
     last_ssm_frame: Option<SsmFrame>,
+    archive: ArchiveLog<MemArchiveStore>,
+    last_archive_append_frame: Option<ArchiveAppendFrame>,
+    last_archive_payload_len: usize,
 }
 
 impl RuntimeOrchestrator {
@@ -156,6 +162,9 @@ impl RuntimeOrchestrator {
             ssm_last_u: [0.0; SSM_D],
             working_context: WorkingContext::default(),
             last_ssm_frame: None,
+            archive: ArchiveLog::new(MemArchiveStore::new(), ArchiveCfg::default()),
+            last_archive_append_frame: None,
+            last_archive_payload_len: 0,
         }
     }
 
@@ -205,6 +214,18 @@ impl RuntimeOrchestrator {
 
     pub fn last_ssm_frame(&self) -> Option<SsmFrame> {
         self.last_ssm_frame
+    }
+
+    pub fn last_archive_append_frame(&self) -> Option<ArchiveAppendFrame> {
+        self.last_archive_append_frame
+    }
+
+    pub fn archive_last_seq(&self) -> u64 {
+        self.archive.last_seq().unwrap_or(0)
+    }
+
+    pub fn last_archive_payload_len(&self) -> usize {
+        self.last_archive_payload_len
     }
 
     pub fn force_causal_cycle_for_test(&mut self, now_ms: u64) {
@@ -571,6 +592,28 @@ impl RuntimeOrchestrator {
             },
             verified_ratio,
         });
+
+        let payload =
+            tick_summary_payload(now_ms, coherence_state, onn_out.mean_lock, ssm_out.gate);
+        let flushed = match self.archive.cfg.flush {
+            FlushPolicy::EveryAppend => true,
+            FlushPolicy::IntervalMs(interval) => {
+                now_ms.saturating_sub(self.archive.last_flush_ms) >= interval
+            }
+            FlushPolicy::Manual => false,
+        };
+
+        let append = self
+            .archive
+            .append(now_ms, &payload)
+            .expect("append archive tick summary");
+        self.last_archive_payload_len = payload.len();
+        self.last_archive_append_frame = Some(ArchiveAppendFrame {
+            now_ms,
+            seq: append.seq,
+            bytes: append.bytes as u32,
+            flushed,
+        });
     }
 
     fn make_spike(
@@ -691,6 +734,28 @@ impl RuntimeOrchestrator {
 
         Ok(decision)
     }
+}
+
+fn tick_summary_payload(
+    now_ms: u64,
+    coherence_state: CoherenceState,
+    mean_lock: f32,
+    gate: f32,
+) -> Vec<u8> {
+    let mut payload = Vec::with_capacity(11);
+    payload.extend_from_slice(&now_ms.to_le_bytes());
+    payload.push(match coherence_state {
+        CoherenceState::Stable => 0,
+        CoherenceState::Drifting => 1,
+        CoherenceState::Fragmenting => 2,
+    });
+    payload.push(quantize_unit(mean_lock));
+    payload.push(quantize_unit(gate));
+    payload
+}
+
+fn quantize_unit(v: f32) -> u8 {
+    (v.clamp(0.0, 1.0) * 255.0).round() as u8
 }
 
 impl Default for RuntimeOrchestrator {

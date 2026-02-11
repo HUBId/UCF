@@ -593,3 +593,80 @@ fn rejected_nsr_emits_verify_spike_with_earliest_ttfs() {
         .expect("verify spike must exist");
     assert_eq!(verify.ttfs_code, 0);
 }
+
+#[test]
+fn archive_log_seq_increments_for_each_tick() {
+    let mut orchestrator = RuntimeOrchestrator::new();
+    let mut adapter = MockAdapter::default();
+
+    for tick in 400..405 {
+        let ctrl = ControlFrame::new_text(
+            SimTime {
+                tick: Tick::new(tick),
+                window: WindowId::new(0),
+            },
+            CorrelationId(1100 + tick),
+            ChannelCode::InternalThought,
+            intent(),
+            "archive-seq",
+        );
+
+        orchestrator
+            .ingest_and_process(&mut adapter, ctrl)
+            .expect("tick should succeed");
+    }
+
+    assert_eq!(orchestrator.archive_last_seq(), 5);
+}
+
+#[test]
+fn archive_tick_payload_is_bounded() {
+    let mut orchestrator = RuntimeOrchestrator::new();
+    let mut adapter = MockAdapter::default();
+
+    let ctrl = ControlFrame::new_text(
+        SimTime {
+            tick: Tick::new(500),
+            window: WindowId::new(0),
+        },
+        CorrelationId(1500),
+        ChannelCode::InternalThought,
+        intent(),
+        "archive-payload",
+    );
+
+    orchestrator
+        .ingest_and_process(&mut adapter, ctrl)
+        .expect("tick should succeed");
+
+    assert!(orchestrator.last_archive_payload_len() <= 64);
+}
+
+#[test]
+fn archive_append_frame_emitted_on_each_tick() {
+    let mut orchestrator = RuntimeOrchestrator::new();
+    let mut adapter = MockAdapter::default();
+
+    for tick in 600..605 {
+        let ctrl = ControlFrame::new_text(
+            SimTime {
+                tick: Tick::new(tick),
+                window: WindowId::new(0),
+            },
+            CorrelationId(2000 + tick),
+            ChannelCode::InternalThought,
+            intent(),
+            "archive-frame",
+        );
+
+        orchestrator
+            .ingest_and_process(&mut adapter, ctrl)
+            .expect("tick should succeed");
+
+        let frame = orchestrator
+            .last_archive_append_frame()
+            .expect("archive frame should exist");
+        assert_eq!(frame.now_ms, tick);
+        assert_eq!(frame.seq, tick - 599);
+    }
+}
