@@ -3280,6 +3280,8 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "ucf-biophys",
+ "ucf-bluebrain-bridge",
+ "ucf-brainbus",
  "ucf-cde",
  "ucf-compute",
  "ucf-core",

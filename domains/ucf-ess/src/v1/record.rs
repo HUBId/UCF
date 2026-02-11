@@ -19,6 +19,8 @@ pub enum ExperienceKind {
     ToolRequest,
     ToolAuth,
     ToolExecution,
+    SandboxCall,
+    SandboxReply,
     AuditCheckpoint,
 }
 
@@ -52,6 +54,8 @@ pub enum AuditPayload {
     ToolRequest(ToolRequestRecord),
     ToolAuth(ToolAuthRecord),
     ToolExecution(ToolExecutionRecord),
+    SandboxCall(SandboxCallRecord),
+    SandboxReply(SandboxReplyRecord),
     AuditCheckpoint(AuditCheckpointRecord),
 }
 
@@ -81,6 +85,25 @@ pub struct ToolExecutionRecord {
     pub error_code: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SandboxCallRecord {
+    pub tool_request_id: u64,
+    pub call_digest: [u8; 32],
+    pub module: String,
+    pub op: String,
+    pub evidence_chain_digest: [u8; 32],
+    pub capability_count: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SandboxReplyRecord {
+    pub tool_request_id: u64,
+    pub reply_digest: [u8; 32],
+    pub status: String,
+    pub bytes_out: u32,
+    pub bytes_in: u32,
+    pub token_digest: Option<[u8; 32]>,
+}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuditCheckpointRecord {
     pub head_digest: [u8; 32],

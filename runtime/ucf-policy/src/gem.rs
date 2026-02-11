@@ -229,7 +229,11 @@ impl Gem {
     }
 }
 
-fn request_from(ctrl: &ControlFrame, decision: &DecisionFrame, decision_id: u64) -> ToolRequest {
+pub fn request_from(
+    ctrl: &ControlFrame,
+    decision: &DecisionFrame,
+    decision_id: u64,
+) -> ToolRequest {
     let (kind, target, payload_hint) = match (&ctrl.channel, &ctrl.payload) {
         (ChannelCode::ExternalOutput, ControlPayload::Text(text)) => (
             CapabilityKind::ExternalApi,
