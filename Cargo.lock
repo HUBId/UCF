@@ -3151,6 +3151,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucf-replay"
+version = "0.1.0"
+dependencies = [
+ "hex",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 1.0.69",
+ "ucf-compute",
+ "ucf-core",
+ "ucf-ess",
+ "ucf-frames",
+]
+
+[[package]]
 name = "ucf-rig"
 version = "0.1.0"
 dependencies = [

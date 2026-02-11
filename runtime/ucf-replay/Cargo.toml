@@ -1,0 +1,17 @@
+[package]
+name = "ucf-replay"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ucf-compute = { path = "../ucf-compute" }
+ucf-core = { path = "../../core/ucf-core" }
+ucf-ess = { path = "../../domains/ucf-ess" }
+ucf-frames = { path = "../../domains/ucf-frames" }
+serde = { workspace = true }
+serde_json = "1"
+thiserror = { workspace = true }
+hex = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
