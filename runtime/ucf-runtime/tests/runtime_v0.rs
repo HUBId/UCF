@@ -1427,3 +1427,61 @@ fn orchestrator_env_burn_backend_surfaces_clear_error() {
     std::env::remove_var("UCF_COMPUTE_BACKEND");
     std::env::remove_var("UCF_COMPUTE_SEED");
 }
+
+#[test]
+fn orchestrator_hooks_emit_milestones_and_track_rejections() {
+    let mut orchestrator = RuntimeOrchestrator::new();
+    orchestrator.set_consolidation_hook_enabled_for_test(true);
+    orchestrator.set_geist_hook_enabled_for_test(true);
+    let mut adapter = MockAdapter::default();
+
+    for tick in 2_000..2_125 {
+        let ctrl = ControlFrame::new_text(
+            SimTime {
+                tick: Tick::new(tick),
+                window: WindowId::new(0),
+            },
+            CorrelationId(9_000 + tick),
+            ChannelCode::ExternalOutput,
+            intent(),
+            "hook-path",
+        );
+        orchestrator
+            .ingest_and_process(&mut adapter, ctrl)
+            .expect("tick should succeed");
+    }
+
+    assert!(orchestrator.consolidation_milestones_emitted_total() >= 1);
+    assert!(orchestrator.last_compute_milestone().is_some());
+    assert!(orchestrator.geist_updates_rejected_total() >= 1);
+    let (consolidation_errors, geist_errors) = orchestrator.hook_errors_total();
+    assert_eq!(consolidation_errors, 0);
+    assert_eq!(geist_errors, 0);
+}
+
+#[test]
+fn orchestrator_hooks_accept_stable_geist_updates() {
+    let mut orchestrator = RuntimeOrchestrator::new();
+    orchestrator.set_consolidation_hook_enabled_for_test(true);
+    orchestrator.set_geist_hook_enabled_for_test(true);
+    let mut adapter = MockAdapter::default();
+
+    for tick in 3_000..3_420 {
+        let ctrl = ControlFrame::new_text(
+            SimTime {
+                tick: Tick::new(tick),
+                window: WindowId::new(0),
+            },
+            CorrelationId(10_000 + tick),
+            ChannelCode::ExternalOutput,
+            intent(),
+            "stable-hook",
+        );
+        orchestrator
+            .ingest_and_process(&mut adapter, ctrl)
+            .expect("tick should succeed");
+    }
+
+    assert!(orchestrator.consolidation_milestones_emitted_total() >= 6);
+    assert!(orchestrator.geist_updates_accepted_total() >= 1);
+}

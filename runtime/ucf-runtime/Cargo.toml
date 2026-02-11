@@ -31,3 +31,5 @@ ucf-spikes = { path = "../../core/ucf-spikes" }
 ucf-sle = { path = "../../core/crates/ucf-sle" }
 ucf-ncde = { path = "../../core/crates/ucf-ncde" }
 ucf-compute = { path = "../ucf-compute" }
+
+blake3 = "1"

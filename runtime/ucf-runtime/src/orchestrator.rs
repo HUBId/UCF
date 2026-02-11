@@ -1,4 +1,8 @@
 use crate::errors::RuntimeError;
+use crate::hooks::{
+    ComputeMilestone, ComputeMilestoneAggregator, ConsolidationHook, GeistHook, GeistRejectReason,
+    GeistStateUpdater,
+};
 use ucf_biophys::v0::{
     apply_coherence_feedback, classify, compute_integration, couple_pair, hpa_step, modulate_hh,
     osc_step, phase_bin, phase_lock, ttfs_from_strength, ttfs_phase, verify_graph, CausalGraph,
@@ -51,6 +55,12 @@ const OSC_NSR: u8 = 3;
 const OSC_COHERENCE: u8 = 4;
 const OSC_NSR_TCF_ENFORCE: u8 = 1;
 const MOD_PBM: ucf_onn::v0::OscId = 13;
+
+fn env_flag(name: &str) -> bool {
+    std::env::var(name)
+        .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+        .unwrap_or(false)
+}
 
 #[derive(Clone, Copy, Debug, Default)]
 struct PhaseBus {
@@ -193,6 +203,20 @@ pub struct RuntimeOrchestrator {
     last_fep_outputs: Option<FepOutputs>,
     risk_quality_counts: [u64; 3],
     fep_risk_penalty_applied_total: u64,
+    consolidation_hook_enabled: bool,
+    geist_hook_enabled: bool,
+    consolidation_hook_errors_total: u64,
+    geist_hook_errors_total: u64,
+    consolidation_milestones_emitted_total: u64,
+    geist_updates_accepted_total: u64,
+    geist_updates_rejected_total: u64,
+    geist_updates_rejected_not_enough_samples_total: u64,
+    geist_updates_rejected_unstable_total: u64,
+    geist_updates_rejected_degraded_total: u64,
+    geist_updates_rejected_drift_total: u64,
+    compute_milestone_aggregator: ComputeMilestoneAggregator,
+    geist_state_updater: GeistStateUpdater,
+    last_compute_milestone: Option<ComputeMilestone>,
 }
 
 impl RuntimeOrchestrator {
@@ -324,6 +348,22 @@ impl RuntimeOrchestrator {
             last_fep_outputs: None,
             risk_quality_counts: [0; 3],
             fep_risk_penalty_applied_total: 0,
+            consolidation_hook_enabled: env_flag("UCF_ENABLE_CONSOLIDATION_HOOK"),
+            geist_hook_enabled: env_flag("UCF_ENABLE_GEIST_HOOK"),
+            consolidation_hook_errors_total: 0,
+            geist_hook_errors_total: 0,
+            consolidation_milestones_emitted_total: 0,
+            geist_updates_accepted_total: 0,
+            geist_updates_rejected_total: 0,
+            geist_updates_rejected_not_enough_samples_total: 0,
+            geist_updates_rejected_unstable_total: 0,
+            geist_updates_rejected_degraded_total: 0,
+            geist_updates_rejected_drift_total: 0,
+            compute_milestone_aggregator: ComputeMilestoneAggregator::new(vec![60, 600, 3600], 8)
+                .expect("valid default consolidation windows"),
+            geist_state_updater: GeistStateUpdater::new(60, 0.9, 0.2, 0.25)
+                .expect("valid default geist hook config"),
+            last_compute_milestone: None,
         }
     }
 
@@ -492,6 +532,37 @@ impl RuntimeOrchestrator {
 
     pub fn coherence_violation_count(&self) -> u64 {
         self.coherence_violation_count
+    }
+
+    pub fn set_consolidation_hook_enabled_for_test(&mut self, enabled: bool) {
+        self.consolidation_hook_enabled = enabled;
+    }
+
+    pub fn set_geist_hook_enabled_for_test(&mut self, enabled: bool) {
+        self.geist_hook_enabled = enabled;
+    }
+
+    pub fn consolidation_milestones_emitted_total(&self) -> u64 {
+        self.consolidation_milestones_emitted_total
+    }
+
+    pub fn geist_updates_accepted_total(&self) -> u64 {
+        self.geist_updates_accepted_total
+    }
+
+    pub fn geist_updates_rejected_total(&self) -> u64 {
+        self.geist_updates_rejected_total
+    }
+
+    pub fn hook_errors_total(&self) -> (u64, u64) {
+        (
+            self.consolidation_hook_errors_total,
+            self.geist_hook_errors_total,
+        )
+    }
+
+    pub fn last_compute_milestone(&self) -> Option<&ComputeMilestone> {
+        self.last_compute_milestone.as_ref()
     }
 
     pub fn force_causal_cycle_for_test(&mut self, now_ms: u64) {
@@ -1540,6 +1611,64 @@ impl RuntimeOrchestrator {
                 .with_neuromod(snapshot)
                 .with_iit_phi(phi),
         )?;
+
+        if self.consolidation_hook_enabled {
+            if let Some(decision_rec) = self.ess.get(self.ess.len().saturating_sub(1)) {
+                match self.compute_milestone_aggregator.on_append(decision_rec) {
+                    Ok(milestones) => {
+                        for milestone in milestones {
+                            self.consolidation_milestones_emitted_total = self
+                                .consolidation_milestones_emitted_total
+                                .saturating_add(1);
+                            self.last_compute_milestone = Some(milestone.clone());
+                            if self.geist_hook_enabled {
+                                match self.geist_state_updater.on_milestone(&milestone) {
+                                    Ok(Some(_)) => {
+                                        self.geist_updates_accepted_total =
+                                            self.geist_updates_accepted_total.saturating_add(1);
+                                    }
+                                    Ok(None) => {
+                                        self.geist_updates_rejected_total =
+                                            self.geist_updates_rejected_total.saturating_add(1);
+                                        match self.geist_state_updater.last_reject_reason() {
+                                            Some(GeistRejectReason::NotEnoughSamples) => {
+                                                self.geist_updates_rejected_not_enough_samples_total = self
+                                                    .geist_updates_rejected_not_enough_samples_total
+                                                    .saturating_add(1);
+                                            }
+                                            Some(GeistRejectReason::Unstable) => {
+                                                self.geist_updates_rejected_unstable_total = self
+                                                    .geist_updates_rejected_unstable_total
+                                                    .saturating_add(1);
+                                            }
+                                            Some(GeistRejectReason::Degraded) => {
+                                                self.geist_updates_rejected_degraded_total = self
+                                                    .geist_updates_rejected_degraded_total
+                                                    .saturating_add(1);
+                                            }
+                                            Some(GeistRejectReason::Drift) => {
+                                                self.geist_updates_rejected_drift_total = self
+                                                    .geist_updates_rejected_drift_total
+                                                    .saturating_add(1);
+                                            }
+                                            None => {}
+                                        }
+                                    }
+                                    Err(_error) => {
+                                        self.geist_hook_errors_total =
+                                            self.geist_hook_errors_total.saturating_add(1);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Err(_error) => {
+                        self.consolidation_hook_errors_total =
+                            self.consolidation_hook_errors_total.saturating_add(1);
+                    }
+                }
+            }
+        }
 
         if let Some(fep) = &self.last_fep_outputs {
             if fep.memory_priority >= 0.45 {
