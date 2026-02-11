@@ -2,7 +2,7 @@ use ucf_core::types::{SimTime, Tick, WindowId};
 use ucf_frames::v1::{
     BiophysFrame, BiophysHhParams, ChannelCode, ControlFrame, ControlPayload, CorrelationId,
     DecisionCode, DecisionFrame, DenyReasonCode, IitFrame, Intent, IntentId, IntentKind,
-    IntentType, ReasonCode,
+    IntentType, OnnFrame, ReasonCode, SnnFrame,
 };
 
 #[test]
@@ -124,4 +124,24 @@ fn iit_frame_can_be_constructed() {
 
     assert_eq!(frame.now_ms, 123);
     assert_eq!(frame.state, 1);
+}
+
+#[test]
+fn onn_and_snn_frames_can_be_constructed() {
+    let onn = OnnFrame {
+        now_ms: 7,
+        global_phase: 1.2,
+        mean_lock: 0.8,
+    };
+    let snn = SnnFrame {
+        now_ms: 7,
+        spikes: 3,
+        feature: 1,
+        causal: 1,
+        verify: 1,
+        attention: 0,
+    };
+
+    assert_eq!(onn.now_ms, 7);
+    assert_eq!(snn.spikes, 3);
 }
