@@ -16,3 +16,5 @@ ucf-snn = { path = "../../domains/ucf-snn" }
 ucf-cde = { path = "../../core/crates/ucf-cde" }
 ucf-nsr = { path = "../../core/crates/ucf-nsr" }
 ucf-ssm = { path = "../../core/crates/ucf-ssm" }
+
+ucf-tcf = { path = "../../core/crates/ucf-tcf" }

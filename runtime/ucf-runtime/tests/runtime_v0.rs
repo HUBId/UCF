@@ -724,3 +724,58 @@ fn low_mean_lock_forces_nsr_block_and_policy_denies_action() {
     assert_eq!(decision.decision, ucf_frames::v1::DecisionCode::Deny);
     assert!(adapter.emitted.is_empty());
 }
+
+#[test]
+fn orchestrator_tick_emits_tcf_frame_each_tick() {
+    let mut orchestrator = RuntimeOrchestrator::new();
+    let mut adapter = MockAdapter::default();
+
+    for tick in 60..80 {
+        let ctrl = ControlFrame::new_text(
+            SimTime {
+                tick: Tick::new(tick),
+                window: WindowId::new(0),
+            },
+            CorrelationId(300 + tick),
+            ChannelCode::InternalThought,
+            intent(),
+            "tcf",
+        );
+
+        orchestrator
+            .ingest_and_process(&mut adapter, ctrl)
+            .expect("tcf tick should succeed");
+
+        let tcf = orchestrator
+            .last_tcf_frame()
+            .expect("tcf frame should exist");
+        assert_eq!(tcf.now_ms, tick);
+    }
+}
+
+#[test]
+fn orchestrator_tcf_mean_lock_is_non_zero_and_not_nan() {
+    let mut orchestrator = RuntimeOrchestrator::new();
+    let mut adapter = MockAdapter::default();
+
+    for tick in 80..100 {
+        let ctrl = ControlFrame::new_text(
+            SimTime {
+                tick: Tick::new(tick),
+                window: WindowId::new(0),
+            },
+            CorrelationId(400 + tick),
+            ChannelCode::InternalThought,
+            intent(),
+            "tcf-lock",
+        );
+        orchestrator
+            .ingest_and_process(&mut adapter, ctrl)
+            .expect("runtime tick should succeed");
+    }
+
+    let tcf = orchestrator.last_tcf_frame().expect("tcf frame");
+    let mean_lock = (tcf.lock_q as f32) / 255.0;
+    assert!(!mean_lock.is_nan());
+    assert!(mean_lock > 0.0);
+}

@@ -17,7 +17,7 @@ use ucf_ess::v1::{ExperienceRecord, ExperienceStore, IdAllocator, InMemoryEss};
 use ucf_frames::v1::{
     ArchiveAppendFrame, BiophysFrame, BiophysHhParams, CdeFrame, ControlFrame, DecisionFrame,
     IitFrame, MicrocircuitFrame, NeuromodulatorSnapshot, NsrFrame, OnnFrame, PhaseFrame, SnnFrame,
-    SsmFrame,
+    SsmFrame, TcfFrame,
 };
 use ucf_iit_proxy::v0::{
     IitConfig, IitMonitor, MOD_BLUE, MOD_GEIST, MOD_JEPA, MOD_NSR, MOD_PBM, MOD_SSM,
@@ -28,6 +28,7 @@ use ucf_onn::v0::{OnnCore, PhaseDeg};
 use ucf_policy::{adapter::ActionAdapter, gem::Gem, pbm::Pbm};
 use ucf_snn::v0::{encode, to_brainbus, FeatureEvent, SnnEncodeCfg};
 use ucf_ssm::v0::{ssm_step, SsmCfg, SsmState};
+use ucf_tcf::v0::{tcf_tick, TcfCfg, TcfState};
 
 const OSC_SSM: OscId = 1;
 const OSC_CDE: OscId = 2;
@@ -87,6 +88,9 @@ pub struct RuntimeOrchestrator {
     event_bus: EventBus,
     spike_seq: u32,
     last_onn_frame: Option<OnnFrame>,
+    tcf_cfg: TcfCfg,
+    tcf_state: TcfState,
+    last_tcf_frame: Option<TcfFrame>,
     forced_mean_lock_for_test: Option<f32>,
     last_snn_frame: Option<SnnFrame>,
     iit_cfg: IITCfg,
@@ -155,6 +159,9 @@ impl RuntimeOrchestrator {
             event_bus: EventBus::default(),
             spike_seq: 0,
             last_onn_frame: None,
+            tcf_cfg: TcfCfg::default_gamma40(),
+            tcf_state: TcfState::new(&TcfCfg::default_gamma40(), 0),
+            last_tcf_frame: None,
             forced_mean_lock_for_test: None,
             last_snn_frame: None,
             iit_cfg: IITCfg::default(),
@@ -200,6 +207,10 @@ impl RuntimeOrchestrator {
 
     pub fn last_onn_frame(&self) -> Option<OnnFrame> {
         self.last_onn_frame
+    }
+
+    pub fn last_tcf_frame(&self) -> Option<TcfFrame> {
+        self.last_tcf_frame
     }
 
     pub fn last_snn_frame(&self) -> Option<SnnFrame> {
@@ -349,15 +360,24 @@ impl RuntimeOrchestrator {
             self.phase_cfg,
         );
 
-        let mut onn_out = onn_step(&mut self.onn_state, dt_ms, self.onn_cfg, ONN_COUPLINGS);
-        if let Some(forced) = self.forced_mean_lock_for_test {
-            onn_out.mean_lock = forced.clamp(0.0, 1.0);
-        }
+        let onn_out = onn_step(&mut self.onn_state, dt_ms, self.onn_cfg, ONN_COUPLINGS);
         self.last_onn_frame = Some(OnnFrame {
             now_ms,
             global_phase: onn_out.global_phase,
             mean_lock: onn_out.mean_lock,
         });
+
+        let mut tcf_out = tcf_tick(&self.tcf_cfg, &mut self.tcf_state, now_ms, &[]);
+        if let Some(forced) = self.forced_mean_lock_for_test {
+            tcf_out.mean_lock = forced.clamp(0.0, 1.0);
+        }
+        self.last_tcf_frame = Some(TcfFrame::from_metrics(
+            tcf_out.now_ms,
+            tcf_out.global_phase,
+            tcf_out.mean_lock,
+            tcf_out.jitter,
+            tcf_out.phase_spread,
+        ));
 
         let baseline = BiophysField::default();
         self.biophys_field = self
@@ -416,7 +436,7 @@ impl RuntimeOrchestrator {
             Observation {
                 now_ms,
                 vars: vec![
-                    (1, onn_out.mean_lock.clamp(0.0, 1.0)),
+                    (1, tcf_out.mean_lock.clamp(0.0, 1.0)),
                     (2, ssm_gate),
                     (3, nsr_verified_ratio),
                     (4, archive_append_bytes_q),
@@ -449,7 +469,7 @@ impl RuntimeOrchestrator {
             intent: planned_intent,
             tool: "mock".to_string(),
             channel: "terminal".to_string(),
-            risk: if onn_out.mean_lock < 0.25 {
+            risk: if tcf_out.mean_lock < 0.25 {
                 "high".to_string()
             } else {
                 "low".to_string()
@@ -504,7 +524,7 @@ impl RuntimeOrchestrator {
         let archive_append_bytes_q =
             ((self.last_archive_payload_len as f32) / 1024.0).clamp(0.0, 1.0);
         let input = [
-            onn_out.mean_lock.clamp(0.0, 1.0),
+            tcf_out.mean_lock.clamp(0.0, 1.0),
             verified_ratio.clamp(0.0, 1.0),
             top_conf_from_cde,
             archive_append_bytes_q,
@@ -513,7 +533,7 @@ impl RuntimeOrchestrator {
             0.0,
             0.0,
         ];
-        let gate = onn_out.mean_lock.clamp(0.0, 1.0);
+        let gate = tcf_out.mean_lock.clamp(0.0, 1.0);
         let ssm_out = ssm_step(&self.ssm_cfg, &mut self.ssm_state, now_ms, &input, gate);
         self.working_context.ssm_y = ssm_out.y.clone();
         let ssm_energy = if ssm_out.y.is_empty() {
@@ -522,10 +542,10 @@ impl RuntimeOrchestrator {
             ssm_out.y.iter().map(|v| v.abs()).sum::<f32>() / (ssm_out.y.len() as f32)
         };
 
-        let phase_bin_ssm = phase_bin(phase_for_osc(&self.onn_state, OSC_SSM), 16);
-        let phase_bin_cde = phase_bin(phase_for_osc(&self.onn_state, OSC_CDE), 16);
-        let phase_bin_nsr = phase_bin(phase_for_osc(&self.onn_state, OSC_NSR), 16);
-        let phase_bin_coh = phase_bin(phase_for_osc(&self.onn_state, OSC_COHERENCE), 16);
+        let tcf_phase_bin = self
+            .last_tcf_frame
+            .map(|frame| frame.phase_bin)
+            .unwrap_or_else(|| phase_bin(tcf_out.global_phase, 255));
 
         let mut tick_spikes = Vec::new();
         if ssm_out.gate > 0.6 {
@@ -534,7 +554,7 @@ impl RuntimeOrchestrator {
                 now_ms,
                 OSC_SSM,
                 SpikeKind::Feature,
-                phase_bin_ssm,
+                tcf_phase_bin,
                 magnitude,
                 None,
             ));
@@ -546,7 +566,7 @@ impl RuntimeOrchestrator {
                 now_ms,
                 OSC_CDE,
                 SpikeKind::Causal,
-                phase_bin_cde,
+                tcf_phase_bin,
                 magnitude,
                 None,
             ));
@@ -557,19 +577,19 @@ impl RuntimeOrchestrator {
                 now_ms,
                 OSC_NSR,
                 SpikeKind::Verify,
-                phase_bin_nsr,
+                tcf_phase_bin,
                 verified_ratio.clamp(0.0, 1.0),
                 None,
             ));
         }
 
-        if onn_out.mean_lock > 0.7 {
+        if tcf_out.mean_lock > 0.7 {
             tick_spikes.push(self.make_spike(
                 now_ms,
                 OSC_COHERENCE,
                 SpikeKind::Attention,
-                phase_bin_coh,
-                onn_out.mean_lock.clamp(0.0, 1.0),
+                tcf_phase_bin,
+                tcf_out.mean_lock.clamp(0.0, 1.0),
                 None,
             ));
         }
@@ -661,7 +681,7 @@ impl RuntimeOrchestrator {
         });
 
         let payload =
-            tick_summary_payload(now_ms, coherence_state, onn_out.mean_lock, ssm_out.gate);
+            tick_summary_payload(now_ms, coherence_state, tcf_out.mean_lock, ssm_out.gate);
         let flushed = match self.archive.cfg.flush {
             FlushPolicy::EveryAppend => true,
             FlushPolicy::IntervalMs(interval) => {
@@ -872,13 +892,4 @@ fn sync_graph_from_cde_state(graph: &mut CausalGraph, state: &CdeState) {
             hyp.conf.clamp(0.0, 1.0),
         );
     }
-}
-
-fn phase_for_osc(state: &OnnState, id: OscId) -> f32 {
-    state
-        .osc
-        .iter()
-        .find(|(oid, _)| *oid == id)
-        .map(|(_, phase)| *phase)
-        .unwrap_or(state.global_phase)
 }
