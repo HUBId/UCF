@@ -405,6 +405,10 @@ pub fn frame_time_tick(time: SimTime) -> u64 {
     time.tick.get()
 }
 
+pub fn ucf_compute_chain_digest_emitted_total() -> u64 {
+    UCF_COMPUTE_CHAIN_DIGEST_EMITTED_TOTAL.load(Ordering::Relaxed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -615,8 +619,4 @@ mod tests {
             );
         }
     }
-}
-
-pub fn ucf_compute_chain_digest_emitted_total() -> u64 {
-    UCF_COMPUTE_CHAIN_DIGEST_EMITTED_TOTAL.load(Ordering::Relaxed)
 }
