@@ -3,6 +3,10 @@ name = "ucf-runtime"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = []
+compute-candle = ["ucf-compute/compute-candle"]
+
 [dependencies]
 ucf-core = { path = "../../core/ucf-core" }
 ucf-frames = { path = "../../domains/ucf-frames" }

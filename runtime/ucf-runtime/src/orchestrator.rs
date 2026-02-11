@@ -11,7 +11,10 @@ use ucf_cde::v0::{
     on_intervention, on_observation, tick_decay, CdeCfg, CdeState, CdeUpdateKind, Intervention,
     Observation, VarId,
 };
-use ucf_compute::{compute_input_from_control, AiComputeBackend, ComputeBudget, CpuStubBackend};
+use ucf_compute::{
+    build_backend, compute_input_from_control, AiComputeBackend, ComputeBackendConfig,
+    ComputeBudget, CpuStubBackend,
+};
 use ucf_core::archive_log::ArchiveLog;
 use ucf_core::storage::{ArchiveCfg, FlushPolicy, MemArchiveStore};
 use ucf_dbm::chemistry::{chemistry_step, ChemistryCfg, NeuromodState};
@@ -191,6 +194,14 @@ pub struct RuntimeOrchestrator {
 }
 
 impl RuntimeOrchestrator {
+    pub fn try_new_from_env() -> Result<Self, RuntimeError> {
+        let cfg = ComputeBackendConfig::from_env()?;
+        let mut orchestrator = Self::new();
+        orchestrator.compute_budget = cfg.to_budget();
+        orchestrator.compute_backend = build_backend(&cfg)?;
+        Ok(orchestrator)
+    }
+
     pub fn new() -> Self {
         let mut onn = OnnCore::new(1.0, 0.0);
         onn.register(MOD_PBM, PhaseDeg(0.0));
