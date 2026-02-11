@@ -93,6 +93,9 @@ pub struct SandboxCallRecord {
     pub op: String,
     pub evidence_chain_digest: [u8; 32],
     pub capability_count: u32,
+    pub isolation_runtime: Option<String>,
+    pub wasm_module_digest: Option<[u8; 32]>,
+    pub fuel_used: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

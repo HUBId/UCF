@@ -5,6 +5,10 @@ use ucf_bluebrain_bridge::BrainStimulusEncoder;
 use ucf_brainbus::v0::Spike;
 use ucf_core::types::{SimTime, Tick, WindowId};
 use ucf_frames::v1::{ChannelCode, ControlFrame, ControlPayload, CorrelationId, DecisionCode};
+
+#[cfg(feature = "sandbox-wasm")]
+use wasmtime::{Caller, Config, Engine, Extern, Instance, Linker, Memory, Module, Store};
+
 use ucf_policy::{
     adapter::ActionAdapter,
     capability::{CapabilityKind, CapabilityScope, CapabilitySet},
@@ -18,6 +22,36 @@ const MAX_MODULE_BYTES: usize = 64;
 const MAX_CALL_INPUT_BYTES: usize = 64 * 1024;
 const MAX_REPLY_OUTPUT_BYTES: usize = 64 * 1024;
 const MAX_CAPABILITY_ITEMS: usize = 32;
+#[cfg(feature = "sandbox-wasm")]
+const WASM_SCHEMA_VERSION: u16 = 1;
+#[cfg(feature = "sandbox-wasm")]
+const MAX_HOSTCALLS: u32 = 32;
+#[cfg(feature = "sandbox-wasm")]
+const MAX_WASM_MEMORY_PAGES: u64 = 2;
+#[cfg(feature = "sandbox-wasm")]
+const MAX_WASM_REPLY_BYTES: usize = 64 * 1024;
+
+#[cfg(feature = "sandbox-wasm")]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WasmCallEnvelope {
+    pub schema_version: u16,
+    pub module: String,
+    pub op: String,
+    pub payload: Vec<u8>,
+    pub capability_set_summary: CapabilitySetSummary,
+    pub evidence_chain_digest: [u8; 32],
+    pub t: u64,
+}
+
+#[cfg(feature = "sandbox-wasm")]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WasmReplyEnvelope {
+    pub schema_version: u16,
+    pub status: SandboxStatus,
+    pub payload: Vec<u8>,
+    pub audit: Option<SandboxAuditSummary>,
+    pub finished_at_t: u64,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CallId(pub u64);
@@ -160,6 +194,7 @@ pub enum SandboxError {
     InvalidRequest(&'static str),
     BudgetExceeded(&'static str),
     BackendDisabled(&'static str),
+    ExecutionFailed(&'static str),
     NotImplemented(&'static str),
 }
 
@@ -297,7 +332,55 @@ impl<'a, A: ActionAdapter> IsolationRuntime for InProcIsolationRuntime<'a, A> {
 }
 
 #[cfg(feature = "sandbox-wasm")]
-pub struct WasmIsolationRuntime;
+struct WasmHostState {
+    call: SandboxCall,
+    hostcalls: u32,
+    tool_request_count: u32,
+    tool_result: Vec<u8>,
+}
+
+#[cfg(feature = "sandbox-wasm")]
+pub struct WasmIsolationRuntime {
+    _gate: ToolGate,
+    engine: Engine,
+    modules: BTreeMap<String, Module>,
+}
+
+#[cfg(feature = "sandbox-wasm")]
+impl WasmIsolationRuntime {
+    pub fn new(gate: ToolGate) -> Result<Self, SandboxError> {
+        let mut cfg = Config::new();
+        cfg.consume_fuel(true);
+        cfg.epoch_interruption(false);
+        let engine = Engine::new(&cfg).map_err(|_| SandboxError::BackendDisabled("engine_init"))?;
+        let mut modules = BTreeMap::new();
+        let echo = Module::new(&engine, wasm_echo_bytes())
+            .map_err(|_| SandboxError::BackendDisabled("echo_module"))?;
+        let probe = Module::new(&engine, wasm_tool_probe_bytes())
+            .map_err(|_| SandboxError::BackendDisabled("probe_module"))?;
+        modules.insert("wasm.echo".to_string(), echo);
+        modules.insert("wasm.tool_probe".to_string(), probe);
+        Ok(Self {
+            _gate: gate,
+            engine,
+            modules,
+        })
+    }
+
+    fn map_tool_kind(kind: u32) -> Option<CapabilityKind> {
+        match kind {
+            1 => Some(CapabilityKind::FileRead),
+            2 => Some(CapabilityKind::NetHttp),
+            _ => None,
+        }
+    }
+
+    fn decode_ptr_len(ret: i64) -> (u32, u32) {
+        let ptr = (ret & 0xffff_ffff) as u32;
+        let len = ((ret >> 32) & 0xffff_ffff) as u32;
+        (ptr, len)
+    }
+}
 
 #[cfg(feature = "sandbox-wasm")]
 impl IsolationRuntime for WasmIsolationRuntime {
@@ -307,12 +390,184 @@ impl IsolationRuntime for WasmIsolationRuntime {
 
     fn call(
         &mut self,
-        _req: SandboxCall,
-        _budget: SandboxBudget,
+        req: SandboxCall,
+        budget: SandboxBudget,
     ) -> Result<SandboxReply, SandboxError> {
-        Err(SandboxError::BackendDisabled(
-            "sandbox-wasm disabled at runtime",
-        ))
+        InProcIsolationRuntime::<ucf_policy::adapter::MockAdapter>::enforce_request_bounds(
+            &req, budget,
+        )?;
+        if budget.hard_timeout_ticks == 0 {
+            return Err(SandboxError::BudgetExceeded("hard_timeout_ticks"));
+        }
+        let module = self
+            .modules
+            .get(&req.module)
+            .ok_or(SandboxError::InvalidRequest("unknown_wasm_module"))?
+            .clone();
+
+        let env = WasmCallEnvelope {
+            schema_version: WASM_SCHEMA_VERSION,
+            module: req.module.clone(),
+            op: req.op.clone(),
+            payload: req.input.clone(),
+            capability_set_summary: req.capabilities.clone(),
+            evidence_chain_digest: req.evidence_chain_digest,
+            t: req.t,
+        };
+        let input_bytes = encode_wasm_call_envelope(&env)?;
+
+        let mut linker: Linker<WasmHostState> = Linker::new(&self.engine);
+        linker
+            .func_wrap(
+                "host",
+                "host_log",
+                |_caller: Caller<'_, WasmHostState>, _level: i32, _ptr: i32, _len: i32| {},
+            )
+            .map_err(|_| SandboxError::BackendDisabled("host_log"))?;
+
+        linker
+            .func_wrap(
+                "host",
+                "host_tool_request",
+                |mut caller: Caller<'_, WasmHostState>,
+                 kind: i32,
+                 target_ptr: i32,
+                 target_len: i32,
+                 _payload_hint: i32|
+                 -> i32 {
+                    {
+                        let state = caller.data_mut();
+                        state.hostcalls = state.hostcalls.saturating_add(1);
+                        if state.hostcalls > MAX_HOSTCALLS {
+                            state.tool_result = b"hostcall_limit".to_vec();
+                            return 2;
+                        }
+                        state.tool_request_count = state.tool_request_count.saturating_add(1);
+                        if state.tool_request_count > 1 {
+                            state.tool_result = b"single_tool_request_only".to_vec();
+                            return 2;
+                        }
+                    }
+                    let Some(kind) = Self::map_tool_kind(kind as u32) else {
+                        caller.data_mut().tool_result = b"unknown_kind".to_vec();
+                        return 2;
+                    };
+                    let Some(Extern::Memory(mem)) = caller.get_export("memory") else {
+                        caller.data_mut().tool_result = b"missing_memory".to_vec();
+                        return 2;
+                    };
+                    let mut target = vec![0u8; target_len.max(0) as usize];
+                    if mem
+                        .read(&caller, target_ptr.max(0) as usize, &mut target)
+                        .is_err()
+                    {
+                        caller.data_mut().tool_result = b"invalid_target".to_vec();
+                        return 2;
+                    }
+                    let target = String::from_utf8_lossy(&target).to_string();
+                    let _request = ToolRequest {
+                        id: caller.data().call.call_id.0,
+                        kind,
+                        target,
+                        payload_hint: PayloadHint::default(),
+                        requested_at_t: caller.data().call.t,
+                        decision_id: caller.data().call.call_id.0,
+                        evidence_chain_digest: caller.data().call.evidence_chain_digest,
+                    };
+                    caller.data_mut().tool_result = b"denied_by_default".to_vec();
+                    2
+                },
+            )
+            .map_err(|_| SandboxError::BackendDisabled("host_tool_request"))?;
+
+        let mut store = Store::new(
+            &self.engine,
+            WasmHostState {
+                call: req.clone(),
+                hostcalls: 0,
+                tool_request_count: 0,
+                tool_result: Vec::new(),
+            },
+        );
+        store
+            .set_fuel(budget.work_units)
+            .map_err(|_| SandboxError::BudgetExceeded("fuel"))?;
+
+        let instance = linker
+            .instantiate(&mut store, &module)
+            .map_err(|_| SandboxError::ExecutionFailed("instantiate"))?;
+        let memory = get_memory(&mut store, &instance)?;
+        let alloc = instance
+            .get_typed_func::<i32, i32>(&mut store, "alloc")
+            .map_err(|_| SandboxError::InvalidRequest("missing_alloc"))?;
+        let entry = instance
+            .get_typed_func::<(i32, i32), i64>(&mut store, "sandbox_call")
+            .map_err(|_| SandboxError::InvalidRequest("missing_entry"))?;
+
+        let in_ptr = alloc
+            .call(&mut store, input_bytes.len() as i32)
+            .map_err(|_| SandboxError::ExecutionFailed("alloc_input"))?;
+        memory
+            .write(&mut store, in_ptr as usize, &input_bytes)
+            .map_err(|_| SandboxError::ExecutionFailed("write_input"))?;
+
+        let ret = entry
+            .call(&mut store, (in_ptr, input_bytes.len() as i32))
+            .map_err(|_| SandboxError::BudgetExceeded("fuel"))?;
+        let (out_ptr, out_len) = Self::decode_ptr_len(ret);
+        if out_len as usize > MAX_WASM_REPLY_BYTES || out_len > budget.max_bytes_out {
+            return Err(SandboxError::BudgetExceeded("bytes_out"));
+        }
+        let mut out = vec![0u8; out_len as usize];
+        memory
+            .read(&store, out_ptr as usize, &mut out)
+            .map_err(|_| SandboxError::ExecutionFailed("read_output"))?;
+
+        let (status, output) = if req.module == "wasm.tool_probe" {
+            let code = out.first().copied().unwrap_or(2);
+            let status = if code == 1 {
+                SandboxStatus::Ok
+            } else {
+                SandboxStatus::Denied
+            };
+            (status, out)
+        } else {
+            let reply = decode_wasm_reply_envelope(&out).unwrap_or(WasmReplyEnvelope {
+                schema_version: WASM_SCHEMA_VERSION,
+                status: SandboxStatus::Ok,
+                payload: req.input.clone(),
+                audit: None,
+                finished_at_t: req.t,
+            });
+            (reply.status, reply.payload)
+        };
+        Ok(SandboxReply {
+            status,
+            output,
+            audit: SandboxAuditSummary {
+                call_digest: req.digest(),
+                token_digest: None,
+                bytes_out: req.input.len() as u32,
+                bytes_in: 0,
+            },
+            finished_at_t: req.t,
+        })
+    }
+}
+
+#[cfg(feature = "sandbox-wasm")]
+fn get_memory(
+    store: &mut Store<WasmHostState>,
+    instance: &Instance,
+) -> Result<Memory, SandboxError> {
+    match instance.get_export(&mut *store, "memory") {
+        Some(Extern::Memory(mem)) => {
+            if mem.size(store) > MAX_WASM_MEMORY_PAGES {
+                return Err(SandboxError::BudgetExceeded("memory_pages"));
+            }
+            Ok(mem)
+        }
+        _ => Err(SandboxError::InvalidRequest("missing_memory")),
     }
 }
 
@@ -364,16 +619,34 @@ pub fn execute_tool_call<A: ActionAdapter>(
         capabilities: capability_summary.clone(),
         evidence_chain_digest: request.evidence_chain_digest,
     };
-    let mut runtime = InProcIsolationRuntime::new(gate, adapter);
-    let reply = runtime.call(
-        call,
-        SandboxBudget {
-            work_units: 4,
-            max_bytes_out: 4096,
-            max_bytes_in: 65536,
-            hard_timeout_ticks: 1,
-        },
-    )?;
+    let budget = SandboxBudget {
+        work_units: 4,
+        max_bytes_out: 4096,
+        max_bytes_in: 65536,
+        hard_timeout_ticks: 1,
+    };
+    let runtime_choice =
+        std::env::var("UCF_ISOLATION_RUNTIME").unwrap_or_else(|_| "inproc".to_string());
+    let reply = if runtime_choice == "wasm" {
+        #[cfg(feature = "sandbox-wasm")]
+        {
+            let wasm_gate = ToolGate::new(
+                gate.capabilities.clone(),
+                ucf_policy::rate_limiter::RateLimiter::new(32),
+            );
+            let mut runtime = WasmIsolationRuntime::new(wasm_gate)?;
+            runtime.call(call, budget)?
+        }
+        #[cfg(not(feature = "sandbox-wasm"))]
+        {
+            return Err(SandboxError::BackendDisabled(
+                "sandbox-wasm feature not enabled",
+            ));
+        }
+    } else {
+        let mut runtime = InProcIsolationRuntime::new(gate, adapter);
+        runtime.call(call, budget)?
+    };
     let auth = match reply.audit.token_digest {
         Some(token_digest) => AuthorizationOutcome::Allowed { token_digest },
         None => {
@@ -598,10 +871,7 @@ mod tests {
     use ucf_frames::v1::{
         BrainStimulusKind, BrainStimulusPayload, CorrelationId, Intent, IntentId, IntentKind,
     };
-    use ucf_policy::{
-        capability::{CapabilityLimits, CapabilityScope, CapabilityToken},
-        rate_limiter::RateLimiter,
-    };
+    use ucf_policy::capability::{CapabilityLimits, CapabilityScope, CapabilityToken};
 
     fn sim_time() -> SimTime {
         SimTime {
@@ -648,7 +918,10 @@ mod tests {
 
     #[test]
     fn denied_call_returns_denied_status() {
-        let mut gate = ToolGate::new(CapabilitySet::empty(), RateLimiter::new(10));
+        let mut gate = ToolGate::new(
+            CapabilitySet::empty(),
+            ucf_policy::rate_limiter::RateLimiter::new(10),
+        );
         let mut adapter = ucf_policy::adapter::MockAdapter::default();
         let mut runtime = InProcIsolationRuntime::new(&mut gate, &mut adapter);
         let req = SandboxCall {
@@ -696,7 +969,7 @@ mod tests {
             CapabilitySet {
                 tokens: vec![token],
             },
-            RateLimiter::new(10),
+            ucf_policy::rate_limiter::RateLimiter::new(10),
         );
         let mut adapter = ucf_policy::adapter::MockAdapter::default();
         let mut runtime = InProcIsolationRuntime::new(&mut gate, &mut adapter);
@@ -722,4 +995,150 @@ mod tests {
             .expect_err("budget should fail");
         assert!(matches!(err, SandboxError::BudgetExceeded("work_units")));
     }
+}
+
+#[cfg(feature = "sandbox-wasm")]
+fn encode_wasm_call_envelope(env: &WasmCallEnvelope) -> Result<Vec<u8>, SandboxError> {
+    if env.op.len() > MAX_OP_BYTES || env.module.len() > MAX_MODULE_BYTES {
+        return Err(SandboxError::InvalidRequest("wasm_envelope_bounds"));
+    }
+    let mut out = Vec::new();
+    out.extend_from_slice(&env.schema_version.to_be_bytes());
+    put_string(&mut out, &env.module);
+    put_string(&mut out, &env.op);
+    put_bytes(&mut out, &env.payload);
+    out.extend_from_slice(&env.capability_set_summary.canonical_bytes());
+    out.extend_from_slice(&env.evidence_chain_digest);
+    put_u64(&mut out, env.t);
+    Ok(out)
+}
+
+#[cfg(feature = "sandbox-wasm")]
+fn decode_wasm_reply_envelope(bytes: &[u8]) -> Result<WasmReplyEnvelope, SandboxError> {
+    if bytes.len() < 3 {
+        return Err(SandboxError::InvalidRequest("wasm_reply_short"));
+    }
+    let schema_version = u16::from_be_bytes([bytes[0], bytes[1]]);
+    let status = match bytes[2] {
+        1 => SandboxStatus::Ok,
+        2 => SandboxStatus::Denied,
+        3 => SandboxStatus::RateLimited,
+        _ => SandboxStatus::Failed,
+    };
+    Ok(WasmReplyEnvelope {
+        schema_version,
+        status,
+        payload: bytes[3..].to_vec(),
+        audit: None,
+        finished_at_t: 0,
+    })
+}
+
+#[cfg(feature = "sandbox-wasm")]
+fn wasm_echo_bytes() -> Vec<u8> {
+    wat::parse_str(
+        r#"(module
+            (memory (export "memory") 1 2)
+            (func (export "alloc") (param $len i32) (result i32)
+                (i32.const 0))
+            (func (export "sandbox_call") (param $ptr i32) (param $len i32) (result i64)
+                local.get $len
+                i64.extend_i32_u
+                i64.const 32
+                i64.shl
+                local.get $ptr
+                i64.extend_i32_u
+                i64.or))"#,
+    )
+    .expect("valid wat")
+}
+
+#[cfg(feature = "sandbox-wasm")]
+fn wasm_tool_probe_bytes() -> Vec<u8> {
+    wat::parse_str(
+        r#"(module
+            (import "host" "host_tool_request" (func $host_tool_request (param i32 i32 i32 i32) (result i32)))
+            (memory (export "memory") 1 2)
+            (data (i32.const 16) "/tmp/probe")
+            (func (export "alloc") (param $len i32) (result i32)
+                (i32.const 0))
+            (func (export "sandbox_call") (param $ptr i32) (param $len i32) (result i64)
+                (local $status i32)
+                i32.const 1
+                i32.const 16
+                i32.const 10
+                i32.const 0
+                call $host_tool_request
+                local.set $status
+                i32.const 0
+                local.get $status
+                i32.store8
+                i32.const 4
+                i64.extend_i32_u
+                i64.const 32
+                i64.shl
+                i32.const 0
+                i64.extend_i32_u
+                i64.or))"#,
+    )
+    .expect("valid wat")
+}
+
+#[cfg(feature = "sandbox-wasm")]
+#[test]
+fn wasm_echo_is_deterministic() {
+    let gate = ToolGate::new(
+        CapabilitySet::empty(),
+        ucf_policy::rate_limiter::RateLimiter::new(10),
+    );
+    let mut rt = WasmIsolationRuntime::new(gate).expect("wasm runtime");
+    let req = SandboxCall {
+        call_id: CallId(9),
+        t: 1,
+        module: "wasm.echo".into(),
+        op: "echo".into(),
+        input: b"ping".to_vec(),
+        capabilities: CapabilitySetSummary::default(),
+        evidence_chain_digest: [2; 32],
+    };
+    let budget = SandboxBudget {
+        work_units: 100_000,
+        max_bytes_out: 4096,
+        max_bytes_in: 4096,
+        hard_timeout_ticks: 1,
+    };
+    let a = rt.call(req.clone(), budget).expect("first");
+    let b = rt.call(req, budget).expect("second");
+    assert_eq!(a.digest(), b.digest());
+}
+
+#[cfg(feature = "sandbox-wasm")]
+#[test]
+fn wasm_tool_probe_denied_by_default() {
+    let gate = ToolGate::new(
+        CapabilitySet::empty(),
+        ucf_policy::rate_limiter::RateLimiter::new(10),
+    );
+    let mut rt = WasmIsolationRuntime::new(gate).expect("wasm runtime");
+    let req = SandboxCall {
+        call_id: CallId(10),
+        t: 1,
+        module: "wasm.tool_probe".into(),
+        op: "probe".into(),
+        input: vec![],
+        capabilities: CapabilitySetSummary::default(),
+        evidence_chain_digest: [3; 32],
+    };
+    let reply = rt
+        .call(
+            req,
+            SandboxBudget {
+                work_units: 100_000,
+                max_bytes_out: 4096,
+                max_bytes_in: 4096,
+                hard_timeout_ticks: 1,
+            },
+        )
+        .expect("reply");
+    assert_eq!(reply.status, SandboxStatus::Denied);
 }
