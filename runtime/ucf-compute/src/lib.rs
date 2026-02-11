@@ -3,9 +3,11 @@ use thiserror::Error;
 use ucf_core::types::SimTime;
 use ucf_frames::v1::{ControlFrame, ControlPayload};
 
+pub mod backends;
 pub mod feature_extractor;
 pub mod ssm;
 pub mod world_model;
+pub use backends::{build_backend, ComputeBackendConfig, ComputeBackendKind};
 use feature_extractor::{FeatureExtractor, MockSaeExtractor, SaeOutput};
 use ssm::{MockSsmSelectiveScan, WorkingMemoryModel};
 use world_model::{MockJepaPredictor, WorldModelPredictor};
@@ -396,30 +398,6 @@ impl SplitMix64 {
         z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
         z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
         z ^ (z >> 31)
-    }
-}
-
-#[cfg(feature = "compute-candle")]
-pub mod candle {
-    use crate::{
-        AiComputeBackend, ComputeBudget, ComputeError, ComputeInput, ComputeSignals, CpuStubBackend,
-    };
-
-    #[derive(Debug, Default, Clone, Copy)]
-    pub struct CandleBackend;
-
-    impl AiComputeBackend for CandleBackend {
-        fn name(&self) -> &'static str {
-            "candle_dummy"
-        }
-
-        fn compute(
-            &self,
-            input: &ComputeInput,
-            budget: ComputeBudget,
-        ) -> Result<ComputeSignals, ComputeError> {
-            CpuStubBackend.compute(input, budget)
-        }
     }
 }
 

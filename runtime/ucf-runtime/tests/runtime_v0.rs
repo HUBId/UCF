@@ -1327,3 +1327,38 @@ fn real_compute_onboarding_v0_smoke_path() {
     assert!(decision_rec.compute_summary.is_some());
     assert_eq!(decision_rec.compute_summary, Some(compute));
 }
+
+#[cfg(feature = "compute-candle")]
+#[test]
+fn orchestrator_env_selects_candle_backend_and_persists_summary() {
+    std::env::set_var("UCF_COMPUTE_BACKEND", "candle");
+    std::env::set_var("UCF_COMPUTE_SEED", "77");
+    std::env::set_var("UCF_COMPUTE_MAX_MICROS", "1000");
+    std::env::set_var("UCF_COMPUTE_HARD_TIMEOUT_MICROS", "5000");
+
+    let mut orchestrator = RuntimeOrchestrator::try_new_from_env().expect("orchestrator from env");
+    let ctrl = ControlFrame::new_text(
+        sim_time(),
+        CorrelationId(999),
+        ChannelCode::ExternalOutput,
+        intent(),
+        "candle path",
+    );
+    let mut adapter = MockAdapter::default();
+
+    let decision = orchestrator
+        .ingest_and_process(&mut adapter, ctrl)
+        .expect("orchestration should succeed");
+
+    let compute = decision.compute_summary.expect("compute summary");
+    assert_eq!(compute.backend, "candle_dummy");
+    assert!(compute.spike_count <= 256);
+    assert!((0.0..=1.0).contains(&compute.risk));
+    assert!((0.0..=1.0).contains(&compute.confidence));
+    assert!(orchestrator.ess.len() >= 2);
+
+    std::env::remove_var("UCF_COMPUTE_BACKEND");
+    std::env::remove_var("UCF_COMPUTE_SEED");
+    std::env::remove_var("UCF_COMPUTE_MAX_MICROS");
+    std::env::remove_var("UCF_COMPUTE_HARD_TIMEOUT_MICROS");
+}
