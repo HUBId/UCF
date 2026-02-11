@@ -1,7 +1,10 @@
 use std::collections::BTreeMap;
 
 use blake3::Hasher;
-use ucf_frames::v1::{ChannelCode, ControlFrame, ControlPayload};
+use ucf_bluebrain_bridge::BrainStimulusEncoder;
+use ucf_brainbus::v0::Spike;
+use ucf_core::types::{SimTime, Tick, WindowId};
+use ucf_frames::v1::{ChannelCode, ControlFrame, ControlPayload, CorrelationId, DecisionCode};
 use ucf_policy::{
     adapter::ActionAdapter,
     capability::{CapabilityKind, CapabilityScope, CapabilitySet},
@@ -176,7 +179,7 @@ pub struct InProcIsolationRuntime<'a, A: ActionAdapter> {
     dispatch: BTreeMap<(&'static str, &'static str), DispatchHandler>,
 }
 
-type DispatchHandler = fn(&[u8], &mut dyn ActionAdapter) -> Result<(u32, u32), String>;
+type DispatchHandler = fn(&SandboxCall, &mut dyn ActionAdapter) -> Result<(), String>;
 
 impl<'a, A: ActionAdapter> InProcIsolationRuntime<'a, A> {
     pub fn new(gate: &'a mut ToolGate, adapter: &'a mut A) -> Self {
@@ -190,9 +193,10 @@ impl<'a, A: ActionAdapter> InProcIsolationRuntime<'a, A> {
             handle_write_bytes as DispatchHandler,
         );
         dispatch.insert(
-            ("tools.brain", "emit_spike_count"),
-            handle_emit_spike_count as DispatchHandler,
+            ("tools.brain", "emit_spikes"),
+            handle_emit_spikes as DispatchHandler,
         );
+        dispatch.insert(("tools.none", "noop"), handle_noop as DispatchHandler);
         Self {
             gate,
             adapter,
@@ -249,33 +253,26 @@ impl<'a, A: ActionAdapter> IsolationRuntime for InProcIsolationRuntime<'a, A> {
         let auth = self.gate.authorize(&tool_request, req.t);
         let call_digest = req.digest();
 
-        let (status, token_digest, output, error_code) = match auth {
+        let (status, token_digest, output) = match auth {
             AuthorizationOutcome::Allowed { token_digest } => {
                 let handler = self
                     .dispatch
                     .get(&(req.module.as_str(), req.op.as_str()))
                     .ok_or(SandboxError::InvalidRequest("unknown_dispatch"))?;
-                match handler(&req.input, self.adapter as &mut dyn ActionAdapter) {
-                    Ok(_) => (SandboxStatus::Ok, Some(token_digest), Vec::new(), None),
-                    Err(code) => (
-                        SandboxStatus::Failed,
-                        Some(token_digest),
-                        code.as_bytes().to_vec(),
-                        Some(code),
-                    ),
+                match handler(&req, self.adapter as &mut dyn ActionAdapter) {
+                    Ok(()) => (SandboxStatus::Ok, Some(token_digest), Vec::new()),
+                    Err(code) => (SandboxStatus::Failed, Some(token_digest), code.into_bytes()),
                 }
             }
             AuthorizationOutcome::Denied { reason } => (
                 SandboxStatus::Denied,
                 None,
                 format!("{reason:?}").into_bytes(),
-                None,
             ),
             AuthorizationOutcome::RateLimited { retry_after_ticks } => (
                 SandboxStatus::RateLimited,
                 None,
                 format!("retry_after:{retry_after_ticks}").into_bytes(),
-                None,
             ),
         };
 
@@ -284,11 +281,6 @@ impl<'a, A: ActionAdapter> IsolationRuntime for InProcIsolationRuntime<'a, A> {
             return Err(SandboxError::BudgetExceeded("bytes_out"));
         }
 
-        let output = if let Some(code) = error_code {
-            code.into_bytes()
-        } else {
-            output
-        };
         let reply = SandboxReply {
             status,
             output,
@@ -350,6 +342,8 @@ pub struct SandboxToolExecution {
     pub call_digest: [u8; 32],
     pub reply_digest: [u8; 32],
     pub capability_summary: CapabilitySetSummary,
+    pub module: String,
+    pub op: String,
 }
 
 pub fn execute_tool_call<A: ActionAdapter>(
@@ -364,8 +358,8 @@ pub fn execute_tool_call<A: ActionAdapter>(
     let call = SandboxCall {
         call_id: CallId(request.id),
         t: request.requested_at_t,
-        module,
-        op,
+        module: module.clone(),
+        op: op.clone(),
         input,
         capabilities: capability_summary.clone(),
         evidence_chain_digest: request.evidence_chain_digest,
@@ -417,6 +411,8 @@ pub fn execute_tool_call<A: ActionAdapter>(
         call_digest: reply.audit.call_digest,
         reply_digest: reply.digest(),
         capability_summary,
+        module,
+        op,
     })
 }
 
@@ -434,11 +430,14 @@ pub fn call_spec_from_control(
             "write_bytes".to_string(),
             bytes.to_vec(),
         )),
-        (ChannelCode::BrainStimulus, ControlPayload::BrainStimulus(_)) => Ok((
+        (ChannelCode::BrainStimulus, ControlPayload::BrainStimulus(payload)) => Ok((
             "tools.brain".to_string(),
-            "emit_spike_count".to_string(),
-            vec![4],
+            "emit_spikes".to_string(),
+            encode_spike_meta(&BrainStimulusEncoder::encode_to_spikes(ctrl, payload)),
         )),
+        (ChannelCode::InternalThought, _) => {
+            Ok(("tools.none".to_string(), "noop".to_string(), Vec::new()))
+        }
         _ => Err(SandboxError::InvalidRequest("unsupported_control_payload")),
     }
 }
@@ -461,13 +460,18 @@ fn decode_tool_request(call: &SandboxCall) -> Result<ToolRequest, SandboxError> 
                 bytes_in: None,
             },
         ),
-        ("tools.brain", "emit_spike_count") => (
+        ("tools.brain", "emit_spikes") => (
             CapabilityKind::UiAutomation,
             "brain_target".to_string(),
             PayloadHint {
-                bytes_out: call.input.first().map(|v| *v as u32),
+                bytes_out: Some(decode_spike_meta(&call.input).map(|(n, _)| n).unwrap_or(0)),
                 bytes_in: None,
             },
+        ),
+        ("tools.none", "noop") => (
+            CapabilityKind::Custom("internal_thought".to_string()),
+            "internal".to_string(),
+            PayloadHint::default(),
         ),
         _ => return Err(SandboxError::InvalidRequest("module_op")),
     };
@@ -483,27 +487,53 @@ fn decode_tool_request(call: &SandboxCall) -> Result<ToolRequest, SandboxError> 
     })
 }
 
-fn handle_emit_text(input: &[u8], adapter: &mut dyn ActionAdapter) -> Result<(u32, u32), String> {
-    let text = String::from_utf8(input.to_vec()).map_err(|_| "invalid_utf8".to_string())?;
-    adapter.emit_text(&text).map_err(|e| e.to_string())?;
-    Ok((text.len() as u32, 0))
+fn handle_emit_text(call: &SandboxCall, adapter: &mut dyn ActionAdapter) -> Result<(), String> {
+    let text = String::from_utf8(call.input.clone()).map_err(|_| "invalid_utf8".to_string())?;
+    adapter.emit_text(&text).map_err(|e| e.to_string())
 }
 
-fn handle_write_bytes(input: &[u8], adapter: &mut dyn ActionAdapter) -> Result<(u32, u32), String> {
-    adapter.write_memory(input).map_err(|e| e.to_string())?;
-    Ok((input.len() as u32, 0))
+fn handle_write_bytes(call: &SandboxCall, adapter: &mut dyn ActionAdapter) -> Result<(), String> {
+    adapter.write_memory(&call.input).map_err(|e| e.to_string())
 }
 
-fn handle_emit_spike_count(
-    input: &[u8],
-    adapter: &mut dyn ActionAdapter,
-) -> Result<(u32, u32), String> {
-    let count = input.first().copied().unwrap_or_default() as usize;
-    let _ = count;
-    adapter
-        .emit_brain_spikes(Vec::new())
-        .map_err(|e| e.to_string())?;
-    Ok((count as u32, 0))
+fn handle_emit_spikes(call: &SandboxCall, adapter: &mut dyn ActionAdapter) -> Result<(), String> {
+    let (count, dst) = decode_spike_meta(&call.input)?;
+    let mut spikes = Vec::with_capacity(count as usize);
+    for idx in 0..count {
+        spikes.push(Spike::new(
+            SimTime {
+                tick: Tick::new(call.t),
+                window: WindowId::new(0),
+            },
+            CorrelationId(call.call_id.0),
+            idx as u16,
+            dst,
+            0,
+        ));
+    }
+    adapter.emit_brain_spikes(spikes).map_err(|e| e.to_string())
+}
+
+fn handle_noop(_call: &SandboxCall, _adapter: &mut dyn ActionAdapter) -> Result<(), String> {
+    Ok(())
+}
+
+fn encode_spike_meta(spikes: &[Spike]) -> Vec<u8> {
+    let count = spikes.len().min(u16::MAX as usize) as u16;
+    let dst = spikes.first().map(|s| s.dst).unwrap_or(0);
+    let mut out = Vec::with_capacity(4);
+    out.extend_from_slice(&count.to_be_bytes());
+    out.extend_from_slice(&dst.to_be_bytes());
+    out
+}
+
+fn decode_spike_meta(input: &[u8]) -> Result<(u32, u16), String> {
+    if input.len() != 4 {
+        return Err("invalid_spike_meta".to_string());
+    }
+    let count = u16::from_be_bytes([input[0], input[1]]) as u32;
+    let dst = u16::from_be_bytes([input[2], input[3]]);
+    Ok((count, dst))
 }
 
 fn capability_kind_tag(kind: &CapabilityKind) -> String {
@@ -557,13 +587,31 @@ fn put_optional_digest(out: &mut Vec<u8>, value: Option<[u8; 32]>) {
     }
 }
 
+pub fn decision_allows_tool(decision: DecisionCode) -> bool {
+    matches!(decision, DecisionCode::Allow)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ucf_core::types::{SimTime, Tick, WindowId};
+    use ucf_frames::v1::{
+        BrainStimulusKind, BrainStimulusPayload, CorrelationId, Intent, IntentId, IntentKind,
+    };
     use ucf_policy::{
         capability::{CapabilityLimits, CapabilityScope, CapabilityToken},
         rate_limiter::RateLimiter,
     };
+
+    fn sim_time() -> SimTime {
+        SimTime {
+            tick: Tick::new(1),
+            window: WindowId::new(0),
+        }
+    }
+    fn intent() -> Intent {
+        Intent::new(IntentId(1), IntentKind::System, "sandbox-test")
+    }
 
     #[test]
     fn canonical_encoding_is_stable() {
@@ -577,6 +625,25 @@ mod tests {
             evidence_chain_digest: [5; 32],
         };
         assert_eq!(call.digest(), call.digest());
+    }
+
+    #[test]
+    fn brain_call_spec_keeps_spike_count() {
+        let ctrl = ControlFrame {
+            time: sim_time(),
+            corr: CorrelationId(1),
+            channel: ChannelCode::BrainStimulus,
+            intent: intent(),
+            payload: ControlPayload::BrainStimulus(BrainStimulusPayload {
+                kind: BrainStimulusKind::SpikeTrain,
+                target: 44,
+                intensity: 255,
+                duration_ms: 90,
+            }),
+        };
+        let (_, _, input) = call_spec_from_control(&ctrl).expect("spec");
+        assert_eq!(input.len(), 4);
+        assert_eq!(u16::from_be_bytes([input[0], input[1]]), 8);
     }
 
     #[test]
