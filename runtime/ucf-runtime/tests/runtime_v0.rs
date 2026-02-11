@@ -7,6 +7,7 @@ use ucf_frames::v1::{
 };
 use ucf_policy::{adapter::MockAdapter, gem::Gem};
 use ucf_runtime::RuntimeOrchestrator;
+use ucf_sle::v0::SleCfg;
 
 fn sim_time() -> SimTime {
     SimTime {
@@ -378,6 +379,11 @@ fn orchestrator_tick_emits_iit_frame() {
 fn orchestrator_tick_emits_cde_and_nsr_frames() {
     let mut orchestrator = RuntimeOrchestrator::new();
     orchestrator.force_mean_lock_for_test(0.0);
+    orchestrator.set_sle_cfg_for_test(SleCfg {
+        min_trigger: 0.0,
+        cooldown_ticks: 0,
+        ..SleCfg::default_v0()
+    });
     orchestrator.set_iit_proxy_cfg_for_test(ucf_iit_proxy::v0::IitCfg {
         min_samples: 2,
         coherence_weight: 1.0,
@@ -912,4 +918,98 @@ fn attention_event_turns_true_with_strong_novelty_spike() {
         .expect("orchestration should succeed");
 
     assert!(orchestrator.attention_event());
+}
+
+#[test]
+fn sle_fires_and_injects_meta_into_ssm() {
+    let mut orchestrator = RuntimeOrchestrator::new();
+    orchestrator.set_sle_cfg_for_test(SleCfg {
+        min_trigger: 0.0,
+        cooldown_ticks: 0,
+        ..SleCfg::default_v0()
+    });
+    orchestrator.set_iit_proxy_cfg_for_test(ucf_iit_proxy::v0::IitCfg {
+        min_samples: 2,
+        coherence_weight: 1.0,
+        flow_weight: 0.0,
+        enforce_threshold: 0.95,
+        ..ucf_iit_proxy::v0::IitCfg::default_v0()
+    });
+    orchestrator.force_mean_lock_for_test(0.0);
+    let mut adapter = MockAdapter::default();
+
+    for tick in 200..220 {
+        let ctrl = ControlFrame::new_text(
+            SimTime {
+                tick: Tick::new(tick),
+                window: WindowId::new(0),
+            },
+            CorrelationId(700 + tick),
+            ChannelCode::InternalThought,
+            intent(),
+            "sle",
+        );
+        orchestrator
+            .ingest_and_process(&mut adapter, ctrl)
+            .expect("tick should succeed");
+    }
+
+    let frame = orchestrator
+        .last_sle_frame()
+        .expect("sle frame should exist");
+    assert_eq!(frame.fired, 1);
+    assert!(frame.weight_q > 0);
+
+    let ssm = orchestrator.last_ssm_frame().expect("ssm frame");
+    assert!(ssm.energy_q > 0);
+    let y = orchestrator.working_context_ssm_y();
+    assert!(y.len() >= 7);
+    assert!(y[5].abs() > 0.0 || y[6].abs() > 0.0);
+}
+
+#[test]
+fn sle_policy_denial_blocks_meta_injection() {
+    let mut orchestrator = RuntimeOrchestrator::new();
+    orchestrator.set_internal_recursion_policy_for_test(false, 1);
+    orchestrator.set_sle_cfg_for_test(SleCfg {
+        min_trigger: 0.0,
+        cooldown_ticks: 0,
+        ..SleCfg::default_v0()
+    });
+    orchestrator.set_iit_proxy_cfg_for_test(ucf_iit_proxy::v0::IitCfg {
+        min_samples: 2,
+        coherence_weight: 1.0,
+        flow_weight: 0.0,
+        enforce_threshold: 0.95,
+        ..ucf_iit_proxy::v0::IitCfg::default_v0()
+    });
+    orchestrator.force_mean_lock_for_test(0.0);
+    let mut adapter = MockAdapter::default();
+
+    for tick in 230..250 {
+        let ctrl = ControlFrame::new_text(
+            SimTime {
+                tick: Tick::new(tick),
+                window: WindowId::new(0),
+            },
+            CorrelationId(900 + tick),
+            ChannelCode::InternalThought,
+            intent(),
+            "sle-policy",
+        );
+        orchestrator
+            .ingest_and_process(&mut adapter, ctrl)
+            .expect("tick should succeed");
+    }
+
+    let frame = orchestrator
+        .last_sle_frame()
+        .expect("sle frame should exist");
+    assert_eq!(frame.fired, 1);
+    assert_eq!(frame.weight_q, 0);
+
+    let y = orchestrator.working_context_ssm_y();
+    assert!(y.len() >= 7);
+    assert!(y[5].abs() < 0.01);
+    assert!(y[6].abs() < 0.01);
 }
