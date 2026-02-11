@@ -4,11 +4,12 @@ use std::sync::Arc;
 use crate::capabilities::{FeatureExtractor, WorkingMemoryModel, WorldModelPredictor};
 use crate::feature_extractor::{FeatureVector, MockSaeExtractor, SaeOutput, SAE_FEATURE_DIM};
 use crate::ssm::{MockSsmSelectiveScan, SsmOutput};
+use crate::work_meter::WorkMeter;
 use crate::world_model::MockJepaPredictor;
 use crate::{
-    clamp01, fuse_signals, stable_budget_profile_id, validate_risk_signal, AiComputeBackend,
-    BackendProfileId, ComputeBudget, ComputeError, ComputeInput, ComputeSignals, EvidenceRef,
-    RiskSignal, SignalQuality,
+    clamp01, fuse_signals, validate_risk_signal, AiComputeBackend, BackendProfileId, ComputeBudget,
+    ComputeError, ComputeInput, ComputeSignals, DegradePolicy, EvidenceRef, RiskSignal,
+    SignalQuality,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -45,7 +46,7 @@ pub struct ComputePipelineBackend {
     sae: Arc<dyn FeatureExtractor + Send + Sync>,
     ssm: Arc<dyn WorkingMemoryModel + Send + Sync>,
     fusion: FusionConfig,
-    limits: LimitsConfig,
+    _limits: LimitsConfig,
 }
 
 impl ComputePipelineBackend {
@@ -63,7 +64,7 @@ impl ComputePipelineBackend {
             sae,
             ssm,
             fusion,
-            limits,
+            _limits: limits,
         }
     }
 
@@ -76,37 +77,6 @@ impl ComputePipelineBackend {
             FusionConfig::default(),
             LimitsConfig::default(),
         )
-    }
-
-    pub(crate) fn stage_budget(total: ComputeBudget, num: u64, den: u64) -> ComputeBudget {
-        let max_micros = ((total.max_micros.saturating_mul(num)) / den).max(1);
-        let hard_timeout_micros = ((total.hard_timeout_micros.saturating_mul(num)) / den).max(1);
-        ComputeBudget {
-            max_micros,
-            hard_timeout_micros,
-            seed: total.seed,
-        }
-    }
-
-    fn check_budget(
-        &self,
-        work_units: u64,
-        stage: &'static str,
-        budget: ComputeBudget,
-    ) -> Result<(), ComputeError> {
-        let elapsed_micros = work_units / self.limits.budget_scale.max(1);
-        if work_units
-            > budget
-                .max_micros
-                .saturating_mul(self.limits.budget_scale.max(1))
-        {
-            return Err(ComputeError::BudgetExceeded {
-                stage,
-                elapsed_micros,
-                limit_micros: budget.max_micros,
-            });
-        }
-        Ok(())
     }
 
     pub(crate) fn empty_sae() -> SaeOutput {
@@ -138,36 +108,72 @@ impl AiComputeBackend for ComputePipelineBackend {
             });
         }
 
-        self.check_budget(1, "pipeline/start", budget)?;
+        let mut global_meter = WorkMeter::new(budget.global_work_units);
+        let mut world_meter = WorkMeter::new(budget.world_units);
+        let mut sae_meter = WorkMeter::new(budget.sae_units);
+        let mut ssm_meter = WorkMeter::new(budget.ssm_units);
+
+        let state = self.world.init_state(input, budget.seed);
+        let mut exceeded_stage: Option<&'static str> = None;
+
+        global_meter.spend(40, "world_model/predict")?;
+        world_meter.spend(40, "world_model/predict")?;
+        let world_model_out = match self.world.predict(&state, input, budget) {
+            Ok(output) => output,
+            Err(ComputeError::BudgetExceeded { stage, .. }) => {
+                let mut unavailable = ComputeSignals::unavailable(input, budget, self.name());
+                unavailable.budget_exceeded_stage = Some(stage);
+                unavailable
+                    .notes
+                    .push(format!("budget_exceeded_stage={stage}"));
+                return Ok(unavailable);
+            }
+            Err(other) => return Err(other),
+        };
+        let surprise = world_model_out.error.surprise;
+
+        global_meter.spend(220, "sae/extract")?;
+        let (sae_out, sae_degraded) = match sae_meter.spend(220, "sae/extract") {
+            Ok(()) => match self.sae.extract(input, &world_model_out, budget) {
+                Ok(output) => (output, false),
+                Err(ComputeError::BudgetExceeded { stage, .. }) => {
+                    exceeded_stage = Some(stage);
+                    if budget.degrade_policy == DegradePolicy::FailFast {
+                        return Ok(ComputeSignals::unavailable(input, budget, self.name()));
+                    }
+                    (Self::empty_sae(), true)
+                }
+                Err(other) => return Err(other),
+            },
+            Err(ComputeError::BudgetExceeded { stage, .. }) => {
+                exceeded_stage = Some(stage);
+                if budget.degrade_policy == DegradePolicy::FailFast {
+                    return Ok(ComputeSignals::unavailable(input, budget, self.name()));
+                }
+                (Self::empty_sae(), true)
+            }
+            Err(other) => return Err(other),
+        };
 
         let mut seed_bytes = [0_u8; 8];
         seed_bytes.copy_from_slice(&input.context_digest[0..8]);
         let context_seed = u64::from_le_bytes(seed_bytes);
-
-        let world_budget = Self::stage_budget(budget, 4, 10);
-        let sae_budget = Self::stage_budget(budget, 3, 10);
-        let ssm_budget = Self::stage_budget(budget, 3, 10);
-
-        let state = self.world.init_state(input, budget.seed);
-        let world_model_out = self.world.predict(&state, input, world_budget)?;
-        let surprise = world_model_out.error.surprise;
-
-        let (sae_out, sae_degraded) = match self.sae.extract(input, &world_model_out, sae_budget) {
-            Ok(output) => (output, false),
-            Err(ComputeError::BudgetExceeded { .. }) => (Self::empty_sae(), true),
-            Err(other) => return Err(other),
-        };
-
         let ssm_state = self
             .ssm
             .init(input, budget.seed ^ context_seed.rotate_left(9));
-        let (ssm_out, ssm_degraded) =
-            match self
+
+        global_meter.spend(220, "ssm/step")?;
+        let (ssm_out, ssm_degraded) = match ssm_meter.spend(220, "ssm/step") {
+            Ok(()) => match self
                 .ssm
-                .step(&ssm_state, &sae_out, &world_model_out, ssm_budget)
+                .step(&ssm_state, &sae_out, &world_model_out, budget)
             {
                 Ok(output) => (output, false),
-                Err(ComputeError::BudgetExceeded { .. }) => {
+                Err(ComputeError::BudgetExceeded { stage, .. }) => {
+                    exceeded_stage = Some(stage);
+                    if budget.degrade_policy == DegradePolicy::FailFast {
+                        return Ok(ComputeSignals::unavailable(input, budget, self.name()));
+                    }
                     let fallback_pressure = surprise.clamp(0.0, 1.0);
                     (
                         SsmOutput {
@@ -179,7 +185,24 @@ impl AiComputeBackend for ComputePipelineBackend {
                     )
                 }
                 Err(other) => return Err(other),
-            };
+            },
+            Err(ComputeError::BudgetExceeded { stage, .. }) => {
+                exceeded_stage = Some(stage);
+                if budget.degrade_policy == DegradePolicy::FailFast {
+                    return Ok(ComputeSignals::unavailable(input, budget, self.name()));
+                }
+                let fallback_pressure = surprise.clamp(0.0, 1.0);
+                (
+                    SsmOutput {
+                        next_state: ssm_state,
+                        pressure: fallback_pressure,
+                        readout: fallback_pressure,
+                    },
+                    true,
+                )
+            }
+            Err(other) => return Err(other),
+        };
 
         let pressure = ssm_out.pressure;
         let (risk, confidence) = fuse_signals(
@@ -206,14 +229,19 @@ impl AiComputeBackend for ComputePipelineBackend {
         let evidence = EvidenceRef {
             context_digest: input.context_digest,
             world_digest: Some(world_model_out.prediction.prediction_digest),
-            spikes_digest: Some(spikes_digest_ref),
-            ssm_digest: Some(ssm_out.next_state.digest),
+            spikes_digest: if sae_degraded {
+                None
+            } else {
+                Some(spikes_digest_ref)
+            },
+            ssm_digest: if ssm_degraded {
+                None
+            } else {
+                Some(ssm_out.next_state.digest)
+            },
             backend_profile: BackendProfileId::from_backend_name(self.name()),
             seed: budget.seed,
-            budget_profile_id: stable_budget_profile_id(
-                budget.max_micros,
-                budget.hard_timeout_micros,
-            ),
+            budget_profile_id: budget.profile_id,
         };
         let mut risk_signal = RiskSignal {
             risk: clamp01(risk),
@@ -239,14 +267,20 @@ impl AiComputeBackend for ComputePipelineBackend {
             sparsity: Some(sae_out.sparsity),
             energy: Some(sae_out.energy),
             ssm_readout: Some(ssm_out.readout),
-            ssm_digest: Some(ssm_out.next_state.digest),
+            ssm_digest: if ssm_degraded {
+                None
+            } else {
+                Some(ssm_out.next_state.digest)
+            },
             world_digest: Some(world_model_out.prediction.prediction_digest),
+            budget_exceeded_stage: exceeded_stage,
         }
         .summary(self.name());
 
         let mut notes = vec![
             format!("backend={}", self.name()),
             format!("frame={}", input.frame_id.0),
+            format!("budget_profile_id={}", budget.profile_id),
             format!("world_model={}", self.world.name()),
             format!("feature_extractor={}", self.sae.name()),
             format!("working_memory={}", self.ssm.name()),
@@ -274,6 +308,10 @@ impl AiComputeBackend for ComputePipelineBackend {
                 &hex::encode(summary.spikes_digest)[..12]
             ),
         ];
+
+        if let Some(stage) = exceeded_stage {
+            notes.push(format!("budget_exceeded_stage={stage}"));
+        }
         if sae_degraded {
             notes.push("degraded:sae_budget_exceeded".to_string());
         }
@@ -293,8 +331,13 @@ impl AiComputeBackend for ComputePipelineBackend {
             sparsity: Some(sae_out.sparsity),
             energy: Some(sae_out.energy),
             ssm_readout: Some(ssm_out.readout),
-            ssm_digest: Some(ssm_out.next_state.digest),
+            ssm_digest: if ssm_degraded {
+                None
+            } else {
+                Some(ssm_out.next_state.digest)
+            },
             world_digest: Some(world_model_out.prediction.prediction_digest),
+            budget_exceeded_stage: exceeded_stage,
         }
         .bounded())
     }
@@ -351,18 +394,30 @@ mod tests {
     }
 
     #[test]
-    fn low_budget_triggers_degraded_risk_quality() {
+    fn stress_profile_triggers_degraded_quality() {
         let backend = ComputePipelineBackend::stub();
-        let out = backend
-            .compute(
-                &input(),
-                ComputeBudget {
-                    max_micros: 100,
-                    hard_timeout_micros: 500,
-                    seed: 1,
-                },
-            )
-            .expect("compute");
+        let budget = ComputeBudget {
+            sae_units: 100,
+            global_work_units: 900,
+            profile_id: 3,
+            ..ComputeBudget::default()
+        };
+        let out = backend.compute(&input(), budget).expect("compute");
         assert_eq!(out.risk_signal.quality, SignalQuality::DegradedFallback);
+        assert_eq!(out.budget_exceeded_stage, Some("sae/extract"));
+    }
+
+    #[test]
+    fn fail_fast_profile_yields_unavailable() {
+        let backend = ComputePipelineBackend::stub();
+        let budget = ComputeBudget {
+            sae_units: 100,
+            degrade_policy: DegradePolicy::FailFast,
+            ..ComputeBudget::default()
+        };
+        let out = backend.compute(&input(), budget).expect("compute");
+        assert_eq!(out.risk_signal.quality, SignalQuality::Unavailable);
+        assert_eq!(out.risk, 1.0);
+        assert_eq!(out.confidence, 0.0);
     }
 }

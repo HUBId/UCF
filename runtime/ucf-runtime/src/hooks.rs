@@ -434,6 +434,7 @@ mod tests {
             budget_profile_id: Some(1),
             seed: Some(7),
             risk_contract_version: Some(1),
+            budget_exceeded_stage: None,
         });
         ExperienceRecord::from_decision(ExperienceId(corr), decision)
     }

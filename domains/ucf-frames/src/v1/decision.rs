@@ -27,6 +27,7 @@ pub struct ComputeSignalsSummary {
     pub budget_profile_id: Option<u32>,
     pub seed: Option<u64>,
     pub risk_contract_version: Option<u16>,
+    pub budget_exceeded_stage: Option<&'static str>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use ucf_compute::ComputeSignalsSummary as RecomputedComputeSummary;
 use ucf_compute::{
-    backends::ComputeBudgetProfile, build_backend, compute_input_from_control,
-    stable_budget_profile_id, ComputeBackendConfig, ComputeBackendKind, ComputeBudget,
+    build_backend, compute_input_from_control, stable_budget_profile_id, ComputeBackendConfig,
+    ComputeBackendKind, ComputeBudget,
 };
 use ucf_core::types::{SimTime, Tick, WindowId};
 use ucf_ess::v1::{ExperienceKind, ExperiencePayload, ExperienceRecord};
@@ -249,7 +249,7 @@ pub fn replay_records(records: &[ExperienceRecord], spec: &ReplaySpec) -> Replay
         let cfg = ComputeBackendConfig {
             kind: backend_kind,
             seed,
-            budgets: ComputeBudgetProfile::default(),
+            ..ComputeBackendConfig::default()
         };
         let backend = match build_backend(&cfg) {
             Ok(backend) => backend,
@@ -542,6 +542,7 @@ pub fn load_fixture_records(path: &Path) -> Result<Vec<ExperienceRecord>, Replay
             budget_profile_id: Some(entry.budget_profile_id),
             seed: Some(entry.seed),
             risk_contract_version: Some(1),
+            budget_exceeded_stage: None,
         };
 
         let decision = DecisionFrame::allow(time, CorrelationId(entry.corr), "fixture")

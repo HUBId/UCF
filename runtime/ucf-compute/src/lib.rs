@@ -9,6 +9,7 @@ pub mod feature_extractor;
 pub mod pipeline;
 pub mod risk_contract;
 pub mod ssm;
+pub mod work_meter;
 pub mod world_model;
 pub use backends::{build_backend, ComputeBackendConfig, ComputeBackendKind};
 pub use pipeline::ComputePipelineBackend;
@@ -52,6 +53,7 @@ pub struct ComputeSignals {
     pub ssm_readout: Option<f32>,
     pub ssm_digest: Option<[u8; 32]>,
     pub world_digest: Option<[u8; 32]>,
+    pub budget_exceeded_stage: Option<&'static str>,
 }
 
 impl ComputeSignals {
@@ -123,6 +125,7 @@ impl ComputeSignals {
             budget_profile_id: risk_signal.evidence.budget_profile_id,
             seed: risk_signal.evidence.seed,
             risk_contract_version: risk_signal.version,
+            budget_exceeded_stage: self.budget_exceeded_stage,
         }
     }
 
@@ -134,10 +137,7 @@ impl ComputeSignals {
             ssm_digest: None,
             backend_profile: BackendProfileId::from_backend_name(backend),
             seed: budget.seed,
-            budget_profile_id: stable_budget_profile_id(
-                budget.max_micros,
-                budget.hard_timeout_micros,
-            ),
+            budget_profile_id: budget.profile_id,
         };
         Self {
             surprise: 0.0,
@@ -158,6 +158,59 @@ impl ComputeSignals {
             ssm_readout: None,
             ssm_digest: None,
             world_digest: None,
+            budget_exceeded_stage: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DegradePolicy {
+    DegradeStages,
+    FailFast,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ComputeBudgetProfile {
+    pub profile_id: u32,
+    pub global_work_units: u64,
+    pub world_units: u64,
+    pub sae_units: u64,
+    pub ssm_units: u64,
+    pub degrade_policy: DegradePolicy,
+}
+
+impl ComputeBudgetProfile {
+    pub fn default_profile() -> Self {
+        Self {
+            profile_id: 1,
+            global_work_units: 1_600,
+            world_units: 420,
+            sae_units: 420,
+            ssm_units: 420,
+            degrade_policy: DegradePolicy::DegradeStages,
+        }
+    }
+
+    pub fn tight_profile() -> Self {
+        Self {
+            profile_id: 2,
+            global_work_units: 1_100,
+            world_units: 360,
+            sae_units: 260,
+            ssm_units: 360,
+            degrade_policy: DegradePolicy::DegradeStages,
+        }
+    }
+
+    pub fn stress_profile() -> Self {
+        Self {
+            profile_id: 3,
+            global_work_units: 900,
+            world_units: 360,
+            sae_units: 100,
+            ssm_units: 360,
+            degrade_policy: DegradePolicy::DegradeStages,
         }
     }
 }
@@ -167,6 +220,12 @@ pub struct ComputeBudget {
     pub max_micros: u64,
     pub hard_timeout_micros: u64,
     pub seed: u64,
+    pub profile_id: u32,
+    pub global_work_units: u64,
+    pub world_units: u64,
+    pub sae_units: u64,
+    pub ssm_units: u64,
+    pub degrade_policy: DegradePolicy,
 }
 
 impl Default for ComputeBudget {
@@ -175,6 +234,12 @@ impl Default for ComputeBudget {
             max_micros: 1_000,
             hard_timeout_micros: 5_000,
             seed: 0xDEC0DED,
+            profile_id: ComputeBudgetProfile::default_profile().profile_id,
+            global_work_units: ComputeBudgetProfile::default_profile().global_work_units,
+            world_units: ComputeBudgetProfile::default_profile().world_units,
+            sae_units: ComputeBudgetProfile::default_profile().sae_units,
+            ssm_units: ComputeBudgetProfile::default_profile().ssm_units,
+            degrade_policy: ComputeBudgetProfile::default_profile().degrade_policy,
         }
     }
 }
@@ -231,6 +296,7 @@ pub struct ComputeSignalsSummary {
     pub budget_profile_id: u32,
     pub seed: u64,
     pub risk_contract_version: u16,
+    pub budget_exceeded_stage: Option<&'static str>,
 }
 
 pub fn fuse_signals(surprise: f32, pressure: f32, energy: f32) -> (f32, f32) {
@@ -400,6 +466,7 @@ mod tests {
             max_micros: 500,
             hard_timeout_micros: 5_000,
             seed: 17,
+            ..ComputeBudget::default()
         };
 
         let out = backend.compute(&input, budget).expect("compute");
@@ -449,6 +516,7 @@ mod tests {
             ssm_readout: Some(3.0),
             ssm_digest: None,
             world_digest: None,
+            budget_exceeded_stage: None,
         }
         .bounded();
         assert_eq!(bounded.spikes.len(), MAX_SPIKES);
@@ -481,20 +549,19 @@ mod tests {
             t: 1,
             context_digest: [255_u8; 32],
         };
-        let err = backend
+        let out = backend
             .compute(
                 &input,
                 ComputeBudget {
                     max_micros: 4,
                     hard_timeout_micros: 1,
                     seed: 0,
+                    ..ComputeBudget::default()
                 },
             )
-            .expect_err("should exceed");
-        match err {
-            ComputeError::BudgetExceeded { stage, .. } => assert_eq!(stage, "world_model/predict"),
-            other => panic!("unexpected error: {other:?}"),
-        }
+            .expect("should degrade deterministically");
+        assert_eq!(out.risk_signal.quality, SignalQuality::Unavailable);
+        assert_eq!(out.budget_exceeded_stage, Some("world_model/predict"));
     }
 
     #[test]
@@ -517,6 +584,7 @@ mod tests {
                         max_micros: 500,
                         hard_timeout_micros: 5_000,
                         seed: case.seed,
+                        ..ComputeBudget::default()
                     },
                 )
                 .expect("compute output");

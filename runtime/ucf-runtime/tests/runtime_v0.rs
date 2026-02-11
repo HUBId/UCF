@@ -1340,29 +1340,68 @@ fn real_compute_onboarding_v0_smoke_path() {
 
 #[test]
 fn degraded_budget_marks_risk_quality_and_persists_evidence() {
-    std::env::set_var("UCF_COMPUTE_MAX_MICROS", "100");
-    std::env::set_var("UCF_COMPUTE_HARD_TIMEOUT_MICROS", "500");
+    std::env::set_var("UCF_COMPUTE_BUDGET_PROFILE", "stress");
 
     let mut orchestrator = RuntimeOrchestrator::try_new_from_env().expect("orchestrator from env");
     let mut adapter = MockAdapter::default();
-    let ctrl = ControlFrame::new_text(
-        sim_time(),
-        CorrelationId(555),
-        ChannelCode::ExternalOutput,
-        intent(),
-        "degraded",
-    );
-    let decision = orchestrator
-        .ingest_and_process(&mut adapter, ctrl)
-        .expect("orchestration should succeed");
-    let compute = decision.compute_summary.expect("compute summary");
+
+    let mut compute = None;
+    for idx in 0..10 {
+        let ctrl = ControlFrame::new_text(
+            sim_time(),
+            CorrelationId(555 + idx),
+            ChannelCode::ExternalOutput,
+            intent(),
+            "degraded",
+        );
+        let decision = orchestrator
+            .ingest_and_process(&mut adapter, ctrl)
+            .expect("orchestration should succeed");
+        if decision.compute_summary.is_some() {
+            compute = decision.compute_summary;
+            break;
+        }
+    }
+
+    let compute = compute.expect("compute summary");
     assert_eq!(compute.risk_quality, Some(1));
     assert!(compute.evidence_world_digest.is_some());
-    assert!(compute.evidence_spikes_digest.is_some());
+    assert!(compute.evidence_spikes_digest.is_none());
     assert!(compute.evidence_ssm_digest.is_some());
+    assert_eq!(compute.budget_exceeded_stage, Some("sae/extract"));
 
-    std::env::remove_var("UCF_COMPUTE_MAX_MICROS");
-    std::env::remove_var("UCF_COMPUTE_HARD_TIMEOUT_MICROS");
+    std::env::remove_var("UCF_COMPUTE_BUDGET_PROFILE");
+}
+
+#[test]
+fn stress_profile_sets_budget_stage_and_backpressure_gating() {
+    std::env::set_var("UCF_COMPUTE_BUDGET_PROFILE", "stress");
+
+    let mut orchestrator = RuntimeOrchestrator::try_new_from_env().expect("orchestrator from env");
+    let mut adapter = MockAdapter::default();
+
+    let mut saw_backpressure_defer = false;
+    for tick in 4_000..4_060 {
+        let ctrl = ControlFrame::new_text(
+            sim_time(),
+            CorrelationId(20_000 + tick),
+            ChannelCode::ExternalOutput,
+            intent(),
+            "stress-budget",
+        );
+        let decision = orchestrator
+            .ingest_and_process(&mut adapter, ctrl)
+            .expect("tick should succeed");
+        if decision.reason_code.0 == "compute_backpressure" {
+            saw_backpressure_defer = true;
+        }
+    }
+
+    assert!(orchestrator.orchestrator_backpressure() >= 0.0);
+    assert!(orchestrator.compute_budget_exceeded_total() > 0);
+    assert!(saw_backpressure_defer || orchestrator.orchestrator_backpressure_active_total() > 0);
+
+    std::env::remove_var("UCF_COMPUTE_BUDGET_PROFILE");
 }
 
 #[cfg(feature = "compute-candle")]
