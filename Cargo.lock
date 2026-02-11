@@ -2502,6 +2502,7 @@ dependencies = [
  "ucf-onn",
  "ucf-policy",
  "ucf-snn",
+ "ucf-spikes",
  "ucf-ssm",
  "ucf-tcf",
 ]
@@ -2592,6 +2593,10 @@ dependencies = [
  "ucf-onn",
  "ucf-types",
 ]
+
+[[package]]
+name = "ucf-spikes"
+version = "0.1.0"
 
 [[package]]
 name = "ucf-ssm"

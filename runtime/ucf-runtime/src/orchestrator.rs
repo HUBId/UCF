@@ -27,6 +27,10 @@ use ucf_nsr::v0::{Claim, NsrEngine, Verdict};
 use ucf_onn::v0::{OnnCore, PhaseDeg};
 use ucf_policy::{adapter::ActionAdapter, gem::Gem, pbm::Pbm};
 use ucf_snn::v0::{encode, to_brainbus, FeatureEvent, SnnEncodeCfg};
+use ucf_spikes::{
+    encode_ttfs_us, filter_phase_locked, PhaseLockCfg, Spike as BusSpike, SpikeBus,
+    SpikeKind as BusSpikeKind,
+};
 use ucf_ssm::v0::{ssm_step, SsmCfg, SsmState};
 use ucf_tcf::v0::{tcf_tick, TcfCfg, TcfState};
 
@@ -86,6 +90,7 @@ pub struct RuntimeOrchestrator {
     onn_state: OnnState,
     onn_cfg: OnnCfg,
     event_bus: EventBus,
+    spike_bus: SpikeBus,
     spike_seq: u32,
     last_onn_frame: Option<OnnFrame>,
     tcf_cfg: TcfCfg,
@@ -93,6 +98,8 @@ pub struct RuntimeOrchestrator {
     last_tcf_frame: Option<TcfFrame>,
     forced_mean_lock_for_test: Option<f32>,
     last_snn_frame: Option<SnnFrame>,
+    last_spike_frames: Vec<ucf_frames::v1::SpikeFrame>,
+    attention_event: bool,
     iit_cfg: IITCfg,
     iit_state: IITState,
     last_iit_frame: Option<IitFrame>,
@@ -157,6 +164,7 @@ impl RuntimeOrchestrator {
             onn_state,
             onn_cfg: OnnCfg::default(),
             event_bus: EventBus::default(),
+            spike_bus: SpikeBus::default(),
             spike_seq: 0,
             last_onn_frame: None,
             tcf_cfg: TcfCfg::default_gamma40(),
@@ -164,6 +172,8 @@ impl RuntimeOrchestrator {
             last_tcf_frame: None,
             forced_mean_lock_for_test: None,
             last_snn_frame: None,
+            last_spike_frames: Vec::new(),
+            attention_event: false,
             iit_cfg: IITCfg::default(),
             iit_state: IITState::default(),
             last_iit_frame: None,
@@ -229,6 +239,10 @@ impl RuntimeOrchestrator {
         self.event_bus.drain()
     }
 
+    pub fn inject_spike_for_test(&mut self, spike: BusSpike) {
+        self.spike_bus.push(spike);
+    }
+
     pub fn last_cde_frame(&self) -> Option<CdeFrame> {
         self.last_cde_frame
     }
@@ -239,6 +253,14 @@ impl RuntimeOrchestrator {
 
     pub fn last_ssm_frame(&self) -> Option<SsmFrame> {
         self.last_ssm_frame
+    }
+
+    pub fn last_spike_frames(&self) -> &[ucf_frames::v1::SpikeFrame] {
+        &self.last_spike_frames
+    }
+
+    pub fn attention_event(&self) -> bool {
+        self.attention_event
     }
 
     pub fn last_archive_append_frame(&self) -> Option<ArchiveAppendFrame> {
@@ -517,9 +539,6 @@ impl RuntimeOrchestrator {
             CoherenceState::Fragmenting => 2,
         };
 
-        let attention = attention_from_coherence(coherence_state);
-        let _ = attention;
-
         let top_conf_from_cde = top_conf.clamp(0.0, 1.0);
         let archive_append_bytes_q =
             ((self.last_archive_payload_len as f32) / 1024.0).clamp(0.0, 1.0);
@@ -528,7 +547,7 @@ impl RuntimeOrchestrator {
             verified_ratio.clamp(0.0, 1.0),
             top_conf_from_cde,
             archive_append_bytes_q,
-            0.0,
+            if self.attention_event { 1.0 } else { 0.0 },
             0.0,
             0.0,
             0.0,
@@ -547,65 +566,122 @@ impl RuntimeOrchestrator {
             .map(|frame| frame.phase_bin)
             .unwrap_or_else(|| phase_bin(tcf_out.global_phase, 255));
 
-        let mut tick_spikes = Vec::new();
         if ssm_out.gate > 0.6 {
-            let magnitude = ((ssm_out.gate - 0.6) / 0.4).clamp(0.0, 1.0);
-            tick_spikes.push(self.make_spike(
+            let strength = ((ssm_out.gate - 0.6) / 0.4).clamp(0.0, 1.0);
+            self.spike_bus.push(BusSpike {
                 now_ms,
-                OSC_SSM,
-                SpikeKind::Feature,
-                tcf_phase_bin,
-                magnitude,
-                None,
-            ));
+                kind: BusSpikeKind::Novelty,
+                chan: OSC_SSM as u8,
+                phase: tcf_phase_bin,
+                strength,
+                ttfs_us: encode_ttfs_us(strength),
+            });
         }
 
         if matches!(obs_update, CdeUpdateKind::Updated { .. }) {
-            let magnitude = top_conf.clamp(0.0, 1.0);
-            tick_spikes.push(self.make_spike(
+            let strength = top_conf.clamp(0.0, 1.0);
+            self.spike_bus.push(BusSpike {
                 now_ms,
-                OSC_CDE,
-                SpikeKind::Causal,
-                tcf_phase_bin,
-                magnitude,
-                None,
-            ));
+                kind: BusSpikeKind::CausalHit,
+                chan: OSC_CDE as u8,
+                phase: tcf_phase_bin,
+                strength,
+                ttfs_us: encode_ttfs_us(strength),
+            });
         }
 
         if matches!(nsr_result.verdict, Verdict::Allow | Verdict::Block) {
-            tick_spikes.push(self.make_spike(
+            let strength = verified_ratio.clamp(0.0, 1.0);
+            self.spike_bus.push(BusSpike {
                 now_ms,
-                OSC_NSR,
-                SpikeKind::Verify,
-                tcf_phase_bin,
-                verified_ratio.clamp(0.0, 1.0),
-                None,
-            ));
+                kind: BusSpikeKind::Verify,
+                chan: OSC_NSR as u8,
+                phase: tcf_phase_bin,
+                strength,
+                ttfs_us: encode_ttfs_us(strength),
+            });
         }
 
         if tcf_out.mean_lock > 0.7 {
-            tick_spikes.push(self.make_spike(
+            let strength = tcf_out.mean_lock.clamp(0.0, 1.0);
+            self.spike_bus.push(BusSpike {
                 now_ms,
-                OSC_COHERENCE,
-                SpikeKind::Attention,
-                tcf_phase_bin,
-                tcf_out.mean_lock.clamp(0.0, 1.0),
-                None,
-            ));
+                kind: BusSpikeKind::AttentionShift,
+                chan: OSC_COHERENCE as u8,
+                phase: tcf_phase_bin,
+                strength,
+                ttfs_us: encode_ttfs_us(strength),
+            });
         }
+
+        let tick_spikes = filter_phase_locked(
+            &PhaseLockCfg {
+                max_dist: 24,
+                attenuate: true,
+            },
+            tcf_phase_bin,
+            &self.spike_bus.drain(),
+        );
+
+        self.attention_event = tick_spikes.iter().any(|spike| {
+            spike.strength > 0.6
+                && matches!(
+                    spike.kind,
+                    BusSpikeKind::Novelty | BusSpikeKind::AttentionShift
+                )
+        });
+
+        self.last_spike_frames = tick_spikes
+            .iter()
+            .map(|spike| ucf_frames::v1::SpikeFrame {
+                now_ms: spike.now_ms,
+                kind: match spike.kind {
+                    BusSpikeKind::Novelty => 1,
+                    BusSpikeKind::Verify => 2,
+                    BusSpikeKind::CausalHit => 3,
+                    BusSpikeKind::MemoryMark => 4,
+                    BusSpikeKind::AttentionShift => 5,
+                },
+                chan: spike.chan,
+                phase: spike.phase,
+                strength_q: (spike.strength.clamp(0.0, 1.0) * 255.0).round() as u8,
+                ttfs_q: ((spike.ttfs_us as f32 / 5000.0).clamp(0.0, 1.0) * 255.0).round() as u8,
+            })
+            .collect();
 
         let mut feature = 0_u32;
         let mut causal = 0_u32;
         let mut verify = 0_u32;
         let mut attention_count = 0_u32;
-        for ev in &tick_spikes {
-            self.event_bus.push(*ev);
-            match ev.kind {
-                SpikeKind::Feature => feature += 1,
-                SpikeKind::Causal => causal += 1,
-                SpikeKind::Verify => verify += 1,
-                SpikeKind::Attention => attention_count += 1,
-            }
+        for spike in &tick_spikes {
+            let mapped = match spike.kind {
+                BusSpikeKind::Novelty => {
+                    feature += 1;
+                    SpikeKind::Feature
+                }
+                BusSpikeKind::Verify => {
+                    verify += 1;
+                    SpikeKind::Verify
+                }
+                BusSpikeKind::CausalHit => {
+                    causal += 1;
+                    SpikeKind::Causal
+                }
+                BusSpikeKind::MemoryMark => continue,
+                BusSpikeKind::AttentionShift => {
+                    attention_count += 1;
+                    SpikeKind::Attention
+                }
+            };
+            let delivery = self.make_spike(
+                spike.now_ms,
+                spike.chan.into(),
+                mapped,
+                spike.phase,
+                spike.strength,
+                Some(((spike.ttfs_us as f32 / 5000.0).clamp(0.0, 1.0) * 255.0).round() as u8),
+            );
+            self.event_bus.push(delivery);
         }
         self.last_snn_frame = Some(SnnFrame {
             now_ms,
@@ -866,14 +942,6 @@ fn quantize_unit(v: f32) -> u8 {
 impl Default for RuntimeOrchestrator {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-fn attention_from_coherence(state: CoherenceState) -> f32 {
-    match state {
-        CoherenceState::Stable => 0.55,
-        CoherenceState::Drifting => 0.45,
-        CoherenceState::Fragmenting => 0.35,
     }
 }
 
