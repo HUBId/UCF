@@ -2,7 +2,10 @@ use std::path::Path;
 
 use ucf_replay::{load_fixture_records, replay_records, ReplayMode, ReplaySpec};
 
-const FIXTURE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/fixtures/golden_replay_fixture.json");
+const FIXTURE: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/fixtures/golden_replay_fixture.json"
+);
 
 fn spec() -> ReplaySpec {
     ReplaySpec {
