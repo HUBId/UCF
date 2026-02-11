@@ -1,12 +1,11 @@
 use crate::errors::RuntimeError;
 use ucf_biophys::v0::{
-    apply_coherence_feedback, classify, compute_integration, couple_pair, ensure_osc, hpa_step,
-    modulate_hh, onn_step, osc_step, phase_bin, phase_lock, ttfs_from_strength, ttfs_phase,
-    verify_graph, CausalGraph, CoherenceState, Edge, EventBus, FieldEvent, FieldEventKind,
-    FieldUpdateCfg, HhParams, HpaCfg, HpaState, IITCfg as BiophysIITCfg, IITInputs,
-    IITState as BiophysIITState, Microcircuit, ModulationCfg, NeuromodulatorField as BiophysField,
-    OnnCfg, OnnState, Osc, OscId, PhaseCfg, RuleCfg, SnnSpikeEvent, SpikeCodecCfg, SpikeKind,
-    VerifyVerdict,
+    apply_coherence_feedback, classify, compute_integration, couple_pair, hpa_step, modulate_hh,
+    osc_step, phase_bin, phase_lock, ttfs_from_strength, ttfs_phase, verify_graph, CausalGraph,
+    CoherenceState, Edge, EventBus, FieldEvent, FieldEventKind, FieldUpdateCfg, HhParams, HpaCfg,
+    HpaState, IITCfg as BiophysIITCfg, IITInputs, IITState as BiophysIITState, Microcircuit,
+    ModulationCfg, NeuromodulatorField as BiophysField, Osc, OscId, PhaseCfg, RuleCfg,
+    SnnSpikeEvent, SpikeCodecCfg, SpikeKind, VerifyVerdict,
 };
 use ucf_cde::v0::{
     on_intervention, on_observation, tick_decay, CdeCfg, CdeState, CdeUpdateKind, Intervention,
@@ -24,7 +23,7 @@ use ucf_iit_proxy::v0::{iit_push_and_eval, IitCfg, IitSample, IitState};
 use ucf_ncde::v0::{ncde_step, NcdeCfg, NcdeInput, NcdeState};
 use ucf_neuromod::v0::{NeuromodInputs, NeuromodScheduler, NeuromodulatorField};
 use ucf_nsr::v0::{Claim, NsrEngine, Verdict};
-use ucf_onn::v0::{OnnCore, PhaseDeg};
+use ucf_onn::v0::{onn_step, OnnCfg, OnnCore, OnnInput, OnnNode, OnnState, PhaseDeg};
 use ucf_policy::{adapter::ActionAdapter, gem::Gem, pbm::Pbm};
 use ucf_sle::v0::{sle_step, SleCfg, SleReason, SleSignals, SleState};
 use ucf_snn::v0::{encode, to_brainbus, FeatureEvent, SnnEncodeCfg};
@@ -35,23 +34,12 @@ use ucf_spikes::{
 use ucf_ssm::v0::{ssm_step, SsmCfg, SsmState};
 use ucf_tcf::v0::{tcf_tick, TcfCfg, TcfState};
 
-const OSC_SSM: OscId = 1;
-const OSC_CDE: OscId = 2;
-const OSC_NSR: OscId = 3;
-const OSC_COHERENCE: OscId = 4;
+const OSC_SSM: u8 = 1;
+const OSC_CDE: u8 = 2;
+const OSC_NSR: u8 = 3;
+const OSC_COHERENCE: u8 = 4;
 const OSC_NSR_TCF_ENFORCE: u8 = 1;
 const MOD_PBM: ucf_onn::v0::OscId = 13;
-
-const ONN_COUPLINGS: &[(OscId, OscId, f32)] = &[
-    (OSC_SSM, OSC_CDE, 1.0),
-    (OSC_CDE, OSC_SSM, 1.0),
-    (OSC_CDE, OSC_NSR, 1.0),
-    (OSC_NSR, OSC_CDE, 1.0),
-    (OSC_NSR, OSC_COHERENCE, 1.0),
-    (OSC_COHERENCE, OSC_NSR, 1.0),
-    (OSC_SSM, OSC_COHERENCE, 0.5),
-    (OSC_COHERENCE, OSC_SSM, 0.5),
-];
 
 #[derive(Clone, Copy, Debug, Default)]
 struct PhaseBus {
@@ -158,11 +146,19 @@ impl RuntimeOrchestrator {
         let mut onn = OnnCore::new(1.0, 0.0);
         onn.register(MOD_PBM, PhaseDeg(0.0));
 
-        let mut onn_state = OnnState::default();
-        ensure_osc(&mut onn_state, OSC_SSM);
-        ensure_osc(&mut onn_state, OSC_CDE);
-        ensure_osc(&mut onn_state, OSC_NSR);
-        ensure_osc(&mut onn_state, OSC_COHERENCE);
+        let onn_cfg = OnnCfg::default_v0();
+        let onn_nodes = [
+            OnnNode::Global,
+            OnnNode::Tcf,
+            OnnNode::Ssm,
+            OnnNode::Nsr,
+            OnnNode::Cde,
+            OnnNode::Iit,
+            OnnNode::Sle,
+            OnnNode::Ncde,
+            OnnNode::Spikes,
+        ];
+        let onn_state = OnnState::new(&onn_cfg, &onn_nodes);
 
         let ssm_cfg = SsmCfg::default_small();
         let ssm_state = SsmState::new(&ssm_cfg, 0);
@@ -194,7 +190,7 @@ impl RuntimeOrchestrator {
             spike_codec_cfg: SpikeCodecCfg::default(),
             last_phase_frame: None,
             onn_state,
-            onn_cfg: OnnCfg::default(),
+            onn_cfg,
             event_bus: EventBus::default(),
             spike_bus: SpikeBus::default(),
             spike_seq: 0,
@@ -271,7 +267,7 @@ impl RuntimeOrchestrator {
     }
 
     pub fn set_onn_coupling_for_test(&mut self, coupling: f32) {
-        self.onn_cfg.coupling = coupling.clamp(0.0, 1.0);
+        self.onn_cfg.k_couple = coupling.clamp(0.0, 1.0);
     }
 
     pub fn force_mean_lock_for_test(&mut self, mean_lock: f32) {
@@ -466,11 +462,29 @@ impl RuntimeOrchestrator {
             self.phase_cfg,
         );
 
-        let onn_out = onn_step(&mut self.onn_state, dt_ms, self.onn_cfg, ONN_COUPLINGS);
+        let attention_level = if self.attention_event {
+            1.0
+        } else {
+            self.last_nsr_frame
+                .map(|frame| 1.0 - (f32::from(frame.verified_q) / 255.0))
+                .unwrap_or(1.0)
+                .clamp(0.0, 1.0)
+        };
+        let anchors = vec![(OnnNode::Global, self.current_tcf_phase_0_1(now_ms))];
+        let onn_out = onn_step(
+            &self.onn_cfg,
+            &mut self.onn_state,
+            &OnnInput {
+                now_ms,
+                anchors,
+                gate: attention_level,
+            },
+        );
         self.last_onn_frame = Some(OnnFrame {
             now_ms,
-            global_phase: onn_out.global_phase,
-            mean_lock: onn_out.mean_lock,
+            global_phase_q: quantize_unit(onn_out.global_phase_0_1),
+            lock_nsr_cde_q: quantize_unit(onn_out.lock_nsr_cde),
+            lock_nsr_ssm_q: quantize_unit(onn_out.lock_nsr_ssm),
         });
 
         let coupling_targets = if self.iit_proxy_state.enforce {
@@ -720,7 +734,7 @@ impl RuntimeOrchestrator {
             self.spike_bus.push(BusSpike {
                 now_ms,
                 kind: BusSpikeKind::Novelty,
-                chan: OSC_SSM as u8,
+                chan: OSC_SSM,
                 phase: tcf_phase_bin,
                 strength,
                 ttfs_us: encode_ttfs_us(strength),
@@ -732,7 +746,7 @@ impl RuntimeOrchestrator {
             self.spike_bus.push(BusSpike {
                 now_ms,
                 kind: BusSpikeKind::CausalHit,
-                chan: OSC_CDE as u8,
+                chan: OSC_CDE,
                 phase: tcf_phase_bin,
                 strength,
                 ttfs_us: encode_ttfs_us(strength),
@@ -744,7 +758,7 @@ impl RuntimeOrchestrator {
             self.spike_bus.push(BusSpike {
                 now_ms,
                 kind: BusSpikeKind::Verify,
-                chan: OSC_NSR as u8,
+                chan: OSC_NSR,
                 phase: tcf_phase_bin,
                 strength,
                 ttfs_us: encode_ttfs_us(strength),
@@ -756,7 +770,7 @@ impl RuntimeOrchestrator {
             self.spike_bus.push(BusSpike {
                 now_ms,
                 kind: BusSpikeKind::AttentionShift,
-                chan: OSC_COHERENCE as u8,
+                chan: OSC_COHERENCE,
                 phase: tcf_phase_bin,
                 strength,
                 ttfs_us: encode_ttfs_us(strength),
@@ -969,8 +983,12 @@ impl RuntimeOrchestrator {
     }
 
     fn current_tcf_phase_0_1(&self, now_ms: u64) -> f32 {
-        self.last_tcf_frame
-            .map(|frame| f32::from(frame.phase_bin) / 255.0)
+        self.last_onn_frame
+            .map(|frame| f32::from(frame.global_phase_q) / 255.0)
+            .or_else(|| {
+                self.last_tcf_frame
+                    .map(|frame| f32::from(frame.phase_bin) / 255.0)
+            })
             // Fallback if no TCF frame is available yet: deterministic sawtooth over 1s.
             .unwrap_or_else(|| ((now_ms % 1_000) as f32) / 1_000.0)
             .clamp(0.0, 1.0)

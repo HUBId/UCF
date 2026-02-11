@@ -1,8 +1,9 @@
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct OnnFrame {
     pub now_ms: u64,
-    pub global_phase: f32,
-    pub mean_lock: f32,
+    pub global_phase_q: u8,
+    pub lock_nsr_cde_q: u8,
+    pub lock_nsr_ssm_q: u8,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
