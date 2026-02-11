@@ -1,12 +1,11 @@
 use crate::errors::RuntimeError;
 use ucf_biophys::v0::{
     apply_coherence_feedback, classify, compute_integration, couple_pair, ensure_osc, hpa_step,
-    modulate_hh, onn_step, osc_step, phase_bin, phase_lock, ssm_step, ttfs_from_strength,
-    ttfs_phase, verify_graph, CausalGraph, CoherenceState, Edge, EventBus, FieldEvent,
-    FieldEventKind, FieldUpdateCfg, HhParams, HpaCfg, HpaState, IITCfg, IITInputs, IITState,
-    Microcircuit, ModulationCfg, NeuromodulatorField as BiophysField, OnnCfg, OnnState, Osc, OscId,
-    PhaseCfg, RuleCfg, SnnSpikeEvent, SpikeCodecCfg, SpikeKind, SsmCfg, SsmInputs, SsmState,
-    VerifyVerdict, SSM_D,
+    modulate_hh, onn_step, osc_step, phase_bin, phase_lock, ttfs_from_strength, ttfs_phase,
+    verify_graph, CausalGraph, CoherenceState, Edge, EventBus, FieldEvent, FieldEventKind,
+    FieldUpdateCfg, HhParams, HpaCfg, HpaState, IITCfg, IITInputs, IITState, Microcircuit,
+    ModulationCfg, NeuromodulatorField as BiophysField, OnnCfg, OnnState, Osc, OscId, PhaseCfg,
+    RuleCfg, SnnSpikeEvent, SpikeCodecCfg, SpikeKind, VerifyVerdict,
 };
 use ucf_cde::v0::{
     on_intervention, on_observation, tick_decay, CdeCfg, CdeState, CdeUpdateKind, Intervention,
@@ -28,6 +27,7 @@ use ucf_nsr::v0::{Claim, NsrEngine, Verdict};
 use ucf_onn::v0::{OnnCore, PhaseDeg};
 use ucf_policy::{adapter::ActionAdapter, gem::Gem, pbm::Pbm};
 use ucf_snn::v0::{encode, to_brainbus, FeatureEvent, SnnEncodeCfg};
+use ucf_ssm::v0::{ssm_step, SsmCfg, SsmState};
 
 const OSC_SSM: OscId = 1;
 const OSC_CDE: OscId = 2;
@@ -52,15 +52,9 @@ struct PhaseBus {
     osc_microcircuit: Osc,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 struct WorkingContext {
-    ctx: [f32; SSM_D],
-}
-
-impl Default for WorkingContext {
-    fn default() -> Self {
-        Self { ctx: [0.0; SSM_D] }
-    }
+    ssm_y: Vec<f32>,
 }
 
 pub struct RuntimeOrchestrator {
@@ -107,9 +101,9 @@ pub struct RuntimeOrchestrator {
     last_nsr_frame: Option<NsrFrame>,
     ssm_state: SsmState,
     ssm_cfg: SsmCfg,
-    ssm_last_u: [f32; SSM_D],
     working_context: WorkingContext,
     last_ssm_frame: Option<SsmFrame>,
+    ssm_gate: f32,
     archive: ArchiveLog<MemArchiveStore>,
     last_archive_append_frame: Option<ArchiveAppendFrame>,
     last_archive_payload_len: usize,
@@ -127,6 +121,9 @@ impl RuntimeOrchestrator {
         ensure_osc(&mut onn_state, OSC_CDE);
         ensure_osc(&mut onn_state, OSC_NSR);
         ensure_osc(&mut onn_state, OSC_COHERENCE);
+
+        let ssm_cfg = SsmCfg::default_small();
+        let ssm_state = SsmState::new(&ssm_cfg, 0);
 
         Self {
             ess: InMemoryEss::new(),
@@ -170,11 +167,11 @@ impl RuntimeOrchestrator {
             nsr_engine: NsrEngine::with_default_rules(),
             last_cde_frame: None,
             last_nsr_frame: None,
-            ssm_state: SsmState::default(),
-            ssm_cfg: SsmCfg::default(),
-            ssm_last_u: [0.0; SSM_D],
+            ssm_state,
+            ssm_cfg,
             working_context: WorkingContext::default(),
             last_ssm_frame: None,
+            ssm_gate: 0.0,
             archive: ArchiveLog::new(MemArchiveStore::new(), ArchiveCfg::default()),
             last_archive_append_frame: None,
             last_archive_payload_len: 0,
@@ -235,6 +232,14 @@ impl RuntimeOrchestrator {
 
     pub fn last_archive_append_frame(&self) -> Option<ArchiveAppendFrame> {
         self.last_archive_append_frame
+    }
+
+    pub fn ssm_gate(&self) -> f32 {
+        self.ssm_gate
+    }
+
+    pub fn working_context_ssm_y(&self) -> &[f32] {
+        &self.working_context.ssm_y
     }
 
     pub fn archive_last_seq(&self) -> u64 {
@@ -394,7 +399,7 @@ impl RuntimeOrchestrator {
         let spike_rate_hz = micro.spikes.len() as f32 / dt_s;
         let ssm_gate = self
             .last_ssm_frame
-            .map(|frame| frame.gate)
+            .map(|frame| f32::from(frame.gate_q) / 255.0)
             .unwrap_or(0.0)
             .clamp(0.0, 1.0);
         let nsr_verified_ratio = self
@@ -433,7 +438,7 @@ impl RuntimeOrchestrator {
         let planned_intent = self
             .last_ssm_frame
             .map(|frame| {
-                if frame.gate > 0.5 {
+                if frame.gate_q > 128 {
                     "act".to_string()
                 } else {
                     "noop".to_string()
@@ -493,38 +498,29 @@ impl RuntimeOrchestrator {
         };
 
         let attention = attention_from_coherence(coherence_state);
+        let _ = attention;
 
-        let mut u = self.ssm_last_u;
-        for value in &mut u[6..] {
-            *value *= 0.95;
-        }
-        u[0] = self.iit_state.integration_ema.clamp(0.0, 1.0);
-        u[1] = lock_nsr_jepa.clamp(0.0, 1.0);
-        u[2] = lock_micro_nsr.clamp(0.0, 1.0);
-        u[3] = (spike_rate_hz / self.iit_cfg.spike_rate_norm_hz).clamp(0.0, 1.0);
-        u[4] = field.dopamine.get();
-        u[5] = field.serotonin.get();
-
-        let mut noise = (1.0 - lock_nsr_jepa).clamp(0.0, 1.0);
-        if onn_out.mean_lock < 0.35 {
-            noise = (noise + 0.05).clamp(0.0, 1.0);
-        } else if onn_out.mean_lock > 0.75 {
-            noise = (noise - 0.03).clamp(0.0, 1.0);
-        }
-
-        let ssm_out = ssm_step(
-            &mut self.ssm_state,
-            &u,
-            SsmInputs {
-                attention,
-                integration: self.iit_state.integration_ema.clamp(0.0, 1.0),
-                dopamine: field.dopamine.get(),
-                noise,
-            },
-            self.ssm_cfg,
-        );
-        self.ssm_last_u = u;
-        self.working_context.ctx = ssm_out.ctx;
+        let top_conf_from_cde = top_conf.clamp(0.0, 1.0);
+        let archive_append_bytes_q =
+            ((self.last_archive_payload_len as f32) / 1024.0).clamp(0.0, 1.0);
+        let input = [
+            onn_out.mean_lock.clamp(0.0, 1.0),
+            verified_ratio.clamp(0.0, 1.0),
+            top_conf_from_cde,
+            archive_append_bytes_q,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+        ];
+        let gate = onn_out.mean_lock.clamp(0.0, 1.0);
+        let ssm_out = ssm_step(&self.ssm_cfg, &mut self.ssm_state, now_ms, &input, gate);
+        self.working_context.ssm_y = ssm_out.y.clone();
+        let ssm_energy = if ssm_out.y.is_empty() {
+            0.0
+        } else {
+            ssm_out.y.iter().map(|v| v.abs()).sum::<f32>() / (ssm_out.y.len() as f32)
+        };
 
         let phase_bin_ssm = phase_bin(phase_for_osc(&self.onn_state, OSC_SSM), 16);
         let phase_bin_cde = phase_bin(phase_for_osc(&self.onn_state, OSC_CDE), 16);
@@ -626,11 +622,11 @@ impl RuntimeOrchestrator {
             lock_nsr_jepa,
             lock_micro_nsr,
         });
+        self.ssm_gate = gate;
         self.last_ssm_frame = Some(SsmFrame {
             now_ms,
-            gate: ssm_out.gate,
-            norm_l2: ssm_out.norm_l2,
-            sparsity: ssm_out.sparsity,
+            gate_q: quantize_unit(ssm_out.gate),
+            energy_q: quantize_unit(ssm_energy),
         });
         self.last_iit_frame = Some(IitFrame {
             now_ms,

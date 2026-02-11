@@ -18,7 +18,6 @@ pub struct BiophysFrame {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SsmFrame {
     pub now_ms: u64,
-    pub gate: f32,
-    pub norm_l2: f32,
-    pub sparsity: f32,
+    pub gate_q: u8,
+    pub energy_q: u8,
 }

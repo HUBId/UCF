@@ -1,5 +1,7 @@
 #![forbid(unsafe_code)]
 
+pub mod v0;
+
 use blake3::Hasher;
 use ucf_coupling::SignalId;
 use ucf_spikebus::SpikeKind;
