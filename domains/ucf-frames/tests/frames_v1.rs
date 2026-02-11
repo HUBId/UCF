@@ -118,12 +118,14 @@ fn biophys_frame_can_be_constructed() {
 fn iit_frame_can_be_constructed() {
     let frame = IitFrame {
         now_ms: 123,
-        integration: 0.42,
-        state: 1,
+        phi_q: 107,
+        coh_q: 120,
+        flow_q: 99,
+        enforce: 1,
     };
 
     assert_eq!(frame.now_ms, 123);
-    assert_eq!(frame.state, 1);
+    assert_eq!(frame.enforce, 1);
 }
 
 #[test]

@@ -1,8 +1,6 @@
-pub mod config;
-pub mod monitor;
+mod model;
 
-pub use config::IitConfig;
-pub use monitor::{IitMonitor, MOD_BLUE, MOD_GEIST, MOD_JEPA, MOD_NSR, MOD_PBM, MOD_SSM};
+pub use model::{iit_push_and_eval, IitCfg, IitSample, IitState, IitTick};
 
 #[cfg(test)]
 mod tests;
