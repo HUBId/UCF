@@ -3,6 +3,9 @@ use thiserror::Error;
 use ucf_core::types::SimTime;
 use ucf_frames::v1::{ControlFrame, ControlPayload};
 
+pub mod world_model;
+use world_model::{MockJepaPredictor, WorldModelPredictor};
+
 pub const MAX_SPIKES: usize = 256;
 pub const MAX_NOTES: usize = 16;
 pub const MAX_NOTE_LEN: usize = 256;
@@ -225,12 +228,16 @@ impl AiComputeBackend for CpuStubBackend {
         let context_seed = u64::from_le_bytes(seed_bytes);
         let mut prng = SplitMix64::new(context_seed ^ budget.seed ^ input.t.rotate_left(7));
 
-        let surprise = Self::normalized_unit(prng.next_u64());
+        let predictor = MockJepaPredictor;
+        let state = predictor.init_state(input, budget.seed);
+        let world_model_out = predictor.predict(&state, input, budget)?;
+
+        let surprise = world_model_out.error.surprise;
         let pressure_base = Self::normalized_unit(prng.next_u64());
         let periodic = ((input.t % 17) as f32) / 16.0;
         let pressure = (pressure_base * 0.75 + periodic * 0.25).clamp(0.0, 1.0);
-        let risk = (0.6 * surprise + 0.4 * pressure).clamp(0.0, 1.0);
-        let confidence = (1.0 - 0.8 * risk).clamp(0.0, 1.0);
+        let risk = (0.7 * surprise + 0.3 * pressure).clamp(0.0, 1.0);
+        let confidence = (1.0 - 0.85 * risk).clamp(0.0, 1.0);
 
         let mut work_units = 32_u64;
         Self::check_budget(work_units, "base", budget)?;
@@ -255,6 +262,11 @@ impl AiComputeBackend for CpuStubBackend {
         let mut notes = vec![
             format!("backend={}", self.name()),
             format!("frame={}", input.frame_id.0),
+            format!("world_model={}", predictor.name()),
+            format!(
+                "pred_digest={}",
+                &hex::encode(world_model_out.prediction.prediction_digest)[..12]
+            ),
             format!(
                 "digest_prefix={:02x}{:02x}",
                 input.context_digest[0], input.context_digest[1]
@@ -275,7 +287,7 @@ impl AiComputeBackend for CpuStubBackend {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct SplitMix64 {
+pub(crate) struct SplitMix64 {
     state: u64,
 }
 
@@ -390,6 +402,30 @@ mod tests {
     }
 
     #[test]
+    fn surprise_is_driven_by_world_model_predictor() {
+        let backend = CpuStubBackend;
+        let input = ComputeInput {
+            frame_id: FrameId(1337),
+            t: 19,
+            context_digest: [0x2A_u8; 32],
+        };
+        let budget = ComputeBudget {
+            max_micros: 500,
+            hard_timeout_micros: 5_000,
+            seed: 17,
+        };
+
+        let out = backend.compute(&input, budget).expect("compute");
+        let predictor = MockJepaPredictor;
+        let state = predictor.init_state(&input, budget.seed);
+        let model = predictor.predict(&state, &input, budget).expect("predict");
+
+        assert!((out.surprise - model.error.surprise).abs() <= 1e-6);
+        assert!(out.notes.iter().any(|n| n == "world_model=mock_jepa_v0"));
+        assert!(out.notes.iter().any(|n| n.starts_with("pred_digest=")));
+    }
+
+    #[test]
     fn boundedness_clamps_and_truncates() {
         let spikes = (0..300)
             .map(|i| Spike {
@@ -436,7 +472,7 @@ mod tests {
             )
             .expect_err("should exceed");
         match err {
-            ComputeError::BudgetExceeded { stage, .. } => assert_eq!(stage, "spikes"),
+            ComputeError::BudgetExceeded { stage, .. } => assert_eq!(stage, "world_model/predict"),
             other => panic!("unexpected error: {other:?}"),
         }
     }
