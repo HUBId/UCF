@@ -1812,6 +1812,11 @@ impl RuntimeOrchestrator {
             op,
             evidence_chain_digest: request.evidence_chain_digest,
             capability_count: audit.capability_summary.items.len() as u32,
+            isolation_runtime: Some(
+                std::env::var("UCF_ISOLATION_RUNTIME").unwrap_or_else(|_| "inproc".to_string()),
+            ),
+            wasm_module_digest: None,
+            fuel_used: None,
         });
         let eid_call = self.ids.next();
         let call_record = ExperienceRecord::audit(
