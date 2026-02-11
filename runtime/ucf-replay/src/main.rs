@@ -48,9 +48,19 @@ fn main() {
     );
     for item in result.items.iter().filter(|i| !i.diff.pass).take(10) {
         println!(
-            "drift decision_id={} corr={} reasons={}",
+            "drift decision_id={} corr={} persisted_chain={} recomputed_chain={} reasons={}",
             item.decision_id,
             item.correlation_id,
+            item.persisted
+                .chain_digest_hex
+                .as_deref()
+                .map(|s| &s[..s.len().min(12)])
+                .unwrap_or("none"),
+            item.recomputed
+                .as_ref()
+                .and_then(|r| r.chain_digest_hex.as_deref())
+                .map(|s| &s[..s.len().min(12)])
+                .unwrap_or("none"),
             serde_json::to_string(&item.diff.reasons).expect("reasons")
         );
     }

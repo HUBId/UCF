@@ -1586,6 +1586,9 @@ impl RuntimeOrchestrator {
             budget_profile_id: Some(compute_summary.budget_profile_id),
             seed: Some(compute_summary.seed),
             risk_contract_version: Some(compute_summary.risk_contract_version),
+            compute_schema_version: Some(compute_summary.compute_schema_version),
+            compute_chain_digest: Some(compute_summary.compute_chain_digest),
+            compute_code_version: Some(compute_summary.compute_code_version),
             budget_exceeded_stage: compute_summary.budget_exceeded_stage,
         });
 
