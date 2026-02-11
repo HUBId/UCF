@@ -568,6 +568,10 @@ pub fn load_fixture_records(path: &Path) -> Result<Vec<ExperienceRecord>, Replay
             compute_chain_digest: None,
             compute_code_version: None,
             budget_exceeded_stage: None,
+            coherence: None,
+            instability: None,
+            phi_proxy: None,
+            coherence_digest: None,
         };
 
         let decision = DecisionFrame::allow(time, CorrelationId(entry.corr), "fixture")

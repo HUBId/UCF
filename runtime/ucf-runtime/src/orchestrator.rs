@@ -1,3 +1,4 @@
+use crate::coherence::{CoherenceRuntime, InterestProfile, Subscriber, TickInput};
 use crate::errors::RuntimeError;
 use crate::hooks::{
     ComputeMilestone, ComputeMilestoneAggregator, ConsolidationHook, GeistHook, GeistRejectReason,
@@ -216,6 +217,8 @@ pub struct RuntimeOrchestrator {
     compute_budget_exceeded_total: u64,
     backpressure_active_total: u64,
     fep_risk_penalty_applied_total: u64,
+    coherence_gated_total: u64,
+    coherence_runtime: CoherenceRuntime,
     consolidation_hook_enabled: bool,
     geist_hook_enabled: bool,
     consolidation_hook_errors_total: u64,
@@ -367,6 +370,26 @@ impl RuntimeOrchestrator {
             compute_budget_exceeded_total: 0,
             backpressure_active_total: 0,
             fep_risk_penalty_applied_total: 0,
+            coherence_gated_total: 0,
+            coherence_runtime: {
+                let mut runtime = CoherenceRuntime::new();
+                runtime.register_subscriber(Subscriber {
+                    module_id: 1,
+                    name: "cde",
+                    interest: InterestProfile::HashBuckets(vec![0, 1, 2]),
+                });
+                runtime.register_subscriber(Subscriber {
+                    module_id: 2,
+                    name: "nsr",
+                    interest: InterestProfile::HashBuckets(vec![3, 4, 5]),
+                });
+                runtime.register_subscriber(Subscriber {
+                    module_id: 3,
+                    name: "ssm",
+                    interest: InterestProfile::TopKFeatures(vec![1, 2, 3, 5, 8, 13]),
+                });
+                runtime
+            },
             consolidation_hook_enabled: env_flag("UCF_ENABLE_CONSOLIDATION_HOOK"),
             geist_hook_enabled: env_flag("UCF_ENABLE_GEIST_HOOK"),
             consolidation_hook_errors_total: 0,
@@ -1609,7 +1632,40 @@ impl RuntimeOrchestrator {
             compute_chain_digest: Some(compute_summary.compute_chain_digest),
             compute_code_version: Some(compute_summary.compute_code_version),
             budget_exceeded_stage: compute_summary.budget_exceeded_stage,
+            coherence: None,
+            instability: None,
+            phi_proxy: None,
+            coherence_digest: None,
         });
+
+        let (routing, windows, schedule, coherence_metrics, coherence_gate) =
+            self.coherence_runtime.tick(
+                &compute_signals.spikes,
+                TickInput {
+                    t: ctrl.time.tick.get(),
+                    source_digest: compute_summary.spikes_digest,
+                    pressure: compute_summary.pressure,
+                    surprise: compute_summary.surprise,
+                    risk: compute_summary.risk,
+                    confidence: compute_summary.confidence,
+                    budget_limit: 8,
+                },
+            );
+        let _ = (routing, windows, schedule);
+
+        if let Some(summary) = decision.compute_summary {
+            decision = decision.with_compute_summary(ucf_frames::v1::ComputeSignalsSummary {
+                coherence: Some(coherence_metrics.coherence),
+                instability: Some(coherence_metrics.instability),
+                phi_proxy: Some(coherence_metrics.phi_proxy),
+                coherence_digest: Some(coherence_metrics.digest),
+                ..summary
+            });
+        }
+        decision = decision.with_gating_reason(coherence_gate);
+        if coherence_gate.is_some() {
+            self.coherence_gated_total = self.coherence_gated_total.saturating_add(1);
+        }
 
         if self.backpressure > 0.8 && decision.decision == ucf_frames::v1::DecisionCode::Allow {
             let mut next = DecisionFrame::defer_with_reason(
@@ -1683,6 +1739,22 @@ impl RuntimeOrchestrator {
                 }
                 decision = next;
             }
+        }
+
+        if coherence_gate.is_some() && decision.decision == ucf_frames::v1::DecisionCode::Allow {
+            let mut next = DecisionFrame::defer_with_reason(
+                decision.time,
+                decision.corr,
+                decision.intent,
+                ucf_frames::v1::ReasonCode("coherence_gate"),
+                "coherence_gate",
+            )
+            .with_meta(decision.meta)
+            .with_gating_reason(coherence_gate);
+            if let Some(summary) = decision.compute_summary {
+                next = next.with_compute_summary(summary);
+            }
+            decision = next;
         }
 
         let eid1 = self.ids.next();

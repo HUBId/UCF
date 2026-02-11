@@ -91,6 +91,10 @@ fn gate_denies_missing_decision_and_rate_limits_by_ticks() {
         compute_chain_digest: None,
         compute_code_version: None,
         budget_exceeded_stage: None,
+        coherence: None,
+        instability: None,
+        phi_proxy: None,
+        coherence_digest: None,
     });
     let mut gate = ToolGate::new(issue_capabilities(Some(&decision), 1), RateLimiter::new(2));
     let mut adapter = MockAdapter::default();
@@ -148,6 +152,10 @@ fn issuer_blocks_high_risk() {
         compute_chain_digest: None,
         compute_code_version: None,
         budget_exceeded_stage: None,
+        coherence: None,
+        instability: None,
+        phi_proxy: None,
+        coherence_digest: None,
     });
     let caps = issue_capabilities(Some(&decision), 10);
     assert_eq!(caps.tokens.len(), 1);

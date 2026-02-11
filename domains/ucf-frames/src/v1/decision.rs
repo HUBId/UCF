@@ -31,6 +31,10 @@ pub struct ComputeSignalsSummary {
     pub compute_chain_digest: Option<[u8; 32]>,
     pub compute_code_version: Option<&'static str>,
     pub budget_exceeded_stage: Option<&'static str>,
+    pub coherence: Option<f32>,
+    pub instability: Option<f32>,
+    pub phi_proxy: Option<f32>,
+    pub coherence_digest: Option<[u8; 32]>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -61,6 +65,7 @@ pub struct DecisionFrame {
     pub rationale: Arc<str>,
     pub meta: DecisionMeta,
     pub compute_summary: Option<ComputeSignalsSummary>,
+    pub gating_reason: Option<&'static str>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -78,6 +83,7 @@ impl DecisionFrame {
             rationale: rationale.into(),
             meta: DecisionMeta::baseline(),
             compute_summary: None,
+            gating_reason: None,
         }
     }
 
@@ -97,6 +103,7 @@ impl DecisionFrame {
             rationale: rationale.into(),
             meta: DecisionMeta::baseline(),
             compute_summary: None,
+            gating_reason: None,
         }
     }
 
@@ -111,6 +118,7 @@ impl DecisionFrame {
             rationale: rationale.into(),
             meta: DecisionMeta::baseline(),
             compute_summary: None,
+            gating_reason: None,
         }
     }
 
@@ -131,6 +139,7 @@ impl DecisionFrame {
             rationale: rationale.into(),
             meta: DecisionMeta::baseline(),
             compute_summary: None,
+            gating_reason: None,
         }
     }
 
@@ -152,6 +161,7 @@ impl DecisionFrame {
             rationale: rationale.into(),
             meta: DecisionMeta::baseline(),
             compute_summary: None,
+            gating_reason: None,
         }
     }
 
@@ -172,6 +182,7 @@ impl DecisionFrame {
             rationale: rationale.into(),
             meta: DecisionMeta::baseline(),
             compute_summary: None,
+            gating_reason: None,
         }
     }
 
@@ -184,6 +195,11 @@ impl DecisionFrame {
 impl DecisionFrame {
     pub fn with_compute_summary(mut self, compute_summary: ComputeSignalsSummary) -> Self {
         self.compute_summary = Some(compute_summary);
+        self
+    }
+
+    pub fn with_gating_reason(mut self, gating_reason: Option<&'static str>) -> Self {
+        self.gating_reason = gating_reason;
         self
     }
 }

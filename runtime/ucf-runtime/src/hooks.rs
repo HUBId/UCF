@@ -438,6 +438,10 @@ mod tests {
             compute_chain_digest: Some([8; 32]),
             compute_code_version: Some("v0.0.0"),
             budget_exceeded_stage: None,
+            coherence: None,
+            instability: None,
+            phi_proxy: None,
+            coherence_digest: None,
         });
         ExperienceRecord::from_decision(ExperienceId(corr), decision)
     }

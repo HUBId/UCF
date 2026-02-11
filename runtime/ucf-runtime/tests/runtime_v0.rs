@@ -53,6 +53,10 @@ fn allow_low_risk(corr: u64) -> DecisionFrame {
         compute_chain_digest: None,
         compute_code_version: None,
         budget_exceeded_stage: None,
+        coherence: None,
+        instability: None,
+        phi_proxy: None,
+        coherence_digest: None,
     });
     d
 }
