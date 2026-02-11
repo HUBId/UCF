@@ -4,13 +4,13 @@ use ucf_core::types::SimTime;
 use ucf_frames::v1::{ControlFrame, ControlPayload};
 
 pub mod backends;
+pub mod capabilities;
 pub mod feature_extractor;
+pub mod pipeline;
 pub mod ssm;
 pub mod world_model;
 pub use backends::{build_backend, ComputeBackendConfig, ComputeBackendKind};
-use feature_extractor::{FeatureExtractor, MockSaeExtractor, SaeOutput};
-use ssm::{MockSsmSelectiveScan, WorkingMemoryModel};
-use world_model::{MockJepaPredictor, WorldModelPredictor};
+pub use pipeline::ComputePipelineBackend;
 
 pub const MAX_SPIKES: usize = 256;
 pub const MAX_NOTES: usize = 16;
@@ -128,6 +128,8 @@ pub enum ComputeError {
     InvalidInput { reason: String },
     #[error("compute backend disabled")]
     BackendDisabled,
+    #[error("compute backend not implemented")]
+    NotImplemented,
     #[error("compute backend internal error: {reason}")]
     Internal { reason: String },
 }
@@ -212,50 +214,9 @@ pub fn compute_input_from_control(ctrl: &ControlFrame) -> ComputeInput {
 #[derive(Debug, Default, Clone, Copy)]
 pub struct CpuStubBackend;
 
-impl CpuStubBackend {
-    fn check_budget(
-        work_units: u64,
-        stage: &'static str,
-        budget: ComputeBudget,
-    ) -> Result<(), ComputeError> {
-        const SCALE: u64 = 8;
-        let elapsed_micros = work_units / SCALE;
-        if work_units > budget.max_micros.saturating_mul(SCALE) {
-            return Err(ComputeError::BudgetExceeded {
-                stage,
-                elapsed_micros,
-                limit_micros: budget.max_micros,
-            });
-        }
-        Ok(())
-    }
-
-    fn stage_budget(total: ComputeBudget, num: u64, den: u64) -> ComputeBudget {
-        let max_micros = ((total.max_micros.saturating_mul(num)) / den).max(1);
-        let hard_timeout_micros = ((total.hard_timeout_micros.saturating_mul(num)) / den).max(1);
-        ComputeBudget {
-            max_micros,
-            hard_timeout_micros,
-            seed: total.seed,
-        }
-    }
-
-    fn empty_sae() -> SaeOutput {
-        SaeOutput {
-            feature_vec: feature_extractor::FeatureVector {
-                features: vec![0.0; feature_extractor::SAE_FEATURE_DIM],
-                digest: [0_u8; 32],
-            },
-            spikes: Vec::new(),
-            sparsity: 1.0,
-            energy: 0.0,
-        }
-    }
-}
-
 impl AiComputeBackend for CpuStubBackend {
     fn name(&self) -> &'static str {
-        "cpu_stub"
+        "stub"
     }
 
     fn compute(
@@ -263,122 +224,7 @@ impl AiComputeBackend for CpuStubBackend {
         input: &ComputeInput,
         budget: ComputeBudget,
     ) -> Result<ComputeSignals, ComputeError> {
-        if input.t == 0 {
-            return Err(ComputeError::InvalidInput {
-                reason: "t must be non-zero".to_string(),
-            });
-        }
-
-        Self::check_budget(1, "pipeline/start", budget)?;
-
-        let mut seed_bytes = [0_u8; 8];
-        seed_bytes.copy_from_slice(&input.context_digest[0..8]);
-        let context_seed = u64::from_le_bytes(seed_bytes);
-
-        let world_budget = Self::stage_budget(budget, 4, 10);
-        let sae_budget = Self::stage_budget(budget, 3, 10);
-        let ssm_budget = Self::stage_budget(budget, 3, 10);
-
-        let predictor = MockJepaPredictor;
-        let state = predictor.init_state(input, budget.seed);
-        let world_model_out = predictor.predict(&state, input, world_budget)?;
-        let surprise = world_model_out.error.surprise;
-
-        let sae_extractor = MockSaeExtractor;
-        let (sae_out, sae_degraded) =
-            match sae_extractor.extract(input, &world_model_out, sae_budget) {
-                Ok(output) => (output, false),
-                Err(ComputeError::BudgetExceeded { .. }) => (Self::empty_sae(), true),
-                Err(other) => return Err(other),
-            };
-
-        let ssm = MockSsmSelectiveScan;
-        let ssm_state = ssm.init(input, budget.seed ^ context_seed.rotate_left(9));
-        let (ssm_out, ssm_degraded) =
-            match ssm.step(&ssm_state, &sae_out, &world_model_out, ssm_budget) {
-                Ok(output) => (output, false),
-                Err(ComputeError::BudgetExceeded { .. }) => {
-                    let fallback_pressure = surprise.clamp(0.0, 1.0);
-                    (
-                        ssm::SsmOutput {
-                            next_state: ssm_state,
-                            pressure: fallback_pressure,
-                            readout: fallback_pressure,
-                        },
-                        true,
-                    )
-                }
-                Err(other) => return Err(other),
-            };
-
-        let pressure = ssm_out.pressure;
-        let (risk, confidence) = fuse_signals(surprise, pressure, sae_out.energy);
-
-        let summary = ComputeSignals {
-            surprise,
-            pressure,
-            risk,
-            confidence,
-            spikes: sae_out.spikes.clone(),
-            notes: Vec::new(),
-            sparsity: Some(sae_out.sparsity),
-            energy: Some(sae_out.energy),
-            ssm_readout: Some(ssm_out.readout),
-            ssm_digest: Some(ssm_out.next_state.digest),
-        }
-        .summary(self.name());
-
-        let mut notes = vec![
-            format!("backend={}", self.name()),
-            format!("frame={}", input.frame_id.0),
-            format!("world_model={}", predictor.name()),
-            format!("feature_extractor={}", sae_extractor.name()),
-            format!("working_memory={}", ssm.name()),
-            format!(
-                "pred_digest={}",
-                &hex::encode(world_model_out.prediction.prediction_digest)[..12]
-            ),
-            format!(
-                "sae_digest={}",
-                &hex::encode(sae_out.feature_vec.digest)[..12]
-            ),
-            format!(
-                "ssm_digest={}",
-                &hex::encode(ssm_out.next_state.digest)[..12]
-            ),
-            format!("spike_count={}", sae_out.spikes.len()),
-            format!("sparsity={:.4}", sae_out.sparsity),
-            format!("energy={:.4}", sae_out.energy),
-            format!(
-                "digest_prefix={:02x}{:02x}",
-                input.context_digest[0], input.context_digest[1]
-            ),
-            format!(
-                "spikes_digest={}",
-                &hex::encode(summary.spikes_digest)[..12]
-            ),
-        ];
-        if sae_degraded {
-            notes.push("degraded:sae_budget_exceeded".to_string());
-        }
-        if ssm_degraded {
-            notes.push("degraded:ssm_budget_exceeded".to_string());
-        }
-        notes.sort();
-
-        Ok(ComputeSignals {
-            surprise,
-            pressure,
-            risk,
-            confidence,
-            spikes: sae_out.spikes,
-            notes,
-            sparsity: Some(sae_out.sparsity),
-            energy: Some(sae_out.energy),
-            ssm_readout: Some(ssm_out.readout),
-            ssm_digest: Some(ssm_out.next_state.digest),
-        }
-        .bounded())
+        ComputePipelineBackend::stub().compute(input, budget)
     }
 }
 
@@ -401,30 +247,6 @@ impl SplitMix64 {
     }
 }
 
-#[cfg(feature = "compute-burn")]
-pub mod burn {
-    use crate::{
-        AiComputeBackend, ComputeBudget, ComputeError, ComputeInput, ComputeSignals, CpuStubBackend,
-    };
-
-    #[derive(Debug, Default, Clone, Copy)]
-    pub struct BurnBackend;
-
-    impl AiComputeBackend for BurnBackend {
-        fn name(&self) -> &'static str {
-            "burn_dummy"
-        }
-
-        fn compute(
-            &self,
-            input: &ComputeInput,
-            budget: ComputeBudget,
-        ) -> Result<ComputeSignals, ComputeError> {
-            CpuStubBackend.compute(input, budget)
-        }
-    }
-}
-
 pub fn frame_time_tick(time: SimTime) -> u64 {
     time.tick.get()
 }
@@ -432,6 +254,8 @@ pub fn frame_time_tick(time: SimTime) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::capabilities::WorldModelPredictor;
+    use crate::world_model::MockJepaPredictor;
 
     #[derive(Debug, serde::Deserialize)]
     struct FixtureCase {
@@ -599,7 +423,7 @@ mod tests {
             assert!((out.confidence - case.expected.confidence).abs() <= 1e-6);
             assert_eq!(out.spikes.len(), case.expected.spike_count);
 
-            let summary = out.summary("cpu_stub");
+            let summary = out.summary("stub");
             assert_eq!(
                 hex::encode(summary.spikes_digest),
                 case.expected.spikes_digest_hex

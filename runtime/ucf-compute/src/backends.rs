@@ -1,10 +1,22 @@
-use crate::{AiComputeBackend, ComputeBudget, ComputeError, CpuStubBackend};
+use std::sync::Arc;
+
+use crate::feature_extractor::MockSaeExtractor;
+use crate::pipeline::{ComputePipelineBackend, FusionConfig, LimitsConfig};
+use crate::ssm::MockSsmSelectiveScan;
+use crate::world_model::MockJepaPredictor;
+use crate::{AiComputeBackend, ComputeBudget, ComputeError};
 
 #[cfg(feature = "compute-candle")]
 mod candle_backend;
 
 #[cfg(feature = "compute-candle")]
-pub use candle_backend::CandleBackend;
+pub use candle_backend::CandleFeatureExtractor;
+
+#[cfg(feature = "compute-burn")]
+mod burn_backend;
+
+#[cfg(feature = "compute-burn")]
+pub use burn_backend::BurnFeatureExtractor;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
@@ -117,25 +129,64 @@ impl ComputeBackendConfig {
 pub fn build_backend(
     cfg: &ComputeBackendConfig,
 ) -> Result<Box<dyn AiComputeBackend + Send + Sync>, ComputeError> {
-    match cfg.kind {
-        ComputeBackendKind::Stub => Ok(Box::new(CpuStubBackend)),
+    let world = Arc::new(MockJepaPredictor);
+    let ssm = Arc::new(MockSsmSelectiveScan);
+    let fusion = FusionConfig::default();
+    let limits = LimitsConfig::default();
+
+    let backend = match cfg.kind {
+        ComputeBackendKind::Stub => ComputePipelineBackend::new(
+            "stub",
+            world,
+            Arc::new(MockSaeExtractor),
+            ssm,
+            fusion,
+            limits,
+        ),
         ComputeBackendKind::Candle => {
             #[cfg(feature = "compute-candle")]
             {
-                Ok(Box::new(CandleBackend::new(cfg.seed)))
+                ComputePipelineBackend::new(
+                    "candle",
+                    world,
+                    Arc::new(CandleFeatureExtractor::new(cfg.seed)),
+                    ssm,
+                    fusion,
+                    limits,
+                )
             }
             #[cfg(not(feature = "compute-candle"))]
             {
-                Err(ComputeError::BackendDisabled)
+                return Err(ComputeError::BackendDisabled);
             }
         }
-        ComputeBackendKind::Burn => Err(ComputeError::BackendDisabled),
-    }
+        ComputeBackendKind::Burn => {
+            #[cfg(feature = "compute-burn")]
+            {
+                ComputePipelineBackend::new(
+                    "burn",
+                    world,
+                    Arc::new(BurnFeatureExtractor::new(cfg.seed)),
+                    ssm,
+                    fusion,
+                    limits,
+                )
+            }
+            #[cfg(not(feature = "compute-burn"))]
+            {
+                return Err(ComputeError::BackendDisabled);
+            }
+        }
+    };
+
+    Ok(Box::new(backend))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(any(feature = "compute-candle", feature = "compute-burn"))]
+    use crate::{ComputeInput, FrameId};
 
     #[test]
     fn env_parse_defaults() {
@@ -180,7 +231,70 @@ mod tests {
         #[cfg(feature = "compute-candle")]
         {
             let backend = build_backend(&cfg).expect("candle backend available");
-            assert_eq!(backend.name(), "candle_dummy");
+            assert_eq!(backend.name(), "candle");
         }
+    }
+
+    #[test]
+    fn burn_profile_behavior() {
+        let cfg = ComputeBackendConfig {
+            kind: ComputeBackendKind::Burn,
+            ..ComputeBackendConfig::default()
+        };
+
+        #[cfg(not(feature = "compute-burn"))]
+        {
+            let result = build_backend(&cfg);
+            assert!(matches!(result, Err(ComputeError::BackendDisabled)));
+        }
+
+        #[cfg(feature = "compute-burn")]
+        {
+            let backend = build_backend(&cfg).expect("burn profile available");
+            let err = backend
+                .compute(
+                    &ComputeInput {
+                        frame_id: FrameId(1),
+                        t: 1,
+                        context_digest: [1_u8; 32],
+                    },
+                    ComputeBudget::default(),
+                )
+                .expect_err("burn skeleton should return explicit error");
+            assert!(matches!(err, ComputeError::NotImplemented));
+        }
+    }
+
+    #[cfg(feature = "compute-candle")]
+    #[test]
+    fn candle_profile_differs_from_stub_deterministically() {
+        let input = ComputeInput {
+            frame_id: FrameId(11),
+            t: 5,
+            context_digest: [9_u8; 32],
+        };
+        let budget = ComputeBudget::default();
+
+        let stub = build_backend(&ComputeBackendConfig {
+            kind: ComputeBackendKind::Stub,
+            ..ComputeBackendConfig::default()
+        })
+        .expect("stub");
+        let candle = build_backend(&ComputeBackendConfig {
+            kind: ComputeBackendKind::Candle,
+            seed: 77,
+            budgets: ComputeBudgetProfile::default(),
+        })
+        .expect("candle");
+
+        let a = candle.compute(&input, budget).expect("candle compute");
+        let b = candle.compute(&input, budget).expect("candle compute");
+        assert_eq!(a, b);
+
+        let stub_out = stub.compute(&input, budget).expect("stub compute");
+        assert_ne!(
+            a.summary("candle").spikes_digest,
+            stub_out.summary("stub").spikes_digest
+        );
     }
 }

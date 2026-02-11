@@ -1,5 +1,6 @@
 use sha2::{Digest, Sha256};
 
+use crate::capabilities::WorldModelPredictor;
 use crate::{ComputeBudget, ComputeError, ComputeInput, SplitMix64};
 
 pub const WORLD_MODEL_LATENT_DIM: usize = 32;
@@ -44,17 +45,6 @@ impl WorldModelOutput {
         }
         self
     }
-}
-
-pub trait WorldModelPredictor: Send + Sync {
-    fn name(&self) -> &'static str;
-    fn init_state(&self, input: &ComputeInput, seed: u64) -> WorldState;
-    fn predict(
-        &self,
-        state: &WorldState,
-        input: &ComputeInput,
-        budget: ComputeBudget,
-    ) -> Result<WorldModelOutput, ComputeError>;
 }
 
 #[derive(Debug, Default, Clone, Copy)]
