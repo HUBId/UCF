@@ -1307,6 +1307,10 @@ fn real_compute_onboarding_v0_smoke_path() {
     assert!(decision.compute_summary.is_some());
     assert!(orchestrator.ess.len() >= 2);
 
+    let compute = decision.compute_summary.expect("compute summary");
+    assert_eq!(compute.backend, "cpu_stub");
+    assert!((0.0..=1.0).contains(&compute.surprise));
+
     let decision_rec = orchestrator
         .ess
         .trail_by_corr(CorrelationId(99))
@@ -1315,5 +1319,5 @@ fn real_compute_onboarding_v0_smoke_path() {
         .expect("decision record");
 
     assert!(decision_rec.compute_summary.is_some());
-    assert_eq!(decision_rec.compute_summary, decision.compute_summary);
+    assert_eq!(decision_rec.compute_summary, Some(compute));
 }
