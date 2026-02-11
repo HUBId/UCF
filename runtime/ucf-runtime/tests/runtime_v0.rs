@@ -625,10 +625,35 @@ fn orchestrator_tick_emits_onn_and_snn_frames_each_tick() {
 
         assert_eq!(onn.now_ms, tick);
         assert_eq!(snn.now_ms, tick);
+        assert!(snn.fired <= 64);
         phases.push(onn.global_phase_q);
     }
 
     assert!(phases.windows(2).any(|w| w[0] != w[1]));
+}
+
+#[test]
+fn runtime_uses_snn_spike_rate_for_ncde_u4() {
+    let mut orchestrator = RuntimeOrchestrator::new();
+    let mut adapter = MockAdapter::default();
+
+    let ctrl = ControlFrame::new_text(
+        SimTime {
+            tick: Tick::new(321),
+            window: WindowId::new(0),
+        },
+        CorrelationId(1321),
+        ChannelCode::InternalThought,
+        intent(),
+        "snn-ncde-spike-rate",
+    );
+
+    orchestrator
+        .ingest_and_process(&mut adapter, ctrl)
+        .expect("tick should succeed");
+
+    assert!(orchestrator.spike_rate_0_1() > 0.0);
+    assert!(orchestrator.last_ncde_spike_u4() > 0.0);
 }
 
 #[test]
