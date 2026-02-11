@@ -1,0 +1,46 @@
+[package]
+name = "ucf-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+ucf-runtime = { path = "../runtime/ucf-runtime", features = ["sandbox-proc"] }
+ucf-policy = { path = "../runtime/ucf-policy" }
+ucf-types = { path = "../core/crates/ucf-types", features = ["serde"] }
+serde_json = "1"
+
+[[bin]]
+name = "fuzz_decode_frame"
+path = "fuzz_targets/fuzz_decode_frame.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_decode_ipc_envelope"
+path = "fuzz_targets/fuzz_decode_ipc_envelope.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_decode_capability_token"
+path = "fuzz_targets/fuzz_decode_capability_token.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_decode_sandbox_call_envelope"
+path = "fuzz_targets/fuzz_decode_sandbox_call_envelope.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
+members = ["."]

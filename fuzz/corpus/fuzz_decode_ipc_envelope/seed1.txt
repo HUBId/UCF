@@ -1,0 +1,3 @@
+ipc-envelope-seed-v1
+msg_id=1
+kind=call

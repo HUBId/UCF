@@ -21,3 +21,4 @@ ucf-core = { path = "../../core/ucf-core" }
 
 [dev-dependencies]
 serde_json = "1"
+proptest = "1"

@@ -205,6 +205,7 @@ mod tests {
     use super::*;
     use crate::risk_contract::SignalQuality;
     use crate::FrameId;
+    use proptest::prelude::*;
 
     fn spike(feature_id: u32, magnitude: f32, timestamp: u64) -> Spike {
         Spike {
@@ -212,6 +213,19 @@ mod tests {
             magnitude,
             timestamp,
         }
+    }
+
+    fn assert_invariants(chain: &EvidenceChain) {
+        assert!(chain.schema_version >= 1);
+        assert_ne!(chain.seed, 0);
+        let mut canonical = *chain;
+        canonical.chain_digest = [0; 32];
+        assert_eq!(chain.chain_digest, digest_canonical(&canonical));
+    }
+
+    fn assert_evidence_chain(chain: &EvidenceChain) {
+        assert_ne!(chain.risk_digest, [0; 32]);
+        assert_invariants(chain);
     }
 
     #[test]
@@ -226,6 +240,60 @@ mod tests {
         let pos_zero = spikes_digest(&[spike(1, 0.0, 1)]);
         let neg_zero = spikes_digest(&[spike(1, -0.0, 1)]);
         assert_ne!(pos_zero, neg_zero);
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(256))]
+
+        #[test]
+        fn canonical_digest_is_stable_for_same_input(seed in 1u64..10_000, risk in 0.0f32..1.0, confidence in 0.0f32..1.0) {
+            let input = ComputeInput { frame_id: FrameId(42), t: 17, context_digest: [7; 32] };
+            let risk_signal = RiskSignal {
+                risk,
+                confidence,
+                quality: SignalQuality::Unavailable,
+                evidence: EvidenceRef {
+                    context_digest: input.context_digest,
+                    world_digest: None,
+                    spikes_digest: None,
+                    ssm_digest: None,
+                    backend_profile: BackendProfileId::StubV1,
+                    seed,
+                    budget_profile_id: 1,
+                },
+                version: 1,
+            };
+            let a = EvidenceChain::from_compute(&input, &[], &risk_signal);
+            let b = EvidenceChain::from_compute(&input, &[], &risk_signal);
+            prop_assert_eq!(a.chain_digest, b.chain_digest);
+            prop_assert_eq!(digest_canonical(&a), digest_canonical(&b));
+            assert_evidence_chain(&a);
+        }
+
+        #[test]
+        fn changing_seed_changes_chain_digest(seed in 1u64..10_000, bump in 1u64..1000) {
+            let input = ComputeInput { frame_id: FrameId(1), t: 2, context_digest: [3; 32] };
+            let mk = |s| RiskSignal {
+                risk: 0.4,
+                confidence: 0.6,
+                quality: SignalQuality::Unavailable,
+                evidence: EvidenceRef {
+                    context_digest: input.context_digest,
+                    world_digest: None,
+                    spikes_digest: None,
+                    ssm_digest: None,
+                    backend_profile: BackendProfileId::StubV1,
+                    seed: s,
+                    budget_profile_id: 9,
+                },
+                version: 1,
+            };
+            let a = EvidenceChain::from_compute(&input, &[], &mk(seed));
+            let b = EvidenceChain::from_compute(&input, &[], &mk(seed.saturating_add(bump)));
+            prop_assert_ne!(a.chain_digest, b.chain_digest);
+            assert_evidence_chain(&a);
+            assert_evidence_chain(&b);
+        }
     }
 
     #[test]

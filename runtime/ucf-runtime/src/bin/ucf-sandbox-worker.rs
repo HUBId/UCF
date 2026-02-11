@@ -329,7 +329,7 @@ fn put_bytes(out: &mut Vec<u8>, b: &[u8]) {
     out.extend_from_slice(b);
 }
 fn read_u16(input: &[u8], i: &mut usize) -> Result<u16, ()> {
-    if input.len() - *i < 2 {
+    if input.len().saturating_sub(*i) < 2 {
         return Err(());
     }
     let v = u16::from_be_bytes([input[*i], input[*i + 1]]);
@@ -337,7 +337,7 @@ fn read_u16(input: &[u8], i: &mut usize) -> Result<u16, ()> {
     Ok(v)
 }
 fn read_u32(input: &[u8], i: &mut usize) -> Result<u32, ()> {
-    if input.len() - *i < 4 {
+    if input.len().saturating_sub(*i) < 4 {
         return Err(());
     }
     let v = u32::from_be_bytes([input[*i], input[*i + 1], input[*i + 2], input[*i + 3]]);
@@ -345,7 +345,7 @@ fn read_u32(input: &[u8], i: &mut usize) -> Result<u32, ()> {
     Ok(v)
 }
 fn read_u64(input: &[u8], i: &mut usize) -> Result<u64, ()> {
-    if input.len() - *i < 8 {
+    if input.len().saturating_sub(*i) < 8 {
         return Err(());
     }
     let v = u64::from_be_bytes([
@@ -363,7 +363,7 @@ fn read_u64(input: &[u8], i: &mut usize) -> Result<u64, ()> {
 }
 fn read_bytes(input: &[u8], i: &mut usize) -> Result<Vec<u8>, ()> {
     let l = read_u32(input, i)? as usize;
-    if input.len() - *i < l {
+    if input.len().saturating_sub(*i) < l {
         return Err(());
     }
     let v = input[*i..*i + l].to_vec();
@@ -374,7 +374,7 @@ fn read_string(input: &[u8], i: &mut usize) -> Result<String, ()> {
     String::from_utf8(read_bytes(input, i)?).map_err(|_| ())
 }
 fn read_digest(input: &[u8], i: &mut usize) -> Result<[u8; 32], ()> {
-    if input.len() - *i < 32 {
+    if input.len().saturating_sub(*i) < 32 {
         return Err(());
     }
     let mut d = [0; 32];
