@@ -23,7 +23,10 @@ use ucf_core::archive_log::ArchiveLog;
 use ucf_core::storage::{ArchiveCfg, FlushPolicy, MemArchiveStore};
 use ucf_dbm::chemistry::{chemistry_step, ChemistryCfg, NeuromodState};
 use ucf_dbm::regions::{region_step, BrainRegion, RegionKind};
-use ucf_ess::v1::{ExperienceRecord, ExperienceStore, IdAllocator, InMemoryEss};
+use ucf_ess::v1::{
+    AuditCheckpointRecord, AuditPayload, ExperienceKind, ExperienceRecord, ExperienceStore,
+    IdAllocator, InMemoryEss, ToolAuthRecord, ToolExecutionRecord, ToolRequestRecord,
+};
 use ucf_fep::{
     check_coherence_invariants, fep_step, homeostasis_step, CoherenceCfg, CoherenceSnapshot,
     FepCfg, FepInputs, FepOutputs, HomeoCfg, HomeoState,
@@ -39,7 +42,12 @@ use ucf_ncde::v0::{ncde_step, NcdeCfg, NcdeInput, NcdeState};
 use ucf_neuromod::v0::{NeuromodInputs, NeuromodScheduler, NeuromodulatorField};
 use ucf_nsr::v0::{Claim, NsrEngine, Verdict};
 use ucf_onn::v0::{onn_step, OnnCfg, OnnCore, OnnInput, OnnNode, OnnState, PhaseDeg};
-use ucf_policy::{adapter::ActionAdapter, gem::Gem, pbm::Pbm};
+use ucf_policy::{
+    adapter::ActionAdapter,
+    gem::{issue_capabilities, AuthorizationOutcome, Gem, ToolGate, ToolStatus},
+    pbm::Pbm,
+    rate_limiter::RateLimiter,
+};
 use ucf_sle::v0::{sle_step, SleCfg, SleReason, SleSignals, SleState};
 use ucf_snn::v0::{encode, snn_emit, to_brainbus, FeatureEvent, SnnCfg, SnnEncodeCfg, SpikeSrc};
 use ucf_spikes::{
@@ -220,6 +228,9 @@ pub struct RuntimeOrchestrator {
     compute_milestone_aggregator: ComputeMilestoneAggregator,
     geist_state_updater: GeistStateUpdater,
     last_compute_milestone: Option<ComputeMilestone>,
+    tool_gate: ToolGate,
+    audit_head_digest: [u8; 32],
+    audit_chain_checkpoint_total: u64,
 }
 
 impl RuntimeOrchestrator {
@@ -370,6 +381,12 @@ impl RuntimeOrchestrator {
             geist_state_updater: GeistStateUpdater::new(60, 0.9, 0.2, 0.25)
                 .expect("valid default geist hook config"),
             last_compute_milestone: None,
+            tool_gate: ToolGate::new(
+                ucf_policy::capability::CapabilitySet::empty(),
+                RateLimiter::new(1024),
+            ),
+            audit_head_digest: [0; 32],
+            audit_chain_checkpoint_total: 0,
         }
     }
 
@@ -1750,12 +1767,104 @@ impl RuntimeOrchestrator {
             }
         }
 
-        if let Err(error) = Gem::execute(adapter, &ctrl, Some(&decision)) {
-            let mut note = format!("gem_error:{error}");
+        self.tool_gate.capabilities = issue_capabilities(Some(&decision), decision.time.tick.get());
+        let audit =
+            Gem::execute_with_gate(adapter, &ctrl, Some(&decision), eid2.0, &mut self.tool_gate)?;
+
+        let req_payload = AuditPayload::ToolRequest(ToolRequestRecord {
+            tool_request_id: audit.request.id,
+            capability_kind: audit.request.kind.as_tag().to_string(),
+            target: audit.request.target.clone(),
+            decision_id: audit.request.decision_id,
+            evidence_chain_digest: audit.request.evidence_chain_digest,
+        });
+        let eid_req = self.ids.next();
+        let req_record = ExperienceRecord::audit(
+            eid_req,
+            decision.time,
+            decision.corr,
+            ExperienceKind::ToolRequest,
+            req_payload,
+            self.audit_head_digest,
+        );
+        self.audit_head_digest = req_record.audit_digest.unwrap_or(self.audit_head_digest);
+        self.ess.append(req_record)?;
+
+        let (allowed, reason, token_digest) = match audit.auth {
+            AuthorizationOutcome::Allowed { token_digest } => {
+                (true, "allowed".to_string(), Some(token_digest))
+            }
+            AuthorizationOutcome::Denied { reason } => (false, format!("{reason:?}"), None),
+            AuthorizationOutcome::RateLimited { retry_after_ticks } => {
+                (false, format!("rate_limited:{retry_after_ticks}"), None)
+            }
+        };
+        let auth_payload = AuditPayload::ToolAuth(ToolAuthRecord {
+            tool_request_id: audit.request.id,
+            allowed,
+            reason,
+            token_digest,
+        });
+        let eid_auth = self.ids.next();
+        let auth_record = ExperienceRecord::audit(
+            eid_auth,
+            decision.time,
+            decision.corr,
+            ExperienceKind::ToolAuth,
+            auth_payload,
+            self.audit_head_digest,
+        );
+        self.audit_head_digest = auth_record.audit_digest.unwrap_or(self.audit_head_digest);
+        self.ess.append(auth_record)?;
+
+        let exec_payload = AuditPayload::ToolExecution(ToolExecutionRecord {
+            tool_request_id: audit.request.id,
+            status: format!("{:?}", audit.result.status),
+            bytes_out: audit.result.bytes_out,
+            bytes_in: audit.result.bytes_in,
+            error_code: audit.result.error_code.clone(),
+        });
+        let eid_exec = self.ids.next();
+        let exec_record = ExperienceRecord::audit(
+            eid_exec,
+            decision.time,
+            decision.corr,
+            ExperienceKind::ToolExecution,
+            exec_payload,
+            self.audit_head_digest,
+        );
+        self.audit_head_digest = exec_record.audit_digest.unwrap_or(self.audit_head_digest);
+        self.ess.append(exec_record)?;
+
+        let checkpoint_payload = AuditPayload::AuditCheckpoint(AuditCheckpointRecord {
+            head_digest: self.audit_head_digest,
+        });
+        let eid_cp = self.ids.next();
+        let checkpoint_record = ExperienceRecord::audit(
+            eid_cp,
+            decision.time,
+            decision.corr,
+            ExperienceKind::AuditCheckpoint,
+            checkpoint_payload,
+            self.audit_head_digest,
+        );
+        self.audit_head_digest = checkpoint_record
+            .audit_digest
+            .unwrap_or(self.audit_head_digest);
+        self.audit_chain_checkpoint_total = self.audit_chain_checkpoint_total.saturating_add(1);
+        self.ess.append(checkpoint_record)?;
+
+        if matches!(audit.result.status, ToolStatus::Failed) {
+            let mut note = format!(
+                "gem_error:{}",
+                audit
+                    .result
+                    .error_code
+                    .unwrap_or_else(|| "unknown".to_string())
+            );
             if note.chars().count() > 120 {
                 note = note.chars().take(120).collect();
             }
-
             let eid3 = self.ids.next();
             self.ess.append(ExperienceRecord::note(
                 eid3,
@@ -1763,8 +1872,7 @@ impl RuntimeOrchestrator {
                 decision.corr,
                 note,
             ))?;
-
-            return Err(error.into());
+            return Err(ucf_policy::errors::PolicyError::AdapterError("tool_failed").into());
         }
 
         if let Some((count, target)) = adapter.take_brain_spike_meta() {

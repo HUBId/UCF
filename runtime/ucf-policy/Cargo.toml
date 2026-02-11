@@ -8,3 +8,6 @@ ucf-core = { path = "../../core/ucf-core" }
 ucf-frames = { path = "../../domains/ucf-frames" }
 ucf-brainbus = { path = "../../domains/ucf-brainbus" }
 ucf-bluebrain-bridge = { path = "../../domains/ucf-bluebrain-bridge" }
+metrics = { workspace = true }
+tracing = { workspace = true }
+sha2 = { workspace = true }
