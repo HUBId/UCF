@@ -1,4 +1,6 @@
 use ucf_cde::v0::CdeUpdateKind;
+#[cfg(feature = "compute-burn")]
+use ucf_compute::ComputeError;
 use ucf_core::types::{SimTime, Tick, WindowId};
 use ucf_ess::v1::{ExperienceKind, ExperiencePayload, ExperienceStore};
 use ucf_fep::{check_coherence_invariants, CoherenceCfg, CoherenceSnapshot};
@@ -7,6 +9,8 @@ use ucf_frames::v1::{
     CorrelationId, DecisionFrame, Intent, IntentId, IntentKind, NeuromodulatorSnapshot,
 };
 use ucf_policy::{adapter::MockAdapter, gem::Gem};
+#[cfg(feature = "compute-burn")]
+use ucf_runtime::errors::RuntimeError;
 use ucf_runtime::RuntimeOrchestrator;
 use ucf_sle::v0::SleCfg;
 
@@ -62,7 +66,7 @@ fn external_output_text_is_allowed_emitted_and_audited() {
     assert_eq!(decision_record.decision_meta, Some(decision.meta));
     assert!(decision.compute_summary.is_some());
     let compute = decision.compute_summary.expect("compute summary");
-    assert_eq!(compute.backend, "cpu_stub");
+    assert_eq!(compute.backend, "stub");
     assert!(compute.spike_count <= 256);
     assert_eq!(decision_record.compute_summary, Some(compute));
     assert_eq!(decision.meta.attention_gain, 0.70000005);
@@ -1308,7 +1312,7 @@ fn real_compute_onboarding_v0_smoke_path() {
     assert!(orchestrator.ess.len() >= 2);
 
     let compute = decision.compute_summary.expect("compute summary");
-    assert_eq!(compute.backend, "cpu_stub");
+    assert_eq!(compute.backend, "stub");
     assert!((0.0..=1.0).contains(&compute.surprise));
     assert!((0.0..=1.0).contains(&compute.pressure));
     assert!((0.0..=1.0).contains(&compute.risk));
@@ -1351,7 +1355,7 @@ fn orchestrator_env_selects_candle_backend_and_persists_summary() {
         .expect("orchestration should succeed");
 
     let compute = decision.compute_summary.expect("compute summary");
-    assert_eq!(compute.backend, "candle_dummy");
+    assert_eq!(compute.backend, "candle");
     assert!(compute.spike_count <= 256);
     assert!((0.0..=1.0).contains(&compute.risk));
     assert!((0.0..=1.0).contains(&compute.confidence));
@@ -1361,4 +1365,32 @@ fn orchestrator_env_selects_candle_backend_and_persists_summary() {
     std::env::remove_var("UCF_COMPUTE_SEED");
     std::env::remove_var("UCF_COMPUTE_MAX_MICROS");
     std::env::remove_var("UCF_COMPUTE_HARD_TIMEOUT_MICROS");
+}
+
+#[cfg(feature = "compute-burn")]
+#[test]
+fn orchestrator_env_burn_backend_surfaces_clear_error() {
+    std::env::set_var("UCF_COMPUTE_BACKEND", "burn");
+    std::env::set_var("UCF_COMPUTE_SEED", "77");
+
+    let mut orchestrator = RuntimeOrchestrator::try_new_from_env().expect("orchestrator from env");
+    let ctrl = ControlFrame::new_text(
+        sim_time(),
+        CorrelationId(1001),
+        ChannelCode::ExternalOutput,
+        intent(),
+        "burn path",
+    );
+    let mut adapter = MockAdapter::default();
+
+    let err = orchestrator
+        .ingest_and_process(&mut adapter, ctrl)
+        .expect_err("burn profile v0 should return explicit not implemented");
+    assert!(matches!(
+        err,
+        RuntimeError::Compute(ComputeError::NotImplemented)
+    ));
+
+    std::env::remove_var("UCF_COMPUTE_BACKEND");
+    std::env::remove_var("UCF_COMPUTE_SEED");
 }

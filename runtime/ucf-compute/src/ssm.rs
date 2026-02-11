@@ -1,5 +1,6 @@
 use sha2::{Digest, Sha256};
 
+use crate::capabilities::WorkingMemoryModel;
 use crate::feature_extractor::SaeOutput;
 use crate::world_model::WorldModelOutput;
 use crate::{ComputeBudget, ComputeError, ComputeInput, SplitMix64};
@@ -19,18 +20,6 @@ pub struct SsmOutput {
     pub next_state: SsmState,
     pub pressure: f32,
     pub readout: f32,
-}
-
-pub trait WorkingMemoryModel: Send + Sync {
-    fn name(&self) -> &'static str;
-    fn init(&self, input: &ComputeInput, seed: u64) -> SsmState;
-    fn step(
-        &self,
-        state: &SsmState,
-        sae: &SaeOutput,
-        world: &WorldModelOutput,
-        budget: ComputeBudget,
-    ) -> Result<SsmOutput, ComputeError>;
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -153,8 +142,9 @@ impl WorkingMemoryModel for MockSsmSelectiveScan {
 
 #[cfg(test)]
 mod tests {
-    use crate::feature_extractor::{FeatureExtractor, MockSaeExtractor};
-    use crate::world_model::{MockJepaPredictor, WorldModelPredictor};
+    use crate::capabilities::{FeatureExtractor, WorldModelPredictor};
+    use crate::feature_extractor::MockSaeExtractor;
+    use crate::world_model::MockJepaPredictor;
     use crate::FrameId;
 
     use super::*;

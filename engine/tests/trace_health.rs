@@ -1,5 +1,15 @@
 use engine::RegulationEngine;
+use std::io::ErrorKind;
+use std::path::Path;
 use ucf::v1::{ExecStats, IntegrityStateClass, PolicyStats, ReasonCode, ReceiptStats, SignalFrame};
+
+fn reset_hpa_state_file() {
+    match std::fs::remove_file(Path::new("hpa_state.json")) {
+        Ok(()) => {}
+        Err(err) if err.kind() == ErrorKind::NotFound => {}
+        Err(err) => panic!("failed to remove hpa_state.json: {err}"),
+    }
+}
 
 fn profile_rank(profile: &str) -> u8 {
     match profile.split('_').next().unwrap_or(profile) {
@@ -42,6 +52,7 @@ fn medium_trace_frame(now_ms: u64, reason_codes: Vec<i32>) -> SignalFrame {
 
 #[test]
 fn trace_fail_sets_m1_overlays_and_reason_code() {
+    reset_hpa_state_file();
     let mut engine = RegulationEngine::default();
     let frame = medium_trace_frame(1_000, vec![ReasonCode::RcGvTraceFail as i32]);
     engine.enqueue_signal_frame(frame).expect("frame enqueued");
@@ -69,6 +80,7 @@ fn trace_fail_sets_m1_overlays_and_reason_code() {
 
 #[test]
 fn consecutive_trace_fail_escalates_to_m2() {
+    reset_hpa_state_file();
     let mut engine = RegulationEngine::default();
 
     let frame_a = medium_trace_frame(1_000, vec![ReasonCode::RcGvTraceFail as i32]);
@@ -94,6 +106,7 @@ fn consecutive_trace_fail_escalates_to_m2() {
 
 #[test]
 fn trace_pass_is_informational_only() {
+    reset_hpa_state_file();
     let mut engine_pass = RegulationEngine::default();
     let frame_pass = medium_trace_frame(1_000, vec![ReasonCode::RcGvTracePass as i32]);
     engine_pass

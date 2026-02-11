@@ -1,11 +1,29 @@
 # ucf-compute v0 pipeline
 
-Deterministic offline compute pipeline used by the runtime:
+Deterministic offline compute pipeline used by the runtime.
 
-1. `world_model` (`MockJepaPredictor`) produces surprise and prediction digest.
-2. `feature_extractor` (`MockSaeExtractor`) produces sparse spikes, sparsity, and energy.
-3. `ssm` (`MockSsmSelectiveScan`) performs a selective-scan memory step and pressure/readout.
-4. `fuse_signals` maps surprise + pressure + energy to scalar `risk`/`confidence` in `[0,1]`.
+## Capability model
+
+The top-level runtime contract stays `AiComputeBackend`, but concrete backends are now composed from stable subtraits in `src/capabilities.rs`:
+
+- `WorldModelPredictor` (JEPA/world prediction)
+- `FeatureExtractor` (SAE/sparse spike extraction)
+- `WorkingMemoryModel` (SSM/selective scan memory)
+- `LlmInference` + `LlmOutput` placeholder (defined for future policy/model integration)
+
+`ComputePipelineBackend` orchestrates these capabilities with bounded deterministic degradation.
+
+## Profile mapping (factory)
+
+`build_backend` wires `ComputeBackendKind` into capability profiles:
+
+- `stub`: `MockJepaPredictor` + `MockSaeExtractor` + `MockSsmSelectiveScan`
+- `candle` (`--features compute-candle`):
+  `MockJepaPredictor` + `CandleFeatureExtractor` + `MockSsmSelectiveScan`
+- `burn` (`--features compute-burn`):
+  `MockJepaPredictor` + `BurnFeatureExtractor` + `MockSsmSelectiveScan`
+
+Burn v0 is an explicit skeleton. With feature enabled, compute returns `ComputeError::NotImplemented` deterministically. Without feature, backend selection fails fast with `ComputeError::BackendDisabled`.
 
 ## Backend selection (runtime)
 
@@ -18,21 +36,24 @@ The orchestrator can be bootstrapped from env config via `RuntimeOrchestrator::t
 
 Default remains `stub` when env vars are unset.
 
-## Candle backend v0 (offline dummy weights)
+## Candle feature extractor v0 (offline dummy weights)
 
-`compute-candle` enables `CandleBackend`, which performs a tiny deterministic forward pass (`32 -> 16`) on CPU-only candle tensors using inline dummy weights in source (`src/backends/candle_backend.rs`).
+`compute-candle` enables `CandleFeatureExtractor`, which performs a deterministic forward pass (`32 -> 64`) on CPU-only candle tensors using inline dummy weights.
 
 - No HTTP, no model downloads, no external fixture pulls.
-- Input vector is derived from `ComputeInput.context_digest` bytes.
-- Reductions (`mean`, top-k spike selection) are executed in Rust over `Vec<f32>` after tensor extraction for stable deterministic ordering across runs.
+- Input vector is derived from `ComputeInput.context_digest` + world prediction digest.
+- Reductions (`top-k`, sparsity, energy) are done in Rust over `Vec<f32>` for deterministic ordering.
 
-## Constraints
+## Offline fixture policy and constraints
 
-- No network and no model weights download.
-- Output is deterministic from `(context_digest, seed, t)`.
+- No network and no model-weight download.
+- Output deterministic from `(context_digest, seed, t)`.
 - Bounded outputs: capped spikes/notes and digest-only persistence for large vectors/state.
 
-## Future backends
+## Adding future backends
 
-`compute-candle` and `compute-burn` features keep the same backend trait/summaries, so real
-implementations can replace mock stages without changing runtime frame contracts.
+To add a real backend later without refactoring orchestrator/frame contracts:
+
+1. Implement one or more capability traits (`WorldModelPredictor`, `FeatureExtractor`, `WorkingMemoryModel`).
+2. Register capability wiring in `build_backend` for a profile.
+3. Keep `AiComputeBackend` entrypoint unchanged by returning `ComputePipelineBackend`.

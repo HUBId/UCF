@@ -1,5 +1,6 @@
 use sha2::{Digest, Sha256};
 
+use crate::capabilities::FeatureExtractor;
 use crate::world_model::WorldModelOutput;
 use crate::{ComputeBudget, ComputeError, ComputeInput, Spike, SplitMix64};
 
@@ -20,16 +21,6 @@ pub struct SaeOutput {
     pub spikes: Vec<Spike>,
     pub sparsity: f32,
     pub energy: f32,
-}
-
-pub trait FeatureExtractor: Send + Sync {
-    fn name(&self) -> &'static str;
-    fn extract(
-        &self,
-        input: &ComputeInput,
-        world: &WorldModelOutput,
-        budget: ComputeBudget,
-    ) -> Result<SaeOutput, ComputeError>;
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -182,7 +173,8 @@ impl FeatureExtractor for MockSaeExtractor {
 
 #[cfg(test)]
 mod tests {
-    use crate::world_model::{MockJepaPredictor, WorldModelPredictor};
+    use crate::capabilities::WorldModelPredictor;
+    use crate::world_model::MockJepaPredictor;
     use crate::FrameId;
 
     use super::*;

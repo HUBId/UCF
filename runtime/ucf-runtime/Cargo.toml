@@ -6,6 +6,7 @@ edition = "2021"
 [features]
 default = []
 compute-candle = ["ucf-compute/compute-candle"]
+compute-burn = ["ucf-compute/compute-burn"]
 
 [dependencies]
 ucf-core = { path = "../../core/ucf-core" }

@@ -1,34 +1,30 @@
 use candle_core::{Device, Tensor};
 
-use crate::{
-    fuse_signals, AiComputeBackend, ComputeBudget, ComputeError, ComputeInput, ComputeSignals,
-    Spike, MAX_SPIKES,
-};
+use crate::capabilities::FeatureExtractor;
+use crate::feature_extractor::{FeatureVector, SaeOutput, SAE_FEATURE_DIM, SAE_MAX_SPIKES};
+use crate::world_model::WorldModelOutput;
+use crate::{ComputeBudget, ComputeError, ComputeInput, Spike};
 
 const IN_DIM: usize = 32;
-const OUT_DIM: usize = 16;
-const SPIKE_TOP_K: usize = 8;
+const OUT_DIM: usize = SAE_FEATURE_DIM;
+const SPIKE_TOP_K: usize = 16;
 const SCALE: u64 = 8;
 
 #[derive(Debug, Clone, Copy)]
-pub struct CandleBackend {
+pub struct CandleFeatureExtractor {
     seed: u64,
 }
 
-impl CandleBackend {
+impl CandleFeatureExtractor {
     pub fn new(seed: u64) -> Self {
         Self { seed }
     }
 
-    fn check_budget(
-        work_units: u64,
-        stage: &'static str,
-        budget: ComputeBudget,
-    ) -> Result<(), ComputeError> {
+    fn check_budget(work_units: u64, budget: ComputeBudget) -> Result<(), ComputeError> {
         let elapsed_micros = work_units / SCALE;
         if work_units > budget.max_micros.saturating_mul(SCALE) {
             return Err(ComputeError::BudgetExceeded {
-                stage,
+                stage: "sae/extract",
                 elapsed_micros,
                 limit_micros: budget.max_micros,
             });
@@ -36,84 +32,38 @@ impl CandleBackend {
         Ok(())
     }
 
-    fn input_vector(input: &ComputeInput) -> [f32; IN_DIM] {
+    fn input_vector(input: &ComputeInput, world: &WorldModelOutput, seed: u64) -> [f32; IN_DIM] {
         let mut x = [0.0_f32; IN_DIM];
         for (i, value) in x.iter_mut().enumerate() {
             let u = input.context_digest[i % 32] as f32;
-            *value = u / 255.0;
+            let w = world.prediction.prediction_digest[(i + (seed as usize % 7)) % 32] as f32;
+            *value = ((0.8 * (u / 255.0)) + (0.2 * (w / 255.0))).clamp(0.0, 1.0);
         }
         x
     }
-
-    fn output_to_signals(&self, y: &[f32], input: &ComputeInput) -> ComputeSignals {
-        let surprise = mean(&y[0..4]).clamp(0.0, 1.0);
-        let pressure = mean(&y[4..8]).clamp(0.0, 1.0);
-        let energy = mean(&y[8..12]).clamp(0.0, 1.0);
-        let (risk, confidence) = fuse_signals(surprise, pressure, energy);
-
-        let mut idx: Vec<usize> = (0..OUT_DIM).collect();
-        idx.sort_by(|&a, &b| y[b].total_cmp(&y[a]));
-        let top_k = SPIKE_TOP_K.min(MAX_SPIKES).min(idx.len());
-        let spikes = idx
-            .into_iter()
-            .take(top_k)
-            .map(|feature_idx| Spike {
-                feature_id: feature_idx as u32,
-                magnitude: y[feature_idx].clamp(0.0, 1.0),
-                timestamp: input.t,
-            })
-            .collect::<Vec<_>>();
-
-        let mut notes = vec![
-            "backend=candle".to_string(),
-            format!("w_digest={}", &hex::encode(WEIGHTS_DIGEST)[..12]),
-            format!("seed={}", self.seed),
-            format!("frame={}", input.frame_id.0),
-        ];
-        notes.sort();
-
-        ComputeSignals {
-            surprise,
-            pressure,
-            risk,
-            confidence,
-            spikes,
-            notes,
-            sparsity: Some(1.0 - ((SPIKE_TOP_K as f32) / (OUT_DIM as f32))),
-            energy: Some(energy),
-            ssm_readout: None,
-            ssm_digest: None,
-        }
-        .bounded()
-    }
 }
 
-impl Default for CandleBackend {
+impl Default for CandleFeatureExtractor {
     fn default() -> Self {
         Self::new(ComputeBudget::default().seed)
     }
 }
 
-impl AiComputeBackend for CandleBackend {
+impl FeatureExtractor for CandleFeatureExtractor {
     fn name(&self) -> &'static str {
-        "candle_dummy"
+        "candle_feature_extractor_v0"
     }
 
-    fn compute(
+    fn extract(
         &self,
         input: &ComputeInput,
+        world: &WorldModelOutput,
         budget: ComputeBudget,
-    ) -> Result<ComputeSignals, ComputeError> {
-        // v0 strategy A: backend directly implements AiComputeBackend and returns ComputeSignals.
-        if input.t == 0 {
-            return Err(ComputeError::InvalidInput {
-                reason: "t must be non-zero".to_string(),
-            });
-        }
-        Self::check_budget(1, "candle/start", budget)?;
+    ) -> Result<SaeOutput, ComputeError> {
+        Self::check_budget(1, budget)?;
+        Self::check_budget((IN_DIM * OUT_DIM) as u64, budget)?;
 
-        let x = Self::input_vector(input);
-        Self::check_budget((IN_DIM * OUT_DIM) as u64, "candle/forward", budget)?;
+        let x = Self::input_vector(input, world, self.seed);
 
         let device = Device::Cpu;
         let w = Tensor::from_slice(&weights_flat(), (OUT_DIM, IN_DIM), &device).map_err(|e| {
@@ -144,22 +94,58 @@ impl AiComputeBackend for CandleBackend {
         let mut yv = y.to_vec1::<f32>().map_err(|e| ComputeError::Internal {
             reason: e.to_string(),
         })?;
+
+        let max_abs = yv
+            .iter()
+            .map(|v| v.abs())
+            .fold(0.0_f32, |acc, value| acc.max(value))
+            .max(1e-6);
+
+        let mut idx: Vec<usize> = (0..OUT_DIM).collect();
+        idx.sort_by(|&a, &b| yv[b].abs().total_cmp(&yv[a].abs()));
+        let top_k = SPIKE_TOP_K.min(SAE_MAX_SPIKES).min(idx.len());
+        let threshold = idx
+            .get(top_k.saturating_sub(1))
+            .map(|i| yv[*i].abs())
+            .unwrap_or(0.0);
         for v in &mut yv {
-            *v = v.clamp(0.0, 1.0);
+            if v.abs() < threshold {
+                *v = 0.0;
+            }
+            *v = v.clamp(-1.0, 1.0);
         }
 
-        Ok(self.output_to_signals(&yv, input))
-    }
-}
+        let spikes = yv
+            .iter()
+            .enumerate()
+            .filter(|(_, value)| **value != 0.0)
+            .map(|(feature_idx, value)| Spike {
+                feature_id: feature_idx as u32,
+                magnitude: (value.abs() / max_abs).clamp(0.0, 1.0),
+                timestamp: input.t,
+            })
+            .collect::<Vec<_>>();
 
-fn mean(values: &[f32]) -> f32 {
-    if values.is_empty() {
-        return 0.0;
+        let zeros = yv.iter().filter(|v| **v == 0.0).count();
+        let sparsity = (zeros as f32 / yv.len() as f32).clamp(0.0, 1.0);
+        let energy = (yv.iter().map(|v| v.abs()).sum::<f32>() / yv.len() as f32).clamp(0.0, 1.0);
+
+        Ok(SaeOutput {
+            feature_vec: FeatureVector {
+                features: yv,
+                digest: WEIGHTS_DIGEST,
+            },
+            spikes,
+            sparsity,
+            energy,
+        })
     }
-    values.iter().sum::<f32>() / (values.len() as f32)
 }
 
 const B: [f32; OUT_DIM] = [
+    0.04, 0.01, 0.03, 0.02, 0.03, 0.02, 0.01, 0.04, 0.02, 0.01, 0.03, 0.02, 0.01, 0.02, 0.03, 0.04,
+    0.04, 0.01, 0.03, 0.02, 0.03, 0.02, 0.01, 0.04, 0.02, 0.01, 0.03, 0.02, 0.01, 0.02, 0.03, 0.04,
+    0.04, 0.01, 0.03, 0.02, 0.03, 0.02, 0.01, 0.04, 0.02, 0.01, 0.03, 0.02, 0.01, 0.02, 0.03, 0.04,
     0.04, 0.01, 0.03, 0.02, 0.03, 0.02, 0.01, 0.04, 0.02, 0.01, 0.03, 0.02, 0.01, 0.02, 0.03, 0.04,
 ];
 
@@ -181,8 +167,11 @@ const WEIGHTS_DIGEST: [u8; 32] = [
 
 #[cfg(test)]
 mod tests {
+    use crate::capabilities::WorldModelPredictor;
+    use crate::world_model::MockJepaPredictor;
+    use crate::FrameId;
+
     use super::*;
-    use crate::{FrameId, MAX_NOTES, MAX_NOTE_LEN};
 
     fn input() -> ComputeInput {
         ComputeInput {
@@ -192,36 +181,45 @@ mod tests {
         }
     }
 
+    fn world(input: &ComputeInput) -> WorldModelOutput {
+        let predictor = MockJepaPredictor;
+        let state = predictor.init_state(input, 77);
+        predictor
+            .predict(&state, input, ComputeBudget::default())
+            .expect("world")
+    }
+
     #[test]
     fn deterministic_for_same_seed_and_input() {
-        let backend = CandleBackend::new(123);
+        let backend = CandleFeatureExtractor::new(123);
+        let input = input();
+        let world = world(&input);
         let budget = ComputeBudget::default();
-        let a = backend.compute(&input(), budget).expect("compute a");
-        let b = backend.compute(&input(), budget).expect("compute b");
+        let a = backend.extract(&input, &world, budget).expect("compute a");
+        let b = backend.extract(&input, &world, budget).expect("compute b");
         assert_eq!(a, b);
     }
 
     #[test]
     fn bounded_outputs_respected() {
-        let backend = CandleBackend::default();
+        let backend = CandleFeatureExtractor::default();
+        let input = input();
         let out = backend
-            .compute(&input(), ComputeBudget::default())
+            .extract(&input, &world(&input), ComputeBudget::default())
             .expect("compute");
-        assert!(out.spikes.len() <= MAX_SPIKES);
-        assert!(out.notes.len() <= MAX_NOTES);
-        assert!(out.notes.iter().all(|n| n.len() <= MAX_NOTE_LEN));
-        assert!((0.0..=1.0).contains(&out.surprise));
-        assert!((0.0..=1.0).contains(&out.pressure));
-        assert!((0.0..=1.0).contains(&out.risk));
-        assert!((0.0..=1.0).contains(&out.confidence));
+        assert!(out.spikes.len() <= SAE_MAX_SPIKES);
+        assert!((0.0..=1.0).contains(&out.sparsity));
+        assert!((0.0..=1.0).contains(&out.energy));
     }
 
     #[test]
     fn budget_enforced() {
-        let backend = CandleBackend::default();
+        let backend = CandleFeatureExtractor::default();
+        let input = input();
         let err = backend
-            .compute(
-                &input(),
+            .extract(
+                &input,
+                &world(&input),
                 ComputeBudget {
                     max_micros: 1,
                     hard_timeout_micros: 1,
@@ -230,7 +228,7 @@ mod tests {
             )
             .expect_err("should fail budget");
         match err {
-            ComputeError::BudgetExceeded { stage, .. } => assert_eq!(stage, "candle/forward"),
+            ComputeError::BudgetExceeded { stage, .. } => assert_eq!(stage, "sae/extract"),
             other => panic!("unexpected error: {other:?}"),
         }
     }
