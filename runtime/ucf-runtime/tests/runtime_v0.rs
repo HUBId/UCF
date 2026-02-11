@@ -1608,3 +1608,135 @@ fn tool_audit_records_and_hash_chain_are_appended() {
         prev = rec.audit_digest.expect("audit digest");
     }
 }
+
+#[test]
+fn hormone_records_are_persisted_windowed_and_bounded() {
+    let mut orchestrator = RuntimeOrchestrator::new();
+    let mut adapter = MockAdapter::default();
+
+    for tick in 10_000..10_100 {
+        let ctrl = ControlFrame::new_text(
+            SimTime {
+                tick: Tick::new(tick),
+                window: WindowId::new(0),
+            },
+            CorrelationId(70_000 + tick),
+            ChannelCode::ExternalOutput,
+            intent(),
+            "hormone-window",
+        );
+        orchestrator
+            .ingest_and_process(&mut adapter, ctrl)
+            .expect("tick should succeed");
+    }
+
+    let records: Vec<_> = (0..orchestrator.ess.len())
+        .filter_map(|idx| orchestrator.ess.get(idx))
+        .collect();
+    let hormone_records: Vec<_> = records
+        .iter()
+        .filter(|r| r.kind == ExperienceKind::Hormone)
+        .collect();
+
+    assert!(hormone_records.len() >= 8);
+    assert!(hormone_records.len() <= 12);
+    for rec in hormone_records {
+        let hormone = rec.hormone_record.expect("hormone payload");
+        assert_eq!(hormone.schema_version, 1);
+        assert!(hormone.cortisol_q <= 255);
+        assert!(hormone.drive_q <= 255);
+        assert!(hormone.stress_index_q <= 255);
+    }
+}
+
+#[test]
+fn high_hormone_stress_makes_gating_stricter() {
+    let mut orchestrator = RuntimeOrchestrator::new();
+    let mut adapter = MockAdapter::default();
+
+    orchestrator.force_nsr_risk_for_test(0.05);
+    orchestrator.force_surprise_for_test(0.05);
+    orchestrator.force_ess_pressure_for_test(0.05);
+
+    let low_ctrl = ControlFrame::new_text(
+        sim_time(),
+        CorrelationId(88_001),
+        ChannelCode::ExternalOutput,
+        intent(),
+        "hormone-low",
+    );
+    orchestrator
+        .ingest_and_process(&mut adapter, low_ctrl)
+        .expect("low tick");
+    let low_mod = orchestrator
+        .last_gating_modulation()
+        .expect("low modulation");
+    let low_fep = orchestrator.last_fep_frame().expect("low fep");
+
+    orchestrator.force_nsr_risk_for_test(0.95);
+    orchestrator.force_surprise_for_test(0.95);
+    orchestrator.force_ess_pressure_for_test(0.95);
+
+    for idx in 0..25 {
+        let ctrl = ControlFrame::new_text(
+            SimTime {
+                tick: Tick::new(90_000 + idx),
+                window: WindowId::new(0),
+            },
+            CorrelationId(99_000 + idx),
+            ChannelCode::ExternalOutput,
+            intent(),
+            "hormone-high",
+        );
+        orchestrator
+            .ingest_and_process(&mut adapter, ctrl)
+            .expect("high tick");
+    }
+
+    let high_mod = orchestrator
+        .last_gating_modulation()
+        .expect("high modulation");
+    let high_fep = orchestrator.last_fep_frame().expect("high fep");
+
+    assert!(high_mod.risk_penalty_scale >= low_mod.risk_penalty_scale);
+    assert!(high_mod.action_threshold_delta >= low_mod.action_threshold_delta);
+    assert!(high_fep.inhibit_q >= low_fep.inhibit_q);
+}
+
+#[test]
+fn hormone_replay_from_identical_inputs_matches_digests() {
+    fn run(seed_corr: u64) -> Vec<[u8; 32]> {
+        let mut orchestrator = RuntimeOrchestrator::new();
+        let mut adapter = MockAdapter::default();
+        orchestrator.force_nsr_risk_for_test(0.7);
+        orchestrator.force_surprise_for_test(0.6);
+        orchestrator.force_ess_pressure_for_test(0.4);
+
+        for tick in 20_000..20_060 {
+            let ctrl = ControlFrame::new_text(
+                SimTime {
+                    tick: Tick::new(tick),
+                    window: WindowId::new(0),
+                },
+                CorrelationId(seed_corr + tick),
+                ChannelCode::ExternalOutput,
+                intent(),
+                "hormone-replay",
+            );
+            orchestrator
+                .ingest_and_process(&mut adapter, ctrl)
+                .expect("tick should succeed");
+        }
+
+        (0..orchestrator.ess.len())
+            .filter_map(|idx| orchestrator.ess.get(idx))
+            .filter(|r| r.kind == ExperienceKind::Hormone)
+            .map(|r| r.hormone_record.expect("hormone").hormone_digest)
+            .collect()
+    }
+
+    let a = run(110_000);
+    let b = run(220_000);
+    assert_eq!(a, b);
+    assert!(!a.is_empty());
+}

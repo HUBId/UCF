@@ -3008,6 +3008,7 @@ dependencies = [
 name = "ucf-biophys"
 version = "0.1.0"
 dependencies = [
+ "sha2",
  "ucf-core",
  "ucf-frames",
 ]
@@ -3676,6 +3677,9 @@ name = "ucf-runtime"
 version = "0.1.0"
 dependencies = [
  "blake3",
+ "hex",
+ "metrics",
+ "tracing",
  "ucf-biophys",
  "ucf-bluebrain-bridge",
  "ucf-brainbus",

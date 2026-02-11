@@ -6,12 +6,13 @@ use crate::hooks::{
 };
 use crate::sandbox::{call_spec_from_control, execute_tool_call, CapabilitySetSummary};
 use ucf_biophys::v0::{
-    apply_coherence_feedback, classify, compute_integration, couple_pair, hpa_step, modulate_hh,
-    osc_step, phase_bin, phase_lock, ttfs_from_strength, ttfs_phase, verify_graph, CausalGraph,
-    CoherenceState, Edge, EventBus, FieldEvent, FieldEventKind, FieldUpdateCfg, HhParams, HpaCfg,
-    HpaState, IITCfg as BiophysIITCfg, IITInputs, IITState as BiophysIITState, Microcircuit,
-    ModulationCfg, NeuromodulatorField as BiophysField, Osc, OscId, PhaseCfg, RuleCfg,
-    SnnSpikeEvent, SpikeCodecCfg, SpikeKind, VerifyVerdict,
+    apply_coherence_feedback, classify, compute_integration, couple_pair, hormone_step, hpa_step,
+    modulate_hh, osc_step, phase_bin, phase_lock, ttfs_from_strength, ttfs_phase, verify_graph,
+    CausalGraph, CoherenceState, Edge, EventBus, FieldEvent, FieldEventKind, FieldUpdateCfg,
+    GatingModulation, HhParams, HormoneCfg, HormoneInput, HormoneState, HormoneStateSummary,
+    HpaCfg, HpaState, IITCfg as BiophysIITCfg, IITInputs, IITState as BiophysIITState,
+    Microcircuit, ModulationCfg, NeuromodulatorField as BiophysField, Osc, OscId, PhaseCfg,
+    RuleCfg, SnnSpikeEvent, SpikeCodecCfg, SpikeKind, VerifyVerdict,
 };
 use ucf_cde::v0::{
     on_intervention, on_observation, tick_decay, CdeCfg, CdeState, CdeUpdateKind, Intervention,
@@ -27,7 +28,7 @@ use ucf_dbm::chemistry::{chemistry_step, ChemistryCfg, NeuromodState};
 use ucf_dbm::regions::{region_step, BrainRegion, RegionKind};
 use ucf_ess::v1::{
     AuditCheckpointRecord, AuditPayload, ExperienceKind, ExperienceRecord, ExperienceStore,
-    IdAllocator, InMemoryEss, SandboxCallRecord, SandboxReplyRecord, ToolAuthRecord,
+    HormoneRecord, IdAllocator, InMemoryEss, SandboxCallRecord, SandboxReplyRecord, ToolAuthRecord,
     ToolExecutionRecord, ToolRequestRecord,
 };
 use ucf_fep::{
@@ -204,6 +205,12 @@ pub struct RuntimeOrchestrator {
     last_archive_append_frame: Option<ArchiveAppendFrame>,
     last_archive_payload_len: usize,
     fep_state: FepState,
+    hormone_state: HormoneState,
+    hormone_cfg: HormoneCfg,
+    hormone_persist_every: u64,
+    last_hormone_summary: Option<HormoneStateSummary>,
+    last_gating_modulation: Option<GatingModulation>,
+    hormone_degraded_total: u64,
     forced_surprise_for_test: Option<f32>,
     forced_geist_drift_for_test: Option<f32>,
     forced_ess_pressure_for_test: Option<f32>,
@@ -357,6 +364,12 @@ impl RuntimeOrchestrator {
                 homeo_state: HomeoState::new(),
                 coh_cfg: CoherenceCfg::default_v0(),
             },
+            hormone_state: HormoneState::default(),
+            hormone_cfg: HormoneCfg::default(),
+            hormone_persist_every: 10,
+            last_hormone_summary: None,
+            last_gating_modulation: None,
+            hormone_degraded_total: 0,
             forced_surprise_for_test: None,
             forced_geist_drift_for_test: None,
             forced_ess_pressure_for_test: None,
@@ -576,6 +589,18 @@ impl RuntimeOrchestrator {
 
     pub fn last_coherence_frame(&self) -> Option<CoherenceFrame> {
         self.last_coherence_frame
+    }
+
+    pub fn last_hormone_summary(&self) -> Option<HormoneStateSummary> {
+        self.last_hormone_summary
+    }
+
+    pub fn last_gating_modulation(&self) -> Option<GatingModulation> {
+        self.last_gating_modulation
+    }
+
+    pub fn hormone_degraded_total(&self) -> u64 {
+        self.hormone_degraded_total
     }
 
     pub fn coherence_violation_count(&self) -> u64 {
@@ -944,6 +969,39 @@ impl RuntimeOrchestrator {
             .unwrap_or(1.0 - compute_risk)
             .clamp(0.0, 1.0);
 
+        let hormone_input = HormoneInput {
+            t: now_ms,
+            pressure: ess_pressure,
+            surprise,
+            risk: nsr_risk,
+            confidence: compute_confidence,
+            coherence: last_compute_summary.and_then(|c| c.coherence),
+            instability: last_compute_summary.and_then(|c| c.instability),
+            evidence_chain_digest: last_compute_summary
+                .and_then(|c| c.compute_chain_digest)
+                .unwrap_or([0; 32]),
+        };
+        let _biophys_span = tracing::info_span!(
+            "biophys_runtime.step",
+            stress_index = tracing::field::Empty,
+            evidence_digest_prefix =
+                tracing::field::display(hex::encode(&hormone_input.evidence_chain_digest[..4]))
+        )
+        .entered();
+        let hormone_out = hormone_step(&self.hormone_cfg, self.hormone_state, &hormone_input);
+        tracing::Span::current().record("stress_index", hormone_out.summary.stress_index);
+        self.hormone_state = hormone_out.state;
+        self.last_hormone_summary = Some(hormone_out.summary);
+        self.last_gating_modulation = Some(hormone_out.modulation);
+        if hormone_out.degraded {
+            self.hormone_degraded_total = self.hormone_degraded_total.saturating_add(1);
+            metrics::counter!("ucf_hormone_degraded_total").increment(1);
+        }
+        metrics::gauge!("ucf_hormone_cortisol").set(f64::from(hormone_out.summary.cortisol));
+        metrics::gauge!("ucf_hormone_drive").set(f64::from(hormone_out.summary.drive));
+        metrics::gauge!("ucf_hormone_stress_index")
+            .set(f64::from(hormone_out.summary.stress_index));
+
         let fep_in = FepInputs {
             now_ms,
             dt_s,
@@ -957,6 +1015,10 @@ impl RuntimeOrchestrator {
             ess_pressure,
             ssm_pressure: ssm_gate,
             geist_drift,
+            hormone_risk_penalty_scale: hormone_out.modulation.risk_penalty_scale,
+            hormone_exploration_bias_delta: hormone_out.modulation.exploration_bias_delta,
+            hormone_attention_gain: hormone_out.modulation.attention_gain,
+            hormone_action_threshold_delta: hormone_out.modulation.action_threshold_delta,
         };
         self.fep_risk_penalty_applied_total = self.fep_risk_penalty_applied_total.saturating_add(1);
         let mut fep_out = fep_step(&self.fep_state.cfg, &fep_in);
@@ -1770,6 +1832,27 @@ impl RuntimeOrchestrator {
                 .with_neuromod(snapshot)
                 .with_iit_phi(phi),
         )?;
+        if self.hormone_persist_every > 0 && ctrl.time.tick.get() % self.hormone_persist_every == 0
+        {
+            if let Some(summary) = self.last_hormone_summary {
+                let hormone_record = HormoneRecord {
+                    t: summary.t,
+                    cortisol_q: u16::from(quantize_unit(summary.cortisol)),
+                    drive_q: u16::from(quantize_unit(summary.drive)),
+                    stress_index_q: u16::from(quantize_unit(summary.stress_index)),
+                    hormone_digest: summary.digest,
+                    evidence_chain_digest: summary.evidence_chain_digest,
+                    modulation_digest: self.last_gating_modulation.map(|m| m.digest),
+                    schema_version: 1,
+                };
+                self.ess.append(ExperienceRecord::from_hormone(
+                    self.ids.next(),
+                    ctrl.time,
+                    ctrl.corr,
+                    hormone_record,
+                ))?;
+            }
+        }
 
         if self.consolidation_hook_enabled {
             if let Some(decision_rec) = self.ess.get(self.ess.len().saturating_sub(1)) {

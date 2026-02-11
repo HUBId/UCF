@@ -6,3 +6,4 @@ edition = "2021"
 [dependencies]
 ucf-core = { path = "../../core/ucf-core" }
 ucf-frames = { path = "../ucf-frames" }
+sha2 = { workspace = true }

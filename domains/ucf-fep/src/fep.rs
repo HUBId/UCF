@@ -43,6 +43,10 @@ pub struct FepInputs {
     pub ess_pressure: f32,
     pub ssm_pressure: f32,
     pub geist_drift: f32,
+    pub hormone_risk_penalty_scale: f32,
+    pub hormone_exploration_bias_delta: f32,
+    pub hormone_attention_gain: f32,
+    pub hormone_action_threshold_delta: f32,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -65,9 +69,14 @@ pub fn fep_step(cfg: &FepCfg, inp: &FepInputs) -> FepOutputs {
     let snn_event_rate = inp.snn_event_rate.clamp(0.0, 1.0);
     let ess_pressure = inp.ess_pressure.clamp(0.0, 1.0);
     let geist_drift = inp.geist_drift.clamp(0.0, 1.0);
+    let hormone_risk_penalty_scale = inp.hormone_risk_penalty_scale.clamp(0.0, 4.0);
+    let hormone_exploration_bias_delta = inp.hormone_exploration_bias_delta.clamp(-0.5, 0.5);
+    let hormone_attention_gain = inp.hormone_attention_gain.clamp(0.0, 3.0);
+    let hormone_action_threshold_delta = inp.hormone_action_threshold_delta.clamp(-0.5, 0.5);
 
     let evidence = (cfg.beta_coherence_lock * onn_lock + (1.0 - surprise)).clamp(0.0, 2.0);
-    let risk_penalty = 0.7 * compute_risk + 0.3 * (1.0 - compute_confidence);
+    let base_risk_penalty = 0.7 * compute_risk + 0.3 * (1.0 - compute_confidence);
+    let risk_penalty = (base_risk_penalty * hormone_risk_penalty_scale).clamp(0.0, 1.5);
     let free_energy = (cfg.beta_surprise * surprise
         + cfg.beta_complexity * complexity
         + cfg.beta_policy_risk * policy_risk
@@ -78,8 +87,9 @@ pub fn fep_step(cfg: &FepCfg, inp: &FepInputs) -> FepOutputs {
     let pressure_penalty =
         (ess_pressure - pressure_relief).max(0.0) * cfg.beta_memory_pressure * 0.35;
     let attention_base =
-        0.45 + 0.55 * surprise - 0.65 * policy_risk - 0.4 * risk_penalty - pressure_penalty;
-    let attention_gain = attention_base.clamp(
+        0.45 + 0.55 * surprise - 0.65 * policy_risk - 0.4 * risk_penalty - pressure_penalty
+            + 0.1 * hormone_exploration_bias_delta;
+    let attention_gain = (attention_base * hormone_attention_gain).clamp(
         cfg.attention_min.min(cfg.attention_max),
         cfg.attention_max.max(cfg.attention_min),
     );
@@ -101,7 +111,8 @@ pub fn fep_step(cfg: &FepCfg, inp: &FepInputs) -> FepOutputs {
         .clamp(0.0, 1.0);
 
     let action_inhibit = (0.45 * policy_risk + 0.35 * risk_penalty + 0.45 * geist_drift
-        - 0.3 * onn_lock * (1.0 - policy_risk))
+        - 0.3 * onn_lock * (1.0 - policy_risk)
+        + hormone_action_threshold_delta)
         .clamp(0.0, 1.0);
 
     let structural_delta = ((surprise - complexity) * (1.0 - policy_risk)).clamp(
@@ -143,6 +154,10 @@ mod tests {
             ess_pressure: 0.3,
             ssm_pressure: 0.2,
             geist_drift: 0.1,
+            hormone_risk_penalty_scale: 1.0,
+            hormone_exploration_bias_delta: 0.0,
+            hormone_attention_gain: 1.0,
+            hormone_action_threshold_delta: 0.0,
         }
     }
 
