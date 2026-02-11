@@ -16,11 +16,15 @@ use ucf_core::storage::{ArchiveCfg, FlushPolicy, MemArchiveStore};
 use ucf_dbm::chemistry::{chemistry_step, ChemistryCfg, NeuromodState};
 use ucf_dbm::regions::{region_step, BrainRegion, RegionKind};
 use ucf_ess::v1::{ExperienceRecord, ExperienceStore, IdAllocator, InMemoryEss};
+use ucf_fep::{
+    check_coherence_invariants, fep_step, homeostasis_step, CoherenceCfg, CoherenceSnapshot,
+    FepCfg, FepInputs, FepOutputs, HomeoCfg, HomeoState,
+};
 use ucf_frames::v1::{
     quantize_avg_v_mv, quantize_hormone, ArchiveAppendFrame, BiophysFrame, BiophysHhParams,
-    CdeFrame, ChemFrame, ControlFrame, DecisionFrame, DigitalBrainFrame, IitFrame,
-    MicrocircuitFrame, NcdeFrame, NeuromodulatorSnapshot, NsrFrame, OnnFrame, PhaseFrame, SleFrame,
-    SnnFrame, SsmFrame, TcfFrame,
+    CdeFrame, ChemFrame, CoherenceFrame, ControlFrame, DecisionFrame, DigitalBrainFrame, FepFrame,
+    IitFrame, MicrocircuitFrame, NcdeFrame, NeuromodulatorSnapshot, NsrFrame, OnnFrame, PhaseFrame,
+    SleFrame, SnnFrame, SsmFrame, TcfFrame,
 };
 use ucf_iit_proxy::v0::{iit_push_and_eval, IitCfg, IitSample, IitState};
 use ucf_ncde::v0::{ncde_step, NcdeCfg, NcdeInput, NcdeState};
@@ -68,6 +72,14 @@ struct DigitalBrainState {
 struct EmotionVector {
     valence: f32,
     arousal: f32,
+}
+
+#[derive(Clone, Debug)]
+struct FepState {
+    cfg: FepCfg,
+    homeo_cfg: HomeoCfg,
+    homeo_state: HomeoState,
+    coh_cfg: CoherenceCfg,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -164,6 +176,15 @@ pub struct RuntimeOrchestrator {
     archive: ArchiveLog<MemArchiveStore>,
     last_archive_append_frame: Option<ArchiveAppendFrame>,
     last_archive_payload_len: usize,
+    fep_state: FepState,
+    forced_surprise_for_test: Option<f32>,
+    forced_geist_drift_for_test: Option<f32>,
+    forced_ess_pressure_for_test: Option<f32>,
+    last_fep_frame: Option<FepFrame>,
+    last_coherence_frame: Option<CoherenceFrame>,
+    coherence_violation_count: u64,
+    coherence_violation_flag: bool,
+    last_fep_outputs: Option<FepOutputs>,
 }
 
 impl RuntimeOrchestrator {
@@ -269,6 +290,20 @@ impl RuntimeOrchestrator {
             archive: ArchiveLog::new(MemArchiveStore::new(), ArchiveCfg::default()),
             last_archive_append_frame: None,
             last_archive_payload_len: 0,
+            fep_state: FepState {
+                cfg: FepCfg::default_v0(),
+                homeo_cfg: HomeoCfg::default_v0(),
+                homeo_state: HomeoState::new(),
+                coh_cfg: CoherenceCfg::default_v0(),
+            },
+            forced_surprise_for_test: None,
+            forced_geist_drift_for_test: None,
+            forced_ess_pressure_for_test: None,
+            last_fep_frame: None,
+            last_coherence_frame: None,
+            coherence_violation_count: 0,
+            coherence_violation_flag: false,
+            last_fep_outputs: None,
         }
     }
 
@@ -318,6 +353,18 @@ impl RuntimeOrchestrator {
 
     pub fn force_nsr_risk_for_test(&mut self, nsr_risk: f32) {
         self.forced_nsr_risk_for_test = Some(nsr_risk.clamp(0.0, 1.0));
+    }
+
+    pub fn force_surprise_for_test(&mut self, surprise: f32) {
+        self.forced_surprise_for_test = Some(surprise.clamp(0.0, 1.0));
+    }
+
+    pub fn force_geist_drift_for_test(&mut self, drift: f32) {
+        self.forced_geist_drift_for_test = Some(drift.clamp(0.0, 1.0));
+    }
+
+    pub fn force_ess_pressure_for_test(&mut self, pressure: f32) {
+        self.forced_ess_pressure_for_test = Some(pressure.clamp(0.0, 1.0));
     }
 
     pub fn set_iit_proxy_cfg_for_test(&mut self, cfg: IitCfg) {
@@ -413,6 +460,18 @@ impl RuntimeOrchestrator {
 
     pub fn last_archive_payload_len(&self) -> usize {
         self.last_archive_payload_len
+    }
+
+    pub fn last_fep_frame(&self) -> Option<FepFrame> {
+        self.last_fep_frame
+    }
+
+    pub fn last_coherence_frame(&self) -> Option<CoherenceFrame> {
+        self.last_coherence_frame
+    }
+
+    pub fn coherence_violation_count(&self) -> u64 {
+        self.coherence_violation_count
     }
 
     pub fn force_causal_cycle_for_test(&mut self, now_ms: u64) {
@@ -682,23 +741,58 @@ impl RuntimeOrchestrator {
 
         let reward = (1.0 - nsr_risk).clamp(0.0, 1.0);
         let stress = nsr_risk.clamp(0.0, 1.0);
-        let safety = self
+        let onn_lock = self
             .last_onn_frame
             .map(|frame| f32::from(frame.lock_nsr_cde_q) / 255.0)
             .unwrap_or(0.0)
             .clamp(0.0, 1.0);
-        let surprise = self
+        let mut surprise = self
             .last_ncde_frame
             .map(|frame| f32::from(frame.l2_q) / 255.0)
             .unwrap_or(0.0)
             .clamp(0.0, 1.0);
+        if let Some(forced) = self.forced_surprise_for_test {
+            surprise = forced.clamp(0.0, 1.0);
+        }
+        let safety = onn_lock;
         let pain = ((surprise - 0.5).max(0.0) * 2.0).clamp(0.0, 1.0);
-        let observed_rate = self
+        let observed_brain_rate = self
             .last_digital_brain_frame
             .map(|f| f32::from(f.amyg_spikes.saturating_add(f.pfc_spikes)) / 32.0)
             .unwrap_or(0.0)
             .clamp(0.0, 1.0);
-        let homeo_err = (0.1 - observed_rate).abs();
+        let mut ess_pressure = (self.ess.len() as f32 / 256.0).clamp(0.0, 1.0);
+        if let Some(forced) = self.forced_ess_pressure_for_test {
+            ess_pressure = forced.clamp(0.0, 1.0);
+        }
+        let mut geist_drift = (1.0 - onn_lock) * 0.5;
+        if let Some(forced) = self.forced_geist_drift_for_test {
+            geist_drift = forced.clamp(0.0, 1.0);
+        }
+        let snn_event_rate = self.last_spike_rate_0_1.clamp(0.0, 1.0);
+        let complexity = (0.5 * snn_event_rate + 0.5 * ess_pressure).clamp(0.0, 1.0);
+        let homeo_err = homeostasis_step(
+            &self.fep_state.homeo_cfg,
+            &mut self.fep_state.homeo_state,
+            dt_s,
+            snn_event_rate,
+            observed_brain_rate,
+            ess_pressure,
+        );
+
+        let fep_in = FepInputs {
+            now_ms,
+            dt_s,
+            surprise,
+            complexity,
+            policy_risk: nsr_risk,
+            onn_lock,
+            snn_event_rate,
+            ess_pressure,
+            ssm_pressure: ssm_gate,
+            geist_drift,
+        };
+        let mut fep_out = fep_step(&self.fep_state.cfg, &fep_in);
 
         chemistry_step(
             dt_s,
@@ -744,6 +838,54 @@ impl RuntimeOrchestrator {
         });
         self.emotion.valence = (self.digital_brain.chem.dopa - stress).clamp(-1.0, 1.0);
         self.emotion.arousal = (stress - self.digital_brain.chem.serotonin * 0.5).clamp(-1.0, 1.0);
+
+        let snapshot = CoherenceSnapshot {
+            surprise,
+            ess_pressure,
+            ssm_pressure: ssm_gate,
+            onn_lock,
+            policy_risk: nsr_risk,
+            geist_drift,
+            attention_gain: fep_out.attention_gain,
+            learn_gate: fep_out.learn_gate,
+            memory_priority: fep_out.memory_priority,
+            action_inhibit: fep_out.action_inhibit,
+            homeo_err,
+            chem_dopa: self.digital_brain.chem.dopa,
+            chem_5ht: self.digital_brain.chem.serotonin,
+            chem_oxy: self.digital_brain.chem.oxytocin,
+            chem_end: self.digital_brain.chem.endorphin,
+            brain_amyg_spikes: amyg_spikes as f32,
+            brain_pfc_spikes: pfc_spikes as f32,
+        };
+        self.coherence_violation_flag = false;
+        if check_coherence_invariants(&self.fep_state.coh_cfg, &snapshot).is_err() {
+            self.coherence_violation_count = self.coherence_violation_count.saturating_add(1);
+            self.coherence_violation_flag = true;
+            fep_out.action_inhibit = (fep_out.action_inhibit + 0.1).clamp(0.0, 1.0);
+        }
+        self.last_fep_outputs = Some(fep_out.clone());
+        self.last_fep_frame = Some(FepFrame {
+            now_ms,
+            attention_q: quantize_unit(fep_out.attention_gain),
+            learn_gate_q: quantize_unit(fep_out.learn_gate),
+            memprio_q: quantize_unit(fep_out.memory_priority),
+            inhibit_q: quantize_unit(fep_out.action_inhibit),
+            confidence_q: quantize_unit(fep_out.confidence),
+            homeo_err_q: quantize_unit(homeo_err),
+        });
+        let coupling = (0.25 * fep_out.attention_gain
+            + 0.25 * fep_out.memory_priority
+            + 0.25 * fep_out.action_inhibit
+            + 0.25 * (1.0 - homeo_err.clamp(0.0, 1.0)))
+        .clamp(0.0, 1.0);
+        self.last_coherence_frame = Some(CoherenceFrame {
+            now_ms,
+            coupling_q: quantize_unit(coupling),
+            drift_q: quantize_unit(geist_drift),
+            risk_q: quantize_unit(nsr_risk),
+            lock_q: quantize_unit(onn_lock),
+        });
 
         let mut integration = compute_integration(
             IITInputs {
@@ -1255,7 +1397,9 @@ impl RuntimeOrchestrator {
     ) -> Result<DecisionFrame, RuntimeError> {
         self.emit_snn_signals(adapter, ctrl.time.tick.get())?;
 
-        let decision = if let Some(nsr_frame) = self.last_nsr_frame {
+        let mut decision = decision;
+
+        decision = if let Some(nsr_frame) = self.last_nsr_frame {
             match nsr_frame.verdict {
                 2 => DecisionFrame::deny_with_reason(
                     decision.time,
@@ -1273,6 +1417,20 @@ impl RuntimeOrchestrator {
             decision
         };
 
+        if let Some(fep) = &self.last_fep_outputs {
+            if fep.action_inhibit >= 0.5 && decision.decision == ucf_frames::v1::DecisionCode::Allow
+            {
+                decision = DecisionFrame::defer_with_reason(
+                    decision.time,
+                    decision.corr,
+                    decision.intent,
+                    ucf_frames::v1::ReasonCode("fep_inhibit_high"),
+                    "fep_inhibit_high",
+                )
+                .with_meta(decision.meta);
+            }
+        }
+
         let eid1 = self.ids.next();
         self.ess.append(
             ExperienceRecord::from_control(eid1, ctrl.clone())
@@ -1286,6 +1444,18 @@ impl RuntimeOrchestrator {
                 .with_neuromod(snapshot)
                 .with_iit_phi(phi),
         )?;
+
+        if let Some(fep) = &self.last_fep_outputs {
+            if fep.memory_priority >= 0.45 {
+                let eid = self.ids.next();
+                self.ess.append(ExperienceRecord::note(
+                    eid,
+                    decision.time,
+                    decision.corr,
+                    "consolidate:high_mem_priority",
+                ))?;
+            }
+        }
 
         if let Err(error) = Gem::execute(adapter, &ctrl, Some(&decision)) {
             let mut note = format!("gem_error:{error}");

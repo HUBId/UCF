@@ -1,6 +1,7 @@
 use ucf_cde::v0::CdeUpdateKind;
 use ucf_core::types::{SimTime, Tick, WindowId};
 use ucf_ess::v1::{ExperienceKind, ExperiencePayload, ExperienceStore};
+use ucf_fep::{check_coherence_invariants, CoherenceCfg, CoherenceSnapshot};
 use ucf_frames::v1::{
     BrainStimulusKind, BrainStimulusPayload, ChannelCode, ControlFrame, ControlPayload,
     CorrelationId, DecisionFrame, Intent, IntentId, IntentKind, NeuromodulatorSnapshot,
@@ -191,6 +192,121 @@ fn orchestrator_tick_records_iit_phi_snapshot() {
 
     let control_record = orchestrator.ess.get(0).expect("control record");
     assert!(control_record.iit_phi.is_some());
+}
+
+#[test]
+fn fep_high_risk_raises_inhibit_and_can_defer() {
+    let ctrl = ControlFrame::new_text(
+        sim_time(),
+        CorrelationId(70),
+        ChannelCode::ExternalOutput,
+        intent(),
+        "risk",
+    );
+    let mut orchestrator = RuntimeOrchestrator::new();
+    orchestrator.force_nsr_risk_for_test(0.9);
+    let mut adapter = MockAdapter::default();
+
+    let decision = orchestrator
+        .ingest_and_process(&mut adapter, ctrl)
+        .expect("orchestration should succeed");
+
+    let fep = orchestrator.last_fep_frame().expect("fep frame");
+    assert!(fep.inhibit_q >= 140, "inhibit_q={} ", fep.inhibit_q);
+    assert!(
+        decision.decision == ucf_frames::v1::DecisionCode::Defer
+            || decision.decision == ucf_frames::v1::DecisionCode::Deny
+    );
+}
+
+#[test]
+fn fep_high_surprise_boosts_memory_priority_and_marks_consolidation() {
+    let ctrl = ControlFrame::new_text(
+        sim_time(),
+        CorrelationId(71),
+        ChannelCode::InternalThought,
+        intent(),
+        "surprise",
+    );
+    let mut orchestrator = RuntimeOrchestrator::new();
+    orchestrator.force_surprise_for_test(0.9);
+    orchestrator.force_ess_pressure_for_test(0.95);
+    let mut adapter = MockAdapter::default();
+
+    orchestrator
+        .ingest_and_process(&mut adapter, ctrl)
+        .expect("orchestration should succeed");
+
+    let fep = orchestrator.last_fep_frame().expect("fep frame");
+    assert!(fep.memprio_q >= 120, "memprio_q={}", fep.memprio_q);
+
+    let has_consolidate = (0..orchestrator.ess.len()).any(|idx| {
+        orchestrator
+            .ess
+            .get(idx)
+            .and_then(|r| match &r.payload {
+                ExperiencePayload::Text(t) => {
+                    Some(t.as_ref().contains("consolidate:high_mem_priority"))
+                }
+                _ => None,
+            })
+            .unwrap_or(false)
+    });
+    assert!(has_consolidate);
+}
+
+#[test]
+fn fep_high_drift_reduces_learning_and_raises_inhibit() {
+    let ctrl = ControlFrame::new_text(
+        sim_time(),
+        CorrelationId(72),
+        ChannelCode::InternalThought,
+        intent(),
+        "drift",
+    );
+    let mut orchestrator = RuntimeOrchestrator::new();
+    orchestrator.force_geist_drift_for_test(0.9);
+    let mut adapter = MockAdapter::default();
+
+    orchestrator
+        .ingest_and_process(&mut adapter, ctrl)
+        .expect("orchestration should succeed");
+
+    let fep = orchestrator.last_fep_frame().expect("fep frame");
+    assert!(fep.learn_gate_q <= 128);
+    assert!(fep.inhibit_q >= 153);
+}
+
+#[test]
+fn coherence_invariants_ok_and_err_cases() {
+    let cfg = CoherenceCfg::default_v0();
+    let ok = CoherenceSnapshot {
+        surprise: 0.4,
+        ess_pressure: 0.4,
+        ssm_pressure: 0.3,
+        onn_lock: 0.8,
+        policy_risk: 0.3,
+        geist_drift: 0.2,
+        attention_gain: 0.6,
+        learn_gate: 0.6,
+        memory_priority: 0.6,
+        action_inhibit: 0.4,
+        homeo_err: 0.2,
+        chem_dopa: 0.5,
+        chem_5ht: 0.5,
+        chem_oxy: 0.5,
+        chem_end: 0.5,
+        brain_amyg_spikes: 3.0,
+        brain_pfc_spikes: 3.0,
+    };
+    assert!(check_coherence_invariants(&cfg, &ok).is_ok());
+
+    let bad = CoherenceSnapshot {
+        policy_risk: 0.9,
+        action_inhibit: 0.2,
+        ..ok
+    };
+    assert!(check_coherence_invariants(&cfg, &bad).is_err());
 }
 
 #[test]
