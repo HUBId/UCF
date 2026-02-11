@@ -25,14 +25,21 @@ PROPTEST_CASES=256 cargo test --workspace
 
 ## Fuzzing locally
 
-Install and run corpus-only smoke fuzz:
+Install and run corpus-only smoke fuzz (nightly toolchain required by `cargo-fuzz`):
 
 ```bash
-cargo install cargo-fuzz --locked
+rustup toolchain install nightly
+cargo +nightly install cargo-fuzz --locked
 cd fuzz
-cargo fuzz run fuzz_decode_ipc_envelope corpus/fuzz_decode_ipc_envelope -- -runs=32 -seed=1
-cargo fuzz run fuzz_decode_capability_token corpus/fuzz_decode_capability_token -- -runs=32 -seed=1
-cargo fuzz run fuzz_decode_sandbox_call_envelope corpus/fuzz_decode_sandbox_call_envelope -- -runs=32 -seed=1
+cargo +nightly fuzz run fuzz_decode_ipc_envelope corpus/fuzz_decode_ipc_envelope -- -runs=32 -seed=1
+cargo +nightly fuzz run fuzz_decode_capability_token corpus/fuzz_decode_capability_token -- -runs=32 -seed=1
+cargo +nightly fuzz run fuzz_decode_sandbox_call_envelope corpus/fuzz_decode_sandbox_call_envelope -- -runs=32 -seed=1
+```
+
+On stable CI we run a compile-only smoke check:
+
+```bash
+cargo check --manifest-path fuzz/Cargo.toml --bins
 ```
 
 ## Add a new fuzz target
@@ -48,7 +55,7 @@ If fuzz reports a crashing input file, replay with:
 
 ```bash
 cd fuzz
-cargo fuzz run <target> <path-to-crash-file> -- -runs=1 -seed=1
+cargo +nightly fuzz run <target> <path-to-crash-file> -- -runs=1 -seed=1
 ```
 
 For manual triage, `DecodeError` exposes bounded fields (`kind`, `at`, `context`) without raw secret dumps.

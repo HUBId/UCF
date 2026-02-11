@@ -28,11 +28,5 @@ jobs:
       - name: Cargo test (quiet)
         run: cargo test -q
 
-      - name: Fuzz smoke (corpus-only)
-        run: |
-          cargo install cargo-fuzz --locked
-          cd fuzz
-          cargo fuzz run fuzz_decode_frame corpus/fuzz_decode_frame -- -runs=32 -seed=1
-          cargo fuzz run fuzz_decode_ipc_envelope corpus/fuzz_decode_ipc_envelope -- -runs=32 -seed=1
-          cargo fuzz run fuzz_decode_capability_token corpus/fuzz_decode_capability_token -- -runs=32 -seed=1
-          cargo fuzz run fuzz_decode_sandbox_call_envelope corpus/fuzz_decode_sandbox_call_envelope -- -runs=32 -seed=1
+      - name: Fuzz targets compile (stable smoke)
+        run: cargo check --manifest-path fuzz/Cargo.toml --bins
