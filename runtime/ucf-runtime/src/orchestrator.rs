@@ -202,6 +202,9 @@ pub struct RuntimeOrchestrator {
     coherence_violation_flag: bool,
     last_fep_outputs: Option<FepOutputs>,
     risk_quality_counts: [u64; 3],
+    backpressure: f32,
+    compute_budget_exceeded_total: u64,
+    backpressure_active_total: u64,
     fep_risk_penalty_applied_total: u64,
     consolidation_hook_enabled: bool,
     geist_hook_enabled: bool,
@@ -347,6 +350,9 @@ impl RuntimeOrchestrator {
             coherence_violation_flag: false,
             last_fep_outputs: None,
             risk_quality_counts: [0; 3],
+            backpressure: 0.0,
+            compute_budget_exceeded_total: 0,
+            backpressure_active_total: 0,
             fep_risk_penalty_applied_total: 0,
             consolidation_hook_enabled: env_flag("UCF_ENABLE_CONSOLIDATION_HOOK"),
             geist_hook_enabled: env_flag("UCF_ENABLE_GEIST_HOOK"),
@@ -559,6 +565,18 @@ impl RuntimeOrchestrator {
             self.consolidation_hook_errors_total,
             self.geist_hook_errors_total,
         )
+    }
+
+    pub fn orchestrator_backpressure(&self) -> f32 {
+        self.backpressure
+    }
+
+    pub fn compute_budget_exceeded_total(&self) -> u64 {
+        self.compute_budget_exceeded_total
+    }
+
+    pub fn orchestrator_backpressure_active_total(&self) -> u64 {
+        self.backpressure_active_total
     }
 
     pub fn last_compute_milestone(&self) -> Option<&ComputeMilestone> {
@@ -1529,6 +1547,23 @@ impl RuntimeOrchestrator {
         let quality_idx = usize::from(compute_summary.risk_quality.min(2));
         self.risk_quality_counts[quality_idx] =
             self.risk_quality_counts[quality_idx].saturating_add(1);
+        if compute_summary.budget_exceeded_stage.is_some() {
+            self.compute_budget_exceeded_total =
+                self.compute_budget_exceeded_total.saturating_add(1);
+        }
+        let quality_penalty = if compute_summary.risk_quality == 0 {
+            0.0
+        } else {
+            0.2
+        };
+        let bp_input = (compute_summary.pressure + quality_penalty).clamp(0.0, 1.0);
+        self.backpressure = (0.6 * self.backpressure + 0.4 * bp_input).clamp(0.0, 1.0);
+        if compute_summary.budget_exceeded_stage.is_some() {
+            self.backpressure = self.backpressure.max(0.85);
+        }
+        if self.backpressure > 0.8 {
+            self.backpressure_active_total = self.backpressure_active_total.saturating_add(1);
+        }
         decision = decision.with_compute_summary(ucf_frames::v1::ComputeSignalsSummary {
             backend: compute_summary.backend,
             surprise: compute_summary.surprise,
@@ -1551,12 +1586,28 @@ impl RuntimeOrchestrator {
             budget_profile_id: Some(compute_summary.budget_profile_id),
             seed: Some(compute_summary.seed),
             risk_contract_version: Some(compute_summary.risk_contract_version),
+            budget_exceeded_stage: compute_summary.budget_exceeded_stage,
         });
+
+        if self.backpressure > 0.8 && decision.decision == ucf_frames::v1::DecisionCode::Allow {
+            let mut next = DecisionFrame::defer_with_reason(
+                decision.time,
+                decision.corr,
+                decision.intent,
+                ucf_frames::v1::ReasonCode("compute_backpressure"),
+                "compute_backpressure",
+            )
+            .with_meta(decision.meta);
+            if let Some(summary) = decision.compute_summary {
+                next = next.with_compute_summary(summary);
+            }
+            decision = next;
+        }
 
         if compute_summary.risk_quality == 2
             && decision.decision == ucf_frames::v1::DecisionCode::Allow
         {
-            decision = DecisionFrame::defer_with_reason(
+            let mut next = DecisionFrame::defer_with_reason(
                 decision.time,
                 decision.corr,
                 decision.intent,
@@ -1564,19 +1615,29 @@ impl RuntimeOrchestrator {
                 "compute_unavailable",
             )
             .with_meta(decision.meta);
+            if let Some(summary) = decision.compute_summary {
+                next = next.with_compute_summary(summary);
+            }
+            decision = next;
         }
 
         decision = if let Some(nsr_frame) = self.last_nsr_frame {
             match nsr_frame.verdict {
-                2 => DecisionFrame::deny_with_reason(
-                    decision.time,
-                    decision.corr,
-                    decision.intent,
-                    ucf_frames::v1::ReasonCode("deny_nsr_block"),
-                    ucf_frames::v1::DenyReasonCode::PolicyViolation,
-                    "deny_nsr_block",
-                )
-                .with_meta(decision.meta),
+                2 => {
+                    let mut next = DecisionFrame::deny_with_reason(
+                        decision.time,
+                        decision.corr,
+                        decision.intent,
+                        ucf_frames::v1::ReasonCode("deny_nsr_block"),
+                        ucf_frames::v1::DenyReasonCode::PolicyViolation,
+                        "deny_nsr_block",
+                    )
+                    .with_meta(decision.meta);
+                    if let Some(summary) = decision.compute_summary {
+                        next = next.with_compute_summary(summary);
+                    }
+                    next
+                }
                 0 | 1 => decision,
                 _ => decision,
             }
@@ -1587,7 +1648,7 @@ impl RuntimeOrchestrator {
         if let Some(fep) = &self.last_fep_outputs {
             if fep.action_inhibit >= 0.5 && decision.decision == ucf_frames::v1::DecisionCode::Allow
             {
-                decision = DecisionFrame::defer_with_reason(
+                let mut next = DecisionFrame::defer_with_reason(
                     decision.time,
                     decision.corr,
                     decision.intent,
@@ -1595,6 +1656,10 @@ impl RuntimeOrchestrator {
                     "fep_inhibit_high",
                 )
                 .with_meta(decision.meta);
+                if let Some(summary) = decision.compute_summary {
+                    next = next.with_compute_summary(summary);
+                }
+                decision = next;
             }
         }
 

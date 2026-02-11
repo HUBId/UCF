@@ -258,6 +258,7 @@ mod tests {
                     max_micros: 1,
                     hard_timeout_micros: 1,
                     seed: 99,
+                    ..ComputeBudget::default()
                 },
             )
             .expect_err("budget should exceed");

@@ -4,7 +4,7 @@ use crate::feature_extractor::MockSaeExtractor;
 use crate::pipeline::{ComputePipelineBackend, FusionConfig, LimitsConfig};
 use crate::ssm::MockSsmSelectiveScan;
 use crate::world_model::MockJepaPredictor;
-use crate::{AiComputeBackend, ComputeBudget, ComputeError};
+use crate::{AiComputeBackend, ComputeBudget, ComputeBudgetProfile, ComputeError};
 
 #[cfg(feature = "compute-candle")]
 mod candle_backend;
@@ -47,12 +47,12 @@ impl ComputeBackendKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct ComputeBudgetProfile {
+pub struct ComputeTimeBudget {
     pub max_micros: u64,
     pub hard_timeout_micros: u64,
 }
 
-impl Default for ComputeBudgetProfile {
+impl Default for ComputeTimeBudget {
     fn default() -> Self {
         let budget = ComputeBudget::default();
         Self {
@@ -66,7 +66,8 @@ impl Default for ComputeBudgetProfile {
 pub struct ComputeBackendConfig {
     pub kind: ComputeBackendKind,
     pub seed: u64,
-    pub budgets: ComputeBudgetProfile,
+    pub budgets: ComputeTimeBudget,
+    pub profile: ComputeBudgetProfile,
 }
 
 impl Default for ComputeBackendConfig {
@@ -75,17 +76,25 @@ impl Default for ComputeBackendConfig {
         Self {
             kind: ComputeBackendKind::default(),
             seed: budget.seed,
-            budgets: ComputeBudgetProfile::default(),
+            budgets: ComputeTimeBudget::default(),
+            profile: ComputeBudgetProfile::default_profile(),
         }
     }
 }
 
 impl ComputeBackendConfig {
     pub fn to_budget(self) -> ComputeBudget {
+        let profile = self.profile;
         ComputeBudget {
             max_micros: self.budgets.max_micros,
             hard_timeout_micros: self.budgets.hard_timeout_micros,
             seed: self.seed,
+            profile_id: profile.profile_id,
+            global_work_units: profile.global_work_units,
+            world_units: profile.world_units,
+            sae_units: profile.sae_units,
+            ssm_units: profile.ssm_units,
+            degrade_policy: profile.degrade_policy,
         }
     }
 
@@ -120,6 +129,18 @@ impl ComputeBackendConfig {
                     .map_err(|_| ComputeError::InvalidInput {
                         reason: format!("invalid UCF_COMPUTE_HARD_TIMEOUT_MICROS={value}"),
                     })?;
+        }
+        if let Ok(value) = std::env::var("UCF_COMPUTE_BUDGET_PROFILE") {
+            cfg.profile = match value.trim().to_ascii_lowercase().as_str() {
+                "default" => ComputeBudgetProfile::default_profile(),
+                "tight" => ComputeBudgetProfile::tight_profile(),
+                "stress" => ComputeBudgetProfile::stress_profile(),
+                _ => {
+                    return Err(ComputeError::InvalidInput {
+                        reason: format!("invalid UCF_COMPUTE_BUDGET_PROFILE={value}"),
+                    })
+                }
+            };
         }
 
         Ok(cfg)
@@ -193,6 +214,7 @@ mod tests {
         let cfg = ComputeBackendConfig::default();
         assert_eq!(cfg.kind, ComputeBackendKind::Stub);
         assert!(cfg.budgets.max_micros > 0);
+        assert_eq!(cfg.profile.profile_id, 1);
     }
 
     #[test]
@@ -216,6 +238,13 @@ mod tests {
         assert_eq!(ComputeBackendKind::parse("unknown"), None);
     }
 
+    #[test]
+    fn parse_budget_profile_from_env() {
+        std::env::set_var("UCF_COMPUTE_BUDGET_PROFILE", "stress");
+        let cfg = ComputeBackendConfig::from_env().expect("parse env");
+        assert_eq!(cfg.profile.profile_id, 3);
+        std::env::remove_var("UCF_COMPUTE_BUDGET_PROFILE");
+    }
     #[test]
     fn candle_disabled_without_feature() {
         let cfg = ComputeBackendConfig {
@@ -283,7 +312,8 @@ mod tests {
         let candle = build_backend(&ComputeBackendConfig {
             kind: ComputeBackendKind::Candle,
             seed: 77,
-            budgets: ComputeBudgetProfile::default(),
+            budgets: ComputeTimeBudget::default(),
+            profile: ComputeBudgetProfile::default_profile(),
         })
         .expect("candle");
 
