@@ -14,3 +14,4 @@ ucf-onn = { path = "../../core/crates/ucf-onn" }
 ucf-iit-proxy = { path = "../../domains/ucf-iit" }
 ucf-snn = { path = "../../domains/ucf-snn" }
 ucf-cde = { path = "../../core/crates/ucf-cde" }
+ucf-nsr = { path = "../../core/crates/ucf-nsr" }
