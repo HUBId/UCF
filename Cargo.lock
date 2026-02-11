@@ -2989,6 +2989,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucf-bench"
+version = "0.1.0"
+dependencies = [
+ "hex",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "ucf-compute",
+ "ucf-core",
+ "ucf-ess",
+ "ucf-frames",
+ "ucf-policy",
+ "ucf-runtime",
+]
+
+[[package]]
 name = "ucf-biophys"
 version = "0.1.0"
 dependencies = [
