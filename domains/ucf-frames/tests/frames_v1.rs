@@ -1,8 +1,9 @@
 use ucf_core::types::{SimTime, Tick, WindowId};
 use ucf_frames::v1::{
-    BiophysFrame, BiophysHhParams, CdeFrame, ChannelCode, ControlFrame, ControlPayload,
-    CorrelationId, DecisionCode, DecisionFrame, DenyReasonCode, IitFrame, Intent, IntentId,
-    IntentKind, IntentType, NcdeFrame, NsrFrame, OnnFrame, ReasonCode, SnnFrame, TcfFrame,
+    BiophysFrame, BiophysHhParams, CdeFrame, ChannelCode, ChemFrame, ControlFrame, ControlPayload,
+    CorrelationId, DecisionCode, DecisionFrame, DenyReasonCode, DigitalBrainFrame, IitFrame,
+    Intent, IntentId, IntentKind, IntentType, NcdeFrame, NsrFrame, OnnFrame, ReasonCode, SnnFrame,
+    TcfFrame,
 };
 
 #[test]
@@ -199,4 +200,25 @@ fn ncde_frame_can_be_constructed() {
     assert_eq!(frame.now_ms, 999);
     assert_eq!(frame.l2_q, 17);
     assert_eq!(frame.phase_q, 201);
+}
+
+#[test]
+fn digital_brain_frames_can_be_constructed() {
+    let chem = ChemFrame {
+        now_ms: 12,
+        dopa_q: 128,
+        s5ht_q: 64,
+        oxy_q: 255,
+        end_q: 0,
+    };
+    let brain = DigitalBrainFrame {
+        now_ms: 12,
+        amyg_spikes: 3,
+        pfc_spikes: 2,
+        amyg_avg_v_q: -650,
+        pfc_avg_v_q: -600,
+    };
+
+    assert_eq!(chem.now_ms, 12);
+    assert_eq!(brain.amyg_spikes, 3);
 }

@@ -2024,6 +2024,10 @@ name = "ucf-crypto"
 version = "0.1.0"
 
 [[package]]
+name = "ucf-dbm"
+version = "0.1.0"
+
+[[package]]
 name = "ucf-demo"
 version = "0.1.0"
 dependencies = [
@@ -2488,6 +2492,7 @@ dependencies = [
  "ucf-biophys",
  "ucf-cde",
  "ucf-core",
+ "ucf-dbm",
  "ucf-ess",
  "ucf-frames",
  "ucf-iit-proxy",

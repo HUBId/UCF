@@ -1088,3 +1088,81 @@ fn orchestrator_tick_emits_ncde_frame_and_l2_grows() {
     assert!(last_l2 > first_l2);
     assert!(orchestrator.ncde_l2_norm_0_1() > 0.0);
 }
+
+#[test]
+fn tick_emits_chem_and_digital_brain_frames() {
+    let mut orchestrator = RuntimeOrchestrator::new();
+    let mut adapter = MockAdapter::default();
+
+    let ctrl = ControlFrame::new_text(
+        SimTime {
+            tick: Tick::new(1_000),
+            window: WindowId::new(0),
+        },
+        CorrelationId(5001),
+        ChannelCode::InternalThought,
+        intent(),
+        "dbm-frame",
+    );
+    orchestrator
+        .ingest_and_process(&mut adapter, ctrl)
+        .expect("tick should succeed");
+
+    let chem = orchestrator.last_chem_frame().expect("chem frame");
+    let brain = orchestrator
+        .last_digital_brain_frame()
+        .expect("digital brain frame");
+
+    assert_eq!(chem.now_ms, 1_000);
+    assert_eq!(brain.now_ms, 1_000);
+}
+
+#[test]
+fn higher_stress_increases_amygdala_spikes() {
+    let mut orchestrator = RuntimeOrchestrator::new();
+    let mut adapter = MockAdapter::default();
+
+    orchestrator.force_nsr_risk_for_test(0.05);
+    for tick in 1_100..1_110 {
+        let ctrl = ControlFrame::new_text(
+            SimTime {
+                tick: Tick::new(tick),
+                window: WindowId::new(0),
+            },
+            CorrelationId(6000 + tick),
+            ChannelCode::InternalThought,
+            intent(),
+            "low-stress",
+        );
+        orchestrator
+            .ingest_and_process(&mut adapter, ctrl)
+            .expect("low stress tick should succeed");
+    }
+    let low = orchestrator
+        .last_digital_brain_frame()
+        .expect("low frame")
+        .amyg_spikes;
+
+    orchestrator.force_nsr_risk_for_test(0.95);
+    for tick in 1_110..1_130 {
+        let ctrl = ControlFrame::new_text(
+            SimTime {
+                tick: Tick::new(tick),
+                window: WindowId::new(0),
+            },
+            CorrelationId(7000 + tick),
+            ChannelCode::InternalThought,
+            intent(),
+            "high-stress",
+        );
+        orchestrator
+            .ingest_and_process(&mut adapter, ctrl)
+            .expect("high stress tick should succeed");
+    }
+    let high = orchestrator
+        .last_digital_brain_frame()
+        .expect("high frame")
+        .amyg_spikes;
+
+    assert!(high >= low, "high={high} low={low}");
+}

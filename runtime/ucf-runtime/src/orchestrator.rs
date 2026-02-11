@@ -13,11 +13,14 @@ use ucf_cde::v0::{
 };
 use ucf_core::archive_log::ArchiveLog;
 use ucf_core::storage::{ArchiveCfg, FlushPolicy, MemArchiveStore};
+use ucf_dbm::chemistry::{chemistry_step, ChemistryCfg, NeuromodState};
+use ucf_dbm::regions::{region_step, BrainRegion, RegionKind};
 use ucf_ess::v1::{ExperienceRecord, ExperienceStore, IdAllocator, InMemoryEss};
 use ucf_frames::v1::{
-    ArchiveAppendFrame, BiophysFrame, BiophysHhParams, CdeFrame, ControlFrame, DecisionFrame,
-    IitFrame, MicrocircuitFrame, NcdeFrame, NeuromodulatorSnapshot, NsrFrame, OnnFrame, PhaseFrame,
-    SleFrame, SnnFrame, SsmFrame, TcfFrame,
+    quantize_avg_v_mv, quantize_hormone, ArchiveAppendFrame, BiophysFrame, BiophysHhParams,
+    CdeFrame, ChemFrame, ControlFrame, DecisionFrame, DigitalBrainFrame, IitFrame,
+    MicrocircuitFrame, NcdeFrame, NeuromodulatorSnapshot, NsrFrame, OnnFrame, PhaseFrame, SleFrame,
+    SnnFrame, SsmFrame, TcfFrame,
 };
 use ucf_iit_proxy::v0::{iit_push_and_eval, IitCfg, IitSample, IitState};
 use ucf_ncde::v0::{ncde_step, NcdeCfg, NcdeInput, NcdeState};
@@ -51,6 +54,20 @@ struct PhaseBus {
 #[derive(Clone, Debug, Default)]
 struct WorkingContext {
     ssm_y: Vec<f32>,
+}
+
+#[derive(Clone, Debug)]
+struct DigitalBrainState {
+    amygdala: BrainRegion,
+    pfc: BrainRegion,
+    chem: NeuromodState,
+    chem_cfg: ChemistryCfg,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct EmotionVector {
+    valence: f32,
+    arousal: f32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -109,6 +126,7 @@ pub struct RuntimeOrchestrator {
     tcf_state: TcfState,
     last_tcf_frame: Option<TcfFrame>,
     forced_mean_lock_for_test: Option<f32>,
+    forced_nsr_risk_for_test: Option<f32>,
     last_snn_frame: Option<SnnFrame>,
     last_spike_frames: Vec<ucf_frames::v1::SpikeFrame>,
     attention_event: bool,
@@ -139,6 +157,10 @@ pub struct RuntimeOrchestrator {
     ncde_state: NcdeState,
     last_ncde_frame: Option<NcdeFrame>,
     last_ncde_spike_u4: f32,
+    digital_brain: DigitalBrainState,
+    last_chem_frame: Option<ChemFrame>,
+    last_digital_brain_frame: Option<DigitalBrainFrame>,
+    emotion: EmotionVector,
     archive: ArchiveLog<MemArchiveStore>,
     last_archive_append_frame: Option<ArchiveAppendFrame>,
     last_archive_payload_len: usize,
@@ -204,6 +226,7 @@ impl RuntimeOrchestrator {
             tcf_state: TcfState::new(&TcfCfg::default_gamma40(), 0),
             last_tcf_frame: None,
             forced_mean_lock_for_test: None,
+            forced_nsr_risk_for_test: None,
             last_snn_frame: None,
             last_spike_frames: Vec::new(),
             attention_event: false,
@@ -234,6 +257,15 @@ impl RuntimeOrchestrator {
             ncde_state,
             last_ncde_frame: None,
             last_ncde_spike_u4: 0.0,
+            digital_brain: DigitalBrainState {
+                amygdala: BrainRegion::new(RegionKind::Amygdala, 16),
+                pfc: BrainRegion::new(RegionKind::Pfc, 16),
+                chem: NeuromodState::baseline(),
+                chem_cfg: ChemistryCfg::default_v0(),
+            },
+            last_chem_frame: None,
+            last_digital_brain_frame: None,
+            emotion: EmotionVector::default(),
             archive: ArchiveLog::new(MemArchiveStore::new(), ArchiveCfg::default()),
             last_archive_append_frame: None,
             last_archive_payload_len: 0,
@@ -282,6 +314,10 @@ impl RuntimeOrchestrator {
 
     pub fn force_mean_lock_for_test(&mut self, mean_lock: f32) {
         self.forced_mean_lock_for_test = Some(mean_lock.clamp(0.0, 1.0));
+    }
+
+    pub fn force_nsr_risk_for_test(&mut self, nsr_risk: f32) {
+        self.forced_nsr_risk_for_test = Some(nsr_risk.clamp(0.0, 1.0));
     }
 
     pub fn set_iit_proxy_cfg_for_test(&mut self, cfg: IitCfg) {
@@ -347,6 +383,18 @@ impl RuntimeOrchestrator {
 
     pub fn last_ncde_frame(&self) -> Option<NcdeFrame> {
         self.last_ncde_frame
+    }
+
+    pub fn last_chem_frame(&self) -> Option<ChemFrame> {
+        self.last_chem_frame
+    }
+
+    pub fn last_digital_brain_frame(&self) -> Option<DigitalBrainFrame> {
+        self.last_digital_brain_frame
+    }
+
+    pub fn emotion_vector(&self) -> (f32, f32) {
+        (self.emotion.valence, self.emotion.arousal)
     }
 
     pub fn ncde_l2_norm_0_1(&self) -> f32 {
@@ -626,8 +674,76 @@ impl RuntimeOrchestrator {
         } else {
             f32::from(nsr_result.satisfied) / f32::from(nsr_result.total)
         };
-        let nsr_risk = (1.0 - verified_ratio).clamp(0.0, 1.0);
+        let mut nsr_risk = (1.0 - verified_ratio).clamp(0.0, 1.0);
+        if let Some(forced) = self.forced_nsr_risk_for_test {
+            nsr_risk = forced.clamp(0.0, 1.0);
+        }
         let verified_q = (verified_ratio * 255.0).round() as u8;
+
+        let reward = (1.0 - nsr_risk).clamp(0.0, 1.0);
+        let stress = nsr_risk.clamp(0.0, 1.0);
+        let safety = self
+            .last_onn_frame
+            .map(|frame| f32::from(frame.lock_nsr_cde_q) / 255.0)
+            .unwrap_or(0.0)
+            .clamp(0.0, 1.0);
+        let surprise = self
+            .last_ncde_frame
+            .map(|frame| f32::from(frame.l2_q) / 255.0)
+            .unwrap_or(0.0)
+            .clamp(0.0, 1.0);
+        let pain = ((surprise - 0.5).max(0.0) * 2.0).clamp(0.0, 1.0);
+        let observed_rate = self
+            .last_digital_brain_frame
+            .map(|f| f32::from(f.amyg_spikes.saturating_add(f.pfc_spikes)) / 32.0)
+            .unwrap_or(0.0)
+            .clamp(0.0, 1.0);
+        let homeo_err = (0.1 - observed_rate).abs();
+
+        chemistry_step(
+            dt_s,
+            &mut self.digital_brain.chem,
+            reward,
+            stress,
+            safety,
+            pain,
+            homeo_err,
+            &self.digital_brain.chem_cfg,
+        );
+
+        let amyg_drive = stress * 1.2 + (1.0 - safety) * 0.6;
+        let pfc_drive = safety * 0.8 + reward * 0.4 - stress * 0.3;
+        let (amyg_spikes, amyg_v) = region_step(
+            now_ms,
+            dt_ms as f32,
+            &mut self.digital_brain.amygdala,
+            &self.digital_brain.chem,
+            amyg_drive,
+        );
+        let (pfc_spikes, pfc_v) = region_step(
+            now_ms,
+            dt_ms as f32,
+            &mut self.digital_brain.pfc,
+            &self.digital_brain.chem,
+            pfc_drive,
+        );
+
+        self.last_chem_frame = Some(ChemFrame {
+            now_ms,
+            dopa_q: quantize_hormone(self.digital_brain.chem.dopa),
+            s5ht_q: quantize_hormone(self.digital_brain.chem.serotonin),
+            oxy_q: quantize_hormone(self.digital_brain.chem.oxytocin),
+            end_q: quantize_hormone(self.digital_brain.chem.endorphin),
+        });
+        self.last_digital_brain_frame = Some(DigitalBrainFrame {
+            now_ms,
+            amyg_spikes: amyg_spikes.min(u16::MAX as u32) as u16,
+            pfc_spikes: pfc_spikes.min(u16::MAX as u32) as u16,
+            amyg_avg_v_q: quantize_avg_v_mv(amyg_v),
+            pfc_avg_v_q: quantize_avg_v_mv(pfc_v),
+        });
+        self.emotion.valence = (self.digital_brain.chem.dopa - stress).clamp(-1.0, 1.0);
+        self.emotion.arousal = (stress - self.digital_brain.chem.serotonin * 0.5).clamp(-1.0, 1.0);
 
         let mut integration = compute_integration(
             IITInputs {

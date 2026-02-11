@@ -5,6 +5,7 @@ mod cde;
 mod codes;
 mod control;
 mod decision;
+mod digital_brain;
 mod iit;
 mod intent;
 mod microcircuit;
@@ -24,6 +25,9 @@ pub use cde::CdeFrame;
 pub use codes::{ChannelCode, DecisionCode, DenyReasonCode};
 pub use control::{ControlFrame, ControlPayload, CorrelationId};
 pub use decision::{DecisionFrame, DecisionMeta, ReasonCode};
+pub use digital_brain::{
+    quantize_avg_v_mv, quantize_hormone, BrainFrame as DigitalBrainFrame, ChemFrame,
+};
 pub use iit::IitFrame;
 pub use intent::{Intent, IntentId, IntentKind, IntentType};
 pub use microcircuit::MicrocircuitFrame;
