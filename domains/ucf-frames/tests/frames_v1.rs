@@ -138,15 +138,13 @@ fn onn_and_snn_frames_can_be_constructed() {
     };
     let snn = SnnFrame {
         now_ms: 7,
-        spikes: 3,
-        feature: 1,
-        causal: 1,
-        verify: 1,
-        attention: 0,
+        fired: 3,
+        suppressed: 1,
+        max_amp_q: 200,
     };
 
     assert_eq!(onn.now_ms, 7);
-    assert_eq!(snn.spikes, 3);
+    assert_eq!(snn.fired, 3);
 }
 
 #[test]

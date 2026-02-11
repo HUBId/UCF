@@ -26,7 +26,7 @@ use ucf_nsr::v0::{Claim, NsrEngine, Verdict};
 use ucf_onn::v0::{onn_step, OnnCfg, OnnCore, OnnInput, OnnNode, OnnState, PhaseDeg};
 use ucf_policy::{adapter::ActionAdapter, gem::Gem, pbm::Pbm};
 use ucf_sle::v0::{sle_step, SleCfg, SleReason, SleSignals, SleState};
-use ucf_snn::v0::{encode, to_brainbus, FeatureEvent, SnnEncodeCfg};
+use ucf_snn::v0::{encode, snn_emit, to_brainbus, FeatureEvent, SnnCfg, SnnEncodeCfg, SpikeSrc};
 use ucf_spikes::{
     encode_ttfs_us, filter_phase_locked, PhaseLockCfg, Spike as BusSpike, SpikeBus,
     SpikeKind as BusSpikeKind,
@@ -82,8 +82,10 @@ pub struct RuntimeOrchestrator {
     neuromod_scheduler: NeuromodScheduler,
     onn: OnnCore,
     snn_encode_cfg: SnnEncodeCfg,
+    snn_cfg: SnnCfg,
     snn_tick_counter: u64,
     last_snn_spike_count: usize,
+    last_spike_rate_0_1: f32,
     biophys_field: BiophysField,
     biophys_cfg: FieldUpdateCfg,
     biophys_mod_cfg: ModulationCfg,
@@ -136,6 +138,7 @@ pub struct RuntimeOrchestrator {
     ncde_cfg: NcdeCfg,
     ncde_state: NcdeState,
     last_ncde_frame: Option<NcdeFrame>,
+    last_ncde_spike_u4: f32,
     archive: ArchiveLog<MemArchiveStore>,
     last_archive_append_frame: Option<ArchiveAppendFrame>,
     last_archive_payload_len: usize,
@@ -174,8 +177,10 @@ impl RuntimeOrchestrator {
             neuromod_scheduler: NeuromodScheduler::new(1),
             onn,
             snn_encode_cfg: SnnEncodeCfg::default(),
+            snn_cfg: SnnCfg::default_v0(),
             snn_tick_counter: 0,
             last_snn_spike_count: 0,
+            last_spike_rate_0_1: 0.0,
             biophys_field: BiophysField::default(),
             biophys_cfg: FieldUpdateCfg::default(),
             biophys_mod_cfg: ModulationCfg::default(),
@@ -228,6 +233,7 @@ impl RuntimeOrchestrator {
             ncde_cfg,
             ncde_state,
             last_ncde_frame: None,
+            last_ncde_spike_u4: 0.0,
             archive: ArchiveLog::new(MemArchiveStore::new(), ArchiveCfg::default()),
             last_archive_append_frame: None,
             last_archive_payload_len: 0,
@@ -264,6 +270,10 @@ impl RuntimeOrchestrator {
 
     pub fn last_snn_frame(&self) -> Option<SnnFrame> {
         self.last_snn_frame
+    }
+
+    pub fn spike_rate_0_1(&self) -> f32 {
+        self.last_spike_rate_0_1
     }
 
     pub fn set_onn_coupling_for_test(&mut self, coupling: f32) {
@@ -343,6 +353,10 @@ impl RuntimeOrchestrator {
         self.last_ncde_frame
             .map(|frame| f32::from(frame.l2_q) / 255.0)
             .unwrap_or(0.0)
+    }
+
+    pub fn last_ncde_spike_u4(&self) -> f32 {
+        self.last_ncde_spike_u4
     }
 
     pub fn archive_last_seq(&self) -> u64 {
@@ -812,29 +826,13 @@ impl RuntimeOrchestrator {
             })
             .collect();
 
-        let mut feature = 0_u32;
-        let mut causal = 0_u32;
-        let mut verify = 0_u32;
-        let mut attention_count = 0_u32;
         for spike in &tick_spikes {
             let mapped = match spike.kind {
-                BusSpikeKind::Novelty => {
-                    feature += 1;
-                    SpikeKind::Feature
-                }
-                BusSpikeKind::Verify => {
-                    verify += 1;
-                    SpikeKind::Verify
-                }
-                BusSpikeKind::CausalHit => {
-                    causal += 1;
-                    SpikeKind::Causal
-                }
+                BusSpikeKind::Novelty => SpikeKind::Feature,
+                BusSpikeKind::Verify => SpikeKind::Verify,
+                BusSpikeKind::CausalHit => SpikeKind::Causal,
                 BusSpikeKind::MemoryMark => continue,
-                BusSpikeKind::AttentionShift => {
-                    attention_count += 1;
-                    SpikeKind::Attention
-                }
+                BusSpikeKind::AttentionShift => SpikeKind::Attention,
             };
             let delivery = self.make_spike(
                 spike.now_ms,
@@ -846,13 +844,74 @@ impl RuntimeOrchestrator {
             );
             self.event_bus.push(delivery);
         }
+
+        let onn_phase_0_1 = self
+            .last_onn_frame
+            .map(|frame| f32::from(frame.global_phase_q) / 255.0)
+            .unwrap_or(0.0)
+            .clamp(0.0, 1.0);
+        let cde_candidates: Vec<(u32, f32)> = self
+            .cde_state
+            .hyps
+            .iter()
+            .enumerate()
+            .map(|(idx, hyp)| (1000 + (idx as u32), hyp.conf.clamp(0.0, 1.0)))
+            .collect();
+        let nsr_candidates = if nsr_risk > 0.0 {
+            vec![(2000_u32, nsr_risk.clamp(0.0, 1.0))]
+        } else {
+            Vec::new()
+        };
+        let ssm_candidates = if ssm_out.gate > 0.0 {
+            vec![(3000_u32, ssm_out.gate.clamp(0.0, 1.0))]
+        } else {
+            Vec::new()
+        };
+
+        let snn_from_cde = snn_emit(
+            &self.snn_cfg,
+            now_ms,
+            onn_phase_0_1,
+            SpikeSrc::Cde,
+            &cde_candidates,
+        );
+        let snn_from_nsr = snn_emit(
+            &self.snn_cfg,
+            now_ms,
+            onn_phase_0_1,
+            SpikeSrc::Nsr,
+            &nsr_candidates,
+        );
+        let snn_from_ssm = snn_emit(
+            &self.snn_cfg,
+            now_ms,
+            onn_phase_0_1,
+            SpikeSrc::Ssm,
+            &ssm_candidates,
+        );
+
+        let fired = snn_from_cde
+            .fired_count
+            .saturating_add(snn_from_nsr.fired_count)
+            .saturating_add(snn_from_ssm.fired_count);
+        let suppressed = snn_from_cde
+            .suppressed_count
+            .saturating_add(snn_from_nsr.suppressed_count)
+            .saturating_add(snn_from_ssm.suppressed_count);
+        let max_amp_q = snn_from_cde
+            .emitted
+            .iter()
+            .chain(snn_from_nsr.emitted.iter())
+            .chain(snn_from_ssm.emitted.iter())
+            .map(|event| event.amp_q)
+            .max()
+            .unwrap_or(0);
+
         self.last_snn_frame = Some(SnnFrame {
             now_ms,
-            spikes: tick_spikes.len() as u32,
-            feature,
-            causal,
-            verify,
-            attention: attention_count,
+            fired,
+            suppressed,
+            max_amp_q,
         });
 
         self.last_biophys_frame = Some(BiophysFrame {
@@ -881,7 +940,13 @@ impl RuntimeOrchestrator {
             lock_nsr_jepa,
             lock_micro_nsr,
         });
-        let spike_rate = (tick_spikes.len().min(32) as f32) / 32.0;
+        let spike_rate = if self.snn_cfg.max_events_per_tick == 0 {
+            0.0
+        } else {
+            f32::from(fired) / (self.snn_cfg.max_events_per_tick as f32)
+        }
+        .clamp(0.0, 1.0);
+        self.last_spike_rate_0_1 = spike_rate;
         let tcf_phase_norm = self.current_tcf_phase_0_1(now_ms);
         let ncde_inp = NcdeInput {
             u: vec![
@@ -894,6 +959,7 @@ impl RuntimeOrchestrator {
             ],
             phase: tcf_phase_norm,
         };
+        self.last_ncde_spike_u4 = ncde_inp.u[4];
         let ncde_tick = ncde_step(&self.ncde_cfg, &mut self.ncde_state, now_ms, &ncde_inp);
         self.last_ncde_frame = Some(NcdeFrame {
             now_ms: ncde_tick.now_ms,
