@@ -1013,3 +1013,49 @@ fn sle_policy_denial_blocks_meta_injection() {
     assert!(y[5].abs() < 0.01);
     assert!(y[6].abs() < 0.01);
 }
+
+#[test]
+fn orchestrator_tick_emits_ncde_frame_and_l2_grows() {
+    let mut orchestrator = RuntimeOrchestrator::new();
+    orchestrator.force_mean_lock_for_test(1.0);
+    orchestrator.set_sle_cfg_for_test(SleCfg {
+        min_trigger: 0.0,
+        cooldown_ticks: 0,
+        ..SleCfg::default_v0()
+    });
+    let mut adapter = MockAdapter::default();
+
+    let mut first_l2 = None;
+    for tick in 900..910 {
+        let ctrl = ControlFrame::new_text(
+            SimTime {
+                tick: Tick::new(tick),
+                window: WindowId::new(0),
+            },
+            CorrelationId(3900 + tick),
+            ChannelCode::InternalThought,
+            intent(),
+            "ncde",
+        );
+        orchestrator
+            .ingest_and_process(&mut adapter, ctrl)
+            .expect("ncde tick should succeed");
+
+        let ncde = orchestrator
+            .last_ncde_frame()
+            .expect("ncde frame should exist");
+        assert_eq!(ncde.now_ms, tick);
+
+        if first_l2.is_none() {
+            first_l2 = Some(ncde.l2_q);
+        }
+    }
+
+    let first_l2 = first_l2.expect("at least one frame");
+    let last_l2 = orchestrator
+        .last_ncde_frame()
+        .expect("ncde frame at end")
+        .l2_q;
+    assert!(last_l2 > first_l2);
+    assert!(orchestrator.ncde_l2_norm_0_1() > 0.0);
+}
