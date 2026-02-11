@@ -779,3 +779,76 @@ fn orchestrator_tcf_mean_lock_is_non_zero_and_not_nan() {
     assert!(!mean_lock.is_nan());
     assert!(mean_lock > 0.0);
 }
+
+#[test]
+fn orchestrator_tick_emits_spike_frames() {
+    let ctrl = ControlFrame::new_text(
+        SimTime {
+            tick: Tick::new(40),
+            window: WindowId::new(0),
+        },
+        CorrelationId(31),
+        ChannelCode::InternalThought,
+        intent(),
+        "spike-frame",
+    );
+    let mut orchestrator = RuntimeOrchestrator::new();
+    orchestrator.force_mean_lock_for_test(1.0);
+    let mut adapter = MockAdapter::default();
+
+    orchestrator
+        .ingest_and_process(&mut adapter, ctrl)
+        .expect("orchestration should succeed");
+
+    let frames = orchestrator.last_spike_frames();
+    assert!(!frames.is_empty());
+    assert!(frames.iter().any(|f| f.kind >= 1 && f.kind <= 5));
+}
+
+#[test]
+fn attention_event_turns_true_with_strong_novelty_spike() {
+    use ucf_spikes::{encode_ttfs_us, Spike, SpikeKind};
+
+    let mut orchestrator = RuntimeOrchestrator::new();
+    let mut adapter = MockAdapter::default();
+
+    let warmup = ControlFrame::new_text(
+        SimTime {
+            tick: Tick::new(41),
+            window: WindowId::new(0),
+        },
+        CorrelationId(32),
+        ChannelCode::InternalThought,
+        intent(),
+        "warmup",
+    );
+    orchestrator
+        .ingest_and_process(&mut adapter, warmup)
+        .expect("warmup should succeed");
+
+    let phase = orchestrator.last_tcf_frame().expect("tcf frame").phase_bin;
+    orchestrator.inject_spike_for_test(Spike {
+        now_ms: 42,
+        kind: SpikeKind::Novelty,
+        chan: 9,
+        phase,
+        strength: 0.9,
+        ttfs_us: encode_ttfs_us(0.9),
+    });
+
+    let ctrl = ControlFrame::new_text(
+        SimTime {
+            tick: Tick::new(42),
+            window: WindowId::new(0),
+        },
+        CorrelationId(33),
+        ChannelCode::InternalThought,
+        intent(),
+        "attention",
+    );
+    orchestrator
+        .ingest_and_process(&mut adapter, ctrl)
+        .expect("orchestration should succeed");
+
+    assert!(orchestrator.attention_event());
+}

@@ -14,3 +14,13 @@ pub struct SnnFrame {
     pub verify: u32,
     pub attention: u32,
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SpikeFrame {
+    pub now_ms: u64,
+    pub kind: u8,
+    pub chan: u8,
+    pub phase: u8,
+    pub strength_q: u8,
+    pub ttfs_q: u8,
+}

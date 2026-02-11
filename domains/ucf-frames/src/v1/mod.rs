@@ -27,7 +27,7 @@ pub use intent::{Intent, IntentId, IntentKind, IntentType};
 pub use microcircuit::MicrocircuitFrame;
 pub use neuromod::NeuromodulatorSnapshot;
 pub use nsr::NsrFrame;
-pub use onn_snn::{OnnFrame, SnnFrame};
+pub use onn_snn::{OnnFrame, SnnFrame, SpikeFrame};
 pub use phase::PhaseFrame;
 pub use phi::PhiProxySnapshot;
 pub use stimulus::{BrainStimulusKind, BrainStimulusPayload};
