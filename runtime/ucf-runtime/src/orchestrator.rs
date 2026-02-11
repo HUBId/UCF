@@ -1417,6 +1417,10 @@ impl RuntimeOrchestrator {
             confidence: compute_summary.confidence,
             spike_count: compute_summary.spike_count,
             spikes_digest: compute_summary.spikes_digest,
+            sparsity: compute_summary.sparsity,
+            energy: compute_summary.energy,
+            ssm_readout: compute_summary.ssm_readout,
+            ssm_digest: compute_summary.ssm_digest,
         });
 
         decision = if let Some(nsr_frame) = self.last_nsr_frame {

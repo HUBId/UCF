@@ -1,58 +1,58 @@
 [
   {
-    "frame_id": 1001,
-    "t": 5,
     "context_digest_hex": "0000000000000000000000000000000000000000000000000000000000000000",
+    "expected": {
+      "confidence": 0.6954621076583862,
+      "pressure": 0.18128344416618347,
+      "risk": 0.3383754789829254,
+      "spike_count": 16,
+      "spikes_digest_hex": "7ec50c2c0d83ccf9655e9c55871b36b2d14347cb616c2fc787418249888ca076",
+      "surprise": 0.5325140357017517
+    },
+    "frame_id": 1001,
     "seed": 1,
-    "expected": {
-      "surprise": 0.532514035702,
-      "pressure": 0.079944238067,
-      "risk": 0.396743088961,
-      "confidence": 0.662768363953,
-      "spike_count": 0,
-      "spikes_digest_hex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-    }
+    "t": 5
   },
   {
-    "frame_id": 1002,
-    "t": 11,
     "context_digest_hex": "1111111111111111111111111111111111111111111111111111111111111111",
+    "expected": {
+      "confidence": 0.6701536178588867,
+      "pressure": 0.19323424994945526,
+      "risk": 0.3664959967136383,
+      "spike_count": 16,
+      "spikes_digest_hex": "685bc80c0ae5c10bdcb82cedbad77cbeb5ee321131f8b075b1b2e3f43be801f7",
+      "surprise": 0.5693581700325012
+    },
+    "frame_id": 1002,
     "seed": 42,
-    "expected": {
-      "surprise": 0.569358170033,
-      "pressure": 0.17461116612,
-      "risk": 0.45093408227,
-      "confidence": 0.61670601368,
-      "spike_count": 0,
-      "spikes_digest_hex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-    }
+    "t": 11
   },
   {
-    "frame_id": 1003,
-    "t": 31,
     "context_digest_hex": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-    "seed": 7,
     "expected": {
-      "surprise": 0.828484773636,
-      "pressure": 0.220377400517,
-      "risk": 0.646052539349,
-      "confidence": 0.450855314732,
-      "spike_count": 0,
-      "spikes_digest_hex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-    }
+      "confidence": 0.4806954860687256,
+      "pressure": 0.31320345401763916,
+      "risk": 0.5770050287246704,
+      "spike_count": 16,
+      "spikes_digest_hex": "e9c84e43cd5a1041d162d8342405c773c790ad5fcd5e5c33a9a62bdc1094968f",
+      "surprise": 0.8284847736358643
+    },
+    "frame_id": 1003,
+    "seed": 7,
+    "t": 31
   },
   {
-    "frame_id": 1004,
-    "t": 63,
     "context_digest_hex": "ffeeddccbbaa99887766554433221100ffeeddccbbaa99887766554433221100",
-    "seed": 99,
     "expected": {
-      "surprise": 0.8504383564,
-      "pressure": 0.187712058425,
-      "risk": 0.651620447636,
-      "confidence": 0.446122586727,
-      "spike_count": 0,
-      "spikes_digest_hex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-    }
+      "confidence": 0.46540969610214233,
+      "pressure": 0.3209480941295624,
+      "risk": 0.5939892530441284,
+      "spike_count": 16,
+      "spikes_digest_hex": "07a115e1e37968d75425d36813a52319903210a054a8a3104629a405a5f2190e",
+      "surprise": 0.8504383563995361
+    },
+    "frame_id": 1004,
+    "seed": 99,
+    "t": 63
   }
 ]

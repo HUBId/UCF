@@ -3,7 +3,11 @@ use thiserror::Error;
 use ucf_core::types::SimTime;
 use ucf_frames::v1::{ControlFrame, ControlPayload};
 
+pub mod feature_extractor;
+pub mod ssm;
 pub mod world_model;
+use feature_extractor::{FeatureExtractor, MockSaeExtractor, SaeOutput};
+use ssm::{MockSsmSelectiveScan, WorkingMemoryModel};
 use world_model::{MockJepaPredictor, WorldModelPredictor};
 
 pub const MAX_SPIKES: usize = 256;
@@ -35,6 +39,10 @@ pub struct ComputeSignals {
     pub confidence: f32,
     pub spikes: Vec<Spike>,
     pub notes: Vec<String>,
+    pub sparsity: Option<f32>,
+    pub energy: Option<f32>,
+    pub ssm_readout: Option<f32>,
+    pub ssm_digest: Option<[u8; 32]>,
 }
 
 impl ComputeSignals {
@@ -43,6 +51,9 @@ impl ComputeSignals {
         self.pressure = self.pressure.clamp(0.0, 1.0);
         self.risk = self.risk.clamp(0.0, 1.0);
         self.confidence = self.confidence.clamp(0.0, 1.0);
+        self.sparsity = self.sparsity.map(|v| v.clamp(0.0, 1.0));
+        self.energy = self.energy.map(|v| v.clamp(0.0, 1.0));
+        self.ssm_readout = self.ssm_readout.map(|v| v.clamp(0.0, 1.0));
 
         if self.spikes.len() > MAX_SPIKES {
             self.spikes.truncate(MAX_SPIKES);
@@ -76,6 +87,10 @@ impl ComputeSignals {
             confidence: self.confidence,
             spike_count: self.spikes.len() as u16,
             spikes_digest,
+            sparsity: self.sparsity,
+            energy: self.energy,
+            ssm_readout: self.ssm_readout,
+            ssm_digest: self.ssm_digest,
         }
     }
 }
@@ -133,6 +148,18 @@ pub struct ComputeSignalsSummary {
     pub confidence: f32,
     pub spike_count: u16,
     pub spikes_digest: [u8; 32],
+    pub sparsity: Option<f32>,
+    pub energy: Option<f32>,
+    pub ssm_readout: Option<f32>,
+    pub ssm_digest: Option<[u8; 32]>,
+}
+
+pub fn fuse_signals(surprise: f32, pressure: f32, energy: f32) -> (f32, f32) {
+    let base_risk = (0.65 * surprise + 0.35 * pressure).clamp(0.0, 1.0);
+    let energy_adj = (energy - 0.5).clamp(-0.5, 0.5);
+    let risk = (base_risk + 0.15 * energy_adj).clamp(0.0, 1.0);
+    let confidence = (1.0 - 0.9 * risk).clamp(0.0, 1.0);
+    (risk, confidence)
 }
 
 pub fn digest_control_frame(ctrl: &ControlFrame) -> [u8; 32] {
@@ -184,11 +211,6 @@ pub fn compute_input_from_control(ctrl: &ControlFrame) -> ComputeInput {
 pub struct CpuStubBackend;
 
 impl CpuStubBackend {
-    fn normalized_unit(bits: u64) -> f32 {
-        let v = (bits >> 40) as u32;
-        (v as f32) / (u32::MAX as f32)
-    }
-
     fn check_budget(
         work_units: u64,
         stage: &'static str,
@@ -204,6 +226,28 @@ impl CpuStubBackend {
             });
         }
         Ok(())
+    }
+
+    fn stage_budget(total: ComputeBudget, num: u64, den: u64) -> ComputeBudget {
+        let max_micros = ((total.max_micros.saturating_mul(num)) / den).max(1);
+        let hard_timeout_micros = ((total.hard_timeout_micros.saturating_mul(num)) / den).max(1);
+        ComputeBudget {
+            max_micros,
+            hard_timeout_micros,
+            seed: total.seed,
+        }
+    }
+
+    fn empty_sae() -> SaeOutput {
+        SaeOutput {
+            feature_vec: feature_extractor::FeatureVector {
+                features: vec![0.0; feature_extractor::SAE_FEATURE_DIM],
+                digest: [0_u8; 32],
+            },
+            spikes: Vec::new(),
+            sparsity: 1.0,
+            energy: 0.0,
+        }
     }
 }
 
@@ -223,55 +267,101 @@ impl AiComputeBackend for CpuStubBackend {
             });
         }
 
+        Self::check_budget(1, "pipeline/start", budget)?;
+
         let mut seed_bytes = [0_u8; 8];
         seed_bytes.copy_from_slice(&input.context_digest[0..8]);
         let context_seed = u64::from_le_bytes(seed_bytes);
-        let mut prng = SplitMix64::new(context_seed ^ budget.seed ^ input.t.rotate_left(7));
+
+        let world_budget = Self::stage_budget(budget, 4, 10);
+        let sae_budget = Self::stage_budget(budget, 3, 10);
+        let ssm_budget = Self::stage_budget(budget, 3, 10);
 
         let predictor = MockJepaPredictor;
         let state = predictor.init_state(input, budget.seed);
-        let world_model_out = predictor.predict(&state, input, budget)?;
-
+        let world_model_out = predictor.predict(&state, input, world_budget)?;
         let surprise = world_model_out.error.surprise;
-        let pressure_base = Self::normalized_unit(prng.next_u64());
-        let periodic = ((input.t % 17) as f32) / 16.0;
-        let pressure = (pressure_base * 0.75 + periodic * 0.25).clamp(0.0, 1.0);
-        let risk = (0.7 * surprise + 0.3 * pressure).clamp(0.0, 1.0);
-        let confidence = (1.0 - 0.85 * risk).clamp(0.0, 1.0);
 
-        let mut work_units = 32_u64;
-        Self::check_budget(work_units, "base", budget)?;
+        let sae_extractor = MockSaeExtractor;
+        let (sae_out, sae_degraded) =
+            match sae_extractor.extract(input, &world_model_out, sae_budget) {
+                Ok(output) => (output, false),
+                Err(ComputeError::BudgetExceeded { .. }) => (Self::empty_sae(), true),
+                Err(other) => return Err(other),
+            };
 
-        let mut spikes = Vec::new();
-        let max_spikes = ((input.context_digest[0] % 64) as usize).min(64);
-        for idx in 0..max_spikes {
-            work_units = work_units.saturating_add(7);
-            Self::check_budget(work_units, "spikes", budget)?;
+        let ssm = MockSsmSelectiveScan;
+        let ssm_state = ssm.init(input, budget.seed ^ context_seed.rotate_left(9));
+        let (ssm_out, ssm_degraded) =
+            match ssm.step(&ssm_state, &sae_out, &world_model_out, ssm_budget) {
+                Ok(output) => (output, false),
+                Err(ComputeError::BudgetExceeded { .. }) => {
+                    let fallback_pressure = surprise.clamp(0.0, 1.0);
+                    (
+                        ssm::SsmOutput {
+                            next_state: ssm_state,
+                            pressure: fallback_pressure,
+                            readout: fallback_pressure,
+                        },
+                        true,
+                    )
+                }
+                Err(other) => return Err(other),
+            };
 
-            let raw_mag = Self::normalized_unit(prng.next_u64());
-            let magnitude = if raw_mag >= 0.8 { raw_mag } else { 0.0 };
-            if magnitude > 0.0 {
-                spikes.push(Spike {
-                    feature_id: (prng.next_u64() as u32) ^ (idx as u32),
-                    magnitude,
-                    timestamp: input.t,
-                });
-            }
+        let pressure = ssm_out.pressure;
+        let (risk, confidence) = fuse_signals(surprise, pressure, sae_out.energy);
+
+        let summary = ComputeSignals {
+            surprise,
+            pressure,
+            risk,
+            confidence,
+            spikes: sae_out.spikes.clone(),
+            notes: Vec::new(),
+            sparsity: Some(sae_out.sparsity),
+            energy: Some(sae_out.energy),
+            ssm_readout: Some(ssm_out.readout),
+            ssm_digest: Some(ssm_out.next_state.digest),
         }
+        .summary(self.name());
 
         let mut notes = vec![
             format!("backend={}", self.name()),
             format!("frame={}", input.frame_id.0),
             format!("world_model={}", predictor.name()),
+            format!("feature_extractor={}", sae_extractor.name()),
+            format!("working_memory={}", ssm.name()),
             format!(
                 "pred_digest={}",
                 &hex::encode(world_model_out.prediction.prediction_digest)[..12]
             ),
             format!(
+                "sae_digest={}",
+                &hex::encode(sae_out.feature_vec.digest)[..12]
+            ),
+            format!(
+                "ssm_digest={}",
+                &hex::encode(ssm_out.next_state.digest)[..12]
+            ),
+            format!("spike_count={}", sae_out.spikes.len()),
+            format!("sparsity={:.4}", sae_out.sparsity),
+            format!("energy={:.4}", sae_out.energy),
+            format!(
                 "digest_prefix={:02x}{:02x}",
                 input.context_digest[0], input.context_digest[1]
             ),
+            format!(
+                "spikes_digest={}",
+                &hex::encode(summary.spikes_digest)[..12]
+            ),
         ];
+        if sae_degraded {
+            notes.push("degraded:sae_budget_exceeded".to_string());
+        }
+        if ssm_degraded {
+            notes.push("degraded:ssm_budget_exceeded".to_string());
+        }
         notes.sort();
 
         Ok(ComputeSignals {
@@ -279,8 +369,12 @@ impl AiComputeBackend for CpuStubBackend {
             pressure,
             risk,
             confidence,
-            spikes,
+            spikes: sae_out.spikes,
             notes,
+            sparsity: Some(sae_out.sparsity),
+            energy: Some(sae_out.energy),
+            ssm_readout: Some(ssm_out.readout),
+            ssm_digest: Some(ssm_out.next_state.digest),
         }
         .bounded())
     }
@@ -402,6 +496,22 @@ mod tests {
     }
 
     #[test]
+    fn fusion_is_monotonic_and_confidence_inverse() {
+        let (r1, _) = fuse_signals(0.2, 0.4, 0.5);
+        let (r2, _) = fuse_signals(0.8, 0.4, 0.5);
+        assert!(r2 >= r1);
+
+        let (r3, _) = fuse_signals(0.4, 0.2, 0.5);
+        let (r4, _) = fuse_signals(0.4, 0.8, 0.5);
+        assert!(r4 >= r3);
+
+        let (risk_low, conf_high) = fuse_signals(0.1, 0.1, 0.5);
+        let (risk_high, conf_low) = fuse_signals(0.9, 0.9, 0.5);
+        assert!(risk_high >= risk_low);
+        assert!(conf_low <= conf_high);
+    }
+
+    #[test]
     fn surprise_is_driven_by_world_model_predictor() {
         let backend = CpuStubBackend;
         let input = ComputeInput {
@@ -442,6 +552,10 @@ mod tests {
             confidence: 4.0,
             spikes,
             notes,
+            sparsity: Some(2.0),
+            energy: Some(-1.0),
+            ssm_readout: Some(3.0),
+            ssm_digest: None,
         }
         .bounded();
         assert_eq!(bounded.spikes.len(), MAX_SPIKES);
