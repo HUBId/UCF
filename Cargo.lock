@@ -1968,6 +1968,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucf-compute"
+version = "0.1.0"
+dependencies = [
+ "hex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 1.0.69",
+ "ucf-core",
+ "ucf-frames",
+]
+
+[[package]]
 name = "ucf-consistency-engine"
 version = "0.1.0"
 dependencies = [
@@ -2495,6 +2508,7 @@ version = "0.1.0"
 dependencies = [
  "ucf-biophys",
  "ucf-cde",
+ "ucf-compute",
  "ucf-core",
  "ucf-dbm",
  "ucf-ess",

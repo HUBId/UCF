@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use ucf_core::types::SimTime;
 use ucf_frames::v1::{
-    BrainFrame, ControlFrame, CorrelationId, DecisionFrame, DecisionMeta, NeuromodulatorSnapshot,
-    PhiProxySnapshot,
+    BrainFrame, ComputeSignalsSummary, ControlFrame, CorrelationId, DecisionFrame, DecisionMeta,
+    NeuromodulatorSnapshot, PhiProxySnapshot,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -27,6 +27,7 @@ pub struct ExperienceRecord {
     pub neuromod: Option<NeuromodulatorSnapshot>,
     pub iit_phi: Option<PhiProxySnapshot>,
     pub decision_meta: Option<DecisionMeta>,
+    pub compute_summary: Option<ComputeSignalsSummary>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -49,6 +50,7 @@ impl ExperienceRecord {
             neuromod: None,
             iit_phi: None,
             decision_meta: None,
+            compute_summary: None,
         }
     }
 
@@ -62,6 +64,7 @@ impl ExperienceRecord {
             neuromod: None,
             iit_phi: None,
             decision_meta: Some(decision.meta),
+            compute_summary: decision.compute_summary,
         }
     }
 
@@ -75,6 +78,7 @@ impl ExperienceRecord {
             neuromod: None,
             iit_phi: None,
             decision_meta: None,
+            compute_summary: None,
         }
     }
 
@@ -93,6 +97,7 @@ impl ExperienceRecord {
             neuromod: None,
             iit_phi: None,
             decision_meta: None,
+            compute_summary: None,
         }
     }
 
