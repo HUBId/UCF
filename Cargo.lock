@@ -2113,6 +2113,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucf-fep"
+version = "0.1.0"
+
+[[package]]
 name = "ucf-fold"
 version = "0.1.0"
 dependencies = [
@@ -2494,6 +2498,7 @@ dependencies = [
  "ucf-core",
  "ucf-dbm",
  "ucf-ess",
+ "ucf-fep",
  "ucf-frames",
  "ucf-iit-proxy",
  "ucf-ncde",

@@ -18,6 +18,8 @@ ucf-nsr = { path = "../../core/crates/ucf-nsr" }
 ucf-ssm = { path = "../../core/crates/ucf-ssm" }
 ucf-dbm = { path = "../../domains/ucf-dbm" }
 
+ucf-fep = { path = "../../domains/ucf-fep" }
+
 ucf-tcf = { path = "../../core/crates/ucf-tcf" }
 ucf-spikes = { path = "../../core/ucf-spikes" }
 

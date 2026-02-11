@@ -6,6 +6,7 @@ mod codes;
 mod control;
 mod decision;
 mod digital_brain;
+mod fep;
 mod iit;
 mod intent;
 mod microcircuit;
@@ -28,6 +29,7 @@ pub use decision::{DecisionFrame, DecisionMeta, ReasonCode};
 pub use digital_brain::{
     quantize_avg_v_mv, quantize_hormone, BrainFrame as DigitalBrainFrame, ChemFrame,
 };
+pub use fep::{CoherenceFrame, FepFrame};
 pub use iit::IitFrame;
 pub use intent::{Intent, IntentId, IntentKind, IntentType};
 pub use microcircuit::MicrocircuitFrame;
