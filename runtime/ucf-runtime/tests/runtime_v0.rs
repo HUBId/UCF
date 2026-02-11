@@ -1310,6 +1310,12 @@ fn real_compute_onboarding_v0_smoke_path() {
     let compute = decision.compute_summary.expect("compute summary");
     assert_eq!(compute.backend, "cpu_stub");
     assert!((0.0..=1.0).contains(&compute.surprise));
+    assert!((0.0..=1.0).contains(&compute.pressure));
+    assert!((0.0..=1.0).contains(&compute.risk));
+    assert!((0.0..=1.0).contains(&compute.confidence));
+    assert!(compute.spike_count > 0);
+    assert!(compute.sparsity.is_some());
+    assert!(compute.energy.is_some());
 
     let decision_rec = orchestrator
         .ess

@@ -13,6 +13,10 @@ pub struct ComputeSignalsSummary {
     pub confidence: f32,
     pub spike_count: u16,
     pub spikes_digest: [u8; 32],
+    pub sparsity: Option<f32>,
+    pub energy: Option<f32>,
+    pub ssm_readout: Option<f32>,
+    pub ssm_digest: Option<[u8; 32]>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
