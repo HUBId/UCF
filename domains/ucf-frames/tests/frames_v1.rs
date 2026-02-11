@@ -2,7 +2,7 @@ use ucf_core::types::{SimTime, Tick, WindowId};
 use ucf_frames::v1::{
     BiophysFrame, BiophysHhParams, CdeFrame, ChannelCode, ControlFrame, ControlPayload,
     CorrelationId, DecisionCode, DecisionFrame, DenyReasonCode, IitFrame, Intent, IntentId,
-    IntentKind, IntentType, NsrFrame, OnnFrame, ReasonCode, SnnFrame, TcfFrame,
+    IntentKind, IntentType, NcdeFrame, NsrFrame, OnnFrame, ReasonCode, SnnFrame, TcfFrame,
 };
 
 #[test]
@@ -187,4 +187,17 @@ fn tcf_frame_can_be_quantized_from_metrics() {
     assert!(frame.lock_q > 0);
     assert!(frame.jitter_q > 0);
     assert!(frame.spread_q > 0);
+}
+
+#[test]
+fn ncde_frame_can_be_constructed() {
+    let frame = NcdeFrame {
+        now_ms: 999,
+        l2_q: 17,
+        phase_q: 201,
+    };
+
+    assert_eq!(frame.now_ms, 999);
+    assert_eq!(frame.l2_q, 17);
+    assert_eq!(frame.phase_q, 201);
 }

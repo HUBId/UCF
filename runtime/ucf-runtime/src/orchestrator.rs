@@ -17,10 +17,11 @@ use ucf_core::storage::{ArchiveCfg, FlushPolicy, MemArchiveStore};
 use ucf_ess::v1::{ExperienceRecord, ExperienceStore, IdAllocator, InMemoryEss};
 use ucf_frames::v1::{
     ArchiveAppendFrame, BiophysFrame, BiophysHhParams, CdeFrame, ControlFrame, DecisionFrame,
-    IitFrame, MicrocircuitFrame, NeuromodulatorSnapshot, NsrFrame, OnnFrame, PhaseFrame, SleFrame,
-    SnnFrame, SsmFrame, TcfFrame,
+    IitFrame, MicrocircuitFrame, NcdeFrame, NeuromodulatorSnapshot, NsrFrame, OnnFrame, PhaseFrame,
+    SleFrame, SnnFrame, SsmFrame, TcfFrame,
 };
 use ucf_iit_proxy::v0::{iit_push_and_eval, IitCfg, IitSample, IitState};
+use ucf_ncde::v0::{ncde_step, NcdeCfg, NcdeInput, NcdeState};
 use ucf_neuromod::v0::{NeuromodInputs, NeuromodScheduler, NeuromodulatorField};
 use ucf_nsr::v0::{Claim, NsrEngine, Verdict};
 use ucf_onn::v0::{OnnCore, PhaseDeg};
@@ -144,6 +145,9 @@ pub struct RuntimeOrchestrator {
     policy_internal_recursion_allow: bool,
     policy_internal_recursion_max_depth: u8,
     ssm_gate: f32,
+    ncde_cfg: NcdeCfg,
+    ncde_state: NcdeState,
+    last_ncde_frame: Option<NcdeFrame>,
     archive: ArchiveLog<MemArchiveStore>,
     last_archive_append_frame: Option<ArchiveAppendFrame>,
     last_archive_payload_len: usize,
@@ -162,6 +166,8 @@ impl RuntimeOrchestrator {
 
         let ssm_cfg = SsmCfg::default_small();
         let ssm_state = SsmState::new(&ssm_cfg, 0);
+        let ncde_cfg = NcdeCfg::default_v0();
+        let ncde_state = NcdeState::new(&ncde_cfg);
 
         Self {
             ess: InMemoryEss::new(),
@@ -223,6 +229,9 @@ impl RuntimeOrchestrator {
             policy_internal_recursion_allow: true,
             policy_internal_recursion_max_depth: SleCfg::default_v0().max_depth,
             ssm_gate: 0.0,
+            ncde_cfg,
+            ncde_state,
+            last_ncde_frame: None,
             archive: ArchiveLog::new(MemArchiveStore::new(), ArchiveCfg::default()),
             last_archive_append_frame: None,
             last_archive_payload_len: 0,
@@ -328,6 +337,16 @@ impl RuntimeOrchestrator {
 
     pub fn working_context_ssm_y(&self) -> &[f32] {
         &self.working_context.ssm_y
+    }
+
+    pub fn last_ncde_frame(&self) -> Option<NcdeFrame> {
+        self.last_ncde_frame
+    }
+
+    pub fn ncde_l2_norm_0_1(&self) -> f32 {
+        self.last_ncde_frame
+            .map(|frame| f32::from(frame.l2_q) / 255.0)
+            .unwrap_or(0.0)
     }
 
     pub fn archive_last_seq(&self) -> u64 {
@@ -849,6 +868,25 @@ impl RuntimeOrchestrator {
             lock_micro_nsr,
         });
         let spike_rate = (tick_spikes.len().min(32) as f32) / 32.0;
+        let tcf_phase_norm = self.current_tcf_phase_0_1(now_ms);
+        let ncde_inp = NcdeInput {
+            u: vec![
+                (1.0 - nsr_risk).clamp(0.0, 1.0),
+                top_conf.clamp(0.0, 1.0),
+                self.iit_proxy_state.phi_proxy.clamp(0.0, 1.0),
+                ssm_out.gate.clamp(0.0, 1.0),
+                spike_rate.clamp(0.0, 1.0),
+                meta_weight.clamp(0.0, 1.0),
+            ],
+            phase: tcf_phase_norm,
+        };
+        let ncde_tick = ncde_step(&self.ncde_cfg, &mut self.ncde_state, now_ms, &ncde_inp);
+        self.last_ncde_frame = Some(NcdeFrame {
+            now_ms: ncde_tick.now_ms,
+            l2_q: ncde_tick.l2_q,
+            phase_q: ncde_tick.phase_q,
+        });
+
         let iit_tick = iit_push_and_eval(
             &self.iit_proxy_cfg,
             &mut self.iit_proxy_state,
@@ -928,6 +966,14 @@ impl RuntimeOrchestrator {
             bytes: append.bytes as u32,
             flushed,
         });
+    }
+
+    fn current_tcf_phase_0_1(&self, now_ms: u64) -> f32 {
+        self.last_tcf_frame
+            .map(|frame| f32::from(frame.phase_bin) / 255.0)
+            // Fallback if no TCF frame is available yet: deterministic sawtooth over 1s.
+            .unwrap_or_else(|| ((now_ms % 1_000) as f32) / 1_000.0)
+            .clamp(0.0, 1.0)
     }
 
     fn make_spike(
