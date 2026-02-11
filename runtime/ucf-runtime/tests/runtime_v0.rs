@@ -1,3 +1,4 @@
+use ucf_cde::v0::CdeUpdateKind;
 use ucf_core::types::{SimTime, Tick, WindowId};
 use ucf_ess::v1::{ExperienceKind, ExperiencePayload, ExperienceStore};
 use ucf_frames::v1::{
@@ -375,6 +376,7 @@ fn orchestrator_tick_emits_iit_frame() {
 fn orchestrator_tick_emits_cde_and_nsr_frames() {
     let mut orchestrator = RuntimeOrchestrator::new();
     let mut adapter = MockAdapter::default();
+    let mut saw_causal_spike = false;
 
     for tick in 80..90 {
         let ctrl = ControlFrame::new_text(
@@ -391,19 +393,42 @@ fn orchestrator_tick_emits_cde_and_nsr_frames() {
         orchestrator
             .ingest_and_process(&mut adapter, ctrl)
             .expect("cde/nsr tick should succeed");
+
+        let cde = orchestrator
+            .last_cde_frame()
+            .expect("cde frame should be present each tick");
+        assert_eq!(cde.now_ms, tick);
+        assert!((0..=255).contains(&u16::from(cde.top_conf_q)));
+
+        let spikes = orchestrator.drain_event_bus_for_test();
+        if spikes
+            .iter()
+            .any(|s| s.kind == ucf_biophys::v0::SpikeKind::Causal)
+        {
+            saw_causal_spike = true;
+        }
     }
 
     let cde = orchestrator
         .last_cde_frame()
         .expect("cde frame should be present");
-    assert!(cde.hyps <= 4);
-    assert!((0.0..=1.0).contains(&cde.top_conf));
+    assert!(cde.hyps <= 256);
+    assert!(cde.changed <= cde.hyps);
+
+    assert!(saw_causal_spike);
 
     let nsr = orchestrator
         .last_nsr_frame()
         .expect("nsr frame should be present");
     assert!(nsr.verdict <= 2);
     assert!((0.0..=1.0).contains(&nsr.verified_ratio));
+}
+
+#[test]
+fn cde_intervention_helper_updates_engine_state() {
+    let mut orchestrator = RuntimeOrchestrator::new();
+    let update = orchestrator.feed_cde_intervention_for_test(42, vec![(1, 1.0)], vec![(2, 0.6)]);
+    assert!(matches!(update, CdeUpdateKind::Updated { .. }));
 }
 
 #[test]
