@@ -2498,6 +2498,7 @@ dependencies = [
  "ucf-frames",
  "ucf-iit-proxy",
  "ucf-neuromod",
+ "ucf-nsr",
  "ucf-onn",
  "ucf-policy",
  "ucf-snn",

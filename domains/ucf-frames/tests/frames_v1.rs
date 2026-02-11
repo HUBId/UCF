@@ -2,7 +2,7 @@ use ucf_core::types::{SimTime, Tick, WindowId};
 use ucf_frames::v1::{
     BiophysFrame, BiophysHhParams, CdeFrame, ChannelCode, ControlFrame, ControlPayload,
     CorrelationId, DecisionCode, DecisionFrame, DenyReasonCode, IitFrame, Intent, IntentId,
-    IntentKind, IntentType, OnnFrame, ReasonCode, SnnFrame,
+    IntentKind, IntentType, NsrFrame, OnnFrame, ReasonCode, SnnFrame,
 };
 
 #[test]
@@ -159,4 +159,19 @@ fn cde_frame_can_be_constructed() {
     assert_eq!(cde.now_ms, 77);
     assert_eq!(cde.hyps, 3);
     assert_eq!(cde.top_conf_q, 200);
+}
+
+#[test]
+fn nsr_frame_can_be_constructed() {
+    let nsr = NsrFrame {
+        now_ms: 99,
+        verdict: 1,
+        satisfied: 2,
+        total: 5,
+        verified_q: 102,
+    };
+
+    assert_eq!(nsr.now_ms, 99);
+    assert_eq!(nsr.verdict, 1);
+    assert!(nsr.satisfied <= nsr.total);
 }

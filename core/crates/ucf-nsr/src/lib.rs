@@ -12,6 +12,7 @@ mod backend_datalog;
 #[cfg(feature = "nsr_smt")]
 mod backend_smt;
 mod notar;
+pub mod v0;
 
 pub use notar::{
     rules, Fact, LogicHook, NoopLogicHook, NsrCore, NsrInputs, NsrOutputs, NsrTrace, Rule, RuleHit,

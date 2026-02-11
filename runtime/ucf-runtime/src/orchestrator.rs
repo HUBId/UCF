@@ -24,6 +24,7 @@ use ucf_iit_proxy::v0::{
     IitConfig, IitMonitor, MOD_BLUE, MOD_GEIST, MOD_JEPA, MOD_NSR, MOD_PBM, MOD_SSM,
 };
 use ucf_neuromod::v0::{NeuromodInputs, NeuromodScheduler, NeuromodulatorField};
+use ucf_nsr::v0::{Claim, NsrEngine, Verdict};
 use ucf_onn::v0::{OnnCore, PhaseDeg};
 use ucf_policy::{adapter::ActionAdapter, gem::Gem, pbm::Pbm};
 use ucf_snn::v0::{encode, to_brainbus, FeatureEvent, SnnEncodeCfg};
@@ -92,6 +93,7 @@ pub struct RuntimeOrchestrator {
     event_bus: EventBus,
     spike_seq: u32,
     last_onn_frame: Option<OnnFrame>,
+    forced_mean_lock_for_test: Option<f32>,
     last_snn_frame: Option<SnnFrame>,
     iit_cfg: IITCfg,
     iit_state: IITState,
@@ -100,6 +102,7 @@ pub struct RuntimeOrchestrator {
     cde_cfg: CdeCfg,
     cde_state: CdeState,
     nsr_cfg: RuleCfg,
+    nsr_engine: NsrEngine,
     last_cde_frame: Option<CdeFrame>,
     last_nsr_frame: Option<NsrFrame>,
     ssm_state: SsmState,
@@ -155,6 +158,7 @@ impl RuntimeOrchestrator {
             event_bus: EventBus::default(),
             spike_seq: 0,
             last_onn_frame: None,
+            forced_mean_lock_for_test: None,
             last_snn_frame: None,
             iit_cfg: IITCfg::default(),
             iit_state: IITState::default(),
@@ -163,6 +167,7 @@ impl RuntimeOrchestrator {
             cde_cfg: CdeCfg::default(),
             cde_state: CdeState::default(),
             nsr_cfg: RuleCfg::default(),
+            nsr_engine: NsrEngine::with_default_rules(),
             last_cde_frame: None,
             last_nsr_frame: None,
             ssm_state: SsmState::default(),
@@ -206,6 +211,10 @@ impl RuntimeOrchestrator {
 
     pub fn set_onn_coupling_for_test(&mut self, coupling: f32) {
         self.onn_cfg.coupling = coupling.clamp(0.0, 1.0);
+    }
+
+    pub fn force_mean_lock_for_test(&mut self, mean_lock: f32) {
+        self.forced_mean_lock_for_test = Some(mean_lock.clamp(0.0, 1.0));
     }
 
     pub fn drain_event_bus_for_test(&mut self) -> Vec<SnnSpikeEvent> {
@@ -335,7 +344,10 @@ impl RuntimeOrchestrator {
             self.phase_cfg,
         );
 
-        let onn_out = onn_step(&mut self.onn_state, dt_ms, self.onn_cfg, ONN_COUPLINGS);
+        let mut onn_out = onn_step(&mut self.onn_state, dt_ms, self.onn_cfg, ONN_COUPLINGS);
+        if let Some(forced) = self.forced_mean_lock_for_test {
+            onn_out.mean_lock = forced.clamp(0.0, 1.0);
+        }
         self.last_onn_frame = Some(OnnFrame {
             now_ms,
             global_phase: onn_out.global_phase,
@@ -387,7 +399,7 @@ impl RuntimeOrchestrator {
             .clamp(0.0, 1.0);
         let nsr_verified_ratio = self
             .last_nsr_frame
-            .map(|frame| frame.verified_ratio)
+            .map(|frame| f32::from(frame.verified_q) / 255.0)
             .unwrap_or(0.0)
             .clamp(0.0, 1.0);
         let archive_append_bytes_q =
@@ -409,7 +421,7 @@ impl RuntimeOrchestrator {
         let decay_update = tick_decay(&mut self.cde_state, self.cde_cfg, now_ms);
         sync_graph_from_cde_state(&mut self.cde_graph, &self.cde_state);
 
-        let (verdict, verified_ratio) = verify_graph(&self.cde_graph, self.nsr_cfg);
+        let (legacy_verdict, _legacy_verified_ratio) = verify_graph(&self.cde_graph, self.nsr_cfg);
         let top_conf = self
             .cde_state
             .hyps
@@ -417,6 +429,35 @@ impl RuntimeOrchestrator {
             .map(|h| h.conf)
             .max_by(|a, b| a.total_cmp(b))
             .unwrap_or(0.0);
+
+        let planned_intent = self
+            .last_ssm_frame
+            .map(|frame| {
+                if frame.gate > 0.5 {
+                    "act".to_string()
+                } else {
+                    "noop".to_string()
+                }
+            })
+            .unwrap_or_else(|| "noop".to_string());
+        let claim = Claim {
+            intent: planned_intent,
+            tool: "mock".to_string(),
+            channel: "terminal".to_string(),
+            risk: if onn_out.mean_lock < 0.25 {
+                "high".to_string()
+            } else {
+                "low".to_string()
+            },
+            audience: "research".to_string(),
+        };
+        let nsr_result = self.nsr_engine.check(&claim);
+        let verified_ratio = if nsr_result.total == 0 {
+            0.0
+        } else {
+            f32::from(nsr_result.satisfied) / f32::from(nsr_result.total)
+        };
+        let verified_q = (verified_ratio * 255.0).round() as u8;
 
         let mut integration = compute_integration(
             IITInputs {
@@ -427,7 +468,7 @@ impl RuntimeOrchestrator {
             self.iit_cfg,
         );
 
-        if verdict == VerifyVerdict::Verified && verified_ratio >= 0.85 {
+        if legacy_verdict == VerifyVerdict::Verified && verified_ratio >= 0.85 {
             integration = (integration + 0.05).clamp(0.0, 1.0);
         }
 
@@ -436,7 +477,7 @@ impl RuntimeOrchestrator {
             (1.0 - alpha) * self.iit_state.integration_ema + alpha * integration;
 
         let mut coherence_state = classify(self.iit_state.integration_ema, self.iit_cfg);
-        if verdict == VerifyVerdict::Rejected {
+        if nsr_result.verdict == Verdict::Block {
             coherence_state = CoherenceState::Fragmenting;
         }
 
@@ -515,24 +556,16 @@ impl RuntimeOrchestrator {
             ));
         }
 
-        let verify_ttfs = if verdict == VerifyVerdict::Rejected {
-            Some(0)
-        } else {
-            None
-        };
-        let verify_magnitude = if verdict == VerifyVerdict::Rejected {
-            1.0
-        } else {
-            verified_ratio.clamp(0.0, 1.0)
-        };
-        tick_spikes.push(self.make_spike(
-            now_ms,
-            OSC_NSR,
-            SpikeKind::Verify,
-            phase_bin_nsr,
-            verify_magnitude,
-            verify_ttfs,
-        ));
+        if matches!(nsr_result.verdict, Verdict::Allow | Verdict::Block) {
+            tick_spikes.push(self.make_spike(
+                now_ms,
+                OSC_NSR,
+                SpikeKind::Verify,
+                phase_bin_nsr,
+                verified_ratio.clamp(0.0, 1.0),
+                None,
+            ));
+        }
 
         if onn_out.mean_lock > 0.7 {
             tick_spikes.push(self.make_spike(
@@ -621,12 +654,14 @@ impl RuntimeOrchestrator {
         });
         self.last_nsr_frame = Some(NsrFrame {
             now_ms,
-            verdict: match verdict {
-                VerifyVerdict::Verified => 0,
-                VerifyVerdict::Rejected => 1,
-                VerifyVerdict::Unknown => 2,
+            verdict: match nsr_result.verdict {
+                Verdict::Allow => 1,
+                Verdict::Block => 2,
+                Verdict::Unknown => 0,
             },
-            verified_ratio,
+            satisfied: nsr_result.satisfied,
+            total: nsr_result.total,
+            verified_q,
         });
 
         let payload =
@@ -721,6 +756,24 @@ impl RuntimeOrchestrator {
         phi: ucf_frames::v1::PhiProxySnapshot,
     ) -> Result<DecisionFrame, RuntimeError> {
         self.emit_snn_signals(adapter, ctrl.time.tick.get())?;
+
+        let decision = if let Some(nsr_frame) = self.last_nsr_frame {
+            match nsr_frame.verdict {
+                2 => DecisionFrame::deny_with_reason(
+                    decision.time,
+                    decision.corr,
+                    decision.intent,
+                    ucf_frames::v1::ReasonCode("deny_nsr_block"),
+                    ucf_frames::v1::DenyReasonCode::PolicyViolation,
+                    "deny_nsr_block",
+                )
+                .with_meta(decision.meta),
+                0 | 1 => decision,
+                _ => decision,
+            }
+        } else {
+            decision
+        };
 
         let eid1 = self.ids.next();
         self.ess.append(

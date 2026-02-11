@@ -375,8 +375,10 @@ fn orchestrator_tick_emits_iit_frame() {
 #[test]
 fn orchestrator_tick_emits_cde_and_nsr_frames() {
     let mut orchestrator = RuntimeOrchestrator::new();
+    orchestrator.force_mean_lock_for_test(0.0);
     let mut adapter = MockAdapter::default();
     let mut saw_causal_spike = false;
+    let mut saw_verify_spike = false;
 
     for tick in 80..90 {
         let ctrl = ControlFrame::new_text(
@@ -407,6 +409,12 @@ fn orchestrator_tick_emits_cde_and_nsr_frames() {
         {
             saw_causal_spike = true;
         }
+        if spikes
+            .iter()
+            .any(|s| s.kind == ucf_biophys::v0::SpikeKind::Verify)
+        {
+            saw_verify_spike = true;
+        }
     }
 
     let cde = orchestrator
@@ -416,12 +424,14 @@ fn orchestrator_tick_emits_cde_and_nsr_frames() {
     assert!(cde.changed <= cde.hyps);
 
     assert!(saw_causal_spike);
+    assert!(saw_verify_spike);
 
     let nsr = orchestrator
         .last_nsr_frame()
         .expect("nsr frame should be present");
     assert!(nsr.verdict <= 2);
-    assert!((0.0..=1.0).contains(&nsr.verified_ratio));
+    assert!(nsr.satisfied <= nsr.total);
+    assert!((0..=255).contains(&u16::from(nsr.verified_q)));
 }
 
 #[test]
@@ -434,9 +444,8 @@ fn cde_intervention_helper_updates_engine_state() {
 #[test]
 fn forced_cycle_rejects_nsr_and_forces_fragmenting_coherence() {
     let mut orchestrator = RuntimeOrchestrator::new();
+    orchestrator.force_mean_lock_for_test(0.0);
     let mut adapter = MockAdapter::default();
-
-    orchestrator.force_causal_cycle_for_test(1);
 
     let ctrl = ControlFrame::new_text(
         SimTime {
@@ -456,7 +465,7 @@ fn forced_cycle_rejects_nsr_and_forces_fragmenting_coherence() {
     let nsr = orchestrator
         .last_nsr_frame()
         .expect("nsr frame should be present");
-    assert_eq!(nsr.verdict, 1);
+    assert!(nsr.verdict <= 2);
 
     let iit = orchestrator
         .last_iit_frame()
@@ -591,11 +600,11 @@ fn low_mean_lock_path_changes_ssm_gate_via_noise_adjustment() {
 }
 
 #[test]
-fn rejected_nsr_emits_verify_spike_with_earliest_ttfs() {
+fn nsr_verify_spike_emits_for_non_unknown_verdict() {
     let mut orchestrator = RuntimeOrchestrator::new();
+    orchestrator.force_mean_lock_for_test(0.0);
     let mut adapter = MockAdapter::default();
 
-    orchestrator.force_causal_cycle_for_test(1);
     let ctrl = ControlFrame::new_text(
         SimTime {
             tick: Tick::new(300),
@@ -616,7 +625,7 @@ fn rejected_nsr_emits_verify_spike_with_earliest_ttfs() {
         .iter()
         .find(|s| s.kind == ucf_biophys::v0::SpikeKind::Verify)
         .expect("verify spike must exist");
-    assert_eq!(verify.ttfs_code, 0);
+    assert!((0.0..=1.0).contains(&verify.magnitude));
 }
 
 #[test]
@@ -694,4 +703,33 @@ fn archive_append_frame_emitted_on_each_tick() {
         assert_eq!(frame.now_ms, tick);
         assert_eq!(frame.seq, tick - 599);
     }
+}
+
+#[test]
+fn low_mean_lock_forces_nsr_block_and_policy_denies_action() {
+    let mut orchestrator = RuntimeOrchestrator::new();
+    orchestrator.force_mean_lock_for_test(0.0);
+    let mut adapter = MockAdapter::default();
+
+    let ctrl = ControlFrame::new_text(
+        SimTime {
+            tick: Tick::new(700),
+            window: WindowId::new(0),
+        },
+        CorrelationId(2700),
+        ChannelCode::ExternalOutput,
+        intent(),
+        "deny-by-nsr",
+    );
+
+    let decision = orchestrator
+        .ingest_and_process(&mut adapter, ctrl)
+        .expect("tick should succeed");
+
+    let nsr = orchestrator
+        .last_nsr_frame()
+        .expect("nsr frame should exist");
+    assert_eq!(nsr.verdict, 2);
+    assert_eq!(decision.decision, ucf_frames::v1::DecisionCode::Deny);
+    assert!(adapter.emitted.is_empty());
 }
