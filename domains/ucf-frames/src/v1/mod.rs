@@ -31,3 +31,6 @@ pub use onn_snn::{OnnFrame, SnnFrame};
 pub use phase::PhaseFrame;
 pub use phi::PhiProxySnapshot;
 pub use stimulus::{BrainStimulusKind, BrainStimulusPayload};
+
+mod tcf;
+pub use tcf::TcfFrame;
