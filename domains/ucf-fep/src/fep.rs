@@ -36,6 +36,8 @@ pub struct FepInputs {
     pub surprise: f32,
     pub complexity: f32,
     pub policy_risk: f32,
+    pub compute_risk: f32,
+    pub compute_confidence: f32,
     pub onn_lock: f32,
     pub snn_event_rate: f32,
     pub ess_pressure: f32,
@@ -57,21 +59,26 @@ pub fn fep_step(cfg: &FepCfg, inp: &FepInputs) -> FepOutputs {
     let surprise = inp.surprise.clamp(0.0, 1.0);
     let complexity = inp.complexity.clamp(0.0, 1.0);
     let policy_risk = inp.policy_risk.clamp(0.0, 1.0);
+    let compute_risk = inp.compute_risk.clamp(0.0, 1.0);
+    let compute_confidence = inp.compute_confidence.clamp(0.0, 1.0);
     let onn_lock = inp.onn_lock.clamp(0.0, 1.0);
     let snn_event_rate = inp.snn_event_rate.clamp(0.0, 1.0);
     let ess_pressure = inp.ess_pressure.clamp(0.0, 1.0);
     let geist_drift = inp.geist_drift.clamp(0.0, 1.0);
 
     let evidence = (cfg.beta_coherence_lock * onn_lock + (1.0 - surprise)).clamp(0.0, 2.0);
+    let risk_penalty = 0.7 * compute_risk + 0.3 * (1.0 - compute_confidence);
     let free_energy = (cfg.beta_surprise * surprise
         + cfg.beta_complexity * complexity
-        + cfg.beta_policy_risk * policy_risk)
+        + cfg.beta_policy_risk * policy_risk
+        + cfg.beta_policy_risk * risk_penalty)
         .max(0.0);
 
     let pressure_relief = (onn_lock * 0.7).clamp(0.0, 1.0);
     let pressure_penalty =
         (ess_pressure - pressure_relief).max(0.0) * cfg.beta_memory_pressure * 0.35;
-    let attention_base = 0.45 + 0.55 * surprise - 0.65 * policy_risk - pressure_penalty;
+    let attention_base =
+        0.45 + 0.55 * surprise - 0.65 * policy_risk - 0.4 * risk_penalty - pressure_penalty;
     let attention_gain = attention_base.clamp(
         cfg.attention_min.min(cfg.attention_max),
         cfg.attention_max.max(cfg.attention_min),
@@ -93,7 +100,7 @@ pub fn fep_step(cfg: &FepCfg, inp: &FepInputs) -> FepOutputs {
         - 0.35 * complexity)
         .clamp(0.0, 1.0);
 
-    let action_inhibit = (0.55 * policy_risk + 0.45 * geist_drift
+    let action_inhibit = (0.45 * policy_risk + 0.35 * risk_penalty + 0.45 * geist_drift
         - 0.3 * onn_lock * (1.0 - policy_risk))
         .clamp(0.0, 1.0);
 
@@ -129,6 +136,8 @@ mod tests {
             surprise: 0.3,
             complexity: 0.2,
             policy_risk: 0.2,
+            compute_risk: 0.2,
+            compute_confidence: 0.8,
             onn_lock: 0.5,
             snn_event_rate: 0.4,
             ess_pressure: 0.3,
@@ -144,6 +153,8 @@ mod tests {
         inp.surprise = 10.0;
         inp.complexity = -2.0;
         inp.policy_risk = 5.0;
+        inp.compute_risk = 5.0;
+        inp.compute_confidence = -3.0;
         inp.onn_lock = 4.0;
         inp.snn_event_rate = 2.0;
         inp.ess_pressure = 2.0;
@@ -194,5 +205,17 @@ mod tests {
         let low_out = fep_step(&cfg, &low);
         let high_out = fep_step(&cfg, &high);
         assert!(high_out.confidence >= low_out.confidence);
+    }
+
+    #[test]
+    fn high_compute_risk_increases_inhibit() {
+        let cfg = FepCfg::default_v0();
+        let low = mk_input();
+        let mut high = mk_input();
+        high.compute_risk = 0.95;
+        high.compute_confidence = 0.1;
+        let low_out = fep_step(&cfg, &low);
+        let high_out = fep_step(&cfg, &high);
+        assert!(high_out.action_inhibit >= low_out.action_inhibit);
     }
 }

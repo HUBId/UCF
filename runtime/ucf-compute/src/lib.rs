@@ -7,10 +7,15 @@ pub mod backends;
 pub mod capabilities;
 pub mod feature_extractor;
 pub mod pipeline;
+pub mod risk_contract;
 pub mod ssm;
 pub mod world_model;
 pub use backends::{build_backend, ComputeBackendConfig, ComputeBackendKind};
 pub use pipeline::ComputePipelineBackend;
+pub use risk_contract::{
+    clamp01, stable_budget_profile_id, validate_risk_signal, BackendProfileId, EvidenceRef,
+    RiskSignal, SignalQuality,
+};
 
 pub const MAX_SPIKES: usize = 256;
 pub const MAX_NOTES: usize = 16;
@@ -39,20 +44,24 @@ pub struct ComputeSignals {
     pub pressure: f32,
     pub risk: f32,
     pub confidence: f32,
+    pub risk_signal: RiskSignal,
     pub spikes: Vec<Spike>,
     pub notes: Vec<String>,
     pub sparsity: Option<f32>,
     pub energy: Option<f32>,
     pub ssm_readout: Option<f32>,
     pub ssm_digest: Option<[u8; 32]>,
+    pub world_digest: Option<[u8; 32]>,
 }
 
 impl ComputeSignals {
     pub fn bounded(mut self) -> Self {
         self.surprise = self.surprise.clamp(0.0, 1.0);
         self.pressure = self.pressure.clamp(0.0, 1.0);
-        self.risk = self.risk.clamp(0.0, 1.0);
-        self.confidence = self.confidence.clamp(0.0, 1.0);
+        self.risk_signal.risk = clamp01(self.risk_signal.risk);
+        self.risk_signal.confidence = clamp01(self.risk_signal.confidence);
+        self.risk = self.risk_signal.risk;
+        self.confidence = self.risk_signal.confidence;
         self.sparsity = self.sparsity.map(|v| v.clamp(0.0, 1.0));
         self.energy = self.energy.map(|v| v.clamp(0.0, 1.0));
         self.ssm_readout = self.ssm_readout.map(|v| v.clamp(0.0, 1.0));
@@ -81,18 +90,74 @@ impl ComputeSignals {
         let digest = hasher.finalize();
         let mut spikes_digest = [0_u8; 32];
         spikes_digest.copy_from_slice(&digest);
+        let risk_signal = if validate_risk_signal(&self.risk_signal).is_ok() {
+            self.risk_signal
+        } else {
+            RiskSignal {
+                risk: 1.0,
+                confidence: 0.0,
+                quality: SignalQuality::Unavailable,
+                evidence: self.risk_signal.evidence,
+                version: 1,
+            }
+        };
         ComputeSignalsSummary {
             backend,
             surprise: self.surprise,
             pressure: self.pressure,
-            risk: self.risk,
-            confidence: self.confidence,
+            risk: risk_signal.risk,
+            confidence: risk_signal.confidence,
             spike_count: self.spikes.len() as u16,
             spikes_digest,
             sparsity: self.sparsity,
             energy: self.energy,
             ssm_readout: self.ssm_readout,
             ssm_digest: self.ssm_digest,
+            world_digest: self.world_digest,
+            risk_quality: risk_signal.quality.as_u8(),
+            evidence_context_digest: risk_signal.evidence.context_digest,
+            evidence_world_digest: risk_signal.evidence.world_digest,
+            evidence_spikes_digest: risk_signal.evidence.spikes_digest,
+            evidence_ssm_digest: risk_signal.evidence.ssm_digest,
+            backend_profile: risk_signal.evidence.backend_profile.as_str(),
+            budget_profile_id: risk_signal.evidence.budget_profile_id,
+            seed: risk_signal.evidence.seed,
+            risk_contract_version: risk_signal.version,
+        }
+    }
+
+    pub fn unavailable(input: &ComputeInput, budget: ComputeBudget, backend: &'static str) -> Self {
+        let evidence = EvidenceRef {
+            context_digest: input.context_digest,
+            world_digest: None,
+            spikes_digest: None,
+            ssm_digest: None,
+            backend_profile: BackendProfileId::from_backend_name(backend),
+            seed: budget.seed,
+            budget_profile_id: stable_budget_profile_id(
+                budget.max_micros,
+                budget.hard_timeout_micros,
+            ),
+        };
+        Self {
+            surprise: 0.0,
+            pressure: 1.0,
+            risk: 1.0,
+            confidence: 0.0,
+            risk_signal: RiskSignal {
+                risk: 1.0,
+                confidence: 0.0,
+                quality: SignalQuality::Unavailable,
+                evidence,
+                version: 1,
+            },
+            spikes: Vec::new(),
+            notes: vec!["risk_contract:unavailable".to_string()],
+            sparsity: None,
+            energy: None,
+            ssm_readout: None,
+            ssm_digest: None,
+            world_digest: None,
         }
     }
 }
@@ -156,6 +221,16 @@ pub struct ComputeSignalsSummary {
     pub energy: Option<f32>,
     pub ssm_readout: Option<f32>,
     pub ssm_digest: Option<[u8; 32]>,
+    pub world_digest: Option<[u8; 32]>,
+    pub risk_quality: u8,
+    pub evidence_context_digest: [u8; 32],
+    pub evidence_world_digest: Option<[u8; 32]>,
+    pub evidence_spikes_digest: Option<[u8; 32]>,
+    pub evidence_ssm_digest: Option<[u8; 32]>,
+    pub backend_profile: &'static str,
+    pub budget_profile_id: u32,
+    pub seed: u64,
+    pub risk_contract_version: u16,
 }
 
 pub fn fuse_signals(surprise: f32, pressure: f32, energy: f32) -> (f32, f32) {
@@ -352,12 +427,28 @@ mod tests {
             pressure: -1.0,
             risk: 3.0,
             confidence: 4.0,
+            risk_signal: RiskSignal {
+                risk: 3.0,
+                confidence: 4.0,
+                quality: SignalQuality::Unavailable,
+                evidence: EvidenceRef {
+                    context_digest: [0; 32],
+                    world_digest: None,
+                    spikes_digest: None,
+                    ssm_digest: None,
+                    backend_profile: BackendProfileId::StubV1,
+                    seed: 0,
+                    budget_profile_id: 0,
+                },
+                version: 1,
+            },
             spikes,
             notes,
             sparsity: Some(2.0),
             energy: Some(-1.0),
             ssm_readout: Some(3.0),
             ssm_digest: None,
+            world_digest: None,
         }
         .bounded();
         assert_eq!(bounded.spikes.len(), MAX_SPIKES);
@@ -367,6 +458,19 @@ mod tests {
         assert_eq!(bounded.pressure, 0.0);
         assert_eq!(bounded.risk, 1.0);
         assert_eq!(bounded.confidence, 1.0);
+    }
+
+    #[test]
+    fn unavailable_signal_is_safe_default() {
+        let input = ComputeInput {
+            frame_id: FrameId(1),
+            t: 1,
+            context_digest: [7; 32],
+        };
+        let sig = ComputeSignals::unavailable(&input, ComputeBudget::default(), "stub");
+        assert_eq!(sig.risk, 1.0);
+        assert_eq!(sig.confidence, 0.0);
+        assert_eq!(sig.risk_signal.quality, SignalQuality::Unavailable);
     }
 
     #[test]
