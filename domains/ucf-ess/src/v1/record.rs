@@ -33,7 +33,7 @@ pub struct ExperienceRecord {
 #[derive(Debug, Clone, PartialEq)]
 pub enum ExperiencePayload {
     Control(ControlFrame),
-    Decision(DecisionFrame),
+    Decision(Box<DecisionFrame>),
     Brain(BrainFrame),
     Text(Arc<str>),
     Empty,
@@ -60,7 +60,7 @@ impl ExperienceRecord {
             time: decision.time,
             corr: decision.corr,
             kind: ExperienceKind::DecisionOut,
-            payload: ExperiencePayload::Decision(decision.clone()),
+            payload: ExperiencePayload::Decision(Box::new(decision.clone())),
             neuromod: None,
             iit_phi: None,
             decision_meta: Some(decision.meta),
