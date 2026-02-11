@@ -3,6 +3,7 @@ use crate::hooks::{
     ComputeMilestone, ComputeMilestoneAggregator, ConsolidationHook, GeistHook, GeistRejectReason,
     GeistStateUpdater,
 };
+use crate::sandbox::{call_spec_from_control, execute_tool_call, CapabilitySetSummary};
 use ucf_biophys::v0::{
     apply_coherence_feedback, classify, compute_integration, couple_pair, hpa_step, modulate_hh,
     osc_step, phase_bin, phase_lock, ttfs_from_strength, ttfs_phase, verify_graph, CausalGraph,
@@ -25,7 +26,8 @@ use ucf_dbm::chemistry::{chemistry_step, ChemistryCfg, NeuromodState};
 use ucf_dbm::regions::{region_step, BrainRegion, RegionKind};
 use ucf_ess::v1::{
     AuditCheckpointRecord, AuditPayload, ExperienceKind, ExperienceRecord, ExperienceStore,
-    IdAllocator, InMemoryEss, ToolAuthRecord, ToolExecutionRecord, ToolRequestRecord,
+    IdAllocator, InMemoryEss, SandboxCallRecord, SandboxReplyRecord, ToolAuthRecord,
+    ToolExecutionRecord, ToolRequestRecord,
 };
 use ucf_fep::{
     check_coherence_invariants, fep_step, homeostasis_step, CoherenceCfg, CoherenceSnapshot,
@@ -44,7 +46,7 @@ use ucf_nsr::v0::{Claim, NsrEngine, Verdict};
 use ucf_onn::v0::{onn_step, OnnCfg, OnnCore, OnnInput, OnnNode, OnnState, PhaseDeg};
 use ucf_policy::{
     adapter::ActionAdapter,
-    gem::{issue_capabilities, AuthorizationOutcome, Gem, ToolGate, ToolStatus},
+    gem::{issue_capabilities, request_from, AuthorizationOutcome, Gem, ToolGate, ToolStatus},
     pbm::Pbm,
     rate_limiter::RateLimiter,
 };
@@ -1768,15 +1770,28 @@ impl RuntimeOrchestrator {
         }
 
         self.tool_gate.capabilities = issue_capabilities(Some(&decision), decision.time.tick.get());
-        let audit =
-            Gem::execute_with_gate(adapter, &ctrl, Some(&decision), eid2.0, &mut self.tool_gate)?;
+        let request = request_from(&ctrl, &decision, eid2.0);
+        let capability_summary = CapabilitySetSummary::from_set(&self.tool_gate.capabilities);
+        let (module, op, input) = call_spec_from_control(&ctrl).map_err(|_| {
+            ucf_policy::errors::PolicyError::AdapterError("sandbox_call_spec_failed")
+        })?;
+        let audit = execute_tool_call(
+            adapter,
+            &mut self.tool_gate,
+            request.clone(),
+            module.clone(),
+            op.clone(),
+            input,
+            capability_summary,
+        )
+        .map_err(|_| ucf_policy::errors::PolicyError::AdapterError("sandbox_call_failed"))?;
 
         let req_payload = AuditPayload::ToolRequest(ToolRequestRecord {
-            tool_request_id: audit.request.id,
-            capability_kind: audit.request.kind.as_tag().to_string(),
-            target: audit.request.target.clone(),
-            decision_id: audit.request.decision_id,
-            evidence_chain_digest: audit.request.evidence_chain_digest,
+            tool_request_id: request.id,
+            capability_kind: request.kind.as_tag().to_string(),
+            target: request.target.clone(),
+            decision_id: request.decision_id,
+            evidence_chain_digest: request.evidence_chain_digest,
         });
         let eid_req = self.ids.next();
         let req_record = ExperienceRecord::audit(
@@ -1790,6 +1805,26 @@ impl RuntimeOrchestrator {
         self.audit_head_digest = req_record.audit_digest.unwrap_or(self.audit_head_digest);
         self.ess.append(req_record)?;
 
+        let call_payload = AuditPayload::SandboxCall(SandboxCallRecord {
+            tool_request_id: request.id,
+            call_digest: audit.call_digest,
+            module,
+            op,
+            evidence_chain_digest: request.evidence_chain_digest,
+            capability_count: audit.capability_summary.items.len() as u32,
+        });
+        let eid_call = self.ids.next();
+        let call_record = ExperienceRecord::audit(
+            eid_call,
+            decision.time,
+            decision.corr,
+            ExperienceKind::SandboxCall,
+            call_payload,
+            self.audit_head_digest,
+        );
+        self.audit_head_digest = call_record.audit_digest.unwrap_or(self.audit_head_digest);
+        self.ess.append(call_record)?;
+
         let (allowed, reason, token_digest) = match audit.auth {
             AuthorizationOutcome::Allowed { token_digest } => {
                 (true, "allowed".to_string(), Some(token_digest))
@@ -1800,7 +1835,7 @@ impl RuntimeOrchestrator {
             }
         };
         let auth_payload = AuditPayload::ToolAuth(ToolAuthRecord {
-            tool_request_id: audit.request.id,
+            tool_request_id: request.id,
             allowed,
             reason,
             token_digest,
@@ -1818,7 +1853,7 @@ impl RuntimeOrchestrator {
         self.ess.append(auth_record)?;
 
         let exec_payload = AuditPayload::ToolExecution(ToolExecutionRecord {
-            tool_request_id: audit.request.id,
+            tool_request_id: request.id,
             status: format!("{:?}", audit.result.status),
             bytes_out: audit.result.bytes_out,
             bytes_in: audit.result.bytes_in,
@@ -1835,6 +1870,26 @@ impl RuntimeOrchestrator {
         );
         self.audit_head_digest = exec_record.audit_digest.unwrap_or(self.audit_head_digest);
         self.ess.append(exec_record)?;
+
+        let reply_payload = AuditPayload::SandboxReply(SandboxReplyRecord {
+            tool_request_id: request.id,
+            reply_digest: audit.reply_digest,
+            status: format!("{:?}", audit.result.status),
+            bytes_out: audit.result.bytes_out.unwrap_or(0),
+            bytes_in: audit.result.bytes_in.unwrap_or(0),
+            token_digest,
+        });
+        let eid_reply = self.ids.next();
+        let reply_record = ExperienceRecord::audit(
+            eid_reply,
+            decision.time,
+            decision.corr,
+            ExperienceKind::SandboxReply,
+            reply_payload,
+            self.audit_head_digest,
+        );
+        self.audit_head_digest = reply_record.audit_digest.unwrap_or(self.audit_head_digest);
+        self.ess.append(reply_record)?;
 
         let checkpoint_payload = AuditPayload::AuditCheckpoint(AuditCheckpointRecord {
             head_digest: self.audit_head_digest,

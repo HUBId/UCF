@@ -1577,7 +1577,13 @@ fn tool_audit_records_and_hash_chain_are_appended() {
     assert!(records.iter().any(|r| r.kind == ExperienceKind::ToolAuth));
     assert!(records
         .iter()
+        .any(|r| r.kind == ExperienceKind::SandboxCall));
+    assert!(records
+        .iter()
         .any(|r| r.kind == ExperienceKind::ToolExecution));
+    assert!(records
+        .iter()
+        .any(|r| r.kind == ExperienceKind::SandboxReply));
     assert!(records
         .iter()
         .any(|r| r.kind == ExperienceKind::AuditCheckpoint));
@@ -1587,8 +1593,10 @@ fn tool_audit_records_and_hash_chain_are_appended() {
         matches!(
             r.kind,
             ExperienceKind::ToolRequest
+                | ExperienceKind::SandboxCall
                 | ExperienceKind::ToolAuth
                 | ExperienceKind::ToolExecution
+                | ExperienceKind::SandboxReply
                 | ExperienceKind::AuditCheckpoint
         )
     }) {
