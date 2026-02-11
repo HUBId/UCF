@@ -1,31 +1,41 @@
 # Sandboxing v1 Prep
 
-This change introduces a deterministic isolation interface that keeps the default runtime **in-process** while preparing feature-gated backends for future WASM and process isolation.
+This change keeps **in-process isolation** as default and adds a first **process-isolated runtime (`proc`)** behind `sandbox-proc`.
 
-## Default mode (in-proc)
+## Runtime selection
 
-No runtime flags are needed; `ucf-runtime` uses the in-process isolation runtime by default.
+`UCF_ISOLATION_RUNTIME` supports:
 
-## Optional future runtime stubs
+- `inproc` (default)
+- `wasm` (feature-gated)
+- `proc` (feature-gated)
 
-`ucf-runtime` now exposes two feature flags for non-default backends:
+For process mode:
 
-- `sandbox-wasm` (stub: returns backend disabled)
-- `sandbox-proc` (stub: not implemented)
+- Host spawns `ucf-sandbox-worker`.
+- IPC uses deterministic binary frames: `len:u32_le || envelope_bytes`.
+- Envelope payloads are canonical bytes plus a blake3 payload digest.
+- Worker sends a startup heartbeat with schema version + build tag.
 
-Example:
+## Why tool I/O is host-proxied
+
+In `proc` mode the worker cannot authorize or execute tools directly. Instead:
+
+1. Worker emits `ToolRequest` over IPC.
+2. Host evaluates via `ToolGate`.
+3. Host executes approved effects through the host adapter.
+4. Host sends `ToolReply` summary back.
+
+This keeps capability enforcement in one place (host), deny-by-default.
+
+## Crash containment
+
+If the worker dies or IPC fails mid-call, host returns a failed sandbox reply (`WORKER_CRASH`) instead of panicking.
+
+## Useful commands
 
 ```bash
-cargo test -p ucf-runtime --features sandbox-wasm
+cargo test -p ucf-runtime
 cargo test -p ucf-runtime --features sandbox-proc
+cargo clippy -p ucf-runtime --features sandbox-proc -- -D warnings
 ```
-
-## Capability flow in sandbox calls
-
-1. Orchestrator issues policy capabilities from decision context.
-2. A `ToolRequest` is built, then transformed into a sandbox call spec (`module/op/input`).
-3. `InProcIsolationRuntime` authorizes through `ToolGate` and dispatches the handler.
-4. Canonical call/reply digests are produced.
-5. ESS audit chain persists `SandboxCall` and `SandboxReply` records linked to existing tool audit records.
-
-This gives a single choke-point for tool execution that can later be swapped to WASM/process isolation without changing orchestrator-level contracts.

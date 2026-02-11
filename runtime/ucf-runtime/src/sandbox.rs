@@ -1,4 +1,8 @@
 use std::collections::BTreeMap;
+#[cfg(feature = "sandbox-proc")]
+use std::io::{Read, Write};
+#[cfg(feature = "sandbox-proc")]
+use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
 use blake3::Hasher;
 use ucf_bluebrain_bridge::BrainStimulusEncoder;
@@ -22,6 +26,12 @@ const MAX_MODULE_BYTES: usize = 64;
 const MAX_CALL_INPUT_BYTES: usize = 64 * 1024;
 const MAX_REPLY_OUTPUT_BYTES: usize = 64 * 1024;
 const MAX_CAPABILITY_ITEMS: usize = 32;
+#[cfg(feature = "sandbox-proc")]
+const IPC_SCHEMA_VERSION: u16 = 1;
+#[cfg(feature = "sandbox-proc")]
+const IPC_HEARTBEAT_MSG_ID: u64 = 0;
+#[cfg(feature = "sandbox-proc")]
+const DEFAULT_MAX_IPC_BYTES: usize = 128 * 1024;
 #[cfg(feature = "sandbox-wasm")]
 const WASM_SCHEMA_VERSION: u16 = 1;
 #[cfg(feature = "sandbox-wasm")]
@@ -196,6 +206,55 @@ pub enum SandboxError {
     BackendDisabled(&'static str),
     ExecutionFailed(&'static str),
     NotImplemented(&'static str),
+}
+
+#[cfg(feature = "sandbox-proc")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum IpcKind {
+    Call = 1,
+    Reply = 2,
+    ToolRequest = 3,
+    ToolReply = 4,
+    Heartbeat = 5,
+    Shutdown = 6,
+}
+
+#[cfg(feature = "sandbox-proc")]
+impl IpcKind {
+    fn from_u8(v: u8) -> Option<Self> {
+        match v {
+            1 => Some(Self::Call),
+            2 => Some(Self::Reply),
+            3 => Some(Self::ToolRequest),
+            4 => Some(Self::ToolReply),
+            5 => Some(Self::Heartbeat),
+            6 => Some(Self::Shutdown),
+            _ => None,
+        }
+    }
+}
+
+#[cfg(feature = "sandbox-proc")]
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct IpcEnvelope {
+    schema_version: u16,
+    msg_id: u64,
+    kind: IpcKind,
+    payload: Vec<u8>,
+    payload_digest: [u8; 32],
+}
+
+#[cfg(feature = "sandbox-proc")]
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct WorkerHeartbeat {
+    schema_version: u16,
+    worker_build_tag: String,
+}
+
+#[cfg(feature = "sandbox-proc")]
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct WorkerToolReply {
+    result: ToolResultSummary,
 }
 
 pub trait IsolationRuntime {
@@ -572,20 +631,175 @@ fn get_memory(
 }
 
 #[cfg(feature = "sandbox-proc")]
-pub struct ProcessIsolationRuntime;
+struct WorkerProcess {
+    _child: Child,
+    stdin: ChildStdin,
+    stdout: ChildStdout,
+    _build_tag: String,
+}
 
 #[cfg(feature = "sandbox-proc")]
-impl IsolationRuntime for ProcessIsolationRuntime {
+pub struct ProcessIsolationRuntime<'a, A: ActionAdapter> {
+    gate: &'a mut ToolGate,
+    adapter: &'a mut A,
+    worker: Option<WorkerProcess>,
+    next_msg_id: u64,
+    max_frames_per_call: u32,
+    max_message_bytes: usize,
+}
+
+#[cfg(feature = "sandbox-proc")]
+impl<'a, A: ActionAdapter> ProcessIsolationRuntime<'a, A> {
+    pub fn new(gate: &'a mut ToolGate, adapter: &'a mut A) -> Self {
+        let max_frames_per_call = std::env::var("UCF_PROC_MAX_FRAMES_PER_CALL")
+            .ok()
+            .and_then(|v| v.parse::<u32>().ok())
+            .unwrap_or(64)
+            .max(1);
+        let max_message_bytes = std::env::var("UCF_PROC_MAX_MESSAGE_BYTES")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or(DEFAULT_MAX_IPC_BYTES)
+            .max(1024);
+        Self {
+            gate,
+            adapter,
+            worker: None,
+            next_msg_id: 1,
+            max_frames_per_call,
+            max_message_bytes,
+        }
+    }
+
+    fn ensure_worker(&mut self) -> Result<(), SandboxError> {
+        if self.worker.is_some() {
+            return Ok(());
+        }
+        let worker_bin = std::env::var("UCF_PROC_WORKER_BIN")
+            .unwrap_or_else(|_| "ucf-sandbox-worker".to_string());
+        let mut child = Command::new(worker_bin)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|_| SandboxError::BackendDisabled("worker_spawn"))?;
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or(SandboxError::BackendDisabled("worker_stdin"))?;
+        let mut stdout = child
+            .stdout
+            .take()
+            .ok_or(SandboxError::BackendDisabled("worker_stdout"))?;
+        let hb_env = read_frame(&mut stdout, self.max_message_bytes)
+            .map_err(|_| SandboxError::BackendDisabled("worker_handshake"))?;
+        let hb = decode_envelope(&hb_env)
+            .map_err(|_| SandboxError::BackendDisabled("worker_handshake"))?;
+        if hb.kind != IpcKind::Heartbeat || hb.msg_id != IPC_HEARTBEAT_MSG_ID {
+            return Err(SandboxError::BackendDisabled("worker_handshake_kind"));
+        }
+        let heartbeat = decode_worker_heartbeat(&hb.payload)?;
+        if heartbeat.schema_version != IPC_SCHEMA_VERSION {
+            return Err(SandboxError::BackendDisabled("worker_schema_version"));
+        }
+        self.worker = Some(WorkerProcess {
+            _child: child,
+            stdin,
+            stdout,
+            _build_tag: heartbeat.worker_build_tag,
+        });
+        Ok(())
+    }
+
+    fn send_envelope(&mut self, env: IpcEnvelope) -> Result<(), SandboxError> {
+        let bytes = encode_envelope(&env);
+        let worker = self
+            .worker
+            .as_mut()
+            .ok_or(SandboxError::ExecutionFailed("worker_missing"))?;
+        write_frame(&mut worker.stdin, &bytes, self.max_message_bytes)
+            .map_err(|_| SandboxError::ExecutionFailed("ipc_write"))
+    }
+
+    fn recv_envelope(&mut self) -> Result<IpcEnvelope, SandboxError> {
+        let worker = self
+            .worker
+            .as_mut()
+            .ok_or(SandboxError::ExecutionFailed("worker_missing"))?;
+        let bytes = read_frame(&mut worker.stdout, self.max_message_bytes)
+            .map_err(|_| SandboxError::ExecutionFailed("ipc_read"))?;
+        decode_envelope(&bytes)
+    }
+
+    fn handle_tool_request(&mut self, msg_id: u64, payload: &[u8]) -> Result<(), SandboxError> {
+        let request = decode_tool_request_wire(payload)?;
+        let auth = self.gate.authorize(&request, request.requested_at_t);
+        let result = match auth {
+            AuthorizationOutcome::Allowed { .. } => run_tool_with_adapter(self.adapter, &request),
+            AuthorizationOutcome::Denied { reason } => ToolResultSummary {
+                status: ToolStatus::Denied,
+                bytes_out: request.payload_hint.bytes_out,
+                bytes_in: request.payload_hint.bytes_in,
+                error_code: Some(format!("{reason:?}")),
+                finished_at_t: request.requested_at_t,
+            },
+            AuthorizationOutcome::RateLimited { retry_after_ticks } => ToolResultSummary {
+                status: ToolStatus::RateLimited,
+                bytes_out: request.payload_hint.bytes_out,
+                bytes_in: request.payload_hint.bytes_in,
+                error_code: Some(format!("retry_after:{retry_after_ticks}")),
+                finished_at_t: request.requested_at_t,
+            },
+        };
+        let tool_reply = WorkerToolReply { result };
+        let payload = encode_tool_reply_wire(&tool_reply);
+        self.send_envelope(IpcEnvelope::new(msg_id, IpcKind::ToolReply, payload))
+    }
+
+    fn mark_worker_crash(&mut self) {
+        self.worker = None;
+    }
+}
+
+#[cfg(feature = "sandbox-proc")]
+impl<'a, A: ActionAdapter> IsolationRuntime for ProcessIsolationRuntime<'a, A> {
     fn name(&self) -> &'static str {
         "process"
     }
 
     fn call(
         &mut self,
-        _req: SandboxCall,
+        req: SandboxCall,
         _budget: SandboxBudget,
     ) -> Result<SandboxReply, SandboxError> {
-        Err(SandboxError::NotImplemented("process runtime is a stub"))
+        self.ensure_worker()?;
+        let msg_id = self.next_msg_id;
+        self.next_msg_id = self.next_msg_id.saturating_add(1).max(1);
+        let call_payload = encode_sandbox_call(&req);
+        self.send_envelope(IpcEnvelope::new(msg_id, IpcKind::Call, call_payload))?;
+
+        let mut frames = 0u32;
+        loop {
+            frames = frames.saturating_add(1);
+            if frames > self.max_frames_per_call {
+                return Err(SandboxError::BudgetExceeded("ipc_frames"));
+            }
+            let env = match self.recv_envelope() {
+                Ok(v) => v,
+                Err(_) => {
+                    self.mark_worker_crash();
+                    return Ok(failed_reply(&req, "WORKER_CRASH"));
+                }
+            };
+            if env.msg_id != msg_id {
+                continue;
+            }
+            match env.kind {
+                IpcKind::ToolRequest => self.handle_tool_request(msg_id, &env.payload)?,
+                IpcKind::Reply => return decode_sandbox_reply(&env.payload),
+                _ => return Err(SandboxError::ExecutionFailed("ipc_kind")),
+            }
+        }
     }
 }
 
@@ -641,6 +855,18 @@ pub fn execute_tool_call<A: ActionAdapter>(
         {
             return Err(SandboxError::BackendDisabled(
                 "sandbox-wasm feature not enabled",
+            ));
+        }
+    } else if runtime_choice == "proc" {
+        #[cfg(feature = "sandbox-proc")]
+        {
+            let mut runtime = ProcessIsolationRuntime::new(gate, adapter);
+            runtime.call(call, budget)?
+        }
+        #[cfg(not(feature = "sandbox-proc"))]
+        {
+            return Err(SandboxError::BackendDisabled(
+                "sandbox-proc feature not enabled",
             ));
         }
     } else {
@@ -858,6 +1084,347 @@ fn put_optional_digest(out: &mut Vec<u8>, value: Option<[u8; 32]>) {
         }
         None => out.push(0),
     }
+}
+
+#[cfg(feature = "sandbox-proc")]
+fn read_u16(input: &[u8], idx: &mut usize) -> Result<u16, SandboxError> {
+    if input.len().saturating_sub(*idx) < 2 {
+        return Err(SandboxError::InvalidRequest("decode_u16"));
+    }
+    let value = u16::from_be_bytes([input[*idx], input[*idx + 1]]);
+    *idx += 2;
+    Ok(value)
+}
+
+#[cfg(feature = "sandbox-proc")]
+fn read_u32(input: &[u8], idx: &mut usize) -> Result<u32, SandboxError> {
+    if input.len().saturating_sub(*idx) < 4 {
+        return Err(SandboxError::InvalidRequest("decode_u32"));
+    }
+    let value = u32::from_be_bytes([
+        input[*idx],
+        input[*idx + 1],
+        input[*idx + 2],
+        input[*idx + 3],
+    ]);
+    *idx += 4;
+    Ok(value)
+}
+
+#[cfg(feature = "sandbox-proc")]
+fn read_u64(input: &[u8], idx: &mut usize) -> Result<u64, SandboxError> {
+    if input.len().saturating_sub(*idx) < 8 {
+        return Err(SandboxError::InvalidRequest("decode_u64"));
+    }
+    let value = u64::from_be_bytes([
+        input[*idx],
+        input[*idx + 1],
+        input[*idx + 2],
+        input[*idx + 3],
+        input[*idx + 4],
+        input[*idx + 5],
+        input[*idx + 6],
+        input[*idx + 7],
+    ]);
+    *idx += 8;
+    Ok(value)
+}
+
+#[cfg(feature = "sandbox-proc")]
+fn read_digest(input: &[u8], idx: &mut usize) -> Result<[u8; 32], SandboxError> {
+    if input.len().saturating_sub(*idx) < 32 {
+        return Err(SandboxError::InvalidRequest("decode_digest"));
+    }
+    let mut out = [0u8; 32];
+    out.copy_from_slice(&input[*idx..*idx + 32]);
+    *idx += 32;
+    Ok(out)
+}
+
+#[cfg(feature = "sandbox-proc")]
+fn read_bytes(input: &[u8], idx: &mut usize) -> Result<Vec<u8>, SandboxError> {
+    let len = read_u32(input, idx)? as usize;
+    if input.len().saturating_sub(*idx) < len {
+        return Err(SandboxError::InvalidRequest("decode_bytes"));
+    }
+    let out = input[*idx..*idx + len].to_vec();
+    *idx += len;
+    Ok(out)
+}
+
+#[cfg(feature = "sandbox-proc")]
+fn read_string(input: &[u8], idx: &mut usize) -> Result<String, SandboxError> {
+    let bytes = read_bytes(input, idx)?;
+    String::from_utf8(bytes).map_err(|_| SandboxError::InvalidRequest("decode_utf8"))
+}
+
+#[cfg(feature = "sandbox-proc")]
+fn encode_sandbox_call(call: &SandboxCall) -> Vec<u8> {
+    call.canonical_bytes()
+}
+
+#[cfg(feature = "sandbox-proc")]
+fn decode_sandbox_reply(input: &[u8]) -> Result<SandboxReply, SandboxError> {
+    let mut idx = 0usize;
+    if input.is_empty() {
+        return Err(SandboxError::InvalidRequest("reply_empty"));
+    }
+    let status = match input[idx] {
+        1 => SandboxStatus::Ok,
+        2 => SandboxStatus::Denied,
+        3 => SandboxStatus::RateLimited,
+        4 => SandboxStatus::Failed,
+        _ => return Err(SandboxError::InvalidRequest("reply_status")),
+    };
+    idx += 1;
+    let output = read_bytes(input, &mut idx)?;
+    let call_digest = read_digest(input, &mut idx)?;
+    let token_digest = if input.get(idx).copied().unwrap_or_default() == 1 {
+        idx += 1;
+        Some(read_digest(input, &mut idx)?)
+    } else {
+        idx += 1;
+        None
+    };
+    let bytes_out = read_u32(input, &mut idx)?;
+    let bytes_in = read_u32(input, &mut idx)?;
+    let finished_at_t = read_u64(input, &mut idx)?;
+    Ok(SandboxReply {
+        status,
+        output,
+        audit: SandboxAuditSummary {
+            call_digest,
+            token_digest,
+            bytes_out,
+            bytes_in,
+        },
+        finished_at_t,
+    })
+}
+
+#[cfg(feature = "sandbox-proc")]
+fn failed_reply(req: &SandboxCall, code: &str) -> SandboxReply {
+    SandboxReply {
+        status: SandboxStatus::Failed,
+        output: code.as_bytes().to_vec(),
+        audit: SandboxAuditSummary {
+            call_digest: req.digest(),
+            token_digest: None,
+            bytes_out: 0,
+            bytes_in: req.input.len() as u32,
+        },
+        finished_at_t: req.t,
+    }
+}
+
+#[cfg(feature = "sandbox-proc")]
+fn run_tool_with_adapter(
+    adapter: &mut dyn ActionAdapter,
+    request: &ToolRequest,
+) -> ToolResultSummary {
+    let status = match (request.kind.clone(), request.target.as_str()) {
+        (CapabilityKind::ExternalApi, "external_output") => {
+            if let Some(len) = request.payload_hint.bytes_out {
+                let text = "x".repeat(len as usize);
+                adapter
+                    .emit_text(&text)
+                    .map(|_| ToolStatus::AllowedExecuted)
+            } else {
+                Ok(ToolStatus::AllowedExecuted)
+            }
+        }
+        (CapabilityKind::FileWrite, "memory_write") => {
+            let bytes = vec![0u8; request.payload_hint.bytes_out.unwrap_or(0) as usize];
+            adapter
+                .write_memory(&bytes)
+                .map(|_| ToolStatus::AllowedExecuted)
+        }
+        (CapabilityKind::UiAutomation, "brain_target") => adapter
+            .emit_brain_spikes(Vec::new())
+            .map(|_| ToolStatus::AllowedExecuted),
+        _ => Ok(ToolStatus::AllowedExecuted),
+    };
+    match status {
+        Ok(status) => ToolResultSummary {
+            status,
+            bytes_out: request.payload_hint.bytes_out,
+            bytes_in: request.payload_hint.bytes_in,
+            error_code: None,
+            finished_at_t: request.requested_at_t,
+        },
+        Err(err) => ToolResultSummary {
+            status: ToolStatus::Failed,
+            bytes_out: request.payload_hint.bytes_out,
+            bytes_in: request.payload_hint.bytes_in,
+            error_code: Some(err.to_string()),
+            finished_at_t: request.requested_at_t,
+        },
+    }
+}
+
+#[cfg(feature = "sandbox-proc")]
+impl IpcEnvelope {
+    fn new(msg_id: u64, kind: IpcKind, payload: Vec<u8>) -> Self {
+        let mut hasher = Hasher::new();
+        hasher.update(&payload);
+        let payload_digest = hasher.finalize().into();
+        Self {
+            schema_version: IPC_SCHEMA_VERSION,
+            msg_id,
+            kind,
+            payload,
+            payload_digest,
+        }
+    }
+}
+
+#[cfg(feature = "sandbox-proc")]
+fn encode_envelope(env: &IpcEnvelope) -> Vec<u8> {
+    let mut out = Vec::new();
+    out.extend_from_slice(&env.schema_version.to_be_bytes());
+    out.extend_from_slice(&env.msg_id.to_be_bytes());
+    out.push(env.kind as u8);
+    put_bytes(&mut out, &env.payload);
+    out.extend_from_slice(&env.payload_digest);
+    out
+}
+
+#[cfg(feature = "sandbox-proc")]
+fn decode_envelope(input: &[u8]) -> Result<IpcEnvelope, SandboxError> {
+    let mut idx = 0usize;
+    let schema_version = read_u16(input, &mut idx)?;
+    let msg_id = read_u64(input, &mut idx)?;
+    let kind = IpcKind::from_u8(
+        *input
+            .get(idx)
+            .ok_or(SandboxError::InvalidRequest("ipc_kind"))?,
+    )
+    .ok_or(SandboxError::InvalidRequest("ipc_kind"))?;
+    idx += 1;
+    let payload = read_bytes(input, &mut idx)?;
+    let payload_digest = read_digest(input, &mut idx)?;
+    let mut hasher = Hasher::new();
+    hasher.update(&payload);
+    let actual: [u8; 32] = hasher.finalize().into();
+    if actual != payload_digest {
+        return Err(SandboxError::InvalidRequest("ipc_payload_digest"));
+    }
+    Ok(IpcEnvelope {
+        schema_version,
+        msg_id,
+        kind,
+        payload,
+        payload_digest,
+    })
+}
+
+#[cfg(feature = "sandbox-proc")]
+fn write_frame(w: &mut dyn Write, payload: &[u8], max_bytes: usize) -> Result<(), SandboxError> {
+    if payload.len() > max_bytes {
+        return Err(SandboxError::BudgetExceeded("ipc_msg_size"));
+    }
+    let len = payload.len() as u32;
+    w.write_all(&len.to_le_bytes())
+        .map_err(|_| SandboxError::ExecutionFailed("frame_write_len"))?;
+    w.write_all(payload)
+        .map_err(|_| SandboxError::ExecutionFailed("frame_write_payload"))?;
+    w.flush()
+        .map_err(|_| SandboxError::ExecutionFailed("frame_flush"))?;
+    Ok(())
+}
+
+#[cfg(feature = "sandbox-proc")]
+fn read_frame(r: &mut dyn Read, max_bytes: usize) -> Result<Vec<u8>, SandboxError> {
+    let mut len_buf = [0u8; 4];
+    r.read_exact(&mut len_buf)
+        .map_err(|_| SandboxError::ExecutionFailed("frame_read_len"))?;
+    let len = u32::from_le_bytes(len_buf) as usize;
+    if len > max_bytes {
+        return Err(SandboxError::BudgetExceeded("ipc_msg_size"));
+    }
+    let mut payload = vec![0u8; len];
+    r.read_exact(&mut payload)
+        .map_err(|_| SandboxError::ExecutionFailed("frame_read_payload"))?;
+    Ok(payload)
+}
+
+#[cfg(feature = "sandbox-proc")]
+fn decode_worker_heartbeat(input: &[u8]) -> Result<WorkerHeartbeat, SandboxError> {
+    let mut idx = 0usize;
+    let schema_version = read_u16(input, &mut idx)?;
+    let worker_build_tag = read_string(input, &mut idx)?;
+    Ok(WorkerHeartbeat {
+        schema_version,
+        worker_build_tag,
+    })
+}
+
+#[cfg(feature = "sandbox-proc")]
+fn decode_tool_request_wire(input: &[u8]) -> Result<ToolRequest, SandboxError> {
+    let mut idx = 0usize;
+    let id = read_u64(input, &mut idx)?;
+    let kind_tag = read_string(input, &mut idx)?;
+    let target = read_string(input, &mut idx)?;
+    let bytes_out = read_u32(input, &mut idx)?;
+    let bytes_in = read_u32(input, &mut idx)?;
+    let requested_at_t = read_u64(input, &mut idx)?;
+    let decision_id = read_u64(input, &mut idx)?;
+    let evidence_chain_digest = read_digest(input, &mut idx)?;
+    let kind = match kind_tag.as_str() {
+        "net_http" => CapabilityKind::NetHttp,
+        "file_read" => CapabilityKind::FileRead,
+        "file_write" => CapabilityKind::FileWrite,
+        "process_exec" => CapabilityKind::ProcessExec,
+        "clipboard_read" => CapabilityKind::ClipboardRead,
+        "clipboard_write" => CapabilityKind::ClipboardWrite,
+        "external_api" => CapabilityKind::ExternalApi,
+        "ui_automation" => CapabilityKind::UiAutomation,
+        v if v.starts_with("custom:") => {
+            CapabilityKind::Custom(v.trim_start_matches("custom:").to_string())
+        }
+        _ => return Err(SandboxError::InvalidRequest("tool_kind")),
+    };
+    Ok(ToolRequest {
+        id,
+        kind,
+        target,
+        payload_hint: PayloadHint {
+            bytes_out: if bytes_out == u32::MAX {
+                None
+            } else {
+                Some(bytes_out)
+            },
+            bytes_in: if bytes_in == u32::MAX {
+                None
+            } else {
+                Some(bytes_in)
+            },
+        },
+        requested_at_t,
+        decision_id,
+        evidence_chain_digest,
+    })
+}
+
+#[cfg(feature = "sandbox-proc")]
+fn encode_tool_reply_wire(reply: &WorkerToolReply) -> Vec<u8> {
+    let mut out = Vec::new();
+    out.push(match reply.result.status {
+        ToolStatus::AllowedExecuted => 1,
+        ToolStatus::Denied => 2,
+        ToolStatus::RateLimited => 3,
+        ToolStatus::Failed => 4,
+    });
+    put_u32(&mut out, reply.result.bytes_out.unwrap_or(u32::MAX));
+    put_u32(&mut out, reply.result.bytes_in.unwrap_or(u32::MAX));
+    if let Some(code) = &reply.result.error_code {
+        out.push(1);
+        put_string(&mut out, code);
+    } else {
+        out.push(0);
+    }
+    put_u64(&mut out, reply.result.finished_at_t);
+    out
 }
 
 pub fn decision_allows_tool(decision: DecisionCode) -> bool {
@@ -1141,4 +1708,32 @@ fn wasm_tool_probe_denied_by_default() {
         )
         .expect("reply");
     assert_eq!(reply.status, SandboxStatus::Denied);
+}
+
+#[cfg(all(test, feature = "sandbox-proc"))]
+mod proc_tests {
+    use super::*;
+
+    #[test]
+    fn ipc_frame_roundtrip() {
+        let env = IpcEnvelope::new(7, IpcKind::Call, b"abc".to_vec());
+        let bytes = encode_envelope(&env);
+        let decoded = decode_envelope(&bytes).expect("decode");
+        assert_eq!(decoded.msg_id, 7);
+        assert_eq!(decoded.kind, IpcKind::Call);
+        assert_eq!(decoded.payload, b"abc".to_vec());
+    }
+
+    #[test]
+    fn heartbeat_roundtrip() {
+        let hb = WorkerHeartbeat {
+            schema_version: IPC_SCHEMA_VERSION,
+            worker_build_tag: "tag".to_string(),
+        };
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&hb.schema_version.to_be_bytes());
+        put_string(&mut bytes, &hb.worker_build_tag);
+        let decoded = decode_worker_heartbeat(&bytes).expect("decode");
+        assert_eq!(decoded.worker_build_tag, "tag");
+    }
 }
