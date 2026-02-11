@@ -4,7 +4,3 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-ucf-core = { path = "../../core/ucf-core" }
-ucf-onn = { path = "../../core/crates/ucf-onn" }
-ucf-frames = { path = "../ucf-frames" }
-ucf-ess = { path = "../ucf-ess" }

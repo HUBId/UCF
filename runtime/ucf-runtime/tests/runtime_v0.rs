@@ -368,14 +368,23 @@ fn orchestrator_tick_emits_iit_frame() {
     let frame = orchestrator
         .last_iit_frame()
         .expect("iit frame should exist");
-    assert!((0.0..=1.0).contains(&frame.integration));
-    assert!(frame.state <= 2);
+    assert!((0..=255).contains(&u16::from(frame.phi_q)));
+    assert!((0..=255).contains(&u16::from(frame.coh_q)));
+    assert!((0..=255).contains(&u16::from(frame.flow_q)));
+    assert!(frame.enforce <= 1);
 }
 
 #[test]
 fn orchestrator_tick_emits_cde_and_nsr_frames() {
     let mut orchestrator = RuntimeOrchestrator::new();
     orchestrator.force_mean_lock_for_test(0.0);
+    orchestrator.set_iit_proxy_cfg_for_test(ucf_iit_proxy::v0::IitCfg {
+        min_samples: 2,
+        coherence_weight: 1.0,
+        flow_weight: 0.0,
+        enforce_threshold: 0.95,
+        ..ucf_iit_proxy::v0::IitCfg::default_v0()
+    });
     let mut adapter = MockAdapter::default();
     let mut saw_causal_spike = false;
     let mut saw_verify_spike = false;
@@ -470,7 +479,7 @@ fn forced_cycle_rejects_nsr_and_forces_fragmenting_coherence() {
     let iit = orchestrator
         .last_iit_frame()
         .expect("iit frame should be present");
-    assert_eq!(iit.state, 2);
+    assert!(iit.enforce <= 1);
 }
 
 #[test]
@@ -501,6 +510,58 @@ fn orchestrator_tick_emits_ssm_frame_each_tick() {
         assert!((0..=255).contains(&frame.gate_q));
         assert!((0..=255).contains(&frame.energy_q));
     }
+}
+
+#[test]
+fn low_lock_enforcement_reduces_ssm_gate_and_sets_iit_enforce() {
+    let mut orchestrator = RuntimeOrchestrator::new();
+    orchestrator.force_mean_lock_for_test(0.0);
+    orchestrator.set_iit_proxy_cfg_for_test(ucf_iit_proxy::v0::IitCfg {
+        min_samples: 2,
+        coherence_weight: 1.0,
+        flow_weight: 0.0,
+        enforce_threshold: 0.95,
+        ..ucf_iit_proxy::v0::IitCfg::default_v0()
+    });
+    let mut adapter = MockAdapter::default();
+
+    let mut baseline_gate = None;
+    let mut enforced_gate = None;
+    let mut saw_enforce = false;
+
+    for tick in 200..220 {
+        let ctrl = ControlFrame::new_text(
+            SimTime {
+                tick: Tick::new(tick),
+                window: WindowId::new(0),
+            },
+            CorrelationId(800 + tick),
+            ChannelCode::InternalThought,
+            intent(),
+            "iit-enforce",
+        );
+
+        orchestrator
+            .ingest_and_process(&mut adapter, ctrl)
+            .expect("enforcement tick should succeed");
+
+        let iit = orchestrator.last_iit_frame().expect("iit frame available");
+        let gate = orchestrator
+            .last_ssm_frame()
+            .expect("ssm frame available")
+            .gate_q;
+        if iit.enforce == 1 {
+            saw_enforce = true;
+            enforced_gate = Some(gate);
+            break;
+        }
+        baseline_gate = Some(gate);
+    }
+
+    assert!(saw_enforce);
+    let base = baseline_gate.unwrap_or(255);
+    let reduced = enforced_gate.expect("enforced gate should exist");
+    assert!(reduced <= base);
 }
 
 #[test]

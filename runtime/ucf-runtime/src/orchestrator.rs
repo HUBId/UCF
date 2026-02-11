@@ -3,9 +3,10 @@ use ucf_biophys::v0::{
     apply_coherence_feedback, classify, compute_integration, couple_pair, ensure_osc, hpa_step,
     modulate_hh, onn_step, osc_step, phase_bin, phase_lock, ttfs_from_strength, ttfs_phase,
     verify_graph, CausalGraph, CoherenceState, Edge, EventBus, FieldEvent, FieldEventKind,
-    FieldUpdateCfg, HhParams, HpaCfg, HpaState, IITCfg, IITInputs, IITState, Microcircuit,
-    ModulationCfg, NeuromodulatorField as BiophysField, OnnCfg, OnnState, Osc, OscId, PhaseCfg,
-    RuleCfg, SnnSpikeEvent, SpikeCodecCfg, SpikeKind, VerifyVerdict,
+    FieldUpdateCfg, HhParams, HpaCfg, HpaState, IITCfg as BiophysIITCfg, IITInputs,
+    IITState as BiophysIITState, Microcircuit, ModulationCfg, NeuromodulatorField as BiophysField,
+    OnnCfg, OnnState, Osc, OscId, PhaseCfg, RuleCfg, SnnSpikeEvent, SpikeCodecCfg, SpikeKind,
+    VerifyVerdict,
 };
 use ucf_cde::v0::{
     on_intervention, on_observation, tick_decay, CdeCfg, CdeState, CdeUpdateKind, Intervention,
@@ -19,9 +20,7 @@ use ucf_frames::v1::{
     IitFrame, MicrocircuitFrame, NeuromodulatorSnapshot, NsrFrame, OnnFrame, PhaseFrame, SnnFrame,
     SsmFrame, TcfFrame,
 };
-use ucf_iit_proxy::v0::{
-    IitConfig, IitMonitor, MOD_BLUE, MOD_GEIST, MOD_JEPA, MOD_NSR, MOD_PBM, MOD_SSM,
-};
+use ucf_iit_proxy::v0::{iit_push_and_eval, IitCfg, IitSample, IitState};
 use ucf_neuromod::v0::{NeuromodInputs, NeuromodScheduler, NeuromodulatorField};
 use ucf_nsr::v0::{Claim, NsrEngine, Verdict};
 use ucf_onn::v0::{OnnCore, PhaseDeg};
@@ -38,6 +37,8 @@ const OSC_SSM: OscId = 1;
 const OSC_CDE: OscId = 2;
 const OSC_NSR: OscId = 3;
 const OSC_COHERENCE: OscId = 4;
+const OSC_NSR_TCF_ENFORCE: u8 = 1;
+const MOD_PBM: ucf_onn::v0::OscId = 13;
 
 const ONN_COUPLINGS: &[(OscId, OscId, f32)] = &[
     (OSC_SSM, OSC_CDE, 1.0),
@@ -70,7 +71,6 @@ pub struct RuntimeOrchestrator {
     neuromod_field: NeuromodulatorField,
     neuromod_scheduler: NeuromodScheduler,
     onn: OnnCore,
-    iit_monitor: IitMonitor,
     snn_encode_cfg: SnnEncodeCfg,
     snn_tick_counter: u64,
     last_snn_spike_count: usize,
@@ -100,8 +100,10 @@ pub struct RuntimeOrchestrator {
     last_snn_frame: Option<SnnFrame>,
     last_spike_frames: Vec<ucf_frames::v1::SpikeFrame>,
     attention_event: bool,
-    iit_cfg: IITCfg,
-    iit_state: IITState,
+    iit_cfg: BiophysIITCfg,
+    iit_state: BiophysIITState,
+    iit_proxy_cfg: IitCfg,
+    iit_proxy_state: IitState,
     last_iit_frame: Option<IitFrame>,
     cde_graph: CausalGraph,
     cde_cfg: CdeCfg,
@@ -123,9 +125,7 @@ pub struct RuntimeOrchestrator {
 impl RuntimeOrchestrator {
     pub fn new() -> Self {
         let mut onn = OnnCore::new(1.0, 0.0);
-        for module_id in [MOD_JEPA, MOD_SSM, MOD_NSR, MOD_PBM, MOD_GEIST, MOD_BLUE] {
-            onn.register(module_id, PhaseDeg(0.0));
-        }
+        onn.register(MOD_PBM, PhaseDeg(0.0));
 
         let mut onn_state = OnnState::default();
         ensure_osc(&mut onn_state, OSC_SSM);
@@ -144,7 +144,6 @@ impl RuntimeOrchestrator {
             neuromod_field: NeuromodulatorField::new_baseline(),
             neuromod_scheduler: NeuromodScheduler::new(1),
             onn,
-            iit_monitor: IitMonitor::new(IitConfig::default()),
             snn_encode_cfg: SnnEncodeCfg::default(),
             snn_tick_counter: 0,
             last_snn_spike_count: 0,
@@ -174,8 +173,10 @@ impl RuntimeOrchestrator {
             last_snn_frame: None,
             last_spike_frames: Vec::new(),
             attention_event: false,
-            iit_cfg: IITCfg::default(),
-            iit_state: IITState::default(),
+            iit_cfg: BiophysIITCfg::default(),
+            iit_state: BiophysIITState::default(),
+            iit_proxy_cfg: IitCfg::default_v0(),
+            iit_proxy_state: IitState::new(&IitCfg::default_v0()),
             last_iit_frame: None,
             cde_graph: CausalGraph::default(),
             cde_cfg: CdeCfg::default(),
@@ -233,6 +234,11 @@ impl RuntimeOrchestrator {
 
     pub fn force_mean_lock_for_test(&mut self, mean_lock: f32) {
         self.forced_mean_lock_for_test = Some(mean_lock.clamp(0.0, 1.0));
+    }
+
+    pub fn set_iit_proxy_cfg_for_test(&mut self, cfg: IitCfg) {
+        self.iit_proxy_cfg = cfg.clone();
+        self.iit_proxy_state = IitState::new(&cfg);
     }
 
     pub fn drain_event_bus_for_test(&mut self) -> Vec<SnnSpikeEvent> {
@@ -332,8 +338,8 @@ impl RuntimeOrchestrator {
         self.neuromod_scheduler
             .advance(ctrl.time.tick.get(), &mut self.neuromod_field, inputs);
         self.onn.step_ms(1);
-        let phi = self.iit_monitor.compute(&self.onn);
         let snapshot = self.neuromod_field.snapshot();
+        let phi = self.iit_phi_snapshot();
 
         let decision = Pbm::decide(&ctrl, Some(snapshot));
         self.ingest_with_decision_and_snapshot(adapter, ctrl, decision, snapshot, phi)
@@ -351,8 +357,8 @@ impl RuntimeOrchestrator {
         self.neuromod_scheduler
             .advance(ctrl.time.tick.get(), &mut self.neuromod_field, inputs);
         self.onn.step_ms(1);
-        let phi = self.iit_monitor.compute(&self.onn);
         let snapshot = self.neuromod_field.snapshot();
+        let phi = self.iit_phi_snapshot();
         self.ingest_with_decision_and_snapshot(adapter, ctrl, decision, snapshot, phi)
     }
 
@@ -389,7 +395,17 @@ impl RuntimeOrchestrator {
             mean_lock: onn_out.mean_lock,
         });
 
-        let mut tcf_out = tcf_tick(&self.tcf_cfg, &mut self.tcf_state, now_ms, &[]);
+        let coupling_targets = if self.iit_proxy_state.enforce {
+            vec![(OSC_NSR_TCF_ENFORCE, self.tcf_state.global_phase)]
+        } else {
+            Vec::new()
+        };
+        let mut tcf_out = tcf_tick(
+            &self.tcf_cfg,
+            &mut self.tcf_state,
+            now_ms,
+            &coupling_targets,
+        );
         if let Some(forced) = self.forced_mean_lock_for_test {
             tcf_out.mean_lock = forced.clamp(0.0, 1.0);
         }
@@ -504,6 +520,7 @@ impl RuntimeOrchestrator {
         } else {
             f32::from(nsr_result.satisfied) / f32::from(nsr_result.total)
         };
+        let nsr_risk = (1.0 - verified_ratio).clamp(0.0, 1.0);
         let verified_q = (verified_ratio * 255.0).round() as u8;
 
         let mut integration = compute_integration(
@@ -533,12 +550,6 @@ impl RuntimeOrchestrator {
             self.iit_state.integration_ema,
             coherence_state,
         );
-        let state = match coherence_state {
-            CoherenceState::Stable => 0,
-            CoherenceState::Drifting => 1,
-            CoherenceState::Fragmenting => 2,
-        };
-
         let top_conf_from_cde = top_conf.clamp(0.0, 1.0);
         let archive_append_bytes_q =
             ((self.last_archive_payload_len as f32) / 1024.0).clamp(0.0, 1.0);
@@ -553,7 +564,7 @@ impl RuntimeOrchestrator {
             0.0,
         ];
         let gate = tcf_out.mean_lock.clamp(0.0, 1.0);
-        let ssm_out = ssm_step(&self.ssm_cfg, &mut self.ssm_state, now_ms, &input, gate);
+        let mut ssm_out = ssm_step(&self.ssm_cfg, &mut self.ssm_state, now_ms, &input, gate);
         self.working_context.ssm_y = ssm_out.y.clone();
         let ssm_energy = if ssm_out.y.is_empty() {
             0.0
@@ -718,16 +729,37 @@ impl RuntimeOrchestrator {
             lock_nsr_jepa,
             lock_micro_nsr,
         });
-        self.ssm_gate = gate;
+        let spike_rate = (tick_spikes.len().min(32) as f32) / 32.0;
+        let iit_tick = iit_push_and_eval(
+            &self.iit_proxy_cfg,
+            &mut self.iit_proxy_state,
+            IitSample {
+                now_ms,
+                tcf_lock: tcf_out.mean_lock.clamp(0.0, 1.0),
+                ssm_gate: ssm_out.gate.clamp(0.0, 1.0),
+                nsr_risk,
+                cde_conf: top_conf.clamp(0.0, 1.0),
+                spike_rate,
+            },
+        );
+        if iit_tick.enforce {
+            let _nsr_risk_floor = nsr_risk.max(0.8);
+            ssm_out.gate = (ssm_out.gate * 0.5).clamp(0.0, 1.0);
+        }
+
+        self.ssm_gate = ssm_out.gate;
         self.last_ssm_frame = Some(SsmFrame {
             now_ms,
             gate_q: quantize_unit(ssm_out.gate),
             energy_q: quantize_unit(ssm_energy),
         });
+
         self.last_iit_frame = Some(IitFrame {
             now_ms,
-            integration: self.iit_state.integration_ema,
-            state,
+            phi_q: quantize_unit(iit_tick.phi_proxy),
+            coh_q: quantize_unit(iit_tick.coherence),
+            flow_q: quantize_unit(iit_tick.flow),
+            enforce: u8::from(iit_tick.enforce),
         });
         let changed = match obs_update {
             CdeUpdateKind::Updated { changed, .. } => changed as u16,
@@ -821,6 +853,15 @@ impl RuntimeOrchestrator {
                 novelty: 0.65,
             },
         ]
+    }
+
+    fn iit_phi_snapshot(&self) -> ucf_frames::v1::PhiProxySnapshot {
+        ucf_frames::v1::PhiProxySnapshot {
+            phi: self.iit_proxy_state.phi_proxy,
+            coherence_mean: self.iit_proxy_state.coherence,
+            coherence_min: self.iit_proxy_state.flow,
+            n_pairs: self.iit_proxy_state.filled as u16,
+        }
     }
 
     fn emit_snn_signals<A: ActionAdapter>(
