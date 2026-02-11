@@ -598,6 +598,7 @@ fn ssm_gate_matches_mean_lock_in_fallback_path() {
 fn orchestrator_tick_emits_onn_and_snn_frames_each_tick() {
     let mut orchestrator = RuntimeOrchestrator::new();
     let mut adapter = MockAdapter::default();
+    let mut phases = Vec::new();
 
     for tick in 200..210 {
         let ctrl = ControlFrame::new_text(
@@ -624,7 +625,10 @@ fn orchestrator_tick_emits_onn_and_snn_frames_each_tick() {
 
         assert_eq!(onn.now_ms, tick);
         assert_eq!(snn.now_ms, tick);
+        phases.push(onn.global_phase_q);
     }
+
+    assert!(phases.windows(2).any(|w| w[0] != w[1]));
 }
 
 #[test]

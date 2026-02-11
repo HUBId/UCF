@@ -132,8 +132,9 @@ fn iit_frame_can_be_constructed() {
 fn onn_and_snn_frames_can_be_constructed() {
     let onn = OnnFrame {
         now_ms: 7,
-        global_phase: 1.2,
-        mean_lock: 0.8,
+        global_phase_q: 128,
+        lock_nsr_cde_q: 200,
+        lock_nsr_ssm_q: 180,
     };
     let snn = SnnFrame {
         now_ms: 7,
