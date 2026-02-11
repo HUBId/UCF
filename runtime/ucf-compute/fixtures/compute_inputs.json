@@ -6,7 +6,7 @@
       "pressure": 0.18128344416618347,
       "risk": 0.3383754789829254,
       "spike_count": 16,
-      "spikes_digest_hex": "7ec50c2c0d83ccf9655e9c55871b36b2d14347cb616c2fc787418249888ca076",
+      "spikes_digest_hex": "50bf5b85712bd476a273ac311a005cbe94faf5c26e9a215dbd9ecdd98b83a4e8",
       "surprise": 0.5325140357017517
     },
     "frame_id": 1001,
@@ -20,7 +20,7 @@
       "pressure": 0.19323424994945526,
       "risk": 0.3664959967136383,
       "spike_count": 16,
-      "spikes_digest_hex": "685bc80c0ae5c10bdcb82cedbad77cbeb5ee321131f8b075b1b2e3f43be801f7",
+      "spikes_digest_hex": "0b0f17a68936b5eb77e7cae0586f53eb1784d59810f217f4db09dd17b09f49e5",
       "surprise": 0.5693581700325012
     },
     "frame_id": 1002,
@@ -34,7 +34,7 @@
       "pressure": 0.31320345401763916,
       "risk": 0.5770050287246704,
       "spike_count": 16,
-      "spikes_digest_hex": "e9c84e43cd5a1041d162d8342405c773c790ad5fcd5e5c33a9a62bdc1094968f",
+      "spikes_digest_hex": "380a0b44f1cb716f146481be597f5802b01f9cb02a89df6ff99f8122ec6745f4",
       "surprise": 0.8284847736358643
     },
     "frame_id": 1003,
@@ -48,7 +48,7 @@
       "pressure": 0.3209480941295624,
       "risk": 0.5939892530441284,
       "spike_count": 16,
-      "spikes_digest_hex": "07a115e1e37968d75425d36813a52319903210a054a8a3104629a405a5f2190e",
+      "spikes_digest_hex": "24ed992a4d53b4e029bae22a9f472d8fd3460f0ff673d1277f2b005085f096cd",
       "surprise": 0.8504383563995361
     },
     "frame_id": 1004,

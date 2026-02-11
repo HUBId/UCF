@@ -27,6 +27,9 @@ pub struct ComputeSignalsSummary {
     pub budget_profile_id: Option<u32>,
     pub seed: Option<u64>,
     pub risk_contract_version: Option<u16>,
+    pub compute_schema_version: Option<u16>,
+    pub compute_chain_digest: Option<[u8; 32]>,
+    pub compute_code_version: Option<&'static str>,
     pub budget_exceeded_stage: Option<&'static str>,
 }
 

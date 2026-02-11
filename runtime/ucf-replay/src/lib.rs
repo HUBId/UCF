@@ -2,6 +2,7 @@
 
 use std::fs;
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use hex::FromHex;
 use serde::{Deserialize, Serialize};
@@ -19,6 +20,7 @@ use ucf_frames::v1::{
 };
 
 const REPORT_CAP: usize = 1000;
+static UCF_COMPUTE_CHAIN_MISMATCH_TOTAL: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -84,6 +86,7 @@ pub struct PersistedSummary {
     pub risk_quality: Option<u8>,
     pub spikes_digest_hex: String,
     pub context_digest_hex: Option<String>,
+    pub chain_digest_hex: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -96,6 +99,7 @@ pub struct RecomputedSummary {
     pub risk_quality: Option<u8>,
     pub spikes_digest_hex: String,
     pub context_digest_hex: Option<String>,
+    pub chain_digest_hex: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -363,7 +367,22 @@ fn compare_summaries(
     recomputed: &RecomputedComputeSummary,
     policy: &DiffPolicy,
 ) -> Vec<DriftReason> {
+    if persisted.compute_chain_digest == Some(recomputed.compute_chain_digest) {
+        return Vec::new();
+    }
+
     let mut reasons = Vec::new();
+
+    if let Some(expected) = persisted.compute_chain_digest {
+        if expected != recomputed.compute_chain_digest {
+            UCF_COMPUTE_CHAIN_MISMATCH_TOTAL.fetch_add(1, Ordering::Relaxed);
+            reasons.push(DriftReason::DigestMismatch {
+                field: "compute_chain_digest".to_string(),
+                expected_prefix: opt_digest_prefix(Some(expected)),
+                got_prefix: opt_digest_prefix(Some(recomputed.compute_chain_digest)),
+            });
+        }
+    }
 
     compare_float(
         "risk",
@@ -434,6 +453,7 @@ fn to_persisted(summary: &ComputeSignalsSummary) -> PersistedSummary {
         risk_quality: summary.risk_quality,
         spikes_digest_hex: hex::encode(summary.spikes_digest),
         context_digest_hex: summary.evidence_context_digest.map(hex::encode),
+        chain_digest_hex: summary.compute_chain_digest.map(hex::encode),
     }
 }
 
@@ -447,6 +467,7 @@ fn to_recomputed(summary: &RecomputedComputeSummary) -> RecomputedSummary {
         risk_quality: Some(summary.risk_quality),
         spikes_digest_hex: hex::encode(summary.spikes_digest),
         context_digest_hex: Some(hex::encode(summary.evidence_context_digest)),
+        chain_digest_hex: Some(hex::encode(summary.compute_chain_digest)),
     }
 }
 
@@ -460,6 +481,7 @@ fn empty_persisted(backend: &str) -> PersistedSummary {
         risk_quality: None,
         spikes_digest_hex: String::new(),
         context_digest_hex: None,
+        chain_digest_hex: None,
     }
 }
 
@@ -542,6 +564,9 @@ pub fn load_fixture_records(path: &Path) -> Result<Vec<ExperienceRecord>, Replay
             budget_profile_id: Some(entry.budget_profile_id),
             seed: Some(entry.seed),
             risk_contract_version: Some(1),
+            compute_schema_version: Some(1),
+            compute_chain_digest: None,
+            compute_code_version: None,
             budget_exceeded_stage: None,
         };
 
@@ -564,4 +589,8 @@ pub fn write_report(path: &Path, result: &ReplayResult) -> Result<(), ReplayErro
     let body = serde_json::to_string_pretty(result)?;
     fs::write(path, body)?;
     Ok(())
+}
+
+pub fn ucf_compute_chain_mismatch_total() -> u64 {
+    UCF_COMPUTE_CHAIN_MISMATCH_TOTAL.load(Ordering::Relaxed)
 }

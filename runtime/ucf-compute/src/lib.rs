@@ -1,10 +1,12 @@
 use sha2::{Digest, Sha256};
+use std::sync::atomic::{AtomicU64, Ordering};
 use thiserror::Error;
 use ucf_core::types::SimTime;
 use ucf_frames::v1::{ControlFrame, ControlPayload};
 
 pub mod backends;
 pub mod capabilities;
+pub mod evidence;
 pub mod feature_extractor;
 pub mod pipeline;
 pub mod risk_contract;
@@ -12,6 +14,7 @@ pub mod ssm;
 pub mod work_meter;
 pub mod world_model;
 pub use backends::{build_backend, ComputeBackendConfig, ComputeBackendKind};
+pub use evidence::{CodeVersionTag, EvidenceChain, COMPUTE_SUMMARY_SCHEMA_VERSION};
 pub use pipeline::ComputePipelineBackend;
 pub use risk_contract::{
     clamp01, stable_budget_profile_id, validate_risk_signal, BackendProfileId, EvidenceRef,
@@ -21,6 +24,8 @@ pub use risk_contract::{
 pub const MAX_SPIKES: usize = 256;
 pub const MAX_NOTES: usize = 16;
 pub const MAX_NOTE_LEN: usize = 256;
+
+static UCF_COMPUTE_CHAIN_DIGEST_EMITTED_TOTAL: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct FrameId(pub u64);
@@ -83,15 +88,7 @@ impl ComputeSignals {
     }
 
     pub fn summary(&self, backend: &'static str) -> ComputeSignalsSummary {
-        let mut hasher = Sha256::new();
-        for spike in &self.spikes {
-            hasher.update(spike.feature_id.to_le_bytes());
-            hasher.update(spike.magnitude.to_bits().to_le_bytes());
-            hasher.update(spike.timestamp.to_le_bytes());
-        }
-        let digest = hasher.finalize();
-        let mut spikes_digest = [0_u8; 32];
-        spikes_digest.copy_from_slice(&digest);
+        let spikes_digest = evidence::spikes_digest(&self.spikes);
         let risk_signal = if validate_risk_signal(&self.risk_signal).is_ok() {
             self.risk_signal
         } else {
@@ -103,6 +100,16 @@ impl ComputeSignals {
                 version: 1,
             }
         };
+        let evidence_chain = EvidenceChain::from_compute(
+            &ComputeInput {
+                frame_id: FrameId(0),
+                t: 0,
+                context_digest: risk_signal.evidence.context_digest,
+            },
+            &self.spikes,
+            &risk_signal,
+        );
+        UCF_COMPUTE_CHAIN_DIGEST_EMITTED_TOTAL.fetch_add(1, Ordering::Relaxed);
         ComputeSignalsSummary {
             backend,
             surprise: self.surprise,
@@ -125,6 +132,9 @@ impl ComputeSignals {
             budget_profile_id: risk_signal.evidence.budget_profile_id,
             seed: risk_signal.evidence.seed,
             risk_contract_version: risk_signal.version,
+            compute_schema_version: evidence_chain.schema_version,
+            compute_chain_digest: evidence_chain.chain_digest,
+            compute_code_version: evidence_chain.code_version.as_str(),
             budget_exceeded_stage: self.budget_exceeded_stage,
         }
     }
@@ -296,6 +306,9 @@ pub struct ComputeSignalsSummary {
     pub budget_profile_id: u32,
     pub seed: u64,
     pub risk_contract_version: u16,
+    pub compute_schema_version: u16,
+    pub compute_chain_digest: [u8; 32],
+    pub compute_code_version: &'static str,
     pub budget_exceeded_stage: Option<&'static str>,
 }
 
@@ -602,4 +615,8 @@ mod tests {
             );
         }
     }
+}
+
+pub fn ucf_compute_chain_digest_emitted_total() -> u64 {
+    UCF_COMPUTE_CHAIN_DIGEST_EMITTED_TOTAL.load(Ordering::Relaxed)
 }
