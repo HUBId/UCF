@@ -13,6 +13,7 @@ mod nsr;
 mod onn_snn;
 mod phase;
 mod phi;
+mod sle;
 mod stimulus;
 
 pub use archive::ArchiveAppendFrame;
@@ -30,6 +31,7 @@ pub use nsr::NsrFrame;
 pub use onn_snn::{OnnFrame, SnnFrame, SpikeFrame};
 pub use phase::PhaseFrame;
 pub use phi::PhiProxySnapshot;
+pub use sle::SleFrame;
 pub use stimulus::{BrainStimulusKind, BrainStimulusPayload};
 
 mod tcf;

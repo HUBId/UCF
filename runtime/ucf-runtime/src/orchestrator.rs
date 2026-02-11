@@ -17,14 +17,15 @@ use ucf_core::storage::{ArchiveCfg, FlushPolicy, MemArchiveStore};
 use ucf_ess::v1::{ExperienceRecord, ExperienceStore, IdAllocator, InMemoryEss};
 use ucf_frames::v1::{
     ArchiveAppendFrame, BiophysFrame, BiophysHhParams, CdeFrame, ControlFrame, DecisionFrame,
-    IitFrame, MicrocircuitFrame, NeuromodulatorSnapshot, NsrFrame, OnnFrame, PhaseFrame, SnnFrame,
-    SsmFrame, TcfFrame,
+    IitFrame, MicrocircuitFrame, NeuromodulatorSnapshot, NsrFrame, OnnFrame, PhaseFrame, SleFrame,
+    SnnFrame, SsmFrame, TcfFrame,
 };
 use ucf_iit_proxy::v0::{iit_push_and_eval, IitCfg, IitSample, IitState};
 use ucf_neuromod::v0::{NeuromodInputs, NeuromodScheduler, NeuromodulatorField};
 use ucf_nsr::v0::{Claim, NsrEngine, Verdict};
 use ucf_onn::v0::{OnnCore, PhaseDeg};
 use ucf_policy::{adapter::ActionAdapter, gem::Gem, pbm::Pbm};
+use ucf_sle::v0::{sle_step, SleCfg, SleReason, SleSignals, SleState};
 use ucf_snn::v0::{encode, to_brainbus, FeatureEvent, SnnEncodeCfg};
 use ucf_spikes::{
     encode_ttfs_us, filter_phase_locked, PhaseLockCfg, Spike as BusSpike, SpikeBus,
@@ -61,6 +62,26 @@ struct PhaseBus {
 #[derive(Clone, Debug, Default)]
 struct WorkingContext {
     ssm_y: Vec<f32>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PolicyDecisionKind {
+    InternalRecursion,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PolicyDecision {
+    pub kind: PolicyDecisionKind,
+    pub allow: bool,
+    pub max_depth: u8,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct MetaInput {
+    tokens: Vec<u32>,
+    weight: f32,
+    depth: u8,
+    reason: SleReason,
 }
 
 pub struct RuntimeOrchestrator {
@@ -116,6 +137,12 @@ pub struct RuntimeOrchestrator {
     ssm_cfg: SsmCfg,
     working_context: WorkingContext,
     last_ssm_frame: Option<SsmFrame>,
+    sle_cfg: SleCfg,
+    sle_state: SleState,
+    last_sle_frame: Option<SleFrame>,
+    last_meta_input: Option<MetaInput>,
+    policy_internal_recursion_allow: bool,
+    policy_internal_recursion_max_depth: u8,
     ssm_gate: f32,
     archive: ArchiveLog<MemArchiveStore>,
     last_archive_append_frame: Option<ArchiveAppendFrame>,
@@ -189,6 +216,12 @@ impl RuntimeOrchestrator {
             ssm_cfg,
             working_context: WorkingContext::default(),
             last_ssm_frame: None,
+            sle_cfg: SleCfg::default_v0(),
+            sle_state: SleState::new(),
+            last_sle_frame: None,
+            last_meta_input: None,
+            policy_internal_recursion_allow: true,
+            policy_internal_recursion_max_depth: SleCfg::default_v0().max_depth,
             ssm_gate: 0.0,
             archive: ArchiveLog::new(MemArchiveStore::new(), ArchiveCfg::default()),
             last_archive_append_frame: None,
@@ -259,6 +292,22 @@ impl RuntimeOrchestrator {
 
     pub fn last_ssm_frame(&self) -> Option<SsmFrame> {
         self.last_ssm_frame
+    }
+
+    pub fn last_sle_frame(&self) -> Option<SleFrame> {
+        self.last_sle_frame
+    }
+
+    pub fn set_internal_recursion_policy_for_test(&mut self, allow: bool, max_depth: u8) {
+        self.policy_internal_recursion_allow = allow;
+        self.policy_internal_recursion_max_depth = max_depth.max(1);
+    }
+
+    pub fn set_sle_cfg_for_test(&mut self, cfg: SleCfg) {
+        self.sle_cfg = cfg;
+        self.policy_internal_recursion_max_depth = self
+            .policy_internal_recursion_max_depth
+            .min(self.sle_cfg.max_depth.max(1));
     }
 
     pub fn last_spike_frames(&self) -> &[ucf_frames::v1::SpikeFrame] {
@@ -360,6 +409,16 @@ impl RuntimeOrchestrator {
         let snapshot = self.neuromod_field.snapshot();
         let phi = self.iit_phi_snapshot();
         self.ingest_with_decision_and_snapshot(adapter, ctrl, decision, snapshot, phi)
+    }
+
+    fn decide_internal_recursion(&self) -> PolicyDecision {
+        PolicyDecision {
+            kind: PolicyDecisionKind::InternalRecursion,
+            allow: self.policy_internal_recursion_allow,
+            max_depth: self
+                .policy_internal_recursion_max_depth
+                .min(self.sle_cfg.max_depth.max(1)),
+        }
     }
 
     fn update_biophys_tick(&mut self, now_ms: u64) {
@@ -553,14 +612,74 @@ impl RuntimeOrchestrator {
         let top_conf_from_cde = top_conf.clamp(0.0, 1.0);
         let archive_append_bytes_q =
             ((self.last_archive_payload_len as f32) / 1024.0).clamp(0.0, 1.0);
+
+        let spike_novelty = self
+            .last_spike_frames
+            .iter()
+            .filter(|spike| spike.kind == 1)
+            .map(|spike| f32::from(spike.strength_q) / 255.0)
+            .max_by(|a, b| a.total_cmp(b))
+            .unwrap_or(0.0)
+            .clamp(0.0, 1.0);
+        let sle_sig = SleSignals {
+            now_ms,
+            nsr_risk,
+            cde_conf: top_conf_from_cde,
+            phi_proxy: self.iit_proxy_state.phi_proxy.clamp(0.0, 1.0),
+            spike_novelty,
+            attention_event: self.attention_event,
+        };
+        let sle_out = sle_step(&self.sle_cfg, &mut self.sle_state, &sle_sig);
+        let policy = self.decide_internal_recursion();
+        let mut meta_weight = 0.0_f32;
+        let mut meta_reason_norm = 0.0_f32;
+        let mut sle_frame = SleFrame {
+            now_ms,
+            fired: 0,
+            reason: 0,
+            depth: 0,
+            weight_q: 0,
+            tok_n: 0,
+        };
+        self.last_meta_input = None;
+        if let Some(meta) = sle_out {
+            sle_frame.fired = 1;
+            let reason_id = match meta.reason {
+                SleReason::HighRisk => 1,
+                SleReason::LowIntegration => 2,
+                SleReason::NoveltyShock => 3,
+                SleReason::Conflict => 4,
+            };
+            sle_frame.reason = reason_id;
+            sle_frame.tok_n = meta.tokens.len().min(255) as u8;
+            let mut depth = meta.depth.min(policy.max_depth.max(1));
+            if depth == 0 {
+                depth = 1;
+            }
+            sle_frame.depth = depth;
+            if policy.allow {
+                let weight = meta.weight.clamp(0.0, 1.0);
+                meta_weight = weight;
+                meta_reason_norm = (reason_id as f32 / 4.0).clamp(0.0, 1.0);
+                sle_frame.weight_q = (weight * 255.0).round() as u8;
+                self.last_meta_input = Some(MetaInput {
+                    tokens: meta.tokens,
+                    weight,
+                    depth,
+                    reason: meta.reason,
+                });
+            }
+        }
+        self.last_sle_frame = Some(sle_frame);
+
         let input = [
             tcf_out.mean_lock.clamp(0.0, 1.0),
             verified_ratio.clamp(0.0, 1.0),
             top_conf_from_cde,
             archive_append_bytes_q,
             if self.attention_event { 1.0 } else { 0.0 },
-            0.0,
-            0.0,
+            meta_weight,
+            meta_reason_norm,
             0.0,
         ];
         let gate = tcf_out.mean_lock.clamp(0.0, 1.0);

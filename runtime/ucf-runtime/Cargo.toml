@@ -19,3 +19,5 @@ ucf-ssm = { path = "../../core/crates/ucf-ssm" }
 
 ucf-tcf = { path = "../../core/crates/ucf-tcf" }
 ucf-spikes = { path = "../../core/ucf-spikes" }
+
+ucf-sle = { path = "../../core/crates/ucf-sle" }

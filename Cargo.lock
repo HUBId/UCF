@@ -2495,6 +2495,7 @@ dependencies = [
  "ucf-nsr",
  "ucf-onn",
  "ucf-policy",
+ "ucf-sle",
  "ucf-snn",
  "ucf-spikes",
  "ucf-ssm",

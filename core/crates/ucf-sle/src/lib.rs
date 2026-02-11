@@ -35,6 +35,236 @@ const SLE_MAX_STIMULI: usize = 8;
 const SLE_HIGH_RISK: u16 = 9000;
 const SLE_DECAY_MAX: u16 = 10_000;
 
+pub mod v0 {
+    #[derive(Clone, Debug, PartialEq)]
+    pub struct SleCfg {
+        pub max_depth: u8,
+        pub max_tokens: u16,
+        pub min_trigger: f32,
+        pub cooldown_ticks: u16,
+    }
+
+    #[derive(Clone, Debug, PartialEq)]
+    pub struct SleSignals {
+        pub now_ms: u64,
+        pub nsr_risk: f32,
+        pub cde_conf: f32,
+        pub phi_proxy: f32,
+        pub spike_novelty: f32,
+        pub attention_event: bool,
+    }
+
+    #[derive(Clone, Debug, PartialEq)]
+    pub enum SleReason {
+        HighRisk,
+        LowIntegration,
+        NoveltyShock,
+        Conflict,
+    }
+
+    #[derive(Clone, Debug, PartialEq)]
+    pub struct MetaContext {
+        pub depth: u8,
+        pub reason: SleReason,
+        pub tokens: Vec<u32>,
+        pub weight: f32,
+    }
+
+    #[derive(Clone, Debug, PartialEq)]
+    pub struct SleState {
+        pub cooldown_left: u16,
+        pub last_reason: Option<SleReason>,
+    }
+
+    impl SleCfg {
+        pub fn default_v0() -> Self {
+            Self {
+                max_depth: 3,
+                max_tokens: 256,
+                min_trigger: 0.6,
+                cooldown_ticks: 8,
+            }
+        }
+    }
+
+    impl SleState {
+        pub fn new() -> Self {
+            Self {
+                cooldown_left: 0,
+                last_reason: None,
+            }
+        }
+    }
+
+    impl Default for SleState {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
+    fn reason_id(reason: &SleReason) -> u32 {
+        match reason {
+            SleReason::HighRisk => 1,
+            SleReason::LowIntegration => 2,
+            SleReason::NoveltyShock => 3,
+            SleReason::Conflict => 4,
+        }
+    }
+
+    fn quantize_unit_to_255(v: f32) -> u32 {
+        (v.clamp(0.0, 1.0) * 255.0).round() as u32
+    }
+
+    pub fn sle_step(cfg: &SleCfg, st: &mut SleState, sig: &SleSignals) -> Option<MetaContext> {
+        if st.cooldown_left > 0 {
+            st.cooldown_left -= 1;
+            return None;
+        }
+
+        let high_risk = sig.nsr_risk >= cfg.min_trigger;
+        let low_integration = sig.phi_proxy <= (1.0 - cfg.min_trigger);
+        let novelty_shock = sig.spike_novelty >= cfg.min_trigger;
+        let conflict = (sig.nsr_risk >= 0.7 && sig.cde_conf >= 0.7 && sig.phi_proxy <= 0.4)
+            || (sig.attention_event && sig.nsr_risk >= 0.7);
+
+        let reason = if conflict {
+            SleReason::Conflict
+        } else if high_risk {
+            SleReason::HighRisk
+        } else if low_integration {
+            SleReason::LowIntegration
+        } else if novelty_shock {
+            SleReason::NoveltyShock
+        } else {
+            return None;
+        };
+
+        let mut depth = 1_u8;
+        if matches!(reason, SleReason::Conflict) {
+            depth = depth.saturating_add(1);
+        }
+        if sig.nsr_risk > 0.85 {
+            depth = depth.saturating_add(1);
+        }
+        depth = depth.min(cfg.max_depth.max(1));
+
+        let mut tokens = vec![
+            reason_id(&reason),
+            depth as u32,
+            quantize_unit_to_255(sig.nsr_risk),
+            quantize_unit_to_255(sig.phi_proxy),
+            quantize_unit_to_255(sig.cde_conf),
+            quantize_unit_to_255(sig.spike_novelty),
+        ];
+        if tokens.len() > 16 {
+            tokens.truncate(16);
+        }
+        if tokens.len() > cfg.max_tokens as usize {
+            tokens.truncate(cfg.max_tokens as usize);
+        }
+
+        let weight = match reason {
+            SleReason::Conflict => 0.8_f32,
+            SleReason::HighRisk => 0.7_f32,
+            SleReason::LowIntegration | SleReason::NoveltyShock => 0.5_f32,
+        }
+        .clamp(0.0_f32, 1.0_f32);
+
+        st.cooldown_left = cfg.cooldown_ticks;
+        st.last_reason = Some(reason.clone());
+
+        Some(MetaContext {
+            depth,
+            reason,
+            tokens,
+            weight,
+        })
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn trigger_priority_conflict_beats_others() {
+            let cfg = SleCfg::default_v0();
+            let mut st = SleState::new();
+            let sig = SleSignals {
+                now_ms: 10,
+                nsr_risk: 0.9,
+                cde_conf: 0.8,
+                phi_proxy: 0.3,
+                spike_novelty: 0.95,
+                attention_event: true,
+            };
+
+            let out = sle_step(&cfg, &mut st, &sig).expect("conflict should fire");
+            assert_eq!(out.reason, SleReason::Conflict);
+        }
+
+        #[test]
+        fn cooldown_behavior_blocks_immediate_refire() {
+            let cfg = SleCfg {
+                cooldown_ticks: 2,
+                ..SleCfg::default_v0()
+            };
+            let mut st = SleState::new();
+            let sig = SleSignals {
+                now_ms: 1,
+                nsr_risk: 0.9,
+                cde_conf: 0.1,
+                phi_proxy: 0.9,
+                spike_novelty: 0.1,
+                attention_event: false,
+            };
+
+            assert!(sle_step(&cfg, &mut st, &sig).is_some());
+            assert!(sle_step(&cfg, &mut st, &sig).is_none());
+            assert!(sle_step(&cfg, &mut st, &sig).is_none());
+            assert!(sle_step(&cfg, &mut st, &sig).is_some());
+        }
+
+        #[test]
+        fn depth_clamp_respects_config() {
+            let cfg = SleCfg {
+                max_depth: 1,
+                ..SleCfg::default_v0()
+            };
+            let mut st = SleState::new();
+            let sig = SleSignals {
+                now_ms: 1,
+                nsr_risk: 0.9,
+                cde_conf: 0.8,
+                phi_proxy: 0.3,
+                spike_novelty: 0.1,
+                attention_event: true,
+            };
+
+            let out = sle_step(&cfg, &mut st, &sig).expect("should fire");
+            assert_eq!(out.depth, 1);
+        }
+
+        #[test]
+        fn determinism_same_inputs_same_output() {
+            let cfg = SleCfg::default_v0();
+            let sig = SleSignals {
+                now_ms: 123,
+                nsr_risk: 0.72,
+                cde_conf: 0.4,
+                phi_proxy: 0.2,
+                spike_novelty: 0.1,
+                attention_event: false,
+            };
+            let mut a = SleState::new();
+            let mut b = SleState::new();
+
+            let out_a = sle_step(&cfg, &mut a, &sig);
+            let out_b = sle_step(&cfg, &mut b, &sig);
+            assert_eq!(out_a, out_b);
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ReflectionClass {
     Stable = 0,
