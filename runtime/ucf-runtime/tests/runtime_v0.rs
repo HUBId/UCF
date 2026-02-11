@@ -60,6 +60,11 @@ fn external_output_text_is_allowed_emitted_and_audited() {
     );
     let decision_record = orchestrator.ess.get(1).expect("decision record");
     assert_eq!(decision_record.decision_meta, Some(decision.meta));
+    assert!(decision.compute_summary.is_some());
+    let compute = decision.compute_summary.expect("compute summary");
+    assert_eq!(compute.backend, "cpu_stub");
+    assert!(compute.spike_count <= 256);
+    assert_eq!(decision_record.compute_summary, Some(compute));
     assert_eq!(decision.meta.attention_gain, 0.70000005);
     assert_eq!(decision.meta.learning_gate, 0.65);
     assert_eq!(decision.meta.recursion_budget, 1);
@@ -1281,4 +1286,34 @@ fn higher_stress_increases_amygdala_spikes() {
         .amyg_spikes;
 
     assert!(high >= low, "high={high} low={low}");
+}
+
+#[test]
+fn real_compute_onboarding_v0_smoke_path() {
+    let ctrl = ControlFrame::new_text(
+        sim_time(),
+        CorrelationId(99),
+        ChannelCode::ExternalOutput,
+        intent(),
+        "smoke",
+    );
+    let mut orchestrator = RuntimeOrchestrator::new();
+    let mut adapter = MockAdapter::default();
+
+    let decision = orchestrator
+        .ingest_and_process(&mut adapter, ctrl)
+        .expect("orchestration should succeed");
+
+    assert!(decision.compute_summary.is_some());
+    assert!(orchestrator.ess.len() >= 2);
+
+    let decision_rec = orchestrator
+        .ess
+        .trail_by_corr(CorrelationId(99))
+        .into_iter()
+        .find(|r| r.kind == ExperienceKind::DecisionOut)
+        .expect("decision record");
+
+    assert!(decision_rec.compute_summary.is_some());
+    assert_eq!(decision_rec.compute_summary, decision.compute_summary);
 }

@@ -1,0 +1,58 @@
+[
+  {
+    "frame_id": 1001,
+    "t": 5,
+    "context_digest_hex": "0000000000000000000000000000000000000000000000000000000000000000",
+    "seed": 1,
+    "expected": {
+      "surprise": 0.0024256547918602954,
+      "pressure": 0.079205923946826,
+      "risk": 0.033137762453846586,
+      "confidence": 0.9734897900369227,
+      "spike_count": 0,
+      "spikes_digest_hex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  {
+    "frame_id": 1002,
+    "t": 11,
+    "context_digest_hex": "1111111111111111111111111111111111111111111111111111111111111111",
+    "seed": 42,
+    "expected": {
+      "surprise": 0.0036482138102055094,
+      "pressure": 0.1747101654770866,
+      "risk": 0.07207299447695795,
+      "confidence": 0.9423416044184336,
+      "spike_count": 0,
+      "spikes_digest_hex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  {
+    "frame_id": 1003,
+    "t": 31,
+    "context_digest_hex": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "seed": 7,
+    "expected": {
+      "surprise": 0.0021698763599083473,
+      "pressure": 0.22040872677500795,
+      "risk": 0.0894654165259482,
+      "confidence": 0.9284276667792415,
+      "spike_count": 0,
+      "spikes_digest_hex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  {
+    "frame_id": 1004,
+    "t": 63,
+    "context_digest_hex": "ffeeddccbbaa99887766554433221100ffeeddccbbaa99887766554433221100",
+    "seed": 99,
+    "expected": {
+      "surprise": 0.00028274464427557416,
+      "pressure": 0.18762355833317235,
+      "risk": 0.0752190701198343,
+      "confidence": 0.9398247439041325,
+      "spike_count": 0,
+      "spikes_digest_hex": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  }
+]

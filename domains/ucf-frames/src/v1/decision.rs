@@ -5,6 +5,17 @@ use ucf_core::types::SimTime;
 use crate::v1::{CorrelationId, DecisionCode, DenyReasonCode, IntentType};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ComputeSignalsSummary {
+    pub backend: &'static str,
+    pub surprise: f32,
+    pub pressure: f32,
+    pub risk: f32,
+    pub confidence: f32,
+    pub spike_count: u16,
+    pub spikes_digest: [u8; 32],
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DecisionMeta {
     pub attention_gain: f32,
     pub learning_gate: f32,
@@ -31,6 +42,7 @@ pub struct DecisionFrame {
     pub deny_reason: Option<DenyReasonCode>,
     pub rationale: Arc<str>,
     pub meta: DecisionMeta,
+    pub compute_summary: Option<ComputeSignalsSummary>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,6 +59,7 @@ impl DecisionFrame {
             deny_reason: None,
             rationale: rationale.into(),
             meta: DecisionMeta::baseline(),
+            compute_summary: None,
         }
     }
 
@@ -65,6 +78,7 @@ impl DecisionFrame {
             deny_reason: Some(reason),
             rationale: rationale.into(),
             meta: DecisionMeta::baseline(),
+            compute_summary: None,
         }
     }
 
@@ -78,6 +92,7 @@ impl DecisionFrame {
             deny_reason: None,
             rationale: rationale.into(),
             meta: DecisionMeta::baseline(),
+            compute_summary: None,
         }
     }
 
@@ -97,6 +112,7 @@ impl DecisionFrame {
             deny_reason: None,
             rationale: rationale.into(),
             meta: DecisionMeta::baseline(),
+            compute_summary: None,
         }
     }
 
@@ -117,6 +133,7 @@ impl DecisionFrame {
             deny_reason: Some(deny_reason),
             rationale: rationale.into(),
             meta: DecisionMeta::baseline(),
+            compute_summary: None,
         }
     }
 
@@ -136,11 +153,19 @@ impl DecisionFrame {
             deny_reason: None,
             rationale: rationale.into(),
             meta: DecisionMeta::baseline(),
+            compute_summary: None,
         }
     }
 
     pub fn with_meta(mut self, meta: DecisionMeta) -> Self {
         self.meta = meta;
+        self
+    }
+}
+
+impl DecisionFrame {
+    pub fn with_compute_summary(mut self, compute_summary: ComputeSignalsSummary) -> Self {
+        self.compute_summary = Some(compute_summary);
         self
     }
 }

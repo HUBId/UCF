@@ -4,6 +4,7 @@ use core::fmt::{Display, Formatter};
 pub enum RuntimeError {
     Policy(ucf_policy::errors::PolicyError),
     Ess(ucf_ess::v1::EssError),
+    Compute(ucf_compute::ComputeError),
 }
 
 impl From<ucf_policy::errors::PolicyError> for RuntimeError {
@@ -23,8 +24,15 @@ impl Display for RuntimeError {
         match self {
             Self::Policy(error) => write!(f, "policy error: {error}"),
             Self::Ess(error) => write!(f, "ess error: {error}"),
+            Self::Compute(error) => write!(f, "compute error: {error}"),
         }
     }
 }
 
 impl std::error::Error for RuntimeError {}
+
+impl From<ucf_compute::ComputeError> for RuntimeError {
+    fn from(value: ucf_compute::ComputeError) -> Self {
+        Self::Compute(value)
+    }
+}

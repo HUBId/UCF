@@ -11,6 +11,7 @@ use ucf_cde::v0::{
     on_intervention, on_observation, tick_decay, CdeCfg, CdeState, CdeUpdateKind, Intervention,
     Observation, VarId,
 };
+use ucf_compute::{compute_input_from_control, AiComputeBackend, ComputeBudget, CpuStubBackend};
 use ucf_core::archive_log::ArchiveLog;
 use ucf_core::storage::{ArchiveCfg, FlushPolicy, MemArchiveStore};
 use ucf_dbm::chemistry::{chemistry_step, ChemistryCfg, NeuromodState};
@@ -107,6 +108,8 @@ pub struct RuntimeOrchestrator {
     pub ids: IdAllocator,
     pub pbm: Pbm,
     pub gem: Gem,
+    compute_backend: Box<dyn AiComputeBackend>,
+    compute_budget: ComputeBudget,
     neuromod_field: NeuromodulatorField,
     neuromod_scheduler: NeuromodScheduler,
     onn: OnnCore,
@@ -216,6 +219,8 @@ impl RuntimeOrchestrator {
             ids: IdAllocator::new(1),
             pbm: Pbm,
             gem: Gem,
+            compute_backend: Box::new(CpuStubBackend),
+            compute_budget: ComputeBudget::default(),
             neuromod_field: NeuromodulatorField::new_baseline(),
             neuromod_scheduler: NeuromodScheduler::new(1),
             onn,
@@ -1398,6 +1403,21 @@ impl RuntimeOrchestrator {
         self.emit_snn_signals(adapter, ctrl.time.tick.get())?;
 
         let mut decision = decision;
+
+        let compute_input = compute_input_from_control(&ctrl);
+        let compute_signals = self
+            .compute_backend
+            .compute(&compute_input, self.compute_budget)?;
+        let compute_summary = compute_signals.summary(self.compute_backend.name());
+        decision = decision.with_compute_summary(ucf_frames::v1::ComputeSignalsSummary {
+            backend: compute_summary.backend,
+            surprise: compute_summary.surprise,
+            pressure: compute_summary.pressure,
+            risk: compute_summary.risk,
+            confidence: compute_summary.confidence,
+            spike_count: compute_summary.spike_count,
+            spikes_digest: compute_summary.spikes_digest,
+        });
 
         decision = if let Some(nsr_frame) = self.last_nsr_frame {
             match nsr_frame.verdict {
