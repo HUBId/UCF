@@ -191,6 +191,8 @@ pub struct RuntimeOrchestrator {
     coherence_violation_count: u64,
     coherence_violation_flag: bool,
     last_fep_outputs: Option<FepOutputs>,
+    risk_quality_counts: [u64; 3],
+    fep_risk_penalty_applied_total: u64,
 }
 
 impl RuntimeOrchestrator {
@@ -320,6 +322,8 @@ impl RuntimeOrchestrator {
             coherence_violation_count: 0,
             coherence_violation_flag: false,
             last_fep_outputs: None,
+            risk_quality_counts: [0; 3],
+            fep_risk_penalty_applied_total: 0,
         }
     }
 
@@ -796,18 +800,34 @@ impl RuntimeOrchestrator {
             ess_pressure,
         );
 
+        let last_compute_summary = self
+            .ess
+            .get(self.ess.len().saturating_sub(1))
+            .and_then(|r| r.compute_summary);
+        let compute_risk = last_compute_summary
+            .map(|c| c.risk)
+            .unwrap_or(nsr_risk)
+            .clamp(0.0, 1.0);
+        let compute_confidence = last_compute_summary
+            .map(|c| c.confidence)
+            .unwrap_or(1.0 - compute_risk)
+            .clamp(0.0, 1.0);
+
         let fep_in = FepInputs {
             now_ms,
             dt_s,
             surprise,
             complexity,
             policy_risk: nsr_risk,
+            compute_risk,
+            compute_confidence,
             onn_lock,
             snn_event_rate,
             ess_pressure,
             ssm_pressure: ssm_gate,
             geist_drift,
         };
+        self.fep_risk_penalty_applied_total = self.fep_risk_penalty_applied_total.saturating_add(1);
         let mut fep_out = fep_step(&self.fep_state.cfg, &fep_in);
 
         chemistry_step(
@@ -1416,10 +1436,28 @@ impl RuntimeOrchestrator {
         let mut decision = decision;
 
         let compute_input = compute_input_from_control(&ctrl);
-        let compute_signals = self
+        let mut compute_signals = match self
             .compute_backend
-            .compute(&compute_input, self.compute_budget)?;
+            .compute(&compute_input, self.compute_budget)
+        {
+            Ok(signals) => signals,
+            Err(_) => ucf_compute::ComputeSignals::unavailable(
+                &compute_input,
+                self.compute_budget,
+                self.compute_backend.name(),
+            ),
+        };
+        if ucf_compute::validate_risk_signal(&compute_signals.risk_signal).is_err() {
+            compute_signals = ucf_compute::ComputeSignals::unavailable(
+                &compute_input,
+                self.compute_budget,
+                self.compute_backend.name(),
+            );
+        }
         let compute_summary = compute_signals.summary(self.compute_backend.name());
+        let quality_idx = usize::from(compute_summary.risk_quality.min(2));
+        self.risk_quality_counts[quality_idx] =
+            self.risk_quality_counts[quality_idx].saturating_add(1);
         decision = decision.with_compute_summary(ucf_frames::v1::ComputeSignalsSummary {
             backend: compute_summary.backend,
             surprise: compute_summary.surprise,
@@ -1432,7 +1470,30 @@ impl RuntimeOrchestrator {
             energy: compute_summary.energy,
             ssm_readout: compute_summary.ssm_readout,
             ssm_digest: compute_summary.ssm_digest,
+            world_digest: compute_summary.world_digest,
+            risk_quality: Some(compute_summary.risk_quality),
+            evidence_context_digest: Some(compute_summary.evidence_context_digest),
+            evidence_world_digest: compute_summary.evidence_world_digest,
+            evidence_spikes_digest: compute_summary.evidence_spikes_digest,
+            evidence_ssm_digest: compute_summary.evidence_ssm_digest,
+            backend_profile: Some(compute_summary.backend_profile),
+            budget_profile_id: Some(compute_summary.budget_profile_id),
+            seed: Some(compute_summary.seed),
+            risk_contract_version: Some(compute_summary.risk_contract_version),
         });
+
+        if compute_summary.risk_quality == 2
+            && decision.decision == ucf_frames::v1::DecisionCode::Allow
+        {
+            decision = DecisionFrame::defer_with_reason(
+                decision.time,
+                decision.corr,
+                decision.intent,
+                ucf_frames::v1::ReasonCode("compute_unavailable"),
+                "compute_unavailable",
+            )
+            .with_meta(decision.meta);
+        }
 
         decision = if let Some(nsr_frame) = self.last_nsr_frame {
             match nsr_frame.verdict {

@@ -1320,6 +1320,12 @@ fn real_compute_onboarding_v0_smoke_path() {
     assert!(compute.spike_count > 0);
     assert!(compute.sparsity.is_some());
     assert!(compute.energy.is_some());
+    assert_eq!(compute.risk_contract_version, Some(1));
+    assert!(compute.risk_quality.is_some());
+    assert!(compute.evidence_context_digest.is_some());
+    assert!(compute.backend_profile.is_some());
+    assert!(compute.budget_profile_id.is_some());
+    assert!(compute.seed.is_some());
 
     let decision_rec = orchestrator
         .ess
@@ -1330,6 +1336,33 @@ fn real_compute_onboarding_v0_smoke_path() {
 
     assert!(decision_rec.compute_summary.is_some());
     assert_eq!(decision_rec.compute_summary, Some(compute));
+}
+
+#[test]
+fn degraded_budget_marks_risk_quality_and_persists_evidence() {
+    std::env::set_var("UCF_COMPUTE_MAX_MICROS", "100");
+    std::env::set_var("UCF_COMPUTE_HARD_TIMEOUT_MICROS", "500");
+
+    let mut orchestrator = RuntimeOrchestrator::try_new_from_env().expect("orchestrator from env");
+    let mut adapter = MockAdapter::default();
+    let ctrl = ControlFrame::new_text(
+        sim_time(),
+        CorrelationId(555),
+        ChannelCode::ExternalOutput,
+        intent(),
+        "degraded",
+    );
+    let decision = orchestrator
+        .ingest_and_process(&mut adapter, ctrl)
+        .expect("orchestration should succeed");
+    let compute = decision.compute_summary.expect("compute summary");
+    assert_eq!(compute.risk_quality, Some(1));
+    assert!(compute.evidence_world_digest.is_some());
+    assert!(compute.evidence_spikes_digest.is_some());
+    assert!(compute.evidence_ssm_digest.is_some());
+
+    std::env::remove_var("UCF_COMPUTE_MAX_MICROS");
+    std::env::remove_var("UCF_COMPUTE_HARD_TIMEOUT_MICROS");
 }
 
 #[cfg(feature = "compute-candle")]

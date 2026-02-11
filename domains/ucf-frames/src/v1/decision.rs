@@ -17,6 +17,16 @@ pub struct ComputeSignalsSummary {
     pub energy: Option<f32>,
     pub ssm_readout: Option<f32>,
     pub ssm_digest: Option<[u8; 32]>,
+    pub world_digest: Option<[u8; 32]>,
+    pub risk_quality: Option<u8>,
+    pub evidence_context_digest: Option<[u8; 32]>,
+    pub evidence_world_digest: Option<[u8; 32]>,
+    pub evidence_spikes_digest: Option<[u8; 32]>,
+    pub evidence_ssm_digest: Option<[u8; 32]>,
+    pub backend_profile: Option<&'static str>,
+    pub budget_profile_id: Option<u32>,
+    pub seed: Option<u64>,
+    pub risk_contract_version: Option<u16>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

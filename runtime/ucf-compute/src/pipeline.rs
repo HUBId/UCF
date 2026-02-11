@@ -1,3 +1,4 @@
+use sha2::{Digest, Sha256};
 use std::sync::Arc;
 
 use crate::capabilities::{FeatureExtractor, WorkingMemoryModel, WorldModelPredictor};
@@ -5,7 +6,9 @@ use crate::feature_extractor::{FeatureVector, MockSaeExtractor, SaeOutput, SAE_F
 use crate::ssm::{MockSsmSelectiveScan, SsmOutput};
 use crate::world_model::MockJepaPredictor;
 use crate::{
-    fuse_signals, AiComputeBackend, ComputeBudget, ComputeError, ComputeInput, ComputeSignals,
+    clamp01, fuse_signals, stable_budget_profile_id, validate_risk_signal, AiComputeBackend,
+    BackendProfileId, ComputeBudget, ComputeError, ComputeInput, ComputeSignals, EvidenceRef,
+    RiskSignal, SignalQuality,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -185,17 +188,59 @@ impl AiComputeBackend for ComputePipelineBackend {
             sae_out.energy * self.fusion.energy_weight,
         );
 
+        let mut spikes_hasher = Sha256::new();
+        for spike in &sae_out.spikes {
+            spikes_hasher.update(spike.feature_id.to_le_bytes());
+            spikes_hasher.update(spike.magnitude.to_bits().to_le_bytes());
+            spikes_hasher.update(spike.timestamp.to_le_bytes());
+        }
+        let spikes_digest = spikes_hasher.finalize();
+        let mut spikes_digest_ref = [0_u8; 32];
+        spikes_digest_ref.copy_from_slice(&spikes_digest);
+
+        let quality = if sae_degraded || ssm_degraded {
+            SignalQuality::DegradedFallback
+        } else {
+            SignalQuality::VerifiedPipeline
+        };
+        let evidence = EvidenceRef {
+            context_digest: input.context_digest,
+            world_digest: Some(world_model_out.prediction.prediction_digest),
+            spikes_digest: Some(spikes_digest_ref),
+            ssm_digest: Some(ssm_out.next_state.digest),
+            backend_profile: BackendProfileId::from_backend_name(self.name()),
+            seed: budget.seed,
+            budget_profile_id: stable_budget_profile_id(
+                budget.max_micros,
+                budget.hard_timeout_micros,
+            ),
+        };
+        let mut risk_signal = RiskSignal {
+            risk: clamp01(risk),
+            confidence: clamp01(confidence),
+            quality,
+            evidence,
+            version: 1,
+        };
+        if validate_risk_signal(&risk_signal).is_err() {
+            risk_signal.risk = 1.0;
+            risk_signal.confidence = 0.0;
+            risk_signal.quality = SignalQuality::Unavailable;
+        }
+
         let summary = ComputeSignals {
             surprise,
             pressure,
-            risk,
-            confidence,
+            risk: risk_signal.risk,
+            confidence: risk_signal.confidence,
+            risk_signal,
             spikes: sae_out.spikes.clone(),
             notes: Vec::new(),
             sparsity: Some(sae_out.sparsity),
             energy: Some(sae_out.energy),
             ssm_readout: Some(ssm_out.readout),
             ssm_digest: Some(ssm_out.next_state.digest),
+            world_digest: Some(world_model_out.prediction.prediction_digest),
         }
         .summary(self.name());
 
@@ -240,14 +285,16 @@ impl AiComputeBackend for ComputePipelineBackend {
         Ok(ComputeSignals {
             surprise,
             pressure,
-            risk,
-            confidence,
+            risk: risk_signal.risk,
+            confidence: risk_signal.confidence,
+            risk_signal,
             spikes: sae_out.spikes,
             notes,
             sparsity: Some(sae_out.sparsity),
             energy: Some(sae_out.energy),
             ssm_readout: Some(ssm_out.readout),
             ssm_digest: Some(ssm_out.next_state.digest),
+            world_digest: Some(world_model_out.prediction.prediction_digest),
         }
         .bounded())
     }
@@ -301,5 +348,21 @@ mod tests {
             .notes
             .iter()
             .any(|n| n == "working_memory=mock_ssm_selective_scan_v0"));
+    }
+
+    #[test]
+    fn low_budget_triggers_degraded_risk_quality() {
+        let backend = ComputePipelineBackend::stub();
+        let out = backend
+            .compute(
+                &input(),
+                ComputeBudget {
+                    max_micros: 100,
+                    hard_timeout_micros: 500,
+                    seed: 1,
+                },
+            )
+            .expect("compute");
+        assert_eq!(out.risk_signal.quality, SignalQuality::DegradedFallback);
     }
 }

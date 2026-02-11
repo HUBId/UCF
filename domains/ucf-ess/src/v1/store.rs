@@ -81,7 +81,7 @@ impl ExperienceStore for InMemoryEss {
             .rev()
             .filter_map(|idx| self.records.get(*idx))
             .find_map(|record| match &record.payload {
-                ExperiencePayload::Decision(decision) => Some(decision),
+                ExperiencePayload::Decision(decision) => Some(decision.as_ref()),
                 _ => None,
             })
     }
