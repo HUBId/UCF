@@ -25,6 +25,38 @@ fn intent() -> Intent {
     Intent::new(IntentId(1), IntentKind::System, "runtime-test")
 }
 
+fn allow_low_risk(corr: u64) -> DecisionFrame {
+    let mut d = DecisionFrame::allow(sim_time(), CorrelationId(corr), "allow");
+    d.compute_summary = Some(ucf_frames::v1::ComputeSignalsSummary {
+        backend: "stub",
+        surprise: 0.1,
+        pressure: 0.1,
+        risk: 0.1,
+        confidence: 0.9,
+        spike_count: 0,
+        spikes_digest: [0; 32],
+        sparsity: None,
+        energy: None,
+        ssm_readout: None,
+        ssm_digest: None,
+        world_digest: None,
+        risk_quality: None,
+        evidence_context_digest: None,
+        evidence_world_digest: None,
+        evidence_spikes_digest: None,
+        evidence_ssm_digest: None,
+        backend_profile: None,
+        budget_profile_id: None,
+        seed: None,
+        risk_contract_version: None,
+        compute_schema_version: None,
+        compute_chain_digest: None,
+        compute_code_version: None,
+        budget_exceeded_stage: None,
+    });
+    d
+}
+
 #[test]
 fn external_output_text_is_allowed_emitted_and_audited() {
     let ctrl = ControlFrame::new_text(
@@ -43,7 +75,7 @@ fn external_output_text_is_allowed_emitted_and_audited() {
 
     assert_eq!(decision.decision, ucf_frames::v1::DecisionCode::Allow);
     assert_eq!(adapter.emitted, vec!["hi".to_string()]);
-    assert_eq!(orchestrator.ess.len(), 2);
+    assert!(orchestrator.ess.len() >= 2);
     assert_eq!(
         orchestrator.ess.get(0).map(|r| r.kind),
         Some(ExperienceKind::ControlIn)
@@ -93,7 +125,7 @@ fn internal_thought_text_is_allowed_without_adapter_effects() {
     assert_eq!(decision.decision, ucf_frames::v1::DecisionCode::Allow);
     assert!(adapter.emitted.is_empty());
     assert_eq!(adapter.mem_writes, 0);
-    assert_eq!(orchestrator.ess.len(), 2);
+    assert!(orchestrator.ess.len() >= 2);
 }
 
 #[test]
@@ -114,7 +146,7 @@ fn memory_write_bytes_is_denied_by_default_policy() {
 
     assert_eq!(decision.decision, ucf_frames::v1::DecisionCode::Deny);
     assert_eq!(adapter.mem_writes, 0);
-    assert_eq!(orchestrator.ess.len(), 2);
+    assert!(orchestrator.ess.len() >= 2);
 }
 
 #[test]
@@ -128,7 +160,7 @@ fn gem_allow_path_emits_and_writes_when_invoked_directly() {
         intent(),
         "allowed",
     );
-    let allow_output = DecisionFrame::allow(sim_time(), CorrelationId(4), "allow_output");
+    let allow_output = allow_low_risk(4);
     Gem::execute(&mut adapter, &output_ctrl, Some(&allow_output)).expect("gem should emit text");
 
     let memory_ctrl = ControlFrame {
@@ -138,7 +170,7 @@ fn gem_allow_path_emits_and_writes_when_invoked_directly() {
         intent: intent(),
         payload: ControlPayload::Bytes(vec![9, 9].into()),
     };
-    let allow_memory = DecisionFrame::allow(sim_time(), CorrelationId(5), "allow_memory");
+    let allow_memory = allow_low_risk(5);
     Gem::execute(&mut adapter, &memory_ctrl, Some(&allow_memory)).expect("gem should write memory");
 
     assert_eq!(adapter.emitted, vec!["allowed".to_string()]);
@@ -164,19 +196,14 @@ fn orchestrator_appends_note_when_brain_spikes_emitted() {
     let mut adapter = MockAdapter::default();
 
     orchestrator
-        .ingest_with_decision(
-            &mut adapter,
-            ctrl,
-            DecisionFrame::allow(sim_time(), CorrelationId(6), "allow_brain"),
-        )
+        .ingest_with_decision(&mut adapter, ctrl, allow_low_risk(6))
         .expect("orchestration should succeed");
 
-    let last = orchestrator
-        .ess
-        .get(orchestrator.ess.len() - 1)
+    let note = (0..orchestrator.ess.len())
+        .filter_map(|idx| orchestrator.ess.get(idx))
+        .find(|r| r.kind == ExperienceKind::Note)
         .expect("note record");
-    assert_eq!(last.kind, ExperienceKind::Note);
-    if let ExperiencePayload::Text(text) = &last.payload {
+    if let ExperiencePayload::Text(text) = &note.payload {
         assert_eq!(text.as_ref(), "brain_spikes:n=8,dst=44");
     } else {
         panic!("expected text note payload");
@@ -1523,4 +1550,49 @@ fn orchestrator_hooks_accept_stable_geist_updates() {
 
     assert!(orchestrator.consolidation_milestones_emitted_total() >= 6);
     assert!(orchestrator.geist_updates_accepted_total() >= 1);
+}
+
+#[test]
+fn tool_audit_records_and_hash_chain_are_appended() {
+    let ctrl = ControlFrame::new_text(
+        sim_time(),
+        CorrelationId(1200),
+        ChannelCode::ExternalOutput,
+        intent(),
+        "audit",
+    );
+    let mut orchestrator = RuntimeOrchestrator::new();
+    let mut adapter = MockAdapter::default();
+
+    orchestrator
+        .ingest_and_process(&mut adapter, ctrl)
+        .expect("ingest");
+
+    let records: Vec<_> = (0..orchestrator.ess.len())
+        .filter_map(|idx| orchestrator.ess.get(idx))
+        .collect();
+    assert!(records
+        .iter()
+        .any(|r| r.kind == ExperienceKind::ToolRequest));
+    assert!(records.iter().any(|r| r.kind == ExperienceKind::ToolAuth));
+    assert!(records
+        .iter()
+        .any(|r| r.kind == ExperienceKind::ToolExecution));
+    assert!(records
+        .iter()
+        .any(|r| r.kind == ExperienceKind::AuditCheckpoint));
+
+    let mut prev = [0_u8; 32];
+    for rec in records.iter().filter(|r| {
+        matches!(
+            r.kind,
+            ExperienceKind::ToolRequest
+                | ExperienceKind::ToolAuth
+                | ExperienceKind::ToolExecution
+                | ExperienceKind::AuditCheckpoint
+        )
+    }) {
+        assert_eq!(rec.audit_prev_digest, Some(prev));
+        prev = rec.audit_digest.expect("audit digest");
+    }
 }

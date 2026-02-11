@@ -17,6 +17,37 @@ fn intent() -> Intent {
     Intent::new(IntentId(7), IntentKind::System, "test")
 }
 
+fn with_low_risk(mut decision: DecisionFrame) -> DecisionFrame {
+    decision.compute_summary = Some(ucf_frames::v1::ComputeSignalsSummary {
+        backend: "stub",
+        surprise: 0.1,
+        pressure: 0.1,
+        risk: 0.1,
+        confidence: 0.9,
+        spike_count: 0,
+        spikes_digest: [0; 32],
+        sparsity: None,
+        energy: None,
+        ssm_readout: None,
+        ssm_digest: None,
+        world_digest: None,
+        risk_quality: None,
+        evidence_context_digest: None,
+        evidence_world_digest: None,
+        evidence_spikes_digest: None,
+        evidence_ssm_digest: None,
+        backend_profile: None,
+        budget_profile_id: None,
+        seed: None,
+        risk_contract_version: None,
+        compute_schema_version: None,
+        compute_chain_digest: None,
+        compute_code_version: None,
+        budget_exceeded_stage: None,
+    });
+    decision
+}
+
 #[test]
 fn no_decision_no_action() {
     let ctrl = ControlFrame::new_text(
@@ -45,7 +76,7 @@ fn pbm_allows_external_output_text_and_gem_emits() {
         intent(),
         "allow-me",
     );
-    let decision = Pbm::decide(&ctrl, None);
+    let decision = with_low_risk(Pbm::decide(&ctrl, None));
     let mut adapter = MockAdapter::default();
 
     let result = Gem::execute(&mut adapter, &ctrl, Some(&decision));
@@ -89,7 +120,11 @@ fn external_output_text_with_allow_emits_text() {
         intent(),
         "hello-world",
     );
-    let decision = DecisionFrame::allow(sim_time(), CorrelationId(4), "allow_test");
+    let decision = with_low_risk(DecisionFrame::allow(
+        sim_time(),
+        CorrelationId(4),
+        "allow_test",
+    ));
     let mut adapter = MockAdapter::default();
 
     let result = Gem::execute(&mut adapter, &ctrl, Some(&decision));
@@ -108,7 +143,11 @@ fn memory_write_bytes_with_allow_writes_memory() {
         intent: intent(),
         payload: ControlPayload::Bytes(vec![1_u8, 2, 3].into()),
     };
-    let decision = DecisionFrame::allow(sim_time(), CorrelationId(5), "allow_mem");
+    let decision = with_low_risk(DecisionFrame::allow(
+        sim_time(),
+        CorrelationId(5),
+        "allow_mem",
+    ));
     let mut adapter = MockAdapter::default();
 
     let result = Gem::execute(&mut adapter, &ctrl, Some(&decision));
@@ -132,7 +171,11 @@ fn gem_allow_brain_stimulus_emits_spikes() {
             duration_ms: 25,
         }),
     };
-    let decision = DecisionFrame::allow(sim_time(), CorrelationId(6), "allow_brain");
+    let decision = with_low_risk(DecisionFrame::allow(
+        sim_time(),
+        CorrelationId(6),
+        "allow_brain",
+    ));
     let mut adapter = MockAdapter::default();
 
     let result = Gem::execute(&mut adapter, &ctrl, Some(&decision));

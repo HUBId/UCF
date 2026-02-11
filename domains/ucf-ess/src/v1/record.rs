@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use sha2::{Digest, Sha256};
 use ucf_core::types::SimTime;
 use ucf_frames::v1::{
     BrainFrame, ComputeSignalsSummary, ControlFrame, CorrelationId, DecisionFrame, DecisionMeta,
@@ -15,6 +16,10 @@ pub enum ExperienceKind {
     DecisionOut,
     BrainOut,
     Note,
+    ToolRequest,
+    ToolAuth,
+    ToolExecution,
+    AuditCheckpoint,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -28,6 +33,8 @@ pub struct ExperienceRecord {
     pub iit_phi: Option<PhiProxySnapshot>,
     pub decision_meta: Option<DecisionMeta>,
     pub compute_summary: Option<ComputeSignalsSummary>,
+    pub audit_prev_digest: Option<[u8; 32]>,
+    pub audit_digest: Option<[u8; 32]>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -36,7 +43,47 @@ pub enum ExperiencePayload {
     Decision(Box<DecisionFrame>),
     Brain(BrainFrame),
     Text(Arc<str>),
+    Audit(AuditPayload),
     Empty,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AuditPayload {
+    ToolRequest(ToolRequestRecord),
+    ToolAuth(ToolAuthRecord),
+    ToolExecution(ToolExecutionRecord),
+    AuditCheckpoint(AuditCheckpointRecord),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToolRequestRecord {
+    pub tool_request_id: u64,
+    pub capability_kind: String,
+    pub target: String,
+    pub decision_id: u64,
+    pub evidence_chain_digest: [u8; 32],
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToolAuthRecord {
+    pub tool_request_id: u64,
+    pub allowed: bool,
+    pub reason: String,
+    pub token_digest: Option<[u8; 32]>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToolExecutionRecord {
+    pub tool_request_id: u64,
+    pub status: String,
+    pub bytes_out: Option<u32>,
+    pub bytes_in: Option<u32>,
+    pub error_code: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AuditCheckpointRecord {
+    pub head_digest: [u8; 32],
 }
 
 impl ExperienceRecord {
@@ -51,6 +98,8 @@ impl ExperienceRecord {
             iit_phi: None,
             decision_meta: None,
             compute_summary: None,
+            audit_prev_digest: None,
+            audit_digest: None,
         }
     }
 
@@ -65,6 +114,8 @@ impl ExperienceRecord {
             iit_phi: None,
             decision_meta: Some(decision.meta),
             compute_summary: decision.compute_summary,
+            audit_prev_digest: None,
+            audit_digest: None,
         }
     }
 
@@ -79,6 +130,8 @@ impl ExperienceRecord {
             iit_phi: None,
             decision_meta: None,
             compute_summary: None,
+            audit_prev_digest: None,
+            audit_digest: None,
         }
     }
 
@@ -98,6 +151,36 @@ impl ExperienceRecord {
             iit_phi: None,
             decision_meta: None,
             compute_summary: None,
+            audit_prev_digest: None,
+            audit_digest: None,
+        }
+    }
+
+    pub fn audit(
+        id: ExperienceId,
+        time: SimTime,
+        corr: CorrelationId,
+        kind: ExperienceKind,
+        payload: AuditPayload,
+        prev_digest: [u8; 32],
+    ) -> Self {
+        let canonical = format!("{:?}|{:?}|{}|{}", kind, payload, time.tick.get(), corr.0);
+        let mut hasher = Sha256::new();
+        hasher.update(prev_digest);
+        hasher.update(canonical.as_bytes());
+        let digest: [u8; 32] = hasher.finalize().into();
+        Self {
+            id,
+            time,
+            corr,
+            kind,
+            payload: ExperiencePayload::Audit(payload),
+            neuromod: None,
+            iit_phi: None,
+            decision_meta: None,
+            compute_summary: None,
+            audit_prev_digest: Some(prev_digest),
+            audit_digest: Some(digest),
         }
     }
 

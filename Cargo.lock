@@ -2832,6 +2832,7 @@ dependencies = [
 name = "ucf-ess"
 version = "0.1.0"
 dependencies = [
+ "sha2",
  "ucf-core",
  "ucf-frames",
 ]
@@ -3101,6 +3102,9 @@ dependencies = [
 name = "ucf-policy"
 version = "0.1.0"
 dependencies = [
+ "metrics",
+ "sha2",
+ "tracing",
  "ucf-bluebrain-bridge",
  "ucf-brainbus",
  "ucf-core",
