@@ -2005,6 +2005,11 @@ dependencies = [
 [[package]]
 name = "ucf-core"
 version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "blake3",
+ "storage-firewood",
+]
 
 [[package]]
 name = "ucf-coupling"

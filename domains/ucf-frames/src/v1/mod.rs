@@ -1,3 +1,4 @@
+mod archive;
 mod biophys;
 mod brain;
 mod cde;
@@ -14,6 +15,7 @@ mod phase;
 mod phi;
 mod stimulus;
 
+pub use archive::ArchiveAppendFrame;
 pub use biophys::{BiophysFrame, BiophysHhParams, SsmFrame};
 pub use brain::{BrainFrame, BrainSignal};
 pub use cde::CdeFrame;
