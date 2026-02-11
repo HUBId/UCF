@@ -1,0 +1,3 @@
+sandbox-call-seed-v1
+module=tools.external
+op=emit_text

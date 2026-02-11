@@ -32,6 +32,10 @@ const IPC_SCHEMA_VERSION: u16 = 1;
 const IPC_HEARTBEAT_MSG_ID: u64 = 0;
 #[cfg(feature = "sandbox-proc")]
 const DEFAULT_MAX_IPC_BYTES: usize = 128 * 1024;
+#[cfg(feature = "sandbox-proc")]
+const DEFAULT_MAX_VEC_LEN: usize = 4_096;
+#[cfg(feature = "sandbox-proc")]
+const DEFAULT_MAX_STR_LEN: usize = 512;
 #[cfg(feature = "sandbox-wasm")]
 const WASM_SCHEMA_VERSION: u16 = 1;
 #[cfg(feature = "sandbox-wasm")]
@@ -210,6 +214,62 @@ pub enum SandboxError {
 
 #[cfg(feature = "sandbox-proc")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DecodeCaps {
+    pub max_bytes: usize,
+    pub max_vec_len: usize,
+    pub max_str_len: usize,
+    pub max_map_len: usize,
+}
+
+#[cfg(feature = "sandbox-proc")]
+impl DecodeCaps {
+    pub const fn caps_default() -> Self {
+        Self {
+            max_bytes: DEFAULT_MAX_IPC_BYTES,
+            max_vec_len: DEFAULT_MAX_VEC_LEN,
+            max_str_len: DEFAULT_MAX_STR_LEN,
+            max_map_len: MAX_CAPABILITY_ITEMS,
+        }
+    }
+
+    pub const fn caps_ipc() -> Self {
+        Self {
+            max_bytes: DEFAULT_MAX_IPC_BYTES,
+            max_vec_len: DEFAULT_MAX_IPC_BYTES,
+            max_str_len: DEFAULT_MAX_STR_LEN,
+            max_map_len: MAX_CAPABILITY_ITEMS,
+        }
+    }
+
+    pub const fn caps_ess() -> Self {
+        Self {
+            max_bytes: 64 * 1024,
+            max_vec_len: 2_048,
+            max_str_len: 256,
+            max_map_len: 64,
+        }
+    }
+}
+
+#[cfg(feature = "sandbox-proc")]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DecodeError {
+    pub kind: &'static str,
+    pub at: &'static str,
+    pub context: String,
+}
+
+#[cfg(feature = "sandbox-proc")]
+impl DecodeError {
+    fn new(kind: &'static str, at: &'static str, context: impl Into<String>) -> Self {
+        let mut context = context.into();
+        context.truncate(96);
+        Self { kind, at, context }
+    }
+}
+
+#[cfg(feature = "sandbox-proc")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum IpcKind {
     Call = 1,
     Reply = 2,
@@ -236,7 +296,7 @@ impl IpcKind {
 
 #[cfg(feature = "sandbox-proc")]
 #[derive(Clone, Debug, PartialEq, Eq)]
-struct IpcEnvelope {
+pub struct IpcEnvelope {
     schema_version: u16,
     msg_id: u64,
     kind: IpcKind,
@@ -246,7 +306,7 @@ struct IpcEnvelope {
 
 #[cfg(feature = "sandbox-proc")]
 #[derive(Clone, Debug, PartialEq, Eq)]
-struct WorkerHeartbeat {
+pub struct WorkerHeartbeat {
     schema_version: u16,
     worker_build_tag: String,
 }
@@ -693,12 +753,13 @@ impl<'a, A: ActionAdapter> ProcessIsolationRuntime<'a, A> {
             .ok_or(SandboxError::BackendDisabled("worker_stdout"))?;
         let hb_env = read_frame(&mut stdout, self.max_message_bytes)
             .map_err(|_| SandboxError::BackendDisabled("worker_handshake"))?;
-        let hb = decode_envelope(&hb_env)
+        let hb = decode_ipc_envelope(&hb_env, DecodeCaps::caps_ipc())
             .map_err(|_| SandboxError::BackendDisabled("worker_handshake"))?;
         if hb.kind != IpcKind::Heartbeat || hb.msg_id != IPC_HEARTBEAT_MSG_ID {
             return Err(SandboxError::BackendDisabled("worker_handshake_kind"));
         }
-        let heartbeat = decode_worker_heartbeat(&hb.payload)?;
+        let heartbeat = decode_worker_heartbeat(&hb.payload, DecodeCaps::caps_default())
+            .map_err(|_| SandboxError::InvalidRequest("heartbeat_decode"))?;
         if heartbeat.schema_version != IPC_SCHEMA_VERSION {
             return Err(SandboxError::BackendDisabled("worker_schema_version"));
         }
@@ -728,11 +789,13 @@ impl<'a, A: ActionAdapter> ProcessIsolationRuntime<'a, A> {
             .ok_or(SandboxError::ExecutionFailed("worker_missing"))?;
         let bytes = read_frame(&mut worker.stdout, self.max_message_bytes)
             .map_err(|_| SandboxError::ExecutionFailed("ipc_read"))?;
-        decode_envelope(&bytes)
+        decode_ipc_envelope(&bytes, DecodeCaps::caps_ipc())
+            .map_err(|_| SandboxError::InvalidRequest("ipc_decode"))
     }
 
     fn handle_tool_request(&mut self, msg_id: u64, payload: &[u8]) -> Result<(), SandboxError> {
-        let request = decode_tool_request_wire(payload)?;
+        let request = decode_tool_request_wire(payload, DecodeCaps::caps_default())
+            .map_err(|_| SandboxError::InvalidRequest("tool_request_decode"))?;
         let auth = self.gate.authorize(&request, request.requested_at_t);
         let result = match auth {
             AuthorizationOutcome::Allowed { .. } => run_tool_with_adapter(self.adapter, &request),
@@ -796,7 +859,10 @@ impl<'a, A: ActionAdapter> IsolationRuntime for ProcessIsolationRuntime<'a, A> {
             }
             match env.kind {
                 IpcKind::ToolRequest => self.handle_tool_request(msg_id, &env.payload)?,
-                IpcKind::Reply => return decode_sandbox_reply(&env.payload),
+                IpcKind::Reply => {
+                    return decode_sandbox_reply(&env.payload, DecodeCaps::caps_default())
+                        .map_err(|_| SandboxError::InvalidRequest("sandbox_reply_decode"))
+                }
                 _ => return Err(SandboxError::ExecutionFailed("ipc_kind")),
             }
         }
@@ -1087,9 +1153,9 @@ fn put_optional_digest(out: &mut Vec<u8>, value: Option<[u8; 32]>) {
 }
 
 #[cfg(feature = "sandbox-proc")]
-fn read_u16(input: &[u8], idx: &mut usize) -> Result<u16, SandboxError> {
+fn read_u16(input: &[u8], idx: &mut usize) -> Result<u16, DecodeError> {
     if input.len().saturating_sub(*idx) < 2 {
-        return Err(SandboxError::InvalidRequest("decode_u16"));
+        return Err(DecodeError::new("truncated", "decode_u16", "need_2_bytes"));
     }
     let value = u16::from_be_bytes([input[*idx], input[*idx + 1]]);
     *idx += 2;
@@ -1097,9 +1163,9 @@ fn read_u16(input: &[u8], idx: &mut usize) -> Result<u16, SandboxError> {
 }
 
 #[cfg(feature = "sandbox-proc")]
-fn read_u32(input: &[u8], idx: &mut usize) -> Result<u32, SandboxError> {
+fn read_u32(input: &[u8], idx: &mut usize) -> Result<u32, DecodeError> {
     if input.len().saturating_sub(*idx) < 4 {
-        return Err(SandboxError::InvalidRequest("decode_u32"));
+        return Err(DecodeError::new("truncated", "decode_u32", "need_4_bytes"));
     }
     let value = u32::from_be_bytes([
         input[*idx],
@@ -1112,9 +1178,9 @@ fn read_u32(input: &[u8], idx: &mut usize) -> Result<u32, SandboxError> {
 }
 
 #[cfg(feature = "sandbox-proc")]
-fn read_u64(input: &[u8], idx: &mut usize) -> Result<u64, SandboxError> {
+fn read_u64(input: &[u8], idx: &mut usize) -> Result<u64, DecodeError> {
     if input.len().saturating_sub(*idx) < 8 {
-        return Err(SandboxError::InvalidRequest("decode_u64"));
+        return Err(DecodeError::new("truncated", "decode_u64", "need_8_bytes"));
     }
     let value = u64::from_be_bytes([
         input[*idx],
@@ -1131,9 +1197,13 @@ fn read_u64(input: &[u8], idx: &mut usize) -> Result<u64, SandboxError> {
 }
 
 #[cfg(feature = "sandbox-proc")]
-fn read_digest(input: &[u8], idx: &mut usize) -> Result<[u8; 32], SandboxError> {
+fn read_digest(input: &[u8], idx: &mut usize) -> Result<[u8; 32], DecodeError> {
     if input.len().saturating_sub(*idx) < 32 {
-        return Err(SandboxError::InvalidRequest("decode_digest"));
+        return Err(DecodeError::new(
+            "truncated",
+            "decode_digest",
+            "need_32_bytes",
+        ));
     }
     let mut out = [0u8; 32];
     out.copy_from_slice(&input[*idx..*idx + 32]);
@@ -1142,10 +1212,17 @@ fn read_digest(input: &[u8], idx: &mut usize) -> Result<[u8; 32], SandboxError> 
 }
 
 #[cfg(feature = "sandbox-proc")]
-fn read_bytes(input: &[u8], idx: &mut usize) -> Result<Vec<u8>, SandboxError> {
+fn read_bytes(input: &[u8], idx: &mut usize, caps: DecodeCaps) -> Result<Vec<u8>, DecodeError> {
     let len = read_u32(input, idx)? as usize;
+    if len > caps.max_vec_len {
+        return Err(DecodeError::new(
+            "bounds",
+            "decode_bytes",
+            format!("len>{}", caps.max_vec_len),
+        ));
+    }
     if input.len().saturating_sub(*idx) < len {
-        return Err(SandboxError::InvalidRequest("decode_bytes"));
+        return Err(DecodeError::new("truncated", "decode_bytes", "payload"));
     }
     let out = input[*idx..*idx + len].to_vec();
     *idx += len;
@@ -1153,9 +1230,16 @@ fn read_bytes(input: &[u8], idx: &mut usize) -> Result<Vec<u8>, SandboxError> {
 }
 
 #[cfg(feature = "sandbox-proc")]
-fn read_string(input: &[u8], idx: &mut usize) -> Result<String, SandboxError> {
-    let bytes = read_bytes(input, idx)?;
-    String::from_utf8(bytes).map_err(|_| SandboxError::InvalidRequest("decode_utf8"))
+fn read_string(input: &[u8], idx: &mut usize, caps: DecodeCaps) -> Result<String, DecodeError> {
+    let bytes = read_bytes(input, idx, caps)?;
+    if bytes.len() > caps.max_str_len {
+        return Err(DecodeError::new(
+            "bounds",
+            "decode_string",
+            format!("len>{}", caps.max_str_len),
+        ));
+    }
+    String::from_utf8(bytes).map_err(|_| DecodeError::new("utf8", "decode_utf8", "invalid_utf8"))
 }
 
 #[cfg(feature = "sandbox-proc")]
@@ -1164,20 +1248,37 @@ fn encode_sandbox_call(call: &SandboxCall) -> Vec<u8> {
 }
 
 #[cfg(feature = "sandbox-proc")]
-fn decode_sandbox_reply(input: &[u8]) -> Result<SandboxReply, SandboxError> {
+pub fn decode_sandbox_reply(input: &[u8], caps: DecodeCaps) -> Result<SandboxReply, DecodeError> {
+    if input.len() > caps.max_bytes {
+        return Err(DecodeError::new(
+            "bounds",
+            "decode_sandbox_reply",
+            format!("input>{}", caps.max_bytes),
+        ));
+    }
     let mut idx = 0usize;
     if input.is_empty() {
-        return Err(SandboxError::InvalidRequest("reply_empty"));
+        return Err(DecodeError::new(
+            "empty",
+            "decode_sandbox_reply",
+            "reply_empty",
+        ));
     }
     let status = match input[idx] {
         1 => SandboxStatus::Ok,
         2 => SandboxStatus::Denied,
         3 => SandboxStatus::RateLimited,
         4 => SandboxStatus::Failed,
-        _ => return Err(SandboxError::InvalidRequest("reply_status")),
+        _ => {
+            return Err(DecodeError::new(
+                "enum",
+                "decode_sandbox_reply",
+                "reply_status",
+            ))
+        }
     };
     idx += 1;
-    let output = read_bytes(input, &mut idx)?;
+    let output = read_bytes(input, &mut idx, caps)?;
     let call_digest = read_digest(input, &mut idx)?;
     let token_digest = if input.get(idx).copied().unwrap_or_default() == 1 {
         idx += 1;
@@ -1290,24 +1391,35 @@ fn encode_envelope(env: &IpcEnvelope) -> Vec<u8> {
 }
 
 #[cfg(feature = "sandbox-proc")]
-fn decode_envelope(input: &[u8]) -> Result<IpcEnvelope, SandboxError> {
+pub fn decode_ipc_envelope(input: &[u8], caps: DecodeCaps) -> Result<IpcEnvelope, DecodeError> {
+    if input.len() > caps.max_bytes {
+        return Err(DecodeError::new(
+            "bounds",
+            "decode_ipc_envelope",
+            format!("input>{}", caps.max_bytes),
+        ));
+    }
     let mut idx = 0usize;
     let schema_version = read_u16(input, &mut idx)?;
     let msg_id = read_u64(input, &mut idx)?;
     let kind = IpcKind::from_u8(
         *input
             .get(idx)
-            .ok_or(SandboxError::InvalidRequest("ipc_kind"))?,
+            .ok_or_else(|| DecodeError::new("truncated", "decode_ipc_envelope", "ipc_kind"))?,
     )
-    .ok_or(SandboxError::InvalidRequest("ipc_kind"))?;
+    .ok_or_else(|| DecodeError::new("enum", "decode_ipc_envelope", "ipc_kind"))?;
     idx += 1;
-    let payload = read_bytes(input, &mut idx)?;
+    let payload = read_bytes(input, &mut idx, caps)?;
     let payload_digest = read_digest(input, &mut idx)?;
     let mut hasher = Hasher::new();
     hasher.update(&payload);
     let actual: [u8; 32] = hasher.finalize().into();
     if actual != payload_digest {
-        return Err(SandboxError::InvalidRequest("ipc_payload_digest"));
+        return Err(DecodeError::new(
+            "digest",
+            "decode_ipc_envelope",
+            "ipc_payload_digest",
+        ));
     }
     Ok(IpcEnvelope {
         schema_version,
@@ -1349,10 +1461,20 @@ fn read_frame(r: &mut dyn Read, max_bytes: usize) -> Result<Vec<u8>, SandboxErro
 }
 
 #[cfg(feature = "sandbox-proc")]
-fn decode_worker_heartbeat(input: &[u8]) -> Result<WorkerHeartbeat, SandboxError> {
+pub fn decode_worker_heartbeat(
+    input: &[u8],
+    caps: DecodeCaps,
+) -> Result<WorkerHeartbeat, DecodeError> {
+    if input.len() > caps.max_bytes {
+        return Err(DecodeError::new(
+            "bounds",
+            "decode_worker_heartbeat",
+            format!("input>{}", caps.max_bytes),
+        ));
+    }
     let mut idx = 0usize;
     let schema_version = read_u16(input, &mut idx)?;
-    let worker_build_tag = read_string(input, &mut idx)?;
+    let worker_build_tag = read_string(input, &mut idx, caps)?;
     Ok(WorkerHeartbeat {
         schema_version,
         worker_build_tag,
@@ -1360,11 +1482,21 @@ fn decode_worker_heartbeat(input: &[u8]) -> Result<WorkerHeartbeat, SandboxError
 }
 
 #[cfg(feature = "sandbox-proc")]
-fn decode_tool_request_wire(input: &[u8]) -> Result<ToolRequest, SandboxError> {
+pub fn decode_tool_request_wire(
+    input: &[u8],
+    caps: DecodeCaps,
+) -> Result<ToolRequest, DecodeError> {
+    if input.len() > caps.max_bytes {
+        return Err(DecodeError::new(
+            "bounds",
+            "decode_tool_request_wire",
+            format!("input>{}", caps.max_bytes),
+        ));
+    }
     let mut idx = 0usize;
     let id = read_u64(input, &mut idx)?;
-    let kind_tag = read_string(input, &mut idx)?;
-    let target = read_string(input, &mut idx)?;
+    let kind_tag = read_string(input, &mut idx, caps)?;
+    let target = read_string(input, &mut idx, caps)?;
     let bytes_out = read_u32(input, &mut idx)?;
     let bytes_in = read_u32(input, &mut idx)?;
     let requested_at_t = read_u64(input, &mut idx)?;
@@ -1382,7 +1514,13 @@ fn decode_tool_request_wire(input: &[u8]) -> Result<ToolRequest, SandboxError> {
         v if v.starts_with("custom:") => {
             CapabilityKind::Custom(v.trim_start_matches("custom:").to_string())
         }
-        _ => return Err(SandboxError::InvalidRequest("tool_kind")),
+        _ => {
+            return Err(DecodeError::new(
+                "enum",
+                "decode_tool_request_wire",
+                "tool_kind",
+            ))
+        }
     };
     Ok(ToolRequest {
         id,
@@ -1718,7 +1856,9 @@ mod proc_tests {
     fn ipc_frame_roundtrip() {
         let env = IpcEnvelope::new(7, IpcKind::Call, b"abc".to_vec());
         let bytes = encode_envelope(&env);
-        let decoded = decode_envelope(&bytes).expect("decode");
+        let decoded = decode_ipc_envelope(&bytes, DecodeCaps::caps_ipc())
+            .map_err(|_| SandboxError::InvalidRequest("ipc_decode"))
+            .expect("decode");
         assert_eq!(decoded.msg_id, 7);
         assert_eq!(decoded.kind, IpcKind::Call);
         assert_eq!(decoded.payload, b"abc".to_vec());
@@ -1733,7 +1873,7 @@ mod proc_tests {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&hb.schema_version.to_be_bytes());
         put_string(&mut bytes, &hb.worker_build_tag);
-        let decoded = decode_worker_heartbeat(&bytes).expect("decode");
+        let decoded = decode_worker_heartbeat(&bytes, DecodeCaps::caps_default()).expect("decode");
         assert_eq!(decoded.worker_build_tag, "tag");
     }
 }
