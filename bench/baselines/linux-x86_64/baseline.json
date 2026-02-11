@@ -1,0 +1,37 @@
+{
+  "build_tag": "085456b",
+  "command": "control-loop",
+  "config": {
+    "backend": "stub",
+    "isolation": "inproc",
+    "ticks": "2000"
+  },
+  "budgets": {
+    "control_tick_p50_ms": 2.0,
+    "control_tick_p95_ms": 5.0,
+    "control_tick_p99_ms": 10.0,
+    "ess_append_p95_ms": 1.0,
+    "regression_throughput_floor_ratio": 0.7,
+    "regression_p95_ceiling_ratio": 1.5
+  },
+  "stats": {
+    "n": 2000,
+    "mean_ms": 1.0602510145000001,
+    "p50_ms": 0.98797,
+    "p95_ms": 1.793988,
+    "p99_ms": 2.076947,
+    "min_ms": 0.555625,
+    "max_ms": 24.480339,
+    "throughput_ops_sec": 941.5646052298831
+  },
+  "extra": {
+    "decision_count": 2000,
+    "ess_records_appended": 14000
+  },
+  "allocations": {
+    "alloc_count": 513459,
+    "dealloc_count": 481056,
+    "alloc_bytes_total": 67226411,
+    "dealloc_bytes_total": 51962905
+  }
+}

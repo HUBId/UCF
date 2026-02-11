@@ -28,5 +28,13 @@ jobs:
       - name: Cargo test (quiet)
         run: cargo test -q
 
+      - name: Bench smoke (control-loop)
+        run: |
+          mkdir -p bench/out
+          cargo run -p ucf-bench -- control-loop --ticks 2000 --backend stub --isolation inproc --out bench/out/control-loop-smoke.json
+      - name: Bench regression guard (smoke)
+        run: |
+          cargo run -p ucf-bench -- compare-baseline --baseline bench/baselines/linux-x86_64/baseline.json --current bench/out/control-loop-smoke.json --out bench/out/regression-report.json
+
       - name: Fuzz targets compile (stable smoke)
         run: cargo check --manifest-path fuzz/Cargo.toml --bins
