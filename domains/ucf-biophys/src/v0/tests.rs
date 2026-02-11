@@ -417,3 +417,59 @@ fn ssm_norm_and_sparsity_are_reported() {
     assert!((out.norm_l2 - 5.0).abs() < 1e-6);
     assert!((out.sparsity - ((super::SSM_D - 2) as f32 / super::SSM_D as f32)).abs() < 1e-6);
 }
+
+#[test]
+fn onn_phase_diff_wraps_shortest_arc() {
+    use super::{phase_diff_abs, TAU};
+
+    let a = 0.1;
+    let b = TAU - 0.1;
+    let diff = phase_diff_abs(a, b);
+    assert!((diff - 0.2).abs() < 1e-3);
+}
+
+#[test]
+fn onn_phase_bin_is_in_range_and_stable() {
+    use super::phase_bin;
+
+    let bins = 16;
+    let p = 1.2345;
+    let b1 = phase_bin(p, bins);
+    let b2 = phase_bin(p, bins);
+    assert_eq!(b1, b2);
+    assert!(b1 < bins);
+}
+
+#[test]
+fn snn_event_bus_honors_capacity() {
+    use super::{EventBus, SnnSpikeEvent, SpikeKind};
+
+    let mut bus = EventBus {
+        cap: 2,
+        ..EventBus::default()
+    };
+    for i in 0..3 {
+        bus.push(SnnSpikeEvent {
+            now_ms: i,
+            src: 1,
+            kind: SpikeKind::Feature,
+            spike_id: i as u32,
+            phase_bin: 0,
+            ttfs_code: 128,
+            magnitude: 0.5,
+        });
+    }
+
+    assert_eq!(bus.q.len(), 2);
+    assert_eq!(bus.q[0].spike_id, 1);
+    assert_eq!(bus.q[1].spike_id, 2);
+}
+
+#[test]
+fn ttfs_strength_mapping_is_monotonic() {
+    use super::ttfs_from_strength;
+
+    let low = ttfs_from_strength(0.1);
+    let high = ttfs_from_strength(0.9);
+    assert!(high < low);
+}

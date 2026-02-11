@@ -501,3 +501,95 @@ fn ssm_gate_is_lower_for_fragmenting_than_stable_given_same_inputs() {
 
     assert!(fragmenting.gate < stable.gate);
 }
+
+#[test]
+fn orchestrator_tick_emits_onn_and_snn_frames_each_tick() {
+    let mut orchestrator = RuntimeOrchestrator::new();
+    let mut adapter = MockAdapter::default();
+
+    for tick in 200..210 {
+        let ctrl = ControlFrame::new_text(
+            SimTime {
+                tick: Tick::new(tick),
+                window: WindowId::new(0),
+            },
+            CorrelationId(800 + tick),
+            ChannelCode::InternalThought,
+            intent(),
+            "onn-snn",
+        );
+
+        orchestrator
+            .ingest_and_process(&mut adapter, ctrl)
+            .expect("tick should succeed");
+
+        let onn = orchestrator
+            .last_onn_frame()
+            .expect("onn frame should exist");
+        let snn = orchestrator
+            .last_snn_frame()
+            .expect("snn frame should exist");
+
+        assert_eq!(onn.now_ms, tick);
+        assert_eq!(snn.now_ms, tick);
+    }
+}
+
+#[test]
+fn low_mean_lock_path_changes_ssm_gate_via_noise_adjustment() {
+    let mut lo = RuntimeOrchestrator::new();
+    lo.set_onn_coupling_for_test(0.0);
+    let mut hi = RuntimeOrchestrator::new();
+
+    let mut adapter_lo = MockAdapter::default();
+    let mut adapter_hi = MockAdapter::default();
+
+    let ctrl = ControlFrame::new_text(
+        SimTime {
+            tick: Tick::new(250),
+            window: WindowId::new(0),
+        },
+        CorrelationId(950),
+        ChannelCode::InternalThought,
+        intent(),
+        "lock-noise",
+    );
+
+    lo.ingest_and_process(&mut adapter_lo, ctrl.clone())
+        .expect("low coupling tick should succeed");
+    hi.ingest_and_process(&mut adapter_hi, ctrl)
+        .expect("default coupling tick should succeed");
+
+    let low_gate = lo.last_ssm_frame().expect("ssm frame low").gate;
+    let high_gate = hi.last_ssm_frame().expect("ssm frame hi").gate;
+    assert!(low_gate <= high_gate);
+}
+
+#[test]
+fn rejected_nsr_emits_verify_spike_with_earliest_ttfs() {
+    let mut orchestrator = RuntimeOrchestrator::new();
+    let mut adapter = MockAdapter::default();
+
+    orchestrator.force_causal_cycle_for_test(1);
+    let ctrl = ControlFrame::new_text(
+        SimTime {
+            tick: Tick::new(300),
+            window: WindowId::new(0),
+        },
+        CorrelationId(999),
+        ChannelCode::InternalThought,
+        intent(),
+        "reject-verify-spike",
+    );
+
+    orchestrator
+        .ingest_and_process(&mut adapter, ctrl)
+        .expect("tick should succeed");
+
+    let spikes = orchestrator.drain_event_bus_for_test();
+    let verify = spikes
+        .iter()
+        .find(|s| s.kind == ucf_biophys::v0::SpikeKind::Verify)
+        .expect("verify spike must exist");
+    assert_eq!(verify.ttfs_code, 0);
+}

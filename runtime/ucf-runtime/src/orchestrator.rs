@@ -1,15 +1,17 @@
 use crate::errors::RuntimeError;
 use ucf_biophys::v0::{
-    apply_coherence_feedback, classify, compute_integration, couple_pair, hpa_step, modulate_hh,
-    osc_step, phase_lock, spikes_from_ids, ssm_step, ttfs_phase, verify_graph, CausalGraph,
-    CoherenceState, Edge, FieldEvent, FieldEventKind, FieldUpdateCfg, HhParams, HpaCfg, HpaState,
-    IITCfg, IITInputs, IITState, Microcircuit, ModulationCfg, NeuromodulatorField as BiophysField,
-    Osc, PhaseCfg, RuleCfg, SpikeCodecCfg, SsmCfg, SsmInputs, SsmState, VerifyVerdict, SSM_D,
+    apply_coherence_feedback, classify, compute_integration, couple_pair, ensure_osc, hpa_step,
+    modulate_hh, onn_step, osc_step, phase_bin, phase_lock, ssm_step, ttfs_from_strength,
+    ttfs_phase, verify_graph, CausalGraph, CoherenceState, Edge, EventBus, FieldEvent,
+    FieldEventKind, FieldUpdateCfg, HhParams, HpaCfg, HpaState, IITCfg, IITInputs, IITState,
+    Microcircuit, ModulationCfg, NeuromodulatorField as BiophysField, OnnCfg, OnnState, Osc, OscId,
+    PhaseCfg, RuleCfg, SnnSpikeEvent, SpikeCodecCfg, SpikeKind, SsmCfg, SsmInputs, SsmState,
+    VerifyVerdict, SSM_D,
 };
 use ucf_ess::v1::{ExperienceRecord, ExperienceStore, IdAllocator, InMemoryEss};
 use ucf_frames::v1::{
     BiophysFrame, BiophysHhParams, CdeFrame, ControlFrame, DecisionFrame, IitFrame,
-    MicrocircuitFrame, NeuromodulatorSnapshot, NsrFrame, PhaseFrame, SsmFrame,
+    MicrocircuitFrame, NeuromodulatorSnapshot, NsrFrame, OnnFrame, PhaseFrame, SnnFrame, SsmFrame,
 };
 use ucf_iit_proxy::v0::{
     IitConfig, IitMonitor, MOD_BLUE, MOD_GEIST, MOD_JEPA, MOD_NSR, MOD_PBM, MOD_SSM,
@@ -18,6 +20,22 @@ use ucf_neuromod::v0::{NeuromodInputs, NeuromodScheduler, NeuromodulatorField};
 use ucf_onn::v0::{OnnCore, PhaseDeg};
 use ucf_policy::{adapter::ActionAdapter, gem::Gem, pbm::Pbm};
 use ucf_snn::v0::{encode, to_brainbus, FeatureEvent, SnnEncodeCfg};
+
+const OSC_SSM: OscId = 1;
+const OSC_CDE: OscId = 2;
+const OSC_NSR: OscId = 3;
+const OSC_COHERENCE: OscId = 4;
+
+const ONN_COUPLINGS: &[(OscId, OscId, f32)] = &[
+    (OSC_SSM, OSC_CDE, 1.0),
+    (OSC_CDE, OSC_SSM, 1.0),
+    (OSC_CDE, OSC_NSR, 1.0),
+    (OSC_NSR, OSC_CDE, 1.0),
+    (OSC_NSR, OSC_COHERENCE, 1.0),
+    (OSC_COHERENCE, OSC_NSR, 1.0),
+    (OSC_SSM, OSC_COHERENCE, 0.5),
+    (OSC_COHERENCE, OSC_SSM, 0.5),
+];
 
 #[derive(Clone, Copy, Debug, Default)]
 struct PhaseBus {
@@ -62,6 +80,12 @@ pub struct RuntimeOrchestrator {
     phase_cfg: PhaseCfg,
     spike_codec_cfg: SpikeCodecCfg,
     last_phase_frame: Option<PhaseFrame>,
+    onn_state: OnnState,
+    onn_cfg: OnnCfg,
+    event_bus: EventBus,
+    spike_seq: u32,
+    last_onn_frame: Option<OnnFrame>,
+    last_snn_frame: Option<SnnFrame>,
     iit_cfg: IITCfg,
     iit_state: IITState,
     last_iit_frame: Option<IitFrame>,
@@ -82,6 +106,12 @@ impl RuntimeOrchestrator {
         for module_id in [MOD_JEPA, MOD_SSM, MOD_NSR, MOD_PBM, MOD_GEIST, MOD_BLUE] {
             onn.register(module_id, PhaseDeg(0.0));
         }
+
+        let mut onn_state = OnnState::default();
+        ensure_osc(&mut onn_state, OSC_SSM);
+        ensure_osc(&mut onn_state, OSC_CDE);
+        ensure_osc(&mut onn_state, OSC_NSR);
+        ensure_osc(&mut onn_state, OSC_COHERENCE);
 
         Self {
             ess: InMemoryEss::new(),
@@ -108,6 +138,12 @@ impl RuntimeOrchestrator {
             phase_cfg: PhaseCfg::default(),
             spike_codec_cfg: SpikeCodecCfg::default(),
             last_phase_frame: None,
+            onn_state,
+            onn_cfg: OnnCfg::default(),
+            event_bus: EventBus::default(),
+            spike_seq: 0,
+            last_onn_frame: None,
+            last_snn_frame: None,
             iit_cfg: IITCfg::default(),
             iit_state: IITState::default(),
             last_iit_frame: None,
@@ -141,6 +177,22 @@ impl RuntimeOrchestrator {
 
     pub fn last_iit_frame(&self) -> Option<IitFrame> {
         self.last_iit_frame
+    }
+
+    pub fn last_onn_frame(&self) -> Option<OnnFrame> {
+        self.last_onn_frame
+    }
+
+    pub fn last_snn_frame(&self) -> Option<SnnFrame> {
+        self.last_snn_frame
+    }
+
+    pub fn set_onn_coupling_for_test(&mut self, coupling: f32) {
+        self.onn_cfg.coupling = coupling.clamp(0.0, 1.0);
+    }
+
+    pub fn drain_event_bus_for_test(&mut self) -> Vec<SnnSpikeEvent> {
+        self.event_bus.drain()
     }
 
     pub fn last_cde_frame(&self) -> Option<CdeFrame> {
@@ -200,12 +252,13 @@ impl RuntimeOrchestrator {
     }
 
     fn update_biophys_tick(&mut self, now_ms: u64) {
-        let dt_s = self
+        let dt_ms = self
             .last_biophys_tick_ms
-            .map(|last| now_ms.saturating_sub(last) as f32 / 1000.0)
-            .unwrap_or(0.001);
+            .map(|last| now_ms.saturating_sub(last) as u32)
+            .unwrap_or(1)
+            .max(1);
         self.last_biophys_tick_ms = Some(now_ms);
-        let dt_s = dt_s.max(0.001);
+        let dt_s = (dt_ms as f32 / 1000.0).max(0.001);
 
         self.phase_bus.osc_jepa = osc_step(self.phase_bus.osc_jepa, dt_s);
         self.phase_bus.osc_nsr = osc_step(self.phase_bus.osc_nsr, dt_s);
@@ -223,6 +276,13 @@ impl RuntimeOrchestrator {
             dt_s,
             self.phase_cfg,
         );
+
+        let onn_out = onn_step(&mut self.onn_state, dt_ms, self.onn_cfg, ONN_COUPLINGS);
+        self.last_onn_frame = Some(OnnFrame {
+            now_ms,
+            global_phase: onn_out.global_phase,
+            mean_lock: onn_out.mean_lock,
+        });
 
         let baseline = BiophysField::default();
         self.biophys_field = self
@@ -257,26 +317,11 @@ impl RuntimeOrchestrator {
         let micro = self.microcircuit.step(field, dt_s);
 
         let _ttfs_zero_phase = ttfs_phase(0, self.spike_codec_cfg);
-        let spike_events =
-            spikes_from_ids(now_ms, &micro.spikes, self.phase_bus.osc_microcircuit.phase);
-
-        if !spike_events.is_empty() {
-            let boost_cfg = PhaseCfg {
-                coupling: (self.phase_cfg.coupling * 2.0).min(1.0),
-                ..self.phase_cfg
-            };
-            (self.phase_bus.osc_microcircuit, self.phase_bus.osc_nsr) = couple_pair(
-                self.phase_bus.osc_microcircuit,
-                self.phase_bus.osc_nsr,
-                dt_s,
-                boost_cfg,
-            );
-        }
 
         let lock_nsr_jepa = phase_lock(self.phase_bus.osc_nsr, self.phase_bus.osc_jepa);
         let lock_micro_nsr = phase_lock(self.phase_bus.osc_microcircuit, self.phase_bus.osc_nsr);
 
-        let spike_rate_hz = spike_events.len() as f32 / dt_s;
+        let spike_rate_hz = micro.spikes.len() as f32 / dt_s;
         self.cde_graph.upsert_var(1);
         self.cde_graph.upsert_var(2);
         self.cde_graph.upsert_var(3);
@@ -370,6 +415,13 @@ impl RuntimeOrchestrator {
         u[4] = field.dopamine.get();
         u[5] = field.serotonin.get();
 
+        let mut noise = (1.0 - lock_nsr_jepa).clamp(0.0, 1.0);
+        if onn_out.mean_lock < 0.35 {
+            noise = (noise + 0.05).clamp(0.0, 1.0);
+        } else if onn_out.mean_lock > 0.75 {
+            noise = (noise - 0.03).clamp(0.0, 1.0);
+        }
+
         let ssm_out = ssm_step(
             &mut self.ssm_state,
             &u,
@@ -377,12 +429,95 @@ impl RuntimeOrchestrator {
                 attention,
                 integration: self.iit_state.integration_ema.clamp(0.0, 1.0),
                 dopamine: field.dopamine.get(),
-                noise: (1.0 - lock_nsr_jepa).clamp(0.0, 1.0),
+                noise,
             },
             self.ssm_cfg,
         );
         self.ssm_last_u = u;
         self.working_context.ctx = ssm_out.ctx;
+
+        let phase_bin_ssm = phase_bin(phase_for_osc(&self.onn_state, OSC_SSM), 16);
+        let phase_bin_cde = phase_bin(phase_for_osc(&self.onn_state, OSC_CDE), 16);
+        let phase_bin_nsr = phase_bin(phase_for_osc(&self.onn_state, OSC_NSR), 16);
+        let phase_bin_coh = phase_bin(phase_for_osc(&self.onn_state, OSC_COHERENCE), 16);
+
+        let mut tick_spikes = Vec::new();
+        if ssm_out.gate > 0.6 {
+            let magnitude = ((ssm_out.gate - 0.6) / 0.4).clamp(0.0, 1.0);
+            tick_spikes.push(self.make_spike(
+                now_ms,
+                OSC_SSM,
+                SpikeKind::Feature,
+                phase_bin_ssm,
+                magnitude,
+                None,
+            ));
+        }
+
+        let cde_hyp_count = self.cde_graph.hyps.len() as u32;
+        if cde_hyp_count > 0 {
+            let magnitude = top_conf.min(1.0);
+            tick_spikes.push(self.make_spike(
+                now_ms,
+                OSC_CDE,
+                SpikeKind::Causal,
+                phase_bin_cde,
+                magnitude,
+                None,
+            ));
+        }
+
+        let verify_ttfs = if verdict == VerifyVerdict::Rejected {
+            Some(0)
+        } else {
+            None
+        };
+        let verify_magnitude = if verdict == VerifyVerdict::Rejected {
+            1.0
+        } else {
+            verified_ratio.clamp(0.0, 1.0)
+        };
+        tick_spikes.push(self.make_spike(
+            now_ms,
+            OSC_NSR,
+            SpikeKind::Verify,
+            phase_bin_nsr,
+            verify_magnitude,
+            verify_ttfs,
+        ));
+
+        if onn_out.mean_lock > 0.7 {
+            tick_spikes.push(self.make_spike(
+                now_ms,
+                OSC_COHERENCE,
+                SpikeKind::Attention,
+                phase_bin_coh,
+                onn_out.mean_lock.clamp(0.0, 1.0),
+                None,
+            ));
+        }
+
+        let mut feature = 0_u32;
+        let mut causal = 0_u32;
+        let mut verify = 0_u32;
+        let mut attention_count = 0_u32;
+        for ev in &tick_spikes {
+            self.event_bus.push(*ev);
+            match ev.kind {
+                SpikeKind::Feature => feature += 1,
+                SpikeKind::Causal => causal += 1,
+                SpikeKind::Verify => verify += 1,
+                SpikeKind::Attention => attention_count += 1,
+            }
+        }
+        self.last_snn_frame = Some(SnnFrame {
+            now_ms,
+            spikes: tick_spikes.len() as u32,
+            feature,
+            causal,
+            verify,
+            attention: attention_count,
+        });
 
         self.last_biophys_frame = Some(BiophysFrame {
             now_ms,
@@ -399,7 +534,7 @@ impl RuntimeOrchestrator {
         self.last_microcircuit_frame = Some(MicrocircuitFrame {
             now_ms,
             n: self.microcircuit.neurons.len() as u32,
-            spike_count: spike_events.len() as u32,
+            spike_count: micro.spikes.len() as u32,
             avg_v: micro.avg_v,
         });
         self.last_phase_frame = Some(PhaseFrame {
@@ -436,6 +571,27 @@ impl RuntimeOrchestrator {
             },
             verified_ratio,
         });
+    }
+
+    fn make_spike(
+        &mut self,
+        now_ms: u64,
+        src: OscId,
+        kind: SpikeKind,
+        phase_bin: u8,
+        magnitude: f32,
+        ttfs_override: Option<u8>,
+    ) -> SnnSpikeEvent {
+        self.spike_seq = self.spike_seq.wrapping_add(1);
+        SnnSpikeEvent {
+            now_ms,
+            src,
+            kind,
+            spike_id: self.spike_seq,
+            phase_bin,
+            ttfs_code: ttfs_override.unwrap_or_else(|| ttfs_from_strength(magnitude)),
+            magnitude,
+        }
     }
 
     fn deterministic_features(&mut self) -> [FeatureEvent; 3] {
@@ -559,4 +715,13 @@ fn attention_from_coherence(state: CoherenceState) -> f32 {
         CoherenceState::Drifting => 0.45,
         CoherenceState::Fragmenting => 0.35,
     }
+}
+
+fn phase_for_osc(state: &OnnState, id: OscId) -> f32 {
+    state
+        .osc
+        .iter()
+        .find(|(oid, _)| *oid == id)
+        .map(|(_, phase)| *phase)
+        .unwrap_or(state.global_phase)
 }
