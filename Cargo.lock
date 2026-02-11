@@ -2502,6 +2502,7 @@ dependencies = [
  "ucf-onn",
  "ucf-policy",
  "ucf-snn",
+ "ucf-ssm",
 ]
 
 [[package]]

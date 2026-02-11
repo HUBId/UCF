@@ -498,42 +498,33 @@ fn orchestrator_tick_emits_ssm_frame_each_tick() {
             .last_ssm_frame()
             .expect("ssm frame should be present");
         assert_eq!(frame.now_ms, tick);
-        assert!((0.0..=1.0).contains(&frame.gate));
+        assert!((0..=255).contains(&frame.gate_q));
+        assert!((0..=255).contains(&frame.energy_q));
     }
 }
 
 #[test]
-fn ssm_gate_is_lower_for_fragmenting_than_stable_given_same_inputs() {
-    let cfg = ucf_biophys::v0::SsmCfg::default();
-    let mut stable_state = ucf_biophys::v0::SsmState::default();
-    let mut fragmenting_state = ucf_biophys::v0::SsmState::default();
-    let u = [0.5; ucf_biophys::v0::SSM_D];
+fn ssm_gate_matches_mean_lock_in_fallback_path() {
+    let mut orchestrator = RuntimeOrchestrator::new();
+    orchestrator.force_mean_lock_for_test(0.42);
+    let mut adapter = MockAdapter::default();
 
-    let stable = ucf_biophys::v0::ssm_step(
-        &mut stable_state,
-        &u,
-        ucf_biophys::v0::SsmInputs {
-            attention: 0.55,
-            integration: 0.5,
-            dopamine: 0.5,
-            noise: 0.2,
+    let ctrl = ControlFrame::new_text(
+        SimTime {
+            tick: Tick::new(137),
+            window: WindowId::new(0),
         },
-        cfg,
+        CorrelationId(637),
+        ChannelCode::InternalThought,
+        intent(),
+        "ssm-gate",
     );
 
-    let fragmenting = ucf_biophys::v0::ssm_step(
-        &mut fragmenting_state,
-        &u,
-        ucf_biophys::v0::SsmInputs {
-            attention: 0.35,
-            integration: 0.5,
-            dopamine: 0.5,
-            noise: 0.2,
-        },
-        cfg,
-    );
+    orchestrator
+        .ingest_and_process(&mut adapter, ctrl)
+        .expect("ssm gate tick should succeed");
 
-    assert!(fragmenting.gate < stable.gate);
+    assert!((orchestrator.ssm_gate() - 0.42).abs() < 1e-6);
 }
 
 #[test]
@@ -594,8 +585,8 @@ fn low_mean_lock_path_changes_ssm_gate_via_noise_adjustment() {
     hi.ingest_and_process(&mut adapter_hi, ctrl)
         .expect("default coupling tick should succeed");
 
-    let low_gate = lo.last_ssm_frame().expect("ssm frame low").gate;
-    let high_gate = hi.last_ssm_frame().expect("ssm frame hi").gate;
+    let low_gate = lo.last_ssm_frame().expect("ssm frame low").gate_q;
+    let high_gate = hi.last_ssm_frame().expect("ssm frame hi").gate_q;
     assert!(low_gate <= high_gate);
 }
 
