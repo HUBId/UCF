@@ -3441,6 +3441,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucf-ops"
+version = "0.1.0"
+dependencies = [
+ "hex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror 1.0.69",
+ "ucf-compute",
+ "ucf-core",
+ "ucf-ess",
+ "ucf-frames",
+ "ucf-policy",
+ "ucf-replay",
+ "ucf-runtime",
+]
+
+[[package]]
 name = "ucf-output-router"
 version = "0.1.0"
 dependencies = [
