@@ -88,6 +88,8 @@ fn execute_call(
         requested_at_t: call.t,
         decision_id: call.call_id.0,
         evidence_chain_digest: call.evidence_chain_digest,
+        candidate_id: None,
+        tool_intent_digest: None,
     };
     let treq = encode_tool_request(&request);
     let req_env = IpcEnvelope::new(msg_id, IpcKind::ToolRequest, treq);

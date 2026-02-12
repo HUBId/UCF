@@ -32,10 +32,11 @@ use ucf_core::storage::{ArchiveCfg, FlushPolicy, MemArchiveStore};
 use ucf_dbm::chemistry::{chemistry_step, ChemistryCfg, NeuromodState};
 use ucf_dbm::regions::{region_step, BrainRegion, RegionKind};
 use ucf_ess::v1::{
-    AuditCheckpointRecord, AuditPayload, DeltaEvaluationRecord, DeltaProposalRecord,
-    DeltaRecommendationRecord, ExperienceKind, ExperienceRecord, ExperienceStore, HormoneRecord,
-    IdAllocator, InMemoryEss, NeuroRecord, NsrRecord, SandboxCallRecord, SandboxReplyRecord,
-    ToolAuthRecord, ToolExecutionRecord, ToolRequestRecord,
+    AuditCheckpointRecord, AuditPayload, CandidateSetRecord, CandidateSummaryRecord,
+    DeltaEvaluationRecord, DeltaProposalRecord, DeltaRecommendationRecord, ExperienceKind,
+    ExperienceRecord, ExperienceStore, HormoneRecord, IdAllocator, InMemoryEss, NeuroRecord,
+    NsrRecord, SandboxCallRecord, SandboxReplyRecord, ToolAuthRecord, ToolExecutionRecord,
+    ToolRequestRecord,
 };
 use ucf_fep::{
     check_coherence_invariants, fep_step, homeostasis_step, CoherenceCfg, CoherenceSnapshot,
@@ -58,7 +59,15 @@ use ucf_nsr::{
 use ucf_onn::v0::{onn_step, OnnCfg, OnnCore, OnnInput, OnnNode, OnnState, PhaseDeg};
 use ucf_policy::{
     adapter::ActionAdapter,
-    gem::{issue_capabilities, request_from, AuthorizationOutcome, Gem, ToolGate, ToolStatus},
+    candidate::{
+        assess_candidate, select_candidate, CandidateGenerator, CandidatePolicyHint,
+        DecisionBudget, DecisionContext, DefaultCandidateGeneratorV0,
+        OutputClass as CandidateOutputClass,
+    },
+    gem::{
+        issue_capabilities, request_from, request_from_intent, AuthorizationOutcome, Gem,
+        PayloadHint as GemPayloadHint, ToolGate, ToolStatus,
+    },
     pbm::Pbm,
     rate_limiter::RateLimiter,
 };
@@ -294,6 +303,7 @@ pub struct RuntimeOrchestrator {
     geist_state_updater: GeistStateUpdater,
     last_compute_milestone: Option<ComputeMilestone>,
     tool_gate: ToolGate,
+    candidate_generator: DefaultCandidateGeneratorV0,
     audit_head_digest: [u8; 32],
     audit_chain_checkpoint_total: u64,
     evolution_enabled: bool,
@@ -696,6 +706,7 @@ impl RuntimeOrchestrator {
                 ucf_policy::capability::CapabilitySet::empty(),
                 RateLimiter::new(1024),
             ),
+            candidate_generator: DefaultCandidateGeneratorV0,
             audit_head_digest: [0; 32],
             audit_chain_checkpoint_total: 0,
             evolution_enabled: env_flag("UCF_ENABLE_EVOLUTION"),
@@ -2192,6 +2203,67 @@ impl RuntimeOrchestrator {
             decision = next;
         }
 
+        let candidate_ctx = DecisionContext {
+            now_t: ctrl.time.tick.get(),
+            risk: compute_summary.risk,
+            confidence: compute_summary.confidence,
+            evidence_chain_digest: compute_summary.compute_chain_digest,
+            planning_allowed: !matches!(decision.decision, ucf_frames::v1::DecisionCode::Deny),
+        };
+        let candidates =
+            self.candidate_generator
+                .generate(&ctrl, &candidate_ctx, DecisionBudget::default());
+        metrics::counter!("ucf_candidates_generated_total").increment(candidates.len() as u64);
+        let nsr_block = matches!(nsr_v0_assessment.policy_hint, PolicyHint::Block);
+        let nsr_safe_only = matches!(nsr_v0_assessment.policy_hint, PolicyHint::SafeOnly);
+        let assessments: Vec<_> = candidates
+            .iter()
+            .map(|candidate| assess_candidate(candidate, &decision, nsr_block, nsr_safe_only))
+            .collect();
+        let allowed_count = assessments.iter().filter(|a| a.allowed).count() as u64;
+        metrics::counter!("ucf_candidates_allowed_total").increment(allowed_count);
+        metrics::counter!("ucf_candidates_blocked_total")
+            .increment(candidates.len() as u64 - allowed_count);
+
+        let mut selected = select_candidate(&candidates, &assessments).or_else(|| {
+            candidates
+                .iter()
+                .zip(assessments.iter())
+                .find(|(c, _)| c.is_noop())
+                .map(|(c, a)| (c.clone(), a.clone()))
+        });
+        if matches!(nsr_v0_assessment.policy_hint, PolicyHint::Block) {
+            selected = candidates
+                .iter()
+                .zip(assessments.iter())
+                .find(|(c, _)| c.is_noop())
+                .map(|(c, a)| (c.clone(), a.clone()));
+        }
+        let (selected_candidate, selected_assessment) = selected.unwrap_or_else(|| {
+            let c = candidates.first().cloned().expect("candidate exists");
+            let a = assessments.first().cloned().expect("assessment exists");
+            (c, a)
+        });
+        metrics::counter!(
+            "ucf_candidate_selected_total",
+            "intent_kind" => format!("{:?}", selected_candidate.intent_kind),
+            "output_class" => format!("{:?}", selected_candidate.output_class)
+        )
+        .increment(1);
+        metrics::counter!("ucf_tool_intents_total", "kind" => "all".to_string())
+            .increment(selected_candidate.tool_intents.len() as u64);
+        tracing::info_span!(
+            "decision.candidates",
+            selected_id = selected_candidate.candidate_id,
+            digest_prefix = format!(
+                "{:02x}{:02x}{:02x}{:02x}",
+                selected_candidate.digest[0],
+                selected_candidate.digest[1],
+                selected_candidate.digest[2],
+                selected_candidate.digest[3]
+            ),
+        );
+
         let eid1 = self.ids.next();
         self.ess.append(
             ExperienceRecord::from_control(eid1, ctrl.clone())
@@ -2205,6 +2277,46 @@ impl RuntimeOrchestrator {
                 .with_neuromod(snapshot)
                 .with_iit_phi(phi),
         )?;
+
+        let candidate_summaries: Vec<CandidateSummaryRecord> = candidates
+            .iter()
+            .zip(assessments.iter())
+            .take(8)
+            .map(|(candidate, assessment)| CandidateSummaryRecord {
+                candidate_id: candidate.candidate_id,
+                digest: candidate.digest,
+                intent_kind: candidate.intent_kind as u8,
+                output_class: candidate.output_class as u8,
+                tool_intent_count: candidate.tool_intents.len().min(8) as u8,
+                allowed: assessment.allowed,
+                policy_hint: match assessment.policy_hint {
+                    CandidatePolicyHint::Block => 2,
+                    CandidatePolicyHint::SafeOnly => 1,
+                    CandidatePolicyHint::Normal => 0,
+                },
+            })
+            .collect();
+        let candidate_set_payload = AuditPayload::CandidateSet(CandidateSetRecord {
+            schema_version: 1,
+            decision_id: eid2.0,
+            t: ctrl.time.tick.get(),
+            selected_candidate_id: selected_candidate.candidate_id,
+            selected_candidate_digest: selected_candidate.digest,
+            summaries: candidate_summaries,
+        });
+        let eid_candidates = self.ids.next();
+        let candidate_record = ExperienceRecord::audit(
+            eid_candidates,
+            decision.time,
+            decision.corr,
+            ExperienceKind::CandidateSet,
+            candidate_set_payload,
+            self.audit_head_digest,
+        );
+        self.audit_head_digest = candidate_record
+            .audit_digest
+            .unwrap_or(self.audit_head_digest);
+        self.ess.append(candidate_record)?;
         if ctrl
             .time
             .tick
@@ -2369,131 +2481,203 @@ impl RuntimeOrchestrator {
         ))?;
 
         self.tool_gate.capabilities = issue_capabilities(Some(&decision), decision.time.tick.get());
-        let request = request_from(&ctrl, &decision, eid2.0);
-        let capability_summary = CapabilitySetSummary::from_set(&self.tool_gate.capabilities);
-        let (module, op, input) = call_spec_from_control(&ctrl).map_err(|_| {
-            ucf_policy::errors::PolicyError::AdapterError("sandbox_call_spec_failed")
-        })?;
-        let audit = execute_tool_call(
-            adapter,
-            &mut self.tool_gate,
-            request.clone(),
-            module.clone(),
-            op.clone(),
-            input,
-            capability_summary,
-        )
-        .map_err(|_| ucf_policy::errors::PolicyError::AdapterError("sandbox_call_failed"))?;
-
-        let req_payload = AuditPayload::ToolRequest(ToolRequestRecord {
-            tool_request_id: request.id,
-            capability_kind: request.kind.as_tag().to_string(),
-            target: request.target.clone(),
-            decision_id: request.decision_id,
-            evidence_chain_digest: request.evidence_chain_digest,
-        });
-        let eid_req = self.ids.next();
-        let req_record = ExperienceRecord::audit(
-            eid_req,
-            decision.time,
-            decision.corr,
-            ExperienceKind::ToolRequest,
-            req_payload,
-            self.audit_head_digest,
-        );
-        self.audit_head_digest = req_record.audit_digest.unwrap_or(self.audit_head_digest);
-        self.ess.append(req_record)?;
-
-        let call_payload = AuditPayload::SandboxCall(SandboxCallRecord {
-            tool_request_id: request.id,
-            call_digest: audit.call_digest,
-            module,
-            op,
-            evidence_chain_digest: request.evidence_chain_digest,
-            capability_count: audit.capability_summary.items.len() as u32,
-            isolation_runtime: Some(
-                std::env::var("UCF_ISOLATION_RUNTIME").unwrap_or_else(|_| "inproc".to_string()),
-            ),
-            wasm_module_digest: None,
-            fuel_used: None,
-        });
-        let eid_call = self.ids.next();
-        let call_record = ExperienceRecord::audit(
-            eid_call,
-            decision.time,
-            decision.corr,
-            ExperienceKind::SandboxCall,
-            call_payload,
-            self.audit_head_digest,
-        );
-        self.audit_head_digest = call_record.audit_digest.unwrap_or(self.audit_head_digest);
-        self.ess.append(call_record)?;
-
-        let (allowed, reason, token_digest) = match audit.auth {
-            AuthorizationOutcome::Allowed { token_digest } => {
-                (true, "allowed".to_string(), Some(token_digest))
+        let mut requests = Vec::new();
+        if selected_assessment.allowed {
+            for intent in selected_candidate.tool_intents.iter().take(8) {
+                if self
+                    .tool_gate
+                    .capabilities
+                    .tokens
+                    .iter()
+                    .any(|token| token.kind == intent.kind)
+                {
+                    let target = intent
+                        .target
+                        .preview
+                        .clone()
+                        .unwrap_or_else(|| format!("h64:{:016x}", intent.target.hash64));
+                    requests.push(request_from_intent(
+                        &decision,
+                        eid2.0,
+                        ctrl.corr.0,
+                        intent.kind.clone(),
+                        target,
+                        GemPayloadHint {
+                            bytes_out: intent.payload_hint.bytes_out,
+                            bytes_in: intent.payload_hint.bytes_in,
+                        },
+                        selected_candidate.candidate_id,
+                        intent.intent_digest,
+                    ));
+                } else {
+                    let eid = self.ids.next();
+                    self.ess.append(ExperienceRecord::note(
+                        eid,
+                        decision.time,
+                        decision.corr,
+                        "candidate_tool_missing_capability",
+                    ))?;
+                }
             }
-            AuthorizationOutcome::Denied { reason } => (false, format!("{reason:?}"), None),
-            AuthorizationOutcome::RateLimited { retry_after_ticks } => {
-                (false, format!("rate_limited:{retry_after_ticks}"), None)
+        }
+        if requests.is_empty() && selected_candidate.output_class == CandidateOutputClass::SafeText
+        {
+            let mut req = request_from(&ctrl, &decision, eid2.0);
+            req.candidate_id = Some(selected_candidate.candidate_id);
+            req.tool_intent_digest = Some(selected_candidate.digest);
+            requests.push(req);
+        }
+
+        for request in requests {
+            metrics::counter!("ucf_tool_requests_created_total").increment(1);
+            let capability_summary = CapabilitySetSummary::from_set(&self.tool_gate.capabilities);
+            let (module, op, input) = call_spec_from_control(&ctrl).map_err(|_| {
+                ucf_policy::errors::PolicyError::AdapterError("sandbox_call_spec_failed")
+            })?;
+            let audit = execute_tool_call(
+                adapter,
+                &mut self.tool_gate,
+                request.clone(),
+                module.clone(),
+                op.clone(),
+                input,
+                capability_summary,
+            )
+            .map_err(|_| ucf_policy::errors::PolicyError::AdapterError("sandbox_call_failed"))?;
+
+            let req_payload = AuditPayload::ToolRequest(ToolRequestRecord {
+                tool_request_id: request.id,
+                capability_kind: request.kind.as_tag().to_string(),
+                target: request.target.clone(),
+                decision_id: request.decision_id,
+                evidence_chain_digest: request.evidence_chain_digest,
+                candidate_id: request.candidate_id,
+                tool_intent_digest: request.tool_intent_digest,
+            });
+            let eid_req = self.ids.next();
+            let req_record = ExperienceRecord::audit(
+                eid_req,
+                decision.time,
+                decision.corr,
+                ExperienceKind::ToolRequest,
+                req_payload,
+                self.audit_head_digest,
+            );
+            self.audit_head_digest = req_record.audit_digest.unwrap_or(self.audit_head_digest);
+            self.ess.append(req_record)?;
+
+            let call_payload = AuditPayload::SandboxCall(SandboxCallRecord {
+                tool_request_id: request.id,
+                call_digest: audit.call_digest,
+                module,
+                op,
+                evidence_chain_digest: request.evidence_chain_digest,
+                capability_count: audit.capability_summary.items.len() as u32,
+                isolation_runtime: Some(
+                    std::env::var("UCF_ISOLATION_RUNTIME").unwrap_or_else(|_| "inproc".to_string()),
+                ),
+                wasm_module_digest: None,
+                fuel_used: None,
+            });
+            let eid_call = self.ids.next();
+            let call_record = ExperienceRecord::audit(
+                eid_call,
+                decision.time,
+                decision.corr,
+                ExperienceKind::SandboxCall,
+                call_payload,
+                self.audit_head_digest,
+            );
+            self.audit_head_digest = call_record.audit_digest.unwrap_or(self.audit_head_digest);
+            self.ess.append(call_record)?;
+
+            let (allowed, reason, token_digest) = match audit.auth {
+                AuthorizationOutcome::Allowed { token_digest } => {
+                    (true, "allowed".to_string(), Some(token_digest))
+                }
+                AuthorizationOutcome::Denied { reason } => (false, format!("{reason:?}"), None),
+                AuthorizationOutcome::RateLimited { retry_after_ticks } => {
+                    (false, format!("rate_limited:{retry_after_ticks}"), None)
+                }
+            };
+            let auth_payload = AuditPayload::ToolAuth(ToolAuthRecord {
+                tool_request_id: request.id,
+                allowed,
+                reason,
+                token_digest,
+            });
+            let eid_auth = self.ids.next();
+            let auth_record = ExperienceRecord::audit(
+                eid_auth,
+                decision.time,
+                decision.corr,
+                ExperienceKind::ToolAuth,
+                auth_payload,
+                self.audit_head_digest,
+            );
+            self.audit_head_digest = auth_record.audit_digest.unwrap_or(self.audit_head_digest);
+            self.ess.append(auth_record)?;
+
+            let exec_payload = AuditPayload::ToolExecution(ToolExecutionRecord {
+                tool_request_id: request.id,
+                status: format!("{:?}", audit.result.status),
+                bytes_out: audit.result.bytes_out,
+                bytes_in: audit.result.bytes_in,
+                error_code: audit.result.error_code.clone(),
+            });
+            let eid_exec = self.ids.next();
+            let exec_record = ExperienceRecord::audit(
+                eid_exec,
+                decision.time,
+                decision.corr,
+                ExperienceKind::ToolExecution,
+                exec_payload,
+                self.audit_head_digest,
+            );
+            self.audit_head_digest = exec_record.audit_digest.unwrap_or(self.audit_head_digest);
+            self.ess.append(exec_record)?;
+
+            let reply_payload = AuditPayload::SandboxReply(SandboxReplyRecord {
+                tool_request_id: request.id,
+                reply_digest: audit.reply_digest,
+                status: format!("{:?}", audit.result.status),
+                bytes_out: audit.result.bytes_out.unwrap_or(0),
+                bytes_in: audit.result.bytes_in.unwrap_or(0),
+                token_digest,
+            });
+            let eid_reply = self.ids.next();
+            let reply_record = ExperienceRecord::audit(
+                eid_reply,
+                decision.time,
+                decision.corr,
+                ExperienceKind::SandboxReply,
+                reply_payload,
+                self.audit_head_digest,
+            );
+            self.audit_head_digest = reply_record.audit_digest.unwrap_or(self.audit_head_digest);
+            self.ess.append(reply_record)?;
+
+            if matches!(audit.result.status, ToolStatus::Failed) {
+                let mut note = format!(
+                    "gem_error:{}",
+                    audit
+                        .result
+                        .error_code
+                        .unwrap_or_else(|| "unknown".to_string())
+                );
+                if note.chars().count() > 120 {
+                    note = note.chars().take(120).collect();
+                }
+                let eid3 = self.ids.next();
+                self.ess.append(ExperienceRecord::note(
+                    eid3,
+                    decision.time,
+                    decision.corr,
+                    note,
+                ))?;
+                return Err(ucf_policy::errors::PolicyError::AdapterError("tool_failed").into());
             }
-        };
-        let auth_payload = AuditPayload::ToolAuth(ToolAuthRecord {
-            tool_request_id: request.id,
-            allowed,
-            reason,
-            token_digest,
-        });
-        let eid_auth = self.ids.next();
-        let auth_record = ExperienceRecord::audit(
-            eid_auth,
-            decision.time,
-            decision.corr,
-            ExperienceKind::ToolAuth,
-            auth_payload,
-            self.audit_head_digest,
-        );
-        self.audit_head_digest = auth_record.audit_digest.unwrap_or(self.audit_head_digest);
-        self.ess.append(auth_record)?;
-
-        let exec_payload = AuditPayload::ToolExecution(ToolExecutionRecord {
-            tool_request_id: request.id,
-            status: format!("{:?}", audit.result.status),
-            bytes_out: audit.result.bytes_out,
-            bytes_in: audit.result.bytes_in,
-            error_code: audit.result.error_code.clone(),
-        });
-        let eid_exec = self.ids.next();
-        let exec_record = ExperienceRecord::audit(
-            eid_exec,
-            decision.time,
-            decision.corr,
-            ExperienceKind::ToolExecution,
-            exec_payload,
-            self.audit_head_digest,
-        );
-        self.audit_head_digest = exec_record.audit_digest.unwrap_or(self.audit_head_digest);
-        self.ess.append(exec_record)?;
-
-        let reply_payload = AuditPayload::SandboxReply(SandboxReplyRecord {
-            tool_request_id: request.id,
-            reply_digest: audit.reply_digest,
-            status: format!("{:?}", audit.result.status),
-            bytes_out: audit.result.bytes_out.unwrap_or(0),
-            bytes_in: audit.result.bytes_in.unwrap_or(0),
-            token_digest,
-        });
-        let eid_reply = self.ids.next();
-        let reply_record = ExperienceRecord::audit(
-            eid_reply,
-            decision.time,
-            decision.corr,
-            ExperienceKind::SandboxReply,
-            reply_payload,
-            self.audit_head_digest,
-        );
-        self.audit_head_digest = reply_record.audit_digest.unwrap_or(self.audit_head_digest);
-        self.ess.append(reply_record)?;
+        }
 
         let checkpoint_payload = AuditPayload::AuditCheckpoint(AuditCheckpointRecord {
             head_digest: self.audit_head_digest,
@@ -2512,27 +2696,6 @@ impl RuntimeOrchestrator {
             .unwrap_or(self.audit_head_digest);
         self.audit_chain_checkpoint_total = self.audit_chain_checkpoint_total.saturating_add(1);
         self.ess.append(checkpoint_record)?;
-
-        if matches!(audit.result.status, ToolStatus::Failed) {
-            let mut note = format!(
-                "gem_error:{}",
-                audit
-                    .result
-                    .error_code
-                    .unwrap_or_else(|| "unknown".to_string())
-            );
-            if note.chars().count() > 120 {
-                note = note.chars().take(120).collect();
-            }
-            let eid3 = self.ids.next();
-            self.ess.append(ExperienceRecord::note(
-                eid3,
-                decision.time,
-                decision.corr,
-                note,
-            ))?;
-            return Err(ucf_policy::errors::PolicyError::AdapterError("tool_failed").into());
-        }
 
         if let Some((count, target)) = adapter.take_brain_spike_meta() {
             let mut note = format!("brain_spikes:n={count},dst={target}");

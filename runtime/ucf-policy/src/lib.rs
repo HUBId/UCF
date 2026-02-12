@@ -1,4 +1,5 @@
 pub mod adapter;
+pub mod candidate;
 pub mod capability;
 pub mod errors;
 pub mod gem;

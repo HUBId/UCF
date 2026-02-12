@@ -1049,6 +1049,8 @@ fn decode_tool_request(call: &SandboxCall) -> Result<ToolRequest, SandboxError> 
         requested_at_t: call.t,
         decision_id: call.call_id.0,
         evidence_chain_digest: call.evidence_chain_digest,
+        candidate_id: None,
+        tool_intent_digest: None,
     })
 }
 
