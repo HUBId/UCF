@@ -1868,3 +1868,101 @@ fn hormone_replay_from_identical_inputs_matches_digests() {
     assert_eq!(a, b);
     assert!(!a.is_empty());
 }
+#[test]
+fn evolution_disabled_by_default_emits_no_delta_records() {
+    std::env::remove_var("UCF_ENABLE_EVOLUTION");
+    let ctrl = ControlFrame::new_text(
+        sim_time(),
+        CorrelationId(900),
+        ChannelCode::ExternalOutput,
+        intent(),
+        "hello",
+    );
+    let mut orchestrator = RuntimeOrchestrator::new();
+    let mut adapter = MockAdapter::default();
+    orchestrator
+        .ingest_and_process(&mut adapter, ctrl)
+        .expect("tick should succeed");
+    let has_delta = (0..orchestrator.ess.len())
+        .filter_map(|idx| orchestrator.ess.get(idx))
+        .any(|r| {
+            matches!(
+                r.kind,
+                ExperienceKind::DeltaProposal
+                    | ExperienceKind::DeltaEvaluation
+                    | ExperienceKind::DeltaRecommendation
+            )
+        });
+    assert!(!has_delta);
+}
+
+#[test]
+fn evolution_enabled_persists_proposal_and_evaluation_without_actions() {
+    std::env::set_var("UCF_ENABLE_EVOLUTION", "1");
+    std::env::set_var("UCF_EVOLUTION_WINDOW_TICKS", "8");
+    let mut orchestrator = RuntimeOrchestrator::new();
+    let mut adapter = MockAdapter::default();
+    for tick in 1..=8u64 {
+        let t = SimTime {
+            tick: Tick::new(tick),
+            window: WindowId::new(0),
+        };
+        let ctrl = ControlFrame::new_text(
+            t,
+            CorrelationId(901 + tick),
+            ChannelCode::ExternalOutput,
+            intent(),
+            "evo",
+        );
+        let mut decision = DecisionFrame::allow(t, CorrelationId(901 + tick), "allow");
+        decision.compute_summary = Some(ucf_frames::v1::ComputeSignalsSummary {
+            backend: "stub",
+            surprise: 0.5,
+            pressure: 0.5,
+            risk: 0.9,
+            confidence: 0.2,
+            spike_count: 0,
+            spikes_digest: [0; 32],
+            sparsity: None,
+            energy: None,
+            ssm_readout: None,
+            ssm_digest: None,
+            world_digest: None,
+            risk_quality: None,
+            evidence_context_digest: None,
+            evidence_world_digest: None,
+            evidence_spikes_digest: None,
+            evidence_ssm_digest: None,
+            backend_profile: None,
+            budget_profile_id: None,
+            seed: None,
+            risk_contract_version: None,
+            compute_schema_version: None,
+            compute_chain_digest: Some([3; 32]),
+            compute_code_version: None,
+            budget_exceeded_stage: Some("world"),
+            coherence: Some(0.2),
+            instability: Some(0.9),
+            phi_proxy: Some(0.1),
+            coherence_digest: Some([4; 32]),
+        });
+        orchestrator
+            .ingest_with_decision(&mut adapter, ctrl, decision)
+            .expect("tick should succeed");
+    }
+
+    let records: Vec<_> = (0..orchestrator.ess.len())
+        .filter_map(|idx| orchestrator.ess.get(idx))
+        .collect();
+    assert!(records
+        .iter()
+        .any(|r| r.kind == ExperienceKind::DeltaProposal));
+    assert!(records
+        .iter()
+        .any(|r| r.kind == ExperienceKind::DeltaEvaluation));
+    let recommendations = records
+        .iter()
+        .filter(|r| r.kind == ExperienceKind::DeltaRecommendation)
+        .count();
+    assert!(recommendations <= 1);
+}

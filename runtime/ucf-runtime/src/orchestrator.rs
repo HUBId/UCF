@@ -1,5 +1,9 @@
 use crate::coherence::{CoherenceRuntime, InterestProfile, Subscriber, TickInput};
 use crate::errors::RuntimeError;
+use crate::evolution::{
+    DeltaOp, DeltaScore, EvolutionBudget, EvolutionContext, EvolutionEngine, MockEvolutionEngineV0,
+    ReasonCode, SmallKey, StructuralDelta, TunableSnapshot,
+};
 use crate::hooks::{
     ComputeMilestone, ComputeMilestoneAggregator, ConsolidationHook, GeistHook, GeistRejectReason,
     GeistStateUpdater,
@@ -28,9 +32,10 @@ use ucf_core::storage::{ArchiveCfg, FlushPolicy, MemArchiveStore};
 use ucf_dbm::chemistry::{chemistry_step, ChemistryCfg, NeuromodState};
 use ucf_dbm::regions::{region_step, BrainRegion, RegionKind};
 use ucf_ess::v1::{
-    AuditCheckpointRecord, AuditPayload, ExperienceKind, ExperienceRecord, ExperienceStore,
-    HormoneRecord, IdAllocator, InMemoryEss, NeuroRecord, SandboxCallRecord, SandboxReplyRecord,
-    ToolAuthRecord, ToolExecutionRecord, ToolRequestRecord,
+    AuditCheckpointRecord, AuditPayload, DeltaEvaluationRecord, DeltaProposalRecord,
+    DeltaRecommendationRecord, ExperienceKind, ExperienceRecord, ExperienceStore, HormoneRecord,
+    IdAllocator, InMemoryEss, NeuroRecord, SandboxCallRecord, SandboxReplyRecord, ToolAuthRecord,
+    ToolExecutionRecord, ToolRequestRecord,
 };
 use ucf_fep::{
     check_coherence_invariants, fep_step, homeostasis_step, CoherenceCfg, CoherenceSnapshot,
@@ -73,6 +78,13 @@ fn env_flag(name: &str) -> bool {
     std::env::var(name)
         .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
         .unwrap_or(false)
+}
+
+fn env_u64(name: &str, default: u64) -> u64 {
+    std::env::var(name)
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(default)
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -127,6 +139,17 @@ struct MetaInput {
     weight: f32,
     depth: u8,
     reason: SleReason,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct EvolutionTickSummary {
+    risk: f32,
+    confidence: f32,
+    coherence: f32,
+    instability: f32,
+    budget_exceeded: bool,
+    denied_tool: bool,
+    evidence_chain_digest: [u8; 32],
 }
 
 pub struct RuntimeOrchestrator {
@@ -252,9 +275,221 @@ pub struct RuntimeOrchestrator {
     tool_gate: ToolGate,
     audit_head_digest: [u8; 32],
     audit_chain_checkpoint_total: u64,
+    evolution_enabled: bool,
+    evolution_window_ticks: u64,
+    evolution_summaries: Vec<EvolutionTickSummary>,
+    evolution_engine: Box<dyn EvolutionEngine>,
+    evolution_proposals_total: u64,
+    evolution_accepted_total: u64,
+    evolution_rejected_total: u64,
+    evolution_budget_exceeded_total: u64,
 }
 
 impl RuntimeOrchestrator {
+    fn summarize_tick_for_evolution(
+        &mut self,
+        compute_summary: Option<ucf_frames::v1::ComputeSignalsSummary>,
+        denied_tool: bool,
+    ) {
+        let summary = EvolutionTickSummary {
+            risk: compute_summary
+                .map(|c| c.risk)
+                .unwrap_or(1.0)
+                .clamp(0.0, 1.0),
+            confidence: compute_summary
+                .map(|c| c.confidence)
+                .unwrap_or(0.0)
+                .clamp(0.0, 1.0),
+            coherence: compute_summary
+                .and_then(|c| c.coherence)
+                .unwrap_or(1.0)
+                .clamp(0.0, 1.0),
+            instability: compute_summary
+                .and_then(|c| c.instability)
+                .unwrap_or(0.0)
+                .clamp(0.0, 1.0),
+            budget_exceeded: compute_summary
+                .and_then(|c| c.budget_exceeded_stage)
+                .is_some(),
+            denied_tool,
+            evidence_chain_digest: compute_summary
+                .and_then(|c| c.compute_chain_digest)
+                .unwrap_or([0; 32]),
+        };
+        if summary.budget_exceeded {
+            self.evolution_budget_exceeded_total =
+                self.evolution_budget_exceeded_total.saturating_add(1);
+            metrics::counter!("ucf_evolution_budget_exceeded_total").increment(1);
+        }
+        self.evolution_summaries.push(summary);
+        let keep = self.evolution_window_ticks.max(8) as usize;
+        if self.evolution_summaries.len() > keep {
+            let drop_n = self.evolution_summaries.len().saturating_sub(keep);
+            self.evolution_summaries.drain(0..drop_n);
+        }
+    }
+
+    fn maybe_run_evolution(
+        &mut self,
+        time: ucf_core::types::SimTime,
+        corr: ucf_frames::v1::CorrelationId,
+    ) -> Result<(), RuntimeError> {
+        if !self.evolution_enabled || self.evolution_summaries.len() < 8 {
+            return Ok(());
+        }
+        if !time.tick.get().is_multiple_of(self.evolution_window_ticks) {
+            return Ok(());
+        }
+        let n = self.evolution_summaries.len() as f32;
+        let risk_mean = self.evolution_summaries.iter().map(|x| x.risk).sum::<f32>() / n;
+        let confidence_mean = self
+            .evolution_summaries
+            .iter()
+            .map(|x| x.confidence)
+            .sum::<f32>()
+            / n;
+        let coherence_mean = self
+            .evolution_summaries
+            .iter()
+            .map(|x| x.coherence)
+            .sum::<f32>()
+            / n;
+        let instability_mean = self
+            .evolution_summaries
+            .iter()
+            .map(|x| x.instability)
+            .sum::<f32>()
+            / n;
+        let budget_exceeded_rate = self
+            .evolution_summaries
+            .iter()
+            .filter(|x| x.budget_exceeded)
+            .count() as f32
+            / n;
+        let denied_tool_rate = self
+            .evolution_summaries
+            .iter()
+            .filter(|x| x.denied_tool)
+            .count() as f32
+            / n;
+        let evidence_chain_digest = self
+            .evolution_summaries
+            .last()
+            .map(|s| s.evidence_chain_digest)
+            .unwrap_or([0; 32]);
+        let ctx = EvolutionContext {
+            t: time.tick.get(),
+            source_window: (
+                time.tick.get().saturating_sub(self.evolution_window_ticks),
+                time.tick.get(),
+            ),
+            evidence_chain_digest,
+            risk_mean,
+            confidence_mean,
+            coherence_mean,
+            instability_mean,
+            budget_exceeded_rate,
+            denied_tool_rate,
+            stress_index: self.last_hormone_summary.map(|s| s.stress_index),
+            neuro_arousal: self.last_neuro_summary.map(|s| s.arousal),
+            params: TunableSnapshot {
+                beta_policy_risk: self.fep_state.cfg.beta_policy_risk,
+                beta_coherence_lock: self.fep_state.cfg.beta_coherence_lock,
+                structure_delta_cap: self.fep_state.cfg.structure_delta_cap,
+                coherence_min_closed_loop_gain: self.fep_state.coh_cfg.min_closed_loop_gain,
+                coherence_max_unchecked_drift: self.fep_state.coh_cfg.max_unchecked_drift,
+                coherence_max_memory_pressure: self.fep_state.coh_cfg.max_memory_pressure,
+                coherence_risk_inhibit_min: self.fep_state.coh_cfg.min_policy_inhibit_on_risk,
+            },
+        };
+        let _span = tracing::info_span!(
+            "evolution.step",
+            window = self.evolution_window_ticks,
+            t = time.tick.get()
+        )
+        .entered();
+        let mut candidates = self
+            .evolution_engine
+            .propose(ctx, EvolutionBudget { work_units: 64 });
+        if candidates.len() > 8 {
+            candidates.truncate(8);
+        }
+        let mut scored = Vec::with_capacity(candidates.len());
+        for delta in candidates {
+            self.evolution_proposals_total = self.evolution_proposals_total.saturating_add(1);
+            metrics::counter!("ucf_evolution_proposals_total").increment(1);
+            let proposal = DeltaProposalRecord {
+                schema_version: 1,
+                delta_id: delta.delta_id,
+                t: delta.t,
+                target: delta.target as u8,
+                ops_summary: ops_summary_bytes(&delta),
+                digest: delta.digest,
+                evidence_chain_digest,
+            };
+            self.ess.append(ExperienceRecord::from_delta_proposal(
+                self.ids.next(),
+                time,
+                corr,
+                proposal,
+            ))?;
+            let score = self.evolution_engine.evaluate(&delta, &ctx);
+            scored.push((delta, score));
+        }
+        let selection = self.evolution_engine.select(&scored);
+        let accepted_id = selection.accepted.as_ref().map(|(d, _)| d.delta_id);
+        if let Some(id) = accepted_id {
+            tracing::info!(accepted_delta_id = %hex::encode(&id[..4]), "evolution accepted candidate");
+        }
+        for (delta, score) in scored {
+            let accepted = accepted_id == Some(delta.delta_id);
+            if accepted {
+                self.evolution_accepted_total = self.evolution_accepted_total.saturating_add(1);
+                metrics::counter!("ucf_evolution_accepted_total").increment(1);
+            } else {
+                self.evolution_rejected_total = self.evolution_rejected_total.saturating_add(1);
+                metrics::counter!("ucf_evolution_rejected_total", "reason" => top_reason(&score))
+                    .increment(1);
+            }
+            let eval = DeltaEvaluationRecord {
+                schema_version: 1,
+                delta_id: delta.delta_id,
+                fitness_q: u16::from(quantize_unit(score.fitness)),
+                risk_penalty_q: u16::from(quantize_unit(score.risk_penalty)),
+                stability_penalty_q: u16::from(quantize_unit(score.stability_penalty)),
+                budget_penalty_q: u16::from(quantize_unit(score.budget_penalty)),
+                score_digest: score.digest,
+                accepted,
+                reason_codes: reason_codes(&score),
+                evidence_chain_digest,
+            };
+            self.ess.append(ExperienceRecord::from_delta_evaluation(
+                self.ids.next(),
+                time,
+                corr,
+                eval,
+            ))?;
+            if accepted {
+                let rec = DeltaRecommendationRecord {
+                    schema_version: 1,
+                    delta_id: delta.delta_id,
+                    recommended_ops: ops_summary_bytes(&delta),
+                    safety_clamps: clamp_summary_bytes(),
+                    requires_human_apply: true,
+                    evidence_chain_digest,
+                };
+                self.ess
+                    .append(ExperienceRecord::from_delta_recommendation(
+                        self.ids.next(),
+                        time,
+                        corr,
+                        rec,
+                    ))?;
+            }
+        }
+        Ok(())
+    }
+
     pub fn try_new_from_env() -> Result<Self, RuntimeError> {
         let cfg = ComputeBackendConfig::from_env()?;
         let mut orchestrator = Self::new();
@@ -442,6 +677,14 @@ impl RuntimeOrchestrator {
             ),
             audit_head_digest: [0; 32],
             audit_chain_checkpoint_total: 0,
+            evolution_enabled: env_flag("UCF_ENABLE_EVOLUTION"),
+            evolution_window_ticks: env_u64("UCF_EVOLUTION_WINDOW_TICKS", 64).max(8),
+            evolution_summaries: Vec::new(),
+            evolution_engine: Box::new(MockEvolutionEngineV0::new(0)),
+            evolution_proposals_total: 0,
+            evolution_accepted_total: 0,
+            evolution_rejected_total: 0,
+            evolution_budget_exceeded_total: 0,
         }
     }
 
@@ -2022,6 +2265,10 @@ impl RuntimeOrchestrator {
             }
         }
 
+        let denied_tool = matches!(decision.decision, ucf_frames::v1::DecisionCode::Deny);
+        self.summarize_tick_for_evolution(decision.compute_summary, denied_tool);
+        self.maybe_run_evolution(decision.time, decision.corr)?;
+
         self.tool_gate.capabilities = issue_capabilities(Some(&decision), decision.time.tick.get());
         let request = request_from(&ctrl, &decision, eid2.0);
         let capability_summary = CapabilitySetSummary::from_set(&self.tool_gate.capabilities);
@@ -2227,6 +2474,71 @@ fn tick_summary_payload(
 
 fn quantize_unit(v: f32) -> u8 {
     (v.clamp(0.0, 1.0) * 255.0).round() as u8
+}
+
+fn encode_key(key: SmallKey) -> u8 {
+    key as u8
+}
+
+fn encode_reason(reason: ReasonCode) -> u8 {
+    reason as u8
+}
+
+fn reason_codes(score: &DeltaScore) -> [u8; 8] {
+    let mut out = [0u8; 8];
+    for (idx, reason) in score.audit.reasons.iter().copied().take(8).enumerate() {
+        out[idx] = encode_reason(reason);
+    }
+    out
+}
+
+fn top_reason(score: &DeltaScore) -> &'static str {
+    match score.audit.reasons.first().copied() {
+        Some(ReasonCode::ImprovesStability) => "improves_stability",
+        Some(ReasonCode::ReducesBudgetExceed) => "reduces_budget_exceed",
+        Some(ReasonCode::DegradesConfidence) => "degrades_confidence",
+        Some(ReasonCode::ViolatesClamp) => "violates_clamp",
+        Some(ReasonCode::TooAggressiveChange) => "too_aggressive_change",
+        Some(ReasonCode::IncreasesRisk) => "increases_risk",
+        Some(ReasonCode::WeakSafetyMargin) => "weak_safety_margin",
+        None => "none",
+    }
+}
+
+fn ops_summary_bytes(delta: &StructuralDelta) -> [u8; 128] {
+    let mut out = [0u8; 128];
+    let mut i = 0usize;
+    for op in delta.ops.iter().take(8) {
+        if i + 16 > out.len() {
+            break;
+        }
+        match op {
+            DeltaOp::Set { key, value } => {
+                out[i] = 0;
+                out[i + 1] = encode_key(*key);
+                out[i + 4..i + 8].copy_from_slice(&value.to_le_bytes());
+            }
+            DeltaOp::Add { key, delta } => {
+                out[i] = 1;
+                out[i + 1] = encode_key(*key);
+                out[i + 4..i + 8].copy_from_slice(&delta.to_le_bytes());
+            }
+            DeltaOp::Clamp { key, min, max } => {
+                out[i] = 2;
+                out[i + 1] = encode_key(*key);
+                out[i + 4..i + 8].copy_from_slice(&min.to_le_bytes());
+                out[i + 8..i + 12].copy_from_slice(&max.to_le_bytes());
+            }
+        }
+        i += 16;
+    }
+    out
+}
+
+fn clamp_summary_bytes() -> [u8; 64] {
+    let mut out = [0u8; 64];
+    out[0] = 1;
+    out
 }
 
 impl Default for RuntimeOrchestrator {

@@ -24,6 +24,9 @@ pub enum ExperienceKind {
     AuditCheckpoint,
     Hormone,
     Neuro,
+    DeltaProposal,
+    DeltaEvaluation,
+    DeltaRecommendation,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -39,6 +42,9 @@ pub struct ExperienceRecord {
     pub compute_summary: Option<ComputeSignalsSummary>,
     pub hormone_record: Option<HormoneRecord>,
     pub neuro_record: Option<NeuroRecord>,
+    pub delta_proposal_record: Option<DeltaProposalRecord>,
+    pub delta_evaluation_record: Option<DeltaEvaluationRecord>,
+    pub delta_recommendation_record: Option<DeltaRecommendationRecord>,
     pub audit_prev_digest: Option<[u8; 32]>,
     pub audit_digest: Option<[u8; 32]>,
 }
@@ -144,6 +150,41 @@ pub struct NeuroRecord {
     pub schema_version: u16,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeltaProposalRecord {
+    pub schema_version: u16,
+    pub delta_id: [u8; 32],
+    pub t: u64,
+    pub target: u8,
+    pub ops_summary: [u8; 128],
+    pub digest: [u8; 32],
+    pub evidence_chain_digest: [u8; 32],
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeltaEvaluationRecord {
+    pub schema_version: u16,
+    pub delta_id: [u8; 32],
+    pub fitness_q: u16,
+    pub risk_penalty_q: u16,
+    pub stability_penalty_q: u16,
+    pub budget_penalty_q: u16,
+    pub score_digest: [u8; 32],
+    pub accepted: bool,
+    pub reason_codes: [u8; 8],
+    pub evidence_chain_digest: [u8; 32],
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeltaRecommendationRecord {
+    pub schema_version: u16,
+    pub delta_id: [u8; 32],
+    pub recommended_ops: [u8; 128],
+    pub safety_clamps: [u8; 64],
+    pub requires_human_apply: bool,
+    pub evidence_chain_digest: [u8; 32],
+}
+
 impl ExperienceRecord {
     pub fn from_control(id: ExperienceId, ctrl: ControlFrame) -> Self {
         Self {
@@ -158,6 +199,9 @@ impl ExperienceRecord {
             compute_summary: None,
             hormone_record: None,
             neuro_record: None,
+            delta_proposal_record: None,
+            delta_evaluation_record: None,
+            delta_recommendation_record: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -176,6 +220,9 @@ impl ExperienceRecord {
             compute_summary: decision.compute_summary,
             hormone_record: None,
             neuro_record: None,
+            delta_proposal_record: None,
+            delta_evaluation_record: None,
+            delta_recommendation_record: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -194,6 +241,9 @@ impl ExperienceRecord {
             compute_summary: None,
             hormone_record: None,
             neuro_record: None,
+            delta_proposal_record: None,
+            delta_evaluation_record: None,
+            delta_recommendation_record: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -217,6 +267,9 @@ impl ExperienceRecord {
             compute_summary: None,
             hormone_record: None,
             neuro_record: None,
+            delta_proposal_record: None,
+            delta_evaluation_record: None,
+            delta_recommendation_record: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -240,6 +293,9 @@ impl ExperienceRecord {
             compute_summary: None,
             hormone_record: Some(hormone_record),
             neuro_record: None,
+            delta_proposal_record: None,
+            delta_evaluation_record: None,
+            delta_recommendation_record: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -263,6 +319,87 @@ impl ExperienceRecord {
             compute_summary: None,
             hormone_record: None,
             neuro_record: Some(neuro_record),
+            delta_proposal_record: None,
+            delta_evaluation_record: None,
+            delta_recommendation_record: None,
+            audit_prev_digest: None,
+            audit_digest: None,
+        }
+    }
+
+    pub fn from_delta_proposal(
+        id: ExperienceId,
+        time: SimTime,
+        corr: CorrelationId,
+        delta_proposal_record: DeltaProposalRecord,
+    ) -> Self {
+        Self {
+            id,
+            time,
+            corr,
+            kind: ExperienceKind::DeltaProposal,
+            payload: ExperiencePayload::Empty,
+            neuromod: None,
+            iit_phi: None,
+            decision_meta: None,
+            compute_summary: None,
+            hormone_record: None,
+            neuro_record: None,
+            delta_proposal_record: Some(delta_proposal_record),
+            delta_evaluation_record: None,
+            delta_recommendation_record: None,
+            audit_prev_digest: None,
+            audit_digest: None,
+        }
+    }
+
+    pub fn from_delta_evaluation(
+        id: ExperienceId,
+        time: SimTime,
+        corr: CorrelationId,
+        delta_evaluation_record: DeltaEvaluationRecord,
+    ) -> Self {
+        Self {
+            id,
+            time,
+            corr,
+            kind: ExperienceKind::DeltaEvaluation,
+            payload: ExperiencePayload::Empty,
+            neuromod: None,
+            iit_phi: None,
+            decision_meta: None,
+            compute_summary: None,
+            hormone_record: None,
+            neuro_record: None,
+            delta_proposal_record: None,
+            delta_evaluation_record: Some(delta_evaluation_record),
+            delta_recommendation_record: None,
+            audit_prev_digest: None,
+            audit_digest: None,
+        }
+    }
+
+    pub fn from_delta_recommendation(
+        id: ExperienceId,
+        time: SimTime,
+        corr: CorrelationId,
+        delta_recommendation_record: DeltaRecommendationRecord,
+    ) -> Self {
+        Self {
+            id,
+            time,
+            corr,
+            kind: ExperienceKind::DeltaRecommendation,
+            payload: ExperiencePayload::Empty,
+            neuromod: None,
+            iit_phi: None,
+            decision_meta: None,
+            compute_summary: None,
+            hormone_record: None,
+            neuro_record: None,
+            delta_proposal_record: None,
+            delta_evaluation_record: None,
+            delta_recommendation_record: Some(delta_recommendation_record),
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -293,6 +430,9 @@ impl ExperienceRecord {
             compute_summary: None,
             hormone_record: None,
             neuro_record: None,
+            delta_proposal_record: None,
+            delta_evaluation_record: None,
+            delta_recommendation_record: None,
             audit_prev_digest: Some(prev_digest),
             audit_digest: Some(digest),
         }
