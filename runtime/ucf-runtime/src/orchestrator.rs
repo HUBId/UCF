@@ -1832,7 +1832,11 @@ impl RuntimeOrchestrator {
                 .with_neuromod(snapshot)
                 .with_iit_phi(phi),
         )?;
-        if self.hormone_persist_every > 0 && ctrl.time.tick.get() % self.hormone_persist_every == 0
+        if ctrl
+            .time
+            .tick
+            .get()
+            .is_multiple_of(self.hormone_persist_every)
         {
             if let Some(summary) = self.last_hormone_summary {
                 let hormone_record = HormoneRecord {
