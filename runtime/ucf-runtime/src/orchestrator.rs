@@ -7,12 +7,13 @@ use crate::hooks::{
 use crate::sandbox::{call_spec_from_control, execute_tool_call, CapabilitySetSummary};
 use ucf_biophys::v0::{
     apply_coherence_feedback, classify, compute_integration, couple_pair, hormone_step, hpa_step,
-    modulate_hh, osc_step, phase_bin, phase_lock, ttfs_from_strength, ttfs_phase, verify_graph,
-    CausalGraph, CoherenceState, Edge, EventBus, FieldEvent, FieldEventKind, FieldUpdateCfg,
-    GatingModulation, HhParams, HormoneCfg, HormoneInput, HormoneState, HormoneStateSummary,
-    HpaCfg, HpaState, IITCfg as BiophysIITCfg, IITInputs, IITState as BiophysIITState,
-    Microcircuit, ModulationCfg, NeuromodulatorField as BiophysField, Osc, OscId, PhaseCfg,
-    RuleCfg, SnnSpikeEvent, SpikeCodecCfg, SpikeKind, VerifyVerdict,
+    modulate_hh, neuro_step, osc_step, phase_bin, phase_lock, ttfs_from_strength, ttfs_phase,
+    verify_graph, BiophysModulation, CausalGraph, CoherenceState, Edge, EventBus, FieldEvent,
+    FieldEventKind, FieldUpdateCfg, GatingModulation, HhParams, HormoneCfg, HormoneInput,
+    HormoneState, HormoneStateSummary, HpaCfg, HpaState, IITCfg as BiophysIITCfg, IITInputs,
+    IITState as BiophysIITState, Microcircuit, ModulationCfg, NeuroCfg, NeuroInput,
+    NeuroSpikeBatch, NeuroStateSummary, NeuromodulatorField as BiophysField, NeuronPopState, Osc,
+    OscId, PhaseCfg, RuleCfg, SnnSpikeEvent, SpikeCodecCfg, SpikeKind, VerifyVerdict,
 };
 use ucf_cde::v0::{
     on_intervention, on_observation, tick_decay, CdeCfg, CdeState, CdeUpdateKind, Intervention,
@@ -28,8 +29,8 @@ use ucf_dbm::chemistry::{chemistry_step, ChemistryCfg, NeuromodState};
 use ucf_dbm::regions::{region_step, BrainRegion, RegionKind};
 use ucf_ess::v1::{
     AuditCheckpointRecord, AuditPayload, ExperienceKind, ExperienceRecord, ExperienceStore,
-    HormoneRecord, IdAllocator, InMemoryEss, SandboxCallRecord, SandboxReplyRecord, ToolAuthRecord,
-    ToolExecutionRecord, ToolRequestRecord,
+    HormoneRecord, IdAllocator, InMemoryEss, NeuroRecord, SandboxCallRecord, SandboxReplyRecord,
+    ToolAuthRecord, ToolExecutionRecord, ToolRequestRecord,
 };
 use ucf_fep::{
     check_coherence_invariants, fep_step, homeostasis_step, CoherenceCfg, CoherenceSnapshot,
@@ -211,6 +212,14 @@ pub struct RuntimeOrchestrator {
     last_hormone_summary: Option<HormoneStateSummary>,
     last_gating_modulation: Option<GatingModulation>,
     hormone_degraded_total: u64,
+    neuro_state: NeuronPopState,
+    neuro_cfg: NeuroCfg,
+    neuro_persist_every: u64,
+    last_neuro_summary: Option<NeuroStateSummary>,
+    last_neuro_modulation: Option<BiophysModulation>,
+    last_neuro_spikes: Option<NeuroSpikeBatch>,
+    neuro_degraded_total: u64,
+    last_neuro_degraded: bool,
     forced_surprise_for_test: Option<f32>,
     forced_geist_drift_for_test: Option<f32>,
     forced_ess_pressure_for_test: Option<f32>,
@@ -370,6 +379,14 @@ impl RuntimeOrchestrator {
             last_hormone_summary: None,
             last_gating_modulation: None,
             hormone_degraded_total: 0,
+            neuro_state: NeuronPopState::default(),
+            neuro_cfg: NeuroCfg::default(),
+            neuro_persist_every: 10,
+            last_neuro_summary: None,
+            last_neuro_modulation: None,
+            last_neuro_spikes: None,
+            neuro_degraded_total: 0,
+            last_neuro_degraded: false,
             forced_surprise_for_test: None,
             forced_geist_drift_for_test: None,
             forced_ess_pressure_for_test: None,
@@ -601,6 +618,14 @@ impl RuntimeOrchestrator {
 
     pub fn hormone_degraded_total(&self) -> u64 {
         self.hormone_degraded_total
+    }
+
+    pub fn last_neuro_summary(&self) -> Option<NeuroStateSummary> {
+        self.last_neuro_summary
+    }
+
+    pub fn neuro_degraded_total(&self) -> u64 {
+        self.neuro_degraded_total
     }
 
     pub fn coherence_violation_count(&self) -> u64 {
@@ -1002,6 +1027,35 @@ impl RuntimeOrchestrator {
         metrics::gauge!("ucf_hormone_stress_index")
             .set(f64::from(hormone_out.summary.stress_index));
 
+        let neuro_input = NeuroInput {
+            t: now_ms,
+            pressure: ess_pressure,
+            surprise,
+            risk: nsr_risk,
+            confidence: compute_confidence,
+            cortisol: hormone_out.summary.cortisol,
+            drive: hormone_out.summary.drive,
+            evidence_chain_digest: hormone_input.evidence_chain_digest,
+        };
+        let neuro_out = {
+            let _neuro_span = tracing::info_span!("biophys_neuro.step", t = now_ms).entered();
+            neuro_step(&self.neuro_cfg, self.neuro_state, &neuro_input)
+        };
+        self.neuro_state = neuro_out.state;
+        self.last_neuro_summary = Some(neuro_out.summary);
+        self.last_neuro_modulation = Some(neuro_out.modulation);
+        self.last_neuro_spikes = Some(neuro_out.spikes.clone());
+        self.last_neuro_degraded = neuro_out.degraded;
+        if neuro_out.degraded {
+            self.neuro_degraded_total = self.neuro_degraded_total.saturating_add(1);
+            metrics::counter!("ucf_neuro_degraded_total").increment(1);
+        }
+        metrics::gauge!("ucf_neuro_arousal").set(f64::from(neuro_out.summary.arousal));
+        metrics::gauge!("ucf_neuro_attention_gain")
+            .set(f64::from(neuro_out.summary.attention_gain));
+        metrics::gauge!("ucf_neuro_excitability").set(f64::from(neuro_out.summary.excitability));
+        metrics::gauge!("ucf_neuro_spike_rate").set(f64::from(neuro_out.summary.spike_rate));
+
         let fep_in = FepInputs {
             now_ms,
             dt_s,
@@ -1009,16 +1063,24 @@ impl RuntimeOrchestrator {
             complexity,
             policy_risk: nsr_risk,
             compute_risk,
-            compute_confidence,
+            compute_confidence: (compute_confidence * neuro_out.summary.attention_gain)
+                .clamp(0.0, 1.0),
             onn_lock,
             snn_event_rate,
             ess_pressure,
             ssm_pressure: ssm_gate,
             geist_drift,
             hormone_risk_penalty_scale: hormone_out.modulation.risk_penalty_scale,
-            hormone_exploration_bias_delta: hormone_out.modulation.exploration_bias_delta,
-            hormone_attention_gain: hormone_out.modulation.attention_gain,
-            hormone_action_threshold_delta: hormone_out.modulation.action_threshold_delta,
+            hormone_exploration_bias_delta: (hormone_out.modulation.exploration_bias_delta
+                + (neuro_out.summary.arousal - 0.5) * 0.2)
+                .clamp(-0.5, 0.5),
+            hormone_attention_gain: (hormone_out.modulation.attention_gain
+                * (0.5 + 0.5 * neuro_out.summary.attention_gain))
+                .clamp(0.0, 3.0),
+            hormone_action_threshold_delta: (hormone_out.modulation.action_threshold_delta
+                + 0.1 * neuro_out.summary.arousal
+                - 0.05 * neuro_out.summary.excitability)
+                .clamp(-0.5, 0.5),
         };
         self.fep_risk_penalty_applied_total = self.fep_risk_penalty_applied_total.saturating_add(1);
         let mut fep_out = fep_step(&self.fep_state.cfg, &fep_in);
@@ -1854,6 +1916,38 @@ impl RuntimeOrchestrator {
                     ctrl.time,
                     ctrl.corr,
                     hormone_record,
+                ))?;
+            }
+        }
+        if ctrl
+            .time
+            .tick
+            .get()
+            .is_multiple_of(self.neuro_persist_every)
+        {
+            if let Some(summary) = self.last_neuro_summary {
+                let spikes = self.last_neuro_spikes.as_ref();
+                let neuro_record = NeuroRecord {
+                    t: summary.t,
+                    arousal_q: u16::from(quantize_unit(summary.arousal)),
+                    attention_gain_q: u16::from(quantize_unit(summary.attention_gain)),
+                    excitability_q: u16::from(quantize_unit(summary.excitability)),
+                    spike_rate_q: u16::from(quantize_unit(summary.spike_rate)),
+                    summary_digest: summary.digest,
+                    evidence_chain_digest: summary.evidence_chain_digest,
+                    hormone_digest: self.last_hormone_summary.map(|h| h.digest),
+                    spikes_digest: spikes.map(|s| s.digest),
+                    spike_count: spikes
+                        .map(|s| s.spikes.len().min(u16::MAX as usize) as u16)
+                        .unwrap_or(0),
+                    degraded: self.last_neuro_degraded,
+                    schema_version: 1,
+                };
+                self.ess.append(ExperienceRecord::from_neuro(
+                    self.ids.next(),
+                    ctrl.time,
+                    ctrl.corr,
+                    neuro_record,
                 ))?;
             }
         }
