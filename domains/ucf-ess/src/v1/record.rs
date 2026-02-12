@@ -27,6 +27,7 @@ pub enum ExperienceKind {
     DeltaProposal,
     DeltaEvaluation,
     DeltaRecommendation,
+    Nsr,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -45,6 +46,7 @@ pub struct ExperienceRecord {
     pub delta_proposal_record: Option<DeltaProposalRecord>,
     pub delta_evaluation_record: Option<DeltaEvaluationRecord>,
     pub delta_recommendation_record: Option<DeltaRecommendationRecord>,
+    pub nsr_record: Option<NsrRecord>,
     pub audit_prev_digest: Option<[u8; 32]>,
     pub audit_digest: Option<[u8; 32]>,
 }
@@ -185,6 +187,22 @@ pub struct DeltaRecommendationRecord {
     pub evidence_chain_digest: [u8; 32],
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NsrRecord {
+    pub t: u64,
+    pub decision_id: u64,
+    pub evidence_chain_digest: [u8; 32],
+    pub ruleset_id: u32,
+    pub engine_id: &'static str,
+    pub schema_version: u16,
+    pub nsr_risk_q: u16,
+    pub nsr_confidence_q: u16,
+    pub policy_hint: u8,
+    pub reasons: Vec<u16>,
+    pub facts_digest: [u8; 32],
+    pub assessment_digest: [u8; 32],
+}
+
 impl ExperienceRecord {
     pub fn from_control(id: ExperienceId, ctrl: ControlFrame) -> Self {
         Self {
@@ -202,6 +220,7 @@ impl ExperienceRecord {
             delta_proposal_record: None,
             delta_evaluation_record: None,
             delta_recommendation_record: None,
+            nsr_record: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -223,6 +242,7 @@ impl ExperienceRecord {
             delta_proposal_record: None,
             delta_evaluation_record: None,
             delta_recommendation_record: None,
+            nsr_record: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -244,6 +264,7 @@ impl ExperienceRecord {
             delta_proposal_record: None,
             delta_evaluation_record: None,
             delta_recommendation_record: None,
+            nsr_record: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -270,6 +291,7 @@ impl ExperienceRecord {
             delta_proposal_record: None,
             delta_evaluation_record: None,
             delta_recommendation_record: None,
+            nsr_record: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -296,6 +318,7 @@ impl ExperienceRecord {
             delta_proposal_record: None,
             delta_evaluation_record: None,
             delta_recommendation_record: None,
+            nsr_record: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -322,6 +345,7 @@ impl ExperienceRecord {
             delta_proposal_record: None,
             delta_evaluation_record: None,
             delta_recommendation_record: None,
+            nsr_record: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -348,6 +372,7 @@ impl ExperienceRecord {
             delta_proposal_record: Some(delta_proposal_record),
             delta_evaluation_record: None,
             delta_recommendation_record: None,
+            nsr_record: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -374,6 +399,7 @@ impl ExperienceRecord {
             delta_proposal_record: None,
             delta_evaluation_record: Some(delta_evaluation_record),
             delta_recommendation_record: None,
+            nsr_record: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -400,6 +426,34 @@ impl ExperienceRecord {
             delta_proposal_record: None,
             delta_evaluation_record: None,
             delta_recommendation_record: Some(delta_recommendation_record),
+            nsr_record: None,
+            audit_prev_digest: None,
+            audit_digest: None,
+        }
+    }
+
+    pub fn from_nsr(
+        id: ExperienceId,
+        time: SimTime,
+        corr: CorrelationId,
+        nsr_record: NsrRecord,
+    ) -> Self {
+        Self {
+            id,
+            time,
+            corr,
+            kind: ExperienceKind::Nsr,
+            payload: ExperiencePayload::Empty,
+            neuromod: None,
+            iit_phi: None,
+            decision_meta: None,
+            compute_summary: None,
+            hormone_record: None,
+            neuro_record: None,
+            delta_proposal_record: None,
+            delta_evaluation_record: None,
+            delta_recommendation_record: None,
+            nsr_record: Some(nsr_record),
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -433,6 +487,7 @@ impl ExperienceRecord {
             delta_proposal_record: None,
             delta_evaluation_record: None,
             delta_recommendation_record: None,
+            nsr_record: None,
             audit_prev_digest: Some(prev_digest),
             audit_digest: Some(digest),
         }

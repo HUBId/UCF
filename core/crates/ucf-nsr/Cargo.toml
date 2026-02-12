@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 blake3 = "1"
+metrics = { workspace = true }
 ucf-cde-scm = { path = "../../../domains/causal/crates/ucf-cde-scm" }
 ucf-influence = { path = "../ucf-influence" }
 ucf-sandbox = { path = "../ucf-sandbox" }
