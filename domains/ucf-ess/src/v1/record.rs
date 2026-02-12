@@ -22,6 +22,7 @@ pub enum ExperienceKind {
     SandboxCall,
     SandboxReply,
     AuditCheckpoint,
+    Hormone,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -35,6 +36,7 @@ pub struct ExperienceRecord {
     pub iit_phi: Option<PhiProxySnapshot>,
     pub decision_meta: Option<DecisionMeta>,
     pub compute_summary: Option<ComputeSignalsSummary>,
+    pub hormone_record: Option<HormoneRecord>,
     pub audit_prev_digest: Option<[u8; 32]>,
     pub audit_digest: Option<[u8; 32]>,
 }
@@ -112,6 +114,18 @@ pub struct AuditCheckpointRecord {
     pub head_digest: [u8; 32],
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HormoneRecord {
+    pub t: u64,
+    pub cortisol_q: u16,
+    pub drive_q: u16,
+    pub stress_index_q: u16,
+    pub hormone_digest: [u8; 32],
+    pub evidence_chain_digest: [u8; 32],
+    pub modulation_digest: Option<[u8; 32]>,
+    pub schema_version: u16,
+}
+
 impl ExperienceRecord {
     pub fn from_control(id: ExperienceId, ctrl: ControlFrame) -> Self {
         Self {
@@ -124,6 +138,7 @@ impl ExperienceRecord {
             iit_phi: None,
             decision_meta: None,
             compute_summary: None,
+            hormone_record: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -140,6 +155,7 @@ impl ExperienceRecord {
             iit_phi: None,
             decision_meta: Some(decision.meta),
             compute_summary: decision.compute_summary,
+            hormone_record: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -156,6 +172,7 @@ impl ExperienceRecord {
             iit_phi: None,
             decision_meta: None,
             compute_summary: None,
+            hormone_record: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -177,6 +194,29 @@ impl ExperienceRecord {
             iit_phi: None,
             decision_meta: None,
             compute_summary: None,
+            hormone_record: None,
+            audit_prev_digest: None,
+            audit_digest: None,
+        }
+    }
+
+    pub fn from_hormone(
+        id: ExperienceId,
+        time: SimTime,
+        corr: CorrelationId,
+        hormone_record: HormoneRecord,
+    ) -> Self {
+        Self {
+            id,
+            time,
+            corr,
+            kind: ExperienceKind::Hormone,
+            payload: ExperiencePayload::Empty,
+            neuromod: None,
+            iit_phi: None,
+            decision_meta: None,
+            compute_summary: None,
+            hormone_record: Some(hormone_record),
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -205,6 +245,7 @@ impl ExperienceRecord {
             iit_phi: None,
             decision_meta: None,
             compute_summary: None,
+            hormone_record: None,
             audit_prev_digest: Some(prev_digest),
             audit_digest: Some(digest),
         }

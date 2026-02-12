@@ -1,6 +1,7 @@
 mod cde;
 mod field;
 mod hh;
+mod hormone;
 mod hpa;
 mod iit;
 mod microcircuit;
@@ -20,6 +21,10 @@ pub use field::{
     Unit01,
 };
 pub use hh::{HHNeuron, HHState, HhStepIn, HhStepOut};
+pub use hormone::{
+    hormone_step, map_modulation, GatingModulation, HormoneCfg, HormoneInput, HormoneState,
+    HormoneStateSummary, HormoneStepOutput,
+};
 pub use hpa::{cortisol_unit, hpa_step, HpaCfg, HpaState};
 pub use iit::{classify, compute_integration, CoherenceState, IITCfg, IITInputs, IITState};
 pub use microcircuit::{MicroStepOut, Microcircuit};
