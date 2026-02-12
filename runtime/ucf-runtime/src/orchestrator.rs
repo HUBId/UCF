@@ -34,8 +34,8 @@ use ucf_dbm::regions::{region_step, BrainRegion, RegionKind};
 use ucf_ess::v1::{
     AuditCheckpointRecord, AuditPayload, DeltaEvaluationRecord, DeltaProposalRecord,
     DeltaRecommendationRecord, ExperienceKind, ExperienceRecord, ExperienceStore, HormoneRecord,
-    IdAllocator, InMemoryEss, NeuroRecord, SandboxCallRecord, SandboxReplyRecord, ToolAuthRecord,
-    ToolExecutionRecord, ToolRequestRecord,
+    IdAllocator, InMemoryEss, NeuroRecord, NsrRecord, SandboxCallRecord, SandboxReplyRecord,
+    ToolAuthRecord, ToolExecutionRecord, ToolRequestRecord,
 };
 use ucf_fep::{
     check_coherence_invariants, fep_step, homeostasis_step, CoherenceCfg, CoherenceSnapshot,
@@ -51,6 +51,10 @@ use ucf_iit_proxy::v0::{iit_push_and_eval, IitCfg, IitSample, IitState};
 use ucf_ncde::v0::{ncde_step, NcdeCfg, NcdeInput, NcdeState};
 use ucf_neuromod::v0::{NeuromodInputs, NeuromodScheduler, NeuromodulatorField};
 use ucf_nsr::v0::{Claim, NsrEngine, Verdict};
+use ucf_nsr::{
+    ActionType, CapabilityKind, DecisionIntentSummary, NsrBudget, NsrContext, NsrDatalogLiteEngine,
+    NsrPolicyEcologyEngine, OutputClass, PolicyHint, PolicyTag, ReasonCode as NsrReasonCodeV0,
+};
 use ucf_onn::v0::{onn_step, OnnCfg, OnnCore, OnnInput, OnnNode, OnnState, PhaseDeg};
 use ucf_policy::{
     adapter::ActionAdapter,
@@ -85,6 +89,23 @@ fn env_u64(name: &str, default: u64) -> u64 {
         .ok()
         .and_then(|v| v.parse::<u64>().ok())
         .unwrap_or(default)
+}
+
+fn quantize_unit_u16(v: f32) -> u16 {
+    (v.clamp(0.0, 1.0) * 10_000.0).round() as u16
+}
+
+fn encode_nsr_reason(reason: NsrReasonCodeV0) -> u16 {
+    match reason {
+        NsrReasonCodeV0::ViolatesDenyByDefault => 1,
+        NsrReasonCodeV0::CoherenceGateTriggered => 2,
+        NsrReasonCodeV0::HighRiskToolRequest => 3,
+        NsrReasonCodeV0::UntrustedTarget => 4,
+        NsrReasonCodeV0::BudgetStress => 5,
+        NsrReasonCodeV0::LowConfidenceContext => 6,
+        NsrReasonCodeV0::SensitiveOutputClass => 7,
+        NsrReasonCodeV0::PolicyRuleHit(idx) => 10_000u16.saturating_add(idx),
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -1324,6 +1345,8 @@ impl RuntimeOrchestrator {
                 + 0.1 * neuro_out.summary.arousal
                 - 0.05 * neuro_out.summary.excitability)
                 .clamp(-0.5, 0.5),
+            nsr_risk: None,
+            nsr_confidence: None,
         };
         self.fep_risk_penalty_applied_total = self.fep_risk_penalty_applied_total.saturating_add(1);
         let mut fep_out = fep_step(&self.fep_state.cfg, &fep_in);
@@ -1953,6 +1976,44 @@ impl RuntimeOrchestrator {
             );
         }
         let compute_summary = compute_signals.summary(self.compute_backend.name());
+        let nsr_v0_assessment = NsrDatalogLiteEngine::default()
+            .assess(
+                &NsrContext {
+                    risk: compute_summary.risk,
+                    confidence: compute_summary.confidence,
+                    coherence: decision.compute_summary.and_then(|s| s.coherence),
+                    instability: decision.compute_summary.and_then(|s| s.instability),
+                    pressure: Some(compute_summary.pressure),
+                    surprise: Some(compute_summary.surprise),
+                    cortisol: self.last_hormone_summary.map(|h| h.cortisol),
+                    arousal: self.last_neuro_summary.map(|n| n.arousal),
+                    has_capability_token: !self.tool_gate.capabilities.tokens.is_empty(),
+                    compute_degraded_ratio: Some(if compute_summary.risk_quality == 2 {
+                        1.0
+                    } else {
+                        0.0
+                    }),
+                },
+                &DecisionIntentSummary {
+                    action_type: ActionType::ToolUse,
+                    tool_kinds: vec![CapabilityKind::NetHttp],
+                    target_domain_hashes: vec![
+                        blake3::hash(compute_summary.backend.as_bytes()).as_bytes()[0] as u64,
+                    ],
+                    target_path_hashes: vec![
+                        blake3::hash(compute_summary.backend_profile.as_bytes()).as_bytes()[0]
+                            as u64,
+                    ],
+                    output_class: if compute_summary.risk > 0.75 {
+                        OutputClass::ExecIntent
+                    } else {
+                        OutputClass::SafeText
+                    },
+                },
+                &[PolicyTag::Network],
+                NsrBudget::default(),
+            )
+            .unwrap_or_else(|_| ucf_nsr::fallback_assessment_fail_open());
         let quality_idx = usize::from(compute_summary.risk_quality.min(2));
         self.risk_quality_counts[quality_idx] =
             self.risk_quality_counts[quality_idx].saturating_add(1);
@@ -2030,6 +2091,13 @@ impl RuntimeOrchestrator {
             });
         }
         decision = decision.with_gating_reason(coherence_gate);
+        if matches!(nsr_v0_assessment.policy_hint, PolicyHint::Block) {
+            decision = decision.with_gating_reason(Some("nsr_block"));
+        } else if matches!(nsr_v0_assessment.policy_hint, PolicyHint::SafeOnly)
+            && decision.gating_reason.is_none()
+        {
+            decision = decision.with_gating_reason(Some("nsr_safe_only"));
+        }
         if coherence_gate.is_some() {
             self.coherence_gated_total = self.coherence_gated_total.saturating_add(1);
         }
@@ -2268,6 +2336,37 @@ impl RuntimeOrchestrator {
         let denied_tool = matches!(decision.decision, ucf_frames::v1::DecisionCode::Deny);
         self.summarize_tick_for_evolution(decision.compute_summary, denied_tool);
         self.maybe_run_evolution(decision.time, decision.corr)?;
+
+        let nsr_record = NsrRecord {
+            t: ctrl.time.tick.get(),
+            decision_id: eid2.0,
+            evidence_chain_digest: compute_summary.compute_chain_digest,
+            ruleset_id: nsr_v0_assessment.ruleset_id,
+            engine_id: nsr_v0_assessment.engine_id,
+            schema_version: nsr_v0_assessment.schema_version,
+            nsr_risk_q: quantize_unit_u16(nsr_v0_assessment.nsr_risk),
+            nsr_confidence_q: quantize_unit_u16(nsr_v0_assessment.nsr_confidence),
+            policy_hint: match nsr_v0_assessment.policy_hint {
+                PolicyHint::Block => 2,
+                PolicyHint::SafeOnly => 1,
+                PolicyHint::Normal => 0,
+            },
+            reasons: nsr_v0_assessment
+                .reasons
+                .iter()
+                .copied()
+                .map(encode_nsr_reason)
+                .take(16)
+                .collect(),
+            facts_digest: nsr_v0_assessment.facts_digest,
+            assessment_digest: nsr_v0_assessment.digest,
+        };
+        self.ess.append(ExperienceRecord::from_nsr(
+            self.ids.next(),
+            ctrl.time,
+            ctrl.corr,
+            nsr_record,
+        ))?;
 
         self.tool_gate.capabilities = issue_capabilities(Some(&decision), decision.time.tick.get());
         let request = request_from(&ctrl, &decision, eid2.0);

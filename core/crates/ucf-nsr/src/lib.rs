@@ -12,11 +12,19 @@ mod backend_datalog;
 #[cfg(feature = "nsr_smt")]
 mod backend_smt;
 mod notar;
+mod policy_ecology_v0;
 pub mod v0;
 
 pub use notar::{
     rules, Fact, LogicHook, NoopLogicHook, NsrCore, NsrInputs, NsrOutputs, NsrTrace, Rule, RuleHit,
     RuleId, RuleSeverity,
+};
+pub use policy_ecology_v0::{
+    apply_nsr_to_fep, fallback_assessment_fail_open, ActionType, CapabilityKind,
+    DecisionIntentSummary, Fact as PolicyFact, NsrAssessment, NsrBudget, NsrContext,
+    NsrDatalogLiteEngine, NsrEngine as NsrPolicyEcologyEngine, NsrError, NsrSmtEngine, OutputClass,
+    PolicyHint, PolicyTag, Predicate, ReasonCode, NSR_ENGINE_ID_V0, NSR_RULESET_ID_V0,
+    NSR_SCHEMA_VERSION_V0,
 };
 
 const LIGHT_PROOF_DOMAIN: &[u8] = b"ucf.nsr.proof.light.v1";
