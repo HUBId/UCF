@@ -6,6 +6,7 @@ mod hpa;
 mod iit;
 mod microcircuit;
 mod modulation;
+mod neuro;
 mod nsr;
 mod ode;
 mod onn;
@@ -29,6 +30,10 @@ pub use hpa::{cortisol_unit, hpa_step, HpaCfg, HpaState};
 pub use iit::{classify, compute_integration, CoherenceState, IITCfg, IITInputs, IITState};
 pub use microcircuit::{MicroStepOut, Microcircuit};
 pub use modulation::{modulate_hh, summarize, HhParams, ModulationCfg};
+pub use neuro::{
+    neuro_step, BiophysModulation, NeuroCfg, NeuroInput, NeuroSpike, NeuroSpikeBatch,
+    NeuroStateSummary, NeuroStepOutput, NeuronPopState, MAX_SPIKES_PER_TICK, NEURON_COUNT,
+};
 pub use nsr::{verify_graph, RuleCfg, VerifyVerdict};
 pub use ode::{clamp01, prod_clear_step, step_euler, Integrator};
 pub use onn::{
