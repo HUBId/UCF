@@ -7,6 +7,7 @@ pub use record::{
     AuditCheckpointRecord, AuditPayload, CandidateSetRecord, CandidateSummaryRecord,
     DeltaEvaluationRecord, DeltaProposalRecord, DeltaRecommendationRecord, ExperienceId,
     ExperienceKind, ExperiencePayload, ExperienceRecord, HormoneRecord, NeuroRecord, NsrRecord,
-    SandboxCallRecord, SandboxReplyRecord, ToolAuthRecord, ToolExecutionRecord, ToolRequestRecord,
+    OutputRecord, SandboxCallRecord, SandboxReplyRecord, ToolAuthRecord, ToolExecutionRecord,
+    ToolRequestRecord,
 };
 pub use store::{ExperienceStore, IdAllocator, InMemoryEss};

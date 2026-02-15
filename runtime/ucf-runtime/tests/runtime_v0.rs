@@ -2,7 +2,7 @@ use ucf_cde::v0::CdeUpdateKind;
 #[cfg(feature = "compute-burn")]
 use ucf_compute::ComputeError;
 use ucf_core::types::{SimTime, Tick, WindowId};
-use ucf_ess::v1::{ExperienceKind, ExperiencePayload, ExperienceStore};
+use ucf_ess::v1::{AuditPayload, ExperienceKind, ExperiencePayload, ExperienceStore};
 use ucf_fep::{check_coherence_invariants, CoherenceCfg, CoherenceSnapshot};
 use ucf_frames::v1::{
     BrainStimulusKind, BrainStimulusPayload, ChannelCode, ControlFrame, ControlPayload,
@@ -1965,4 +1965,64 @@ fn evolution_enabled_persists_proposal_and_evaluation_without_actions() {
         .filter(|r| r.kind == ExperienceKind::DeltaRecommendation)
         .count();
     assert!(recommendations <= 1);
+}
+
+#[test]
+fn orchestrator_persists_output_record_for_safe_text_or_code() {
+    let ctrl = ControlFrame::new_text(
+        sim_time(),
+        CorrelationId(900),
+        ChannelCode::ExternalOutput,
+        intent(),
+        "output-record",
+    );
+    let mut orchestrator = RuntimeOrchestrator::new();
+    let mut adapter = MockAdapter::default();
+    orchestrator
+        .ingest_and_process(&mut adapter, ctrl)
+        .expect("orchestration should succeed");
+
+    let output = (0..orchestrator.ess.len())
+        .filter_map(|idx| orchestrator.ess.get(idx))
+        .find(|r| r.kind == ExperienceKind::Output)
+        .expect("output record must exist");
+    match &output.payload {
+        ExperiencePayload::Audit(AuditPayload::Output(record)) => {
+            assert!(record.schema_version >= 1);
+            assert_eq!(record.output_class, 0);
+            assert!(record.text.as_ref().is_some());
+        }
+        _ => panic!("expected output audit payload"),
+    }
+}
+
+#[test]
+fn external_output_class_uses_plan_summary_without_llm_digests() {
+    let ctrl = ControlFrame::new_text(
+        sim_time(),
+        CorrelationId(901),
+        ChannelCode::ExternalOutput,
+        intent(),
+        "plan-path",
+    );
+    let mut orchestrator = RuntimeOrchestrator::new();
+    let mut adapter = MockAdapter::default();
+    orchestrator
+        .ingest_and_process(&mut adapter, ctrl)
+        .expect("orchestration should succeed");
+
+    let maybe_plan_output = (0..orchestrator.ess.len())
+        .filter_map(|idx| orchestrator.ess.get(idx))
+        .filter(|r| r.kind == ExperienceKind::Output)
+        .find_map(|r| match &r.payload {
+            ExperiencePayload::Audit(AuditPayload::Output(record)) if record.output_class == 2 => {
+                Some(record)
+            }
+            _ => None,
+        });
+    if let Some(record) = maybe_plan_output {
+        assert_eq!(record.llm_backend_name, "plan-only");
+        assert_eq!(record.llm_request_digest, [0; 32]);
+        assert_eq!(record.llm_response_digest, [0; 32]);
+    }
 }

@@ -29,6 +29,7 @@ pub enum ExperienceKind {
     DeltaRecommendation,
     Nsr,
     CandidateSet,
+    Output,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -71,6 +72,7 @@ pub enum AuditPayload {
     SandboxReply(SandboxReplyRecord),
     AuditCheckpoint(AuditCheckpointRecord),
     CandidateSet(CandidateSetRecord),
+    Output(OutputRecord),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -103,6 +105,23 @@ pub struct CandidateSetRecord {
     pub selected_candidate_id: u16,
     pub selected_candidate_digest: [u8; 32],
     pub summaries: Vec<CandidateSummaryRecord>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OutputRecord {
+    pub schema_version: u16,
+    pub decision_id: u64,
+    pub candidate_id: u16,
+    pub t: u64,
+    pub output_class: u8,
+    pub llm_backend_name: String,
+    pub llm_request_digest: [u8; 32],
+    pub llm_response_digest: [u8; 32],
+    pub token_count: u32,
+    pub status: u8,
+    pub finish_reason: u8,
+    pub text: Option<String>,
+    pub evidence_chain_digest: [u8; 32],
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -496,6 +515,33 @@ impl ExperienceRecord {
             corr,
             kind: ExperienceKind::CandidateSet,
             payload: ExperiencePayload::Audit(AuditPayload::CandidateSet(candidate_set)),
+            neuromod: None,
+            iit_phi: None,
+            decision_meta: None,
+            compute_summary: None,
+            hormone_record: None,
+            neuro_record: None,
+            delta_proposal_record: None,
+            delta_evaluation_record: None,
+            delta_recommendation_record: None,
+            nsr_record: None,
+            audit_prev_digest: None,
+            audit_digest: None,
+        }
+    }
+
+    pub fn from_output(
+        id: ExperienceId,
+        time: SimTime,
+        corr: CorrelationId,
+        output: OutputRecord,
+    ) -> Self {
+        Self {
+            id,
+            time,
+            corr,
+            kind: ExperienceKind::Output,
+            payload: ExperiencePayload::Audit(AuditPayload::Output(output)),
             neuromod: None,
             iit_phi: None,
             decision_meta: None,
