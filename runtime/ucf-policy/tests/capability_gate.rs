@@ -50,6 +50,8 @@ fn scope_matching_domain_like_target() {
         requested_at_t: 1,
         decision_id: 5,
         evidence_chain_digest: [0; 32],
+        candidate_id: None,
+        tool_intent_digest: None,
     };
     assert!(set.allows(&req, 2).is_ok());
     assert_eq!(set.allows(&req, 5), Err(CapabilityDenyReason::Expired));

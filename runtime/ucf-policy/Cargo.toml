@@ -11,3 +11,4 @@ ucf-bluebrain-bridge = { path = "../../domains/ucf-bluebrain-bridge" }
 metrics = { workspace = true }
 tracing = { workspace = true }
 sha2 = { workspace = true }
+blake3 = "1.5"

@@ -28,6 +28,7 @@ pub enum ExperienceKind {
     DeltaEvaluation,
     DeltaRecommendation,
     Nsr,
+    CandidateSet,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -69,6 +70,7 @@ pub enum AuditPayload {
     SandboxCall(SandboxCallRecord),
     SandboxReply(SandboxReplyRecord),
     AuditCheckpoint(AuditCheckpointRecord),
+    CandidateSet(CandidateSetRecord),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -78,6 +80,29 @@ pub struct ToolRequestRecord {
     pub target: String,
     pub decision_id: u64,
     pub evidence_chain_digest: [u8; 32],
+    pub candidate_id: Option<u16>,
+    pub tool_intent_digest: Option<[u8; 32]>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CandidateSummaryRecord {
+    pub candidate_id: u16,
+    pub digest: [u8; 32],
+    pub intent_kind: u8,
+    pub output_class: u8,
+    pub tool_intent_count: u8,
+    pub allowed: bool,
+    pub policy_hint: u8,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CandidateSetRecord {
+    pub schema_version: u16,
+    pub decision_id: u64,
+    pub t: u64,
+    pub selected_candidate_id: u16,
+    pub selected_candidate_digest: [u8; 32],
+    pub summaries: Vec<CandidateSummaryRecord>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -454,6 +479,33 @@ impl ExperienceRecord {
             delta_evaluation_record: None,
             delta_recommendation_record: None,
             nsr_record: Some(nsr_record),
+            audit_prev_digest: None,
+            audit_digest: None,
+        }
+    }
+
+    pub fn from_candidate_set(
+        id: ExperienceId,
+        time: SimTime,
+        corr: CorrelationId,
+        candidate_set: CandidateSetRecord,
+    ) -> Self {
+        Self {
+            id,
+            time,
+            corr,
+            kind: ExperienceKind::CandidateSet,
+            payload: ExperiencePayload::Audit(AuditPayload::CandidateSet(candidate_set)),
+            neuromod: None,
+            iit_phi: None,
+            decision_meta: None,
+            compute_summary: None,
+            hormone_record: None,
+            neuro_record: None,
+            delta_proposal_record: None,
+            delta_evaluation_record: None,
+            delta_recommendation_record: None,
+            nsr_record: None,
             audit_prev_digest: None,
             audit_digest: None,
         }

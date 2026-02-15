@@ -592,6 +592,8 @@ impl IsolationRuntime for WasmIsolationRuntime {
                         requested_at_t: caller.data().call.t,
                         decision_id: caller.data().call.call_id.0,
                         evidence_chain_digest: caller.data().call.evidence_chain_digest,
+                        candidate_id: None,
+                        tool_intent_digest: None,
                     };
                     caller.data_mut().tool_result = b"denied_by_default".to_vec();
                     2
@@ -1049,6 +1051,8 @@ fn decode_tool_request(call: &SandboxCall) -> Result<ToolRequest, SandboxError> 
         requested_at_t: call.t,
         decision_id: call.call_id.0,
         evidence_chain_digest: call.evidence_chain_digest,
+        candidate_id: None,
+        tool_intent_digest: None,
     })
 }
 
@@ -1541,6 +1545,8 @@ pub fn decode_tool_request_wire(
         requested_at_t,
         decision_id,
         evidence_chain_digest,
+        candidate_id: None,
+        tool_intent_digest: None,
     })
 }
 

@@ -30,6 +30,8 @@ pub struct ToolRequest {
     pub requested_at_t: u64,
     pub decision_id: u64,
     pub evidence_chain_digest: [u8; 32],
+    pub candidate_id: Option<u16>,
+    pub tool_intent_digest: Option<[u8; 32]>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -284,6 +286,37 @@ pub fn request_from(
         requested_at_t: ctrl.time.tick.get(),
         decision_id,
         evidence_chain_digest,
+        candidate_id: None,
+        tool_intent_digest: None,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn request_from_intent(
+    decision: &DecisionFrame,
+    decision_id: u64,
+    request_id: u64,
+    kind: CapabilityKind,
+    target: String,
+    payload_hint: PayloadHint,
+    candidate_id: u16,
+    tool_intent_digest: [u8; 32],
+) -> ToolRequest {
+    let evidence_chain_digest = decision
+        .compute_summary
+        .and_then(|s| s.compute_chain_digest)
+        .unwrap_or([0u8; 32]);
+
+    ToolRequest {
+        id: request_id,
+        kind,
+        target,
+        payload_hint,
+        requested_at_t: decision.time.tick.get(),
+        decision_id,
+        evidence_chain_digest,
+        candidate_id: Some(candidate_id),
+        tool_intent_digest: Some(tool_intent_digest),
     }
 }
 
