@@ -23,6 +23,10 @@ use ucf_cde::v0::{
     on_intervention, on_observation, tick_decay, CdeCfg, CdeState, CdeUpdateKind, Intervention,
     Observation, VarId,
 };
+use ucf_compute::capabilities::{
+    build_llm_backend, FinishReason, LlmBackendConfig, LlmInference, LlmOutputClass, LlmRequest,
+    LlmResponse, LlmStatus,
+};
 use ucf_compute::{
     build_backend, compute_input_from_control, AiComputeBackend, ComputeBackendConfig,
     ComputeBudget, CpuStubBackend,
@@ -35,8 +39,8 @@ use ucf_ess::v1::{
     AuditCheckpointRecord, AuditPayload, CandidateSetRecord, CandidateSummaryRecord,
     DeltaEvaluationRecord, DeltaProposalRecord, DeltaRecommendationRecord, ExperienceKind,
     ExperienceRecord, ExperienceStore, HormoneRecord, IdAllocator, InMemoryEss, NeuroRecord,
-    NsrRecord, SandboxCallRecord, SandboxReplyRecord, ToolAuthRecord, ToolExecutionRecord,
-    ToolRequestRecord,
+    NsrRecord, OutputRecord, SandboxCallRecord, SandboxReplyRecord, ToolAuthRecord,
+    ToolExecutionRecord, ToolRequestRecord,
 };
 use ucf_fep::{
     check_coherence_invariants, fep_step, homeostasis_step, CoherenceCfg, CoherenceSnapshot,
@@ -102,6 +106,61 @@ fn env_u64(name: &str, default: u64) -> u64 {
 
 fn quantize_unit_u16(v: f32) -> u16 {
     (v.clamp(0.0, 1.0) * 10_000.0).round() as u16
+}
+
+const OUTPUT_SCHEMA_VERSION: u16 = 1;
+const MAX_OUTPUT_TEXT_CHARS: usize = 4096;
+
+fn output_status_code(status: LlmStatus) -> u8 {
+    match status {
+        LlmStatus::Ok => 0,
+        LlmStatus::Truncated => 1,
+        LlmStatus::Refused => 2,
+        LlmStatus::Failed => 3,
+    }
+}
+
+fn finish_reason_code(reason: FinishReason) -> u8 {
+    match reason {
+        FinishReason::Stop => 0,
+        FinishReason::Length => 1,
+        FinishReason::PolicyRefusal => 2,
+        FinishReason::Error => 3,
+    }
+}
+
+fn bounded_summary_line(input: &str) -> String {
+    input.chars().take(160).collect()
+}
+
+fn map_output_class(output_class: CandidateOutputClass) -> LlmOutputClass {
+    match output_class {
+        CandidateOutputClass::SafeText => LlmOutputClass::SafeText,
+        CandidateOutputClass::Code => LlmOutputClass::Code,
+        CandidateOutputClass::ExternalIo => LlmOutputClass::ExternalIo,
+        CandidateOutputClass::ExecIntent => LlmOutputClass::ExecIntent,
+        CandidateOutputClass::Sensitive => LlmOutputClass::Sensitive,
+    }
+}
+
+fn validate_output(output_class: CandidateOutputClass, text: &str) -> Result<(), ()> {
+    match output_class {
+        CandidateOutputClass::SafeText => {
+            if text.contains("```") {
+                return Err(());
+            }
+            Ok(())
+        }
+        CandidateOutputClass::Code => Ok(()),
+        CandidateOutputClass::ExternalIo | CandidateOutputClass::ExecIntent => {
+            if text.is_empty() {
+                Ok(())
+            } else {
+                Err(())
+            }
+        }
+        CandidateOutputClass::Sensitive => Err(()),
+    }
 }
 
 fn encode_nsr_reason(reason: NsrReasonCodeV0) -> u16 {
@@ -189,6 +248,8 @@ pub struct RuntimeOrchestrator {
     pub gem: Gem,
     compute_backend: Box<dyn AiComputeBackend>,
     compute_budget: ComputeBudget,
+    llm_backend: std::sync::Arc<dyn LlmInference + Send + Sync>,
+    llm_cfg: LlmBackendConfig,
     neuromod_field: NeuromodulatorField,
     neuromod_scheduler: NeuromodScheduler,
     onn: OnnCore,
@@ -523,9 +584,12 @@ impl RuntimeOrchestrator {
 
     pub fn try_new_from_env() -> Result<Self, RuntimeError> {
         let cfg = ComputeBackendConfig::from_env()?;
+        let llm_cfg = LlmBackendConfig::from_env()?;
         let mut orchestrator = Self::new();
         orchestrator.compute_budget = cfg.to_budget();
         orchestrator.compute_backend = build_backend(&cfg)?;
+        orchestrator.llm_backend = build_llm_backend(llm_cfg)?;
+        orchestrator.llm_cfg = llm_cfg;
         Ok(orchestrator)
     }
 
@@ -559,6 +623,9 @@ impl RuntimeOrchestrator {
             gem: Gem,
             compute_backend: Box::new(CpuStubBackend),
             compute_budget: ComputeBudget::default(),
+            llm_backend: build_llm_backend(LlmBackendConfig::from_env().unwrap_or_default())
+                .unwrap_or_else(|_| std::sync::Arc::new(ucf_compute::capabilities::LlmStubBackend)),
+            llm_cfg: LlmBackendConfig::from_env().unwrap_or_default(),
             neuromod_field: NeuromodulatorField::new_baseline(),
             neuromod_scheduler: NeuromodScheduler::new(1),
             onn,
@@ -2308,6 +2375,131 @@ impl RuntimeOrchestrator {
             decision.time,
             decision.corr,
             candidate_set_record,
+        ))?;
+
+        let output_record = if matches!(
+            selected_candidate.output_class,
+            CandidateOutputClass::SafeText | CandidateOutputClass::Code
+        ) {
+            let rationale = selected_candidate
+                .rationale
+                .lines
+                .iter()
+                .map(|line| bounded_summary_line(line))
+                .collect::<Vec<_>>()
+                .join(" | ");
+            let prompt = format!(
+                "decision={} candidate={} class={:?} risk={:.3} confidence={:.3} rationale={} chain={:02x}{:02x}{:02x}{:02x}",
+                eid2.0,
+                selected_candidate.candidate_id,
+                selected_candidate.output_class,
+                compute_summary.risk,
+                compute_summary.confidence,
+                rationale,
+                compute_summary.compute_chain_digest[0],
+                compute_summary.compute_chain_digest[1],
+                compute_summary.compute_chain_digest[2],
+                compute_summary.compute_chain_digest[3],
+            );
+            let llm_req = LlmRequest {
+                schema_version: 1,
+                t: ctrl.time.tick.get(),
+                decision_id: eid2.0,
+                candidate_id: selected_candidate.candidate_id,
+                output_class: map_output_class(selected_candidate.output_class),
+                prompt,
+                context_digest: compute_input.context_digest,
+                evidence_chain_digest: compute_summary.compute_chain_digest,
+                seed: self.llm_cfg.seed,
+                max_tokens: self.llm_cfg.max_tokens,
+                temperature: 0.0,
+            }
+            .bounded();
+            let llm_request_digest = llm_req.digest();
+            let mut llm_resp = self
+                .llm_backend
+                .infer(&llm_req, self.compute_budget)
+                .unwrap_or_else(|_| LlmResponse {
+                    status: LlmStatus::Failed,
+                    text: "llm backend failed".to_string(),
+                    token_count: 0,
+                    finish_reason: FinishReason::Error,
+                    digest: [0; 32],
+                });
+            if llm_resp.digest == [0; 32] {
+                llm_resp = ucf_compute::capabilities::LlmResponse::new(
+                    llm_resp.status,
+                    llm_resp.text,
+                    llm_resp.token_count,
+                    llm_resp.finish_reason,
+                );
+            }
+            metrics::counter!("ucf_llm_infer_total", "backend" => self.llm_backend.name().to_string()).increment(1);
+            if matches!(llm_resp.status, LlmStatus::Refused) {
+                metrics::counter!("ucf_llm_refused_total").increment(1);
+            }
+            if matches!(llm_resp.status, LlmStatus::Truncated) {
+                metrics::counter!("ucf_llm_truncated_total").increment(1);
+            }
+            let mut text = llm_resp
+                .text
+                .chars()
+                .take(MAX_OUTPUT_TEXT_CHARS)
+                .collect::<String>();
+            if validate_output(selected_candidate.output_class, &text).is_err() {
+                text = "refused: output validation failed".to_string();
+                llm_resp = ucf_compute::capabilities::LlmResponse::new(
+                    LlmStatus::Refused,
+                    text.clone(),
+                    0,
+                    FinishReason::PolicyRefusal,
+                );
+            }
+            OutputRecord {
+                schema_version: OUTPUT_SCHEMA_VERSION,
+                decision_id: eid2.0,
+                candidate_id: selected_candidate.candidate_id,
+                t: ctrl.time.tick.get(),
+                output_class: selected_candidate.output_class as u8,
+                llm_backend_name: self.llm_backend.name().to_string(),
+                llm_request_digest,
+                llm_response_digest: llm_resp.digest,
+                token_count: llm_resp.token_count,
+                status: output_status_code(llm_resp.status),
+                finish_reason: finish_reason_code(llm_resp.finish_reason),
+                text: Some(text),
+                evidence_chain_digest: compute_summary.compute_chain_digest,
+            }
+        } else {
+            let summary = selected_candidate
+                .tool_intents
+                .iter()
+                .take(4)
+                .map(|intent| format!("{:?}", intent.kind))
+                .collect::<Vec<_>>()
+                .join(",");
+            OutputRecord {
+                schema_version: OUTPUT_SCHEMA_VERSION,
+                decision_id: eid2.0,
+                candidate_id: selected_candidate.candidate_id,
+                t: ctrl.time.tick.get(),
+                output_class: selected_candidate.output_class as u8,
+                llm_backend_name: "plan-only".to_string(),
+                llm_request_digest: [0; 32],
+                llm_response_digest: [0; 32],
+                token_count: 0,
+                status: output_status_code(LlmStatus::Refused),
+                finish_reason: finish_reason_code(FinishReason::PolicyRefusal),
+                text: Some(format!("tool intents require gate: {summary}")),
+                evidence_chain_digest: compute_summary.compute_chain_digest,
+            }
+        };
+        metrics::counter!("ucf_output_records_total", "class" => format!("{:?}", selected_candidate.output_class)).increment(1);
+        self.ess.append(ExperienceRecord::from_output(
+            self.ids.next(),
+            decision.time,
+            decision.corr,
+            output_record,
         ))?;
         if ctrl
             .time
