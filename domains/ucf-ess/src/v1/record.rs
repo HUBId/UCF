@@ -484,6 +484,33 @@ impl ExperienceRecord {
         }
     }
 
+    pub fn from_candidate_set(
+        id: ExperienceId,
+        time: SimTime,
+        corr: CorrelationId,
+        candidate_set: CandidateSetRecord,
+    ) -> Self {
+        Self {
+            id,
+            time,
+            corr,
+            kind: ExperienceKind::CandidateSet,
+            payload: ExperiencePayload::Audit(AuditPayload::CandidateSet(candidate_set)),
+            neuromod: None,
+            iit_phi: None,
+            decision_meta: None,
+            compute_summary: None,
+            hormone_record: None,
+            neuro_record: None,
+            delta_proposal_record: None,
+            delta_evaluation_record: None,
+            delta_recommendation_record: None,
+            nsr_record: None,
+            audit_prev_digest: None,
+            audit_digest: None,
+        }
+    }
+
     pub fn audit(
         id: ExperienceId,
         time: SimTime,

@@ -2272,11 +2272,10 @@ impl RuntimeOrchestrator {
         )?;
 
         let eid2 = self.ids.next();
-        self.ess.append(
-            ExperienceRecord::from_decision(eid2, decision.clone())
-                .with_neuromod(snapshot)
-                .with_iit_phi(phi),
-        )?;
+        let decision_record = ExperienceRecord::from_decision(eid2, decision.clone())
+            .with_neuromod(snapshot)
+            .with_iit_phi(phi);
+        self.ess.append(decision_record.clone())?;
 
         let candidate_summaries: Vec<CandidateSummaryRecord> = candidates
             .iter()
@@ -2296,27 +2295,20 @@ impl RuntimeOrchestrator {
                 },
             })
             .collect();
-        let candidate_set_payload = AuditPayload::CandidateSet(CandidateSetRecord {
+        let candidate_set_record = CandidateSetRecord {
             schema_version: 1,
             decision_id: eid2.0,
             t: ctrl.time.tick.get(),
             selected_candidate_id: selected_candidate.candidate_id,
             selected_candidate_digest: selected_candidate.digest,
             summaries: candidate_summaries,
-        });
-        let eid_candidates = self.ids.next();
-        let candidate_record = ExperienceRecord::audit(
-            eid_candidates,
+        };
+        self.ess.append(ExperienceRecord::from_candidate_set(
+            self.ids.next(),
             decision.time,
             decision.corr,
-            ExperienceKind::CandidateSet,
-            candidate_set_payload,
-            self.audit_head_digest,
-        );
-        self.audit_head_digest = candidate_record
-            .audit_digest
-            .unwrap_or(self.audit_head_digest);
-        self.ess.append(candidate_record)?;
+            candidate_set_record,
+        ))?;
         if ctrl
             .time
             .tick
@@ -2376,8 +2368,11 @@ impl RuntimeOrchestrator {
         }
 
         if self.consolidation_hook_enabled {
-            if let Some(decision_rec) = self.ess.get(self.ess.len().saturating_sub(1)) {
-                match self.compute_milestone_aggregator.on_append(decision_rec) {
+            {
+                match self
+                    .compute_milestone_aggregator
+                    .on_append(&decision_record)
+                {
                     Ok(milestones) => {
                         for milestone in milestones {
                             self.consolidation_milestones_emitted_total = self
