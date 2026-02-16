@@ -239,6 +239,106 @@ pub struct GeistMacroState {
     pub provenance_digest: [u8; 32],
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LiquidContextWindow {
+    pub sample_count: u16,
+    pub mean_uncertainty: f32,
+    pub max_uncertainty: f32,
+    pub mean_stability: f32,
+    pub rolling_digest: [u8; 32],
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct LiquidTimelineIndex {
+    summaries: Vec<ucf_ess::v1::LfmSummaryRecord>,
+}
+
+impl LiquidTimelineIndex {
+    pub fn rebuild_from_ess(&mut self, ess: &impl ucf_ess::v1::ExperienceStore) {
+        self.summaries.clear();
+        for idx in 0..ess.len() {
+            let Some(rec) = ess.get(idx) else {
+                continue;
+            };
+            if rec.kind != ExperienceKind::LfmSummary {
+                continue;
+            }
+            if let Some(summary) = rec.lfm_summary_record {
+                self.summaries.push(summary);
+            }
+        }
+        self.summaries
+            .sort_by(|a, b| a.t.cmp(&b.t).then_with(|| a.digest.cmp(&b.digest)));
+        metrics::counter!("ucf_lfm_index_rebuild_total").increment(1);
+    }
+
+    pub fn append(&mut self, summary: ucf_ess::v1::LfmSummaryRecord) {
+        let insert_at = self
+            .summaries
+            .binary_search_by(|probe| {
+                probe
+                    .t
+                    .cmp(&summary.t)
+                    .then_with(|| probe.digest.cmp(&summary.digest))
+            })
+            .unwrap_or_else(|idx| idx);
+        self.summaries.insert(insert_at, summary);
+    }
+
+    pub fn get_window(
+        &self,
+        t0: u64,
+        t1: u64,
+        max_results: usize,
+    ) -> Vec<ucf_ess::v1::LfmSummaryRecord> {
+        let capped = max_results.clamp(1, 256);
+        let mut out = self
+            .summaries
+            .iter()
+            .copied()
+            .filter(|s| s.t >= t0 && s.t <= t1)
+            .collect::<Vec<_>>();
+        if out.len() > capped {
+            out.drain(0..out.len() - capped);
+        }
+        metrics::counter!("ucf_lfm_query_window_total").increment(1);
+        out
+    }
+
+    pub fn get_last(&self, n: usize) -> Vec<ucf_ess::v1::LfmSummaryRecord> {
+        let capped = n.clamp(1, 128);
+        if self.summaries.len() <= capped {
+            return self.summaries.clone();
+        }
+        self.summaries[self.summaries.len() - capped..].to_vec()
+    }
+
+    pub fn context_window(&self, n: usize) -> Option<LiquidContextWindow> {
+        let last = self.get_last(n);
+        if last.is_empty() {
+            return None;
+        }
+        let mut sum_u = 0.0f32;
+        let mut sum_s = 0.0f32;
+        let mut max_u = 0.0f32;
+        let mut hasher = blake3::Hasher::new();
+        for item in &last {
+            sum_u += item.uncertainty.clamp(0.0, 1.0);
+            sum_s += item.stability.clamp(0.0, 1.0);
+            max_u = max_u.max(item.uncertainty.clamp(0.0, 1.0));
+            hasher.update(&item.digest);
+        }
+        let n = last.len() as f32;
+        Some(LiquidContextWindow {
+            sample_count: last.len().min(usize::from(u16::MAX)) as u16,
+            mean_uncertainty: (sum_u / n).clamp(0.0, 1.0),
+            max_uncertainty: max_u,
+            mean_stability: (sum_s / n).clamp(0.0, 1.0),
+            rolling_digest: *hasher.finalize().as_bytes(),
+        })
+    }
+}
+
 pub trait GeistHook {
     fn on_milestone(
         &mut self,
@@ -502,6 +602,51 @@ mod tests {
         assert_eq!(stream, rebuilt);
     }
 
+    #[test]
+    fn liquid_timeline_index_rebuild_and_query_are_deterministic() {
+        use ucf_ess::v1::{ExperienceStore, IdAllocator, InMemoryEss, LfmSummaryRecord};
+
+        let mut ess = InMemoryEss::new();
+        let mut ids = IdAllocator::new(1);
+        for tick in 0..20u64 {
+            let time = SimTime {
+                tick: Tick::new(tick),
+                window: WindowId::new(0),
+            };
+            let summary = LfmSummaryRecord {
+                t: tick,
+                decision_id: Some(100 + tick),
+                evidence_chain_digest: [1; 32],
+                backend_pack_digest: [2; 32],
+                liquid_state_digest: [tick as u8; 32],
+                liquid_readout_digest: [3; 32],
+                uncertainty: (tick as f32 / 20.0).clamp(0.0, 1.0),
+                stability: (1.0 - tick as f32 / 20.0).clamp(0.0, 1.0),
+                schema_version: 1,
+                digest: [0; 32],
+            }
+            .with_digest();
+            let rec =
+                ExperienceRecord::from_lfm_summary(ids.next(), time, CorrelationId(tick), summary);
+            ess.append(rec).expect("append");
+        }
+
+        let mut index = LiquidTimelineIndex::default();
+        index.rebuild_from_ess(&ess);
+        let last = index.get_last(8);
+        assert_eq!(last.len(), 8);
+        assert!(last.windows(2).all(|w| w[0].t <= w[1].t));
+
+        let window = index.get_window(5, 9, 32);
+        assert_eq!(window.len(), 5);
+        assert_eq!(window.first().map(|s| s.t), Some(5));
+        assert_eq!(window.last().map(|s| s.t), Some(9));
+
+        let ctx = index.context_window(4).expect("ctx");
+        assert_eq!(ctx.sample_count, 4);
+        assert!((0.0..=1.0).contains(&ctx.mean_uncertainty));
+        assert!((0.0..=1.0).contains(&ctx.mean_stability));
+    }
     #[test]
     fn geist_rejects_unstable_or_degraded_milestones() {
         let mut geist = GeistStateUpdater::new(120, 0.95, 0.2, 0.4).expect("geist");

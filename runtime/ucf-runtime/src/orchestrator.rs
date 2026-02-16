@@ -6,7 +6,7 @@ use crate::evolution::{
 };
 use crate::hooks::{
     ComputeMilestone, ComputeMilestoneAggregator, ConsolidationHook, GeistHook, GeistRejectReason,
-    GeistStateUpdater,
+    GeistStateUpdater, LiquidContextWindow, LiquidTimelineIndex,
 };
 use crate::sandbox::{call_spec_from_control, execute_tool_call, CapabilitySetSummary};
 use ucf_biophys::v0::{
@@ -39,8 +39,8 @@ use ucf_ess::v1::{
     AuditCheckpointRecord, AuditPayload, BackendPackRecord, CandidateSetRecord,
     CandidateSummaryRecord, DeltaEvaluationRecord, DeltaProposalRecord, DeltaRecommendationRecord,
     ExperienceKind, ExperienceRecord, ExperienceStore, HormoneRecord, IdAllocator, InMemoryEss,
-    NeuroRecord, NsrRecord, OutputRecord, SandboxCallRecord, SandboxReplyRecord, ToolAuthRecord,
-    ToolExecutionRecord, ToolRequestRecord,
+    LfmSummaryRecord, LfmWindowRecord, NeuroRecord, NsrRecord, OutputRecord, SandboxCallRecord,
+    SandboxReplyRecord, ToolAuthRecord, ToolExecutionRecord, ToolRequestRecord,
 };
 use ucf_fep::{
     check_coherence_invariants, fep_step, homeostasis_step, CoherenceCfg, CoherenceSnapshot,
@@ -246,6 +246,26 @@ fn digest_prefix(digest: [u8; 32]) -> String {
     hex::encode(digest)[..12].to_string()
 }
 
+fn backend_pack_digest(summary: ucf_compute::ComputeSignalsSummary) -> [u8; 32] {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(&summary.backend_pack_id.to_be_bytes());
+    hasher.update(&summary.fixtures_digest);
+    hasher.update(summary.backend_profile.as_bytes());
+    *hasher.finalize().as_bytes()
+}
+
+fn liquid_window_from_index(
+    window: Option<LiquidContextWindow>,
+) -> Option<ucf_policy::candidate::LiquidContextWindowSummary> {
+    window.map(|w| ucf_policy::candidate::LiquidContextWindowSummary {
+        sample_count: w.sample_count,
+        mean_uncertainty: w.mean_uncertainty,
+        max_uncertainty: w.max_uncertainty,
+        mean_stability: w.mean_stability,
+        rolling_digest: w.rolling_digest,
+    })
+}
+
 fn output_class_instruction(output_class: CandidateOutputClass) -> &'static str {
     match output_class {
         CandidateOutputClass::SafeText => {
@@ -265,6 +285,7 @@ fn build_prompt(
     control_frame_summary: &str,
     decision_summary: &str,
     signals: PromptConditioning,
+    liquid_context: Option<LiquidContextWindow>,
     output_class: CandidateOutputClass,
 ) -> String {
     let mut prompt = format!(
@@ -275,7 +296,8 @@ fn build_prompt(
             "- {}\n",
             "- output_class={:?}\n",
             "Signals: risk={} confidence={} surprise={:.3} pressure={:.3} uncertainty={} coherence={} instability={}\n",
-            "Digests: evidence_chain={} lfm_readout={}\n",
+            "Digests: evidence_chain={} lfm_readout={} liquid_rolling={}\n",
+            "Liquid scalars: mean_u={} max_u={} mean_stability={} samples={}\n",
             "{}\n",
             "Do: obey policy constraints, be concise, be auditable.\n",
             "Don't: reveal hidden state vectors, emit sensitive content, invoke tools."
@@ -295,6 +317,21 @@ fn build_prompt(
             .lfm_readout_digest
             .map(digest_prefix)
             .unwrap_or_else(|| "na".to_string()),
+        liquid_context
+            .map(|w| digest_prefix(w.rolling_digest))
+            .unwrap_or_else(|| "na".to_string()),
+        liquid_context
+            .map(|w| format!("{:.3}", w.mean_uncertainty))
+            .unwrap_or_else(|| "na".to_string()),
+        liquid_context
+            .map(|w| format!("{:.3}", w.max_uncertainty))
+            .unwrap_or_else(|| "na".to_string()),
+        liquid_context
+            .map(|w| format!("{:.3}", w.mean_stability))
+            .unwrap_or_else(|| "na".to_string()),
+        liquid_context
+            .map(|w| w.sample_count.to_string())
+            .unwrap_or_else(|| "0".to_string()),
         output_class_instruction(output_class),
     );
 
@@ -528,6 +565,9 @@ pub struct RuntimeOrchestrator {
     hormone_state: HormoneState,
     hormone_cfg: HormoneCfg,
     hormone_persist_every: u64,
+    lfm_persist_every: u64,
+    lfm_window_emit_every: u64,
+    liquid_timeline_index: LiquidTimelineIndex,
     last_hormone_summary: Option<HormoneStateSummary>,
     last_gating_modulation: Option<GatingModulation>,
     hormone_degraded_total: u64,
@@ -950,6 +990,9 @@ impl RuntimeOrchestrator {
             hormone_state: HormoneState::default(),
             hormone_cfg: HormoneCfg::default(),
             hormone_persist_every: 10,
+            lfm_persist_every: env_u64("UCF_LFM_PERSIST_EVERY", 2).max(1),
+            lfm_window_emit_every: env_u64("UCF_LFM_WINDOW_EMIT_EVERY", 8).max(2),
+            liquid_timeline_index: LiquidTimelineIndex::default(),
             last_hormone_summary: None,
             last_gating_modulation: None,
             hormone_degraded_total: 0,
@@ -1147,6 +1190,10 @@ impl RuntimeOrchestrator {
 
     pub fn working_context_ssm_y(&self) -> &[f32] {
         &self.working_context.ssm_y
+    }
+
+    pub fn rebuild_liquid_timeline_index(&mut self) {
+        self.liquid_timeline_index.rebuild_from_ess(&self.ess);
     }
 
     pub fn last_ncde_frame(&self) -> Option<NcdeFrame> {
@@ -2523,12 +2570,18 @@ impl RuntimeOrchestrator {
             decision = next;
         }
 
+        let liquid_context = self.liquid_timeline_index.context_window(16);
+        if let Some(window) = liquid_context {
+            metrics::gauge!("ucf_lfm_uncertainty_mean_recent")
+                .set(f64::from(window.mean_uncertainty));
+        }
         let candidate_ctx = DecisionContext {
             now_t: ctrl.time.tick.get(),
             risk: compute_summary.risk,
             confidence: compute_summary.confidence,
             evidence_chain_digest: compute_summary.compute_chain_digest,
             planning_allowed: !matches!(decision.decision, ucf_frames::v1::DecisionCode::Deny),
+            liquid_context: liquid_window_from_index(liquid_context),
         };
         let candidates =
             self.candidate_generator
@@ -2596,6 +2649,74 @@ impl RuntimeOrchestrator {
             .with_neuromod(snapshot)
             .with_iit_phi(phi);
         self.ess.append(decision_record.clone())?;
+
+        if ctrl.time.tick.get().is_multiple_of(self.lfm_persist_every) {
+            if let (Some(liquid_state_digest), Some(uncertainty), Some(stability)) = (
+                compute_summary.lfm_digest,
+                compute_summary.lfm_uncertainty,
+                compute_summary.lfm_stability,
+            ) {
+                let evidence_chain_digest = compute_summary.compute_chain_digest;
+                let summary = LfmSummaryRecord {
+                    t: ctrl.time.tick.get(),
+                    decision_id: Some(eid2.0),
+                    evidence_chain_digest,
+                    backend_pack_digest: backend_pack_digest(compute_summary),
+                    liquid_state_digest,
+                    liquid_readout_digest: liquid_state_digest,
+                    uncertainty,
+                    stability,
+                    schema_version: 1,
+                    digest: [0; 32],
+                }
+                .with_digest();
+                self.liquid_timeline_index.append(summary);
+                self.ess.append(ExperienceRecord::from_lfm_summary(
+                    self.ids.next(),
+                    decision.time,
+                    decision.corr,
+                    summary,
+                ))?;
+                metrics::counter!("ucf_lfm_records_appended_total").increment(1);
+
+                if ctrl
+                    .time
+                    .tick
+                    .get()
+                    .is_multiple_of(self.lfm_window_emit_every)
+                {
+                    let window = self.liquid_timeline_index.get_last(32);
+                    if !window.is_empty() {
+                        let mut sum_u = 0.0f32;
+                        let mut sum_s = 0.0f32;
+                        let mut hasher = blake3::Hasher::new();
+                        for item in &window {
+                            sum_u += item.uncertainty.clamp(0.0, 1.0);
+                            sum_s += item.stability.clamp(0.0, 1.0);
+                            hasher.update(&item.digest);
+                        }
+                        let denom = window.len() as f32;
+                        let record = LfmWindowRecord {
+                            t0: window.first().map(|s| s.t).unwrap_or(ctrl.time.tick.get()),
+                            t1: window.last().map(|s| s.t).unwrap_or(ctrl.time.tick.get()),
+                            sample_count: window.len().min(usize::from(u16::MAX)) as u16,
+                            mean_uncertainty: (sum_u / denom).clamp(0.0, 1.0),
+                            mean_stability: (sum_s / denom).clamp(0.0, 1.0),
+                            rolling_digest: *hasher.finalize().as_bytes(),
+                            schema_version: 1,
+                            digest: [0; 32],
+                        }
+                        .with_digest();
+                        self.ess.append(ExperienceRecord::from_lfm_window(
+                            self.ids.next(),
+                            decision.time,
+                            decision.corr,
+                            record,
+                        ))?;
+                    }
+                }
+            }
+        }
 
         let candidate_summaries: Vec<CandidateSummaryRecord> = candidates
             .iter()
@@ -2682,6 +2803,7 @@ impl RuntimeOrchestrator {
                     evidence_chain_digest: compute_summary.compute_chain_digest,
                     lfm_readout_digest: compute_summary.lfm_digest,
                 },
+                self.liquid_timeline_index.context_window(16),
                 decoding_policy.output_class,
             );
             let llm_req = LlmRequest {
@@ -3340,12 +3462,14 @@ mod tests {
             &"x".repeat(4000),
             &"y".repeat(4000),
             signals,
+            None,
             CandidateOutputClass::SafeText,
         );
         let b = build_prompt(
             &"x".repeat(4000),
             &"y".repeat(4000),
             signals,
+            None,
             CandidateOutputClass::SafeText,
         );
         assert_eq!(a, b);

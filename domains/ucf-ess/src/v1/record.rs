@@ -31,6 +31,8 @@ pub enum ExperienceKind {
     CandidateSet,
     Output,
     BackendPack,
+    LfmSummary,
+    LfmWindow,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -51,6 +53,8 @@ pub struct ExperienceRecord {
     pub delta_recommendation_record: Option<DeltaRecommendationRecord>,
     pub nsr_record: Option<NsrRecord>,
     pub backend_pack_record: Option<BackendPackRecord>,
+    pub lfm_summary_record: Option<LfmSummaryRecord>,
+    pub lfm_window_record: Option<LfmWindowRecord>,
     pub audit_prev_digest: Option<[u8; 32]>,
     pub audit_digest: Option<[u8; 32]>,
 }
@@ -271,6 +275,83 @@ pub struct NsrRecord {
     pub assessment_digest: [u8; 32],
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LfmSummaryRecord {
+    pub t: u64,
+    pub decision_id: Option<u64>,
+    pub evidence_chain_digest: [u8; 32],
+    pub backend_pack_digest: [u8; 32],
+    pub liquid_state_digest: [u8; 32],
+    pub liquid_readout_digest: [u8; 32],
+    pub uncertainty: f32,
+    pub stability: f32,
+    pub schema_version: u16,
+    pub digest: [u8; 32],
+}
+
+impl LfmSummaryRecord {
+    pub fn with_digest(mut self) -> Self {
+        self.digest = self.compute_digest();
+        self
+    }
+
+    pub fn compute_digest(&self) -> [u8; 32] {
+        let mut hasher = Sha256::new();
+        hasher.update(self.t.to_be_bytes());
+        match self.decision_id {
+            Some(id) => {
+                hasher.update([1]);
+                hasher.update(id.to_be_bytes());
+            }
+            None => hasher.update([0]),
+        }
+        hasher.update(self.evidence_chain_digest);
+        hasher.update(self.backend_pack_digest);
+        hasher.update(self.liquid_state_digest);
+        hasher.update(self.liquid_readout_digest);
+        hasher.update(self.uncertainty.clamp(0.0, 1.0).to_bits().to_be_bytes());
+        hasher.update(self.stability.clamp(0.0, 1.0).to_bits().to_be_bytes());
+        hasher.update(self.schema_version.to_be_bytes());
+        hasher.finalize().into()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LfmWindowRecord {
+    pub t0: u64,
+    pub t1: u64,
+    pub sample_count: u16,
+    pub mean_uncertainty: f32,
+    pub mean_stability: f32,
+    pub rolling_digest: [u8; 32],
+    pub schema_version: u16,
+    pub digest: [u8; 32],
+}
+
+impl LfmWindowRecord {
+    pub fn with_digest(mut self) -> Self {
+        self.digest = self.compute_digest();
+        self
+    }
+
+    pub fn compute_digest(&self) -> [u8; 32] {
+        let mut hasher = Sha256::new();
+        hasher.update(self.t0.to_be_bytes());
+        hasher.update(self.t1.to_be_bytes());
+        hasher.update(self.sample_count.to_be_bytes());
+        hasher.update(
+            self.mean_uncertainty
+                .clamp(0.0, 1.0)
+                .to_bits()
+                .to_be_bytes(),
+        );
+        hasher.update(self.mean_stability.clamp(0.0, 1.0).to_bits().to_be_bytes());
+        hasher.update(self.rolling_digest);
+        hasher.update(self.schema_version.to_be_bytes());
+        hasher.finalize().into()
+    }
+}
+
 impl ExperienceRecord {
     pub fn from_control(id: ExperienceId, ctrl: ControlFrame) -> Self {
         Self {
@@ -290,6 +371,8 @@ impl ExperienceRecord {
             delta_recommendation_record: None,
             nsr_record: None,
             backend_pack_record: None,
+            lfm_summary_record: None,
+            lfm_window_record: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -313,6 +396,8 @@ impl ExperienceRecord {
             delta_recommendation_record: None,
             nsr_record: None,
             backend_pack_record: None,
+            lfm_summary_record: None,
+            lfm_window_record: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -336,6 +421,8 @@ impl ExperienceRecord {
             delta_recommendation_record: None,
             nsr_record: None,
             backend_pack_record: None,
+            lfm_summary_record: None,
+            lfm_window_record: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -364,6 +451,8 @@ impl ExperienceRecord {
             delta_recommendation_record: None,
             nsr_record: None,
             backend_pack_record: None,
+            lfm_summary_record: None,
+            lfm_window_record: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -392,6 +481,8 @@ impl ExperienceRecord {
             delta_recommendation_record: None,
             nsr_record: None,
             backend_pack_record: Some(backend_pack_record),
+            lfm_summary_record: None,
+            lfm_window_record: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -420,6 +511,8 @@ impl ExperienceRecord {
             delta_recommendation_record: None,
             nsr_record: None,
             backend_pack_record: None,
+            lfm_summary_record: None,
+            lfm_window_record: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -448,6 +541,8 @@ impl ExperienceRecord {
             delta_recommendation_record: None,
             nsr_record: None,
             backend_pack_record: None,
+            lfm_summary_record: None,
+            lfm_window_record: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -476,6 +571,8 @@ impl ExperienceRecord {
             delta_recommendation_record: None,
             nsr_record: None,
             backend_pack_record: None,
+            lfm_summary_record: None,
+            lfm_window_record: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -504,6 +601,8 @@ impl ExperienceRecord {
             delta_recommendation_record: None,
             nsr_record: None,
             backend_pack_record: None,
+            lfm_summary_record: None,
+            lfm_window_record: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -532,6 +631,8 @@ impl ExperienceRecord {
             delta_recommendation_record: Some(delta_recommendation_record),
             nsr_record: None,
             backend_pack_record: None,
+            lfm_summary_record: None,
+            lfm_window_record: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -560,6 +661,8 @@ impl ExperienceRecord {
             delta_recommendation_record: None,
             nsr_record: Some(nsr_record),
             backend_pack_record: None,
+            lfm_summary_record: None,
+            lfm_window_record: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -588,6 +691,8 @@ impl ExperienceRecord {
             delta_recommendation_record: None,
             nsr_record: None,
             backend_pack_record: None,
+            lfm_summary_record: None,
+            lfm_window_record: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -616,6 +721,68 @@ impl ExperienceRecord {
             delta_recommendation_record: None,
             nsr_record: None,
             backend_pack_record: None,
+            lfm_summary_record: None,
+            lfm_window_record: None,
+            audit_prev_digest: None,
+            audit_digest: None,
+        }
+    }
+
+    pub fn from_lfm_summary(
+        id: ExperienceId,
+        time: SimTime,
+        corr: CorrelationId,
+        lfm_summary_record: LfmSummaryRecord,
+    ) -> Self {
+        Self {
+            id,
+            time,
+            corr,
+            kind: ExperienceKind::LfmSummary,
+            payload: ExperiencePayload::Empty,
+            neuromod: None,
+            iit_phi: None,
+            decision_meta: None,
+            compute_summary: None,
+            hormone_record: None,
+            neuro_record: None,
+            delta_proposal_record: None,
+            delta_evaluation_record: None,
+            delta_recommendation_record: None,
+            nsr_record: None,
+            backend_pack_record: None,
+            lfm_summary_record: Some(lfm_summary_record),
+            lfm_window_record: None,
+            audit_prev_digest: None,
+            audit_digest: None,
+        }
+    }
+
+    pub fn from_lfm_window(
+        id: ExperienceId,
+        time: SimTime,
+        corr: CorrelationId,
+        lfm_window_record: LfmWindowRecord,
+    ) -> Self {
+        Self {
+            id,
+            time,
+            corr,
+            kind: ExperienceKind::LfmWindow,
+            payload: ExperiencePayload::Empty,
+            neuromod: None,
+            iit_phi: None,
+            decision_meta: None,
+            compute_summary: None,
+            hormone_record: None,
+            neuro_record: None,
+            delta_proposal_record: None,
+            delta_evaluation_record: None,
+            delta_recommendation_record: None,
+            nsr_record: None,
+            backend_pack_record: None,
+            lfm_summary_record: None,
+            lfm_window_record: Some(lfm_window_record),
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -651,6 +818,8 @@ impl ExperienceRecord {
             delta_recommendation_record: None,
             nsr_record: None,
             backend_pack_record: None,
+            lfm_summary_record: None,
+            lfm_window_record: None,
             audit_prev_digest: Some(prev_digest),
             audit_digest: Some(digest),
         }
