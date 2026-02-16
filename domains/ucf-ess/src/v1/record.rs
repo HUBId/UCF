@@ -36,6 +36,7 @@ pub enum ExperienceKind {
     LfmWindow,
     CapabilityIssuance,
     Throttle,
+    Emergency,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -84,6 +85,7 @@ pub enum AuditPayload {
     Output(OutputRecord),
     CapabilityIssuance(CapabilityIssuanceRecord),
     Throttle(ThrottleRecord),
+    Emergency(EmergencyRecord),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -95,9 +97,41 @@ pub struct CapabilityIssuanceRecord {
     pub granted_kinds: Vec<String>,
     pub denied_kinds: Vec<(String, String)>,
     pub tier: u8,
+    pub effective_tier: u8,
+    pub emergency_override: bool,
     pub governor_score_q: u16,
     pub governance_signals_digest: [u8; 32],
     pub throttle_state_digest: [u8; 32],
+    pub evidence_chain_digest: [u8; 32],
+    pub schema_version: u16,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EmergencyReasonCode {
+    RunawayV,
+    TrendDV,
+    Saturation,
+    NanInf,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EmergencyStateCode {
+    Armed,
+    Active,
+    Off,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EmergencyRecord {
+    pub t: u64,
+    pub state: EmergencyStateCode,
+    pub reason: EmergencyReasonCode,
+    pub v_q: u16,
+    pub dv_q: u16,
+    pub state_norm_q: u16,
+    pub deriv_norm_q: u16,
+    pub lfm_digest: [u8; 32],
+    pub backend_pack_digest: [u8; 32],
     pub evidence_chain_digest: [u8; 32],
     pub schema_version: u16,
 }

@@ -39,6 +39,9 @@ pub struct LfmOutput {
     pub uncertainty: f32,
     pub stability: f32,
     pub state_norm: f32,
+    pub deriv_norm: f32,
+    pub saturation_ratio: f32,
+    pub nan_inf_detected: bool,
     pub quality: StageQuality,
     pub notes: SmallNotes,
     pub plasticity: Option<PlasticityRecord>,
@@ -52,6 +55,9 @@ impl LfmOutput {
             uncertainty: 1.0,
             stability: 0.0,
             state_norm: 1.0,
+            deriv_norm: 1.0,
+            saturation_ratio: 1.0,
+            nan_inf_detected: false,
             quality: StageQuality::DegradedFallback,
             notes: SmallNotes(vec![format!("degraded:{reason}")]),
             plasticity: None,
@@ -116,6 +122,7 @@ pub struct PlasticityRecord {
     pub delta_digest: [u8; 32],
     pub params_digest_after: [u8; 32],
     pub evidence_chain_digest: [u8; 32],
+    pub emergency_disabled: bool,
 }
 
 pub trait LfmKernel: Send + Sync {
@@ -411,6 +418,10 @@ impl LfmKernel for CandleLfmKernel {
             / LFM_STATE_DIM as f32
             / self.fixture.state_scale)
             .clamp(0.0, 1.0);
+        let deriv_norm = 0.0_f32;
+        let saturation_ratio =
+            self.x_shadow.iter().filter(|v| v.abs() >= 0.999).count() as f32 / LFM_STATE_DIM as f32;
+        let nan_inf_detected = self.x_shadow.iter().any(|v| !v.is_finite());
         let uncertainty = (0.6 * u + 0.4 * state_norm).clamp(0.0, 1.0);
         let stability = (1.0 - uncertainty).clamp(0.0, 1.0);
 
@@ -435,6 +446,9 @@ impl LfmKernel for CandleLfmKernel {
             uncertainty,
             stability,
             state_norm,
+            deriv_norm,
+            saturation_ratio,
+            nan_inf_detected,
             quality: StageQuality::Ok,
             notes: SmallNotes(vec![format!(
                 "fixture={}",
@@ -818,6 +832,13 @@ impl LfmKernel for LnnOdeLfmKernel {
         let deriv_norm =
             (k2.iter().map(|v| v.abs()).sum::<f32>() / n as f32 / self.base_params.clamp_deriv)
                 .clamp(0.0, 1.0);
+        let saturation_ratio = self
+            .x
+            .iter()
+            .filter(|v| v.abs() >= self.base_params.clamp_state - 1.0e-6)
+            .count() as f32
+            / n as f32;
+        let nan_inf_detected = self.x.iter().chain(k2.iter()).any(|v| !v.is_finite());
         let uncertainty = (0.5 * u + 0.3 * state_norm + 0.2 * deriv_norm).clamp(0.0, 1.0);
         let stability = (1.0 - uncertainty).clamp(0.0, 1.0);
 
@@ -878,6 +899,9 @@ impl LfmKernel for LnnOdeLfmKernel {
             uncertainty,
             stability,
             state_norm,
+            deriv_norm,
+            saturation_ratio,
+            nan_inf_detected,
             quality: StageQuality::Ok,
             notes: SmallNotes(vec![
                 format!("fixture={}", hex::encode(&self.base_params.digest[..6])),
@@ -899,6 +923,7 @@ impl LfmKernel for LnnOdeLfmKernel {
                 delta_digest: plasticity_update.delta_digest,
                 params_digest_after: plasticity_update.params_digest_after,
                 evidence_chain_digest: [0; 32],
+                emergency_disabled: false,
             }),
         })
     }
@@ -1005,6 +1030,7 @@ impl LfmKernel for ToyLfmKernel {
         Self::check_budget(work_units, budget)?;
         let u = self.drive(input);
         let mask = Self::select_mask(input.spikes_digest);
+        let x_prev = self.x;
 
         for (idx, x) in self.x.iter_mut().enumerate() {
             work_units = work_units.saturating_add(4);
@@ -1027,7 +1053,18 @@ impl LfmKernel for ToyLfmKernel {
             / LFM_STATE_DIM as f32
             / self.fixture.state_scale)
             .clamp(0.0, 1.0);
-        let uncertainty = (0.6 * u + 0.4 * state_norm).clamp(0.0, 1.0);
+        let deriv_norm = (self
+            .x
+            .iter()
+            .zip(x_prev.iter())
+            .map(|(x, prev)| (x - prev).abs())
+            .sum::<f32>()
+            / LFM_STATE_DIM as f32)
+            .clamp(0.0, 1.0);
+        let saturation_ratio =
+            self.x.iter().filter(|v| v.abs() >= 0.999).count() as f32 / LFM_STATE_DIM as f32;
+        let nan_inf_detected = self.x.iter().any(|v| !v.is_finite());
+        let uncertainty = (0.6 * u + 0.3 * state_norm + 0.1 * deriv_norm).clamp(0.0, 1.0);
         let stability = (1.0 - uncertainty).clamp(0.0, 1.0);
 
         let liquid_state_digest = self.state_digest(input);
@@ -1042,6 +1079,9 @@ impl LfmKernel for ToyLfmKernel {
             uncertainty,
             stability,
             state_norm,
+            deriv_norm,
+            saturation_ratio,
+            nan_inf_detected,
             quality: StageQuality::Ok,
             notes: SmallNotes(vec![format!(
                 "fixture={}",
