@@ -255,7 +255,11 @@ impl AiComputeBackend for ComputePipelineBackend {
         let evidence = EvidenceRef {
             context_digest: input.context_digest,
             world_digest: Some(world_model_out.prediction_digest),
-            spikes_digest: Some(spikes_digest_ref),
+            spikes_digest: if sae_degraded {
+                None
+            } else {
+                Some(spikes_digest_ref)
+            },
             ssm_digest: if ssm_degraded {
                 None
             } else {
