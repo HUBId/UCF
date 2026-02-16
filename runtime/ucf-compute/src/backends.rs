@@ -1,10 +1,8 @@
-use std::sync::{Arc, Mutex};
-
-use crate::feature_extractor::ToySaeExtractor;
 use crate::pipeline::{ComputePipelineBackend, FusionConfig, LimitsConfig};
-use crate::ssm::ToySsmKernel;
-use crate::world_model::MockJepaPredictor;
-use crate::{AiComputeBackend, ComputeBudget, ComputeBudgetProfile, ComputeError};
+use crate::{
+    AiComputeBackend, BackendPackConfig, BackendPackFactory, BackendPackKind, ComputeBudget,
+    ComputeBudgetProfile, ComputeError,
+};
 
 #[cfg(feature = "compute-candle")]
 mod candle_backend;
@@ -150,31 +148,25 @@ impl ComputeBackendConfig {
 pub fn build_backend(
     cfg: &ComputeBackendConfig,
 ) -> Result<Box<dyn AiComputeBackend + Send + Sync>, ComputeError> {
-    let world = Arc::new(Mutex::new(MockJepaPredictor::default()));
-    let ssm = Arc::new(Mutex::new(ToySsmKernel::default()));
     let fusion = FusionConfig::default();
     let limits = LimitsConfig::default();
 
+    let pack_kind = match cfg.kind {
+        ComputeBackendKind::Stub => BackendPackKind::ToyV1,
+        ComputeBackendKind::Candle => BackendPackKind::CandleToyV1,
+        ComputeBackendKind::Burn => BackendPackKind::BurnToyV1,
+    };
+    let pack = BackendPackFactory::build(BackendPackConfig {
+        pack: pack_kind,
+        seed: cfg.seed,
+    })?;
+
     let backend = match cfg.kind {
-        ComputeBackendKind::Stub => ComputePipelineBackend::new(
-            "stub",
-            world,
-            Arc::new(ToySaeExtractor::default()),
-            ssm,
-            fusion,
-            limits,
-        ),
+        ComputeBackendKind::Stub => ComputePipelineBackend::new(pack, fusion, limits),
         ComputeBackendKind::Candle => {
             #[cfg(feature = "compute-candle")]
             {
-                ComputePipelineBackend::new(
-                    "candle",
-                    world,
-                    Arc::new(CandleSaeExtractor::new(cfg.seed)),
-                    ssm,
-                    fusion,
-                    limits,
-                )
+                ComputePipelineBackend::new(pack, fusion, limits)
             }
             #[cfg(not(feature = "compute-candle"))]
             {
@@ -184,14 +176,7 @@ pub fn build_backend(
         ComputeBackendKind::Burn => {
             #[cfg(feature = "compute-burn")]
             {
-                ComputePipelineBackend::new(
-                    "burn",
-                    world,
-                    Arc::new(BurnSaeExtractor::new(cfg.seed)),
-                    ssm,
-                    fusion,
-                    limits,
-                )
+                ComputePipelineBackend::new(pack, fusion, limits)
             }
             #[cfg(not(feature = "compute-burn"))]
             {

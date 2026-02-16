@@ -30,6 +30,7 @@ pub enum ExperienceKind {
     Nsr,
     CandidateSet,
     Output,
+    BackendPack,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -49,6 +50,7 @@ pub struct ExperienceRecord {
     pub delta_evaluation_record: Option<DeltaEvaluationRecord>,
     pub delta_recommendation_record: Option<DeltaRecommendationRecord>,
     pub nsr_record: Option<NsrRecord>,
+    pub backend_pack_record: Option<BackendPackRecord>,
     pub audit_prev_digest: Option<[u8; 32]>,
     pub audit_digest: Option<[u8; 32]>,
 }
@@ -232,6 +234,21 @@ pub struct DeltaRecommendationRecord {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BackendPackRecord {
+    pub schema_version: u16,
+    pub t: u64,
+    pub pack_name: String,
+    pub pack_id: u32,
+    pub fixtures_digest: [u8; 32],
+    pub llm_backend: u8,
+    pub world_backend: u8,
+    pub sae_backend: u8,
+    pub ssm_backend: u8,
+    pub meta_digest: [u8; 32],
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NsrRecord {
     pub t: u64,
     pub decision_id: u64,
@@ -265,6 +282,7 @@ impl ExperienceRecord {
             delta_evaluation_record: None,
             delta_recommendation_record: None,
             nsr_record: None,
+            backend_pack_record: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -287,6 +305,7 @@ impl ExperienceRecord {
             delta_evaluation_record: None,
             delta_recommendation_record: None,
             nsr_record: None,
+            backend_pack_record: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -309,6 +328,7 @@ impl ExperienceRecord {
             delta_evaluation_record: None,
             delta_recommendation_record: None,
             nsr_record: None,
+            backend_pack_record: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -336,6 +356,35 @@ impl ExperienceRecord {
             delta_evaluation_record: None,
             delta_recommendation_record: None,
             nsr_record: None,
+            backend_pack_record: None,
+            audit_prev_digest: None,
+            audit_digest: None,
+        }
+    }
+
+    pub fn from_backend_pack(
+        id: ExperienceId,
+        time: SimTime,
+        corr: CorrelationId,
+        backend_pack_record: BackendPackRecord,
+    ) -> Self {
+        Self {
+            id,
+            time,
+            corr,
+            kind: ExperienceKind::BackendPack,
+            payload: ExperiencePayload::Empty,
+            neuromod: None,
+            iit_phi: None,
+            decision_meta: None,
+            compute_summary: None,
+            hormone_record: None,
+            neuro_record: None,
+            delta_proposal_record: None,
+            delta_evaluation_record: None,
+            delta_recommendation_record: None,
+            nsr_record: None,
+            backend_pack_record: Some(backend_pack_record),
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -363,6 +412,7 @@ impl ExperienceRecord {
             delta_evaluation_record: None,
             delta_recommendation_record: None,
             nsr_record: None,
+            backend_pack_record: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -390,6 +440,7 @@ impl ExperienceRecord {
             delta_evaluation_record: None,
             delta_recommendation_record: None,
             nsr_record: None,
+            backend_pack_record: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -417,6 +468,7 @@ impl ExperienceRecord {
             delta_evaluation_record: None,
             delta_recommendation_record: None,
             nsr_record: None,
+            backend_pack_record: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -444,6 +496,7 @@ impl ExperienceRecord {
             delta_evaluation_record: Some(delta_evaluation_record),
             delta_recommendation_record: None,
             nsr_record: None,
+            backend_pack_record: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -471,6 +524,7 @@ impl ExperienceRecord {
             delta_evaluation_record: None,
             delta_recommendation_record: Some(delta_recommendation_record),
             nsr_record: None,
+            backend_pack_record: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -498,6 +552,7 @@ impl ExperienceRecord {
             delta_evaluation_record: None,
             delta_recommendation_record: None,
             nsr_record: Some(nsr_record),
+            backend_pack_record: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -525,6 +580,7 @@ impl ExperienceRecord {
             delta_evaluation_record: None,
             delta_recommendation_record: None,
             nsr_record: None,
+            backend_pack_record: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -552,6 +608,7 @@ impl ExperienceRecord {
             delta_evaluation_record: None,
             delta_recommendation_record: None,
             nsr_record: None,
+            backend_pack_record: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -586,6 +643,7 @@ impl ExperienceRecord {
             delta_evaluation_record: None,
             delta_recommendation_record: None,
             nsr_record: None,
+            backend_pack_record: None,
             audit_prev_digest: Some(prev_digest),
             audit_digest: Some(digest),
         }

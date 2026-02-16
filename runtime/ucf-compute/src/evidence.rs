@@ -1,5 +1,6 @@
 use sha2::{Digest, Sha256};
 
+use crate::backend_pack::{BackendComponentId, BackendPackId};
 use crate::risk_contract::{BackendProfileId, EvidenceRef, RiskSignal};
 use crate::world_model::StageQuality;
 use crate::{ComputeInput, Spike};
@@ -64,6 +65,12 @@ pub struct EvidenceChain {
     pub schema_version: u16,
     pub code_version: CodeVersionTag,
     pub backend_profile: BackendProfileId,
+    pub backend_pack_id: BackendPackId,
+    pub fixtures_digest: [u8; 32],
+    pub llm_backend: BackendComponentId,
+    pub world_backend: BackendComponentId,
+    pub sae_backend: BackendComponentId,
+    pub ssm_backend: BackendComponentId,
     pub budget_profile_id: u32,
     pub seed: u64,
     pub context_digest: [u8; 32],
@@ -89,6 +96,12 @@ impl EvidenceChain {
             schema_version: COMPUTE_SUMMARY_SCHEMA_VERSION,
             code_version: CodeVersionTag::current(),
             backend_profile: risk_signal.evidence.backend_profile,
+            backend_pack_id: risk_signal.evidence.backend_pack_id,
+            fixtures_digest: risk_signal.evidence.fixtures_digest,
+            llm_backend: risk_signal.evidence.llm_backend,
+            world_backend: risk_signal.evidence.world_backend,
+            sae_backend: risk_signal.evidence.sae_backend,
+            ssm_backend: risk_signal.evidence.ssm_backend,
             budget_profile_id: risk_signal.evidence.budget_profile_id,
             seed: risk_signal.evidence.seed,
             context_digest: input.context_digest,
@@ -154,6 +167,12 @@ impl CanonicalEncode for EvidenceRef {
         encode_opt_digest(out, self.spikes_digest);
         encode_opt_digest(out, self.ssm_digest);
         out.push(self.backend_profile as u8);
+        out.extend_from_slice(&self.backend_pack_id.0.to_le_bytes());
+        out.extend_from_slice(&self.fixtures_digest);
+        out.push(self.llm_backend as u8);
+        out.push(self.world_backend as u8);
+        out.push(self.sae_backend as u8);
+        out.push(self.ssm_backend as u8);
         out.extend_from_slice(&self.budget_profile_id.to_le_bytes());
         out.extend_from_slice(&self.seed.to_le_bytes());
     }
@@ -185,6 +204,12 @@ impl CanonicalEncode for EvidenceChain {
         out.extend_from_slice(&self.schema_version.to_le_bytes());
         encode_bounded_string(out, self.code_version.as_str());
         out.push(self.backend_profile as u8);
+        out.extend_from_slice(&self.backend_pack_id.0.to_le_bytes());
+        out.extend_from_slice(&self.fixtures_digest);
+        out.push(self.llm_backend as u8);
+        out.push(self.world_backend as u8);
+        out.push(self.sae_backend as u8);
+        out.push(self.ssm_backend as u8);
         out.extend_from_slice(&self.budget_profile_id.to_le_bytes());
         out.extend_from_slice(&self.seed.to_le_bytes());
         out.extend_from_slice(&self.context_digest);
@@ -283,6 +308,12 @@ mod tests {
                     spikes_digest: None,
                     ssm_digest: None,
                     backend_profile: BackendProfileId::StubV1,
+                    backend_pack_id: crate::BackendPackId(1),
+                    fixtures_digest: [9; 32],
+                    llm_backend: crate::BackendComponentId::ToyV1,
+                    world_backend: crate::BackendComponentId::ToyV1,
+                    sae_backend: crate::BackendComponentId::ToyV1,
+                    ssm_backend: crate::BackendComponentId::ToyV1,
                     seed,
                     budget_profile_id: 1,
                 },
@@ -308,6 +339,12 @@ mod tests {
                     spikes_digest: None,
                     ssm_digest: None,
                     backend_profile: BackendProfileId::StubV1,
+                    backend_pack_id: crate::BackendPackId(1),
+                    fixtures_digest: [9; 32],
+                    llm_backend: crate::BackendComponentId::ToyV1,
+                    world_backend: crate::BackendComponentId::ToyV1,
+                    sae_backend: crate::BackendComponentId::ToyV1,
+                    ssm_backend: crate::BackendComponentId::ToyV1,
                     seed: s,
                     budget_profile_id: 9,
                 },
@@ -338,6 +375,12 @@ mod tests {
                 spikes_digest: None,
                 ssm_digest: None,
                 backend_profile: BackendProfileId::StubV1,
+                backend_pack_id: crate::BackendPackId(1),
+                fixtures_digest: [9; 32],
+                llm_backend: crate::BackendComponentId::ToyV1,
+                world_backend: crate::BackendComponentId::ToyV1,
+                sae_backend: crate::BackendComponentId::ToyV1,
+                ssm_backend: crate::BackendComponentId::ToyV1,
                 seed: 11,
                 budget_profile_id: 1,
             },

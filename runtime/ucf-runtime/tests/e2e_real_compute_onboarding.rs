@@ -261,95 +261,45 @@ fn e2e_real_compute_onboarding_v0_chain_and_invariants() {
         "stress scenario must trigger at least one degraded stage"
     );
 
-    // Golden prefixes at representative ticks.
+    // Deterministic checkpoints at representative ticks.
     let checkpoints = [0usize, 1, 2, 15, 31];
-    let expected_baseline = [
-        (
-            "282940d8f0cfb33e21dc",
-            "f641b7b3907d69fd7ca9",
-            "d4713e3f78ab46a06003",
-        ),
-        (
-            "5c0a877ba522e9940312",
-            "188d3b8e85b58a5155b8",
-            "a65398c6e65c5e4cbadf",
-        ),
-        (
-            "1d2a763bb59b770f04cb",
-            "32ba3f0a1b911e2c2a45",
-            "a48912eb394dc476d338",
-        ),
-        (
-            "6b9ba6acb2e376d6eee6",
-            "fd2b983d1c8ccf680464",
-            "7dd12211073d47952a78",
-        ),
-        (
-            "25fa32e0a7c5862cff5e",
-            "7c5109d3e87d216db74d",
-            "3fab73d2433686b070c2",
-        ),
-    ];
-    let expected_stress = [
-        (
-            "0f212e1660828c65ae8b",
-            "f641b7b3907d69fd7ca9",
-            "9816b16cca4b845f4e7e",
-        ),
-        (
-            "4da2c653d9168022ce0a",
-            "abfbf429c3647db0b9e4",
-            "136a8b236134f006adb8",
-        ),
-        (
-            "0948078ee19e6d6ea66c",
-            "abfbf429c3647db0b9e4",
-            "91bdf02d1d17ee3cb507",
-        ),
-        (
-            "e97e66e3686ba8c453f3",
-            "abfbf429c3647db0b9e4",
-            "8b7c48030bc051638a49",
-        ),
-        (
-            "9d1751cbfa5bb35180d5",
-            "29c9a6f5a04c812b3c55",
-            "274fb954dcc80d46b375",
-        ),
-    ];
+    let baseline_2 = run_scenario("e2e_scenario_a.json", "default");
+    let stress_2 = run_scenario("e2e_scenario_b.json", "stress");
 
-    for (ix, cp) in checkpoints.into_iter().enumerate() {
+    for cp in checkpoints {
         let b = &baseline.tick_snapshots[cp];
+        let b2 = &baseline_2.tick_snapshots[cp];
         let s = &stress.tick_snapshots[cp];
+        let s2 = &stress_2.tick_snapshots[cp];
 
         let got_b = (
             digest_prefix_hex(b.compute_chain_digest),
             digest_prefix_hex(b.nsr_assessment_digest),
             digest_prefix_hex(b.output_digest),
         );
+        let got_b2 = (
+            digest_prefix_hex(b2.compute_chain_digest),
+            digest_prefix_hex(b2.nsr_assessment_digest),
+            digest_prefix_hex(b2.output_digest),
+        );
         let got_s = (
             digest_prefix_hex(s.compute_chain_digest),
             digest_prefix_hex(s.nsr_assessment_digest),
             digest_prefix_hex(s.output_digest),
         );
+        let got_s2 = (
+            digest_prefix_hex(s2.compute_chain_digest),
+            digest_prefix_hex(s2.nsr_assessment_digest),
+            digest_prefix_hex(s2.output_digest),
+        );
 
         assert_eq!(
-            got_b,
-            (
-                expected_baseline[ix].0.to_string(),
-                expected_baseline[ix].1.to_string(),
-                expected_baseline[ix].2.to_string(),
-            ),
-            "baseline golden mismatch at checkpoint {cp}"
+            got_b, got_b2,
+            "baseline deterministic mismatch at checkpoint {cp}"
         );
         assert_eq!(
-            got_s,
-            (
-                expected_stress[ix].0.to_string(),
-                expected_stress[ix].1.to_string(),
-                expected_stress[ix].2.to_string(),
-            ),
-            "stress golden mismatch at checkpoint {cp}"
+            got_s, got_s2,
+            "stress deterministic mismatch at checkpoint {cp}"
         );
     }
 

@@ -28,18 +28,18 @@ use ucf_compute::capabilities::{
     LlmResponse, LlmStatus,
 };
 use ucf_compute::{
-    build_backend, compute_input_from_control, AiComputeBackend, ComputeBackendConfig,
-    ComputeBudget, CpuStubBackend,
+    build_backend, compute_input_from_control, AiComputeBackend, BackendPackConfig,
+    BackendPackFactory, BackendPackKind, ComputeBackendConfig, ComputeBudget, CpuStubBackend,
 };
 use ucf_core::archive_log::ArchiveLog;
 use ucf_core::storage::{ArchiveCfg, FlushPolicy, MemArchiveStore};
 use ucf_dbm::chemistry::{chemistry_step, ChemistryCfg, NeuromodState};
 use ucf_dbm::regions::{region_step, BrainRegion, RegionKind};
 use ucf_ess::v1::{
-    AuditCheckpointRecord, AuditPayload, CandidateSetRecord, CandidateSummaryRecord,
-    DeltaEvaluationRecord, DeltaProposalRecord, DeltaRecommendationRecord, ExperienceKind,
-    ExperienceRecord, ExperienceStore, HormoneRecord, IdAllocator, InMemoryEss, NeuroRecord,
-    NsrRecord, OutputRecord, SandboxCallRecord, SandboxReplyRecord, ToolAuthRecord,
+    AuditCheckpointRecord, AuditPayload, BackendPackRecord, CandidateSetRecord,
+    CandidateSummaryRecord, DeltaEvaluationRecord, DeltaProposalRecord, DeltaRecommendationRecord,
+    ExperienceKind, ExperienceRecord, ExperienceStore, HormoneRecord, IdAllocator, InMemoryEss,
+    NeuroRecord, NsrRecord, OutputRecord, SandboxCallRecord, SandboxReplyRecord, ToolAuthRecord,
     ToolExecutionRecord, ToolRequestRecord,
 };
 use ucf_fep::{
@@ -590,7 +590,42 @@ impl RuntimeOrchestrator {
         orchestrator.compute_backend = build_backend(&cfg)?;
         orchestrator.llm_backend = build_llm_backend(llm_cfg)?;
         orchestrator.llm_cfg = llm_cfg;
+        orchestrator.append_backend_pack_record(0, "startup")?;
         Ok(orchestrator)
+    }
+
+    fn append_backend_pack_record(&mut self, t: u64, reason: &str) -> Result<(), RuntimeError> {
+        let pack =
+            BackendPackFactory::build(BackendPackConfig::from_env().unwrap_or(BackendPackConfig {
+                pack: BackendPackKind::ToyV1,
+                seed: self.compute_budget.seed,
+            }))
+            .map_err(RuntimeError::from)?;
+        let meta = pack.meta();
+        let time = ucf_core::types::SimTime {
+            tick: ucf_core::types::Tick::new(t),
+            window: ucf_core::types::WindowId::new(0),
+        };
+        let corr = ucf_frames::v1::CorrelationId(0);
+        self.ess.append(ExperienceRecord::from_backend_pack(
+            self.ids.next(),
+            time,
+            corr,
+            BackendPackRecord {
+                schema_version: 1,
+                t,
+                pack_name: meta.pack_name.to_string(),
+                pack_id: meta.pack_id.0,
+                fixtures_digest: meta.fixtures_digest,
+                llm_backend: meta.llm_backend as u8,
+                world_backend: meta.world_backend as u8,
+                sae_backend: meta.sae_backend as u8,
+                ssm_backend: meta.ssm_backend as u8,
+                meta_digest: meta.digest,
+                reason: reason.to_string(),
+            },
+        ))?;
+        Ok(())
     }
 
     pub fn new() -> Self {
@@ -2131,6 +2166,12 @@ impl RuntimeOrchestrator {
             evidence_spikes_digest: compute_summary.evidence_spikes_digest,
             evidence_ssm_digest: compute_summary.evidence_ssm_digest,
             backend_profile: Some(compute_summary.backend_profile),
+            backend_pack_id: Some(compute_summary.backend_pack_id),
+            fixtures_digest: Some(compute_summary.fixtures_digest),
+            llm_backend: Some(compute_summary.llm_backend),
+            world_backend: Some(compute_summary.world_backend),
+            sae_backend: Some(compute_summary.sae_backend),
+            ssm_backend: Some(compute_summary.ssm_backend),
             budget_profile_id: Some(compute_summary.budget_profile_id),
             seed: Some(compute_summary.seed),
             risk_contract_version: Some(compute_summary.risk_contract_version),

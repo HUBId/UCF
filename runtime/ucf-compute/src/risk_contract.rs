@@ -1,5 +1,7 @@
 use thiserror::Error;
 
+use crate::backend_pack::{BackendComponentId, BackendPackId};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[repr(u8)]
 pub enum BackendProfileId {
@@ -50,6 +52,12 @@ pub struct EvidenceRef {
     pub spikes_digest: Option<[u8; 32]>,
     pub ssm_digest: Option<[u8; 32]>,
     pub backend_profile: BackendProfileId,
+    pub backend_pack_id: BackendPackId,
+    pub fixtures_digest: [u8; 32],
+    pub llm_backend: BackendComponentId,
+    pub world_backend: BackendComponentId,
+    pub sae_backend: BackendComponentId,
+    pub ssm_backend: BackendComponentId,
     pub seed: u64,
     pub budget_profile_id: u32,
 }
@@ -124,6 +132,12 @@ mod tests {
                 spikes_digest: Some([3; 32]),
                 ssm_digest: Some([4; 32]),
                 backend_profile: BackendProfileId::StubV1,
+                backend_pack_id: crate::BackendPackId(1),
+                fixtures_digest: [9; 32],
+                llm_backend: crate::BackendComponentId::ToyV1,
+                world_backend: crate::BackendComponentId::ToyV1,
+                sae_backend: crate::BackendComponentId::ToyV1,
+                ssm_backend: crate::BackendComponentId::ToyV1,
                 seed: 1,
                 budget_profile_id: 7,
             },
