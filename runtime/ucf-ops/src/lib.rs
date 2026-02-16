@@ -17,7 +17,10 @@ use ucf_frames::v1::{
     ChannelCode, ControlFrame, ControlPayload, CorrelationId, Intent, IntentId, IntentKind,
 };
 use ucf_policy::adapter::MockAdapter;
-use ucf_replay::{load_fixture_records, replay_records, write_report, ReplayMode, ReplaySpec};
+use ucf_replay::{
+    load_fixture_records, replay_audit as run_replay_audit, replay_records, write_report,
+    ReplayMode, ReplayPlan, ReplaySpec, ReplayStrictness,
+};
 use ucf_runtime::RuntimeOrchestrator;
 
 #[derive(Debug, Error)]
@@ -337,6 +340,28 @@ pub fn verify_bugreport(path: &Path) -> Result<(), OpsError> {
         return Err(OpsError::Invalid("ess slice too large".to_string()));
     }
 
+    Ok(())
+}
+
+pub fn replay_audit(
+    workdir: &Path,
+    from_tick: u64,
+    to_tick: u64,
+    strictness: ReplayStrictness,
+    stop_on_first_divergence: bool,
+    report_path: &Path,
+) -> Result<(), OpsError> {
+    let records = load_fixture_records(&workdir.join("ess").join("ess_fixture.json"))?;
+    let plan = ReplayPlan {
+        t0: from_tick,
+        t1: to_tick,
+        expected_backend_pack_digest: None,
+        strictness,
+        stop_on_first_divergence,
+    };
+    let report = run_replay_audit(&records, &plan);
+    let body = serde_json::to_string_pretty(&report)?;
+    fs::write(report_path, body)?;
     Ok(())
 }
 

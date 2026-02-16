@@ -3,10 +3,10 @@
 use std::path::PathBuf;
 
 use ucf_ops::{
-    bringup, diagnostics, export_bugreport, metrics_snapshot, replay_bugreport, verify_bugreport,
-    ExportArgs,
+    bringup, diagnostics, export_bugreport, metrics_snapshot, replay_audit, replay_bugreport,
+    verify_bugreport, ExportArgs,
 };
-use ucf_replay::ReplayMode;
+use ucf_replay::{ReplayMode, ReplayStrictness};
 
 fn main() {
     if let Err(err) = run() {
@@ -84,13 +84,34 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let report_path = replay_bugreport(&PathBuf::from(path), mode)?;
             println!("replay_report={}", report_path.display());
         }
+        "replay" => {
+            let from = parse_u64(&args, "--from", 0);
+            let to = parse_u64(&args, "--to", u64::MAX);
+            let strictness = match arg_value(&args, "--strict").as_deref() {
+                Some("recompute") => ReplayStrictness::RecomputeStages,
+                _ => ReplayStrictness::VerifyOnly,
+            };
+            let report = arg_value(&args, "--report")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| workdir.join("replay_report.json"));
+            let stop_on_first_divergence = !has_flag(&args, "--continue");
+            replay_audit(
+                &workdir,
+                from,
+                to,
+                strictness,
+                stop_on_first_divergence,
+                &report,
+            )?;
+            println!("replay_report={}", report.display());
+        }
         "metrics-snapshot" => {
             let snapshot = metrics_snapshot(&workdir)?;
             println!("{}", serde_json::to_string_pretty(&snapshot)?);
         }
         _ => {
             eprintln!(
-                "usage: ucf-ops <bringup|diag|export-bugreport|verify-bugreport|replay-bugreport|metrics-snapshot> [--workdir <path>]"
+                "usage: ucf-ops <bringup|diag|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot> [--workdir <path>]"
             );
             std::process::exit(1);
         }
