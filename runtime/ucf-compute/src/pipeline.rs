@@ -1,11 +1,13 @@
 use sha2::{Digest, Sha256};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use crate::capabilities::{FeatureExtractor, WorkingMemoryModel, WorldModelPredictor};
 use crate::feature_extractor::{FeatureVector, MockSaeExtractor, SaeOutput, SAE_FEATURE_DIM};
 use crate::ssm::{MockSsmSelectiveScan, SsmOutput};
 use crate::work_meter::WorkMeter;
-use crate::world_model::MockJepaPredictor;
+use crate::world_model::{
+    obs_features_from_context, MockJepaPredictor, StageQuality, WorldModelInput, WorldModelOutput,
+};
 use crate::{
     clamp01, fuse_signals, validate_risk_signal, AiComputeBackend, BackendProfileId, ComputeBudget,
     ComputeError, ComputeInput, ComputeSignals, DegradePolicy, EvidenceRef, RiskSignal,
@@ -42,7 +44,7 @@ impl Default for LimitsConfig {
 
 pub struct ComputePipelineBackend {
     backend_name: &'static str,
-    world: Arc<dyn WorldModelPredictor + Send + Sync>,
+    world: Arc<Mutex<dyn WorldModelPredictor + Send + Sync>>,
     sae: Arc<dyn FeatureExtractor + Send + Sync>,
     ssm: Arc<dyn WorkingMemoryModel + Send + Sync>,
     fusion: FusionConfig,
@@ -52,7 +54,7 @@ pub struct ComputePipelineBackend {
 impl ComputePipelineBackend {
     pub fn new(
         backend_name: &'static str,
-        world: Arc<dyn WorldModelPredictor + Send + Sync>,
+        world: Arc<Mutex<dyn WorldModelPredictor + Send + Sync>>,
         sae: Arc<dyn FeatureExtractor + Send + Sync>,
         ssm: Arc<dyn WorkingMemoryModel + Send + Sync>,
         fusion: FusionConfig,
@@ -71,7 +73,7 @@ impl ComputePipelineBackend {
     pub fn stub() -> Self {
         Self::new(
             "stub",
-            Arc::new(MockJepaPredictor),
+            Arc::new(Mutex::new(MockJepaPredictor::default())),
             Arc::new(MockSaeExtractor),
             Arc::new(MockSsmSelectiveScan),
             FusionConfig::default(),
@@ -113,24 +115,43 @@ impl AiComputeBackend for ComputePipelineBackend {
         let mut sae_meter = WorkMeter::new(budget.sae_units);
         let mut ssm_meter = WorkMeter::new(budget.ssm_units);
 
-        let state = self.world.init_state(input, budget.seed);
         let mut exceeded_stage: Option<&'static str> = None;
 
-        global_meter.spend(40, "world_model/predict")?;
-        world_meter.spend(40, "world_model/predict")?;
-        let world_model_out = match self.world.predict(&state, input, budget) {
+        global_meter.spend(40, "world_model/step")?;
+        world_meter.spend(40, "world_model/step")?;
+        let mut world = self.world.lock().map_err(|_| ComputeError::InvalidInput {
+            reason: "world model mutex poisoned".to_string(),
+        })?;
+        let world_model_name = world.name();
+        let world_input = WorldModelInput {
+            t: input.t,
+            context_digest: input.context_digest,
+            obs_features: obs_features_from_context(input.context_digest),
+            seed: budget.seed,
+        };
+        let world_model_out = match world.step(&world_input, budget) {
             Ok(output) => output,
             Err(ComputeError::BudgetExceeded { stage, .. }) => {
-                let mut unavailable = ComputeSignals::unavailable(input, budget, self.name());
-                unavailable.budget_exceeded_stage = Some(stage);
-                unavailable
-                    .notes
-                    .push(format!("budget_exceeded_stage={stage}"));
-                return Ok(unavailable);
+                exceeded_stage = Some(stage);
+                if budget.degrade_policy == DegradePolicy::FailFast {
+                    let mut unavailable = ComputeSignals::unavailable(input, budget, self.name());
+                    unavailable.budget_exceeded_stage = Some(stage);
+                    return Ok(unavailable);
+                }
+                WorldModelOutput::degraded_budget(stage)
             }
             Err(other) => return Err(other),
         };
-        let surprise = world_model_out.error.surprise;
+        let span = tracing::info_span!("world_model.step", predictor = world_model_name, t = input.t, pred = %hex::encode(&world_model_out.prediction_digest[..4]));
+        let _enter = span.enter();
+        drop(world);
+        let surprise = world_model_out.surprise;
+        metrics::histogram!("ucf_world_prediction_error")
+            .record(f64::from(world_model_out.prediction_error));
+        metrics::histogram!("ucf_world_surprise").record(f64::from(world_model_out.surprise));
+        if world_model_out.quality == StageQuality::DegradedFallback {
+            metrics::counter!("ucf_world_degraded_total").increment(1);
+        }
 
         global_meter.spend(220, "sae/extract")?;
         let (sae_out, sae_degraded) = match sae_meter.spend(220, "sae/extract") {
@@ -221,14 +242,15 @@ impl AiComputeBackend for ComputePipelineBackend {
         let mut spikes_digest_ref = [0_u8; 32];
         spikes_digest_ref.copy_from_slice(&spikes_digest);
 
-        let quality = if sae_degraded || ssm_degraded {
+        let quality = if world_model_out.quality != StageQuality::Ok || sae_degraded || ssm_degraded
+        {
             SignalQuality::DegradedFallback
         } else {
             SignalQuality::VerifiedPipeline
         };
         let evidence = EvidenceRef {
             context_digest: input.context_digest,
-            world_digest: Some(world_model_out.prediction.prediction_digest),
+            world_digest: Some(world_model_out.prediction_digest),
             spikes_digest: if sae_degraded {
                 None
             } else {
@@ -272,7 +294,7 @@ impl AiComputeBackend for ComputePipelineBackend {
             } else {
                 Some(ssm_out.next_state.digest)
             },
-            world_digest: Some(world_model_out.prediction.prediction_digest),
+            world_digest: Some(world_model_out.prediction_digest),
             budget_exceeded_stage: exceeded_stage,
         }
         .summary(self.name());
@@ -281,13 +303,15 @@ impl AiComputeBackend for ComputePipelineBackend {
             format!("backend={}", self.name()),
             format!("frame={}", input.frame_id.0),
             format!("budget_profile_id={}", budget.profile_id),
-            format!("world_model={}", self.world.name()),
+            format!("world_model={}", world_model_name),
             format!("feature_extractor={}", self.sae.name()),
             format!("working_memory={}", self.ssm.name()),
             format!(
                 "pred_digest={}",
-                &hex::encode(world_model_out.prediction.prediction_digest)[..12]
+                &hex::encode(world_model_out.prediction_digest)[..12]
             ),
+            format!("pred_error={:.4}", world_model_out.prediction_error),
+            format!("world_quality={:?}", world_model_out.quality),
             format!(
                 "sae_digest={}",
                 &hex::encode(sae_out.feature_vec.digest)[..12]
@@ -336,7 +360,7 @@ impl AiComputeBackend for ComputePipelineBackend {
             } else {
                 Some(ssm_out.next_state.digest)
             },
-            world_digest: Some(world_model_out.prediction.prediction_digest),
+            world_digest: Some(world_model_out.prediction_digest),
             budget_exceeded_stage: exceeded_stage,
         }
         .bounded())
@@ -362,10 +386,13 @@ mod tests {
 
     #[test]
     fn deterministic_for_same_input_and_seed() {
-        let backend = ComputePipelineBackend::stub();
         let budget = ComputeBudget::default();
-        let a = backend.compute(&input(), budget).expect("compute");
-        let b = backend.compute(&input(), budget).expect("compute");
+        let a = ComputePipelineBackend::stub()
+            .compute(&input(), budget)
+            .expect("compute");
+        let b = ComputePipelineBackend::stub()
+            .compute(&input(), budget)
+            .expect("compute");
         assert_eq!(a, b);
     }
 
@@ -373,7 +400,7 @@ mod tests {
     fn keeps_expected_capability_notes() {
         let backend = ComputePipelineBackend::new(
             "stub",
-            Arc::new(MockJepaPredictor),
+            Arc::new(Mutex::new(MockJepaPredictor::default())),
             Arc::new(MockSaeExtractor),
             Arc::new(MockSsmSelectiveScan),
             FusionConfig::default(),

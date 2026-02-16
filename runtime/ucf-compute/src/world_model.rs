@@ -1,270 +1,392 @@
 use sha2::{Digest, Sha256};
 
+use crate::risk_contract::SignalQuality;
+use crate::{ComputeBudget, ComputeError};
+
 use crate::capabilities::WorldModelPredictor;
-use crate::{ComputeBudget, ComputeError, ComputeInput, SplitMix64};
-
-pub const WORLD_MODEL_LATENT_DIM: usize = 32;
-pub const WORLD_MODEL_MAX_LATENT: usize = 64;
-pub const WORLD_MODEL_MAX_DEBUG: usize = 8;
-
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct WorldState {
-    pub latent: Vec<f32>,
-    pub t: u64,
-    pub digest: [u8; 32],
-}
-
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct Prediction {
-    pub next_latent: Vec<f32>,
-    pub next_t: u64,
-    pub prediction_digest: [u8; 32],
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct PredictionError {
-    pub l2: f32,
-    pub normalized: f32,
-    pub surprise: f32,
-}
-
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct WorldModelOutput {
-    pub prediction: Prediction,
-    pub error: PredictionError,
-    pub debug: Vec<String>,
-}
-
-impl WorldModelOutput {
-    pub fn bounded(mut self) -> Self {
-        if self.prediction.next_latent.len() > WORLD_MODEL_MAX_LATENT {
-            self.prediction.next_latent.truncate(WORLD_MODEL_MAX_LATENT);
-        }
-        if self.debug.len() > WORLD_MODEL_MAX_DEBUG {
-            self.debug.truncate(WORLD_MODEL_MAX_DEBUG);
-        }
-        self
-    }
-}
-
-#[derive(Debug, Default, Clone, Copy)]
-pub struct MockJepaPredictor;
-
-impl MockJepaPredictor {
-    fn normalized_unit(bits: u64) -> f32 {
-        let v = (bits >> 40) as u32;
-        (v as f32) / (u32::MAX as f32)
-    }
-
-    fn centered_unit(bits: u64) -> f32 {
-        Self::normalized_unit(bits) * 2.0 - 1.0
-    }
-
-    fn check_budget(work_units: u64, budget: ComputeBudget) -> Result<(), ComputeError> {
-        const SCALE: u64 = 8;
-        let elapsed_micros = work_units / SCALE;
-        if work_units > budget.max_micros.saturating_mul(SCALE) {
-            return Err(ComputeError::BudgetExceeded {
-                stage: "world_model/predict",
-                elapsed_micros,
-                limit_micros: budget.max_micros,
-            });
-        }
-        Ok(())
-    }
-
-    fn digest_latent(latent: &[f32], t: u64) -> [u8; 32] {
-        let mut hasher = Sha256::new();
-        for value in latent {
-            hasher.update(value.to_bits().to_le_bytes());
-        }
-        hasher.update(t.to_le_bytes());
-        let digest = hasher.finalize();
-        let mut out = [0_u8; 32];
-        out.copy_from_slice(&digest);
-        out
-    }
-
-    fn make_observation(input: &ComputeInput) -> [f32; 32] {
-        let mut obs = [0_f32; 32];
-        for (idx, byte) in input.context_digest.iter().enumerate() {
-            obs[idx] = (*byte as f32) / 255.0;
-        }
-        obs
-    }
-}
 
 impl WorldModelPredictor for MockJepaPredictor {
     fn name(&self) -> &'static str {
         "mock_jepa_v0"
     }
 
-    fn init_state(&self, input: &ComputeInput, seed: u64) -> WorldState {
-        let mut seed_bytes = [0_u8; 8];
-        seed_bytes.copy_from_slice(&input.context_digest[0..8]);
-        let context_seed = u64::from_le_bytes(seed_bytes);
-
-        let mut prng =
-            SplitMix64::new(context_seed ^ seed ^ input.t.rotate_left(11) ^ 0x4A45_5041_7630_0001);
-        let latent: Vec<f32> = (0..WORLD_MODEL_LATENT_DIM)
-            .map(|idx| {
-                let jitter = (idx as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
-                Self::centered_unit(prng.next_u64() ^ jitter)
-            })
-            .collect();
-
-        WorldState {
-            digest: Self::digest_latent(&latent, input.t),
-            latent,
-            t: input.t,
-        }
-    }
-
-    fn predict(
-        &self,
-        state: &WorldState,
-        input: &ComputeInput,
+    fn step(
+        &mut self,
+        input: &WorldModelInput,
         budget: ComputeBudget,
     ) -> Result<WorldModelOutput, ComputeError> {
-        let mut work_units = 24_u64;
+        if !self.initialized {
+            self.init_state(input);
+        }
+
+        let mut work_units = 16_u64;
         Self::check_budget(work_units, budget)?;
 
-        let obs = Self::make_observation(input);
-
-        let mut seed_bytes = [0_u8; 8];
-        seed_bytes.copy_from_slice(&state.digest[0..8]);
-        let mut prng = SplitMix64::new(
-            u64::from_le_bytes(seed_bytes) ^ budget.seed ^ state.t.rotate_left(5) ^ input.t,
-        );
-
-        let a = 0.65 + 0.25 * Self::normalized_unit(prng.next_u64());
-        let b = 0.15 + 0.2 * Self::normalized_unit(prng.next_u64());
-        let bias = 0.05 * Self::centered_unit(prng.next_u64());
-
-        let mut next_latent = Vec::with_capacity(WORLD_MODEL_LATENT_DIM);
-        for (idx, obs_value) in obs.iter().enumerate().take(WORLD_MODEL_LATENT_DIM) {
-            work_units = work_units.saturating_add(5);
-            Self::check_budget(work_units, budget)?;
-            let prev = state.latent.get(idx).copied().unwrap_or(0.0);
-            let candidate = prev * a + *obs_value * b + bias;
-            next_latent.push(candidate.clamp(-1.0, 1.0));
+        let mut pred = [0.0_f32; WORLD_MODEL_FEATURE_DIM];
+        for (i, pred_i) in pred.iter_mut().enumerate().take(WORLD_MODEL_FEATURE_DIM) {
+            let mut value = self.fixture.c[i];
+            for (j, state_j) in self.state.iter().enumerate().take(WORLD_MODEL_FEATURE_DIM) {
+                work_units = work_units.saturating_add(2);
+                Self::check_budget(work_units, budget)?;
+                value +=
+                    self.fixture.a[i][j] * *state_j + self.fixture.b[i][j] * input.obs_features[j];
+            }
+            *pred_i = value.clamp(-1.0, 1.0);
         }
 
-        let l2 = next_latent
+        let err = pred
             .iter()
-            .zip(state.latent.iter().copied().chain(std::iter::repeat(0.0)))
-            .take(WORLD_MODEL_LATENT_DIM)
-            .map(|(next, prev)| {
-                let d = next - prev;
-                d * d
-            })
+            .zip(input.obs_features.iter())
+            .map(|(p, o)| (p - o).abs())
             .sum::<f32>()
-            / (WORLD_MODEL_LATENT_DIM as f32);
+            / WORLD_MODEL_FEATURE_DIM as f32;
 
-        let normalized = (l2 * 6.0).clamp(0.0, 1.0);
-        let surprise = normalized;
-
-        let next_t = input.t.saturating_add(1);
-        let prediction_digest = Self::digest_latent(&next_latent, next_t);
-
-        Ok(WorldModelOutput {
-            prediction: Prediction {
-                next_latent,
-                next_t,
-                prediction_digest,
-            },
-            error: PredictionError {
-                l2,
-                normalized,
-                surprise,
-            },
-            debug: vec![
-                format!("predictor={}", self.name()),
-                format!("state_t={}", state.t),
-                format!("next_t={next_t}"),
-            ],
+        let alpha = 0.22_f32;
+        for (state, p) in self.state.iter_mut().zip(pred.iter()) {
+            *state = (*state + alpha * (*p - *state)).clamp(-1.0, 1.0);
         }
-        .bounded())
+
+        let prediction_digest =
+            Self::digest_vector(&pred, input.seed, input.t, self.fixture.weights_digest);
+        let state_digest = Self::digest_vector(
+            &self.state,
+            input.seed,
+            input.t.saturating_add(1),
+            self.fixture.weights_digest,
+        );
+        let output = WorldModelOutput {
+            prediction_digest,
+            state_digest,
+            prediction_error: err.clamp(0.0, 1.0),
+            surprise: err.clamp(0.0, 1.0),
+            state_norm: state_norm_01(&self.state),
+            quality: StageQuality::Ok,
+            notes: vec![
+                format!("fixture={}", hex::encode(&self.fixture.weights_digest[..6])),
+                format!("t={}", input.t),
+            ],
+        };
+        Ok(output.bounded())
+    }
+}
+
+pub const WORLD_MODEL_FEATURE_DIM: usize = 16;
+pub const WORLD_MODEL_MAX_NOTES: usize = 4;
+const JEPA_FIXTURE_SCHEMA_V1: u16 = 1;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StageQuality {
+    Ok,
+    DegradedFallback,
+    Unavailable,
+}
+
+impl StageQuality {
+    pub fn as_signal_quality(self) -> SignalQuality {
+        match self {
+            Self::Ok => SignalQuality::VerifiedPipeline,
+            Self::DegradedFallback => SignalQuality::DegradedFallback,
+            Self::Unavailable => SignalQuality::Unavailable,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WorldModelInput {
+    pub t: u64,
+    pub context_digest: [u8; 32],
+    pub obs_features: [f32; WORLD_MODEL_FEATURE_DIM],
+    pub seed: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WorldModelOutput {
+    pub prediction_digest: [u8; 32],
+    pub state_digest: [u8; 32],
+    pub prediction_error: f32,
+    pub surprise: f32,
+    pub state_norm: f32,
+    pub quality: StageQuality,
+    pub notes: Vec<String>,
+}
+
+impl WorldModelOutput {
+    pub fn bounded(mut self) -> Self {
+        self.prediction_error = self.prediction_error.clamp(0.0, 1.0);
+        self.surprise = self.surprise.clamp(0.0, 1.0);
+        self.state_norm = self.state_norm.clamp(0.0, 1.0);
+        if self.notes.len() > WORLD_MODEL_MAX_NOTES {
+            self.notes.truncate(WORLD_MODEL_MAX_NOTES);
+        }
+        self
+    }
+
+    pub fn degraded_budget(stage: &'static str) -> Self {
+        Self {
+            prediction_digest: [0; 32],
+            state_digest: [0; 32],
+            prediction_error: 1.0,
+            surprise: 1.0,
+            state_norm: 0.0,
+            quality: StageQuality::DegradedFallback,
+            notes: vec![format!("budget_exceeded_stage={stage}")],
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WorldFixtureDigest {
+    pub schema_version: u16,
+    pub k: u16,
+    pub weights_digest: [u8; 32],
+}
+
+#[derive(Debug, Clone)]
+pub struct MockJepaPredictor {
+    state: [f32; WORLD_MODEL_FEATURE_DIM],
+    initialized: bool,
+    fixture: DynFixture,
+}
+
+#[derive(Debug, Clone)]
+struct DynFixture {
+    schema_version: u16,
+    k: u16,
+    a: [[f32; WORLD_MODEL_FEATURE_DIM]; WORLD_MODEL_FEATURE_DIM],
+    b: [[f32; WORLD_MODEL_FEATURE_DIM]; WORLD_MODEL_FEATURE_DIM],
+    c: [f32; WORLD_MODEL_FEATURE_DIM],
+    weights_digest: [u8; 32],
+}
+
+impl DynFixture {
+    fn parse_json(raw: &str) -> Result<Self, ComputeError> {
+        #[derive(serde::Deserialize)]
+        struct DynFixtureJson {
+            schema_version: u16,
+            k: usize,
+            a: Vec<f32>,
+            b: Vec<f32>,
+            c: Vec<f32>,
+            weights_digest_hex: String,
+        }
+
+        let parsed: DynFixtureJson =
+            serde_json::from_str(raw).map_err(|err| ComputeError::InvalidInput {
+                reason: format!("invalid JEPA fixture json: {err}"),
+            })?;
+
+        if parsed.schema_version != JEPA_FIXTURE_SCHEMA_V1 || parsed.k != WORLD_MODEL_FEATURE_DIM {
+            return Err(ComputeError::InvalidInput {
+                reason: format!(
+                    "unsupported JEPA fixture schema={} k={}",
+                    parsed.schema_version, parsed.k
+                ),
+            });
+        }
+        if parsed.a.len() != WORLD_MODEL_FEATURE_DIM * WORLD_MODEL_FEATURE_DIM
+            || parsed.b.len() != WORLD_MODEL_FEATURE_DIM * WORLD_MODEL_FEATURE_DIM
+            || parsed.c.len() != WORLD_MODEL_FEATURE_DIM
+        {
+            return Err(ComputeError::InvalidInput {
+                reason: "invalid JEPA fixture dimensions".to_string(),
+            });
+        }
+
+        let mut a = [[0.0_f32; WORLD_MODEL_FEATURE_DIM]; WORLD_MODEL_FEATURE_DIM];
+        let mut b = [[0.0_f32; WORLD_MODEL_FEATURE_DIM]; WORLD_MODEL_FEATURE_DIM];
+        let mut c = [0.0_f32; WORLD_MODEL_FEATURE_DIM];
+
+        for i in 0..WORLD_MODEL_FEATURE_DIM {
+            for j in 0..WORLD_MODEL_FEATURE_DIM {
+                a[i][j] = parsed.a[i * WORLD_MODEL_FEATURE_DIM + j];
+                b[i][j] = parsed.b[i * WORLD_MODEL_FEATURE_DIM + j];
+            }
+            c[i] = parsed.c[i];
+        }
+
+        let mut canonical =
+            Vec::with_capacity((parsed.a.len() + parsed.b.len() + parsed.c.len()) * 4 + 8);
+        canonical.extend_from_slice(&parsed.schema_version.to_le_bytes());
+        canonical.extend_from_slice(&(parsed.k as u16).to_le_bytes());
+        for value in parsed
+            .a
+            .iter()
+            .chain(parsed.b.iter())
+            .chain(parsed.c.iter())
+        {
+            canonical.extend_from_slice(&value.to_bits().to_le_bytes());
+        }
+        let expected: [u8; 32] = Sha256::digest(&canonical).into();
+
+        let digest_bytes =
+            hex::decode(parsed.weights_digest_hex).map_err(|err| ComputeError::InvalidInput {
+                reason: format!("invalid JEPA fixture digest hex: {err}"),
+            })?;
+        if digest_bytes.len() != 32 {
+            return Err(ComputeError::InvalidInput {
+                reason: "invalid JEPA fixture digest length".to_string(),
+            });
+        }
+        let mut weights_digest = [0_u8; 32];
+        weights_digest.copy_from_slice(&digest_bytes);
+
+        if expected != weights_digest {
+            return Err(ComputeError::InvalidInput {
+                reason: "invalid JEPA fixture digest".to_string(),
+            });
+        }
+
+        Ok(Self {
+            schema_version: parsed.schema_version,
+            k: parsed.k as u16,
+            a,
+            b,
+            c,
+            weights_digest,
+        })
+    }
+
+    fn digest(&self) -> WorldFixtureDigest {
+        WorldFixtureDigest {
+            schema_version: self.schema_version,
+            k: self.k,
+            weights_digest: self.weights_digest,
+        }
+    }
+}
+
+impl Default for MockJepaPredictor {
+    fn default() -> Self {
+        let fixture = DynFixture::parse_json(include_str!("../fixtures/jepa_dyn_v1.json"))
+            .expect("embedded JEPA fixture must be valid");
+        Self {
+            state: [0.0; WORLD_MODEL_FEATURE_DIM],
+            initialized: false,
+            fixture,
+        }
+    }
+}
+
+impl MockJepaPredictor {
+    fn check_budget(work_units: u64, budget: ComputeBudget) -> Result<(), ComputeError> {
+        const SCALE: u64 = 8;
+        if work_units > budget.max_micros.saturating_mul(SCALE) {
+            return Err(ComputeError::BudgetExceeded {
+                stage: "world_model/step",
+                elapsed_micros: work_units / SCALE,
+                limit_micros: budget.max_micros,
+            });
+        }
+        Ok(())
+    }
+
+    fn init_state(&mut self, input: &WorldModelInput) {
+        for (idx, slot) in self.state.iter_mut().enumerate() {
+            let b = input.context_digest[idx] as f32 / 255.0;
+            let mix = ((input.seed.rotate_left((idx % 31) as u32) ^ idx as u64) & 0xFFFF) as f32;
+            *slot = (2.0 * b - 1.0 + (mix / 65535.0 - 0.5) * 0.02).clamp(-1.0, 1.0);
+        }
+        self.initialized = true;
+    }
+
+    fn digest_vector(values: &[f32], seed: u64, t: u64, fixture_digest: [u8; 32]) -> [u8; 32] {
+        let mut hasher = Sha256::new();
+        hasher.update(seed.to_le_bytes());
+        hasher.update(t.to_le_bytes());
+        hasher.update(fixture_digest);
+        for v in values {
+            hasher.update(v.to_bits().to_le_bytes());
+        }
+        hasher.finalize().into()
+    }
+
+    pub fn fixture_digest(&self) -> WorldFixtureDigest {
+        self.fixture.digest()
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::FrameId;
+impl MockJepaPredictor {
+    pub fn reset_for_tests(&mut self) {
+        self.state = [0.0; WORLD_MODEL_FEATURE_DIM];
+        self.initialized = false;
+    }
+}
 
-    fn input() -> ComputeInput {
-        ComputeInput {
-            frame_id: FrameId(7),
+pub(crate) fn obs_features_from_context(
+    context_digest: [u8; 32],
+) -> [f32; WORLD_MODEL_FEATURE_DIM] {
+    let mut obs = [0.0_f32; WORLD_MODEL_FEATURE_DIM];
+    for (i, slot) in obs.iter_mut().enumerate() {
+        let a = context_digest[i] as f32 / 255.0;
+        let b = context_digest[i + WORLD_MODEL_FEATURE_DIM] as f32 / 255.0;
+        *slot = ((0.65 * a + 0.35 * b) * 2.0 - 1.0).clamp(-1.0, 1.0);
+    }
+    obs
+}
+
+pub fn state_norm_01(state: &[f32; WORLD_MODEL_FEATURE_DIM]) -> f32 {
+    (state.iter().map(|v| v.abs()).sum::<f32>() / WORLD_MODEL_FEATURE_DIM as f32).clamp(0.0, 1.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::capabilities::WorldModelPredictor;
+
+    use super::*;
+
+    fn input() -> WorldModelInput {
+        WorldModelInput {
             t: 12,
             context_digest: [0xAB; 32],
+            obs_features: obs_features_from_context([0xAB; 32]),
+            seed: 123,
         }
     }
 
     #[test]
-    fn init_state_and_predict_are_deterministic() {
-        let predictor = MockJepaPredictor;
-        let input = input();
-        let budget = ComputeBudget::default();
+    fn determinism_holds_for_same_sequence() {
+        let mut a = MockJepaPredictor::default();
+        let mut b = MockJepaPredictor::default();
+        let inp = input();
 
-        let state_a = predictor.init_state(&input, 123);
-        let state_b = predictor.init_state(&input, 123);
-        assert_eq!(state_a, state_b);
-
-        let out_a = predictor
-            .predict(&state_a, &input, budget)
-            .expect("predict");
-        let out_b = predictor
-            .predict(&state_b, &input, budget)
-            .expect("predict");
+        let out_a = a.step(&inp, ComputeBudget::default()).expect("step");
+        let out_b = b.step(&inp, ComputeBudget::default()).expect("step");
         assert_eq!(out_a, out_b);
     }
 
     #[test]
-    fn bounded_shapes_and_debug() {
-        let predictor = MockJepaPredictor;
-        let state = predictor.init_state(&input(), 5);
+    fn bounded_values_and_quality() {
+        let mut predictor = MockJepaPredictor::default();
         let out = predictor
-            .predict(&state, &input(), ComputeBudget::default())
-            .expect("predict");
+            .step(&input(), ComputeBudget::default())
+            .expect("step")
+            .bounded();
 
-        assert_eq!(state.latent.len(), WORLD_MODEL_LATENT_DIM);
-        assert_eq!(out.prediction.next_latent.len(), WORLD_MODEL_LATENT_DIM);
-        assert!(out.debug.len() <= WORLD_MODEL_MAX_DEBUG);
+        assert!((0.0..=1.0).contains(&out.prediction_error));
+        assert!((0.0..=1.0).contains(&out.surprise));
+        assert!((0.0..=1.0).contains(&out.state_norm));
+        assert_eq!(out.quality, StageQuality::Ok);
+        assert!(out.notes.len() <= WORLD_MODEL_MAX_NOTES);
     }
 
     #[test]
-    fn error_values_stay_in_range() {
-        let predictor = MockJepaPredictor;
-        let state = predictor.init_state(&input(), 42);
-        let out = predictor
-            .predict(&state, &input(), ComputeBudget::default())
-            .expect("predict");
-
-        assert!(out.error.l2 >= 0.0);
-        assert!((0.0..=1.0).contains(&out.error.normalized));
-        assert!((0.0..=1.0).contains(&out.error.surprise));
-    }
-
-    #[test]
-    fn budget_exceeded_reports_world_model_stage() {
-        let predictor = MockJepaPredictor;
-        let state = predictor.init_state(&input(), 99);
+    fn budget_exceeded_is_returned() {
+        let mut predictor = MockJepaPredictor::default();
         let err = predictor
-            .predict(
-                &state,
+            .step(
                 &input(),
                 ComputeBudget {
                     max_micros: 1,
                     hard_timeout_micros: 1,
-                    seed: 99,
                     ..ComputeBudget::default()
                 },
             )
             .expect_err("budget should exceed");
 
         match err {
-            ComputeError::BudgetExceeded { stage, .. } => assert_eq!(stage, "world_model/predict"),
+            ComputeError::BudgetExceeded { stage, .. } => assert_eq!(stage, "world_model/step"),
             other => panic!("unexpected error: {other:?}"),
         }
     }

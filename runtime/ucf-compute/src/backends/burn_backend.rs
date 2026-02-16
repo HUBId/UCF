@@ -33,7 +33,7 @@ impl FeatureExtractor for BurnFeatureExtractor {
 mod tests {
     use super::*;
     use crate::capabilities::WorldModelPredictor;
-    use crate::world_model::MockJepaPredictor;
+    use crate::world_model::{obs_features_from_context, MockJepaPredictor, WorldModelInput};
     use crate::FrameId;
 
     #[test]
@@ -44,10 +44,17 @@ mod tests {
             t: 3,
             context_digest: [2_u8; 32],
         };
-        let world_model = MockJepaPredictor;
-        let world_state = world_model.init_state(&input, 5);
+        let mut world_model = MockJepaPredictor::default();
         let world = world_model
-            .predict(&world_state, &input, ComputeBudget::default())
+            .step(
+                &WorldModelInput {
+                    t: input.t,
+                    context_digest: input.context_digest,
+                    obs_features: obs_features_from_context(input.context_digest),
+                    seed: 5,
+                },
+                ComputeBudget::default(),
+            )
             .expect("world model should work");
 
         let err = extractor

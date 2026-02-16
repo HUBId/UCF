@@ -3103,11 +3103,13 @@ version = "0.1.0"
 dependencies = [
  "candle-core",
  "hex",
+ "metrics",
  "proptest",
  "serde",
  "serde_json",
  "sha2",
  "thiserror 1.0.69",
+ "tracing",
  "ucf-core",
  "ucf-frames",
 ]

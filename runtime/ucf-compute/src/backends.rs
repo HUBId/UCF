@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use crate::feature_extractor::MockSaeExtractor;
 use crate::pipeline::{ComputePipelineBackend, FusionConfig, LimitsConfig};
@@ -150,7 +150,7 @@ impl ComputeBackendConfig {
 pub fn build_backend(
     cfg: &ComputeBackendConfig,
 ) -> Result<Box<dyn AiComputeBackend + Send + Sync>, ComputeError> {
-    let world = Arc::new(MockJepaPredictor);
+    let world = Arc::new(Mutex::new(MockJepaPredictor::default()));
     let ssm = Arc::new(MockSsmSelectiveScan);
     let fusion = FusionConfig::default();
     let limits = LimitsConfig::default();
