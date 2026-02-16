@@ -1,17 +1,17 @@
 use sha2::{Digest, Sha256};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use crate::capabilities::{SaeExtractor, WorkingMemoryModel, WorldModelPredictor};
+use crate::backend_pack::{BackendPack, BackendPackFactory};
 use crate::feature_extractor::{SaeOutput, ToySaeExtractor};
-use crate::ssm::{SsmInput, SsmOutput, ToySsmKernel};
+use crate::ssm::{SsmInput, SsmOutput};
 use crate::work_meter::WorkMeter;
 use crate::world_model::{
-    obs_features_from_context, MockJepaPredictor, StageQuality, WorldModelInput, WorldModelOutput,
+    obs_features_from_context, StageQuality, WorldModelInput, WorldModelOutput,
 };
 use crate::{
-    clamp01, fuse_signals, validate_risk_signal, AiComputeBackend, BackendProfileId, ComputeBudget,
-    ComputeError, ComputeInput, ComputeSignals, DegradePolicy, EvidenceRef, RiskSignal,
-    SignalQuality,
+    clamp01, fuse_signals, validate_risk_signal, AiComputeBackend, BackendPackConfig,
+    BackendProfileId, ComputeBudget, ComputeError, ComputeInput, ComputeSignals, DegradePolicy,
+    EvidenceRef, RiskSignal, SignalQuality,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -43,42 +43,24 @@ impl Default for LimitsConfig {
 }
 
 pub struct ComputePipelineBackend {
-    backend_name: &'static str,
-    world: Arc<Mutex<dyn WorldModelPredictor + Send + Sync>>,
-    sae: Arc<dyn SaeExtractor + Send + Sync>,
-    ssm: Arc<Mutex<dyn WorkingMemoryModel + Send + Sync>>,
+    pack: Arc<dyn BackendPack>,
     fusion: FusionConfig,
     _limits: LimitsConfig,
 }
 
 impl ComputePipelineBackend {
-    pub fn new(
-        backend_name: &'static str,
-        world: Arc<Mutex<dyn WorldModelPredictor + Send + Sync>>,
-        sae: Arc<dyn SaeExtractor + Send + Sync>,
-        ssm: Arc<Mutex<dyn WorkingMemoryModel + Send + Sync>>,
-        fusion: FusionConfig,
-        limits: LimitsConfig,
-    ) -> Self {
+    pub fn new(pack: Arc<dyn BackendPack>, fusion: FusionConfig, limits: LimitsConfig) -> Self {
         Self {
-            backend_name,
-            world,
-            sae,
-            ssm,
+            pack,
             fusion,
             _limits: limits,
         }
     }
 
     pub fn stub() -> Self {
-        Self::new(
-            "stub",
-            Arc::new(Mutex::new(MockJepaPredictor::default())),
-            Arc::new(ToySaeExtractor::default()),
-            Arc::new(Mutex::new(ToySsmKernel::default())),
-            FusionConfig::default(),
-            LimitsConfig::default(),
-        )
+        let pack = BackendPackFactory::build(BackendPackConfig::default())
+            .expect("default backend pack must build");
+        Self::new(pack, FusionConfig::default(), LimitsConfig::default())
     }
 
     pub(crate) fn empty_sae() -> SaeOutput {
@@ -96,7 +78,7 @@ impl ComputePipelineBackend {
 
 impl AiComputeBackend for ComputePipelineBackend {
     fn name(&self) -> &'static str {
-        self.backend_name
+        self.pack.meta().pack_name
     }
 
     fn compute(
@@ -116,12 +98,17 @@ impl AiComputeBackend for ComputePipelineBackend {
         let mut ssm_meter = WorkMeter::new(budget.ssm_units);
 
         let mut exceeded_stage: Option<&'static str> = None;
+        let pack_meta = self.pack.meta();
 
         global_meter.spend(40, "world_model/step")?;
         world_meter.spend(40, "world_model/step")?;
-        let mut world = self.world.lock().map_err(|_| ComputeError::InvalidInput {
-            reason: "world model mutex poisoned".to_string(),
-        })?;
+        let mut world = self
+            .pack
+            .world()
+            .lock()
+            .map_err(|_| ComputeError::InvalidInput {
+                reason: "world model mutex poisoned".to_string(),
+            })?;
         let world_model_name = world.name();
         let world_input = WorldModelInput {
             t: input.t,
@@ -157,10 +144,14 @@ impl AiComputeBackend for ComputePipelineBackend {
         let evidence_seed: [u8; 32] = Sha256::digest(input.context_digest).into();
         let sae_input =
             ToySaeExtractor::make_input(input, &world_model_out, budget.seed, evidence_seed);
-        let sae_span = tracing::info_span!("sae.extract", extractor = self.sae.name(), t = input.t);
+        let sae_span = tracing::info_span!(
+            "sae.extract",
+            extractor = self.pack.sae().name(),
+            t = input.t
+        );
         let _sae_enter = sae_span.enter();
         let (sae_out, sae_degraded) = match sae_meter.spend(220, "sae/extract") {
-            Ok(()) => match self.sae.extract(&sae_input, budget) {
+            Ok(()) => match self.pack.sae().extract(&sae_input, budget) {
                 Ok(output) => (output, false),
                 Err(ComputeError::BudgetExceeded { stage, .. }) => {
                     exceeded_stage = Some(stage);
@@ -200,9 +191,13 @@ impl AiComputeBackend for ComputePipelineBackend {
         };
 
         global_meter.spend(220, "ssm/step")?;
-        let mut ssm = self.ssm.lock().map_err(|_| ComputeError::InvalidInput {
-            reason: "ssm mutex poisoned".to_string(),
-        })?;
+        let mut ssm = self
+            .pack
+            .ssm()
+            .lock()
+            .map_err(|_| ComputeError::InvalidInput {
+                reason: "ssm mutex poisoned".to_string(),
+            })?;
         let ssm_name = ssm.name();
         let ssm_span = tracing::info_span!("ssm.step", kernel = ssm_name, t = input.t);
         let _ssm_enter = ssm_span.enter();
@@ -263,6 +258,12 @@ impl AiComputeBackend for ComputePipelineBackend {
                 Some(ssm_out.state_digest)
             },
             backend_profile: BackendProfileId::from_backend_name(self.name()),
+            backend_pack_id: pack_meta.pack_id,
+            fixtures_digest: pack_meta.fixtures_digest,
+            llm_backend: pack_meta.llm_backend,
+            world_backend: pack_meta.world_backend,
+            sae_backend: pack_meta.sae_backend,
+            ssm_backend: pack_meta.ssm_backend,
             seed: budget.seed,
             budget_profile_id: budget.profile_id,
         };
@@ -307,7 +308,7 @@ impl AiComputeBackend for ComputePipelineBackend {
             format!("frame={}", input.frame_id.0),
             format!("budget_profile_id={}", budget.profile_id),
             format!("world_model={}", world_model_name),
-            format!("feature_extractor={}", self.sae.name()),
+            format!("feature_extractor={}", self.pack.sae().name()),
             format!("working_memory={}", ssm_name),
             format!(
                 "pred_digest={}",
@@ -369,10 +370,8 @@ impl AiComputeBackend for ComputePipelineBackend {
 
 #[cfg(test)]
 mod tests {
-    use crate::feature_extractor::ToySaeExtractor;
-    use crate::ssm::ToySsmKernel;
-    use crate::world_model::MockJepaPredictor;
     use crate::FrameId;
+    use crate::{BackendPackConfig, BackendPackFactory};
 
     use super::*;
 
@@ -398,14 +397,9 @@ mod tests {
 
     #[test]
     fn keeps_expected_capability_notes() {
-        let backend = ComputePipelineBackend::new(
-            "stub",
-            Arc::new(Mutex::new(MockJepaPredictor::default())),
-            Arc::new(ToySaeExtractor::default()),
-            Arc::new(Mutex::new(ToySsmKernel::default())),
-            FusionConfig::default(),
-            LimitsConfig::default(),
-        );
+        let pack = BackendPackFactory::build(BackendPackConfig::default()).expect("pack");
+        let backend =
+            ComputePipelineBackend::new(pack, FusionConfig::default(), LimitsConfig::default());
         let out = backend
             .compute(&input(), ComputeBudget::default())
             .expect("compute");

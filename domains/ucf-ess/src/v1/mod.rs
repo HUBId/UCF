@@ -4,10 +4,10 @@ pub mod store;
 
 pub use errors::EssError;
 pub use record::{
-    AuditCheckpointRecord, AuditPayload, CandidateSetRecord, CandidateSummaryRecord,
-    DeltaEvaluationRecord, DeltaProposalRecord, DeltaRecommendationRecord, ExperienceId,
-    ExperienceKind, ExperiencePayload, ExperienceRecord, HormoneRecord, NeuroRecord, NsrRecord,
-    OutputRecord, SandboxCallRecord, SandboxReplyRecord, ToolAuthRecord, ToolExecutionRecord,
-    ToolRequestRecord,
+    AuditCheckpointRecord, AuditPayload, BackendPackRecord, CandidateSetRecord,
+    CandidateSummaryRecord, DeltaEvaluationRecord, DeltaProposalRecord, DeltaRecommendationRecord,
+    ExperienceId, ExperienceKind, ExperiencePayload, ExperienceRecord, HormoneRecord, NeuroRecord,
+    NsrRecord, OutputRecord, SandboxCallRecord, SandboxReplyRecord, ToolAuthRecord,
+    ToolExecutionRecord, ToolRequestRecord,
 };
 pub use store::{ExperienceStore, IdAllocator, InMemoryEss};

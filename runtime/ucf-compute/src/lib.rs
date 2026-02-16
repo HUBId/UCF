@@ -4,6 +4,7 @@ use thiserror::Error;
 use ucf_frames::v1::{ControlFrame, ControlPayload};
 use world_model::StageQuality;
 
+pub mod backend_pack;
 pub mod backends;
 pub mod capabilities;
 pub mod evidence;
@@ -13,6 +14,10 @@ pub mod risk_contract;
 pub mod ssm;
 pub mod work_meter;
 pub mod world_model;
+pub use backend_pack::{
+    BackendComponentId, BackendPack, BackendPackConfig, BackendPackFactory, BackendPackId,
+    BackendPackKind, BackendPackMeta, BackendSwapRequest, FixtureId, FixtureManager,
+};
 pub use backends::{build_backend, ComputeBackendConfig, ComputeBackendKind};
 pub use evidence::{CodeVersionTag, EvidenceChain, COMPUTE_SUMMARY_SCHEMA_VERSION};
 pub use pipeline::ComputePipelineBackend;
@@ -134,6 +139,12 @@ impl ComputeSignals {
             evidence_ssm_digest: risk_signal.evidence.ssm_digest,
             ssm_quality: self.ssm_quality,
             backend_profile: risk_signal.evidence.backend_profile.as_str(),
+            backend_pack_id: risk_signal.evidence.backend_pack_id.0,
+            fixtures_digest: risk_signal.evidence.fixtures_digest,
+            llm_backend: risk_signal.evidence.llm_backend as u8,
+            world_backend: risk_signal.evidence.world_backend as u8,
+            sae_backend: risk_signal.evidence.sae_backend as u8,
+            ssm_backend: risk_signal.evidence.ssm_backend as u8,
             budget_profile_id: risk_signal.evidence.budget_profile_id,
             seed: risk_signal.evidence.seed,
             risk_contract_version: risk_signal.version,
@@ -151,6 +162,12 @@ impl ComputeSignals {
             spikes_digest: None,
             ssm_digest: None,
             backend_profile: BackendProfileId::from_backend_name(backend),
+            backend_pack_id: crate::BackendPackId(0),
+            fixtures_digest: [0; 32],
+            llm_backend: crate::BackendComponentId::Disabled,
+            world_backend: crate::BackendComponentId::Disabled,
+            sae_backend: crate::BackendComponentId::Disabled,
+            ssm_backend: crate::BackendComponentId::Disabled,
             seed: budget.seed,
             budget_profile_id: budget.profile_id,
         };
@@ -311,6 +328,12 @@ pub struct ComputeSignalsSummary {
     pub evidence_ssm_digest: Option<[u8; 32]>,
     pub ssm_quality: Option<StageQuality>,
     pub backend_profile: &'static str,
+    pub backend_pack_id: u32,
+    pub fixtures_digest: [u8; 32],
+    pub llm_backend: u8,
+    pub world_backend: u8,
+    pub sae_backend: u8,
+    pub ssm_backend: u8,
     pub budget_profile_id: u32,
     pub seed: u64,
     pub risk_contract_version: u16,
@@ -513,6 +536,12 @@ mod tests {
                     spikes_digest: None,
                     ssm_digest: None,
                     backend_profile: BackendProfileId::StubV1,
+                    backend_pack_id: crate::BackendPackId(1),
+                    fixtures_digest: [9; 32],
+                    llm_backend: crate::BackendComponentId::ToyV1,
+                    world_backend: crate::BackendComponentId::ToyV1,
+                    sae_backend: crate::BackendComponentId::ToyV1,
+                    ssm_backend: crate::BackendComponentId::ToyV1,
                     seed: 0,
                     budget_profile_id: 0,
                 },
