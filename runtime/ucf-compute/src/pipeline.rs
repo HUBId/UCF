@@ -279,10 +279,19 @@ impl AiComputeBackend for ComputePipelineBackend {
             }
             Err(other) => return Err(other),
         };
+        let lfm_backend_label = if lfm_name.contains("candle") {
+            "candle"
+        } else if lfm_name.contains("burn") {
+            "burn"
+        } else {
+            "toy"
+        };
+        metrics::counter!("ucf_lfm_step_total", "backend" => lfm_backend_label).increment(1);
         metrics::gauge!("ucf_lfm_uncertainty").set(f64::from(lfm_out.uncertainty));
         metrics::gauge!("ucf_lfm_stability").set(f64::from(lfm_out.stability));
         if lfm_out.quality == StageQuality::DegradedFallback {
-            metrics::counter!("ucf_lfm_degraded_total").increment(1);
+            metrics::counter!("ucf_lfm_degraded_total", "backend" => lfm_backend_label)
+                .increment(1);
         }
 
         let pressure = ssm_out.pressure;
