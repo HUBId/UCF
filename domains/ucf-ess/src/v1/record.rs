@@ -33,6 +33,8 @@ pub enum ExperienceKind {
     BackendPack,
     LfmSummary,
     LfmWindow,
+    CapabilityIssuance,
+    Throttle,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -79,6 +81,35 @@ pub enum AuditPayload {
     AuditCheckpoint(AuditCheckpointRecord),
     CandidateSet(CandidateSetRecord),
     Output(OutputRecord),
+    CapabilityIssuance(CapabilityIssuanceRecord),
+    Throttle(ThrottleRecord),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CapabilityIssuanceRecord {
+    pub t: u64,
+    pub decision_id: u64,
+    pub candidate_id: Option<u16>,
+    pub requested_kinds: Vec<String>,
+    pub granted_kinds: Vec<String>,
+    pub denied_kinds: Vec<(String, String)>,
+    pub tier: u8,
+    pub governor_score_q: u16,
+    pub governance_signals_digest: [u8; 32],
+    pub throttle_state_digest: [u8; 32],
+    pub evidence_chain_digest: [u8; 32],
+    pub schema_version: u16,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ThrottleRecord {
+    pub t: u64,
+    pub kind: String,
+    pub tokens_remaining: u16,
+    pub cooldown_ticks: u16,
+    pub deny_count: u16,
+    pub digest: [u8; 32],
+    pub schema_version: u16,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

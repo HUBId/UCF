@@ -37,10 +37,11 @@ use ucf_dbm::chemistry::{chemistry_step, ChemistryCfg, NeuromodState};
 use ucf_dbm::regions::{region_step, BrainRegion, RegionKind};
 use ucf_ess::v1::{
     AuditCheckpointRecord, AuditPayload, BackendPackRecord, CandidateSetRecord,
-    CandidateSummaryRecord, DeltaEvaluationRecord, DeltaProposalRecord, DeltaRecommendationRecord,
-    ExperienceKind, ExperienceRecord, ExperienceStore, HormoneRecord, IdAllocator, InMemoryEss,
-    LfmSummaryRecord, LfmWindowRecord, NeuroRecord, NsrRecord, OutputRecord, SandboxCallRecord,
-    SandboxReplyRecord, ToolAuthRecord, ToolExecutionRecord, ToolRequestRecord,
+    CandidateSummaryRecord, CapabilityIssuanceRecord, DeltaEvaluationRecord, DeltaProposalRecord,
+    DeltaRecommendationRecord, ExperienceKind, ExperienceRecord, ExperienceStore, HormoneRecord,
+    IdAllocator, InMemoryEss, LfmSummaryRecord, LfmWindowRecord, NeuroRecord, NsrRecord,
+    OutputRecord, SandboxCallRecord, SandboxReplyRecord, ThrottleRecord, ToolAuthRecord,
+    ToolExecutionRecord, ToolRequestRecord,
 };
 use ucf_fep::{
     check_coherence_invariants, fep_step, homeostasis_step, CoherenceCfg, CoherenceSnapshot,
@@ -69,8 +70,9 @@ use ucf_policy::{
         OutputClass as CandidateOutputClass,
     },
     gem::{
-        issue_capabilities, request_from, request_from_intent, AuthorizationOutcome, Gem,
-        PayloadHint as GemPayloadHint, ToolGate, ToolStatus,
+        issue_capabilities_governed, request_from, request_from_intent, AuthorizationOutcome,
+        CapabilityIssuanceDecision, Gem, GovernanceSignals, PayloadHint as GemPayloadHint,
+        ToolGate, ToolGovernor, ToolStatus,
     },
     pbm::Pbm,
     rate_limiter::RateLimiter,
@@ -609,6 +611,8 @@ pub struct RuntimeOrchestrator {
     geist_state_updater: GeistStateUpdater,
     last_compute_milestone: Option<ComputeMilestone>,
     tool_gate: ToolGate,
+    tool_governor: ToolGovernor,
+    last_nsr_risk: Option<f32>,
     candidate_generator: DefaultCandidateGeneratorV0,
     audit_head_digest: [u8; 32],
     audit_chain_checkpoint_total: u64,
@@ -823,6 +827,84 @@ impl RuntimeOrchestrator {
                         rec,
                     ))?;
             }
+        }
+        Ok(())
+    }
+
+    fn persist_issuance_records(
+        &mut self,
+        time: ucf_core::types::SimTime,
+        corr: ucf_frames::v1::CorrelationId,
+        decision_id: u64,
+        candidate_id: u16,
+        issuance: &CapabilityIssuanceDecision,
+    ) -> Result<(), RuntimeError> {
+        let issuance_payload = AuditPayload::CapabilityIssuance(CapabilityIssuanceRecord {
+            t: time.tick.get(),
+            decision_id,
+            candidate_id: Some(candidate_id),
+            requested_kinds: issuance
+                .requested_kinds
+                .iter()
+                .map(|k| k.as_tag().to_string())
+                .take(12)
+                .collect(),
+            granted_kinds: issuance
+                .granted_kinds
+                .iter()
+                .map(|k| k.as_tag().to_string())
+                .take(12)
+                .collect(),
+            denied_kinds: issuance
+                .denied
+                .iter()
+                .map(|x| (x.kind.as_tag().to_string(), x.reason_code.to_string()))
+                .take(16)
+                .collect(),
+            tier: issuance.tier.as_u8(),
+            governor_score_q: quantize_unit_u16(issuance.governor_score),
+            governance_signals_digest: issuance.governance_signals_digest,
+            throttle_state_digest: issuance.throttle_state_digest,
+            evidence_chain_digest: issuance.evidence_chain_digest,
+            schema_version: issuance.schema_version,
+        });
+        let issuance_record = ExperienceRecord::audit(
+            self.ids.next(),
+            time,
+            corr,
+            ExperienceKind::CapabilityIssuance,
+            issuance_payload,
+            self.audit_head_digest,
+        );
+        self.audit_head_digest = issuance_record
+            .audit_digest
+            .unwrap_or(self.audit_head_digest);
+        self.ess.append(issuance_record)?;
+
+        for (kind, slot) in self.tool_governor.snapshot() {
+            if slot.cooldown_ticks > 0 {
+                metrics::counter!("ucf_tool_cooldown_active_total", "kind" => kind.as_tag().to_string())
+                    .increment(1);
+            }
+            let throttle_payload = AuditPayload::Throttle(ThrottleRecord {
+                t: time.tick.get(),
+                kind: kind.as_tag().to_string(),
+                tokens_remaining: slot.tokens,
+                cooldown_ticks: slot.cooldown_ticks,
+                deny_count: slot.deny_count,
+                digest: issuance.throttle_state_digest,
+                schema_version: 1,
+            });
+            let rec = ExperienceRecord::audit(
+                self.ids.next(),
+                time,
+                corr,
+                ExperienceKind::Throttle,
+                throttle_payload,
+                self.audit_head_digest,
+            );
+            self.audit_head_digest = rec.audit_digest.unwrap_or(self.audit_head_digest);
+            self.ess.append(rec)?;
         }
         Ok(())
     }
@@ -1057,6 +1139,8 @@ impl RuntimeOrchestrator {
                 ucf_policy::capability::CapabilitySet::empty(),
                 RateLimiter::new(1024),
             ),
+            tool_governor: ToolGovernor::default(),
+            last_nsr_risk: None,
             candidate_generator: DefaultCandidateGeneratorV0,
             audit_head_digest: [0; 32],
             audit_chain_checkpoint_total: 0,
@@ -3095,7 +3179,28 @@ impl RuntimeOrchestrator {
             nsr_record,
         ))?;
 
-        self.tool_gate.capabilities = issue_capabilities(Some(&decision), decision.time.tick.get());
+        self.last_nsr_risk = Some(nsr_v0_assessment.nsr_risk.clamp(0.0, 1.0));
+
+        let governance_signals = GovernanceSignals::from_inputs(
+            Some(&decision),
+            decision.time.tick.get(),
+            self.last_nsr_risk,
+            self.last_hormone_summary.map(|s| s.stress_index),
+        );
+        let (issued_caps, issuance_decision) = issue_capabilities_governed(
+            Some(&decision),
+            decision.time.tick.get(),
+            governance_signals,
+            &mut self.tool_governor,
+        );
+        self.tool_gate.capabilities = issued_caps;
+        self.persist_issuance_records(
+            decision.time,
+            decision.corr,
+            eid2.0,
+            selected_candidate.candidate_id,
+            &issuance_decision,
+        )?;
         let mut requests = Vec::new();
         if selected_assessment.allowed {
             for intent in selected_candidate.tool_intents.iter().take(8) {

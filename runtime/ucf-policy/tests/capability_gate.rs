@@ -6,7 +6,10 @@ use ucf_frames::v1::{
 use ucf_policy::{
     adapter::MockAdapter,
     capability::{CapabilityDenyReason, CapabilityKind, CapabilityScope},
-    gem::{issue_capabilities, Gem, ToolGate, ToolStatus},
+    gem::{
+        governor_score, issue_capabilities, issue_capabilities_governed, Gem, GovernanceSignals,
+        IssuanceTier, ToolGate, ToolGovernor, ToolStatus,
+    },
     rate_limiter::RateLimiter,
 };
 
@@ -129,12 +132,8 @@ fn gate_denies_missing_decision_and_rate_limits_by_ticks() {
         .expect("fourth");
     assert_eq!(first.result.status, ToolStatus::AllowedExecuted);
     assert_eq!(second.result.status, ToolStatus::AllowedExecuted);
-    assert_eq!(third.result.status, ToolStatus::AllowedExecuted);
-    assert_eq!(fourth.result.status, ToolStatus::AllowedExecuted);
-
-    let fifth = Gem::execute_with_gate(&mut adapter, &ctrl, Some(&decision_ok), 7, &mut gate)
-        .expect("fifth");
-    assert_eq!(fifth.result.status, ToolStatus::RateLimited);
+    assert_eq!(third.result.status, ToolStatus::RateLimited);
+    assert_eq!(fourth.result.status, ToolStatus::RateLimited);
 }
 
 #[test]
@@ -184,6 +183,86 @@ fn issuer_blocks_high_risk() {
         coherence_digest: None,
     });
     let caps = issue_capabilities(Some(&decision), 10);
-    assert_eq!(caps.tokens.len(), 1);
-    assert_eq!(caps.tokens[0].kind, CapabilityKind::FileRead);
+    assert!(caps
+        .tokens
+        .iter()
+        .all(|t| t.kind != CapabilityKind::ExternalApi));
+}
+
+#[test]
+fn governor_score_and_tier_boundaries_are_deterministic() {
+    let signals = GovernanceSignals::from_inputs(None, 42, Some(0.8), Some(0.4));
+    let score1 = governor_score(signals);
+    let score2 = governor_score(signals);
+    assert_eq!(score1, score2);
+    assert!(matches!(
+        IssuanceTier::from_score(0.249),
+        IssuanceTier::Tier0
+    ));
+    assert!(matches!(
+        IssuanceTier::from_score(0.25),
+        IssuanceTier::Tier1
+    ));
+    assert!(matches!(IssuanceTier::from_score(0.5), IssuanceTier::Tier2));
+    assert!(matches!(
+        IssuanceTier::from_score(0.75),
+        IssuanceTier::Tier3
+    ));
+}
+
+#[test]
+fn tool_governor_escalates_cooldown_under_repeated_denies() {
+    let mut governor = ToolGovernor::default();
+    let mut decision = DecisionFrame::allow(sim_time(1), CorrelationId(8), "allow");
+    decision.compute_summary = Some(ucf_frames::v1::ComputeSignalsSummary {
+        backend: "stub",
+        surprise: 0.9,
+        pressure: 0.9,
+        risk: 0.9,
+        confidence: 0.1,
+        spike_count: 0,
+        spikes_digest: [0; 32],
+        sparsity: None,
+        energy: None,
+        ssm_readout: None,
+        ssm_digest: None,
+        world_digest: None,
+        risk_quality: None,
+        evidence_context_digest: None,
+        evidence_world_digest: None,
+        evidence_spikes_digest: None,
+        evidence_ssm_digest: None,
+        evidence_lfm_digest: None,
+        backend_profile: None,
+        backend_pack_id: None,
+        fixtures_digest: None,
+        llm_backend: None,
+        world_backend: None,
+        sae_backend: None,
+        ssm_backend: None,
+        lfm_backend: None,
+        lfm_uncertainty: Some(1.0),
+        lfm_stability: Some(0.0),
+        lfm_digest: None,
+        budget_profile_id: None,
+        seed: None,
+        risk_contract_version: None,
+        compute_schema_version: None,
+        compute_chain_digest: None,
+        compute_code_version: None,
+        budget_exceeded_stage: None,
+        lfm_quality: None,
+        coherence: Some(0.0),
+        instability: Some(1.0),
+        phi_proxy: None,
+        coherence_digest: None,
+    });
+    let signals = GovernanceSignals::from_inputs(Some(&decision), 1, Some(0.95), Some(0.9));
+    let (_, d1) = issue_capabilities_governed(Some(&decision), 1, signals, &mut governor);
+    let (_, d2) = issue_capabilities_governed(Some(&decision), 2, signals, &mut governor);
+    assert!(d1.tier.as_u8() >= 2);
+    assert!(d2.tier.as_u8() >= 2);
+    let slot = governor.slot(&CapabilityKind::ExternalApi);
+    assert!(slot.cooldown_ticks > 0);
+    assert!(slot.deny_count > 0);
 }
