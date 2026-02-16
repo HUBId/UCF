@@ -7,8 +7,20 @@ use crate::ssm::{SsmOutput, SsmState};
 use crate::world_model::{WorldModelOutput, WorldState};
 use crate::{ComputeBudget, ComputeError, ComputeInput, MAX_NOTE_LEN};
 
+#[cfg(any(feature = "compute-burn", feature = "llm-burn"))]
+mod burn_llm_backend;
+#[cfg(any(feature = "compute-candle", feature = "llm-candle"))]
+mod candle_llm_backend;
+#[cfg(any(test, feature = "compute-candle", feature = "llm-candle"))]
+mod llm_toy;
+
+#[cfg(any(feature = "compute-burn", feature = "llm-burn"))]
+use burn_llm_backend::BurnLlmBackend;
+#[cfg(any(feature = "compute-candle", feature = "llm-candle"))]
+use candle_llm_backend::CandleLlmBackend;
+
 const MAX_LLM_PROMPT_BYTES: usize = 8 * 1024;
-const MAX_LLM_TEXT_BYTES: usize = 16 * 1024;
+pub(crate) const MAX_LLM_TEXT_BYTES: usize = 16 * 1024;
 const MAX_LLM_TOKENS: u32 = 1024;
 const VOCAB: [&str; 32] = [
     "safe",
@@ -332,13 +344,34 @@ pub fn build_llm_backend(
 ) -> Result<Arc<dyn LlmInference + Send + Sync>, ComputeError> {
     match cfg.kind {
         LlmBackendKind::Stub => Ok(Arc::new(LlmStubBackend)),
-        LlmBackendKind::Candle | LlmBackendKind::Burn => Err(ComputeError::BackendDisabled),
+        LlmBackendKind::Candle => {
+            #[cfg(any(feature = "compute-candle", feature = "llm-candle"))]
+            {
+                Ok(Arc::new(CandleLlmBackend::from_fixture()?))
+            }
+            #[cfg(not(any(feature = "compute-candle", feature = "llm-candle")))]
+            {
+                Err(ComputeError::BackendDisabled)
+            }
+        }
+        LlmBackendKind::Burn => {
+            #[cfg(any(feature = "compute-burn", feature = "llm-burn"))]
+            {
+                Ok(Arc::new(BurnLlmBackend))
+            }
+            #[cfg(not(any(feature = "compute-burn", feature = "llm-burn")))]
+            {
+                Err(ComputeError::BackendDisabled)
+            }
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(any(feature = "compute-candle", feature = "llm-candle"))]
+    use crate::capabilities::llm_toy::ToyWeights;
 
     fn base_request() -> LlmRequest {
         LlmRequest {
@@ -395,5 +428,63 @@ mod tests {
             .expect("infer");
         assert_eq!(response.status, LlmStatus::Refused);
         assert_eq!(response.finish_reason, FinishReason::PolicyRefusal);
+    }
+
+    #[cfg(any(feature = "compute-candle", feature = "llm-candle"))]
+    #[test]
+    fn candle_llm_is_deterministic_for_same_request() {
+        let backend = build_llm_backend(LlmBackendConfig {
+            kind: LlmBackendKind::Candle,
+            ..LlmBackendConfig::default()
+        })
+        .expect("candle backend");
+        let req = base_request();
+        let a = backend
+            .infer(&req, ComputeBudget::default())
+            .expect("infer a");
+        let b = backend
+            .infer(&req, ComputeBudget::default())
+            .expect("infer b");
+        assert_eq!(a.digest, b.digest);
+        assert_eq!(a.text, b.text);
+    }
+
+    #[cfg(any(feature = "compute-candle", feature = "llm-candle"))]
+    #[test]
+    fn candle_llm_weights_change_digest() {
+        use crate::capabilities::candle_llm_backend::CandleLlmBackend;
+
+        let req = base_request();
+        let baseline = CandleLlmBackend::from_fixture()
+            .expect("fixture")
+            .infer(&req, ComputeBudget::default())
+            .expect("infer baseline");
+
+        let mut tweaked = ToyWeights::load().expect("load weights");
+        for b in &mut tweaked.linear_b {
+            *b = -10.0;
+        }
+        tweaked.linear_b[0] = 10.0;
+        tweaked.vocab[0] = "forced_token".to_string();
+        let alt = CandleLlmBackend::from_weights(tweaked)
+            .infer(&req, ComputeBudget::default())
+            .expect("infer alt");
+        assert_ne!(baseline.digest, alt.digest);
+    }
+
+    #[cfg(any(feature = "compute-candle", feature = "llm-candle"))]
+    #[test]
+    fn candle_llm_honors_token_cap() {
+        let backend = build_llm_backend(LlmBackendConfig {
+            kind: LlmBackendKind::Candle,
+            ..LlmBackendConfig::default()
+        })
+        .expect("candle backend");
+        let mut req = base_request();
+        req.max_tokens = 3;
+        let out = backend
+            .infer(&req, ComputeBudget::default())
+            .expect("infer");
+        assert_eq!(out.token_count, 3);
     }
 }
