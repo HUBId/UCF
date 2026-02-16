@@ -27,6 +27,8 @@ pub struct LfmInput {
     pub instability: Option<f32>,
     pub hormone_stress: Option<f32>,
     pub neuro_arousal: Option<f32>,
+    pub governor_tier: Option<u8>,
+    pub prediction_error: Option<f32>,
     pub seed: u64,
 }
 
@@ -39,6 +41,7 @@ pub struct LfmOutput {
     pub state_norm: f32,
     pub quality: StageQuality,
     pub notes: SmallNotes,
+    pub plasticity: Option<PlasticityRecord>,
 }
 
 impl LfmOutput {
@@ -51,8 +54,68 @@ impl LfmOutput {
             state_norm: 1.0,
             quality: StageQuality::DegradedFallback,
             notes: SmallNotes(vec![format!("degraded:{reason}")]),
+            plasticity: None,
         }
     }
+}
+
+#[cfg(feature = "lfm-lnn")]
+const PLASTICITY_MAX_PARAMS: usize = 8;
+#[cfg(feature = "lfm-lnn")]
+const PLASTICITY_MAX_UPDATES_PER_TICK: usize = 4;
+#[cfg(feature = "lfm-lnn")]
+const PLASTICITY_DELTA_RESOLUTION: f32 = 1e-3;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum ParamKey {
+    AlphaI(u16),
+    WuI(u16),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ParamDelta {
+    pub key: ParamKey,
+    pub delta_q: i16,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PlasticityInput {
+    pub t: u64,
+    pub governor_tier: u8,
+    pub uncertainty: f32,
+    pub coherence: Option<f32>,
+    pub pressure: f32,
+    pub surprise: f32,
+    pub prediction_error: Option<f32>,
+    pub seed: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PlasticityUpdate {
+    pub enabled: bool,
+    pub updated_params: Vec<ParamDelta>,
+    pub delta_digest: [u8; 32],
+    pub params_digest_after: [u8; 32],
+    pub quality: StageQuality,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PlasticityRecord {
+    pub schema_version: u16,
+    pub t: u64,
+    pub backend_pack_digest: [u8; 32],
+    pub lfm_fixture_digest: [u8; 32],
+    pub enabled: bool,
+    pub governor_tier: u8,
+    pub uncertainty_q: u16,
+    pub coherence_q: Option<u16>,
+    pub pressure_q: u16,
+    pub surprise_q: u16,
+    pub prediction_error_q: Option<i16>,
+    pub param_deltas: Vec<ParamDelta>,
+    pub delta_digest: [u8; 32],
+    pub params_digest_after: [u8; 32],
+    pub evidence_chain_digest: [u8; 32],
 }
 
 pub trait LfmKernel: Send + Sync {
@@ -357,7 +420,7 @@ impl LfmKernel for CandleLfmKernel {
         hasher.update(input.context_digest);
         hasher.update(input.world_digest);
         for value in &self.x_shadow {
-            hasher.update(quantize_signed_unit(value).to_le_bytes());
+            hasher.update(quantize_signed_unit(*value).to_le_bytes());
         }
         let liquid_state_digest: [u8; 32] = hasher.finalize().into();
 
@@ -377,6 +440,7 @@ impl LfmKernel for CandleLfmKernel {
                 "fixture={}",
                 hex::encode(&self.fixture.digest[..6])
             )]),
+            plasticity: None,
         })
     }
 }
@@ -518,8 +582,16 @@ impl LnnParamsV1 {
 
 #[cfg(feature = "lfm-lnn")]
 #[derive(Debug, Clone)]
+struct LnnRuntimeOverlay {
+    alpha: Vec<f32>,
+    wu: Vec<f32>,
+}
+
+#[cfg(feature = "lfm-lnn")]
+#[derive(Debug, Clone)]
 pub struct LnnOdeLfmKernel {
-    params: LnnParamsV1,
+    base_params: LnnParamsV1,
+    overlay: LnnRuntimeOverlay,
     x: Vec<f32>,
 }
 
@@ -530,7 +602,11 @@ impl Default for LnnOdeLfmKernel {
             .expect("embedded LNN fixture must be valid");
         let mut this = Self {
             x: vec![0.0_f32; params.n],
-            params,
+            overlay: LnnRuntimeOverlay {
+                alpha: params.alpha.clone(),
+                wu: params.wu.clone(),
+            },
+            base_params: params,
         };
         this.reset_session(0);
         this
@@ -540,7 +616,7 @@ impl Default for LnnOdeLfmKernel {
 #[cfg(feature = "lfm-lnn")]
 impl LnnOdeLfmKernel {
     fn check_budget(&self, budget: ComputeBudget) -> Result<(), ComputeError> {
-        let n = self.params.n as u64;
+        let n = self.base_params.n as u64;
         let work_units = 32_u64.saturating_add(2 * n * n).saturating_add(24 * n);
         let elapsed_micros = work_units / LFM_WORK_SCALE;
         if work_units > budget.max_micros.saturating_mul(LFM_WORK_SCALE) {
@@ -553,31 +629,144 @@ impl LnnOdeLfmKernel {
         Ok(())
     }
 
+    fn quantize_delta(delta: f32) -> i16 {
+        (delta / PLASTICITY_DELTA_RESOLUTION)
+            .round()
+            .clamp(i16::MIN as f32, i16::MAX as f32) as i16
+    }
+
+    fn dequantize_delta(delta_q: i16) -> f32 {
+        f32::from(delta_q) * PLASTICITY_DELTA_RESOLUTION
+    }
+
+    fn params_digest(&self) -> [u8; 32] {
+        let mut hasher = Sha256::new();
+        hasher.update(self.base_params.digest);
+        for v in &self.overlay.alpha {
+            hasher.update(quantize_unit_u16((v / 2.0).clamp(0.0, 1.0)).to_le_bytes());
+        }
+        for v in &self.overlay.wu {
+            hasher.update(quantize_signed_unit(v.clamp(-1.0, 1.0)).to_le_bytes());
+        }
+        hasher.finalize().into()
+    }
+
+    fn delta_digest(updated_params: &[ParamDelta]) -> [u8; 32] {
+        let mut hasher = Sha256::new();
+        for delta in updated_params {
+            match delta.key {
+                ParamKey::AlphaI(i) => {
+                    hasher.update([0]);
+                    hasher.update(i.to_le_bytes());
+                }
+                ParamKey::WuI(i) => {
+                    hasher.update([1]);
+                    hasher.update(i.to_le_bytes());
+                }
+            }
+            hasher.update(delta.delta_q.to_le_bytes());
+        }
+        hasher.finalize().into()
+    }
+
+    fn apply_plasticity(&mut self, input: &PlasticityInput) -> PlasticityUpdate {
+        let coherence = input.coherence.unwrap_or(1.0).clamp(0.0, 1.0);
+        let enabled = input.governor_tier <= 1 && input.uncertainty <= 0.45 && coherence >= 0.6;
+        if !enabled {
+            let params_digest_after = self.params_digest();
+            return PlasticityUpdate {
+                enabled,
+                updated_params: Vec::new(),
+                delta_digest: Self::delta_digest(&[]),
+                params_digest_after,
+                quality: StageQuality::Ok,
+            };
+        }
+
+        let err = input
+            .prediction_error
+            .unwrap_or(input.surprise)
+            .clamp(0.0, 1.0);
+        let d =
+            (0.8 * (err - 0.4) - 0.7 * (input.pressure.clamp(0.0, 1.0) - 0.65)).clamp(-1.0, 1.0);
+        let lr = 0.01_f32;
+        let raw_delta = (lr * d).clamp(-0.02, 0.02);
+        let delta_q = Self::quantize_delta(raw_delta);
+        if delta_q == 0 {
+            let params_digest_after = self.params_digest();
+            return PlasticityUpdate {
+                enabled,
+                updated_params: Vec::new(),
+                delta_digest: Self::delta_digest(&[]),
+                params_digest_after,
+                quality: StageQuality::Ok,
+            };
+        }
+        let delta = Self::dequantize_delta(delta_q);
+        let n = self.overlay.alpha.len();
+        let update_count = PLASTICITY_MAX_UPDATES_PER_TICK
+            .min(n)
+            .min(PLASTICITY_MAX_PARAMS);
+        let mut updated_params = Vec::with_capacity(update_count);
+
+        for k in 0..update_count {
+            let idx_seed = input.seed ^ input.t.rotate_left((k as u32) & 31);
+            let idx = ((idx_seed as usize)
+                .wrapping_add((usize::from(input.governor_tier) + 1) * (k + 3))
+                .wrapping_add(usize::from(input.t.to_le_bytes()[k % 8])))
+                % n;
+            let base = self.base_params.alpha[idx];
+            let low = (base - 0.5).max(0.1);
+            let high = (base + 0.5).min(2.0);
+            let before = self.overlay.alpha[idx];
+            let after = (before + delta).clamp(low, high);
+            let applied_q = Self::quantize_delta(after - before);
+            if applied_q != 0 {
+                self.overlay.alpha[idx] =
+                    (before + Self::dequantize_delta(applied_q)).clamp(low, high);
+                updated_params.push(ParamDelta {
+                    key: ParamKey::AlphaI(idx as u16),
+                    delta_q: applied_q,
+                });
+            }
+        }
+        updated_params.truncate(PLASTICITY_MAX_PARAMS);
+        let delta_digest = Self::delta_digest(&updated_params);
+        let params_digest_after = self.params_digest();
+        PlasticityUpdate {
+            enabled,
+            updated_params,
+            delta_digest,
+            params_digest_after,
+            quality: StageQuality::Ok,
+        }
+    }
+
     fn drive(&self, input: &LfmInput) -> f32 {
-        let spikes = (f32::from(input.spike_count) / self.params.kmax).clamp(0.0, 1.0);
+        let spikes = (f32::from(input.spike_count) / self.base_params.kmax).clamp(0.0, 1.0);
         let coherence_penalty = 1.0 - input.coherence.unwrap_or(1.0).clamp(0.0, 1.0);
-        (self.params.drive_w[0] * input.pressure.clamp(0.0, 1.0)
-            + self.params.drive_w[1] * input.surprise.clamp(0.0, 1.0)
-            + self.params.drive_w[2] * spikes
-            + self.params.drive_w[3] * input.sae_energy.clamp(0.0, 1.0)
-            + self.params.drive_w[4] * coherence_penalty
-            + self.params.drive_w[5] * input.instability.unwrap_or(0.0).clamp(0.0, 1.0)
-            + self.params.drive_w[6] * input.hormone_stress.unwrap_or(0.0).clamp(0.0, 1.0)
-            + self.params.drive_w[7] * input.neuro_arousal.unwrap_or(0.0).clamp(0.0, 1.0))
+        (self.base_params.drive_w[0] * input.pressure.clamp(0.0, 1.0)
+            + self.base_params.drive_w[1] * input.surprise.clamp(0.0, 1.0)
+            + self.base_params.drive_w[2] * spikes
+            + self.base_params.drive_w[3] * input.sae_energy.clamp(0.0, 1.0)
+            + self.base_params.drive_w[4] * coherence_penalty
+            + self.base_params.drive_w[5] * input.instability.unwrap_or(0.0).clamp(0.0, 1.0)
+            + self.base_params.drive_w[6] * input.hormone_stress.unwrap_or(0.0).clamp(0.0, 1.0)
+            + self.base_params.drive_w[7] * input.neuro_arousal.unwrap_or(0.0).clamp(0.0, 1.0))
         .clamp(0.0, 1.0)
     }
 
     fn deriv(&self, x: &[f32], u: f32, out: &mut [f32]) {
-        let n = self.params.n;
+        let n = self.base_params.n;
         for i in 0..n {
-            let mut acc = self.params.b[i] + self.params.wu[i] * u;
+            let mut acc = self.base_params.b[i] + self.overlay.wu[i] * u;
             let row = i * n;
             for (j, x_j) in x.iter().enumerate().take(n) {
-                acc += self.params.wx[row + j] * *x_j;
+                acc += self.base_params.wx[row + j] * *x_j;
             }
             let nonlin = acc.tanh();
-            out[i] = (-self.params.alpha[i] * x[i] + nonlin)
-                .clamp(-self.params.clamp_deriv, self.params.clamp_deriv);
+            out[i] = (-self.overlay.alpha[i] * x[i] + nonlin)
+                .clamp(-self.base_params.clamp_deriv, self.base_params.clamp_deriv);
         }
     }
 }
@@ -590,7 +779,7 @@ impl LfmKernel for LnnOdeLfmKernel {
 
     fn reset_session(&mut self, seed: u64) {
         let mut hasher = Sha256::new();
-        hasher.update(self.params.digest);
+        hasher.update(self.base_params.digest);
         hasher.update(seed.to_le_bytes());
         let bytes: [u8; 32] = hasher.finalize().into();
         for (idx, value) in self.x.iter_mut().enumerate() {
@@ -598,7 +787,7 @@ impl LfmKernel for LnnOdeLfmKernel {
             let b1 = bytes[(idx + 7) % bytes.len()];
             let raw = i16::from_le_bytes([b0, b1]);
             let centered = f32::from(raw % 2048) / 2048.0;
-            *value = centered.clamp(-self.params.clamp_state, self.params.clamp_state);
+            *value = centered.clamp(-self.base_params.clamp_state, self.base_params.clamp_state);
         }
     }
 
@@ -606,41 +795,71 @@ impl LfmKernel for LnnOdeLfmKernel {
         self.check_budget(budget)?;
 
         let u = self.drive(input);
-        let n = self.params.n;
+        let n = self.base_params.n;
         let mut k1 = vec![0.0_f32; n];
         let mut x_mid = vec![0.0_f32; n];
         let mut k2 = vec![0.0_f32; n];
 
         self.deriv(&self.x, u, &mut k1);
         for i in 0..n {
-            x_mid[i] = (self.x[i] + 0.5 * self.params.dt * k1[i])
-                .clamp(-self.params.clamp_state, self.params.clamp_state);
+            x_mid[i] = (self.x[i] + 0.5 * self.base_params.dt * k1[i])
+                .clamp(-self.base_params.clamp_state, self.base_params.clamp_state);
         }
         self.deriv(&x_mid, u, &mut k2);
         for (i, k2_i) in k2.iter().enumerate().take(n) {
-            self.x[i] = (self.x[i] + self.params.dt * *k2_i)
-                .clamp(-self.params.clamp_state, self.params.clamp_state);
+            self.x[i] = (self.x[i] + self.base_params.dt * *k2_i)
+                .clamp(-self.base_params.clamp_state, self.base_params.clamp_state);
         }
 
         let readout = self.x.iter().sum::<f32>() / n as f32;
         let state_norm =
-            (self.x.iter().map(|v| v.abs()).sum::<f32>() / n as f32 / self.params.state_scale)
+            (self.x.iter().map(|v| v.abs()).sum::<f32>() / n as f32 / self.base_params.state_scale)
                 .clamp(0.0, 1.0);
         let deriv_norm =
-            (k2.iter().map(|v| v.abs()).sum::<f32>() / n as f32 / self.params.clamp_deriv)
+            (k2.iter().map(|v| v.abs()).sum::<f32>() / n as f32 / self.base_params.clamp_deriv)
                 .clamp(0.0, 1.0);
         let uncertainty = (0.5 * u + 0.3 * state_norm + 0.2 * deriv_norm).clamp(0.0, 1.0);
         let stability = (1.0 - uncertainty).clamp(0.0, 1.0);
+
+        let plasticity_input = PlasticityInput {
+            t: input.t,
+            governor_tier: input.governor_tier.unwrap_or(3),
+            uncertainty,
+            coherence: input.coherence,
+            pressure: input.pressure,
+            surprise: input.surprise,
+            prediction_error: input.prediction_error,
+            seed: input.seed,
+        };
+        let plasticity_update = self.apply_plasticity(&plasticity_input);
+
+        if plasticity_update.enabled {
+            metrics::counter!("ucf_plasticity_enabled_total").increment(1);
+        } else {
+            let reason = if plasticity_input.governor_tier > 1 {
+                "governance"
+            } else if plasticity_input.uncertainty > 0.45 {
+                "uncertainty"
+            } else {
+                "coherence"
+            };
+            metrics::counter!("ucf_plasticity_disabled_total", "reason" => reason).increment(1);
+        }
+        metrics::counter!("ucf_plasticity_param_updates_total")
+            .increment(plasticity_update.updated_params.len() as u64);
+        let alpha_mean = self.overlay.alpha.iter().sum::<f32>() / self.overlay.alpha.len() as f32;
+        metrics::gauge!("ucf_lfm_alpha_mean").set(f64::from(alpha_mean));
 
         metrics::counter!("ucf_lfm_lnn_step_total").increment(1);
         metrics::histogram!("ucf_lfm_lnn_deriv_norm").record(f64::from(deriv_norm));
 
         let mut hasher = Sha256::new();
-        hasher.update(self.params.digest);
+        hasher.update(self.base_params.digest);
+        hasher.update(plasticity_update.params_digest_after);
         hasher.update(input.t.to_le_bytes());
         hasher.update(input.context_digest);
         for value in &self.x {
-            let normalized = (*value / self.params.clamp_state).clamp(-1.0, 1.0);
+            let normalized = (*value / self.base_params.clamp_state).clamp(-1.0, 1.0);
             hasher.update(quantize_signed_unit(normalized).to_le_bytes());
         }
         hasher.update(quantize_unit_u16(u).to_le_bytes());
@@ -661,9 +880,26 @@ impl LfmKernel for LnnOdeLfmKernel {
             state_norm,
             quality: StageQuality::Ok,
             notes: SmallNotes(vec![
-                format!("fixture={}", hex::encode(&self.params.digest[..6])),
+                format!("fixture={}", hex::encode(&self.base_params.digest[..6])),
                 format!("deriv_q={}", quantize_unit_u16(deriv_norm)),
             ]),
+            plasticity: Some(PlasticityRecord {
+                schema_version: 1,
+                t: input.t,
+                backend_pack_digest: [0; 32],
+                lfm_fixture_digest: self.base_params.digest,
+                enabled: plasticity_update.enabled,
+                governor_tier: plasticity_input.governor_tier,
+                uncertainty_q: quantize_unit_u16(plasticity_input.uncertainty),
+                coherence_q: plasticity_input.coherence.map(quantize_unit_u16),
+                pressure_q: quantize_unit_u16(plasticity_input.pressure),
+                surprise_q: quantize_unit_u16(plasticity_input.surprise),
+                prediction_error_q: plasticity_input.prediction_error.map(quantize_signed_unit),
+                param_deltas: plasticity_update.updated_params,
+                delta_digest: plasticity_update.delta_digest,
+                params_digest_after: plasticity_update.params_digest_after,
+                evidence_chain_digest: [0; 32],
+            }),
         })
     }
 }
@@ -811,6 +1047,7 @@ impl LfmKernel for ToyLfmKernel {
                 "fixture={}",
                 hex::encode(&self.fixture.digest[..6])
             )]),
+            plasticity: None,
         })
     }
 }
@@ -833,6 +1070,8 @@ mod tests {
             instability: Some(0.2),
             hormone_stress: Some(0.1),
             neuro_arousal: Some(0.2),
+            governor_tier: Some(0),
+            prediction_error: Some(0.25),
             seed: 7,
         }
     }
@@ -964,7 +1203,7 @@ mod tests {
         assert!(kernel
             .x
             .iter()
-            .all(|v| v.abs() <= kernel.params.clamp_state + f32::EPSILON));
+            .all(|v| v.abs() <= kernel.base_params.clamp_state + f32::EPSILON));
     }
 
     #[cfg(feature = "lfm-lnn")]
@@ -985,6 +1224,54 @@ mod tests {
             .step(&high, ComputeBudget::default())
             .expect("high");
         assert!(high_out.uncertainty >= low_out.uncertainty);
+    }
+
+    #[cfg(feature = "lfm-lnn")]
+    #[test]
+    fn lnn_plasticity_disabled_on_high_tier_or_uncertainty() {
+        let mut kernel = LnnOdeLfmKernel::default();
+        let mut inp = input();
+        inp.governor_tier = Some(3);
+        let out = kernel.step(&inp, ComputeBudget::default()).expect("step");
+        let rec = out.plasticity.expect("plasticity record");
+        assert!(!rec.enabled);
+
+        let mut kernel = LnnOdeLfmKernel::default();
+        let mut inp2 = input();
+        inp2.governor_tier = Some(0);
+        inp2.pressure = 1.0;
+        inp2.surprise = 1.0;
+        let out2 = kernel.step(&inp2, ComputeBudget::default()).expect("step");
+        let rec2 = out2.plasticity.expect("plasticity record");
+        assert!(!rec2.enabled || rec2.uncertainty_q <= quantize_unit_u16(0.45));
+    }
+
+    #[cfg(feature = "lfm-lnn")]
+    #[test]
+    fn lnn_plasticity_is_bounded_and_deterministic() {
+        let mut a = LnnOdeLfmKernel::default();
+        let mut b = LnnOdeLfmKernel::default();
+        a.reset_session(17);
+        b.reset_session(17);
+        let mut inp = input();
+        inp.governor_tier = Some(0);
+        inp.coherence = Some(0.9);
+        inp.prediction_error = Some(0.95);
+        inp.pressure = 0.2;
+
+        for tick in 1..=32 {
+            inp.t = tick;
+            let out_a = a.step(&inp, ComputeBudget::default()).expect("a step");
+            let out_b = b.step(&inp, ComputeBudget::default()).expect("b step");
+            let rec_a = out_a.plasticity.as_ref().expect("plasticity");
+            let rec_b = out_b.plasticity.as_ref().expect("plasticity");
+            assert_eq!(rec_a, rec_b);
+            assert!(rec_a.param_deltas.len() <= PLASTICITY_MAX_UPDATES_PER_TICK);
+            for delta in &rec_a.param_deltas {
+                assert!(delta.delta_q.abs() <= 20);
+            }
+            assert!(a.overlay.alpha.iter().all(|v| (0.1..=2.0).contains(v)));
+        }
     }
 
     #[cfg(feature = "lfm-lnn")]
