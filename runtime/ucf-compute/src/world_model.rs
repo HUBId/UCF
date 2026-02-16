@@ -1,5 +1,6 @@
 use sha2::{Digest, Sha256};
 
+use crate::evidence::quantize_signed_unit;
 use crate::risk_contract::SignalQuality;
 use crate::{ComputeBudget, ComputeError};
 
@@ -296,7 +297,7 @@ impl MockJepaPredictor {
         hasher.update(t.to_le_bytes());
         hasher.update(fixture_digest);
         for v in values {
-            hasher.update(v.to_bits().to_le_bytes());
+            hasher.update(quantize_signed_unit(*v).to_le_bytes());
         }
         hasher.finalize().into()
     }

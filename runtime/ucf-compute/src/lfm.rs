@@ -1,5 +1,6 @@
 use sha2::{Digest, Sha256};
 
+use crate::evidence::{quantize_signed_unit, quantize_unit_u16};
 use crate::feature_extractor::SmallNotes;
 use crate::world_model::StageQuality;
 use crate::{ComputeBudget, ComputeError};
@@ -354,12 +355,12 @@ impl LfmKernel for CandleLfmKernel {
         hasher.update(input.context_digest);
         hasher.update(input.world_digest);
         for value in &self.x_shadow {
-            hasher.update(value.to_bits().to_le_bytes());
+            hasher.update(quantize_signed_unit(value).to_le_bytes());
         }
         let liquid_state_digest: [u8; 32] = hasher.finalize().into();
 
         let mut readout_hasher = Sha256::new();
-        readout_hasher.update(readout.to_bits().to_le_bytes());
+        readout_hasher.update(quantize_unit_u16(readout).to_le_bytes());
         readout_hasher.update(liquid_state_digest);
         let liquid_readout_digest: [u8; 32] = readout_hasher.finalize().into();
 
@@ -451,7 +452,7 @@ impl ToyLfmKernel {
         hasher.update(input.context_digest);
         hasher.update(input.world_digest);
         for value in self.x {
-            hasher.update(value.to_bits().to_le_bytes());
+            hasher.update(quantize_signed_unit(value).to_le_bytes());
         }
         hasher.finalize().into()
     }
@@ -506,7 +507,7 @@ impl LfmKernel for ToyLfmKernel {
 
         let liquid_state_digest = self.state_digest(input);
         let mut readout_hasher = Sha256::new();
-        readout_hasher.update(readout.to_bits().to_le_bytes());
+        readout_hasher.update(quantize_unit_u16(readout).to_le_bytes());
         readout_hasher.update(liquid_state_digest);
         let liquid_readout_digest: [u8; 32] = readout_hasher.finalize().into();
 

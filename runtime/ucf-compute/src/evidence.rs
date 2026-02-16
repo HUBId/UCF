@@ -4,9 +4,24 @@ use crate::backend_pack::{BackendComponentId, BackendPackId};
 use crate::risk_contract::{BackendProfileId, EvidenceRef, RiskSignal};
 use crate::world_model::StageQuality;
 use crate::{ComputeInput, Spike};
+use ucf_types::{
+    canonicalize_f32, quantize_signed_unit_i16, quantize_unit, CANONICAL_UNIT_QUANT_MAX,
+};
 
-pub const COMPUTE_SUMMARY_SCHEMA_VERSION: u16 = 1;
+pub const COMPUTE_SUMMARY_SCHEMA_VERSION: u16 = 2;
 const CODE_VERSION_MAX_LEN: usize = 16;
+
+pub fn canonical_f32_bits(value: f32) -> u32 {
+    canonicalize_f32(value)
+}
+
+pub fn quantize_unit_u16(value: f32) -> u16 {
+    quantize_unit(value, CANONICAL_UNIT_QUANT_MAX)
+}
+
+pub fn quantize_signed_unit(value: f32) -> i16 {
+    quantize_signed_unit_i16(value)
+}
 
 pub trait CanonicalEncode {
     fn encode_canonical(&self, out: &mut Vec<u8>);
@@ -153,7 +168,7 @@ impl From<&[Spike]> for CanonicalSpikes {
             a.timestamp
                 .cmp(&b.timestamp)
                 .then_with(|| a.feature_id.cmp(&b.feature_id))
-                .then_with(|| a.magnitude.to_bits().cmp(&b.magnitude.to_bits()))
+                .then_with(|| canonical_f32_bits(a.magnitude).cmp(&canonical_f32_bits(b.magnitude)))
         });
         Self(spikes)
     }
@@ -189,8 +204,8 @@ impl CanonicalEncode for EvidenceRef {
 
 impl CanonicalEncode for RiskSignal {
     fn encode_canonical(&self, out: &mut Vec<u8>) {
-        out.extend_from_slice(&self.risk.to_bits().to_le_bytes());
-        out.extend_from_slice(&self.confidence.to_bits().to_le_bytes());
+        out.extend_from_slice(&quantize_unit_u16(self.risk).to_le_bytes());
+        out.extend_from_slice(&quantize_unit_u16(self.confidence).to_le_bytes());
         out.push(self.quality as u8);
         self.evidence.encode_canonical(out);
         out.extend_from_slice(&self.version.to_le_bytes());
@@ -203,7 +218,7 @@ impl CanonicalEncode for CanonicalSpikes {
         for spike in &self.0 {
             out.extend_from_slice(&spike.timestamp.to_le_bytes());
             out.extend_from_slice(&spike.feature_id.to_le_bytes());
-            out.extend_from_slice(&spike.magnitude.to_bits().to_le_bytes());
+            out.extend_from_slice(&quantize_unit_u16(spike.magnitude).to_le_bytes());
         }
     }
 }
@@ -304,10 +319,61 @@ mod tests {
     }
 
     #[test]
-    fn canonical_spikes_uses_float_bits() {
+    fn mini_fuzz_spikes_digest_no_panics() {
+        let mut seed = 0xA5A5_5A5A_u64;
+        for _ in 0..2048 {
+            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+            let len = ((seed >> 8) as usize) % 64;
+            let mut spikes = Vec::with_capacity(len);
+            for idx in 0..len {
+                seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+                let mag = ((seed >> 16) as u16) as f32 / u16::MAX as f32;
+                spikes.push(Spike {
+                    feature_id: (seed as u32) % 256,
+                    magnitude: mag,
+                    timestamp: idx as u64,
+                });
+            }
+            let digest = spikes_digest(&spikes);
+            assert_ne!(digest, [0; 32]);
+        }
+    }
+
+    #[test]
+    fn canonical_spikes_normalize_negative_zero() {
         let pos_zero = spikes_digest(&[spike(1, 0.0, 1)]);
         let neg_zero = spikes_digest(&[spike(1, -0.0, 1)]);
-        assert_ne!(pos_zero, neg_zero);
+        assert_eq!(pos_zero, neg_zero);
+    }
+
+    #[test]
+    fn risk_digest_stable_under_small_float_representation_drift() {
+        let base = RiskSignal {
+            risk: 0.3,
+            confidence: 0.7,
+            quality: SignalQuality::Unavailable,
+            evidence: EvidenceRef {
+                context_digest: [1; 32],
+                world_digest: None,
+                spikes_digest: None,
+                ssm_digest: None,
+                lfm_digest: None,
+                backend_profile: BackendProfileId::StubV1,
+                backend_pack_id: crate::BackendPackId(1),
+                fixtures_digest: [2; 32],
+                llm_backend: crate::BackendComponentId::ToyV1,
+                world_backend: crate::BackendComponentId::ToyV1,
+                sae_backend: crate::BackendComponentId::ToyV1,
+                ssm_backend: crate::BackendComponentId::ToyV1,
+                lfm_backend: crate::BackendComponentId::ToyV1,
+                seed: 9,
+                budget_profile_id: 1,
+            },
+            version: 1,
+        };
+        let mut drift = base;
+        drift.risk = 0.1 + 0.2;
+        assert_eq!(digest_canonical(&base), digest_canonical(&drift));
     }
 
     proptest! {

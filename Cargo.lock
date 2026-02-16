@@ -3112,6 +3112,7 @@ dependencies = [
  "tracing",
  "ucf-core",
  "ucf-frames",
+ "ucf-types",
 ]
 
 [[package]]
@@ -3216,6 +3217,7 @@ dependencies = [
  "sha2",
  "ucf-core",
  "ucf-frames",
+ "ucf-types",
 ]
 
 [[package]]
@@ -3570,6 +3572,7 @@ dependencies = [
  "ucf-core",
  "ucf-ess",
  "ucf-frames",
+ "ucf-types",
 ]
 
 [[package]]
@@ -3878,6 +3881,7 @@ dependencies = [
 name = "ucf-types"
 version = "0.1.0"
 dependencies = [
+ "proptest",
  "serde",
  "ucf-protocol",
 ]

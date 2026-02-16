@@ -23,6 +23,7 @@ use ucf_frames::v1::{
     ChannelCode, ComputeSignalsSummary, ControlFrame, CorrelationId, DecisionFrame, Intent,
     IntentId, IntentKind,
 };
+use ucf_types::{quantize_unit, CANONICAL_UNIT_QUANT_MAX};
 
 const REPORT_CAP: usize = 1000;
 const REPLAY_DIVERGENCE_CAP: usize = 64;
@@ -1150,13 +1151,13 @@ fn governance_signals_digest(
 
     let mut hasher = Sha256::new();
     hasher.update(t.to_le_bytes());
-    hasher.update(risk.to_bits().to_le_bytes());
-    hasher.update(confidence.to_bits().to_le_bytes());
+    hasher.update(quantize_unit_u16(risk).to_le_bytes());
+    hasher.update(quantize_unit_u16(confidence).to_le_bytes());
     put_opt_f32(&mut hasher, nsr_risk.map(|v| v.clamp(0.0, 1.0)));
     put_opt_f32(&mut hasher, coherence);
     put_opt_f32(&mut hasher, instability);
-    hasher.update(pressure.to_bits().to_le_bytes());
-    hasher.update(surprise.to_bits().to_le_bytes());
+    hasher.update(quantize_unit_u16(pressure).to_le_bytes());
+    hasher.update(quantize_unit_u16(surprise).to_le_bytes());
     put_opt_f32(&mut hasher, lfm_uncertainty);
     put_opt_f32(&mut hasher, lfm_stability);
     put_opt_f32(&mut hasher, hormone_stress.map(|v| v.clamp(0.0, 1.0)));
@@ -1166,7 +1167,7 @@ fn governance_signals_digest(
 fn put_opt_f32(hasher: &mut Sha256, value: Option<f32>) {
     if let Some(v) = value {
         hasher.update([1]);
-        hasher.update(v.to_bits().to_le_bytes());
+        hasher.update(quantize_unit_u16(v).to_le_bytes());
     } else {
         hasher.update([0]);
     }
@@ -1200,7 +1201,7 @@ fn issuance_tier(score: f32) -> u8 {
 }
 
 fn quantize_unit_u16(value: f32) -> u16 {
-    ((value.clamp(0.0, 1.0) * 65535.0).round()) as u16
+    quantize_unit(value, CANONICAL_UNIT_QUANT_MAX)
 }
 
 fn push_divergence(report: &mut ReplayReport, divergence: Divergence) {

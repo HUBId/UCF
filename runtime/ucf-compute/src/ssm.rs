@@ -1,5 +1,6 @@
 use sha2::{Digest, Sha256};
 
+use crate::evidence::{quantize_signed_unit, quantize_unit_u16};
 use crate::feature_extractor::SmallNotes;
 use crate::world_model::StageQuality;
 use crate::{ComputeBudget, ComputeError};
@@ -233,14 +234,14 @@ impl ToySsmKernel {
         hasher.update(seed.to_le_bytes());
         hasher.update(context_digest);
         for value in self.x {
-            hasher.update(value.to_bits().to_le_bytes());
+            hasher.update(quantize_signed_unit(value).to_le_bytes());
         }
         hasher.finalize().into()
     }
 
     fn readout_digest(&self, readout: f32, state_digest: [u8; 32]) -> [u8; 32] {
         let mut hasher = Sha256::new();
-        hasher.update(readout.to_bits().to_le_bytes());
+        hasher.update(quantize_unit_u16(readout).to_le_bytes());
         hasher.update(state_digest);
         hasher.update(self.fixture.digest);
         hasher.finalize().into()

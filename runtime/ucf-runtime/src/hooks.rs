@@ -545,7 +545,7 @@ mod tests {
             budget_profile_id: Some(1),
             seed: Some(7),
             risk_contract_version: Some(1),
-            compute_schema_version: Some(1),
+            compute_schema_version: Some(2),
             compute_chain_digest: Some([8; 32]),
             compute_code_version: Some("v0.0.0"),
             budget_exceeded_stage: None,
@@ -622,7 +622,7 @@ mod tests {
                 liquid_readout_digest: [3; 32],
                 uncertainty: (tick as f32 / 20.0).clamp(0.0, 1.0),
                 stability: (1.0 - tick as f32 / 20.0).clamp(0.0, 1.0),
-                schema_version: 1,
+                schema_version: 2,
                 digest: [0; 32],
             }
             .with_digest();

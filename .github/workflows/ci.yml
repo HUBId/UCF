@@ -38,3 +38,6 @@ jobs:
 
       - name: Fuzz targets compile (stable smoke)
         run: cargo check --manifest-path fuzz/Cargo.toml --bins
+
+      - name: Determinism replay guard
+        run: cargo run -p ucf-replay -- replay --fixture runtime/ucf-replay/fixtures/golden_replay_fixture.json --from 0 --to 100000 --mode compute --report replay_report.json

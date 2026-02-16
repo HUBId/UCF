@@ -2750,7 +2750,7 @@ impl RuntimeOrchestrator {
                     liquid_readout_digest: liquid_state_digest,
                     uncertainty,
                     stability,
-                    schema_version: 1,
+                    schema_version: 2,
                     digest: [0; 32],
                 }
                 .with_digest();
@@ -2787,7 +2787,7 @@ impl RuntimeOrchestrator {
                             mean_uncertainty: (sum_u / denom).clamp(0.0, 1.0),
                             mean_stability: (sum_s / denom).clamp(0.0, 1.0),
                             rolling_digest: *hasher.finalize().as_bytes(),
-                            schema_version: 1,
+                            schema_version: 2,
                             digest: [0; 32],
                         }
                         .with_digest();
