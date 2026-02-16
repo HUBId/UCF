@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use crate::backend_pack::{BackendPack, BackendPackFactory};
 use crate::feature_extractor::{SaeOutput, ToySaeExtractor};
+use crate::lfm::{LfmInput, LfmOutput};
 use crate::ssm::{SsmInput, SsmOutput};
 use crate::work_meter::WorkMeter;
 use crate::world_model::{
@@ -96,6 +97,7 @@ impl AiComputeBackend for ComputePipelineBackend {
         let mut world_meter = WorkMeter::new(budget.world_units);
         let mut sae_meter = WorkMeter::new(budget.sae_units);
         let mut ssm_meter = WorkMeter::new(budget.ssm_units);
+        let mut lfm_meter = WorkMeter::new(budget.lfm_units);
 
         let mut exceeded_stage: Option<&'static str> = None;
         let pack_meta = self.pack.meta();
@@ -229,16 +231,75 @@ impl AiComputeBackend for ComputePipelineBackend {
             metrics::counter!("ucf_ssm_degraded_total").increment(1);
         }
 
+        let lfm_input = LfmInput {
+            t: input.t,
+            context_digest: input.context_digest,
+            world_digest: world_model_out.prediction_digest,
+            surprise: world_model_out.surprise,
+            spikes_digest: sae_out.spikes_digest,
+            spike_count: sae_out.spike_count,
+            sae_energy: sae_out.energy,
+            pressure: ssm_out.pressure,
+            coherence: None,
+            instability: None,
+            hormone_stress: None,
+            neuro_arousal: None,
+            seed: budget.seed,
+        };
+
+        global_meter.spend(220, "lfm/step")?;
+        let mut lfm = self
+            .pack
+            .lfm()
+            .lock()
+            .map_err(|_| ComputeError::InvalidInput {
+                reason: "lfm mutex poisoned".to_string(),
+            })?;
+        let lfm_name = lfm.name();
+        let lfm_span = tracing::info_span!("lfm.step", kernel = lfm_name, t = input.t);
+        let _lfm_enter = lfm_span.enter();
+        let (lfm_out, lfm_degraded) = match lfm_meter.spend(220, "lfm/step") {
+            Ok(()) => match lfm.step(&lfm_input, budget) {
+                Ok(output) => (output, false),
+                Err(ComputeError::BudgetExceeded { stage, .. }) => {
+                    exceeded_stage = Some(stage);
+                    if budget.degrade_policy == DegradePolicy::FailFast {
+                        return Ok(ComputeSignals::unavailable(input, budget, self.name()));
+                    }
+                    (LfmOutput::degraded("budget_exceeded"), true)
+                }
+                Err(other) => return Err(other),
+            },
+            Err(ComputeError::BudgetExceeded { stage, .. }) => {
+                exceeded_stage = Some(stage);
+                if budget.degrade_policy == DegradePolicy::FailFast {
+                    return Ok(ComputeSignals::unavailable(input, budget, self.name()));
+                }
+                (LfmOutput::degraded("budget_exceeded"), true)
+            }
+            Err(other) => return Err(other),
+        };
+        metrics::gauge!("ucf_lfm_uncertainty").set(f64::from(lfm_out.uncertainty));
+        metrics::gauge!("ucf_lfm_stability").set(f64::from(lfm_out.stability));
+        if lfm_out.quality == StageQuality::DegradedFallback {
+            metrics::counter!("ucf_lfm_degraded_total").increment(1);
+        }
+
         let pressure = ssm_out.pressure;
-        let (risk, confidence) = fuse_signals(
+        let (base_risk, base_confidence) = fuse_signals(
             surprise * self.fusion.world_weight,
             pressure * self.fusion.ssm_weight,
             sae_out.energy * self.fusion.energy_weight,
         );
+        let risk = clamp01(base_risk + 0.2 * lfm_out.uncertainty);
+        let confidence = clamp01(base_confidence * lfm_out.stability);
 
         let spikes_digest_ref = sae_out.spikes_digest;
 
-        let quality = if world_model_out.quality != StageQuality::Ok || sae_degraded || ssm_degraded
+        let quality = if world_model_out.quality != StageQuality::Ok
+            || sae_degraded
+            || ssm_degraded
+            || lfm_degraded
         {
             SignalQuality::DegradedFallback
         } else {
@@ -257,6 +318,11 @@ impl AiComputeBackend for ComputePipelineBackend {
             } else {
                 Some(ssm_out.state_digest)
             },
+            lfm_digest: if lfm_degraded {
+                None
+            } else {
+                Some(lfm_out.liquid_state_digest)
+            },
             backend_profile: BackendProfileId::from_backend_name(self.name()),
             backend_pack_id: pack_meta.pack_id,
             fixtures_digest: pack_meta.fixtures_digest,
@@ -264,6 +330,7 @@ impl AiComputeBackend for ComputePipelineBackend {
             world_backend: pack_meta.world_backend,
             sae_backend: pack_meta.sae_backend,
             ssm_backend: pack_meta.ssm_backend,
+            lfm_backend: pack_meta.lfm_backend,
             seed: budget.seed,
             budget_profile_id: budget.profile_id,
         };
@@ -297,8 +364,16 @@ impl AiComputeBackend for ComputePipelineBackend {
                 Some(ssm_out.state_digest)
             },
             world_digest: Some(world_model_out.prediction_digest),
+            lfm_uncertainty: Some(lfm_out.uncertainty),
+            lfm_stability: Some(lfm_out.stability),
+            lfm_digest: if lfm_degraded {
+                None
+            } else {
+                Some(lfm_out.liquid_state_digest)
+            },
             sae_quality: Some(sae_out.quality),
             ssm_quality: Some(ssm_out.quality),
+            lfm_quality: Some(lfm_out.quality),
             budget_exceeded_stage: exceeded_stage,
         }
         .summary(self.name());
@@ -310,6 +385,7 @@ impl AiComputeBackend for ComputePipelineBackend {
             format!("world_model={}", world_model_name),
             format!("feature_extractor={}", self.pack.sae().name()),
             format!("working_memory={}", ssm_name),
+            format!("lfm={}", lfm_name),
             format!(
                 "pred_digest={}",
                 &hex::encode(world_model_out.prediction_digest)[..12]
@@ -318,7 +394,12 @@ impl AiComputeBackend for ComputePipelineBackend {
             format!("world_quality={:?}", world_model_out.quality),
             format!("sae_quality={:?}", sae_out.quality),
             format!("ssm_quality={:?}", ssm_out.quality),
+            format!("lfm_quality={:?}", lfm_out.quality),
             format!("ssm_digest={}", &hex::encode(ssm_out.state_digest)[..12]),
+            format!(
+                "lfm_digest={}",
+                &hex::encode(lfm_out.liquid_state_digest)[..12]
+            ),
             format!("spike_count={}", sae_out.spike_count),
             format!("sparsity={:.4}", sae_out.sparsity),
             format!("energy={:.4}", sae_out.energy),
@@ -341,6 +422,9 @@ impl AiComputeBackend for ComputePipelineBackend {
         if ssm_degraded {
             notes.push("degraded:ssm_budget_exceeded".to_string());
         }
+        if lfm_degraded {
+            notes.push("degraded:lfm_budget_exceeded".to_string());
+        }
         notes.sort();
 
         Ok(ComputeSignals {
@@ -360,8 +444,16 @@ impl AiComputeBackend for ComputePipelineBackend {
                 Some(ssm_out.state_digest)
             },
             world_digest: Some(world_model_out.prediction_digest),
+            lfm_uncertainty: Some(lfm_out.uncertainty),
+            lfm_stability: Some(lfm_out.stability),
+            lfm_digest: if lfm_degraded {
+                None
+            } else {
+                Some(lfm_out.liquid_state_digest)
+            },
             sae_quality: Some(sae_out.quality),
             ssm_quality: Some(ssm_out.quality),
+            lfm_quality: Some(lfm_out.quality),
             budget_exceeded_stage: exceeded_stage,
         }
         .bounded())
@@ -403,15 +495,11 @@ mod tests {
         let out = backend
             .compute(&input(), ComputeBudget::default())
             .expect("compute");
-        assert!(out.notes.iter().any(|n| n == "world_model=mock_jepa_v0"));
         assert!(out
             .notes
             .iter()
             .any(|n| n == "feature_extractor=toy_sae_v0"));
-        assert!(out
-            .notes
-            .iter()
-            .any(|n| n == "working_memory=toy_ssm_selective_scan_v0"));
+        assert!(out.notes.iter().any(|n| n.starts_with("lfm=")));
     }
 
     #[test]

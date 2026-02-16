@@ -244,6 +244,7 @@ pub struct BackendPackRecord {
     pub world_backend: u8,
     pub sae_backend: u8,
     pub ssm_backend: u8,
+    pub lfm_backend: u8,
     pub meta_digest: [u8; 32],
     pub reason: String,
 }

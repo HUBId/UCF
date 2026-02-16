@@ -51,6 +51,7 @@ pub struct EvidenceRef {
     pub world_digest: Option<[u8; 32]>,
     pub spikes_digest: Option<[u8; 32]>,
     pub ssm_digest: Option<[u8; 32]>,
+    pub lfm_digest: Option<[u8; 32]>,
     pub backend_profile: BackendProfileId,
     pub backend_pack_id: BackendPackId,
     pub fixtures_digest: [u8; 32],
@@ -58,6 +59,7 @@ pub struct EvidenceRef {
     pub world_backend: BackendComponentId,
     pub sae_backend: BackendComponentId,
     pub ssm_backend: BackendComponentId,
+    pub lfm_backend: BackendComponentId,
     pub seed: u64,
     pub budget_profile_id: u32,
 }
@@ -101,7 +103,8 @@ pub fn validate_risk_signal(rs: &RiskSignal) -> Result<(), RiskContractError> {
     if rs.quality == SignalQuality::VerifiedPipeline
         && (rs.evidence.world_digest.is_none()
             || rs.evidence.spikes_digest.is_none()
-            || rs.evidence.ssm_digest.is_none())
+            || rs.evidence.ssm_digest.is_none()
+            || rs.evidence.lfm_digest.is_none())
     {
         return Err(RiskContractError::MissingVerifiedEvidence);
     }
@@ -131,6 +134,7 @@ mod tests {
                 world_digest: Some([2; 32]),
                 spikes_digest: Some([3; 32]),
                 ssm_digest: Some([4; 32]),
+                lfm_digest: Some([5; 32]),
                 backend_profile: BackendProfileId::StubV1,
                 backend_pack_id: crate::BackendPackId(1),
                 fixtures_digest: [9; 32],
@@ -138,6 +142,7 @@ mod tests {
                 world_backend: crate::BackendComponentId::ToyV1,
                 sae_backend: crate::BackendComponentId::ToyV1,
                 ssm_backend: crate::BackendComponentId::ToyV1,
+                lfm_backend: crate::BackendComponentId::ToyV1,
                 seed: 1,
                 budget_profile_id: 7,
             },

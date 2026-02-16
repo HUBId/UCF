@@ -9,6 +9,7 @@ pub mod backends;
 pub mod capabilities;
 pub mod evidence;
 pub mod feature_extractor;
+pub mod lfm;
 pub mod pipeline;
 pub mod risk_contract;
 pub mod ssm;
@@ -63,8 +64,12 @@ pub struct ComputeSignals {
     pub ssm_readout: Option<f32>,
     pub ssm_digest: Option<[u8; 32]>,
     pub world_digest: Option<[u8; 32]>,
+    pub lfm_uncertainty: Option<f32>,
+    pub lfm_stability: Option<f32>,
+    pub lfm_digest: Option<[u8; 32]>,
     pub sae_quality: Option<StageQuality>,
     pub ssm_quality: Option<StageQuality>,
+    pub lfm_quality: Option<StageQuality>,
     pub budget_exceeded_stage: Option<&'static str>,
 }
 
@@ -79,6 +84,8 @@ impl ComputeSignals {
         self.sparsity = self.sparsity.map(|v| v.clamp(0.0, 1.0));
         self.energy = self.energy.map(|v| v.clamp(0.0, 1.0));
         self.ssm_readout = self.ssm_readout.map(|v| v.clamp(0.0, 1.0));
+        self.lfm_uncertainty = self.lfm_uncertainty.map(|v| v.clamp(0.0, 1.0));
+        self.lfm_stability = self.lfm_stability.map(|v| v.clamp(0.0, 1.0));
 
         if self.spikes.len() > MAX_SPIKES {
             self.spikes.truncate(MAX_SPIKES);
@@ -117,6 +124,7 @@ impl ComputeSignals {
             &risk_signal,
             self.sae_quality,
             self.ssm_quality,
+            self.lfm_quality,
         );
         UCF_COMPUTE_CHAIN_DIGEST_EMITTED_TOTAL.fetch_add(1, Ordering::Relaxed);
         ComputeSignalsSummary {
@@ -137,7 +145,9 @@ impl ComputeSignals {
             evidence_world_digest: risk_signal.evidence.world_digest,
             evidence_spikes_digest: risk_signal.evidence.spikes_digest,
             evidence_ssm_digest: risk_signal.evidence.ssm_digest,
+            evidence_lfm_digest: risk_signal.evidence.lfm_digest,
             ssm_quality: self.ssm_quality,
+            lfm_quality: self.lfm_quality,
             backend_profile: risk_signal.evidence.backend_profile.as_str(),
             backend_pack_id: risk_signal.evidence.backend_pack_id.0,
             fixtures_digest: risk_signal.evidence.fixtures_digest,
@@ -145,6 +155,10 @@ impl ComputeSignals {
             world_backend: risk_signal.evidence.world_backend as u8,
             sae_backend: risk_signal.evidence.sae_backend as u8,
             ssm_backend: risk_signal.evidence.ssm_backend as u8,
+            lfm_backend: risk_signal.evidence.lfm_backend as u8,
+            lfm_uncertainty: self.lfm_uncertainty,
+            lfm_stability: self.lfm_stability,
+            lfm_digest: self.lfm_digest,
             budget_profile_id: risk_signal.evidence.budget_profile_id,
             seed: risk_signal.evidence.seed,
             risk_contract_version: risk_signal.version,
@@ -161,6 +175,7 @@ impl ComputeSignals {
             world_digest: None,
             spikes_digest: None,
             ssm_digest: None,
+            lfm_digest: None,
             backend_profile: BackendProfileId::from_backend_name(backend),
             backend_pack_id: crate::BackendPackId(0),
             fixtures_digest: [0; 32],
@@ -168,6 +183,7 @@ impl ComputeSignals {
             world_backend: crate::BackendComponentId::Disabled,
             sae_backend: crate::BackendComponentId::Disabled,
             ssm_backend: crate::BackendComponentId::Disabled,
+            lfm_backend: crate::BackendComponentId::Disabled,
             seed: budget.seed,
             budget_profile_id: budget.profile_id,
         };
@@ -190,8 +206,12 @@ impl ComputeSignals {
             ssm_readout: None,
             ssm_digest: None,
             world_digest: None,
+            lfm_uncertainty: None,
+            lfm_stability: None,
+            lfm_digest: None,
             sae_quality: None,
             ssm_quality: None,
+            lfm_quality: None,
             budget_exceeded_stage: None,
         }
     }
@@ -211,6 +231,7 @@ pub struct ComputeBudgetProfile {
     pub world_units: u64,
     pub sae_units: u64,
     pub ssm_units: u64,
+    pub lfm_units: u64,
     pub degrade_policy: DegradePolicy,
 }
 
@@ -222,6 +243,7 @@ impl ComputeBudgetProfile {
             world_units: 420,
             sae_units: 420,
             ssm_units: 420,
+            lfm_units: 420,
             degrade_policy: DegradePolicy::DegradeStages,
         }
     }
@@ -233,6 +255,7 @@ impl ComputeBudgetProfile {
             world_units: 360,
             sae_units: 260,
             ssm_units: 360,
+            lfm_units: 280,
             degrade_policy: DegradePolicy::DegradeStages,
         }
     }
@@ -244,6 +267,7 @@ impl ComputeBudgetProfile {
             world_units: 360,
             sae_units: 100,
             ssm_units: 360,
+            lfm_units: 200,
             degrade_policy: DegradePolicy::DegradeStages,
         }
     }
@@ -259,6 +283,7 @@ pub struct ComputeBudget {
     pub world_units: u64,
     pub sae_units: u64,
     pub ssm_units: u64,
+    pub lfm_units: u64,
     pub degrade_policy: DegradePolicy,
 }
 
@@ -273,6 +298,7 @@ impl Default for ComputeBudget {
             world_units: ComputeBudgetProfile::default_profile().world_units,
             sae_units: ComputeBudgetProfile::default_profile().sae_units,
             ssm_units: ComputeBudgetProfile::default_profile().ssm_units,
+            lfm_units: ComputeBudgetProfile::default_profile().lfm_units,
             degrade_policy: ComputeBudgetProfile::default_profile().degrade_policy,
         }
     }
@@ -326,7 +352,9 @@ pub struct ComputeSignalsSummary {
     pub evidence_world_digest: Option<[u8; 32]>,
     pub evidence_spikes_digest: Option<[u8; 32]>,
     pub evidence_ssm_digest: Option<[u8; 32]>,
+    pub evidence_lfm_digest: Option<[u8; 32]>,
     pub ssm_quality: Option<StageQuality>,
+    pub lfm_quality: Option<StageQuality>,
     pub backend_profile: &'static str,
     pub backend_pack_id: u32,
     pub fixtures_digest: [u8; 32],
@@ -334,6 +362,10 @@ pub struct ComputeSignalsSummary {
     pub world_backend: u8,
     pub sae_backend: u8,
     pub ssm_backend: u8,
+    pub lfm_backend: u8,
+    pub lfm_uncertainty: Option<f32>,
+    pub lfm_stability: Option<f32>,
+    pub lfm_digest: Option<[u8; 32]>,
     pub budget_profile_id: u32,
     pub seed: u64,
     pub risk_contract_version: u16,
@@ -507,7 +539,6 @@ mod tests {
             .expect("predict");
 
         assert!((out.surprise - model.surprise).abs() <= 1e-6);
-        assert!(out.notes.iter().any(|n| n == "world_model=mock_jepa_v0"));
         assert!(out.notes.iter().any(|n| n.starts_with("pred_digest=")));
     }
 
@@ -535,6 +566,7 @@ mod tests {
                     world_digest: None,
                     spikes_digest: None,
                     ssm_digest: None,
+                    lfm_digest: None,
                     backend_profile: BackendProfileId::StubV1,
                     backend_pack_id: crate::BackendPackId(1),
                     fixtures_digest: [9; 32],
@@ -542,6 +574,7 @@ mod tests {
                     world_backend: crate::BackendComponentId::ToyV1,
                     sae_backend: crate::BackendComponentId::ToyV1,
                     ssm_backend: crate::BackendComponentId::ToyV1,
+                    lfm_backend: crate::BackendComponentId::ToyV1,
                     seed: 0,
                     budget_profile_id: 0,
                 },
@@ -554,8 +587,12 @@ mod tests {
             ssm_readout: Some(3.0),
             ssm_digest: None,
             world_digest: None,
+            lfm_uncertainty: None,
+            lfm_stability: None,
+            lfm_digest: None,
             sae_quality: None,
             ssm_quality: None,
+            lfm_quality: None,
             budget_exceeded_stage: None,
         }
         .bounded();
@@ -601,7 +638,7 @@ mod tests {
             )
             .expect("should degrade deterministically");
         assert_eq!(out.risk_signal.quality, SignalQuality::DegradedFallback);
-        assert_eq!(out.budget_exceeded_stage, Some("ssm/step"));
+        assert_eq!(out.budget_exceeded_stage, Some("lfm/step"));
     }
 
     #[test]

@@ -45,6 +45,7 @@ fn allow_low_risk(corr: u64) -> DecisionFrame {
         evidence_world_digest: None,
         evidence_spikes_digest: None,
         evidence_ssm_digest: None,
+        evidence_lfm_digest: None,
         backend_profile: None,
         backend_pack_id: None,
         fixtures_digest: None,
@@ -52,6 +53,10 @@ fn allow_low_risk(corr: u64) -> DecisionFrame {
         world_backend: None,
         sae_backend: None,
         ssm_backend: None,
+        lfm_backend: None,
+        lfm_uncertainty: None,
+        lfm_stability: None,
+        lfm_digest: None,
         budget_profile_id: None,
         seed: None,
         risk_contract_version: None,
@@ -59,6 +64,7 @@ fn allow_low_risk(corr: u64) -> DecisionFrame {
         compute_chain_digest: None,
         compute_code_version: None,
         budget_exceeded_stage: None,
+        lfm_quality: None,
         coherence: None,
         instability: None,
         phi_proxy: None,
@@ -1405,7 +1411,7 @@ fn degraded_budget_marks_risk_quality_and_persists_evidence() {
     assert!(compute.evidence_world_digest.is_some());
     assert!(compute.evidence_spikes_digest.is_none());
     assert!(compute.evidence_ssm_digest.is_some());
-    assert_eq!(compute.budget_exceeded_stage, Some("sae/extract"));
+    assert_eq!(compute.budget_exceeded_stage, Some("lfm/step"));
 
     std::env::remove_var("UCF_COMPUTE_BUDGET_PROFILE");
 }
@@ -1939,6 +1945,7 @@ fn evolution_enabled_persists_proposal_and_evaluation_without_actions() {
             evidence_world_digest: None,
             evidence_spikes_digest: None,
             evidence_ssm_digest: None,
+            evidence_lfm_digest: None,
             backend_profile: None,
             backend_pack_id: None,
             fixtures_digest: None,
@@ -1946,6 +1953,10 @@ fn evolution_enabled_persists_proposal_and_evaluation_without_actions() {
             world_backend: None,
             sae_backend: None,
             ssm_backend: None,
+            lfm_backend: None,
+            lfm_uncertainty: None,
+            lfm_stability: None,
+            lfm_digest: None,
             budget_profile_id: None,
             seed: None,
             risk_contract_version: None,
@@ -1953,6 +1964,7 @@ fn evolution_enabled_persists_proposal_and_evaluation_without_actions() {
             compute_chain_digest: Some([3; 32]),
             compute_code_version: None,
             budget_exceeded_stage: Some("world"),
+            lfm_quality: None,
             coherence: Some(0.2),
             instability: Some(0.9),
             phi_proxy: Some(0.1),
