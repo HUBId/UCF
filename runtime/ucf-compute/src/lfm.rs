@@ -199,6 +199,206 @@ impl Default for ToyLfmKernel {
     }
 }
 
+#[cfg(feature = "lfm-candle")]
+#[derive(Debug, Clone)]
+pub struct CandleLfmKernel {
+    fixture: LfmFixture,
+    x_shadow: Vec<f32>,
+}
+
+#[cfg(feature = "lfm-candle")]
+impl Default for CandleLfmKernel {
+    fn default() -> Self {
+        let fixture =
+            LfmFixture::parse_json(LFM_FIXTURE_JSON).expect("embedded LFM fixture must be valid");
+        let mut this = Self {
+            fixture,
+            x_shadow: vec![0.0; LFM_STATE_DIM],
+        };
+        this.reset_session(0);
+        this
+    }
+}
+
+#[cfg(feature = "lfm-candle")]
+impl LfmKernel for CandleLfmKernel {
+    fn name(&self) -> &'static str {
+        "candle_lfm_liquid_dynamics_v1"
+    }
+
+    fn reset_session(&mut self, seed: u64) {
+        let mut hasher = Sha256::new();
+        hasher.update(self.fixture.digest);
+        hasher.update(seed.to_le_bytes());
+        let bytes: [u8; 32] = hasher.finalize().into();
+        for (idx, value) in self.x_shadow.iter_mut().enumerate() {
+            let b = bytes[idx % bytes.len()];
+            let centered = ((f32::from(b) / 255.0) * 2.0) - 1.0;
+            *value = centered.clamp(-1.0, 1.0);
+        }
+    }
+
+    fn step(&mut self, input: &LfmInput, budget: ComputeBudget) -> Result<LfmOutput, ComputeError> {
+        use candle_core::{Device, Tensor};
+
+        let mut work_units = 16_u64;
+        ToyLfmKernel::check_budget(work_units, budget)?;
+        let u = ToyLfmKernel {
+            x: [0.0; LFM_STATE_DIM],
+            fixture: self.fixture,
+        }
+        .drive(input);
+        let mask = ToyLfmKernel::select_mask(input.spikes_digest);
+
+        let mut gated = vec![0.0_f32; LFM_STATE_DIM];
+        for idx in 0..LFM_STATE_DIM {
+            work_units = work_units.saturating_add(4);
+            ToyLfmKernel::check_budget(work_units, budget)?;
+            gated[idx] = if mask[idx] {
+                self.fixture.b[idx] * u
+            } else {
+                0.0
+            };
+        }
+
+        let device = Device::Cpu;
+        let x = Tensor::from_slice(&self.x_shadow, LFM_STATE_DIM, &device).map_err(|err| {
+            ComputeError::Internal {
+                reason: format!("lfm candle x tensor: {err}"),
+            }
+        })?;
+        let a = Tensor::from_slice(&self.fixture.a, LFM_STATE_DIM, &device).map_err(|err| {
+            ComputeError::Internal {
+                reason: format!("lfm candle a tensor: {err}"),
+            }
+        })?;
+        let decay = Tensor::from_slice(&[0.985_f32; LFM_STATE_DIM], LFM_STATE_DIM, &device)
+            .map_err(|err| ComputeError::Internal {
+                reason: format!("lfm candle decay tensor: {err}"),
+            })?;
+        let mask_f32: Vec<f32> = mask
+            .iter()
+            .map(|enabled| if *enabled { 1.0 } else { 0.0 })
+            .collect();
+        let mask_t = Tensor::from_slice(&mask_f32, LFM_STATE_DIM, &device).map_err(|err| {
+            ComputeError::Internal {
+                reason: format!("lfm candle mask tensor: {err}"),
+            }
+        })?;
+        let gated_t = Tensor::from_slice(&gated, LFM_STATE_DIM, &device).map_err(|err| {
+            ComputeError::Internal {
+                reason: format!("lfm candle gated tensor: {err}"),
+            }
+        })?;
+
+        let active = a
+            .broadcast_mul(&x)
+            .and_then(|t| t.broadcast_add(&gated_t))
+            .map_err(|err| ComputeError::Internal {
+                reason: format!("lfm candle active update: {err}"),
+            })?;
+        let inactive = decay
+            .broadcast_mul(&x)
+            .map_err(|err| ComputeError::Internal {
+                reason: format!("lfm candle inactive update: {err}"),
+            })?;
+        let one_minus_mask = Tensor::from_slice(
+            &mask_f32
+                .iter()
+                .map(|v| if *v > 0.5 { 0.0 } else { 1.0 })
+                .collect::<Vec<f32>>(),
+            LFM_STATE_DIM,
+            &device,
+        )
+        .map_err(|err| ComputeError::Internal {
+            reason: format!("lfm candle inverse mask tensor: {err}"),
+        })?;
+        let merged = mask_t
+            .broadcast_mul(&active)
+            .and_then(|t| {
+                one_minus_mask
+                    .broadcast_mul(&inactive)
+                    .and_then(|i| t.broadcast_add(&i))
+            })
+            .map_err(|err| ComputeError::Internal {
+                reason: format!("lfm candle merge update: {err}"),
+            })?;
+
+        let mut x_next = merged
+            .to_vec1::<f32>()
+            .map_err(|err| ComputeError::Internal {
+                reason: format!("lfm candle readback: {err}"),
+            })?;
+        for value in &mut x_next {
+            *value = value.clamp(-1.0, 1.0);
+        }
+        self.x_shadow.copy_from_slice(&x_next);
+
+        let mut readout = 0.0_f32;
+        for idx in 0..LFM_STATE_DIM {
+            work_units = work_units.saturating_add(2);
+            ToyLfmKernel::check_budget(work_units, budget)?;
+            readout += self.fixture.c[idx] * self.x_shadow[idx];
+        }
+
+        let state_norm = (self.x_shadow.iter().map(|v| v.abs()).sum::<f32>()
+            / LFM_STATE_DIM as f32
+            / self.fixture.state_scale)
+            .clamp(0.0, 1.0);
+        let uncertainty = (0.6 * u + 0.4 * state_norm).clamp(0.0, 1.0);
+        let stability = (1.0 - uncertainty).clamp(0.0, 1.0);
+
+        let mut hasher = Sha256::new();
+        hasher.update(self.fixture.digest);
+        hasher.update(input.t.to_le_bytes());
+        hasher.update(input.context_digest);
+        hasher.update(input.world_digest);
+        for value in &self.x_shadow {
+            hasher.update(value.to_bits().to_le_bytes());
+        }
+        let liquid_state_digest: [u8; 32] = hasher.finalize().into();
+
+        let mut readout_hasher = Sha256::new();
+        readout_hasher.update(readout.to_bits().to_le_bytes());
+        readout_hasher.update(liquid_state_digest);
+        let liquid_readout_digest: [u8; 32] = readout_hasher.finalize().into();
+
+        Ok(LfmOutput {
+            liquid_state_digest,
+            liquid_readout_digest,
+            uncertainty,
+            stability,
+            state_norm,
+            quality: StageQuality::Ok,
+            notes: SmallNotes(vec![format!(
+                "fixture={}",
+                hex::encode(&self.fixture.digest[..6])
+            )]),
+        })
+    }
+}
+
+#[cfg(feature = "lfm-burn")]
+#[derive(Debug, Clone, Default)]
+pub struct BurnLfmKernel;
+
+#[cfg(feature = "lfm-burn")]
+impl LfmKernel for BurnLfmKernel {
+    fn name(&self) -> &'static str {
+        "burn_lfm_liquid_dynamics_v0"
+    }
+
+    fn reset_session(&mut self, _seed: u64) {}
+
+    fn step(
+        &mut self,
+        _input: &LfmInput,
+        _budget: ComputeBudget,
+    ) -> Result<LfmOutput, ComputeError> {
+        Err(ComputeError::BackendDisabled)
+    }
+}
+
 impl ToyLfmKernel {
     fn check_budget(work_units: u64, budget: ComputeBudget) -> Result<(), ComputeError> {
         let elapsed_micros = work_units / LFM_WORK_SCALE;
@@ -396,6 +596,39 @@ mod tests {
         assert!(high_out.uncertainty >= low_out.uncertainty);
     }
 
+    #[cfg(feature = "lfm-candle")]
+    #[test]
+    fn candle_deterministic_for_same_sequence() {
+        let mut a = CandleLfmKernel::default();
+        let mut b = CandleLfmKernel::default();
+        a.reset_session(9);
+        b.reset_session(9);
+
+        let first_a = a.step(&input(), ComputeBudget::default()).expect("step");
+        let first_b = b.step(&input(), ComputeBudget::default()).expect("step");
+        assert_eq!(first_a, first_b);
+
+        let mut next = input();
+        next.t = 4;
+        next.pressure = 0.8;
+        let second_a = a.step(&next, ComputeBudget::default()).expect("step");
+        let second_b = b.step(&next, ComputeBudget::default()).expect("step");
+        assert_eq!(second_a, second_b);
+    }
+
+    #[cfg(feature = "lfm-candle")]
+    #[test]
+    fn candle_matches_toy_contract_outputs() {
+        let mut toy = ToyLfmKernel::default();
+        let mut candle = CandleLfmKernel::default();
+        toy.reset_session(13);
+        candle.reset_session(13);
+        let out_toy = toy.step(&input(), ComputeBudget::default()).expect("toy");
+        let out_candle = candle
+            .step(&input(), ComputeBudget::default())
+            .expect("candle");
+        assert_eq!(out_toy, out_candle);
+    }
     #[test]
     fn budget_exceeded_is_deterministic() {
         let mut kernel = ToyLfmKernel::default();

@@ -6,7 +6,7 @@
 
 Use environment variables:
 
-- `UCF_BACKEND_PACK=toy_v1|stub_v0|candle_toy_v1|burn_toy_v1`
+- `UCF_BACKEND_PACK=toy_v1|stub_v0|candle_toy_v1|candle_liquid_v1|burn_toy_v1`
 - `UCF_BACKEND_SEED=<u64>`
 
 ## Fixtures
@@ -17,6 +17,7 @@ Fixtures are committed and loaded offline via `include_bytes!`:
 - `runtime/ucf-compute/fixtures/jepa_dyn_v1.json`
 - `runtime/ucf-compute/fixtures/sae_proj_v1.json`
 - `runtime/ucf-compute/fixtures/ssm_toy_v1.json`
+- `runtime/ucf-compute/fixtures/lfm_params_v1.json`
 
 `FixtureManager` computes per-fixture digests and an overall digest in canonical order.
 

@@ -10,6 +10,8 @@ compute-candle = ["dep:candle-core"]
 compute-burn = []
 llm-candle = ["dep:candle-core"]
 llm-burn = []
+lfm-candle = ["dep:candle-core"]
+lfm-burn = []
 
 [dependencies]
 sha2 = { workspace = true }

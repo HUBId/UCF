@@ -4,7 +4,9 @@ The LFM stage is a **first-class compute stage** in the UCF compute pipeline, ex
 
 ## Purpose
 
-`ToyLfmKernel` is a deterministic, offline, bounded liquid-dynamics stub (`toy_lfm_liquid_dynamics_v0`) that provides:
+`ToyLfmKernel` is the default deterministic, offline, bounded liquid-dynamics stub (`toy_lfm_liquid_dynamics_v0`).
+
+`CandleLfmKernel` (`candle_lfm_liquid_dynamics_v1`) is available behind `--features lfm-candle` and uses CPU Candle tensors for the state update path while keeping deterministic reductions/digests in Rust.
 
 - `liquid_state_digest`
 - `liquid_readout_digest`
@@ -42,7 +44,7 @@ The stage integrates via `LfmKernel`:
 
 ## Dynamics (v0 stub)
 
-Fixture file: `runtime/ucf-compute/fixtures/lfm_params_v1.json`.
+Fixture file: `runtime/ucf-compute/fixtures/lfm_params_v1.json` (committed offline fixture loaded via `include_bytes!`).
 
 State dimension is fixed (`N=32`), with deterministic per-tick update:
 
@@ -86,3 +88,12 @@ The `LfmKernel` trait allows later adapter implementations (e.g., Candle/Burn) w
 - deterministic canonical evidence wiring,
 - bounded summaries/digests,
 - fixed failure policy semantics.
+
+
+## Backend profiles
+
+- `toy_v1`: toy LFM kernel
+- `candle_toy_v1`: candle LFM + candle LLM (LLM falls back to stub if llm-candle is disabled)
+- `candle_liquid_v1`: candle LFM only; other components remain toy/stub
+
+Selecting a candle-LFM profile without `lfm-candle` returns `BackendDisabled` safely.
