@@ -11,6 +11,8 @@ use crate::feature_extractor::ToySaeExtractor;
 use crate::lfm::BurnLfmKernel;
 #[cfg(feature = "lfm-candle")]
 use crate::lfm::CandleLfmKernel;
+#[cfg(feature = "lfm-lnn")]
+use crate::lfm::LnnOdeLfmKernel;
 use crate::lfm::{LfmKernel, ToyLfmKernel};
 use crate::ssm::{SsmKernel, ToySsmKernel};
 use crate::world_model::MockJepaPredictor;
@@ -29,6 +31,7 @@ pub enum BackendComponentId {
     ToyV1 = 1,
     CandleToyV1 = 2,
     BurnToyV1 = 3,
+    LnnOdeV1 = 4,
     Disabled = 255,
 }
 
@@ -39,16 +42,18 @@ pub enum FixtureId {
     SaeProjV1,
     SsmParamsV1,
     LfmParamsV1,
+    LfmLnnParamsV1,
 }
 
 impl FixtureId {
-    pub const fn canonical_order() -> [Self; 5] {
+    pub const fn canonical_order() -> [Self; 6] {
         [
             Self::ToyLlmWeightsV1,
             Self::JepaDynV1,
             Self::SaeProjV1,
             Self::SsmParamsV1,
             Self::LfmParamsV1,
+            Self::LfmLnnParamsV1,
         ]
     }
 }
@@ -74,6 +79,9 @@ impl FixtureManager {
             FixtureId::SaeProjV1 => include_bytes!("../fixtures/sae_proj_v1.json").as_slice(),
             FixtureId::SsmParamsV1 => include_bytes!("../fixtures/ssm_toy_v1.json").as_slice(),
             FixtureId::LfmParamsV1 => include_bytes!("../fixtures/lfm_params_v1.json").as_slice(),
+            FixtureId::LfmLnnParamsV1 => {
+                include_bytes!("../fixtures/lfm_lnn_params_v1.json").as_slice()
+            }
         };
         if bytes.len() > MAX_FIXTURE_BYTES {
             return Err(ComputeError::InvalidInput {
@@ -187,6 +195,7 @@ pub enum BackendPackKind {
     CandleToyV1,
     CandleLiquidV1,
     BurnToyV1,
+    ToyLnnV1,
 }
 
 impl BackendPackKind {
@@ -197,6 +206,7 @@ impl BackendPackKind {
             "candle_toy_v1" => Some(Self::CandleToyV1),
             "candle_liquid_v1" => Some(Self::CandleLiquidV1),
             "burn_toy_v1" => Some(Self::BurnToyV1),
+            "toy_lnn_v1" => Some(Self::ToyLnnV1),
             _ => None,
         }
     }
@@ -208,6 +218,7 @@ impl BackendPackKind {
             Self::CandleToyV1 => "candle_toy_v1",
             Self::CandleLiquidV1 => "candle_liquid_v1",
             Self::BurnToyV1 => "burn_toy_v1",
+            Self::ToyLnnV1 => "toy_lnn_v1",
         }
     }
 
@@ -218,6 +229,7 @@ impl BackendPackKind {
             Self::CandleToyV1 => BackendPackId(2),
             Self::CandleLiquidV1 => BackendPackId(4),
             Self::BurnToyV1 => BackendPackId(3),
+            Self::ToyLnnV1 => BackendPackId(5),
         }
     }
 }
@@ -284,6 +296,7 @@ impl BackendPackFactory {
             BackendPackKind::BurnToyV1 => {
                 (BackendComponentId::BurnToyV1, BackendComponentId::BurnToyV1)
             }
+            BackendPackKind::ToyLnnV1 => (BackendComponentId::ToyV1, BackendComponentId::ToyV1),
         };
 
         let llm_cfg = match cfg.pack {
@@ -304,6 +317,11 @@ impl BackendPackFactory {
             },
             BackendPackKind::BurnToyV1 => LlmBackendConfig {
                 kind: crate::capabilities::LlmBackendKind::Burn,
+                seed: cfg.seed,
+                max_tokens: 128,
+            },
+            BackendPackKind::ToyLnnV1 => LlmBackendConfig {
+                kind: crate::capabilities::LlmBackendKind::Stub,
                 seed: cfg.seed,
                 max_tokens: 128,
             },
@@ -334,6 +352,19 @@ impl BackendPackFactory {
                         (BackendComponentId::BurnToyV1, Box::new(BurnLfmKernel))
                     }
                     #[cfg(not(feature = "lfm-burn"))]
+                    {
+                        return Err(ComputeError::BackendDisabled);
+                    }
+                }
+                BackendPackKind::ToyLnnV1 => {
+                    #[cfg(feature = "lfm-lnn")]
+                    {
+                        (
+                            BackendComponentId::LnnOdeV1,
+                            Box::new(LnnOdeLfmKernel::default()),
+                        )
+                    }
+                    #[cfg(not(feature = "lfm-lnn"))]
                     {
                         return Err(ComputeError::BackendDisabled);
                     }
@@ -392,6 +423,33 @@ mod tests {
             BackendPackKind::parse("candle_liquid_v1"),
             Some(BackendPackKind::CandleLiquidV1)
         );
+    }
+
+    #[test]
+    fn parse_toy_lnn_pack() {
+        assert_eq!(
+            BackendPackKind::parse("toy_lnn_v1"),
+            Some(BackendPackKind::ToyLnnV1)
+        );
+    }
+
+    #[test]
+    fn toy_lnn_feature_gate_behavior() {
+        let cfg = BackendPackConfig {
+            pack: BackendPackKind::ToyLnnV1,
+            seed: 5,
+        };
+        #[cfg(not(feature = "lfm-lnn"))]
+        {
+            let result = BackendPackFactory::build(cfg);
+            assert!(matches!(result, Err(ComputeError::BackendDisabled)));
+        }
+        #[cfg(feature = "lfm-lnn")]
+        {
+            let pack = BackendPackFactory::build(cfg).expect("pack");
+            assert_eq!(pack.meta().lfm_backend, BackendComponentId::LnnOdeV1);
+            assert_eq!(pack.meta().pack_name, "toy_lnn_v1");
+        }
     }
 
     #[test]

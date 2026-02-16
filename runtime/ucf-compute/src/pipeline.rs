@@ -292,6 +292,9 @@ impl AiComputeBackend for ComputePipelineBackend {
         if lfm_out.quality == StageQuality::DegradedFallback {
             metrics::counter!("ucf_lfm_degraded_total", "backend" => lfm_backend_label)
                 .increment(1);
+            if lfm_name.contains("lnn") {
+                metrics::counter!("ucf_lfm_lnn_degraded_total").increment(1);
+            }
         }
 
         let pressure = ssm_out.pressure;

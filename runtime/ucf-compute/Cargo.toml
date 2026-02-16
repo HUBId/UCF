@@ -12,6 +12,7 @@ llm-candle = ["dep:candle-core"]
 llm-burn = []
 lfm-candle = ["dep:candle-core"]
 lfm-burn = []
+lfm-lnn = []
 
 [dependencies]
 sha2 = { workspace = true }
