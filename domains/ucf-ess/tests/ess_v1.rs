@@ -1,5 +1,8 @@
 use ucf_core::types::{SimTime, Tick, WindowId};
-use ucf_ess::v1::{EssError, ExperienceRecord, ExperienceStore, IdAllocator, InMemoryEss};
+use ucf_ess::v1::{
+    EssError, ExperienceRecord, ExperienceStore, IdAllocator, InMemoryEss, LfmSummaryRecord,
+    LfmWindowRecord,
+};
 use ucf_frames::v1::{
     ChannelCode, ControlFrame, CorrelationId, DecisionFrame, Intent, IntentId, IntentKind,
 };
@@ -201,4 +204,73 @@ fn constructors_default_neuromod_to_none() {
         ExperienceRecord::note(ids.next(), time(99, 3), corr, "note").neuromod,
         None
     );
+}
+
+#[test]
+fn lfm_summary_digest_is_stable() {
+    let summary = LfmSummaryRecord {
+        t: 42,
+        decision_id: Some(7),
+        evidence_chain_digest: [1; 32],
+        backend_pack_digest: [2; 32],
+        liquid_state_digest: [3; 32],
+        liquid_readout_digest: [4; 32],
+        uncertainty: 0.3,
+        stability: 0.8,
+        schema_version: 1,
+        digest: [0; 32],
+    };
+    let a = summary.with_digest();
+    let b = summary.with_digest();
+    assert_eq!(a.digest, b.digest);
+}
+
+#[test]
+fn lfm_records_can_be_appended() {
+    let mut ess = InMemoryEss::new();
+    let mut ids = IdAllocator::new(2000);
+    let corr = CorrelationId(88);
+    let t = time(55, 1);
+
+    let summary = LfmSummaryRecord {
+        t: 55,
+        decision_id: Some(2001),
+        evidence_chain_digest: [1; 32],
+        backend_pack_digest: [2; 32],
+        liquid_state_digest: [3; 32],
+        liquid_readout_digest: [4; 32],
+        uncertainty: 0.4,
+        stability: 0.7,
+        schema_version: 1,
+        digest: [0; 32],
+    }
+    .with_digest();
+    let window = LfmWindowRecord {
+        t0: 50,
+        t1: 55,
+        sample_count: 4,
+        mean_uncertainty: 0.35,
+        mean_stability: 0.72,
+        rolling_digest: [9; 32],
+        schema_version: 1,
+        digest: [0; 32],
+    }
+    .with_digest();
+
+    ess.append(ExperienceRecord::from_lfm_summary(
+        ids.next(),
+        t,
+        corr,
+        summary,
+    ))
+    .expect("lfm summary append should succeed");
+    ess.append(ExperienceRecord::from_lfm_window(
+        ids.next(),
+        time(56, 1),
+        corr,
+        window,
+    ))
+    .expect("lfm window append should succeed");
+
+    assert_eq!(ess.len(), 2);
 }

@@ -180,12 +180,22 @@ impl Default for DecisionBudget {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LiquidContextWindowSummary {
+    pub sample_count: u16,
+    pub mean_uncertainty: f32,
+    pub max_uncertainty: f32,
+    pub mean_stability: f32,
+    pub rolling_digest: [u8; 32],
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DecisionContext {
     pub now_t: u64,
     pub risk: f32,
     pub confidence: f32,
     pub evidence_chain_digest: [u8; 32],
     pub planning_allowed: bool,
+    pub liquid_context: Option<LiquidContextWindowSummary>,
 }
 
 pub trait CandidateGenerator {
@@ -227,7 +237,12 @@ impl CandidateGenerator for DefaultCandidateGeneratorV0 {
         }));
 
         if ctx.planning_allowed {
-            let tool_intents = if ctx.risk > 0.7 || ctx.confidence < 0.35 {
+            let liquid_uncertainty_high = ctx
+                .liquid_context
+                .map(|window| window.mean_uncertainty > 0.75 || window.max_uncertainty > 0.9)
+                .unwrap_or(false);
+            let tool_intents = if ctx.risk > 0.7 || ctx.confidence < 0.35 || liquid_uncertainty_high
+            {
                 Vec::new()
             } else {
                 vec![ToolIntent::new(
@@ -436,6 +451,7 @@ mod tests {
             confidence: 0.8,
             evidence_chain_digest: [3; 32],
             planning_allowed: true,
+            liquid_context: None,
         };
         let g = DefaultCandidateGeneratorV0;
         let left = g.generate(&frame(), &ctx, DecisionBudget::default());
