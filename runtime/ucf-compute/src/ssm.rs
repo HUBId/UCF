@@ -99,7 +99,7 @@ impl WorkingMemoryModel for MockSsmSelectiveScan {
         seed_bytes.copy_from_slice(&state.digest[0..8]);
         let mut prng = SplitMix64::new(u64::from_le_bytes(seed_bytes) ^ budget.seed);
 
-        let u0 = (0.5 * sae.energy + 0.5 * world.error.surprise).clamp(0.0, 1.0);
+        let u0 = (0.5 * sae.energy + 0.5 * world.surprise).clamp(0.0, 1.0);
 
         let mut mem = Vec::with_capacity(state.mem.len().min(SSM_MAX_MEM));
         for prev in state.mem.iter().take(SSM_MAX_MEM) {
@@ -144,7 +144,7 @@ impl WorkingMemoryModel for MockSsmSelectiveScan {
 mod tests {
     use crate::capabilities::{FeatureExtractor, WorldModelPredictor};
     use crate::feature_extractor::MockSaeExtractor;
-    use crate::world_model::MockJepaPredictor;
+    use crate::world_model::{obs_features_from_context, MockJepaPredictor, WorldModelInput};
     use crate::FrameId;
 
     use super::*;
@@ -158,10 +158,17 @@ mod tests {
     }
 
     fn world(input: &ComputeInput) -> WorldModelOutput {
-        let predictor = MockJepaPredictor;
-        let state = predictor.init_state(input, 4);
+        let mut predictor = MockJepaPredictor::default();
         predictor
-            .predict(&state, input, ComputeBudget::default())
+            .step(
+                &WorldModelInput {
+                    t: input.t,
+                    context_digest: input.context_digest,
+                    obs_features: obs_features_from_context(input.context_digest),
+                    seed: 4,
+                },
+                ComputeBudget::default(),
+            )
             .expect("world")
     }
 

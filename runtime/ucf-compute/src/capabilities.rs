@@ -4,7 +4,7 @@ use sha2::{Digest, Sha256};
 
 use crate::feature_extractor::SaeOutput;
 use crate::ssm::{SsmOutput, SsmState};
-use crate::world_model::{WorldModelOutput, WorldState};
+use crate::world_model::{WorldModelInput, WorldModelOutput};
 use crate::{ComputeBudget, ComputeError, ComputeInput, MAX_NOTE_LEN};
 
 #[cfg(any(feature = "compute-burn", feature = "llm-burn"))]
@@ -59,11 +59,9 @@ const VOCAB: [&str; 32] = [
 
 pub trait WorldModelPredictor: Send + Sync {
     fn name(&self) -> &'static str;
-    fn init_state(&self, input: &ComputeInput, seed: u64) -> WorldState;
-    fn predict(
-        &self,
-        state: &WorldState,
-        input: &ComputeInput,
+    fn step(
+        &mut self,
+        input: &WorldModelInput,
         budget: ComputeBudget,
     ) -> Result<WorldModelOutput, ComputeError>;
 }

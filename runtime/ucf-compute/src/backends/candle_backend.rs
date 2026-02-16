@@ -36,7 +36,7 @@ impl CandleFeatureExtractor {
         let mut x = [0.0_f32; IN_DIM];
         for (i, value) in x.iter_mut().enumerate() {
             let u = input.context_digest[i % 32] as f32;
-            let w = world.prediction.prediction_digest[(i + (seed as usize % 7)) % 32] as f32;
+            let w = world.prediction_digest[(i + (seed as usize % 7)) % 32] as f32;
             *value = ((0.8 * (u / 255.0)) + (0.2 * (w / 255.0))).clamp(0.0, 1.0);
         }
         x
@@ -168,7 +168,7 @@ const WEIGHTS_DIGEST: [u8; 32] = [
 #[cfg(test)]
 mod tests {
     use crate::capabilities::WorldModelPredictor;
-    use crate::world_model::MockJepaPredictor;
+    use crate::world_model::{obs_features_from_context, MockJepaPredictor, WorldModelInput};
     use crate::FrameId;
 
     use super::*;
@@ -182,10 +182,17 @@ mod tests {
     }
 
     fn world(input: &ComputeInput) -> WorldModelOutput {
-        let predictor = MockJepaPredictor;
-        let state = predictor.init_state(input, 77);
+        let mut predictor = MockJepaPredictor::default();
         predictor
-            .predict(&state, input, ComputeBudget::default())
+            .step(
+                &WorldModelInput {
+                    t: input.t,
+                    context_digest: input.context_digest,
+                    obs_features: obs_features_from_context(input.context_digest),
+                    seed: 77,
+                },
+                ComputeBudget::default(),
+            )
             .expect("world")
     }
 

@@ -90,7 +90,7 @@ impl FeatureExtractor for MockSaeExtractor {
         Self::check_budget(work_units, budget)?;
 
         let mut seed_hasher = Sha256::new();
-        seed_hasher.update(world.prediction.prediction_digest);
+        seed_hasher.update(world.prediction_digest);
         seed_hasher.update(input.context_digest);
         seed_hasher.update(input.t.to_le_bytes());
         seed_hasher.update(b"mock_sae_v0");
@@ -174,7 +174,7 @@ impl FeatureExtractor for MockSaeExtractor {
 #[cfg(test)]
 mod tests {
     use crate::capabilities::WorldModelPredictor;
-    use crate::world_model::MockJepaPredictor;
+    use crate::world_model::{obs_features_from_context, MockJepaPredictor, WorldModelInput};
     use crate::FrameId;
 
     use super::*;
@@ -188,10 +188,17 @@ mod tests {
     }
 
     fn world(input: &ComputeInput) -> WorldModelOutput {
-        let predictor = MockJepaPredictor;
-        let state = predictor.init_state(input, 11);
+        let mut predictor = MockJepaPredictor::default();
         predictor
-            .predict(&state, input, ComputeBudget::default())
+            .step(
+                &WorldModelInput {
+                    t: input.t,
+                    context_digest: input.context_digest,
+                    obs_features: obs_features_from_context(input.context_digest),
+                    seed: 11,
+                },
+                ComputeBudget::default(),
+            )
             .expect("world")
     }
 
