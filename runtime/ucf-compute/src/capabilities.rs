@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use sha2::{Digest, Sha256};
 
-use crate::feature_extractor::SaeOutput;
+use crate::feature_extractor::{SaeInput, SaeOutput};
 use crate::ssm::{SsmOutput, SsmState};
 use crate::world_model::{WorldModelInput, WorldModelOutput};
 use crate::{ComputeBudget, ComputeError, ComputeInput, MAX_NOTE_LEN};
@@ -66,14 +66,9 @@ pub trait WorldModelPredictor: Send + Sync {
     ) -> Result<WorldModelOutput, ComputeError>;
 }
 
-pub trait FeatureExtractor: Send + Sync {
+pub trait SaeExtractor: Send + Sync {
     fn name(&self) -> &'static str;
-    fn extract(
-        &self,
-        input: &ComputeInput,
-        world: &WorldModelOutput,
-        budget: ComputeBudget,
-    ) -> Result<SaeOutput, ComputeError>;
+    fn extract(&self, input: &SaeInput, budget: ComputeBudget) -> Result<SaeOutput, ComputeError>;
 }
 
 pub trait WorkingMemoryModel: Send + Sync {
