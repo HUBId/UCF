@@ -1,3 +1,4 @@
+use crate::lfm::PlasticityRecord;
 use sha2::{Digest, Sha256};
 use std::sync::atomic::{AtomicU64, Ordering};
 use thiserror::Error;
@@ -70,6 +71,7 @@ pub struct ComputeSignals {
     pub sae_quality: Option<StageQuality>,
     pub ssm_quality: Option<StageQuality>,
     pub lfm_quality: Option<StageQuality>,
+    pub plasticity_record: Option<PlasticityRecord>,
     pub budget_exceeded_stage: Option<&'static str>,
 }
 
@@ -212,6 +214,7 @@ impl ComputeSignals {
             sae_quality: None,
             ssm_quality: None,
             lfm_quality: None,
+            plasticity_record: None,
             budget_exceeded_stage: None,
         }
     }
@@ -285,6 +288,7 @@ pub struct ComputeBudget {
     pub ssm_units: u64,
     pub lfm_units: u64,
     pub degrade_policy: DegradePolicy,
+    pub governor_tier: u8,
 }
 
 impl Default for ComputeBudget {
@@ -300,6 +304,7 @@ impl Default for ComputeBudget {
             ssm_units: ComputeBudgetProfile::default_profile().ssm_units,
             lfm_units: ComputeBudgetProfile::default_profile().lfm_units,
             degrade_policy: ComputeBudgetProfile::default_profile().degrade_policy,
+            governor_tier: 0,
         }
     }
 }
@@ -593,6 +598,7 @@ mod tests {
             sae_quality: None,
             ssm_quality: None,
             lfm_quality: None,
+            plasticity_record: None,
             budget_exceeded_stage: None,
         }
         .bounded();

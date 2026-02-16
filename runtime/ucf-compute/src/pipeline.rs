@@ -244,6 +244,8 @@ impl AiComputeBackend for ComputePipelineBackend {
             instability: None,
             hormone_stress: None,
             neuro_arousal: None,
+            governor_tier: Some(budget.governor_tier),
+            prediction_error: Some(world_model_out.prediction_error),
             seed: budget.seed,
         };
 
@@ -279,6 +281,8 @@ impl AiComputeBackend for ComputePipelineBackend {
             }
             Err(other) => return Err(other),
         };
+        let plasticity_record = lfm_out.plasticity.clone();
+
         let lfm_backend_label = if lfm_name.contains("candle") {
             "candle"
         } else if lfm_name.contains("burn") {
@@ -386,6 +390,7 @@ impl AiComputeBackend for ComputePipelineBackend {
             sae_quality: Some(sae_out.quality),
             ssm_quality: Some(ssm_out.quality),
             lfm_quality: Some(lfm_out.quality),
+            plasticity_record: plasticity_record.clone(),
             budget_exceeded_stage: exceeded_stage,
         }
         .summary(self.name());
@@ -424,6 +429,15 @@ impl AiComputeBackend for ComputePipelineBackend {
                 &hex::encode(summary.spikes_digest)[..12]
             ),
         ];
+
+        if let Some(rec) = &plasticity_record {
+            notes.push(format!("plasticity_enabled={}", rec.enabled));
+            notes.push(format!("plasticity_updates={}", rec.param_deltas.len()));
+            notes.push(format!(
+                "plasticity_digest={}",
+                &hex::encode(rec.params_digest_after)[..12]
+            ));
+        }
 
         if let Some(stage) = exceeded_stage {
             notes.push(format!("budget_exceeded_stage={stage}"));
@@ -466,6 +480,7 @@ impl AiComputeBackend for ComputePipelineBackend {
             sae_quality: Some(sae_out.quality),
             ssm_quality: Some(ssm_out.quality),
             lfm_quality: Some(lfm_out.quality),
+            plasticity_record: plasticity_record.clone(),
             budget_exceeded_stage: exceeded_stage,
         }
         .bounded())
