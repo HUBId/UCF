@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::capabilities::{SaeExtractor, WorkingMemoryModel, WorldModelPredictor};
 use crate::feature_extractor::{SaeOutput, ToySaeExtractor};
-use crate::ssm::{MockSsmSelectiveScan, SsmOutput};
+use crate::ssm::{SsmInput, SsmOutput, ToySsmKernel};
 use crate::work_meter::WorkMeter;
 use crate::world_model::{
     obs_features_from_context, MockJepaPredictor, StageQuality, WorldModelInput, WorldModelOutput,
@@ -46,7 +46,7 @@ pub struct ComputePipelineBackend {
     backend_name: &'static str,
     world: Arc<Mutex<dyn WorldModelPredictor + Send + Sync>>,
     sae: Arc<dyn SaeExtractor + Send + Sync>,
-    ssm: Arc<dyn WorkingMemoryModel + Send + Sync>,
+    ssm: Arc<Mutex<dyn WorkingMemoryModel + Send + Sync>>,
     fusion: FusionConfig,
     _limits: LimitsConfig,
 }
@@ -56,7 +56,7 @@ impl ComputePipelineBackend {
         backend_name: &'static str,
         world: Arc<Mutex<dyn WorldModelPredictor + Send + Sync>>,
         sae: Arc<dyn SaeExtractor + Send + Sync>,
-        ssm: Arc<dyn WorkingMemoryModel + Send + Sync>,
+        ssm: Arc<Mutex<dyn WorkingMemoryModel + Send + Sync>>,
         fusion: FusionConfig,
         limits: LimitsConfig,
     ) -> Self {
@@ -75,7 +75,7 @@ impl ComputePipelineBackend {
             "stub",
             Arc::new(Mutex::new(MockJepaPredictor::default())),
             Arc::new(ToySaeExtractor::default()),
-            Arc::new(MockSsmSelectiveScan),
+            Arc::new(Mutex::new(ToySsmKernel::default())),
             FusionConfig::default(),
             LimitsConfig::default(),
         )
@@ -188,34 +188,33 @@ impl AiComputeBackend for ComputePipelineBackend {
             metrics::counter!("ucf_sae_degraded_total").increment(1);
         }
 
-        let mut seed_bytes = [0_u8; 8];
-        seed_bytes.copy_from_slice(&input.context_digest[0..8]);
-        let context_seed = u64::from_le_bytes(seed_bytes);
-        let ssm_state = self
-            .ssm
-            .init(input, budget.seed ^ context_seed.rotate_left(9));
+        let ssm_input = SsmInput {
+            t: input.t,
+            spikes_digest: sae_out.spikes_digest,
+            spike_count: sae_out.spike_count,
+            sae_energy: sae_out.energy,
+            world_surprise: world_model_out.surprise,
+            risk: 0.0,
+            seed: budget.seed,
+            context_digest: input.context_digest,
+        };
 
         global_meter.spend(220, "ssm/step")?;
+        let mut ssm = self.ssm.lock().map_err(|_| ComputeError::InvalidInput {
+            reason: "ssm mutex poisoned".to_string(),
+        })?;
+        let ssm_name = ssm.name();
+        let ssm_span = tracing::info_span!("ssm.step", kernel = ssm_name, t = input.t);
+        let _ssm_enter = ssm_span.enter();
         let (ssm_out, ssm_degraded) = match ssm_meter.spend(220, "ssm/step") {
-            Ok(()) => match self
-                .ssm
-                .step(&ssm_state, &sae_out, &world_model_out, budget)
-            {
+            Ok(()) => match ssm.step(&ssm_input, budget) {
                 Ok(output) => (output, false),
                 Err(ComputeError::BudgetExceeded { stage, .. }) => {
                     exceeded_stage = Some(stage);
                     if budget.degrade_policy == DegradePolicy::FailFast {
                         return Ok(ComputeSignals::unavailable(input, budget, self.name()));
                     }
-                    let fallback_pressure = surprise.clamp(0.0, 1.0);
-                    (
-                        SsmOutput {
-                            next_state: ssm_state,
-                            pressure: fallback_pressure,
-                            readout: fallback_pressure,
-                        },
-                        true,
-                    )
+                    (SsmOutput::degraded("budget_exceeded"), true)
                 }
                 Err(other) => return Err(other),
             },
@@ -224,18 +223,16 @@ impl AiComputeBackend for ComputePipelineBackend {
                 if budget.degrade_policy == DegradePolicy::FailFast {
                     return Ok(ComputeSignals::unavailable(input, budget, self.name()));
                 }
-                let fallback_pressure = surprise.clamp(0.0, 1.0);
-                (
-                    SsmOutput {
-                        next_state: ssm_state,
-                        pressure: fallback_pressure,
-                        readout: fallback_pressure,
-                    },
-                    true,
-                )
+                (SsmOutput::degraded("budget_exceeded"), true)
             }
             Err(other) => return Err(other),
         };
+
+        metrics::histogram!("ucf_ssm_pressure").record(f64::from(ssm_out.pressure));
+        metrics::gauge!("ucf_ssm_state_norm").set(f64::from(ssm_out.state_norm));
+        if ssm_out.quality == StageQuality::DegradedFallback {
+            metrics::counter!("ucf_ssm_degraded_total").increment(1);
+        }
 
         let pressure = ssm_out.pressure;
         let (risk, confidence) = fuse_signals(
@@ -263,7 +260,7 @@ impl AiComputeBackend for ComputePipelineBackend {
             ssm_digest: if ssm_degraded {
                 None
             } else {
-                Some(ssm_out.next_state.digest)
+                Some(ssm_out.state_digest)
             },
             backend_profile: BackendProfileId::from_backend_name(self.name()),
             seed: budget.seed,
@@ -296,10 +293,11 @@ impl AiComputeBackend for ComputePipelineBackend {
             ssm_digest: if ssm_degraded {
                 None
             } else {
-                Some(ssm_out.next_state.digest)
+                Some(ssm_out.state_digest)
             },
             world_digest: Some(world_model_out.prediction_digest),
             sae_quality: Some(sae_out.quality),
+            ssm_quality: Some(ssm_out.quality),
             budget_exceeded_stage: exceeded_stage,
         }
         .summary(self.name());
@@ -310,7 +308,7 @@ impl AiComputeBackend for ComputePipelineBackend {
             format!("budget_profile_id={}", budget.profile_id),
             format!("world_model={}", world_model_name),
             format!("feature_extractor={}", self.sae.name()),
-            format!("working_memory={}", self.ssm.name()),
+            format!("working_memory={}", ssm_name),
             format!(
                 "pred_digest={}",
                 &hex::encode(world_model_out.prediction_digest)[..12]
@@ -318,10 +316,8 @@ impl AiComputeBackend for ComputePipelineBackend {
             format!("pred_error={:.4}", world_model_out.prediction_error),
             format!("world_quality={:?}", world_model_out.quality),
             format!("sae_quality={:?}", sae_out.quality),
-            format!(
-                "ssm_digest={}",
-                &hex::encode(ssm_out.next_state.digest)[..12]
-            ),
+            format!("ssm_quality={:?}", ssm_out.quality),
+            format!("ssm_digest={}", &hex::encode(ssm_out.state_digest)[..12]),
             format!("spike_count={}", sae_out.spike_count),
             format!("sparsity={:.4}", sae_out.sparsity),
             format!("energy={:.4}", sae_out.energy),
@@ -360,10 +356,11 @@ impl AiComputeBackend for ComputePipelineBackend {
             ssm_digest: if ssm_degraded {
                 None
             } else {
-                Some(ssm_out.next_state.digest)
+                Some(ssm_out.state_digest)
             },
             world_digest: Some(world_model_out.prediction_digest),
             sae_quality: Some(sae_out.quality),
+            ssm_quality: Some(ssm_out.quality),
             budget_exceeded_stage: exceeded_stage,
         }
         .bounded())
@@ -373,7 +370,7 @@ impl AiComputeBackend for ComputePipelineBackend {
 #[cfg(test)]
 mod tests {
     use crate::feature_extractor::ToySaeExtractor;
-    use crate::ssm::MockSsmSelectiveScan;
+    use crate::ssm::ToySsmKernel;
     use crate::world_model::MockJepaPredictor;
     use crate::FrameId;
 
@@ -405,7 +402,7 @@ mod tests {
             "stub",
             Arc::new(Mutex::new(MockJepaPredictor::default())),
             Arc::new(ToySaeExtractor::default()),
-            Arc::new(MockSsmSelectiveScan),
+            Arc::new(Mutex::new(ToySsmKernel::default())),
             FusionConfig::default(),
             LimitsConfig::default(),
         );
@@ -420,7 +417,7 @@ mod tests {
         assert!(out
             .notes
             .iter()
-            .any(|n| n == "working_memory=mock_ssm_selective_scan_v0"));
+            .any(|n| n == "working_memory=toy_ssm_selective_scan_v0"));
     }
 
     #[test]

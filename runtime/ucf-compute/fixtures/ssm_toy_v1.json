@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "n": 32,
+  "kmax": 64,
+  "w1": 0.45,
+  "w2": 0.3,
+  "w3": 0.25,
+  "state_scale": 0.72,
+  "decay_formula": {
+    "modulus": 997,
+    "mul_i": 37,
+    "add": 211,
+    "scale": 0.18,
+    "bias": 0.79
+  },
+  "gain_formula": {
+    "modulus": 991,
+    "mul_i": 19,
+    "add": 53,
+    "scale": 0.24,
+    "bias": 0.06
+  },
+  "readout_formula": {
+    "modulus": 983,
+    "mul_i": 29,
+    "add": 17,
+    "scale": 0.8,
+    "bias": -0.4
+  },
+  "fixture_digest_hex": "9bf911ca6b808dee569e84a084ab6f8dcb1590d76a8213cae06644e08139b097"
+}

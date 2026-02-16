@@ -1,7 +1,6 @@
 use sha2::{Digest, Sha256};
 use std::sync::atomic::{AtomicU64, Ordering};
 use thiserror::Error;
-use ucf_core::types::SimTime;
 use ucf_frames::v1::{ControlFrame, ControlPayload};
 use world_model::StageQuality;
 
@@ -60,6 +59,7 @@ pub struct ComputeSignals {
     pub ssm_digest: Option<[u8; 32]>,
     pub world_digest: Option<[u8; 32]>,
     pub sae_quality: Option<StageQuality>,
+    pub ssm_quality: Option<StageQuality>,
     pub budget_exceeded_stage: Option<&'static str>,
 }
 
@@ -111,6 +111,7 @@ impl ComputeSignals {
             &self.spikes,
             &risk_signal,
             self.sae_quality,
+            self.ssm_quality,
         );
         UCF_COMPUTE_CHAIN_DIGEST_EMITTED_TOTAL.fetch_add(1, Ordering::Relaxed);
         ComputeSignalsSummary {
@@ -131,6 +132,7 @@ impl ComputeSignals {
             evidence_world_digest: risk_signal.evidence.world_digest,
             evidence_spikes_digest: risk_signal.evidence.spikes_digest,
             evidence_ssm_digest: risk_signal.evidence.ssm_digest,
+            ssm_quality: self.ssm_quality,
             backend_profile: risk_signal.evidence.backend_profile.as_str(),
             budget_profile_id: risk_signal.evidence.budget_profile_id,
             seed: risk_signal.evidence.seed,
@@ -172,6 +174,7 @@ impl ComputeSignals {
             ssm_digest: None,
             world_digest: None,
             sae_quality: None,
+            ssm_quality: None,
             budget_exceeded_stage: None,
         }
     }
@@ -306,6 +309,7 @@ pub struct ComputeSignalsSummary {
     pub evidence_world_digest: Option<[u8; 32]>,
     pub evidence_spikes_digest: Option<[u8; 32]>,
     pub evidence_ssm_digest: Option<[u8; 32]>,
+    pub ssm_quality: Option<StageQuality>,
     pub backend_profile: &'static str,
     pub budget_profile_id: u32,
     pub seed: u64,
@@ -384,33 +388,6 @@ impl AiComputeBackend for CpuStubBackend {
     ) -> Result<ComputeSignals, ComputeError> {
         ComputePipelineBackend::stub().compute(input, budget)
     }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct SplitMix64 {
-    state: u64,
-}
-
-impl SplitMix64 {
-    fn new(seed: u64) -> Self {
-        Self { state: seed }
-    }
-
-    fn next_u64(&mut self) -> u64 {
-        self.state = self.state.wrapping_add(0x9E37_79B9_7F4A_7C15);
-        let mut z = self.state;
-        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-        z ^ (z >> 31)
-    }
-}
-
-pub fn frame_time_tick(time: SimTime) -> u64 {
-    time.tick.get()
-}
-
-pub fn ucf_compute_chain_digest_emitted_total() -> u64 {
-    UCF_COMPUTE_CHAIN_DIGEST_EMITTED_TOTAL.load(Ordering::Relaxed)
 }
 
 #[cfg(test)]
@@ -549,6 +526,7 @@ mod tests {
             ssm_digest: None,
             world_digest: None,
             sae_quality: None,
+            ssm_quality: None,
             budget_exceeded_stage: None,
         }
         .bounded();
