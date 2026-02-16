@@ -71,15 +71,18 @@ pub struct EvidenceChain {
     pub world_backend: BackendComponentId,
     pub sae_backend: BackendComponentId,
     pub ssm_backend: BackendComponentId,
+    pub lfm_backend: BackendComponentId,
     pub budget_profile_id: u32,
     pub seed: u64,
     pub context_digest: [u8; 32],
     pub world_digest: Option<[u8; 32]>,
     pub spikes_digest: Option<[u8; 32]>,
     pub ssm_digest: Option<[u8; 32]>,
+    pub lfm_digest: Option<[u8; 32]>,
     pub risk_digest: [u8; 32],
     pub sae_quality: Option<StageQuality>,
     pub ssm_quality: Option<StageQuality>,
+    pub lfm_quality: Option<StageQuality>,
     pub chain_digest: [u8; 32],
 }
 
@@ -90,6 +93,7 @@ impl EvidenceChain {
         risk_signal: &RiskSignal,
         sae_quality: Option<StageQuality>,
         ssm_quality: Option<StageQuality>,
+        lfm_quality: Option<StageQuality>,
     ) -> Self {
         let risk_digest = digest_canonical(risk_signal);
         let mut chain = Self {
@@ -102,6 +106,7 @@ impl EvidenceChain {
             world_backend: risk_signal.evidence.world_backend,
             sae_backend: risk_signal.evidence.sae_backend,
             ssm_backend: risk_signal.evidence.ssm_backend,
+            lfm_backend: risk_signal.evidence.lfm_backend,
             budget_profile_id: risk_signal.evidence.budget_profile_id,
             seed: risk_signal.evidence.seed,
             context_digest: input.context_digest,
@@ -111,9 +116,11 @@ impl EvidenceChain {
                 .spikes_digest
                 .or_else(|| (!spikes.is_empty()).then(|| spikes_digest(spikes))),
             ssm_digest: risk_signal.evidence.ssm_digest,
+            lfm_digest: risk_signal.evidence.lfm_digest,
             risk_digest,
             sae_quality,
             ssm_quality,
+            lfm_quality,
             chain_digest: [0; 32],
         };
         chain.chain_digest = digest_canonical(&chain);
@@ -166,6 +173,7 @@ impl CanonicalEncode for EvidenceRef {
         encode_opt_digest(out, self.world_digest);
         encode_opt_digest(out, self.spikes_digest);
         encode_opt_digest(out, self.ssm_digest);
+        encode_opt_digest(out, self.lfm_digest);
         out.push(self.backend_profile as u8);
         out.extend_from_slice(&self.backend_pack_id.0.to_le_bytes());
         out.extend_from_slice(&self.fixtures_digest);
@@ -173,6 +181,7 @@ impl CanonicalEncode for EvidenceRef {
         out.push(self.world_backend as u8);
         out.push(self.sae_backend as u8);
         out.push(self.ssm_backend as u8);
+        out.push(self.lfm_backend as u8);
         out.extend_from_slice(&self.budget_profile_id.to_le_bytes());
         out.extend_from_slice(&self.seed.to_le_bytes());
     }
@@ -210,12 +219,14 @@ impl CanonicalEncode for EvidenceChain {
         out.push(self.world_backend as u8);
         out.push(self.sae_backend as u8);
         out.push(self.ssm_backend as u8);
+        out.push(self.lfm_backend as u8);
         out.extend_from_slice(&self.budget_profile_id.to_le_bytes());
         out.extend_from_slice(&self.seed.to_le_bytes());
         out.extend_from_slice(&self.context_digest);
         encode_opt_digest(out, self.world_digest);
         encode_opt_digest(out, self.spikes_digest);
         encode_opt_digest(out, self.ssm_digest);
+        encode_opt_digest(out, self.lfm_digest);
         out.extend_from_slice(&self.risk_digest);
         match self.sae_quality {
             Some(q) => {
@@ -225,6 +236,13 @@ impl CanonicalEncode for EvidenceChain {
             None => out.push(0),
         }
         match self.ssm_quality {
+            Some(q) => {
+                out.push(1);
+                out.push(q as u8);
+            }
+            None => out.push(0),
+        }
+        match self.lfm_quality {
             Some(q) => {
                 out.push(1);
                 out.push(q as u8);
@@ -307,6 +325,7 @@ mod tests {
                     world_digest: None,
                     spikes_digest: None,
                     ssm_digest: None,
+                    lfm_digest: None,
                     backend_profile: BackendProfileId::StubV1,
                     backend_pack_id: crate::BackendPackId(1),
                     fixtures_digest: [9; 32],
@@ -314,13 +333,14 @@ mod tests {
                     world_backend: crate::BackendComponentId::ToyV1,
                     sae_backend: crate::BackendComponentId::ToyV1,
                     ssm_backend: crate::BackendComponentId::ToyV1,
+                    lfm_backend: crate::BackendComponentId::ToyV1,
                     seed,
                     budget_profile_id: 1,
                 },
                 version: 1,
             };
-            let a = EvidenceChain::from_compute(&input, &[], &risk_signal, None, None);
-            let b = EvidenceChain::from_compute(&input, &[], &risk_signal, None, None);
+            let a = EvidenceChain::from_compute(&input, &[], &risk_signal, None, None, None);
+            let b = EvidenceChain::from_compute(&input, &[], &risk_signal, None, None, None);
             prop_assert_eq!(a.chain_digest, b.chain_digest);
             prop_assert_eq!(digest_canonical(&a), digest_canonical(&b));
             assert_evidence_chain(&a);
@@ -338,6 +358,7 @@ mod tests {
                     world_digest: None,
                     spikes_digest: None,
                     ssm_digest: None,
+                    lfm_digest: None,
                     backend_profile: BackendProfileId::StubV1,
                     backend_pack_id: crate::BackendPackId(1),
                     fixtures_digest: [9; 32],
@@ -345,13 +366,14 @@ mod tests {
                     world_backend: crate::BackendComponentId::ToyV1,
                     sae_backend: crate::BackendComponentId::ToyV1,
                     ssm_backend: crate::BackendComponentId::ToyV1,
+                    lfm_backend: crate::BackendComponentId::ToyV1,
                     seed: s,
                     budget_profile_id: 9,
                 },
                 version: 1,
             };
-            let a = EvidenceChain::from_compute(&input, &[], &mk(seed), None, None);
-            let b = EvidenceChain::from_compute(&input, &[], &mk(seed.saturating_add(bump)), None, None);
+            let a = EvidenceChain::from_compute(&input, &[], &mk(seed), None, None, None);
+            let b = EvidenceChain::from_compute(&input, &[], &mk(seed.saturating_add(bump)), None, None, None);
             prop_assert_ne!(a.chain_digest, b.chain_digest);
             assert_evidence_chain(&a);
             assert_evidence_chain(&b);
@@ -374,6 +396,7 @@ mod tests {
                 world_digest: None,
                 spikes_digest: None,
                 ssm_digest: None,
+                lfm_digest: None,
                 backend_profile: BackendProfileId::StubV1,
                 backend_pack_id: crate::BackendPackId(1),
                 fixtures_digest: [9; 32],
@@ -381,23 +404,24 @@ mod tests {
                 world_backend: crate::BackendComponentId::ToyV1,
                 sae_backend: crate::BackendComponentId::ToyV1,
                 ssm_backend: crate::BackendComponentId::ToyV1,
+                lfm_backend: crate::BackendComponentId::ToyV1,
                 seed: 11,
                 budget_profile_id: 1,
             },
             version: 1,
         };
 
-        let base = EvidenceChain::from_compute(&input, &[], &risk, None, None);
-        let same = EvidenceChain::from_compute(&input, &[], &risk, None, None);
+        let base = EvidenceChain::from_compute(&input, &[], &risk, None, None, None);
+        let same = EvidenceChain::from_compute(&input, &[], &risk, None, None, None);
         assert_eq!(base.chain_digest, same.chain_digest);
 
         risk.evidence.seed = 12;
-        let changed_seed = EvidenceChain::from_compute(&input, &[], &risk, None, None);
+        let changed_seed = EvidenceChain::from_compute(&input, &[], &risk, None, None, None);
         assert_ne!(base.chain_digest, changed_seed.chain_digest);
 
         risk.evidence.seed = 11;
         risk.evidence.backend_profile = BackendProfileId::BurnV1;
-        let changed_backend = EvidenceChain::from_compute(&input, &[], &risk, None, None);
+        let changed_backend = EvidenceChain::from_compute(&input, &[], &risk, None, None, None);
         assert_ne!(base.chain_digest, changed_backend.chain_digest);
     }
 }

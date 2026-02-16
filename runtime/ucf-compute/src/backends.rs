@@ -92,6 +92,7 @@ impl ComputeBackendConfig {
             world_units: profile.world_units,
             sae_units: profile.sae_units,
             ssm_units: profile.ssm_units,
+            lfm_units: profile.lfm_units,
             degrade_policy: profile.degrade_policy,
         }
     }

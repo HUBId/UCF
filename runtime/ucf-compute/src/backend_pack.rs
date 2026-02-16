@@ -7,6 +7,7 @@ use crate::capabilities::{
     WorldModelPredictor,
 };
 use crate::feature_extractor::ToySaeExtractor;
+use crate::lfm::{LfmKernel, ToyLfmKernel};
 use crate::ssm::{SsmKernel, ToySsmKernel};
 use crate::world_model::MockJepaPredictor;
 use crate::{CodeVersionTag, ComputeError};
@@ -33,15 +34,17 @@ pub enum FixtureId {
     JepaDynV1,
     SaeProjV1,
     SsmParamsV1,
+    LfmParamsV1,
 }
 
 impl FixtureId {
-    pub const fn canonical_order() -> [Self; 4] {
+    pub const fn canonical_order() -> [Self; 5] {
         [
             Self::ToyLlmWeightsV1,
             Self::JepaDynV1,
             Self::SaeProjV1,
             Self::SsmParamsV1,
+            Self::LfmParamsV1,
         ]
     }
 }
@@ -66,6 +69,7 @@ impl FixtureManager {
             FixtureId::JepaDynV1 => include_bytes!("../fixtures/jepa_dyn_v1.json").as_slice(),
             FixtureId::SaeProjV1 => include_bytes!("../fixtures/sae_proj_v1.json").as_slice(),
             FixtureId::SsmParamsV1 => include_bytes!("../fixtures/ssm_toy_v1.json").as_slice(),
+            FixtureId::LfmParamsV1 => include_bytes!("../fixtures/lfm_params_v1.json").as_slice(),
         };
         if bytes.len() > MAX_FIXTURE_BYTES {
             return Err(ComputeError::InvalidInput {
@@ -99,6 +103,7 @@ pub struct BackendPackMeta {
     pub world_backend: BackendComponentId,
     pub sae_backend: BackendComponentId,
     pub ssm_backend: BackendComponentId,
+    pub lfm_backend: BackendComponentId,
     pub fixtures_digest: [u8; 32],
     pub code_version: CodeVersionTag,
     pub digest: [u8; 32],
@@ -115,6 +120,7 @@ impl BackendPackMeta {
         hasher.update([self.world_backend as u8]);
         hasher.update([self.sae_backend as u8]);
         hasher.update([self.ssm_backend as u8]);
+        hasher.update([self.lfm_backend as u8]);
         hasher.update(self.fixtures_digest);
         hasher.update((self.code_version.as_str().len() as u16).to_le_bytes());
         hasher.update(self.code_version.as_str().as_bytes());
@@ -128,6 +134,7 @@ pub trait BackendPack: Send + Sync {
     fn world(&self) -> &Mutex<Box<dyn WorldModelPredictor + Send + Sync>>;
     fn sae(&self) -> &dyn SaeExtractor;
     fn ssm(&self) -> &Mutex<Box<dyn SsmKernel + Send + Sync>>;
+    fn lfm(&self) -> &Mutex<Box<dyn LfmKernel + Send + Sync>>;
     fn reset_session(&mut self, _seed: u64) {}
     fn supports_hot_swap(&self) -> bool {
         true
@@ -140,6 +147,7 @@ pub struct UnifiedBackendPack {
     world: Mutex<Box<dyn WorldModelPredictor + Send + Sync>>,
     sae: Arc<dyn SaeExtractor + Send + Sync>,
     ssm: Mutex<Box<dyn SsmKernel + Send + Sync>>,
+    lfm: Mutex<Box<dyn LfmKernel + Send + Sync>>,
 }
 
 impl BackendPack for UnifiedBackendPack {
@@ -161,6 +169,10 @@ impl BackendPack for UnifiedBackendPack {
 
     fn ssm(&self) -> &Mutex<Box<dyn SsmKernel + Send + Sync>> {
         &self.ssm
+    }
+
+    fn lfm(&self) -> &Mutex<Box<dyn LfmKernel + Send + Sync>> {
+        &self.lfm
     }
 }
 
@@ -290,6 +302,7 @@ impl BackendPackFactory {
             world_backend: BackendComponentId::ToyV1,
             sae_backend: sae_component,
             ssm_backend: BackendComponentId::ToyV1,
+            lfm_backend: BackendComponentId::ToyV1,
             fixtures_digest,
             code_version: CodeVersionTag::current(),
             digest: [0; 32],
@@ -302,6 +315,7 @@ impl BackendPackFactory {
             world: Mutex::new(Box::new(MockJepaPredictor::default())),
             sae: Arc::new(ToySaeExtractor::default()),
             ssm: Mutex::new(Box::new(ToySsmKernel::default())),
+            lfm: Mutex::new(Box::new(ToyLfmKernel::default())),
         }))
     }
 }
