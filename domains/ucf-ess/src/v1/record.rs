@@ -6,6 +6,7 @@ use ucf_frames::v1::{
     BrainFrame, ComputeSignalsSummary, ControlFrame, CorrelationId, DecisionFrame, DecisionMeta,
     NeuromodulatorSnapshot, PhiProxySnapshot,
 };
+use ucf_types::{quantize_unit, CANONICAL_UNIT_QUANT_MAX};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ExperienceId(pub u64);
@@ -340,8 +341,8 @@ impl LfmSummaryRecord {
         hasher.update(self.backend_pack_digest);
         hasher.update(self.liquid_state_digest);
         hasher.update(self.liquid_readout_digest);
-        hasher.update(self.uncertainty.clamp(0.0, 1.0).to_bits().to_be_bytes());
-        hasher.update(self.stability.clamp(0.0, 1.0).to_bits().to_be_bytes());
+        hasher.update(quantize_unit(self.uncertainty, CANONICAL_UNIT_QUANT_MAX).to_be_bytes());
+        hasher.update(quantize_unit(self.stability, CANONICAL_UNIT_QUANT_MAX).to_be_bytes());
         hasher.update(self.schema_version.to_be_bytes());
         hasher.finalize().into()
     }
@@ -370,13 +371,8 @@ impl LfmWindowRecord {
         hasher.update(self.t0.to_be_bytes());
         hasher.update(self.t1.to_be_bytes());
         hasher.update(self.sample_count.to_be_bytes());
-        hasher.update(
-            self.mean_uncertainty
-                .clamp(0.0, 1.0)
-                .to_bits()
-                .to_be_bytes(),
-        );
-        hasher.update(self.mean_stability.clamp(0.0, 1.0).to_bits().to_be_bytes());
+        hasher.update(quantize_unit(self.mean_uncertainty, CANONICAL_UNIT_QUANT_MAX).to_be_bytes());
+        hasher.update(quantize_unit(self.mean_stability, CANONICAL_UNIT_QUANT_MAX).to_be_bytes());
         hasher.update(self.rolling_digest);
         hasher.update(self.schema_version.to_be_bytes());
         hasher.finalize().into()

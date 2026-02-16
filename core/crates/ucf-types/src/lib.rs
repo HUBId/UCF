@@ -2,6 +2,69 @@
 
 use std::fmt;
 
+pub const CANONICAL_QNAN_BITS_F32: u32 = 0x7FC0_0000;
+pub const CANONICAL_UNIT_QUANT_MAX: u16 = u16::MAX;
+pub const CANONICAL_SIGNED_UNIT_QUANT_MAX: i16 = i16::MAX;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct CanonicalF32(pub u32);
+
+impl CanonicalF32 {
+    pub fn from_f32(value: f32) -> Self {
+        Self(canonicalize_f32(value))
+    }
+
+    pub fn bits(self) -> u32 {
+        self.0
+    }
+}
+
+pub fn canonicalize_f32(value: f32) -> u32 {
+    if value == 0.0 {
+        return 0.0f32.to_bits();
+    }
+    if value.is_nan() {
+        return CANONICAL_QNAN_BITS_F32;
+    }
+    value.to_bits()
+}
+
+pub fn canonicalize_f32_clamped(value: f32, min: f32, max: f32) -> u32 {
+    if value.is_nan() {
+        return CANONICAL_QNAN_BITS_F32;
+    }
+    canonicalize_f32(value.clamp(min, max))
+}
+
+pub fn quantize_unit(value: f32, q: u16) -> u16 {
+    let clamped = if value.is_nan() {
+        0.0
+    } else {
+        value.clamp(0.0, 1.0)
+    };
+    let scaled = (clamped * f32::from(q)).round();
+    if scaled <= 0.0 {
+        0
+    } else if scaled >= f32::from(q) {
+        q
+    } else {
+        scaled as u16
+    }
+}
+
+pub fn quantize_signed_unit_i16(value: f32) -> i16 {
+    let clamped = if value.is_nan() {
+        0.0
+    } else {
+        value.clamp(-1.0, 1.0)
+    };
+    let scaled = (clamped * f32::from(CANONICAL_SIGNED_UNIT_QUANT_MAX)).round();
+    scaled.clamp(
+        f32::from(i16::MIN) + 1.0,
+        f32::from(CANONICAL_SIGNED_UNIT_QUANT_MAX),
+    ) as i16
+}
+
 pub mod v1 {
     pub use ucf_protocol::v1::*;
 }
@@ -642,6 +705,7 @@ impl CausalReport {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     #[test]
     fn node_id_roundtrip() {
@@ -681,10 +745,41 @@ mod tests {
     }
 
     #[test]
+    fn canonicalize_f32_normalizes_negative_zero_and_nan() {
+        assert_eq!(canonicalize_f32(-0.0), 0.0f32.to_bits());
+        assert_eq!(canonicalize_f32(f32::NAN), CANONICAL_QNAN_BITS_F32);
+    }
+
+    #[test]
+    fn quantize_unit_clamps_nan_and_bounds() {
+        assert_eq!(quantize_unit(f32::NAN, CANONICAL_UNIT_QUANT_MAX), 0);
+        assert_eq!(quantize_unit(-1.0, CANONICAL_UNIT_QUANT_MAX), 0);
+        assert_eq!(
+            quantize_unit(2.0, CANONICAL_UNIT_QUANT_MAX),
+            CANONICAL_UNIT_QUANT_MAX
+        );
+    }
+
+    #[test]
     fn vrf_tag_requires_suite_and_domain() {
         let tag = Digest32::new([1u8; 32]);
         assert!(VrfTag::new(0, 1, tag).is_err());
         assert!(VrfTag::new(1, 0, tag).is_err());
         assert!(VrfTag::new(1, 1, tag).is_ok());
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(256))]
+
+        #[test]
+        fn quantize_unit_is_monotonic_and_idempotent(a in -10.0f32..10.0, b in -10.0f32..10.0) {
+            let qa = quantize_unit(a, CANONICAL_UNIT_QUANT_MAX);
+            let qb = quantize_unit(b, CANONICAL_UNIT_QUANT_MAX);
+            if a <= b {
+                prop_assert!(qa <= qb);
+            }
+            let clamped = a.clamp(0.0, 1.0);
+            prop_assert_eq!(qa, quantize_unit(clamped, CANONICAL_UNIT_QUANT_MAX));
+        }
     }
 }

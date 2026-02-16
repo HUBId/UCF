@@ -24,6 +24,7 @@ tracing = { workspace = true }
 candle-core = { version = "0.8", default-features = false, optional = true }
 ucf-frames = { path = "../../domains/ucf-frames" }
 ucf-core = { path = "../../core/ucf-core" }
+ucf-types = { path = "../../core/crates/ucf-types" }
 
 [dev-dependencies]
 serde_json = "1"

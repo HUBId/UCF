@@ -1,6 +1,7 @@
 use sha2::{Digest, Sha256};
 
 use crate::capabilities::SaeExtractor;
+use crate::evidence::quantize_unit_u16;
 use crate::world_model::{StageQuality, WorldModelOutput};
 use crate::{ComputeBudget, ComputeError, ComputeInput, Spike};
 
@@ -314,11 +315,7 @@ impl SaeExtractor for ToySaeExtractor {
                 timestamp: input.t,
             });
         }
-        spikes.sort_by(|a, b| {
-            a.feature_id
-                .cmp(&b.feature_id)
-                .then_with(|| b.magnitude.to_bits().cmp(&a.magnitude.to_bits()))
-        });
+        spikes.sort_by(|a, b| a.feature_id.cmp(&b.feature_id));
 
         let spike_count = spikes.len() as u16;
         let sparsity = (1.0 - (spike_count as f32 / SAE_FEATURE_DIM as f32)).clamp(0.0, 1.0);
@@ -328,7 +325,7 @@ impl SaeExtractor for ToySaeExtractor {
         let mut digest_hasher = Sha256::new();
         for spike in &spikes {
             digest_hasher.update(spike.feature_id.to_le_bytes());
-            digest_hasher.update(spike.magnitude.to_bits().to_le_bytes());
+            digest_hasher.update(quantize_unit_u16(spike.magnitude).to_le_bytes());
             digest_hasher.update(spike.timestamp.to_le_bytes());
         }
         digest_hasher.update(self.fixture.digest);
