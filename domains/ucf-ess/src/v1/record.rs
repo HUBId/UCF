@@ -65,7 +65,7 @@ pub enum ExperiencePayload {
     Empty,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum AuditPayload {
     ToolRequest(ToolRequestRecord),
     ToolAuth(ToolAuthRecord),
@@ -109,7 +109,7 @@ pub struct CandidateSetRecord {
     pub summaries: Vec<CandidateSummaryRecord>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct OutputRecord {
     pub schema_version: u16,
     pub decision_id: u64,
@@ -124,6 +124,12 @@ pub struct OutputRecord {
     pub finish_reason: u8,
     pub text: Option<String>,
     pub evidence_chain_digest: [u8; 32],
+    pub lfm_readout_digest: Option<[u8; 32]>,
+    pub lfm_uncertainty: Option<f32>,
+    pub lfm_stability: Option<f32>,
+    pub max_tokens_eff: u32,
+    pub output_override: Option<u8>,
+    pub override_reasons: Vec<u16>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

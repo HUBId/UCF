@@ -1,7 +1,7 @@
 # LLM Backend v0 (offline)
 
 ## Contracts
-- `LlmRequest` carries deterministic inputs (`decision_id`, `candidate_id`, `output_class`, bounded `prompt`, digests, seed, token budget).
+- `LlmRequest` carries deterministic inputs (`decision_id`, `candidate_id`, `output_class`, bounded `prompt`, digests, seed, token budget) plus bounded liquid conditioning (`lfm_readout_digest`, `lfm_uncertainty`, `lfm_stability`, `coherence`, `instability`, `risk`, `confidence`).
 - `LlmResponse` carries bounded text + audit fields (`status`, `finish_reason`, `token_count`, canonical `digest`).
 - `LlmInference` is text-only (`infer(req, budget)`), no tool execution and no IO access.
 
@@ -13,6 +13,27 @@
   - response bytes capped to 16 KiB
   - max tokens capped to 1024
 - `ExternalIo` / `ExecIntent` are refused by stub with `PolicyRefusal`.
+
+
+## Liquid-conditioned prompt template v0
+- Prompt assembly is deterministic and fixed-order:
+  1) system constraint line
+  2) bounded context summary bullets
+  3) fixed-order signals header (`risk`, `confidence`, `surprise`, `pressure`, `uncertainty`, `coherence`, `instability`)
+  4) digest prefixes (`evidence_chain_digest`, optional `lfm_readout_digest`)
+  5) output-class instruction + do/don't rules
+- Prompt is capped at 8 KiB with deterministic truncation.
+- Raw liquid/ESS payload vectors are never included; only bounded scalars and digest prefixes are injected.
+
+## Uncertainty-aware decoding policy
+- Effective output length is deterministic:
+  - `max_tokens_eff = clamp(base * (1 - 0.6 * uncertainty), min=64, max=base)`
+- NSR `SafeOnly`/`Block` hints force `SafeText` output class at generation time.
+- High uncertainty / low stability trigger a deterministic short-output override path.
+- Runtime persists the policy decision in `OutputRecord`:
+  - `lfm_readout_digest`, `lfm_uncertainty`, `lfm_stability`
+  - `max_tokens_eff`
+  - `output_override` + bounded `override_reasons` (auditable reason codes)
 
 ## Output-class enforcement
 - Runtime validates final output in one choke point:

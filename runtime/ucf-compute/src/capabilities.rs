@@ -149,6 +149,13 @@ pub struct LlmRequest {
     pub prompt: String,
     pub context_digest: [u8; 32],
     pub evidence_chain_digest: [u8; 32],
+    pub lfm_readout_digest: Option<[u8; 32]>,
+    pub lfm_uncertainty: Option<f32>,
+    pub lfm_stability: Option<f32>,
+    pub coherence: Option<f32>,
+    pub instability: Option<f32>,
+    pub risk: Option<f32>,
+    pub confidence: Option<f32>,
     pub seed: u64,
     pub max_tokens: u32,
     pub temperature: f32,
@@ -160,6 +167,12 @@ impl LlmRequest {
         self.prompt = self.prompt.chars().take(MAX_LLM_PROMPT_BYTES).collect();
         self.max_tokens = self.max_tokens.clamp(1, MAX_LLM_TOKENS);
         self.temperature = self.temperature.clamp(0.0, 2.0);
+        self.lfm_uncertainty = self.lfm_uncertainty.map(|v| v.clamp(0.0, 1.0));
+        self.lfm_stability = self.lfm_stability.map(|v| v.clamp(0.0, 1.0));
+        self.coherence = self.coherence.map(|v| v.clamp(0.0, 1.0));
+        self.instability = self.instability.map(|v| v.clamp(0.0, 1.0));
+        self.risk = self.risk.map(|v| v.clamp(0.0, 1.0));
+        self.confidence = self.confidence.map(|v| v.clamp(0.0, 1.0));
         self
     }
 
@@ -174,10 +187,37 @@ impl LlmRequest {
         hasher.update(self.prompt.as_bytes());
         hasher.update(self.context_digest);
         hasher.update(self.evidence_chain_digest);
+        encode_opt_digest(&mut hasher, self.lfm_readout_digest);
+        encode_opt_f32(&mut hasher, self.lfm_uncertainty);
+        encode_opt_f32(&mut hasher, self.lfm_stability);
+        encode_opt_f32(&mut hasher, self.coherence);
+        encode_opt_f32(&mut hasher, self.instability);
+        encode_opt_f32(&mut hasher, self.risk);
+        encode_opt_f32(&mut hasher, self.confidence);
         hasher.update(self.seed.to_le_bytes());
         hasher.update(self.max_tokens.to_le_bytes());
         hasher.update(self.temperature.to_bits().to_le_bytes());
         hasher.finalize().into()
+    }
+}
+
+fn encode_opt_digest(hasher: &mut Sha256, value: Option<[u8; 32]>) {
+    match value {
+        Some(v) => {
+            hasher.update([1]);
+            hasher.update(v);
+        }
+        None => hasher.update([0]),
+    }
+}
+
+fn encode_opt_f32(hasher: &mut Sha256, value: Option<f32>) {
+    match value {
+        Some(v) => {
+            hasher.update([1]);
+            hasher.update(v.to_bits().to_le_bytes());
+        }
+        None => hasher.update([0]),
     }
 }
 
@@ -368,10 +408,27 @@ mod tests {
             prompt: "hello deterministic world".to_string(),
             context_digest: [1; 32],
             evidence_chain_digest: [2; 32],
+            lfm_readout_digest: Some([3; 32]),
+            lfm_uncertainty: Some(0.2),
+            lfm_stability: Some(0.8),
+            coherence: Some(0.9),
+            instability: Some(0.1),
+            risk: Some(0.3),
+            confidence: Some(0.7),
             seed: 9,
             max_tokens: 32,
             temperature: 0.0,
         }
+    }
+
+    #[test]
+    fn request_digest_changes_with_conditioning_fields() {
+        let req = base_request();
+        let a = req.digest();
+        let mut req2 = req.clone();
+        req2.lfm_uncertainty = Some(0.9);
+        let b = req2.digest();
+        assert_ne!(a, b);
     }
 
     #[test]

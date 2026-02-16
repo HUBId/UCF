@@ -2015,6 +2015,14 @@ fn orchestrator_persists_output_record_for_safe_text_or_code() {
             assert!(record.schema_version >= 1);
             assert_eq!(record.output_class, 0);
             assert!(record.text.as_ref().is_some());
+            assert!(record.max_tokens_eff >= 64);
+            assert!(record.max_tokens_eff <= 128);
+            assert!(record.lfm_uncertainty.is_some());
+            assert!(record.lfm_stability.is_some());
+            assert_eq!(
+                record.override_reasons.len(),
+                record.override_reasons.len().min(8)
+            );
         }
         _ => panic!("expected output audit payload"),
     }
@@ -2048,5 +2056,6 @@ fn external_output_class_uses_plan_summary_without_llm_digests() {
         assert_eq!(record.llm_backend_name, "plan-only");
         assert_eq!(record.llm_request_digest, [0; 32]);
         assert_eq!(record.llm_response_digest, [0; 32]);
+        assert!(record.max_tokens_eff >= 64);
     }
 }

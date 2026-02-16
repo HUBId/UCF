@@ -110,6 +110,78 @@ fn quantize_unit_u16(v: f32) -> u16 {
 
 const OUTPUT_SCHEMA_VERSION: u16 = 1;
 const MAX_OUTPUT_TEXT_CHARS: usize = 4096;
+const MAX_LLM_PROMPT_BYTES: usize = 8 * 1024;
+const MIN_UNCERTAINTY_TOKENS: u32 = 64;
+const UNCERTAINTY_MAXTOKENS_FACTOR: f32 = 0.6;
+const UNCERTAINTY_HIGH_THRESHOLD: f32 = 0.75;
+const STABILITY_LOW_THRESHOLD: f32 = 0.35;
+const MAX_OVERRIDE_REASONS: usize = 8;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum OutputOverrideCode {
+    ForcedSafeOnly,
+    ForcedShort,
+}
+
+impl OutputOverrideCode {
+    fn as_u8(self) -> u8 {
+        match self {
+            Self::ForcedSafeOnly => 1,
+            Self::ForcedShort => 2,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum OverrideReasonCode {
+    NsrSafeOnly,
+    NsrBlock,
+    HighUncertainty,
+    LowStability,
+}
+
+impl OverrideReasonCode {
+    fn as_u16(self) -> u16 {
+        match self {
+            Self::NsrSafeOnly => 1,
+            Self::NsrBlock => 2,
+            Self::HighUncertainty => 3,
+            Self::LowStability => 4,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct DecodingPolicy {
+    max_tokens_eff: u32,
+    output_class: CandidateOutputClass,
+    output_override: Option<OutputOverrideCode>,
+    override_reasons: [Option<OverrideReasonCode>; MAX_OVERRIDE_REASONS],
+}
+
+impl DecodingPolicy {
+    fn reason_codes(&self) -> Vec<u16> {
+        self.override_reasons
+            .iter()
+            .flatten()
+            .map(|reason| reason.as_u16())
+            .take(MAX_OVERRIDE_REASONS)
+            .collect()
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct PromptConditioning {
+    risk: Option<f32>,
+    confidence: Option<f32>,
+    surprise: f32,
+    pressure: f32,
+    uncertainty: Option<f32>,
+    coherence: Option<f32>,
+    instability: Option<f32>,
+    evidence_chain_digest: [u8; 32],
+    lfm_readout_digest: Option<[u8; 32]>,
+}
 
 fn output_status_code(status: LlmStatus) -> u8 {
     match status {
@@ -160,6 +232,139 @@ fn validate_output(output_class: CandidateOutputClass, text: &str) -> Result<(),
             }
         }
         CandidateOutputClass::Sensitive => Err(()),
+    }
+}
+
+fn fmt_signal(value: Option<f32>) -> String {
+    match value {
+        Some(v) => format!("{v:.3}"),
+        None => "na".to_string(),
+    }
+}
+
+fn digest_prefix(digest: [u8; 32]) -> String {
+    hex::encode(digest)[..12].to_string()
+}
+
+fn output_class_instruction(output_class: CandidateOutputClass) -> &'static str {
+    match output_class {
+        CandidateOutputClass::SafeText => {
+            "Output format: plain safe text, no code blocks, no tool instructions."
+        }
+        CandidateOutputClass::Code => {
+            "Output format: concise deterministic code/text response, no tool execution directives."
+        }
+        CandidateOutputClass::ExternalIo | CandidateOutputClass::ExecIntent => {
+            "Output format: refusal-safe placeholder only."
+        }
+        CandidateOutputClass::Sensitive => "Output format: refusal-safe text only.",
+    }
+}
+
+fn build_prompt(
+    control_frame_summary: &str,
+    decision_summary: &str,
+    signals: PromptConditioning,
+    output_class: CandidateOutputClass,
+) -> String {
+    let mut prompt = format!(
+        concat!(
+            "System constraints: deterministic response only; no tools; bounded safe output.\n",
+            "Context summary:\n",
+            "- {}\n",
+            "- {}\n",
+            "- output_class={:?}\n",
+            "Signals: risk={} confidence={} surprise={:.3} pressure={:.3} uncertainty={} coherence={} instability={}\n",
+            "Digests: evidence_chain={} lfm_readout={}\n",
+            "{}\n",
+            "Do: obey policy constraints, be concise, be auditable.\n",
+            "Don't: reveal hidden state vectors, emit sensitive content, invoke tools."
+        ),
+        control_frame_summary,
+        decision_summary,
+        output_class,
+        fmt_signal(signals.risk),
+        fmt_signal(signals.confidence),
+        signals.surprise,
+        signals.pressure,
+        fmt_signal(signals.uncertainty),
+        fmt_signal(signals.coherence),
+        fmt_signal(signals.instability),
+        digest_prefix(signals.evidence_chain_digest),
+        signals
+            .lfm_readout_digest
+            .map(digest_prefix)
+            .unwrap_or_else(|| "na".to_string()),
+        output_class_instruction(output_class),
+    );
+
+    if prompt.len() > MAX_LLM_PROMPT_BYTES {
+        prompt.truncate(MAX_LLM_PROMPT_BYTES);
+    }
+    prompt
+}
+
+fn compute_max_tokens_eff(base: u32, uncertainty: Option<f32>) -> u32 {
+    let u = uncertainty.unwrap_or(0.0).clamp(0.0, 1.0);
+    let scaled = (base as f32 * (1.0 - UNCERTAINTY_MAXTOKENS_FACTOR * u)).round() as u32;
+    scaled.clamp(MIN_UNCERTAINTY_TOKENS.min(base), base)
+}
+
+fn apply_decoding_policy(
+    base_max_tokens: u32,
+    selected_output_class: CandidateOutputClass,
+    nsr_hint: PolicyHint,
+    lfm_uncertainty: Option<f32>,
+    lfm_stability: Option<f32>,
+) -> DecodingPolicy {
+    let mut override_reasons = [None; MAX_OVERRIDE_REASONS];
+    let mut reason_count = 0usize;
+    let mut push_reason = |reason: OverrideReasonCode| {
+        if reason_count < MAX_OVERRIDE_REASONS {
+            override_reasons[reason_count] = Some(reason);
+            reason_count += 1;
+        }
+    };
+
+    let mut output_class = selected_output_class;
+    let mut output_override = None;
+
+    if matches!(nsr_hint, PolicyHint::Block) {
+        output_class = CandidateOutputClass::SafeText;
+        output_override = Some(OutputOverrideCode::ForcedSafeOnly);
+        push_reason(OverrideReasonCode::NsrBlock);
+    } else if matches!(nsr_hint, PolicyHint::SafeOnly) {
+        output_class = CandidateOutputClass::SafeText;
+        output_override = Some(OutputOverrideCode::ForcedSafeOnly);
+        push_reason(OverrideReasonCode::NsrSafeOnly);
+    }
+
+    let uncertainty_high = lfm_uncertainty
+        .map(|u| u.clamp(0.0, 1.0) > UNCERTAINTY_HIGH_THRESHOLD)
+        .unwrap_or(false);
+    let stability_low = lfm_stability
+        .map(|s| s.clamp(0.0, 1.0) < STABILITY_LOW_THRESHOLD)
+        .unwrap_or(false);
+
+    if uncertainty_high {
+        push_reason(OverrideReasonCode::HighUncertainty);
+    }
+    if stability_low {
+        push_reason(OverrideReasonCode::LowStability);
+    }
+
+    if (uncertainty_high || stability_low)
+        && !matches!(output_override, Some(OutputOverrideCode::ForcedSafeOnly))
+    {
+        output_override = Some(OutputOverrideCode::ForcedShort);
+    }
+
+    let max_tokens_eff = compute_max_tokens_eff(base_max_tokens, lfm_uncertainty);
+    DecodingPolicy {
+        max_tokens_eff,
+        output_class,
+        output_override,
+        override_reasons,
     }
 }
 
@@ -2425,10 +2630,32 @@ impl RuntimeOrchestrator {
             candidate_set_record,
         ))?;
 
-        let output_record = if matches!(
+        let decoding_policy = apply_decoding_policy(
+            self.llm_cfg.max_tokens,
             selected_candidate.output_class,
+            nsr_v0_assessment.policy_hint,
+            compute_summary.lfm_uncertainty,
+            compute_summary.lfm_stability,
+        );
+        metrics::histogram!("ucf_llm_max_tokens_eff").record(decoding_policy.max_tokens_eff as f64);
+        if matches!(
+            decoding_policy.output_override,
+            Some(OutputOverrideCode::ForcedSafeOnly)
+        ) {
+            metrics::counter!("ucf_llm_forced_safeonly_total").increment(1);
+        }
+        if matches!(
+            decoding_policy.output_override,
+            Some(OutputOverrideCode::ForcedShort)
+        ) {
+            metrics::counter!("ucf_llm_forced_short_total").increment(1);
+        }
+
+        let output_record = if matches!(
+            decoding_policy.output_class,
             CandidateOutputClass::SafeText | CandidateOutputClass::Code
         ) {
+            metrics::counter!("ucf_lfm_conditioning_used_total").increment(1);
             let rationale = selected_candidate
                 .rationale
                 .lines
@@ -2436,30 +2663,45 @@ impl RuntimeOrchestrator {
                 .map(|line| bounded_summary_line(line))
                 .collect::<Vec<_>>()
                 .join(" | ");
-            let prompt = format!(
-                "decision={} candidate={} class={:?} risk={:.3} confidence={:.3} rationale={} chain={:02x}{:02x}{:02x}{:02x}",
-                eid2.0,
-                selected_candidate.candidate_id,
-                selected_candidate.output_class,
-                compute_summary.risk,
-                compute_summary.confidence,
-                rationale,
-                compute_summary.compute_chain_digest[0],
-                compute_summary.compute_chain_digest[1],
-                compute_summary.compute_chain_digest[2],
-                compute_summary.compute_chain_digest[3],
+            let control_summary = bounded_summary_line(ctrl.intent.summary.as_ref());
+            let decision_summary = bounded_summary_line(&format!(
+                "decision={} candidate={} class={:?} rationale={}",
+                eid2.0, selected_candidate.candidate_id, decoding_policy.output_class, rationale
+            ));
+            let prompt = build_prompt(
+                &control_summary,
+                &decision_summary,
+                PromptConditioning {
+                    risk: Some(compute_summary.risk),
+                    confidence: Some(compute_summary.confidence),
+                    surprise: compute_summary.surprise,
+                    pressure: compute_summary.pressure,
+                    uncertainty: compute_summary.lfm_uncertainty,
+                    coherence: None,
+                    instability: None,
+                    evidence_chain_digest: compute_summary.compute_chain_digest,
+                    lfm_readout_digest: compute_summary.lfm_digest,
+                },
+                decoding_policy.output_class,
             );
             let llm_req = LlmRequest {
                 schema_version: 1,
                 t: ctrl.time.tick.get(),
                 decision_id: eid2.0,
                 candidate_id: selected_candidate.candidate_id,
-                output_class: map_output_class(selected_candidate.output_class),
+                output_class: map_output_class(decoding_policy.output_class),
                 prompt,
                 context_digest: compute_input.context_digest,
                 evidence_chain_digest: compute_summary.compute_chain_digest,
+                lfm_readout_digest: compute_summary.lfm_digest,
+                lfm_uncertainty: compute_summary.lfm_uncertainty,
+                lfm_stability: compute_summary.lfm_stability,
+                coherence: None,
+                instability: None,
+                risk: Some(compute_summary.risk),
+                confidence: Some(compute_summary.confidence),
                 seed: self.llm_cfg.seed,
-                max_tokens: self.llm_cfg.max_tokens,
+                max_tokens: decoding_policy.max_tokens_eff,
                 temperature: 0.0,
             }
             .bounded();
@@ -2494,7 +2736,7 @@ impl RuntimeOrchestrator {
                 .chars()
                 .take(MAX_OUTPUT_TEXT_CHARS)
                 .collect::<String>();
-            if validate_output(selected_candidate.output_class, &text).is_err() {
+            if validate_output(decoding_policy.output_class, &text).is_err() {
                 text = "refused: output validation failed".to_string();
                 llm_resp = ucf_compute::capabilities::LlmResponse::new(
                     LlmStatus::Refused,
@@ -2508,7 +2750,7 @@ impl RuntimeOrchestrator {
                 decision_id: eid2.0,
                 candidate_id: selected_candidate.candidate_id,
                 t: ctrl.time.tick.get(),
-                output_class: selected_candidate.output_class as u8,
+                output_class: decoding_policy.output_class as u8,
                 llm_backend_name: self.llm_backend.name().to_string(),
                 llm_request_digest,
                 llm_response_digest: llm_resp.digest,
@@ -2517,6 +2759,14 @@ impl RuntimeOrchestrator {
                 finish_reason: finish_reason_code(llm_resp.finish_reason),
                 text: Some(text),
                 evidence_chain_digest: compute_summary.compute_chain_digest,
+                lfm_readout_digest: compute_summary.lfm_digest,
+                lfm_uncertainty: compute_summary.lfm_uncertainty,
+                lfm_stability: compute_summary.lfm_stability,
+                max_tokens_eff: decoding_policy.max_tokens_eff,
+                output_override: decoding_policy
+                    .output_override
+                    .map(OutputOverrideCode::as_u8),
+                override_reasons: decoding_policy.reason_codes(),
             }
         } else {
             let summary = selected_candidate
@@ -2540,6 +2790,14 @@ impl RuntimeOrchestrator {
                 finish_reason: finish_reason_code(FinishReason::PolicyRefusal),
                 text: Some(format!("tool intents require gate: {summary}")),
                 evidence_chain_digest: compute_summary.compute_chain_digest,
+                lfm_readout_digest: compute_summary.lfm_digest,
+                lfm_uncertainty: compute_summary.lfm_uncertainty,
+                lfm_stability: compute_summary.lfm_stability,
+                max_tokens_eff: decoding_policy.max_tokens_eff,
+                output_override: decoding_policy
+                    .output_override
+                    .map(OutputOverrideCode::as_u8),
+                override_reasons: decoding_policy.reason_codes(),
             }
         };
         metrics::counter!("ucf_output_records_total", "class" => format!("{:?}", selected_candidate.output_class)).increment(1);
@@ -3058,5 +3316,70 @@ fn sync_graph_from_cde_state(graph: &mut CausalGraph, state: &CdeState) {
             hyp.last_update_ms,
             hyp.conf.clamp(0.0, 1.0),
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn prompt_builder_is_deterministic_and_bounded() {
+        let signals = PromptConditioning {
+            risk: Some(0.2),
+            confidence: Some(0.8),
+            surprise: 0.1,
+            pressure: 0.3,
+            uncertainty: Some(0.4),
+            coherence: Some(0.7),
+            instability: Some(0.2),
+            evidence_chain_digest: [9; 32],
+            lfm_readout_digest: Some([3; 32]),
+        };
+        let a = build_prompt(
+            &"x".repeat(4000),
+            &"y".repeat(4000),
+            signals,
+            CandidateOutputClass::SafeText,
+        );
+        let b = build_prompt(
+            &"x".repeat(4000),
+            &"y".repeat(4000),
+            signals,
+            CandidateOutputClass::SafeText,
+        );
+        assert_eq!(a, b);
+        assert!(a.len() <= MAX_LLM_PROMPT_BYTES);
+        assert!(a.contains("Signals: risk=0.200 confidence=0.800"));
+    }
+
+    #[test]
+    fn max_tokens_eff_decreases_with_uncertainty() {
+        let base = 256;
+        let low = compute_max_tokens_eff(base, Some(0.1));
+        let high = compute_max_tokens_eff(base, Some(0.9));
+        assert!(high <= low);
+        assert!(low <= base);
+        assert!(high >= MIN_UNCERTAINTY_TOKENS.min(base));
+    }
+
+    #[test]
+    fn override_policy_is_auditable() {
+        let out = apply_decoding_policy(
+            200,
+            CandidateOutputClass::Code,
+            PolicyHint::SafeOnly,
+            Some(0.95),
+            Some(0.2),
+        );
+        assert_eq!(out.output_class, CandidateOutputClass::SafeText);
+        assert_eq!(
+            out.output_override,
+            Some(OutputOverrideCode::ForcedSafeOnly)
+        );
+        let reasons = out.reason_codes();
+        assert!(reasons.contains(&OverrideReasonCode::NsrSafeOnly.as_u16()));
+        assert!(reasons.contains(&OverrideReasonCode::HighUncertainty.as_u16()));
+        assert!(reasons.contains(&OverrideReasonCode::LowStability.as_u16()));
     }
 }
