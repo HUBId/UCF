@@ -142,8 +142,8 @@ impl WorkingMemoryModel for MockSsmSelectiveScan {
 
 #[cfg(test)]
 mod tests {
-    use crate::capabilities::{FeatureExtractor, WorldModelPredictor};
-    use crate::feature_extractor::MockSaeExtractor;
+    use crate::capabilities::{SaeExtractor, WorldModelPredictor};
+    use crate::feature_extractor::ToySaeExtractor;
     use crate::world_model::{obs_features_from_context, MockJepaPredictor, WorldModelInput};
     use crate::FrameId;
 
@@ -176,8 +176,11 @@ mod tests {
     fn init_and_step_are_deterministic() {
         let input = input();
         let world = world(&input);
-        let sae = MockSaeExtractor
-            .extract(&input, &world, ComputeBudget::default())
+        let sae = ToySaeExtractor::default()
+            .extract(
+                &ToySaeExtractor::make_input(&input, &world, 11, [8; 32]),
+                ComputeBudget::default(),
+            )
             .expect("sae");
 
         let ssm = MockSsmSelectiveScan;
@@ -198,8 +201,11 @@ mod tests {
     fn pressure_stays_bounded() {
         let input = input();
         let world = world(&input);
-        let sae = MockSaeExtractor
-            .extract(&input, &world, ComputeBudget::default())
+        let sae = ToySaeExtractor::default()
+            .extract(
+                &ToySaeExtractor::make_input(&input, &world, 11, [8; 32]),
+                ComputeBudget::default(),
+            )
             .expect("sae");
         let ssm = MockSsmSelectiveScan;
         let state = ssm.init(&input, 3);
@@ -215,8 +221,11 @@ mod tests {
     fn budget_exceeded_uses_expected_stage() {
         let input = input();
         let world = world(&input);
-        let sae = MockSaeExtractor
-            .extract(&input, &world, ComputeBudget::default())
+        let sae = ToySaeExtractor::default()
+            .extract(
+                &ToySaeExtractor::make_input(&input, &world, 11, [8; 32]),
+                ComputeBudget::default(),
+            )
             .expect("sae");
         let ssm = MockSsmSelectiveScan;
         let state = ssm.init(&input, 9);

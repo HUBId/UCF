@@ -1,8 +1,8 @@
 use sha2::{Digest, Sha256};
 use std::sync::{Arc, Mutex};
 
-use crate::capabilities::{FeatureExtractor, WorkingMemoryModel, WorldModelPredictor};
-use crate::feature_extractor::{FeatureVector, MockSaeExtractor, SaeOutput, SAE_FEATURE_DIM};
+use crate::capabilities::{SaeExtractor, WorkingMemoryModel, WorldModelPredictor};
+use crate::feature_extractor::{SaeOutput, ToySaeExtractor};
 use crate::ssm::{MockSsmSelectiveScan, SsmOutput};
 use crate::work_meter::WorkMeter;
 use crate::world_model::{
@@ -45,7 +45,7 @@ impl Default for LimitsConfig {
 pub struct ComputePipelineBackend {
     backend_name: &'static str,
     world: Arc<Mutex<dyn WorldModelPredictor + Send + Sync>>,
-    sae: Arc<dyn FeatureExtractor + Send + Sync>,
+    sae: Arc<dyn SaeExtractor + Send + Sync>,
     ssm: Arc<dyn WorkingMemoryModel + Send + Sync>,
     fusion: FusionConfig,
     _limits: LimitsConfig,
@@ -55,7 +55,7 @@ impl ComputePipelineBackend {
     pub fn new(
         backend_name: &'static str,
         world: Arc<Mutex<dyn WorldModelPredictor + Send + Sync>>,
-        sae: Arc<dyn FeatureExtractor + Send + Sync>,
+        sae: Arc<dyn SaeExtractor + Send + Sync>,
         ssm: Arc<dyn WorkingMemoryModel + Send + Sync>,
         fusion: FusionConfig,
         limits: LimitsConfig,
@@ -74,7 +74,7 @@ impl ComputePipelineBackend {
         Self::new(
             "stub",
             Arc::new(Mutex::new(MockJepaPredictor::default())),
-            Arc::new(MockSaeExtractor),
+            Arc::new(ToySaeExtractor::default()),
             Arc::new(MockSsmSelectiveScan),
             FusionConfig::default(),
             LimitsConfig::default(),
@@ -83,13 +83,13 @@ impl ComputePipelineBackend {
 
     pub(crate) fn empty_sae() -> SaeOutput {
         SaeOutput {
-            feature_vec: FeatureVector {
-                features: vec![0.0; SAE_FEATURE_DIM],
-                digest: [0_u8; 32],
-            },
             spikes: Vec::new(),
+            spike_count: 0,
             sparsity: 1.0,
             energy: 0.0,
+            spikes_digest: [0_u8; 32],
+            quality: StageQuality::DegradedFallback,
+            notes: crate::feature_extractor::SmallNotes(vec!["degraded:empty".to_string()]),
         }
     }
 }
@@ -154,8 +154,13 @@ impl AiComputeBackend for ComputePipelineBackend {
         }
 
         global_meter.spend(220, "sae/extract")?;
+        let evidence_seed: [u8; 32] = Sha256::digest(input.context_digest).into();
+        let sae_input =
+            ToySaeExtractor::make_input(input, &world_model_out, budget.seed, evidence_seed);
+        let sae_span = tracing::info_span!("sae.extract", extractor = self.sae.name(), t = input.t);
+        let _sae_enter = sae_span.enter();
         let (sae_out, sae_degraded) = match sae_meter.spend(220, "sae/extract") {
-            Ok(()) => match self.sae.extract(input, &world_model_out, budget) {
+            Ok(()) => match self.sae.extract(&sae_input, budget) {
                 Ok(output) => (output, false),
                 Err(ComputeError::BudgetExceeded { stage, .. }) => {
                     exceeded_stage = Some(stage);
@@ -175,6 +180,13 @@ impl AiComputeBackend for ComputePipelineBackend {
             }
             Err(other) => return Err(other),
         };
+
+        metrics::histogram!("ucf_sae_spike_count").record(f64::from(sae_out.spike_count));
+        metrics::gauge!("ucf_sae_sparsity").set(f64::from(sae_out.sparsity));
+        metrics::histogram!("ucf_sae_energy").record(f64::from(sae_out.energy));
+        if sae_out.quality == StageQuality::DegradedFallback {
+            metrics::counter!("ucf_sae_degraded_total").increment(1);
+        }
 
         let mut seed_bytes = [0_u8; 8];
         seed_bytes.copy_from_slice(&input.context_digest[0..8]);
@@ -232,15 +244,7 @@ impl AiComputeBackend for ComputePipelineBackend {
             sae_out.energy * self.fusion.energy_weight,
         );
 
-        let mut spikes_hasher = Sha256::new();
-        for spike in &sae_out.spikes {
-            spikes_hasher.update(spike.feature_id.to_le_bytes());
-            spikes_hasher.update(spike.magnitude.to_bits().to_le_bytes());
-            spikes_hasher.update(spike.timestamp.to_le_bytes());
-        }
-        let spikes_digest = spikes_hasher.finalize();
-        let mut spikes_digest_ref = [0_u8; 32];
-        spikes_digest_ref.copy_from_slice(&spikes_digest);
+        let spikes_digest_ref = sae_out.spikes_digest;
 
         let quality = if world_model_out.quality != StageQuality::Ok || sae_degraded || ssm_degraded
         {
@@ -295,6 +299,7 @@ impl AiComputeBackend for ComputePipelineBackend {
                 Some(ssm_out.next_state.digest)
             },
             world_digest: Some(world_model_out.prediction_digest),
+            sae_quality: Some(sae_out.quality),
             budget_exceeded_stage: exceeded_stage,
         }
         .summary(self.name());
@@ -312,15 +317,12 @@ impl AiComputeBackend for ComputePipelineBackend {
             ),
             format!("pred_error={:.4}", world_model_out.prediction_error),
             format!("world_quality={:?}", world_model_out.quality),
-            format!(
-                "sae_digest={}",
-                &hex::encode(sae_out.feature_vec.digest)[..12]
-            ),
+            format!("sae_quality={:?}", sae_out.quality),
             format!(
                 "ssm_digest={}",
                 &hex::encode(ssm_out.next_state.digest)[..12]
             ),
-            format!("spike_count={}", sae_out.spikes.len()),
+            format!("spike_count={}", sae_out.spike_count),
             format!("sparsity={:.4}", sae_out.sparsity),
             format!("energy={:.4}", sae_out.energy),
             format!(
@@ -361,6 +363,7 @@ impl AiComputeBackend for ComputePipelineBackend {
                 Some(ssm_out.next_state.digest)
             },
             world_digest: Some(world_model_out.prediction_digest),
+            sae_quality: Some(sae_out.quality),
             budget_exceeded_stage: exceeded_stage,
         }
         .bounded())
@@ -369,7 +372,7 @@ impl AiComputeBackend for ComputePipelineBackend {
 
 #[cfg(test)]
 mod tests {
-    use crate::feature_extractor::MockSaeExtractor;
+    use crate::feature_extractor::ToySaeExtractor;
     use crate::ssm::MockSsmSelectiveScan;
     use crate::world_model::MockJepaPredictor;
     use crate::FrameId;
@@ -401,7 +404,7 @@ mod tests {
         let backend = ComputePipelineBackend::new(
             "stub",
             Arc::new(Mutex::new(MockJepaPredictor::default())),
-            Arc::new(MockSaeExtractor),
+            Arc::new(ToySaeExtractor::default()),
             Arc::new(MockSsmSelectiveScan),
             FusionConfig::default(),
             LimitsConfig::default(),
@@ -413,7 +416,7 @@ mod tests {
         assert!(out
             .notes
             .iter()
-            .any(|n| n == "feature_extractor=mock_sae_v0"));
+            .any(|n| n == "feature_extractor=toy_sae_v0"));
         assert!(out
             .notes
             .iter()

@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use thiserror::Error;
 use ucf_core::types::SimTime;
 use ucf_frames::v1::{ControlFrame, ControlPayload};
+use world_model::StageQuality;
 
 pub mod backends;
 pub mod capabilities;
@@ -58,6 +59,7 @@ pub struct ComputeSignals {
     pub ssm_readout: Option<f32>,
     pub ssm_digest: Option<[u8; 32]>,
     pub world_digest: Option<[u8; 32]>,
+    pub sae_quality: Option<StageQuality>,
     pub budget_exceeded_stage: Option<&'static str>,
 }
 
@@ -108,6 +110,7 @@ impl ComputeSignals {
             },
             &self.spikes,
             &risk_signal,
+            self.sae_quality,
         );
         UCF_COMPUTE_CHAIN_DIGEST_EMITTED_TOTAL.fetch_add(1, Ordering::Relaxed);
         ComputeSignalsSummary {
@@ -168,6 +171,7 @@ impl ComputeSignals {
             ssm_readout: None,
             ssm_digest: None,
             world_digest: None,
+            sae_quality: None,
             budget_exceeded_stage: None,
         }
     }
@@ -544,6 +548,7 @@ mod tests {
             ssm_readout: Some(3.0),
             ssm_digest: None,
             world_digest: None,
+            sae_quality: None,
             budget_exceeded_stage: None,
         }
         .bounded();

@@ -1,28 +1,26 @@
-use crate::capabilities::FeatureExtractor;
-use crate::feature_extractor::SaeOutput;
-use crate::world_model::WorldModelOutput;
-use crate::{ComputeBudget, ComputeError, ComputeInput};
+use crate::capabilities::SaeExtractor;
+use crate::feature_extractor::{SaeInput, SaeOutput};
+use crate::{ComputeBudget, ComputeError};
 
 #[derive(Debug, Clone, Copy)]
-pub struct BurnFeatureExtractor {
+pub struct BurnSaeExtractor {
     _seed: u64,
 }
 
-impl BurnFeatureExtractor {
+impl BurnSaeExtractor {
     pub fn new(seed: u64) -> Self {
         Self { _seed: seed }
     }
 }
 
-impl FeatureExtractor for BurnFeatureExtractor {
+impl SaeExtractor for BurnSaeExtractor {
     fn name(&self) -> &'static str {
         "burn_feature_extractor_v0"
     }
 
     fn extract(
         &self,
-        _input: &ComputeInput,
-        _world: &WorldModelOutput,
+        _input: &SaeInput,
         _budget: ComputeBudget,
     ) -> Result<SaeOutput, ComputeError> {
         Err(ComputeError::NotImplemented)
@@ -32,33 +30,20 @@ impl FeatureExtractor for BurnFeatureExtractor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::capabilities::WorldModelPredictor;
-    use crate::world_model::{obs_features_from_context, MockJepaPredictor, WorldModelInput};
-    use crate::FrameId;
 
     #[test]
     fn explicit_not_implemented_error() {
-        let extractor = BurnFeatureExtractor::new(7);
-        let input = ComputeInput {
-            frame_id: FrameId(1),
+        let extractor = BurnSaeExtractor::new(7);
+        let input = SaeInput {
             t: 3,
-            context_digest: [2_u8; 32],
+            context_features: [0.0; crate::feature_extractor::SAE_INPUT_DIM],
+            world_state_digest: None,
+            seed: 5,
+            evidence_chain_digest: [0; 32],
         };
-        let mut world_model = MockJepaPredictor::default();
-        let world = world_model
-            .step(
-                &WorldModelInput {
-                    t: input.t,
-                    context_digest: input.context_digest,
-                    obs_features: obs_features_from_context(input.context_digest),
-                    seed: 5,
-                },
-                ComputeBudget::default(),
-            )
-            .expect("world model should work");
 
         let err = extractor
-            .extract(&input, &world, ComputeBudget::default())
+            .extract(&input, ComputeBudget::default())
             .expect_err("burn skeleton returns explicit error");
         assert!(matches!(err, ComputeError::NotImplemented));
     }

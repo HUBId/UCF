@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "f": 128,
+  "d": 32,
+  "energy_scale": 1.0,
+  "weight_formula": {
+    "modulus": 97,
+    "mul_i": 31,
+    "mul_j": 17,
+    "add": 13,
+    "scale": 0.2,
+    "bias": -0.1
+  },
+  "bias_formula": {
+    "modulus": 41,
+    "mul_i": 19,
+    "add": 7,
+    "scale": 0.05,
+    "bias": -0.025
+  },
+  "weights_digest_hex": "acb4d2209673a6672f6c49acf76fc65f001a3b126ce5c868d4ce94cd20cd7848"
+}

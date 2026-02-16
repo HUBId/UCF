@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use crate::feature_extractor::MockSaeExtractor;
+use crate::feature_extractor::ToySaeExtractor;
 use crate::pipeline::{ComputePipelineBackend, FusionConfig, LimitsConfig};
 use crate::ssm::MockSsmSelectiveScan;
 use crate::world_model::MockJepaPredictor;
@@ -10,13 +10,13 @@ use crate::{AiComputeBackend, ComputeBudget, ComputeBudgetProfile, ComputeError}
 mod candle_backend;
 
 #[cfg(feature = "compute-candle")]
-pub use candle_backend::CandleFeatureExtractor;
+pub use candle_backend::CandleSaeExtractor;
 
 #[cfg(feature = "compute-burn")]
 mod burn_backend;
 
 #[cfg(feature = "compute-burn")]
-pub use burn_backend::BurnFeatureExtractor;
+pub use burn_backend::BurnSaeExtractor;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
@@ -159,7 +159,7 @@ pub fn build_backend(
         ComputeBackendKind::Stub => ComputePipelineBackend::new(
             "stub",
             world,
-            Arc::new(MockSaeExtractor),
+            Arc::new(ToySaeExtractor::default()),
             ssm,
             fusion,
             limits,
@@ -170,7 +170,7 @@ pub fn build_backend(
                 ComputePipelineBackend::new(
                     "candle",
                     world,
-                    Arc::new(CandleFeatureExtractor::new(cfg.seed)),
+                    Arc::new(CandleSaeExtractor::new(cfg.seed)),
                     ssm,
                     fusion,
                     limits,
@@ -187,7 +187,7 @@ pub fn build_backend(
                 ComputePipelineBackend::new(
                     "burn",
                     world,
-                    Arc::new(BurnFeatureExtractor::new(cfg.seed)),
+                    Arc::new(BurnSaeExtractor::new(cfg.seed)),
                     ssm,
                     fusion,
                     limits,
