@@ -8,6 +8,8 @@ default = ["compute-stub"]
 compute-stub = []
 compute-candle = ["dep:candle-core"]
 compute-burn = []
+llm-candle = ["dep:candle-core"]
+llm-burn = []
 
 [dependencies]
 sha2 = { workspace = true }
