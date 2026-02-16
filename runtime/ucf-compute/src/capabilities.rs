@@ -3,9 +3,9 @@ use std::sync::Arc;
 use sha2::{Digest, Sha256};
 
 use crate::feature_extractor::{SaeInput, SaeOutput};
-use crate::ssm::{SsmOutput, SsmState};
+use crate::ssm::SsmKernel;
 use crate::world_model::{WorldModelInput, WorldModelOutput};
-use crate::{ComputeBudget, ComputeError, ComputeInput, MAX_NOTE_LEN};
+use crate::{ComputeBudget, ComputeError, MAX_NOTE_LEN};
 
 #[cfg(any(feature = "compute-burn", feature = "llm-burn"))]
 mod burn_llm_backend;
@@ -71,17 +71,9 @@ pub trait SaeExtractor: Send + Sync {
     fn extract(&self, input: &SaeInput, budget: ComputeBudget) -> Result<SaeOutput, ComputeError>;
 }
 
-pub trait WorkingMemoryModel: Send + Sync {
-    fn name(&self) -> &'static str;
-    fn init(&self, input: &ComputeInput, seed: u64) -> SsmState;
-    fn step(
-        &self,
-        state: &SsmState,
-        sae: &SaeOutput,
-        world: &WorldModelOutput,
-        budget: ComputeBudget,
-    ) -> Result<SsmOutput, ComputeError>;
-}
+pub trait WorkingMemoryModel: SsmKernel {}
+
+impl<T: SsmKernel> WorkingMemoryModel for T {}
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct LlmOutput {

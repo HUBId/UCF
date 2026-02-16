@@ -17,11 +17,11 @@ The top-level runtime contract stays `AiComputeBackend`, but concrete backends a
 
 `build_backend` wires `ComputeBackendKind` into capability profiles:
 
-- `stub`: `MockJepaPredictor` + `MockSaeExtractor` + `MockSsmSelectiveScan`
+- `stub`: `MockJepaPredictor` + `MockSaeExtractor` + `ToySsmKernel`
 - `candle` (`--features compute-candle`):
-  `MockJepaPredictor` + `CandleFeatureExtractor` + `MockSsmSelectiveScan`
+  `MockJepaPredictor` + `CandleFeatureExtractor` + `ToySsmKernel`
 - `burn` (`--features compute-burn`):
-  `MockJepaPredictor` + `BurnFeatureExtractor` + `MockSsmSelectiveScan`
+  `MockJepaPredictor` + `BurnFeatureExtractor` + `ToySsmKernel`
 
 Burn v0 is an explicit skeleton. With feature enabled, compute returns `ComputeError::NotImplemented` deterministically. Without feature, backend selection fails fast with `ComputeError::BackendDisabled`.
 

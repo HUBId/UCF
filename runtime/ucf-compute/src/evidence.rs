@@ -72,6 +72,7 @@ pub struct EvidenceChain {
     pub ssm_digest: Option<[u8; 32]>,
     pub risk_digest: [u8; 32],
     pub sae_quality: Option<StageQuality>,
+    pub ssm_quality: Option<StageQuality>,
     pub chain_digest: [u8; 32],
 }
 
@@ -81,6 +82,7 @@ impl EvidenceChain {
         spikes: &[Spike],
         risk_signal: &RiskSignal,
         sae_quality: Option<StageQuality>,
+        ssm_quality: Option<StageQuality>,
     ) -> Self {
         let risk_digest = digest_canonical(risk_signal);
         let mut chain = Self {
@@ -98,6 +100,7 @@ impl EvidenceChain {
             ssm_digest: risk_signal.evidence.ssm_digest,
             risk_digest,
             sae_quality,
+            ssm_quality,
             chain_digest: [0; 32],
         };
         chain.chain_digest = digest_canonical(&chain);
@@ -196,6 +199,13 @@ impl CanonicalEncode for EvidenceChain {
             }
             None => out.push(0),
         }
+        match self.ssm_quality {
+            Some(q) => {
+                out.push(1);
+                out.push(q as u8);
+            }
+            None => out.push(0),
+        }
     }
 }
 
@@ -278,8 +288,8 @@ mod tests {
                 },
                 version: 1,
             };
-            let a = EvidenceChain::from_compute(&input, &[], &risk_signal, None);
-            let b = EvidenceChain::from_compute(&input, &[], &risk_signal, None);
+            let a = EvidenceChain::from_compute(&input, &[], &risk_signal, None, None);
+            let b = EvidenceChain::from_compute(&input, &[], &risk_signal, None, None);
             prop_assert_eq!(a.chain_digest, b.chain_digest);
             prop_assert_eq!(digest_canonical(&a), digest_canonical(&b));
             assert_evidence_chain(&a);
@@ -303,8 +313,8 @@ mod tests {
                 },
                 version: 1,
             };
-            let a = EvidenceChain::from_compute(&input, &[], &mk(seed), None);
-            let b = EvidenceChain::from_compute(&input, &[], &mk(seed.saturating_add(bump)), None);
+            let a = EvidenceChain::from_compute(&input, &[], &mk(seed), None, None);
+            let b = EvidenceChain::from_compute(&input, &[], &mk(seed.saturating_add(bump)), None, None);
             prop_assert_ne!(a.chain_digest, b.chain_digest);
             assert_evidence_chain(&a);
             assert_evidence_chain(&b);
@@ -334,17 +344,17 @@ mod tests {
             version: 1,
         };
 
-        let base = EvidenceChain::from_compute(&input, &[], &risk, None);
-        let same = EvidenceChain::from_compute(&input, &[], &risk, None);
+        let base = EvidenceChain::from_compute(&input, &[], &risk, None, None);
+        let same = EvidenceChain::from_compute(&input, &[], &risk, None, None);
         assert_eq!(base.chain_digest, same.chain_digest);
 
         risk.evidence.seed = 12;
-        let changed_seed = EvidenceChain::from_compute(&input, &[], &risk, None);
+        let changed_seed = EvidenceChain::from_compute(&input, &[], &risk, None, None);
         assert_ne!(base.chain_digest, changed_seed.chain_digest);
 
         risk.evidence.seed = 11;
         risk.evidence.backend_profile = BackendProfileId::BurnV1;
-        let changed_backend = EvidenceChain::from_compute(&input, &[], &risk, None);
+        let changed_backend = EvidenceChain::from_compute(&input, &[], &risk, None, None);
         assert_ne!(base.chain_digest, changed_backend.chain_digest);
     }
 }
