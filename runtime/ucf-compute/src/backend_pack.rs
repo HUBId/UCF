@@ -15,6 +15,7 @@ use crate::lfm::CandleLfmKernel;
 use crate::lfm::LnnOdeLfmKernel;
 use crate::lfm::{LfmKernel, ToyLfmKernel};
 use crate::ssm::{SsmKernel, ToySsmKernel};
+use crate::worker_backend::WorkerBackendPack;
 use crate::world_model::MockJepaPredictor;
 use crate::{CodeVersionTag, ComputeError, ModelLoadError, ModelSlot, ModelStore};
 
@@ -198,6 +199,7 @@ pub enum BackendPackKind {
     CandleLiquidV1,
     BurnToyV1,
     ToyLnnV1,
+    WorkerV1,
 }
 
 impl BackendPackKind {
@@ -209,6 +211,7 @@ impl BackendPackKind {
             "candle_liquid_v1" => Some(Self::CandleLiquidV1),
             "burn_toy_v1" => Some(Self::BurnToyV1),
             "toy_lnn_v1" => Some(Self::ToyLnnV1),
+            "worker_v1" => Some(Self::WorkerV1),
             _ => None,
         }
     }
@@ -221,6 +224,7 @@ impl BackendPackKind {
             Self::CandleLiquidV1 => "candle_liquid_v1",
             Self::BurnToyV1 => "burn_toy_v1",
             Self::ToyLnnV1 => "toy_lnn_v1",
+            Self::WorkerV1 => "worker_v1",
         }
     }
 
@@ -232,6 +236,7 @@ impl BackendPackKind {
             Self::CandleLiquidV1 => BackendPackId(4),
             Self::BurnToyV1 => BackendPackId(3),
             Self::ToyLnnV1 => BackendPackId(5),
+            Self::WorkerV1 => BackendPackId(6),
         }
     }
 }
@@ -284,6 +289,10 @@ pub struct BackendPackFactory;
 impl BackendPackFactory {
     pub fn build(cfg: BackendPackConfig) -> Result<Arc<dyn BackendPack>, ComputeError> {
         crate::ReleaseFeatureMatrix::detect().validate_pack(cfg.pack)?;
+        if cfg.pack == BackendPackKind::WorkerV1 {
+            return WorkerBackendPack::build(cfg.seed);
+        }
+
         let fixtures = FixtureManager;
         let fixtures_digest = fixtures.overall_digest()?;
         let model_store = ModelStore::from_env_default().unwrap_or_else(|_| ModelStore {
@@ -304,7 +313,9 @@ impl BackendPackFactory {
             BackendPackKind::BurnToyV1 => {
                 (BackendComponentId::BurnToyV1, BackendComponentId::BurnToyV1)
             }
-            BackendPackKind::ToyLnnV1 => (BackendComponentId::ToyV1, BackendComponentId::ToyV1),
+            BackendPackKind::ToyLnnV1 | BackendPackKind::WorkerV1 => {
+                (BackendComponentId::ToyV1, BackendComponentId::ToyV1)
+            }
         };
 
         let llm_cfg = match cfg.pack {
@@ -318,18 +329,15 @@ impl BackendPackFactory {
                 seed: cfg.seed,
                 max_tokens: 128,
             },
-            BackendPackKind::CandleLiquidV1 => LlmBackendConfig {
+            BackendPackKind::CandleLiquidV1
+            | BackendPackKind::ToyLnnV1
+            | BackendPackKind::WorkerV1 => LlmBackendConfig {
                 kind: crate::capabilities::LlmBackendKind::Stub,
                 seed: cfg.seed,
                 max_tokens: 128,
             },
             BackendPackKind::BurnToyV1 => LlmBackendConfig {
                 kind: crate::capabilities::LlmBackendKind::Burn,
-                seed: cfg.seed,
-                max_tokens: 128,
-            },
-            BackendPackKind::ToyLnnV1 => LlmBackendConfig {
-                kind: crate::capabilities::LlmBackendKind::Stub,
                 seed: cfg.seed,
                 max_tokens: 128,
             },
@@ -376,6 +384,11 @@ impl BackendPackFactory {
                     {
                         return Err(ComputeError::BackendDisabled);
                     }
+                }
+                BackendPackKind::WorkerV1 => {
+                    return Err(ComputeError::Internal {
+                        reason: "worker pack handled above".to_string(),
+                    })
                 }
             };
 
