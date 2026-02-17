@@ -4,10 +4,11 @@ use std::path::PathBuf;
 
 use ucf_ops::{
     adversarial_run, bench_run, bringup, diagnostics, ess_compact, ess_snapshot, explain_tick,
-    export_bugreport, metrics_snapshot, metrics_summary, metrics_trend, models_probe,
-    models_verify, one_command_bringup, readiness_gate, replay_audit, replay_bugreport, run_status,
-    runs_list, runs_search, runs_show, security_verify_chain, verify_bugreport, AdversarialRunArgs,
-    BenchArgs, ExplainTickRequest, ExportArgs, GateStatus,
+    export_bugreport, load_signoff_checklist, metrics_snapshot, metrics_summary, metrics_trend,
+    models_probe, models_verify, one_command_bringup, out_manifest, readiness_gate,
+    release_signoff_validate, replay_audit, replay_bugreport, run_status, runs_list, runs_search,
+    runs_show, security_verify_chain, verify_bugreport, AdversarialRunArgs, BenchArgs,
+    ExplainTickRequest, ExportArgs, GateStatus,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -355,6 +356,51 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 std::process::exit(2);
             }
         }
+        "out" => {
+            let sub = args.get(2).map(String::as_str).unwrap_or("help");
+            match sub {
+                "manifest" => {
+                    let Some(dir) = arg_value(&args, "--dir") else {
+                        return Err("usage: ucf-ops out manifest --dir <path>".into());
+                    };
+                    let manifest = out_manifest(&PathBuf::from(dir))?;
+                    println!("{}", serde_json::to_string_pretty(&manifest)?);
+                }
+                _ => return Err("usage: ucf-ops out manifest --dir <path>".into()),
+            }
+        }
+        "release" => {
+            let sub = args.get(2).map(String::as_str).unwrap_or("help");
+            match sub {
+                "signoff" => {
+                    let validate = has_flag(&args, "--validate");
+                    if !validate {
+                        return Err("usage: ucf-ops release signoff --validate --out <dir> --emit <path> [--checklist <path>]".into());
+                    }
+                    let Some(out) = arg_value(&args, "--out") else {
+                        return Err("usage: ucf-ops release signoff --validate --out <dir> --emit <path> [--checklist <path>]".into());
+                    };
+                    let emit = arg_value(&args, "--emit")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("release/v0_signoff_result.json"));
+                    let checklist = arg_value(&args, "--checklist")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("release/v0_signoff_checklist.toml"));
+                    let _ = load_signoff_checklist(&checklist)?;
+                    let report = release_signoff_validate(&PathBuf::from(out), &checklist, &emit)?;
+                    println!("pass={}", report.pass);
+                    println!("emit={}", emit.display());
+                    if !report.pass {
+                        std::process::exit(2);
+                    }
+                }
+                _ => {
+                    return Err(
+                        "usage: ucf-ops release signoff --validate --out <dir> --emit <path> [--checklist <path>]".into(),
+                    )
+                }
+            }
+        }
         "bench" => {
             let scenario = arg_value(&args, "--scenario")
                 .map(PathBuf::from)
@@ -476,7 +522,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             eprintln!(
-                "usage: ucf-ops <bringup|diag|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|readiness-gate|adversarial-run|bench|runs|status|version> [--workdir <path>]"
+                "usage: ucf-ops <bringup|diag|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|readiness-gate|adversarial-run|out|release|bench|runs|status|version> [--workdir <path>]"
             );
             std::process::exit(1);
         }

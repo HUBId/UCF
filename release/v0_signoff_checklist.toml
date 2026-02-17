@@ -1,0 +1,86 @@
+version = "v0"
+profile = "test"
+
+[[items]]
+id = "workspace_tests"
+command = "cargo test --workspace"
+required = true
+purpose = "Workspace-level deterministic verification"
+pass_criteria = "exit_code == 0"
+
+[[items]]
+id = "bringup"
+command = "cargo run -p ucf-ops -- bringup --scenario fixtures/e2e_scenario_a.json --ticks 32 --out ./out/<run_id>"
+required = true
+purpose = "Generate deterministic run metadata and core artifacts"
+expected_artifact = "run_metadata.json"
+pass_criteria = "file exists + digest stable prefix"
+
+[[items]]
+id = "readiness_gate"
+command = "cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/<run_id>/gate_report.json"
+required = true
+purpose = "Offline production-readiness checks"
+expected_artifact = "gate_report.json"
+pass_criteria = "status=pass"
+
+[[items]]
+id = "adversarial"
+command = "cargo run -p ucf-ops -- adversarial-run --suite v1 --out ./out/<run_id>/adversarial_report.json"
+required = true
+purpose = "Adversarial prompts/path/tool intent regression"
+expected_artifact = "adversarial_report.json"
+pass_criteria = "pass=true"
+
+[[items]]
+id = "bench"
+command = "cargo run -p ucf-ops -- bench --scenario fixtures/e2e_scenario_a.json --ticks 256 --out ./out/<run_id>/bench_report.json"
+required = true
+purpose = "Deterministic throughput and memory-cap checks"
+expected_artifact = "bench_report.json"
+pass_criteria = "memory.cap_exceeded=false"
+
+[[items]]
+id = "models_verify"
+command = "cargo run -p ucf-ops -- models verify --manifest models/manifest.toml"
+required = true
+purpose = "Hash-lock + slot verification"
+pass_criteria = "all slots verified or disabled"
+
+[[items]]
+id = "models_probe"
+command = "cargo run -p ucf-ops -- models probe --manifest models/manifest.toml --out ./out/<run_id>/probe_report.json"
+required = false
+purpose = "Optional deterministic probe execution for enabled slots"
+expected_artifact = "probe_report.json"
+pass_criteria = "summary.pass=true when model files available"
+
+[[items]]
+id = "ess_snapshot"
+command = "cargo run -p ucf-ops -- ess snapshot --out ./out/<run_id>/snapshot.snap"
+required = true
+purpose = "Immutable ESS export for replay and forensics"
+expected_artifact = "snapshot.snap"
+pass_criteria = "snapshot + manifest digest emitted"
+
+[[items]]
+id = "security_chain"
+command = "cargo run -p ucf-ops -- security verify-chain --from 1 --to 32"
+required = true
+purpose = "Capability/emergency/audit chain integrity"
+pass_criteria = "exit_code == 0"
+
+[[items]]
+id = "out_manifest"
+command = "cargo run -p ucf-ops -- out manifest --dir ./out/<run_id>"
+required = true
+purpose = "Generate machine-readable artifact + sha256 manifest"
+expected_artifact = "manifest.json"
+pass_criteria = "manifest contains all expected files"
+
+[[items]]
+id = "release_validate"
+command = "cargo run -p ucf-ops -- release signoff --validate --out ./out/<run_id> --emit release/v0_signoff_result.json"
+required = true
+purpose = "Tag gate validation of produced artifacts"
+pass_criteria = "pass=true"
