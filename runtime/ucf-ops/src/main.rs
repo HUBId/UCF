@@ -3,8 +3,9 @@
 use std::path::PathBuf;
 
 use ucf_ops::{
-    bringup, diagnostics, export_bugreport, metrics_snapshot, replay_audit, replay_bugreport,
-    verify_bugreport, ExportArgs,
+    bringup, diagnostics, explain_tick, export_bugreport, metrics_snapshot, metrics_summary,
+    metrics_trend, replay_audit, replay_bugreport, verify_bugreport, ExplainTickRequest,
+    ExportArgs,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -109,9 +110,110 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let snapshot = metrics_snapshot(&workdir)?;
             println!("{}", serde_json::to_string_pretty(&snapshot)?);
         }
+        "explain-tick" => {
+            let req = ExplainTickRequest {
+                t: arg_value(&args, "--t").and_then(|v| v.parse::<u64>().ok()),
+                decision_id: arg_value(&args, "--decision-id").and_then(|v| v.parse::<u64>().ok()),
+                detail_level: arg_value(&args, "--detail-level")
+                    .and_then(|v| v.parse::<u8>().ok())
+                    .unwrap_or(1),
+                digest_prefix_len: arg_value(&args, "--digest-prefix-len")
+                    .and_then(|v| v.parse::<u8>().ok())
+                    .unwrap_or(8),
+            };
+            let report = explain_tick(&workdir, req)?;
+            if has_flag(&args, "--json") {
+                println!("{}", serde_json::to_string_pretty(&report)?);
+            } else {
+                println!(
+                    "tick={} decision_id={}",
+                    report.header.t, report.header.decision_id
+                );
+                println!(
+                    "chain={} backend_pack={}",
+                    report
+                        .header
+                        .evidence_chain_digest_prefix
+                        .as_deref()
+                        .unwrap_or("none"),
+                    report
+                        .header
+                        .backend_pack_digest_prefix
+                        .as_deref()
+                        .unwrap_or("none")
+                );
+                println!(
+                    "risk={:?} confidence={:?} surprise={:?} pressure={:?}",
+                    report.compute.risk.risk,
+                    report.compute.risk.confidence,
+                    report.compute.world.surprise,
+                    report.compute.ssm.pressure
+                );
+                println!(
+                    "tier={:?} emergency_active={} issuance={}",
+                    report.governance.tier,
+                    report.governance.emergency_active,
+                    report.governance.issuance.len()
+                );
+                println!(
+                    "candidates={:?} selected={:?} output_class={:?}",
+                    report.decision.candidate_count,
+                    report.decision.selected_candidate_id,
+                    report.output.output_class
+                );
+                for warning in report.warnings {
+                    println!("warning={warning}");
+                }
+            }
+        }
+        "metrics" => {
+            let sub = args.get(2).map(String::as_str).unwrap_or("help");
+            match sub {
+                "summary" => {
+                    let last = arg_value(&args, "--last")
+                        .and_then(|v| v.parse::<usize>().ok())
+                        .unwrap_or(64);
+                    let report = metrics_summary(&workdir, last)?;
+                    if has_flag(&args, "--json") {
+                        println!("{}", serde_json::to_string_pretty(&report)?);
+                    } else {
+                        println!(
+                            "ticks={} mean_surprise={:.4} max_surprise={:.4}",
+                            report.ticks_observed, report.mean_surprise, report.max_surprise
+                        );
+                        println!(
+                            "mean_pressure={:.4} max_pressure={:.4} mean_uncertainty={:.4}",
+                            report.mean_pressure, report.max_pressure, report.mean_uncertainty
+                        );
+                        println!(
+                            "tier2_3_percent={:.2} emergency_triggers={} deny_rate={:.4}",
+                            report.governor_tier_2_3_percent,
+                            report.emergency_triggers,
+                            report.tool_issuance_deny_rate
+                        );
+                    }
+                }
+                "trend" => {
+                    let from = parse_u64(&args, "--from", 0);
+                    let to = parse_u64(&args, "--to", u64::MAX);
+                    let trend = metrics_trend(&workdir, from, to)?;
+                    if has_flag(&args, "--json") {
+                        println!("{}", serde_json::to_string_pretty(&trend)?);
+                    } else {
+                        for p in trend {
+                            println!(
+                                "t={} surprise={:?} pressure={:?} uncertainty={:?} risk={:?}",
+                                p.t, p.surprise, p.pressure, p.uncertainty, p.risk
+                            );
+                        }
+                    }
+                }
+                _ => return Err("usage: ucf-ops metrics <summary|trend> ...".into()),
+            }
+        }
         _ => {
             eprintln!(
-                "usage: ucf-ops <bringup|diag|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot> [--workdir <path>]"
+                "usage: ucf-ops <bringup|diag|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics> [--workdir <path>]"
             );
             std::process::exit(1);
         }

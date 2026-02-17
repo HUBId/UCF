@@ -11,8 +11,11 @@ use ucf_compute::{
     build_backend, compute_input_from_control, stable_budget_profile_id, ComputeBackendConfig,
     ComputeBackendKind,
 };
-use ucf_core::types::{SimTime, Tick, WindowId};
-use ucf_ess::v1::{ExperienceKind, ExperiencePayload};
+use ucf_core::types::Tick;
+use ucf_core::types::{SimTime, WindowId};
+use ucf_ess::v1::{
+    AuditPayload, EmergencyStateCode, ExperienceKind, ExperiencePayload, ExperienceRecord,
+};
 use ucf_frames::v1::{
     ChannelCode, ControlFrame, ControlPayload, CorrelationId, Intent, IntentId, IntentKind,
 };
@@ -93,6 +96,154 @@ pub struct ExportArgs {
     pub last: Option<usize>,
     pub include_sandbox: bool,
     pub include_audit: bool,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ExplainTickRequest {
+    pub t: Option<u64>,
+    pub decision_id: Option<u64>,
+    pub detail_level: u8,
+    pub digest_prefix_len: u8,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ExplainTickReport {
+    pub header: ExplainHeader,
+    pub compute: ExplainCompute,
+    pub governance: ExplainGovernance,
+    pub decision: ExplainDecision,
+    pub output: ExplainOutput,
+    pub links: ExplainLinks,
+    pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ExplainHeader {
+    pub t: u64,
+    pub decision_id: u64,
+    pub backend_pack_digest_prefix: Option<String>,
+    pub evidence_chain_digest_prefix: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ExplainCompute {
+    pub world: ExplainWorld,
+    pub sae: ExplainSae,
+    pub ssm: ExplainSsm,
+    pub lfm: ExplainLfm,
+    pub coherence: Option<ExplainCoherence>,
+    pub risk: ExplainRisk,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ExplainWorld {
+    pub surprise: Option<f32>,
+    pub prediction_error: Option<f32>,
+    pub world_digest_prefix: Option<String>,
+    pub quality: Option<u8>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ExplainSae {
+    pub spike_count: Option<u16>,
+    pub energy: Option<f32>,
+    pub spikes_digest_prefix: Option<String>,
+    pub quality: Option<u8>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ExplainSsm {
+    pub pressure: Option<f32>,
+    pub ssm_digest_prefix: Option<String>,
+    pub quality: Option<u8>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ExplainLfm {
+    pub uncertainty: Option<f32>,
+    pub stability: Option<f32>,
+    pub lfm_digest_prefix: Option<String>,
+    pub quality: Option<u8>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ExplainCoherence {
+    pub coherence: Option<f32>,
+    pub phi_proxy: Option<f32>,
+    pub coherence_digest_prefix: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ExplainRisk {
+    pub risk: Option<f32>,
+    pub confidence: Option<f32>,
+    pub risk_digest_prefix: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ExplainGovernance {
+    pub governor_score: Option<u16>,
+    pub tier: Option<u8>,
+    pub emergency_active: bool,
+    pub issuance: Vec<IssuanceExplain>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+pub struct IssuanceExplain {
+    pub candidate_id: Option<u16>,
+    pub requested: Vec<String>,
+    pub granted: Vec<String>,
+    pub denied: Vec<(String, String)>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ExplainDecision {
+    pub candidate_count: Option<usize>,
+    pub selected_candidate_id: Option<u16>,
+    pub selected_candidate_digest_prefix: Option<String>,
+    pub policy_hints: Vec<u8>,
+    pub nsr_reasons: Vec<u16>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ExplainOutput {
+    pub output_class: Option<u8>,
+    pub llm_backend: Option<String>,
+    pub request_digest_prefix: Option<String>,
+    pub response_digest_prefix: Option<String>,
+    pub status: Option<u8>,
+    pub finish_reason: Option<u8>,
+    pub max_tokens_eff: Option<u32>,
+    pub text_preview: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ExplainLinks {
+    pub record_ids: Vec<u64>,
+    pub record_kinds: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct MetricsSummary {
+    pub ticks_observed: usize,
+    pub mean_surprise: f32,
+    pub max_surprise: f32,
+    pub mean_pressure: f32,
+    pub max_pressure: f32,
+    pub mean_uncertainty: f32,
+    pub max_uncertainty: f32,
+    pub governor_tier_2_3_percent: f32,
+    pub emergency_triggers: usize,
+    pub tool_issuance_deny_rate: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct MetricsTrendPoint {
+    pub t: u64,
+    pub surprise: Option<f32>,
+    pub pressure: Option<f32>,
+    pub uncertainty: Option<f32>,
+    pub risk: Option<f32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -418,6 +569,461 @@ pub fn metrics_snapshot(workdir: &Path) -> Result<serde_json::Value, OpsError> {
     }))
 }
 
+pub fn explain_tick(
+    workdir: &Path,
+    req: ExplainTickRequest,
+) -> Result<ExplainTickReport, OpsError> {
+    let records = load_fixture_records(&workdir.join("ess").join("ess_fixture.json"))?;
+    build_explain_tick_report(&records, req)
+}
+
+pub fn build_explain_tick_report(
+    records: &[ExperienceRecord],
+    req: ExplainTickRequest,
+) -> Result<ExplainTickReport, OpsError> {
+    let mut warnings = Vec::new();
+    let prefix = req.digest_prefix_len.clamp(4, 32) as usize;
+    let detail = req.detail_level.min(2);
+
+    let decision = records
+        .iter()
+        .filter(|r| r.kind == ExperienceKind::DecisionOut)
+        .filter(|r| {
+            req.t.is_none_or(|t| r.time.tick.get() == t)
+                && req.decision_id.is_none_or(|id| r.id.0 == id)
+        })
+        .max_by_key(|r| (r.time.tick.get(), r.id.0))
+        .ok_or_else(|| OpsError::Invalid("no matching decision found".to_string()))?;
+
+    let tick = decision.time.tick.get();
+    let decision_id = decision.id.0;
+    let compute = decision.compute_summary;
+    if compute.is_none() {
+        warnings.push("DecisionOut missing compute_summary".to_string());
+    }
+    let evidence_chain = compute.and_then(|s| s.compute_chain_digest);
+
+    let mut candidates = records
+        .iter()
+        .filter_map(|r| {
+            if r.kind != ExperienceKind::CandidateSet || r.time.tick.get() != tick {
+                return None;
+            }
+            match &r.payload {
+                ExperiencePayload::Audit(AuditPayload::CandidateSet(c))
+                    if c.decision_id == decision_id =>
+                {
+                    Some((r, c.clone()))
+                }
+                _ => None,
+            }
+        })
+        .collect::<Vec<_>>();
+    candidates.sort_by_key(|(r, _)| (r.time.tick.get(), r.id.0));
+    let candidate_set = candidates.last().map(|(_, c)| c.clone());
+
+    let mut outputs = records
+        .iter()
+        .filter_map(|r| {
+            if r.kind != ExperienceKind::Output || r.time.tick.get() != tick {
+                return None;
+            }
+            match &r.payload {
+                ExperiencePayload::Audit(AuditPayload::Output(o))
+                    if o.decision_id == decision_id =>
+                {
+                    Some((r, o.clone()))
+                }
+                _ => None,
+            }
+        })
+        .collect::<Vec<_>>();
+    outputs.sort_by_key(|(r, o)| (r.time.tick.get(), r.id.0, o.candidate_id));
+    let output = outputs.last().map(|(_, o)| o.clone());
+
+    let mut issuances = records
+        .iter()
+        .filter_map(|r| {
+            if r.kind != ExperienceKind::CapabilityIssuance || r.time.tick.get() != tick {
+                return None;
+            }
+            match &r.payload {
+                ExperiencePayload::Audit(AuditPayload::CapabilityIssuance(i))
+                    if i.decision_id == decision_id =>
+                {
+                    Some((r, i.clone()))
+                }
+                _ => None,
+            }
+        })
+        .collect::<Vec<_>>();
+    issuances.sort_by_key(|(r, i)| {
+        (
+            r.time.tick.get(),
+            r.id.0,
+            i.candidate_id.unwrap_or(u16::MAX),
+        )
+    });
+
+    let mut nsrs = records
+        .iter()
+        .filter_map(|r| {
+            if r.kind == ExperienceKind::Nsr && r.time.tick.get() == tick {
+                r.nsr_record
+                    .clone()
+                    .filter(|n| n.decision_id == decision_id)
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    nsrs.sort_by_key(|n| (n.t, n.decision_id));
+
+    let mut lfm = records
+        .iter()
+        .filter_map(|r| {
+            if r.kind == ExperienceKind::LfmSummary && r.time.tick.get() == tick {
+                r.lfm_summary_record
+                    .filter(|s| s.decision_id == Some(decision_id))
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    lfm.sort_by_key(|s| s.t);
+    let lfm_summary = lfm.last().copied();
+
+    let mut packs = records
+        .iter()
+        .filter_map(|r| r.backend_pack_record.clone().filter(|p| p.t <= tick))
+        .collect::<Vec<_>>();
+    packs.sort_by_key(|p| p.t);
+    let backend_pack = packs.last().cloned();
+
+    let emergency_active = records.iter().any(|r| {
+        r.kind == ExperienceKind::Emergency
+            && r.time.tick.get() <= tick
+            && matches!(
+                &r.payload,
+                ExperiencePayload::Audit(AuditPayload::Emergency(e)) if e.state == EmergencyStateCode::Active
+            )
+    });
+
+    if candidate_set.is_none() {
+        warnings.push("CandidateSetRecord missing".to_string());
+    }
+    if output.is_none() {
+        warnings.push("OutputRecord missing".to_string());
+    }
+    if issuances.is_empty() {
+        warnings.push("CapabilityIssuanceRecord missing".to_string());
+    }
+
+    let mut policy_hints = nsrs.iter().map(|n| n.policy_hint).collect::<Vec<_>>();
+    policy_hints.sort_unstable();
+    policy_hints.dedup();
+
+    let mut nsr_reasons = nsrs
+        .iter()
+        .flat_map(|n| n.reasons.clone())
+        .collect::<Vec<_>>();
+    nsr_reasons.sort_unstable();
+    nsr_reasons.dedup();
+    if detail == 0 {
+        nsr_reasons.truncate(4);
+    } else {
+        nsr_reasons.truncate(16);
+    }
+
+    let mut issuance_view = issuances
+        .iter()
+        .map(|(_, i)| {
+            let mut requested = i.requested_kinds.clone();
+            let mut granted = i.granted_kinds.clone();
+            let mut denied = i.denied_kinds.clone();
+            requested.sort();
+            granted.sort();
+            denied.sort();
+            IssuanceExplain {
+                candidate_id: i.candidate_id,
+                requested,
+                granted,
+                denied,
+            }
+        })
+        .collect::<Vec<_>>();
+    issuance_view.sort();
+    issuance_view.truncate(if detail == 0 { 2 } else { 8 });
+
+    let links = {
+        let mut rows = records
+            .iter()
+            .filter(|r| r.time.tick.get() == tick)
+            .filter(|r| {
+                r.id.0 == decision_id
+                    || r.corr == decision.corr
+                    || matches!(
+                        (&r.kind, &r.payload),
+                        (ExperienceKind::CapabilityIssuance, ExperiencePayload::Audit(AuditPayload::CapabilityIssuance(i))) if i.decision_id == decision_id
+                    )
+                    || matches!(
+                        (&r.kind, &r.payload),
+                        (ExperienceKind::CandidateSet, ExperiencePayload::Audit(AuditPayload::CandidateSet(c))) if c.decision_id == decision_id
+                    )
+                    || matches!(
+                        (&r.kind, &r.payload),
+                        (ExperienceKind::Output, ExperiencePayload::Audit(AuditPayload::Output(o))) if o.decision_id == decision_id
+                    )
+            })
+            .collect::<Vec<_>>();
+        rows.sort_by_key(|r| (r.time.tick.get(), r.id.0));
+        rows.truncate(32);
+        ExplainLinks {
+            record_ids: rows.iter().map(|r| r.id.0).collect(),
+            record_kinds: rows.iter().map(|r| format!("{:?}", r.kind)).collect(),
+        }
+    };
+
+    Ok(ExplainTickReport {
+        header: ExplainHeader {
+            t: tick,
+            decision_id,
+            backend_pack_digest_prefix: backend_pack.map(|p| digest_prefix(&p.meta_digest, prefix)),
+            evidence_chain_digest_prefix: evidence_chain.map(|d| digest_prefix(&d, prefix)),
+        },
+        compute: ExplainCompute {
+            world: ExplainWorld {
+                surprise: compute.map(|s| s.surprise),
+                prediction_error: compute.map(|s| s.surprise),
+                world_digest_prefix: compute
+                    .and_then(|s| s.world_digest)
+                    .map(|d| digest_prefix(&d, prefix)),
+                quality: compute.and_then(|s| s.risk_quality),
+            },
+            sae: ExplainSae {
+                spike_count: compute.map(|s| s.spike_count),
+                energy: compute.and_then(|s| s.energy),
+                spikes_digest_prefix: compute.map(|s| digest_prefix(&s.spikes_digest, prefix)),
+                quality: compute.and_then(|s| s.risk_quality),
+            },
+            ssm: ExplainSsm {
+                pressure: compute.map(|s| s.pressure),
+                ssm_digest_prefix: compute
+                    .and_then(|s| s.ssm_digest)
+                    .map(|d| digest_prefix(&d, prefix)),
+                quality: compute.and_then(|s| s.risk_quality),
+            },
+            lfm: ExplainLfm {
+                uncertainty: lfm_summary
+                    .map(|s| s.uncertainty)
+                    .or(compute.and_then(|s| s.lfm_uncertainty)),
+                stability: lfm_summary
+                    .map(|s| s.stability)
+                    .or(compute.and_then(|s| s.lfm_stability)),
+                lfm_digest_prefix: lfm_summary.map(|s| digest_prefix(&s.digest, prefix)).or(
+                    compute
+                        .and_then(|s| s.lfm_digest)
+                        .map(|d| digest_prefix(&d, prefix)),
+                ),
+                quality: compute.and_then(|s| s.lfm_quality),
+            },
+            coherence: compute.map(|s| ExplainCoherence {
+                coherence: s.coherence,
+                phi_proxy: s.phi_proxy,
+                coherence_digest_prefix: s.coherence_digest.map(|d| digest_prefix(&d, prefix)),
+            }),
+            risk: ExplainRisk {
+                risk: compute.map(|s| s.risk),
+                confidence: compute.map(|s| s.confidence),
+                risk_digest_prefix: compute
+                    .and_then(|s| s.compute_chain_digest)
+                    .map(|d| digest_prefix(&d, prefix)),
+            },
+        },
+        governance: ExplainGovernance {
+            governor_score: issuances.last().map(|(_, i)| i.governor_score_q),
+            tier: issuances.last().map(|(_, i)| i.effective_tier),
+            emergency_active,
+            issuance: issuance_view,
+        },
+        decision: ExplainDecision {
+            candidate_count: candidate_set.as_ref().map(|c| c.summaries.len()),
+            selected_candidate_id: candidate_set.as_ref().map(|c| c.selected_candidate_id),
+            selected_candidate_digest_prefix: candidate_set
+                .as_ref()
+                .map(|c| digest_prefix(&c.selected_candidate_digest, prefix)),
+            policy_hints,
+            nsr_reasons,
+        },
+        output: ExplainOutput {
+            output_class: output.as_ref().map(|o| o.output_class),
+            llm_backend: output.as_ref().map(|o| o.llm_backend_name.clone()),
+            request_digest_prefix: output
+                .as_ref()
+                .map(|o| digest_prefix(&o.llm_request_digest, prefix)),
+            response_digest_prefix: output
+                .as_ref()
+                .map(|o| digest_prefix(&o.llm_response_digest, prefix)),
+            status: output.as_ref().map(|o| o.status),
+            finish_reason: output.as_ref().map(|o| o.finish_reason),
+            max_tokens_eff: output.as_ref().map(|o| o.max_tokens_eff),
+            text_preview: output.as_ref().and_then(|o| o.text.clone()).and_then(|t| {
+                if detail >= 2 {
+                    Some(bounded_preview(&t, 256))
+                } else {
+                    None
+                }
+            }),
+        },
+        links,
+        warnings,
+    })
+}
+
+pub fn metrics_summary(workdir: &Path, last: usize) -> Result<MetricsSummary, OpsError> {
+    let records = load_fixture_records(&workdir.join("ess").join("ess_fixture.json"))?;
+    let mut decisions = records
+        .iter()
+        .filter(|r| r.kind == ExperienceKind::DecisionOut)
+        .filter_map(|r| r.compute_summary.map(|s| (r.time.tick.get(), s)))
+        .collect::<Vec<_>>();
+    decisions.sort_by_key(|(t, _)| *t);
+    let len = decisions.len();
+    let slice = if last == 0 || last >= len {
+        decisions.as_slice()
+    } else {
+        &decisions[len - last..]
+    };
+
+    let ticks_observed = slice.len();
+    if ticks_observed == 0 {
+        return Ok(MetricsSummary {
+            ticks_observed: 0,
+            mean_surprise: 0.0,
+            max_surprise: 0.0,
+            mean_pressure: 0.0,
+            max_pressure: 0.0,
+            mean_uncertainty: 0.0,
+            max_uncertainty: 0.0,
+            governor_tier_2_3_percent: 0.0,
+            emergency_triggers: 0,
+            tool_issuance_deny_rate: 0.0,
+        });
+    }
+
+    let mut surprise_sum = 0.0;
+    let mut pressure_sum = 0.0;
+    let mut uncertainty_sum = 0.0;
+    let mut max_surprise: f32 = 0.0;
+    let mut max_pressure: f32 = 0.0;
+    let mut max_uncertainty: f32 = 0.0;
+    for (_, s) in slice {
+        surprise_sum += s.surprise;
+        pressure_sum += s.pressure;
+        let u = s.lfm_uncertainty.unwrap_or(0.0);
+        uncertainty_sum += u;
+        max_surprise = max_surprise.max(s.surprise);
+        max_pressure = max_pressure.max(s.pressure);
+        max_uncertainty = max_uncertainty.max(u);
+    }
+
+    let from_tick = slice.first().map(|(t, _)| *t).unwrap_or(0);
+    let to_tick = slice.last().map(|(t, _)| *t).unwrap_or(0);
+
+    let issuances = records
+        .iter()
+        .filter(|r| r.kind == ExperienceKind::CapabilityIssuance)
+        .filter_map(|r| match &r.payload {
+            ExperiencePayload::Audit(AuditPayload::CapabilityIssuance(i))
+                if i.t >= from_tick && i.t <= to_tick =>
+            {
+                Some(i)
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    let tier23 = issuances.iter().filter(|i| i.effective_tier >= 2).count();
+    let deny_total: usize = issuances.iter().map(|i| i.denied_kinds.len()).sum();
+    let request_total: usize = issuances.iter().map(|i| i.requested_kinds.len()).sum();
+
+    let emergency_triggers = records
+        .iter()
+        .filter(|r| r.kind == ExperienceKind::Emergency)
+        .filter_map(|r| match &r.payload {
+            ExperiencePayload::Audit(AuditPayload::Emergency(e))
+                if e.t >= from_tick && e.t <= to_tick =>
+            {
+                Some(e)
+            }
+            _ => None,
+        })
+        .filter(|e| e.state == EmergencyStateCode::Active)
+        .count();
+
+    Ok(MetricsSummary {
+        ticks_observed,
+        mean_surprise: surprise_sum / ticks_observed as f32,
+        max_surprise,
+        mean_pressure: pressure_sum / ticks_observed as f32,
+        max_pressure,
+        mean_uncertainty: uncertainty_sum / ticks_observed as f32,
+        max_uncertainty,
+        governor_tier_2_3_percent: if issuances.is_empty() {
+            0.0
+        } else {
+            (tier23 as f32) * 100.0 / (issuances.len() as f32)
+        },
+        emergency_triggers,
+        tool_issuance_deny_rate: if request_total == 0 {
+            0.0
+        } else {
+            deny_total as f32 / request_total as f32
+        },
+    })
+}
+
+pub fn metrics_trend(
+    workdir: &Path,
+    from_tick: u64,
+    to_tick: u64,
+) -> Result<Vec<MetricsTrendPoint>, OpsError> {
+    let records = load_fixture_records(&workdir.join("ess").join("ess_fixture.json"))?;
+    let mut points = records
+        .iter()
+        .filter(|r| r.kind == ExperienceKind::DecisionOut)
+        .filter_map(|r| {
+            if r.time.tick.get() < from_tick || r.time.tick.get() > to_tick {
+                return None;
+            }
+            r.compute_summary.map(|s| MetricsTrendPoint {
+                t: r.time.tick.get(),
+                surprise: Some(s.surprise),
+                pressure: Some(s.pressure),
+                uncertainty: s.lfm_uncertainty,
+                risk: Some(s.risk),
+            })
+        })
+        .collect::<Vec<_>>();
+    points.sort_by_key(|p| p.t);
+    if points.len() <= 256 {
+        return Ok(points);
+    }
+    let step = points.len().div_ceil(256);
+    Ok(points.into_iter().step_by(step).take(256).collect())
+}
+
+fn digest_prefix(digest: &[u8; 32], prefix_len: usize) -> String {
+    hex::encode(digest)[..prefix_len.min(64)].to_string()
+}
+
+fn bounded_preview(text: &str, max_chars: usize) -> String {
+    let mut out = text.chars().take(max_chars).collect::<String>();
+    if text.chars().count() > max_chars {
+        out.push('…');
+    }
+    out
+}
 pub fn load_or_init_config(workdir: &Path) -> Result<OpsConfig, OpsError> {
     let path = workdir.join("config_resolved.json");
     if !path.exists() {
@@ -571,5 +1177,41 @@ mod tests {
         fs::write(report_dir.join("README.txt"), "tampered").expect("tamper");
         let err = verify_bugreport(&report_dir).expect_err("must fail");
         assert!(format!("{err}").contains("checksum mismatch"));
+    }
+
+    #[test]
+    fn explain_tick_is_deterministic_for_fixture_data() {
+        let dir = tempdir().expect("tempdir");
+        bringup(dir.path(), true, 12).expect("bringup");
+
+        let req = ExplainTickRequest {
+            t: Some(12),
+            decision_id: None,
+            detail_level: 1,
+            digest_prefix_len: 8,
+        };
+        let a = explain_tick(dir.path(), req).expect("report a");
+        let b = explain_tick(dir.path(), req).expect("report b");
+
+        assert_eq!(a, b);
+        assert_eq!(a.header.t, 12);
+        assert!(a.header.evidence_chain_digest_prefix.is_none());
+        assert!(!a.warnings.is_empty());
+    }
+
+    #[test]
+    fn metrics_trend_downsamples_to_bound() {
+        let dir = tempdir().expect("tempdir");
+        bringup(dir.path(), true, 600).expect("bringup");
+
+        let trend = metrics_trend(dir.path(), 0, u64::MAX).expect("trend");
+        assert!(trend.len() <= 256);
+        assert!(!trend.is_empty());
+    }
+
+    #[test]
+    fn bounded_preview_caps_and_marks_truncation() {
+        let preview = bounded_preview("abcdefghijklmnopqrstuvwxyz", 8);
+        assert_eq!(preview, "abcdefgh…");
     }
 }
