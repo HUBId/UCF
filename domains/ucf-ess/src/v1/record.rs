@@ -38,6 +38,8 @@ pub enum ExperienceKind {
     Throttle,
     Emergency,
     PolicyProvenance,
+    RemoteCall,
+    RemoteCallDenied,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -88,6 +90,29 @@ pub enum AuditPayload {
     Throttle(ThrottleRecord),
     Emergency(EmergencyRecord),
     PolicyProvenance(PolicyProvenanceRecord),
+    RemoteCall(RemoteCallRecord),
+    RemoteCallDenied(RemoteCallDeniedRecord),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemoteCallRecord {
+    pub t: u64,
+    pub stage: String,
+    pub endpoint_id: String,
+    pub request_digest_prefix: [u8; 8],
+    pub status: u16,
+    pub elapsed_ms: u64,
+    pub bytes_in: u32,
+    pub bytes_out: u32,
+    pub governor_tier: u8,
+    pub policy_hash_prefix: [u8; 8],
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemoteCallDeniedRecord {
+    pub t: u64,
+    pub stage: String,
+    pub reason: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

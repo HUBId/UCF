@@ -16,6 +16,8 @@ pub mod ipc;
 pub mod lfm;
 pub mod model_store;
 pub mod pipeline;
+#[cfg(feature = "remote-compute")]
+pub mod remote_compute;
 pub mod risk_contract;
 pub mod ssm;
 pub mod work_meter;
@@ -35,6 +37,11 @@ pub use model_store::{
     ModelDevice, ModelFormat, ModelLoadError, ModelSlot, ModelSlotSpec, ModelStore,
 };
 pub use pipeline::ComputePipelineBackend;
+#[cfg(feature = "remote-compute")]
+pub use remote_compute::{
+    NodeSigner, RemoteComputeClient, RemoteErr, RemoteGovernor, RemoteGovernorConfig,
+    RemotePolicyAllowlist, RemoteReq, RemoteResp,
+};
 pub use risk_contract::{
     clamp01, stable_budget_profile_id, validate_risk_signal, BackendProfileId, EvidenceRef,
     RiskSignal, SignalQuality,
