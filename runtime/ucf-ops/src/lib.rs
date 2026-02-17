@@ -1,7 +1,9 @@
 #![forbid(unsafe_code)]
 
 mod adversarial;
+mod bench;
 pub use adversarial::{adversarial_run, AdversarialReport, AdversarialRunArgs, CaseResult};
+pub use bench::{bench_run, BenchArgs, BenchReport};
 
 use std::collections::BTreeMap;
 use std::fs;

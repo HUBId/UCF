@@ -3,10 +3,10 @@
 use std::path::PathBuf;
 
 use ucf_ops::{
-    adversarial_run, bringup, diagnostics, explain_tick, export_bugreport, metrics_snapshot,
-    metrics_summary, metrics_trend, models_probe, models_verify, one_command_bringup,
-    readiness_gate, replay_audit, replay_bugreport, security_verify_chain, verify_bugreport,
-    AdversarialRunArgs, ExplainTickRequest, ExportArgs, GateStatus,
+    adversarial_run, bench_run, bringup, diagnostics, explain_tick, export_bugreport,
+    metrics_snapshot, metrics_summary, metrics_trend, models_probe, models_verify,
+    one_command_bringup, readiness_gate, replay_audit, replay_bugreport, security_verify_chain,
+    verify_bugreport, AdversarialRunArgs, BenchArgs, ExplainTickRequest, ExportArgs, GateStatus,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -329,9 +329,39 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 std::process::exit(2);
             }
         }
+        "bench" => {
+            let scenario = arg_value(&args, "--scenario")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("fixtures/e2e_scenario_a.json"));
+            let ticks = parse_u64(&args, "--ticks", 256);
+            let out = arg_value(&args, "--out")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("./out/bench_report.json"));
+            let rss_sample_every = parse_u64(&args, "--rss-sample-every", 16);
+            let rss_cap_mb = arg_value(&args, "--rss-cap-mb").and_then(|v| v.parse::<u64>().ok());
+
+            let report = bench_run(&BenchArgs {
+                scenario,
+                ticks,
+                out: out.clone(),
+                rss_sample_every,
+                rss_cap_mb,
+            })?;
+            println!("bench_run_id={}", report.run_id);
+            println!("scenario_id={}", report.scenario_id);
+            println!("ticks={}", report.ticks);
+            println!(
+                "throughput_ticks_per_sec={:.3}",
+                report.throughput_ticks_per_sec
+            );
+            println!("out={}", out.display());
+            if report.memory.cap_exceeded {
+                std::process::exit(2);
+            }
+        }
         _ => {
             eprintln!(
-                "usage: ucf-ops <bringup|diag|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|readiness-gate|adversarial-run|version> [--workdir <path>]"
+                "usage: ucf-ops <bringup|diag|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|readiness-gate|adversarial-run|bench|version> [--workdir <path>]"
             );
             std::process::exit(1);
         }
