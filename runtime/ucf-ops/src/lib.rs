@@ -1632,6 +1632,7 @@ pub fn one_command_bringup(
     write_json(out_dir.join("metrics_summary.json"), &metrics)?;
     write_json(out_dir.join("explain_tick_last.json"), &explain)?;
     write_json(out_dir.join("run_metadata_record.json"), &run_metadata)?;
+    write_json(out_dir.join("run_metadata.json"), &run_metadata)?;
 
     Ok(BringupArtifacts {
         run_metadata,
@@ -3101,6 +3102,145 @@ mod tests {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct OutManifestEntry {
+    pub file: String,
+    pub sha256: String,
+    pub size_bytes: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct OutManifest {
+    pub dir: String,
+    pub generated_at: u64,
+    pub entries: Vec<OutManifestEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ReleaseChecklistItem {
+    pub id: String,
+    pub command: String,
+    pub required: bool,
+    pub expected_artifact: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ReleaseChecklist {
+    pub version: String,
+    pub profile: String,
+    pub items: Vec<ReleaseChecklistItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SignoffCheckResult {
+    pub id: String,
+    pub ok: bool,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SignoffResult {
+    pub pass: bool,
+    pub checked_at: u64,
+    pub out_dir: String,
+    pub artifacts_manifest: OutManifest,
+    pub checks: Vec<SignoffCheckResult>,
+}
+
+pub fn out_manifest(dir: &Path) -> Result<OutManifest, OpsError> {
+    let mut entries = Vec::new();
+    if !dir.exists() {
+        return Err(OpsError::Invalid(format!(
+            "out dir missing: {}",
+            dir.display()
+        )));
+    }
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        if name == "manifest.json" {
+            continue;
+        }
+        let bytes = fs::read(&path)?;
+        entries.push(OutManifestEntry {
+            file: name.to_string(),
+            sha256: sha256_hex(&bytes),
+            size_bytes: bytes.len() as u64,
+        });
+    }
+    entries.sort_by(|a, b| a.file.cmp(&b.file));
+    let mut manifest = OutManifest {
+        dir: dir.display().to_string(),
+        generated_at: now_unix_secs(),
+        entries,
+    };
+    write_json(dir.join("manifest.json"), &manifest)?;
+    let manifest_bytes = fs::read(dir.join("manifest.json"))?;
+    manifest.entries.push(OutManifestEntry {
+        file: "manifest.json".to_string(),
+        sha256: sha256_hex(&manifest_bytes),
+        size_bytes: manifest_bytes.len() as u64,
+    });
+    manifest.entries.sort_by(|a, b| a.file.cmp(&b.file));
+    write_json(dir.join("manifest.json"), &manifest)?;
+    Ok(manifest)
+}
+
+pub fn load_signoff_checklist(path: &Path) -> Result<ReleaseChecklist, OpsError> {
+    let raw = fs::read_to_string(path)?;
+    let parsed: ReleaseChecklist = toml::from_str(&raw)
+        .map_err(|err| OpsError::Invalid(format!("invalid checklist toml: {err}")))?;
+    Ok(parsed)
+}
+
+pub fn release_signoff_validate(
+    out_dir: &Path,
+    checklist_path: &Path,
+    emit: &Path,
+) -> Result<SignoffResult, OpsError> {
+    let checklist = load_signoff_checklist(checklist_path)?;
+    let manifest = out_manifest(out_dir)?;
+    let mut checks = Vec::new();
+
+    for item in checklist.items {
+        if let Some(expected) = item.expected_artifact {
+            let found = manifest.entries.iter().find(|e| e.file == expected);
+            let ok = found.is_some() || !item.required;
+            checks.push(SignoffCheckResult {
+                id: item.id,
+                ok,
+                detail: if ok {
+                    format!("artifact {} present", expected)
+                } else {
+                    format!("artifact {} missing", expected)
+                },
+            });
+        } else {
+            checks.push(SignoffCheckResult {
+                id: item.id,
+                ok: true,
+                detail: "no artifact assertion".to_string(),
+            });
+        }
+    }
+
+    let pass = checks.iter().all(|c| c.ok);
+    let result = SignoffResult {
+        pass,
+        checked_at: now_unix_secs(),
+        out_dir: out_dir.display().to_string(),
+        artifacts_manifest: manifest,
+        checks,
+    };
+    write_json(emit, &result)?;
+    Ok(result)
+}
 pub fn security_verify_chain(workdir: &Path, from: u64, to: u64) -> Result<(), OpsError> {
     let records = load_fixture_records(workdir)?;
     let mut prev: Option<[u8; 32]> = None;

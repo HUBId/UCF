@@ -2,8 +2,9 @@ use std::fs;
 
 use tempfile::tempdir;
 use ucf_ops::{
-    bringup, diagnostics, export_bugreport, one_command_bringup, readiness_gate, replay_audit,
-    replay_bugreport, verify_bugreport, ExportArgs, GateStatus,
+    bringup, diagnostics, export_bugreport, load_signoff_checklist, one_command_bringup,
+    out_manifest, readiness_gate, release_signoff_validate, replay_audit, replay_bugreport,
+    verify_bugreport, ExportArgs, GateStatus,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -85,6 +86,7 @@ fn one_command_bringup_writes_release_artifacts() {
     assert!(!artifacts.run_metadata.code_version_tag.is_empty());
     assert!(out.join("metrics_summary.json").exists());
     assert!(out.join("run_metadata_record.json").exists());
+    assert!(out.join("run_metadata.json").exists());
     assert!(dir
         .path()
         .join("ess")
@@ -103,4 +105,45 @@ fn readiness_gate_writes_report() {
     assert!(out.exists());
     assert!(!report.checks.is_empty());
     assert!(matches!(report.status, GateStatus::Pass | GateStatus::Fail));
+}
+
+#[test]
+fn checklist_toml_parses() {
+    let checklist = load_signoff_checklist(std::path::Path::new(
+        "../../release/v0_signoff_checklist.toml",
+    ))
+    .expect("checklist");
+    assert_eq!(checklist.version, "v0");
+    assert!(!checklist.items.is_empty());
+}
+
+#[test]
+fn release_signoff_validate_fixture_out_dir() {
+    let dir = tempdir().expect("tempdir");
+    let out = dir.path().join("out/run-1");
+    fs::create_dir_all(&out).expect("out dir");
+    fs::write(out.join("run_metadata.json"), b"{}").expect("run metadata");
+    fs::write(out.join("gate_report.json"), b"{}").expect("gate report");
+    fs::write(out.join("adversarial_report.json"), b"{}").expect("adv report");
+    fs::write(out.join("bench_report.json"), b"{}").expect("bench report");
+    fs::write(out.join("replay_report.json"), b"{}").expect("replay report");
+    fs::write(out.join("explain_tick_last.json"), b"{}").expect("explain report");
+    fs::write(out.join("probe_report.json"), b"{}").expect("probe report");
+    fs::write(out.join("snapshot.snap"), b"snap").expect("snapshot");
+
+    let emit = dir.path().join("signoff_result.json");
+    let report = release_signoff_validate(
+        &out,
+        std::path::Path::new("../../release/v0_signoff_checklist.toml"),
+        &emit,
+    )
+    .expect("validate");
+
+    assert!(report.pass);
+    assert!(emit.exists());
+    let manifest = out_manifest(&out).expect("manifest");
+    assert!(manifest
+        .entries
+        .iter()
+        .any(|e| e.file == "run_metadata.json"));
 }

@@ -26,3 +26,11 @@ Resolved config lives in `./.ucf/config_resolved.json` and merges profile defaul
 - `out/explain_tick_last.json`
 - `out/replay_verify.json` (default)
 - `out/run_metadata_record.json`
+- `out/run_metadata.json`
+
+
+## Signoff validation
+```bash
+cargo run -p ucf-ops -- out manifest --dir ./out/<run_id>
+cargo run -p ucf-ops -- release signoff --validate --out ./out/<run_id> --emit release/v0_signoff_result.json
+```
