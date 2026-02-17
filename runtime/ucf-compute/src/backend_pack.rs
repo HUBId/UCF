@@ -2,6 +2,10 @@ use std::sync::{Arc, Mutex};
 
 use sha2::{Digest, Sha256};
 
+#[cfg(feature = "compute-burn")]
+use crate::backends::{BurnSaeExtractor, BurnSsmKernel, BurnWorldPredictor};
+#[cfg(feature = "compute-candle")]
+use crate::backends::{CandleSaeExtractor, CandleSsmKernel, CandleWorldPredictor};
 use crate::capabilities::{
     build_llm_backend, LlmBackendConfig, LlmInference, LlmStubBackend, SaeExtractor,
     WorldModelPredictor,
@@ -309,28 +313,67 @@ impl BackendPackFactory {
             specs: std::collections::BTreeMap::new(),
         });
         let model_hashes_digest = model_store.model_hashes_digest();
-        let (llm_component, sae_component) = match cfg.pack {
-            BackendPackKind::StubV0 => (BackendComponentId::StubV0, BackendComponentId::StubV0),
-            BackendPackKind::ToyV1 => (BackendComponentId::ToyV1, BackendComponentId::ToyV1),
+        let (llm_component, world_component, sae_component, ssm_component) = match cfg.pack {
+            BackendPackKind::StubV0 => (
+                BackendComponentId::StubV0,
+                BackendComponentId::StubV0,
+                BackendComponentId::StubV0,
+                BackendComponentId::StubV0,
+            ),
+            BackendPackKind::ToyV1 => (
+                BackendComponentId::ToyV1,
+                BackendComponentId::ToyV1,
+                BackendComponentId::ToyV1,
+                BackendComponentId::ToyV1,
+            ),
             BackendPackKind::CandleToyV1 => (
                 BackendComponentId::CandleToyV1,
                 BackendComponentId::CandleToyV1,
+                BackendComponentId::CandleToyV1,
+                BackendComponentId::CandleToyV1,
             ),
-            BackendPackKind::CandleLiquidV1 => {
-                (BackendComponentId::ToyV1, BackendComponentId::ToyV1)
-            }
-            BackendPackKind::BurnToyV1 => {
-                (BackendComponentId::BurnToyV1, BackendComponentId::BurnToyV1)
-            }
-            BackendPackKind::ToyLnnV1 | BackendPackKind::WorkerV1 => {
-                (BackendComponentId::ToyV1, BackendComponentId::ToyV1)
-            }
+            BackendPackKind::CandleLiquidV1 => (
+                BackendComponentId::ToyV1,
+                BackendComponentId::ToyV1,
+                BackendComponentId::ToyV1,
+                BackendComponentId::ToyV1,
+            ),
+            BackendPackKind::BurnToyV1 => (
+                BackendComponentId::BurnToyV1,
+                BackendComponentId::BurnToyV1,
+                BackendComponentId::BurnToyV1,
+                BackendComponentId::BurnToyV1,
+            ),
+            BackendPackKind::ToyLnnV1 | BackendPackKind::WorkerV1 => (
+                BackendComponentId::ToyV1,
+                BackendComponentId::ToyV1,
+                BackendComponentId::ToyV1,
+                BackendComponentId::ToyV1,
+            ),
             #[cfg(feature = "remote-compute")]
             BackendPackKind::RemoteV1 => (
                 BackendComponentId::RemoteProxyV1,
                 BackendComponentId::RemoteProxyV1,
+                BackendComponentId::RemoteProxyV1,
+                BackendComponentId::RemoteProxyV1,
             ),
         };
+
+        let world_model_hash = model_store
+            .verify_slot(ModelSlot::WorldJepa)
+            .ok()
+            .map(|slot| slot.sha256)
+            .unwrap_or([0x21; 32]);
+        let sae_model_hash = model_store
+            .verify_slot(ModelSlot::Sae)
+            .ok()
+            .map(|slot| slot.sha256)
+            .unwrap_or([0x31; 32]);
+        let ssm_model_hash = model_store
+            .verify_slot(ModelSlot::Ssm)
+            .ok()
+            .map(|slot| slot.sha256)
+            .unwrap_or([0x41; 32]);
 
         let llm_cfg = match cfg.pack {
             BackendPackKind::StubV0 | BackendPackKind::ToyV1 => LlmBackendConfig {
@@ -421,9 +464,9 @@ impl BackendPackFactory {
             pack_name: cfg.pack.as_str(),
             pack_id: cfg.pack.id(),
             llm_backend: llm_component,
-            world_backend: BackendComponentId::ToyV1,
+            world_backend: world_component,
             sae_backend: sae_component,
-            ssm_backend: BackendComponentId::ToyV1,
+            ssm_backend: ssm_component,
             lfm_backend: lfm_component,
             fixtures_digest,
             model_hashes_digest,
@@ -432,12 +475,84 @@ impl BackendPackFactory {
         };
         meta.digest = meta.canonical_digest();
 
+        let world_backend: Box<dyn WorldModelPredictor + Send + Sync> = match cfg.pack {
+            BackendPackKind::CandleToyV1 => {
+                #[cfg(feature = "compute-candle")]
+                {
+                    Box::new(CandleWorldPredictor::new(world_model_hash))
+                }
+                #[cfg(not(feature = "compute-candle"))]
+                {
+                    return Err(ComputeError::BackendDisabled);
+                }
+            }
+            BackendPackKind::BurnToyV1 => {
+                #[cfg(feature = "compute-burn")]
+                {
+                    Box::new(BurnWorldPredictor::new(world_model_hash))
+                }
+                #[cfg(not(feature = "compute-burn"))]
+                {
+                    return Err(ComputeError::BackendDisabled);
+                }
+            }
+            _ => Box::new(MockJepaPredictor::default()),
+        };
+
+        let sae_backend: Arc<dyn SaeExtractor + Send + Sync> = match cfg.pack {
+            BackendPackKind::CandleToyV1 => {
+                #[cfg(feature = "compute-candle")]
+                {
+                    Arc::new(CandleSaeExtractor::new(sae_model_hash))
+                }
+                #[cfg(not(feature = "compute-candle"))]
+                {
+                    return Err(ComputeError::BackendDisabled);
+                }
+            }
+            BackendPackKind::BurnToyV1 => {
+                #[cfg(feature = "compute-burn")]
+                {
+                    Arc::new(BurnSaeExtractor::new(sae_model_hash))
+                }
+                #[cfg(not(feature = "compute-burn"))]
+                {
+                    return Err(ComputeError::BackendDisabled);
+                }
+            }
+            _ => Arc::new(ToySaeExtractor::default()),
+        };
+
+        let ssm_backend: Box<dyn SsmKernel + Send + Sync> = match cfg.pack {
+            BackendPackKind::CandleToyV1 => {
+                #[cfg(feature = "compute-candle")]
+                {
+                    Box::new(CandleSsmKernel::new(ssm_model_hash))
+                }
+                #[cfg(not(feature = "compute-candle"))]
+                {
+                    return Err(ComputeError::BackendDisabled);
+                }
+            }
+            BackendPackKind::BurnToyV1 => {
+                #[cfg(feature = "compute-burn")]
+                {
+                    Box::new(BurnSsmKernel::new(ssm_model_hash))
+                }
+                #[cfg(not(feature = "compute-burn"))]
+                {
+                    return Err(ComputeError::BackendDisabled);
+                }
+            }
+            _ => Box::new(ToySsmKernel::default()),
+        };
+
         Ok(Arc::new(UnifiedBackendPack {
             meta,
             llm,
-            world: Mutex::new(Box::new(MockJepaPredictor::default())),
-            sae: Arc::new(ToySaeExtractor::default()),
-            ssm: Mutex::new(Box::new(ToySsmKernel::default())),
+            world: Mutex::new(world_backend),
+            sae: sae_backend,
+            ssm: Mutex::new(ssm_backend),
             lfm: Mutex::new(lfm_kernel),
         }))
     }

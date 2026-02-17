@@ -9,13 +9,13 @@ use crate::{
 mod candle_backend;
 
 #[cfg(feature = "compute-candle")]
-pub use candle_backend::CandleSaeExtractor;
+pub use candle_backend::{CandleSaeExtractor, CandleSsmKernel, CandleWorldPredictor};
 
 #[cfg(feature = "compute-burn")]
 mod burn_backend;
 
 #[cfg(feature = "compute-burn")]
-pub use burn_backend::BurnSaeExtractor;
+pub use burn_backend::{BurnSaeExtractor, BurnSsmKernel, BurnWorldPredictor};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
