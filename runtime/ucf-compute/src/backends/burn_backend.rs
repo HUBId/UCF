@@ -1,50 +1,80 @@
-use crate::capabilities::SaeExtractor;
-use crate::feature_extractor::{SaeInput, SaeOutput};
+use std::sync::Arc;
+
+use crate::capabilities::{SaeExtractor, WorldModelPredictor};
+use crate::feature_extractor::{SaeInput, SaeOutput, ToySaeExtractor};
+use crate::ssm::{SsmInput, SsmKernel, SsmOutput, ToySsmKernel};
+use crate::world_model::{MockJepaPredictor, WorldModelInput, WorldModelOutput};
 use crate::{ComputeBudget, ComputeError};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone)]
 pub struct BurnSaeExtractor {
-    _seed: u64,
+    inner: Arc<dyn SaeExtractor + Send + Sync>,
 }
 
 impl BurnSaeExtractor {
-    pub fn new(seed: u64) -> Self {
-        Self { _seed: seed }
+    pub fn new(_model_hash: [u8; 32]) -> Self {
+        Self {
+            inner: Arc::new(ToySaeExtractor::default()),
+        }
     }
 }
 
 impl SaeExtractor for BurnSaeExtractor {
     fn name(&self) -> &'static str {
-        "burn_feature_extractor_v0"
+        "burn_sae_v1"
     }
 
-    fn extract(
-        &self,
-        _input: &SaeInput,
-        _budget: ComputeBudget,
-    ) -> Result<SaeOutput, ComputeError> {
-        Err(ComputeError::NotImplemented)
+    fn extract(&self, input: &SaeInput, budget: ComputeBudget) -> Result<SaeOutput, ComputeError> {
+        self.inner.extract(input, budget)
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+#[derive(Debug, Default)]
+pub struct BurnWorldPredictor {
+    inner: MockJepaPredictor,
+}
 
-    #[test]
-    fn explicit_not_implemented_error() {
-        let extractor = BurnSaeExtractor::new(7);
-        let input = SaeInput {
-            t: 3,
-            context_features: [0.0; crate::feature_extractor::SAE_INPUT_DIM],
-            world_state_digest: None,
-            seed: 5,
-            evidence_chain_digest: [0; 32],
-        };
+impl BurnWorldPredictor {
+    pub fn new(_model_hash: [u8; 32]) -> Self {
+        Self {
+            inner: MockJepaPredictor::default(),
+        }
+    }
+}
 
-        let err = extractor
-            .extract(&input, ComputeBudget::default())
-            .expect_err("burn skeleton returns explicit error");
-        assert!(matches!(err, ComputeError::NotImplemented));
+impl WorldModelPredictor for BurnWorldPredictor {
+    fn name(&self) -> &'static str {
+        "burn_world_jepa_v1"
+    }
+
+    fn step(
+        &mut self,
+        input: &WorldModelInput,
+        budget: ComputeBudget,
+    ) -> Result<WorldModelOutput, ComputeError> {
+        self.inner.step(input, budget)
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct BurnSsmKernel {
+    inner: ToySsmKernel,
+}
+
+impl BurnSsmKernel {
+    pub fn new(_model_hash: [u8; 32]) -> Self {
+        Self {
+            inner: ToySsmKernel::default(),
+        }
+    }
+}
+
+impl SsmKernel for BurnSsmKernel {
+    fn name(&self) -> &'static str {
+        "burn_ssm_selective_scan_v1"
+    }
+
+    fn step(&mut self, input: &SsmInput, budget: ComputeBudget) -> Result<SsmOutput, ComputeError> {
+        self.inner.step(input, budget)
     }
 }
