@@ -323,6 +323,7 @@ pub struct BackendPackRecord {
     pub pack_name: String,
     pub pack_id: u32,
     pub fixtures_digest: [u8; 32],
+    pub model_hashes_digest: [u8; 32],
     pub llm_backend: u8,
     pub world_backend: u8,
     pub sae_backend: u8,

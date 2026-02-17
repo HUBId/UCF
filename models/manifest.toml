@@ -1,0 +1,41 @@
+allowlist_root = "models"
+
+[slots.llm]
+enabled = false
+path = "llm.bin"
+expected_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+max_bytes = 67108864
+format = "candle_bin"
+device = "cpu_only"
+
+[slots.world_jepa]
+enabled = false
+path = "world_jepa.bin"
+expected_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+max_bytes = 67108864
+format = "custom"
+device = "cpu_only"
+
+[slots.sae]
+enabled = false
+path = "sae.bin"
+expected_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+max_bytes = 67108864
+format = "custom"
+device = "cpu_only"
+
+[slots.lfm]
+enabled = false
+path = "lfm.bin"
+expected_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+max_bytes = 67108864
+format = "burn"
+device = "cpu_only"
+
+[slots.ssm]
+enabled = false
+path = "ssm.bin"
+expected_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+max_bytes = 67108864
+format = "custom"
+device = "cpu_only"

@@ -11,7 +11,7 @@ use thiserror::Error;
 use ucf_compute::{
     build_backend, compute_input_from_control, stable_budget_profile_id, BackendPackConfig,
     BackendPackFactory, BackendPackKind, ComputeBackendConfig, ComputeBackendKind, ComputeError,
-    ReleaseFeatureMatrix,
+    ModelSlot, ModelStore, ReleaseFeatureMatrix,
 };
 use ucf_core::types::Tick;
 use ucf_core::types::{SimTime, WindowId};
@@ -88,6 +88,7 @@ pub struct RunMetadataRecord {
     pub code_version_tag: String,
     pub backend_pack_meta_digest: String,
     pub fixtures_digest: String,
+    pub model_hashes_digest: String,
     pub enabled_features_bitmap: u16,
     pub profile: String,
     pub schema_versions: BTreeMap<String, u16>,
@@ -99,6 +100,62 @@ pub struct BringupArtifacts {
     pub metrics: MetricsSummary,
     pub explain: ExplainTickReport,
     pub replay_report: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelVerifySlotReport {
+    pub slot: String,
+    pub enabled: bool,
+    pub status: String,
+    pub sha256: Option<String>,
+    pub size_bytes: Option<u64>,
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelsVerifyReport {
+    pub manifest: String,
+    pub allowlist_root: String,
+    pub model_hashes_digest: String,
+    pub slots: Vec<ModelVerifySlotReport>,
+}
+
+pub fn models_verify(manifest: &Path) -> Result<ModelsVerifyReport, OpsError> {
+    let store = ModelStore::from_manifest_and_env(manifest)
+        .map_err(|e| OpsError::Invalid(format!("manifest error: {e:?}")))?;
+    let mut slots = Vec::new();
+    for slot in ModelSlot::all() {
+        let verified = store.verify_slot(slot);
+        match verified {
+            Ok(v) => slots.push(ModelVerifySlotReport {
+                slot: slot.as_str().to_string(),
+                enabled: true,
+                status: "verified".to_string(),
+                sha256: Some(hex::encode(v.sha256)),
+                size_bytes: Some(v.size_bytes),
+                reason: None,
+            }),
+            Err(err) => slots.push(ModelVerifySlotReport {
+                slot: slot.as_str().to_string(),
+                enabled: !matches!(err, ucf_compute::ModelLoadError::Disabled),
+                status: if matches!(err, ucf_compute::ModelLoadError::Disabled) {
+                    "disabled".to_string()
+                } else {
+                    "rejected".to_string()
+                },
+                sha256: None,
+                size_bytes: None,
+                reason: Some(format!("{err:?}")),
+            }),
+        }
+    }
+
+    Ok(ModelsVerifyReport {
+        manifest: manifest.display().to_string(),
+        allowlist_root: store.allowlist_root.display().to_string(),
+        model_hashes_digest: hex::encode(store.model_hashes_digest()),
+        slots,
+    })
 }
 
 const GATE_CHECK_CAP: usize = 64;
@@ -938,6 +995,7 @@ pub fn one_command_bringup(
         code_version_tag: build.git_commit,
         backend_pack_meta_digest: hex::encode(meta.digest),
         fixtures_digest: hex::encode(meta.fixtures_digest),
+        model_hashes_digest: hex::encode(meta.model_hashes_digest),
         enabled_features_bitmap: ReleaseFeatureMatrix::detect().bits,
         profile: resolved_profile_name(),
         schema_versions,
