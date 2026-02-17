@@ -1064,7 +1064,7 @@ impl LfmKernel for ToyLfmKernel {
         let saturation_ratio =
             self.x.iter().filter(|v| v.abs() >= 0.999).count() as f32 / LFM_STATE_DIM as f32;
         let nan_inf_detected = self.x.iter().any(|v| !v.is_finite());
-        let uncertainty = (0.6 * u + 0.3 * state_norm + 0.1 * deriv_norm).clamp(0.0, 1.0);
+        let uncertainty = (0.6 * u + 0.4 * state_norm).clamp(0.0, 1.0);
         let stability = (1.0 - uncertainty).clamp(0.0, 1.0);
 
         let liquid_state_digest = self.state_digest(input);
