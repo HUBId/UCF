@@ -7,6 +7,12 @@ use world_model::StageQuality;
 
 pub mod backend_pack;
 pub mod backends;
+#[cfg(any(
+    feature = "compute-candle",
+    feature = "llm-candle",
+    feature = "lfm-candle"
+))]
+pub mod candle_weights;
 pub mod capabilities;
 pub mod enablement;
 pub mod evidence;

@@ -33,6 +33,7 @@ metrics = { workspace = true }
 tracing = { workspace = true }
 libc = "0.2"
 candle-core = { version = "0.8", default-features = false, optional = true }
+safetensors = "0.4"
 ucf-frames = { path = "../../domains/ucf-frames" }
 ucf-core = { path = "../../core/ucf-core" }
 ucf-types = { path = "../../core/crates/ucf-types" }

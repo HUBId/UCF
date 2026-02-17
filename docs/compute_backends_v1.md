@@ -39,3 +39,21 @@ Run deterministic compute probe paths by building ucf-compute tests or `ucf-ops 
 ## Budget tuning
 - Budgets stay enforced by stage (`world_model/step`, `sae/extract`, `ssm/step`) through `ComputeBudget` and work meters.
 - Suggested rollout: shadow first, compare envelopes, then active slot-by-slot.
+
+## Candle safetensors loader behavior
+- Loader API: `load_safetensors(slot, bytes, spec)` (CPU only).
+- Input is local bytes only (typically from `ModelStore::verify_slot` + `read_verified_bytes`).
+- Strict validation: all required tensors must exist with exact shape and dtype.
+- Deterministic loading order: tensors are kept in `BTreeMap<String, Tensor>` (name sorted).
+- Bounded memory: bytes larger than slot `max_bytes` are rejected before parsing.
+- Stable error codes:
+  - `WEIGHT_MISSING_TENSOR`
+  - `WEIGHT_SHAPE_MISMATCH`
+  - `WEIGHT_DTYPE_MISMATCH`
+  - `WEIGHT_TOO_LARGE`
+  - `WEIGHT_PARSE_ERROR`
+  - `WEIGHT_HASH_MISMATCH`
+- Any validation failure must fail safe and map to `ComputeError::BackendDisabled`.
+
+## Offline fixtures
+Golden/negative safetensors fixtures are generated in unit tests at runtime (offline, deterministic) to keep the repository text-only and VCS-compatible.

@@ -44,3 +44,37 @@ sha256sum models/llm.bin
 ```
 
 Only the hash + metadata are persisted in records (not model bytes).
+
+## Candle safetensors weight specs (v1)
+For `format = "candle_safetensors"`, `ucf-compute` validates required tensor names, exact shapes, and dtypes before enabling a slot.
+
+### `world_jepa` (JEPA v1)
+Required tensors:
+- `W1: [D,H] f32`
+- `b1: [H] f32`
+- `W2: [H,D] f32`
+- `b2: [D] f32`
+
+### `sae` (SAE v1)
+Required tensors:
+- `W: [F,D] f32`
+- `b: [F] f32`
+
+### `ssm` (SSM v1)
+Required tensors:
+- `A: [N,N] f32`
+- `B: [N] f32`
+- `C: [N] f32`
+
+### `lfm` (LFM LNN v1)
+Required tensors:
+- `alpha: [N] f32`
+- `Wx: [N,N] f32`
+- `Wu: [N] f32`
+- `b: [N] f32`
+
+### `llm` (placeholder v1)
+Required tensors:
+- `embed: [N,D] f32`
+
+Dimension symbols (`D/H/F/N`) are slot-local bind variables and must stay consistent across tensors in a slot.
