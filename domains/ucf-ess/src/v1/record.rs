@@ -283,6 +283,8 @@ pub struct DeltaProposalRecord {
     pub ops_summary: [u8; 128],
     pub digest: [u8; 32],
     pub evidence_chain_digest: [u8; 32],
+    pub window_stats_digest: [u8; 32],
+    pub backend_pack_digest: [u8; 32],
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -297,6 +299,9 @@ pub struct DeltaEvaluationRecord {
     pub accepted: bool,
     pub reason_codes: [u8; 8],
     pub evidence_chain_digest: [u8; 32],
+    pub window_stats_digest: [u8; 32],
+    pub backend_pack_digest: [u8; 32],
+    pub suppression_reason_code: u8,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -307,6 +312,8 @@ pub struct DeltaRecommendationRecord {
     pub safety_clamps: [u8; 64],
     pub requires_human_apply: bool,
     pub evidence_chain_digest: [u8; 32],
+    pub window_stats_digest: [u8; 32],
+    pub backend_pack_digest: [u8; 32],
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
