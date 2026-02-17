@@ -2,8 +2,10 @@ use blake3::Hasher;
 
 pub const STRUCTURAL_DELTA_SCHEMA_VERSION: u16 = 1;
 pub const MAX_DELTA_OPS: usize = 8;
-pub const MAX_DELTA_CANDIDATES: usize = 8;
+pub const MAX_DELTA_CANDIDATES: usize = 4;
 pub const MAX_SCORE_AUDIT_ITEMS: usize = 8;
+const MAX_OPS_PER_SAFE_DELTA: usize = 2;
+const MAX_DELTA_MAGNITUDE: f32 = 0.05;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DeltaTarget {
@@ -78,7 +80,30 @@ pub struct EvolutionContext {
     pub denied_tool_rate: f32,
     pub stress_index: Option<f32>,
     pub neuro_arousal: Option<f32>,
+    pub liquid_window: LiquidWindowStats,
+    pub governor_tier_mean: f32,
+    pub governor_tier_max: u8,
+    pub emergency_active: bool,
+    pub backend_pack_digest: [u8; 32],
+    pub nsr_available: bool,
     pub params: TunableSnapshot,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LiquidWindowStats {
+    pub window: (u64, u64),
+    pub mean_uncertainty: f32,
+    pub max_uncertainty: f32,
+    pub mean_pressure: f32,
+    pub max_pressure: f32,
+    pub mean_surprise: f32,
+    pub max_surprise: f32,
+    pub mean_risk: f32,
+    pub max_risk: f32,
+    pub mean_coherence: Option<f32>,
+    pub delta_mean_uncertainty: f32,
+    pub delta_mean_pressure: f32,
+    pub digest: [u8; 32],
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -95,6 +120,8 @@ pub enum ReasonCode {
     TooAggressiveChange,
     IncreasesRisk,
     WeakSafetyMargin,
+    HeuristicAssumption,
+    SafetyDominance,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -176,6 +203,12 @@ impl MockEvolutionEngineV0 {
         hasher.update(b"ucf.evolution.structural_delta.v1");
         hasher.update(&ctx.t.to_le_bytes());
         hasher.update(&(target as u8).to_le_bytes());
+        hasher.update(&ctx.liquid_window.digest);
+        hasher.update(&ctx.backend_pack_digest);
+        hasher.update(&ctx.governor_tier_max.to_le_bytes());
+        hasher.update(&ctx.governor_tier_mean.to_le_bytes());
+        hasher.update(&[ctx.emergency_active as u8]);
+        hasher.update(&[ctx.nsr_available as u8]);
         for op in &ops {
             match op {
                 DeltaOp::Set { key, value } => {
@@ -213,6 +246,34 @@ impl MockEvolutionEngineV0 {
             digest,
         }
     }
+
+    fn safe_add(key: SmallKey, delta: f32) -> DeltaOp {
+        let bounded = delta.clamp(-MAX_DELTA_MAGNITUDE, MAX_DELTA_MAGNITUDE);
+        DeltaOp::Add {
+            key,
+            delta: bounded,
+        }
+    }
+
+    fn push_candidate(
+        &self,
+        out: &mut Vec<StructuralDelta>,
+        ctx: &EvolutionContext,
+        target: DeltaTarget,
+        ops: Vec<DeltaOp>,
+    ) {
+        if out.len() >= MAX_DELTA_CANDIDATES {
+            return;
+        }
+        let safe_ops = ops
+            .into_iter()
+            .take(MAX_OPS_PER_SAFE_DELTA)
+            .collect::<Vec<_>>();
+        if safe_ops.is_empty() {
+            return;
+        }
+        out.push(self.build_delta(ctx, target, safe_ops));
+    }
 }
 
 impl EvolutionEngine for MockEvolutionEngineV0 {
@@ -221,68 +282,77 @@ impl EvolutionEngine for MockEvolutionEngineV0 {
     }
 
     fn propose(&mut self, ctx: EvolutionContext, budget: EvolutionBudget) -> Vec<StructuralDelta> {
-        if budget.work_units == 0 {
+        if budget.work_units == 0 || ctx.emergency_active {
             return Vec::new();
         }
         let mut out = Vec::new();
-        if ctx.budget_exceeded_rate > 0.25 {
-            out.push(self.build_delta(
+        let high_uncertainty = ctx.liquid_window.mean_uncertainty > 0.6;
+        let high_risk = ctx.risk_mean > 0.6 || ctx.liquid_window.mean_risk > 0.6;
+        let high_pressure = ctx.liquid_window.mean_pressure > 0.65;
+        let high_surprise = ctx.liquid_window.mean_surprise > 0.7;
+        let low_confidence = ctx.confidence_mean < 0.45;
+        let stable_low_risk = ctx.liquid_window.mean_risk < 0.3
+            && ctx.liquid_window.mean_uncertainty < 0.35
+            && ctx.liquid_window.mean_coherence.unwrap_or(0.0) > 0.7
+            && ctx.governor_tier_max == 0;
+
+        if !ctx.nsr_available || ctx.governor_tier_max >= 3 {
+            self.push_candidate(
+                &mut out,
                 &ctx,
-                DeltaTarget::ComputeBudgetHints,
-                vec![
-                    DeltaOp::Add {
-                        key: SmallKey::BetaPolicyRisk,
-                        delta: 0.1,
-                    },
-                    DeltaOp::Add {
-                        key: SmallKey::StructureDeltaCap,
-                        delta: -0.05,
-                    },
-                ],
-            ));
+                DeltaTarget::PolicyThresholds,
+                vec![Self::safe_add(SmallKey::CoherenceRiskInhibitMin, 0.03)],
+            );
+            return out;
         }
-        if ctx.coherence_mean < 0.35 || ctx.instability_mean > 0.7 {
-            out.push(self.build_delta(
-                &ctx,
-                DeltaTarget::CoherenceGating,
-                vec![
-                    DeltaOp::Add {
-                        key: SmallKey::CoherenceMinClosedLoopGain,
-                        delta: 0.05,
-                    },
-                    DeltaOp::Add {
-                        key: SmallKey::CoherenceRiskInhibitMin,
-                        delta: 0.05,
-                    },
-                ],
-            ));
-        }
-        if ctx.risk_mean > 0.65 && ctx.confidence_mean < 0.45 {
-            out.push(self.build_delta(
+
+        if high_uncertainty && high_risk {
+            self.push_candidate(
+                &mut out,
                 &ctx,
                 DeltaTarget::FepWeights,
                 vec![
-                    DeltaOp::Add {
-                        key: SmallKey::BetaPolicyRisk,
-                        delta: 0.1,
-                    },
-                    DeltaOp::Add {
-                        key: SmallKey::BetaCoherenceLock,
-                        delta: 0.05,
-                    },
+                    Self::safe_add(SmallKey::BetaPolicyRisk, 0.05),
+                    Self::safe_add(SmallKey::CoherenceRiskInhibitMin, 0.04),
                 ],
-            ));
+            );
         }
-        if out.is_empty() {
+
+        if high_pressure && !high_risk {
+            self.push_candidate(
+                &mut out,
+                &ctx,
+                DeltaTarget::ComputeBudgetHints,
+                vec![
+                    Self::safe_add(SmallKey::CoherenceMaxMemoryPressure, -0.04),
+                    Self::safe_add(SmallKey::StructureDeltaCap, -0.03),
+                ],
+            );
+        }
+
+        if high_surprise && low_confidence {
+            self.push_candidate(
+                &mut out,
+                &ctx,
+                DeltaTarget::PolicyThresholds,
+                vec![
+                    Self::safe_add(SmallKey::BetaCoherenceLock, 0.03),
+                    Self::safe_add(SmallKey::CoherenceMaxUncheckedDrift, -0.03),
+                ],
+            );
+        }
+
+        if out.is_empty() && stable_low_risk {
             let tightened = Self::apply_add(ctx.params, SmallKey::StructureDeltaCap, -0.02);
-            out.push(self.build_delta(
+            self.push_candidate(
+                &mut out,
                 &ctx,
                 DeltaTarget::FepWeights,
                 vec![DeltaOp::Set {
                     key: SmallKey::StructureDeltaCap,
                     value: tightened,
                 }],
-            ));
+            );
         }
         out.sort_by(|a, b| a.digest.cmp(&b.digest));
         out.truncate(MAX_DELTA_CANDIDATES);
@@ -299,7 +369,7 @@ impl EvolutionEngine for MockEvolutionEngineV0 {
         for op in &delta.ops {
             if let DeltaOp::Add { key, delta } = op {
                 metrics_used.push(*key);
-                if delta.abs() > 0.2 {
+                if delta.abs() > MAX_DELTA_MAGNITUDE {
                     reasons.push(ReasonCode::TooAggressiveChange);
                 }
                 let next = Self::apply_add(ctx.params, *key, *delta);
@@ -329,6 +399,10 @@ impl EvolutionEngine for MockEvolutionEngineV0 {
         if ctx.coherence_mean < 0.3 {
             stability_penalty += 0.2;
             reasons.push(ReasonCode::WeakSafetyMargin);
+        }
+        reasons.push(ReasonCode::HeuristicAssumption);
+        if ctx.emergency_active || ctx.governor_tier_max >= 3 || !ctx.nsr_available {
+            reasons.push(ReasonCode::SafetyDominance);
         }
 
         reasons.sort();
@@ -382,6 +456,7 @@ impl EvolutionEngine for MockEvolutionEngineV0 {
                         | ReasonCode::TooAggressiveChange
                         | ReasonCode::IncreasesRisk
                         | ReasonCode::WeakSafetyMargin
+                        | ReasonCode::SafetyDominance
                 )
             });
             if !blocked && score.fitness >= 0.55 {
@@ -420,6 +495,26 @@ mod tests {
             denied_tool_rate: 1.0,
             stress_index: Some(0.8),
             neuro_arousal: Some(0.9),
+            liquid_window: LiquidWindowStats {
+                window: (1, 64),
+                mean_uncertainty: 0.75,
+                max_uncertainty: 0.82,
+                mean_pressure: 0.8,
+                max_pressure: 0.9,
+                mean_surprise: 0.7,
+                max_surprise: 0.9,
+                mean_risk: 0.8,
+                max_risk: 0.9,
+                mean_coherence: Some(0.25),
+                delta_mean_uncertainty: 0.1,
+                delta_mean_pressure: 0.1,
+                digest: [2; 32],
+            },
+            governor_tier_mean: 1.0,
+            governor_tier_max: 1,
+            emergency_active: false,
+            backend_pack_digest: [9; 32],
+            nsr_available: true,
             params: TunableSnapshot {
                 beta_policy_risk: 1.4,
                 beta_coherence_lock: 1.1,
@@ -441,7 +536,7 @@ mod tests {
             DeltaTarget::FepWeights,
             vec![DeltaOp::Add {
                 key: SmallKey::BetaPolicyRisk,
-                delta: 0.1,
+                delta: 0.05,
             }],
         );
         let delta2 = engine.build_delta(
@@ -449,7 +544,7 @@ mod tests {
             DeltaTarget::FepWeights,
             vec![DeltaOp::Add {
                 key: SmallKey::BetaPolicyRisk,
-                delta: 0.1,
+                delta: 0.05,
             }],
         );
         assert_eq!(delta.digest, delta2.digest);
@@ -525,5 +620,14 @@ mod tests {
             result.accepted.as_ref().map(|(d, _)| d.delta_id),
             Some(expected)
         );
+    }
+
+    #[test]
+    fn emergency_suppresses_proposals() {
+        let mut engine = MockEvolutionEngineV0::new(5);
+        let mut ctx = sample_ctx();
+        ctx.emergency_active = true;
+        let proposals = engine.propose(ctx, EvolutionBudget { work_units: 10 });
+        assert!(proposals.is_empty());
     }
 }

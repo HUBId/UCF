@@ -1,8 +1,8 @@
 use crate::coherence::{CoherenceRuntime, InterestProfile, Subscriber, TickInput};
 use crate::errors::RuntimeError;
 use crate::evolution::{
-    DeltaOp, DeltaScore, EvolutionBudget, EvolutionContext, EvolutionEngine, MockEvolutionEngineV0,
-    ReasonCode, SmallKey, StructuralDelta, TunableSnapshot,
+    DeltaOp, DeltaScore, EvolutionBudget, EvolutionContext, EvolutionEngine, LiquidWindowStats,
+    MockEvolutionEngineV0, ReasonCode, SmallKey, StructuralDelta, TunableSnapshot,
 };
 use crate::hooks::{
     ComputeMilestone, ComputeMilestoneAggregator, ConsolidationHook, GeistHook, GeistRejectReason,
@@ -552,9 +552,15 @@ struct EvolutionTickSummary {
     confidence: f32,
     coherence: f32,
     instability: f32,
+    pressure: f32,
+    surprise: f32,
+    uncertainty: f32,
+    governor_tier: u8,
     budget_exceeded: bool,
     denied_tool: bool,
     evidence_chain_digest: [u8; 32],
+    backend_pack_digest: [u8; 32],
+    nsr_available: bool,
 }
 
 pub struct RuntimeOrchestrator {
@@ -700,6 +706,8 @@ pub struct RuntimeOrchestrator {
     evolution_accepted_total: u64,
     evolution_rejected_total: u64,
     evolution_budget_exceeded_total: u64,
+    evolution_suppressed_total: u64,
+    evolution_recommended_total: u64,
 }
 
 impl RuntimeOrchestrator {
@@ -707,6 +715,9 @@ impl RuntimeOrchestrator {
         &mut self,
         compute_summary: Option<ucf_frames::v1::ComputeSignalsSummary>,
         denied_tool: bool,
+        governor_tier: u8,
+        backend_pack_digest: [u8; 32],
+        nsr_available: bool,
     ) {
         let summary = EvolutionTickSummary {
             risk: compute_summary
@@ -725,6 +736,19 @@ impl RuntimeOrchestrator {
                 .and_then(|c| c.instability)
                 .unwrap_or(0.0)
                 .clamp(0.0, 1.0),
+            pressure: compute_summary
+                .map(|c| c.pressure)
+                .unwrap_or(1.0)
+                .clamp(0.0, 1.0),
+            surprise: compute_summary
+                .map(|c| c.surprise)
+                .unwrap_or(1.0)
+                .clamp(0.0, 1.0),
+            uncertainty: compute_summary
+                .and_then(|c| c.lfm_uncertainty)
+                .unwrap_or(1.0)
+                .clamp(0.0, 1.0),
+            governor_tier: governor_tier.min(3),
             budget_exceeded: compute_summary
                 .and_then(|c| c.budget_exceeded_stage)
                 .is_some(),
@@ -732,6 +756,8 @@ impl RuntimeOrchestrator {
             evidence_chain_digest: compute_summary
                 .and_then(|c| c.compute_chain_digest)
                 .unwrap_or([0; 32]),
+            backend_pack_digest,
+            nsr_available,
         };
         if summary.budget_exceeded {
             self.evolution_budget_exceeded_total =
@@ -744,6 +770,85 @@ impl RuntimeOrchestrator {
             let drop_n = self.evolution_summaries.len().saturating_sub(keep);
             self.evolution_summaries.drain(0..drop_n);
         }
+    }
+
+    fn liquid_window_stats(&self, now_t: u64) -> Option<LiquidWindowStats> {
+        if self.evolution_summaries.len() < 8 {
+            return None;
+        }
+        let t0 = now_t.saturating_sub(self.evolution_window_ticks);
+        let t1 = now_t;
+        let n = self.evolution_summaries.len() as f32;
+        let half = (self.evolution_summaries.len() / 2).max(1);
+        let first = &self.evolution_summaries[..half];
+        let second = &self.evolution_summaries[half..];
+
+        let mean = |f: fn(&EvolutionTickSummary) -> f32| -> f32 {
+            self.evolution_summaries.iter().map(f).sum::<f32>() / n
+        };
+        let max = |f: fn(&EvolutionTickSummary) -> f32| -> f32 {
+            self.evolution_summaries
+                .iter()
+                .map(f)
+                .fold(0.0_f32, f32::max)
+        };
+        let half_mean =
+            |slice: &[EvolutionTickSummary], f: fn(&EvolutionTickSummary) -> f32| -> f32 {
+                if slice.is_empty() {
+                    return 0.0;
+                }
+                slice.iter().map(f).sum::<f32>() / slice.len() as f32
+            };
+
+        let mean_uncertainty = mean(|s| s.uncertainty).clamp(0.0, 1.0);
+        let max_uncertainty = max(|s| s.uncertainty).clamp(0.0, 1.0);
+        let mean_pressure = mean(|s| s.pressure).clamp(0.0, 1.0);
+        let max_pressure = max(|s| s.pressure).clamp(0.0, 1.0);
+        let mean_surprise = mean(|s| s.surprise).clamp(0.0, 1.0);
+        let max_surprise = max(|s| s.surprise).clamp(0.0, 1.0);
+        let mean_risk = mean(|s| s.risk).clamp(0.0, 1.0);
+        let max_risk = max(|s| s.risk).clamp(0.0, 1.0);
+        let mean_coherence_value = mean(|s| s.coherence).clamp(0.0, 1.0);
+        let mean_coherence = Some(mean_coherence_value);
+        let delta_mean_uncertainty = (half_mean(second, |s| s.uncertainty)
+            - half_mean(first, |s| s.uncertainty))
+        .clamp(-1.0, 1.0);
+        let delta_mean_pressure =
+            (half_mean(second, |s| s.pressure) - half_mean(first, |s| s.pressure)).clamp(-1.0, 1.0);
+
+        let q = |v: f32| quantize_unit_u16(v) as u32;
+        let q_signed = |v: f32| ((v.clamp(-1.0, 1.0) * 10_000.0).round() as i32).to_be_bytes();
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(b"ucf.runtime.evolution.liquid_window.v0");
+        hasher.update(&t0.to_be_bytes());
+        hasher.update(&t1.to_be_bytes());
+        hasher.update(&q(mean_uncertainty).to_be_bytes());
+        hasher.update(&q(max_uncertainty).to_be_bytes());
+        hasher.update(&q(mean_pressure).to_be_bytes());
+        hasher.update(&q(max_pressure).to_be_bytes());
+        hasher.update(&q(mean_surprise).to_be_bytes());
+        hasher.update(&q(max_surprise).to_be_bytes());
+        hasher.update(&q(mean_risk).to_be_bytes());
+        hasher.update(&q(max_risk).to_be_bytes());
+        hasher.update(&q(mean_coherence_value).to_be_bytes());
+        hasher.update(&q_signed(delta_mean_uncertainty));
+        hasher.update(&q_signed(delta_mean_pressure));
+
+        Some(LiquidWindowStats {
+            window: (t0, t1),
+            mean_uncertainty,
+            max_uncertainty,
+            mean_pressure,
+            max_pressure,
+            mean_surprise,
+            max_surprise,
+            mean_risk,
+            max_risk,
+            mean_coherence,
+            delta_mean_uncertainty,
+            delta_mean_pressure,
+            digest: *hasher.finalize().as_bytes(),
+        })
     }
 
     fn maybe_run_evolution(
@@ -789,11 +894,62 @@ impl RuntimeOrchestrator {
             .filter(|x| x.denied_tool)
             .count() as f32
             / n;
+        let governor_tier_mean = self
+            .evolution_summaries
+            .iter()
+            .map(|x| f32::from(x.governor_tier))
+            .sum::<f32>()
+            / n;
+        let governor_tier_max = self
+            .evolution_summaries
+            .iter()
+            .map(|x| x.governor_tier)
+            .max()
+            .unwrap_or(0);
         let evidence_chain_digest = self
             .evolution_summaries
             .last()
             .map(|s| s.evidence_chain_digest)
             .unwrap_or([0; 32]);
+        let backend_pack_digest = self
+            .evolution_summaries
+            .last()
+            .map(|s| s.backend_pack_digest)
+            .unwrap_or([0; 32]);
+        let nsr_available = self.evolution_summaries.iter().all(|s| s.nsr_available);
+        let emergency_active = self.emergency_active();
+        let liquid_window =
+            self.liquid_window_stats(time.tick.get())
+                .unwrap_or(LiquidWindowStats {
+                    window: (
+                        time.tick.get().saturating_sub(self.evolution_window_ticks),
+                        time.tick.get(),
+                    ),
+                    mean_uncertainty: 1.0,
+                    max_uncertainty: 1.0,
+                    mean_pressure: 1.0,
+                    max_pressure: 1.0,
+                    mean_surprise: 1.0,
+                    max_surprise: 1.0,
+                    mean_risk: risk_mean,
+                    max_risk: risk_mean,
+                    mean_coherence: Some(coherence_mean),
+                    delta_mean_uncertainty: 0.0,
+                    delta_mean_pressure: 0.0,
+                    digest: [0; 32],
+                });
+        if emergency_active {
+            self.evolution_suppressed_total = self.evolution_suppressed_total.saturating_add(1);
+            metrics::counter!("ucf_structural_delta_suppressed_total", "reason" => "emergency")
+                .increment(1);
+            self.ess.append(ExperienceRecord::note(
+                self.ids.next(),
+                time,
+                corr,
+                "evolution_engine_suppressed:emergency",
+            ))?;
+            return Ok(());
+        }
         let ctx = EvolutionContext {
             t: time.tick.get(),
             source_window: (
@@ -809,6 +965,12 @@ impl RuntimeOrchestrator {
             denied_tool_rate,
             stress_index: self.last_hormone_summary.map(|s| s.stress_index),
             neuro_arousal: self.last_neuro_summary.map(|s| s.arousal),
+            liquid_window,
+            governor_tier_mean,
+            governor_tier_max,
+            emergency_active,
+            backend_pack_digest,
+            nsr_available,
             params: TunableSnapshot {
                 beta_policy_risk: self.fep_state.cfg.beta_policy_risk,
                 beta_coherence_lock: self.fep_state.cfg.beta_coherence_lock,
@@ -819,6 +981,17 @@ impl RuntimeOrchestrator {
                 coherence_risk_inhibit_min: self.fep_state.coh_cfg.min_policy_inhibit_on_risk,
             },
         };
+        if !ctx.nsr_available {
+            self.evolution_suppressed_total = self.evolution_suppressed_total.saturating_add(1);
+            metrics::counter!("ucf_structural_delta_suppressed_total", "reason" => "nsr_unavailable")
+                .increment(1);
+            self.ess.append(ExperienceRecord::note(
+                self.ids.next(),
+                time,
+                corr,
+                "evolution_engine_suppressed:nsr_unavailable",
+            ))?;
+        }
         let _span = tracing::info_span!(
             "evolution.step",
             window = self.evolution_window_ticks,
@@ -828,13 +1001,13 @@ impl RuntimeOrchestrator {
         let mut candidates = self
             .evolution_engine
             .propose(ctx, EvolutionBudget { work_units: 64 });
-        if candidates.len() > 8 {
-            candidates.truncate(8);
+        if candidates.len() > 4 {
+            candidates.truncate(4);
         }
         let mut scored = Vec::with_capacity(candidates.len());
         for delta in candidates {
             self.evolution_proposals_total = self.evolution_proposals_total.saturating_add(1);
-            metrics::counter!("ucf_evolution_proposals_total").increment(1);
+            metrics::counter!("ucf_structural_delta_proposals_total").increment(1);
             let proposal = DeltaProposalRecord {
                 schema_version: 1,
                 delta_id: delta.delta_id,
@@ -843,6 +1016,8 @@ impl RuntimeOrchestrator {
                 ops_summary: ops_summary_bytes(&delta),
                 digest: delta.digest,
                 evidence_chain_digest,
+                window_stats_digest: ctx.liquid_window.digest,
+                backend_pack_digest: ctx.backend_pack_digest,
             };
             self.ess.append(ExperienceRecord::from_delta_proposal(
                 self.ids.next(),
@@ -862,10 +1037,10 @@ impl RuntimeOrchestrator {
             let accepted = accepted_id == Some(delta.delta_id);
             if accepted {
                 self.evolution_accepted_total = self.evolution_accepted_total.saturating_add(1);
-                metrics::counter!("ucf_evolution_accepted_total").increment(1);
+                metrics::counter!("ucf_structural_delta_recommended_total").increment(1);
             } else {
                 self.evolution_rejected_total = self.evolution_rejected_total.saturating_add(1);
-                metrics::counter!("ucf_evolution_rejected_total", "reason" => top_reason(&score))
+                metrics::counter!("ucf_structural_delta_rejected_total", "reason" => top_reason(&score))
                     .increment(1);
             }
             let eval = DeltaEvaluationRecord {
@@ -879,6 +1054,9 @@ impl RuntimeOrchestrator {
                 accepted,
                 reason_codes: reason_codes(&score),
                 evidence_chain_digest,
+                window_stats_digest: ctx.liquid_window.digest,
+                backend_pack_digest: ctx.backend_pack_digest,
+                suppression_reason_code: suppression_reason_code(&ctx),
             };
             self.ess.append(ExperienceRecord::from_delta_evaluation(
                 self.ids.next(),
@@ -887,6 +1065,8 @@ impl RuntimeOrchestrator {
                 eval,
             ))?;
             if accepted {
+                self.evolution_recommended_total =
+                    self.evolution_recommended_total.saturating_add(1);
                 let rec = DeltaRecommendationRecord {
                     schema_version: 1,
                     delta_id: delta.delta_id,
@@ -894,6 +1074,8 @@ impl RuntimeOrchestrator {
                     safety_clamps: clamp_summary_bytes(),
                     requires_human_apply: true,
                     evidence_chain_digest,
+                    window_stats_digest: ctx.liquid_window.digest,
+                    backend_pack_digest: ctx.backend_pack_digest,
                 };
                 self.ess
                     .append(ExperienceRecord::from_delta_recommendation(
@@ -1457,6 +1639,8 @@ impl RuntimeOrchestrator {
             evolution_accepted_total: 0,
             evolution_rejected_total: 0,
             evolution_budget_exceeded_total: 0,
+            evolution_suppressed_total: 0,
+            evolution_recommended_total: 0,
         }
     }
 
@@ -3467,7 +3651,13 @@ impl RuntimeOrchestrator {
         }
 
         let denied_tool = matches!(decision.decision, ucf_frames::v1::DecisionCode::Deny);
-        self.summarize_tick_for_evolution(decision.compute_summary, denied_tool);
+        self.summarize_tick_for_evolution(
+            decision.compute_summary,
+            denied_tool,
+            self.compute_budget.governor_tier,
+            backend_pack_digest(compute_summary),
+            true,
+        );
         self.maybe_run_evolution(decision.time, decision.corr)?;
 
         let nsr_record = NsrRecord {
@@ -3812,8 +4002,23 @@ fn top_reason(score: &DeltaScore) -> &'static str {
         Some(ReasonCode::TooAggressiveChange) => "too_aggressive_change",
         Some(ReasonCode::IncreasesRisk) => "increases_risk",
         Some(ReasonCode::WeakSafetyMargin) => "weak_safety_margin",
+        Some(ReasonCode::HeuristicAssumption) => "heuristic_assumption",
+        Some(ReasonCode::SafetyDominance) => "safety_dominance",
         None => "none",
     }
+}
+
+fn suppression_reason_code(ctx: &EvolutionContext) -> u8 {
+    if ctx.emergency_active {
+        return 1;
+    }
+    if !ctx.nsr_available {
+        return 2;
+    }
+    if ctx.governor_tier_max >= 3 {
+        return 3;
+    }
+    0
 }
 
 fn ops_summary_bytes(delta: &StructuralDelta) -> [u8; 128] {
