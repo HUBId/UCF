@@ -1,0 +1,10 @@
+{
+  "governor": {
+    "tier_thresholds": [0.25, 0.5, 0.75],
+    "safe_default_tier": 3,
+    "allow_file_write_max_tier": 1,
+    "allow_external_api_max_tier": 0,
+    "allow_network": false,
+    "allow_exec": false
+  }
+}

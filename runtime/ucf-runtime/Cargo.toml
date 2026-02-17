@@ -45,6 +45,7 @@ wat = { version = "1", optional = true }
 
 metrics = { workspace = true }
 tracing = { workspace = true }
+thiserror = { workspace = true }
 
 [dev-dependencies]
 serde = { workspace = true }

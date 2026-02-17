@@ -3509,7 +3509,10 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "metrics",
+ "serde",
  "sha2",
+ "thiserror 1.0.69",
+ "toml",
  "tracing",
  "ucf-bluebrain-bridge",
  "ucf-brainbus",
@@ -3691,6 +3694,7 @@ dependencies = [
  "metrics",
  "serde",
  "serde_json",
+ "thiserror 1.0.69",
  "tracing",
  "ucf-biophys",
  "ucf-bluebrain-bridge",

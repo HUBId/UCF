@@ -1,0 +1,10 @@
+{
+  "filesystem_roots": {
+    "models_root": {"path": "./models", "mode": "read"},
+    "out_root": {"path": "./out", "mode": "write_ops_only"},
+    "ess_root": {"path": "./runtime", "mode": "read_write_internal"}
+  },
+  "network": {"enabled": false},
+  "process_exec": {"enabled": false},
+  "model_slots": ["./models"]
+}

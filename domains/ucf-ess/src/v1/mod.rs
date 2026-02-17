@@ -8,7 +8,8 @@ pub use record::{
     CandidateSummaryRecord, CapabilityIssuanceRecord, DeltaEvaluationRecord, DeltaProposalRecord,
     DeltaRecommendationRecord, EmergencyReasonCode, EmergencyRecord, EmergencyStateCode,
     ExperienceId, ExperienceKind, ExperiencePayload, ExperienceRecord, HormoneRecord,
-    LfmSummaryRecord, LfmWindowRecord, NeuroRecord, NsrRecord, OutputRecord, SandboxCallRecord,
-    SandboxReplyRecord, ThrottleRecord, ToolAuthRecord, ToolExecutionRecord, ToolRequestRecord,
+    LfmSummaryRecord, LfmWindowRecord, NeuroRecord, NsrRecord, OutputRecord,
+    PolicyProvenanceRecord, SandboxCallRecord, SandboxReplyRecord, ThrottleRecord, ToolAuthRecord,
+    ToolExecutionRecord, ToolRequestRecord,
 };
 pub use store::{ExperienceStore, IdAllocator, InMemoryEss};

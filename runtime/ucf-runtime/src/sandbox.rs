@@ -915,6 +915,7 @@ pub fn execute_tool_call<A: ActionAdapter>(
             let wasm_gate = ToolGate::new(
                 gate.capabilities.clone(),
                 ucf_policy::rate_limiter::RateLimiter::new(32),
+                None,
             );
             let mut runtime = WasmIsolationRuntime::new(wasm_gate)?;
             runtime.call(call, budget)?
@@ -1632,6 +1633,7 @@ mod tests {
         let mut gate = ToolGate::new(
             CapabilitySet::empty(),
             ucf_policy::rate_limiter::RateLimiter::new(10),
+            None,
         );
         let mut adapter = ucf_policy::adapter::MockAdapter::default();
         let mut runtime = InProcIsolationRuntime::new(&mut gate, &mut adapter);
@@ -1681,6 +1683,7 @@ mod tests {
                 tokens: vec![token],
             },
             ucf_policy::rate_limiter::RateLimiter::new(10),
+            None,
         );
         let mut adapter = ucf_policy::adapter::MockAdapter::default();
         let mut runtime = InProcIsolationRuntime::new(&mut gate, &mut adapter);

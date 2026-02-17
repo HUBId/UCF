@@ -40,8 +40,9 @@ use ucf_ess::v1::{
     CandidateSummaryRecord, CapabilityIssuanceRecord, DeltaEvaluationRecord, DeltaProposalRecord,
     DeltaRecommendationRecord, EmergencyReasonCode, EmergencyRecord, EmergencyStateCode,
     ExperienceKind, ExperienceRecord, ExperienceStore, HormoneRecord, IdAllocator, InMemoryEss,
-    LfmSummaryRecord, LfmWindowRecord, NeuroRecord, NsrRecord, OutputRecord, SandboxCallRecord,
-    SandboxReplyRecord, ThrottleRecord, ToolAuthRecord, ToolExecutionRecord, ToolRequestRecord,
+    LfmSummaryRecord, LfmWindowRecord, NeuroRecord, NsrRecord, OutputRecord,
+    PolicyProvenanceRecord, SandboxCallRecord, SandboxReplyRecord, ThrottleRecord, ToolAuthRecord,
+    ToolExecutionRecord, ToolRequestRecord,
 };
 use ucf_fep::{
     check_coherence_invariants, fep_step, homeostasis_step, CoherenceCfg, CoherenceSnapshot,
@@ -75,6 +76,7 @@ use ucf_policy::{
         ToolGate, ToolGovernor, ToolStatus,
     },
     pbm::Pbm,
+    policy_bundle::verify_policy_bundle,
     rate_limiter::RateLimiter,
 };
 use ucf_sle::v0::{sle_step, SleCfg, SleReason, SleSignals, SleState};
@@ -708,6 +710,7 @@ pub struct RuntimeOrchestrator {
     evolution_budget_exceeded_total: u64,
     evolution_suppressed_total: u64,
     evolution_recommended_total: u64,
+    policy_bundle_hash: String,
 }
 
 impl RuntimeOrchestrator {
@@ -1099,6 +1102,7 @@ impl RuntimeOrchestrator {
         effective_tier: u8,
     ) -> Result<(), RuntimeError> {
         let issuance_payload = AuditPayload::CapabilityIssuance(CapabilityIssuanceRecord {
+            policy_bundle_hash: self.policy_bundle_hash.clone(),
             t: time.tick.get(),
             decision_id,
             candidate_id: Some(candidate_id),
@@ -1193,6 +1197,7 @@ impl RuntimeOrchestrator {
         compute_summary: &ucf_compute::ComputeSignalsSummary,
     ) -> Result<(), RuntimeError> {
         let payload = AuditPayload::Emergency(EmergencyRecord {
+            policy_bundle_hash: self.policy_bundle_hash.clone(),
             t: time.tick.get(),
             state,
             reason: reason.as_ess(),
@@ -1463,7 +1468,30 @@ impl RuntimeOrchestrator {
         let ncde_cfg = NcdeCfg::default_v0();
         let ncde_state = NcdeState::new(&ncde_cfg);
 
-        Self {
+        #[cfg(test)]
+        if std::env::var("UCF_POLICY_BUNDLE_SHA256").is_err() {
+            if let Ok(manifest) = std::fs::read_to_string("policies/manifest.toml") {
+                if let Some(hash_line) = manifest.lines().find(|l| l.starts_with("bundle_sha256 ="))
+                {
+                    let hash = hash_line
+                        .split('=')
+                        .nth(1)
+                        .map(str::trim)
+                        .unwrap_or("")
+                        .trim_matches('"')
+                        .to_string();
+                    if !hash.is_empty() {
+                        std::env::set_var("UCF_POLICY_BUNDLE_SHA256", hash);
+                    }
+                }
+            }
+        }
+
+        let policy_provenance = verify_policy_bundle(std::path::Path::new("policies"))
+            .unwrap_or_else(|e| panic!("policy bundle verification failed: {e}"));
+        metrics::gauge!("ucf_policy_bundle_verified").set(1.0);
+
+        let mut out = Self {
             ess: InMemoryEss::new(),
             ids: IdAllocator::new(1),
             pbm: Pbm,
@@ -1622,6 +1650,7 @@ impl RuntimeOrchestrator {
             tool_gate: ToolGate::new(
                 ucf_policy::capability::CapabilitySet::empty(),
                 RateLimiter::new(1024),
+                Some(policy_provenance.bundle_sha256.clone()),
             ),
             tool_governor: ToolGovernor::default(),
             last_nsr_risk: None,
@@ -1642,7 +1671,28 @@ impl RuntimeOrchestrator {
             evolution_budget_exceeded_total: 0,
             evolution_suppressed_total: 0,
             evolution_recommended_total: 0,
-        }
+            policy_bundle_hash: policy_provenance.bundle_sha256.clone(),
+        };
+
+        let _ = out.ess.append(ExperienceRecord::audit(
+            out.ids.next(),
+            ucf_core::types::SimTime {
+                tick: ucf_core::types::Tick::new(0),
+                window: ucf_core::types::WindowId::new(0),
+            },
+            ucf_frames::v1::CorrelationId(0),
+            ExperienceKind::PolicyProvenance,
+            AuditPayload::PolicyProvenance(PolicyProvenanceRecord {
+                t: 0,
+                run_id: policy_provenance.run_id,
+                bundle_version: policy_provenance.version,
+                bundle_hash: policy_provenance.bundle_sha256.clone(),
+                enabled_features: policy_provenance.enabled_features,
+                schema_version: 1,
+            }),
+            out.audit_head_digest,
+        ));
+        out
     }
 
     pub fn last_snn_spike_count(&self) -> usize {
@@ -4195,6 +4245,19 @@ mod tests {
         assert!(reasons.contains(&OverrideReasonCode::HighUncertainty.as_u16()));
         assert!(reasons.contains(&OverrideReasonCode::LowStability.as_u16()));
     }
+    #[test]
+    fn fails_fast_on_bad_policy_bundle_hash() {
+        let original = std::env::var("UCF_POLICY_BUNDLE_SHA256").ok();
+        std::env::set_var("UCF_POLICY_BUNDLE_SHA256", "deadbeef");
+        let outcome = std::panic::catch_unwind(RuntimeOrchestrator::new);
+        assert!(outcome.is_err());
+        if let Some(v) = original {
+            std::env::set_var("UCF_POLICY_BUNDLE_SHA256", v);
+        } else {
+            std::env::remove_var("UCF_POLICY_BUNDLE_SHA256");
+        }
+    }
+
     #[test]
     fn emergency_decoding_policy_forces_safe_short_output() {
         let out = apply_decoding_policy(

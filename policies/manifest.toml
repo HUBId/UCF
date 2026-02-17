@@ -1,0 +1,15 @@
+version = "v1"
+
+[[files]]
+path = "bundle_v1/compiled_rules.json"
+sha256 = "216c425ad23a052e38d0856b02a702c19085e90bf623f01539a501ef9b749c2b"
+
+[[files]]
+path = "bundle_v1/allowlists.json"
+sha256 = "64c26cd8b4ee3d3b23aa27c61371c3e7695d7e4feb0479d3c7a069eb5a6ccf43"
+
+[[files]]
+path = "bundle_v1/governor_defaults.json"
+sha256 = "84923d53124d703c91594b9355650ef3340179ec5c04bda4f4ce05ea823d5cb6"
+
+bundle_sha256 = "c214007ffedae35da75ca66c9737329db580a0919b17886bc67d221f0d3b857f"

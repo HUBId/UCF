@@ -117,7 +117,11 @@ fn gate_denies_missing_decision_and_rate_limits_by_ticks() {
         phi_proxy: None,
         coherence_digest: None,
     });
-    let mut gate = ToolGate::new(issue_capabilities(Some(&decision), 1), RateLimiter::new(2));
+    let mut gate = ToolGate::new(
+        issue_capabilities(Some(&decision), 1),
+        RateLimiter::new(2),
+        None,
+    );
     let mut adapter = MockAdapter::default();
 
     let denied =
