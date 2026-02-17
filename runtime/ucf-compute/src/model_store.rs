@@ -239,6 +239,41 @@ impl ModelStore {
         })
     }
 
+    pub fn read_verified_bytes(
+        &self,
+        verified: &VerifiedModelSlot,
+    ) -> Result<Vec<u8>, ModelLoadError> {
+        let mut file = File::open(&verified.path).map_err(|e| ModelLoadError::OpenFailed {
+            path: verified.path.clone(),
+            reason: e.to_string(),
+        })?;
+        let size = file
+            .metadata()
+            .map_err(|e| ModelLoadError::OpenFailed {
+                path: verified.path.clone(),
+                reason: e.to_string(),
+            })?
+            .len();
+        let slot_spec = self
+            .specs
+            .get(&verified.slot)
+            .ok_or(ModelLoadError::Disabled)?;
+        if size > slot_spec.max_bytes {
+            return Err(ModelLoadError::Oversized {
+                path: verified.path.clone(),
+                max_bytes: slot_spec.max_bytes,
+                size_bytes: size,
+            });
+        }
+        let mut bytes = Vec::with_capacity(size as usize);
+        file.read_to_end(&mut bytes)
+            .map_err(|e| ModelLoadError::OpenFailed {
+                path: verified.path.clone(),
+                reason: e.to_string(),
+            })?;
+        Ok(bytes)
+    }
+
     pub fn verified_slots(&self) -> BTreeMap<ModelSlot, Result<VerifiedModelSlot, ModelLoadError>> {
         ModelSlot::all()
             .into_iter()

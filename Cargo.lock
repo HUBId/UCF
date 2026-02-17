@@ -3127,6 +3127,7 @@ dependencies = [
  "metrics",
  "proptest",
  "rmp-serde",
+ "safetensors",
  "serde",
  "serde_json",
  "sha2",
