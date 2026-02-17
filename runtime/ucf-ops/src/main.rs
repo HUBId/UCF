@@ -5,7 +5,8 @@ use std::path::PathBuf;
 use ucf_ops::{
     bringup, diagnostics, explain_tick, export_bugreport, metrics_snapshot, metrics_summary,
     metrics_trend, models_probe, models_verify, one_command_bringup, readiness_gate, replay_audit,
-    replay_bugreport, verify_bugreport, ExplainTickRequest, ExportArgs, GateStatus,
+    replay_bugreport, security_verify_chain, verify_bugreport, ExplainTickRequest, ExportArgs,
+    GateStatus,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -279,6 +280,22 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         }
+        "security" => {
+            let sub = args.get(2).map(String::as_str).unwrap_or("help");
+            match sub {
+                "verify-chain" => {
+                    let from = parse_u64(&args, "--from", 0);
+                    let to = parse_u64(&args, "--to", u64::MAX);
+                    security_verify_chain(&workdir, from, to)?;
+                    println!("security_chain=ok from={from} to={to}");
+                }
+                _ => {
+                    return Err(
+                        "usage: ucf-ops security verify-chain [--from <t0>] [--to <t1>]".into(),
+                    )
+                }
+            }
+        }
         "readiness-gate" => {
             let profile = arg_value(&args, "--profile").unwrap_or_else(|| "test".to_string());
             let out = arg_value(&args, "--out")
@@ -293,7 +310,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             eprintln!(
-                "usage: ucf-ops <bringup|diag|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|readiness-gate|version> [--workdir <path>]"
+                "usage: ucf-ops <bringup|diag|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|readiness-gate|version> [--workdir <path>]"
             );
             std::process::exit(1);
         }

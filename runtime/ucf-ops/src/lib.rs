@@ -2563,3 +2563,37 @@ mod tests {
         assert_eq!(c.0, d.0);
     }
 }
+
+pub fn security_verify_chain(workdir: &Path, from: u64, to: u64) -> Result<(), OpsError> {
+    let records = load_fixture_records(workdir)?;
+    let mut prev: Option<[u8; 32]> = None;
+    for record in records
+        .iter()
+        .filter(|r| r.time.tick.get() >= from && r.time.tick.get() <= to)
+    {
+        if !matches!(
+            record.kind,
+            ExperienceKind::CapabilityIssuance
+                | ExperienceKind::Emergency
+                | ExperienceKind::BackendPack
+                | ExperienceKind::AuditCheckpoint
+                | ExperienceKind::Output
+        ) {
+            continue;
+        }
+        if let (Some(expected_prev), Some(digest)) = (record.audit_prev_digest, record.audit_digest)
+        {
+            if let Some(actual_prev) = prev {
+                if actual_prev != expected_prev {
+                    return Err(OpsError::Invalid(format!(
+                        "security chain break at experience_id={} tick={}",
+                        record.id.0,
+                        record.time.tick.get()
+                    )));
+                }
+            }
+            prev = Some(digest);
+        }
+    }
+    Ok(())
+}

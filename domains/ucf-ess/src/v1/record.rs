@@ -37,6 +37,7 @@ pub enum ExperienceKind {
     CapabilityIssuance,
     Throttle,
     Emergency,
+    PolicyProvenance,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -86,10 +87,12 @@ pub enum AuditPayload {
     CapabilityIssuance(CapabilityIssuanceRecord),
     Throttle(ThrottleRecord),
     Emergency(EmergencyRecord),
+    PolicyProvenance(PolicyProvenanceRecord),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CapabilityIssuanceRecord {
+    pub policy_bundle_hash: String,
     pub t: u64,
     pub decision_id: u64,
     pub candidate_id: Option<u16>,
@@ -106,6 +109,15 @@ pub struct CapabilityIssuanceRecord {
     pub schema_version: u16,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PolicyProvenanceRecord {
+    pub t: u64,
+    pub run_id: String,
+    pub bundle_version: String,
+    pub bundle_hash: String,
+    pub enabled_features: Vec<String>,
+    pub schema_version: u16,
+}
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EmergencyReasonCode {
     RunawayV,
@@ -123,6 +135,7 @@ pub enum EmergencyStateCode {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EmergencyRecord {
+    pub policy_bundle_hash: String,
     pub t: u64,
     pub state: EmergencyStateCode,
     pub reason: EmergencyReasonCode,

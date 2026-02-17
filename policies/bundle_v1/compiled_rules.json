@@ -1,0 +1,10 @@
+{
+  "version": "v1",
+  "default_decision": "deny",
+  "rules": [
+    {"id": "allow_internal", "channel": "InternalThought", "decision": "allow"},
+    {"id": "allow_external_text_short", "channel": "ExternalOutput", "max_chars": 512, "decision": "allow"},
+    {"id": "deny_memory_write_default", "channel": "MemoryWrite", "decision": "deny"},
+    {"id": "deny_brain_stim_default", "channel": "BrainStimulus", "decision": "deny"}
+  ]
+}

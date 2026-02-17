@@ -384,13 +384,19 @@ pub struct ToolExecutionAudit {
 pub struct ToolGate {
     pub capabilities: CapabilitySet,
     pub rate_limiter: RateLimiter,
+    pub policy_bundle_hash: Option<String>,
 }
 
 impl ToolGate {
-    pub fn new(capabilities: CapabilitySet, rate_limiter: RateLimiter) -> Self {
+    pub fn new(
+        capabilities: CapabilitySet,
+        rate_limiter: RateLimiter,
+        policy_bundle_hash: Option<String>,
+    ) -> Self {
         Self {
             capabilities,
             rate_limiter,
+            policy_bundle_hash,
         }
     }
 
@@ -402,6 +408,14 @@ impl ToolGate {
         );
         let _entered = span.enter();
         counter!("ucf_tool_requests_total", "kind" => req.kind.as_tag().to_string()).increment(1);
+
+        if self.policy_bundle_hash.is_none() {
+            counter!("ucf_tool_denied_total", "reason" => "policy_bundle_unverified".to_string())
+                .increment(1);
+            return AuthorizationOutcome::Denied {
+                reason: CapabilityDenyReason::PolicyBundleUnverified,
+            };
+        }
 
         let token = match self.capabilities.allows(req, now_t) {
             Ok(token) => token,
@@ -446,6 +460,7 @@ impl Gem {
         let mut gate = ToolGate::new(
             issue_capabilities(decision, ctrl.time.tick.get()),
             RateLimiter::new(1024),
+            None,
         );
         Self::execute_with_gate(adapter, ctrl, decision, ctrl.corr.0, &mut gate).map(|_| ())
     }
@@ -680,9 +695,7 @@ pub fn issue_capabilities_governed(
         CapabilityKind::FileRead,
         CapabilityKind::FileWrite,
         CapabilityKind::ExternalApi,
-        CapabilityKind::NetHttp,
         CapabilityKind::UiAutomation,
-        CapabilityKind::ProcessExec,
     ];
 
     for kind in requested.iter().cloned() {

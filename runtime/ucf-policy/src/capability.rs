@@ -150,6 +150,7 @@ pub enum CapabilityDenyReason {
     DecisionMissing,
     ScopeAllDisallowed,
     ByteLimitExceeded,
+    PolicyBundleUnverified,
 }
 
 impl CapabilitySet {

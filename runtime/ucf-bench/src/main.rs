@@ -292,7 +292,8 @@ fn run_sandbox(args: &[String]) -> Result<(), BenchError> {
             "wasm" => {
                 #[cfg(feature = "sandbox-wasm")]
                 {
-                    let wasm_gate = ToolGate::new(gate.capabilities.clone(), RateLimiter::new(32));
+                    let wasm_gate =
+                        ToolGate::new(gate.capabilities.clone(), RateLimiter::new(32), None);
                     let mut rt = WasmIsolationRuntime::new(wasm_gate)
                         .map_err(|e| BenchError::Compute(format!("{e:?}")))?;
                     rt.call(call, budget)
