@@ -4,10 +4,19 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::mpsc;
+use std::thread;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
+use ucf_compute::capabilities::{LlmOutputClass, LlmRequest};
+use ucf_compute::feature_extractor::SaeInput;
+use ucf_compute::lfm::LfmInput;
+use ucf_compute::model_store::VerifiedModelSlot;
+use ucf_compute::ssm::SsmInput;
+use ucf_compute::world_model::{StageQuality, WorldModelInput};
 use ucf_compute::{
     build_backend, compute_input_from_control, stable_budget_profile_id, BackendPackConfig,
     BackendPackFactory, BackendPackKind, ComputeBackendConfig, ComputeBackendKind, ComputeError,
@@ -120,6 +129,75 @@ pub struct ModelsVerifyReport {
     pub slots: Vec<ModelVerifySlotReport>,
 }
 
+const PROBE_TIMEOUT_MS: u64 = 200;
+const PROBE_BUDGET_MS: u64 = 100;
+const PROBE_TAIL_GUARD_FACTOR: f64 = 1.5;
+const PROBE_RUNS: usize = 3;
+const PROBE_RESULT_CAP: usize = 10;
+const MODEL_PROBE_SCHEMA_VERSION: u16 = 1;
+const PROBE_NOTES_MAX: usize = 240;
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProbeSpec {
+    pub slot: ModelSlot,
+    pub timeout_ms: u64,
+    pub max_tokens: u32,
+    pub input_digest: [u8; 32],
+    pub seed: u64,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ProbeStatus {
+    Ok,
+    Timeout,
+    Error,
+    Disabled,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProbeResult {
+    pub slot: ModelSlot,
+    pub backend_id: String,
+    pub model_sha256_prefix: Option<String>,
+    pub status: ProbeStatus,
+    pub elapsed_ms: u64,
+    pub output_digest: [u8; 32],
+    pub quality: StageQuality,
+    pub notes: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProbeReportSummary {
+    pub pass: bool,
+    pub reasons: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProbeReport {
+    pub run_id: String,
+    pub timestamp: u64,
+    pub results: Vec<ProbeResult>,
+    pub summary: ProbeReportSummary,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ModelProbeRecord {
+    pub t: u64,
+    pub run_id: String,
+    pub pack_digest: String,
+    pub slot: ModelSlot,
+    pub model_hash_prefix: Option<String>,
+    pub timeout_ms: u64,
+    pub seed: u64,
+    pub input_digest_prefix: String,
+    pub status: ProbeStatus,
+    pub elapsed_ms: u64,
+    pub output_digest_prefix: String,
+    pub quality: StageQuality,
+    pub schema_version: u16,
+}
+
 pub fn models_verify(manifest: &Path) -> Result<ModelsVerifyReport, OpsError> {
     let store = ModelStore::from_manifest_and_env(manifest)
         .map_err(|e| OpsError::Invalid(format!("manifest error: {e:?}")))?;
@@ -156,6 +234,424 @@ pub fn models_verify(manifest: &Path) -> Result<ModelsVerifyReport, OpsError> {
         model_hashes_digest: hex::encode(store.model_hashes_digest()),
         slots,
     })
+}
+
+pub fn models_probe(workdir: &Path, manifest: &Path, out: &Path) -> Result<ProbeReport, OpsError> {
+    ensure_layout(workdir)?;
+    let verify = models_verify(manifest)?;
+    let store = ModelStore::from_manifest_and_env(manifest)
+        .map_err(|e| OpsError::Invalid(format!("manifest error: {e:?}")))?;
+    std::env::set_var("UCF_MODEL_MANIFEST", manifest);
+    let pack = BackendPackFactory::build(BackendPackConfig::from_env()?)?;
+    let run_id = format!("probe-{}", now_unix_secs());
+    let mut results = Vec::new();
+    let mut reasons = Vec::new();
+    let mut records = Vec::new();
+    for slot in ModelSlot::all() {
+        if results.len() >= PROBE_RESULT_CAP {
+            break;
+        }
+        let verified = store.verify_slot(slot).ok();
+        let spec = probe_spec_for_slot(slot);
+        let (mut result, record) =
+            run_probe_for_slot(&run_id, &pack, slot, &spec, verified.as_ref());
+        if matches!(result.status, ProbeStatus::Disabled)
+            && !verify
+                .slots
+                .iter()
+                .any(|s| s.slot == slot.as_str() && s.status == "disabled")
+        {
+            result.status = ProbeStatus::Error;
+            result.notes = bounded_note("slot unexpectedly disabled during probe");
+        }
+        if result.status != ProbeStatus::Ok {
+            reasons.push(format!("{}={:?}", slot.as_str(), result.status));
+        }
+        results.push(result);
+        records.push(record);
+    }
+
+    persist_probe_records(workdir, &records)?;
+
+    let summary = ProbeReportSummary {
+        pass: reasons.is_empty(),
+        reasons,
+    };
+    let report = ProbeReport {
+        run_id,
+        timestamp: now_unix_secs(),
+        results,
+        summary,
+    };
+    if let Some(parent) = out.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    write_json(out, &report)?;
+    Ok(report)
+}
+
+fn probe_spec_for_slot(slot: ModelSlot) -> ProbeSpec {
+    let seed = 0xA11C_E555_u64;
+    let max_tokens = 64;
+    let input_digest = match slot {
+        ModelSlot::Llm => digest_json(&serde_json::json!({
+            "prompt": "UCF deterministic model probe v1",
+            "seed": seed,
+            "max_tokens": max_tokens
+        })),
+        ModelSlot::WorldJepa => digest_json(&deterministic_features(seed, 16)),
+        ModelSlot::Sae => digest_json(&deterministic_features(seed ^ 0x5A5A, 32)),
+        ModelSlot::Ssm => digest_json(&serde_json::json!({
+            "spikes_digest": vec![17_u8; 32],
+            "spike_count": 11,
+            "sae_energy": 0.3,
+            "world_surprise": 0.2,
+            "risk": 0.1
+        })),
+        ModelSlot::Lfm => digest_json(&serde_json::json!({
+            "pressure": 0.35,
+            "surprise": 0.22,
+            "sae_energy": 0.29,
+            "spike_count": 13
+        })),
+    };
+    ProbeSpec {
+        slot,
+        timeout_ms: PROBE_TIMEOUT_MS,
+        max_tokens,
+        input_digest,
+        seed,
+    }
+}
+
+fn run_probe_for_slot(
+    run_id: &str,
+    pack: &std::sync::Arc<dyn ucf_compute::BackendPack>,
+    slot: ModelSlot,
+    spec: &ProbeSpec,
+    verified: Option<&VerifiedModelSlot>,
+) -> (ProbeResult, ModelProbeRecord) {
+    let model_sha = verified.map(|v| hex_prefix(v.sha256));
+    let backend_id = format!(
+        "{}:{}",
+        pack.meta().pack_name,
+        hex_prefix(pack.meta().digest)
+    );
+    let mut elapsed_samples = Vec::new();
+    let mut final_status = ProbeStatus::Disabled;
+    let mut final_quality = StageQuality::Unavailable;
+    let mut final_output = [0_u8; 32];
+    let mut notes = String::new();
+
+    if verified.is_none() {
+        final_status = ProbeStatus::Disabled;
+        notes = bounded_note("slot disabled in model manifest");
+    } else {
+        for _ in 0..PROBE_RUNS {
+            let started = Instant::now();
+            let outcome = match slot {
+                ModelSlot::Llm => exec_with_timeout(spec.timeout_ms, {
+                    let pack = pack.clone();
+                    let spec = spec.clone();
+                    move || run_llm_probe(pack, &spec)
+                }),
+                ModelSlot::WorldJepa => exec_with_timeout(spec.timeout_ms, {
+                    let pack = pack.clone();
+                    let spec = spec.clone();
+                    move || run_world_probe(pack, &spec)
+                }),
+                ModelSlot::Sae => exec_with_timeout(spec.timeout_ms, {
+                    let pack = pack.clone();
+                    let spec = spec.clone();
+                    move || run_sae_probe(pack, &spec)
+                }),
+                ModelSlot::Ssm => exec_with_timeout(spec.timeout_ms, {
+                    let pack = pack.clone();
+                    let spec = spec.clone();
+                    move || run_ssm_probe(pack, &spec)
+                }),
+                ModelSlot::Lfm => exec_with_timeout(spec.timeout_ms, {
+                    let pack = pack.clone();
+                    let spec = spec.clone();
+                    move || run_lfm_probe(pack, &spec)
+                }),
+            };
+            let elapsed_ms = started.elapsed().as_millis() as u64;
+            elapsed_samples.push(elapsed_ms);
+            match outcome {
+                Ok((digest, quality)) => {
+                    final_status = ProbeStatus::Ok;
+                    final_quality = quality;
+                    final_output = digest;
+                }
+                Err(ProbeExecError::Timeout) => {
+                    final_status = ProbeStatus::Timeout;
+                    final_quality = StageQuality::DegradedFallback;
+                    notes = bounded_note("probe timeout hit; result discarded safely");
+                    break;
+                }
+                Err(ProbeExecError::Exec(msg)) => {
+                    final_status = ProbeStatus::Error;
+                    final_quality = StageQuality::DegradedFallback;
+                    notes = bounded_note(&format!("probe error: {msg}"));
+                    break;
+                }
+            }
+        }
+    }
+
+    elapsed_samples.sort_unstable();
+    let p50 = percentile_ms(&elapsed_samples, 0.5);
+    let p95 = percentile_ms(&elapsed_samples, 0.95);
+    if final_status == ProbeStatus::Ok
+        && p95 > ((PROBE_BUDGET_MS as f64) * PROBE_TAIL_GUARD_FACTOR) as u64
+    {
+        final_quality = StageQuality::DegradedFallback;
+        notes = bounded_note(&format!(
+            "tail_guard_exceeded p50={}ms p95={}ms budget={}ms",
+            p50, p95, PROBE_BUDGET_MS
+        ));
+    } else if final_status == ProbeStatus::Ok && notes.is_empty() {
+        notes = bounded_note(&format!(
+            "latency p50={}ms p95={}ms budget={}ms",
+            p50, p95, PROBE_BUDGET_MS
+        ));
+    }
+
+    let elapsed_ms = *elapsed_samples.last().unwrap_or(&0);
+    let result = ProbeResult {
+        slot,
+        backend_id: backend_id.clone(),
+        model_sha256_prefix: model_sha.clone(),
+        status: final_status,
+        elapsed_ms,
+        output_digest: final_output,
+        quality: final_quality,
+        notes,
+    };
+    let record = ModelProbeRecord {
+        t: now_unix_secs(),
+        run_id: run_id.to_string(),
+        pack_digest: hex_prefix(pack.meta().digest),
+        slot,
+        model_hash_prefix: model_sha,
+        timeout_ms: spec.timeout_ms,
+        seed: spec.seed,
+        input_digest_prefix: hex_prefix(spec.input_digest),
+        status: final_status,
+        elapsed_ms,
+        output_digest_prefix: hex_prefix(final_output),
+        quality: final_quality,
+        schema_version: MODEL_PROBE_SCHEMA_VERSION,
+    };
+    (result, record)
+}
+
+fn run_llm_probe(
+    pack: std::sync::Arc<dyn ucf_compute::BackendPack>,
+    spec: &ProbeSpec,
+) -> Result<([u8; 32], StageQuality), String> {
+    let req = LlmRequest {
+        schema_version: 1,
+        t: 1,
+        decision_id: 1,
+        candidate_id: 1,
+        output_class: LlmOutputClass::SafeText,
+        prompt: "UCF deterministic model probe v1".to_string(),
+        context_digest: [0x22; 32],
+        evidence_chain_digest: [0x33; 32],
+        lfm_readout_digest: None,
+        lfm_uncertainty: None,
+        lfm_stability: None,
+        coherence: Some(0.8),
+        instability: Some(0.1),
+        risk: Some(0.2),
+        confidence: Some(0.9),
+        seed: spec.seed,
+        max_tokens: spec.max_tokens,
+        temperature: 0.0,
+    }
+    .bounded();
+    let resp = pack
+        .llm()
+        .infer(&req, ComputeBackendConfig::default().to_budget())
+        .map_err(|e| format!("{e:?}"))?;
+    Ok((resp.digest, StageQuality::Ok))
+}
+
+fn run_world_probe(
+    pack: std::sync::Arc<dyn ucf_compute::BackendPack>,
+    spec: &ProbeSpec,
+) -> Result<([u8; 32], StageQuality), String> {
+    let mut obs = [0.0_f32; 16];
+    for (idx, value) in deterministic_features(spec.seed, 16).iter().enumerate() {
+        obs[idx] = *value;
+    }
+    let input = WorldModelInput {
+        t: 1,
+        context_digest: [0x44; 32],
+        obs_features: obs,
+        seed: spec.seed,
+    };
+    let out = pack
+        .world()
+        .lock()
+        .map_err(|_| "world lock poisoned".to_string())?
+        .step(&input, ComputeBackendConfig::default().to_budget())
+        .map_err(|e| format!("{e:?}"))?;
+    Ok((out.prediction_digest, out.quality))
+}
+
+fn run_sae_probe(
+    pack: std::sync::Arc<dyn ucf_compute::BackendPack>,
+    spec: &ProbeSpec,
+) -> Result<([u8; 32], StageQuality), String> {
+    let mut feats = [0.0_f32; 32];
+    for (idx, value) in deterministic_features(spec.seed ^ 0x5A5A, 32)
+        .iter()
+        .enumerate()
+    {
+        feats[idx] = *value;
+    }
+    let input = SaeInput {
+        t: 1,
+        context_features: feats,
+        world_state_digest: Some([0x51; 32]),
+        seed: spec.seed,
+        evidence_chain_digest: [0x52; 32],
+    };
+    let out = pack
+        .sae()
+        .extract(&input, ComputeBackendConfig::default().to_budget())
+        .map_err(|e| format!("{e:?}"))?;
+    Ok((out.spikes_digest, out.quality))
+}
+
+fn run_ssm_probe(
+    pack: std::sync::Arc<dyn ucf_compute::BackendPack>,
+    spec: &ProbeSpec,
+) -> Result<([u8; 32], StageQuality), String> {
+    let input = SsmInput {
+        t: 1,
+        spikes_digest: [0x11; 32],
+        spike_count: 11,
+        sae_energy: 0.3,
+        world_surprise: 0.2,
+        risk: 0.1,
+        seed: spec.seed,
+        context_digest: [0x61; 32],
+    };
+    let out = pack
+        .ssm()
+        .lock()
+        .map_err(|_| "ssm lock poisoned".to_string())?
+        .step(&input, ComputeBackendConfig::default().to_budget())
+        .map_err(|e| format!("{e:?}"))?;
+    Ok((out.state_digest, out.quality))
+}
+
+fn run_lfm_probe(
+    pack: std::sync::Arc<dyn ucf_compute::BackendPack>,
+    spec: &ProbeSpec,
+) -> Result<([u8; 32], StageQuality), String> {
+    let input = LfmInput {
+        t: 1,
+        context_digest: [0x71; 32],
+        world_digest: [0x72; 32],
+        surprise: 0.22,
+        spikes_digest: [0x11; 32],
+        spike_count: 13,
+        sae_energy: 0.29,
+        pressure: 0.35,
+        coherence: Some(0.85),
+        instability: Some(0.05),
+        hormone_stress: Some(0.2),
+        neuro_arousal: Some(0.3),
+        governor_tier: Some(1),
+        prediction_error: Some(0.1),
+        seed: spec.seed,
+    };
+    let out = pack
+        .lfm()
+        .lock()
+        .map_err(|_| "lfm lock poisoned".to_string())?
+        .step(&input, ComputeBackendConfig::default().to_budget())
+        .map_err(|e| format!("{e:?}"))?;
+    Ok((out.liquid_state_digest, out.quality))
+}
+
+#[derive(Debug)]
+enum ProbeExecError {
+    Timeout,
+    Exec(String),
+}
+
+fn exec_with_timeout<T, F>(timeout_ms: u64, task: F) -> Result<T, ProbeExecError>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, String> + Send + 'static,
+{
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        let _ = tx.send(task());
+    });
+    match rx.recv_timeout(Duration::from_millis(timeout_ms)) {
+        Ok(result) => result.map_err(ProbeExecError::Exec),
+        Err(mpsc::RecvTimeoutError::Timeout) => Err(ProbeExecError::Timeout),
+        Err(mpsc::RecvTimeoutError::Disconnected) => Err(ProbeExecError::Exec(
+            "probe worker disconnected".to_string(),
+        )),
+    }
+}
+
+fn deterministic_features(seed: u64, len: usize) -> Vec<f32> {
+    (0..len)
+        .map(|i| {
+            let mixed = seed.wrapping_add((i as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15));
+            (mixed as u32) as f32 / u32::MAX as f32
+        })
+        .collect()
+}
+
+fn percentile_ms(values: &[u64], pct: f64) -> u64 {
+    if values.is_empty() {
+        return 0;
+    }
+    let idx = ((values.len() - 1) as f64 * pct).round() as usize;
+    values[idx.min(values.len() - 1)]
+}
+
+fn digest_json<T: Serialize>(value: &T) -> [u8; 32] {
+    let bytes = serde_json::to_vec(value).unwrap_or_default();
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    hasher.finalize().into()
+}
+
+fn bounded_note(note: &str) -> String {
+    note.chars().take(PROBE_NOTES_MAX).collect()
+}
+
+fn hex_prefix(digest: [u8; 32]) -> String {
+    hex::encode(&digest[..6])
+}
+
+fn now_unix_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
+fn persist_probe_records(workdir: &Path, new_records: &[ModelProbeRecord]) -> Result<(), OpsError> {
+    let path = workdir.join("ess").join("model_probe_records.json");
+    let mut all: Vec<ModelProbeRecord> = if path.exists() {
+        serde_json::from_str(&fs::read_to_string(&path)?)?
+    } else {
+        Vec::new()
+    };
+    all.extend_from_slice(new_records);
+    write_json(path, &all)
 }
 
 const GATE_CHECK_CAP: usize = 64;
@@ -2004,5 +2500,66 @@ mod tests {
     fn bounded_preview_caps_and_marks_truncation() {
         let preview = bounded_preview("abcdefghijklmnopqrstuvwxyz", 8);
         assert_eq!(preview, "abcdefgh…");
+    }
+
+    #[test]
+    fn probe_inputs_are_deterministic() {
+        let a = probe_spec_for_slot(ModelSlot::Llm);
+        let b = probe_spec_for_slot(ModelSlot::Llm);
+        assert_eq!(a.input_digest, b.input_digest);
+
+        let wa = probe_spec_for_slot(ModelSlot::WorldJepa);
+        let wb = probe_spec_for_slot(ModelSlot::WorldJepa);
+        assert_eq!(wa.input_digest, wb.input_digest);
+    }
+
+    #[test]
+    fn timeout_returns_without_deadlock() {
+        let result = exec_with_timeout(10, || {
+            thread::sleep(Duration::from_millis(100));
+            Ok::<_, String>(())
+        });
+        assert!(matches!(result, Err(ProbeExecError::Timeout)));
+    }
+
+    #[test]
+    fn models_probe_persists_records_and_report() {
+        let dir = tempdir().expect("tempdir");
+        let out = dir.path().join("out/probe_report.json");
+        let report = models_probe(dir.path(), Path::new("models/manifest.toml"), &out)
+            .expect("models probe");
+        assert!(!report.results.is_empty());
+        assert!(out.exists());
+        let records = dir.path().join("ess/model_probe_records.json");
+        assert!(records.exists());
+    }
+
+    #[test]
+    fn probe_digests_are_deterministic_for_toy_backends() {
+        let world_spec = probe_spec_for_slot(ModelSlot::WorldJepa);
+        let a = run_world_probe(
+            BackendPackFactory::build(BackendPackConfig::default()).expect("pack a"),
+            &world_spec,
+        )
+        .expect("world a");
+        let b = run_world_probe(
+            BackendPackFactory::build(BackendPackConfig::default()).expect("pack b"),
+            &world_spec,
+        )
+        .expect("world b");
+        assert_eq!(a.0, b.0);
+
+        let sae_spec = probe_spec_for_slot(ModelSlot::Sae);
+        let c = run_sae_probe(
+            BackendPackFactory::build(BackendPackConfig::default()).expect("pack c"),
+            &sae_spec,
+        )
+        .expect("sae a");
+        let d = run_sae_probe(
+            BackendPackFactory::build(BackendPackConfig::default()).expect("pack d"),
+            &sae_spec,
+        )
+        .expect("sae b");
+        assert_eq!(c.0, d.0);
     }
 }

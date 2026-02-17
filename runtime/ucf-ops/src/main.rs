@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use ucf_ops::{
     bringup, diagnostics, explain_tick, export_bugreport, metrics_snapshot, metrics_summary,
-    metrics_trend, models_verify, one_command_bringup, readiness_gate, replay_audit,
+    metrics_trend, models_probe, models_verify, one_command_bringup, readiness_gate, replay_audit,
     replay_bugreport, verify_bugreport, ExplainTickRequest, ExportArgs, GateStatus,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
@@ -257,7 +257,26 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         std::process::exit(2);
                     }
                 }
-                _ => return Err("usage: ucf-ops models verify [--manifest <path>]".into()),
+                "probe" => {
+                    let manifest = arg_value(&args, "--manifest")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("models/manifest.toml"));
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/probe_report.json"));
+                    let report = models_probe(&workdir, &manifest, &out)?;
+                    println!("{}", serde_json::to_string_pretty(&report)?);
+                    println!("out={}", out.display());
+                    if !report.summary.pass {
+                        std::process::exit(2);
+                    }
+                }
+                _ => {
+                    return Err(
+                        "usage: ucf-ops models <verify|probe> [--manifest <path>] [--out <path>]"
+                            .into(),
+                    )
+                }
             }
         }
         "readiness-gate" => {
