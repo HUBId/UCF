@@ -2,8 +2,8 @@ use std::fs;
 
 use tempfile::tempdir;
 use ucf_ops::{
-    bringup, diagnostics, export_bugreport, one_command_bringup, replay_audit, replay_bugreport,
-    verify_bugreport, ExportArgs,
+    bringup, diagnostics, export_bugreport, one_command_bringup, readiness_gate, replay_audit,
+    replay_bugreport, verify_bugreport, ExportArgs, GateStatus,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -90,4 +90,17 @@ fn one_command_bringup_writes_release_artifacts() {
         .join("ess")
         .join("run_metadata_record.json")
         .exists());
+}
+
+#[test]
+fn readiness_gate_writes_report() {
+    std::env::set_var("UCF_SKIP_GATE_WORKSPACE_TESTS", "1");
+    let dir = tempdir().expect("tempdir");
+    let out = dir.path().join("gate_report.json");
+    let report = readiness_gate(dir.path(), "test", &out).expect("readiness gate");
+    std::env::remove_var("UCF_SKIP_GATE_WORKSPACE_TESTS");
+
+    assert!(out.exists());
+    assert!(!report.checks.is_empty());
+    assert!(matches!(report.status, GateStatus::Pass | GateStatus::Fail));
 }

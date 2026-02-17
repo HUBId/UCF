@@ -4,8 +4,8 @@ use std::path::PathBuf;
 
 use ucf_ops::{
     bringup, diagnostics, explain_tick, export_bugreport, metrics_snapshot, metrics_summary,
-    metrics_trend, one_command_bringup, replay_audit, replay_bugreport, verify_bugreport,
-    ExplainTickRequest, ExportArgs,
+    metrics_trend, one_command_bringup, readiness_gate, replay_audit, replay_bugreport,
+    verify_bugreport, ExplainTickRequest, ExportArgs, GateStatus,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -237,9 +237,21 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 _ => return Err("usage: ucf-ops metrics <summary|trend> ...".into()),
             }
         }
+        "readiness-gate" => {
+            let profile = arg_value(&args, "--profile").unwrap_or_else(|| "test".to_string());
+            let out = arg_value(&args, "--out")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("./out/gate_report.json"));
+            let report = readiness_gate(&workdir, &profile, &out)?;
+            println!("status={:?}", report.status);
+            println!("out={}", out.display());
+            if report.status != GateStatus::Pass {
+                std::process::exit(2);
+            }
+        }
         _ => {
             eprintln!(
-                "usage: ucf-ops <bringup|diag|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|version> [--workdir <path>]"
+                "usage: ucf-ops <bringup|diag|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|readiness-gate|version> [--workdir <path>]"
             );
             std::process::exit(1);
         }
