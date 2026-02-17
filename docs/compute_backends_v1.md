@@ -7,15 +7,18 @@ CPU-only real compute adapters for `world_jepa`, `sae`, and `ssm` in backend pac
 - **World/JEPA** (`WorldModelPredictor`):
   - input: `WorldModelInput { obs_features[16], context_digest, t, seed }`
   - output: `WorldModelOutput { prediction_digest, state_digest, prediction_error, surprise, state_norm }`
-  - digesting: quantized signed latent/state values.
+  - forward (v1): `h = tanh(x·W1 + b1)`, `y = h·W2 + b2` (CPU deterministic loops).
+  - error: `mean_abs(y-x)` clamped to `[0,1]`.
+  - digesting: `prediction_digest = H(q_i16(y_clamped) || model_hash || t || context_digest)` and `prediction_error_q = quantize_unit_u16(error)`.
 - **SAE** (`SaeExtractor`):
   - input: `SaeInput { context_features[32], world_state_digest, t, seed }`
-  - forward: `y = W x + b`, ReLU, deterministic top-k sparsify.
-  - output: spikes + `spikes_digest`, `spike_count`, `energy`, `sparsity`.
+  - forward: `y = W x + b` (CPU deterministic loops).
+  - sparsify: deterministic top-k by `|y_i|`, tie-break by `feature_id`.
+  - output: spikes + `spikes_digest`, `spike_count`, `energy`, `sparsity` where digest uses canonical sorted spikes + quantized magnitudes + model/context metadata.
 - **SSM** (`SsmKernel`):
   - input: `SsmInput { spikes_digest, spike_count, sae_energy, world_surprise, ... }`
-  - forward: selective scan update over state (O(T*N) minimal path).
-  - output: `pressure`, `state_digest`, `readout_digest`, `state_norm`, `readout`.
+  - forward: structured scan update in ascending index order: `s[i] = A[i]*s[i] + B[i]*inp`, clamped to `[-1,1]`.
+  - output: `pressure`, `state_digest`, `readout_digest`, `state_norm`, `readout`, with state digest over quantized signed state + model hash + tick/context digests.
 
 ## Model provisioning (offline/hash-locked)
 Use `models/manifest.toml` with slots:
@@ -57,3 +60,10 @@ Run deterministic compute probe paths by building ucf-compute tests or `ucf-ops 
 
 ## Offline fixtures
 Golden/negative safetensors fixtures are generated in unit tests at runtime (offline, deterministic) to keep the repository text-only and VCS-compatible.
+
+
+## Envelope checks / fail-safe
+- Any `NaN`/`Inf` during JEPA/SAE/SSM yields deterministic degraded fallback (`StageQuality::DegradedFallback`).
+- Degraded outputs are conservative: JEPA error/surprise = 1, SAE empty spikes + energy 0, SSM pressure/readout = 1.
+- Degraded digests use deterministic markers and include `(t, context/evidence digest)` for replay compatibility.
+- Outputs are bounded in v1 (`spike_count <= SAE_TOP_K`, state values clamped to `[-1,1]`, unit metrics clamped to `[0,1]`).

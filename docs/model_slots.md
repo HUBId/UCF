@@ -62,7 +62,7 @@ Required tensors:
 
 ### `ssm` (SSM v1)
 Required tensors:
-- `A: [N,N] f32`
+- `A: [N,N] f32` (v1 uses deterministic diagonal/structured scan path)
 - `B: [N] f32`
 - `C: [N] f32`
 
