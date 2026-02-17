@@ -4,8 +4,8 @@ use std::path::PathBuf;
 
 use ucf_ops::{
     bringup, diagnostics, explain_tick, export_bugreport, metrics_snapshot, metrics_summary,
-    metrics_trend, replay_audit, replay_bugreport, verify_bugreport, ExplainTickRequest,
-    ExportArgs,
+    metrics_trend, one_command_bringup, replay_audit, replay_bugreport, verify_bugreport,
+    ExplainTickRequest, ExportArgs,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -19,20 +19,46 @@ fn main() {
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
     let cmd = args.get(1).map(String::as_str).unwrap_or("help");
+    if cmd == "--version" || cmd == "version" {
+        println!("ucf-ops {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
     let workdir = arg_value(&args, "--workdir")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(".ucf"));
 
     match cmd {
         "bringup" => {
-            let demo = has_flag(&args, "--demo");
-            let ticks = parse_u64(&args, "--ticks", 100);
-            let out = bringup(&workdir, demo, ticks)?;
-            println!("pid={} status=ok", std::process::id());
-            println!("workdir={}", out.workdir.display());
-            println!("ess={}", out.ess_fixture_path.display());
-            println!("logs={}", out.log_path.display());
-            println!("decisions={} digest={}", out.decision_count, out.ess_digest);
+            let ticks = parse_u64(&args, "--ticks", 32);
+            if let Some(scenario) = arg_value(&args, "--scenario") {
+                let out_dir = arg_value(&args, "--out")
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|| PathBuf::from("./out"));
+                let replay_verify = !has_flag(&args, "--no-replay");
+                let artifacts = one_command_bringup(
+                    &workdir,
+                    &PathBuf::from(scenario),
+                    ticks,
+                    &out_dir,
+                    replay_verify,
+                )?;
+                println!("pid={} status=ok", std::process::id());
+                println!("workdir={}", workdir.display());
+                println!("profile={}", artifacts.run_metadata.profile);
+                println!("run_id={}", artifacts.run_metadata.run_id);
+                println!("out={}", out_dir.display());
+                if let Some(report) = artifacts.replay_report {
+                    println!("replay_report={report}");
+                }
+            } else {
+                let demo = has_flag(&args, "--demo");
+                let out = bringup(&workdir, demo, ticks)?;
+                println!("pid={} status=ok", std::process::id());
+                println!("workdir={}", out.workdir.display());
+                println!("ess={}", out.ess_fixture_path.display());
+                println!("logs={}", out.log_path.display());
+                println!("decisions={} digest={}", out.decision_count, out.ess_digest);
+            }
         }
         "diag" => {
             let report = diagnostics(&workdir)?;
@@ -213,7 +239,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             eprintln!(
-                "usage: ucf-ops <bringup|diag|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics> [--workdir <path>]"
+                "usage: ucf-ops <bringup|diag|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|version> [--workdir <path>]"
             );
             std::process::exit(1);
         }

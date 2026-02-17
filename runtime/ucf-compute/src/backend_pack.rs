@@ -281,6 +281,7 @@ pub struct BackendPackFactory;
 
 impl BackendPackFactory {
     pub fn build(cfg: BackendPackConfig) -> Result<Arc<dyn BackendPack>, ComputeError> {
+        crate::ReleaseFeatureMatrix::detect().validate_pack(cfg.pack)?;
         let fixtures = FixtureManager;
         let fixtures_digest = fixtures.overall_digest()?;
         let (llm_component, sae_component) = match cfg.pack {
@@ -442,7 +443,10 @@ mod tests {
         #[cfg(not(feature = "lfm-lnn"))]
         {
             let result = BackendPackFactory::build(cfg);
-            assert!(matches!(result, Err(ComputeError::BackendDisabled)));
+            assert!(matches!(
+                result,
+                Err(ComputeError::BackendDisabled) | Err(ComputeError::InvalidInput { .. })
+            ));
         }
         #[cfg(feature = "lfm-lnn")]
         {
@@ -461,7 +465,10 @@ mod tests {
         #[cfg(not(feature = "lfm-candle"))]
         {
             let result = BackendPackFactory::build(cfg);
-            assert!(matches!(result, Err(ComputeError::BackendDisabled)));
+            assert!(matches!(
+                result,
+                Err(ComputeError::BackendDisabled) | Err(ComputeError::InvalidInput { .. })
+            ));
         }
         #[cfg(feature = "lfm-candle")]
         {

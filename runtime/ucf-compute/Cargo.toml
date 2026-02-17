@@ -4,15 +4,21 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["compute-stub"]
-compute-stub = []
+default = ["backend-stub", "backend-toy"]
+backend-stub = []
+backend-toy = []
+compute-stub = ["backend-stub"]
 compute-candle = ["dep:candle-core"]
 compute-burn = []
+backend-burn = ["compute-burn"]
 llm-candle = ["dep:candle-core"]
 llm-burn = []
 lfm-candle = ["dep:candle-core"]
 lfm-burn = []
 lfm-lnn = []
+plasticity = []
+replay = []
+ops-explain = []
 
 [dependencies]
 sha2 = { workspace = true }

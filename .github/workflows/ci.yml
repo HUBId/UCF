@@ -41,3 +41,15 @@ jobs:
 
       - name: Determinism replay guard
         run: cargo run -p ucf-replay -- replay --fixture runtime/ucf-replay/fixtures/golden_replay_fixture.json --from 0 --to 100000 --mode compute --report replay_report.json
+
+      - name: Ops bringup deterministic spine
+        run: |
+          rm -rf .ucf out
+          cargo run -p ucf-ops -- bringup --scenario fixtures/e2e_scenario_a.json --ticks 32 --out ./out
+          test -f out/metrics_summary.json
+          test -f out/run_metadata_record.json
+          python - <<'PY2'
+import hashlib, pathlib
+m = pathlib.Path('out/metrics_summary.json').read_bytes()
+print('metrics_sha256_prefix=' + hashlib.sha256(m).hexdigest()[:12])
+PY2

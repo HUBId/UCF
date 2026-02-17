@@ -10,6 +10,7 @@ pub mod backends;
 pub mod capabilities;
 pub mod evidence;
 pub mod feature_extractor;
+pub mod feature_matrix;
 pub mod lfm;
 pub mod pipeline;
 pub mod risk_contract;
@@ -22,6 +23,7 @@ pub use backend_pack::{
 };
 pub use backends::{build_backend, ComputeBackendConfig, ComputeBackendKind};
 pub use evidence::{CodeVersionTag, EvidenceChain, COMPUTE_SUMMARY_SCHEMA_VERSION};
+pub use feature_matrix::ReleaseFeatureMatrix;
 pub use pipeline::ComputePipelineBackend;
 pub use risk_contract::{
     clamp01, stable_budget_profile_id, validate_risk_signal, BackendProfileId, EvidenceRef,
