@@ -19,6 +19,7 @@ lfm-lnn = []
 plasticity = []
 replay = []
 ops-explain = []
+remote-compute = []
 
 [dependencies]
 sha2 = { workspace = true }

@@ -9,6 +9,7 @@ pub const FEATURE_LFM_LNN: u16 = 1 << 5;
 pub const FEATURE_PLASTICITY: u16 = 1 << 6;
 pub const FEATURE_REPLAY: u16 = 1 << 7;
 pub const FEATURE_OPS_EXPLAIN: u16 = 1 << 8;
+pub const FEATURE_REMOTE_COMPUTE: u16 = 1 << 9;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ReleaseFeatureMatrix {
@@ -44,6 +45,9 @@ impl ReleaseFeatureMatrix {
         }
         if cfg!(feature = "ops-explain") {
             bits |= FEATURE_OPS_EXPLAIN;
+        }
+        if cfg!(feature = "remote-compute") {
+            bits |= FEATURE_REMOTE_COMPUTE;
         }
         Self { bits }
     }
@@ -106,6 +110,16 @@ impl ReleaseFeatureMatrix {
                 } else {
                     Err(ComputeError::InvalidInput {
                         reason: "pack worker_v1 requires feature backend-toy".to_string(),
+                    })
+                }
+            }
+            #[cfg(feature = "remote-compute")]
+            BackendPackKind::RemoteV1 => {
+                if self.bits & FEATURE_REMOTE_COMPUTE != 0 {
+                    Ok(())
+                } else {
+                    Err(ComputeError::InvalidInput {
+                        reason: "pack remote_v1 requires feature remote-compute".to_string(),
                     })
                 }
             }

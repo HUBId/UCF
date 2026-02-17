@@ -33,6 +33,7 @@ pub enum BackendComponentId {
     CandleToyV1 = 2,
     BurnToyV1 = 3,
     LnnOdeV1 = 4,
+    RemoteProxyV1 = 5,
     Disabled = 255,
 }
 
@@ -200,6 +201,8 @@ pub enum BackendPackKind {
     BurnToyV1,
     ToyLnnV1,
     WorkerV1,
+    #[cfg(feature = "remote-compute")]
+    RemoteV1,
 }
 
 impl BackendPackKind {
@@ -212,6 +215,8 @@ impl BackendPackKind {
             "burn_toy_v1" => Some(Self::BurnToyV1),
             "toy_lnn_v1" => Some(Self::ToyLnnV1),
             "worker_v1" => Some(Self::WorkerV1),
+            #[cfg(feature = "remote-compute")]
+            "remote_v1" => Some(Self::RemoteV1),
             _ => None,
         }
     }
@@ -225,6 +230,8 @@ impl BackendPackKind {
             Self::BurnToyV1 => "burn_toy_v1",
             Self::ToyLnnV1 => "toy_lnn_v1",
             Self::WorkerV1 => "worker_v1",
+            #[cfg(feature = "remote-compute")]
+            Self::RemoteV1 => "remote_v1",
         }
     }
 
@@ -237,6 +244,8 @@ impl BackendPackKind {
             Self::BurnToyV1 => BackendPackId(3),
             Self::ToyLnnV1 => BackendPackId(5),
             Self::WorkerV1 => BackendPackId(6),
+            #[cfg(feature = "remote-compute")]
+            Self::RemoteV1 => BackendPackId(7),
         }
     }
 }
@@ -316,6 +325,11 @@ impl BackendPackFactory {
             BackendPackKind::ToyLnnV1 | BackendPackKind::WorkerV1 => {
                 (BackendComponentId::ToyV1, BackendComponentId::ToyV1)
             }
+            #[cfg(feature = "remote-compute")]
+            BackendPackKind::RemoteV1 => (
+                BackendComponentId::RemoteProxyV1,
+                BackendComponentId::RemoteProxyV1,
+            ),
         };
 
         let llm_cfg = match cfg.pack {
@@ -332,6 +346,12 @@ impl BackendPackFactory {
             BackendPackKind::CandleLiquidV1
             | BackendPackKind::ToyLnnV1
             | BackendPackKind::WorkerV1 => LlmBackendConfig {
+                kind: crate::capabilities::LlmBackendKind::Stub,
+                seed: cfg.seed,
+                max_tokens: 128,
+            },
+            #[cfg(feature = "remote-compute")]
+            BackendPackKind::RemoteV1 => LlmBackendConfig {
                 kind: crate::capabilities::LlmBackendKind::Stub,
                 seed: cfg.seed,
                 max_tokens: 128,
@@ -390,6 +410,10 @@ impl BackendPackFactory {
                         reason: "worker pack handled above".to_string(),
                     })
                 }
+                #[cfg(feature = "remote-compute")]
+                BackendPackKind::RemoteV1 => {
+                    return Self::build_remote_pack(cfg.seed, fixtures_digest, model_hashes_digest)
+                }
             };
 
         let mut meta = BackendPackMeta {
@@ -416,6 +440,81 @@ impl BackendPackFactory {
             ssm: Mutex::new(Box::new(ToySsmKernel::default())),
             lfm: Mutex::new(lfm_kernel),
         }))
+    }
+}
+
+#[cfg(feature = "remote-compute")]
+impl BackendPackFactory {
+    fn build_remote_pack(
+        seed: u64,
+        fixtures_digest: [u8; 32],
+        model_hashes_digest: [u8; 32],
+    ) -> Result<Arc<dyn BackendPack>, ComputeError> {
+        let remote_enable = std::env::var("UCF_REMOTE_ENABLE").unwrap_or_default();
+        if remote_enable != "1" {
+            return Err(ComputeError::BackendDisabled);
+        }
+        let allowlist_path = std::path::Path::new("policies/bundle_v1/allowlists.json");
+        let policy_hash = std::env::var("UCF_POLICY_BUNDLE_SHA256").unwrap_or_default();
+        let allowlist = crate::remote_compute::RemotePolicyAllowlist::load(allowlist_path)?;
+        if !allowlist.enabled || !allowlist.allows_policy_hash(&policy_hash) {
+            return Err(ComputeError::BackendDisabled);
+        }
+
+        let mut meta = BackendPackMeta {
+            schema_version: 1,
+            pack_name: "remote_v1",
+            pack_id: BackendPackKind::RemoteV1.id(),
+            llm_backend: BackendComponentId::RemoteProxyV1,
+            world_backend: BackendComponentId::RemoteProxyV1,
+            sae_backend: BackendComponentId::RemoteProxyV1,
+            ssm_backend: BackendComponentId::RemoteProxyV1,
+            lfm_backend: BackendComponentId::RemoteProxyV1,
+            fixtures_digest,
+            model_hashes_digest,
+            code_version: CodeVersionTag::current(),
+            digest: [0; 32],
+        };
+        meta.digest = meta.canonical_digest();
+        Ok(Arc::new(RemoteBackendPack {
+            inner: UnifiedBackendPack {
+                meta,
+                llm: Arc::new(LlmStubBackend),
+                world: Mutex::new(Box::new(MockJepaPredictor::default())),
+                sae: Arc::new(ToySaeExtractor::default()),
+                ssm: Mutex::new(Box::new(ToySsmKernel::default())),
+                lfm: Mutex::new(Box::new(ToyLfmKernel::default())),
+            },
+            _seed: seed,
+        }))
+    }
+}
+
+#[cfg(feature = "remote-compute")]
+pub struct RemoteBackendPack {
+    inner: UnifiedBackendPack,
+    _seed: u64,
+}
+
+#[cfg(feature = "remote-compute")]
+impl BackendPack for RemoteBackendPack {
+    fn meta(&self) -> &BackendPackMeta {
+        self.inner.meta()
+    }
+    fn llm(&self) -> &dyn LlmInference {
+        self.inner.llm()
+    }
+    fn world(&self) -> &Mutex<Box<dyn WorldModelPredictor + Send + Sync>> {
+        self.inner.world()
+    }
+    fn sae(&self) -> &dyn SaeExtractor {
+        self.inner.sae()
+    }
+    fn ssm(&self) -> &Mutex<Box<dyn SsmKernel + Send + Sync>> {
+        self.inner.ssm()
+    }
+    fn lfm(&self) -> &Mutex<Box<dyn LfmKernel + Send + Sync>> {
+        self.inner.lfm()
     }
 }
 
@@ -506,5 +605,17 @@ mod tests {
             assert_eq!(pack.meta().lfm_backend, BackendComponentId::CandleToyV1);
             assert_eq!(pack.meta().pack_name, "candle_liquid_v1");
         }
+    }
+
+    #[cfg(feature = "remote-compute")]
+    #[test]
+    fn remote_pack_requires_runtime_and_policy_opt_in() {
+        std::env::remove_var("UCF_REMOTE_ENABLE");
+        let cfg = BackendPackConfig {
+            pack: BackendPackKind::RemoteV1,
+            seed: 42,
+        };
+        let result = BackendPackFactory::build(cfg);
+        assert!(matches!(result, Err(ComputeError::BackendDisabled)));
     }
 }
