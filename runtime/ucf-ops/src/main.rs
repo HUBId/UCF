@@ -3,10 +3,11 @@
 use std::path::PathBuf;
 
 use ucf_ops::{
-    adversarial_run, bench_run, bringup, diagnostics, explain_tick, export_bugreport,
-    metrics_snapshot, metrics_summary, metrics_trend, models_probe, models_verify,
-    one_command_bringup, readiness_gate, replay_audit, replay_bugreport, security_verify_chain,
-    verify_bugreport, AdversarialRunArgs, BenchArgs, ExplainTickRequest, ExportArgs, GateStatus,
+    adversarial_run, bench_run, bringup, diagnostics, ess_compact, ess_snapshot, explain_tick,
+    export_bugreport, metrics_snapshot, metrics_summary, metrics_trend, models_probe,
+    models_verify, one_command_bringup, readiness_gate, replay_audit, replay_bugreport,
+    security_verify_chain, verify_bugreport, AdversarialRunArgs, BenchArgs, ExplainTickRequest,
+    ExportArgs, GateStatus,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -135,6 +136,31 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 &report,
             )?;
             println!("replay_report={}", report.display());
+        }
+        "ess" => {
+            let sub = args.get(2).map(String::as_str).unwrap_or("help");
+            match sub {
+                "snapshot" => {
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| workdir.join("ess/snapshot.snap"));
+                    let manifest = ess_snapshot(&workdir, &out)?;
+                    println!(
+                        "snapshot={} digest={}",
+                        out.display(),
+                        manifest.snapshot_digest
+                    );
+                    println!("manifest_digest={}", manifest.manifest_digest);
+                }
+                "compact" => {
+                    let policy = arg_value(&args, "--policy")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("policies/bundle_v1/retention_v1.json"));
+                    let manifest = ess_compact(&workdir, &policy)?;
+                    println!("compaction_manifest={}", serde_json::to_string(&manifest)?);
+                }
+                _ => return Err("usage: ucf-ops ess <snapshot|compact> ...".into()),
+            }
         }
         "metrics-snapshot" => {
             let snapshot = metrics_snapshot(&workdir)?;

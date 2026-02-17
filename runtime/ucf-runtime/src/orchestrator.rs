@@ -36,13 +36,13 @@ use ucf_core::storage::{ArchiveCfg, FlushPolicy, MemArchiveStore};
 use ucf_dbm::chemistry::{chemistry_step, ChemistryCfg, NeuromodState};
 use ucf_dbm::regions::{region_step, BrainRegion, RegionKind};
 use ucf_ess::v1::{
-    AuditCheckpointRecord, AuditPayload, BackendPackRecord, CandidateSetRecord,
-    CandidateSummaryRecord, CapabilityIssuanceRecord, DeltaEvaluationRecord, DeltaProposalRecord,
-    DeltaRecommendationRecord, EmergencyReasonCode, EmergencyRecord, EmergencyStateCode,
-    ExperienceKind, ExperienceRecord, ExperienceStore, HormoneRecord, IdAllocator, InMemoryEss,
-    LfmSummaryRecord, LfmWindowRecord, NeuroRecord, NsrRecord, OutputRecord,
-    PolicyProvenanceRecord, SandboxCallRecord, SandboxReplyRecord, ThrottleRecord, ToolAuthRecord,
-    ToolExecutionRecord, ToolRequestRecord,
+    compute_content_digest, AuditCheckpointRecord, AuditPayload, BackendPackRecord,
+    CandidateSetRecord, CandidateSummaryRecord, CapabilityIssuanceRecord, DeltaEvaluationRecord,
+    DeltaProposalRecord, DeltaRecommendationRecord, EmergencyReasonCode, EmergencyRecord,
+    EmergencyStateCode, ExperienceKind, ExperienceRecord, ExperienceStore, HormoneRecord,
+    IdAllocator, InMemoryEss, LfmSummaryRecord, LfmWindowRecord, NeuroRecord, NsrRecord,
+    OutputRecord, PayloadClassification, PolicyProvenanceRecord, SandboxCallRecord,
+    SandboxReplyRecord, ThrottleRecord, ToolAuthRecord, ToolExecutionRecord, ToolRequestRecord,
 };
 use ucf_fep::{
     check_coherence_invariants, fep_step, homeostasis_step, CoherenceCfg, CoherenceSnapshot,
@@ -112,7 +112,7 @@ fn quantize_unit_u16(v: f32) -> u16 {
     (v.clamp(0.0, 1.0) * 10_000.0).round() as u16
 }
 
-const OUTPUT_SCHEMA_VERSION: u16 = 1;
+const OUTPUT_SCHEMA_VERSION: u16 = 2;
 const MAX_OUTPUT_TEXT_CHARS: usize = 4096;
 const MAX_LLM_PROMPT_BYTES: usize = 8 * 1024;
 const MIN_UNCERTAINTY_TOKENS: u32 = 64;
@@ -3520,7 +3520,12 @@ impl RuntimeOrchestrator {
                 token_count: llm_resp.token_count,
                 status: output_status_code(llm_resp.status),
                 finish_reason: finish_reason_code(llm_resp.finish_reason),
+                content_digest: compute_content_digest(&text),
                 text: Some(text),
+                redacted: false,
+                payload_len: None,
+                payload_classification: Some(PayloadClassification::Safe),
+                redaction_policy_marker: None,
                 evidence_chain_digest: compute_summary.compute_chain_digest,
                 lfm_readout_digest: compute_summary.lfm_digest,
                 lfm_uncertainty: compute_summary.lfm_uncertainty,
@@ -3551,7 +3556,14 @@ impl RuntimeOrchestrator {
                 token_count: 0,
                 status: output_status_code(LlmStatus::Refused),
                 finish_reason: finish_reason_code(FinishReason::PolicyRefusal),
+                content_digest: compute_content_digest(&format!(
+                    "tool intents require gate: {summary}"
+                )),
                 text: Some(format!("tool intents require gate: {summary}")),
+                redacted: false,
+                payload_len: None,
+                payload_classification: Some(PayloadClassification::Safe),
+                redaction_policy_marker: None,
                 evidence_chain_digest: compute_summary.compute_chain_digest,
                 lfm_readout_digest: compute_summary.lfm_digest,
                 lfm_uncertainty: compute_summary.lfm_uncertainty,

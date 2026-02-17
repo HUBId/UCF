@@ -12,4 +12,8 @@ sha256 = "64c26cd8b4ee3d3b23aa27c61371c3e7695d7e4feb0479d3c7a069eb5a6ccf43"
 path = "bundle_v1/governor_defaults.json"
 sha256 = "84923d53124d703c91594b9355650ef3340179ec5c04bda4f4ce05ea823d5cb6"
 
-bundle_sha256 = "c214007ffedae35da75ca66c9737329db580a0919b17886bc67d221f0d3b857f"
+[[files]]
+path = "bundle_v1/retention_v1.json"
+sha256 = "cfd13ee26144d1e752f3ba5ef931f959d327d0b9ec06c045f600d11dd066a446"
+
+bundle_sha256 = "33dfdc7e1e5bcbb4607c96a1cf9cfb6f85a0a9e3796e0eb28b670c8ae6c32e06"

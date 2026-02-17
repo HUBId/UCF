@@ -1,15 +1,17 @@
 pub mod errors;
+pub mod governance;
 pub mod record;
 pub mod store;
 
 pub use errors::EssError;
+pub use governance::{apply_retention, DataClass, RetentionPolicyV1, RetentionStats};
 pub use record::{
-    AuditCheckpointRecord, AuditPayload, BackendPackRecord, CandidateSetRecord,
-    CandidateSummaryRecord, CapabilityIssuanceRecord, DeltaEvaluationRecord, DeltaProposalRecord,
-    DeltaRecommendationRecord, EmergencyReasonCode, EmergencyRecord, EmergencyStateCode,
-    ExperienceId, ExperienceKind, ExperiencePayload, ExperienceRecord, HormoneRecord,
-    LfmSummaryRecord, LfmWindowRecord, NeuroRecord, NsrRecord, OutputRecord,
-    PolicyProvenanceRecord, SandboxCallRecord, SandboxReplyRecord, ThrottleRecord, ToolAuthRecord,
-    ToolExecutionRecord, ToolRequestRecord,
+    compute_content_digest, AuditCheckpointRecord, AuditPayload, BackendPackRecord,
+    CandidateSetRecord, CandidateSummaryRecord, CapabilityIssuanceRecord, DeltaEvaluationRecord,
+    DeltaProposalRecord, DeltaRecommendationRecord, EmergencyReasonCode, EmergencyRecord,
+    EmergencyStateCode, ExperienceId, ExperienceKind, ExperiencePayload, ExperienceRecord,
+    HormoneRecord, LfmSummaryRecord, LfmWindowRecord, NeuroRecord, NsrRecord, OutputRecord,
+    PayloadClassification, PolicyProvenanceRecord, SandboxCallRecord, SandboxReplyRecord,
+    ThrottleRecord, ToolAuthRecord, ToolExecutionRecord, ToolRequestRecord,
 };
 pub use store::{ExperienceStore, IdAllocator, InMemoryEss};
