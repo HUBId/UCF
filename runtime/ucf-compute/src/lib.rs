@@ -8,6 +8,7 @@ use world_model::StageQuality;
 pub mod backend_pack;
 pub mod backends;
 pub mod capabilities;
+pub mod enablement;
 pub mod evidence;
 pub mod feature_extractor;
 pub mod feature_matrix;
@@ -23,6 +24,9 @@ pub use backend_pack::{
     BackendPackKind, BackendPackMeta, BackendSwapRequest, FixtureId, FixtureManager,
 };
 pub use backends::{build_backend, ComputeBackendConfig, ComputeBackendKind};
+pub use enablement::{
+    EnablementComputeBackend, EnablementConfig, RealEnablementMode, SlotEnablement, SlotMode,
+};
 pub use evidence::{CodeVersionTag, EvidenceChain, COMPUTE_SUMMARY_SCHEMA_VERSION};
 pub use feature_matrix::ReleaseFeatureMatrix;
 pub use model_store::{
