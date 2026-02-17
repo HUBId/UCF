@@ -5,9 +5,9 @@ use std::path::PathBuf;
 use ucf_ops::{
     adversarial_run, bench_run, bringup, diagnostics, ess_compact, ess_snapshot, explain_tick,
     export_bugreport, metrics_snapshot, metrics_summary, metrics_trend, models_probe,
-    models_verify, one_command_bringup, readiness_gate, replay_audit, replay_bugreport,
-    security_verify_chain, verify_bugreport, AdversarialRunArgs, BenchArgs, ExplainTickRequest,
-    ExportArgs, GateStatus,
+    models_verify, one_command_bringup, readiness_gate, replay_audit, replay_bugreport, run_status,
+    runs_list, runs_search, runs_show, security_verify_chain, verify_bugreport, AdversarialRunArgs,
+    BenchArgs, ExplainTickRequest, ExportArgs, GateStatus,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -385,9 +385,98 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 std::process::exit(2);
             }
         }
+
+        "runs" => {
+            let sub = args.get(2).map(String::as_str).unwrap_or("help");
+            match sub {
+                "list" => {
+                    let last = arg_value(&args, "--last")
+                        .and_then(|v| v.parse::<usize>().ok())
+                        .unwrap_or(50);
+                    let entries = runs_list(&workdir, last)?;
+                    for e in entries {
+                        println!(
+                            "run_id={} started_at={} parent={} reason={} policy={} pack={} model={} profile={} status={} last_tick={}",
+                            e.run_id,
+                            e.started_at_tick,
+                            e.parent_run_id.as_deref().unwrap_or("none"),
+                            e.resume_reason
+                                .as_ref()
+                                .map(|r| format!("{:?}", r))
+                                .unwrap_or_else(|| "none".to_string()),
+                            e.policy_bundle_hash_prefix,
+                            e.pack_digest_prefix,
+                            e.model_hashes_digest_prefix,
+                            e.profile,
+                            e.status,
+                            e.last_tick.map(|t| t.to_string()).unwrap_or_else(|| "none".to_string())
+                        );
+                    }
+                }
+                "show" => {
+                    let Some(run_id) = arg_value(&args, "--run") else {
+                        return Err("usage: ucf-ops runs show --run <id>".into());
+                    };
+                    let run = runs_show(&workdir, &run_id)?
+                        .ok_or_else(|| format!("run not found: {run_id}"))?;
+                    println!("{}", serde_json::to_string_pretty(&run)?);
+                }
+                "search" => {
+                    let pack = arg_value(&args, "--pack");
+                    let policy = arg_value(&args, "--policy");
+                    let model = arg_value(&args, "--model");
+                    let entries = runs_search(
+                        &workdir,
+                        pack.as_deref(),
+                        policy.as_deref(),
+                        model.as_deref(),
+                    )?;
+                    for e in entries {
+                        println!(
+                            "run_id={} started_at={} parent={} reason={} policy={} pack={} model={} profile={} status={} last_tick={}",
+                            e.run_id,
+                            e.started_at_tick,
+                            e.parent_run_id.as_deref().unwrap_or("none"),
+                            e.resume_reason
+                                .as_ref()
+                                .map(|r| format!("{:?}", r))
+                                .unwrap_or_else(|| "none".to_string()),
+                            e.policy_bundle_hash_prefix,
+                            e.pack_digest_prefix,
+                            e.model_hashes_digest_prefix,
+                            e.profile,
+                            e.status,
+                            e.last_tick.map(|t| t.to_string()).unwrap_or_else(|| "none".to_string())
+                        );
+                    }
+                }
+                _ => return Err("usage: ucf-ops runs <list|show|search> ...".into()),
+            }
+        }
+        "status" => {
+            let Some(run_id) = arg_value(&args, "--run") else {
+                return Err("usage: ucf-ops status --run <id>".into());
+            };
+            let status = run_status(&workdir, &run_id)?;
+            println!("run_id={}", status.run_id);
+            println!("active_slots={}", status.active_slots.join(","));
+            println!(
+                "governor_tier={} governor_score={:.4} emergency_active={}",
+                status.governor_tier, status.governor_score, status.emergency_active
+            );
+            for p in status.last_ticks {
+                println!(
+                    "tick={} pressure={:?} surprise={:?} uncertainty={:?} risk={:?}",
+                    p.t, p.pressure, p.surprise, p.uncertainty, p.risk
+                );
+            }
+            for (kind, reason) in status.issuance_denies {
+                println!("deny kind={} reason={}", kind, reason);
+            }
+        }
         _ => {
             eprintln!(
-                "usage: ucf-ops <bringup|diag|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|readiness-gate|adversarial-run|bench|version> [--workdir <path>]"
+                "usage: ucf-ops <bringup|diag|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|readiness-gate|adversarial-run|bench|runs|status|version> [--workdir <path>]"
             );
             std::process::exit(1);
         }
