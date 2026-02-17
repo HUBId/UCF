@@ -1,7 +1,8 @@
 use crate::pipeline::{ComputePipelineBackend, FusionConfig, LimitsConfig};
 use crate::{
     AiComputeBackend, BackendPackConfig, BackendPackFactory, BackendPackKind, ComputeBudget,
-    ComputeBudgetProfile, ComputeError,
+    ComputeBudgetProfile, ComputeError, EnablementComputeBackend, EnablementConfig,
+    RealEnablementMode,
 };
 
 #[cfg(feature = "compute-candle")]
@@ -187,7 +188,30 @@ pub fn build_backend(
         }
     };
 
-    Ok(Box::new(backend))
+    let primary: Box<dyn AiComputeBackend + Send + Sync> = Box::new(backend);
+    let enablement = EnablementConfig::from_env().unwrap_or_default();
+    if enablement.mode == RealEnablementMode::Off {
+        return Ok(primary);
+    }
+
+    let shadow_kind = match cfg.kind {
+        ComputeBackendKind::Stub => BackendPackKind::CandleToyV1,
+        ComputeBackendKind::Candle | ComputeBackendKind::Burn => BackendPackKind::ToyV1,
+    };
+    let shadow_pack = BackendPackFactory::build(BackendPackConfig {
+        pack: shadow_kind,
+        seed: cfg.seed,
+    });
+    let shadow_backend = shadow_pack
+        .ok()
+        .map(|pack| ComputePipelineBackend::new(pack, fusion, limits))
+        .map(|b| Box::new(b) as Box<dyn AiComputeBackend + Send + Sync>);
+
+    Ok(Box::new(EnablementComputeBackend::new(
+        primary,
+        shadow_backend,
+        enablement,
+    )))
 }
 
 #[cfg(test)]
