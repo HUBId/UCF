@@ -54,6 +54,19 @@ m = pathlib.Path('out/metrics_summary.json').read_bytes()
 print('metrics_sha256_prefix=' + hashlib.sha256(m).hexdigest()[:12])
 PY2
 
+
+      - name: Adversarial harness v1
+        run: |
+          export UCF_POLICY_BUNDLE_SHA256=$(python - <<'PY2'
+import pathlib
+for line in pathlib.Path('policies/manifest.toml').read_text().splitlines():
+    if line.strip().startswith('bundle_sha256'):
+        print(line.split('=',1)[1].strip().strip('"'))
+        break
+PY2
+)
+          cargo run -p ucf-ops -- adversarial-run --suite v1 --out ./out/adversarial_report.json
+          test -f out/adversarial_report.json
       - name: Ops readiness gate
         run: |
           rm -rf .ucf_gate out_gate

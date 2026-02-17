@@ -3,10 +3,10 @@
 use std::path::PathBuf;
 
 use ucf_ops::{
-    bringup, diagnostics, explain_tick, export_bugreport, metrics_snapshot, metrics_summary,
-    metrics_trend, models_probe, models_verify, one_command_bringup, readiness_gate, replay_audit,
-    replay_bugreport, security_verify_chain, verify_bugreport, ExplainTickRequest, ExportArgs,
-    GateStatus,
+    adversarial_run, bringup, diagnostics, explain_tick, export_bugreport, metrics_snapshot,
+    metrics_summary, metrics_trend, models_probe, models_verify, one_command_bringup,
+    readiness_gate, replay_audit, replay_bugreport, security_verify_chain, verify_bugreport,
+    AdversarialRunArgs, ExplainTickRequest, ExportArgs, GateStatus,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -308,9 +308,30 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 std::process::exit(2);
             }
         }
+        "adversarial-run" => {
+            let suite = arg_value(&args, "--suite").unwrap_or_else(|| "v1".to_string());
+            let out = arg_value(&args, "--out")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("./out/adversarial_report.json"));
+            let report = adversarial_run(&AdversarialRunArgs {
+                workdir: workdir.clone(),
+                suite,
+                out: out.clone(),
+            })?;
+            println!(
+                "suite={} pass={} cases={}",
+                report.suite_version,
+                report.pass,
+                report.cases.len()
+            );
+            println!("out={}", out.display());
+            if !report.pass {
+                std::process::exit(2);
+            }
+        }
         _ => {
             eprintln!(
-                "usage: ucf-ops <bringup|diag|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|readiness-gate|version> [--workdir <path>]"
+                "usage: ucf-ops <bringup|diag|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|readiness-gate|adversarial-run|version> [--workdir <path>]"
             );
             std::process::exit(1);
         }
