@@ -342,6 +342,7 @@ impl AiComputeBackend for ComputePipelineBackend {
             backend_profile: BackendProfileId::from_backend_name(self.name()),
             backend_pack_id: pack_meta.pack_id,
             fixtures_digest: pack_meta.fixtures_digest,
+            model_hashes_digest: pack_meta.model_hashes_digest,
             llm_backend: pack_meta.llm_backend,
             world_backend: pack_meta.world_backend,
             sae_backend: pack_meta.sae_backend,

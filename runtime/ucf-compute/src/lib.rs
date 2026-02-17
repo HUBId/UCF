@@ -12,6 +12,7 @@ pub mod evidence;
 pub mod feature_extractor;
 pub mod feature_matrix;
 pub mod lfm;
+pub mod model_store;
 pub mod pipeline;
 pub mod risk_contract;
 pub mod ssm;
@@ -24,6 +25,9 @@ pub use backend_pack::{
 pub use backends::{build_backend, ComputeBackendConfig, ComputeBackendKind};
 pub use evidence::{CodeVersionTag, EvidenceChain, COMPUTE_SUMMARY_SCHEMA_VERSION};
 pub use feature_matrix::ReleaseFeatureMatrix;
+pub use model_store::{
+    ModelDevice, ModelFormat, ModelLoadError, ModelSlot, ModelSlotSpec, ModelStore,
+};
 pub use pipeline::ComputePipelineBackend;
 pub use risk_contract::{
     clamp01, stable_budget_profile_id, validate_risk_signal, BackendProfileId, EvidenceRef,
@@ -162,6 +166,7 @@ impl ComputeSignals {
             backend_profile: risk_signal.evidence.backend_profile.as_str(),
             backend_pack_id: risk_signal.evidence.backend_pack_id.0,
             fixtures_digest: risk_signal.evidence.fixtures_digest,
+            model_hashes_digest: risk_signal.evidence.model_hashes_digest,
             llm_backend: risk_signal.evidence.llm_backend as u8,
             world_backend: risk_signal.evidence.world_backend as u8,
             sae_backend: risk_signal.evidence.sae_backend as u8,
@@ -194,6 +199,7 @@ impl ComputeSignals {
             backend_profile: BackendProfileId::from_backend_name(backend),
             backend_pack_id: crate::BackendPackId(0),
             fixtures_digest: [0; 32],
+            model_hashes_digest: [0; 32],
             llm_backend: crate::BackendComponentId::Disabled,
             world_backend: crate::BackendComponentId::Disabled,
             sae_backend: crate::BackendComponentId::Disabled,
@@ -380,6 +386,7 @@ pub struct ComputeSignalsSummary {
     pub backend_profile: &'static str,
     pub backend_pack_id: u32,
     pub fixtures_digest: [u8; 32],
+    pub model_hashes_digest: [u8; 32],
     pub llm_backend: u8,
     pub world_backend: u8,
     pub sae_backend: u8,
@@ -596,6 +603,7 @@ mod tests {
                     backend_profile: BackendProfileId::StubV1,
                     backend_pack_id: crate::BackendPackId(1),
                     fixtures_digest: [9; 32],
+                    model_hashes_digest: [8; 32],
                     llm_backend: crate::BackendComponentId::ToyV1,
                     world_backend: crate::BackendComponentId::ToyV1,
                     sae_backend: crate::BackendComponentId::ToyV1,

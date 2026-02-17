@@ -82,6 +82,7 @@ pub struct EvidenceChain {
     pub backend_profile: BackendProfileId,
     pub backend_pack_id: BackendPackId,
     pub fixtures_digest: [u8; 32],
+    pub model_hashes_digest: [u8; 32],
     pub llm_backend: BackendComponentId,
     pub world_backend: BackendComponentId,
     pub sae_backend: BackendComponentId,
@@ -117,6 +118,7 @@ impl EvidenceChain {
             backend_profile: risk_signal.evidence.backend_profile,
             backend_pack_id: risk_signal.evidence.backend_pack_id,
             fixtures_digest: risk_signal.evidence.fixtures_digest,
+            model_hashes_digest: risk_signal.evidence.model_hashes_digest,
             llm_backend: risk_signal.evidence.llm_backend,
             world_backend: risk_signal.evidence.world_backend,
             sae_backend: risk_signal.evidence.sae_backend,
@@ -192,6 +194,7 @@ impl CanonicalEncode for EvidenceRef {
         out.push(self.backend_profile as u8);
         out.extend_from_slice(&self.backend_pack_id.0.to_le_bytes());
         out.extend_from_slice(&self.fixtures_digest);
+        out.extend_from_slice(&self.model_hashes_digest);
         out.push(self.llm_backend as u8);
         out.push(self.world_backend as u8);
         out.push(self.sae_backend as u8);
@@ -230,6 +233,7 @@ impl CanonicalEncode for EvidenceChain {
         out.push(self.backend_profile as u8);
         out.extend_from_slice(&self.backend_pack_id.0.to_le_bytes());
         out.extend_from_slice(&self.fixtures_digest);
+        out.extend_from_slice(&self.model_hashes_digest);
         out.push(self.llm_backend as u8);
         out.push(self.world_backend as u8);
         out.push(self.sae_backend as u8);
@@ -361,6 +365,7 @@ mod tests {
                 backend_profile: BackendProfileId::StubV1,
                 backend_pack_id: crate::BackendPackId(1),
                 fixtures_digest: [2; 32],
+                model_hashes_digest: [3; 32],
                 llm_backend: crate::BackendComponentId::ToyV1,
                 world_backend: crate::BackendComponentId::ToyV1,
                 sae_backend: crate::BackendComponentId::ToyV1,
@@ -395,6 +400,7 @@ mod tests {
                     backend_profile: BackendProfileId::StubV1,
                     backend_pack_id: crate::BackendPackId(1),
                     fixtures_digest: [9; 32],
+                    model_hashes_digest: [8; 32],
                     llm_backend: crate::BackendComponentId::ToyV1,
                     world_backend: crate::BackendComponentId::ToyV1,
                     sae_backend: crate::BackendComponentId::ToyV1,
@@ -428,6 +434,7 @@ mod tests {
                     backend_profile: BackendProfileId::StubV1,
                     backend_pack_id: crate::BackendPackId(1),
                     fixtures_digest: [9; 32],
+                    model_hashes_digest: [8; 32],
                     llm_backend: crate::BackendComponentId::ToyV1,
                     world_backend: crate::BackendComponentId::ToyV1,
                     sae_backend: crate::BackendComponentId::ToyV1,
@@ -466,6 +473,7 @@ mod tests {
                 backend_profile: BackendProfileId::StubV1,
                 backend_pack_id: crate::BackendPackId(1),
                 fixtures_digest: [9; 32],
+                model_hashes_digest: [8; 32],
                 llm_backend: crate::BackendComponentId::ToyV1,
                 world_backend: crate::BackendComponentId::ToyV1,
                 sae_backend: crate::BackendComponentId::ToyV1,

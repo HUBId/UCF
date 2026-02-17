@@ -16,7 +16,7 @@ use crate::lfm::LnnOdeLfmKernel;
 use crate::lfm::{LfmKernel, ToyLfmKernel};
 use crate::ssm::{SsmKernel, ToySsmKernel};
 use crate::world_model::MockJepaPredictor;
-use crate::{CodeVersionTag, ComputeError};
+use crate::{CodeVersionTag, ComputeError, ModelLoadError, ModelSlot, ModelStore};
 
 const FIXTURE_SCHEMA_V1: u16 = 1;
 const MAX_FIXTURE_BYTES: usize = 1024 * 1024;
@@ -117,6 +117,7 @@ pub struct BackendPackMeta {
     pub ssm_backend: BackendComponentId,
     pub lfm_backend: BackendComponentId,
     pub fixtures_digest: [u8; 32],
+    pub model_hashes_digest: [u8; 32],
     pub code_version: CodeVersionTag,
     pub digest: [u8; 32],
 }
@@ -134,6 +135,7 @@ impl BackendPackMeta {
         hasher.update([self.ssm_backend as u8]);
         hasher.update([self.lfm_backend as u8]);
         hasher.update(self.fixtures_digest);
+        hasher.update(self.model_hashes_digest);
         hasher.update((self.code_version.as_str().len() as u16).to_le_bytes());
         hasher.update(self.code_version.as_str().as_bytes());
         hasher.finalize().into()
@@ -284,6 +286,11 @@ impl BackendPackFactory {
         crate::ReleaseFeatureMatrix::detect().validate_pack(cfg.pack)?;
         let fixtures = FixtureManager;
         let fixtures_digest = fixtures.overall_digest()?;
+        let model_store = ModelStore::from_env_default().unwrap_or_else(|_| ModelStore {
+            allowlist_root: std::path::PathBuf::from("models"),
+            specs: std::collections::BTreeMap::new(),
+        });
+        let model_hashes_digest = model_store.model_hashes_digest();
         let (llm_component, sae_component) = match cfg.pack {
             BackendPackKind::StubV0 => (BackendComponentId::StubV0, BackendComponentId::StubV0),
             BackendPackKind::ToyV1 => (BackendComponentId::ToyV1, BackendComponentId::ToyV1),
@@ -382,6 +389,7 @@ impl BackendPackFactory {
             ssm_backend: BackendComponentId::ToyV1,
             lfm_backend: lfm_component,
             fixtures_digest,
+            model_hashes_digest,
             code_version: CodeVersionTag::current(),
             digest: [0; 32],
         };
@@ -395,6 +403,15 @@ impl BackendPackFactory {
             ssm: Mutex::new(Box::new(ToySsmKernel::default())),
             lfm: Mutex::new(lfm_kernel),
         }))
+    }
+}
+
+pub fn slot_verified_or_reason(slot: ModelSlot) -> Result<(), String> {
+    let store = ModelStore::from_env_default().map_err(|e| format!("{e:?}"))?;
+    match store.verify_slot(slot) {
+        Ok(_) => Ok(()),
+        Err(ModelLoadError::Disabled) => Err("disabled".to_string()),
+        Err(err) => Err(format!("{err:?}")),
     }
 }
 
