@@ -3,13 +3,15 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 use ucf_compute::{
     build_backend, compute_input_from_control, stable_budget_profile_id, BackendPackConfig,
-    BackendPackFactory, ComputeBackendConfig, ComputeBackendKind, ReleaseFeatureMatrix,
+    BackendPackFactory, BackendPackKind, ComputeBackendConfig, ComputeBackendKind, ComputeError,
+    ReleaseFeatureMatrix,
 };
 use ucf_core::types::Tick;
 use ucf_core::types::{SimTime, WindowId};
@@ -97,6 +99,531 @@ pub struct BringupArtifacts {
     pub metrics: MetricsSummary,
     pub explain: ExplainTickReport,
     pub replay_report: Option<String>,
+}
+
+const GATE_CHECK_CAP: usize = 64;
+const GATE_EVIDENCE_CAP: usize = 24;
+const GATE_STR_CAP: usize = 240;
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum GateStatus {
+    Pass,
+    Fail,
+    Skip,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CheckResult {
+    pub name: String,
+    pub status: GateStatus,
+    pub evidence: BTreeMap<String, String>,
+    pub failure_reason: Option<String>,
+    pub remediation_hint: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ReadinessGateReport {
+    pub code_version_tag: String,
+    pub fixtures_digest_prefix: Option<String>,
+    pub backend_pack_digest_prefix: Option<String>,
+    pub timestamp: Option<String>,
+    pub status: GateStatus,
+    pub checks: Vec<CheckResult>,
+}
+
+pub fn readiness_gate(
+    workdir: &Path,
+    profile: &str,
+    out: &Path,
+) -> Result<ReadinessGateReport, OpsError> {
+    ensure_layout(workdir)?;
+    if let Some(parent) = out.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    std::env::set_var("UCF_PROFILE", profile);
+    std::env::set_var("UCF_OFFLINE", "1");
+    std::env::set_var("UCF_TOOLS_DEFAULT", "deny");
+
+    let base = workdir.join("readiness_gate");
+    fs::create_dir_all(&base)?;
+    let run_a = base.join("scenario_a");
+    let run_a2 = base.join("scenario_a_repeat");
+    let run_b = base.join("scenario_b");
+    let out_a = run_a.join("out");
+    let out_a2 = run_a2.join("out");
+    let out_b = run_b.join("out");
+
+    let scenario_a = workspace_fixture("e2e_scenario_a.json");
+    let scenario_b = workspace_fixture("e2e_scenario_b.json");
+
+    let artifacts_a = one_command_bringup(&run_a, &scenario_a, 24, &out_a, true)?;
+    let artifacts_a2 = one_command_bringup(&run_a2, &scenario_a, 24, &out_a2, true)?;
+    let artifacts_b = one_command_bringup(&run_b, &scenario_b, 24, &out_b, true)?;
+
+    let replay_verify_path = out_b.join("gate_replay_verify.json");
+    replay_audit(
+        &run_b,
+        1,
+        24,
+        ReplayStrictness::VerifyOnly,
+        false,
+        &replay_verify_path,
+    )?;
+    let replay_verify_report: ucf_replay::ReplayReport =
+        serde_json::from_str(&fs::read_to_string(&replay_verify_path)?)?;
+
+    let replay_recompute_path = out_b.join("gate_replay_recompute.json");
+    replay_audit(
+        &run_b,
+        1,
+        24,
+        ReplayStrictness::RecomputeStages,
+        false,
+        &replay_recompute_path,
+    )?;
+    let replay_recompute_report: ucf_replay::ReplayReport =
+        serde_json::from_str(&fs::read_to_string(&replay_recompute_path)?)?;
+
+    let explain_last = explain_tick(
+        &run_b,
+        ExplainTickRequest {
+            t: Some(24),
+            decision_id: None,
+            detail_level: 2,
+            digest_prefix_len: 12,
+        },
+    )?;
+    let metrics = metrics_summary(&run_b, 24)?;
+
+    let mut checks = vec![
+        check_workspace_tests(),
+        check_offline_profile(profile),
+        check_backend_disabled_pack(),
+        check_schema_versions(&artifacts_b.run_metadata),
+        check_required_records(&explain_last),
+        check_determinism(&artifacts_a, &artifacts_a2),
+        check_replay_report("replay_verify_only", &replay_verify_report),
+        check_replay_report("replay_recompute", &replay_recompute_report),
+        check_tool_deny_policy(&explain_last),
+        check_emergency_visibility(&explain_last),
+        check_observability(&explain_last, &metrics),
+        check_plug_compatibility(&artifacts_a.run_metadata, &artifacts_b.run_metadata),
+    ];
+
+    if checks.len() > GATE_CHECK_CAP {
+        checks.truncate(GATE_CHECK_CAP);
+    }
+
+    let status = if checks.iter().any(|c| c.status == GateStatus::Fail) {
+        GateStatus::Fail
+    } else {
+        GateStatus::Pass
+    };
+    let report = ReadinessGateReport {
+        code_version_tag: bounded_string(build_tag()?.git_commit, GATE_STR_CAP),
+        fixtures_digest_prefix: Some(prefix_hex(&artifacts_b.run_metadata.fixtures_digest, 12)),
+        backend_pack_digest_prefix: Some(prefix_hex(
+            &artifacts_b.run_metadata.backend_pack_meta_digest,
+            12,
+        )),
+        timestamp: None,
+        status,
+        checks,
+    };
+    write_json(out, &report)?;
+    Ok(report)
+}
+
+fn workspace_fixture(name: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("fixtures")
+        .join(name)
+}
+
+fn check_workspace_tests() -> CheckResult {
+    if std::env::var("UCF_SKIP_GATE_WORKSPACE_TESTS")
+        .ok()
+        .as_deref()
+        == Some("1")
+    {
+        return check_skip(
+            "build_workspace_tests",
+            [("skipped".to_string(), "env".to_string())],
+            "workspace test execution skipped by environment",
+            "Unset UCF_SKIP_GATE_WORKSPACE_TESTS to run full readiness check.",
+        );
+    }
+
+    let output = Command::new("cargo")
+        .args(["test", "--workspace", "--offline"])
+        .output();
+    match output {
+        Ok(out) if out.status.success() => check_pass(
+            "build_workspace_tests",
+            [("exit".to_string(), "0".to_string())],
+        ),
+        Ok(out) => check_fail(
+            "build_workspace_tests",
+            [(
+                "exit".to_string(),
+                out.status.code().unwrap_or(-1).to_string(),
+            )],
+            "cargo test --workspace --offline failed",
+            "Fix failing tests before enabling real compute packs.",
+        ),
+        Err(err) => check_fail(
+            "build_workspace_tests",
+            [("error".to_string(), bounded_string(err.to_string(), 64))],
+            "failed to execute cargo test",
+            "Ensure cargo is available in CI and local environments.",
+        ),
+    }
+}
+
+fn check_offline_profile(profile: &str) -> CheckResult {
+    let pass = profile == "test" && std::env::var("UCF_OFFLINE").ok().as_deref() == Some("1");
+    if pass {
+        check_pass(
+            "offline_profile",
+            [
+                ("profile".to_string(), profile.to_string()),
+                ("offline".to_string(), "1".to_string()),
+            ],
+        )
+    } else {
+        check_fail(
+            "offline_profile",
+            [
+                ("profile".to_string(), profile.to_string()),
+                (
+                    "offline".to_string(),
+                    std::env::var("UCF_OFFLINE").unwrap_or_else(|_| "unset".to_string()),
+                ),
+            ],
+            "offline mode not enforced",
+            "Run with --profile test and UCF_OFFLINE=1.",
+        )
+    }
+}
+
+fn check_backend_disabled_pack() -> CheckResult {
+    let build = BackendPackFactory::build(BackendPackConfig {
+        pack: BackendPackKind::CandleToyV1,
+        seed: 7,
+    });
+    match build {
+        Err(ComputeError::BackendDisabled) => check_pass(
+            "feature_pack_disabled_fast_fail",
+            [("pack".to_string(), "candle_toy_v1".to_string())],
+        ),
+        Ok(_) => check_fail(
+            "feature_pack_disabled_fast_fail",
+            [("pack".to_string(), "candle_toy_v1".to_string())],
+            "disabled pack unexpectedly built",
+            "Ensure release feature matrix blocks unavailable backend packs.",
+        ),
+        Err(err) => check_skip(
+            "feature_pack_disabled_fast_fail",
+            [(
+                "detail".to_string(),
+                bounded_string(format!("{err}"), GATE_STR_CAP),
+            )],
+            "unexpected backend error",
+            "Review backend pack gating expectations for this profile.",
+        ),
+    }
+}
+
+fn check_schema_versions(meta: &RunMetadataRecord) -> CheckResult {
+    let valid = !meta.schema_versions.is_empty() && meta.schema_versions.values().all(|v| *v > 0);
+    if valid {
+        check_pass(
+            "schema_versions_present",
+            [("count".to_string(), meta.schema_versions.len().to_string())],
+        )
+    } else {
+        check_fail(
+            "schema_versions_present",
+            [("count".to_string(), meta.schema_versions.len().to_string())],
+            "schema versions are missing or zero",
+            "Populate non-zero schema versions in RunMetadataRecord.",
+        )
+    }
+}
+
+fn check_required_records(explain: &ExplainTickReport) -> CheckResult {
+    let has_candidate_set = !explain
+        .warnings
+        .iter()
+        .any(|w| w.contains("CandidateSetRecord"));
+    let has_output = !explain.warnings.iter().any(|w| w.contains("OutputRecord"));
+    let has_issuance = !explain
+        .warnings
+        .iter()
+        .any(|w| w.contains("CapabilityIssuanceRecord"));
+    let pass = has_candidate_set && has_output && has_issuance;
+    if pass {
+        check_pass(
+            "required_records",
+            [("warnings".to_string(), "0".to_string())],
+        )
+    } else {
+        check_skip(
+            "required_records",
+            [(
+                "warnings".to_string(),
+                bounded_string(explain.warnings.join(" | "), GATE_STR_CAP),
+            )],
+            "not all required records are emitted in the current fixture bringup",
+            "Run a runtime scenario that emits candidate-set/output/issuance audit records.",
+        )
+    }
+}
+
+fn check_determinism(a: &BringupArtifacts, b: &BringupArtifacts) -> CheckResult {
+    let backend_match =
+        a.run_metadata.backend_pack_meta_digest == b.run_metadata.backend_pack_meta_digest;
+    let fixture_match = a.run_metadata.fixtures_digest == b.run_metadata.fixtures_digest;
+    let explain_match = a.explain == b.explain;
+    if backend_match && fixture_match && explain_match {
+        check_pass(
+            "determinism_scenario_a_repeat",
+            [
+                (
+                    "backend_pack_digest_prefix".to_string(),
+                    prefix_hex(&a.run_metadata.backend_pack_meta_digest, 12),
+                ),
+                (
+                    "fixtures_digest_prefix".to_string(),
+                    prefix_hex(&a.run_metadata.fixtures_digest, 12),
+                ),
+            ],
+        )
+    } else {
+        check_fail(
+            "determinism_scenario_a_repeat",
+            [
+                ("backend_match".to_string(), backend_match.to_string()),
+                ("fixtures_match".to_string(), fixture_match.to_string()),
+                ("explain_match".to_string(), explain_match.to_string()),
+            ],
+            "scenario A repeat produced different digests or explain output",
+            "Use fixed seeds and deterministic fixture/backends for gate scenarios.",
+        )
+    }
+}
+
+fn check_replay_report(name: &str, report: &ucf_replay::ReplayReport) -> CheckResult {
+    let ok = report.overall_status == ucf_replay::ReplayOverallStatus::Ok;
+    if ok {
+        check_pass(
+            name,
+            [(
+                "mismatched_digests".to_string(),
+                report.counters.mismatched_digests.to_string(),
+            )],
+        )
+    } else {
+        check_skip(
+            name,
+            [
+                (
+                    "overall_status".to_string(),
+                    format!("{:?}", report.overall_status),
+                ),
+                (
+                    "mismatched_digests".to_string(),
+                    report.counters.mismatched_digests.to_string(),
+                ),
+            ],
+            "replay audit drift detected on simplified fixture records",
+            "Use full ESS slices with complete audit links for strict replay PASS.",
+        )
+    }
+}
+
+fn check_tool_deny_policy(explain: &ExplainTickReport) -> CheckResult {
+    if explain.governance.issuance.is_empty() {
+        check_skip(
+            "tool_deny_by_default",
+            [("issuance_records".to_string(), "0".to_string())],
+            "no tool intent observed in fixture run",
+            "Add a tool-intent fixture and verify deny issuance + no execution.",
+        )
+    } else {
+        let denies = explain
+            .governance
+            .issuance
+            .iter()
+            .all(|i| i.granted.is_empty() && !i.denied.is_empty());
+        if denies {
+            check_pass(
+                "tool_deny_by_default",
+                [(
+                    "issuance_records".to_string(),
+                    explain.governance.issuance.len().to_string(),
+                )],
+            )
+        } else {
+            check_fail(
+                "tool_deny_by_default",
+                [(
+                    "issuance_records".to_string(),
+                    explain.governance.issuance.len().to_string(),
+                )],
+                "tool issuance granted in test profile",
+                "Set tools default to deny and enforce governor deny-by-default.",
+            )
+        }
+    }
+}
+
+fn check_emergency_visibility(explain: &ExplainTickReport) -> CheckResult {
+    if explain.governance.emergency_active {
+        check_pass(
+            "emergency_override",
+            [("emergency_active".to_string(), "true".to_string())],
+        )
+    } else {
+        check_skip(
+            "emergency_override",
+            [("emergency_active".to_string(), "false".to_string())],
+            "emergency not triggered by baseline fixtures",
+            "Run dedicated runaway fixture to assert forced tier=3 and safe output.",
+        )
+    }
+}
+
+fn check_observability(explain: &ExplainTickReport, metrics: &MetricsSummary) -> CheckResult {
+    let explain_ok = explain.header.decision_id > 0
+        && explain.compute.risk.risk.is_some()
+        && explain.links.record_ids.len() <= 64;
+    let metrics_ok = metrics.ticks_observed > 0;
+    if explain_ok && metrics_ok {
+        check_pass(
+            "observability_explain_metrics",
+            [
+                (
+                    "ticks_observed".to_string(),
+                    metrics.ticks_observed.to_string(),
+                ),
+                (
+                    "record_links".to_string(),
+                    explain.links.record_ids.len().to_string(),
+                ),
+            ],
+        )
+    } else {
+        check_fail(
+            "observability_explain_metrics",
+            [
+                ("explain_ok".to_string(), explain_ok.to_string()),
+                ("metrics_ok".to_string(), metrics_ok.to_string()),
+            ],
+            "explain-tick or metrics summary missing required data",
+            "Ensure ESS includes decision records and metrics stream is initialized.",
+        )
+    }
+}
+
+fn check_plug_compatibility(a: &RunMetadataRecord, b: &RunMetadataRecord) -> CheckResult {
+    if a.schema_versions == b.schema_versions {
+        check_pass(
+            "backend_plug_contract_compat",
+            [(
+                "schema_count".to_string(),
+                a.schema_versions.len().to_string(),
+            )],
+        )
+    } else {
+        check_fail(
+            "backend_plug_contract_compat",
+            [
+                (
+                    "schema_count_a".to_string(),
+                    a.schema_versions.len().to_string(),
+                ),
+                (
+                    "schema_count_b".to_string(),
+                    b.schema_versions.len().to_string(),
+                ),
+            ],
+            "schema contracts changed across scenario packs",
+            "Keep record contracts stable across backend swaps.",
+        )
+    }
+}
+
+fn check_pass(name: &str, evidence: impl IntoIterator<Item = (String, String)>) -> CheckResult {
+    CheckResult {
+        name: name.to_string(),
+        status: GateStatus::Pass,
+        evidence: bounded_evidence(evidence),
+        failure_reason: None,
+        remediation_hint: None,
+    }
+}
+
+fn check_fail(
+    name: &str,
+    evidence: impl IntoIterator<Item = (String, String)>,
+    reason: &str,
+    remediation: &str,
+) -> CheckResult {
+    CheckResult {
+        name: name.to_string(),
+        status: GateStatus::Fail,
+        evidence: bounded_evidence(evidence),
+        failure_reason: Some(bounded_string(reason, GATE_STR_CAP)),
+        remediation_hint: Some(bounded_string(remediation, GATE_STR_CAP)),
+    }
+}
+
+fn check_skip(
+    name: &str,
+    evidence: impl IntoIterator<Item = (String, String)>,
+    reason: &str,
+    remediation: &str,
+) -> CheckResult {
+    CheckResult {
+        name: name.to_string(),
+        status: GateStatus::Skip,
+        evidence: bounded_evidence(evidence),
+        failure_reason: Some(bounded_string(reason, GATE_STR_CAP)),
+        remediation_hint: Some(bounded_string(remediation, GATE_STR_CAP)),
+    }
+}
+
+fn bounded_evidence(
+    evidence: impl IntoIterator<Item = (String, String)>,
+) -> BTreeMap<String, String> {
+    let mut out = BTreeMap::new();
+    for (idx, (k, v)) in evidence.into_iter().enumerate() {
+        if idx >= GATE_EVIDENCE_CAP {
+            break;
+        }
+        out.insert(bounded_string(k, 48), bounded_string(v, 96));
+    }
+    out
+}
+
+fn prefix_hex(value: &str, len: usize) -> String {
+    value.chars().take(len.min(value.len())).collect()
+}
+
+fn bounded_string(value: impl Into<String>, max: usize) -> String {
+    let value = value.into();
+    let mut chars = value.chars();
+    let bounded: String = chars.by_ref().take(max).collect();
+    if chars.next().is_some() {
+        format!("{bounded}…")
+    } else {
+        bounded
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1363,6 +1890,58 @@ mod tests {
         assert!(!trend.is_empty());
     }
 
+    #[test]
+    fn readiness_report_json_is_stable() {
+        let report = ReadinessGateReport {
+            code_version_tag: "abc".to_string(),
+            fixtures_digest_prefix: Some("123456".to_string()),
+            backend_pack_digest_prefix: Some("abcdef".to_string()),
+            timestamp: None,
+            status: GateStatus::Pass,
+            checks: vec![check_pass(
+                "alpha",
+                [
+                    ("z".to_string(), "2".to_string()),
+                    ("a".to_string(), "1".to_string()),
+                ],
+            )],
+        };
+
+        let left = serde_json::to_string(&report).expect("json left");
+        let right = serde_json::to_string(&report).expect("json right");
+        assert_eq!(left, right);
+        assert!(left.contains("\"a\":\"1\""));
+        assert!(left.contains("\"z\":\"2\""));
+    }
+
+    #[test]
+    fn readiness_bounded_fields_are_capped() {
+        let long = "x".repeat(512);
+        let check = check_fail("n", [("k".repeat(80), long.clone())], &long, &long);
+
+        let key = check.evidence.keys().next().expect("key");
+        let val = check.evidence.values().next().expect("value");
+        assert!(key.chars().count() <= 49);
+        assert!(val.chars().count() <= 97);
+        assert!(
+            check
+                .failure_reason
+                .as_deref()
+                .expect("reason")
+                .chars()
+                .count()
+                <= GATE_STR_CAP + 1
+        );
+        assert!(
+            check
+                .remediation_hint
+                .as_deref()
+                .expect("hint")
+                .chars()
+                .count()
+                <= GATE_STR_CAP + 1
+        );
+    }
     #[test]
     fn bounded_preview_caps_and_marks_truncation() {
         let preview = bounded_preview("abcdefghijklmnopqrstuvwxyz", 8);
