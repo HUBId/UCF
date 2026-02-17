@@ -3238,6 +3238,7 @@ dependencies = [
 name = "ucf-ess"
 version = "0.1.0"
 dependencies = [
+ "serde",
  "sha2",
  "ucf-core",
  "ucf-frames",

@@ -67,6 +67,7 @@ pub struct ExperienceRecord {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[allow(clippy::large_enum_variant)]
 pub enum ExperiencePayload {
     Control(ControlFrame),
     Decision(Box<DecisionFrame>),
@@ -230,7 +231,12 @@ pub struct OutputRecord {
     pub token_count: u32,
     pub status: u8,
     pub finish_reason: u8,
+    pub content_digest: [u8; 32],
     pub text: Option<String>,
+    pub redacted: bool,
+    pub payload_len: Option<u32>,
+    pub payload_classification: Option<PayloadClassification>,
+    pub redaction_policy_marker: Option<String>,
     pub evidence_chain_digest: [u8; 32],
     pub lfm_readout_digest: Option<[u8; 32]>,
     pub lfm_uncertainty: Option<f32>,
@@ -238,6 +244,19 @@ pub struct OutputRecord {
     pub max_tokens_eff: u32,
     pub output_override: Option<u8>,
     pub override_reasons: Vec<u16>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PayloadClassification {
+    Safe,
+    Private,
+}
+
+pub fn compute_content_digest(text: &str) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(b"UCF:ESS:OUTPUT:CONTENT:v1");
+    hasher.update(text.as_bytes());
+    hasher.finalize().into()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

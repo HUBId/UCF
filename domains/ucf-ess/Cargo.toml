@@ -8,3 +8,4 @@ ucf-core = { path = "../../core/ucf-core" }
 ucf-frames = { path = "../ucf-frames" }
 ucf-types = { path = "../../core/crates/ucf-types" }
 sha2 = { workspace = true }
+serde = { workspace = true, features = ["derive"] }

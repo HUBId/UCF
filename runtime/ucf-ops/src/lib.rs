@@ -30,7 +30,8 @@ use ucf_compute::{
 use ucf_core::types::Tick;
 use ucf_core::types::{SimTime, WindowId};
 use ucf_ess::v1::{
-    AuditPayload, EmergencyStateCode, ExperienceKind, ExperiencePayload, ExperienceRecord,
+    apply_retention, AuditPayload, EmergencyStateCode, ExperienceKind, ExperiencePayload,
+    ExperienceRecord, RetentionPolicyV1,
 };
 use ucf_frames::v1::{
     ChannelCode, ControlFrame, ControlPayload, CorrelationId, Intent, IntentId, IntentKind,
@@ -1327,6 +1328,9 @@ pub struct ExplainOutput {
     pub finish_reason: Option<u8>,
     pub max_tokens_eff: Option<u32>,
     pub text_preview: Option<String>,
+    pub redacted: Option<bool>,
+    pub content_digest_prefix: Option<String>,
+    pub payload_len: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -2063,6 +2067,11 @@ pub fn build_explain_tick_report(
                     None
                 }
             }),
+            redacted: output.as_ref().map(|o| o.redacted),
+            content_digest_prefix: output
+                .as_ref()
+                .map(|o| digest_prefix(&o.content_digest, prefix)),
+            payload_len: output.as_ref().and_then(|o| o.payload_len),
         },
         links,
         warnings,
@@ -2377,6 +2386,65 @@ fn sha256_hex(data: &[u8]) -> String {
     hex::encode(hasher.finalize())
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EssCompactionManifest {
+    pub schema_version: u16,
+    pub range_start_tick: u64,
+    pub range_end_tick: u64,
+    pub records_total: usize,
+    pub redactions_total: u64,
+    pub payload_bytes_pruned_total: u64,
+    pub policy_hash: String,
+    pub snapshot_digest: String,
+    pub manifest_digest: String,
+}
+
+pub fn ess_snapshot(workdir: &Path, out: &Path) -> Result<EssCompactionManifest, OpsError> {
+    let records = load_fixture_records(&workdir.join("ess").join("ess_fixture.json"))?;
+    fs::create_dir_all(
+        out.parent()
+            .ok_or_else(|| OpsError::Invalid("snapshot out path has no parent".to_string()))?,
+    )?;
+    let snapshot_body = serde_json::to_string_pretty(&records.len())?;
+    fs::write(out, snapshot_body.as_bytes())?;
+    let mut manifest = EssCompactionManifest {
+        schema_version: 1,
+        range_start_tick: records.first().map(|r| r.time.tick.get()).unwrap_or(0),
+        range_end_tick: records.last().map(|r| r.time.tick.get()).unwrap_or(0),
+        records_total: records.len(),
+        redactions_total: 0,
+        payload_bytes_pruned_total: 0,
+        policy_hash: "none".to_string(),
+        snapshot_digest: sha256_hex(snapshot_body.as_bytes()),
+        manifest_digest: String::new(),
+    };
+    manifest.manifest_digest = sha256_hex(&serde_json::to_vec(&manifest)?);
+    Ok(manifest)
+}
+
+pub fn ess_compact(workdir: &Path, policy_path: &Path) -> Result<EssCompactionManifest, OpsError> {
+    let mut records = load_fixture_records(&workdir.join("ess").join("ess_fixture.json"))?;
+    let policy_text = fs::read_to_string(policy_path)?;
+    let policy: RetentionPolicyV1 = serde_json::from_str(&policy_text)?;
+    let now_tick = records.last().map(|r| r.time.tick.get()).unwrap_or(0);
+    let stats = apply_retention(&mut records, &policy, now_tick);
+
+    let snapshot = serde_json::to_vec_pretty(&records.len())?;
+    let mut manifest = EssCompactionManifest {
+        schema_version: 1,
+        range_start_tick: records.first().map(|r| r.time.tick.get()).unwrap_or(0),
+        range_end_tick: records.last().map(|r| r.time.tick.get()).unwrap_or(0),
+        records_total: records.len(),
+        redactions_total: stats.redactions_total,
+        payload_bytes_pruned_total: stats.payload_bytes_pruned_total,
+        policy_hash: sha256_hex(policy_text.as_bytes()),
+        snapshot_digest: sha256_hex(&snapshot),
+        manifest_digest: String::new(),
+    };
+    manifest.manifest_digest = sha256_hex(&serde_json::to_vec(&manifest)?);
+    Ok(manifest)
+}
+
 #[cfg(test)]
 #[allow(clippy::items_after_test_module)]
 mod tests {
@@ -2567,6 +2635,35 @@ mod tests {
         )
         .expect("sae b");
         assert_eq!(c.0, d.0);
+    }
+
+    #[test]
+    fn ess_snapshot_manifest_digest_is_deterministic() {
+        let dir = tempdir().expect("tempdir");
+        bringup(dir.path(), true, 8).expect("bringup");
+        let snap_path = dir.path().join("snapshots/run.snap");
+        let a = ess_snapshot(dir.path(), &snap_path).expect("snapshot a");
+        let b = ess_snapshot(dir.path(), &snap_path).expect("snapshot b");
+        assert_eq!(a.manifest_digest, b.manifest_digest);
+    }
+
+    #[test]
+    fn ess_compaction_manifest_tamper_detected() {
+        let dir = tempdir().expect("tempdir");
+        bringup(dir.path(), true, 8).expect("bringup");
+        let policy_path = dir.path().join("retention.json");
+        fs::write(
+            &policy_path,
+            serde_json::to_string(&RetentionPolicyV1::default()).expect("policy"),
+        )
+        .expect("write policy");
+        let manifest = ess_compact(dir.path(), &policy_path).expect("compact");
+        let mut tampered = manifest.clone();
+        tampered.records_total = tampered.records_total.saturating_add(1);
+        assert_ne!(
+            sha256_hex(&serde_json::to_vec(&tampered).expect("tampered vec")),
+            manifest.manifest_digest
+        );
     }
 }
 

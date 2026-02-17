@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "keep_full_for_ticks": 2048,
+  "keep_full_for_days": 7,
+  "keep_digests_forever": true,
+  "max_ess_bytes": 268435456,
+  "policy_marker": "retention_v1_default"
+}
