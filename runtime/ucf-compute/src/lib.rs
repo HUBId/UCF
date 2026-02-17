@@ -12,12 +12,14 @@ pub mod enablement;
 pub mod evidence;
 pub mod feature_extractor;
 pub mod feature_matrix;
+pub mod ipc;
 pub mod lfm;
 pub mod model_store;
 pub mod pipeline;
 pub mod risk_contract;
 pub mod ssm;
 pub mod work_meter;
+pub mod worker_backend;
 pub mod world_model;
 pub use backend_pack::{
     BackendComponentId, BackendPack, BackendPackConfig, BackendPackFactory, BackendPackId,

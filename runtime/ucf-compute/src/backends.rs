@@ -24,6 +24,7 @@ pub enum ComputeBackendKind {
     Stub,
     Candle,
     Burn,
+    Worker,
 }
 
 impl ComputeBackendKind {
@@ -32,6 +33,7 @@ impl ComputeBackendKind {
             "stub" | "cpu_stub" => Some(Self::Stub),
             "candle" | "candle_dummy" => Some(Self::Candle),
             "burn" | "burn_dummy" => Some(Self::Burn),
+            "worker" | "worker_v1" => Some(Self::Worker),
             _ => None,
         }
     }
@@ -41,6 +43,7 @@ impl ComputeBackendKind {
             Self::Stub => "stub",
             Self::Candle => "candle",
             Self::Burn => "burn",
+            Self::Worker => "worker",
         }
     }
 }
@@ -158,6 +161,7 @@ pub fn build_backend(
         ComputeBackendKind::Stub => BackendPackKind::ToyV1,
         ComputeBackendKind::Candle => BackendPackKind::CandleToyV1,
         ComputeBackendKind::Burn => BackendPackKind::BurnToyV1,
+        ComputeBackendKind::Worker => BackendPackKind::WorkerV1,
     };
     let pack = BackendPackFactory::build(BackendPackConfig {
         pack: pack_kind,
@@ -186,6 +190,7 @@ pub fn build_backend(
                 return Err(ComputeError::BackendDisabled);
             }
         }
+        ComputeBackendKind::Worker => ComputePipelineBackend::new(pack, fusion, limits),
     };
 
     let primary: Box<dyn AiComputeBackend + Send + Sync> = Box::new(backend);
@@ -196,7 +201,9 @@ pub fn build_backend(
 
     let shadow_kind = match cfg.kind {
         ComputeBackendKind::Stub => BackendPackKind::CandleToyV1,
-        ComputeBackendKind::Candle | ComputeBackendKind::Burn => BackendPackKind::ToyV1,
+        ComputeBackendKind::Candle | ComputeBackendKind::Burn | ComputeBackendKind::Worker => {
+            BackendPackKind::ToyV1
+        }
     };
     let shadow_pack = BackendPackFactory::build(BackendPackConfig {
         pack: shadow_kind,

@@ -100,6 +100,15 @@ impl ReleaseFeatureMatrix {
                 }
                 Ok(())
             }
+            BackendPackKind::WorkerV1 => {
+                if has_toy {
+                    Ok(())
+                } else {
+                    Err(ComputeError::InvalidInput {
+                        reason: "pack worker_v1 requires feature backend-toy".to_string(),
+                    })
+                }
+            }
         }
     }
 }
