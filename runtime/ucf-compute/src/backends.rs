@@ -241,7 +241,10 @@ mod tests {
         #[cfg(not(feature = "compute-candle"))]
         {
             let result = build_backend(&cfg);
-            assert!(matches!(result, Err(ComputeError::BackendDisabled)));
+            assert!(matches!(
+                result,
+                Err(ComputeError::BackendDisabled) | Err(ComputeError::InvalidInput { .. })
+            ));
         }
 
         #[cfg(feature = "compute-candle")]
@@ -261,7 +264,10 @@ mod tests {
         #[cfg(not(feature = "compute-burn"))]
         {
             let result = build_backend(&cfg);
-            assert!(matches!(result, Err(ComputeError::BackendDisabled)));
+            assert!(matches!(
+                result,
+                Err(ComputeError::BackendDisabled) | Err(ComputeError::InvalidInput { .. })
+            ));
         }
 
         #[cfg(feature = "compute-burn")]

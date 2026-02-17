@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 use ucf_compute::{
-    build_backend, compute_input_from_control, stable_budget_profile_id, ComputeBackendConfig,
-    ComputeBackendKind,
+    build_backend, compute_input_from_control, stable_budget_profile_id, BackendPackConfig,
+    BackendPackFactory, ComputeBackendConfig, ComputeBackendKind, ReleaseFeatureMatrix,
 };
 use ucf_core::types::Tick;
 use ucf_core::types::{SimTime, WindowId};
@@ -43,22 +43,29 @@ pub enum OpsError {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default)]
 pub struct OpsConfig {
+    pub profile: String,
+    pub offline: bool,
     pub compute_backend: ComputeBackendKind,
     pub compute_seed: u64,
     pub compute_budget_profile: String,
     pub isolation_runtime: String,
     pub capabilities_default: String,
+    pub log_level: String,
 }
 
 impl Default for OpsConfig {
     fn default() -> Self {
         Self {
+            profile: "test".to_string(),
+            offline: true,
             compute_backend: ComputeBackendKind::Stub,
             compute_seed: 0xDEC0DED,
-            compute_budget_profile: "default".to_string(),
+            compute_budget_profile: "tight".to_string(),
             isolation_runtime: "inproc".to_string(),
             capabilities_default: "deny".to_string(),
+            log_level: "info".to_string(),
         }
     }
 }
@@ -70,6 +77,26 @@ pub struct BringupResult {
     pub log_path: PathBuf,
     pub decision_count: usize,
     pub ess_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RunMetadataRecord {
+    pub run_id: String,
+    pub started_at_tick: u64,
+    pub code_version_tag: String,
+    pub backend_pack_meta_digest: String,
+    pub fixtures_digest: String,
+    pub enabled_features_bitmap: u16,
+    pub profile: String,
+    pub schema_versions: BTreeMap<String, u16>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BringupArtifacts {
+    pub run_metadata: RunMetadataRecord,
+    pub metrics: MetricsSummary,
+    pub explain: ExplainTickReport,
+    pub replay_report: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -351,6 +378,82 @@ pub fn bringup(workdir: &Path, demo: bool, ticks: u64) -> Result<BringupResult, 
         log_path,
         decision_count: fixture.decisions.len(),
         ess_digest,
+    })
+}
+
+pub fn one_command_bringup(
+    workdir: &Path,
+    scenario: &Path,
+    ticks: u64,
+    out_dir: &Path,
+    replay_verify: bool,
+) -> Result<BringupArtifacts, OpsError> {
+    ensure_layout(workdir)?;
+    fs::create_dir_all(out_dir)?;
+    let _scenario_doc: serde_json::Value = serde_json::from_str(&fs::read_to_string(scenario)?)?;
+
+    std::env::set_var("UCF_PROFILE", "test");
+    std::env::set_var("UCF_OFFLINE", "1");
+    std::env::set_var("UCF_TOOLS_DEFAULT", "deny");
+    let result = bringup(workdir, true, ticks)?;
+    let build = build_tag()?;
+    let pack = BackendPackFactory::build(BackendPackConfig::from_env()?)?;
+    let meta = pack.meta();
+
+    let mut schema_versions = BTreeMap::new();
+    schema_versions.insert("backend_pack_record".to_string(), 1);
+    schema_versions.insert("compute_summary".to_string(), 1);
+    schema_versions.insert("output".to_string(), 1);
+
+    let run_metadata = RunMetadataRecord {
+        run_id: result.ess_digest.chars().take(16).collect(),
+        started_at_tick: 0,
+        code_version_tag: build.git_commit,
+        backend_pack_meta_digest: hex::encode(meta.digest),
+        fixtures_digest: hex::encode(meta.fixtures_digest),
+        enabled_features_bitmap: ReleaseFeatureMatrix::detect().bits,
+        profile: resolved_profile_name(),
+        schema_versions,
+    };
+    write_json(
+        workdir.join("ess").join("run_metadata_record.json"),
+        &run_metadata,
+    )?;
+
+    let metrics = metrics_summary(workdir, ticks as usize)?;
+    let explain = explain_tick(
+        workdir,
+        ExplainTickRequest {
+            t: Some(ticks),
+            decision_id: None,
+            detail_level: 1,
+            digest_prefix_len: 12,
+        },
+    )?;
+    let replay_report = if replay_verify {
+        let path = out_dir.join("replay_verify.json");
+        replay_audit(
+            workdir,
+            1,
+            ticks,
+            ReplayStrictness::VerifyOnly,
+            false,
+            &path,
+        )?;
+        Some(path.display().to_string())
+    } else {
+        None
+    };
+
+    write_json(out_dir.join("metrics_summary.json"), &metrics)?;
+    write_json(out_dir.join("explain_tick_last.json"), &explain)?;
+    write_json(out_dir.join("run_metadata_record.json"), &run_metadata)?;
+
+    Ok(BringupArtifacts {
+        run_metadata,
+        metrics,
+        explain,
+        replay_report,
     })
 }
 
@@ -1027,11 +1130,62 @@ fn bounded_preview(text: &str, max_chars: usize) -> String {
 pub fn load_or_init_config(workdir: &Path) -> Result<OpsConfig, OpsError> {
     let path = workdir.join("config_resolved.json");
     if !path.exists() {
-        let cfg = OpsConfig::default();
+        let cfg = profile_defaults(&resolved_profile_name());
         write_json(&path, &cfg)?;
         return Ok(cfg);
     }
-    Ok(serde_json::from_str(&fs::read_to_string(path)?)?)
+    let mut cfg: OpsConfig = serde_json::from_str(&fs::read_to_string(path)?)?;
+    let prof = resolved_profile_name();
+    cfg.profile = prof.clone();
+    let defaults = profile_defaults(&prof);
+    if cfg.profile.is_empty() {
+        cfg = defaults;
+    }
+    Ok(apply_env_overrides(cfg))
+}
+
+fn resolved_profile_name() -> String {
+    std::env::var("UCF_PROFILE")
+        .unwrap_or_else(|_| "test".to_string())
+        .to_ascii_lowercase()
+}
+
+fn profile_defaults(profile: &str) -> OpsConfig {
+    match profile {
+        "dev" => OpsConfig {
+            profile: "dev".to_string(),
+            offline: true,
+            compute_backend: ComputeBackendKind::Stub,
+            compute_seed: 0xDEC0DED,
+            compute_budget_profile: "default".to_string(),
+            isolation_runtime: "inproc".to_string(),
+            capabilities_default: "allow".to_string(),
+            log_level: "debug".to_string(),
+        },
+        "prod" => OpsConfig {
+            profile: "prod".to_string(),
+            offline: true,
+            compute_backend: ComputeBackendKind::Stub,
+            compute_seed: 0xA11CE,
+            compute_budget_profile: "stress".to_string(),
+            isolation_runtime: "inproc".to_string(),
+            capabilities_default: "deny".to_string(),
+            log_level: "info".to_string(),
+        },
+        _ => OpsConfig::default(),
+    }
+}
+
+fn apply_env_overrides(mut cfg: OpsConfig) -> OpsConfig {
+    if let Ok(v) = std::env::var("UCF_COMPUTE_SEED") {
+        if let Ok(seed) = v.parse::<u64>() {
+            cfg.compute_seed = seed;
+        }
+    }
+    if let Ok(v) = std::env::var("UCF_COMPUTE_BUDGET_PROFILE") {
+        cfg.compute_budget_profile = v;
+    }
+    cfg
 }
 
 fn run_compute_probe(cfg: &OpsConfig) -> Result<DiagCheck, OpsError> {
