@@ -382,6 +382,10 @@ impl AiComputeBackend for ComputePipelineBackend {
             world_digest: Some(world_model_out.prediction_digest),
             lfm_uncertainty: Some(lfm_out.uncertainty),
             lfm_stability: Some(lfm_out.stability),
+            lfm_state_norm: Some(lfm_out.state_norm),
+            lfm_deriv_norm: Some(lfm_out.deriv_norm),
+            lfm_saturation_ratio: Some(lfm_out.saturation_ratio),
+            lfm_nan_inf_detected: lfm_out.nan_inf_detected,
             lfm_digest: if lfm_degraded {
                 None
             } else {
@@ -472,6 +476,10 @@ impl AiComputeBackend for ComputePipelineBackend {
             world_digest: Some(world_model_out.prediction_digest),
             lfm_uncertainty: Some(lfm_out.uncertainty),
             lfm_stability: Some(lfm_out.stability),
+            lfm_state_norm: Some(lfm_out.state_norm),
+            lfm_deriv_norm: Some(lfm_out.deriv_norm),
+            lfm_saturation_ratio: Some(lfm_out.saturation_ratio),
+            lfm_nan_inf_detected: lfm_out.nan_inf_detected,
             lfm_digest: if lfm_degraded {
                 None
             } else {

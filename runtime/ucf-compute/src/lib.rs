@@ -67,6 +67,10 @@ pub struct ComputeSignals {
     pub world_digest: Option<[u8; 32]>,
     pub lfm_uncertainty: Option<f32>,
     pub lfm_stability: Option<f32>,
+    pub lfm_state_norm: Option<f32>,
+    pub lfm_deriv_norm: Option<f32>,
+    pub lfm_saturation_ratio: Option<f32>,
+    pub lfm_nan_inf_detected: bool,
     pub lfm_digest: Option<[u8; 32]>,
     pub sae_quality: Option<StageQuality>,
     pub ssm_quality: Option<StageQuality>,
@@ -88,6 +92,9 @@ impl ComputeSignals {
         self.ssm_readout = self.ssm_readout.map(|v| v.clamp(0.0, 1.0));
         self.lfm_uncertainty = self.lfm_uncertainty.map(|v| v.clamp(0.0, 1.0));
         self.lfm_stability = self.lfm_stability.map(|v| v.clamp(0.0, 1.0));
+        self.lfm_state_norm = self.lfm_state_norm.map(|v| v.clamp(0.0, 1.0));
+        self.lfm_deriv_norm = self.lfm_deriv_norm.map(|v| v.clamp(0.0, 1.0));
+        self.lfm_saturation_ratio = self.lfm_saturation_ratio.map(|v| v.clamp(0.0, 1.0));
 
         if self.spikes.len() > MAX_SPIKES {
             self.spikes.truncate(MAX_SPIKES);
@@ -160,6 +167,10 @@ impl ComputeSignals {
             lfm_backend: risk_signal.evidence.lfm_backend as u8,
             lfm_uncertainty: self.lfm_uncertainty,
             lfm_stability: self.lfm_stability,
+            lfm_state_norm: self.lfm_state_norm,
+            lfm_deriv_norm: self.lfm_deriv_norm,
+            lfm_saturation_ratio: self.lfm_saturation_ratio,
+            lfm_nan_inf_detected: self.lfm_nan_inf_detected,
             lfm_digest: self.lfm_digest,
             budget_profile_id: risk_signal.evidence.budget_profile_id,
             seed: risk_signal.evidence.seed,
@@ -210,6 +221,10 @@ impl ComputeSignals {
             world_digest: None,
             lfm_uncertainty: None,
             lfm_stability: None,
+            lfm_state_norm: None,
+            lfm_deriv_norm: None,
+            lfm_saturation_ratio: None,
+            lfm_nan_inf_detected: false,
             lfm_digest: None,
             sae_quality: None,
             ssm_quality: None,
@@ -370,6 +385,10 @@ pub struct ComputeSignalsSummary {
     pub lfm_backend: u8,
     pub lfm_uncertainty: Option<f32>,
     pub lfm_stability: Option<f32>,
+    pub lfm_state_norm: Option<f32>,
+    pub lfm_deriv_norm: Option<f32>,
+    pub lfm_saturation_ratio: Option<f32>,
+    pub lfm_nan_inf_detected: bool,
     pub lfm_digest: Option<[u8; 32]>,
     pub budget_profile_id: u32,
     pub seed: u64,
@@ -594,6 +613,10 @@ mod tests {
             world_digest: None,
             lfm_uncertainty: None,
             lfm_stability: None,
+            lfm_state_norm: None,
+            lfm_deriv_norm: None,
+            lfm_saturation_ratio: None,
+            lfm_nan_inf_detected: false,
             lfm_digest: None,
             sae_quality: None,
             ssm_quality: None,

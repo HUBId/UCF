@@ -38,10 +38,10 @@ use ucf_dbm::regions::{region_step, BrainRegion, RegionKind};
 use ucf_ess::v1::{
     AuditCheckpointRecord, AuditPayload, BackendPackRecord, CandidateSetRecord,
     CandidateSummaryRecord, CapabilityIssuanceRecord, DeltaEvaluationRecord, DeltaProposalRecord,
-    DeltaRecommendationRecord, ExperienceKind, ExperienceRecord, ExperienceStore, HormoneRecord,
-    IdAllocator, InMemoryEss, LfmSummaryRecord, LfmWindowRecord, NeuroRecord, NsrRecord,
-    OutputRecord, SandboxCallRecord, SandboxReplyRecord, ThrottleRecord, ToolAuthRecord,
-    ToolExecutionRecord, ToolRequestRecord,
+    DeltaRecommendationRecord, EmergencyReasonCode, EmergencyRecord, EmergencyStateCode,
+    ExperienceKind, ExperienceRecord, ExperienceStore, HormoneRecord, IdAllocator, InMemoryEss,
+    LfmSummaryRecord, LfmWindowRecord, NeuroRecord, NsrRecord, OutputRecord, SandboxCallRecord,
+    SandboxReplyRecord, ThrottleRecord, ToolAuthRecord, ToolExecutionRecord, ToolRequestRecord,
 };
 use ucf_fep::{
     check_coherence_invariants, fep_step, homeostasis_step, CoherenceCfg, CoherenceSnapshot,
@@ -118,6 +118,14 @@ const UNCERTAINTY_MAXTOKENS_FACTOR: f32 = 0.6;
 const UNCERTAINTY_HIGH_THRESHOLD: f32 = 0.75;
 const STABILITY_LOW_THRESHOLD: f32 = 0.35;
 const MAX_OVERRIDE_REASONS: usize = 8;
+const EMERGENCY_MAX_TOKENS: u32 = 64;
+const EMERGENCY_COOLDOWN_TICKS: u16 = 32;
+const EMERGENCY_ARM_TREND_TICKS: u8 = 2;
+const EMERGENCY_DV_TREND_K: u8 = 3;
+const LFM_V_K: f32 = 0.25;
+const LFM_V_MAX: f32 = 1.10;
+const LFM_DV_MAX: f32 = 0.06;
+const LFM_SATURATION_MAX: f32 = 0.20;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum OutputOverrideCode {
@@ -151,6 +159,58 @@ impl OverrideReasonCode {
             Self::LowStability => 4,
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum EmergencyTriggerReason {
+    RunawayV,
+    TrendDV,
+    Saturation,
+    NanInf,
+}
+
+impl EmergencyTriggerReason {
+    fn as_ess(self) -> EmergencyReasonCode {
+        match self {
+            Self::RunawayV => EmergencyReasonCode::RunawayV,
+            Self::TrendDV => EmergencyReasonCode::TrendDV,
+            Self::Saturation => EmergencyReasonCode::Saturation,
+            Self::NanInf => EmergencyReasonCode::NanInf,
+        }
+    }
+
+    fn as_label(self) -> &'static str {
+        match self {
+            Self::RunawayV => "runaway_v",
+            Self::TrendDV => "trend_dv",
+            Self::Saturation => "saturation",
+            Self::NanInf => "nan_inf",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct StabilitySnapshot {
+    v: f32,
+    dv: f32,
+    state_norm: f32,
+    deriv_norm: f32,
+    saturation_ratio: f32,
+    nan_inf_detected: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum EmergencyState {
+    Inactive,
+    Armed {
+        since_t: u64,
+        reason: EmergencyTriggerReason,
+    },
+    Active {
+        since_t: u64,
+        reason: EmergencyTriggerReason,
+        cool_down_remaining: u16,
+    },
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -355,6 +415,7 @@ fn apply_decoding_policy(
     nsr_hint: PolicyHint,
     lfm_uncertainty: Option<f32>,
     lfm_stability: Option<f32>,
+    emergency_active: bool,
 ) -> DecodingPolicy {
     let mut override_reasons = [None; MAX_OVERRIDE_REASONS];
     let mut reason_count = 0usize;
@@ -367,6 +428,17 @@ fn apply_decoding_policy(
 
     let mut output_class = selected_output_class;
     let mut output_override = None;
+
+    if emergency_active {
+        output_class = CandidateOutputClass::SafeText;
+        output_override = Some(OutputOverrideCode::ForcedSafeOnly);
+        return DecodingPolicy {
+            max_tokens_eff: EMERGENCY_MAX_TOKENS.min(base_max_tokens),
+            output_class,
+            output_override,
+            override_reasons,
+        };
+    }
 
     if matches!(nsr_hint, PolicyHint::Block) {
         output_class = CandidateOutputClass::SafeText;
@@ -613,6 +685,10 @@ pub struct RuntimeOrchestrator {
     tool_gate: ToolGate,
     tool_governor: ToolGovernor,
     last_nsr_risk: Option<f32>,
+    emergency_state: EmergencyState,
+    emergency_last_v: Option<f32>,
+    emergency_dv_trend_count: u8,
+    emergency_last_reason: Option<EmergencyTriggerReason>,
     candidate_generator: DefaultCandidateGeneratorV0,
     audit_head_digest: [u8; 32],
     audit_chain_checkpoint_total: u64,
@@ -838,6 +914,7 @@ impl RuntimeOrchestrator {
         decision_id: u64,
         candidate_id: u16,
         issuance: &CapabilityIssuanceDecision,
+        effective_tier: u8,
     ) -> Result<(), RuntimeError> {
         let issuance_payload = AuditPayload::CapabilityIssuance(CapabilityIssuanceRecord {
             t: time.tick.get(),
@@ -862,6 +939,8 @@ impl RuntimeOrchestrator {
                 .take(16)
                 .collect(),
             tier: issuance.tier.as_u8(),
+            effective_tier,
+            emergency_override: effective_tier > issuance.tier.as_u8(),
             governor_score_q: quantize_unit_u16(issuance.governor_score),
             governance_signals_digest: issuance.governance_signals_digest,
             throttle_state_digest: issuance.throttle_state_digest,
@@ -907,6 +986,228 @@ impl RuntimeOrchestrator {
             self.ess.append(rec)?;
         }
         Ok(())
+    }
+
+    fn q_u16(v: f32) -> u16 {
+        (v.clamp(0.0, 1.0) * 65_535.0).round() as u16
+    }
+
+    fn q_signed_u16(v: f32) -> u16 {
+        let clamped = v.clamp(-1.0, 1.0);
+        (((clamped + 1.0) * 0.5) * 65_535.0).round() as u16
+    }
+
+    fn emergency_active(&self) -> bool {
+        matches!(self.emergency_state, EmergencyState::Active { .. })
+    }
+
+    fn persist_emergency_transition(
+        &mut self,
+        time: ucf_core::types::SimTime,
+        corr: ucf_frames::v1::CorrelationId,
+        state: EmergencyStateCode,
+        reason: EmergencyTriggerReason,
+        stability: StabilitySnapshot,
+        compute_summary: &ucf_compute::ComputeSignalsSummary,
+    ) -> Result<(), RuntimeError> {
+        let payload = AuditPayload::Emergency(EmergencyRecord {
+            t: time.tick.get(),
+            state,
+            reason: reason.as_ess(),
+            v_q: Self::q_u16(stability.v),
+            dv_q: Self::q_signed_u16(stability.dv),
+            state_norm_q: Self::q_u16(stability.state_norm),
+            deriv_norm_q: Self::q_u16(stability.deriv_norm),
+            lfm_digest: compute_summary.lfm_digest.unwrap_or([0; 32]),
+            backend_pack_digest: backend_pack_digest(*compute_summary),
+            evidence_chain_digest: compute_summary.compute_chain_digest,
+            schema_version: 1,
+        });
+        let rec = ExperienceRecord::audit(
+            self.ids.next(),
+            time,
+            corr,
+            ExperienceKind::Emergency,
+            payload,
+            self.audit_head_digest,
+        );
+        self.audit_head_digest = rec.audit_digest.unwrap_or(self.audit_head_digest);
+        self.ess.append(rec)?;
+        Ok(())
+    }
+
+    fn update_emergency_state(
+        &mut self,
+        time: ucf_core::types::SimTime,
+        corr: ucf_frames::v1::CorrelationId,
+        compute_summary: &ucf_compute::ComputeSignalsSummary,
+    ) -> Result<StabilitySnapshot, RuntimeError> {
+        let state_norm = compute_summary
+            .lfm_state_norm
+            .unwrap_or(1.0)
+            .clamp(0.0, 1.0);
+        let deriv_norm = compute_summary
+            .lfm_deriv_norm
+            .unwrap_or(1.0)
+            .clamp(0.0, 1.0);
+        let saturation_ratio = compute_summary
+            .lfm_saturation_ratio
+            .unwrap_or(0.0)
+            .clamp(0.0, 1.0);
+        let nan_inf_detected = compute_summary.lfm_nan_inf_detected;
+        let v = (state_norm * state_norm + LFM_V_K * deriv_norm * deriv_norm).clamp(0.0, 2.0);
+        let dv = self.emergency_last_v.map(|prev| v - prev).unwrap_or(0.0);
+        self.emergency_last_v = Some(v);
+
+        let reason = if nan_inf_detected {
+            Some(EmergencyTriggerReason::NanInf)
+        } else if v > LFM_V_MAX {
+            Some(EmergencyTriggerReason::RunawayV)
+        } else if saturation_ratio > LFM_SATURATION_MAX {
+            Some(EmergencyTriggerReason::Saturation)
+        } else if dv > LFM_DV_MAX {
+            self.emergency_dv_trend_count = self.emergency_dv_trend_count.saturating_add(1);
+            if self.emergency_dv_trend_count >= EMERGENCY_DV_TREND_K {
+                Some(EmergencyTriggerReason::TrendDV)
+            } else {
+                None
+            }
+        } else {
+            self.emergency_dv_trend_count = 0;
+            None
+        };
+
+        let snapshot = StabilitySnapshot {
+            v,
+            dv,
+            state_norm,
+            deriv_norm,
+            saturation_ratio,
+            nan_inf_detected,
+        };
+
+        match self.emergency_state {
+            EmergencyState::Inactive => {
+                if let Some(r) = reason {
+                    if matches!(
+                        r,
+                        EmergencyTriggerReason::RunawayV | EmergencyTriggerReason::NanInf
+                    ) {
+                        self.emergency_state = EmergencyState::Active {
+                            since_t: time.tick.get(),
+                            reason: r,
+                            cool_down_remaining: EMERGENCY_COOLDOWN_TICKS,
+                        };
+                        self.persist_emergency_transition(
+                            time,
+                            corr,
+                            EmergencyStateCode::Active,
+                            r,
+                            snapshot,
+                            compute_summary,
+                        )?;
+                        self.emergency_last_reason = Some(r);
+                    } else {
+                        self.emergency_state = EmergencyState::Armed {
+                            since_t: time.tick.get(),
+                            reason: r,
+                        };
+                        self.persist_emergency_transition(
+                            time,
+                            corr,
+                            EmergencyStateCode::Armed,
+                            r,
+                            snapshot,
+                            compute_summary,
+                        )?;
+                    }
+                }
+            }
+            EmergencyState::Armed {
+                since_t,
+                reason: armed_reason,
+            } => {
+                if let Some(r) = reason {
+                    if time.tick.get().saturating_sub(since_t)
+                        >= u64::from(EMERGENCY_ARM_TREND_TICKS)
+                        || matches!(
+                            r,
+                            EmergencyTriggerReason::RunawayV | EmergencyTriggerReason::NanInf
+                        )
+                    {
+                        self.emergency_state = EmergencyState::Active {
+                            since_t: time.tick.get(),
+                            reason: r,
+                            cool_down_remaining: EMERGENCY_COOLDOWN_TICKS,
+                        };
+                        self.persist_emergency_transition(
+                            time,
+                            corr,
+                            EmergencyStateCode::Active,
+                            r,
+                            snapshot,
+                            compute_summary,
+                        )?;
+                        self.emergency_last_reason = Some(r);
+                    }
+                } else {
+                    self.emergency_state = EmergencyState::Inactive;
+                    self.persist_emergency_transition(
+                        time,
+                        corr,
+                        EmergencyStateCode::Off,
+                        armed_reason,
+                        snapshot,
+                        compute_summary,
+                    )?;
+                }
+            }
+            EmergencyState::Active {
+                since_t,
+                reason: active_reason,
+                cool_down_remaining,
+            } => {
+                let _ = since_t;
+                let remaining = cool_down_remaining.saturating_sub(1);
+                self.emergency_state = EmergencyState::Active {
+                    since_t: time.tick.get(),
+                    reason: active_reason,
+                    cool_down_remaining: remaining,
+                };
+                if remaining == 0 && reason.is_none() {
+                    self.emergency_state = EmergencyState::Inactive;
+                    self.persist_emergency_transition(
+                        time,
+                        corr,
+                        EmergencyStateCode::Off,
+                        active_reason,
+                        snapshot,
+                        compute_summary,
+                    )?;
+                }
+            }
+        }
+
+        metrics::gauge!("ucf_emergency_active").set(if self.emergency_active() {
+            1.0
+        } else {
+            0.0
+        });
+        let cooldown = match self.emergency_state {
+            EmergencyState::Active {
+                cool_down_remaining,
+                ..
+            } => cool_down_remaining,
+            _ => 0,
+        };
+        metrics::gauge!("ucf_emergency_cooldown_ticks").set(f64::from(cooldown));
+
+        if let Some(r) = reason {
+            metrics::counter!("ucf_emergency_trigger_total", "reason" => r.as_label().to_string())
+                .increment(1);
+        }
+
+        Ok(snapshot)
     }
 
     pub fn try_new_from_env() -> Result<Self, RuntimeError> {
@@ -1141,6 +1442,10 @@ impl RuntimeOrchestrator {
             ),
             tool_governor: ToolGovernor::default(),
             last_nsr_risk: None,
+            emergency_state: EmergencyState::Inactive,
+            emergency_last_v: None,
+            emergency_dv_trend_count: 0,
+            emergency_last_reason: None,
             candidate_generator: DefaultCandidateGeneratorV0,
             audit_head_digest: [0; 32],
             audit_chain_checkpoint_total: 0,
@@ -2407,25 +2712,36 @@ impl RuntimeOrchestrator {
         let mut decision = decision;
 
         let compute_input = compute_input_from_control(&ctrl);
-        let mut compute_signals = match self
-            .compute_backend
-            .compute(&compute_input, self.compute_budget)
+        let mut compute_budget = self.compute_budget;
+        if self.emergency_active() {
+            compute_budget.governor_tier = 3;
+        }
+        let mut compute_signals = match self.compute_backend.compute(&compute_input, compute_budget)
         {
             Ok(signals) => signals,
             Err(_) => ucf_compute::ComputeSignals::unavailable(
                 &compute_input,
-                self.compute_budget,
+                compute_budget,
                 self.compute_backend.name(),
             ),
         };
         if ucf_compute::validate_risk_signal(&compute_signals.risk_signal).is_err() {
             compute_signals = ucf_compute::ComputeSignals::unavailable(
                 &compute_input,
-                self.compute_budget,
+                compute_budget,
                 self.compute_backend.name(),
             );
         }
         let compute_summary = compute_signals.summary(self.compute_backend.name());
+        let _stability_snapshot =
+            self.update_emergency_state(ctrl.time, ctrl.corr, &compute_summary)?;
+        let emergency_active = self.emergency_active();
+        if emergency_active {
+            if let Some(rec) = compute_signals.plasticity_record.as_mut() {
+                rec.enabled = false;
+                rec.emergency_disabled = true;
+            }
+        }
         let nsr_v0_assessment = NsrDatalogLiteEngine::default()
             .assess(
                 &NsrContext {
@@ -2513,6 +2829,10 @@ impl RuntimeOrchestrator {
             lfm_backend: Some(compute_summary.lfm_backend),
             lfm_uncertainty: compute_summary.lfm_uncertainty,
             lfm_stability: compute_summary.lfm_stability,
+            lfm_state_norm: compute_summary.lfm_state_norm,
+            lfm_deriv_norm: compute_summary.lfm_deriv_norm,
+            lfm_saturation_ratio: compute_summary.lfm_saturation_ratio,
+            lfm_nan_inf_detected: Some(compute_summary.lfm_nan_inf_detected),
             lfm_digest: compute_summary.lfm_digest,
             budget_profile_id: Some(compute_summary.budget_profile_id),
             seed: Some(compute_summary.seed),
@@ -2664,7 +2984,8 @@ impl RuntimeOrchestrator {
             risk: compute_summary.risk,
             confidence: compute_summary.confidence,
             evidence_chain_digest: compute_summary.compute_chain_digest,
-            planning_allowed: !matches!(decision.decision, ucf_frames::v1::DecisionCode::Deny),
+            planning_allowed: !matches!(decision.decision, ucf_frames::v1::DecisionCode::Deny)
+                && !emergency_active,
             liquid_context: liquid_window_from_index(liquid_context),
         };
         let candidates =
@@ -2689,7 +3010,7 @@ impl RuntimeOrchestrator {
                 .find(|(c, _)| c.is_noop())
                 .map(|(c, a)| (c.clone(), a.clone()))
         });
-        if matches!(nsr_v0_assessment.policy_hint, PolicyHint::Block) {
+        if matches!(nsr_v0_assessment.policy_hint, PolicyHint::Block) || emergency_active {
             selected = candidates
                 .iter()
                 .zip(assessments.iter())
@@ -2841,6 +3162,7 @@ impl RuntimeOrchestrator {
             nsr_v0_assessment.policy_hint,
             compute_summary.lfm_uncertainty,
             compute_summary.lfm_stability,
+            emergency_active,
         );
         metrics::histogram!("ucf_llm_max_tokens_eff").record(decoding_policy.max_tokens_eff as f64);
         if matches!(
@@ -3193,13 +3515,20 @@ impl RuntimeOrchestrator {
             governance_signals,
             &mut self.tool_governor,
         );
-        self.tool_gate.capabilities = issued_caps;
+        let (effective_caps, effective_tier) = if emergency_active {
+            metrics::counter!("ucf_emergency_forced_deny_tools_total").increment(1);
+            (ucf_policy::capability::CapabilitySet::empty(), 3_u8)
+        } else {
+            (issued_caps, issuance_decision.tier.as_u8())
+        };
+        self.tool_gate.capabilities = effective_caps;
         self.persist_issuance_records(
             decision.time,
             decision.corr,
             eid2.0,
             selected_candidate.candidate_id,
             &issuance_decision,
+            effective_tier,
         )?;
         let mut requests = Vec::new();
         if selected_assessment.allowed {
@@ -3550,6 +3879,53 @@ fn sync_graph_from_cde_state(graph: &mut CausalGraph, state: &CdeState) {
 mod tests {
     use super::*;
 
+    fn compute_summary_fixture() -> ucf_compute::ComputeSignalsSummary {
+        ucf_compute::ComputeSignalsSummary {
+            backend: "stub",
+            surprise: 0.2,
+            pressure: 0.2,
+            risk: 0.2,
+            confidence: 0.8,
+            spike_count: 0,
+            spikes_digest: [1; 32],
+            sparsity: Some(0.1),
+            energy: Some(0.1),
+            ssm_readout: Some(0.1),
+            ssm_digest: Some([2; 32]),
+            world_digest: Some([3; 32]),
+            risk_quality: 0,
+            evidence_context_digest: [4; 32],
+            evidence_world_digest: Some([5; 32]),
+            evidence_spikes_digest: Some([6; 32]),
+            evidence_ssm_digest: Some([7; 32]),
+            evidence_lfm_digest: Some([8; 32]),
+            ssm_quality: Some(ucf_compute::world_model::StageQuality::Ok),
+            lfm_quality: Some(ucf_compute::world_model::StageQuality::Ok),
+            backend_profile: "stub",
+            backend_pack_id: 1,
+            fixtures_digest: [9; 32],
+            llm_backend: 0,
+            world_backend: 0,
+            sae_backend: 0,
+            ssm_backend: 0,
+            lfm_backend: 0,
+            lfm_uncertainty: Some(0.1),
+            lfm_stability: Some(0.9),
+            lfm_state_norm: Some(0.1),
+            lfm_deriv_norm: Some(0.1),
+            lfm_saturation_ratio: Some(0.0),
+            lfm_nan_inf_detected: false,
+            lfm_digest: Some([10; 32]),
+            budget_profile_id: 1,
+            seed: 1,
+            risk_contract_version: 1,
+            compute_schema_version: 1,
+            compute_chain_digest: [11; 32],
+            compute_code_version: "v1",
+            budget_exceeded_stage: None,
+        }
+    }
+
     #[test]
     fn prompt_builder_is_deterministic_and_bounded() {
         let signals = PromptConditioning {
@@ -3600,6 +3976,7 @@ mod tests {
             PolicyHint::SafeOnly,
             Some(0.95),
             Some(0.2),
+            false,
         );
         assert_eq!(out.output_class, CandidateOutputClass::SafeText);
         assert_eq!(
@@ -3610,5 +3987,51 @@ mod tests {
         assert!(reasons.contains(&OverrideReasonCode::NsrSafeOnly.as_u16()));
         assert!(reasons.contains(&OverrideReasonCode::HighUncertainty.as_u16()));
         assert!(reasons.contains(&OverrideReasonCode::LowStability.as_u16()));
+    }
+    #[test]
+    fn emergency_decoding_policy_forces_safe_short_output() {
+        let out = apply_decoding_policy(
+            512,
+            CandidateOutputClass::Code,
+            PolicyHint::Normal,
+            Some(0.1),
+            Some(0.9),
+            true,
+        );
+        assert_eq!(out.output_class, CandidateOutputClass::SafeText);
+        assert_eq!(out.max_tokens_eff, EMERGENCY_MAX_TOKENS);
+    }
+
+    #[test]
+    fn emergency_state_transitions_on_runaway_and_cooldown() {
+        let mut orchestrator = RuntimeOrchestrator::new();
+        let time = ucf_core::types::SimTime {
+            tick: ucf_core::types::Tick::new(10),
+            window: ucf_core::types::WindowId::new(0),
+        };
+        let corr = ucf_frames::v1::CorrelationId(7);
+        let mut summary = compute_summary_fixture();
+        summary.lfm_state_norm = Some(1.0);
+        summary.lfm_deriv_norm = Some(1.0);
+        summary.lfm_saturation_ratio = Some(0.0);
+        summary.lfm_nan_inf_detected = false;
+        let _ = orchestrator
+            .update_emergency_state(time, corr, &summary)
+            .expect("emergency update");
+        assert!(orchestrator.emergency_active());
+
+        let mut stable = summary;
+        stable.lfm_state_norm = Some(0.1);
+        stable.lfm_deriv_norm = Some(0.0);
+        for step in 0..=EMERGENCY_COOLDOWN_TICKS {
+            let t = ucf_core::types::SimTime {
+                tick: ucf_core::types::Tick::new(11 + u64::from(step)),
+                window: ucf_core::types::WindowId::new(0),
+            };
+            let _ = orchestrator
+                .update_emergency_state(t, corr, &stable)
+                .expect("update");
+        }
+        assert!(!orchestrator.emergency_active());
     }
 }
