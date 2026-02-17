@@ -96,7 +96,17 @@ pub struct BringupResult {
     pub ess_digest: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ResumeReason {
+    OperatorResume,
+    CrashRecovery,
+    Fallback,
+    Upgrade,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
 pub struct RunMetadataRecord {
     pub run_id: String,
     pub started_at_tick: u64,
@@ -107,6 +117,60 @@ pub struct RunMetadataRecord {
     pub enabled_features_bitmap: u16,
     pub profile: String,
     pub schema_versions: BTreeMap<String, u16>,
+    pub parent_run_id: Option<String>,
+    pub resume_reason: Option<ResumeReason>,
+    pub compat_digest: String,
+    pub policy_bundle_hash: String,
+    pub ended_at_tick: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ResumeMismatchReason {
+    PolicyHash,
+    BackendPackDigest,
+    ModelHashesDigest,
+    SchemaVersion,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ResumeDecision {
+    ResumeAllowed,
+    NewSessionRequired { reasons: Vec<ResumeMismatchReason> },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResumeCheckConfig {
+    pub policy_bundle_hash: String,
+    pub backend_pack_meta_digest: String,
+    pub model_hashes_digest: String,
+    pub enabled_features_bitmap: u16,
+    pub schema_versions: BTreeMap<String, u16>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RunRegistryEntry {
+    pub run_id: String,
+    pub started_at_tick: u64,
+    pub parent_run_id: Option<String>,
+    pub resume_reason: Option<ResumeReason>,
+    pub policy_bundle_hash_prefix: String,
+    pub pack_digest_prefix: String,
+    pub model_hashes_digest_prefix: String,
+    pub profile: String,
+    pub status: String,
+    pub last_tick: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RunStatusReport {
+    pub run_id: String,
+    pub active_slots: Vec<String>,
+    pub governor_tier: u8,
+    pub governor_score: f32,
+    pub emergency_active: bool,
+    pub last_ticks: Vec<MetricsTrendPoint>,
+    pub issuance_denies: Vec<(String, String)>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1394,6 +1458,8 @@ pub fn bringup(workdir: &Path, demo: bool, ticks: u64) -> Result<BringupResult, 
     std::env::set_var("UCF_COMPUTE_BACKEND", cfg.compute_backend.as_env_str());
     std::env::set_var("UCF_COMPUTE_SEED", cfg.compute_seed.to_string());
     std::env::set_var("UCF_COMPUTE_BUDGET_PROFILE", &cfg.compute_budget_profile);
+    ensure_policy_bundle_hash_env();
+    ensure_policy_bundle_root()?;
 
     let mut orchestrator = RuntimeOrchestrator::try_new_from_env()?;
     let mut adapter = MockAdapter::default();
@@ -1494,21 +1560,49 @@ pub fn one_command_bringup(
     schema_versions.insert("compute_summary".to_string(), 1);
     schema_versions.insert("output".to_string(), 1);
 
-    let run_metadata = RunMetadataRecord {
-        run_id: result.ess_digest.chars().take(16).collect(),
-        started_at_tick: 0,
-        code_version_tag: build.git_commit,
+    let policy_bundle_hash =
+        std::env::var("UCF_POLICY_BUNDLE_SHA256").unwrap_or_else(|_| "unverified".to_string());
+    let resume_cfg = ResumeCheckConfig {
+        policy_bundle_hash: policy_bundle_hash.clone(),
         backend_pack_meta_digest: hex::encode(meta.digest),
-        fixtures_digest: hex::encode(meta.fixtures_digest),
         model_hashes_digest: hex::encode(meta.model_hashes_digest),
         enabled_features_bitmap: ReleaseFeatureMatrix::detect().bits,
+        schema_versions: schema_versions.clone(),
+    };
+    let mut run_metadata = RunMetadataRecord {
+        run_id: format!(
+            "{}-{}",
+            result.ess_digest.chars().take(12).collect::<String>(),
+            now_unix_secs()
+        ),
+        started_at_tick: 0,
+        code_version_tag: build.git_commit,
+        backend_pack_meta_digest: resume_cfg.backend_pack_meta_digest.clone(),
+        fixtures_digest: hex::encode(meta.fixtures_digest),
+        model_hashes_digest: resume_cfg.model_hashes_digest.clone(),
+        enabled_features_bitmap: resume_cfg.enabled_features_bitmap,
         profile: resolved_profile_name(),
         schema_versions,
+        parent_run_id: None,
+        resume_reason: None,
+        compat_digest: compute_resume_compat_digest(&resume_cfg),
+        policy_bundle_hash,
+        ended_at_tick: Some(ticks),
     };
-    write_json(
-        workdir.join("ess").join("run_metadata_record.json"),
-        &run_metadata,
-    )?;
+    if let Some(prev) = latest_run_metadata(workdir)? {
+        let decision = check_resume_compat(&prev, &resume_cfg);
+        match decision {
+            ResumeDecision::ResumeAllowed => {
+                run_metadata.parent_run_id = Some(prev.run_id);
+                run_metadata.resume_reason = Some(ResumeReason::OperatorResume);
+            }
+            ResumeDecision::NewSessionRequired { .. } => {
+                run_metadata.parent_run_id = Some(prev.run_id);
+                run_metadata.resume_reason = Some(ResumeReason::Upgrade);
+            }
+        }
+    }
+    persist_run_metadata(workdir, &run_metadata)?;
 
     let metrics = metrics_summary(workdir, ticks as usize)?;
     let explain = explain_tick(
@@ -2211,6 +2305,181 @@ pub fn metrics_trend(
     Ok(points.into_iter().step_by(step).take(256).collect())
 }
 
+pub fn compute_resume_compat_digest(cfg: &ResumeCheckConfig) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"UCF:resume_compat:v1");
+    hasher.update(cfg.policy_bundle_hash.as_bytes());
+    hasher.update(cfg.backend_pack_meta_digest.as_bytes());
+    hasher.update(cfg.model_hashes_digest.as_bytes());
+    hasher.update(cfg.enabled_features_bitmap.to_le_bytes());
+    for (k, v) in &cfg.schema_versions {
+        hasher.update(k.as_bytes());
+        hasher.update(v.to_le_bytes());
+    }
+    hex::encode(hasher.finalize())
+}
+
+pub fn check_resume_compat(
+    prev_run: &RunMetadataRecord,
+    new_config: &ResumeCheckConfig,
+) -> ResumeDecision {
+    let mut reasons = Vec::new();
+    if prev_run.policy_bundle_hash != new_config.policy_bundle_hash {
+        reasons.push(ResumeMismatchReason::PolicyHash);
+    }
+    if prev_run.backend_pack_meta_digest != new_config.backend_pack_meta_digest {
+        reasons.push(ResumeMismatchReason::BackendPackDigest);
+    }
+    let any_real_slots_enabled = new_config.enabled_features_bitmap != 0;
+    if any_real_slots_enabled && prev_run.model_hashes_digest != new_config.model_hashes_digest {
+        reasons.push(ResumeMismatchReason::ModelHashesDigest);
+    }
+    for (name, version) in &new_config.schema_versions {
+        if prev_run.schema_versions.get(name).copied().unwrap_or(0) != *version {
+            reasons.push(ResumeMismatchReason::SchemaVersion);
+            break;
+        }
+    }
+    if reasons.is_empty() {
+        ResumeDecision::ResumeAllowed
+    } else {
+        ResumeDecision::NewSessionRequired { reasons }
+    }
+}
+
+fn persist_run_metadata(workdir: &Path, run_metadata: &RunMetadataRecord) -> Result<(), OpsError> {
+    write_json(
+        workdir.join("ess").join("run_metadata_record.json"),
+        run_metadata,
+    )?;
+    let run_dir = workdir.join("ess").join("runs");
+    fs::create_dir_all(&run_dir)?;
+    write_json(
+        run_dir.join(format!("{}.json", run_metadata.run_id)),
+        run_metadata,
+    )?;
+    Ok(())
+}
+
+fn load_run_registry(workdir: &Path) -> Result<Vec<RunMetadataRecord>, OpsError> {
+    let run_dir = workdir.join("ess").join("runs");
+    if !run_dir.exists() {
+        return Ok(Vec::new());
+    }
+    let mut runs = Vec::new();
+    for entry in fs::read_dir(&run_dir)? {
+        let entry = entry?;
+        if entry.file_type()?.is_file() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("json") {
+                let data = fs::read_to_string(path)?;
+                if let Ok(meta) = serde_json::from_str::<RunMetadataRecord>(&data) {
+                    runs.push(meta);
+                }
+            }
+        }
+    }
+    runs.sort_by(|a, b| {
+        a.started_at_tick
+            .cmp(&b.started_at_tick)
+            .then_with(|| a.run_id.cmp(&b.run_id))
+    });
+    Ok(runs)
+}
+
+fn latest_run_metadata(workdir: &Path) -> Result<Option<RunMetadataRecord>, OpsError> {
+    Ok(load_run_registry(workdir)?.into_iter().last())
+}
+
+pub fn runs_list(workdir: &Path, last: usize) -> Result<Vec<RunRegistryEntry>, OpsError> {
+    let records =
+        load_fixture_records(&workdir.join("ess").join("ess_fixture.json")).unwrap_or_default();
+    let last_tick = records.iter().map(|r| r.time.tick.get()).max();
+    let mut entries = load_run_registry(workdir)?
+        .into_iter()
+        .map(|m| RunRegistryEntry {
+            run_id: m.run_id,
+            started_at_tick: m.started_at_tick,
+            parent_run_id: m.parent_run_id,
+            resume_reason: m.resume_reason,
+            policy_bundle_hash_prefix: prefix_hex(&m.policy_bundle_hash, 12),
+            pack_digest_prefix: prefix_hex(&m.backend_pack_meta_digest, 12),
+            model_hashes_digest_prefix: prefix_hex(&m.model_hashes_digest, 12),
+            profile: m.profile,
+            status: if m.ended_at_tick.is_some() {
+                "ended".to_string()
+            } else {
+                "active".to_string()
+            },
+            last_tick,
+        })
+        .collect::<Vec<_>>();
+    if entries.len() > last {
+        entries = entries.split_off(entries.len() - last);
+    }
+    Ok(entries)
+}
+
+pub fn runs_show(workdir: &Path, run_id: &str) -> Result<Option<RunMetadataRecord>, OpsError> {
+    Ok(load_run_registry(workdir)?
+        .into_iter()
+        .find(|r| r.run_id == run_id))
+}
+
+pub fn runs_search(
+    workdir: &Path,
+    pack: Option<&str>,
+    policy: Option<&str>,
+    model: Option<&str>,
+) -> Result<Vec<RunRegistryEntry>, OpsError> {
+    let mut entries = runs_list(workdir, usize::MAX)?;
+    entries.retain(|e| {
+        pack.is_none_or(|p| e.pack_digest_prefix.starts_with(p))
+            && policy.is_none_or(|p| e.policy_bundle_hash_prefix.starts_with(p))
+            && model.is_none_or(|p| e.model_hashes_digest_prefix.starts_with(p))
+    });
+    Ok(entries)
+}
+
+pub fn run_status(workdir: &Path, run_id: &str) -> Result<RunStatusReport, OpsError> {
+    let _meta = runs_show(workdir, run_id)?
+        .ok_or_else(|| OpsError::Invalid(format!("unknown run_id: {run_id}")))?;
+    let records = load_fixture_records(&workdir.join("ess").join("ess_fixture.json"))?;
+    let mut trend = metrics_trend(workdir, 0, u64::MAX)?;
+    if trend.len() > 8 {
+        trend = trend.split_off(trend.len() - 8);
+    }
+    let explain = build_explain_tick_report(
+        &records,
+        ExplainTickRequest {
+            t: None,
+            decision_id: None,
+            detail_level: 1,
+            digest_prefix_len: 8,
+        },
+    )?;
+    let issuance_denies = explain
+        .governance
+        .issuance
+        .iter()
+        .flat_map(|i| i.denied.iter().cloned())
+        .take(16)
+        .collect::<Vec<_>>();
+    let active_slots = vec!["llm", "world_jepa", "sae", "ssm", "lfm"]
+        .into_iter()
+        .map(str::to_string)
+        .collect();
+    Ok(RunStatusReport {
+        run_id: run_id.to_string(),
+        active_slots,
+        governor_tier: explain.governance.tier.unwrap_or(0),
+        governor_score: explain.governance.governor_score.unwrap_or(0) as f32 / 1024.0,
+        emergency_active: explain.governance.emergency_active,
+        last_ticks: trend,
+        issuance_denies,
+    })
+}
+
 fn digest_prefix(digest: &[u8; 32], prefix_len: usize) -> String {
     hex::encode(digest)[..prefix_len.min(64)].to_string()
 }
@@ -2311,6 +2580,92 @@ fn run_compute_probe(cfg: &OpsConfig) -> Result<DiagCheck, OpsError> {
         detail: format!("risk={:.3} confidence={:.3}", out.risk, out.confidence),
         remediation: "ensure compute backend feature flags and seed are set.".to_string(),
     })
+}
+
+fn ensure_policy_bundle_root() -> Result<(), OpsError> {
+    let local_manifest = Path::new("policies/manifest.toml");
+    let local_ok = fs::read_to_string(local_manifest)
+        .map(|v| v.contains("bundle_sha256"))
+        .unwrap_or(false);
+    if local_ok {
+        return Ok(());
+    }
+    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let source = repo_root.join("policies");
+    if !source.join("manifest.toml").exists() {
+        return Ok(());
+    }
+    fs::create_dir_all("policies/bundle_v1")?;
+    let src_manifest = fs::read_to_string(source.join("manifest.toml"))?;
+    let mut bundle = String::new();
+    let mut files = Vec::<(String, String)>::new();
+    let mut cur_path: Option<String> = None;
+    for line in src_manifest.lines() {
+        let trimmed = line.trim();
+        if let Some(v) = trimmed
+            .strip_prefix("bundle_sha256 = ")
+            .and_then(|rest| rest.strip_prefix('"'))
+            .and_then(|rest| rest.strip_suffix('"'))
+        {
+            bundle = v.to_string();
+        }
+        if let Some(v) = trimmed
+            .strip_prefix("path = ")
+            .and_then(|rest| rest.strip_prefix('"'))
+            .and_then(|rest| rest.strip_suffix('"'))
+        {
+            cur_path = Some(v.to_string());
+        }
+        if let Some(v) = trimmed
+            .strip_prefix("sha256 = ")
+            .and_then(|rest| rest.strip_prefix('"'))
+            .and_then(|rest| rest.strip_suffix('"'))
+        {
+            if let Some(path) = cur_path.take() {
+                files.push((path, v.to_string()));
+            }
+        }
+    }
+    let mut normalized = String::from(r#"version = "v1"\n"#);
+    if !bundle.is_empty() {
+        normalized.push_str(&format!(r#"bundle_sha256 = "{}"\n\n"#, bundle));
+    }
+    for (path, sha) in &files {
+        normalized.push_str("[[files]]\n");
+        normalized.push_str(&format!(r#"path = "{}"\n"#, path));
+        normalized.push_str(&format!(r#"sha256 = "{}"\n\n"#, sha));
+    }
+    fs::write("policies/manifest.toml", normalized)?;
+    for name in [
+        "compiled_rules.json",
+        "allowlists.json",
+        "governor_defaults.json",
+        "retention_v1.json",
+    ] {
+        fs::copy(
+            source.join("bundle_v1").join(name),
+            Path::new("policies/bundle_v1").join(name),
+        )?;
+    }
+    Ok(())
+}
+
+fn ensure_policy_bundle_hash_env() {
+    if std::env::var("UCF_POLICY_BUNDLE_SHA256").is_ok() {
+        return;
+    }
+    let manifest_path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../policies/manifest.toml");
+    if let Ok(manifest_raw) = fs::read_to_string(manifest_path) {
+        if let Some(hash) = manifest_raw.lines().find_map(|line| {
+            line.trim()
+                .strip_prefix("bundle_sha256 = ")
+                .and_then(|rest| rest.strip_prefix('"'))
+                .and_then(|rest| rest.strip_suffix('"'))
+        }) {
+            std::env::set_var("UCF_POLICY_BUNDLE_SHA256", hash);
+        }
+    }
 }
 
 fn ensure_layout(workdir: &Path) -> Result<(), OpsError> {
@@ -2647,6 +3002,85 @@ mod tests {
         assert_eq!(a.manifest_digest, b.manifest_digest);
     }
 
+    #[test]
+    fn resume_compat_digest_is_stable() {
+        let mut schema = BTreeMap::new();
+        schema.insert("output".to_string(), 1);
+        let cfg = ResumeCheckConfig {
+            policy_bundle_hash: "policy-a".to_string(),
+            backend_pack_meta_digest: "pack-a".to_string(),
+            model_hashes_digest: "model-a".to_string(),
+            enabled_features_bitmap: 1,
+            schema_versions: schema,
+        };
+        assert_eq!(
+            compute_resume_compat_digest(&cfg),
+            compute_resume_compat_digest(&cfg)
+        );
+    }
+
+    #[test]
+    fn resume_decision_requires_new_session_on_policy_change() {
+        let mut schema = BTreeMap::new();
+        schema.insert("output".to_string(), 1);
+        let prev = RunMetadataRecord {
+            run_id: "r1".to_string(),
+            started_at_tick: 0,
+            code_version_tag: "c".to_string(),
+            backend_pack_meta_digest: "pack-a".to_string(),
+            fixtures_digest: "f".to_string(),
+            model_hashes_digest: "model-a".to_string(),
+            enabled_features_bitmap: 1,
+            profile: "test".to_string(),
+            schema_versions: schema.clone(),
+            parent_run_id: None,
+            resume_reason: None,
+            compat_digest: "d".to_string(),
+            policy_bundle_hash: "policy-a".to_string(),
+            ended_at_tick: Some(10),
+        };
+        let cfg_ok = ResumeCheckConfig {
+            policy_bundle_hash: "policy-a".to_string(),
+            backend_pack_meta_digest: "pack-a".to_string(),
+            model_hashes_digest: "model-a".to_string(),
+            enabled_features_bitmap: 1,
+            schema_versions: schema.clone(),
+        };
+        assert_eq!(
+            check_resume_compat(&prev, &cfg_ok),
+            ResumeDecision::ResumeAllowed
+        );
+        let cfg_bad = ResumeCheckConfig {
+            policy_bundle_hash: "policy-b".to_string(),
+            ..cfg_ok
+        };
+        assert!(matches!(
+            check_resume_compat(&prev, &cfg_bad),
+            ResumeDecision::NewSessionRequired { .. }
+        ));
+    }
+
+    #[test]
+    fn runs_list_ordering_is_stable() {
+        let dir = tempdir().expect("tempdir");
+        let run_dir = dir.path().join("ess/runs");
+        fs::create_dir_all(&run_dir).expect("run dir");
+        let a = RunMetadataRecord {
+            run_id: "b-run".to_string(),
+            started_at_tick: 5,
+            ..RunMetadataRecord::default()
+        };
+        let b = RunMetadataRecord {
+            run_id: "a-run".to_string(),
+            started_at_tick: 5,
+            ..RunMetadataRecord::default()
+        };
+        write_json(run_dir.join("1.json"), &a).expect("write a");
+        write_json(run_dir.join("2.json"), &b).expect("write b");
+        let list = runs_list(dir.path(), 10).expect("runs");
+        assert_eq!(list[0].run_id, "a-run");
+        assert_eq!(list[1].run_id, "b-run");
+    }
     #[test]
     fn ess_compaction_manifest_tamper_detected() {
         let dir = tempdir().expect("tempdir");
