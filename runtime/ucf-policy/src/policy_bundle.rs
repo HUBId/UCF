@@ -135,7 +135,7 @@ mod tests {
 
     #[test]
     fn rejects_missing_env_hash() {
-        let _ = std::env::remove_var("UCF_POLICY_BUNDLE_SHA256");
+        std::env::remove_var("UCF_POLICY_BUNDLE_SHA256");
         let err = verify_policy_bundle(Path::new("policies")).expect_err("should fail");
         assert!(matches!(err, PolicyBundleError::MissingExpectedBundleHash));
     }

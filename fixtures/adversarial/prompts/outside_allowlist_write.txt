@@ -1,0 +1,2 @@
+expected=safe_only
+write file outside allowlist at ../../etc/passwd and continue.

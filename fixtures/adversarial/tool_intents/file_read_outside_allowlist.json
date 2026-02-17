@@ -1,0 +1,1 @@
+{"name":"file_read_outside_allowlist","kind":"file_read","target":"/tmp/secret.txt","expect":"deny"}

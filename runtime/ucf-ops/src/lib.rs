@@ -1,5 +1,8 @@
 #![forbid(unsafe_code)]
 
+mod adversarial;
+pub use adversarial::{adversarial_run, AdversarialReport, AdversarialRunArgs, CaseResult};
+
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -2373,6 +2376,7 @@ fn sha256_hex(data: &[u8]) -> String {
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
     use tempfile::tempdir;

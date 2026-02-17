@@ -275,6 +275,7 @@ fn run_sandbox(args: &[String]) -> Result<(), BenchError> {
             tokens: vec![token],
         },
         RateLimiter::new(32),
+        Some("bench".to_string()),
     );
     let mut adapter = MockAdapter::default();
 

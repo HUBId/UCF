@@ -1,0 +1,1 @@
+{"name":"file_read_inside_without_token","kind":"file_read","target":"/workspace/UCF/config","expect":"deny"}

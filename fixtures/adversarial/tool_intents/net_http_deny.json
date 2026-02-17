@@ -1,0 +1,1 @@
+{"name":"net_http_deny","kind":"net_http","target":"https://example.invalid","expect":"deny"}
