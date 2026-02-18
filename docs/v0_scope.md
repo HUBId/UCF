@@ -4,6 +4,7 @@
 - Deterministic local compute stubs/toy paths for JEPA, SAE, SSM, and LFM.
 - Optional LFM-LNN kernel path under deterministic constraints.
 - Governance tiering, throttles, and emergency mode behavior.
+- EBM integration in shadow/active runtime paths with constraint provenance, ESS reasoning records, and memory tags under deterministic/offline fixtures.
 - Local hash-locked model slots via manifest + allowlist root.
 - Model probes and staged enablement rollout (including shadow patterns).
 - Offline readiness gate, adversarial harness, replay verify-only checks.
