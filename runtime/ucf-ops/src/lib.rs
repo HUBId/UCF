@@ -1421,9 +1421,12 @@ pub struct ExplainGovernance {
 pub struct ExplainEbm {
     pub mode: u8,
     pub aggregate_energy_q: u16,
+    pub base_energy_q: u16,
     pub best_candidate_id: Option<u16>,
     pub top_energies_q: Vec<u16>,
+    pub top_term_contributions: Vec<(u16, String, u16)>,
     pub ebm_digest_prefix: String,
+    pub constraints_digest_prefix: String,
     pub status: u8,
 }
 
@@ -2217,9 +2220,16 @@ pub fn build_explain_tick_report(
             ebm: ebm.as_ref().map(|e| ExplainEbm {
                 mode: e.enablement_mode,
                 aggregate_energy_q: e.aggregate_energy_q,
+                base_energy_q: e.base_energy_q,
                 best_candidate_id: e.top_candidate_ids.first().copied(),
                 top_energies_q: e.top_energies_q.clone(),
+                top_term_contributions: e
+                    .top_term_contributions
+                    .iter()
+                    .map(|(id, q)| (*id, ebm_term_label(*id).to_string(), *q))
+                    .collect(),
                 ebm_digest_prefix: digest_prefix_arr8(&e.ebm_digest_prefix, prefix),
+                constraints_digest_prefix: digest_prefix_arr8(&e.constraints_digest_prefix, prefix),
                 status: e.status,
             }),
         },
@@ -2570,6 +2580,19 @@ pub fn run_status(workdir: &Path, run_id: &str) -> Result<RunStatusReport, OpsEr
     })
 }
 
+fn ebm_term_label(term_id: u16) -> &'static str {
+    match term_id {
+        1 => "ToolIntentPenalty",
+        2 => "CapabilityForbidden",
+        3 => "CapabilityHighRisk",
+        4 => "ContextRiskAmplifier",
+        5 => "EmergencyDenyAllBias",
+        6 => "OutputClassMismatch",
+        7 => "BudgetExhaustedBias",
+        _ => "UnknownTerm",
+    }
+}
+
 fn digest_prefix(digest: &[u8; 32], prefix_len: usize) -> String {
     hex::encode(digest)[..prefix_len.min(64)].to_string()
 }
@@ -2679,8 +2702,10 @@ fn run_compute_probe(cfg: &OpsConfig) -> Result<DiagCheck, OpsError> {
 fn ensure_policy_bundle_root() -> Result<(), OpsError> {
     let local_manifest = Path::new("policies/manifest.toml");
     let local_ok = fs::read_to_string(local_manifest)
-        .map(|v| v.contains("bundle_sha256"))
-        .unwrap_or(false);
+        .ok()
+        .and_then(|v| toml::from_str::<toml::Value>(&v).ok())
+        .and_then(|v| v.get("bundle_sha256").cloned())
+        .is_some();
     if local_ok {
         return Ok(());
     }
@@ -2720,14 +2745,14 @@ fn ensure_policy_bundle_root() -> Result<(), OpsError> {
             }
         }
     }
-    let mut normalized = String::from(r#"version = "v1"\n"#);
+    let mut normalized = String::from("version = \"v1\"\n");
     if !bundle.is_empty() {
-        normalized.push_str(&format!(r#"bundle_sha256 = "{}"\n\n"#, bundle));
+        normalized.push_str(&format!("bundle_sha256 = \"{}\"\n\n", bundle));
     }
     for (path, sha) in &files {
         normalized.push_str("[[files]]\n");
-        normalized.push_str(&format!(r#"path = "{}"\n"#, path));
-        normalized.push_str(&format!(r#"sha256 = "{}"\n\n"#, sha));
+        normalized.push_str(&format!("path = \"{}\"\n", path));
+        normalized.push_str(&format!("sha256 = \"{}\"\n\n", sha));
     }
     fs::write("policies/manifest.toml", normalized)?;
     for name in [
@@ -2735,6 +2760,7 @@ fn ensure_policy_bundle_root() -> Result<(), OpsError> {
         "allowlists.json",
         "governor_defaults.json",
         "retention_v1.json",
+        "ebm_constraints.toml",
     ] {
         fs::copy(
             source.join("bundle_v1").join(name),

@@ -4,8 +4,10 @@ use crate::compute_economics::{
     CostSchedule,
 };
 use crate::ebm::{
-    candidate_feature_from_decision, CandleEbmReasonerV1, CpuEbmStubV0, EbmEnablementMode,
-    EbmInput, EbmReasoner, EbmSignal, EbmSignals, EbmStatus,
+    active_ebm_constraints, candidate_feature_from_decision, configure_ebm_constraints,
+    CandleEbmReasonerV1, ConstraintParams, ConstraintTermId, ConstraintTermKind,
+    ConstraintTermSpec, CpuEbmStubV0, EbmConstraintLibrary, EbmEnablementMode, EbmInput,
+    EbmReasoner, EbmSignal, EbmSignals, EbmStatus,
 };
 use crate::errors::RuntimeError;
 use crate::evolution::{
@@ -47,12 +49,12 @@ use ucf_ess::v1::{
     compute_content_digest, AuditCheckpointRecord, AuditPayload, BackendPackRecord,
     CandidateSetRecord, CandidateSummaryRecord, CapabilityIssuanceRecord,
     ComputeBudgetViolationRecord, ComputeBudgetWindowRecord, DeltaEvaluationRecord,
-    DeltaProposalRecord, DeltaRecommendationRecord, EbmEnvelopeViolationRecord, EbmReasoningRecord,
-    EmergencyReasonCode, EmergencyRecord, EmergencyStateCode, ExperienceKind, ExperienceRecord,
-    ExperienceStore, HormoneRecord, IdAllocator, InMemoryEss, LfmSummaryRecord, LfmWindowRecord,
-    NeuroRecord, NsrRecord, OutputRecord, PayloadClassification, PolicyProvenanceRecord,
-    SandboxCallRecord, SandboxReplyRecord, ThrottleRecord, ToolAuthRecord, ToolExecutionRecord,
-    ToolRequestRecord,
+    DeltaProposalRecord, DeltaRecommendationRecord, EbmConstraintProvenanceRecord,
+    EbmEnvelopeViolationRecord, EbmReasoningRecord, EmergencyReasonCode, EmergencyRecord,
+    EmergencyStateCode, ExperienceKind, ExperienceRecord, ExperienceStore, HormoneRecord,
+    IdAllocator, InMemoryEss, LfmSummaryRecord, LfmWindowRecord, NeuroRecord, NsrRecord,
+    OutputRecord, PayloadClassification, PolicyProvenanceRecord, SandboxCallRecord,
+    SandboxReplyRecord, ThrottleRecord, ToolAuthRecord, ToolExecutionRecord, ToolRequestRecord,
 };
 use ucf_fep::{
     check_coherence_invariants, fep_step, homeostasis_step, CoherenceCfg, CoherenceSnapshot,
@@ -80,6 +82,7 @@ use ucf_policy::{
         DecisionBudget, DecisionContext, DefaultCandidateGeneratorV0,
         OutputClass as CandidateOutputClass,
     },
+    ebm_constraints::load_ebm_constraints,
     gem::{
         issue_capabilities_governed, request_from, request_from_intent, AuthorizationOutcome,
         CapabilityIssuanceDecision, Gem, GovernanceSignals, PayloadHint as GemPayloadHint,
@@ -111,6 +114,75 @@ fn env_flag(name: &str) -> bool {
         .unwrap_or(false)
 }
 
+fn map_constraint_kind(kind: &str) -> Option<ConstraintTermKind> {
+    match kind {
+        "ToolIntentPenalty" => Some(ConstraintTermKind::ToolIntentPenalty),
+        "CapabilityForbidden" => Some(ConstraintTermKind::CapabilityForbidden),
+        "CapabilityHighRisk" => Some(ConstraintTermKind::CapabilityHighRisk),
+        "ContextRiskAmplifier" => Some(ConstraintTermKind::ContextRiskAmplifier),
+        "EmergencyDenyAllBias" => Some(ConstraintTermKind::EmergencyDenyAllBias),
+        "OutputClassMismatch" => Some(ConstraintTermKind::OutputClassMismatch),
+        "BudgetExhaustedBias" => Some(ConstraintTermKind::BudgetExhaustedBias),
+        _ => None,
+    }
+}
+
+fn map_candidate_kind(kind: Option<&str>) -> Option<crate::ebm::CandidateKind> {
+    match kind {
+        Some("SafeText") => Some(crate::ebm::CandidateKind::SafeText),
+        Some("Json") => Some(crate::ebm::CandidateKind::Json),
+        Some("ToolIntent") => Some(crate::ebm::CandidateKind::ToolIntent),
+        Some("NoOp") => Some(crate::ebm::CandidateKind::NoOp),
+        Some("Other") => Some(crate::ebm::CandidateKind::Other),
+        _ => None,
+    }
+}
+
+fn load_runtime_ebm_constraints(policy_hash: &str) -> EbmConstraintLibrary {
+    let loaded = load_ebm_constraints(std::path::Path::new("policies"));
+    let library = loaded
+        .ok()
+        .map(|bundle| {
+            let mut terms = bundle
+                .terms
+                .iter()
+                .filter_map(|term| {
+                    let kind = map_constraint_kind(&term.kind)?;
+                    Some(ConstraintTermSpec {
+                        id: ConstraintTermId(term.id),
+                        kind,
+                        weight_q: ucf_types::UQ0_16::from_raw(term.weight_q),
+                        params: ConstraintParams {
+                            capability_class_id: term.capability_class_id,
+                            threshold_q: term.threshold_q.map(ucf_types::UQ0_16::from_raw),
+                            candidate_kind: map_candidate_kind(term.candidate_kind.as_deref()),
+                            governor_tier_min: term.governor_tier_min,
+                        },
+                    })
+                })
+                .collect::<Vec<_>>();
+            terms.sort_by(|a, b| a.id.0.cmp(&b.id.0));
+            EbmConstraintLibrary {
+                schema_version: bundle.schema_version,
+                terms,
+                fallback_used: false,
+                constraints_digest: bundle.constraints_digest,
+            }
+        })
+        .unwrap_or_else(EbmConstraintLibrary::fallback);
+    if library.fallback_used {
+        metrics::counter!("ucf_ebm_constraint_fallback_total").increment(1);
+    }
+    metrics::gauge!("ucf_ebm_constraint_terms_loaded").set(library.terms.len() as f64);
+    tracing::info!(
+        terms = library.terms.len(),
+        fallback = library.fallback_used,
+        policy_hash = %policy_hash,
+        "ebm constraints configured"
+    );
+    library
+}
+
 fn env_u64(name: &str, default: u64) -> u64 {
     std::env::var(name)
         .ok()
@@ -125,6 +197,18 @@ fn quantize_unit_u16(v: f32) -> u16 {
 fn prefix8(digest: [u8; 32]) -> [u8; 8] {
     let mut out = [0u8; 8];
     out.copy_from_slice(&digest[..8]);
+    out
+}
+
+fn prefix8_hex(hex: &str) -> [u8; 8] {
+    let mut out = [0u8; 8];
+    for (i, chunk) in hex.as_bytes().chunks(2).take(8).enumerate() {
+        if chunk.len() == 2 {
+            let hi = (chunk[0] as char).to_digit(16).unwrap_or(0) as u8;
+            let lo = (chunk[1] as char).to_digit(16).unwrap_or(0) as u8;
+            out[i] = (hi << 4) | lo;
+        }
+    }
     out
 }
 
@@ -1645,6 +1729,8 @@ impl RuntimeOrchestrator {
 
         let policy_provenance = verify_policy_bundle(std::path::Path::new("policies"))
             .unwrap_or_else(|e| panic!("policy bundle verification failed: {e}"));
+        let ebm_constraints = load_runtime_ebm_constraints(&policy_provenance.bundle_sha256);
+        configure_ebm_constraints(ebm_constraints);
         metrics::gauge!("ucf_policy_bundle_verified").set(1.0);
 
         let mut out = Self {
@@ -1866,6 +1952,24 @@ impl RuntimeOrchestrator {
                 bundle_hash: policy_provenance.bundle_sha256.clone(),
                 enabled_features: policy_provenance.enabled_features,
                 schema_version: 1,
+            }),
+            out.audit_head_digest,
+        ));
+        let constraints = active_ebm_constraints();
+        let _ = out.ess.append(ExperienceRecord::audit(
+            out.ids.next(),
+            ucf_core::types::SimTime {
+                tick: ucf_core::types::Tick::new(0),
+                window: ucf_core::types::WindowId::new(0),
+            },
+            ucf_frames::v1::CorrelationId(0),
+            ExperienceKind::EbmConstraintProvenance,
+            AuditPayload::EbmConstraintProvenance(EbmConstraintProvenanceRecord {
+                t: 0,
+                policy_hash_prefix: prefix8_hex(&policy_provenance.bundle_sha256),
+                constraints_digest_prefix: prefix8(constraints.constraints_digest),
+                term_count: constraints.terms.len().min(usize::from(u16::MAX)) as u16,
+                schema_version: constraints.schema_version,
             }),
             out.audit_head_digest,
         ));
@@ -3741,9 +3845,22 @@ impl RuntimeOrchestrator {
                 )
                 .raw(),
                 aggregate_energy_q: out.aggregate_energy_q.raw(),
+                base_energy_q: out
+                    .base_energies_q
+                    .get(usize::from(out.best_indices.first().copied().unwrap_or(0)))
+                    .copied()
+                    .unwrap_or(out.aggregate_energy_q)
+                    .raw(),
                 top_energies_q,
                 top_candidate_ids,
                 ebm_digest_prefix: prefix8(out.ebm_digest),
+                constraints_digest_prefix: out.constraints_digest_prefix,
+                top_term_contributions: out
+                    .selected_term_contributions
+                    .iter()
+                    .take(8)
+                    .map(|t| (t.id, t.contrib_q.raw()))
+                    .collect(),
                 search_enabled: out.search_enabled,
                 search_steps_used: out.search_steps_used,
                 evidence_chain_digest_prefix: prefix8(compute_summary.compute_chain_digest),
