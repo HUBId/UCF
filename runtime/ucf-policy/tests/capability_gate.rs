@@ -7,11 +7,12 @@ use ucf_policy::{
     adapter::MockAdapter,
     capability::{CapabilityDenyReason, CapabilityKind, CapabilityScope},
     gem::{
-        governor_score, issue_capabilities, issue_capabilities_governed, Gem, GovernanceSignals,
+        governor_score_q, issue_capabilities, issue_capabilities_governed, Gem, GovernanceSignals,
         IssuanceTier, ToolGate, ToolGovernor, ToolStatus,
     },
     rate_limiter::RateLimiter,
 };
+use ucf_types::UQ0_16;
 
 fn sim_time(tick: u64) -> SimTime {
     SimTime {
@@ -136,7 +137,7 @@ fn gate_denies_missing_decision_and_rate_limits_by_ticks() {
     let mut gate = ToolGate::new(
         issue_capabilities(Some(&decision), 1),
         RateLimiter::new(2),
-        None,
+        Some("bundle".to_string()),
     );
     let mut adapter = MockAdapter::default();
 
@@ -236,20 +237,27 @@ fn issuer_blocks_high_risk() {
 #[test]
 fn governor_score_and_tier_boundaries_are_deterministic() {
     let signals = GovernanceSignals::from_inputs(None, 42, Some(0.8), Some(0.4));
-    let score1 = governor_score(signals);
-    let score2 = governor_score(signals);
+    let score1 = governor_score_q(signals).to_f32();
+    let score2 = governor_score_q(signals).to_f32();
     assert_eq!(score1, score2);
     assert!(matches!(
-        IssuanceTier::from_score(0.249),
+        IssuanceTier::from_score_q(UQ0_16::from_f32_clamped(0.249)),
         IssuanceTier::Tier0
     ));
     assert!(matches!(
-        IssuanceTier::from_score(0.25),
+        IssuanceTier::from_score_q(UQ0_16::from_f32_clamped(0.25)),
         IssuanceTier::Tier1
     ));
-    assert!(matches!(IssuanceTier::from_score(0.5), IssuanceTier::Tier2));
     assert!(matches!(
-        IssuanceTier::from_score(0.75),
+        IssuanceTier::from_score_q(UQ0_16::from_f32_clamped(0.5)),
+        IssuanceTier::Tier2
+    ));
+    assert!(matches!(
+        IssuanceTier::from_score_q(UQ0_16::from_f32_clamped(0.75)),
+        IssuanceTier::Tier2
+    ));
+    assert!(matches!(
+        IssuanceTier::from_score_q(UQ0_16::from_f32_clamped(0.76)),
         IssuanceTier::Tier3
     ));
 }

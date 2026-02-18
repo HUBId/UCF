@@ -18,6 +18,8 @@ pub enum ExperienceKind {
     BrainOut,
     Note,
     ToolRequest,
+    ToolPlan,
+    ToolIssue,
     ToolAuth,
     ToolExecution,
     SandboxCall,
@@ -109,6 +111,8 @@ impl ExperienceEbmTagRecord {
 #[derive(Debug, Clone, PartialEq)]
 pub enum AuditPayload {
     ToolRequest(ToolRequestRecord),
+    ToolPlan(ToolPlanAuditRecord),
+    ToolIssue(ToolIssueAuditRecord),
     ToolAuth(ToolAuthRecord),
     ToolExecution(ToolExecutionRecord),
     SandboxCall(SandboxCallRecord),
@@ -418,6 +422,27 @@ pub fn compute_content_digest(text: &str) -> [u8; 32] {
     hasher.update(b"UCF:ESS:OUTPUT:CONTENT:v1");
     hasher.update(text.as_bytes());
     hasher.finalize().into()
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToolPlanAuditRecord {
+    pub plan_digest_prefix: [u8; 8],
+    pub tool_id: String,
+    pub tool_class_id: String,
+    pub args_digest_prefix: [u8; 8],
+    pub required_caps: Vec<String>,
+    pub ebm_energy_q: Option<u16>,
+    pub nsr_risk_q: Option<u16>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToolIssueAuditRecord {
+    pub plan_digest_prefix: [u8; 8],
+    pub issued: bool,
+    pub issued_caps: Vec<[u8; 8]>,
+    pub deny_reasons: Vec<String>,
+    pub policy_graph_digest_prefix: [u8; 8],
+    pub security_chain_digest_prefix: [u8; 8],
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
