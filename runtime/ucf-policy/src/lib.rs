@@ -6,6 +6,7 @@ pub mod errors;
 pub mod gem;
 pub mod pbm;
 pub mod rate_limiter;
+pub mod tool_plans;
 
 pub mod policy_bundle;
 

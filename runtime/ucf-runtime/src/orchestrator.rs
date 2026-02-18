@@ -22,6 +22,7 @@ use crate::nsr_v1::{
     eval_input_from_candidate, NsrEngineV1, NsrOutput as NsrV1Output, NsrStatus as NsrV1Status,
 };
 use crate::sandbox::{call_spec_from_control, execute_tool_call, CapabilitySetSummary};
+use std::collections::HashSet;
 use ucf_biophys::v0::{
     apply_coherence_feedback, classify, compute_integration, couple_pair, hormone_step, hpa_step,
     modulate_hh, neuro_step, osc_step, phase_bin, phase_lock, ttfs_from_strength, ttfs_phase,
@@ -57,7 +58,8 @@ use ucf_ess::v1::{
     EmergencyStateCode, ExperienceKind, ExperienceRecord, ExperienceStore, HormoneRecord,
     IdAllocator, InMemoryEss, LfmSummaryRecord, LfmWindowRecord, NeuroRecord, NsrRecord,
     OutputRecord, PayloadClassification, PolicyProvenanceRecord, SandboxCallRecord,
-    SandboxReplyRecord, ThrottleRecord, ToolAuthRecord, ToolExecutionRecord, ToolRequestRecord,
+    SandboxReplyRecord, ThrottleRecord, ToolAuthRecord, ToolExecutionRecord, ToolIssueAuditRecord,
+    ToolPlanAuditRecord, ToolRequestRecord,
 };
 use ucf_fep::{
     check_coherence_invariants, fep_step, homeostasis_step, CoherenceCfg, CoherenceSnapshot,
@@ -95,6 +97,7 @@ use ucf_policy::{
     policy_bundle::verify_policy_bundle,
     policy_packs::load_and_merge_policy_graph,
     rate_limiter::RateLimiter,
+    tool_plans::{build_plan, issue_for_plan, make_plan_record},
 };
 use ucf_sle::v0::{sle_step, SleCfg, SleReason, SleSignals, SleState};
 use ucf_snn::v0::{encode, snn_emit, to_brainbus, FeatureEvent, SnnCfg, SnnEncodeCfg, SpikeSrc};
@@ -792,6 +795,7 @@ pub struct RuntimeOrchestrator {
     last_compute_milestone: Option<ComputeMilestone>,
     tool_gate: ToolGate,
     tool_governor: ToolGovernor,
+    spent_tool_tokens: HashSet<[u8; 32]>,
     last_nsr_risk: Option<f32>,
     last_nsr_penalty_q: u16,
     emergency_state: EmergencyState,
@@ -1919,6 +1923,7 @@ impl RuntimeOrchestrator {
                 Some(policy_provenance.bundle_sha256.clone()),
             ),
             tool_governor: ToolGovernor::default(),
+            spent_tool_tokens: HashSet::new(),
             last_nsr_risk: None,
             last_nsr_penalty_q: 0,
             emergency_state: EmergencyState::Inactive,
@@ -4453,6 +4458,138 @@ impl RuntimeOrchestrator {
                 self.persist_compute_budget_violation(decision.time, decision.corr, &v)?;
                 continue;
             }
+
+            let Some(intent) = selected_candidate.tool_intents.iter().find(|intent| {
+                request
+                    .tool_intent_digest
+                    .is_some_and(|digest| digest == intent.intent_digest)
+            }) else {
+                let eid = self.ids.next();
+                self.ess.append(ExperienceRecord::note(
+                    eid,
+                    decision.time,
+                    decision.corr,
+                    "tool_plan_missing_intent",
+                ))?;
+                continue;
+            };
+
+            let policy_graph_bytes = hex::decode(&self.policy_graph_digest).unwrap_or_default();
+            let mut policy_graph_digest = [0u8; 32];
+            if policy_graph_bytes.len() >= 32 {
+                policy_graph_digest.copy_from_slice(&policy_graph_bytes[..32]);
+            }
+            let plan = build_plan(
+                intent,
+                &request,
+                selected_candidate.candidate_id,
+                selected_candidate.digest,
+                policy_graph_digest,
+            );
+            let plan_record = make_plan_record(
+                &plan,
+                governance_signals.ebm_energy_mean_topk_q.map(|q| q.raw()),
+                Some(selected_nsr_v1.nsr_risk_q.raw()),
+            );
+            let eid_plan = self.ids.next();
+            let plan_payload = AuditPayload::ToolPlan(ToolPlanAuditRecord {
+                plan_digest_prefix: plan_record.plan_digest_prefix,
+                tool_id: plan_record.tool_id.clone(),
+                tool_class_id: plan_record.tool_class_id.clone(),
+                args_digest_prefix: plan_record.args_digest_prefix,
+                required_caps: plan_record.required_caps.clone(),
+                ebm_energy_q: plan_record.ebm_energy_q,
+                nsr_risk_q: plan_record.nsr_risk_q,
+            });
+            let plan_audit = ExperienceRecord::audit(
+                eid_plan,
+                decision.time,
+                decision.corr,
+                ExperienceKind::ToolPlan,
+                plan_payload,
+                self.audit_head_digest,
+            );
+            self.audit_head_digest = plan_audit.audit_digest.unwrap_or(self.audit_head_digest);
+            self.ess.append(plan_audit)?;
+
+            let capability_token = self
+                .tool_gate
+                .capabilities
+                .allows(&request, request.requested_at_t)
+                .ok();
+            let (issue_decision, issue_record) = issue_for_plan(
+                &plan,
+                &request,
+                capability_token,
+                issuance_decision.tier,
+                governance_signals,
+                policy_graph_digest,
+            );
+            let eid_issue = self.ids.next();
+            let issue_payload = AuditPayload::ToolIssue(ToolIssueAuditRecord {
+                plan_digest_prefix: issue_record.plan_digest_prefix,
+                issued: issue_decision.issued,
+                issued_caps: issue_record.issued_caps.clone(),
+                deny_reasons: issue_record.deny_reasons.clone(),
+                policy_graph_digest_prefix: issue_record.policy_graph_digest_prefix,
+                security_chain_digest_prefix: issue_record.security_chain_digest_prefix,
+            });
+            let issue_audit = ExperienceRecord::audit(
+                eid_issue,
+                decision.time,
+                decision.corr,
+                ExperienceKind::ToolIssue,
+                issue_payload,
+                self.audit_head_digest,
+            );
+            self.audit_head_digest = issue_audit.audit_digest.unwrap_or(self.audit_head_digest);
+            self.ess.append(issue_audit)?;
+
+            if !issue_decision.issued {
+                let eid_exec_denied = self.ids.next();
+                let exec_denied = ExperienceRecord::audit(
+                    eid_exec_denied,
+                    decision.time,
+                    decision.corr,
+                    ExperienceKind::ToolExecution,
+                    AuditPayload::ToolExecution(ToolExecutionRecord {
+                        tool_request_id: request.id,
+                        status: "Denied".to_string(),
+                        bytes_out: request.payload_hint.bytes_out,
+                        bytes_in: request.payload_hint.bytes_in,
+                        error_code: Some(issue_decision.deny_reasons.join(",")),
+                    }),
+                    self.audit_head_digest,
+                );
+                self.audit_head_digest = exec_denied.audit_digest.unwrap_or(self.audit_head_digest);
+                self.ess.append(exec_denied)?;
+                continue;
+            }
+
+            if let Some(token) = issue_decision.issued_token.as_ref() {
+                if self.spent_tool_tokens.contains(&token.token_digest) {
+                    let eid_exec_denied = self.ids.next();
+                    let exec_denied = ExperienceRecord::audit(
+                        eid_exec_denied,
+                        decision.time,
+                        decision.corr,
+                        ExperienceKind::ToolExecution,
+                        AuditPayload::ToolExecution(ToolExecutionRecord {
+                            tool_request_id: request.id,
+                            status: "Denied".to_string(),
+                            bytes_out: request.payload_hint.bytes_out,
+                            bytes_in: request.payload_hint.bytes_in,
+                            error_code: Some("token_replay".to_string()),
+                        }),
+                        self.audit_head_digest,
+                    );
+                    self.audit_head_digest =
+                        exec_denied.audit_digest.unwrap_or(self.audit_head_digest);
+                    self.ess.append(exec_denied)?;
+                    continue;
+                }
+            }
+
             let capability_summary = CapabilitySetSummary::from_set(&self.tool_gate.capabilities);
             let (module, op, input) = call_spec_from_control(&ctrl).map_err(|_| {
                 ucf_policy::errors::PolicyError::AdapterError("sandbox_call_spec_failed")
@@ -4516,6 +4653,7 @@ impl RuntimeOrchestrator {
 
             let (allowed, reason, token_digest) = match audit.auth {
                 AuthorizationOutcome::Allowed { token_digest } => {
+                    self.spent_tool_tokens.insert(token_digest);
                     (true, "allowed".to_string(), Some(token_digest))
                 }
                 AuthorizationOutcome::Denied { reason } => (false, format!("{reason:?}"), None),

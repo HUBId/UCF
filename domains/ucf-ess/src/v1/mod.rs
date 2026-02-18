@@ -16,7 +16,8 @@ pub use record::{
     ExperienceRecord, HormoneRecord, LfmSummaryRecord, LfmWindowRecord, NeuroRecord, NsrRecord,
     OutputRecord, PayloadClassification, PolicyProvenanceRecord, RetrievalDecisionRecord,
     RetrievalReasonCode, RetrievalSelectionRecord, RetrievedExperienceRole, SandboxCallRecord,
-    SandboxReplyRecord, ThrottleRecord, ToolAuthRecord, ToolExecutionRecord, ToolRequestRecord,
+    SandboxReplyRecord, ThrottleRecord, ToolAuthRecord, ToolExecutionRecord, ToolIssueAuditRecord,
+    ToolPlanAuditRecord, ToolRequestRecord,
 };
 pub use store::{ExperienceStore, IdAllocator, InMemoryEss};
 

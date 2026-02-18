@@ -50,6 +50,8 @@ pub fn data_class_for_payload(payload: &AuditPayload) -> DataClass {
         | AuditPayload::EbmConstraintProvenance(_)
         | AuditPayload::AuditCheckpoint(_) => DataClass::DigestOnly,
         AuditPayload::ToolRequest(_)
+        | AuditPayload::ToolPlan(_)
+        | AuditPayload::ToolIssue(_)
         | AuditPayload::ToolAuth(_)
         | AuditPayload::ToolExecution(_)
         | AuditPayload::SandboxCall(_)

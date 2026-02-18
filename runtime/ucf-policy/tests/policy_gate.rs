@@ -4,7 +4,13 @@ use ucf_frames::v1::{
     CorrelationId, DecisionCode, DecisionFrame, Intent, IntentId, IntentKind, IntentType,
     NeuromodulatorSnapshot,
 };
-use ucf_policy::{adapter::MockAdapter, errors::PolicyError, gem::Gem, pbm::Pbm};
+use ucf_policy::{
+    adapter::MockAdapter,
+    errors::PolicyError,
+    gem::{issue_capabilities, Gem, ToolGate},
+    pbm::Pbm,
+    rate_limiter::RateLimiter,
+};
 
 fn sim_time() -> SimTime {
     SimTime {
@@ -84,6 +90,19 @@ fn with_low_risk(mut decision: DecisionFrame) -> DecisionFrame {
     decision
 }
 
+fn execute_with_verified_bundle(
+    adapter: &mut MockAdapter,
+    ctrl: &ControlFrame,
+    decision: &DecisionFrame,
+) -> Result<ucf_policy::gem::ToolExecutionAudit, PolicyError> {
+    let mut gate = ToolGate::new(
+        issue_capabilities(Some(decision), ctrl.time.tick.get()),
+        RateLimiter::new(16),
+        Some("bundle".to_string()),
+    );
+    Gem::execute_with_gate(adapter, ctrl, Some(decision), ctrl.corr.0, &mut gate)
+}
+
 #[test]
 fn no_decision_no_action() {
     let ctrl = ControlFrame::new_text(
@@ -115,7 +134,7 @@ fn pbm_allows_external_output_text_and_gem_emits() {
     let decision = with_low_risk(Pbm::decide(&ctrl, None));
     let mut adapter = MockAdapter::default();
 
-    let result = Gem::execute(&mut adapter, &ctrl, Some(&decision));
+    let result = execute_with_verified_bundle(&mut adapter, &ctrl, &decision);
 
     assert_eq!(decision.decision, DecisionCode::Allow);
     assert_eq!(decision.intent, IntentType::ExternalCommunicate);
@@ -138,7 +157,7 @@ fn internal_thought_allowed_but_not_externalized() {
     let decision = Pbm::decide(&ctrl, None);
     let mut adapter = MockAdapter::default();
 
-    let result = Gem::execute(&mut adapter, &ctrl, Some(&decision));
+    let result = execute_with_verified_bundle(&mut adapter, &ctrl, &decision);
 
     assert_eq!(decision.decision, DecisionCode::Allow);
     assert!(result.is_ok());
@@ -163,7 +182,7 @@ fn external_output_text_with_allow_emits_text() {
     ));
     let mut adapter = MockAdapter::default();
 
-    let result = Gem::execute(&mut adapter, &ctrl, Some(&decision));
+    let result = execute_with_verified_bundle(&mut adapter, &ctrl, &decision);
 
     assert!(result.is_ok());
     assert_eq!(adapter.emitted, vec!["hello-world".to_string()]);
@@ -186,7 +205,7 @@ fn memory_write_bytes_with_allow_writes_memory() {
     ));
     let mut adapter = MockAdapter::default();
 
-    let result = Gem::execute(&mut adapter, &ctrl, Some(&decision));
+    let result = execute_with_verified_bundle(&mut adapter, &ctrl, &decision);
 
     assert!(result.is_ok());
     assert_eq!(adapter.mem_writes, 1);
@@ -214,7 +233,7 @@ fn gem_allow_brain_stimulus_emits_spikes() {
     ));
     let mut adapter = MockAdapter::default();
 
-    let result = Gem::execute(&mut adapter, &ctrl, Some(&decision));
+    let result = execute_with_verified_bundle(&mut adapter, &ctrl, &decision);
 
     assert!(result.is_ok());
     assert_eq!(adapter.brain_spikes().len(), 2);
