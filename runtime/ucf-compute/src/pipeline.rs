@@ -14,6 +14,8 @@ use crate::work_meter::WorkMeter;
 use crate::world_model::{
     obs_features_from_context, StageQuality, WorldModelInput, WorldModelOutput,
 };
+use std::time::Instant;
+
 use crate::{
     clamp01, fuse_signals, validate_risk_signal, AiComputeBackend, BackendPackConfig,
     BackendProfileId, ComputeBudget, ComputeError, ComputeInput, ComputeSignals, DegradePolicy,
@@ -299,6 +301,9 @@ impl AiComputeBackend for ComputePipelineBackend {
             neuro_arousal: None,
             governor_tier: Some(budget.governor_tier),
             prediction_error: Some(world_model_out.prediction_error),
+            risk: Some(ssm_out.pressure.clamp(0.0, 1.0)),
+            confidence: Some((1.0 - ssm_out.pressure).clamp(0.0, 1.0)),
+            prior_uncertainty: Some((1.0 - ssm_out.readout).clamp(0.0, 1.0)),
             seed: budget.seed,
         };
 
@@ -330,6 +335,7 @@ impl AiComputeBackend for ComputePipelineBackend {
         let lfm_name = lfm.name();
         let lfm_span = tracing::info_span!("lfm.step", kernel = lfm_name, t = input.t);
         let _lfm_enter = lfm_span.enter();
+        let lfm_started = Instant::now();
         let (lfm_out, lfm_degraded) = match lfm_meter.spend(220, "lfm/step") {
             Ok(()) => match lfm.step(&lfm_input, budget) {
                 Ok(output) => (output, false),
@@ -352,6 +358,8 @@ impl AiComputeBackend for ComputePipelineBackend {
             Err(other) => return Err(other),
         };
         let plasticity_record = lfm_out.plasticity.clone();
+        metrics::histogram!("ucf_lfm_ode_step_micros")
+            .record(lfm_started.elapsed().as_micros() as f64);
 
         let lfm_backend_label = if lfm_name.contains("candle") {
             "candle"
@@ -589,6 +597,7 @@ impl AiComputeBackend for ComputePipelineBackend {
 #[cfg(test)]
 mod tests {
     use crate::FrameId;
+
     use crate::{BackendPackConfig, BackendPackFactory};
 
     use super::*;

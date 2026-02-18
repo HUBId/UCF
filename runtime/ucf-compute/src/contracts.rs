@@ -234,6 +234,7 @@ impl LfmValidatorV1 {
             output.state_norm,
             output.deriv_norm,
             output.saturation_ratio,
+            output.homeostasis_error,
             input.surprise,
             input.sae_energy,
             input.pressure,
@@ -243,12 +244,16 @@ impl LfmValidatorV1 {
             }
         }
         let mut readout_hasher = Sha256::new();
-        readout_hasher.update(output.uncertainty.to_bits().to_le_bytes());
-        readout_hasher.update(output.stability.to_bits().to_le_bytes());
+        readout_hasher.update(output.uncertainty_q.to_le_bytes());
+        readout_hasher.update(output.stability_q.to_le_bytes());
+        readout_hasher.update(output.homeostasis_error_q.to_le_bytes());
         readout_hasher.update(output.liquid_state_digest);
         let expected: [u8; 32] = readout_hasher.finalize().into();
         if expected != output.liquid_readout_digest {
             report.add_hard(ViolationCode::ReadoutDigestMismatch);
+        }
+        if output.nan_inf_detected {
+            report.add_hard(ViolationCode::ScalarOutOfRange);
         }
         if serde_json::to_vec(output)
             .map(|buf| buf.len() > MAX_STAGE_ENCODED_BYTES)
