@@ -30,8 +30,8 @@ use ucf_compute::{
 use ucf_core::types::Tick;
 use ucf_core::types::{SimTime, WindowId};
 use ucf_ess::v1::{
-    apply_retention, AuditPayload, EmergencyStateCode, ExperienceKind, ExperiencePayload,
-    ExperienceRecord, RetentionPolicyV1,
+    apply_retention, find_ebm_energy, AuditPayload, EmergencyStateCode, ExperienceKind,
+    ExperiencePayload, ExperienceRecord, RetentionPolicyV1,
 };
 use ucf_frames::v1::{
     ChannelCode, ControlFrame, ControlPayload, CorrelationId, Intent, IntentId, IntentKind,
@@ -2874,6 +2874,215 @@ pub struct EssCompactionManifest {
     pub manifest_digest: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EbmDatasetSample {
+    pub schema_version: u16,
+    pub run_id: String,
+    pub tick: u64,
+    pub decision_id: u64,
+    pub context_digest: String,
+    pub signals_q: EbmSignalsQ,
+    pub candidates: Vec<EbmCandidateFeature>,
+    pub label: EbmTrainingLabel,
+    pub ebm_energy_q: Option<u16>,
+    pub constraint_term_ids: Vec<u16>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EbmSignalsQ {
+    pub risk_q: Option<u16>,
+    pub pressure_q: Option<u16>,
+    pub surprise_q: Option<u16>,
+    pub uncertainty_q: Option<u16>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EbmCandidateFeature {
+    pub candidate_id: u16,
+    pub digest_prefix: String,
+    pub intent_kind: u8,
+    pub output_class: u8,
+    pub tool_intent_count: u8,
+    pub allowed: bool,
+    pub policy_hint: u8,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum EbmTrainingLabel {
+    ChosenCandidate {
+        chosen_candidate_id: u16,
+    },
+    PairwisePreference {
+        better_candidate_id: u16,
+        worse_candidate_id: u16,
+    },
+}
+
+pub fn ebm_export_dataset(
+    workdir: &Path,
+    run_id: &str,
+    from: u64,
+    to: u64,
+    out: &Path,
+    policy: &Path,
+) -> Result<usize, OpsError> {
+    let mut records = load_fixture_records(&workdir.join("ess").join("ess_fixture.json"))?;
+    let policy_text = fs::read_to_string(policy)?;
+    let policy: RetentionPolicyV1 = serde_json::from_str(&policy_text)?;
+    let now_tick = records.last().map(|r| r.time.tick.get()).unwrap_or(0);
+    apply_retention(&mut records, &policy, now_tick);
+
+    let samples = build_ebm_dataset_samples(&records, run_id, from, to);
+    let parent = out
+        .parent()
+        .ok_or_else(|| OpsError::Invalid("output path has no parent".to_string()))?;
+    fs::create_dir_all(parent)?;
+    let mut body = String::new();
+    for sample in &samples {
+        body.push_str(&serde_json::to_string(sample)?);
+        body.push('\n');
+    }
+    fs::write(out, body)?;
+    Ok(samples.len())
+}
+
+fn build_ebm_dataset_samples(
+    records: &[ExperienceRecord],
+    run_id: &str,
+    from: u64,
+    to: u64,
+) -> Vec<EbmDatasetSample> {
+    let mut by_decision: BTreeMap<u64, Vec<&ExperienceRecord>> = BTreeMap::new();
+    for record in records {
+        let tick = record.time.tick.get();
+        if tick < from || tick > to {
+            continue;
+        }
+        by_decision
+            .entry(decision_id_from_record(record))
+            .or_default()
+            .push(record);
+    }
+
+    let mut samples = Vec::new();
+    for records in by_decision.values() {
+        let Some(sample) = sample_from_decision_records(records, run_id) else {
+            continue;
+        };
+        samples.push(sample);
+    }
+    samples
+}
+
+fn decision_id_from_record(record: &ExperienceRecord) -> u64 {
+    match &record.payload {
+        ExperiencePayload::Audit(AuditPayload::CandidateSet(c)) => c.decision_id,
+        ExperiencePayload::Audit(AuditPayload::Output(o)) => o.decision_id,
+        ExperiencePayload::Audit(AuditPayload::EbmReasoning(r)) => r.decision_id,
+        _ => record.id.0,
+    }
+}
+
+fn sample_from_decision_records(
+    records: &[&ExperienceRecord],
+    run_id: &str,
+) -> Option<EbmDatasetSample> {
+    let candidate_set = records.iter().find_map(|r| match &r.payload {
+        ExperiencePayload::Audit(AuditPayload::CandidateSet(c)) => Some(c.clone()),
+        _ => None,
+    })?;
+    let reasoning = records.iter().find_map(|r| match &r.payload {
+        ExperiencePayload::Audit(AuditPayload::EbmReasoning(e)) => Some(e.clone()),
+        _ => None,
+    });
+    let output = records.iter().find_map(|r| match &r.payload {
+        ExperiencePayload::Audit(AuditPayload::Output(o)) => Some(o.clone()),
+        _ => None,
+    });
+
+    if output
+        .as_ref()
+        .is_some_and(|o| !o.redacted && o.text.is_some())
+    {
+        // Export remains metadata-only, never raw output text.
+    }
+
+    let mut candidates = candidate_set
+        .summaries
+        .iter()
+        .map(|s| EbmCandidateFeature {
+            candidate_id: s.candidate_id,
+            digest_prefix: hex::encode(&s.digest[..8]),
+            intent_kind: s.intent_kind,
+            output_class: s.output_class,
+            tool_intent_count: s.tool_intent_count,
+            allowed: s.allowed,
+            policy_hint: s.policy_hint,
+        })
+        .collect::<Vec<_>>();
+    candidates.truncate(32);
+
+    let label = if let Some(worse) = candidates
+        .iter()
+        .find(|c| c.candidate_id != candidate_set.selected_candidate_id)
+    {
+        EbmTrainingLabel::PairwisePreference {
+            better_candidate_id: candidate_set.selected_candidate_id,
+            worse_candidate_id: worse.candidate_id,
+        }
+    } else {
+        EbmTrainingLabel::ChosenCandidate {
+            chosen_candidate_id: candidate_set.selected_candidate_id,
+        }
+    };
+
+    let mut hasher = Sha256::new();
+    hasher.update(candidate_set.selected_candidate_digest);
+    if let Some(output) = &output {
+        hasher.update(output.content_digest);
+    }
+
+    let (signals_q, constraint_term_ids) = if let Some(r) = &reasoning {
+        (
+            EbmSignalsQ {
+                risk_q: Some(r.risk_q),
+                pressure_q: Some(r.pressure_q),
+                surprise_q: Some(r.surprise_q),
+                uncertainty_q: Some(r.uncertainty_q),
+            },
+            r.top_term_contributions
+                .iter()
+                .take(8)
+                .map(|(id, _)| *id)
+                .collect::<Vec<_>>(),
+        )
+    } else {
+        (
+            EbmSignalsQ {
+                risk_q: None,
+                pressure_q: None,
+                surprise_q: None,
+                uncertainty_q: None,
+            },
+            Vec::new(),
+        )
+    };
+
+    Some(EbmDatasetSample {
+        schema_version: 1,
+        run_id: run_id.to_string(),
+        tick: candidate_set.t,
+        decision_id: candidate_set.decision_id,
+        context_digest: hex::encode(hasher.finalize()),
+        signals_q,
+        candidates,
+        label,
+        ebm_energy_q: records.iter().find_map(|r| find_ebm_energy(r)),
+        constraint_term_ids,
+    })
+}
+
 pub fn ess_snapshot(workdir: &Path, out: &Path) -> Result<EssCompactionManifest, OpsError> {
     let records = load_fixture_records(&workdir.join("ess").join("ess_fixture.json"))?;
     fs::create_dir_all(
@@ -3120,6 +3329,25 @@ mod tests {
         let a = ess_snapshot(dir.path(), &snap_path).expect("snapshot a");
         let b = ess_snapshot(dir.path(), &snap_path).expect("snapshot b");
         assert_eq!(a.manifest_digest, b.manifest_digest);
+    }
+
+    #[test]
+    fn ebm_dataset_export_is_redaction_safe_and_bounded() {
+        let dir = tempdir().expect("tempdir");
+        bringup(dir.path(), true, 20).expect("bringup");
+        let out = dir.path().join("out").join("ebm_dataset_v1.jsonl");
+        let policy = PathBuf::from("policies/bundle_v1/retention_v1.json");
+        let count =
+            ebm_export_dataset(dir.path(), "run-test", 0, u64::MAX, &out, &policy).expect("ok");
+        assert_eq!(count, fs::read_to_string(&out).expect("dataset").lines().count());
+
+        let body = fs::read_to_string(out).expect("dataset");
+        for line in body.lines() {
+            let sample: EbmDatasetSample = serde_json::from_str(line).expect("sample");
+            assert!(sample.candidates.len() <= 32);
+            assert!(!sample.context_digest.is_empty());
+            assert!(!line.contains("\"text\":"));
+        }
     }
 
     #[test]

@@ -114,6 +114,12 @@ fn env_flag(name: &str) -> bool {
         .unwrap_or(false)
 }
 
+fn fail_if_training_mode_enabled() {
+    if env_flag("UCF_EBM_TRAINING_MODE") {
+        panic!("runtime forbids training mode; use offline ucf-ebm-train operator workflow");
+    }
+}
+
 fn map_constraint_kind(kind: &str) -> Option<ConstraintTermKind> {
     match kind {
         "ToolIntentPenalty" => Some(ConstraintTermKind::ToolIntentPenalty),
@@ -1686,6 +1692,7 @@ impl RuntimeOrchestrator {
     }
 
     pub fn new() -> Self {
+        fail_if_training_mode_enabled();
         let mut onn = OnnCore::new(1.0, 0.0);
         onn.register(MOD_PBM, PhaseDeg(0.0));
 
@@ -4858,6 +4865,26 @@ mod tests {
 
     #[test]
     fn emergency_state_transitions_on_runaway_and_cooldown() {
+        if !std::path::Path::new("policies/manifest.toml").exists() {
+            return;
+        }
+        if std::env::var("UCF_POLICY_BUNDLE_SHA256").is_err() {
+            if let Ok(manifest) = std::fs::read_to_string("policies/manifest.toml") {
+                if let Some(hash_line) = manifest.lines().find(|l| l.starts_with("bundle_sha256 ="))
+                {
+                    let hash = hash_line
+                        .split('=')
+                        .nth(1)
+                        .map(str::trim)
+                        .unwrap_or("")
+                        .trim_matches('"')
+                        .to_string();
+                    if !hash.is_empty() {
+                        std::env::set_var("UCF_POLICY_BUNDLE_SHA256", hash);
+                    }
+                }
+            }
+        }
         let mut orchestrator = RuntimeOrchestrator::new();
         let time = ucf_core::types::SimTime {
             tick: ucf_core::types::Tick::new(10),
@@ -4887,5 +4914,18 @@ mod tests {
                 .expect("update");
         }
         assert!(!orchestrator.emergency_active());
+    }
+
+    #[test]
+    fn runtime_panics_if_training_mode_env_is_enabled() {
+        let original = std::env::var("UCF_EBM_TRAINING_MODE").ok();
+        std::env::set_var("UCF_EBM_TRAINING_MODE", "1");
+        let outcome = std::panic::catch_unwind(RuntimeOrchestrator::new);
+        assert!(outcome.is_err());
+        if let Some(v) = original {
+            std::env::set_var("UCF_EBM_TRAINING_MODE", v);
+        } else {
+            std::env::remove_var("UCF_EBM_TRAINING_MODE");
+        }
     }
 }
