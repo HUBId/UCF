@@ -98,6 +98,7 @@ pub struct DecisionFrame {
     pub meta: DecisionMeta,
     pub compute_summary: Option<ComputeSignalsSummary>,
     pub gating_reason: Option<&'static str>,
+    pub policy_graph_digest_prefix: Option<[u8; 8]>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -116,6 +117,7 @@ impl DecisionFrame {
             meta: DecisionMeta::baseline(),
             compute_summary: None,
             gating_reason: None,
+            policy_graph_digest_prefix: None,
         }
     }
 
@@ -136,6 +138,7 @@ impl DecisionFrame {
             meta: DecisionMeta::baseline(),
             compute_summary: None,
             gating_reason: None,
+            policy_graph_digest_prefix: None,
         }
     }
 
@@ -151,6 +154,7 @@ impl DecisionFrame {
             meta: DecisionMeta::baseline(),
             compute_summary: None,
             gating_reason: None,
+            policy_graph_digest_prefix: None,
         }
     }
 
@@ -172,6 +176,7 @@ impl DecisionFrame {
             meta: DecisionMeta::baseline(),
             compute_summary: None,
             gating_reason: None,
+            policy_graph_digest_prefix: None,
         }
     }
 
@@ -194,6 +199,7 @@ impl DecisionFrame {
             meta: DecisionMeta::baseline(),
             compute_summary: None,
             gating_reason: None,
+            policy_graph_digest_prefix: None,
         }
     }
 
@@ -215,6 +221,7 @@ impl DecisionFrame {
             meta: DecisionMeta::baseline(),
             compute_summary: None,
             gating_reason: None,
+            policy_graph_digest_prefix: None,
         }
     }
 
@@ -232,6 +239,13 @@ impl DecisionFrame {
 
     pub fn with_gating_reason(mut self, gating_reason: Option<&'static str>) -> Self {
         self.gating_reason = gating_reason;
+        self
+    }
+}
+
+impl DecisionFrame {
+    pub fn with_policy_graph_digest_prefix(mut self, digest: Option<[u8; 8]>) -> Self {
+        self.policy_graph_digest_prefix = digest;
         self
     }
 }

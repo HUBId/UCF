@@ -1,0 +1,35 @@
+schema_version = 1
+
+[[terms]]
+id = 1
+kind = "ToolIntentPenalty"
+weight_q = 18000
+
+[[terms]]
+id = 2
+kind = "CapabilityForbidden"
+weight_q = 65535
+capability_class_id = 112
+
+[[terms]]
+id = 3
+kind = "ContextRiskAmplifier"
+weight_q = 22000
+threshold_q = 30000
+
+[[terms]]
+id = 4
+kind = "EmergencyDenyAllBias"
+weight_q = 62000
+
+[[terms]]
+id = 5
+kind = "BudgetExhaustedBias"
+weight_q = 12000
+governor_tier_min = 3
+
+[[terms]]
+id = 6
+kind = "NsrRiskAmplifier"
+weight_q = 16000
+threshold_q = 36000

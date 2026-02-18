@@ -6,9 +6,10 @@ use ucf_ops::{
     adversarial_run, bench_run, bringup, diagnostics, ebm_export_dataset, ess_compact,
     ess_snapshot, explain_tick, export_bugreport, load_signoff_checklist, metrics_snapshot,
     metrics_summary, metrics_trend, models_probe, models_verify, one_command_bringup, out_manifest,
-    readiness_gate, release_signoff_validate, replay_audit, replay_bugreport, run_status,
-    runs_list, runs_search, runs_show, security_verify_chain, verify_bugreport, AdversarialRunArgs,
-    BenchArgs, ExplainTickRequest, ExportArgs, GateStatus,
+    policy_diff, policy_explain, policy_validate, readiness_gate, release_signoff_validate,
+    replay_audit, replay_bugreport, run_status, runs_list, runs_search, runs_show,
+    security_verify_chain, verify_bugreport, AdversarialRunArgs, BenchArgs, ExplainTickRequest,
+    ExportArgs, GateStatus,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -189,6 +190,63 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             .into(),
                     )
                 }
+            }
+        }
+
+        "policy" => {
+            let sub = args.get(2).map(String::as_str).unwrap_or("help");
+            match sub {
+                "validate" => {
+                    let pack = arg_value(&args, "--pack")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("policies/packs/base_v1"));
+                    let overlay = arg_value(&args, "--overlay").map(PathBuf::from);
+                    let report = policy_validate(&pack, overlay.as_deref())?;
+                    println!("policy_graph_digest={}", report.policy_graph_digest);
+                    println!("base_pack_digest={}", report.base_pack);
+                    if let Some(ov) = report.overlay_pack {
+                        println!("overlay_pack_digest={ov}");
+                    }
+                }
+                "diff" => {
+                    let a_pack = arg_value(&args, "--a-pack")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("policies/packs/base_v1"));
+                    let b_pack = arg_value(&args, "--b-pack")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("policies/packs/base_v1"));
+                    let a_overlay = arg_value(&args, "--a-overlay").map(PathBuf::from);
+                    let b_overlay = arg_value(&args, "--b-overlay").map(PathBuf::from);
+                    let report =
+                        policy_diff(&a_pack, a_overlay.as_deref(), &b_pack, b_overlay.as_deref())?;
+                    println!("digest_a={}", report.digest_a);
+                    println!("digest_b={}", report.digest_b);
+                    for d in report.thresholds {
+                        println!("threshold_diff={d}");
+                    }
+                    for d in report.budgets {
+                        println!("budget_diff={d}");
+                    }
+                    for d in report.allowlists {
+                        println!("allowlist_diff={d}");
+                    }
+                }
+                "explain" => {
+                    let Some(prefix) = arg_value(&args, "--digest") else {
+                        return Err("usage: ucf-ops policy explain --digest <prefix>".into());
+                    };
+                    if let Some(report) = policy_explain(&workdir, &prefix)? {
+                        println!("run_id={}", report.run_id);
+                        println!("policy_graph_digest={}", report.policy_graph_digest);
+                        println!("base_pack_digest={}", report.base_pack_digest);
+                        if let Some(ov) = report.overlay_pack_digest {
+                            println!("overlay_pack_digest={ov}");
+                        }
+                    } else {
+                        println!("not_found");
+                    }
+                }
+                _ => return Err("usage: ucf-ops policy <validate|diff|explain> ...".into()),
             }
         }
         "metrics-snapshot" => {

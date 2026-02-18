@@ -3550,6 +3550,7 @@ dependencies = [
  "metrics",
  "serde",
  "sha2",
+ "tempfile",
  "thiserror 1.0.69",
  "toml",
  "tracing",

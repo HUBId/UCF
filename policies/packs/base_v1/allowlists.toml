@@ -1,0 +1,7 @@
+[values]
+filesystem_models_root = "./models:read"
+filesystem_out_root = "./out:write_ops_only"
+filesystem_ess_root = "./runtime:read_write_internal"
+network_enabled = "false"
+remote_compute_enabled = "false"
+process_exec_enabled = "false"

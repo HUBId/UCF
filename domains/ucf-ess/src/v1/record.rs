@@ -229,6 +229,7 @@ pub struct CapabilityIssuanceRecord {
     pub nsr_penalty_q: u16,
     pub ebm_energy_used_q: u16,
     pub policy_bundle_hash: String,
+    pub policy_graph_digest: String,
     pub t: u64,
     pub decision_id: u64,
     pub candidate_id: Option<u16>,
@@ -251,6 +252,9 @@ pub struct PolicyProvenanceRecord {
     pub run_id: String,
     pub bundle_version: String,
     pub bundle_hash: String,
+    pub policy_graph_digest: String,
+    pub base_pack_digest: String,
+    pub overlay_pack_digest: Option<String>,
     pub enabled_features: Vec<String>,
     pub schema_version: u16,
 }
@@ -280,6 +284,7 @@ pub enum EmergencyStateCode {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EmergencyRecord {
     pub policy_bundle_hash: String,
+    pub policy_graph_digest: String,
     pub t: u64,
     pub state: EmergencyStateCode,
     pub reason: EmergencyReasonCode,

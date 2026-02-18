@@ -72,6 +72,8 @@ fn with_low_risk(mut decision: DecisionFrame) -> DecisionFrame {
         lfm_quality: None,
         coherence: None,
         instability: None,
+        coherence_q: None,
+        instability_q: None,
         phi_proxy: None,
         coherence_digest: None,
         free_energy_proxy_q: None,
