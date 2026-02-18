@@ -337,6 +337,7 @@ fn map_dtype(dtype: DType) -> safetensors::Dtype {
     feature = "llm-candle",
     feature = "lfm-candle"
 ))]
+#[allow(dead_code)]
 fn map_candle_dtype(dtype: DType) -> Result<CandleDType, WeightErr> {
     match dtype {
         DType::F16 => Ok(CandleDType::F16),

@@ -373,17 +373,17 @@ impl BackendPackFactory {
             ),
         };
 
-        let _world_model_hash = model_store
+        let world_model_hash = model_store
             .verify_slot(ModelSlot::WorldJepa)
             .ok()
             .map(|slot| slot.sha256)
             .unwrap_or([0x21; 32]);
-        let _sae_model_hash = model_store
+        let sae_model_hash = model_store
             .verify_slot(ModelSlot::Sae)
             .ok()
             .map(|slot| slot.sha256)
             .unwrap_or([0x31; 32]);
-        let _ssm_model_hash = model_store
+        let ssm_model_hash = model_store
             .verify_slot(ModelSlot::Ssm)
             .ok()
             .map(|slot| slot.sha256)
