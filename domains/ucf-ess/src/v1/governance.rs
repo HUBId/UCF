@@ -41,7 +41,9 @@ pub struct RetentionStats {
 pub fn data_class_for_payload(payload: &AuditPayload) -> DataClass {
     match payload {
         AuditPayload::CandidateSet(_) => DataClass::ScalarSummary,
-        AuditPayload::EbmReasoning(_) => DataClass::ScalarSummary,
+        AuditPayload::EbmReasoning(_) | AuditPayload::EbmEnvelopeViolation(_) => {
+            DataClass::ScalarSummary
+        }
         AuditPayload::CapabilityIssuance(_) => DataClass::ScalarSummary,
         AuditPayload::Output(_) => DataClass::TextPayload,
         AuditPayload::PolicyProvenance(_) | AuditPayload::AuditCheckpoint(_) => {

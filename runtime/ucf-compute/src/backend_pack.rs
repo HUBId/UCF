@@ -48,6 +48,7 @@ pub enum BackendComponentId {
     CandleJepaV1 = 10,
     CandleSaeV1 = 11,
     CandleSsmV1 = 12,
+    CandleEbmV1 = 13,
     BurnJepaV1 = 20,
     BurnSaeV1 = 21,
     BurnSsmV1 = 22,
