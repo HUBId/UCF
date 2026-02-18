@@ -1,5 +1,6 @@
 use sha2::{Digest, Sha256};
 
+use crate::contracts::StageContractVersion;
 use crate::evidence::{quantize_signed_unit, quantize_unit_u16};
 use crate::feature_extractor::SmallNotes;
 use crate::world_model::StageQuality;
@@ -54,6 +55,9 @@ impl SsmOutput {
 
 pub trait SsmKernel: Send + Sync {
     fn name(&self) -> &'static str;
+    fn contract_version(&self) -> StageContractVersion {
+        StageContractVersion::V1
+    }
     fn step(&mut self, input: &SsmInput, budget: ComputeBudget) -> Result<SsmOutput, ComputeError>;
 }
 

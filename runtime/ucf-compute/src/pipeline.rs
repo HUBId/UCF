@@ -2,6 +2,11 @@ use sha2::{Digest, Sha256};
 use std::sync::Arc;
 
 use crate::backend_pack::{BackendPack, BackendPackFactory};
+use crate::contracts::{
+    validate_evidence_chain_digest, ContractRegistry, LfmValidatorV1, SaeValidatorV1,
+    SsmValidatorV1, StageContractRegistry, StageContractVersion, StageKind, ValidationStatus,
+    ViolationCode, WorldValidatorV1,
+};
 use crate::feature_extractor::{SaeOutput, ToySaeExtractor};
 use crate::lfm::{LfmInput, LfmOutput};
 use crate::ssm::{SsmInput, SsmOutput};
@@ -101,6 +106,8 @@ impl AiComputeBackend for ComputePipelineBackend {
 
         let mut exceeded_stage: Option<&'static str> = None;
         let pack_meta = self.pack.meta();
+        let registry = StageContractRegistry;
+        let requested = StageContractVersion::V1;
 
         global_meter.spend(40, "world_model/step")?;
         world_meter.spend(40, "world_model/step")?;
@@ -112,6 +119,19 @@ impl AiComputeBackend for ComputePipelineBackend {
                 reason: "world model mutex poisoned".to_string(),
             })?;
         let world_model_name = world.name();
+        if !registry.supports(
+            StageKind::World,
+            pack_meta.world_backend,
+            world.contract_version(),
+        ) || world.contract_version() != requested
+        {
+            let mut unavailable = ComputeSignals::unavailable(input, budget, self.name());
+            unavailable.validation_status = ValidationStatus::Degraded;
+            unavailable.violation_reason_mask =
+                1_u32 << (ViolationCode::BackendContractMismatch as u32);
+            unavailable.backend_id = pack_meta.world_backend as u16;
+            return Ok(unavailable);
+        }
         let world_input = WorldModelInput {
             t: input.t,
             context_digest: input.context_digest,
@@ -134,6 +154,7 @@ impl AiComputeBackend for ComputePipelineBackend {
         let span = tracing::info_span!("world_model.step", predictor = world_model_name, t = input.t, pred = %hex::encode(&world_model_out.prediction_digest[..4]));
         let _enter = span.enter();
         drop(world);
+        let mut validation_report = WorldValidatorV1::validate(&world_input, &world_model_out);
         let surprise = world_model_out.surprise;
         metrics::histogram!("ucf_world_prediction_error")
             .record(f64::from(world_model_out.prediction_error));
@@ -146,6 +167,18 @@ impl AiComputeBackend for ComputePipelineBackend {
         let evidence_seed: [u8; 32] = Sha256::digest(input.context_digest).into();
         let sae_input =
             ToySaeExtractor::make_input(input, &world_model_out, budget.seed, evidence_seed);
+        if !registry.supports(
+            StageKind::Sae,
+            pack_meta.sae_backend,
+            self.pack.sae().contract_version(),
+        ) || self.pack.sae().contract_version() != requested
+        {
+            validation_report.add_hard(ViolationCode::BackendContractMismatch);
+            let mut out = ComputeSignals::unavailable(input, budget, self.name());
+            out.backend_id = pack_meta.sae_backend as u16;
+            out.violation_reason_mask = validation_report.violation_mask;
+            return Ok(out);
+        }
         let sae_span = tracing::info_span!(
             "sae.extract",
             extractor = self.pack.sae().name(),
@@ -175,6 +208,7 @@ impl AiComputeBackend for ComputePipelineBackend {
         };
 
         metrics::histogram!("ucf_sae_spike_count").record(f64::from(sae_out.spike_count));
+        validation_report = validation_report.merge(SaeValidatorV1::validate(&sae_input, &sae_out));
         metrics::gauge!("ucf_sae_sparsity").set(f64::from(sae_out.sparsity));
         metrics::histogram!("ucf_sae_energy").record(f64::from(sae_out.energy));
         if sae_out.quality == StageQuality::DegradedFallback {
@@ -193,6 +227,23 @@ impl AiComputeBackend for ComputePipelineBackend {
         };
 
         global_meter.spend(220, "ssm/step")?;
+        if !registry.supports(
+            StageKind::Ssm,
+            pack_meta.ssm_backend,
+            self.pack
+                .ssm()
+                .lock()
+                .map_err(|_| ComputeError::InvalidInput {
+                    reason: "ssm mutex poisoned".to_string(),
+                })?
+                .contract_version(),
+        ) {
+            validation_report.add_hard(ViolationCode::BackendContractMismatch);
+            let mut out = ComputeSignals::unavailable(input, budget, self.name());
+            out.backend_id = pack_meta.ssm_backend as u16;
+            out.violation_reason_mask = validation_report.violation_mask;
+            return Ok(out);
+        }
         let mut ssm = self
             .pack
             .ssm()
@@ -225,6 +276,8 @@ impl AiComputeBackend for ComputePipelineBackend {
             Err(other) => return Err(other),
         };
 
+        validation_report =
+            validation_report.merge(SsmValidatorV1::validate(&ssm_input, &ssm_out, None));
         metrics::histogram!("ucf_ssm_pressure").record(f64::from(ssm_out.pressure));
         metrics::gauge!("ucf_ssm_state_norm").set(f64::from(ssm_out.state_norm));
         if ssm_out.quality == StageQuality::DegradedFallback {
@@ -250,6 +303,23 @@ impl AiComputeBackend for ComputePipelineBackend {
         };
 
         global_meter.spend(220, "lfm/step")?;
+        if !registry.supports(
+            StageKind::Lfm,
+            pack_meta.lfm_backend,
+            self.pack
+                .lfm()
+                .lock()
+                .map_err(|_| ComputeError::InvalidInput {
+                    reason: "lfm mutex poisoned".to_string(),
+                })?
+                .contract_version(),
+        ) {
+            validation_report.add_hard(ViolationCode::BackendContractMismatch);
+            let mut out = ComputeSignals::unavailable(input, budget, self.name());
+            out.backend_id = pack_meta.lfm_backend as u16;
+            out.violation_reason_mask = validation_report.violation_mask;
+            return Ok(out);
+        }
         let mut lfm = self
             .pack
             .lfm()
@@ -301,6 +371,7 @@ impl AiComputeBackend for ComputePipelineBackend {
             }
         }
 
+        validation_report = validation_report.merge(LfmValidatorV1::validate(&lfm_input, &lfm_out));
         let pressure = ssm_out.pressure;
         let (base_risk, base_confidence) = fuse_signals(
             surprise * self.fusion.world_weight,
@@ -397,6 +468,10 @@ impl AiComputeBackend for ComputePipelineBackend {
             lfm_quality: Some(lfm_out.quality),
             plasticity_record: plasticity_record.clone(),
             budget_exceeded_stage: exceeded_stage,
+            contract_version: StageContractVersion::V1,
+            backend_id: pack_meta.pack_id.0 as u16,
+            validation_status: validation_report.status,
+            violation_reason_mask: validation_report.violation_mask,
         }
         .summary(self.name());
 
@@ -458,6 +533,17 @@ impl AiComputeBackend for ComputePipelineBackend {
         }
         notes.sort();
 
+        let chain_report =
+            validate_evidence_chain_digest(&crate::evidence::EvidenceChain::from_compute(
+                input,
+                &sae_out.spikes,
+                &risk_signal,
+                Some(sae_out.quality),
+                Some(ssm_out.quality),
+                Some(lfm_out.quality),
+            ));
+        validation_report = validation_report.merge(chain_report);
+
         Ok(ComputeSignals {
             surprise,
             pressure,
@@ -491,6 +577,10 @@ impl AiComputeBackend for ComputePipelineBackend {
             lfm_quality: Some(lfm_out.quality),
             plasticity_record: plasticity_record.clone(),
             budget_exceeded_stage: exceeded_stage,
+            contract_version: StageContractVersion::V1,
+            backend_id: pack_meta.pack_id.0 as u16,
+            validation_status: validation_report.status,
+            violation_reason_mask: validation_report.violation_mask,
         }
         .bounded())
     }

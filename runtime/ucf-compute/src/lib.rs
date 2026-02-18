@@ -18,6 +18,7 @@ pub mod backends;
 ))]
 pub mod candle_weights;
 pub mod capabilities;
+pub mod contracts;
 pub mod enablement;
 pub mod evidence;
 pub mod feature_extractor;
@@ -38,6 +39,7 @@ pub use backend_pack::{
     BackendPackKind, BackendPackMeta, BackendSwapRequest, FixtureId, FixtureManager,
 };
 pub use backends::{build_backend, ComputeBackendConfig, ComputeBackendKind};
+pub use contracts::{StageContractVersion, ValidationStatus};
 pub use enablement::{
     EnablementComputeBackend, EnablementConfig, RealEnablementMode, SlotEnablement, SlotMode,
 };
@@ -106,6 +108,10 @@ pub struct ComputeSignals {
     pub lfm_quality: Option<StageQuality>,
     pub plasticity_record: Option<PlasticityRecord>,
     pub budget_exceeded_stage: Option<&'static str>,
+    pub contract_version: StageContractVersion,
+    pub backend_id: u16,
+    pub validation_status: ValidationStatus,
+    pub violation_reason_mask: u32,
 }
 
 impl ComputeSignals {
@@ -221,6 +227,10 @@ impl ComputeSignals {
             compute_chain_digest: evidence_chain.chain_digest,
             compute_code_version: evidence_chain.code_version.as_str(),
             budget_exceeded_stage: self.budget_exceeded_stage,
+            contract_version: self.contract_version.as_u16(),
+            backend_id: self.backend_id,
+            validation_status: self.validation_status,
+            violation_reason_mask: self.violation_reason_mask,
         }
     }
 
@@ -274,6 +284,10 @@ impl ComputeSignals {
             lfm_quality: None,
             plasticity_record: None,
             budget_exceeded_stage: None,
+            contract_version: StageContractVersion::V1,
+            backend_id: 0,
+            validation_status: ValidationStatus::Degraded,
+            violation_reason_mask: 0,
         }
     }
 }
@@ -447,6 +461,10 @@ pub struct ComputeSignalsSummary {
     pub compute_chain_digest: [u8; 32],
     pub compute_code_version: &'static str,
     pub budget_exceeded_stage: Option<&'static str>,
+    pub contract_version: u16,
+    pub backend_id: u16,
+    pub validation_status: ValidationStatus,
+    pub violation_reason_mask: u32,
 }
 
 pub fn fuse_signals(surprise: f32, pressure: f32, energy: f32) -> (f32, f32) {
@@ -674,6 +692,10 @@ mod tests {
             lfm_quality: None,
             plasticity_record: None,
             budget_exceeded_stage: None,
+            contract_version: StageContractVersion::V1,
+            backend_id: 0,
+            validation_status: ValidationStatus::Degraded,
+            violation_reason_mask: 0,
         }
         .bounded();
         assert_eq!(bounded.spikes.len(), MAX_SPIKES);
