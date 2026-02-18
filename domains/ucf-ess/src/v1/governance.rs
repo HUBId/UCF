@@ -54,7 +54,9 @@ pub fn data_class_for_payload(payload: &AuditPayload) -> DataClass {
         | AuditPayload::Throttle(_)
         | AuditPayload::Emergency(_)
         | AuditPayload::RemoteCall(_)
-        | AuditPayload::RemoteCallDenied(_) => DataClass::ScalarSummary,
+        | AuditPayload::RemoteCallDenied(_)
+        | AuditPayload::ComputeBudgetWindow(_)
+        | AuditPayload::ComputeBudgetViolation(_) => DataClass::ScalarSummary,
     }
 }
 

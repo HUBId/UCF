@@ -40,6 +40,8 @@ pub enum ExperienceKind {
     PolicyProvenance,
     RemoteCall,
     RemoteCallDenied,
+    ComputeBudgetWindow,
+    ComputeBudgetViolation,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -93,6 +95,8 @@ pub enum AuditPayload {
     PolicyProvenance(PolicyProvenanceRecord),
     RemoteCall(RemoteCallRecord),
     RemoteCallDenied(RemoteCallDeniedRecord),
+    ComputeBudgetWindow(ComputeBudgetWindowRecord),
+    ComputeBudgetViolation(ComputeBudgetViolationRecord),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -116,6 +120,42 @@ pub struct RemoteCallDeniedRecord {
     pub reason: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ComputeBudgetWindowRecord {
+    pub t0: u64,
+    pub t1: u64,
+    pub window: u64,
+    pub primary_available_start: u64,
+    pub primary_spent_start: u64,
+    pub primary_available_end: u64,
+    pub primary_spent_end: u64,
+    pub shadow_available_start: u64,
+    pub shadow_spent_start: u64,
+    pub shadow_available_end: u64,
+    pub shadow_spent_end: u64,
+    pub llm_spent: u64,
+    pub governor_spent: u64,
+    pub jepa_spent: u64,
+    pub sae_spent: u64,
+    pub ssm_spent: u64,
+    pub lfm_spent: u64,
+    pub tool_spent: u64,
+    pub governor_tier_mean_q: u16,
+    pub governor_tier_max: u8,
+    pub policy_hash_prefix: [u8; 8],
+    pub schema_version: u16,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ComputeBudgetViolationRecord {
+    pub t: u64,
+    pub stage: String,
+    pub pool: String,
+    pub reason: String,
+    pub attempted_cost: u64,
+    pub available: u64,
+    pub schema_version: u16,
+}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CapabilityIssuanceRecord {
     pub policy_bundle_hash: String,
