@@ -1,5 +1,6 @@
 use sha2::{Digest, Sha256};
 
+use crate::contracts::StageContractVersion;
 use crate::evidence::{quantize_signed_unit, quantize_unit_u16};
 use crate::feature_extractor::SmallNotes;
 use crate::world_model::StageQuality;
@@ -127,6 +128,9 @@ pub struct PlasticityRecord {
 
 pub trait LfmKernel: Send + Sync {
     fn name(&self) -> &'static str;
+    fn contract_version(&self) -> StageContractVersion {
+        StageContractVersion::V1
+    }
     fn reset_session(&mut self, seed: u64);
     fn step(&mut self, input: &LfmInput, budget: ComputeBudget) -> Result<LfmOutput, ComputeError>;
 }

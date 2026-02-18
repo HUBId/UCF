@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use sha2::{Digest, Sha256};
 
+use crate::contracts::StageContractVersion;
 use crate::feature_extractor::{SaeInput, SaeOutput};
 use crate::ssm::SsmKernel;
 use crate::world_model::{WorldModelInput, WorldModelOutput};
@@ -59,6 +60,9 @@ const VOCAB: [&str; 32] = [
 
 pub trait WorldModelPredictor: Send + Sync {
     fn name(&self) -> &'static str;
+    fn contract_version(&self) -> StageContractVersion {
+        StageContractVersion::V1
+    }
     fn step(
         &mut self,
         input: &WorldModelInput,
@@ -68,6 +72,9 @@ pub trait WorldModelPredictor: Send + Sync {
 
 pub trait SaeExtractor: Send + Sync {
     fn name(&self) -> &'static str;
+    fn contract_version(&self) -> StageContractVersion {
+        StageContractVersion::V1
+    }
     fn extract(&self, input: &SaeInput, budget: ComputeBudget) -> Result<SaeOutput, ComputeError>;
 }
 
@@ -91,6 +98,9 @@ impl LlmOutput {
 
 pub trait LlmInference: Send + Sync {
     fn name(&self) -> &'static str;
+    fn contract_version(&self) -> StageContractVersion {
+        StageContractVersion::V1
+    }
     fn infer(&self, req: &LlmRequest, budget: ComputeBudget) -> Result<LlmResponse, ComputeError>;
 }
 
@@ -248,7 +258,7 @@ impl LlmResponse {
         response
     }
 
-    fn compute_digest(&self) -> [u8; 32] {
+    pub(crate) fn compute_digest(&self) -> [u8; 32] {
         let mut hasher = Sha256::new();
         hasher.update([self.status as u8]);
         hasher.update((self.text.len() as u32).to_le_bytes());
