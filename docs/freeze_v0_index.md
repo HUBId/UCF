@@ -22,6 +22,9 @@ Canonical references defining **Real Compute Onboarding v0**.
 | `docs/operator_runs.md` | 2026-02-17 | runtime/ucf-ops | normative |
 | `docs/readiness_gate.md` | 2026-02-17 | runtime/ucf-ops | normative |
 | `docs/adversarial_harness.md` | 2026-02-17 | runtime/ucf-ops | normative |
+| `docs/ebm_reasoner.md` | 2026-02-18 | runtime/ucf-runtime | normative |
+| `docs/ebm_constraints.md` | 2026-02-18 | policies + runtime/ucf-policy | normative |
+| `docs/ebm_memory_loop.md` | 2026-02-18 | domains/ucf-ess + runtime/ucf-runtime | normative |
 | `docs/runbooks/bringup.md` | 2026-02-17 | runbooks | normative |
 | `docs/runbooks/diagnostics.md` | 2026-02-17 | runbooks | informative |
 | `docs/runbooks/incident_playbook.md` | 2026-02-17 | runbooks | informative |

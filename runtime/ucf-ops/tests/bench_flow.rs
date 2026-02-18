@@ -21,4 +21,6 @@ fn bench_command_produces_report() {
     assert_eq!(report.ticks, 16);
     assert!(report.stage_latency_ms.contains_key("world"));
     assert!(report.stage_latency_ms.contains_key("llm"));
+    assert!(report.stage_latency_ms.contains_key("ebm"));
+    assert!(report.counters.ebm_candidates_scored_total > 0);
 }

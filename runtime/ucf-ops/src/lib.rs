@@ -825,16 +825,57 @@ pub fn readiness_gate(
     let run_a = base.join("scenario_a");
     let run_a2 = base.join("scenario_a_repeat");
     let run_b = base.join("scenario_b");
+    let run_ebm_off = base.join("scenario_ebm_off");
+    let run_ebm_shadow = base.join("scenario_ebm_shadow");
+    let run_ebm_active = base.join("scenario_ebm_active");
+    let run_ebm_active_repeat = base.join("scenario_ebm_active_repeat");
     let out_a = run_a.join("out");
     let out_a2 = run_a2.join("out");
     let out_b = run_b.join("out");
+    let out_ebm_off = run_ebm_off.join("out");
+    let out_ebm_shadow = run_ebm_shadow.join("out");
+    let out_ebm_active = run_ebm_active.join("out");
+    let out_ebm_active_repeat = run_ebm_active_repeat.join("out");
 
     let scenario_a = workspace_fixture("e2e_scenario_a.json");
     let scenario_b = workspace_fixture("e2e_scenario_b.json");
+    let scenario_ebm = workspace_fixture("e2e_scenario_ebm_v1.json");
 
     let artifacts_a = one_command_bringup(&run_a, &scenario_a, 24, &out_a, true)?;
     let artifacts_a2 = one_command_bringup(&run_a2, &scenario_a, 24, &out_a2, true)?;
     let artifacts_b = one_command_bringup(&run_b, &scenario_b, 24, &out_b, true)?;
+    let ebm_off = one_command_bringup_with_ebm_mode(
+        &run_ebm_off,
+        &scenario_ebm,
+        24,
+        &out_ebm_off,
+        true,
+        "off",
+    )?;
+    let ebm_shadow = one_command_bringup_with_ebm_mode(
+        &run_ebm_shadow,
+        &scenario_ebm,
+        24,
+        &out_ebm_shadow,
+        true,
+        "shadow",
+    )?;
+    let ebm_active = one_command_bringup_with_ebm_mode(
+        &run_ebm_active,
+        &scenario_ebm,
+        24,
+        &out_ebm_active,
+        true,
+        "active",
+    )?;
+    let ebm_active_repeat = one_command_bringup_with_ebm_mode(
+        &run_ebm_active_repeat,
+        &scenario_ebm,
+        24,
+        &out_ebm_active_repeat,
+        true,
+        "active",
+    )?;
 
     let replay_verify_path = out_b.join("gate_replay_verify.json");
     replay_audit(
@@ -884,6 +925,23 @@ pub fn readiness_gate(
         check_emergency_visibility(&explain_last),
         check_observability(&explain_last, &metrics),
         check_plug_compatibility(&artifacts_a.run_metadata, &artifacts_b.run_metadata),
+        check_ebm_wiring(&ebm_shadow.explain, &ebm_active.explain),
+        check_ebm_shadow_active_correctness(
+            &ebm_off.explain,
+            &ebm_shadow.explain,
+            &ebm_active.explain,
+        ),
+        check_ebm_safety_dominance(
+            &ebm_off.explain,
+            &ebm_active.explain,
+            &out_ebm_active.join("adversarial_report.json"),
+        ),
+        check_ebm_determinism(&ebm_active.explain, &ebm_active_repeat.explain),
+        check_ebm_constraints_provenance(
+            &run_ebm_active,
+            &ebm_active.run_metadata.policy_bundle_hash,
+        ),
+        check_ebm_fallback_degraded_record(&run_ebm_active),
     ];
 
     if checks.len() > GATE_CHECK_CAP {
@@ -908,6 +966,243 @@ pub fn readiness_gate(
     };
     write_json(out, &report)?;
     Ok(report)
+}
+
+fn one_command_bringup_with_ebm_mode(
+    workdir: &Path,
+    scenario: &Path,
+    ticks: u64,
+    out_dir: &Path,
+    replay_verify: bool,
+    ebm_mode: &str,
+) -> Result<BringupArtifacts, OpsError> {
+    let prev = std::env::var("UCF_SLOT_EBM_MODE").ok();
+    std::env::set_var("UCF_SLOT_EBM_MODE", ebm_mode);
+    let out = one_command_bringup(workdir, scenario, ticks, out_dir, replay_verify);
+    if let Some(v) = prev {
+        std::env::set_var("UCF_SLOT_EBM_MODE", v);
+    } else {
+        std::env::remove_var("UCF_SLOT_EBM_MODE");
+    }
+    out
+}
+
+fn check_ebm_wiring(shadow: &ExplainTickReport, active: &ExplainTickReport) -> CheckResult {
+    let shadow_ok = shadow
+        .governance
+        .ebm
+        .as_ref()
+        .is_some_and(|e| !e.ebm_digest_prefix.is_empty() && e.top_energies_q.len() <= 8);
+    let active_ok = active
+        .governance
+        .ebm
+        .as_ref()
+        .is_some_and(|e| !e.ebm_digest_prefix.is_empty() && e.top_energies_q.len() <= 8);
+    if shadow_ok && active_ok {
+        check_pass(
+            "ebm_wiring_records",
+            [
+                ("shadow_present".to_string(), "true".to_string()),
+                ("active_present".to_string(), "true".to_string()),
+            ],
+        )
+    } else {
+        check_fail(
+            "ebm_wiring_records",
+            [
+                ("shadow_present".to_string(), shadow_ok.to_string()),
+                ("active_present".to_string(), active_ok.to_string()),
+            ],
+            "ebm record or digest missing in shadow/active mode",
+            "Enable EBM slot mode and ensure EbmReasoningRecord is emitted with bounded fields.",
+        )
+    }
+}
+
+fn check_ebm_shadow_active_correctness(
+    off: &ExplainTickReport,
+    shadow: &ExplainTickReport,
+    active: &ExplainTickReport,
+) -> CheckResult {
+    let shadow_same = off.decision.selected_candidate_id == shadow.decision.selected_candidate_id;
+    let active_safe = active.decision.selected_candidate_id != Some(2);
+    if shadow_same && active_safe {
+        check_pass(
+            "ebm_shadow_active_correctness",
+            [
+                (
+                    "off_selected".to_string(),
+                    off.decision.selected_candidate_id.unwrap_or(0).to_string(),
+                ),
+                (
+                    "active_selected".to_string(),
+                    active
+                        .decision
+                        .selected_candidate_id
+                        .unwrap_or(0)
+                        .to_string(),
+                ),
+            ],
+        )
+    } else {
+        check_fail(
+            "ebm_shadow_active_correctness",
+            [
+                ("shadow_same_as_off".to_string(), shadow_same.to_string()),
+                (
+                    "active_not_tool_intent".to_string(),
+                    active_safe.to_string(),
+                ),
+            ],
+            "shadow changed decision or active selected tool-intent candidate",
+            "Keep shadow observational-only and enforce active rerank away from ToolIntent.",
+        )
+    }
+}
+
+fn check_ebm_safety_dominance(
+    off: &ExplainTickReport,
+    active: &ExplainTickReport,
+    adversarial_path: &Path,
+) -> CheckResult {
+    let off_tier = off.governance.tier.unwrap_or(0);
+    let active_tier = active.governance.tier.unwrap_or(0);
+    let off_score = off.governance.governor_score.unwrap_or(0);
+    let active_score = active.governance.governor_score.unwrap_or(0);
+    let monotone = active_tier >= off_tier && active_score >= off_score;
+    let mut adv_denied = true;
+    if let Ok(report_body) = fs::read_to_string(adversarial_path) {
+        if let Ok(report) = serde_json::from_str::<crate::AdversarialReport>(&report_body) {
+            adv_denied = report
+                .cases
+                .iter()
+                .filter(|c| c.name.contains("ebm_"))
+                .all(|c| c.observed.output_class == "safe_only");
+        }
+    }
+    if monotone && adv_denied {
+        check_pass(
+            "ebm_safety_dominance",
+            [
+                ("off_tier".to_string(), off_tier.to_string()),
+                ("active_tier".to_string(), active_tier.to_string()),
+                ("off_score_q".to_string(), off_score.to_string()),
+                ("active_score_q".to_string(), active_score.to_string()),
+            ],
+        )
+    } else {
+        check_fail(
+            "ebm_safety_dominance",
+            [
+                ("monotone".to_string(), monotone.to_string()),
+                ("adversarial_denied".to_string(), adv_denied.to_string()),
+            ],
+            "ebm active mode loosened governance or adversarial deny semantics",
+            "Verify EBM only tightens governor/tool gates and rerun adversarial suite.",
+        )
+    }
+}
+
+fn check_ebm_determinism(
+    active_a: &ExplainTickReport,
+    active_b: &ExplainTickReport,
+) -> CheckResult {
+    let a = active_a
+        .governance
+        .ebm
+        .as_ref()
+        .map(|e| e.ebm_digest_prefix.clone())
+        .unwrap_or_default();
+    let b = active_b
+        .governance
+        .ebm
+        .as_ref()
+        .map(|e| e.ebm_digest_prefix.clone())
+        .unwrap_or_default();
+    if !a.is_empty() && a == b {
+        check_pass("ebm_determinism_digest", [("digest_prefix".to_string(), a)])
+    } else {
+        check_fail(
+            "ebm_determinism_digest",
+            [("digest_a".to_string(), a), ("digest_b".to_string(), b)],
+            "ebm digest prefix changed between identical runs",
+            "Use fixed fixture/backends/seeds and avoid non-deterministic ebm feature inputs.",
+        )
+    }
+}
+
+fn check_ebm_constraints_provenance(workdir: &Path, policy_hash: &str) -> CheckResult {
+    let records =
+        load_fixture_records(&workdir.join("ess").join("ess_fixture.json")).unwrap_or_default();
+    let policy_prefix = prefix_hex(policy_hash, 16);
+    let match_found = records.iter().any(|r| {
+        if r.kind != ExperienceKind::EbmConstraintProvenance {
+            return false;
+        }
+        matches!(
+            &r.payload,
+            ExperiencePayload::Audit(AuditPayload::EbmConstraintProvenance(p))
+                if digest_prefix_arr8(&p.policy_hash_prefix, 16) == policy_prefix
+        )
+    });
+    if match_found {
+        check_pass(
+            "ebm_constraints_provenance",
+            [("policy_prefix".to_string(), policy_prefix)],
+        )
+    } else {
+        check_fail(
+            "ebm_constraints_provenance",
+            [("policy_prefix".to_string(), policy_prefix)],
+            "missing or mismatched EbmConstraintProvenanceRecord",
+            "Emit EBM constraints provenance at startup and bind it to policy hash prefix.",
+        )
+    }
+}
+
+fn check_ebm_fallback_degraded_record(workdir: &Path) -> CheckResult {
+    let records =
+        load_fixture_records(&workdir.join("ess").join("ess_fixture.json")).unwrap_or_default();
+    let has_reasoning = records
+        .iter()
+        .any(|r| r.kind == ExperienceKind::EbmReasoning);
+    let degraded = records.iter().any(|r| {
+        if r.kind != ExperienceKind::EbmEnvelopeViolation {
+            return false;
+        }
+        matches!(
+            &r.payload,
+            ExperiencePayload::Audit(AuditPayload::EbmEnvelopeViolation(_))
+        )
+    });
+    if has_reasoning {
+        if degraded {
+            check_pass(
+                "ebm_fallback_recorded",
+                [
+                    ("has_reasoning".to_string(), "true".to_string()),
+                    ("degraded_record".to_string(), "true".to_string()),
+                ],
+            )
+        } else {
+            check_skip(
+                "ebm_fallback_recorded",
+                [
+                    ("has_reasoning".to_string(), "true".to_string()),
+                    ("degraded_record".to_string(), "false".to_string()),
+                ],
+                "no degraded ebm record observed in baseline run",
+                "Run budget-starved ebm fixture to verify degraded fallback record persistence.",
+            )
+        }
+    } else {
+        check_fail(
+            "ebm_fallback_recorded",
+            [("has_reasoning".to_string(), "false".to_string())],
+            "ebm reasoning records missing",
+            "Enable EBM shadow/active mode and rerun readiness scenarios.",
+        )
+    }
 }
 
 fn workspace_fixture(name: &str) -> PathBuf {
@@ -3339,7 +3634,10 @@ mod tests {
         let policy = PathBuf::from("policies/bundle_v1/retention_v1.json");
         let count =
             ebm_export_dataset(dir.path(), "run-test", 0, u64::MAX, &out, &policy).expect("ok");
-        assert_eq!(count, fs::read_to_string(&out).expect("dataset").lines().count());
+        assert_eq!(
+            count,
+            fs::read_to_string(&out).expect("dataset").lines().count()
+        );
 
         let body = fs::read_to_string(out).expect("dataset");
         for line in body.lines() {

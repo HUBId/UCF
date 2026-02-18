@@ -17,6 +17,13 @@ use ucf_compute::{
 };
 use ucf_core::types::{SimTime, Tick, WindowId};
 use ucf_frames::v1::{ChannelCode, ControlFrame, CorrelationId, Intent, IntentId, IntentKind};
+use ucf_policy::candidate::{
+    CandidateGenerator, DecisionBudget, DecisionContext, DefaultCandidateGeneratorV0,
+};
+use ucf_runtime::ebm::{
+    active_ebm_constraints, candidate_feature_from_decision, CpuEbmStubV0, EbmInput, EbmReasoner,
+    EbmSignals,
+};
 
 use crate::OpsError;
 
@@ -84,6 +91,8 @@ pub struct BenchCounters {
     pub queue_depth_avg: f64,
     pub tool_issuance_denies: u64,
     pub tool_issuance_attempts: u64,
+    pub ebm_candidates_scored_total: u64,
+    pub ebm_mean_k_q: u16,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -208,7 +217,12 @@ pub fn bench_run(args: &BenchArgs) -> Result<BenchReport, OpsError> {
         queue_depth_avg: 0.0,
         tool_issuance_denies: 0,
         tool_issuance_attempts: 0,
+        ebm_candidates_scored_total: 0,
+        ebm_mean_k_q: 0,
     };
+    let mut ebm = CpuEbmStubV0;
+    let generator = DefaultCandidateGeneratorV0;
+    let _constraints = active_ebm_constraints();
 
     let run_start = Instant::now();
     let run_id = format!("bench-{}", crate::now_unix_secs());
@@ -350,6 +364,50 @@ pub fn bench_run(args: &BenchArgs) -> Result<BenchReport, OpsError> {
             .expect("stage exists")
             .push(t5.elapsed().as_secs_f64() * 1000.0);
 
+        let t_ebm = Instant::now();
+        let decision_ctx = DecisionContext {
+            now_t: tick,
+            risk,
+            confidence,
+            evidence_chain_digest: input.context_digest,
+            planning_allowed: true,
+            liquid_context: None,
+        };
+        let candidates = generator.generate(&ctrl, &decision_ctx, DecisionBudget::default());
+        let ebm_input = EbmInput {
+            t: tick,
+            governor_tier: 0,
+            emergency_active: false,
+            context_digest: input.context_digest,
+            signals: EbmSignals {
+                risk_q: ucf_types::UQ0_16::from_f32_clamped(risk),
+                confidence_q: ucf_types::UQ0_16::from_f32_clamped(confidence),
+                pressure_q: ucf_types::UQ0_16::from_f32_clamped(
+                    ssm_out.as_ref().map(|s| s.pressure).unwrap_or(0.0),
+                ),
+                surprise_q: ucf_types::UQ0_16::from_f32_clamped(
+                    world_out.as_ref().map(|w| w.surprise).unwrap_or(0.0),
+                ),
+                uncertainty_q: ucf_types::UQ0_16::from_f32_clamped(
+                    lfm_out.as_ref().map(|l| l.uncertainty).unwrap_or(1.0),
+                ),
+                coherence_q: None,
+            },
+            candidates: candidates
+                .iter()
+                .map(candidate_feature_from_decision)
+                .collect(),
+        };
+        counters.ebm_candidates_scored_total = counters
+            .ebm_candidates_scored_total
+            .saturating_add(ebm_input.candidates.len() as u64);
+        let mut ebm_budget = ucf_compute::work_meter::WorkMeter::new(64);
+        let _ = ebm.score_candidates(ebm_input, &mut ebm_budget);
+        stage_stats
+            .entry("ebm".to_string())
+            .or_default()
+            .push(t_ebm.elapsed().as_secs_f64() * 1000.0);
+
         let t6 = Instant::now();
         let _ = pack.llm().infer(
             &LlmRequest {
@@ -426,6 +484,12 @@ pub fn bench_run(args: &BenchArgs) -> Result<BenchReport, OpsError> {
     }
 
     counters.budget_exceeded_events = counters.degraded_stages.values().copied().sum::<u64>();
+    counters.ebm_mean_k_q = if tick_cap > 0 {
+        (((counters.ebm_candidates_scored_total as u128) << 16) / (tick_cap as u128))
+            .min(u16::MAX as u128) as u16
+    } else {
+        0
+    };
 
     let elapsed_s = run_start.elapsed().as_secs_f64();
     let throughput = if elapsed_s > 0.0 {
@@ -481,6 +545,15 @@ pub fn bench_run(args: &BenchArgs) -> Result<BenchReport, OpsError> {
         if s.p95_ms > 2.0 {
             hints.push(
                 "llm dominates tail latency: reduce max_tokens_eff or tighten uncertainty scaling"
+                    .to_string(),
+            );
+        }
+    }
+    if let Some(ebm_stats) = stage_stats.get("ebm") {
+        let s = ebm_stats.stats();
+        if s.p95_ms > 1.0 {
+            hints.push(
+                "ebm p95 exceeds 1ms: reduce candidate K or simplify feature extraction"
                     .to_string(),
             );
         }

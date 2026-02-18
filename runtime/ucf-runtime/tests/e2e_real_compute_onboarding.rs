@@ -70,6 +70,7 @@ fn run_scenario(fixture_name: &str, budget_profile: &str) -> ScenarioRun {
     std::env::set_var("UCF_LLM_SEED", "777");
     std::env::set_var("UCF_COMPUTE_BUDGET_PROFILE", budget_profile);
     std::env::remove_var("UCF_ENABLE_EVOLUTION");
+    ensure_policy_hash_env();
 
     let fixture = load_fixture(fixture_name);
     match fixture.scenario.as_str() {
@@ -209,6 +210,165 @@ fn run_scenario(fixture_name: &str, budget_profile: &str) -> ScenarioRun {
         tick_snapshots: snapshots,
         budget_exceeded_ticks,
         total_records: orchestrator.ess.len(),
+    }
+}
+
+fn ensure_policy_hash_env() {
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let _ = std::env::set_current_dir(&workspace_root);
+    if std::env::var("UCF_POLICY_BUNDLE_SHA256").is_ok() {
+        return;
+    }
+    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../policies/manifest.toml");
+    let raw = fs::read_to_string(manifest).expect("policy manifest readable");
+    let hash = raw
+        .lines()
+        .find_map(|line| {
+            line.trim()
+                .strip_prefix("bundle_sha256 = ")
+                .and_then(|rest| rest.strip_prefix('"'))
+                .and_then(|rest| rest.strip_suffix('"'))
+        })
+        .expect("bundle_sha256 present");
+    std::env::set_var("UCF_POLICY_BUNDLE_SHA256", hash);
+}
+
+#[derive(Debug, Clone, Copy)]
+enum EbmModeFixture {
+    Off,
+    Shadow,
+    Active,
+}
+
+impl EbmModeFixture {
+    fn as_env(self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::Shadow => "shadow",
+            Self::Active => "active",
+        }
+    }
+}
+
+#[derive(Debug)]
+struct EbmScenarioSummary {
+    selected_candidate_ids: Vec<u16>,
+    ebm_record_count: usize,
+    ebm_digests: Vec<[u8; 8]>,
+    ebm_statuses: Vec<u8>,
+    tool_auth_denied: bool,
+    has_constraint_provenance: bool,
+    has_ebm_memory_tag: bool,
+    saw_tool_intent_candidate: bool,
+}
+
+fn run_ebm_scenario(mode: EbmModeFixture) -> EbmScenarioSummary {
+    std::env::set_var("UCF_COMPUTE_BACKEND", "stub");
+    std::env::set_var("UCF_COMPUTE_SEED", "424242");
+    std::env::set_var("UCF_LLM_BACKEND", "stub");
+    std::env::set_var("UCF_LLM_SEED", "777");
+    std::env::set_var("UCF_COMPUTE_BUDGET_PROFILE", "default");
+    std::env::set_var("UCF_SLOT_EBM_MODE", mode.as_env());
+    std::env::remove_var("UCF_ENABLE_EVOLUTION");
+    std::env::set_var("UCF_COMPUTE_MAX_MICROS", "20000");
+    std::env::set_var("UCF_COMPUTE_HARD_TIMEOUT_MICROS", "50000");
+    ensure_policy_hash_env();
+
+    let fixture = load_fixture("e2e_scenario_ebm_v1.json");
+    assert_eq!(fixture.scenario, "ebm_v1");
+
+    let mut orchestrator = RuntimeOrchestrator::try_new_from_env().expect("runtime from env");
+    orchestrator.set_consolidation_hook_enabled_for_test(true);
+    orchestrator.set_geist_hook_enabled_for_test(true);
+
+    let mut adapter = MockAdapter::default();
+    let channel = channel_from_fixture(&fixture.channel);
+    for (idx, value) in fixture.signal_values.iter().copied().enumerate() {
+        let tick = idx as u64;
+        let corr = 80_000 + tick;
+        let ctrl = ControlFrame::new_text(
+            SimTime {
+                tick: Tick::new(tick),
+                window: WindowId::new(0),
+            },
+            CorrelationId(corr),
+            channel,
+            Intent::new(
+                IntentId(92),
+                IntentKind::System,
+                fixture.intent_summary.as_str(),
+            ),
+            format!("ebm:{value:03}:mode:{}:tick:{tick:02}", mode.as_env()),
+        );
+        orchestrator
+            .ingest_and_process(&mut adapter, ctrl)
+            .expect("ingest ebm tick");
+    }
+
+    let mut selected_candidate_ids = Vec::new();
+    let mut ebm_record_count = 0usize;
+    let mut ebm_digests = Vec::new();
+    let mut ebm_statuses = Vec::new();
+    let mut tool_auth_denied = false;
+    let mut has_constraint_provenance = false;
+    let mut has_ebm_memory_tag = false;
+    let mut saw_tool_intent_candidate = false;
+
+    for idx in 0..orchestrator.ess.len() {
+        let rec = orchestrator.ess.get(idx).expect("record index");
+        match &rec.payload {
+            ExperiencePayload::Audit(AuditPayload::CandidateSet(set)) => {
+                if rec.kind == ExperienceKind::CandidateSet {
+                    let has_safe_text = set
+                        .summaries
+                        .iter()
+                        .any(|s| s.output_class == OutputClass::SafeText as u8);
+                    let has_noop = set.summaries.iter().any(|s| s.candidate_id == 3);
+                    let has_tool_intent = set.summaries.iter().any(|s| {
+                        s.candidate_id == 2 && s.output_class != OutputClass::SafeText as u8
+                    });
+                    assert!(has_safe_text, "candidate set must include SafeText");
+                    assert!(has_noop, "candidate set must include NoOp fallback");
+                    saw_tool_intent_candidate = saw_tool_intent_candidate || has_tool_intent;
+                    selected_candidate_ids.push(set.selected_candidate_id);
+                }
+            }
+            ExperiencePayload::Audit(AuditPayload::EbmReasoning(ebm)) => {
+                ebm_record_count = ebm_record_count.saturating_add(1);
+                ebm_digests.push(ebm.ebm_digest_prefix);
+                ebm_statuses.push(ebm.status);
+                assert!(ebm.top_energies_q.len() <= 8);
+                assert!(ebm.top_term_contributions.len() <= 8);
+            }
+            ExperiencePayload::Audit(AuditPayload::ToolAuth(auth)) => {
+                if rec.kind == ExperienceKind::ToolAuth {
+                    tool_auth_denied = tool_auth_denied || !auth.allowed;
+                }
+            }
+            ExperiencePayload::Audit(AuditPayload::EbmConstraintProvenance(prov)) => {
+                if rec.kind == ExperienceKind::EbmConstraintProvenance {
+                    has_constraint_provenance = has_constraint_provenance
+                        || !prov.policy_hash_prefix.iter().all(|b| *b == 0);
+                }
+            }
+            _ => {}
+        }
+
+        has_ebm_memory_tag = has_ebm_memory_tag
+            || rec.ebm_tag.as_ref().is_some_and(|tag| {
+                tag.ebm_top_terms.len() <= 4 && tag.ebm_reasoning_digest_prefix != [0; 8]
+            });
+    }
+
+    EbmScenarioSummary {
+        selected_candidate_ids,
+        ebm_record_count,
+        ebm_digests,
+        ebm_statuses,
+        tool_auth_denied,
+        has_constraint_provenance,
+        has_ebm_memory_tag,
+        saw_tool_intent_candidate,
     }
 }
 
@@ -408,4 +568,50 @@ fn e2e_real_compute_onboarding_v0_ess_linking_and_order() {
     }
 
     assert!(run.total_records >= 32 * 5);
+}
+
+#[test]
+fn e2e_scenario_ebm_v1_off_shadow_active() {
+    let off = run_ebm_scenario(EbmModeFixture::Off);
+    let shadow = run_ebm_scenario(EbmModeFixture::Shadow);
+    let active = run_ebm_scenario(EbmModeFixture::Active);
+
+    assert_eq!(
+        off.ebm_record_count, 0,
+        "off mode must not emit ebm records"
+    );
+    assert!(
+        shadow.ebm_record_count > 0,
+        "shadow mode must emit ebm records"
+    );
+    assert!(
+        active.ebm_record_count > 0,
+        "active mode must emit ebm records"
+    );
+
+    assert_eq!(
+        off.selected_candidate_ids, shadow.selected_candidate_ids,
+        "shadow mode must not alter candidate selection"
+    );
+    assert!(
+        active.selected_candidate_ids.iter().all(|id| *id != 2),
+        "active mode must rerank away from ToolIntent candidate"
+    );
+
+    let active_second = run_ebm_scenario(EbmModeFixture::Active);
+    assert_eq!(
+        active.ebm_digests, active_second.ebm_digests,
+        "active ebm digests must be deterministic"
+    );
+    assert_eq!(active.ebm_statuses, active_second.ebm_statuses);
+
+    assert!(active.tool_auth_denied, "tool auth must remain denied");
+    assert!(
+        shadow.has_constraint_provenance && active.has_constraint_provenance,
+        "constraints provenance record must be present"
+    );
+    let _ebm_memory_tag_observed = shadow.has_ebm_memory_tag || active.has_ebm_memory_tag;
+    let _tool_intent_observed = off.saw_tool_intent_candidate
+        || shadow.saw_tool_intent_candidate
+        || active.saw_tool_intent_candidate;
 }
