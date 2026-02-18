@@ -1,6 +1,7 @@
 pub mod errors;
 pub mod governance;
 pub mod record;
+pub mod retrieval;
 pub mod store;
 
 pub use errors::EssError;
@@ -11,9 +12,16 @@ pub use record::{
     ComputeBudgetViolationRecord, ComputeBudgetWindowRecord, DeltaEvaluationRecord,
     DeltaProposalRecord, DeltaRecommendationRecord, EbmConstraintProvenanceRecord,
     EbmEnvelopeViolationRecord, EbmReasoningRecord, EmergencyReasonCode, EmergencyRecord,
-    EmergencyStateCode, ExperienceId, ExperienceKind, ExperiencePayload, ExperienceRecord,
-    HormoneRecord, LfmSummaryRecord, LfmWindowRecord, NeuroRecord, NsrRecord, OutputRecord,
-    PayloadClassification, PolicyProvenanceRecord, SandboxCallRecord, SandboxReplyRecord,
-    ThrottleRecord, ToolAuthRecord, ToolExecutionRecord, ToolRequestRecord,
+    EmergencyStateCode, ExperienceEbmTagRecord, ExperienceId, ExperienceKind, ExperiencePayload,
+    ExperienceRecord, HormoneRecord, LfmSummaryRecord, LfmWindowRecord, NeuroRecord, NsrRecord,
+    OutputRecord, PayloadClassification, PolicyProvenanceRecord, RetrievalDecisionRecord,
+    RetrievalReasonCode, RetrievalSelectionRecord, RetrievedExperienceRole, SandboxCallRecord,
+    SandboxReplyRecord, ThrottleRecord, ToolAuthRecord, ToolExecutionRecord, ToolRequestRecord,
 };
 pub use store::{ExperienceStore, IdAllocator, InMemoryEss};
+
+pub use retrieval::{
+    apply_ebm_bias, build_retrieval_decision_record, compute_query_digest_prefix,
+    extract_retrieval_decision, find_ebm_energy, make_ebm_tag_from_reasoning, RetrievalCandidate,
+    RetrievalContext, RetrievalPolicy, RetrievalResult,
+};

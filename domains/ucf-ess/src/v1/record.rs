@@ -45,6 +45,7 @@ pub enum ExperienceKind {
     RemoteCallDenied,
     ComputeBudgetWindow,
     ComputeBudgetViolation,
+    RetrievalDecision,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -67,8 +68,20 @@ pub struct ExperienceRecord {
     pub backend_pack_record: Option<BackendPackRecord>,
     pub lfm_summary_record: Option<LfmSummaryRecord>,
     pub lfm_window_record: Option<LfmWindowRecord>,
+    pub ebm_tag: Option<ExperienceEbmTagRecord>,
     pub audit_prev_digest: Option<[u8; 32]>,
     pub audit_digest: Option<[u8; 32]>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExperienceEbmTagRecord {
+    pub decision_id: u64,
+    pub evidence_chain_digest: [u8; 32],
+    pub ebm_energy_min_q: u16,
+    pub ebm_energy_mean_topk_q: u16,
+    pub ebm_constraints_digest_prefix: [u8; 8],
+    pub ebm_top_terms: Vec<(u16, u16)>,
+    pub ebm_reasoning_digest_prefix: [u8; 8],
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -80,6 +93,17 @@ pub enum ExperiencePayload {
     Text(Arc<str>),
     Audit(AuditPayload),
     Empty,
+}
+
+impl ExperienceEbmTagRecord {
+    pub const MAX_TOP_TERMS: usize = 4;
+
+    pub fn clamp_bounds(mut self) -> Self {
+        self.ebm_top_terms
+            .sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        self.ebm_top_terms.truncate(Self::MAX_TOP_TERMS);
+        self
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -103,6 +127,41 @@ pub enum AuditPayload {
     RemoteCallDenied(RemoteCallDeniedRecord),
     ComputeBudgetWindow(ComputeBudgetWindowRecord),
     ComputeBudgetViolation(ComputeBudgetViolationRecord),
+    RetrievalDecision(RetrievalDecisionRecord),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RetrievedExperienceRole {
+    PrecedentSafe,
+    Template,
+    AvoidExample,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RetrievalReasonCode {
+    EbmBiasApplied,
+    AvoidExamplesIncluded,
+    HighRiskContext,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RetrievalSelectionRecord {
+    pub experience_id: ExperienceId,
+    pub experience_digest_prefix: [u8; 8],
+    pub role: RetrievedExperienceRole,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RetrievalDecisionRecord {
+    pub schema_version: u16,
+    pub t: u64,
+    pub query_digest_prefix: [u8; 8],
+    pub selected: Vec<RetrievalSelectionRecord>,
+    pub low_energy_threshold_q: u16,
+    pub high_energy_threshold_q: u16,
+    pub policy_hash_prefix: [u8; 8],
+    pub evidence_chain_digest_prefix: [u8; 8],
+    pub reason_codes: Vec<RetrievalReasonCode>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -595,6 +654,7 @@ impl ExperienceRecord {
             backend_pack_record: None,
             lfm_summary_record: None,
             lfm_window_record: None,
+            ebm_tag: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -620,6 +680,7 @@ impl ExperienceRecord {
             backend_pack_record: None,
             lfm_summary_record: None,
             lfm_window_record: None,
+            ebm_tag: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -645,6 +706,7 @@ impl ExperienceRecord {
             backend_pack_record: None,
             lfm_summary_record: None,
             lfm_window_record: None,
+            ebm_tag: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -675,6 +737,7 @@ impl ExperienceRecord {
             backend_pack_record: None,
             lfm_summary_record: None,
             lfm_window_record: None,
+            ebm_tag: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -705,6 +768,7 @@ impl ExperienceRecord {
             backend_pack_record: Some(backend_pack_record),
             lfm_summary_record: None,
             lfm_window_record: None,
+            ebm_tag: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -735,6 +799,7 @@ impl ExperienceRecord {
             backend_pack_record: None,
             lfm_summary_record: None,
             lfm_window_record: None,
+            ebm_tag: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -765,6 +830,7 @@ impl ExperienceRecord {
             backend_pack_record: None,
             lfm_summary_record: None,
             lfm_window_record: None,
+            ebm_tag: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -795,6 +861,7 @@ impl ExperienceRecord {
             backend_pack_record: None,
             lfm_summary_record: None,
             lfm_window_record: None,
+            ebm_tag: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -825,6 +892,7 @@ impl ExperienceRecord {
             backend_pack_record: None,
             lfm_summary_record: None,
             lfm_window_record: None,
+            ebm_tag: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -855,6 +923,7 @@ impl ExperienceRecord {
             backend_pack_record: None,
             lfm_summary_record: None,
             lfm_window_record: None,
+            ebm_tag: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -885,6 +954,7 @@ impl ExperienceRecord {
             backend_pack_record: None,
             lfm_summary_record: None,
             lfm_window_record: None,
+            ebm_tag: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -915,6 +985,7 @@ impl ExperienceRecord {
             backend_pack_record: None,
             lfm_summary_record: None,
             lfm_window_record: None,
+            ebm_tag: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -945,6 +1016,38 @@ impl ExperienceRecord {
             backend_pack_record: None,
             lfm_summary_record: None,
             lfm_window_record: None,
+            ebm_tag: None,
+            audit_prev_digest: None,
+            audit_digest: None,
+        }
+    }
+
+    pub fn from_retrieval_decision(
+        id: ExperienceId,
+        time: SimTime,
+        corr: CorrelationId,
+        record: RetrievalDecisionRecord,
+    ) -> Self {
+        Self {
+            id,
+            time,
+            corr,
+            kind: ExperienceKind::RetrievalDecision,
+            payload: ExperiencePayload::Audit(AuditPayload::RetrievalDecision(record)),
+            neuromod: None,
+            iit_phi: None,
+            decision_meta: None,
+            compute_summary: None,
+            hormone_record: None,
+            neuro_record: None,
+            delta_proposal_record: None,
+            delta_evaluation_record: None,
+            delta_recommendation_record: None,
+            nsr_record: None,
+            backend_pack_record: None,
+            lfm_summary_record: None,
+            lfm_window_record: None,
+            ebm_tag: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -975,6 +1078,7 @@ impl ExperienceRecord {
             backend_pack_record: None,
             lfm_summary_record: None,
             lfm_window_record: None,
+            ebm_tag: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -1005,6 +1109,7 @@ impl ExperienceRecord {
             backend_pack_record: None,
             lfm_summary_record: None,
             lfm_window_record: None,
+            ebm_tag: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -1035,6 +1140,7 @@ impl ExperienceRecord {
             backend_pack_record: None,
             lfm_summary_record: Some(lfm_summary_record),
             lfm_window_record: None,
+            ebm_tag: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -1065,6 +1171,7 @@ impl ExperienceRecord {
             backend_pack_record: None,
             lfm_summary_record: None,
             lfm_window_record: Some(lfm_window_record),
+            ebm_tag: None,
             audit_prev_digest: None,
             audit_digest: None,
         }
@@ -1102,9 +1209,15 @@ impl ExperienceRecord {
             backend_pack_record: None,
             lfm_summary_record: None,
             lfm_window_record: None,
+            ebm_tag: None,
             audit_prev_digest: Some(prev_digest),
             audit_digest: Some(digest),
         }
+    }
+
+    pub fn with_ebm_tag(mut self, ebm_tag: ExperienceEbmTagRecord) -> Self {
+        self.ebm_tag = Some(ebm_tag.clamp_bounds());
+        self
     }
 
     pub fn with_neuromod(mut self, neuromod: NeuromodulatorSnapshot) -> Self {
