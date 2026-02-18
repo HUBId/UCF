@@ -10,7 +10,10 @@ pub mod backends;
 #[cfg(any(
     feature = "compute-candle",
     feature = "llm-candle",
-    feature = "lfm-candle"
+    feature = "lfm-candle",
+    feature = "compute-burn",
+    feature = "llm-burn",
+    feature = "lfm-burn"
 ))]
 pub mod candle_weights;
 pub mod capabilities;

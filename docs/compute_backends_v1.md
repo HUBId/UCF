@@ -44,10 +44,10 @@ Run deterministic compute probe paths by building ucf-compute tests or `ucf-ops 
 - Suggested rollout: shadow first, compare envelopes, then active slot-by-slot.
 
 ## Candle safetensors loader behavior
-- Loader API: `load_safetensors(slot, bytes, spec)` (CPU only).
+- Loader API: `load_safetensors_raw(slot, bytes, spec)` (CPU only, backend-agnostic).
 - Input is local bytes only (typically from `ModelStore::verify_slot` + `read_verified_bytes`).
 - Strict validation: all required tensors must exist with exact shape and dtype.
-- Deterministic loading order: tensors are kept in `BTreeMap<String, Tensor>` (name sorted).
+- Deterministic loading order: tensors are kept in `BTreeMap<String, LoadedTensorRaw>` (name sorted) and optionally converted to Candle tensors.
 - Bounded memory: bytes larger than slot `max_bytes` are rejected before parsing.
 - Stable error codes:
   - `WEIGHT_MISSING_TENSOR`
