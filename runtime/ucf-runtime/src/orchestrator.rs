@@ -1,4 +1,8 @@
 use crate::coherence::{CoherenceRuntime, InterestProfile, Subscriber, TickInput};
+use crate::compute_economics::{
+    estimate_input_tokens, BudgetPool, ComputeEconomicsProfile, ComputeEconomy, ComputeStage,
+    CostSchedule,
+};
 use crate::errors::RuntimeError;
 use crate::evolution::{
     DeltaOp, DeltaScore, EvolutionBudget, EvolutionContext, EvolutionEngine, LiquidWindowStats,
@@ -37,7 +41,8 @@ use ucf_dbm::chemistry::{chemistry_step, ChemistryCfg, NeuromodState};
 use ucf_dbm::regions::{region_step, BrainRegion, RegionKind};
 use ucf_ess::v1::{
     compute_content_digest, AuditCheckpointRecord, AuditPayload, BackendPackRecord,
-    CandidateSetRecord, CandidateSummaryRecord, CapabilityIssuanceRecord, DeltaEvaluationRecord,
+    CandidateSetRecord, CandidateSummaryRecord, CapabilityIssuanceRecord,
+    ComputeBudgetViolationRecord, ComputeBudgetWindowRecord, DeltaEvaluationRecord,
     DeltaProposalRecord, DeltaRecommendationRecord, EmergencyReasonCode, EmergencyRecord,
     EmergencyStateCode, ExperienceKind, ExperienceRecord, ExperienceStore, HormoneRecord,
     IdAllocator, InMemoryEss, LfmSummaryRecord, LfmWindowRecord, NeuroRecord, NsrRecord,
@@ -711,6 +716,12 @@ pub struct RuntimeOrchestrator {
     evolution_suppressed_total: u64,
     evolution_recommended_total: u64,
     policy_bundle_hash: String,
+    compute_economy: ComputeEconomy,
+    compute_budget_window_t0: u64,
+    compute_budget_window_t: u64,
+    compute_tier_sum: u64,
+    compute_tier_count: u64,
+    compute_tier_max: u8,
 }
 
 impl RuntimeOrchestrator {
@@ -1171,6 +1182,112 @@ impl RuntimeOrchestrator {
             self.audit_head_digest = rec.audit_digest.unwrap_or(self.audit_head_digest);
             self.ess.append(rec)?;
         }
+        Ok(())
+    }
+
+    fn persist_compute_budget_violation(
+        &mut self,
+        time: ucf_core::types::SimTime,
+        corr: ucf_frames::v1::CorrelationId,
+        violation: &crate::compute_economics::ComputeBudgetViolationRecord,
+    ) -> Result<(), RuntimeError> {
+        let payload = AuditPayload::ComputeBudgetViolation(ComputeBudgetViolationRecord {
+            t: time.tick.get(),
+            stage: violation.stage.as_str().to_string(),
+            pool: match violation.pool {
+                BudgetPool::Primary => "primary",
+                BudgetPool::Shadow => "shadow",
+            }
+            .to_string(),
+            reason: violation.reason.to_string(),
+            attempted_cost: violation.attempted_cost,
+            available: violation.available,
+            schema_version: 1,
+        });
+        let rec = ExperienceRecord::audit(
+            self.ids.next(),
+            time,
+            corr,
+            ExperienceKind::ComputeBudgetViolation,
+            payload,
+            self.audit_head_digest,
+        );
+        self.audit_head_digest = rec.audit_digest.unwrap_or(self.audit_head_digest);
+        self.ess.append(rec)?;
+        metrics::counter!("ucf_budget_denials_total", "stage" => violation.stage.as_str().to_string())
+            .increment(1);
+        Ok(())
+    }
+
+    fn maybe_persist_compute_budget_window(
+        &mut self,
+        time: ucf_core::types::SimTime,
+        corr: ucf_frames::v1::CorrelationId,
+    ) -> Result<(), RuntimeError> {
+        let window = time.window.get();
+        if window == self.compute_budget_window_t {
+            return Ok(());
+        }
+        if self.compute_tier_count > 0 {
+            let mean =
+                (self.compute_tier_sum as f32 / self.compute_tier_count as f32).clamp(0.0, 3.0);
+            let snap = self.compute_economy.snapshot_window(
+                self.compute_budget_window_t0,
+                time.tick.get().saturating_sub(1),
+                self.compute_budget_window_t,
+                quantize_unit_u16(mean / 3.0),
+                self.compute_tier_max,
+                {
+                    let mut out = [0_u8; 8];
+                    let decoded = hex::decode(&self.policy_bundle_hash).unwrap_or_default();
+                    if decoded.len() >= 8 {
+                        out.copy_from_slice(&decoded[..8]);
+                    }
+                    out
+                },
+            );
+            let spent = |st: ComputeStage| *snap.spent_per_stage.get(&st).unwrap_or(&0);
+            let payload = AuditPayload::ComputeBudgetWindow(ComputeBudgetWindowRecord {
+                t0: snap.t0,
+                t1: snap.t1,
+                window: snap.window,
+                primary_available_start: snap.primary_start.available,
+                primary_spent_start: snap.primary_start.spent,
+                primary_available_end: snap.primary_end.available,
+                primary_spent_end: snap.primary_end.spent,
+                shadow_available_start: snap.shadow_start.available,
+                shadow_spent_start: snap.shadow_start.spent,
+                shadow_available_end: snap.shadow_end.available,
+                shadow_spent_end: snap.shadow_end.spent,
+                llm_spent: spent(ComputeStage::Llm),
+                governor_spent: spent(ComputeStage::Governor),
+                jepa_spent: spent(ComputeStage::Jepa),
+                sae_spent: spent(ComputeStage::Sae),
+                ssm_spent: spent(ComputeStage::Ssm),
+                lfm_spent: spent(ComputeStage::Lfm),
+                tool_spent: spent(ComputeStage::Tool),
+                governor_tier_mean_q: snap.governor_tier_mean_q,
+                governor_tier_max: snap.governor_tier_max,
+                policy_hash_prefix: snap.policy_hash_prefix,
+                schema_version: 1,
+            });
+            let rec = ExperienceRecord::audit(
+                self.ids.next(),
+                time,
+                corr,
+                ExperienceKind::ComputeBudgetWindow,
+                payload,
+                self.audit_head_digest,
+            );
+            self.audit_head_digest = rec.audit_digest.unwrap_or(self.audit_head_digest);
+            self.ess.append(rec)?;
+        }
+        self.compute_economy.reset_window();
+        self.compute_budget_window_t = window;
+        self.compute_budget_window_t0 = time.tick.get();
+        self.compute_tier_sum = 0;
+        self.compute_tier_count = 0;
+        self.compute_tier_max = 0;
         Ok(())
     }
 
@@ -1672,6 +1789,15 @@ impl RuntimeOrchestrator {
             evolution_suppressed_total: 0,
             evolution_recommended_total: 0,
             policy_bundle_hash: policy_provenance.bundle_sha256.clone(),
+            compute_economy: ComputeEconomy::new(
+                ComputeEconomicsProfile::from_env(),
+                CostSchedule::default(),
+            ),
+            compute_budget_window_t0: 0,
+            compute_budget_window_t: 0,
+            compute_tier_sum: 0,
+            compute_tier_count: 0,
+            compute_tier_max: 0,
         };
 
         let _ = out.ess.append(ExperienceRecord::audit(
@@ -2951,14 +3077,52 @@ impl RuntimeOrchestrator {
         if self.emergency_active() {
             compute_budget.governor_tier = 3;
         }
-        let mut compute_signals = match self.compute_backend.compute(&compute_input, compute_budget)
-        {
-            Ok(signals) => signals,
-            Err(_) => ucf_compute::ComputeSignals::unavailable(
+        self.maybe_persist_compute_budget_window(ctrl.time, ctrl.corr)?;
+        self.compute_economy
+            .begin_tick(compute_budget.governor_tier, self.emergency_active());
+        self.compute_tier_sum = self
+            .compute_tier_sum
+            .saturating_add(u64::from(compute_budget.governor_tier.min(3)));
+        self.compute_tier_count = self.compute_tier_count.saturating_add(1);
+        self.compute_tier_max = self
+            .compute_tier_max
+            .max(compute_budget.governor_tier.min(3));
+        if let Err(v) = self.compute_economy.try_charge(
+            BudgetPool::Primary,
+            ComputeStage::Governor,
+            self.compute_economy
+                .schedule
+                .stage_cost(ComputeStage::Governor, 1),
+            ctrl.time.tick.get(),
+        ) {
+            self.persist_compute_budget_violation(ctrl.time, ctrl.corr, &v)?;
+        }
+
+        let mut compute_signals = if let Err(v) = self.compute_economy.try_charge(
+            BudgetPool::Primary,
+            ComputeStage::Jepa,
+            self.compute_economy
+                .schedule
+                .stage_cost(ComputeStage::Jepa, 64),
+            ctrl.time.tick.get(),
+        ) {
+            self.persist_compute_budget_violation(ctrl.time, ctrl.corr, &v)?;
+            let mut unavailable = ucf_compute::ComputeSignals::unavailable(
                 &compute_input,
                 compute_budget,
                 self.compute_backend.name(),
-            ),
+            );
+            unavailable.budget_exceeded_stage = Some("compute_tokens/jepa");
+            unavailable
+        } else {
+            match self.compute_backend.compute(&compute_input, compute_budget) {
+                Ok(signals) => signals,
+                Err(_) => ucf_compute::ComputeSignals::unavailable(
+                    &compute_input,
+                    compute_budget,
+                    self.compute_backend.name(),
+                ),
+            }
         };
         if ucf_compute::validate_risk_signal(&compute_signals.risk_signal).is_err() {
             compute_signals = ucf_compute::ComputeSignals::unavailable(
@@ -2968,6 +3132,20 @@ impl RuntimeOrchestrator {
             );
         }
         let compute_summary = compute_signals.summary(self.compute_backend.name());
+        for (stage, dim) in [
+            (ComputeStage::Sae, 128_u32),
+            (ComputeStage::Ssm, 64_u32),
+            (ComputeStage::Lfm, 64_u32),
+        ] {
+            if let Err(v) = self.compute_economy.try_charge(
+                BudgetPool::Primary,
+                stage,
+                self.compute_economy.schedule.stage_cost(stage, dim),
+                ctrl.time.tick.get(),
+            ) {
+                self.persist_compute_budget_violation(ctrl.time, ctrl.corr, &v)?;
+            }
+        }
         let _stability_snapshot =
             self.update_emergency_state(ctrl.time, ctrl.corr, &compute_summary)?;
         let emergency_active = self.emergency_active();
@@ -3034,6 +3212,16 @@ impl RuntimeOrchestrator {
         }
         if self.backpressure > 0.8 {
             self.backpressure_active_total = self.backpressure_active_total.saturating_add(1);
+        }
+        let primary_remaining = self.compute_economy.remaining(BudgetPool::Primary);
+        let shadow_remaining = self.compute_economy.remaining(BudgetPool::Shadow);
+        metrics::gauge!("ucf_compute_tokens_remaining", "pool" => "primary")
+            .set(primary_remaining as f64);
+        metrics::gauge!("ucf_compute_tokens_remaining", "pool" => "shadow")
+            .set(shadow_remaining as f64);
+        metrics::counter!("ucf_compute_tokens_spent_total", "stage" => "governor").increment(0);
+        if primary_remaining < 300 {
+            self.backpressure = self.backpressure.max(0.9);
         }
         decision = decision.with_compute_summary(ucf_frames::v1::ComputeSignalsSummary {
             backend: compute_summary.backend,
@@ -3479,23 +3667,51 @@ impl RuntimeOrchestrator {
             }
             .bounded();
             let llm_request_digest = llm_req.digest();
-            let mut llm_resp = self
-                .llm_backend
-                .infer(&llm_req, self.compute_budget)
-                .unwrap_or_else(|err| {
-                    let text = if matches!(err, ucf_compute::ComputeError::BudgetExceeded { .. }) {
-                        "System busy; try again.".to_string()
-                    } else {
-                        "refused: llm backend unavailable".to_string()
-                    };
-                    LlmResponse {
-                        status: LlmStatus::Failed,
-                        text,
-                        token_count: 0,
-                        finish_reason: FinishReason::Error,
-                        digest: [0; 32],
-                    }
-                });
+            let in_tokens = estimate_input_tokens(&llm_req.prompt);
+            let llm_reservation = self.compute_economy.reserve_llm(
+                BudgetPool::Primary,
+                in_tokens,
+                llm_req.max_tokens,
+                ctrl.time.tick.get(),
+            );
+            let mut llm_resp = if let Err(v) = &llm_reservation {
+                self.persist_compute_budget_violation(ctrl.time, ctrl.corr, v)?;
+                LlmResponse {
+                    status: LlmStatus::Refused,
+                    text: "refused: compute token budget exhausted".to_string(),
+                    token_count: 0,
+                    finish_reason: FinishReason::PolicyRefusal,
+                    digest: [0; 32],
+                }
+            } else {
+                self.llm_backend
+                    .infer(&llm_req, self.compute_budget)
+                    .unwrap_or_else(|err| {
+                        let text =
+                            if matches!(err, ucf_compute::ComputeError::BudgetExceeded { .. }) {
+                                "System busy; try again.".to_string()
+                            } else {
+                                "refused: llm backend unavailable".to_string()
+                            };
+                        LlmResponse {
+                            status: LlmStatus::Failed,
+                            text,
+                            token_count: 0,
+                            finish_reason: FinishReason::Error,
+                            digest: [0; 32],
+                        }
+                    })
+            };
+            if let Ok(res) = llm_reservation {
+                if let Some(v) = self.compute_economy.settle_llm(
+                    res,
+                    in_tokens,
+                    llm_resp.token_count,
+                    ctrl.time.tick.get(),
+                ) {
+                    self.persist_compute_budget_violation(ctrl.time, ctrl.corr, &v)?;
+                }
+            }
             if llm_resp.digest == [0; 32] {
                 llm_resp = ucf_compute::capabilities::LlmResponse::new(
                     llm_resp.status,
@@ -3849,6 +4065,17 @@ impl RuntimeOrchestrator {
 
         for request in requests {
             metrics::counter!("ucf_tool_requests_created_total").increment(1);
+            if let Err(v) = self.compute_economy.try_charge(
+                BudgetPool::Primary,
+                ComputeStage::Tool,
+                self.compute_economy
+                    .schedule
+                    .stage_cost(ComputeStage::Tool, 1),
+                decision.time.tick.get(),
+            ) {
+                self.persist_compute_budget_violation(decision.time, decision.corr, &v)?;
+                continue;
+            }
             let capability_summary = CapabilitySetSummary::from_set(&self.tool_gate.capabilities);
             let (module, op, input) = call_spec_from_control(&ctrl).map_err(|_| {
                 ucf_policy::errors::PolicyError::AdapterError("sandbox_call_spec_failed")
