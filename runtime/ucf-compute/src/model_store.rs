@@ -89,6 +89,9 @@ pub struct ModelSlotSpec {
 pub enum ModelLoadError {
     Disabled,
     MissingPath,
+    MissingExpectedHash {
+        slot: ModelSlot,
+    },
     ManifestParse(String),
     PathOutsideAllowlist {
         path: PathBuf,
@@ -178,6 +181,9 @@ impl ModelStore {
         };
         if !spec.enabled {
             return Err(ModelLoadError::Disabled);
+        }
+        if spec.expected_sha256 == [0; 32] {
+            return Err(ModelLoadError::MissingExpectedHash { slot });
         }
         let rel_path = spec.path.clone().ok_or(ModelLoadError::MissingPath)?;
         let joined = self.allowlist_root.join(&rel_path);
@@ -521,5 +527,40 @@ mod tests {
         };
         let err = store.verify_slot(ModelSlot::Llm).expect_err("must fail");
         assert!(matches!(err, ModelLoadError::Oversized { .. }));
+    }
+
+    #[test]
+    fn enabled_slot_requires_nonzero_expected_hash() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let models = temp.path().join("models");
+        fs::create_dir_all(&models).expect("models");
+        fs::write(models.join("w.bin"), b"abc").expect("write");
+
+        let mut specs = BTreeMap::new();
+        specs.insert(
+            ModelSlot::EbmReasoner,
+            ModelSlotSpec {
+                slot: ModelSlot::EbmReasoner,
+                enabled: true,
+                path: Some(PathBuf::from("w.bin")),
+                expected_sha256: [0; 32],
+                max_bytes: 1024,
+                format: ModelFormat::Custom,
+                device: ModelDevice::CpuOnly,
+            },
+        );
+        let store = ModelStore {
+            allowlist_root: models,
+            specs,
+        };
+        let err = store
+            .verify_slot(ModelSlot::EbmReasoner)
+            .expect_err("must fail");
+        assert!(matches!(
+            err,
+            ModelLoadError::MissingExpectedHash {
+                slot: ModelSlot::EbmReasoner
+            }
+        ));
     }
 }

@@ -3237,6 +3237,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucf-ebm-train"
+version = "0.1.0"
+dependencies = [
+ "hex",
+ "safetensors",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "ucf-ess"
 version = "0.1.0"
 dependencies = [

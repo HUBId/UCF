@@ -3,12 +3,12 @@
 use std::path::PathBuf;
 
 use ucf_ops::{
-    adversarial_run, bench_run, bringup, diagnostics, ess_compact, ess_snapshot, explain_tick,
-    export_bugreport, load_signoff_checklist, metrics_snapshot, metrics_summary, metrics_trend,
-    models_probe, models_verify, one_command_bringup, out_manifest, readiness_gate,
-    release_signoff_validate, replay_audit, replay_bugreport, run_status, runs_list, runs_search,
-    runs_show, security_verify_chain, verify_bugreport, AdversarialRunArgs, BenchArgs,
-    ExplainTickRequest, ExportArgs, GateStatus,
+    adversarial_run, bench_run, bringup, diagnostics, ebm_export_dataset, ess_compact,
+    ess_snapshot, explain_tick, export_bugreport, load_signoff_checklist, metrics_snapshot,
+    metrics_summary, metrics_trend, models_probe, models_verify, one_command_bringup, out_manifest,
+    readiness_gate, release_signoff_validate, replay_audit, replay_bugreport, run_status,
+    runs_list, runs_search, runs_show, security_verify_chain, verify_bugreport, AdversarialRunArgs,
+    BenchArgs, ExplainTickRequest, ExportArgs, GateStatus,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -161,6 +161,34 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     println!("compaction_manifest={}", serde_json::to_string(&manifest)?);
                 }
                 _ => return Err("usage: ucf-ops ess <snapshot|compact> ...".into()),
+            }
+        }
+        "ebm" => {
+            let sub = args.get(2).map(String::as_str).unwrap_or("help");
+            match sub {
+                "export-dataset" => {
+                    let Some(run_id) = arg_value(&args, "--run") else {
+                        return Err(
+                            "usage: ucf-ops ebm export-dataset --run <id> --from <t0> --to <t1> --out <path> [--policy <path>]".into(),
+                        );
+                    };
+                    let from = parse_u64(&args, "--from", 0);
+                    let to = parse_u64(&args, "--to", u64::MAX);
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/ebm_dataset_v1.jsonl"));
+                    let policy = arg_value(&args, "--policy")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("policies/bundle_v1/retention_v1.json"));
+                    let count = ebm_export_dataset(&workdir, &run_id, from, to, &out, &policy)?;
+                    println!("dataset={} samples={count}", out.display());
+                }
+                _ => {
+                    return Err(
+                        "usage: ucf-ops ebm export-dataset --run <id> --from <t0> --to <t1> --out <path> [--policy <path>]"
+                            .into(),
+                    )
+                }
             }
         }
         "metrics-snapshot" => {
@@ -522,7 +550,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             eprintln!(
-                "usage: ucf-ops <bringup|diag|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|readiness-gate|adversarial-run|out|release|bench|runs|status|version> [--workdir <path>]"
+                "usage: ucf-ops <bringup|diag|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|readiness-gate|adversarial-run|out|release|bench|runs|status|ess|ebm|version> [--workdir <path>]"
             );
             std::process::exit(1);
         }
