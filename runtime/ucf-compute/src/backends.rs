@@ -313,8 +313,8 @@ mod tests {
                     },
                     ComputeBudget::default(),
                 )
-                .expect_err("burn skeleton should return explicit error");
-            assert!(matches!(err, ComputeError::NotImplemented));
+                .expect("burn compute");
+            assert!((0.0..=1.0).contains(&err.surprise));
         }
     }
 
@@ -350,5 +350,32 @@ mod tests {
             a.summary("candle").spikes_digest,
             stub_out.summary("stub").spikes_digest
         );
+    }
+
+    #[cfg(all(feature = "compute-candle", feature = "compute-burn"))]
+    #[test]
+    fn candle_burn_envelope_parity_smoke() {
+        let input = ComputeInput {
+            frame_id: FrameId(7),
+            t: 3,
+            context_digest: [3_u8; 32],
+        };
+        let budget = ComputeBudget::default();
+        let candle = build_backend(&ComputeBackendConfig {
+            kind: ComputeBackendKind::Candle,
+            ..ComputeBackendConfig::default()
+        })
+        .expect("candle");
+        let burn = build_backend(&ComputeBackendConfig {
+            kind: ComputeBackendKind::Burn,
+            ..ComputeBackendConfig::default()
+        })
+        .expect("burn");
+
+        let candle_out = candle.compute(&input, budget).expect("candle compute");
+        let burn_out = burn.compute(&input, budget).expect("burn compute");
+        assert!((0.0..=1.0).contains(&candle_out.pressure));
+        assert!((0.0..=1.0).contains(&burn_out.pressure));
+        assert!((candle_out.pressure - burn_out.pressure).abs() <= 0.15);
     }
 }

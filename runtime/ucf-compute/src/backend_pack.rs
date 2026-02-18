@@ -45,6 +45,12 @@ pub enum BackendComponentId {
     BurnToyV1 = 3,
     LnnOdeV1 = 4,
     RemoteProxyV1 = 5,
+    CandleJepaV1 = 10,
+    CandleSaeV1 = 11,
+    CandleSsmV1 = 12,
+    BurnJepaV1 = 20,
+    BurnSaeV1 = 21,
+    BurnSsmV1 = 22,
     Disabled = 255,
 }
 
@@ -335,9 +341,9 @@ impl BackendPackFactory {
             ),
             BackendPackKind::CandleToyV1 => (
                 BackendComponentId::CandleToyV1,
-                BackendComponentId::CandleToyV1,
-                BackendComponentId::CandleToyV1,
-                BackendComponentId::CandleToyV1,
+                BackendComponentId::CandleJepaV1,
+                BackendComponentId::CandleSaeV1,
+                BackendComponentId::CandleSsmV1,
             ),
             BackendPackKind::CandleLiquidV1 => (
                 BackendComponentId::ToyV1,
@@ -347,9 +353,9 @@ impl BackendPackFactory {
             ),
             BackendPackKind::BurnToyV1 => (
                 BackendComponentId::BurnToyV1,
-                BackendComponentId::BurnToyV1,
-                BackendComponentId::BurnToyV1,
-                BackendComponentId::BurnToyV1,
+                BackendComponentId::BurnJepaV1,
+                BackendComponentId::BurnSaeV1,
+                BackendComponentId::BurnSsmV1,
             ),
             BackendPackKind::ToyLnnV1 | BackendPackKind::WorkerV1 => (
                 BackendComponentId::ToyV1,
@@ -366,17 +372,17 @@ impl BackendPackFactory {
             ),
         };
 
-        let _world_model_hash = model_store
+        let world_model_hash = model_store
             .verify_slot(ModelSlot::WorldJepa)
             .ok()
             .map(|slot| slot.sha256)
             .unwrap_or([0x21; 32]);
-        let _sae_model_hash = model_store
+        let sae_model_hash = model_store
             .verify_slot(ModelSlot::Sae)
             .ok()
             .map(|slot| slot.sha256)
             .unwrap_or([0x31; 32]);
-        let _ssm_model_hash = model_store
+        let ssm_model_hash = model_store
             .verify_slot(ModelSlot::Ssm)
             .ok()
             .map(|slot| slot.sha256)
@@ -472,7 +478,7 @@ impl BackendPackFactory {
                     }
                     #[cfg(not(feature = "lfm-burn"))]
                     {
-                        return Err(ComputeError::BackendDisabled);
+                        (BackendComponentId::ToyV1, Box::new(ToyLfmKernel::default()))
                     }
                 }
                 BackendPackKind::ToyLnnV1 => {

@@ -3122,6 +3122,7 @@ name = "ucf-compute"
 version = "0.1.0"
 dependencies = [
  "candle-core",
+ "half",
  "hex",
  "libc",
  "metrics",

@@ -1,5 +1,10 @@
 use std::collections::BTreeMap;
 
+#[cfg(any(
+    feature = "compute-candle",
+    feature = "llm-candle",
+    feature = "lfm-candle"
+))]
 use candle_core::{DType as CandleDType, Device, Tensor};
 use safetensors::tensor::SafeTensors;
 
@@ -44,6 +49,25 @@ impl WeightSpec {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct LoadedWeightsRaw {
+    pub slot: ModelSlot,
+    pub tensors: BTreeMap<String, LoadedTensorRaw>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LoadedTensorRaw {
+    pub name: String,
+    pub dtype: DType,
+    pub shape: Vec<usize>,
+    pub values_f32: Vec<f32>,
+}
+
+#[cfg(any(
+    feature = "compute-candle",
+    feature = "llm-candle",
+    feature = "lfm-candle"
+))]
 #[derive(Debug, Clone)]
 pub struct LoadedWeights {
     pub slot: ModelSlot,
@@ -95,11 +119,11 @@ impl WeightErr {
     }
 }
 
-pub fn load_safetensors(
+pub fn load_safetensors_raw(
     slot: ModelSlot,
     bytes: &[u8],
     spec: &WeightSpec,
-) -> Result<LoadedWeights, WeightErr> {
+) -> Result<LoadedWeightsRaw, WeightErr> {
     if bytes.len() as u64 > spec.max_bytes {
         return Err(WeightErr::TooLarge {
             code: "WEIGHT_TOO_LARGE",
@@ -112,7 +136,7 @@ pub fn load_safetensors(
         reason: err.to_string(),
     })?;
     let mut bindings = spec.bindings.clone();
-    let mut loaded = BTreeMap::new();
+    let mut loaded: BTreeMap<String, LoadedTensorRaw> = BTreeMap::new();
 
     for required in spec.tensors {
         load_one(&raw, &mut bindings, required, &mut loaded)?;
@@ -123,7 +147,7 @@ pub fn load_safetensors(
         }
     }
 
-    Ok(LoadedWeights {
+    Ok(LoadedWeightsRaw {
         slot,
         tensors: loaded,
     })
@@ -133,7 +157,7 @@ fn load_one(
     raw: &SafeTensors<'_>,
     bindings: &mut BTreeMap<&'static str, usize>,
     expected: &TensorSpec,
-    loaded: &mut BTreeMap<String, Tensor>,
+    loaded: &mut BTreeMap<String, LoadedTensorRaw>,
 ) -> Result<(), WeightErr> {
     let tensor_view = raw
         .tensor(expected.name)
@@ -164,21 +188,116 @@ fn load_one(
         });
     }
 
-    let tensor = Tensor::from_raw_buffer(
-        tensor_view.data(),
-        map_candle_dtype(expected.dtype)?,
-        tensor_view.shape(),
-        &Device::Cpu,
-    )
-    .map_err(|err| WeightErr::ParseError {
-        code: "WEIGHT_PARSE_ERROR",
-        reason: err.to_string(),
-    })?;
+    let values_f32 = decode_tensor_to_f32(expected.dtype, tensor_view.data())?;
 
-    loaded.insert(expected.name.to_string(), tensor);
+    loaded.insert(
+        expected.name.to_string(),
+        LoadedTensorRaw {
+            name: expected.name.to_string(),
+            dtype: expected.dtype,
+            shape: found_shape,
+            values_f32,
+        },
+    );
     Ok(())
 }
 
+fn decode_tensor_to_f32(dtype: DType, bytes: &[u8]) -> Result<Vec<f32>, WeightErr> {
+    match dtype {
+        DType::F32 => {
+            if bytes.len() % 4 != 0 {
+                return Err(WeightErr::ParseError {
+                    code: "WEIGHT_PARSE_ERROR",
+                    reason: "invalid f32 tensor byte length".to_string(),
+                });
+            }
+            Ok(bytes
+                .chunks_exact(4)
+                .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+                .collect())
+        }
+        DType::F16 => {
+            if bytes.len() % 2 != 0 {
+                return Err(WeightErr::ParseError {
+                    code: "WEIGHT_PARSE_ERROR",
+                    reason: "invalid f16 tensor byte length".to_string(),
+                });
+            }
+            Ok(bytes
+                .chunks_exact(2)
+                .map(|chunk| {
+                    half::f16::from_bits(u16::from_le_bytes([chunk[0], chunk[1]])).to_f32()
+                })
+                .collect())
+        }
+        DType::BF16 => {
+            if bytes.len() % 2 != 0 {
+                return Err(WeightErr::ParseError {
+                    code: "WEIGHT_PARSE_ERROR",
+                    reason: "invalid bf16 tensor byte length".to_string(),
+                });
+            }
+            Ok(bytes
+                .chunks_exact(2)
+                .map(|chunk| {
+                    half::bf16::from_bits(u16::from_le_bytes([chunk[0], chunk[1]])).to_f32()
+                })
+                .collect())
+        }
+        DType::I32 => {
+            if bytes.len() % 4 != 0 {
+                return Err(WeightErr::ParseError {
+                    code: "WEIGHT_PARSE_ERROR",
+                    reason: "invalid i32 tensor byte length".to_string(),
+                });
+            }
+            Ok(bytes
+                .chunks_exact(4)
+                .map(|chunk| i32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]) as f32)
+                .collect())
+        }
+        DType::U8 => Ok(bytes.iter().map(|v| *v as f32).collect()),
+    }
+}
+
+#[cfg(any(
+    feature = "compute-candle",
+    feature = "llm-candle",
+    feature = "lfm-candle"
+))]
+pub fn raw_to_candle(raw: &LoadedWeightsRaw) -> Result<LoadedWeights, WeightErr> {
+    let mut tensors = BTreeMap::new();
+    for (name, tensor_raw) in &raw.tensors {
+        let tensor = Tensor::from_vec(
+            tensor_raw.values_f32.clone(),
+            tensor_raw.shape.as_slice(),
+            &Device::Cpu,
+        )
+        .map_err(|err| WeightErr::ParseError {
+            code: "WEIGHT_PARSE_ERROR",
+            reason: err.to_string(),
+        })?;
+        tensors.insert(name.clone(), tensor);
+    }
+    Ok(LoadedWeights {
+        slot: raw.slot,
+        tensors,
+    })
+}
+
+#[cfg(any(
+    feature = "compute-candle",
+    feature = "llm-candle",
+    feature = "lfm-candle"
+))]
+pub fn load_safetensors(
+    slot: ModelSlot,
+    bytes: &[u8],
+    spec: &WeightSpec,
+) -> Result<LoadedWeights, WeightErr> {
+    let raw = load_safetensors_raw(slot, bytes, spec)?;
+    raw_to_candle(&raw)
+}
 fn bind_shape(
     shape: &[DimExpr],
     found: &[usize],
@@ -213,6 +332,11 @@ fn map_dtype(dtype: DType) -> safetensors::Dtype {
     }
 }
 
+#[cfg(any(
+    feature = "compute-candle",
+    feature = "llm-candle",
+    feature = "lfm-candle"
+))]
 fn map_candle_dtype(dtype: DType) -> Result<CandleDType, WeightErr> {
     match dtype {
         DType::F16 => Ok(CandleDType::F16),
@@ -243,18 +367,32 @@ pub fn map_model_load_error(err: &ModelLoadError) -> Option<WeightErr> {
     }
 }
 
-pub fn load_verified_slot(
+pub fn load_verified_slot_raw(
     store: &ModelStore,
     verified: &VerifiedModelSlot,
     spec: &WeightSpec,
-) -> Result<LoadedWeights, WeightErr> {
+) -> Result<LoadedWeightsRaw, WeightErr> {
     let bytes = store.read_verified_bytes(verified).map_err(|err| {
         map_model_load_error(&err).unwrap_or(WeightErr::ParseError {
             code: "WEIGHT_PARSE_ERROR",
             reason: format!("{err:?}"),
         })
     })?;
-    load_safetensors(verified.slot, &bytes, spec)
+    load_safetensors_raw(verified.slot, &bytes, spec)
+}
+
+#[cfg(any(
+    feature = "compute-candle",
+    feature = "llm-candle",
+    feature = "lfm-candle"
+))]
+pub fn load_verified_slot(
+    store: &ModelStore,
+    verified: &VerifiedModelSlot,
+    spec: &WeightSpec,
+) -> Result<LoadedWeights, WeightErr> {
+    let raw = load_verified_slot_raw(store, verified, spec)?;
+    raw_to_candle(&raw)
 }
 
 pub fn backend_disable_for_weight_error(err: &WeightErr) -> ComputeError {
@@ -475,7 +613,7 @@ mod tests {
     fn loads_golden_jepa() {
         let spec = spec_for_slot(ModelSlot::WorldJepa, 1024 * 1024);
         let bytes = fixture_jepa_small();
-        let loaded = load_safetensors(ModelSlot::WorldJepa, &bytes, &spec).expect("valid");
+        let loaded = load_safetensors_raw(ModelSlot::WorldJepa, &bytes, &spec).expect("valid");
         let keys: Vec<_> = loaded.tensors.keys().cloned().collect();
         assert_eq!(keys, vec!["W1", "W2", "b1", "b2"]);
     }
@@ -484,7 +622,7 @@ mod tests {
     fn rejects_missing_tensor() {
         let spec = spec_for_slot(ModelSlot::WorldJepa, 1024 * 1024);
         let bytes = fixture_jepa_missing();
-        let err = load_safetensors(ModelSlot::WorldJepa, &bytes, &spec).expect_err("must fail");
+        let err = load_safetensors_raw(ModelSlot::WorldJepa, &bytes, &spec).expect_err("must fail");
         assert!(matches!(err, WeightErr::MissingTensor { .. }));
         assert_eq!(err.code(), "WEIGHT_MISSING_TENSOR");
     }
@@ -493,7 +631,7 @@ mod tests {
     fn rejects_shape_mismatch() {
         let spec = spec_for_slot(ModelSlot::WorldJepa, 1024 * 1024);
         let bytes = fixture_jepa_wrong_shape();
-        let err = load_safetensors(ModelSlot::WorldJepa, &bytes, &spec).expect_err("must fail");
+        let err = load_safetensors_raw(ModelSlot::WorldJepa, &bytes, &spec).expect_err("must fail");
         assert!(matches!(err, WeightErr::ShapeMismatch { .. }));
         assert_eq!(err.code(), "WEIGHT_SHAPE_MISMATCH");
     }
@@ -502,7 +640,7 @@ mod tests {
     fn rejects_dtype_mismatch() {
         let spec = spec_for_slot(ModelSlot::WorldJepa, 1024 * 1024);
         let bytes = fixture_jepa_wrong_dtype();
-        let err = load_safetensors(ModelSlot::WorldJepa, &bytes, &spec).expect_err("must fail");
+        let err = load_safetensors_raw(ModelSlot::WorldJepa, &bytes, &spec).expect_err("must fail");
         assert!(matches!(err, WeightErr::DTypeMismatch { .. }));
         assert_eq!(err.code(), "WEIGHT_DTYPE_MISMATCH");
     }
@@ -511,7 +649,7 @@ mod tests {
     fn deterministic_ordering() {
         let spec = spec_for_slot(ModelSlot::Ssm, 1024 * 1024);
         let bytes = fixture_ssm_small();
-        let loaded = load_safetensors(ModelSlot::Ssm, &bytes, &spec).expect("valid");
+        let loaded = load_safetensors_raw(ModelSlot::Ssm, &bytes, &spec).expect("valid");
         let keys: Vec<_> = loaded.tensors.keys().cloned().collect();
         assert_eq!(keys, vec!["A", "B", "C"]);
     }
@@ -520,7 +658,7 @@ mod tests {
     fn too_large_rejected_before_parse() {
         let spec = spec_for_slot(ModelSlot::WorldJepa, 3);
         let bytes = vec![1_u8, 2, 3, 4];
-        let err = load_safetensors(ModelSlot::WorldJepa, &bytes, &spec).expect_err("too large");
+        let err = load_safetensors_raw(ModelSlot::WorldJepa, &bytes, &spec).expect_err("too large");
         assert!(matches!(err, WeightErr::TooLarge { .. }));
         assert_eq!(err.code(), "WEIGHT_TOO_LARGE");
     }
@@ -557,7 +695,7 @@ mod tests {
         };
         let verified = store.verify_slot(ModelSlot::WorldJepa).expect("verified");
         let spec = spec_for_slot(ModelSlot::WorldJepa, verified.size_bytes);
-        let err = load_verified_slot(&store, &verified, &spec).expect_err("shape mismatch");
+        let err = load_verified_slot_raw(&store, &verified, &spec).expect_err("shape mismatch");
         assert!(matches!(
             backend_disable_for_weight_error(&err),
             ComputeError::BackendDisabled
@@ -579,7 +717,7 @@ mod tests {
             max_bytes: 1024,
             bindings: BTreeMap::new(),
         };
-        let loaded = load_safetensors(ModelSlot::Llm, &blob, &spec).expect("u8 ok");
+        let loaded = load_safetensors_raw(ModelSlot::Llm, &blob, &spec).expect("u8 ok");
         assert!(loaded.tensors.contains_key("x"));
     }
 }
