@@ -88,6 +88,7 @@ pub struct SlotEnablement {
     pub world_jepa: SlotMode,
     pub sae: SlotMode,
     pub ssm: SlotMode,
+    pub ebm: SlotMode,
 }
 
 impl Default for SlotEnablement {
@@ -98,6 +99,7 @@ impl Default for SlotEnablement {
             world_jepa: SlotMode::Toy,
             sae: SlotMode::Toy,
             ssm: SlotMode::Toy,
+            ebm: SlotMode::Toy,
         }
     }
 }
@@ -117,6 +119,7 @@ impl SlotEnablement {
                     ModelSlot::WorldJepa => cfg.world_jepa = parsed,
                     ModelSlot::Sae => cfg.sae = parsed,
                     ModelSlot::Ssm => cfg.ssm = parsed,
+                    ModelSlot::EbmReasoner => cfg.ebm = parsed,
                 }
             }
         }
@@ -130,6 +133,7 @@ impl SlotEnablement {
             ModelSlot::WorldJepa => self.world_jepa,
             ModelSlot::Sae => self.sae,
             ModelSlot::Ssm => self.ssm,
+            ModelSlot::EbmReasoner => self.ebm,
         }
     }
 }

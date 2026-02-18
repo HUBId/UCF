@@ -3,6 +3,10 @@ use crate::compute_economics::{
     estimate_input_tokens, BudgetPool, ComputeEconomicsProfile, ComputeEconomy, ComputeStage,
     CostSchedule,
 };
+use crate::ebm::{
+    candidate_feature_from_decision, CpuEbmStubV0, EbmEnablementMode, EbmInput, EbmReasoner,
+    EbmSignals, EbmStatus,
+};
 use crate::errors::RuntimeError;
 use crate::evolution::{
     DeltaOp, DeltaScore, EvolutionBudget, EvolutionContext, EvolutionEngine, LiquidWindowStats,
@@ -43,10 +47,10 @@ use ucf_ess::v1::{
     compute_content_digest, AuditCheckpointRecord, AuditPayload, BackendPackRecord,
     CandidateSetRecord, CandidateSummaryRecord, CapabilityIssuanceRecord,
     ComputeBudgetViolationRecord, ComputeBudgetWindowRecord, DeltaEvaluationRecord,
-    DeltaProposalRecord, DeltaRecommendationRecord, EmergencyReasonCode, EmergencyRecord,
-    EmergencyStateCode, ExperienceKind, ExperienceRecord, ExperienceStore, HormoneRecord,
-    IdAllocator, InMemoryEss, LfmSummaryRecord, LfmWindowRecord, NeuroRecord, NsrRecord,
-    OutputRecord, PayloadClassification, PolicyProvenanceRecord, SandboxCallRecord,
+    DeltaProposalRecord, DeltaRecommendationRecord, EbmReasoningRecord, EmergencyReasonCode,
+    EmergencyRecord, EmergencyStateCode, ExperienceKind, ExperienceRecord, ExperienceStore,
+    HormoneRecord, IdAllocator, InMemoryEss, LfmSummaryRecord, LfmWindowRecord, NeuroRecord,
+    NsrRecord, OutputRecord, PayloadClassification, PolicyProvenanceRecord, SandboxCallRecord,
     SandboxReplyRecord, ThrottleRecord, ToolAuthRecord, ToolExecutionRecord, ToolRequestRecord,
 };
 use ucf_fep::{
@@ -115,6 +119,12 @@ fn env_u64(name: &str, default: u64) -> u64 {
 
 fn quantize_unit_u16(v: f32) -> u16 {
     (v.clamp(0.0, 1.0) * 10_000.0).round() as u16
+}
+
+fn prefix8(digest: [u8; 32]) -> [u8; 8] {
+    let mut out = [0u8; 8];
+    out.copy_from_slice(&digest[..8]);
+    out
 }
 
 const OUTPUT_SCHEMA_VERSION: u16 = 2;
@@ -703,6 +713,9 @@ pub struct RuntimeOrchestrator {
     emergency_dv_trend_count: u8,
     emergency_last_reason: Option<EmergencyTriggerReason>,
     candidate_generator: DefaultCandidateGeneratorV0,
+    ebm_reasoner: CpuEbmStubV0,
+    ebm_mode: EbmEnablementMode,
+    ebm_run_id: u64,
     audit_head_digest: [u8; 32],
     audit_chain_checkpoint_total: u64,
     evolution_enabled: bool,
@@ -1776,6 +1789,12 @@ impl RuntimeOrchestrator {
             emergency_dv_trend_count: 0,
             emergency_last_reason: None,
             candidate_generator: DefaultCandidateGeneratorV0,
+            ebm_reasoner: CpuEbmStubV0,
+            ebm_mode: std::env::var("UCF_SLOT_EBM_MODE")
+                .ok()
+                .and_then(|v| EbmEnablementMode::parse(&v))
+                .unwrap_or(EbmEnablementMode::Off),
+            ebm_run_id: 1,
             audit_head_digest: [0; 32],
             audit_chain_checkpoint_total: 0,
             evolution_enabled: env_flag("UCF_ENABLE_EVOLUTION"),
@@ -3447,6 +3466,47 @@ impl RuntimeOrchestrator {
                 .find(|(c, _)| c.is_noop())
                 .map(|(c, a)| (c.clone(), a.clone()))
         });
+        let mut ebm_output = None;
+        if !matches!(self.ebm_mode, EbmEnablementMode::Off) {
+            let ebm_input = EbmInput {
+                t: ctrl.time.tick.get(),
+                governor_tier: self.compute_budget.governor_tier,
+                emergency_active,
+                context_digest: compute_input.context_digest,
+                signals: EbmSignals {
+                    risk_q: ucf_types::UQ0_16::from_f32_clamped(compute_summary.risk),
+                    confidence_q: ucf_types::UQ0_16::from_f32_clamped(compute_summary.confidence),
+                    pressure_q: ucf_types::UQ0_16::from_f32_clamped(compute_summary.pressure),
+                    surprise_q: ucf_types::UQ0_16::from_f32_clamped(compute_summary.surprise),
+                    uncertainty_q: ucf_types::UQ0_16::from_f32_clamped(
+                        compute_summary.lfm_uncertainty.unwrap_or(1.0),
+                    ),
+                    coherence_q: None,
+                },
+                candidates: candidates
+                    .iter()
+                    .map(candidate_feature_from_decision)
+                    .collect(),
+            };
+            let mut ebm_budget = ucf_compute::work_meter::WorkMeter::new(64);
+            let out = self
+                .ebm_reasoner
+                .score_candidates(ebm_input, &mut ebm_budget);
+            if matches!(self.ebm_mode, EbmEnablementMode::Active) {
+                selected = out
+                    .best_indices
+                    .iter()
+                    .filter_map(|idx| {
+                        candidates
+                            .get(usize::from(*idx))
+                            .zip(assessments.get(usize::from(*idx)))
+                    })
+                    .find(|(_, assessment)| assessment.allowed)
+                    .map(|(candidate, assessment)| (candidate.clone(), assessment.clone()))
+                    .or(selected);
+            }
+            ebm_output = Some(out);
+        }
         if matches!(nsr_v0_assessment.policy_hint, PolicyHint::Block) || emergency_active {
             selected = candidates
                 .iter()
@@ -3592,6 +3652,55 @@ impl RuntimeOrchestrator {
             decision.corr,
             candidate_set_record,
         ))?;
+
+        if let Some(out) = ebm_output {
+            let mut top_energies_q = Vec::new();
+            let mut top_candidate_ids = Vec::new();
+            for idx in out.best_indices.iter().take(8) {
+                let i = usize::from(*idx);
+                if let (Some(energy), Some(candidate)) = (out.energies_q.get(i), candidates.get(i))
+                {
+                    top_energies_q.push(energy.raw());
+                    top_candidate_ids.push(candidate.candidate_id);
+                }
+            }
+            let record = EbmReasoningRecord {
+                schema_version: 1,
+                t: ctrl.time.tick.get(),
+                run_id: self.ebm_run_id,
+                decision_id: eid2.0,
+                backend_pack_digest_prefix: prefix8(backend_pack_digest(compute_summary)),
+                ebm_backend_id: self.ebm_reasoner.backend_id() as u8,
+                contract_version: self.ebm_reasoner.contract_version().as_u16(),
+                enablement_mode: self.ebm_mode.as_u8(),
+                risk_q: ucf_types::UQ0_16::from_f32_clamped(compute_summary.risk).raw(),
+                pressure_q: ucf_types::UQ0_16::from_f32_clamped(compute_summary.pressure).raw(),
+                surprise_q: ucf_types::UQ0_16::from_f32_clamped(compute_summary.surprise).raw(),
+                uncertainty_q: ucf_types::UQ0_16::from_f32_clamped(
+                    compute_summary.lfm_uncertainty.unwrap_or(1.0),
+                )
+                .raw(),
+                aggregate_energy_q: out.aggregate_energy_q.raw(),
+                top_energies_q,
+                top_candidate_ids,
+                ebm_digest_prefix: prefix8(out.ebm_digest),
+                evidence_chain_digest_prefix: prefix8(compute_summary.compute_chain_digest),
+                status: out.status.as_u8(),
+                reason_code: match out.status {
+                    EbmStatus::Ok => 0,
+                    EbmStatus::BudgetExceeded => 1,
+                    EbmStatus::DegradedFallback => 2,
+                    EbmStatus::Disabled => 3,
+                    EbmStatus::Error => 4,
+                },
+            };
+            self.ess.append(ExperienceRecord::from_ebm_reasoning(
+                self.ids.next(),
+                decision.time,
+                decision.corr,
+                record,
+            ))?;
+        }
 
         let decoding_policy = apply_decoding_policy(
             self.llm_cfg.max_tokens,

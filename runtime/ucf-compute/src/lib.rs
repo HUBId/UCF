@@ -58,6 +58,7 @@ pub use risk_contract::{
     clamp01, stable_budget_profile_id, validate_risk_signal, BackendProfileId, EvidenceRef,
     RiskSignal, SignalQuality,
 };
+pub use work_meter::WorkMeter;
 
 pub const MAX_SPIKES: usize = 256;
 pub const MAX_NOTES: usize = 16;

@@ -3722,6 +3722,7 @@ dependencies = [
  "metrics",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror 1.0.69",
  "tracing",
  "ucf-biophys",
@@ -3745,6 +3746,7 @@ dependencies = [
  "ucf-spikes",
  "ucf-ssm",
  "ucf-tcf",
+ "ucf-types",
  "wasmtime",
  "wat",
 ]

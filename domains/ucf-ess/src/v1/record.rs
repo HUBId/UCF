@@ -30,6 +30,7 @@ pub enum ExperienceKind {
     DeltaRecommendation,
     Nsr,
     CandidateSet,
+    EbmReasoning,
     Output,
     BackendPack,
     LfmSummary,
@@ -88,6 +89,7 @@ pub enum AuditPayload {
     SandboxReply(SandboxReplyRecord),
     AuditCheckpoint(AuditCheckpointRecord),
     CandidateSet(CandidateSetRecord),
+    EbmReasoning(EbmReasoningRecord),
     Output(OutputRecord),
     CapabilityIssuance(CapabilityIssuanceRecord),
     Throttle(ThrottleRecord),
@@ -256,6 +258,29 @@ pub struct CandidateSetRecord {
     pub selected_candidate_id: u16,
     pub selected_candidate_digest: [u8; 32],
     pub summaries: Vec<CandidateSummaryRecord>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EbmReasoningRecord {
+    pub schema_version: u16,
+    pub t: u64,
+    pub run_id: u64,
+    pub decision_id: u64,
+    pub backend_pack_digest_prefix: [u8; 8],
+    pub ebm_backend_id: u8,
+    pub contract_version: u16,
+    pub enablement_mode: u8,
+    pub risk_q: u16,
+    pub pressure_q: u16,
+    pub surprise_q: u16,
+    pub uncertainty_q: u16,
+    pub aggregate_energy_q: u16,
+    pub top_energies_q: Vec<u16>,
+    pub top_candidate_ids: Vec<u16>,
+    pub ebm_digest_prefix: [u8; 8],
+    pub evidence_chain_digest_prefix: [u8; 8],
+    pub status: u8,
+    pub reason_code: u16,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -846,6 +871,36 @@ impl ExperienceRecord {
             corr,
             kind: ExperienceKind::CandidateSet,
             payload: ExperiencePayload::Audit(AuditPayload::CandidateSet(candidate_set)),
+            neuromod: None,
+            iit_phi: None,
+            decision_meta: None,
+            compute_summary: None,
+            hormone_record: None,
+            neuro_record: None,
+            delta_proposal_record: None,
+            delta_evaluation_record: None,
+            delta_recommendation_record: None,
+            nsr_record: None,
+            backend_pack_record: None,
+            lfm_summary_record: None,
+            lfm_window_record: None,
+            audit_prev_digest: None,
+            audit_digest: None,
+        }
+    }
+
+    pub fn from_ebm_reasoning(
+        id: ExperienceId,
+        time: SimTime,
+        corr: CorrelationId,
+        ebm_record: EbmReasoningRecord,
+    ) -> Self {
+        Self {
+            id,
+            time,
+            corr,
+            kind: ExperienceKind::EbmReasoning,
+            payload: ExperiencePayload::Audit(AuditPayload::EbmReasoning(ebm_record)),
             neuromod: None,
             iit_phi: None,
             decision_meta: None,
