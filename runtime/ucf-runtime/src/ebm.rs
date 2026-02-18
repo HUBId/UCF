@@ -109,6 +109,45 @@ pub struct EbmOutput {
     pub search_steps_used: u8,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EbmSignal {
+    pub energy_min_q: UQ0_16,
+    pub energy_mean_topk_q: UQ0_16,
+    pub energy_dispersion_q: UQ0_16,
+    pub ebm_digest_prefix: [u8; 8],
+}
+
+impl EbmSignal {
+    pub fn from_output(output: &EbmOutput) -> Self {
+        let mut top = output
+            .best_indices
+            .iter()
+            .filter_map(|idx| output.energies_q.get(usize::from(*idx)).copied())
+            .take(EBM_TOP_N_MAX)
+            .collect::<Vec<_>>();
+        if top.is_empty() {
+            top.push(output.aggregate_energy_q);
+        }
+        top.sort_by_key(|v| v.raw());
+        let min = top[0];
+        let max = *top.last().unwrap_or(&min);
+        let sum = top.iter().map(|v| u32::from(v.raw())).sum::<u32>();
+        let mean_raw = (sum / top.len() as u32).min(u32::from(u16::MAX)) as u16;
+        Self {
+            energy_min_q: min,
+            energy_mean_topk_q: UQ0_16::from_raw(mean_raw),
+            energy_dispersion_q: UQ0_16::from_raw(max.raw().saturating_sub(min.raw())),
+            ebm_digest_prefix: prefix8(output.ebm_digest),
+        }
+    }
+}
+
+fn prefix8(digest: [u8; 32]) -> [u8; 8] {
+    let mut out = [0u8; 8];
+    out.copy_from_slice(&digest[..8]);
+    out
+}
+
 pub trait EbmReasoner: Send {
     fn contract_version(&self) -> StageContractVersion;
     fn backend_id(&self) -> BackendComponentId;
@@ -200,6 +239,7 @@ impl EbmReasoner for CpuEbmStubV0 {
 
 #[cfg(any(feature = "compute-candle", test))]
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct EbmMlModelV1 {
     input_dim: usize,
     hidden_dim: usize,
@@ -463,6 +503,7 @@ impl EbmReasoner for CandleEbmReasonerV1 {
 }
 
 #[cfg(any(feature = "compute-candle", test))]
+#[allow(dead_code)]
 fn score_with_bounded_search(
     model: &EbmMlModelV1,
     signals: &EbmSignals,
@@ -513,6 +554,7 @@ fn bounded_variants(candidate: &CandidateFeature) -> Vec<CandidateFeature> {
 }
 
 #[cfg(any(feature = "compute-candle", test))]
+#[allow(dead_code)]
 fn score_mlp_candidate(
     model: &EbmMlModelV1,
     signals: &EbmSignals,
@@ -542,6 +584,7 @@ fn score_mlp_candidate(
 }
 
 #[cfg(any(feature = "compute-candle", test))]
+#[allow(dead_code)]
 fn build_feature_vector(
     signals: &EbmSignals,
     candidate: &CandidateFeature,
@@ -573,6 +616,7 @@ fn build_feature_vector(
 }
 
 #[cfg(any(feature = "compute-candle", test))]
+#[allow(dead_code)]
 fn sigmoid(v: f32) -> f32 {
     if v.is_nan() {
         1.0
@@ -582,6 +626,7 @@ fn sigmoid(v: f32) -> f32 {
 }
 
 #[cfg(any(feature = "compute-candle", test))]
+#[allow(dead_code)]
 fn q_to_f32(v: UQ0_16) -> f32 {
     f32::from(v.raw()) / f32::from(u16::MAX)
 }

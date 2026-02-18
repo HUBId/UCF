@@ -1,6 +1,7 @@
 #[derive(Clone, Debug, PartialEq)]
 pub struct FepCfg {
     pub beta_surprise: f32,
+    pub w_ebm_q: u16,
     pub beta_complexity: f32,
     pub beta_policy_risk: f32,
     pub beta_memory_pressure: f32,
@@ -17,6 +18,7 @@ impl FepCfg {
     pub fn default_v0() -> Self {
         Self {
             beta_surprise: 1.2,
+            w_ebm_q: 1_966,
             beta_complexity: 0.8,
             beta_policy_risk: 1.4,
             beta_memory_pressure: 1.0,
@@ -34,6 +36,7 @@ impl FepCfg {
 #[derive(Clone, Debug, PartialEq)]
 pub struct FepInputs {
     pub now_ms: u64,
+    pub ebm_energy_mean_topk_q: u16,
     pub dt_s: f32,
     pub surprise: f32,
     pub complexity: f32,
@@ -56,6 +59,10 @@ pub struct FepInputs {
 #[derive(Clone, Debug, PartialEq)]
 pub struct FepOutputs {
     pub attention_gain: f32,
+    pub free_energy_proxy_q: u16,
+    pub ebm_energy_mean_topk_q: u16,
+    pub w_ebm_q: u16,
+    pub coupling_version: u8,
     pub learn_gate: f32,
     pub memory_priority: f32,
     pub action_inhibit: f32,
@@ -92,6 +99,10 @@ pub fn fep_step(cfg: &FepCfg, inp: &FepInputs) -> FepOutputs {
         + cfg.lambda_nsr * nsr_risk
         + cfg.beta_policy_risk * risk_penalty)
         .max(0.0);
+    let base_free_energy_q = (free_energy.clamp(0.0, 1.0) * 65_535.0).round() as u16;
+    let ebm_energy_mean_topk_q = inp.ebm_energy_mean_topk_q;
+    let proxy_add = ((u32::from(cfg.w_ebm_q) * u32::from(ebm_energy_mean_topk_q)) >> 16) as u16;
+    let free_energy_proxy_q = base_free_energy_q.saturating_add(proxy_add);
 
     let pressure_relief = (onn_lock * 0.7).clamp(0.0, 1.0);
     let pressure_penalty =
@@ -142,6 +153,10 @@ pub fn fep_step(cfg: &FepCfg, inp: &FepInputs) -> FepOutputs {
 
     FepOutputs {
         attention_gain,
+        free_energy_proxy_q,
+        ebm_energy_mean_topk_q,
+        w_ebm_q: cfg.w_ebm_q,
+        coupling_version: 1,
         learn_gate,
         memory_priority,
         action_inhibit,
@@ -157,6 +172,7 @@ mod tests {
     fn mk_input() -> FepInputs {
         FepInputs {
             now_ms: 1,
+            ebm_energy_mean_topk_q: 0,
             dt_s: 0.01,
             surprise: 0.3,
             complexity: 0.2,

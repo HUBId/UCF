@@ -91,6 +91,8 @@ pub struct EvolutionContext {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct LiquidWindowStats {
+    pub ebm_energy_mean_q: f32,
+    pub ebm_energy_trend_q: f32,
     pub window: (u64, u64),
     pub mean_uncertainty: f32,
     pub max_uncertainty: f32,
@@ -122,6 +124,8 @@ pub enum ReasonCode {
     WeakSafetyMargin,
     HeuristicAssumption,
     SafetyDominance,
+    EbmEnergyHigh,
+    EbmTrendUp,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -291,6 +295,8 @@ impl EvolutionEngine for MockEvolutionEngineV0 {
         let high_pressure = ctx.liquid_window.mean_pressure > 0.65;
         let high_surprise = ctx.liquid_window.mean_surprise > 0.7;
         let low_confidence = ctx.confidence_mean < 0.45;
+        let ebm_energy_high = ctx.liquid_window.ebm_energy_mean_q > 0.6;
+        let ebm_trend_up = ctx.liquid_window.ebm_energy_trend_q > 0.08;
         let stable_low_risk = ctx.liquid_window.mean_risk < 0.3
             && ctx.liquid_window.mean_uncertainty < 0.35
             && ctx.liquid_window.mean_coherence.unwrap_or(0.0) > 0.7
@@ -326,6 +332,27 @@ impl EvolutionEngine for MockEvolutionEngineV0 {
                 vec![
                     Self::safe_add(SmallKey::CoherenceMaxMemoryPressure, -0.04),
                     Self::safe_add(SmallKey::StructureDeltaCap, -0.03),
+                ],
+            );
+        }
+
+        if ebm_energy_high || ebm_trend_up {
+            self.push_candidate(
+                &mut out,
+                &ctx,
+                DeltaTarget::FepWeights,
+                vec![
+                    Self::safe_add(SmallKey::BetaPolicyRisk, 0.03),
+                    Self::safe_add(SmallKey::CoherenceRiskInhibitMin, 0.03),
+                ],
+            );
+            self.push_candidate(
+                &mut out,
+                &ctx,
+                DeltaTarget::ComputeBudgetHints,
+                vec![
+                    Self::safe_add(SmallKey::CoherenceMaxMemoryPressure, -0.03),
+                    Self::safe_add(SmallKey::StructureDeltaCap, -0.02),
                 ],
             );
         }
@@ -396,6 +423,12 @@ impl EvolutionEngine for MockEvolutionEngineV0 {
             budget_penalty += 0.2;
             reasons.push(ReasonCode::ReducesBudgetExceed);
         }
+        if ctx.liquid_window.ebm_energy_mean_q > 0.6 {
+            reasons.push(ReasonCode::EbmEnergyHigh);
+        }
+        if ctx.liquid_window.ebm_energy_trend_q > 0.08 {
+            reasons.push(ReasonCode::EbmTrendUp);
+        }
         if ctx.coherence_mean < 0.3 {
             stability_penalty += 0.2;
             reasons.push(ReasonCode::WeakSafetyMargin);
@@ -457,6 +490,8 @@ impl EvolutionEngine for MockEvolutionEngineV0 {
                         | ReasonCode::IncreasesRisk
                         | ReasonCode::WeakSafetyMargin
                         | ReasonCode::SafetyDominance
+                        | ReasonCode::EbmEnergyHigh
+                        | ReasonCode::EbmTrendUp
                 )
             });
             if !blocked && score.fitness >= 0.55 {
@@ -508,6 +543,8 @@ mod tests {
                 mean_coherence: Some(0.25),
                 delta_mean_uncertainty: 0.1,
                 delta_mean_pressure: 0.1,
+                ebm_energy_mean_q: 0.7,
+                ebm_energy_trend_q: 0.12,
                 digest: [2; 32],
             },
             governor_tier_mean: 1.0,

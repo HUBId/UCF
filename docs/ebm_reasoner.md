@@ -37,3 +37,16 @@ Optional über `UCF_EBM_SEARCH=1`:
 - Timeout/Budget/NaN/Degenerate => Fallback + envelope violation record
 
 Governance/Tool-Gate bleibt final maßgeblich; EBM beeinflusst nur Kandidaten-Rerank.
+
+
+## FEP/Governor Coupling v1
+
+- EBM liefert ein deterministisches `EbmSignal` mit `energy_min_q`, `energy_mean_topk_q`, `energy_dispersion_q` und `ebm_digest_prefix`.
+- FEP nutzt `energy_mean_topk_q` als zusätzlichen Free-Energy-Proxy-Term:
+  - `free_energy_proxy_q = clamp(base_free_energy_q + w_ebm_q * energy_mean_topk_q, 0..1)`
+  - fixed-point only auf dem Policy-Pfad.
+- Governor nutzt EBM **nur tightening-only**:
+  - Bei `energy_mean_topk_q > E_HIGH` wird eine additive Penalty berechnet.
+  - Unterhalb des Schwellwerts: keine Wirkung.
+  - EBM kann Governor niemals permissiver machen.
+- Bei `emergency_active` wird EBM im Governor ignoriert und kann im Reasoning als `suppressed_by_emergency=true` markiert werden.

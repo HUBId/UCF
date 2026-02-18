@@ -128,6 +128,10 @@ fn gate_denies_missing_decision_and_rate_limits_by_ticks() {
         instability_q: None,
         phi_proxy: None,
         coherence_digest: None,
+        free_energy_proxy_q: None,
+        ebm_energy_mean_topk_q: None,
+        ebm_w_q: None,
+        fep_coupling_version: None,
     });
     let mut gate = ToolGate::new(
         issue_capabilities(Some(&decision), 1),
@@ -217,6 +221,10 @@ fn issuer_blocks_high_risk() {
         instability_q: None,
         phi_proxy: None,
         coherence_digest: None,
+        free_energy_proxy_q: None,
+        ebm_energy_mean_topk_q: None,
+        ebm_w_q: None,
+        fep_coupling_version: None,
     });
     let caps = issue_capabilities(Some(&decision), 10);
     assert!(caps
@@ -308,6 +316,10 @@ fn tool_governor_escalates_cooldown_under_repeated_denies() {
         instability_q: None,
         phi_proxy: None,
         coherence_digest: None,
+        free_energy_proxy_q: None,
+        ebm_energy_mean_topk_q: None,
+        ebm_w_q: None,
+        fep_coupling_version: None,
     });
     let signals = GovernanceSignals::from_inputs(Some(&decision), 1, Some(0.95), Some(0.9));
     let (_, d1) = issue_capabilities_governed(Some(&decision), 1, signals, &mut governor);

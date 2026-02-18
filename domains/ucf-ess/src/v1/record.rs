@@ -162,6 +162,10 @@ pub struct ComputeBudgetViolationRecord {
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CapabilityIssuanceRecord {
+    pub governor_score_before_q: u16,
+    pub governor_score_after_q: u16,
+    pub ebm_penalty_q: u16,
+    pub ebm_energy_used_q: u16,
     pub policy_bundle_hash: String,
     pub t: u64,
     pub decision_id: u64,
@@ -264,6 +268,7 @@ pub struct CandidateSetRecord {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EbmReasoningRecord {
+    pub suppressed_by_emergency: bool,
     pub schema_version: u16,
     pub t: u64,
     pub run_id: u64,
