@@ -50,3 +50,11 @@ Governance/Tool-Gate bleibt final maßgeblich; EBM beeinflusst nur Kandidaten-Re
   - Unterhalb des Schwellwerts: keine Wirkung.
   - EBM kann Governor niemals permissiver machen.
 - Bei `emergency_active` wird EBM im Governor ignoriert und kann im Reasoning als `suppressed_by_emergency=true` markiert werden.
+
+
+## Constraint Library v1
+
+- EBM addiert harte Safety-Constraints als deterministische Energy-Terme (`E_total = clamp(E_model + Σterm, 0..1)`).
+- Term-Definitionen kommen aus `policies/bundle_v1/ebm_constraints.toml` und sind über den Policy-Bundle-Hash gesichert.
+- Bei Lade-/Validierungsfehlern greift ein konservativer Fallback (`ToolIntentPenalty`) und wird telemetriert.
+- Explain-Tick zeigt `base_energy_q` plus Top-Term-Contributions (id + Label + Beitrag).

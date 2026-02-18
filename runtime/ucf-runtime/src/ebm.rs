@@ -1,4 +1,5 @@
 use sha2::{Digest, Sha256};
+use std::sync::OnceLock;
 use ucf_compute::{BackendComponentId, StageContractVersion, WorkMeter};
 use ucf_policy::candidate::{DecisionCandidate, OutputClass};
 use ucf_types::UQ0_16;
@@ -8,6 +9,100 @@ pub const EBM_TOP_N_MAX: usize = 8;
 pub const EBM_FEATURE_D_MAX: usize = 64;
 pub const EBM_HIDDEN_MAX: usize = 32;
 pub const EBM_SEARCH_STEPS_MAX: u8 = 16;
+pub const EBM_CONSTRAINT_TOP_MAX: usize = 8;
+pub const EBM_CONSTRAINT_TERM_MAX: usize = 32;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ConstraintTermId(pub u16);
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConstraintTermKind {
+    ToolIntentPenalty,
+    CapabilityForbidden,
+    CapabilityHighRisk,
+    ContextRiskAmplifier,
+    EmergencyDenyAllBias,
+    OutputClassMismatch,
+    BudgetExhaustedBias,
+}
+
+impl ConstraintTermKind {
+    pub const fn as_label(self) -> &'static str {
+        match self {
+            Self::ToolIntentPenalty => "ToolIntentPenalty",
+            Self::CapabilityForbidden => "CapabilityForbidden",
+            Self::CapabilityHighRisk => "CapabilityHighRisk",
+            Self::ContextRiskAmplifier => "ContextRiskAmplifier",
+            Self::EmergencyDenyAllBias => "EmergencyDenyAllBias",
+            Self::OutputClassMismatch => "OutputClassMismatch",
+            Self::BudgetExhaustedBias => "BudgetExhaustedBias",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ConstraintParams {
+    pub capability_class_id: Option<u8>,
+    pub threshold_q: Option<UQ0_16>,
+    pub candidate_kind: Option<CandidateKind>,
+    pub governor_tier_min: Option<u8>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ConstraintTermSpec {
+    pub id: ConstraintTermId,
+    pub kind: ConstraintTermKind,
+    pub weight_q: UQ0_16,
+    pub params: ConstraintParams,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TermContribution {
+    pub id: u16,
+    pub kind: ConstraintTermKind,
+    pub contrib_q: UQ0_16,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EbmConstraintLibrary {
+    pub schema_version: u16,
+    pub terms: Vec<ConstraintTermSpec>,
+    pub fallback_used: bool,
+    pub constraints_digest: [u8; 32],
+}
+
+impl EbmConstraintLibrary {
+    pub fn fallback() -> Self {
+        let terms = vec![ConstraintTermSpec {
+            id: ConstraintTermId(1),
+            kind: ConstraintTermKind::ToolIntentPenalty,
+            weight_q: UQ0_16::from_raw(62_000),
+            params: ConstraintParams {
+                capability_class_id: None,
+                threshold_q: None,
+                candidate_kind: None,
+                governor_tier_min: None,
+            },
+        }];
+        Self {
+            schema_version: 1,
+            constraints_digest: digest_constraint_terms(1, &terms),
+            terms,
+            fallback_used: true,
+        }
+    }
+}
+
+static EBM_CONSTRAINT_LIBRARY: OnceLock<EbmConstraintLibrary> = OnceLock::new();
+
+pub fn configure_ebm_constraints(library: EbmConstraintLibrary) {
+    let _ = EBM_CONSTRAINT_LIBRARY.set(library);
+}
+
+pub fn active_ebm_constraints() -> &'static EbmConstraintLibrary {
+    EBM_CONSTRAINT_LIBRARY.get_or_init(EbmConstraintLibrary::fallback)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EbmEnablementMode {
@@ -59,6 +154,7 @@ impl EbmStatus {
     }
 }
 
+#[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum CandidateKind {
     SafeText,
@@ -103,6 +199,9 @@ pub struct EbmOutput {
     pub energies_q: Vec<UQ0_16>,
     pub best_indices: Vec<u16>,
     pub aggregate_energy_q: UQ0_16,
+    pub base_energies_q: Vec<UQ0_16>,
+    pub selected_term_contributions: Vec<TermContribution>,
+    pub constraints_digest_prefix: [u8; 8],
     pub ebm_digest: [u8; 32],
     pub model_digest_prefix: [u8; 8],
     pub search_enabled: bool,
@@ -196,22 +295,29 @@ impl EbmReasoner for CpuEbmStubV0 {
             );
         }
 
-        let mut scored: Vec<(usize, u16, UQ0_16)> = input
+        let constraints = active_ebm_constraints();
+        let mut scored: Vec<(usize, u16, UQ0_16, UQ0_16, Vec<TermContribution>)> = input
             .candidates
             .iter()
             .enumerate()
-            .map(|(idx, c)| (idx, c.candidate_id, score_candidate(&input, c)))
+            .map(|(idx, c)| {
+                let base = score_candidate(&input, c);
+                let (total, contribs) = apply_constraint_terms(&input, c, base, constraints);
+                (idx, c.candidate_id, total, base, contribs)
+            })
             .collect();
         scored.sort_by(|a, b| a.2.raw().cmp(&b.2.raw()).then_with(|| a.1.cmp(&b.1)));
 
         let mut energies_q = vec![UQ0_16::ONE; input.candidates.len()];
-        for (idx, _, energy) in &scored {
+        let mut base_energies_q = vec![UQ0_16::ONE; input.candidates.len()];
+        for (idx, _, energy, base, _) in &scored {
             energies_q[*idx] = *energy;
+            base_energies_q[*idx] = *base;
         }
         let best_indices = scored
             .iter()
             .take(EBM_TOP_N_MAX)
-            .map(|(idx, _, _)| *idx as u16)
+            .map(|(idx, _, _, _, _)| *idx as u16)
             .collect::<Vec<_>>();
         let aggregate = scored.first().map(|v| v.2).unwrap_or(UQ0_16::ONE);
         let digest = compute_ebm_digest(
@@ -224,11 +330,19 @@ impl EbmReasoner for CpuEbmStubV0 {
             0,
         );
 
+        let selected_term_contributions = scored
+            .first()
+            .map(|(_, _, _, _, contribs)| contribs.clone())
+            .unwrap_or_default();
+
         EbmOutput {
             status: EbmStatus::Ok,
             energies_q,
             best_indices,
             aggregate_energy_q: aggregate,
+            base_energies_q,
+            selected_term_contributions,
+            constraints_digest_prefix: prefix8(constraints.constraints_digest),
             ebm_digest: digest,
             model_digest_prefix: [0; 8],
             search_enabled: false,
@@ -477,7 +591,7 @@ impl EbmReasoner for CandleEbmReasonerV1 {
         let best_indices = scored
             .iter()
             .take(EBM_TOP_N_MAX)
-            .map(|(idx, _, _)| *idx as u16)
+            .map(|(idx, _, _, _, _)| *idx as u16)
             .collect::<Vec<_>>();
         let aggregate = scored.first().map(|v| v.2).unwrap_or(UQ0_16::ONE);
         let digest = compute_ebm_digest(
@@ -491,9 +605,12 @@ impl EbmReasoner for CandleEbmReasonerV1 {
         );
         EbmOutput {
             status: EbmStatus::Ok,
-            energies_q,
+            energies_q: energies_q.clone(),
             best_indices,
             aggregate_energy_q: aggregate,
+            base_energies_q: energies_q,
+            selected_term_contributions: Vec::new(),
+            constraints_digest_prefix: [0; 8],
             ebm_digest: digest,
             model_digest_prefix: self.model_digest_prefix,
             search_enabled: self.search_enabled,
@@ -631,6 +748,139 @@ fn q_to_f32(v: UQ0_16) -> f32 {
     f32::from(v.raw()) / f32::from(u16::MAX)
 }
 
+fn apply_constraint_terms(
+    input: &EbmInput,
+    candidate: &CandidateFeature,
+    base: UQ0_16,
+    constraints: &EbmConstraintLibrary,
+) -> (UQ0_16, Vec<TermContribution>) {
+    let mut total = u32::from(base.raw());
+    let mut contributions = Vec::new();
+    for term in &constraints.terms {
+        let contrib = eval_constraint_term(term, input, candidate);
+        if contrib.raw() > 0 {
+            total = total.saturating_add(u32::from(contrib.raw()));
+            contributions.push(TermContribution {
+                id: term.id.0,
+                kind: term.kind,
+                contrib_q: contrib,
+            });
+            metrics::counter!("ucf_ebm_term_applied_total", "term_id" => term.id.0.to_string())
+                .increment(1);
+        }
+    }
+    contributions.sort_by(|a, b| {
+        b.contrib_q
+            .raw()
+            .cmp(&a.contrib_q.raw())
+            .then_with(|| a.id.cmp(&b.id))
+    });
+    contributions.truncate(EBM_CONSTRAINT_TOP_MAX);
+    (
+        UQ0_16::from_raw(total.min(u32::from(u16::MAX)) as u16),
+        contributions,
+    )
+}
+
+fn eval_constraint_term(
+    term: &ConstraintTermSpec,
+    input: &EbmInput,
+    candidate: &CandidateFeature,
+) -> UQ0_16 {
+    match term.kind {
+        ConstraintTermKind::ToolIntentPenalty => {
+            if matches!(candidate.candidate_kind, CandidateKind::ToolIntent) {
+                term.weight_q
+            } else {
+                UQ0_16::ZERO
+            }
+        }
+        ConstraintTermKind::CapabilityForbidden => {
+            if let (Some(expected), Some(actual)) =
+                (term.params.capability_class_id, candidate.tool_class)
+            {
+                if expected == actual {
+                    return UQ0_16::ONE;
+                }
+            }
+            UQ0_16::ZERO
+        }
+        ConstraintTermKind::CapabilityHighRisk => {
+            if let (Some(expected), Some(actual)) =
+                (term.params.capability_class_id, candidate.tool_class)
+            {
+                if expected == actual && input.signals.risk_q.raw() >= 32768 {
+                    return term.weight_q;
+                }
+            }
+            UQ0_16::ZERO
+        }
+        ConstraintTermKind::ContextRiskAmplifier => {
+            let threshold = term.params.threshold_q.unwrap_or(UQ0_16::from_raw(32_768));
+            if input.signals.risk_q.raw() > threshold.raw() {
+                let delta =
+                    UQ0_16::from_raw(input.signals.risk_q.raw().saturating_sub(threshold.raw()));
+                let raw = mul_q(term.weight_q, delta) as u16;
+                UQ0_16::from_raw(raw)
+            } else {
+                UQ0_16::ZERO
+            }
+        }
+        ConstraintTermKind::EmergencyDenyAllBias => {
+            if input.emergency_active && !matches!(candidate.candidate_kind, CandidateKind::NoOp) {
+                term.weight_q
+            } else {
+                UQ0_16::ZERO
+            }
+        }
+        ConstraintTermKind::OutputClassMismatch => {
+            if term
+                .params
+                .candidate_kind
+                .is_some_and(|k| k != candidate.candidate_kind)
+            {
+                term.weight_q
+            } else {
+                UQ0_16::ZERO
+            }
+        }
+        ConstraintTermKind::BudgetExhaustedBias => {
+            if term
+                .params
+                .governor_tier_min
+                .is_some_and(|min| input.governor_tier >= min)
+                && !matches!(candidate.candidate_kind, CandidateKind::NoOp)
+            {
+                term.weight_q
+            } else {
+                UQ0_16::ZERO
+            }
+        }
+    }
+}
+
+fn digest_constraint_terms(schema_version: u16, terms: &[ConstraintTermSpec]) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(b"ucf.ebm.constraints.v1");
+    hasher.update(schema_version.to_le_bytes());
+    for term in terms {
+        hasher.update(term.id.0.to_le_bytes());
+        hasher.update([term.kind as u8]);
+        hasher.update(term.weight_q.raw().to_le_bytes());
+        hasher.update([term.params.capability_class_id.unwrap_or(0)]);
+        hasher.update(
+            term.params
+                .threshold_q
+                .map(UQ0_16::raw)
+                .unwrap_or(0)
+                .to_le_bytes(),
+        );
+        hasher.update([term.params.candidate_kind.map(|v| v as u8).unwrap_or(0)]);
+        hasher.update([term.params.governor_tier_min.unwrap_or(0)]);
+    }
+    hasher.finalize().into()
+}
+
 fn score_candidate(input: &EbmInput, candidate: &CandidateFeature) -> UQ0_16 {
     let mut acc = 0u32;
     acc = acc.saturating_add(mul_q(W_RISK_Q, input.signals.risk_q));
@@ -762,6 +1012,9 @@ fn degraded_fallback(
             .first()
             .map(|idx| energies_q[*idx as usize])
             .unwrap_or(UQ0_16::ONE),
+        base_energies_q: energies_q.clone(),
+        selected_term_contributions: Vec::new(),
+        constraints_digest_prefix: [0; 8],
         energies_q,
         best_indices,
         ebm_digest: digest,

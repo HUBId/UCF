@@ -40,6 +40,7 @@ pub enum ExperienceKind {
     Throttle,
     Emergency,
     PolicyProvenance,
+    EbmConstraintProvenance,
     RemoteCall,
     RemoteCallDenied,
     ComputeBudgetWindow,
@@ -97,6 +98,7 @@ pub enum AuditPayload {
     Throttle(ThrottleRecord),
     Emergency(EmergencyRecord),
     PolicyProvenance(PolicyProvenanceRecord),
+    EbmConstraintProvenance(EbmConstraintProvenanceRecord),
     RemoteCall(RemoteCallRecord),
     RemoteCallDenied(RemoteCallDeniedRecord),
     ComputeBudgetWindow(ComputeBudgetWindowRecord),
@@ -192,6 +194,14 @@ pub struct PolicyProvenanceRecord {
     pub enabled_features: Vec<String>,
     pub schema_version: u16,
 }
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EbmConstraintProvenanceRecord {
+    pub t: u64,
+    pub policy_hash_prefix: [u8; 8],
+    pub constraints_digest_prefix: [u8; 8],
+    pub term_count: u16,
+    pub schema_version: u16,
+}
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EmergencyReasonCode {
     RunawayV,
@@ -283,9 +293,12 @@ pub struct EbmReasoningRecord {
     pub surprise_q: u16,
     pub uncertainty_q: u16,
     pub aggregate_energy_q: u16,
+    pub base_energy_q: u16,
     pub top_energies_q: Vec<u16>,
     pub top_candidate_ids: Vec<u16>,
     pub ebm_digest_prefix: [u8; 8],
+    pub constraints_digest_prefix: [u8; 8],
+    pub top_term_contributions: Vec<(u16, u16)>,
     pub search_enabled: bool,
     pub search_steps_used: u8,
     pub evidence_chain_digest_prefix: [u8; 8],

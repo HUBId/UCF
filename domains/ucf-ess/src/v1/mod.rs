@@ -9,11 +9,11 @@ pub use record::{
     compute_content_digest, AuditCheckpointRecord, AuditPayload, BackendPackRecord,
     CandidateSetRecord, CandidateSummaryRecord, CapabilityIssuanceRecord,
     ComputeBudgetViolationRecord, ComputeBudgetWindowRecord, DeltaEvaluationRecord,
-    DeltaProposalRecord, DeltaRecommendationRecord, EbmEnvelopeViolationRecord, EbmReasoningRecord,
-    EmergencyReasonCode, EmergencyRecord, EmergencyStateCode, ExperienceId, ExperienceKind,
-    ExperiencePayload, ExperienceRecord, HormoneRecord, LfmSummaryRecord, LfmWindowRecord,
-    NeuroRecord, NsrRecord, OutputRecord, PayloadClassification, PolicyProvenanceRecord,
-    SandboxCallRecord, SandboxReplyRecord, ThrottleRecord, ToolAuthRecord, ToolExecutionRecord,
-    ToolRequestRecord,
+    DeltaProposalRecord, DeltaRecommendationRecord, EbmConstraintProvenanceRecord,
+    EbmEnvelopeViolationRecord, EbmReasoningRecord, EmergencyReasonCode, EmergencyRecord,
+    EmergencyStateCode, ExperienceId, ExperienceKind, ExperiencePayload, ExperienceRecord,
+    HormoneRecord, LfmSummaryRecord, LfmWindowRecord, NeuroRecord, NsrRecord, OutputRecord,
+    PayloadClassification, PolicyProvenanceRecord, SandboxCallRecord, SandboxReplyRecord,
+    ThrottleRecord, ToolAuthRecord, ToolExecutionRecord, ToolRequestRecord,
 };
 pub use store::{ExperienceStore, IdAllocator, InMemoryEss};

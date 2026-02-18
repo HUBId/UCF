@@ -46,9 +46,9 @@ pub fn data_class_for_payload(payload: &AuditPayload) -> DataClass {
         }
         AuditPayload::CapabilityIssuance(_) => DataClass::ScalarSummary,
         AuditPayload::Output(_) => DataClass::TextPayload,
-        AuditPayload::PolicyProvenance(_) | AuditPayload::AuditCheckpoint(_) => {
-            DataClass::DigestOnly
-        }
+        AuditPayload::PolicyProvenance(_)
+        | AuditPayload::EbmConstraintProvenance(_)
+        | AuditPayload::AuditCheckpoint(_) => DataClass::DigestOnly,
         AuditPayload::ToolRequest(_)
         | AuditPayload::ToolAuth(_)
         | AuditPayload::ToolExecution(_)

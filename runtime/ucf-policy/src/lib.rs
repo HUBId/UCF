@@ -1,6 +1,7 @@
 pub mod adapter;
 pub mod candidate;
 pub mod capability;
+pub mod ebm_constraints;
 pub mod errors;
 pub mod gem;
 pub mod pbm;
