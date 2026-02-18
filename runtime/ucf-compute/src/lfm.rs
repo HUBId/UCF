@@ -30,6 +30,9 @@ pub struct LfmInput {
     pub neuro_arousal: Option<f32>,
     pub governor_tier: Option<u8>,
     pub prediction_error: Option<f32>,
+    pub risk: Option<f32>,
+    pub confidence: Option<f32>,
+    pub prior_uncertainty: Option<f32>,
     pub seed: u64,
 }
 
@@ -39,6 +42,10 @@ pub struct LfmOutput {
     pub liquid_readout_digest: [u8; 32],
     pub uncertainty: f32,
     pub stability: f32,
+    pub homeostasis_error: f32,
+    pub uncertainty_q: u16,
+    pub stability_q: u16,
+    pub homeostasis_error_q: u16,
     pub state_norm: f32,
     pub deriv_norm: f32,
     pub saturation_ratio: f32,
@@ -55,6 +62,10 @@ impl LfmOutput {
             liquid_readout_digest: LFM_DEGRADED_MARKER,
             uncertainty: 1.0,
             stability: 0.0,
+            homeostasis_error: 1.0,
+            uncertainty_q: quantize_unit_u16(1.0),
+            stability_q: quantize_unit_u16(0.0),
+            homeostasis_error_q: quantize_unit_u16(1.0),
             state_norm: 1.0,
             deriv_norm: 1.0,
             saturation_ratio: 1.0,
@@ -426,20 +437,33 @@ impl LfmKernel for CandleLfmKernel {
         let saturation_ratio =
             self.x_shadow.iter().filter(|v| v.abs() >= 0.999).count() as f32 / LFM_STATE_DIM as f32;
         let nan_inf_detected = self.x_shadow.iter().any(|v| !v.is_finite());
+        if nan_inf_detected {
+            let mut out = LfmOutput::degraded("nan_inf_detected");
+            out.nan_inf_detected = true;
+            return Ok(out);
+        }
         let uncertainty = (0.6 * u + 0.4 * state_norm).clamp(0.0, 1.0);
         let stability = (1.0 - uncertainty).clamp(0.0, 1.0);
+        let homeostasis_error = (uncertainty - 0.5).abs().clamp(0.0, 1.0);
+        let uncertainty_q = quantize_unit_u16(uncertainty);
+        let stability_q = quantize_unit_u16(stability);
+        let homeostasis_error_q = quantize_unit_u16(homeostasis_error);
 
         let mut hasher = Sha256::new();
         hasher.update(self.fixture.digest);
         hasher.update(input.t.to_le_bytes());
         hasher.update(input.context_digest);
         hasher.update(input.world_digest);
+        hasher.update(input.spikes_digest);
         for value in &self.x_shadow {
             hasher.update(quantize_signed_unit(*value).to_le_bytes());
         }
         let liquid_state_digest: [u8; 32] = hasher.finalize().into();
 
         let mut readout_hasher = Sha256::new();
+        readout_hasher.update(uncertainty_q.to_le_bytes());
+        readout_hasher.update(stability_q.to_le_bytes());
+        readout_hasher.update(homeostasis_error_q.to_le_bytes());
         readout_hasher.update(quantize_unit_u16(readout).to_le_bytes());
         readout_hasher.update(liquid_state_digest);
         let liquid_readout_digest: [u8; 32] = readout_hasher.finalize().into();
@@ -449,6 +473,10 @@ impl LfmKernel for CandleLfmKernel {
             liquid_readout_digest,
             uncertainty,
             stability,
+            homeostasis_error,
+            uncertainty_q,
+            stability_q,
+            homeostasis_error_q,
             state_norm,
             deriv_norm,
             saturation_ratio,
@@ -467,11 +495,14 @@ impl LfmKernel for CandleLfmKernel {
 #[derive(Debug, Clone)]
 struct LnnParamsV1 {
     n: usize,
+    m: usize,
     dt: f32,
+    steps: u8,
     clamp_state: f32,
     clamp_deriv: f32,
     kmax: f32,
     state_scale: f32,
+    homeostasis_target: f32,
     drive_w: [f32; 8],
     alpha: Vec<f32>,
     wx: Vec<f32>,
@@ -487,11 +518,14 @@ impl LnnParamsV1 {
         struct LnnFixtureJson {
             schema_version: u16,
             n: usize,
+            m: usize,
             dt: f32,
+            steps: u8,
             clamp_state: f32,
             clamp_deriv: f32,
             kmax: u16,
             state_scale: f32,
+            homeostasis_target: f32,
             drive_w: Vec<f32>,
             alpha: Vec<f32>,
             wx: Vec<f32>,
@@ -505,59 +539,72 @@ impl LnnParamsV1 {
                 reason: format!("invalid LNN fixture json: {err}"),
             })?;
 
-        let schema_version = parsed.schema_version;
-        if schema_version != 1 {
-            tracing::warn!("lfm-lnn invalid schema_version={schema_version}");
+        if parsed.schema_version != 1 {
+            tracing::warn!("lfm-lnn invalid schema_version={}", parsed.schema_version);
             return Err(ComputeError::BackendDisabled);
         }
         let n = parsed.n;
-        if n == 0 || n > 64 {
-            tracing::warn!("lfm-lnn invalid state size n={n}");
+        let m = parsed.m;
+        if n == 0 || n > 32 || m == 0 || m > 8 {
+            tracing::warn!("lfm-lnn invalid dimensions n={n} m={m}");
             return Err(ComputeError::BackendDisabled);
         }
-        let dt = parsed.dt;
-        let clamp_state = parsed.clamp_state;
-        let clamp_deriv = parsed.clamp_deriv;
-        let kmax = f32::from(parsed.kmax);
-        let state_scale = parsed.state_scale;
         if parsed.drive_w.len() != 8
             || parsed.alpha.len() != n
             || parsed.wx.len() != n * n
-            || parsed.wu.len() != n
+            || parsed.wu.len() != n * m
             || parsed.b.len() != n
         {
             tracing::warn!("lfm-lnn invalid fixture array lengths");
             return Err(ComputeError::BackendDisabled);
         }
+
         let mut drive_w = [0.0_f32; 8];
         drive_w.copy_from_slice(&parsed.drive_w);
-        let alpha = parsed.alpha;
-        let wx = parsed.wx;
-        let wu = parsed.wu;
-        let b = parsed.b;
-        if !(dt.is_finite() && dt > 0.0 && dt <= 1.0) {
-            tracing::warn!("lfm-lnn invalid dt={dt}");
+
+        if !(parsed.dt.is_finite() && parsed.dt > 0.0 && parsed.dt <= 1.0) {
+            tracing::warn!("lfm-lnn invalid dt={}", parsed.dt);
             return Err(ComputeError::BackendDisabled);
         }
-        if !(clamp_state.is_finite() && clamp_state > 0.0 && clamp_state <= 1.0) {
-            tracing::warn!("lfm-lnn invalid clamp_state={clamp_state}");
+        if !(parsed.steps > 0 && parsed.steps <= 8) {
+            tracing::warn!("lfm-lnn invalid steps={}", parsed.steps);
             return Err(ComputeError::BackendDisabled);
         }
-        if !(clamp_deriv.is_finite() && clamp_deriv > 0.0 && clamp_deriv <= 1.0) {
-            tracing::warn!("lfm-lnn invalid clamp_deriv={clamp_deriv}");
+        if !(parsed.clamp_state.is_finite()
+            && parsed.clamp_state > 0.0
+            && parsed.clamp_state <= 1.0)
+        {
+            tracing::warn!("lfm-lnn invalid clamp_state={}", parsed.clamp_state);
             return Err(ComputeError::BackendDisabled);
         }
-        if !(state_scale.is_finite() && state_scale > 0.0) {
-            tracing::warn!("lfm-lnn invalid state_scale={state_scale}");
+        if !(parsed.clamp_deriv.is_finite()
+            && parsed.clamp_deriv > 0.0
+            && parsed.clamp_deriv <= 1.0)
+        {
+            tracing::warn!("lfm-lnn invalid clamp_deriv={}", parsed.clamp_deriv);
             return Err(ComputeError::BackendDisabled);
         }
-        for value in alpha.iter().copied() {
+        if !(parsed.state_scale.is_finite() && parsed.state_scale > 0.0) {
+            tracing::warn!("lfm-lnn invalid state_scale={}", parsed.state_scale);
+            return Err(ComputeError::BackendDisabled);
+        }
+        if !(parsed.homeostasis_target.is_finite()
+            && (0.0..=1.0).contains(&parsed.homeostasis_target))
+        {
+            tracing::warn!(
+                "lfm-lnn invalid homeostasis_target={}",
+                parsed.homeostasis_target
+            );
+            return Err(ComputeError::BackendDisabled);
+        }
+
+        for value in parsed.alpha.iter().copied() {
             if !value.is_finite() || !(0.1..=2.0).contains(&value) {
                 tracing::warn!("lfm-lnn invalid alpha");
                 return Err(ComputeError::BackendDisabled);
             }
         }
-        for value in wx.iter().chain(&wu).chain(&b).copied() {
+        for value in parsed.wx.iter().chain(&parsed.wu).chain(&parsed.b).copied() {
             if !value.is_finite() || value.abs() > 1.0 {
                 tracing::warn!("lfm-lnn invalid weight magnitude");
                 return Err(ComputeError::BackendDisabled);
@@ -566,16 +613,19 @@ impl LnnParamsV1 {
 
         Ok(Self {
             n,
-            dt,
-            clamp_state,
-            clamp_deriv,
-            kmax: kmax.max(1.0),
-            state_scale,
+            m,
+            dt: parsed.dt,
+            steps: parsed.steps,
+            clamp_state: parsed.clamp_state,
+            clamp_deriv: parsed.clamp_deriv,
+            kmax: f32::from(parsed.kmax).max(1.0),
+            state_scale: parsed.state_scale,
+            homeostasis_target: parsed.homeostasis_target,
             drive_w,
-            alpha,
-            wx,
-            wu,
-            b,
+            alpha: parsed.alpha,
+            wx: parsed.wx,
+            wu: parsed.wu,
+            b: parsed.b,
             digest: {
                 let computed: [u8; 32] = Sha256::digest(raw.as_bytes()).into();
                 match hex::decode(parsed.fixture_digest_hex) {
@@ -635,7 +685,13 @@ impl Default for LnnOdeLfmKernel {
 impl LnnOdeLfmKernel {
     fn check_budget(&self, budget: ComputeBudget) -> Result<(), ComputeError> {
         let n = self.base_params.n as u64;
-        let work_units = 32_u64.saturating_add(2 * n * n).saturating_add(24 * n);
+        let m = self.base_params.m as u64;
+        let steps = u64::from(self.base_params.steps);
+        let per_step = 16_u64
+            .saturating_add(2 * n * n)
+            .saturating_add(2 * n * m)
+            .saturating_add(20 * n);
+        let work_units = 32_u64.saturating_add(steps.saturating_mul(per_step));
         let elapsed_micros = work_units / LFM_WORK_SCALE;
         if work_units > budget.max_micros.saturating_mul(LFM_WORK_SCALE) {
             return Err(ComputeError::BudgetExceeded {
@@ -760,27 +816,49 @@ impl LnnOdeLfmKernel {
         }
     }
 
-    fn drive(&self, input: &LfmInput) -> f32 {
+    fn build_u(&self, input: &LfmInput) -> [f32; 8] {
         let spikes = (f32::from(input.spike_count) / self.base_params.kmax).clamp(0.0, 1.0);
         let coherence_penalty = 1.0 - input.coherence.unwrap_or(1.0).clamp(0.0, 1.0);
-        (self.base_params.drive_w[0] * input.pressure.clamp(0.0, 1.0)
-            + self.base_params.drive_w[1] * input.surprise.clamp(0.0, 1.0)
-            + self.base_params.drive_w[2] * spikes
-            + self.base_params.drive_w[3] * input.sae_energy.clamp(0.0, 1.0)
-            + self.base_params.drive_w[4] * coherence_penalty
-            + self.base_params.drive_w[5] * input.instability.unwrap_or(0.0).clamp(0.0, 1.0)
-            + self.base_params.drive_w[6] * input.hormone_stress.unwrap_or(0.0).clamp(0.0, 1.0)
-            + self.base_params.drive_w[7] * input.neuro_arousal.unwrap_or(0.0).clamp(0.0, 1.0))
-        .clamp(0.0, 1.0)
+        let risk = input.risk.unwrap_or(0.0).clamp(0.0, 1.0);
+        let uncertainty = input.prior_uncertainty.unwrap_or(0.0).clamp(0.0, 1.0);
+        let confidence = input.confidence.unwrap_or(1.0).clamp(0.0, 1.0);
+        [
+            input.pressure.clamp(0.0, 1.0),
+            input.surprise.clamp(0.0, 1.0),
+            risk,
+            uncertainty,
+            confidence,
+            spikes,
+            input.sae_energy.clamp(0.0, 1.0),
+            (0.5 * coherence_penalty
+                + 0.3 * input.instability.unwrap_or(0.0).clamp(0.0, 1.0)
+                + 0.1 * input.hormone_stress.unwrap_or(0.0).clamp(0.0, 1.0)
+                + 0.1 * input.neuro_arousal.unwrap_or(0.0).clamp(0.0, 1.0))
+            .clamp(0.0, 1.0),
+        ]
     }
 
-    fn deriv(&self, x: &[f32], u: f32, out: &mut [f32]) {
+    fn drive(&self, u: &[f32; 8]) -> f32 {
+        let mut out = 0.0_f32;
+        for (i, value) in u.iter().enumerate() {
+            out += self.base_params.drive_w[i] * *value;
+        }
+        out.clamp(0.0, 1.0)
+    }
+
+    fn deriv(&self, x: &[f32], u: &[f32; 8], out: &mut [f32]) {
         let n = self.base_params.n;
+        let m = self.base_params.m;
         for i in 0..n {
-            let mut acc = self.base_params.b[i] + self.overlay.wu[i] * u;
-            let row = i * n;
+            let mut acc = self.base_params.b[i];
+            let row_x = i * n;
             for (j, x_j) in x.iter().enumerate().take(n) {
-                acc += self.base_params.wx[row + j] * *x_j;
+                acc += self.base_params.wx[row_x + j] * *x_j;
+            }
+            let row_u = i * m;
+            for (j, u_j) in u.iter().enumerate().take(m) {
+                let signed = (*u_j * 2.0) - 1.0;
+                acc += self.overlay.wu[row_u + j] * signed;
             }
             let nonlin = acc.tanh();
             out[i] = (-self.overlay.alpha[i] * x[i] + nonlin)
@@ -812,21 +890,25 @@ impl LfmKernel for LnnOdeLfmKernel {
     fn step(&mut self, input: &LfmInput, budget: ComputeBudget) -> Result<LfmOutput, ComputeError> {
         self.check_budget(budget)?;
 
-        let u = self.drive(input);
+        let u_vec = self.build_u(input);
+        let u = self.drive(&u_vec);
         let n = self.base_params.n;
         let mut k1 = vec![0.0_f32; n];
         let mut x_mid = vec![0.0_f32; n];
         let mut k2 = vec![0.0_f32; n];
 
-        self.deriv(&self.x, u, &mut k1);
-        for i in 0..n {
-            x_mid[i] = (self.x[i] + 0.5 * self.base_params.dt * k1[i])
-                .clamp(-self.base_params.clamp_state, self.base_params.clamp_state);
-        }
-        self.deriv(&x_mid, u, &mut k2);
-        for (i, k2_i) in k2.iter().enumerate().take(n) {
-            self.x[i] = (self.x[i] + self.base_params.dt * *k2_i)
-                .clamp(-self.base_params.clamp_state, self.base_params.clamp_state);
+        self.deriv(&self.x, &u_vec, &mut k1);
+        for _ in 0..self.base_params.steps {
+            for i in 0..n {
+                x_mid[i] = (self.x[i] + 0.5 * self.base_params.dt * k1[i])
+                    .clamp(-self.base_params.clamp_state, self.base_params.clamp_state);
+            }
+            self.deriv(&x_mid, &u_vec, &mut k2);
+            for (i, k2_i) in k2.iter().enumerate().take(n) {
+                self.x[i] = (self.x[i] + self.base_params.dt * *k2_i)
+                    .clamp(-self.base_params.clamp_state, self.base_params.clamp_state);
+            }
+            self.deriv(&self.x, &u_vec, &mut k1);
         }
 
         let readout = self.x.iter().sum::<f32>() / n as f32;
@@ -843,8 +925,19 @@ impl LfmKernel for LnnOdeLfmKernel {
             .count() as f32
             / n as f32;
         let nan_inf_detected = self.x.iter().chain(k2.iter()).any(|v| !v.is_finite());
+        if nan_inf_detected {
+            let mut out = LfmOutput::degraded("nan_inf_detected");
+            out.nan_inf_detected = true;
+            return Ok(out);
+        }
         let uncertainty = (0.5 * u + 0.3 * state_norm + 0.2 * deriv_norm).clamp(0.0, 1.0);
         let stability = (1.0 - uncertainty).clamp(0.0, 1.0);
+        let homeostasis_error = (uncertainty - self.base_params.homeostasis_target)
+            .abs()
+            .clamp(0.0, 1.0);
+        let uncertainty_q = quantize_unit_u16(uncertainty);
+        let stability_q = quantize_unit_u16(stability);
+        let homeostasis_error_q = quantize_unit_u16(homeostasis_error);
 
         let plasticity_input = PlasticityInput {
             t: input.t,
@@ -883,16 +976,22 @@ impl LfmKernel for LnnOdeLfmKernel {
         hasher.update(plasticity_update.params_digest_after);
         hasher.update(input.t.to_le_bytes());
         hasher.update(input.context_digest);
+        hasher.update(input.world_digest);
+        hasher.update(input.spikes_digest);
         for value in &self.x {
             let normalized = (*value / self.base_params.clamp_state).clamp(-1.0, 1.0);
             hasher.update(quantize_signed_unit(normalized).to_le_bytes());
         }
         hasher.update(quantize_unit_u16(u).to_le_bytes());
-        hasher.update(quantize_unit_u16(uncertainty).to_le_bytes());
-        hasher.update(quantize_unit_u16(stability).to_le_bytes());
+        hasher.update(uncertainty_q.to_le_bytes());
+        hasher.update(stability_q.to_le_bytes());
+        hasher.update(homeostasis_error_q.to_le_bytes());
         let liquid_state_digest: [u8; 32] = hasher.finalize().into();
 
         let mut readout_hasher = Sha256::new();
+        readout_hasher.update(uncertainty_q.to_le_bytes());
+        readout_hasher.update(stability_q.to_le_bytes());
+        readout_hasher.update(homeostasis_error_q.to_le_bytes());
         readout_hasher.update(quantize_signed_unit(readout).to_le_bytes());
         readout_hasher.update(liquid_state_digest);
         let liquid_readout_digest: [u8; 32] = readout_hasher.finalize().into();
@@ -902,6 +1001,10 @@ impl LfmKernel for LnnOdeLfmKernel {
             liquid_readout_digest,
             uncertainty,
             stability,
+            homeostasis_error,
+            uncertainty_q,
+            stability_q,
+            homeostasis_error_q,
             state_norm,
             deriv_norm,
             saturation_ratio,
@@ -1005,6 +1108,7 @@ impl ToyLfmKernel {
         hasher.update(input.t.to_le_bytes());
         hasher.update(input.context_digest);
         hasher.update(input.world_digest);
+        hasher.update(input.spikes_digest);
         for value in self.x {
             hasher.update(quantize_signed_unit(value).to_le_bytes());
         }
@@ -1068,11 +1172,23 @@ impl LfmKernel for ToyLfmKernel {
         let saturation_ratio =
             self.x.iter().filter(|v| v.abs() >= 0.999).count() as f32 / LFM_STATE_DIM as f32;
         let nan_inf_detected = self.x.iter().any(|v| !v.is_finite());
+        if nan_inf_detected {
+            let mut out = LfmOutput::degraded("nan_inf_detected");
+            out.nan_inf_detected = true;
+            return Ok(out);
+        }
         let uncertainty = (0.6 * u + 0.4 * state_norm).clamp(0.0, 1.0);
         let stability = (1.0 - uncertainty).clamp(0.0, 1.0);
+        let homeostasis_error = (uncertainty - 0.5).abs().clamp(0.0, 1.0);
+        let uncertainty_q = quantize_unit_u16(uncertainty);
+        let stability_q = quantize_unit_u16(stability);
+        let homeostasis_error_q = quantize_unit_u16(homeostasis_error);
 
         let liquid_state_digest = self.state_digest(input);
         let mut readout_hasher = Sha256::new();
+        readout_hasher.update(uncertainty_q.to_le_bytes());
+        readout_hasher.update(stability_q.to_le_bytes());
+        readout_hasher.update(homeostasis_error_q.to_le_bytes());
         readout_hasher.update(quantize_unit_u16(readout).to_le_bytes());
         readout_hasher.update(liquid_state_digest);
         let liquid_readout_digest: [u8; 32] = readout_hasher.finalize().into();
@@ -1082,6 +1198,10 @@ impl LfmKernel for ToyLfmKernel {
             liquid_readout_digest,
             uncertainty,
             stability,
+            homeostasis_error,
+            uncertainty_q,
+            stability_q,
+            homeostasis_error_q,
             state_norm,
             deriv_norm,
             saturation_ratio,
@@ -1116,6 +1236,9 @@ mod tests {
             neuro_arousal: Some(0.2),
             governor_tier: Some(0),
             prediction_error: Some(0.25),
+            risk: Some(0.2),
+            confidence: Some(0.8),
+            prior_uncertainty: Some(0.3),
             seed: 7,
         }
     }
@@ -1318,6 +1441,34 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "lfm-lnn")]
+    #[test]
+    fn lnn_outputs_quantized_contract_scalars() {
+        let mut kernel = LnnOdeLfmKernel::default();
+        let out = kernel
+            .step(&input(), ComputeBudget::default())
+            .expect("step");
+        assert_eq!(out.uncertainty_q, quantize_unit_u16(out.uncertainty));
+        assert_eq!(out.stability_q, quantize_unit_u16(out.stability));
+        assert_eq!(
+            out.homeostasis_error_q,
+            quantize_unit_u16(out.homeostasis_error)
+        );
+    }
+
+    #[cfg(feature = "lfm-lnn")]
+    #[test]
+    fn lnn_nan_param_triggers_degraded_fallback() {
+        let mut kernel = LnnOdeLfmKernel::default();
+        kernel.overlay.alpha[0] = f32::NAN;
+        let out = kernel
+            .step(&input(), ComputeBudget::default())
+            .expect("step");
+        assert_eq!(out.quality, StageQuality::DegradedFallback);
+        assert!(out.nan_inf_detected);
+        assert_eq!(out.uncertainty_q, quantize_unit_u16(1.0));
+        assert_eq!(out.stability_q, quantize_unit_u16(0.0));
+    }
     #[cfg(feature = "lfm-lnn")]
     #[test]
     fn lnn_budget_exceeded_is_deterministic() {
