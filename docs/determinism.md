@@ -44,3 +44,6 @@ In this hardening pass:
 - `cargo fmt --check` and strict `clippy -D warnings` are required.
 - Property-style and mini-fuzz deterministic tests run offline.
 - CI also runs replay checks to catch deterministic drift early.
+
+## Fixed-point safety scalars (v2)
+Safety-critical scalar path now has integer contract values (`*_q`, `u16` UQ0.16) for digest/policy/replay. Float values remain display-only and non-normative for these signals.

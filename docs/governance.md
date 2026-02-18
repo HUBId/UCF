@@ -45,3 +45,6 @@ All tool actions still require explicit issuance and ToolGate authorization.
 - Keep token capacities/cooldowns bounded and small.
 - Use conservative defaults when inputs are absent (`risk=1`, `confidence=0`, no optional trust signal).
 - Never allow `All` scopes or unbounded quotas.
+
+## Fixed-point governor path
+Governor input signals carry parallel fixed-point fields (`risk_q`, `coherence_q`, `instability_q`, `lfm_uncertainty_q`, `hormone_stress_q`), digest commits these quantized values, and governor scoring/tiering uses fixed-point arithmetic.

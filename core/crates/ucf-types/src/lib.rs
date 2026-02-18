@@ -6,6 +6,84 @@ pub const CANONICAL_QNAN_BITS_F32: u32 = 0x7FC0_0000;
 pub const CANONICAL_UNIT_QUANT_MAX: u16 = u16::MAX;
 pub const CANONICAL_SIGNED_UNIT_QUANT_MAX: i16 = i16::MAX;
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct UQ0_16(pub u16);
+
+impl UQ0_16 {
+    pub const SCALE: u32 = 1 << 16;
+    pub const ZERO: Self = Self(0);
+    pub const ONE: Self = Self(u16::MAX);
+
+    pub const fn from_raw(raw: u16) -> Self {
+        Self(raw)
+    }
+
+    pub const fn raw(self) -> u16 {
+        self.0
+    }
+
+    pub fn from_f32_clamped(value: f32) -> Self {
+        Self(quantize_unit(value, CANONICAL_UNIT_QUANT_MAX))
+    }
+
+    pub fn to_f32(self) -> f32 {
+        f32::from(self.0) / f32::from(CANONICAL_UNIT_QUANT_MAX)
+    }
+
+    pub fn saturating_add(self, rhs: Self) -> Self {
+        Self(self.0.saturating_add(rhs.0))
+    }
+
+    pub fn saturating_mul(self, rhs: Self) -> Self {
+        let lhs = u32::from(self.0);
+        let rhs = u32::from(rhs.0);
+        let product = lhs.saturating_mul(rhs);
+        let scaled = (product.saturating_add(1 << 15)) >> 16;
+        Self((scaled.min(u32::from(u16::MAX))) as u16)
+    }
+}
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Q16_16(pub i32);
+
+impl Q16_16 {
+    pub const SCALE: i64 = 1 << 16;
+
+    pub const fn from_raw(raw: i32) -> Self {
+        Self(raw)
+    }
+
+    pub const fn raw(self) -> i32 {
+        self.0
+    }
+
+    pub fn from_f32_clamped(value: f32) -> Self {
+        let scaled = (f64::from(value) * Self::SCALE as f64).round();
+        Self(scaled.clamp(f64::from(i32::MIN), f64::from(i32::MAX)) as i32)
+    }
+
+    pub fn to_f32(self) -> f32 {
+        self.0 as f32 / Self::SCALE as f32
+    }
+
+    pub fn saturating_add(self, rhs: Self) -> Self {
+        Self(self.0.saturating_add(rhs.0))
+    }
+
+    pub fn saturating_mul(self, rhs: Self) -> Self {
+        let product = i64::from(self.0).saturating_mul(i64::from(rhs.0));
+        let adjusted = if product >= 0 {
+            product.saturating_add(1 << 15)
+        } else {
+            product.saturating_sub(1 << 15)
+        };
+        let scaled = adjusted >> 16;
+        Self(scaled.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32)
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct CanonicalF32(pub u32);
 
@@ -781,5 +859,36 @@ mod tests {
             let clamped = a.clamp(0.0, 1.0);
             prop_assert_eq!(qa, quantize_unit(clamped, CANONICAL_UNIT_QUANT_MAX));
         }
+    }
+}
+
+#[cfg(test)]
+mod fixed_point_tests {
+    use super::{Q16_16, UQ0_16};
+
+    #[test]
+    fn uq0_16_roundtrip_and_clamp() {
+        assert_eq!(UQ0_16::from_f32_clamped(-1.0).raw(), 0);
+        assert_eq!(UQ0_16::from_f32_clamped(2.0).raw(), u16::MAX);
+        let mid = UQ0_16::from_f32_clamped(0.5);
+        assert!((mid.to_f32() - 0.5).abs() < 1e-4);
+    }
+
+    #[test]
+    fn uq0_16_mul_is_deterministic() {
+        let a = UQ0_16::from_f32_clamped(0.75);
+        let b = UQ0_16::from_f32_clamped(0.5);
+        let out = a.saturating_mul(b);
+        assert!((out.to_f32() - 0.375).abs() < 1e-4);
+    }
+
+    #[test]
+    fn q16_16_saturating_mul_and_add() {
+        let a = Q16_16::from_f32_clamped(1.5);
+        let b = Q16_16::from_f32_clamped(-0.25);
+        let prod = a.saturating_mul(b);
+        assert!((prod.to_f32() + 0.375).abs() < 1e-4);
+        let sum = Q16_16::from_raw(i32::MAX).saturating_add(Q16_16::from_raw(1));
+        assert_eq!(sum.raw(), i32::MAX);
     }
 }
