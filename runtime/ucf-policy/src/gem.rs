@@ -5,6 +5,7 @@ use ucf_bluebrain_bridge::BrainStimulusEncoder;
 use ucf_frames::v1::{
     ChannelCode, ControlFrame, ControlPayload, DecisionCode, DecisionFrame, DenyReasonCode,
 };
+use ucf_types::UQ0_16;
 
 use crate::{
     adapter::ActionAdapter,
@@ -24,14 +25,23 @@ pub struct GovernanceSignals {
     pub t: u64,
     pub risk: f32,
     pub confidence: f32,
+    pub risk_q: UQ0_16,
+    pub confidence_q: UQ0_16,
     pub nsr_risk: Option<f32>,
     pub coherence: Option<f32>,
     pub instability: Option<f32>,
+    pub coherence_q: Option<UQ0_16>,
+    pub instability_q: Option<UQ0_16>,
     pub pressure: f32,
     pub surprise: f32,
+    pub pressure_q: UQ0_16,
+    pub surprise_q: UQ0_16,
     pub lfm_uncertainty: Option<f32>,
     pub lfm_stability: Option<f32>,
+    pub lfm_uncertainty_q: Option<UQ0_16>,
+    pub lfm_stability_q: Option<UQ0_16>,
     pub hormone_stress: Option<f32>,
+    pub hormone_stress_q: Option<UQ0_16>,
     pub digest: [u8; 32],
 }
 
@@ -47,14 +57,35 @@ impl GovernanceSignals {
             t,
             risk: summary.map(|s| s.risk).unwrap_or(1.0),
             confidence: summary.map(|s| s.confidence).unwrap_or(0.0),
+            risk_q: summary
+                .map(|s| UQ0_16::from_raw(s.risk_q))
+                .unwrap_or(UQ0_16::ONE),
+            confidence_q: summary
+                .map(|s| UQ0_16::from_raw(s.confidence_q))
+                .unwrap_or(UQ0_16::ZERO),
             nsr_risk,
             coherence: summary.and_then(|s| s.coherence),
             instability: summary.and_then(|s| s.instability),
+            coherence_q: summary.and_then(|s| s.coherence_q).map(UQ0_16::from_raw),
+            instability_q: summary.and_then(|s| s.instability_q).map(UQ0_16::from_raw),
             pressure: summary.map(|s| s.pressure).unwrap_or(1.0),
             surprise: summary.map(|s| s.surprise).unwrap_or(1.0),
+            pressure_q: summary
+                .map(|s| UQ0_16::from_raw(s.pressure_q))
+                .unwrap_or(UQ0_16::ONE),
+            surprise_q: summary
+                .map(|s| UQ0_16::from_raw(s.surprise_q))
+                .unwrap_or(UQ0_16::ONE),
             lfm_uncertainty: summary.and_then(|s| s.lfm_uncertainty),
             lfm_stability: summary.and_then(|s| s.lfm_stability),
+            lfm_uncertainty_q: summary
+                .and_then(|s| s.lfm_uncertainty_q)
+                .map(UQ0_16::from_raw),
+            lfm_stability_q: summary
+                .and_then(|s| s.lfm_stability_q)
+                .map(UQ0_16::from_raw),
             hormone_stress,
+            hormone_stress_q: hormone_stress.map(UQ0_16::from_f32_clamped),
             digest: [0; 32],
         };
         out.risk = out.risk.clamp(0.0, 1.0);
@@ -67,6 +98,15 @@ impl GovernanceSignals {
         out.lfm_uncertainty = out.lfm_uncertainty.map(|v| v.clamp(0.0, 1.0));
         out.lfm_stability = out.lfm_stability.map(|v| v.clamp(0.0, 1.0));
         out.hormone_stress = out.hormone_stress.map(|v| v.clamp(0.0, 1.0));
+        out.risk_q = UQ0_16::from_f32_clamped(out.risk);
+        out.confidence_q = UQ0_16::from_f32_clamped(out.confidence);
+        out.coherence_q = out.coherence.map(UQ0_16::from_f32_clamped);
+        out.instability_q = out.instability.map(UQ0_16::from_f32_clamped);
+        out.pressure_q = UQ0_16::from_f32_clamped(out.pressure);
+        out.surprise_q = UQ0_16::from_f32_clamped(out.surprise);
+        out.lfm_uncertainty_q = out.lfm_uncertainty.map(UQ0_16::from_f32_clamped);
+        out.lfm_stability_q = out.lfm_stability.map(UQ0_16::from_f32_clamped);
+        out.hormone_stress_q = out.hormone_stress.map(UQ0_16::from_f32_clamped);
         out.digest = out.compute_digest();
         out
     }
@@ -74,24 +114,24 @@ impl GovernanceSignals {
     fn compute_digest(&self) -> [u8; 32] {
         let mut hasher = Sha256::new();
         hasher.update(self.t.to_le_bytes());
-        hasher.update(self.risk.to_bits().to_le_bytes());
-        hasher.update(self.confidence.to_bits().to_le_bytes());
-        put_opt_f32(&mut hasher, self.nsr_risk);
-        put_opt_f32(&mut hasher, self.coherence);
-        put_opt_f32(&mut hasher, self.instability);
-        hasher.update(self.pressure.to_bits().to_le_bytes());
-        hasher.update(self.surprise.to_bits().to_le_bytes());
-        put_opt_f32(&mut hasher, self.lfm_uncertainty);
-        put_opt_f32(&mut hasher, self.lfm_stability);
-        put_opt_f32(&mut hasher, self.hormone_stress);
+        hasher.update(self.risk_q.raw().to_le_bytes());
+        hasher.update(self.confidence_q.raw().to_le_bytes());
+        put_opt_uq(&mut hasher, self.nsr_risk.map(UQ0_16::from_f32_clamped));
+        put_opt_uq(&mut hasher, self.coherence_q);
+        put_opt_uq(&mut hasher, self.instability_q);
+        hasher.update(self.pressure_q.raw().to_le_bytes());
+        hasher.update(self.surprise_q.raw().to_le_bytes());
+        put_opt_uq(&mut hasher, self.lfm_uncertainty_q);
+        put_opt_uq(&mut hasher, self.lfm_stability_q);
+        put_opt_uq(&mut hasher, self.hormone_stress_q);
         hasher.finalize().into()
     }
 }
 
-fn put_opt_f32(hasher: &mut Sha256, value: Option<f32>) {
+fn put_opt_uq(hasher: &mut Sha256, value: Option<UQ0_16>) {
     if let Some(v) = value {
         hasher.update([1]);
-        hasher.update(v.to_bits().to_le_bytes());
+        hasher.update(v.raw().to_le_bytes());
     } else {
         hasher.update([0]);
     }
@@ -106,12 +146,13 @@ pub enum IssuanceTier {
 }
 
 impl IssuanceTier {
-    pub fn from_score(score: f32) -> Self {
-        if score < 0.25 {
+    pub fn from_score_q(score_q: UQ0_16) -> Self {
+        let q = score_q.raw();
+        if q < 16_384 {
             Self::Tier0
-        } else if score < 0.5 {
+        } else if q < 32_768 {
             Self::Tier1
-        } else if score < 0.75 {
+        } else if q < 49_152 {
             Self::Tier2
         } else {
             Self::Tier3
@@ -128,13 +169,29 @@ impl IssuanceTier {
     }
 }
 
-pub fn governor_score(signals: GovernanceSignals) -> f32 {
-    (0.35 * signals.nsr_risk.unwrap_or(signals.risk)
-        + 0.20 * (1.0 - signals.coherence.unwrap_or(1.0))
-        + 0.20 * signals.instability.unwrap_or(0.0)
-        + 0.15 * signals.lfm_uncertainty.unwrap_or(0.0)
-        + 0.10 * signals.hormone_stress.unwrap_or(0.0))
-    .clamp(0.0, 1.0)
+const W_RISK_Q: UQ0_16 = UQ0_16::from_raw(22_938);
+const W_COH_Q: UQ0_16 = UQ0_16::from_raw(13_107);
+const W_INSTAB_Q: UQ0_16 = UQ0_16::from_raw(13_107);
+const W_UNCERT_Q: UQ0_16 = UQ0_16::from_raw(9_830);
+const W_STRESS_Q: UQ0_16 = UQ0_16::from_raw(6_554);
+
+pub fn governor_score_q(signals: GovernanceSignals) -> UQ0_16 {
+    let risk = signals
+        .nsr_risk
+        .map(UQ0_16::from_f32_clamped)
+        .unwrap_or(signals.risk_q);
+    let coherence_penalty =
+        UQ0_16::from_raw(u16::MAX - signals.coherence_q.unwrap_or(UQ0_16::ONE).raw());
+    let instability = signals.instability_q.unwrap_or(UQ0_16::ZERO);
+    let uncertainty = signals.lfm_uncertainty_q.unwrap_or(UQ0_16::ZERO);
+    let stress = signals.hormone_stress_q.unwrap_or(UQ0_16::ZERO);
+    let mut score = UQ0_16::ZERO;
+    score = score.saturating_add(risk.saturating_mul(W_RISK_Q));
+    score = score.saturating_add(coherence_penalty.saturating_mul(W_COH_Q));
+    score = score.saturating_add(instability.saturating_mul(W_INSTAB_Q));
+    score = score.saturating_add(uncertainty.saturating_mul(W_UNCERT_Q));
+    score = score.saturating_add(stress.saturating_mul(W_STRESS_Q));
+    score
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -325,6 +382,7 @@ pub struct CapabilityIssuanceDecision {
     pub denied: Vec<CapabilityDecisionItem>,
     pub tier: IssuanceTier,
     pub governor_score: f32,
+    pub governor_score_q: u16,
     pub governance_signals_digest: [u8; 32],
     pub throttle_state_digest: [u8; 32],
     pub evidence_chain_digest: [u8; 32],
@@ -676,6 +734,7 @@ pub fn issue_capabilities_governed(
                 denied,
                 tier: IssuanceTier::Tier3,
                 governor_score: 1.0,
+                governor_score_q: UQ0_16::ONE.raw(),
                 governance_signals_digest: signals.digest,
                 throttle_state_digest: governor.digest(),
                 evidence_chain_digest: [0; 32],
@@ -684,8 +743,9 @@ pub fn issue_capabilities_governed(
         );
     };
     governor.on_tick(now_t);
-    let score = governor_score(signals);
-    let tier = IssuanceTier::from_score(score);
+    let score_q = governor_score_q(signals);
+    let score = score_q.to_f32();
+    let tier = IssuanceTier::from_score_q(score_q);
     counter!("ucf_governor_tier", "tier" => tier.as_u8().to_string()).increment(1);
     metrics::gauge!("ucf_governor_score").set(f64::from(score));
     let mut tokens = Vec::new();
@@ -736,6 +796,7 @@ pub fn issue_capabilities_governed(
             denied,
             tier,
             governor_score: score,
+            governor_score_q: score_q.raw(),
             governance_signals_digest: signals.digest,
             throttle_state_digest,
             evidence_chain_digest,

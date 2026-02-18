@@ -3507,6 +3507,7 @@ dependencies = [
  "ucf-policy",
  "ucf-replay",
  "ucf-runtime",
+ "ucf-types",
 ]
 
 [[package]]
@@ -3544,6 +3545,7 @@ dependencies = [
  "ucf-brainbus",
  "ucf-core",
  "ucf-frames",
+ "ucf-types",
 ]
 
 [[package]]

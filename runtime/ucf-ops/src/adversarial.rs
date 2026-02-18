@@ -14,6 +14,7 @@ use ucf_policy::gem::{
 };
 use ucf_policy::rate_limiter::RateLimiter;
 use ucf_runtime::sandbox_fs::{FsCapabilityKind, FsCapabilityToken, SandboxFs, SandboxFsError};
+use ucf_types::UQ0_16;
 
 use crate::OpsError;
 
@@ -291,14 +292,23 @@ fn run_governor_stress_case() -> CaseResult {
             t,
             risk: 1.0,
             confidence: 0.0,
+            risk_q: UQ0_16::ONE,
+            confidence_q: UQ0_16::ZERO,
             nsr_risk: Some(1.0),
             coherence: Some(0.0),
             instability: Some(1.0),
+            coherence_q: Some(UQ0_16::ZERO),
+            instability_q: Some(UQ0_16::ONE),
             pressure: 1.0,
             surprise: 1.0,
+            pressure_q: UQ0_16::ONE,
+            surprise_q: UQ0_16::ONE,
             lfm_uncertainty: Some(1.0),
             lfm_stability: Some(0.0),
+            lfm_uncertainty_q: Some(UQ0_16::ONE),
+            lfm_stability_q: Some(UQ0_16::ZERO),
             hormone_stress: Some(1.0),
+            hormone_stress_q: Some(UQ0_16::ONE),
             digest: [9; 32],
         };
         let (_, issuance) = issue_capabilities_governed(Some(&decision), t, signals, &mut governor);

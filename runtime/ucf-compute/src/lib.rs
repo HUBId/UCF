@@ -3,6 +3,7 @@ use sha2::{Digest, Sha256};
 use std::sync::atomic::{AtomicU64, Ordering};
 use thiserror::Error;
 use ucf_frames::v1::{ControlFrame, ControlPayload};
+use ucf_types::UQ0_16;
 use world_model::StageQuality;
 
 pub mod backend_pack;
@@ -170,6 +171,10 @@ impl ComputeSignals {
             pressure: self.pressure,
             risk: risk_signal.risk,
             confidence: risk_signal.confidence,
+            surprise_q: UQ0_16::from_f32_clamped(self.surprise).raw(),
+            pressure_q: UQ0_16::from_f32_clamped(self.pressure).raw(),
+            risk_q: UQ0_16::from_f32_clamped(risk_signal.risk).raw(),
+            confidence_q: UQ0_16::from_f32_clamped(risk_signal.confidence).raw(),
             spike_count: self.spikes.len() as u16,
             spikes_digest,
             sparsity: self.sparsity,
@@ -196,6 +201,14 @@ impl ComputeSignals {
             lfm_backend: risk_signal.evidence.lfm_backend as u8,
             lfm_uncertainty: self.lfm_uncertainty,
             lfm_stability: self.lfm_stability,
+            lfm_uncertainty_q: self
+                .lfm_uncertainty
+                .map(UQ0_16::from_f32_clamped)
+                .map(UQ0_16::raw),
+            lfm_stability_q: self
+                .lfm_stability
+                .map(UQ0_16::from_f32_clamped)
+                .map(UQ0_16::raw),
             lfm_state_norm: self.lfm_state_norm,
             lfm_deriv_norm: self.lfm_deriv_norm,
             lfm_saturation_ratio: self.lfm_saturation_ratio,
@@ -390,6 +403,10 @@ pub struct ComputeSignalsSummary {
     pub pressure: f32,
     pub risk: f32,
     pub confidence: f32,
+    pub surprise_q: u16,
+    pub pressure_q: u16,
+    pub risk_q: u16,
+    pub confidence_q: u16,
     pub spike_count: u16,
     pub spikes_digest: [u8; 32],
     pub sparsity: Option<f32>,
@@ -416,6 +433,8 @@ pub struct ComputeSignalsSummary {
     pub lfm_backend: u8,
     pub lfm_uncertainty: Option<f32>,
     pub lfm_stability: Option<f32>,
+    pub lfm_uncertainty_q: Option<u16>,
+    pub lfm_stability_q: Option<u16>,
     pub lfm_state_norm: Option<f32>,
     pub lfm_deriv_norm: Option<f32>,
     pub lfm_saturation_ratio: Option<f32>,
