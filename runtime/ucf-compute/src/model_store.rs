@@ -21,11 +21,19 @@ pub enum ModelSlot {
     Sae,
     Lfm,
     Ssm,
+    EbmReasoner,
 }
 
 impl ModelSlot {
-    pub const fn all() -> [Self; 5] {
-        [Self::Llm, Self::WorldJepa, Self::Sae, Self::Lfm, Self::Ssm]
+    pub const fn all() -> [Self; 6] {
+        [
+            Self::Llm,
+            Self::WorldJepa,
+            Self::Sae,
+            Self::Lfm,
+            Self::Ssm,
+            Self::EbmReasoner,
+        ]
     }
 
     pub const fn env_key(self) -> &'static str {
@@ -35,6 +43,7 @@ impl ModelSlot {
             Self::Sae => "SAE",
             Self::Lfm => "LFM",
             Self::Ssm => "SSM",
+            Self::EbmReasoner => "EBM",
         }
     }
 
@@ -45,6 +54,7 @@ impl ModelSlot {
             Self::Sae => "sae",
             Self::Lfm => "lfm",
             Self::Ssm => "ssm",
+            Self::EbmReasoner => "ebm_reasoner",
         }
     }
 }
@@ -310,6 +320,7 @@ struct ModelManifestSlots {
     sae: Option<ModelManifestSlotEntry>,
     lfm: Option<ModelManifestSlotEntry>,
     ssm: Option<ModelManifestSlotEntry>,
+    ebm_reasoner: Option<ModelManifestSlotEntry>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -349,6 +360,7 @@ impl ModelManifest {
             ModelSlot::Sae => slots.sae.get_or_insert_with(default_entry),
             ModelSlot::Lfm => slots.lfm.get_or_insert_with(default_entry),
             ModelSlot::Ssm => slots.ssm.get_or_insert_with(default_entry),
+            ModelSlot::EbmReasoner => slots.ebm_reasoner.get_or_insert_with(default_entry),
         }
     }
 
@@ -381,6 +393,7 @@ impl ModelManifest {
             ModelSlot::Sae => slots.sae.as_ref(),
             ModelSlot::Lfm => slots.lfm.as_ref(),
             ModelSlot::Ssm => slots.ssm.as_ref(),
+            ModelSlot::EbmReasoner => slots.ebm_reasoner.as_ref(),
         }
     }
 }

@@ -28,6 +28,7 @@ ucf-cde = { path = "../../core/crates/ucf-cde" }
 ucf-nsr = { path = "../../core/crates/ucf-nsr" }
 ucf-ssm = { path = "../../core/crates/ucf-ssm" }
 ucf-dbm = { path = "../../domains/ucf-dbm" }
+ucf-types = { path = "../../core/crates/ucf-types" }
 
 ucf-fep = { path = "../../domains/ucf-fep" }
 
@@ -45,6 +46,7 @@ wat = { version = "1", optional = true }
 
 metrics = { workspace = true }
 tracing = { workspace = true }
+sha2 = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]

@@ -384,6 +384,12 @@ fn probe_spec_for_slot(slot: ModelSlot) -> ProbeSpec {
             "sae_energy": 0.29,
             "spike_count": 13
         })),
+        ModelSlot::EbmReasoner => digest_json(&serde_json::json!({
+            "risk_q": 32000,
+            "uncertainty_q": 28000,
+            "pressure_q": 24000,
+            "surprise_q": 20000
+        })),
     };
     ProbeSpec {
         slot,
@@ -445,6 +451,7 @@ fn run_probe_for_slot(
                     let spec = spec.clone();
                     move || run_lfm_probe(pack, &spec)
                 }),
+                ModelSlot::EbmReasoner => Ok(([0_u8; 32], StageQuality::Unavailable)),
             };
             let elapsed_ms = started.elapsed().as_millis() as u64;
             elapsed_samples.push(elapsed_ms);
@@ -1363,6 +1370,17 @@ pub struct ExplainGovernance {
     pub tier: Option<u8>,
     pub emergency_active: bool,
     pub issuance: Vec<IssuanceExplain>,
+    pub ebm: Option<ExplainEbm>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ExplainEbm {
+    pub mode: u8,
+    pub aggregate_energy_q: u16,
+    pub best_candidate_id: Option<u16>,
+    pub top_energies_q: Vec<u16>,
+    pub ebm_digest_prefix: String,
+    pub status: u8,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -1910,6 +1928,25 @@ pub fn build_explain_tick_report(
     candidates.sort_by_key(|(r, _)| (r.time.tick.get(), r.id.0));
     let candidate_set = candidates.last().map(|(_, c)| c.clone());
 
+    let mut ebm_records = records
+        .iter()
+        .filter_map(|r| {
+            if r.kind != ExperienceKind::EbmReasoning || r.time.tick.get() != tick {
+                return None;
+            }
+            match &r.payload {
+                ExperiencePayload::Audit(AuditPayload::EbmReasoning(e))
+                    if e.decision_id == decision_id =>
+                {
+                    Some((r, e.clone()))
+                }
+                _ => None,
+            }
+        })
+        .collect::<Vec<_>>();
+    ebm_records.sort_by_key(|(r, _)| (r.time.tick.get(), r.id.0));
+    let ebm = ebm_records.last().map(|(_, e)| e.clone());
+
     let mut outputs = records
         .iter()
         .filter_map(|r| {
@@ -2133,6 +2170,14 @@ pub fn build_explain_tick_report(
             tier: issuances.last().map(|(_, i)| i.effective_tier),
             emergency_active,
             issuance: issuance_view,
+            ebm: ebm.as_ref().map(|e| ExplainEbm {
+                mode: e.enablement_mode,
+                aggregate_energy_q: e.aggregate_energy_q,
+                best_candidate_id: e.top_candidate_ids.first().copied(),
+                top_energies_q: e.top_energies_q.clone(),
+                ebm_digest_prefix: digest_prefix_arr8(&e.ebm_digest_prefix, prefix),
+                status: e.status,
+            }),
         },
         decision: ExplainDecision {
             candidate_count: candidate_set.as_ref().map(|c| c.summaries.len()),
@@ -2483,6 +2528,10 @@ pub fn run_status(workdir: &Path, run_id: &str) -> Result<RunStatusReport, OpsEr
 
 fn digest_prefix(digest: &[u8; 32], prefix_len: usize) -> String {
     hex::encode(digest)[..prefix_len.min(64)].to_string()
+}
+
+fn digest_prefix_arr8(digest: &[u8; 8], prefix_len: usize) -> String {
+    hex::encode(digest)[..prefix_len.min(16)].to_string()
 }
 
 fn bounded_preview(text: &str, max_chars: usize) -> String {
