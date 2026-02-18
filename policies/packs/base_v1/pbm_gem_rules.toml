@@ -1,0 +1,19 @@
+[[rules]]
+id = "allow_internal"
+channel = "InternalThought"
+decision = "allow"
+
+[[rules]]
+id = "allow_external_text_short"
+channel = "ExternalOutput"
+decision = "allow"
+
+[[rules]]
+id = "deny_memory_write_default"
+channel = "MemoryWrite"
+decision = "deny"
+
+[[rules]]
+id = "deny_brain_stim_default"
+channel = "BrainStimulus"
+decision = "deny"

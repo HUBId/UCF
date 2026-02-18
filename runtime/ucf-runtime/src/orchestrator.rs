@@ -93,6 +93,7 @@ use ucf_policy::{
     },
     pbm::Pbm,
     policy_bundle::verify_policy_bundle,
+    policy_packs::load_and_merge_policy_graph,
     rate_limiter::RateLimiter,
 };
 use ucf_sle::v0::{sle_step, SleCfg, SleReason, SleSignals, SleState};
@@ -814,6 +815,8 @@ pub struct RuntimeOrchestrator {
     evolution_suppressed_total: u64,
     evolution_recommended_total: u64,
     policy_bundle_hash: String,
+    policy_graph_digest: String,
+    policy_graph_digest_prefix: [u8; 8],
     compute_economy: ComputeEconomy,
     compute_budget_window_t0: u64,
     compute_budget_window_t: u64,
@@ -1232,6 +1235,7 @@ impl RuntimeOrchestrator {
     ) -> Result<(), RuntimeError> {
         let issuance_payload = AuditPayload::CapabilityIssuance(CapabilityIssuanceRecord {
             policy_bundle_hash: self.policy_bundle_hash.clone(),
+            policy_graph_digest: self.policy_graph_digest.clone(),
             t: time.tick.get(),
             decision_id,
             candidate_id: Some(candidate_id),
@@ -1391,7 +1395,7 @@ impl RuntimeOrchestrator {
                 tool_spent: spent(ComputeStage::Tool),
                 governor_tier_mean_q: snap.governor_tier_mean_q,
                 governor_tier_max: snap.governor_tier_max,
-                policy_hash_prefix: snap.policy_hash_prefix,
+                policy_hash_prefix: self.policy_graph_digest_prefix,
                 schema_version: 1,
             });
             let rec = ExperienceRecord::audit(
@@ -1438,6 +1442,7 @@ impl RuntimeOrchestrator {
     ) -> Result<(), RuntimeError> {
         let payload = AuditPayload::Emergency(EmergencyRecord {
             policy_bundle_hash: self.policy_bundle_hash.clone(),
+            policy_graph_digest: self.policy_graph_digest.clone(),
             t: time.tick.get(),
             state,
             reason: reason.as_ess(),
@@ -1730,6 +1735,21 @@ impl RuntimeOrchestrator {
 
         let policy_provenance = verify_policy_bundle(std::path::Path::new("policies"))
             .unwrap_or_else(|e| panic!("policy bundle verification failed: {e}"));
+        let policy_overlay = std::env::var("UCF_POLICY_OVERLAY")
+            .ok()
+            .map(|v| std::path::PathBuf::from(format!("policies/packs/overlays/{v}")));
+        let (policy_graph, policy_graph_prov) = load_and_merge_policy_graph(
+            std::path::Path::new("policies/packs/base_v1"),
+            policy_overlay.as_deref(),
+        )
+        .unwrap_or_else(|e| panic!("policy graph load failed: {e}"));
+        if let Ok(expected) = std::env::var("UCF_POLICY_GRAPH_DIGEST") {
+            assert_eq!(
+                expected, policy_graph_prov.policy_graph_digest,
+                "policy graph digest mismatch"
+            );
+        }
+        let _ = policy_graph;
         let ebm_constraints = load_runtime_ebm_constraints(&policy_provenance.bundle_sha256);
         configure_ebm_constraints(ebm_constraints);
         metrics::gauge!("ucf_policy_bundle_verified").set(1.0);
@@ -1931,6 +1951,8 @@ impl RuntimeOrchestrator {
             evolution_suppressed_total: 0,
             evolution_recommended_total: 0,
             policy_bundle_hash: policy_provenance.bundle_sha256.clone(),
+            policy_graph_digest: policy_graph_prov.policy_graph_digest.clone(),
+            policy_graph_digest_prefix: prefix8_hex(&policy_graph_prov.policy_graph_digest),
             compute_economy: ComputeEconomy::new(
                 ComputeEconomicsProfile::from_env(),
                 CostSchedule::default(),
@@ -1955,6 +1977,9 @@ impl RuntimeOrchestrator {
                 run_id: policy_provenance.run_id,
                 bundle_version: policy_provenance.version,
                 bundle_hash: policy_provenance.bundle_sha256.clone(),
+                policy_graph_digest: policy_graph_prov.policy_graph_digest.clone(),
+                base_pack_digest: policy_graph_prov.base_pack_digest.clone(),
+                overlay_pack_digest: policy_graph_prov.overlay_pack_digest.clone(),
                 enabled_features: policy_provenance.enabled_features,
                 schema_version: 1,
             }),
@@ -4610,6 +4635,8 @@ impl RuntimeOrchestrator {
             ))?;
         }
 
+        let decision =
+            decision.with_policy_graph_digest_prefix(Some(self.policy_graph_digest_prefix));
         Ok(decision)
     }
 }

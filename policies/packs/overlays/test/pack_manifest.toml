@@ -1,0 +1,28 @@
+name = "overlay_test"
+version = "1.0.0"
+schema_version = 1
+pack_digest = "3f494d5344cb16c5744d71371875d9c1ccd2dbaaf3a73703fdd3a66424373e2a"
+
+[[files]]
+path = "pbm_gem_rules.toml"
+sha256 = "7dd43c502d5e885b419217fac2d9403e5d0db5d69554ea8e311f4f87e908b67e"
+
+[[files]]
+path = "nsr_rules_v1.dl"
+sha256 = "8d495592f13fb4760b971be399da7271c118fbed04a5f8f5aea5dc82c79f61b0"
+
+[[files]]
+path = "ebm_constraints.toml"
+sha256 = "7177e1e3a0cc8c3358fbac7cada4ad08ed661b010875e7d4b65a0f0f2feab49c"
+
+[[files]]
+path = "budgets.toml"
+sha256 = "22b566c6b4588fa90114768be93ae1f79507d666e6cf99169140ed224fbcd5df"
+
+[[files]]
+path = "thresholds.toml"
+sha256 = "06d1f3cadeb2a1ca260f2afae32ae3a4e034225fd7b7bb5697b56358d443d2e3"
+
+[[files]]
+path = "allowlists.toml"
+sha256 = "22b566c6b4588fa90114768be93ae1f79507d666e6cf99169140ed224fbcd5df"

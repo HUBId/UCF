@@ -1,0 +1,6 @@
+[values]
+governor_tier_1_q = 2500
+governor_tier_2_q = 5000
+governor_tier_3_q = 7500
+ebm_high_risk_q = 7000
+ebm_low_risk_q = 3000

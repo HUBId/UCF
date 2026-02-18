@@ -37,6 +37,7 @@ use ucf_frames::v1::{
     ChannelCode, ControlFrame, ControlPayload, CorrelationId, Intent, IntentId, IntentKind,
 };
 use ucf_policy::adapter::MockAdapter;
+use ucf_policy::policy_packs::{load_and_merge_policy_graph, policy_graph_digest, PolicyPackError};
 use ucf_replay::{
     load_fixture_records, replay_audit as run_replay_audit, replay_records, write_report,
     ReplayMode, ReplayPlan, ReplaySpec, ReplayStrictness,
@@ -57,6 +58,8 @@ pub enum OpsError {
     Invalid(String),
     #[error("replay error: {0}")]
     Replay(#[from] ucf_replay::ReplayError),
+    #[error("policy pack error: {0}")]
+    PolicyPack(#[from] PolicyPackError),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -3930,4 +3933,122 @@ pub fn security_verify_chain(workdir: &Path, from: u64, to: u64) -> Result<(), O
         }
     }
     Ok(())
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PolicyValidateReport {
+    pub policy_graph_digest: String,
+    pub base_pack: String,
+    pub overlay_pack: Option<String>,
+    pub schema_version: u16,
+}
+
+pub fn policy_validate(
+    pack: &Path,
+    overlay: Option<&Path>,
+) -> Result<PolicyValidateReport, OpsError> {
+    let (graph, prov) = load_and_merge_policy_graph(pack, overlay)?;
+    let _ = graph;
+    Ok(PolicyValidateReport {
+        policy_graph_digest: prov.policy_graph_digest,
+        base_pack: prov.base_pack_digest,
+        overlay_pack: prov.overlay_pack_digest,
+        schema_version: prov.schema_version,
+    })
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PolicyDiffReport {
+    pub digest_a: String,
+    pub digest_b: String,
+    pub thresholds: Vec<String>,
+    pub budgets: Vec<String>,
+    pub allowlists: Vec<String>,
+}
+
+pub fn policy_diff(
+    a_pack: &Path,
+    a_overlay: Option<&Path>,
+    b_pack: &Path,
+    b_overlay: Option<&Path>,
+) -> Result<PolicyDiffReport, OpsError> {
+    let (a, _) = load_and_merge_policy_graph(a_pack, a_overlay)?;
+    let (b, _) = load_and_merge_policy_graph(b_pack, b_overlay)?;
+    let mut thresholds = diff_i64(&a.thresholds, &b.thresholds);
+    let mut budgets = diff_i64(&a.budgets, &b.budgets);
+    let mut allowlists = diff_str(&a.allowlists, &b.allowlists);
+    thresholds.truncate(64);
+    budgets.truncate(64);
+    allowlists.truncate(64);
+    Ok(PolicyDiffReport {
+        digest_a: policy_graph_digest(&a)?,
+        digest_b: policy_graph_digest(&b)?,
+        thresholds,
+        budgets,
+        allowlists,
+    })
+}
+
+fn diff_i64(a: &BTreeMap<String, i64>, b: &BTreeMap<String, i64>) -> Vec<String> {
+    let mut keys = a.keys().chain(b.keys()).cloned().collect::<Vec<_>>();
+    keys.sort();
+    keys.dedup();
+    keys.into_iter()
+        .filter_map(|k| {
+            let av = a.get(&k);
+            let bv = b.get(&k);
+            if av != bv {
+                Some(format!("{k}: {:?} -> {:?}", av, bv))
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+fn diff_str(a: &BTreeMap<String, String>, b: &BTreeMap<String, String>) -> Vec<String> {
+    let mut keys = a.keys().chain(b.keys()).cloned().collect::<Vec<_>>();
+    keys.sort();
+    keys.dedup();
+    keys.into_iter()
+        .filter_map(|k| {
+            let av = a.get(&k);
+            let bv = b.get(&k);
+            if av != bv {
+                Some(format!("{k}: {:?} -> {:?}", av, bv))
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PolicyExplainReport {
+    pub run_id: String,
+    pub bundle_hash: String,
+    pub policy_graph_digest: String,
+    pub base_pack_digest: String,
+    pub overlay_pack_digest: Option<String>,
+}
+
+pub fn policy_explain(
+    workdir: &Path,
+    digest_prefix: &str,
+) -> Result<Option<PolicyExplainReport>, OpsError> {
+    let records = load_fixture_records(&workdir.join("ess").join("ess_fixture.json"))?;
+    for rec in records {
+        if let ExperiencePayload::Audit(AuditPayload::PolicyProvenance(p)) = rec.payload {
+            if p.policy_graph_digest.starts_with(digest_prefix) {
+                return Ok(Some(PolicyExplainReport {
+                    run_id: p.run_id,
+                    bundle_hash: p.bundle_hash,
+                    policy_graph_digest: p.policy_graph_digest,
+                    base_pack_digest: p.base_pack_digest,
+                    overlay_pack_digest: p.overlay_pack_digest,
+                }));
+            }
+        }
+    }
+    Ok(None)
 }

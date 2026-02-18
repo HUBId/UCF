@@ -1,0 +1,6 @@
+[values]
+compute_primary = 100000
+compute_shadow = 50000
+sandbox_work_units = 4096
+sandbox_bytes_in = 131072
+sandbox_bytes_out = 131072

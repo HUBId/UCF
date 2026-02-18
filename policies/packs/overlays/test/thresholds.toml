@@ -1,0 +1,4 @@
+[values]
+governor_tier_1_q = 2400
+governor_tier_2_q = 4800
+governor_tier_3_q = 7000
