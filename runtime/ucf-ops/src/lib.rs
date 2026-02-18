@@ -649,6 +649,9 @@ fn run_lfm_probe(
         neuro_arousal: Some(0.3),
         governor_tier: Some(1),
         prediction_error: Some(0.1),
+        risk: Some(0.2),
+        confidence: Some(0.8),
+        prior_uncertainty: Some(0.3),
         seed: spec.seed,
     };
     let out = pack
@@ -678,6 +681,7 @@ fn run_ebm_probe(spec: &ProbeSpec) -> Result<([u8; 32], StageQuality), String> {
             surprise_q: UQ0_16::from_raw(20_000),
             uncertainty_q: UQ0_16::from_raw(28_000),
             coherence_q: None,
+            nsr_risk_q: None,
         },
         candidates: vec![
             CandidateFeature {
@@ -1739,6 +1743,9 @@ pub struct ExplainDecision {
     pub selected_candidate_id: Option<u16>,
     pub selected_candidate_digest_prefix: Option<String>,
     pub policy_hints: Vec<u8>,
+    pub nsr_risk_q: Option<u16>,
+    pub nsr_status: Option<u8>,
+    pub nsr_rules_digest_prefix: Option<String>,
     pub nsr_reasons: Vec<u16>,
 }
 
@@ -2399,7 +2406,7 @@ pub fn build_explain_tick_report(
     if detail == 0 {
         nsr_reasons.truncate(4);
     } else {
-        nsr_reasons.truncate(16);
+        nsr_reasons.truncate(8);
     }
 
     let mut issuance_view = issuances
@@ -2535,6 +2542,11 @@ pub fn build_explain_tick_report(
                 .as_ref()
                 .map(|c| digest_prefix(&c.selected_candidate_digest, prefix)),
             policy_hints,
+            nsr_risk_q: nsrs.last().map(|n| n.nsr_risk_q),
+            nsr_status: nsrs.last().map(|n| n.nsr_status),
+            nsr_rules_digest_prefix: nsrs
+                .last()
+                .map(|n| digest_prefix_arr8(&n.rules_digest_prefix, prefix)),
             nsr_reasons,
         },
         output: ExplainOutput {

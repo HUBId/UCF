@@ -18,6 +18,9 @@ use crate::hooks::{
     ComputeMilestone, ComputeMilestoneAggregator, ConsolidationHook, GeistHook, GeistRejectReason,
     GeistStateUpdater, LiquidContextWindow, LiquidTimelineIndex,
 };
+use crate::nsr_v1::{
+    eval_input_from_candidate, NsrEngineV1, NsrOutput as NsrV1Output, NsrStatus as NsrV1Status,
+};
 use crate::sandbox::{call_spec_from_control, execute_tool_call, CapabilitySetSummary};
 use ucf_biophys::v0::{
     apply_coherence_feedback, classify, compute_integration, couple_pair, hormone_step, hpa_step,
@@ -72,7 +75,7 @@ use ucf_neuromod::v0::{NeuromodInputs, NeuromodScheduler, NeuromodulatorField};
 use ucf_nsr::v0::{Claim, NsrEngine, Verdict};
 use ucf_nsr::{
     ActionType, CapabilityKind, DecisionIntentSummary, NsrBudget, NsrContext, NsrDatalogLiteEngine,
-    NsrPolicyEcologyEngine, OutputClass, PolicyHint, PolicyTag, ReasonCode as NsrReasonCodeV0,
+    NsrPolicyEcologyEngine, OutputClass, PolicyHint, PolicyTag,
 };
 use ucf_onn::v0::{onn_step, OnnCfg, OnnCore, OnnInput, OnnNode, OnnState, PhaseDeg};
 use ucf_policy::{
@@ -129,6 +132,7 @@ fn map_constraint_kind(kind: &str) -> Option<ConstraintTermKind> {
         "EmergencyDenyAllBias" => Some(ConstraintTermKind::EmergencyDenyAllBias),
         "OutputClassMismatch" => Some(ConstraintTermKind::OutputClassMismatch),
         "BudgetExhaustedBias" => Some(ConstraintTermKind::BudgetExhaustedBias),
+        "NsrRiskAmplifier" => Some(ConstraintTermKind::NsrRiskAmplifier),
         _ => None,
     }
 }
@@ -587,19 +591,6 @@ fn apply_decoding_policy(
     }
 }
 
-fn encode_nsr_reason(reason: NsrReasonCodeV0) -> u16 {
-    match reason {
-        NsrReasonCodeV0::ViolatesDenyByDefault => 1,
-        NsrReasonCodeV0::CoherenceGateTriggered => 2,
-        NsrReasonCodeV0::HighRiskToolRequest => 3,
-        NsrReasonCodeV0::UntrustedTarget => 4,
-        NsrReasonCodeV0::BudgetStress => 5,
-        NsrReasonCodeV0::LowConfidenceContext => 6,
-        NsrReasonCodeV0::SensitiveOutputClass => 7,
-        NsrReasonCodeV0::PolicyRuleHit(idx) => 10_000u16.saturating_add(idx),
-    }
-}
-
 #[derive(Clone, Copy, Debug, Default)]
 struct PhaseBus {
     osc_jepa: Osc,
@@ -726,6 +717,7 @@ pub struct RuntimeOrchestrator {
     cde_state: CdeState,
     nsr_cfg: RuleCfg,
     nsr_engine: NsrEngine,
+    nsr_v1_engine: NsrEngineV1,
     last_cde_frame: Option<CdeFrame>,
     last_nsr_frame: Option<NsrFrame>,
     ssm_state: SsmState,
@@ -800,6 +792,7 @@ pub struct RuntimeOrchestrator {
     tool_gate: ToolGate,
     tool_governor: ToolGovernor,
     last_nsr_risk: Option<f32>,
+    last_nsr_penalty_q: u16,
     emergency_state: EmergencyState,
     emergency_last_v: Option<f32>,
     emergency_dv_trend_count: u8,
@@ -1267,6 +1260,7 @@ impl RuntimeOrchestrator {
             governor_score_before_q: issuance.governor_score_before_q,
             governor_score_after_q: issuance.governor_score_after_q,
             ebm_penalty_q: issuance.ebm_penalty_q,
+            nsr_penalty_q: issuance.nsr_penalty_q,
             ebm_energy_used_q: issuance.ebm_energy_used_q,
             governance_signals_digest: issuance.governance_signals_digest,
             throttle_state_digest: issuance.throttle_state_digest,
@@ -1795,6 +1789,9 @@ impl RuntimeOrchestrator {
             cde_state: CdeState::default(),
             nsr_cfg: RuleCfg::default(),
             nsr_engine: NsrEngine::with_default_rules(),
+            nsr_v1_engine: NsrEngineV1::from_policy_file(std::path::Path::new(
+                "policies/bundle_v1/nsr_rules_v1.dl",
+            )),
             last_cde_frame: None,
             last_nsr_frame: None,
             ssm_state,
@@ -1903,6 +1900,7 @@ impl RuntimeOrchestrator {
             ),
             tool_governor: ToolGovernor::default(),
             last_nsr_risk: None,
+            last_nsr_penalty_q: 0,
             emergency_state: EmergencyState::Inactive,
             emergency_last_v: None,
             emergency_dv_trend_count: 0,
@@ -3609,6 +3607,22 @@ impl RuntimeOrchestrator {
             .iter()
             .map(|candidate| assess_candidate(candidate, &decision, nsr_block, nsr_safe_only))
             .collect();
+        let nsr_v1_outputs: Vec<NsrV1Output> = candidates
+            .iter()
+            .take(32)
+            .map(|candidate| {
+                self.nsr_v1_engine.evaluate(eval_input_from_candidate(
+                    candidate,
+                    compute_summary.risk,
+                    emergency_active,
+                    self.compute_budget.governor_tier,
+                ))
+            })
+            .collect();
+        let nsr_for_ebm = nsr_v1_outputs
+            .iter()
+            .map(|o| o.nsr_risk_q)
+            .max_by_key(|q| q.raw());
         let allowed_count = assessments.iter().filter(|a| a.allowed).count() as u64;
         metrics::counter!("ucf_candidates_allowed_total").increment(allowed_count);
         metrics::counter!("ucf_candidates_blocked_total")
@@ -3642,6 +3656,7 @@ impl RuntimeOrchestrator {
                         compute_summary.lfm_uncertainty.unwrap_or(1.0),
                     ),
                     coherence_q: None,
+                    nsr_risk_q: nsr_for_ebm,
                 },
                 candidates: candidates
                     .iter()
@@ -3688,6 +3703,16 @@ impl RuntimeOrchestrator {
             let a = assessments.first().cloned().expect("assessment exists");
             (c, a)
         });
+        let selected_nsr_v1 = candidates
+            .iter()
+            .position(|c| c.candidate_id == selected_candidate.candidate_id)
+            .and_then(|idx| nsr_v1_outputs.get(idx).cloned())
+            .unwrap_or_else(|| NsrV1Output {
+                status: NsrV1Status::ParseErrorFallback,
+                nsr_risk_q: ucf_types::UQ0_16::ONE,
+                top_reasons: vec![],
+                rules_digest: [0; 32],
+            });
         metrics::counter!(
             "ucf_candidate_selected_total",
             "intent_kind" => format!("{:?}", selected_candidate.intent_kind),
@@ -4278,22 +4303,23 @@ impl RuntimeOrchestrator {
             t: ctrl.time.tick.get(),
             decision_id: eid2.0,
             evidence_chain_digest: compute_summary.compute_chain_digest,
-            ruleset_id: nsr_v0_assessment.ruleset_id,
-            engine_id: nsr_v0_assessment.engine_id,
-            schema_version: nsr_v0_assessment.schema_version,
-            nsr_risk_q: quantize_unit_u16(nsr_v0_assessment.nsr_risk),
+            ruleset_id: 1,
+            engine_id: "nsr_v1_datalog_lite",
+            schema_version: 1,
+            nsr_risk_q: selected_nsr_v1.nsr_risk_q.raw(),
+            nsr_status: selected_nsr_v1.status as u8,
             nsr_confidence_q: quantize_unit_u16(nsr_v0_assessment.nsr_confidence),
+            rules_digest_prefix: prefix8(selected_nsr_v1.rules_digest),
             policy_hint: match nsr_v0_assessment.policy_hint {
                 PolicyHint::Block => 2,
                 PolicyHint::SafeOnly => 1,
                 PolicyHint::Normal => 0,
             },
-            reasons: nsr_v0_assessment
-                .reasons
+            reasons: selected_nsr_v1
+                .top_reasons
                 .iter()
-                .copied()
-                .map(encode_nsr_reason)
-                .take(16)
+                .map(|r| r.term_id)
+                .take(8)
                 .collect(),
             facts_digest: nsr_v0_assessment.facts_digest,
             assessment_digest: nsr_v0_assessment.digest,
@@ -4305,7 +4331,7 @@ impl RuntimeOrchestrator {
             nsr_record,
         ))?;
 
-        self.last_nsr_risk = Some(nsr_v0_assessment.nsr_risk.clamp(0.0, 1.0));
+        self.last_nsr_risk = Some(selected_nsr_v1.nsr_risk_q.to_f32());
 
         let mut governance_signals = GovernanceSignals::from_inputs(
             Some(&decision),
@@ -4324,6 +4350,9 @@ impl RuntimeOrchestrator {
         );
         metrics::counter!("ucf_governor_ebm_penalty_total")
             .increment(u64::from(issuance_decision.ebm_penalty_q));
+        metrics::counter!("ucf_governor_nsr_penalty_total")
+            .increment(u64::from(issuance_decision.nsr_penalty_q));
+        self.last_nsr_penalty_q = issuance_decision.nsr_penalty_q;
         let (effective_caps, effective_tier) = if emergency_active {
             metrics::counter!("ucf_emergency_forced_deny_tools_total").increment(1);
             (ucf_policy::capability::CapabilitySet::empty(), 3_u8)

@@ -1,0 +1,6 @@
+# NSR v1 bounded rules
+risk_term(100,18000) :- candidate_kind(tool).
+risk_term(110,12000) :- context_risk_level(high).
+risk_term(120,9000) :- emergency(active).
+risk_term(130,7000) :- budget_low(true).
+risk_term(140,10000) :- tool_class(80).

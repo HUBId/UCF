@@ -1,6 +1,5 @@
 use sha2::{Digest, Sha256};
 
-#[cfg(feature = "lfm-lnn")]
 use crate::contracts::StageContractVersion;
 use crate::evidence::{quantize_signed_unit, quantize_unit_u16};
 use crate::feature_extractor::SmallNotes;

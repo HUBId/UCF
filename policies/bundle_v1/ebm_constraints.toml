@@ -27,3 +27,9 @@ id = 5
 kind = "BudgetExhaustedBias"
 weight_q = 12000
 governor_tier_min = 3
+
+[[terms]]
+id = 6
+kind = "NsrRiskAmplifier"
+weight_q = 16000
+threshold_q = 36000

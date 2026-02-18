@@ -326,6 +326,9 @@ pub fn bench_run(args: &BenchArgs) -> Result<BenchReport, OpsError> {
             neuro_arousal: None,
             governor_tier: Some(0),
             prediction_error: world_out.as_ref().map(|w| w.prediction_error),
+            risk: None,
+            confidence: None,
+            prior_uncertainty: None,
             seed: budget.seed,
         };
         let lfm_out = pack
@@ -392,6 +395,7 @@ pub fn bench_run(args: &BenchArgs) -> Result<BenchReport, OpsError> {
                     lfm_out.as_ref().map(|l| l.uncertainty).unwrap_or(1.0),
                 ),
                 coherence_q: None,
+                nsr_risk_q: None,
             },
             candidates: candidates
                 .iter()
