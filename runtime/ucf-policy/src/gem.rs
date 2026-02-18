@@ -182,6 +182,8 @@ const W_STRESS_Q: UQ0_16 = UQ0_16::from_raw(6_554);
 
 pub const EBM_ENERGY_HIGH_Q: UQ0_16 = UQ0_16::from_raw(39_321);
 pub const W_EBM_PENALTY_Q: UQ0_16 = UQ0_16::from_raw(6_554);
+pub const NSR_HIGH_Q: UQ0_16 = UQ0_16::from_raw(45_875);
+pub const W_NSR_PENALTY_Q: UQ0_16 = UQ0_16::from_raw(9_830);
 
 pub fn governor_ebm_penalty_q(signals: GovernanceSignals) -> UQ0_16 {
     let Some(energy) = signals.ebm_energy_mean_topk_q else {
@@ -210,6 +212,17 @@ pub fn governor_score_q(signals: GovernanceSignals) -> UQ0_16 {
     score = score.saturating_add(uncertainty.saturating_mul(W_UNCERT_Q));
     score = score.saturating_add(stress.saturating_mul(W_STRESS_Q));
     score
+}
+
+pub fn governor_nsr_penalty_q(signals: GovernanceSignals) -> UQ0_16 {
+    let Some(nsr) = signals.nsr_risk.map(UQ0_16::from_f32_clamped) else {
+        return UQ0_16::ZERO;
+    };
+    if nsr.raw() <= NSR_HIGH_Q.raw() {
+        return UQ0_16::ZERO;
+    }
+    let excess = UQ0_16::from_raw(nsr.raw().saturating_sub(NSR_HIGH_Q.raw()));
+    excess.saturating_mul(W_NSR_PENALTY_Q)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -398,6 +411,7 @@ pub struct CapabilityIssuanceDecision {
     pub governor_score_before_q: u16,
     pub governor_score_after_q: u16,
     pub ebm_penalty_q: u16,
+    pub nsr_penalty_q: u16,
     pub ebm_energy_used_q: u16,
     pub requested_kinds: Vec<CapabilityKind>,
     pub granted_kinds: Vec<CapabilityKind>,
@@ -754,6 +768,7 @@ pub fn issue_capabilities_governed(
                 governor_score_before_q: UQ0_16::ONE.raw(),
                 governor_score_after_q: UQ0_16::ONE.raw(),
                 ebm_penalty_q: 0,
+                nsr_penalty_q: 0,
                 ebm_energy_used_q: 0,
                 requested_kinds: Vec::new(),
                 granted_kinds: Vec::new(),
@@ -771,7 +786,10 @@ pub fn issue_capabilities_governed(
     governor.on_tick(now_t);
     let score_before_q = governor_score_q(signals);
     let ebm_penalty_q = governor_ebm_penalty_q(signals);
-    let score_q = score_before_q.saturating_add(ebm_penalty_q);
+    let nsr_penalty_q = governor_nsr_penalty_q(signals);
+    let score_q = score_before_q
+        .saturating_add(ebm_penalty_q)
+        .saturating_add(nsr_penalty_q);
     let score = score_q.to_f32();
     let tier = IssuanceTier::from_score_q(score_q);
     counter!("ucf_governor_tier", "tier" => tier.as_u8().to_string()).increment(1);
@@ -822,6 +840,7 @@ pub fn issue_capabilities_governed(
             governor_score_before_q: score_before_q.raw(),
             governor_score_after_q: score_q.raw(),
             ebm_penalty_q: ebm_penalty_q.raw(),
+            nsr_penalty_q: nsr_penalty_q.raw(),
             ebm_energy_used_q: signals.ebm_energy_mean_topk_q.map(UQ0_16::raw).unwrap_or(0),
             requested_kinds: requested.to_vec(),
             granted_kinds,

@@ -1,5 +1,5 @@
 version = "v1"
-bundle_sha256 = "04694275e4589848c37480114113b9572875b9f9d956c9b076e94511e3b16918"
+bundle_sha256 = "317238e96a4a6c6ac7a81a36d7fa4d4ba6ace66fbddcd40f4b5c8a098b979538"
 
 [[files]]
 path = "bundle_v1/allowlists.json"
@@ -11,11 +11,15 @@ sha256 = "216c425ad23a052e38d0856b02a702c19085e90bf623f01539a501ef9b749c2b"
 
 [[files]]
 path = "bundle_v1/ebm_constraints.toml"
-sha256 = "66a6ecb8b1f9af08be1263c967b95647e0e777dc7f8a64c900eb3b60ef9f8322"
+sha256 = "5a30f64081da76dbeeccb4c862c8d08a410c6828a8cd00e57d68f24508ff5eee"
 
 [[files]]
 path = "bundle_v1/governor_defaults.json"
 sha256 = "84923d53124d703c91594b9355650ef3340179ec5c04bda4f4ce05ea823d5cb6"
+
+[[files]]
+path = "bundle_v1/nsr_rules_v1.dl"
+sha256 = "27c6c838b60ed4ea5b9536e193e7c27be07fba29c1e77bdfcb1185c26311535d"
 
 [[files]]
 path = "bundle_v1/retention_v1.json"

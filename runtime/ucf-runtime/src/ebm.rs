@@ -25,6 +25,7 @@ pub enum ConstraintTermKind {
     EmergencyDenyAllBias,
     OutputClassMismatch,
     BudgetExhaustedBias,
+    NsrRiskAmplifier,
 }
 
 impl ConstraintTermKind {
@@ -37,6 +38,7 @@ impl ConstraintTermKind {
             Self::EmergencyDenyAllBias => "EmergencyDenyAllBias",
             Self::OutputClassMismatch => "OutputClassMismatch",
             Self::BudgetExhaustedBias => "BudgetExhaustedBias",
+            Self::NsrRiskAmplifier => "NsrRiskAmplifier",
         }
     }
 }
@@ -181,6 +183,7 @@ pub struct EbmSignals {
     pub surprise_q: UQ0_16,
     pub uncertainty_q: UQ0_16,
     pub coherence_q: Option<UQ0_16>,
+    pub nsr_risk_q: Option<UQ0_16>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -856,6 +859,18 @@ fn eval_constraint_term(
                 UQ0_16::ZERO
             }
         }
+        ConstraintTermKind::NsrRiskAmplifier => {
+            let threshold = term.params.threshold_q.unwrap_or(UQ0_16::from_raw(32_768));
+            let Some(nsr_q) = input.signals.nsr_risk_q else {
+                return UQ0_16::ZERO;
+            };
+            if nsr_q.raw() > threshold.raw() {
+                let delta = UQ0_16::from_raw(nsr_q.raw().saturating_sub(threshold.raw()));
+                UQ0_16::from_raw(mul_q(term.weight_q, delta) as u16)
+            } else {
+                UQ0_16::ZERO
+            }
+        }
     }
 }
 
@@ -1092,6 +1107,7 @@ mod tests {
                 surprise_q: UQ0_16::from_raw(20_000),
                 uncertainty_q: UQ0_16::from_raw(25_000),
                 coherence_q: None,
+                nsr_risk_q: None,
             },
             candidates: vec![
                 CandidateFeature {
@@ -1133,6 +1149,7 @@ mod tests {
             surprise_q: UQ0_16::ZERO,
             uncertainty_q: UQ0_16::ZERO,
             coherence_q: None,
+            nsr_risk_q: None,
         };
         input.candidates = vec![
             CandidateFeature {
