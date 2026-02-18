@@ -59,7 +59,8 @@ pub fn data_class_for_payload(payload: &AuditPayload) -> DataClass {
         | AuditPayload::RemoteCall(_)
         | AuditPayload::RemoteCallDenied(_)
         | AuditPayload::ComputeBudgetWindow(_)
-        | AuditPayload::ComputeBudgetViolation(_) => DataClass::ScalarSummary,
+        | AuditPayload::ComputeBudgetViolation(_)
+        | AuditPayload::RetrievalDecision(_) => DataClass::ScalarSummary,
     }
 }
 
@@ -152,6 +153,7 @@ mod tests {
             backend_pack_record: None,
             lfm_summary_record: None,
             lfm_window_record: None,
+            ebm_tag: None,
             audit_prev_digest: None,
             audit_digest: None,
         }];

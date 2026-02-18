@@ -251,6 +251,15 @@ pub struct ConsolidationCycleSummary {
     pub micro_count: usize,
     pub meso_count: usize,
     pub macro_count: usize,
+    pub ebm_summary: MilestoneEbmSummary,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MilestoneEbmSummary {
+    pub stable_selected: usize,
+    pub anomaly_selected: usize,
+    pub stable_threshold_q: u16,
+    pub anomaly_threshold_q: u16,
 }
 
 impl<S: RecordSource, A: ExperienceAppender> ConsolidationKernel<S, A> {
@@ -288,6 +297,12 @@ impl<S: RecordSource, A: ExperienceAppender> ConsolidationKernel<S, A> {
                 micro_count: 0,
                 meso_count: 0,
                 macro_count: 0,
+                ebm_summary: MilestoneEbmSummary {
+                    stable_selected: 0,
+                    anomaly_selected: 0,
+                    stable_threshold_q: 3000,
+                    anomaly_threshold_q: 7000,
+                },
             };
         }
 
@@ -297,8 +312,16 @@ impl<S: RecordSource, A: ExperienceAppender> ConsolidationKernel<S, A> {
                 micro_count: 0,
                 meso_count: 0,
                 macro_count: 0,
+                ebm_summary: MilestoneEbmSummary {
+                    stable_selected: 0,
+                    anomaly_selected: 0,
+                    stable_threshold_q: 3000,
+                    anomaly_threshold_q: 7000,
+                },
             };
         }
+
+        let (records, ebm_summary) = select_energy_biased_records(&records);
 
         let micros: Vec<ProtoMicroMilestone> = records
             .chunks(self.config.micro_window)
@@ -332,6 +355,7 @@ impl<S: RecordSource, A: ExperienceAppender> ConsolidationKernel<S, A> {
             micro_count: micros.len(),
             meso_count: mesos.len(),
             macro_count: macros.len(),
+            ebm_summary,
         }
     }
 
@@ -410,6 +434,55 @@ impl<S: RecordSource, A: ExperienceAppender> ConsolidationKernel<S, A> {
 
         Some(outcome)
     }
+}
+
+fn energy_q(record: &ExperienceRecord) -> u16 {
+    record
+        .digest
+        .as_ref()
+        .and_then(|digest| digest.algo_id)
+        .map(|value| (value.min(u32::from(u16::MAX))) as u16)
+        .unwrap_or(0)
+}
+
+fn select_energy_biased_records(
+    records: &[ExperienceRecord],
+) -> (Vec<ExperienceRecord>, MilestoneEbmSummary) {
+    const STABLE_THRESHOLD_Q: u16 = 3000;
+    const ANOMALY_THRESHOLD_Q: u16 = 7000;
+    const MAX_ANOMALIES: usize = 2;
+
+    let mut stable: Vec<ExperienceRecord> = records
+        .iter()
+        .filter(|record| energy_q(record) <= STABLE_THRESHOLD_Q)
+        .cloned()
+        .collect();
+    let mut anomaly: Vec<ExperienceRecord> = records
+        .iter()
+        .filter(|record| energy_q(record) >= ANOMALY_THRESHOLD_Q)
+        .cloned()
+        .collect();
+    stable.sort_by(|a, b| a.record_id.cmp(&b.record_id));
+    anomaly.sort_by(|a, b| {
+        b.observed_at_ms
+            .cmp(&a.observed_at_ms)
+            .then_with(|| a.record_id.cmp(&b.record_id))
+    });
+    anomaly.truncate(MAX_ANOMALIES);
+
+    let stable_len = stable.len();
+    let anomaly_len = anomaly.len();
+    stable.extend(anomaly);
+
+    (
+        stable,
+        MilestoneEbmSummary {
+            stable_selected: stable_len,
+            anomaly_selected: anomaly_len,
+            stable_threshold_q: STABLE_THRESHOLD_Q,
+            anomaly_threshold_q: ANOMALY_THRESHOLD_Q,
+        },
+    )
 }
 
 pub fn build_micro(records: &[ExperienceRecord]) -> ProtoMicroMilestone {
