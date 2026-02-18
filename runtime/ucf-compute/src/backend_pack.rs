@@ -6,6 +6,8 @@ use sha2::{Digest, Sha256};
 use crate::backends::{BurnSaeExtractor, BurnSsmKernel, BurnWorldPredictor};
 #[cfg(feature = "compute-candle")]
 use crate::backends::{CandleSaeExtractor, CandleSsmKernel, CandleWorldPredictor};
+#[cfg(any(feature = "compute-candle", feature = "llm-candle"))]
+use crate::capabilities::build_candle_llm_from_slot;
 use crate::capabilities::{
     build_llm_backend, LlmBackendConfig, LlmInference, LlmStubBackend, SaeExtractor,
     WorldModelPredictor,
@@ -25,6 +27,11 @@ use crate::{CodeVersionTag, ComputeError, ModelLoadError, ModelSlot, ModelStore}
 
 const FIXTURE_SCHEMA_V1: u16 = 1;
 const MAX_FIXTURE_BYTES: usize = 1024 * 1024;
+#[cfg(any(feature = "compute-candle", feature = "llm-candle"))]
+const DEFAULT_LLM_TOKENIZER_PATH: &str = "runtime/ucf-compute/fixtures/llm_v1_tiny_vocab.json";
+#[cfg(any(feature = "compute-candle", feature = "llm-candle"))]
+const DEFAULT_LLM_TOKENIZER_SHA256: &str =
+    "e867a121231210b47a6d8d482434a6c436911f21428664bc70f2ef3c0c5272d3";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct BackendPackId(pub u32);
@@ -359,17 +366,17 @@ impl BackendPackFactory {
             ),
         };
 
-        let world_model_hash = model_store
+        let _world_model_hash = model_store
             .verify_slot(ModelSlot::WorldJepa)
             .ok()
             .map(|slot| slot.sha256)
             .unwrap_or([0x21; 32]);
-        let sae_model_hash = model_store
+        let _sae_model_hash = model_store
             .verify_slot(ModelSlot::Sae)
             .ok()
             .map(|slot| slot.sha256)
             .unwrap_or([0x31; 32]);
-        let ssm_model_hash = model_store
+        let _ssm_model_hash = model_store
             .verify_slot(ModelSlot::Ssm)
             .ok()
             .map(|slot| slot.sha256)
@@ -380,11 +387,15 @@ impl BackendPackFactory {
                 kind: crate::capabilities::LlmBackendKind::Stub,
                 seed: cfg.seed,
                 max_tokens: 128,
+                tokenizer_path: None,
+                tokenizer_sha256: None,
             },
             BackendPackKind::CandleToyV1 => LlmBackendConfig {
                 kind: crate::capabilities::LlmBackendKind::Candle,
                 seed: cfg.seed,
                 max_tokens: 128,
+                tokenizer_path: None,
+                tokenizer_sha256: None,
             },
             BackendPackKind::CandleLiquidV1
             | BackendPackKind::ToyLnnV1
@@ -392,21 +403,50 @@ impl BackendPackFactory {
                 kind: crate::capabilities::LlmBackendKind::Stub,
                 seed: cfg.seed,
                 max_tokens: 128,
+                tokenizer_path: None,
+                tokenizer_sha256: None,
             },
             #[cfg(feature = "remote-compute")]
             BackendPackKind::RemoteV1 => LlmBackendConfig {
                 kind: crate::capabilities::LlmBackendKind::Stub,
                 seed: cfg.seed,
                 max_tokens: 128,
+                tokenizer_path: None,
+                tokenizer_sha256: None,
             },
             BackendPackKind::BurnToyV1 => LlmBackendConfig {
                 kind: crate::capabilities::LlmBackendKind::Burn,
                 seed: cfg.seed,
                 max_tokens: 128,
+                tokenizer_path: None,
+                tokenizer_sha256: None,
             },
         };
 
-        let llm = build_llm_backend(llm_cfg).unwrap_or_else(|_| Arc::new(LlmStubBackend));
+        #[cfg(any(feature = "compute-candle", feature = "llm-candle"))]
+        let llm: Arc<dyn LlmInference + Send + Sync> =
+            if matches!(cfg.pack, BackendPackKind::CandleToyV1) {
+                if let Ok(verified_llm) = model_store.verify_slot(ModelSlot::Llm) {
+                    let tokenizer_path = std::env::var("UCF_LLM_TOKENIZER_PATH")
+                        .map(std::path::PathBuf::from)
+                        .unwrap_or_else(|_| DEFAULT_LLM_TOKENIZER_PATH.into());
+                    let tokenizer_sha = std::env::var("UCF_LLM_TOKENIZER_SHA256")
+                        .ok()
+                        .and_then(|hex| decode_hash(&hex).ok())
+                        .or_else(|| decode_hash(DEFAULT_LLM_TOKENIZER_SHA256).ok())
+                        .unwrap_or([0_u8; 32]);
+                    build_candle_llm_from_slot(&verified_llm, &tokenizer_path, tokenizer_sha)
+                        .or_else(|_| build_llm_backend(llm_cfg))
+                        .unwrap_or_else(|_| Arc::new(LlmStubBackend))
+                } else {
+                    build_llm_backend(llm_cfg).unwrap_or_else(|_| Arc::new(LlmStubBackend))
+                }
+            } else {
+                build_llm_backend(llm_cfg).unwrap_or_else(|_| Arc::new(LlmStubBackend))
+            };
+        #[cfg(not(any(feature = "compute-candle", feature = "llm-candle")))]
+        let llm: Arc<dyn LlmInference + Send + Sync> =
+            build_llm_backend(llm_cfg).unwrap_or_else(|_| Arc::new(LlmStubBackend));
         let (lfm_component, lfm_kernel): (BackendComponentId, Box<dyn LfmKernel + Send + Sync>) =
             match cfg.pack {
                 BackendPackKind::StubV0 | BackendPackKind::ToyV1 => {
@@ -556,6 +596,17 @@ impl BackendPackFactory {
             lfm: Mutex::new(lfm_kernel),
         }))
     }
+}
+
+#[cfg(any(feature = "compute-candle", feature = "llm-candle"))]
+fn decode_hash(hex_value: &str) -> Result<[u8; 32], ()> {
+    let bytes = hex::decode(hex_value).map_err(|_| ())?;
+    if bytes.len() != 32 {
+        return Err(());
+    }
+    let mut out = [0_u8; 32];
+    out.copy_from_slice(&bytes);
+    Ok(out)
 }
 
 #[cfg(feature = "remote-compute")]

@@ -62,3 +62,10 @@ Die Primärentscheidung bleibt immer Toy-first in Shadow/Compare.
 - Ergebnisstatus
 
 Damit bleibt der Vergleich reproduzierbar und offline auswertbar.
+
+## LLM v1 (Candle CPU) Rollout Notes
+
+- LLM bleibt in `shadow`/`compare` strikt nicht-entscheidend: Toy/Stub ist primär, Candle läuft nur beobachtend.
+- `active` ist nur zulässig, wenn ModelSlot (`llm`) + Tokenizer-Hash verifiziert sind.
+- Timeout/Fehler führen deterministisch zu SafeText-Fallback (`System busy; try again.`) statt Tool-Ausführung.
+- OutputClass bleibt harter finaler Choke-Point (invalid output => refusal).

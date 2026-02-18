@@ -1,4 +1,4 @@
-# LLM Backend v0 (offline)
+# LLM Backend v1 (offline, deterministic)
 
 ## Contracts
 - `LlmRequest` carries deterministic inputs (`decision_id`, `candidate_id`, `output_class`, bounded `prompt`, digests, seed, token budget) plus bounded liquid conditioning (`lfm_readout_digest`, `lfm_uncertainty`, `lfm_stability`, `coherence`, `instability`, `risk`, `confidence`).
@@ -54,14 +54,22 @@
   - `UCF_LLM_MAX_TOKENS`
 - Without features, candle/burn fail fast as `BackendDisabled`.
 
-## Candle toy adapter (offline fixtures)
-- Enable with `--features llm-candle` on crates depending on `ucf-compute` (for `ucf-runtime`: `cargo test -p ucf-runtime --features llm-candle`).
+## Candle CPU backend v1
+- Enable with `--features llm-candle` on crates depending on `ucf-compute`.
 - Backend selection remains env-driven:
   - `UCF_LLM_BACKEND=stub|candle|burn`
-  - `candle` resolves to backend profile `candle:toy_v1`.
-- Candle adapter loads committed fixture weights from `runtime/ucf-compute/fixtures/toy_weights_v1.json` via `include_str!` (no runtime download/network).
-- Forward pass is deterministic CPU-only toy compute (`embed[token] -> linear -> argmax`) with quantized logits (1e-6) before token selection for stable digests.
-- Generation is bounded by the existing LLM response and token caps and uses deterministic recurrence (`next_token = argmax(linear(embed[current_token]))`).
+  - `candle` resolves to `candle:llm_v1` when `ModelSlot::Llm` + tokenizer asset verify; otherwise safe fallback (`candle:toy_v1` or stub).
+- Active Candle v1 path loads safetensors via ModelSlot verification (hash-locked, local only):
+  - required tensors: `tok_emb[32,64]`, `lm_head[64,32]`
+  - tokenizer vocab JSON hash-locked via `UCF_LLM_TOKENIZER_PATH` + `UCF_LLM_TOKENIZER_SHA256`
+- Decoding policy is deterministic greedy only:
+  - no temperature sampling, no top-k randomness, no RNG draw in decode loop
+  - `next = argmax(logits[-1])`
+- Boundedness remains enforced:
+  - prompt cap 8 KiB
+  - max tokens bounded
+  - output text cap 16 KiB
+- NaN/Inf logits and timeout are treated as backend errors and trigger deterministic safe fallback response.
 
 ## Burn adapter status
 - `burn` is feature-gated (`--features llm-burn`) and currently a skeleton returning `NotImplemented`.
@@ -69,4 +77,11 @@
 
 ## Determinism caveats
 - CPU-only execution and fixed operation ordering are used.
-- Digest stability is best effort across toolchains; toy adapter additionally rounds logits before argmax to reduce backend-specific float drift.
+- Logits are quantized before argmax to reduce backend-specific float drift.
+
+## Safety invariants (non-negotiable)
+- LLM does not execute tools.
+- OutputClass validation is final gate in runtime:
+  - invalid class/text pairing is converted to refusal
+  - `ExecIntent` / `ExternalIo` stay tool-gated and non-automatic.
+- Backend errors degrade safely (bounded refusal text / busy response).
