@@ -290,6 +290,7 @@ fn run_governor_stress_case() -> CaseResult {
     for t in 1..=STRESS_TICKS {
         let signals = GovernanceSignals {
             t,
+            ebm_energy_mean_topk_q: None,
             risk: 1.0,
             confidence: 0.0,
             risk_q: UQ0_16::ONE,

@@ -22,6 +22,7 @@ const ISSUANCE_SCHEMA_VERSION: u16 = 1;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct GovernanceSignals {
+    pub ebm_energy_mean_topk_q: Option<UQ0_16>,
     pub t: u64,
     pub risk: f32,
     pub confidence: f32,
@@ -55,6 +56,9 @@ impl GovernanceSignals {
         let summary = decision.and_then(|d| d.compute_summary);
         let mut out = Self {
             t,
+            ebm_energy_mean_topk_q: summary
+                .and_then(|s| s.ebm_energy_mean_topk_q)
+                .map(UQ0_16::from_raw),
             risk: summary.map(|s| s.risk).unwrap_or(1.0),
             confidence: summary.map(|s| s.confidence).unwrap_or(0.0),
             risk_q: summary
@@ -124,6 +128,7 @@ impl GovernanceSignals {
         put_opt_uq(&mut hasher, self.lfm_uncertainty_q);
         put_opt_uq(&mut hasher, self.lfm_stability_q);
         put_opt_uq(&mut hasher, self.hormone_stress_q);
+        put_opt_uq(&mut hasher, self.ebm_energy_mean_topk_q);
         hasher.finalize().into()
     }
 }
@@ -175,6 +180,19 @@ const W_INSTAB_Q: UQ0_16 = UQ0_16::from_raw(13_107);
 const W_UNCERT_Q: UQ0_16 = UQ0_16::from_raw(9_830);
 const W_STRESS_Q: UQ0_16 = UQ0_16::from_raw(6_554);
 
+pub const EBM_ENERGY_HIGH_Q: UQ0_16 = UQ0_16::from_raw(39_321);
+pub const W_EBM_PENALTY_Q: UQ0_16 = UQ0_16::from_raw(6_554);
+
+pub fn governor_ebm_penalty_q(signals: GovernanceSignals) -> UQ0_16 {
+    let Some(energy) = signals.ebm_energy_mean_topk_q else {
+        return UQ0_16::ZERO;
+    };
+    if energy.raw() <= EBM_ENERGY_HIGH_Q.raw() {
+        return UQ0_16::ZERO;
+    }
+    let excess = UQ0_16::from_raw(energy.raw().saturating_sub(EBM_ENERGY_HIGH_Q.raw()));
+    excess.saturating_mul(W_EBM_PENALTY_Q)
+}
 pub fn governor_score_q(signals: GovernanceSignals) -> UQ0_16 {
     let risk = signals
         .nsr_risk
@@ -377,6 +395,10 @@ pub struct CapabilityDecisionItem {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct CapabilityIssuanceDecision {
+    pub governor_score_before_q: u16,
+    pub governor_score_after_q: u16,
+    pub ebm_penalty_q: u16,
+    pub ebm_energy_used_q: u16,
     pub requested_kinds: Vec<CapabilityKind>,
     pub granted_kinds: Vec<CapabilityKind>,
     pub denied: Vec<CapabilityDecisionItem>,
@@ -729,6 +751,10 @@ pub fn issue_capabilities_governed(
         return (
             CapabilitySet::empty(),
             CapabilityIssuanceDecision {
+                governor_score_before_q: UQ0_16::ONE.raw(),
+                governor_score_after_q: UQ0_16::ONE.raw(),
+                ebm_penalty_q: 0,
+                ebm_energy_used_q: 0,
                 requested_kinds: Vec::new(),
                 granted_kinds: Vec::new(),
                 denied,
@@ -743,7 +769,9 @@ pub fn issue_capabilities_governed(
         );
     };
     governor.on_tick(now_t);
-    let score_q = governor_score_q(signals);
+    let score_before_q = governor_score_q(signals);
+    let ebm_penalty_q = governor_ebm_penalty_q(signals);
+    let score_q = score_before_q.saturating_add(ebm_penalty_q);
     let score = score_q.to_f32();
     let tier = IssuanceTier::from_score_q(score_q);
     counter!("ucf_governor_tier", "tier" => tier.as_u8().to_string()).increment(1);
@@ -791,6 +819,10 @@ pub fn issue_capabilities_governed(
     (
         CapabilitySet { tokens },
         CapabilityIssuanceDecision {
+            governor_score_before_q: score_before_q.raw(),
+            governor_score_after_q: score_q.raw(),
+            ebm_penalty_q: ebm_penalty_q.raw(),
+            ebm_energy_used_q: signals.ebm_energy_mean_topk_q.map(UQ0_16::raw).unwrap_or(0),
             requested_kinds: requested.to_vec(),
             granted_kinds,
             denied,

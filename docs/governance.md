@@ -48,3 +48,13 @@ All tool actions still require explicit issuance and ToolGate authorization.
 
 ## Fixed-point governor path
 Governor input signals carry parallel fixed-point fields (`risk_q`, `coherence_q`, `instability_q`, `lfm_uncertainty_q`, `hormone_stress_q`), digest commits these quantized values, and governor scoring/tiering uses fixed-point arithmetic.
+
+
+## EBM penalty (tightening-only)
+
+Der Governor-Score enthält optional eine EBM-basierte Zusatzstrafe (`ebm_penalty_q`).
+
+- Aktiv nur oberhalb eines hohen Energieschwellwerts (`E_HIGH`).
+- Additiv und fixed-point quantisiert.
+- Sicherheitsdominanz: EBM erhöht nur den Score/Tier (strenger) oder wirkt neutral.
+- In Emergency wird das Signal ignoriert (deny-all bleibt dominant).

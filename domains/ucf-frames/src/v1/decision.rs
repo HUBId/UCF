@@ -63,6 +63,10 @@ pub struct ComputeSignalsSummary {
     pub instability_q: Option<u16>,
     pub phi_proxy: Option<f32>,
     pub coherence_digest: Option<[u8; 32]>,
+    pub free_energy_proxy_q: Option<u16>,
+    pub ebm_energy_mean_topk_q: Option<u16>,
+    pub ebm_w_q: Option<u16>,
+    pub fep_coupling_version: Option<u8>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

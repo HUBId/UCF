@@ -74,6 +74,10 @@ fn with_low_risk(mut decision: DecisionFrame) -> DecisionFrame {
         instability: None,
         phi_proxy: None,
         coherence_digest: None,
+        free_energy_proxy_q: None,
+        ebm_energy_mean_topk_q: None,
+        ebm_w_q: None,
+        fep_coupling_version: None,
     });
     decision
 }

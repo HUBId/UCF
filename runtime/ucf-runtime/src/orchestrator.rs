@@ -5,7 +5,7 @@ use crate::compute_economics::{
 };
 use crate::ebm::{
     candidate_feature_from_decision, CandleEbmReasonerV1, CpuEbmStubV0, EbmEnablementMode,
-    EbmInput, EbmReasoner, EbmSignals, EbmStatus,
+    EbmInput, EbmReasoner, EbmSignal, EbmSignals, EbmStatus,
 };
 use crate::errors::RuntimeError;
 use crate::evolution::{
@@ -573,6 +573,7 @@ struct EvolutionTickSummary {
     pressure: f32,
     surprise: f32,
     uncertainty: f32,
+    ebm_energy_mean_q: u16,
     governor_tier: u8,
     budget_exceeded: bool,
     denied_tool: bool,
@@ -746,6 +747,7 @@ impl RuntimeOrchestrator {
         governor_tier: u8,
         backend_pack_digest: [u8; 32],
         nsr_available: bool,
+        ebm_energy_mean_q: u16,
     ) {
         let summary = EvolutionTickSummary {
             risk: compute_summary
@@ -776,6 +778,7 @@ impl RuntimeOrchestrator {
                 .and_then(|c| c.lfm_uncertainty)
                 .unwrap_or(1.0)
                 .clamp(0.0, 1.0),
+            ebm_energy_mean_q,
             governor_tier: governor_tier.min(3),
             budget_exceeded: compute_summary
                 .and_then(|c| c.budget_exceeded_stage)
@@ -843,6 +846,18 @@ impl RuntimeOrchestrator {
         .clamp(-1.0, 1.0);
         let delta_mean_pressure =
             (half_mean(second, |s| s.pressure) - half_mean(first, |s| s.pressure)).clamp(-1.0, 1.0);
+        let ebm_energy_mean_q = (self
+            .evolution_summaries
+            .iter()
+            .map(|s| s.ebm_energy_mean_q as f32)
+            .sum::<f32>()
+            / n
+            / 65535.0)
+            .clamp(0.0, 1.0);
+        let ebm_energy_trend_q = ((half_mean(second, |s| s.ebm_energy_mean_q as f32)
+            - half_mean(first, |s| s.ebm_energy_mean_q as f32))
+            / 65535.0)
+            .clamp(-1.0, 1.0);
 
         let q = |v: f32| quantize_unit_u16(v) as u32;
         let q_signed = |v: f32| ((v.clamp(-1.0, 1.0) * 10_000.0).round() as i32).to_be_bytes();
@@ -861,6 +876,8 @@ impl RuntimeOrchestrator {
         hasher.update(&q(mean_coherence_value).to_be_bytes());
         hasher.update(&q_signed(delta_mean_uncertainty));
         hasher.update(&q_signed(delta_mean_pressure));
+        hasher.update(&quantize_unit_u16(ebm_energy_mean_q).to_le_bytes());
+        hasher.update(&q_signed(ebm_energy_trend_q));
 
         Some(LiquidWindowStats {
             window: (t0, t1),
@@ -875,6 +892,8 @@ impl RuntimeOrchestrator {
             mean_coherence,
             delta_mean_uncertainty,
             delta_mean_pressure,
+            ebm_energy_mean_q,
+            ebm_energy_trend_q,
             digest: *hasher.finalize().as_bytes(),
         })
     }
@@ -964,6 +983,8 @@ impl RuntimeOrchestrator {
                     mean_coherence: Some(coherence_mean),
                     delta_mean_uncertainty: 0.0,
                     delta_mean_pressure: 0.0,
+                    ebm_energy_mean_q: 0.0,
+                    ebm_energy_trend_q: 0.0,
                     digest: [0; 32],
                 });
         if emergency_active {
@@ -1153,6 +1174,10 @@ impl RuntimeOrchestrator {
             effective_tier,
             emergency_override: effective_tier > issuance.tier.as_u8(),
             governor_score_q: issuance.governor_score_q,
+            governor_score_before_q: issuance.governor_score_before_q,
+            governor_score_after_q: issuance.governor_score_after_q,
+            ebm_penalty_q: issuance.ebm_penalty_q,
+            ebm_energy_used_q: issuance.ebm_energy_used_q,
             governance_signals_digest: issuance.governance_signals_digest,
             throttle_state_digest: issuance.throttle_state_digest,
             evidence_chain_digest: issuance.evidence_chain_digest,
@@ -2464,6 +2489,7 @@ impl RuntimeOrchestrator {
 
         let fep_in = FepInputs {
             now_ms,
+            ebm_energy_mean_topk_q: 0,
             dt_s,
             surprise,
             complexity,
@@ -2563,6 +2589,7 @@ impl RuntimeOrchestrator {
             self.coherence_violation_flag = true;
             fep_out.action_inhibit = (fep_out.action_inhibit + 0.1).clamp(0.0, 1.0);
         }
+        metrics::gauge!("ucf_fep_free_energy_proxy_q").set(f64::from(fep_out.free_energy_proxy_q));
         self.last_fep_outputs = Some(fep_out.clone());
         self.last_fep_frame = Some(FepFrame {
             now_ms,
@@ -3307,6 +3334,16 @@ impl RuntimeOrchestrator {
             instability_q: None,
             phi_proxy: None,
             coherence_digest: None,
+            free_energy_proxy_q: self
+                .last_fep_outputs
+                .as_ref()
+                .map(|f| f.free_energy_proxy_q),
+            ebm_energy_mean_topk_q: self
+                .last_fep_outputs
+                .as_ref()
+                .map(|f| f.ebm_energy_mean_topk_q),
+            ebm_w_q: self.last_fep_outputs.as_ref().map(|f| f.w_ebm_q),
+            fep_coupling_version: self.last_fep_outputs.as_ref().map(|f| f.coupling_version),
         });
 
         let (routing, windows, schedule, coherence_metrics, coherence_gate) =
@@ -3474,7 +3511,12 @@ impl RuntimeOrchestrator {
                 .map(|(c, a)| (c.clone(), a.clone()))
         });
         let mut ebm_output = None;
+        let mut ebm_signal = None;
+        let mut ebm_suppressed_by_emergency = false;
         if !matches!(self.ebm_mode, EbmEnablementMode::Off) {
+            if emergency_active {
+                ebm_suppressed_by_emergency = true;
+            }
             let ebm_input = EbmInput {
                 t: ctrl.time.tick.get(),
                 governor_tier: self.compute_budget.governor_tier,
@@ -3512,7 +3554,16 @@ impl RuntimeOrchestrator {
                     .map(|(candidate, assessment)| (candidate.clone(), assessment.clone()))
                     .or(selected);
             }
+            ebm_signal = Some(EbmSignal::from_output(&out));
             ebm_output = Some(out);
+        }
+        if let (Some(sig), Some(summary)) = (ebm_signal, decision.compute_summary) {
+            decision = decision.with_compute_summary(ucf_frames::v1::ComputeSignalsSummary {
+                ebm_energy_mean_topk_q: Some(sig.energy_mean_topk_q.raw()),
+                ..summary
+            });
+            metrics::gauge!("ucf_ebm_energy_mean_topk_q")
+                .set(f64::from(sig.energy_mean_topk_q.raw()));
         }
         if matches!(nsr_v0_assessment.policy_hint, PolicyHint::Block) || emergency_active {
             selected = candidates
@@ -3672,6 +3723,7 @@ impl RuntimeOrchestrator {
                 }
             }
             let record = EbmReasoningRecord {
+                suppressed_by_emergency: ebm_suppressed_by_emergency,
                 schema_version: 2,
                 t: ctrl.time.tick.get(),
                 run_id: self.ebm_run_id,
@@ -4091,6 +4143,10 @@ impl RuntimeOrchestrator {
             self.compute_budget.governor_tier,
             backend_pack_digest(compute_summary),
             true,
+            decision
+                .compute_summary
+                .and_then(|s| s.ebm_energy_mean_topk_q)
+                .unwrap_or(0),
         );
         self.maybe_run_evolution(decision.time, decision.corr)?;
 
@@ -4127,18 +4183,23 @@ impl RuntimeOrchestrator {
 
         self.last_nsr_risk = Some(nsr_v0_assessment.nsr_risk.clamp(0.0, 1.0));
 
-        let governance_signals = GovernanceSignals::from_inputs(
+        let mut governance_signals = GovernanceSignals::from_inputs(
             Some(&decision),
             decision.time.tick.get(),
             self.last_nsr_risk,
             self.last_hormone_summary.map(|s| s.stress_index),
         );
+        if emergency_active {
+            governance_signals.ebm_energy_mean_topk_q = None;
+        }
         let (issued_caps, issuance_decision) = issue_capabilities_governed(
             Some(&decision),
             decision.time.tick.get(),
             governance_signals,
             &mut self.tool_governor,
         );
+        metrics::counter!("ucf_governor_ebm_penalty_total")
+            .increment(u64::from(issuance_decision.ebm_penalty_q));
         let (effective_caps, effective_tier) = if emergency_active {
             metrics::counter!("ucf_emergency_forced_deny_tools_total").increment(1);
             (ucf_policy::capability::CapabilitySet::empty(), 3_u8)
@@ -4449,6 +4510,8 @@ fn top_reason(score: &DeltaScore) -> &'static str {
         Some(ReasonCode::WeakSafetyMargin) => "weak_safety_margin",
         Some(ReasonCode::HeuristicAssumption) => "heuristic_assumption",
         Some(ReasonCode::SafetyDominance) => "safety_dominance",
+        Some(ReasonCode::EbmEnergyHigh) => "ebm_energy_high",
+        Some(ReasonCode::EbmTrendUp) => "ebm_trend_up",
         None => "none",
     }
 }

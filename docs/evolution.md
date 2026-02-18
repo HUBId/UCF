@@ -106,3 +106,18 @@ Inspect by reading ESS records and filtering:
 2. Validate reason codes, penalties, and evidence-chain digest.
 3. Export proposal as an ops artifact/patch in a separate controlled step.
 4. Apply through human/ops gated config deployment.
+
+
+## EBM-driven tightening hints
+
+`LiquidWindowStats` enthält zusätzliche EBM-Felder:
+- `ebm_energy_mean_q`
+- `ebm_energy_trend_q`
+
+Diese Signale erzeugen ausschließlich tightening-Vorschläge (keine Lockerung):
+- höhere `beta_policy_risk`/`coherence_risk_inhibit_min`
+- konservativere Budget-Hints
+
+Zusätzliche Reason-Codes:
+- `EbmEnergyHigh`
+- `EbmTrendUp`

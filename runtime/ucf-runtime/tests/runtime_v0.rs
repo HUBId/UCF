@@ -85,6 +85,10 @@ fn allow_low_risk(corr: u64) -> DecisionFrame {
         instability_q: None,
         phi_proxy: None,
         coherence_digest: None,
+        free_energy_proxy_q: None,
+        ebm_energy_mean_topk_q: None,
+        ebm_w_q: None,
+        fep_coupling_version: None,
     });
     d
 }
@@ -2007,6 +2011,10 @@ fn evolution_enabled_persists_proposal_and_evaluation_without_actions() {
             instability_q: None,
             phi_proxy: Some(0.1),
             coherence_digest: Some([4; 32]),
+            free_energy_proxy_q: None,
+            ebm_energy_mean_topk_q: None,
+            ebm_w_q: None,
+            fep_coupling_version: None,
         });
         orchestrator
             .ingest_with_decision(&mut adapter, ctrl, decision)
@@ -2100,6 +2108,10 @@ fn evolution_suppressed_in_emergency_mode() {
             instability_q: None,
             phi_proxy: Some(0.1),
             coherence_digest: Some([4; 32]),
+            free_energy_proxy_q: None,
+            ebm_energy_mean_topk_q: None,
+            ebm_w_q: None,
+            fep_coupling_version: None,
         });
         orchestrator
             .ingest_with_decision(&mut adapter, ctrl, decision)
@@ -2198,6 +2210,10 @@ fn evolution_replay_proposal_digests_are_stable() {
                 instability_q: None,
                 phi_proxy: Some(0.1),
                 coherence_digest: Some([6; 32]),
+                free_energy_proxy_q: None,
+                ebm_energy_mean_topk_q: None,
+                ebm_w_q: None,
+                fep_coupling_version: None,
             });
             orchestrator
                 .ingest_with_decision(&mut adapter, ctrl, decision)

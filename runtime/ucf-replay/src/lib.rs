@@ -672,6 +672,10 @@ pub fn load_fixture_records(path: &Path) -> Result<Vec<ExperienceRecord>, Replay
             instability_q: None,
             phi_proxy: None,
             coherence_digest: None,
+            free_energy_proxy_q: None,
+            ebm_energy_mean_topk_q: None,
+            ebm_w_q: None,
+            fep_coupling_version: None,
         };
 
         let decision = DecisionFrame::allow(time, CorrelationId(entry.corr), "fixture")
