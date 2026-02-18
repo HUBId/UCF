@@ -1,8 +1,11 @@
 use sha2::{Digest, Sha256};
 
+#[cfg(feature = "lfm-lnn")]
 use crate::contracts::StageContractVersion;
 use crate::evidence::{quantize_signed_unit, quantize_unit_u16};
 use crate::feature_extractor::SmallNotes;
+#[cfg(feature = "lfm-lnn")]
+use crate::model_store::{ModelSlot, ModelStore, VerifiedModelSlot};
 use crate::world_model::StageQuality;
 use crate::{ComputeBudget, ComputeError};
 
@@ -13,6 +16,14 @@ const LFM_FIXTURE_JSON: &str = include_str!("../fixtures/lfm_params_v1.json");
 #[cfg(feature = "lfm-lnn")]
 const LFM_LNN_PARAMS_V1_JSON: &str = include_str!("../fixtures/lfm_lnn_params_v1.json");
 const LFM_DEGRADED_MARKER: [u8; 32] = [0xEE; 32];
+#[cfg(feature = "lfm-lnn")]
+const LFM_INSTABILITY_WINDOW: usize = 8;
+#[cfg(feature = "lfm-lnn")]
+const LFM_SATURATION_MAX: f32 = 0.98;
+#[cfg(feature = "lfm-lnn")]
+const LFM_DELTA_MAX: f32 = 0.95;
+#[cfg(feature = "lfm-lnn")]
+const LFM_UNSTABLE_TICKS: u8 = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct LfmInput {
@@ -649,10 +660,127 @@ impl LnnParamsV1 {
 }
 
 #[cfg(feature = "lfm-lnn")]
+type LfmLoadedParams = (
+    Vec<f32>,
+    Vec<f32>,
+    Vec<f32>,
+    Vec<f32>,
+    Option<Vec<f32>>,
+    [u8; 32],
+);
+
+#[cfg(feature = "lfm-lnn")]
 #[derive(Debug, Clone)]
 struct LnnRuntimeOverlay {
     alpha: Vec<f32>,
     wu: Vec<f32>,
+    params_digest: [u8; 32],
+    model_digest: Option<[u8; 32]>,
+}
+
+#[cfg(feature = "lfm-lnn")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum InstabilityReason {
+    Saturation,
+    DeltaNorm,
+}
+
+#[cfg(feature = "lfm-lnn")]
+#[derive(Debug, Clone)]
+struct InstabilityState {
+    prev_x: Vec<f32>,
+    sat_window: std::collections::VecDeque<f32>,
+    delta_window: std::collections::VecDeque<f32>,
+    sign_flip_window: std::collections::VecDeque<f32>,
+    sat_streak: u8,
+    delta_streak: u8,
+    fallback_active: bool,
+}
+
+#[cfg(feature = "lfm-lnn")]
+impl InstabilityState {
+    fn new(n: usize) -> Self {
+        Self {
+            prev_x: vec![0.0; n],
+            sat_window: std::collections::VecDeque::with_capacity(LFM_INSTABILITY_WINDOW),
+            delta_window: std::collections::VecDeque::with_capacity(LFM_INSTABILITY_WINDOW),
+            sign_flip_window: std::collections::VecDeque::with_capacity(LFM_INSTABILITY_WINDOW),
+            sat_streak: 0,
+            delta_streak: 0,
+            fallback_active: false,
+        }
+    }
+
+    fn reset(&mut self) {
+        self.prev_x.fill(0.0);
+        self.sat_window.clear();
+        self.delta_window.clear();
+        self.sign_flip_window.clear();
+        self.sat_streak = 0;
+        self.delta_streak = 0;
+        self.fallback_active = false;
+    }
+
+    fn push(win: &mut std::collections::VecDeque<f32>, v: f32) {
+        if win.len() == LFM_INSTABILITY_WINDOW {
+            win.pop_front();
+        }
+        win.push_back(v);
+    }
+
+    fn update(
+        &mut self,
+        x: &[f32],
+        saturation_ratio: f32,
+    ) -> Option<(InstabilityReason, f32, f32, f32)> {
+        let n = x.len().max(1) as f32;
+        let delta_norm = x
+            .iter()
+            .zip(self.prev_x.iter())
+            .map(|(a, b)| (*a - *b).abs())
+            .sum::<f32>()
+            / n;
+        let sign_flip_rate = x
+            .iter()
+            .zip(self.prev_x.iter())
+            .filter(|(a, b)| a.signum() != b.signum() && a.abs() > 1e-6 && b.abs() > 1e-6)
+            .count() as f32
+            / n;
+
+        Self::push(&mut self.sat_window, saturation_ratio);
+        Self::push(&mut self.delta_window, delta_norm);
+        Self::push(&mut self.sign_flip_window, sign_flip_rate);
+
+        self.sat_streak = if saturation_ratio > LFM_SATURATION_MAX {
+            self.sat_streak.saturating_add(1)
+        } else {
+            0
+        };
+        self.delta_streak = if delta_norm > LFM_DELTA_MAX {
+            self.delta_streak.saturating_add(1)
+        } else {
+            0
+        };
+
+        self.prev_x.copy_from_slice(x);
+
+        let sat_avg =
+            self.sat_window.iter().copied().sum::<f32>() / self.sat_window.len().max(1) as f32;
+        let delta_avg =
+            self.delta_window.iter().copied().sum::<f32>() / self.delta_window.len().max(1) as f32;
+        let flip_avg = self.sign_flip_window.iter().copied().sum::<f32>()
+            / self.sign_flip_window.len().max(1) as f32;
+
+        if self.sat_streak >= LFM_UNSTABLE_TICKS {
+            self.fallback_active = true;
+            return Some((InstabilityReason::Saturation, sat_avg, delta_avg, flip_avg));
+        }
+        if self.delta_streak >= LFM_UNSTABLE_TICKS {
+            self.fallback_active = true;
+            return Some((InstabilityReason::DeltaNorm, sat_avg, delta_avg, flip_avg));
+        }
+        None
+    }
 }
 
 #[cfg(feature = "lfm-lnn")]
@@ -661,6 +789,7 @@ pub struct LnnOdeLfmKernel {
     base_params: LnnParamsV1,
     overlay: LnnRuntimeOverlay,
     x: Vec<f32>,
+    instability: InstabilityState,
 }
 
 #[cfg(feature = "lfm-lnn")]
@@ -668,14 +797,20 @@ impl Default for LnnOdeLfmKernel {
     fn default() -> Self {
         let params = LnnParamsV1::parse_json(LFM_LNN_PARAMS_V1_JSON)
             .expect("embedded LNN fixture must be valid");
+        let n = params.n;
         let mut this = Self {
-            x: vec![0.0_f32; params.n],
+            x: vec![0.0_f32; n],
             overlay: LnnRuntimeOverlay {
                 alpha: params.alpha.clone(),
                 wu: params.wu.clone(),
+                params_digest: [0; 32],
+                model_digest: None,
             },
             base_params: params,
+            instability: InstabilityState::new(n),
         };
+        this.try_load_slot_params();
+        this.overlay.params_digest = this.params_digest();
         this.reset_session(0);
         this
     }
@@ -683,6 +818,138 @@ impl Default for LnnOdeLfmKernel {
 
 #[cfg(feature = "lfm-lnn")]
 impl LnnOdeLfmKernel {
+    fn deterministic_x0(seed: u64, n: usize, clamp_state: f32) -> Vec<f32> {
+        let run_id = std::env::var("UCF_RUN_ID").unwrap_or_else(|_| "run-default".to_string());
+        let policy_hash =
+            std::env::var("UCF_POLICY_HASH").unwrap_or_else(|_| "policy-default".to_string());
+        let mut h = Sha256::new();
+        h.update(run_id.as_bytes());
+        h.update(policy_hash.as_bytes());
+        h.update(seed.to_le_bytes());
+        h.update(b"lfm_x0");
+        let digest: [u8; 32] = h.finalize().into();
+        let mut s0 = u64::from_le_bytes(digest[0..8].try_into().unwrap_or([1; 8]));
+        if s0 == 0 {
+            s0 = 0x9E3779B97F4A7C15;
+        }
+        let mut out = Vec::with_capacity(n);
+        for _ in 0..n {
+            s0 ^= s0 << 13;
+            s0 ^= s0 >> 7;
+            s0 ^= s0 << 17;
+            let r = (s0 as f64 / u64::MAX as f64) as f32;
+            let v = (r * 0.2 - 0.1).clamp(-clamp_state, clamp_state);
+            out.push(v);
+        }
+        out
+    }
+
+    fn x0_digest(&self) -> [u8; 32] {
+        let mut hasher = Sha256::new();
+        for v in &self.x {
+            hasher.update(v.to_bits().to_le_bytes());
+        }
+        hasher.finalize().into()
+    }
+
+    fn decode_f32_tensor(
+        raw: &safetensors::tensor::SafeTensors<'_>,
+        name: &str,
+        expected: &[usize],
+    ) -> Result<Vec<f32>, ComputeError> {
+        let t = raw.tensor(name).map_err(|_| ComputeError::InvalidInput {
+            reason: format!("missing {name}"),
+        })?;
+        if t.shape() != expected {
+            return Err(ComputeError::InvalidInput {
+                reason: format!("shape mismatch {name}"),
+            });
+        }
+        if t.dtype() != safetensors::Dtype::F32 {
+            return Err(ComputeError::InvalidInput {
+                reason: format!("dtype mismatch {name}"),
+            });
+        }
+        if t.data().len() % 4 != 0 {
+            return Err(ComputeError::InvalidInput {
+                reason: format!("invalid bytes {name}"),
+            });
+        }
+        Ok(t.data()
+            .chunks_exact(4)
+            .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+            .collect())
+    }
+
+    fn load_lfm_params(
+        verified: &VerifiedModelSlot,
+        bytes: &[u8],
+        base: &LnnParamsV1,
+    ) -> Result<LfmLoadedParams, ComputeError> {
+        if base.n > 32 || base.m > 8 {
+            return Err(ComputeError::InvalidInput {
+                reason: "lfm dimensions exceed cap".to_string(),
+            });
+        }
+        let raw = safetensors::tensor::SafeTensors::deserialize(bytes).map_err(|e| {
+            ComputeError::InvalidInput {
+                reason: format!("lfm safetensors parse failed: {e}"),
+            }
+        })?;
+        let alpha = Self::decode_f32_tensor(&raw, "lfm.alpha", &[base.n])?;
+        let wx = Self::decode_f32_tensor(&raw, "lfm.wx", &[base.n, base.n])?;
+        let wu = Self::decode_f32_tensor(&raw, "lfm.wu", &[base.n, base.m])?;
+        let b = Self::decode_f32_tensor(&raw, "lfm.b", &[base.n])?;
+        let x0 = raw
+            .tensor("lfm.x0")
+            .ok()
+            .map(|_| Self::decode_f32_tensor(&raw, "lfm.x0", &[base.n]))
+            .transpose()?;
+        let mut hasher = Sha256::new();
+        hasher.update(verified.sha256);
+        hasher.update((base.n as u16).to_le_bytes());
+        hasher.update((base.m as u16).to_le_bytes());
+        for (name, vals) in [
+            ("lfm.alpha", &alpha),
+            ("lfm.b", &b),
+            ("lfm.wu", &wu),
+            ("lfm.wx", &wx),
+        ] {
+            hasher.update(name.as_bytes());
+            for v in vals {
+                hasher.update(v.to_bits().to_le_bytes());
+            }
+        }
+        let params_digest: [u8; 32] = hasher.finalize().into();
+        Ok((alpha, wx, wu, b, x0, params_digest))
+    }
+
+    fn try_load_slot_params(&mut self) {
+        let Ok(store) = ModelStore::from_env_default() else {
+            return;
+        };
+        let Ok(verified) = store.verify_slot(ModelSlot::Lfm) else {
+            return;
+        };
+        let Ok(bytes) = store.read_verified_bytes(&verified) else {
+            return;
+        };
+        let Ok((alpha, wx, wu, b, x0, params_digest)) =
+            Self::load_lfm_params(&verified, &bytes, &self.base_params)
+        else {
+            return;
+        };
+        self.overlay.alpha = alpha;
+        self.base_params.wx = wx;
+        self.overlay.wu = wu;
+        self.base_params.b = b;
+        if let Some(init) = x0 {
+            self.x = init;
+        }
+        self.overlay.params_digest = params_digest;
+        self.overlay.model_digest = Some(verified.sha256);
+    }
+
     fn check_budget(&self, budget: ComputeBudget) -> Result<(), ComputeError> {
         let n = self.base_params.n as u64;
         let m = self.base_params.m as u64;
@@ -716,11 +983,22 @@ impl LnnOdeLfmKernel {
     fn params_digest(&self) -> [u8; 32] {
         let mut hasher = Sha256::new();
         hasher.update(self.base_params.digest);
+        if let Some(model_digest) = self.overlay.model_digest {
+            hasher.update(model_digest);
+        }
+        hasher.update((self.base_params.n as u16).to_le_bytes());
+        hasher.update((self.base_params.m as u16).to_le_bytes());
         for v in &self.overlay.alpha {
-            hasher.update(quantize_unit_u16((v / 2.0).clamp(0.0, 1.0)).to_le_bytes());
+            hasher.update(v.to_bits().to_le_bytes());
+        }
+        for v in &self.base_params.wx {
+            hasher.update(v.to_bits().to_le_bytes());
         }
         for v in &self.overlay.wu {
-            hasher.update(quantize_signed_unit(v.clamp(-1.0, 1.0)).to_le_bytes());
+            hasher.update(v.to_bits().to_le_bytes());
+        }
+        for v in &self.base_params.b {
+            hasher.update(v.to_bits().to_le_bytes());
         }
         hasher.finalize().into()
     }
@@ -874,17 +1152,9 @@ impl LfmKernel for LnnOdeLfmKernel {
     }
 
     fn reset_session(&mut self, seed: u64) {
-        let mut hasher = Sha256::new();
-        hasher.update(self.base_params.digest);
-        hasher.update(seed.to_le_bytes());
-        let bytes: [u8; 32] = hasher.finalize().into();
-        for (idx, value) in self.x.iter_mut().enumerate() {
-            let b0 = bytes[idx % bytes.len()];
-            let b1 = bytes[(idx + 7) % bytes.len()];
-            let raw = i16::from_le_bytes([b0, b1]);
-            let centered = f32::from(raw % 2048) / 2048.0;
-            *value = centered.clamp(-self.base_params.clamp_state, self.base_params.clamp_state);
-        }
+        self.x = Self::deterministic_x0(seed, self.base_params.n, self.base_params.clamp_state);
+        self.instability.reset();
+        self.instability.prev_x = self.x.clone();
     }
 
     fn step(&mut self, input: &LfmInput, budget: ComputeBudget) -> Result<LfmOutput, ComputeError> {
@@ -924,10 +1194,21 @@ impl LfmKernel for LnnOdeLfmKernel {
             .filter(|v| v.abs() >= self.base_params.clamp_state - 1.0e-6)
             .count() as f32
             / n as f32;
+        let instability = self.instability.update(&self.x, saturation_ratio);
         let nan_inf_detected = self.x.iter().chain(k2.iter()).any(|v| !v.is_finite());
         if nan_inf_detected {
             let mut out = LfmOutput::degraded("nan_inf_detected");
             out.nan_inf_detected = true;
+            return Ok(out);
+        }
+        if let Some((reason, sat_avg, delta_avg, flip_avg)) = instability {
+            let mut out = LfmOutput::degraded("instability_fallback");
+            out.notes = SmallNotes(vec![
+                format!("reason={:?}", reason),
+                format!("sat={:.3}", sat_avg),
+                format!("delta={:.3}", delta_avg),
+                format!("flip={:.3}", flip_avg),
+            ]);
             return Ok(out);
         }
         let uncertainty = (0.5 * u + 0.3 * state_norm + 0.2 * deriv_norm).clamp(0.0, 1.0);
@@ -950,6 +1231,7 @@ impl LfmKernel for LnnOdeLfmKernel {
             seed: input.seed,
         };
         let plasticity_update = self.apply_plasticity(&plasticity_input);
+        self.overlay.params_digest = plasticity_update.params_digest_after;
 
         if plasticity_update.enabled {
             metrics::counter!("ucf_plasticity_enabled_total").increment(1);
@@ -1012,6 +1294,15 @@ impl LfmKernel for LnnOdeLfmKernel {
             quality: StageQuality::Ok,
             notes: SmallNotes(vec![
                 format!("fixture={}", hex::encode(&self.base_params.digest[..6])),
+                format!(
+                    "model={}",
+                    self.overlay
+                        .model_digest
+                        .map(|d| hex::encode(&d[..6]))
+                        .unwrap_or_else(|| "none".to_string())
+                ),
+                format!("params={}", hex::encode(&self.overlay.params_digest[..6])),
+                format!("x0={}", hex::encode(&self.x0_digest()[..6])),
                 format!("deriv_q={}", quantize_unit_u16(deriv_norm)),
             ]),
             plasticity: Some(PlasticityRecord {
@@ -1219,6 +1510,12 @@ impl LfmKernel for ToyLfmKernel {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn read_hex_fixture(path: &str) -> Vec<u8> {
+        let raw = std::fs::read_to_string(path).expect("fixture hex");
+        let compact = raw.split_whitespace().collect::<String>();
+        hex::decode(compact).expect("valid hex fixture")
+    }
 
     fn input() -> LfmInput {
         LfmInput {
@@ -1430,6 +1727,9 @@ mod tests {
             inp.t = tick;
             let out_a = a.step(&inp, ComputeBudget::default()).expect("a step");
             let out_b = b.step(&inp, ComputeBudget::default()).expect("b step");
+            if out_a.quality == StageQuality::DegradedFallback {
+                continue;
+            }
             let rec_a = out_a.plasticity.as_ref().expect("plasticity");
             let rec_b = out_b.plasticity.as_ref().expect("plasticity");
             assert_eq!(rec_a, rec_b);
@@ -1504,5 +1804,49 @@ mod tests {
             ComputeError::BudgetExceeded { stage, .. } => assert_eq!(stage, "lfm/step"),
             other => panic!("unexpected error: {other:?}"),
         }
+    }
+    #[cfg(feature = "lfm-lnn")]
+    #[test]
+    fn lnn_deterministic_x0_from_seed() {
+        let a = LnnOdeLfmKernel::deterministic_x0(42, 8, 1.0);
+        let b = LnnOdeLfmKernel::deterministic_x0(42, 8, 1.0);
+        assert_eq!(a, b);
+        assert!(a.iter().all(|v| (-0.1..=0.1).contains(v)));
+    }
+
+    #[cfg(feature = "lfm-lnn")]
+    #[test]
+    fn lnn_instability_detector_triggers() {
+        let mut state = InstabilityState::new(4);
+        let x = vec![1.0, -1.0, 1.0, -1.0];
+        assert!(state.update(&x, 0.999).is_none());
+        assert!(state.update(&x, 0.999).is_none());
+        let hit = state.update(&x, 0.999);
+        assert!(hit.is_some());
+    }
+
+    #[cfg(feature = "lfm-lnn")]
+    #[test]
+    fn lnn_weight_fixture_spec_validation() {
+        let mut kernel = LnnOdeLfmKernel::default();
+        let path = std::path::Path::new("../../fixtures/weights/lfm_ode_v1_small.safetensors.hex");
+        let bytes = read_hex_fixture(path.to_str().expect("path"));
+        let verified = VerifiedModelSlot {
+            slot: ModelSlot::Lfm,
+            path: path.to_path_buf(),
+            sha256: [0xAB; 32],
+            size_bytes: bytes.len() as u64,
+            format: crate::model_store::ModelFormat::CandleSafetensors,
+            device: crate::model_store::ModelDevice::CpuOnly,
+        };
+        let loaded =
+            LnnOdeLfmKernel::load_lfm_params(&verified, &bytes, &kernel.base_params).expect("load");
+        assert_eq!(loaded.0.len(), kernel.base_params.n);
+        assert_eq!(loaded.2.len(), kernel.base_params.n * kernel.base_params.m);
+
+        let bad =
+            read_hex_fixture("../../fixtures/weights/lfm_ode_v1_missing_tensor.safetensors.hex");
+        assert!(LnnOdeLfmKernel::load_lfm_params(&verified, &bad, &kernel.base_params).is_err());
+        kernel.reset_session(3);
     }
 }

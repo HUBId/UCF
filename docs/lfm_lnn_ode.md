@@ -1,4 +1,4 @@
-# LFM × LNN ODE Core v1
+# LFM × LNN ODE Core v1.1
 
 This document describes the deterministic LFM ODE kernel (`LnnOdeLfmKernel`) used in compute.
 
@@ -9,17 +9,17 @@ State dynamics per substep:
 - `x ∈ R^N`, `u ∈ R^M`
 - `dx/dt = -alpha ⊙ x + tanh(Wx*x + Wu*u + b)`
 
-v1 bounds:
+v1.1 bounds:
 
 - `N <= 32`
 - `M <= 8`
 - fixed `dt`
 - fixed `steps` per tick
-- clamp `x` to `[-1, 1]` each substep
+- clamp `x` to `[-clamp_state, clamp_state]` each substep
 
 ## Integrator
 
-v1 uses deterministic RK2 (midpoint), fixed-step only.
+v1.1 uses deterministic RK2 (midpoint), fixed-step only.
 
 For each substep:
 
@@ -29,68 +29,76 @@ For each substep:
 
 No adaptive solver is used.
 
-## Inputs
+## Weight tensors (hash-locked, offline)
 
-Canonical `u` uses bounded compute signals only (no raw text):
+The LFM model slot (`ModelSlot::Lfm`) can provide safetensors with strict names and shapes:
 
-- pressure
-- surprise
-- risk
-- prior uncertainty
-- confidence
-- spike density
-- sae energy
-- stress composite
+- required `lfm.alpha`: `[N]` `f32`
+- required `lfm.wx`: `[N,N]` `f32`
+- required `lfm.wu`: `[N,M]` `f32`
+- required `lfm.b`: `[N]` `f32`
+- optional `lfm.x0`: `[N]` `f32`
 
-All components are mapped deterministically in `[0,1]` and then consumed as signed inputs in the ODE.
+Validation rules:
 
-## Contracted outputs
+- exact tensor names
+- exact shapes and dtype (`f32` only in v1.1)
+- `N <= 32`, `M <= 8`
+- slot hash must already be verified by `ModelStore::verify_slot` before load
 
-Derived scalars:
+Reference fixtures (hex-encoded safetensors bytes, to keep the repo text-only for PR tooling):
 
-- `uncertainty`
-- `stability`
-- `homeostasis_error = |uncertainty - homeostasis_target|`
+- `fixtures/weights/lfm_ode_v1_small.safetensors.hex`
+- negative: `fixtures/weights/lfm_ode_v1_bad_shape.safetensors.hex`
+- negative: `fixtures/weights/lfm_ode_v1_missing_tensor.safetensors.hex`
 
-Each scalar is quantized to `UQ0_16` and persisted in the LFM output contract.
+## Deterministic x0 init
 
-Digest binding includes:
+If `lfm.x0` is not provided, `x0` is generated deterministically from:
 
-- model fixture digest
-- optional plasticity digest
-- `t`
-- `context/world/spikes` digests
-- quantized state
-- quantized contracted scalars
+- `UCF_RUN_ID`
+- `UCF_POLICY_HASH`
+- session seed
+- domain separator `"lfm_x0"`
 
-## Safety and fallback
+A deterministic xorshift stream maps entries into `[-0.1, 0.1]`, then clamps by `clamp_state`.
 
-If NaN/Inf is detected, kernel returns `DegradedFallback` with:
+## Safety envelope and fallback
 
-- `uncertainty=1`
-- `stability=0`
-- `homeostasis_error=1`
+The kernel tracks rolling instability metrics:
 
-and marks `nan_inf_detected=true`.
+- clamp saturation ratio
+- delta norm `mean(|x_t - x_{t-1}|)`
+- sign flip rate
 
-## Config knobs
+Fallback trigger (consecutive streaks):
 
-Current fixture fields:
+- saturation ratio `> 0.98` for 3 ticks, or
+- delta norm `> 0.95` for 3 ticks.
 
-- `n`, `m`
-- `dt`, `steps`
-- `clamp_state`, `clamp_deriv`
-- `homeostasis_target`
-- `alpha`, `Wx`, `Wu`, `b`
+On trigger (or NaN/Inf), output degrades to deterministic fallback (`StageQuality::DegradedFallback`).
 
-Recommended defaults for v1:
+## Audit / digests
 
-- `n=16`
-- `m=8`
-- `dt=0.05`
-- `steps=4`
+The kernel surfaces digest prefixes in notes:
 
-## Weights (future)
+- fixture digest prefix
+- model slot hash prefix (if loaded)
+- parameter digest prefix
+- `x0` digest prefix
 
-v1 remains policy-fixture first for determinism envelope validation. A later revision can add
-`lfm-weights` model-slot loading without changing the deterministic contract behavior.
+Parameter digest canonicalization uses fixed tensor name ordering and raw `f32` little-endian bytes with slot hash + dims.
+
+## Enablement modes
+
+Slot rollout remains controlled by:
+
+- `UCF_SLOT_LFM_MODE=toy|shadow|active`
+
+`shadow` computes with real slot params without replacing primary outputs, while `active` uses real params as primary.
+`toy` keeps policy fixture params.
+
+## Probing commands
+
+- validate/test kernel: `cargo test -p ucf-compute lnn_ --features lfm-lnn`
+- full checks: `cargo fmt --all --check && cargo clippy --workspace --all-targets --all-features -- -D warnings`
