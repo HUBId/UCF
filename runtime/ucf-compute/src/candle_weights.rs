@@ -344,11 +344,18 @@ const LFM_REQ: &[TensorSpec] = &[
     },
 ];
 
-const LLM_REQ: &[TensorSpec] = &[TensorSpec {
-    name: "embed",
-    shape: &[N, D],
-    dtype: DType::F32,
-}];
+const LLM_REQ: &[TensorSpec] = &[
+    TensorSpec {
+        name: "tok_emb",
+        shape: &[DimExpr::Fixed(32), DimExpr::Fixed(64)],
+        dtype: DType::F32,
+    },
+    TensorSpec {
+        name: "lm_head",
+        shape: &[DimExpr::Fixed(64), DimExpr::Fixed(32)],
+        dtype: DType::F32,
+    },
+];
 
 pub fn spec_for_slot(slot: ModelSlot, max_bytes: u64) -> WeightSpec {
     let tensors = match slot {

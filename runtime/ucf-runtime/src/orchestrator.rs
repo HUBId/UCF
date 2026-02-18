@@ -3472,12 +3472,19 @@ impl RuntimeOrchestrator {
             let mut llm_resp = self
                 .llm_backend
                 .infer(&llm_req, self.compute_budget)
-                .unwrap_or_else(|_| LlmResponse {
-                    status: LlmStatus::Failed,
-                    text: "llm backend failed".to_string(),
-                    token_count: 0,
-                    finish_reason: FinishReason::Error,
-                    digest: [0; 32],
+                .unwrap_or_else(|err| {
+                    let text = if matches!(err, ucf_compute::ComputeError::BudgetExceeded { .. }) {
+                        "System busy; try again.".to_string()
+                    } else {
+                        "refused: llm backend unavailable".to_string()
+                    };
+                    LlmResponse {
+                        status: LlmStatus::Failed,
+                        text,
+                        token_count: 0,
+                        finish_reason: FinishReason::Error,
+                        digest: [0; 32],
+                    }
                 });
             if llm_resp.digest == [0; 32] {
                 llm_resp = ucf_compute::capabilities::LlmResponse::new(

@@ -264,6 +264,8 @@ pub struct LlmBackendConfig {
     pub kind: LlmBackendKind,
     pub seed: u64,
     pub max_tokens: u32,
+    pub tokenizer_path: Option<&'static str>,
+    pub tokenizer_sha256: Option<[u8; 32]>,
 }
 
 impl Default for LlmBackendConfig {
@@ -272,6 +274,8 @@ impl Default for LlmBackendConfig {
             kind: LlmBackendKind::Stub,
             seed: 0x5eed_u64,
             max_tokens: 128,
+            tokenizer_path: None,
+            tokenizer_sha256: None,
         }
     }
 }
@@ -390,6 +394,21 @@ pub fn build_llm_backend(
             }
         }
     }
+}
+
+#[cfg(any(feature = "compute-candle", feature = "llm-candle"))]
+pub fn build_candle_llm_from_slot(
+    verified: &crate::model_store::VerifiedModelSlot,
+    tokenizer_path: &std::path::Path,
+    tokenizer_sha256: [u8; 32],
+) -> Result<Arc<dyn LlmInference + Send + Sync>, ComputeError> {
+    Ok(Arc::new(
+        candle_llm_backend::CandleLlmBackend::from_verified_slot(
+            verified,
+            tokenizer_path,
+            tokenizer_sha256,
+        )?,
+    ))
 }
 
 #[cfg(test)]

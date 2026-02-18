@@ -73,8 +73,16 @@ Required tensors:
 - `Wu: [N] f32`
 - `b: [N] f32`
 
-### `llm` (placeholder v1)
+### `llm` (Candle CPU v1 tiny)
 Required tensors:
-- `embed: [N,D] f32`
+- `tok_emb: [32,64] f32`
+- `lm_head: [64,32] f32`
+
+Tokenizer asset (hash-locked, offline) is required for active LLM slot loading:
+- default path: `runtime/ucf-compute/fixtures/llm_v1_tiny_vocab.json`
+- override: `UCF_LLM_TOKENIZER_PATH`
+- hash override: `UCF_LLM_TOKENIZER_SHA256`
+
+If tokenizer hash verification fails, slot creation falls back safely to stub/toy backend.
 
 Dimension symbols (`D/H/F/N`) are slot-local bind variables and must stay consistent across tensors in a slot.
