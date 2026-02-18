@@ -495,6 +495,28 @@ const LLM_REQ: &[TensorSpec] = &[
     },
 ];
 
+const EBM_REQ: &[TensorSpec] = &[
+    TensorSpec {
+        name: "ebm.w1",
+        shape: &[DimExpr::Var("d"), DimExpr::Var("h")],
+        dtype: DType::F32,
+    },
+    TensorSpec {
+        name: "ebm.b1",
+        shape: &[DimExpr::Var("h")],
+        dtype: DType::F32,
+    },
+    TensorSpec {
+        name: "ebm.w2",
+        shape: &[DimExpr::Var("h"), DimExpr::Fixed(1)],
+        dtype: DType::F32,
+    },
+    TensorSpec {
+        name: "ebm.b2",
+        shape: &[DimExpr::Fixed(1)],
+        dtype: DType::F32,
+    },
+];
 pub fn spec_for_slot(slot: ModelSlot, max_bytes: u64) -> WeightSpec {
     let tensors = match slot {
         ModelSlot::WorldJepa => JEPA_REQ,
@@ -502,6 +524,7 @@ pub fn spec_for_slot(slot: ModelSlot, max_bytes: u64) -> WeightSpec {
         ModelSlot::Ssm => SSM_REQ,
         ModelSlot::Lfm => LFM_REQ,
         ModelSlot::Llm => LLM_REQ,
+        ModelSlot::EbmReasoner => EBM_REQ,
     };
     WeightSpec {
         slot,

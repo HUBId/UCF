@@ -1,53 +1,39 @@
-# EBM Reasoner v0
+# EBM Reasoner
 
-Der EBM-Reasoner ist eine additive Re-Ranking-Schicht zwischen CandidateSet-Erzeugung und finaler Auswahl.
+## v1 Architektur
 
-## Rolle in der Pipeline
+`CandleEbmReasonerV1` nutzt ein kleines MLP (`ebm.w1`, `ebm.b1`, `ebm.w2`, `ebm.b2`) mit begrenzten Shapes:
+- `D <= 64`
+- `H <= 32`
+- CPU-only, offline, hash-locked via `ModelStore`/`WeightSpec`
 
-1. CandidateSet wird wie bisher durch `DefaultCandidateGeneratorV0` erzeugt.
-2. Der EBM bewertet Kandidaten deterministisch über quantisierte Signale.
-3. In `active` wird die Auswahl nach minimaler Energie gerankt, aber **Governor/Policy/ToolGate bleiben final**.
-4. In `shadow`/`compare` werden nur ESS-Audits erzeugt; die bestehende Auswahl bleibt unverändert.
+Forward (deterministisch):
+1. i16-Features nach f32: `x = q / 32767.0`
+2. `h = tanh(W1*x + b1)`
+3. `e = sigmoid(W2*h + b2)`
+4. `energy_q = UQ0_16::from_f32_clamped(e)`
 
-## v0 Energie-Funktion
+Bei Fehlern/Budget/degenerierten Outputs wird `DegradedFallback` genutzt, ohne Governance zu umgehen.
 
-`CpuEbmStubV0` nutzt feste Fixed-Point-Gewichte (`UQ0_16`) über:
+## Feature-Encoding
 
-- risk
-- uncertainty
-- pressure
-- surprise
+Kanonischer Vektor:
+- Signale: risk/confidence/pressure/surprise/uncertainty/coherence
+- Kandidatenmetadaten: kind, tool_class
+- Quantisierte Cost-Features aus Candidate (`compute_units`, `bytes_out`, `tool_calls`)
 
-Zusatzregeln:
+## Bounded Search
 
-- `ToolIntent`: hoher Energie-Penalty
-- `Json`: kleiner Penalty
-- `NoOp`: kleiner Bonus
-- `emergency_active` oder Tier ≥ 3: massive Tool-Penalty, NoOp-Bias
+Optional über `UCF_EBM_SEARCH=1`:
+- diskrete Varianten (max 4 pro Kandidat)
+- keine neuen Fähigkeiten
+- deterministische Generierung + Sortierung
+- Schritte begrenzt (`<=16`) und in ESS recordet
 
-Alle Energien werden auf `[0, 1]` geklemmt (`UQ0_16`). Tie-Break ist stabil über `candidate_id`.
+## Rollout/Fallback
 
-## Safety-Properties
+- `UCF_SLOT_EBM_MODE=off|shadow|compare|active`
+- `UCF_EBM_CANDLE=1` aktiviert Candle-Reasoner
+- Timeout/Budget/NaN/Degenerate => Fallback + envelope violation record
 
-- Keine Tool-Ausführung durch EBM (nur Re-Ranking).
-- Boundaries: max Kandidaten und Top-N limitiert.
-- Budget-Überschreitung führt zu `DegradedFallback` und blockiert den Basispfad nicht.
-- Deterministischer Digest über quantisierte Inputs + Energien.
-
-## Enablement Modes
-
-- `off`: EBM deaktiviert.
-- `shadow`: EBM läuft, Entscheidung unverändert.
-- `compare`: EBM läuft wie shadow (v0).
-- `active`: EBM-Re-Ranking wird für die Kandidatenauswahl genutzt.
-
-Empfohlen: erst shadow, dann active.
-
-## Konfiguration
-
-- Shadow: `UCF_SLOT_EBM_MODE=shadow`
-- Active: `UCF_SLOT_EBM_MODE=active`
-
-## Future
-
-`ModelSlot::EbmReasoner` ist vorbereitet für spätere Candle/Burn Gewichtsladung (`WeightSpec`/`ModelStore`) ohne Architekturbruch.
+Governance/Tool-Gate bleibt final maßgeblich; EBM beeinflusst nur Kandidaten-Rerank.

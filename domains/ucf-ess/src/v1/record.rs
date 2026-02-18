@@ -31,6 +31,7 @@ pub enum ExperienceKind {
     Nsr,
     CandidateSet,
     EbmReasoning,
+    EbmEnvelopeViolation,
     Output,
     BackendPack,
     LfmSummary,
@@ -90,6 +91,7 @@ pub enum AuditPayload {
     AuditCheckpoint(AuditCheckpointRecord),
     CandidateSet(CandidateSetRecord),
     EbmReasoning(EbmReasoningRecord),
+    EbmEnvelopeViolation(EbmEnvelopeViolationRecord),
     Output(OutputRecord),
     CapabilityIssuance(CapabilityIssuanceRecord),
     Throttle(ThrottleRecord),
@@ -268,6 +270,7 @@ pub struct EbmReasoningRecord {
     pub decision_id: u64,
     pub backend_pack_digest_prefix: [u8; 8],
     pub ebm_backend_id: u8,
+    pub ebm_model_digest_prefix: [u8; 8],
     pub contract_version: u16,
     pub enablement_mode: u8,
     pub risk_q: u16,
@@ -278,11 +281,21 @@ pub struct EbmReasoningRecord {
     pub top_energies_q: Vec<u16>,
     pub top_candidate_ids: Vec<u16>,
     pub ebm_digest_prefix: [u8; 8],
+    pub search_enabled: bool,
+    pub search_steps_used: u8,
     pub evidence_chain_digest_prefix: [u8; 8],
     pub status: u8,
     pub reason_code: u16,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EbmEnvelopeViolationRecord {
+    pub schema_version: u16,
+    pub t: u64,
+    pub decision_id: u64,
+    pub violation_code: u8,
+    pub details: String,
+}
 #[derive(Debug, Clone, PartialEq)]
 pub struct OutputRecord {
     pub schema_version: u16,
@@ -901,6 +914,36 @@ impl ExperienceRecord {
             corr,
             kind: ExperienceKind::EbmReasoning,
             payload: ExperiencePayload::Audit(AuditPayload::EbmReasoning(ebm_record)),
+            neuromod: None,
+            iit_phi: None,
+            decision_meta: None,
+            compute_summary: None,
+            hormone_record: None,
+            neuro_record: None,
+            delta_proposal_record: None,
+            delta_evaluation_record: None,
+            delta_recommendation_record: None,
+            nsr_record: None,
+            backend_pack_record: None,
+            lfm_summary_record: None,
+            lfm_window_record: None,
+            audit_prev_digest: None,
+            audit_digest: None,
+        }
+    }
+
+    pub fn from_ebm_envelope_violation(
+        id: ExperienceId,
+        time: SimTime,
+        corr: CorrelationId,
+        record: EbmEnvelopeViolationRecord,
+    ) -> Self {
+        Self {
+            id,
+            time,
+            corr,
+            kind: ExperienceKind::EbmEnvelopeViolation,
+            payload: ExperiencePayload::Audit(AuditPayload::EbmEnvelopeViolation(record)),
             neuromod: None,
             iit_phi: None,
             decision_meta: None,

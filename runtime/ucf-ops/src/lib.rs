@@ -451,7 +451,10 @@ fn run_probe_for_slot(
                     let spec = spec.clone();
                     move || run_lfm_probe(pack, &spec)
                 }),
-                ModelSlot::EbmReasoner => Ok(([0_u8; 32], StageQuality::Unavailable)),
+                ModelSlot::EbmReasoner => exec_with_timeout(spec.timeout_ms, {
+                    let spec = spec.clone();
+                    move || run_ebm_probe(&spec)
+                }),
             };
             let elapsed_ms = started.elapsed().as_millis() as u64;
             elapsed_samples.push(elapsed_ms);
@@ -655,6 +658,47 @@ fn run_lfm_probe(
         .step(&input, ComputeBackendConfig::default().to_budget())
         .map_err(|e| format!("{e:?}"))?;
     Ok((out.liquid_state_digest, out.quality))
+}
+fn run_ebm_probe(spec: &ProbeSpec) -> Result<([u8; 32], StageQuality), String> {
+    use ucf_runtime::ebm::{
+        CandidateFeature, CandidateKind, CpuEbmStubV0, EbmInput, EbmReasoner, EbmSignals,
+    };
+    use ucf_types::UQ0_16;
+
+    let mut ebm = CpuEbmStubV0;
+    let input = EbmInput {
+        t: 1,
+        governor_tier: 1,
+        emergency_active: false,
+        context_digest: [0x81; 32],
+        signals: EbmSignals {
+            risk_q: UQ0_16::from_raw(32_000),
+            confidence_q: UQ0_16::from_raw(38_000),
+            pressure_q: UQ0_16::from_raw(24_000),
+            surprise_q: UQ0_16::from_raw(20_000),
+            uncertainty_q: UQ0_16::from_raw(28_000),
+            coherence_q: None,
+        },
+        candidates: vec![
+            CandidateFeature {
+                candidate_id: 1,
+                candidate_kind: CandidateKind::SafeText,
+                tool_class: None,
+                candidate_digest: [1; 32],
+                feature_vec_q: vec![123, 1, 0],
+            },
+            CandidateFeature {
+                candidate_id: 2,
+                candidate_kind: CandidateKind::ToolIntent,
+                tool_class: Some(7),
+                candidate_digest: [2; 32],
+                feature_vec_q: vec![123, 10, 2],
+            },
+        ],
+    };
+    let mut budget = ucf_compute::WorkMeter::new(spec.max_tokens as u64);
+    let out = ebm.score_candidates(input, &mut budget);
+    Ok((out.ebm_digest, StageQuality::Ok))
 }
 
 #[derive(Debug)]

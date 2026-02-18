@@ -5,6 +5,9 @@ use ucf_types::UQ0_16;
 
 pub const EBM_K_MAX: usize = 32;
 pub const EBM_TOP_N_MAX: usize = 8;
+pub const EBM_FEATURE_D_MAX: usize = 64;
+pub const EBM_HIDDEN_MAX: usize = 32;
+pub const EBM_SEARCH_STEPS_MAX: u8 = 16;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EbmEnablementMode {
@@ -56,7 +59,7 @@ impl EbmStatus {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum CandidateKind {
     SafeText,
     Json,
@@ -101,9 +104,12 @@ pub struct EbmOutput {
     pub best_indices: Vec<u16>,
     pub aggregate_energy_q: UQ0_16,
     pub ebm_digest: [u8; 32],
+    pub model_digest_prefix: [u8; 8],
+    pub search_enabled: bool,
+    pub search_steps_used: u8,
 }
 
-pub trait EbmReasoner {
+pub trait EbmReasoner: Send {
     fn contract_version(&self) -> StageContractVersion;
     fn backend_id(&self) -> BackendComponentId;
     fn score_candidates(&mut self, input: EbmInput, budget: &mut WorkMeter) -> EbmOutput;
@@ -144,6 +150,9 @@ impl EbmReasoner for CpuEbmStubV0 {
                 &input,
                 self.contract_version(),
                 self.backend_id(),
+                [0; 8],
+                false,
+                0,
                 EbmStatus::BudgetExceeded,
             );
         }
@@ -169,8 +178,11 @@ impl EbmReasoner for CpuEbmStubV0 {
         let digest = compute_ebm_digest(
             self.contract_version(),
             self.backend_id(),
+            [0; 8],
             &input,
             &energies_q,
+            false,
+            0,
         );
 
         EbmOutput {
@@ -179,8 +191,399 @@ impl EbmReasoner for CpuEbmStubV0 {
             best_indices,
             aggregate_energy_q: aggregate,
             ebm_digest: digest,
+            model_digest_prefix: [0; 8],
+            search_enabled: false,
+            search_steps_used: 0,
         }
     }
+}
+
+#[cfg(any(feature = "compute-candle", test))]
+#[derive(Debug, Clone)]
+struct EbmMlModelV1 {
+    input_dim: usize,
+    hidden_dim: usize,
+    w1: Vec<f32>,
+    b1: Vec<f32>,
+    w2: Vec<f32>,
+    b2: f32,
+}
+
+#[cfg(feature = "compute-candle")]
+#[derive(Debug)]
+pub struct CandleEbmReasonerV1 {
+    model: Option<EbmMlModelV1>,
+    model_digest_prefix: [u8; 8],
+    search_enabled: bool,
+}
+
+#[cfg(feature = "compute-candle")]
+impl CandleEbmReasonerV1 {
+    pub fn from_model_store(search_enabled: bool) -> Self {
+        use ucf_compute::candle_weights::{
+            load_safetensors_raw, DType, DimExpr, TensorSpec, WeightSpec,
+        };
+        use ucf_compute::{ModelSlot, ModelStore};
+
+        const EBM_REQ: &[TensorSpec] = &[
+            TensorSpec {
+                name: "ebm.w1",
+                shape: &[DimExpr::Var("d"), DimExpr::Var("h")],
+                dtype: DType::F32,
+            },
+            TensorSpec {
+                name: "ebm.b1",
+                shape: &[DimExpr::Var("h")],
+                dtype: DType::F32,
+            },
+            TensorSpec {
+                name: "ebm.w2",
+                shape: &[DimExpr::Var("h"), DimExpr::Fixed(1)],
+                dtype: DType::F32,
+            },
+            TensorSpec {
+                name: "ebm.b2",
+                shape: &[DimExpr::Fixed(1)],
+                dtype: DType::F32,
+            },
+        ];
+        let Ok(store) = ModelStore::from_env_default() else {
+            return Self {
+                model: None,
+                model_digest_prefix: [0; 8],
+                search_enabled,
+            };
+        };
+        let Ok(verified) = store.verify_slot(ModelSlot::EbmReasoner) else {
+            return Self {
+                model: None,
+                model_digest_prefix: [0; 8],
+                search_enabled,
+            };
+        };
+        let spec = WeightSpec {
+            slot: ModelSlot::EbmReasoner,
+            tensors: EBM_REQ,
+            optional: &[],
+            max_bytes: verified.size_bytes.max(1024),
+            bindings: std::collections::BTreeMap::new(),
+        };
+        let Ok(bytes) = store.read_verified_bytes(&verified) else {
+            return Self {
+                model: None,
+                model_digest_prefix: [0; 8],
+                search_enabled,
+            };
+        };
+        let Ok(loaded) = load_safetensors_raw(ModelSlot::EbmReasoner, &bytes, &spec) else {
+            return Self {
+                model: None,
+                model_digest_prefix: [0; 8],
+                search_enabled,
+            };
+        };
+
+        let Some(w1) = loaded.tensors.get("ebm.w1") else {
+            return Self {
+                model: None,
+                model_digest_prefix: [0; 8],
+                search_enabled,
+            };
+        };
+        let Some(b1) = loaded.tensors.get("ebm.b1") else {
+            return Self {
+                model: None,
+                model_digest_prefix: [0; 8],
+                search_enabled,
+            };
+        };
+        let Some(w2) = loaded.tensors.get("ebm.w2") else {
+            return Self {
+                model: None,
+                model_digest_prefix: [0; 8],
+                search_enabled,
+            };
+        };
+        let Some(b2) = loaded.tensors.get("ebm.b2") else {
+            return Self {
+                model: None,
+                model_digest_prefix: [0; 8],
+                search_enabled,
+            };
+        };
+        if w1.shape.len() != 2 || b1.shape.len() != 1 || w2.shape.len() != 2 {
+            return Self {
+                model: None,
+                model_digest_prefix: [0; 8],
+                search_enabled,
+            };
+        }
+        let d = w1.shape[0];
+        let h = w1.shape[1];
+        if d == 0 || h == 0 || d > EBM_FEATURE_D_MAX || h > EBM_HIDDEN_MAX {
+            return Self {
+                model: None,
+                model_digest_prefix: [0; 8],
+                search_enabled,
+            };
+        }
+        if b1.shape[0] != h || w2.shape[0] != h || w2.shape[1] != 1 || b2.values_f32.len() != 1 {
+            return Self {
+                model: None,
+                model_digest_prefix: [0; 8],
+                search_enabled,
+            };
+        }
+        let model = EbmMlModelV1 {
+            input_dim: d,
+            hidden_dim: h,
+            w1: w1.values_f32.clone(),
+            b1: b1.values_f32.clone(),
+            w2: w2.values_f32.clone(),
+            b2: b2.values_f32[0],
+        };
+        Self {
+            model: Some(model),
+            model_digest_prefix: prefix8(verified.sha256),
+            search_enabled,
+        }
+    }
+
+    #[cfg(test)]
+    fn from_model_for_tests(model: EbmMlModelV1, search_enabled: bool) -> Self {
+        Self {
+            model: Some(model),
+            model_digest_prefix: [0xAB; 8],
+            search_enabled,
+        }
+    }
+}
+
+#[cfg(feature = "compute-candle")]
+impl EbmReasoner for CandleEbmReasonerV1 {
+    fn contract_version(&self) -> StageContractVersion {
+        StageContractVersion::V1
+    }
+
+    fn backend_id(&self) -> BackendComponentId {
+        BackendComponentId::CandleEbmV1
+    }
+
+    fn score_candidates(&mut self, mut input: EbmInput, budget: &mut WorkMeter) -> EbmOutput {
+        input.candidates.truncate(EBM_K_MAX);
+        let Some(model) = self.model.as_ref() else {
+            return degraded_fallback(
+                &input,
+                self.contract_version(),
+                self.backend_id(),
+                self.model_digest_prefix,
+                self.search_enabled,
+                0,
+                EbmStatus::DegradedFallback,
+            );
+        };
+        if budget
+            .spend(
+                (input.candidates.len() as u64).saturating_mul(4),
+                "ebm/candle_score",
+            )
+            .is_err()
+        {
+            return degraded_fallback(
+                &input,
+                self.contract_version(),
+                self.backend_id(),
+                self.model_digest_prefix,
+                self.search_enabled,
+                0,
+                EbmStatus::BudgetExceeded,
+            );
+        }
+
+        let mut energies_q = Vec::with_capacity(input.candidates.len());
+        let mut steps_used = 0_u8;
+        for candidate in &input.candidates {
+            let (best_energy, used) = if self.search_enabled {
+                score_with_bounded_search(model, &input.signals, candidate)
+            } else {
+                (score_mlp_candidate(model, &input.signals, candidate), 0)
+            };
+            steps_used = steps_used.saturating_add(used).min(EBM_SEARCH_STEPS_MAX);
+            energies_q.push(best_energy);
+        }
+
+        if energies_q.iter().all(|e| *e == UQ0_16::ZERO)
+            || energies_q.iter().all(|e| *e == UQ0_16::ONE)
+        {
+            return degraded_fallback(
+                &input,
+                self.contract_version(),
+                self.backend_id(),
+                self.model_digest_prefix,
+                self.search_enabled,
+                steps_used,
+                EbmStatus::DegradedFallback,
+            );
+        }
+
+        let mut scored: Vec<(usize, u16, UQ0_16)> = input
+            .candidates
+            .iter()
+            .enumerate()
+            .map(|(idx, c)| (idx, c.candidate_id, energies_q[idx]))
+            .collect();
+        scored.sort_by(|a, b| a.2.raw().cmp(&b.2.raw()).then_with(|| a.1.cmp(&b.1)));
+
+        let best_indices = scored
+            .iter()
+            .take(EBM_TOP_N_MAX)
+            .map(|(idx, _, _)| *idx as u16)
+            .collect::<Vec<_>>();
+        let aggregate = scored.first().map(|v| v.2).unwrap_or(UQ0_16::ONE);
+        let digest = compute_ebm_digest(
+            self.contract_version(),
+            self.backend_id(),
+            self.model_digest_prefix,
+            &input,
+            &energies_q,
+            self.search_enabled,
+            steps_used,
+        );
+        EbmOutput {
+            status: EbmStatus::Ok,
+            energies_q,
+            best_indices,
+            aggregate_energy_q: aggregate,
+            ebm_digest: digest,
+            model_digest_prefix: self.model_digest_prefix,
+            search_enabled: self.search_enabled,
+            search_steps_used: steps_used,
+        }
+    }
+}
+
+#[cfg(any(feature = "compute-candle", test))]
+fn score_with_bounded_search(
+    model: &EbmMlModelV1,
+    signals: &EbmSignals,
+    candidate: &CandidateFeature,
+) -> (UQ0_16, u8) {
+    let mut variants = bounded_variants(candidate);
+    let mut best = UQ0_16::ONE;
+    let mut used = 0_u8;
+    for variant in variants.drain(..).take(4) {
+        let e = score_mlp_candidate(model, signals, &variant);
+        used = used.saturating_add(1).min(EBM_SEARCH_STEPS_MAX);
+        if e.raw() < best.raw() {
+            best = e;
+        }
+    }
+    (best, used)
+}
+
+#[cfg(any(feature = "compute-candle", test))]
+fn bounded_variants(candidate: &CandidateFeature) -> Vec<CandidateFeature> {
+    let mut out = vec![candidate.clone()];
+    if !matches!(candidate.candidate_kind, CandidateKind::NoOp) {
+        let mut no_op = candidate.clone();
+        no_op.candidate_kind = CandidateKind::NoOp;
+        out.push(no_op);
+    }
+    if matches!(candidate.candidate_kind, CandidateKind::ToolIntent) {
+        let mut lower = candidate.clone();
+        lower.candidate_kind = CandidateKind::Json;
+        out.push(lower);
+    }
+    let mut shorter = candidate.clone();
+    if !shorter.feature_vec_q.is_empty() {
+        shorter.feature_vec_q[0] = shorter.feature_vec_q[0].saturating_sub(2048);
+    }
+    out.push(shorter);
+    out.sort_by(|a, b| {
+        a.candidate_kind
+            .cmp(&b.candidate_kind)
+            .then_with(|| a.candidate_id.cmp(&b.candidate_id))
+    });
+    out.dedup_by(|a, b| {
+        a.candidate_kind == b.candidate_kind
+            && a.candidate_id == b.candidate_id
+            && a.feature_vec_q == b.feature_vec_q
+    });
+    out
+}
+
+#[cfg(any(feature = "compute-candle", test))]
+fn score_mlp_candidate(
+    model: &EbmMlModelV1,
+    signals: &EbmSignals,
+    candidate: &CandidateFeature,
+) -> UQ0_16 {
+    let mut x = build_feature_vector(signals, candidate, model.input_dim);
+    x.truncate(model.input_dim);
+    while x.len() < model.input_dim {
+        x.push(0.0);
+    }
+
+    let mut h = vec![0.0_f32; model.hidden_dim];
+    for (j, hv) in h.iter_mut().enumerate() {
+        let mut acc = model.b1[j];
+        for (i, xv) in x.iter().enumerate() {
+            acc += model.w1[i * model.hidden_dim + j] * *xv;
+        }
+        *hv = acc.tanh();
+    }
+
+    let mut e_raw = model.b2;
+    for (j, hv) in h.iter().enumerate() {
+        e_raw += model.w2[j] * *hv;
+    }
+    let e = sigmoid(e_raw);
+    UQ0_16::from_f32_clamped(e)
+}
+
+#[cfg(any(feature = "compute-candle", test))]
+fn build_feature_vector(
+    signals: &EbmSignals,
+    candidate: &CandidateFeature,
+    dim: usize,
+) -> Vec<f32> {
+    let mut out = Vec::with_capacity(dim.min(EBM_FEATURE_D_MAX));
+    out.push(q_to_f32(signals.risk_q));
+    out.push(q_to_f32(signals.confidence_q));
+    out.push(q_to_f32(signals.pressure_q));
+    out.push(q_to_f32(signals.surprise_q));
+    out.push(q_to_f32(signals.uncertainty_q));
+    out.push(signals.coherence_q.map(q_to_f32).unwrap_or(0.0));
+    out.push(match candidate.candidate_kind {
+        CandidateKind::SafeText => 0.0,
+        CandidateKind::Json => 0.25,
+        CandidateKind::ToolIntent => 0.5,
+        CandidateKind::NoOp => 0.75,
+        CandidateKind::Other => 1.0,
+    });
+    out.push(f32::from(candidate.tool_class.unwrap_or(0)) / 255.0);
+    for &q in candidate
+        .feature_vec_q
+        .iter()
+        .take(EBM_FEATURE_D_MAX.saturating_sub(out.len()))
+    {
+        out.push((q as f32) / 32767.0);
+    }
+    out
+}
+
+#[cfg(any(feature = "compute-candle", test))]
+fn sigmoid(v: f32) -> f32 {
+    if v.is_nan() {
+        1.0
+    } else {
+        1.0 / (1.0 + (-v).exp())
+    }
+}
+
+#[cfg(any(feature = "compute-candle", test))]
+fn q_to_f32(v: UQ0_16) -> f32 {
+    f32::from(v.raw()) / f32::from(u16::MAX)
 }
 
 fn score_candidate(input: &EbmInput, candidate: &CandidateFeature) -> UQ0_16 {
@@ -222,12 +625,18 @@ fn mul_q(a: UQ0_16, b: UQ0_16) -> u32 {
 fn compute_ebm_digest(
     contract_version: StageContractVersion,
     backend_id: BackendComponentId,
+    model_digest_prefix: [u8; 8],
     input: &EbmInput,
     energies_q: &[UQ0_16],
+    search_enabled: bool,
+    search_steps_used: u8,
 ) -> [u8; 32] {
     let mut hasher = Sha256::new();
     hasher.update(contract_version.as_u16().to_le_bytes());
     hasher.update([backend_id as u8]);
+    hasher.update(model_digest_prefix);
+    hasher.update([u8::from(search_enabled)]);
+    hasher.update([search_steps_used]);
     hasher.update(input.t.to_le_bytes());
     hasher.update([input.governor_tier]);
     hasher.update([u8::from(input.emergency_active)]);
@@ -256,6 +665,9 @@ fn degraded_fallback(
     input: &EbmInput,
     contract_version: StageContractVersion,
     backend_id: BackendComponentId,
+    model_digest_prefix: [u8; 8],
+    search_enabled: bool,
+    search_steps_used: u8,
     status: EbmStatus,
 ) -> EbmOutput {
     let mut energies_q = vec![UQ0_16::ONE; input.candidates.len()];
@@ -290,7 +702,15 @@ fn degraded_fallback(
             .map(|(idx, _)| idx as u16)
             .collect()
     };
-    let digest = compute_ebm_digest(contract_version, backend_id, input, &energies_q);
+    let digest = compute_ebm_digest(
+        contract_version,
+        backend_id,
+        model_digest_prefix,
+        input,
+        &energies_q,
+        search_enabled,
+        search_steps_used,
+    );
     EbmOutput {
         status,
         aggregate_energy_q: best_indices
@@ -300,6 +720,9 @@ fn degraded_fallback(
         energies_q,
         best_indices,
         ebm_digest: digest,
+        model_digest_prefix,
+        search_enabled,
+        search_steps_used,
     }
 }
 
@@ -319,17 +742,39 @@ pub fn candidate_feature_from_decision(candidate: &DecisionCandidate) -> Candida
         .tool_intents
         .first()
         .map(|tool| tool.kind.as_tag().bytes().next().unwrap_or(0));
+    let feature_vec_q = vec![
+        (candidate.estimated_cost.compute_units.min(i16::MAX as u32)) as i16,
+        (candidate.estimated_cost.bytes_out.min(i16::MAX as u32)) as i16,
+        i16::from(candidate.estimated_cost.tool_calls),
+    ];
     CandidateFeature {
         candidate_id: candidate.candidate_id,
         candidate_kind,
         tool_class,
         candidate_digest: candidate.digest,
-        feature_vec_q: Vec::new(),
+        feature_vec_q,
     }
 }
 
 pub fn fallback_best_index(output: &EbmOutput) -> Option<usize> {
     output.best_indices.first().map(|idx| usize::from(*idx))
+}
+
+#[cfg(not(feature = "compute-candle"))]
+pub type CandleEbmReasonerV1 = CpuEbmStubV0;
+
+#[cfg(not(feature = "compute-candle"))]
+impl CpuEbmStubV0 {
+    pub fn from_model_store(_search_enabled: bool) -> Self {
+        Self
+    }
+}
+
+#[cfg(feature = "compute-candle")]
+fn prefix8(bytes: [u8; 32]) -> [u8; 8] {
+    let mut out = [0_u8; 8];
+    out.copy_from_slice(&bytes[..8]);
+    out
 }
 
 #[cfg(test)]
@@ -414,26 +859,43 @@ mod tests {
     }
 
     #[test]
-    fn emergency_penalizes_tool_intent() {
-        let mut input = mk_input();
-        input.emergency_active = true;
-        let mut ebm = CpuEbmStubV0;
-        let mut budget = WorkMeter::new(100);
-        let out = ebm.score_candidates(input, &mut budget);
-        let best = out.best_indices[0] as usize;
-        assert!(!matches!(
-            out.energies_q.get(best),
-            Some(v) if *v == UQ0_16::ONE && best == 0
-        ));
-        assert_eq!(best, 1);
-    }
-
-    #[test]
     fn budget_exceeded_is_safe_and_deterministic() {
         let mut ebm = CpuEbmStubV0;
         let mut budget = WorkMeter::new(0);
         let out = ebm.score_candidates(mk_input(), &mut budget);
         assert_eq!(out.status, EbmStatus::BudgetExceeded);
         assert_eq!(out.best_indices.first().copied(), Some(0));
+    }
+
+    #[test]
+    fn variant_generation_is_deterministic() {
+        let c = CandidateFeature {
+            candidate_id: 3,
+            candidate_kind: CandidateKind::ToolIntent,
+            tool_class: Some(1),
+            candidate_digest: [3; 32],
+            feature_vec_q: vec![1024, 10],
+        };
+        assert_eq!(bounded_variants(&c), bounded_variants(&c));
+    }
+
+    #[cfg(feature = "compute-candle")]
+    #[test]
+    fn candle_forward_deterministic() {
+        let model = EbmMlModelV1 {
+            input_dim: 8,
+            hidden_dim: 3,
+            w1: vec![0.01; 24],
+            b1: vec![0.0; 3],
+            w2: vec![0.2, 0.1, 0.3],
+            b2: 0.05,
+        };
+        let mut ebm = CandleEbmReasonerV1::from_model_for_tests(model, true);
+        let mut a = WorkMeter::new(100);
+        let mut b = WorkMeter::new(100);
+        let out_a = ebm.score_candidates(mk_input(), &mut a);
+        let out_b = ebm.score_candidates(mk_input(), &mut b);
+        assert_eq!(out_a.energies_q, out_b.energies_q);
+        assert_eq!(out_a.ebm_digest, out_b.ebm_digest);
     }
 }

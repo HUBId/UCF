@@ -4,8 +4,8 @@ use crate::compute_economics::{
     CostSchedule,
 };
 use crate::ebm::{
-    candidate_feature_from_decision, CpuEbmStubV0, EbmEnablementMode, EbmInput, EbmReasoner,
-    EbmSignals, EbmStatus,
+    candidate_feature_from_decision, CandleEbmReasonerV1, CpuEbmStubV0, EbmEnablementMode,
+    EbmInput, EbmReasoner, EbmSignals, EbmStatus,
 };
 use crate::errors::RuntimeError;
 use crate::evolution::{
@@ -47,11 +47,12 @@ use ucf_ess::v1::{
     compute_content_digest, AuditCheckpointRecord, AuditPayload, BackendPackRecord,
     CandidateSetRecord, CandidateSummaryRecord, CapabilityIssuanceRecord,
     ComputeBudgetViolationRecord, ComputeBudgetWindowRecord, DeltaEvaluationRecord,
-    DeltaProposalRecord, DeltaRecommendationRecord, EbmReasoningRecord, EmergencyReasonCode,
-    EmergencyRecord, EmergencyStateCode, ExperienceKind, ExperienceRecord, ExperienceStore,
-    HormoneRecord, IdAllocator, InMemoryEss, LfmSummaryRecord, LfmWindowRecord, NeuroRecord,
-    NsrRecord, OutputRecord, PayloadClassification, PolicyProvenanceRecord, SandboxCallRecord,
-    SandboxReplyRecord, ThrottleRecord, ToolAuthRecord, ToolExecutionRecord, ToolRequestRecord,
+    DeltaProposalRecord, DeltaRecommendationRecord, EbmEnvelopeViolationRecord, EbmReasoningRecord,
+    EmergencyReasonCode, EmergencyRecord, EmergencyStateCode, ExperienceKind, ExperienceRecord,
+    ExperienceStore, HormoneRecord, IdAllocator, InMemoryEss, LfmSummaryRecord, LfmWindowRecord,
+    NeuroRecord, NsrRecord, OutputRecord, PayloadClassification, PolicyProvenanceRecord,
+    SandboxCallRecord, SandboxReplyRecord, ThrottleRecord, ToolAuthRecord, ToolExecutionRecord,
+    ToolRequestRecord,
 };
 use ucf_fep::{
     check_coherence_invariants, fep_step, homeostasis_step, CoherenceCfg, CoherenceSnapshot,
@@ -713,7 +714,7 @@ pub struct RuntimeOrchestrator {
     emergency_dv_trend_count: u8,
     emergency_last_reason: Option<EmergencyTriggerReason>,
     candidate_generator: DefaultCandidateGeneratorV0,
-    ebm_reasoner: CpuEbmStubV0,
+    ebm_reasoner: Box<dyn EbmReasoner>,
     ebm_mode: EbmEnablementMode,
     ebm_run_id: u64,
     audit_head_digest: [u8; 32],
@@ -1789,7 +1790,13 @@ impl RuntimeOrchestrator {
             emergency_dv_trend_count: 0,
             emergency_last_reason: None,
             candidate_generator: DefaultCandidateGeneratorV0,
-            ebm_reasoner: CpuEbmStubV0,
+            ebm_reasoner: if env_flag("UCF_EBM_CANDLE") {
+                Box::new(CandleEbmReasonerV1::from_model_store(env_flag(
+                    "UCF_EBM_SEARCH",
+                )))
+            } else {
+                Box::new(CpuEbmStubV0)
+            },
             ebm_mode: std::env::var("UCF_SLOT_EBM_MODE")
                 .ok()
                 .and_then(|v| EbmEnablementMode::parse(&v))
@@ -3665,12 +3672,13 @@ impl RuntimeOrchestrator {
                 }
             }
             let record = EbmReasoningRecord {
-                schema_version: 1,
+                schema_version: 2,
                 t: ctrl.time.tick.get(),
                 run_id: self.ebm_run_id,
                 decision_id: eid2.0,
                 backend_pack_digest_prefix: prefix8(backend_pack_digest(compute_summary)),
                 ebm_backend_id: self.ebm_reasoner.backend_id() as u8,
+                ebm_model_digest_prefix: out.model_digest_prefix,
                 contract_version: self.ebm_reasoner.contract_version().as_u16(),
                 enablement_mode: self.ebm_mode.as_u8(),
                 risk_q: ucf_types::UQ0_16::from_f32_clamped(compute_summary.risk).raw(),
@@ -3684,6 +3692,8 @@ impl RuntimeOrchestrator {
                 top_energies_q,
                 top_candidate_ids,
                 ebm_digest_prefix: prefix8(out.ebm_digest),
+                search_enabled: out.search_enabled,
+                search_steps_used: out.search_steps_used,
                 evidence_chain_digest_prefix: prefix8(compute_summary.compute_chain_digest),
                 status: out.status.as_u8(),
                 reason_code: match out.status {
@@ -3700,6 +3710,21 @@ impl RuntimeOrchestrator {
                 decision.corr,
                 record,
             ))?;
+            if !matches!(out.status, EbmStatus::Ok) {
+                self.ess
+                    .append(ExperienceRecord::from_ebm_envelope_violation(
+                        self.ids.next(),
+                        decision.time,
+                        decision.corr,
+                        EbmEnvelopeViolationRecord {
+                            schema_version: 1,
+                            t: ctrl.time.tick.get(),
+                            decision_id: eid2.0,
+                            violation_code: out.status.as_u8(),
+                            details: format!("status={:?}", out.status),
+                        },
+                    ))?;
+            }
         }
 
         let decoding_policy = apply_decoding_policy(
