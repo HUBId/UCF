@@ -2,8 +2,14 @@
 
 mod adversarial;
 mod bench;
+mod causal;
 pub use adversarial::{adversarial_run, AdversarialReport, AdversarialRunArgs, CaseResult};
 pub use bench::{bench_run, BenchArgs, BenchReport};
+pub use causal::{
+    causal_slice, event_id_for_decision, event_id_for_record, explain_why,
+    save_counterfactual_result, simulate_counterfactual, write_slice, CausalEdge, CausalSlice,
+    CounterfactualRequest, CounterfactualResult, EdgeType, EventNode, EventType, ExplainWhyReport,
+};
 
 use std::collections::BTreeMap;
 use std::fs;

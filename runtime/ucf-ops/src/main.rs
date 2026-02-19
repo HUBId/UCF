@@ -3,13 +3,14 @@
 use std::path::PathBuf;
 
 use ucf_ops::{
-    adversarial_run, bench_run, bringup, diagnostics, ebm_export_dataset, ess_compact,
-    ess_snapshot, explain_tick, export_bugreport, load_signoff_checklist, metrics_snapshot,
-    metrics_summary, metrics_trend, models_probe, models_verify, one_command_bringup, out_manifest,
-    policy_diff, policy_explain, policy_validate, readiness_gate, release_signoff_validate,
-    replay_audit, replay_bugreport, run_status, runs_list, runs_search, runs_show,
-    security_verify_chain, verify_bugreport, AdversarialRunArgs, BenchArgs, ExplainTickRequest,
-    ExportArgs, GateStatus,
+    adversarial_run, bench_run, bringup, causal_slice, diagnostics, ebm_export_dataset,
+    ess_compact, ess_snapshot, event_id_for_decision, explain_tick, explain_why, export_bugreport,
+    load_signoff_checklist, metrics_snapshot, metrics_summary, metrics_trend, models_probe,
+    models_verify, one_command_bringup, out_manifest, policy_diff, policy_explain, policy_validate,
+    readiness_gate, release_signoff_validate, replay_audit, replay_bugreport, run_status,
+    runs_list, runs_search, runs_show, save_counterfactual_result, security_verify_chain,
+    simulate_counterfactual, verify_bugreport, write_slice, AdversarialRunArgs, BenchArgs,
+    CounterfactualRequest, ExplainTickRequest, ExportArgs, GateStatus,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -307,6 +308,106 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 for warning in report.warnings {
                     println!("warning={warning}");
                 }
+            }
+        }
+        "causal" => {
+            let sub = args.get(2).map(String::as_str).unwrap_or("help");
+            match sub {
+                "slice" => {
+                    let run_id = arg_value(&args, "--run").unwrap_or_else(|| "unknown".to_string());
+                    let radius = arg_value(&args, "--radius")
+                        .and_then(|v| v.parse::<u8>().ok())
+                        .unwrap_or(2);
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/causal_slice.json"));
+                    let event_id = if let Some(event) = arg_value(&args, "--event") {
+                        event
+                    } else if let Some(decision_id) = arg_value(&args, "--decision").and_then(|v| v.parse::<u64>().ok()) {
+                        event_id_for_decision(&workdir, &run_id, decision_id)?
+                            .ok_or_else(|| "decision event not found".to_string())?
+                    } else {
+                        return Err("usage: ucf-ops causal slice --run <id> --event <event_id> [--radius <n>] [--out <path>]".into());
+                    };
+
+                    let slice = causal_slice(&workdir, &run_id, &event_id, radius)?;
+                    write_slice(&slice, &out)?;
+                    println!("center_event_id={}", slice.center_event_id);
+                    println!("nodes={} edges={}", slice.nodes.len(), slice.edges.len());
+                    println!("out={}", out.display());
+                }
+                _ => return Err("usage: ucf-ops causal slice --run <id> --event <event_id> [--radius <n>] [--out <path>]".into()),
+            }
+        }
+        "explain" => {
+            let sub = args.get(2).map(String::as_str).unwrap_or("help");
+            match sub {
+                "why" => {
+                    let Some(decision_id) =
+                        arg_value(&args, "--decision").and_then(|v| v.parse::<u64>().ok())
+                    else {
+                        return Err("usage: ucf-ops explain why --decision <id>".into());
+                    };
+                    let report = explain_why(&workdir, decision_id)?;
+                    if has_flag(&args, "--json") {
+                        println!("{}", serde_json::to_string_pretty(&report)?);
+                    } else {
+                        println!(
+                            "decision_id={} center_event_id={}",
+                            report.decision_id, report.center_event_id
+                        );
+                        println!("incoming_causes={}", report.incoming_causes.len());
+                        for edge in &report.incoming_causes {
+                            println!(
+                                "  cause {:?}: {} -> {} evidence={}",
+                                edge.edge_type,
+                                edge.src_event_id,
+                                edge.dst_event_id,
+                                edge.evidence_digest_prefix
+                            );
+                        }
+                        println!("outgoing_effects={}", report.outgoing_effects.len());
+                        for edge in &report.outgoing_effects {
+                            println!(
+                                "  effect {:?}: {} -> {} evidence={}",
+                                edge.edge_type,
+                                edge.src_event_id,
+                                edge.dst_event_id,
+                                edge.evidence_digest_prefix
+                            );
+                        }
+                    }
+                }
+                _ => return Err("usage: ucf-ops explain why --decision <id>".into()),
+            }
+        }
+        "counterfactual" => {
+            let sub = args.get(2).map(String::as_str).unwrap_or("help");
+            match sub {
+                "simulate" => {
+                    let Some(base_decision_id) = arg_value(&args, "--decision").and_then(|v| v.parse::<u64>().ok()) else {
+                        return Err("usage: ucf-ops counterfactual simulate --decision <id> --candidate <id> [--out <path>]".into());
+                    };
+                    let Some(alternative_candidate_id) = arg_value(&args, "--candidate").and_then(|v| v.parse::<u16>().ok()) else {
+                        return Err("usage: ucf-ops counterfactual simulate --decision <id> --candidate <id> [--out <path>]".into());
+                    };
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/counterfactual_result.json"));
+                    let result = simulate_counterfactual(
+                        &workdir,
+                        CounterfactualRequest {
+                            base_decision_id,
+                            alternative_candidate_id,
+                        },
+                    )?;
+                    save_counterfactual_result(&result, &out)?;
+                    println!("would_choose_candidate={}", result.would_choose_candidate);
+                    println!("would_issue_tool={}", result.would_issue_tool);
+                    println!("risk_delta_q={} energy_delta_q={}", result.risk_delta_q, result.energy_delta_q);
+                    println!("out={}", out.display());
+                }
+                _ => return Err("usage: ucf-ops counterfactual simulate --decision <id> --candidate <id> [--out <path>]".into()),
             }
         }
         "metrics" => {
