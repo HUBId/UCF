@@ -294,7 +294,7 @@ impl L4Solver {
         self.step_count = self.step_count.saturating_add(1);
         #[cfg(feature = "biophys-l4-ca")]
         {
-            return L4StepOutput { ca_spike };
+            L4StepOutput { ca_spike }
         }
         #[cfg(not(feature = "biophys-l4-ca"))]
         {
@@ -398,7 +398,7 @@ impl L4Solver {
         self.step_count = self.step_count.saturating_add(1);
         #[cfg(feature = "biophys-l4-ca")]
         {
-            return L4StepOutput { ca_spike };
+            L4StepOutput { ca_spike }
         }
         #[cfg(not(feature = "biophys-l4-ca"))]
         {
