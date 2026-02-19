@@ -63,6 +63,10 @@ pub struct ComputeSignalsSummary {
     pub instability_q: Option<u16>,
     pub phi_proxy: Option<f32>,
     pub coherence_digest: Option<[u8; 32]>,
+    pub iit_coherence_q: Option<u16>,
+    pub iit_incoherence_q: Option<u16>,
+    pub iit_reason_codes: Option<[u8; 4]>,
+    pub stage_allow_mask: Option<StageAllowMask>,
     pub free_energy_proxy_q: Option<u16>,
     pub ebm_energy_mean_topk_q: Option<u16>,
     pub ebm_w_q: Option<u16>,
@@ -103,6 +107,16 @@ pub struct DecisionFrame {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ReasonCode(pub &'static str);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StageAllowMask {
+    pub lfm: bool,
+    pub nsr: bool,
+    pub ebm_constraints: bool,
+    pub governor: bool,
+    pub llm_generation: bool,
+    pub tool_planning: bool,
+}
 
 impl DecisionFrame {
     pub fn allow(time: SimTime, corr: CorrelationId, rationale: impl Into<Arc<str>>) -> Self {

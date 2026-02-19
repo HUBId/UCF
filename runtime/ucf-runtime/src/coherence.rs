@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, VecDeque};
 
 use blake3::Hasher;
 use ucf_compute::Spike;
+use ucf_types::UQ0_16;
 
 const DOMAIN_COHERENCE: &[u8] = b"ucf.runtime.coherence.v0";
 const BUCKETS: u32 = 64;
@@ -12,6 +13,56 @@ const MAX_EVENTS_PER_BATCH: usize = 128;
 const MAX_SUBSCRIBERS: usize = 32;
 const MAX_SELECTED: usize = 8;
 const MAX_HISTORY: usize = 64;
+const INCOHERENCE_THRESHOLD_Q: UQ0_16 = UQ0_16::from_raw(39_321); // ~0.6
+const SIGNAL_AGREEMENT_K_Q: UQ0_16 = UQ0_16::from_raw(49_152); // 0.75
+const CONTRADICTION_PENALTY_Q: UQ0_16 = UQ0_16::from_raw(6_554); // 0.1
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IitReasonCode {
+    HighDispersion,
+    PhaseUnlock,
+    ContradictionTrend,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StageAllowMask {
+    pub lfm: bool,
+    pub nsr: bool,
+    pub ebm_constraints: bool,
+    pub governor: bool,
+    pub llm_generation: bool,
+    pub tool_planning: bool,
+}
+
+impl StageAllowMask {
+    pub fn unrestricted() -> Self {
+        Self {
+            lfm: true,
+            nsr: true,
+            ebm_constraints: true,
+            governor: true,
+            llm_generation: true,
+            tool_planning: true,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct IitMonitorOutput {
+    pub contract_version: u16,
+    pub backend_id: &'static str,
+    pub coherence_q: UQ0_16,
+    pub incoherence_q: UQ0_16,
+    pub reason_codes: Vec<IitReasonCode>,
+    pub monitor_digest: [u8; 32],
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PhaseWindowRecord {
+    pub t: u64,
+    pub allow_mask: StageAllowMask,
+    pub reason: &'static str,
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct SpikeEvent {
@@ -103,6 +154,15 @@ pub struct CoherenceMetrics {
     pub digest: [u8; 32],
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct CoherenceSignals {
+    risk_q: UQ0_16,
+    pressure_q: UQ0_16,
+    surprise_q: UQ0_16,
+    uncertainty_q: UQ0_16,
+    stability_q: UQ0_16,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct HistoryPoint {
     spike_count: usize,
@@ -169,6 +229,8 @@ impl CoherenceRuntime {
         Vec<PhaseWindow>,
         ScheduleDecision,
         CoherenceMetrics,
+        IitMonitorOutput,
+        PhaseWindowRecord,
         Option<&'static str>,
     ) {
         let batch = make_batch(input.t, spikes, input.source_digest);
@@ -218,6 +280,9 @@ impl CoherenceRuntime {
         }
 
         let metrics = compute_metrics(&self.history);
+        let iit_output =
+            compute_iit_monitor(input.t, input.source_digest, input, metrics, &windows);
+        let phase_window = phase_window_record(input.t, &iit_output);
         let schedule = schedule_modules(
             &self.subscribers,
             &windows,
@@ -229,8 +294,133 @@ impl CoherenceRuntime {
         if gating_reason.is_some() {
             self.gated_total = self.gated_total.saturating_add(1);
         }
-        (routing, windows, schedule, metrics, gating_reason)
+        (
+            routing,
+            windows,
+            schedule,
+            metrics,
+            iit_output,
+            phase_window,
+            gating_reason,
+        )
     }
+}
+
+fn compute_iit_monitor(
+    t: u64,
+    source_digest: [u8; 32],
+    input: TickInput,
+    metrics: CoherenceMetrics,
+    windows: &[PhaseWindow],
+) -> IitMonitorOutput {
+    let signals = CoherenceSignals {
+        risk_q: UQ0_16::from_f32_clamped(input.risk),
+        pressure_q: UQ0_16::from_f32_clamped(input.pressure),
+        surprise_q: UQ0_16::from_f32_clamped(input.surprise),
+        uncertainty_q: UQ0_16::from_f32_clamped(1.0 - input.confidence),
+        stability_q: UQ0_16::from_f32_clamped(1.0 - metrics.instability),
+    };
+    let mut reasons = Vec::with_capacity(4);
+    let a = signal_agreement_coherence_q(signals, &mut reasons);
+    let b = phase_consistency_q(windows, &mut reasons);
+    let c = stability_trend_coherence_q(signals, &mut reasons);
+    let coherence_q = UQ0_16::from_raw(a.raw().min(b.raw()).min(c.raw()));
+    let incoherence_q = UQ0_16::from_raw(u16::MAX.saturating_sub(coherence_q.raw()));
+    reasons.truncate(4);
+
+    let mut hasher = Hasher::new();
+    hasher.update(b"ucf.iit.monitor.v1");
+    hasher.update(&coherence_q.raw().to_be_bytes());
+    hasher.update(&incoherence_q.raw().to_be_bytes());
+    hasher.update(&t.to_be_bytes());
+    hasher.update(&source_digest);
+    for reason in &reasons {
+        hasher.update(&[*reason as u8]);
+    }
+    IitMonitorOutput {
+        contract_version: 1,
+        backend_id: "IitMonitorV1",
+        coherence_q,
+        incoherence_q,
+        reason_codes: reasons,
+        monitor_digest: *hasher.finalize().as_bytes(),
+    }
+}
+
+fn phase_window_record(t: u64, output: &IitMonitorOutput) -> PhaseWindowRecord {
+    let allow_mask = if output.incoherence_q.raw() > INCOHERENCE_THRESHOLD_Q.raw() {
+        StageAllowMask {
+            lfm: true,
+            nsr: true,
+            ebm_constraints: true,
+            governor: true,
+            llm_generation: false,
+            tool_planning: false,
+        }
+    } else {
+        StageAllowMask::unrestricted()
+    };
+    let reason = if allow_mask.llm_generation {
+        "coherence_ok"
+    } else {
+        "incoherence_restrict"
+    };
+    PhaseWindowRecord {
+        t,
+        allow_mask,
+        reason,
+    }
+}
+
+fn signal_agreement_coherence_q(
+    signals: CoherenceSignals,
+    reasons: &mut Vec<IitReasonCode>,
+) -> UQ0_16 {
+    let xs = [
+        signals.risk_q.raw(),
+        signals.pressure_q.raw(),
+        signals.surprise_q.raw(),
+        signals.uncertainty_q.raw(),
+    ];
+    let mean = xs.iter().map(|v| u32::from(*v)).sum::<u32>() / xs.len() as u32;
+    let mad = xs
+        .iter()
+        .map(|v| u32::from((*v as i32 - mean as i32).unsigned_abs() as u16))
+        .sum::<u32>()
+        / xs.len() as u32;
+    let weighted = ((mad * u32::from(SIGNAL_AGREEMENT_K_Q.raw())) >> 16).min(u32::from(u16::MAX));
+    let coh = u16::MAX.saturating_sub(weighted as u16);
+    if coh < 32_768 {
+        reasons.push(IitReasonCode::HighDispersion);
+    }
+    UQ0_16::from_raw(coh)
+}
+
+fn phase_consistency_q(windows: &[PhaseWindow], reasons: &mut Vec<IitReasonCode>) -> UQ0_16 {
+    if windows.is_empty() {
+        return UQ0_16::ONE;
+    }
+    let mean = windows
+        .iter()
+        .map(|w| UQ0_16::from_f32_clamped(w.alignment).raw() as u32)
+        .sum::<u32>()
+        / windows.len() as u32;
+    if mean < 32_768 {
+        reasons.push(IitReasonCode::PhaseUnlock);
+    }
+    UQ0_16::from_raw(mean as u16)
+}
+
+fn stability_trend_coherence_q(
+    signals: CoherenceSignals,
+    reasons: &mut Vec<IitReasonCode>,
+) -> UQ0_16 {
+    let mut out = signals.stability_q;
+    if signals.risk_q.raw() > 39_321 && signals.stability_q.raw() < 26_214 {
+        out = UQ0_16::from_raw(out.raw().saturating_sub(CONTRADICTION_PENALTY_Q.raw()));
+        reasons.push(IitReasonCode::ContradictionTrend);
+    }
+    out
 }
 
 impl Default for CoherenceRuntime {
@@ -521,11 +711,80 @@ mod tests {
             confidence: 0.2,
             budget_limit: 1,
         };
-        let (_, windows, schedule, metrics, _) = runtime.tick(&spikes(), input);
+        let (_, windows, schedule, metrics, _, _, _) = runtime.tick(&spikes(), input);
         assert!(!windows.is_empty());
         assert!(schedule.selected.len() <= 1);
         assert!((0.0..=1.0).contains(&metrics.coherence));
         assert!((0.0..=1.0).contains(&metrics.instability));
         assert!((0.0..=1.0).contains(&metrics.phi_proxy));
+    }
+
+    #[test]
+    fn iit_monitor_outputs_are_deterministic_and_bounded() {
+        let mut runtime = CoherenceRuntime::new();
+        runtime.register_subscriber(Subscriber {
+            module_id: 1,
+            name: "a",
+            interest: InterestProfile::HashBuckets(vec![1, 2]),
+        });
+        let input = TickInput {
+            t: 7,
+            source_digest: [5; 32],
+            pressure: 0.9,
+            surprise: 0.8,
+            risk: 0.9,
+            confidence: 0.1,
+            budget_limit: 1,
+        };
+        let out_a = runtime.tick(&spikes(), input);
+        let out_b = runtime.tick(&spikes(), input);
+        assert_eq!(out_a.4.monitor_digest, out_b.4.monitor_digest);
+        assert_eq!(
+            out_a
+                .4
+                .coherence_q
+                .raw()
+                .saturating_add(out_a.4.incoherence_q.raw()),
+            u16::MAX
+        );
+    }
+
+    #[test]
+    fn incoherence_phase_window_tightens_only() {
+        let mut runtime = CoherenceRuntime::new();
+        runtime.register_subscriber(Subscriber {
+            module_id: 2,
+            name: "b",
+            interest: InterestProfile::HashBuckets(vec![1]),
+        });
+        let low = runtime.tick(
+            &spikes(),
+            TickInput {
+                t: 1,
+                source_digest: [1; 32],
+                pressure: 0.1,
+                surprise: 0.1,
+                risk: 0.1,
+                confidence: 0.9,
+                budget_limit: 1,
+            },
+        );
+        let high = runtime.tick(
+            &spikes(),
+            TickInput {
+                t: 2,
+                source_digest: [2; 32],
+                pressure: 1.0,
+                surprise: 1.0,
+                risk: 1.0,
+                confidence: 0.0,
+                budget_limit: 1,
+            },
+        );
+
+        let low_mask = low.5.allow_mask;
+        let high_mask = high.5.allow_mask;
+        assert!(low_mask.llm_generation || !high_mask.llm_generation);
+        assert!(low_mask.tool_planning || !high_mask.tool_planning);
     }
 }

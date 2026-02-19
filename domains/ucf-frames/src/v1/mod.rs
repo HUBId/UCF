@@ -25,7 +25,9 @@ pub use brain::{BrainFrame, BrainSignal};
 pub use cde::CdeFrame;
 pub use codes::{ChannelCode, DecisionCode, DenyReasonCode};
 pub use control::{ControlFrame, ControlPayload, CorrelationId};
-pub use decision::{ComputeSignalsSummary, DecisionFrame, DecisionMeta, ReasonCode};
+pub use decision::{
+    ComputeSignalsSummary, DecisionFrame, DecisionMeta, ReasonCode, StageAllowMask,
+};
 pub use digital_brain::{
     quantize_avg_v_mv, quantize_hormone, BrainFrame as DigitalBrainFrame, ChemFrame,
 };

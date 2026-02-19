@@ -242,6 +242,8 @@ const LFM_V_K: f32 = 0.25;
 const LFM_V_MAX: f32 = 1.10;
 const LFM_DV_MAX: f32 = 0.06;
 const LFM_SATURATION_MAX: f32 = 0.20;
+const IIT_INCOHERENCE_GOV_INC_HIGH_Q: u16 = 39_321; // ~0.6
+const IIT_INCOHERENCE_GOV_EXTRA_PENALTY_MAX_Q: u16 = 16_384; // ~0.25
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum OutputOverrideCode {
@@ -3473,6 +3475,10 @@ impl RuntimeOrchestrator {
             instability_q: None,
             phi_proxy: None,
             coherence_digest: None,
+            iit_coherence_q: None,
+            iit_incoherence_q: None,
+            iit_reason_codes: None,
+            stage_allow_mask: None,
             free_energy_proxy_q: self
                 .last_fep_outputs
                 .as_ref()
@@ -3485,20 +3491,64 @@ impl RuntimeOrchestrator {
             fep_coupling_version: self.last_fep_outputs.as_ref().map(|f| f.coupling_version),
         });
 
-        let (routing, windows, schedule, coherence_metrics, coherence_gate) =
-            self.coherence_runtime.tick(
-                &compute_signals.spikes,
-                TickInput {
-                    t: ctrl.time.tick.get(),
-                    source_digest: compute_summary.spikes_digest,
-                    pressure: compute_summary.pressure,
-                    surprise: compute_summary.surprise,
-                    risk: compute_summary.risk,
-                    confidence: compute_summary.confidence,
-                    budget_limit: 8,
-                },
-            );
+        let (
+            routing,
+            windows,
+            schedule,
+            coherence_metrics,
+            iit_monitor,
+            phase_window,
+            coherence_gate,
+        ) = self.coherence_runtime.tick(
+            &compute_signals.spikes,
+            TickInput {
+                t: ctrl.time.tick.get(),
+                source_digest: compute_summary.spikes_digest,
+                pressure: compute_summary.pressure,
+                surprise: compute_summary.surprise,
+                risk: compute_summary.risk,
+                confidence: compute_summary.confidence,
+                budget_limit: 8,
+            },
+        );
         let _ = (routing, windows, schedule);
+
+        self.ess.append(ExperienceRecord::note(
+            self.ids.next(),
+            ctrl.time,
+            ctrl.corr,
+            format!(
+                "iit_monitor:coh_q={} incoh_q={} digest={} reasons={:?}",
+                iit_monitor.coherence_q.raw(),
+                iit_monitor.incoherence_q.raw(),
+                hex::encode(&iit_monitor.monitor_digest[..8]),
+                iit_monitor.reason_codes
+            ),
+        ))?;
+        self.ess.append(ExperienceRecord::note(
+            self.ids.next(),
+            ctrl.time,
+            ctrl.corr,
+            format!(
+                "phase_window:t={} reason={} llm={} tool={} lfm={} nsr={} ebm={} gov={}",
+                phase_window.t,
+                phase_window.reason,
+                phase_window.allow_mask.llm_generation,
+                phase_window.allow_mask.tool_planning,
+                phase_window.allow_mask.lfm,
+                phase_window.allow_mask.nsr,
+                phase_window.allow_mask.ebm_constraints,
+                phase_window.allow_mask.governor
+            ),
+        ))?;
+        let stage_allow_mask = ucf_frames::v1::StageAllowMask {
+            lfm: phase_window.allow_mask.lfm,
+            nsr: phase_window.allow_mask.nsr,
+            ebm_constraints: phase_window.allow_mask.ebm_constraints,
+            governor: phase_window.allow_mask.governor,
+            llm_generation: phase_window.allow_mask.llm_generation,
+            tool_planning: phase_window.allow_mask.tool_planning,
+        };
 
         if let Some(summary) = decision.compute_summary {
             decision = decision.with_compute_summary(ucf_frames::v1::ComputeSignalsSummary {
@@ -3507,7 +3557,17 @@ impl RuntimeOrchestrator {
                 coherence_q: Some(Self::q_u16(coherence_metrics.coherence)),
                 instability_q: Some(Self::q_u16(coherence_metrics.instability)),
                 phi_proxy: Some(coherence_metrics.phi_proxy),
-                coherence_digest: Some(coherence_metrics.digest),
+                coherence_digest: Some(iit_monitor.monitor_digest),
+                iit_coherence_q: Some(iit_monitor.coherence_q.raw()),
+                iit_incoherence_q: Some(iit_monitor.incoherence_q.raw()),
+                iit_reason_codes: {
+                    let mut codes = [0u8; 4];
+                    for (idx, reason) in iit_monitor.reason_codes.iter().take(4).enumerate() {
+                        codes[idx] = *reason as u8;
+                    }
+                    Some(codes)
+                },
+                stage_allow_mask: Some(stage_allow_mask),
                 ..summary
             });
         }
@@ -3980,10 +4040,11 @@ impl RuntimeOrchestrator {
             metrics::counter!("ucf_llm_forced_short_total").increment(1);
         }
 
-        let output_record = if matches!(
-            decoding_policy.output_class,
-            CandidateOutputClass::SafeText | CandidateOutputClass::Code
-        ) {
+        let output_record = if stage_allow_mask.llm_generation
+            && matches!(
+                decoding_policy.output_class,
+                CandidateOutputClass::SafeText | CandidateOutputClass::Code
+            ) {
             metrics::counter!("ucf_lfm_conditioning_used_total").increment(1);
             let rationale = selected_candidate
                 .rationale
@@ -4383,12 +4444,34 @@ impl RuntimeOrchestrator {
         metrics::counter!("ucf_governor_nsr_penalty_total")
             .increment(u64::from(issuance_decision.nsr_penalty_q));
         self.last_nsr_penalty_q = issuance_decision.nsr_penalty_q;
-        let (effective_caps, effective_tier) = if emergency_active {
+        let incoherence_q = decision
+            .compute_summary
+            .and_then(|s| s.iit_incoherence_q)
+            .unwrap_or(0);
+        let incoherence_extra_penalty_q = if incoherence_q > IIT_INCOHERENCE_GOV_INC_HIGH_Q {
+            let span = u32::from(u16::MAX - IIT_INCOHERENCE_GOV_INC_HIGH_Q);
+            let delta = u32::from(incoherence_q - IIT_INCOHERENCE_GOV_INC_HIGH_Q);
+            ((delta * u32::from(IIT_INCOHERENCE_GOV_EXTRA_PENALTY_MAX_Q)) / span) as u16
+        } else {
+            0
+        };
+        let (effective_caps, mut effective_tier) = if emergency_active {
             metrics::counter!("ucf_emergency_forced_deny_tools_total").increment(1);
             (ucf_policy::capability::CapabilitySet::empty(), 3_u8)
         } else {
             (issued_caps, issuance_decision.tier.as_u8())
         };
+        if incoherence_extra_penalty_q > 0 {
+            effective_tier = effective_tier.max(2);
+            metrics::counter!("ucf_governor_incoherence_penalty_total")
+                .increment(u64::from(incoherence_extra_penalty_q));
+            self.ess.append(ExperienceRecord::note(
+                self.ids.next(),
+                decision.time,
+                decision.corr,
+                format!("governor_incoherence_tighten:q={incoherence_extra_penalty_q}"),
+            ))?;
+        }
         self.tool_gate.capabilities = effective_caps;
         self.persist_issuance_records(
             decision.time,
@@ -4443,6 +4526,16 @@ impl RuntimeOrchestrator {
             req.candidate_id = Some(selected_candidate.candidate_id);
             req.tool_intent_digest = Some(selected_candidate.digest);
             requests.push(req);
+        }
+
+        if !stage_allow_mask.tool_planning {
+            self.ess.append(ExperienceRecord::note(
+                self.ids.next(),
+                decision.time,
+                decision.corr,
+                "phase_window_denied_tool_planning",
+            ))?;
+            requests.clear();
         }
 
         for request in requests {
