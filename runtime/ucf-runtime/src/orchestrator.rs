@@ -23,6 +23,7 @@ use crate::nsr_v1::{
 };
 use crate::sandbox::{call_spec_from_control, execute_tool_call, CapabilitySetSummary};
 use std::collections::HashSet;
+use std::time::Instant;
 use ucf_biophys::v0::{
     apply_coherence_feedback, classify, compute_integration, couple_pair, hormone_step, hpa_step,
     modulate_hh, neuro_step, osc_step, phase_bin, phase_lock, ttfs_from_strength, ttfs_phase,
@@ -533,6 +534,7 @@ fn apply_decoding_policy(
     nsr_hint: PolicyHint,
     lfm_uncertainty: Option<f32>,
     lfm_stability: Option<f32>,
+    hormone_stress_gate: Option<f32>,
     emergency_active: bool,
 ) -> DecodingPolicy {
     let mut override_reasons = [None; MAX_OVERRIDE_REASONS];
@@ -588,7 +590,12 @@ fn apply_decoding_policy(
         output_override = Some(OutputOverrideCode::ForcedShort);
     }
 
-    let max_tokens_eff = compute_max_tokens_eff(base_max_tokens, lfm_uncertainty);
+    let max_tokens_eff = {
+        let base = compute_max_tokens_eff(base_max_tokens, lfm_uncertainty);
+        let stress_gate = hormone_stress_gate.unwrap_or(1.0).clamp(0.1, 1.0);
+        let tightened = (base as f32 * stress_gate).round() as u32;
+        tightened.clamp(MIN_UNCERTAINTY_TOKENS.min(base_max_tokens), base_max_tokens)
+    };
     DecodingPolicy {
         max_tokens_eff,
         output_class,
@@ -2585,7 +2592,28 @@ impl RuntimeOrchestrator {
                 tracing::field::display(hex::encode(&hormone_input.evidence_chain_digest[..4]))
         )
         .entered();
-        let hormone_out = hormone_step(&self.hormone_cfg, self.hormone_state, &hormone_input);
+        let biophys_start = Instant::now();
+        let mut hormone_out = hormone_step(&self.hormone_cfg, self.hormone_state, &hormone_input);
+        metrics::histogram!("ucf_biophys_runtime_ode_micros")
+            .record(biophys_start.elapsed().as_micros() as f64);
+        if self.emergency_active() {
+            hormone_out.state.cortisol = 1.0;
+            hormone_out.state.dopamine = 0.0;
+            hormone_out.state.norepinephrine = 1.0;
+            hormone_out.state.serotonin = 0.0;
+            hormone_out.state.acetylcholine = 0.0;
+            hormone_out.state.drive = 0.0;
+            hormone_out.summary.cortisol = 1.0;
+            hormone_out.summary.dopamine = 0.0;
+            hormone_out.summary.norepinephrine = 1.0;
+            hormone_out.summary.serotonin = 0.0;
+            hormone_out.summary.acetylcholine = 0.0;
+            hormone_out.summary.drive = 0.0;
+            hormone_out.summary.stress_index = 1.0;
+            hormone_out.modulation.stress_gate = 0.1;
+            hormone_out.modulation.plasticity_gate = 0.0;
+            hormone_out.modulation.attention_gain = 0.2;
+        }
         tracing::Span::current().record("stress_index", hormone_out.summary.stress_index);
         self.hormone_state = hormone_out.state;
         self.last_hormone_summary = Some(hormone_out.summary);
@@ -3550,6 +3578,19 @@ impl RuntimeOrchestrator {
             tool_planning: phase_window.allow_mask.tool_planning,
         };
 
+        if let Some(mods) = self.last_gating_modulation {
+            if mods.stress_gate <= 0.35 {
+                if let Err(err) = self.ess.append(ExperienceRecord::note(
+                    self.ids.next(),
+                    ctrl.time,
+                    ctrl.corr,
+                    "hormone_modulation:HighCortisol:tighten_budget",
+                )) {
+                    tracing::warn!(?err, "failed to persist hormone modulation note");
+                }
+            }
+        }
+
         if let Some(summary) = decision.compute_summary {
             decision = decision.with_compute_summary(ucf_frames::v1::ComputeSignalsSummary {
                 coherence: Some(coherence_metrics.coherence),
@@ -4024,6 +4065,7 @@ impl RuntimeOrchestrator {
             nsr_v0_assessment.policy_hint,
             compute_summary.lfm_uncertainty,
             compute_summary.lfm_stability,
+            self.last_gating_modulation.map(|m| m.stress_gate),
             emergency_active,
         );
         metrics::histogram!("ucf_llm_max_tokens_eff").record(decoding_policy.max_tokens_eff as f64);
@@ -4255,12 +4297,25 @@ impl RuntimeOrchestrator {
                 let hormone_record = HormoneRecord {
                     t: summary.t,
                     cortisol_q: u16::from(quantize_unit(summary.cortisol)),
+                    dopamine_q: u16::from(quantize_unit(summary.dopamine)),
+                    norepinephrine_q: u16::from(quantize_unit(summary.norepinephrine)),
+                    serotonin_q: u16::from(quantize_unit(summary.serotonin)),
+                    acetylcholine_q: u16::from(quantize_unit(summary.acetylcholine)),
                     drive_q: u16::from(quantize_unit(summary.drive)),
                     stress_index_q: u16::from(quantize_unit(summary.stress_index)),
+                    attention_gain_q: self
+                        .last_gating_modulation
+                        .map(|m| u16::from(quantize_unit(m.attention_gain))),
+                    plasticity_gate_q: self
+                        .last_gating_modulation
+                        .map(|m| u16::from(quantize_unit(m.plasticity_gate))),
+                    stress_gate_q: self
+                        .last_gating_modulation
+                        .map(|m| u16::from(quantize_unit(m.stress_gate))),
                     hormone_digest: summary.digest,
                     evidence_chain_digest: summary.evidence_chain_digest,
                     modulation_digest: self.last_gating_modulation.map(|m| m.digest),
-                    schema_version: 1,
+                    schema_version: 2,
                 };
                 self.ess.append(ExperienceRecord::from_hormone(
                     self.ids.next(),
@@ -5111,6 +5166,7 @@ mod tests {
             PolicyHint::SafeOnly,
             Some(0.95),
             Some(0.2),
+            Some(1.0),
             false,
         );
         assert_eq!(out.output_class, CandidateOutputClass::SafeText);
@@ -5137,6 +5193,29 @@ mod tests {
     }
 
     #[test]
+    fn hormone_stress_gate_tightens_llm_budget() {
+        let low_stress = apply_decoding_policy(
+            256,
+            CandidateOutputClass::SafeText,
+            PolicyHint::Normal,
+            Some(0.2),
+            Some(0.8),
+            Some(1.0),
+            false,
+        );
+        let high_stress = apply_decoding_policy(
+            256,
+            CandidateOutputClass::SafeText,
+            PolicyHint::Normal,
+            Some(0.2),
+            Some(0.8),
+            Some(0.3),
+            false,
+        );
+        assert!(high_stress.max_tokens_eff <= low_stress.max_tokens_eff);
+    }
+
+    #[test]
     fn emergency_decoding_policy_forces_safe_short_output() {
         let out = apply_decoding_policy(
             512,
@@ -5144,6 +5223,7 @@ mod tests {
             PolicyHint::Normal,
             Some(0.1),
             Some(0.9),
+            Some(1.0),
             true,
         );
         assert_eq!(out.output_class, CandidateOutputClass::SafeText);

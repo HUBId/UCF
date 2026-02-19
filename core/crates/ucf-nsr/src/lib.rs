@@ -510,7 +510,7 @@ impl ConstraintEngine for NsrEngine {
             BackendKind::Smt => {
                 #[cfg(feature = "nsr_smt")]
                 {
-                    let mut backend = backend_smt::SmtBackend::new(self.mvp.thresholds);
+                    let mut backend = backend_smt::SmtBackend::new(self.mvp.thresholds.clone());
                     Some(backend.check(&facts, inp))
                 }
                 #[cfg(not(feature = "nsr_smt"))]
@@ -521,7 +521,8 @@ impl ConstraintEngine for NsrEngine {
             BackendKind::Datalog => {
                 #[cfg(feature = "nsr_datalog")]
                 {
-                    let mut backend = backend_datalog::DatalogBackend::new(self.mvp.thresholds);
+                    let mut backend =
+                        backend_datalog::DatalogBackend::new(self.mvp.thresholds.clone());
                     Some(backend.check(&facts, inp))
                 }
                 #[cfg(not(feature = "nsr_datalog"))]
