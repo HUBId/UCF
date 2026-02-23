@@ -524,7 +524,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     println!("{}", serde_json::to_string_pretty(&report)?);
                     println!("out={}", out.display());
                     if !report.summary.pass {
-                        std::process::exit(2);
+                        let all_disabled = report
+                            .results
+                            .iter()
+                            .all(|r| matches!(r.status, ucf_ops::ProbeStatus::Disabled));
+                        if !all_disabled {
+                            std::process::exit(2);
+                        }
                     }
                 }
                 _ => {

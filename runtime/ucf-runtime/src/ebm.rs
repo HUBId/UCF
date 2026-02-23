@@ -594,7 +594,7 @@ impl EbmReasoner for CandleEbmReasonerV1 {
         let best_indices = scored
             .iter()
             .take(EBM_TOP_N_MAX)
-            .map(|(idx, _, _, _, _)| *idx as u16)
+            .map(|(idx, _, _)| *idx as u16)
             .collect::<Vec<_>>();
         let aggregate = scored.first().map(|v| v.2).unwrap_or(UQ0_16::ONE);
         let digest = compute_ebm_digest(
@@ -1081,13 +1081,6 @@ impl CpuEbmStubV0 {
     pub fn from_model_store(_search_enabled: bool) -> Self {
         Self
     }
-}
-
-#[cfg(feature = "compute-candle")]
-fn prefix8(bytes: [u8; 32]) -> [u8; 8] {
-    let mut out = [0_u8; 8];
-    out.copy_from_slice(&bytes[..8]);
-    out
 }
 
 #[cfg(test)]
