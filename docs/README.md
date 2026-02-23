@@ -26,3 +26,7 @@
 - [Modul-Template](templates/module_template.md)
 - [Golden-Stream-Testtemplate](templates/test_template.md)
 - [Konfigurations-Template](templates/config_template.md)
+
+## Roadmaps & Runbooks
+- [v1.1 Plan: Real Models & Optional GPU Lane](v1_1_plan.md)
+- [Weights Incident Response](runbooks/weights_incident_response.md)
