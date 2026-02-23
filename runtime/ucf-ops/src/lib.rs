@@ -4311,16 +4311,11 @@ pub fn determinism_scan(repo_root: &Path) -> Result<DeterminismScanReport, OpsEr
             .strip_prefix(repo_root)
             .unwrap_or(path)
             .to_string_lossy();
-        let in_scope = rel.starts_with("runtime/ucf-runtime/src/")
-            || rel.starts_with("runtime/ucf-policy/src/")
-            || rel.starts_with("runtime/ucf-replay/src/");
-        if !in_scope {
-            continue;
-        }
         if rel.contains("vendor/")
             || rel.contains("target/")
             || rel.contains("tests/")
             || rel.contains("fuzz/")
+            || rel.contains("runtime/ucf-ops/src/lib.rs")
         {
             continue;
         }
