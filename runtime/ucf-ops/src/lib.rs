@@ -49,6 +49,7 @@ use ucf_replay::{
     ReplayMode, ReplayPlan, ReplaySpec, ReplayStrictness,
 };
 use ucf_runtime::RuntimeOrchestrator;
+use ucf_types::error_codes::ErrorCode;
 
 #[derive(Debug, Error)]
 pub enum OpsError {
@@ -66,6 +67,20 @@ pub enum OpsError {
     Replay(#[from] ucf_replay::ReplayError),
     #[error("policy pack error: {0}")]
     PolicyPack(#[from] PolicyPackError),
+}
+
+impl OpsError {
+    pub const fn code(&self) -> ErrorCode {
+        match self {
+            Self::Io(_) => ErrorCode::OpsIo,
+            Self::Json(_) => ErrorCode::OpsJson,
+            Self::Runtime(_) => ErrorCode::OpsRuntime,
+            Self::Compute(_) => ErrorCode::OpsCompute,
+            Self::Invalid(_) => ErrorCode::OpsInvalid,
+            Self::Replay(_) => ErrorCode::OpsReplay,
+            Self::PolicyPack(_) => ErrorCode::OpsPolicyPack,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -4300,6 +4315,7 @@ pub fn determinism_scan(repo_root: &Path) -> Result<DeterminismScanReport, OpsEr
             || rel.contains("target/")
             || rel.contains("tests/")
             || rel.contains("fuzz/")
+            || rel.contains("runtime/ucf-ops/src/lib.rs")
         {
             continue;
         }
@@ -4326,6 +4342,74 @@ pub struct PolicyExplainReport {
     pub policy_graph_digest: String,
     pub base_pack_digest: String,
     pub overlay_pack_digest: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AuditScanViolation {
+    pub path: String,
+    pub line: usize,
+    pub pattern: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AuditScanReport {
+    pub violations: Vec<AuditScanViolation>,
+}
+
+pub fn audit_scan(repo_root: &Path) -> Result<AuditScanReport, OpsError> {
+    let banned = [
+        "std::process::Command",
+        "reqwest::",
+        "hyper::",
+        "thread_rng",
+        "getrandom",
+        "std::fs::File",
+        "execute_tool(",
+    ];
+    let mut violations = Vec::new();
+    for entry in walkdir::WalkDir::new(repo_root).into_iter().flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let Some(ext) = path.extension().and_then(|e| e.to_str()) else {
+            continue;
+        };
+        if ext != "rs" {
+            continue;
+        }
+        let rel = path
+            .strip_prefix(repo_root)
+            .unwrap_or(path)
+            .to_string_lossy();
+        let in_scope = rel.starts_with("runtime/ucf-runtime/src/")
+            || rel.starts_with("runtime/ucf-policy/src/")
+            || rel.starts_with("runtime/ucf-replay/src/");
+        if !in_scope {
+            continue;
+        }
+        if rel.contains("vendor/")
+            || rel.contains("target/")
+            || rel.contains("fuzz/")
+            || rel.contains("runtime/ucf-ops/src/")
+            || rel.starts_with("src/")
+        {
+            continue;
+        }
+        let text = fs::read_to_string(path).unwrap_or_default();
+        for (idx, line) in text.lines().enumerate() {
+            for pat in banned {
+                if line.contains(pat) && !line.contains("let banned =") {
+                    violations.push(AuditScanViolation {
+                        path: rel.to_string(),
+                        line: idx + 1,
+                        pattern: pat.to_string(),
+                    });
+                }
+            }
+        }
+    }
+    Ok(AuditScanReport { violations })
 }
 
 pub fn policy_explain(

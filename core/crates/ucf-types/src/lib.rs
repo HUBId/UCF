@@ -2,6 +2,9 @@
 
 use std::fmt;
 
+pub mod error_codes;
+pub mod record_schema;
+
 pub const CANONICAL_QNAN_BITS_F32: u32 = 0x7FC0_0000;
 pub const CANONICAL_UNIT_QUANT_MAX: u16 = u16::MAX;
 pub const CANONICAL_SIGNED_UNIT_QUANT_MAX: i16 = i16::MAX;

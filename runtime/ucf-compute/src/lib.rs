@@ -1,3 +1,10 @@
+#[cfg(all(feature = "compute-candle", feature = "compute-burn"))]
+compile_error!("invalid feature combo: compute-candle and compute-burn are mutually exclusive");
+#[cfg(all(feature = "llm-candle", feature = "llm-burn"))]
+compile_error!("invalid feature combo: llm-candle and llm-burn are mutually exclusive");
+#[cfg(all(feature = "lfm-candle", feature = "lfm-burn"))]
+compile_error!("invalid feature combo: lfm-candle and lfm-burn are mutually exclusive");
+
 use crate::lfm::PlasticityRecord;
 use sha2::{Digest, Sha256};
 use std::sync::atomic::{AtomicU64, Ordering};
