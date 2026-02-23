@@ -1730,11 +1730,8 @@ impl RuntimeOrchestrator {
         let workspace_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
         let policy_root = workspace_root.join("policies");
 
-        #[cfg(test)]
         if std::env::var("UCF_POLICY_BUNDLE_SHA256").is_err() {
-            if let Ok(manifest) = crate::io_caps::IoCaps::runtime_default()
-                .read_to_string(&policy_root.join("manifest.toml"))
-            {
+            if let Ok(manifest) = std::fs::read_to_string(policy_root.join("manifest.toml")) {
                 if let Some(hash_line) = manifest.lines().find(|l| l.starts_with("bundle_sha256 ="))
                 {
                     let hash = hash_line
