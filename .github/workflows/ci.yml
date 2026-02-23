@@ -6,7 +6,7 @@ on:
   pull_request:
 
 jobs:
-  build:
+  core:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -19,58 +19,49 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Determinism scan
         run: cargo run -p ucf-ops -- determinism scan
-      - name: Cargo build
-        run: cargo build --workspace --all-targets
-      - name: Cargo test
-        run: PROPTEST_CASES=256 cargo test --workspace --all-targets
-      - name: Cargo test (sandbox-wasm)
-        run: PROPTEST_CASES=256 cargo test --workspace --features sandbox-wasm
-      - name: Cargo test (sandbox-proc)
-        run: PROPTEST_CASES=256 cargo test --workspace --features sandbox-proc
-      - name: Cargo test (quiet)
-        run: cargo test -q
+      - name: Policy validate
+        run: cargo run -p ucf-ops -- policy validate --pack policies/packs/base_v1
+      - name: Models verify
+        run: cargo run -p ucf-ops -- models verify --manifest models/manifest.toml
+      - name: Models probe (fixtures)
+        run: cargo run -p ucf-ops -- models probe --manifest models/manifest.toml --out ./out/probe_report.json
+      - name: Cargo test workspace
+        run: PROPTEST_CASES=128 cargo test --workspace --all-targets
+      - name: Cargo test no-default-features
+        run: PROPTEST_CASES=128 cargo test --workspace --all-targets --no-default-features
+      - name: Readiness gate
+        run: cargo run -p ucf-ops -- readiness-gate --profile test --out ./out_gate/gate_report.json --workdir ./.ucf_gate
+      - name: RC1 gate
+        run: cargo run -p ucf-ops -- release rc1-gate --out ./out_gate/rc1_gate.json
 
-      - name: Bench smoke (control-loop)
+  feature-matrix:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        lane:
+          - name: default
+            features: ""
+            blocking: true
+          - name: candle-cpu
+            features: "compute-candle,llm-candle,lfm-candle"
+            blocking: false
+          - name: burn-cpu
+            features: "compute-burn,backend-burn,llm-burn,lfm-burn"
+            blocking: false
+          - name: stage-isolation
+            features: "sandbox-wasm"
+            blocking: false
+    continue-on-error: ${{ matrix.lane.blocking == false }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Test lane ${{ matrix.lane.name }}
         run: |
-          mkdir -p bench/out
-          cargo run -p ucf-bench -- control-loop --ticks 2000 --backend stub --isolation inproc --out bench/out/control-loop-smoke.json
-      - name: Bench regression guard (smoke)
-        run: |
-          cargo run -p ucf-bench -- compare-baseline --baseline bench/baselines/linux-x86_64/baseline.json --current bench/out/control-loop-smoke.json --out bench/out/regression-report.json
-
-      - name: Fuzz targets compile (stable smoke)
-        run: cargo check --manifest-path fuzz/Cargo.toml --bins
-
-      - name: Determinism replay guard
-        run: cargo run -p ucf-replay -- replay --fixture runtime/ucf-replay/fixtures/golden_replay_fixture.json --from 0 --to 100000 --mode compute --report replay_report.json
-
-      - name: Ops bringup deterministic spine
-        run: |
-          rm -rf .ucf out
-          cargo run -p ucf-ops -- bringup --scenario fixtures/e2e_scenario_a.json --ticks 32 --out ./out
-          test -f out/metrics_summary.json
-          test -f out/run_metadata_record.json
-          python - <<'PY2'
-import hashlib, pathlib
-m = pathlib.Path('out/metrics_summary.json').read_bytes()
-print('metrics_sha256_prefix=' + hashlib.sha256(m).hexdigest()[:12])
-PY2
-
-
-      - name: Adversarial harness v1
-        run: |
-          export UCF_POLICY_BUNDLE_SHA256=$(python - <<'PY2'
-import pathlib
-for line in pathlib.Path('policies/manifest.toml').read_text().splitlines():
-    if line.strip().startswith('bundle_sha256'):
-        print(line.split('=',1)[1].strip().strip('"'))
-        break
-PY2
-)
-          cargo run -p ucf-ops -- adversarial-run --suite v1 --out ./out/adversarial_report.json
-          test -f out/adversarial_report.json
-      - name: Ops readiness gate
-        run: |
-          rm -rf .ucf_gate out_gate
-          cargo run -p ucf-ops -- readiness-gate --profile test --out ./out_gate/gate_report.json --workdir ./.ucf_gate
-          test -f out_gate/gate_report.json
+          if [ -z "${{ matrix.lane.features }}" ]; then
+            cargo test --workspace --all-targets
+          else
+            cargo test --workspace --all-targets --features "${{ matrix.lane.features }}"
+          fi

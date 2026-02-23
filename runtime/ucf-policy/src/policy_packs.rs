@@ -488,6 +488,7 @@ fn validate_semver(v: &str) -> Result<(), PolicyPackError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
     use sha2::Digest;
 
     #[test]
@@ -562,5 +563,66 @@ unknown = 1
         std::fs::write(dir.path().join("pack_manifest.toml"), lines).expect("manifest");
 
         assert!(load_and_merge_policy_graph(base, Some(dir.path())).is_err());
+    }
+
+    proptest! {
+        #[test]
+        fn policy_pack_merge_no_panic_for_random_overlay_values(k in "[a-z_]{1,12}", v in -1000i64..1000i64) {
+            let dir = tempfile::tempdir().expect("tmp");
+            let base = Path::new("../../policies/packs/base_v1");
+            let seed = Path::new("../../policies/packs/base_v1");
+            for name in [
+                "pbm_gem_rules.toml",
+                "nsr_rules_v1.dl",
+                "ebm_constraints.toml",
+                "budgets.toml",
+                "thresholds.toml",
+                "allowlists.toml",
+                "determinism.toml",
+            ] {
+                std::fs::copy(seed.join(name), dir.path().join(name)).expect("copy");
+            }
+            std::fs::write(
+                dir.path().join("thresholds.toml"),
+                format!("[values]\n{k} = {v}\n"),
+            )
+            .expect("write");
+
+            let files = [
+                "pbm_gem_rules.toml",
+                "nsr_rules_v1.dl",
+                "ebm_constraints.toml",
+                "budgets.toml",
+                "thresholds.toml",
+                "allowlists.toml",
+                "determinism.toml",
+            ];
+            let mut lines =
+                String::from("name = \"overlay_tmp\"\nversion = \"1.0.0\"\nschema_version = 1\n\n");
+            let mut dig = sha2::Sha256::new();
+            dig.update(b"ucf.policy.pack.v1");
+            let mut pairs = Vec::new();
+            for f in files {
+                let b = std::fs::read(dir.path().join(f)).expect("read");
+                let d = sha256(&b);
+                let h = hex_lower(d);
+                lines.push_str(&format!(
+                    "[[files]]\npath = \"{}\"\nsha256 = \"{}\"\n\n",
+                    f, h
+                ));
+                pairs.push((f.to_string(), d));
+            }
+            pairs.sort_by(|a, b| a.0.cmp(&b.0));
+            for (f, d) in pairs {
+                dig.update(f.as_bytes());
+                dig.update([0]);
+                dig.update(d);
+            }
+            let pack_digest = hex_lower(dig.finalize().into());
+            lines.push_str(&format!("pack_digest = \"{}\"\n", pack_digest));
+            std::fs::write(dir.path().join("pack_manifest.toml"), lines).expect("manifest");
+
+            let _ = load_and_merge_policy_graph(base, Some(dir.path()));
+        }
     }
 }

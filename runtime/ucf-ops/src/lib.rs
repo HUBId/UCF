@@ -3915,6 +3915,215 @@ pub fn release_signoff_validate(
     write_json(emit, &result)?;
     Ok(result)
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Rc1GateReport {
+    pub schema_version: u16,
+    pub status: GateStatus,
+    pub checks: Vec<CheckResult>,
+    pub policy_graph_digest: String,
+    pub model_hashes_digest: String,
+    pub readiness_gate_path: String,
+    pub artifacts: Vec<String>,
+}
+
+pub fn release_rc1_gate(
+    workdir: &Path,
+    out: &Path,
+    include_load_smoke: bool,
+) -> Result<Rc1GateReport, OpsError> {
+    if let Some(parent) = out.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    std::env::set_var("UCF_OFFLINE", "1");
+    std::env::set_var("UCF_TOOLS_DEFAULT", "deny");
+
+    let mut checks = Vec::new();
+    let mut artifacts = Vec::new();
+
+    let policy = policy_validate(Path::new("policies/packs/base_v1"), None)?;
+    let mut policy_ev = BTreeMap::new();
+    policy_ev.insert(
+        "policy_graph_digest".to_string(),
+        policy.policy_graph_digest.clone(),
+    );
+    checks.push(CheckResult {
+        name: "policy_validate".to_string(),
+        status: GateStatus::Pass,
+        evidence: policy_ev,
+        failure_reason: None,
+        remediation_hint: None,
+    });
+
+    let models = models_verify(Path::new("models/manifest.toml"))?;
+    let mut model_ev = BTreeMap::new();
+    model_ev.insert(
+        "model_hashes_digest".to_string(),
+        models.model_hashes_digest.clone(),
+    );
+    let model_fail = models
+        .slots
+        .iter()
+        .find(|s| s.enabled && s.status != "verified")
+        .map(|s| format!("enabled slot {} not verified", s.slot.as_str()));
+    checks.push(CheckResult {
+        name: "models_verify".to_string(),
+        status: if model_fail.is_some() {
+            GateStatus::Fail
+        } else {
+            GateStatus::Pass
+        },
+        evidence: model_ev,
+        failure_reason: model_fail,
+        remediation_hint: Some("provide fixture weights or disable slot in manifest".to_string()),
+    });
+
+    let gate_out = out.with_file_name("rc1_readiness_gate.json");
+    let gate = readiness_gate(workdir, "test", &gate_out)?;
+    artifacts.push(gate_out.display().to_string());
+    let mut gate_ev = BTreeMap::new();
+    gate_ev.insert("status".to_string(), format!("{:?}", gate.status));
+    checks.push(CheckResult {
+        name: "readiness_gate".to_string(),
+        status: gate.status,
+        evidence: gate_ev,
+        failure_reason: if gate.status == GateStatus::Pass {
+            None
+        } else {
+            Some("readiness gate failed".to_string())
+        },
+        remediation_hint: Some("inspect readiness gate report for failed checks".to_string()),
+    });
+
+    if include_load_smoke {
+        let smoke_out = out.with_file_name("rc1_load_smoke.json");
+        let bench = crate::bench::bench_run(&crate::bench::BenchArgs {
+            scenario: PathBuf::from("fixtures/e2e_scenario_a.json"),
+            ticks: 300,
+            out: smoke_out.clone(),
+            rss_sample_every: 16,
+            rss_cap_mb: Some(2048),
+        })?;
+        artifacts.push(smoke_out.display().to_string());
+        let mut ev = BTreeMap::new();
+        ev.insert(
+            "p95_ms".to_string(),
+            format!("{:.4}", bench.tick_time_ms.p95_ms),
+        );
+        ev.insert(
+            "max_rss_mb".to_string(),
+            format!("{:.1}", bench.memory.max_rss_mb.unwrap_or(0.0)),
+        );
+        checks.push(CheckResult {
+            name: "load_smoke".to_string(),
+            status: if bench.memory.cap_exceeded {
+                GateStatus::Fail
+            } else {
+                GateStatus::Pass
+            },
+            evidence: ev,
+            failure_reason: if bench.memory.cap_exceeded {
+                Some("rss cap exceeded".to_string())
+            } else {
+                None
+            },
+            remediation_hint: Some("reduce enabled features or tighten budgets".to_string()),
+        });
+    }
+
+    let status = if checks.iter().any(|c| c.status == GateStatus::Fail) {
+        GateStatus::Fail
+    } else {
+        GateStatus::Pass
+    };
+    let report = Rc1GateReport {
+        schema_version: 1,
+        status,
+        checks,
+        policy_graph_digest: policy.policy_graph_digest,
+        model_hashes_digest: models.model_hashes_digest,
+        readiness_gate_path: gate_out.display().to_string(),
+        artifacts,
+    };
+    write_json(out, &report)?;
+    Ok(report)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DiagnosticsBundleReport {
+    pub run_id: String,
+    pub out: String,
+    pub entries: Vec<String>,
+}
+
+pub fn diagnostics_collect(
+    workdir: &Path,
+    run_id: &str,
+    out: &Path,
+) -> Result<DiagnosticsBundleReport, OpsError> {
+    if let Some(parent) = out.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let run_dir = PathBuf::from("out").join(run_id);
+    if !run_dir.exists() {
+        return Err(OpsError::Invalid(format!(
+            "run artifact directory not found: {}",
+            run_dir.display()
+        )));
+    }
+
+    let mut selected = vec![
+        run_dir.join("run_metadata.json"),
+        run_dir.join("metrics_summary.json"),
+        run_dir.join("gate_report.json"),
+        run_dir.join("adversarial_report.json"),
+        run_dir.join("bench_report.json"),
+    ];
+    let explain_dir = workdir.join("explain_tick");
+    if explain_dir.exists() {
+        for e in fs::read_dir(&explain_dir)? {
+            let p = e?.path();
+            if p.extension().and_then(|x| x.to_str()) == Some("json") {
+                selected.push(p);
+            }
+        }
+    }
+
+    let file = fs::File::create(out)?;
+    let mut zip = zip::ZipWriter::new(file);
+    let opts = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+    let mut entries = Vec::new();
+    for path in selected {
+        if !path.exists() {
+            continue;
+        }
+        let name = path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("entry.json")
+            .to_string();
+        let mut text = fs::read_to_string(&path).unwrap_or_default();
+        if text.contains("\"text\":") || text.contains("\"payload\":") {
+            text = text.replace("\"text\":", "\"text_redacted\":");
+            text = text.replace("\"payload\":", "\"payload_redacted\":");
+        }
+        zip.start_file(name.clone(), opts)
+            .map_err(|e| OpsError::Invalid(format!("zip start failed: {e}")))?;
+        use std::io::Write;
+        zip.write_all(text.as_bytes())
+            .map_err(|e| OpsError::Invalid(format!("zip write failed: {e}")))?;
+        entries.push(name);
+    }
+    zip.finish()
+        .map_err(|e| OpsError::Invalid(format!("zip finalize failed: {e}")))?;
+    Ok(DiagnosticsBundleReport {
+        run_id: run_id.to_string(),
+        out: out.display().to_string(),
+        entries,
+    })
+}
+
 pub fn security_verify_chain(workdir: &Path, from: u64, to: u64) -> Result<(), OpsError> {
     let records = load_fixture_records(workdir)?;
     let mut prev: Option<[u8; 32]> = None;
@@ -4118,4 +4327,45 @@ pub fn policy_explain(
         }
     }
     Ok(None)
+}
+
+#[cfg(test)]
+mod rc1_tests {
+    use super::*;
+
+    #[test]
+    fn diagnostics_bundle_redacts_payload_keys() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let out_run = PathBuf::from("out").join("run-test");
+        std::fs::create_dir_all(&out_run).expect("out dir");
+        std::fs::write(out_run.join("run_metadata.json"), "{\"ok\":true}").expect("write");
+        std::fs::write(
+            out_run.join("metrics_summary.json"),
+            "{\"payload\":\"secret\"}",
+        )
+        .expect("write");
+        std::fs::create_dir_all(dir.path().join("explain_tick")).expect("exp dir");
+        std::fs::write(
+            dir.path().join("explain_tick/last.json"),
+            "{\"text\":\"hidden\",\"note\":\"x\"}",
+        )
+        .expect("write");
+        let zip_path = dir.path().join("diag.zip");
+        let report = diagnostics_collect(dir.path(), "run-test", &zip_path).expect("bundle");
+        assert!(!report.entries.is_empty());
+        let bytes = std::fs::read(&zip_path).expect("zip bytes");
+        let as_text = String::from_utf8_lossy(&bytes);
+        assert!(!as_text.contains("\"text\":"));
+        assert!(!as_text.contains("\"payload\":"));
+
+        let _ = std::fs::remove_dir_all(Path::new("out").join("run-test"));
+    }
+
+    #[test]
+    fn rc1_gate_fails_on_induced_invalid_output_path() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let out = PathBuf::from("/dev/null/rc1_gate.json");
+        let result = release_rc1_gate(dir.path(), &out, false);
+        assert!(result.is_err());
+    }
 }

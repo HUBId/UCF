@@ -2,13 +2,17 @@
 
 - Bringup: `docs/runbooks/bringup.md`
 - Diagnostics: `docs/runbooks/diagnostics.md`
+- Diagnostics bundle: `docs/runbooks/diagnostics_bundle.md`
 - Failure modes: `docs/runbooks/failure_modes.md`
 - Incident playbook: `docs/runbooks/incident_playbook.md`
 
-## v0 Sign-Off + Tagging
-1. Execute the checklist sequence in `release/v0_signoff_checklist.md`.
-2. Validate artifacts with:
-   - `cargo run -p ucf-ops -- out manifest --dir ./out/<run_id>`
-   - `cargo run -p ucf-ops -- release signoff --validate --out ./out/<run_id> --emit release/v0_signoff_result.json`
-3. Confirm `release/v0_signoff_result.json` reports `pass=true`.
-4. Tag the commit only after the signoff result and manifest are committed or archived.
+## v1.0-rc1 Sign-Off + Tagging
+1. Run rc1 gate:
+   - `cargo run -p ucf-ops -- release rc1-gate --out ./out/rc1_gate.json --load-smoke`
+2. Run load and soak suites:
+   - `scripts/load_rc1.sh`
+   - `SOAK_MINUTES=30 scripts/soak_rc1.sh`
+3. Validate machine checklist:
+   - `cargo run -p ucf-ops -- release signoff --validate --checklist release/v1_rc1_signoff_checklist.toml --out ./out/rc1 --emit release/v1_rc1_signoff_result.json`
+4. Store `./out/rc1*`, checklist result, and manifests.
+5. Tag only after PASS artifacts are archived: `git tag -a v1.0-rc1 <commit>`.

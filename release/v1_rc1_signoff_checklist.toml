@@ -1,0 +1,76 @@
+version = "v1.0-rc1"
+profile = "test"
+
+[[items]]
+id = "fmt"
+command = "cargo fmt --all -- --check"
+required = true
+purpose = "format gate"
+pass_criteria = "exit_code == 0"
+
+[[items]]
+id = "clippy"
+command = "cargo clippy --workspace --all-targets -- -D warnings"
+required = true
+purpose = "lint gate"
+pass_criteria = "exit_code == 0"
+
+[[items]]
+id = "tests"
+command = "cargo test --workspace --all-targets"
+required = true
+purpose = "core offline tests"
+pass_criteria = "exit_code == 0"
+
+[[items]]
+id = "determinism_scan"
+command = "cargo run -p ucf-ops -- determinism scan"
+required = true
+purpose = "determinism lock"
+pass_criteria = "violations=0"
+
+[[items]]
+id = "policy_validate"
+command = "cargo run -p ucf-ops -- policy validate --pack policies/packs/base_v1"
+required = true
+purpose = "policy graph digest check"
+pass_criteria = "policy_graph_digest emitted"
+
+[[items]]
+id = "models_verify"
+command = "cargo run -p ucf-ops -- models verify --manifest models/manifest.toml"
+required = true
+purpose = "model slots fixture lock"
+pass_criteria = "all enabled slots verified"
+
+[[items]]
+id = "rc1_gate"
+command = "cargo run -p ucf-ops -- release rc1-gate --out ./out/rc1_gate.json --load-smoke"
+required = true
+purpose = "binary rc1 PASS/FAIL gate"
+expected_artifact = "rc1_gate.json"
+pass_criteria = "status=PASS"
+
+[[items]]
+id = "load_suite"
+command = "scripts/load_rc1.sh ./out/rc1"
+required = true
+purpose = "load suite artifacts"
+expected_artifact = "manifest.json"
+pass_criteria = "artifacts emitted"
+
+[[items]]
+id = "soak_suite"
+command = "SOAK_MINUTES=30 scripts/soak_rc1.sh ./out/rc1"
+required = true
+purpose = "soak suite artifacts"
+expected_artifact = "readiness_gate.json"
+pass_criteria = "thresholds met"
+
+[[items]]
+id = "diagnostics_bundle"
+command = "cargo run -p ucf-ops -- diagnostics collect --run <run_id> --out ./out/diag_<run_id>.zip"
+required = true
+purpose = "redaction-safe replay bundle"
+expected_artifact = "diag_<run_id>.zip"
+pass_criteria = "zip exists and excludes raw payload"
