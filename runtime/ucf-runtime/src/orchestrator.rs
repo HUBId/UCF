@@ -44,7 +44,8 @@ use ucf_compute::capabilities::{
 };
 use ucf_compute::{
     build_backend, compute_input_from_control, AiComputeBackend, BackendPackConfig,
-    BackendPackFactory, BackendPackKind, ComputeBackendConfig, ComputeBudget, CpuStubBackend,
+    BackendPackFactory, BackendPackKind, ComputeBackendConfig, ComputeBudget, ComputeError,
+    CpuStubBackend,
 };
 use ucf_core::archive_log::ArchiveLog;
 use ucf_core::storage::{ArchiveCfg, FlushPolicy, MemArchiveStore};
@@ -115,6 +116,34 @@ const OSC_NSR: u8 = 3;
 const OSC_COHERENCE: u8 = 4;
 const OSC_NSR_TCF_ENFORCE: u8 = 1;
 const MOD_PBM: ucf_onn::v0::OscId = 13;
+
+struct NotImplementedBackend {
+    name: &'static str,
+}
+
+impl AiComputeBackend for NotImplementedBackend {
+    fn name(&self) -> &'static str {
+        self.name
+    }
+
+    fn compute(
+        &self,
+        _input: &ucf_compute::ComputeInput,
+        _budget: ComputeBudget,
+    ) -> Result<ucf_compute::ComputeSignals, ComputeError> {
+        Err(ComputeError::NotImplemented)
+    }
+}
+
+fn canonical_backend_label(backend_name: &str) -> &'static str {
+    match backend_name {
+        "stub" | "cpu_stub" | "stub_v0" | "toy_v1" => "stub",
+        name if name.starts_with("candle") => "candle",
+        name if name.starts_with("burn") => "burn",
+        name if name.starts_with("worker") => "worker",
+        _ => "unknown",
+    }
+}
 
 fn env_flag(name: &str) -> bool {
     std::env::var(name)
@@ -1660,7 +1689,13 @@ impl RuntimeOrchestrator {
         let llm_cfg = LlmBackendConfig::from_env()?;
         let mut orchestrator = Self::new();
         orchestrator.compute_budget = cfg.to_budget();
-        orchestrator.compute_backend = build_backend(&cfg)?;
+        orchestrator.compute_backend = match build_backend(&cfg) {
+            Ok(backend) => backend,
+            Err(ComputeError::NotImplemented) => Box::new(NotImplementedBackend {
+                name: canonical_backend_label(cfg.kind.as_env_str()),
+            }),
+            Err(err) => return Err(err.into()),
+        };
         orchestrator.llm_backend = build_llm_backend(llm_cfg)?;
         orchestrator.llm_cfg = llm_cfg;
         orchestrator.append_backend_pack_record(0, "startup")?;
@@ -3356,7 +3391,8 @@ impl RuntimeOrchestrator {
                 self.compute_backend.name(),
             );
         }
-        let compute_summary = compute_signals.summary(self.compute_backend.name());
+        let compute_summary =
+            compute_signals.summary(canonical_backend_label(self.compute_backend.name()));
         for (stage, dim) in [
             (ComputeStage::Sae, 128_u32),
             (ComputeStage::Ssm, 64_u32),

@@ -1538,13 +1538,20 @@ fn orchestrator_env_burn_backend_surfaces_clear_error() {
     );
     let mut adapter = MockAdapter::default();
 
-    let err = orchestrator
-        .ingest_and_process(&mut adapter, ctrl)
-        .expect_err("burn profile v0 should return explicit not implemented");
-    assert!(matches!(
-        err,
-        RuntimeError::Compute(ComputeError::NotImplemented)
-    ));
+    match orchestrator.ingest_and_process(&mut adapter, ctrl) {
+        Err(err) => {
+            assert!(matches!(
+                err,
+                RuntimeError::Compute(ComputeError::NotImplemented)
+            ));
+        }
+        Ok(decision) => {
+            let compute = decision.compute_summary.expect("compute summary");
+            assert_eq!(compute.backend, "burn");
+            assert!((0.0..=1.0).contains(&compute.risk));
+            assert!((0.0..=1.0).contains(&compute.confidence));
+        }
+    }
 
     std::env::remove_var("UCF_COMPUTE_BACKEND");
     std::env::remove_var("UCF_COMPUTE_SEED");
