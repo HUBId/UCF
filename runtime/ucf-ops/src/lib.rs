@@ -130,6 +130,8 @@ pub struct RunMetadataRecord {
     pub resume_reason: Option<ResumeReason>,
     pub compat_digest: String,
     pub policy_bundle_hash: String,
+    pub determinism_mode: String,
+    pub determinism_policy_digest: Option<String>,
     pub ended_at_tick: Option<u64>,
 }
 
@@ -559,6 +561,8 @@ fn run_llm_probe(
         seed: spec.seed,
         max_tokens: spec.max_tokens,
         temperature: 0.0,
+        top_p: 1.0,
+        sampling_enabled: false,
     }
     .bounded();
     let resp = pack
@@ -1963,6 +1967,8 @@ pub fn one_command_bringup(
         resume_reason: None,
         compat_digest: compute_resume_compat_digest(&resume_cfg),
         policy_bundle_hash,
+        determinism_mode: "deterministic_only".to_string(),
+        determinism_policy_digest: None,
         ended_at_tick: Some(ticks),
     };
     if let Some(prev) = latest_run_metadata(workdir)? {
@@ -3704,6 +3710,8 @@ mod tests {
             resume_reason: None,
             compat_digest: "d".to_string(),
             policy_bundle_hash: "policy-a".to_string(),
+            determinism_mode: "deterministic_only".to_string(),
+            determinism_policy_digest: None,
             ended_at_tick: Some(10),
         };
         let cfg_ok = ResumeCheckConfig {
@@ -4027,6 +4035,59 @@ fn diff_str(a: &BTreeMap<String, String>, b: &BTreeMap<String, String>) -> Vec<S
             }
         })
         .collect()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DeterminismScanViolation {
+    pub path: String,
+    pub line: usize,
+    pub pattern: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DeterminismScanReport {
+    pub violations: Vec<DeterminismScanViolation>,
+}
+
+pub fn determinism_scan(repo_root: &Path) -> Result<DeterminismScanReport, OpsError> {
+    let banned = ["thread_rng", "rand::random", "getrandom", "OsRng"];
+    let mut violations = Vec::new();
+    for entry in walkdir::WalkDir::new(repo_root).into_iter().flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let Some(ext) = path.extension().and_then(|e| e.to_str()) else {
+            continue;
+        };
+        if ext != "rs" {
+            continue;
+        }
+        let rel = path
+            .strip_prefix(repo_root)
+            .unwrap_or(path)
+            .to_string_lossy();
+        if rel.contains("vendor/")
+            || rel.contains("target/")
+            || rel.contains("tests/")
+            || rel.contains("fuzz/")
+        {
+            continue;
+        }
+        let text = fs::read_to_string(path).unwrap_or_default();
+        for (idx, line) in text.lines().enumerate() {
+            for pat in banned {
+                if line.contains(pat) && !line.contains("let banned =") {
+                    violations.push(DeterminismScanViolation {
+                        path: rel.to_string(),
+                        line: idx + 1,
+                        pattern: pat.to_string(),
+                    });
+                }
+            }
+        }
+    }
+    Ok(DeterminismScanReport { violations })
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

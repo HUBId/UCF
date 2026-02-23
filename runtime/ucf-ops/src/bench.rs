@@ -433,6 +433,8 @@ pub fn bench_run(args: &BenchArgs) -> Result<BenchReport, OpsError> {
                 seed: budget.seed,
                 max_tokens: 64,
                 temperature: 0.0,
+                top_p: 1.0,
+                sampling_enabled: false,
             }
             .bounded(),
             budget,

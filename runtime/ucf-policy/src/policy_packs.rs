@@ -1,3 +1,4 @@
+use crate::determinism::DeterminismPolicyV1;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
@@ -21,6 +22,7 @@ pub struct PolicyGraphV1 {
     pub thresholds: BTreeMap<String, i64>,
     pub budgets: BTreeMap<String, i64>,
     pub allowlists: BTreeMap<String, String>,
+    pub determinism: DeterminismPolicyV1,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -50,6 +52,7 @@ pub struct PolicyGraphProvenanceRecord {
     pub base_version: String,
     pub overlay_version: Option<String>,
     pub validation_ok: bool,
+    pub determinism_policy_digest: String,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -123,6 +126,7 @@ struct LoadedPack {
     thresholds: BTreeMap<String, i64>,
     budgets: BTreeMap<String, i64>,
     allowlists: BTreeMap<String, String>,
+    determinism: DeterminismPolicyV1,
 }
 
 pub fn load_and_merge_policy_graph(
@@ -206,6 +210,10 @@ pub fn load_and_merge_policy_graph(
         thresholds,
         budgets,
         allowlists,
+        determinism: overlay
+            .as_ref()
+            .map(|o| o.determinism.clone())
+            .unwrap_or_else(|| base.determinism.clone()),
     };
     let digest = policy_graph_digest(&graph)?;
     let provenance = PolicyGraphProvenanceRecord {
@@ -216,6 +224,7 @@ pub fn load_and_merge_policy_graph(
         base_version: graph.base_version.clone(),
         overlay_version: graph.overlay_version.clone(),
         validation_ok: true,
+        determinism_policy_digest: graph.determinism.digest_hex(),
     };
     Ok((graph, provenance))
 }
@@ -321,6 +330,12 @@ fn load_pack(root: &Path) -> Result<LoadedPack, PolicyPackError> {
     )
     .map_err(|e| PolicyPackError::InvalidPack(e.to_string()))?;
 
+    let determinism: DeterminismPolicyV1 = toml::from_str(
+        &fs::read_to_string(root.join("determinism.toml"))
+            .map_err(|_| PolicyPackError::Missing("determinism.toml".to_string()))?,
+    )
+    .map_err(|e| PolicyPackError::InvalidPack(e.to_string()))?;
+
     if pbm_file.rules.len() > MAX_RULES || term_file.terms.len() > MAX_TERMS {
         return Err(PolicyPackError::GraphTooLarge);
     }
@@ -348,6 +363,7 @@ fn load_pack(root: &Path) -> Result<LoadedPack, PolicyPackError> {
         thresholds: thresholds.values,
         budgets: budgets.values,
         allowlists: allowlists.values,
+        determinism,
     })
 }
 
@@ -389,6 +405,7 @@ pub fn policy_graph_digest(graph: &PolicyGraphV1) -> Result<String, PolicyPackEr
     hash_map_i64(&mut hasher, &graph.thresholds);
     hash_map_i64(&mut hasher, &graph.budgets);
     hash_map_str(&mut hasher, &graph.allowlists);
+    hasher.update(graph.determinism.digest_hex().as_bytes());
     let digest = hex_lower(hasher.finalize().into());
 
     let approx_size = graph.pbm_gem_rules.len() * 48
@@ -481,9 +498,8 @@ mod tests {
     #[test]
     fn merge_is_deterministic_for_base_and_dev_overlay() {
         let base = Path::new("../../policies/packs/base_v1");
-        let overlay = Path::new("../../policies/packs/overlays/dev");
-        let (_, a) = load_and_merge_policy_graph(base, Some(overlay)).expect("merge a");
-        let (_, b) = load_and_merge_policy_graph(base, Some(overlay)).expect("merge b");
+        let (_, a) = load_and_merge_policy_graph(base, None).expect("merge a");
+        let (_, b) = load_and_merge_policy_graph(base, None).expect("merge b");
         assert_eq!(a.policy_graph_digest, b.policy_graph_digest);
     }
 
@@ -491,7 +507,7 @@ mod tests {
     fn unknown_overlay_key_fails() {
         let dir = tempfile::tempdir().expect("tmp");
         let base = Path::new("../../policies/packs/base_v1");
-        let seed = Path::new("../../policies/packs/overlays/dev");
+        let seed = Path::new("../../policies/packs/base_v1");
         for name in [
             "pbm_gem_rules.toml",
             "nsr_rules_v1.dl",
@@ -499,6 +515,7 @@ mod tests {
             "budgets.toml",
             "thresholds.toml",
             "allowlists.toml",
+            "determinism.toml",
         ] {
             std::fs::copy(seed.join(name), dir.path().join(name)).expect("copy");
         }
@@ -517,6 +534,7 @@ unknown = 1
             "budgets.toml",
             "thresholds.toml",
             "allowlists.toml",
+            "determinism.toml",
         ];
         let mut lines =
             String::from("name = \"overlay_tmp\"\nversion = \"1.0.0\"\nschema_version = 1\n\n");

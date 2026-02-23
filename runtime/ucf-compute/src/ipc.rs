@@ -43,6 +43,14 @@ pub struct LlmRequestIpc {
     pub seed: u64,
     pub max_tokens: u32,
     pub temperature: f32,
+    #[serde(default = "default_top_p")]
+    pub top_p: f32,
+    #[serde(default)]
+    pub sampling_enabled: bool,
+}
+
+fn default_top_p() -> f32 {
+    1.0
 }
 
 impl From<LlmRequest> for LlmRequestIpc {
@@ -66,6 +74,8 @@ impl From<LlmRequest> for LlmRequestIpc {
             seed: value.seed,
             max_tokens: value.max_tokens,
             temperature: value.temperature,
+            top_p: value.top_p,
+            sampling_enabled: value.sampling_enabled,
         }
     }
 }
@@ -98,6 +108,8 @@ impl From<LlmRequestIpc> for LlmRequest {
             seed: value.seed,
             max_tokens: value.max_tokens,
             temperature: value.temperature,
+            top_p: value.top_p,
+            sampling_enabled: value.sampling_enabled,
         }
     }
 }

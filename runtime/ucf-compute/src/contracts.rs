@@ -367,6 +367,8 @@ mod tests {
             seed: 1,
             max_tokens: 8,
             temperature: 0.1,
+            top_p: 1.0,
+            sampling_enabled: false,
         };
         let mut resp = LlmResponse::new(LlmStatus::Ok, "x".into(), 1, FinishReason::Stop);
         resp.digest = [0; 32];

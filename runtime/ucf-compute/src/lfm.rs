@@ -1510,12 +1510,6 @@ impl LfmKernel for ToyLfmKernel {
 mod tests {
     use super::*;
 
-    fn read_hex_fixture(path: &str) -> Vec<u8> {
-        let raw = std::fs::read_to_string(path).expect("fixture hex");
-        let compact = raw.split_whitespace().collect::<String>();
-        hex::decode(compact).expect("valid hex fixture")
-    }
-
     fn input() -> LfmInput {
         LfmInput {
             t: 3,

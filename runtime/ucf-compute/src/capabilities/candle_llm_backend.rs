@@ -218,6 +218,11 @@ impl LlmInference for CandleLlmBackend {
         }
 
         let req = req.clone().bounded();
+        if req.sampling_enabled || req.temperature > 0.0 || req.top_p < 1.0 {
+            return Err(ComputeError::SamplingDisabled {
+                code: "SAMPLING_DISABLED",
+            });
+        }
         let mut text = String::new();
         if req.output_class == LlmOutputClass::SafeText {
             text.push_str("- Summary:\n- ");
