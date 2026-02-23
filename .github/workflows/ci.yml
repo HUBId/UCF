@@ -17,6 +17,8 @@ jobs:
         run: cargo fmt --all -- --check
       - name: Cargo clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Determinism scan
+        run: cargo run -p ucf-ops -- determinism scan
       - name: Cargo build
         run: cargo build --workspace --all-targets
       - name: Cargo test

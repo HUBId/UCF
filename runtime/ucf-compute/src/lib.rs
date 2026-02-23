@@ -400,6 +400,8 @@ pub enum ComputeError {
     NotImplemented,
     #[error("compute backend internal error: {reason}")]
     Internal { reason: String },
+    #[error("{code}")]
+    SamplingDisabled { code: &'static str },
 }
 
 pub trait AiComputeBackend: Send + Sync {

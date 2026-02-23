@@ -169,6 +169,8 @@ pub struct LlmRequest {
     pub seed: u64,
     pub max_tokens: u32,
     pub temperature: f32,
+    pub top_p: f32,
+    pub sampling_enabled: bool,
 }
 
 impl LlmRequest {
@@ -177,6 +179,7 @@ impl LlmRequest {
         self.prompt = self.prompt.chars().take(MAX_LLM_PROMPT_BYTES).collect();
         self.max_tokens = self.max_tokens.clamp(1, MAX_LLM_TOKENS);
         self.temperature = self.temperature.clamp(0.0, 2.0);
+        self.top_p = self.top_p.clamp(0.0, 1.0);
         self.lfm_uncertainty = self.lfm_uncertainty.map(|v| v.clamp(0.0, 1.0));
         self.lfm_stability = self.lfm_stability.map(|v| v.clamp(0.0, 1.0));
         self.coherence = self.coherence.map(|v| v.clamp(0.0, 1.0));
@@ -207,6 +210,8 @@ impl LlmRequest {
         hasher.update(self.seed.to_le_bytes());
         hasher.update(self.max_tokens.to_le_bytes());
         hasher.update(self.temperature.to_bits().to_le_bytes());
+        hasher.update(self.top_p.to_bits().to_le_bytes());
+        hasher.update([u8::from(self.sampling_enabled)]);
         hasher.finalize().into()
     }
 }
@@ -338,6 +343,11 @@ impl LlmInference for LlmStubBackend {
             ));
         }
         let req = req.clone().bounded();
+        if req.sampling_enabled || req.temperature > 0.0 || req.top_p < 1.0 {
+            return Err(ComputeError::SamplingDisabled {
+                code: "SAMPLING_DISABLED",
+            });
+        }
         let prompt_digest: [u8; 32] = Sha256::digest(req.prompt.as_bytes()).into();
         let mut text = String::new();
         match req.output_class {
@@ -447,6 +457,8 @@ mod tests {
             seed: 9,
             max_tokens: 32,
             temperature: 0.0,
+            top_p: 1.0,
+            sampling_enabled: false,
         }
     }
 
@@ -499,6 +511,22 @@ mod tests {
             .expect("infer");
         assert_eq!(response.status, LlmStatus::Refused);
         assert_eq!(response.finish_reason, FinishReason::PolicyRefusal);
+    }
+
+    #[test]
+    fn sampling_is_denied_by_default() {
+        let backend = LlmStubBackend;
+        let mut req = base_request();
+        req.temperature = 0.8;
+        let err = backend
+            .infer(&req, ComputeBudget::default())
+            .expect_err("sampling must be denied");
+        assert!(matches!(
+            err,
+            ComputeError::SamplingDisabled {
+                code: "SAMPLING_DISABLED"
+            }
+        ));
     }
 
     #[cfg(any(feature = "compute-candle", feature = "llm-candle"))]

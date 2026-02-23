@@ -4136,6 +4136,8 @@ impl RuntimeOrchestrator {
                 seed: self.llm_cfg.seed,
                 max_tokens: decoding_policy.max_tokens_eff,
                 temperature: 0.0,
+                top_p: 1.0,
+                sampling_enabled: false,
             }
             .bounded();
             let llm_request_digest = llm_req.digest();
