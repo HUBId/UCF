@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, fs, path::PathBuf};
+use std::{collections::BTreeMap, fs, path::PathBuf, sync::Mutex};
 
 use ucf_core::types::{SimTime, Tick, WindowId};
 use ucf_ess::v1::{AuditPayload, ExperienceKind, ExperiencePayload, ExperienceStore};
@@ -29,6 +29,8 @@ struct TickSnapshot {
     output_digest: [u8; 32],
     decision_id: u64,
 }
+
+static ENV_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Debug)]
 struct ScenarioRun {
@@ -64,6 +66,7 @@ fn digest_prefix_hex(digest: [u8; 32]) -> String {
 }
 
 fn run_scenario(fixture_name: &str, budget_profile: &str) -> ScenarioRun {
+    let _env_guard = ENV_LOCK.lock().expect("env lock");
     std::env::set_var("UCF_COMPUTE_BACKEND", "stub");
     std::env::set_var("UCF_COMPUTE_SEED", "424242");
     std::env::set_var("UCF_LLM_BACKEND", "stub");
@@ -263,6 +266,7 @@ struct EbmScenarioSummary {
 }
 
 fn run_ebm_scenario(mode: EbmModeFixture) -> EbmScenarioSummary {
+    let _env_guard = ENV_LOCK.lock().expect("env lock");
     std::env::set_var("UCF_COMPUTE_BACKEND", "stub");
     std::env::set_var("UCF_COMPUTE_SEED", "424242");
     std::env::set_var("UCF_LLM_BACKEND", "stub");
