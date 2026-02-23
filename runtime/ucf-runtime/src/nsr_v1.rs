@@ -1,7 +1,8 @@
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs;
 use std::path::Path;
+
+use crate::io_caps::IoCaps;
 use ucf_policy::candidate::DecisionCandidate;
 use ucf_types::UQ0_16;
 
@@ -83,7 +84,7 @@ enum Literal {
 
 impl NsrEngineV1 {
     pub fn from_policy_file(path: &Path) -> Self {
-        let bytes = fs::read(path).unwrap_or_default();
+        let bytes = IoCaps::runtime_default().read(path).unwrap_or_default();
         let rules_digest = Sha256::digest(&bytes).into();
         let text = String::from_utf8_lossy(&bytes);
         match parse_rules(&text) {
