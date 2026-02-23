@@ -11,6 +11,11 @@ pub const FEATURE_REPLAY: u16 = 1 << 7;
 pub const FEATURE_OPS_EXPLAIN: u16 = 1 << 8;
 pub const FEATURE_REMOTE_COMPUTE: u16 = 1 << 9;
 
+#[deprecated(note = "toy lane bits are legacy and scheduled for removal in v1.2")]
+pub const fn toy_lane_feature_bits() -> u16 {
+    FEATURE_BACKEND_STUB | FEATURE_BACKEND_TOY
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ReleaseFeatureMatrix {
     pub bits: u16,

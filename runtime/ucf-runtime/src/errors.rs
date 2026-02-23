@@ -1,4 +1,5 @@
 use core::fmt::{Display, Formatter};
+use ucf_types::error_codes::ErrorCode;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RuntimeError {
@@ -34,5 +35,15 @@ impl std::error::Error for RuntimeError {}
 impl From<ucf_compute::ComputeError> for RuntimeError {
     fn from(value: ucf_compute::ComputeError) -> Self {
         Self::Compute(value)
+    }
+}
+
+impl RuntimeError {
+    pub const fn code(&self) -> ErrorCode {
+        match self {
+            Self::Policy(_) => ErrorCode::RuntimePolicy,
+            Self::Ess(_) => ErrorCode::RuntimeEss,
+            Self::Compute(_) => ErrorCode::RuntimeCompute,
+        }
     }
 }

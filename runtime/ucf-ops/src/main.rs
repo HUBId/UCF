@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use ucf_ops::{
-    adversarial_run, bench_run, bringup, causal_slice, determinism_scan, diagnostics,
+    adversarial_run, audit_scan, bench_run, bringup, causal_slice, determinism_scan, diagnostics,
     diagnostics_collect, ebm_export_dataset, ess_compact, ess_snapshot, event_id_for_decision,
     explain_tick, explain_why, export_bugreport, load_signoff_checklist, metrics_snapshot,
     metrics_summary, metrics_trend, models_probe, models_verify, one_command_bringup, out_manifest,
@@ -232,6 +232,24 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
                 _ => return Err("usage: ucf-ops determinism scan".into()),
+            }
+        }
+
+        "audit" => {
+            let sub = args.get(2).map(String::as_str).unwrap_or("help");
+            match sub {
+                "scan" => {
+                    let report = audit_scan(&PathBuf::from("."))?;
+                    if report.violations.is_empty() {
+                        println!("audit_scan=ok violations=0");
+                    } else {
+                        for v in &report.violations {
+                            println!("violation={}::{} pattern={}", v.path, v.line, v.pattern);
+                        }
+                        return Err("audit scan failed".into());
+                    }
+                }
+                _ => return Err("usage: ucf-ops audit scan".into()),
             }
         }
 

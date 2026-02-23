@@ -19,6 +19,8 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Determinism scan
         run: cargo run -p ucf-ops -- determinism scan
+      - name: Audit scan
+        run: cargo run -p ucf-ops -- audit scan
       - name: Policy validate
         run: cargo run -p ucf-ops -- policy validate --pack policies/packs/base_v1
       - name: Models verify
@@ -50,7 +52,11 @@ jobs:
             features: "compute-burn,backend-burn,llm-burn,lfm-burn"
             blocking: false
           - name: stage-isolation
-            features: "sandbox-wasm"
+            features: "sandbox-wasm,stage-isolation"
+            blocking: false
+          - name: ebm-train
+            package: "ucf-ebm-train"
+            features: "ebm-train"
             blocking: false
     continue-on-error: ${{ matrix.lane.blocking == false }}
     steps:
@@ -60,7 +66,9 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Test lane ${{ matrix.lane.name }}
         run: |
-          if [ -z "${{ matrix.lane.features }}" ]; then
+          if [ -n "${{ matrix.lane.package }}" ]; then
+            cargo test -p "${{ matrix.lane.package }}" --all-targets --features "${{ matrix.lane.features }}"
+          elif [ -z "${{ matrix.lane.features }}" ]; then
             cargo test --workspace --all-targets
           else
             cargo test --workspace --all-targets --features "${{ matrix.lane.features }}"

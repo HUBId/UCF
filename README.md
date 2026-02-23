@@ -1,9 +1,18 @@
 # UCF UNIFIED COGNITIVE FABRIC
 
-## Feature flags
-- `ai-runtime`: enables the optional AI runtime backend glue (still mocked).
-- `ode`: enables the ODE/NCDE solver ports (mock implementations only).
-- `burn`/`candle`: placeholders for future ML backends (no crates wired yet).
+## Canonical feature matrix (production)
+Supported, CI-enforced lanes:
+- `default (toy)`: `cargo test --workspace --all-targets`
+- `candle-cpu`: `--features "compute-candle,llm-candle,lfm-candle"`
+- `burn-cpu`: `--features "compute-burn,backend-burn,llm-burn,lfm-burn"`
+- `stage-isolation`: `--features "sandbox-wasm,stage-isolation"`
+- `ebm-train` (tools-only): `cargo test -p ucf-ebm-train --features "ebm-train"`
+
+See `docs/feature_matrix.md` for details.
+
+## Post-rc1 hardening commands
+- Determinism scan: `cargo run -p ucf-ops -- determinism scan`
+- Hidden path audit scan: `cargo run -p ucf-ops -- audit scan`
 
 ## Architecture
 - See `docs/architecture/COHERENCE_LOOP.md`.

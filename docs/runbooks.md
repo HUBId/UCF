@@ -16,3 +16,9 @@
    - `cargo run -p ucf-ops -- release signoff --validate --checklist release/v1_rc1_signoff_checklist.toml --out ./out/rc1 --emit release/v1_rc1_signoff_result.json`
 4. Store `./out/rc1*`, checklist result, and manifests.
 5. Tag only after PASS artifacts are archived: `git tag -a v1.0-rc1 <commit>`.
+
+
+## Strict mode audits
+- Determinism: `cargo run -p ucf-ops -- determinism scan`
+- Hidden paths: `cargo run -p ucf-ops -- audit scan`
+- In CI both scans are blocking and must return zero violations.
