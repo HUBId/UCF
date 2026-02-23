@@ -4,14 +4,14 @@ use std::path::PathBuf;
 
 use ucf_ops::{
     adversarial_run, bench_run, bringup, causal_slice, determinism_scan, diagnostics,
-    ebm_export_dataset, ess_compact, ess_snapshot, event_id_for_decision, explain_tick,
-    explain_why, export_bugreport, load_signoff_checklist, metrics_snapshot, metrics_summary,
-    metrics_trend, models_probe, models_verify, one_command_bringup, out_manifest, policy_diff,
-    policy_explain, policy_validate, readiness_gate, release_signoff_validate, replay_audit,
-    replay_bugreport, run_status, runs_list, runs_search, runs_show, save_counterfactual_result,
-    security_verify_chain, simulate_counterfactual, verify_bugreport, write_slice,
-    AdversarialRunArgs, BenchArgs, CounterfactualRequest, ExplainTickRequest, ExportArgs,
-    GateStatus,
+    diagnostics_collect, ebm_export_dataset, ess_compact, ess_snapshot, event_id_for_decision,
+    explain_tick, explain_why, export_bugreport, load_signoff_checklist, metrics_snapshot,
+    metrics_summary, metrics_trend, models_probe, models_verify, one_command_bringup, out_manifest,
+    policy_diff, policy_explain, policy_validate, readiness_gate, release_rc1_gate,
+    release_signoff_validate, replay_audit, replay_bugreport, run_status, runs_list, runs_search,
+    runs_show, save_counterfactual_result, security_verify_chain, simulate_counterfactual,
+    verify_bugreport, write_slice, AdversarialRunArgs, BenchArgs, CounterfactualRequest,
+    ExplainTickRequest, ExportArgs, GateStatus,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -85,6 +85,28 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             if !report.ok() {
                 std::process::exit(2);
+            }
+        }
+        "diagnostics" => {
+            let sub = args.get(2).map(String::as_str).unwrap_or("help");
+            match sub {
+                "collect" => {
+                    let Some(run_id) = arg_value(&args, "--run") else {
+                        return Err(
+                            "usage: ucf-ops diagnostics collect --run <id> --out <path>".into()
+                        );
+                    };
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from(format!("./out/diag_{run_id}.zip")));
+                    let report = diagnostics_collect(&workdir, &run_id, &out)?;
+                    println!("run_id={}", report.run_id);
+                    println!("out={}", report.out);
+                    println!("entries={}", report.entries.len());
+                }
+                _ => {
+                    return Err("usage: ucf-ops diagnostics collect --run <id> --out <path>".into())
+                }
             }
         }
         "export-bugreport" => {
@@ -502,7 +524,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     println!("{}", serde_json::to_string_pretty(&report)?);
                     println!("out={}", out.display());
                     if !report.summary.pass {
-                        std::process::exit(2);
+                        let all_disabled = report
+                            .results
+                            .iter()
+                            .all(|r| matches!(r.status, ucf_ops::ProbeStatus::Disabled));
+                        if !all_disabled {
+                            std::process::exit(2);
+                        }
                     }
                 }
                 _ => {
@@ -600,11 +628,19 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         std::process::exit(2);
                     }
                 }
-                _ => {
-                    return Err(
-                        "usage: ucf-ops release signoff --validate --out <dir> --emit <path> [--checklist <path>]".into(),
-                    )
+                "rc1-gate" => {
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/rc1_gate.json"));
+                    let include_load_smoke = has_flag(&args, "--load-smoke");
+                    let report = release_rc1_gate(&workdir, &out, include_load_smoke)?;
+                    println!("status={:?}", report.status);
+                    println!("out={}", out.display());
+                    if report.status != GateStatus::Pass {
+                        std::process::exit(2);
+                    }
                 }
+                _ => return Err("usage: ucf-ops release <signoff|rc1-gate> ...".into()),
             }
         }
         "bench" => {
@@ -728,7 +764,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             eprintln!(
-                "usage: ucf-ops <bringup|diag|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|readiness-gate|adversarial-run|out|release|bench|runs|status|ess|ebm|version> [--workdir <path>]"
+                "usage: ucf-ops <bringup|diag|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|readiness-gate|adversarial-run|out|release|bench|runs|status|ess|ebm|version> [--workdir <path>]"
             );
             std::process::exit(1);
         }

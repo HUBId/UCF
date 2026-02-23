@@ -28,3 +28,6 @@ Canonical references defining **Real Compute Onboarding v0**.
 | `docs/runbooks/bringup.md` | 2026-02-17 | runbooks | normative |
 | `docs/runbooks/diagnostics.md` | 2026-02-17 | runbooks | informative |
 | `docs/runbooks/incident_playbook.md` | 2026-02-17 | runbooks | informative |
+| `docs/runbooks/diagnostics_bundle.md` | 2026-02-23 | runbooks | normative |
+| `release/v1_rc1_signoff_checklist.md` | 2026-02-23 | release | normative |
+| `release/v1_rc1_signoff_checklist.toml` | 2026-02-23 | release | normative |

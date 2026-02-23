@@ -1,18 +1,13 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum DeterminismMode {
+    #[default]
     DeterministicOnly,
     SeededAllowed,
     NondetAllowed,
-}
-
-impl Default for DeterminismMode {
-    fn default() -> Self {
-        Self::DeterministicOnly
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]

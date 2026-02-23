@@ -44,7 +44,8 @@ use ucf_compute::capabilities::{
 };
 use ucf_compute::{
     build_backend, compute_input_from_control, AiComputeBackend, BackendPackConfig,
-    BackendPackFactory, BackendPackKind, ComputeBackendConfig, ComputeBudget, CpuStubBackend,
+    BackendPackFactory, BackendPackKind, ComputeBackendConfig, ComputeBudget, ComputeError,
+    CpuStubBackend,
 };
 use ucf_core::archive_log::ArchiveLog;
 use ucf_core::storage::{ArchiveCfg, FlushPolicy, MemArchiveStore};
@@ -115,6 +116,34 @@ const OSC_NSR: u8 = 3;
 const OSC_COHERENCE: u8 = 4;
 const OSC_NSR_TCF_ENFORCE: u8 = 1;
 const MOD_PBM: ucf_onn::v0::OscId = 13;
+
+struct NotImplementedBackend {
+    name: &'static str,
+}
+
+impl AiComputeBackend for NotImplementedBackend {
+    fn name(&self) -> &'static str {
+        self.name
+    }
+
+    fn compute(
+        &self,
+        _input: &ucf_compute::ComputeInput,
+        _budget: ComputeBudget,
+    ) -> Result<ucf_compute::ComputeSignals, ComputeError> {
+        Err(ComputeError::NotImplemented)
+    }
+}
+
+fn canonical_backend_label(backend_name: &str) -> &'static str {
+    match backend_name {
+        "stub" | "cpu_stub" | "stub_v0" | "toy_v1" => "stub",
+        name if name.starts_with("candle") => "candle",
+        name if name.starts_with("burn") => "burn",
+        name if name.starts_with("worker") => "worker",
+        _ => "unknown",
+    }
+}
 
 fn env_flag(name: &str) -> bool {
     std::env::var(name)
@@ -1660,7 +1689,13 @@ impl RuntimeOrchestrator {
         let llm_cfg = LlmBackendConfig::from_env()?;
         let mut orchestrator = Self::new();
         orchestrator.compute_budget = cfg.to_budget();
-        orchestrator.compute_backend = build_backend(&cfg)?;
+        orchestrator.compute_backend = match build_backend(&cfg) {
+            Ok(backend) => backend,
+            Err(ComputeError::NotImplemented) => Box::new(NotImplementedBackend {
+                name: canonical_backend_label(cfg.kind.as_env_str()),
+            }),
+            Err(err) => return Err(err.into()),
+        };
         orchestrator.llm_backend = build_llm_backend(llm_cfg)?;
         orchestrator.llm_cfg = llm_cfg;
         orchestrator.append_backend_pack_record(0, "startup")?;
@@ -1727,7 +1762,9 @@ impl RuntimeOrchestrator {
         let ncde_cfg = NcdeCfg::default_v0();
         let ncde_state = NcdeState::new(&ncde_cfg);
 
-        #[cfg(test)]
+        let workspace_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let policy_root = workspace_root.join("policies");
+
         if std::env::var("UCF_POLICY_BUNDLE_SHA256").is_err() {
             if let Ok(manifest) = crate::io_caps::IoCaps::runtime_default()
                 .read_to_string(std::path::Path::new("manifest.toml"))
@@ -1748,16 +1785,15 @@ impl RuntimeOrchestrator {
             }
         }
 
-        let policy_provenance = verify_policy_bundle(std::path::Path::new("policies"))
+        let policy_provenance = verify_policy_bundle(&policy_root)
             .unwrap_or_else(|e| panic!("policy bundle verification failed: {e}"));
         let policy_overlay = std::env::var("UCF_POLICY_OVERLAY")
             .ok()
-            .map(|v| std::path::PathBuf::from(format!("policies/packs/overlays/{v}")));
-        let (policy_graph, policy_graph_prov) = load_and_merge_policy_graph(
-            std::path::Path::new("policies/packs/base_v1"),
-            policy_overlay.as_deref(),
-        )
-        .unwrap_or_else(|e| panic!("policy graph load failed: {e}"));
+            .map(|v| policy_root.join(format!("packs/overlays/{v}")));
+        let policy_base = policy_root.join("packs/base_v1");
+        let (policy_graph, policy_graph_prov) =
+            load_and_merge_policy_graph(&policy_base, policy_overlay.as_deref())
+                .unwrap_or_else(|e| panic!("policy graph load failed: {e}"));
         if let Ok(expected) = std::env::var("UCF_POLICY_GRAPH_DIGEST") {
             assert_eq!(
                 expected, policy_graph_prov.policy_graph_digest,
@@ -3355,7 +3391,8 @@ impl RuntimeOrchestrator {
                 self.compute_backend.name(),
             );
         }
-        let compute_summary = compute_signals.summary(self.compute_backend.name());
+        let compute_summary =
+            compute_signals.summary(canonical_backend_label(self.compute_backend.name()));
         for (stage, dim) in [
             (ComputeStage::Sae, 128_u32),
             (ComputeStage::Ssm, 64_u32),

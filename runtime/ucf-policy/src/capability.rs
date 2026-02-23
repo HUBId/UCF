@@ -550,6 +550,7 @@ pub fn decode_capability_token(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     #[test]
     fn capability_token_roundtrip() {
@@ -580,5 +581,12 @@ mod tests {
     fn decode_capability_token_rejects_oversized() {
         let bytes = vec![0u8; DecodeCaps::caps_default().max_bytes + 1];
         assert!(decode_capability_token(&bytes, DecodeCaps::caps_default()).is_err());
+    }
+
+    proptest! {
+        #[test]
+        fn decode_capability_token_never_panics_for_arbitrary_bytes(bytes in proptest::collection::vec(any::<u8>(), 0..512)) {
+            let _ = decode_capability_token(&bytes, DecodeCaps::caps_default());
+        }
     }
 }

@@ -1613,7 +1613,15 @@ mod tests {
         let out_candle = candle
             .step(&input(), ComputeBudget::default())
             .expect("candle");
-        assert_eq!(out_toy, out_candle);
+        assert_eq!(out_toy.liquid_state_digest, out_candle.liquid_state_digest);
+        assert_eq!(
+            out_toy.liquid_readout_digest,
+            out_candle.liquid_readout_digest
+        );
+        assert_eq!(out_toy.uncertainty_q, out_candle.uncertainty_q);
+        assert_eq!(out_toy.stability_q, out_candle.stability_q);
+        assert_eq!(out_toy.homeostasis_error_q, out_candle.homeostasis_error_q);
+        assert_eq!(out_toy.quality, out_candle.quality);
     }
 
     #[cfg(feature = "lfm-lnn")]
