@@ -1729,7 +1729,9 @@ impl RuntimeOrchestrator {
 
         #[cfg(test)]
         if std::env::var("UCF_POLICY_BUNDLE_SHA256").is_err() {
-            if let Ok(manifest) = std::fs::read_to_string("policies/manifest.toml") {
+            if let Ok(manifest) = crate::io_caps::IoCaps::runtime_default()
+                .read_to_string(std::path::Path::new("manifest.toml"))
+            {
                 if let Some(hash_line) = manifest.lines().find(|l| l.starts_with("bundle_sha256 ="))
                 {
                     let hash = hash_line
@@ -4158,9 +4160,19 @@ impl RuntimeOrchestrator {
                     digest: [0; 32],
                 }
             } else {
-                self.llm_backend
-                    .infer(&llm_req, self.compute_budget)
-                    .unwrap_or_else(|err| {
+                {
+                    let mode = crate::stage_isolation::StageIsolationMode::from_env();
+                    let isolated = mode.isolate_llm();
+                    let infer = if isolated {
+                        crate::stage_isolation::infer_llm_isolated(&llm_req).map_err(|_| {
+                            ucf_compute::ComputeError::Internal {
+                                reason: "stage_worker".to_string(),
+                            }
+                        })
+                    } else {
+                        self.llm_backend.infer(&llm_req, self.compute_budget)
+                    };
+                    infer.unwrap_or_else(|err| {
                         let text =
                             if matches!(err, ucf_compute::ComputeError::BudgetExceeded { .. }) {
                                 "System busy; try again.".to_string()
@@ -4175,6 +4187,7 @@ impl RuntimeOrchestrator {
                             digest: [0; 32],
                         }
                     })
+                }
             };
             if let Ok(res) = llm_reservation {
                 if let Some(v) = self.compute_economy.settle_llm(
@@ -5238,7 +5251,9 @@ mod tests {
             return;
         }
         if std::env::var("UCF_POLICY_BUNDLE_SHA256").is_err() {
-            if let Ok(manifest) = std::fs::read_to_string("policies/manifest.toml") {
+            if let Ok(manifest) = crate::io_caps::IoCaps::runtime_default()
+                .read_to_string(std::path::Path::new("manifest.toml"))
+            {
                 if let Some(hash_line) = manifest.lines().find(|l| l.starts_with("bundle_sha256 ="))
                 {
                     let hash = hash_line
