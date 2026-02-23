@@ -1727,10 +1727,13 @@ impl RuntimeOrchestrator {
         let ncde_cfg = NcdeCfg::default_v0();
         let ncde_state = NcdeState::new(&ncde_cfg);
 
+        let workspace_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let policy_root = workspace_root.join("policies");
+
         #[cfg(test)]
         if std::env::var("UCF_POLICY_BUNDLE_SHA256").is_err() {
             if let Ok(manifest) = crate::io_caps::IoCaps::runtime_default()
-                .read_to_string(std::path::Path::new("manifest.toml"))
+                .read_to_string(&policy_root.join("manifest.toml"))
             {
                 if let Some(hash_line) = manifest.lines().find(|l| l.starts_with("bundle_sha256 ="))
                 {
@@ -1748,16 +1751,15 @@ impl RuntimeOrchestrator {
             }
         }
 
-        let policy_provenance = verify_policy_bundle(std::path::Path::new("policies"))
+        let policy_provenance = verify_policy_bundle(&policy_root)
             .unwrap_or_else(|e| panic!("policy bundle verification failed: {e}"));
         let policy_overlay = std::env::var("UCF_POLICY_OVERLAY")
             .ok()
-            .map(|v| std::path::PathBuf::from(format!("policies/packs/overlays/{v}")));
-        let (policy_graph, policy_graph_prov) = load_and_merge_policy_graph(
-            std::path::Path::new("policies/packs/base_v1"),
-            policy_overlay.as_deref(),
-        )
-        .unwrap_or_else(|e| panic!("policy graph load failed: {e}"));
+            .map(|v| policy_root.join(format!("packs/overlays/{v}")));
+        let policy_base = policy_root.join("packs/base_v1");
+        let (policy_graph, policy_graph_prov) =
+            load_and_merge_policy_graph(&policy_base, policy_overlay.as_deref())
+                .unwrap_or_else(|e| panic!("policy graph load failed: {e}"));
         if let Ok(expected) = std::env::var("UCF_POLICY_GRAPH_DIGEST") {
             assert_eq!(
                 expected, policy_graph_prov.policy_graph_digest,

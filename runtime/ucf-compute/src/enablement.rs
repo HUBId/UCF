@@ -189,7 +189,7 @@ impl AiComputeBackend for EnablementComputeBackend {
             return Ok(primary);
         }
         if let Some(shadow) = &self.shadow {
-            if input.t % self.cfg.shadow_every_n_ticks == 0 {
+            if input.t.is_multiple_of(self.cfg.shadow_every_n_ticks) {
                 metrics::counter!("ucf_shadow_runs_total", "slot" => "compute").increment(1);
                 let started = Instant::now();
                 match shadow.compute(

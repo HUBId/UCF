@@ -526,7 +526,7 @@ impl BackendPackFactory {
             BackendPackKind::CandleToyV1 => {
                 #[cfg(feature = "compute-candle")]
                 {
-                    Box::new(CandleWorldPredictor::new(world_model_hash))
+                    Box::new(CandleWorldPredictor::new(_world_model_hash))
                 }
                 #[cfg(not(feature = "compute-candle"))]
                 {
@@ -536,7 +536,7 @@ impl BackendPackFactory {
             BackendPackKind::BurnToyV1 => {
                 #[cfg(feature = "compute-burn")]
                 {
-                    Box::new(BurnWorldPredictor::new(world_model_hash))
+                    Box::new(BurnWorldPredictor::new(_world_model_hash))
                 }
                 #[cfg(not(feature = "compute-burn"))]
                 {
@@ -550,7 +550,7 @@ impl BackendPackFactory {
             BackendPackKind::CandleToyV1 => {
                 #[cfg(feature = "compute-candle")]
                 {
-                    Arc::new(CandleSaeExtractor::new(sae_model_hash))
+                    Arc::new(CandleSaeExtractor::new(_sae_model_hash))
                 }
                 #[cfg(not(feature = "compute-candle"))]
                 {
@@ -560,7 +560,7 @@ impl BackendPackFactory {
             BackendPackKind::BurnToyV1 => {
                 #[cfg(feature = "compute-burn")]
                 {
-                    Arc::new(BurnSaeExtractor::new(sae_model_hash))
+                    Arc::new(BurnSaeExtractor::new(_sae_model_hash))
                 }
                 #[cfg(not(feature = "compute-burn"))]
                 {
@@ -574,7 +574,7 @@ impl BackendPackFactory {
             BackendPackKind::CandleToyV1 => {
                 #[cfg(feature = "compute-candle")]
                 {
-                    Box::new(CandleSsmKernel::new(ssm_model_hash))
+                    Box::new(CandleSsmKernel::new(_ssm_model_hash))
                 }
                 #[cfg(not(feature = "compute-candle"))]
                 {
@@ -584,7 +584,7 @@ impl BackendPackFactory {
             BackendPackKind::BurnToyV1 => {
                 #[cfg(feature = "compute-burn")]
                 {
-                    Box::new(BurnSsmKernel::new(ssm_model_hash))
+                    Box::new(BurnSsmKernel::new(_ssm_model_hash))
                 }
                 #[cfg(not(feature = "compute-burn"))]
                 {

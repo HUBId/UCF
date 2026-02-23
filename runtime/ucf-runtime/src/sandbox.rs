@@ -1804,6 +1804,7 @@ fn wasm_echo_is_deterministic() {
     let gate = ToolGate::new(
         CapabilitySet::empty(),
         ucf_policy::rate_limiter::RateLimiter::new(10),
+        None,
     );
     let mut rt = WasmIsolationRuntime::new(gate).expect("wasm runtime");
     let req = SandboxCall {
@@ -1832,6 +1833,7 @@ fn wasm_tool_probe_denied_by_default() {
     let gate = ToolGate::new(
         CapabilitySet::empty(),
         ucf_policy::rate_limiter::RateLimiter::new(10),
+        None,
     );
     let mut rt = WasmIsolationRuntime::new(gate).expect("wasm runtime");
     let req = SandboxCall {
