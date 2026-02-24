@@ -235,7 +235,7 @@ impl SaeExtractor for BurnSaeExtractor {
         let mut rank: Vec<(usize, f32)> = y
             .iter()
             .enumerate()
-            .map(|(i, v)| (i, v.abs().clamp(0.0, 1.0)))
+            .map(|(i, v)| (i, v.max(0.0).clamp(0.0, 1.0)))
             .collect();
         rank.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
 
@@ -250,6 +250,7 @@ impl SaeExtractor for BurnSaeExtractor {
                 timestamp: input.t,
             });
         }
+        spikes.sort_by_key(|s| s.feature_id);
 
         let energy = (y.iter().map(|v| v.abs()).sum::<f32>() / self.f as f32).clamp(0.0, 1.0);
         let spikes_digest = self.spikes_digest(&spikes, input);
@@ -389,9 +390,9 @@ mod tests {
         let mut w = vec![0.0; SAE_FEATURE_DIM * SAE_INPUT_DIM];
         let mut b = vec![0.0; SAE_FEATURE_DIM];
         w[0] = 1.0;
-        w[SAE_INPUT_DIM] = -1.0;
-        b[0] = 0.5;
-        b[1] = -0.5;
+        w[SAE_INPUT_DIM] = 1.0;
+        b[0] = 0.0;
+        b[1] = 0.0;
         let sae = BurnSaeExtractor {
             w,
             b,
