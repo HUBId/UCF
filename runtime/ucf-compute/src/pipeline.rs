@@ -12,7 +12,8 @@ use crate::lfm::{LfmInput, LfmOutput};
 use crate::ssm::{SsmInput, SsmOutput};
 use crate::work_meter::WorkMeter;
 use crate::world_model::{
-    obs_features_from_context, StageQuality, WorldModelInput, WorldModelOutput,
+    obs_features_from_context, world_vljepa_shadow_step, StageQuality, WorldInputEncodingV1,
+    WorldModelInput, WorldModelOutput,
 };
 use std::time::Instant;
 
@@ -156,6 +157,34 @@ impl AiComputeBackend for ComputePipelineBackend {
         let span = tracing::info_span!("world_model.step", predictor = world_model_name, t = input.t, pred = %hex::encode(&world_model_out.prediction_digest[..4]));
         let _enter = span.enter();
         drop(world);
+
+        if std::env::var("UCF_SLOT_WORLD_VLJEPA_MODE").ok().as_deref() == Some("shadow") {
+            let vljepa_in = WorldInputEncodingV1 {
+                context_digest: input.context_digest,
+                risk: world_model_out.prediction_error,
+                pressure: world_model_out.state_norm,
+                surprise: world_model_out.surprise,
+                uncertainty: world_model_out.surprise,
+                confidence: (1.0 - world_model_out.surprise).clamp(0.0, 1.0),
+                coherence: (1.0 - world_model_out.surprise).clamp(0.0, 1.0),
+                sae_spikes_digest_prefix: None,
+                ssm_state_digest_prefix: None,
+                lfm_state_digest_prefix: None,
+                token_summary_digest_prefix: None,
+            };
+            let shadow =
+                world_vljepa_shadow_step(input.t, &vljepa_in, self.pack.meta().model_hashes_digest);
+            metrics::histogram!("ucf_world_vljepa_prediction_error_q")
+                .record(f64::from(shadow.prediction_error_q));
+            tracing::info!(
+                target: "ucf.world_vljepa_shadow",
+                t = shadow.t,
+                prediction_error_q = shadow.prediction_error_q,
+                prediction_digest = %hex::encode(shadow.prediction_digest_prefix),
+                status = shadow.status,
+                "world_vljepa shadow record"
+            );
+        }
         let mut validation_report = WorldValidatorV1::validate(&world_input, &world_model_out);
         let surprise = world_model_out.surprise;
         metrics::histogram!("ucf_world_prediction_error")

@@ -400,6 +400,7 @@ fn probe_spec_for_slot(slot: ModelSlot) -> ProbeSpec {
             "max_tokens": max_tokens
         })),
         ModelSlot::WorldJepa => digest_json(&deterministic_features(seed, 16)),
+        ModelSlot::WorldVljepa => digest_json(&deterministic_features(seed ^ 0xC0DE, 64)),
         ModelSlot::Sae => digest_json(&deterministic_features(seed ^ 0x5A5A, 32)),
         ModelSlot::Ssm => digest_json(&serde_json::json!({
             "spikes_digest": vec![17_u8; 32],
@@ -462,6 +463,11 @@ fn run_probe_for_slot(
                     move || run_llm_probe(pack, &spec)
                 }),
                 ModelSlot::WorldJepa => exec_with_timeout(spec.timeout_ms, {
+                    let pack = pack.clone();
+                    let spec = spec.clone();
+                    move || run_world_probe(pack, &spec)
+                }),
+                ModelSlot::WorldVljepa => exec_with_timeout(spec.timeout_ms, {
                     let pack = pack.clone();
                     let spec = spec.clone();
                     move || run_world_probe(pack, &spec)
@@ -2926,7 +2932,7 @@ pub fn run_status(workdir: &Path, run_id: &str) -> Result<RunStatusReport, OpsEr
         .flat_map(|i| i.denied.iter().cloned())
         .take(16)
         .collect::<Vec<_>>();
-    let active_slots = vec!["llm", "world_jepa", "sae", "ssm", "lfm"]
+    let active_slots = vec!["llm", "world_jepa", "world_vljepa", "sae", "ssm", "lfm"]
         .into_iter()
         .map(str::to_string)
         .collect();

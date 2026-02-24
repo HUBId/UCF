@@ -219,6 +219,7 @@ pub fn parse_slot(value: &str) -> Result<ModelSlot, OpsError> {
     match value {
         "llm" => Ok(ModelSlot::Llm),
         "world_jepa" => Ok(ModelSlot::WorldJepa),
+        "world_vljepa" => Ok(ModelSlot::WorldVljepa),
         "sae" => Ok(ModelSlot::Sae),
         "lfm" => Ok(ModelSlot::Lfm),
         "ssm" => Ok(ModelSlot::Ssm),
