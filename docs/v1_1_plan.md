@@ -330,3 +330,8 @@ Exit criteria:
 - Stable gate pass on known-good hash.
 - Clear root cause and preventative action recorded.
 - Incident runbook artifacts attached and archived.
+
+
+## Operational references
+- Weights lifecycle: `docs/weights_lifecycle.md`
+- Incident runbook: `docs/runbooks/model_incident.md`

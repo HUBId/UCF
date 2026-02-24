@@ -6,12 +6,13 @@ use ucf_ops::{
     adversarial_run, audit_scan, bench_run, bringup, causal_slice, determinism_scan, diagnostics,
     diagnostics_collect, ebm_export_dataset, ess_compact, ess_snapshot, event_id_for_decision,
     explain_tick, explain_why, export_bugreport, load_signoff_checklist, metrics_snapshot,
-    metrics_summary, metrics_trend, models_probe, models_verify, one_command_bringup, out_manifest,
-    policy_diff, policy_explain, policy_validate, readiness_gate, release_rc1_gate,
-    release_signoff_validate, replay_audit, replay_bugreport, run_status, runs_list, runs_search,
-    runs_show, save_counterfactual_result, security_verify_chain, simulate_counterfactual,
-    verify_bugreport, write_slice, AdversarialRunArgs, BenchArgs, CounterfactualRequest,
-    ExplainTickRequest, ExportArgs, GateStatus,
+    metrics_summary, metrics_trend, models_list, models_probe, models_promote, models_rollback,
+    models_stage, models_verify, one_command_bringup, out_manifest, parse_slot, policy_diff,
+    policy_explain, policy_validate, readiness_gate, release_rc1_gate, release_signoff_validate,
+    replay_audit, replay_bugreport, run_status, runs_list, runs_search, runs_show,
+    save_counterfactual_result, security_verify_chain, simulate_counterfactual, verify_bugreport,
+    write_slice, AdversarialRunArgs, BenchArgs, CounterfactualRequest, ExplainTickRequest,
+    ExportArgs, GateStatus,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -531,6 +532,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         std::process::exit(2);
                     }
                 }
+                "stage" => {
+                    let slot = parse_slot(&arg_value(&args, "--slot").ok_or("missing --slot")?)?;
+                    let path = PathBuf::from(arg_value(&args, "--path").ok_or("missing --path")?);
+                    let result = models_stage(slot, &path)?;
+                    println!("{}", serde_json::to_string_pretty(&result)?);
+                }
                 "probe" => {
                     let manifest = arg_value(&args, "--manifest")
                         .map(PathBuf::from)
@@ -551,9 +558,32 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
                 }
+                "promote" => {
+                    let slot = parse_slot(&arg_value(&args, "--slot").ok_or("missing --slot")?)?;
+                    let hash = arg_value(&args, "--hash").ok_or("missing --hash")?;
+                    let probe = arg_value(&args, "--probe-report")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/probe_report.json"));
+                    let gate = arg_value(&args, "--gate-report")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/gate_report.json"));
+                    let report = models_promote(slot, &hash, &probe, &gate)?;
+                    println!("{}", serde_json::to_string_pretty(&report)?);
+                }
+                "rollback" => {
+                    let slot = parse_slot(&arg_value(&args, "--slot").ok_or("missing --slot")?)?;
+                    let to = arg_value(&args, "--to").ok_or("missing --to")?;
+                    let report = models_rollback(slot, &to)?;
+                    println!("{}", serde_json::to_string_pretty(&report)?);
+                }
+                "list" => {
+                    let slot = parse_slot(&arg_value(&args, "--slot").ok_or("missing --slot")?)?;
+                    let report = models_list(slot)?;
+                    println!("{}", serde_json::to_string_pretty(&report)?);
+                }
                 _ => {
                     return Err(
-                        "usage: ucf-ops models <verify|probe> [--manifest <path>] [--out <path>]"
+                        "usage: ucf-ops models <verify|probe|stage|promote|rollback|list> ..."
                             .into(),
                     )
                 }
