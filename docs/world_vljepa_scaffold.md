@@ -60,3 +60,13 @@ ucf-ops world shadow-report --run <run_id> --windows 10 --out ./out/world_shadow
 ```
 
 The report includes window summaries, drift alarms, and model/manifest digests and is consumed by `models promote` for `world_vljepa` gating.
+
+
+## Promotion gate linkage (v1.1)
+
+When WorldVljepa is active (or recently promoted), readiness gate requires shadow evidence:
+- `out/world_shadow_report.json` must be PASS.
+- promotion provenance must reference a shadow report digest prefix.
+- drift alarm rate must stay under configured threshold for a minimum window count.
+
+If WorldVljepa runs shadow-only, gate allows PASS with sufficient windows and no severe alarms; otherwise FAIL with remediation guidance.

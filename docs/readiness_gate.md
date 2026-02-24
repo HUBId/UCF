@@ -33,6 +33,14 @@ The command exits with code `0` on `PASS` and `2` on `FAIL`.
 - `status` (`PASS` / `FAIL`)
 - `checks[]`
 
+Additional v1.1 section checks (also `CheckResult` objects):
+
+- `weights_lifecycle`
+- `world_vljepa_evidence`
+- `sae_real`
+- `ssm_opt`
+- `gpu_lane` (optional section check)
+
 Each check is a bounded `CheckResult`:
 
 - `name`

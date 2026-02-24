@@ -335,3 +335,15 @@ Exit criteria:
 ## Operational references
 - Weights lifecycle: `docs/weights_lifecycle.md`
 - Incident runbook: `docs/runbooks/model_incident.md`
+
+
+## Prompt 127 readiness criteria (v1.1-rc1)
+
+The readiness gate must include explicit v1.1 sections:
+- `weights_lifecycle`: manifest digest integrity, promoted-only active pointers, manifest history, promotion provenance, and pin audit evidence.
+- `world_vljepa_evidence`: shadow report digest linkage for active/recent promotion, bounded drift alarm rate, and minimum windows.
+- `sae_real`: SAE probe/validator evidence for active deployment; clean SKIP when SAE is not active.
+- `ssm_opt`: opt-kernel drift + digest mismatch thresholds when `UCF_SSM_KERNEL != ref`; otherwise SKIP.
+- `gpu_lane`: parity evidence when `UCF_GPU_MODE=shadow|active`; otherwise SKIP.
+
+Any required evidence missing for an active/promoted feature is a hard FAIL with remediation hints.
