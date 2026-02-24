@@ -3,12 +3,16 @@
 mod adversarial;
 mod bench;
 mod causal;
+mod models_lifecycle;
 pub use adversarial::{adversarial_run, AdversarialReport, AdversarialRunArgs, CaseResult};
 pub use bench::{bench_run, BenchArgs, BenchReport};
 pub use causal::{
     causal_slice, event_id_for_decision, event_id_for_record, explain_why,
     save_counterfactual_result, simulate_counterfactual, write_slice, CausalEdge, CausalSlice,
     CounterfactualRequest, CounterfactualResult, EdgeType, EventNode, EventType, ExplainWhyReport,
+};
+pub use models_lifecycle::{
+    models_list, models_promote, models_rollback, models_stage, parse_slot,
 };
 
 use std::collections::BTreeMap;

@@ -83,6 +83,8 @@ pub struct ModelSlotSpec {
     pub max_bytes: u64,
     pub format: ModelFormat,
     pub device: ModelDevice,
+    pub active_hash: Option<String>,
+    pub contract_version: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -123,6 +125,8 @@ pub struct VerifiedModelSlot {
     pub size_bytes: u64,
     pub format: ModelFormat,
     pub device: ModelDevice,
+    pub active_hash: Option<String>,
+    pub contract_version: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -171,7 +175,7 @@ impl ModelStore {
     pub fn from_env_default() -> Result<Self, ModelLoadError> {
         let path = std::env::var("UCF_MODEL_MANIFEST")
             .map(PathBuf::from)
-            .unwrap_or_else(|_| PathBuf::from("models/manifest.toml"));
+            .unwrap_or_else(|_| PathBuf::from("models/MANIFEST.toml"));
         Self::from_manifest_and_env(&path)
     }
 
@@ -182,10 +186,33 @@ impl ModelStore {
         if !spec.enabled {
             return Err(ModelLoadError::Disabled);
         }
-        if spec.expected_sha256 == [0; 32] {
+        let pin_key = format!("UCF_MODEL_PIN_{}", slot.env_key());
+        let rel_path = if let Ok(pin_hash) = std::env::var(pin_key) {
+            PathBuf::from(format!(
+                "promoted/{}/{}/model.safetensors",
+                slot.as_str(),
+                pin_hash
+            ))
+        } else if let Some(active_hash) = spec.active_hash.as_ref() {
+            PathBuf::from(format!(
+                "promoted/{}/{}/model.safetensors",
+                slot.as_str(),
+                active_hash
+            ))
+        } else {
+            spec.path.clone().ok_or(ModelLoadError::MissingPath)?
+        };
+        let expected_hash =
+            if let Ok(pin_hash) = std::env::var(format!("UCF_MODEL_PIN_{}", slot.env_key())) {
+                parse_hash(&pin_hash)
+            } else if let Some(active_hash) = spec.active_hash.as_ref() {
+                parse_hash(active_hash)
+            } else {
+                spec.expected_sha256
+            };
+        if expected_hash == [0; 32] {
             return Err(ModelLoadError::MissingExpectedHash { slot });
         }
-        let rel_path = spec.path.clone().ok_or(ModelLoadError::MissingPath)?;
         let joined = self.allowlist_root.join(&rel_path);
         let allowlist_root =
             self.allowlist_root
@@ -238,9 +265,9 @@ impl ModelStore {
             hasher.update(&buf[..read]);
         }
         let found: [u8; 32] = hasher.finalize().into();
-        if found != spec.expected_sha256 {
+        if found != expected_hash {
             return Err(ModelLoadError::HashMismatch {
-                expected: spec.expected_sha256,
+                expected: expected_hash,
                 found,
             });
         }
@@ -252,6 +279,8 @@ impl ModelStore {
             size_bytes: size,
             format: spec.format,
             device: spec.device,
+            active_hash: spec.active_hash.clone(),
+            contract_version: spec.contract_version.clone(),
         })
     }
 
@@ -337,6 +366,8 @@ struct ModelManifestSlotEntry {
     max_bytes: Option<u64>,
     format: Option<ModelFormat>,
     device: Option<ModelDevice>,
+    active_hash: Option<String>,
+    contract_version: Option<String>,
 }
 
 impl ModelManifest {
@@ -385,6 +416,8 @@ impl ModelManifest {
                     max_bytes: entry.max_bytes.unwrap_or(DEFAULT_MAX_BYTES),
                     format: entry.format.unwrap_or(ModelFormat::Custom),
                     device: entry.device.unwrap_or(ModelDevice::CpuOnly),
+                    active_hash: entry.active_hash.clone(),
+                    contract_version: entry.contract_version.clone(),
                 },
             );
         }
@@ -412,6 +445,8 @@ fn default_entry() -> ModelManifestSlotEntry {
         max_bytes: Some(DEFAULT_MAX_BYTES),
         format: Some(ModelFormat::Custom),
         device: Some(ModelDevice::CpuOnly),
+        active_hash: None,
+        contract_version: None,
     }
 }
 
@@ -463,6 +498,8 @@ mod tests {
                 max_bytes: 1024,
                 format: ModelFormat::Custom,
                 device: ModelDevice::CpuOnly,
+                active_hash: None,
+                contract_version: None,
             },
         );
         let store = ModelStore {
@@ -491,6 +528,8 @@ mod tests {
                 max_bytes: 1024,
                 format: ModelFormat::Custom,
                 device: ModelDevice::CpuOnly,
+                active_hash: None,
+                contract_version: None,
             },
         );
         let store = ModelStore {
@@ -519,6 +558,8 @@ mod tests {
                 max_bytes: 3,
                 format: ModelFormat::Custom,
                 device: ModelDevice::CpuOnly,
+                active_hash: None,
+                contract_version: None,
             },
         );
         let store = ModelStore {
@@ -547,6 +588,8 @@ mod tests {
                 max_bytes: 1024,
                 format: ModelFormat::Custom,
                 device: ModelDevice::CpuOnly,
+                active_hash: None,
+                contract_version: None,
             },
         );
         let store = ModelStore {

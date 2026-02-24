@@ -711,6 +711,8 @@ mod tests {
                 max_bytes: 1024 * 1024,
                 format: crate::model_store::ModelFormat::CandleSafetensors,
                 device: crate::model_store::ModelDevice::CpuOnly,
+                active_hash: None,
+                contract_version: None,
             },
         );
         let store = ModelStore {
