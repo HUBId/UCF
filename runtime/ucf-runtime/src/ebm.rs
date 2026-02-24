@@ -256,6 +256,70 @@ pub trait EbmReasoner: Send {
     fn score_candidates(&mut self, input: EbmInput, budget: &mut WorkMeter) -> EbmOutput;
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GpuMode {
+    Off,
+    Shadow,
+    Active,
+}
+
+impl GpuMode {
+    pub fn from_env() -> Self {
+        match std::env::var("UCF_GPU_MODE") {
+            Ok(v) => match v.trim().to_ascii_lowercase().as_str() {
+                "shadow" => Self::Shadow,
+                "active" => Self::Active,
+                _ => Self::Off,
+            },
+            Err(_) => Self::Off,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GpuUnavailableRecord {
+    pub stage: &'static str,
+    pub reason: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GpuResourceViolationRecord {
+    pub stage: &'static str,
+    pub estimated_vram_bytes: u64,
+    pub estimated_kernel_micros: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GpuParityRecord {
+    pub stage: &'static str,
+    pub mismatch_count: u16,
+    pub compared_count: u16,
+    pub max_scalar_delta_lsb: u16,
+    pub gpu_disabled: bool,
+}
+
+pub fn ebm_parity_within_lsb(cpu: &EbmOutput, gpu: &EbmOutput, lsb: u16) -> GpuParityRecord {
+    let compared = cpu.energies_q.len().min(gpu.energies_q.len());
+    let mut mismatch = 0_u16;
+    let mut max_delta = 0_u16;
+    for i in 0..compared {
+        let a = cpu.energies_q[i].raw();
+        let b = gpu.energies_q[i].raw();
+        let d = a.abs_diff(b);
+        max_delta = max_delta.max(d);
+        if d > lsb {
+            mismatch = mismatch.saturating_add(1);
+        }
+    }
+    GpuParityRecord {
+        stage: "ebm",
+        mismatch_count: mismatch,
+        compared_count: compared.min(usize::from(u16::MAX)) as u16,
+        max_scalar_delta_lsb: max_delta,
+        gpu_disabled: mismatch > 0,
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct CpuEbmStubV0;
 
@@ -1205,5 +1269,33 @@ mod tests {
         let out_b = ebm.score_candidates(mk_input(), &mut b);
         assert_eq!(out_a.energies_q, out_b.energies_q);
         assert_eq!(out_a.ebm_digest, out_b.ebm_digest);
+    }
+    #[test]
+    fn gpu_mode_default_off() {
+        std::env::remove_var("UCF_GPU_MODE");
+        assert_eq!(GpuMode::from_env(), GpuMode::Off);
+    }
+
+    #[test]
+    fn parity_allows_one_lsb_delta() {
+        let cpu = CpuEbmStubV0.score_candidates(mk_input(), &mut WorkMeter::new(64));
+        let mut gpu = cpu.clone();
+        if let Some(first) = gpu.energies_q.first_mut() {
+            *first = UQ0_16::from_raw(first.raw().saturating_add(1));
+        }
+        let rec = ebm_parity_within_lsb(&cpu, &gpu, 1);
+        assert_eq!(rec.mismatch_count, 0);
+    }
+
+    #[test]
+    fn parity_detects_drift_over_lsb() {
+        let cpu = CpuEbmStubV0.score_candidates(mk_input(), &mut WorkMeter::new(64));
+        let mut gpu = cpu.clone();
+        if let Some(first) = gpu.energies_q.first_mut() {
+            *first = UQ0_16::from_raw(first.raw().saturating_sub(4));
+        }
+        let rec = ebm_parity_within_lsb(&cpu, &gpu, 1);
+        assert!(rec.mismatch_count > 0);
+        assert!(rec.gpu_disabled);
     }
 }

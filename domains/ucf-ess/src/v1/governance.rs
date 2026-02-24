@@ -62,7 +62,10 @@ pub fn data_class_for_payload(payload: &AuditPayload) -> DataClass {
         | AuditPayload::RemoteCallDenied(_)
         | AuditPayload::ComputeBudgetWindow(_)
         | AuditPayload::ComputeBudgetViolation(_)
-        | AuditPayload::RetrievalDecision(_) => DataClass::ScalarSummary,
+        | AuditPayload::RetrievalDecision(_)
+        | AuditPayload::GpuUnavailable(_)
+        | AuditPayload::GpuParity(_)
+        | AuditPayload::GpuResourceViolation(_) => DataClass::ScalarSummary,
     }
 }
 

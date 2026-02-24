@@ -1,0 +1,12 @@
+[package]
+name = "ucf-backends-gpu"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = []
+gpu-cuda = []
+gpu-metal = []
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }

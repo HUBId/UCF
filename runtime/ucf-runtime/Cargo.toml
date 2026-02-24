@@ -12,6 +12,8 @@ llm-burn = ["ucf-compute/llm-burn"]
 sandbox-wasm = ["dep:wasmtime", "dep:wat"]
 sandbox-proc = []
 stage-isolation = []
+gpu-cuda = ["dep:ucf-backends-gpu", "ucf-backends-gpu/gpu-cuda"]
+gpu-metal = ["dep:ucf-backends-gpu", "ucf-backends-gpu/gpu-metal"]
 
 [dependencies]
 ucf-core = { path = "../../core/ucf-core" }
@@ -39,6 +41,7 @@ ucf-spikes = { path = "../../core/ucf-spikes" }
 ucf-sle = { path = "../../core/crates/ucf-sle" }
 ucf-ncde = { path = "../../core/crates/ucf-ncde" }
 ucf-compute = { path = "../ucf-compute" }
+ucf-backends-gpu = { path = "../ucf-backends-gpu", optional = true }
 
 blake3 = "1"
 hex = { workspace = true }
