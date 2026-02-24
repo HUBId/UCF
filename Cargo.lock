@@ -3041,6 +3041,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucf-backends-gpu"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "ucf-bench"
 version = "0.1.0"
 dependencies = [
@@ -3775,6 +3782,7 @@ dependencies = [
  "sha2",
  "thiserror 1.0.69",
  "tracing",
+ "ucf-backends-gpu",
  "ucf-biophys",
  "ucf-bluebrain-bridge",
  "ucf-brainbus",

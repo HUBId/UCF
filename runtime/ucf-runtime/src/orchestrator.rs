@@ -3,11 +3,13 @@ use crate::compute_economics::{
     estimate_input_tokens, BudgetPool, ComputeEconomicsProfile, ComputeEconomy, ComputeStage,
     CostSchedule,
 };
+#[cfg(any(feature = "gpu-cuda", feature = "gpu-metal"))]
+use crate::ebm::EBM_FEATURE_D_MAX;
 use crate::ebm::{
     active_ebm_constraints, candidate_feature_from_decision, configure_ebm_constraints,
-    CandleEbmReasonerV1, ConstraintParams, ConstraintTermId, ConstraintTermKind,
-    ConstraintTermSpec, CpuEbmStubV0, EbmConstraintLibrary, EbmEnablementMode, EbmInput,
-    EbmReasoner, EbmSignal, EbmSignals, EbmStatus,
+    ebm_parity_within_lsb, CandleEbmReasonerV1, ConstraintParams, ConstraintTermId,
+    ConstraintTermKind, ConstraintTermSpec, CpuEbmStubV0, EbmConstraintLibrary, EbmEnablementMode,
+    EbmInput, EbmReasoner, EbmSignal, EbmSignals, EbmStatus, GpuMode,
 };
 use crate::errors::RuntimeError;
 use crate::evolution::{
@@ -24,6 +26,9 @@ use crate::nsr_v1::{
 use crate::sandbox::{call_spec_from_control, execute_tool_call, CapabilitySetSummary};
 use std::collections::HashSet;
 use std::time::Instant;
+#[cfg(any(feature = "gpu-cuda", feature = "gpu-metal"))]
+use ucf_backends_gpu::{detect_gpu_capability, GpuResourceCaps};
+
 use ucf_biophys::v0::{
     apply_coherence_feedback, classify, compute_integration, couple_pair, hormone_step, hpa_step,
     modulate_hh, neuro_step, osc_step, phase_bin, phase_lock, ttfs_from_strength, ttfs_phase,
@@ -51,17 +56,19 @@ use ucf_core::archive_log::ArchiveLog;
 use ucf_core::storage::{ArchiveCfg, FlushPolicy, MemArchiveStore};
 use ucf_dbm::chemistry::{chemistry_step, ChemistryCfg, NeuromodState};
 use ucf_dbm::regions::{region_step, BrainRegion, RegionKind};
+#[cfg(any(feature = "gpu-cuda", feature = "gpu-metal"))]
+use ucf_ess::v1::GpuResourceViolationRecord;
 use ucf_ess::v1::{
     compute_content_digest, AuditCheckpointRecord, AuditPayload, BackendPackRecord,
     CandidateSetRecord, CandidateSummaryRecord, CapabilityIssuanceRecord,
     ComputeBudgetViolationRecord, ComputeBudgetWindowRecord, DeltaEvaluationRecord,
     DeltaProposalRecord, DeltaRecommendationRecord, EbmConstraintProvenanceRecord,
     EbmEnvelopeViolationRecord, EbmReasoningRecord, EmergencyReasonCode, EmergencyRecord,
-    EmergencyStateCode, ExperienceKind, ExperienceRecord, ExperienceStore, HormoneRecord,
-    IdAllocator, InMemoryEss, LfmSummaryRecord, LfmWindowRecord, NeuroRecord, NsrRecord,
-    OutputRecord, PayloadClassification, PolicyProvenanceRecord, SandboxCallRecord,
-    SandboxReplyRecord, ThrottleRecord, ToolAuthRecord, ToolExecutionRecord, ToolIssueAuditRecord,
-    ToolPlanAuditRecord, ToolRequestRecord,
+    EmergencyStateCode, ExperienceKind, ExperienceRecord, ExperienceStore, GpuParityRecord,
+    GpuUnavailableRecord, HormoneRecord, IdAllocator, InMemoryEss, LfmSummaryRecord,
+    LfmWindowRecord, NeuroRecord, NsrRecord, OutputRecord, PayloadClassification,
+    PolicyProvenanceRecord, SandboxCallRecord, SandboxReplyRecord, ThrottleRecord, ToolAuthRecord,
+    ToolExecutionRecord, ToolIssueAuditRecord, ToolPlanAuditRecord, ToolRequestRecord,
 };
 use ucf_fep::{
     check_coherence_invariants, fep_step, homeostasis_step, CoherenceCfg, CoherenceSnapshot,
@@ -843,6 +850,9 @@ pub struct RuntimeOrchestrator {
     candidate_generator: DefaultCandidateGeneratorV0,
     ebm_reasoner: Box<dyn EbmReasoner>,
     ebm_mode: EbmEnablementMode,
+    gpu_mode: GpuMode,
+    gpu_parity_fail_streak: u8,
+    gpu_disabled: bool,
     ebm_run_id: u64,
     audit_head_digest: [u8; 32],
     audit_chain_checkpoint_total: u64,
@@ -1989,6 +1999,9 @@ impl RuntimeOrchestrator {
                 .ok()
                 .and_then(|v| EbmEnablementMode::parse(&v))
                 .unwrap_or(EbmEnablementMode::Off),
+            gpu_mode: GpuMode::from_env(),
+            gpu_parity_fail_streak: 0,
+            gpu_disabled: false,
             ebm_run_id: 1,
             audit_head_digest: [0; 32],
             audit_chain_checkpoint_total: 0,
@@ -3833,12 +3846,132 @@ impl RuntimeOrchestrator {
                     .map(candidate_feature_from_decision)
                     .collect(),
             };
-            let mut ebm_budget = ucf_compute::work_meter::WorkMeter::new(64);
-            let out = self
-                .ebm_reasoner
-                .score_candidates(ebm_input, &mut ebm_budget);
+
+            let mut cpu_ref_reasoner = CpuEbmStubV0;
+            let mut cpu_budget = ucf_compute::work_meter::WorkMeter::new(64);
+            let cpu_out = cpu_ref_reasoner.score_candidates(ebm_input.clone(), &mut cpu_budget);
+
+            let mut final_out = cpu_out.clone();
+            let requested_gpu = !matches!(self.gpu_mode, GpuMode::Off);
+            let mut gpu_allowed = requested_gpu && !self.gpu_disabled;
+
+            #[cfg(not(any(feature = "gpu-cuda", feature = "gpu-metal")))]
+            if requested_gpu {
+                gpu_allowed = false;
+                self.gpu_disabled = true;
+                let _ = self.ess.append(ExperienceRecord::from_gpu_unavailable(
+                    self.ids.next(),
+                    ctrl.time,
+                    ctrl.corr,
+                    GpuUnavailableRecord {
+                        schema_version: 1,
+                        t: ctrl.time.tick.get(),
+                        stage: "ebm".to_string(),
+                        reason: "gpu_feature_disabled".to_string(),
+                    },
+                ));
+            }
+
+            #[cfg(any(feature = "gpu-cuda", feature = "gpu-metal"))]
+            {
+                if requested_gpu {
+                    let caps = detect_gpu_capability();
+                    if !caps.available {
+                        gpu_allowed = false;
+                        self.gpu_disabled = true;
+                        let _ = self.ess.append(ExperienceRecord::from_gpu_unavailable(
+                            self.ids.next(),
+                            ctrl.time,
+                            ctrl.corr,
+                            GpuUnavailableRecord {
+                                schema_version: 1,
+                                t: ctrl.time.tick.get(),
+                                stage: "ebm".to_string(),
+                                reason: "gpu_unavailable".to_string(),
+                            },
+                        ));
+                    }
+                }
+                if gpu_allowed {
+                    let caps = GpuResourceCaps::from_env();
+                    let estimated_vram_bytes = (ebm_input.candidates.len() as u64)
+                        .saturating_mul(4)
+                        .saturating_mul(EBM_FEATURE_D_MAX as u64)
+                        .saturating_mul(4);
+                    let estimated_kernel_micros = 50_000_u64;
+                    if !caps.within_caps(estimated_vram_bytes, estimated_kernel_micros) {
+                        gpu_allowed = false;
+                        self.gpu_disabled = true;
+                        let _ = self
+                            .ess
+                            .append(ExperienceRecord::from_gpu_resource_violation(
+                                self.ids.next(),
+                                ctrl.time,
+                                ctrl.corr,
+                                GpuResourceViolationRecord {
+                                    schema_version: 1,
+                                    t: ctrl.time.tick.get(),
+                                    stage: "ebm".to_string(),
+                                    estimated_vram_bytes,
+                                    estimated_kernel_micros,
+                                    action: "gpu_disabled".to_string(),
+                                },
+                            ));
+                    }
+                }
+            }
+
+            if gpu_allowed {
+                let mut ebm_budget = ucf_compute::work_meter::WorkMeter::new(64);
+                let gpu_out = self
+                    .ebm_reasoner
+                    .score_candidates(ebm_input.clone(), &mut ebm_budget);
+                let parity = ebm_parity_within_lsb(&cpu_out, &gpu_out, 1);
+                let parity_fail = parity.mismatch_count > 0;
+                if parity_fail {
+                    self.gpu_parity_fail_streak = self.gpu_parity_fail_streak.saturating_add(1);
+                } else {
+                    self.gpu_parity_fail_streak = 0;
+                }
+                if self.gpu_parity_fail_streak >= 3 {
+                    self.gpu_disabled = true;
+                }
+                let _ = self.ess.append(ExperienceRecord::from_gpu_parity(
+                    self.ids.next(),
+                    ctrl.time,
+                    ctrl.corr,
+                    GpuParityRecord {
+                        schema_version: 1,
+                        t: ctrl.time.tick.get(),
+                        stage: parity.stage.to_string(),
+                        mismatch_count: parity.mismatch_count,
+                        compared_count: parity.compared_count,
+                        max_scalar_delta_lsb: parity.max_scalar_delta_lsb,
+                        action: if parity_fail {
+                            "fallback_cpu".to_string()
+                        } else {
+                            "ok".to_string()
+                        },
+                    },
+                ));
+
+                match self.gpu_mode {
+                    GpuMode::Shadow => {
+                        final_out = cpu_out.clone();
+                    }
+                    GpuMode::Active => {
+                        if !parity_fail && !self.gpu_disabled {
+                            final_out = gpu_out;
+                        }
+                    }
+                    GpuMode::Off => {
+                        final_out = cpu_out.clone();
+                    }
+                }
+            }
+
             if matches!(self.ebm_mode, EbmEnablementMode::Active) {
-                selected = out
+                selected = final_out
                     .best_indices
                     .iter()
                     .filter_map(|idx| {
@@ -3850,8 +3983,8 @@ impl RuntimeOrchestrator {
                     .map(|(candidate, assessment)| (candidate.clone(), assessment.clone()))
                     .or(selected);
             }
-            ebm_signal = Some(EbmSignal::from_output(&out));
-            ebm_output = Some(out);
+            ebm_signal = Some(EbmSignal::from_output(&final_out));
+            ebm_output = Some(final_out);
         }
         if let (Some(sig), Some(summary)) = (ebm_signal, decision.compute_summary) {
             decision = decision.with_compute_summary(ucf_frames::v1::ComputeSignalsSummary {

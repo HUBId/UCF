@@ -34,6 +34,9 @@ pub enum ExperienceKind {
     CandidateSet,
     EbmReasoning,
     EbmEnvelopeViolation,
+    GpuUnavailable,
+    GpuParity,
+    GpuResourceViolation,
     Output,
     BackendPack,
     LfmSummary,
@@ -121,6 +124,9 @@ pub enum AuditPayload {
     CandidateSet(CandidateSetRecord),
     EbmReasoning(EbmReasoningRecord),
     EbmEnvelopeViolation(EbmEnvelopeViolationRecord),
+    GpuUnavailable(GpuUnavailableRecord),
+    GpuParity(GpuParityRecord),
+    GpuResourceViolation(GpuResourceViolationRecord),
     Output(OutputRecord),
     CapabilityIssuance(CapabilityIssuanceRecord),
     Throttle(ThrottleRecord),
@@ -382,6 +388,35 @@ pub struct EbmEnvelopeViolationRecord {
     pub decision_id: u64,
     pub violation_code: u8,
     pub details: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GpuUnavailableRecord {
+    pub schema_version: u16,
+    pub t: u64,
+    pub stage: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GpuParityRecord {
+    pub schema_version: u16,
+    pub t: u64,
+    pub stage: String,
+    pub mismatch_count: u16,
+    pub compared_count: u16,
+    pub max_scalar_delta_lsb: u16,
+    pub action: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GpuResourceViolationRecord {
+    pub schema_version: u16,
+    pub t: u64,
+    pub stage: String,
+    pub estimated_vram_bytes: u64,
+    pub estimated_kernel_micros: u64,
+    pub action: String,
 }
 #[derive(Debug, Clone, PartialEq)]
 pub struct OutputRecord {
@@ -1124,6 +1159,98 @@ impl ExperienceRecord {
         }
     }
 
+    pub fn from_gpu_unavailable(
+        id: ExperienceId,
+        time: SimTime,
+        corr: CorrelationId,
+        record: GpuUnavailableRecord,
+    ) -> Self {
+        Self {
+            id,
+            time,
+            corr,
+            kind: ExperienceKind::GpuUnavailable,
+            payload: ExperiencePayload::Audit(AuditPayload::GpuUnavailable(record)),
+            neuromod: None,
+            iit_phi: None,
+            decision_meta: None,
+            compute_summary: None,
+            hormone_record: None,
+            neuro_record: None,
+            delta_proposal_record: None,
+            delta_evaluation_record: None,
+            delta_recommendation_record: None,
+            nsr_record: None,
+            backend_pack_record: None,
+            lfm_summary_record: None,
+            lfm_window_record: None,
+            ebm_tag: None,
+            audit_prev_digest: None,
+            audit_digest: None,
+        }
+    }
+
+    pub fn from_gpu_parity(
+        id: ExperienceId,
+        time: SimTime,
+        corr: CorrelationId,
+        record: GpuParityRecord,
+    ) -> Self {
+        Self {
+            id,
+            time,
+            corr,
+            kind: ExperienceKind::GpuParity,
+            payload: ExperiencePayload::Audit(AuditPayload::GpuParity(record)),
+            neuromod: None,
+            iit_phi: None,
+            decision_meta: None,
+            compute_summary: None,
+            hormone_record: None,
+            neuro_record: None,
+            delta_proposal_record: None,
+            delta_evaluation_record: None,
+            delta_recommendation_record: None,
+            nsr_record: None,
+            backend_pack_record: None,
+            lfm_summary_record: None,
+            lfm_window_record: None,
+            ebm_tag: None,
+            audit_prev_digest: None,
+            audit_digest: None,
+        }
+    }
+
+    pub fn from_gpu_resource_violation(
+        id: ExperienceId,
+        time: SimTime,
+        corr: CorrelationId,
+        record: GpuResourceViolationRecord,
+    ) -> Self {
+        Self {
+            id,
+            time,
+            corr,
+            kind: ExperienceKind::GpuResourceViolation,
+            payload: ExperiencePayload::Audit(AuditPayload::GpuResourceViolation(record)),
+            neuromod: None,
+            iit_phi: None,
+            decision_meta: None,
+            compute_summary: None,
+            hormone_record: None,
+            neuro_record: None,
+            delta_proposal_record: None,
+            delta_evaluation_record: None,
+            delta_recommendation_record: None,
+            nsr_record: None,
+            backend_pack_record: None,
+            lfm_summary_record: None,
+            lfm_window_record: None,
+            ebm_tag: None,
+            audit_prev_digest: None,
+            audit_digest: None,
+        }
+    }
     pub fn from_output(
         id: ExperienceId,
         time: SimTime,

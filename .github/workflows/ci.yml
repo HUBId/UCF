@@ -54,6 +54,10 @@ jobs:
           - name: stage-isolation
             features: "sandbox-wasm,stage-isolation"
             blocking: false
+          - name: gpu-cuda
+            package: "ucf-runtime"
+            features: "compute-candle,lfm-candle,gpu-cuda"
+            blocking: false
           - name: ebm-train
             package: "ucf-ebm-train"
             features: "ebm-train"
