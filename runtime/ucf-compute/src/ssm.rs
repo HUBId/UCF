@@ -15,6 +15,35 @@ const SSM_FIXTURE_DIGEST: [u8; 32] = [
     0xcb, 0x15, 0x90, 0xd7, 0x6a, 0x82, 0x13, 0xca, 0xe0, 0x66, 0x44, 0xe0, 0x81, 0x39, 0xb0, 0x97,
 ];
 const DEGRADED_MARKER: [u8; 32] = [0xDD; 32];
+const SSM_DRIFT_PRESSURE_DELTA_MAX_Q: u16 = 2;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SsmKernelMode {
+    Ref,
+    Opt,
+    Shadow,
+}
+
+impl SsmKernelMode {
+    fn from_env() -> Self {
+        let Ok(raw) = std::env::var("UCF_SSM_KERNEL") else {
+            return Self::Ref;
+        };
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "opt" => Self::Opt,
+            "shadow" => Self::Shadow,
+            _ => Self::Ref,
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Ref => "ref",
+            Self::Opt => "opt",
+            Self::Shadow => "shadow",
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct SsmInput {
@@ -180,6 +209,8 @@ impl SsmFixture {
 pub struct ToySsmKernel {
     x: [f32; SSM_STATE_DIM],
     fixture: SsmFixture,
+    mode: SsmKernelMode,
+    opt_enabled: bool,
 }
 
 impl Default for ToySsmKernel {
@@ -188,8 +219,17 @@ impl Default for ToySsmKernel {
             x: [0.0; SSM_STATE_DIM],
             fixture: SsmFixture::parse_json(SSM_FIXTURE_JSON)
                 .expect("embedded SSM fixture must be valid"),
+            mode: SsmKernelMode::from_env(),
+            opt_enabled: true,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct KernelStep {
+    readout: f32,
+    state_norm: f32,
+    pressure_q: u16,
 }
 
 impl ToySsmKernel {
@@ -250,65 +290,205 @@ impl ToySsmKernel {
         hasher.update(self.fixture.digest);
         hasher.finalize().into()
     }
-}
 
-impl SsmKernel for ToySsmKernel {
-    fn name(&self) -> &'static str {
-        "toy_ssm_selective_scan_v0"
-    }
-
-    fn step(&mut self, input: &SsmInput, budget: ComputeBudget) -> Result<SsmOutput, ComputeError> {
-        let mut work_units = 16_u64;
-        Self::check_budget(work_units, budget)?;
-
+    fn compute_u(&self, input: &SsmInput) -> f32 {
         let u_spikes = (f32::from(input.spike_count) / self.fixture.kmax).clamp(0.0, 1.0);
-        let u = (self.fixture.w1 * u_spikes
+        (self.fixture.w1 * u_spikes
             + self.fixture.w2 * input.sae_energy.clamp(0.0, 1.0)
             + self.fixture.w3 * input.world_surprise.clamp(0.0, 1.0))
-        .clamp(0.0, 1.0);
+        .clamp(0.0, 1.0)
+    }
 
-        let selected = Self::select_indices(input.spikes_digest);
+    fn make_selected_mask(spikes_digest: [u8; 32]) -> [bool; SSM_STATE_DIM] {
+        let selected = Self::select_indices(spikes_digest);
         let mut selected_mask = [false; SSM_STATE_DIM];
         for idx in selected {
             selected_mask[idx] = true;
         }
+        selected_mask
+    }
 
-        for (idx, value) in self.x.iter_mut().enumerate() {
-            work_units = work_units.saturating_add(4);
-            Self::check_budget(work_units, budget)?;
+    fn ssm_ref_kernel(
+        fixture: &SsmFixture,
+        state: &mut [f32; SSM_STATE_DIM],
+        selected_mask: &[bool; SSM_STATE_DIM],
+        u: f32,
+    ) -> KernelStep {
+        for (idx, value) in state.iter_mut().enumerate() {
             if selected_mask[idx] {
-                *value = (self.fixture.a[idx] * *value + self.fixture.b[idx] * u).clamp(-1.0, 1.0);
+                *value = (fixture.a[idx] * *value + fixture.b[idx] * u).clamp(-1.0, 1.0);
             } else {
                 *value = (0.98 * *value).clamp(-1.0, 1.0);
             }
         }
 
         let mut readout = 0.0_f32;
-        for idx in 0..SSM_STATE_DIM {
-            work_units = work_units.saturating_add(2);
-            Self::check_budget(work_units, budget)?;
-            readout += self.fixture.c[idx] * self.x[idx];
+        for (idx, value) in state.iter().enumerate() {
+            readout += fixture.c[idx] * *value;
         }
         let readout = ((readout + 1.0) * 0.5).clamp(0.0, 1.0);
 
-        let mean_abs = self.x.iter().map(|v| v.abs()).sum::<f32>() / SSM_STATE_DIM as f32;
-        let state_norm = (mean_abs / self.fixture.state_scale).clamp(0.0, 1.0);
-        let pressure = (0.5 * u + 0.5 * state_norm).clamp(0.0, 1.0);
+        let mean_abs = state.iter().map(|v| v.abs()).sum::<f32>() / SSM_STATE_DIM as f32;
+        let state_norm = (mean_abs / fixture.state_scale).clamp(0.0, 1.0);
+        let pressure_q = quantize_unit_u16((0.5 * u + 0.5 * state_norm).clamp(0.0, 1.0));
+
+        KernelStep {
+            readout,
+            state_norm,
+            pressure_q,
+        }
+    }
+
+    fn ssm_opt_kernel(
+        fixture: &SsmFixture,
+        state: &mut [f32; SSM_STATE_DIM],
+        selected_mask: &[bool; SSM_STATE_DIM],
+        u: f32,
+    ) -> KernelStep {
+        let mut i = 0usize;
+        while i + 4 <= SSM_STATE_DIM {
+            for lane in 0..4 {
+                let idx = i + lane;
+                let prev = state[idx];
+                state[idx] = if selected_mask[idx] {
+                    (fixture.a[idx] * prev + fixture.b[idx] * u).clamp(-1.0, 1.0)
+                } else {
+                    (0.98 * prev).clamp(-1.0, 1.0)
+                };
+            }
+            i += 4;
+        }
+        while i < SSM_STATE_DIM {
+            let prev = state[i];
+            state[i] = if selected_mask[i] {
+                (fixture.a[i] * prev + fixture.b[i] * u).clamp(-1.0, 1.0)
+            } else {
+                (0.98 * prev).clamp(-1.0, 1.0)
+            };
+            i += 1;
+        }
+
+        let mut readout = 0.0_f32;
+        for (idx, value) in state.iter().enumerate() {
+            readout += fixture.c[idx] * *value;
+        }
+        let readout = ((readout + 1.0) * 0.5).clamp(0.0, 1.0);
+
+        let mut abs_sum = 0.0_f32;
+        for value in state.iter() {
+            abs_sum += value.abs();
+        }
+        let mean_abs = abs_sum / SSM_STATE_DIM as f32;
+        let state_norm = (mean_abs / fixture.state_scale).clamp(0.0, 1.0);
+        let pressure_q = quantize_unit_u16((0.5 * u + 0.5 * state_norm).clamp(0.0, 1.0));
+
+        KernelStep {
+            readout,
+            state_norm,
+            pressure_q,
+        }
+    }
+}
+
+impl SsmKernel for ToySsmKernel {
+    fn name(&self) -> &'static str {
+        "toy_ssm_selective_scan_v1_1"
+    }
+
+    fn step(&mut self, input: &SsmInput, budget: ComputeBudget) -> Result<SsmOutput, ComputeError> {
+        let mut work_units = 16_u64;
+        Self::check_budget(work_units, budget)?;
+
+        let u = self.compute_u(input);
+        let selected_mask = Self::make_selected_mask(input.spikes_digest);
+
+        work_units = work_units.saturating_add((SSM_STATE_DIM as u64) * 6);
+        Self::check_budget(work_units, budget)?;
+
+        let mut notes = vec![format!("kernel_mode={}", self.mode.as_str())];
+
+        let step = match self.mode {
+            SsmKernelMode::Ref => {
+                notes.push("kernel_id=ref".to_string());
+                Self::ssm_ref_kernel(&self.fixture, &mut self.x, &selected_mask, u)
+            }
+            SsmKernelMode::Opt => {
+                if self.opt_enabled {
+                    notes.push("kernel_id=opt".to_string());
+                    Self::ssm_opt_kernel(&self.fixture, &mut self.x, &selected_mask, u)
+                } else {
+                    notes.push("kernel_id=ref_fallback".to_string());
+                    Self::ssm_ref_kernel(&self.fixture, &mut self.x, &selected_mask, u)
+                }
+            }
+            SsmKernelMode::Shadow => {
+                let mut ref_state = self.x;
+                let mut opt_state = self.x;
+                let ref_step =
+                    Self::ssm_ref_kernel(&self.fixture, &mut ref_state, &selected_mask, u);
+                let opt_step =
+                    Self::ssm_opt_kernel(&self.fixture, &mut opt_state, &selected_mask, u);
+                let pressure_delta_q = ref_step.pressure_q.abs_diff(opt_step.pressure_q);
+
+                let ref_digest = {
+                    let mut hasher = Sha256::new();
+                    hasher.update(self.fixture.digest);
+                    hasher.update(input.t.to_le_bytes());
+                    hasher.update(input.seed.to_le_bytes());
+                    hasher.update(input.context_digest);
+                    for value in ref_state.iter().copied() {
+                        hasher.update(quantize_signed_unit(value).to_le_bytes());
+                    }
+                    let digest: [u8; 32] = hasher.finalize().into();
+                    digest
+                };
+                let opt_digest = {
+                    let mut hasher = Sha256::new();
+                    hasher.update(self.fixture.digest);
+                    hasher.update(input.t.to_le_bytes());
+                    hasher.update(input.seed.to_le_bytes());
+                    hasher.update(input.context_digest);
+                    for value in opt_state.iter().copied() {
+                        hasher.update(quantize_signed_unit(value).to_le_bytes());
+                    }
+                    let digest: [u8; 32] = hasher.finalize().into();
+                    digest
+                };
+
+                let drifted =
+                    pressure_delta_q > SSM_DRIFT_PRESSURE_DELTA_MAX_Q || ref_digest != opt_digest;
+                notes.push(format!(
+                    "kernel_id=shadow_ref_opt delta_q={pressure_delta_q}"
+                ));
+                if drifted {
+                    self.opt_enabled = false;
+                    notes.push("drift_alarm=1".to_string());
+                }
+
+                self.x = ref_state;
+                ref_step
+            }
+        };
+
+        let pressure = f32::from(step.pressure_q) / f32::from(u16::MAX);
 
         let state_digest = self.state_digest(input.t, input.context_digest, input.seed);
-        let readout_digest = self.readout_digest(readout, state_digest);
+        let readout_digest = self.readout_digest(step.readout, state_digest);
 
         Ok(SsmOutput {
             pressure,
             state_digest,
             readout_digest,
-            state_norm,
-            readout,
+            state_norm: step.state_norm,
+            readout: step.readout,
             quality: StageQuality::Ok,
-            notes: SmallNotes(vec![format!(
-                "fixture={}",
-                hex::encode(&self.fixture.digest[..6])
-            )]),
+            notes: SmallNotes({
+                notes.push(format!(
+                    "fixture={}",
+                    hex::encode(&self.fixture.digest[..6])
+                ));
+                notes
+            }),
         })
     }
 }
@@ -389,5 +569,46 @@ mod tests {
             ComputeError::BudgetExceeded { stage, .. } => assert_eq!(stage, "ssm/step"),
             other => panic!("unexpected error: {other:?}"),
         }
+    }
+
+    #[test]
+    fn ref_and_opt_kernel_parity() {
+        let fixture = SsmFixture::parse_json(SSM_FIXTURE_JSON).expect("fixture");
+        let input = input();
+        let u = {
+            let u_spikes = (f32::from(input.spike_count) / fixture.kmax).clamp(0.0, 1.0);
+            (fixture.w1 * u_spikes
+                + fixture.w2 * input.sae_energy.clamp(0.0, 1.0)
+                + fixture.w3 * input.world_surprise.clamp(0.0, 1.0))
+            .clamp(0.0, 1.0)
+        };
+        let mask = ToySsmKernel::make_selected_mask(input.spikes_digest);
+        let mut ref_state = [0.0_f32; SSM_STATE_DIM];
+        let mut opt_state = [0.0_f32; SSM_STATE_DIM];
+
+        let ref_step = ToySsmKernel::ssm_ref_kernel(&fixture, &mut ref_state, &mask, u);
+        let opt_step = ToySsmKernel::ssm_opt_kernel(&fixture, &mut opt_state, &mask, u);
+
+        assert_eq!(ref_step.pressure_q, opt_step.pressure_q);
+        assert_eq!(ref_state, opt_state);
+    }
+
+    #[test]
+    fn shadow_mode_records_drift_and_disables_opt() {
+        std::env::set_var("UCF_SSM_KERNEL", "shadow");
+        let mut kernel = ToySsmKernel {
+            opt_enabled: true,
+            ..ToySsmKernel::default()
+        };
+
+        let out = kernel
+            .step(&input(), ComputeBudget::default())
+            .expect("step");
+        assert!(out
+            .notes
+            .0
+            .iter()
+            .any(|n| n.starts_with("kernel_id=shadow_ref_opt")));
+        std::env::remove_var("UCF_SSM_KERNEL");
     }
 }
