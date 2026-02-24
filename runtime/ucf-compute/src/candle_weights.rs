@@ -429,6 +429,29 @@ const JEPA_REQ: &[TensorSpec] = &[
     },
 ];
 
+const VLJEPA_REQ: &[TensorSpec] = &[
+    TensorSpec {
+        name: "vljepa.w1",
+        shape: &[D, H],
+        dtype: DType::F32,
+    },
+    TensorSpec {
+        name: "vljepa.b1",
+        shape: &[H],
+        dtype: DType::F32,
+    },
+    TensorSpec {
+        name: "vljepa.w2",
+        shape: &[H, D],
+        dtype: DType::F32,
+    },
+    TensorSpec {
+        name: "vljepa.b2",
+        shape: &[D],
+        dtype: DType::F32,
+    },
+];
+
 const SAE_REQ: &[TensorSpec] = &[
     TensorSpec {
         name: "W",
@@ -521,6 +544,7 @@ const EBM_REQ: &[TensorSpec] = &[
 pub fn spec_for_slot(slot: ModelSlot, max_bytes: u64) -> WeightSpec {
     let tensors = match slot {
         ModelSlot::WorldJepa => JEPA_REQ,
+        ModelSlot::WorldVljepa => VLJEPA_REQ,
         ModelSlot::Sae => SAE_REQ,
         ModelSlot::Ssm => SSM_REQ,
         ModelSlot::Lfm => LFM_REQ,

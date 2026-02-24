@@ -18,6 +18,7 @@ const DEFAULT_MAX_BYTES: u64 = 64 * 1024 * 1024;
 pub enum ModelSlot {
     Llm,
     WorldJepa,
+    WorldVljepa,
     Sae,
     Lfm,
     Ssm,
@@ -25,10 +26,11 @@ pub enum ModelSlot {
 }
 
 impl ModelSlot {
-    pub const fn all() -> [Self; 6] {
+    pub const fn all() -> [Self; 7] {
         [
             Self::Llm,
             Self::WorldJepa,
+            Self::WorldVljepa,
             Self::Sae,
             Self::Lfm,
             Self::Ssm,
@@ -40,6 +42,7 @@ impl ModelSlot {
         match self {
             Self::Llm => "LLM",
             Self::WorldJepa => "WORLD_JEPA",
+            Self::WorldVljepa => "WORLD_VLJEPA",
             Self::Sae => "SAE",
             Self::Lfm => "LFM",
             Self::Ssm => "SSM",
@@ -51,6 +54,7 @@ impl ModelSlot {
         match self {
             Self::Llm => "llm",
             Self::WorldJepa => "world_jepa",
+            Self::WorldVljepa => "world_vljepa",
             Self::Sae => "sae",
             Self::Lfm => "lfm",
             Self::Ssm => "ssm",
@@ -352,6 +356,7 @@ struct ModelManifest {
 struct ModelManifestSlots {
     llm: Option<ModelManifestSlotEntry>,
     world_jepa: Option<ModelManifestSlotEntry>,
+    world_vljepa: Option<ModelManifestSlotEntry>,
     sae: Option<ModelManifestSlotEntry>,
     lfm: Option<ModelManifestSlotEntry>,
     ssm: Option<ModelManifestSlotEntry>,
@@ -394,6 +399,7 @@ impl ModelManifest {
         match slot {
             ModelSlot::Llm => slots.llm.get_or_insert_with(default_entry),
             ModelSlot::WorldJepa => slots.world_jepa.get_or_insert_with(default_entry),
+            ModelSlot::WorldVljepa => slots.world_vljepa.get_or_insert_with(default_entry),
             ModelSlot::Sae => slots.sae.get_or_insert_with(default_entry),
             ModelSlot::Lfm => slots.lfm.get_or_insert_with(default_entry),
             ModelSlot::Ssm => slots.ssm.get_or_insert_with(default_entry),
@@ -429,6 +435,7 @@ impl ModelManifest {
         match slot {
             ModelSlot::Llm => slots.llm.as_ref(),
             ModelSlot::WorldJepa => slots.world_jepa.as_ref(),
+            ModelSlot::WorldVljepa => slots.world_vljepa.as_ref(),
             ModelSlot::Sae => slots.sae.as_ref(),
             ModelSlot::Lfm => slots.lfm.as_ref(),
             ModelSlot::Ssm => slots.ssm.as_ref(),

@@ -46,6 +46,8 @@ pub enum BackendComponentId {
     LnnOdeV1 = 4,
     RemoteProxyV1 = 5,
     CandleJepaV1 = 10,
+    VljepaAdapterV0 = 14,
+    CandleVljepaV1 = 15,
     CandleSaeV1 = 11,
     CandleSsmV1 = 12,
     CandleEbmV1 = 13,

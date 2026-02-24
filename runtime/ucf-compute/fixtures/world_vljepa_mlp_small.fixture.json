@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "format": "scaffold_fixture_v1",
+  "slot": "world_vljepa",
+  "note": "Text-only fixture descriptor because binary artifacts are not supported in this PR flow.",
+  "tensor_specs": [
+    { "name": "vljepa.w1", "shape": [64, 8], "dtype": "f32", "init": "zeros" },
+    { "name": "vljepa.b1", "shape": [8], "dtype": "f32", "init": "zeros" },
+    { "name": "vljepa.w2", "shape": [8, 64], "dtype": "f32", "init": "zeros" },
+    { "name": "vljepa.b2", "shape": [64], "dtype": "f32", "init": "zeros" }
+  ]
+}

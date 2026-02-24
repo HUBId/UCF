@@ -392,3 +392,162 @@ mod tests {
         }
     }
 }
+
+pub const WORLD_VLJEPA_ENCODING_DIM: usize = 64;
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WorldInputEncodingV1 {
+    pub context_digest: [u8; 32],
+    pub risk: f32,
+    pub pressure: f32,
+    pub surprise: f32,
+    pub uncertainty: f32,
+    pub confidence: f32,
+    pub coherence: f32,
+    pub sae_spikes_digest_prefix: Option<[u8; 8]>,
+    pub ssm_state_digest_prefix: Option<[u8; 8]>,
+    pub lfm_state_digest_prefix: Option<[u8; 8]>,
+    pub token_summary_digest_prefix: Option<[u8; 8]>,
+}
+
+impl WorldInputEncodingV1 {
+    pub fn encode_vector(&self) -> [f32; WORLD_VLJEPA_ENCODING_DIM] {
+        let mut out = [0.0_f32; WORLD_VLJEPA_ENCODING_DIM];
+        out[0] = (self.risk * 2.0 - 1.0).clamp(-1.0, 1.0);
+        out[1] = (self.pressure * 2.0 - 1.0).clamp(-1.0, 1.0);
+        out[2] = (self.surprise * 2.0 - 1.0).clamp(-1.0, 1.0);
+        out[3] = (self.uncertainty * 2.0 - 1.0).clamp(-1.0, 1.0);
+        out[4] = (self.confidence * 2.0 - 1.0).clamp(-1.0, 1.0);
+        out[5] = (self.coherence * 2.0 - 1.0).clamp(-1.0, 1.0);
+
+        let mut bytes = Vec::with_capacity(64);
+        bytes.extend_from_slice(&self.context_digest);
+        for p in [
+            self.sae_spikes_digest_prefix,
+            self.ssm_state_digest_prefix,
+            self.lfm_state_digest_prefix,
+            self.token_summary_digest_prefix,
+        ]
+        .into_iter()
+        .flatten()
+        {
+            bytes.extend_from_slice(&p);
+        }
+        for i in 0..(WORLD_VLJEPA_ENCODING_DIM - 6) {
+            let b = bytes.get(i % bytes.len()).copied().unwrap_or(0) as f32;
+            out[6 + i] = (b / 127.5 - 1.0).clamp(-1.0, 1.0);
+        }
+        out
+    }
+
+    pub fn encoding_digest(&self) -> [u8; 32] {
+        let mut h = Sha256::new();
+        h.update(self.context_digest);
+        for v in self.encode_vector() {
+            h.update(crate::evidence::quantize_signed_unit(v).to_le_bytes());
+        }
+        h.finalize().into()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct WorldVljepaShadowRecord {
+    pub t: u64,
+    pub encoding_digest_prefix: [u8; 8],
+    pub prediction_error_q: u16,
+    pub prediction_digest_prefix: [u8; 8],
+    pub model_hash_prefix: [u8; 8],
+    pub status: &'static str,
+}
+
+pub fn world_vljepa_shadow_step(
+    t: u64,
+    encoding: &WorldInputEncodingV1,
+    model_hash: [u8; 32],
+) -> WorldVljepaShadowRecord {
+    let x = encoding.encode_vector();
+    let mut y = [0.0_f32; WORLD_VLJEPA_ENCODING_DIM];
+    for (idx, yi) in y.iter_mut().enumerate() {
+        let a = model_hash[idx % 32] as f32 / 255.0;
+        *yi = (x[idx] * (0.6 + a * 0.4)).clamp(-1.0, 1.0);
+    }
+    let err = y
+        .iter()
+        .zip(x.iter())
+        .map(|(a, b)| (a - b).abs())
+        .sum::<f32>()
+        / WORLD_VLJEPA_ENCODING_DIM as f32;
+    let err_q = ucf_types::UQ0_16::from_f32_clamped(err).raw();
+
+    let mut hasher = Sha256::new();
+    for v in y {
+        hasher.update(crate::evidence::quantize_signed_unit(v).to_le_bytes());
+    }
+    hasher.update(model_hash);
+    hasher.update(t.to_le_bytes());
+    hasher.update(encoding.encoding_digest());
+    let prediction_digest: [u8; 32] = hasher.finalize().into();
+
+    let mut enc_pref = [0_u8; 8];
+    enc_pref.copy_from_slice(&encoding.encoding_digest()[..8]);
+    let mut pred_pref = [0_u8; 8];
+    pred_pref.copy_from_slice(&prediction_digest[..8]);
+    let mut model_pref = [0_u8; 8];
+    model_pref.copy_from_slice(&model_hash[..8]);
+
+    WorldVljepaShadowRecord {
+        t,
+        encoding_digest_prefix: enc_pref,
+        prediction_error_q: err_q,
+        prediction_digest_prefix: pred_pref,
+        model_hash_prefix: model_pref,
+        status: "ok",
+    }
+}
+
+#[cfg(test)]
+mod vljepa_tests {
+    use super::*;
+
+    #[test]
+    fn vljepa_encoding_is_deterministic_and_bounded() {
+        let enc = WorldInputEncodingV1 {
+            context_digest: [0xAA; 32],
+            risk: 0.2,
+            pressure: 0.4,
+            surprise: 0.1,
+            uncertainty: 0.3,
+            confidence: 0.9,
+            coherence: 0.8,
+            sae_spikes_digest_prefix: Some([1; 8]),
+            ssm_state_digest_prefix: Some([2; 8]),
+            lfm_state_digest_prefix: None,
+            token_summary_digest_prefix: Some([3; 8]),
+        };
+        let a = enc.encode_vector();
+        let b = enc.encode_vector();
+        assert_eq!(a, b);
+        assert!(a.iter().all(|v| (-1.0..=1.0).contains(v)));
+        assert_eq!(enc.encoding_digest(), enc.encoding_digest());
+    }
+
+    #[test]
+    fn vljepa_shadow_step_is_deterministic() {
+        let enc = WorldInputEncodingV1 {
+            context_digest: [0xBB; 32],
+            risk: 0.6,
+            pressure: 0.7,
+            surprise: 0.2,
+            uncertainty: 0.2,
+            confidence: 0.8,
+            coherence: 0.6,
+            sae_spikes_digest_prefix: None,
+            ssm_state_digest_prefix: None,
+            lfm_state_digest_prefix: None,
+            token_summary_digest_prefix: None,
+        };
+        let a = world_vljepa_shadow_step(99, &enc, [0x11; 32]);
+        let b = world_vljepa_shadow_step(99, &enc, [0x11; 32]);
+        assert_eq!(a, b);
+    }
+}
