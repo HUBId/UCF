@@ -3,11 +3,13 @@ use crate::compute_economics::{
     estimate_input_tokens, BudgetPool, ComputeEconomicsProfile, ComputeEconomy, ComputeStage,
     CostSchedule,
 };
+#[cfg(any(feature = "gpu-cuda", feature = "gpu-metal"))]
+use crate::ebm::EBM_FEATURE_D_MAX;
 use crate::ebm::{
     active_ebm_constraints, candidate_feature_from_decision, configure_ebm_constraints,
     ebm_parity_within_lsb, CandleEbmReasonerV1, ConstraintParams, ConstraintTermId,
     ConstraintTermKind, ConstraintTermSpec, CpuEbmStubV0, EbmConstraintLibrary, EbmEnablementMode,
-    EbmInput, EbmReasoner, EbmSignal, EbmSignals, EbmStatus, GpuMode, EBM_FEATURE_D_MAX,
+    EbmInput, EbmReasoner, EbmSignal, EbmSignals, EbmStatus, GpuMode,
 };
 use crate::errors::RuntimeError;
 use crate::evolution::{
@@ -54,6 +56,8 @@ use ucf_core::archive_log::ArchiveLog;
 use ucf_core::storage::{ArchiveCfg, FlushPolicy, MemArchiveStore};
 use ucf_dbm::chemistry::{chemistry_step, ChemistryCfg, NeuromodState};
 use ucf_dbm::regions::{region_step, BrainRegion, RegionKind};
+#[cfg(any(feature = "gpu-cuda", feature = "gpu-metal"))]
+use ucf_ess::v1::GpuResourceViolationRecord;
 use ucf_ess::v1::{
     compute_content_digest, AuditCheckpointRecord, AuditPayload, BackendPackRecord,
     CandidateSetRecord, CandidateSummaryRecord, CapabilityIssuanceRecord,
@@ -61,8 +65,8 @@ use ucf_ess::v1::{
     DeltaProposalRecord, DeltaRecommendationRecord, EbmConstraintProvenanceRecord,
     EbmEnvelopeViolationRecord, EbmReasoningRecord, EmergencyReasonCode, EmergencyRecord,
     EmergencyStateCode, ExperienceKind, ExperienceRecord, ExperienceStore, GpuParityRecord,
-    GpuResourceViolationRecord, GpuUnavailableRecord, HormoneRecord, IdAllocator, InMemoryEss,
-    LfmSummaryRecord, LfmWindowRecord, NeuroRecord, NsrRecord, OutputRecord, PayloadClassification,
+    GpuUnavailableRecord, HormoneRecord, IdAllocator, InMemoryEss, LfmSummaryRecord,
+    LfmWindowRecord, NeuroRecord, NsrRecord, OutputRecord, PayloadClassification,
     PolicyProvenanceRecord, SandboxCallRecord, SandboxReplyRecord, ThrottleRecord, ToolAuthRecord,
     ToolExecutionRecord, ToolIssueAuditRecord, ToolPlanAuditRecord, ToolRequestRecord,
 };

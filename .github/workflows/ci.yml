@@ -56,7 +56,7 @@ jobs:
             blocking: false
           - name: gpu-cuda
             package: "ucf-runtime"
-            features: "compute-candle,gpu-cuda"
+            features: "compute-candle,lfm-candle,gpu-cuda"
             blocking: false
           - name: ebm-train
             package: "ucf-ebm-train"
