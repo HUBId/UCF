@@ -170,6 +170,13 @@ impl SaeValidatorV1 {
         {
             report.add_hard(ViolationCode::ScalarOutOfRange);
         }
+        if output
+            .spikes
+            .windows(2)
+            .any(|pair| pair[0].feature_id >= pair[1].feature_id)
+        {
+            report.add_hard(ViolationCode::ScalarOutOfRange);
+        }
         if spikes_digest(&output.spikes) != output.spikes_digest {
             report.add_hard(ViolationCode::SpikesDigestMismatch);
         }
@@ -335,6 +342,40 @@ mod tests {
         };
         out.spikes_digest = spikes_digest(&out.spikes);
         out.spikes[0].magnitude = 0.8;
+        let input = SaeInput {
+            t: 1,
+            context_features: [0.0; crate::feature_extractor::SAE_INPUT_DIM],
+            world_state_digest: None,
+            seed: 1,
+            evidence_chain_digest: [0; 32],
+        };
+        let report = SaeValidatorV1::validate(&input, &out);
+        assert_eq!(report.status, ValidationStatus::Degraded);
+    }
+
+    #[test]
+    fn sae_duplicate_feature_ids_are_rejected() {
+        let mut out = SaeOutput {
+            spikes: vec![
+                crate::Spike {
+                    feature_id: 2,
+                    magnitude: 0.7,
+                    timestamp: 1,
+                },
+                crate::Spike {
+                    feature_id: 2,
+                    magnitude: 0.6,
+                    timestamp: 1,
+                },
+            ],
+            spike_count: 2,
+            sparsity: 0.8,
+            energy: 0.2,
+            spikes_digest: [0; 32],
+            quality: crate::world_model::StageQuality::Ok,
+            notes: crate::feature_extractor::SmallNotes(vec![]),
+        };
+        out.spikes_digest = spikes_digest(&out.spikes);
         let input = SaeInput {
             t: 1,
             context_features: [0.0; crate::feature_extractor::SAE_INPUT_DIM],

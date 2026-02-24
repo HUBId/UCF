@@ -454,13 +454,26 @@ const VLJEPA_REQ: &[TensorSpec] = &[
 
 const SAE_REQ: &[TensorSpec] = &[
     TensorSpec {
-        name: "W",
+        name: "sae.w_enc",
         shape: &[F, D],
         dtype: DType::F32,
     },
     TensorSpec {
-        name: "b",
+        name: "sae.b_enc",
         shape: &[F],
+        dtype: DType::F32,
+    },
+];
+
+const SAE_OPT: &[TensorSpec] = &[
+    TensorSpec {
+        name: "sae.w_dec",
+        shape: &[D, F],
+        dtype: DType::F32,
+    },
+    TensorSpec {
+        name: "sae.b_dec",
+        shape: &[D],
         dtype: DType::F32,
     },
 ];
@@ -551,10 +564,14 @@ pub fn spec_for_slot(slot: ModelSlot, max_bytes: u64) -> WeightSpec {
         ModelSlot::Llm => LLM_REQ,
         ModelSlot::EbmReasoner => EBM_REQ,
     };
+    let optional = match slot {
+        ModelSlot::Sae => SAE_OPT,
+        _ => &[],
+    };
     WeightSpec {
         slot,
         tensors,
-        optional: &[],
+        optional,
         max_bytes,
         bindings: BTreeMap::new(),
     }
@@ -769,5 +786,14 @@ mod tests {
         };
         let loaded = load_safetensors_raw(ModelSlot::Llm, &blob, &spec).expect("u8 ok");
         assert!(loaded.tensors.contains_key("x"));
+    }
+
+    #[test]
+    fn sae_spec_uses_v1_1_tensor_names_and_optional_decoder() {
+        let spec = spec_for_slot(ModelSlot::Sae, 1024);
+        let required: Vec<_> = spec.tensors.iter().map(|t| t.name).collect();
+        let optional: Vec<_> = spec.optional.iter().map(|t| t.name).collect();
+        assert_eq!(required, vec!["sae.w_enc", "sae.b_enc"]);
+        assert_eq!(optional, vec!["sae.w_dec", "sae.b_dec"]);
     }
 }
