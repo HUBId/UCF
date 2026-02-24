@@ -457,6 +457,8 @@ pub struct WorldVljepaShadowRecord {
     pub prediction_error_q: u16,
     pub prediction_digest_prefix: [u8; 8],
     pub model_hash_prefix: [u8; 8],
+    pub saturation_clamp_count: u16,
+    pub invalid_output: bool,
     pub status: &'static str,
 }
 
@@ -467,9 +469,15 @@ pub fn world_vljepa_shadow_step(
 ) -> WorldVljepaShadowRecord {
     let x = encoding.encode_vector();
     let mut y = [0.0_f32; WORLD_VLJEPA_ENCODING_DIM];
+    let mut saturation_clamp_count = 0_u16;
     for (idx, yi) in y.iter_mut().enumerate() {
         let a = model_hash[idx % 32] as f32 / 255.0;
-        *yi = (x[idx] * (0.6 + a * 0.4)).clamp(-1.0, 1.0);
+        let raw = x[idx] * (0.6 + a * 0.4);
+        let clamped = raw.clamp(-1.0, 1.0);
+        if (raw - clamped).abs() > f32::EPSILON {
+            saturation_clamp_count = saturation_clamp_count.saturating_add(1);
+        }
+        *yi = clamped;
     }
     let err = y
         .iter()
@@ -477,7 +485,8 @@ pub fn world_vljepa_shadow_step(
         .map(|(a, b)| (a - b).abs())
         .sum::<f32>()
         / WORLD_VLJEPA_ENCODING_DIM as f32;
-    let err_q = ucf_types::UQ0_16::from_f32_clamped(err).raw();
+    let invalid_output = !err.is_finite() || y.iter().any(|v| !v.is_finite());
+    let err_q = ucf_types::UQ0_16::from_f32_clamped(if invalid_output { 1.0 } else { err }).raw();
 
     let mut hasher = Sha256::new();
     for v in y {
@@ -501,7 +510,9 @@ pub fn world_vljepa_shadow_step(
         prediction_error_q: err_q,
         prediction_digest_prefix: pred_pref,
         model_hash_prefix: model_pref,
-        status: "ok",
+        saturation_clamp_count,
+        invalid_output,
+        status: if invalid_output { "invalid" } else { "ok" },
     }
 }
 

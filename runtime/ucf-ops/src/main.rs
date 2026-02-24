@@ -11,8 +11,8 @@ use ucf_ops::{
     policy_explain, policy_validate, readiness_gate, release_rc1_gate, release_signoff_validate,
     replay_audit, replay_bugreport, run_status, runs_list, runs_search, runs_show,
     save_counterfactual_result, security_verify_chain, simulate_counterfactual, verify_bugreport,
-    write_slice, AdversarialRunArgs, BenchArgs, CounterfactualRequest, ExplainTickRequest,
-    ExportArgs, GateStatus,
+    world_shadow_report, write_slice, AdversarialRunArgs, BenchArgs, CounterfactualRequest,
+    ExplainTickRequest, ExportArgs, GateStatus,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -567,7 +567,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     let gate = arg_value(&args, "--gate-report")
                         .map(PathBuf::from)
                         .unwrap_or_else(|| PathBuf::from("./out/gate_report.json"));
-                    let report = models_promote(slot, &hash, &probe, &gate)?;
+                    let shadow = arg_value(&args, "--shadow-report").map(PathBuf::from);
+                    let report = models_promote(slot, &hash, &probe, &gate, shadow.as_deref())?;
                     println!("{}", serde_json::to_string_pretty(&report)?);
                 }
                 "rollback" => {
@@ -584,6 +585,33 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 _ => {
                     return Err(
                         "usage: ucf-ops models <verify|probe|stage|promote|rollback|list> ..."
+                            .into(),
+                    )
+                }
+            }
+        }
+        "world" => {
+            let sub = args.get(2).map(String::as_str).unwrap_or("help");
+            match sub {
+                "shadow-report" => {
+                    let Some(run_id) = arg_value(&args, "--run") else {
+                        return Err("usage: ucf-ops world shadow-report --run <id> --windows <n> --out <path>".into());
+                    };
+                    let windows = parse_usize(&args, "--windows", 10);
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/world_shadow_report.json"));
+                    let report = world_shadow_report(&workdir, &run_id, windows, &out)?;
+                    println!("status={:?}", report.status);
+                    println!("windows={}", report.window_count);
+                    println!("out={}", out.display());
+                    if report.status != GateStatus::Pass {
+                        std::process::exit(2);
+                    }
+                }
+                _ => {
+                    return Err(
+                        "usage: ucf-ops world shadow-report --run <id> --windows <n> --out <path>"
                             .into(),
                     )
                 }
@@ -838,5 +866,11 @@ fn has_flag(args: &[String], name: &str) -> bool {
 fn parse_u64(args: &[String], name: &str, default: u64) -> u64 {
     arg_value(args, name)
         .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(default)
+}
+
+fn parse_usize(args: &[String], name: &str, default: usize) -> usize {
+    arg_value(args, name)
+        .and_then(|v| v.parse::<usize>().ok())
         .unwrap_or(default)
 }

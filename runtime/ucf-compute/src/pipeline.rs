@@ -1,5 +1,6 @@
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
+use std::time::Instant;
 
 use crate::backend_pack::{BackendPack, BackendPackFactory};
 use crate::contracts::{
@@ -15,8 +16,8 @@ use crate::world_model::{
     obs_features_from_context, world_vljepa_shadow_step, StageQuality, WorldInputEncodingV1,
     WorldModelInput, WorldModelOutput,
 };
-use std::time::Instant;
 
+use crate::world_vljepa_shadow::{record_shadow_sample, shadow_disabled};
 use crate::{
     clamp01, fuse_signals, validate_risk_signal, AiComputeBackend, BackendPackConfig,
     BackendProfileId, ComputeBudget, ComputeError, ComputeInput, ComputeSignals, DegradePolicy,
@@ -158,7 +159,9 @@ impl AiComputeBackend for ComputePipelineBackend {
         let _enter = span.enter();
         drop(world);
 
-        if std::env::var("UCF_SLOT_WORLD_VLJEPA_MODE").ok().as_deref() == Some("shadow") {
+        if std::env::var("UCF_SLOT_WORLD_VLJEPA_MODE").ok().as_deref() == Some("shadow")
+            && !shadow_disabled()
+        {
             let vljepa_in = WorldInputEncodingV1 {
                 context_digest: input.context_digest,
                 risk: world_model_out.prediction_error,
@@ -172,14 +175,22 @@ impl AiComputeBackend for ComputePipelineBackend {
                 lfm_state_digest_prefix: None,
                 token_summary_digest_prefix: None,
             };
+            let started = std::time::Instant::now();
             let shadow =
                 world_vljepa_shadow_step(input.t, &vljepa_in, self.pack.meta().model_hashes_digest);
+            let latency_ms = started.elapsed().as_secs_f32() * 1000.0;
+            let baseline_error_q =
+                ucf_types::UQ0_16::from_f32_clamped(world_model_out.prediction_error).raw();
+            record_shadow_sample(latency_ms, baseline_error_q, &shadow);
             metrics::histogram!("ucf_world_vljepa_prediction_error_q")
                 .record(f64::from(shadow.prediction_error_q));
             tracing::info!(
                 target: "ucf.world_vljepa_shadow",
                 t = shadow.t,
                 prediction_error_q = shadow.prediction_error_q,
+                baseline_error_q,
+                saturation_clamp_count = shadow.saturation_clamp_count,
+                invalid_output = shadow.invalid_output,
                 prediction_digest = %hex::encode(shadow.prediction_digest_prefix),
                 status = shadow.status,
                 "world_vljepa shadow record"
