@@ -390,9 +390,9 @@ mod tests {
         let mut w = vec![0.0; SAE_FEATURE_DIM * SAE_INPUT_DIM];
         let mut b = vec![0.0; SAE_FEATURE_DIM];
         w[0] = 1.0;
-        w[SAE_INPUT_DIM] = -1.0;
-        b[0] = 0.5;
-        b[1] = -0.5;
+        w[SAE_INPUT_DIM] = 1.0;
+        b[0] = 0.0;
+        b[1] = 0.0;
         let sae = BurnSaeExtractor {
             w,
             b,
