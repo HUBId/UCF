@@ -2,9 +2,9 @@ use std::fs;
 
 use tempfile::tempdir;
 use ucf_ops::{
-    bringup, diagnostics, export_bugreport, load_signoff_checklist, one_command_bringup,
-    out_manifest, readiness_gate, release_signoff_validate, replay_audit, replay_bugreport,
-    verify_bugreport, ExportArgs, GateStatus,
+    bringup, diagnostics, export_bugreport, load_signoff_checklist, models_promote, models_stage,
+    one_command_bringup, out_manifest, parse_slot, readiness_gate, release_signoff_validate,
+    replay_audit, replay_bugreport, verify_bugreport, world_shadow_report, ExportArgs, GateStatus,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -146,4 +146,71 @@ fn release_signoff_validate_fixture_out_dir() {
         .entries
         .iter()
         .any(|e| e.file == "run_metadata.json"));
+}
+
+#[test]
+fn world_shadow_report_reads_bounded_windows() {
+    let dir = tempdir().expect("tempdir");
+    let run_id = "run-test";
+    let report_dir = dir.path().join("reports/world_vljepa");
+    fs::create_dir_all(&report_dir).expect("mkdir");
+    let windows = [
+        r#"{"window_id":0,"start_t":0,"end_t":511,"ticks":512,"latency_mean_ms":1.0,"latency_p95_ms":2.0,"error_mean_q":100,"error_p95_q":120,"error_delta_mean_q":10,"error_delta_p95_q":20,"invalid_rate":0.0,"saturation_rate":0.0}"#,
+        r#"{"window_id":1,"start_t":512,"end_t":1023,"ticks":512,"latency_mean_ms":1.0,"latency_p95_ms":2.0,"error_mean_q":100,"error_p95_q":120,"error_delta_mean_q":10,"error_delta_p95_q":20,"invalid_rate":0.0,"saturation_rate":0.0}"#,
+    ];
+    fs::write(
+        report_dir.join(format!("{}_windows.jsonl", run_id)),
+        windows.join(
+            "
+",
+        ),
+    )
+    .expect("windows");
+    fs::write(report_dir.join(format!("{}_alarms.jsonl", run_id)), "").expect("alarms");
+    fs::create_dir_all(dir.path().join("runs")).expect("runs");
+    fs::write(
+        dir.path().join("runs").join(format!("{run_id}.json")),
+        r#"{"model_hashes_digest":"abc"}"#,
+    )
+    .expect("run meta");
+
+    let out = dir.path().join("out/world_shadow_report.json");
+    let report = world_shadow_report(dir.path(), run_id, 1, &out).expect("shadow report");
+    assert_eq!(report.window_count, 1);
+    assert_eq!(report.status, GateStatus::Pass);
+}
+
+#[test]
+fn world_vljepa_promotion_denied_without_shadow_report() {
+    let dir = tempdir().expect("tempdir");
+    let cwd = std::env::current_dir().expect("cwd");
+    std::env::set_current_dir(dir.path()).expect("chdir");
+
+    let slot = parse_slot("world_vljepa").expect("slot");
+    let src = dir.path().join("model_src");
+    fs::create_dir_all(&src).expect("src");
+    fs::write(src.join("model.safetensors"), b"stub").expect("model");
+    let staged = models_stage(slot, &src).expect("stage");
+
+    fs::create_dir_all(dir.path().join("out")).expect("out");
+    fs::write(
+        dir.path().join("out/probe_report.json"),
+        r#"{"run_id":"r1","timestamp":0,"results":[],"summary":{"pass":true,"reasons":[]}}"#,
+    )
+    .expect("probe");
+    fs::write(
+        dir.path().join("out/gate_report.json"),
+        r#"{"code_version_tag":"x","fixtures_digest_prefix":null,"backend_pack_digest_prefix":null,"timestamp":null,"status":"PASS","checks":[]}"#,
+    )
+    .expect("gate");
+
+    let res = models_promote(
+        slot,
+        &staged.hash,
+        &dir.path().join("out/probe_report.json"),
+        &dir.path().join("out/gate_report.json"),
+        None,
+    );
+    assert!(res.is_err());
+    std::env::set_current_dir(cwd).expect("restore cwd");
 }

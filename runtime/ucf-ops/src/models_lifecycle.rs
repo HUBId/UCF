@@ -8,7 +8,9 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use ucf_compute::ModelSlot;
 
-use crate::{sha256_hex, GateStatus, OpsError, ProbeReport, ReadinessGateReport};
+use crate::{
+    sha256_hex, GateStatus, OpsError, ProbeReport, ReadinessGateReport, WorldShadowReport,
+};
 
 const MANIFEST_HISTORY_KEEP: usize = 20;
 const MODEL_FILE_NAME: &str = "model.safetensors";
@@ -44,6 +46,7 @@ pub struct StageResult {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LifecycleActionReport {
+    pub shadow_report_digest_prefix: Option<String>,
     pub action: String,
     pub slot: String,
     pub from_hash: Option<String>,
@@ -94,6 +97,7 @@ pub fn models_promote(
     hash: &str,
     probe_report_path: &Path,
     gate_report_path: &Path,
+    shadow_report_path: Option<&Path>,
 ) -> Result<LifecycleActionReport, OpsError> {
     let staged = PathBuf::from("models")
         .join("staging")
@@ -111,6 +115,34 @@ pub fn models_promote(
     let gate: ReadinessGateReport = serde_json::from_str(&fs::read_to_string(gate_report_path)?)?;
     if gate.status != GateStatus::Pass {
         return Err(OpsError::Invalid("readiness gate is not PASS".to_string()));
+    }
+    let mut shadow_report_digest_prefix = None;
+    let require_shadow = std::env::var("UCF_WORLD_VLJEPA_REQUIRE_SHADOW_EVIDENCE")
+        .map(|v| v != "0")
+        .unwrap_or(true);
+    if slot == ModelSlot::WorldVljepa && require_shadow {
+        let Some(path) = shadow_report_path else {
+            return Err(OpsError::Invalid(
+                "world_vljepa promotion requires --shadow-report".to_string(),
+            ));
+        };
+        let shadow: WorldShadowReport = serde_json::from_str(&fs::read_to_string(path)?)?;
+        if shadow.status != GateStatus::Pass {
+            return Err(OpsError::Invalid(
+                "world_vljepa shadow report is not PASS".to_string(),
+            ));
+        }
+        let min_ticks = std::env::var("UCF_WORLD_VLJEPA_PROMOTION_MIN_TICKS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(10_000);
+        if shadow.ticks_total < min_ticks {
+            return Err(OpsError::Invalid(format!(
+                "world_vljepa shadow soak too short: {} < {} ticks",
+                shadow.ticks_total, min_ticks
+            )));
+        }
+        shadow_report_digest_prefix = Some(file_digest_prefix(path)?);
     }
 
     let promoted = PathBuf::from("models")
@@ -147,6 +179,7 @@ pub fn models_promote(
     )?;
     Ok(LifecycleActionReport {
         action: "promotion".to_string(),
+        shadow_report_digest_prefix,
         slot: slot_key,
         from_hash,
         to_hash: hash.to_string(),
@@ -187,6 +220,7 @@ pub fn models_rollback(slot: ModelSlot, to_hash: &str) -> Result<LifecycleAction
     persist_rollback_record(&slot_key, &from_hash, to_hash, &manifest)?;
     Ok(LifecycleActionReport {
         action: "rollback".to_string(),
+        shadow_report_digest_prefix: None,
         slot: slot_key,
         from_hash,
         to_hash: to_hash.to_string(),
@@ -383,6 +417,7 @@ fn persist_action_record(
 ) -> Result<(), OpsError> {
     let report = LifecycleActionReport {
         action: action.to_string(),
+        shadow_report_digest_prefix: None,
         slot: slot.to_string(),
         from_hash: from_hash.clone(),
         to_hash: to_hash.to_string(),
@@ -413,6 +448,7 @@ fn persist_rollback_record(
 ) -> Result<(), OpsError> {
     let report = LifecycleActionReport {
         action: "rollback".to_string(),
+        shadow_report_digest_prefix: None,
         slot: slot.to_string(),
         from_hash: from_hash.clone(),
         to_hash: to_hash.to_string(),

@@ -4,6 +4,7 @@ mod adversarial;
 mod bench;
 mod causal;
 mod models_lifecycle;
+mod world_shadow;
 pub use adversarial::{adversarial_run, AdversarialReport, AdversarialRunArgs, CaseResult};
 pub use bench::{bench_run, BenchArgs, BenchReport};
 pub use causal::{
@@ -14,6 +15,7 @@ pub use causal::{
 pub use models_lifecycle::{
     models_list, models_promote, models_rollback, models_stage, parse_slot,
 };
+pub use world_shadow::{world_shadow_report, WorldShadowReport};
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -1974,6 +1976,21 @@ pub fn one_command_bringup(
     std::env::set_var("UCF_PROFILE", "test");
     std::env::set_var("UCF_OFFLINE", "1");
     std::env::set_var("UCF_TOOLS_DEFAULT", "deny");
+    let shadow_base = workdir.join("reports").join("world_vljepa");
+    fs::create_dir_all(&shadow_base)?;
+    let shadow_windows_tmp = shadow_base.join("current_windows.jsonl");
+    let shadow_alarms_tmp = shadow_base.join("current_alarms.jsonl");
+    let _ = fs::remove_file(&shadow_windows_tmp);
+    let _ = fs::remove_file(&shadow_alarms_tmp);
+    std::env::set_var(
+        "UCF_WORLD_VLJEPA_WINDOWS_LOG",
+        shadow_windows_tmp.display().to_string(),
+    );
+    std::env::set_var(
+        "UCF_WORLD_VLJEPA_ALARMS_LOG",
+        shadow_alarms_tmp.display().to_string(),
+    );
+    ucf_compute::world_vljepa_shadow::reset_shadow_state();
     let result = bringup(workdir, true, ticks)?;
     let build = build_tag()?;
     let pack = BackendPackFactory::build(BackendPackConfig::from_env()?)?;
@@ -2029,6 +2046,14 @@ pub fn one_command_bringup(
         }
     }
     persist_run_metadata(workdir, &run_metadata)?;
+    let shadow_windows = shadow_base.join(format!("{}_windows.jsonl", run_metadata.run_id));
+    let shadow_alarms = shadow_base.join(format!("{}_alarms.jsonl", run_metadata.run_id));
+    if shadow_windows_tmp.exists() {
+        fs::rename(&shadow_windows_tmp, &shadow_windows)?;
+    }
+    if shadow_alarms_tmp.exists() {
+        fs::rename(&shadow_alarms_tmp, &shadow_alarms)?;
+    }
 
     let metrics = metrics_summary(workdir, ticks as usize)?;
     let explain_tick_index = ticks.saturating_sub(1);

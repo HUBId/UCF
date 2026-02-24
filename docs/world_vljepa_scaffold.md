@@ -34,3 +34,29 @@ This keeps contract shape stable while allowing later promotion to a real VL-JEP
 
 
 Fixture descriptor: `runtime/ucf-compute/fixtures/world_vljepa_mlp_small.fixture.json` (text-only scaffold fixture).
+
+## Shadow Envelope Metrics v1.1
+
+Window-based shadow telemetry (`UCF_WORLD_VLJEPA_WINDOW_TICKS`, default `512`) now tracks:
+- `latency_ms` (mean + p95)
+- `prediction_error_q` (mean + p95)
+- `error_delta_q = max(vljepa_error_q - baseline_error_q, 0)` vs JEPA stub baseline
+- `invalid_rate` and `saturation_rate`
+
+Drift watch evaluates each window with policy thresholds:
+- `UCF_WORLD_VLJEPA_LAT_P95_MAX_MS`
+- `UCF_WORLD_VLJEPA_ERR_MEAN_MAX_Q`
+- `UCF_WORLD_VLJEPA_ERR_SPIKE_MAX_Q`
+- `UCF_WORLD_VLJEPA_INVALID_OUTPUT_MAX_RATE`
+
+On sustained/severe drift, shadow is tightening-only and can auto-disable (`DisabledShadow`) while staying decision-neutral.
+
+## Shadow report for promotion evidence
+
+Generate bounded shadow evidence artifact:
+
+```bash
+ucf-ops world shadow-report --run <run_id> --windows 10 --out ./out/world_shadow_report.json
+```
+
+The report includes window summaries, drift alarms, and model/manifest digests and is consumed by `models promote` for `world_vljepa` gating.
