@@ -1,0 +1,62 @@
+version = "v1.1-rc1"
+profile = "test"
+
+[[items]]
+id = "fmt"
+command = "cargo fmt --all -- --check"
+required = true
+purpose = "format gate"
+pass_criteria = "exit_code == 0"
+
+[[items]]
+id = "clippy"
+command = "cargo clippy --workspace --all-targets -- -D warnings"
+required = true
+purpose = "lint gate"
+pass_criteria = "exit_code == 0"
+
+[[items]]
+id = "tests"
+command = "cargo test --workspace --all-targets"
+required = true
+purpose = "core tests"
+pass_criteria = "exit_code == 0"
+
+[[items]]
+id = "models_probe"
+command = "cargo run -p ucf-ops -- models probe --manifest models/manifest.toml --out ./out/v1_1/probe_report.json"
+required = true
+purpose = "weights/slot probe evidence"
+expected_artifact = "probe_report.json"
+pass_criteria = "summary.pass=true"
+
+[[items]]
+id = "readiness_gate_v1_1"
+command = "cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/v1_1/readiness_gate.json --workdir ./.ucf_gate_v1_1"
+required = true
+purpose = "v1.1 readiness PASS/FAIL"
+expected_artifact = "readiness_gate.json"
+pass_criteria = "status=PASS"
+
+[[items]]
+id = "adversarial_suite"
+command = "cargo run -p ucf-ops -- adversarial-run --suite v1 --out ./out/v1_1/adversarial_report.json"
+required = true
+purpose = "adversarial resistance"
+expected_artifact = "adversarial_report.json"
+pass_criteria = "pass=true"
+
+[[items]]
+id = "bench"
+command = "cargo run -p ucf-ops -- bench --ticks 2048 --out ./out/v1_1/bench_report.json"
+required = true
+purpose = "latency/fallback thresholds"
+expected_artifact = "bench_report.json"
+pass_criteria = "thresholds met"
+
+[[items]]
+id = "policy_validate"
+command = "cargo run -p ucf-ops -- policy validate --pack policies/packs/base_v1"
+required = true
+purpose = "policy graph digest pin"
+pass_criteria = "policy_graph_digest emitted"

@@ -841,6 +841,7 @@ pub struct CheckResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default)]
 pub struct ReadinessGateReport {
     pub code_version_tag: String,
     pub fixtures_digest_prefix: Option<String>,
@@ -848,6 +849,29 @@ pub struct ReadinessGateReport {
     pub timestamp: Option<String>,
     pub status: GateStatus,
     pub checks: Vec<CheckResult>,
+    pub weights_lifecycle: Option<CheckResult>,
+    pub world_vljepa_evidence: Option<CheckResult>,
+    pub sae_real: Option<CheckResult>,
+    pub ssm_opt: Option<CheckResult>,
+    pub gpu_lane: Option<CheckResult>,
+}
+
+impl Default for ReadinessGateReport {
+    fn default() -> Self {
+        Self {
+            code_version_tag: String::new(),
+            fixtures_digest_prefix: None,
+            backend_pack_digest_prefix: None,
+            timestamp: None,
+            status: GateStatus::Fail,
+            checks: Vec::new(),
+            weights_lifecycle: None,
+            world_vljepa_evidence: None,
+            sae_real: None,
+            ssm_opt: None,
+            gpu_lane: None,
+        }
+    }
 }
 
 pub fn readiness_gate(
@@ -989,6 +1013,18 @@ pub fn readiness_gate(
         check_ebm_fallback_degraded_record(&run_ebm_active),
     ];
 
+    let weights_lifecycle = check_weights_lifecycle_integrity(workdir)?;
+    let world_vljepa_evidence = check_world_vljepa_shadow_evidence(workdir)?;
+    let sae_real = check_sae_real_readiness(workdir)?;
+    let ssm_opt = check_ssm_opt_drift(workdir)?;
+    let gpu_lane = check_gpu_lane_parity(workdir)?;
+
+    checks.push(weights_lifecycle.clone());
+    checks.push(world_vljepa_evidence.clone());
+    checks.push(sae_real.clone());
+    checks.push(ssm_opt.clone());
+    checks.push(gpu_lane.clone());
+
     if checks.len() > GATE_CHECK_CAP {
         checks.truncate(GATE_CHECK_CAP);
     }
@@ -1008,6 +1044,11 @@ pub fn readiness_gate(
         timestamp: None,
         status,
         checks,
+        weights_lifecycle: Some(weights_lifecycle),
+        world_vljepa_evidence: Some(world_vljepa_evidence),
+        sae_real: Some(sae_real),
+        ssm_opt: Some(ssm_opt),
+        gpu_lane: Some(gpu_lane),
     };
     write_json(out, &report)?;
     Ok(report)
@@ -1588,6 +1629,405 @@ fn check_plug_compatibility(a: &RunMetadataRecord, b: &RunMetadataRecord) -> Che
             "schema contracts changed across scenario packs",
             "Keep record contracts stable across backend swaps.",
         )
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+struct GateLifecycleSlotManifest {
+    active_hash: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+struct GateLifecycleManifest {
+    slots: BTreeMap<String, GateLifecycleSlotManifest>,
+    manifest_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+struct PromotionRecordView {
+    slot: String,
+    to_hash: String,
+    shadow_report_digest_prefix: Option<String>,
+}
+
+fn check_weights_lifecycle_integrity(_workdir: &Path) -> Result<CheckResult, OpsError> {
+    let manifest_path = PathBuf::from("models/MANIFEST.toml");
+    if !manifest_path.exists() {
+        return Ok(check_skip(
+            "weights_lifecycle",
+            [("manifest".to_string(), "missing".to_string())],
+            "weights lifecycle not initialized",
+            "Initialize lifecycle via models stage/promote to enforce this gate.",
+        ));
+    }
+    let raw = fs::read_to_string(&manifest_path)?;
+    let manifest: GateLifecycleManifest = toml::from_str(&raw)
+        .map_err(|e| OpsError::Invalid(format!("manifest parse failed: {e}")))?;
+    let mut promoted_only = true;
+    let mut active_count = 0usize;
+    for (slot, m) in &manifest.slots {
+        if let Some(hash) = &m.active_hash {
+            active_count += 1;
+            let promoted = PathBuf::from("models")
+                .join("promoted")
+                .join(slot)
+                .join(hash);
+            if !promoted.exists() {
+                promoted_only = false;
+            }
+        }
+    }
+
+    let mut canonical = manifest.clone();
+    canonical.manifest_digest.clear();
+    let computed = sha256_hex(&serde_json::to_vec(&canonical)?);
+    let digest_ok = computed == manifest.manifest_digest;
+
+    let hist_dir = PathBuf::from("models/manifests/history");
+    let hist_count = if hist_dir.exists() {
+        fs::read_dir(hist_dir)?
+            .filter_map(Result::ok)
+            .filter(|e| e.file_type().map(|t| t.is_file()).unwrap_or(false))
+            .count()
+    } else {
+        0
+    };
+
+    let promotion_records: Vec<PromotionRecordView> =
+        fs::read_to_string("out/model_promotion_records.json")
+            .ok()
+            .and_then(|v| serde_json::from_str(&v).ok())
+            .unwrap_or_default();
+
+    let lifecycle_initialized = active_count > 0 || hist_count > 0 || !promotion_records.is_empty();
+    if !lifecycle_initialized {
+        return Ok(check_skip(
+            "weights_lifecycle",
+            [
+                ("active_slots".to_string(), "0".to_string()),
+                ("history_entries".to_string(), hist_count.to_string()),
+                (
+                    "promotion_records".to_string(),
+                    promotion_records.len().to_string(),
+                ),
+            ],
+            "weights lifecycle not initialized",
+            "Initialize lifecycle via models stage/promote to enforce this gate.",
+        ));
+    }
+    let mut provenance_missing = 0usize;
+    for (slot, m) in &manifest.slots {
+        if let Some(hash) = &m.active_hash {
+            let found = promotion_records
+                .iter()
+                .any(|r| r.slot == *slot && r.to_hash == *hash);
+            if !found && !promotion_records.is_empty() {
+                provenance_missing += 1;
+            }
+        }
+    }
+
+    let pin_env_used =
+        std::env::vars().any(|(k, v)| k.starts_with("UCF_MODEL_PIN_") && !v.is_empty());
+    let pin_records_present = PathBuf::from("out/model_pin_records.json").exists();
+    if pin_env_used && !pin_records_present {
+        return Ok(check_fail(
+            "weights_lifecycle",
+            [
+                ("pin_env_used".to_string(), "true".to_string()),
+                ("pin_records".to_string(), "missing".to_string()),
+            ],
+            "pin override used without ModelPinRecord evidence",
+            "Emit out/model_pin_records.json with slot/hash override rationale before promotion.",
+        ));
+    }
+
+    if promoted_only && digest_ok && hist_count >= 1 && provenance_missing == 0 {
+        Ok(check_pass(
+            "weights_lifecycle",
+            [
+                ("active_slots".to_string(), active_count.to_string()),
+                ("history_entries".to_string(), hist_count.to_string()),
+                (
+                    "manifest_digest_prefix".to_string(),
+                    prefix_hex(&manifest.manifest_digest, 12),
+                ),
+            ],
+        ))
+    } else {
+        Ok(check_fail(
+            "weights_lifecycle",
+            [
+                ("promoted_only".to_string(), promoted_only.to_string()),
+                ("manifest_digest_ok".to_string(), digest_ok.to_string()),
+                ("history_entries".to_string(), hist_count.to_string()),
+                ("missing_provenance".to_string(), provenance_missing.to_string()),
+            ],
+            "weights lifecycle integrity constraints not met",
+            "Ensure active hashes are promoted, manifest digest is canonical, history is persisted, and promotion records exist.",
+        ))
+    }
+}
+
+fn check_world_vljepa_shadow_evidence(workdir: &Path) -> Result<CheckResult, OpsError> {
+    let manifest: Option<GateLifecycleManifest> = fs::read_to_string("models/MANIFEST.toml")
+        .ok()
+        .and_then(|v| toml::from_str(&v).ok());
+    let active = manifest
+        .as_ref()
+        .and_then(|m| m.slots.get("world_vljepa"))
+        .and_then(|s| s.active_hash.as_ref())
+        .is_some();
+    let promotions: Vec<PromotionRecordView> =
+        fs::read_to_string("out/model_promotion_records.json")
+            .ok()
+            .and_then(|v| serde_json::from_str(&v).ok())
+            .unwrap_or_default();
+    let recent_promoted = promotions
+        .iter()
+        .rev()
+        .take(3)
+        .any(|p| p.slot == "world_vljepa");
+
+    let report_path = workdir.join("out/world_shadow_report.json");
+    let report: Option<WorldShadowReport> = fs::read_to_string(&report_path)
+        .ok()
+        .and_then(|v| serde_json::from_str(&v).ok());
+
+    let require = active || recent_promoted;
+    if !require && report.is_none() {
+        return Ok(check_skip(
+            "world_vljepa_evidence",
+            [("required".to_string(), "false".to_string())],
+            "world_vljepa inactive and no shadow artifact",
+            "No action required unless world_vljepa is active or promoted.",
+        ));
+    }
+
+    let Some(rep) = report else {
+        return Ok(check_fail(
+            "world_vljepa_evidence",
+            [("shadow_report".to_string(), "missing".to_string())],
+            "world_vljepa requires shadow evidence artifact",
+            "Run `ucf-ops world shadow-report` and store out/world_shadow_report.json.",
+        ));
+    };
+
+    let has_promo_digest = promotions
+        .iter()
+        .rev()
+        .find(|p| p.slot == "world_vljepa")
+        .and_then(|p| p.shadow_report_digest_prefix.clone())
+        .is_some();
+    let min_windows = std::env::var("UCF_WORLD_VLJEPA_GATE_MIN_WINDOWS")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(2);
+    let drift_threshold = std::env::var("UCF_WORLD_VLJEPA_DRIFT_ALARM_RATE_MAX")
+        .ok()
+        .and_then(|v| v.parse::<f32>().ok())
+        .unwrap_or(0.05);
+    let alarm_rate = if rep.window_count == 0 {
+        1.0
+    } else {
+        rep.drift_alarms.len() as f32 / rep.window_count as f32
+    };
+
+    let ok = rep.status == GateStatus::Pass
+        && rep.window_count >= min_windows
+        && alarm_rate <= drift_threshold
+        && (!require || has_promo_digest);
+    if ok {
+        Ok(check_pass(
+            "world_vljepa_evidence",
+            [
+                ("windows".to_string(), rep.window_count.to_string()),
+                ("alarm_rate".to_string(), format!("{alarm_rate:.4}")),
+                (
+                    "report_digest_prefix".to_string(),
+                    prefix_hex(&rep.report_digest, 12),
+                ),
+            ],
+        ))
+    } else {
+        Ok(check_fail(
+            "world_vljepa_evidence",
+            [
+                ("status_pass".to_string(), (rep.status == GateStatus::Pass).to_string()),
+                ("windows".to_string(), rep.window_count.to_string()),
+                ("alarm_rate".to_string(), format!("{alarm_rate:.4}")),
+                ("promotion_digest_ref".to_string(), has_promo_digest.to_string()),
+            ],
+            "world_vljepa shadow evidence below gate requirements",
+            "Collect sufficient shadow windows, clear severe alarms, and attach shadow digest in promotion record.",
+        ))
+    }
+}
+
+fn check_sae_real_readiness(workdir: &Path) -> Result<CheckResult, OpsError> {
+    let manifest: Option<GateLifecycleManifest> = fs::read_to_string("models/MANIFEST.toml")
+        .ok()
+        .and_then(|v| toml::from_str(&v).ok());
+    let sae_active = manifest
+        .as_ref()
+        .and_then(|m| m.slots.get("sae"))
+        .and_then(|s| s.active_hash.as_ref())
+        .is_some();
+
+    let probe_path = workdir.join("out/probe_report.json");
+    let probe: Option<ProbeReport> = fs::read_to_string(&probe_path)
+        .ok()
+        .and_then(|v| serde_json::from_str(&v).ok());
+    let Some(probe) = probe else {
+        if !sae_active {
+            return Ok(check_skip(
+                "sae_real",
+                [("sae_active".to_string(), "false".to_string())],
+                "SAE not active and no probe evidence present",
+                "No action required unless SAE is promoted/active.",
+            ));
+        }
+        return Ok(check_fail(
+            "sae_real",
+            [("probe_report".to_string(), "missing".to_string())],
+            "SAE readiness requires probe evidence",
+            "Run `ucf-ops models probe --out out/probe_report.json` before gate.",
+        ));
+    };
+    let sae = probe.results.iter().find(|r| r.slot == ModelSlot::Sae);
+    let Some(sae) = sae else {
+        return Ok(check_fail(
+            "sae_real",
+            [("sae_result".to_string(), "missing".to_string())],
+            "SAE slot missing from probe report",
+            "Enable SAE slot in manifest and rerun models probe.",
+        ));
+    };
+    let ok = matches!(sae.status, ProbeStatus::Ok);
+    if ok {
+        Ok(check_pass(
+            "sae_real",
+            [("probe_status".to_string(), "PASS".to_string())],
+        ))
+    } else {
+        Ok(check_fail(
+            "sae_real",
+            [("probe_status".to_string(), format!("{:?}", sae.status))],
+            "SAE validators did not pass",
+            "Fix SAE weight spec / spike-rate quality and rerun probe.",
+        ))
+    }
+}
+
+fn check_ssm_opt_drift(workdir: &Path) -> Result<CheckResult, OpsError> {
+    let kernel = std::env::var("UCF_SSM_KERNEL").unwrap_or_else(|_| "ref".to_string());
+    if kernel == "ref" {
+        return Ok(check_skip(
+            "ssm_opt",
+            [("kernel".to_string(), kernel)],
+            "optimized SSM kernel not enabled",
+            "Set UCF_SSM_KERNEL=opt (or simd) and provide parity artifact to gate it.",
+        ));
+    }
+    let path = workdir.join("out/ssm_opt_parity.json");
+    let json: serde_json::Value = match fs::read_to_string(&path)
+        .ok()
+        .and_then(|v| serde_json::from_str(&v).ok())
+    {
+        Some(v) => v,
+        None => {
+            return Ok(check_fail(
+                "ssm_opt",
+                [("artifact".to_string(), "missing".to_string())],
+                "SSM opt kernel enabled without drift/parity artifact",
+                "Emit out/ssm_opt_parity.json with drift_alarm_rate and digest_mismatch_rate.",
+            ))
+        }
+    };
+    let drift = json
+        .get("drift_alarm_rate")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(1.0);
+    let mismatch = json
+        .get("digest_mismatch_rate")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(1.0);
+    if drift <= 0.05 && mismatch == 0.0 {
+        Ok(check_pass(
+            "ssm_opt",
+            [
+                ("kernel".to_string(), kernel),
+                ("drift_alarm_rate".to_string(), format!("{drift:.4}")),
+                ("digest_mismatch_rate".to_string(), format!("{mismatch:.4}")),
+            ],
+        ))
+    } else {
+        Ok(check_fail(
+            "ssm_opt",
+            [
+                ("kernel".to_string(), kernel),
+                ("drift_alarm_rate".to_string(), format!("{drift:.4}")),
+                ("digest_mismatch_rate".to_string(), format!("{mismatch:.4}")),
+            ],
+            "SSM optimized kernel drift/parity thresholds exceeded",
+            "Reduce drift alarms and enforce digest mismatch rate to zero before enabling opt lane.",
+        ))
+    }
+}
+
+fn check_gpu_lane_parity(workdir: &Path) -> Result<CheckResult, OpsError> {
+    let mode = std::env::var("UCF_GPU_MODE").unwrap_or_else(|_| "off".to_string());
+    if mode == "off" {
+        return Ok(check_skip(
+            "gpu_lane",
+            [("gpu_mode".to_string(), mode)],
+            "GPU lane disabled",
+            "No action required.",
+        ));
+    }
+    let path = workdir.join("out/gpu_parity_report.json");
+    let json: serde_json::Value = match fs::read_to_string(&path)
+        .ok()
+        .and_then(|v| serde_json::from_str(&v).ok())
+    {
+        Some(v) => v,
+        None => {
+            return Ok(check_fail(
+                "gpu_lane",
+                [("artifact".to_string(), "missing".to_string())],
+                "GPU mode enabled without parity artifact",
+                "Emit out/gpu_parity_report.json containing envelope_mismatch_rate.",
+            ))
+        }
+    };
+    let mismatch = json
+        .get("envelope_mismatch_rate")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(1.0);
+    if mismatch <= 0.01 {
+        Ok(check_pass(
+            "gpu_lane",
+            [
+                ("gpu_mode".to_string(), mode),
+                (
+                    "envelope_mismatch_rate".to_string(),
+                    format!("{mismatch:.4}"),
+                ),
+            ],
+        ))
+    } else {
+        Ok(check_fail(
+            "gpu_lane",
+            [
+                ("gpu_mode".to_string(), mode),
+                (
+                    "envelope_mismatch_rate".to_string(),
+                    format!("{mismatch:.4}"),
+                ),
+            ],
+            "GPU lane parity threshold exceeded",
+            "Keep GPU in shadow/off and fix parity drift before activation.",
+        ))
     }
 }
 
@@ -3597,6 +4037,42 @@ mod tests {
     }
 
     #[test]
+    fn weights_lifecycle_check_fails_without_manifest() {
+        let dir = tempdir().expect("tempdir");
+        let cwd = std::env::current_dir().expect("cwd");
+        std::env::set_current_dir(dir.path()).expect("chdir");
+        let c = check_weights_lifecycle_integrity(dir.path()).expect("check");
+        std::env::set_current_dir(cwd).expect("restore");
+        assert_eq!(c.name, "weights_lifecycle");
+        assert_eq!(c.status, GateStatus::Skip);
+    }
+
+    #[test]
+    fn world_vljepa_check_fails_when_required_shadow_missing() {
+        let dir = tempdir().expect("tempdir");
+        let cwd = std::env::current_dir().expect("cwd");
+        std::env::set_current_dir(dir.path()).expect("chdir");
+        fs::create_dir_all("models").expect("models");
+        fs::write(
+            "models/MANIFEST.toml",
+            r#"manifest_version = 1
+manifest_digest = "x"
+[slots.world_vljepa]
+active_hash = "abc"
+"#,
+        )
+        .expect("manifest");
+        let c = check_world_vljepa_shadow_evidence(dir.path()).expect("check");
+        std::env::set_current_dir(cwd).expect("restore");
+        assert_eq!(c.name, "world_vljepa_evidence");
+        assert_eq!(c.status, GateStatus::Fail);
+        assert!(c
+            .remediation_hint
+            .unwrap_or_default()
+            .contains("shadow-report"));
+    }
+
+    #[test]
     fn readiness_report_json_is_stable() {
         let report = ReadinessGateReport {
             code_version_tag: "abc".to_string(),
@@ -3611,6 +4087,11 @@ mod tests {
                     ("a".to_string(), "1".to_string()),
                 ],
             )],
+            weights_lifecycle: None,
+            world_vljepa_evidence: None,
+            sae_real: None,
+            ssm_opt: None,
+            gpu_lane: None,
         };
 
         let left = serde_json::to_string(&report).expect("json left");

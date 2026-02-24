@@ -40,3 +40,13 @@ ucf-ops models promote \
   --gate-report ./out/gate_report.json \
   --shadow-report ./out/world_shadow_report.json
 ```
+
+
+## Readiness gate evidence (v1.1)
+
+For v1.1 readiness, lifecycle evidence is mandatory when lifecycle is initialized:
+- `models/MANIFEST.toml` digest must match canonical encoding.
+- active hashes must resolve under `models/promoted/<slot>/<hash>`.
+- history requires at least one file under `models/manifests/history/`.
+- each active hash must have promotion provenance in `out/model_promotion_records.json` (except initial seed state).
+- if pin override env vars are used, `out/model_pin_records.json` must exist and explain overrides.
