@@ -1698,6 +1698,23 @@ fn check_weights_lifecycle_integrity(_workdir: &Path) -> Result<CheckResult, Ops
             .ok()
             .and_then(|v| serde_json::from_str(&v).ok())
             .unwrap_or_default();
+
+    let lifecycle_initialized = active_count > 0 || hist_count > 0 || !promotion_records.is_empty();
+    if !lifecycle_initialized {
+        return Ok(check_skip(
+            "weights_lifecycle",
+            [
+                ("active_slots".to_string(), "0".to_string()),
+                ("history_entries".to_string(), hist_count.to_string()),
+                (
+                    "promotion_records".to_string(),
+                    promotion_records.len().to_string(),
+                ),
+            ],
+            "weights lifecycle not initialized",
+            "Initialize lifecycle via models stage/promote to enforce this gate.",
+        ));
+    }
     let mut provenance_missing = 0usize;
     for (slot, m) in &manifest.slots {
         if let Some(hash) = &m.active_hash {
