@@ -269,12 +269,38 @@ pub fn record_shadow_sample(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, OnceLock};
+
+    fn env_test_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    fn set_env(k: &str, v: &str, stash: &mut Vec<(String, Option<String>)>) {
+        let key = k.to_string();
+        if !stash.iter().any(|(s, _)| s == &key) {
+            stash.push((key.clone(), std::env::var(&key).ok()));
+        }
+        std::env::set_var(k, v);
+    }
+
+    fn restore_env(stash: Vec<(String, Option<String>)>) {
+        for (k, old) in stash {
+            if let Some(v) = old {
+                std::env::set_var(k, v);
+            } else {
+                std::env::remove_var(k);
+            }
+        }
+    }
 
     #[test]
     fn window_aggregation_is_deterministic() {
+        let _guard = env_test_lock().lock().expect("env lock");
+        let mut stash = Vec::new();
         reset_shadow_state();
-        std::env::set_var("UCF_WORLD_VLJEPA_WINDOW_TICKS", "4");
-        std::env::set_var("UCF_WORLD_VLJEPA_DISABLE_ON_ALARM", "0");
+        set_env("UCF_WORLD_VLJEPA_WINDOW_TICKS", "4", &mut stash);
+        set_env("UCF_WORLD_VLJEPA_DISABLE_ON_ALARM", "0", &mut stash);
         for t in 0..4 {
             let rec = WorldVljepaShadowRecord {
                 t,
@@ -289,14 +315,22 @@ mod tests {
             record_shadow_sample(1.0, 900, &rec);
         }
         assert!(!shadow_disabled());
+        restore_env(stash);
     }
 
     #[test]
     fn drift_alarm_disables_shadow() {
+        let _guard = env_test_lock().lock().expect("env lock");
+        let mut stash = Vec::new();
         reset_shadow_state();
-        std::env::set_var("UCF_WORLD_VLJEPA_WINDOW_TICKS", "2");
-        std::env::set_var("UCF_WORLD_VLJEPA_DISABLE_ON_ALARM", "1");
-        std::env::set_var("UCF_WORLD_VLJEPA_ERR_SPIKE_MAX_Q", "100");
+        set_env("UCF_WORLD_VLJEPA_WINDOW_TICKS", "2", &mut stash);
+        set_env("UCF_WORLD_VLJEPA_DISABLE_ON_ALARM", "1", &mut stash);
+        set_env("UCF_WORLD_VLJEPA_ERR_SPIKE_MAX_Q", "100", &mut stash);
+        set_env(
+            "UCF_WORLD_VLJEPA_INVALID_OUTPUT_MAX_RATE",
+            "1.0",
+            &mut stash,
+        );
         for t in 0..2 {
             let rec = WorldVljepaShadowRecord {
                 t,
@@ -311,5 +345,6 @@ mod tests {
             record_shadow_sample(1.0, 100, &rec);
         }
         assert!(shadow_disabled());
+        restore_env(stash);
     }
 }

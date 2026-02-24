@@ -863,6 +863,7 @@ pub fn readiness_gate(
     std::env::set_var("UCF_PROFILE", profile);
     std::env::set_var("UCF_OFFLINE", "1");
     std::env::set_var("UCF_TOOLS_DEFAULT", "deny");
+    std::env::set_var("UCF_SSM_KERNEL", "ref");
 
     let base = workdir.join("readiness_gate");
     fs::create_dir_all(&base)?;
@@ -1976,6 +1977,7 @@ pub fn one_command_bringup(
     std::env::set_var("UCF_PROFILE", "test");
     std::env::set_var("UCF_OFFLINE", "1");
     std::env::set_var("UCF_TOOLS_DEFAULT", "deny");
+    std::env::set_var("UCF_SSM_KERNEL", "ref");
     let shadow_base = workdir.join("reports").join("world_vljepa");
     fs::create_dir_all(&shadow_base)?;
     let shadow_windows_tmp = shadow_base.join("current_windows.jsonl");
@@ -4007,6 +4009,7 @@ pub fn release_rc1_gate(
     }
     std::env::set_var("UCF_OFFLINE", "1");
     std::env::set_var("UCF_TOOLS_DEFAULT", "deny");
+    std::env::set_var("UCF_SSM_KERNEL", "ref");
 
     let mut checks = Vec::new();
     let mut artifacts = Vec::new();
