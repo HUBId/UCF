@@ -37,3 +37,17 @@ See `docs/feature_matrix.md` for details.
   - `docs/freeze_v0_index.md`
   - `docs/v0_scope.md`
   - `docs/artifact_convention_v0.md`
+
+## Prompt series workflow
+- Prompt index (1–128): `docs/prompt_series_index.md`
+- Module impact map: `docs/module_map.md`
+- Next-prompt authoring rules: `docs/prompt_rulebook.md`
+- Current series state snapshot: `docs/series_state_snapshot.md`
+
+Quick workflow:
+1. Start at the next monotonic prompt ID and follow `docs/prompt_rulebook.md`.
+2. Implement changes and update index/module map entries for the new prompt.
+3. Run readiness/signoff checks as applicable:
+   - v1.0-rc1: `cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/<run_id>/gate_report.json`
+   - v1.1-rc1: `cargo run -p ucf-ops -- readiness-gate --profile v1_1_rc1 --out ./out/<run_id>/v1_1_gate_report.json`
+4. Keep release signoff artifacts aligned (`release/*.md`, `release/*.toml`).
