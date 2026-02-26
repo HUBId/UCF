@@ -13,6 +13,7 @@ See `docs/feature_matrix.md` for details.
 ## Post-rc1 hardening commands
 - Determinism scan: `cargo run -p ucf-ops -- determinism scan`
 - Hidden path audit scan: `cargo run -p ucf-ops -- audit scan`
+- Spec snapshot: `cargo run -p ucf-ops -- spec snapshot --policy policies/packs/base_v1 --overlay policies/packs/overlays/test --out docs/spec_snapshot.md`
 
 ## Architecture
 - See `docs/architecture/COHERENCE_LOOP.md`.

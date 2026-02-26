@@ -5,6 +5,7 @@ use ucf_ops::{
     bringup, diagnostics, export_bugreport, load_signoff_checklist, models_promote, models_stage,
     one_command_bringup, out_manifest, parse_slot, readiness_gate, release_signoff_validate,
     replay_audit, replay_bugreport, verify_bugreport, world_shadow_report, ExportArgs, GateStatus,
+    SpecSnapshotArgs,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -213,4 +214,25 @@ fn world_vljepa_promotion_denied_without_shadow_report() {
     );
     assert!(res.is_err());
     std::env::set_current_dir(cwd).expect("restore cwd");
+}
+
+#[test]
+fn spec_snapshot_writes_expected_sections() {
+    let dir = tempdir().expect("tempdir");
+    let out = dir.path().join("spec_snapshot.md");
+
+    ucf_ops::generate_spec_snapshot(&SpecSnapshotArgs {
+        policy: std::path::PathBuf::from("../../policies/packs/base_v1"),
+        overlay: Some(std::path::PathBuf::from(
+            "../../policies/packs/overlays/test",
+        )),
+        out: out.clone(),
+    })
+    .expect("snapshot");
+
+    let body = fs::read_to_string(out).expect("read snapshot");
+    assert!(body.contains("## A) Frames / Records"));
+    assert!(body.contains("## B) Stage contracts"));
+    assert!(body.contains("## D) Policy digests"));
+    assert!(body.contains("## E) Model slots"));
 }
