@@ -33,7 +33,15 @@ python scripts/prompt_runner.py next
 python scripts/prompt_runner.py done 00129
 python scripts/prompt_runner.py fail 00129 --reason "test failed"
 python scripts/prompt_runner.py add --id 00131 --title "New prompt" --file prompt.txt
+python scripts/prompt_runner.py render --id 00131 --template docs/codex_prompt_template.txt
 ```
+
+### `render --id <id> --template <path>`
+
+- Loads a queue entry by prompt ID.
+- Loads the template file (default `docs/codex_prompt_template.txt`).
+- Replaces content between `START_TASK_SPECIFIC` and `END_TASK_SPECIFIC` with the entry `prompt_text`.
+- Prints the fully rendered prompt to stdout for copy/paste into Codex.
 
 ### `next`
 

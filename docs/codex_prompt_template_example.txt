@@ -1,0 +1,84 @@
+PROMPT 999 — Add "render" support to Prompt Runner
+Objective: Add a render workflow that injects queued prompt_text into a canonical template between START_TASK_SPECIFIC and END_TASK_SPECIFIC, then prints the fully assembled copy/paste prompt.
+
+Context / Preconditions
+[x] Locate and read AGENTS.md / repo instructions first; follow them before doing any work.
+[x] Confirm required local tools are available.
+[x] Confirm prompt rulebook constraints are active for this run.
+
+Constraints (hard)
+- Offline-first: avoid network calls unless explicitly allowlisted by this task.
+- Deterministic: identical inputs/config must produce byte-stable outputs.
+- Safety-first: policy-first decisions, deny-by-default tools/capabilities.
+- Budget-bounded: bounded runtime, memory, storage, retries, and queue growth.
+- Bounded execution: no unbounded loops; explicit error exits and diagnostics.
+
+Repo discovery
+[x] Inspect top-level layout and docs/ before changing code.
+[x] Identify impacted modules/contracts/tests/docs.
+[x] If a final summary style exists in repo docs, mirror that exact style.
+Suggested commands:
+- pwd
+- rg --files docs scripts
+- rg -n "prompt|rulebook|summary|runner|template" docs README.md scripts
+- rg -n "TODO|FIXME|prompt_runner|self-check" scripts docs
+
+Task-specific section
+START_TASK_SPECIFIC
+Goal
+- Extend `scripts/prompt_runner.py` with command:
+  - `python scripts/prompt_runner.py render --id <id> --template docs/codex_prompt_template.txt`
+
+Requirements
+1) Read queue entry by ID and load template file.
+2) Replace text between START_TASK_SPECIFIC and END_TASK_SPECIFIC with entry prompt_text.
+3) Print final rendered prompt to stdout.
+4) Add self-check coverage:
+   - template file exists
+   - placeholders exist
+   - render smoke pass
+5) Update docs:
+   - docs/prompt_runner.md usage example
+   - docs/prompt_rulebook.md template guidance
+   - README mention for template workflow
+END_TASK_SPECIFIC
+
+Implementation steps
+[x] Define/update types and contracts first (input/output schema, invariants).
+[x] Implement core logic with deterministic behavior (no hidden RNG/time deps).
+[x] Wire integration paths (CLI/router/entrypoints) with feature guards as needed.
+[x] Update records/digests/artifact references when outputs are persisted.
+[x] Respect existing feature flags and avoid broad default-feature changes.
+[x] Add robust error messages for operator debugging.
+
+Tests
+[x] Unit tests for local logic and edge cases.
+[x] Integration tests for module wiring (if the repo has integration tests here).
+[x] E2E/smoke tests for user-facing flows (if available).
+[x] Replay/verify checks for deterministic artifacts (if available).
+[x] Run formatting and lint checks required by CI.
+
+Docs
+[x] Update docs describing behavior, usage, and invariants.
+[x] Update README quick-start or command references if user workflow changes.
+[x] Document any new flags, files, or operational caveats.
+
+Safety/Determinism invariants
+[x] No decision, no action.
+[x] Deny-by-default capabilities/tools remain intact.
+[x] Hash/digest references remain consistent for changed artifacts.
+[x] Replay compatibility for acceptance-critical flows is preserved.
+[x] No new hidden network/runtime side-effects introduced.
+
+Final summary format
+- Summary
+  - Changed files: <path + one-line reason each>
+  - Behavior impact: <deterministic/safety/evidence impact>
+- Commands run
+  - <exact command 1> -> <pass/fail + short note>
+  - <exact command 2> -> <pass/fail + short note>
+- Acceptance criteria confirmation
+  - <criterion 1>: <met/not met + proof>
+  - <criterion 2>: <met/not met + proof>
+- Risks/notes
+  - <known limitations, follow-ups, or environment caveats>
