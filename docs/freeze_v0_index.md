@@ -17,6 +17,7 @@ Canonical references defining **Real Compute Onboarding v0**.
 | `docs/data_governance.md` | 2026-02-17 | data governance | normative |
 | `docs/model_slots.md` | 2026-02-17 | model-store | normative |
 | `docs/model_probes.md` | 2026-02-17 | runtime/ucf-ops | normative |
+| `docs/spec_snapshot.md` | 2026-02-26 | runtime/ucf-ops | normative |
 | `docs/enablement_rollout.md` | 2026-02-17 | operations | informative |
 | `docs/artifact_convention_v0.md` | 2026-02-17 | runtime/ucf-ops | normative |
 | `docs/operator_runs.md` | 2026-02-17 | runtime/ucf-ops | normative |

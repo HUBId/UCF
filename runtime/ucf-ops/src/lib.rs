@@ -4,6 +4,7 @@ mod adversarial;
 mod bench;
 mod causal;
 mod models_lifecycle;
+mod spec_snapshot;
 mod world_shadow;
 pub use adversarial::{adversarial_run, AdversarialReport, AdversarialRunArgs, CaseResult};
 pub use bench::{bench_run, BenchArgs, BenchReport};
@@ -15,6 +16,7 @@ pub use causal::{
 pub use models_lifecycle::{
     models_list, models_promote, models_rollback, models_stage, parse_slot,
 };
+pub use spec_snapshot::{generate_spec_snapshot, SpecSnapshotArgs};
 pub use world_shadow::{world_shadow_report, WorldShadowReport};
 
 use std::collections::BTreeMap;

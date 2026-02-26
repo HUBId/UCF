@@ -12,7 +12,7 @@ use ucf_ops::{
     replay_audit, replay_bugreport, run_status, runs_list, runs_search, runs_show,
     save_counterfactual_result, security_verify_chain, simulate_counterfactual, verify_bugreport,
     world_shadow_report, write_slice, AdversarialRunArgs, BenchArgs, CounterfactualRequest,
-    ExplainTickRequest, ExportArgs, GateStatus,
+    ExplainTickRequest, ExportArgs, GateStatus, SpecSnapshotArgs,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -308,6 +308,33 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
                 _ => return Err("usage: ucf-ops policy <validate|diff|explain> ...".into()),
+            }
+        }
+
+        "spec" => {
+            let sub = args.get(2).map(String::as_str).unwrap_or("help");
+            match sub {
+                "snapshot" => {
+                    let policy = arg_value(&args, "--policy")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("policies/packs/base_v1"));
+                    let overlay = arg_value(&args, "--overlay").map(PathBuf::from);
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("docs/spec_snapshot.md"));
+                    ucf_ops::generate_spec_snapshot(&SpecSnapshotArgs {
+                        policy,
+                        overlay,
+                        out: out.clone(),
+                    })?;
+                    println!("spec_snapshot={}", out.display());
+                }
+                _ => {
+                    return Err(
+                        "usage: ucf-ops spec snapshot [--policy <dir>] [--overlay <dir>] [--out <path>]"
+                            .into(),
+                    )
+                }
             }
         }
         "metrics-snapshot" => {
@@ -840,7 +867,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             eprintln!(
-                "usage: ucf-ops <bringup|diag|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|readiness-gate|adversarial-run|out|release|bench|runs|status|ess|ebm|version> [--workdir <path>]"
+                "usage: ucf-ops <bringup|diag|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|readiness-gate|adversarial-run|out|release|bench|runs|status|ess|ebm|policy|spec|version> [--workdir <path>]"
             );
             std::process::exit(1);
         }
