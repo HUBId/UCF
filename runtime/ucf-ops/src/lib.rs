@@ -1321,6 +1321,15 @@ fn workspace_fixture(name: &str) -> PathBuf {
 }
 
 fn check_workspace_tests() -> CheckResult {
+    if std::env::var("CI").ok().as_deref() == Some("true") {
+        return check_skip(
+            "build_workspace_tests",
+            [("skipped".to_string(), "ci".to_string())],
+            "workspace test execution skipped in CI readiness lane",
+            "Run cargo test --workspace --offline in a dedicated lane for full readiness coverage.",
+        );
+    }
+
     if std::env::var("UCF_SKIP_GATE_WORKSPACE_TESTS")
         .ok()
         .as_deref()
@@ -4992,5 +5001,15 @@ mod rc1_tests {
         let out = PathBuf::from("/dev/null/rc1_gate.json");
         let result = release_rc1_gate(dir.path(), &out, false);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn workspace_test_check_skips_in_ci() {
+        std::env::set_var("CI", "true");
+        std::env::remove_var("UCF_SKIP_GATE_WORKSPACE_TESTS");
+        let check = check_workspace_tests();
+        std::env::remove_var("CI");
+        assert_eq!(check.name, "build_workspace_tests");
+        assert_eq!(check.status, GateStatus::Skip);
     }
 }
