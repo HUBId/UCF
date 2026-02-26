@@ -1,0 +1,34 @@
+# Prompt queue for copy-paste Codex workflow
+
+[[entries]]
+id = "00129"
+title = "Bootstrap Automation: Copy-Paste Codex Prompt Runner"
+status = "pending"
+created_at = "2026-02-26T00:00:00Z"
+prompt_text = """
+PROMPT 129 — Bootstrap Automation: “Copy-Paste Codex Prompt Runner” Script, Prompt Queue File, and Safe Execution Guards
+Ziel: Du arbeitest im Modus “ein Prompt pro Nachricht, copy-paste in Codex”. Das ist ok, aber fehleranfällig. Wir bauen eine kleine Automation, die:
+- Prompts aus einer Queue-Datei liest (prompt_queue.md oder .toml)
+- Jeden Prompt einzeln ausgibt (copy-friendly) + Status “pending/running/done/failed”
+- Sicherheitsguards:
+  - verlangt Repo-Zustandscheck (clean working tree)
+  - schreibt Logs in ./out/prompt_runs/<id>/
+  - erzwingt “offline mode” (no network) via env checks (best effort)
+- Keine “magische” Änderung: Script macht nur assistierende Arbeit, Codex führt weiterhin aus.
+"""
+notes = """
+Initial scaffold entry for prompt-runner rollout.
+"""
+
+[[entries]]
+id = "00130"
+title = "Placeholder prompt"
+status = "pending"
+created_at = "2026-02-26T00:05:00Z"
+prompt_text = """
+PROMPT 130 — Placeholder for next task.
+Replace this text with the real prompt before running `next`.
+"""
+notes = """
+Sample entry to demonstrate queue ordering.
+"""

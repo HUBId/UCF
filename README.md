@@ -38,6 +38,27 @@ See `docs/feature_matrix.md` for details.
   - `docs/v0_scope.md`
   - `docs/artifact_convention_v0.md`
 
+
+## Prompt Runner
+- Queue file (machine): `docs/prompt_queue.toml`
+- Queue file (human): `docs/prompt_queue.md`
+- Usage guide: `docs/prompt_runner.md`
+
+Typical flow:
+1. Add/edit prompt entries in `docs/prompt_queue.toml` (or use `python scripts/prompt_runner.py add ...`).
+2. Pull next prompt (and create deterministic logs):
+   - `python scripts/prompt_runner.py next`
+3. After manual execution, mark result:
+   - success: `python scripts/prompt_runner.py done <id>`
+   - failure: `python scripts/prompt_runner.py fail <id> --reason "..."`
+4. Validate queue integrity:
+   - `python scripts/prompt_runner.py self-check`
+
+Safety defaults:
+- Mutating commands refuse dirty working trees unless `--allow-dirty` is passed.
+- Logs are written to `./out/prompt_runs/<id>/`.
+- Offline guard is best-effort and warning-only (proxy/env + command hints).
+
 ## Prompt series workflow
 - Prompt index (1–128): `docs/prompt_series_index.md`
 - Module impact map: `docs/module_map.md`
