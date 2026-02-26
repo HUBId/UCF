@@ -21,6 +21,7 @@ except ModuleNotFoundError as exc:  # pragma: no cover
 ROOT = Path(__file__).resolve().parent.parent
 QUEUE_PATH = ROOT / "docs" / "prompt_queue.toml"
 LOG_ROOT = ROOT / "out" / "prompt_runs"
+DEFAULT_TEMPLATE_PATH = ROOT / "docs" / "codex_prompt_template.txt"
 ALLOWED_STATUSES = {"pending", "running", "done", "failed"}
 OFFLINE_ENV_KEYS = [
     "http_proxy",
@@ -289,6 +290,43 @@ def cmd_add(args: argparse.Namespace) -> int:
     return 0
 
 
+def render_prompt_template(template_text: str, task_text: str) -> str:
+    start_marker = "START_TASK_SPECIFIC"
+    end_marker = "END_TASK_SPECIFIC"
+
+    if start_marker not in template_text or end_marker not in template_text:
+        raise SystemExit(
+            "Template is missing START_TASK_SPECIFIC/END_TASK_SPECIFIC markers."
+        )
+
+    start_idx = template_text.index(start_marker) + len(start_marker)
+    end_idx = template_text.index(end_marker)
+    if end_idx <= start_idx:
+        raise SystemExit("Template markers are malformed (END before START).")
+
+    normalized_task = task_text.strip("\n")
+    replacement = f"\n{normalized_task}\n"
+    return template_text[:start_idx] + replacement + template_text[end_idx:]
+
+
+def cmd_render(args: argparse.Namespace) -> int:
+    entries = load_queue()
+    entry = find_by_id(entries, args.id)
+
+    template_path = Path(args.template)
+    if not template_path.is_absolute():
+        template_path = ROOT / template_path
+
+    if not template_path.exists():
+        raise SystemExit(f"Template file not found: {template_path}")
+
+    template_text = template_path.read_text(encoding="utf-8")
+    rendered = render_prompt_template(template_text, entry.prompt_text)
+
+    print(rendered, end="" if rendered.endswith("\n") else "\n")
+    return 0
+
+
 def cmd_self_check(_: argparse.Namespace) -> int:
     entries = load_queue()
     ids = [e.id for e in entries]
@@ -304,11 +342,29 @@ def cmd_self_check(_: argparse.Namespace) -> int:
     probe.write_text("ok\n", encoding="utf-8")
     probe.unlink(missing_ok=True)
 
+    template_ok = DEFAULT_TEMPLATE_PATH.exists()
+    placeholder_ok = False
+    rendered_ok = False
+    if template_ok:
+        template_text = DEFAULT_TEMPLATE_PATH.read_text(encoding="utf-8")
+        placeholder_ok = (
+            "START_TASK_SPECIFIC" in template_text and "END_TASK_SPECIFIC" in template_text
+        )
+        if placeholder_ok and entries:
+            try:
+                _ = render_prompt_template(template_text, entries[0].prompt_text)
+                rendered_ok = True
+            except SystemExit:
+                rendered_ok = False
+
     print("Self-check passed:")
     print(f"  entries={len(entries)}")
     print("  unique_ids=yes")
     print("  statuses_valid=yes")
     print(f"  out_dir_writable=yes ({LOG_ROOT})")
+    print(f"  template_exists={'yes' if template_ok else 'no'} ({DEFAULT_TEMPLATE_PATH})")
+    print(f"  template_placeholders_valid={'yes' if placeholder_ok else 'no'}")
+    print(f"  template_render_smoke={'yes' if rendered_ok else 'no'}")
     return 0
 
 
@@ -342,6 +398,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_add.add_argument("--notes", default=None, help="Optional notes")
     p_add.add_argument("--allow-dirty", action="store_true", help="Allow dirty git tree")
     p_add.set_defaults(func=cmd_add)
+
+    p_render = sub.add_parser("render", help="Render prompt template with queue entry text")
+    p_render.add_argument("--id", required=True, help="Prompt ID")
+    p_render.add_argument(
+        "--template",
+        default=str(DEFAULT_TEMPLATE_PATH.relative_to(ROOT)),
+        help="Template path (default: docs/codex_prompt_template.txt)",
+    )
+    p_render.set_defaults(func=cmd_render)
 
     p_self = sub.add_parser("self-check", help="Validate queue and writeability")
     p_self.set_defaults(func=cmd_self_check)

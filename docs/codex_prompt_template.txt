@@ -1,0 +1,69 @@
+PROMPT <ID> — <TITLE>
+Objective: <ONE_PARAGRAPH_OBJECTIVE>
+
+Context / Preconditions
+[ ] Locate and read AGENTS.md / repo instructions first; follow them before doing any work.
+[ ] Confirm required local tools are available.
+[ ] Confirm prompt rulebook constraints are active for this run.
+
+Constraints (hard)
+- Offline-first: avoid network calls unless explicitly allowlisted by this task.
+- Deterministic: identical inputs/config must produce byte-stable outputs.
+- Safety-first: policy-first decisions, deny-by-default tools/capabilities.
+- Budget-bounded: bounded runtime, memory, storage, retries, and queue growth.
+- Bounded execution: no unbounded loops; explicit error exits and diagnostics.
+
+Repo discovery
+[ ] Inspect top-level layout and docs/ before changing code.
+[ ] Identify impacted modules/contracts/tests/docs.
+[ ] If a final summary style exists in repo docs, mirror that exact style.
+Suggested commands:
+- pwd
+- rg --files docs scripts
+- rg -n "prompt|rulebook|summary|runner|template" docs README.md scripts
+- rg -n "TODO|FIXME|prompt_runner|self-check" scripts docs
+
+Task-specific section
+START_TASK_SPECIFIC
+<REPLACE_WITH_TASK_SPECIFIC_CONTENT>
+END_TASK_SPECIFIC
+
+Implementation steps
+[ ] Define/update types and contracts first (input/output schema, invariants).
+[ ] Implement core logic with deterministic behavior (no hidden RNG/time deps).
+[ ] Wire integration paths (CLI/router/entrypoints) with feature guards as needed.
+[ ] Update records/digests/artifact references when outputs are persisted.
+[ ] Respect existing feature flags and avoid broad default-feature changes.
+[ ] Add robust error messages for operator debugging.
+
+Tests
+[ ] Unit tests for local logic and edge cases.
+[ ] Integration tests for module wiring (if the repo has integration tests here).
+[ ] E2E/smoke tests for user-facing flows (if available).
+[ ] Replay/verify checks for deterministic artifacts (if available).
+[ ] Run formatting and lint checks required by CI.
+
+Docs
+[ ] Update docs describing behavior, usage, and invariants.
+[ ] Update README quick-start or command references if user workflow changes.
+[ ] Document any new flags, files, or operational caveats.
+
+Safety/Determinism invariants
+[ ] No decision, no action.
+[ ] Deny-by-default capabilities/tools remain intact.
+[ ] Hash/digest references remain consistent for changed artifacts.
+[ ] Replay compatibility for acceptance-critical flows is preserved.
+[ ] No new hidden network/runtime side-effects introduced.
+
+Final summary format
+- Summary
+  - Changed files: <path + one-line reason each>
+  - Behavior impact: <deterministic/safety/evidence impact>
+- Commands run
+  - <exact command 1> -> <pass/fail + short note>
+  - <exact command 2> -> <pass/fail + short note>
+- Acceptance criteria confirmation
+  - <criterion 1>: <met/not met + proof>
+  - <criterion 2>: <met/not met + proof>
+- Risks/notes
+  - <known limitations, follow-ups, or environment caveats>

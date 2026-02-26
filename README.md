@@ -63,12 +63,16 @@ Safety defaults:
 - Prompt index (1–128): `docs/prompt_series_index.md`
 - Module impact map: `docs/module_map.md`
 - Next-prompt authoring rules: `docs/prompt_rulebook.md`
+- Canonical copy/paste template: `docs/codex_prompt_template.txt`
+- Filled example: `docs/codex_prompt_template_example.txt`
 - Current series state snapshot: `docs/series_state_snapshot.md`
 
 Quick workflow:
 1. Start at the next monotonic prompt ID and follow `docs/prompt_rulebook.md`.
-2. Implement changes and update index/module map entries for the new prompt.
-3. Run readiness/signoff checks as applicable:
+2. Use `docs/codex_prompt_template.txt` for new prompts and place task-specific content between `START_TASK_SPECIFIC` / `END_TASK_SPECIFIC`.
+3. Optional helper: `python scripts/prompt_runner.py render --id <id> --template docs/codex_prompt_template.txt`.
+4. Implement changes and update index/module map entries for the new prompt.
+5. Run readiness/signoff checks as applicable:
    - v1.0-rc1: `cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/<run_id>/gate_report.json`
    - v1.1-rc1: `cargo run -p ucf-ops -- readiness-gate --profile v1_1_rc1 --out ./out/<run_id>/v1_1_gate_report.json`
-4. Keep release signoff artifacts aligned (`release/*.md`, `release/*.toml`).
+6. Keep release signoff artifacts aligned (`release/*.md`, `release/*.toml`).

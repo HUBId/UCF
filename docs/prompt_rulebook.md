@@ -63,3 +63,9 @@ Use explicit phases in new prompts:
 - Provide ordered, non-interactive steps.
 - Include required validation commands.
 - Require final summary to include changed files and verification results.
+
+## Canonical template usage
+- Use `docs/codex_prompt_template.txt` as the default copy/paste super-prompt skeleton.
+- Put task-specific details only between `START_TASK_SPECIFIC` and `END_TASK_SPECIFIC`.
+- Keep all standard sections/checklists intact (context, discovery, implementation, tests, docs, invariants, final summary).
+- For concrete guidance, see `docs/codex_prompt_template_example.txt`.
