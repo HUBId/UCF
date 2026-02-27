@@ -10,5 +10,6 @@ pub mod orchestrator;
 pub mod sandbox;
 pub mod sandbox_fs;
 pub mod stage_isolation;
+pub mod tool_plugins;
 
 pub use orchestrator::RuntimeOrchestrator;
