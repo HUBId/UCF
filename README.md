@@ -14,6 +14,7 @@ See `docs/feature_matrix.md` for details.
 - Determinism scan: `cargo run -p ucf-ops -- determinism scan`
 - Hidden path audit scan: `cargo run -p ucf-ops -- audit scan`
 - Spec snapshot: `cargo run -p ucf-ops -- spec snapshot --policy policies/packs/base_v1 --overlay policies/packs/overlays/test --out docs/spec_snapshot.md`
+- Docs lint (CI-blocking): `cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json`
 
 ## Architecture
 - See `docs/architecture/COHERENCE_LOOP.md`.
@@ -77,3 +78,6 @@ Quick workflow:
    - v1.0-rc1: `cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/<run_id>/gate_report.json`
    - v1.1-rc1: `cargo run -p ucf-ops -- readiness-gate --profile v1_1_rc1 --out ./out/<run_id>/v1_1_gate_report.json`
 6. Keep release signoff artifacts aligned (`release/*.md`, `release/*.toml`).
+
+
+See `docs/docs_checks.md` for remediation guidance when docs lint fails.

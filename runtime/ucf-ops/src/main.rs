@@ -12,7 +12,8 @@ use ucf_ops::{
     replay_audit, replay_bugreport, run_status, runs_list, runs_search, runs_show,
     save_counterfactual_result, security_verify_chain, simulate_counterfactual, verify_bugreport,
     world_shadow_report, write_slice, AdversarialRunArgs, BenchArgs, ChangeImpactArgs,
-    CounterfactualRequest, ExplainTickRequest, ExportArgs, GateStatus, SpecSnapshotArgs,
+    CounterfactualRequest, DocsLintArgs, DocsLintMode, DocsLintStatus, ExplainTickRequest,
+    ExportArgs, GateStatus, SpecSnapshotArgs,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -359,6 +360,68 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         "usage: ucf-ops spec snapshot [--policy <dir>] [--overlay <dir>] [--out <path>]"
                             .into(),
                     )
+                }
+            }
+        }
+        "docs" => {
+            let sub = args.get(2).map(String::as_str).unwrap_or("help");
+            match sub {
+                "lint" => {
+                    let mode = if has_flag(&args, "--warn") {
+                        DocsLintMode::Warn
+                    } else {
+                        DocsLintMode::Strict
+                    };
+                    let report = ucf_ops::docs_lint(&DocsLintArgs {
+                        repo_root: PathBuf::from("."),
+                        policy_pack: arg_value(&args, "--policy")
+                            .map(PathBuf::from)
+                            .unwrap_or_else(|| PathBuf::from("policies/packs/base_v1")),
+                        overlay_pack: if has_flag(&args, "--no-overlay") {
+                            None
+                        } else {
+                            arg_value(&args, "--overlay")
+                                .map(PathBuf::from)
+                                .or(Some(PathBuf::from("policies/packs/overlays/test")))
+                        },
+                        spec_snapshot: arg_value(&args, "--spec")
+                            .map(PathBuf::from)
+                            .unwrap_or_else(|| PathBuf::from("docs/spec_snapshot.md")),
+                        prompt_index: arg_value(&args, "--prompt-index")
+                            .map(PathBuf::from)
+                            .unwrap_or_else(|| PathBuf::from("docs/prompt_series_index.md")),
+                        module_map: arg_value(&args, "--module-map")
+                            .map(PathBuf::from)
+                            .unwrap_or_else(|| PathBuf::from("docs/module_map.md")),
+                        mode,
+                    })?;
+                    for check in &report.checks {
+                        let status = match check.status {
+                            DocsLintStatus::Pass => "PASS",
+                            DocsLintStatus::Warn => "WARN",
+                            DocsLintStatus::Fail => "FAIL",
+                        };
+                        println!("[{status}] {} :: {}", check.name, check.detail);
+                        if let Some(remediation) = &check.remediation {
+                            if check.status != DocsLintStatus::Pass {
+                                println!("  remedy: {remediation}");
+                            }
+                        }
+                    }
+                    println!("overall={}", if report.ok { "PASS" } else { "FAIL" });
+                    if let Some(out) = arg_value(&args, "--out").map(PathBuf::from) {
+                        if let Some(parent) = out.parent() {
+                            std::fs::create_dir_all(parent)?;
+                        }
+                        std::fs::write(&out, serde_json::to_string_pretty(&report)?)?;
+                        println!("report={}", out.display());
+                    }
+                    if !report.ok {
+                        std::process::exit(2);
+                    }
+                }
+                _ => {
+                    return Err("usage: ucf-ops docs lint [--strict|--warn] [--out <path>] [--policy <dir>] [--overlay <dir>|--no-overlay] [--spec <path>] [--prompt-index <path>] [--module-map <path>]".into())
                 }
             }
         }
