@@ -1,0 +1,12 @@
+{
+  "run_id": "run-test",
+  "policy_graph_digest_prefix_hex": "0102030405060708",
+  "tick": 1,
+  "window": 0,
+  "corr_id": 1001,
+  "intent_id": 2001,
+  "intent_kind": 1,
+  "channel": 1,
+  "intent_summary": "operator hello",
+  "payload_text_utf8": "safe text for deterministic smoke"
+}

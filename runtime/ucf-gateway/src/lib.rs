@@ -571,6 +571,10 @@ fn map_err_code(err: &GatewayError) -> u32 {
 fn extract_token(req: &proto::GatewayRequest) -> &str {
     match &req.payload {
         Some(proto::gateway_request::Payload::Handshake(h)) => h.auth_token.as_str(),
+        Some(proto::gateway_request::Payload::Submit(r)) => r.auth_token.as_str(),
+        Some(proto::gateway_request::Payload::Subscribe(r)) => r.auth_token.as_str(),
+        Some(proto::gateway_request::Payload::EssQuery(r)) => r.auth_token.as_str(),
+        Some(proto::gateway_request::Payload::Report(r)) => r.auth_token.as_str(),
         _ => "",
     }
 }

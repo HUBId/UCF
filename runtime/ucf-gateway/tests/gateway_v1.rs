@@ -20,6 +20,7 @@ fn submit_request(policy: [u8; 8]) -> proto::ControlFrameSubmitRequest {
         channel: 1,
         intent_summary: "hello".to_string(),
         payload_text_utf8: b"safe text".to_vec(),
+        auth_token: "test-token".to_string(),
     }
 }
 
@@ -50,6 +51,7 @@ fn negotiation_and_submit_and_subscribe_and_ess_query_work() {
                 run_id: "run-test".to_string(),
                 policy_graph_digest_prefix: vec![1, 2, 3, 4, 5, 6, 7, 8],
                 max_events: 8,
+                auth_token: "test-token".to_string(),
             },
         )
         .expect("subscribe");
@@ -63,6 +65,7 @@ fn negotiation_and_submit_and_subscribe_and_ess_query_work() {
                 run_id: "run-test".to_string(),
                 policy_graph_digest_prefix: vec![1, 2, 3, 4, 5, 6, 7, 8],
                 max_records: 10,
+                auth_token: "test-token".to_string(),
             },
         )
         .expect("ess");
@@ -89,6 +92,7 @@ fn size_caps_and_auth_denials_are_enforced_and_logged() {
                 run_id: "run-test".to_string(),
                 policy_graph_digest_prefix: vec![1, 2, 3, 4, 5, 6, 7, 8],
                 max_records: 2,
+                auth_token: "wrong-token".to_string(),
             },
         )
         .expect_err("must reject auth");

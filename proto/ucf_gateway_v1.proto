@@ -33,6 +33,7 @@ message ControlFrameSubmitRequest {
   uint32 channel = 9;
   string intent_summary = 10;
   bytes payload_text_utf8 = 11;
+  string auth_token = 12;
 }
 
 message ControlFrameSubmitResponse {
@@ -48,6 +49,7 @@ message DecisionStreamSubscribeRequest {
   string run_id = 2;
   bytes policy_graph_digest_prefix = 3;
   uint32 max_events = 4;
+  string auth_token = 5;
 }
 
 message DecisionEvent {
@@ -72,6 +74,7 @@ message EssQueryRequest {
   string run_id = 2;
   bytes policy_graph_digest_prefix = 3;
   uint32 max_records = 4;
+  string auth_token = 5;
 }
 
 message EssSummary {
@@ -93,6 +96,7 @@ message ReportRequest {
   bytes policy_graph_digest_prefix = 3;
   string report_type = 4;
   uint64 tick = 5;
+  string auth_token = 6;
 }
 
 message ReportResponse {
