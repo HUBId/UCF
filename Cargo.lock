@@ -3305,6 +3305,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucf-client"
+version = "0.1.0"
+dependencies = [
+ "prost",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 1.0.69",
+ "ucf-gateway",
+]
+
+[[package]]
 name = "ucf-commit"
 version = "0.1.0"
 dependencies = [
