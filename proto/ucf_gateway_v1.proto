@@ -1,0 +1,126 @@
+syntax = "proto3";
+
+package ucf.gateway.v1;
+
+message HandshakeRequest {
+  uint32 schema_version = 1;
+  string client_id = 2;
+  repeated uint32 supported_versions = 3;
+  string auth_token = 4;
+}
+
+message HandshakeResponse {
+  uint32 schema_version = 1;
+  uint32 selected_version = 2;
+  Error error = 3;
+  repeated string granted_capabilities = 4;
+}
+
+message Error {
+  uint32 code = 1;
+  string message = 2;
+}
+
+message ControlFrameSubmitRequest {
+  uint32 schema_version = 1;
+  string run_id = 2;
+  bytes policy_graph_digest_prefix = 3;
+  uint64 tick = 4;
+  uint64 window = 5;
+  uint64 corr_id = 6;
+  uint64 intent_id = 7;
+  uint32 intent_kind = 8;
+  uint32 channel = 9;
+  string intent_summary = 10;
+  bytes payload_text_utf8 = 11;
+}
+
+message ControlFrameSubmitResponse {
+  uint32 schema_version = 1;
+  string run_id = 2;
+  bytes frame_digest = 3;
+  DecisionEvent decision = 4;
+  Error error = 5;
+}
+
+message DecisionStreamSubscribeRequest {
+  uint32 schema_version = 1;
+  string run_id = 2;
+  bytes policy_graph_digest_prefix = 3;
+  uint32 max_events = 4;
+}
+
+message DecisionEvent {
+  uint32 schema_version = 1;
+  string run_id = 2;
+  uint64 tick = 3;
+  uint64 corr_id = 4;
+  string decision_code = 5;
+  string reason_code = 6;
+  string rationale_redacted = 7;
+  bytes policy_graph_digest_prefix = 8;
+}
+
+message DecisionStreamSubscribeResponse {
+  uint32 schema_version = 1;
+  repeated DecisionEvent events = 2;
+  Error error = 3;
+}
+
+message EssQueryRequest {
+  uint32 schema_version = 1;
+  string run_id = 2;
+  bytes policy_graph_digest_prefix = 3;
+  uint32 max_records = 4;
+}
+
+message EssSummary {
+  uint64 experience_id = 1;
+  uint64 tick = 2;
+  string kind = 3;
+  uint64 corr_id = 4;
+}
+
+message EssQueryResponse {
+  uint32 schema_version = 1;
+  repeated EssSummary summaries = 2;
+  Error error = 3;
+}
+
+message ReportRequest {
+  uint32 schema_version = 1;
+  string run_id = 2;
+  bytes policy_graph_digest_prefix = 3;
+  string report_type = 4;
+  uint64 tick = 5;
+}
+
+message ReportResponse {
+  uint32 schema_version = 1;
+  string report_type = 2;
+  bytes report_json_utf8 = 3;
+  Error error = 4;
+}
+
+message GatewayRequest {
+  uint32 negotiated_version = 1;
+  oneof payload {
+    HandshakeRequest handshake = 2;
+    ControlFrameSubmitRequest submit = 3;
+    DecisionStreamSubscribeRequest subscribe = 4;
+    EssQueryRequest ess_query = 5;
+    ReportRequest report = 6;
+  }
+}
+
+message GatewayResponse {
+  uint32 negotiated_version = 1;
+  oneof payload {
+    HandshakeResponse handshake = 2;
+    ControlFrameSubmitResponse submit = 3;
+    DecisionStreamSubscribeResponse subscribe = 4;
+    EssQueryResponse ess_query = 5;
+    ReportResponse report = 6;
+    Error error = 7;
+  }
+}
