@@ -4,6 +4,7 @@ mod adversarial;
 mod bench;
 mod causal;
 mod change_impact;
+mod docs_lint;
 mod models_lifecycle;
 mod spec_snapshot;
 mod world_shadow;
@@ -15,6 +16,7 @@ pub use causal::{
     CounterfactualRequest, CounterfactualResult, EdgeType, EventNode, EventType, ExplainWhyReport,
 };
 pub use change_impact::{change_impact, ChangeImpactArgs};
+pub use docs_lint::{docs_lint, DocsLintArgs, DocsLintMode, DocsLintReport, DocsLintStatus};
 pub use models_lifecycle::{
     models_list, models_promote, models_rollback, models_stage, parse_slot,
 };

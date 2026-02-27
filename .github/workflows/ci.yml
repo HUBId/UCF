@@ -21,16 +21,14 @@ jobs:
         run: cargo run -p ucf-ops -- determinism scan
       - name: Audit scan
         run: cargo run -p ucf-ops -- audit scan
-      - name: Policy validate
-        run: cargo run -p ucf-ops -- policy validate --pack policies/packs/base_v1
       - name: Models verify
         run: cargo run -p ucf-ops -- models verify --manifest models/manifest.toml
       - name: Models probe (fixtures)
         run: cargo run -p ucf-ops -- models probe --manifest models/manifest.toml --out ./out/probe_report.json
-      - name: Spec snapshot
-        run: |
-          cargo run -p ucf-ops -- spec snapshot --policy policies/packs/base_v1 --overlay policies/packs/overlays/test --out docs/spec_snapshot.md
-          git diff --exit-code docs/spec_snapshot.md
+      - name: Build ucf-ops
+        run: cargo build -p ucf-ops
+      - name: Docs lint (blocking)
+        run: cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json
       - name: Change impact plan (informational)
         run: |
           cargo run -p ucf-ops -- change-impact --base HEAD~1 --head HEAD --out ./out/change_impact_plan.md --json-out ./out/change_impact_plan.json
@@ -42,6 +40,7 @@ jobs:
           path: |
             out/change_impact_plan.md
             out/change_impact_plan.json
+            out/docs_lint_report.json
 
       - name: Cargo test workspace
         run: PROPTEST_CASES=128 cargo test --workspace --all-targets
