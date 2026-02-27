@@ -89,18 +89,26 @@ fn load_rules(path: &Path) -> Result<ChangeImpactRules, OpsError> {
 }
 
 fn git_changed_files(base: &str, head: &str) -> Result<Vec<String>, OpsError> {
-    let output = Command::new("git")
-        .arg("diff")
-        .arg("--name-only")
-        .arg(format!("{base}..{head}"))
-        .output()?;
-    if !output.status.success() {
-        return Err(OpsError::Invalid(format!(
-            "git diff failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        )));
-    }
-    let mut files: Vec<String> = String::from_utf8_lossy(&output.stdout)
+    git_changed_files_in_repo(Path::new("."), base, head)
+}
+
+fn git_changed_files_in_repo(repo: &Path, base: &str, head: &str) -> Result<Vec<String>, OpsError> {
+    let primary = run_git(repo, &["diff", "--name-only", &format!("{base}..{head}")])?;
+    let raw = if primary.status.success() {
+        String::from_utf8_lossy(&primary.stdout).into_owned()
+    } else {
+        let fallback = run_git(repo, &["show", "--pretty=format:", "--name-only", head])?;
+        if !fallback.status.success() {
+            return Err(OpsError::Invalid(format!(
+                "git diff failed: {}; fallback failed: {}",
+                String::from_utf8_lossy(&primary.stderr).trim(),
+                String::from_utf8_lossy(&fallback.stderr).trim()
+            )));
+        }
+        String::from_utf8_lossy(&fallback.stdout).into_owned()
+    };
+
+    let mut files: Vec<String> = raw
         .lines()
         .map(str::trim)
         .filter(|line| !line.is_empty())
@@ -109,6 +117,12 @@ fn git_changed_files(base: &str, head: &str) -> Result<Vec<String>, OpsError> {
     files.sort();
     files.dedup();
     Ok(files)
+}
+
+fn run_git(repo: &Path, args: &[&str]) -> Result<std::process::Output, OpsError> {
+    let mut cmd = Command::new("git");
+    cmd.args(args).current_dir(repo);
+    Ok(cmd.output()?)
 }
 
 fn build_plan(
@@ -126,14 +140,11 @@ fn build_plan(
 
     let mut modules = BTreeSet::new();
     let mut gates = BTreeSet::new();
-    let mut known_paths = BTreeSet::new();
-
     for file in &analyzed {
         let mut matched = false;
         for rule in &rules.rules {
             if rule_matches(rule, file) {
                 matched = true;
-                known_paths.insert(file.clone());
                 for module in &rule.modules {
                     modules.insert(module.clone());
                 }
@@ -308,6 +319,7 @@ fn write_plan_json(path: &Path, plan: &ChangeImpactPlan) -> Result<(), OpsError>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
 
     #[test]
     fn glob_supports_double_star_and_wildcards() {
@@ -391,5 +403,22 @@ mod tests {
         };
         let plan = build_plan("a", "b", &["x.rs".to_string()], &rules);
         assert_eq!(plan.commands, vec!["cmd1"]);
+    }
+
+    #[test]
+    fn git_change_impact_falls_back_to_root_diff_when_base_is_missing() {
+        let dir = tempfile::tempdir().expect("tmp");
+        run_git(dir.path(), &["init"]).expect("git init");
+        run_git(dir.path(), &["config", "user.email", "ci@example.com"]).expect("config email");
+        run_git(dir.path(), &["config", "user.name", "CI"]).expect("config name");
+
+        let mut file = std::fs::File::create(dir.path().join("README.md")).expect("create file");
+        writeln!(file, "hello").expect("write file");
+        run_git(dir.path(), &["add", "."]).expect("git add");
+        run_git(dir.path(), &["commit", "-m", "init"]).expect("git commit");
+
+        let changed =
+            git_changed_files_in_repo(dir.path(), "HEAD~1", "HEAD").expect("fallback diff");
+        assert_eq!(changed, vec!["README.md"]);
     }
 }
