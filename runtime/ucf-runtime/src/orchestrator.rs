@@ -23,7 +23,10 @@ use crate::hooks::{
 use crate::nsr_v1::{
     eval_input_from_candidate, NsrEngineV1, NsrOutput as NsrV1Output, NsrStatus as NsrV1Status,
 };
-use crate::sandbox::{call_spec_from_control, execute_tool_call, CapabilitySetSummary};
+use crate::tool_plugins::{
+    compact_tool_result_note, run_plugin_tool, CapabilityTokenBinding, SandboxEnv,
+    ToolPluginRegistry,
+};
 use std::collections::HashSet;
 use std::time::Instant;
 #[cfg(any(feature = "gpu-cuda", feature = "gpu-metal"))]
@@ -4923,20 +4926,55 @@ impl RuntimeOrchestrator {
                 }
             }
 
-            let capability_summary = CapabilitySetSummary::from_set(&self.tool_gate.capabilities);
-            let (module, op, input) = call_spec_from_control(&ctrl).map_err(|_| {
-                ucf_policy::errors::PolicyError::AdapterError("sandbox_call_spec_failed")
-            })?;
-            let audit = execute_tool_call(
-                adapter,
-                &mut self.tool_gate,
-                request.clone(),
-                module.clone(),
-                op.clone(),
-                input,
-                capability_summary,
-            )
-            .map_err(|_| ucf_policy::errors::PolicyError::AdapterError("sandbox_call_failed"))?;
+            let Some(issued_token) = issue_decision.issued_token.clone() else {
+                let eid_exec_denied = self.ids.next();
+                let exec_denied = ExperienceRecord::audit(
+                    eid_exec_denied,
+                    decision.time,
+                    decision.corr,
+                    ExperienceKind::ToolExecution,
+                    AuditPayload::ToolExecution(ToolExecutionRecord {
+                        tool_request_id: request.id,
+                        status: "Denied".to_string(),
+                        bytes_out: request.payload_hint.bytes_out,
+                        bytes_in: request.payload_hint.bytes_in,
+                        error_code: Some("missing_issued_token".to_string()),
+                    }),
+                    self.audit_head_digest,
+                );
+                self.audit_head_digest = exec_denied.audit_digest.unwrap_or(self.audit_head_digest);
+                self.ess.append(exec_denied)?;
+                continue;
+            };
+
+            let registry = ToolPluginRegistry::with_builtin_stubs();
+            let plugin_audit = run_plugin_tool(
+                &registry,
+                &request,
+                crate::tool_plugins::PluginDispatchSpec {
+                    tool_id: plan.tool_id.clone(),
+                    tool_class_id: plan.tool_class_id.clone(),
+                    plan_digest: plan.plan_digest,
+                    args: plan.args_canonical.clone(),
+                    binding: CapabilityTokenBinding {
+                        token: issued_token.clone(),
+                        plan_digest: plan.plan_digest,
+                    },
+                },
+                &SandboxEnv { fs: None },
+            );
+            let module = format!("plugin:{}", plan.tool_id);
+            let op = format!("class:{}", plan.tool_class_id);
+            let audit = crate::sandbox::SandboxToolExecution {
+                request: request.clone(),
+                auth: plugin_audit.auth,
+                result: plugin_audit.result.clone(),
+                call_digest: plan.plan_digest,
+                reply_digest: plugin_audit.result_digest,
+                capability_summary: crate::sandbox::CapabilitySetSummary::default(),
+                module: module.clone(),
+                op: op.clone(),
+            };
 
             let req_payload = AuditPayload::ToolRequest(ToolRequestRecord {
                 tool_request_id: request.id,
@@ -4966,9 +5004,7 @@ impl RuntimeOrchestrator {
                 op,
                 evidence_chain_digest: request.evidence_chain_digest,
                 capability_count: audit.capability_summary.items.len() as u32,
-                isolation_runtime: Some(
-                    std::env::var("UCF_ISOLATION_RUNTIME").unwrap_or_else(|_| "inproc".to_string()),
-                ),
+                isolation_runtime: Some("plugin_builtin_v1".to_string()),
                 wasm_module_digest: None,
                 fuel_used: None,
             });
@@ -5017,7 +5053,10 @@ impl RuntimeOrchestrator {
                 status: format!("{:?}", audit.result.status),
                 bytes_out: audit.result.bytes_out,
                 bytes_in: audit.result.bytes_in,
-                error_code: audit.result.error_code.clone(),
+                error_code: Some(compact_tool_result_note(
+                    plugin_audit.result_digest,
+                    &plugin_audit.preview,
+                )),
             });
             let eid_exec = self.ids.next();
             let exec_record = ExperienceRecord::audit(
