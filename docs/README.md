@@ -30,3 +30,8 @@
 ## Roadmaps & Runbooks
 - [v1.1 Plan: Real Models & Optional GPU Lane](v1_1_plan.md)
 - [Weights Incident Response](runbooks/weights_incident_response.md)
+
+## Repository Hygiene
+- [Branch Policy](branch_policy.md)
+- [Contributing Workflow](contributing_workflow.md)
+- [Codex Instructions (AGENTS.md)](../AGENTS.md)

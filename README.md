@@ -68,6 +68,9 @@ Safety defaults:
 - Canonical copy/paste template: `docs/codex_prompt_template.txt`
 - Filled example: `docs/codex_prompt_template_example.txt`
 - Current series state snapshot: `docs/series_state_snapshot.md`
+- Contributor workflow: `docs/contributing_workflow.md`
+- Canonical branch policy: `docs/branch_policy.md`
+- Codex repo instructions: `AGENTS.md`
 
 Quick workflow:
 1. Start at the next monotonic prompt ID and follow `docs/prompt_rulebook.md`.
