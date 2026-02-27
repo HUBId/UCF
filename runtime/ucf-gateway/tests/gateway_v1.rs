@@ -73,7 +73,7 @@ fn negotiation_and_submit_and_subscribe_and_ess_query_work() {
 }
 
 #[test]
-fn size_caps_and_auth_denials_are_enforced_and_logged() {
+fn size_caps_auth_denials_rate_limits_and_abuse_logs_are_enforced() {
     let td = tempdir().expect("tmp");
     let mut svc = GatewayService::new(GatewayConfig::for_tests(td.path()));
 
@@ -82,7 +82,7 @@ fn size_caps_and_auth_denials_are_enforced_and_logged() {
     let err = svc
         .submit_control_frame("test-token", big)
         .expect_err("must reject");
-    assert!(err.to_string().contains("large"));
+    assert_eq!(err.to_string(), "message too large");
 
     let err = svc
         .query_ess(
@@ -96,27 +96,50 @@ fn size_caps_and_auth_denials_are_enforced_and_logged() {
             },
         )
         .expect_err("must reject auth");
-    assert_eq!(err.to_string(), "unauthorized");
+    assert_eq!(err.to_string(), "auth denied");
 
-    let _ = svc.handle_request(
+    for _ in 0..6 {
+        let _ = svc.handle_request(
+            proto::GatewayRequest {
+                negotiated_version: 1,
+                payload: Some(proto::gateway_request::Payload::Submit(submit_request([
+                    1, 2, 3, 4, 5, 6, 7, 8,
+                ]))),
+            },
+            "test-token",
+            "client-a",
+        );
+    }
+
+    let abuse_body =
+        std::fs::read_to_string(td.path().join("gateway_abuse_records.jsonl")).expect("abuse");
+    assert!(abuse_body.contains("RateLimit"));
+    assert!(!abuse_body.contains("safe text"));
+
+    let deny = svc.handle_request(
         proto::GatewayRequest {
             negotiated_version: 1,
-            payload: Some(proto::gateway_request::Payload::Handshake(
-                proto::HandshakeRequest {
+            payload: Some(proto::gateway_request::Payload::EssQuery(
+                proto::EssQueryRequest {
                     schema_version: 1,
-                    client_id: "client-a".to_string(),
-                    supported_versions: vec![1],
-                    auth_token: "bad".to_string(),
+                    run_id: "run-test".to_string(),
+                    policy_graph_digest_prefix: vec![1, 2, 3, 4, 5, 6, 7, 8],
+                    max_records: 2,
+                    auth_token: "wrong-token".to_string(),
                 },
             )),
         },
-        "bad",
+        "wrong-token",
         "client-a",
     );
-
-    let log_body =
-        std::fs::read_to_string(td.path().join("gateway_access_records.jsonl")).expect("log");
-    assert!(log_body.contains("\"endpoint\":\"handshake\""));
+    match deny.payload {
+        Some(proto::gateway_response::Payload::Error(e)) => {
+            assert_eq!(e.code, 1001);
+            assert!(!e.request_id.is_empty());
+            assert_eq!(e.message, "auth denied");
+        }
+        _ => panic!("expected error"),
+    }
 }
 
 #[test]
@@ -129,7 +152,7 @@ fn tcp_length_delimited_roundtrip_works() {
         let mut svc = GatewayService::new(GatewayConfig::for_tests(td.path()));
         let listener = std::net::TcpListener::bind(addr).expect("bind");
         let (mut socket, _) = listener.accept().expect("accept");
-        let req = read_frame(&mut socket, 128 * 1024).expect("read");
+        let req = read_frame(&mut socket, 256 * 1024).expect("read");
         let resp = svc.handle_request(req, "test-token", "c1");
         write_frame(&mut socket, &resp).expect("write");
     });

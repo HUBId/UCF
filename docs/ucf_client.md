@@ -18,6 +18,20 @@ ucf-client report explain-tick --t 123 [--endpoint ...] [--auth ...]
 ucf-client report readiness-gate --latest [--endpoint ...] [--auth ...]
 ```
 
+## Auth usage
+
+Gateway hardening expects a shared local token.
+
+1. Start gateway with token (test/prod):
+   ```bash
+   export UCF_GATEWAY_TOKEN=test-token
+   ```
+2. Pass the same token through the client:
+   ```bash
+   export UCF_CLIENT_AUTH=test-token
+   ```
+3. Requests without valid auth return `ERR_AUTH_DENIED`.
+
 ## Deterministic fixtures
 
 - `fixtures/client/controlframe_min.json`: minimal deterministic control frame.
@@ -26,7 +40,7 @@ ucf-client report readiness-gate --latest [--endpoint ...] [--auth ...]
 ## Operator smoke workflow
 
 1. Ensure gateway is running locally (unix socket or loopback TCP).
-2. Set auth token if needed:
+2. Set auth token:
    ```bash
    export UCF_CLIENT_AUTH=test-token
    ```
