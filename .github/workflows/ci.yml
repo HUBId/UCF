@@ -31,6 +31,18 @@ jobs:
         run: |
           cargo run -p ucf-ops -- spec snapshot --policy policies/packs/base_v1 --overlay policies/packs/overlays/test --out docs/spec_snapshot.md
           git diff --exit-code docs/spec_snapshot.md
+      - name: Change impact plan (informational)
+        run: |
+          cargo run -p ucf-ops -- change-impact --base HEAD~1 --head HEAD --out ./out/change_impact_plan.md --json-out ./out/change_impact_plan.json
+      - name: Upload change impact artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: change-impact-plan
+          path: |
+            out/change_impact_plan.md
+            out/change_impact_plan.json
+
       - name: Cargo test workspace
         run: PROPTEST_CASES=128 cargo test --workspace --all-targets
       - name: Cargo test no-default-features
