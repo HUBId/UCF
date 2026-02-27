@@ -1,0 +1,15 @@
+profile = "dev"
+policy_overlay = "dev"
+backend_pack = "toy_v1"
+slot_ebm_mode = "shadow"
+offline = true
+compute_backend = "stub"
+compute_seed = 233811181
+compute_budget_profile = "default"
+isolation_runtime = "inproc"
+capabilities_default = "deny"
+sampling_enabled = true
+determinism_lock_strict = true
+docs_lint_required = false
+stage_isolation_optional = true
+log_level = "debug"

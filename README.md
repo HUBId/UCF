@@ -41,6 +41,15 @@ See `docs/feature_matrix.md` for details.
   - `docs/artifact_convention_v0.md`
 
 
+## Minimal Viable Governance v2 Profiles
+- Profile ladder via `UCF_PROFILE=dev|test|prod` with config files in `configs/`.
+- Start commands:
+  - `UCF_PROFILE=dev cargo run -p ucf-ops -- bringup --scenario fixtures/e2e_scenario_a.json --ticks 32 --out ./out/dev`
+  - `UCF_PROFILE=test cargo run -p ucf-ops -- bringup --scenario fixtures/e2e_scenario_a.json --ticks 32 --out ./out/test`
+  - `UCF_PROFILE=prod cargo run -p ucf-ops -- bringup --scenario fixtures/e2e_scenario_a.json --ticks 32 --out ./out/prod`
+- Unknown config keys fail fast during TOML parse/load.
+- Migration guide: `docs/config_migration_v2.md`.
+
 ## Prompt Runner
 - Queue file (machine): `docs/prompt_queue.toml`
 - Queue file (human): `docs/prompt_queue.md`
