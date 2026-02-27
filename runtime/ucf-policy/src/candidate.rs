@@ -213,7 +213,7 @@ pub struct DefaultCandidateGeneratorV0;
 impl CandidateGenerator for DefaultCandidateGeneratorV0 {
     fn generate(
         &self,
-        _frame: &ControlFrame,
+        frame: &ControlFrame,
         ctx: &DecisionContext,
         budget: DecisionBudget,
     ) -> Vec<DecisionCandidate> {
@@ -237,12 +237,27 @@ impl CandidateGenerator for DefaultCandidateGeneratorV0 {
         }));
 
         if ctx.planning_allowed {
+            let demo_toolread = match &frame.payload {
+                ucf_frames::v1::ControlPayload::Text(text) => text.contains("tool_demo_file_read"),
+                _ => false,
+            };
             let liquid_uncertainty_high = ctx
                 .liquid_context
                 .map(|window| window.mean_uncertainty > 0.75 || window.max_uncertainty > 0.9)
                 .unwrap_or(false);
-            let tool_intents = if ctx.risk > 0.7 || ctx.confidence < 0.35 || liquid_uncertainty_high
-            {
+            let tool_intents = if demo_toolread {
+                let demo_intent = ToolIntent::new(
+                    CapabilityKind::FileRead,
+                    TargetRef::new(hash64("demo_root:hello.txt"), Some("demo_root:hello.txt")),
+                    PayloadHint {
+                        bytes_out: Some(128),
+                        bytes_in: Some(64),
+                    },
+                    EffectClass::ReadOnly,
+                    false,
+                );
+                vec![demo_intent.clone(), demo_intent]
+            } else if ctx.risk > 0.7 || ctx.confidence < 0.35 || liquid_uncertainty_high {
                 Vec::new()
             } else {
                 vec![ToolIntent::new(
@@ -270,10 +285,18 @@ impl CandidateGenerator for DefaultCandidateGeneratorV0 {
                     OutputClass::ExternalIo
                 },
                 tool_intents,
-                estimated_cost: CostHint {
-                    compute_units: 2,
-                    tool_calls: 1,
-                    bytes_out: 128,
+                estimated_cost: if demo_toolread {
+                    CostHint {
+                        compute_units: 0,
+                        tool_calls: 1,
+                        bytes_out: 64,
+                    }
+                } else {
+                    CostHint {
+                        compute_units: 2,
+                        tool_calls: 1,
+                        bytes_out: 128,
+                    }
                 },
                 rationale: RationaleSummary::bounded(vec!["deterministic plan candidate"]),
                 evidence_chain_digest: ctx.evidence_chain_digest,

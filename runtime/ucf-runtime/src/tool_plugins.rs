@@ -314,7 +314,10 @@ fn sanitize_response(resp: ToolExecResponse) -> ToolExecResponse {
 
 fn extract_allowed_roots(scope: &CapabilityScope) -> Vec<String> {
     match scope {
-        CapabilityScope::Paths(items) => items.clone(),
+        CapabilityScope::Paths(items) => items
+            .iter()
+            .map(|item| item.split(':').next().unwrap_or(item.as_str()).to_string())
+            .collect(),
         _ => Vec::new(),
     }
 }

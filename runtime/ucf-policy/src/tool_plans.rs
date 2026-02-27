@@ -72,11 +72,15 @@ pub fn build_plan(
         .chars()
         .take(MAX_PLAN_STRING_CHARS)
         .collect::<String>();
-    let tool_class_id = request
-        .target
-        .chars()
-        .take(MAX_PLAN_STRING_CHARS)
-        .collect::<String>();
+    let tool_class_id = if matches!(request.kind, CapabilityKind::FileRead) {
+        "memory_write".to_string()
+    } else {
+        request
+            .target
+            .chars()
+            .take(MAX_PLAN_STRING_CHARS)
+            .collect::<String>()
+    };
     let args_canonical = canonical_args(request);
     let expected_effect_class = match intent.expected_effect {
         EffectClass::ReadOnly => ToolEffectClass::Read,
@@ -123,6 +127,35 @@ fn digest_plan_bytes(
 }
 
 pub fn canonical_args(req: &ToolRequest) -> Vec<u8> {
+    if matches!(req.kind, CapabilityKind::FileRead) {
+        let (root_id, rel_path) = req
+            .target
+            .split_once(':')
+            .map(|(root, rel)| (root.trim(), rel.trim()))
+            .unwrap_or(("", ""));
+        let mut parts = [
+            format!(
+                "path={}",
+                rel_path
+                    .chars()
+                    .take(MAX_PLAN_STRING_CHARS)
+                    .collect::<String>()
+            ),
+            format!(
+                "root_id={}",
+                root_id
+                    .chars()
+                    .take(MAX_PLAN_STRING_CHARS)
+                    .collect::<String>()
+            ),
+        ];
+        parts.sort();
+        let mut bytes = parts.join("\n").into_bytes();
+        if bytes.len() > MAX_PLAN_ARGS_BYTES {
+            bytes.truncate(MAX_PLAN_ARGS_BYTES);
+        }
+        return bytes;
+    }
     let mut parts = [
         format!("bytes_in={}", req.payload_hint.bytes_in.unwrap_or(0)),
         format!("bytes_out={}", req.payload_hint.bytes_out.unwrap_or(0)),

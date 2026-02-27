@@ -874,7 +874,10 @@ fn base_policy_token(
         {
             Some(CapabilityToken::issue(
                 CapabilityKind::FileRead,
-                CapabilityScope::Paths(vec!["/workspace/UCF/config".to_string()]),
+                CapabilityScope::Paths(vec![
+                    "demo_root:hello.txt".to_string(),
+                    "/workspace/UCF/config".to_string(),
+                ]),
                 CapabilityLimits {
                     max_calls_per_window: 2,
                     window_ticks: 10,

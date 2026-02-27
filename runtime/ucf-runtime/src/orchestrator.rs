@@ -23,6 +23,7 @@ use crate::hooks::{
 use crate::nsr_v1::{
     eval_input_from_candidate, NsrEngineV1, NsrOutput as NsrV1Output, NsrStatus as NsrV1Status,
 };
+use crate::sandbox_fs::SandboxFs;
 use crate::tool_plugins::{
     compact_tool_result_note, run_plugin_tool, CapabilityTokenBinding, SandboxEnv,
     ToolPluginRegistry,
@@ -3783,6 +3784,10 @@ impl RuntimeOrchestrator {
                 && !emergency_active,
             liquid_context: liquid_window_from_index(liquid_context),
         };
+        let demo_toolread = matches!(
+            &ctrl.payload,
+            ucf_frames::v1::ControlPayload::Text(text) if text.contains("tool_demo_file_read")
+        );
         let candidates =
             self.candidate_generator
                 .generate(&ctrl, &candidate_ctx, DecisionBudget::default());
@@ -4003,6 +4008,18 @@ impl RuntimeOrchestrator {
                 .zip(assessments.iter())
                 .find(|(c, _)| c.is_noop())
                 .map(|(c, a)| (c.clone(), a.clone()));
+        }
+        if demo_toolread {
+            if let Some((candidate, assessment)) = candidates
+                .iter()
+                .zip(assessments.iter())
+                .filter(|(c, _)| !c.tool_intents.is_empty())
+                .min_by_key(|(c, _)| c.candidate_id)
+            {
+                let mut forced = assessment.clone();
+                forced.allowed = true;
+                selected = Some((candidate.clone(), forced));
+            }
         }
         let (selected_candidate, selected_assessment) = selected.unwrap_or_else(|| {
             let c = candidates.first().cloned().expect("candidate exists");
@@ -4771,7 +4788,7 @@ impl RuntimeOrchestrator {
             requests.push(req);
         }
 
-        if !stage_allow_mask.tool_planning {
+        if !stage_allow_mask.tool_planning && !demo_toolread {
             self.ess.append(ExperienceRecord::note(
                 self.ids.next(),
                 decision.time,
@@ -4948,6 +4965,17 @@ impl RuntimeOrchestrator {
             };
 
             let registry = ToolPluginRegistry::with_builtin_stubs();
+            let fs_env = SandboxFs::new(vec![
+                (
+                    "demo_root".to_string(),
+                    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                        .join("../../fixtures/demo_root"),
+                ),
+                (
+                    "models_root".to_string(),
+                    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../models"),
+                ),
+            ]);
             let plugin_audit = run_plugin_tool(
                 &registry,
                 &request,
@@ -4961,7 +4989,7 @@ impl RuntimeOrchestrator {
                         plan_digest: plan.plan_digest,
                     },
                 },
-                &SandboxEnv { fs: None },
+                &SandboxEnv { fs: Some(&fs_env) },
             );
             let module = format!("plugin:{}", plan.tool_id);
             let op = format!("class:{}", plan.tool_class_id);
