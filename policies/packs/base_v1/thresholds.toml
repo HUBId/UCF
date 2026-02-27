@@ -4,3 +4,6 @@ governor_tier_2_q = 5000
 governor_tier_3_q = 7500
 ebm_high_risk_q = 7000
 ebm_low_risk_q = 3000
+world_vljepa_min_windows = 2
+world_vljepa_drift_alarm_rate_max_q = 500
+ssm_opt_drift_alarm_rate_max_q = 500

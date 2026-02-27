@@ -1,0 +1,15 @@
+profile = "prod"
+policy_overlay = "prod"
+backend_pack = "worker_v1"
+slot_ebm_mode = "shadow"
+offline = true
+compute_backend = "stub"
+compute_seed = 659918
+compute_budget_profile = "stress"
+isolation_runtime = "inproc"
+capabilities_default = "deny"
+sampling_enabled = false
+determinism_lock_strict = true
+docs_lint_required = true
+stage_isolation_optional = true
+log_level = "warn"

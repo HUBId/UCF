@@ -21,9 +21,9 @@ Pack selection is validated at build/start time. If a selected backend pack requ
 `UCF_PROFILE=dev|test|prod` is resolved by `ucf-ops` and merged with env overrides.
 
 Defaults:
-- `dev`: toy backend, debug logs, allow tools default.
-- `test`: deterministic seed, tight budget, deny tools default, offline on.
-- `prod`: deterministic seed, stress budget, deny tools default, offline on.
+- `dev`: offline, shadow governance lane, no tools by default, debug logs.
+- `test`: deterministic, deny-by-default, shadow modes, offline on.
+- `prod`: deterministic strict, deny-by-default, no sampling, policy-hash locked flow.
 
 ## One-command bringup
 

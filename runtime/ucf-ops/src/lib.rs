@@ -96,29 +96,47 @@ impl OpsError {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct OpsConfig {
     pub profile: String,
+    pub policy_overlay: String,
+    pub backend_pack: String,
+    pub slot_ebm_mode: String,
     pub offline: bool,
     pub compute_backend: ComputeBackendKind,
     pub compute_seed: u64,
     pub compute_budget_profile: String,
     pub isolation_runtime: String,
     pub capabilities_default: String,
+    pub sampling_enabled: bool,
+    pub determinism_lock_strict: bool,
+    pub docs_lint_required: bool,
+    pub stage_isolation_optional: bool,
+    pub emergency_policy_pin: Option<String>,
     pub log_level: String,
+    pub config_digest: String,
 }
 
 impl Default for OpsConfig {
     fn default() -> Self {
         Self {
             profile: "test".to_string(),
+            policy_overlay: "test".to_string(),
+            backend_pack: "toy_v1".to_string(),
+            slot_ebm_mode: "shadow".to_string(),
             offline: true,
             compute_backend: ComputeBackendKind::Stub,
             compute_seed: 0xDEC0DED,
             compute_budget_profile: "tight".to_string(),
             isolation_runtime: "inproc".to_string(),
             capabilities_default: "deny".to_string(),
+            sampling_enabled: false,
+            determinism_lock_strict: true,
+            docs_lint_required: false,
+            stage_isolation_optional: true,
+            emergency_policy_pin: None,
             log_level: "info".to_string(),
+            config_digest: String::new(),
         }
     }
 }
@@ -152,6 +170,8 @@ pub struct RunMetadataRecord {
     pub model_hashes_digest: String,
     pub enabled_features_bitmap: u16,
     pub profile: String,
+    pub config_digest: String,
+    pub policy_overlay: String,
     pub schema_versions: BTreeMap<String, u16>,
     pub parent_run_id: Option<String>,
     pub resume_reason: Option<ResumeReason>,
@@ -891,8 +911,6 @@ pub fn readiness_gate(
     }
 
     std::env::set_var("UCF_PROFILE", profile);
-    std::env::set_var("UCF_OFFLINE", "1");
-    std::env::set_var("UCF_TOOLS_DEFAULT", "deny");
     std::env::set_var("UCF_SSM_KERNEL", "ref");
 
     let base = workdir.join("readiness_gate");
@@ -1784,6 +1802,17 @@ fn check_weights_lifecycle_integrity(_workdir: &Path) -> Result<CheckResult, Ops
     }
 }
 
+fn policy_threshold_i64(key: &str) -> Option<i64> {
+    let overlay = std::env::var("UCF_POLICY_OVERLAY").ok();
+    let overlay_path = overlay
+        .as_deref()
+        .map(|name| PathBuf::from("policies/packs/overlays").join(name));
+    let overlay_ref = overlay_path.as_deref();
+    let (graph, _) =
+        load_and_merge_policy_graph(Path::new("policies/packs/base_v1"), overlay_ref).ok()?;
+    graph.thresholds.get(key).copied()
+}
+
 fn check_world_vljepa_shadow_evidence(workdir: &Path) -> Result<CheckResult, OpsError> {
     let manifest: Option<GateLifecycleManifest> = fs::read_to_string("models/MANIFEST.toml")
         .ok()
@@ -1834,13 +1863,11 @@ fn check_world_vljepa_shadow_evidence(workdir: &Path) -> Result<CheckResult, Ops
         .find(|p| p.slot == "world_vljepa")
         .and_then(|p| p.shadow_report_digest_prefix.clone())
         .is_some();
-    let min_windows = std::env::var("UCF_WORLD_VLJEPA_GATE_MIN_WINDOWS")
-        .ok()
-        .and_then(|v| v.parse::<usize>().ok())
+    let min_windows = policy_threshold_i64("world_vljepa_min_windows")
+        .and_then(|v| usize::try_from(v).ok())
         .unwrap_or(2);
-    let drift_threshold = std::env::var("UCF_WORLD_VLJEPA_DRIFT_ALARM_RATE_MAX")
-        .ok()
-        .and_then(|v| v.parse::<f32>().ok())
+    let drift_threshold = policy_threshold_i64("world_vljepa_drift_alarm_rate_max_q")
+        .map(|v| (v as f32) / 10_000.0)
         .unwrap_or(0.05);
     let alarm_rate = if rep.window_count == 0 {
         1.0
@@ -1967,7 +1994,11 @@ fn check_ssm_opt_drift(workdir: &Path) -> Result<CheckResult, OpsError> {
         .get("digest_mismatch_rate")
         .and_then(|v| v.as_f64())
         .unwrap_or(1.0);
-    if drift <= 0.05 && mismatch == 0.0 {
+    let drift_limit = policy_threshold_i64("ssm_opt_drift_alarm_rate_max_q")
+        .map(|v| (v as f64) / 10_000.0)
+        .unwrap_or(0.05);
+
+    if drift <= drift_limit && mismatch == 0.0 {
         Ok(check_pass(
             "ssm_opt",
             [
@@ -2340,6 +2371,11 @@ pub fn bringup(workdir: &Path, demo: bool, ticks: u64) -> Result<BringupResult, 
     std::env::set_var("UCF_COMPUTE_BACKEND", cfg.compute_backend.as_env_str());
     std::env::set_var("UCF_COMPUTE_SEED", cfg.compute_seed.to_string());
     std::env::set_var("UCF_COMPUTE_BUDGET_PROFILE", &cfg.compute_budget_profile);
+    std::env::set_var("UCF_POLICY_OVERLAY", &cfg.policy_overlay);
+    std::env::set_var("UCF_SLOT_EBM_MODE", &cfg.slot_ebm_mode);
+    std::env::set_var("UCF_BACKEND_PACK", &cfg.backend_pack);
+    std::env::set_var("UCF_TOOLS_DEFAULT", &cfg.capabilities_default);
+    std::env::set_var("UCF_OFFLINE", if cfg.offline { "1" } else { "0" });
     ensure_policy_bundle_hash_env();
     ensure_policy_bundle_root()?;
 
@@ -2429,9 +2465,6 @@ pub fn one_command_bringup(
     fs::create_dir_all(out_dir)?;
     let _scenario_doc: serde_json::Value = serde_json::from_str(&fs::read_to_string(scenario)?)?;
 
-    std::env::set_var("UCF_PROFILE", "test");
-    std::env::set_var("UCF_OFFLINE", "1");
-    std::env::set_var("UCF_TOOLS_DEFAULT", "deny");
     std::env::set_var("UCF_SSM_KERNEL", "ref");
     let shadow_base = workdir.join("reports").join("world_vljepa");
     fs::create_dir_all(&shadow_base)?;
@@ -2449,6 +2482,7 @@ pub fn one_command_bringup(
     );
     ucf_compute::world_vljepa_shadow::reset_shadow_state();
     let result = bringup(workdir, true, ticks)?;
+    let cfg = load_or_init_config(workdir)?;
     let build = build_tag()?;
     let pack = BackendPackFactory::build(BackendPackConfig::from_env()?)?;
     let meta = pack.meta();
@@ -2479,7 +2513,9 @@ pub fn one_command_bringup(
         fixtures_digest: hex::encode(meta.fixtures_digest),
         model_hashes_digest: resume_cfg.model_hashes_digest.clone(),
         enabled_features_bitmap: resume_cfg.enabled_features_bitmap,
-        profile: resolved_profile_name(),
+        profile: cfg.profile.clone(),
+        config_digest: cfg.config_digest.clone(),
+        policy_overlay: cfg.policy_overlay.clone(),
         schema_versions,
         parent_run_id: None,
         resume_reason: None,
@@ -3458,64 +3494,133 @@ fn bounded_preview(text: &str, max_chars: usize) -> String {
     out
 }
 pub fn load_or_init_config(workdir: &Path) -> Result<OpsConfig, OpsError> {
-    let path = workdir.join("config_resolved.json");
-    if !path.exists() {
-        let cfg = profile_defaults(&resolved_profile_name());
-        write_json(&path, &cfg)?;
-        return Ok(cfg);
-    }
-    let mut cfg: OpsConfig = serde_json::from_str(&fs::read_to_string(path)?)?;
-    let prof = resolved_profile_name();
-    cfg.profile = prof.clone();
-    let defaults = profile_defaults(&prof);
-    if cfg.profile.is_empty() {
-        cfg = defaults;
-    }
-    Ok(apply_env_overrides(cfg))
+    let profile = resolved_profile_name();
+    let path = profile_config_path(&profile);
+    let mut cfg = load_profile_config(&path)?;
+
+    cfg.profile = profile;
+    apply_env_overrides(&mut cfg)?;
+    validate_config_ladder(&cfg)?;
+    cfg.config_digest = ops_config_digest(&cfg)?;
+
+    write_json(workdir.join("config_resolved.json"), &cfg)?;
+    Ok(cfg)
 }
 
 fn resolved_profile_name() -> String {
-    std::env::var("UCF_PROFILE")
+    let profile = std::env::var("UCF_PROFILE")
         .unwrap_or_else(|_| "test".to_string())
-        .to_ascii_lowercase()
-}
-
-fn profile_defaults(profile: &str) -> OpsConfig {
-    match profile {
-        "dev" => OpsConfig {
-            profile: "dev".to_string(),
-            offline: true,
-            compute_backend: ComputeBackendKind::Stub,
-            compute_seed: 0xDEC0DED,
-            compute_budget_profile: "default".to_string(),
-            isolation_runtime: "inproc".to_string(),
-            capabilities_default: "allow".to_string(),
-            log_level: "debug".to_string(),
-        },
-        "prod" => OpsConfig {
-            profile: "prod".to_string(),
-            offline: true,
-            compute_backend: ComputeBackendKind::Stub,
-            compute_seed: 0xA11CE,
-            compute_budget_profile: "stress".to_string(),
-            isolation_runtime: "inproc".to_string(),
-            capabilities_default: "deny".to_string(),
-            log_level: "info".to_string(),
-        },
-        _ => OpsConfig::default(),
+        .to_ascii_lowercase();
+    match profile.as_str() {
+        "dev" | "test" | "prod" => profile,
+        _ => "test".to_string(),
     }
 }
 
-fn apply_env_overrides(mut cfg: OpsConfig) -> OpsConfig {
-    if let Ok(v) = std::env::var("UCF_COMPUTE_SEED") {
-        if let Ok(seed) = v.parse::<u64>() {
-            cfg.compute_seed = seed;
+fn profile_config_path(profile: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../configs")
+        .join(format!("{profile}.toml"))
+}
+
+fn load_profile_config(path: &Path) -> Result<OpsConfig, OpsError> {
+    let raw = fs::read_to_string(path)?;
+    toml::from_str::<OpsConfig>(&raw)
+        .map_err(|e| OpsError::Invalid(format!("invalid config {}: {e}", path.display())))
+}
+
+fn profile_rank(profile: &str) -> u8 {
+    match profile {
+        "dev" => 0,
+        "test" => 1,
+        "prod" => 2,
+        _ => 0,
+    }
+}
+
+fn validate_config_ladder(cfg: &OpsConfig) -> Result<(), OpsError> {
+    if cfg.policy_overlay != cfg.profile {
+        return Err(OpsError::Invalid(format!(
+            "policy_overlay must match profile: profile={} overlay={}",
+            cfg.profile, cfg.policy_overlay
+        )));
+    }
+
+    if !cfg.offline {
+        return Err(OpsError::Invalid(
+            "offline must be enabled for all profiles".to_string(),
+        ));
+    }
+
+    let rank = profile_rank(&cfg.profile);
+    if rank >= profile_rank("test") {
+        if cfg.compute_seed == 0 {
+            return Err(OpsError::Invalid(
+                "test/prod require non-zero deterministic seed".to_string(),
+            ));
+        }
+        if cfg.sampling_enabled {
+            return Err(OpsError::Invalid(
+                "sampling must be disabled in test/prod".to_string(),
+            ));
+        }
+        if !cfg.determinism_lock_strict {
+            return Err(OpsError::Invalid(
+                "determinism_lock_strict must be true in test/prod".to_string(),
+            ));
+        }
+        if cfg.slot_ebm_mode != "shadow"
+            && cfg.slot_ebm_mode != "active"
+            && cfg.slot_ebm_mode != "off"
+        {
+            return Err(OpsError::Invalid(
+                "slot_ebm_mode must be shadow, active, or off".to_string(),
+            ));
         }
     }
-    if let Ok(v) = std::env::var("UCF_COMPUTE_BUDGET_PROFILE") {
-        cfg.compute_budget_profile = v;
+
+    if rank >= profile_rank("prod") {
+        if cfg.capabilities_default != "deny" {
+            return Err(OpsError::Invalid(
+                "prod requires capabilities_default=deny".to_string(),
+            ));
+        }
+        if cfg.slot_ebm_mode != "shadow" {
+            return Err(OpsError::Invalid(
+                "prod requires slot_ebm_mode=shadow".to_string(),
+            ));
+        }
+        if !cfg.docs_lint_required {
+            return Err(OpsError::Invalid(
+                "prod requires docs_lint_required=true".to_string(),
+            ));
+        }
     }
-    cfg
+
+    Ok(())
+}
+
+fn apply_env_overrides(cfg: &mut OpsConfig) -> Result<(), OpsError> {
+    if let Ok(v) = std::env::var("UCF_POLICY_OVERLAY") {
+        cfg.policy_overlay = v;
+    }
+    if let Ok(v) = std::env::var("UCF_SLOT_EBM_MODE") {
+        cfg.slot_ebm_mode = v;
+    }
+    if let Ok(v) = std::env::var("UCF_STAGE_ISOLATION") {
+        cfg.isolation_runtime = v;
+    }
+    if let Ok(v) = std::env::var("UCF_EMERGENCY_POLICY_PIN") {
+        cfg.emergency_policy_pin = Some(v);
+    }
+    Ok(())
+}
+
+fn ops_config_digest(cfg: &OpsConfig) -> Result<String, OpsError> {
+    let mut normalized = cfg.clone();
+    normalized.config_digest.clear();
+    let bytes = serde_json::to_vec(&normalized)?;
+    Ok(sha256_hex(&bytes))
 }
 
 fn run_compute_probe(cfg: &OpsConfig) -> Result<DiagCheck, OpsError> {
@@ -4273,6 +4378,8 @@ active_hash = "abc"
             model_hashes_digest: "model-a".to_string(),
             enabled_features_bitmap: 1,
             profile: "test".to_string(),
+            config_digest: "cfg".to_string(),
+            policy_overlay: "test".to_string(),
             schema_versions: schema.clone(),
             parent_run_id: None,
             resume_reason: None,
@@ -4503,8 +4610,6 @@ pub fn release_rc1_gate(
     if let Some(parent) = out.parent() {
         fs::create_dir_all(parent)?;
     }
-    std::env::set_var("UCF_OFFLINE", "1");
-    std::env::set_var("UCF_TOOLS_DEFAULT", "deny");
     std::env::set_var("UCF_SSM_KERNEL", "ref");
 
     let mut checks = Vec::new();
