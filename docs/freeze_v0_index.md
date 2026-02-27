@@ -4,6 +4,9 @@ Canonical references defining **Real Compute Onboarding v0**.
 
 | Doc | Last updated | Owner module | Type |
 |---|---|---|---|
+| `docs/branch_policy.md` | 2026-02-27 | repository governance | normative |
+| `docs/contributing_workflow.md` | 2026-02-27 | contributors + prompt series | normative |
+| `AGENTS.md` | 2026-02-27 | repository automation | normative |
 | `docs/architecture.md` | 2026-02-17 | architecture | normative |
 | `docs/SPINE.md` | 2026-02-17 | release-spine | normative |
 | `docs/backends.md` | 2026-02-17 | runtime/ucf-compute | normative |
