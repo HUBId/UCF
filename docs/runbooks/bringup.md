@@ -17,7 +17,7 @@ cargo run -p ucf-ops -- bringup --demo --ticks 100
 ## Runtime profile
 `UCF_PROFILE=dev|test|prod`.
 
-Resolved config lives in `./.ucf/config_resolved.json` and merges profile defaults with env overrides.
+Resolved config lives in `./.ucf/config_resolved.json` and is loaded from `configs/<profile>.toml` + allowlisted env overrides (`UCF_POLICY_OVERLAY`, `UCF_SLOT_EBM_MODE`, `UCF_STAGE_ISOLATION`, `UCF_EMERGENCY_POLICY_PIN`). Unknown keys fail config load.
 
 ## Expected output artifacts
 - `.ucf/ess/ess_fixture.json`
