@@ -27,8 +27,20 @@ pub mod proto {
 }
 
 const SCHEMA_VERSION: u32 = 1;
-const MAX_MESSAGE_BYTES: usize = 128 * 1024;
+const MAX_MESSAGE_BYTES: usize = 256 * 1024;
 const MAX_LIST: usize = 64;
+const SUBMIT_MAX_BYTES: usize = 4096;
+const SUMMARY_MAX_CHARS: usize = 256;
+const REQUEST_ID_PREFIX: usize = 12;
+
+const ERR_AUTH_DENIED: u32 = 1001;
+const ERR_RATE_LIMITED: u32 = 1002;
+const ERR_SCHEMA_INVALID: u32 = 1003;
+const ERR_POLICY_DENIED: u32 = 1004;
+const ERR_TOO_LARGE: u32 = 1005;
+const ERR_VERSION_MISMATCH: u32 = 1006;
+const ERR_INTERNAL: u32 = 1500;
+const ERR_UNAVAILABLE: u32 = 1501;
 
 #[derive(Debug, Clone)]
 pub enum GatewayTransport {
@@ -47,51 +59,121 @@ impl GatewayTransport {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct RateLimitConfig {
+    pub capacity: u32,
+    pub refill_per_sec: u32,
+}
+
 #[derive(Debug, Clone)]
 pub struct GatewayConfig {
     pub run_id: String,
     pub policy_graph_digest_prefix: [u8; 8],
-    pub auth_tokens: BTreeMap<String, BTreeSet<String>>,
+    pub token_capabilities_by_hash: BTreeMap<String, BTreeSet<String>>,
     pub access_log_path: PathBuf,
+    pub abuse_log_path: PathBuf,
     pub workdir: PathBuf,
     pub max_message_bytes: usize,
+    pub rate_limits: BTreeMap<String, RateLimitConfig>,
 }
 
 impl GatewayConfig {
     pub fn for_tests(tmp: &Path) -> Self {
-        let mut auth_tokens = BTreeMap::new();
-        auth_tokens.insert(
-            "test-token".to_string(),
+        let mut token_capabilities_by_hash = BTreeMap::new();
+        token_capabilities_by_hash.insert(
+            hash_token("test-token"),
             ["submit", "subscribe", "ess:read", "report:read"]
                 .into_iter()
                 .map(ToString::to_string)
                 .collect(),
         );
+
+        let mut rate_limits = BTreeMap::new();
+        rate_limits.insert(
+            "submit".to_string(),
+            RateLimitConfig {
+                capacity: 5,
+                refill_per_sec: 5,
+            },
+        );
+        rate_limits.insert(
+            "ess_query".to_string(),
+            RateLimitConfig {
+                capacity: 10,
+                refill_per_sec: 10,
+            },
+        );
+        rate_limits.insert(
+            "report".to_string(),
+            RateLimitConfig {
+                capacity: 2,
+                refill_per_sec: 2,
+            },
+        );
+
         Self {
             run_id: "run-test".to_string(),
             policy_graph_digest_prefix: [1, 2, 3, 4, 5, 6, 7, 8],
-            auth_tokens,
+            token_capabilities_by_hash,
             access_log_path: tmp.join("gateway_access_records.jsonl"),
+            abuse_log_path: tmp.join("gateway_abuse_records.jsonl"),
             workdir: tmp.to_path_buf(),
             max_message_bytes: MAX_MESSAGE_BYTES,
+            rate_limits,
         }
+    }
+
+    pub fn from_env(tmp: &Path) -> Result<Self, GatewayError> {
+        let mode = std::env::var("UCF_ENV").unwrap_or_else(|_| "dev".to_string());
+        let mut cfg = Self::for_tests(tmp);
+        cfg.token_capabilities_by_hash.clear();
+        if let Ok(token) = std::env::var("UCF_GATEWAY_TOKEN") {
+            cfg.token_capabilities_by_hash.insert(
+                hash_token(token.as_str()),
+                ["submit", "subscribe", "ess:read", "report:read"]
+                    .into_iter()
+                    .map(ToString::to_string)
+                    .collect(),
+            );
+            return Ok(cfg);
+        }
+        if mode == "dev" {
+            eprintln!("warning: UCF_GATEWAY_TOKEN not set, enabling dev fallback token");
+            cfg.token_capabilities_by_hash.insert(
+                hash_token("dev-token"),
+                ["submit", "subscribe", "ess:read", "report:read"]
+                    .into_iter()
+                    .map(ToString::to_string)
+                    .collect(),
+            );
+            return Ok(cfg);
+        }
+        Err(GatewayError::Unauthorized)
     }
 }
 
 #[derive(Debug, Error)]
 pub enum GatewayError {
-    #[error("unauthorized")]
+    #[error("auth denied")]
     Unauthorized,
+    #[error("rate limited")]
+    RateLimited,
     #[error("unsupported version")]
     UnsupportedVersion,
     #[error("message too large")]
     MessageTooLarge,
-    #[error("invalid request: {0}")]
-    InvalidRequest(String),
-    #[error("io: {0}")]
+    #[error("schema invalid")]
+    SchemaInvalid,
+    #[error("policy denied")]
+    PolicyDenied,
+    #[error("internal")]
+    Internal,
+    #[error("unavailable")]
+    Unavailable,
+    #[error("io")]
     Io(#[from] std::io::Error),
-    #[error("encode/decode: {0}")]
-    Proto(String),
+    #[error("encode/decode")]
+    Proto,
 }
 
 #[derive(Debug, Serialize)]
@@ -100,7 +182,52 @@ pub struct GatewayAccessRecord {
     pub endpoint: String,
     pub t_ms: u64,
     pub status: String,
-    pub client_id_digest: String,
+    pub client_id_digest_prefix: String,
+    pub request_id: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct GatewayAbuseRecord {
+    pub schema_version: u16,
+    pub t_ms: u64,
+    pub endpoint: String,
+    pub client_id_digest_prefix: String,
+    pub reason_code: String,
+    pub request_digest_prefix: String,
+    pub request_id: String,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct TokenBucket {
+    capacity: u32,
+    refill_per_sec: u32,
+    tokens_milli: u64,
+    last_refill_ms: u64,
+}
+
+impl TokenBucket {
+    fn new(cfg: RateLimitConfig, now_ms: u64) -> Self {
+        Self {
+            capacity: cfg.capacity,
+            refill_per_sec: cfg.refill_per_sec,
+            tokens_milli: u64::from(cfg.capacity) * 1000,
+            last_refill_ms: now_ms,
+        }
+    }
+
+    fn allow(&mut self, now_ms: u64) -> bool {
+        let elapsed_ms = now_ms.saturating_sub(self.last_refill_ms);
+        let refill_milli = elapsed_ms.saturating_mul(u64::from(self.refill_per_sec));
+        let capacity_milli = u64::from(self.capacity) * 1000;
+        self.tokens_milli = (self.tokens_milli + refill_milli).min(capacity_milli);
+        self.last_refill_ms = now_ms;
+        if self.tokens_milli >= 1000 {
+            self.tokens_milli -= 1000;
+            true
+        } else {
+            false
+        }
+    }
 }
 
 pub struct GatewayService {
@@ -108,6 +235,7 @@ pub struct GatewayService {
     orchestrator: RuntimeOrchestrator,
     adapter: MockAdapter,
     decisions: VecDeque<proto::DecisionEvent>,
+    token_buckets: BTreeMap<String, TokenBucket>,
 }
 
 impl GatewayService {
@@ -117,6 +245,7 @@ impl GatewayService {
             orchestrator: RuntimeOrchestrator::new(),
             adapter: MockAdapter::default(),
             decisions: VecDeque::new(),
+            token_buckets: BTreeMap::new(),
         }
     }
 
@@ -146,8 +275,8 @@ impl GatewayService {
     fn authorize(&self, token: &str, capability: &str) -> Result<BTreeSet<String>, GatewayError> {
         let caps = self
             .config
-            .auth_tokens
-            .get(token)
+            .token_capabilities_by_hash
+            .get(&hash_token(token))
             .cloned()
             .ok_or(GatewayError::Unauthorized)?;
         if !caps.contains(capability) {
@@ -156,18 +285,41 @@ impl GatewayService {
         Ok(caps)
     }
 
+    fn enforce_rate_limit(
+        &mut self,
+        endpoint: &str,
+        client_digest_prefix: &str,
+    ) -> Result<(), GatewayError> {
+        let Some(cfg) = self.config.rate_limits.get(endpoint).copied() else {
+            return Ok(());
+        };
+        let key = format!("{endpoint}:{client_digest_prefix}");
+        let now = now_ms();
+        let bucket = self
+            .token_buckets
+            .entry(key)
+            .or_insert_with(|| TokenBucket::new(cfg, now));
+        if bucket.allow(now) {
+            Ok(())
+        } else {
+            Err(GatewayError::RateLimited)
+        }
+    }
+
     fn validate_common(
         &self,
         schema_version: u32,
+        run_id: &str,
         policy_digest: &[u8],
     ) -> Result<(), GatewayError> {
         if schema_version != SCHEMA_VERSION {
             return Err(GatewayError::UnsupportedVersion);
         }
+        if run_id != self.config.run_id {
+            return Err(GatewayError::SchemaInvalid);
+        }
         if policy_digest != self.config.policy_graph_digest_prefix {
-            return Err(GatewayError::InvalidRequest(
-                "policy_graph_digest_prefix mismatch".to_string(),
-            ));
+            return Err(GatewayError::PolicyDenied);
         }
         Ok(())
     }
@@ -178,15 +330,23 @@ impl GatewayService {
         req: proto::ControlFrameSubmitRequest,
     ) -> Result<proto::ControlFrameSubmitResponse, GatewayError> {
         self.authorize(token, "submit")?;
-        self.validate_common(req.schema_version, &req.policy_graph_digest_prefix)?;
-        if req.payload_text_utf8.len() > 4096 || req.intent_summary.len() > 256 {
+        self.validate_common(
+            req.schema_version,
+            &req.run_id,
+            &req.policy_graph_digest_prefix,
+        )?;
+        if req.payload_text_utf8.len() > SUBMIT_MAX_BYTES
+            || req.intent_summary.chars().count() > SUMMARY_MAX_CHARS
+        {
             return Err(GatewayError::MessageTooLarge);
+        }
+        if req.intent_summary.trim().is_empty() {
+            return Err(GatewayError::SchemaInvalid);
         }
         let intent_kind = map_intent_kind(req.intent_kind)?;
         let channel = map_channel(req.channel)?;
-        let text = std::str::from_utf8(&req.payload_text_utf8).map_err(|_| {
-            GatewayError::InvalidRequest("payload_text_utf8 must be valid utf8".to_string())
-        })?;
+        let text =
+            std::str::from_utf8(&req.payload_text_utf8).map_err(|_| GatewayError::SchemaInvalid)?;
         let ctrl = ControlFrame::new_text(
             SimTime {
                 tick: Tick::new(req.tick),
@@ -205,7 +365,7 @@ impl GatewayService {
         let decision = self
             .orchestrator
             .ingest_and_process(&mut self.adapter, ctrl)
-            .map_err(|e| GatewayError::InvalidRequest(format!("runtime ingest failed: {e}")))?;
+            .map_err(|_| GatewayError::SchemaInvalid)?;
         let evt = decision_to_event(
             &self.config.run_id,
             self.config.policy_graph_digest_prefix,
@@ -213,7 +373,7 @@ impl GatewayService {
         );
         self.decisions.push_back(evt.clone());
         while self.decisions.len() > MAX_LIST {
-            self.decisions.pop_front();
+            let _ = self.decisions.pop_front();
         }
 
         Ok(proto::ControlFrameSubmitResponse {
@@ -231,7 +391,11 @@ impl GatewayService {
         req: proto::DecisionStreamSubscribeRequest,
     ) -> Result<proto::DecisionStreamSubscribeResponse, GatewayError> {
         self.authorize(token, "subscribe")?;
-        self.validate_common(req.schema_version, &req.policy_graph_digest_prefix)?;
+        self.validate_common(
+            req.schema_version,
+            &req.run_id,
+            &req.policy_graph_digest_prefix,
+        )?;
         let max = usize::try_from(req.max_events)
             .unwrap_or(MAX_LIST)
             .min(MAX_LIST);
@@ -250,7 +414,11 @@ impl GatewayService {
         req: proto::EssQueryRequest,
     ) -> Result<proto::EssQueryResponse, GatewayError> {
         self.authorize(token, "ess:read")?;
-        self.validate_common(req.schema_version, &req.policy_graph_digest_prefix)?;
+        self.validate_common(
+            req.schema_version,
+            &req.run_id,
+            &req.policy_graph_digest_prefix,
+        )?;
         let max = usize::try_from(req.max_records)
             .unwrap_or(MAX_LIST)
             .min(MAX_LIST);
@@ -278,7 +446,11 @@ impl GatewayService {
         req: proto::ReportRequest,
     ) -> Result<proto::ReportResponse, GatewayError> {
         self.authorize(token, "report:read")?;
-        self.validate_common(req.schema_version, &req.policy_graph_digest_prefix)?;
+        self.validate_common(
+            req.schema_version,
+            &req.run_id,
+            &req.policy_graph_digest_prefix,
+        )?;
         let report_json = match req.report_type.as_str() {
             "explain-tick" => {
                 let r = explain_tick(
@@ -290,8 +462,8 @@ impl GatewayService {
                         digest_prefix_len: 8,
                     },
                 )
-                .map_err(|e| GatewayError::InvalidRequest(format!("explain-tick failed: {e}")))?;
-                serde_json::to_vec(&r).map_err(|e| GatewayError::Proto(e.to_string()))?
+                .map_err(|_| GatewayError::Unavailable)?;
+                serde_json::to_vec(&r).map_err(|_| GatewayError::Internal)?
             }
             "readiness-gate" => {
                 let r = readiness_gate(
@@ -299,13 +471,11 @@ impl GatewayService {
                     "test",
                     &self.config.workdir.join("out/gate_report.json"),
                 )
-                .map_err(|e| GatewayError::InvalidRequest(format!("readiness-gate failed: {e}")))?;
-                serde_json::to_vec(&r).map_err(|e| GatewayError::Proto(e.to_string()))?
+                .map_err(|_| GatewayError::Unavailable)?;
+                serde_json::to_vec(&r).map_err(|_| GatewayError::Internal)?
             }
             _ => {
-                return Err(GatewayError::InvalidRequest(
-                    "unsupported report_type".to_string(),
-                ));
+                return Err(GatewayError::SchemaInvalid);
             }
         };
         Ok(proto::ReportResponse {
@@ -322,6 +492,14 @@ impl GatewayService {
         token: &str,
         client_id: &str,
     ) -> proto::GatewayResponse {
+        let request_id = new_request_id(req.negotiated_version, token, client_id);
+        let request_digest_prefix = digest_prefix(request_body_digest(&req).as_slice(), 16);
+        let client_id_digest_prefix = if token.is_empty() {
+            "unknown".to_string()
+        } else {
+            digest_prefix(hash_token(token).as_bytes(), 16)
+        };
+
         let (endpoint, result) = match req.payload {
             Some(proto::gateway_request::Payload::Handshake(r)) => (
                 "handshake",
@@ -348,51 +526,102 @@ impl GatewayService {
                 self.get_report(token, r)
                     .map(proto::gateway_response::Payload::Report),
             ),
-            None => (
-                "none",
-                Err(GatewayError::InvalidRequest("missing payload".to_string())),
-            ),
+            None => ("none", Err(GatewayError::SchemaInvalid)),
         };
-        let status = if result.is_ok() { "ok" } else { "deny" };
-        let _ = self.log_access(endpoint, status, client_id);
-        match result {
-            Ok(payload) => proto::GatewayResponse {
+
+        if let Ok(payload) = result {
+            if let Err(err) = self.enforce_rate_limit(endpoint, &client_id_digest_prefix) {
+                let _ = self.log_abuse(
+                    endpoint,
+                    &client_id_digest_prefix,
+                    reason_code(&err),
+                    &request_digest_prefix,
+                    &request_id,
+                );
+                let _ = self.log_access(endpoint, "deny", &client_id_digest_prefix, &request_id);
+                return safe_error_response(req.negotiated_version, err, request_id);
+            }
+            let _ = self.log_access(endpoint, "ok", &client_id_digest_prefix, &request_id);
+            return proto::GatewayResponse {
                 negotiated_version: req.negotiated_version,
                 payload: Some(payload),
-            },
-            Err(err) => proto::GatewayResponse {
-                negotiated_version: req.negotiated_version,
-                payload: Some(proto::gateway_response::Payload::Error(proto::Error {
-                    code: map_err_code(&err),
-                    message: err.to_string(),
-                })),
-            },
+            };
         }
+
+        let err = result.err().unwrap_or(GatewayError::Internal);
+        let _ = self.log_abuse(
+            endpoint,
+            &client_id_digest_prefix,
+            reason_code(&err),
+            &request_digest_prefix,
+            &request_id,
+        );
+        let _ = self.log_access(endpoint, "deny", &client_id_digest_prefix, &request_id);
+        safe_error_response(req.negotiated_version, err, request_id)
     }
 
     fn log_access(
         &self,
         endpoint: &str,
         status: &str,
-        client_id: &str,
+        client_id_digest_prefix: &str,
+        request_id: &str,
     ) -> Result<(), GatewayError> {
         let rec = GatewayAccessRecord {
             schema_version: 1,
             endpoint: endpoint.to_string(),
             t_ms: now_ms(),
             status: status.to_string(),
-            client_id_digest: hex::encode(digest_bytes(client_id.as_bytes())),
+            client_id_digest_prefix: client_id_digest_prefix.to_string(),
+            request_id: request_id.to_string(),
         };
-        if let Some(parent) = self.config.access_log_path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        let mut f = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&self.config.access_log_path)?;
-        let line = serde_json::to_string(&rec).map_err(|e| GatewayError::Proto(e.to_string()))?;
-        writeln!(f, "{line}")?;
-        Ok(())
+        append_jsonl(&self.config.access_log_path, &rec)
+    }
+
+    fn log_abuse(
+        &self,
+        endpoint: &str,
+        client_id_digest_prefix: &str,
+        reason: &str,
+        request_digest_prefix: &str,
+        request_id: &str,
+    ) -> Result<(), GatewayError> {
+        let rec = GatewayAbuseRecord {
+            schema_version: 1,
+            t_ms: now_ms(),
+            endpoint: endpoint.to_string(),
+            client_id_digest_prefix: client_id_digest_prefix.to_string(),
+            reason_code: reason.to_string(),
+            request_digest_prefix: request_digest_prefix.to_string(),
+            request_id: request_id.to_string(),
+        };
+        append_jsonl(&self.config.abuse_log_path, &rec)
+    }
+}
+
+fn append_jsonl<T: Serialize>(path: &Path, value: &T) -> Result<(), GatewayError> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let mut f = OpenOptions::new().create(true).append(true).open(path)?;
+    let line = serde_json::to_string(value).map_err(|_| GatewayError::Internal)?;
+    writeln!(f, "{line}")?;
+    Ok(())
+}
+
+fn safe_error_response(
+    negotiated_version: u32,
+    err: GatewayError,
+    request_id: String,
+) -> proto::GatewayResponse {
+    let (code, message) = map_err_code(&err);
+    proto::GatewayResponse {
+        negotiated_version,
+        payload: Some(proto::gateway_response::Payload::Error(proto::Error {
+            code,
+            message: message.to_string(),
+            request_id,
+        })),
     }
 }
 
@@ -408,7 +637,7 @@ pub fn read_frame<R: Read>(
     }
     let mut body = vec![0u8; len];
     reader.read_exact(&mut body)?;
-    proto::GatewayRequest::decode(body.as_slice()).map_err(|e| GatewayError::Proto(e.to_string()))
+    proto::GatewayRequest::decode(body.as_slice()).map_err(|_| GatewayError::Proto)
 }
 
 pub fn write_frame<W: Write>(
@@ -468,7 +697,7 @@ fn read_frame_unix(
     }
     let mut body = vec![0u8; len];
     stream.read_exact(&mut body)?;
-    proto::GatewayRequest::decode(body.as_slice()).map_err(|e| GatewayError::Proto(e.to_string()))
+    proto::GatewayRequest::decode(body.as_slice()).map_err(|_| GatewayError::Proto)
 }
 
 #[cfg(unix)]
@@ -522,9 +751,7 @@ fn map_intent_kind(kind: u32) -> Result<IntentKind, GatewayError> {
         4 => Ok(IntentKind::WriteMemory),
         5 => Ok(IntentKind::StimulateBrain),
         6 => Ok(IntentKind::System),
-        _ => Err(GatewayError::InvalidRequest(
-            "unknown intent_kind".to_string(),
-        )),
+        _ => Err(GatewayError::SchemaInvalid),
     }
 }
 
@@ -534,7 +761,7 @@ fn map_channel(channel: u32) -> Result<ChannelCode, GatewayError> {
         2 => Ok(ChannelCode::InternalThought),
         3 => Ok(ChannelCode::MemoryWrite),
         4 => Ok(ChannelCode::BrainStimulus),
-        _ => Err(GatewayError::InvalidRequest("unknown channel".to_string())),
+        _ => Err(GatewayError::SchemaInvalid),
     }
 }
 
@@ -551,20 +778,59 @@ fn digest_control_frame(frame: &ControlFrame) -> [u8; 32] {
     *hasher.finalize().as_bytes()
 }
 
-fn digest_bytes(bytes: &[u8]) -> [u8; 32] {
+fn request_body_digest(req: &proto::GatewayRequest) -> [u8; 32] {
     let mut hasher = Hasher::new();
-    hasher.update(b"ucf.gateway.client.v1");
-    hasher.update(bytes);
+    hasher.update(b"ucf.gateway.request.v1");
+    hasher.update(&req.encode_to_vec());
     *hasher.finalize().as_bytes()
 }
 
-fn map_err_code(err: &GatewayError) -> u32 {
+fn digest_prefix(bytes: &[u8], chars: usize) -> String {
+    hex::encode(bytes).chars().take(chars).collect()
+}
+
+pub fn hash_token(token: &str) -> String {
+    let mut hasher = Hasher::new();
+    hasher.update(b"ucf.gateway.auth.v1");
+    hasher.update(token.as_bytes());
+    hex::encode(hasher.finalize().as_bytes())
+}
+
+fn new_request_id(negotiated_version: u32, token: &str, client_id: &str) -> String {
+    let mut hasher = Hasher::new();
+    hasher.update(b"ucf.gateway.request_id.v1");
+    hasher.update(&negotiated_version.to_le_bytes());
+    hasher.update(token.as_bytes());
+    hasher.update(client_id.as_bytes());
+    hasher.update(&now_ms().to_le_bytes());
+    digest_prefix(hasher.finalize().as_bytes(), REQUEST_ID_PREFIX)
+}
+
+fn map_err_code(err: &GatewayError) -> (u32, &'static str) {
     match err {
-        GatewayError::Unauthorized => 401,
-        GatewayError::UnsupportedVersion => 426,
-        GatewayError::MessageTooLarge => 413,
-        GatewayError::InvalidRequest(_) => 400,
-        GatewayError::Io(_) | GatewayError::Proto(_) => 500,
+        GatewayError::Unauthorized => (ERR_AUTH_DENIED, "auth denied"),
+        GatewayError::RateLimited => (ERR_RATE_LIMITED, "rate limit exceeded"),
+        GatewayError::UnsupportedVersion => (ERR_VERSION_MISMATCH, "unsupported version"),
+        GatewayError::MessageTooLarge => (ERR_TOO_LARGE, "request too large"),
+        GatewayError::SchemaInvalid => (ERR_SCHEMA_INVALID, "schema invalid"),
+        GatewayError::PolicyDenied => (ERR_POLICY_DENIED, "policy denied"),
+        GatewayError::Unavailable => (ERR_UNAVAILABLE, "temporarily unavailable"),
+        GatewayError::Internal | GatewayError::Io(_) | GatewayError::Proto => {
+            (ERR_INTERNAL, "internal error")
+        }
+    }
+}
+
+fn reason_code(err: &GatewayError) -> &'static str {
+    match err {
+        GatewayError::Unauthorized => "AuthFail",
+        GatewayError::RateLimited => "RateLimit",
+        GatewayError::SchemaInvalid => "Malformed",
+        GatewayError::MessageTooLarge => "TooLarge",
+        GatewayError::UnsupportedVersion => "VersionMismatch",
+        GatewayError::PolicyDenied => "PolicyDenied",
+        GatewayError::Unavailable => "Unavailable",
+        GatewayError::Internal | GatewayError::Io(_) | GatewayError::Proto => "Internal",
     }
 }
 
@@ -602,5 +868,30 @@ pub fn local_bind_for_platform(preferred_port: u16) -> GatewayTransport {
     #[cfg(not(unix))]
     {
         GatewayTransport::TcpLocal(preferred_port)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn token_hash_stable() {
+        assert_eq!(hash_token("abc"), hash_token("abc"));
+        assert_ne!(hash_token("abc"), hash_token("abcd"));
+    }
+
+    #[test]
+    fn token_bucket_deterministic() {
+        let cfg = RateLimitConfig {
+            capacity: 2,
+            refill_per_sec: 2,
+        };
+        let mut bucket = TokenBucket::new(cfg, 0);
+        assert!(bucket.allow(0));
+        assert!(bucket.allow(0));
+        assert!(!bucket.allow(0));
+        assert!(!bucket.allow(499));
+        assert!(bucket.allow(500));
     }
 }
