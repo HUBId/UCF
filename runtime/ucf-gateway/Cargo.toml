@@ -19,6 +19,7 @@ ucf-ops = { path = "../ucf-ops" }
 
 [build-dependencies]
 prost-build = "0.12"
+protoc-bin-vendored = "3"
 
 [dev-dependencies]
 tempfile = "3"
