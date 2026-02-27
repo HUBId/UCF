@@ -1,0 +1,65 @@
+max_files = 500
+max_commands = 12
+default_modules = ["runtime-core", "unknown"]
+default_gates = ["cargo-test-workspace", "readiness-gate"]
+
+[[command_catalog]]
+gate = "cargo-test-workspace"
+command = "cargo test --workspace --all-targets"
+
+[[command_catalog]]
+gate = "readiness-gate"
+command = "cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/change_impact/readiness_gate.json --workdir ./.ucf_gate_change_impact"
+
+[[command_catalog]]
+gate = "adversarial-suite"
+command = "cargo run -p ucf-ops -- adversarial-run --suite v1 --out ./out/change_impact/adversarial_report.json"
+
+[[command_catalog]]
+gate = "bench"
+command = "cargo run -p ucf-ops -- bench --ticks 512 --out ./out/change_impact/bench_report.json"
+
+[[command_catalog]]
+gate = "determinism-scan"
+command = "cargo run -p ucf-ops -- determinism scan"
+
+[[command_catalog]]
+gate = "policy-validate"
+command = "cargo run -p ucf-ops -- policy validate --pack policies/packs/base_v1"
+
+[[command_catalog]]
+gate = "spec-snapshot"
+command = "cargo run -p ucf-ops -- spec snapshot --policy policies/packs/base_v1 --overlay policies/packs/overlays/test --out ./out/change_impact/spec_snapshot.md"
+
+[[command_catalog]]
+gate = "ops-unit-tests"
+command = "cargo test -p ucf-ops --all-targets"
+
+[[command_catalog]]
+gate = "probes"
+command = "cargo run -p ucf-ops -- models probe --manifest models/manifest.toml --out ./out/change_impact/probe_report.json"
+
+[[rules]]
+name = "policy-and-policies"
+include = ["runtime/ucf-policy/**", "policies/**"]
+modules = ["ucf-policy", "policies"]
+gates = ["policy-validate", "readiness-gate", "adversarial-suite", "spec-snapshot", "cargo-test-workspace"]
+
+[[rules]]
+name = "backends-and-compute"
+include = ["runtime/ucf-compute/**", "runtime/ucf-backends/**", "crates/ucf-backends-gpu/**"]
+modules = ["ucf-compute", "ucf-backends"]
+gates = ["probes", "readiness-gate", "bench", "determinism-scan", "cargo-test-workspace"]
+
+[[rules]]
+name = "ops-tooling"
+include = ["runtime/ucf-ops/**", "release/**"]
+modules = ["ucf-ops", "release"]
+gates = ["ops-unit-tests", "spec-snapshot", "cargo-test-workspace"]
+
+[[rules]]
+name = "docs-only-light"
+include = ["docs/**", "README.md"]
+exclude = ["docs/change_impact_rules.toml"]
+modules = ["docs"]
+gates = ["spec-snapshot"]

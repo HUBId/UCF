@@ -3,6 +3,7 @@
 mod adversarial;
 mod bench;
 mod causal;
+mod change_impact;
 mod models_lifecycle;
 mod spec_snapshot;
 mod world_shadow;
@@ -13,6 +14,7 @@ pub use causal::{
     save_counterfactual_result, simulate_counterfactual, write_slice, CausalEdge, CausalSlice,
     CounterfactualRequest, CounterfactualResult, EdgeType, EventNode, EventType, ExplainWhyReport,
 };
+pub use change_impact::{change_impact, ChangeImpactArgs};
 pub use models_lifecycle::{
     models_list, models_promote, models_rollback, models_stage, parse_slot,
 };

@@ -11,8 +11,8 @@ use ucf_ops::{
     policy_explain, policy_validate, readiness_gate, release_rc1_gate, release_signoff_validate,
     replay_audit, replay_bugreport, run_status, runs_list, runs_search, runs_show,
     save_counterfactual_result, security_verify_chain, simulate_counterfactual, verify_bugreport,
-    world_shadow_report, write_slice, AdversarialRunArgs, BenchArgs, CounterfactualRequest,
-    ExplainTickRequest, ExportArgs, GateStatus, SpecSnapshotArgs,
+    world_shadow_report, write_slice, AdversarialRunArgs, BenchArgs, ChangeImpactArgs,
+    CounterfactualRequest, ExplainTickRequest, ExportArgs, GateStatus, SpecSnapshotArgs,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -309,6 +309,31 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 _ => return Err("usage: ucf-ops policy <validate|diff|explain> ...".into()),
             }
+        }
+
+        "change-impact" => {
+            let base = arg_value(&args, "--base").unwrap_or_else(|| "HEAD~1".to_string());
+            let head = arg_value(&args, "--head").unwrap_or_else(|| "HEAD".to_string());
+            let out_md = arg_value(&args, "--out")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("./out/change_impact_plan.md"));
+            let out_json = arg_value(&args, "--json-out")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("./out/change_impact_plan.json"));
+            let rules_path = arg_value(&args, "--rules")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("docs/change_impact_rules.toml"));
+            let plan = ucf_ops::change_impact(&ChangeImpactArgs {
+                base,
+                head,
+                rules_path,
+                out_md: out_md.clone(),
+                out_json: out_json.clone(),
+            })?;
+            println!("changed_files={}", plan.total_changed_files);
+            println!("required_gates={}", plan.required_gates.join(","));
+            println!("out_md={}", out_md.display());
+            println!("out_json={}", out_json.display());
         }
 
         "spec" => {
@@ -867,7 +892,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             eprintln!(
-                "usage: ucf-ops <bringup|diag|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|readiness-gate|adversarial-run|out|release|bench|runs|status|ess|ebm|policy|spec|version> [--workdir <path>]"
+                "usage: ucf-ops <bringup|diag|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|readiness-gate|adversarial-run|out|release|bench|runs|status|ess|ebm|policy|spec|change-impact|version> [--workdir <path>]"
             );
             std::process::exit(1);
         }
