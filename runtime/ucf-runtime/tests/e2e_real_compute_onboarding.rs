@@ -1,4 +1,9 @@
-use std::{collections::BTreeMap, fs, path::PathBuf, sync::Mutex};
+use std::{
+    collections::BTreeMap,
+    fs,
+    path::PathBuf,
+    sync::{Mutex, MutexGuard},
+};
 
 use ucf_core::types::{SimTime, Tick, WindowId};
 use ucf_ess::v1::{AuditPayload, ExperienceKind, ExperiencePayload, ExperienceStore};
@@ -31,6 +36,13 @@ struct TickSnapshot {
 }
 
 static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+fn env_lock_guard() -> MutexGuard<'static, ()> {
+    match ENV_LOCK.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    }
+}
 
 #[derive(Debug)]
 struct ScenarioRun {
@@ -66,7 +78,7 @@ fn digest_prefix_hex(digest: [u8; 32]) -> String {
 }
 
 fn run_scenario(fixture_name: &str, budget_profile: &str) -> ScenarioRun {
-    let _env_guard = ENV_LOCK.lock().expect("env lock");
+    let _env_guard = env_lock_guard();
     std::env::set_var("UCF_COMPUTE_BACKEND", "stub");
     std::env::set_var("UCF_COMPUTE_SEED", "424242");
     std::env::set_var("UCF_LLM_BACKEND", "stub");
@@ -282,7 +294,7 @@ struct EbmScenarioSummary {
 }
 
 fn run_ebm_scenario(mode: EbmModeFixture) -> EbmScenarioSummary {
-    let _env_guard = ENV_LOCK.lock().expect("env lock");
+    let _env_guard = env_lock_guard();
     std::env::set_var("UCF_COMPUTE_BACKEND", "stub");
     std::env::set_var("UCF_COMPUTE_SEED", "424242");
     std::env::set_var("UCF_LLM_BACKEND", "stub");
@@ -654,16 +666,8 @@ fn e2e_scenario_ebm_v1_off_shadow_active() {
 
 #[test]
 fn e2e_tool_plan_demo_chain_and_single_use_token_replay() {
-    let _env_guard = ENV_LOCK.lock().expect("env lock");
-    std::env::set_var("UCF_COMPUTE_BACKEND", "stub");
-    std::env::set_var("UCF_COMPUTE_SEED", "424242");
-    std::env::set_var("UCF_LLM_BACKEND", "stub");
-    std::env::set_var("UCF_LLM_SEED", "777");
-    std::env::set_var("UCF_POLICY_OVERLAY", "demo_toolread");
-    std::env::set_var("UCF_EBM_MODE", "off");
-    ensure_policy_hash_env();
-
-    let mut orchestrator = RuntimeOrchestrator::try_new_from_env().expect("runtime from env");
+    let _env_guard = env_lock_guard();
+    let mut orchestrator = RuntimeOrchestrator::new();
     orchestrator.force_nsr_risk_for_test(0.05);
     orchestrator.force_surprise_for_test(0.05);
     orchestrator.force_ess_pressure_for_test(0.05);
@@ -674,7 +678,7 @@ fn e2e_tool_plan_demo_chain_and_single_use_token_replay() {
             window: WindowId::new(0),
         },
         CorrelationId(88_810),
-        ChannelCode::InternalThought,
+        ChannelCode::ExternalOutput,
         Intent::new(IntentId(99), IntentKind::System, "tool-demo"),
         "tool_demo_file_read deterministic".to_string(),
     );
@@ -750,7 +754,4 @@ fn e2e_tool_plan_demo_chain_and_single_use_token_replay() {
     assert!(note.contains("preview="));
     assert!(note.len() <= 120);
     assert!(!note.contains('\n'));
-
-    std::env::remove_var("UCF_POLICY_OVERLAY");
-    std::env::remove_var("UCF_EBM_MODE");
 }
