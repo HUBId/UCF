@@ -27,12 +27,15 @@ pub use world_shadow::{world_shadow_report, WorldShadowReport};
 
 use std::collections::BTreeMap;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
+use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -4925,6 +4928,399 @@ pub fn logs_verify_proof(proof: &Path) -> Result<(), OpsError> {
         return Err(OpsError::Invalid("invalid Merkle proof".to_string()));
     }
     Ok(())
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RunCertificateSummaryV1 {
+    pub mean_risk_q: u16,
+    pub mean_uncertainty_q: u16,
+    pub max_governor_tier: u8,
+    pub total_violations_count: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RunCertificateV1 {
+    pub schema_version: u16,
+    pub run_id: String,
+    pub started_at: Option<u64>,
+    pub ended_at: Option<u64>,
+    pub policy_graph_digest: String,
+    pub manifest_digest: String,
+    pub final_checkpoint_root: String,
+    pub record_count: u64,
+    pub summary: RunCertificateSummaryV1,
+    pub certificate_digest: String,
+    pub signature: String,
+    pub signer_key_id: String,
+    pub signer_public_key: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RunAttestationRecord {
+    pub schema_version: u16,
+    pub run_id: String,
+    pub certificate_digest_prefix: String,
+    pub signer_key_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AttestVerifyReport {
+    pub pass: bool,
+    pub reasons: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AttestationBundleManifest {
+    pub run_id: String,
+    pub out: String,
+    pub entries: Vec<String>,
+}
+
+pub fn attest_keys_generate(workdir: &Path, force: bool) -> Result<(), OpsError> {
+    let key_dir = workdir.join("keys");
+    fs::create_dir_all(&key_dir)?;
+    let private_path = key_dir.join("attestation_ed25519.key");
+    let public_path = key_dir.join("attestation_ed25519.pub");
+    if !force && private_path.exists() && public_path.exists() {
+        return Ok(());
+    }
+
+    let sk = SigningKey::generate(&mut OsRng);
+    let vk = sk.verifying_key();
+    fs::write(&private_path, hex::encode(sk.to_bytes()))?;
+    fs::write(&public_path, hex::encode(vk.to_bytes()))?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perm = fs::metadata(&private_path)?.permissions();
+        perm.set_mode(0o600);
+        fs::set_permissions(&private_path, perm)?;
+        let mut pub_perm = fs::metadata(&public_path)?.permissions();
+        pub_perm.set_mode(0o644);
+        fs::set_permissions(&public_path, pub_perm)?;
+    }
+    Ok(())
+}
+
+pub fn attest_run(workdir: &Path, run_id: &str, out: &Path) -> Result<RunCertificateV1, OpsError> {
+    attest_keys_generate(workdir, false)?;
+    let run = runs_show(workdir, run_id)?
+        .ok_or_else(|| OpsError::Invalid(format!("run metadata not found: {run_id}")))?;
+    let records = load_fixture_records(&workdir.join("ess").join("ess_fixture.json"))?;
+    let segments = build_merkle_segments(run_id, &records, 1024);
+    verify_segment_chain(&segments)?;
+    let final_root = segments
+        .last()
+        .map(|s| s.merkle_root.clone())
+        .unwrap_or_default();
+
+    let (sum_risk, count_risk, sum_unc, count_unc, max_tier, total_violations) =
+        summarize_attestation_metrics(&records);
+
+    let (policy_base, policy_overlay, manifest_path) = resolve_attestation_inputs();
+    let policy = load_and_merge_policy_graph(&policy_base, Some(&policy_overlay))?;
+    let manifest = models_verify(&manifest_path)?;
+
+    let mut cert = RunCertificateV1 {
+        schema_version: 1,
+        run_id: run_id.to_string(),
+        started_at: Some(run.started_at_tick),
+        ended_at: run.ended_at_tick,
+        policy_graph_digest: policy.1.policy_graph_digest,
+        manifest_digest: manifest.model_hashes_digest,
+        final_checkpoint_root: final_root,
+        record_count: records.len() as u64,
+        summary: RunCertificateSummaryV1 {
+            mean_risk_q: if count_risk == 0 {
+                0
+            } else {
+                (sum_risk / count_risk) as u16
+            },
+            mean_uncertainty_q: if count_unc == 0 {
+                0
+            } else {
+                (sum_unc / count_unc) as u16
+            },
+            max_governor_tier: max_tier,
+            total_violations_count: total_violations,
+        },
+        certificate_digest: String::new(),
+        signature: String::new(),
+        signer_key_id: "attestation_ed25519_v1".to_string(),
+        signer_public_key: load_attestation_public_key_hex(workdir)?,
+    };
+
+    cert.certificate_digest = certificate_digest_hex(&cert)?;
+    cert.signature = sign_certificate_digest(workdir, &cert.certificate_digest)?;
+    if let Some(parent) = out.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    write_json(out, &cert)?;
+    persist_run_attestation_record(workdir, run_id, &cert)?;
+    Ok(cert)
+}
+
+pub fn attest_verify(
+    workdir: &Path,
+    cert_path: &Path,
+    _ess: &Path,
+) -> Result<AttestVerifyReport, OpsError> {
+    let data = fs::read_to_string(cert_path)?;
+    let cert: RunCertificateV1 = serde_json::from_str(&data)?;
+    let mut reasons = Vec::new();
+
+    let recomputed = certificate_digest_hex(&cert)?;
+    if recomputed != cert.certificate_digest {
+        reasons.push("certificate digest mismatch".to_string());
+    }
+
+    if !verify_certificate_signature(&cert)? {
+        reasons.push("signature verification failed".to_string());
+    }
+
+    let run = runs_show(workdir, &cert.run_id)?;
+    if run.is_none() {
+        reasons.push("missing run metadata for run_id".to_string());
+    }
+
+    let (policy_base, policy_overlay, manifest_path) = resolve_attestation_inputs();
+    let policy = load_and_merge_policy_graph(&policy_base, Some(&policy_overlay))?;
+    if policy.1.policy_graph_digest != cert.policy_graph_digest {
+        reasons.push("policy_graph_digest mismatch".to_string());
+    }
+
+    let manifest = models_verify(&manifest_path)?;
+    if manifest.model_hashes_digest != cert.manifest_digest {
+        reasons.push("manifest_digest mismatch".to_string());
+    }
+
+    let records = load_fixture_records(&workdir.join("ess").join("ess_fixture.json"))?;
+    let segments = build_merkle_segments(&cert.run_id, &records, 1024);
+    if let Err(err) = verify_segment_chain(&segments) {
+        reasons.push(format!("segment chain invalid: {err}"));
+    }
+    let final_root = segments
+        .last()
+        .map(|s| s.merkle_root.clone())
+        .unwrap_or_default();
+    if final_root != cert.final_checkpoint_root {
+        reasons.push("final checkpoint root mismatch".to_string());
+    }
+
+    Ok(AttestVerifyReport {
+        pass: reasons.is_empty(),
+        reasons,
+    })
+}
+
+pub fn attest_bundle(
+    workdir: &Path,
+    run_id: &str,
+    out: &Path,
+) -> Result<AttestationBundleManifest, OpsError> {
+    if let Some(parent) = out.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let cert_path = workdir.join("out").join(format!("run_cert_{run_id}.json"));
+    let cert = if cert_path.exists() {
+        serde_json::from_str::<RunCertificateV1>(&fs::read_to_string(&cert_path)?)?
+    } else {
+        attest_run(workdir, run_id, &cert_path)?
+    };
+
+    let records = load_fixture_records(&workdir.join("ess").join("ess_fixture.json"))?;
+    let segments = build_merkle_segments(run_id, &records, 1024);
+    verify_segment_chain(&segments)?;
+
+    let file = fs::File::create(out)?;
+    let mut zip = zip::ZipWriter::new(file);
+    let opts = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+    let mut entries = Vec::new();
+
+    let cert_bytes = serde_json::to_vec_pretty(&cert)?;
+    zip.start_file("run_certificate.json", opts)
+        .map_err(|e| OpsError::Invalid(format!("zip start failed: {e}")))?;
+    zip.write_all(&cert_bytes)
+        .map_err(|e| OpsError::Invalid(format!("zip write failed: {e}")))?;
+    entries.push("run_certificate.json".to_string());
+
+    let final_checkpoint = records
+        .iter()
+        .rev()
+        .find(|r| r.kind == ExperienceKind::AuditCheckpoint)
+        .map(|r| {
+            serde_json::json!({
+                "id": r.id.0,
+                "tick": r.time.tick.get(),
+                "audit_digest": r.audit_digest.map(hex::encode),
+                "audit_prev_digest": r.audit_prev_digest.map(hex::encode)
+            })
+        })
+        .unwrap_or_else(|| serde_json::json!({}));
+    let checkpoint_bytes = serde_json::to_vec_pretty(&final_checkpoint)?;
+    zip.start_file("final_checkpoint.json", opts)
+        .map_err(|e| OpsError::Invalid(format!("zip start failed: {e}")))?;
+    zip.write_all(&checkpoint_bytes)
+        .map_err(|e| OpsError::Invalid(format!("zip write failed: {e}")))?;
+    entries.push("final_checkpoint.json".to_string());
+
+    let roots_only = segments
+        .iter()
+        .map(|s| {
+            serde_json::json!({
+                "segment_index": s.segment_id.segment_index,
+                "record_count": s.record_count,
+                "merkle_root": s.merkle_root,
+                "prev_segment_root": s.prev_segment_root
+            })
+        })
+        .collect::<Vec<_>>();
+    let roots_bytes = serde_json::to_vec_pretty(&roots_only)?;
+    zip.start_file("segment_roots.json", opts)
+        .map_err(|e| OpsError::Invalid(format!("zip start failed: {e}")))?;
+    zip.write_all(&roots_bytes)
+        .map_err(|e| OpsError::Invalid(format!("zip write failed: {e}")))?;
+    entries.push("segment_roots.json".to_string());
+
+    let gate_path = PathBuf::from("./out/gate_report.json");
+    if gate_path.exists() {
+        let gate = fs::read_to_string(&gate_path)?;
+        zip.start_file("readiness_gate_report.json", opts)
+            .map_err(|e| OpsError::Invalid(format!("zip start failed: {e}")))?;
+        zip.write_all(gate.as_bytes())
+            .map_err(|e| OpsError::Invalid(format!("zip write failed: {e}")))?;
+        entries.push("readiness_gate_report.json".to_string());
+    }
+
+    zip.finish()
+        .map_err(|e| OpsError::Invalid(format!("zip finalize failed: {e}")))?;
+
+    Ok(AttestationBundleManifest {
+        run_id: run_id.to_string(),
+        out: out.display().to_string(),
+        entries,
+    })
+}
+
+fn resolve_attestation_inputs() -> (PathBuf, PathBuf, PathBuf) {
+    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let base = repo_root.join("policies/packs/base_v1");
+    let overlay = repo_root.join("policies/packs/overlays/test");
+    let manifest = repo_root.join("models/manifest.toml");
+    (base, overlay, manifest)
+}
+
+fn summarize_attestation_metrics(records: &[ExperienceRecord]) -> (u64, u64, u64, u64, u8, u32) {
+    let mut sum_risk = 0u64;
+    let mut count_risk = 0u64;
+    let mut sum_unc = 0u64;
+    let mut count_unc = 0u64;
+    let mut max_tier = 0u8;
+    let mut violations = 0u32;
+    for record in records {
+        if let ExperiencePayload::Audit(AuditPayload::EbmReasoning(r)) = &record.payload {
+            sum_risk = sum_risk.saturating_add(r.risk_q as u64);
+            count_risk = count_risk.saturating_add(1);
+            sum_unc = sum_unc.saturating_add(r.uncertainty_q as u64);
+            count_unc = count_unc.saturating_add(1);
+        }
+        if let ExperiencePayload::Audit(AuditPayload::CapabilityIssuance(c)) = &record.payload {
+            max_tier = max_tier.max(c.tier).max(c.effective_tier);
+        }
+        if matches!(
+            &record.payload,
+            ExperiencePayload::Audit(AuditPayload::EbmEnvelopeViolation(_))
+                | ExperiencePayload::Audit(AuditPayload::GpuResourceViolation(_))
+                | ExperiencePayload::Audit(AuditPayload::ComputeBudgetViolation(_))
+        ) {
+            violations = violations.saturating_add(1);
+        }
+    }
+    (
+        sum_risk, count_risk, sum_unc, count_unc, max_tier, violations,
+    )
+}
+
+fn certificate_digest_hex(cert: &RunCertificateV1) -> Result<String, OpsError> {
+    let mut canonical = cert.clone();
+    canonical.certificate_digest.clear();
+    canonical.signature.clear();
+    Ok(sha256_hex(&serde_json::to_vec(&canonical)?))
+}
+
+fn load_attestation_signing_key(workdir: &Path) -> Result<SigningKey, OpsError> {
+    let private_path = workdir.join("keys").join("attestation_ed25519.key");
+    let private_hex = fs::read_to_string(private_path)?;
+    let private_bytes = hex::decode(private_hex.trim())
+        .map_err(|e| OpsError::Invalid(format!("invalid attestation private key hex: {e}")))?;
+    let secret: [u8; 32] = private_bytes
+        .as_slice()
+        .try_into()
+        .map_err(|_| OpsError::Invalid("attestation private key must be 32 bytes".to_string()))?;
+    Ok(SigningKey::from_bytes(&secret))
+}
+
+fn load_attestation_public_key_hex(workdir: &Path) -> Result<String, OpsError> {
+    let public_path = workdir.join("keys").join("attestation_ed25519.pub");
+    if public_path.exists() {
+        return Ok(fs::read_to_string(public_path)?.trim().to_string());
+    }
+    let signing = load_attestation_signing_key(workdir)?;
+    Ok(hex::encode(signing.verifying_key().to_bytes()))
+}
+
+fn sign_certificate_digest(workdir: &Path, cert_digest_hex: &str) -> Result<String, OpsError> {
+    let signing = load_attestation_signing_key(workdir)?;
+    let digest = hex::decode(cert_digest_hex)
+        .map_err(|e| OpsError::Invalid(format!("invalid certificate digest hex: {e}")))?;
+    let sig: Signature = signing.sign(&digest);
+    Ok(hex::encode(sig.to_bytes()))
+}
+
+fn verify_certificate_signature(cert: &RunCertificateV1) -> Result<bool, OpsError> {
+    let pub_bytes = hex::decode(&cert.signer_public_key)
+        .map_err(|e| OpsError::Invalid(format!("invalid signer public key hex: {e}")))?;
+    let vk_bytes: [u8; 32] = pub_bytes
+        .as_slice()
+        .try_into()
+        .map_err(|_| OpsError::Invalid("signer public key must be 32 bytes".to_string()))?;
+    let vk = VerifyingKey::from_bytes(&vk_bytes)
+        .map_err(|e| OpsError::Invalid(format!("invalid signer public key: {e}")))?;
+    let sig_bytes = hex::decode(&cert.signature)
+        .map_err(|e| OpsError::Invalid(format!("invalid signature hex: {e}")))?;
+    let sig_arr: [u8; 64] = sig_bytes
+        .as_slice()
+        .try_into()
+        .map_err(|_| OpsError::Invalid("signature must be 64 bytes".to_string()))?;
+    let sig = Signature::from_bytes(&sig_arr);
+    let digest = hex::decode(&cert.certificate_digest)
+        .map_err(|e| OpsError::Invalid(format!("invalid certificate digest hex: {e}")))?;
+    Ok(vk.verify(&digest, &sig).is_ok())
+}
+
+fn persist_run_attestation_record(
+    workdir: &Path,
+    run_id: &str,
+    cert: &RunCertificateV1,
+) -> Result<(), OpsError> {
+    let path = workdir.join("ess").join("run_attestations.json");
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let mut records: Vec<RunAttestationRecord> = if path.exists() {
+        serde_json::from_str(&fs::read_to_string(&path)?)?
+    } else {
+        Vec::new()
+    };
+    records.push(RunAttestationRecord {
+        schema_version: 1,
+        run_id: run_id.to_string(),
+        certificate_digest_prefix: cert.certificate_digest.chars().take(12).collect(),
+        signer_key_id: cert.signer_key_id.clone(),
+    });
+    write_json(&path, &records)
 }
 
 fn build_merkle_segments(
