@@ -3,18 +3,18 @@
 use std::path::PathBuf;
 
 use ucf_ops::{
-    adversarial_run, audit_scan, bench_run, bringup, causal_slice, determinism_scan, diagnostics,
-    diagnostics_collect, ebm_export_dataset, ess_compact, ess_snapshot, event_id_for_decision,
-    explain_tick, explain_why, export_bugreport, load_signoff_checklist, logs_prove,
-    logs_verify_proof, metrics_snapshot, metrics_summary, metrics_trend, models_list, models_probe,
-    models_promote, models_recommend_rollback, models_rollback, models_stage, models_verify,
-    one_command_bringup, out_manifest, parse_slot, policy_diff, policy_explain, policy_validate,
-    readiness_gate, release_rc1_gate, release_signoff_validate, replay_audit, replay_bugreport,
-    run_status, runs_list, runs_search, runs_show, save_counterfactual_result,
-    security_verify_chain, simulate_counterfactual, verify_bugreport, world_shadow_report,
-    write_slice, AdversarialRunArgs, BenchArgs, ChangeImpactArgs, CounterfactualRequest,
-    DocsLintArgs, DocsLintMode, DocsLintStatus, ExplainTickRequest, ExportArgs, GateStatus,
-    SpecSnapshotArgs,
+    adversarial_run, attest_bundle, attest_keys_generate, attest_run, attest_verify, audit_scan,
+    bench_run, bringup, causal_slice, determinism_scan, diagnostics, diagnostics_collect,
+    ebm_export_dataset, ess_compact, ess_snapshot, event_id_for_decision, explain_tick,
+    explain_why, export_bugreport, load_signoff_checklist, logs_prove, logs_verify_proof,
+    metrics_snapshot, metrics_summary, metrics_trend, models_list, models_probe, models_promote,
+    models_recommend_rollback, models_rollback, models_stage, models_verify, one_command_bringup,
+    out_manifest, parse_slot, policy_diff, policy_explain, policy_validate, readiness_gate,
+    release_rc1_gate, release_signoff_validate, replay_audit, replay_bugreport, run_status,
+    runs_list, runs_search, runs_show, save_counterfactual_result, security_verify_chain,
+    simulate_counterfactual, verify_bugreport, world_shadow_report, write_slice,
+    AdversarialRunArgs, BenchArgs, ChangeImpactArgs, CounterfactualRequest, DocsLintArgs,
+    DocsLintMode, DocsLintStatus, ExplainTickRequest, ExportArgs, GateStatus, SpecSnapshotArgs,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -783,6 +783,57 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 _ => return Err("usage: ucf-ops logs <prove|verify-proof> ...".into()),
             }
         }
+        "attest" => {
+            let sub = args.get(2).map(String::as_str).unwrap_or("help");
+            match sub {
+                "keys" => {
+                    let force = has_flag(&args, "--force");
+                    attest_keys_generate(&workdir, force)?;
+                    println!("attestation_keys=ok");
+                }
+                "run" => {
+                    let Some(run_id) = arg_value(&args, "--run") else {
+                        return Err("usage: ucf-ops attest run --run <id> --out <path>".into());
+                    };
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from(format!("./out/run_cert_{run_id}.json")));
+                    let cert = attest_run(&workdir, &run_id, &out)?;
+                    println!("run_id={}", cert.run_id);
+                    println!("certificate_digest={}", cert.certificate_digest);
+                    println!("out={}", out.display());
+                }
+                "verify" => {
+                    let cert = arg_value(&args, "--cert")
+                        .map(PathBuf::from)
+                        .ok_or("usage: ucf-ops attest verify --cert <path> --ess <path>")?;
+                    let ess = arg_value(&args, "--ess")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| workdir.join("ess").join("ess_fixture.json"));
+                    let report = attest_verify(&workdir, &cert, &ess)?;
+                    println!("pass={}", report.pass);
+                    for reason in report.reasons {
+                        println!("reason={reason}");
+                    }
+                    if !report.pass {
+                        std::process::exit(2);
+                    }
+                }
+                "bundle" => {
+                    let Some(run_id) = arg_value(&args, "--run") else {
+                        return Err("usage: ucf-ops attest bundle --run <id> --out <path>".into());
+                    };
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from(format!("./out/bundle_{run_id}.zip")));
+                    let report = attest_bundle(&workdir, &run_id, &out)?;
+                    println!("run_id={}", report.run_id);
+                    println!("entries={}", report.entries.len());
+                    println!("out={}", report.out);
+                }
+                _ => return Err("usage: ucf-ops attest <keys|run|verify|bundle> ...".into()),
+            }
+        }
         "readiness-gate" => {
             let profile = arg_value(&args, "--profile").unwrap_or_else(|| "test".to_string());
             let out = arg_value(&args, "--out")
@@ -990,7 +1041,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             eprintln!(
-                "usage: ucf-ops <bringup|diag|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|readiness-gate|adversarial-run|out|release|bench|runs|status|ess|ebm|policy|spec|change-impact|version> [--workdir <path>]"
+                "usage: ucf-ops <bringup|diag|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|attest|readiness-gate|adversarial-run|out|release|bench|runs|status|ess|ebm|policy|spec|change-impact|version> [--workdir <path>]"
             );
             std::process::exit(1);
         }

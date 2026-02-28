@@ -2,10 +2,10 @@ use std::fs;
 
 use tempfile::tempdir;
 use ucf_ops::{
-    bringup, diagnostics, export_bugreport, load_signoff_checklist, models_promote, models_stage,
-    one_command_bringup, out_manifest, parse_slot, readiness_gate, release_signoff_validate,
-    replay_audit, replay_bugreport, verify_bugreport, world_shadow_report, ExportArgs, GateStatus,
-    SpecSnapshotArgs,
+    attest_bundle, attest_run, attest_verify, bringup, diagnostics, export_bugreport,
+    load_signoff_checklist, models_promote, models_stage, one_command_bringup, out_manifest,
+    parse_slot, readiness_gate, release_signoff_validate, replay_audit, replay_bugreport,
+    verify_bugreport, world_shadow_report, ExportArgs, GateStatus, SpecSnapshotArgs,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -235,4 +235,87 @@ fn spec_snapshot_writes_expected_sections() {
     assert!(body.contains("## B) Stage contracts"));
     assert!(body.contains("## D) Policy digests"));
     assert!(body.contains("## E) Model slots"));
+}
+
+#[test]
+fn attest_run_and_verify_roundtrip() {
+    let dir = tempdir().expect("tempdir");
+    let out = dir.path().join("out");
+    let artifacts = one_command_bringup(
+        dir.path(),
+        std::path::Path::new("../../fixtures/e2e_scenario_a.json"),
+        12,
+        &out,
+        false,
+    )
+    .expect("bringup");
+
+    let cert_path = out.join(format!("run_cert_{}.json", artifacts.run_metadata.run_id));
+    let _cert =
+        attest_run(dir.path(), &artifacts.run_metadata.run_id, &cert_path).expect("attest run");
+    assert!(cert_path.exists());
+
+    let verify = attest_verify(
+        dir.path(),
+        &cert_path,
+        &dir.path().join("ess").join("ess_fixture.json"),
+    )
+    .expect("attest verify");
+    assert!(verify.pass, "reasons={:?}", verify.reasons);
+}
+
+#[test]
+fn attest_verify_fails_on_tamper() {
+    let dir = tempdir().expect("tempdir");
+    let out = dir.path().join("out");
+    let artifacts = one_command_bringup(
+        dir.path(),
+        std::path::Path::new("../../fixtures/e2e_scenario_a.json"),
+        12,
+        &out,
+        false,
+    )
+    .expect("bringup");
+
+    let cert_path = out.join("run_cert_tamper.json");
+    let _ = attest_run(dir.path(), &artifacts.run_metadata.run_id, &cert_path).expect("attest run");
+
+    let mut cert_json: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&cert_path).expect("read cert")).expect("json");
+    cert_json["manifest_digest"] = serde_json::Value::String("deadbeef".repeat(8));
+    fs::write(
+        &cert_path,
+        serde_json::to_string_pretty(&cert_json).expect("serialize"),
+    )
+    .expect("write cert");
+
+    let verify = attest_verify(
+        dir.path(),
+        &cert_path,
+        &dir.path().join("ess").join("ess_fixture.json"),
+    )
+    .expect("attest verify");
+    assert!(!verify.pass);
+    assert!(!verify.reasons.is_empty());
+}
+
+#[test]
+fn attest_bundle_exports_redaction_safe_artifacts() {
+    let dir = tempdir().expect("tempdir");
+    let out = dir.path().join("out");
+    let artifacts = one_command_bringup(
+        dir.path(),
+        std::path::Path::new("../../fixtures/e2e_scenario_a.json"),
+        10,
+        &out,
+        false,
+    )
+    .expect("bringup");
+
+    let bundle_path = out.join("bundle.zip");
+    let bundle =
+        attest_bundle(dir.path(), &artifacts.run_metadata.run_id, &bundle_path).expect("bundle");
+    assert!(bundle_path.exists());
+    assert!(bundle.entries.iter().any(|e| e == "run_certificate.json"));
+    assert!(bundle.entries.iter().any(|e| e == "segment_roots.json"));
 }
