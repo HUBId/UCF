@@ -28,6 +28,9 @@ fn main() {
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
     let cmd = args.get(1).map(String::as_str).unwrap_or("help");
+    if let Some(bundle_root) = arg_value(&args, "--bundle") {
+        std::env::set_current_dir(bundle_root)?;
+    }
     if cmd == "--version" || cmd == "version" {
         println!("ucf-ops {}", env!("CARGO_PKG_VERSION"));
         return Ok(());
@@ -88,6 +91,27 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             if !report.ok() {
                 std::process::exit(2);
+            }
+        }
+        "health" => {
+            let sub = args.get(2).map(String::as_str).unwrap_or("help");
+            match sub {
+                "check" => {
+                    let report = diagnostics(&workdir)?;
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/health.json"));
+                    if let Some(parent) = out.parent() {
+                        std::fs::create_dir_all(parent)?;
+                    }
+                    std::fs::write(&out, serde_json::to_vec_pretty(&report)?)?;
+                    println!("out={}", out.display());
+                    println!("overall={}", if report.ok() { "PASS" } else { "FAIL" });
+                    if !report.ok() {
+                        std::process::exit(2);
+                    }
+                }
+                _ => return Err("usage: ucf-ops health check [--out <path>]".into()),
             }
         }
         "diagnostics" => {
@@ -1041,7 +1065,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             eprintln!(
-                "usage: ucf-ops <bringup|diag|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|attest|readiness-gate|adversarial-run|out|release|bench|runs|status|ess|ebm|policy|spec|change-impact|version> [--workdir <path>]"
+                "usage: ucf-ops <bringup|diag|health|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|attest|readiness-gate|adversarial-run|out|release|bench|runs|status|ess|ebm|policy|spec|change-impact|version> [--workdir <path>] [--bundle <path>]"
             );
             std::process::exit(1);
         }

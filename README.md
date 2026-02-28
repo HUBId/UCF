@@ -50,6 +50,18 @@ See `docs/feature_matrix.md` for details.
 - Unknown config keys fail fast during TOML parse/load.
 - Migration guide: `docs/config_migration_v2.md`.
 
+
+## Portable bringup (bundle-first)
+- Build bundle:
+  - `python deploy/scripts/build_bundle.py --target ./bundles/releases/ucf_v1 --profile prod`
+- Switch to bundle root and run local gates:
+  - `./bundles/releases/ucf_v1/bin/ucf-ops readiness-gate --bundle ./bundles/releases/ucf_v1 --profile test --out ./bundles/releases/ucf_v1/out/gate.json`
+  - `./bundles/releases/ucf_v1/bin/ucf-ops docs lint --bundle ./bundles/releases/ucf_v1 --strict --out ./bundles/releases/ucf_v1/out/docs_lint.json`
+- Upgrade/rollback via bundle switching:
+  - `./deploy/scripts/upgrade_bundle.sh upgrade <bundle_id>`
+  - `./deploy/scripts/upgrade_bundle.sh rollback <bundle_id>`
+- Full guide: `docs/deploy_portable.md`.
+
 ## Prompt Runner
 - Queue file (machine): `docs/prompt_queue.toml`
 - Queue file (human): `docs/prompt_queue.md`
