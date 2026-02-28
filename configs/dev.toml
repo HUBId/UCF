@@ -5,6 +5,7 @@ slot_ebm_mode = "shadow"
 offline = true
 compute_backend = "stub"
 compute_seed = 233811181
+device_profile = "medium"
 compute_budget_profile = "default"
 isolation_runtime = "inproc"
 capabilities_default = "deny"

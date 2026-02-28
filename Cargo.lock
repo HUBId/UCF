@@ -3913,6 +3913,7 @@ dependencies = [
  "ucf-core",
  "ucf-ess",
  "ucf-frames",
+ "ucf-platform",
  "ucf-policy",
  "ucf-replay",
  "ucf-runtime",
@@ -3939,6 +3940,14 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "ucf-types",
+]
+
+[[package]]
+name = "ucf-platform"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

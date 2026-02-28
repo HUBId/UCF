@@ -59,6 +59,7 @@ use ucf_ess::v1::{
 use ucf_frames::v1::{
     ChannelCode, ControlFrame, ControlPayload, CorrelationId, Intent, IntentId, IntentKind,
 };
+use ucf_platform::{LocalPlatformProbe, PlatformProbe};
 use ucf_policy::adapter::MockAdapter;
 use ucf_policy::policy_packs::{load_and_merge_policy_graph, policy_graph_digest, PolicyPackError};
 use ucf_replay::{
@@ -111,6 +112,7 @@ pub struct OpsConfig {
     pub compute_backend: ComputeBackendKind,
     pub compute_seed: u64,
     pub compute_budget_profile: String,
+    pub device_profile: String,
     pub isolation_runtime: String,
     pub capabilities_default: String,
     pub sampling_enabled: bool,
@@ -133,6 +135,7 @@ impl Default for OpsConfig {
             compute_backend: ComputeBackendKind::Stub,
             compute_seed: 0xDEC0DED,
             compute_budget_profile: "tight".to_string(),
+            device_profile: "small".to_string(),
             isolation_runtime: "inproc".to_string(),
             capabilities_default: "deny".to_string(),
             sampling_enabled: false,
@@ -143,6 +146,108 @@ impl Default for OpsConfig {
             log_level: "info".to_string(),
             config_digest: String::new(),
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DeviceProfileName {
+    Small,
+    Medium,
+    Large,
+}
+
+impl DeviceProfileName {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Small => "small",
+            Self::Medium => "medium",
+            Self::Large => "large",
+        }
+    }
+
+    fn parse(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "small" => Some(Self::Small),
+            "medium" => Some(Self::Medium),
+            "large" => Some(Self::Large),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DeviceProfileV1 {
+    pub name: DeviceProfileName,
+    pub compute_budget_profile: String,
+    pub llm_max_tokens: u32,
+    pub probe_timeout_ms: u64,
+    pub world_shadow_window_ticks: u32,
+    pub world_shadow_sampling_rate_pct: u16,
+    pub stage_isolation_default: bool,
+}
+
+impl DeviceProfileV1 {
+    pub fn for_name(name: DeviceProfileName) -> Self {
+        match name {
+            DeviceProfileName::Small => Self {
+                name,
+                compute_budget_profile: "tight".to_string(),
+                llm_max_tokens: 64,
+                probe_timeout_ms: 150,
+                world_shadow_window_ticks: 4,
+                world_shadow_sampling_rate_pct: 10_000,
+                stage_isolation_default: false,
+            },
+            DeviceProfileName::Medium => Self {
+                name,
+                compute_budget_profile: "default".to_string(),
+                llm_max_tokens: 128,
+                probe_timeout_ms: 200,
+                world_shadow_window_ticks: 6,
+                world_shadow_sampling_rate_pct: 10_000,
+                stage_isolation_default: true,
+            },
+            DeviceProfileName::Large => Self {
+                name,
+                compute_budget_profile: "stress".to_string(),
+                llm_max_tokens: 192,
+                probe_timeout_ms: 250,
+                world_shadow_window_ticks: 8,
+                world_shadow_sampling_rate_pct: 10_000,
+                stage_isolation_default: true,
+            },
+        }
+    }
+
+    pub fn digest_hex(&self) -> Result<String, OpsError> {
+        let bytes = serde_json::to_vec(self)?;
+        Ok(sha256_hex(&bytes))
+    }
+}
+
+impl OpsConfig {
+    fn device_profile_name(&self) -> Result<DeviceProfileName, OpsError> {
+        DeviceProfileName::parse(&self.device_profile).ok_or_else(|| {
+            OpsError::Invalid(format!(
+                "invalid device_profile={}; expected small|medium|large",
+                self.device_profile
+            ))
+        })
+    }
+
+    fn device_profile_llm_max_tokens(&self) -> u32 {
+        self.device_profile_name()
+            .map(DeviceProfileV1::for_name)
+            .map(|p| p.llm_max_tokens)
+            .unwrap_or(64)
+    }
+
+    fn device_profile_world_shadow_window_ticks(&self) -> u32 {
+        self.device_profile_name()
+            .map(DeviceProfileV1::for_name)
+            .map(|p| p.world_shadow_window_ticks)
+            .unwrap_or(4)
     }
 }
 
@@ -177,6 +282,9 @@ pub struct RunMetadataRecord {
     pub profile: String,
     pub config_digest: String,
     pub policy_overlay: String,
+    pub platform_probe_summary: String,
+    pub device_profile_name: String,
+    pub device_profile_digest: String,
     pub schema_versions: BTreeMap<String, u16>,
     pub parent_run_id: Option<String>,
     pub resume_reason: Option<ResumeReason>,
@@ -2377,6 +2485,14 @@ pub fn bringup(workdir: &Path, demo: bool, ticks: u64) -> Result<BringupResult, 
     std::env::set_var("UCF_COMPUTE_BACKEND", cfg.compute_backend.as_env_str());
     std::env::set_var("UCF_COMPUTE_SEED", cfg.compute_seed.to_string());
     std::env::set_var("UCF_COMPUTE_BUDGET_PROFILE", &cfg.compute_budget_profile);
+    std::env::set_var(
+        "UCF_LLM_MAX_TOKENS",
+        cfg.device_profile_llm_max_tokens().to_string(),
+    );
+    std::env::set_var(
+        "UCF_WORLD_VLJEPA_WINDOW_TICKS",
+        cfg.device_profile_world_shadow_window_ticks().to_string(),
+    );
     std::env::set_var("UCF_POLICY_OVERLAY", &cfg.policy_overlay);
     std::env::set_var("UCF_SLOT_EBM_MODE", &cfg.slot_ebm_mode);
     std::env::set_var("UCF_BACKEND_PACK", &cfg.backend_pack);
@@ -2522,6 +2638,10 @@ pub fn one_command_bringup(
         profile: cfg.profile.clone(),
         config_digest: cfg.config_digest.clone(),
         policy_overlay: cfg.policy_overlay.clone(),
+        platform_probe_summary: LocalPlatformProbe::probe().summary(),
+        device_profile_name: cfg.device_profile.clone(),
+        device_profile_digest: DeviceProfileV1::for_name(cfg.device_profile_name()?)
+            .digest_hex()?,
         schema_versions,
         parent_run_id: None,
         resume_reason: None,
@@ -3506,6 +3626,7 @@ pub fn load_or_init_config(workdir: &Path) -> Result<OpsConfig, OpsError> {
 
     cfg.profile = profile;
     apply_env_overrides(&mut cfg)?;
+    apply_device_profile(&mut cfg)?;
     validate_config_ladder(&cfg)?;
     cfg.config_digest = ops_config_digest(&cfg)?;
 
@@ -3607,6 +3728,24 @@ fn validate_config_ladder(cfg: &OpsConfig) -> Result<(), OpsError> {
 }
 
 fn apply_env_overrides(cfg: &mut OpsConfig) -> Result<(), OpsError> {
+    const ALLOW: &[&str] = &[
+        "UCF_POLICY_OVERLAY",
+        "UCF_SLOT_EBM_MODE",
+        "UCF_STAGE_ISOLATION",
+        "UCF_EMERGENCY_POLICY_PIN",
+        "UCF_DEVICE_PROFILE",
+    ];
+    for (k, v) in std::env::vars() {
+        if !k.starts_with("UCF_OPS_OVERRIDE_") {
+            continue;
+        }
+        if !ALLOW.contains(&v.as_str()) {
+            return Err(OpsError::Invalid(format!(
+                "unknown env override key via {k}={v}; allowed: {}",
+                ALLOW.join(",")
+            )));
+        }
+    }
     if let Ok(v) = std::env::var("UCF_POLICY_OVERLAY") {
         cfg.policy_overlay = v;
     }
@@ -3616,9 +3755,21 @@ fn apply_env_overrides(cfg: &mut OpsConfig) -> Result<(), OpsError> {
     if let Ok(v) = std::env::var("UCF_STAGE_ISOLATION") {
         cfg.isolation_runtime = v;
     }
+    if let Ok(v) = std::env::var("UCF_DEVICE_PROFILE") {
+        cfg.device_profile = v;
+    }
     if let Ok(v) = std::env::var("UCF_EMERGENCY_POLICY_PIN") {
         cfg.emergency_policy_pin = Some(v);
     }
+    Ok(())
+}
+
+fn apply_device_profile(cfg: &mut OpsConfig) -> Result<(), OpsError> {
+    let name = cfg.device_profile_name()?;
+    let profile = DeviceProfileV1::for_name(name);
+    cfg.device_profile = name.as_str().to_string();
+    cfg.compute_budget_profile = profile.compute_budget_profile;
+    cfg.stage_isolation_optional = profile.stage_isolation_default;
     Ok(())
 }
 
@@ -4386,6 +4537,9 @@ active_hash = "abc"
             profile: "test".to_string(),
             config_digest: "cfg".to_string(),
             policy_overlay: "test".to_string(),
+            platform_probe_summary: "os=linux".to_string(),
+            device_profile_name: "small".to_string(),
+            device_profile_digest: "d".to_string(),
             schema_versions: schema.clone(),
             parent_run_id: None,
             resume_reason: None,
@@ -5795,6 +5949,69 @@ pub fn audit_scan(repo_root: &Path) -> Result<AuditScanReport, OpsError> {
     Ok(AuditScanReport { violations })
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HardwareScanViolation {
+    pub path: String,
+    pub line: usize,
+    pub pattern: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HardwareScanReport {
+    pub violations: Vec<HardwareScanViolation>,
+}
+
+pub fn hardware_scan(repo_root: &Path) -> Result<HardwareScanReport, OpsError> {
+    let banned = [
+        "NUC",
+        "Raspberry",
+        "RPi",
+        "Intel",
+        "AMD",
+        "NVIDIA",
+        "/etc/ucf",
+    ];
+    let mut violations = Vec::new();
+    for entry in walkdir::WalkDir::new(repo_root).into_iter().flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let rel = path
+            .strip_prefix(repo_root)
+            .unwrap_or(path)
+            .to_string_lossy();
+        if rel.contains("vendor/")
+            || rel.contains("target/")
+            || rel.starts_with("deploy/")
+            || rel.starts_with("runtime/ucf-ops/src/")
+        {
+            continue;
+        }
+        let in_runtime_scope = rel.starts_with("runtime/")
+            || rel.starts_with("core/")
+            || rel.starts_with("domains/")
+            || rel.starts_with("ai/")
+            || rel.starts_with("app/");
+        if !in_runtime_scope {
+            continue;
+        }
+        let text = fs::read_to_string(path).unwrap_or_default();
+        for (idx, line) in text.lines().enumerate() {
+            for pat in banned {
+                if line.contains(pat) && !line.contains("let banned =") {
+                    violations.push(HardwareScanViolation {
+                        path: rel.to_string(),
+                        line: idx + 1,
+                        pattern: pat.to_string(),
+                    });
+                }
+            }
+        }
+    }
+    Ok(HardwareScanReport { violations })
+}
+
 pub fn policy_explain(
     workdir: &Path,
     digest_prefix: &str,
@@ -5912,5 +6129,60 @@ mod rc1_tests {
         std::env::remove_var("CI");
         assert_eq!(check.name, "build_workspace_tests");
         assert_eq!(check.status, GateStatus::Skip);
+    }
+}
+
+#[cfg(test)]
+mod hardware_scan_tests {
+    use super::*;
+
+    #[test]
+    fn hardware_scan_flags_forbidden_terms() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let runtime_dir = tmp.path().join("runtime/ucf-runtime/src");
+        std::fs::create_dir_all(&runtime_dir).expect("mkdir");
+        let bad = runtime_dir.join("bad.rs");
+        std::fs::write(&bad, "const TARGET: &str = \"RPi\";\n").expect("write");
+
+        let report = hardware_scan(tmp.path()).expect("scan");
+        assert_eq!(report.violations.len(), 1);
+        assert_eq!(report.violations[0].pattern, "RPi");
+    }
+}
+
+#[cfg(test)]
+mod device_profile_tests {
+    use super::*;
+
+    #[test]
+    fn device_profile_digest_is_stable() {
+        let digest = DeviceProfileV1::for_name(DeviceProfileName::Small)
+            .digest_hex()
+            .expect("digest");
+        assert_eq!(digest.len(), 64);
+        assert_eq!(
+            digest,
+            DeviceProfileV1::for_name(DeviceProfileName::Small)
+                .digest_hex()
+                .expect("digest")
+        );
+    }
+
+    #[test]
+    fn run_metadata_contains_platform_and_device_profile_fields() {
+        let record = RunMetadataRecord {
+            platform_probe_summary:
+                "os=Linux arch=X86_64 cores=1 mem_mb=1 accel=None monotonic_clock_ok=true"
+                    .to_string(),
+            device_profile_name: "small".to_string(),
+            device_profile_digest: DeviceProfileV1::for_name(DeviceProfileName::Small)
+                .digest_hex()
+                .expect("digest"),
+            ..RunMetadataRecord::default()
+        };
+        let json = serde_json::to_string(&record).expect("serialize");
+        assert!(json.contains("platform_probe_summary"));
+        assert!(json.contains("device_profile_name"));
+        assert!(json.contains("device_profile_digest"));
     }
 }
