@@ -3,6 +3,10 @@ name = "ucf-ops"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = []
+formal-smt = []
+
 [dependencies]
 ucf-runtime = { path = "../ucf-runtime" }
 ucf-replay = { path = "../ucf-replay" }
