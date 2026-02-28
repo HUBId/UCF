@@ -6,15 +6,16 @@ use ucf_ops::{
     adversarial_run, attest_bundle, attest_keys_generate, attest_run, attest_verify, audit_scan,
     bench_run, bringup, causal_slice, determinism_scan, diagnostics, diagnostics_collect,
     ebm_export_dataset, ess_compact, ess_snapshot, event_id_for_decision, explain_tick,
-    explain_why, export_bugreport, load_signoff_checklist, logs_prove, logs_verify_proof,
-    metrics_snapshot, metrics_summary, metrics_trend, models_list, models_probe, models_promote,
-    models_recommend_rollback, models_rollback, models_stage, models_verify, one_command_bringup,
-    out_manifest, parse_slot, policy_diff, policy_explain, policy_validate, readiness_gate,
-    release_rc1_gate, release_signoff_validate, replay_audit, replay_bugreport, run_status,
-    runs_list, runs_search, runs_show, save_counterfactual_result, security_verify_chain,
-    simulate_counterfactual, verify_bugreport, world_shadow_report, write_slice,
-    AdversarialRunArgs, BenchArgs, ChangeImpactArgs, CounterfactualRequest, DocsLintArgs,
-    DocsLintMode, DocsLintStatus, ExplainTickRequest, ExportArgs, GateStatus, SpecSnapshotArgs,
+    explain_why, export_bugreport, hardware_scan, load_signoff_checklist, logs_prove,
+    logs_verify_proof, metrics_snapshot, metrics_summary, metrics_trend, models_list, models_probe,
+    models_promote, models_recommend_rollback, models_rollback, models_stage, models_verify,
+    one_command_bringup, out_manifest, parse_slot, policy_diff, policy_explain, policy_validate,
+    readiness_gate, release_rc1_gate, release_signoff_validate, replay_audit, replay_bugreport,
+    run_status, runs_list, runs_search, runs_show, save_counterfactual_result,
+    security_verify_chain, simulate_counterfactual, verify_bugreport, world_shadow_report,
+    write_slice, AdversarialRunArgs, BenchArgs, ChangeImpactArgs, CounterfactualRequest,
+    DocsLintArgs, DocsLintMode, DocsLintStatus, ExplainTickRequest, ExportArgs, GateStatus,
+    SpecSnapshotArgs,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -276,7 +277,22 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         return Err("audit scan failed".into());
                     }
                 }
-                _ => return Err("usage: ucf-ops audit scan".into()),
+                "hardware-scan" => {
+                    let report = hardware_scan(&PathBuf::from("."))?;
+                    if report.violations.is_empty() {
+                        println!("hardware_scan=ok violations=0");
+                    } else {
+                        println!("hardware_scan=fail violations={}", report.violations.len());
+                        for violation in report.violations {
+                            println!(
+                                "{}:{}:{}",
+                                violation.path, violation.line, violation.pattern
+                            );
+                        }
+                        return Err("hardware scan failed".into());
+                    }
+                }
+                _ => return Err("usage: ucf-ops audit scan|hardware-scan".into()),
             }
         }
 

@@ -16,6 +16,7 @@ ucf-core = { path = "../../core/ucf-core" }
 ucf-frames = { path = "../../domains/ucf-frames" }
 ucf-ess = { path = "../../domains/ucf-ess" }
 ucf-types = { path = "../../core/crates/ucf-types" }
+ucf-platform = { path = "../ucf-platform" }
 serde = { workspace = true }
 serde_json = "1"
 sha2 = { workspace = true }

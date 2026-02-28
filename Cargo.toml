@@ -178,6 +178,7 @@ members = [
     "adapters/rig/crates/ucf-rig",
     "adapters/terminal/crates/ucf-terminal",
     "runtime/ucf-backends-gpu",
+    "runtime/ucf-platform",
     "runtime/*",
 ]
 resolver = "2"

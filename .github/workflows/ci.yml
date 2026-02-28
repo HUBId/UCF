@@ -21,6 +21,9 @@ jobs:
         run: cargo run -p ucf-ops -- determinism scan
       - name: Audit scan
         run: cargo run -p ucf-ops -- audit scan
+
+      - name: Hardware assumptions scan
+        run: cargo run -p ucf-ops -- audit hardware-scan
       - name: Models verify
         run: cargo run -p ucf-ops -- models verify --manifest models/manifest.toml
       - name: Models probe (fixtures)

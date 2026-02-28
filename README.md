@@ -13,6 +13,7 @@ See `docs/feature_matrix.md` for details.
 ## Post-rc1 hardening commands
 - Determinism scan: `cargo run -p ucf-ops -- determinism scan`
 - Hidden path audit scan: `cargo run -p ucf-ops -- audit scan`
+- Hardware assumptions scan: `cargo run -p ucf-ops -- audit hardware-scan`
 - Spec snapshot: `cargo run -p ucf-ops -- spec snapshot --policy policies/packs/base_v1 --overlay policies/packs/overlays/test --out docs/spec_snapshot.md`
 - Docs lint (CI-blocking): `cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json`
 
@@ -43,6 +44,7 @@ See `docs/feature_matrix.md` for details.
 
 ## Minimal Viable Governance v2 Profiles
 - Profile ladder via `UCF_PROFILE=dev|test|prod` with config files in `configs/`.
+- Device budget profile via `UCF_DEVICE_PROFILE=small|medium|large` (resource budgets only).
 - Start commands:
   - `UCF_PROFILE=dev cargo run -p ucf-ops -- bringup --scenario fixtures/e2e_scenario_a.json --ticks 32 --out ./out/dev`
   - `UCF_PROFILE=test cargo run -p ucf-ops -- bringup --scenario fixtures/e2e_scenario_a.json --ticks 32 --out ./out/test`
