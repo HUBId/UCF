@@ -18,7 +18,8 @@ pub use causal::{
 pub use change_impact::{change_impact, ChangeImpactArgs};
 pub use docs_lint::{docs_lint, DocsLintArgs, DocsLintMode, DocsLintReport, DocsLintStatus};
 pub use models_lifecycle::{
-    models_list, models_promote, models_rollback, models_stage, parse_slot,
+    models_list, models_promote, models_recommend_rollback, models_rollback, models_stage,
+    parse_slot,
 };
 pub use spec_snapshot::{generate_spec_snapshot, SpecSnapshotArgs};
 pub use world_shadow::{world_shadow_report, WorldShadowReport};

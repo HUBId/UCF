@@ -28,7 +28,7 @@ use crate::tool_plugins::{
     compact_tool_result_note, run_plugin_tool, CapabilityTokenBinding, SandboxEnv,
     ToolPluginRegistry,
 };
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::time::Instant;
 #[cfg(any(feature = "gpu-cuda", feature = "gpu-metal"))]
 use ucf_backends_gpu::{detect_gpu_capability, GpuResourceCaps};
@@ -51,6 +51,7 @@ use ucf_compute::capabilities::{
     build_llm_backend, FinishReason, LlmBackendConfig, LlmInference, LlmOutputClass, LlmRequest,
     LlmResponse, LlmStatus,
 };
+use ucf_compute::enablement::{SlotEnablement, SlotMode};
 use ucf_compute::{
     build_backend, compute_input_from_control, AiComputeBackend, BackendPackConfig,
     BackendPackFactory, BackendPackKind, ComputeBackendConfig, ComputeBudget, ComputeError,
@@ -370,6 +371,204 @@ enum EmergencyState {
         reason: EmergencyTriggerReason,
         cool_down_remaining: u16,
     },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ModelGovernanceStatus {
+    Healthy,
+    Degraded,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum GovernanceSlot {
+    Llm,
+    World,
+    Sae,
+    Ssm,
+    Lfm,
+    Ebm,
+}
+
+impl GovernanceSlot {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Llm => "llm",
+            Self::World => "world",
+            Self::Sae => "sae",
+            Self::Ssm => "ssm",
+            Self::Lfm => "lfm",
+            Self::Ebm => "ebm",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ModelGovernancePolicy {
+    max_timeout_rate_q: u16,
+    max_invalid_rate_q: u16,
+    max_envelope_violation_rate_q: u16,
+    max_delta_uncertainty_q: u16,
+    max_delta_pressure_q: u16,
+}
+
+impl Default for ModelGovernancePolicy {
+    fn default() -> Self {
+        Self {
+            max_timeout_rate_q: 3276,
+            max_invalid_rate_q: 655,
+            max_envelope_violation_rate_q: 655,
+            max_delta_uncertainty_q: 9830,
+            max_delta_pressure_q: 9830,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct SlotWindowAcc {
+    samples: u64,
+    timeout: u64,
+    invalid: u64,
+    envelope: u64,
+    uncertainty_sum_q: u64,
+    pressure_sum_q: u64,
+}
+
+#[derive(Debug)]
+struct ModelGovernanceRuntime {
+    window_ticks: u64,
+    persistent_windows: u8,
+    current_window_start: u64,
+    status: BTreeMap<GovernanceSlot, ModelGovernanceStatus>,
+    breaches_streak: BTreeMap<GovernanceSlot, u8>,
+    thresholds: BTreeMap<GovernanceSlot, ModelGovernancePolicy>,
+    baseline_uncertainty_q: u16,
+    baseline_pressure_q: u16,
+    accum: BTreeMap<GovernanceSlot, SlotWindowAcc>,
+}
+
+impl ModelGovernanceRuntime {
+    fn from_policy(window_ticks: u64, thresholds: &BTreeMap<String, i64>) -> Self {
+        let mut out = Self::new(window_ticks, 0, 0);
+        for slot in [
+            GovernanceSlot::Llm,
+            GovernanceSlot::World,
+            GovernanceSlot::Sae,
+            GovernanceSlot::Ssm,
+            GovernanceSlot::Lfm,
+            GovernanceSlot::Ebm,
+        ] {
+            let prefix = format!("model_governance_{}", slot.as_str());
+            let mut p = ModelGovernancePolicy::default();
+            p.max_timeout_rate_q = threshold_u16(
+                thresholds,
+                &format!("{prefix}_max_timeout_rate_q"),
+                p.max_timeout_rate_q,
+            );
+            p.max_invalid_rate_q = threshold_u16(
+                thresholds,
+                &format!("{prefix}_max_invalid_rate_q"),
+                p.max_invalid_rate_q,
+            );
+            p.max_envelope_violation_rate_q = threshold_u16(
+                thresholds,
+                &format!("{prefix}_max_envelope_violation_rate_q"),
+                p.max_envelope_violation_rate_q,
+            );
+            p.max_delta_uncertainty_q = threshold_u16(
+                thresholds,
+                &format!("{prefix}_max_delta_uncertainty_q"),
+                p.max_delta_uncertainty_q,
+            );
+            p.max_delta_pressure_q = threshold_u16(
+                thresholds,
+                &format!("{prefix}_max_delta_pressure_q"),
+                p.max_delta_pressure_q,
+            );
+            out.thresholds.insert(slot, p);
+        }
+        out
+    }
+
+    fn new(window_ticks: u64, baseline_uncertainty_q: u16, baseline_pressure_q: u16) -> Self {
+        let mut status = BTreeMap::new();
+        let mut breaches_streak = BTreeMap::new();
+        let mut thresholds = BTreeMap::new();
+        let mut accum = BTreeMap::new();
+        for slot in [
+            GovernanceSlot::Llm,
+            GovernanceSlot::World,
+            GovernanceSlot::Sae,
+            GovernanceSlot::Ssm,
+            GovernanceSlot::Lfm,
+            GovernanceSlot::Ebm,
+        ] {
+            status.insert(slot, ModelGovernanceStatus::Healthy);
+            breaches_streak.insert(slot, 0);
+            thresholds.insert(slot, ModelGovernancePolicy::default());
+            accum.insert(slot, SlotWindowAcc::default());
+        }
+        Self {
+            window_ticks: window_ticks.max(64),
+            persistent_windows: 2,
+            current_window_start: 0,
+            status,
+            breaches_streak,
+            thresholds,
+            baseline_uncertainty_q,
+            baseline_pressure_q,
+            accum,
+        }
+    }
+
+    fn any_critical_degraded(&self) -> bool {
+        self.status.get(&GovernanceSlot::Llm) == Some(&ModelGovernanceStatus::Degraded)
+            || self.status.get(&GovernanceSlot::Ebm) == Some(&ModelGovernanceStatus::Degraded)
+    }
+}
+
+fn threshold_u16(thresholds: &BTreeMap<String, i64>, key: &str, fallback: u16) -> u16 {
+    thresholds
+        .get(key)
+        .copied()
+        .and_then(|v| u16::try_from(v).ok())
+        .unwrap_or(fallback)
+}
+
+fn model_governance_digest(status: &BTreeMap<GovernanceSlot, ModelGovernanceStatus>) -> [u8; 32] {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"ucf.runtime.model_governance.status.v1");
+    for slot in [
+        GovernanceSlot::Llm,
+        GovernanceSlot::World,
+        GovernanceSlot::Sae,
+        GovernanceSlot::Ssm,
+        GovernanceSlot::Lfm,
+        GovernanceSlot::Ebm,
+    ] {
+        hasher.update(slot.as_str().as_bytes());
+        let degraded = status.get(&slot) == Some(&ModelGovernanceStatus::Degraded);
+        hasher.update(&[u8::from(degraded)]);
+    }
+    *hasher.finalize().as_bytes()
+}
+
+fn model_governance_reason_codes(
+    status: &BTreeMap<GovernanceSlot, ModelGovernanceStatus>,
+) -> Vec<String> {
+    let mut out = Vec::new();
+    for slot in [
+        GovernanceSlot::Llm,
+        GovernanceSlot::World,
+        GovernanceSlot::Sae,
+        GovernanceSlot::Ssm,
+        GovernanceSlot::Lfm,
+        GovernanceSlot::Ebm,
+    ] {
+        if status.get(&slot) == Some(&ModelGovernanceStatus::Degraded) {
+            out.push(format!("slot_{}_degraded", slot.as_str()));
+        }
+    }
+    out
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -844,6 +1043,8 @@ pub struct RuntimeOrchestrator {
     last_compute_milestone: Option<ComputeMilestone>,
     tool_gate: ToolGate,
     tool_governor: ToolGovernor,
+    slot_enablement: SlotEnablement,
+    model_governance: ModelGovernanceRuntime,
     spent_tool_tokens: HashSet<[u8; 32]>,
     last_nsr_risk: Option<f32>,
     last_nsr_penalty_q: u16,
@@ -882,6 +1083,169 @@ pub struct RuntimeOrchestrator {
 }
 
 impl RuntimeOrchestrator {
+    fn governance_slot_mode(&self, slot: GovernanceSlot) -> SlotMode {
+        match slot {
+            GovernanceSlot::Llm => self.slot_enablement.llm,
+            GovernanceSlot::World => self.slot_enablement.world_jepa,
+            GovernanceSlot::Sae => self.slot_enablement.sae,
+            GovernanceSlot::Ssm => self.slot_enablement.ssm,
+            GovernanceSlot::Lfm => self.slot_enablement.lfm,
+            GovernanceSlot::Ebm => self.slot_enablement.ebm,
+        }
+    }
+
+    fn update_model_governance_tick(
+        &mut self,
+        now_t: u64,
+        corr: ucf_frames::v1::CorrelationId,
+        compute_summary: Option<ucf_frames::v1::ComputeSignalsSummary>,
+        llm_timed_out: bool,
+    ) -> Result<(), RuntimeError> {
+        let pressure_q = compute_summary.map(|s| s.pressure_q).unwrap_or(0);
+        let uncertainty_q = compute_summary
+            .and_then(|s| s.lfm_uncertainty_q)
+            .unwrap_or(0);
+        for slot in [
+            GovernanceSlot::Llm,
+            GovernanceSlot::World,
+            GovernanceSlot::Sae,
+            GovernanceSlot::Ssm,
+            GovernanceSlot::Lfm,
+            GovernanceSlot::Ebm,
+        ] {
+            if let Some(acc) = self.model_governance.accum.get_mut(&slot) {
+                acc.samples = acc.samples.saturating_add(1);
+                acc.pressure_sum_q = acc.pressure_sum_q.saturating_add(u64::from(pressure_q));
+                acc.uncertainty_sum_q = acc
+                    .uncertainty_sum_q
+                    .saturating_add(u64::from(uncertainty_q));
+                if llm_timed_out && matches!(slot, GovernanceSlot::Llm) {
+                    acc.timeout = acc.timeout.saturating_add(1);
+                }
+                if compute_summary
+                    .and_then(|s| s.lfm_nan_inf_detected)
+                    .unwrap_or(false)
+                    && matches!(slot, GovernanceSlot::Lfm)
+                {
+                    acc.invalid = acc.invalid.saturating_add(1);
+                }
+            }
+        }
+
+        if !now_t.is_multiple_of(self.model_governance.window_ticks) {
+            return Ok(());
+        }
+
+        let window_start = self.model_governance.current_window_start;
+        self.model_governance.current_window_start = now_t;
+        let mut degrade_critical = false;
+        for slot in [
+            GovernanceSlot::Llm,
+            GovernanceSlot::World,
+            GovernanceSlot::Sae,
+            GovernanceSlot::Ssm,
+            GovernanceSlot::Lfm,
+            GovernanceSlot::Ebm,
+        ] {
+            let slot_mode = self.governance_slot_mode(slot);
+            let Some(acc) = self.model_governance.accum.get_mut(&slot) else {
+                continue;
+            };
+            let policy = self.model_governance.thresholds[&slot];
+            let denom = acc.samples.max(1);
+            let timeout_rate_q = ((acc.timeout.saturating_mul(u64::from(u16::MAX))) / denom) as u16;
+            let invalid_rate_q = ((acc.invalid.saturating_mul(u64::from(u16::MAX))) / denom) as u16;
+            let envelope_rate_q =
+                ((acc.envelope.saturating_mul(u64::from(u16::MAX))) / denom) as u16;
+            let mean_uncertainty_q = (acc.uncertainty_sum_q / denom) as u16;
+            let mean_pressure_q = (acc.pressure_sum_q / denom) as u16;
+            let delta_uncertainty_q =
+                mean_uncertainty_q.abs_diff(self.model_governance.baseline_uncertainty_q);
+            let delta_pressure_q =
+                mean_pressure_q.abs_diff(self.model_governance.baseline_pressure_q);
+
+            let mut reasons = Vec::new();
+            if timeout_rate_q > policy.max_timeout_rate_q {
+                reasons.push("timeout_rate".to_string());
+            }
+            if invalid_rate_q > policy.max_invalid_rate_q {
+                reasons.push("invalid_rate".to_string());
+            }
+            if envelope_rate_q > policy.max_envelope_violation_rate_q {
+                reasons.push("envelope_violation_rate".to_string());
+            }
+            if delta_uncertainty_q > policy.max_delta_uncertainty_q {
+                reasons.push("delta_uncertainty".to_string());
+            }
+            if delta_pressure_q > policy.max_delta_pressure_q {
+                reasons.push("delta_pressure".to_string());
+            }
+
+            let breached = !reasons.is_empty();
+            let streak = self
+                .model_governance
+                .breaches_streak
+                .entry(slot)
+                .or_insert(0);
+            if breached {
+                *streak = streak.saturating_add(1);
+                self.model_governance
+                    .status
+                    .insert(slot, ModelGovernanceStatus::Degraded);
+                if matches!(slot, GovernanceSlot::Llm | GovernanceSlot::Ebm) {
+                    degrade_critical = true;
+                }
+                let rec = ExperienceRecord::note(
+                    self.ids.next(),
+                    ucf_core::types::SimTime {
+                        tick: ucf_core::types::Tick::new(now_t),
+                        window: ucf_core::types::WindowId::new(0),
+                    },
+                    corr,
+                    format!(
+                        "model_governance_alarm slot={} window={}..{} reasons={} mode={:?}",
+                        slot.as_str(),
+                        window_start,
+                        now_t,
+                        reasons.join(","),
+                        slot_mode
+                    ),
+                );
+                self.ess.append(rec)?;
+                if *streak >= self.model_governance.persistent_windows {
+                    let rec = ExperienceRecord::note(
+                        self.ids.next(),
+                        ucf_core::types::SimTime {
+                            tick: ucf_core::types::Tick::new(now_t),
+                            window: ucf_core::types::WindowId::new(0),
+                        },
+                        corr,
+                        format!(
+                            "model_rollback_recommendation slot={} reasons={} human_required_prod=true",
+                            slot.as_str(),
+                            reasons.join(",")
+                        ),
+                    );
+                    self.ess.append(rec)?;
+                }
+            } else {
+                *streak = 0;
+                self.model_governance
+                    .status
+                    .insert(slot, ModelGovernanceStatus::Healthy);
+                if slot_mode == SlotMode::Toy {
+                    self.model_governance.baseline_uncertainty_q = mean_uncertainty_q;
+                    self.model_governance.baseline_pressure_q = mean_pressure_q;
+                }
+            }
+            *acc = SlotWindowAcc::default();
+        }
+        if degrade_critical {
+            self.compute_budget.governor_tier = self.compute_budget.governor_tier.max(2);
+        }
+        Ok(())
+    }
+
     fn summarize_tick_for_evolution(
         &mut self,
         compute_summary: Option<ucf_frames::v1::ComputeSignalsSummary>,
@@ -1814,7 +2178,8 @@ impl RuntimeOrchestrator {
                 "policy graph digest mismatch"
             );
         }
-        let _ = policy_graph;
+        let slot_enablement = SlotEnablement::from_env().unwrap_or_default();
+        let model_governance = ModelGovernanceRuntime::from_policy(512, &policy_graph.thresholds);
         let ebm_constraints = load_runtime_ebm_constraints(&policy_provenance.bundle_sha256);
         configure_ebm_constraints(ebm_constraints);
         metrics::gauge!("ucf_policy_bundle_verified").set(1.0);
@@ -1984,6 +2349,8 @@ impl RuntimeOrchestrator {
                 Some(policy_provenance.bundle_sha256.clone()),
             ),
             tool_governor: ToolGovernor::default(),
+            slot_enablement,
+            model_governance,
             spent_tool_tokens: HashSet::new(),
             last_nsr_risk: None,
             last_nsr_penalty_q: 0,
@@ -4690,6 +5057,12 @@ impl RuntimeOrchestrator {
             self.last_nsr_risk,
             self.last_hormone_summary.map(|s| s.stress_index),
         );
+        self.update_model_governance_tick(
+            decision.time.tick.get(),
+            decision.corr,
+            decision.compute_summary,
+            false,
+        )?;
         if emergency_active {
             governance_signals.ebm_energy_mean_topk_q = None;
         }
@@ -4715,12 +5088,13 @@ impl RuntimeOrchestrator {
         } else {
             0
         };
-        let (effective_caps, mut effective_tier) = if emergency_active {
+        let (issued_caps, mut effective_tier) = if emergency_active {
             metrics::counter!("ucf_emergency_forced_deny_tools_total").increment(1);
             (ucf_policy::capability::CapabilitySet::empty(), 3_u8)
         } else {
             (issued_caps, issuance_decision.tier.as_u8())
         };
+        let mut effective_caps = issued_caps;
         if incoherence_extra_penalty_q > 0 {
             effective_tier = effective_tier.max(2);
             metrics::counter!("ucf_governor_incoherence_penalty_total")
@@ -4730,6 +5104,16 @@ impl RuntimeOrchestrator {
                 decision.time,
                 decision.corr,
                 format!("governor_incoherence_tighten:q={incoherence_extra_penalty_q}"),
+            ))?;
+        }
+        if self.model_governance.any_critical_degraded() {
+            effective_tier = 3;
+            effective_caps = ucf_policy::capability::CapabilitySet::empty();
+            self.ess.append(ExperienceRecord::note(
+                self.ids.next(),
+                decision.time,
+                decision.corr,
+                "model_governance_critical_degraded:tool_issuance_denied",
             ))?;
         }
         self.tool_gate.capabilities = effective_caps;
@@ -4879,11 +5263,16 @@ impl RuntimeOrchestrator {
                 policy_graph_digest,
             );
             let eid_issue = self.ids.next();
+            let model_governance_digest = model_governance_digest(&self.model_governance.status);
             let issue_payload = AuditPayload::ToolIssue(ToolIssueAuditRecord {
                 plan_digest_prefix: issue_record.plan_digest_prefix,
                 issued: issue_decision.issued,
                 issued_caps: issue_record.issued_caps.clone(),
                 deny_reasons: issue_record.deny_reasons.clone(),
+                model_governance_digest_prefix: Some(prefix8(model_governance_digest)),
+                model_governance_reason_codes: model_governance_reason_codes(
+                    &self.model_governance.status,
+                ),
                 policy_graph_digest_prefix: issue_record.policy_graph_digest_prefix,
                 security_chain_digest_prefix: issue_record.security_chain_digest_prefix,
             });
