@@ -1,0 +1,7 @@
+{
+  "scenario": "tool_plan_demo",
+  "ticks": 8,
+  "channel": "external_output",
+  "intent_summary": "tool plan demo file read",
+  "signal_values": [11, 11, 11, 11, 11, 11, 11, 11]
+}

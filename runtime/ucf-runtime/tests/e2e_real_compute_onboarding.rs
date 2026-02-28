@@ -1,4 +1,9 @@
-use std::{collections::BTreeMap, fs, path::PathBuf, sync::Mutex};
+use std::{
+    collections::BTreeMap,
+    fs,
+    path::PathBuf,
+    sync::{Mutex, MutexGuard},
+};
 
 use ucf_core::types::{SimTime, Tick, WindowId};
 use ucf_ess::v1::{AuditPayload, ExperienceKind, ExperiencePayload, ExperienceStore};
@@ -31,6 +36,13 @@ struct TickSnapshot {
 }
 
 static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+fn env_lock_guard() -> MutexGuard<'static, ()> {
+    match ENV_LOCK.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    }
+}
 
 #[derive(Debug)]
 struct ScenarioRun {
@@ -66,7 +78,7 @@ fn digest_prefix_hex(digest: [u8; 32]) -> String {
 }
 
 fn run_scenario(fixture_name: &str, budget_profile: &str) -> ScenarioRun {
-    let _env_guard = ENV_LOCK.lock().expect("env lock");
+    let _env_guard = env_lock_guard();
     std::env::set_var("UCF_COMPUTE_BACKEND", "stub");
     std::env::set_var("UCF_COMPUTE_SEED", "424242");
     std::env::set_var("UCF_LLM_BACKEND", "stub");
@@ -84,6 +96,11 @@ fn run_scenario(fixture_name: &str, budget_profile: &str) -> ScenarioRun {
         "stress" => {
             std::env::set_var("UCF_COMPUTE_MAX_MICROS", "1");
             std::env::set_var("UCF_COMPUTE_HARD_TIMEOUT_MICROS", "2");
+        }
+        "tool_plan_demo" => {
+            std::env::set_var("UCF_COMPUTE_MAX_MICROS", "20000");
+            std::env::set_var("UCF_COMPUTE_HARD_TIMEOUT_MICROS", "50000");
+            std::env::set_var("UCF_POLICY_OVERLAY", "demo_toolread");
         }
         other => panic!("unsupported scenario: {other}"),
     }
@@ -110,10 +127,17 @@ fn run_scenario(fixture_name: &str, budget_profile: &str) -> ScenarioRun {
                 IntentKind::System,
                 fixture.intent_summary.as_str(),
             ),
-            format!(
-                "sig:{value:03}:scenario:{}:tick:{tick:02}",
-                fixture.scenario
-            ),
+            if fixture.scenario == "tool_plan_demo" {
+                format!(
+                    "tool_demo_file_read sig:{value:03}:scenario:{}:tick:{tick:02}",
+                    fixture.scenario
+                )
+            } else {
+                format!(
+                    "sig:{value:03}:scenario:{}:tick:{tick:02}",
+                    fixture.scenario
+                )
+            },
         );
 
         let decision = orchestrator
@@ -208,6 +232,10 @@ fn run_scenario(fixture_name: &str, budget_profile: &str) -> ScenarioRun {
         "deny-by-default must avoid tool path"
     );
 
+    if fixture.scenario == "tool_plan_demo" {
+        std::env::remove_var("UCF_POLICY_OVERLAY");
+    }
+
     ScenarioRun {
         fixture,
         tick_snapshots: snapshots,
@@ -266,7 +294,7 @@ struct EbmScenarioSummary {
 }
 
 fn run_ebm_scenario(mode: EbmModeFixture) -> EbmScenarioSummary {
-    let _env_guard = ENV_LOCK.lock().expect("env lock");
+    let _env_guard = env_lock_guard();
     std::env::set_var("UCF_COMPUTE_BACKEND", "stub");
     std::env::set_var("UCF_COMPUTE_SEED", "424242");
     std::env::set_var("UCF_LLM_BACKEND", "stub");
@@ -634,4 +662,96 @@ fn e2e_scenario_ebm_v1_off_shadow_active() {
     let _tool_intent_observed = off.saw_tool_intent_candidate
         || shadow.saw_tool_intent_candidate
         || active.saw_tool_intent_candidate;
+}
+
+#[test]
+fn e2e_tool_plan_demo_chain_and_single_use_token_replay() {
+    let _env_guard = env_lock_guard();
+    let mut orchestrator = RuntimeOrchestrator::new();
+    orchestrator.force_nsr_risk_for_test(0.05);
+    orchestrator.force_surprise_for_test(0.05);
+    orchestrator.force_ess_pressure_for_test(0.05);
+    let mut adapter = MockAdapter::default();
+    let ctrl = ControlFrame::new_text(
+        SimTime {
+            tick: Tick::new(10),
+            window: WindowId::new(0),
+        },
+        CorrelationId(88_810),
+        ChannelCode::ExternalOutput,
+        Intent::new(IntentId(99), IntentKind::System, "tool-demo"),
+        "tool_demo_file_read deterministic".to_string(),
+    );
+
+    orchestrator
+        .ingest_and_process(&mut adapter, ctrl)
+        .expect("demo ingest");
+
+    let records: Vec<_> = (0..orchestrator.ess.len())
+        .filter_map(|idx| orchestrator.ess.get(idx))
+        .collect();
+
+    assert!(records
+        .iter()
+        .any(|r| r.kind == ExperienceKind::CandidateSet));
+    assert!(
+        records.iter().any(|r| r.kind == ExperienceKind::ToolPlan),
+        "kinds={:?}",
+        records
+            .iter()
+            .map(|r| format!("{:?}", r.kind))
+            .collect::<Vec<_>>()
+    );
+    assert!(records.iter().any(|r| r.kind == ExperienceKind::ToolIssue));
+
+    let executions: Vec<_> = records
+        .iter()
+        .filter(|r| r.kind == ExperienceKind::ToolExecution)
+        .collect();
+    assert!(
+        executions.iter().any(|r| {
+            if let ExperiencePayload::Audit(AuditPayload::ToolExecution(exec)) = &r.payload {
+                exec.status.contains("AllowedExecuted")
+            } else {
+                false
+            }
+        }),
+        "expected one successful plugin execution, got {:?}",
+        executions
+            .iter()
+            .filter_map(|r| match &r.payload {
+                ExperiencePayload::Audit(AuditPayload::ToolExecution(exec)) => {
+                    Some((exec.status.clone(), exec.error_code.clone()))
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        executions.iter().any(|r| {
+            if let ExperiencePayload::Audit(AuditPayload::ToolExecution(exec)) = &r.payload {
+                exec.error_code.as_deref() == Some("token_replay")
+            } else {
+                false
+            }
+        }),
+        "expected replay denial for single-use token"
+    );
+
+    let exec_ok = executions
+        .iter()
+        .find_map(|r| match &r.payload {
+            ExperiencePayload::Audit(AuditPayload::ToolExecution(exec))
+                if exec.status.contains("AllowedExecuted") =>
+            {
+                Some(exec)
+            }
+            _ => None,
+        })
+        .expect("ok execution record");
+    let note = exec_ok.error_code.as_deref().unwrap_or("");
+    assert!(note.contains("result_digest="));
+    assert!(note.contains("preview="));
+    assert!(note.len() <= 120);
+    assert!(!note.contains('\n'));
 }

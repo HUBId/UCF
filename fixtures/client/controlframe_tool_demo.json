@@ -1,0 +1,12 @@
+{
+  "run_id": "run-test",
+  "policy_graph_digest_prefix_hex": "0102030405060708",
+  "tick": 10,
+  "window": 0,
+  "corr_id": 8810,
+  "intent_id": 2099,
+  "intent_kind": 2,
+  "channel": 1,
+  "intent_summary": "tool-demo-file-read",
+  "payload_text_utf8": "tool_demo_file_read deterministic"
+}

@@ -1,0 +1,32 @@
+name = "overlay_demo_toolread"
+version = "1.0.0"
+schema_version = 1
+pack_digest = "410b863665990de88e5ac993b3eaf35b9236b545fc475507cf57c433c7807d56"
+
+[[files]]
+path = "pbm_gem_rules.toml"
+sha256 = "7dd43c502d5e885b419217fac2d9403e5d0db5d69554ea8e311f4f87e908b67e"
+
+[[files]]
+path = "nsr_rules_v1.dl"
+sha256 = "8d495592f13fb4760b971be399da7271c118fbed04a5f8f5aea5dc82c79f61b0"
+
+[[files]]
+path = "ebm_constraints.toml"
+sha256 = "7177e1e3a0cc8c3358fbac7cada4ad08ed661b010875e7d4b65a0f0f2feab49c"
+
+[[files]]
+path = "budgets.toml"
+sha256 = "22b566c6b4588fa90114768be93ae1f79507d666e6cf99169140ed224fbcd5df"
+
+[[files]]
+path = "thresholds.toml"
+sha256 = "6d3cb11b9c6edbaa272e4176ef83167478bdfe70248daf4281343743327e0ac1"
+
+[[files]]
+path = "allowlists.toml"
+sha256 = "d1c028d99cdac45a18b48b14de39d302cbe2d3800405c13241840de0ccbc39ce"
+
+[[files]]
+path = "determinism.toml"
+sha256 = "93c83482f5a72c80b51748ac84bbb64d5043ff80edaf419af94ccac443d3803d"
