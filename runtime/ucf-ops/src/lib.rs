@@ -4802,7 +4802,7 @@ pub fn diagnostics_collect(
 }
 
 pub fn security_verify_chain(workdir: &Path, from: u64, to: u64) -> Result<(), OpsError> {
-    let records = load_fixture_records(workdir)?;
+    let records = load_fixture_records(&workdir.join("ess").join("ess_fixture.json"))?;
     let mut prev: Option<[u8; 32]> = None;
     for record in records
         .iter()
@@ -4832,7 +4832,352 @@ pub fn security_verify_chain(workdir: &Path, from: u64, to: u64) -> Result<(), O
             prev = Some(digest);
         }
     }
+
+    let run_id = workdir
+        .file_name()
+        .and_then(|v| v.to_str())
+        .unwrap_or("local")
+        .to_string();
+    let segments = build_merkle_segments(&run_id, &records, 1024);
+    verify_segment_chain(&segments)?;
+
+    for segment in &segments {
+        if segment.record_count == 0 {
+            continue;
+        }
+        let proof = prove_record_in_segment(segment, segment.leaf_digests[0])
+            .ok_or_else(|| OpsError::Invalid("failed to build sample segment proof".to_string()))?;
+        if !verify_merkle_proof(&proof) {
+            return Err(OpsError::Invalid(format!(
+                "segment proof verification failed for segment {}",
+                segment.segment_id.segment_index
+            )));
+        }
+    }
+
     Ok(())
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SegmentId {
+    pub run_id: String,
+    pub segment_index: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MerkleSegmentRecord {
+    pub segment_id: SegmentId,
+    pub first_t: u64,
+    pub last_t: u64,
+    pub record_count: u32,
+    pub merkle_root: String,
+    pub prev_segment_root: Option<String>,
+    pub segment_digest: String,
+    #[serde(skip)]
+    leaf_digests: Vec<[u8; 32]>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MerkleProofStep {
+    pub sibling_hash: String,
+    pub sibling_on_left: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MerkleProofRecord {
+    pub segment_id: SegmentId,
+    pub leaf_index: usize,
+    pub siblings: Vec<MerkleProofStep>,
+    pub segment_root: String,
+    pub leaf_hash: String,
+    pub proof_digest: String,
+}
+
+pub fn logs_prove(
+    workdir: &Path,
+    record_digest_hex: &str,
+    out: &Path,
+    segment_size: usize,
+) -> Result<MerkleProofRecord, OpsError> {
+    let target = parse_hex_digest(record_digest_hex)?;
+    let records = load_fixture_records(&workdir.join("ess").join("ess_fixture.json"))?;
+    let run_id = workdir
+        .file_name()
+        .and_then(|v| v.to_str())
+        .unwrap_or("local")
+        .to_string();
+    let segments = build_merkle_segments(&run_id, &records, segment_size.max(1));
+    for segment in &segments {
+        if let Some(proof) = prove_record_in_segment(segment, target) {
+            write_json(out, &proof)?;
+            return Ok(proof);
+        }
+    }
+    Err(OpsError::Invalid(format!(
+        "record digest not found in ESS fixture: {record_digest_hex}"
+    )))
+}
+
+pub fn logs_verify_proof(proof: &Path) -> Result<(), OpsError> {
+    let data = fs::read_to_string(proof)?;
+    let proof: MerkleProofRecord = serde_json::from_str(&data)?;
+    if !verify_merkle_proof(&proof) {
+        return Err(OpsError::Invalid("invalid Merkle proof".to_string()));
+    }
+    Ok(())
+}
+
+fn build_merkle_segments(
+    run_id: &str,
+    records: &[ExperienceRecord],
+    segment_size: usize,
+) -> Vec<MerkleSegmentRecord> {
+    let mut out = Vec::new();
+    let mut prev_segment_root: Option<[u8; 32]> = None;
+    for (segment_index, chunk) in records.chunks(segment_size).enumerate() {
+        let leaf_digests = chunk
+            .iter()
+            .map(record_merkle_leaf_digest)
+            .collect::<Vec<_>>();
+        let merkle_root = compute_merkle_root(&leaf_digests);
+        let first_t = chunk.first().map(|r| r.time.tick.get()).unwrap_or(0);
+        let last_t = chunk.last().map(|r| r.time.tick.get()).unwrap_or(first_t);
+        let segment_id = SegmentId {
+            run_id: run_id.to_string(),
+            segment_index: segment_index as u64,
+        };
+        let segment_digest = compute_segment_digest(
+            &segment_id,
+            first_t,
+            last_t,
+            leaf_digests.len() as u32,
+            merkle_root,
+            prev_segment_root,
+        );
+        out.push(MerkleSegmentRecord {
+            segment_id,
+            first_t,
+            last_t,
+            record_count: leaf_digests.len() as u32,
+            merkle_root: hex::encode(merkle_root),
+            prev_segment_root: prev_segment_root.map(hex::encode),
+            segment_digest: hex::encode(segment_digest),
+            leaf_digests,
+        });
+        prev_segment_root = Some(merkle_root);
+    }
+    out
+}
+
+fn verify_segment_chain(segments: &[MerkleSegmentRecord]) -> Result<(), OpsError> {
+    let mut prev_root: Option<String> = None;
+    for segment in segments {
+        if segment.prev_segment_root != prev_root {
+            return Err(OpsError::Invalid(format!(
+                "segment chain break at segment {}",
+                segment.segment_id.segment_index
+            )));
+        }
+        prev_root = Some(segment.merkle_root.clone());
+    }
+    Ok(())
+}
+
+fn prove_record_in_segment(
+    segment: &MerkleSegmentRecord,
+    leaf_digest: [u8; 32],
+) -> Option<MerkleProofRecord> {
+    let leaf_index = segment
+        .leaf_digests
+        .iter()
+        .position(|d| *d == leaf_digest)?;
+    let siblings = compute_merkle_path(&segment.leaf_digests, leaf_index);
+    let mut proof = MerkleProofRecord {
+        segment_id: segment.segment_id.clone(),
+        leaf_index,
+        siblings,
+        segment_root: segment.merkle_root.clone(),
+        leaf_hash: hex::encode(leaf_digest),
+        proof_digest: String::new(),
+    };
+    proof.proof_digest = sha256_hex(&serde_json::to_vec(&proof).unwrap_or_default());
+    Some(proof)
+}
+
+fn record_merkle_leaf_digest(record: &ExperienceRecord) -> [u8; 32] {
+    #[derive(Serialize)]
+    struct CanonicalLeaf<'a> {
+        id: u64,
+        tick: u64,
+        window: u64,
+        corr: u64,
+        kind: &'a str,
+        audit_digest: Option<String>,
+    }
+    let canonical = CanonicalLeaf {
+        id: record.id.0,
+        tick: record.time.tick.get(),
+        window: record.time.window.get(),
+        corr: record.corr.0,
+        kind: experience_kind_name(record.kind),
+        audit_digest: record.audit_digest.map(hex::encode),
+    };
+    digest_json(&canonical)
+}
+
+fn experience_kind_name(kind: ExperienceKind) -> &'static str {
+    match kind {
+        ExperienceKind::ControlIn => "ControlIn",
+        ExperienceKind::DecisionOut => "DecisionOut",
+        ExperienceKind::BrainOut => "BrainOut",
+        ExperienceKind::Note => "Note",
+        ExperienceKind::ToolRequest => "ToolRequest",
+        ExperienceKind::ToolPlan => "ToolPlan",
+        ExperienceKind::ToolIssue => "ToolIssue",
+        ExperienceKind::ToolAuth => "ToolAuth",
+        ExperienceKind::ToolExecution => "ToolExecution",
+        ExperienceKind::SandboxCall => "SandboxCall",
+        ExperienceKind::SandboxReply => "SandboxReply",
+        ExperienceKind::AuditCheckpoint => "AuditCheckpoint",
+        ExperienceKind::Hormone => "Hormone",
+        ExperienceKind::Neuro => "Neuro",
+        ExperienceKind::DeltaProposal => "DeltaProposal",
+        ExperienceKind::DeltaEvaluation => "DeltaEvaluation",
+        ExperienceKind::DeltaRecommendation => "DeltaRecommendation",
+        ExperienceKind::Nsr => "Nsr",
+        ExperienceKind::CandidateSet => "CandidateSet",
+        ExperienceKind::EbmReasoning => "EbmReasoning",
+        ExperienceKind::EbmEnvelopeViolation => "EbmEnvelopeViolation",
+        ExperienceKind::GpuUnavailable => "GpuUnavailable",
+        ExperienceKind::GpuParity => "GpuParity",
+        ExperienceKind::GpuResourceViolation => "GpuResourceViolation",
+        ExperienceKind::Output => "Output",
+        ExperienceKind::BackendPack => "BackendPack",
+        ExperienceKind::LfmSummary => "LfmSummary",
+        ExperienceKind::LfmWindow => "LfmWindow",
+        ExperienceKind::CapabilityIssuance => "CapabilityIssuance",
+        ExperienceKind::Throttle => "Throttle",
+        ExperienceKind::Emergency => "Emergency",
+        ExperienceKind::PolicyProvenance => "PolicyProvenance",
+        ExperienceKind::EbmConstraintProvenance => "EbmConstraintProvenance",
+        ExperienceKind::RemoteCall => "RemoteCall",
+        ExperienceKind::RemoteCallDenied => "RemoteCallDenied",
+        ExperienceKind::ComputeBudgetWindow => "ComputeBudgetWindow",
+        ExperienceKind::ComputeBudgetViolation => "ComputeBudgetViolation",
+        ExperienceKind::RetrievalDecision => "RetrievalDecision",
+    }
+}
+
+fn compute_merkle_root(leaves: &[[u8; 32]]) -> [u8; 32] {
+    if leaves.is_empty() {
+        return Sha256::digest(b"UCF:ESS:SEGMENT:EMPTY:v1").into();
+    }
+    let mut layer = leaves.to_vec();
+    while layer.len() > 1 {
+        let mut next = Vec::with_capacity(layer.len().div_ceil(2));
+        let mut idx = 0;
+        while idx < layer.len() {
+            let left = layer[idx];
+            let right = layer.get(idx + 1).copied().unwrap_or(left);
+            next.push(hash_pair(left, right));
+            idx += 2;
+        }
+        layer = next;
+    }
+    layer[0]
+}
+
+fn compute_merkle_path(leaves: &[[u8; 32]], leaf_index: usize) -> Vec<MerkleProofStep> {
+    let mut path = Vec::new();
+    if leaves.is_empty() {
+        return path;
+    }
+    let mut idx = leaf_index;
+    let mut layer = leaves.to_vec();
+    while layer.len() > 1 {
+        let sibling_idx = if idx.is_multiple_of(2) {
+            (idx + 1).min(layer.len() - 1)
+        } else {
+            idx - 1
+        };
+        path.push(MerkleProofStep {
+            sibling_hash: hex::encode(layer[sibling_idx]),
+            sibling_on_left: sibling_idx < idx,
+        });
+
+        let mut next = Vec::with_capacity(layer.len().div_ceil(2));
+        let mut cursor = 0;
+        while cursor < layer.len() {
+            let left = layer[cursor];
+            let right = layer.get(cursor + 1).copied().unwrap_or(left);
+            next.push(hash_pair(left, right));
+            cursor += 2;
+        }
+        idx /= 2;
+        layer = next;
+    }
+    path
+}
+
+fn verify_merkle_proof(proof: &MerkleProofRecord) -> bool {
+    let mut acc = match parse_hex_digest(&proof.leaf_hash) {
+        Ok(digest) => digest,
+        Err(_) => return false,
+    };
+    for step in &proof.siblings {
+        let sibling = match parse_hex_digest(&step.sibling_hash) {
+            Ok(digest) => digest,
+            Err(_) => return false,
+        };
+        acc = if step.sibling_on_left {
+            hash_pair(sibling, acc)
+        } else {
+            hash_pair(acc, sibling)
+        };
+    }
+    hex::encode(acc) == proof.segment_root
+}
+
+fn compute_segment_digest(
+    segment_id: &SegmentId,
+    first_t: u64,
+    last_t: u64,
+    record_count: u32,
+    merkle_root: [u8; 32],
+    prev_segment_root: Option<[u8; 32]>,
+) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(b"UCF:ESS:MERKLE-SEGMENT:v1");
+    hasher.update(segment_id.run_id.as_bytes());
+    hasher.update(segment_id.segment_index.to_be_bytes());
+    hasher.update(first_t.to_be_bytes());
+    hasher.update(last_t.to_be_bytes());
+    hasher.update(record_count.to_be_bytes());
+    hasher.update(merkle_root);
+    hasher.update(prev_segment_root.unwrap_or([0; 32]));
+    hasher.finalize().into()
+}
+
+fn hash_pair(left: [u8; 32], right: [u8; 32]) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(b"UCF:ESS:MERKLE-NODE:v1");
+    hasher.update(left);
+    hasher.update(right);
+    hasher.finalize().into()
+}
+
+fn parse_hex_digest(value: &str) -> Result<[u8; 32], OpsError> {
+    let bytes = hex::decode(value)
+        .map_err(|e| OpsError::Invalid(format!("invalid digest hex '{value}': {e}")))?;
+    if bytes.len() != 32 {
+        return Err(OpsError::Invalid(format!(
+            "digest must be 32 bytes, got {}",
+            bytes.len()
+        )));
+    }
+    let mut out = [0_u8; 32];
+    out.copy_from_slice(&bytes);
+    Ok(out)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -5073,6 +5418,54 @@ pub fn policy_explain(
         }
     }
     Ok(None)
+}
+
+#[cfg(test)]
+mod proof_carrying_logs_tests {
+    use super::*;
+    use ucf_core::types::{SimTime, Tick, WindowId};
+    use ucf_ess::v1::ExperienceId;
+    use ucf_frames::v1::CorrelationId;
+
+    fn note(id: u64, tick: u64) -> ExperienceRecord {
+        ExperienceRecord::note(
+            ExperienceId(id),
+            SimTime {
+                tick: Tick::new(tick),
+                window: WindowId::new(0),
+            },
+            CorrelationId(id),
+            "x",
+        )
+    }
+
+    #[test]
+    fn merkle_root_is_deterministic() {
+        let records = vec![note(1, 1), note(2, 2), note(3, 3)];
+        let a = build_merkle_segments("run", &records, 2);
+        let b = build_merkle_segments("run", &records, 2);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn proof_generation_and_verification_work() {
+        let records = vec![note(1, 1), note(2, 2), note(3, 3), note(4, 4)];
+        let segments = build_merkle_segments("run", &records, 4);
+        let target = record_merkle_leaf_digest(&records[2]);
+        let proof = prove_record_in_segment(&segments[0], target).expect("proof");
+        assert!(verify_merkle_proof(&proof));
+    }
+
+    #[test]
+    fn segment_boundaries_are_deterministic() {
+        let records = (0..2050).map(|i| note(i + 1, i + 1)).collect::<Vec<_>>();
+        let segments = build_merkle_segments("run", &records, 1024);
+        assert_eq!(segments.len(), 3);
+        assert_eq!(segments[0].record_count, 1024);
+        assert_eq!(segments[1].record_count, 1024);
+        assert_eq!(segments[2].record_count, 2);
+        assert!(verify_segment_chain(&segments).is_ok());
+    }
 }
 
 #[cfg(test)]

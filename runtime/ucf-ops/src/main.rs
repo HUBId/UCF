@@ -5,15 +5,16 @@ use std::path::PathBuf;
 use ucf_ops::{
     adversarial_run, audit_scan, bench_run, bringup, causal_slice, determinism_scan, diagnostics,
     diagnostics_collect, ebm_export_dataset, ess_compact, ess_snapshot, event_id_for_decision,
-    explain_tick, explain_why, export_bugreport, load_signoff_checklist, metrics_snapshot,
-    metrics_summary, metrics_trend, models_list, models_probe, models_promote,
-    models_recommend_rollback, models_rollback, models_stage, models_verify, one_command_bringup,
-    out_manifest, parse_slot, policy_diff, policy_explain, policy_validate, readiness_gate,
-    release_rc1_gate, release_signoff_validate, replay_audit, replay_bugreport, run_status,
-    runs_list, runs_search, runs_show, save_counterfactual_result, security_verify_chain,
-    simulate_counterfactual, verify_bugreport, world_shadow_report, write_slice,
-    AdversarialRunArgs, BenchArgs, ChangeImpactArgs, CounterfactualRequest, DocsLintArgs,
-    DocsLintMode, DocsLintStatus, ExplainTickRequest, ExportArgs, GateStatus, SpecSnapshotArgs,
+    explain_tick, explain_why, export_bugreport, load_signoff_checklist, logs_prove,
+    logs_verify_proof, metrics_snapshot, metrics_summary, metrics_trend, models_list, models_probe,
+    models_promote, models_recommend_rollback, models_rollback, models_stage, models_verify,
+    one_command_bringup, out_manifest, parse_slot, policy_diff, policy_explain, policy_validate,
+    readiness_gate, release_rc1_gate, release_signoff_validate, replay_audit, replay_bugreport,
+    run_status, runs_list, runs_search, runs_show, save_counterfactual_result,
+    security_verify_chain, simulate_counterfactual, verify_bugreport, world_shadow_report,
+    write_slice, AdversarialRunArgs, BenchArgs, ChangeImpactArgs, CounterfactualRequest,
+    DocsLintArgs, DocsLintMode, DocsLintStatus, ExplainTickRequest, ExportArgs, GateStatus,
+    SpecSnapshotArgs,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -751,6 +752,35 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         "usage: ucf-ops security verify-chain [--from <t0>] [--to <t1>]".into(),
                     )
                 }
+            }
+        }
+
+        "logs" => {
+            let sub = args.get(2).map(String::as_str).unwrap_or("help");
+            match sub {
+                "prove" => {
+                    let digest = arg_value(&args, "--record-digest")
+                        .ok_or("usage: ucf-ops logs prove --record-digest <hex> [--out <path>] [--segment-size <n>]")?;
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/proof.json"));
+                    let segment_size = parse_usize(&args, "--segment-size", 1024).max(1);
+                    let proof = logs_prove(&workdir, &digest, &out, segment_size)?;
+                    println!(
+                        "segment={} leaf_index={} out={}",
+                        proof.segment_id.segment_index,
+                        proof.leaf_index,
+                        out.display()
+                    );
+                }
+                "verify-proof" => {
+                    let proof = arg_value(&args, "--proof")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/proof.json"));
+                    logs_verify_proof(&proof)?;
+                    println!("proof=ok path={}", proof.display());
+                }
+                _ => return Err("usage: ucf-ops logs <prove|verify-proof> ...".into()),
             }
         }
         "readiness-gate" => {
