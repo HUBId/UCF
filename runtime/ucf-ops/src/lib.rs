@@ -5,6 +5,7 @@ mod bench;
 mod causal;
 mod change_impact;
 mod docs_lint;
+mod formal_invariants;
 mod models_lifecycle;
 mod spec_snapshot;
 mod world_shadow;
@@ -1036,6 +1037,7 @@ pub fn readiness_gate(
             &ebm_active.run_metadata.policy_bundle_hash,
         ),
         check_ebm_fallback_degraded_record(&run_ebm_active),
+        formal_invariants::run_formal_invariants_check(profile)?,
     ];
 
     let weights_lifecycle = check_weights_lifecycle_integrity(workdir)?;
