@@ -2140,7 +2140,9 @@ impl RuntimeOrchestrator {
         let ncde_cfg = NcdeCfg::default_v0();
         let ncde_state = NcdeState::new(&ncde_cfg);
 
-        let workspace_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let workspace_root = std::env::var("UCF_BUNDLE_ROOT")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../.."));
         let policy_root = workspace_root.join("policies");
 
         if std::env::var("UCF_POLICY_BUNDLE_SHA256").is_err() {
@@ -5354,16 +5356,17 @@ impl RuntimeOrchestrator {
             };
 
             let registry = ToolPluginRegistry::with_builtin_stubs();
+            let bundle_root = std::env::var("UCF_BUNDLE_ROOT")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|_| {
+                    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
+                });
             let fs_env = SandboxFs::new(vec![
                 (
                     "demo_root".to_string(),
-                    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                        .join("../../fixtures/demo_root"),
+                    bundle_root.join("fixtures/demo_root"),
                 ),
-                (
-                    "models_root".to_string(),
-                    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../models"),
-                ),
+                ("models_root".to_string(), bundle_root.join("models")),
             ]);
             let plugin_audit = run_plugin_tool(
                 &registry,

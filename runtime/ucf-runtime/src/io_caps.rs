@@ -42,7 +42,9 @@ pub enum IoCapsError {
 
 impl IoCaps {
     pub fn runtime_default() -> Self {
-        let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let workspace_root = std::env::var("UCF_BUNDLE_ROOT")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../.."));
         Self {
             roots: vec![
                 workspace_root.join("policies"),

@@ -1,0 +1,14 @@
+[Unit]
+Description=UCF Runtime (portable bundle)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/ucf/bundles/current
+Environment=UCF_BUNDLE_ROOT=%h/ucf/bundles/current
+ExecStart=%h/ucf/bundles/current/bin/ucf-runtime
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target
