@@ -476,6 +476,8 @@ pub struct ToolIssueAuditRecord {
     pub issued: bool,
     pub issued_caps: Vec<[u8; 8]>,
     pub deny_reasons: Vec<String>,
+    pub model_governance_digest_prefix: Option<[u8; 8]>,
+    pub model_governance_reason_codes: Vec<String>,
     pub policy_graph_digest_prefix: [u8; 8],
     pub security_chain_digest_prefix: [u8; 8],
 }

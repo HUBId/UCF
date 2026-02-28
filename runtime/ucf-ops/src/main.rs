@@ -6,14 +6,14 @@ use ucf_ops::{
     adversarial_run, audit_scan, bench_run, bringup, causal_slice, determinism_scan, diagnostics,
     diagnostics_collect, ebm_export_dataset, ess_compact, ess_snapshot, event_id_for_decision,
     explain_tick, explain_why, export_bugreport, load_signoff_checklist, metrics_snapshot,
-    metrics_summary, metrics_trend, models_list, models_probe, models_promote, models_rollback,
-    models_stage, models_verify, one_command_bringup, out_manifest, parse_slot, policy_diff,
-    policy_explain, policy_validate, readiness_gate, release_rc1_gate, release_signoff_validate,
-    replay_audit, replay_bugreport, run_status, runs_list, runs_search, runs_show,
-    save_counterfactual_result, security_verify_chain, simulate_counterfactual, verify_bugreport,
-    world_shadow_report, write_slice, AdversarialRunArgs, BenchArgs, ChangeImpactArgs,
-    CounterfactualRequest, DocsLintArgs, DocsLintMode, DocsLintStatus, ExplainTickRequest,
-    ExportArgs, GateStatus, SpecSnapshotArgs,
+    metrics_summary, metrics_trend, models_list, models_probe, models_promote,
+    models_recommend_rollback, models_rollback, models_stage, models_verify, one_command_bringup,
+    out_manifest, parse_slot, policy_diff, policy_explain, policy_validate, readiness_gate,
+    release_rc1_gate, release_signoff_validate, replay_audit, replay_bugreport, run_status,
+    runs_list, runs_search, runs_show, save_counterfactual_result, security_verify_chain,
+    simulate_counterfactual, verify_bugreport, world_shadow_report, write_slice,
+    AdversarialRunArgs, BenchArgs, ChangeImpactArgs, CounterfactualRequest, DocsLintArgs,
+    DocsLintMode, DocsLintStatus, ExplainTickRequest, ExportArgs, GateStatus, SpecSnapshotArgs,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -697,9 +697,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     let report = models_list(slot)?;
                     println!("{}", serde_json::to_string_pretty(&report)?);
                 }
+                "recommend-rollback" => {
+                    let slot = parse_slot(&arg_value(&args, "--slot").ok_or("missing --slot")?)?;
+                    let report = models_recommend_rollback(slot, &workdir)?;
+                    println!("{}", serde_json::to_string_pretty(&report)?);
+                }
                 _ => {
                     return Err(
-                        "usage: ucf-ops models <verify|probe|stage|promote|rollback|list> ..."
+                        "usage: ucf-ops models <verify|probe|stage|promote|rollback|list|recommend-rollback> ..."
                             .into(),
                     )
                 }

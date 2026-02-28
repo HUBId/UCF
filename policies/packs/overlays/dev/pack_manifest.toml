@@ -1,7 +1,7 @@
 name = "overlay_dev"
 version = "1.0.0"
 schema_version = 1
-pack_digest = "205df09af51edd6577b01f77d7638bdcefbcf92a881906358d2f27f519d841b0"
+pack_digest = "1d27c72880424f0b2fa4ad695bc33be0e06b370117d54a7b467c9a6306b169e1"
 
 [[files]]
 path = "pbm_gem_rules.toml"
@@ -21,7 +21,7 @@ sha256 = "22b566c6b4588fa90114768be93ae1f79507d666e6cf99169140ed224fbcd5df"
 
 [[files]]
 path = "thresholds.toml"
-sha256 = "2362b61f1d3d80f7fb859ff668e36c8340790b128966fae65e5c4486cfad50d0"
+sha256 = "2a9eadd0edf0d7319c160f52790b6824aab5a22878186fab062ac7b22ec9f211"
 
 [[files]]
 path = "allowlists.toml"

@@ -7,6 +7,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use ucf_compute::ModelSlot;
+use ucf_ess::v1::ExperiencePayload;
+use ucf_replay::load_fixture_records;
 
 use crate::{
     sha256_hex, GateStatus, OpsError, ProbeReport, ReadinessGateReport, WorldShadowReport,
@@ -63,6 +65,19 @@ pub struct ModelsListReport {
     pub active_hash: Option<String>,
     pub staged_hashes: Vec<String>,
     pub promoted_hashes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RollbackRecommendation {
+    pub slot: String,
+    pub tick: u64,
+    pub note: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ModelsRollbackRecommendationReport {
+    pub slot: String,
+    pub recommendations: Vec<RollbackRecommendation>,
 }
 
 pub fn models_stage(slot: ModelSlot, src_dir: &Path) -> Result<StageResult, OpsError> {
@@ -246,6 +261,43 @@ pub fn models_list(slot: ModelSlot) -> Result<ModelsListReport, OpsError> {
         promoted_hashes: list_hash_dirs(
             &PathBuf::from("models").join("promoted").join(slot.as_str()),
         )?,
+    })
+}
+
+pub fn models_recommend_rollback(
+    slot: ModelSlot,
+    workdir: &Path,
+) -> Result<ModelsRollbackRecommendationReport, OpsError> {
+    let ess_path = workdir.join("ess").join("ess_fixture.json");
+    let slot_key = slot.as_str().to_string();
+    if !ess_path.exists() {
+        return Ok(ModelsRollbackRecommendationReport {
+            slot: slot_key,
+            recommendations: Vec::new(),
+        });
+    }
+    let mut recommendations = Vec::new();
+    for record in load_fixture_records(&ess_path)? {
+        let ExperiencePayload::Text(note) = record.payload else {
+            continue;
+        };
+        let note = note.to_string();
+        if note.starts_with("model_rollback_recommendation")
+            && note.contains(&format!("slot={}", slot.as_str()))
+        {
+            recommendations.push(RollbackRecommendation {
+                slot: slot.as_str().to_string(),
+                tick: record.time.tick.get(),
+                note,
+            });
+        }
+    }
+    recommendations.sort_by_key(|r| r.tick);
+    recommendations.reverse();
+    recommendations.truncate(8);
+    Ok(ModelsRollbackRecommendationReport {
+        slot: slot_key,
+        recommendations,
     })
 }
 
