@@ -1,0 +1,4 @@
+# Keep policy artifacts line-ending stable across OS checkouts so manifest hashes verify deterministically.
+policies/**/*.json text eol=lf
+policies/**/*.toml text eol=lf
+policies/**/*.dl text eol=lf
