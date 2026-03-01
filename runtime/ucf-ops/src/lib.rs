@@ -5818,6 +5818,13 @@ fn diff_str(a: &BTreeMap<String, String>, b: &BTreeMap<String, String>) -> Vec<S
         .collect()
 }
 
+fn normalized_rel_path(repo_root: &Path, path: &Path) -> String {
+    path.strip_prefix(repo_root)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .replace('\\', "/")
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DeterminismScanViolation {
     pub path: String,
@@ -5844,10 +5851,7 @@ pub fn determinism_scan(repo_root: &Path) -> Result<DeterminismScanReport, OpsEr
         if ext != "rs" {
             continue;
         }
-        let rel = path
-            .strip_prefix(repo_root)
-            .unwrap_or(path)
-            .to_string_lossy();
+        let rel = normalized_rel_path(repo_root, path);
         if rel.contains("vendor/")
             || rel.contains("target/")
             || rel.contains("tests/")
@@ -5915,10 +5919,7 @@ pub fn audit_scan(repo_root: &Path) -> Result<AuditScanReport, OpsError> {
         if ext != "rs" {
             continue;
         }
-        let rel = path
-            .strip_prefix(repo_root)
-            .unwrap_or(path)
-            .to_string_lossy();
+        let rel = normalized_rel_path(repo_root, path);
         let in_scope = rel.starts_with("runtime/ucf-runtime/src/")
             || rel.starts_with("runtime/ucf-policy/src/")
             || rel.starts_with("runtime/ucf-replay/src/");
@@ -5987,10 +5988,7 @@ pub fn path_scan(repo_root: &Path) -> Result<PathScanReport, OpsError> {
         if ext != "rs" {
             continue;
         }
-        let rel = path
-            .strip_prefix(repo_root)
-            .unwrap_or(path)
-            .to_string_lossy();
+        let rel = normalized_rel_path(repo_root, path);
         let in_scope = rel.starts_with("runtime/") && rel.contains("/src/");
         if !in_scope
             || rel.starts_with("runtime/ucf-ops/src/")
@@ -6166,10 +6164,7 @@ pub fn hardware_scan(repo_root: &Path) -> Result<HardwareScanReport, OpsError> {
         if !path.is_file() {
             continue;
         }
-        let rel = path
-            .strip_prefix(repo_root)
-            .unwrap_or(path)
-            .to_string_lossy();
+        let rel = normalized_rel_path(repo_root, path);
         if rel.contains("vendor/")
             || rel.contains("target/")
             || rel.starts_with("deploy/")
