@@ -57,7 +57,7 @@ fn docs_lint_fails_on_hardware_terms_in_core_docs() {
     let bad_prompt_index = dir.path().join("prompt_series_index.md");
     fs::write(
         &bad_prompt_index,
-        "# Prompt Series Index\nCore NUC target\n",
+        "# Prompt Series Index\nCore Xeon target\n",
     )
     .expect("write");
 
