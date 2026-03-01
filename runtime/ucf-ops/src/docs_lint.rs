@@ -24,6 +24,7 @@ pub struct DocsLintArgs {
     pub spec_snapshot: PathBuf,
     pub prompt_index: PathBuf,
     pub module_map: PathBuf,
+    pub deploy_doc: PathBuf,
     pub mode: DocsLintMode,
 }
 
@@ -56,6 +57,7 @@ pub fn docs_lint(args: &DocsLintArgs) -> Result<DocsLintReport, OpsError> {
         policy_pack_check(args)?,
         prompt_index_check(args)?,
         module_map_check(args)?,
+        hardware_neutral_docs_check(args)?,
     ];
     let ok = checks.iter().all(|c| c.status != DocsLintStatus::Fail);
     Ok(DocsLintReport {
@@ -231,6 +233,88 @@ fn module_map_check(args: &DocsLintArgs) -> Result<DocsLintCheck, OpsError> {
     })
 }
 
+fn hardware_neutral_docs_check(args: &DocsLintArgs) -> Result<DocsLintCheck, OpsError> {
+    let files = [
+        ("prompt_series_index", &args.prompt_index, false),
+        (
+            "prompt_rulebook",
+            &args.repo_root.join("docs").join("prompt_rulebook.md"),
+            false,
+        ),
+        ("deploy_portable", &args.deploy_doc, true),
+    ];
+
+    let banned = [
+        "NUC",
+        "Raspberry Pi",
+        "RPi",
+        "Intel Core",
+        "Xeon",
+        "AMD Ryzen",
+        "Threadripper",
+    ];
+
+    let mut warnings = Vec::new();
+    let mut failures = Vec::new();
+
+    for (label, path, is_deploy_doc) in files {
+        let body = fs::read_to_string(path)?;
+        let mut in_history = false;
+        for (idx, raw) in body.lines().enumerate() {
+            let line = raw.trim();
+            if line.starts_with('#') {
+                in_history = line.to_ascii_lowercase().contains("history");
+            }
+
+            for term in &banned {
+                if !line.contains(term) {
+                    continue;
+                }
+                let hit = format!("{label}:{} contains `{term}`", idx + 1);
+                if is_deploy_doc || in_history {
+                    warnings.push(hit);
+                } else {
+                    failures.push(hit);
+                }
+            }
+        }
+    }
+
+    if !failures.is_empty() {
+        return Ok(DocsLintCheck {
+            name: "hardware_neutral_docs".to_string(),
+            status: DocsLintStatus::Fail,
+            detail: format!(
+                "hardware-specific terms found in core docs: {}",
+                failures.join("; ")
+            ),
+            remediation: Some(
+                "replace machine/vendor terms with DeviceProfile (small/medium/large) wording or move historical references into clearly marked History sections"
+                    .to_string(),
+            ),
+        });
+    }
+
+    if !warnings.is_empty() {
+        return Ok(DocsLintCheck {
+            name: "hardware_neutral_docs".to_string(),
+            status: DocsLintStatus::Warn,
+            detail: format!(
+                "hardware-specific terms allowed in deploy/history scope: {}",
+                warnings.join("; ")
+            ),
+            remediation: None,
+        });
+    }
+
+    Ok(DocsLintCheck {
+        name: "hardware_neutral_docs".to_string(),
+        status: DocsLintStatus::Pass,
+        detail: "no hardware-specific terms detected in guarded docs".to_string(),
+        remediation: None,
+    })
+}
+
 fn cargo_metadata_package_names(repo_root: &Path) -> Result<BTreeSet<String>, OpsError> {
     let output = Command::new("cargo")
         .arg("metadata")
@@ -381,7 +465,11 @@ fn first_diff_line(a: &str, b: &str) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use super::{first_diff_line, parse_module_map_keys, parse_prompt_ids};
+    use super::{
+        first_diff_line, hardware_neutral_docs_check, parse_module_map_keys, parse_prompt_ids,
+        DocsLintArgs, DocsLintMode, DocsLintStatus,
+    };
+    use std::path::PathBuf;
 
     #[test]
     fn prompt_parser_accepts_table_ids() {
@@ -409,5 +497,63 @@ mod tests {
         let old = "a\nb\nc\n";
         let new = "a\nb\nd\n";
         assert_eq!(first_diff_line(old, new), 3);
+    }
+
+    #[test]
+    fn hardware_neutral_check_warns_in_history_section() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let docs = dir.path().join("docs");
+        std::fs::create_dir_all(&docs).expect("mkdir");
+        std::fs::write(
+            docs.join("prompt_series_index.md"),
+            "# Prompt\n## History\nLegacy NUC mention\n",
+        )
+        .expect("write");
+        std::fs::write(docs.join("prompt_rulebook.md"), "# Rules\n").expect("write");
+        std::fs::write(docs.join("deploy_portable.md"), "# Deploy\nRPi adapter\n").expect("write");
+        std::fs::write(docs.join("module_map.md"), "- **ucf-ops**: x\n").expect("write");
+        std::fs::write(docs.join("spec_snapshot.md"), "# x\n").expect("write");
+
+        let check = hardware_neutral_docs_check(&DocsLintArgs {
+            repo_root: dir.path().to_path_buf(),
+            policy_pack: PathBuf::from("policies/packs/base_v1"),
+            overlay_pack: None,
+            spec_snapshot: docs.join("spec_snapshot.md"),
+            prompt_index: docs.join("prompt_series_index.md"),
+            module_map: docs.join("module_map.md"),
+            deploy_doc: docs.join("deploy_portable.md"),
+            mode: DocsLintMode::Strict,
+        })
+        .expect("check");
+        assert_eq!(check.status, DocsLintStatus::Warn);
+    }
+
+    #[test]
+    fn hardware_neutral_check_fails_in_core_docs() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let docs = dir.path().join("docs");
+        std::fs::create_dir_all(&docs).expect("mkdir");
+        std::fs::write(
+            docs.join("prompt_series_index.md"),
+            "# Prompt\nNUC target\n",
+        )
+        .expect("write");
+        std::fs::write(docs.join("prompt_rulebook.md"), "# Rules\n").expect("write");
+        std::fs::write(docs.join("deploy_portable.md"), "# Deploy\n").expect("write");
+        std::fs::write(docs.join("module_map.md"), "- **ucf-ops**: x\n").expect("write");
+        std::fs::write(docs.join("spec_snapshot.md"), "# x\n").expect("write");
+
+        let check = hardware_neutral_docs_check(&DocsLintArgs {
+            repo_root: dir.path().to_path_buf(),
+            policy_pack: PathBuf::from("policies/packs/base_v1"),
+            overlay_pack: None,
+            spec_snapshot: docs.join("spec_snapshot.md"),
+            prompt_index: docs.join("prompt_series_index.md"),
+            module_map: docs.join("module_map.md"),
+            deploy_doc: docs.join("deploy_portable.md"),
+            mode: DocsLintMode::Strict,
+        })
+        .expect("check");
+        assert_eq!(check.status, DocsLintStatus::Fail);
     }
 }

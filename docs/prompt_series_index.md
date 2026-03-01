@@ -1,6 +1,8 @@
-# Prompt Series Index (1–128)
+# Prompt Series Index (1–148)
 
 This index is generated from merged prompt-series PR metadata (`#248..#374`) plus this wrap-up prompt (`128`). It is deterministic: prompt IDs map monotonically to the series sequence.
+
+**Hardware-neutral policy:** no machine-specific assumptions in core prompt specs; use device profiles and budget envelopes instead.
 
 ## Table of contents
 - [UCF core plumbing (1–37)](#ucf-core-plumbing-137)
@@ -167,3 +169,12 @@ This index is generated from merged prompt-series PR metadata (`#248..#374`) plu
 | ID | Title | One-line intent | Primary modules touched | Key acceptance criteria | Dependencies |
 |---:|---|---|---|---|---|
 | 128 | Wrap-Up: Prompt Series Index, Module Map, and Next Prompt Generator Rulebook | Wrap-Up: Prompt Series Index, Module Map, and Next Prompt Generator Rulebook | docs, release, README.md | merged series step recorded; documentation artifacts updated; test/bench or verification assets updated | 127 |
+
+## Hardware-neutral migration prompts (145–148)
+
+| ID | Title | One-line intent | Primary modules touched | Key acceptance criteria | Dependencies |
+|---:|---|---|---|---|---|
+| 145 | Hardware-specific deployment profile references | **Deprecated/obsolete (hardware-specific assumption), replaced by Prompt 147/148.** Kept as optional historical traceability. | docs | historical record preserved; no numbering changes | 144 |
+| 146 | Cluster-anchored rollout assumptions | **Deprecated/obsolete (hardware-specific assumption), replaced by Prompt 147/148.** Kept as optional historical traceability. | docs | historical record preserved; no numbering changes | 145 |
+| 147 | DeviceProfile-first rollout guidance | Replace machine naming with `DeviceProfile` (`small`/`medium`/`large`) and explicit budget envelopes. | docs, runtime/ucf-ops | hardware-neutral terminology in prompt/docs guidance | 146 |
+| 148 | Hardware terminology compliance scan | Add policy/lint scan coverage for hardware-specific terms in guarded scopes. | runtime/ucf-ops, docs | deterministic scan report and actionable violations | 147 |

@@ -42,6 +42,16 @@ Modes:
    - `--strict`: mismatch fails.
    - `--warn`: mismatch warns and continues.
 
+5. **Hardware-neutral docs guardrail**
+   - Scans `docs/prompt_series_index.md`, `docs/prompt_rulebook.md`, and `docs/deploy_portable.md` for obvious hardware-specific terms.
+   - Fails when forbidden terms appear in core docs outside clearly marked history sections.
+   - Allows deploy/history mentions as warnings.
+   - Remediation:
+     ```bash
+     # Replace hardware/vendor wording with DeviceProfile + explicit budgets
+     cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json
+     ```
+
 ## Report output
 
 When `--out` is provided, lint writes deterministic JSON with per-check status and remediation hints.
