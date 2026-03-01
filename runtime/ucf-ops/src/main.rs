@@ -434,6 +434,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         module_map: arg_value(&args, "--module-map")
                             .map(PathBuf::from)
                             .unwrap_or_else(|| PathBuf::from("docs/module_map.md")),
+                        deploy_doc: PathBuf::from("docs/deploy_portable.md"),
                         mode,
                     })?;
                     for check in &report.checks {

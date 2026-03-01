@@ -22,6 +22,7 @@ Include all of these invariants explicitly:
 - **Safety**: policy-first execution and deny-by-default tool behavior.
 - **Budget**: bounded compute, storage, and runtime costs.
 - **Boundedness**: finite queues/retries/state growth and explicit failure exits.
+- **Hardware-neutral**: prompts must not assume specific hardware models, machine classes, clusters, or vendor platforms in core requirements.
 
 ## Safety invariants (must remain true)
 - **No decision, no action**.
@@ -69,3 +70,8 @@ Use explicit phases in new prompts:
 - Put task-specific details only between `START_TASK_SPECIFIC` and `END_TASK_SPECIFIC`.
 - Keep all standard sections/checklists intact (context, discovery, implementation, tests, docs, invariants, final summary).
 - For concrete guidance, see `docs/codex_prompt_template_example.txt`.
+
+## Hardware-neutral guidance
+- Express target environments using `DeviceProfile` classes (`small`, `medium`, `large`) rather than machine names.
+- Encode performance/throughput expectations as explicit budget envelopes (latency, memory, compute), not vendor or node-family references.
+- Restrict hardware-specific wording to deployment templates/history notes when historically required.
