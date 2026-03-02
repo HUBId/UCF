@@ -17,6 +17,13 @@ jobs:
         run: cargo fmt --all -- --check
       - name: Cargo clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: SDK API snapshot check
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            python scripts/sdk_api_snapshot.py check --baseline-ref "${{ github.event.pull_request.base.sha }}"
+          else
+            python scripts/sdk_api_snapshot.py check --baseline-ref "${{ github.event.before }}"
+          fi
       - name: Determinism scan
         run: cargo run -p ucf-ops -- determinism scan
       - name: Audit scan

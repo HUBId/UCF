@@ -3,18 +3,29 @@ use std::fs;
 use tempfile::tempdir;
 use ucf_ops::{docs_lint, DocsLintArgs, DocsLintMode, DocsLintStatus};
 
+fn repo_root() -> std::path::PathBuf {
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("runtime parent")
+        .parent()
+        .expect("repo root")
+        .to_path_buf()
+}
+
+fn repo_path(rel: &str) -> std::path::PathBuf {
+    repo_root().join(rel)
+}
+
 #[test]
 fn docs_lint_passes_on_repo_docs() {
     let report = docs_lint(&DocsLintArgs {
-        repo_root: std::path::PathBuf::from("../.."),
-        policy_pack: std::path::PathBuf::from("../../policies/packs/base_v1"),
-        overlay_pack: Some(std::path::PathBuf::from(
-            "../../policies/packs/overlays/test",
-        )),
-        spec_snapshot: std::path::PathBuf::from("../../docs/spec_snapshot.md"),
-        prompt_index: std::path::PathBuf::from("../../docs/prompt_series_index.md"),
-        module_map: std::path::PathBuf::from("../../docs/module_map.md"),
-        deploy_doc: std::path::PathBuf::from("../../docs/deploy_portable.md"),
+        repo_root: repo_root(),
+        policy_pack: repo_path("policies/packs/base_v1"),
+        overlay_pack: Some(repo_path("policies/packs/overlays/test")),
+        spec_snapshot: repo_path("docs/spec_snapshot.md"),
+        prompt_index: repo_path("docs/prompt_series_index.md"),
+        module_map: repo_path("docs/module_map.md"),
+        deploy_doc: repo_path("docs/deploy_portable.md"),
         mode: DocsLintMode::Strict,
     })
     .expect("docs lint should run");
@@ -29,15 +40,13 @@ fn docs_lint_fails_on_snapshot_mismatch() {
     fs::write(&bad_snapshot, "# stale snapshot\n").expect("write snapshot");
 
     let report = docs_lint(&DocsLintArgs {
-        repo_root: std::path::PathBuf::from("../.."),
-        policy_pack: std::path::PathBuf::from("../../policies/packs/base_v1"),
-        overlay_pack: Some(std::path::PathBuf::from(
-            "../../policies/packs/overlays/test",
-        )),
+        repo_root: repo_root(),
+        policy_pack: repo_path("policies/packs/base_v1"),
+        overlay_pack: Some(repo_path("policies/packs/overlays/test")),
         spec_snapshot: bad_snapshot,
-        prompt_index: std::path::PathBuf::from("../../docs/prompt_series_index.md"),
-        module_map: std::path::PathBuf::from("../../docs/module_map.md"),
-        deploy_doc: std::path::PathBuf::from("../../docs/deploy_portable.md"),
+        prompt_index: repo_path("docs/prompt_series_index.md"),
+        module_map: repo_path("docs/module_map.md"),
+        deploy_doc: repo_path("docs/deploy_portable.md"),
         mode: DocsLintMode::Strict,
     })
     .expect("docs lint should run");
@@ -62,15 +71,13 @@ fn docs_lint_fails_on_hardware_terms_in_core_docs() {
     .expect("write");
 
     let report = docs_lint(&DocsLintArgs {
-        repo_root: std::path::PathBuf::from("../.."),
-        policy_pack: std::path::PathBuf::from("../../policies/packs/base_v1"),
-        overlay_pack: Some(std::path::PathBuf::from(
-            "../../policies/packs/overlays/test",
-        )),
-        spec_snapshot: std::path::PathBuf::from("../../docs/spec_snapshot.md"),
+        repo_root: repo_root(),
+        policy_pack: repo_path("policies/packs/base_v1"),
+        overlay_pack: Some(repo_path("policies/packs/overlays/test")),
+        spec_snapshot: repo_path("docs/spec_snapshot.md"),
         prompt_index: bad_prompt_index,
-        module_map: std::path::PathBuf::from("../../docs/module_map.md"),
-        deploy_doc: std::path::PathBuf::from("../../docs/deploy_portable.md"),
+        module_map: repo_path("docs/module_map.md"),
+        deploy_doc: repo_path("docs/deploy_portable.md"),
         mode: DocsLintMode::Strict,
     })
     .expect("docs lint should run");

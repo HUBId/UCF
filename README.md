@@ -107,3 +107,21 @@ Quick workflow:
 
 
 See `docs/docs_checks.md` for remediation guidance when docs lint fails.
+
+
+## Stable Core API (`ucf-sdk`)
+- Crate: `ucf-sdk`
+- Stable boundary types:
+  - `ControlFrameV1`
+  - `DecisionEventV1`
+  - `EssSummaryQueryV1`
+  - `EssSummaryResponseV1`
+  - `Digest32`, `UQ0_16` (stable re-exports)
+- Deterministic encoding helpers are available on all boundary structs via `encode_deterministic()`.
+- Internal engine modules are intentionally not re-exported.
+
+Local API compatibility checks:
+- `python scripts/sdk_api_snapshot.py generate`
+- `python scripts/sdk_api_snapshot.py check --baseline-ref HEAD^`
+
+See `docs/sdk_versioning.md` for semver and deprecation policy.

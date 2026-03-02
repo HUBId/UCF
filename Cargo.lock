@@ -4208,6 +4208,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucf-sdk"
+version = "1.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "ucf-types",
+]
+
+[[package]]
 name = "ucf-sle"
 version = "0.1.0"
 dependencies = [

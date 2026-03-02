@@ -649,6 +649,12 @@ impl SsmKernel for ToySsmKernel {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, OnceLock};
+
+    fn env_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
 
     fn input() -> SsmInput {
         SsmInput {
@@ -748,8 +754,9 @@ mod tests {
 
     #[test]
     fn shadow_mode_records_drift_and_disables_opt() {
-        std::env::set_var("UCF_SSM_KERNEL", "shadow");
+        let _guard = env_lock().lock().expect("env lock");
         let mut kernel = ToySsmKernel {
+            mode: SsmKernelMode::Shadow,
             opt_enabled: true,
             ..ToySsmKernel::default()
         };
@@ -762,24 +769,25 @@ mod tests {
             .0
             .iter()
             .any(|n| n.starts_with("kernel_id=shadow_ref_opt")));
-        std::env::remove_var("UCF_SSM_KERNEL");
     }
 
     #[test]
     fn shadow_drift_alarm_persists_and_disables_opt_fallback() {
+        let _guard = env_lock().lock().expect("env lock");
         let temp = tempfile::tempdir().expect("tempdir");
         let alarms = temp.path().join("ssm_alarms.jsonl");
-        std::env::set_var("UCF_SSM_KERNEL", "shadow");
         std::env::set_var("UCF_SSM_KERNEL_ALARMS_LOG", &alarms);
         std::env::set_var("UCF_SSM_TEST_FORCE_DRIFT", "1");
 
-        let mut kernel = ToySsmKernel::default();
+        let mut kernel = ToySsmKernel {
+            mode: SsmKernelMode::Shadow,
+            ..ToySsmKernel::default()
+        };
         let _ = kernel
             .step(&input(), ComputeBudget::default())
             .expect("step");
 
         std::env::remove_var("UCF_SSM_TEST_FORCE_DRIFT");
-        std::env::set_var("UCF_SSM_KERNEL", "opt");
         kernel.mode = SsmKernelMode::Opt;
         let out = kernel
             .step(&input(), ComputeBudget::default())
@@ -789,7 +797,6 @@ mod tests {
         let content = std::fs::read_to_string(&alarms).expect("alarms log");
         assert!(content.contains("disable_opt_fallback_to_ref"));
 
-        std::env::remove_var("UCF_SSM_KERNEL");
         std::env::remove_var("UCF_SSM_KERNEL_ALARMS_LOG");
     }
 
