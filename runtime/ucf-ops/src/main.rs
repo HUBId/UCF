@@ -14,10 +14,10 @@ use ucf_ops::{
     policy_diff, policy_explain, policy_validate, portability_check, readiness_gate,
     release_rc1_gate, release_signoff_validate, replay_audit, replay_bugreport, repro_pack,
     repro_verify, run_status, runs_list, runs_search, runs_show, save_counterfactual_result,
-    security_verify_chain, simulate_counterfactual, verify_bugreport, world_shadow_report,
-    write_slice, AdversarialRunArgs, BenchArgs, ChangeImpactArgs, ConfigV1, CounterfactualRequest,
-    DocsLintArgs, DocsLintMode, DocsLintStatus, ExplainTickRequest, ExportArgs, GateStatus,
-    GoldenGenerateArgs, GoldenVerifyArgs, SpecSnapshotArgs,
+    security_verify_chain, simulate_counterfactual, strict_check, verify_bugreport,
+    world_shadow_report, write_slice, AdversarialRunArgs, BenchArgs, ChangeImpactArgs, ConfigV1,
+    CounterfactualRequest, DocsLintArgs, DocsLintMode, DocsLintStatus, ExplainTickRequest,
+    ExportArgs, GateStatus, GoldenGenerateArgs, GoldenVerifyArgs, SpecSnapshotArgs,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -31,6 +31,9 @@ fn main() {
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
     let cmd = args.get(1).map(String::as_str).unwrap_or("help");
+    if has_flag(&args, "--strict") {
+        std::env::set_var("UCF_STRICT_MODE", "1");
+    }
     if let Some(bundle_root) = arg_value(&args, "--bundle") {
         std::env::set_current_dir(bundle_root)?;
     }
@@ -1267,6 +1270,28 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 _ => return Err("usage: ucf-ops runs <list|show|search> ...".into()),
             }
         }
+        "strict" => {
+            let sub = args.get(2).map(String::as_str).unwrap_or("help");
+            match sub {
+                "check" => {
+                    if has_flag(&args, "--strict") {
+                        std::env::set_var("UCF_STRICT_MODE", "1");
+                    }
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/strict_check.json"));
+                    let report = strict_check(&workdir, true, &out)?;
+                    println!("out={}", out.display());
+                    println!("strict_mode_enabled={}", report.strict_mode_enabled);
+                    println!("overall={}", if report.ok { "PASS" } else { "FAIL" });
+                    if !report.ok {
+                        std::process::exit(2);
+                    }
+                }
+                _ => return Err("usage: ucf-ops strict check [--strict] [--out <path>]".into()),
+            }
+        }
+
         "status" => {
             let Some(run_id) = arg_value(&args, "--run") else {
                 return Err("usage: ucf-ops status --run <id>".into());
@@ -1290,7 +1315,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             eprintln!(
-                "usage: ucf-ops <bringup|diag|health|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|attest|repro|readiness-gate|goldens|adversarial-run|out|release|bench|runs|status|ess|ebm|drift|policy|portability|spec|change-impact|version> [--workdir <path>] [--bundle <path>]"
+                "usage: ucf-ops <bringup|diag|health|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|attest|repro|readiness-gate|goldens|adversarial-run|out|release|bench|runs|status|strict|ess|ebm|drift|policy|portability|spec|change-impact|version> [--workdir <path>] [--bundle <path>]"
             );
             std::process::exit(1);
         }

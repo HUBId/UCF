@@ -9,6 +9,8 @@ use ucf_compute::ComputeBackendKind;
 #[serde(deny_unknown_fields)]
 pub struct ConfigV1 {
     pub profile_name: String,
+    #[serde(default)]
+    pub strict_mode: bool,
     pub policy_overlay: String,
     pub device_profile: DeviceProfileName,
     pub slot_modes: SlotModesV1,
@@ -125,6 +127,7 @@ impl ConfigV1 {
     pub fn into_ops_config(self) -> OpsConfig {
         OpsConfig {
             profile: self.profile_name,
+            strict_mode: self.strict_mode,
             policy_overlay: self.policy_overlay,
             backend_pack: self.runtime.backend_pack,
             slot_ebm_mode: self.slot_modes.ebm.as_str().to_string(),
@@ -219,6 +222,7 @@ pub fn migrate_config_v1(
 
     let new_cfg = ConfigV1 {
         profile_name: profile_name.clone(),
+        strict_mode: false,
         policy_overlay: legacy.policy_overlay.unwrap_or(profile_name.clone()),
         device_profile,
         slot_modes: SlotModesV1 { ebm: slot_mode },
