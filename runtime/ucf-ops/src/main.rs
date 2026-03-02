@@ -14,10 +14,11 @@ use ucf_ops::{
     policy_diff, policy_explain, policy_validate, portability_check, readiness_gate,
     release_rc1_gate, release_signoff_validate, replay_audit, replay_bugreport, repro_pack,
     repro_verify, run_status, runs_list, runs_search, runs_show, save_counterfactual_result,
-    security_verify_chain, simulate_counterfactual, strict_check, verify_bugreport,
+    security_verify_chain, simulate_counterfactual, strict_check, troubleshoot, verify_bugreport,
     world_shadow_report, write_slice, AdversarialRunArgs, BenchArgs, ChangeImpactArgs, ConfigV1,
-    CounterfactualRequest, DocsLintArgs, DocsLintMode, DocsLintStatus, ExplainTickRequest,
-    ExportArgs, GateStatus, GoldenGenerateArgs, GoldenVerifyArgs, SpecSnapshotArgs,
+    CounterfactualRequest, DevLoopArgs, DocsLintArgs, DocsLintMode, DocsLintStatus,
+    ExplainTickRequest, ExportArgs, GateStatus, GoldenGenerateArgs, GoldenVerifyArgs,
+    SpecSnapshotArgs,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -1098,6 +1099,54 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         }
+        "dev" => {
+            let sub = args.get(2).map(String::as_str).unwrap_or("help");
+            match sub {
+                "loop" => {
+                    let profile = arg_value(&args, "--profile").unwrap_or_else(|| "dev".to_string());
+                    let scenario = arg_value(&args, "--scenario").unwrap_or_else(|| "golden_a".to_string());
+                    let ticks = parse_u64(&args, "--ticks", 32);
+                    let out_dir = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/dev_loop"));
+                    let report = ucf_ops::dev_loop(
+                        &workdir,
+                        &DevLoopArgs {
+                            profile,
+                            scenario,
+                            ticks,
+                            out_dir: out_dir.clone(),
+                            run_tests: !has_flag(&args, "--no-tests"),
+                        },
+                    )?;
+                    println!("out={}", out_dir.display());
+                    for step in report.steps {
+                        println!("step={} status={:?} detail={}", step.step, step.status, step.detail);
+                    }
+                    for action in report.next_actions {
+                        println!("next={action}");
+                    }
+                }
+                _ => return Err("usage: ucf-ops dev loop [--profile <dev|test|prod>] [--scenario <id>] [--ticks <n>] [--out <path>] [--no-tests]".into()),
+            }
+        }
+        "troubleshoot" => {
+            let Some(run_id) = arg_value(&args, "--run") else {
+                return Err("usage: ucf-ops troubleshoot --run <id> --out <path>".into());
+            };
+            let out = arg_value(&args, "--out")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("./out/troubleshoot.json"));
+            let report = troubleshoot(&workdir, &run_id, &out)?;
+            println!("run_id={}", report.run_id);
+            println!("out={}", out.display());
+            for issue in report.issues {
+                println!(
+                    "issue={} severity={} next={}",
+                    issue.source, issue.severity, issue.next_command
+                );
+            }
+        }
         "adversarial-run" => {
             let suite = arg_value(&args, "--suite").unwrap_or_else(|| "v1".to_string());
             let out = arg_value(&args, "--out")
@@ -1315,7 +1364,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             eprintln!(
-                "usage: ucf-ops <bringup|diag|health|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|attest|repro|readiness-gate|goldens|adversarial-run|out|release|bench|runs|status|strict|ess|ebm|drift|policy|portability|spec|change-impact|version> [--workdir <path>] [--bundle <path>]"
+                "usage: ucf-ops <bringup|diag|health|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|attest|repro|readiness-gate|goldens|dev|troubleshoot|adversarial-run|out|release|bench|runs|status|strict|ess|ebm|drift|policy|portability|spec|change-impact|version> [--workdir <path>] [--bundle <path>]"
             );
             std::process::exit(1);
         }
