@@ -6,16 +6,17 @@ use ucf_ops::{
     adversarial_run, attest_bundle, attest_keys_generate, attest_run, attest_verify, audit_scan,
     bench_run, bringup, causal_slice, determinism_scan, diagnostics, diagnostics_collect,
     ebm_export_dataset, ess_compact, ess_snapshot, event_id_for_decision, explain_tick,
-    explain_why, export_bugreport, hardware_scan, load_signoff_checklist, logs_prove,
-    logs_verify_proof, metrics_snapshot, metrics_summary, metrics_trend, models_list, models_probe,
-    models_promote, models_recommend_rollback, models_rollback, models_stage, models_verify,
-    one_command_bringup, out_manifest, parse_slot, path_scan, policy_diff, policy_explain,
-    policy_validate, portability_check, readiness_gate, release_rc1_gate, release_signoff_validate,
-    replay_audit, replay_bugreport, run_status, runs_list, runs_search, runs_show,
-    save_counterfactual_result, security_verify_chain, simulate_counterfactual, verify_bugreport,
-    world_shadow_report, write_slice, AdversarialRunArgs, BenchArgs, ChangeImpactArgs,
-    CounterfactualRequest, DocsLintArgs, DocsLintMode, DocsLintStatus, ExplainTickRequest,
-    ExportArgs, GateStatus, SpecSnapshotArgs,
+    explain_why, export_bugreport, export_policy_key_registry_v1, hardware_scan,
+    load_signoff_checklist, logs_prove, logs_verify_proof, metrics_snapshot, metrics_summary,
+    metrics_trend, migrate_config_v1, models_list, models_probe, models_promote,
+    models_recommend_rollback, models_rollback, models_stage, models_verify, one_command_bringup,
+    out_manifest, parse_slot, path_scan, policy_diff, policy_explain, policy_validate,
+    portability_check, readiness_gate, release_rc1_gate, release_signoff_validate, replay_audit,
+    replay_bugreport, run_status, runs_list, runs_search, runs_show, save_counterfactual_result,
+    security_verify_chain, simulate_counterfactual, verify_bugreport, world_shadow_report,
+    write_slice, AdversarialRunArgs, BenchArgs, ChangeImpactArgs, ConfigV1, CounterfactualRequest,
+    DocsLintArgs, DocsLintMode, DocsLintStatus, ExplainTickRequest, ExportArgs, GateStatus,
+    SpecSnapshotArgs,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -405,7 +406,49 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         println!("not_found");
                     }
                 }
-                _ => return Err("usage: ucf-ops policy <validate|diff|explain> ...".into()),
+                "keys" => {
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("docs/policy_key_registry.md"));
+                    export_policy_key_registry_v1(&out)?;
+                    println!("policy_keys_registry={}", out.display());
+                }
+                _ => return Err("usage: ucf-ops policy <validate|diff|explain|keys> ...".into()),
+            }
+        }
+
+        "config" => {
+            let sub = args.get(2).map(String::as_str).unwrap_or("help");
+            match sub {
+                "migrate" => {
+                    let Some(input) = arg_value(&args, "--in") else {
+                        return Err("usage: ucf-ops config migrate --in <old.toml> --out <new.toml> --diff <path>".into());
+                    };
+                    let Some(output) = arg_value(&args, "--out") else {
+                        return Err("usage: ucf-ops config migrate --in <old.toml> --out <new.toml> --diff <path>".into());
+                    };
+                    let diff = arg_value(&args, "--diff")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/config_diff.txt"));
+                    let output_path = PathBuf::from(&output);
+                    let report = migrate_config_v1(&PathBuf::from(input), &output_path, &diff)?;
+                    println!("migrated_out={output}");
+                    println!("diff={}", diff.display());
+                    println!("old_digest={}", report.old_digest);
+                    println!("new_digest={}", report.new_digest);
+                    for warning in report.warnings {
+                        println!("warning={warning}");
+                    }
+                }
+                "validate" => {
+                    let Some(input) = arg_value(&args, "--in") else {
+                        return Err("usage: ucf-ops config validate --in <config_v1.toml>".into());
+                    };
+                    let raw = std::fs::read_to_string(&input)?;
+                    let _ = ConfigV1::from_toml_str(&raw)?;
+                    println!("config_v1_valid={input}");
+                }
+                _ => return Err("usage: ucf-ops config <migrate|validate> ...".into()),
             }
         }
 

@@ -49,7 +49,11 @@ See `docs/feature_matrix.md` for details.
   - `UCF_PROFILE=dev cargo run -p ucf-ops -- bringup --scenario fixtures/e2e_scenario_a.json --ticks 32 --out ./out/dev`
   - `UCF_PROFILE=test cargo run -p ucf-ops -- bringup --scenario fixtures/e2e_scenario_a.json --ticks 32 --out ./out/test`
   - `UCF_PROFILE=prod cargo run -p ucf-ops -- bringup --scenario fixtures/e2e_scenario_a.json --ticks 32 --out ./out/prod`
-- Unknown config keys fail fast during TOML parse/load.
+- Config contract v1: `docs/config_contract_v1.md`.
+- Validate config schema: `cargo run -p ucf-ops -- config validate --in configs/test.toml`.
+- Unknown config keys fail fast during TOML parse/load (`ConfigV1` with strict schema).
+- Migrate legacy config: `cargo run -p ucf-ops -- config migrate --in old.toml --out new.toml --diff ./out/config_diff.txt`.
+- Export policy key registry: `cargo run -p ucf-ops -- policy keys --out docs/policy_key_registry.md`.
 - Migration guide: `docs/config_migration_v2.md`.
 
 
