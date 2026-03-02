@@ -4,7 +4,7 @@
   "scenario_id": "golden_a",
   "scenario_fixture": "fixtures/e2e_scenario_a.json",
   "ticks": 12,
-  "policy_graph_digest_prefix": "464943c52bb2",
+  "policy_graph_digest_prefix": "dd50b29b5a4f",
   "config_digest_prefix": "d215a8dba72b",
   "expected_outputs": {
     "sampled_tick_digests": [
@@ -30,6 +30,6 @@
       "uncertainty_mean_q": 0
     },
     "gate_status": "PASS",
-    "spec_snapshot_sha256_prefix": "43a2cc587915"
+    "spec_snapshot_sha256_prefix": "e108e2b9de5c"
   }
 }

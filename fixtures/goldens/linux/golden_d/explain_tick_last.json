@@ -38,6 +38,11 @@
       "risk": 0.32576066,
       "confidence": 0.51400733,
       "risk_digest_prefix": null
+    },
+    "drift": {
+      "statuses": {},
+      "alarm_ids": [],
+      "reason_codes": []
     }
   },
   "governance": {
