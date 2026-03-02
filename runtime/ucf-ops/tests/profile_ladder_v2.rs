@@ -2,11 +2,11 @@ use std::fs;
 use std::path::Path;
 
 use tempfile::tempdir;
-use ucf_ops::{load_or_init_config, one_command_bringup, OpsConfig};
+use ucf_ops::{load_or_init_config, migrate_config_v1, one_command_bringup, ConfigV1};
 
-fn load_cfg(path: &Path) -> OpsConfig {
+fn load_cfg(path: &Path) -> ConfigV1 {
     let raw = fs::read_to_string(path).expect("read config");
-    toml::from_str(&raw).expect("parse config")
+    ConfigV1::from_toml_str(&raw).expect("parse config")
 }
 
 #[test]
@@ -14,22 +14,35 @@ fn config_schema_rejects_unknown_keys() {
     let bad = r#"
 profile = "test"
 policy_overlay = "test"
+device_profile = "small"
+
+[slot_modes]
+ebm = "shadow"
+
+[paths]
+policy_pack = "policies/packs/base_v1"
+policy_overlay = "policies/packs/overlays/test"
+models_manifest = "models/manifest.toml"
+
+[strictness]
+determinism_lock = true
+stage_isolation = true
+
+[runtime]
 backend_pack = "toy_v1"
-slot_ebm_mode = "shadow"
 offline = true
 compute_backend = "stub"
 compute_seed = 1
-compute_budget_profile = "tight"
-isolation_runtime = "inproc"
 capabilities_default = "deny"
 sampling_enabled = false
-determinism_lock_strict = true
 docs_lint_required = false
-stage_isolation_optional = true
+isolation_runtime = "inproc"
 log_level = "info"
+llm_max_tokens = 64
+probe_timeout_ms = 150
 extra_unsupported_knob = true
 "#;
-    let err = toml::from_str::<OpsConfig>(bad).expect_err("unknown key must fail");
+    let err = ConfigV1::from_toml_str(bad).expect_err("unknown key must fail");
     assert!(err.to_string().contains("unknown field"));
 }
 
@@ -40,12 +53,29 @@ fn ladder_never_reduces_safety() {
     let test = load_cfg(&repo.join("configs/test.toml"));
     let prod = load_cfg(&repo.join("configs/prod.toml"));
 
-    assert!(dev.offline && test.offline && prod.offline);
-    assert!(!test.sampling_enabled && !prod.sampling_enabled);
-    assert!(test.determinism_lock_strict && prod.determinism_lock_strict);
-    assert_eq!(test.capabilities_default, "deny");
-    assert_eq!(prod.capabilities_default, "deny");
-    assert!(prod.docs_lint_required);
+    assert!(dev.runtime.offline && test.runtime.offline && prod.runtime.offline);
+    assert!(!test.runtime.sampling_enabled && !prod.runtime.sampling_enabled);
+    assert!(test.strictness.determinism_lock && prod.strictness.determinism_lock);
+    assert_eq!(test.runtime.capabilities_default, "deny");
+    assert_eq!(prod.runtime.capabilities_default, "deny");
+    assert!(prod.runtime.docs_lint_required);
+}
+
+#[test]
+fn migrated_config_validates_strictly() {
+    let dir = tempdir().expect("tempdir");
+    let old = dir.path().join("old.toml");
+    let new = dir.path().join("new.toml");
+    let diff = dir.path().join("diff.txt");
+    fs::write(
+        &old,
+        "profile='test'\npolicy_overlay='test'\nbackend_pack='toy_v1'\nslot_ebm_mode='shadow'\n",
+    )
+    .expect("old write");
+    migrate_config_v1(&old, &new, &diff).expect("migrate");
+    let new_raw = fs::read_to_string(&new).expect("read new");
+    let migrated = ConfigV1::from_toml_str(&new_raw).expect("validate strict");
+    assert_eq!(migrated.profile_name, "test");
 }
 
 #[test]

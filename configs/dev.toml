@@ -1,16 +1,28 @@
-profile = "dev"
+profile_name = "dev"
 policy_overlay = "dev"
+device_profile = "medium"
+
+[slot_modes]
+ebm = "shadow"
+
+[paths]
+policy_pack = "policies/packs/base_v1"
+policy_overlay = "policies/packs/overlays/dev"
+models_manifest = "models/manifest.toml"
+
+[strictness]
+determinism_lock = true
+stage_isolation = true
+
+[runtime]
 backend_pack = "toy_v1"
-slot_ebm_mode = "shadow"
 offline = true
 compute_backend = "stub"
 compute_seed = 233811181
-device_profile = "medium"
-compute_budget_profile = "default"
-isolation_runtime = "inproc"
 capabilities_default = "deny"
 sampling_enabled = true
-determinism_lock_strict = true
 docs_lint_required = false
-stage_isolation_optional = true
+isolation_runtime = "inproc"
 log_level = "debug"
+llm_max_tokens = 128
+probe_timeout_ms = 200
