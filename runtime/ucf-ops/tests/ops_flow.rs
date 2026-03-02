@@ -9,6 +9,19 @@ use ucf_ops::{
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
+fn repo_root() -> std::path::PathBuf {
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("runtime parent")
+        .parent()
+        .expect("repo root")
+        .to_path_buf()
+}
+
+fn repo_path(rel: &str) -> std::path::PathBuf {
+    repo_root().join(rel)
+}
+
 #[test]
 fn bringup_demo_is_deterministic() {
     let left = tempdir().expect("left");
@@ -77,7 +90,7 @@ fn one_command_bringup_writes_release_artifacts() {
     let out = dir.path().join("out");
     let artifacts = one_command_bringup(
         dir.path(),
-        std::path::Path::new("../../fixtures/e2e_scenario_a.json"),
+        repo_path("fixtures/e2e_scenario_a.json").as_path(),
         16,
         &out,
         true,
@@ -110,10 +123,9 @@ fn readiness_gate_writes_report() {
 
 #[test]
 fn checklist_toml_parses() {
-    let checklist = load_signoff_checklist(std::path::Path::new(
-        "../../release/v0_signoff_checklist.toml",
-    ))
-    .expect("checklist");
+    let checklist =
+        load_signoff_checklist(repo_path("release/v0_signoff_checklist.toml").as_path())
+            .expect("checklist");
     assert_eq!(checklist.version, "v0");
     assert!(!checklist.items.is_empty());
 }
@@ -135,7 +147,7 @@ fn release_signoff_validate_fixture_out_dir() {
     let emit = dir.path().join("signoff_result.json");
     let report = release_signoff_validate(
         &out,
-        std::path::Path::new("../../release/v0_signoff_checklist.toml"),
+        repo_path("release/v0_signoff_checklist.toml").as_path(),
         &emit,
     )
     .expect("validate");
@@ -222,10 +234,8 @@ fn spec_snapshot_writes_expected_sections() {
     let out = dir.path().join("spec_snapshot.md");
 
     ucf_ops::generate_spec_snapshot(&SpecSnapshotArgs {
-        policy: std::path::PathBuf::from("../../policies/packs/base_v1"),
-        overlay: Some(std::path::PathBuf::from(
-            "../../policies/packs/overlays/test",
-        )),
+        policy: repo_path("policies/packs/base_v1"),
+        overlay: Some(repo_path("policies/packs/overlays/test")),
         out: out.clone(),
     })
     .expect("snapshot");
@@ -243,7 +253,7 @@ fn attest_run_and_verify_roundtrip() {
     let out = dir.path().join("out");
     let artifacts = one_command_bringup(
         dir.path(),
-        std::path::Path::new("../../fixtures/e2e_scenario_a.json"),
+        repo_path("fixtures/e2e_scenario_a.json").as_path(),
         12,
         &out,
         false,
@@ -270,7 +280,7 @@ fn attest_verify_fails_on_tamper() {
     let out = dir.path().join("out");
     let artifacts = one_command_bringup(
         dir.path(),
-        std::path::Path::new("../../fixtures/e2e_scenario_a.json"),
+        repo_path("fixtures/e2e_scenario_a.json").as_path(),
         12,
         &out,
         false,
@@ -305,7 +315,7 @@ fn attest_bundle_exports_redaction_safe_artifacts() {
     let out = dir.path().join("out");
     let artifacts = one_command_bringup(
         dir.path(),
-        std::path::Path::new("../../fixtures/e2e_scenario_a.json"),
+        repo_path("fixtures/e2e_scenario_a.json").as_path(),
         10,
         &out,
         false,
