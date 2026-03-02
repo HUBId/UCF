@@ -2,3 +2,4 @@
 policies/**/*.json text eol=lf
 policies/**/*.toml text eol=lf
 policies/**/*.dl text eol=lf
+docs/spec_snapshot.md text eol=lf
