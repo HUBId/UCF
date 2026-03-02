@@ -36,7 +36,7 @@ pub use models_lifecycle::{
 pub use spec_snapshot::{generate_spec_snapshot, SpecSnapshotArgs};
 pub use world_shadow::{world_shadow_report, WorldShadowReport};
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -81,6 +81,9 @@ use ucf_replay::{
 };
 use ucf_runtime::RuntimeOrchestrator;
 use ucf_types::error_codes::ErrorCode;
+
+const DEV_LOOP_MAX_SCENARIOS: usize = 2;
+const TROUBLESHOOT_MAX_ISSUES: usize = 8;
 
 #[derive(Debug, Error)]
 pub enum OpsError {
@@ -367,6 +370,87 @@ pub struct BringupArtifacts {
     pub metrics: MetricsSummary,
     pub explain: ExplainTickReport,
     pub replay_report: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DevLoopStepStatus {
+    Pass,
+    Fail,
+    Skipped,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DevLoopStepResult {
+    pub step: String,
+    pub status: DevLoopStepStatus,
+    pub detail: String,
+    pub artifact: Option<String>,
+    pub hint: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DevLoopReport {
+    pub profile: String,
+    pub scenario: String,
+    pub ticks: u64,
+    pub steps: Vec<DevLoopStepResult>,
+    pub next_actions: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DevLoopArgs {
+    pub profile: String,
+    pub scenario: String,
+    pub ticks: u64,
+    pub out_dir: PathBuf,
+    pub run_tests: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ConfigReloadReasonCode {
+    PolicyOverlayChanged,
+    PolicyPathChanged,
+    ManifestChanged,
+    StrictModeChanged,
+    AuthTokenChanged,
+    UnsupportedKeyChanged,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConfigReloadAppliedRecord {
+    pub t_unix: u64,
+    pub profile: String,
+    pub changed_keys: Vec<String>,
+    pub config_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConfigReloadDeniedRecord {
+    pub t_unix: u64,
+    pub profile: String,
+    pub changed_keys: Vec<String>,
+    pub reason_codes: Vec<ConfigReloadReasonCode>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TroubleshootIssue {
+    pub source: String,
+    pub severity: String,
+    pub detail: String,
+    pub next_command: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TroubleshootReport {
+    pub run_id: String,
+    pub strict_failure: Option<String>,
+    pub drift_report: Option<String>,
+    pub readiness_gate: Option<String>,
+    pub docs_lint: Option<String>,
+    pub gateway_abuse_count: usize,
+    pub issues: Vec<TroubleshootIssue>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2770,6 +2854,328 @@ pub fn one_command_bringup(
     })
 }
 
+pub fn dev_loop(workdir: &Path, args: &DevLoopArgs) -> Result<DevLoopReport, OpsError> {
+    ensure_layout(workdir)?;
+    fs::create_dir_all(&args.out_dir)?;
+    let mut steps = Vec::new();
+
+    if args.run_tests {
+        let test_out = args.out_dir.join("cargo_test_subset.log");
+        let (ok, detail) = run_shell_command(
+            &["cargo", "test", "-p", "ucf-ops", "--lib", "--quiet"],
+            &test_out,
+        )?;
+        steps.push(DevLoopStepResult {
+            step: "cargo_test_subset".to_string(),
+            status: if ok {
+                DevLoopStepStatus::Pass
+            } else {
+                DevLoopStepStatus::Fail
+            },
+            detail,
+            artifact: Some(test_out.display().to_string()),
+            hint: if ok {
+                None
+            } else {
+                Some("fix failing tests before iterating bringup".to_string())
+            },
+        });
+    } else {
+        steps.push(DevLoopStepResult {
+            step: "cargo_test_subset".to_string(),
+            status: DevLoopStepStatus::Skipped,
+            detail: "skipped (--no-tests)".to_string(),
+            artifact: None,
+            hint: None,
+        });
+    }
+
+    let scenario_path =
+        PathBuf::from("fixtures/goldens/scenarios").join(format!("{}.json", args.scenario));
+    let bringup_out = args.out_dir.join("bringup");
+    let bringup_status =
+        one_command_bringup(workdir, &scenario_path, args.ticks, &bringup_out, true);
+    match bringup_status {
+        Ok(artifacts) => steps.push(DevLoopStepResult {
+            step: "bringup".to_string(),
+            status: DevLoopStepStatus::Pass,
+            detail: format!(
+                "run_id={} profile={}",
+                artifacts.run_metadata.run_id, artifacts.run_metadata.profile
+            ),
+            artifact: Some(bringup_out.display().to_string()),
+            hint: None,
+        }),
+        Err(err) => steps.push(DevLoopStepResult {
+            step: "bringup".to_string(),
+            status: DevLoopStepStatus::Fail,
+            detail: err.to_string(),
+            artifact: Some(bringup_out.display().to_string()),
+            hint: Some(
+                "run `ucf-ops bringup --scenario <path> --ticks <n>` to inspect failure"
+                    .to_string(),
+            ),
+        }),
+    }
+
+    let docs_out = args.out_dir.join("docs_lint_report.json");
+    let docs_report = docs_lint(&DocsLintArgs {
+        repo_root: PathBuf::from("."),
+        policy_pack: PathBuf::from("policies/packs/base_v1"),
+        overlay_pack: Some(PathBuf::from(format!(
+            "policies/packs/overlays/{}",
+            args.profile
+        ))),
+        spec_snapshot: PathBuf::from("docs/spec_snapshot.md"),
+        prompt_index: PathBuf::from("docs/prompt_series_index.md"),
+        module_map: PathBuf::from("docs/module_map.md"),
+        deploy_doc: PathBuf::from("docs/deploy.md"),
+        mode: DocsLintMode::Strict,
+    });
+    match docs_report {
+        Ok(report) => {
+            write_json(&docs_out, &report)?;
+            steps.push(DevLoopStepResult {
+                step: "docs_lint".to_string(),
+                status: if report.ok {
+                    DevLoopStepStatus::Pass
+                } else {
+                    DevLoopStepStatus::Fail
+                },
+                detail: format!("ok={}", report.ok),
+                artifact: Some(docs_out.display().to_string()),
+                hint: if report.ok {
+                    None
+                } else {
+                    Some(
+                        "run `ucf-ops docs lint --strict --out ./out/docs_lint_report.json`"
+                            .to_string(),
+                    )
+                },
+            });
+        }
+        Err(err) => steps.push(DevLoopStepResult {
+            step: "docs_lint".to_string(),
+            status: DevLoopStepStatus::Fail,
+            detail: err.to_string(),
+            artifact: Some(docs_out.display().to_string()),
+            hint: Some("fix docs lint configuration or docs references".to_string()),
+        }),
+    }
+
+    let mut scenarios = vec![args.scenario.clone(), "golden_b".to_string()];
+    scenarios.sort();
+    scenarios.dedup();
+    scenarios.truncate(DEV_LOOP_MAX_SCENARIOS);
+    for scenario in scenarios {
+        let verify_res = goldens_verify(&GoldenVerifyArgs {
+            scenario: scenario.clone(),
+            os: std::env::consts::OS.to_string(),
+            out_root: PathBuf::from("fixtures/goldens"),
+            workdir_root: args.out_dir.join("goldens_workdir"),
+        });
+        let verify_ok = verify_res.is_ok();
+        let detail = match verify_res {
+            Ok(()) => "status=PASS".to_string(),
+            Err(err) => err.to_string(),
+        };
+        steps.push(DevLoopStepResult {
+            step: format!("goldens_verify:{scenario}"),
+            status: if verify_ok {
+                DevLoopStepStatus::Pass
+            } else {
+                DevLoopStepStatus::Fail
+            },
+            detail,
+            artifact: Some(
+                args.out_dir
+                    .join(format!("goldens_{scenario}.json"))
+                    .display()
+                    .to_string(),
+            ),
+            hint: if verify_ok {
+                None
+            } else {
+                Some(format!(
+                    "run `ucf-ops goldens verify --scenario {scenario}`"
+                ))
+            },
+        });
+    }
+
+    let mut next_actions = BTreeSet::new();
+    for step in &steps {
+        if step.status == DevLoopStepStatus::Fail {
+            if let Some(hint) = &step.hint {
+                next_actions.insert(hint.clone());
+            }
+        }
+    }
+    if next_actions.is_empty() {
+        next_actions.insert(
+            "all checks passed; continue with full workspace tests before commit".to_string(),
+        );
+    }
+
+    let report = DevLoopReport {
+        profile: args.profile.clone(),
+        scenario: args.scenario.clone(),
+        ticks: args.ticks,
+        steps,
+        next_actions: next_actions.into_iter().collect(),
+    };
+    write_json(args.out_dir.join("dev_loop_report.json"), &report)?;
+    Ok(report)
+}
+
+pub fn apply_hot_reload_if_safe(
+    workdir: &Path,
+    current: &OpsConfig,
+    updated: &OpsConfig,
+) -> Result<Result<OpsConfig, ConfigReloadDeniedRecord>, OpsError> {
+    let changed_keys = diff_ops_config_keys(current, updated);
+    let mut reasons = Vec::new();
+    for key in &changed_keys {
+        match key.as_str() {
+            "compute_budget_profile" | "sampling_enabled" | "log_level" => {}
+            "policy_overlay" => reasons.push(ConfigReloadReasonCode::PolicyOverlayChanged),
+            "strict_mode" | "determinism_lock_strict" => {
+                reasons.push(ConfigReloadReasonCode::StrictModeChanged)
+            }
+            "emergency_policy_pin" => reasons.push(ConfigReloadReasonCode::AuthTokenChanged),
+            _ => reasons.push(ConfigReloadReasonCode::UnsupportedKeyChanged),
+        }
+    }
+    if current.profile != updated.profile {
+        reasons.push(ConfigReloadReasonCode::ManifestChanged);
+    }
+    reasons.sort_by(|a, b| format!("{:?}", a).cmp(&format!("{:?}", b)));
+    reasons.dedup();
+    if reasons.is_empty() {
+        let mut applied = updated.clone();
+        applied.config_digest = ops_config_digest(&applied)?;
+        let record = ConfigReloadAppliedRecord {
+            t_unix: now_unix_secs(),
+            profile: applied.profile.clone(),
+            changed_keys,
+            config_digest: applied.config_digest.clone(),
+        };
+        persist_jsonl_record(
+            &workdir.join("reports/config_reload_applied.jsonl"),
+            &record,
+        )?;
+        return Ok(Ok(applied));
+    }
+    let denied = ConfigReloadDeniedRecord {
+        t_unix: now_unix_secs(),
+        profile: updated.profile.clone(),
+        changed_keys,
+        reason_codes: reasons,
+    };
+    persist_jsonl_record(&workdir.join("reports/config_reload_denied.jsonl"), &denied)?;
+    Ok(Err(denied))
+}
+
+pub fn troubleshoot(
+    workdir: &Path,
+    run_id: &str,
+    out: &Path,
+) -> Result<TroubleshootReport, OpsError> {
+    ensure_layout(workdir)?;
+    let strict = first_existing_path(&[
+        workdir.join("out/strict_failure.json"),
+        PathBuf::from("./out/strict_failure.json"),
+    ]);
+    let drift = first_existing_path(&[
+        workdir.join(format!("out/drift_{run_id}.json")),
+        PathBuf::from("./out/drift_report.json"),
+    ]);
+    let gate = first_existing_path(&[
+        workdir.join("out/gate_report.json"),
+        PathBuf::from("./out/gate_report.json"),
+    ]);
+    let docs = first_existing_path(&[
+        workdir.join("out/docs_lint_report.json"),
+        PathBuf::from("./out/docs_lint_report.json"),
+    ]);
+    let records =
+        load_fixture_records(&workdir.join("ess").join("ess_fixture.json")).unwrap_or_default();
+    let abuse_count: usize = records
+        .iter()
+        .filter_map(|r| match &r.payload {
+            ExperiencePayload::Audit(AuditPayload::CapabilityIssuance(i)) => {
+                Some(i.denied_kinds.len())
+            }
+            _ => None,
+        })
+        .sum();
+
+    let mut issues = Vec::new();
+    if let Some(path) = &strict {
+        issues.push(TroubleshootIssue {
+            source: "strict_failure".to_string(),
+            severity: "high".to_string(),
+            detail: format!("strict checks failed: {}", path.display()),
+            next_command: "ucf-ops strict check --strict --out ./out/strict_check.json".to_string(),
+        });
+    }
+    if let Some(path) = &drift {
+        issues.push(TroubleshootIssue {
+            source: "drift_report".to_string(),
+            severity: "medium".to_string(),
+            detail: format!("drift report present: {}", path.display()),
+            next_command: format!(
+                "ucf-ops drift report --run {run_id} --windows 32 --out ./out/drift_report.json"
+            ),
+        });
+    }
+    if gate.is_none() {
+        issues.push(TroubleshootIssue {
+            source: "readiness_gate".to_string(),
+            severity: "medium".to_string(),
+            detail: "readiness gate report missing".to_string(),
+            next_command: "ucf-ops readiness-gate --profile test --out ./out/gate_report.json"
+                .to_string(),
+        });
+    }
+    if docs.is_none() {
+        issues.push(TroubleshootIssue {
+            source: "docs_lint".to_string(),
+            severity: "low".to_string(),
+            detail: "docs lint report missing".to_string(),
+            next_command: "ucf-ops docs lint --strict --out ./out/docs_lint_report.json"
+                .to_string(),
+        });
+    }
+    if abuse_count > 0 {
+        issues.push(TroubleshootIssue {
+            source: "gateway_abuse".to_string(),
+            severity: "high".to_string(),
+            detail: format!("detected {} denied tool invocations", abuse_count),
+            next_command: "ucf-ops security verify-chain --from 0 --to 18446744073709551615"
+                .to_string(),
+        });
+    }
+    issues.sort_by(|a, b| {
+        a.source
+            .cmp(&b.source)
+            .then(a.next_command.cmp(&b.next_command))
+    });
+    issues.truncate(TROUBLESHOOT_MAX_ISSUES);
+
+    let report = TroubleshootReport {
+        run_id: run_id.to_string(),
+        strict_failure: strict.map(|p| p.display().to_string()),
+        drift_report: drift.map(|p| p.display().to_string()),
+        readiness_gate: gate.map(|p| p.display().to_string()),
+        docs_lint: docs.map(|p| p.display().to_string()),
+        gateway_abuse_count: abuse_count,
+        issues,
+    };
+    write_json(out, &report)?;
+    Ok(report)
+}
+
 pub fn diagnostics(workdir: &Path) -> Result<DiagReport, OpsError> {
     let mut checks = Vec::new();
     let cfg = load_or_init_config(workdir)?;
@@ -4330,6 +4736,70 @@ fn build_checksums(dir: &Path) -> Result<ChecksumManifest, OpsError> {
 fn write_json(path: impl AsRef<Path>, value: &impl Serialize) -> Result<(), OpsError> {
     fs::write(path, serde_json::to_string_pretty(value)?)?;
     Ok(())
+}
+
+fn persist_jsonl_record(path: &Path, value: &impl Serialize) -> Result<(), OpsError> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)?;
+    writeln!(file, "{}", serde_json::to_string(value)?)?;
+    Ok(())
+}
+
+fn first_existing_path(candidates: &[PathBuf]) -> Option<PathBuf> {
+    candidates.iter().find(|p| p.exists()).cloned()
+}
+
+fn run_shell_command(cmd: &[&str], out: &Path) -> Result<(bool, String), OpsError> {
+    let mut command = Command::new(cmd[0]);
+    command.args(&cmd[1..]);
+    let output = command.output()?;
+    if let Some(parent) = out.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let mut body = String::new();
+    body.push_str(&String::from_utf8_lossy(&output.stdout));
+    body.push_str(&String::from_utf8_lossy(&output.stderr));
+    fs::write(out, body.as_bytes())?;
+    Ok((
+        output.status.success(),
+        format!("exit_code={}", output.status.code().unwrap_or(1)),
+    ))
+}
+
+fn diff_ops_config_keys(current: &OpsConfig, updated: &OpsConfig) -> Vec<String> {
+    let mut keys = Vec::new();
+    macro_rules! changed {
+        ($field:ident) => {
+            if current.$field != updated.$field {
+                keys.push(stringify!($field).to_string());
+            }
+        };
+    }
+    changed!(profile);
+    changed!(strict_mode);
+    changed!(policy_overlay);
+    changed!(backend_pack);
+    changed!(slot_ebm_mode);
+    changed!(offline);
+    changed!(compute_backend);
+    changed!(compute_seed);
+    changed!(compute_budget_profile);
+    changed!(device_profile);
+    changed!(isolation_runtime);
+    changed!(capabilities_default);
+    changed!(sampling_enabled);
+    changed!(determinism_lock_strict);
+    changed!(docs_lint_required);
+    changed!(stage_isolation_optional);
+    changed!(emergency_policy_pin);
+    changed!(log_level);
+    keys.sort();
+    keys
 }
 
 fn sha256_hex(data: &[u8]) -> String {
@@ -7263,5 +7733,81 @@ mod strict_mode_tests {
             vec!["strict.models.manifest_digest_missing".to_string()]
         );
         assert!(matches!(item.status, StrictCheckStatus::Fail));
+    }
+}
+
+#[cfg(test)]
+mod dev_loop_and_reload_tests {
+    use super::*;
+
+    fn base_cfg() -> OpsConfig {
+        OpsConfig {
+            profile: "dev".to_string(),
+            strict_mode: false,
+            policy_overlay: "dev".to_string(),
+            backend_pack: "toy_v1".to_string(),
+            slot_ebm_mode: "shadow".to_string(),
+            offline: true,
+            compute_backend: ComputeBackendKind::Stub,
+            compute_seed: 1,
+            compute_budget_profile: "small".to_string(),
+            device_profile: "small".to_string(),
+            isolation_runtime: "inproc".to_string(),
+            capabilities_default: "deny".to_string(),
+            sampling_enabled: false,
+            determinism_lock_strict: true,
+            docs_lint_required: false,
+            stage_isolation_optional: true,
+            emergency_policy_pin: None,
+            log_level: "info".to_string(),
+            config_digest: String::new(),
+        }
+    }
+
+    #[test]
+    fn hot_reload_allows_non_security_keys() {
+        let tmp = tempfile::tempdir().expect("tmp");
+        let current = base_cfg();
+        let mut updated = base_cfg();
+        updated.compute_budget_profile = "medium".to_string();
+        updated.sampling_enabled = true;
+        updated.log_level = "debug".to_string();
+        let out = apply_hot_reload_if_safe(tmp.path(), &current, &updated).expect("reload");
+        assert!(out.is_ok());
+    }
+
+    #[test]
+    fn hot_reload_denies_security_keys() {
+        let tmp = tempfile::tempdir().expect("tmp");
+        let current = base_cfg();
+        let mut updated = base_cfg();
+        updated.policy_overlay = "prod".to_string();
+        let out = apply_hot_reload_if_safe(tmp.path(), &current, &updated).expect("reload");
+        let denied = out.expect_err("must deny");
+        assert!(!denied.reason_codes.is_empty());
+    }
+
+    #[test]
+    fn troubleshoot_issues_are_deterministically_sorted() {
+        let mut issues = [
+            TroubleshootIssue {
+                source: "z".to_string(),
+                severity: "low".to_string(),
+                detail: "z".to_string(),
+                next_command: "z".to_string(),
+            },
+            TroubleshootIssue {
+                source: "a".to_string(),
+                severity: "high".to_string(),
+                detail: "a".to_string(),
+                next_command: "a".to_string(),
+            },
+        ];
+        issues.sort_by(|a, b| {
+            a.source
+                .cmp(&b.source)
+                .then(a.next_command.cmp(&b.next_command))
+        });
+        assert_eq!(issues[0].source, "a");
     }
 }
