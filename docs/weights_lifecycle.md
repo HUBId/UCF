@@ -6,7 +6,7 @@ Operational flow (offline-first):
 2. `ucf-ops models probe --manifest models/manifest.toml --out ./out/probe_report.json`
 3. `ucf-ops readiness-gate --profile test --out ./out/gate_report.json`
 4. `ucf-ops models promote --slot <slot> --hash <sha256> --probe-report ./out/probe_report.json --gate-report ./out/gate_report.json`
-5. Runtime loads promoted artifact referenced by `models/MANIFEST.toml`.
+5. Runtime loads promoted artifact referenced by `models/lifecycle_manifest.toml`.
 
 Rollback:
 
@@ -45,7 +45,7 @@ ucf-ops models promote \
 ## Readiness gate evidence (v1.1)
 
 For v1.1 readiness, lifecycle evidence is mandatory when lifecycle is initialized:
-- `models/MANIFEST.toml` digest must match canonical encoding.
+- `models/lifecycle_manifest.toml` digest must match canonical encoding.
 - active hashes must resolve under `models/promoted/<slot>/<hash>`.
 - history requires at least one file under `models/manifests/history/`.
 - each active hash must have promotion provenance in `out/model_promotion_records.json` (except initial seed state).

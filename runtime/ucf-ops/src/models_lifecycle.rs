@@ -319,7 +319,7 @@ fn persist_manifest_with_history(manifest: &mut LifecycleManifest) -> Result<(),
     fs::create_dir_all("models")?;
     let body = toml::to_string_pretty(manifest)
         .map_err(|e| OpsError::Invalid(format!("manifest serialize failed: {e}")))?;
-    fs::write("models/MANIFEST.toml", body.as_bytes())?;
+    fs::write("models/lifecycle_manifest.toml", body.as_bytes())?;
     let hist_dir = PathBuf::from("models/manifests/history");
     fs::create_dir_all(&hist_dir)?;
     let name = format!(
@@ -337,7 +337,7 @@ fn persist_manifest_with_history(manifest: &mut LifecycleManifest) -> Result<(),
 }
 
 fn load_or_init_manifest() -> Result<LifecycleManifest, OpsError> {
-    let path = PathBuf::from("models/MANIFEST.toml");
+    let path = PathBuf::from("models/lifecycle_manifest.toml");
     if !path.exists() {
         let mut out = LifecycleManifest {
             manifest_version: 1,

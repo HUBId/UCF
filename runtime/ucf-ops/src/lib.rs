@@ -1798,7 +1798,7 @@ struct PromotionRecordView {
 }
 
 fn check_weights_lifecycle_integrity(_workdir: &Path) -> Result<CheckResult, OpsError> {
-    let manifest_path = PathBuf::from("models/MANIFEST.toml");
+    let manifest_path = PathBuf::from("models/lifecycle_manifest.toml");
     if !manifest_path.exists() {
         return Ok(check_skip(
             "weights_lifecycle",
@@ -1928,9 +1928,10 @@ fn policy_threshold_i64(key: &str) -> Option<i64> {
 }
 
 fn check_world_vljepa_shadow_evidence(workdir: &Path) -> Result<CheckResult, OpsError> {
-    let manifest: Option<GateLifecycleManifest> = fs::read_to_string("models/MANIFEST.toml")
-        .ok()
-        .and_then(|v| toml::from_str(&v).ok());
+    let manifest: Option<GateLifecycleManifest> =
+        fs::read_to_string("models/lifecycle_manifest.toml")
+            .ok()
+            .and_then(|v| toml::from_str(&v).ok());
     let active = manifest
         .as_ref()
         .and_then(|m| m.slots.get("world_vljepa"))
@@ -2021,9 +2022,10 @@ fn check_world_vljepa_shadow_evidence(workdir: &Path) -> Result<CheckResult, Ops
 }
 
 fn check_sae_real_readiness(workdir: &Path) -> Result<CheckResult, OpsError> {
-    let manifest: Option<GateLifecycleManifest> = fs::read_to_string("models/MANIFEST.toml")
-        .ok()
-        .and_then(|v| toml::from_str(&v).ok());
+    let manifest: Option<GateLifecycleManifest> =
+        fs::read_to_string("models/lifecycle_manifest.toml")
+            .ok()
+            .and_then(|v| toml::from_str(&v).ok());
     let sae_active = manifest
         .as_ref()
         .and_then(|m| m.slots.get("sae"))
@@ -4331,7 +4333,7 @@ mod tests {
         std::env::set_current_dir(dir.path()).expect("chdir");
         fs::create_dir_all("models").expect("models");
         fs::write(
-            "models/MANIFEST.toml",
+            "models/lifecycle_manifest.toml",
             r#"manifest_version = 1
 manifest_digest = "x"
 [slots.world_vljepa]
