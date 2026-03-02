@@ -1,0 +1,17 @@
+[package]
+name = "ucf-sdk"
+version = "1.0.0"
+edition = "2021"
+license-file = "../README.md"
+description = "Stable, deterministic boundary SDK for UCF core APIs"
+
+[features]
+default = []
+serde = ["dep:serde", "ucf-types/serde"]
+
+[dependencies]
+ucf-types = { path = "../core/crates/ucf-types" }
+serde = { workspace = true, optional = true, features = ["derive"] }
+
+[dev-dependencies]
+serde_json = "1"

@@ -1,0 +1,26 @@
+# ucf-sdk public API snapshot
+version=1.0.0
+
+field ControlFrameV1::pub control_id: String,
+field ControlFrameV1::pub cycle_hint: u64,
+field ControlFrameV1::pub input_digest: Digest32,
+field ControlFrameV1::pub nonce: u64,
+field ControlFrameV1::pub policy_class: u16,
+field DecisionEventV1::pub confidence: UQ0_16,
+field DecisionEventV1::pub control_id: String,
+field DecisionEventV1::pub decision: DecisionKindV1,
+field DecisionEventV1::pub decision_digest: Digest32,
+field DecisionEventV1::pub event_seq: u64,
+field DecisionEventV1::pub reason_code: u16,
+field EssSummaryQueryV1::pub decision_filter: Option<DecisionKindV1>,
+field EssSummaryQueryV1::pub from_seq_inclusive: u64,
+field EssSummaryQueryV1::pub limit: u16,
+field EssSummaryResponseV1::pub allow_count: u64,
+field EssSummaryResponseV1::pub defer_count: u64,
+field EssSummaryResponseV1::pub deny_count: u64,
+field EssSummaryResponseV1::pub from_seq_inclusive: u64,
+field EssSummaryResponseV1::pub mean_confidence: UQ0_16,
+field EssSummaryResponseV1::pub summary_digest: Digest32,
+field EssSummaryResponseV1::pub to_seq_inclusive: u64,
+field EssSummaryResponseV1::pub total: u64,
+pub use ucf_types::{Digest32, UQ0_16};
