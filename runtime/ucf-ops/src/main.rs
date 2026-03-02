@@ -12,11 +12,11 @@ use ucf_ops::{
     models_recommend_rollback, models_rollback, models_stage, models_verify, one_command_bringup,
     out_manifest, parse_slot, path_scan, policy_diff, policy_explain, policy_validate,
     portability_check, readiness_gate, release_rc1_gate, release_signoff_validate, replay_audit,
-    replay_bugreport, run_status, runs_list, runs_search, runs_show, save_counterfactual_result,
-    security_verify_chain, simulate_counterfactual, verify_bugreport, world_shadow_report,
-    write_slice, AdversarialRunArgs, BenchArgs, ChangeImpactArgs, ConfigV1, CounterfactualRequest,
-    DocsLintArgs, DocsLintMode, DocsLintStatus, ExplainTickRequest, ExportArgs, GateStatus,
-    SpecSnapshotArgs,
+    replay_bugreport, repro_pack, repro_verify, run_status, runs_list, runs_search, runs_show,
+    save_counterfactual_result, security_verify_chain, simulate_counterfactual, verify_bugreport,
+    world_shadow_report, write_slice, AdversarialRunArgs, BenchArgs, ChangeImpactArgs, ConfigV1,
+    CounterfactualRequest, DocsLintArgs, DocsLintMode, DocsLintStatus, ExplainTickRequest,
+    ExportArgs, GateStatus, SpecSnapshotArgs,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -974,6 +974,42 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 _ => return Err("usage: ucf-ops attest <keys|run|verify|bundle> ...".into()),
             }
         }
+        "repro" => {
+            let sub = args.get(2).map(String::as_str).unwrap_or("help");
+            match sub {
+                "pack" => {
+                    let Some(run_id) = arg_value(&args, "--run") else {
+                        return Err(
+                            "usage: ucf-ops repro pack --run <id> --out <path> [--range last]"
+                                .into(),
+                        );
+                    };
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from(format!("./out/repro_{run_id}.zip")));
+                    let report = repro_pack(&workdir, &run_id, &out)?;
+                    println!("run_id={}", report.run_id);
+                    println!("pack_id={}", report.pack_id);
+                    println!("entries={}", report.entry_count);
+                    println!("out={}", report.out);
+                }
+                "verify" => {
+                    let pack = arg_value(&args, "--pack")
+                        .map(PathBuf::from)
+                        .ok_or("usage: ucf-ops repro verify --pack <zip> --out <path>")?;
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/repro_verify.json"));
+                    let report = repro_verify(&pack, &out)?;
+                    println!("status={}", if report.pass { "PASS" } else { "FAIL" });
+                    println!("out={}", out.display());
+                    if !report.pass {
+                        std::process::exit(2);
+                    }
+                }
+                _ => return Err("usage: ucf-ops repro <pack|verify> ...".into()),
+            }
+        }
         "readiness-gate" => {
             let profile = arg_value(&args, "--profile").unwrap_or_else(|| "test".to_string());
             let out = arg_value(&args, "--out")
@@ -1181,7 +1217,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             eprintln!(
-                "usage: ucf-ops <bringup|diag|health|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|attest|readiness-gate|adversarial-run|out|release|bench|runs|status|ess|ebm|policy|portability|spec|change-impact|version> [--workdir <path>] [--bundle <path>]"
+                "usage: ucf-ops <bringup|diag|health|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|attest|repro|readiness-gate|adversarial-run|out|release|bench|runs|status|ess|ebm|policy|portability|spec|change-impact|version> [--workdir <path>] [--bundle <path>]"
             );
             std::process::exit(1);
         }
