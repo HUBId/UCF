@@ -118,6 +118,7 @@ impl OpsError {
 #[serde(default, deny_unknown_fields)]
 pub struct OpsConfig {
     pub profile: String,
+    pub strict_mode: bool,
     pub policy_overlay: String,
     pub backend_pack: String,
     pub slot_ebm_mode: String,
@@ -141,6 +142,7 @@ impl Default for OpsConfig {
     fn default() -> Self {
         Self {
             profile: "test".to_string(),
+            strict_mode: false,
             policy_overlay: "test".to_string(),
             backend_pack: "toy_v1".to_string(),
             slot_ebm_mode: "shadow".to_string(),
@@ -305,6 +307,8 @@ pub struct RunMetadataRecord {
     pub policy_bundle_hash: String,
     pub determinism_mode: String,
     pub determinism_policy_digest: Option<String>,
+    pub strict_mode_enabled: bool,
+    pub strict_mode_digest: Option<String>,
     pub ended_at_tick: Option<u64>,
 }
 
@@ -2511,6 +2515,18 @@ struct OpsFixtureDecision {
 pub fn bringup(workdir: &Path, demo: bool, ticks: u64) -> Result<BringupResult, OpsError> {
     ensure_layout(workdir)?;
     let cfg = load_or_init_config(workdir)?;
+    if cfg.strict_mode {
+        StrictModeEnforcer::check_all(workdir, &cfg, false).map_err(|report| {
+            OpsError::Invalid(format!(
+                "strict mode failed: {} failed checks (see out/strict_failure.json)",
+                report
+                    .checks
+                    .iter()
+                    .filter(|c| matches!(c.status, StrictCheckStatus::Fail))
+                    .count()
+            ))
+        })?;
+    }
 
     std::env::set_var("UCF_COMPUTE_BACKEND", cfg.compute_backend.as_env_str());
     std::env::set_var("UCF_COMPUTE_SEED", cfg.compute_seed.to_string());
@@ -2679,8 +2695,19 @@ pub fn one_command_bringup(
         policy_bundle_hash,
         determinism_mode: "deterministic_only".to_string(),
         determinism_policy_digest: None,
+        strict_mode_enabled: cfg.strict_mode,
+        strict_mode_digest: None,
         ended_at_tick: Some(ticks),
     };
+    if cfg.strict_mode {
+        let strict_policy = StrictModeV1::from_config(&cfg);
+        run_metadata.strict_mode_digest = Some(sha256_hex(
+            serde_json::to_vec(&strict_policy)
+                .unwrap_or_default()
+                .as_slice(),
+        ));
+    }
+
     if let Some(prev) = latest_run_metadata(workdir)? {
         let decision = check_resume_compat(&prev, &resume_cfg);
         match decision {
@@ -3680,6 +3707,278 @@ fn bounded_preview(text: &str, max_chars: usize) -> String {
     }
     out
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct StrictModeV1 {
+    pub enabled: bool,
+    pub required_checks: Vec<String>,
+    pub dev_exceptions: Vec<String>,
+}
+
+impl StrictModeV1 {
+    fn from_config(cfg: &OpsConfig) -> Self {
+        Self {
+            enabled: cfg.strict_mode,
+            required_checks: vec![
+                "determinism_sampling_disabled".to_string(),
+                "determinism_rng_scan".to_string(),
+                "policy_graph_digest".to_string(),
+                "policy_pack_validate".to_string(),
+                "models_manifest_digest".to_string(),
+                "models_promoted_only".to_string(),
+                "models_verify".to_string(),
+                "tool_2pc_required".to_string(),
+                "sandbox_fs_scan".to_string(),
+            ],
+            dev_exceptions: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum StrictCheckStatus {
+    Pass,
+    Fail,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct StrictCheckResult {
+    pub check_id: String,
+    pub status: StrictCheckStatus,
+    pub error_codes: Vec<String>,
+    pub remediation: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct StrictModeFailureReport {
+    pub schema_version: u16,
+    pub strict_mode_enabled: bool,
+    pub profile: String,
+    pub checks: Vec<StrictCheckResult>,
+}
+
+impl StrictModeFailureReport {
+    pub fn has_failures(&self) -> bool {
+        self.checks
+            .iter()
+            .any(|c| matches!(c.status, StrictCheckStatus::Fail))
+    }
+
+    fn normalized_for_digest(&self) -> Self {
+        let mut c = self.clone();
+        c.checks.sort_by(|a, b| a.check_id.cmp(&b.check_id));
+        c
+    }
+
+    pub fn digest_hex(&self) -> Result<String, OpsError> {
+        Ok(sha256_hex(
+            serde_json::to_vec(&self.normalized_for_digest())?.as_slice(),
+        ))
+    }
+}
+
+pub struct StrictModeEnforcer;
+
+impl StrictModeEnforcer {
+    pub fn check_all(
+        workdir: &Path,
+        cfg: &OpsConfig,
+        ops_only: bool,
+    ) -> Result<(), StrictModeFailureReport> {
+        let mut checks = Vec::new();
+        checks.push(if !cfg.sampling_enabled {
+            strict_pass("determinism_sampling_disabled")
+        } else {
+            strict_fail(
+                "determinism_sampling_disabled",
+                "strict.sampling.enabled",
+                "set runtime.sampling_enabled=false",
+            )
+        });
+
+        match determinism_scan(Path::new(".")) {
+            Ok(r) if r.violations.is_empty() => checks.push(strict_pass("determinism_rng_scan")),
+            Ok(_) => checks.push(strict_fail(
+                "determinism_rng_scan",
+                "strict.determinism.rng",
+                "remove disallowed RNG usage and rerun `ucf-ops determinism scan`",
+            )),
+            Err(_) => checks.push(strict_fail(
+                "determinism_rng_scan",
+                "strict.determinism.scan_error",
+                "ensure repository is readable for determinism scan",
+            )),
+        }
+
+        let pack = PathBuf::from("policies/packs/base_v1");
+        let overlay = PathBuf::from(format!("policies/packs/overlays/{}", cfg.profile));
+        match policy_validate(&pack, Some(&overlay)) {
+            Ok(report) => {
+                if let Ok(expected) = std::env::var("UCF_POLICY_GRAPH_DIGEST") {
+                    if expected == report.policy_graph_digest {
+                        checks.push(strict_pass("policy_graph_digest"));
+                    } else {
+                        checks.push(strict_fail(
+                            "policy_graph_digest",
+                            "strict.policy.digest_mismatch",
+                            "set UCF_POLICY_GRAPH_DIGEST to the validated policy_graph_digest",
+                        ));
+                    }
+                } else {
+                    checks.push(strict_fail(
+                        "policy_graph_digest",
+                        "strict.policy.digest_missing",
+                        "export UCF_POLICY_GRAPH_DIGEST from validated policy",
+                    ));
+                }
+                checks.push(strict_pass("policy_pack_validate"));
+            }
+            Err(_) => {
+                checks.push(strict_fail("policy_graph_digest", "strict.policy.validation_failed", "run `ucf-ops policy validate --pack policies/packs/base_v1 --overlay policies/packs/overlays/test`"));
+                checks.push(strict_fail(
+                    "policy_pack_validate",
+                    "strict.policy.validation_failed",
+                    "fix policy pack errors and re-run validate",
+                ));
+            }
+        }
+
+        let manifest_path = PathBuf::from("models/manifest.toml");
+        match fs::read_to_string(&manifest_path) {
+            Ok(body) => {
+                let computed = sha256_hex(body.as_bytes());
+                match std::env::var("UCF_MODEL_MANIFEST_DIGEST") {
+                    Ok(expected) if expected == computed => {
+                        checks.push(strict_pass("models_manifest_digest"))
+                    }
+                    Ok(_) => checks.push(strict_fail(
+                        "models_manifest_digest",
+                        "strict.models.manifest_digest_mismatch",
+                        "set UCF_MODEL_MANIFEST_DIGEST to sha256(models/manifest.toml)",
+                    )),
+                    Err(_) => checks.push(strict_fail(
+                        "models_manifest_digest",
+                        "strict.models.manifest_digest_missing",
+                        "export UCF_MODEL_MANIFEST_DIGEST",
+                    )),
+                }
+                if body.contains("promoted/") {
+                    checks.push(strict_pass("models_promoted_only"));
+                } else {
+                    checks.push(strict_fail(
+                        "models_promoted_only",
+                        "strict.models.promoted_only",
+                        "use promoted/<slot>/<hash>/model.safetensors entries",
+                    ));
+                }
+            }
+            Err(_) => {
+                checks.push(strict_fail(
+                    "models_manifest_digest",
+                    "strict.models.manifest_missing",
+                    "ensure models/manifest.toml exists",
+                ));
+                checks.push(strict_fail(
+                    "models_promoted_only",
+                    "strict.models.manifest_missing",
+                    "ensure models manifest is present",
+                ));
+            }
+        }
+
+        match models_verify(Path::new("models/manifest.toml")) {
+            Ok(report) if report.slots.iter().all(|s| s.status == "verified" || s.status == "disabled") => checks.push(strict_pass("models_verify")),
+            Ok(_) => checks.push(strict_fail("models_verify", "strict.models.verify_failed", "run `ucf-ops models verify --manifest models/manifest.toml` and fix rejected slots")),
+            Err(_) => checks.push(strict_fail("models_verify", "strict.models.verify_error", "fix manifest parse/allowlist issues")),
+        }
+
+        checks.push(if cfg.capabilities_default == "deny" {
+            strict_pass("tool_2pc_required")
+        } else {
+            strict_fail(
+                "tool_2pc_required",
+                "strict.tools.2pc_required",
+                "set capabilities_default=deny and keep tool-governed execution",
+            )
+        });
+
+        match path_scan(Path::new(".")) {
+            Ok(r) if r.violations.is_empty() => checks.push(strict_pass("sandbox_fs_scan")),
+            Ok(_) => checks.push(strict_fail(
+                "sandbox_fs_scan",
+                "strict.sandbox.path_violation",
+                "remove banned absolute/system paths from runtime code",
+            )),
+            Err(_) => checks.push(strict_fail(
+                "sandbox_fs_scan",
+                "strict.sandbox.scan_error",
+                "ensure repository is readable for path scan",
+            )),
+        }
+
+        if ops_only {
+            let docs = docs_lint(&DocsLintArgs {
+                repo_root: PathBuf::from("."),
+                policy_pack: PathBuf::from("policies/packs/base_v1"),
+                overlay_pack: Some(PathBuf::from("policies/packs/overlays/test")),
+                spec_snapshot: PathBuf::from("docs/spec_snapshot.md"),
+                prompt_index: PathBuf::from("docs/prompt_series_index.md"),
+                module_map: PathBuf::from("docs/module_map.md"),
+                deploy_doc: PathBuf::from("docs/deploy.md"),
+                mode: DocsLintMode::Strict,
+            });
+            match docs {
+                Ok(r) if r.ok => checks.push(strict_pass("docs_lint_strict")),
+                Ok(_) => checks.push(strict_fail(
+                    "docs_lint_strict",
+                    "strict.docs.lint_failed",
+                    "run `ucf-ops docs lint --strict`",
+                )),
+                Err(_) => checks.push(strict_fail(
+                    "docs_lint_strict",
+                    "strict.docs.lint_error",
+                    "resolve docs lint execution error",
+                )),
+            }
+        }
+
+        checks.sort_by(|a, b| a.check_id.cmp(&b.check_id));
+        let report = StrictModeFailureReport {
+            schema_version: 1,
+            strict_mode_enabled: true,
+            profile: cfg.profile.clone(),
+            checks,
+        };
+
+        if report.has_failures() {
+            let _ = fs::create_dir_all(workdir.join("out"));
+            let _ = write_json(workdir.join("out/strict_failure.json"), &report);
+            Err(report)
+        } else {
+            Ok(())
+        }
+    }
+}
+
+fn strict_pass(id: &str) -> StrictCheckResult {
+    StrictCheckResult {
+        check_id: id.to_string(),
+        status: StrictCheckStatus::Pass,
+        error_codes: Vec::new(),
+        remediation: "ok".to_string(),
+    }
+}
+
+fn strict_fail(id: &str, code: &str, remediation: &str) -> StrictCheckResult {
+    StrictCheckResult {
+        check_id: id.to_string(),
+        status: StrictCheckStatus::Fail,
+        error_codes: vec![code.to_string()],
+        remediation: remediation.to_string(),
+    }
+}
+
 pub fn load_or_init_config(workdir: &Path) -> Result<OpsConfig, OpsError> {
     let profile = resolved_profile_name();
     let path = profile_config_path(&profile);
@@ -3796,6 +4095,7 @@ fn apply_env_overrides(cfg: &mut OpsConfig) -> Result<(), OpsError> {
         "UCF_STAGE_ISOLATION",
         "UCF_EMERGENCY_POLICY_PIN",
         "UCF_DEVICE_PROFILE",
+        "UCF_STRICT_MODE",
     ];
     for (k, v) in std::env::vars() {
         if !k.starts_with("UCF_OPS_OVERRIDE_") {
@@ -3816,6 +4116,10 @@ fn apply_env_overrides(cfg: &mut OpsConfig) -> Result<(), OpsError> {
     }
     if let Ok(v) = std::env::var("UCF_STAGE_ISOLATION") {
         cfg.isolation_runtime = v;
+    }
+
+    if let Ok(v) = std::env::var("UCF_STRICT_MODE") {
+        cfg.strict_mode = matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "YES");
     }
     if let Ok(v) = std::env::var("UCF_DEVICE_PROFILE") {
         cfg.device_profile = v;
@@ -4609,6 +4913,8 @@ active_hash = "abc"
             policy_bundle_hash: "policy-a".to_string(),
             determinism_mode: "deterministic_only".to_string(),
             determinism_policy_digest: None,
+            strict_mode_enabled: false,
+            strict_mode_digest: None,
             ended_at_tick: Some(10),
         };
         let cfg_ok = ResumeCheckConfig {
@@ -6413,6 +6719,44 @@ pub struct PortabilityCheckReport {
     pub remediation: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct StrictCheckReport {
+    pub strict_mode_enabled: bool,
+    pub ok: bool,
+    pub report: StrictModeFailureReport,
+}
+
+pub fn strict_check(
+    workdir: &Path,
+    ops_only: bool,
+    out: &Path,
+) -> Result<StrictCheckReport, OpsError> {
+    ensure_layout(workdir)?;
+    let cfg = load_or_init_config(workdir)?;
+    let enabled = cfg.strict_mode || std::env::var("UCF_STRICT_MODE").ok().as_deref() == Some("1");
+    let mut active_cfg = cfg.clone();
+    active_cfg.strict_mode = enabled;
+    let outcome = StrictModeEnforcer::check_all(workdir, &active_cfg, ops_only);
+    let report = match outcome {
+        Ok(()) => StrictModeFailureReport {
+            schema_version: 1,
+            strict_mode_enabled: true,
+            profile: active_cfg.profile.clone(),
+            checks: vec![strict_pass("strict_mode")],
+        },
+        Err(r) => r,
+    };
+    if let Some(parent) = out.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    write_json(out, &report)?;
+    Ok(StrictCheckReport {
+        strict_mode_enabled: enabled,
+        ok: !report.has_failures(),
+        report,
+    })
+}
+
 pub fn portability_check(out: &Path) -> Result<PortabilityCheckReport, OpsError> {
     let run_a = tempfile::tempdir()?;
     let run_b = tempfile::tempdir()?;
@@ -6883,5 +7227,41 @@ mod repro_pack_tests {
         let tampered_out = workdir.path().join("out/repro_verify_tampered.json");
         let report = repro_verify(&tampered, &tampered_out);
         assert!(report.is_err() || !report.expect("report").pass);
+    }
+}
+
+#[cfg(test)]
+mod strict_mode_tests {
+    use super::*;
+
+    #[test]
+    fn strict_report_digest_is_stable_under_input_order() {
+        let mut report = StrictModeFailureReport {
+            schema_version: 1,
+            strict_mode_enabled: true,
+            profile: "test".to_string(),
+            checks: vec![
+                strict_fail("b", "strict.test.b", "fix b"),
+                strict_fail("a", "strict.test.a", "fix a"),
+            ],
+        };
+        let d1 = report.digest_hex().expect("digest");
+        report.checks.reverse();
+        let d2 = report.digest_hex().expect("digest");
+        assert_eq!(d1, d2);
+    }
+
+    #[test]
+    fn strict_fail_uses_stable_error_code() {
+        let item = strict_fail(
+            "models_manifest_digest",
+            "strict.models.manifest_digest_missing",
+            "set env",
+        );
+        assert_eq!(
+            item.error_codes,
+            vec!["strict.models.manifest_digest_missing".to_string()]
+        );
+        assert!(matches!(item.status, StrictCheckStatus::Fail));
     }
 }

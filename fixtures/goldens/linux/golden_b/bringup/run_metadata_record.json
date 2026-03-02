@@ -1,13 +1,13 @@
 {
-  "run_id": "2c30cef2ebdc-1772453088",
+  "run_id": "2c30cef2ebdc-1772457004",
   "started_at_tick": 0,
-  "code_version_tag": "b3033280247b7e307a60a89e6adb6d2b8bfd0007",
+  "code_version_tag": "fd24f38da863a436f251e741d802d7328780bfa0",
   "backend_pack_meta_digest": "05103413b273319a96c6174333acd4467f6f4583326378f28ae5bc85e1be6c47",
   "fixtures_digest": "3c83ddc406380b847925528b556804aac97b6885c012399f675cf10e3331ecc0",
   "model_hashes_digest": "53aea21879feb4c1f507590ec119fd3d5a5c7bd8d805d9f997a581a8ab5daeb8",
   "enabled_features_bitmap": 3,
   "profile": "test",
-  "config_digest": "97425bb21363ba4fe7f8f4600710e522b97cfe03b3b525305f0c4f7f9cbbf7c5",
+  "config_digest": "60e29d3de9052b1649d0184e662bbdb839bae8203ac9a5fed4347d1ff6b7a567",
   "policy_overlay": "test",
   "platform_probe_summary": "os=Linux arch=X86_64 cores=2 mem_mb=18361 accel=None monotonic_clock_ok=true",
   "device_profile_name": "small",
@@ -23,5 +23,7 @@
   "policy_bundle_hash": "317238e96a4a6c6ac7a81a36d7fa4d4ba6ace66fbddcd40f4b5c8a098b979538",
   "determinism_mode": "deterministic_only",
   "determinism_policy_digest": null,
+  "strict_mode_enabled": false,
+  "strict_mode_digest": null,
   "ended_at_tick": 12
 }
