@@ -1,0 +1,27 @@
+{
+  "run_id": "2c30cef2ebdc-1772446439",
+  "started_at_tick": 0,
+  "code_version_tag": "a5da4dfac3a3186ff2efdaecb414ff78ab3da4bf",
+  "backend_pack_meta_digest": "05103413b273319a96c6174333acd4467f6f4583326378f28ae5bc85e1be6c47",
+  "fixtures_digest": "3c83ddc406380b847925528b556804aac97b6885c012399f675cf10e3331ecc0",
+  "model_hashes_digest": "53aea21879feb4c1f507590ec119fd3d5a5c7bd8d805d9f997a581a8ab5daeb8",
+  "enabled_features_bitmap": 3,
+  "profile": "test",
+  "config_digest": "1a17d3966fd1c8f99e74f33805aee7516641d6f6e89f9ae5d612ba09ebd3e8bc",
+  "policy_overlay": "test",
+  "platform_probe_summary": "os=Linux arch=X86_64 cores=2 mem_mb=18361 accel=None monotonic_clock_ok=true",
+  "device_profile_name": "small",
+  "device_profile_digest": "ce08e5d3abf107fc400df5d06e49b356cb2086a159aac9f379eeb5c9ee2d095f",
+  "schema_versions": {
+    "backend_pack_record": 1,
+    "compute_summary": 1,
+    "output": 1
+  },
+  "parent_run_id": null,
+  "resume_reason": null,
+  "compat_digest": "1a0b0ac13b7ea8820dde900fafed18dba4b04fa355cebb358901ac3dfcfed6de",
+  "policy_bundle_hash": "317238e96a4a6c6ac7a81a36d7fa4d4ba6ace66fbddcd40f4b5c8a098b979538",
+  "determinism_mode": "deterministic_only",
+  "determinism_policy_digest": null,
+  "ended_at_tick": 12
+}

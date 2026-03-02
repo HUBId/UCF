@@ -1,0 +1,189 @@
+{
+  "range": [
+    1,
+    12
+  ],
+  "overall_status": "drift_found",
+  "first_divergence": {
+    "t": 1,
+    "component": "risk",
+    "expected_digest": "present",
+    "observed_digest": "missing",
+    "hint": "compute_chain_digest missing in DecisionFrame.compute_summary"
+  },
+  "counters": {
+    "missing_records": 0,
+    "mismatched_digests": 24,
+    "degraded_steps": 0
+  },
+  "details": [
+    {
+      "t": 1,
+      "component": "risk",
+      "expected_digest": "present",
+      "observed_digest": "missing",
+      "hint": "compute_chain_digest missing in DecisionFrame.compute_summary"
+    },
+    {
+      "t": 1,
+      "component": "sae",
+      "expected_digest": "present",
+      "observed_digest": "missing",
+      "hint": "evidence-chain link missing"
+    },
+    {
+      "t": 2,
+      "component": "risk",
+      "expected_digest": "present",
+      "observed_digest": "missing",
+      "hint": "compute_chain_digest missing in DecisionFrame.compute_summary"
+    },
+    {
+      "t": 2,
+      "component": "sae",
+      "expected_digest": "present",
+      "observed_digest": "missing",
+      "hint": "evidence-chain link missing"
+    },
+    {
+      "t": 3,
+      "component": "risk",
+      "expected_digest": "present",
+      "observed_digest": "missing",
+      "hint": "compute_chain_digest missing in DecisionFrame.compute_summary"
+    },
+    {
+      "t": 3,
+      "component": "sae",
+      "expected_digest": "present",
+      "observed_digest": "missing",
+      "hint": "evidence-chain link missing"
+    },
+    {
+      "t": 4,
+      "component": "risk",
+      "expected_digest": "present",
+      "observed_digest": "missing",
+      "hint": "compute_chain_digest missing in DecisionFrame.compute_summary"
+    },
+    {
+      "t": 4,
+      "component": "sae",
+      "expected_digest": "present",
+      "observed_digest": "missing",
+      "hint": "evidence-chain link missing"
+    },
+    {
+      "t": 5,
+      "component": "risk",
+      "expected_digest": "present",
+      "observed_digest": "missing",
+      "hint": "compute_chain_digest missing in DecisionFrame.compute_summary"
+    },
+    {
+      "t": 5,
+      "component": "sae",
+      "expected_digest": "present",
+      "observed_digest": "missing",
+      "hint": "evidence-chain link missing"
+    },
+    {
+      "t": 6,
+      "component": "risk",
+      "expected_digest": "present",
+      "observed_digest": "missing",
+      "hint": "compute_chain_digest missing in DecisionFrame.compute_summary"
+    },
+    {
+      "t": 6,
+      "component": "sae",
+      "expected_digest": "present",
+      "observed_digest": "missing",
+      "hint": "evidence-chain link missing"
+    },
+    {
+      "t": 7,
+      "component": "risk",
+      "expected_digest": "present",
+      "observed_digest": "missing",
+      "hint": "compute_chain_digest missing in DecisionFrame.compute_summary"
+    },
+    {
+      "t": 7,
+      "component": "sae",
+      "expected_digest": "present",
+      "observed_digest": "missing",
+      "hint": "evidence-chain link missing"
+    },
+    {
+      "t": 8,
+      "component": "risk",
+      "expected_digest": "present",
+      "observed_digest": "missing",
+      "hint": "compute_chain_digest missing in DecisionFrame.compute_summary"
+    },
+    {
+      "t": 8,
+      "component": "sae",
+      "expected_digest": "present",
+      "observed_digest": "missing",
+      "hint": "evidence-chain link missing"
+    },
+    {
+      "t": 9,
+      "component": "risk",
+      "expected_digest": "present",
+      "observed_digest": "missing",
+      "hint": "compute_chain_digest missing in DecisionFrame.compute_summary"
+    },
+    {
+      "t": 9,
+      "component": "sae",
+      "expected_digest": "present",
+      "observed_digest": "missing",
+      "hint": "evidence-chain link missing"
+    },
+    {
+      "t": 10,
+      "component": "risk",
+      "expected_digest": "present",
+      "observed_digest": "missing",
+      "hint": "compute_chain_digest missing in DecisionFrame.compute_summary"
+    },
+    {
+      "t": 10,
+      "component": "sae",
+      "expected_digest": "present",
+      "observed_digest": "missing",
+      "hint": "evidence-chain link missing"
+    },
+    {
+      "t": 11,
+      "component": "risk",
+      "expected_digest": "present",
+      "observed_digest": "missing",
+      "hint": "compute_chain_digest missing in DecisionFrame.compute_summary"
+    },
+    {
+      "t": 11,
+      "component": "sae",
+      "expected_digest": "present",
+      "observed_digest": "missing",
+      "hint": "evidence-chain link missing"
+    },
+    {
+      "t": 12,
+      "component": "risk",
+      "expected_digest": "present",
+      "observed_digest": "missing",
+      "hint": "compute_chain_digest missing in DecisionFrame.compute_summary"
+    },
+    {
+      "t": 12,
+      "component": "sae",
+      "expected_digest": "present",
+      "observed_digest": "missing",
+      "hint": "evidence-chain link missing"
+    }
+  ]
+}

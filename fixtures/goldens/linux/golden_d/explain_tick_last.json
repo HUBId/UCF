@@ -1,0 +1,88 @@
+{
+  "header": {
+    "t": 11,
+    "decision_id": 11,
+    "backend_pack_digest_prefix": null,
+    "evidence_chain_digest_prefix": null
+  },
+  "compute": {
+    "world": {
+      "surprise": 0.39731997,
+      "prediction_error": 0.39731997,
+      "world_digest_prefix": null,
+      "quality": 0
+    },
+    "sae": {
+      "spike_count": 32,
+      "energy": null,
+      "spikes_digest_prefix": "261e2bb55e69",
+      "quality": 0
+    },
+    "ssm": {
+      "pressure": 0.20851454,
+      "ssm_digest_prefix": null,
+      "quality": 0
+    },
+    "lfm": {
+      "uncertainty": null,
+      "stability": null,
+      "lfm_digest_prefix": null,
+      "quality": null
+    },
+    "coherence": {
+      "coherence": null,
+      "phi_proxy": null,
+      "coherence_digest_prefix": null
+    },
+    "risk": {
+      "risk": 0.32576066,
+      "confidence": 0.51400733,
+      "risk_digest_prefix": null
+    }
+  },
+  "governance": {
+    "governor_score": null,
+    "tier": null,
+    "emergency_active": false,
+    "issuance": [],
+    "ebm": null
+  },
+  "decision": {
+    "candidate_count": null,
+    "selected_candidate_id": null,
+    "selected_candidate_digest_prefix": null,
+    "policy_hints": [],
+    "nsr_risk_q": null,
+    "nsr_status": null,
+    "nsr_rules_digest_prefix": null,
+    "nsr_reasons": []
+  },
+  "output": {
+    "output_class": null,
+    "llm_backend": null,
+    "request_digest_prefix": null,
+    "response_digest_prefix": null,
+    "status": null,
+    "finish_reason": null,
+    "max_tokens_eff": null,
+    "text_preview": null,
+    "redacted": null,
+    "content_digest_prefix": null,
+    "payload_len": null
+  },
+  "links": {
+    "record_ids": [
+      11,
+      110
+    ],
+    "record_kinds": [
+      "DecisionOut",
+      "ControlIn"
+    ]
+  },
+  "warnings": [
+    "CandidateSetRecord missing",
+    "OutputRecord missing",
+    "CapabilityIssuanceRecord missing"
+  ]
+}

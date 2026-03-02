@@ -1,0 +1,12 @@
+{
+  "ticks_observed": 12,
+  "mean_surprise": 0.37406278,
+  "max_surprise": 0.51875114,
+  "mean_pressure": 0.18975866,
+  "max_pressure": 0.22162203,
+  "mean_uncertainty": 0.0,
+  "max_uncertainty": 0.0,
+  "governor_tier_2_3_percent": 0.0,
+  "emergency_triggers": 0,
+  "tool_issuance_deny_rate": 0.0
+}

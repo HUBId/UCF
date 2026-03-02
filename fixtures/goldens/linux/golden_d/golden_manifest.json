@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "os": "linux",
+  "scenario_id": "golden_d",
+  "scenario_fixture": "fixtures/e2e_tool_plan_demo.json",
+  "ticks": 12,
+  "policy_graph_digest_prefix": "464943c52bb2",
+  "config_digest_prefix": "1a17d3966fd1",
+  "expected_outputs": {
+    "sampled_tick_digests": [
+      {
+        "tick": 1,
+        "window": 0,
+        "evidence_context_digest_prefix": "48e3b71daf87"
+      },
+      {
+        "tick": 7,
+        "window": 0,
+        "evidence_context_digest_prefix": "c0449b8f22c1"
+      },
+      {
+        "tick": 12,
+        "window": 0,
+        "evidence_context_digest_prefix": "aab2505e7e23"
+      }
+    ],
+    "scalar_summary": {
+      "risk_mean_q": 20336,
+      "pressure_mean_q": 12436,
+      "uncertainty_mean_q": 0
+    },
+    "gate_status": "PASS",
+    "spec_snapshot_sha256_prefix": "43a2cc587915"
+  }
+}

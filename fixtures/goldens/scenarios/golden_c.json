@@ -1,0 +1,7 @@
+{
+  "scenario_id": "golden_c",
+  "scenario_fixture": "fixtures/e2e_scenario_ebm_v1.json",
+  "ticks": 12,
+  "profile": "test",
+  "slot_ebm_mode": "shadow"
+}
