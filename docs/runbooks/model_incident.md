@@ -20,4 +20,4 @@
 2. Attach:
    - `./out/probe_report.json`
    - `./out/gate_report.json`
-   - `models/MANIFEST.toml`
+   - `models/lifecycle_manifest.toml`

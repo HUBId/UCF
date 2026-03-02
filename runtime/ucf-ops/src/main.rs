@@ -9,13 +9,13 @@ use ucf_ops::{
     explain_why, export_bugreport, hardware_scan, load_signoff_checklist, logs_prove,
     logs_verify_proof, metrics_snapshot, metrics_summary, metrics_trend, models_list, models_probe,
     models_promote, models_recommend_rollback, models_rollback, models_stage, models_verify,
-    one_command_bringup, out_manifest, parse_slot, policy_diff, policy_explain, policy_validate,
-    readiness_gate, release_rc1_gate, release_signoff_validate, replay_audit, replay_bugreport,
-    run_status, runs_list, runs_search, runs_show, save_counterfactual_result,
-    security_verify_chain, simulate_counterfactual, verify_bugreport, world_shadow_report,
-    write_slice, AdversarialRunArgs, BenchArgs, ChangeImpactArgs, CounterfactualRequest,
-    DocsLintArgs, DocsLintMode, DocsLintStatus, ExplainTickRequest, ExportArgs, GateStatus,
-    SpecSnapshotArgs,
+    one_command_bringup, out_manifest, parse_slot, path_scan, policy_diff, policy_explain,
+    policy_validate, portability_check, readiness_gate, release_rc1_gate, release_signoff_validate,
+    replay_audit, replay_bugreport, run_status, runs_list, runs_search, runs_show,
+    save_counterfactual_result, security_verify_chain, simulate_counterfactual, verify_bugreport,
+    world_shadow_report, write_slice, AdversarialRunArgs, BenchArgs, ChangeImpactArgs,
+    CounterfactualRequest, DocsLintArgs, DocsLintMode, DocsLintStatus, ExplainTickRequest,
+    ExportArgs, GateStatus, SpecSnapshotArgs,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -292,7 +292,63 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         return Err("hardware scan failed".into());
                     }
                 }
-                _ => return Err("usage: ucf-ops audit scan|hardware-scan".into()),
+                "path-scan" => {
+                    let report = path_scan(&PathBuf::from("."))?;
+                    if report.violations.is_empty() {
+                        println!("path_scan=ok violations=0");
+                    } else {
+                        println!("path_scan=fail violations={}", report.violations.len());
+                        for violation in report.violations {
+                            println!(
+                                "{}:{}:{}",
+                                violation.path, violation.line, violation.pattern
+                            );
+                        }
+                        return Err("path scan failed".into());
+                    }
+                }
+                _ => return Err("usage: ucf-ops audit scan|hardware-scan|path-scan".into()),
+            }
+        }
+
+        "portability" => {
+            let sub = args.get(2).map(String::as_str).unwrap_or("help");
+            match sub {
+                "check" => {
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/portability.json"));
+                    let report = portability_check(&out)?;
+                    println!("schema_version={}", report.schema_version);
+                    println!("os={} arch={}", report.os, report.arch);
+                    println!(
+                        "deterministic_within_os={}",
+                        if report.deterministic_within_os {
+                            "PASS"
+                        } else {
+                            "FAIL"
+                        }
+                    );
+                    for (name, prefix) in report.digest_prefixes {
+                        println!("digest_prefix_{}={}", name, prefix);
+                    }
+                    println!(
+                        "fixed_point_summary=count:{} risk_q:{} pressure_q:{} surprise_q:{} uncertainty_q:{}",
+                        report.fixed_point_summary.sample_count,
+                        report.fixed_point_summary.mean_risk_q,
+                        report.fixed_point_summary.mean_pressure_q,
+                        report.fixed_point_summary.mean_surprise_q,
+                        report.fixed_point_summary.mean_uncertainty_q
+                    );
+                    println!("out={}", out.display());
+                    if !report.deterministic_within_os {
+                        for remedy in report.remediation {
+                            println!("remedy: {}", remedy);
+                        }
+                        std::process::exit(2);
+                    }
+                }
+                _ => return Err("usage: ucf-ops portability check [--out <path>]".into()),
             }
         }
 
@@ -1082,7 +1138,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             eprintln!(
-                "usage: ucf-ops <bringup|diag|health|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|attest|readiness-gate|adversarial-run|out|release|bench|runs|status|ess|ebm|policy|spec|change-impact|version> [--workdir <path>] [--bundle <path>]"
+                "usage: ucf-ops <bringup|diag|health|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|attest|readiness-gate|adversarial-run|out|release|bench|runs|status|ess|ebm|policy|portability|spec|change-impact|version> [--workdir <path>] [--bundle <path>]"
             );
             std::process::exit(1);
         }

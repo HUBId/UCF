@@ -1798,7 +1798,7 @@ struct PromotionRecordView {
 }
 
 fn check_weights_lifecycle_integrity(_workdir: &Path) -> Result<CheckResult, OpsError> {
-    let manifest_path = PathBuf::from("models/MANIFEST.toml");
+    let manifest_path = PathBuf::from("models/lifecycle_manifest.toml");
     if !manifest_path.exists() {
         return Ok(check_skip(
             "weights_lifecycle",
@@ -1928,9 +1928,10 @@ fn policy_threshold_i64(key: &str) -> Option<i64> {
 }
 
 fn check_world_vljepa_shadow_evidence(workdir: &Path) -> Result<CheckResult, OpsError> {
-    let manifest: Option<GateLifecycleManifest> = fs::read_to_string("models/MANIFEST.toml")
-        .ok()
-        .and_then(|v| toml::from_str(&v).ok());
+    let manifest: Option<GateLifecycleManifest> =
+        fs::read_to_string("models/lifecycle_manifest.toml")
+            .ok()
+            .and_then(|v| toml::from_str(&v).ok());
     let active = manifest
         .as_ref()
         .and_then(|m| m.slots.get("world_vljepa"))
@@ -2021,9 +2022,10 @@ fn check_world_vljepa_shadow_evidence(workdir: &Path) -> Result<CheckResult, Ops
 }
 
 fn check_sae_real_readiness(workdir: &Path) -> Result<CheckResult, OpsError> {
-    let manifest: Option<GateLifecycleManifest> = fs::read_to_string("models/MANIFEST.toml")
-        .ok()
-        .and_then(|v| toml::from_str(&v).ok());
+    let manifest: Option<GateLifecycleManifest> =
+        fs::read_to_string("models/lifecycle_manifest.toml")
+            .ok()
+            .and_then(|v| toml::from_str(&v).ok());
     let sae_active = manifest
         .as_ref()
         .and_then(|m| m.slots.get("sae"))
@@ -4331,7 +4333,7 @@ mod tests {
         std::env::set_current_dir(dir.path()).expect("chdir");
         fs::create_dir_all("models").expect("models");
         fs::write(
-            "models/MANIFEST.toml",
+            "models/lifecycle_manifest.toml",
             r#"manifest_version = 1
 manifest_digest = "x"
 [slots.world_vljepa]
@@ -5818,6 +5820,13 @@ fn diff_str(a: &BTreeMap<String, String>, b: &BTreeMap<String, String>) -> Vec<S
         .collect()
 }
 
+fn normalized_rel_path(repo_root: &Path, path: &Path) -> String {
+    path.strip_prefix(repo_root)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .replace('\\', "/")
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DeterminismScanViolation {
     pub path: String,
@@ -5844,10 +5853,7 @@ pub fn determinism_scan(repo_root: &Path) -> Result<DeterminismScanReport, OpsEr
         if ext != "rs" {
             continue;
         }
-        let rel = path
-            .strip_prefix(repo_root)
-            .unwrap_or(path)
-            .to_string_lossy();
+        let rel = normalized_rel_path(repo_root, path);
         if rel.contains("vendor/")
             || rel.contains("target/")
             || rel.contains("tests/")
@@ -5915,10 +5921,7 @@ pub fn audit_scan(repo_root: &Path) -> Result<AuditScanReport, OpsError> {
         if ext != "rs" {
             continue;
         }
-        let rel = path
-            .strip_prefix(repo_root)
-            .unwrap_or(path)
-            .to_string_lossy();
+        let rel = normalized_rel_path(repo_root, path);
         let in_scope = rel.starts_with("runtime/ucf-runtime/src/")
             || rel.starts_with("runtime/ucf-policy/src/")
             || rel.starts_with("runtime/ucf-replay/src/");
@@ -5961,6 +5964,192 @@ pub struct HardwareScanReport {
     pub violations: Vec<HardwareScanViolation>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PathScanViolation {
+    pub path: String,
+    pub line: usize,
+    pub pattern: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PathScanReport {
+    pub violations: Vec<PathScanViolation>,
+}
+
+pub fn path_scan(repo_root: &Path) -> Result<PathScanReport, OpsError> {
+    let banned = ["/etc/", "/var/", "systemd", "systemctl"];
+    let mut violations = Vec::new();
+    for entry in walkdir::WalkDir::new(repo_root).into_iter().flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let Some(ext) = path.extension().and_then(|e| e.to_str()) else {
+            continue;
+        };
+        if ext != "rs" {
+            continue;
+        }
+        let rel = normalized_rel_path(repo_root, path);
+        let in_scope = rel.starts_with("runtime/") && rel.contains("/src/");
+        if !in_scope
+            || rel.starts_with("runtime/ucf-ops/src/")
+            || rel.contains("vendor/")
+            || rel.contains("target/")
+            || rel.contains("fuzz/")
+            || rel.starts_with("deploy/")
+        {
+            continue;
+        }
+        let text = fs::read_to_string(path).unwrap_or_default();
+        for (idx, line) in text.lines().enumerate() {
+            for pat in banned {
+                if line.contains(pat) && !line.contains("let banned =") {
+                    violations.push(PathScanViolation {
+                        path: rel.to_string(),
+                        line: idx + 1,
+                        pattern: pat.to_string(),
+                    });
+                }
+            }
+        }
+    }
+    Ok(PathScanReport { violations })
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PortabilityFixedPointSummary {
+    pub sample_count: usize,
+    pub mean_risk_q: u16,
+    pub mean_pressure_q: u16,
+    pub mean_surprise_q: u16,
+    pub mean_uncertainty_q: u16,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PortabilityCheckReport {
+    pub schema_version: u16,
+    pub os: String,
+    pub arch: String,
+    pub digest_prefixes: BTreeMap<String, String>,
+    pub fixed_point_summary: PortabilityFixedPointSummary,
+    pub deterministic_within_os: bool,
+    pub remediation: Vec<String>,
+}
+
+pub fn portability_check(out: &Path) -> Result<PortabilityCheckReport, OpsError> {
+    let run_a = tempfile::tempdir()?;
+    let run_b = tempfile::tempdir()?;
+    let left = bringup(run_a.path(), true, 16)?;
+    let right = bringup(run_b.path(), true, 16)?;
+
+    let dataset_out = run_a.path().join("out/portability_dataset.jsonl");
+    let sample_count = ebm_export_dataset(
+        run_a.path(),
+        "run-portability",
+        0,
+        u64::MAX,
+        &dataset_out,
+        &PathBuf::from("policies/bundle_v1/retention_v1.json"),
+    )?;
+    let dataset_body = fs::read_to_string(&dataset_out)?;
+    let mut sum_risk: u64 = 0;
+    let mut sum_pressure: u64 = 0;
+    let mut sum_surprise: u64 = 0;
+    let mut sum_uncertainty: u64 = 0;
+    let mut counted: usize = 0;
+    for line in dataset_body.lines() {
+        let sample: EbmDatasetSample = serde_json::from_str(line)?;
+        if let (Some(risk), Some(pressure), Some(surprise), Some(uncertainty)) = (
+            sample.signals_q.risk_q,
+            sample.signals_q.pressure_q,
+            sample.signals_q.surprise_q,
+            sample.signals_q.uncertainty_q,
+        ) {
+            sum_risk = sum_risk.saturating_add(risk as u64);
+            sum_pressure = sum_pressure.saturating_add(pressure as u64);
+            sum_surprise = sum_surprise.saturating_add(surprise as u64);
+            sum_uncertainty = sum_uncertainty.saturating_add(uncertainty as u64);
+            counted += 1;
+        }
+    }
+    let fixed_point_missing = counted == 0;
+
+    let dataset_digest = sha256_hex(dataset_body.as_bytes());
+    let deterministic_within_os = left.ess_digest == right.ess_digest;
+    let mut digest_prefixes = BTreeMap::new();
+    digest_prefixes.insert(
+        "ess_run_a".to_string(),
+        left.ess_digest.chars().take(12).collect(),
+    );
+    digest_prefixes.insert(
+        "ess_run_b".to_string(),
+        right.ess_digest.chars().take(12).collect(),
+    );
+    digest_prefixes.insert(
+        "ebm_dataset".to_string(),
+        dataset_digest.chars().take(12).collect(),
+    );
+
+    let mut remediation = vec![
+        "Avoid OS-specific ordering and filesystem metadata in externally visible digests."
+            .to_string(),
+        "Prefer canonical encodings and sorted key iteration (BTreeMap / explicit sort)."
+            .to_string(),
+        "If cross-OS exact digest parity is infeasible, keep fixed-point scalar envelopes stable and documented."
+            .to_string(),
+    ];
+    if fixed_point_missing {
+        remediation.push(
+            "No fixed-point EBM signals were emitted in the toy/stub run; enforce envelope checks via schema + digest-prefix stability."
+                .to_string(),
+        );
+    }
+    if !deterministic_within_os {
+        remediation.insert(
+            0,
+            "Digest mismatch within same OS: inspect toy/stub scenario serialization and record ordering."
+                .to_string(),
+        );
+    }
+    let report = PortabilityCheckReport {
+        schema_version: 1,
+        os: std::env::consts::OS.to_string(),
+        arch: std::env::consts::ARCH.to_string(),
+        digest_prefixes,
+        fixed_point_summary: PortabilityFixedPointSummary {
+            sample_count,
+            mean_risk_q: if counted == 0 {
+                0
+            } else {
+                (sum_risk / counted as u64) as u16
+            },
+            mean_pressure_q: if counted == 0 {
+                0
+            } else {
+                (sum_pressure / counted as u64) as u16
+            },
+            mean_surprise_q: if counted == 0 {
+                0
+            } else {
+                (sum_surprise / counted as u64) as u16
+            },
+            mean_uncertainty_q: if counted == 0 {
+                0
+            } else {
+                (sum_uncertainty / counted as u64) as u16
+            },
+        },
+        deterministic_within_os,
+        remediation,
+    };
+    if let Some(parent) = out.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(out, serde_json::to_vec_pretty(&report)?)?;
+    Ok(report)
+}
+
 pub fn hardware_scan(repo_root: &Path) -> Result<HardwareScanReport, OpsError> {
     let banned = [
         "NUC",
@@ -5977,10 +6166,7 @@ pub fn hardware_scan(repo_root: &Path) -> Result<HardwareScanReport, OpsError> {
         if !path.is_file() {
             continue;
         }
-        let rel = path
-            .strip_prefix(repo_root)
-            .unwrap_or(path)
-            .to_string_lossy();
+        let rel = normalized_rel_path(repo_root, path);
         if rel.contains("vendor/")
             || rel.contains("target/")
             || rel.starts_with("deploy/")
@@ -6184,5 +6370,60 @@ mod device_profile_tests {
         assert!(json.contains("platform_probe_summary"));
         assert!(json.contains("device_profile_name"));
         assert!(json.contains("device_profile_digest"));
+    }
+}
+
+#[cfg(test)]
+mod path_scan_tests {
+    use super::*;
+
+    #[test]
+    fn path_scan_flags_forbidden_paths_in_runtime_crates() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let runtime_dir = tmp.path().join("runtime/ucf-runtime/src");
+        std::fs::create_dir_all(&runtime_dir).expect("mkdir");
+        std::fs::write(
+            runtime_dir.join("bad.rs"),
+            "const CFG: &str = \"/etc/ucf/config.toml\";\n",
+        )
+        .expect("write");
+
+        let report = path_scan(tmp.path()).expect("scan");
+        assert_eq!(report.violations.len(), 1);
+        assert_eq!(report.violations[0].pattern, "/etc/");
+    }
+}
+
+#[cfg(test)]
+mod portability_check_tests {
+    use super::*;
+
+    #[test]
+    fn portability_digest_prefixes_are_sorted() {
+        let report = PortabilityCheckReport {
+            schema_version: 1,
+            os: "linux".to_string(),
+            arch: "x86_64".to_string(),
+            digest_prefixes: [
+                ("zeta".to_string(), "111111111111".to_string()),
+                ("alpha".to_string(), "222222222222".to_string()),
+            ]
+            .into_iter()
+            .collect(),
+            fixed_point_summary: PortabilityFixedPointSummary {
+                sample_count: 1,
+                mean_risk_q: 1,
+                mean_pressure_q: 2,
+                mean_surprise_q: 3,
+                mean_uncertainty_q: 4,
+            },
+            deterministic_within_os: true,
+            remediation: vec![],
+        };
+
+        let json = serde_json::to_string(&report).expect("json");
+        let alpha = json.find("alpha").expect("alpha");
+        let zeta = json.find("zeta").expect("zeta");
+        assert!(alpha < zeta);
     }
 }

@@ -81,7 +81,7 @@ pub fn world_shadow_report(
         .and_then(|v| v.as_str())
         .map(ToString::to_string);
 
-    let manifest_digest = fs::read_to_string("models/MANIFEST.toml")
+    let manifest_digest = fs::read_to_string("models/lifecycle_manifest.toml")
         .ok()
         .and_then(|raw| {
             raw.lines()

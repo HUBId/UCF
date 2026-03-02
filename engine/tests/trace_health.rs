@@ -1,14 +1,19 @@
 use engine::RegulationEngine;
-use std::io::ErrorKind;
-use std::path::Path;
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use ucf::v1::{ExecStats, IntegrityStateClass, PolicyStats, ReasonCode, ReceiptStats, SignalFrame};
 
+static HPA_STATE_COUNTER: AtomicU64 = AtomicU64::new(0);
+
 fn reset_hpa_state_file() {
-    match std::fs::remove_file(Path::new("hpa_state.json")) {
-        Ok(()) => {}
-        Err(err) if err.kind() == ErrorKind::NotFound => {}
-        Err(err) => panic!("failed to remove hpa_state.json: {err}"),
-    }
+    let id = HPA_STATE_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let path: PathBuf = std::env::temp_dir().join(format!(
+        "engine_trace_health_hpa_state_{}_{}.json",
+        std::process::id(),
+        id
+    ));
+    let _ = std::fs::remove_file(&path);
+    std::env::set_var("HPA_STATE_PATH", &path);
 }
 
 fn profile_rank(profile: &str) -> u8 {

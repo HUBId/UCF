@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 
-use ucf_gateway::{run_tcp_once, run_unix_once, GatewayConfig, GatewayService, GatewayTransport};
+#[cfg(unix)]
+use ucf_gateway::run_unix_once;
+use ucf_gateway::{run_tcp_once, GatewayConfig, GatewayService, GatewayTransport};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let workdir =

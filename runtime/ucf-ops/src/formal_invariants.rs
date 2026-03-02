@@ -392,7 +392,7 @@ mod enabled {
                     .then_some(v.trim().to_string())
             })
             .collect();
-        if let Ok(text) = fs::read_to_string("models/MANIFEST.toml") {
+        if let Ok(text) = fs::read_to_string("models/lifecycle_manifest.toml") {
             if let Ok(value) = text.parse::<toml::Value>() {
                 if let Some(slots) = value.get("slots").and_then(|v| v.as_table()) {
                     for slot in slots.values() {

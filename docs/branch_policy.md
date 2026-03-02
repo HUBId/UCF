@@ -9,6 +9,9 @@ This repository uses a single **stable branch**, explicit **release-candidate br
   - Required gates before merge:
     - `cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json`
     - `cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/gate_report.json`
+    - `cargo run -p ucf-ops -- audit hardware-scan`
+    - `cargo run -p ucf-ops -- audit path-scan`
+    - `cargo run -p ucf-ops -- portability check --out ./out/portability.json`
 - `vX.Y-rcN` (release candidate branches, for example `v1.0-rc1`, `v1.1-rc1`)
   - Stabilization only (bugfixes, release docs, signoff artifacts).
   - Must keep `docs/spec_snapshot.md` and release checklists aligned with changes.
