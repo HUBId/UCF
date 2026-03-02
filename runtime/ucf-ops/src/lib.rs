@@ -7,6 +7,7 @@ mod change_impact;
 mod config_contract;
 mod docs_lint;
 mod formal_invariants;
+mod goldens;
 mod models_lifecycle;
 mod spec_snapshot;
 mod world_shadow;
@@ -22,6 +23,10 @@ pub use config_contract::{
     export_policy_key_registry_v1, migrate_config_v1, ConfigV1, MigrateReport, PolicyKeyEntryV1,
 };
 pub use docs_lint::{docs_lint, DocsLintArgs, DocsLintMode, DocsLintReport, DocsLintStatus};
+pub use goldens::{
+    goldens_generate, goldens_update, goldens_verify, GoldenGenerateArgs, GoldenScenarioConfig,
+    GoldenVerifyArgs,
+};
 pub use models_lifecycle::{
     models_list, models_promote, models_recommend_rollback, models_rollback, models_stage,
     parse_slot,

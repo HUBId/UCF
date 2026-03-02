@@ -61,6 +61,12 @@ jobs:
         run: cargo run -p ucf-ops -- readiness-gate --profile test --out ./out_gate/gate_report.json --workdir ./.ucf_gate
       - name: Portability check (linux)
         run: cargo run -p ucf-ops -- portability check --out ./out/portability_linux.json
+      - name: Goldens verify (linux)
+        run: |
+          cargo run -p ucf-ops -- goldens verify --scenario golden_a --os linux
+          cargo run -p ucf-ops -- goldens verify --scenario golden_b --os linux
+          cargo run -p ucf-ops -- goldens verify --scenario golden_c --os linux
+          cargo run -p ucf-ops -- goldens verify --scenario golden_d --os linux
       - name: RC1 gate
         run: cargo run -p ucf-ops -- release rc1-gate --out ./out_gate/rc1_gate.json
 
@@ -92,6 +98,12 @@ jobs:
       - name: Readiness smoke (windows)
         if: runner.os == 'Windows'
         run: cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/gate_report_windows.json --workdir ./.ucf_gate_windows
+      - name: Goldens verify
+        run: |
+          cargo run -p ucf-ops -- goldens verify --scenario golden_a --os ${{ runner.os }}
+          cargo run -p ucf-ops -- goldens verify --scenario golden_b --os ${{ runner.os }}
+          cargo run -p ucf-ops -- goldens verify --scenario golden_c --os ${{ runner.os }}
+          cargo run -p ucf-ops -- goldens verify --scenario golden_d --os ${{ runner.os }}
 
   feature-matrix:
     runs-on: ubuntu-latest
