@@ -23,6 +23,34 @@ pub struct PolicyGraphV1 {
     pub budgets: BTreeMap<String, i64>,
     pub allowlists: BTreeMap<String, String>,
     pub determinism: DeterminismPolicyV1,
+    pub drift_budget: DriftBudgetV1,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct DriftBudgetV1 {
+    pub schema_version: u16,
+    #[serde(default)]
+    pub entries: Vec<DriftBudgetEntryV1>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct DriftBudgetEntryV1 {
+    pub stage_id: String,
+    pub window_size: u32,
+    pub latency_p95_max_ms: u32,
+    pub invalid_rate_max_q: u16,
+    pub timeout_rate_max_q: u16,
+    pub delta_scalar_max_q: u16,
+    pub digest_mismatch_rate_max_q: Option<u16>,
+    pub action_on_breach: DriftActionV1,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DriftActionV1 {
+    DisableShadow,
+    ForceToy,
+    RecommendRollback,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -127,6 +155,7 @@ struct LoadedPack {
     budgets: BTreeMap<String, i64>,
     allowlists: BTreeMap<String, String>,
     determinism: DeterminismPolicyV1,
+    drift_budget: DriftBudgetV1,
 }
 
 pub fn load_and_merge_policy_graph(
@@ -214,6 +243,10 @@ pub fn load_and_merge_policy_graph(
             .as_ref()
             .map(|o| o.determinism.clone())
             .unwrap_or_else(|| base.determinism.clone()),
+        drift_budget: merge_drift_budget(
+            &base.drift_budget,
+            overlay.as_ref().map(|x| &x.drift_budget),
+        )?,
     };
     let digest = policy_graph_digest(&graph)?;
     let provenance = PolicyGraphProvenanceRecord {
@@ -227,6 +260,40 @@ pub fn load_and_merge_policy_graph(
         determinism_policy_digest: graph.determinism.digest_hex(),
     };
     Ok((graph, provenance))
+}
+
+fn merge_drift_budget(
+    base: &DriftBudgetV1,
+    overlay: Option<&DriftBudgetV1>,
+) -> Result<DriftBudgetV1, PolicyPackError> {
+    let mut by_stage: BTreeMap<String, DriftBudgetEntryV1> = base
+        .entries
+        .iter()
+        .cloned()
+        .map(|e| (e.stage_id.clone(), e))
+        .collect();
+    if let Some(ov) = overlay {
+        if ov.schema_version != base.schema_version {
+            return Err(PolicyPackError::MergeConflict(
+                "drift budget schema version mismatch".to_string(),
+            ));
+        }
+        for entry in &ov.entries {
+            if !by_stage.contains_key(&entry.stage_id) {
+                return Err(PolicyPackError::MergeConflict(format!(
+                    "overlay drift stage not in base: {}",
+                    entry.stage_id
+                )));
+            }
+            by_stage.insert(entry.stage_id.clone(), entry.clone());
+        }
+    }
+    let mut entries: Vec<_> = by_stage.into_values().collect();
+    entries.sort_by(|a, b| a.stage_id.cmp(&b.stage_id));
+    Ok(DriftBudgetV1 {
+        schema_version: base.schema_version,
+        entries,
+    })
 }
 
 fn merge_kv(
@@ -335,6 +402,11 @@ fn load_pack(root: &Path) -> Result<LoadedPack, PolicyPackError> {
             .map_err(|_| PolicyPackError::Missing("determinism.toml".to_string()))?,
     )
     .map_err(|e| PolicyPackError::InvalidPack(e.to_string()))?;
+    let drift_budget: DriftBudgetV1 = toml::from_str(
+        &fs::read_to_string(root.join("drift_budget.toml"))
+            .map_err(|_| PolicyPackError::Missing("drift_budget.toml".to_string()))?,
+    )
+    .map_err(|e| PolicyPackError::InvalidPack(e.to_string()))?;
 
     if pbm_file.rules.len() > MAX_RULES || term_file.terms.len() > MAX_TERMS {
         return Err(PolicyPackError::GraphTooLarge);
@@ -364,6 +436,7 @@ fn load_pack(root: &Path) -> Result<LoadedPack, PolicyPackError> {
         budgets: budgets.values,
         allowlists: allowlists.values,
         determinism,
+        drift_budget,
     })
 }
 
@@ -406,6 +479,22 @@ pub fn policy_graph_digest(graph: &PolicyGraphV1) -> Result<String, PolicyPackEr
     hash_map_i64(&mut hasher, &graph.budgets);
     hash_map_str(&mut hasher, &graph.allowlists);
     hasher.update(graph.determinism.digest_hex().as_bytes());
+    hasher.update(graph.drift_budget.schema_version.to_le_bytes());
+    for entry in &graph.drift_budget.entries {
+        hasher.update(entry.stage_id.as_bytes());
+        hasher.update([0]);
+        hasher.update(entry.window_size.to_le_bytes());
+        hasher.update(entry.latency_p95_max_ms.to_le_bytes());
+        hasher.update(entry.invalid_rate_max_q.to_le_bytes());
+        hasher.update(entry.timeout_rate_max_q.to_le_bytes());
+        hasher.update(entry.delta_scalar_max_q.to_le_bytes());
+        hasher.update(entry.digest_mismatch_rate_max_q.unwrap_or(0).to_le_bytes());
+        hasher.update([match entry.action_on_breach {
+            DriftActionV1::DisableShadow => 1,
+            DriftActionV1::ForceToy => 2,
+            DriftActionV1::RecommendRollback => 3,
+        }]);
+    }
     let digest = hex_lower(hasher.finalize().into());
 
     let approx_size = graph.pbm_gem_rules.len() * 48
@@ -517,6 +606,7 @@ mod tests {
             "thresholds.toml",
             "allowlists.toml",
             "determinism.toml",
+            "drift_budget.toml",
         ] {
             std::fs::copy(seed.join(name), dir.path().join(name)).expect("copy");
         }
@@ -579,6 +669,7 @@ unknown = 1
                 "thresholds.toml",
                 "allowlists.toml",
                 "determinism.toml",
+                "drift_budget.toml",
             ] {
                 std::fs::copy(seed.join(name), dir.path().join(name)).expect("copy");
             }
@@ -596,6 +687,7 @@ unknown = 1
                 "thresholds.toml",
                 "allowlists.toml",
                 "determinism.toml",
+                "drift_budget.toml",
             ];
             let mut lines =
                 String::from("name = \"overlay_tmp\"\nversion = \"1.0.0\"\nschema_version = 1\n\n");

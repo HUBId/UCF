@@ -333,27 +333,6 @@ pub fn policy_key_registry_v1() -> Vec<PolicyKeyEntryV1> {
             default: "3000",
             module: "ebm",
         },
-        PolicyKeyEntryV1 {
-            name: "world_vljepa_min_windows",
-            key_type: "u16",
-            range: "1..=128",
-            default: "2",
-            module: "world_model",
-        },
-        PolicyKeyEntryV1 {
-            name: "world_vljepa_drift_alarm_rate_max_q",
-            key_type: "UQ0_16",
-            range: "0..=10000",
-            default: "500",
-            module: "world_model",
-        },
-        PolicyKeyEntryV1 {
-            name: "ssm_opt_drift_alarm_rate_max_q",
-            key_type: "UQ0_16",
-            range: "0..=10000",
-            default: "500",
-            module: "ssm",
-        },
     ]
 }
 

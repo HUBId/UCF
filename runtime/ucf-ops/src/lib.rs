@@ -6,6 +6,7 @@ mod causal;
 mod change_impact;
 mod config_contract;
 mod docs_lint;
+mod drift;
 mod formal_invariants;
 mod goldens;
 mod models_lifecycle;
@@ -23,6 +24,7 @@ pub use config_contract::{
     export_policy_key_registry_v1, migrate_config_v1, ConfigV1, MigrateReport, PolicyKeyEntryV1,
 };
 pub use docs_lint::{docs_lint, DocsLintArgs, DocsLintMode, DocsLintReport, DocsLintStatus};
+pub use drift::{drift_report, drift_status_map, DriftReportV1};
 pub use goldens::{
     goldens_generate, goldens_update, goldens_verify, GoldenGenerateArgs, GoldenScenarioConfig,
     GoldenVerifyArgs,
@@ -70,7 +72,9 @@ use ucf_frames::v1::{
 };
 use ucf_platform::{LocalPlatformProbe, PlatformProbe};
 use ucf_policy::adapter::MockAdapter;
-use ucf_policy::policy_packs::{load_and_merge_policy_graph, policy_graph_digest, PolicyPackError};
+use ucf_policy::policy_packs::{
+    load_and_merge_policy_graph, policy_graph_digest, DriftBudgetEntryV1, PolicyPackError,
+};
 use ucf_replay::{
     load_fixture_records, replay_audit as run_replay_audit, replay_records, write_report,
     ReplayMode, ReplayPlan, ReplaySpec, ReplayStrictness,
@@ -1925,7 +1929,7 @@ fn check_weights_lifecycle_integrity(_workdir: &Path) -> Result<CheckResult, Ops
     }
 }
 
-fn policy_threshold_i64(key: &str) -> Option<i64> {
+fn policy_drift_entry(stage_id: &str) -> Option<DriftBudgetEntryV1> {
     let overlay = std::env::var("UCF_POLICY_OVERLAY").ok();
     let overlay_path = overlay
         .as_deref()
@@ -1933,7 +1937,11 @@ fn policy_threshold_i64(key: &str) -> Option<i64> {
     let overlay_ref = overlay_path.as_deref();
     let (graph, _) =
         load_and_merge_policy_graph(Path::new("policies/packs/base_v1"), overlay_ref).ok()?;
-    graph.thresholds.get(key).copied()
+    graph
+        .drift_budget
+        .entries
+        .into_iter()
+        .find(|entry| entry.stage_id == stage_id)
 }
 
 fn check_world_vljepa_shadow_evidence(workdir: &Path) -> Result<CheckResult, OpsError> {
@@ -1987,12 +1995,15 @@ fn check_world_vljepa_shadow_evidence(workdir: &Path) -> Result<CheckResult, Ops
         .find(|p| p.slot == "world_vljepa")
         .and_then(|p| p.shadow_report_digest_prefix.clone())
         .is_some();
-    let min_windows = policy_threshold_i64("world_vljepa_min_windows")
-        .and_then(|v| usize::try_from(v).ok())
+    let budget = policy_drift_entry("world_vljepa");
+    let min_windows = budget
+        .as_ref()
+        .map(|entry| entry.window_size as usize)
         .unwrap_or(2);
-    let drift_threshold = policy_threshold_i64("world_vljepa_drift_alarm_rate_max_q")
-        .map(|v| (v as f32) / 10_000.0)
-        .unwrap_or(0.05);
+    let drift_threshold = budget
+        .as_ref()
+        .map(|entry| (entry.delta_scalar_max_q as f32) / 10_000.0)
+        .unwrap_or(0.0);
     let alarm_rate = if rep.window_count == 0 {
         1.0
     } else {
@@ -2119,9 +2130,9 @@ fn check_ssm_opt_drift(workdir: &Path) -> Result<CheckResult, OpsError> {
         .get("digest_mismatch_rate")
         .and_then(|v| v.as_f64())
         .unwrap_or(1.0);
-    let drift_limit = policy_threshold_i64("ssm_opt_drift_alarm_rate_max_q")
-        .map(|v| (v as f64) / 10_000.0)
-        .unwrap_or(0.05);
+    let drift_limit = policy_drift_entry("ssm_opt")
+        .map(|entry| (entry.delta_scalar_max_q as f64) / 10_000.0)
+        .unwrap_or(0.0);
 
     if drift <= drift_limit && mismatch == 0.0 {
         Ok(check_pass(
@@ -2331,6 +2342,14 @@ pub struct ExplainCompute {
     pub lfm: ExplainLfm,
     pub coherence: Option<ExplainCoherence>,
     pub risk: ExplainRisk,
+    pub drift: ExplainDrift,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ExplainDrift {
+    pub statuses: BTreeMap<String, String>,
+    pub alarm_ids: Vec<String>,
+    pub reason_codes: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -2944,12 +2963,23 @@ pub fn explain_tick(
     req: ExplainTickRequest,
 ) -> Result<ExplainTickReport, OpsError> {
     let records = load_fixture_records(&workdir.join("ess").join("ess_fixture.json"))?;
-    build_explain_tick_report(&records, req)
+    let drift = fs::read_to_string(workdir.join("out/drift_report.json"))
+        .ok()
+        .and_then(|raw| serde_json::from_str::<DriftReportV1>(&raw).ok());
+    build_explain_tick_report_with_drift(&records, req, drift.as_ref())
 }
 
 pub fn build_explain_tick_report(
     records: &[ExperienceRecord],
     req: ExplainTickRequest,
+) -> Result<ExplainTickReport, OpsError> {
+    build_explain_tick_report_with_drift(records, req, None)
+}
+
+fn build_explain_tick_report_with_drift(
+    records: &[ExperienceRecord],
+    req: ExplainTickRequest,
+    drift: Option<&DriftReportV1>,
 ) -> Result<ExplainTickReport, OpsError> {
     let mut warnings = Vec::new();
     let prefix = req.digest_prefix_len.clamp(4, 32) as usize;
@@ -3144,6 +3174,21 @@ pub fn build_explain_tick_report(
     issuance_view.sort();
     issuance_view.truncate(if detail == 0 { 2 } else { 8 });
 
+    let drift_statuses = drift.map(drift_status_map).unwrap_or_default();
+    let mut drift_alarm_ids = Vec::new();
+    let mut drift_reason_codes = Vec::new();
+    if let Some(rep) = drift {
+        for alarm in &rep.alarms {
+            if alarm.window_id == tick || alarm.window_id + 1 == tick {
+                drift_alarm_ids.push(alarm.alarm_id.clone());
+                drift_reason_codes.push(alarm.reason_code.clone());
+            }
+        }
+    }
+    drift_alarm_ids.sort();
+    drift_reason_codes.sort();
+    drift_reason_codes.dedup();
+
     let links = {
         let mut rows = records
             .iter()
@@ -3227,6 +3272,11 @@ pub fn build_explain_tick_report(
                 risk_digest_prefix: compute
                     .and_then(|s| s.compute_chain_digest)
                     .map(|d| digest_prefix(&d, prefix)),
+            },
+            drift: ExplainDrift {
+                statuses: drift_statuses,
+                alarm_ids: drift_alarm_ids,
+                reason_codes: drift_reason_codes,
             },
         },
         governance: ExplainGovernance {

@@ -1,7 +1,7 @@
 name = "base_v1"
 version = "1.0.0"
 schema_version = 1
-pack_digest = "42e8a59369a29faab039d5637d857e4850f19dfee4b4a61cb23be7b0eac1567a"
+pack_digest = "1c0b0e18ade1165ef1a8620bd64f9b903577d802cb4991c05b35198db762e437"
 
 [[files]]
 path = "pbm_gem_rules.toml"
@@ -21,7 +21,7 @@ sha256 = "56df880095ae434d1e93d76e01fe871c86567841b9ca31c6594c2cd98cc2be46"
 
 [[files]]
 path = "thresholds.toml"
-sha256 = "55485203382ef2af76c441ec7bdfe3012de12bccdd2909f3418bbeb431f158d7"
+sha256 = "521c7c9bc1e75eabd7207380d6c43afd2aa110fd62ac3e9de0d2c8ecf2dc0370"
 
 [[files]]
 path = "allowlists.toml"
@@ -30,3 +30,7 @@ sha256 = "d1c028d99cdac45a18b48b14de39d302cbe2d3800405c13241840de0ccbc39ce"
 [[files]]
 path = "determinism.toml"
 sha256 = "93c83482f5a72c80b51748ac84bbb64d5043ff80edaf419af94ccac443d3803d"
+
+[[files]]
+path = "drift_budget.toml"
+sha256 = "263e88ae266fe828426f2f41f6e02c5b3930bed29f00429ca7aa014e832658ba"

@@ -1,0 +1,30 @@
+schema_version = 1
+
+[[entries]]
+stage_id = "gpu_lane"
+window_size = 20
+latency_p95_max_ms = 25
+invalid_rate_max_q = 500
+timeout_rate_max_q = 500
+delta_scalar_max_q = 500
+digest_mismatch_rate_max_q = 0
+action_on_breach = "force_toy"
+
+[[entries]]
+stage_id = "ssm_opt"
+window_size = 20
+latency_p95_max_ms = 20
+invalid_rate_max_q = 500
+timeout_rate_max_q = 500
+delta_scalar_max_q = 500
+digest_mismatch_rate_max_q = 0
+action_on_breach = "force_toy"
+
+[[entries]]
+stage_id = "world_vljepa"
+window_size = 20
+latency_p95_max_ms = 5
+invalid_rate_max_q = 500
+timeout_rate_max_q = 500
+delta_scalar_max_q = 500
+action_on_breach = "disable_shadow"
