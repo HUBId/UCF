@@ -5365,6 +5365,322 @@ pub fn attest_bundle(
     })
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ReproPackArtifact {
+    pub path: String,
+    pub sha256: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ReproPackEssSlice {
+    pub record_count: usize,
+    pub segment_roots: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ReproPackManifestV1 {
+    pub schema_version: u16,
+    pub pack_id: String,
+    pub run_id: String,
+    pub policy_graph_digest: String,
+    pub manifest_digest: String,
+    pub config_digest: String,
+    pub included_artifacts: Vec<ReproPackArtifact>,
+    pub ess_slice: ReproPackEssSlice,
+    pub certificate_digest: Option<String>,
+    pub repro_pack_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ReproPackBuildReport {
+    pub run_id: String,
+    pub pack_id: String,
+    pub out: String,
+    pub entry_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ReproVerifyReport {
+    pub pass: bool,
+    pub run_id: String,
+    pub pack_id: String,
+    pub checked_files: usize,
+    pub replay_report: String,
+    pub first_divergence: Option<u64>,
+    pub reasons: Vec<String>,
+}
+
+pub fn repro_pack(
+    workdir: &Path,
+    run_id: &str,
+    out: &Path,
+) -> Result<ReproPackBuildReport, OpsError> {
+    if let Some(parent) = out.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let run_meta = runs_show(workdir, run_id)?
+        .ok_or_else(|| OpsError::Invalid(format!("run metadata not found: {run_id}")))?;
+    let config_path = workdir.join("config_resolved.json");
+    if !config_path.exists() {
+        let _ = load_or_init_config(workdir)?;
+    }
+
+    let (policy_base, policy_overlay, manifest_path) = resolve_attestation_inputs();
+    let policy = policy_validate(&policy_base, Some(&policy_overlay))?;
+    let model_verify = models_verify(&manifest_path)?;
+
+    let fixture_path = workdir.join("ess").join("ess_fixture.json");
+    let fixture_value: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&fixture_path)?)?;
+    let decisions = fixture_value
+        .get("decisions")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| OpsError::Invalid("ess fixture missing decisions array".to_string()))?;
+    let bounded_decisions: Vec<serde_json::Value> = decisions
+        .iter()
+        .rev()
+        .take(2048)
+        .cloned()
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
+    let bounded_fixture = serde_json::json!({"decisions": bounded_decisions});
+    let bounded_records = load_fixture_records_from_value(&bounded_fixture)?;
+    let segments = build_merkle_segments(run_id, &bounded_records, 1024);
+
+    let policy_ref = serde_json::json!({
+        "policy_graph_digest": policy.policy_graph_digest,
+        "base_pack": policy.base_pack,
+        "overlay_pack": policy.overlay_pack,
+        "schema_version": policy.schema_version
+    });
+    let models_ref = serde_json::json!({
+        "manifest_path": model_verify.manifest,
+        "manifest_digest": model_verify.model_hashes_digest,
+        "active_hashes": model_verify
+            .slots
+            .iter()
+            .filter_map(|s| s.sha256.as_ref().map(|h| serde_json::json!({"slot": s.slot, "sha256": h})))
+            .collect::<Vec<_>>()
+    });
+
+    let mut file_map: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    file_map.insert("config_resolved.json".to_string(), fs::read(&config_path)?);
+    file_map.insert(
+        "policy_ref.json".to_string(),
+        serde_json::to_vec_pretty(&policy_ref)?,
+    );
+    file_map.insert(
+        "models_ref.json".to_string(),
+        serde_json::to_vec_pretty(&models_ref)?,
+    );
+    file_map.insert(
+        "ess_slice.json".to_string(),
+        serde_json::to_vec_pretty(&bounded_fixture)?,
+    );
+    let roots_only = segments
+        .iter()
+        .map(|s| {
+            serde_json::json!({
+                "segment_index": s.segment_id.segment_index,
+                "record_count": s.record_count,
+                "merkle_root": s.merkle_root,
+                "prev_segment_root": s.prev_segment_root
+            })
+        })
+        .collect::<Vec<_>>();
+    file_map.insert(
+        "segment_roots.json".to_string(),
+        serde_json::to_vec_pretty(&roots_only)?,
+    );
+    let gate_path = PathBuf::from("./out/gate_report.json");
+    if gate_path.exists() {
+        file_map.insert(
+            "readiness_gate_report.json".to_string(),
+            fs::read(&gate_path)?,
+        );
+    }
+
+    let cert_path = workdir.join("out").join(format!("run_cert_{run_id}.json"));
+    let cert_digest = if cert_path.exists() {
+        let cert: RunCertificateV1 = serde_json::from_str(&fs::read_to_string(&cert_path)?)?;
+        file_map.insert(
+            "run_certificate.json".to_string(),
+            serde_json::to_vec_pretty(&cert)?,
+        );
+        Some(cert.certificate_digest)
+    } else {
+        None
+    };
+
+    let mut included_artifacts = Vec::new();
+    for (name, bytes) in &file_map {
+        included_artifacts.push(ReproPackArtifact {
+            path: name.clone(),
+            sha256: sha256_hex(bytes),
+        });
+    }
+
+    let pack_id = format!("repro-{run_id}");
+    let mut manifest = ReproPackManifestV1 {
+        schema_version: 1,
+        pack_id: pack_id.clone(),
+        run_id: run_id.to_string(),
+        policy_graph_digest: policy.policy_graph_digest,
+        manifest_digest: model_verify.model_hashes_digest,
+        config_digest: run_meta.config_digest,
+        included_artifacts,
+        ess_slice: ReproPackEssSlice {
+            record_count: bounded_records.len(),
+            segment_roots: roots_only
+                .iter()
+                .filter_map(|v| {
+                    v.get("merkle_root")
+                        .and_then(|x| x.as_str())
+                        .map(ToString::to_string)
+                })
+                .collect(),
+        },
+        certificate_digest: cert_digest,
+        repro_pack_digest: String::new(),
+    };
+    manifest.repro_pack_digest = repro_pack_digest_hex(&manifest)?;
+    file_map.insert(
+        "repro_pack_manifest.json".to_string(),
+        serde_json::to_vec_pretty(&manifest)?,
+    );
+
+    let file = fs::File::create(out)?;
+    let mut zip = zip::ZipWriter::new(file);
+    let opts = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+    for (name, bytes) in &file_map {
+        zip.start_file(name, opts)
+            .map_err(|e| OpsError::Invalid(format!("zip start failed: {e}")))?;
+        zip.write_all(bytes)
+            .map_err(|e| OpsError::Invalid(format!("zip write failed: {e}")))?;
+    }
+    zip.finish()
+        .map_err(|e| OpsError::Invalid(format!("zip finalize failed: {e}")))?;
+
+    Ok(ReproPackBuildReport {
+        run_id: run_id.to_string(),
+        pack_id,
+        out: out.display().to_string(),
+        entry_count: file_map.len(),
+    })
+}
+
+pub fn repro_verify(pack: &Path, out: &Path) -> Result<ReproVerifyReport, OpsError> {
+    let file = fs::File::open(pack)?;
+    let mut archive = zip::ZipArchive::new(file)
+        .map_err(|e| OpsError::Invalid(format!("unable to open repro pack zip: {e}")))?;
+    let temp = tempfile::tempdir()?;
+    let mut reasons = Vec::new();
+
+    for i in 0..archive.len() {
+        let mut f = archive
+            .by_index(i)
+            .map_err(|e| OpsError::Invalid(format!("zip read failed: {e}")))?;
+        let out_path = temp.path().join(f.name());
+        if let Some(parent) = out_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let mut out_file = fs::File::create(&out_path)?;
+        std::io::copy(&mut f, &mut out_file)?;
+    }
+
+    let manifest_path = temp.path().join("repro_pack_manifest.json");
+    let manifest: ReproPackManifestV1 = serde_json::from_str(&fs::read_to_string(&manifest_path)?)?;
+    let recomputed_pack = repro_pack_digest_hex(&manifest)?;
+    if recomputed_pack != manifest.repro_pack_digest {
+        reasons.push("repro_pack_digest mismatch".to_string());
+    }
+
+    for art in &manifest.included_artifacts {
+        let p = temp.path().join(&art.path);
+        let bytes = fs::read(&p)?;
+        if sha256_hex(&bytes) != art.sha256 {
+            reasons.push(format!("artifact sha256 mismatch: {}", art.path));
+        }
+    }
+
+    let policy_ref: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(temp.path().join("policy_ref.json"))?)?;
+    if policy_ref
+        .get("policy_graph_digest")
+        .and_then(|v| v.as_str())
+        != Some(manifest.policy_graph_digest.as_str())
+    {
+        reasons.push("policy graph digest mismatch".to_string());
+    }
+
+    let models_ref: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(temp.path().join("models_ref.json"))?)?;
+    if models_ref.get("manifest_digest").and_then(|v| v.as_str())
+        != Some(manifest.manifest_digest.as_str())
+    {
+        reasons.push("manifest digest mismatch".to_string());
+    }
+
+    let ess_path = temp.path().join("ess_slice.json");
+    let records = load_fixture_records(&ess_path)?;
+    let replay_path = out.with_file_name("repro_verify_replay_report.json");
+    let replay = replay_records(
+        &records,
+        &ReplaySpec {
+            from_tick: 0,
+            to_tick: u64::MAX,
+            backend_override: None,
+            seed_override: None,
+            budget_override: None,
+            mode: ReplayMode::ComputeOnly,
+        },
+    );
+    write_report(&replay_path, &replay)?;
+    let first_divergence = replay
+        .items
+        .iter()
+        .find(|i| i.status != ucf_replay::ReplayStatus::Match)
+        .map(|i| i.decision_id);
+
+    let report = ReproVerifyReport {
+        pass: reasons.is_empty(),
+        run_id: manifest.run_id,
+        pack_id: manifest.pack_id,
+        checked_files: manifest.included_artifacts.len(),
+        replay_report: replay_path.display().to_string(),
+        first_divergence,
+        reasons,
+    };
+
+    if let Some(parent) = out.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    write_json(out, &report)?;
+    Ok(report)
+}
+
+fn load_fixture_records_from_value(
+    value: &serde_json::Value,
+) -> Result<Vec<ExperienceRecord>, OpsError> {
+    let dir = tempfile::tempdir()?;
+    let path = dir.path().join("ess_slice.json");
+    fs::write(&path, serde_json::to_vec(value)?)?;
+    let records = load_fixture_records(&path)?;
+    Ok(records)
+}
+
+fn repro_pack_digest_hex(manifest: &ReproPackManifestV1) -> Result<String, OpsError> {
+    let mut canonical = manifest.clone();
+    canonical.repro_pack_digest.clear();
+    canonical
+        .included_artifacts
+        .sort_by(|a, b| a.path.cmp(&b.path));
+    Ok(sha256_hex(&serde_json::to_vec(&canonical)?))
+}
+
 fn resolve_attestation_inputs() -> (PathBuf, PathBuf, PathBuf) {
     let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let base = repo_root.join("policies/packs/base_v1");
@@ -6430,5 +6746,87 @@ mod portability_check_tests {
         let alpha = json.find("alpha").expect("alpha");
         let zeta = json.find("zeta").expect("zeta");
         assert!(alpha < zeta);
+    }
+}
+
+#[cfg(test)]
+mod repro_pack_tests {
+    use super::*;
+
+    fn zip_names(path: &Path) -> Vec<String> {
+        let file = std::fs::File::open(path).expect("zip open");
+        let mut zip = zip::ZipArchive::new(file).expect("zip parse");
+        let mut names = Vec::new();
+        for i in 0..zip.len() {
+            names.push(zip.by_index(i).expect("entry").name().to_string());
+        }
+        names
+    }
+
+    #[test]
+    fn repro_pack_digest_is_stable_for_same_manifest() {
+        let manifest = ReproPackManifestV1 {
+            schema_version: 1,
+            pack_id: "repro-run".to_string(),
+            run_id: "run".to_string(),
+            policy_graph_digest: "aa".repeat(32),
+            manifest_digest: "bb".repeat(32),
+            config_digest: "cc".repeat(32),
+            included_artifacts: vec![
+                ReproPackArtifact {
+                    path: "b.json".to_string(),
+                    sha256: "02".repeat(32),
+                },
+                ReproPackArtifact {
+                    path: "a.json".to_string(),
+                    sha256: "01".repeat(32),
+                },
+            ],
+            ess_slice: ReproPackEssSlice {
+                record_count: 0,
+                segment_roots: vec![],
+            },
+            certificate_digest: None,
+            repro_pack_digest: String::new(),
+        };
+        let a = repro_pack_digest_hex(&manifest).expect("digest");
+        let b = repro_pack_digest_hex(&manifest).expect("digest");
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn repro_pack_and_verify_and_tamper() {
+        let workdir = tempfile::tempdir().expect("tmp");
+        let scenario =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/e2e_scenario_a.json");
+        let out_dir = workdir.path().join("out");
+        let artifacts =
+            one_command_bringup(workdir.path(), &scenario, 8, &out_dir, true).expect("bringup");
+        let run_id = artifacts.run_metadata.run_id;
+
+        let out_a = workdir.path().join("out/repro_a.zip");
+        let out_b = workdir.path().join("out/repro_b.zip");
+        repro_pack(workdir.path(), &run_id, &out_a).expect("pack a");
+        repro_pack(workdir.path(), &run_id, &out_b).expect("pack b");
+
+        assert_eq!(zip_names(&out_a), zip_names(&out_b));
+        assert_eq!(
+            std::fs::read(&out_a).expect("a"),
+            std::fs::read(&out_b).expect("b")
+        );
+
+        let verify_out = workdir.path().join("out/repro_verify.json");
+        let verify = repro_verify(&out_a, &verify_out).expect("verify");
+        assert!(verify.pass);
+
+        let tampered = workdir.path().join("out/repro_tampered.zip");
+        let mut tampered_bytes = std::fs::read(&out_a).expect("read pack");
+        let idx = tampered_bytes.len().saturating_sub(17);
+        tampered_bytes[idx] ^= 0xFF;
+        std::fs::write(&tampered, tampered_bytes).expect("write tampered");
+
+        let tampered_out = workdir.path().join("out/repro_verify_tampered.json");
+        let report = repro_verify(&tampered, &tampered_out);
+        assert!(report.is_err() || !report.expect("report").pass);
     }
 }
