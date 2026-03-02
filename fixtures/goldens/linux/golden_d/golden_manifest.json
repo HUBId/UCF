@@ -5,7 +5,7 @@
   "scenario_fixture": "fixtures/e2e_tool_plan_demo.json",
   "ticks": 12,
   "policy_graph_digest_prefix": "dd50b29b5a4f",
-  "config_digest_prefix": "1a17d3966fd1",
+  "config_digest_prefix": "3cc13458752d",
   "expected_outputs": {
     "sampled_tick_digests": [
       {
