@@ -5,19 +5,19 @@ use std::path::PathBuf;
 use ucf_ops::{
     adversarial_run, attest_bundle, attest_keys_generate, attest_run, attest_verify, audit_scan,
     bench_run, bringup, causal_slice, determinism_scan, diagnostics, diagnostics_collect,
-    ebm_export_dataset, ess_compact, ess_snapshot, event_id_for_decision, explain_tick,
-    explain_why, export_bugreport, export_policy_key_registry_v1, goldens_generate, goldens_update,
-    goldens_verify, hardware_scan, load_signoff_checklist, logs_prove, logs_verify_proof,
-    metrics_snapshot, metrics_summary, metrics_trend, migrate_config_v1, models_list, models_probe,
-    models_promote, models_recommend_rollback, models_rollback, models_stage, models_verify,
-    one_command_bringup, out_manifest, parse_slot, path_scan, policy_diff, policy_explain,
-    policy_validate, portability_check, readiness_gate, release_rc1_gate, release_signoff_validate,
-    replay_audit, replay_bugreport, repro_pack, repro_verify, run_status, runs_list, runs_search,
-    runs_show, save_counterfactual_result, security_verify_chain, simulate_counterfactual,
-    verify_bugreport, world_shadow_report, write_slice, AdversarialRunArgs, BenchArgs,
-    ChangeImpactArgs, ConfigV1, CounterfactualRequest, DocsLintArgs, DocsLintMode, DocsLintStatus,
-    ExplainTickRequest, ExportArgs, GateStatus, GoldenGenerateArgs, GoldenVerifyArgs,
-    SpecSnapshotArgs,
+    drift_report, ebm_export_dataset, ess_compact, ess_snapshot, event_id_for_decision,
+    explain_tick, explain_why, export_bugreport, export_policy_key_registry_v1, goldens_generate,
+    goldens_update, goldens_verify, hardware_scan, load_signoff_checklist, logs_prove,
+    logs_verify_proof, metrics_snapshot, metrics_summary, metrics_trend, migrate_config_v1,
+    models_list, models_probe, models_promote, models_recommend_rollback, models_rollback,
+    models_stage, models_verify, one_command_bringup, out_manifest, parse_slot, path_scan,
+    policy_diff, policy_explain, policy_validate, portability_check, readiness_gate,
+    release_rc1_gate, release_signoff_validate, replay_audit, replay_bugreport, repro_pack,
+    repro_verify, run_status, runs_list, runs_search, runs_show, save_counterfactual_result,
+    security_verify_chain, simulate_counterfactual, verify_bugreport, world_shadow_report,
+    write_slice, AdversarialRunArgs, BenchArgs, ChangeImpactArgs, ConfigV1, CounterfactualRequest,
+    DocsLintArgs, DocsLintMode, DocsLintStatus, ExplainTickRequest, ExportArgs, GateStatus,
+    GoldenGenerateArgs, GoldenVerifyArgs, SpecSnapshotArgs,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -852,6 +852,35 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         }
+        "drift" => {
+            let sub = args.get(2).map(String::as_str).unwrap_or("help");
+            match sub {
+                "report" => {
+                    let Some(run_id) = arg_value(&args, "--run") else {
+                        return Err(
+                            "usage: ucf-ops drift report --run <id> --windows <n> --out <path>"
+                                .into(),
+                        );
+                    };
+                    let windows = parse_usize(&args, "--windows", 20);
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/drift_report.json"));
+                    let report = drift_report(&workdir, &run_id, windows, &out)?;
+                    println!("status={:?}", report.status);
+                    println!("alarms={}", report.alarms.len());
+                    println!("out={}", out.display());
+                    if report.status != GateStatus::Pass {
+                        std::process::exit(2);
+                    }
+                }
+                _ => {
+                    return Err(
+                        "usage: ucf-ops drift report --run <id> --windows <n> --out <path>".into(),
+                    )
+                }
+            }
+        }
         "world" => {
             let sub = args.get(2).map(String::as_str).unwrap_or("help");
             match sub {
@@ -1261,7 +1290,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             eprintln!(
-                "usage: ucf-ops <bringup|diag|health|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|attest|repro|readiness-gate|goldens|adversarial-run|out|release|bench|runs|status|ess|ebm|policy|portability|spec|change-impact|version> [--workdir <path>] [--bundle <path>]"
+                "usage: ucf-ops <bringup|diag|health|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|attest|repro|readiness-gate|goldens|adversarial-run|out|release|bench|runs|status|ess|ebm|drift|policy|portability|spec|change-impact|version> [--workdir <path>] [--bundle <path>]"
             );
             std::process::exit(1);
         }

@@ -2,9 +2,6 @@
 governor_tier_1_q = 2200
 governor_tier_2_q = 4200
 governor_tier_3_q = 6500
-world_vljepa_min_windows = 2
-world_vljepa_drift_alarm_rate_max_q = 1000
-ssm_opt_drift_alarm_rate_max_q = 1000
 model_governance_llm_max_timeout_rate_q = 3000
 model_governance_llm_max_invalid_rate_q = 500
 model_governance_llm_max_envelope_violation_rate_q = 500
