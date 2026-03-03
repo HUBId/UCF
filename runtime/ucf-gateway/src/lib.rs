@@ -45,18 +45,86 @@ const ERR_UNAVAILABLE: u32 = 1501;
 #[derive(Debug, Clone)]
 pub enum GatewayTransport {
     Unix(PathBuf),
+    Pipe(String),
     TcpLocal(u16),
 }
 
 impl GatewayTransport {
-    pub fn default_v1() -> Self {
+    pub fn default_v1(bundle_root: &Path) -> Self {
         #[cfg(unix)]
         {
-            return Self::Unix(PathBuf::from("/tmp/ucf_gateway_v1.sock"));
+            return Self::Unix(default_unix_socket_path(bundle_root));
+        }
+        #[cfg(windows)]
+        {
+            let _ = bundle_root;
+            return Self::Pipe(default_windows_pipe_name());
         }
         #[allow(unreachable_code)]
         Self::TcpLocal(44991)
     }
+}
+
+pub fn default_unix_socket_path(bundle_root: &Path) -> PathBuf {
+    bundle_root.join("data").join("ipc").join("gateway.sock")
+}
+
+pub fn default_windows_pipe_name() -> String {
+    r"\\.\pipe\ucf_gateway".to_string()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TransportKind {
+    Unix,
+    Pipe,
+    Tcp,
+}
+
+impl TransportKind {
+    pub fn parse(input: &str) -> Result<Self, GatewayError> {
+        match input {
+            "unix" => Ok(Self::Unix),
+            "pipe" => Ok(Self::Pipe),
+            "tcp" => Ok(Self::Tcp),
+            _ => Err(GatewayError::SchemaInvalid),
+        }
+    }
+}
+
+pub fn transport_from_env(bundle_root: &Path) -> Result<GatewayTransport, GatewayError> {
+    let kind = match std::env::var("UCF_GATEWAY_TRANSPORT") {
+        Ok(raw) => TransportKind::parse(raw.trim())?,
+        Err(_) => {
+            #[cfg(unix)]
+            {
+                TransportKind::Unix
+            }
+            #[cfg(windows)]
+            {
+                TransportKind::Pipe
+            }
+            #[cfg(not(any(unix, windows)))]
+            {
+                TransportKind::Tcp
+            }
+        }
+    };
+    match kind {
+        TransportKind::Unix => Ok(GatewayTransport::Unix(default_unix_socket_path(
+            bundle_root,
+        ))),
+        TransportKind::Pipe => Ok(GatewayTransport::Pipe(default_windows_pipe_name())),
+        TransportKind::Tcp => parse_explicit_tcp_bind(),
+    }
+}
+
+fn parse_explicit_tcp_bind() -> Result<GatewayTransport, GatewayError> {
+    let bind = std::env::var("UCF_GATEWAY_BIND").map_err(|_| GatewayError::Unauthorized)?;
+    let parsed: SocketAddr = bind.parse().map_err(|_| GatewayError::SchemaInvalid)?;
+    if !parsed.ip().is_loopback() {
+        return Err(GatewayError::Unauthorized);
+    }
+    Ok(GatewayTransport::TcpLocal(parsed.port()))
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -863,9 +931,14 @@ pub fn local_bind_for_platform(preferred_port: u16) -> GatewayTransport {
     #[cfg(unix)]
     {
         let _ = preferred_port;
-        GatewayTransport::Unix(PathBuf::from("/tmp/ucf_gateway_v1.sock"))
+        GatewayTransport::Unix(default_unix_socket_path(Path::new(".ucf")))
     }
-    #[cfg(not(unix))]
+    #[cfg(windows)]
+    {
+        let _ = preferred_port;
+        GatewayTransport::Pipe(default_windows_pipe_name())
+    }
+    #[cfg(not(any(unix, windows)))]
     {
         GatewayTransport::TcpLocal(preferred_port)
     }
@@ -893,5 +966,22 @@ mod tests {
         assert!(!bucket.allow(0));
         assert!(!bucket.allow(499));
         assert!(bucket.allow(500));
+    }
+
+    #[test]
+    fn transport_kind_parse() {
+        assert_eq!(
+            TransportKind::parse("unix").expect("unix"),
+            TransportKind::Unix
+        );
+        assert_eq!(
+            TransportKind::parse("pipe").expect("pipe"),
+            TransportKind::Pipe
+        );
+        assert_eq!(
+            TransportKind::parse("tcp").expect("tcp"),
+            TransportKind::Tcp
+        );
+        assert!(TransportKind::parse("bad").is_err());
     }
 }
