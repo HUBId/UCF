@@ -33,13 +33,18 @@ pub enum ClientError {
 pub enum Endpoint {
     Tcp(SocketAddr),
     Unix(PathBuf),
+    Pipe(String),
 }
 
 impl Endpoint {
     pub fn default_local() -> Self {
         #[cfg(unix)]
         {
-            return Self::Unix(PathBuf::from("/tmp/ucf_gateway_v1.sock"));
+            return Self::Unix(PathBuf::from(".ucf/data/ipc/gateway.sock"));
+        }
+        #[cfg(windows)]
+        {
+            return Self::Pipe(r"\\.\pipe\ucf_gateway".to_string());
         }
         #[allow(unreachable_code)]
         Self::Tcp(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 44991))
@@ -59,6 +64,9 @@ impl Endpoint {
         }
         if let Some(path) = raw.strip_prefix("unix://") {
             return Ok(Self::Unix(PathBuf::from(path)));
+        }
+        if let Some(name) = raw.strip_prefix("pipe://") {
+            return Ok(Self::Pipe(name.to_string()));
         }
         if raw.contains(':') {
             let parsed: SocketAddr = raw
@@ -389,6 +397,9 @@ fn send(
                 ))
             }
         }
+        Endpoint::Pipe(name) => Err(ClientError::Usage(format!(
+            "named pipe endpoint is not supported in this build: {name}"
+        ))),
     }
 }
 
@@ -412,7 +423,7 @@ fn send_over_stream<S: Read + Write>(
 }
 
 fn usage() -> String {
-    "ucf-client [--endpoint tcp://127.0.0.1:44991|unix:///tmp/ucf_gateway_v1.sock] [--auth token] <submit|stream|ess|report> ...".to_string()
+    "ucf-client [--endpoint tcp://127.0.0.1:44991|unix://.ucf/data/ipc/gateway.sock|pipe://./pipe/ucf_gateway] [--auth token] <submit|stream|ess|report> ...".to_string()
 }
 
 fn arg_value(args: &[String], flag: &str) -> Option<String> {

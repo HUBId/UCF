@@ -2,7 +2,9 @@ use std::path::PathBuf;
 
 #[cfg(unix)]
 use ucf_gateway::run_unix_once;
-use ucf_gateway::{run_tcp_once, GatewayConfig, GatewayService, GatewayTransport};
+use ucf_gateway::{
+    run_tcp_once, transport_from_env, GatewayConfig, GatewayService, GatewayTransport,
+};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let workdir =
@@ -10,14 +12,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     std::fs::create_dir_all(&workdir)?;
     let cfg = GatewayConfig::from_env(&workdir)?;
     let mut service = GatewayService::new(cfg);
-    let transport = GatewayTransport::default_v1();
+    let transport = transport_from_env(&workdir)?;
     loop {
         match &transport {
             #[cfg(unix)]
             GatewayTransport::Unix(path) => run_unix_once(&mut service, path)?,
+            #[cfg(not(unix))]
+            GatewayTransport::Unix(path) => {
+                return Err(format!(
+                    "unix socket transport is not supported on this build: {}",
+                    path.display()
+                )
+                .into());
+            }
             GatewayTransport::TcpLocal(port) => run_tcp_once(&mut service, *port)?,
-            #[allow(unreachable_patterns)]
-            _ => run_tcp_once(&mut service, 44991)?,
+            GatewayTransport::Pipe(name) => {
+                return Err(format!(
+                    "named pipe transport is not implemented in this build: {name}"
+                )
+                .into());
+            }
         }
     }
 }

@@ -6,19 +6,19 @@ use ucf_ops::{
     adversarial_run, attest_bundle, attest_keys_generate, attest_run, attest_verify, audit_scan,
     bench_run, bringup, causal_slice, determinism_scan, diagnostics, diagnostics_collect,
     drift_report, ebm_export_dataset, ess_compact, ess_snapshot, event_id_for_decision,
-    explain_tick, explain_why, export_bugreport, export_policy_key_registry_v1, goldens_generate,
-    goldens_update, goldens_verify, hardware_scan, load_signoff_checklist, logs_prove,
-    logs_verify_proof, metrics_snapshot, metrics_summary, metrics_trend, migrate_config_v1,
-    models_list, models_probe, models_promote, models_recommend_rollback, models_rollback,
-    models_stage, models_verify, one_command_bringup, out_manifest, parse_slot, path_scan,
-    policy_diff, policy_explain, policy_validate, portability_check, readiness_gate,
-    release_rc1_gate, release_signoff_validate, replay_audit, replay_bugreport, repro_pack,
-    repro_verify, run_status, runs_list, runs_search, runs_show, save_counterfactual_result,
-    security_verify_chain, simulate_counterfactual, strict_check, troubleshoot, verify_bugreport,
-    world_shadow_report, write_slice, AdversarialRunArgs, BenchArgs, BugKitBuildArgs,
-    ChangeImpactArgs, ConfigV1, CounterfactualRequest, DevLoopArgs, DocsLintArgs, DocsLintMode,
-    DocsLintStatus, ExplainTickRequest, ExportArgs, GateStatus, GoldenGenerateArgs,
-    GoldenVerifyArgs, SpecSnapshotArgs,
+    explain_tick, explain_why, export_bugreport, export_policy_key_registry_v1,
+    gateway_threat_test, goldens_generate, goldens_update, goldens_verify, hardware_scan,
+    load_signoff_checklist, logs_prove, logs_verify_proof, metrics_snapshot, metrics_summary,
+    metrics_trend, migrate_config_v1, models_list, models_probe, models_promote,
+    models_recommend_rollback, models_rollback, models_stage, models_verify, one_command_bringup,
+    out_manifest, parse_slot, path_scan, policy_diff, policy_explain, policy_validate,
+    portability_check, readiness_gate, release_rc1_gate, release_signoff_validate, replay_audit,
+    replay_bugreport, repro_pack, repro_verify, run_status, runs_list, runs_search, runs_show,
+    save_counterfactual_result, security_verify_chain, simulate_counterfactual, strict_check,
+    troubleshoot, verify_bugreport, world_shadow_report, write_slice, AdversarialRunArgs,
+    BenchArgs, BugKitBuildArgs, ChangeImpactArgs, ConfigV1, CounterfactualRequest, DevLoopArgs,
+    DocsLintArgs, DocsLintMode, DocsLintStatus, ExplainTickRequest, ExportArgs, GateStatus,
+    GoldenGenerateArgs, GoldenVerifyArgs, SpecSnapshotArgs,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -1162,6 +1162,21 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
                 _ => return Err("usage: ucf-ops dev loop [--profile <dev|test|prod>] [--scenario <id>] [--ticks <n>] [--out <path>] [--no-tests]".into()),
+            }
+        }
+        "gateway" => {
+            let sub = args.get(2).map(String::as_str).unwrap_or("help");
+            match sub {
+                "threat-test" => {
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/gateway_threat.json"));
+                    let report = gateway_threat_test(&out)?;
+                    println!("out={}", out.display());
+                    println!("ok={}", report.ok);
+                    println!("abuse_log_total={}", report.abuse_log_total);
+                }
+                _ => return Err("usage: ucf-ops gateway threat-test --out <path>".into()),
             }
         }
         "troubleshoot" => {
