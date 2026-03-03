@@ -6241,6 +6241,285 @@ pub struct ReproVerifyReport {
     pub reasons: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BugKitBuildArgs {
+    pub include_payload: bool,
+    pub include_weights: bool,
+    pub max_bytes: u64,
+}
+
+impl Default for BugKitBuildArgs {
+    fn default() -> Self {
+        Self {
+            include_payload: false,
+            include_weights: false,
+            max_bytes: 50 * 1024 * 1024,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BugKitManifestEntry {
+    pub path: String,
+    pub sha256: String,
+    pub size_bytes: u64,
+    pub optional: bool,
+    pub dropped_due_to_size_cap: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BugKitManifestV1 {
+    pub schema_version: u16,
+    pub run_id: String,
+    pub include_payload: bool,
+    pub include_weights: bool,
+    pub max_bytes: u64,
+    pub total_bytes: u64,
+    pub file_count: usize,
+    pub files: Vec<BugKitManifestEntry>,
+    pub warnings: Vec<String>,
+    pub bugkit_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BugKitBuildReport {
+    pub run_id: String,
+    pub out: String,
+    pub total_bytes: u64,
+    pub file_count: usize,
+    pub warnings: Vec<String>,
+}
+
+pub fn bugkit_build(
+    workdir: &Path,
+    run_id: &str,
+    out: &Path,
+    args: &BugKitBuildArgs,
+) -> Result<BugKitBuildReport, OpsError> {
+    if let Some(parent) = out.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let repro_out = workdir.join("out").join(format!("repro_{run_id}.zip"));
+    if !repro_out.exists() {
+        repro_pack(workdir, run_id, &repro_out)?;
+    }
+
+    let diagnostics_out = workdir.join("out").join(format!("diag_{run_id}.zip"));
+    {
+        let run_dir_candidates = [
+            workdir.join("out").join(run_id),
+            PathBuf::from("out").join(run_id),
+        ];
+        let run_dir = run_dir_candidates
+            .iter()
+            .find(|p| p.exists())
+            .cloned()
+            .ok_or_else(|| {
+                OpsError::Invalid(format!(
+                    "run artifact directory not found: {} or {}",
+                    run_dir_candidates[0].display(),
+                    run_dir_candidates[1].display()
+                ))
+            })?;
+        let mut selected = vec![
+            run_dir.join("run_metadata.json"),
+            run_dir.join("metrics_summary.json"),
+            run_dir.join("gate_report.json"),
+            run_dir.join("adversarial_report.json"),
+            run_dir.join("bench_report.json"),
+        ];
+        let explain_dir = workdir.join("explain_tick");
+        if explain_dir.exists() {
+            for e in fs::read_dir(&explain_dir)? {
+                let p = e?.path();
+                if p.extension().and_then(|x| x.to_str()) == Some("json") {
+                    selected.push(p);
+                }
+            }
+        }
+        if let Some(parent) = diagnostics_out.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let file = fs::File::create(&diagnostics_out)?;
+        let mut zip = zip::ZipWriter::new(file);
+        let opts = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        for path in selected {
+            if !path.exists() {
+                continue;
+            }
+            let name = path
+                .file_name()
+                .and_then(|v| v.to_str())
+                .unwrap_or("entry.json")
+                .to_string();
+            let mut text = fs::read_to_string(&path).unwrap_or_default();
+            text = text.replace("\"text\":", "\"text_redacted\":");
+            if !args.include_payload {
+                text = text.replace("\"payload\":", "\"payload_redacted\":");
+            }
+            zip.start_file(name, opts)
+                .map_err(|e| OpsError::Invalid(format!("zip start failed: {e}")))?;
+            zip.write_all(text.as_bytes())
+                .map_err(|e| OpsError::Invalid(format!("zip write failed: {e}")))?;
+        }
+        zip.finish()
+            .map_err(|e| OpsError::Invalid(format!("zip finalize failed: {e}")))?;
+    }
+
+    let (policy_base, policy_overlay, _manifest_path) = resolve_attestation_inputs();
+    let policy = policy_validate(&policy_base, Some(&policy_overlay))?;
+    let policy_ref = serde_json::json!({
+        "base_pack": policy.base_pack,
+        "overlay_pack": policy.overlay_pack,
+        "policy_graph_digest": policy.policy_graph_digest,
+        "schema_version": policy.schema_version
+    });
+
+    let mut entries: Vec<(String, Vec<u8>, bool)> = Vec::new();
+    entries.push(("repro_pack.zip".to_string(), fs::read(&repro_out)?, false));
+    if diagnostics_out.exists() {
+        entries.push((
+            "diagnostics_bundle.zip".to_string(),
+            fs::read(&diagnostics_out)?,
+            true,
+        ));
+    }
+    let spec_snapshot = PathBuf::from("docs/spec_snapshot.md");
+    if spec_snapshot.exists() {
+        entries.push((
+            "spec_snapshot.md".to_string(),
+            fs::read(spec_snapshot)?,
+            false,
+        ));
+    }
+    entries.push((
+        "policy_graph_ref.json".to_string(),
+        serde_json::to_vec_pretty(&policy_ref)?,
+        false,
+    ));
+
+    for extra in [
+        PathBuf::from("out/strict_check.json"),
+        PathBuf::from("out/strict_failure.json"),
+        PathBuf::from("out/drift_report.json"),
+        PathBuf::from("out/gate_report.json"),
+        PathBuf::from("out/docs_lint_report.json"),
+    ] {
+        if extra.exists() {
+            let name = format!(
+                "diagnostics/{}",
+                extra
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("artifact.json")
+            );
+            entries.push((name, fs::read(extra)?, true));
+        }
+    }
+
+    let mut warnings = Vec::new();
+    if args.include_payload {
+        warnings.push("include_payload=true: raw payload fields may be present".to_string());
+    }
+    if args.include_weights {
+        warnings.push("include_weights=true: model binaries may include sensitive IP".to_string());
+        warnings.push(
+            "weight inclusion currently unsupported in bugkit; no model binaries added".to_string(),
+        );
+    }
+
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
+    let mut manifest_entries: Vec<BugKitManifestEntry> = entries
+        .iter()
+        .map(|(path, bytes, optional)| BugKitManifestEntry {
+            path: path.clone(),
+            sha256: sha256_hex(bytes),
+            size_bytes: bytes.len() as u64,
+            optional: *optional,
+            dropped_due_to_size_cap: false,
+        })
+        .collect();
+
+    let mut total_bytes: u64 = manifest_entries.iter().map(|e| e.size_bytes).sum();
+    if total_bytes > args.max_bytes {
+        for entry in manifest_entries.iter_mut().rev() {
+            if entry.optional && total_bytes > args.max_bytes {
+                total_bytes = total_bytes.saturating_sub(entry.size_bytes);
+                entry.dropped_due_to_size_cap = true;
+                warnings.push(format!(
+                    "dropped optional artifact due to size cap: {}",
+                    entry.path
+                ));
+            }
+        }
+        if total_bytes > args.max_bytes {
+            warnings.push(format!(
+                "bugkit remains over max size cap after dropping optional artifacts ({} > {})",
+                total_bytes, args.max_bytes
+            ));
+        }
+    }
+
+    let mut manifest = BugKitManifestV1 {
+        schema_version: 1,
+        run_id: run_id.to_string(),
+        include_payload: args.include_payload,
+        include_weights: args.include_weights,
+        max_bytes: args.max_bytes,
+        total_bytes,
+        file_count: manifest_entries
+            .iter()
+            .filter(|e| !e.dropped_due_to_size_cap)
+            .count()
+            + 1,
+        files: manifest_entries,
+        warnings,
+        bugkit_digest: String::new(),
+    };
+    let mut canonical = manifest.clone();
+    canonical.bugkit_digest.clear();
+    canonical.files.sort_by(|a, b| a.path.cmp(&b.path));
+    manifest.bugkit_digest = sha256_hex(&serde_json::to_vec(&canonical)?);
+
+    let mut selected: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    for (path, bytes, _) in entries {
+        if manifest
+            .files
+            .iter()
+            .any(|e| e.path == path && !e.dropped_due_to_size_cap)
+        {
+            selected.insert(path, bytes);
+        }
+    }
+    selected.insert(
+        "BUGKIT_MANIFEST.json".to_string(),
+        serde_json::to_vec_pretty(&manifest)?,
+    );
+
+    let file = fs::File::create(out)?;
+    let mut zip = zip::ZipWriter::new(file);
+    let opts = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+    for (path, bytes) in selected {
+        zip.start_file(path, opts)
+            .map_err(|e| OpsError::Invalid(format!("zip start failed: {e}")))?;
+        zip.write_all(&bytes)
+            .map_err(|e| OpsError::Invalid(format!("zip write failed: {e}")))?;
+    }
+    zip.finish()
+        .map_err(|e| OpsError::Invalid(format!("zip finalize failed: {e}")))?;
+
+    Ok(BugKitBuildReport {
+        run_id: run_id.to_string(),
+        out: out.display().to_string(),
+        total_bytes: manifest.total_bytes,
+        file_count: manifest.file_count,
+        warnings: manifest.warnings,
+    })
+}
+
 pub fn repro_pack(
     workdir: &Path,
     run_id: &str,
@@ -7697,6 +7976,157 @@ mod repro_pack_tests {
         let tampered_out = workdir.path().join("out/repro_verify_tampered.json");
         let report = repro_verify(&tampered, &tampered_out);
         assert!(report.is_err() || !report.expect("report").pass);
+    }
+}
+
+#[cfg(test)]
+mod bugkit_tests {
+    use super::*;
+
+    #[test]
+    fn bugkit_zip_order_is_deterministic() {
+        let workdir = tempfile::tempdir().expect("tmp");
+        let run_id = "run-bugkit".to_string();
+        let run_dir = workdir.path().join("out").join(&run_id);
+        std::fs::create_dir_all(&run_dir).expect("run dir");
+        std::fs::write(
+            run_dir.join("run_metadata.json"),
+            "{}
+",
+        )
+        .expect("meta");
+        std::fs::write(
+            run_dir.join("metrics_summary.json"),
+            "{}
+",
+        )
+        .expect("metrics");
+        std::fs::write(
+            workdir
+                .path()
+                .join("out")
+                .join(format!("repro_{run_id}.zip")),
+            b"zip",
+        )
+        .expect("repro");
+
+        let out_a = workdir.path().join("out/bugkit_a.zip");
+        let out_b = workdir.path().join("out/bugkit_b.zip");
+        let args = BugKitBuildArgs::default();
+        bugkit_build(workdir.path(), &run_id, &out_a, &args).expect("bugkit a");
+        bugkit_build(workdir.path(), &run_id, &out_b, &args).expect("bugkit b");
+
+        let file_a = std::fs::File::open(&out_a).expect("open a");
+        let mut zip_a = zip::ZipArchive::new(file_a).expect("zip a");
+        let file_b = std::fs::File::open(&out_b).expect("open b");
+        let mut zip_b = zip::ZipArchive::new(file_b).expect("zip b");
+        let mut names_a = Vec::new();
+        let mut names_b = Vec::new();
+        for i in 0..zip_a.len() {
+            names_a.push(zip_a.by_index(i).expect("entry").name().to_string());
+        }
+        for i in 0..zip_b.len() {
+            names_b.push(zip_b.by_index(i).expect("entry").name().to_string());
+        }
+        assert_eq!(names_a, names_b);
+    }
+
+    #[test]
+    fn bugkit_size_cap_drops_optional_entries() {
+        let workdir = tempfile::tempdir().expect("tmp");
+        let run_id = "run-bugkit".to_string();
+        let run_dir = workdir.path().join("out").join(&run_id);
+        std::fs::create_dir_all(&run_dir).expect("run dir");
+        std::fs::write(
+            run_dir.join("run_metadata.json"),
+            "{}
+",
+        )
+        .expect("meta");
+        std::fs::write(
+            run_dir.join("metrics_summary.json"),
+            "{}
+",
+        )
+        .expect("metrics");
+        std::fs::write(
+            workdir
+                .path()
+                .join("out")
+                .join(format!("repro_{run_id}.zip")),
+            vec![b'x'; 4096],
+        )
+        .expect("repro");
+
+        let out = workdir.path().join("out/bugkit_capped.zip");
+        let report = bugkit_build(
+            workdir.path(),
+            &run_id,
+            &out,
+            &BugKitBuildArgs {
+                max_bytes: 1024,
+                ..BugKitBuildArgs::default()
+            },
+        )
+        .expect("bugkit");
+        assert!(report
+            .warnings
+            .iter()
+            .any(|w| w.contains("dropped optional artifact")));
+    }
+
+    #[test]
+    fn bugkit_manifest_detects_tamper() {
+        let workdir = tempfile::tempdir().expect("tmp");
+        let run_id = "run-bugkit".to_string();
+        let run_dir = workdir.path().join("out").join(&run_id);
+        std::fs::create_dir_all(&run_dir).expect("run dir");
+        std::fs::write(
+            run_dir.join("run_metadata.json"),
+            "{}
+",
+        )
+        .expect("meta");
+        std::fs::write(
+            run_dir.join("metrics_summary.json"),
+            "{}
+",
+        )
+        .expect("metrics");
+        std::fs::write(
+            workdir
+                .path()
+                .join("out")
+                .join(format!("repro_{run_id}.zip")),
+            b"abcde",
+        )
+        .expect("repro");
+
+        let out = workdir.path().join("out/bugkit.zip");
+        bugkit_build(workdir.path(), &run_id, &out, &BugKitBuildArgs::default()).expect("bugkit");
+
+        let file = std::fs::File::open(&out).expect("open");
+        let mut zip = zip::ZipArchive::new(file).expect("zip");
+        let dir = tempfile::tempdir().expect("tmp2");
+        zip.extract(dir.path()).expect("extract");
+
+        let repro = dir.path().join("repro_pack.zip");
+        let mut bytes = std::fs::read(&repro).expect("repro read");
+        let idx = bytes.len().saturating_sub(11);
+        bytes[idx] ^= 0xAA;
+        std::fs::write(&repro, bytes).expect("write");
+
+        let manifest: BugKitManifestV1 = serde_json::from_str(
+            &std::fs::read_to_string(dir.path().join("BUGKIT_MANIFEST.json")).expect("manifest"),
+        )
+        .expect("parse");
+        let repro_entry = manifest
+            .files
+            .iter()
+            .find(|e| e.path == "repro_pack.zip")
+            .expect("entry");
+        let tampered_digest = sha256_hex(&std::fs::read(&repro).expect("bytes"));
+        assert_ne!(repro_entry.sha256, tampered_digest);
     }
 }
 

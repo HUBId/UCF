@@ -15,10 +15,10 @@ use ucf_ops::{
     release_rc1_gate, release_signoff_validate, replay_audit, replay_bugreport, repro_pack,
     repro_verify, run_status, runs_list, runs_search, runs_show, save_counterfactual_result,
     security_verify_chain, simulate_counterfactual, strict_check, troubleshoot, verify_bugreport,
-    world_shadow_report, write_slice, AdversarialRunArgs, BenchArgs, ChangeImpactArgs, ConfigV1,
-    CounterfactualRequest, DevLoopArgs, DocsLintArgs, DocsLintMode, DocsLintStatus,
-    ExplainTickRequest, ExportArgs, GateStatus, GoldenGenerateArgs, GoldenVerifyArgs,
-    SpecSnapshotArgs,
+    world_shadow_report, write_slice, AdversarialRunArgs, BenchArgs, BugKitBuildArgs,
+    ChangeImpactArgs, ConfigV1, CounterfactualRequest, DevLoopArgs, DocsLintArgs, DocsLintMode,
+    DocsLintStatus, ExplainTickRequest, ExportArgs, GateStatus, GoldenGenerateArgs,
+    GoldenVerifyArgs, SpecSnapshotArgs,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -1042,6 +1042,40 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
                 _ => return Err("usage: ucf-ops repro <pack|verify> ...".into()),
+            }
+        }
+        "bugkit" => {
+            let sub = args.get(2).map(String::as_str).unwrap_or("help");
+            match sub {
+                "build" => {
+                    let Some(run_id) = arg_value(&args, "--run") else {
+                        return Err("usage: ucf-ops bugkit build --run <id> --out <path> [--include_payload] [--include_weights] [--max-bytes <n>]".into());
+                    };
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from(format!("./out/bugkit_{run_id}.zip")));
+                    let max_bytes = parse_u64(&args, "--max-bytes", 50 * 1024 * 1024);
+                    let report = ucf_ops::bugkit_build(
+                        &workdir,
+                        &run_id,
+                        &out,
+                        &BugKitBuildArgs {
+                            include_payload: has_flag(&args, "--include_payload"),
+                            include_weights: has_flag(&args, "--include_weights"),
+                            max_bytes,
+                        },
+                    )?;
+                    println!("run_id={}", report.run_id);
+                    println!("out={}", report.out);
+                    println!("total_bytes={}", report.total_bytes);
+                    println!("files={}", report.file_count);
+                    for warning in report.warnings {
+                        println!("warning={warning}");
+                    }
+                }
+                _ => {
+                    return Err("usage: ucf-ops bugkit build --run <id> --out <path> [--include_payload] [--include_weights] [--max-bytes <n>]".into())
+                }
             }
         }
         "readiness-gate" => {
