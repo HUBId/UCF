@@ -17,6 +17,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         match &transport {
             #[cfg(unix)]
             GatewayTransport::Unix(path) => run_unix_once(&mut service, path)?,
+            #[cfg(not(unix))]
+            GatewayTransport::Unix(path) => {
+                return Err(format!(
+                    "unix socket transport is not supported on this build: {}",
+                    path.display()
+                )
+                .into());
+            }
             GatewayTransport::TcpLocal(port) => run_tcp_once(&mut service, *port)?,
             GatewayTransport::Pipe(name) => {
                 return Err(format!(
