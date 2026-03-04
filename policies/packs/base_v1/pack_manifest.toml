@@ -1,31 +1,19 @@
 name = "base_v1"
 version = "1.0.0"
 schema_version = 1
-pack_digest = "dec4f2e4d62b20c6aeaa279f0aec505ee9d5da9df8b10937aa67fd8b24c194ca"
+pack_digest = "b78121465b643b6f124ed1652d5cde70f9c817f95054496221247351d9daab2c"
 
 [[files]]
-path = "pbm_gem_rules.toml"
-sha256 = "4d9a1cd98a23779cc21338cc72764550ad751b54f50b94f0a76d36bb934e6a23"
-
-[[files]]
-path = "nsr_rules_v1.dl"
-sha256 = "27c6c838b60ed4ea5b9536e193e7c27be07fba29c1e77bdfcb1185c26311535d"
-
-[[files]]
-path = "ebm_constraints.toml"
-sha256 = "5a30f64081da76dbeeccb4c862c8d08a410c6828a8cd00e57d68f24508ff5eee"
-
-[[files]]
-path = "budgets.toml"
-sha256 = "56df880095ae434d1e93d76e01fe871c86567841b9ca31c6594c2cd98cc2be46"
-
-[[files]]
-path = "thresholds.toml"
-sha256 = "521c7c9bc1e75eabd7207380d6c43afd2aa110fd62ac3e9de0d2c8ecf2dc0370"
+path = "alerts.toml"
+sha256 = "550f2898424314aa4ab65f0dc88c41047163fd3ae3de23755d2e953a5b4574b5"
 
 [[files]]
 path = "allowlists.toml"
 sha256 = "f35fad39fd81460cb9359b905b0945dfc3861f0c12c3bfc210427021ae81919c"
+
+[[files]]
+path = "budgets.toml"
+sha256 = "56df880095ae434d1e93d76e01fe871c86567841b9ca31c6594c2cd98cc2be46"
 
 [[files]]
 path = "determinism.toml"
@@ -34,3 +22,19 @@ sha256 = "93c83482f5a72c80b51748ac84bbb64d5043ff80edaf419af94ccac443d3803d"
 [[files]]
 path = "drift_budget.toml"
 sha256 = "263e88ae266fe828426f2f41f6e02c5b3930bed29f00429ca7aa014e832658ba"
+
+[[files]]
+path = "ebm_constraints.toml"
+sha256 = "5a30f64081da76dbeeccb4c862c8d08a410c6828a8cd00e57d68f24508ff5eee"
+
+[[files]]
+path = "nsr_rules_v1.dl"
+sha256 = "27c6c838b60ed4ea5b9536e193e7c27be07fba29c1e77bdfcb1185c26311535d"
+
+[[files]]
+path = "pbm_gem_rules.toml"
+sha256 = "4d9a1cd98a23779cc21338cc72764550ad751b54f50b94f0a76d36bb934e6a23"
+
+[[files]]
+path = "thresholds.toml"
+sha256 = "521c7c9bc1e75eabd7207380d6c43afd2aa110fd62ac3e9de0d2c8ecf2dc0370"

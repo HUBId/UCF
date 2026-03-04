@@ -2,6 +2,7 @@
 
 mod adversarial;
 mod airgap;
+mod alerts;
 mod bench;
 mod causal;
 mod change_impact;
@@ -20,6 +21,7 @@ pub use airgap::{
     airgap_import, AirgapArtifactType, AirgapExportReport, AirgapImportArgs, AirgapImportMode,
     AirgapImportReport,
 };
+pub use alerts::{alerts_report, AlertClearRecordV1, AlertEventV1, AlertRecordV1, AlertsReportV1};
 pub use bench::{bench_run, BenchArgs, BenchReport};
 pub use causal::{
     causal_slice, event_id_for_decision, event_id_for_record, explain_why,
