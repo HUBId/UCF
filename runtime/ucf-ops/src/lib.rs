@@ -7425,6 +7425,18 @@ struct CargoNodeDep {
     pkg: String,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+struct CargoLockfile {
+    package: Vec<CargoLockPackage>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct CargoLockPackage {
+    name: String,
+    #[serde(default)]
+    dependencies: Vec<String>,
+}
+
 pub fn load_network_allowlist(path: &Path) -> Result<NetworkAllowlist, OpsError> {
     let body = fs::read_to_string(path)?;
     let mut parsed = toml::from_str::<NetworkAllowlist>(&body).map_err(|e| {
@@ -7459,14 +7471,21 @@ pub fn net_deps_audit(
         .arg("--offline")
         .current_dir(repo_root)
         .output()?;
-    if !output.status.success() {
+    if output.status.success() {
+        let metadata_json = String::from_utf8_lossy(&output.stdout).to_string();
+        return net_deps_audit_from_metadata_json(&metadata_json, &allowlist, allowlist_path);
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    if !stderr.contains("attempting to make an HTTP request, but --offline was specified") {
         return Err(OpsError::Invalid(format!(
-            "cargo metadata failed: {}",
-            String::from_utf8_lossy(&output.stderr)
+            "cargo metadata failed: {stderr}"
         )));
     }
-    let metadata_json = String::from_utf8_lossy(&output.stdout).to_string();
-    net_deps_audit_from_metadata_json(&metadata_json, &allowlist, allowlist_path)
+
+    let lockfile_path = repo_root.join("Cargo.lock");
+    let lockfile_body = fs::read_to_string(&lockfile_path)?;
+    net_deps_audit_from_lockfile_toml(&lockfile_body, &allowlist, allowlist_path)
 }
 
 pub fn net_deps_audit_from_metadata_json(
@@ -7508,6 +7527,82 @@ pub fn net_deps_audit_from_metadata_json(
     runtime_root_ids.sort();
     runtime_root_ids.dedup();
 
+    let mut violations = Vec::new();
+    for root_id in runtime_root_ids {
+        let root_name = id_to_name
+            .get(&root_id)
+            .cloned()
+            .unwrap_or_else(|| root_id.clone());
+        violations.extend(find_net_dep_violations(
+            &root_id,
+            &root_name,
+            &graph,
+            &id_to_name,
+            allowlist,
+        ));
+    }
+
+    Ok(build_net_deps_report(allowlist_path, allowlist, violations))
+}
+
+pub fn net_deps_audit_from_lockfile_toml(
+    lockfile_body: &str,
+    allowlist: &NetworkAllowlist,
+    allowlist_path: &Path,
+) -> Result<NetDepsAuditReport, OpsError> {
+    let lockfile = toml::from_str::<CargoLockfile>(lockfile_body)
+        .map_err(|e| OpsError::Invalid(format!("invalid Cargo.lock for net-deps audit: {e}")))?;
+
+    let mut graph: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for package in lockfile.package {
+        let mut deps = package
+            .dependencies
+            .into_iter()
+            .map(|dep| lockfile_dep_name(&dep))
+            .collect::<Vec<_>>();
+        deps.sort();
+        deps.dedup();
+        graph.entry(package.name).or_default().extend(deps);
+    }
+    for deps in graph.values_mut() {
+        deps.sort();
+        deps.dedup();
+    }
+
+    let id_to_name = graph
+        .keys()
+        .cloned()
+        .map(|k| (k.clone(), k))
+        .collect::<BTreeMap<_, _>>();
+
+    let mut violations = Vec::new();
+    for root_name in &allowlist.runtime_crates {
+        if !graph.contains_key(root_name) {
+            continue;
+        }
+        violations.extend(find_net_dep_violations(
+            root_name,
+            root_name,
+            &graph,
+            &id_to_name,
+            allowlist,
+        ));
+    }
+
+    Ok(build_net_deps_report(allowlist_path, allowlist, violations))
+}
+
+fn lockfile_dep_name(dep: &str) -> String {
+    dep.split_whitespace().next().unwrap_or(dep).to_string()
+}
+
+fn find_net_dep_violations(
+    root_id: &str,
+    root_name: &str,
+    graph: &BTreeMap<String, Vec<String>>,
+    id_to_name: &BTreeMap<String, String>,
+    allowlist: &NetworkAllowlist,
+) -> Vec<NetDepsViolation> {
     let forbidden: BTreeSet<String> = allowlist.forbidden_crates.iter().cloned().collect();
     let exemptions: BTreeSet<(String, String)> = allowlist
         .exempt_runtime_edges
@@ -7515,76 +7610,76 @@ pub fn net_deps_audit_from_metadata_json(
         .map(|x| (x.root_crate.clone(), x.forbidden_crate.clone()))
         .collect();
 
-    let mut violations = Vec::new();
+    let mut queue = VecDeque::new();
+    let mut visited = BTreeSet::new();
+    let mut prev: BTreeMap<String, String> = BTreeMap::new();
+    queue.push_back(root_id.to_string());
+    visited.insert(root_id.to_string());
 
-    for root_id in runtime_root_ids {
-        let root_name = id_to_name
-            .get(&root_id)
-            .cloned()
-            .unwrap_or_else(|| root_id.clone());
-        let mut queue = VecDeque::new();
-        let mut visited = BTreeSet::new();
-        let mut prev: BTreeMap<String, String> = BTreeMap::new();
-        queue.push_back(root_id.clone());
-        visited.insert(root_id.clone());
-
-        while let Some(current) = queue.pop_front() {
-            if let Some(neighbors) = graph.get(&current) {
-                for next in neighbors {
-                    if visited.insert(next.clone()) {
-                        prev.insert(next.clone(), current.clone());
-                        queue.push_back(next.clone());
-                    }
+    while let Some(current) = queue.pop_front() {
+        if let Some(neighbors) = graph.get(&current) {
+            for next in neighbors {
+                if visited.insert(next.clone()) {
+                    prev.insert(next.clone(), current.clone());
+                    queue.push_back(next.clone());
                 }
             }
-        }
-
-        let mut forbidden_hits: Vec<(String, String)> = visited
-            .iter()
-            .filter_map(|id| {
-                let name = id_to_name.get(id)?;
-                if forbidden.contains(name)
-                    && !exemptions.contains(&(root_name.clone(), name.clone()))
-                {
-                    Some((id.clone(), name.clone()))
-                } else {
-                    None
-                }
-            })
-            .collect();
-        forbidden_hits.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0)));
-
-        for (hit_id, hit_name) in forbidden_hits {
-            let mut path_ids = vec![hit_id.clone()];
-            let mut cursor = hit_id.clone();
-            while let Some(parent) = prev.get(&cursor) {
-                path_ids.push(parent.clone());
-                if parent == &root_id {
-                    break;
-                }
-                cursor = parent.clone();
-            }
-            path_ids.reverse();
-            let path = path_ids
-                .iter()
-                .map(|id| id_to_name.get(id).cloned().unwrap_or_else(|| id.clone()))
-                .collect::<Vec<_>>();
-
-            violations.push(NetDepsViolation {
-                root_crate: root_name.clone(),
-                forbidden_crate: hit_name.clone(),
-                path,
-                remediation: vec![
-                    format!(
-                        "feature-gate `{}` so it is excluded from default features for runtime crate `{}`",
-                        hit_name, root_name
-                    ),
-                    "move networking code to an ops-only crate outside runtime closure".to_string(),
-                ],
-            });
         }
     }
 
+    let mut hits = visited
+        .iter()
+        .filter_map(|id| {
+            let dep_name = id_to_name.get(id)?;
+            if forbidden.contains(dep_name)
+                && !exemptions.contains(&(root_name.to_string(), dep_name.to_string()))
+            {
+                Some((id.clone(), dep_name.clone()))
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    hits.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0)));
+
+    let mut violations = Vec::new();
+    for (hit_id, hit_name) in hits {
+        let mut path_ids = vec![hit_id.clone()];
+        let mut cursor = hit_id;
+        while let Some(parent) = prev.get(&cursor) {
+            path_ids.push(parent.clone());
+            if parent == root_id {
+                break;
+            }
+            cursor = parent.clone();
+        }
+        path_ids.reverse();
+        let path = path_ids
+            .iter()
+            .map(|id| id_to_name.get(id).cloned().unwrap_or_else(|| id.clone()))
+            .collect::<Vec<_>>();
+
+        violations.push(NetDepsViolation {
+            root_crate: root_name.to_string(),
+            forbidden_crate: hit_name.clone(),
+            path,
+            remediation: vec![
+                format!(
+                    "feature-gate `{}` so it is excluded from default features for runtime crate `{}`",
+                    hit_name, root_name
+                ),
+                "move networking code to an ops-only crate outside runtime closure".to_string(),
+            ],
+        });
+    }
+    violations
+}
+
+fn build_net_deps_report(
+    allowlist_path: &Path,
+    allowlist: &NetworkAllowlist,
+    mut violations: Vec<NetDepsViolation>,
+) -> NetDepsAuditReport {
     violations.sort_by(|a, b| {
         (&a.root_crate, &a.forbidden_crate, &a.path).cmp(&(
             &b.root_crate,
@@ -7593,12 +7688,12 @@ pub fn net_deps_audit_from_metadata_json(
         ))
     });
 
-    Ok(NetDepsAuditReport {
+    NetDepsAuditReport {
         schema_version: 1,
         allowlist_path: allowlist_path.to_string_lossy().replace('\\', "/"),
         runtime_roots: allowlist.runtime_crates.clone(),
         violations,
-    })
+    }
 }
 
 pub fn audit_scan(repo_root: &Path) -> Result<AuditScanReport, OpsError> {

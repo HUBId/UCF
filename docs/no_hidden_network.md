@@ -6,6 +6,7 @@
 
 1. **Dependency closure scan** (`ucf-ops audit net-deps`)
    - Reads `cargo metadata --format-version 1 --locked --offline`.
+   - If offline metadata resolution cannot proceed due missing local registry cache, it falls back to local `Cargo.lock` graph parsing (still offline).
    - Loads `docs/network_allowlist.toml`.
    - Traverses runtime crate closures (default features only).
    - Fails if forbidden network crates appear in runtime closure.

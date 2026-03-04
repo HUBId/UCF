@@ -1,6 +1,8 @@
 use std::path::Path;
 
-use ucf_ops::{net_deps_audit_from_metadata_json, NetworkAllowlist};
+use ucf_ops::{
+    net_deps_audit_from_lockfile_toml, net_deps_audit_from_metadata_json, NetworkAllowlist,
+};
 
 fn allowlist() -> NetworkAllowlist {
     NetworkAllowlist {
@@ -48,6 +50,39 @@ fn net_deps_audit_reports_forbidden_path_deterministically() {
     .expect("audit");
     assert_eq!(report.violations.len(), 1);
     assert_eq!(report.violations[0].forbidden_crate, "reqwest");
+    assert_eq!(
+        report.violations[0].path,
+        vec!["ucf-runtime", "ucf-mid", "reqwest"]
+    );
+}
+
+#[test]
+fn net_deps_lockfile_fallback_reports_forbidden_path() {
+    let lockfile = r#"
+version = 3
+
+[[package]]
+name = "ucf-runtime"
+version = "0.1.0"
+dependencies = ["ucf-mid 0.1.0"]
+
+[[package]]
+name = "ucf-mid"
+version = "0.1.0"
+dependencies = ["reqwest 0.11.0"]
+
+[[package]]
+name = "reqwest"
+version = "0.11.0"
+"#;
+
+    let report = net_deps_audit_from_lockfile_toml(
+        lockfile,
+        &allowlist(),
+        Path::new("docs/network_allowlist.toml"),
+    )
+    .expect("audit lockfile");
+    assert_eq!(report.violations.len(), 1);
     assert_eq!(
         report.violations[0].path,
         vec!["ucf-runtime", "ucf-mid", "reqwest"]
