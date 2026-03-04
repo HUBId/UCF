@@ -107,6 +107,45 @@ message ReportResponse {
   Error error = 4;
 }
 
+message HealthRequest {
+  uint32 schema_version = 1;
+  string auth_token = 2;
+}
+
+enum HealthStatus {
+  HEALTH_STATUS_UNSPECIFIED = 0;
+  HEALTH_STATUS_OK = 1;
+  HEALTH_STATUS_DEGRADED = 2;
+  HEALTH_STATUS_FAIL = 3;
+}
+
+enum DriftStatus {
+  DRIFT_STATUS_UNSPECIFIED = 0;
+  DRIFT_STATUS_UNKNOWN = 1;
+  DRIFT_STATUS_OK = 2;
+  DRIFT_STATUS_DEGRADED = 3;
+}
+
+message AlarmCounts {
+  uint32 drift_alarms = 1;
+  uint32 violations = 2;
+}
+
+message HealthResponseV1 {
+  uint32 schema_version = 1;
+  HealthStatus status = 2;
+  string run_id = 3;
+  bool strict_mode = 4;
+  string policy_graph_digest_prefix = 5;
+  string manifest_digest_prefix = 6;
+  DriftStatus drift_status = 7;
+  bool emergency_active = 8;
+  uint64 last_tick_age_ms = 9;
+  string active_slots_summary = 10;
+  AlarmCounts recent_alarm_counts = 11;
+  Error error = 12;
+}
+
 message GatewayRequest {
   uint32 negotiated_version = 1;
   oneof payload {
@@ -115,6 +154,7 @@ message GatewayRequest {
     DecisionStreamSubscribeRequest subscribe = 4;
     EssQueryRequest ess_query = 5;
     ReportRequest report = 6;
+    HealthRequest health = 7;
   }
 }
 
@@ -126,6 +166,7 @@ message GatewayResponse {
     DecisionStreamSubscribeResponse subscribe = 4;
     EssQueryResponse ess_query = 5;
     ReportResponse report = 6;
-    Error error = 7;
+    HealthResponseV1 health = 7;
+    Error error = 8;
   }
 }

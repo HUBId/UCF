@@ -90,6 +90,7 @@ pub enum Command {
     EssQuery { last: u32 },
     ReportExplainTick { tick: u64 },
     ReportReadinessGate,
+    Health,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -192,6 +193,11 @@ pub fn parse_cli(args: &[String]) -> Result<Cli, ClientError> {
                 _ => Err(ClientError::Usage(usage())),
             }
         }
+        "health" => Ok(Cli {
+            endpoint,
+            auth,
+            command: Command::Health,
+        }),
         _ => Err(ClientError::Usage(usage())),
     }
 }
@@ -205,6 +211,56 @@ pub fn run(cli: Cli) -> Result<String, ClientError> {
             report(&cli.endpoint, &cli.auth, "explain-tick", tick)
         }
         Command::ReportReadinessGate => report(&cli.endpoint, &cli.auth, "readiness-gate", 0),
+        Command::Health => health(&cli.endpoint, &cli.auth),
+    }
+}
+
+fn health(endpoint: &Endpoint, auth: &str) -> Result<String, ClientError> {
+    let req = proto::GatewayRequest {
+        negotiated_version: 1,
+        payload: Some(proto::gateway_request::Payload::Health(
+            proto::HealthRequest {
+                schema_version: SCHEMA_VERSION,
+                auth_token: auth.to_string(),
+            },
+        )),
+    };
+    let resp = send(endpoint, &req)?;
+    match resp.payload {
+        Some(proto::gateway_response::Payload::Health(r)) => {
+            let value = serde_json::json!({
+                "schema_version": r.schema_version,
+                "status": r.status,
+                "run_id": r.run_id,
+                "strict_mode": r.strict_mode,
+                "policy_graph_digest_prefix": r.policy_graph_digest_prefix,
+                "manifest_digest_prefix": r.manifest_digest_prefix,
+                "drift_status": r.drift_status,
+                "emergency_active": r.emergency_active,
+                "last_tick_age_ms": r.last_tick_age_ms,
+                "active_slots_summary": r.active_slots_summary,
+                "recent_alarm_counts": {
+                    "drift_alarms": r
+                        .recent_alarm_counts
+                        .as_ref()
+                        .map(|a| a.drift_alarms)
+                        .unwrap_or_default(),
+                    "violations": r
+                        .recent_alarm_counts
+                        .as_ref()
+                        .map(|a| a.violations)
+                        .unwrap_or_default(),
+                }
+            });
+            serde_json::to_string_pretty(&value).map_err(ClientError::from)
+        }
+        Some(proto::gateway_response::Payload::Error(e)) => Err(ClientError::Gateway {
+            code: e.code,
+            message: e.message,
+        }),
+        _ => Err(ClientError::Proto(
+            "unexpected response payload for health".to_string(),
+        )),
     }
 }
 
@@ -423,7 +479,7 @@ fn send_over_stream<S: Read + Write>(
 }
 
 fn usage() -> String {
-    "ucf-client [--endpoint tcp://127.0.0.1:44991|unix://.ucf/data/ipc/gateway.sock|pipe://./pipe/ucf_gateway] [--auth token] <submit|stream|ess|report> ...".to_string()
+    "ucf-client [--endpoint tcp://127.0.0.1:44991|unix://.ucf/data/ipc/gateway.sock|pipe://./pipe/ucf_gateway] [--auth token] <submit|stream|ess|report|health> ...".to_string()
 }
 
 fn arg_value(args: &[String], flag: &str) -> Option<String> {

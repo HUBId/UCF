@@ -189,6 +189,9 @@ pub struct GatewayConfig {
     pub workdir: PathBuf,
     pub max_message_bytes: usize,
     pub rate_limits: BTreeMap<String, RateLimitConfig>,
+    pub strict_mode: bool,
+    pub manifest_digest_prefix: String,
+    pub env_mode: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -287,10 +290,16 @@ impl GatewayConfig {
         let mut token_capabilities_by_hash = BTreeMap::new();
         token_capabilities_by_hash.insert(
             hash_token("test-token"),
-            ["submit", "subscribe", "ess:read", "report:read"]
-                .into_iter()
-                .map(ToString::to_string)
-                .collect(),
+            [
+                "submit",
+                "subscribe",
+                "ess:read",
+                "report:read",
+                "health:read",
+            ]
+            .into_iter()
+            .map(ToString::to_string)
+            .collect(),
         );
 
         let mut rate_limits = BTreeMap::new();
@@ -315,6 +324,13 @@ impl GatewayConfig {
                 refill_per_sec: 2,
             },
         );
+        rate_limits.insert(
+            "health".to_string(),
+            RateLimitConfig {
+                capacity: 2,
+                refill_per_sec: 2,
+            },
+        );
 
         Self {
             run_id: "run-test".to_string(),
@@ -325,20 +341,32 @@ impl GatewayConfig {
             workdir: tmp.to_path_buf(),
             max_message_bytes: MAX_MESSAGE_BYTES,
             rate_limits,
+            strict_mode: strict_mode_enabled(),
+            manifest_digest_prefix: "unknown".to_string(),
+            env_mode: "test".to_string(),
         }
     }
 
     pub fn from_env(tmp: &Path) -> Result<Self, GatewayError> {
         let mode = std::env::var("UCF_ENV").unwrap_or_else(|_| "dev".to_string());
         let mut cfg = Self::for_tests(tmp);
+        cfg.env_mode = mode.clone();
+        cfg.strict_mode = strict_mode_enabled();
+        cfg.manifest_digest_prefix = load_manifest_digest_prefix();
         cfg.token_capabilities_by_hash.clear();
         if let Ok(token) = std::env::var("UCF_GATEWAY_TOKEN") {
             cfg.token_capabilities_by_hash.insert(
                 hash_token(token.as_str()),
-                ["submit", "subscribe", "ess:read", "report:read"]
-                    .into_iter()
-                    .map(ToString::to_string)
-                    .collect(),
+                [
+                    "submit",
+                    "subscribe",
+                    "ess:read",
+                    "report:read",
+                    "health:read",
+                ]
+                .into_iter()
+                .map(ToString::to_string)
+                .collect(),
             );
             return Ok(cfg);
         }
@@ -346,15 +374,34 @@ impl GatewayConfig {
             eprintln!("warning: UCF_GATEWAY_TOKEN not set, enabling dev fallback token");
             cfg.token_capabilities_by_hash.insert(
                 hash_token("dev-token"),
-                ["submit", "subscribe", "ess:read", "report:read"]
-                    .into_iter()
-                    .map(ToString::to_string)
-                    .collect(),
+                [
+                    "submit",
+                    "subscribe",
+                    "ess:read",
+                    "report:read",
+                    "health:read",
+                ]
+                .into_iter()
+                .map(ToString::to_string)
+                .collect(),
             );
             return Ok(cfg);
         }
         Err(GatewayError::Unauthorized)
     }
+}
+
+fn load_manifest_digest_prefix() -> String {
+    std::fs::read_to_string("models/lifecycle_manifest.toml")
+        .ok()
+        .and_then(|raw| {
+            raw.lines()
+                .find(|l| l.trim_start().starts_with("manifest_digest"))
+                .and_then(|line| line.split('=').nth(1))
+                .map(|v| v.trim().trim_matches('"').chars().take(12).collect())
+        })
+        .filter(|s: &String| !s.is_empty())
+        .unwrap_or_else(|| "unknown".to_string())
 }
 
 #[derive(Debug, Error)]
@@ -441,6 +488,7 @@ pub struct GatewayService {
     adapter: MockAdapter,
     decisions: VecDeque<proto::DecisionEvent>,
     token_buckets: BTreeMap<String, TokenBucket>,
+    last_tick_wallclock_ms: Option<u64>,
 }
 
 impl GatewayService {
@@ -451,6 +499,7 @@ impl GatewayService {
             adapter: MockAdapter::default(),
             decisions: VecDeque::new(),
             token_buckets: BTreeMap::new(),
+            last_tick_wallclock_ms: None,
         }
     }
 
@@ -571,6 +620,7 @@ impl GatewayService {
             .orchestrator
             .ingest_and_process(&mut self.adapter, ctrl)
             .map_err(|_| GatewayError::SchemaInvalid)?;
+        self.last_tick_wallclock_ms = Some(now_ms());
         let evt = decision_to_event(
             &self.config.run_id,
             self.config.policy_graph_digest_prefix,
@@ -691,6 +741,60 @@ impl GatewayService {
         })
     }
 
+    pub fn get_health(
+        &self,
+        token: &str,
+        req: proto::HealthRequest,
+    ) -> Result<proto::HealthResponseV1, GatewayError> {
+        if req.schema_version != SCHEMA_VERSION {
+            return Err(GatewayError::UnsupportedVersion);
+        }
+        if self.config.env_mode == "dev" && token.is_empty() {
+            eprintln!("warning: unauthenticated health probe in dev mode");
+        } else {
+            self.authorize(token, "health:read")?;
+        }
+
+        let drift_alarms = read_recent_alarm_count(&self.config.workdir, &self.config.run_id, 128);
+        let violations = read_recent_violations_count(&self.config.workdir, 128);
+        let drift_status = if drift_alarms == 0 {
+            proto::DriftStatus::Ok
+        } else {
+            proto::DriftStatus::Degraded
+        };
+        let emergency_active = self.orchestrator.is_emergency_active();
+        let status = if emergency_active {
+            proto::HealthStatus::Fail
+        } else if drift_alarms > 0 || violations > 0 {
+            proto::HealthStatus::Degraded
+        } else {
+            proto::HealthStatus::Ok
+        };
+
+        let last_tick_age_ms = self
+            .last_tick_wallclock_ms
+            .map(|ts| now_ms().saturating_sub(ts))
+            .unwrap_or(u64::MAX);
+
+        Ok(proto::HealthResponseV1 {
+            schema_version: SCHEMA_VERSION,
+            status: status as i32,
+            run_id: self.config.run_id.clone(),
+            strict_mode: self.config.strict_mode,
+            policy_graph_digest_prefix: hex::encode(self.config.policy_graph_digest_prefix),
+            manifest_digest_prefix: self.config.manifest_digest_prefix.clone(),
+            drift_status: drift_status as i32,
+            emergency_active,
+            last_tick_age_ms,
+            active_slots_summary: self.orchestrator.active_slots_summary(),
+            recent_alarm_counts: Some(proto::AlarmCounts {
+                drift_alarms,
+                violations,
+            }),
+            error: None,
+        })
+    }
+
     pub fn handle_request(
         &mut self,
         req: proto::GatewayRequest,
@@ -730,6 +834,11 @@ impl GatewayService {
                 "report",
                 self.get_report(token, r)
                     .map(proto::gateway_response::Payload::Report),
+            ),
+            Some(proto::gateway_request::Payload::Health(r)) => (
+                "health",
+                self.get_health(token, r)
+                    .map(proto::gateway_response::Payload::Health),
             ),
             None => ("none", Err(GatewayError::SchemaInvalid)),
         };
@@ -1048,6 +1157,7 @@ fn extract_token(req: &proto::GatewayRequest) -> &str {
         Some(proto::gateway_request::Payload::Subscribe(r)) => r.auth_token.as_str(),
         Some(proto::gateway_request::Payload::EssQuery(r)) => r.auth_token.as_str(),
         Some(proto::gateway_request::Payload::Report(r)) => r.auth_token.as_str(),
+        Some(proto::gateway_request::Payload::Health(r)) => r.auth_token.as_str(),
         _ => "",
     }
 }
@@ -1055,8 +1165,29 @@ fn extract_token(req: &proto::GatewayRequest) -> &str {
 fn extract_client_id(req: &proto::GatewayRequest) -> &str {
     match &req.payload {
         Some(proto::gateway_request::Payload::Handshake(h)) => h.client_id.as_str(),
+        Some(proto::gateway_request::Payload::Health(_)) => "health-client",
         _ => "anonymous",
     }
+}
+
+fn read_recent_alarm_count(workdir: &Path, run_id: &str, cap: usize) -> u32 {
+    let path = workdir
+        .join("world_shadow")
+        .join(format!("{}_alarms.jsonl", run_id));
+    let Ok(body) = std::fs::read_to_string(path) else {
+        return 0;
+    };
+    let count = body.lines().take(cap).count();
+    u32::try_from(count).unwrap_or(u32::MAX)
+}
+
+fn read_recent_violations_count(workdir: &Path, cap: usize) -> u32 {
+    let path = workdir.join("network_violations.jsonl");
+    let Ok(body) = std::fs::read_to_string(path) else {
+        return 0;
+    };
+    let count = body.lines().take(cap).count();
+    u32::try_from(count).unwrap_or(u32::MAX)
 }
 
 fn now_ms() -> u64 {
