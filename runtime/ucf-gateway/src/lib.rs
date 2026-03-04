@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 
 use blake3::Hasher;
 use prost::Message;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use ucf_core::types::{SimTime, Tick, WindowId};
 use ucf_ess::v1::ExperienceStore;
@@ -109,21 +109,67 @@ pub fn transport_from_env(bundle_root: &Path) -> Result<GatewayTransport, Gatewa
             }
         }
     };
-    match kind {
-        TransportKind::Unix => Ok(GatewayTransport::Unix(default_unix_socket_path(
-            bundle_root,
-        ))),
-        TransportKind::Pipe => Ok(GatewayTransport::Pipe(default_windows_pipe_name())),
-        TransportKind::Tcp => parse_explicit_tcp_bind(),
+    let transport = match kind {
+        TransportKind::Unix => GatewayTransport::Unix(default_unix_socket_path(bundle_root)),
+        TransportKind::Pipe => GatewayTransport::Pipe(default_windows_pipe_name()),
+        TransportKind::Tcp => parse_explicit_tcp_bind()?,
+    };
+    enforce_transport_policy(bundle_root, &transport)?;
+    Ok(transport)
+}
+
+fn enforce_transport_policy(
+    bundle_root: &Path,
+    transport: &GatewayTransport,
+) -> Result<(), GatewayError> {
+    match transport {
+        GatewayTransport::Unix(_) | GatewayTransport::Pipe(_) => Ok(()),
+        GatewayTransport::TcpLocal(port) => {
+            let bind =
+                std::env::var("UCF_GATEWAY_BIND").unwrap_or_else(|_| format!("127.0.0.1:{port}"));
+            match bind.parse::<SocketAddr>() {
+                Ok(addr) if addr.ip().is_loopback() => Ok(()),
+                Ok(addr) => {
+                    let action = if strict_mode_enabled() {
+                        "shutdown"
+                    } else {
+                        "safe_only"
+                    };
+                    record_gateway_violation(
+                        bundle_root,
+                        "gateway_non_loopback_bind",
+                        "non_loopback",
+                        action,
+                        format!("requested gateway bind {addr}"),
+                    );
+                    Err(GatewayError::Unauthorized)
+                }
+                Err(_) => Err(GatewayError::SchemaInvalid),
+            }
+        }
+    }
+}
+
+fn runtime_socket_audit_tick(workdir: &Path) {
+    if let Some(detail) = detect_non_loopback_tcp_established() {
+        let action = if strict_mode_enabled() {
+            "safe_only"
+        } else {
+            "warn"
+        };
+        record_gateway_violation(
+            workdir,
+            "runtime_non_loopback_tcp_detected",
+            "non_loopback",
+            action,
+            detail,
+        );
     }
 }
 
 fn parse_explicit_tcp_bind() -> Result<GatewayTransport, GatewayError> {
     let bind = std::env::var("UCF_GATEWAY_BIND").map_err(|_| GatewayError::Unauthorized)?;
     let parsed: SocketAddr = bind.parse().map_err(|_| GatewayError::SchemaInvalid)?;
-    if !parsed.ip().is_loopback() {
-        return Err(GatewayError::Unauthorized);
-    }
     Ok(GatewayTransport::TcpLocal(parsed.port()))
 }
 
@@ -143,6 +189,97 @@ pub struct GatewayConfig {
     pub workdir: PathBuf,
     pub max_message_bytes: usize,
     pub rate_limits: BTreeMap<String, RateLimitConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct NetworkViolationRecord {
+    pub schema_version: u16,
+    pub reason_code: String,
+    pub endpoint_class: String,
+    pub action: String,
+    pub detail: String,
+    pub strict_mode: bool,
+    pub t_ms: u64,
+}
+
+fn strict_mode_enabled() -> bool {
+    std::env::var("UCF_STRICT_MODE").ok().as_deref() == Some("1")
+}
+
+fn network_violation_log_path(workdir: &Path) -> PathBuf {
+    workdir.join("network_violations.jsonl")
+}
+
+fn append_network_violation(
+    workdir: &Path,
+    record: &NetworkViolationRecord,
+) -> Result<(), GatewayError> {
+    if let Some(parent) = network_violation_log_path(workdir).parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(network_violation_log_path(workdir))?;
+    let line = serde_json::to_string(record).map_err(|_| GatewayError::Internal)?;
+    file.write_all(line.as_bytes())?;
+    file.write_all(
+        b"
+",
+    )?;
+    Ok(())
+}
+
+fn record_gateway_violation(
+    workdir: &Path,
+    reason_code: &str,
+    endpoint_class: &str,
+    action: &str,
+    detail: String,
+) {
+    let record = NetworkViolationRecord {
+        schema_version: 1,
+        reason_code: reason_code.to_string(),
+        endpoint_class: endpoint_class.to_string(),
+        action: action.to_string(),
+        detail,
+        strict_mode: strict_mode_enabled(),
+        t_ms: now_ms(),
+    };
+    let _ = append_network_violation(workdir, &record);
+}
+
+#[cfg(target_os = "linux")]
+fn detect_non_loopback_tcp_established() -> Option<String> {
+    let body = std::fs::read_to_string("/proc/net/tcp").ok()?;
+    for line in body.lines().skip(1) {
+        let cols = line.split_whitespace().collect::<Vec<_>>();
+        if cols.len() < 4 {
+            continue;
+        }
+        let remote = cols[2];
+        let state = cols[3];
+        if state != "01" {
+            continue;
+        }
+        let Some((remote_ip_hex, remote_port_hex)) = remote.split_once(':') else {
+            continue;
+        };
+        if remote_ip_hex.eq_ignore_ascii_case("00000000")
+            || remote_ip_hex.eq_ignore_ascii_case("0100007F")
+        {
+            continue;
+        }
+        return Some(format!(
+            "remote={remote_ip_hex}:{remote_port_hex} state={state}"
+        ));
+    }
+    None
+}
+
+#[cfg(not(target_os = "linux"))]
+fn detect_non_loopback_tcp_established() -> Option<String> {
+    None
 }
 
 impl GatewayConfig {
@@ -721,6 +858,7 @@ pub fn write_frame<W: Write>(
 }
 
 pub fn run_tcp_once(service: &mut GatewayService, port: u16) -> Result<(), GatewayError> {
+    runtime_socket_audit_tick(&service.config.workdir);
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
     let listener = TcpListener::bind(addr)?;
     let (mut stream, _) = listener.accept()?;
@@ -740,6 +878,7 @@ fn process_connection(
 
 #[cfg(unix)]
 pub fn run_unix_once(service: &mut GatewayService, path: &Path) -> Result<(), GatewayError> {
+    runtime_socket_audit_tick(&service.config.workdir);
     if path.exists() {
         std::fs::remove_file(path)?;
     }

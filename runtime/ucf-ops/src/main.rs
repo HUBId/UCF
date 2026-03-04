@@ -10,13 +10,13 @@ use ucf_ops::{
     gateway_threat_test, goldens_generate, goldens_update, goldens_verify, goldens_verify_detailed,
     hardware_scan, load_signoff_checklist, logs_prove, logs_verify_proof, metrics_snapshot,
     metrics_summary, metrics_trend, migrate_config_v1, models_list, models_probe, models_promote,
-    models_recommend_rollback, models_rollback, models_stage, models_verify, nightly_summarize,
-    one_command_bringup, out_manifest, parse_slot, path_scan, policy_diff, policy_explain,
-    policy_validate, portability_check, readiness_gate, release_rc1_gate, release_signoff_validate,
-    replay_audit, replay_bugreport, repro_pack, repro_verify, run_status, runs_list, runs_search,
-    runs_show, save_counterfactual_result, security_verify_chain, simulate_counterfactual,
-    strict_check, troubleshoot, verify_bugreport, world_shadow_report, write_slice,
-    AdversarialRunArgs, BenchArgs, BugKitBuildArgs, ChangeImpactArgs, ConfigV1,
+    models_recommend_rollback, models_rollback, models_stage, models_verify, net_deps_audit,
+    nightly_summarize, one_command_bringup, out_manifest, parse_slot, path_scan, policy_diff,
+    policy_explain, policy_validate, portability_check, readiness_gate, release_rc1_gate,
+    release_signoff_validate, replay_audit, replay_bugreport, repro_pack, repro_verify, run_status,
+    runs_list, runs_search, runs_show, save_counterfactual_result, security_verify_chain,
+    simulate_counterfactual, strict_check, troubleshoot, verify_bugreport, world_shadow_report,
+    write_slice, AdversarialRunArgs, BenchArgs, BugKitBuildArgs, ChangeImpactArgs, ConfigV1,
     CounterfactualRequest, DevLoopArgs, DocsLintArgs, DocsLintMode, DocsLintStatus,
     ExplainTickRequest, ExportArgs, GateStatus, GoldenGenerateArgs, GoldenVerifyArgs,
     GoldenVerifyReport, NightlySummarizeArgs, SpecSnapshotArgs,
@@ -314,7 +314,37 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         return Err("path scan failed".into());
                     }
                 }
-                _ => return Err("usage: ucf-ops audit scan|hardware-scan|path-scan".into()),
+                "net-deps" => {
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/net_deps.json"));
+                    let allowlist = arg_value(&args, "--allowlist")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("docs/network_allowlist.toml"));
+                    let report = net_deps_audit(&PathBuf::from("."), &allowlist)?;
+                    if let Some(parent) = out.parent() {
+                        std::fs::create_dir_all(parent)?;
+                    }
+                    std::fs::write(&out, serde_json::to_vec_pretty(&report)?)?;
+                    println!("out={}", out.display());
+                    if report.violations.is_empty() {
+                        println!("net_deps=ok violations=0");
+                    } else {
+                        println!("net_deps=fail violations={}", report.violations.len());
+                        for violation in report.violations {
+                            println!(
+                                "root={} forbidden={} path={}",
+                                violation.root_crate,
+                                violation.forbidden_crate,
+                                violation.path.join(" -> ")
+                            );
+                        }
+                        return Err("network dependency audit failed".into());
+                    }
+                }
+                _ => {
+                    return Err("usage: ucf-ops audit scan|hardware-scan|path-scan|net-deps".into())
+                }
             }
         }
 

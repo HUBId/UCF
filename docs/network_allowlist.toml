@@ -1,0 +1,31 @@
+schema_version = 1
+
+# Runtime closure roots scanned in `cargo metadata` default-feature graph.
+runtime_crates = [
+  "ucf-backends-gpu",
+  "ucf-client",
+  "ucf-gateway",
+  "ucf-platform",
+  "ucf-policy",
+  "ucf-replay",
+  "ucf-runtime",
+]
+
+# Forbidden in runtime default closure unless exempted below.
+forbidden_crates = [
+  "hyper",
+  "isahc",
+  "reqwest",
+  "tokio-tungstenite",
+  "tungstenite",
+  "ureq",
+]
+
+# Explicitly documented feature gates allowed for non-runtime lanes.
+allowed_feature_notes = [
+  "remote-compute",
+  "ops-networking",
+]
+
+# Keep empty by default; exemptions must be policy-reviewed.
+exempt_runtime_edges = []
