@@ -55,6 +55,19 @@ UCF_GATEWAY_TRANSPORT=tcp UCF_GATEWAY_BIND=127.0.0.1:44991 UCF_GATEWAY_TOKEN=tes
 - Pipe: `--endpoint pipe://./pipe/ucf_gateway`
 - TCP: `--endpoint tcp://127.0.0.1:44991`
 
+## Health Probe (lokal, sicher)
+
+Gateway-Health ist ein lokaler IPC-Endpunkt (`health`) mit stabiler, begrenzter Oberfläche.
+
+- `test`/`prod`: Token erforderlich (`health:read`)
+- `dev`: leerer Token für Health erlaubt, aber mit Warnung
+
+Beispiel:
+
+```bash
+cargo run -p ucf-ops -- health check --endpoint unix://.ucf/data/ipc/gateway.sock --auth test-token --out ./out/health.json
+```
+
 ## Lokale Firewall Guidance (ohne Tools)
 
 ### Windows Defender Firewall

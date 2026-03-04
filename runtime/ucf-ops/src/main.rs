@@ -107,21 +107,63 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let sub = args.get(2).map(String::as_str).unwrap_or("help");
             match sub {
                 "check" => {
-                    let report = diagnostics(&workdir)?;
                     let out = arg_value(&args, "--out")
                         .map(PathBuf::from)
                         .unwrap_or_else(|| PathBuf::from("./out/health.json"));
+                    let endpoint = arg_value(&args, "--endpoint")
+                        .unwrap_or_else(|| "unix://.ucf/data/ipc/gateway.sock".to_string());
+                    let auth = arg_value(&args, "--auth").unwrap_or_default();
+                    let output = std::process::Command::new("cargo")
+                        .args([
+                            "run",
+                            "-p",
+                            "ucf-client",
+                            "--",
+                            "--endpoint",
+                            endpoint.as_str(),
+                            "--auth",
+                            auth.as_str(),
+                            "health",
+                        ])
+                        .output()?;
+                    if !output.status.success() {
+                        return Err(format!(
+                            "gateway health query failed: {}",
+                            String::from_utf8_lossy(&output.stderr)
+                        )
+                        .into());
+                    }
+                    let mut report: serde_json::Value = serde_json::from_slice(&output.stdout)
+                        .map_err(|e| format!("invalid health payload: {e}"))?;
+                    if let Some(slots) = report
+                        .get("active_slots_summary")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.chars().take(128).collect::<String>())
+                    {
+                        report["active_slots_summary"] = serde_json::Value::String(slots);
+                    }
                     if let Some(parent) = out.parent() {
                         std::fs::create_dir_all(parent)?;
                     }
                     std::fs::write(&out, serde_json::to_vec_pretty(&report)?)?;
                     println!("out={}", out.display());
-                    println!("overall={}", if report.ok() { "PASS" } else { "FAIL" });
-                    if !report.ok() {
-                        std::process::exit(2);
+                    let code = match report.get("status").and_then(|v| v.as_i64()) {
+                        Some(1) => 0,
+                        Some(2) => 2,
+                        Some(3) => 3,
+                        _ => 3,
+                    };
+                    println!("status_code={code}");
+                    if code != 0 {
+                        std::process::exit(code);
                     }
                 }
-                _ => return Err("usage: ucf-ops health check [--out <path>]".into()),
+                _ => {
+                    return Err(
+                        "usage: ucf-ops health check [--out <path>] [--endpoint <local>] [--auth <token>]"
+                            .into(),
+                    )
+                }
             }
         }
         "diagnostics" => {

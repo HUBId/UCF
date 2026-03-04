@@ -211,3 +211,50 @@ fn strict_mode_rejects_non_loopback_tcp_bind_and_records_violation() {
     std::env::remove_var("UCF_GATEWAY_BIND");
     std::env::remove_var("UCF_STRICT_MODE");
 }
+
+#[test]
+fn health_endpoint_requires_token_outside_dev_and_returns_bounded_surface() {
+    let td = tempdir().expect("tmp");
+    let mut svc = GatewayService::new(GatewayConfig::for_tests(td.path()));
+
+    let denied = svc.handle_request(
+        proto::GatewayRequest {
+            negotiated_version: 1,
+            payload: Some(proto::gateway_request::Payload::Health(
+                proto::HealthRequest {
+                    schema_version: 1,
+                    auth_token: "".to_string(),
+                },
+            )),
+        },
+        "",
+        "hc",
+    );
+    match denied.payload {
+        Some(proto::gateway_response::Payload::Error(e)) => assert_eq!(e.code, 1001),
+        _ => panic!("expected auth error"),
+    }
+
+    let ok = svc.handle_request(
+        proto::GatewayRequest {
+            negotiated_version: 1,
+            payload: Some(proto::gateway_request::Payload::Health(
+                proto::HealthRequest {
+                    schema_version: 1,
+                    auth_token: "test-token".to_string(),
+                },
+            )),
+        },
+        "test-token",
+        "hc",
+    );
+    match ok.payload {
+        Some(proto::gateway_response::Payload::Health(h)) => {
+            assert_eq!(h.schema_version, 1);
+            assert_eq!(h.run_id, "run-test");
+            assert!(!h.policy_graph_digest_prefix.is_empty());
+            assert!(h.active_slots_summary.chars().count() <= 128);
+        }
+        _ => panic!("expected health payload"),
+    }
+}

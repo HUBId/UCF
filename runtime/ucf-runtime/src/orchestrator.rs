@@ -2699,6 +2699,29 @@ impl RuntimeOrchestrator {
             .upsert_hypothesis(Edge { from: 3, to: 1 }, now_ms, 0.2);
     }
 
+    pub fn is_emergency_active(&self) -> bool {
+        self.emergency_active()
+    }
+
+    pub fn active_slots_summary(&self) -> String {
+        fn mode_to_str(mode: SlotMode) -> &'static str {
+            match mode {
+                SlotMode::Toy => "toy",
+                SlotMode::Shadow => "shadow",
+                SlotMode::Active => "active",
+            }
+        }
+        format!(
+            "llm={};world={};sae={};ssm={};lfm={};ebm={}",
+            mode_to_str(self.slot_enablement.llm),
+            mode_to_str(self.slot_enablement.world_jepa),
+            mode_to_str(self.slot_enablement.sae),
+            mode_to_str(self.slot_enablement.ssm),
+            mode_to_str(self.slot_enablement.lfm),
+            mode_to_str(self.slot_enablement.ebm)
+        )
+    }
+
     pub fn feed_cde_intervention_for_test(
         &mut self,
         now_ms: u64,

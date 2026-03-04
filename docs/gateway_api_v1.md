@@ -31,12 +31,14 @@
   - `submit`
   - `ess:read`
   - `report:read`
+  - `health:read` (required in test/prod)
 
 ## Deterministic rate limits
 Token bucket limits are deterministic integer arithmetic and policy-configurable per endpoint:
 - `submit`: default `5/s`
 - `ess_query`: default `10/s`
 - `report`: default `2/s`
+- `health`: default `2/s`
 
 Rate-limit exceed returns `ERR_RATE_LIMITED` and emits a `GatewayAbuseRecord`.
 
@@ -90,6 +92,7 @@ Defined in `proto/ucf_gateway_v1.proto`:
 - `DecisionStreamSubscribeRequest/Response`
 - `EssQueryRequest/Response`
 - `ReportRequest/Response`
+- `HealthRequest/HealthResponseV1`
 - `HandshakeRequest/Response`
 
 ## Minimal local flow

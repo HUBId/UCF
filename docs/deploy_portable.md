@@ -26,6 +26,12 @@ cd ./bundles/releases/ucf_v1
 
 All artifact output is expected in `./out/<run_id>/...` or `./out/*.json` depending on command.
 
+Health checks are backed by gateway `health` endpoint and provide strict exit codes for service managers:
+
+- `0` = OK
+- `2` = DEGRADED
+- `3` = FAIL
+
 ## 3) Runtime startup validation
 
 At startup, runtime enforces policy/manifest validation fail-fast behavior:
