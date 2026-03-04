@@ -56,9 +56,9 @@ Deterministic snapshot generated from code registries + policy pack manifests.
 
 ## D) Policy digests
 
-- base_pack_digest: `1c0b0e18ade1165e…`
-- overlay_pack_digest: `2f89705c1c0c2eba…`
-- policy_graph_digest: `dd50b29b5a4f25a6…`
+- base_pack_digest: `dec4f2e4d62b20c6…`
+- overlay_pack_digest: `99f3164bae1c7f28…`
+- policy_graph_digest: `11d30be557b236ae…`
 - determinism_policy_digest: `690b28933c1bb65f…`
 
 ## E) Model slots

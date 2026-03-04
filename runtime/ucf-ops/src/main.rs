@@ -3,23 +3,25 @@
 use std::path::PathBuf;
 
 use ucf_ops::{
-    adversarial_run, attest_bundle, attest_keys_generate, attest_run, attest_verify, audit_scan,
-    bench_run, bringup, causal_slice, determinism_scan, diagnostics, diagnostics_collect,
-    drift_report, ebm_export_dataset, ess_compact, ess_snapshot, event_id_for_decision,
-    explain_tick, explain_why, export_bugreport, export_policy_key_registry_v1,
-    gateway_threat_test, goldens_generate, goldens_update, goldens_verify, goldens_verify_detailed,
-    hardware_scan, load_signoff_checklist, logs_prove, logs_verify_proof, metrics_snapshot,
-    metrics_summary, metrics_trend, migrate_config_v1, models_list, models_probe, models_promote,
-    models_recommend_rollback, models_rollback, models_stage, models_verify, net_deps_audit,
-    nightly_summarize, one_command_bringup, out_manifest, parse_slot, path_scan, policy_diff,
-    policy_explain, policy_validate, portability_check, readiness_gate, release_rc1_gate,
-    release_signoff_validate, replay_audit, replay_bugreport, repro_pack, repro_verify, run_status,
-    runs_list, runs_search, runs_show, save_counterfactual_result, security_verify_chain,
-    simulate_counterfactual, strict_check, troubleshoot, verify_bugreport, world_shadow_report,
-    write_slice, AdversarialRunArgs, BenchArgs, BugKitBuildArgs, ChangeImpactArgs, ConfigV1,
-    CounterfactualRequest, DevLoopArgs, DocsLintArgs, DocsLintMode, DocsLintStatus,
-    ExplainTickRequest, ExportArgs, GateStatus, GoldenGenerateArgs, GoldenVerifyArgs,
-    GoldenVerifyReport, NightlySummarizeArgs, SpecSnapshotArgs,
+    adversarial_run, airgap_export_models, airgap_export_policies, airgap_export_repro,
+    airgap_export_run_cert, airgap_import, attest_bundle, attest_keys_generate, attest_run,
+    attest_verify, audit_scan, bench_run, bringup, causal_slice, determinism_scan, diagnostics,
+    diagnostics_collect, drift_report, ebm_export_dataset, ess_compact, ess_snapshot,
+    event_id_for_decision, explain_tick, explain_why, export_bugreport,
+    export_policy_key_registry_v1, gateway_threat_test, goldens_generate, goldens_update,
+    goldens_verify, goldens_verify_detailed, hardware_scan, load_signoff_checklist, logs_prove,
+    logs_verify_proof, metrics_snapshot, metrics_summary, metrics_trend, migrate_config_v1,
+    models_list, models_probe, models_promote, models_recommend_rollback, models_rollback,
+    models_stage, models_verify, net_deps_audit, nightly_summarize, one_command_bringup,
+    out_manifest, parse_slot, path_scan, policy_diff, policy_explain, policy_validate,
+    portability_check, readiness_gate, release_rc1_gate, release_signoff_validate, replay_audit,
+    replay_bugreport, repro_pack, repro_verify, run_status, runs_list, runs_search, runs_show,
+    save_counterfactual_result, security_verify_chain, simulate_counterfactual, strict_check,
+    troubleshoot, verify_bugreport, world_shadow_report, write_slice, AdversarialRunArgs,
+    AirgapArtifactType, AirgapImportArgs, AirgapImportMode, BenchArgs, BugKitBuildArgs,
+    ChangeImpactArgs, ConfigV1, CounterfactualRequest, DevLoopArgs, DocsLintArgs, DocsLintMode,
+    DocsLintStatus, ExplainTickRequest, ExportArgs, GateStatus, GoldenGenerateArgs,
+    GoldenVerifyArgs, GoldenVerifyReport, NightlySummarizeArgs, SpecSnapshotArgs,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -1073,6 +1075,110 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
                 _ => return Err("usage: ucf-ops repro <pack|verify> ...".into()),
+            }
+        }
+        "airgap" => {
+            let sub = args.get(2).map(String::as_str).unwrap_or("help");
+            match sub {
+                "export" => {
+                    let kind = args.get(3).map(String::as_str).unwrap_or("help");
+                    match kind {
+                        "policies" => {
+                            let pack = arg_value(&args, "--pack").map(PathBuf::from).ok_or("usage: ucf-ops airgap export policies --pack <path> [--overlay <path>] --out <zip>")?;
+                            let overlay = arg_value(&args, "--overlay").map(PathBuf::from);
+                            let out = arg_value(&args, "--out").map(PathBuf::from).ok_or("usage: ucf-ops airgap export policies --pack <path> [--overlay <path>] --out <zip>")?;
+                            let report =
+                                airgap_export_policies(&workdir, &pack, overlay.as_deref(), &out)?;
+                            println!("digest={}", report.overall_digest);
+                            println!("out={}", report.out);
+                        }
+                        "models" => {
+                            let slot = arg_value(&args, "--slot").ok_or("usage: ucf-ops airgap export models --slot <slot> --hash <hash> --out <zip>")?;
+                            let hash = arg_value(&args, "--hash").ok_or("usage: ucf-ops airgap export models --slot <slot> --hash <hash> --out <zip>")?;
+                            let out = arg_value(&args, "--out").map(PathBuf::from).ok_or("usage: ucf-ops airgap export models --slot <slot> --hash <hash> --out <zip>")?;
+                            let report = airgap_export_models(&workdir, &slot, &hash, &out)?;
+                            println!("digest={}", report.overall_digest);
+                            println!("out={}", report.out);
+                        }
+                        "run-cert" => {
+                            let run_id = arg_value(&args, "--run").ok_or(
+                                "usage: ucf-ops airgap export run-cert --run <id> --out <zip>",
+                            )?;
+                            let out = arg_value(&args, "--out").map(PathBuf::from).ok_or(
+                                "usage: ucf-ops airgap export run-cert --run <id> --out <zip>",
+                            )?;
+                            let report = airgap_export_run_cert(&workdir, &run_id, &out)?;
+                            println!("digest={}", report.overall_digest);
+                            println!("out={}", report.out);
+                        }
+                        "repro" => {
+                            let run_id = arg_value(&args, "--run").ok_or(
+                                "usage: ucf-ops airgap export repro --run <id> --out <zip>",
+                            )?;
+                            let out = arg_value(&args, "--out").map(PathBuf::from).ok_or(
+                                "usage: ucf-ops airgap export repro --run <id> --out <zip>",
+                            )?;
+                            let report = airgap_export_repro(&workdir, &run_id, &out)?;
+                            println!("digest={}", report.overall_digest);
+                            println!("out={}", report.out);
+                        }
+                        _ => {
+                            return Err(
+                                "usage: ucf-ops airgap export <policies|models|run-cert|repro> ..."
+                                    .into(),
+                            )
+                        }
+                    }
+                }
+                "import" => {
+                    let kind = args.get(3).map(String::as_str).unwrap_or("help");
+                    let artifact_type = match kind {
+                        "policies" => AirgapArtifactType::Policies,
+                        "models" => AirgapArtifactType::Models,
+                        "run-cert" => AirgapArtifactType::RunCert,
+                        "repro" => AirgapArtifactType::Repro,
+                        _ => return Err("usage: ucf-ops airgap import <policies|models|run-cert|repro> --in <zip> --out <json> [--mode staging|promoted]".into()),
+                    };
+                    let input = arg_value(&args, "--in")
+                        .map(PathBuf::from)
+                        .ok_or("usage: ucf-ops airgap import <type> --in <zip> --out <json>")?;
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/airgap_import_report.json"));
+                    let mode = match arg_value(&args, "--mode")
+                        .unwrap_or_else(|| "staging".to_string())
+                        .as_str()
+                    {
+                        "staging" => AirgapImportMode::Staging,
+                        "promoted" => AirgapImportMode::Promoted,
+                        _ => return Err("--mode must be staging|promoted".into()),
+                    };
+                    let pack = arg_value(&args, "--pack")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("policies/packs/base_v1"));
+                    let overlay = arg_value(&args, "--overlay")
+                        .map(PathBuf::from)
+                        .or_else(|| Some(PathBuf::from("policies/packs/overlays/test")));
+                    let strict_signer = !has_flag(&args, "--allow-untrusted");
+                    let report = airgap_import(
+                        &workdir,
+                        &AirgapImportArgs {
+                            artifact_type,
+                            input,
+                            out: out.clone(),
+                            mode,
+                            policy_pack: pack,
+                            policy_overlay: overlay,
+                            strict_signer,
+                        },
+                    )?;
+                    println!("pass={}", report.pass);
+                    println!("out={}", out.display());
+                    if !report.pass {
+                        std::process::exit(2);
+                    }
+                }
+                _ => return Err("usage: ucf-ops airgap <export|import> ...".into()),
             }
         }
         "bugkit" => {
