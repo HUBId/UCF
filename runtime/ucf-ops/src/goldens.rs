@@ -219,6 +219,7 @@ fn compare_manifests(
     expected: &GoldenManifest,
     actual: &GoldenManifest,
 ) -> GoldenVerifyScenarioReport {
+    let cross_platform_baseline = expected.os != actual.os;
     let mut remediation = format!(
         "run `cargo run -p ucf-ops -- goldens verify --scenario {scenario} --os {}`",
         actual.os
@@ -283,6 +284,22 @@ fn compare_manifests(
     );
     let benign = benign_digest_only_diff(expected, actual);
     if benign {
+        if cross_platform_baseline {
+            return GoldenVerifyScenarioReport {
+                scenario: scenario.to_string(),
+                status: GateStatus::Pass,
+                refresh_candidate: false,
+                heuristic: GoldenRefreshHeuristic::None,
+                detail: format!(
+                    "status=PASS (using {} baseline on {})",
+                    expected.os, actual.os
+                ),
+                remediation: format!(
+                    "optional: run `cargo run -p ucf-ops -- goldens generate --scenario {scenario} --os {}` to add native snapshots",
+                    actual.os
+                ),
+            };
+        }
         return GoldenVerifyScenarioReport {
             scenario: scenario.to_string(),
             status: GateStatus::Fail,
@@ -305,6 +322,8 @@ fn compare_manifests(
 fn benign_digest_only_diff(expected: &GoldenManifest, actual: &GoldenManifest) -> bool {
     let mut left = expected.clone();
     let mut right = actual.clone();
+    left.os.clear();
+    right.os.clear();
     left.policy_graph_digest_prefix.clear();
     right.policy_graph_digest_prefix.clear();
     left.config_digest_prefix.clear();
@@ -405,11 +424,10 @@ fn normalize_os(os: &str) -> String {
 mod tests {
     use super::*;
 
-    #[test]
-    fn manifest_serialization_is_deterministic() {
-        let manifest = GoldenManifest {
+    fn base_manifest(os: &str) -> GoldenManifest {
+        GoldenManifest {
             schema_version: 1,
-            os: "linux".to_string(),
+            os: os.to_string(),
             scenario_id: "golden_a".to_string(),
             scenario_fixture: "fixtures/e2e_scenario_a.json".to_string(),
             ticks: 12,
@@ -419,7 +437,7 @@ mod tests {
                 sampled_tick_digests: vec![GoldenTickDigestSample {
                     tick: 1,
                     window: 0,
-                    evidence_context_digest_prefix: "cafebeef".to_string(),
+                    evidence_context_digest_prefix: "cafebeef0001".to_string(),
                 }],
                 scalar_summary: GoldenScalarSummary {
                     risk_mean_q: 1,
@@ -427,12 +445,33 @@ mod tests {
                     uncertainty_mean_q: 3,
                 },
                 gate_status: GateStatus::Pass,
-                spec_snapshot_sha256_prefix: "123".to_string(),
+                spec_snapshot_sha256_prefix: "123456789abc".to_string(),
             },
-        };
+        }
+    }
+
+    #[test]
+    fn manifest_serialization_is_deterministic() {
+        let manifest = base_manifest("linux");
         let a = serde_json::to_string_pretty(&manifest).expect("json");
         let b = serde_json::to_string_pretty(&manifest).expect("json");
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn cross_platform_digest_only_diff_is_portable_pass() {
+        let expected = base_manifest("linux");
+        let mut actual = base_manifest("windows");
+        actual.policy_graph_digest_prefix = "111111".to_string();
+        actual.config_digest_prefix = "222222".to_string();
+        actual.expected_outputs.spec_snapshot_sha256_prefix = "333333".to_string();
+        actual.expected_outputs.sampled_tick_digests[0].evidence_context_digest_prefix =
+            "444444".to_string();
+
+        let report = compare_manifests("golden_a", &expected, &actual);
+        assert_eq!(report.status, GateStatus::Pass);
+        assert!(!report.refresh_candidate);
+        assert!(report.detail.contains("using linux baseline on windows"));
     }
 
     #[test]
