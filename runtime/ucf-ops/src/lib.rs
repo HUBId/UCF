@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 mod adversarial;
+mod airgap;
 mod bench;
 mod causal;
 mod change_impact;
@@ -14,6 +15,11 @@ mod nightly;
 mod spec_snapshot;
 mod world_shadow;
 pub use adversarial::{adversarial_run, AdversarialReport, AdversarialRunArgs, CaseResult};
+pub use airgap::{
+    airgap_export_models, airgap_export_policies, airgap_export_repro, airgap_export_run_cert,
+    airgap_import, AirgapArtifactType, AirgapExportReport, AirgapImportArgs, AirgapImportMode,
+    AirgapImportReport,
+};
 pub use bench::{bench_run, BenchArgs, BenchReport};
 pub use causal::{
     causal_slice, event_id_for_decision, event_id_for_record, explain_why,

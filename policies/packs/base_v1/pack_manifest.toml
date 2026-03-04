@@ -1,7 +1,7 @@
 name = "base_v1"
 version = "1.0.0"
 schema_version = 1
-pack_digest = "1c0b0e18ade1165ef1a8620bd64f9b903577d802cb4991c05b35198db762e437"
+pack_digest = "dec4f2e4d62b20c6aeaa279f0aec505ee9d5da9df8b10937aa67fd8b24c194ca"
 
 [[files]]
 path = "pbm_gem_rules.toml"
@@ -25,7 +25,7 @@ sha256 = "521c7c9bc1e75eabd7207380d6c43afd2aa110fd62ac3e9de0d2c8ecf2dc0370"
 
 [[files]]
 path = "allowlists.toml"
-sha256 = "d1c028d99cdac45a18b48b14de39d302cbe2d3800405c13241840de0ccbc39ce"
+sha256 = "f35fad39fd81460cb9359b905b0945dfc3861f0c12c3bfc210427021ae81919c"
 
 [[files]]
 path = "determinism.toml"

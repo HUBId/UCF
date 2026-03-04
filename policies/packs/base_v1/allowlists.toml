@@ -5,3 +5,5 @@ filesystem_ess_root = "./runtime:read_write_internal"
 network_enabled = "false"
 remote_compute_enabled = "false"
 process_exec_enabled = "false"
+
+airgap_trusted_signer_key_hashes = ""

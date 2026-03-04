@@ -1,7 +1,7 @@
 name = "overlay_test"
 version = "1.0.0"
 schema_version = 1
-pack_digest = "2f89705c1c0c2eba183d6c7fb52d862c982e376d6e226a57ff975151c3a0fb36"
+pack_digest = "99f3164bae1c7f288b5cf535ef3777c20c1c742df7c61adc888d7a571e50119b"
 
 [[files]]
 path = "pbm_gem_rules.toml"
@@ -25,7 +25,7 @@ sha256 = "6ce6765f5a2c6435ad8e7f74908dcd4cdb6537d47c503101b956f8b8ece76a1d"
 
 [[files]]
 path = "allowlists.toml"
-sha256 = "22b566c6b4588fa90114768be93ae1f79507d666e6cf99169140ed224fbcd5df"
+sha256 = "38f7d0351e0366edf9de44b154417074462bc99ca8c38e0f0c7280c9a248307b"
 
 [[files]]
 path = "determinism.toml"
