@@ -7,18 +7,19 @@ use ucf_ops::{
     bench_run, bringup, causal_slice, determinism_scan, diagnostics, diagnostics_collect,
     drift_report, ebm_export_dataset, ess_compact, ess_snapshot, event_id_for_decision,
     explain_tick, explain_why, export_bugreport, export_policy_key_registry_v1,
-    gateway_threat_test, goldens_generate, goldens_update, goldens_verify, hardware_scan,
-    load_signoff_checklist, logs_prove, logs_verify_proof, metrics_snapshot, metrics_summary,
-    metrics_trend, migrate_config_v1, models_list, models_probe, models_promote,
-    models_recommend_rollback, models_rollback, models_stage, models_verify, one_command_bringup,
-    out_manifest, parse_slot, path_scan, policy_diff, policy_explain, policy_validate,
-    portability_check, readiness_gate, release_rc1_gate, release_signoff_validate, replay_audit,
-    replay_bugreport, repro_pack, repro_verify, run_status, runs_list, runs_search, runs_show,
-    save_counterfactual_result, security_verify_chain, simulate_counterfactual, strict_check,
-    troubleshoot, verify_bugreport, world_shadow_report, write_slice, AdversarialRunArgs,
-    BenchArgs, BugKitBuildArgs, ChangeImpactArgs, ConfigV1, CounterfactualRequest, DevLoopArgs,
-    DocsLintArgs, DocsLintMode, DocsLintStatus, ExplainTickRequest, ExportArgs, GateStatus,
-    GoldenGenerateArgs, GoldenVerifyArgs, SpecSnapshotArgs,
+    gateway_threat_test, goldens_generate, goldens_update, goldens_verify, goldens_verify_detailed,
+    hardware_scan, load_signoff_checklist, logs_prove, logs_verify_proof, metrics_snapshot,
+    metrics_summary, metrics_trend, migrate_config_v1, models_list, models_probe, models_promote,
+    models_recommend_rollback, models_rollback, models_stage, models_verify, nightly_summarize,
+    one_command_bringup, out_manifest, parse_slot, path_scan, policy_diff, policy_explain,
+    policy_validate, portability_check, readiness_gate, release_rc1_gate, release_signoff_validate,
+    replay_audit, replay_bugreport, repro_pack, repro_verify, run_status, runs_list, runs_search,
+    runs_show, save_counterfactual_result, security_verify_chain, simulate_counterfactual,
+    strict_check, troubleshoot, verify_bugreport, world_shadow_report, write_slice,
+    AdversarialRunArgs, BenchArgs, BugKitBuildArgs, ChangeImpactArgs, ConfigV1,
+    CounterfactualRequest, DevLoopArgs, DocsLintArgs, DocsLintMode, DocsLintStatus,
+    ExplainTickRequest, ExportArgs, GateStatus, GoldenGenerateArgs, GoldenVerifyArgs,
+    GoldenVerifyReport, NightlySummarizeArgs, SpecSnapshotArgs,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -1111,13 +1112,52 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     println!("out={}", out.display());
                 }
                 "verify" => {
-                    goldens_verify(&GoldenVerifyArgs {
-                        scenario,
-                        os,
-                        out_root,
-                        workdir_root,
-                    })?;
-                    println!("status=PASS");
+                    if has_flag(&args, "--all") {
+                        let scenarios = ["golden_a", "golden_b", "golden_c", "golden_d"];
+                        let mut reports = Vec::new();
+                        for scenario_id in scenarios {
+                            let report = goldens_verify_detailed(&GoldenVerifyArgs {
+                                scenario: scenario_id.to_string(),
+                                os: os.clone(),
+                                out_root: out_root.clone(),
+                                workdir_root: workdir_root.clone(),
+                            })?;
+                            println!(
+                                "scenario={} status={:?} refresh_candidate={} heuristic={:?}",
+                                report.scenario, report.status, report.refresh_candidate, report.heuristic
+                            );
+                            reports.push(report);
+                        }
+                        reports.sort_by(|a, b| a.scenario.cmp(&b.scenario));
+                        let overall = if reports.iter().all(|r| r.status == GateStatus::Pass) {
+                            GateStatus::Pass
+                        } else {
+                            GateStatus::Fail
+                        };
+                        let bundle = GoldenVerifyReport {
+                            os: os.clone(),
+                            status: overall,
+                            scenarios: reports,
+                        };
+                        if let Some(path) = arg_value(&args, "--report-out").map(PathBuf::from) {
+                            if let Some(parent) = path.parent() {
+                                std::fs::create_dir_all(parent)?;
+                            }
+                            std::fs::write(&path, serde_json::to_string_pretty(&bundle)?)?;
+                            println!("report={}", path.display());
+                        }
+                        if overall != GateStatus::Pass {
+                            std::process::exit(2);
+                        }
+                    } else {
+                        goldens_verify(&GoldenVerifyArgs {
+                            scenario,
+                            os,
+                            out_root,
+                            workdir_root,
+                        })?;
+                        println!("status=PASS");
+                    }
                 }
                 "update" => {
                     let out = goldens_update(&GoldenGenerateArgs {
@@ -1129,7 +1169,47 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     println!("out={}", out.display());
                 }
                 _ => {
-                    return Err("usage: ucf-ops goldens <generate|verify|update> --scenario <id> [--os <linux|windows|macos>] [--out fixtures/goldens] [--workdir-root ./.ucf_goldens]".into())
+                    return Err("usage: ucf-ops goldens <generate|verify|update> --scenario <id> [--all] [--report-out <path>] [--os <linux|windows|macos>] [--out fixtures/goldens] [--workdir-root ./.ucf_goldens]".into())
+                }
+            }
+        }
+        "nightly" => {
+            let sub = args.get(2).map(String::as_str).unwrap_or("help");
+            match sub {
+                "summarize" => {
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/nightly_summary.json"));
+                    let docs = arg_value(&args, "--docs")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/docs_lint_report.json"));
+                    let gate = arg_value(&args, "--gate")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/gate_report.json"));
+                    let adversarial = arg_value(&args, "--adversarial")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/adversarial_report.json"));
+                    let goldens = arg_value(&args, "--goldens")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/goldens_report.json"));
+                    let drift = arg_value(&args, "--drift").map(PathBuf::from);
+                    let report = nightly_summarize(&NightlySummarizeArgs {
+                        docs_lint_report: docs,
+                        gate_report: gate,
+                        adversarial_report: adversarial,
+                        goldens_report: goldens,
+                        drift_report: drift,
+                        out: out.clone(),
+                    })?;
+                    println!("status={:?}", report.status);
+                    println!("golden_refresh_suggested={}", report.golden_refresh_suggested);
+                    println!("out={}", out.display());
+                    if report.status != ucf_ops::NightlyOverallStatus::Pass {
+                        std::process::exit(2);
+                    }
+                }
+                _ => {
+                    return Err("usage: ucf-ops nightly summarize [--docs <path>] [--gate <path>] [--adversarial <path>] [--goldens <path>] [--drift <path>] [--out <path>]".into())
                 }
             }
         }
@@ -1413,7 +1493,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             eprintln!(
-                "usage: ucf-ops <bringup|diag|health|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|attest|repro|readiness-gate|goldens|dev|troubleshoot|adversarial-run|out|release|bench|runs|status|strict|ess|ebm|drift|policy|portability|spec|change-impact|version> [--workdir <path>] [--bundle <path>]"
+                "usage: ucf-ops <bringup|diag|health|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|attest|repro|readiness-gate|goldens|nightly|dev|troubleshoot|adversarial-run|out|release|bench|runs|status|strict|ess|ebm|drift|policy|portability|spec|change-impact|version> [--workdir <path>] [--bundle <path>]"
             );
             std::process::exit(1);
         }
