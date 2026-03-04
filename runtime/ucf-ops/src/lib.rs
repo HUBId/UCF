@@ -10,6 +10,7 @@ mod drift;
 mod formal_invariants;
 mod goldens;
 mod models_lifecycle;
+mod nightly;
 mod spec_snapshot;
 mod world_shadow;
 pub use adversarial::{adversarial_run, AdversarialReport, AdversarialRunArgs, CaseResult};
@@ -26,12 +27,17 @@ pub use config_contract::{
 pub use docs_lint::{docs_lint, DocsLintArgs, DocsLintMode, DocsLintReport, DocsLintStatus};
 pub use drift::{drift_report, drift_status_map, DriftReportV1};
 pub use goldens::{
-    goldens_generate, goldens_update, goldens_verify, GoldenGenerateArgs, GoldenScenarioConfig,
-    GoldenVerifyArgs,
+    goldens_generate, goldens_update, goldens_verify, goldens_verify_detailed, GoldenGenerateArgs,
+    GoldenRefreshHeuristic, GoldenScenarioConfig, GoldenVerifyArgs, GoldenVerifyReport,
+    GoldenVerifyScenarioReport,
 };
 pub use models_lifecycle::{
     models_list, models_promote, models_recommend_rollback, models_rollback, models_stage,
     parse_slot,
+};
+pub use nightly::{
+    nightly_summarize, NightlyComponentReport, NightlyOverallStatus, NightlySummarizeArgs,
+    NightlySummaryReport,
 };
 pub use spec_snapshot::{generate_spec_snapshot, SpecSnapshotArgs};
 pub use world_shadow::{world_shadow_report, WorldShadowReport};

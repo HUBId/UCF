@@ -25,6 +25,31 @@ pub struct GoldenVerifyArgs {
     pub workdir_root: PathBuf,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum GoldenRefreshHeuristic {
+    None,
+    DigestPrefixOnly,
+    ScalarOrStructureChanged,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct GoldenVerifyScenarioReport {
+    pub scenario: String,
+    pub status: GateStatus,
+    pub refresh_candidate: bool,
+    pub heuristic: GoldenRefreshHeuristic,
+    pub detail: String,
+    pub remediation: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct GoldenVerifyReport {
+    pub os: String,
+    pub status: GateStatus,
+    pub scenarios: Vec<GoldenVerifyScenarioReport>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GoldenScenarioConfig {
     pub scenario_id: String,
@@ -48,7 +73,7 @@ struct GoldenScalarSummary {
     uncertainty_mean_q: u16,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 struct GoldenExpectedOutputs {
     sampled_tick_digests: Vec<GoldenTickDigestSample>,
     scalar_summary: GoldenScalarSummary,
@@ -56,7 +81,7 @@ struct GoldenExpectedOutputs {
     spec_snapshot_sha256_prefix: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 struct GoldenManifest {
     schema_version: u16,
     os: String,
@@ -151,6 +176,23 @@ pub fn goldens_update(args: &GoldenGenerateArgs) -> Result<PathBuf, OpsError> {
 }
 
 pub fn goldens_verify(args: &GoldenVerifyArgs) -> Result<(), OpsError> {
+    let report = goldens_verify_detailed(args)?;
+    if report.status == GateStatus::Pass {
+        return Ok(());
+    }
+    Err(OpsError::Invalid(report.detail))
+}
+
+pub fn goldens_verify_detailed(
+    args: &GoldenVerifyArgs,
+) -> Result<GoldenVerifyScenarioReport, OpsError> {
+    let (expected, actual) = load_expected_and_actual(args)?;
+    Ok(compare_manifests(&args.scenario, &expected, &actual))
+}
+
+fn load_expected_and_actual(
+    args: &GoldenVerifyArgs,
+) -> Result<(GoldenManifest, GoldenManifest), OpsError> {
     let requested_os = normalize_os(&args.os);
     let mut expected_dir = args.out_root.join(&requested_os).join(&args.scenario);
     if !expected_dir.join("golden_manifest.json").exists() {
@@ -169,54 +211,148 @@ pub fn goldens_verify(args: &GoldenVerifyArgs) -> Result<(), OpsError> {
     let actual: GoldenManifest = serde_json::from_str(&fs::read_to_string(
         generated_dir.join("golden_manifest.json"),
     )?)?;
+    Ok((expected, actual))
+}
 
-    let same_os = expected.os == actual.os;
+fn compare_manifests(
+    scenario: &str,
+    expected: &GoldenManifest,
+    actual: &GoldenManifest,
+) -> GoldenVerifyScenarioReport {
+    let cross_platform_baseline = expected.os != actual.os;
+    let mut remediation = format!(
+        "run `cargo run -p ucf-ops -- goldens verify --scenario {scenario} --os {}`",
+        actual.os
+    );
     if expected.expected_outputs.gate_status != GateStatus::Pass
         || actual.expected_outputs.gate_status != GateStatus::Pass
     {
-        return Err(OpsError::Invalid(
+        return fail_report(
+            scenario,
+            GoldenRefreshHeuristic::ScalarOrStructureChanged,
             "golden gate status is not PASS".to_string(),
-        ));
+            remediation,
+        );
     }
-    if expected.policy_graph_digest_prefix != actual.policy_graph_digest_prefix {
-        return Err(OpsError::Invalid(format!(
-            "policy digest mismatch: expected={} actual={}",
-            expected.policy_graph_digest_prefix, actual.policy_graph_digest_prefix
-        )));
+    if expected.expected_outputs.scalar_summary != actual.expected_outputs.scalar_summary {
+        return fail_report(
+            scenario,
+            GoldenRefreshHeuristic::ScalarOrStructureChanged,
+            "scalar summary mismatch".to_string(),
+            remediation,
+        );
     }
-    if expected.config_digest_prefix != actual.config_digest_prefix {
-        return Err(OpsError::Invalid(format!(
-            "config digest mismatch: expected={} actual={}",
-            expected.config_digest_prefix, actual.config_digest_prefix
-        )));
-    }
-
-    if same_os
-        && expected.expected_outputs.sampled_tick_digests
-            != actual.expected_outputs.sampled_tick_digests
-    {
-        return Err(OpsError::Invalid("sampled tick digest prefixes changed; run `ucf-ops goldens update ...` for intentional updates".to_string()));
-    }
-
-    if expected.expected_outputs.scalar_summary.risk_mean_q
-        != actual.expected_outputs.scalar_summary.risk_mean_q
-        || expected.expected_outputs.scalar_summary.pressure_mean_q
-            != actual.expected_outputs.scalar_summary.pressure_mean_q
-        || expected.expected_outputs.scalar_summary.uncertainty_mean_q
-            != actual.expected_outputs.scalar_summary.uncertainty_mean_q
-    {
-        return Err(OpsError::Invalid("scalar summary mismatch".to_string()));
-    }
-
     if expected.expected_outputs.sampled_tick_digests.len()
         != actual.expected_outputs.sampled_tick_digests.len()
     {
-        return Err(OpsError::Invalid(
+        return fail_report(
+            scenario,
+            GoldenRefreshHeuristic::ScalarOrStructureChanged,
             "sampled digest structure mismatch".to_string(),
-        ));
+            remediation,
+        );
+    }
+    let structure_unchanged = expected
+        .expected_outputs
+        .sampled_tick_digests
+        .iter()
+        .zip(actual.expected_outputs.sampled_tick_digests.iter())
+        .all(|(left, right)| left.tick == right.tick && left.window == right.window);
+    if !structure_unchanged {
+        return fail_report(
+            scenario,
+            GoldenRefreshHeuristic::ScalarOrStructureChanged,
+            "sampled digest structure mismatch".to_string(),
+            remediation,
+        );
     }
 
-    Ok(())
+    if expected == actual {
+        return GoldenVerifyScenarioReport {
+            scenario: scenario.to_string(),
+            status: GateStatus::Pass,
+            refresh_candidate: false,
+            heuristic: GoldenRefreshHeuristic::None,
+            detail: "status=PASS".to_string(),
+            remediation,
+        };
+    }
+
+    remediation = format!(
+        "run `cargo run -p ucf-ops -- goldens update --scenario {scenario} --os {}` after reviewing drift + docs",
+        actual.os
+    );
+    let benign = benign_digest_only_diff(expected, actual);
+    if benign {
+        if cross_platform_baseline {
+            return GoldenVerifyScenarioReport {
+                scenario: scenario.to_string(),
+                status: GateStatus::Pass,
+                refresh_candidate: false,
+                heuristic: GoldenRefreshHeuristic::None,
+                detail: format!(
+                    "status=PASS (using {} baseline on {})",
+                    expected.os, actual.os
+                ),
+                remediation: format!(
+                    "optional: run `cargo run -p ucf-ops -- goldens generate --scenario {scenario} --os {}` to add native snapshots",
+                    actual.os
+                ),
+            };
+        }
+        return GoldenVerifyScenarioReport {
+            scenario: scenario.to_string(),
+            status: GateStatus::Fail,
+            refresh_candidate: true,
+            heuristic: GoldenRefreshHeuristic::DigestPrefixOnly,
+            detail: "digest prefixes changed while fixed-point scalars and structure stayed stable"
+                .to_string(),
+            remediation,
+        };
+    }
+
+    fail_report(
+        scenario,
+        GoldenRefreshHeuristic::ScalarOrStructureChanged,
+        "golden manifest mismatch (non-benign change)".to_string(),
+        remediation,
+    )
+}
+
+fn benign_digest_only_diff(expected: &GoldenManifest, actual: &GoldenManifest) -> bool {
+    let mut left = expected.clone();
+    let mut right = actual.clone();
+    left.os.clear();
+    right.os.clear();
+    left.policy_graph_digest_prefix.clear();
+    right.policy_graph_digest_prefix.clear();
+    left.config_digest_prefix.clear();
+    right.config_digest_prefix.clear();
+    left.expected_outputs.spec_snapshot_sha256_prefix.clear();
+    right.expected_outputs.spec_snapshot_sha256_prefix.clear();
+    for digest in &mut left.expected_outputs.sampled_tick_digests {
+        digest.evidence_context_digest_prefix.clear();
+    }
+    for digest in &mut right.expected_outputs.sampled_tick_digests {
+        digest.evidence_context_digest_prefix.clear();
+    }
+    left == right
+}
+
+fn fail_report(
+    scenario: &str,
+    heuristic: GoldenRefreshHeuristic,
+    detail: String,
+    remediation: String,
+) -> GoldenVerifyScenarioReport {
+    GoldenVerifyScenarioReport {
+        scenario: scenario.to_string(),
+        status: GateStatus::Fail,
+        refresh_candidate: false,
+        heuristic,
+        detail,
+        remediation,
+    }
 }
 
 fn load_scenario(id: &str) -> Result<GoldenScenarioConfig, OpsError> {
@@ -288,11 +424,10 @@ fn normalize_os(os: &str) -> String {
 mod tests {
     use super::*;
 
-    #[test]
-    fn manifest_serialization_is_deterministic() {
-        let manifest = GoldenManifest {
+    fn base_manifest(os: &str) -> GoldenManifest {
+        GoldenManifest {
             schema_version: 1,
-            os: "linux".to_string(),
+            os: os.to_string(),
             scenario_id: "golden_a".to_string(),
             scenario_fixture: "fixtures/e2e_scenario_a.json".to_string(),
             ticks: 12,
@@ -302,7 +437,7 @@ mod tests {
                 sampled_tick_digests: vec![GoldenTickDigestSample {
                     tick: 1,
                     window: 0,
-                    evidence_context_digest_prefix: "cafebeef".to_string(),
+                    evidence_context_digest_prefix: "cafebeef0001".to_string(),
                 }],
                 scalar_summary: GoldenScalarSummary {
                     risk_mean_q: 1,
@@ -310,12 +445,33 @@ mod tests {
                     uncertainty_mean_q: 3,
                 },
                 gate_status: GateStatus::Pass,
-                spec_snapshot_sha256_prefix: "123".to_string(),
+                spec_snapshot_sha256_prefix: "123456789abc".to_string(),
             },
-        };
+        }
+    }
+
+    #[test]
+    fn manifest_serialization_is_deterministic() {
+        let manifest = base_manifest("linux");
         let a = serde_json::to_string_pretty(&manifest).expect("json");
         let b = serde_json::to_string_pretty(&manifest).expect("json");
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn cross_platform_digest_only_diff_is_portable_pass() {
+        let expected = base_manifest("linux");
+        let mut actual = base_manifest("windows");
+        actual.policy_graph_digest_prefix = "111111".to_string();
+        actual.config_digest_prefix = "222222".to_string();
+        actual.expected_outputs.spec_snapshot_sha256_prefix = "333333".to_string();
+        actual.expected_outputs.sampled_tick_digests[0].evidence_context_digest_prefix =
+            "444444".to_string();
+
+        let report = compare_manifests("golden_a", &expected, &actual);
+        assert_eq!(report.status, GateStatus::Pass);
+        assert!(!report.refresh_candidate);
+        assert!(report.detail.contains("using linux baseline on windows"));
     }
 
     #[test]

@@ -1,0 +1,69 @@
+name: Nightly Verify
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+jobs:
+  linux-nightly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cargo test workspace
+        run: cargo test --workspace --all-targets
+      - name: Docs lint
+        run: cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json
+      - name: Spec snapshot verify (no diff)
+        run: |
+          cargo run -p ucf-ops -- spec snapshot --policy policies/packs/base_v1 --overlay policies/packs/overlays/test --out ./out/spec_snapshot_nightly.md
+          diff -u docs/spec_snapshot.md ./out/spec_snapshot_nightly.md
+      - name: Goldens verify all
+        run: cargo run -p ucf-ops -- goldens verify --all --os linux --report-out ./out/goldens_report.json
+      - name: Readiness gate (toy profile)
+        run: cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/gate_report.json --workdir ./.ucf_gate_nightly
+      - name: Adversarial suite
+        run: cargo run -p ucf-ops -- adversarial-run --suite v1 --out ./out/adversarial_report.json
+      - name: Drift report (best effort)
+        run: |
+          run_id=$(jq -r '.run_id' ./out/gate_report.json)
+          cargo run -p ucf-ops -- drift report --run "$run_id" --windows 4 --out ./out/drift_report.json
+      - name: Nightly summary
+        if: always()
+        run: |
+          if [ -f ./out/drift_report.json ]; then
+            cargo run -p ucf-ops -- nightly summarize --docs ./out/docs_lint_report.json --gate ./out/gate_report.json --adversarial ./out/adversarial_report.json --goldens ./out/goldens_report.json --drift ./out/drift_report.json --out ./out/nightly_summary.json
+          else
+            cargo run -p ucf-ops -- nightly summarize --docs ./out/docs_lint_report.json --gate ./out/gate_report.json --adversarial ./out/adversarial_report.json --goldens ./out/goldens_report.json --out ./out/nightly_summary.json
+          fi
+      - name: Upload nightly artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-linux-artifacts
+          path: |
+            out/nightly_summary.json
+            out/docs_lint_report.json
+            out/gate_report.json
+            out/adversarial_report.json
+            out/goldens_report.json
+            out/drift_report.json
+
+  windows-nightly:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cargo test workspace
+        run: cargo test --workspace --all-targets
+      - name: Docs lint
+        run: cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json
+      - name: Golden verify (single scenario)
+        run: cargo run -p ucf-ops -- goldens verify --scenario golden_a --os windows
