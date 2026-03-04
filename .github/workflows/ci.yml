@@ -32,6 +32,8 @@ jobs:
         run: cargo run -p ucf-ops -- audit hardware-scan
       - name: Runtime path hygiene scan
         run: cargo run -p ucf-ops -- audit path-scan
+      - name: Hidden network dependency scan
+        run: cargo run -p ucf-ops -- audit net-deps --out ./out/net_deps.json
       - name: Models verify
         run: cargo run -p ucf-ops -- models verify --manifest models/manifest.toml
       - name: Models probe (fixtures)
@@ -90,6 +92,8 @@ jobs:
         run: cargo run -p ucf-ops -- audit hardware-scan
       - name: Runtime path hygiene scan
         run: cargo run -p ucf-ops -- audit path-scan
+      - name: Hidden network dependency scan
+        run: cargo run -p ucf-ops -- audit net-deps --out ./out/net_deps.json
       - name: Portability check
         run: cargo run -p ucf-ops -- portability check --out ./out/portability.json
       - name: Readiness gate (test profile)

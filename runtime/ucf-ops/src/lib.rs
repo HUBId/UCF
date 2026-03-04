@@ -42,7 +42,7 @@ pub use nightly::{
 pub use spec_snapshot::{generate_spec_snapshot, SpecSnapshotArgs};
 pub use world_shadow::{world_shadow_report, WorldShadowReport};
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -7334,6 +7334,271 @@ pub struct AuditScanViolation {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AuditScanReport {
     pub violations: Vec<AuditScanViolation>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default, deny_unknown_fields)]
+pub struct NetworkAllowlist {
+    pub schema_version: u16,
+    pub runtime_crates: Vec<String>,
+    pub forbidden_crates: Vec<String>,
+    pub allowed_feature_notes: Vec<String>,
+    pub exempt_runtime_edges: Vec<NetDepExemption>,
+}
+
+impl Default for NetworkAllowlist {
+    fn default() -> Self {
+        Self {
+            schema_version: 1,
+            runtime_crates: vec![
+                "ucf-runtime".to_string(),
+                "ucf-policy".to_string(),
+                "ucf-replay".to_string(),
+                "ucf-gateway".to_string(),
+                "ucf-client".to_string(),
+                "ucf-platform".to_string(),
+                "ucf-backends-gpu".to_string(),
+            ],
+            forbidden_crates: vec![
+                "reqwest".to_string(),
+                "hyper".to_string(),
+                "tokio-tungstenite".to_string(),
+                "tungstenite".to_string(),
+                "ureq".to_string(),
+                "isahc".to_string(),
+            ],
+            allowed_feature_notes: Vec::new(),
+            exempt_runtime_edges: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(default, deny_unknown_fields)]
+pub struct NetDepExemption {
+    pub root_crate: String,
+    pub forbidden_crate: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct NetDepsViolation {
+    pub root_crate: String,
+    pub forbidden_crate: String,
+    pub path: Vec<String>,
+    pub remediation: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct NetDepsAuditReport {
+    pub schema_version: u16,
+    pub allowlist_path: String,
+    pub runtime_roots: Vec<String>,
+    pub violations: Vec<NetDepsViolation>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct CargoMetadata {
+    packages: Vec<CargoPackage>,
+    resolve: Option<CargoResolve>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct CargoPackage {
+    id: String,
+    name: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct CargoResolve {
+    nodes: Vec<CargoNode>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct CargoNode {
+    id: String,
+    deps: Vec<CargoNodeDep>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct CargoNodeDep {
+    pkg: String,
+}
+
+pub fn load_network_allowlist(path: &Path) -> Result<NetworkAllowlist, OpsError> {
+    let body = fs::read_to_string(path)?;
+    let mut parsed = toml::from_str::<NetworkAllowlist>(&body).map_err(|e| {
+        OpsError::Invalid(format!("invalid network allowlist {}: {e}", path.display()))
+    })?;
+    parsed.runtime_crates.sort();
+    parsed.runtime_crates.dedup();
+    parsed.forbidden_crates.sort();
+    parsed.forbidden_crates.dedup();
+    parsed.allowed_feature_notes.sort();
+    parsed.allowed_feature_notes.dedup();
+    parsed.exempt_runtime_edges.sort_by(|a, b| {
+        (&a.root_crate, &a.forbidden_crate, &a.reason).cmp(&(
+            &b.root_crate,
+            &b.forbidden_crate,
+            &b.reason,
+        ))
+    });
+    Ok(parsed)
+}
+
+pub fn net_deps_audit(
+    repo_root: &Path,
+    allowlist_path: &Path,
+) -> Result<NetDepsAuditReport, OpsError> {
+    let allowlist = load_network_allowlist(allowlist_path)?;
+    let output = Command::new("cargo")
+        .arg("metadata")
+        .arg("--format-version")
+        .arg("1")
+        .arg("--locked")
+        .arg("--offline")
+        .current_dir(repo_root)
+        .output()?;
+    if !output.status.success() {
+        return Err(OpsError::Invalid(format!(
+            "cargo metadata failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        )));
+    }
+    let metadata_json = String::from_utf8_lossy(&output.stdout).to_string();
+    net_deps_audit_from_metadata_json(&metadata_json, &allowlist, allowlist_path)
+}
+
+pub fn net_deps_audit_from_metadata_json(
+    metadata_json: &str,
+    allowlist: &NetworkAllowlist,
+    allowlist_path: &Path,
+) -> Result<NetDepsAuditReport, OpsError> {
+    let metadata: CargoMetadata = serde_json::from_str(metadata_json)?;
+    let Some(resolve) = metadata.resolve else {
+        return Err(OpsError::Invalid(
+            "cargo metadata output missing resolve graph".to_string(),
+        ));
+    };
+
+    let mut id_to_name = BTreeMap::new();
+    let mut name_to_ids: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for package in metadata.packages {
+        id_to_name.insert(package.id.clone(), package.name.clone());
+        name_to_ids
+            .entry(package.name)
+            .or_default()
+            .push(package.id);
+    }
+
+    let mut graph: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for node in resolve.nodes {
+        let mut deps = node.deps.into_iter().map(|d| d.pkg).collect::<Vec<_>>();
+        deps.sort();
+        deps.dedup();
+        graph.insert(node.id, deps);
+    }
+
+    let mut runtime_root_ids = Vec::new();
+    for crate_name in &allowlist.runtime_crates {
+        if let Some(ids) = name_to_ids.get(crate_name) {
+            runtime_root_ids.extend(ids.iter().cloned());
+        }
+    }
+    runtime_root_ids.sort();
+    runtime_root_ids.dedup();
+
+    let forbidden: BTreeSet<String> = allowlist.forbidden_crates.iter().cloned().collect();
+    let exemptions: BTreeSet<(String, String)> = allowlist
+        .exempt_runtime_edges
+        .iter()
+        .map(|x| (x.root_crate.clone(), x.forbidden_crate.clone()))
+        .collect();
+
+    let mut violations = Vec::new();
+
+    for root_id in runtime_root_ids {
+        let root_name = id_to_name
+            .get(&root_id)
+            .cloned()
+            .unwrap_or_else(|| root_id.clone());
+        let mut queue = VecDeque::new();
+        let mut visited = BTreeSet::new();
+        let mut prev: BTreeMap<String, String> = BTreeMap::new();
+        queue.push_back(root_id.clone());
+        visited.insert(root_id.clone());
+
+        while let Some(current) = queue.pop_front() {
+            if let Some(neighbors) = graph.get(&current) {
+                for next in neighbors {
+                    if visited.insert(next.clone()) {
+                        prev.insert(next.clone(), current.clone());
+                        queue.push_back(next.clone());
+                    }
+                }
+            }
+        }
+
+        let mut forbidden_hits: Vec<(String, String)> = visited
+            .iter()
+            .filter_map(|id| {
+                let name = id_to_name.get(id)?;
+                if forbidden.contains(name)
+                    && !exemptions.contains(&(root_name.clone(), name.clone()))
+                {
+                    Some((id.clone(), name.clone()))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        forbidden_hits.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0)));
+
+        for (hit_id, hit_name) in forbidden_hits {
+            let mut path_ids = vec![hit_id.clone()];
+            let mut cursor = hit_id.clone();
+            while let Some(parent) = prev.get(&cursor) {
+                path_ids.push(parent.clone());
+                if parent == &root_id {
+                    break;
+                }
+                cursor = parent.clone();
+            }
+            path_ids.reverse();
+            let path = path_ids
+                .iter()
+                .map(|id| id_to_name.get(id).cloned().unwrap_or_else(|| id.clone()))
+                .collect::<Vec<_>>();
+
+            violations.push(NetDepsViolation {
+                root_crate: root_name.clone(),
+                forbidden_crate: hit_name.clone(),
+                path,
+                remediation: vec![
+                    format!(
+                        "feature-gate `{}` so it is excluded from default features for runtime crate `{}`",
+                        hit_name, root_name
+                    ),
+                    "move networking code to an ops-only crate outside runtime closure".to_string(),
+                ],
+            });
+        }
+    }
+
+    violations.sort_by(|a, b| {
+        (&a.root_crate, &a.forbidden_crate, &a.path).cmp(&(
+            &b.root_crate,
+            &b.forbidden_crate,
+            &b.path,
+        ))
+    });
+
+    Ok(NetDepsAuditReport {
+        schema_version: 1,
+        allowlist_path: allowlist_path.to_string_lossy().replace('\\', "/"),
+        runtime_roots: allowlist.runtime_crates.clone(),
+        violations,
+    })
 }
 
 pub fn audit_scan(repo_root: &Path) -> Result<AuditScanReport, OpsError> {

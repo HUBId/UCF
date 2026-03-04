@@ -195,3 +195,19 @@ fn tcp_length_delimited_roundtrip_works() {
 
     handle.join().expect("join");
 }
+
+#[test]
+fn strict_mode_rejects_non_loopback_tcp_bind_and_records_violation() {
+    let td = tempdir().expect("tmp");
+    std::env::set_var("UCF_GATEWAY_TRANSPORT", "tcp");
+    std::env::set_var("UCF_GATEWAY_BIND", "0.0.0.0:44991");
+    std::env::set_var("UCF_STRICT_MODE", "1");
+    let err = ucf_gateway::transport_from_env(td.path()).expect_err("reject bind");
+    assert_eq!(err.to_string(), "auth denied");
+    let body =
+        std::fs::read_to_string(td.path().join("network_violations.jsonl")).expect("violation log");
+    assert!(body.contains("gateway_non_loopback_bind"));
+    std::env::remove_var("UCF_GATEWAY_TRANSPORT");
+    std::env::remove_var("UCF_GATEWAY_BIND");
+    std::env::remove_var("UCF_STRICT_MODE");
+}
