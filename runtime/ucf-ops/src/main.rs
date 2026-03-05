@@ -14,15 +14,15 @@ use ucf_ops::{
     models_list, models_probe, models_promote, models_recommend_rollback, models_rollback,
     models_stage, models_verify, net_deps_audit, nightly_summarize, one_command_bringup,
     out_manifest, parse_duration_secs, parse_inject, parse_slot, path_scan, policy_diff,
-    policy_explain, policy_validate, portability_check, readiness_gate, release_rc1_gate,
-    release_signoff_validate, replay_audit, replay_bugreport, repro_pack, repro_verify, run_status,
-    runs_list, runs_search, runs_show, save_counterfactual_result, security_verify_chain,
-    simulate_counterfactual, soak_run, strict_check, troubleshoot, verify_bugreport,
-    world_shadow_report, write_slice, AdversarialRunArgs, AirgapArtifactType, AirgapImportArgs,
-    AirgapImportMode, BenchArgs, BugKitBuildArgs, ChangeImpactArgs, ConfigV1,
+    policy_explain, policy_validate, portability_check, readiness_gate, release_build_rc,
+    release_rc1_gate, release_signoff_validate, replay_audit, replay_bugreport, repro_pack,
+    repro_verify, run_status, runs_list, runs_search, runs_show, save_counterfactual_result,
+    security_verify_chain, simulate_counterfactual, soak_run, strict_check, troubleshoot,
+    verify_bugreport, world_shadow_report, write_slice, AdversarialRunArgs, AirgapArtifactType,
+    AirgapImportArgs, AirgapImportMode, BenchArgs, BugKitBuildArgs, ChangeImpactArgs, ConfigV1,
     CounterfactualRequest, DevLoopArgs, DocsLintArgs, DocsLintMode, DocsLintStatus,
     ExplainTickRequest, ExportArgs, GateStatus, GoldenGenerateArgs, GoldenVerifyArgs,
-    GoldenVerifyReport, NightlySummarizeArgs, SoakRunArgs, SpecSnapshotArgs,
+    GoldenVerifyReport, NightlySummarizeArgs, ReleaseBuildRcArgs, SoakRunArgs, SpecSnapshotArgs,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -1549,7 +1549,29 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         std::process::exit(2);
                     }
                 }
-                _ => return Err("usage: ucf-ops release <signoff|rc1-gate> ...".into()),
+                "build-rc" => {
+                    let Some(version) = arg_value(&args, "--version") else {
+                        return Err("usage: ucf-ops release build-rc --version <vX.Y-rcZ> [--profile prod] [--out ./out/rc] [--fast]".into());
+                    };
+                    let profile =
+                        arg_value(&args, "--profile").unwrap_or_else(|| "prod".to_string());
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/rc"));
+                    let report = release_build_rc(
+                        &workdir,
+                        &ReleaseBuildRcArgs {
+                            version,
+                            profile,
+                            out,
+                            fast: has_flag(&args, "--fast"),
+                        },
+                    )?;
+                    println!("version={}", report.version);
+                    println!("rc_digest={}", report.rc_digest);
+                    println!("rc_zip={}", report.rc_zip);
+                }
+                _ => return Err("usage: ucf-ops release <signoff|rc1-gate|build-rc> ...".into()),
             }
         }
         "bench" => {
