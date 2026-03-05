@@ -5,6 +5,17 @@
 - Keep `<N>` strictly monotonic (`N = previous + 1`).
 - Never recycle or rename historical prompt IDs after publication.
 
+## Series governance guardrails
+- Generate at most the **next 10 prompts** in planning docs by default.
+- Do not generate more than 10 queued prompts unless explicitly requested.
+- Treat queue generation as classification/planning only; do not delete historical prompts.
+- Keep queue documents bounded and deterministic (stable order by prompt ID).
+
+## Prompt classification requirement
+- Every prompt must declare one class: **MUST**, **NICE**, or **DEFERRED**.
+- Prompt body must align requirements/acceptance criteria with its declared class.
+- Immediate execution queues must prioritize MUST items for the active anchor milestone.
+
 ## Required prompt structure
 Every new prompt must include the following sections, in this order:
 1. **Goal**
