@@ -2344,3 +2344,41 @@ fn external_output_class_uses_plan_summary_without_llm_digests() {
         assert!(record.max_tokens_eff >= 64);
     }
 }
+
+#[test]
+fn decision_inputs_record_emitted_per_tick_and_bounded() {
+    let mut orchestrator = RuntimeOrchestrator::new();
+    let mut adapter = MockAdapter::default();
+
+    for tick in 0..16_u64 {
+        let ctrl = ControlFrame::new_text(
+            SimTime {
+                tick: Tick::new(10_000 + tick),
+                window: WindowId::new(0),
+            },
+            CorrelationId(20_000 + tick),
+            ChannelCode::ExternalOutput,
+            intent(),
+            "decision-inputs",
+        );
+        orchestrator
+            .ingest_and_process(&mut adapter, ctrl)
+            .expect("tick");
+    }
+
+    let decision_inputs: Vec<_> = (0..orchestrator.ess.len())
+        .filter_map(|idx| orchestrator.ess.get(idx))
+        .filter(|r| r.kind == ExperienceKind::DecisionInputs)
+        .collect();
+    assert_eq!(decision_inputs.len(), 16);
+
+    for rec in decision_inputs {
+        let di = rec
+            .decision_inputs_record
+            .expect("decision inputs payload must be populated");
+        assert!((0.0..=1.0).contains(&(f32::from(di.risk_q) / f32::from(u16::MAX))));
+        assert!((0.0..=1.0).contains(&(f32::from(di.confidence_q) / f32::from(u16::MAX))));
+        assert!(di.has_network_intent == di.has_tool_intent);
+        assert!(matches!(rec.payload, ExperiencePayload::Empty));
+    }
+}

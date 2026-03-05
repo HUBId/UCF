@@ -9,17 +9,17 @@ pub use governance::{apply_retention, DataClass, RetentionPolicyV1, RetentionSta
 pub use record::{
     compute_content_digest, AuditCheckpointRecord, AuditPayload, BackendPackRecord,
     CandidateSetRecord, CandidateSummaryRecord, CapabilityIssuanceRecord,
-    ComputeBudgetViolationRecord, ComputeBudgetWindowRecord, DeltaEvaluationRecord,
-    DeltaProposalRecord, DeltaRecommendationRecord, EbmConstraintProvenanceRecord,
-    EbmEnvelopeViolationRecord, EbmReasoningRecord, EmergencyReasonCode, EmergencyRecord,
-    EmergencyStateCode, ExperienceEbmTagRecord, ExperienceId, ExperienceKind, ExperiencePayload,
-    ExperienceRecord, GpuParityRecord, GpuResourceViolationRecord, GpuUnavailableRecord,
-    HormoneRecord, LfmSummaryRecord, LfmWindowRecord, LlmSummaryRecord, NeuroRecord, NsrRecord,
-    OutputRecord, PayloadClassification, PolicyProvenanceRecord, RetrievalDecisionRecord,
-    RetrievalReasonCode, RetrievalSelectionRecord, RetrievedExperienceRole, SaeSummaryRecord,
-    SandboxCallRecord, SandboxReplyRecord, SignalBundleRecordV1, SsmSummaryRecord, ThrottleRecord,
-    ToolAuthRecord, ToolExecutionRecord, ToolIssueAuditRecord, ToolPlanAuditRecord,
-    ToolRequestRecord, WorldSummaryRecord,
+    ComputeBudgetViolationRecord, ComputeBudgetWindowRecord, DecisionInputsRecordV1,
+    DeltaEvaluationRecord, DeltaProposalRecord, DeltaRecommendationRecord,
+    EbmConstraintProvenanceRecord, EbmEnvelopeViolationRecord, EbmReasoningRecord,
+    EmergencyReasonCode, EmergencyRecord, EmergencyStateCode, ExperienceEbmTagRecord, ExperienceId,
+    ExperienceKind, ExperiencePayload, ExperienceRecord, GpuParityRecord,
+    GpuResourceViolationRecord, GpuUnavailableRecord, HormoneRecord, LfmSummaryRecord,
+    LfmWindowRecord, LlmSummaryRecord, NeuroRecord, NsrRecord, OutputRecord, PayloadClassification,
+    PolicyProvenanceRecord, RetrievalDecisionRecord, RetrievalReasonCode, RetrievalSelectionRecord,
+    RetrievedExperienceRole, SaeSummaryRecord, SandboxCallRecord, SandboxReplyRecord,
+    SignalBundleRecordV1, SsmSummaryRecord, ThrottleRecord, ToolAuthRecord, ToolExecutionRecord,
+    ToolIssueAuditRecord, ToolPlanAuditRecord, ToolRequestRecord, WorldSummaryRecord,
 };
 pub use store::{ExperienceStore, IdAllocator, InMemoryEss};
 

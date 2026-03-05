@@ -3873,6 +3873,9 @@ dependencies = [
 [[package]]
 name = "ucf-fep"
 version = "0.1.0"
+dependencies = [
+ "ucf-types",
+]
 
 [[package]]
 name = "ucf-fold"
