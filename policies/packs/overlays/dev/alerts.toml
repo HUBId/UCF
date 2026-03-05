@@ -1,0 +1,41 @@
+schema_version = 1
+
+[[rules]]
+id = "degraded_fallback_rate"
+kind = "DegradedFallbackRate"
+window_size = 512
+threshold = 16
+severity = "medium"
+action = "tighten"
+
+[[rules]]
+id = "drift_alarm_rate"
+kind = "DriftAlarmRate"
+window_size = 512
+threshold = 4
+severity = "high"
+action = "disable_slot"
+
+[[rules]]
+id = "emergency_active_rate"
+kind = "EmergencyActiveRate"
+window_size = 512
+threshold = 8
+severity = "critical"
+action = "require_operator"
+
+[[rules]]
+id = "gateway_auth_fail_rate"
+kind = "GatewayAuthFailRate"
+window_size = 512
+threshold = 8
+severity = "high"
+action = "tighten"
+
+[[rules]]
+id = "strict_mode_failure"
+kind = "StrictModeFailure"
+window_size = 512
+threshold = 1
+severity = "high"
+action = "require_operator"

@@ -4,9 +4,9 @@ use std::path::PathBuf;
 
 use ucf_ops::{
     adversarial_run, airgap_export_models, airgap_export_policies, airgap_export_repro,
-    airgap_export_run_cert, airgap_import, attest_bundle, attest_keys_generate, attest_run,
-    attest_verify, audit_scan, bench_run, bringup, causal_slice, determinism_scan, diagnostics,
-    diagnostics_collect, drift_report, ebm_export_dataset, ess_compact, ess_snapshot,
+    airgap_export_run_cert, airgap_import, alerts_report, attest_bundle, attest_keys_generate,
+    attest_run, attest_verify, audit_scan, bench_run, bringup, causal_slice, determinism_scan,
+    diagnostics, diagnostics_collect, drift_report, ebm_export_dataset, ess_compact, ess_snapshot,
     event_id_for_decision, explain_tick, explain_why, export_bugreport,
     export_policy_key_registry_v1, gateway_threat_test, goldens_generate, goldens_update,
     goldens_verify, goldens_verify_detailed, hardware_scan, load_signoff_checklist, logs_prove,
@@ -960,6 +960,24 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         }
+        "alerts" => {
+            let sub = args.get(2).map(String::as_str).unwrap_or("help");
+            match sub {
+                "report" => {
+                    let Some(run_id) = arg_value(&args, "--run") else {
+                        return Err("usage: ucf-ops alerts report --run <id> --out <path>".into());
+                    };
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/alerts_report.json"));
+                    let report = alerts_report(&workdir, &run_id, &out)?;
+                    println!("active_alerts={}", report.active_alerts.len());
+                    println!("last_triggers={}", report.last_triggers.len());
+                    println!("out={}", out.display());
+                }
+                _ => return Err("usage: ucf-ops alerts report --run <id> --out <path>".into()),
+            }
+        }
         "world" => {
             let sub = args.get(2).map(String::as_str).unwrap_or("help");
             match sub {
@@ -1671,7 +1689,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             eprintln!(
-                "usage: ucf-ops <bringup|diag|health|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|attest|repro|readiness-gate|goldens|nightly|dev|troubleshoot|adversarial-run|out|release|bench|runs|status|strict|ess|ebm|drift|policy|portability|spec|change-impact|version> [--workdir <path>] [--bundle <path>]"
+                "usage: ucf-ops <bringup|diag|health|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|attest|repro|readiness-gate|goldens|nightly|dev|troubleshoot|adversarial-run|out|release|bench|runs|status|strict|ess|ebm|drift|alerts|policy|portability|spec|change-impact|version> [--workdir <path>] [--bundle <path>]"
             );
             std::process::exit(1);
         }

@@ -24,6 +24,51 @@ pub struct PolicyGraphV1 {
     pub allowlists: BTreeMap<String, String>,
     pub determinism: DeterminismPolicyV1,
     pub drift_budget: DriftBudgetV1,
+    pub alerts: AlertRulesV1,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct AlertRulesV1 {
+    pub schema_version: u16,
+    #[serde(default)]
+    pub rules: Vec<AlertRuleV1>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct AlertRuleV1 {
+    pub id: String,
+    pub kind: AlertRuleKindV1,
+    pub window_size: u32,
+    pub threshold: u32,
+    pub severity: AlertSeverityV1,
+    pub action: AlertActionV1,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+pub enum AlertRuleKindV1 {
+    DriftAlarmRate,
+    GatewayAuthFailRate,
+    StrictModeFailure,
+    DegradedFallbackRate,
+    EmergencyActiveRate,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AlertSeverityV1 {
+    Low,
+    Medium,
+    High,
+    Critical,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AlertActionV1 {
+    Recommend,
+    Tighten,
+    DisableSlot,
+    RequireOperator,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -156,6 +201,7 @@ struct LoadedPack {
     allowlists: BTreeMap<String, String>,
     determinism: DeterminismPolicyV1,
     drift_budget: DriftBudgetV1,
+    alerts: AlertRulesV1,
 }
 
 pub fn load_and_merge_policy_graph(
@@ -247,6 +293,7 @@ pub fn load_and_merge_policy_graph(
             &base.drift_budget,
             overlay.as_ref().map(|x| &x.drift_budget),
         )?,
+        alerts: merge_alert_rules(&base.alerts, overlay.as_ref().map(|x| &x.alerts))?,
     };
     let digest = policy_graph_digest(&graph)?;
     let provenance = PolicyGraphProvenanceRecord {
@@ -260,6 +307,40 @@ pub fn load_and_merge_policy_graph(
         determinism_policy_digest: graph.determinism.digest_hex(),
     };
     Ok((graph, provenance))
+}
+
+fn merge_alert_rules(
+    base: &AlertRulesV1,
+    overlay: Option<&AlertRulesV1>,
+) -> Result<AlertRulesV1, PolicyPackError> {
+    let mut by_id: BTreeMap<String, AlertRuleV1> = base
+        .rules
+        .iter()
+        .cloned()
+        .map(|r| (r.id.clone(), r))
+        .collect();
+    if let Some(ov) = overlay {
+        if ov.schema_version != base.schema_version {
+            return Err(PolicyPackError::MergeConflict(
+                "alerts schema version mismatch".to_string(),
+            ));
+        }
+        for rule in &ov.rules {
+            if !by_id.contains_key(&rule.id) {
+                return Err(PolicyPackError::MergeConflict(format!(
+                    "overlay alert rule not in base: {}",
+                    rule.id
+                )));
+            }
+            by_id.insert(rule.id.clone(), rule.clone());
+        }
+    }
+    let mut rules: Vec<_> = by_id.into_values().collect();
+    rules.sort_by(|a, b| a.id.cmp(&b.id));
+    Ok(AlertRulesV1 {
+        schema_version: base.schema_version,
+        rules,
+    })
 }
 
 fn merge_drift_budget(
@@ -407,6 +488,11 @@ fn load_pack(root: &Path) -> Result<LoadedPack, PolicyPackError> {
             .map_err(|_| PolicyPackError::Missing("drift_budget.toml".to_string()))?,
     )
     .map_err(|e| PolicyPackError::InvalidPack(e.to_string()))?;
+    let alerts: AlertRulesV1 = toml::from_str(
+        &fs::read_to_string(root.join("alerts.toml"))
+            .map_err(|_| PolicyPackError::Missing("alerts.toml".to_string()))?,
+    )
+    .map_err(|e| PolicyPackError::InvalidPack(e.to_string()))?;
 
     if pbm_file.rules.len() > MAX_RULES || term_file.terms.len() > MAX_TERMS {
         return Err(PolicyPackError::GraphTooLarge);
@@ -437,6 +523,7 @@ fn load_pack(root: &Path) -> Result<LoadedPack, PolicyPackError> {
         allowlists: allowlists.values,
         determinism,
         drift_budget,
+        alerts,
     })
 }
 
@@ -494,6 +581,15 @@ pub fn policy_graph_digest(graph: &PolicyGraphV1) -> Result<String, PolicyPackEr
             DriftActionV1::ForceToy => 2,
             DriftActionV1::RecommendRollback => 3,
         }]);
+    }
+    for rule in &graph.alerts.rules {
+        hasher.update(rule.id.as_bytes());
+        hasher.update([0]);
+        hasher.update([rule.kind as u8]);
+        hasher.update(rule.window_size.to_le_bytes());
+        hasher.update(rule.threshold.to_le_bytes());
+        hasher.update([rule.severity as u8]);
+        hasher.update([rule.action as u8]);
     }
     let digest = hex_lower(hasher.finalize().into());
 
@@ -607,6 +703,7 @@ mod tests {
             "allowlists.toml",
             "determinism.toml",
             "drift_budget.toml",
+            "alerts.toml",
         ] {
             std::fs::copy(seed.join(name), dir.path().join(name)).expect("copy");
         }
@@ -668,9 +765,10 @@ unknown = 1
                 "budgets.toml",
                 "thresholds.toml",
                 "allowlists.toml",
-                "determinism.toml",
-                "drift_budget.toml",
-            ] {
+            "determinism.toml",
+            "drift_budget.toml",
+            "alerts.toml",
+        ] {
                 std::fs::copy(seed.join(name), dir.path().join(name)).expect("copy");
             }
             std::fs::write(
@@ -686,9 +784,10 @@ unknown = 1
                 "budgets.toml",
                 "thresholds.toml",
                 "allowlists.toml",
-                "determinism.toml",
-                "drift_budget.toml",
-            ];
+            "determinism.toml",
+            "drift_budget.toml",
+            "alerts.toml",
+        ];
             let mut lines =
                 String::from("name = \"overlay_tmp\"\nversion = \"1.0.0\"\nschema_version = 1\n\n");
             let mut dig = sha2::Sha256::new();
