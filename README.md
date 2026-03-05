@@ -112,6 +112,9 @@ Quick workflow:
 
 See `docs/docs_checks.md` for remediation guidance when docs lint fails.
 
+Operator/reviewer end-state reference:
+- `docs/end_state.md`
+
 
 ## Stable Core API (`ucf-sdk`)
 - Crate: `ucf-sdk`
