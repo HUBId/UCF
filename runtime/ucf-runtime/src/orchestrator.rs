@@ -70,15 +70,16 @@ use ucf_ess::v1::GpuResourceViolationRecord;
 use ucf_ess::v1::{
     compute_content_digest, AuditCheckpointRecord, AuditPayload, BackendPackRecord,
     CandidateSetRecord, CandidateSummaryRecord, CapabilityIssuanceRecord,
-    ComputeBudgetViolationRecord, ComputeBudgetWindowRecord, DeltaEvaluationRecord,
-    DeltaProposalRecord, DeltaRecommendationRecord, EbmConstraintProvenanceRecord,
-    EbmEnvelopeViolationRecord, EbmReasoningRecord, EmergencyReasonCode, EmergencyRecord,
-    EmergencyStateCode, ExperienceKind, ExperienceRecord, ExperienceStore, GpuParityRecord,
-    GpuUnavailableRecord, HormoneRecord, IdAllocator, InMemoryEss, LfmSummaryRecord,
-    LfmWindowRecord, NeuroRecord, NsrRecord, OutputRecord, PayloadClassification,
-    PolicyProvenanceRecord, SaeSummaryRecord, SandboxCallRecord, SandboxReplyRecord,
-    SignalBundleRecordV1, SsmSummaryRecord, ThrottleRecord, ToolAuthRecord, ToolExecutionRecord,
-    ToolIssueAuditRecord, ToolPlanAuditRecord, ToolRequestRecord, WorldSummaryRecord,
+    ComputeBudgetViolationRecord, ComputeBudgetWindowRecord, DecisionInputsRecordV1,
+    DeltaEvaluationRecord, DeltaProposalRecord, DeltaRecommendationRecord,
+    EbmConstraintProvenanceRecord, EbmEnvelopeViolationRecord, EbmReasoningRecord,
+    EmergencyReasonCode, EmergencyRecord, EmergencyStateCode, ExperienceKind, ExperienceRecord,
+    ExperienceStore, GpuParityRecord, GpuUnavailableRecord, HormoneRecord, IdAllocator,
+    InMemoryEss, LfmSummaryRecord, LfmWindowRecord, NeuroRecord, NsrRecord, OutputRecord,
+    PayloadClassification, PolicyProvenanceRecord, SaeSummaryRecord, SandboxCallRecord,
+    SandboxReplyRecord, SignalBundleRecordV1, SsmSummaryRecord, ThrottleRecord, ToolAuthRecord,
+    ToolExecutionRecord, ToolIssueAuditRecord, ToolPlanAuditRecord, ToolRequestRecord,
+    WorldSummaryRecord,
 };
 use ucf_fep::{
     check_coherence_invariants, fep_step, homeostasis_step, CoherenceCfg, CoherenceSnapshot,
@@ -126,7 +127,7 @@ use ucf_spikes::{
 };
 use ucf_ssm::v0::{ssm_step, SsmCfg, SsmState};
 use ucf_tcf::v0::{tcf_tick, TcfCfg, TcfState};
-use ucf_types::{SignalBundleV1, UQ0_16};
+use ucf_types::{RiskConfidenceCoefficientsV1, RiskConfidenceV1, SignalBundleV1, UQ0_16};
 
 const OSC_SSM: u8 = 1;
 const OSC_CDE: u8 = 2;
@@ -562,6 +563,21 @@ fn threshold_u16(thresholds: &BTreeMap<String, i64>, key: &str, fallback: u16) -
         .copied()
         .and_then(|v| u16::try_from(v).ok())
         .unwrap_or(fallback)
+}
+
+fn risk_confidence_coefficients(
+    thresholds: &BTreeMap<String, i64>,
+) -> RiskConfidenceCoefficientsV1 {
+    RiskConfidenceCoefficientsV1 {
+        base_risk_q: UQ0_16::from_raw(threshold_u16(
+            thresholds,
+            "risk_confidence_base_risk_q",
+            32_768,
+        )),
+        alpha_q: UQ0_16::from_raw(threshold_u16(thresholds, "risk_confidence_alpha_q", 8_192)),
+        beta_q: UQ0_16::from_raw(threshold_u16(thresholds, "risk_confidence_beta_q", 8_192)),
+        gamma_q: UQ0_16::from_raw(threshold_u16(thresholds, "risk_confidence_gamma_q", 32_768)),
+    }
 }
 
 fn model_governance_digest(status: &BTreeMap<GovernanceSlot, ModelGovernanceStatus>) -> [u8; 32] {
@@ -1104,6 +1120,8 @@ pub struct RuntimeOrchestrator {
     policy_bundle_hash: String,
     policy_graph_digest: String,
     policy_graph_digest_prefix: [u8; 8],
+    risk_confidence_coeffs: RiskConfidenceCoefficientsV1,
+    risk_confidence_state: Option<RiskConfidenceV1>,
     compute_economy: ComputeEconomy,
     compute_budget_window_t0: u64,
     compute_budget_window_t: u64,
@@ -2436,6 +2454,8 @@ impl RuntimeOrchestrator {
             policy_bundle_hash: policy_provenance.bundle_sha256.clone(),
             policy_graph_digest: policy_graph_prov.policy_graph_digest.clone(),
             policy_graph_digest_prefix: prefix8_hex(&policy_graph_prov.policy_graph_digest),
+            risk_confidence_coeffs: risk_confidence_coefficients(&policy_graph.thresholds),
+            risk_confidence_state: None,
             compute_economy: ComputeEconomy::new(
                 ComputeEconomicsProfile::from_env(),
                 CostSchedule::default(),
@@ -3176,16 +3196,36 @@ impl RuntimeOrchestrator {
         metrics::gauge!("ucf_neuro_excitability").set(f64::from(neuro_out.summary.excitability));
         metrics::gauge!("ucf_neuro_spike_rate").set(f64::from(neuro_out.summary.spike_rate));
 
+        let fep_signal_bundle = SignalBundleV1 {
+            t: now_ms,
+            policy_graph_digest: [0; 32],
+            risk_q: UQ0_16::from_f32_clamped(compute_risk),
+            confidence_q: UQ0_16::from_f32_clamped(compute_confidence),
+            surprise_q: UQ0_16::from_f32_clamped(surprise),
+            pressure_q: UQ0_16::from_f32_clamped(ess_pressure),
+            uncertainty_q: UQ0_16::from_f32_clamped(geist_drift),
+            stability_q: UQ0_16::from_f32_clamped(1.0 - homeo_err),
+            coherence_q: None,
+            world_prediction_digest: [0; 32],
+            sae_spikes_digest: [0; 32],
+            ssm_state_digest: [0; 32],
+            lfm_state_digest: [0; 32],
+        };
+        let fep_risk_confidence = RiskConfidenceV1 {
+            risk_q: UQ0_16::from_f32_clamped(compute_risk),
+            confidence_q: UQ0_16::from_f32_clamped(
+                (compute_confidence * neuro_out.summary.attention_gain).clamp(0.0, 1.0),
+            ),
+            update_digest: [0; 32],
+        };
         let fep_in = FepInputs {
             now_ms,
             ebm_energy_mean_topk_q: 0,
             dt_s,
-            surprise,
+            signal_bundle: fep_signal_bundle,
+            risk_confidence: fep_risk_confidence,
             complexity,
             policy_risk: nsr_risk,
-            compute_risk,
-            compute_confidence: (compute_confidence * neuro_out.summary.attention_gain)
-                .clamp(0.0, 1.0),
             onn_lock,
             snn_event_rate,
             ess_pressure,
@@ -3899,7 +3939,7 @@ impl RuntimeOrchestrator {
         if policy_graph_bytes.len() >= 32 {
             policy_graph_digest.copy_from_slice(&policy_graph_bytes[..32]);
         }
-        let signal_bundle = SignalBundleV1 {
+        let mut signal_bundle = SignalBundleV1 {
             t: ctrl.time.tick.get(),
             policy_graph_digest,
             risk_q: UQ0_16::from_raw(compute_summary.risk_q),
@@ -3914,6 +3954,19 @@ impl RuntimeOrchestrator {
             ssm_state_digest: compute_summary.ssm_digest.unwrap_or([0; 32]),
             lfm_state_digest: compute_summary.lfm_digest.unwrap_or([0; 32]),
         };
+        let risk_confidence = RiskConfidenceV1::update(
+            self.risk_confidence_state,
+            &signal_bundle,
+            policy_graph_digest,
+            self.risk_confidence_coeffs,
+        );
+        self.risk_confidence_state = Some(risk_confidence);
+        signal_bundle.risk_q = risk_confidence.risk_q;
+        signal_bundle.confidence_q = risk_confidence.confidence_q;
+        compute_summary.risk_q = risk_confidence.risk_q.raw();
+        compute_summary.confidence_q = risk_confidence.confidence_q.raw();
+        compute_summary.risk = risk_confidence.risk_q.to_f32();
+        compute_summary.confidence = risk_confidence.confidence_q.to_f32();
         compute_summary.signal_bundle_digest = Some(signal_bundle.signals_digest());
         for (stage, dim) in [
             (ComputeStage::Sae, 128_u32),
@@ -4010,8 +4063,8 @@ impl RuntimeOrchestrator {
             backend: compute_summary.backend,
             surprise: compute_summary.surprise,
             pressure: compute_summary.pressure,
-            risk: compute_summary.risk,
-            confidence: compute_summary.confidence,
+            risk: risk_confidence.risk_q.to_f32(),
+            confidence: risk_confidence.confidence_q.to_f32(),
             surprise_q: compute_summary.surprise_q,
             pressure_q: compute_summary.pressure_q,
             risk_q: compute_summary.risk_q,
@@ -4283,8 +4336,8 @@ impl RuntimeOrchestrator {
         }
         let candidate_ctx = DecisionContext {
             now_t: ctrl.time.tick.get(),
-            risk: compute_summary.risk,
-            confidence: compute_summary.confidence,
+            risk: risk_confidence.risk_q.to_f32(),
+            confidence: risk_confidence.confidence_q.to_f32(),
             evidence_chain_digest: compute_summary.compute_chain_digest,
             planning_allowed: !matches!(decision.decision, ucf_frames::v1::DecisionCode::Deny)
                 && !emergency_active,
@@ -4345,8 +4398,8 @@ impl RuntimeOrchestrator {
                 emergency_active,
                 context_digest: compute_input.context_digest,
                 signals: EbmSignals {
-                    risk_q: ucf_types::UQ0_16::from_f32_clamped(compute_summary.risk),
-                    confidence_q: ucf_types::UQ0_16::from_f32_clamped(compute_summary.confidence),
+                    risk_q: risk_confidence.risk_q,
+                    confidence_q: risk_confidence.confidence_q,
                     pressure_q: ucf_types::UQ0_16::from_f32_clamped(compute_summary.pressure),
                     surprise_q: ucf_types::UQ0_16::from_f32_clamped(compute_summary.surprise),
                     uncertainty_q: ucf_types::UQ0_16::from_f32_clamped(
@@ -4570,6 +4623,35 @@ impl RuntimeOrchestrator {
         )?;
 
         let eid2 = self.ids.next();
+        let top_candidates_digest_prefix = candidates.iter().map(|c| c.digest).min().map(prefix8);
+        let has_tool_intent = candidates.iter().any(|c| !c.tool_intents.is_empty());
+        let decision_inputs = DecisionInputsRecordV1 {
+            t: ctrl.time.tick.get(),
+            run_id: self.ebm_run_id,
+            policy_graph_digest_prefix: self.policy_graph_digest_prefix,
+            signals_digest_prefix: prefix8(signal_bundle.signals_digest()),
+            risk_q: risk_confidence.risk_q.raw(),
+            confidence_q: risk_confidence.confidence_q.raw(),
+            governor_tier: self.compute_budget.governor_tier,
+            gating_status: if emergency_active {
+                2
+            } else if decision.gating_reason.is_some() {
+                1
+            } else {
+                0
+            },
+            top_candidates_digest_prefix,
+            has_tool_intent,
+            has_network_intent: has_tool_intent,
+            has_filesystem_intent: has_tool_intent,
+            evidence_chain_digest_prefix: prefix8(compute_summary.compute_chain_digest),
+        };
+        self.ess.append(ExperienceRecord::from_decision_inputs(
+            self.ids.next(),
+            decision.time,
+            decision.corr,
+            decision_inputs,
+        ))?;
         let decision_record = ExperienceRecord::from_decision(eid2, decision.clone())
             .with_neuromod(snapshot)
             .with_iit_phi(phi);

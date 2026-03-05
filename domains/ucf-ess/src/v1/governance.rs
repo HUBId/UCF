@@ -162,6 +162,7 @@ mod tests {
             lfm_summary_record: None,
             llm_summary_record: None,
             signal_bundle_record: None,
+            decision_inputs_record: None,
             lfm_window_record: None,
             ebm_tag: None,
             audit_prev_digest: None,

@@ -33,16 +33,17 @@ impl FepCfg {
     }
 }
 
+use ucf_types::{RiskConfidenceV1, SignalBundleV1};
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct FepInputs {
     pub now_ms: u64,
     pub ebm_energy_mean_topk_q: u16,
     pub dt_s: f32,
-    pub surprise: f32,
+    pub signal_bundle: SignalBundleV1,
+    pub risk_confidence: RiskConfidenceV1,
     pub complexity: f32,
     pub policy_risk: f32,
-    pub compute_risk: f32,
-    pub compute_confidence: f32,
     pub onn_lock: f32,
     pub snn_event_rate: f32,
     pub ess_pressure: f32,
@@ -71,19 +72,19 @@ pub struct FepOutputs {
 }
 
 pub fn fep_step(cfg: &FepCfg, inp: &FepInputs) -> FepOutputs {
-    let surprise = inp.surprise.clamp(0.0, 1.0);
+    let surprise = inp.signal_bundle.surprise_q.to_f32().clamp(0.0, 1.0);
     let complexity = inp.complexity.clamp(0.0, 1.0);
     let policy_risk = inp.policy_risk.clamp(0.0, 1.0);
-    let compute_confidence = inp.compute_confidence.clamp(0.0, 1.0);
+    let compute_confidence = inp.risk_confidence.confidence_q.to_f32().clamp(0.0, 1.0);
     let nsr_risk = inp.nsr_risk.unwrap_or(policy_risk).clamp(0.0, 1.0);
     let nsr_confidence = inp
         .nsr_confidence
         .unwrap_or(compute_confidence)
         .clamp(0.0, 1.0);
-    let compute_risk = inp.compute_risk.clamp(0.0, 1.0);
+    let compute_risk = inp.risk_confidence.risk_q.to_f32().clamp(0.0, 1.0);
     let onn_lock = inp.onn_lock.clamp(0.0, 1.0);
     let snn_event_rate = inp.snn_event_rate.clamp(0.0, 1.0);
-    let ess_pressure = inp.ess_pressure.clamp(0.0, 1.0);
+    let ess_pressure = inp.signal_bundle.pressure_q.to_f32().clamp(0.0, 1.0);
     let geist_drift = inp.geist_drift.clamp(0.0, 1.0);
     let hormone_risk_penalty_scale = inp.hormone_risk_penalty_scale.clamp(0.0, 4.0);
     let hormone_exploration_bias_delta = inp.hormone_exploration_bias_delta.clamp(-0.5, 0.5);
@@ -168,17 +169,35 @@ pub fn fep_step(cfg: &FepCfg, inp: &FepInputs) -> FepOutputs {
 #[cfg(test)]
 mod tests {
     use super::{fep_step, FepCfg, FepInputs};
+    use ucf_types::{RiskConfidenceV1, SignalBundleV1, UQ0_16};
 
     fn mk_input() -> FepInputs {
         FepInputs {
             now_ms: 1,
             ebm_energy_mean_topk_q: 0,
             dt_s: 0.01,
-            surprise: 0.3,
+            signal_bundle: SignalBundleV1 {
+                t: 1,
+                policy_graph_digest: [0; 32],
+                risk_q: ucf_types::UQ0_16::from_f32_clamped(0.2),
+                confidence_q: ucf_types::UQ0_16::from_f32_clamped(0.8),
+                surprise_q: ucf_types::UQ0_16::from_f32_clamped(0.3),
+                pressure_q: ucf_types::UQ0_16::from_f32_clamped(0.3),
+                uncertainty_q: ucf_types::UQ0_16::from_f32_clamped(0.2),
+                stability_q: ucf_types::UQ0_16::from_f32_clamped(0.7),
+                coherence_q: None,
+                world_prediction_digest: [0; 32],
+                sae_spikes_digest: [0; 32],
+                ssm_state_digest: [0; 32],
+                lfm_state_digest: [0; 32],
+            },
+            risk_confidence: RiskConfidenceV1 {
+                risk_q: ucf_types::UQ0_16::from_f32_clamped(0.2),
+                confidence_q: ucf_types::UQ0_16::from_f32_clamped(0.8),
+                update_digest: [1; 32],
+            },
             complexity: 0.2,
             policy_risk: 0.2,
-            compute_risk: 0.2,
-            compute_confidence: 0.8,
             onn_lock: 0.5,
             snn_event_rate: 0.4,
             ess_pressure: 0.3,
@@ -197,14 +216,14 @@ mod tests {
     fn fep_step_clamps_outputs() {
         let cfg = FepCfg::default_v0();
         let mut inp = mk_input();
-        inp.surprise = 10.0;
+        inp.signal_bundle.surprise_q = UQ0_16::from_f32_clamped(10.0);
         inp.complexity = -2.0;
         inp.policy_risk = 5.0;
-        inp.compute_risk = 5.0;
-        inp.compute_confidence = -3.0;
+        inp.risk_confidence.risk_q = UQ0_16::from_f32_clamped(5.0);
+        inp.risk_confidence.confidence_q = UQ0_16::from_f32_clamped(-3.0);
         inp.onn_lock = 4.0;
         inp.snn_event_rate = 2.0;
-        inp.ess_pressure = 2.0;
+        inp.signal_bundle.pressure_q = UQ0_16::from_f32_clamped(2.0);
         inp.geist_drift = 2.0;
 
         let out = fep_step(&cfg, &inp);
@@ -234,7 +253,7 @@ mod tests {
         let cfg = FepCfg::default_v0();
         let low = mk_input();
         let mut high = mk_input();
-        high.ess_pressure = 0.95;
+        high.signal_bundle.pressure_q = UQ0_16::from_f32_clamped(0.95);
 
         let low_out = fep_step(&cfg, &low);
         let high_out = fep_step(&cfg, &high);
@@ -259,8 +278,8 @@ mod tests {
         let cfg = FepCfg::default_v0();
         let low = mk_input();
         let mut high = mk_input();
-        high.compute_risk = 0.95;
-        high.compute_confidence = 0.1;
+        high.risk_confidence.risk_q = UQ0_16::from_f32_clamped(0.95);
+        high.risk_confidence.confidence_q = UQ0_16::from_f32_clamped(0.1);
         let low_out = fep_step(&cfg, &low);
         let high_out = fep_step(&cfg, &high);
         assert!(high_out.action_inhibit >= low_out.action_inhibit);

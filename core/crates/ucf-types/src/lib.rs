@@ -191,6 +191,63 @@ impl SignalBundleV1 {
     }
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RiskConfidenceV1 {
+    pub risk_q: UQ0_16,
+    pub confidence_q: UQ0_16,
+    pub update_digest: [u8; 32],
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RiskConfidenceCoefficientsV1 {
+    pub base_risk_q: UQ0_16,
+    pub alpha_q: UQ0_16,
+    pub beta_q: UQ0_16,
+    pub gamma_q: UQ0_16,
+}
+
+impl RiskConfidenceV1 {
+    pub fn update(
+        previous: Option<Self>,
+        signal_bundle: &SignalBundleV1,
+        policy_graph_digest: [u8; 32],
+        coeffs: RiskConfidenceCoefficientsV1,
+    ) -> Self {
+        let risk_adjust = coeffs
+            .alpha_q
+            .saturating_mul(signal_bundle.surprise_q)
+            .saturating_add(coeffs.beta_q.saturating_mul(signal_bundle.pressure_q));
+        let risk_q = coeffs.base_risk_q.saturating_add(risk_adjust);
+        let confidence_penalty = coeffs.gamma_q.saturating_mul(signal_bundle.uncertainty_q);
+        let confidence_q =
+            UQ0_16::from_raw(UQ0_16::ONE.raw().saturating_sub(confidence_penalty.raw()));
+        let mut hasher = Sha256::new();
+        hasher.update(b"ucf.risk_confidence.v1");
+        match previous {
+            Some(prev) => {
+                hasher.update([1]);
+                hasher.update(prev.risk_q.raw().to_be_bytes());
+                hasher.update(prev.confidence_q.raw().to_be_bytes());
+                hasher.update(prev.update_digest);
+            }
+            None => hasher.update([0]),
+        }
+        hasher.update(signal_bundle.signals_digest());
+        hasher.update(policy_graph_digest);
+        hasher.update(coeffs.base_risk_q.raw().to_be_bytes());
+        hasher.update(coeffs.alpha_q.raw().to_be_bytes());
+        hasher.update(coeffs.beta_q.raw().to_be_bytes());
+        hasher.update(coeffs.gamma_q.raw().to_be_bytes());
+        let update_digest = hasher.finalize().into();
+        Self {
+            risk_q,
+            confidence_q,
+            update_digest,
+        }
+    }
+}
+
 pub mod v1 {
     pub use ucf_protocol::v1::*;
 }
@@ -977,5 +1034,56 @@ mod signal_bundle_tests {
         changed.pressure_q = UQ0_16::from_raw(99);
         let b = changed.signals_digest();
         assert_ne!(a, b);
+    }
+}
+
+#[cfg(test)]
+mod risk_confidence_tests {
+    use super::{RiskConfidenceCoefficientsV1, RiskConfidenceV1, SignalBundleV1, UQ0_16};
+
+    fn sample_bundle() -> SignalBundleV1 {
+        SignalBundleV1 {
+            t: 9,
+            policy_graph_digest: [2; 32],
+            risk_q: UQ0_16::from_raw(1000),
+            confidence_q: UQ0_16::from_raw(50000),
+            surprise_q: UQ0_16::from_raw(20_000),
+            pressure_q: UQ0_16::from_raw(30_000),
+            uncertainty_q: UQ0_16::from_raw(40_000),
+            stability_q: UQ0_16::from_raw(10_000),
+            coherence_q: None,
+            world_prediction_digest: [3; 32],
+            sae_spikes_digest: [4; 32],
+            ssm_state_digest: [5; 32],
+            lfm_state_digest: [6; 32],
+        }
+    }
+
+    #[test]
+    fn risk_confidence_update_is_bounded() {
+        let bundle = sample_bundle();
+        let coeffs = RiskConfidenceCoefficientsV1 {
+            base_risk_q: UQ0_16::from_raw(60_000),
+            alpha_q: UQ0_16::from_raw(60_000),
+            beta_q: UQ0_16::from_raw(60_000),
+            gamma_q: UQ0_16::from_raw(65_535),
+        };
+        let out = RiskConfidenceV1::update(None, &bundle, [8; 32], coeffs);
+        assert!((0.0..=1.0).contains(&out.risk_q.to_f32()));
+        assert!((0.0..=1.0).contains(&out.confidence_q.to_f32()));
+    }
+
+    #[test]
+    fn risk_confidence_update_is_deterministic() {
+        let bundle = sample_bundle();
+        let coeffs = RiskConfidenceCoefficientsV1 {
+            base_risk_q: UQ0_16::from_raw(10_000),
+            alpha_q: UQ0_16::from_raw(5_000),
+            beta_q: UQ0_16::from_raw(3_000),
+            gamma_q: UQ0_16::from_raw(8_000),
+        };
+        let first = RiskConfidenceV1::update(None, &bundle, [7; 32], coeffs);
+        let second = RiskConfidenceV1::update(None, &bundle, [7; 32], coeffs);
+        assert_eq!(first, second);
     }
 }

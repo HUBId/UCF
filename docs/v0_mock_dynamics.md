@@ -94,3 +94,7 @@ In the runtime control loop, a per-tick `SignalBundleRecordV1` is persisted with
 - policy/evidence digest prefixes
 
 This enables deterministic replay checks without payload bloat.
+
+## FEP consumption and stabilized risk/confidence
+
+Runtime tick wiring now updates `RiskConfidenceV1` from `SignalBundleV1` before decisioning and feeds that pair into FEP/active-inference inputs. `DecisionInputsRecordV1` is appended to ESS immediately before `DecisionFrame` so replay/postmortem can inspect exactly what decision logic saw, without raw payloads.
