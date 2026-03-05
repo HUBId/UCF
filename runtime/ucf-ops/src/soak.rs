@@ -275,17 +275,36 @@ fn resolve_scenario_fixture(scenario: &str) -> Result<String, OpsError> {
     if direct.exists() {
         return Ok(direct.display().to_string());
     }
-    let scenario_path =
-        PathBuf::from("fixtures/goldens/scenarios").join(format!("{scenario}.json"));
-    if !scenario_path.exists() {
-        return Err(OpsError::Invalid(format!("unknown scenario: {scenario}")));
-    }
+
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let scenario_candidates = [
+        PathBuf::from("fixtures/goldens/scenarios").join(format!("{scenario}.json")),
+        workspace_root
+            .join("fixtures/goldens/scenarios")
+            .join(format!("{scenario}.json")),
+    ];
+
+    let scenario_path = scenario_candidates
+        .into_iter()
+        .find(|path| path.exists())
+        .ok_or_else(|| OpsError::Invalid(format!("unknown scenario: {scenario}")))?;
+
     let value: serde_json::Value = serde_json::from_slice(&fs::read(&scenario_path)?)?;
-    Ok(value
+    let fixture = value
         .get("scenario_fixture")
         .and_then(|v| v.as_str())
-        .unwrap_or("fixtures/e2e_scenario_a.json")
-        .to_string())
+        .unwrap_or("fixtures/e2e_scenario_a.json");
+
+    let fixture_path = PathBuf::from(fixture);
+    if fixture_path.exists() {
+        return Ok(fixture_path.display().to_string());
+    }
+    let workspace_fixture = workspace_root.join(fixture);
+    if workspace_fixture.exists() {
+        return Ok(workspace_fixture.display().to_string());
+    }
+
+    Ok(fixture.to_string())
 }
 
 fn create_postmortem_bundle(
