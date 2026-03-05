@@ -14,11 +14,12 @@ pub use record::{
     EbmEnvelopeViolationRecord, EbmReasoningRecord, EmergencyReasonCode, EmergencyRecord,
     EmergencyStateCode, ExperienceEbmTagRecord, ExperienceId, ExperienceKind, ExperiencePayload,
     ExperienceRecord, GpuParityRecord, GpuResourceViolationRecord, GpuUnavailableRecord,
-    HormoneRecord, LfmSummaryRecord, LfmWindowRecord, NeuroRecord, NsrRecord, OutputRecord,
-    PayloadClassification, PolicyProvenanceRecord, RetrievalDecisionRecord, RetrievalReasonCode,
-    RetrievalSelectionRecord, RetrievedExperienceRole, SandboxCallRecord, SandboxReplyRecord,
-    ThrottleRecord, ToolAuthRecord, ToolExecutionRecord, ToolIssueAuditRecord, ToolPlanAuditRecord,
-    ToolRequestRecord,
+    HormoneRecord, LfmSummaryRecord, LfmWindowRecord, LlmSummaryRecord, NeuroRecord, NsrRecord,
+    OutputRecord, PayloadClassification, PolicyProvenanceRecord, RetrievalDecisionRecord,
+    RetrievalReasonCode, RetrievalSelectionRecord, RetrievedExperienceRole, SaeSummaryRecord,
+    SandboxCallRecord, SandboxReplyRecord, SsmSummaryRecord, ThrottleRecord, ToolAuthRecord,
+    ToolExecutionRecord, ToolIssueAuditRecord, ToolPlanAuditRecord, ToolRequestRecord,
+    WorldSummaryRecord,
 };
 pub use store::{ExperienceStore, IdAllocator, InMemoryEss};
 

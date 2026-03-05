@@ -76,8 +76,9 @@ use ucf_ess::v1::{
     EmergencyStateCode, ExperienceKind, ExperienceRecord, ExperienceStore, GpuParityRecord,
     GpuUnavailableRecord, HormoneRecord, IdAllocator, InMemoryEss, LfmSummaryRecord,
     LfmWindowRecord, NeuroRecord, NsrRecord, OutputRecord, PayloadClassification,
-    PolicyProvenanceRecord, SandboxCallRecord, SandboxReplyRecord, ThrottleRecord, ToolAuthRecord,
-    ToolExecutionRecord, ToolIssueAuditRecord, ToolPlanAuditRecord, ToolRequestRecord,
+    PolicyProvenanceRecord, SaeSummaryRecord, SandboxCallRecord, SandboxReplyRecord,
+    SsmSummaryRecord, ThrottleRecord, ToolAuthRecord, ToolExecutionRecord, ToolIssueAuditRecord,
+    ToolPlanAuditRecord, ToolRequestRecord, WorldSummaryRecord,
 };
 use ucf_fep::{
     check_coherence_invariants, fep_step, homeostasis_step, CoherenceCfg, CoherenceSnapshot,
@@ -4552,6 +4553,67 @@ impl RuntimeOrchestrator {
         self.ess.append(decision_record.clone())?;
 
         if ctrl.time.tick.get().is_multiple_of(self.lfm_persist_every) {
+            let evidence_prefix = prefix8(compute_summary.compute_chain_digest);
+            let policy_prefix = self.policy_graph_digest_prefix;
+            let validation_status = compute_summary.validation_status as u8;
+
+            if let Some(world_digest) = compute_summary.world_digest {
+                let world = WorldSummaryRecord {
+                    t: ctrl.time.tick.get(),
+                    contract_version: compute_summary.contract_version,
+                    backend_id: compute_summary.world_backend as u16,
+                    prediction_error_q: compute_summary.surprise_q,
+                    prediction_digest_prefix: prefix8(world_digest),
+                    policy_graph_digest_prefix: policy_prefix,
+                    evidence_chain_digest_prefix: evidence_prefix,
+                    validation_status,
+                };
+                self.ess.append(ExperienceRecord::from_world_summary(
+                    self.ids.next(),
+                    decision.time,
+                    decision.corr,
+                    world,
+                ))?;
+            }
+
+            let top_spikes: Vec<(u16, u16)> = Vec::new();
+            let sae = SaeSummaryRecord {
+                t: ctrl.time.tick.get(),
+                contract_version: compute_summary.contract_version,
+                backend_id: compute_summary.sae_backend as u16,
+                spike_count: compute_summary.spike_count,
+                spikes_digest_prefix: prefix8(compute_summary.spikes_digest),
+                top_spikes,
+                policy_graph_digest_prefix: policy_prefix,
+                evidence_chain_digest_prefix: evidence_prefix,
+                validation_status,
+            };
+            self.ess.append(ExperienceRecord::from_sae_summary(
+                self.ids.next(),
+                decision.time,
+                decision.corr,
+                sae,
+            ))?;
+
+            if let Some(ssm_digest) = compute_summary.ssm_digest {
+                let ssm = SsmSummaryRecord {
+                    t: ctrl.time.tick.get(),
+                    contract_version: compute_summary.contract_version,
+                    backend_id: compute_summary.ssm_backend as u16,
+                    pressure_q: quantize_unit_u16(compute_summary.pressure),
+                    state_digest_prefix: prefix8(ssm_digest),
+                    policy_graph_digest_prefix: policy_prefix,
+                    evidence_chain_digest_prefix: evidence_prefix,
+                    validation_status,
+                };
+                self.ess.append(ExperienceRecord::from_ssm_summary(
+                    self.ids.next(),
+                    decision.time,
+                    decision.corr,
+                    ssm,
+                ))?;
+            }
+
             if let (Some(liquid_state_digest), Some(uncertainty), Some(stability)) = (
                 compute_summary.lfm_digest,
                 compute_summary.lfm_uncertainty,

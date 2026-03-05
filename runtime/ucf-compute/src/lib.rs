@@ -38,6 +38,7 @@ pub mod pipeline;
 pub mod remote_compute;
 pub mod risk_contract;
 pub mod ssm;
+pub mod stage_v1;
 pub mod work_meter;
 pub mod worker_backend;
 pub mod world_model;

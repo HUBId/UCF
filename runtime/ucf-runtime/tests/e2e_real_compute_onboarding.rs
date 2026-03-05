@@ -755,3 +755,69 @@ fn e2e_tool_plan_demo_chain_and_single_use_token_replay() {
     assert!(note.len() <= 120);
     assert!(!note.contains('\n'));
 }
+
+#[test]
+fn e2e_stage_summary_records_present_for_short_loop() {
+    let _env_guard = env_lock_guard();
+    std::env::set_var("UCF_COMPUTE_BACKEND", "stub");
+    std::env::set_var("UCF_COMPUTE_SEED", "1234");
+    std::env::set_var("UCF_LLM_BACKEND", "stub");
+    std::env::set_var("UCF_LLM_SEED", "5678");
+    std::env::set_var("UCF_COMPUTE_BUDGET_PROFILE", "default");
+    std::env::set_var("UCF_COMPUTE_MAX_MICROS", "20000");
+    std::env::set_var("UCF_COMPUTE_HARD_TIMEOUT_MICROS", "50000");
+    ensure_policy_hash_env();
+
+    let mut orchestrator = RuntimeOrchestrator::try_new_from_env().expect("runtime from env");
+    let mut adapter = MockAdapter::default();
+
+    for tick in 1..=8u64 {
+        let ctrl = ControlFrame::new_text(
+            SimTime {
+                tick: Tick::new(tick),
+                window: WindowId::new(0),
+            },
+            CorrelationId(120_000 + tick),
+            ChannelCode::ExternalOutput,
+            Intent::new(IntentId(7), IntentKind::System, "stage-summary"),
+            format!("stage-summary-{tick}"),
+        );
+        orchestrator
+            .ingest_and_process(&mut adapter, ctrl)
+            .expect("ingest tick");
+    }
+
+    let mut world = 0usize;
+    let mut sae = 0usize;
+    let mut ssm = 0usize;
+    let mut lfm = 0usize;
+
+    for idx in 0..orchestrator.ess.len() {
+        let rec = orchestrator.ess.get(idx).expect("record");
+        match rec.kind {
+            ExperienceKind::WorldSummary => {
+                world += 1;
+                assert!(rec.world_summary_record.is_some());
+            }
+            ExperienceKind::SaeSummary => {
+                sae += 1;
+                let entry = rec.sae_summary_record.as_ref().expect("sae summary");
+                assert!(entry.top_spikes.len() <= 8);
+            }
+            ExperienceKind::SsmSummary => {
+                ssm += 1;
+                assert!(rec.ssm_summary_record.is_some());
+            }
+            ExperienceKind::LfmSummary => {
+                lfm += 1;
+                assert!(rec.lfm_summary_record.is_some());
+            }
+            _ => {}
+        }
+    }
+
+    assert!(world >= 4, "expected >=4 world summaries, got {world}");
+    assert!(sae >= 4, "expected >=4 sae summaries, got {sae}");
+    assert!(ssm >= 4, "expected >=4 ssm summaries, got {ssm}");
+    assert!(lfm >= 4, "expected >=4 lfm summaries, got {lfm}");
+}
