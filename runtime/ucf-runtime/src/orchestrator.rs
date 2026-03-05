@@ -5849,7 +5849,7 @@ fn sync_graph_from_cde_state(graph: &mut CausalGraph, state: &CdeState) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs as fileio;
+    use std as stdlib;
 
     fn compute_summary_fixture() -> ucf_compute::ComputeSignalsSummary {
         ucf_compute::ComputeSignalsSummary {
@@ -6157,7 +6157,7 @@ mod tests {
             .expect("no panic");
         assert!(out.compute_summary.is_some());
         let body = std::io::read_to_string(
-            fileio::File::open(td.path().join("panic_records.jsonl")).expect("open"),
+            stdlib::fs::File::open(td.path().join("panic_records.jsonl")).expect("open"),
         )
         .expect("panic record");
         assert!(body.contains("stage.compute"));
