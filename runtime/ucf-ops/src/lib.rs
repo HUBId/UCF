@@ -5627,6 +5627,457 @@ pub struct Rc1GateReport {
     pub artifacts: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ReleaseBuildRcArgs {
+    pub version: String,
+    pub profile: String,
+    pub out: PathBuf,
+    pub fast: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RcVerificationReportDigest {
+    pub step: String,
+    pub report: String,
+    pub sha256: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RcManifestV1 {
+    pub schema_version: u16,
+    pub version: String,
+    pub profile: String,
+    pub code_version_tag: String,
+    pub policy_graph_digest: String,
+    pub models_manifest_digest: String,
+    pub binary_hashes: BTreeMap<String, String>,
+    pub verification_reports: Vec<RcVerificationReportDigest>,
+    pub bundle_hashes: BTreeMap<String, String>,
+    pub rc_digest: String,
+    pub signer_key_id: String,
+    pub signer_public_key: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ReleaseBuildRcReport {
+    pub version: String,
+    pub profile: String,
+    pub fast: bool,
+    pub rc_zip: String,
+    pub rc_digest: String,
+    pub out_dir: String,
+}
+
+pub fn release_build_rc(
+    workdir: &Path,
+    args: &ReleaseBuildRcArgs,
+) -> Result<ReleaseBuildRcReport, OpsError> {
+    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    fs::create_dir_all(&args.out)?;
+    let reports_dir = args.out.join("reports");
+    fs::create_dir_all(&reports_dir)?;
+
+    run_release_step(
+        &repo_root,
+        &["cargo", "build", "--release"],
+        &reports_dir.join("build_release.log"),
+        "build_release",
+    )?;
+
+    let docs_out = reports_dir.join("docs_lint_report.json");
+    let docs_report = docs_lint(&DocsLintArgs {
+        repo_root: repo_root.clone(),
+        policy_pack: repo_root.join("policies/packs/base_v1"),
+        overlay_pack: Some(repo_root.join("policies/packs/overlays/test")),
+        spec_snapshot: repo_root.join("docs/spec_snapshot.md"),
+        prompt_index: repo_root.join("docs/prompt_series_index.md"),
+        module_map: repo_root.join("docs/module_map.md"),
+        deploy_doc: repo_root.join("docs/deploy_portable.md"),
+        mode: DocsLintMode::Strict,
+    })?;
+    write_json(&docs_out, &docs_report)?;
+    if !docs_report.ok {
+        return Err(OpsError::Invalid(format!(
+            "release build-rc failed at docs_lint (report: {})",
+            docs_out.display()
+        )));
+    }
+
+    ensure_spec_snapshot_unchanged(&repo_root, &reports_dir.join("spec_snapshot_check.json"))?;
+
+    let gate_out = reports_dir.join("gate_report.json");
+    let gate = readiness_gate(workdir, "test", &gate_out)?;
+    if gate.status != GateStatus::Pass {
+        return Err(OpsError::Invalid(format!(
+            "release build-rc failed at readiness_gate (report: {})",
+            gate_out.display()
+        )));
+    }
+
+    let adversarial_out = reports_dir.join("adversarial_report.json");
+    if !args.fast {
+        let adversarial = adversarial_run(&AdversarialRunArgs {
+            workdir: workdir.to_path_buf(),
+            suite: "v1".to_string(),
+            out: adversarial_out.clone(),
+        })?;
+        if !adversarial.pass {
+            return Err(OpsError::Invalid(format!(
+                "release build-rc failed at adversarial_run (report: {})",
+                adversarial_out.display()
+            )));
+        }
+    } else {
+        write_json(
+            &adversarial_out,
+            &serde_json::json!({"skipped": true, "reason": "--fast"}),
+        )?;
+    }
+
+    let goldens_out = reports_dir.join("goldens_report.json");
+    if !args.fast {
+        let scenarios = golden_scenario_ids()?;
+        let mut scenario_reports = Vec::new();
+        for scenario in scenarios {
+            scenario_reports.push(goldens_verify_detailed(&GoldenVerifyArgs {
+                scenario,
+                os: std::env::consts::OS.to_string(),
+                out_root: PathBuf::from("fixtures/goldens"),
+                workdir_root: PathBuf::from(".ucf_goldens"),
+            })?);
+        }
+        scenario_reports.sort_by(|a, b| a.scenario.cmp(&b.scenario));
+        let overall = if scenario_reports
+            .iter()
+            .all(|entry| entry.status == GateStatus::Pass)
+        {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        };
+        let bundle = GoldenVerifyReport {
+            os: std::env::consts::OS.to_string(),
+            status: overall,
+            scenarios: scenario_reports,
+        };
+        write_json(&goldens_out, &bundle)?;
+        if bundle.status != GateStatus::Pass {
+            return Err(OpsError::Invalid(format!(
+                "release build-rc failed at goldens_verify (report: {})",
+                goldens_out.display()
+            )));
+        }
+    } else {
+        write_json(
+            &goldens_out,
+            &serde_json::json!({"skipped": true, "reason": "--fast"}),
+        )?;
+    }
+
+    let strict_out = reports_dir.join("strict_check.json");
+    let strict = strict_check(workdir, true, &strict_out)?;
+    if !strict.ok {
+        return Err(OpsError::Invalid(format!(
+            "release build-rc failed at strict_check (report: {})",
+            strict_out.display()
+        )));
+    }
+
+    let bundle_out = args.out.join("bundle");
+    let target = bundle_out.display().to_string();
+    run_release_step(
+        &repo_root,
+        &[
+            "python",
+            "deploy/scripts/build_bundle.py",
+            "--target",
+            target.as_str(),
+            "--profile",
+            args.profile.as_str(),
+            "--bin-source",
+            "target/release",
+        ],
+        &reports_dir.join("bundle_build.log"),
+        "bundle_build",
+    )?;
+
+    attest_keys_generate(workdir, false)?;
+    let (policy_base, policy_overlay, manifest_path) = resolve_attestation_inputs();
+    let policy = load_and_merge_policy_graph(&policy_base, Some(&policy_overlay))?;
+    let manifest_verify = models_verify(&manifest_path)?;
+    let binary_hashes = release_binary_hashes(&repo_root.join("target/release"))?;
+    let mut verification_reports = collect_report_hashes(&reports_dir)?;
+    verification_reports.sort_by(|a, b| a.step.cmp(&b.step));
+    let mut bundle_hashes = collect_tree_hashes(&bundle_out)?;
+
+    let code_version_tag = git_head_short(&repo_root)?;
+    let signer_public_key = load_attestation_public_key_hex(workdir)?;
+    let mut manifest = RcManifestV1 {
+        schema_version: 1,
+        version: args.version.clone(),
+        profile: args.profile.clone(),
+        code_version_tag,
+        policy_graph_digest: policy.1.policy_graph_digest,
+        models_manifest_digest: manifest_verify.model_hashes_digest,
+        binary_hashes,
+        verification_reports,
+        bundle_hashes: std::mem::take(&mut bundle_hashes),
+        rc_digest: String::new(),
+        signer_key_id: "attestation_ed25519_v1".to_string(),
+        signer_public_key,
+    };
+    manifest.rc_digest = rc_manifest_digest(&manifest)?;
+    let manifest_bytes = serde_json::to_vec_pretty(&manifest)?;
+    let signature = sign_certificate_digest(workdir, &manifest.rc_digest)?;
+
+    let mut pack_entries = BTreeMap::new();
+    pack_entries.insert("RC_MANIFEST.json".to_string(), manifest_bytes.clone());
+    pack_entries.insert(
+        "RC_MANIFEST.sig".to_string(),
+        format!("{}\n", signature).into_bytes(),
+    );
+    insert_tree_entries(&args.out.join("bundle"), "bundle", &mut pack_entries)?;
+    insert_tree_entries(&reports_dir, "reports", &mut pack_entries)?;
+
+    let mut sums_lines = Vec::new();
+    for (path, bytes) in &pack_entries {
+        sums_lines.push(format!("{}  {}", sha256_hex(bytes), path));
+    }
+    sums_lines.sort();
+    let sums_bytes = format!("{}\n", sums_lines.join("\n")).into_bytes();
+    pack_entries.insert("SHA256SUMS.txt".to_string(), sums_bytes);
+
+    let mut digest_hasher = Sha256::new();
+    digest_hasher.update(&serde_json::to_vec(&manifest)?);
+    for (path, bytes) in &pack_entries {
+        if path == "SHA256SUMS.txt" {
+            continue;
+        }
+        digest_hasher.update(path.as_bytes());
+        digest_hasher.update(sha256_hex(bytes).as_bytes());
+    }
+    let final_digest = hex::encode(digest_hasher.finalize());
+    let rc_name = format!("ucf_rc_{}_{}.zip", args.version, &final_digest[..16]);
+    let rc_zip = args.out.join(rc_name);
+    write_deterministic_zip(&rc_zip, &pack_entries)?;
+
+    Ok(ReleaseBuildRcReport {
+        version: args.version.clone(),
+        profile: args.profile.clone(),
+        fast: args.fast,
+        rc_zip: rc_zip.display().to_string(),
+        rc_digest: final_digest,
+        out_dir: args.out.display().to_string(),
+    })
+}
+
+fn run_release_step(
+    repo_root: &Path,
+    cmd: &[&str],
+    out: &Path,
+    step: &str,
+) -> Result<(), OpsError> {
+    if cmd.is_empty() {
+        return Err(OpsError::Invalid("empty command".to_string()));
+    }
+    let mut command = Command::new(cmd[0]);
+    command.current_dir(repo_root).args(&cmd[1..]);
+    let output = command.output()?;
+    if let Some(parent) = out.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let mut body = String::new();
+    body.push_str(&String::from_utf8_lossy(&output.stdout));
+    body.push_str(&String::from_utf8_lossy(&output.stderr));
+    fs::write(out, body)?;
+    if !output.status.success() {
+        return Err(OpsError::Invalid(format!(
+            "release build-rc failed at {step} (report: {})",
+            out.display()
+        )));
+    }
+    Ok(())
+}
+
+fn ensure_spec_snapshot_unchanged(repo_root: &Path, out: &Path) -> Result<(), OpsError> {
+    let spec_path = repo_root.join("docs/spec_snapshot.md");
+    let before = fs::read(&spec_path)?;
+    let temp = repo_root.join("out/spec_snapshot_build_rc_tmp.md");
+    generate_spec_snapshot(&SpecSnapshotArgs {
+        policy: repo_root.join("policies/packs/base_v1"),
+        overlay: Some(repo_root.join("policies/packs/overlays/test")),
+        out: temp.clone(),
+    })?;
+    let after = fs::read(&temp)?;
+    let unchanged = before == after;
+    let _ = fs::remove_file(&temp);
+    write_json(
+        out,
+        &serde_json::json!({"unchanged": unchanged, "path": spec_path.display().to_string()}),
+    )?;
+    if !unchanged {
+        return Err(OpsError::Invalid(format!(
+            "release build-rc failed at spec_snapshot_unchanged (report: {})",
+            out.display()
+        )));
+    }
+    Ok(())
+}
+
+fn golden_scenario_ids() -> Result<Vec<String>, OpsError> {
+    let mut ids = Vec::new();
+    let scenarios_dir = PathBuf::from("fixtures/goldens/scenarios");
+    for entry in fs::read_dir(scenarios_dir)? {
+        let path = entry?.path();
+        if path.extension().and_then(|v| v.to_str()) != Some("json") {
+            continue;
+        }
+        if let Some(stem) = path.file_stem().and_then(|v| v.to_str()) {
+            ids.push(stem.to_string());
+        }
+    }
+    ids.sort();
+    Ok(ids)
+}
+
+fn release_binary_hashes(dir: &Path) -> Result<BTreeMap<String, String>, OpsError> {
+    let mut out = BTreeMap::new();
+    for entry in fs::read_dir(dir)? {
+        let path = entry?.path();
+        if !path.is_file() {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|v| v.to_str()) else {
+            continue;
+        };
+        if name.ends_with(".d") || name.ends_with(".rlib") || name.ends_with(".rmeta") {
+            continue;
+        }
+        if name.contains('.') && !name.ends_with(".exe") {
+            continue;
+        }
+        let bytes = fs::read(&path)?;
+        out.insert(name.to_string(), sha256_hex(&bytes));
+    }
+    if out.is_empty() {
+        return Err(OpsError::Invalid(format!(
+            "no release binaries found in {}",
+            dir.display()
+        )));
+    }
+    Ok(out)
+}
+
+fn collect_report_hashes(reports_dir: &Path) -> Result<Vec<RcVerificationReportDigest>, OpsError> {
+    let mut out = Vec::new();
+    for entry in fs::read_dir(reports_dir)? {
+        let path = entry?.path();
+        if !path.is_file() {
+            continue;
+        }
+        let bytes = fs::read(&path)?;
+        let Some(name) = path.file_name().and_then(|v| v.to_str()) else {
+            continue;
+        };
+        out.push(RcVerificationReportDigest {
+            step: name.to_string(),
+            report: format!("reports/{name}"),
+            sha256: sha256_hex(&bytes),
+        });
+    }
+    out.sort_by(|a, b| a.step.cmp(&b.step));
+    Ok(out)
+}
+
+fn collect_tree_hashes(root: &Path) -> Result<BTreeMap<String, String>, OpsError> {
+    let mut out = BTreeMap::new();
+    for entry in walkdir::WalkDir::new(root)
+        .sort_by_file_name()
+        .into_iter()
+        .filter_map(Result::ok)
+    {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let rel = path
+            .strip_prefix(root)
+            .map_err(|e| OpsError::Invalid(format!("strip prefix failed: {e}")))?
+            .to_string_lossy()
+            .replace('\\', "/");
+        out.insert(rel, sha256_hex(&fs::read(path)?));
+    }
+    Ok(out)
+}
+
+fn rc_manifest_digest(manifest: &RcManifestV1) -> Result<String, OpsError> {
+    let mut canonical = manifest.clone();
+    canonical.rc_digest.clear();
+    canonical
+        .verification_reports
+        .sort_by(|a, b| a.step.cmp(&b.step));
+    Ok(sha256_hex(&serde_json::to_vec(&canonical)?))
+}
+
+fn insert_tree_entries(
+    root: &Path,
+    prefix: &str,
+    entries: &mut BTreeMap<String, Vec<u8>>,
+) -> Result<(), OpsError> {
+    for entry in walkdir::WalkDir::new(root)
+        .sort_by_file_name()
+        .into_iter()
+        .filter_map(Result::ok)
+    {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let rel = path
+            .strip_prefix(root)
+            .map_err(|e| OpsError::Invalid(format!("strip prefix failed: {e}")))?
+            .to_string_lossy()
+            .replace('\\', "/");
+        let key = format!("{prefix}/{rel}");
+        entries.insert(key, fs::read(path)?);
+    }
+    Ok(())
+}
+
+fn write_deterministic_zip(
+    out: &Path,
+    entries: &BTreeMap<String, Vec<u8>>,
+) -> Result<(), OpsError> {
+    if let Some(parent) = out.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let file = fs::File::create(out)?;
+    let mut zip = zip::ZipWriter::new(file);
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated)
+        .last_modified_time(zip::DateTime::default());
+    for (path, bytes) in entries {
+        zip.start_file(path, options)
+            .map_err(|e| OpsError::Invalid(format!("zip start failed: {e}")))?;
+        zip.write_all(bytes)
+            .map_err(|e| OpsError::Invalid(format!("zip write failed: {e}")))?;
+    }
+    zip.finish()
+        .map_err(|e| OpsError::Invalid(format!("zip finalize failed: {e}")))?;
+    Ok(())
+}
+
+fn git_head_short(repo_root: &Path) -> Result<String, OpsError> {
+    let out = Command::new("git")
+        .current_dir(repo_root)
+        .args(["rev-parse", "--short=12", "HEAD"])
+        .output()?;
+    if !out.status.success() {
+        return Err(OpsError::Invalid("unable to resolve git HEAD".to_string()));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
 pub fn release_rc1_gate(
     workdir: &Path,
     out: &Path,
@@ -8769,4 +9220,80 @@ pub fn gateway_threat_test(out: &Path) -> Result<GatewayThreatReport, OpsError> 
     };
     write_json(out, &report)?;
     Ok(report)
+}
+
+#[cfg(test)]
+mod release_rc_pack_tests {
+    use super::*;
+
+    #[test]
+    fn rc_manifest_digest_is_canonical() {
+        let manifest = RcManifestV1 {
+            schema_version: 1,
+            version: "v1.0-rc1".to_string(),
+            profile: "prod".to_string(),
+            code_version_tag: "abc123".to_string(),
+            policy_graph_digest: "p".repeat(64),
+            models_manifest_digest: "m".repeat(64),
+            binary_hashes: BTreeMap::from([("ucf-ops".to_string(), "b".repeat(64))]),
+            verification_reports: vec![RcVerificationReportDigest {
+                step: "a".to_string(),
+                report: "reports/a.json".to_string(),
+                sha256: "c".repeat(64),
+            }],
+            bundle_hashes: BTreeMap::from([("bin/ucf-ops".to_string(), "d".repeat(64))]),
+            rc_digest: "x".repeat(64),
+            signer_key_id: "attestation_ed25519_v1".to_string(),
+            signer_public_key: "e".repeat(64),
+        };
+        let a = rc_manifest_digest(&manifest).expect("digest a");
+        let mut changed = manifest.clone();
+        changed.rc_digest = "y".repeat(64);
+        let b = rc_manifest_digest(&changed).expect("digest b");
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn deterministic_zip_bytes_stable() {
+        let tmp = tempfile::tempdir().expect("tmp");
+        let zip_a = tmp.path().join("a.zip");
+        let zip_b = tmp.path().join("b.zip");
+        let entries = BTreeMap::from([
+            ("z.txt".to_string(), b"z".to_vec()),
+            ("a.txt".to_string(), b"a".to_vec()),
+        ]);
+        write_deterministic_zip(&zip_a, &entries).expect("zip a");
+        write_deterministic_zip(&zip_b, &entries).expect("zip b");
+        assert_eq!(
+            fs::read(zip_a).expect("read a"),
+            fs::read(zip_b).expect("read b")
+        );
+    }
+
+    #[test]
+    fn rc_manifest_signature_verifies() {
+        let tmp = tempfile::tempdir().expect("tmp");
+        attest_keys_generate(tmp.path(), false).expect("keys");
+        let digest = "ab".repeat(32);
+        let sig = sign_certificate_digest(tmp.path(), &digest).expect("sign");
+        let vk_hex = load_attestation_public_key_hex(tmp.path()).expect("pub");
+        let vk = VerifyingKey::from_bytes(
+            &hex::decode(vk_hex)
+                .expect("pub hex")
+                .as_slice()
+                .try_into()
+                .expect("pub len"),
+        )
+        .expect("vk");
+        let signature = Signature::from_bytes(
+            &hex::decode(sig)
+                .expect("sig hex")
+                .as_slice()
+                .try_into()
+                .expect("sig len"),
+        );
+        assert!(vk
+            .verify(&hex::decode(digest).expect("digest"), &signature)
+            .is_ok());
+    }
 }
