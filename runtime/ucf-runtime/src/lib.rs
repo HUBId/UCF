@@ -7,6 +7,7 @@ pub mod hooks;
 pub mod io_caps;
 pub mod nsr_v1;
 pub mod orchestrator;
+pub mod panic_monitor;
 pub mod sandbox;
 pub mod sandbox_fs;
 pub mod stage_isolation;

@@ -23,6 +23,10 @@ use crate::hooks::{
 use crate::nsr_v1::{
     eval_input_from_candidate, NsrEngineV1, NsrOutput as NsrV1Output, NsrStatus as NsrV1Status,
 };
+use crate::panic_monitor::{
+    append_panic_record, panic_log_path, panic_payload_digest, strict_panic_fail_fast_enabled,
+    PanicAction, PanicRecordV1,
+};
 use crate::sandbox_fs::SandboxFs;
 use crate::tool_plugins::{
     compact_tool_result_note, run_plugin_tool, CapabilityTokenBinding, SandboxEnv,
@@ -163,10 +167,34 @@ fn env_flag(name: &str) -> bool {
         .unwrap_or(false)
 }
 
-fn fail_if_training_mode_enabled() {
+fn fail_if_training_mode_enabled() -> Result<(), RuntimeError> {
     if env_flag("UCF_EBM_TRAINING_MODE") {
-        panic!("runtime forbids training mode; use offline ucf-ebm-train operator workflow");
+        return Err(RuntimeError::Policy(
+            ucf_policy::errors::PolicyError::AdapterError(
+                "runtime forbids training mode; use offline ucf-ebm-train operator workflow",
+            ),
+        ));
     }
+    Ok(())
+}
+
+fn record_runtime_panic(stage: &'static str, panic_digest: String, fail_fast: bool) {
+    let action = if fail_fast {
+        PanicAction::Shutdown
+    } else {
+        PanicAction::Degraded
+    };
+    let record = PanicRecordV1 {
+        schema_version: 1,
+        t: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0),
+        module_stage_id: stage.to_string(),
+        panic_digest,
+        action_taken: action,
+    };
+    append_panic_record(&panic_log_path(), &record);
 }
 
 fn map_constraint_kind(kind: &str) -> Option<ConstraintTermKind> {
@@ -2086,7 +2114,11 @@ impl RuntimeOrchestrator {
                 pack: BackendPackKind::ToyV1,
                 seed: self.compute_budget.seed,
             }))
-            .map_err(RuntimeError::from)?;
+            .map_err(|_| {
+                RuntimeError::Policy(ucf_policy::errors::PolicyError::AdapterError(
+                    "policy graph load failed",
+                ))
+            })?;
         let meta = pack.meta();
         let time = ucf_core::types::SimTime {
             tick: ucf_core::types::Tick::new(t),
@@ -2117,7 +2149,11 @@ impl RuntimeOrchestrator {
     }
 
     pub fn new() -> Self {
-        fail_if_training_mode_enabled();
+        Self::new_with_result().unwrap_or_else(|e| panic!("runtime initialization failed: {e}"))
+    }
+
+    pub fn new_with_result() -> Result<Self, RuntimeError> {
+        fail_if_training_mode_enabled()?;
         let mut onn = OnnCore::new(1.0, 0.0);
         onn.register(MOD_PBM, PhaseDeg(0.0));
 
@@ -2165,20 +2201,27 @@ impl RuntimeOrchestrator {
             }
         }
 
-        let policy_provenance = verify_policy_bundle(&policy_root)
-            .unwrap_or_else(|e| panic!("policy bundle verification failed: {e}"));
+        let policy_provenance = verify_policy_bundle(&policy_root).map_err(|_| {
+            RuntimeError::Policy(ucf_policy::errors::PolicyError::AdapterError(
+                "policy bundle verification failed",
+            ))
+        })?;
         let policy_overlay = std::env::var("UCF_POLICY_OVERLAY")
             .ok()
             .map(|v| policy_root.join(format!("packs/overlays/{v}")));
         let policy_base = policy_root.join("packs/base_v1");
         let (policy_graph, policy_graph_prov) =
-            load_and_merge_policy_graph(&policy_base, policy_overlay.as_deref())
-                .unwrap_or_else(|e| panic!("policy graph load failed: {e}"));
+            load_and_merge_policy_graph(&policy_base, policy_overlay.as_deref()).map_err(|_| {
+                RuntimeError::Policy(ucf_policy::errors::PolicyError::AdapterError(
+                    "policy graph load failed",
+                ))
+            })?;
         if let Ok(expected) = std::env::var("UCF_POLICY_GRAPH_DIGEST") {
-            assert_eq!(
-                expected, policy_graph_prov.policy_graph_digest,
-                "policy graph digest mismatch"
-            );
+            if expected != policy_graph_prov.policy_graph_digest {
+                return Err(RuntimeError::Policy(
+                    ucf_policy::errors::PolicyError::AdapterError("policy graph digest mismatch"),
+                ));
+            }
         }
         let slot_enablement = SlotEnablement::from_env().unwrap_or_default();
         let model_governance = ModelGovernanceRuntime::from_policy(512, &policy_graph.thresholds);
@@ -2441,7 +2484,7 @@ impl RuntimeOrchestrator {
             }),
             out.audit_head_digest,
         ));
-        out
+        Ok(out)
     }
 
     pub fn last_snn_spike_count(&self) -> usize {
@@ -2754,7 +2797,21 @@ impl RuntimeOrchestrator {
         let phi = self.iit_phi_snapshot();
 
         let decision = Pbm::decide(&ctrl, Some(snapshot));
-        self.ingest_with_decision_and_snapshot(adapter, ctrl, decision, snapshot, phi)
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            self.ingest_with_decision_and_snapshot(adapter, ctrl, decision, snapshot, phi)
+        })) {
+            Ok(res) => res,
+            Err(payload) => {
+                let panic_digest = panic_payload_digest(payload.as_ref());
+                let fail_fast = strict_panic_fail_fast_enabled();
+                record_runtime_panic("stage.pipeline", panic_digest.clone(), fail_fast);
+                Err(RuntimeError::Panic {
+                    stage: "stage.pipeline",
+                    panic_digest,
+                    fail_fast,
+                })
+            }
+        }
     }
 
     pub fn ingest_with_decision<A: ActionAdapter>(
@@ -2771,7 +2828,21 @@ impl RuntimeOrchestrator {
         self.onn.step_ms(1);
         let snapshot = self.neuromod_field.snapshot();
         let phi = self.iit_phi_snapshot();
-        self.ingest_with_decision_and_snapshot(adapter, ctrl, decision, snapshot, phi)
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            self.ingest_with_decision_and_snapshot(adapter, ctrl, decision, snapshot, phi)
+        })) {
+            Ok(res) => res,
+            Err(payload) => {
+                let panic_digest = panic_payload_digest(payload.as_ref());
+                let fail_fast = strict_panic_fail_fast_enabled();
+                record_runtime_panic("stage.pipeline", panic_digest.clone(), fail_fast);
+                Err(RuntimeError::Panic {
+                    stage: "stage.pipeline",
+                    panic_digest,
+                    fail_fast,
+                })
+            }
+        }
     }
 
     fn decide_internal_recursion(&self) -> PolicyDecision {
@@ -3784,13 +3855,32 @@ impl RuntimeOrchestrator {
             unavailable.budget_exceeded_stage = Some("compute_tokens/jepa");
             unavailable
         } else {
-            match self.compute_backend.compute(&compute_input, compute_budget) {
-                Ok(signals) => signals,
-                Err(_) => ucf_compute::ComputeSignals::unavailable(
+            match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                self.compute_backend.compute(&compute_input, compute_budget)
+            })) {
+                Ok(Ok(signals)) => signals,
+                Ok(Err(_)) => ucf_compute::ComputeSignals::unavailable(
                     &compute_input,
                     compute_budget,
                     self.compute_backend.name(),
                 ),
+                Err(payload) => {
+                    let panic_digest = panic_payload_digest(payload.as_ref());
+                    let fail_fast = strict_panic_fail_fast_enabled();
+                    record_runtime_panic("stage.compute", panic_digest.clone(), fail_fast);
+                    if fail_fast {
+                        return Err(RuntimeError::Panic {
+                            stage: "stage.compute",
+                            panic_digest,
+                            fail_fast,
+                        });
+                    }
+                    ucf_compute::ComputeSignals::unavailable(
+                        &compute_input,
+                        compute_budget,
+                        self.compute_backend.name(),
+                    )
+                }
             }
         };
         if ucf_compute::validate_risk_signal(&compute_signals.risk_signal).is_err() {
@@ -5391,21 +5481,56 @@ impl RuntimeOrchestrator {
                 ),
                 ("models_root".to_string(), bundle_root.join("models")),
             ]);
-            let plugin_audit = run_plugin_tool(
-                &registry,
-                &request,
-                crate::tool_plugins::PluginDispatchSpec {
-                    tool_id: plan.tool_id.clone(),
-                    tool_class_id: plan.tool_class_id.clone(),
-                    plan_digest: plan.plan_digest,
-                    args: plan.args_canonical.clone(),
-                    binding: CapabilityTokenBinding {
-                        token: issued_token.clone(),
+            let plugin_audit = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                run_plugin_tool(
+                    &registry,
+                    &request,
+                    crate::tool_plugins::PluginDispatchSpec {
+                        tool_id: plan.tool_id.clone(),
+                        tool_class_id: plan.tool_class_id.clone(),
                         plan_digest: plan.plan_digest,
+                        args: plan.args_canonical.clone(),
+                        binding: CapabilityTokenBinding {
+                            token: issued_token.clone(),
+                            plan_digest: plan.plan_digest,
+                        },
                     },
-                },
-                &SandboxEnv { fs: Some(&fs_env) },
-            );
+                    &SandboxEnv { fs: Some(&fs_env) },
+                )
+            })) {
+                Ok(audit) => audit,
+                Err(payload) => {
+                    let panic_digest = panic_payload_digest(payload.as_ref());
+                    let fail_fast = strict_panic_fail_fast_enabled();
+                    record_runtime_panic("stage.tool_execution", panic_digest.clone(), fail_fast);
+                    if fail_fast {
+                        return Err(RuntimeError::Panic {
+                            stage: "stage.tool_execution",
+                            panic_digest,
+                            fail_fast,
+                        });
+                    }
+                    let eid_exec = self.ids.next();
+                    let exec_record = ExperienceRecord::audit(
+                        eid_exec,
+                        decision.time,
+                        decision.corr,
+                        ExperienceKind::ToolExecution,
+                        AuditPayload::ToolExecution(ToolExecutionRecord {
+                            tool_request_id: request.id,
+                            status: "Failed".to_string(),
+                            bytes_out: request.payload_hint.bytes_out,
+                            bytes_in: request.payload_hint.bytes_in,
+                            error_code: Some("panic_caught".to_string()),
+                        }),
+                        self.audit_head_digest,
+                    );
+                    self.audit_head_digest =
+                        exec_record.audit_digest.unwrap_or(self.audit_head_digest);
+                    self.ess.append(exec_record)?;
+                    continue;
+                }
+            };
             let module = format!("plugin:{}", plan.tool_id);
             let op = format!("class:{}", plan.tool_class_id);
             let audit = crate::sandbox::SandboxToolExecution {
@@ -5724,6 +5849,7 @@ fn sync_graph_from_cde_state(graph: &mut CausalGraph, state: &CdeState) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std as stdlib;
 
     fn compute_summary_fixture() -> ucf_compute::ComputeSignalsSummary {
         ucf_compute::ComputeSignalsSummary {
@@ -5850,7 +5976,7 @@ mod tests {
     fn fails_fast_on_bad_policy_bundle_hash() {
         let original = std::env::var("UCF_POLICY_BUNDLE_SHA256").ok();
         std::env::set_var("UCF_POLICY_BUNDLE_SHA256", "deadbeef");
-        let outcome = std::panic::catch_unwind(RuntimeOrchestrator::new);
+        let outcome = RuntimeOrchestrator::new_with_result();
         assert!(outcome.is_err());
         if let Some(v) = original {
             std::env::set_var("UCF_POLICY_BUNDLE_SHA256", v);
@@ -5953,15 +6079,88 @@ mod tests {
     }
 
     #[test]
-    fn runtime_panics_if_training_mode_env_is_enabled() {
+    fn runtime_returns_error_if_training_mode_env_is_enabled() {
         let original = std::env::var("UCF_EBM_TRAINING_MODE").ok();
         std::env::set_var("UCF_EBM_TRAINING_MODE", "1");
-        let outcome = std::panic::catch_unwind(RuntimeOrchestrator::new);
+        let outcome = RuntimeOrchestrator::new_with_result();
         assert!(outcome.is_err());
         if let Some(v) = original {
             std::env::set_var("UCF_EBM_TRAINING_MODE", v);
         } else {
             std::env::remove_var("UCF_EBM_TRAINING_MODE");
         }
+    }
+
+    struct PanicBackend;
+    impl AiComputeBackend for PanicBackend {
+        fn name(&self) -> &'static str {
+            "panic_backend"
+        }
+
+        fn compute(
+            &self,
+            _input: &ucf_compute::ComputeInput,
+            _budget: ComputeBudget,
+        ) -> Result<ucf_compute::ComputeSignals, ComputeError> {
+            panic!("panic backend test");
+        }
+    }
+
+    #[test]
+    fn panic_in_stage_compute_is_caught_and_recorded() {
+        let td = tempfile::tempdir().expect("tmp");
+        std::env::set_var(
+            "UCF_PANIC_LOG_PATH",
+            td.path().join("panic_records.jsonl").display().to_string(),
+        );
+        if std::env::var("UCF_POLICY_BUNDLE_SHA256").is_err() {
+            if let Ok(manifest) = crate::io_caps::IoCaps::runtime_default()
+                .read_to_string(std::path::Path::new("manifest.toml"))
+            {
+                if let Some(hash_line) = manifest.lines().find(|l| l.starts_with("bundle_sha256 ="))
+                {
+                    let hash = hash_line
+                        .split('=')
+                        .nth(1)
+                        .map(str::trim)
+                        .unwrap_or("")
+                        .trim_matches('"')
+                        .to_string();
+                    if !hash.is_empty() {
+                        std::env::set_var("UCF_POLICY_BUNDLE_SHA256", hash);
+                    }
+                }
+            }
+        }
+        let Ok(mut orchestrator) = RuntimeOrchestrator::new_with_result() else {
+            std::env::remove_var("UCF_PANIC_LOG_PATH");
+            return;
+        };
+        orchestrator.compute_backend = Box::new(PanicBackend);
+        let mut adapter = ucf_policy::adapter::MockAdapter::default();
+        let ctrl = ControlFrame::new_text(
+            ucf_core::types::SimTime {
+                tick: ucf_core::types::Tick::new(1),
+                window: ucf_core::types::WindowId::new(0),
+            },
+            ucf_frames::v1::CorrelationId(1),
+            ucf_frames::v1::ChannelCode::ExternalOutput,
+            ucf_frames::v1::Intent::new(
+                ucf_frames::v1::IntentId(1),
+                ucf_frames::v1::IntentKind::Speak,
+                "panic-test".to_string(),
+            ),
+            "hello",
+        );
+        let out = orchestrator
+            .ingest_and_process(&mut adapter, ctrl)
+            .expect("no panic");
+        assert!(out.compute_summary.is_some());
+        let body = std::io::read_to_string(
+            stdlib::fs::File::open(td.path().join("panic_records.jsonl")).expect("open"),
+        )
+        .expect("panic record");
+        assert!(body.contains("stage.compute"));
+        std::env::remove_var("UCF_PANIC_LOG_PATH");
     }
 }

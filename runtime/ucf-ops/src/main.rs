@@ -173,19 +173,24 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 "collect" => {
                     let Some(run_id) = arg_value(&args, "--run") else {
                         return Err(
-                            "usage: ucf-ops diagnostics collect --run <id> --out <path>".into()
+                            "usage: ucf-ops diagnostics collect --run <id> --out <path> [--include_backtrace]".into()
                         );
                     };
                     let out = arg_value(&args, "--out")
                         .map(PathBuf::from)
                         .unwrap_or_else(|| PathBuf::from(format!("./out/diag_{run_id}.zip")));
-                    let report = diagnostics_collect(&workdir, &run_id, &out)?;
+                    let report = diagnostics_collect(
+                        &workdir,
+                        &run_id,
+                        &out,
+                        has_flag(&args, "--include_backtrace"),
+                    )?;
                     println!("run_id={}", report.run_id);
                     println!("out={}", report.out);
                     println!("entries={}", report.entries.len());
                 }
                 _ => {
-                    return Err("usage: ucf-ops diagnostics collect --run <id> --out <path>".into())
+                    return Err("usage: ucf-ops diagnostics collect --run <id> --out <path> [--include_backtrace]".into())
                 }
             }
         }

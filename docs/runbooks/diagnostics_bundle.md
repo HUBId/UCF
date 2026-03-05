@@ -18,3 +18,11 @@ Bundle content (best effort):
 - No raw output payloads are included by default.
 - Keys named `text` / `payload` are rewritten as `text_redacted` / `payload_redacted` during collection.
 - Artifact is suitable for replay and incident escalation.
+
+## Backtrace handling
+
+- Default deployment posture: set `RUST_BACKTRACE=0`.
+- Diagnostics collection supports explicit opt-in:
+  - `ucf-ops diagnostics collect --run <id> --out <zip> --include_backtrace`
+- Backtrace/path material is path-redacted before writing into the diagnostics archive.
+- Backtrace content is not emitted into normal gateway/runtime safe error responses.
