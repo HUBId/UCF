@@ -1,0 +1,19 @@
+{
+  "scenario": "v0_flow_a",
+  "ticks": 8,
+  "channel": "internal_thought",
+  "intent_summary": "produce safe text response",
+  "policy_overlay": "test",
+  "determinism": "strict",
+  "stub_backends": true,
+  "signal_values": [
+    12,
+    13,
+    12,
+    11,
+    12,
+    13,
+    12,
+    12
+  ]
+}

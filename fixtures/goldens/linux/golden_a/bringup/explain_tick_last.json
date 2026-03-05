@@ -35,8 +35,8 @@
       "coherence_digest_prefix": null
     },
     "risk": {
-      "risk": 0.32576066,
-      "confidence": 0.51400733,
+      "risk": 0.57573813,
+      "confidence": 0.8354925,
       "risk_digest_prefix": null
     },
     "drift": {
