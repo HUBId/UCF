@@ -1,25 +1,38 @@
 # Prompt Series State Snapshot
 
-## Current milestone state
-- Last executed prompt ID: **128** (this wrap-up/indexing prompt).
-- Prompt-series index: `docs/prompt_series_index.md`.
-- Prompt-to-module coverage map: `docs/module_map.md`.
+## Current anchor
+- **Current anchor milestone:** `Real Compute Onboarding v0`.
+- **Anchor definition:** `docs/roadmap_anchor_v0.md`.
+- **Prompt index source:** `docs/prompt_series_index.md`.
 
-## Active branches/features (repo state context)
-- Current branch: `work`.
-- Latest completed prompt-era feature block before this wrap-up: v1.1 readiness/signoff path (`121–127`).
+## Status against v0 anchor (best-effort)
+- **MUST coverage already completed (historical prompts):**
+  - Real compute onboarding block (`38-67`) is indexed as delivered historical work.
+  - Existing v0 onboarding E2E documentation is present.
+- **MUST governance now active:**
+  - Future prompt generation is constrained to MUST-aligned items until v0 closure.
 
-## Mandatory prompt block before enabling real weights
-Based on the v1.1 plan and readiness/signoff artifacts, the mandatory prompt chain is:
-- **121**: weights promotion/rollback lifecycle tooling.
-- **122**: VL-JEPA slot + `WeightSpec` scaffolding.
-- **123**: VL-JEPA shadow rollout + drift/probe controls.
-- **124**: SAE real slot spec/backend path.
-- **125**: SSM optimized kernel lane + parity checks.
-- **126**: optional GPU lane scaffolding and parity gating.
-- **127**: v1.1 readiness gate extension + signoff flow.
+## Last executed prompt / resume point
+- Last executed prompt ID: **128**.
+- Resume from: **`PROMPT 129`**.
+- Numbering remains monotonic and append-only.
 
-## Resume rule
-- To continue the series, start at **`PROMPT 129`** and increment monotonically.
-- Follow `docs/prompt_rulebook.md` for structure/invariants.
-- Update `docs/prompt_series_index.md` and `docs/module_map.md` in the same change.
+## Immediate next prompts (capped to 10, MUST-only)
+Reference: `docs/next_10_prompts.md`
+
+| Prompt ID | Title (short) | v0 class | Status |
+|---:|---|---|---|
+| 129 | Backend trait contract freeze for v0 stubs | MUST | pending |
+| 130 | Deterministic CPU backend stub conformance tests | MUST | pending |
+| 131 | JEPA mock deterministic signal mapping | MUST | pending |
+| 132 | SAE mock deterministic signal mapping | MUST | pending |
+| 133 | SSM mock deterministic state update mapping | MUST | pending |
+| 134 | Compute summary wiring for spikes/surprise/pressure | MUST | pending |
+| 135 | E2E ControlFrame->Decision->ESS canonical fixture pass | MUST | pending |
+| 136 | Policy gate assertion: no decision, no action | MUST | pending |
+| 137 | Minimal explain-tick observability acceptance checks | MUST | pending |
+| 138 | v0 onboarding signoff bundle (must-only evidence) | MUST | pending |
+
+## Series control notes
+- Prompts are classified as MUST/NICE/DEFERRED at authoring time.
+- Only MUST-aligned prompts are included in the immediate capped queue.
