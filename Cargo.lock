@@ -4366,6 +4366,7 @@ dependencies = [
  "ucf-nsr",
  "ucf-onn",
  "ucf-policy",
+ "ucf-replay",
  "ucf-sle",
  "ucf-snn",
  "ucf-spikes",
