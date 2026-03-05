@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+use sha2::{Digest, Sha256};
 use std::fmt;
 
 pub mod error_codes;
@@ -144,6 +145,50 @@ pub fn quantize_signed_unit_i16(value: f32) -> i16 {
         f32::from(i16::MIN) + 1.0,
         f32::from(CANONICAL_SIGNED_UNIT_QUANT_MAX),
     ) as i16
+}
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SignalBundleV1 {
+    pub t: u64,
+    pub policy_graph_digest: [u8; 32],
+    pub risk_q: UQ0_16,
+    pub confidence_q: UQ0_16,
+    pub surprise_q: UQ0_16,
+    pub pressure_q: UQ0_16,
+    pub uncertainty_q: UQ0_16,
+    pub stability_q: UQ0_16,
+    pub coherence_q: Option<UQ0_16>,
+    pub world_prediction_digest: [u8; 32],
+    pub sae_spikes_digest: [u8; 32],
+    pub ssm_state_digest: [u8; 32],
+    pub lfm_state_digest: [u8; 32],
+}
+
+impl SignalBundleV1 {
+    pub fn signals_digest(&self) -> [u8; 32] {
+        let mut hasher = Sha256::new();
+        hasher.update(self.t.to_be_bytes());
+        hasher.update(self.policy_graph_digest);
+        hasher.update(self.risk_q.raw().to_be_bytes());
+        hasher.update(self.confidence_q.raw().to_be_bytes());
+        hasher.update(self.surprise_q.raw().to_be_bytes());
+        hasher.update(self.pressure_q.raw().to_be_bytes());
+        hasher.update(self.uncertainty_q.raw().to_be_bytes());
+        hasher.update(self.stability_q.raw().to_be_bytes());
+        match self.coherence_q {
+            Some(value) => {
+                hasher.update([1]);
+                hasher.update(value.raw().to_be_bytes());
+            }
+            None => hasher.update([0]),
+        }
+        hasher.update(self.world_prediction_digest);
+        hasher.update(self.sae_spikes_digest);
+        hasher.update(self.ssm_state_digest);
+        hasher.update(self.lfm_state_digest);
+        hasher.finalize().into()
+    }
 }
 
 pub mod v1 {
@@ -893,5 +938,44 @@ mod fixed_point_tests {
         assert!((prod.to_f32() + 0.375).abs() < 1e-4);
         let sum = Q16_16::from_raw(i32::MAX).saturating_add(Q16_16::from_raw(1));
         assert_eq!(sum.raw(), i32::MAX);
+    }
+}
+
+#[cfg(test)]
+mod signal_bundle_tests {
+    use super::{SignalBundleV1, UQ0_16};
+
+    fn sample_bundle() -> SignalBundleV1 {
+        SignalBundleV1 {
+            t: 42,
+            policy_graph_digest: [1; 32],
+            risk_q: UQ0_16::from_raw(11),
+            confidence_q: UQ0_16::from_raw(12),
+            surprise_q: UQ0_16::from_raw(13),
+            pressure_q: UQ0_16::from_raw(14),
+            uncertainty_q: UQ0_16::from_raw(15),
+            stability_q: UQ0_16::from_raw(16),
+            coherence_q: None,
+            world_prediction_digest: [2; 32],
+            sae_spikes_digest: [3; 32],
+            ssm_state_digest: [4; 32],
+            lfm_state_digest: [5; 32],
+        }
+    }
+
+    #[test]
+    fn signal_bundle_digest_is_deterministic() {
+        let a = sample_bundle().signals_digest();
+        let b = sample_bundle().signals_digest();
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn signal_bundle_digest_changes_with_field_mutation() {
+        let a = sample_bundle().signals_digest();
+        let mut changed = sample_bundle();
+        changed.pressure_q = UQ0_16::from_raw(99);
+        let b = changed.signals_digest();
+        assert_ne!(a, b);
     }
 }

@@ -511,6 +511,7 @@ impl AiComputeBackend for ComputePipelineBackend {
             } else {
                 Some(lfm_out.liquid_state_digest)
             },
+            signal_bundle_digest: None,
             sae_quality: Some(sae_out.quality),
             ssm_quality: Some(ssm_out.quality),
             lfm_quality: Some(lfm_out.quality),
@@ -620,6 +621,7 @@ impl AiComputeBackend for ComputePipelineBackend {
             } else {
                 Some(lfm_out.liquid_state_digest)
             },
+            signal_bundle_digest: None,
             sae_quality: Some(sae_out.quality),
             ssm_quality: Some(ssm_out.quality),
             lfm_quality: Some(lfm_out.quality),
