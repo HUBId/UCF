@@ -59,7 +59,7 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::mpsc;
+use std::sync::{mpsc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -8323,6 +8323,404 @@ pub struct StrictCheckReport {
     pub strict_mode_enabled: bool,
     pub ok: bool,
     pub report: StrictModeFailureReport,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PreflightCheck {
+    pub name: String,
+    pub status: GateStatus,
+    pub critical: bool,
+    pub evidence: BTreeMap<String, String>,
+    pub remediation: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PreflightReport {
+    pub schema_version: u16,
+    pub bundle: String,
+    pub overall: GateStatus,
+    pub exit_code: i32,
+    pub checks: Vec<PreflightCheck>,
+    pub remediation_hints: Vec<String>,
+}
+
+const PREFLIGHT_ENV_KEYS: [&str; 2] = ["UCF_POLICY_GRAPH_DIGEST", "UCF_MODEL_MANIFEST_DIGEST"];
+
+fn preflight_process_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
+pub fn preflight(bundle: &Path, out: &Path) -> Result<PreflightReport, OpsError> {
+    let _process_guard = preflight_process_lock()
+        .lock()
+        .map_err(|_| OpsError::Invalid("preflight process lock poisoned".to_string()))?;
+    let bundle = bundle.canonicalize()?;
+    let original_cwd = std::env::current_dir()?;
+    std::env::set_current_dir(&bundle)?;
+    let result = (|| {
+        let checks = vec![
+            preflight_bundle_integrity(&bundle)?,
+            preflight_strict_check(&bundle)?,
+            preflight_docs_lint(&bundle)?,
+            preflight_gate_check(&bundle)?,
+            preflight_runtime_status(&bundle),
+            preflight_rc_manifest(&bundle)?,
+        ];
+
+        let mut remediation_hints = Vec::new();
+        for check in &checks {
+            if matches!(check.status, GateStatus::Fail) {
+                if let Some(remediation) = &check.remediation {
+                    remediation_hints.push(remediation.clone());
+                }
+            }
+        }
+        remediation_hints.sort();
+        remediation_hints.dedup();
+
+        let has_critical_fail = checks
+            .iter()
+            .any(|c| c.critical && matches!(c.status, GateStatus::Fail));
+        let has_fail = checks.iter().any(|c| matches!(c.status, GateStatus::Fail));
+        let (overall, exit_code) = if has_critical_fail {
+            (GateStatus::Fail, 3)
+        } else if has_fail {
+            (GateStatus::Fail, 2)
+        } else {
+            (GateStatus::Pass, 0)
+        };
+
+        let report = PreflightReport {
+            schema_version: 1,
+            bundle: bundle.display().to_string(),
+            overall,
+            exit_code,
+            checks,
+            remediation_hints,
+        };
+
+        if let Some(parent) = out.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        write_json(out, &report)?;
+        Ok(report)
+    })();
+    std::env::set_current_dir(original_cwd)?;
+    result
+}
+
+fn preflight_bundle_integrity(bundle: &Path) -> Result<PreflightCheck, OpsError> {
+    let mut evidence = BTreeMap::new();
+    let required = [
+        "bin/ucf-ops",
+        "configs",
+        "policies/packs/base_v1",
+        "policies/manifest.toml",
+        "models/manifest.toml",
+        "VERSION.txt",
+    ];
+    let mut missing = Vec::new();
+    for item in required {
+        let exists = bundle.join(item).exists();
+        evidence.insert(item.to_string(), exists.to_string());
+        if !exists {
+            missing.push(item.to_string());
+        }
+    }
+
+    let version = bundle.join("VERSION.txt");
+    if version.exists() {
+        let body = fs::read_to_string(&version)?;
+        let fields = parse_key_value_file(&body);
+        let manifest_digest = sha256_hex(&fs::read(bundle.join("models/manifest.toml"))?);
+        evidence.insert(
+            "version_manifest_digest_matches".to_string(),
+            fields
+                .get("manifest_digest")
+                .map(|d| d == &manifest_digest)
+                .unwrap_or(false)
+                .to_string(),
+        );
+        evidence.insert(
+            "version_policy_graph_digest_present".to_string(),
+            fields.contains_key("policy_graph_digest").to_string(),
+        );
+        if fields.get("manifest_digest") != Some(&manifest_digest) {
+            missing.push("VERSION.txt:manifest_digest mismatch".to_string());
+        }
+        if !fields.contains_key("policy_graph_digest") {
+            missing.push("VERSION.txt:policy_graph_digest missing".to_string());
+        }
+    }
+
+    let status = if missing.is_empty() {
+        GateStatus::Pass
+    } else {
+        evidence.insert("missing_or_invalid".to_string(), missing.join(","));
+        GateStatus::Fail
+    };
+    Ok(PreflightCheck {
+        name: "bundle_integrity".to_string(),
+        status,
+        critical: true,
+        evidence,
+        remediation: Some(
+            "rebuild bundle: python deploy/scripts/build_bundle.py --target <bundle> --profile <dev|test|prod>"
+                .to_string(),
+        ),
+    })
+}
+
+fn preflight_strict_check(bundle: &Path) -> Result<PreflightCheck, OpsError> {
+    let out = bundle.join("out/preflight_strict_check.json");
+    let mut previous = BTreeMap::new();
+    for key in PREFLIGHT_ENV_KEYS {
+        previous.insert(key, std::env::var(key).ok());
+    }
+
+    if let Ok(body) = fs::read_to_string(bundle.join("VERSION.txt")) {
+        let version = parse_key_value_file(&body);
+        if let Some(policy_digest) = version.get("policy_graph_digest") {
+            std::env::set_var("UCF_POLICY_GRAPH_DIGEST", policy_digest);
+        }
+        if let Some(manifest_digest) = version.get("manifest_digest") {
+            std::env::set_var("UCF_MODEL_MANIFEST_DIGEST", manifest_digest);
+        }
+    }
+    let strict_result = strict_check(&bundle.join(".ucf"), false, &out);
+
+    for (key, value) in previous {
+        if let Some(value) = value {
+            std::env::set_var(key, value);
+        } else {
+            std::env::remove_var(key);
+        }
+    }
+
+    let report = strict_result?;
+    let mut evidence = BTreeMap::new();
+    evidence.insert("report".to_string(), out.display().to_string());
+    evidence.insert(
+        "strict_mode_enabled".to_string(),
+        report.strict_mode_enabled.to_string(),
+    );
+    Ok(PreflightCheck {
+        name: "strict_check".to_string(),
+        status: if report.ok {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        critical: true,
+        evidence,
+        remediation: Some("run `ucf-ops strict check --bundle <path> --strict --out ./out/strict_check.json` and resolve failing checks".to_string()),
+    })
+}
+
+fn preflight_docs_lint(bundle: &Path) -> Result<PreflightCheck, OpsError> {
+    let mut evidence = BTreeMap::new();
+    let docs_dir = bundle.join("docs");
+    if !docs_dir.exists() {
+        evidence.insert("reason".to_string(), "docs directory missing".to_string());
+        return Ok(PreflightCheck {
+            name: "docs_lint".to_string(),
+            status: GateStatus::Skip,
+            critical: false,
+            evidence,
+            remediation: None,
+        });
+    }
+    let out = bundle.join("out/docs_lint_report.json");
+    let report = docs_lint(&DocsLintArgs {
+        repo_root: bundle.to_path_buf(),
+        policy_pack: bundle.join("policies/packs/base_v1"),
+        overlay_pack: Some(bundle.join("policies/packs/overlays/test")),
+        spec_snapshot: bundle.join("docs/spec_snapshot.md"),
+        prompt_index: bundle.join("docs/prompt_series_index.md"),
+        module_map: bundle.join("docs/module_map.md"),
+        deploy_doc: bundle.join("docs/deploy_portable.md"),
+        mode: DocsLintMode::Strict,
+    });
+    match report {
+        Ok(report) => {
+            write_json(&out, &report)?;
+            evidence.insert("report".to_string(), out.display().to_string());
+            Ok(PreflightCheck {
+                name: "docs_lint".to_string(),
+                status: if report.ok { GateStatus::Pass } else { GateStatus::Fail },
+                critical: false,
+                evidence,
+                remediation: Some("run `ucf-ops docs lint --strict --out ./out/docs_lint_report.json` and fix docs issues".to_string()),
+            })
+        }
+        Err(err) => {
+            evidence.insert("error".to_string(), err.to_string());
+            Ok(PreflightCheck {
+                name: "docs_lint".to_string(),
+                status: GateStatus::Fail,
+                critical: false,
+                evidence,
+                remediation: Some(
+                    "ensure bundle docs include snapshot, prompt index, module map, and deploy doc"
+                        .to_string(),
+                ),
+            })
+        }
+    }
+}
+
+fn preflight_gate_check(bundle: &Path) -> Result<PreflightCheck, OpsError> {
+    let mut evidence = BTreeMap::new();
+    let latest = first_existing_path(&[
+        bundle.join("out/gate_latest.json"),
+        bundle.join("out/gate_report.json"),
+    ]);
+    if let Some(path) = latest {
+        let report: ReadinessGateReport = serde_json::from_slice(&fs::read(&path)?)?;
+        evidence.insert("source".to_string(), path.display().to_string());
+        return Ok(PreflightCheck {
+            name: "gate_status".to_string(),
+            status: if report.status == GateStatus::Pass {
+                GateStatus::Pass
+            } else {
+                GateStatus::Fail
+            },
+            critical: false,
+            evidence,
+            remediation: Some(
+                "run `ucf-ops readiness-gate --profile test --out ./out/gate_report.json`"
+                    .to_string(),
+            ),
+        });
+    }
+    let smoke_out = bundle.join("out/preflight_gate_smoke.json");
+    let smoke = readiness_gate(&bundle.join(".ucf"), "test", &smoke_out)?;
+    evidence.insert("source".to_string(), smoke_out.display().to_string());
+    Ok(PreflightCheck {
+        name: "gate_status".to_string(),
+        status: if smoke.status == GateStatus::Pass {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        critical: false,
+        evidence,
+        remediation: Some("fix readiness failures and rerun `ucf-ops readiness-gate --profile test --out ./out/gate_report.json`".to_string()),
+    })
+}
+
+fn preflight_runtime_status(bundle: &Path) -> PreflightCheck {
+    let mut evidence = BTreeMap::new();
+    let health = bundle.join("out/health.json");
+    let alerts = bundle.join("out/alerts_report.json");
+    let drift = bundle.join("out/drift_report.json");
+    evidence.insert("health_present".to_string(), health.exists().to_string());
+    evidence.insert("alerts_present".to_string(), alerts.exists().to_string());
+    evidence.insert("drift_present".to_string(), drift.exists().to_string());
+    if !health.exists() && !alerts.exists() && !drift.exists() {
+        evidence.insert(
+            "reason".to_string(),
+            "runtime evidence not available in bundle/out".to_string(),
+        );
+        return PreflightCheck {
+            name: "runtime_status".to_string(),
+            status: GateStatus::Skip,
+            critical: false,
+            evidence,
+            remediation: None,
+        };
+    }
+    PreflightCheck {
+        name: "runtime_status".to_string(),
+        status: GateStatus::Pass,
+        critical: false,
+        evidence,
+        remediation: None,
+    }
+}
+
+fn preflight_rc_manifest(bundle: &Path) -> Result<PreflightCheck, OpsError> {
+    let mut evidence = BTreeMap::new();
+    let manifest_path = bundle.join("RC_MANIFEST.json");
+    let sig_path = bundle.join("RC_MANIFEST.sig");
+    let sums_path = bundle.join("SHA256SUMS.txt");
+    if !manifest_path.exists() || !sig_path.exists() || !sums_path.exists() {
+        evidence.insert("reason".to_string(), "rc artifacts missing".to_string());
+        return Ok(PreflightCheck {
+            name: "rc_manifest".to_string(),
+            status: GateStatus::Skip,
+            critical: false,
+            evidence,
+            remediation: None,
+        });
+    }
+
+    let manifest: RcManifestV1 = serde_json::from_slice(&fs::read(&manifest_path)?)?;
+    let digest_ok = rc_manifest_digest(&manifest)? == manifest.rc_digest;
+    evidence.insert("manifest_digest_ok".to_string(), digest_ok.to_string());
+
+    let sig_hex = fs::read_to_string(&sig_path)?.trim().to_string();
+    let sig_bytes = hex::decode(sig_hex)
+        .map_err(|e| OpsError::Invalid(format!("invalid RC_MANIFEST.sig hex: {e}")))?;
+    let sig_arr: [u8; 64] = sig_bytes
+        .as_slice()
+        .try_into()
+        .map_err(|_| OpsError::Invalid("invalid RC_MANIFEST.sig size".to_string()))?;
+    let sig = Signature::from_bytes(&sig_arr);
+    let signer_bytes = hex::decode(&manifest.signer_public_key)
+        .map_err(|e| OpsError::Invalid(format!("invalid signer_public_key hex: {e}")))?;
+    let signer_arr: [u8; 32] = signer_bytes
+        .as_slice()
+        .try_into()
+        .map_err(|_| OpsError::Invalid("invalid signer_public_key length".to_string()))?;
+    let verify_key = VerifyingKey::from_bytes(&signer_arr)
+        .map_err(|e| OpsError::Invalid(format!("invalid signer key: {e}")))?;
+    let digest_bytes = hex::decode(&manifest.rc_digest)
+        .map_err(|e| OpsError::Invalid(format!("invalid rc_digest hex: {e}")))?;
+    let signature_ok = verify_key.verify(&digest_bytes, &sig).is_ok();
+    evidence.insert("signature_ok".to_string(), signature_ok.to_string());
+
+    let mut sums_ok = true;
+    for line in fs::read_to_string(&sums_path)?.lines() {
+        let mut parts = line.splitn(2, "  ");
+        let Some(expected) = parts.next() else {
+            continue;
+        };
+        let Some(path) = parts.next() else { continue };
+        let path = bundle.join(path);
+        if !path.exists() || sha256_hex(&fs::read(path)?) != expected {
+            sums_ok = false;
+            break;
+        }
+    }
+    evidence.insert("sha256sums_ok".to_string(), sums_ok.to_string());
+    let status = if digest_ok && signature_ok && sums_ok {
+        GateStatus::Pass
+    } else {
+        GateStatus::Fail
+    };
+
+    Ok(PreflightCheck {
+        name: "rc_manifest".to_string(),
+        status,
+        critical: true,
+        evidence,
+        remediation: Some(
+            "rebuild RC pack and regenerate RC_MANIFEST.json/RC_MANIFEST.sig/SHA256SUMS.txt"
+                .to_string(),
+        ),
+    })
+}
+
+fn parse_key_value_file(body: &str) -> BTreeMap<String, String> {
+    let mut out = BTreeMap::new();
+    for line in body.lines() {
+        if let Some((key, value)) = line.split_once('=') {
+            out.insert(key.trim().to_string(), value.trim().to_string());
+        }
+    }
+    out
 }
 
 pub fn strict_check(
