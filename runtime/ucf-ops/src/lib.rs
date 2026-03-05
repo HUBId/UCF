@@ -59,7 +59,7 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::mpsc;
+use std::sync::{mpsc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -8344,7 +8344,17 @@ pub struct PreflightReport {
     pub remediation_hints: Vec<String>,
 }
 
+const PREFLIGHT_ENV_KEYS: [&str; 2] = ["UCF_POLICY_GRAPH_DIGEST", "UCF_MODEL_MANIFEST_DIGEST"];
+
+fn preflight_process_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
 pub fn preflight(bundle: &Path, out: &Path) -> Result<PreflightReport, OpsError> {
+    let _process_guard = preflight_process_lock()
+        .lock()
+        .map_err(|_| OpsError::Invalid("preflight process lock poisoned".to_string()))?;
     let bundle = bundle.canonicalize()?;
     let original_cwd = std::env::current_dir()?;
     std::env::set_current_dir(&bundle)?;
@@ -8464,6 +8474,11 @@ fn preflight_bundle_integrity(bundle: &Path) -> Result<PreflightCheck, OpsError>
 
 fn preflight_strict_check(bundle: &Path) -> Result<PreflightCheck, OpsError> {
     let out = bundle.join("out/preflight_strict_check.json");
+    let mut previous = BTreeMap::new();
+    for key in PREFLIGHT_ENV_KEYS {
+        previous.insert(key, std::env::var(key).ok());
+    }
+
     if let Ok(body) = fs::read_to_string(bundle.join("VERSION.txt")) {
         let version = parse_key_value_file(&body);
         if let Some(policy_digest) = version.get("policy_graph_digest") {
@@ -8473,7 +8488,17 @@ fn preflight_strict_check(bundle: &Path) -> Result<PreflightCheck, OpsError> {
             std::env::set_var("UCF_MODEL_MANIFEST_DIGEST", manifest_digest);
         }
     }
-    let report = strict_check(&bundle.join(".ucf"), false, &out)?;
+    let strict_result = strict_check(&bundle.join(".ucf"), false, &out);
+
+    for (key, value) in previous {
+        if let Some(value) = value {
+            std::env::set_var(key, value);
+        } else {
+            std::env::remove_var(key);
+        }
+    }
+
+    let report = strict_result?;
     let mut evidence = BTreeMap::new();
     evidence.insert("report".to_string(), out.display().to_string());
     evidence.insert(
