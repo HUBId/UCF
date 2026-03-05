@@ -5849,7 +5849,7 @@ fn sync_graph_from_cde_state(graph: &mut CausalGraph, state: &CdeState) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{fs as fileio};
+    use std::fs as fileio;
 
     fn compute_summary_fixture() -> ucf_compute::ComputeSignalsSummary {
         ucf_compute::ComputeSignalsSummary {
