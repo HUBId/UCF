@@ -190,13 +190,13 @@ fn run_v0_flow(enable_hooks: bool) -> FlowRunSummary {
                 _ => {}
             }
 
-            if record.audit_digest.is_some() {
+            if let Some(audit_digest) = record.audit_digest {
                 if first_audit {
                     first_audit = false;
                 } else {
                     assert_eq!(record.audit_prev_digest, Some(prev_audit_digest));
                 }
-                prev_audit_digest = record.audit_digest.expect("audit digest");
+                prev_audit_digest = audit_digest;
             }
         }
 
