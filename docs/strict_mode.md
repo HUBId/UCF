@@ -42,3 +42,13 @@ Report fields are bounded and redaction-safe:
 - **test/prod**: always enable strict mode
 - **dev**: optional, but recommended before promotion
 
+
+## Panic policy
+
+- Runtime panic handling is structured:
+  - Stage-boundary panics are caught and converted to runtime panic errors (`runtime.panic`, code `1004`).
+  - A `PanicRecordV1` is emitted to local panic diagnostics (`out/panic_records.jsonl`).
+- Strict mode supports optional fail-fast panic shutdown:
+  - `UCF_STRICT_MODE=1`
+  - `UCF_STRICT_PANIC_FAIL_FAST=1`
+- Without fail-fast, runtime uses deterministic degraded fallback semantics.

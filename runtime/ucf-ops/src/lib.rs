@@ -330,7 +330,14 @@ pub struct RunMetadataRecord {
     pub determinism_policy_digest: Option<String>,
     pub strict_mode_enabled: bool,
     pub strict_mode_digest: Option<String>,
+    pub crash_dumps_disabled: bool,
     pub ended_at_tick: Option<u64>,
+}
+
+fn disable_crash_dumps_best_effort() -> bool {
+    std::env::var("UCF_CRASH_DUMPS_DISABLED")
+        .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+        .unwrap_or(false)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -2799,6 +2806,7 @@ pub fn one_command_bringup(
         determinism_policy_digest: None,
         strict_mode_enabled: cfg.strict_mode,
         strict_mode_digest: None,
+        crash_dumps_disabled: disable_crash_dumps_best_effort(),
         ended_at_tick: Some(ticks),
     };
     if cfg.strict_mode {
@@ -5403,6 +5411,7 @@ active_hash = "abc"
             determinism_policy_digest: None,
             strict_mode_enabled: false,
             strict_mode_digest: None,
+            crash_dumps_disabled: false,
             ended_at_tick: Some(10),
         };
         let cfg_ok = ResumeCheckConfig {
@@ -5750,6 +5759,7 @@ pub fn diagnostics_collect(
     workdir: &Path,
     run_id: &str,
     out: &Path,
+    include_backtrace: bool,
 ) -> Result<DiagnosticsBundleReport, OpsError> {
     if let Some(parent) = out.parent() {
         fs::create_dir_all(parent)?;
@@ -5769,6 +5779,10 @@ pub fn diagnostics_collect(
         run_dir.join("adversarial_report.json"),
         run_dir.join("bench_report.json"),
     ];
+    let panic_log = workdir.join("out").join("panic_records.jsonl");
+    if include_backtrace && panic_log.exists() {
+        selected.push(panic_log);
+    }
     let explain_dir = workdir.join("explain_tick");
     if explain_dir.exists() {
         for e in fs::read_dir(&explain_dir)? {
@@ -5783,6 +5797,8 @@ pub fn diagnostics_collect(
     let mut zip = zip::ZipWriter::new(file);
     let opts = zip::write::SimpleFileOptions::default()
         .compression_method(zip::CompressionMethod::Deflated);
+    let path_redaction_re = regex::Regex::new(r"(/[A-Za-z0-9_./-]+|[A-Za-z]:\\[^\s]+)")
+        .map_err(|e| OpsError::Invalid(format!("path redaction regex invalid: {e}")))?;
     let mut entries = Vec::new();
     for path in selected {
         if !path.exists() {
@@ -5797,6 +5813,11 @@ pub fn diagnostics_collect(
         if text.contains("\"text\":") || text.contains("\"payload\":") {
             text = text.replace("\"text\":", "\"text_redacted\":");
             text = text.replace("\"payload\":", "\"payload_redacted\":");
+        }
+        if include_backtrace && (name.contains("panic") || text.contains("stack backtrace:")) {
+            text = path_redaction_re
+                .replace_all(&text, "<redacted_path>")
+                .to_string();
         }
         zip.start_file(name.clone(), opts)
             .map_err(|e| OpsError::Invalid(format!("zip start failed: {e}")))?;
@@ -8123,20 +8144,20 @@ mod rc1_tests {
         let dir = tempfile::tempdir().expect("tmp");
         let out_run = PathBuf::from("out").join("run-test");
         std::fs::create_dir_all(&out_run).expect("out dir");
-        std::fs::write(out_run.join("run_metadata.json"), "{\"ok\":true}").expect("write");
+        std::fs::write(out_run.join("run_metadata.json"), r#"{"ok":true}"#).expect("write");
         std::fs::write(
             out_run.join("metrics_summary.json"),
-            "{\"payload\":\"secret\"}",
+            r#"{"payload":"secret"}"#,
         )
         .expect("write");
         std::fs::create_dir_all(dir.path().join("explain_tick")).expect("exp dir");
         std::fs::write(
             dir.path().join("explain_tick/last.json"),
-            "{\"text\":\"hidden\",\"note\":\"x\"}",
+            r#"{"text":"hidden","note":"x"}"#,
         )
         .expect("write");
         let zip_path = dir.path().join("diag.zip");
-        let report = diagnostics_collect(dir.path(), "run-test", &zip_path).expect("bundle");
+        let report = diagnostics_collect(dir.path(), "run-test", &zip_path, false).expect("bundle");
         assert!(!report.entries.is_empty());
         let bytes = std::fs::read(&zip_path).expect("zip bytes");
         let as_text = String::from_utf8_lossy(&bytes);
@@ -8144,6 +8165,43 @@ mod rc1_tests {
         assert!(!as_text.contains("\"payload\":"));
 
         let _ = std::fs::remove_dir_all(Path::new("out").join("run-test"));
+    }
+
+    #[test]
+    fn diagnostics_bundle_includes_backtrace_only_when_requested() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let out_run = PathBuf::from("out").join("run-bt");
+        std::fs::create_dir_all(&out_run).expect("out dir");
+        std::fs::write(out_run.join("run_metadata.json"), r#"{"ok":true}"#).expect("write");
+        std::fs::write(out_run.join("metrics_summary.json"), r#"{"ok":true}"#).expect("write");
+        std::fs::create_dir_all(dir.path().join("out")).expect("out");
+        std::fs::write(
+            dir.path().join("out/panic_records.jsonl"),
+            r#"stack backtrace:
+/workspace/UCF/runtime/src/lib.rs:10
+C:\agent\file.rs:2"#,
+        )
+        .expect("write");
+
+        let zip_no = dir.path().join("diag_no.zip");
+        let report_no = diagnostics_collect(dir.path(), "run-bt", &zip_no, false).expect("bundle");
+        assert!(!report_no
+            .entries
+            .iter()
+            .any(|e| e.contains("panic_records")));
+
+        let zip_yes = dir.path().join("diag_yes.zip");
+        let report_yes = diagnostics_collect(dir.path(), "run-bt", &zip_yes, true).expect("bundle");
+        assert!(report_yes
+            .entries
+            .iter()
+            .any(|e| e.contains("panic_records")));
+        let bytes = std::fs::read(&zip_yes).expect("zip");
+        let text = String::from_utf8_lossy(&bytes);
+        assert!(!text.contains("/workspace/UCF"));
+        assert!(!text.contains(r"C:\agent"));
+
+        let _ = std::fs::remove_dir_all(Path::new("out").join("run-bt"));
     }
 
     #[test]

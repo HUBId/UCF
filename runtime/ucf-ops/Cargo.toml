@@ -28,5 +28,6 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 ed25519-dalek = { version = "2", features = ["rand_core"] }
 rand = "0.8"
 tempfile = "3"
+regex = "1"
 
 [dev-dependencies]

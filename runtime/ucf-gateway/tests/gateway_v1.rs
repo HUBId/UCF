@@ -258,3 +258,32 @@ fn health_endpoint_requires_token_outside_dev_and_returns_bounded_surface() {
         _ => panic!("expected health payload"),
     }
 }
+
+#[test]
+fn gateway_panic_is_caught_and_returns_internal_error() {
+    let td = tempdir().expect("tmp");
+    let mut svc = GatewayService::new(GatewayConfig::for_tests(td.path()));
+    let resp = svc.handle_request(
+        proto::GatewayRequest {
+            negotiated_version: 1,
+            payload: Some(proto::gateway_request::Payload::Handshake(
+                proto::HandshakeRequest {
+                    schema_version: 1,
+                    client_id: "c1".to_string(),
+                    supported_versions: vec![1],
+                    auth_token: "test-token".to_string(),
+                },
+            )),
+        },
+        "test-token",
+        "__panic_test__",
+    );
+    match resp.payload {
+        Some(proto::gateway_response::Payload::Error(e)) => {
+            assert_eq!(e.code, 1500);
+            assert_eq!(e.message, "internal error");
+            assert!(!e.request_id.is_empty());
+        }
+        _ => panic!("expected internal error"),
+    }
+}

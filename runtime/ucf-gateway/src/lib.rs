@@ -619,7 +619,7 @@ impl GatewayService {
         let decision = self
             .orchestrator
             .ingest_and_process(&mut self.adapter, ctrl)
-            .map_err(|_| GatewayError::SchemaInvalid)?;
+            .map_err(|_| GatewayError::Internal)?;
         self.last_tick_wallclock_ms = Some(now_ms());
         let evt = decision_to_event(
             &self.config.run_id,
@@ -809,39 +809,48 @@ impl GatewayService {
             digest_prefix(hash_token(token).as_bytes(), 16)
         };
 
-        let (endpoint, result) = match req.payload {
-            Some(proto::gateway_request::Payload::Handshake(r)) => (
-                "handshake",
-                self.negotiate(&r)
-                    .map(proto::gateway_response::Payload::Handshake),
-            ),
-            Some(proto::gateway_request::Payload::Submit(r)) => (
-                "submit",
-                self.submit_control_frame(token, r)
-                    .map(proto::gateway_response::Payload::Submit),
-            ),
-            Some(proto::gateway_request::Payload::Subscribe(r)) => (
-                "subscribe",
-                self.subscribe_decisions(token, r)
-                    .map(proto::gateway_response::Payload::Subscribe),
-            ),
-            Some(proto::gateway_request::Payload::EssQuery(r)) => (
-                "ess_query",
-                self.query_ess(token, r)
-                    .map(proto::gateway_response::Payload::EssQuery),
-            ),
-            Some(proto::gateway_request::Payload::Report(r)) => (
-                "report",
-                self.get_report(token, r)
-                    .map(proto::gateway_response::Payload::Report),
-            ),
-            Some(proto::gateway_request::Payload::Health(r)) => (
-                "health",
-                self.get_health(token, r)
-                    .map(proto::gateway_response::Payload::Health),
-            ),
-            None => ("none", Err(GatewayError::SchemaInvalid)),
-        };
+        let (endpoint, result) =
+            match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                if client_id == "__panic_test__" {
+                    panic!("gateway panic test hook");
+                }
+                match req.payload {
+                    Some(proto::gateway_request::Payload::Handshake(r)) => (
+                        "handshake",
+                        self.negotiate(&r)
+                            .map(proto::gateway_response::Payload::Handshake),
+                    ),
+                    Some(proto::gateway_request::Payload::Submit(r)) => (
+                        "submit",
+                        self.submit_control_frame(token, r)
+                            .map(proto::gateway_response::Payload::Submit),
+                    ),
+                    Some(proto::gateway_request::Payload::Subscribe(r)) => (
+                        "subscribe",
+                        self.subscribe_decisions(token, r)
+                            .map(proto::gateway_response::Payload::Subscribe),
+                    ),
+                    Some(proto::gateway_request::Payload::EssQuery(r)) => (
+                        "ess_query",
+                        self.query_ess(token, r)
+                            .map(proto::gateway_response::Payload::EssQuery),
+                    ),
+                    Some(proto::gateway_request::Payload::Report(r)) => (
+                        "report",
+                        self.get_report(token, r)
+                            .map(proto::gateway_response::Payload::Report),
+                    ),
+                    Some(proto::gateway_request::Payload::Health(r)) => (
+                        "health",
+                        self.get_health(token, r)
+                            .map(proto::gateway_response::Payload::Health),
+                    ),
+                    None => ("none", Err(GatewayError::SchemaInvalid)),
+                }
+            })) {
+                Ok(outcome) => outcome,
+                Err(_) => ("internal", Err(GatewayError::Internal)),
+            };
 
         if let Ok(payload) = result {
             if let Err(err) = self.enforce_rate_limit(endpoint, &client_id_digest_prefix) {

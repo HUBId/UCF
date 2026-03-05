@@ -6,6 +6,11 @@ pub enum RuntimeError {
     Policy(ucf_policy::errors::PolicyError),
     Ess(ucf_ess::v1::EssError),
     Compute(ucf_compute::ComputeError),
+    Panic {
+        stage: &'static str,
+        panic_digest: String,
+        fail_fast: bool,
+    },
 }
 
 impl From<ucf_policy::errors::PolicyError> for RuntimeError {
@@ -26,6 +31,16 @@ impl Display for RuntimeError {
             Self::Policy(error) => write!(f, "policy error: {error}"),
             Self::Ess(error) => write!(f, "ess error: {error}"),
             Self::Compute(error) => write!(f, "compute error: {error}"),
+            Self::Panic {
+                stage,
+                panic_digest,
+                fail_fast,
+            } => write!(
+                f,
+                "panic caught in stage={stage} digest={} action={}",
+                &panic_digest[..panic_digest.len().min(12)],
+                if *fail_fast { "shutdown" } else { "degraded" }
+            ),
         }
     }
 }
@@ -44,6 +59,7 @@ impl RuntimeError {
             Self::Policy(_) => ErrorCode::RuntimePolicy,
             Self::Ess(_) => ErrorCode::RuntimeEss,
             Self::Compute(_) => ErrorCode::RuntimeCompute,
+            Self::Panic { .. } => ErrorCode::RuntimePanic,
         }
     }
 }
