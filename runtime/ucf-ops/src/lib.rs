@@ -13,6 +13,7 @@ mod formal_invariants;
 mod goldens;
 mod models_lifecycle;
 mod nightly;
+mod soak;
 mod spec_snapshot;
 mod world_shadow;
 pub use adversarial::{adversarial_run, AdversarialReport, AdversarialRunArgs, CaseResult};
@@ -46,6 +47,9 @@ pub use models_lifecycle::{
 pub use nightly::{
     nightly_summarize, NightlyComponentReport, NightlyOverallStatus, NightlySummarizeArgs,
     NightlySummaryReport,
+};
+pub use soak::{
+    parse_duration_secs, parse_inject, soak_run, InjectTrigger, SoakReport, SoakRunArgs, SoakStatus,
 };
 pub use spec_snapshot::{generate_spec_snapshot, SpecSnapshotArgs};
 pub use world_shadow::{world_shadow_report, WorldShadowReport};

@@ -13,15 +13,16 @@ use ucf_ops::{
     logs_verify_proof, metrics_snapshot, metrics_summary, metrics_trend, migrate_config_v1,
     models_list, models_probe, models_promote, models_recommend_rollback, models_rollback,
     models_stage, models_verify, net_deps_audit, nightly_summarize, one_command_bringup,
-    out_manifest, parse_slot, path_scan, policy_diff, policy_explain, policy_validate,
-    portability_check, readiness_gate, release_rc1_gate, release_signoff_validate, replay_audit,
-    replay_bugreport, repro_pack, repro_verify, run_status, runs_list, runs_search, runs_show,
-    save_counterfactual_result, security_verify_chain, simulate_counterfactual, strict_check,
-    troubleshoot, verify_bugreport, world_shadow_report, write_slice, AdversarialRunArgs,
-    AirgapArtifactType, AirgapImportArgs, AirgapImportMode, BenchArgs, BugKitBuildArgs,
-    ChangeImpactArgs, ConfigV1, CounterfactualRequest, DevLoopArgs, DocsLintArgs, DocsLintMode,
-    DocsLintStatus, ExplainTickRequest, ExportArgs, GateStatus, GoldenGenerateArgs,
-    GoldenVerifyArgs, GoldenVerifyReport, NightlySummarizeArgs, SpecSnapshotArgs,
+    out_manifest, parse_duration_secs, parse_inject, parse_slot, path_scan, policy_diff,
+    policy_explain, policy_validate, portability_check, readiness_gate, release_rc1_gate,
+    release_signoff_validate, replay_audit, replay_bugreport, repro_pack, repro_verify, run_status,
+    runs_list, runs_search, runs_show, save_counterfactual_result, security_verify_chain,
+    simulate_counterfactual, soak_run, strict_check, troubleshoot, verify_bugreport,
+    world_shadow_report, write_slice, AdversarialRunArgs, AirgapArtifactType, AirgapImportArgs,
+    AirgapImportMode, BenchArgs, BugKitBuildArgs, ChangeImpactArgs, ConfigV1,
+    CounterfactualRequest, DevLoopArgs, DocsLintArgs, DocsLintMode, DocsLintStatus,
+    ExplainTickRequest, ExportArgs, GateStatus, GoldenGenerateArgs, GoldenVerifyArgs,
+    GoldenVerifyReport, NightlySummarizeArgs, SoakRunArgs, SpecSnapshotArgs,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -1644,6 +1645,50 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 _ => return Err("usage: ucf-ops runs <list|show|search> ...".into()),
             }
         }
+
+        "soak" => {
+            let sub = args.get(2).map(String::as_str).unwrap_or("help");
+            match sub {
+                "run" => {
+                    let duration = arg_value(&args, "--duration").unwrap_or_else(|| "2h".to_string());
+                    let duration_secs = parse_duration_secs(&duration)?;
+                    let scenario = arg_value(&args, "--scenario").unwrap_or_else(|| "golden_a".to_string());
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from(format!("./out/soak_{}", std::process::id())));
+                    let health_poll_secs = parse_u64(&args, "--health-poll", 5);
+                    let memory_sample_secs = parse_u64(&args, "--memory-sample", 60);
+                    let inject = args
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(idx, v)| if v == "--inject" { args.get(idx + 1) } else { None })
+                        .map(|v| parse_inject(v))
+                        .collect::<Result<Vec<_>, _>>()?;
+                    let report = soak_run(
+                        &workdir,
+                        &SoakRunArgs {
+                            duration_secs,
+                            scenario,
+                            out: out.clone(),
+                            health_poll_secs,
+                            memory_sample_secs,
+                            inject,
+                            postmortem: has_flag(&args, "--postmortem"),
+                        },
+                    )?;
+                    println!("run_id={}", report.run_id);
+                    println!("status={:?}", report.status);
+                    println!("out={}", out.join("soak_report.json").display());
+                    if let Some(bundle) = report.postmortem_bundle {
+                        println!("postmortem_bundle={bundle}");
+                    }
+                    if matches!(report.status, ucf_ops::SoakStatus::Fail) {
+                        std::process::exit(2);
+                    }
+                }
+                _ => return Err("usage: ucf-ops soak run [--duration 2h] [--scenario golden_a] [--out <dir>] [--inject <kind[:target]@t=N>]... [--postmortem]".into()),
+            }
+        }
         "strict" => {
             let sub = args.get(2).map(String::as_str).unwrap_or("help");
             match sub {
@@ -1689,7 +1734,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             eprintln!(
-                "usage: ucf-ops <bringup|diag|health|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|attest|repro|readiness-gate|goldens|nightly|dev|troubleshoot|adversarial-run|out|release|bench|runs|status|strict|ess|ebm|drift|alerts|policy|portability|spec|change-impact|version> [--workdir <path>] [--bundle <path>]"
+                "usage: ucf-ops <bringup|diag|health|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|attest|repro|readiness-gate|goldens|nightly|dev|troubleshoot|adversarial-run|out|release|bench|runs|status|strict|ess|ebm|drift|alerts|policy|portability|spec|change-impact|soak|version> [--workdir <path>] [--bundle <path>]"
             );
             std::process::exit(1);
         }
