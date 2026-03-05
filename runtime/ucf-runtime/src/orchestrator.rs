@@ -77,8 +77,8 @@ use ucf_ess::v1::{
     GpuUnavailableRecord, HormoneRecord, IdAllocator, InMemoryEss, LfmSummaryRecord,
     LfmWindowRecord, NeuroRecord, NsrRecord, OutputRecord, PayloadClassification,
     PolicyProvenanceRecord, SaeSummaryRecord, SandboxCallRecord, SandboxReplyRecord,
-    SsmSummaryRecord, ThrottleRecord, ToolAuthRecord, ToolExecutionRecord, ToolIssueAuditRecord,
-    ToolPlanAuditRecord, ToolRequestRecord, WorldSummaryRecord,
+    SignalBundleRecordV1, SsmSummaryRecord, ThrottleRecord, ToolAuthRecord, ToolExecutionRecord,
+    ToolIssueAuditRecord, ToolPlanAuditRecord, ToolRequestRecord, WorldSummaryRecord,
 };
 use ucf_fep::{
     check_coherence_invariants, fep_step, homeostasis_step, CoherenceCfg, CoherenceSnapshot,
@@ -126,6 +126,7 @@ use ucf_spikes::{
 };
 use ucf_ssm::v0::{ssm_step, SsmCfg, SsmState};
 use ucf_tcf::v0::{tcf_tick, TcfCfg, TcfState};
+use ucf_types::{SignalBundleV1, UQ0_16};
 
 const OSC_SSM: u8 = 1;
 const OSC_CDE: u8 = 2;
@@ -3891,8 +3892,29 @@ impl RuntimeOrchestrator {
                 self.compute_backend.name(),
             );
         }
-        let compute_summary =
+        let mut compute_summary =
             compute_signals.summary(canonical_backend_label(self.compute_backend.name()));
+        let policy_graph_bytes = hex::decode(&self.policy_graph_digest).unwrap_or_default();
+        let mut policy_graph_digest = [0u8; 32];
+        if policy_graph_bytes.len() >= 32 {
+            policy_graph_digest.copy_from_slice(&policy_graph_bytes[..32]);
+        }
+        let signal_bundle = SignalBundleV1 {
+            t: ctrl.time.tick.get(),
+            policy_graph_digest,
+            risk_q: UQ0_16::from_raw(compute_summary.risk_q),
+            confidence_q: UQ0_16::from_raw(compute_summary.confidence_q),
+            surprise_q: UQ0_16::from_raw(compute_summary.surprise_q),
+            pressure_q: UQ0_16::from_raw(compute_summary.pressure_q),
+            uncertainty_q: UQ0_16::from_raw(compute_summary.lfm_uncertainty_q.unwrap_or(u16::MAX)),
+            stability_q: UQ0_16::from_raw(compute_summary.lfm_stability_q.unwrap_or(0)),
+            coherence_q: None,
+            world_prediction_digest: compute_summary.world_digest.unwrap_or([0; 32]),
+            sae_spikes_digest: compute_summary.spikes_digest,
+            ssm_state_digest: compute_summary.ssm_digest.unwrap_or([0; 32]),
+            lfm_state_digest: compute_summary.lfm_digest.unwrap_or([0; 32]),
+        };
+        compute_summary.signal_bundle_digest = Some(signal_bundle.signals_digest());
         for (stage, dim) in [
             (ComputeStage::Sae, 128_u32),
             (ComputeStage::Ssm, 64_u32),
@@ -4024,6 +4046,7 @@ impl RuntimeOrchestrator {
             lfm_saturation_ratio: compute_summary.lfm_saturation_ratio,
             lfm_nan_inf_detected: Some(compute_summary.lfm_nan_inf_detected),
             lfm_digest: compute_summary.lfm_digest,
+            signal_bundle_digest: compute_summary.signal_bundle_digest,
             budget_profile_id: Some(compute_summary.budget_profile_id),
             seed: Some(compute_summary.seed),
             risk_contract_version: Some(compute_summary.risk_contract_version),
@@ -4679,6 +4702,30 @@ impl RuntimeOrchestrator {
                     }
                 }
             }
+
+            let signal_bundle_record = SignalBundleRecordV1 {
+                t: ctrl.time.tick.get(),
+                risk_q: signal_bundle.risk_q.raw(),
+                confidence_q: signal_bundle.confidence_q.raw(),
+                surprise_q: signal_bundle.surprise_q.raw(),
+                pressure_q: signal_bundle.pressure_q.raw(),
+                uncertainty_q: signal_bundle.uncertainty_q.raw(),
+                stability_q: signal_bundle.stability_q.raw(),
+                coherence_q: signal_bundle.coherence_q.map(UQ0_16::raw),
+                signals_digest_prefix: prefix8(signal_bundle.signals_digest()),
+                world_prediction_digest_prefix: prefix8(signal_bundle.world_prediction_digest),
+                sae_spikes_digest_prefix: prefix8(signal_bundle.sae_spikes_digest),
+                ssm_state_digest_prefix: prefix8(signal_bundle.ssm_state_digest),
+                lfm_state_digest_prefix: prefix8(signal_bundle.lfm_state_digest),
+                policy_graph_digest_prefix: policy_prefix,
+                evidence_chain_digest_prefix: evidence_prefix,
+            };
+            self.ess.append(ExperienceRecord::from_signal_bundle(
+                self.ids.next(),
+                decision.time,
+                decision.corr,
+                signal_bundle_record,
+            ))?;
         }
 
         let candidate_summaries: Vec<CandidateSummaryRecord> = candidates
@@ -5957,6 +6004,7 @@ mod tests {
             lfm_saturation_ratio: Some(0.0),
             lfm_nan_inf_detected: false,
             lfm_digest: Some([10; 32]),
+            signal_bundle_digest: None,
             budget_profile_id: 1,
             seed: 1,
             risk_contract_version: 1,

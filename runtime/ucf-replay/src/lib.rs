@@ -654,6 +654,7 @@ pub fn load_fixture_records(path: &Path) -> Result<Vec<ExperienceRecord>, Replay
             lfm_saturation_ratio: None,
             lfm_nan_inf_detected: None,
             lfm_digest: None,
+            signal_bundle_digest: None,
             budget_profile_id: Some(entry.budget_profile_id),
             seed: Some(entry.seed),
             risk_contract_version: Some(1),

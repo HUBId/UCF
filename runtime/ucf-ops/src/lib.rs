@@ -7530,6 +7530,7 @@ fn experience_kind_name(kind: ExperienceKind) -> &'static str {
         ExperienceKind::SaeSummary => "SaeSummary",
         ExperienceKind::SsmSummary => "SsmSummary",
         ExperienceKind::LfmSummary => "LfmSummary",
+        ExperienceKind::SignalBundle => "SignalBundle",
         ExperienceKind::LlmSummary => "LlmSummary",
         ExperienceKind::LfmWindow => "LfmWindow",
         ExperienceKind::CapabilityIssuance => "CapabilityIssuance",

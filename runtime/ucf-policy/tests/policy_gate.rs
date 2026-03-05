@@ -64,6 +64,7 @@ fn with_low_risk(mut decision: DecisionFrame) -> DecisionFrame {
         lfm_saturation_ratio: None,
         lfm_nan_inf_detected: None,
         lfm_digest: None,
+        signal_bundle_digest: None,
         budget_profile_id: None,
         seed: None,
         risk_contract_version: None,

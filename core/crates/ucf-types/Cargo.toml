@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 ucf_protocol = { package = "ucf-protocol", path = "../../../protocol/crates/ucf-protocol" }
 serde = { workspace = true, optional = true }
+sha2 = "0.10"
 
 [features]
 serde = ["dep:serde"]

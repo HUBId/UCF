@@ -45,6 +45,7 @@ pub struct ComputeSignalsSummary {
     pub lfm_saturation_ratio: Option<f32>,
     pub lfm_nan_inf_detected: Option<bool>,
     pub lfm_digest: Option<[u8; 32]>,
+    pub signal_bundle_digest: Option<[u8; 32]>,
     pub budget_profile_id: Option<u32>,
     pub seed: Option<u64>,
     pub risk_contract_version: Option<u16>,

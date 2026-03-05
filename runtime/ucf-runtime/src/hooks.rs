@@ -552,6 +552,7 @@ mod tests {
             lfm_saturation_ratio: None,
             lfm_nan_inf_detected: None,
             lfm_digest: None,
+            signal_bundle_digest: None,
             budget_profile_id: Some(1),
             seed: Some(7),
             risk_contract_version: Some(1),
