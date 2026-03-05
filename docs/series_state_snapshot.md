@@ -34,5 +34,6 @@ Reference: `docs/next_10_prompts.md`
 | 138 | v0 onboarding signoff bundle (must-only evidence) | MUST | pending |
 
 ## Series control notes
+- v0 complete criterion: **`ucf-ops v0 gate` overall PASS**.
 - Prompts are classified as MUST/NICE/DEFERRED at authoring time.
 - Only MUST-aligned prompts are included in the immediate capped queue.
