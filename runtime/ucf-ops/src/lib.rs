@@ -5519,6 +5519,7 @@ mod tests {
 
     #[test]
     fn export_and_verify_roundtrip() {
+        let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
         let dir = tempdir().expect("tempdir");
         bringup(dir.path(), true, 20).expect("bringup");
         let report_dir = export_bugreport(
@@ -5537,6 +5538,7 @@ mod tests {
 
     #[test]
     fn verify_catches_tampering() {
+        let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
         let dir = tempdir().expect("tempdir");
         bringup(dir.path(), true, 8).expect("bringup");
         let report_dir = export_bugreport(
