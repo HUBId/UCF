@@ -761,6 +761,14 @@ mod tests {
         LOCK.get_or_init(|| Mutex::new(()))
     }
 
+    fn clear_model_env() {
+        std::env::remove_var("UCF_MODEL_MANIFEST");
+        for slot in ModelSlot::all() {
+            std::env::remove_var(format!("UCF_MODEL_{}_ENABLED", slot.env_key()));
+            std::env::remove_var(format!("UCF_MODEL_PIN_{}", slot.env_key()));
+        }
+    }
+
     #[test]
     fn fixture_digest_stable() {
         let manager = FixtureManager;
@@ -773,10 +781,7 @@ mod tests {
     #[test]
     fn factory_deterministic() {
         let _guard = env_lock().lock().expect("env lock");
-        for slot in ModelSlot::all() {
-            std::env::remove_var(format!("UCF_MODEL_{}_ENABLED", slot.env_key()));
-        }
-        std::env::remove_var("UCF_MODEL_MANIFEST");
+        clear_model_env();
         let a = BackendPackFactory::build(BackendPackConfig::default()).expect("a");
         let b = BackendPackFactory::build(BackendPackConfig::default()).expect("b");
         assert_eq!(a.meta().digest, b.meta().digest);
@@ -800,6 +805,8 @@ mod tests {
 
     #[test]
     fn toy_lnn_feature_gate_behavior() {
+        let _guard = env_lock().lock().expect("env lock");
+        clear_model_env();
         let cfg = BackendPackConfig {
             pack: BackendPackKind::ToyLnnV1,
             seed: 5,
@@ -822,6 +829,8 @@ mod tests {
 
     #[test]
     fn candle_liquid_feature_gate_behavior() {
+        let _guard = env_lock().lock().expect("env lock");
+        clear_model_env();
         let cfg = BackendPackConfig {
             pack: BackendPackKind::CandleLiquidV1,
             seed: 5,
@@ -857,6 +866,7 @@ mod tests {
     #[test]
     fn enabled_slot_requires_manifest_at_startup() {
         let _guard = env_lock().lock().expect("env lock");
+        clear_model_env();
         let dir = tempfile::tempdir().expect("tempdir");
         let missing_manifest = dir.path().join("missing-manifest.toml");
         std::env::set_var("UCF_MODEL_LLM_ENABLED", "true");
@@ -865,7 +875,6 @@ mod tests {
         let res = BackendPackFactory::build(BackendPackConfig::default());
         assert!(matches!(res, Err(ComputeError::InvalidInput { .. })));
 
-        std::env::remove_var("UCF_MODEL_LLM_ENABLED");
-        std::env::remove_var("UCF_MODEL_MANIFEST");
+        clear_model_env();
     }
 }

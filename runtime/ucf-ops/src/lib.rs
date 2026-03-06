@@ -5465,7 +5465,31 @@ pub fn ess_compact(workdir: &Path, policy_path: &Path) -> Result<EssCompactionMa
 #[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, OnceLock};
     use tempfile::tempdir;
+
+    fn cwd_test_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    struct CwdGuard {
+        prev: PathBuf,
+    }
+
+    impl CwdGuard {
+        fn enter(path: &Path) -> Self {
+            let prev = std::env::current_dir().expect("cwd");
+            std::env::set_current_dir(path).expect("chdir");
+            Self { prev }
+        }
+    }
+
+    impl Drop for CwdGuard {
+        fn drop(&mut self) {
+            let _ = std::env::set_current_dir(&self.prev);
+        }
+    }
 
     #[test]
     fn export_and_verify_roundtrip() {
@@ -5536,20 +5560,19 @@ mod tests {
 
     #[test]
     fn weights_lifecycle_check_fails_without_manifest() {
+        let _guard = cwd_test_lock().lock().expect("cwd lock");
         let dir = tempdir().expect("tempdir");
-        let cwd = std::env::current_dir().expect("cwd");
-        std::env::set_current_dir(dir.path()).expect("chdir");
+        let _cwd = CwdGuard::enter(dir.path());
         let c = check_weights_lifecycle_integrity(dir.path()).expect("check");
-        std::env::set_current_dir(cwd).expect("restore");
         assert_eq!(c.name, "weights_lifecycle");
         assert_eq!(c.status, GateStatus::Skip);
     }
 
     #[test]
     fn world_vljepa_check_fails_when_required_shadow_missing() {
+        let _guard = cwd_test_lock().lock().expect("cwd lock");
         let dir = tempdir().expect("tempdir");
-        let cwd = std::env::current_dir().expect("cwd");
-        std::env::set_current_dir(dir.path()).expect("chdir");
+        let _cwd = CwdGuard::enter(dir.path());
         fs::create_dir_all("models").expect("models");
         fs::write(
             "models/lifecycle_manifest.toml",
@@ -5561,7 +5584,6 @@ active_hash = "abc"
         )
         .expect("manifest");
         let c = check_world_vljepa_shadow_evidence(dir.path()).expect("check");
-        std::env::set_current_dir(cwd).expect("restore");
         assert_eq!(c.name, "world_vljepa_evidence");
         assert_eq!(c.status, GateStatus::Fail);
         assert!(c
