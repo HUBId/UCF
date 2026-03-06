@@ -59,7 +59,7 @@ use ucf_compute::enablement::{SlotEnablement, SlotMode};
 use ucf_compute::{
     build_backend, compute_input_from_control, AiComputeBackend, BackendPackConfig,
     BackendPackFactory, BackendPackKind, ComputeBackendConfig, ComputeBudget, ComputeError,
-    CpuStubBackend,
+    CpuStubBackend, SlotCompareStatusV1, SlotShadowEventV1,
 };
 use ucf_core::archive_log::ArchiveLog;
 use ucf_core::storage::{ArchiveCfg, FlushPolicy, MemArchiveStore};
@@ -77,9 +77,10 @@ use ucf_ess::v1::{
     ExperienceStore, GpuParityRecord, GpuUnavailableRecord, HormoneRecord, IdAllocator,
     InMemoryEss, LfmSummaryRecord, LfmWindowRecord, NeuroRecord, NsrRecord, OutputRecord,
     PayloadClassification, PolicyProvenanceRecord, SaeSummaryRecord, SandboxCallRecord,
-    SandboxReplyRecord, SignalBundleRecordV1, SsmSummaryRecord, ThrottleRecord, ToolAuthRecord,
-    ToolExecutionRecord, ToolIssueAuditRecord, ToolPlanAuditRecord, ToolRequestRecord,
-    WorldSummaryRecord,
+    SandboxReplyRecord, ShadowDisableRecord, SignalBundleRecordV1, SlotCompareStatusCodeV1,
+    SlotCompareWindowRecordV1, SlotModeChangeRecordV1, SsmSummaryRecord, ThrottleRecord,
+    ToolAuthRecord, ToolExecutionRecord, ToolIssueAuditRecord, ToolPlanAuditRecord,
+    ToolRequestRecord, WorldSummaryRecord,
 };
 use ucf_fep::{
     check_coherence_invariants, fep_step, homeostasis_step, CoherenceCfg, CoherenceSnapshot,
@@ -3925,6 +3926,68 @@ impl RuntimeOrchestrator {
                 }
             }
         };
+        for event in self.compute_backend.drain_shadow_events() {
+            match event {
+                SlotShadowEventV1::CompareWindow(record) => {
+                    let status = match record.status {
+                        SlotCompareStatusV1::Ok => SlotCompareStatusCodeV1::Ok,
+                        SlotCompareStatusV1::DriftWarn => SlotCompareStatusCodeV1::DriftWarn,
+                        SlotCompareStatusV1::ShadowDisabled => {
+                            SlotCompareStatusCodeV1::ShadowDisabled
+                        }
+                    };
+                    self.ess.append(ExperienceRecord::from_slot_compare_window(
+                        self.ids.next(),
+                        ctrl.time,
+                        ctrl.corr,
+                        SlotCompareWindowRecordV1 {
+                            schema_version: 1,
+                            slot_id: record.slot_id,
+                            t0: record.t0,
+                            t1: record.t1,
+                            sample_count: record.sample_count,
+                            primary_mean_q: record.primary_mean_q,
+                            primary_p95_q: record.primary_p95_q,
+                            shadow_mean_q: record.shadow_mean_q,
+                            shadow_p95_q: record.shadow_p95_q,
+                            digest_mismatch_count: record.digest_mismatch_count,
+                            invalid_shadow_count: record.invalid_shadow_count,
+                            digest_prefix_samples: record.digest_prefix_samples,
+                            status,
+                        },
+                    ))?;
+                }
+                SlotShadowEventV1::ShadowDisable(record) => {
+                    self.ess.append(ExperienceRecord::from_shadow_disable(
+                        self.ids.next(),
+                        ctrl.time,
+                        ctrl.corr,
+                        ShadowDisableRecord {
+                            schema_version: 1,
+                            slot_id: record.slot_id,
+                            t: record.t,
+                            reason: record.reason,
+                            consecutive_failures: record.consecutive_failures,
+                        },
+                    ))?;
+                }
+                SlotShadowEventV1::ModeChange(record) => {
+                    self.ess.append(ExperienceRecord::from_slot_mode_change(
+                        self.ids.next(),
+                        ctrl.time,
+                        ctrl.corr,
+                        SlotModeChangeRecordV1 {
+                            schema_version: 1,
+                            slot_id: record.slot_id,
+                            t: record.t,
+                            from_mode: record.from_mode.as_str().to_string(),
+                            to_mode: record.to_mode.as_str().to_string(),
+                        },
+                    ))?;
+                }
+            }
+        }
+
         if ucf_compute::validate_risk_signal(&compute_signals.risk_signal).is_err() {
             compute_signals = ucf_compute::ComputeSignals::unavailable(
                 &compute_input,

@@ -18,7 +18,8 @@ pub use record::{
     LfmWindowRecord, LlmSummaryRecord, NeuroRecord, NsrRecord, OutputRecord, PayloadClassification,
     PolicyProvenanceRecord, RetrievalDecisionRecord, RetrievalReasonCode, RetrievalSelectionRecord,
     RetrievedExperienceRole, SaeSummaryRecord, SandboxCallRecord, SandboxReplyRecord,
-    SignalBundleRecordV1, SsmSummaryRecord, ThrottleRecord, ToolAuthRecord, ToolExecutionRecord,
+    ShadowDisableRecord, SignalBundleRecordV1, SlotCompareStatusCodeV1, SlotCompareWindowRecordV1,
+    SlotModeChangeRecordV1, SsmSummaryRecord, ThrottleRecord, ToolAuthRecord, ToolExecutionRecord,
     ToolIssueAuditRecord, ToolPlanAuditRecord, ToolRequestRecord, WorldSummaryRecord,
 };
 pub use store::{ExperienceStore, IdAllocator, InMemoryEss};

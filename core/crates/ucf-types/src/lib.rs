@@ -165,6 +165,24 @@ pub struct SignalBundleV1 {
     pub lfm_state_digest: [u8; 32],
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum SlotModeV1 {
+    Off,
+    Shadow,
+    Active,
+}
+
+impl SlotModeV1 {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::Shadow => "shadow",
+            Self::Active => "active",
+        }
+    }
+}
+
 impl SignalBundleV1 {
     pub fn signals_digest(&self) -> [u8; 32] {
         let mut hasher = Sha256::new();

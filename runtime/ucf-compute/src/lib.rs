@@ -73,6 +73,52 @@ pub const MAX_SPIKES: usize = 256;
 pub const MAX_NOTES: usize = 16;
 pub const MAX_NOTE_LEN: usize = 256;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SlotCompareStatusV1 {
+    Ok,
+    DriftWarn,
+    ShadowDisabled,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SlotCompareWindowRecordV1 {
+    pub slot_id: String,
+    pub t0: u64,
+    pub t1: u64,
+    pub sample_count: u16,
+    pub primary_mean_q: u16,
+    pub primary_p95_q: u16,
+    pub shadow_mean_q: u16,
+    pub shadow_p95_q: u16,
+    pub digest_mismatch_count: u16,
+    pub invalid_shadow_count: u16,
+    pub digest_prefix_samples: Vec<[u8; 4]>,
+    pub status: SlotCompareStatusV1,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShadowDisableRecordV1 {
+    pub slot_id: String,
+    pub t: u64,
+    pub reason: String,
+    pub consecutive_failures: u16,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SlotModeChangeRecordV1 {
+    pub slot_id: String,
+    pub t: u64,
+    pub from_mode: ucf_types::SlotModeV1,
+    pub to_mode: ucf_types::SlotModeV1,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SlotShadowEventV1 {
+    CompareWindow(SlotCompareWindowRecordV1),
+    ShadowDisable(ShadowDisableRecordV1),
+    ModeChange(SlotModeChangeRecordV1),
+}
+
 static UCF_COMPUTE_CHAIN_DIGEST_EMITTED_TOTAL: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -423,6 +469,10 @@ pub trait AiComputeBackend: Send + Sync {
         input: &ComputeInput,
         budget: ComputeBudget,
     ) -> Result<ComputeSignals, ComputeError>;
+
+    fn drain_shadow_events(&self) -> Vec<SlotShadowEventV1> {
+        Vec::new()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

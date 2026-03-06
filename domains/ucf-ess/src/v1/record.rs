@@ -57,6 +57,9 @@ pub enum ExperienceKind {
     ComputeBudgetWindow,
     ComputeBudgetViolation,
     RetrievalDecision,
+    SlotCompareWindow,
+    ShadowDisable,
+    SlotModeChange,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -150,6 +153,9 @@ pub enum AuditPayload {
     ComputeBudgetWindow(ComputeBudgetWindowRecord),
     ComputeBudgetViolation(ComputeBudgetViolationRecord),
     RetrievalDecision(RetrievalDecisionRecord),
+    SlotCompareWindow(SlotCompareWindowRecordV1),
+    ShadowDisable(ShadowDisableRecord),
+    SlotModeChange(SlotModeChangeRecordV1),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -184,6 +190,48 @@ pub struct RetrievalDecisionRecord {
     pub policy_hash_prefix: [u8; 8],
     pub evidence_chain_digest_prefix: [u8; 8],
     pub reason_codes: Vec<RetrievalReasonCode>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SlotCompareStatusCodeV1 {
+    Ok,
+    DriftWarn,
+    ShadowDisabled,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SlotCompareWindowRecordV1 {
+    pub schema_version: u16,
+    pub slot_id: String,
+    pub t0: u64,
+    pub t1: u64,
+    pub sample_count: u16,
+    pub primary_mean_q: u16,
+    pub primary_p95_q: u16,
+    pub shadow_mean_q: u16,
+    pub shadow_p95_q: u16,
+    pub digest_mismatch_count: u16,
+    pub invalid_shadow_count: u16,
+    pub digest_prefix_samples: Vec<[u8; 4]>,
+    pub status: SlotCompareStatusCodeV1,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShadowDisableRecord {
+    pub schema_version: u16,
+    pub slot_id: String,
+    pub t: u64,
+    pub reason: String,
+    pub consecutive_failures: u16,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SlotModeChangeRecordV1 {
+    pub schema_version: u16,
+    pub slot_id: String,
+    pub t: u64,
+    pub from_mode: String,
+    pub to_mode: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1785,6 +1833,117 @@ impl ExperienceRecord {
             signal_bundle_record: None,
             decision_inputs_record: None,
             lfm_window_record: Some(lfm_window_record),
+            ebm_tag: None,
+            audit_prev_digest: None,
+            audit_digest: None,
+        }
+    }
+
+    pub fn from_slot_compare_window(
+        id: ExperienceId,
+        time: SimTime,
+        corr: CorrelationId,
+        record: SlotCompareWindowRecordV1,
+    ) -> Self {
+        Self {
+            id,
+            time,
+            corr,
+            kind: ExperienceKind::SlotCompareWindow,
+            payload: ExperiencePayload::Audit(AuditPayload::SlotCompareWindow(record)),
+            neuromod: None,
+            iit_phi: None,
+            decision_meta: None,
+            compute_summary: None,
+            hormone_record: None,
+            neuro_record: None,
+            delta_proposal_record: None,
+            delta_evaluation_record: None,
+            delta_recommendation_record: None,
+            nsr_record: None,
+            backend_pack_record: None,
+            world_summary_record: None,
+            sae_summary_record: None,
+            ssm_summary_record: None,
+            lfm_summary_record: None,
+            llm_summary_record: None,
+            signal_bundle_record: None,
+            decision_inputs_record: None,
+            lfm_window_record: None,
+            ebm_tag: None,
+            audit_prev_digest: None,
+            audit_digest: None,
+        }
+    }
+
+    pub fn from_shadow_disable(
+        id: ExperienceId,
+        time: SimTime,
+        corr: CorrelationId,
+        record: ShadowDisableRecord,
+    ) -> Self {
+        Self {
+            id,
+            time,
+            corr,
+            kind: ExperienceKind::ShadowDisable,
+            payload: ExperiencePayload::Audit(AuditPayload::ShadowDisable(record)),
+            neuromod: None,
+            iit_phi: None,
+            decision_meta: None,
+            compute_summary: None,
+            hormone_record: None,
+            neuro_record: None,
+            delta_proposal_record: None,
+            delta_evaluation_record: None,
+            delta_recommendation_record: None,
+            nsr_record: None,
+            backend_pack_record: None,
+            world_summary_record: None,
+            sae_summary_record: None,
+            ssm_summary_record: None,
+            lfm_summary_record: None,
+            llm_summary_record: None,
+            signal_bundle_record: None,
+            decision_inputs_record: None,
+            lfm_window_record: None,
+            ebm_tag: None,
+            audit_prev_digest: None,
+            audit_digest: None,
+        }
+    }
+
+    pub fn from_slot_mode_change(
+        id: ExperienceId,
+        time: SimTime,
+        corr: CorrelationId,
+        record: SlotModeChangeRecordV1,
+    ) -> Self {
+        Self {
+            id,
+            time,
+            corr,
+            kind: ExperienceKind::SlotModeChange,
+            payload: ExperiencePayload::Audit(AuditPayload::SlotModeChange(record)),
+            neuromod: None,
+            iit_phi: None,
+            decision_meta: None,
+            compute_summary: None,
+            hormone_record: None,
+            neuro_record: None,
+            delta_proposal_record: None,
+            delta_evaluation_record: None,
+            delta_recommendation_record: None,
+            nsr_record: None,
+            backend_pack_record: None,
+            world_summary_record: None,
+            sae_summary_record: None,
+            ssm_summary_record: None,
+            lfm_summary_record: None,
+            llm_summary_record: None,
+            signal_bundle_record: None,
+            decision_inputs_record: None,
+            lfm_window_record: None,
             ebm_tag: None,
             audit_prev_digest: None,
             audit_digest: None,
