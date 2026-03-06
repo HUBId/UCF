@@ -201,36 +201,27 @@ fn world_shadow_report_reads_bounded_windows() {
 }
 
 #[test]
-fn world_vljepa_promotion_denied_without_shadow_report() {
+fn promotion_fails_when_staged_digest_mismatch() {
     let dir = tempdir().expect("tempdir");
     let cwd = std::env::current_dir().expect("cwd");
     std::env::set_current_dir(dir.path()).expect("chdir");
 
-    let slot = parse_slot("world_vljepa").expect("slot");
+    let slot = parse_slot("llm").expect("slot");
     let src = dir.path().join("model_src");
     fs::create_dir_all(&src).expect("src");
     fs::write(src.join("model.safetensors"), b"stub").expect("model");
     let staged = models_stage(slot, &src).expect("stage");
 
-    fs::create_dir_all(dir.path().join("out")).expect("out");
     fs::write(
-        dir.path().join("out/probe_report.json"),
-        r#"{"run_id":"r1","timestamp":0,"results":[],"summary":{"pass":true,"reasons":[]}}"#,
+        dir.path()
+            .join("models/staging/llm")
+            .join(&staged.hash)
+            .join("model.safetensors"),
+        b"tampered",
     )
-    .expect("probe");
-    fs::write(
-        dir.path().join("out/gate_report.json"),
-        r#"{"code_version_tag":"x","fixtures_digest_prefix":null,"backend_pack_digest_prefix":null,"timestamp":null,"status":"PASS","checks":[]}"#,
-    )
-    .expect("gate");
+    .expect("tamper staged");
 
-    let res = models_promote(
-        slot,
-        &staged.hash,
-        &dir.path().join("out/probe_report.json"),
-        &dir.path().join("out/gate_report.json"),
-        None,
-    );
+    let res = models_promote(slot, &staged.hash, None);
     assert!(res.is_err());
     std::env::set_current_dir(cwd).expect("restore cwd");
 }

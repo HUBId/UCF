@@ -9,9 +9,7 @@ use ucf_compute::ModelSlot;
 use ucf_ess::v1::ExperiencePayload;
 use ucf_replay::load_fixture_records;
 
-use crate::{
-    sha256_hex, GateStatus, OpsError, ProbeReport, ReadinessGateReport, WorldShadowReport,
-};
+use crate::{sha256_hex, OpsError};
 
 const MANIFEST_HISTORY_KEEP: usize = 20;
 const MODEL_FILE_NAME: &str = "model.safetensors";
@@ -58,6 +56,8 @@ pub struct LifecycleActionReport {
     pub slot: String,
     pub from_hash: Option<String>,
     pub to_hash: String,
+    pub old_manifest_digest_prefix: Option<String>,
+    pub new_manifest_digest_prefix: String,
     pub manifest_digest_prefix: String,
     pub probe_report_digest_prefix: Option<String>,
     pub readiness_gate_digest_prefix: Option<String>,
@@ -136,9 +136,7 @@ pub fn models_stage(slot: ModelSlot, src_dir: &Path) -> Result<StageResult, OpsE
 pub fn models_promote(
     slot: ModelSlot,
     hash: &str,
-    probe_report_path: &Path,
-    gate_report_path: &Path,
-    shadow_report_path: Option<&Path>,
+    history_keep: Option<usize>,
 ) -> Result<LifecycleActionReport, OpsError> {
     let staged = PathBuf::from("models")
         .join("staging")
@@ -149,41 +147,12 @@ pub fn models_promote(
             "staged artifact not found for {hash}"
         )));
     }
-    let probe: ProbeReport = serde_json::from_str(&fs::read_to_string(probe_report_path)?)?;
-    if !probe.summary.pass {
-        return Err(OpsError::Invalid("probe report is not PASS".to_string()));
-    }
-    let gate: ReadinessGateReport = serde_json::from_str(&fs::read_to_string(gate_report_path)?)?;
-    if gate.status != GateStatus::Pass {
-        return Err(OpsError::Invalid("readiness gate is not PASS".to_string()));
-    }
-    let mut shadow_report_digest_prefix = None;
-    let require_shadow = std::env::var("UCF_WORLD_VLJEPA_REQUIRE_SHADOW_EVIDENCE")
-        .map(|v| v != "0")
-        .unwrap_or(true);
-    if slot == ModelSlot::WorldVljepa && require_shadow {
-        let Some(path) = shadow_report_path else {
-            return Err(OpsError::Invalid(
-                "world_vljepa promotion requires --shadow-report".to_string(),
-            ));
-        };
-        let shadow: WorldShadowReport = serde_json::from_str(&fs::read_to_string(path)?)?;
-        if shadow.status != GateStatus::Pass {
-            return Err(OpsError::Invalid(
-                "world_vljepa shadow report is not PASS".to_string(),
-            ));
-        }
-        let min_ticks = std::env::var("UCF_WORLD_VLJEPA_PROMOTION_MIN_TICKS")
-            .ok()
-            .and_then(|v| v.parse::<u64>().ok())
-            .unwrap_or(10_000);
-        if shadow.ticks_total < min_ticks {
-            return Err(OpsError::Invalid(format!(
-                "world_vljepa shadow soak too short: {} < {} ticks",
-                shadow.ticks_total, min_ticks
-            )));
-        }
-        shadow_report_digest_prefix = Some(file_digest_prefix(path)?);
+    let staged_verify = verify_staged_candidate(slot, hash)?;
+    if !staged_verify.pass {
+        return Err(OpsError::Invalid(format!(
+            "staged artifact verification failed: {}",
+            staged_verify.reason
+        )));
     }
 
     let promoted = PathBuf::from("models")
@@ -193,6 +162,7 @@ pub fn models_promote(
     copy_tree(&staged, &promoted)?;
 
     let mut manifest = load_or_init_manifest()?;
+    let old_manifest_digest_prefix = Some(manifest.manifest_digest.chars().take(12).collect());
     let slot_key = slot.as_str().to_string();
     let from_hash = manifest
         .slots
@@ -206,40 +176,41 @@ pub fn models_promote(
         Some(hash.to_string()),
         files,
     );
-    persist_manifest_with_history(&mut manifest)?;
-    persist_action_record(
-        "promotion",
-        &slot_key,
-        &from_hash,
-        hash,
-        &manifest,
-        &probe,
-        &gate,
-    )?;
+    persist_manifest_with_history(&mut manifest, history_keep)?;
+    persist_action_record("promotion", &slot_key, &from_hash, hash, &manifest)?;
     Ok(LifecycleActionReport {
         action: "promotion".to_string(),
-        shadow_report_digest_prefix,
+        shadow_report_digest_prefix: None,
         slot: slot_key,
         from_hash,
         to_hash: hash.to_string(),
+        old_manifest_digest_prefix,
+        new_manifest_digest_prefix: manifest.manifest_digest.chars().take(12).collect(),
         manifest_digest_prefix: manifest.manifest_digest.chars().take(12).collect(),
-        probe_report_digest_prefix: Some(file_digest_prefix(probe_report_path)?),
-        readiness_gate_digest_prefix: Some(file_digest_prefix(gate_report_path)?),
+        probe_report_digest_prefix: None,
+        readiness_gate_digest_prefix: None,
         timestamp: now_secs(),
     })
 }
 
-pub fn models_rollback(slot: ModelSlot, to_hash: &str) -> Result<LifecycleActionReport, OpsError> {
+pub fn models_rollback(
+    slot: ModelSlot,
+    to_hash: Option<&str>,
+    steps: Option<usize>,
+    history_keep: Option<usize>,
+) -> Result<LifecycleActionReport, OpsError> {
+    let target_hash = resolve_rollback_target(slot, to_hash, steps)?;
     let promoted = PathBuf::from("models")
         .join("promoted")
         .join(slot.as_str())
-        .join(to_hash);
+        .join(&target_hash);
     if !promoted.exists() {
         return Err(OpsError::Invalid(
             "rollback hash is not present in promoted".to_string(),
         ));
     }
     let mut manifest = load_or_init_manifest()?;
+    let old_manifest_digest_prefix = Some(manifest.manifest_digest.chars().take(12).collect());
     let slot_key = slot.as_str().to_string();
     let from_hash = manifest
         .slots
@@ -250,17 +221,19 @@ pub fn models_rollback(slot: ModelSlot, to_hash: &str) -> Result<LifecycleAction
     upsert_slot_manifest(
         &mut manifest,
         slot_key.clone(),
-        Some(to_hash.to_string()),
+        Some(target_hash.clone()),
         files,
     );
-    persist_manifest_with_history(&mut manifest)?;
-    persist_rollback_record(&slot_key, &from_hash, to_hash, &manifest)?;
+    persist_manifest_with_history(&mut manifest, history_keep)?;
+    persist_rollback_record(&slot_key, &from_hash, &target_hash, &manifest)?;
     Ok(LifecycleActionReport {
         action: "rollback".to_string(),
         shadow_report_digest_prefix: None,
         slot: slot_key,
         from_hash,
-        to_hash: to_hash.to_string(),
+        to_hash: target_hash,
+        old_manifest_digest_prefix,
+        new_manifest_digest_prefix: manifest.manifest_digest.chars().take(12).collect(),
         manifest_digest_prefix: manifest.manifest_digest.chars().take(12).collect(),
         probe_report_digest_prefix: None,
         readiness_gate_digest_prefix: None,
@@ -407,7 +380,10 @@ pub fn parse_slot(value: &str) -> Result<ModelSlot, OpsError> {
     }
 }
 
-fn persist_manifest_with_history(manifest: &mut LifecycleManifest) -> Result<(), OpsError> {
+fn persist_manifest_with_history(
+    manifest: &mut LifecycleManifest,
+    history_keep: Option<usize>,
+) -> Result<(), OpsError> {
     manifest.manifest_digest = compute_manifest_digest(manifest)?;
     manifest.created_at = Some(now_secs());
     fs::create_dir_all("models")?;
@@ -422,7 +398,7 @@ fn persist_manifest_with_history(manifest: &mut LifecycleManifest) -> Result<(),
     fs::create_dir_all(&hist_dir)?;
     let name = format!(
         "{}_{}.toml",
-        now_secs(),
+        now_millis(),
         manifest
             .manifest_digest
             .chars()
@@ -430,7 +406,7 @@ fn persist_manifest_with_history(manifest: &mut LifecycleManifest) -> Result<(),
             .collect::<String>()
     );
     fs::write(hist_dir.join(name), body.as_bytes())?;
-    trim_history(&hist_dir, MANIFEST_HISTORY_KEEP)?;
+    trim_history(&hist_dir, resolve_history_keep(history_keep))?;
     Ok(())
 }
 
@@ -544,7 +520,7 @@ fn ensure_manifest_slot(slot: ModelSlot) -> Result<(), OpsError> {
             max_bytes: 64 * 1024 * 1024,
             contract_versions_supported: vec!["v1".to_string()],
         });
-        persist_manifest_with_history(&mut manifest)?;
+        persist_manifest_with_history(&mut manifest, None)?;
     }
     Ok(())
 }
@@ -660,10 +636,6 @@ fn list_hash_dirs(base: &Path) -> Result<Vec<String>, OpsError> {
     Ok(out)
 }
 
-fn file_digest_prefix(path: &Path) -> Result<String, OpsError> {
-    Ok(file_sha256_hex(path)?.chars().take(12).collect())
-}
-
 fn trim_history(dir: &Path, keep: usize) -> Result<(), OpsError> {
     let mut entries = fs::read_dir(dir)?
         .filter_map(|e| e.ok())
@@ -678,11 +650,147 @@ fn trim_history(dir: &Path, keep: usize) -> Result<(), OpsError> {
     Ok(())
 }
 
+fn resolve_history_keep(history_keep: Option<usize>) -> usize {
+    history_keep
+        .or_else(|| {
+            std::env::var("UCF_MODELS_MANIFEST_HISTORY_KEEP")
+                .ok()
+                .and_then(|v| v.parse::<usize>().ok())
+        })
+        .filter(|v| *v > 0)
+        .unwrap_or(MANIFEST_HISTORY_KEEP)
+}
+
+#[derive(Debug)]
+struct StagedVerifyResult {
+    pass: bool,
+    reason: String,
+}
+
+fn verify_staged_candidate(slot: ModelSlot, hash: &str) -> Result<StagedVerifyResult, OpsError> {
+    let staged = PathBuf::from("models")
+        .join("staging")
+        .join(slot.as_str())
+        .join(hash);
+    let entries = collect_file_entries(&staged)?;
+    if entries.is_empty() {
+        return Ok(StagedVerifyResult {
+            pass: false,
+            reason: "staged directory has no files".to_string(),
+        });
+    }
+    if entries.len() > MAX_SLOT_FILES {
+        return Ok(StagedVerifyResult {
+            pass: false,
+            reason: format!("too many files: {} > {}", entries.len(), MAX_SLOT_FILES),
+        });
+    }
+    if digest_entries(&entries) != hash {
+        return Ok(StagedVerifyResult {
+            pass: false,
+            reason: "digest mismatch for staged artifact".to_string(),
+        });
+    }
+    let mut manifest = load_or_init_manifest()?;
+    let slot_id = slot.as_str().to_string();
+    let max_bytes = manifest
+        .slots
+        .iter_mut()
+        .find(|s| s.slot_id == slot_id)
+        .map(|s| s.max_bytes)
+        .unwrap_or(64 * 1024 * 1024);
+    let total = entries.iter().map(|e| e.size_bytes).sum::<u64>();
+    if total > max_bytes {
+        return Ok(StagedVerifyResult {
+            pass: false,
+            reason: format!("size cap exceeded: {total} > {max_bytes}"),
+        });
+    }
+    Ok(StagedVerifyResult {
+        pass: true,
+        reason: "PASS".to_string(),
+    })
+}
+
+fn resolve_rollback_target(
+    slot: ModelSlot,
+    to_hash: Option<&str>,
+    steps: Option<usize>,
+) -> Result<String, OpsError> {
+    if let Some(to_hash) = to_hash {
+        return Ok(to_hash.to_string());
+    }
+    let steps = steps.unwrap_or(1);
+    if steps == 0 {
+        return Err(OpsError::Invalid("--steps must be >= 1".to_string()));
+    }
+    let current_hash = load_or_init_manifest()?
+        .slots
+        .into_iter()
+        .find(|s| s.slot_id == slot.as_str())
+        .and_then(|s| s.active_hash);
+    let mut history = load_history_manifests()?;
+    history.reverse();
+    let mut candidates = Vec::<String>::new();
+    for manifest in history {
+        let Some(slot_entry) = manifest.slots.iter().find(|s| s.slot_id == slot.as_str()) else {
+            continue;
+        };
+        let Some(hash) = slot_entry.active_hash.clone() else {
+            continue;
+        };
+        if candidates.last() != Some(&hash) {
+            candidates.push(hash);
+        }
+    }
+    let mut previous = Vec::<String>::new();
+    for hash in candidates {
+        if current_hash.as_deref() == Some(hash.as_str()) {
+            continue;
+        }
+        if previous.last() != Some(&hash) {
+            previous.push(hash);
+        }
+    }
+    if previous.len() < steps {
+        return Err(OpsError::Invalid(format!(
+            "rollback target unavailable for --steps {steps}"
+        )));
+    }
+    Ok(previous[steps - 1].clone())
+}
+
+fn load_history_manifests() -> Result<Vec<LifecycleManifest>, OpsError> {
+    let dir = PathBuf::from("models/manifests/history");
+    if !dir.exists() {
+        return Ok(Vec::new());
+    }
+    let mut entries = fs::read_dir(dir)?
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().map(|t| t.is_file()).unwrap_or(false))
+        .collect::<Vec<_>>();
+    entries.sort_by_key(|e| e.file_name());
+    let mut out = Vec::with_capacity(entries.len());
+    for entry in entries {
+        let parsed = toml::from_str::<LifecycleManifest>(&fs::read_to_string(entry.path())?)
+            .map_err(|e| OpsError::Invalid(format!("history manifest parse failed: {e}")))?;
+        out.push(parsed);
+    }
+    Ok(out)
+}
+
 fn now_secs() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs()
+}
+
+fn now_millis() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
 }
 
 fn persist_action_record(
@@ -691,8 +799,6 @@ fn persist_action_record(
     from_hash: &Option<String>,
     to_hash: &str,
     manifest: &LifecycleManifest,
-    probe: &ProbeReport,
-    gate: &ReadinessGateReport,
 ) -> Result<(), OpsError> {
     let report = LifecycleActionReport {
         action: action.to_string(),
@@ -700,19 +806,11 @@ fn persist_action_record(
         slot: slot.to_string(),
         from_hash: from_hash.clone(),
         to_hash: to_hash.to_string(),
+        old_manifest_digest_prefix: None,
+        new_manifest_digest_prefix: manifest.manifest_digest.chars().take(12).collect(),
         manifest_digest_prefix: manifest.manifest_digest.chars().take(12).collect(),
-        probe_report_digest_prefix: Some(
-            sha256_hex(serde_json::to_string(probe)?.as_bytes())
-                .chars()
-                .take(12)
-                .collect(),
-        ),
-        readiness_gate_digest_prefix: Some(
-            sha256_hex(serde_json::to_string(gate)?.as_bytes())
-                .chars()
-                .take(12)
-                .collect(),
-        ),
+        probe_report_digest_prefix: None,
+        readiness_gate_digest_prefix: None,
         timestamp: now_secs(),
     };
     let path = PathBuf::from("out").join("model_promotion_records.json");
@@ -731,6 +829,8 @@ fn persist_rollback_record(
         slot: slot.to_string(),
         from_hash: from_hash.clone(),
         to_hash: to_hash.to_string(),
+        old_manifest_digest_prefix: None,
+        new_manifest_digest_prefix: manifest.manifest_digest.chars().take(12).collect(),
         manifest_digest_prefix: manifest.manifest_digest.chars().take(12).collect(),
         probe_report_digest_prefix: None,
         readiness_gate_digest_prefix: None,
@@ -848,7 +948,7 @@ mod tests {
             Some(staged.hash.clone()),
             collect_file_entries(&promoted).expect("entries"),
         );
-        persist_manifest_with_history(&mut manifest).expect("persist");
+        persist_manifest_with_history(&mut manifest, None).expect("persist");
 
         let ok = models_verify(Path::new("models/MANIFEST.toml")).expect("verify");
         assert!(ok.digest_match && ok.promoted_hashes_exist && ok.files_verified);
@@ -871,5 +971,62 @@ mod tests {
         }
         let err = models_stage(ModelSlot::Llm, &src).expect_err("must reject");
         assert!(format!("{err}").contains("too many files"));
+    }
+
+    #[test]
+    fn promote_and_rollback_write_history_and_prune() {
+        let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let _cwd = CwdGuard::enter(dir.path());
+
+        let src = dir.path().join("src");
+        fs::create_dir_all(&src).expect("src");
+        fs::write(src.join("model.safetensors"), b"v1").expect("write");
+        let staged_v1 = models_stage(ModelSlot::Llm, &src).expect("stage v1");
+        let promote_v1 =
+            models_promote(ModelSlot::Llm, &staged_v1.hash, Some(2)).expect("promote v1");
+        assert_eq!(promote_v1.to_hash, staged_v1.hash);
+
+        fs::write(src.join("model.safetensors"), b"v2").expect("write");
+        let staged_v2 = models_stage(ModelSlot::Llm, &src).expect("stage v2");
+        let _promote_v2 =
+            models_promote(ModelSlot::Llm, &staged_v2.hash, Some(2)).expect("promote v2");
+
+        let rollback = models_rollback(ModelSlot::Llm, Some(&staged_v1.hash), None, Some(2))
+            .expect("rollback");
+        assert_eq!(rollback.to_hash, staged_v1.hash);
+
+        let manifest = load_or_init_manifest().expect("manifest");
+        let llm = manifest
+            .slots
+            .iter()
+            .find(|s| s.slot_id == "llm")
+            .expect("llm slot");
+        assert_eq!(llm.active_hash.as_deref(), Some(staged_v1.hash.as_str()));
+
+        let hist_count = fs::read_dir("models/manifests/history")
+            .expect("history")
+            .filter_map(|e| e.ok())
+            .count();
+        assert!(hist_count <= 2);
+    }
+
+    #[test]
+    fn rollback_steps_selects_previous_hash() {
+        let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let _cwd = CwdGuard::enter(dir.path());
+
+        let src = dir.path().join("src");
+        fs::create_dir_all(&src).expect("src");
+        fs::write(src.join("model.safetensors"), b"h1").expect("h1");
+        let h1 = models_stage(ModelSlot::Llm, &src).expect("stage h1").hash;
+        models_promote(ModelSlot::Llm, &h1, None).expect("promote h1");
+        fs::write(src.join("model.safetensors"), b"h2").expect("h2");
+        let h2 = models_stage(ModelSlot::Llm, &src).expect("stage h2").hash;
+        models_promote(ModelSlot::Llm, &h2, None).expect("promote h2");
+
+        let report = models_rollback(ModelSlot::Llm, None, Some(1), None).expect("rollback steps");
+        assert_eq!(report.to_hash, h1);
     }
 }
