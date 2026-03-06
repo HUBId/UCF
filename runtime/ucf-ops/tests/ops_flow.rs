@@ -1,4 +1,5 @@
 use std::fs;
+use std::sync::{Mutex, OnceLock};
 
 use tempfile::tempdir;
 use ucf_ops::{
@@ -8,6 +9,11 @@ use ucf_ops::{
     verify_bugreport, world_shadow_report, ExportArgs, GateStatus, SpecSnapshotArgs,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
+
+fn gate_test_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
 
 fn repo_root() -> std::path::PathBuf {
     std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -110,6 +116,7 @@ fn one_command_bringup_writes_release_artifacts() {
 
 #[test]
 fn readiness_gate_writes_report() {
+    let _guard = gate_test_lock().lock().expect("lock");
     std::env::set_var("UCF_SKIP_GATE_WORKSPACE_TESTS", "1");
     let dir = tempdir().expect("tempdir");
     let out = dir.path().join("gate_report.json");

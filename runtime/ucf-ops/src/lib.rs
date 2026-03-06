@@ -1350,234 +1350,227 @@ pub fn v0_gate(workdir: &Path, scenario: &Path, out: &Path) -> Result<V0GateRepo
     }
 
     let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let original_cwd = std::env::current_dir()?;
-    std::env::set_current_dir(&repo_root)?;
 
-    let result = (|| {
-        let scenario_doc: serde_json::Value = serde_json::from_str(&fs::read_to_string(scenario)?)?;
-        let ticks = scenario_doc
-            .get("ticks")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(8);
+    let scenario_doc: serde_json::Value = serde_json::from_str(&fs::read_to_string(scenario)?)?;
+    let ticks = scenario_doc
+        .get("ticks")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(8);
 
-        let policy = policy_validate(
-            Path::new("policies/packs/base_v1"),
-            Some(Path::new("policies/packs/overlays/test")),
-        );
-        let expected_policy_prefix =
-            expected_policy_digest_prefix_from_spec_snapshot(Path::new("docs/spec_snapshot.md"))?;
+    let policy = policy_validate(
+        &repo_root.join("policies/packs/base_v1"),
+        Some(&repo_root.join("policies/packs/overlays/test")),
+    );
+    let expected_policy_prefix =
+        expected_policy_digest_prefix_from_spec_snapshot(&repo_root.join("docs/spec_snapshot.md"))?;
 
-        let policy_check = match policy {
-            Ok(report) => {
-                let locked = report
-                    .policy_graph_digest
-                    .starts_with(&expected_policy_prefix);
-                v0_gate_check(
-                    "policy_graph_lock",
-                    if locked {
+    let policy_check = match policy {
+        Ok(report) => {
+            let locked = report
+                .policy_graph_digest
+                .starts_with(&expected_policy_prefix);
+            v0_gate_check(
+                "policy_graph_lock",
+                if locked {
+                    GateStatus::Pass
+                } else {
+                    GateStatus::Fail
+                },
+                [
+                    (
+                        "policy_graph_digest".to_string(),
+                        prefix_hex(&report.policy_graph_digest, 12),
+                    ),
+                    (
+                        "locked_prefix".to_string(),
+                        prefix_hex(&expected_policy_prefix, 12),
+                    ),
+                ],
+                "v0.policy.lock_mismatch",
+            )
+        }
+        Err(err) => v0_gate_check(
+            "policy_graph_lock",
+            GateStatus::Fail,
+            [(
+                "error".to_string(),
+                bounded_string(err.to_string(), GATE_STR_CAP),
+            )],
+            "v0.policy.validation_error",
+        ),
+    };
+
+    let run_one = v0_gate_run_once(workdir, scenario, ticks, "run_1");
+    let run_two = v0_gate_run_once(workdir, scenario, ticks, "run_2");
+
+    let (determinism_check, e2e_check, boundedness_check, schema_check, no_tool_check) =
+        match (run_one, run_two) {
+            (Ok(a), Ok(b)) => {
+                let determinism_pass = a.signals_digest == b.signals_digest
+                    && a.decision_digest == b.decision_digest
+                    && a.experience_digest == b.experience_digest;
+                let determinism_check = v0_gate_check(
+                    "determinism_double_run",
+                    if determinism_pass {
                         GateStatus::Pass
                     } else {
                         GateStatus::Fail
                     },
                     [
                         (
-                            "policy_graph_digest".to_string(),
-                            prefix_hex(&report.policy_graph_digest, 12),
+                            "signals_digest".to_string(),
+                            prefix_hex(&a.signals_digest, 12),
                         ),
                         (
-                            "locked_prefix".to_string(),
-                            prefix_hex(&expected_policy_prefix, 12),
+                            "decision_digest".to_string(),
+                            prefix_hex(&a.decision_digest, 12),
+                        ),
+                        (
+                            "experience_digest".to_string(),
+                            prefix_hex(&a.experience_digest, 12),
                         ),
                     ],
-                    "v0.policy.lock_mismatch",
+                    "v0.determinism.digest_mismatch",
+                );
+
+                let e2e_pass = a.record_count > 0 && a.has_required_records;
+                let e2e_check = v0_gate_check(
+                    "e2e_flow_a",
+                    if e2e_pass {
+                        GateStatus::Pass
+                    } else {
+                        GateStatus::Fail
+                    },
+                    [
+                        ("record_count".to_string(), a.record_count.to_string()),
+                        (
+                            "required_records".to_string(),
+                            a.has_required_records.to_string(),
+                        ),
+                    ],
+                    "v0.e2e.required_records_missing",
+                );
+
+                let boundedness_pass = a.max_record_bytes <= V0_MAX_RECORD_BYTES;
+                let boundedness_check = v0_gate_check(
+                    "record_boundedness",
+                    if boundedness_pass {
+                        GateStatus::Pass
+                    } else {
+                        GateStatus::Fail
+                    },
+                    [
+                        (
+                            "max_record_bytes".to_string(),
+                            a.max_record_bytes.to_string(),
+                        ),
+                        (
+                            "max_allowed_bytes".to_string(),
+                            V0_MAX_RECORD_BYTES.to_string(),
+                        ),
+                    ],
+                    "v0.records.size_cap_exceeded",
+                );
+
+                let schema_pass = schema_versions_known(&a.schema_versions);
+                let schema_check = v0_gate_check(
+                    "schema_versions_known",
+                    if schema_pass {
+                        GateStatus::Pass
+                    } else {
+                        GateStatus::Fail
+                    },
+                    [(
+                        "schema_versions_digest".to_string(),
+                        prefix_hex(&sha256_hex(&serde_json::to_vec(&a.schema_versions)?), 12),
+                    )],
+                    "v0.schema.unknown_or_missing",
+                );
+
+                let no_tool_pass = a.tool_execution_count == 0;
+                let no_tool_check = v0_gate_check(
+                    "no_tool_execution",
+                    if no_tool_pass {
+                        GateStatus::Pass
+                    } else {
+                        GateStatus::Fail
+                    },
+                    [(
+                        "tool_execution_count".to_string(),
+                        a.tool_execution_count.to_string(),
+                    )],
+                    "v0.tools.execution_detected",
+                );
+
+                (
+                    determinism_check,
+                    e2e_check,
+                    boundedness_check,
+                    schema_check,
+                    no_tool_check,
                 )
             }
-            Err(err) => v0_gate_check(
-                "policy_graph_lock",
-                GateStatus::Fail,
-                [(
-                    "error".to_string(),
-                    bounded_string(err.to_string(), GATE_STR_CAP),
-                )],
-                "v0.policy.validation_error",
-            ),
-        };
-
-        let run_one = v0_gate_run_once(workdir, scenario, ticks, "run_1");
-        let run_two = v0_gate_run_once(workdir, scenario, ticks, "run_2");
-
-        let (determinism_check, e2e_check, boundedness_check, schema_check, no_tool_check) =
-            match (run_one, run_two) {
-                (Ok(a), Ok(b)) => {
-                    let determinism_pass = a.signals_digest == b.signals_digest
-                        && a.decision_digest == b.decision_digest
-                        && a.experience_digest == b.experience_digest;
-                    let determinism_check = v0_gate_check(
-                        "determinism_double_run",
-                        if determinism_pass {
-                            GateStatus::Pass
-                        } else {
-                            GateStatus::Fail
-                        },
-                        [
-                            (
-                                "signals_digest".to_string(),
-                                prefix_hex(&a.signals_digest, 12),
-                            ),
-                            (
-                                "decision_digest".to_string(),
-                                prefix_hex(&a.decision_digest, 12),
-                            ),
-                            (
-                                "experience_digest".to_string(),
-                                prefix_hex(&a.experience_digest, 12),
-                            ),
-                        ],
-                        "v0.determinism.digest_mismatch",
-                    );
-
-                    let e2e_pass = a.record_count > 0 && a.has_required_records;
-                    let e2e_check = v0_gate_check(
+            (Err(err), _) | (_, Err(err)) => {
+                let fail = v0_gate_check(
+                    "determinism_double_run",
+                    GateStatus::Fail,
+                    [(
+                        "error".to_string(),
+                        bounded_string(err.to_string(), GATE_STR_CAP),
+                    )],
+                    "v0.run.execution_error",
+                );
+                (
+                    fail,
+                    v0_gate_check(
                         "e2e_flow_a",
-                        if e2e_pass {
-                            GateStatus::Pass
-                        } else {
-                            GateStatus::Fail
-                        },
-                        [
-                            ("record_count".to_string(), a.record_count.to_string()),
-                            (
-                                "required_records".to_string(),
-                                a.has_required_records.to_string(),
-                            ),
-                        ],
-                        "v0.e2e.required_records_missing",
-                    );
-
-                    let boundedness_pass = a.max_record_bytes <= V0_MAX_RECORD_BYTES;
-                    let boundedness_check = v0_gate_check(
-                        "record_boundedness",
-                        if boundedness_pass {
-                            GateStatus::Pass
-                        } else {
-                            GateStatus::Fail
-                        },
-                        [
-                            (
-                                "max_record_bytes".to_string(),
-                                a.max_record_bytes.to_string(),
-                            ),
-                            (
-                                "max_allowed_bytes".to_string(),
-                                V0_MAX_RECORD_BYTES.to_string(),
-                            ),
-                        ],
-                        "v0.records.size_cap_exceeded",
-                    );
-
-                    let schema_pass = schema_versions_known(&a.schema_versions);
-                    let schema_check = v0_gate_check(
-                        "schema_versions_known",
-                        if schema_pass {
-                            GateStatus::Pass
-                        } else {
-                            GateStatus::Fail
-                        },
-                        [(
-                            "schema_versions_digest".to_string(),
-                            prefix_hex(&sha256_hex(&serde_json::to_vec(&a.schema_versions)?), 12),
-                        )],
-                        "v0.schema.unknown_or_missing",
-                    );
-
-                    let no_tool_pass = a.tool_execution_count == 0;
-                    let no_tool_check = v0_gate_check(
-                        "no_tool_execution",
-                        if no_tool_pass {
-                            GateStatus::Pass
-                        } else {
-                            GateStatus::Fail
-                        },
-                        [(
-                            "tool_execution_count".to_string(),
-                            a.tool_execution_count.to_string(),
-                        )],
-                        "v0.tools.execution_detected",
-                    );
-
-                    (
-                        determinism_check,
-                        e2e_check,
-                        boundedness_check,
-                        schema_check,
-                        no_tool_check,
-                    )
-                }
-                (Err(err), _) | (_, Err(err)) => {
-                    let fail = v0_gate_check(
-                        "determinism_double_run",
                         GateStatus::Fail,
-                        [(
-                            "error".to_string(),
-                            bounded_string(err.to_string(), GATE_STR_CAP),
-                        )],
+                        [("error".to_string(), "dependent_on_run".to_string())],
                         "v0.run.execution_error",
-                    );
-                    (
-                        fail,
-                        v0_gate_check(
-                            "e2e_flow_a",
-                            GateStatus::Fail,
-                            [("error".to_string(), "dependent_on_run".to_string())],
-                            "v0.run.execution_error",
-                        ),
-                        v0_gate_check(
-                            "record_boundedness",
-                            GateStatus::Fail,
-                            [("error".to_string(), "dependent_on_run".to_string())],
-                            "v0.run.execution_error",
-                        ),
-                        v0_gate_check(
-                            "schema_versions_known",
-                            GateStatus::Fail,
-                            [("error".to_string(), "dependent_on_run".to_string())],
-                            "v0.run.execution_error",
-                        ),
-                        v0_gate_check(
-                            "no_tool_execution",
-                            GateStatus::Fail,
-                            [("error".to_string(), "dependent_on_run".to_string())],
-                            "v0.run.execution_error",
-                        ),
-                    )
-                }
-            };
-
-        let checks = vec![
-            policy_check,
-            determinism_check,
-            e2e_check,
-            boundedness_check,
-            schema_check,
-            no_tool_check,
-        ];
-        let overall_status = if checks.iter().all(|c| c.status == GateStatus::Pass) {
-            V0GateOverallStatus::Pass
-        } else {
-            V0GateOverallStatus::Fail
+                    ),
+                    v0_gate_check(
+                        "record_boundedness",
+                        GateStatus::Fail,
+                        [("error".to_string(), "dependent_on_run".to_string())],
+                        "v0.run.execution_error",
+                    ),
+                    v0_gate_check(
+                        "schema_versions_known",
+                        GateStatus::Fail,
+                        [("error".to_string(), "dependent_on_run".to_string())],
+                        "v0.run.execution_error",
+                    ),
+                    v0_gate_check(
+                        "no_tool_execution",
+                        GateStatus::Fail,
+                        [("error".to_string(), "dependent_on_run".to_string())],
+                        "v0.run.execution_error",
+                    ),
+                )
+            }
         };
 
-        let report = V0GateReportV1 {
-            schema_version: V0_SCHEMA_VERSION,
-            overall_status,
-            checks,
-        };
-        write_json(out, &report)?;
-        Ok(report)
-    })();
+    let checks = vec![
+        policy_check,
+        determinism_check,
+        e2e_check,
+        boundedness_check,
+        schema_check,
+        no_tool_check,
+    ];
+    let overall_status = if checks.iter().all(|c| c.status == GateStatus::Pass) {
+        V0GateOverallStatus::Pass
+    } else {
+        V0GateOverallStatus::Fail
+    };
 
-    std::env::set_current_dir(original_cwd)?;
-    result
+    let report = V0GateReportV1 {
+        schema_version: V0_SCHEMA_VERSION,
+        overall_status,
+        checks,
+    };
+    write_json(out, &report)?;
+    Ok(report)
 }
 
 fn v0_gate_check(
