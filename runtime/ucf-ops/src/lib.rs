@@ -42,7 +42,7 @@ pub use goldens::{
 };
 pub use models_lifecycle::{
     models_list, models_promote, models_recommend_rollback, models_rollback, models_stage,
-    parse_slot,
+    models_verify as models_verify_lifecycle, parse_slot,
 };
 pub use nightly::{
     nightly_summarize, NightlyComponentReport, NightlyOverallStatus, NightlySummarizeArgs,
@@ -331,6 +331,8 @@ pub struct RunMetadataRecord {
     pub strict_mode_enabled: bool,
     pub strict_mode_digest: Option<String>,
     pub crash_dumps_disabled: bool,
+    pub models_manifest_present: bool,
+    pub models_manifest_digest_prefix: Option<String>,
     pub ended_at_tick: Option<u64>,
 }
 
@@ -338,6 +340,20 @@ fn disable_crash_dumps_best_effort() -> bool {
     std::env::var("UCF_CRASH_DUMPS_DISABLED")
         .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
         .unwrap_or(false)
+}
+
+fn load_models_manifest_runtime_metadata() -> (bool, Option<String>) {
+    let path = Path::new("models/MANIFEST.toml");
+    let Some(raw) = fs::read_to_string(path).ok() else {
+        return (false, None);
+    };
+    let digest = raw
+        .lines()
+        .find(|l| l.trim_start().starts_with("manifest_digest"))
+        .and_then(|l| l.split('=').nth(1))
+        .map(|v| v.trim().trim_matches('"').to_string());
+    let prefix = digest.map(|d| d.chars().take(12).collect());
+    (true, prefix)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -3144,8 +3160,14 @@ pub fn one_command_bringup(
         strict_mode_enabled: cfg.strict_mode,
         strict_mode_digest: None,
         crash_dumps_disabled: disable_crash_dumps_best_effort(),
+        models_manifest_present: false,
+        models_manifest_digest_prefix: None,
         ended_at_tick: Some(ticks),
     };
+    let (models_manifest_present, models_manifest_digest_prefix) =
+        load_models_manifest_runtime_metadata();
+    run_metadata.models_manifest_present = models_manifest_present;
+    run_metadata.models_manifest_digest_prefix = models_manifest_digest_prefix;
     if cfg.strict_mode {
         let strict_policy = StrictModeV1::from_config(&cfg);
         run_metadata.strict_mode_digest = Some(sha256_hex(
@@ -5749,6 +5771,8 @@ active_hash = "abc"
             strict_mode_enabled: false,
             strict_mode_digest: None,
             crash_dumps_disabled: false,
+            models_manifest_present: false,
+            models_manifest_digest_prefix: None,
             ended_at_tick: Some(10),
         };
         let cfg_ok = ResumeCheckConfig {

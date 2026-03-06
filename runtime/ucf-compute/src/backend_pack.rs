@@ -324,10 +324,20 @@ impl BackendPackFactory {
 
         let fixtures = FixtureManager;
         let fixtures_digest = fixtures.overall_digest()?;
-        let model_store = ModelStore::from_env_default().unwrap_or_else(|_| ModelStore {
-            allowlist_root: std::path::PathBuf::from("models"),
-            specs: std::collections::BTreeMap::new(),
-        });
+        let model_store = match ModelStore::from_env_default() {
+            Ok(store) => store,
+            Err(err) => {
+                if model_slots_enabled_from_env() {
+                    return Err(ComputeError::InvalidInput {
+                        reason: format!("model store startup validation failed: {err:?}"),
+                    });
+                }
+                ModelStore {
+                    allowlist_root: std::path::PathBuf::from("models"),
+                    specs: std::collections::BTreeMap::new(),
+                }
+            }
+        };
         let model_hashes_digest = model_store.model_hashes_digest();
         let (llm_component, world_component, sae_component, ssm_component) = match cfg.pack {
             BackendPackKind::StubV0 => (
@@ -607,6 +617,14 @@ impl BackendPackFactory {
     }
 }
 
+fn model_slots_enabled_from_env() -> bool {
+    ModelSlot::all().into_iter().any(|slot| {
+        std::env::var(format!("UCF_MODEL_{}_ENABLED", slot.env_key()))
+            .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE"))
+            .unwrap_or(false)
+    })
+}
+
 #[cfg(any(feature = "compute-candle", feature = "llm-candle"))]
 fn decode_hash(hex_value: &str) -> Result<[u8; 32], ()> {
     let bytes = hex::decode(hex_value).map_err(|_| ())?;
@@ -705,6 +723,12 @@ pub fn slot_verified_or_reason(slot: ModelSlot) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, OnceLock};
+
+    fn env_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
 
     #[test]
     fn fixture_digest_stable() {
@@ -717,6 +741,11 @@ mod tests {
 
     #[test]
     fn factory_deterministic() {
+        let _guard = env_lock().lock().expect("env lock");
+        for slot in ModelSlot::all() {
+            std::env::remove_var(format!("UCF_MODEL_{}_ENABLED", slot.env_key()));
+        }
+        std::env::remove_var("UCF_MODEL_MANIFEST");
         let a = BackendPackFactory::build(BackendPackConfig::default()).expect("a");
         let b = BackendPackFactory::build(BackendPackConfig::default()).expect("b");
         assert_eq!(a.meta().digest, b.meta().digest);
@@ -792,5 +821,20 @@ mod tests {
         };
         let result = BackendPackFactory::build(cfg);
         assert!(matches!(result, Err(ComputeError::BackendDisabled)));
+    }
+
+    #[test]
+    fn enabled_slot_requires_manifest_at_startup() {
+        let _guard = env_lock().lock().expect("env lock");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let missing_manifest = dir.path().join("missing-manifest.toml");
+        std::env::set_var("UCF_MODEL_LLM_ENABLED", "true");
+        std::env::set_var("UCF_MODEL_MANIFEST", &missing_manifest);
+
+        let res = BackendPackFactory::build(BackendPackConfig::default());
+        assert!(matches!(res, Err(ComputeError::InvalidInput { .. })));
+
+        std::env::remove_var("UCF_MODEL_LLM_ENABLED");
+        std::env::remove_var("UCF_MODEL_MANIFEST");
     }
 }
