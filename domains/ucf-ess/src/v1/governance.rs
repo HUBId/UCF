@@ -65,7 +65,10 @@ pub fn data_class_for_payload(payload: &AuditPayload) -> DataClass {
         | AuditPayload::RetrievalDecision(_)
         | AuditPayload::GpuUnavailable(_)
         | AuditPayload::GpuParity(_)
-        | AuditPayload::GpuResourceViolation(_) => DataClass::ScalarSummary,
+        | AuditPayload::GpuResourceViolation(_)
+        | AuditPayload::SlotCompareWindow(_)
+        | AuditPayload::ShadowDisable(_)
+        | AuditPayload::SlotModeChange(_) => DataClass::ScalarSummary,
     }
 }
 

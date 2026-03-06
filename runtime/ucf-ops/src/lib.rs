@@ -7964,6 +7964,9 @@ fn experience_kind_name(kind: ExperienceKind) -> &'static str {
         ExperienceKind::ComputeBudgetWindow => "ComputeBudgetWindow",
         ExperienceKind::ComputeBudgetViolation => "ComputeBudgetViolation",
         ExperienceKind::RetrievalDecision => "RetrievalDecision",
+        ExperienceKind::SlotCompareWindow => "SlotCompareWindow",
+        ExperienceKind::ShadowDisable => "ShadowDisable",
+        ExperienceKind::SlotModeChange => "SlotModeChange",
     }
 }
 

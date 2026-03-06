@@ -1,10 +1,14 @@
 use std::collections::BTreeMap;
+use std::sync::Mutex;
 use std::time::Instant;
 
 use sha2::{Digest, Sha256};
+use ucf_types::{quantize_unit, SlotModeV1, CANONICAL_UNIT_QUANT_MAX};
 
 use crate::{
     AiComputeBackend, ComputeBudget, ComputeError, ComputeInput, ComputeSignals, ModelSlot,
+    ShadowDisableRecordV1, SlotCompareStatusV1, SlotCompareWindowRecordV1, SlotModeChangeRecordV1,
+    SlotShadowEventV1,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -49,6 +53,8 @@ impl SlotMode {
 pub struct EnablementConfig {
     pub mode: RealEnablementMode,
     pub shadow_every_n_ticks: u64,
+    pub shadow_rate: u64,
+    pub compare_window: u64,
 }
 
 impl Default for EnablementConfig {
@@ -56,6 +62,8 @@ impl Default for EnablementConfig {
         Self {
             mode: RealEnablementMode::Off,
             shadow_every_n_ticks: 4,
+            shadow_rate: 4,
+            compare_window: 256,
         }
     }
 }
@@ -74,6 +82,22 @@ impl EnablementConfig {
                 .parse::<u64>()
                 .map_err(|_| ComputeError::InvalidInput {
                     reason: format!("invalid UCF_SHADOW_EVERY_N_TICKS={raw}"),
+                })?
+                .max(1);
+        }
+        if let Ok(raw) = std::env::var("UCF_SLOT_SHADOW_RATE") {
+            cfg.shadow_rate = raw
+                .parse::<u64>()
+                .map_err(|_| ComputeError::InvalidInput {
+                    reason: format!("invalid UCF_SLOT_SHADOW_RATE={raw}"),
+                })?
+                .max(1);
+        }
+        if let Ok(raw) = std::env::var("UCF_SLOT_COMPARE_WINDOW") {
+            cfg.compare_window = raw
+                .parse::<u64>()
+                .map_err(|_| ComputeError::InvalidInput {
+                    reason: format!("invalid UCF_SLOT_COMPARE_WINDOW={raw}"),
                 })?
                 .max(1);
         }
@@ -149,10 +173,95 @@ pub struct ShadowComparisonRecord {
     pub result: &'static str,
 }
 
+struct PrimaryOutput(ComputeSignals);
+struct ShadowOutput(ComputeSignals);
+
+#[derive(Debug, Clone)]
+struct CompareWindowState {
+    t0: u64,
+    primary_q: Vec<u16>,
+    shadow_q: Vec<u16>,
+    digest_mismatch_count: u16,
+    invalid_shadow_count: u16,
+    digest_prefix_samples: Vec<[u8; 4]>,
+}
+
+impl CompareWindowState {
+    fn new(t0: u64) -> Self {
+        Self {
+            t0,
+            primary_q: Vec::new(),
+            shadow_q: Vec::new(),
+            digest_mismatch_count: 0,
+            invalid_shadow_count: 0,
+            digest_prefix_samples: Vec::new(),
+        }
+    }
+
+    fn record(&mut self, primary: &ComputeSignals, shadow: &ComputeSignals) {
+        self.primary_q
+            .push(quantize_unit(primary.risk, CANONICAL_UNIT_QUANT_MAX));
+        self.shadow_q
+            .push(quantize_unit(shadow.risk, CANONICAL_UNIT_QUANT_MAX));
+        let pfx_primary = digest_prefix4(primary);
+        let pfx_shadow = digest_prefix4(shadow);
+        if pfx_primary != pfx_shadow {
+            self.digest_mismatch_count = self.digest_mismatch_count.saturating_add(1);
+        }
+        if !envelope_ok(shadow) {
+            self.invalid_shadow_count = self.invalid_shadow_count.saturating_add(1);
+        }
+        if self.digest_prefix_samples.len() < 4 {
+            self.digest_prefix_samples.push(pfx_shadow);
+        }
+    }
+
+    fn flush(self, slot_id: &str, t1: u64, disabled: bool) -> SlotCompareWindowRecordV1 {
+        let sample_count = self.primary_q.len().min(usize::from(u16::MAX)) as u16;
+        let primary_mean_q = mean_q(&self.primary_q);
+        let shadow_mean_q = mean_q(&self.shadow_q);
+        let primary_p95_q = p95_q(self.primary_q);
+        let shadow_p95_q = p95_q(self.shadow_q);
+        let status = if disabled {
+            SlotCompareStatusV1::ShadowDisabled
+        } else if self.digest_mismatch_count > 0 || self.invalid_shadow_count > 0 {
+            SlotCompareStatusV1::DriftWarn
+        } else {
+            SlotCompareStatusV1::Ok
+        };
+        SlotCompareWindowRecordV1 {
+            slot_id: slot_id.to_string(),
+            t0: self.t0,
+            t1,
+            sample_count,
+            primary_mean_q,
+            primary_p95_q,
+            shadow_mean_q,
+            shadow_p95_q,
+            digest_mismatch_count: self.digest_mismatch_count,
+            invalid_shadow_count: self.invalid_shadow_count,
+            digest_prefix_samples: self.digest_prefix_samples,
+            status,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct ShadowRuntime {
+    mode: SlotModeV1,
+    last_mode: SlotModeV1,
+    phase_offset: u64,
+    compare_window_state: CompareWindowState,
+    consecutive_shadow_failures: u16,
+    shadow_disabled: bool,
+    outbox: Vec<SlotShadowEventV1>,
+}
+
 pub struct EnablementComputeBackend {
     primary: Box<dyn AiComputeBackend + Send + Sync>,
     shadow: Option<Box<dyn AiComputeBackend + Send + Sync>>,
     cfg: EnablementConfig,
+    runtime: Mutex<ShadowRuntime>,
 }
 
 impl EnablementComputeBackend {
@@ -161,10 +270,21 @@ impl EnablementComputeBackend {
         shadow: Option<Box<dyn AiComputeBackend + Send + Sync>>,
         cfg: EnablementConfig,
     ) -> Self {
+        let slot_id = "compute";
+        let phase_offset = shadow_phase_offset(0, slot_id, cfg.shadow_rate);
         Self {
             primary,
             shadow,
             cfg,
+            runtime: Mutex::new(ShadowRuntime {
+                mode: slot_mode_from_enablement(cfg.mode),
+                last_mode: slot_mode_from_enablement(cfg.mode),
+                phase_offset,
+                compare_window_state: CompareWindowState::new(0),
+                consecutive_shadow_failures: 0,
+                shadow_disabled: false,
+                outbox: Vec::new(),
+            }),
         }
     }
 }
@@ -179,7 +299,7 @@ impl AiComputeBackend for EnablementComputeBackend {
         input: &ComputeInput,
         budget: ComputeBudget,
     ) -> Result<ComputeSignals, ComputeError> {
-        let primary = self.primary.compute(input, budget)?;
+        let primary = PrimaryOutput(self.primary.compute(input, budget)?);
         metrics::gauge!("ucf_slot_active", "slot" => "compute").set(
             if self.cfg.mode == RealEnablementMode::Active {
                 1.0
@@ -187,11 +307,30 @@ impl AiComputeBackend for EnablementComputeBackend {
                 0.0
             },
         );
-        if self.cfg.mode == RealEnablementMode::Off {
-            return Ok(primary);
+
+        let mut rt = self.runtime.lock().expect("shadow runtime lock poisoned");
+        let current_mode = slot_mode_from_enablement(self.cfg.mode);
+        if current_mode != rt.last_mode {
+            let from_mode = rt.last_mode;
+            rt.outbox
+                .push(SlotShadowEventV1::ModeChange(SlotModeChangeRecordV1 {
+                    slot_id: "compute".to_string(),
+                    t: input.t,
+                    from_mode,
+                    to_mode: current_mode,
+                }));
+            rt.last_mode = current_mode;
+            rt.mode = current_mode;
         }
+
+        if rt.mode == SlotModeV1::Off {
+            return Ok(primary.0);
+        }
+
         if let Some(shadow) = &self.shadow {
-            if input.t.is_multiple_of(self.cfg.shadow_every_n_ticks) {
+            if should_run_shadow_at(input.t, rt.phase_offset, self.cfg.shadow_rate)
+                && !rt.shadow_disabled
+            {
                 metrics::counter!("ucf_shadow_runs_total", "slot" => "compute").increment(1);
                 let started = Instant::now();
                 match shadow.compute(
@@ -201,27 +340,54 @@ impl AiComputeBackend for EnablementComputeBackend {
                         ..budget
                     },
                 ) {
-                    Ok(shadow_out) => {
-                        let elapsed_ms = started.elapsed().as_millis() as u64;
-                        let _rec = ShadowComparisonRecord {
-                            t: input.t,
-                            toy_digest_prefix: digest_prefix(&primary),
-                            real_digest_prefix: digest_prefix(&shadow_out),
-                            elapsed_ms,
-                            result: "ok",
-                        };
-                        if !envelope_ok(&shadow_out) {
-                            metrics::counter!("ucf_compare_envelope_violation_total", "slot" => "compute").increment(1);
-                        }
+                    Ok(out) => {
+                        let _elapsed_ms = started.elapsed().as_millis() as u64;
+                        let shadow_out = ShadowOutput(out);
+                        rt.consecutive_shadow_failures = 0;
+                        rt.compare_window_state.record(&primary.0, &shadow_out.0);
                     }
                     Err(_) => {
+                        rt.consecutive_shadow_failures =
+                            rt.consecutive_shadow_failures.saturating_add(1);
                         metrics::counter!("ucf_shadow_timeouts_total", "slot" => "compute")
                             .increment(1);
+                        if rt.consecutive_shadow_failures >= 3 {
+                            rt.shadow_disabled = true;
+                            let consecutive_failures = rt.consecutive_shadow_failures;
+                            rt.outbox.push(SlotShadowEventV1::ShadowDisable(
+                                ShadowDisableRecordV1 {
+                                    slot_id: "compute".to_string(),
+                                    t: input.t,
+                                    reason: "shadow_compute_failed".to_string(),
+                                    consecutive_failures,
+                                },
+                            ));
+                        }
                     }
                 }
             }
         }
-        Ok(primary)
+
+        if (input.t + 1).is_multiple_of(self.cfg.compare_window) {
+            let flushed = std::mem::replace(
+                &mut rt.compare_window_state,
+                CompareWindowState::new(input.t.saturating_add(1)),
+            );
+            let shadow_disabled = rt.shadow_disabled;
+            rt.outbox
+                .push(SlotShadowEventV1::CompareWindow(flushed.flush(
+                    "compute",
+                    input.t,
+                    shadow_disabled,
+                )));
+        }
+
+        Ok(primary.0)
+    }
+
+    fn drain_shadow_events(&self) -> Vec<SlotShadowEventV1> {
+        let mut rt = self.runtime.lock().expect("shadow runtime lock poisoned");
+        std::mem::take(&mut rt.outbox)
     }
 }
 
@@ -246,6 +412,57 @@ fn digest_prefix(signals: &ComputeSignals) -> String {
     hasher.update(signals.confidence.to_bits().to_le_bytes());
     let digest = hasher.finalize();
     hex::encode(&digest[..4])
+}
+
+fn digest_prefix4(signals: &ComputeSignals) -> [u8; 4] {
+    let mut out = [0_u8; 4];
+    out.copy_from_slice(&Sha256::digest(digest_prefix(signals).as_bytes())[..4]);
+    out
+}
+
+fn mean_q(values: &[u16]) -> u16 {
+    if values.is_empty() {
+        return 0;
+    }
+    let sum: u64 = values.iter().map(|v| u64::from(*v)).sum();
+    (sum / values.len() as u64) as u16
+}
+
+fn p95_q(mut values: Vec<u16>) -> u16 {
+    if values.is_empty() {
+        return 0;
+    }
+    values.sort_unstable();
+    let idx = ((values.len() - 1) * 95) / 100;
+    values[idx]
+}
+
+fn slot_mode_from_enablement(mode: RealEnablementMode) -> SlotModeV1 {
+    match mode {
+        RealEnablementMode::Off => SlotModeV1::Off,
+        RealEnablementMode::Shadow | RealEnablementMode::Compare => SlotModeV1::Shadow,
+        RealEnablementMode::Active => SlotModeV1::Active,
+    }
+}
+
+fn shadow_phase_offset(run_id: u64, slot_id: &str, rate: u64) -> u64 {
+    let mut hasher = Sha256::new();
+    hasher.update(run_id.to_le_bytes());
+    hasher.update(slot_id.as_bytes());
+    let digest = hasher.finalize();
+    let mut first8 = [0_u8; 8];
+    first8.copy_from_slice(&digest[..8]);
+    u64::from_le_bytes(first8) % rate.max(1)
+}
+
+pub fn should_run_shadow(run_id: u64, slot_id: &str, t: u64, rate: u64) -> bool {
+    let r = rate.max(1);
+    let offset = shadow_phase_offset(run_id, slot_id, r);
+    should_run_shadow_at(t, offset, r)
+}
+
+fn should_run_shadow_at(t: u64, offset: u64, rate: u64) -> bool {
+    t % rate.max(1) == offset % rate.max(1)
 }
 
 pub fn parse_stage_ladder(raw: &str) -> BTreeMap<u64, SlotEnablement> {
@@ -301,5 +518,117 @@ mod tests {
             "toy",
         );
         assert!(envelope_ok(&signals));
+    }
+
+    #[test]
+    fn should_run_shadow_is_deterministic() {
+        let a: Vec<u64> = (0..32)
+            .filter(|t| should_run_shadow(7, "compute", *t, 4))
+            .collect();
+        let b: Vec<u64> = (0..32)
+            .filter(|t| should_run_shadow(7, "compute", *t, 4))
+            .collect();
+        assert_eq!(a, b);
+        assert_eq!(a.len(), 8);
+    }
+
+    #[test]
+    fn compare_window_aggregate_is_deterministic() {
+        let s = vec![10, 20, 30, 40, 50];
+        assert_eq!(mean_q(&s), 30);
+        assert_eq!(p95_q(s), 40);
+    }
+
+    #[derive(Clone)]
+    struct MockBackend {
+        risk: f32,
+        fail: bool,
+    }
+
+    impl AiComputeBackend for MockBackend {
+        fn name(&self) -> &'static str {
+            "mock"
+        }
+
+        fn compute(
+            &self,
+            input: &ComputeInput,
+            budget: ComputeBudget,
+        ) -> Result<ComputeSignals, ComputeError> {
+            if self.fail {
+                return Err(ComputeError::InvalidInput {
+                    reason: "forced".to_string(),
+                });
+            }
+            let mut out = ComputeSignals::unavailable(input, budget, "mock");
+            out.risk = self.risk;
+            Ok(out)
+        }
+    }
+
+    #[test]
+    fn shadow_does_not_change_primary_output() {
+        let input = ComputeInput {
+            frame_id: crate::FrameId(1),
+            t: 3,
+            context_digest: [0; 32],
+        };
+        let budget = ComputeBudget::default();
+        let backend = EnablementComputeBackend::new(
+            Box::new(MockBackend {
+                risk: 0.2,
+                fail: false,
+            }),
+            Some(Box::new(MockBackend {
+                risk: 0.8,
+                fail: false,
+            })),
+            EnablementConfig {
+                mode: RealEnablementMode::Shadow,
+                shadow_every_n_ticks: 1,
+                shadow_rate: 1,
+                compare_window: 8,
+            },
+        );
+        let out = backend.compute(&input, budget).expect("compute ok");
+        assert_eq!(out.risk, 0.2);
+    }
+
+    #[test]
+    fn shadow_failure_never_breaks_primary() {
+        let input = ComputeInput {
+            frame_id: crate::FrameId(1),
+            t: 1,
+            context_digest: [0; 32],
+        };
+        let budget = ComputeBudget::default();
+        let backend = EnablementComputeBackend::new(
+            Box::new(MockBackend {
+                risk: 0.3,
+                fail: false,
+            }),
+            Some(Box::new(MockBackend {
+                risk: 0.9,
+                fail: true,
+            })),
+            EnablementConfig {
+                mode: RealEnablementMode::Shadow,
+                shadow_every_n_ticks: 1,
+                shadow_rate: 1,
+                compare_window: 8,
+            },
+        );
+        for t in 1..=3 {
+            let mut in2 = input.clone();
+            in2.t = t;
+            let out = backend
+                .compute(&in2, budget)
+                .expect("primary must continue");
+            assert_eq!(out.risk, 0.3);
+        }
+        let events = backend.drain_shadow_events();
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, SlotShadowEventV1::ShadowDisable(_))));
     }
 }
