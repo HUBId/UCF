@@ -41,8 +41,8 @@ pub use goldens::{
     GoldenVerifyScenarioReport,
 };
 pub use models_lifecycle::{
-    models_list, models_promote, models_recommend_rollback, models_rollback, models_stage,
-    models_verify as models_verify_lifecycle, parse_slot,
+    models_list, models_probe_slot, models_promote, models_recommend_rollback, models_rollback,
+    models_stage, models_verify as models_verify_lifecycle, parse_slot, ProbeReportV1,
 };
 pub use nightly::{
     nightly_summarize, NightlyComponentReport, NightlyOverallStatus, NightlySummarizeArgs,
@@ -5519,6 +5519,7 @@ mod tests {
 
     #[test]
     fn export_and_verify_roundtrip() {
+        let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
         let dir = tempdir().expect("tempdir");
         bringup(dir.path(), true, 20).expect("bringup");
         let report_dir = export_bugreport(
@@ -5537,6 +5538,7 @@ mod tests {
 
     #[test]
     fn verify_catches_tampering() {
+        let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
         let dir = tempdir().expect("tempdir");
         bringup(dir.path(), true, 8).expect("bringup");
         let report_dir = export_bugreport(

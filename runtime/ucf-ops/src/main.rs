@@ -11,19 +11,19 @@ use ucf_ops::{
     export_policy_key_registry_v1, gateway_threat_test, goldens_generate, goldens_update,
     goldens_verify, goldens_verify_detailed, hardware_scan, load_signoff_checklist, logs_prove,
     logs_verify_proof, metrics_snapshot, metrics_summary, metrics_trend, migrate_config_v1,
-    models_list, models_probe, models_promote, models_recommend_rollback, models_rollback,
-    models_stage, models_verify, models_verify_lifecycle, net_deps_audit, nightly_summarize,
-    one_command_bringup, out_manifest, parse_duration_secs, parse_inject, parse_slot, path_scan,
-    policy_diff, policy_explain, policy_validate, portability_check, preflight, readiness_gate,
-    release_build_rc, release_rc1_gate, release_signoff_validate, replay_audit, replay_bugreport,
-    repro_pack, repro_verify, run_status, runs_list, runs_search, runs_show,
-    save_counterfactual_result, security_verify_chain, simulate_counterfactual, soak_run,
-    strict_check, troubleshoot, v0_gate, verify_bugreport, world_shadow_report, write_slice,
-    AdversarialRunArgs, AirgapArtifactType, AirgapImportArgs, AirgapImportMode, BenchArgs,
-    BugKitBuildArgs, ChangeImpactArgs, ConfigV1, CounterfactualRequest, DevLoopArgs, DocsLintArgs,
-    DocsLintMode, DocsLintStatus, ExplainTickRequest, ExportArgs, GateStatus, GoldenGenerateArgs,
-    GoldenVerifyArgs, GoldenVerifyReport, NightlySummarizeArgs, ReleaseBuildRcArgs, SoakRunArgs,
-    SpecSnapshotArgs,
+    models_list, models_probe, models_probe_slot, models_promote, models_recommend_rollback,
+    models_rollback, models_stage, models_verify, models_verify_lifecycle, net_deps_audit,
+    nightly_summarize, one_command_bringup, out_manifest, parse_duration_secs, parse_inject,
+    parse_slot, path_scan, policy_diff, policy_explain, policy_validate, portability_check,
+    preflight, readiness_gate, release_build_rc, release_rc1_gate, release_signoff_validate,
+    replay_audit, replay_bugreport, repro_pack, repro_verify, run_status, runs_list, runs_search,
+    runs_show, save_counterfactual_result, security_verify_chain, simulate_counterfactual,
+    soak_run, strict_check, troubleshoot, v0_gate, verify_bugreport, world_shadow_report,
+    write_slice, AdversarialRunArgs, AirgapArtifactType, AirgapImportArgs, AirgapImportMode,
+    BenchArgs, BugKitBuildArgs, ChangeImpactArgs, ConfigV1, CounterfactualRequest, DevLoopArgs,
+    DocsLintArgs, DocsLintMode, DocsLintStatus, ExplainTickRequest, ExportArgs, GateStatus,
+    GoldenGenerateArgs, GoldenVerifyArgs, GoldenVerifyReport, NightlySummarizeArgs,
+    ReleaseBuildRcArgs, SoakRunArgs, SpecSnapshotArgs,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -919,22 +919,36 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     println!("{}", serde_json::to_string_pretty(&result)?);
                 }
                 "probe" => {
-                    let manifest = arg_value(&args, "--manifest")
-                        .map(PathBuf::from)
-                        .unwrap_or_else(|| PathBuf::from("models/manifest.toml"));
-                    let out = arg_value(&args, "--out")
-                        .map(PathBuf::from)
-                        .unwrap_or_else(|| PathBuf::from("./out/probe_report.json"));
-                    let report = models_probe(&workdir, &manifest, &out)?;
-                    println!("{}", serde_json::to_string_pretty(&report)?);
-                    println!("out={}", out.display());
-                    if !report.summary.pass {
-                        let all_disabled = report
-                            .results
-                            .iter()
-                            .all(|r| matches!(r.status, ucf_ops::ProbeStatus::Disabled));
-                        if !all_disabled {
+                    if let Some(slot_value) = arg_value(&args, "--slot") {
+                        let slot = parse_slot(&slot_value)?;
+                        let hash = arg_value(&args, "--hash");
+                        let out = arg_value(&args, "--out")
+                            .map(PathBuf::from)
+                            .unwrap_or_else(|| PathBuf::from(format!("./out/probe_{}.json", slot.as_str())));
+                        let report = models_probe_slot(slot, hash.as_deref(), &out)?;
+                        println!("{}", serde_json::to_string_pretty(&report)?);
+                        println!("out={}", out.display());
+                        if !report.pass() {
                             std::process::exit(2);
+                        }
+                    } else {
+                        let manifest = arg_value(&args, "--manifest")
+                            .map(PathBuf::from)
+                            .unwrap_or_else(|| PathBuf::from("models/MANIFEST.toml"));
+                        let out = arg_value(&args, "--out")
+                            .map(PathBuf::from)
+                            .unwrap_or_else(|| PathBuf::from("./out/probe_report.json"));
+                        let report = models_probe(&workdir, &manifest, &out)?;
+                        println!("{}", serde_json::to_string_pretty(&report)?);
+                        println!("out={}", out.display());
+                        if !report.summary.pass {
+                            let all_disabled = report
+                                .results
+                                .iter()
+                                .all(|r| matches!(r.status, ucf_ops::ProbeStatus::Disabled));
+                            if !all_disabled {
+                                std::process::exit(2);
+                            }
                         }
                     }
                 }

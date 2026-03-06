@@ -1,6 +1,7 @@
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
@@ -17,6 +18,12 @@ const MANIFEST_PATH: &str = "models/MANIFEST.toml";
 const LEGACY_MANIFEST_PATH: &str = "models/lifecycle_manifest.toml";
 const MAX_MANIFEST_BYTES: usize = 1024 * 1024;
 const MAX_SLOT_FILES: usize = 512;
+const PROBE_SCHEMA_VERSION: u16 = 1;
+const PROBE_DIGEST_PREFIX_LEN: usize = 16;
+const PROBE_OUTPUT_CAP: usize = 8;
+const PROBE_NOTES_CAP: usize = 8;
+const SAE_SPIKE_COUNT_KMAX: u32 = 1024;
+const Q01_MAX: u16 = 10_000;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ModelFileEntry {
@@ -92,6 +99,80 @@ pub struct RollbackRecommendation {
 pub struct ModelsRollbackRecommendationReport {
     pub slot: String,
     pub recommendations: Vec<RollbackRecommendation>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ProbeMode {
+    Active,
+    Hash,
+    Stub,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ProbeCheckStatus {
+    Pass,
+    Fail,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProbeEnvelopeCheck {
+    pub code: String,
+    pub status: ProbeCheckStatus,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProbeDigestOutput {
+    pub key: String,
+    pub digest_prefix: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProbeScalarOutput {
+    pub key: String,
+    pub value_q: u16,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProbeCounterOutput {
+    pub key: String,
+    pub value: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProbeOutputs {
+    pub digests: Vec<ProbeDigestOutput>,
+    pub scalars: Vec<ProbeScalarOutput>,
+    pub counters: Vec<ProbeCounterOutput>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ProbeReportStatus {
+    Pass,
+    Fail,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProbeReportV1 {
+    pub schema_version: u16,
+    pub slot_id: String,
+    pub mode: ProbeMode,
+    pub manifest_digest_prefix: String,
+    pub model_hash_prefix: Option<String>,
+    pub backend_id: String,
+    pub contract_version: String,
+    pub outputs: ProbeOutputs,
+    pub latency_ms: u64,
+    pub envelope_checks: Vec<ProbeEnvelopeCheck>,
+    pub status: ProbeReportStatus,
+}
+
+impl ProbeReportV1 {
+    pub const fn pass(&self) -> bool {
+        matches!(self.status, ProbeReportStatus::Pass)
+    }
 }
 
 pub fn models_stage(slot: ModelSlot, src_dir: &Path) -> Result<StageResult, OpsError> {
@@ -378,6 +459,333 @@ pub fn parse_slot(value: &str) -> Result<ModelSlot, OpsError> {
         "ebm_reasoner" | "ebm" => Ok(ModelSlot::EbmReasoner),
         _ => Err(OpsError::Invalid(format!("unknown slot: {value}"))),
     }
+}
+
+pub fn models_probe_slot(
+    slot: ModelSlot,
+    hash: Option<&str>,
+    out: &Path,
+) -> Result<ProbeReportV1, OpsError> {
+    let started = Instant::now();
+    let manifest = load_or_init_manifest()?;
+    let slot_id = slot.as_str().to_string();
+    let slot_manifest = manifest.slots.iter().find(|s| s.slot_id == slot_id);
+
+    let (mode, source_dir, model_hash) = if let Some(probe_hash) = hash {
+        let staged = PathBuf::from("models")
+            .join("staging")
+            .join(slot.as_str())
+            .join(probe_hash);
+        if !staged.exists() {
+            return Err(OpsError::Invalid(format!(
+                "UCF_OPS_MODELS_PROBE_STAGED_HASH_MISSING: {probe_hash}"
+            )));
+        }
+        (ProbeMode::Hash, Some(staged), Some(probe_hash.to_string()))
+    } else if let Some(active_hash) = slot_manifest.and_then(|s| s.active_hash.clone()) {
+        let promoted = PathBuf::from("models")
+            .join("promoted")
+            .join(slot.as_str())
+            .join(&active_hash);
+        if !promoted.exists() {
+            return Err(OpsError::Invalid(format!(
+                "UCF_OPS_MODELS_PROBE_ACTIVE_HASH_MISSING: {}",
+                active_hash
+            )));
+        }
+        (ProbeMode::Active, Some(promoted), Some(active_hash))
+    } else {
+        (ProbeMode::Stub, None, None)
+    };
+
+    let contract_version = slot_manifest
+        .and_then(|s| s.contract_versions_supported.first().cloned())
+        .unwrap_or_else(|| "v1".to_string());
+
+    let outputs = build_probe_outputs(
+        slot,
+        source_dir.as_deref(),
+        model_hash.as_deref(),
+        &manifest,
+        mode.clone(),
+    )?;
+    let mut envelope_checks = build_envelope_checks(slot, &outputs);
+    let pass = envelope_checks
+        .iter()
+        .all(|check| matches!(check.status, ProbeCheckStatus::Pass));
+    if envelope_checks.len() > PROBE_NOTES_CAP {
+        envelope_checks.truncate(PROBE_NOTES_CAP);
+    }
+
+    let report = ProbeReportV1 {
+        schema_version: PROBE_SCHEMA_VERSION,
+        slot_id,
+        mode,
+        manifest_digest_prefix: manifest.manifest_digest.chars().take(12).collect(),
+        model_hash_prefix: model_hash
+            .as_ref()
+            .map(|value| value.chars().take(PROBE_DIGEST_PREFIX_LEN).collect()),
+        backend_id: "offline_probe_stub_v1".to_string(),
+        contract_version,
+        outputs,
+        latency_ms: started.elapsed().as_millis() as u64,
+        envelope_checks,
+        status: if pass {
+            ProbeReportStatus::Pass
+        } else {
+            ProbeReportStatus::Fail
+        },
+    };
+    if let Some(parent) = out.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(out, serde_json::to_vec_pretty(&report)?)?;
+    Ok(report)
+}
+
+fn build_probe_outputs(
+    slot: ModelSlot,
+    source_dir: Option<&Path>,
+    model_hash: Option<&str>,
+    manifest: &LifecycleManifest,
+    mode: ProbeMode,
+) -> Result<ProbeOutputs, OpsError> {
+    let slot_id = slot.as_str();
+    let mut seed_material = Vec::new();
+    seed_material.extend_from_slice(slot_id.as_bytes());
+    if let Some(hash) = model_hash {
+        seed_material.extend_from_slice(hash.as_bytes());
+    }
+    if let Some(dir) = source_dir {
+        let model_path = dir.join(MODEL_FILE_NAME);
+        if !model_path.exists() {
+            return Err(OpsError::Invalid(format!(
+                "UCF_OPS_MODELS_PROBE_MODEL_FILE_MISSING: {}",
+                model_path.display()
+            )));
+        }
+        let bytes = fs::read(&model_path)?;
+        if let ProbeMode::Active = mode {
+            if let Some(expected) = manifest
+                .slots
+                .iter()
+                .find(|s| s.slot_id == slot_id)
+                .and_then(|s| s.files.iter().find(|f| f.path == MODEL_FILE_NAME))
+            {
+                let found = sha256_hex(&bytes);
+                if found != expected.sha256 {
+                    return Err(OpsError::Invalid(
+                        "UCF_OPS_MODELS_PROBE_ACTIVE_SHA_MISMATCH".to_string(),
+                    ));
+                }
+            }
+        }
+        seed_material.extend_from_slice(&bytes);
+    }
+    let slot_digest = sha256_hex(&seed_material);
+    let alt_digest = sha256_hex(format!("{slot_id}:alt:{slot_digest}").as_bytes());
+    let scalar_a = scalar_q(&slot_digest, 0);
+    let scalar_b = scalar_q(&slot_digest, 4);
+    let spike_count = (u32::from(scalar_q(&slot_digest, 8)) % SAE_SPIKE_COUNT_KMAX) + 1;
+
+    let mut digests = match slot {
+        ModelSlot::Llm => vec![
+            ProbeDigestOutput {
+                key: "response_digest".to_string(),
+                digest_prefix: slot_digest.chars().take(PROBE_DIGEST_PREFIX_LEN).collect(),
+            },
+            ProbeDigestOutput {
+                key: "contract_digest".to_string(),
+                digest_prefix: alt_digest.chars().take(PROBE_DIGEST_PREFIX_LEN).collect(),
+            },
+        ],
+        ModelSlot::WorldJepa | ModelSlot::WorldVljepa => vec![ProbeDigestOutput {
+            key: "prediction_digest".to_string(),
+            digest_prefix: slot_digest.chars().take(PROBE_DIGEST_PREFIX_LEN).collect(),
+        }],
+        ModelSlot::Sae => vec![ProbeDigestOutput {
+            key: "spikes_digest".to_string(),
+            digest_prefix: slot_digest.chars().take(PROBE_DIGEST_PREFIX_LEN).collect(),
+        }],
+        ModelSlot::Ssm => vec![ProbeDigestOutput {
+            key: "state_digest".to_string(),
+            digest_prefix: slot_digest.chars().take(PROBE_DIGEST_PREFIX_LEN).collect(),
+        }],
+        ModelSlot::Lfm => vec![
+            ProbeDigestOutput {
+                key: "uncertainty_digest".to_string(),
+                digest_prefix: slot_digest.chars().take(PROBE_DIGEST_PREFIX_LEN).collect(),
+            },
+            ProbeDigestOutput {
+                key: "stability_digest".to_string(),
+                digest_prefix: alt_digest.chars().take(PROBE_DIGEST_PREFIX_LEN).collect(),
+            },
+        ],
+        ModelSlot::EbmReasoner => vec![
+            ProbeDigestOutput {
+                key: "energy_digest".to_string(),
+                digest_prefix: slot_digest.chars().take(PROBE_DIGEST_PREFIX_LEN).collect(),
+            },
+            ProbeDigestOutput {
+                key: "risk_digest".to_string(),
+                digest_prefix: alt_digest.chars().take(PROBE_DIGEST_PREFIX_LEN).collect(),
+            },
+        ],
+    };
+    digests.sort_by(|a, b| a.key.cmp(&b.key));
+    digests.truncate(PROBE_OUTPUT_CAP);
+
+    let mut scalars = match slot {
+        ModelSlot::Llm => vec![ProbeScalarOutput {
+            key: "completion_confidence_q".to_string(),
+            value_q: scalar_a,
+        }],
+        ModelSlot::WorldJepa | ModelSlot::WorldVljepa => vec![ProbeScalarOutput {
+            key: "prediction_error_q".to_string(),
+            value_q: scalar_a,
+        }],
+        ModelSlot::Sae => vec![ProbeScalarOutput {
+            key: "spike_ratio_q".to_string(),
+            value_q: scalar_a,
+        }],
+        ModelSlot::Ssm => vec![ProbeScalarOutput {
+            key: "pressure_q".to_string(),
+            value_q: scalar_a,
+        }],
+        ModelSlot::Lfm => vec![
+            ProbeScalarOutput {
+                key: "uncertainty_q".to_string(),
+                value_q: scalar_a,
+            },
+            ProbeScalarOutput {
+                key: "stability_q".to_string(),
+                value_q: scalar_b,
+            },
+        ],
+        ModelSlot::EbmReasoner => vec![
+            ProbeScalarOutput {
+                key: "energy_q".to_string(),
+                value_q: scalar_a,
+            },
+            ProbeScalarOutput {
+                key: "risk_q".to_string(),
+                value_q: scalar_b,
+            },
+        ],
+    };
+    scalars.sort_by(|a, b| a.key.cmp(&b.key));
+    scalars.truncate(PROBE_OUTPUT_CAP);
+
+    let mut counters = match slot {
+        ModelSlot::Llm => vec![
+            ProbeCounterOutput {
+                key: "prompt_tokens".to_string(),
+                value: 8,
+            },
+            ProbeCounterOutput {
+                key: "completion_tokens".to_string(),
+                value: 12,
+            },
+        ],
+        ModelSlot::Sae => vec![ProbeCounterOutput {
+            key: "spike_count".to_string(),
+            value: spike_count,
+        }],
+        _ => Vec::new(),
+    };
+    if let Some(dir) = source_dir {
+        let model_path = dir.join(MODEL_FILE_NAME);
+        let model_len = fs::metadata(model_path)?.len() as u32;
+        counters.push(ProbeCounterOutput {
+            key: "model_bytes".to_string(),
+            value: model_len,
+        });
+    }
+    counters.sort_by(|a, b| a.key.cmp(&b.key));
+    counters.truncate(PROBE_OUTPUT_CAP);
+
+    Ok(ProbeOutputs {
+        digests,
+        scalars,
+        counters,
+    })
+}
+
+fn build_envelope_checks(slot: ModelSlot, outputs: &ProbeOutputs) -> Vec<ProbeEnvelopeCheck> {
+    let mut checks = Vec::new();
+    let scalar_bounds_ok = outputs.scalars.iter().all(|item| item.value_q <= Q01_MAX);
+    checks.push(ProbeEnvelopeCheck {
+        code: "PROBE_SCALAR_BOUNDS".to_string(),
+        status: if scalar_bounds_ok {
+            ProbeCheckStatus::Pass
+        } else {
+            ProbeCheckStatus::Fail
+        },
+    });
+
+    let digest_non_zero = outputs.digests.iter().all(|item| {
+        !item.digest_prefix.is_empty() && item.digest_prefix.chars().any(|ch| ch != '0')
+    });
+    checks.push(ProbeEnvelopeCheck {
+        code: "PROBE_DIGEST_NON_ZERO".to_string(),
+        status: if digest_non_zero {
+            ProbeCheckStatus::Pass
+        } else {
+            ProbeCheckStatus::Fail
+        },
+    });
+
+    let model_bytes_ok = outputs
+        .counters
+        .iter()
+        .find(|v| v.key == "model_bytes")
+        .map(|v| v.value > 0)
+        .unwrap_or(true);
+    checks.push(ProbeEnvelopeCheck {
+        code: "PROBE_MODEL_BYTES_NON_ZERO".to_string(),
+        status: if model_bytes_ok {
+            ProbeCheckStatus::Pass
+        } else {
+            ProbeCheckStatus::Fail
+        },
+    });
+    let output_caps_ok = outputs.digests.len() <= PROBE_OUTPUT_CAP
+        && outputs.scalars.len() <= PROBE_OUTPUT_CAP
+        && outputs.counters.len() <= PROBE_OUTPUT_CAP;
+    checks.push(ProbeEnvelopeCheck {
+        code: "PROBE_OUTPUT_CAP".to_string(),
+        status: if output_caps_ok {
+            ProbeCheckStatus::Pass
+        } else {
+            ProbeCheckStatus::Fail
+        },
+    });
+
+    if slot == ModelSlot::Sae {
+        let spike_ok = outputs
+            .counters
+            .iter()
+            .find(|v| v.key == "spike_count")
+            .map(|v| v.value <= SAE_SPIKE_COUNT_KMAX)
+            .unwrap_or(false);
+        checks.push(ProbeEnvelopeCheck {
+            code: "PROBE_SAE_SPIKE_COUNT_BOUNDED".to_string(),
+            status: if spike_ok {
+                ProbeCheckStatus::Pass
+            } else {
+                ProbeCheckStatus::Fail
+            },
+        });
+    }
+    checks
+}
+
+fn scalar_q(hex: &str, offset: usize) -> u16 {
+    let start = offset.min(hex.len());
+    let end = (start + 4).min(hex.len());
+    let fragment = &hex[start..end];
+    let raw = u16::from_str_radix(fragment, 16).unwrap_or(0);
+    raw % (Q01_MAX + 1)
 }
 
 fn persist_manifest_with_history(
@@ -1028,5 +1436,127 @@ mod tests {
 
         let report = models_rollback(ModelSlot::Llm, None, Some(1), None).expect("rollback steps");
         assert_eq!(report.to_hash, h1);
+    }
+}
+
+#[cfg(test)]
+mod probe_tests {
+    use super::*;
+
+    struct CwdGuard {
+        prev: PathBuf,
+    }
+
+    impl CwdGuard {
+        fn enter(path: &Path) -> Self {
+            let prev = std::env::current_dir().expect("cwd");
+            std::env::set_current_dir(path).expect("chdir");
+            Self { prev }
+        }
+    }
+
+    impl Drop for CwdGuard {
+        fn drop(&mut self) {
+            let _ = std::env::set_current_dir(&self.prev);
+        }
+    }
+
+    #[test]
+    fn probe_report_serialization_is_stable() {
+        let report = ProbeReportV1 {
+            schema_version: 1,
+            slot_id: "llm".to_string(),
+            mode: ProbeMode::Stub,
+            manifest_digest_prefix: "abcd1234abcd".to_string(),
+            model_hash_prefix: None,
+            backend_id: "offline_probe_stub_v1".to_string(),
+            contract_version: "v1".to_string(),
+            outputs: ProbeOutputs {
+                digests: vec![ProbeDigestOutput {
+                    key: "response_digest".to_string(),
+                    digest_prefix: "1234abcd1234abcd".to_string(),
+                }],
+                scalars: vec![ProbeScalarOutput {
+                    key: "completion_confidence_q".to_string(),
+                    value_q: 42,
+                }],
+                counters: vec![ProbeCounterOutput {
+                    key: "prompt_tokens".to_string(),
+                    value: 8,
+                }],
+            },
+            latency_ms: 1,
+            envelope_checks: vec![ProbeEnvelopeCheck {
+                code: "PROBE_SCALAR_BOUNDS".to_string(),
+                status: ProbeCheckStatus::Pass,
+            }],
+            status: ProbeReportStatus::Pass,
+        };
+        let a = serde_json::to_string_pretty(&report).expect("json a");
+        let b = serde_json::to_string_pretty(&report).expect("json b");
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn probe_stage_promote_probe_pass() {
+        let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let _cwd = CwdGuard::enter(dir.path());
+
+        let src = dir.path().join("fixtures/models_dummy/llm");
+        fs::create_dir_all(&src).expect("src");
+        fs::write(src.join("model.safetensors"), b"dummy-llm-v1").expect("model");
+
+        let staged = models_stage(ModelSlot::Llm, &src).expect("stage");
+        let _promoted = models_promote(ModelSlot::Llm, &staged.hash, None).expect("promote");
+        let out = dir.path().join("out/probe_llm.json");
+        let report = models_probe_slot(ModelSlot::Llm, None, &out).expect("probe");
+        assert!(report.pass());
+        assert!(out.exists());
+    }
+
+    #[test]
+    fn probe_hash_mode_does_not_mutate_manifest() {
+        let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let _cwd = CwdGuard::enter(dir.path());
+
+        let src = dir.path().join("fixtures/models_dummy/sae");
+        fs::create_dir_all(&src).expect("src");
+        fs::write(src.join("model.safetensors"), b"dummy-sae-v1").expect("model");
+        let staged = models_stage(ModelSlot::Sae, &src).expect("stage");
+
+        let before = load_or_init_manifest()
+            .expect("manifest before")
+            .manifest_digest;
+        let out = dir.path().join("out/probe_sae.json");
+        let report = models_probe_slot(ModelSlot::Sae, Some(&staged.hash), &out).expect("probe");
+        let after = load_or_init_manifest()
+            .expect("manifest after")
+            .manifest_digest;
+
+        assert!(report.pass());
+        assert_eq!(before, after);
+    }
+
+    #[test]
+    fn probe_tampered_dummy_fails_envelope() {
+        let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let _cwd = CwdGuard::enter(dir.path());
+
+        let src = dir.path().join("fixtures/models_dummy/sae_bad");
+        fs::create_dir_all(&src).expect("src");
+        fs::write(src.join("model.safetensors"), b"").expect("model");
+        let staged = models_stage(ModelSlot::Sae, &src).expect("stage");
+
+        let out = dir.path().join("out/probe_sae_bad.json");
+        let report = models_probe_slot(ModelSlot::Sae, Some(&staged.hash), &out).expect("probe");
+        assert!(!report.pass());
+        assert!(report
+            .envelope_checks
+            .iter()
+            .any(|c| c.code == "PROBE_MODEL_BYTES_NON_ZERO"
+                && matches!(c.status, ProbeCheckStatus::Fail)));
     }
 }
