@@ -757,6 +757,30 @@ fn append_action(path: PathBuf, report: &LifecycleActionReport) -> Result<(), Op
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, OnceLock};
+
+    fn cwd_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    struct CwdGuard {
+        prev: PathBuf,
+    }
+
+    impl CwdGuard {
+        fn enter(path: &Path) -> Self {
+            let prev = std::env::current_dir().expect("cwd");
+            std::env::set_current_dir(path).expect("chdir");
+            Self { prev }
+        }
+    }
+
+    impl Drop for CwdGuard {
+        fn drop(&mut self) {
+            let _ = std::env::set_current_dir(&self.prev);
+        }
+    }
 
     #[test]
     fn manifest_digest_canonical_stable() {
@@ -802,9 +826,9 @@ mod tests {
 
     #[test]
     fn stage_and_verify_detects_tamper() {
+        let _guard = cwd_lock().lock().expect("cwd lock");
         let dir = tempfile::tempdir().expect("tempdir");
-        let cwd = std::env::current_dir().expect("cwd");
-        std::env::set_current_dir(dir.path()).expect("chdir");
+        let _cwd = CwdGuard::enter(dir.path());
 
         let src = dir.path().join("src");
         fs::create_dir_all(&src).expect("src");
@@ -838,15 +862,13 @@ mod tests {
         fs::write(promoted.join("model.safetensors"), b"tampered").expect("tamper");
         let bad = models_verify(Path::new("models/MANIFEST.toml")).expect("verify bad");
         assert!(!bad.files_verified);
-
-        std::env::set_current_dir(cwd).expect("restore");
     }
 
     #[test]
     fn stage_rejects_too_many_files() {
+        let _guard = cwd_lock().lock().expect("cwd lock");
         let dir = tempfile::tempdir().expect("tempdir");
-        let cwd = std::env::current_dir().expect("cwd");
-        std::env::set_current_dir(dir.path()).expect("chdir");
+        let _cwd = CwdGuard::enter(dir.path());
         let src = dir.path().join("src");
         fs::create_dir_all(&src).expect("src");
         fs::write(src.join("model.safetensors"), b"abc").expect("model");
@@ -855,6 +877,5 @@ mod tests {
         }
         let err = models_stage(ModelSlot::Llm, &src).expect_err("must reject");
         assert!(format!("{err}").contains("too many files"));
-        std::env::set_current_dir(cwd).expect("restore");
     }
 }

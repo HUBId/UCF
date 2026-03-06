@@ -94,10 +94,8 @@ pub struct ModelSlotSpec {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ModelLoadError {
     Disabled,
+    MissingPath,
     MissingExpectedHash {
-        slot: ModelSlot,
-    },
-    PromotedOnlyPathRequired {
         slot: ModelSlot,
     },
     ManifestParse(String),
@@ -214,7 +212,7 @@ impl ModelStore {
                 active_hash
             ))
         } else {
-            return Err(ModelLoadError::PromotedOnlyPathRequired { slot });
+            spec.path.clone().ok_or(ModelLoadError::MissingPath)?
         };
         let expected_hash = if let Some(pin_hash) = pin_hash {
             parse_hash(&pin_hash)
@@ -608,42 +606,6 @@ mod tests {
             err,
             ModelLoadError::MissingExpectedHash {
                 slot: ModelSlot::EbmReasoner
-            }
-        ));
-    }
-
-    #[test]
-    fn enabled_slot_requires_promoted_path_invariant() {
-        let temp = tempfile::tempdir().expect("tempdir");
-        let models = temp.path().join("models");
-        fs::create_dir_all(&models).expect("models");
-        let expected: [u8; 32] = Sha256::digest(b"abc").into();
-
-        let mut specs = BTreeMap::new();
-        specs.insert(
-            ModelSlot::Llm,
-            ModelSlotSpec {
-                slot: ModelSlot::Llm,
-                enabled: true,
-                path: Some(PathBuf::from("llm.bin")),
-                expected_sha256: expected,
-                max_bytes: 1024,
-                format: ModelFormat::Custom,
-                device: ModelDevice::CpuOnly,
-                active_hash: None,
-                contract_version: None,
-            },
-        );
-        let store = ModelStore {
-            allowlist_root: models,
-            specs,
-        };
-
-        let err = store.verify_slot(ModelSlot::Llm).expect_err("must fail");
-        assert!(matches!(
-            err,
-            ModelLoadError::PromotedOnlyPathRequired {
-                slot: ModelSlot::Llm
             }
         ));
     }

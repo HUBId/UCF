@@ -338,6 +338,7 @@ impl BackendPackFactory {
                 }
             }
         };
+        enforce_promoted_only_for_enabled_slots(&model_store)?;
         let model_hashes_digest = model_store.model_hashes_digest();
         let (llm_component, world_component, sae_component, ssm_component) = match cfg.pack {
             BackendPackKind::StubV0 => (
@@ -617,6 +618,36 @@ impl BackendPackFactory {
     }
 }
 
+fn enforce_promoted_only_for_enabled_slots(store: &ModelStore) -> Result<(), ComputeError> {
+    for slot in ModelSlot::all() {
+        let Some(spec) = store.specs.get(&slot) else {
+            continue;
+        };
+        if !spec.enabled {
+            continue;
+        }
+        let pin_set = std::env::var(format!("UCF_MODEL_PIN_{}", slot.env_key()))
+            .ok()
+            .map(|v| !v.trim().is_empty())
+            .unwrap_or(false);
+        if !pin_set
+            && spec
+                .active_hash
+                .as_ref()
+                .map(|v| v.is_empty())
+                .unwrap_or(true)
+        {
+            return Err(ComputeError::InvalidInput {
+                reason: format!(
+                    "enabled slot {} requires active_hash or UCF_MODEL_PIN_{}",
+                    slot.as_str(),
+                    slot.env_key()
+                ),
+            });
+        }
+    }
+    Ok(())
+}
 fn model_slots_enabled_from_env() -> bool {
     ModelSlot::all().into_iter().any(|slot| {
         std::env::var(format!("UCF_MODEL_{}_ENABLED", slot.env_key()))
