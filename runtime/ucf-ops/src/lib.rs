@@ -5754,7 +5754,9 @@ active_hash = "abc"
 
     #[test]
     fn ebm_dataset_export_is_redaction_safe_and_bounded() {
+        let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
         let dir = tempdir().expect("tempdir");
+        let _cwd = CwdGuard::enter(dir.path());
         bringup(dir.path(), true, 20).expect("bringup");
         let out = dir.path().join("out").join("ebm_dataset_v1.jsonl");
         let policy = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
