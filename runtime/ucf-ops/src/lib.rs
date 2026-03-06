@@ -41,8 +41,8 @@ pub use goldens::{
     GoldenVerifyScenarioReport,
 };
 pub use models_lifecycle::{
-    models_list, models_promote, models_recommend_rollback, models_rollback, models_stage,
-    models_verify as models_verify_lifecycle, parse_slot,
+    models_list, models_probe_slot, models_promote, models_recommend_rollback, models_rollback,
+    models_stage, models_verify as models_verify_lifecycle, parse_slot, ProbeReportV1,
 };
 pub use nightly::{
     nightly_summarize, NightlyComponentReport, NightlyOverallStatus, NightlySummarizeArgs,
