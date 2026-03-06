@@ -9404,9 +9404,29 @@ mod proof_carrying_logs_tests {
 mod rc1_tests {
     use super::*;
 
+    struct CwdGuard {
+        prev: PathBuf,
+    }
+
+    impl CwdGuard {
+        fn enter(path: &Path) -> Self {
+            let prev = std::env::current_dir().expect("cwd");
+            std::env::set_current_dir(path).expect("chdir");
+            Self { prev }
+        }
+    }
+
+    impl Drop for CwdGuard {
+        fn drop(&mut self) {
+            let _ = std::env::set_current_dir(&self.prev);
+        }
+    }
+
     #[test]
     fn diagnostics_bundle_redacts_payload_keys() {
+        let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
         let dir = tempfile::tempdir().expect("tmp");
+        let _cwd = CwdGuard::enter(dir.path());
         let out_run = PathBuf::from("out").join("run-test");
         std::fs::create_dir_all(&out_run).expect("out dir");
         std::fs::write(out_run.join("run_metadata.json"), r#"{"ok":true}"#).expect("write");
@@ -9434,7 +9454,9 @@ mod rc1_tests {
 
     #[test]
     fn diagnostics_bundle_includes_backtrace_only_when_requested() {
+        let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
         let dir = tempfile::tempdir().expect("tmp");
+        let _cwd = CwdGuard::enter(dir.path());
         let out_run = PathBuf::from("out").join("run-bt");
         std::fs::create_dir_all(&out_run).expect("out dir");
         std::fs::write(out_run.join("run_metadata.json"), r#"{"ok":true}"#).expect("write");
