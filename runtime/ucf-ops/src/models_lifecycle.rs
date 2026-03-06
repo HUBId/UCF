@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -16,6 +15,10 @@ use crate::{
 
 const MANIFEST_HISTORY_KEEP: usize = 20;
 const MODEL_FILE_NAME: &str = "model.safetensors";
+const MANIFEST_PATH: &str = "models/MANIFEST.toml";
+const LEGACY_MANIFEST_PATH: &str = "models/lifecycle_manifest.toml";
+const MAX_MANIFEST_BYTES: usize = 1024 * 1024;
+const MAX_SLOT_FILES: usize = 512;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ModelFileEntry {
@@ -26,16 +29,18 @@ pub struct ModelFileEntry {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LifecycleSlotManifest {
+    pub slot_id: String,
     pub active_hash: Option<String>,
     pub files: Vec<ModelFileEntry>,
     pub max_bytes: u64,
-    pub contract_version: String,
+    pub contract_versions_supported: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LifecycleManifest {
     pub manifest_version: u16,
-    pub slots: BTreeMap<String, LifecycleSlotManifest>,
+    pub created_at: Option<u64>,
+    pub slots: Vec<LifecycleSlotManifest>,
     pub manifest_digest: String,
 }
 
@@ -68,6 +73,15 @@ pub struct ModelsListReport {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ModelsVerifyReport {
+    pub manifest: String,
+    pub manifest_present: bool,
+    pub digest_match: bool,
+    pub promoted_hashes_exist: bool,
+    pub files_verified: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RollbackRecommendation {
     pub slot: String,
     pub tick: u64,
@@ -94,12 +108,24 @@ pub fn models_stage(slot: ModelSlot, src_dir: &Path) -> Result<StageResult, OpsE
             MODEL_FILE_NAME
         )));
     }
-    let hash = file_sha256_hex(&model_path)?;
+    let source_entries = collect_file_entries(src_dir)?;
+    if source_entries.is_empty() {
+        return Err(OpsError::Invalid("stage source has no files".to_string()));
+    }
+    if source_entries.len() > MAX_SLOT_FILES {
+        return Err(OpsError::Invalid(format!(
+            "stage source has too many files: {} > {}",
+            source_entries.len(),
+            MAX_SLOT_FILES
+        )));
+    }
+    let hash = digest_entries(&source_entries);
     let dst = PathBuf::from("models")
         .join("staging")
         .join(slot.as_str())
         .join(&hash);
     copy_tree(src_dir, &dst)?;
+    ensure_manifest_slot(slot)?;
     Ok(StageResult {
         slot: slot.as_str().to_string(),
         hash,
@@ -170,17 +196,15 @@ pub fn models_promote(
     let slot_key = slot.as_str().to_string();
     let from_hash = manifest
         .slots
-        .get(&slot_key)
+        .iter()
+        .find(|s| s.slot_id == slot_key)
         .and_then(|s| s.active_hash.clone());
     let files = collect_file_entries(&promoted)?;
-    manifest.slots.insert(
+    upsert_slot_manifest(
+        &mut manifest,
         slot_key.clone(),
-        LifecycleSlotManifest {
-            active_hash: Some(hash.to_string()),
-            files,
-            max_bytes: 64 * 1024 * 1024,
-            contract_version: "v1".to_string(),
-        },
+        Some(hash.to_string()),
+        files,
     );
     persist_manifest_with_history(&mut manifest)?;
     persist_action_record(
@@ -219,17 +243,15 @@ pub fn models_rollback(slot: ModelSlot, to_hash: &str) -> Result<LifecycleAction
     let slot_key = slot.as_str().to_string();
     let from_hash = manifest
         .slots
-        .get(&slot_key)
+        .iter()
+        .find(|s| s.slot_id == slot_key)
         .and_then(|s| s.active_hash.clone());
     let files = collect_file_entries(&promoted)?;
-    manifest.slots.insert(
+    upsert_slot_manifest(
+        &mut manifest,
         slot_key.clone(),
-        LifecycleSlotManifest {
-            active_hash: Some(to_hash.to_string()),
-            files,
-            max_bytes: 64 * 1024 * 1024,
-            contract_version: "v1".to_string(),
-        },
+        Some(to_hash.to_string()),
+        files,
     );
     persist_manifest_with_history(&mut manifest)?;
     persist_rollback_record(&slot_key, &from_hash, to_hash, &manifest)?;
@@ -249,18 +271,89 @@ pub fn models_rollback(slot: ModelSlot, to_hash: &str) -> Result<LifecycleAction
 pub fn models_list(slot: ModelSlot) -> Result<ModelsListReport, OpsError> {
     let manifest = load_or_init_manifest()?;
     let slot_key = slot.as_str().to_string();
+    let active_hash = manifest
+        .slots
+        .iter()
+        .find(|s| s.slot_id == slot_key)
+        .and_then(|s| s.active_hash.clone());
     Ok(ModelsListReport {
         slot: slot_key.clone(),
-        active_hash: manifest
-            .slots
-            .get(&slot_key)
-            .and_then(|s| s.active_hash.clone()),
+        active_hash,
         staged_hashes: list_hash_dirs(
             &PathBuf::from("models").join("staging").join(slot.as_str()),
         )?,
         promoted_hashes: list_hash_dirs(
             &PathBuf::from("models").join("promoted").join(slot.as_str()),
         )?,
+    })
+}
+
+pub fn models_verify(manifest: &Path) -> Result<ModelsVerifyReport, OpsError> {
+    if !manifest.exists() {
+        return Ok(ModelsVerifyReport {
+            manifest: manifest.display().to_string(),
+            manifest_present: false,
+            digest_match: false,
+            promoted_hashes_exist: false,
+            files_verified: false,
+        });
+    }
+    let raw = fs::read_to_string(manifest)?;
+    if raw.len() > MAX_MANIFEST_BYTES {
+        return Err(OpsError::Invalid(format!(
+            "manifest too large: {} > {} bytes",
+            raw.len(),
+            MAX_MANIFEST_BYTES
+        )));
+    }
+    let parsed: LifecycleManifest = toml::from_str(&raw)
+        .map_err(|e| OpsError::Invalid(format!("manifest parse failed: {e}")))?;
+    let digest_match = compute_manifest_digest(&parsed)? == parsed.manifest_digest;
+    let mut promoted_hashes_exist = true;
+    let mut files_verified = true;
+    for slot in &parsed.slots {
+        if slot.files.len() > MAX_SLOT_FILES {
+            return Err(OpsError::Invalid(format!(
+                "slot {} has too many files: {} > {}",
+                slot.slot_id,
+                slot.files.len(),
+                MAX_SLOT_FILES
+            )));
+        }
+        if let Some(active_hash) = slot.active_hash.as_ref() {
+            let root = PathBuf::from("models")
+                .join("promoted")
+                .join(&slot.slot_id)
+                .join(active_hash);
+            if !root.exists() {
+                promoted_hashes_exist = false;
+                continue;
+            }
+            for file in &slot.files {
+                let path = root.join(&file.path);
+                let metadata = match fs::metadata(&path) {
+                    Ok(v) => v,
+                    Err(_) => {
+                        files_verified = false;
+                        continue;
+                    }
+                };
+                if metadata.len() != file.size_bytes {
+                    files_verified = false;
+                    continue;
+                }
+                if file_sha256_hex(&path)? != file.sha256 {
+                    files_verified = false;
+                }
+            }
+        }
+    }
+    Ok(ModelsVerifyReport {
+        manifest: manifest.display().to_string(),
+        manifest_present: true,
+        digest_match,
+        promoted_hashes_exist,
+        files_verified,
     })
 }
 
@@ -316,10 +409,15 @@ pub fn parse_slot(value: &str) -> Result<ModelSlot, OpsError> {
 
 fn persist_manifest_with_history(manifest: &mut LifecycleManifest) -> Result<(), OpsError> {
     manifest.manifest_digest = compute_manifest_digest(manifest)?;
+    manifest.created_at = Some(now_secs());
     fs::create_dir_all("models")?;
     let body = toml::to_string_pretty(manifest)
         .map_err(|e| OpsError::Invalid(format!("manifest serialize failed: {e}")))?;
-    fs::write("models/lifecycle_manifest.toml", body.as_bytes())?;
+    fs::write(MANIFEST_PATH, body.as_bytes())?;
+    fs::write(
+        LEGACY_MANIFEST_PATH,
+        legacy_manifest_toml(manifest)?.as_bytes(),
+    )?;
     let hist_dir = PathBuf::from("models/manifests/history");
     fs::create_dir_all(&hist_dir)?;
     let name = format!(
@@ -337,23 +435,152 @@ fn persist_manifest_with_history(manifest: &mut LifecycleManifest) -> Result<(),
 }
 
 fn load_or_init_manifest() -> Result<LifecycleManifest, OpsError> {
-    let path = PathBuf::from("models/lifecycle_manifest.toml");
-    if !path.exists() {
+    let canonical_path = PathBuf::from(MANIFEST_PATH);
+    let legacy_path = PathBuf::from(LEGACY_MANIFEST_PATH);
+    if !canonical_path.exists() && !legacy_path.exists() {
         let mut out = LifecycleManifest {
             manifest_version: 1,
-            slots: BTreeMap::new(),
+            created_at: None,
+            slots: Vec::new(),
             manifest_digest: String::new(),
         };
         out.manifest_digest = compute_manifest_digest(&out)?;
         return Ok(out);
     }
+    let path = if canonical_path.exists() {
+        canonical_path
+    } else {
+        legacy_path
+    };
     let raw = fs::read_to_string(path)?;
-    toml::from_str(&raw).map_err(|e| OpsError::Invalid(format!("manifest parse failed: {e}")))
+    if let Ok(parsed) = toml::from_str::<LifecycleManifest>(&raw) {
+        return Ok(parsed);
+    }
+    #[derive(Deserialize)]
+    struct LegacySlot {
+        active_hash: Option<String>,
+    }
+    #[derive(Deserialize)]
+    struct LegacyManifest {
+        slots: std::collections::BTreeMap<String, LegacySlot>,
+        manifest_digest: Option<String>,
+    }
+    let legacy: LegacyManifest = toml::from_str(&raw)
+        .map_err(|e| OpsError::Invalid(format!("manifest parse failed: {e}")))?;
+    Ok(LifecycleManifest {
+        manifest_version: 1,
+        created_at: None,
+        slots: legacy
+            .slots
+            .into_iter()
+            .map(|(slot_id, slot)| LifecycleSlotManifest {
+                slot_id,
+                active_hash: slot.active_hash,
+                files: Vec::new(),
+                max_bytes: 64 * 1024 * 1024,
+                contract_versions_supported: vec!["v1".to_string()],
+            })
+            .collect(),
+        manifest_digest: legacy.manifest_digest.unwrap_or_default(),
+    })
+}
+
+fn legacy_manifest_toml(manifest: &LifecycleManifest) -> Result<String, OpsError> {
+    #[derive(Serialize)]
+    struct LegacySlotManifest {
+        active_hash: Option<String>,
+    }
+    #[derive(Serialize)]
+    struct LegacyManifest {
+        slots: std::collections::BTreeMap<String, LegacySlotManifest>,
+        manifest_digest: String,
+    }
+    let slots = manifest
+        .slots
+        .iter()
+        .map(|s| {
+            (
+                s.slot_id.clone(),
+                LegacySlotManifest {
+                    active_hash: s.active_hash.clone(),
+                },
+            )
+        })
+        .collect();
+    toml::to_string_pretty(&LegacyManifest {
+        slots,
+        manifest_digest: manifest.manifest_digest.clone(),
+    })
+    .map_err(|e| OpsError::Invalid(format!("legacy manifest serialize failed: {e}")))
 }
 
 fn compute_manifest_digest(manifest: &LifecycleManifest) -> Result<String, OpsError> {
-    let canonical = serde_json::to_vec(manifest)?;
+    #[derive(Serialize)]
+    struct Canonical<'a> {
+        manifest_version: u16,
+        slots: &'a [LifecycleSlotManifest],
+    }
+    let mut slots = manifest.slots.clone();
+    slots.sort_by(|a, b| a.slot_id.cmp(&b.slot_id));
+    for slot in &mut slots {
+        slot.files.sort_by(|a, b| a.path.cmp(&b.path));
+        slot.contract_versions_supported.sort();
+    }
+    let canonical = serde_json::to_vec(&Canonical {
+        manifest_version: manifest.manifest_version,
+        slots: &slots,
+    })?;
     Ok(sha256_hex(&canonical))
+}
+
+fn ensure_manifest_slot(slot: ModelSlot) -> Result<(), OpsError> {
+    let mut manifest = load_or_init_manifest()?;
+    let slot_id = slot.as_str().to_string();
+    if !manifest.slots.iter().any(|s| s.slot_id == slot_id) {
+        manifest.slots.push(LifecycleSlotManifest {
+            slot_id,
+            active_hash: None,
+            files: Vec::new(),
+            max_bytes: 64 * 1024 * 1024,
+            contract_versions_supported: vec!["v1".to_string()],
+        });
+        persist_manifest_with_history(&mut manifest)?;
+    }
+    Ok(())
+}
+
+fn upsert_slot_manifest(
+    manifest: &mut LifecycleManifest,
+    slot_id: String,
+    active_hash: Option<String>,
+    files: Vec<ModelFileEntry>,
+) {
+    if let Some(entry) = manifest.slots.iter_mut().find(|s| s.slot_id == slot_id) {
+        entry.active_hash = active_hash;
+        entry.files = files;
+        entry.max_bytes = 64 * 1024 * 1024;
+        entry.contract_versions_supported = vec!["v1".to_string()];
+        return;
+    }
+    manifest.slots.push(LifecycleSlotManifest {
+        slot_id,
+        active_hash,
+        files,
+        max_bytes: 64 * 1024 * 1024,
+        contract_versions_supported: vec!["v1".to_string()],
+    });
+}
+
+fn digest_entries(entries: &[ModelFileEntry]) -> String {
+    let mut hasher = Sha256::new();
+    for entry in entries {
+        hasher.update(entry.path.as_bytes());
+        hasher.update([0]);
+        hasher.update(entry.sha256.as_bytes());
+        hasher.update([0]);
+        hasher.update(entry.size_bytes.to_le_bytes());
+    }
+    hex::encode(hasher.finalize())
 }
 
 fn collect_files(root: &Path) -> Result<Vec<PathBuf>, OpsError> {
@@ -525,4 +752,124 @@ fn append_action(path: PathBuf, report: &LifecycleActionReport) -> Result<(), Op
     all.push(report.clone());
     fs::write(path, serde_json::to_string_pretty(&all)?)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct CwdGuard {
+        prev: PathBuf,
+    }
+
+    impl CwdGuard {
+        fn enter(path: &Path) -> Self {
+            let prev = std::env::current_dir().expect("cwd");
+            std::env::set_current_dir(path).expect("chdir");
+            Self { prev }
+        }
+    }
+
+    impl Drop for CwdGuard {
+        fn drop(&mut self) {
+            let _ = std::env::set_current_dir(&self.prev);
+        }
+    }
+
+    #[test]
+    fn manifest_digest_canonical_stable() {
+        let mut a = LifecycleManifest {
+            manifest_version: 1,
+            created_at: Some(10),
+            slots: vec![
+                LifecycleSlotManifest {
+                    slot_id: "sae".to_string(),
+                    active_hash: Some("bb".to_string()),
+                    files: vec![ModelFileEntry {
+                        path: "b.txt".to_string(),
+                        sha256: "2".repeat(64),
+                        size_bytes: 2,
+                    }],
+                    max_bytes: 1024,
+                    contract_versions_supported: vec!["v2".to_string(), "v1".to_string()],
+                },
+                LifecycleSlotManifest {
+                    slot_id: "llm".to_string(),
+                    active_hash: Some("aa".to_string()),
+                    files: vec![ModelFileEntry {
+                        path: "a.txt".to_string(),
+                        sha256: "1".repeat(64),
+                        size_bytes: 1,
+                    }],
+                    max_bytes: 1024,
+                    contract_versions_supported: vec!["v1".to_string()],
+                },
+            ],
+            manifest_digest: String::new(),
+        };
+        let mut b = LifecycleManifest {
+            manifest_version: 1,
+            created_at: Some(99),
+            slots: vec![a.slots[1].clone(), a.slots[0].clone()],
+            manifest_digest: String::new(),
+        };
+        a.manifest_digest = compute_manifest_digest(&a).expect("digest");
+        b.manifest_digest = compute_manifest_digest(&b).expect("digest");
+        assert_eq!(a.manifest_digest, b.manifest_digest);
+    }
+
+    #[test]
+    fn stage_and_verify_detects_tamper() {
+        let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let _cwd = CwdGuard::enter(dir.path());
+
+        let src = dir.path().join("src");
+        fs::create_dir_all(&src).expect("src");
+        fs::write(src.join("model.safetensors"), b"abc").expect("write");
+        let staged = models_stage(ModelSlot::Llm, &src).expect("stage");
+        let staged_path = dir
+            .path()
+            .join("models/staging/llm")
+            .join(&staged.hash)
+            .join("model.safetensors");
+        assert!(staged_path.exists());
+
+        let promoted = dir.path().join("models/promoted/llm").join(&staged.hash);
+        copy_tree(
+            &dir.path().join("models/staging/llm").join(&staged.hash),
+            &promoted,
+        )
+        .expect("promoted copy");
+        let mut manifest = load_or_init_manifest().expect("manifest");
+        upsert_slot_manifest(
+            &mut manifest,
+            "llm".to_string(),
+            Some(staged.hash.clone()),
+            collect_file_entries(&promoted).expect("entries"),
+        );
+        persist_manifest_with_history(&mut manifest).expect("persist");
+
+        let ok = models_verify(Path::new("models/MANIFEST.toml")).expect("verify");
+        assert!(ok.digest_match && ok.promoted_hashes_exist && ok.files_verified);
+
+        fs::write(promoted.join("model.safetensors"), b"tampered").expect("tamper");
+        let bad = models_verify(Path::new("models/MANIFEST.toml")).expect("verify bad");
+        assert!(!bad.files_verified);
+    }
+
+    #[test]
+    fn stage_rejects_too_many_files() {
+        let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let _cwd = CwdGuard::enter(dir.path());
+        let src = dir.path().join("src");
+        fs::create_dir_all(&src).expect("src");
+        fs::write(src.join("model.safetensors"), b"abc").expect("model");
+        for i in 0..MAX_SLOT_FILES {
+            fs::write(src.join(format!("f_{i}.bin")), b"x").expect("file");
+        }
+        let err = models_stage(ModelSlot::Llm, &src).expect_err("must reject");
+        assert!(format!("{err}").contains("too many files"));
+    }
 }

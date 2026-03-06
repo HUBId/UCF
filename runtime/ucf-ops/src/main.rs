@@ -12,9 +12,9 @@ use ucf_ops::{
     goldens_verify, goldens_verify_detailed, hardware_scan, load_signoff_checklist, logs_prove,
     logs_verify_proof, metrics_snapshot, metrics_summary, metrics_trend, migrate_config_v1,
     models_list, models_probe, models_promote, models_recommend_rollback, models_rollback,
-    models_stage, models_verify, net_deps_audit, nightly_summarize, one_command_bringup,
-    out_manifest, parse_duration_secs, parse_inject, parse_slot, path_scan, policy_diff,
-    policy_explain, policy_validate, portability_check, preflight, readiness_gate,
+    models_stage, models_verify, models_verify_lifecycle, net_deps_audit, nightly_summarize,
+    one_command_bringup, out_manifest, parse_duration_secs, parse_inject, parse_slot, path_scan,
+    policy_diff, policy_explain, policy_validate, portability_check, preflight, readiness_gate,
     release_build_rc, release_rc1_gate, release_signoff_validate, replay_audit, replay_bugreport,
     repro_pack, repro_verify, run_status, runs_list, runs_search, runs_show,
     save_counterfactual_result, security_verify_chain, simulate_counterfactual, soak_run,
@@ -864,21 +864,58 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 "verify" => {
                     let manifest = arg_value(&args, "--manifest")
                         .map(PathBuf::from)
-                        .unwrap_or_else(|| PathBuf::from("models/manifest.toml"));
-                    let report = models_verify(&manifest)?;
-                    println!("{}", serde_json::to_string_pretty(&report)?);
-                    let all_ok = report
-                        .slots
-                        .iter()
-                        .all(|s| s.status == "verified" || s.status == "disabled");
-                    if !all_ok {
-                        std::process::exit(2);
+                        .unwrap_or_else(|| PathBuf::from("models/MANIFEST.toml"));
+                    let out = arg_value(&args, "--out").map(PathBuf::from);
+                    let use_legacy = manifest
+                        .file_name()
+                        .and_then(|v| v.to_str())
+                        .map(|v| v.eq_ignore_ascii_case("manifest.toml") && v != "MANIFEST.toml")
+                        .unwrap_or(false);
+                    if use_legacy {
+                        let report = models_verify(&manifest)?;
+                        if let Some(path) = out {
+                            if let Some(parent) = path.parent() {
+                                std::fs::create_dir_all(parent)?;
+                            }
+                            std::fs::write(&path, serde_json::to_vec_pretty(&report)?)?;
+                        }
+                        println!("{}", serde_json::to_string_pretty(&report)?);
+                        let all_ok = report
+                            .slots
+                            .iter()
+                            .all(|s| s.status == "verified" || s.status == "disabled");
+                        if !all_ok {
+                            std::process::exit(2);
+                        }
+                    } else {
+                        let report = models_verify_lifecycle(&manifest)?;
+                        if let Some(path) = out {
+                            if let Some(parent) = path.parent() {
+                                std::fs::create_dir_all(parent)?;
+                            }
+                            std::fs::write(&path, serde_json::to_vec_pretty(&report)?)?;
+                        }
+                        println!("{}", serde_json::to_string_pretty(&report)?);
+                        let all_ok = report.manifest_present
+                            && report.digest_match
+                            && report.promoted_hashes_exist
+                            && report.files_verified;
+                        if !all_ok {
+                            std::process::exit(2);
+                        }
                     }
                 }
                 "stage" => {
                     let slot = parse_slot(&arg_value(&args, "--slot").ok_or("missing --slot")?)?;
                     let path = PathBuf::from(arg_value(&args, "--path").ok_or("missing --path")?);
+                    let out = arg_value(&args, "--out").map(PathBuf::from);
                     let result = models_stage(slot, &path)?;
+                    if let Some(path) = out {
+                        if let Some(parent) = path.parent() {
+                            std::fs::create_dir_all(parent)?;
+                        }
+                        std::fs::write(&path, serde_json::to_vec_pretty(&result)?)?;
+                    }
                     println!("{}", serde_json::to_string_pretty(&result)?);
                 }
                 "probe" => {

@@ -42,7 +42,7 @@ pub use goldens::{
 };
 pub use models_lifecycle::{
     models_list, models_promote, models_recommend_rollback, models_rollback, models_stage,
-    parse_slot,
+    models_verify as models_verify_lifecycle, parse_slot,
 };
 pub use nightly::{
     nightly_summarize, NightlyComponentReport, NightlyOverallStatus, NightlySummarizeArgs,
@@ -102,6 +102,12 @@ use ucf_types::error_codes::ErrorCode;
 
 const DEV_LOOP_MAX_SCENARIOS: usize = 2;
 const TROUBLESHOOT_MAX_ISSUES: usize = 8;
+
+#[cfg(test)]
+pub(crate) fn test_cwd_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
 
 #[derive(Debug, Error)]
 pub enum OpsError {
@@ -331,6 +337,8 @@ pub struct RunMetadataRecord {
     pub strict_mode_enabled: bool,
     pub strict_mode_digest: Option<String>,
     pub crash_dumps_disabled: bool,
+    pub models_manifest_present: bool,
+    pub models_manifest_digest_prefix: Option<String>,
     pub ended_at_tick: Option<u64>,
 }
 
@@ -338,6 +346,20 @@ fn disable_crash_dumps_best_effort() -> bool {
     std::env::var("UCF_CRASH_DUMPS_DISABLED")
         .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
         .unwrap_or(false)
+}
+
+fn load_models_manifest_runtime_metadata() -> (bool, Option<String>) {
+    let path = Path::new("models/MANIFEST.toml");
+    let Some(raw) = fs::read_to_string(path).ok() else {
+        return (false, None);
+    };
+    let digest = raw
+        .lines()
+        .find(|l| l.trim_start().starts_with("manifest_digest"))
+        .and_then(|l| l.split('=').nth(1))
+        .map(|v| v.trim().trim_matches('"').to_string());
+    let prefix = digest.map(|d| d.chars().take(12).collect());
+    (true, prefix)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -608,7 +630,7 @@ pub fn models_probe(workdir: &Path, manifest: &Path, out: &Path) -> Result<Probe
     let verify = models_verify(manifest)?;
     let store = ModelStore::from_manifest_and_env(manifest)
         .map_err(|e| OpsError::Invalid(format!("manifest error: {e:?}")))?;
-    std::env::set_var("UCF_MODEL_MANIFEST", manifest);
+    let _manifest_env_guard = EnvVarGuard::set("UCF_MODEL_MANIFEST", manifest.as_os_str());
     let pack = BackendPackFactory::build(BackendPackConfig::from_env()?)?;
     let run_id = format!("probe-{}", now_unix_secs());
     let mut results = Vec::new();
@@ -655,6 +677,32 @@ pub fn models_probe(workdir: &Path, manifest: &Path, out: &Path) -> Result<Probe
     }
     write_json(out, &report)?;
     Ok(report)
+}
+
+struct EnvVarGuard {
+    key: String,
+    prev: Option<String>,
+}
+
+impl EnvVarGuard {
+    fn set(key: &str, value: &std::ffi::OsStr) -> Self {
+        let prev = std::env::var(key).ok();
+        std::env::set_var(key, value);
+        Self {
+            key: key.to_string(),
+            prev,
+        }
+    }
+}
+
+impl Drop for EnvVarGuard {
+    fn drop(&mut self) {
+        if let Some(prev) = self.prev.as_ref() {
+            std::env::set_var(&self.key, prev);
+        } else {
+            std::env::remove_var(&self.key);
+        }
+    }
 }
 
 fn probe_spec_for_slot(slot: ModelSlot) -> ProbeSpec {
@@ -3144,8 +3192,14 @@ pub fn one_command_bringup(
         strict_mode_enabled: cfg.strict_mode,
         strict_mode_digest: None,
         crash_dumps_disabled: disable_crash_dumps_best_effort(),
+        models_manifest_present: false,
+        models_manifest_digest_prefix: None,
         ended_at_tick: Some(ticks),
     };
+    let (models_manifest_present, models_manifest_digest_prefix) =
+        load_models_manifest_runtime_metadata();
+    run_metadata.models_manifest_present = models_manifest_present;
+    run_metadata.models_manifest_digest_prefix = models_manifest_digest_prefix;
     if cfg.strict_mode {
         let strict_policy = StrictModeV1::from_config(&cfg);
         run_metadata.strict_mode_digest = Some(sha256_hex(
@@ -5445,6 +5499,24 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
 
+    struct CwdGuard {
+        prev: PathBuf,
+    }
+
+    impl CwdGuard {
+        fn enter(path: &Path) -> Self {
+            let prev = std::env::current_dir().expect("cwd");
+            std::env::set_current_dir(path).expect("chdir");
+            Self { prev }
+        }
+    }
+
+    impl Drop for CwdGuard {
+        fn drop(&mut self) {
+            let _ = std::env::set_current_dir(&self.prev);
+        }
+    }
+
     #[test]
     fn export_and_verify_roundtrip() {
         let dir = tempdir().expect("tempdir");
@@ -5514,20 +5586,19 @@ mod tests {
 
     #[test]
     fn weights_lifecycle_check_fails_without_manifest() {
+        let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
         let dir = tempdir().expect("tempdir");
-        let cwd = std::env::current_dir().expect("cwd");
-        std::env::set_current_dir(dir.path()).expect("chdir");
+        let _cwd = CwdGuard::enter(dir.path());
         let c = check_weights_lifecycle_integrity(dir.path()).expect("check");
-        std::env::set_current_dir(cwd).expect("restore");
         assert_eq!(c.name, "weights_lifecycle");
         assert_eq!(c.status, GateStatus::Skip);
     }
 
     #[test]
     fn world_vljepa_check_fails_when_required_shadow_missing() {
+        let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
         let dir = tempdir().expect("tempdir");
-        let cwd = std::env::current_dir().expect("cwd");
-        std::env::set_current_dir(dir.path()).expect("chdir");
+        let _cwd = CwdGuard::enter(dir.path());
         fs::create_dir_all("models").expect("models");
         fs::write(
             "models/lifecycle_manifest.toml",
@@ -5539,7 +5610,6 @@ active_hash = "abc"
         )
         .expect("manifest");
         let c = check_world_vljepa_shadow_evidence(dir.path()).expect("check");
-        std::env::set_current_dir(cwd).expect("restore");
         assert_eq!(c.name, "world_vljepa_evidence");
         assert_eq!(c.status, GateStatus::Fail);
         assert!(c
@@ -5687,7 +5757,8 @@ active_hash = "abc"
         let dir = tempdir().expect("tempdir");
         bringup(dir.path(), true, 20).expect("bringup");
         let out = dir.path().join("out").join("ebm_dataset_v1.jsonl");
-        let policy = PathBuf::from("policies/bundle_v1/retention_v1.json");
+        let policy = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../policies/bundle_v1/retention_v1.json");
         let count =
             ebm_export_dataset(dir.path(), "run-test", 0, u64::MAX, &out, &policy).expect("ok");
         assert_eq!(
@@ -5749,6 +5820,8 @@ active_hash = "abc"
             strict_mode_enabled: false,
             strict_mode_digest: None,
             crash_dumps_disabled: false,
+            models_manifest_present: false,
+            models_manifest_digest_prefix: None,
             ended_at_tick: Some(10),
         };
         let cfg_ok = ResumeCheckConfig {

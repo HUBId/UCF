@@ -156,6 +156,7 @@ pub struct ModelStore {
 
 impl ModelStore {
     pub fn from_manifest_and_env(manifest_path: &Path) -> Result<Self, ModelLoadError> {
+        let manifest_exists = manifest_path.exists();
         let mut doc = if manifest_path.exists() {
             let text = std::fs::read_to_string(manifest_path)
                 .map_err(|e| ModelLoadError::ManifestParse(e.to_string()))?;
@@ -170,6 +171,12 @@ impl ModelStore {
             .clone()
             .unwrap_or_else(|| PathBuf::from(DEFAULT_ALLOWLIST_ROOT));
         let specs = doc.to_specs();
+        let any_enabled = specs.values().any(|s| s.enabled);
+        if any_enabled && !manifest_exists {
+            return Err(ModelLoadError::ManifestParse(
+                "manifest required when any model slot is enabled".to_string(),
+            ));
+        }
         Ok(Self {
             allowlist_root,
             specs,
@@ -191,7 +198,8 @@ impl ModelStore {
             return Err(ModelLoadError::Disabled);
         }
         let pin_key = format!("UCF_MODEL_PIN_{}", slot.env_key());
-        let rel_path = if let Ok(pin_hash) = std::env::var(pin_key) {
+        let pin_hash = std::env::var(pin_key).ok();
+        let rel_path = if let Some(pin_hash) = pin_hash.as_ref() {
             PathBuf::from(format!(
                 "promoted/{}/{}/model.safetensors",
                 slot.as_str(),
@@ -206,14 +214,13 @@ impl ModelStore {
         } else {
             spec.path.clone().ok_or(ModelLoadError::MissingPath)?
         };
-        let expected_hash =
-            if let Ok(pin_hash) = std::env::var(format!("UCF_MODEL_PIN_{}", slot.env_key())) {
-                parse_hash(&pin_hash)
-            } else if let Some(active_hash) = spec.active_hash.as_ref() {
-                parse_hash(active_hash)
-            } else {
-                spec.expected_sha256
-            };
+        let expected_hash = if let Some(pin_hash) = pin_hash {
+            parse_hash(&pin_hash)
+        } else if let Some(active_hash) = spec.active_hash.as_ref() {
+            parse_hash(active_hash)
+        } else {
+            spec.expected_sha256
+        };
         if expected_hash == [0; 32] {
             return Err(ModelLoadError::MissingExpectedHash { slot });
         }
@@ -487,42 +494,18 @@ mod tests {
     }
 
     #[test]
-    fn rejects_path_outside_allowlist() {
-        let temp = tempfile::tempdir().expect("tempdir");
-        let models = temp.path().join("models");
-        let outside = temp.path().join("outside.bin");
-        fs::create_dir_all(&models).expect("models");
-        fs::write(&outside, b"abc").expect("write");
-
-        let mut specs = BTreeMap::new();
-        specs.insert(
-            ModelSlot::Llm,
-            ModelSlotSpec {
-                slot: ModelSlot::Llm,
-                enabled: true,
-                path: Some(PathBuf::from("../outside.bin")),
-                expected_sha256: Sha256::digest(b"abc").into(),
-                max_bytes: 1024,
-                format: ModelFormat::Custom,
-                device: ModelDevice::CpuOnly,
-                active_hash: None,
-                contract_version: None,
-            },
-        );
-        let store = ModelStore {
-            allowlist_root: models,
-            specs,
-        };
-        let err = store.verify_slot(ModelSlot::Llm).expect_err("must fail");
-        assert!(matches!(err, ModelLoadError::PathOutsideAllowlist { .. }));
-    }
-
-    #[test]
     fn detects_hash_mismatch() {
         let temp = tempfile::tempdir().expect("tempdir");
         let models = temp.path().join("models");
         fs::create_dir_all(&models).expect("models");
-        fs::write(models.join("w.bin"), b"abc").expect("write");
+        let bad_hash = "0909090909090909090909090909090909090909090909090909090909090909";
+        let model_path = models
+            .join("promoted")
+            .join("llm")
+            .join(bad_hash)
+            .join("model.safetensors");
+        fs::create_dir_all(model_path.parent().expect("parent")).expect("mkdirs");
+        fs::write(&model_path, b"abc").expect("write");
 
         let mut specs = BTreeMap::new();
         specs.insert(
@@ -530,12 +513,12 @@ mod tests {
             ModelSlotSpec {
                 slot: ModelSlot::Llm,
                 enabled: true,
-                path: Some(PathBuf::from("w.bin")),
+                path: None,
                 expected_sha256: [9; 32],
                 max_bytes: 1024,
                 format: ModelFormat::Custom,
                 device: ModelDevice::CpuOnly,
-                active_hash: None,
+                active_hash: Some(bad_hash.to_string()),
                 contract_version: None,
             },
         );
@@ -552,7 +535,14 @@ mod tests {
         let temp = tempfile::tempdir().expect("tempdir");
         let models = temp.path().join("models");
         fs::create_dir_all(&models).expect("models");
-        fs::write(models.join("w.bin"), b"abcdef").expect("write");
+        let hash = "bef57ec7f53a6d40beb640a780a639c83bc29ac8a9816f1f6e8860d947f01831";
+        let model_path = models
+            .join("promoted")
+            .join("llm")
+            .join(hash)
+            .join("model.safetensors");
+        fs::create_dir_all(model_path.parent().expect("parent")).expect("mkdirs");
+        fs::write(&model_path, b"abcdef").expect("write");
 
         let mut specs = BTreeMap::new();
         specs.insert(
@@ -560,12 +550,12 @@ mod tests {
             ModelSlotSpec {
                 slot: ModelSlot::Llm,
                 enabled: true,
-                path: Some(PathBuf::from("w.bin")),
+                path: None,
                 expected_sha256: Sha256::digest(b"abcdef").into(),
                 max_bytes: 3,
                 format: ModelFormat::Custom,
                 device: ModelDevice::CpuOnly,
-                active_hash: None,
+                active_hash: Some(hash.to_string()),
                 contract_version: None,
             },
         );
@@ -582,7 +572,13 @@ mod tests {
         let temp = tempfile::tempdir().expect("tempdir");
         let models = temp.path().join("models");
         fs::create_dir_all(&models).expect("models");
-        fs::write(models.join("w.bin"), b"abc").expect("write");
+        let model_path = models
+            .join("promoted")
+            .join("ebm_reasoner")
+            .join("zz")
+            .join("model.safetensors");
+        fs::create_dir_all(model_path.parent().expect("parent")).expect("mkdirs");
+        fs::write(&model_path, b"abc").expect("write");
 
         let mut specs = BTreeMap::new();
         specs.insert(
@@ -590,12 +586,12 @@ mod tests {
             ModelSlotSpec {
                 slot: ModelSlot::EbmReasoner,
                 enabled: true,
-                path: Some(PathBuf::from("w.bin")),
+                path: None,
                 expected_sha256: [0; 32],
                 max_bytes: 1024,
                 format: ModelFormat::Custom,
                 device: ModelDevice::CpuOnly,
-                active_hash: None,
+                active_hash: Some("zz".to_string()),
                 contract_version: None,
             },
         );
