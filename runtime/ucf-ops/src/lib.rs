@@ -5556,7 +5556,9 @@ mod tests {
 
     #[test]
     fn explain_tick_is_deterministic_for_fixture_data() {
+        let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
         let dir = tempdir().expect("tempdir");
+        let _cwd = CwdGuard::enter(dir.path());
         bringup(dir.path(), true, 12).expect("bringup");
 
         let req = ExplainTickRequest {
@@ -5744,7 +5746,9 @@ active_hash = "abc"
 
     #[test]
     fn ess_snapshot_manifest_digest_is_deterministic() {
+        let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
         let dir = tempdir().expect("tempdir");
+        let _cwd = CwdGuard::enter(dir.path());
         bringup(dir.path(), true, 8).expect("bringup");
         let snap_path = dir.path().join("snapshots/run.snap");
         let a = ess_snapshot(dir.path(), &snap_path).expect("snapshot a");
@@ -5870,7 +5874,9 @@ active_hash = "abc"
     }
     #[test]
     fn ess_compaction_manifest_tamper_detected() {
+        let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
         let dir = tempdir().expect("tempdir");
+        let _cwd = CwdGuard::enter(dir.path());
         bringup(dir.path(), true, 8).expect("bringup");
         let policy_path = dir.path().join("retention.json");
         fs::write(
