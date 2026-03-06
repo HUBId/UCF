@@ -624,7 +624,7 @@ pub fn models_probe(workdir: &Path, manifest: &Path, out: &Path) -> Result<Probe
     let verify = models_verify(manifest)?;
     let store = ModelStore::from_manifest_and_env(manifest)
         .map_err(|e| OpsError::Invalid(format!("manifest error: {e:?}")))?;
-    std::env::set_var("UCF_MODEL_MANIFEST", manifest);
+    let _manifest_env_guard = EnvVarGuard::set("UCF_MODEL_MANIFEST", manifest.as_os_str());
     let pack = BackendPackFactory::build(BackendPackConfig::from_env()?)?;
     let run_id = format!("probe-{}", now_unix_secs());
     let mut results = Vec::new();
@@ -671,6 +671,32 @@ pub fn models_probe(workdir: &Path, manifest: &Path, out: &Path) -> Result<Probe
     }
     write_json(out, &report)?;
     Ok(report)
+}
+
+struct EnvVarGuard {
+    key: String,
+    prev: Option<String>,
+}
+
+impl EnvVarGuard {
+    fn set(key: &str, value: &std::ffi::OsStr) -> Self {
+        let prev = std::env::var(key).ok();
+        std::env::set_var(key, value);
+        Self {
+            key: key.to_string(),
+            prev,
+        }
+    }
+}
+
+impl Drop for EnvVarGuard {
+    fn drop(&mut self) {
+        if let Some(prev) = self.prev.as_ref() {
+            std::env::set_var(&self.key, prev);
+        } else {
+            std::env::remove_var(&self.key);
+        }
+    }
 }
 
 fn probe_spec_for_slot(slot: ModelSlot) -> ProbeSpec {
@@ -5731,7 +5757,8 @@ active_hash = "abc"
         let dir = tempdir().expect("tempdir");
         bringup(dir.path(), true, 20).expect("bringup");
         let out = dir.path().join("out").join("ebm_dataset_v1.jsonl");
-        let policy = PathBuf::from("policies/bundle_v1/retention_v1.json");
+        let policy = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../policies/bundle_v1/retention_v1.json");
         let count =
             ebm_export_dataset(dir.path(), "run-test", 0, u64::MAX, &out, &policy).expect("ok");
         assert_eq!(
