@@ -1,13 +1,19 @@
 use std::fs;
+use std::sync::{Mutex, OnceLock};
 
 use tempfile::tempdir;
 use ucf_ops::{
     attest_bundle, attest_run, attest_verify, bringup, diagnostics, export_bugreport,
     load_signoff_checklist, models_promote, models_stage, one_command_bringup, out_manifest,
-    parse_slot, readiness_gate, release_signoff_validate, replay_audit, replay_bugreport,
+    parse_slot, readiness_gate, release_signoff_validate, replay_audit, replay_bugreport, v0_gate,
     verify_bugreport, world_shadow_report, ExportArgs, GateStatus, SpecSnapshotArgs,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
+
+fn gate_test_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
 
 fn repo_root() -> std::path::PathBuf {
     std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -110,6 +116,7 @@ fn one_command_bringup_writes_release_artifacts() {
 
 #[test]
 fn readiness_gate_writes_report() {
+    let _guard = gate_test_lock().lock().expect("lock");
     std::env::set_var("UCF_SKIP_GATE_WORKSPACE_TESTS", "1");
     let dir = tempdir().expect("tempdir");
     let out = dir.path().join("gate_report.json");
@@ -328,4 +335,30 @@ fn attest_bundle_exports_redaction_safe_artifacts() {
     assert!(bundle_path.exists());
     assert!(bundle.entries.iter().any(|e| e == "run_certificate.json"));
     assert!(bundle.entries.iter().any(|e| e == "segment_roots.json"));
+}
+
+#[test]
+fn v0_gate_writes_deterministic_check_order() {
+    let dir = tempdir().expect("tempdir");
+    let out = dir.path().join("v0_gate_report.json");
+    let scenario = repo_path("fixtures/e2e/v0_flow_a.json");
+    let report = v0_gate(dir.path(), &scenario, &out).expect("v0 gate");
+
+    assert!(out.exists());
+    assert_eq!(report.schema_version, 1);
+    assert_eq!(
+        report
+            .checks
+            .iter()
+            .map(|c| c.name.as_str())
+            .collect::<Vec<_>>(),
+        vec![
+            "policy_graph_lock",
+            "determinism_double_run",
+            "e2e_flow_a",
+            "record_boundedness",
+            "schema_versions_known",
+            "no_tool_execution",
+        ]
+    );
 }

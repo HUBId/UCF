@@ -18,7 +18,7 @@ use ucf_ops::{
     release_build_rc, release_rc1_gate, release_signoff_validate, replay_audit, replay_bugreport,
     repro_pack, repro_verify, run_status, runs_list, runs_search, runs_show,
     save_counterfactual_result, security_verify_chain, simulate_counterfactual, soak_run,
-    strict_check, troubleshoot, verify_bugreport, world_shadow_report, write_slice,
+    strict_check, troubleshoot, v0_gate, verify_bugreport, world_shadow_report, write_slice,
     AdversarialRunArgs, AirgapArtifactType, AirgapImportArgs, AirgapImportMode, BenchArgs,
     BugKitBuildArgs, ChangeImpactArgs, ConfigV1, CounterfactualRequest, DevLoopArgs, DocsLintArgs,
     DocsLintMode, DocsLintStatus, ExplainTickRequest, ExportArgs, GateStatus, GoldenGenerateArgs,
@@ -1309,6 +1309,27 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 std::process::exit(2);
             }
         }
+        "v0" => {
+            let sub = args.get(2).map(String::as_str).unwrap_or("help");
+            match sub {
+                "gate" => {
+                    let scenario = arg_value(&args, "--scenario")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("fixtures/e2e/v0_flow_a.json"));
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/v0_gate_report.json"));
+                    let report = v0_gate(&workdir, &scenario, &out)?;
+                    println!("overall={:?}", report.overall_status);
+                    println!("schema_version={}", report.schema_version);
+                    println!("out={}", out.display());
+                    if !matches!(report.overall_status, ucf_ops::V0GateOverallStatus::Pass) {
+                        std::process::exit(2);
+                    }
+                }
+                _ => return Err("usage: ucf-ops v0 gate [--scenario <path>] [--out <path>]".into()),
+            }
+        }
         "goldens" => {
             let sub = args.get(2).map(String::as_str).unwrap_or("help");
             let scenario = arg_value(&args, "--scenario").unwrap_or_else(|| "golden_a".to_string());
@@ -1777,7 +1798,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             eprintln!(
-                "usage: ucf-ops <bringup|diag|health|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|attest|repro|readiness-gate|preflight|goldens|nightly|dev|troubleshoot|adversarial-run|out|release|bench|runs|status|strict|ess|ebm|drift|alerts|policy|portability|spec|change-impact|soak|version> [--workdir <path>] [--bundle <path>]"
+                "usage: ucf-ops <bringup|diag|health|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|attest|repro|readiness-gate|preflight|goldens|nightly|dev|troubleshoot|adversarial-run|out|release|bench|runs|status|strict|ess|ebm|drift|alerts|policy|portability|spec|change-impact|soak|v0|version> [--workdir <path>] [--bundle <path>]"
             );
             std::process::exit(1);
         }

@@ -1121,6 +1121,28 @@ pub struct ReadinessGateReport {
     pub gpu_lane: Option<CheckResult>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum V0GateOverallStatus {
+    Pass,
+    Fail,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct V0GateCheckV1 {
+    pub name: String,
+    pub status: GateStatus,
+    pub evidence_digest_prefixes: BTreeMap<String, String>,
+    pub remediation_hint_code: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct V0GateReportV1 {
+    pub schema_version: u16,
+    pub overall_status: V0GateOverallStatus,
+    pub checks: Vec<V0GateCheckV1>,
+}
+
 impl Default for ReadinessGateReport {
     fn default() -> Self {
         Self {
@@ -1316,6 +1338,321 @@ pub fn readiness_gate(
     };
     write_json(out, &report)?;
     Ok(report)
+}
+
+const V0_MAX_RECORD_BYTES: usize = 16 * 1024;
+const V0_SCHEMA_VERSION: u16 = 1;
+
+pub fn v0_gate(workdir: &Path, scenario: &Path, out: &Path) -> Result<V0GateReportV1, OpsError> {
+    ensure_layout(workdir)?;
+    if let Some(parent) = out.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+
+    let scenario_doc: serde_json::Value = serde_json::from_str(&fs::read_to_string(scenario)?)?;
+    let ticks = scenario_doc
+        .get("ticks")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(8);
+
+    let policy = policy_validate(
+        &repo_root.join("policies/packs/base_v1"),
+        Some(&repo_root.join("policies/packs/overlays/test")),
+    );
+    let expected_policy_prefix =
+        expected_policy_digest_prefix_from_spec_snapshot(&repo_root.join("docs/spec_snapshot.md"))?;
+
+    let policy_check = match policy {
+        Ok(report) => {
+            let locked = report
+                .policy_graph_digest
+                .starts_with(&expected_policy_prefix);
+            v0_gate_check(
+                "policy_graph_lock",
+                if locked {
+                    GateStatus::Pass
+                } else {
+                    GateStatus::Fail
+                },
+                [
+                    (
+                        "policy_graph_digest".to_string(),
+                        prefix_hex(&report.policy_graph_digest, 12),
+                    ),
+                    (
+                        "locked_prefix".to_string(),
+                        prefix_hex(&expected_policy_prefix, 12),
+                    ),
+                ],
+                "v0.policy.lock_mismatch",
+            )
+        }
+        Err(err) => v0_gate_check(
+            "policy_graph_lock",
+            GateStatus::Fail,
+            [(
+                "error".to_string(),
+                bounded_string(err.to_string(), GATE_STR_CAP),
+            )],
+            "v0.policy.validation_error",
+        ),
+    };
+
+    let run_one = v0_gate_run_once(workdir, scenario, ticks, "run_1");
+    let run_two = v0_gate_run_once(workdir, scenario, ticks, "run_2");
+
+    let (determinism_check, e2e_check, boundedness_check, schema_check, no_tool_check) =
+        match (run_one, run_two) {
+            (Ok(a), Ok(b)) => {
+                let determinism_pass = a.signals_digest == b.signals_digest
+                    && a.decision_digest == b.decision_digest
+                    && a.experience_digest == b.experience_digest;
+                let determinism_check = v0_gate_check(
+                    "determinism_double_run",
+                    if determinism_pass {
+                        GateStatus::Pass
+                    } else {
+                        GateStatus::Fail
+                    },
+                    [
+                        (
+                            "signals_digest".to_string(),
+                            prefix_hex(&a.signals_digest, 12),
+                        ),
+                        (
+                            "decision_digest".to_string(),
+                            prefix_hex(&a.decision_digest, 12),
+                        ),
+                        (
+                            "experience_digest".to_string(),
+                            prefix_hex(&a.experience_digest, 12),
+                        ),
+                    ],
+                    "v0.determinism.digest_mismatch",
+                );
+
+                let e2e_pass = a.record_count > 0 && a.has_required_records;
+                let e2e_check = v0_gate_check(
+                    "e2e_flow_a",
+                    if e2e_pass {
+                        GateStatus::Pass
+                    } else {
+                        GateStatus::Fail
+                    },
+                    [
+                        ("record_count".to_string(), a.record_count.to_string()),
+                        (
+                            "required_records".to_string(),
+                            a.has_required_records.to_string(),
+                        ),
+                    ],
+                    "v0.e2e.required_records_missing",
+                );
+
+                let boundedness_pass = a.max_record_bytes <= V0_MAX_RECORD_BYTES;
+                let boundedness_check = v0_gate_check(
+                    "record_boundedness",
+                    if boundedness_pass {
+                        GateStatus::Pass
+                    } else {
+                        GateStatus::Fail
+                    },
+                    [
+                        (
+                            "max_record_bytes".to_string(),
+                            a.max_record_bytes.to_string(),
+                        ),
+                        (
+                            "max_allowed_bytes".to_string(),
+                            V0_MAX_RECORD_BYTES.to_string(),
+                        ),
+                    ],
+                    "v0.records.size_cap_exceeded",
+                );
+
+                let schema_pass = schema_versions_known(&a.schema_versions);
+                let schema_check = v0_gate_check(
+                    "schema_versions_known",
+                    if schema_pass {
+                        GateStatus::Pass
+                    } else {
+                        GateStatus::Fail
+                    },
+                    [(
+                        "schema_versions_digest".to_string(),
+                        prefix_hex(&sha256_hex(&serde_json::to_vec(&a.schema_versions)?), 12),
+                    )],
+                    "v0.schema.unknown_or_missing",
+                );
+
+                let no_tool_pass = a.tool_execution_count == 0;
+                let no_tool_check = v0_gate_check(
+                    "no_tool_execution",
+                    if no_tool_pass {
+                        GateStatus::Pass
+                    } else {
+                        GateStatus::Fail
+                    },
+                    [(
+                        "tool_execution_count".to_string(),
+                        a.tool_execution_count.to_string(),
+                    )],
+                    "v0.tools.execution_detected",
+                );
+
+                (
+                    determinism_check,
+                    e2e_check,
+                    boundedness_check,
+                    schema_check,
+                    no_tool_check,
+                )
+            }
+            (Err(err), _) | (_, Err(err)) => {
+                let fail = v0_gate_check(
+                    "determinism_double_run",
+                    GateStatus::Fail,
+                    [(
+                        "error".to_string(),
+                        bounded_string(err.to_string(), GATE_STR_CAP),
+                    )],
+                    "v0.run.execution_error",
+                );
+                (
+                    fail,
+                    v0_gate_check(
+                        "e2e_flow_a",
+                        GateStatus::Fail,
+                        [("error".to_string(), "dependent_on_run".to_string())],
+                        "v0.run.execution_error",
+                    ),
+                    v0_gate_check(
+                        "record_boundedness",
+                        GateStatus::Fail,
+                        [("error".to_string(), "dependent_on_run".to_string())],
+                        "v0.run.execution_error",
+                    ),
+                    v0_gate_check(
+                        "schema_versions_known",
+                        GateStatus::Fail,
+                        [("error".to_string(), "dependent_on_run".to_string())],
+                        "v0.run.execution_error",
+                    ),
+                    v0_gate_check(
+                        "no_tool_execution",
+                        GateStatus::Fail,
+                        [("error".to_string(), "dependent_on_run".to_string())],
+                        "v0.run.execution_error",
+                    ),
+                )
+            }
+        };
+
+    let checks = vec![
+        policy_check,
+        determinism_check,
+        e2e_check,
+        boundedness_check,
+        schema_check,
+        no_tool_check,
+    ];
+    let overall_status = if checks.iter().all(|c| c.status == GateStatus::Pass) {
+        V0GateOverallStatus::Pass
+    } else {
+        V0GateOverallStatus::Fail
+    };
+
+    let report = V0GateReportV1 {
+        schema_version: V0_SCHEMA_VERSION,
+        overall_status,
+        checks,
+    };
+    write_json(out, &report)?;
+    Ok(report)
+}
+
+fn v0_gate_check(
+    name: &str,
+    status: GateStatus,
+    evidence: impl IntoIterator<Item = (String, String)>,
+    remediation_hint_code: &str,
+) -> V0GateCheckV1 {
+    V0GateCheckV1 {
+        name: name.to_string(),
+        status,
+        evidence_digest_prefixes: bounded_evidence(evidence),
+        remediation_hint_code: remediation_hint_code.to_string(),
+    }
+}
+
+#[derive(Debug)]
+struct V0RunSummary {
+    signals_digest: String,
+    decision_digest: String,
+    experience_digest: String,
+    record_count: usize,
+    max_record_bytes: usize,
+    schema_versions: BTreeMap<String, u16>,
+    tool_execution_count: usize,
+    has_required_records: bool,
+}
+
+fn v0_gate_run_once(
+    workdir: &Path,
+    scenario: &Path,
+    ticks: u64,
+    run_name: &str,
+) -> Result<V0RunSummary, OpsError> {
+    let run_dir = workdir.join("v0_gate").join(run_name);
+    let _ = fs::remove_dir_all(&run_dir);
+    let out_dir = run_dir.join("out");
+    let artifacts = one_command_bringup(&run_dir, scenario, ticks, &out_dir, true)?;
+    let records = load_fixture_records(&run_dir.join("ess").join("ess_fixture.json"))?;
+    let max_record_bytes = records
+        .iter()
+        .map(|r| format!("{r:?}").len())
+        .max()
+        .unwrap_or(0);
+    let tool_execution_count = records
+        .iter()
+        .filter(|r| r.kind == ExperienceKind::ToolExecution)
+        .count();
+    let has_required_records = !records.is_empty();
+    Ok(V0RunSummary {
+        signals_digest: artifacts.run_metadata.fixtures_digest,
+        decision_digest: sha256_hex(&serde_json::to_vec(&artifacts.explain.decision)?),
+        experience_digest: sha256_hex(&serde_json::to_vec(&artifacts.explain.links)?),
+        record_count: records.len(),
+        max_record_bytes,
+        schema_versions: artifacts.run_metadata.schema_versions,
+        tool_execution_count,
+        has_required_records,
+    })
+}
+
+fn schema_versions_known(versions: &BTreeMap<String, u16>) -> bool {
+    let expected = ["backend_pack_record", "compute_summary", "output"];
+    expected
+        .iter()
+        .all(|key| versions.get(*key).copied().unwrap_or_default() > 0)
+        && versions.len() == expected.len()
+}
+
+fn expected_policy_digest_prefix_from_spec_snapshot(path: &Path) -> Result<String, OpsError> {
+    let raw = fs::read_to_string(path)?;
+    let Some(line) = raw.lines().find(|l| l.contains("policy_graph_digest")) else {
+        return Err(OpsError::Invalid(
+            "docs/spec_snapshot.md missing policy_graph_digest line".to_string(),
+        ));
+    };
+    let Some(prefix) = line.split('`').nth(1) else {
+        return Err(OpsError::Invalid(
+            "docs/spec_snapshot.md policy_graph_digest format invalid".to_string(),
+        ));
+    };
+    Ok(prefix.trim_end_matches('…').to_string())
 }
 
 fn one_command_bringup_with_ebm_mode(
