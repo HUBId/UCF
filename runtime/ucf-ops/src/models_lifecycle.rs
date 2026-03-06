@@ -757,12 +757,6 @@ fn append_action(path: PathBuf, report: &LifecycleActionReport) -> Result<(), Op
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Mutex, OnceLock};
-
-    fn cwd_lock() -> &'static Mutex<()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
-    }
 
     struct CwdGuard {
         prev: PathBuf,
@@ -826,7 +820,7 @@ mod tests {
 
     #[test]
     fn stage_and_verify_detects_tamper() {
-        let _guard = cwd_lock().lock().expect("cwd lock");
+        let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
         let dir = tempfile::tempdir().expect("tempdir");
         let _cwd = CwdGuard::enter(dir.path());
 
@@ -866,7 +860,7 @@ mod tests {
 
     #[test]
     fn stage_rejects_too_many_files() {
-        let _guard = cwd_lock().lock().expect("cwd lock");
+        let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
         let dir = tempfile::tempdir().expect("tempdir");
         let _cwd = CwdGuard::enter(dir.path());
         let src = dir.path().join("src");

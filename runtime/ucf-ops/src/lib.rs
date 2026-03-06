@@ -103,6 +103,12 @@ use ucf_types::error_codes::ErrorCode;
 const DEV_LOOP_MAX_SCENARIOS: usize = 2;
 const TROUBLESHOOT_MAX_ISSUES: usize = 8;
 
+#[cfg(test)]
+pub(crate) fn test_cwd_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
 #[derive(Debug, Error)]
 pub enum OpsError {
     #[error("io error: {0}")]
@@ -5491,13 +5497,7 @@ pub fn ess_compact(workdir: &Path, policy_path: &Path) -> Result<EssCompactionMa
 #[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
-    use std::sync::{Mutex, OnceLock};
     use tempfile::tempdir;
-
-    fn cwd_test_lock() -> &'static Mutex<()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
-    }
 
     struct CwdGuard {
         prev: PathBuf,
@@ -5586,7 +5586,7 @@ mod tests {
 
     #[test]
     fn weights_lifecycle_check_fails_without_manifest() {
-        let _guard = cwd_test_lock().lock().expect("cwd lock");
+        let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
         let dir = tempdir().expect("tempdir");
         let _cwd = CwdGuard::enter(dir.path());
         let c = check_weights_lifecycle_integrity(dir.path()).expect("check");
@@ -5596,7 +5596,7 @@ mod tests {
 
     #[test]
     fn world_vljepa_check_fails_when_required_shadow_missing() {
-        let _guard = cwd_test_lock().lock().expect("cwd lock");
+        let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
         let dir = tempdir().expect("tempdir");
         let _cwd = CwdGuard::enter(dir.path());
         fs::create_dir_all("models").expect("models");
