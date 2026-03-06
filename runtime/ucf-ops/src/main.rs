@@ -941,20 +941,33 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 "promote" => {
                     let slot = parse_slot(&arg_value(&args, "--slot").ok_or("missing --slot")?)?;
                     let hash = arg_value(&args, "--hash").ok_or("missing --hash")?;
-                    let probe = arg_value(&args, "--probe-report")
+                    let keep = arg_value(&args, "--history-keep").and_then(|v| v.parse::<usize>().ok());
+                    let out = arg_value(&args, "--out")
                         .map(PathBuf::from)
-                        .unwrap_or_else(|| PathBuf::from("./out/probe_report.json"));
-                    let gate = arg_value(&args, "--gate-report")
-                        .map(PathBuf::from)
-                        .unwrap_or_else(|| PathBuf::from("./out/gate_report.json"));
-                    let shadow = arg_value(&args, "--shadow-report").map(PathBuf::from);
-                    let report = models_promote(slot, &hash, &probe, &gate, shadow.as_deref())?;
+                        .unwrap_or_else(|| PathBuf::from("./out/models_promote.json"));
+                    let report = models_promote(slot, &hash, keep)?;
+                    if let Some(parent) = out.parent() {
+                        std::fs::create_dir_all(parent)?;
+                    }
+                    std::fs::write(&out, serde_json::to_vec_pretty(&report)?)?;
                     println!("{}", serde_json::to_string_pretty(&report)?);
                 }
                 "rollback" => {
                     let slot = parse_slot(&arg_value(&args, "--slot").ok_or("missing --slot")?)?;
-                    let to = arg_value(&args, "--to").ok_or("missing --to")?;
-                    let report = models_rollback(slot, &to)?;
+                    let to = arg_value(&args, "--to");
+                    let steps = arg_value(&args, "--steps").and_then(|v| v.parse::<usize>().ok());
+                    if to.is_none() && steps.is_none() {
+                        return Err("usage: ucf-ops models rollback --slot <slot> (--to <hash> | --steps <n>) [--history-keep <n>] [--out <path>]".into());
+                    }
+                    let keep = arg_value(&args, "--history-keep").and_then(|v| v.parse::<usize>().ok());
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/models_rollback.json"));
+                    let report = models_rollback(slot, to.as_deref(), steps, keep)?;
+                    if let Some(parent) = out.parent() {
+                        std::fs::create_dir_all(parent)?;
+                    }
+                    std::fs::write(&out, serde_json::to_vec_pretty(&report)?)?;
                     println!("{}", serde_json::to_string_pretty(&report)?);
                 }
                 "list" => {

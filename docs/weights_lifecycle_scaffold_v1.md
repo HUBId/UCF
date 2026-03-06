@@ -46,8 +46,17 @@ Runtime loads only promoted paths for enabled model slots.
   - `cargo run -p ucf-ops -- models list --slot llm`
 - Verify:
   - `cargo run -p ucf-ops -- models verify --manifest models/MANIFEST.toml --out ./out/models_verify.json`
+- Promote (staging -> promoted + manifest active hash update):
+  - `cargo run -p ucf-ops -- models promote --slot llm --hash <sha256> --out ./out/models_promote.json`
+- Rollback (promoted hash only):
+  - `cargo run -p ucf-ops -- models rollback --slot llm --to <sha256> --out ./out/models_rollback.json`
+  - optional deterministic convenience: `--steps 1`
 
 All commands are offline-only and do not download artifacts.
+
+Promotion requires staged verification PASS (digest + caps) before copying into promoted.
+Rollback always targets promoted hashes and writes a new manifest history record.
+History retention is deterministic and bounded (`--history-keep <N>` or `UCF_MODELS_MANIFEST_HISTORY_KEEP`, default 20).
 
 ## Runtime behavior
 

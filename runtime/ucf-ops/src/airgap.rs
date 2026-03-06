@@ -328,21 +328,10 @@ fn validate_and_place(
             if staged.hash != hash {
                 reasons.push("staged model hash mismatch".to_string());
             }
-            if mode == AirgapImportMode::Promoted {
-                let tmp = tempfile::tempdir()?;
-                let probe = tmp.path().join("probe.json");
-                let gate = tmp.path().join("gate.json");
-                fs::write(
-                    &probe,
-                    r#"{"run_id":"airgap-import","timestamp":0,"results":[],"summary":{"pass":true,"reasons":[]}}"#,
-                )?;
-                fs::write(
-                    &gate,
-                    r#"{"code_version_tag":"airgap","fixtures_digest_prefix":null,"backend_pack_digest_prefix":null,"timestamp":null,"status":"PASS","checks":[]}"#,
-                )?;
-                if models_promote(parsed_slot, hash, &probe, &gate, None).is_err() {
-                    reasons.push("promoted model import failed policy gates".to_string());
-                }
+            if mode == AirgapImportMode::Promoted
+                && models_promote(parsed_slot, hash, None).is_err()
+            {
+                reasons.push("promoted model import failed policy gates".to_string());
             }
         }
         AirgapArtifactType::RunCert => {

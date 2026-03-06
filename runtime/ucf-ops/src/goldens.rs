@@ -424,6 +424,24 @@ fn normalize_os(os: &str) -> String {
 mod tests {
     use super::*;
 
+    struct CwdGuard {
+        prev: PathBuf,
+    }
+
+    impl CwdGuard {
+        fn enter(path: &Path) -> Self {
+            let prev = std::env::current_dir().expect("cwd");
+            std::env::set_current_dir(path).expect("chdir");
+            Self { prev }
+        }
+    }
+
+    impl Drop for CwdGuard {
+        fn drop(&mut self) {
+            let _ = std::env::set_current_dir(&self.prev);
+        }
+    }
+
     fn base_manifest(os: &str) -> GoldenManifest {
         GoldenManifest {
             schema_version: 1,
@@ -476,7 +494,9 @@ mod tests {
 
     #[test]
     fn golden_generate_then_verify_passes() {
+        let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
         let dir = tempfile::tempdir().expect("tempdir");
+        let _cwd = CwdGuard::enter(dir.path());
         let out_root = dir.path().join("goldens");
         let workdir_root = dir.path().join("work");
 
