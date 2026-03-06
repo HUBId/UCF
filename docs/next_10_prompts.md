@@ -1,75 +1,85 @@
-# Next 10 Prompts (MUST-only, v0 Anchor)
+# Next 10 Prompts (MUST-only, v1 Anchor)
 
-Anchor: `Real Compute Onboarding v0` (`docs/roadmap_anchor_v0.md`)
+Anchor: `Real Compute Onboarding v1` transition plan (v0 completion prerequisite: `ucf-ops v0 gate` PASS)
 
 > Guardrail: This queue is capped to **10** entries unless an explicit request expands it.
 
-## Prompt 129 — Backend trait contract freeze for v0 stubs
-- Class: **MUST**
+## Prompt 178 — Weights lifecycle scaffold (staging/promoted, no real weights required)
+- Objective: Define deterministic v1 lifecycle metadata and transitions for `staging` and `promoted` slots without requiring real weight artifacts.
 - Acceptance:
-  - Backend trait interfaces are explicitly frozen for v0 scope.
-  - No hardware-specific assumptions are introduced.
-  - Contract docs and compile checks remain deterministic.
+  - Lifecycle schema documents `staging -> promoted` transitions with deterministic state encoding.
+  - Real weight blobs are optional in v1 unless a probe fixture explicitly references them.
+  - Offline fixture path validates empty/dummy payload handling.
+- Dependencies: v0 gate PASS; prompt rulebook 10-prompt cap (Prompt 171).
 
-## Prompt 130 — Deterministic CPU backend stub conformance tests
-- Class: **MUST**
+## Prompt 179 — Hardware-neutral backend adapter traits (Candle/Burn optional, no real compute)
+- Objective: Specify backend adapter trait interfaces that allow Candle/Burn integration later while keeping v1 behavior hardware-neutral.
 - Acceptance:
-  - CPU stubs return deterministic outputs for identical fixtures.
-  - Conformance tests cover success and bounded-failure paths.
-  - Replay of fixtures yields byte-stable evidence fields.
+  - Trait contract defines adapter boundaries independent of vendor/device assumptions.
+  - Candle/Burn adapters remain optional and feature-gated for v1.
+  - Deterministic stub behavior is specified for no-backend environments.
+- Dependencies: 178.
 
-## Prompt 131 — JEPA mock deterministic signal mapping
-- Class: **MUST**
+## Prompt 180 — Probe infrastructure per model slot with dummy fixtures
+- Objective: Add slot-scoped probe fixture planning so v1 can validate interfaces without real weights.
 - Acceptance:
-  - JEPA mock emits deterministic `spikes/surprise/pressure`-related fields.
-  - Signal bounds are validated in tests.
-  - Outputs are explainable from fixture inputs.
+  - Each slot has a deterministic dummy probe fixture contract.
+  - Probe outputs are canonicalized for repeatable compare runs.
+  - Real weights are only required when a probe fixture explicitly opts in.
+- Dependencies: 178, 179.
 
-## Prompt 132 — SAE mock deterministic signal mapping
-- Class: **MUST**
+## Prompt 181 — Slot-level rollout state machine (shadow/compare/active)
+- Objective: Define deterministic rollout semantics per slot using `shadow`, `compare`, and `active` states.
 - Acceptance:
-  - SAE mock emits deterministic feature/surprise-related fields.
-  - Canonical ordering is preserved in persisted outputs.
-  - Determinism checks pass across repeated runs.
+  - State machine transitions are explicit, bounded, and auditable.
+  - `shadow` and `compare` do not force production activation paths.
+  - Canonical transition evidence fields are listed for docs/tests.
+- Dependencies: 178, 180.
 
-## Prompt 133 — SSM mock deterministic state update mapping
-- Class: **MUST**
+## Prompt 182 — Drift budget schema and evaluator for shadow outputs
+- Objective: Specify minimal drift budget fields and deterministic evaluation flow for shadow-vs-reference outputs.
 - Acceptance:
-  - SSM mock state updates are deterministic and bounded.
-  - No nondeterministic iteration leaks to persisted/output-facing artifacts.
-  - State transition evidence is replay-compatible.
+  - Drift budget schema defines threshold fields with stable encoding.
+  - Evaluator behavior is deterministic for identical fixture inputs.
+  - Budget verdicts are consumable by rollout state transitions.
+- Dependencies: 180, 181.
 
-## Prompt 134 — Compute summary wiring for spikes/surprise/pressure
-- Class: **MUST**
+## Prompt 183 — Minimal alerts rules and report format
+- Objective: Define minimal alerting rules and deterministic reporting for drift and rollout anomalies.
 - Acceptance:
-  - Compute summary includes required onboarding signals.
-  - Wiring is covered by deterministic tests.
-  - Evidence digests remain chain-consistent.
+  - Alert rule set covers at least budget breach and transition violation signals.
+  - Report schema is bounded and deterministic in ordering/content.
+  - Offline report generation is documented for CI artifacts.
+- Dependencies: 182.
 
-## Prompt 135 — E2E ControlFrame->Decision->ESS canonical fixture pass
-- Class: **MUST**
+## Prompt 184 — Portability gate integration (Linux/Windows lanes)
+- Objective: Integrate v1 scaffolding checks into existing portability gate lanes without changing hardware assumptions.
 - Acceptance:
-  - E2E fixture verifies `ControlFrame -> Decision -> ESS append`.
-  - Ordering and linkage invariants hold for all records.
-  - Offline execution path passes without network dependency.
+  - Linux and Windows lane expectations are documented for v1 scaffolding checks.
+  - Determinism is required within each OS lane for identical fixtures.
+  - Gate output artifact paths follow repository conventions.
+- Dependencies: 179, 180, 183.
 
-## Prompt 136 — Policy gate assertion: no decision, no action
-- Class: **MUST**
+## Prompt 185 — Strict-mode wiring for v1 scaffold features
+- Objective: Define strict-mode behavior that enforces v1 scaffold invariants at runtime/docs gates.
 - Acceptance:
-  - Runtime denies actions when no decision exists.
-  - Negative-path tests assert deny-by-default behavior.
-  - Safety invariant is documented in acceptance evidence.
+  - Strict mode fails on missing required v1 scaffold metadata.
+  - Non-strict mode preserves backward-compatible behavior for staged rollout.
+  - Failure reasons are deterministic and operator-readable.
+- Dependencies: 181, 182, 183.
 
-## Prompt 137 — Minimal explain-tick observability acceptance checks
-- Class: **MUST**
+## Prompt 186 — Operator docs and end-state update for v1 onboarding
+- Objective: Update operator-facing documentation to reflect v1 onboarding semantics and end-state expectations.
 - Acceptance:
-  - Explain-tick minimum output exists for onboarding ticks.
-  - Key fields required for audit/debug are populated deterministically.
-  - Documentation and tests reference the same observable fields.
+  - Docs describe lifecycle, rollout states, drift budgets, and alerts in one coherent flow.
+  - End-state wording remains hardware-neutral and probe-first.
+  - Prompt index/state references are synchronized with v1 queue.
+- Dependencies: 178-185.
 
-## Prompt 138 — v0 onboarding signoff bundle (must-only evidence)
-- Class: **MUST**
+## Prompt 187 — v1 scaffolding signoff gate (PASS/FAIL)
+- Objective: Define the v1 gate criteria that mark scaffolding completeness without requiring real production weights by default.
 - Acceptance:
-  - Signoff bundle includes tests, docs, and gate artifacts for MUST scope.
-  - NICE/DEFERRED items are explicitly excluded from signoff requirements.
-  - Snapshot/index/state docs are updated consistently.
+  - Gate criteria cover lifecycle, probe, rollout, drift, alerts, portability, and strict-mode checks.
+  - PASS/FAIL semantics are deterministic and CI-friendly.
+  - Real weights remain optional unless explicitly required by probe fixtures.
+- Dependencies: 178-186.
