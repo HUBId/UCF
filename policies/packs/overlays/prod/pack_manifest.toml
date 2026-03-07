@@ -1,11 +1,11 @@
 name = "overlay_prod"
 version = "1.0.0"
 schema_version = 1
-pack_digest = "83c3379201507cfa266643b54edb52fd3fe1aa7323d8be8add259e378db4aa2e"
+pack_digest = "611919ea72ea75f2823d7e186e9106d7c17a334b7eb0e1db27e8c7618490d451"
 
 [[files]]
 path = "alerts.toml"
-sha256 = "550f2898424314aa4ab65f0dc88c41047163fd3ae3de23755d2e953a5b4574b5"
+sha256 = "5ad58d0b7a53f39c601555ec341f8dcb129c0602492b209f21c9711a600018c5"
 
 [[files]]
 path = "allowlists.toml"

@@ -5,37 +5,33 @@ id = "degraded_fallback_rate"
 kind = "DegradedFallbackRate"
 window_size = 512
 threshold = 16
+clear_after_windows = 2
 severity = "medium"
-action = "tighten"
+action = "recommend_disable_shadow"
 
 [[rules]]
-id = "drift_alarm_rate"
-kind = "DriftAlarmRate"
+id = "drift_severe_rate"
+kind = "DriftSevereRate"
 window_size = 512
 threshold = 4
+clear_after_windows = 2
 severity = "high"
-action = "disable_slot"
-
-[[rules]]
-id = "emergency_active_rate"
-kind = "EmergencyActiveRate"
-window_size = 512
-threshold = 8
-severity = "critical"
-action = "require_operator"
+action = "recommend_rollback"
 
 [[rules]]
 id = "gateway_auth_fail_rate"
 kind = "GatewayAuthFailRate"
 window_size = 512
 threshold = 8
+clear_after_windows = 2
 severity = "high"
-action = "tighten"
+action = "require_operator"
 
 [[rules]]
-id = "strict_mode_failure"
-kind = "StrictModeFailure"
+id = "strict_failure_present"
+kind = "StrictFailurePresent"
 window_size = 512
 threshold = 1
+clear_after_windows = 2
 severity = "high"
 action = "require_operator"

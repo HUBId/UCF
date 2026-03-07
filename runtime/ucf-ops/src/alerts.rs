@@ -3,11 +3,12 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use ucf_ess::v1::{AuditPayload, EmergencyStateCode, ExperiencePayload, ExperienceRecord};
+use ucf_ess::v1::{AuditPayload, ExperiencePayload, ExperienceRecord};
 use ucf_policy::policy_packs::{
     load_and_merge_policy_graph, AlertActionV1, AlertRuleKindV1, AlertRulesV1, AlertSeverityV1,
 };
 
+use crate::drift::DriftAlarmRecordV1;
 use crate::{load_fixture_records, persist_jsonl_record, sha256_hex, OpsError};
 
 const ALERTS_MAX_ACTIVE: usize = 16;
@@ -62,6 +63,18 @@ struct AlertObservation {
     window_start_t: u64,
     window_end_t: u64,
     evidence_digests: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct AlertEvaluatorStateV1 {
+    schema_version: u16,
+    below_threshold_windows: BTreeMap<String, u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct GatewayAbuseRecordV1 {
+    t_ms: u64,
+    reason_code: String,
 }
 
 pub fn alerts_report(workdir: &Path, run_id: &str, out: &Path) -> Result<AlertsReportV1, OpsError> {
@@ -163,7 +176,10 @@ fn remediation_commands(code: &str) -> &'static [&'static str] {
             &["ucf-ops gateway threat-test --out ./out/gateway_threat.json"]
         }
         "run_strict_check" => &["ucf-ops strict check --strict --out ./out/strict_check.json"],
-        "recommend_rollback" => &["ucf-ops models recommend-rollback --slot world"],
+        "recommend_rollback" => &["ucf-ops models rollback --slot world --to <hash>"],
+        "recommend_disable_shadow" => {
+            &["ucf-ops drift report --run <id> --windows 20 --out ./out/drift_report.json"]
+        }
         _ => &[],
     }
 }
@@ -184,36 +200,58 @@ impl AlertEvaluator {
         records: &[ExperienceRecord],
     ) -> Result<Vec<AlertEventV1>, OpsError> {
         let active_ids = self.current_active_ids(workdir)?;
+        let state_path = workdir.join("out/alerts_state.json");
+        let mut state = read_state(&state_path)?;
         let mut events = Vec::new();
+
         for rule in &self.rules.rules {
             let observation = observe_rule(rule.kind, rule.window_size, workdir, run_id, records)?;
             let alert_id = format!("{}:{}", kind_code(rule.kind), rule.id);
             let triggered = observation.count >= rule.threshold;
             let is_active = active_ids.contains(&alert_id);
-            if triggered && !is_active {
-                events.push(AlertEventV1::Trigger(AlertRecordV1 {
-                    schema_version: 1,
-                    alert_id: alert_id.clone(),
-                    severity: severity_code(rule.severity).to_string(),
-                    triggered_at_t: observation.window_end_t,
-                    rule_id: rule.id.clone(),
-                    observed_count: observation.count,
-                    window_start_t: observation.window_start_t,
-                    window_end_t: observation.window_end_t,
-                    evidence_digests: observation.evidence_digests,
-                    remediation_codes: remediation_codes_for_rule(rule.kind, rule.action),
-                }));
-            } else if !triggered && is_active {
-                events.push(AlertEventV1::Clear(AlertClearRecordV1 {
-                    schema_version: 1,
-                    alert_id,
-                    rule_id: rule.id.clone(),
-                    cleared_at_t: observation.window_end_t,
-                    window_start_t: observation.window_start_t,
-                    window_end_t: observation.window_end_t,
-                }));
+
+            if triggered {
+                state.below_threshold_windows.insert(alert_id.clone(), 0);
+                if !is_active {
+                    events.push(AlertEventV1::Trigger(AlertRecordV1 {
+                        schema_version: 1,
+                        alert_id: alert_id.clone(),
+                        severity: severity_code(rule.severity).to_string(),
+                        triggered_at_t: observation.window_end_t,
+                        rule_id: rule.id.clone(),
+                        observed_count: observation.count,
+                        window_start_t: observation.window_start_t,
+                        window_end_t: observation.window_end_t,
+                        evidence_digests: observation.evidence_digests,
+                        remediation_codes: remediation_codes_for_rule(rule.kind, rule.action),
+                    }));
+                }
+                continue;
+            }
+
+            if is_active {
+                let counter = state
+                    .below_threshold_windows
+                    .entry(alert_id.clone())
+                    .or_insert(0);
+                *counter = counter.saturating_add(1);
+                if *counter >= rule.clear_after_windows.max(1) {
+                    events.push(AlertEventV1::Clear(AlertClearRecordV1 {
+                        schema_version: 1,
+                        alert_id: alert_id.clone(),
+                        rule_id: rule.id.clone(),
+                        cleared_at_t: observation.window_end_t,
+                        window_start_t: observation.window_start_t,
+                        window_end_t: observation.window_end_t,
+                    }));
+                    state.below_threshold_windows.insert(alert_id, 0);
+                }
+            } else {
+                state.below_threshold_windows.insert(alert_id, 0);
             }
         }
+
+        write_state(&state_path, &state)?;
         Ok(events)
     }
 
@@ -244,12 +282,14 @@ fn observe_rule(
     let end_t = records.iter().map(|r| r.time.tick.get()).max().unwrap_or(0);
     let start_t = end_t.saturating_sub(window_size as u64).saturating_add(1);
     match kind {
-        AlertRuleKindV1::DriftAlarmRate => {
+        AlertRuleKindV1::DriftSevereRate => {
             let path = workdir
                 .join("reports")
                 .join("world_vljepa")
                 .join(format!("{}_alarms.jsonl", run_id));
-            let mut alarms = load_jsonl::<serde_json::Value>(&path)?;
+            let mut alarms = load_jsonl::<DriftAlarmRecordV1>(&path)?;
+            alarms.retain(|a| a.severity == "SEVERE");
+            alarms.sort_by(|a, b| a.alarm_id.cmp(&b.alarm_id));
             if alarms.len() > window_size as usize {
                 alarms = alarms.split_off(alarms.len() - window_size as usize);
             }
@@ -267,13 +307,9 @@ fn observe_rule(
         }
         AlertRuleKindV1::GatewayAuthFailRate => {
             let mut abuse =
-                load_jsonl::<serde_json::Value>(&workdir.join("gateway_abuse_records.jsonl"))?;
-            abuse.retain(|v| {
-                v.get("reason_code")
-                    .and_then(|x| x.as_str())
-                    .map(|x| x == "auth_denied")
-                    .unwrap_or(false)
-            });
+                load_jsonl::<GatewayAbuseRecordV1>(&workdir.join("gateway_abuse_records.jsonl"))?;
+            abuse.retain(|v| v.reason_code == "AuthFail");
+            abuse.sort_by_key(|v| v.t_ms);
             if abuse.len() > window_size as usize {
                 abuse = abuse.split_off(abuse.len() - window_size as usize);
             }
@@ -289,7 +325,7 @@ fn observe_rule(
                 evidence_digests: evidence,
             })
         }
-        AlertRuleKindV1::StrictModeFailure => {
+        AlertRuleKindV1::StrictFailurePresent => {
             let strict_path = workdir.join("out").join("strict_failure.json");
             let present = strict_path.exists();
             let mut evidence = Vec::new();
@@ -328,42 +364,15 @@ fn observe_rule(
                 evidence_digests: evidence,
             })
         }
-        AlertRuleKindV1::EmergencyActiveRate => {
-            let mut matched = records
-                .iter()
-                .filter(|r| r.time.tick.get() >= start_t && r.time.tick.get() <= end_t)
-                .filter_map(|r| match &r.payload {
-                    ExperiencePayload::Audit(AuditPayload::Emergency(e))
-                        if e.state == EmergencyStateCode::Active =>
-                    {
-                        Some((r.id.0, e.t))
-                    }
-                    _ => None,
-                })
-                .collect::<Vec<_>>();
-            matched.sort();
-            let evidence = matched
-                .iter()
-                .take(ALERTS_MAX_EVIDENCE)
-                .map(|(id, t)| sha256_hex(format!("emergency:{id}:{t}").as_bytes()))
-                .collect::<Vec<_>>();
-            Ok(AlertObservation {
-                count: matched.len() as u32,
-                window_start_t: start_t,
-                window_end_t: end_t,
-                evidence_digests: evidence,
-            })
-        }
     }
 }
 
 fn kind_code(kind: AlertRuleKindV1) -> &'static str {
     match kind {
-        AlertRuleKindV1::DriftAlarmRate => "drift_alarm_rate",
+        AlertRuleKindV1::DriftSevereRate => "drift_severe_rate",
         AlertRuleKindV1::GatewayAuthFailRate => "gateway_auth_fail_rate",
-        AlertRuleKindV1::StrictModeFailure => "strict_mode_failure",
+        AlertRuleKindV1::StrictFailurePresent => "strict_failure_present",
         AlertRuleKindV1::DegradedFallbackRate => "degraded_fallback_rate",
-        AlertRuleKindV1::EmergencyActiveRate => "emergency_active_rate",
     }
 }
 
@@ -378,17 +387,15 @@ fn severity_code(severity: AlertSeverityV1) -> &'static str {
 
 fn remediation_codes_for_rule(kind: AlertRuleKindV1, action: AlertActionV1) -> Vec<String> {
     let mut out = match kind {
-        AlertRuleKindV1::DriftAlarmRate => vec!["run_drift_report".to_string()],
+        AlertRuleKindV1::DriftSevereRate => vec!["run_drift_report".to_string()],
         AlertRuleKindV1::GatewayAuthFailRate => vec!["run_gateway_threat_test".to_string()],
-        AlertRuleKindV1::StrictModeFailure => vec!["run_strict_check".to_string()],
+        AlertRuleKindV1::StrictFailurePresent => vec!["run_strict_check".to_string()],
         AlertRuleKindV1::DegradedFallbackRate => vec!["run_strict_check".to_string()],
-        AlertRuleKindV1::EmergencyActiveRate => vec!["run_strict_check".to_string()],
     };
-    if matches!(
-        action,
-        AlertActionV1::Recommend | AlertActionV1::DisableSlot
-    ) {
-        out.push("recommend_rollback".to_string());
+    match action {
+        AlertActionV1::RecommendRollback => out.push("recommend_rollback".to_string()),
+        AlertActionV1::RecommendDisableShadow => out.push("recommend_disable_shadow".to_string()),
+        AlertActionV1::RequireOperator => {}
     }
     out.sort();
     out.dedup();
@@ -408,66 +415,71 @@ fn load_jsonl<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<Vec<T>, OpsEr
         .map_err(OpsError::from)
 }
 
+fn read_state(path: &Path) -> Result<AlertEvaluatorStateV1, OpsError> {
+    if !path.exists() {
+        return Ok(AlertEvaluatorStateV1 {
+            schema_version: 1,
+            ..AlertEvaluatorStateV1::default()
+        });
+    }
+    let state = serde_json::from_slice::<AlertEvaluatorStateV1>(&fs::read(path)?)?;
+    Ok(state)
+}
+
+fn write_state(path: &Path, state: &AlertEvaluatorStateV1) -> Result<(), OpsError> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(path, serde_json::to_vec_pretty(state)?)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use tempfile::tempdir;
-    use ucf_core::types::{SimTime, Tick, WindowId};
-    use ucf_ess::v1::{EmergencyReasonCode, EmergencyRecord, ExperienceId, ExperienceKind};
-    use ucf_frames::v1::CorrelationId;
 
     use super::*;
 
     #[test]
-    fn evaluator_triggers_and_clears() {
+    fn evaluator_triggers_and_clears_with_hysteresis() {
         let tmp = tempdir().expect("tmp");
+        let alarms_dir = tmp.path().join("reports/world_vljepa");
+        fs::create_dir_all(&alarms_dir).expect("mkdir");
+        fs::write(
+            alarms_dir.join("run-a_alarms.jsonl"),
+            "{\"alarm_id\":\"a\",\"slot_id\":\"world_vljepa\",\"window_id\":1,\"breached_fields\":[],\"observed\":{},\"severity\":\"SEVERE\",\"action_taken\":\"disable_shadow\",\"reason_code\":\"x\",\"evidence_digests\":[]}\n",
+        )
+        .expect("write");
         let rules = AlertRulesV1 {
             schema_version: 1,
             rules: vec![ucf_policy::policy_packs::AlertRuleV1 {
-                id: "emergency_active_rate".to_string(),
-                kind: AlertRuleKindV1::EmergencyActiveRate,
+                id: "drift_severe_rate".to_string(),
+                kind: AlertRuleKindV1::DriftSevereRate,
                 window_size: 32,
                 threshold: 1,
+                clear_after_windows: 2,
                 severity: AlertSeverityV1::High,
-                action: AlertActionV1::RequireOperator,
+                action: AlertActionV1::RecommendDisableShadow,
             }],
         };
         let evaluator = AlertEvaluator::new(rules);
-        let rec = ExperienceRecord::audit(
-            ExperienceId(1),
-            SimTime {
-                tick: Tick::new(12),
-                window: WindowId::new(1),
-            },
-            CorrelationId(1),
-            ExperienceKind::Emergency,
-            AuditPayload::Emergency(EmergencyRecord {
-                policy_bundle_hash: "x".to_string(),
-                policy_graph_digest: "y".to_string(),
-                t: 12,
-                state: EmergencyStateCode::Active,
-                reason: EmergencyReasonCode::RunawayV,
-                v_q: 1,
-                dv_q: 1,
-                state_norm_q: 1,
-                deriv_norm_q: 1,
-                lfm_digest: [0; 32],
-                backend_pack_digest: [0; 32],
-                evidence_chain_digest: [0; 32],
-                schema_version: 1,
-            }),
-            [0; 32],
-        );
         let events = evaluator
-            .evaluate(tmp.path(), "run-a", &[rec])
+            .evaluate(tmp.path(), "run-a", &[])
             .expect("evaluate");
         assert!(matches!(events.first(), Some(AlertEventV1::Trigger(_))));
         for event in events {
             persist_jsonl_record(&tmp.path().join("out/alerts_records.jsonl"), &event)
                 .expect("persist");
         }
-        let cleared = evaluator
+
+        fs::write(alarms_dir.join("run-a_alarms.jsonl"), "").expect("clear alarms");
+        let first_below = evaluator
             .evaluate(tmp.path(), "run-a", &[])
-            .expect("evaluate clear");
-        assert!(matches!(cleared.first(), Some(AlertEventV1::Clear(_))));
+            .expect("evaluate first below");
+        assert!(first_below.is_empty());
+        let second_below = evaluator
+            .evaluate(tmp.path(), "run-a", &[])
+            .expect("evaluate second below");
+        assert!(matches!(second_below.first(), Some(AlertEventV1::Clear(_))));
     }
 }

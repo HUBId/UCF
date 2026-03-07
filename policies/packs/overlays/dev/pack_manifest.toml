@@ -1,11 +1,11 @@
 name = "overlay_dev"
 version = "1.0.0"
 schema_version = 1
-pack_digest = "7081a1d81c3f48f01f81593201499c274fce2ea29ec0b97d8f93b9c1fbebf962"
+pack_digest = "de1eb3905d214f875870a8667e881f46316208dfa8968d0e82589049e39ad47e"
 
 [[files]]
 path = "alerts.toml"
-sha256 = "550f2898424314aa4ab65f0dc88c41047163fd3ae3de23755d2e953a5b4574b5"
+sha256 = "5ad58d0b7a53f39c601555ec341f8dcb129c0602492b209f21c9711a600018c5"
 
 [[files]]
 path = "allowlists.toml"
