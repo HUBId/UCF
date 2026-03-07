@@ -1,7 +1,7 @@
 {
-  "run_id": "0a44db34cd07-1772738914",
+  "run_id": "0a44db34cd07-1772876444",
   "started_at_tick": 0,
-  "code_version_tag": "548e766846360960b7d04abbaf3fd4b5113f6f8a",
+  "code_version_tag": "bf1eb7a1da4947ee1ed9b90ed412f11e09dc2bf6",
   "backend_pack_meta_digest": "05103413b273319a96c6174333acd4467f6f4583326378f28ae5bc85e1be6c47",
   "fixtures_digest": "3c83ddc406380b847925528b556804aac97b6885c012399f675cf10e3331ecc0",
   "model_hashes_digest": "53aea21879feb4c1f507590ec119fd3d5a5c7bd8d805d9f997a581a8ab5daeb8",
@@ -26,5 +26,7 @@
   "strict_mode_enabled": false,
   "strict_mode_digest": null,
   "crash_dumps_disabled": false,
+  "models_manifest_present": true,
+  "models_manifest_digest_prefix": "",
   "ended_at_tick": 12
 }
