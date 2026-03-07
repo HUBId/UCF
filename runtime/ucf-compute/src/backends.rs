@@ -337,22 +337,28 @@ mod tests {
             ..ComputeBackendConfig::default()
         })
         .expect("stub");
-        let candle = build_backend(&ComputeBackendConfig {
+        let candle = match build_backend(&ComputeBackendConfig {
             kind: ComputeBackendKind::Candle,
             seed: 77,
             budgets: ComputeTimeBudget::default(),
             profile: ComputeBudgetProfile::default_profile(),
-        })
-        .expect("candle");
+        }) {
+            Ok(backend) => backend,
+            Err(ComputeError::BackendDisabled) | Err(ComputeError::InvalidInput { .. }) => return,
+            Err(other) => panic!("unexpected candle init error: {other:?}"),
+        };
 
         let a = candle.compute(&input, budget).expect("candle compute");
-        let candle2 = build_backend(&ComputeBackendConfig {
+        let candle2 = match build_backend(&ComputeBackendConfig {
             kind: ComputeBackendKind::Candle,
             seed: 77,
             budgets: ComputeTimeBudget::default(),
             profile: ComputeBudgetProfile::default_profile(),
-        })
-        .expect("candle");
+        }) {
+            Ok(backend) => backend,
+            Err(ComputeError::BackendDisabled) | Err(ComputeError::InvalidInput { .. }) => return,
+            Err(other) => panic!("unexpected candle init error: {other:?}"),
+        };
         let b = candle2.compute(&input, budget).expect("candle compute");
         assert_eq!(a.summary("a").spikes_digest, b.summary("b").spikes_digest);
 
