@@ -91,7 +91,7 @@ pub fn nightly_summarize(
         components.push(component(
             "drift_report",
             drift_report.status == GateStatus::Pass,
-            format!("run_id={} stages={}", drift_report.run_id, drift_report.stage_reports.len()),
+            format!("run_id={} slots={}", drift_report.run_id, drift_report.slot_reports.len()),
             "cargo run -p ucf-ops -- drift report --run <run_id> --windows 4 --out ./out/drift_report.json",
         ));
     }

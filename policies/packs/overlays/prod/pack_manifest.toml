@@ -1,7 +1,7 @@
 name = "overlay_prod"
 version = "1.0.0"
 schema_version = 1
-pack_digest = "f9ab375c764884d3804544ffedca900e3036b3ea7357e9a6b3787e6af30c4843"
+pack_digest = "83c3379201507cfa266643b54edb52fd3fe1aa7323d8be8add259e378db4aa2e"
 
 [[files]]
 path = "alerts.toml"
@@ -17,7 +17,7 @@ sha256 = "22b566c6b4588fa90114768be93ae1f79507d666e6cf99169140ed224fbcd5df"
 
 [[files]]
 path = "drift_budget.toml"
-sha256 = "93dbcad0c26b1e88ff10d3840581465ec0b9ce5b0a52a51e4cebc519f3475225"
+sha256 = "7a5d2d5f73910fc75d5aa1a10ced29479c5e370b6a46aae6e1652115a79bf885"
 
 [[files]]
 path = "ebm_constraints.toml"
@@ -34,3 +34,4 @@ sha256 = "7dd43c502d5e885b419217fac2d9403e5d0db5d69554ea8e311f4f87e908b67e"
 [[files]]
 path = "thresholds.toml"
 sha256 = "a2e0ac14fcd798ff871e3393e5bcacbc042ab6253ff93e9d7dc7015cd54df50b"
+

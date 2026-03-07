@@ -1,7 +1,7 @@
 name = "base_v1"
 version = "1.0.0"
 schema_version = 1
-pack_digest = "b78121465b643b6f124ed1652d5cde70f9c817f95054496221247351d9daab2c"
+pack_digest = "f68a96fbc6f72a29aa1a3aba1517fd6b4c3f434c61523cc5fc5e0c0f8a39dbc6"
 
 [[files]]
 path = "alerts.toml"
@@ -21,7 +21,7 @@ sha256 = "93c83482f5a72c80b51748ac84bbb64d5043ff80edaf419af94ccac443d3803d"
 
 [[files]]
 path = "drift_budget.toml"
-sha256 = "263e88ae266fe828426f2f41f6e02c5b3930bed29f00429ca7aa014e832658ba"
+sha256 = "026c34fa4e887259bbbc3903bc42195f1a1ca7e315f2e1c2a438016c25739108"
 
 [[files]]
 path = "ebm_constraints.toml"
@@ -38,3 +38,4 @@ sha256 = "4d9a1cd98a23779cc21338cc72764550ad751b54f50b94f0a76d36bb934e6a23"
 [[files]]
 path = "thresholds.toml"
 sha256 = "521c7c9bc1e75eabd7207380d6c43afd2aa110fd62ac3e9de0d2c8ecf2dc0370"
+

@@ -31,7 +31,8 @@ mod enabled {
     use std::process::{Command, Stdio};
     use ucf_policy::determinism::DeterminismMode;
     use ucf_policy::policy_packs::{
-        load_and_merge_policy_graph, policy_graph_digest, PolicyGraphV1,
+        load_and_merge_policy_graph, policy_graph_digest, AlertRulesV1, DriftBudgetV1,
+        PolicyGraphV1,
     };
 
     #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -426,6 +427,15 @@ mod enabled {
                 budgets: BTreeMap::from([("governor_risk_weight_q".to_string(), -1)]),
                 allowlists: BTreeMap::new(),
                 determinism: Default::default(),
+                drift_budget: DriftBudgetV1 {
+                    schema_version: 1,
+                    entries: Vec::new(),
+                },
+                drift_budget_digest: String::new(),
+                alerts: AlertRulesV1 {
+                    schema_version: 1,
+                    rules: Vec::new(),
+                },
             };
             let a = eval_monotone_tightening(&graph);
             assert_eq!(a.status, GateStatus::Fail);

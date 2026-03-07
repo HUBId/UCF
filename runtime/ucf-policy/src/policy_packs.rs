@@ -24,6 +24,7 @@ pub struct PolicyGraphV1 {
     pub allowlists: BTreeMap<String, String>,
     pub determinism: DeterminismPolicyV1,
     pub drift_budget: DriftBudgetV1,
+    pub drift_budget_digest: String,
     pub alerts: AlertRulesV1,
 }
 
@@ -80,22 +81,32 @@ pub struct DriftBudgetV1 {
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct DriftBudgetEntryV1 {
-    pub stage_id: String,
-    pub window_size: u32,
+    #[serde(alias = "stage_id")]
+    pub slot_id: String,
+    #[serde(alias = "window_size")]
+    pub window_size_ticks: u32,
+    #[serde(default)]
+    pub scalar_delta_max_q: BTreeMap<String, u16>,
     pub latency_p95_max_ms: u32,
     pub invalid_rate_max_q: u16,
-    pub timeout_rate_max_q: u16,
-    pub delta_scalar_max_q: u16,
     pub digest_mismatch_rate_max_q: Option<u16>,
-    pub action_on_breach: DriftActionV1,
+    #[serde(default)]
+    pub severity: DriftSeverityMapV1,
+    #[serde(alias = "action_on_breach")]
+    pub action_on_severe: DriftActionV1,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DriftActionV1 {
     DisableShadow,
-    ForceToy,
-    RecommendRollback,
+    None,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Default)]
+pub struct DriftSeverityMapV1 {
+    #[serde(default)]
+    pub severe_fields: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -273,7 +284,7 @@ pub fn load_and_merge_policy_graph(
     ebm_terms.sort_by_key(|t| t.id);
     nsr.sort();
 
-    let graph = PolicyGraphV1 {
+    let mut graph = PolicyGraphV1 {
         schema_version: base.manifest.schema_version,
         base_name: base.manifest.name.clone(),
         base_version: base.manifest.version.clone(),
@@ -293,8 +304,10 @@ pub fn load_and_merge_policy_graph(
             &base.drift_budget,
             overlay.as_ref().map(|x| &x.drift_budget),
         )?,
+        drift_budget_digest: String::new(),
         alerts: merge_alert_rules(&base.alerts, overlay.as_ref().map(|x| &x.alerts))?,
     };
+    graph.drift_budget_digest = drift_budget_digest(&graph.drift_budget);
     let digest = policy_graph_digest(&graph)?;
     let provenance = PolicyGraphProvenanceRecord {
         base_pack_digest: base.manifest.pack_digest,
@@ -351,7 +364,7 @@ fn merge_drift_budget(
         .entries
         .iter()
         .cloned()
-        .map(|e| (e.stage_id.clone(), e))
+        .map(|e| (e.slot_id.clone(), e))
         .collect();
     if let Some(ov) = overlay {
         if ov.schema_version != base.schema_version {
@@ -360,17 +373,17 @@ fn merge_drift_budget(
             ));
         }
         for entry in &ov.entries {
-            if !by_stage.contains_key(&entry.stage_id) {
+            if !by_stage.contains_key(&entry.slot_id) {
                 return Err(PolicyPackError::MergeConflict(format!(
                     "overlay drift stage not in base: {}",
-                    entry.stage_id
+                    entry.slot_id
                 )));
             }
-            by_stage.insert(entry.stage_id.clone(), entry.clone());
+            by_stage.insert(entry.slot_id.clone(), entry.clone());
         }
     }
     let mut entries: Vec<_> = by_stage.into_values().collect();
-    entries.sort_by(|a, b| a.stage_id.cmp(&b.stage_id));
+    entries.sort_by(|a, b| a.slot_id.cmp(&b.slot_id));
     Ok(DriftBudgetV1 {
         schema_version: base.schema_version,
         entries,
@@ -566,22 +579,7 @@ pub fn policy_graph_digest(graph: &PolicyGraphV1) -> Result<String, PolicyPackEr
     hash_map_i64(&mut hasher, &graph.budgets);
     hash_map_str(&mut hasher, &graph.allowlists);
     hasher.update(graph.determinism.digest_hex().as_bytes());
-    hasher.update(graph.drift_budget.schema_version.to_le_bytes());
-    for entry in &graph.drift_budget.entries {
-        hasher.update(entry.stage_id.as_bytes());
-        hasher.update([0]);
-        hasher.update(entry.window_size.to_le_bytes());
-        hasher.update(entry.latency_p95_max_ms.to_le_bytes());
-        hasher.update(entry.invalid_rate_max_q.to_le_bytes());
-        hasher.update(entry.timeout_rate_max_q.to_le_bytes());
-        hasher.update(entry.delta_scalar_max_q.to_le_bytes());
-        hasher.update(entry.digest_mismatch_rate_max_q.unwrap_or(0).to_le_bytes());
-        hasher.update([match entry.action_on_breach {
-            DriftActionV1::DisableShadow => 1,
-            DriftActionV1::ForceToy => 2,
-            DriftActionV1::RecommendRollback => 3,
-        }]);
-    }
+    hasher.update(graph.drift_budget_digest.as_bytes());
     for rule in &graph.alerts.rules {
         hasher.update(rule.id.as_bytes());
         hasher.update([0]);
@@ -624,6 +622,34 @@ fn hash_map_str(hasher: &mut Sha256, map: &BTreeMap<String, String>) {
         hasher.update(v.as_bytes());
         hasher.update([0]);
     }
+}
+
+fn drift_budget_digest(budget: &DriftBudgetV1) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"ucf.policy.drift_budget.v1");
+    hasher.update(budget.schema_version.to_le_bytes());
+    for entry in &budget.entries {
+        hasher.update(entry.slot_id.as_bytes());
+        hasher.update([0]);
+        hasher.update(entry.window_size_ticks.to_le_bytes());
+        hasher.update(entry.latency_p95_max_ms.to_le_bytes());
+        hasher.update(entry.invalid_rate_max_q.to_le_bytes());
+        for (k, v) in &entry.scalar_delta_max_q {
+            hasher.update(k.as_bytes());
+            hasher.update([0]);
+            hasher.update(v.to_le_bytes());
+        }
+        hasher.update(entry.digest_mismatch_rate_max_q.unwrap_or(0).to_le_bytes());
+        for f in &entry.severity.severe_fields {
+            hasher.update(f.as_bytes());
+            hasher.update([0]);
+        }
+        hasher.update([match entry.action_on_severe {
+            DriftActionV1::DisableShadow => 1,
+            DriftActionV1::None => 2,
+        }]);
+    }
+    hex_lower(hasher.finalize().into())
 }
 
 fn compute_pack_digest(root: &Path, files: &[ManifestFile]) -> Result<String, PolicyPackError> {

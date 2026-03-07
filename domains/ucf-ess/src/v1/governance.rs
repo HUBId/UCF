@@ -67,6 +67,7 @@ pub fn data_class_for_payload(payload: &AuditPayload) -> DataClass {
         | AuditPayload::GpuParity(_)
         | AuditPayload::GpuResourceViolation(_)
         | AuditPayload::SlotCompareWindow(_)
+        | AuditPayload::DriftAlarm(_)
         | AuditPayload::ShadowDisable(_)
         | AuditPayload::SlotModeChange(_) => DataClass::ScalarSummary,
     }

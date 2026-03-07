@@ -249,16 +249,16 @@ fn load_drift(path: &Path) -> Result<Vec<DriftStageSnapshot>, ConsoleError> {
     }
     let mut report = serde_json::from_str::<DriftReportV1>(&fs::read_to_string(path)?)?;
     report
-        .stage_reports
-        .sort_by(|a, b| a.stage_id.cmp(&b.stage_id));
+        .slot_reports
+        .sort_by(|a, b| a.slot_id.cmp(&b.slot_id));
     let mut items = report
-        .stage_reports
+        .slot_reports
         .into_iter()
         .map(|s| DriftStageSnapshot {
-            stage_id: s.stage_id,
+            stage_id: s.slot_id,
             status: s.status,
             active_alarms: s.active_alarms,
-            recommended_action: s.recommended_action,
+            recommended_action: s.recommended_actions.join(","),
             windows_count: s.windows.len(),
         })
         .collect::<Vec<_>>();
@@ -370,10 +370,10 @@ mod tests {
         let mut stages = Vec::new();
         for i in (0..25).rev() {
             stages.push(serde_json::json!({
-                "stage_id": format!("s-{i:02}"),
+                "slot_id": format!("s-{i:02}"),
                 "status": "OK",
                 "active_alarms": [],
-                "recommended_action": "none",
+                "recommended_actions": ["none"],
                 "windows": []
             }));
         }
@@ -381,7 +381,7 @@ mod tests {
             "run_id": "r1",
             "status": "PASS",
             "windows_limit": 4,
-            "stage_reports": stages,
+            "slot_reports": stages,
             "alarms": [],
             "operator_summary": "",
             "report_digest": ""

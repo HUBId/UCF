@@ -473,6 +473,10 @@ pub trait AiComputeBackend: Send + Sync {
     fn drain_shadow_events(&self) -> Vec<SlotShadowEventV1> {
         Vec::new()
     }
+
+    fn apply_shadow_disable(&self, _slot_id: &str, _t: u64, _reason: &str, _to_off: bool) -> bool {
+        false
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
