@@ -1,30 +1,60 @@
 schema_version = 1
 
 [[entries]]
-stage_id = "gpu_lane"
-window_size = 20
+slot_id = "compute"
+window_size_ticks = 20
+latency_p95_max_ms = 25
+invalid_rate_max_q = 300
+digest_mismatch_rate_max_q = 0
+action_on_severe = "disable_shadow"
+
+[entries.scalar_delta_max_q]
+risk_mean_q = 300
+risk_p95_q = 300
+
+[entries.severity]
+severe_fields = [
+  "digest_mismatch_rate_max_q",
+  "scalar_delta_max_q.risk_p95_q",
+]
+
+[[entries]]
+slot_id = "gpu_lane"
+window_size_ticks = 20
+latency_p95_max_ms = 25
+invalid_rate_max_q = 300
+digest_mismatch_rate_max_q = 0
+action_on_severe = "none"
+
+[entries.scalar_delta_max_q]
+drift_alarm_rate_q = 300
+
+[entries.severity]
+severe_fields = ["digest_mismatch_rate_max_q"]
+
+[[entries]]
+slot_id = "ssm_opt"
+window_size_ticks = 20
 latency_p95_max_ms = 20
 invalid_rate_max_q = 300
-timeout_rate_max_q = 300
-delta_scalar_max_q = 300
 digest_mismatch_rate_max_q = 0
-action_on_breach = "force_toy"
+action_on_severe = "none"
+
+[entries.scalar_delta_max_q]
+drift_alarm_rate_q = 300
+
+[entries.severity]
+severe_fields = ["digest_mismatch_rate_max_q"]
 
 [[entries]]
-stage_id = "ssm_opt"
-window_size = 20
-latency_p95_max_ms = 18
+slot_id = "world_vljepa"
+window_size_ticks = 20
+latency_p95_max_ms = 5
 invalid_rate_max_q = 300
-timeout_rate_max_q = 300
-delta_scalar_max_q = 300
-digest_mismatch_rate_max_q = 0
-action_on_breach = "force_toy"
+action_on_severe = "disable_shadow"
 
-[[entries]]
-stage_id = "world_vljepa"
-window_size = 20
-latency_p95_max_ms = 4
-invalid_rate_max_q = 300
-timeout_rate_max_q = 300
-delta_scalar_max_q = 300
-action_on_breach = "disable_shadow"
+[entries.scalar_delta_max_q]
+error_delta_p95_q = 300
+
+[entries.severity]
+severe_fields = ["scalar_delta_max_q.error_delta_p95_q"]

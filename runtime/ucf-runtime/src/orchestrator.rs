@@ -71,7 +71,7 @@ use ucf_ess::v1::{
     compute_content_digest, AuditCheckpointRecord, AuditPayload, BackendPackRecord,
     CandidateSetRecord, CandidateSummaryRecord, CapabilityIssuanceRecord,
     ComputeBudgetViolationRecord, ComputeBudgetWindowRecord, DecisionInputsRecordV1,
-    DeltaEvaluationRecord, DeltaProposalRecord, DeltaRecommendationRecord,
+    DeltaEvaluationRecord, DeltaProposalRecord, DeltaRecommendationRecord, DriftAlarmRecordV1,
     EbmConstraintProvenanceRecord, EbmEnvelopeViolationRecord, EbmReasoningRecord,
     EmergencyReasonCode, EmergencyRecord, EmergencyStateCode, ExperienceKind, ExperienceRecord,
     ExperienceStore, GpuParityRecord, GpuUnavailableRecord, HormoneRecord, IdAllocator,
@@ -116,7 +116,7 @@ use ucf_policy::{
     },
     pbm::Pbm,
     policy_bundle::verify_policy_bundle,
-    policy_packs::load_and_merge_policy_graph,
+    policy_packs::{load_and_merge_policy_graph, DriftBudgetEntryV1},
     rate_limiter::RateLimiter,
     tool_plans::{build_plan, issue_for_plan, make_plan_record},
 };
@@ -1129,6 +1129,8 @@ pub struct RuntimeOrchestrator {
     compute_tier_sum: u64,
     compute_tier_count: u64,
     compute_tier_max: u8,
+    drift_budget_by_slot: BTreeMap<String, DriftBudgetEntryV1>,
+    shadow_disable_to_off: bool,
 }
 
 impl RuntimeOrchestrator {
@@ -2466,6 +2468,14 @@ impl RuntimeOrchestrator {
             compute_tier_sum: 0,
             compute_tier_count: 0,
             compute_tier_max: 0,
+            drift_budget_by_slot: policy_graph
+                .drift_budget
+                .entries
+                .iter()
+                .cloned()
+                .map(|e| (e.slot_id.clone(), e))
+                .collect(),
+            shadow_disable_to_off: env_flag("UCF_SHADOW_DISABLE_TO_OFF"),
         };
 
         let _ = out.ess.append(ExperienceRecord::audit(
@@ -3929,6 +3939,7 @@ impl RuntimeOrchestrator {
         for event in self.compute_backend.drain_shadow_events() {
             match event {
                 SlotShadowEventV1::CompareWindow(record) => {
+                    let slot_id = record.slot_id.clone();
                     let status = match record.status {
                         SlotCompareStatusV1::Ok => SlotCompareStatusCodeV1::Ok,
                         SlotCompareStatusV1::DriftWarn => SlotCompareStatusCodeV1::DriftWarn,
@@ -3942,7 +3953,7 @@ impl RuntimeOrchestrator {
                         ctrl.corr,
                         SlotCompareWindowRecordV1 {
                             schema_version: 1,
-                            slot_id: record.slot_id,
+                            slot_id: slot_id.clone(),
                             t0: record.t0,
                             t1: record.t1,
                             sample_count: record.sample_count,
@@ -3956,6 +3967,104 @@ impl RuntimeOrchestrator {
                             status,
                         },
                     ))?;
+
+                    if let Some(budget) = self.drift_budget_by_slot.get(&slot_id) {
+                        if record.sample_count > 0 {
+                            let sample_count = u32::from(record.sample_count);
+                            let invalid_rate_q =
+                                ((u32::from(record.invalid_shadow_count) * 10_000) / sample_count)
+                                    .min(10_000) as u16;
+                            let digest_mismatch_rate_q =
+                                ((u32::from(record.digest_mismatch_count) * 10_000) / sample_count)
+                                    .min(10_000) as u16;
+                            let risk_mean_delta_q =
+                                record.primary_mean_q.abs_diff(record.shadow_mean_q);
+                            let risk_p95_delta_q =
+                                record.primary_p95_q.abs_diff(record.shadow_p95_q);
+                            let mut breached_fields = Vec::new();
+                            let mut observed_q = Vec::new();
+                            if invalid_rate_q > budget.invalid_rate_max_q {
+                                breached_fields.push("invalid_rate_max_q".to_string());
+                                observed_q.push((
+                                    "invalid_rate_q".to_string(),
+                                    u32::from(invalid_rate_q),
+                                ));
+                            }
+                            if let Some(max) = budget.digest_mismatch_rate_max_q {
+                                if digest_mismatch_rate_q > max {
+                                    breached_fields.push("digest_mismatch_rate_max_q".to_string());
+                                    observed_q.push((
+                                        "digest_mismatch_rate_q".to_string(),
+                                        u32::from(digest_mismatch_rate_q),
+                                    ));
+                                }
+                            }
+                            if let Some(max) = budget.scalar_delta_max_q.get("risk_mean_q") {
+                                if risk_mean_delta_q > *max {
+                                    breached_fields
+                                        .push("scalar_delta_max_q.risk_mean_q".to_string());
+                                    observed_q.push((
+                                        "scalar_delta_max_q.risk_mean_q".to_string(),
+                                        u32::from(risk_mean_delta_q),
+                                    ));
+                                }
+                            }
+                            if let Some(max) = budget.scalar_delta_max_q.get("risk_p95_q") {
+                                if risk_p95_delta_q > *max {
+                                    breached_fields
+                                        .push("scalar_delta_max_q.risk_p95_q".to_string());
+                                    observed_q.push((
+                                        "scalar_delta_max_q.risk_p95_q".to_string(),
+                                        u32::from(risk_p95_delta_q),
+                                    ));
+                                }
+                            }
+                            if !breached_fields.is_empty() {
+                                breached_fields.sort();
+                                observed_q.sort_by(|a, b| a.0.cmp(&b.0));
+                                let severe = breached_fields.iter().any(|field| {
+                                    budget.severity.severe_fields.iter().any(|s| s == field)
+                                });
+                                let action_taken = if severe {
+                                    match budget.action_on_severe {
+                                        ucf_policy::policy_packs::DriftActionV1::DisableShadow => {
+                                            if self.compute_backend.apply_shadow_disable(
+                                                &slot_id,
+                                                record.t1,
+                                                "severe_drift_auto_disable",
+                                                self.shadow_disable_to_off,
+                                            ) {
+                                                "disable_shadow"
+                                            } else {
+                                                "none"
+                                            }
+                                        }
+                                        ucf_policy::policy_packs::DriftActionV1::None => "none",
+                                    }
+                                } else {
+                                    "none"
+                                };
+                                self.ess.append(ExperienceRecord::from_drift_alarm(
+                                    self.ids.next(),
+                                    ctrl.time,
+                                    ctrl.corr,
+                                    DriftAlarmRecordV1 {
+                                        schema_version: 1,
+                                        slot_id: slot_id.clone(),
+                                        window_id: record.t1,
+                                        breached_fields,
+                                        observed_q,
+                                        severity: if severe {
+                                            "severe".to_string()
+                                        } else {
+                                            "warn".to_string()
+                                        },
+                                        action_taken: action_taken.to_string(),
+                                    },
+                                ))?;
+                            }
+                        }
+                    }
                 }
                 SlotShadowEventV1::ShadowDisable(record) => {
                     self.ess.append(ExperienceRecord::from_shadow_disable(

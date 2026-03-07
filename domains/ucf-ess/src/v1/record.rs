@@ -58,6 +58,7 @@ pub enum ExperienceKind {
     ComputeBudgetViolation,
     RetrievalDecision,
     SlotCompareWindow,
+    DriftAlarm,
     ShadowDisable,
     SlotModeChange,
 }
@@ -154,6 +155,7 @@ pub enum AuditPayload {
     ComputeBudgetViolation(ComputeBudgetViolationRecord),
     RetrievalDecision(RetrievalDecisionRecord),
     SlotCompareWindow(SlotCompareWindowRecordV1),
+    DriftAlarm(DriftAlarmRecordV1),
     ShadowDisable(ShadowDisableRecord),
     SlotModeChange(SlotModeChangeRecordV1),
 }
@@ -214,6 +216,17 @@ pub struct SlotCompareWindowRecordV1 {
     pub invalid_shadow_count: u16,
     pub digest_prefix_samples: Vec<[u8; 4]>,
     pub status: SlotCompareStatusCodeV1,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DriftAlarmRecordV1 {
+    pub schema_version: u16,
+    pub slot_id: String,
+    pub window_id: u64,
+    pub breached_fields: Vec<String>,
+    pub observed_q: Vec<(String, u32)>,
+    pub severity: String,
+    pub action_taken: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1888,6 +1901,43 @@ impl ExperienceRecord {
             corr,
             kind: ExperienceKind::ShadowDisable,
             payload: ExperiencePayload::Audit(AuditPayload::ShadowDisable(record)),
+            neuromod: None,
+            iit_phi: None,
+            decision_meta: None,
+            compute_summary: None,
+            hormone_record: None,
+            neuro_record: None,
+            delta_proposal_record: None,
+            delta_evaluation_record: None,
+            delta_recommendation_record: None,
+            nsr_record: None,
+            backend_pack_record: None,
+            world_summary_record: None,
+            sae_summary_record: None,
+            ssm_summary_record: None,
+            lfm_summary_record: None,
+            llm_summary_record: None,
+            signal_bundle_record: None,
+            decision_inputs_record: None,
+            lfm_window_record: None,
+            ebm_tag: None,
+            audit_prev_digest: None,
+            audit_digest: None,
+        }
+    }
+
+    pub fn from_drift_alarm(
+        id: ExperienceId,
+        time: SimTime,
+        corr: CorrelationId,
+        record: DriftAlarmRecordV1,
+    ) -> Self {
+        Self {
+            id,
+            time,
+            corr,
+            kind: ExperienceKind::DriftAlarm,
+            payload: ExperiencePayload::Audit(AuditPayload::DriftAlarm(record)),
             neuromod: None,
             iit_phi: None,
             decision_meta: None,

@@ -10,7 +10,7 @@ pub use record::{
     compute_content_digest, AuditCheckpointRecord, AuditPayload, BackendPackRecord,
     CandidateSetRecord, CandidateSummaryRecord, CapabilityIssuanceRecord,
     ComputeBudgetViolationRecord, ComputeBudgetWindowRecord, DecisionInputsRecordV1,
-    DeltaEvaluationRecord, DeltaProposalRecord, DeltaRecommendationRecord,
+    DeltaEvaluationRecord, DeltaProposalRecord, DeltaRecommendationRecord, DriftAlarmRecordV1,
     EbmConstraintProvenanceRecord, EbmEnvelopeViolationRecord, EbmReasoningRecord,
     EmergencyReasonCode, EmergencyRecord, EmergencyStateCode, ExperienceEbmTagRecord, ExperienceId,
     ExperienceKind, ExperiencePayload, ExperienceRecord, GpuParityRecord,

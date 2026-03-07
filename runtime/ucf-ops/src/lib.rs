@@ -2439,7 +2439,7 @@ fn policy_drift_entry(stage_id: &str) -> Option<DriftBudgetEntryV1> {
         .drift_budget
         .entries
         .into_iter()
-        .find(|entry| entry.stage_id == stage_id)
+        .find(|entry| entry.slot_id == stage_id)
 }
 
 fn check_world_vljepa_shadow_evidence(workdir: &Path) -> Result<CheckResult, OpsError> {
@@ -2496,11 +2496,12 @@ fn check_world_vljepa_shadow_evidence(workdir: &Path) -> Result<CheckResult, Ops
     let budget = policy_drift_entry("world_vljepa");
     let min_windows = budget
         .as_ref()
-        .map(|entry| entry.window_size as usize)
+        .map(|entry| entry.window_size_ticks as usize)
         .unwrap_or(2);
     let drift_threshold = budget
         .as_ref()
-        .map(|entry| (entry.delta_scalar_max_q as f32) / 10_000.0)
+        .and_then(|entry| entry.scalar_delta_max_q.get("error_delta_p95_q").copied())
+        .map(|v| (v as f32) / 10_000.0)
         .unwrap_or(0.0);
     let alarm_rate = if rep.window_count == 0 {
         1.0
@@ -2629,7 +2630,8 @@ fn check_ssm_opt_drift(workdir: &Path) -> Result<CheckResult, OpsError> {
         .and_then(|v| v.as_f64())
         .unwrap_or(1.0);
     let drift_limit = policy_drift_entry("ssm_opt")
-        .map(|entry| (entry.delta_scalar_max_q as f64) / 10_000.0)
+        .and_then(|entry| entry.scalar_delta_max_q.get("drift_alarm_rate_q").copied())
+        .map(|v| (v as f64) / 10_000.0)
         .unwrap_or(0.0);
 
     if drift <= drift_limit && mismatch == 0.0 {
@@ -7965,6 +7967,7 @@ fn experience_kind_name(kind: ExperienceKind) -> &'static str {
         ExperienceKind::ComputeBudgetViolation => "ComputeBudgetViolation",
         ExperienceKind::RetrievalDecision => "RetrievalDecision",
         ExperienceKind::SlotCompareWindow => "SlotCompareWindow",
+        ExperienceKind::DriftAlarm => "DriftAlarm",
         ExperienceKind::ShadowDisable => "ShadowDisable",
         ExperienceKind::SlotModeChange => "SlotModeChange",
     }

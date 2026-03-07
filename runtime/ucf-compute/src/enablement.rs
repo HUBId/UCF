@@ -389,6 +389,37 @@ impl AiComputeBackend for EnablementComputeBackend {
         let mut rt = self.runtime.lock().expect("shadow runtime lock poisoned");
         std::mem::take(&mut rt.outbox)
     }
+
+    fn apply_shadow_disable(&self, slot_id: &str, t: u64, reason: &str, to_off: bool) -> bool {
+        if slot_id != "compute" {
+            return false;
+        }
+        let mut rt = self.runtime.lock().expect("shadow runtime lock poisoned");
+        if rt.shadow_disabled {
+            return false;
+        }
+        rt.shadow_disabled = true;
+        if to_off {
+            let from_mode = rt.mode;
+            rt.mode = SlotModeV1::Off;
+            rt.last_mode = SlotModeV1::Off;
+            rt.outbox
+                .push(SlotShadowEventV1::ModeChange(SlotModeChangeRecordV1 {
+                    slot_id: slot_id.to_string(),
+                    t,
+                    from_mode,
+                    to_mode: SlotModeV1::Off,
+                }));
+        }
+        rt.outbox
+            .push(SlotShadowEventV1::ShadowDisable(ShadowDisableRecordV1 {
+                slot_id: slot_id.to_string(),
+                t,
+                reason: reason.to_string(),
+                consecutive_failures: 0,
+            }));
+        true
+    }
 }
 
 fn envelope_ok(signals: &ComputeSignals) -> bool {
