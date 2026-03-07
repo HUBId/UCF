@@ -14,19 +14,22 @@ Schema:
 - `schema_version`
 - `[[rules]]`
   - `id`
-  - `kind` (`DriftAlarmRate`, `GatewayAuthFailRate`, `StrictModeFailure`, `DegradedFallbackRate`, `EmergencyActiveRate`)
+  - `kind` (`DriftSevereRate`, `GatewayAuthFailRate`, `StrictFailurePresent`, `DegradedFallbackRate`)
   - `window_size`
   - `threshold`
+  - `clear_after_windows` (deterministic hysteresis)
   - `severity` (`low|medium|high|critical`)
-  - `action` (`recommend|tighten|disable_slot|require_operator`)
+  - `action` (`recommend_rollback|recommend_disable_shadow|require_operator`)
 
 ## Deterministic windows and counts
 
 Alerts are evaluated deterministically with bounded windows:
 
-- Tick-window based for ESS-derived signals (`DegradedFallbackRate`, `EmergencyActiveRate`).
-- Bounded latest-event windows for gateway and drift JSONL artifacts.
-- Strict-mode failure uses local strict failure artifact presence.
+- Tick-window based for ESS-derived degraded fallback signals.
+- Bounded latest-event windows for gateway abuse and drift JSONL artifacts.
+- Drift alerts count only `DriftAlarmRecordV1` records where `severity == "SEVERE"`.
+- Strict-mode failure uses local `./out/strict_failure.json` presence.
+- Clear events require `clear_after_windows` consecutive below-threshold windows.
 
 No network access is required.
 
@@ -41,7 +44,9 @@ Event types:
 - `trigger` with `AlertRecordV1`
 - `clear` with `AlertClearRecordV1`
 
-Records are digest-only evidence (no sensitive payload text), bounded evidence vectors, and deterministic remediation code mapping.
+Evaluator state for hysteresis is persisted to:
+
+- `.ucf/out/alerts_state.json`
 
 ## Report command
 
@@ -53,7 +58,7 @@ cargo run -p ucf-ops -- alerts report --run <id> --out ./out/alerts_report.json
 
 The report includes:
 
-- active alerts (bounded)
+- active alerts (bounded, <=16)
 - last trigger history (<=20)
 - deterministic remediation command suggestions
 - short operator summary text
@@ -68,5 +73,5 @@ Depending on active alerts:
    - `ucf-ops gateway threat-test --out ./out/gateway_threat.json`
 3. Re-run strict posture checks:
    - `ucf-ops strict check --strict --out ./out/strict_check.json`
-4. Consider rollback recommendation:
-   - `ucf-ops models recommend-rollback --slot world`
+4. Consider rollback recommendation (recommendation only):
+   - `ucf-ops models rollback --slot world --to <hash>`

@@ -1,11 +1,11 @@
 name = "base_v1"
 version = "1.0.0"
 schema_version = 1
-pack_digest = "f68a96fbc6f72a29aa1a3aba1517fd6b4c3f434c61523cc5fc5e0c0f8a39dbc6"
+pack_digest = "c1910a96521404980e0df6f09bf7be54cfef807ea953f317cf9ece95af10b792"
 
 [[files]]
 path = "alerts.toml"
-sha256 = "550f2898424314aa4ab65f0dc88c41047163fd3ae3de23755d2e953a5b4574b5"
+sha256 = "5ad58d0b7a53f39c601555ec341f8dcb129c0602492b209f21c9711a600018c5"
 
 [[files]]
 path = "allowlists.toml"

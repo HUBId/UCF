@@ -1,11 +1,11 @@
 name = "overlay_test"
 version = "1.0.0"
 schema_version = 1
-pack_digest = "fd13e23805257131898218a1d93fdf1b6d8218571e231aca3376a7bad8dd6db2"
+pack_digest = "7bbda319f597062b848b6a3bfb7fadce14b88148b8b8159f5eeb44e88ad986d4"
 
 [[files]]
 path = "alerts.toml"
-sha256 = "550f2898424314aa4ab65f0dc88c41047163fd3ae3de23755d2e953a5b4574b5"
+sha256 = "5ad58d0b7a53f39c601555ec341f8dcb129c0602492b209f21c9711a600018c5"
 
 [[files]]
 path = "allowlists.toml"
