@@ -18,7 +18,7 @@ use ucf_ops::{
     preflight, readiness_gate, release_build_rc, release_rc1_gate, release_signoff_validate,
     replay_audit, replay_bugreport, repro_pack, repro_verify, run_status, runs_list, runs_search,
     runs_show, save_counterfactual_result, security_verify_chain, simulate_counterfactual,
-    soak_run, strict_check, troubleshoot, v0_gate, verify_bugreport, world_shadow_report,
+    soak_run, strict_check, troubleshoot, v0_gate, v1_smoke, verify_bugreport, world_shadow_report,
     write_slice, AdversarialRunArgs, AirgapArtifactType, AirgapImportArgs, AirgapImportMode,
     BenchArgs, BugKitBuildArgs, ChangeImpactArgs, ConfigV1, CounterfactualRequest, DevLoopArgs,
     DocsLintArgs, DocsLintMode, DocsLintStatus, ExplainTickRequest, ExportArgs, GateStatus,
@@ -1373,6 +1373,29 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 std::process::exit(2);
             }
         }
+        "v1" => {
+            let sub = args.get(2).map(String::as_str).unwrap_or("help");
+            match sub {
+                "smoke" => {
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/v1_smoke_report.json"));
+                    let report = v1_smoke(&workdir, &out, has_flag(&args, "--shadow"))?;
+                    println!("schema_version={}", report.schema_version);
+                    for check in &report.checks {
+                        println!(
+                            "check={} status={:?} detail={}",
+                            check.name, check.status, check.detail
+                        );
+                    }
+                    println!("out={}", out.display());
+                    if report.checks.iter().any(|c| c.status == GateStatus::Fail) {
+                        std::process::exit(2);
+                    }
+                }
+                _ => return Err("usage: ucf-ops v1 smoke [--shadow] [--out <path>]".into()),
+            }
+        }
         "v0" => {
             let sub = args.get(2).map(String::as_str).unwrap_or("help");
             match sub {
@@ -1862,7 +1885,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             eprintln!(
-                "usage: ucf-ops <bringup|diag|health|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|attest|repro|readiness-gate|preflight|goldens|nightly|dev|troubleshoot|adversarial-run|out|release|bench|runs|status|strict|ess|ebm|drift|alerts|policy|portability|spec|change-impact|soak|v0|version> [--workdir <path>] [--bundle <path>]"
+                "usage: ucf-ops <bringup|diag|health|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|attest|repro|readiness-gate|preflight|goldens|nightly|dev|troubleshoot|adversarial-run|out|release|bench|runs|status|strict|ess|ebm|drift|alerts|policy|portability|spec|change-impact|soak|v0|v1|version> [--workdir <path>] [--bundle <path>]"
             );
             std::process::exit(1);
         }

@@ -42,6 +42,8 @@ jobs:
         run: cargo build -p ucf-ops
       - name: Docs lint (blocking)
         run: cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json
+      - name: v0 gate (blocking)
+        run: cargo run -p ucf-ops -- v0 gate --scenario fixtures/e2e/v0_flow_a.json --out ./out/v0_gate_report.json
       - name: Change impact plan (informational)
         run: |
           cargo run -p ucf-ops -- change-impact --base HEAD~1 --head HEAD --out ./out/change_impact_plan.md --json-out ./out/change_impact_plan.json
@@ -88,12 +90,47 @@ jobs:
         run: cargo test --workspace --all-targets
       - name: Docs lint (blocking)
         run: cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json
+      - name: v0 gate (blocking)
+        run: cargo run -p ucf-ops -- v0 gate --scenario fixtures/e2e/v0_flow_a.json --out ./out/v0_gate_report.json
       - name: Hardware assumptions scan
         run: cargo run -p ucf-ops -- audit hardware-scan
       - name: Runtime path hygiene scan
         run: cargo run -p ucf-ops -- audit path-scan
       - name: Hidden network dependency scan
         run: cargo run -p ucf-ops -- audit net-deps --out ./out/net_deps.json
+      - name: Models verify (if manifest present)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          if [ -f models/MANIFEST.toml ]; then
+            cargo run -p ucf-ops -- models verify --manifest models/MANIFEST.toml --out ./out/models_verify_report.json
+          elif [ -f models/manifest.toml ]; then
+            cargo run -p ucf-ops -- models verify --manifest models/manifest.toml --out ./out/models_verify_report.json
+          else
+            echo "models_verify=skip reason=no_manifest"
+          fi
+      - name: Models verify (if manifest present)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (Test-Path "models/MANIFEST.toml") {
+            cargo run -p ucf-ops -- models verify --manifest models/MANIFEST.toml --out ./out/models_verify_report.json
+          } elseif (Test-Path "models/manifest.toml") {
+            cargo run -p ucf-ops -- models verify --manifest models/manifest.toml --out ./out/models_verify_report.json
+          } else {
+            Write-Host "models_verify=skip reason=no_manifest"
+          }
+      - name: Models probe slots (dummy/offline)
+        run: |
+          cargo run -p ucf-ops -- models probe --slot llm --out ./out/probe_llm.json
+          cargo run -p ucf-ops -- models probe --slot sae --out ./out/probe_sae.json
+          cargo run -p ucf-ops -- models probe --slot world_jepa --out ./out/probe_world_jepa.json
+      - name: v1 smoke (minimal)
+        if: runner.os == 'Linux'
+        run: cargo run -p ucf-ops -- v1 smoke --shadow --out ./out/v1_smoke_report.json
+      - name: v1 smoke (minimal, no shadow)
+        if: runner.os == 'Windows'
+        run: cargo run -p ucf-ops -- v1 smoke --out ./out/v1_smoke_report.json
       - name: Portability check
         run: cargo run -p ucf-ops -- portability check --out ./out/portability.json
       - name: Readiness gate (test profile)
