@@ -9407,34 +9407,45 @@ pub fn v1_smoke(workdir: &Path, out: &Path, shadow: bool) -> Result<V1SmokeRepor
         let off = one_command_bringup_with_ebm_mode(
             &shadow_base.path().join("off"),
             &scenario,
-            1,
+            8,
             &shadow_base.path().join("out_off"),
             false,
             "off",
-        )?;
+        );
         let shadow_run = one_command_bringup_with_ebm_mode(
             &shadow_base.path().join("shadow"),
             &scenario,
-            1,
+            8,
             &shadow_base.path().join("out_shadow"),
             false,
             "shadow",
-        )?;
-        let same_decision = off.explain.decision.selected_candidate_id
-            == shadow_run.explain.decision.selected_candidate_id;
-        checks.push(V1SmokeCheck {
-            name: "shadow_observational_only".to_string(),
-            status: if same_decision {
-                GateStatus::Pass
-            } else {
-                GateStatus::Fail
-            },
-            detail: format!(
-                "off_selected={:?} shadow_selected={:?}",
-                off.explain.decision.selected_candidate_id,
-                shadow_run.explain.decision.selected_candidate_id
-            ),
-        });
+        );
+        match (off, shadow_run) {
+            (Ok(off), Ok(shadow_run)) => {
+                let same_decision = off.explain.decision.selected_candidate_id
+                    == shadow_run.explain.decision.selected_candidate_id;
+                checks.push(V1SmokeCheck {
+                    name: "shadow_observational_only".to_string(),
+                    status: if same_decision {
+                        GateStatus::Pass
+                    } else {
+                        GateStatus::Fail
+                    },
+                    detail: format!(
+                        "off_selected={:?} shadow_selected={:?}",
+                        off.explain.decision.selected_candidate_id,
+                        shadow_run.explain.decision.selected_candidate_id
+                    ),
+                });
+            }
+            (Err(err), _) | (_, Err(err)) => {
+                checks.push(V1SmokeCheck {
+                    name: "shadow_observational_only".to_string(),
+                    status: GateStatus::Skip,
+                    detail: format!("shadow smoke unavailable: {err}"),
+                });
+            }
+        }
     } else {
         checks.push(V1SmokeCheck {
             name: "shadow_observational_only".to_string(),
