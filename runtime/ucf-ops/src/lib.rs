@@ -8689,6 +8689,19 @@ pub struct PathScanReport {
     pub violations: Vec<PathScanViolation>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct V1SmokeCheck {
+    pub name: String,
+    pub status: GateStatus,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct V1SmokeReport {
+    pub schema_version: u16,
+    pub checks: Vec<V1SmokeCheck>,
+}
+
 pub fn path_scan(repo_root: &Path) -> Result<PathScanReport, OpsError> {
     let banned = ["/etc/", "/var/", "systemd", "systemctl"];
     let mut violations = Vec::new();
@@ -8727,6 +8740,12 @@ pub fn path_scan(repo_root: &Path) -> Result<PathScanReport, OpsError> {
             }
         }
     }
+    violations.sort_by(|a, b| {
+        a.path
+            .cmp(&b.path)
+            .then_with(|| a.line.cmp(&b.line))
+            .then_with(|| a.pattern.cmp(&b.pattern))
+    });
     Ok(PathScanReport { violations })
 }
 
@@ -9328,7 +9347,15 @@ pub fn hardware_scan(repo_root: &Path) -> Result<HardwareScanReport, OpsError> {
             || rel.starts_with("domains/")
             || rel.starts_with("ai/")
             || rel.starts_with("app/");
-        if !in_runtime_scope {
+        let in_core_docs_scope = [
+            "docs/portability_gate.md",
+            "docs/readiness_gate.md",
+            "docs/deploy_portable.md",
+            "docs/spec_snapshot.md",
+        ]
+        .iter()
+        .any(|doc| rel == *doc);
+        if !in_runtime_scope && !in_core_docs_scope {
             continue;
         }
         let text = fs::read_to_string(path).unwrap_or_default();
@@ -9344,7 +9371,98 @@ pub fn hardware_scan(repo_root: &Path) -> Result<HardwareScanReport, OpsError> {
             }
         }
     }
+    violations.sort_by(|a, b| {
+        a.path
+            .cmp(&b.path)
+            .then_with(|| a.line.cmp(&b.line))
+            .then_with(|| a.pattern.cmp(&b.pattern))
+    });
     Ok(HardwareScanReport { violations })
+}
+
+pub fn v1_smoke(workdir: &Path, out: &Path, shadow: bool) -> Result<V1SmokeReport, OpsError> {
+    let mut checks = Vec::new();
+    for slot in [ModelSlot::Llm, ModelSlot::Sae, ModelSlot::WorldJepa] {
+        let report = models_probe_slot(
+            slot,
+            None,
+            &workdir
+                .join("out")
+                .join(format!("probe_{}_smoke.json", slot.as_str())),
+        )?;
+        checks.push(V1SmokeCheck {
+            name: format!("probe_{}", slot.as_str()),
+            status: if report.pass() {
+                GateStatus::Pass
+            } else {
+                GateStatus::Fail
+            },
+            detail: format!("mode={:?} status={:?}", report.mode, report.status),
+        });
+    }
+
+    if shadow {
+        let scenario = PathBuf::from("fixtures/e2e/v0_flow_a.json");
+        let shadow_base = tempfile::tempdir()?;
+        let off = one_command_bringup_with_ebm_mode(
+            &shadow_base.path().join("off"),
+            &scenario,
+            8,
+            &shadow_base.path().join("out_off"),
+            false,
+            "off",
+        );
+        let shadow_run = one_command_bringup_with_ebm_mode(
+            &shadow_base.path().join("shadow"),
+            &scenario,
+            8,
+            &shadow_base.path().join("out_shadow"),
+            false,
+            "shadow",
+        );
+        match (off, shadow_run) {
+            (Ok(off), Ok(shadow_run)) => {
+                let same_decision = off.explain.decision.selected_candidate_id
+                    == shadow_run.explain.decision.selected_candidate_id;
+                checks.push(V1SmokeCheck {
+                    name: "shadow_observational_only".to_string(),
+                    status: if same_decision {
+                        GateStatus::Pass
+                    } else {
+                        GateStatus::Fail
+                    },
+                    detail: format!(
+                        "off_selected={:?} shadow_selected={:?}",
+                        off.explain.decision.selected_candidate_id,
+                        shadow_run.explain.decision.selected_candidate_id
+                    ),
+                });
+            }
+            (Err(err), _) | (_, Err(err)) => {
+                checks.push(V1SmokeCheck {
+                    name: "shadow_observational_only".to_string(),
+                    status: GateStatus::Skip,
+                    detail: format!("shadow smoke unavailable: {err}"),
+                });
+            }
+        }
+    } else {
+        checks.push(V1SmokeCheck {
+            name: "shadow_observational_only".to_string(),
+            status: GateStatus::Skip,
+            detail: "disabled (--shadow not set)".to_string(),
+        });
+    }
+
+    let report = V1SmokeReport {
+        schema_version: 1,
+        checks,
+    };
+    if let Some(parent) = out.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(out, serde_json::to_vec_pretty(&report)?)?;
+    Ok(report)
 }
 
 pub fn policy_explain(
@@ -9599,6 +9717,25 @@ mod path_scan_tests {
         let report = path_scan(tmp.path()).expect("scan");
         assert_eq!(report.violations.len(), 1);
         assert_eq!(report.violations[0].pattern, "/etc/");
+    }
+}
+
+#[cfg(test)]
+mod v1_smoke_tests {
+    use super::*;
+
+    #[test]
+    fn v1_smoke_runs_without_shadow() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let out = dir.path().join("out/v1_smoke_report.json");
+        let report = v1_smoke(dir.path(), &out, false).expect("v1 smoke");
+        assert!(out.exists());
+        assert_eq!(report.schema_version, 1);
+        assert!(report.checks.iter().any(|c| c.name == "probe_llm"));
+        assert!(report
+            .checks
+            .iter()
+            .any(|c| c.name == "shadow_observational_only" && c.status == GateStatus::Skip));
     }
 }
 
