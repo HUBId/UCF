@@ -1,5 +1,7 @@
 # Roadmap Anchor v0 — Real Compute Onboarding (Hardware-Neutral)
 
+> Status update: v0 and v1 onboarding phases are complete; active planning moved to `docs/roadmap_anchor_v2.md`.
+
 ## A) Current target milestone
 **Real Compute Onboarding v0** is the active anchor for prompt-series execution and docs governance.
 

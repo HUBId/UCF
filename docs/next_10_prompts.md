@@ -1,85 +1,85 @@
-# Next 10 Prompts (MUST-only, v1 Anchor)
+# Next 10 Prompts (v2 Anchor)
 
-Anchor: `Real Compute Onboarding v1` transition plan (v0 completion prerequisite: `ucf-ops v0 gate` PASS)
+Anchor: `Real Compute Onboarding v2` (precondition: `ucf-ops v1 gate` PASS)
 
 > Guardrail: This queue is capped to **10** entries unless an explicit request expands it.
 
-## Prompt 178 — Weights lifecycle scaffold (staging/promoted, no real weights required)
-- Objective: Define deterministic v1 lifecycle metadata and transitions for `staging` and `promoted` slots without requiring real weight artifacts.
+## Prompt 189 — Adapter trait hardening for optional Candle/Burn slots
+- Objective: Refine backend adapter trait boundaries so optional Candle/Burn integrations stay deterministic and hardware-neutral.
 - Acceptance:
-  - Lifecycle schema documents `staging -> promoted` transitions with deterministic state encoding.
-  - Real weight blobs are optional in v1 unless a probe fixture explicitly references them.
-  - Offline fixture path validates empty/dummy payload handling.
-- Dependencies: v0 gate PASS; prompt rulebook 10-prompt cap (Prompt 171).
+  - Trait contracts document slot boundaries and deterministic fallback behavior.
+  - Optional backend flags are explicit and default-off.
+  - No vendor- or hardware-specific assumptions are required.
+- Dependencies: v1 gate PASS.
 
-## Prompt 179 — Hardware-neutral backend adapter traits (Candle/Burn optional, no real compute)
-- Objective: Specify backend adapter trait interfaces that allow Candle/Burn integration later while keeping v1 behavior hardware-neutral.
+## Prompt 190 — Optional feature wiring for one or two backend-enabled slots
+- Objective: Define feature wiring for at most one or two slots to enable optional real backend paths.
 - Acceptance:
-  - Trait contract defines adapter boundaries independent of vendor/device assumptions.
-  - Candle/Burn adapters remain optional and feature-gated for v1.
-  - Deterministic stub behavior is specified for no-backend environments.
-- Dependencies: 178.
+  - Slot scope is limited to one or two named slots.
+  - Disabled-feature behavior remains stub-only and deterministic.
+  - Build/runtime docs specify optional activation paths.
+- Dependencies: 189.
 
-## Prompt 180 — Probe infrastructure per model slot with dummy fixtures
-- Objective: Add slot-scoped probe fixture planning so v1 can validate interfaces without real weights.
+## Prompt 191 — Tiny real-weights fixture contract for one slot (probe-first)
+- Objective: Specify a tiny fixture contract for one slot so probe workflows can validate real backend loading behavior.
 - Acceptance:
-  - Each slot has a deterministic dummy probe fixture contract.
-  - Probe outputs are canonicalized for repeatable compare runs.
-  - Real weights are only required when a probe fixture explicitly opts in.
-- Dependencies: 178, 179.
+  - Fixture contract includes digest, size cap, and canonical metadata fields.
+  - Probe-first usage is required; production activation is excluded.
+  - Baseline workflows do not require downloading real weights.
+- Dependencies: 190.
 
-## Prompt 181 — Slot-level rollout state machine (shadow/compare/active)
-- Objective: Define deterministic rollout semantics per slot using `shadow`, `compare`, and `active` states.
+## Prompt 192 — Probe-only execution flow for optional real backend fixture
+- Objective: Define deterministic probe execution and reporting for the tiny real-backend fixture.
 - Acceptance:
-  - State machine transitions are explicit, bounded, and auditable.
-  - `shadow` and `compare` do not force production activation paths.
-  - Canonical transition evidence fields are listed for docs/tests.
-- Dependencies: 178, 180.
+  - Probe run produces deterministic PASS/FAIL outputs for identical inputs.
+  - Evidence payload format is canonical and bounded.
+  - Failure remediation steps are documented for offline runs.
+- Dependencies: 191.
 
-## Prompt 182 — Drift budget schema and evaluator for shadow outputs
-- Objective: Specify minimal drift budget fields and deterministic evaluation flow for shadow-vs-reference outputs.
+## Prompt 193 — Shadow-only rollout guard for optional real backend
+- Objective: Introduce rollout guardrails that keep optional real backend operation in shadow mode only.
 - Acceptance:
-  - Drift budget schema defines threshold fields with stable encoding.
-  - Evaluator behavior is deterministic for identical fixture inputs.
-  - Budget verdicts are consumable by rollout state transitions.
-- Dependencies: 180, 181.
+  - Shadow mode is enforced as the only allowed mode for optional real backend paths.
+  - Decision-impact parity checks remain mandatory.
+  - Safety invariant `no decision, no action` is unchanged.
+- Dependencies: 192.
 
-## Prompt 183 — Minimal alerts rules and report format
-- Objective: Define minimal alerting rules and deterministic reporting for drift and rollout anomalies.
+## Prompt 194 — Drift/evidence parity checks for stub vs optional backend
+- Objective: Define parity checks between deterministic stubs and optional backend shadow outputs.
 - Acceptance:
-  - Alert rule set covers at least budget breach and transition violation signals.
-  - Report schema is bounded and deterministic in ordering/content.
-  - Offline report generation is documented for CI artifacts.
-- Dependencies: 182.
+  - Drift budget fields and thresholds are documented for parity checks.
+  - Evidence records include stable digests and comparison verdicts.
+  - Checks are reproducible in offline fixture runs.
+- Dependencies: 193.
 
-## Prompt 184 — Portability gate integration (Linux/Windows lanes)
-- Objective: Integrate v1 scaffolding checks into existing portability gate lanes without changing hardware assumptions.
+## Prompt 195 — Operator runbook update for optional backend probe workflows
+- Objective: Update operator docs for staging, probing, and shadow monitoring of optional backend slots.
 - Acceptance:
-  - Linux and Windows lane expectations are documented for v1 scaffolding checks.
-  - Determinism is required within each OS lane for identical fixtures.
-  - Gate output artifact paths follow repository conventions.
-- Dependencies: 179, 180, 183.
+  - Runbook steps are non-interactive and deterministic.
+  - Required artifacts and report paths are listed explicitly.
+  - Rollback/disable path for optional backend features is documented.
+- Dependencies: 190, 192, 193, 194.
 
-## Prompt 185 — Strict-mode wiring for v1 scaffold features
-- Objective: Define strict-mode behavior that enforces v1 scaffold invariants at runtime/docs gates.
+## Prompt 196 — Deterministic performance bench envelope for optional backend paths
+- Objective: Add optional benchmark planning for backend probe/shadow paths with fixed budget envelopes.
 - Acceptance:
-  - Strict mode fails on missing required v1 scaffold metadata.
-  - Non-strict mode preserves backward-compatible behavior for staged rollout.
-  - Failure reasons are deterministic and operator-readable.
-- Dependencies: 181, 182, 183.
+  - Bench definitions use budget envelopes, not hardware-specific targets.
+  - Output schema and ordering are deterministic.
+  - Bench scope is clearly marked optional (NICE).
+- Dependencies: 192, 193.
 
-## Prompt 186 — Operator docs and end-state update for v1 onboarding
-- Objective: Update operator-facing documentation to reflect v1 onboarding semantics and end-state expectations.
+## Prompt 197 — Extended drift dashboard docs for probe/shadow comparison
+- Objective: Expand documentation for drift dashboard views covering probe and shadow parity trends.
 - Acceptance:
-  - Docs describe lifecycle, rollout states, drift budgets, and alerts in one coherent flow.
-  - End-state wording remains hardware-neutral and probe-first.
-  - Prompt index/state references are synchronized with v1 queue.
-- Dependencies: 178-185.
+  - Dashboard inputs and derived metrics are documented with stable field names.
+  - Data retention and boundedness constraints are explicit.
+  - Work is clearly marked optional (NICE).
+- Dependencies: 194.
 
-## Prompt 187 — v1 scaffolding signoff gate (PASS/FAIL)
-- Objective: Define the v1 gate criteria that mark scaffolding completeness without requiring real production weights by default.
+## Prompt 198 — v2 phase-1 signoff gate for optional real-backend readiness
+- Objective: Define v2 phase-1 gate criteria for optional real-backend probe/shadow readiness.
 - Acceptance:
-  - Gate criteria cover lifecycle, probe, rollout, drift, alerts, portability, and strict-mode checks.
+  - Gate criteria cover adapters, fixture contract, probe flow, shadow guard, and parity evidence.
   - PASS/FAIL semantics are deterministic and CI-friendly.
-  - Real weights remain optional unless explicitly required by probe fixtures.
-- Dependencies: 178-186.
+  - Training, remote compute, and GPU lanes remain out of scope.
+- Dependencies: 189-195.
