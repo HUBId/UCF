@@ -1198,6 +1198,28 @@ pub struct V0GateReportV1 {
     pub checks: Vec<V0GateCheckV1>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct V1GateCheckV1 {
+    pub name: String,
+    pub status: GateStatus,
+    pub evidence_digest_prefixes: BTreeMap<String, String>,
+    pub remediation_hint: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum V1GateOverallStatus {
+    Pass,
+    Fail,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct V1GateReportV1 {
+    pub schema_version: u16,
+    pub overall_status: V1GateOverallStatus,
+    pub checks: Vec<V1GateCheckV1>,
+}
+
 impl Default for ReadinessGateReport {
     fn default() -> Self {
         Self {
@@ -1626,6 +1648,291 @@ pub fn v0_gate(workdir: &Path, scenario: &Path, out: &Path) -> Result<V0GateRepo
     };
     write_json(out, &report)?;
     Ok(report)
+}
+
+const V1_SCHEMA_VERSION: u16 = 1;
+
+pub fn v1_gate(workdir: &Path, out: &Path) -> Result<V1GateReportV1, OpsError> {
+    ensure_layout(workdir)?;
+    if let Some(parent) = out.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let mut checks = Vec::new();
+    let v0_out = workdir.join("out").join("v0_gate_report.json");
+    let v0 = v0_gate(workdir, Path::new("fixtures/e2e/v0_flow_a.json"), &v0_out)?;
+    checks.push(v1_gate_check(
+        "v0_gate_pass",
+        if matches!(v0.overall_status, V0GateOverallStatus::Pass) {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [("v0_gate_report".to_string(), prefix_hex(&sha256_hex(&serde_json::to_vec(&v0)?), 16))],
+        "run `cargo run -p ucf-ops -- v0 gate --out ./out/v0_gate_report.json` and fix failing checks",
+    ));
+
+    let models_dir = Path::new("models");
+    if models_dir.exists() {
+        let verify = models_verify_lifecycle(Path::new("models/MANIFEST.toml"));
+        let (status, evidence) = match verify {
+            Ok(report) => {
+                let pass = report.manifest_present
+                    && report.digest_match
+                    && report.promoted_hashes_exist
+                    && report.files_verified;
+                let digest = prefix_hex(&sha256_hex(&serde_json::to_vec(&report)?), 16);
+                (
+                    if pass {
+                        GateStatus::Pass
+                    } else {
+                        GateStatus::Fail
+                    },
+                    vec![("models_verify".to_string(), digest)],
+                )
+            }
+            Err(err) => (
+                GateStatus::Fail,
+                vec![("error".to_string(), bounded_string(err.to_string(), 48))],
+            ),
+        };
+        checks.push(v1_gate_check(
+            "models_manifest_verify",
+            status,
+            evidence,
+            "run `cargo run -p ucf-ops -- models verify --manifest models/MANIFEST.toml`",
+        ));
+    } else {
+        checks.push(v1_gate_check(
+            "models_manifest_verify",
+            GateStatus::Skip,
+            [("models_dir".to_string(), "missing".to_string())],
+            "optional: add `models/` plus `models/MANIFEST.toml` to enable verification",
+        ));
+    }
+
+    let slots = [ModelSlot::WorldJepa, ModelSlot::Sae, ModelSlot::Ssm];
+    let probe_reports: Result<Vec<_>, OpsError> = slots
+        .into_iter()
+        .map(|slot| {
+            models_probe_slot(
+                slot,
+                None,
+                &workdir
+                    .join("out")
+                    .join(format!("probe_{}_v1_gate.json", slot.as_str())),
+            )
+            .map(|r| (slot, r))
+        })
+        .collect();
+    match probe_reports {
+        Ok(reports) => {
+            let all_pass = reports.iter().all(|(_, report)| report.pass());
+            let mut evidence = Vec::new();
+            for (slot, report) in reports {
+                evidence.push((
+                    format!("probe_{}", slot.as_str()),
+                    prefix_hex(&sha256_hex(&serde_json::to_vec(&report)?), 16),
+                ));
+            }
+            checks.push(v1_gate_check(
+                "probes_dummy_pass",
+                if all_pass { GateStatus::Pass } else { GateStatus::Fail },
+                evidence,
+                "run `cargo run -p ucf-ops -- models probe --manifest models/MANIFEST.toml --out ./out/probe_report.json` and fix failed slots",
+            ));
+        }
+        Err(err) => checks.push(v1_gate_check(
+            "probes_dummy_pass",
+            GateStatus::Fail,
+            [("error".to_string(), bounded_string(err.to_string(), 48))],
+            "ensure probe fixtures/backend stubs are available and rerun gate",
+        )),
+    }
+
+    let scenario = Path::new("fixtures/e2e/v0_flow_a.json");
+    let off = v0_gate_run_once(workdir, scenario, 8, "v1_gate_shadow_off");
+    let shadow = one_command_bringup_with_ebm_mode(
+        &workdir.join("v1_gate").join("shadow_on"),
+        scenario,
+        8,
+        &workdir.join("v1_gate").join("shadow_on").join("out"),
+        true,
+        "shadow",
+    );
+
+    let (shadow_status, shadow_evidence) = match (off, shadow) {
+        (Ok(off_run), Ok(shadow_run)) => {
+            let shadow_decision = sha256_hex(&serde_json::to_vec(&shadow_run.explain.decision)?);
+            let no_impact = off_run.decision_digest == shadow_decision;
+            let shadow_records = load_fixture_records(
+                &workdir
+                    .join("v1_gate")
+                    .join("shadow_on")
+                    .join("ess")
+                    .join("ess_fixture.json"),
+            )?;
+            let tool_count = shadow_records
+                .iter()
+                .filter(|r| r.kind == ExperienceKind::ToolExecution)
+                .count();
+            (
+                if no_impact && tool_count == 0 {
+                    GateStatus::Pass
+                } else {
+                    GateStatus::Fail
+                },
+                vec![
+                    (
+                        "off_decision".to_string(),
+                        prefix_hex(&off_run.decision_digest, 16),
+                    ),
+                    (
+                        "shadow_decision".to_string(),
+                        prefix_hex(&shadow_decision, 16),
+                    ),
+                    ("tool_execution_count".to_string(), tool_count.to_string()),
+                ],
+            )
+        }
+        (Err(err), _) | (_, Err(err)) => (
+            GateStatus::Fail,
+            vec![("error".to_string(), bounded_string(err.to_string(), 48))],
+        ),
+    };
+    checks.push(v1_gate_check(
+        "shadow_no_decision_impact",
+        shadow_status,
+        shadow_evidence,
+        "keep slot in shadow mode only and require decision digest parity with baseline run",
+    ));
+
+    let cfg = load_or_init_config(workdir)?;
+    let drift_budget_override = std::env::var("UCF_STRICT_DRIFT_BUDGET_PATH").ok();
+    let base_drift_budget = Path::new("policies/packs/base_v1/drift_budget.toml");
+    let overlay_drift_budget = PathBuf::from(format!(
+        "policies/packs/overlays/{}/drift_budget.toml",
+        cfg.profile
+    ));
+    let drift_present = if let Some(path) = drift_budget_override {
+        PathBuf::from(path).exists()
+    } else {
+        overlay_drift_budget.exists() || base_drift_budget.exists()
+    };
+    checks.push(v1_gate_check(
+        "drift_budget_present_if_shadow",
+        if drift_present {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [(
+            "drift_budget".to_string(),
+            if drift_present { "present" } else { "missing" }.to_string(),
+        )],
+        "add `drift_budget.toml` to base or active overlay pack",
+    ));
+
+    let base_alerts = Path::new("policies/packs/base_v1/alerts.toml");
+    let overlay_alerts = PathBuf::from(format!(
+        "policies/packs/overlays/{}/alerts.toml",
+        cfg.profile
+    ));
+    let alerts_present = overlay_alerts.exists() || base_alerts.exists();
+    checks.push(v1_gate_check(
+        "alerts_present",
+        if alerts_present {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [(
+            "alerts_config".to_string(),
+            if alerts_present { "present" } else { "missing" }.to_string(),
+        )],
+        "add `alerts.toml` to base or active overlay pack",
+    ));
+
+    let strict_out = workdir.join("out").join("strict_check_v1_gate.json");
+    let strict = strict_check(workdir, true, &strict_out)?;
+    let strict_v1_pass = strict.ok
+        || strict
+            .report
+            .v1_checks
+            .iter()
+            .all(|c| matches!(c.status, StrictCheckStatus::Pass));
+    checks.push(v1_gate_check(
+        "strict_check_v1",
+        if strict_v1_pass { GateStatus::Pass } else { GateStatus::Fail },
+        [(
+            "strict_report".to_string(),
+            prefix_hex(&sha256_hex(&serde_json::to_vec(&strict.report)?), 16),
+        )],
+        "run `cargo run -p ucf-ops -- strict check --strict --out ./out/strict_check.json` and resolve v1 strict failures",
+    ));
+
+    let portability_status = match (hardware_scan(Path::new(".")), path_scan(Path::new("."))) {
+        (Ok(hw), Ok(path)) => {
+            let mut evidence = vec![
+                (
+                    "hardware_violations".to_string(),
+                    hw.violations.len().to_string(),
+                ),
+                (
+                    "path_violations".to_string(),
+                    path.violations.len().to_string(),
+                ),
+            ];
+            evidence.sort_by(|a, b| a.0.cmp(&b.0));
+            v1_gate_check(
+                "portability_scans",
+                if hw.violations.is_empty() && path.violations.is_empty() {
+                    GateStatus::Pass
+                } else {
+                    GateStatus::Fail
+                },
+                evidence,
+                "run `cargo run -p ucf-ops -- portability check --out ./out/portability_check.json` and fix scan violations",
+            )
+        }
+        (Err(err), _) | (_, Err(err)) => v1_gate_check(
+            "portability_scans",
+            GateStatus::Skip,
+            [("error".to_string(), bounded_string(err.to_string(), 48))],
+            "optional scan unavailable in this environment",
+        ),
+    };
+    checks.push(portability_status);
+
+    let overall_status = if checks
+        .iter()
+        .all(|check| matches!(check.status, GateStatus::Pass | GateStatus::Skip))
+    {
+        V1GateOverallStatus::Pass
+    } else {
+        V1GateOverallStatus::Fail
+    };
+    let report = V1GateReportV1 {
+        schema_version: V1_SCHEMA_VERSION,
+        overall_status,
+        checks,
+    };
+    write_json(out, &report)?;
+    Ok(report)
+}
+
+fn v1_gate_check(
+    name: &str,
+    status: GateStatus,
+    evidence: impl IntoIterator<Item = (String, String)>,
+    remediation_hint: &str,
+) -> V1GateCheckV1 {
+    V1GateCheckV1 {
+        name: name.to_string(),
+        status,
+        evidence_digest_prefixes: bounded_evidence(evidence),
+        remediation_hint: remediation_hint.to_string(),
+    }
 }
 
 fn v0_gate_check(
@@ -10613,5 +10920,147 @@ mod release_rc_pack_tests {
         assert!(vk
             .verify(&hex::decode(digest).expect("digest"), &signature)
             .is_ok());
+    }
+}
+
+#[cfg(test)]
+mod v1_gate_tests {
+    use super::*;
+
+    struct LocalCwdGuard {
+        prev: PathBuf,
+    }
+
+    impl LocalCwdGuard {
+        fn enter(path: &Path) -> Self {
+            let prev = std::env::current_dir().expect("cwd");
+            std::env::set_current_dir(path).expect("set cwd");
+            Self { prev }
+        }
+    }
+
+    impl Drop for LocalCwdGuard {
+        fn drop(&mut self) {
+            let _ = std::env::set_current_dir(&self.prev);
+        }
+    }
+
+    fn repo_root() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
+    }
+
+    fn with_replaced_file(path: &Path, replacement: &str, f: impl FnOnce()) {
+        let original = fs::read_to_string(path).expect("read original");
+        fs::write(path, replacement).expect("write replacement");
+        let run = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
+        fs::write(path, original).expect("restore original");
+        if let Err(payload) = run {
+            std::panic::resume_unwind(payload);
+        }
+    }
+
+    #[test]
+    fn v1_gate_check_order_is_fixed() {
+        let _guard = crate::test_cwd_lock()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let root = repo_root();
+        let _cwd = LocalCwdGuard::enter(&root);
+        let out = root.join("out/v1_gate_report_test_order.json");
+        let report = v1_gate(Path::new(".ucf"), &out).expect("v1 gate");
+        let names: Vec<String> = report.checks.into_iter().map(|c| c.name).collect();
+        assert_eq!(
+            names,
+            vec![
+                "v0_gate_pass",
+                "models_manifest_verify",
+                "probes_dummy_pass",
+                "shadow_no_decision_impact",
+                "drift_budget_present_if_shadow",
+                "alerts_present",
+                "strict_check_v1",
+                "portability_scans",
+            ]
+        );
+    }
+
+    #[test]
+    fn v1_gate_report_serialization_is_deterministic() {
+        let mut report = V1GateReportV1 {
+            schema_version: 1,
+            overall_status: V1GateOverallStatus::Pass,
+            checks: vec![
+                v1_gate_check(
+                    "a",
+                    GateStatus::Pass,
+                    [("k".to_string(), "v".to_string())],
+                    "ok",
+                ),
+                v1_gate_check(
+                    "b",
+                    GateStatus::Skip,
+                    [("x".to_string(), "y".to_string())],
+                    "optional",
+                ),
+            ],
+        };
+        let a = serde_json::to_vec(&report).expect("serialize a");
+        let b = serde_json::to_vec(&report).expect("serialize b");
+        assert_eq!(a, b);
+        report.checks.reverse();
+        let c = serde_json::to_vec(&report).expect("serialize c");
+        assert_ne!(a, c);
+    }
+
+    #[test]
+    fn v1_gate_fails_when_drift_budget_missing() {
+        let _guard = crate::test_cwd_lock()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let root = repo_root();
+        let _cwd = LocalCwdGuard::enter(&root);
+        let _profile = EnvVarGuard::set("UCF_PROFILE", std::ffi::OsStr::new("test"));
+        let _drift_override = EnvVarGuard::set(
+            "UCF_STRICT_DRIFT_BUDGET_PATH",
+            std::ffi::OsStr::new("./out/does_not_exist_drift_budget.toml"),
+        );
+        let out = root.join("out/v1_gate_report_test_drift_fail.json");
+        let report = v1_gate(Path::new(".ucf"), &out).expect("v1 gate");
+        let check = report
+            .checks
+            .iter()
+            .find(|c| c.name == "drift_budget_present_if_shadow")
+            .expect("drift check");
+        assert!(matches!(check.status, GateStatus::Fail));
+        assert!(matches!(report.overall_status, V1GateOverallStatus::Fail));
+    }
+
+    #[test]
+    fn v1_gate_fails_when_probe_breaks() {
+        let _guard = crate::test_cwd_lock()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let root = repo_root();
+        let _cwd = LocalCwdGuard::enter(&root);
+        let manifest = root.join("models/MANIFEST.toml");
+        let out = root.join("out/v1_gate_report_test_probe_fail.json");
+        with_replaced_file(
+            &manifest,
+            r#"manifest_version = 1
+created_at = 0
+manifest_digest = "broken"
+slots = [{ slot_id = "world_jepa", active_hash = "missing", files = [{ path = "model.safetensors", sha256 = "00", size_bytes = 1 }], max_bytes = 1, contract_versions_supported = ["v1"] }]
+"#,
+            || {
+                let report = v1_gate(Path::new(".ucf"), &out).expect("v1 gate");
+                let check = report
+                    .checks
+                    .iter()
+                    .find(|c| c.name == "probes_dummy_pass")
+                    .expect("probe check");
+                assert!(matches!(check.status, GateStatus::Fail));
+                assert!(matches!(report.overall_status, V1GateOverallStatus::Fail));
+            },
+        );
     }
 }

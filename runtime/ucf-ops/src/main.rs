@@ -1393,7 +1393,19 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         std::process::exit(2);
                     }
                 }
-                _ => return Err("usage: ucf-ops v1 smoke [--shadow] [--out <path>]".into()),
+                "gate" => {
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/v1_gate_report.json"));
+                    let report = ucf_ops::v1_gate(&workdir, &out)?;
+                    println!("overall={:?}", report.overall_status);
+                    println!("schema_version={}", report.schema_version);
+                    println!("out={}", out.display());
+                    if !matches!(report.overall_status, ucf_ops::V1GateOverallStatus::Pass) {
+                        std::process::exit(2);
+                    }
+                }
+                _ => return Err("usage: ucf-ops v1 <smoke|gate> [--shadow] [--out <path>]".into()),
             }
         }
         "v0" => {
