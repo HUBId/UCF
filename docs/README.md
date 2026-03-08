@@ -30,6 +30,9 @@
 ## Roadmaps & Runbooks
 - [v1.1 Plan: Real Models & Optional GPU Lane](v1_1_plan.md)
 - [Weights Incident Response](runbooks/weights_incident_response.md)
+- [Models Lifecycle Runbook v1](runbooks/models_v1.md)
+- [Shadow Runbook v1](runbooks/shadow_v1.md)
+- [Drift + Alerts Runbook v1](runbooks/drift_alerts_v1.md)
 
 ## Repository Hygiene
 - [Branch Policy](branch_policy.md)

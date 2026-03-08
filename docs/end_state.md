@@ -71,6 +71,22 @@ References:
 - [`docs/weights_lifecycle.md`](weights_lifecycle.md)
 - [`docs/attested_runs.md`](attested_runs.md)
 
+## 4.1) v1 operator scaffold additions
+
+v1 extends operator workflows with governance scaffolding that remains offline-first:
+
+- **Models lifecycle scaffold**: deterministic `stage -> verify -> probe -> promote -> rollback` flow with hash-locked evidence and history artifacts.
+- **Probes + shadow scaffolding**: slot probes and compare-window telemetry for observational validation before active rollout.
+- **Drift budgets + alerts scaffolding**: deterministic drift/alert reports with tightening-only actions (for example shadow disable), while rollback remains operator-invoked.
+
+Operator runbooks for these v1 flows:
+
+- [`docs/runbooks/models_v1.md`](runbooks/models_v1.md)
+- [`docs/runbooks/shadow_v1.md`](runbooks/shadow_v1.md)
+- [`docs/runbooks/drift_alerts_v1.md`](runbooks/drift_alerts_v1.md)
+
+Clarification: UCF remains offline-first and tool execution is still deny-by-default unless explicitly policy-enabled.
+
 ## 5) Audit and verification
 
 UCF provides verification-ready artifacts rather than implicit trust:

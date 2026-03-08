@@ -32,7 +32,23 @@ Health checks are backed by gateway `health` endpoint and provide strict exit co
 - `2` = DEGRADED
 - `3` = FAIL
 
-## 3) Runtime startup validation
+## 3) Bundle model governance paths
+
+Portable bundles should carry model governance files and directories explicitly:
+
+- `models/manifest.toml` (or `models/MANIFEST.toml` depending on repository casing)
+- `models/promoted/<slot>/<sha256>/...`
+- `models/manifests/history/`
+
+Validate model manifest integrity from bundle root:
+
+```bash
+./bin/ucf-ops models verify --manifest ./models/manifest.toml --out ./out/models_verify.json
+```
+
+If the repository/bundle uses uppercase manifest filename, use `./models/MANIFEST.toml` instead.
+
+## 4) Runtime startup validation
 
 At startup, runtime enforces policy/manifest validation fail-fast behavior:
 
@@ -46,7 +62,7 @@ For bundle-based startup, set:
 export UCF_BUNDLE_ROOT="$(pwd)"
 ```
 
-## 4) Offline upgrade / rollback (bundle switching)
+## 5) Offline upgrade / rollback (bundle switching)
 
 Bundle switch layout:
 
@@ -69,7 +85,7 @@ PowerShell:
 .\deploy\scripts\upgrade_bundle.ps1 -Action rollback -BundleId <bundle_id>
 ```
 
-## 5) Optional OS adapters
+## 6) Optional OS adapters
 
 Templates are provided (non-blocking, optional):
 

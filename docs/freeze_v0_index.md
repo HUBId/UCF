@@ -37,3 +37,6 @@ Canonical references defining **Real Compute Onboarding v0**.
 | `release/v1_rc1_signoff_checklist.toml` | 2026-02-23 | release | normative |
 
 | `docs/hardware_neutral_migration.md` | 2026-02-28 | prompt series + runtime/ucf-ops docs lint | normative |
+| `docs/runbooks/models_v1.md` | 2026-03-08 | runbooks | informative |
+| `docs/runbooks/shadow_v1.md` | 2026-03-08 | runbooks | informative |
+| `docs/runbooks/drift_alerts_v1.md` | 2026-03-08 | runbooks | informative |

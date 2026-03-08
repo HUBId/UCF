@@ -16,6 +16,16 @@ Strict Mode enables a single additive guard rail switch for runtime and ops chec
 - Sandbox checks (runtime path scan)
 - Ops-only release checks (`ucf-ops strict check` also runs docs lint strict)
 
+### v1 strict checks summary
+
+Strict mode evaluates v1 controls in deterministic order:
+
+1. model manifest + promoted-path integrity checks
+2. active-slot probe evidence checks (when probe enforcement is enabled)
+3. shadow preconditions (`drift_budget` present, compare-window wiring set)
+4. observational-only guarantee checks for shadow outputs
+5. strict-failure artifact emission for operator remediation
+
 ### v1 scaffold checks (strict extension)
 
 When strict mode is enabled, v1 scaffold invariants are enforced additively:

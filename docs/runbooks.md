@@ -5,6 +5,9 @@
 - Diagnostics bundle: `docs/runbooks/diagnostics_bundle.md`
 - Failure modes: `docs/runbooks/failure_modes.md`
 - Incident playbook: `docs/runbooks/incident_playbook.md`
+- Models lifecycle v1: `docs/runbooks/models_v1.md`
+- Shadow operations v1: `docs/runbooks/shadow_v1.md`
+- Drift + alerts v1: `docs/runbooks/drift_alerts_v1.md`
 
 ## v1.0-rc1 Sign-Off + Tagging
 1. Run rc1 gate:
