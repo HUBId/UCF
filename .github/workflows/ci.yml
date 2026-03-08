@@ -102,10 +102,10 @@ jobs:
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          if [ -f models/MANIFEST.toml ]; then
-            cargo run -p ucf-ops -- models verify --manifest models/MANIFEST.toml --out ./out/models_verify_report.json
-          elif [ -f models/manifest.toml ]; then
+          if [ -f models/manifest.toml ]; then
             cargo run -p ucf-ops -- models verify --manifest models/manifest.toml --out ./out/models_verify_report.json
+          elif [ -f models/MANIFEST.toml ]; then
+            cargo run -p ucf-ops -- models verify --manifest models/MANIFEST.toml --out ./out/models_verify_report.json
           else
             echo "models_verify=skip reason=no_manifest"
           fi
@@ -113,10 +113,10 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          if (Test-Path "models/MANIFEST.toml") {
-            cargo run -p ucf-ops -- models verify --manifest models/MANIFEST.toml --out ./out/models_verify_report.json
-          } elseif (Test-Path "models/manifest.toml") {
+          if (Test-Path "models/manifest.toml") {
             cargo run -p ucf-ops -- models verify --manifest models/manifest.toml --out ./out/models_verify_report.json
+          } elseif (Test-Path "models/MANIFEST.toml") {
+            cargo run -p ucf-ops -- models verify --manifest models/MANIFEST.toml --out ./out/models_verify_report.json
           } else {
             Write-Host "models_verify=skip reason=no_manifest"
           }

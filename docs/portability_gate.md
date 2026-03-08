@@ -23,7 +23,7 @@
      - `cargo run -p ucf-ops -- portability check --out ./out/portability.json`
 
 2. **v1 minimal checks (blocking where present)**
-   - `models verify` runs only if `models/MANIFEST.toml` or `models/manifest.toml` exists; otherwise CI emits deterministic skip output.
+   - `models verify` runs only if `models/manifest.toml` (preferred) or `models/MANIFEST.toml` exists; otherwise CI emits deterministic skip output.
    - `models probe` runs deterministic offline probes for `llm`, `sae`, and `world_jepa` slots.
    - `v1 smoke` runs a minimal smoke report:
      - Linux: `ucf-ops v1 smoke --shadow` (single-slot shadow observational check)
@@ -58,7 +58,7 @@
 cargo test --workspace --all-targets
 cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json
 cargo run -p ucf-ops -- v0 gate --scenario fixtures/e2e/v0_flow_a.json --out ./out/v0_gate_report.json
-if [ -f models/MANIFEST.toml ]; then cargo run -p ucf-ops -- models verify --manifest models/MANIFEST.toml --out ./out/models_verify_report.json; elif [ -f models/manifest.toml ]; then cargo run -p ucf-ops -- models verify --manifest models/manifest.toml --out ./out/models_verify_report.json; else echo "models_verify=skip reason=no_manifest"; fi
+if [ -f models/manifest.toml ]; then cargo run -p ucf-ops -- models verify --manifest models/manifest.toml --out ./out/models_verify_report.json; elif [ -f models/MANIFEST.toml ]; then cargo run -p ucf-ops -- models verify --manifest models/MANIFEST.toml --out ./out/models_verify_report.json; else echo "models_verify=skip reason=no_manifest"; fi
 cargo run -p ucf-ops -- models probe --slot llm --out ./out/probe_llm.json
 cargo run -p ucf-ops -- models probe --slot sae --out ./out/probe_sae.json
 cargo run -p ucf-ops -- models probe --slot world_jepa --out ./out/probe_world_jepa.json
@@ -76,7 +76,7 @@ cargo run -p ucf-ops -- portability check --out ./out/portability.json
 cargo test --workspace --all-targets
 cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json
 cargo run -p ucf-ops -- v0 gate --scenario fixtures/e2e/v0_flow_a.json --out ./out/v0_gate_report.json
-if (Test-Path "models/MANIFEST.toml") { cargo run -p ucf-ops -- models verify --manifest models/MANIFEST.toml --out ./out/models_verify_report.json } elseif (Test-Path "models/manifest.toml") { cargo run -p ucf-ops -- models verify --manifest models/manifest.toml --out ./out/models_verify_report.json } else { Write-Host "models_verify=skip reason=no_manifest" }
+if (Test-Path "models/manifest.toml") { cargo run -p ucf-ops -- models verify --manifest models/manifest.toml --out ./out/models_verify_report.json } elseif (Test-Path "models/MANIFEST.toml") { cargo run -p ucf-ops -- models verify --manifest models/MANIFEST.toml --out ./out/models_verify_report.json } else { Write-Host "models_verify=skip reason=no_manifest" }
 cargo run -p ucf-ops -- models probe --slot llm --out ./out/probe_llm.json
 cargo run -p ucf-ops -- models probe --slot sae --out ./out/probe_sae.json
 cargo run -p ucf-ops -- models probe --slot world_jepa --out ./out/probe_world_jepa.json
@@ -98,7 +98,7 @@ cargo run -p ucf-ops -- portability check --out ./out/portability.json
   - Replace vendor/machine assumptions with neutral `DeviceProfile` + budget/config controls.
 
 - **`models verify` skipped in CI**
-  - Add `models/MANIFEST.toml` (preferred) or `models/manifest.toml` if lifecycle validation is required.
+  - Add `models/manifest.toml` (preferred for current portability lane) or `models/MANIFEST.toml` if lifecycle validation is required.
 
 - **`v1 smoke` failed**
   - Run `ucf-ops models probe --slot llm|sae|world_jepa` locally and inspect probe reports.
