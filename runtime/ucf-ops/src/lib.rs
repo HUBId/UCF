@@ -336,6 +336,7 @@ pub struct RunMetadataRecord {
     pub determinism_policy_digest: Option<String>,
     pub strict_mode_enabled: bool,
     pub strict_mode_digest: Option<String>,
+    pub probe_report_digest_prefix: Option<String>,
     pub crash_dumps_disabled: bool,
     pub models_manifest_present: bool,
     pub models_manifest_digest_prefix: Option<String>,
@@ -360,6 +361,12 @@ fn load_models_manifest_runtime_metadata() -> (bool, Option<String>) {
         .map(|v| v.trim().trim_matches('"').to_string());
     let prefix = digest.map(|d| d.chars().take(12).collect());
     (true, prefix)
+}
+
+fn load_probe_report_digest_prefix(workdir: &Path) -> Option<String> {
+    let path = workdir.join("out/probe_report.json");
+    let body = fs::read(path).ok()?;
+    Some(prefix_hex(&sha256_hex(&body), 16))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -3193,6 +3200,7 @@ pub fn one_command_bringup(
         determinism_policy_digest: None,
         strict_mode_enabled: cfg.strict_mode,
         strict_mode_digest: None,
+        probe_report_digest_prefix: None,
         crash_dumps_disabled: disable_crash_dumps_best_effort(),
         models_manifest_present: false,
         models_manifest_digest_prefix: None,
@@ -3202,6 +3210,7 @@ pub fn one_command_bringup(
         load_models_manifest_runtime_metadata();
     run_metadata.models_manifest_present = models_manifest_present;
     run_metadata.models_manifest_digest_prefix = models_manifest_digest_prefix;
+    run_metadata.probe_report_digest_prefix = load_probe_report_digest_prefix(workdir);
     if cfg.strict_mode {
         let strict_policy = StrictModeV1::from_config(&cfg);
         run_metadata.strict_mode_digest = Some(sha256_hex(
@@ -4581,18 +4590,29 @@ pub struct StrictModeFailureReport {
     pub strict_mode_enabled: bool,
     pub profile: String,
     pub checks: Vec<StrictCheckResult>,
+    #[serde(default)]
+    pub v1_checks: Vec<StrictCheckResult>,
+    #[serde(default)]
+    pub evidence_digest_prefixes: BTreeMap<String, String>,
 }
 
 impl StrictModeFailureReport {
     pub fn has_failures(&self) -> bool {
         self.checks
             .iter()
+            .chain(self.v1_checks.iter())
             .any(|c| matches!(c.status, StrictCheckStatus::Fail))
     }
 
     fn normalized_for_digest(&self) -> Self {
         let mut c = self.clone();
         c.checks.sort_by(|a, b| a.check_id.cmp(&b.check_id));
+        c.v1_checks.sort_by(|a, b| a.check_id.cmp(&b.check_id));
+        c.evidence_digest_prefixes = c
+            .evidence_digest_prefixes
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
         c
     }
 
@@ -4612,6 +4632,7 @@ impl StrictModeEnforcer {
         ops_only: bool,
     ) -> Result<(), StrictModeFailureReport> {
         let mut checks = Vec::new();
+        let mut evidence_digest_prefixes = BTreeMap::new();
         checks.push(if !cfg.sampling_enabled {
             strict_pass("determinism_sampling_disabled")
         } else {
@@ -4769,11 +4790,14 @@ impl StrictModeEnforcer {
         }
 
         checks.sort_by(|a, b| a.check_id.cmp(&b.check_id));
+        let v1_checks = strict_v1_checks(workdir, cfg, &mut evidence_digest_prefixes);
         let report = StrictModeFailureReport {
             schema_version: 1,
             strict_mode_enabled: true,
             profile: cfg.profile.clone(),
             checks,
+            v1_checks,
+            evidence_digest_prefixes,
         };
 
         if report.has_failures() {
@@ -4784,6 +4808,193 @@ impl StrictModeEnforcer {
             Ok(())
         }
     }
+}
+
+fn strict_v1_checks(
+    workdir: &Path,
+    cfg: &OpsConfig,
+    evidence_digest_prefixes: &mut BTreeMap<String, String>,
+) -> Vec<StrictCheckResult> {
+    let slot_enablement = ucf_compute::SlotEnablement::from_env().unwrap_or_default();
+    let active_mode_requested = std::env::var("UCF_REAL_ENABLEMENT_MODE")
+        .ok()
+        .map(|v| v.eq_ignore_ascii_case("active"))
+        .unwrap_or(false)
+        || cfg.slot_ebm_mode.eq_ignore_ascii_case("active")
+        || ModelSlot::all().into_iter().any(|slot| {
+            matches!(
+                slot_enablement.for_slot(slot),
+                ucf_compute::SlotMode::Active
+            )
+        });
+    let shadow_enabled = std::env::var("UCF_REAL_ENABLEMENT_MODE")
+        .ok()
+        .map(|v| v.eq_ignore_ascii_case("shadow") || v.eq_ignore_ascii_case("compare"))
+        .unwrap_or(false)
+        || cfg.slot_ebm_mode.eq_ignore_ascii_case("shadow")
+        || ModelSlot::all().into_iter().any(|slot| {
+            matches!(
+                slot_enablement.for_slot(slot),
+                ucf_compute::SlotMode::Shadow
+            )
+        });
+
+    let mut checks = Vec::new();
+    let manifest_path = PathBuf::from("models/MANIFEST.toml");
+    let probe_enforcement_enabled = std::env::var("UCF_STRICT_ENFORCE_ACTIVE_PROBES")
+        .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+        .unwrap_or(false);
+
+    let v1_verify = models_verify_lifecycle(&manifest_path).ok();
+    if let Some(report) = v1_verify.as_ref() {
+        if report.manifest_present {
+            let digest = sha256_hex(
+                &serde_json::to_vec(report)
+                    .unwrap_or_else(|_| b"strict.v1.models_verify.digest_fallback".to_vec()),
+            );
+            evidence_digest_prefixes
+                .insert("models_verify_report".to_string(), prefix_hex(&digest, 16));
+        }
+    }
+
+    if active_mode_requested {
+        match fs::read_to_string(&manifest_path) {
+            Ok(body) => {
+                let manifest_digest = sha256_hex(body.as_bytes());
+                evidence_digest_prefixes.insert(
+                    "models_manifest".to_string(),
+                    prefix_hex(&manifest_digest, 16),
+                );
+                checks.push(strict_pass("v1_manifest_active_requires_digest"));
+            }
+            Err(_) => checks.push(strict_fail(
+                "v1_manifest_active_requires_digest",
+                "strict.v1.manifest.required_for_active",
+                "create models/MANIFEST.toml and pin digest evidence before active rollout",
+            )),
+        }
+    } else {
+        checks.push(strict_pass("v1_manifest_active_requires_digest"));
+    }
+
+    if active_mode_requested {
+        match v1_verify {
+            Some(report) if report.manifest_present && report.promoted_hashes_exist && report.files_verified => {
+                checks.push(strict_pass("v1_promoted_only_active_hashes"));
+            }
+            _ => checks.push(strict_fail(
+                "v1_promoted_only_active_hashes",
+                "strict.v1.promoted_only.verify_failed",
+                "run `cargo run -p ucf-ops -- models verify --manifest models/MANIFEST.toml` and promote active hashes",
+            )),
+        }
+    } else {
+        checks.push(strict_pass("v1_promoted_only_active_hashes"));
+    }
+
+    if probe_enforcement_enabled && active_mode_requested {
+        let probe_path = workdir.join("out/probe_report.json");
+        match fs::read_to_string(&probe_path)
+            .ok()
+            .and_then(|body| serde_json::from_str::<ProbeReport>(&body).ok())
+        {
+            Some(report) => {
+                let probe_digest = sha256_hex(
+                    &serde_json::to_vec(&report)
+                        .unwrap_or_else(|_| b"strict.v1.probe.digest_fallback".to_vec()),
+                );
+                evidence_digest_prefixes.insert(
+                    "probe_report".to_string(),
+                    prefix_hex(&probe_digest, 16),
+                );
+                let all_ok = report
+                    .results
+                    .iter()
+                    .all(|result| matches!(result.status, ProbeStatus::Ok | ProbeStatus::Disabled));
+                if report.summary.pass && all_ok {
+                    checks.push(strict_pass("v1_active_slots_probe_pass"));
+                } else {
+                    checks.push(strict_fail(
+                        "v1_active_slots_probe_pass",
+                        "strict.v1.probes.active_slot_failed",
+                        "run `cargo run -p ucf-ops -- models probe --manifest models/manifest.toml --out ./out/probe_report.json` and require PASS",
+                    ));
+                }
+            }
+            None => checks.push(strict_fail(
+                "v1_active_slots_probe_pass",
+                "strict.v1.probes.report_missing",
+                "run `cargo run -p ucf-ops -- models probe --manifest models/manifest.toml --out ./out/probe_report.json`",
+            )),
+        }
+    } else {
+        checks.push(strict_pass("v1_active_slots_probe_pass"));
+    }
+
+    if shadow_enabled {
+        let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let drift_budget_override = std::env::var("UCF_STRICT_DRIFT_BUDGET_PATH").ok();
+        let base_drift_budget = repo_root.join("policies/packs/base_v1/drift_budget.toml");
+        let overlay_drift_budget = repo_root.join(format!(
+            "policies/packs/overlays/{}/drift_budget.toml",
+            cfg.profile
+        ));
+        let drift_budget_path = drift_budget_override
+            .as_deref()
+            .map(PathBuf::from)
+            .or_else(|| {
+                if overlay_drift_budget.exists() {
+                    Some(overlay_drift_budget.clone())
+                } else if base_drift_budget.exists() {
+                    Some(base_drift_budget.clone())
+                } else {
+                    None
+                }
+            });
+        if let Some(path) = drift_budget_path {
+            match fs::read(path) {
+                Ok(digest_source) if !digest_source.is_empty() => {
+                    evidence_digest_prefixes.insert(
+                        "drift_budget".to_string(),
+                        prefix_hex(&sha256_hex(&digest_source), 16),
+                    );
+                    checks.push(strict_pass("v1_shadow_requires_drift_budget"));
+                }
+                _ => checks.push(strict_fail(
+                    "v1_shadow_requires_drift_budget",
+                    "strict.v1.shadow.drift_budget_missing",
+                    "run `cargo run -p ucf-ops -- policy validate --pack policies/packs/base_v1 --overlay policies/packs/overlays/test` and ensure drift_budget.toml is present",
+                )),
+            }
+        } else {
+            checks.push(strict_fail(
+                "v1_shadow_requires_drift_budget",
+                "strict.v1.shadow.drift_budget_missing",
+                "run `cargo run -p ucf-ops -- policy validate --pack policies/packs/base_v1 --overlay policies/packs/overlays/test` and ensure drift_budget.toml is present",
+            ));
+        }
+
+        let compare_enabled = std::env::var("UCF_SLOT_COMPARE_WINDOW")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .map(|v| v > 0)
+            .unwrap_or(true);
+        if compare_enabled {
+            checks.push(strict_pass("v1_shadow_compare_window_required"));
+        } else {
+            checks.push(strict_fail(
+                "v1_shadow_compare_window_required",
+                "strict.v1.shadow.compare_window_disabled",
+                "set UCF_SLOT_COMPARE_WINDOW to a positive integer to emit SlotCompareWindow records",
+            ));
+        }
+    } else {
+        checks.push(strict_pass("v1_shadow_requires_drift_budget"));
+        checks.push(strict_pass("v1_shadow_compare_window_required"));
+    }
+
+    checks.push(strict_pass("v1_shadow_no_decision_impact_guard"));
+    checks
 }
 
 fn strict_pass(id: &str) -> StrictCheckResult {
@@ -5829,6 +6040,7 @@ active_hash = "abc"
             determinism_policy_digest: None,
             strict_mode_enabled: false,
             strict_mode_digest: None,
+            probe_report_digest_prefix: None,
             crash_dumps_disabled: false,
             models_manifest_present: false,
             models_manifest_digest_prefix: None,
@@ -9191,6 +9403,8 @@ pub fn strict_check(
             strict_mode_enabled: true,
             profile: active_cfg.profile.clone(),
             checks: vec![strict_pass("strict_mode")],
+            v1_checks: Vec::new(),
+            evidence_digest_prefixes: BTreeMap::new(),
         },
         Err(r) => r,
     };
@@ -10010,6 +10224,48 @@ mod bugkit_tests {
 mod strict_mode_tests {
     use super::*;
 
+    struct LocalCwdGuard {
+        prev: PathBuf,
+    }
+
+    impl LocalCwdGuard {
+        fn enter(path: &Path) -> Self {
+            let prev = std::env::current_dir().expect("cwd");
+            std::env::set_current_dir(path).expect("set cwd");
+            Self { prev }
+        }
+    }
+
+    impl Drop for LocalCwdGuard {
+        fn drop(&mut self) {
+            let _ = std::env::set_current_dir(&self.prev);
+        }
+    }
+
+    fn strict_test_cfg(profile: &str, slot_ebm_mode: &str) -> OpsConfig {
+        OpsConfig {
+            profile: profile.to_string(),
+            strict_mode: true,
+            policy_overlay: profile.to_string(),
+            backend_pack: "toy_v1".to_string(),
+            slot_ebm_mode: slot_ebm_mode.to_string(),
+            offline: true,
+            compute_backend: ComputeBackendKind::Stub,
+            compute_seed: 1,
+            compute_budget_profile: "small".to_string(),
+            device_profile: "small".to_string(),
+            isolation_runtime: "inproc".to_string(),
+            capabilities_default: "deny".to_string(),
+            sampling_enabled: false,
+            determinism_lock_strict: true,
+            docs_lint_required: false,
+            stage_isolation_optional: true,
+            emergency_policy_pin: None,
+            log_level: "info".to_string(),
+            config_digest: "test".to_string(),
+        }
+    }
+
     #[test]
     fn strict_report_digest_is_stable_under_input_order() {
         let mut report = StrictModeFailureReport {
@@ -10020,6 +10276,8 @@ mod strict_mode_tests {
                 strict_fail("b", "strict.test.b", "fix b"),
                 strict_fail("a", "strict.test.a", "fix a"),
             ],
+            v1_checks: Vec::new(),
+            evidence_digest_prefixes: BTreeMap::new(),
         };
         let d1 = report.digest_hex().expect("digest");
         report.checks.reverse();
@@ -10039,6 +10297,77 @@ mod strict_mode_tests {
             vec!["strict.models.manifest_digest_missing".to_string()]
         );
         assert!(matches!(item.status, StrictCheckStatus::Fail));
+    }
+
+    #[test]
+    fn v1_strict_fails_when_manifest_missing_but_active_requested() {
+        let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
+        let dir = tempfile::tempdir().expect("tmp");
+        let _cwd = LocalCwdGuard::enter(dir.path());
+        std::fs::create_dir_all(dir.path().join("out")).expect("out");
+        let cfg = strict_test_cfg("test", "active");
+        let mut evidence = BTreeMap::new();
+
+        let checks = strict_v1_checks(dir.path(), &cfg, &mut evidence);
+        assert!(checks.iter().any(|c| {
+            c.check_id == "v1_manifest_active_requires_digest"
+                && matches!(c.status, StrictCheckStatus::Fail)
+        }));
+    }
+
+    #[test]
+    fn v1_strict_fails_when_shadow_enabled_and_drift_budget_missing() {
+        let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
+        let dir = tempfile::tempdir().expect("tmp");
+        let _cwd = LocalCwdGuard::enter(dir.path());
+        std::fs::create_dir_all(dir.path().join("out")).expect("out");
+        let _drift_override = EnvVarGuard::set(
+            "UCF_STRICT_DRIFT_BUDGET_PATH",
+            std::ffi::OsStr::new("./out/does_not_exist_drift_budget.toml"),
+        );
+        let cfg = strict_test_cfg("test", "shadow");
+        let mut evidence = BTreeMap::new();
+
+        let checks = strict_v1_checks(dir.path(), &cfg, &mut evidence);
+        assert!(checks.iter().any(|c| {
+            c.check_id == "v1_shadow_requires_drift_budget"
+                && matches!(c.status, StrictCheckStatus::Fail)
+        }));
+    }
+
+    #[test]
+    fn v1_strict_probe_missing_fails_when_probe_enforcement_enabled() {
+        let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
+        let dir = tempfile::tempdir().expect("tmp");
+        let _cwd = LocalCwdGuard::enter(dir.path());
+        std::fs::create_dir_all(dir.path().join("out")).expect("out");
+        let _probe_flag = EnvVarGuard::set(
+            "UCF_STRICT_ENFORCE_ACTIVE_PROBES",
+            std::ffi::OsStr::new("1"),
+        );
+        let cfg = strict_test_cfg("test", "active");
+        let mut evidence = BTreeMap::new();
+
+        let checks = strict_v1_checks(dir.path(), &cfg, &mut evidence);
+        assert!(checks.iter().any(|c| {
+            c.check_id == "v1_active_slots_probe_pass"
+                && matches!(c.status, StrictCheckStatus::Fail)
+        }));
+    }
+
+    #[test]
+    fn v1_strict_shadow_passes_with_present_drift_budget() {
+        let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
+        let dir = tempfile::tempdir().expect("tmp");
+        std::fs::create_dir_all(dir.path().join("out")).expect("out");
+        let cfg = strict_test_cfg("test", "shadow");
+        let mut evidence = BTreeMap::new();
+
+        let checks = strict_v1_checks(dir.path(), &cfg, &mut evidence);
+        assert!(checks.iter().any(|c| {
+            c.check_id == "v1_shadow_requires_drift_budget"
+                && matches!(c.status, StrictCheckStatus::Pass)
+        }));
     }
 }
 

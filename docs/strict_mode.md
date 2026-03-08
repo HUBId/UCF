@@ -16,6 +16,17 @@ Strict Mode enables a single additive guard rail switch for runtime and ops chec
 - Sandbox checks (runtime path scan)
 - Ops-only release checks (`ucf-ops strict check` also runs docs lint strict)
 
+### v1 scaffold checks (strict extension)
+
+When strict mode is enabled, v1 scaffold invariants are enforced additively:
+
+- Active slot modes require a present manifest digest (`models/MANIFEST.toml`).
+- Active slot hashes must remain promoted-only and verifiable.
+- Optional probe enforcement (`UCF_STRICT_ENFORCE_ACTIVE_PROBES=1`) requires PASS probe evidence for promoted active slots.
+- Shadow enablement requires drift budget availability from merged policy graph.
+- Shadow enablement requires compare-window emission wiring (`UCF_SLOT_COMPARE_WINDOW > 0`).
+- Shadow outputs are guarded to remain observational-only and not alter decision outputs.
+
 ## Failure report
 
 On strict failure, a single consolidated report is written to:
@@ -30,12 +41,18 @@ Report fields are bounded and redaction-safe:
 - `error_codes`
 - `remediation`
 
+The report now also includes:
+
+- `v1_checks` (fixed check-id ordering)
+- `evidence_digest_prefixes` (bounded digest prefixes only)
+
 ## Run metadata
 
 `RunMetadataRecord` persists:
 
 - `strict_mode_enabled`
 - `strict_mode_digest`
+- `probe_report_digest_prefix` (when probe report is available)
 
 ## Recommended use
 
