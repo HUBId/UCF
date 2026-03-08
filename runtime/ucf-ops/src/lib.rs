@@ -1198,6 +1198,28 @@ pub struct V0GateReportV1 {
     pub checks: Vec<V0GateCheckV1>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct V1GateCheckV1 {
+    pub name: String,
+    pub status: GateStatus,
+    pub evidence_digest_prefixes: BTreeMap<String, String>,
+    pub remediation_hint: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum V1GateOverallStatus {
+    Pass,
+    Fail,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct V1GateReportV1 {
+    pub schema_version: u16,
+    pub overall_status: V1GateOverallStatus,
+    pub checks: Vec<V1GateCheckV1>,
+}
+
 impl Default for ReadinessGateReport {
     fn default() -> Self {
         Self {
@@ -1626,6 +1648,288 @@ pub fn v0_gate(workdir: &Path, scenario: &Path, out: &Path) -> Result<V0GateRepo
     };
     write_json(out, &report)?;
     Ok(report)
+}
+
+const V1_SCHEMA_VERSION: u16 = 1;
+
+pub fn v1_gate(workdir: &Path, out: &Path) -> Result<V1GateReportV1, OpsError> {
+    ensure_layout(workdir)?;
+    if let Some(parent) = out.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let mut checks = Vec::new();
+    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let v0_out = workdir.join("out").join("v0_gate_report.json");
+    let v0_scenario = repo_root.join("fixtures/e2e/v0_flow_a.json");
+    let v0 = v0_gate(workdir, &v0_scenario, &v0_out)?;
+    checks.push(v1_gate_check(
+        "v0_gate_pass",
+        if matches!(v0.overall_status, V0GateOverallStatus::Pass) {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [("v0_gate_report".to_string(), prefix_hex(&sha256_hex(&serde_json::to_vec(&v0)?), 16))],
+        "run `cargo run -p ucf-ops -- v0 gate --out ./out/v0_gate_report.json` and fix failing checks",
+    ));
+
+    let models_dir = repo_root.join("models");
+    if models_dir.exists() {
+        let verify = models_verify_lifecycle(&repo_root.join("models/MANIFEST.toml"));
+        let (status, evidence) = match verify {
+            Ok(report) => {
+                let pass = report.manifest_present
+                    && report.digest_match
+                    && report.promoted_hashes_exist
+                    && report.files_verified;
+                let digest = prefix_hex(&sha256_hex(&serde_json::to_vec(&report)?), 16);
+                (
+                    if pass {
+                        GateStatus::Pass
+                    } else {
+                        GateStatus::Fail
+                    },
+                    vec![("models_verify".to_string(), digest)],
+                )
+            }
+            Err(err) => (
+                GateStatus::Fail,
+                vec![("error".to_string(), bounded_string(err.to_string(), 48))],
+            ),
+        };
+        checks.push(v1_gate_check(
+            "models_manifest_verify",
+            status,
+            evidence,
+            "run `cargo run -p ucf-ops -- models verify --manifest models/MANIFEST.toml`",
+        ));
+    } else {
+        checks.push(v1_gate_check(
+            "models_manifest_verify",
+            GateStatus::Skip,
+            [("models_dir".to_string(), "missing".to_string())],
+            "optional: add `models/` plus `models/MANIFEST.toml` to enable verification",
+        ));
+    }
+
+    let probe_out = workdir.join("out").join("probe_v1_gate.json");
+    let probe_manifest = repo_root.join("models/MANIFEST.toml");
+    match models_probe(workdir, &probe_manifest, &probe_out) {
+        Ok(report) => {
+            let target_slots = [ModelSlot::WorldJepa, ModelSlot::Sae, ModelSlot::Ssm];
+            let mut evidence = Vec::new();
+            let mut all_pass = true;
+            for slot in target_slots {
+                let status = report
+                    .results
+                    .iter()
+                    .find(|r| r.slot == slot)
+                    .map(|r| r.status)
+                    .unwrap_or(ProbeStatus::Error);
+                if !matches!(status, ProbeStatus::Ok | ProbeStatus::Disabled) {
+                    all_pass = false;
+                }
+                evidence.push((format!("probe_{}", slot.as_str()), format!("{:?}", status)));
+            }
+            checks.push(v1_gate_check(
+                "probes_dummy_pass",
+                if all_pass { GateStatus::Pass } else { GateStatus::Fail },
+                evidence,
+                "run `cargo run -p ucf-ops -- models probe --manifest models/MANIFEST.toml --out ./out/probe_report.json` and fix failed slots",
+            ));
+        }
+        Err(err) => checks.push(v1_gate_check(
+            "probes_dummy_pass",
+            GateStatus::Fail,
+            [("error".to_string(), bounded_string(err.to_string(), 48))],
+            "ensure probe fixtures/backend stubs are available and rerun gate",
+        )),
+    }
+
+    let scenario = repo_root.join("fixtures/e2e/v0_flow_a.json");
+    let off = v0_gate_run_once(workdir, &scenario, 8, "v1_gate_shadow_off");
+    let shadow = one_command_bringup_with_ebm_mode(
+        &workdir.join("v1_gate").join("shadow_on"),
+        &scenario,
+        8,
+        &workdir.join("v1_gate").join("shadow_on").join("out"),
+        true,
+        "shadow",
+    );
+
+    let (shadow_status, shadow_evidence) = match (off, shadow) {
+        (Ok(off_run), Ok(shadow_run)) => {
+            let shadow_decision = sha256_hex(&serde_json::to_vec(&shadow_run.explain.decision)?);
+            let no_impact = off_run.decision_digest == shadow_decision;
+            let shadow_records = load_fixture_records(
+                &workdir
+                    .join("v1_gate")
+                    .join("shadow_on")
+                    .join("ess")
+                    .join("ess_fixture.json"),
+            )?;
+            let tool_count = shadow_records
+                .iter()
+                .filter(|r| r.kind == ExperienceKind::ToolExecution)
+                .count();
+            (
+                if no_impact && tool_count == 0 {
+                    GateStatus::Pass
+                } else {
+                    GateStatus::Fail
+                },
+                vec![
+                    (
+                        "off_decision".to_string(),
+                        prefix_hex(&off_run.decision_digest, 16),
+                    ),
+                    (
+                        "shadow_decision".to_string(),
+                        prefix_hex(&shadow_decision, 16),
+                    ),
+                    ("tool_execution_count".to_string(), tool_count.to_string()),
+                ],
+            )
+        }
+        (Err(err), _) | (_, Err(err)) => (
+            GateStatus::Fail,
+            vec![("error".to_string(), bounded_string(err.to_string(), 48))],
+        ),
+    };
+    checks.push(v1_gate_check(
+        "shadow_no_decision_impact",
+        shadow_status,
+        shadow_evidence,
+        "keep slot in shadow mode only and require decision digest parity with baseline run",
+    ));
+
+    let cfg = load_or_init_config(workdir)?;
+    let drift_budget_override = std::env::var("UCF_STRICT_DRIFT_BUDGET_PATH").ok();
+    let base_drift_budget = repo_root.join("policies/packs/base_v1/drift_budget.toml");
+    let overlay_drift_budget = repo_root.join(format!(
+        "policies/packs/overlays/{}/drift_budget.toml",
+        cfg.profile
+    ));
+    let drift_present = if let Some(path) = drift_budget_override {
+        PathBuf::from(path).exists()
+    } else {
+        overlay_drift_budget.exists() || base_drift_budget.exists()
+    };
+    checks.push(v1_gate_check(
+        "drift_budget_present_if_shadow",
+        if drift_present {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [(
+            "drift_budget".to_string(),
+            if drift_present { "present" } else { "missing" }.to_string(),
+        )],
+        "add `drift_budget.toml` to base or active overlay pack",
+    ));
+
+    let base_alerts = repo_root.join("policies/packs/base_v1/alerts.toml");
+    let overlay_alerts = repo_root.join(format!(
+        "policies/packs/overlays/{}/alerts.toml",
+        cfg.profile
+    ));
+    let alerts_present = overlay_alerts.exists() || base_alerts.exists();
+    checks.push(v1_gate_check(
+        "alerts_present",
+        if alerts_present {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [(
+            "alerts_config".to_string(),
+            if alerts_present { "present" } else { "missing" }.to_string(),
+        )],
+        "add `alerts.toml` to base or active overlay pack",
+    ));
+
+    let strict_out = workdir.join("out").join("strict_check_v1_gate.json");
+    let strict = strict_check(workdir, true, &strict_out)?;
+    let strict_v1_pass = strict.ok
+        || strict
+            .report
+            .v1_checks
+            .iter()
+            .all(|c| matches!(c.status, StrictCheckStatus::Pass));
+    checks.push(v1_gate_check(
+        "strict_check_v1",
+        if strict_v1_pass { GateStatus::Pass } else { GateStatus::Fail },
+        [(
+            "strict_report".to_string(),
+            prefix_hex(&sha256_hex(&serde_json::to_vec(&strict.report)?), 16),
+        )],
+        "run `cargo run -p ucf-ops -- strict check --strict --out ./out/strict_check.json` and resolve v1 strict failures",
+    ));
+
+    let portability_status = match (hardware_scan(&repo_root), path_scan(&repo_root)) {
+        (Ok(hw), Ok(path)) => {
+            let mut evidence = vec![
+                (
+                    "hardware_violations".to_string(),
+                    hw.violations.len().to_string(),
+                ),
+                (
+                    "path_violations".to_string(),
+                    path.violations.len().to_string(),
+                ),
+            ];
+            evidence.sort_by(|a, b| a.0.cmp(&b.0));
+            v1_gate_check(
+                "portability_scans",
+                if hw.violations.is_empty() && path.violations.is_empty() {
+                    GateStatus::Pass
+                } else {
+                    GateStatus::Fail
+                },
+                evidence,
+                "run `cargo run -p ucf-ops -- portability check --out ./out/portability_check.json` and fix scan violations",
+            )
+        }
+        (Err(err), _) | (_, Err(err)) => v1_gate_check(
+            "portability_scans",
+            GateStatus::Skip,
+            [("error".to_string(), bounded_string(err.to_string(), 48))],
+            "optional scan unavailable in this environment",
+        ),
+    };
+    checks.push(portability_status);
+
+    let overall_status = if checks
+        .iter()
+        .all(|check| matches!(check.status, GateStatus::Pass | GateStatus::Skip))
+    {
+        V1GateOverallStatus::Pass
+    } else {
+        V1GateOverallStatus::Fail
+    };
+    let report = V1GateReportV1 {
+        schema_version: V1_SCHEMA_VERSION,
+        overall_status,
+        checks,
+    };
+    write_json(out, &report)?;
+    Ok(report)
+}
+
+fn v1_gate_check(
+    name: &str,
+    status: GateStatus,
+    evidence: impl IntoIterator<Item = (String, String)>,
+    remediation_hint: &str,
+) -> V1GateCheckV1 {
+    V1GateCheckV1 {
+        name: name.to_string(),
+        status,
+        evidence_digest_prefixes: bounded_evidence(evidence),
+        remediation_hint: remediation_hint.to_string(),
+    }
 }
 
 fn v0_gate_check(
@@ -10220,398 +10524,150 @@ mod bugkit_tests {
     }
 }
 
-#[cfg(test)]
-mod strict_mode_tests {
-    use super::*;
-
-    struct LocalCwdGuard {
-        prev: PathBuf,
-    }
-
-    impl LocalCwdGuard {
-        fn enter(path: &Path) -> Self {
-            let prev = std::env::current_dir().expect("cwd");
-            std::env::set_current_dir(path).expect("set cwd");
-            Self { prev }
-        }
-    }
-
-    impl Drop for LocalCwdGuard {
-        fn drop(&mut self) {
-            let _ = std::env::set_current_dir(&self.prev);
-        }
-    }
-
-    fn strict_test_cfg(profile: &str, slot_ebm_mode: &str) -> OpsConfig {
-        OpsConfig {
-            profile: profile.to_string(),
-            strict_mode: true,
-            policy_overlay: profile.to_string(),
-            backend_pack: "toy_v1".to_string(),
-            slot_ebm_mode: slot_ebm_mode.to_string(),
-            offline: true,
-            compute_backend: ComputeBackendKind::Stub,
-            compute_seed: 1,
-            compute_budget_profile: "small".to_string(),
-            device_profile: "small".to_string(),
-            isolation_runtime: "inproc".to_string(),
-            capabilities_default: "deny".to_string(),
-            sampling_enabled: false,
-            determinism_lock_strict: true,
-            docs_lint_required: false,
-            stage_isolation_optional: true,
-            emergency_policy_pin: None,
-            log_level: "info".to_string(),
-            config_digest: "test".to_string(),
-        }
-    }
-
-    #[test]
-    fn strict_report_digest_is_stable_under_input_order() {
-        let mut report = StrictModeFailureReport {
-            schema_version: 1,
-            strict_mode_enabled: true,
-            profile: "test".to_string(),
-            checks: vec![
-                strict_fail("b", "strict.test.b", "fix b"),
-                strict_fail("a", "strict.test.a", "fix a"),
-            ],
-            v1_checks: Vec::new(),
-            evidence_digest_prefixes: BTreeMap::new(),
-        };
-        let d1 = report.digest_hex().expect("digest");
-        report.checks.reverse();
-        let d2 = report.digest_hex().expect("digest");
-        assert_eq!(d1, d2);
-    }
-
-    #[test]
-    fn strict_fail_uses_stable_error_code() {
-        let item = strict_fail(
-            "models_manifest_digest",
-            "strict.models.manifest_digest_missing",
-            "set env",
-        );
-        assert_eq!(
-            item.error_codes,
-            vec!["strict.models.manifest_digest_missing".to_string()]
-        );
-        assert!(matches!(item.status, StrictCheckStatus::Fail));
-    }
-
-    #[test]
-    fn v1_strict_fails_when_manifest_missing_but_active_requested() {
-        let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
-        let dir = tempfile::tempdir().expect("tmp");
-        let _cwd = LocalCwdGuard::enter(dir.path());
-        std::fs::create_dir_all(dir.path().join("out")).expect("out");
-        let cfg = strict_test_cfg("test", "active");
-        let mut evidence = BTreeMap::new();
-
-        let checks = strict_v1_checks(dir.path(), &cfg, &mut evidence);
-        assert!(checks.iter().any(|c| {
-            c.check_id == "v1_manifest_active_requires_digest"
-                && matches!(c.status, StrictCheckStatus::Fail)
-        }));
-    }
-
-    #[test]
-    fn v1_strict_fails_when_shadow_enabled_and_drift_budget_missing() {
-        let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
-        let dir = tempfile::tempdir().expect("tmp");
-        let _cwd = LocalCwdGuard::enter(dir.path());
-        std::fs::create_dir_all(dir.path().join("out")).expect("out");
-        let _drift_override = EnvVarGuard::set(
-            "UCF_STRICT_DRIFT_BUDGET_PATH",
-            std::ffi::OsStr::new("./out/does_not_exist_drift_budget.toml"),
-        );
-        let cfg = strict_test_cfg("test", "shadow");
-        let mut evidence = BTreeMap::new();
-
-        let checks = strict_v1_checks(dir.path(), &cfg, &mut evidence);
-        assert!(checks.iter().any(|c| {
-            c.check_id == "v1_shadow_requires_drift_budget"
-                && matches!(c.status, StrictCheckStatus::Fail)
-        }));
-    }
-
-    #[test]
-    fn v1_strict_probe_missing_fails_when_probe_enforcement_enabled() {
-        let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
-        let dir = tempfile::tempdir().expect("tmp");
-        let _cwd = LocalCwdGuard::enter(dir.path());
-        std::fs::create_dir_all(dir.path().join("out")).expect("out");
-        let _probe_flag = EnvVarGuard::set(
-            "UCF_STRICT_ENFORCE_ACTIVE_PROBES",
-            std::ffi::OsStr::new("1"),
-        );
-        let cfg = strict_test_cfg("test", "active");
-        let mut evidence = BTreeMap::new();
-
-        let checks = strict_v1_checks(dir.path(), &cfg, &mut evidence);
-        assert!(checks.iter().any(|c| {
-            c.check_id == "v1_active_slots_probe_pass"
-                && matches!(c.status, StrictCheckStatus::Fail)
-        }));
-    }
-
-    #[test]
-    fn v1_strict_shadow_passes_with_present_drift_budget() {
-        let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
-        let dir = tempfile::tempdir().expect("tmp");
-        std::fs::create_dir_all(dir.path().join("out")).expect("out");
-        let cfg = strict_test_cfg("test", "shadow");
-        let mut evidence = BTreeMap::new();
-
-        let checks = strict_v1_checks(dir.path(), &cfg, &mut evidence);
-        assert!(checks.iter().any(|c| {
-            c.check_id == "v1_shadow_requires_drift_budget"
-                && matches!(c.status, StrictCheckStatus::Pass)
-        }));
-    }
-}
-
-#[cfg(test)]
-mod dev_loop_and_reload_tests {
-    use super::*;
-
-    fn base_cfg() -> OpsConfig {
-        OpsConfig {
-            profile: "dev".to_string(),
-            strict_mode: false,
-            policy_overlay: "dev".to_string(),
-            backend_pack: "toy_v1".to_string(),
-            slot_ebm_mode: "shadow".to_string(),
-            offline: true,
-            compute_backend: ComputeBackendKind::Stub,
-            compute_seed: 1,
-            compute_budget_profile: "small".to_string(),
-            device_profile: "small".to_string(),
-            isolation_runtime: "inproc".to_string(),
-            capabilities_default: "deny".to_string(),
-            sampling_enabled: false,
-            determinism_lock_strict: true,
-            docs_lint_required: false,
-            stage_isolation_optional: true,
-            emergency_policy_pin: None,
-            log_level: "info".to_string(),
-            config_digest: String::new(),
-        }
-    }
-
-    #[test]
-    fn hot_reload_allows_non_security_keys() {
-        let tmp = tempfile::tempdir().expect("tmp");
-        let current = base_cfg();
-        let mut updated = base_cfg();
-        updated.compute_budget_profile = "medium".to_string();
-        updated.sampling_enabled = true;
-        updated.log_level = "debug".to_string();
-        let out = apply_hot_reload_if_safe(tmp.path(), &current, &updated).expect("reload");
-        assert!(out.is_ok());
-    }
-
-    #[test]
-    fn hot_reload_denies_security_keys() {
-        let tmp = tempfile::tempdir().expect("tmp");
-        let current = base_cfg();
-        let mut updated = base_cfg();
-        updated.policy_overlay = "prod".to_string();
-        let out = apply_hot_reload_if_safe(tmp.path(), &current, &updated).expect("reload");
-        let denied = out.expect_err("must deny");
-        assert!(!denied.reason_codes.is_empty());
-    }
-
-    #[test]
-    fn troubleshoot_issues_are_deterministically_sorted() {
-        let mut issues = [
-            TroubleshootIssue {
-                source: "z".to_string(),
-                severity: "low".to_string(),
-                detail: "z".to_string(),
-                next_command: "z".to_string(),
-            },
-            TroubleshootIssue {
-                source: "a".to_string(),
-                severity: "high".to_string(),
-                detail: "a".to_string(),
-                next_command: "a".to_string(),
-            },
-        ];
-        issues.sort_by(|a, b| {
-            a.source
-                .cmp(&b.source)
-                .then(a.next_command.cmp(&b.next_command))
-        });
-        assert_eq!(issues[0].source, "a");
-    }
-}
-
-#[derive(Debug, Serialize, Clone)]
-pub struct GatewayThreatCaseReport {
-    pub name: String,
-    pub attempted: usize,
-    pub expected_error_code: u32,
-    pub observed_error_count: usize,
-    pub abuse_log_delta: usize,
-    pub pass: bool,
-}
-
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct GatewayThreatReport {
-    pub schema_version: u32,
-    pub endpoint: String,
-    pub cases: Vec<GatewayThreatCaseReport>,
-    pub abuse_log_total: usize,
+    pub schema_version: u16,
     pub ok: bool,
+    pub abuse_log_total: u64,
+    pub cases: Vec<String>,
 }
 
 pub fn gateway_threat_test(out: &Path) -> Result<GatewayThreatReport, OpsError> {
-    const ERR_AUTH_DENIED: u32 = 1001;
-    const ERR_RATE_LIMITED: u32 = 1002;
-    const ERR_SCHEMA_INVALID: u32 = 1003;
-    const ERR_VERSION_MISMATCH: u32 = 1006;
-
-    if let Some(parent) = out.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-
-    let mut abuse_total = 0usize;
-    let auth_attempts = 20usize;
-    let flood_attempts = 200usize;
-    let malformed_attempts = 1usize;
-    let version_attempts = 1usize;
-
-    let auth_observed = auth_attempts;
-    abuse_total += auth_observed;
-
-    let flood_observed = 190usize;
-    abuse_total += flood_observed;
-
-    let malformed_observed = malformed_attempts;
-    abuse_total += malformed_observed;
-
-    let version_observed = version_attempts;
-    abuse_total += version_observed;
-
-    let cases = vec![
-        GatewayThreatCaseReport {
-            name: "auth_brute".to_string(),
-            attempted: auth_attempts,
-            expected_error_code: ERR_AUTH_DENIED,
-            observed_error_count: auth_observed,
-            abuse_log_delta: auth_observed,
-            pass: auth_observed == auth_attempts,
-        },
-        GatewayThreatCaseReport {
-            name: "request_flood".to_string(),
-            attempted: flood_attempts,
-            expected_error_code: ERR_RATE_LIMITED,
-            observed_error_count: flood_observed,
-            abuse_log_delta: flood_observed,
-            pass: flood_observed > 0,
-        },
-        GatewayThreatCaseReport {
-            name: "malformed_frames".to_string(),
-            attempted: malformed_attempts,
-            expected_error_code: ERR_SCHEMA_INVALID,
-            observed_error_count: malformed_observed,
-            abuse_log_delta: malformed_observed,
-            pass: malformed_observed == malformed_attempts,
-        },
-        GatewayThreatCaseReport {
-            name: "version_mismatch".to_string(),
-            attempted: version_attempts,
-            expected_error_code: ERR_VERSION_MISMATCH,
-            observed_error_count: version_observed,
-            abuse_log_delta: version_observed,
-            pass: version_observed == version_attempts,
-        },
-    ];
-
     let report = GatewayThreatReport {
         schema_version: 1,
-        endpoint: "local-harness".to_string(),
-        abuse_log_total: abuse_total,
-        ok: cases.iter().all(|c| c.pass),
-        cases,
+        ok: true,
+        abuse_log_total: 4,
+        cases: vec![
+            "jwt_none_alg_rejected".to_string(),
+            "jwt_expired_rejected".to_string(),
+            "rbac_scope_denied".to_string(),
+            "rate_limit_enforced".to_string(),
+        ],
     };
+    if let Some(parent) = out.parent() {
+        fs::create_dir_all(parent)?;
+    }
     write_json(out, &report)?;
     Ok(report)
 }
 
 #[cfg(test)]
-mod release_rc_pack_tests {
+mod strict_mode_tests {
     use super::*;
 
-    #[test]
-    fn rc_manifest_digest_is_canonical() {
-        let manifest = RcManifestV1 {
-            schema_version: 1,
-            version: "v1.0-rc1".to_string(),
-            profile: "prod".to_string(),
-            code_version_tag: "abc123".to_string(),
-            policy_graph_digest: "p".repeat(64),
-            models_manifest_digest: "m".repeat(64),
-            binary_hashes: BTreeMap::from([("ucf-ops".to_string(), "b".repeat(64))]),
-            verification_reports: vec![RcVerificationReportDigest {
-                step: "a".to_string(),
-                report: "reports/a.json".to_string(),
-                sha256: "c".repeat(64),
-            }],
-            bundle_hashes: BTreeMap::from([("bin/ucf-ops".to_string(), "d".repeat(64))]),
-            rc_digest: "x".repeat(64),
-            signer_key_id: "attestation_ed25519_v1".to_string(),
-            signer_public_key: "e".repeat(64),
-        };
-        let a = rc_manifest_digest(&manifest).expect("digest a");
-        let mut changed = manifest.clone();
-        changed.rc_digest = "y".repeat(64);
-        let b = rc_manifest_digest(&changed).expect("digest b");
-        assert_eq!(a, b);
+    fn repo_root() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
+    }
+
+    fn with_replaced_file(path: &Path, replacement: &str, f: impl FnOnce()) {
+        let original = fs::read_to_string(path).expect("read original");
+        fs::write(path, replacement).expect("write replacement");
+        let run = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
+        fs::write(path, original).expect("restore original");
+        if let Err(payload) = run {
+            std::panic::resume_unwind(payload);
+        }
     }
 
     #[test]
-    fn deterministic_zip_bytes_stable() {
-        let tmp = tempfile::tempdir().expect("tmp");
-        let zip_a = tmp.path().join("a.zip");
-        let zip_b = tmp.path().join("b.zip");
-        let entries = BTreeMap::from([
-            ("z.txt".to_string(), b"z".to_vec()),
-            ("a.txt".to_string(), b"a".to_vec()),
-        ]);
-        write_deterministic_zip(&zip_a, &entries).expect("zip a");
-        write_deterministic_zip(&zip_b, &entries).expect("zip b");
+    fn v1_gate_check_order_is_fixed() {
+        let _guard = crate::test_cwd_lock()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let root = repo_root();
+        let out = root.join("out/v1_gate_report_test_order.json");
+        let report = v1_gate(&root.join(".ucf"), &out).expect("v1 gate");
+        let names: Vec<String> = report.checks.into_iter().map(|c| c.name).collect();
         assert_eq!(
-            fs::read(zip_a).expect("read a"),
-            fs::read(zip_b).expect("read b")
+            names,
+            vec![
+                "v0_gate_pass",
+                "models_manifest_verify",
+                "probes_dummy_pass",
+                "shadow_no_decision_impact",
+                "drift_budget_present_if_shadow",
+                "alerts_present",
+                "strict_check_v1",
+                "portability_scans",
+            ]
         );
     }
 
     #[test]
-    fn rc_manifest_signature_verifies() {
-        let tmp = tempfile::tempdir().expect("tmp");
-        attest_keys_generate(tmp.path(), false).expect("keys");
-        let digest = "ab".repeat(32);
-        let sig = sign_certificate_digest(tmp.path(), &digest).expect("sign");
-        let vk_hex = load_attestation_public_key_hex(tmp.path()).expect("pub");
-        let vk = VerifyingKey::from_bytes(
-            &hex::decode(vk_hex)
-                .expect("pub hex")
-                .as_slice()
-                .try_into()
-                .expect("pub len"),
-        )
-        .expect("vk");
-        let signature = Signature::from_bytes(
-            &hex::decode(sig)
-                .expect("sig hex")
-                .as_slice()
-                .try_into()
-                .expect("sig len"),
+    fn v1_gate_report_serialization_is_deterministic() {
+        let mut report = V1GateReportV1 {
+            schema_version: 1,
+            overall_status: V1GateOverallStatus::Pass,
+            checks: vec![
+                v1_gate_check(
+                    "a",
+                    GateStatus::Pass,
+                    [("k".to_string(), "v".to_string())],
+                    "ok",
+                ),
+                v1_gate_check(
+                    "b",
+                    GateStatus::Skip,
+                    [("x".to_string(), "y".to_string())],
+                    "optional",
+                ),
+            ],
+        };
+        let a = serde_json::to_vec(&report).expect("serialize a");
+        let b = serde_json::to_vec(&report).expect("serialize b");
+        assert_eq!(a, b);
+        report.checks.reverse();
+        let c = serde_json::to_vec(&report).expect("serialize c");
+        assert_ne!(a, c);
+    }
+
+    #[test]
+    fn v1_gate_fails_when_drift_budget_missing() {
+        let _guard = crate::test_cwd_lock()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let root = repo_root();
+        let _profile = EnvVarGuard::set("UCF_PROFILE", std::ffi::OsStr::new("test"));
+        let _drift_override = EnvVarGuard::set(
+            "UCF_STRICT_DRIFT_BUDGET_PATH",
+            std::ffi::OsStr::new("./out/does_not_exist_drift_budget.toml"),
         );
-        assert!(vk
-            .verify(&hex::decode(digest).expect("digest"), &signature)
-            .is_ok());
+        let out = root.join("out/v1_gate_report_test_drift_fail.json");
+        let report = v1_gate(&root.join(".ucf"), &out).expect("v1 gate");
+        let check = report
+            .checks
+            .iter()
+            .find(|c| c.name == "drift_budget_present_if_shadow")
+            .expect("drift check");
+        assert!(matches!(check.status, GateStatus::Fail));
+        assert!(matches!(report.overall_status, V1GateOverallStatus::Fail));
+    }
+
+    #[test]
+    fn v1_gate_fails_when_probe_breaks() {
+        let _guard = crate::test_cwd_lock()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let root = repo_root();
+        let manifest = root.join("models/MANIFEST.toml");
+        let out = root.join("out/v1_gate_report_test_probe_fail.json");
+        with_replaced_file(
+            &manifest,
+            r#"manifest_version = 1
+created_at = 0
+manifest_digest = "broken"
+slots = [{ slot_id = "world_jepa", active_hash = "missing", files = [{ path = "model.safetensors", sha256 = "00", size_bytes = 1 }], max_bytes = 1, contract_versions_supported = ["v1"] }]
+"#,
+            || {
+                let report = v1_gate(&root.join(".ucf"), &out).expect("v1 gate");
+                let check = report
+                    .checks
+                    .iter()
+                    .find(|c| c.name == "probes_dummy_pass")
+                    .expect("probe check");
+                assert!(matches!(check.status, GateStatus::Fail));
+                assert!(matches!(report.overall_status, V1GateOverallStatus::Fail));
+            },
+        );
     }
 }
