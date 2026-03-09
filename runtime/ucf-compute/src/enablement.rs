@@ -222,6 +222,8 @@ impl CompareWindowState {
         let shadow_mean_q = mean_q(&self.shadow_q);
         let primary_p95_q = p95_q(self.primary_q);
         let shadow_p95_q = p95_q(self.shadow_q);
+        let mean_delta_q = primary_mean_q.abs_diff(shadow_mean_q);
+        let p95_delta_q = primary_p95_q.abs_diff(shadow_p95_q);
         let status = if disabled {
             SlotCompareStatusV1::ShadowDisabled
         } else if self.digest_mismatch_count > 0 || self.invalid_shadow_count > 0 {
@@ -238,6 +240,8 @@ impl CompareWindowState {
             primary_p95_q,
             shadow_mean_q,
             shadow_p95_q,
+            mean_delta_q,
+            p95_delta_q,
             digest_mismatch_count: self.digest_mismatch_count,
             invalid_shadow_count: self.invalid_shadow_count,
             digest_prefix_samples: self.digest_prefix_samples,

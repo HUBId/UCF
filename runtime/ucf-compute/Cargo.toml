@@ -7,6 +7,7 @@ edition = "2021"
 default = ["backend-stub", "backend-toy"]
 backend-stub = []
 backend-toy = []
+backend-candle = ["dep:candle-core"]
 compute-stub = ["backend-stub"]
 compute-candle = ["dep:candle-core"]
 compute-burn = []

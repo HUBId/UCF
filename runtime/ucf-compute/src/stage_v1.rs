@@ -414,7 +414,7 @@ fn digest_spikes(spikes: &[SaeSpikeV1]) -> [u8; 32] {
     hasher.finalize().into()
 }
 
-fn digest_prediction(prediction_q: &[i16; MOCK_WORLD_DIM]) -> [u8; 32] {
+pub(crate) fn digest_prediction(prediction_q: &[i16; MOCK_WORLD_DIM]) -> [u8; 32] {
     let mut hasher = Sha256::new();
     for value in prediction_q {
         hasher.update(value.to_le_bytes());
@@ -437,7 +437,7 @@ fn mock_prediction_vector(
     out
 }
 
-fn novelty_from_context(context_digest: [u8; 32]) -> u16 {
+pub(crate) fn novelty_from_context(context_digest: [u8; 32]) -> u16 {
     let mut changes = 0u32;
     for idx in 1..32 {
         if context_digest[idx] != context_digest[idx - 1] {
@@ -447,7 +447,7 @@ fn novelty_from_context(context_digest: [u8; 32]) -> u16 {
     ((changes * u32::from(u16::MAX)) / 31) as u16
 }
 
-fn mix_q(a_q: u16, b_q: u16, w_a_q: u16, w_b_q: u16) -> u16 {
+pub(crate) fn mix_q(a_q: u16, b_q: u16, w_a_q: u16, w_b_q: u16) -> u16 {
     let lhs = u32::from(a_q) * u32::from(w_a_q);
     let rhs = u32::from(b_q) * u32::from(w_b_q);
     ((lhs.saturating_add(rhs).saturating_add(32767)) / 65535).min(u32::from(u16::MAX)) as u16
