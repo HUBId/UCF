@@ -63,3 +63,16 @@ cargo run -p ucf-ops -- models list --slot <slot>
 
 Promotion (`stage -> promote`) does **not** imply activation.
 Activation remains blocked until the active evidence bundle passes.
+
+
+## Shadow-Ready distinction
+
+`Shadow-Ready` is a separate gate (`models shadow-ready`) that certifies shadow evidence completeness for the two currently supported real slots.
+
+- `Shadow-Ready` indicates probe/compare/no-impact/drift evidence is sufficient for shadow scaffolding.
+- `Active-Eligible` indicates active enablement evidence passed for a slot/hash.
+
+These are intentionally different:
+
+- `Shadow-Ready != Active-Eligible`
+- A slot can be shadow-ready and still be denied for active mode by policy/stage rules.
