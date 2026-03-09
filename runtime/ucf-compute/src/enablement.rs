@@ -200,11 +200,17 @@ impl CompareWindowState {
 
     fn record(&mut self, primary: &ComputeSignals, shadow: &ComputeSignals) {
         self.primary_q
-            .push(quantize_unit(primary.risk, CANONICAL_UNIT_QUANT_MAX));
+            .push(quantize_unit(primary.pressure, CANONICAL_UNIT_QUANT_MAX));
         self.shadow_q
-            .push(quantize_unit(shadow.risk, CANONICAL_UNIT_QUANT_MAX));
-        let pfx_primary = digest_prefix4(primary);
-        let pfx_shadow = digest_prefix4(shadow);
+            .push(quantize_unit(shadow.pressure, CANONICAL_UNIT_QUANT_MAX));
+        let pfx_primary = primary
+            .ssm_digest
+            .map(|v| [v[0], v[1], v[2], v[3]])
+            .unwrap_or_else(|| digest_prefix4(primary));
+        let pfx_shadow = shadow
+            .ssm_digest
+            .map(|v| [v[0], v[1], v[2], v[3]])
+            .unwrap_or_else(|| digest_prefix4(shadow));
         if pfx_primary != pfx_shadow {
             self.digest_mismatch_count = self.digest_mismatch_count.saturating_add(1);
         }
