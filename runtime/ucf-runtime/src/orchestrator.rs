@@ -3961,6 +3961,8 @@ impl RuntimeOrchestrator {
                             primary_p95_q: record.primary_p95_q,
                             shadow_mean_q: record.shadow_mean_q,
                             shadow_p95_q: record.shadow_p95_q,
+                            mean_delta_q: record.mean_delta_q,
+                            p95_delta_q: record.p95_delta_q,
                             digest_mismatch_count: record.digest_mismatch_count,
                             invalid_shadow_count: record.invalid_shadow_count,
                             digest_prefix_samples: record.digest_prefix_samples,
@@ -3977,10 +3979,8 @@ impl RuntimeOrchestrator {
                             let digest_mismatch_rate_q =
                                 ((u32::from(record.digest_mismatch_count) * 10_000) / sample_count)
                                     .min(10_000) as u16;
-                            let risk_mean_delta_q =
-                                record.primary_mean_q.abs_diff(record.shadow_mean_q);
-                            let risk_p95_delta_q =
-                                record.primary_p95_q.abs_diff(record.shadow_p95_q);
+                            let risk_mean_delta_q = record.mean_delta_q;
+                            let risk_p95_delta_q = record.p95_delta_q;
                             let mut breached_fields = Vec::new();
                             let mut observed_q = Vec::new();
                             if invalid_rate_q > budget.invalid_rate_max_q {

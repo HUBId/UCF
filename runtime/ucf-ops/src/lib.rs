@@ -650,7 +650,7 @@ pub fn models_probe(workdir: &Path, manifest: &Path, out: &Path) -> Result<Probe
         let verified = store.verify_slot(slot).ok();
         let spec = probe_spec_for_slot(slot);
         let (mut result, record) =
-            run_probe_for_slot(&run_id, &pack, slot, &spec, verified.as_ref());
+            run_probe_for_slot(&run_id, &pack, slot, &spec, verified.as_ref(), &store);
         if matches!(result.status, ProbeStatus::Disabled)
             && !verify
                 .slots
@@ -759,12 +759,14 @@ fn run_probe_for_slot(
     slot: ModelSlot,
     spec: &ProbeSpec,
     verified: Option<&VerifiedModelSlot>,
+    store: &ModelStore,
 ) -> (ProbeResult, ModelProbeRecord) {
     let model_sha = verified.map(|v| hex_prefix(v.sha256));
     let backend_id = format!(
-        "{}:{}",
+        "{}:{}/world:{}",
         pack.meta().pack_name,
-        hex_prefix(pack.meta().digest)
+        hex_prefix(pack.meta().digest),
+        pack.meta().world_backend as u8
     );
     let mut elapsed_samples = Vec::new();
     let mut final_status = ProbeStatus::Disabled;
@@ -787,12 +789,15 @@ fn run_probe_for_slot(
                 ModelSlot::WorldJepa => exec_with_timeout(spec.timeout_ms, {
                     let pack = pack.clone();
                     let spec = spec.clone();
-                    move || run_world_probe(pack, &spec)
+                    let has_weights = verified.is_some();
+                    let store = store.clone();
+                    move || run_world_probe(pack, &spec, has_weights, &store)
                 }),
                 ModelSlot::WorldVljepa => exec_with_timeout(spec.timeout_ms, {
                     let pack = pack.clone();
                     let spec = spec.clone();
-                    move || run_world_probe(pack, &spec)
+                    let store = store.clone();
+                    move || run_world_probe(pack, &spec, false, &store)
                 }),
                 ModelSlot::Sae => exec_with_timeout(spec.timeout_ms, {
                     let pack = pack.clone();
@@ -922,11 +927,29 @@ fn run_llm_probe(
 fn run_world_probe(
     pack: std::sync::Arc<dyn ucf_compute::BackendPack>,
     spec: &ProbeSpec,
+    has_weights: bool,
+    store: &ModelStore,
 ) -> Result<([u8; 32], StageQuality), String> {
+    let _ = (has_weights, store);
     let mut obs = [0.0_f32; 16];
     for (idx, value) in deterministic_features(spec.seed, 16).iter().enumerate() {
         obs[idx] = *value;
     }
+    #[cfg(feature = "backend-candle")]
+    if has_weights {
+        use ucf_compute::stage_v1::{WorldInputV1, WorldPredictorV1};
+        use ucf_compute::stage_v1_candle::CandleWorldAdapterV0;
+        let adapter = CandleWorldAdapterV0::from_model_store(store);
+        let input_v1 = WorldInputV1 {
+            context_digest: spec.input_digest,
+            previous_world_state_digest: None,
+            signal_q: 1024,
+        };
+        if let Ok(out) = adapter.step(&input_v1) {
+            return Ok((out.prediction_digest, StageQuality::Ok));
+        }
+    }
+
     let input = WorldModelInput {
         t: 1,
         context_digest: [0x44; 32],
@@ -6237,14 +6260,20 @@ active_hash = "abc"
     #[test]
     fn probe_digests_are_deterministic_for_toy_backends() {
         let world_spec = probe_spec_for_slot(ModelSlot::WorldJepa);
+        let store =
+            ModelStore::from_manifest_and_env(Path::new("nonexistent.toml")).expect("store");
         let a = run_world_probe(
             BackendPackFactory::build(BackendPackConfig::default()).expect("pack a"),
             &world_spec,
+            false,
+            &store,
         )
         .expect("world a");
         let b = run_world_probe(
             BackendPackFactory::build(BackendPackConfig::default()).expect("pack b"),
             &world_spec,
+            false,
+            &store,
         )
         .expect("world b");
         assert_eq!(a.0, b.0);

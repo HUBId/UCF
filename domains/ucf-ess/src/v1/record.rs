@@ -212,6 +212,8 @@ pub struct SlotCompareWindowRecordV1 {
     pub primary_p95_q: u16,
     pub shadow_mean_q: u16,
     pub shadow_p95_q: u16,
+    pub mean_delta_q: u16,
+    pub p95_delta_q: u16,
     pub digest_mismatch_count: u16,
     pub invalid_shadow_count: u16,
     pub digest_prefix_samples: Vec<[u8; 4]>,
