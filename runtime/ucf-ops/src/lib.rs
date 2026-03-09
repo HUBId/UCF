@@ -10556,6 +10556,7 @@ mod repro_pack_tests {
 
     #[test]
     fn repro_pack_and_verify_and_tamper() {
+        let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
         let workdir = tempfile::tempdir().expect("tmp");
         let scenario =
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/e2e_scenario_a.json");
