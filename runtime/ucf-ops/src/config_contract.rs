@@ -17,6 +17,7 @@ pub struct ConfigV1 {
     pub paths: ConfigPathsV1,
     pub strictness: StrictnessV1,
     pub runtime: RuntimeConfigV1,
+    #[serde(default)]
     pub active_evidence: ActiveEvidenceConfigV1,
 }
 
@@ -29,6 +30,19 @@ pub struct ActiveEvidenceConfigV1 {
     pub freshness_drift_status_max_age_ticks: u64,
     pub allow_warn_drift_for_active: bool,
     pub require_matching_target_hash: bool,
+}
+
+impl Default for ActiveEvidenceConfigV1 {
+    fn default() -> Self {
+        Self {
+            freshness_probe_max_age_ticks: 256,
+            freshness_compare_max_age_ticks: 256,
+            freshness_no_impact_max_age_ticks: 256,
+            freshness_drift_status_max_age_ticks: 256,
+            allow_warn_drift_for_active: false,
+            require_matching_target_hash: true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

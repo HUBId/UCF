@@ -2626,7 +2626,7 @@ mod probe_tests {
         #[cfg(not(feature = "backend-burn"))]
         assert!(matches!(
             denied.code,
-            ActiveEnablementDeniedCode::ProbeRequired
+            ActiveEnablementDeniedCode::ActiveDeniedNoProbe
         ));
     }
 
@@ -2804,7 +2804,7 @@ mod probe_tests {
 
     #[test]
     fn supported_real_slots_active_view_ordering_stable() {
-        let mut slots = vec![
+        let mut slots = [
             SupportedRealSlotActiveViewEntryV1 {
                 slot_id: "world_jepa".to_string(),
                 target_hash: "b".to_string(),
