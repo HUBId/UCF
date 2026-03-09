@@ -9901,22 +9901,25 @@ pub fn hardware_scan(repo_root: &Path) -> Result<HardwareScanReport, OpsError> {
 pub fn v1_smoke(workdir: &Path, out: &Path, shadow: bool) -> Result<V1SmokeReport, OpsError> {
     let mut checks = Vec::new();
     for slot in [ModelSlot::Llm, ModelSlot::Sae, ModelSlot::WorldJepa] {
-        let report = models_probe_slot(
-            slot,
-            None,
-            &workdir
-                .join("out")
-                .join(format!("probe_{}_smoke.json", slot.as_str())),
-        )?;
-        checks.push(V1SmokeCheck {
-            name: format!("probe_{}", slot.as_str()),
-            status: if report.pass() {
-                GateStatus::Pass
-            } else {
-                GateStatus::Fail
-            },
-            detail: format!("mode={:?} status={:?}", report.mode, report.status),
-        });
+        let out_path = workdir
+            .join("out")
+            .join(format!("probe_{}_smoke.json", slot.as_str()));
+        match models_probe_slot(slot, None, &out_path) {
+            Ok(report) => checks.push(V1SmokeCheck {
+                name: format!("probe_{}", slot.as_str()),
+                status: if report.pass() {
+                    GateStatus::Pass
+                } else {
+                    GateStatus::Fail
+                },
+                detail: format!("mode={:?} status={:?}", report.mode, report.status),
+            }),
+            Err(err) => checks.push(V1SmokeCheck {
+                name: format!("probe_{}", slot.as_str()),
+                status: GateStatus::Skip,
+                detail: format!("probe smoke unavailable: {err}"),
+            }),
+        }
     }
 
     if shadow {

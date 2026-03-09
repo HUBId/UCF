@@ -1,38 +1,38 @@
 # Prompt Series State Snapshot
 
 ## Current anchor
-- **Current anchor milestone:** `Real Compute Onboarding v1`.
-- **Anchor definition:** v1 transition queue in `docs/next_10_prompts.md` (entry set `178-187`).
+- **Current anchor milestone:** `Real Compute Onboarding v2`.
+- **Anchor definition:** v2 planning queue in `docs/next_10_prompts.md` (entry set `189-198`).
 - **Prompt index source:** `docs/prompt_series_index.md`.
 
-## Status against v1 anchor (transition from completed v0)
-- **v0 completion prerequisite:** `ucf-ops v0 gate` overall PASS in CI.
-- **Transition state:** v0 signoff is treated as complete; planning focus moved to v1 scaffolding.
-- **Queue policy:** immediate queue remains capped to 10 MUST prompts.
+## Status against v2 anchor (v1 wrap complete)
+- **v1 signoff prerequisite:** `ucf-ops v1 gate` overall PASS.
+- **Transition state:** v1 is complete; v2 planning is active.
+- **Queue policy:** immediate queue remains capped to 10 prompts.
 
 ## Last executed prompt / resume point
-- Last executed prompt ID: **177**.
-- Next prompt ID: **178**.
-- Resume from: **`PROMPT 178`**.
+- Last executed prompt ID: **188**.
+- Next prompt ID: **189**.
+- Resume from: **`PROMPT 189`**.
 - Numbering remains monotonic and append-only.
 
-## Immediate next prompts (capped to 10, MUST-only)
+## Immediate next prompts (capped to 10)
 Reference: `docs/next_10_prompts.md`
 
-| Prompt ID | Title (short) | v1 class | Status |
+| Prompt ID | Title (short) | v2 class | Status |
 |---:|---|---|---|
-| 178 | Weights lifecycle scaffold (staging/promoted, no real weights required) | MUST | pending |
-| 179 | Hardware-neutral backend adapter traits (Candle/Burn optional, no real compute) | MUST | pending |
-| 180 | Probe infrastructure per model slot with dummy fixtures | MUST | pending |
-| 181 | Slot-level rollout state machine (shadow/compare/active) | MUST | pending |
-| 182 | Drift budget schema and evaluator for shadow outputs | MUST | pending |
-| 183 | Minimal alerts rules and report format | MUST | pending |
-| 184 | Portability gate integration (Linux/Windows lanes) | MUST | pending |
-| 185 | Strict-mode wiring for v1 scaffold features | MUST | pending |
-| 186 | Operator docs and end-state update for v1 onboarding | MUST | pending |
-| 187 | v1 scaffolding signoff gate (PASS/FAIL) | MUST | pending |
+| 189 | Adapter trait hardening for Candle/Burn optional slots | MUST | pending |
+| 190 | Optional feature wiring for one or two real backend slots | MUST | pending |
+| 191 | Tiny real-weights fixture contract for one slot (probe-first) | MUST | pending |
+| 192 | Probe-only execution path for real backend fixture | MUST | pending |
+| 193 | Shadow-only rollout guard for real backend activation | MUST | pending |
+| 194 | Drift/evidence parity checks for stub vs optional real backend | MUST | pending |
+| 195 | Operator runbook update for optional real-backend probes | MUST | pending |
+| 196 | Deterministic benchmark harness for optional backend paths | NICE | pending |
+| 197 | Extended drift dashboard docs for probe/shadow comparison | NICE | pending |
+| 198 | v2 phase-1 signoff gate for optional real-backend readiness | MUST | pending |
 
 ## Series control notes
-- v0 completion requirement remains: **`ucf-ops v0 gate` overall PASS**.
+- v1 completion requirement: **`ucf-ops v1 gate` overall PASS**.
+- v2 real backend work is optional, probe-first, and shadow-only by default.
 - Prompts are classified as MUST/NICE/DEFERRED at authoring time.
-- Only MUST-aligned prompts are included in the immediate capped queue.
