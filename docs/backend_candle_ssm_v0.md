@@ -60,8 +60,9 @@ If severe drift persists, shadow is disabled according to compare/drift policy t
 
 ## Failure behavior
 
-If SSM candle weights are missing or fail validation, adapter initialization fails closed with
-`BACKEND_DISABLED` and falls back to non-candle/default safe behavior.
+If the SSM slot is enabled in the model manifest, missing/invalid candle weights fail closed with
+`BACKEND_DISABLED`. If the SSM slot is disabled, candle lane keeps deterministic hash-derived toy
+initialization for compatibility in non-model-slot test paths.
 
 
 To materialize a local `.safetensors` file for manual experiments:

@@ -289,6 +289,35 @@ pub struct CandleSsmKernel {
 }
 
 impl CandleSsmKernel {
+    pub fn new(model_hash: [u8; 32]) -> Self {
+        let mut a = [0.0; SSM_STATE_DIM];
+        let mut b = [0.0; SSM_STATE_DIM];
+        let mut c = [0.0; SSM_STATE_DIM];
+        for i in 0..SSM_STATE_DIM {
+            a[i] = 0.9 + (model_hash[i % 32] as f32 / 255.0) * 0.08;
+            b[i] = ((model_hash[(i + 7) % 32] as f32 / 255.0) * 2.0 - 1.0) * 0.2;
+            c[i] = ((model_hash[(i + 13) % 32] as f32 / 255.0) * 2.0 - 1.0) * 0.5;
+        }
+        Self {
+            state: [0.0; SSM_STATE_DIM],
+            a,
+            b,
+            c: Some(c),
+            model_hash,
+        }
+    }
+
+    pub fn from_model_store_or_hash(
+        store: &ModelStore,
+        fallback_hash: [u8; 32],
+    ) -> Result<Self, ComputeError> {
+        match store.verify_slot(crate::model_store::ModelSlot::Ssm) {
+            Ok(_) => Self::from_model_store(store),
+            Err(crate::model_store::ModelLoadError::Disabled) => Ok(Self::new(fallback_hash)),
+            Err(_) => Err(ComputeError::BackendDisabled),
+        }
+    }
+
     pub fn from_model_store(store: &ModelStore) -> Result<Self, ComputeError> {
         let verified = store
             .verify_slot(crate::model_store::ModelSlot::Ssm)

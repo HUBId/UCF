@@ -587,7 +587,10 @@ impl BackendPackFactory {
             BackendPackKind::CandleToyV1 => {
                 #[cfg(feature = "compute-candle")]
                 {
-                    Box::new(CandleSsmKernel::from_model_store(&model_store)?)
+                    Box::new(CandleSsmKernel::from_model_store_or_hash(
+                        &model_store,
+                        _ssm_model_hash,
+                    )?)
                 }
                 #[cfg(not(feature = "compute-candle"))]
                 {
