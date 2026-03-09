@@ -40,6 +40,8 @@ pub mod remote_compute;
 pub mod risk_contract;
 pub mod ssm;
 pub mod stage_v1;
+#[cfg(feature = "backend-burn")]
+pub mod stage_v1_burn;
 #[cfg(feature = "backend-candle")]
 pub mod stage_v1_candle;
 pub mod work_meter;

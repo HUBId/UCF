@@ -112,6 +112,9 @@ pub enum ActiveEnablementDeniedCode {
     ActiveDeniedDrift,
     ActiveDeniedHashMismatch,
     ActiveDeniedStrictMode,
+    ActiveDeniedBackendNotYetAllowed,
+    ProbeRequired,
+    BackendDisabled,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -485,6 +488,12 @@ pub fn can_enable_active(
             detail: "dev bypass is forbidden in strict mode".to_string(),
         });
     }
+    if cfg!(feature = "backend-burn") && slot == ModelSlot::WorldJepa {
+        return Err(EnablementDenied {
+            code: ActiveEnablementDeniedCode::ActiveDeniedBackendNotYetAllowed,
+            detail: "ACTIVE_DENIED_BACKEND_NOT_YET_ALLOWED: burn world active mode is not supported in v0".to_string(),
+        });
+    }
     let manifest = load_or_init_manifest().map_err(|e| EnablementDenied {
         code: ActiveEnablementDeniedCode::ActiveDeniedHashMismatch,
         detail: e.to_string(),
@@ -515,8 +524,11 @@ pub fn can_enable_active(
         .ok()
         .and_then(|body| serde_json::from_str(&body).ok())
         .ok_or_else(|| EnablementDenied {
-            code: ActiveEnablementDeniedCode::ActiveDeniedNoProbe,
-            detail: format!("missing probe report: {}", probe_path.display()),
+            code: ActiveEnablementDeniedCode::ProbeRequired,
+            detail: format!(
+                "PROBE_REQUIRED: missing probe report: {}",
+                probe_path.display()
+            ),
         })?;
     let expected_hash_prefix = target_hash
         .chars()
@@ -527,8 +539,8 @@ pub fn can_enable_active(
         || !probe.pass()
     {
         return Err(EnablementDenied {
-            code: ActiveEnablementDeniedCode::ActiveDeniedNoProbe,
-            detail: "latest probe missing PASS for slot/hash".to_string(),
+            code: ActiveEnablementDeniedCode::ProbeRequired,
+            detail: "PROBE_REQUIRED: latest probe missing PASS for slot/hash".to_string(),
         });
     }
     let latest_probe_digest_prefix = prefix_hex(
@@ -1997,9 +2009,32 @@ mod probe_tests {
             false,
         )
         .expect_err("must deny");
+        #[cfg(feature = "backend-burn")]
         assert!(matches!(
             denied.code,
-            ActiveEnablementDeniedCode::ActiveDeniedNoProbe
+            ActiveEnablementDeniedCode::ActiveDeniedBackendNotYetAllowed
+        ));
+        #[cfg(not(feature = "backend-burn"))]
+        assert!(matches!(
+            denied.code,
+            ActiveEnablementDeniedCode::ProbeRequired
+        ));
+    }
+
+    #[cfg(feature = "backend-burn")]
+    #[test]
+    fn active_check_denies_burn_world_backend() {
+        let denied = can_enable_active(
+            ModelSlot::WorldJepa,
+            "deadbeef",
+            Path::new("."),
+            false,
+            false,
+        )
+        .expect_err("must deny");
+        assert!(matches!(
+            denied.code,
+            ActiveEnablementDeniedCode::ActiveDeniedBackendNotYetAllowed
         ));
     }
 
