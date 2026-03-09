@@ -764,11 +764,19 @@ fn run_probe_for_slot(
     store: &ModelStore,
 ) -> (ProbeResult, ModelProbeRecord) {
     let model_sha = verified.map(|v| hex_prefix(v.sha256));
+    let slot_component = match slot {
+        ModelSlot::Llm => pack.meta().llm_backend as u8,
+        ModelSlot::WorldJepa | ModelSlot::WorldVljepa => pack.meta().world_backend as u8,
+        ModelSlot::Sae => pack.meta().sae_backend as u8,
+        ModelSlot::Ssm => pack.meta().ssm_backend as u8,
+        ModelSlot::Lfm => pack.meta().lfm_backend as u8,
+        ModelSlot::EbmReasoner => pack.meta().lfm_backend as u8,
+    };
     let mut backend_id = format!(
-        "{}:{}/world:{}",
+        "{}:{}/slot:{}",
         pack.meta().pack_name,
         hex_prefix(pack.meta().digest),
-        pack.meta().world_backend as u8
+        slot_component
     );
     let mut elapsed_samples = Vec::new();
     let mut final_status = ProbeStatus::Disabled;
@@ -1016,21 +1024,22 @@ fn run_sae_probe(
         use ucf_compute::stage_v1::{SaeExtractorV1, SaeInputV1};
         use ucf_compute::stage_v1_candle::CandleSaeAdapterV0;
 
-        let store = ModelStore::from_env_default().map_err(|e| format!("{e:?}"))?;
-        let adapter = CandleSaeAdapterV0::from_model_store(&store);
-        let input_v1 = SaeInputV1 {
-            context_digest: spec.input_digest,
-            prediction_digest: [0x51; 32],
-            top_k: 8,
-        };
-        if let Ok(out) = adapter.infer(&input_v1) {
-            return Ok(SlotProbeOutput {
-                digest: out.spikes_digest,
-                quality: StageQuality::Ok,
-                backend_id: Some("candle:sae:303".to_string()),
-                spike_count: Some(out.spikes.len() as u16),
-                spikes_digest_prefix: Some(hex_prefix(out.spikes_digest)),
-            });
+        if let Ok(store) = ModelStore::from_env_default() {
+            let adapter = CandleSaeAdapterV0::from_model_store(&store);
+            let input_v1 = SaeInputV1 {
+                context_digest: spec.input_digest,
+                prediction_digest: [0x51; 32],
+                top_k: 8,
+            };
+            if let Ok(out) = adapter.infer(&input_v1) {
+                return Ok(SlotProbeOutput {
+                    digest: out.spikes_digest,
+                    quality: StageQuality::Ok,
+                    backend_id: Some(format!("candle:sae:{}", adapter.backend_id())),
+                    spike_count: Some(out.spikes.len() as u16),
+                    spikes_digest_prefix: Some(hex_prefix(out.spikes_digest)),
+                });
+            }
         }
     }
 
