@@ -41,8 +41,10 @@ pub use goldens::{
     GoldenVerifyScenarioReport,
 };
 pub use models_lifecycle::{
-    models_list, models_probe_slot, models_promote, models_recommend_rollback, models_rollback,
-    models_stage, models_verify as models_verify_lifecycle, parse_slot, ProbeReportV1,
+    can_enable_active, models_active_check, models_list, models_probe_slot, models_promote,
+    models_recommend_rollback, models_rollback, models_stage,
+    models_verify as models_verify_lifecycle, parse_slot, ActiveCheckStatus,
+    ActiveEnablementDeniedCode, ActiveEnablementEvidenceV1, ModelsActiveCheckReport, ProbeReportV1,
 };
 pub use nightly::{
     nightly_summarize, NightlyComponentReport, NightlyOverallStatus, NightlySummarizeArgs,
@@ -5451,6 +5453,59 @@ fn strict_v1_checks(
         checks.push(strict_pass("v1_shadow_compare_window_required"));
     }
 
+    if active_mode_requested {
+        let bypass = cfg.profile.eq_ignore_ascii_case("dev")
+            && std::env::var("UCF_DEV_ACTIVE_BYPASS")
+                .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+                .unwrap_or(false);
+        let active_slots = ModelSlot::all()
+            .into_iter()
+            .filter(|slot| {
+                matches!(
+                    slot_enablement.for_slot(*slot),
+                    ucf_compute::SlotMode::Active
+                )
+            })
+            .collect::<Vec<_>>();
+        if active_slots.is_empty() {
+            checks.push(strict_fail(
+                "v2_active_requires_evidence",
+                "strict.v2.active.slot_missing",
+                "configure at least one real slot explicitly before active check",
+            ));
+        } else {
+            let mut ok = true;
+            for slot in active_slots {
+                let manifest = models_lifecycle::models_list(slot).ok();
+                let target = manifest.and_then(|m| m.active_hash);
+                if let Some(hash) = target {
+                    match can_enable_active(slot, &hash, workdir, true, bypass) {
+                        Ok(e) => {
+                            evidence_digest_prefixes.insert(
+                                format!("active_evidence_{}", slot.as_str()),
+                                prefix_hex(&e.evidence_digest, 16),
+                            );
+                        }
+                        Err(_) => ok = false,
+                    }
+                } else {
+                    ok = false;
+                }
+            }
+            if ok {
+                checks.push(strict_pass("v2_active_requires_evidence"));
+            } else {
+                checks.push(strict_fail(
+                    "v2_active_requires_evidence",
+                    "strict.v2.active.evidence_missing",
+                    "run `cargo run -p ucf-ops -- models active-check --slot <slot> --out ./out/active_check_<slot>.json` and keep slot shadow until PASS",
+                ));
+            }
+        }
+    } else {
+        checks.push(strict_pass("v2_active_requires_evidence"));
+    }
+
     checks.push(strict_pass("v1_shadow_no_decision_impact_guard"));
     checks
 }
@@ -10501,6 +10556,7 @@ mod repro_pack_tests {
 
     #[test]
     fn repro_pack_and_verify_and_tamper() {
+        let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
         let workdir = tempfile::tempdir().expect("tmp");
         let scenario =
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/e2e_scenario_a.json");

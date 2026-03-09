@@ -7,10 +7,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use ucf_compute::ModelSlot;
-use ucf_ess::v1::ExperiencePayload;
+use ucf_ess::v1::{AuditPayload, ExperiencePayload};
 use ucf_replay::load_fixture_records;
 
-use crate::{sha256_hex, OpsError};
+use crate::{prefix_hex, sha256_hex, OpsError};
 
 const MANIFEST_HISTORY_KEEP: usize = 20;
 const MODEL_FILE_NAME: &str = "model.safetensors";
@@ -77,6 +77,74 @@ pub struct ModelsListReport {
     pub active_hash: Option<String>,
     pub staged_hashes: Vec<String>,
     pub promoted_hashes: Vec<String>,
+    pub current_mode: String,
+    pub active_eligible: bool,
+    pub last_evidence_digest_prefix: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum DriftStatusV1 {
+    Ok,
+    Warn,
+    Severe,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ActiveEnablementEvidenceV1 {
+    pub slot_id: String,
+    pub target_hash: String,
+    pub latest_probe_report_digest_prefix: String,
+    pub latest_probe_status: ProbeReportStatus,
+    pub latest_compare_window_digest_prefix: String,
+    pub shadow_no_impact_verified: bool,
+    pub latest_drift_status: DriftStatusV1,
+    pub evidence_window_ticks: u64,
+    pub evidence_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ActiveEnablementDeniedCode {
+    ActiveDeniedNoProbe,
+    ActiveDeniedNoShadowEvidence,
+    ActiveDeniedDrift,
+    ActiveDeniedHashMismatch,
+    ActiveDeniedStrictMode,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EnablementDenied {
+    pub code: ActiveEnablementDeniedCode,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ActiveCheckStatus {
+    Pass,
+    Fail,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ActiveEnablementCheckRecordV1 {
+    pub slot_id: String,
+    pub target_hash: String,
+    pub status: ActiveCheckStatus,
+    pub denial_code: Option<ActiveEnablementDeniedCode>,
+    pub evidence_digest_prefix: Option<String>,
+    pub timestamp: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ModelsActiveCheckReport {
+    pub slot_id: String,
+    pub target_hash: String,
+    pub status: ActiveCheckStatus,
+    pub evidence: Option<ActiveEnablementEvidenceV1>,
+    pub denied: Option<EnablementDenied>,
+    pub remediation: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -330,6 +398,15 @@ pub fn models_list(slot: ModelSlot) -> Result<ModelsListReport, OpsError> {
         .iter()
         .find(|s| s.slot_id == slot_key)
         .and_then(|s| s.active_hash.clone());
+    let active_hash_for_check = active_hash.clone();
+    let active_check = active_hash_for_check
+        .as_deref()
+        .map(|hash| can_enable_active(slot, hash, Path::new("."), false, false));
+    let (active_eligible, last_evidence_digest_prefix) = match active_check {
+        Some(Ok(e)) => (true, Some(prefix_hex(&e.evidence_digest, 16))),
+        _ => (false, None),
+    };
+
     Ok(ModelsListReport {
         slot: slot_key.clone(),
         active_hash,
@@ -339,7 +416,275 @@ pub fn models_list(slot: ModelSlot) -> Result<ModelsListReport, OpsError> {
         promoted_hashes: list_hash_dirs(
             &PathBuf::from("models").join("promoted").join(slot.as_str()),
         )?,
+        current_mode: slot_mode_from_env(slot).to_string(),
+        active_eligible,
+        last_evidence_digest_prefix,
     })
+}
+
+pub fn models_active_check(
+    slot: ModelSlot,
+    workdir: &Path,
+    out: &Path,
+) -> Result<ModelsActiveCheckReport, OpsError> {
+    let manifest = load_or_init_manifest()?;
+    let slot_id = slot.as_str().to_string();
+    let target_hash = manifest
+        .slots
+        .iter()
+        .find(|s| s.slot_id == slot_id)
+        .and_then(|s| s.active_hash.clone())
+        .ok_or_else(|| {
+            OpsError::Invalid("no active_hash for slot in lifecycle manifest".to_string())
+        })?;
+    let strict_mode = std::env::var("UCF_STRICT_MODE").ok().as_deref() == Some("1");
+    let bypass = std::env::var("UCF_DEV_ACTIVE_BYPASS")
+        .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+        .unwrap_or(false);
+    let decision = can_enable_active(slot, &target_hash, workdir, strict_mode, bypass);
+    let (status, evidence, denied) = match decision {
+        Ok(evidence) => (ActiveCheckStatus::Pass, Some(evidence), None),
+        Err(denied) => (ActiveCheckStatus::Fail, None, Some(denied)),
+    };
+    let report = ModelsActiveCheckReport {
+        slot_id: slot_id.clone(),
+        target_hash: target_hash.clone(),
+        status: status.clone(),
+        evidence,
+        denied,
+        remediation: vec![
+            format!(
+                "cargo run -p ucf-ops -- models probe --slot {} --out ./out/probe_{}.json",
+                slot.as_str(),
+                slot.as_str()
+            ),
+            "cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/gate_report.json"
+                .to_string(),
+            "cargo run -p ucf-ops -- drift report --run <run_id> --windows 20 --out ./out/drift_report.json".to_string(),
+            "rollback or keep slot in shadow mode until active-check PASS".to_string(),
+        ],
+    };
+    if let Some(parent) = out.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(out, serde_json::to_vec_pretty(&report)?)?;
+    append_active_check_record(workdir, &slot_id, &target_hash, &report)?;
+    Ok(report)
+}
+
+pub fn can_enable_active(
+    slot: ModelSlot,
+    target_hash: &str,
+    workdir: &Path,
+    strict_mode: bool,
+    dev_bypass: bool,
+) -> Result<ActiveEnablementEvidenceV1, EnablementDenied> {
+    if strict_mode && dev_bypass {
+        return Err(EnablementDenied {
+            code: ActiveEnablementDeniedCode::ActiveDeniedStrictMode,
+            detail: "dev bypass is forbidden in strict mode".to_string(),
+        });
+    }
+    let manifest = load_or_init_manifest().map_err(|e| EnablementDenied {
+        code: ActiveEnablementDeniedCode::ActiveDeniedHashMismatch,
+        detail: e.to_string(),
+    })?;
+    let slot_id = slot.as_str().to_string();
+    let manifest_hash = manifest
+        .slots
+        .iter()
+        .find(|s| s.slot_id == slot_id)
+        .and_then(|s| s.active_hash.clone())
+        .ok_or_else(|| EnablementDenied {
+            code: ActiveEnablementDeniedCode::ActiveDeniedHashMismatch,
+            detail: "slot has no active hash in lifecycle manifest".to_string(),
+        })?;
+    let promoted_path = PathBuf::from("models")
+        .join("promoted")
+        .join(slot.as_str())
+        .join(&manifest_hash);
+    if target_hash != manifest_hash || !promoted_path.exists() {
+        return Err(EnablementDenied {
+            code: ActiveEnablementDeniedCode::ActiveDeniedHashMismatch,
+            detail: "target hash not aligned with promoted active hash".to_string(),
+        });
+    }
+
+    let probe_path = PathBuf::from("out").join(format!("probe_{}.json", slot.as_str()));
+    let probe: ProbeReportV1 = fs::read_to_string(&probe_path)
+        .ok()
+        .and_then(|body| serde_json::from_str(&body).ok())
+        .ok_or_else(|| EnablementDenied {
+            code: ActiveEnablementDeniedCode::ActiveDeniedNoProbe,
+            detail: format!("missing probe report: {}", probe_path.display()),
+        })?;
+    let expected_hash_prefix = target_hash
+        .chars()
+        .take(PROBE_DIGEST_PREFIX_LEN)
+        .collect::<String>();
+    if probe.slot_id != slot.as_str()
+        || probe.model_hash_prefix.as_deref() != Some(expected_hash_prefix.as_str())
+        || !probe.pass()
+    {
+        return Err(EnablementDenied {
+            code: ActiveEnablementDeniedCode::ActiveDeniedNoProbe,
+            detail: "latest probe missing PASS for slot/hash".to_string(),
+        });
+    }
+    let latest_probe_digest_prefix = prefix_hex(
+        &sha256_hex(&serde_json::to_vec(&probe).unwrap_or_default()),
+        16,
+    );
+
+    let fixture_path = workdir.join("ess").join("ess_fixture.json");
+    let records = load_fixture_records(&fixture_path).unwrap_or_default();
+    let mut latest_compare: Option<ucf_ess::v1::SlotCompareWindowRecordV1> = None;
+    let mut max_tick = 0_u64;
+    let mut drift_status = DriftStatusV1::Unknown;
+    for record in records {
+        max_tick = max_tick.max(record.time.tick.get());
+        if let ExperiencePayload::Audit(payload) = record.payload {
+            match payload {
+                AuditPayload::SlotCompareWindow(window) if window.slot_id == slot.as_str() => {
+                    latest_compare = Some(window);
+                }
+                AuditPayload::DriftAlarm(alarm) if alarm.slot_id == slot.as_str() => {
+                    drift_status = if alarm.severity.eq_ignore_ascii_case("severe") {
+                        DriftStatusV1::Severe
+                    } else {
+                        DriftStatusV1::Warn
+                    };
+                }
+                _ => {}
+            }
+        }
+    }
+    let Some(compare) = latest_compare else {
+        return Err(EnablementDenied {
+            code: ActiveEnablementDeniedCode::ActiveDeniedNoShadowEvidence,
+            detail: "missing compare window evidence".to_string(),
+        });
+    };
+    let evidence_window_ticks = std::env::var("UCF_ACTIVE_EVIDENCE_WINDOW_TICKS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(256)
+        .max(1);
+    if max_tick.saturating_sub(compare.t1) > evidence_window_ticks {
+        return Err(EnablementDenied {
+            code: ActiveEnablementDeniedCode::ActiveDeniedNoShadowEvidence,
+            detail: "compare window too old for freshness bound".to_string(),
+        });
+    }
+    let shadow_no_impact_verified =
+        fs::read_to_string(PathBuf::from("out").join("gate_report.json"))
+            .ok()
+            .and_then(|body| serde_json::from_str::<serde_json::Value>(&body).ok())
+            .and_then(|v| v.get("checks").and_then(|c| c.as_array()).cloned())
+            .map(|checks| {
+                checks.iter().any(|c| {
+                    c.get("name").and_then(|v| v.as_str()) == Some("shadow_no_decision_impact")
+                        && c.get("status").and_then(|v| v.as_str()) == Some("PASS")
+                })
+            })
+            .unwrap_or(false);
+    if !shadow_no_impact_verified {
+        return Err(EnablementDenied {
+            code: ActiveEnablementDeniedCode::ActiveDeniedNoShadowEvidence,
+            detail: "shadow no-impact evidence missing or failed".to_string(),
+        });
+    }
+    if matches!(drift_status, DriftStatusV1::Unknown) {
+        drift_status = DriftStatusV1::Ok;
+    }
+    let allow_warn = std::env::var("UCF_ACTIVE_ALLOW_DRIFT_WARN")
+        .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+        .unwrap_or(false);
+    if matches!(drift_status, DriftStatusV1::Severe)
+        || (matches!(drift_status, DriftStatusV1::Warn) && !allow_warn)
+    {
+        return Err(EnablementDenied {
+            code: ActiveEnablementDeniedCode::ActiveDeniedDrift,
+            detail: "drift budget violated in active evidence window".to_string(),
+        });
+    }
+    let compare_digest = sha256_hex(
+        format!(
+            "{}:{}:{}:{}:{}:{}",
+            compare.slot_id,
+            compare.t0,
+            compare.t1,
+            compare.sample_count,
+            compare.mean_delta_q,
+            compare.p95_delta_q
+        )
+        .as_bytes(),
+    );
+    let mut digest_source = Vec::new();
+    digest_source.extend_from_slice(slot.as_str().as_bytes());
+    digest_source.extend_from_slice(target_hash.as_bytes());
+    digest_source.extend_from_slice(latest_probe_digest_prefix.as_bytes());
+    digest_source.extend_from_slice(format!("{:?}", probe.status).as_bytes());
+    digest_source.extend_from_slice(prefix_hex(&compare_digest, 16).as_bytes());
+    digest_source.extend_from_slice(if shadow_no_impact_verified {
+        b"1"
+    } else {
+        b"0"
+    });
+    digest_source.extend_from_slice(format!("{:?}", drift_status).as_bytes());
+    digest_source.extend_from_slice(evidence_window_ticks.to_string().as_bytes());
+    let evidence_digest = sha256_hex(&digest_source);
+    Ok(ActiveEnablementEvidenceV1 {
+        slot_id,
+        target_hash: target_hash.to_string(),
+        latest_probe_report_digest_prefix: latest_probe_digest_prefix,
+        latest_probe_status: probe.status,
+        latest_compare_window_digest_prefix: prefix_hex(&compare_digest, 16),
+        shadow_no_impact_verified,
+        latest_drift_status: drift_status,
+        evidence_window_ticks,
+        evidence_digest,
+    })
+}
+
+fn append_active_check_record(
+    workdir: &Path,
+    slot_id: &str,
+    target_hash: &str,
+    report: &ModelsActiveCheckReport,
+) -> Result<(), OpsError> {
+    let path = workdir.join("out").join("active_enablement_checks.json");
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let mut all: Vec<ActiveEnablementCheckRecordV1> = if path.exists() {
+        serde_json::from_str(&fs::read_to_string(&path)?)?
+    } else {
+        Vec::new()
+    };
+    all.push(ActiveEnablementCheckRecordV1 {
+        slot_id: slot_id.to_string(),
+        target_hash: target_hash.to_string(),
+        status: report.status.clone(),
+        denial_code: report.denied.as_ref().map(|d| d.code.clone()),
+        evidence_digest_prefix: report
+            .evidence
+            .as_ref()
+            .map(|e| prefix_hex(&e.evidence_digest, 16)),
+        timestamp: now_secs(),
+    });
+    fs::write(path, serde_json::to_vec_pretty(&all)?)?;
+    Ok(())
+}
+
+fn slot_mode_from_env(slot: ModelSlot) -> &'static str {
+    let key = format!("UCF_SLOT_{}_MODE", slot.env_key());
+    match std::env::var(key) {
+        Ok(v) if v.eq_ignore_ascii_case("active") => "active",
+        Ok(v) if v.eq_ignore_ascii_case("shadow") => "shadow",
+        Ok(v) if v.eq_ignore_ascii_case("off") => "off",
+        _ => "shadow",
+    }
 }
 
 pub fn models_verify(manifest: &Path) -> Result<ModelsVerifyReport, OpsError> {
@@ -1630,5 +1975,58 @@ mod probe_tests {
             .filter_map(|entry| entry.ok())
             .count();
         assert!(history_count >= 1);
+    }
+
+    #[test]
+    fn active_check_denies_without_probe() {
+        let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let _cwd = CwdGuard::enter(dir.path());
+
+        let src = dir.path().join("fixtures/models_dummy/world");
+        fs::create_dir_all(&src).expect("src");
+        fs::write(src.join("model.safetensors"), b"dummy-world-v1").expect("model");
+        let staged = models_stage(ModelSlot::WorldJepa, &src).expect("stage");
+        let _promoted = models_promote(ModelSlot::WorldJepa, &staged.hash, None).expect("promote");
+
+        let denied = can_enable_active(
+            ModelSlot::WorldJepa,
+            &staged.hash,
+            Path::new("."),
+            false,
+            false,
+        )
+        .expect_err("must deny");
+        assert!(matches!(
+            denied.code,
+            ActiveEnablementDeniedCode::ActiveDeniedNoProbe
+        ));
+    }
+
+    #[test]
+    fn active_evidence_digest_is_stable() {
+        let ev = ActiveEnablementEvidenceV1 {
+            slot_id: "world_jepa".to_string(),
+            target_hash: "abc123".to_string(),
+            latest_probe_report_digest_prefix: "1111".to_string(),
+            latest_probe_status: ProbeReportStatus::Pass,
+            latest_compare_window_digest_prefix: "2222".to_string(),
+            shadow_no_impact_verified: true,
+            latest_drift_status: DriftStatusV1::Ok,
+            evidence_window_ticks: 128,
+            evidence_digest: "".to_string(),
+        };
+        let mut digest_source = Vec::new();
+        digest_source.extend_from_slice(ev.slot_id.as_bytes());
+        digest_source.extend_from_slice(ev.target_hash.as_bytes());
+        digest_source.extend_from_slice(ev.latest_probe_report_digest_prefix.as_bytes());
+        digest_source.extend_from_slice(format!("{:?}", ev.latest_probe_status).as_bytes());
+        digest_source.extend_from_slice(ev.latest_compare_window_digest_prefix.as_bytes());
+        digest_source.extend_from_slice(b"1");
+        digest_source.extend_from_slice(format!("{:?}", ev.latest_drift_status).as_bytes());
+        digest_source.extend_from_slice(ev.evidence_window_ticks.to_string().as_bytes());
+        let a = sha256_hex(&digest_source);
+        let b = sha256_hex(&digest_source);
+        assert_eq!(a, b);
     }
 }

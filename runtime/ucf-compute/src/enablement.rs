@@ -328,6 +328,8 @@ impl AiComputeBackend for EnablementComputeBackend {
                     t: input.t,
                     from_mode,
                     to_mode: current_mode,
+                    evidence_validated: false,
+                    evidence_digest_prefix: None,
                 }));
             rt.last_mode = current_mode;
             rt.mode = current_mode;
@@ -419,6 +421,8 @@ impl AiComputeBackend for EnablementComputeBackend {
                     t,
                     from_mode,
                     to_mode: SlotModeV1::Off,
+                    evidence_validated: false,
+                    evidence_digest_prefix: None,
                 }));
         }
         rt.outbox
