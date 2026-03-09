@@ -307,7 +307,7 @@ impl GatewayConfig {
             "submit".to_string(),
             RateLimitConfig {
                 capacity: 5,
-                refill_per_sec: 5,
+                refill_per_sec: 0,
             },
         );
         rate_limits.insert(

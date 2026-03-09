@@ -19,12 +19,12 @@ use ucf_ops::{
     release_rc1_gate, release_signoff_validate, replay_audit, replay_bugreport, repro_pack,
     repro_verify, run_status, runs_list, runs_search, runs_show, save_counterfactual_result,
     security_verify_chain, simulate_counterfactual, soak_run, strict_check, troubleshoot, v0_gate,
-    v1_smoke, verify_bugreport, world_parity_report, world_shadow_report, write_slice,
+    v1_smoke, v2_gate, verify_bugreport, world_parity_report, world_shadow_report, write_slice,
     AdversarialRunArgs, AirgapArtifactType, AirgapImportArgs, AirgapImportMode, BenchArgs,
     BugKitBuildArgs, ChangeImpactArgs, ConfigV1, CounterfactualRequest, DevLoopArgs, DocsLintArgs,
     DocsLintMode, DocsLintStatus, ExplainTickRequest, ExportArgs, GateStatus, GoldenGenerateArgs,
     GoldenVerifyArgs, GoldenVerifyReport, NightlySummarizeArgs, ReleaseBuildRcArgs, SoakRunArgs,
-    SpecSnapshotArgs,
+    SpecSnapshotArgs, V2GateOverallStatus,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -1457,6 +1457,24 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
                 _ => return Err("usage: ucf-ops v1 <smoke|gate> [--shadow] [--out <path>]".into()),
+            }
+        }
+        "v2" => {
+            let sub = args.get(2).map(String::as_str).unwrap_or("help");
+            match sub {
+                "gate" => {
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/v2_gate_report.json"));
+                    let report = v2_gate(&workdir, &out)?;
+                    println!("overall={:?}", report.overall_status);
+                    println!("schema_version={}", report.schema_version);
+                    println!("out={}", out.display());
+                    if !matches!(report.overall_status, V2GateOverallStatus::Pass) {
+                        std::process::exit(2);
+                    }
+                }
+                _ => return Err("usage: ucf-ops v2 gate [--out <path>]".into()),
             }
         }
         "v0" => {

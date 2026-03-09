@@ -732,6 +732,11 @@ impl Drop for EnvVarGuard {
     }
 }
 
+fn with_env_var<T>(key: &str, value: &str, f: impl FnOnce() -> T) -> T {
+    let _guard = EnvVarGuard::set(key, std::ffi::OsStr::new(value));
+    f()
+}
+
 fn probe_spec_for_slot(slot: ModelSlot) -> ProbeSpec {
     let seed = 0xA11C_E555_u64;
     let max_tokens = 64;
@@ -1413,6 +1418,29 @@ pub struct V1GateReportV1 {
     pub checks: Vec<V1GateCheckV1>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct V2GateCheckV1 {
+    pub name: String,
+    pub status: GateStatus,
+    pub evidence_digest_prefixes: BTreeMap<String, String>,
+    pub remediation_hint_code: String,
+    pub notes: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum V2GateOverallStatus {
+    Pass,
+    Fail,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct V2GateReportV1 {
+    pub schema_version: u16,
+    pub overall_status: V2GateOverallStatus,
+    pub checks: Vec<V2GateCheckV1>,
+}
+
 impl Default for ReadinessGateReport {
     fn default() -> Self {
         Self {
@@ -1844,6 +1872,7 @@ pub fn v0_gate(workdir: &Path, scenario: &Path, out: &Path) -> Result<V0GateRepo
 }
 
 const V1_SCHEMA_VERSION: u16 = 1;
+const V2_SCHEMA_VERSION: u16 = 1;
 
 pub fn v1_gate(workdir: &Path, out: &Path) -> Result<V1GateReportV1, OpsError> {
     ensure_layout(workdir)?;
@@ -2110,6 +2139,448 @@ pub fn v1_gate(workdir: &Path, out: &Path) -> Result<V1GateReportV1, OpsError> {
     };
     write_json(out, &report)?;
     Ok(report)
+}
+
+pub fn v2_gate(workdir: &Path, out: &Path) -> Result<V2GateReportV1, OpsError> {
+    ensure_layout(workdir)?;
+    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let second_slot = detect_v2_second_slot(&repo_root)?;
+    let mut checks = Vec::new();
+
+    let v0_out = workdir.join("out").join("v0_gate_report_v2_gate.json");
+    let v0 = v0_gate(
+        workdir,
+        &repo_root.join("fixtures/e2e/v0_flow_a.json"),
+        &v0_out,
+    )?;
+    checks.push(v2_gate_check(
+        "v0_gate_pass",
+        if matches!(v0.overall_status, V0GateOverallStatus::Pass) {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [(
+            "v0_gate_report".to_string(),
+            prefix_hex(&sha256_hex(&serde_json::to_vec(&v0)?), 16),
+        )],
+        "REMEDIATE_RUN_V0_GATE",
+        "NOTE_REQUIRED_V0",
+    ));
+
+    let v1_out = workdir.join("out").join("v1_gate_report_v2_gate.json");
+    let v1 = v1_gate(workdir, &v1_out)?;
+    checks.push(v2_gate_check(
+        "v1_gate_pass",
+        if matches!(v1.overall_status, V1GateOverallStatus::Pass) {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [(
+            "v1_gate_report".to_string(),
+            prefix_hex(&sha256_hex(&serde_json::to_vec(&v1)?), 16),
+        )],
+        "REMEDIATE_RUN_V1_GATE",
+        "NOTE_REQUIRED_V1",
+    ));
+
+    let verify_manifest = repo_root.join("models/manifest.toml");
+    let verify = models_verify(&verify_manifest)?;
+    checks.push(v2_gate_check(
+        "models_manifest_verify",
+        if verify
+            .slots
+            .iter()
+            .all(|slot| slot.status == "verified" || slot.status == "disabled")
+        {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [(
+            "models_verify".to_string(),
+            prefix_hex(&sha256_hex(&serde_json::to_vec(&verify)?), 16),
+        )],
+        "REMEDIATE_MODELS_VERIFY",
+        "NOTE_REQUIRED_MANIFEST",
+    ));
+
+    let manifest = repo_root.join("models/MANIFEST.toml");
+    let probe_out = workdir.join("out").join("probe_v2_gate.json");
+    let probe = models_probe(workdir, &manifest, &probe_out)?;
+    let probe_digest = prefix_hex(&sha256_hex(&serde_json::to_vec(&probe)?), 16);
+    let world_probe = probe
+        .results
+        .iter()
+        .find(|r| r.slot == ModelSlot::WorldJepa)
+        .map(|r| r.status);
+    checks.push(v2_gate_check(
+        "world_tiny_fixture_probe_pass",
+        if matches!(world_probe, Some(ProbeStatus::Ok)) {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [
+            ("probe_report".to_string(), probe_digest.clone()),
+            (
+                "probe_world".to_string(),
+                format!("{:?}", world_probe.unwrap_or(ProbeStatus::Error)),
+            ),
+        ],
+        "REMEDIATE_WORLD_PROBE",
+        "NOTE_REQUIRED_WORLD",
+    ));
+
+    let second_probe = probe
+        .results
+        .iter()
+        .find(|r| r.slot == second_slot)
+        .map(|r| r.status);
+    checks.push(v2_gate_check(
+        "second_slot_tiny_fixture_probe_pass",
+        if matches!(second_probe, Some(ProbeStatus::Ok)) {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [
+            ("probe_report".to_string(), probe_digest.clone()),
+            (
+                format!("probe_{}", second_slot.as_str()),
+                format!("{:?}", second_probe.unwrap_or(ProbeStatus::Error)),
+            ),
+        ],
+        "REMEDIATE_SECOND_SLOT_PROBE",
+        "NOTE_REQUIRED_SECOND_SLOT",
+    ));
+
+    let world_shadow = v2_shadow_no_impact_check(workdir, ModelSlot::WorldJepa, "world");
+    checks.push(world_shadow);
+    let second_shadow = v2_shadow_no_impact_check(workdir, second_slot, second_slot.as_str());
+    checks.push(second_shadow);
+
+    let shadow_ready_path = workdir.join("out").join("shadow_ready_report.json");
+    let shadow_ready = fs::read_to_string(&shadow_ready_path)
+        .ok()
+        .and_then(|body| serde_json::from_str::<AggregatedEvidenceReportV1>(&body).ok());
+    let shadow_ready_digest = shadow_ready
+        .as_ref()
+        .map(|r| prefix_hex(&r.report_digest, 16))
+        .unwrap_or_else(|| "missing".to_string());
+    let world_ready = shadow_ready.as_ref().and_then(|report| {
+        report
+            .slots
+            .iter()
+            .find(|slot| slot.slot_id == ModelSlot::WorldJepa.as_str())
+    });
+    checks.push(v2_gate_check(
+        "world_shadow_ready",
+        if world_ready.is_some_and(|s| s.shadow_ready) {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [(
+            "shadow_ready_report".to_string(),
+            shadow_ready_digest.clone(),
+        )],
+        "REMEDIATE_WORLD_SHADOW_READY",
+        "NOTE_REQUIRED_WORLD",
+    ));
+    let second_ready = shadow_ready.as_ref().and_then(|report| {
+        report
+            .slots
+            .iter()
+            .find(|slot| slot.slot_id == second_slot.as_str())
+    });
+    checks.push(v2_gate_check(
+        "second_slot_shadow_ready",
+        if second_ready.is_some_and(|s| s.shadow_ready) {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [("shadow_ready_report".to_string(), shadow_ready_digest)],
+        "REMEDIATE_SECOND_SLOT_SHADOW_READY",
+        "NOTE_REQUIRED_SECOND_SLOT",
+    ));
+
+    let cfg = load_or_init_config(workdir)?;
+    let drift_budget_override = std::env::var("UCF_STRICT_DRIFT_BUDGET_PATH").ok();
+    let base_drift_budget = repo_root.join("policies/packs/base_v1/drift_budget.toml");
+    let overlay_drift_budget = repo_root.join(format!(
+        "policies/packs/overlays/{}/drift_budget.toml",
+        cfg.profile
+    ));
+    let drift_present = if let Some(path) = drift_budget_override {
+        PathBuf::from(path).exists()
+    } else {
+        overlay_drift_budget.exists() || base_drift_budget.exists()
+    };
+    checks.push(v2_gate_check(
+        "drift_budget_present",
+        if drift_present {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [(
+            "drift_budget".to_string(),
+            if drift_present { "present" } else { "missing" }.to_string(),
+        )],
+        "REMEDIATE_DRIFT_BUDGET",
+        "NOTE_REQUIRED_POLICY",
+    ));
+
+    let base_alerts = repo_root.join("policies/packs/base_v1/alerts.toml");
+    let overlay_alerts = repo_root.join(format!(
+        "policies/packs/overlays/{}/alerts.toml",
+        cfg.profile
+    ));
+    let alerts_present = overlay_alerts.exists() || base_alerts.exists();
+    checks.push(v2_gate_check(
+        "alerts_rules_present",
+        if alerts_present {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [(
+            "alerts".to_string(),
+            if alerts_present { "present" } else { "missing" }.to_string(),
+        )],
+        "REMEDIATE_ALERTS_RULES",
+        "NOTE_REQUIRED_POLICY",
+    ));
+
+    let strict_out = workdir.join("out").join("strict_check_v2_gate.json");
+    let strict = strict_check(workdir, true, &strict_out)?;
+    let strict_v2_pass = strict.ok
+        && strict.report.v1_checks.iter().all(|check| {
+            !check.check_id.starts_with("v2_") || matches!(check.status, StrictCheckStatus::Pass)
+        });
+    checks.push(v2_gate_check(
+        "strict_check_v2",
+        if strict_v2_pass {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [(
+            "strict_report".to_string(),
+            prefix_hex(&strict.report.digest_hex()?, 16),
+        )],
+        "REMEDIATE_STRICT_V2",
+        "NOTE_REQUIRED_STRICT",
+    ));
+
+    let parity_path = workdir.join("out").join("world_parity_report.json");
+    let parity_present = parity_path.exists();
+    let parity_digest = if parity_present {
+        prefix_hex(&sha256_hex(&fs::read(&parity_path)?), 16)
+    } else {
+        "missing".to_string()
+    };
+    checks.push(v2_gate_check(
+        "world_parity_report_present",
+        if parity_present {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [("world_parity_report".to_string(), parity_digest.clone())],
+        "REMEDIATE_WORLD_PARITY_REPORT",
+        "NOTE_REQUIRED_WORLD",
+    ));
+
+    let burn_check = if cfg!(feature = "backend-burn") {
+        let burn_probe = world_probe
+            .as_ref()
+            .is_some_and(|s| matches!(s, ProbeStatus::Ok));
+        v2_gate_check(
+            "burn_world_probe_pass",
+            if burn_probe {
+                GateStatus::Pass
+            } else {
+                GateStatus::Fail
+            },
+            [
+                ("probe_report".to_string(), probe_digest),
+                (
+                    "burn_expected".to_string(),
+                    if burn_probe { "ok" } else { "probe_not_ok" }.to_string(),
+                ),
+            ],
+            "REMEDIATE_BURN_PROBE",
+            "NOTE_OPTIONAL_BURN",
+        )
+    } else {
+        v2_gate_check(
+            "burn_world_probe_pass",
+            GateStatus::Skip,
+            [("burn_backend".to_string(), "not_enabled".to_string())],
+            "REMEDIATE_ENABLE_BURN_BACKEND",
+            "NOTE_OPTIONAL_BURN",
+        )
+    };
+    checks.push(burn_check);
+
+    let burn_shadow = if cfg!(feature = "backend-burn") {
+        checks
+            .iter()
+            .find(|c| c.name == "world_parity_report_present")
+            .map(|c| {
+                v2_gate_check(
+                    "burn_world_shadow_compare_present",
+                    c.status,
+                    [("world_parity_report".to_string(), parity_digest)],
+                    "REMEDIATE_BURN_COMPARE_REPORT",
+                    "NOTE_OPTIONAL_BURN",
+                )
+            })
+            .unwrap_or_else(|| {
+                v2_gate_check(
+                    "burn_world_shadow_compare_present",
+                    GateStatus::Fail,
+                    [("world_parity_report".to_string(), "missing".to_string())],
+                    "REMEDIATE_BURN_COMPARE_REPORT",
+                    "NOTE_OPTIONAL_BURN",
+                )
+            })
+    } else {
+        v2_gate_check(
+            "burn_world_shadow_compare_present",
+            GateStatus::Skip,
+            [("burn_backend".to_string(), "not_enabled".to_string())],
+            "REMEDIATE_ENABLE_BURN_BACKEND",
+            "NOTE_OPTIONAL_BURN",
+        )
+    };
+    checks.push(burn_shadow);
+
+    let overall_status = if checks
+        .iter()
+        .all(|check| matches!(check.status, GateStatus::Pass | GateStatus::Skip))
+    {
+        V2GateOverallStatus::Pass
+    } else {
+        V2GateOverallStatus::Fail
+    };
+    let report = V2GateReportV1 {
+        schema_version: V2_SCHEMA_VERSION,
+        overall_status,
+        checks,
+    };
+    write_json(out, &report)?;
+    Ok(report)
+}
+
+fn detect_v2_second_slot(repo_root: &Path) -> Result<ModelSlot, OpsError> {
+    let body = fs::read_to_string(repo_root.join("docs/series_state_snapshot.md"))?;
+    for line in body.lines() {
+        if line.contains("Second supported slot") {
+            let lower = line.to_ascii_lowercase();
+            if lower.contains("sae") {
+                return Ok(ModelSlot::Sae);
+            }
+            if lower.contains("ssm") {
+                return Ok(ModelSlot::Ssm);
+            }
+        }
+    }
+    Err(OpsError::Invalid(
+        "V2_SECOND_SLOT_UNKNOWN: expected sae or ssm in docs/series_state_snapshot.md".to_string(),
+    ))
+}
+
+fn v2_shadow_no_impact_check(workdir: &Path, slot: ModelSlot, note: &str) -> V2GateCheckV1 {
+    let scenario = workspace_fixture("e2e_scenario_a.json");
+    let env_key = format!("UCF_SLOT_{}_MODE", slot.env_key());
+    let off = with_env_var(&env_key, "off", || {
+        v0_gate_run_once(
+            workdir,
+            &scenario,
+            8,
+            &format!("v2_{}_shadow_off", slot.as_str()),
+        )
+    });
+    let shadow = with_env_var(&env_key, "shadow", || {
+        v0_gate_run_once(
+            workdir,
+            &scenario,
+            8,
+            &format!("v2_{}_shadow_on", slot.as_str()),
+        )
+    });
+    match (off, shadow) {
+        (Ok(off_run), Ok(shadow_run)) => {
+            let no_impact = off_run.decision_digest == shadow_run.decision_digest;
+            let no_tools =
+                off_run.tool_execution_count == 0 && shadow_run.tool_execution_count == 0;
+            v2_gate_check(
+                if slot == ModelSlot::WorldJepa {
+                    "world_shadow_no_impact"
+                } else {
+                    "second_slot_shadow_no_impact"
+                },
+                if no_impact && no_tools {
+                    GateStatus::Pass
+                } else {
+                    GateStatus::Fail
+                },
+                [
+                    (
+                        "baseline_decision".to_string(),
+                        prefix_hex(&off_run.decision_digest, 16),
+                    ),
+                    (
+                        "shadow_decision".to_string(),
+                        prefix_hex(&shadow_run.decision_digest, 16),
+                    ),
+                    (
+                        "tool_exec_count".to_string(),
+                        (off_run.tool_execution_count + shadow_run.tool_execution_count)
+                            .to_string(),
+                    ),
+                ],
+                "REMEDIATE_SHADOW_NO_IMPACT",
+                if note == "world" {
+                    "NOTE_REQUIRED_WORLD"
+                } else {
+                    "NOTE_REQUIRED_SECOND_SLOT"
+                },
+            )
+        }
+        (Err(err), _) | (_, Err(err)) => v2_gate_check(
+            if slot == ModelSlot::WorldJepa {
+                "world_shadow_no_impact"
+            } else {
+                "second_slot_shadow_no_impact"
+            },
+            GateStatus::Fail,
+            [("error".to_string(), bounded_string(err.to_string(), 48))],
+            "REMEDIATE_SHADOW_NO_IMPACT",
+            "NOTE_REQUIRED_SHADOW",
+        ),
+    }
+}
+
+fn v2_gate_check(
+    name: &str,
+    status: GateStatus,
+    evidence: impl IntoIterator<Item = (String, String)>,
+    remediation_hint_code: &str,
+    notes: &str,
+) -> V2GateCheckV1 {
+    V2GateCheckV1 {
+        name: name.to_string(),
+        status,
+        evidence_digest_prefixes: bounded_evidence(evidence),
+        remediation_hint_code: remediation_hint_code.to_string(),
+        notes: notes.to_string(),
+    }
 }
 
 fn v1_gate_check(
@@ -11013,5 +11484,110 @@ slots = [{ slot_id = "world_jepa", active_hash = "missing", files = [{ path = "m
                 assert!(matches!(report.overall_status, V1GateOverallStatus::Fail));
             },
         );
+    }
+
+    #[test]
+    fn v2_gate_check_order_is_fixed() {
+        let _guard = crate::test_cwd_lock()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let root = repo_root();
+        let out = root.join("out/v2_gate_report_test_order.json");
+        let report = v2_gate(&root.join(".ucf"), &out).expect("v2 gate");
+        let names: Vec<String> = report.checks.into_iter().map(|c| c.name).collect();
+        assert_eq!(
+            names,
+            vec![
+                "v0_gate_pass",
+                "v1_gate_pass",
+                "models_manifest_verify",
+                "world_tiny_fixture_probe_pass",
+                "second_slot_tiny_fixture_probe_pass",
+                "world_shadow_no_impact",
+                "second_slot_shadow_no_impact",
+                "world_shadow_ready",
+                "second_slot_shadow_ready",
+                "drift_budget_present",
+                "alerts_rules_present",
+                "strict_check_v2",
+                "world_parity_report_present",
+                "burn_world_probe_pass",
+                "burn_world_shadow_compare_present",
+            ]
+        );
+    }
+
+    #[test]
+    fn v2_gate_report_serialization_is_deterministic() {
+        let report = V2GateReportV1 {
+            schema_version: 1,
+            overall_status: V2GateOverallStatus::Pass,
+            checks: vec![
+                v2_gate_check(
+                    "a",
+                    GateStatus::Pass,
+                    [("k".to_string(), "v".to_string())],
+                    "R1",
+                    "N1",
+                ),
+                v2_gate_check(
+                    "b",
+                    GateStatus::Skip,
+                    [("x".to_string(), "y".to_string())],
+                    "R2",
+                    "N2",
+                ),
+            ],
+        };
+        let a = serde_json::to_vec(&report).expect("serialize a");
+        let b = serde_json::to_vec(&report).expect("serialize b");
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn v2_gate_fails_when_drift_budget_missing() {
+        let _guard = crate::test_cwd_lock()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let root = repo_root();
+        let _profile = EnvVarGuard::set("UCF_PROFILE", std::ffi::OsStr::new("test"));
+        let _drift_override = EnvVarGuard::set(
+            "UCF_STRICT_DRIFT_BUDGET_PATH",
+            std::ffi::OsStr::new("./out/does_not_exist_v2_drift_budget.toml"),
+        );
+        let out = root.join("out/v2_gate_report_test_drift_fail.json");
+        let report = v2_gate(&root.join(".ucf"), &out).expect("v2 gate");
+        let check = report
+            .checks
+            .iter()
+            .find(|c| c.name == "drift_budget_present")
+            .expect("drift check");
+        assert!(matches!(check.status, GateStatus::Fail));
+        assert!(matches!(report.overall_status, V2GateOverallStatus::Fail));
+    }
+
+    #[test]
+    fn v2_gate_burn_checks_skip_when_feature_absent() {
+        let _guard = crate::test_cwd_lock()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        if cfg!(feature = "backend-burn") {
+            return;
+        }
+        let root = repo_root();
+        let out = root.join("out/v2_gate_report_test_burn_skip.json");
+        let report = v2_gate(&root.join(".ucf"), &out).expect("v2 gate");
+        let burn_probe = report
+            .checks
+            .iter()
+            .find(|c| c.name == "burn_world_probe_pass")
+            .expect("burn probe check");
+        let burn_compare = report
+            .checks
+            .iter()
+            .find(|c| c.name == "burn_world_shadow_compare_present")
+            .expect("burn compare check");
+        assert!(matches!(burn_probe.status, GateStatus::Skip));
+        assert!(matches!(burn_compare.status, GateStatus::Skip));
     }
 }
