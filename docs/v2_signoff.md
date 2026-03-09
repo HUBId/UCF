@@ -65,3 +65,6 @@ Per check:
 v2 minimal signoff scope is **exactly two slots**:
 - `world_jepa`
 - and exactly one second slot declared in `docs/series_state_snapshot.md` (`sae` or `ssm`).
+
+## Post-v2 continuation note
+After `ucf-ops v2 gate` PASS, continue at **Prompt 200** via `docs/next_10_prompts.md`.

@@ -1,85 +1,85 @@
-# Next 10 Prompts (v2 Anchor)
+# Next 10 Prompts (v3 Anchor)
 
-Anchor: `Real Compute Onboarding v2` (precondition: `ucf-ops v1 gate` PASS)
+Anchor: `Real Compute Onboarding v3` (precondition: `ucf-ops v2 gate` PASS)
 
 > Guardrail: This queue is capped to **10** entries unless an explicit request expands it.
 
-## Prompt 189 — Adapter trait hardening for optional Candle/Burn slots
-- Objective: Refine backend adapter trait boundaries so optional Candle/Burn integrations stay deterministic and hardware-neutral.
+## Prompt 200 (MUST) — Extend Active evidence from one slot to supported real slots set
+Objective: Expand Active evidence requirements from single-slot assumptions to the supported real-slot set while preserving deterministic, offline-first enforcement.
 - Acceptance:
-  - Trait contracts document slot boundaries and deterministic fallback behavior.
-  - Optional backend flags are explicit and default-off.
-  - No vendor- or hardware-specific assumptions are required.
-- Dependencies: v1 gate PASS.
+  - Active evidence schema/validation covers each supported real slot with stable field semantics.
+  - Missing slot evidence remains deny-by-default and reports deterministic remediation hints.
+  - Replay compatibility and canonical digest linkage remain intact.
+- Dependencies: v2 gate PASS (Prompt 198), Prompt 199 wrap complete.
 
-## Prompt 190 — Optional feature wiring for one or two backend-enabled slots
-- Objective: Define feature wiring for at most one or two slots to enable optional real backend paths.
+## Prompt 201 (MUST) — Unified Eligibility Report for Probe/Shadow/Active readiness
+Objective: Define one bounded eligibility report that unifies Probe, Shadow, and Active readiness outcomes across supported real slots.
 - Acceptance:
-  - Slot scope is limited to one or two named slots.
-  - Disabled-feature behavior remains stub-only and deterministic.
-  - Build/runtime docs specify optional activation paths.
-- Dependencies: 189.
+  - A single report schema emits per-slot readiness verdicts in deterministic order.
+  - Parity/drift and evidence checks feed one eligibility decision pipeline.
+  - Offline reproducibility is documented for report generation and verification.
+- Dependencies: 200.
 
-## Prompt 191 — Tiny real-weights fixture contract for one slot (probe-first)
-- Objective: Specify a tiny fixture contract for one slot so probe workflows can validate real backend loading behavior.
+## Prompt 202 (MUST) — Candle adapter extension for chosen second slot beyond fixture smoke
+Objective: Extend Candle adapter parity for the chosen second slot beyond fixture-smoke scope under probe-first constraints.
 - Acceptance:
-  - Fixture contract includes digest, size cap, and canonical metadata fields.
-  - Probe-first usage is required; production activation is excluded.
-  - Baseline workflows do not require downloading real weights.
-- Dependencies: 190.
+  - Probe-path adapter behavior for the second slot is specified beyond load-only smoke.
+  - Stub fallback behavior remains deterministic when optional backend paths are unavailable.
+  - No hardware-specific assumptions are introduced in adapter docs/spec.
+- Dependencies: 200, 201.
 
-## Prompt 192 — Probe-only execution flow for optional real backend fixture
-- Objective: Define deterministic probe execution and reporting for the tiny real-backend fixture.
+## Prompt 203 (NICE) — Burn parity extension or second-slot backend parity (if scaffolded)
+Objective: Add bounded parity planning for Burn or equivalent second-slot backend path only where scaffolding already exists.
 - Acceptance:
-  - Probe run produces deterministic PASS/FAIL outputs for identical inputs.
-  - Evidence payload format is canonical and bounded.
-  - Failure remediation steps are documented for offline runs.
-- Dependencies: 191.
+  - Scope is conditional and explicitly limited to pre-existing scaffolded backend paths.
+  - Parity outputs align with unified eligibility inputs without introducing new runtime requirements.
+  - Probe-first and shadow-first constraints remain unchanged.
+- Dependencies: 201, 202.
 
-## Prompt 193 — Shadow-only rollout guard for optional real backend
-- Objective: Introduce rollout guardrails that keep optional real backend operation in shadow mode only.
+## Prompt 204 (MUST) — Real-slot compare window normalization across World + second slot
+Objective: Normalize compare-window definitions so World and second-slot parity/drift checks share consistent evidence windows.
 - Acceptance:
-  - Shadow mode is enforced as the only allowed mode for optional real backend paths.
-  - Decision-impact parity checks remain mandatory.
-  - Safety invariant `no decision, no action` is unchanged.
-- Dependencies: 192.
+  - Compare-window terms and boundaries are harmonized across both slots.
+  - Normalization preserves deterministic replay outcomes for equivalent inputs.
+  - Drift verdict generation remains bounded and auditable.
+- Dependencies: 201, 202.
 
-## Prompt 194 — Drift/evidence parity checks for stub vs optional backend
-- Objective: Define parity checks between deterministic stubs and optional backend shadow outputs.
+## Prompt 205 (MUST) — v3 strict-mode updates for broader real-slot evidence
+Objective: Update strict-mode docs/gates for broader multi-slot real-backend evidence expectations in v3.
 - Acceptance:
-  - Drift budget fields and thresholds are documented for parity checks.
-  - Evidence records include stable digests and comparison verdicts.
-  - Checks are reproducible in offline fixture runs.
-- Dependencies: 193.
+  - Strict-mode checks reference expanded evidence requirements for supported slots.
+  - Failure modes include stable remediation codes/messages for missing or inconsistent evidence.
+  - Offline-first and hardware-neutral constraints are explicitly preserved.
+- Dependencies: 200, 201, 204.
 
-## Prompt 195 — Operator runbook update for optional backend probe workflows
-- Objective: Update operator docs for staging, probing, and shadow monitoring of optional backend slots.
+## Prompt 206 (MUST) — v3 operator report and signoff consolidation
+Objective: Consolidate operator-facing readiness and signoff reporting for multi-slot real backend workflows.
 - Acceptance:
-  - Runbook steps are non-interactive and deterministic.
-  - Required artifacts and report paths are listed explicitly.
-  - Rollback/disable path for optional backend features is documented.
-- Dependencies: 190, 192, 193, 194.
+  - Operator report sections for probe/shadow/active readiness are unified and bounded.
+  - Signoff summary fields remain deterministic and easy to audit.
+  - Runbook guidance stays non-interactive and offline-first.
+- Dependencies: 201, 205.
 
-## Prompt 196 — Deterministic performance bench envelope for optional backend paths
-- Objective: Add optional benchmark planning for backend probe/shadow paths with fixed budget envelopes.
+## Prompt 207 (NICE) — v3 portability and docs checks refresh
+Objective: Refresh portability-focused docs checks and governance docs to reflect v3 multi-slot evidence/reporting scope.
 - Acceptance:
-  - Bench definitions use budget envelopes, not hardware-specific targets.
-  - Output schema and ordering are deterministic.
-  - Bench scope is clearly marked optional (NICE).
-- Dependencies: 192, 193.
+  - Docs checks clearly cover updated v3 anchor and queue artifacts.
+  - Hardware-neutral wording checks continue to guard core planning docs.
+  - Updated docs references remain consistent with prompt rulebook constraints.
+- Dependencies: 205, 206.
 
-## Prompt 197 — Extended drift dashboard docs for probe/shadow comparison
-- Objective: Expand documentation for drift dashboard views covering probe and shadow parity trends.
+## Prompt 208 (MUST) — v3 gate schema and orchestration
+Objective: Define v3 gate schema/orchestration so eligibility, evidence, and reporting checks are evaluated in one deterministic signoff flow.
 - Acceptance:
-  - Dashboard inputs and derived metrics are documented with stable field names.
-  - Data retention and boundedness constraints are explicit.
-  - Work is clearly marked optional (NICE).
-- Dependencies: 194.
+  - Gate schema lists ordered checks and PASS/FAIL semantics for v3 scope.
+  - Orchestration integrates unified eligibility outputs and multi-slot evidence checks.
+  - Artifacts/output paths follow repository conventions and remain offline reproducible.
+- Dependencies: 205, 206, 207.
 
-## Prompt 198 — v2 phase-1 signoff gate for optional real-backend readiness
-- Objective: Define v2 phase-1 gate criteria for optional real-backend probe/shadow readiness.
+## Prompt 209 (MUST) — v3 wrap and next anchor governance
+Objective: Close v3 planning/execution cycle with explicit wrap criteria and next-anchor governance updates.
 - Acceptance:
-  - Gate criteria cover adapters, fixture contract, probe flow, shadow guard, and parity evidence.
-  - PASS/FAIL semantics are deterministic and CI-friendly.
-  - Training, remote compute, and GPU lanes remain out of scope.
-- Dependencies: 189-195.
+  - v3 completion conditions and transition rules are documented without speculative scope expansion.
+  - Next immediate queue remains capped to 10 prompts unless explicitly expanded.
+  - Anchor/state snapshot docs are updated with deterministic resume metadata.
+- Dependencies: 208.
