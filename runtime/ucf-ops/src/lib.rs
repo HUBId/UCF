@@ -559,6 +559,8 @@ pub struct ProbeResult {
     pub status: ProbeStatus,
     pub elapsed_ms: u64,
     pub output_digest: [u8; 32],
+    pub spike_count: Option<u16>,
+    pub spikes_digest_prefix: Option<String>,
     pub quality: StageQuality,
     pub notes: String,
 }
@@ -762,16 +764,26 @@ fn run_probe_for_slot(
     store: &ModelStore,
 ) -> (ProbeResult, ModelProbeRecord) {
     let model_sha = verified.map(|v| hex_prefix(v.sha256));
-    let backend_id = format!(
-        "{}:{}/world:{}",
+    let slot_component = match slot {
+        ModelSlot::Llm => pack.meta().llm_backend as u8,
+        ModelSlot::WorldJepa | ModelSlot::WorldVljepa => pack.meta().world_backend as u8,
+        ModelSlot::Sae => pack.meta().sae_backend as u8,
+        ModelSlot::Ssm => pack.meta().ssm_backend as u8,
+        ModelSlot::Lfm => pack.meta().lfm_backend as u8,
+        ModelSlot::EbmReasoner => pack.meta().lfm_backend as u8,
+    };
+    let mut backend_id = format!(
+        "{}:{}/slot:{}",
         pack.meta().pack_name,
         hex_prefix(pack.meta().digest),
-        pack.meta().world_backend as u8
+        slot_component
     );
     let mut elapsed_samples = Vec::new();
     let mut final_status = ProbeStatus::Disabled;
     let mut final_quality = StageQuality::Unavailable;
     let mut final_output = [0_u8; 32];
+    let mut spike_count = None;
+    let mut spikes_digest_prefix = None;
     let mut notes = String::new();
 
     if verified.is_none() {
@@ -822,10 +834,19 @@ fn run_probe_for_slot(
             let elapsed_ms = started.elapsed().as_millis() as u64;
             elapsed_samples.push(elapsed_ms);
             match outcome {
-                Ok((digest, quality)) => {
+                Ok(probe_out) => {
                     final_status = ProbeStatus::Ok;
-                    final_quality = quality;
-                    final_output = digest;
+                    final_quality = probe_out.quality;
+                    final_output = probe_out.digest;
+                    if let Some(v) = probe_out.spike_count {
+                        spike_count = Some(v);
+                    }
+                    if let Some(v) = probe_out.spikes_digest_prefix {
+                        spikes_digest_prefix = Some(v);
+                    }
+                    if let Some(v) = probe_out.backend_id {
+                        backend_id = v;
+                    }
                 }
                 Err(ProbeExecError::Timeout) => {
                     final_status = ProbeStatus::Timeout;
@@ -869,6 +890,8 @@ fn run_probe_for_slot(
         status: final_status,
         elapsed_ms,
         output_digest: final_output,
+        spike_count,
+        spikes_digest_prefix,
         quality: final_quality,
         notes,
     };
@@ -890,10 +913,19 @@ fn run_probe_for_slot(
     (result, record)
 }
 
+#[derive(Debug, Clone)]
+struct SlotProbeOutput {
+    digest: [u8; 32],
+    quality: StageQuality,
+    backend_id: Option<String>,
+    spike_count: Option<u16>,
+    spikes_digest_prefix: Option<String>,
+}
+
 fn run_llm_probe(
     pack: std::sync::Arc<dyn ucf_compute::BackendPack>,
     spec: &ProbeSpec,
-) -> Result<([u8; 32], StageQuality), String> {
+) -> Result<SlotProbeOutput, String> {
     let req = LlmRequest {
         schema_version: 1,
         t: 1,
@@ -921,7 +953,13 @@ fn run_llm_probe(
         .llm()
         .infer(&req, ComputeBackendConfig::default().to_budget())
         .map_err(|e| format!("{e:?}"))?;
-    Ok((resp.digest, StageQuality::Ok))
+    Ok(SlotProbeOutput {
+        digest: resp.digest,
+        quality: StageQuality::Ok,
+        backend_id: None,
+        spike_count: None,
+        spikes_digest_prefix: None,
+    })
 }
 
 fn run_world_probe(
@@ -929,7 +967,7 @@ fn run_world_probe(
     spec: &ProbeSpec,
     has_weights: bool,
     store: &ModelStore,
-) -> Result<([u8; 32], StageQuality), String> {
+) -> Result<SlotProbeOutput, String> {
     let _ = (has_weights, store);
     let mut obs = [0.0_f32; 16];
     for (idx, value) in deterministic_features(spec.seed, 16).iter().enumerate() {
@@ -946,7 +984,13 @@ fn run_world_probe(
             signal_q: 1024,
         };
         if let Ok(out) = adapter.step(&input_v1) {
-            return Ok((out.prediction_digest, StageQuality::Ok));
+            return Ok(SlotProbeOutput {
+                digest: out.prediction_digest,
+                quality: StageQuality::Ok,
+                backend_id: None,
+                spike_count: None,
+                spikes_digest_prefix: None,
+            });
         }
     }
 
@@ -962,13 +1006,43 @@ fn run_world_probe(
         .map_err(|_| "world lock poisoned".to_string())?
         .step(&input, ComputeBackendConfig::default().to_budget())
         .map_err(|e| format!("{e:?}"))?;
-    Ok((out.prediction_digest, out.quality))
+    Ok(SlotProbeOutput {
+        digest: out.prediction_digest,
+        quality: out.quality,
+        backend_id: None,
+        spike_count: None,
+        spikes_digest_prefix: None,
+    })
 }
 
 fn run_sae_probe(
     pack: std::sync::Arc<dyn ucf_compute::BackendPack>,
     spec: &ProbeSpec,
-) -> Result<([u8; 32], StageQuality), String> {
+) -> Result<SlotProbeOutput, String> {
+    #[cfg(feature = "backend-candle")]
+    {
+        use ucf_compute::stage_v1::{SaeExtractorV1, SaeInputV1};
+        use ucf_compute::stage_v1_candle::CandleSaeAdapterV0;
+
+        if let Ok(store) = ModelStore::from_env_default() {
+            let adapter = CandleSaeAdapterV0::from_model_store(&store);
+            let input_v1 = SaeInputV1 {
+                context_digest: spec.input_digest,
+                prediction_digest: [0x51; 32],
+                top_k: 8,
+            };
+            if let Ok(out) = adapter.infer(&input_v1) {
+                return Ok(SlotProbeOutput {
+                    digest: out.spikes_digest,
+                    quality: StageQuality::Ok,
+                    backend_id: Some(format!("candle:sae:{}", adapter.backend_id())),
+                    spike_count: Some(out.spikes.len() as u16),
+                    spikes_digest_prefix: Some(hex_prefix(out.spikes_digest)),
+                });
+            }
+        }
+    }
+
     let mut feats = [0.0_f32; 32];
     for (idx, value) in deterministic_features(spec.seed ^ 0x5A5A, 32)
         .iter()
@@ -987,13 +1061,19 @@ fn run_sae_probe(
         .sae()
         .extract(&input, ComputeBackendConfig::default().to_budget())
         .map_err(|e| format!("{e:?}"))?;
-    Ok((out.spikes_digest, out.quality))
+    Ok(SlotProbeOutput {
+        digest: out.spikes_digest,
+        quality: out.quality,
+        backend_id: None,
+        spike_count: Some(out.spike_count),
+        spikes_digest_prefix: Some(hex_prefix(out.spikes_digest)),
+    })
 }
 
 fn run_ssm_probe(
     pack: std::sync::Arc<dyn ucf_compute::BackendPack>,
     spec: &ProbeSpec,
-) -> Result<([u8; 32], StageQuality), String> {
+) -> Result<SlotProbeOutput, String> {
     let input = SsmInput {
         t: 1,
         spikes_digest: [0x11; 32],
@@ -1010,13 +1090,19 @@ fn run_ssm_probe(
         .map_err(|_| "ssm lock poisoned".to_string())?
         .step(&input, ComputeBackendConfig::default().to_budget())
         .map_err(|e| format!("{e:?}"))?;
-    Ok((out.state_digest, out.quality))
+    Ok(SlotProbeOutput {
+        digest: out.state_digest,
+        quality: out.quality,
+        backend_id: None,
+        spike_count: None,
+        spikes_digest_prefix: None,
+    })
 }
 
 fn run_lfm_probe(
     pack: std::sync::Arc<dyn ucf_compute::BackendPack>,
     spec: &ProbeSpec,
-) -> Result<([u8; 32], StageQuality), String> {
+) -> Result<SlotProbeOutput, String> {
     let input = LfmInput {
         t: 1,
         context_digest: [0x71; 32],
@@ -1043,9 +1129,15 @@ fn run_lfm_probe(
         .map_err(|_| "lfm lock poisoned".to_string())?
         .step(&input, ComputeBackendConfig::default().to_budget())
         .map_err(|e| format!("{e:?}"))?;
-    Ok((out.liquid_state_digest, out.quality))
+    Ok(SlotProbeOutput {
+        digest: out.liquid_state_digest,
+        quality: out.quality,
+        backend_id: None,
+        spike_count: None,
+        spikes_digest_prefix: None,
+    })
 }
-fn run_ebm_probe(spec: &ProbeSpec) -> Result<([u8; 32], StageQuality), String> {
+fn run_ebm_probe(spec: &ProbeSpec) -> Result<SlotProbeOutput, String> {
     use ucf_runtime::ebm::{
         CandidateFeature, CandidateKind, CpuEbmStubV0, EbmInput, EbmReasoner, EbmSignals,
     };
@@ -1085,7 +1177,13 @@ fn run_ebm_probe(spec: &ProbeSpec) -> Result<([u8; 32], StageQuality), String> {
     };
     let mut budget = ucf_compute::WorkMeter::new(spec.max_tokens as u64);
     let out = ebm.score_candidates(input, &mut budget);
-    Ok((out.ebm_digest, StageQuality::Ok))
+    Ok(SlotProbeOutput {
+        digest: out.ebm_digest,
+        quality: StageQuality::Ok,
+        backend_id: None,
+        spike_count: None,
+        spikes_digest_prefix: None,
+    })
 }
 
 #[derive(Debug)]
@@ -6276,7 +6374,7 @@ active_hash = "abc"
             &store,
         )
         .expect("world b");
-        assert_eq!(a.0, b.0);
+        assert_eq!(a.digest, b.digest);
 
         let sae_spec = probe_spec_for_slot(ModelSlot::Sae);
         let c = run_sae_probe(
@@ -6289,7 +6387,7 @@ active_hash = "abc"
             &sae_spec,
         )
         .expect("sae b");
-        assert_eq!(c.0, d.0);
+        assert_eq!(c.digest, d.digest);
     }
 
     #[test]
