@@ -120,7 +120,7 @@ impl Default for SlotEnablement {
         Self {
             llm: SlotMode::Toy,
             lfm: SlotMode::Toy,
-            world_jepa: SlotMode::Toy,
+            world_jepa: SlotMode::Shadow,
             sae: SlotMode::Toy,
             ssm: SlotMode::Toy,
             ebm: SlotMode::Toy,
@@ -545,6 +545,13 @@ mod tests {
         assert_eq!(parsed.get(&0).expect("p1").llm, SlotMode::Shadow);
         assert_eq!(parsed.get(&64).expect("p2").lfm, SlotMode::Shadow);
         assert_eq!(parsed.get(&128).expect("p3").world_jepa, SlotMode::Shadow);
+    }
+
+    #[test]
+    fn world_slot_defaults_to_shadow() {
+        let defaults = SlotEnablement::default();
+        assert_eq!(defaults.world_jepa, SlotMode::Shadow);
+        assert_eq!(defaults.for_slot(ModelSlot::WorldVljepa), SlotMode::Shadow);
     }
 
     #[test]

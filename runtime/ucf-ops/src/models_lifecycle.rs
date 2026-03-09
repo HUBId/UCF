@@ -451,6 +451,7 @@ pub fn models_recommend_rollback(
 pub fn parse_slot(value: &str) -> Result<ModelSlot, OpsError> {
     match value {
         "llm" => Ok(ModelSlot::Llm),
+        "world" => Ok(ModelSlot::WorldJepa),
         "world_jepa" => Ok(ModelSlot::WorldJepa),
         "world_vljepa" => Ok(ModelSlot::WorldVljepa),
         "sae" => Ok(ModelSlot::Sae),
@@ -1442,6 +1443,19 @@ mod tests {
 #[cfg(test)]
 mod probe_tests {
     use super::*;
+    use sha2::{Digest, Sha256};
+
+    fn materialize_world_real_tiny_fixture(dst_root: &Path) -> PathBuf {
+        let fixture_hex = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/weights/world_real_tiny.safetensors.hex");
+        let raw_hex = fs::read_to_string(&fixture_hex).expect("fixture hex");
+        let bytes =
+            hex::decode(raw_hex.trim()).expect("fixture hex must decode into deterministic bytes");
+        let dir = dst_root.join("fixtures/weights/world_real_tiny_dir");
+        fs::create_dir_all(&dir).expect("fixture dir");
+        fs::write(dir.join("model.safetensors"), bytes).expect("fixture model");
+        dir
+    }
 
     struct CwdGuard {
         prev: PathBuf,
@@ -1558,5 +1572,63 @@ mod probe_tests {
             .iter()
             .any(|c| c.code == "PROBE_MODEL_BYTES_NON_ZERO"
                 && matches!(c.status, ProbeCheckStatus::Fail)));
+    }
+
+    #[test]
+    fn world_real_tiny_fixture_hash_is_stable() {
+        let fixture_hex = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/weights/world_real_tiny.safetensors.hex");
+        let raw_hex = fs::read_to_string(&fixture_hex).expect("fixture hex");
+        let bytes = hex::decode(raw_hex.trim()).expect("fixture bytes");
+        let digest = hex::encode(Sha256::digest(&bytes));
+        assert_eq!(
+            digest,
+            "73b51575099cb45efb4a3fc66e1daf31157476c2f6ec3a2d8a313452cad024c6"
+        );
+    }
+
+    #[test]
+    fn world_real_tiny_stage_probe_promote_probe_flow() {
+        let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let _cwd = CwdGuard::enter(dir.path());
+
+        let src = materialize_world_real_tiny_fixture(dir.path());
+        let staged = models_stage(ModelSlot::WorldJepa, &src).expect("stage");
+
+        let manifest_before = load_or_init_manifest()
+            .expect("manifest before")
+            .manifest_digest;
+        let staged_probe_out = dir.path().join("out/probe_world_staged.json");
+        let staged_report =
+            models_probe_slot(ModelSlot::WorldJepa, Some(&staged.hash), &staged_probe_out)
+                .expect("staged probe");
+        let manifest_after = load_or_init_manifest()
+            .expect("manifest after")
+            .manifest_digest;
+        assert!(staged_report.pass());
+        assert_eq!(manifest_before, manifest_after);
+
+        let promote = models_promote(ModelSlot::WorldJepa, &staged.hash, Some(4)).expect("promote");
+        assert_eq!(promote.slot, "world_jepa");
+        assert_eq!(promote.to_hash, staged.hash);
+        assert!(promote.old_manifest_digest_prefix.is_some());
+        assert_eq!(promote.new_manifest_digest_prefix.len(), 12);
+
+        let active_probe_out = dir.path().join("out/probe_world_active.json");
+        let active_report =
+            models_probe_slot(ModelSlot::WorldJepa, None, &active_probe_out).expect("active probe");
+        assert!(active_report.pass());
+        assert_eq!(active_report.mode, ProbeMode::Active);
+        assert_eq!(
+            active_report.model_hash_prefix.as_deref(),
+            Some(&staged.hash[..PROBE_DIGEST_PREFIX_LEN])
+        );
+
+        let history_count = fs::read_dir("models/manifests/history")
+            .expect("history")
+            .filter_map(|entry| entry.ok())
+            .count();
+        assert!(history_count >= 1);
     }
 }

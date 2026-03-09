@@ -1,0 +1,5 @@
+slot_id = "world_jepa"
+contract_version = "v1"
+fixture_path = "fixtures/weights/world_real_tiny.safetensors.hex"
+sha256 = "73b51575099cb45efb4a3fc66e1daf31157476c2f6ec3a2d8a313452cad024c6"
+tensors = ["w1: [16,2] f32", "b1: [2] f32", "w2: [2,16] f32", "b2: [16] f32"]
