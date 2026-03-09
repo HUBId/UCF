@@ -706,6 +706,15 @@ impl EnvVarGuard {
             prev,
         }
     }
+
+    fn remove(key: &str) -> Self {
+        let prev = std::env::var(key).ok();
+        std::env::remove_var(key);
+        Self {
+            key: key.to_string(),
+            prev,
+        }
+    }
 }
 
 impl Drop for EnvVarGuard {
@@ -5743,6 +5752,14 @@ fn ops_config_digest(cfg: &OpsConfig) -> Result<String, OpsError> {
 }
 
 fn run_compute_probe(cfg: &OpsConfig) -> Result<DiagCheck, OpsError> {
+    let _env_guards = [
+        EnvVarGuard::remove("UCF_REAL_ENABLEMENT_MODE"),
+        EnvVarGuard::remove("UCF_SLOT_WORLD_JEPA"),
+        EnvVarGuard::remove("UCF_SLOT_WORLD_VLJEPA"),
+        EnvVarGuard::remove("UCF_SLOT_SAE"),
+        EnvVarGuard::remove("UCF_SLOT_SSM"),
+        EnvVarGuard::remove("UCF_SLOT_LFM"),
+    ];
     let backend_cfg = ComputeBackendConfig {
         kind: cfg.compute_backend,
         seed: cfg.compute_seed,
