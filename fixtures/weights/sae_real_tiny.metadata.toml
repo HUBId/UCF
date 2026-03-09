@@ -1,0 +1,5 @@
+slot_id = "sae"
+contract_version = "v1"
+fixture_path = "fixtures/weights/sae_real_tiny.safetensors.hex"
+sha256 = "0f1ea81381690179efb5058ff06379423142265b2e6e80ca731ecd8ad8330c57"
+tensors = ["sae.w_enc: [64,16] f32", "sae.b_enc: [64] f32"]
