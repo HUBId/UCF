@@ -991,7 +991,30 @@ fn run_world_probe(
     for (idx, value) in deterministic_features(spec.seed, 16).iter().enumerate() {
         obs[idx] = *value;
     }
-    #[cfg(feature = "backend-candle")]
+    #[cfg(feature = "backend-burn")]
+    if has_weights {
+        use ucf_compute::stage_v1::{WorldInputV1, WorldPredictorV1};
+        use ucf_compute::stage_v1_burn::BurnWorldAdapterV0;
+        let adapter = BurnWorldAdapterV0::from_model_store(store);
+        let input_v1 = WorldInputV1 {
+            context_digest: spec.input_digest,
+            previous_world_state_digest: None,
+            signal_q: 1024,
+        };
+        if let Ok(out) = adapter.step(&input_v1) {
+            return Ok(SlotProbeOutput {
+                digest: out.prediction_digest,
+                quality: StageQuality::Ok,
+                backend_id: Some(format!("burn:world:{}", adapter.backend_id())),
+                spike_count: None,
+                spikes_digest_prefix: None,
+                pressure_q: Some(out.prediction_error_q),
+                state_digest_prefix: Some(hex_prefix(out.prediction_digest)),
+            });
+        }
+    }
+
+    #[cfg(all(feature = "backend-candle", not(feature = "backend-burn")))]
     if has_weights {
         use ucf_compute::stage_v1::{WorldInputV1, WorldPredictorV1};
         use ucf_compute::stage_v1_candle::CandleWorldAdapterV0;
@@ -1005,11 +1028,11 @@ fn run_world_probe(
             return Ok(SlotProbeOutput {
                 digest: out.prediction_digest,
                 quality: StageQuality::Ok,
-                backend_id: None,
+                backend_id: Some(format!("candle:world:{}", adapter.backend_id())),
                 spike_count: None,
                 spikes_digest_prefix: None,
-                pressure_q: None,
-                state_digest_prefix: None,
+                pressure_q: Some(out.prediction_error_q),
+                state_digest_prefix: Some(hex_prefix(out.prediction_digest)),
             });
         }
     }
@@ -1815,6 +1838,7 @@ pub fn v1_gate(workdir: &Path, out: &Path) -> Result<V1GateReportV1, OpsError> {
     }
 
     let mut checks = Vec::new();
+
     let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let v0_out = workdir.join("out").join("v0_gate_report.json");
     let v0_scenario = repo_root.join("fixtures/e2e/v0_flow_a.json");
@@ -5300,6 +5324,19 @@ fn strict_v1_checks(
         });
 
     let mut checks = Vec::new();
+    if cfg!(feature = "backend-burn") {
+        if matches!(slot_enablement.world_jepa, ucf_compute::SlotMode::Active) {
+            checks.push(strict_fail(
+                "v2_burn_world_active_denied",
+                "ACTIVE_DENIED_BACKEND_NOT_YET_ALLOWED",
+                "set UCF_SLOT_WORLD_JEPA=shadow|off for backend-burn world adapter",
+            ));
+        } else {
+            checks.push(strict_pass("v2_burn_world_active_denied"));
+        }
+    } else {
+        checks.push(strict_pass("v2_burn_world_active_denied"));
+    }
     let manifest_path = PathBuf::from("models/MANIFEST.toml");
     let probe_enforcement_enabled = std::env::var("UCF_STRICT_ENFORCE_ACTIVE_PROBES")
         .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
@@ -5371,12 +5408,22 @@ fn strict_v1_checks(
                     .results
                     .iter()
                     .all(|result| matches!(result.status, ProbeStatus::Ok | ProbeStatus::Disabled));
-                if report.summary.pass && all_ok {
+                let burn_world_ok = if cfg!(feature = "backend-burn") {
+                    report
+                        .results
+                        .iter()
+                        .find(|result| result.slot == ModelSlot::WorldJepa)
+                        .map(|result| matches!(result.status, ProbeStatus::Ok))
+                        .unwrap_or(false)
+                } else {
+                    true
+                };
+                if report.summary.pass && all_ok && burn_world_ok {
                     checks.push(strict_pass("v1_active_slots_probe_pass"));
                 } else {
                     checks.push(strict_fail(
                         "v1_active_slots_probe_pass",
-                        "strict.v1.probes.active_slot_failed",
+                        "PROBE_REQUIRED",
                         "run `cargo run -p ucf-ops -- models probe --manifest models/manifest.toml --out ./out/probe_report.json` and require PASS",
                     ));
                 }
