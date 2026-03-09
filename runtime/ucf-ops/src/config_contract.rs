@@ -17,6 +17,18 @@ pub struct ConfigV1 {
     pub paths: ConfigPathsV1,
     pub strictness: StrictnessV1,
     pub runtime: RuntimeConfigV1,
+    pub active_evidence: ActiveEvidenceConfigV1,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ActiveEvidenceConfigV1 {
+    pub freshness_probe_max_age_ticks: u64,
+    pub freshness_compare_max_age_ticks: u64,
+    pub freshness_no_impact_max_age_ticks: u64,
+    pub freshness_drift_status_max_age_ticks: u64,
+    pub allow_warn_drift_for_active: bool,
+    pub require_matching_target_hash: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -144,6 +156,22 @@ impl ConfigV1 {
             stage_isolation_optional: self.strictness.stage_isolation,
             emergency_policy_pin: self.runtime.emergency_policy_pin,
             log_level: self.runtime.log_level,
+            active_evidence_probe_max_age_ticks: self.active_evidence.freshness_probe_max_age_ticks,
+            active_evidence_compare_max_age_ticks: self
+                .active_evidence
+                .freshness_compare_max_age_ticks,
+            active_evidence_no_impact_max_age_ticks: self
+                .active_evidence
+                .freshness_no_impact_max_age_ticks,
+            active_evidence_drift_status_max_age_ticks: self
+                .active_evidence
+                .freshness_drift_status_max_age_ticks,
+            active_evidence_allow_warn_drift_for_active: self
+                .active_evidence
+                .allow_warn_drift_for_active,
+            active_evidence_require_matching_target_hash: self
+                .active_evidence
+                .require_matching_target_hash,
             config_digest: String::new(),
         }
     }
@@ -252,6 +280,14 @@ pub fn migrate_config_v1(
             log_level: legacy.log_level.unwrap_or_else(|| "info".to_string()),
             llm_max_tokens: 128,
             probe_timeout_ms: 200,
+        },
+        active_evidence: ActiveEvidenceConfigV1 {
+            freshness_probe_max_age_ticks: 256,
+            freshness_compare_max_age_ticks: 256,
+            freshness_no_impact_max_age_ticks: 256,
+            freshness_drift_status_max_age_ticks: 256,
+            allow_warn_drift_for_active: false,
+            require_matching_target_hash: true,
         },
     };
     new_cfg.validate()?;

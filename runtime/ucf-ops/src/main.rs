@@ -11,20 +11,21 @@ use ucf_ops::{
     export_policy_key_registry_v1, gateway_threat_test, goldens_generate, goldens_update,
     goldens_verify, goldens_verify_detailed, hardware_scan, load_signoff_checklist, logs_prove,
     logs_verify_proof, metrics_snapshot, metrics_summary, metrics_trend, migrate_config_v1,
-    models_active_check, models_list, models_probe, models_probe_slot, models_promote,
-    models_recommend_rollback, models_rollback, models_shadow_ready, models_stage, models_verify,
-    models_verify_lifecycle, net_deps_audit, nightly_summarize, one_command_bringup, out_manifest,
-    parse_duration_secs, parse_inject, parse_slot, path_scan, policy_diff, policy_explain,
-    policy_validate, portability_check, preflight, readiness_gate, release_build_rc,
-    release_rc1_gate, release_signoff_validate, replay_audit, replay_bugreport, repro_pack,
-    repro_verify, run_status, runs_list, runs_search, runs_show, save_counterfactual_result,
-    security_verify_chain, simulate_counterfactual, soak_run, strict_check, troubleshoot, v0_gate,
-    v1_smoke, v2_gate, verify_bugreport, world_parity_report, world_shadow_report, write_slice,
-    AdversarialRunArgs, AirgapArtifactType, AirgapImportArgs, AirgapImportMode, BenchArgs,
-    BugKitBuildArgs, ChangeImpactArgs, ConfigV1, CounterfactualRequest, DevLoopArgs, DocsLintArgs,
-    DocsLintMode, DocsLintStatus, ExplainTickRequest, ExportArgs, GateStatus, GoldenGenerateArgs,
-    GoldenVerifyArgs, GoldenVerifyReport, NightlySummarizeArgs, ReleaseBuildRcArgs, SoakRunArgs,
-    SpecSnapshotArgs, V2GateOverallStatus,
+    models_active_check, models_active_evidence, models_list, models_probe, models_probe_slot,
+    models_promote, models_recommend_rollback, models_rollback, models_shadow_ready, models_stage,
+    models_verify, models_verify_lifecycle, net_deps_audit, nightly_summarize, one_command_bringup,
+    out_manifest, parse_duration_secs, parse_inject, parse_slot, path_scan, policy_diff,
+    policy_explain, policy_validate, portability_check, preflight, readiness_gate,
+    release_build_rc, release_rc1_gate, release_signoff_validate, replay_audit, replay_bugreport,
+    repro_pack, repro_verify, run_status, runs_list, runs_search, runs_show,
+    save_counterfactual_result, security_verify_chain, simulate_counterfactual, soak_run,
+    strict_check, troubleshoot, v0_gate, v1_smoke, v2_gate, verify_bugreport, world_parity_report,
+    world_shadow_report, write_slice, AdversarialRunArgs, AirgapArtifactType, AirgapImportArgs,
+    AirgapImportMode, BenchArgs, BugKitBuildArgs, ChangeImpactArgs, ConfigV1,
+    CounterfactualRequest, DevLoopArgs, DocsLintArgs, DocsLintMode, DocsLintStatus,
+    ExplainTickRequest, ExportArgs, GateStatus, GoldenGenerateArgs, GoldenVerifyArgs,
+    GoldenVerifyReport, NightlySummarizeArgs, ReleaseBuildRcArgs, SoakRunArgs, SpecSnapshotArgs,
+    V2GateOverallStatus,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -1033,9 +1034,44 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         std::process::exit(2);
                     }
                 }
+                "active-evidence" => {
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/active_evidence_report.json"));
+                    let report = models_active_evidence(&workdir, &out)?;
+                    for slot in &report.slots {
+                        println!(
+                            "slot={} target={} eligible={}{}",
+                            slot.slot_id,
+                            slot.target_hash.chars().take(16).collect::<String>(),
+                            if slot.active_eligible { "yes" } else { "no" },
+                            slot.denial_reason_code
+                                .as_ref()
+                                .map(|v| format!(" reason={v}"))
+                                .unwrap_or_default()
+                        );
+                    }
+                    println!(
+                        "overall_all_supported_slots_active_eligible={}",
+                        if report.all_supported_slots_active_eligible {
+                            "yes"
+                        } else {
+                            "no"
+                        }
+                    );
+                    println!("out={}", out.display());
+                    println!("remediation:");
+                    println!("- cargo run -p ucf-ops -- models probe --slot <slot> --out ./out/probe_<slot>.json");
+                    println!("- cargo run -p ucf-ops -- models shadow-ready --out ./out/shadow_ready_report.json");
+                    println!("- cargo run -p ucf-ops -- drift report --run <run_id> --windows 20 --out ./out/drift_report.json");
+                    println!("- keep slot in shadow until active evidence eligibility is PASS");
+                    if !report.all_supported_slots_active_eligible {
+                        std::process::exit(2);
+                    }
+                }
                 _ => {
                     return Err(
-                        "usage: ucf-ops models <verify|probe|stage|promote|rollback|list|active-check|recommend-rollback|shadow-ready> ..."
+                        "usage: ucf-ops models <verify|probe|stage|promote|rollback|list|active-check|active-evidence|recommend-rollback|shadow-ready> ..."
                             .into(),
                     )
                 }

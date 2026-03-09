@@ -27,3 +27,11 @@ isolation_runtime = "inproc"
 log_level = "debug"
 llm_max_tokens = 128
 probe_timeout_ms = 200
+
+[active_evidence]
+freshness_probe_max_age_ticks = 256
+freshness_compare_max_age_ticks = 256
+freshness_no_impact_max_age_ticks = 256
+freshness_drift_status_max_age_ticks = 256
+allow_warn_drift_for_active = false
+require_matching_target_hash = true
