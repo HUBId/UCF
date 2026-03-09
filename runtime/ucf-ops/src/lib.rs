@@ -561,6 +561,8 @@ pub struct ProbeResult {
     pub output_digest: [u8; 32],
     pub spike_count: Option<u16>,
     pub spikes_digest_prefix: Option<String>,
+    pub pressure_q: Option<u16>,
+    pub state_digest_prefix: Option<String>,
     pub quality: StageQuality,
     pub notes: String,
 }
@@ -784,6 +786,8 @@ fn run_probe_for_slot(
     let mut final_output = [0_u8; 32];
     let mut spike_count = None;
     let mut spikes_digest_prefix = None;
+    let mut pressure_q = None;
+    let mut state_digest_prefix = None;
     let mut notes = String::new();
 
     if verified.is_none() {
@@ -844,6 +848,12 @@ fn run_probe_for_slot(
                     if let Some(v) = probe_out.spikes_digest_prefix {
                         spikes_digest_prefix = Some(v);
                     }
+                    if let Some(v) = probe_out.pressure_q {
+                        pressure_q = Some(v);
+                    }
+                    if let Some(v) = probe_out.state_digest_prefix {
+                        state_digest_prefix = Some(v);
+                    }
                     if let Some(v) = probe_out.backend_id {
                         backend_id = v;
                     }
@@ -892,6 +902,8 @@ fn run_probe_for_slot(
         output_digest: final_output,
         spike_count,
         spikes_digest_prefix,
+        pressure_q,
+        state_digest_prefix,
         quality: final_quality,
         notes,
     };
@@ -920,6 +932,8 @@ struct SlotProbeOutput {
     backend_id: Option<String>,
     spike_count: Option<u16>,
     spikes_digest_prefix: Option<String>,
+    pressure_q: Option<u16>,
+    state_digest_prefix: Option<String>,
 }
 
 fn run_llm_probe(
@@ -959,6 +973,8 @@ fn run_llm_probe(
         backend_id: None,
         spike_count: None,
         spikes_digest_prefix: None,
+        pressure_q: None,
+        state_digest_prefix: None,
     })
 }
 
@@ -990,6 +1006,8 @@ fn run_world_probe(
                 backend_id: None,
                 spike_count: None,
                 spikes_digest_prefix: None,
+                pressure_q: None,
+                state_digest_prefix: None,
             });
         }
     }
@@ -1012,6 +1030,8 @@ fn run_world_probe(
         backend_id: None,
         spike_count: None,
         spikes_digest_prefix: None,
+        pressure_q: None,
+        state_digest_prefix: None,
     })
 }
 
@@ -1038,6 +1058,8 @@ fn run_sae_probe(
                     backend_id: Some(format!("candle:sae:{}", adapter.backend_id())),
                     spike_count: Some(out.spikes.len() as u16),
                     spikes_digest_prefix: Some(hex_prefix(out.spikes_digest)),
+                    pressure_q: None,
+                    state_digest_prefix: None,
                 });
             }
         }
@@ -1067,6 +1089,8 @@ fn run_sae_probe(
         backend_id: None,
         spike_count: Some(out.spike_count),
         spikes_digest_prefix: Some(hex_prefix(out.spikes_digest)),
+        pressure_q: None,
+        state_digest_prefix: None,
     })
 }
 
@@ -1096,6 +1120,11 @@ fn run_ssm_probe(
         backend_id: None,
         spike_count: None,
         spikes_digest_prefix: None,
+        pressure_q: Some(
+            u16::try_from((out.pressure.clamp(0.0, 1.0) * f32::from(u16::MAX)).round() as u32)
+                .unwrap_or(u16::MAX),
+        ),
+        state_digest_prefix: Some(hex_prefix(out.state_digest)),
     })
 }
 
@@ -1135,6 +1164,8 @@ fn run_lfm_probe(
         backend_id: None,
         spike_count: None,
         spikes_digest_prefix: None,
+        pressure_q: None,
+        state_digest_prefix: None,
     })
 }
 fn run_ebm_probe(spec: &ProbeSpec) -> Result<SlotProbeOutput, String> {
@@ -1183,6 +1214,8 @@ fn run_ebm_probe(spec: &ProbeSpec) -> Result<SlotProbeOutput, String> {
         backend_id: None,
         spike_count: None,
         spikes_digest_prefix: None,
+        pressure_q: None,
+        state_digest_prefix: None,
     })
 }
 

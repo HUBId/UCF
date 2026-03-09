@@ -480,17 +480,25 @@ const SAE_OPT: &[TensorSpec] = &[
 
 const SSM_REQ: &[TensorSpec] = &[
     TensorSpec {
-        name: "A",
-        shape: &[N, N],
-        dtype: DType::F32,
-    },
-    TensorSpec {
-        name: "B",
+        name: "ssm.a",
         shape: &[N],
         dtype: DType::F32,
     },
     TensorSpec {
-        name: "C",
+        name: "ssm.b",
+        shape: &[N],
+        dtype: DType::F32,
+    },
+];
+
+const SSM_OPT: &[TensorSpec] = &[
+    TensorSpec {
+        name: "ssm.c",
+        shape: &[N],
+        dtype: DType::F32,
+    },
+    TensorSpec {
+        name: "ssm.init",
         shape: &[N],
         dtype: DType::F32,
     },
@@ -566,6 +574,7 @@ pub fn spec_for_slot(slot: ModelSlot, max_bytes: u64) -> WeightSpec {
     };
     let optional = match slot {
         ModelSlot::Sae => SAE_OPT,
+        ModelSlot::Ssm => SSM_OPT,
         _ => &[],
     };
     WeightSpec {
@@ -665,9 +674,9 @@ mod tests {
     fn fixture_ssm_small() -> Vec<u8> {
         serialize(
             [
-                ("A", f32_tensor(&[3, 3], &[0.0; 9])),
-                ("B", f32_tensor(&[3], &[0.0; 3])),
-                ("C", f32_tensor(&[3], &[0.0; 3])),
+                ("ssm.a", f32_tensor(&[3], &[0.0; 3])),
+                ("ssm.b", f32_tensor(&[3], &[0.0; 3])),
+                ("ssm.c", f32_tensor(&[3], &[0.0; 3])),
             ],
             &None,
         )
@@ -716,7 +725,7 @@ mod tests {
         let bytes = fixture_ssm_small();
         let loaded = load_safetensors_raw(ModelSlot::Ssm, &bytes, &spec).expect("valid");
         let keys: Vec<_> = loaded.tensors.keys().cloned().collect();
-        assert_eq!(keys, vec!["A", "B", "C"]);
+        assert_eq!(keys, vec!["ssm.a", "ssm.b", "ssm.c"]);
     }
 
     #[test]

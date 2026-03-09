@@ -1,10 +1,14 @@
 use sha2::{Digest, Sha256};
 
+use crate::candle_weights::{
+    backend_disable_for_weight_error, load_verified_slot_raw, spec_for_slot,
+};
 use crate::capabilities::{SaeExtractor, WorldModelPredictor};
 use crate::evidence::{quantize_signed_unit, quantize_unit_u16};
 use crate::feature_extractor::{
     SaeInput, SaeOutput, SmallNotes, SAE_FEATURE_DIM, SAE_INPUT_DIM, SAE_TOP_K,
 };
+use crate::model_store::ModelStore;
 use crate::ssm::{SsmInput, SsmKernel, SsmOutput, SSM_STATE_DIM};
 use crate::world_model::{
     state_norm_01, StageQuality, WorldModelInput, WorldModelOutput, WORLD_MODEL_FEATURE_DIM,
@@ -280,7 +284,7 @@ pub struct CandleSsmKernel {
     state: [f32; SSM_STATE_DIM],
     a: [f32; SSM_STATE_DIM],
     b: [f32; SSM_STATE_DIM],
-    c: [f32; SSM_STATE_DIM],
+    c: Option<[f32; SSM_STATE_DIM]>,
     model_hash: [u8; 32],
 }
 
@@ -298,9 +302,69 @@ impl CandleSsmKernel {
             state: [0.0; SSM_STATE_DIM],
             a,
             b,
-            c,
+            c: Some(c),
             model_hash,
         }
+    }
+
+    pub fn from_model_store_or_hash(
+        store: &ModelStore,
+        fallback_hash: [u8; 32],
+    ) -> Result<Self, ComputeError> {
+        match store.verify_slot(crate::model_store::ModelSlot::Ssm) {
+            Ok(_) => Self::from_model_store(store),
+            Err(crate::model_store::ModelLoadError::Disabled) => Ok(Self::new(fallback_hash)),
+            Err(_) => Err(ComputeError::BackendDisabled),
+        }
+    }
+
+    pub fn from_model_store(store: &ModelStore) -> Result<Self, ComputeError> {
+        let verified = store
+            .verify_slot(crate::model_store::ModelSlot::Ssm)
+            .map_err(|_| ComputeError::BackendDisabled)?;
+        let spec = spec_for_slot(crate::model_store::ModelSlot::Ssm, verified.size_bytes);
+        let loaded = load_verified_slot_raw(store, &verified, &spec)
+            .map_err(|err| backend_disable_for_weight_error(&err))?;
+
+        let Some(a_t) = loaded.tensors.get("ssm.a") else {
+            return Err(ComputeError::BackendDisabled);
+        };
+        let Some(b_t) = loaded.tensors.get("ssm.b") else {
+            return Err(ComputeError::BackendDisabled);
+        };
+        if a_t.shape.first().copied() != Some(SSM_STATE_DIM)
+            || b_t.shape.first().copied() != Some(SSM_STATE_DIM)
+        {
+            return Err(ComputeError::BackendDisabled);
+        }
+
+        let mut a = [0.0; SSM_STATE_DIM];
+        a.copy_from_slice(&a_t.values_f32[..SSM_STATE_DIM]);
+        let mut b = [0.0; SSM_STATE_DIM];
+        b.copy_from_slice(&b_t.values_f32[..SSM_STATE_DIM]);
+
+        let c = loaded.tensors.get("ssm.c").map(|tensor| {
+            let mut out = [0.0; SSM_STATE_DIM];
+            out.copy_from_slice(&tensor.values_f32[..SSM_STATE_DIM]);
+            out
+        });
+        let state = loaded
+            .tensors
+            .get("ssm.init")
+            .map(|tensor| {
+                let mut out = [0.0; SSM_STATE_DIM];
+                out.copy_from_slice(&tensor.values_f32[..SSM_STATE_DIM]);
+                out
+            })
+            .unwrap_or([0.0; SSM_STATE_DIM]);
+
+        Ok(Self {
+            state,
+            a,
+            b,
+            c,
+            model_hash: verified.sha256,
+        })
     }
 
     fn degraded(input: &SsmInput, reason: &'static str) -> SsmOutput {
@@ -323,9 +387,22 @@ impl CandleSsmKernel {
     }
 }
 
+#[cfg(test)]
+impl CandleSsmKernel {
+    fn for_test(a: f32, b: f32, model_hash: [u8; 32]) -> Self {
+        Self {
+            state: [0.0; SSM_STATE_DIM],
+            a: [a; SSM_STATE_DIM],
+            b: [b; SSM_STATE_DIM],
+            c: None,
+            model_hash,
+        }
+    }
+}
+
 impl SsmKernel for CandleSsmKernel {
     fn name(&self) -> &'static str {
-        "candle_ssm_v1"
+        "candle_ssm_v2_adapter_v0"
     }
 
     fn step(
@@ -337,24 +414,35 @@ impl SsmKernel for CandleSsmKernel {
             + 0.3 * input.sae_energy
             + 0.2 * input.world_surprise)
             .clamp(0.0, 1.0);
+        let inp_i = ((quantize_unit_u16(inp) as f32) / (u16::MAX as f32)).clamp(0.0, 1.0);
 
         for i in 0..SSM_STATE_DIM {
-            self.state[i] = (self.a[i] * self.state[i] + self.b[i] * inp).clamp(-1.0, 1.0);
+            let mut next = self.a[i] * self.state[i] + self.b[i] * inp_i;
+            if let Some(c) = self.c {
+                next += c[i];
+            }
+            self.state[i] = next.clamp(-1.0, 1.0);
         }
 
         if self.state.iter().any(|v| !v.is_finite()) {
             return Ok(Self::degraded(input, "nan_inf"));
         }
 
-        let mean_abs = self.state.iter().map(|v| v.abs()).sum::<f32>() / SSM_STATE_DIM as f32;
-        let pressure = mean_abs.clamp(0.0, 1.0);
-        let readout = ((0..SSM_STATE_DIM)
-            .map(|i| self.state[i] * self.c[i])
-            .sum::<f32>()
-            / SSM_STATE_DIM as f32
-            * 0.5
-            + 0.5)
-            .clamp(0.0, 1.0);
+        let mut abs_sum_q = 0_u32;
+        for value in self.state {
+            abs_sum_q = abs_sum_q.saturating_add(u32::from(quantize_unit_u16(value.abs())));
+        }
+        let mean_abs_q = (abs_sum_q / (SSM_STATE_DIM as u32)) as u16;
+        let pressure = f32::from(mean_abs_q) / f32::from(u16::MAX);
+        let readout = if let Some(c) = self.c {
+            let mut acc = 0.0_f32;
+            for (i, coeff) in c.iter().enumerate() {
+                acc += self.state[i] * *coeff;
+            }
+            (acc / SSM_STATE_DIM as f32 * 0.5 + 0.5).clamp(0.0, 1.0)
+        } else {
+            pressure
+        };
 
         let mut state_h = Sha256::new();
         for v in self.state {
@@ -363,6 +451,8 @@ impl SsmKernel for CandleSsmKernel {
         state_h.update(self.model_hash);
         state_h.update(input.t.to_le_bytes());
         state_h.update(input.spikes_digest);
+        state_h.update(input.context_digest);
+        state_h.update(quantize_unit_u16(input.world_surprise).to_le_bytes());
         let state_digest: [u8; 32] = state_h.finalize().into();
 
         let mut read_h = Sha256::new();
@@ -378,7 +468,7 @@ impl SsmKernel for CandleSsmKernel {
             readout,
             quality: StageQuality::Ok,
             notes: SmallNotes(vec![format!(
-                "model={}",
+                "model={} mode=shadow_only",
                 hex::encode(&self.model_hash[..6])
             )]),
         })
@@ -421,7 +511,7 @@ mod tests {
 
     #[test]
     fn ssm_pressure_is_bounded() {
-        let mut ssm = CandleSsmKernel::new([9; 32]);
+        let mut ssm = CandleSsmKernel::for_test(0.9, 0.1, [9; 32]);
         let inp = SsmInput {
             t: 4,
             spikes_digest: [1; 32],
@@ -434,5 +524,25 @@ mod tests {
         };
         let out = ssm.step(&inp, ComputeBudget::default()).expect("step");
         assert!((0.0..=1.0).contains(&out.pressure));
+    }
+
+    #[test]
+    fn ssm_digest_is_stable_for_same_inputs() {
+        let mut a = CandleSsmKernel::for_test(0.93, 0.04, [4; 32]);
+        let mut b = CandleSsmKernel::for_test(0.93, 0.04, [4; 32]);
+        let inp = SsmInput {
+            t: 7,
+            spikes_digest: [1; 32],
+            spike_count: 12,
+            sae_energy: 0.2,
+            world_surprise: 0.3,
+            risk: 0.1,
+            seed: 0,
+            context_digest: [2; 32],
+        };
+        let out_a = a.step(&inp, ComputeBudget::default()).expect("a");
+        let out_b = b.step(&inp, ComputeBudget::default()).expect("b");
+        assert_eq!(out_a.state_digest, out_b.state_digest);
+        assert_eq!(out_a.pressure, out_b.pressure);
     }
 }
