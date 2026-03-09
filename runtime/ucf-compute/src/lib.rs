@@ -115,6 +115,8 @@ pub struct SlotModeChangeRecordV1 {
     pub t: u64,
     pub from_mode: ucf_types::SlotModeV1,
     pub to_mode: ucf_types::SlotModeV1,
+    pub evidence_validated: bool,
+    pub evidence_digest_prefix: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

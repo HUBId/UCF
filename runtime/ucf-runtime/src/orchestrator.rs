@@ -4091,6 +4091,8 @@ impl RuntimeOrchestrator {
                             t: record.t,
                             from_mode: record.from_mode.as_str().to_string(),
                             to_mode: record.to_mode.as_str().to_string(),
+                            evidence_validated: record.evidence_validated,
+                            evidence_digest_prefix: record.evidence_digest_prefix,
                         },
                     ))?;
                 }
