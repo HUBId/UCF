@@ -19,10 +19,10 @@ use ucf_ops::{
     release_rc1_gate, release_signoff_validate, replay_audit, replay_bugreport, repro_pack,
     repro_verify, run_status, runs_list, runs_search, runs_show, save_counterfactual_result,
     security_verify_chain, simulate_counterfactual, soak_run, strict_check, troubleshoot, v0_gate,
-    v1_smoke, verify_bugreport, world_shadow_report, write_slice, AdversarialRunArgs,
-    AirgapArtifactType, AirgapImportArgs, AirgapImportMode, BenchArgs, BugKitBuildArgs,
-    ChangeImpactArgs, ConfigV1, CounterfactualRequest, DevLoopArgs, DocsLintArgs, DocsLintMode,
-    DocsLintStatus, ExplainTickRequest, ExportArgs, GateStatus, GoldenGenerateArgs,
+    v1_smoke, verify_bugreport, world_parity_report, world_shadow_report, write_slice,
+    AdversarialRunArgs, AirgapArtifactType, AirgapImportArgs, AirgapImportMode, BenchArgs,
+    BugKitBuildArgs, ChangeImpactArgs, ConfigV1, CounterfactualRequest, DevLoopArgs, DocsLintArgs,
+    DocsLintMode, DocsLintStatus, ExplainTickRequest, ExportArgs, GateStatus, GoldenGenerateArgs,
     GoldenVerifyArgs, GoldenVerifyReport, NightlySummarizeArgs, ReleaseBuildRcArgs, SoakRunArgs,
     SpecSnapshotArgs,
 };
@@ -1081,9 +1081,21 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         std::process::exit(2);
                     }
                 }
+                "parity-report" => {
+                    let Some(run_id) = arg_value(&args, "--run") else {
+                        return Err("usage: ucf-ops world parity-report --run <id> --out <path>".into());
+                    };
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/world_parity_report.json"));
+                    let report = world_parity_report(&workdir, &run_id, &out)?;
+                    println!("parity_windows={}", report.parity_records.len());
+                    println!("eligibility_entries={}", report.eligibility.len());
+                    println!("out={}", out.display());
+                }
                 _ => {
                     return Err(
-                        "usage: ucf-ops world shadow-report --run <id> --windows <n> --out <path>"
+                        "usage: ucf-ops world <shadow-report|parity-report> --run <id> [--windows <n>] --out <path>"
                             .into(),
                     )
                 }
