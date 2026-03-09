@@ -12,7 +12,7 @@ use ucf_ops::{
     goldens_verify, goldens_verify_detailed, hardware_scan, load_signoff_checklist, logs_prove,
     logs_verify_proof, metrics_snapshot, metrics_summary, metrics_trend, migrate_config_v1,
     models_active_check, models_list, models_probe, models_probe_slot, models_promote,
-    models_recommend_rollback, models_rollback, models_stage, models_verify,
+    models_recommend_rollback, models_rollback, models_shadow_ready, models_stage, models_verify,
     models_verify_lifecycle, net_deps_audit, nightly_summarize, one_command_bringup, out_manifest,
     parse_duration_secs, parse_inject, parse_slot, path_scan, policy_diff, policy_explain,
     policy_validate, portability_check, preflight, readiness_gate, release_build_rc,
@@ -1007,9 +1007,35 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     let report = models_recommend_rollback(slot, &workdir)?;
                     println!("{}", serde_json::to_string_pretty(&report)?);
                 }
+                "shadow-ready" => {
+                    let slot = arg_value(&args, "--slot").map(|v| parse_slot(&v)).transpose()?;
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/shadow_ready_report.json"));
+                    let report = models_shadow_ready(&workdir, slot, &out)?;
+                    for slot_report in &report.slots {
+                        let target_prefix = slot_report.target_hash.chars().take(16).collect::<String>();
+                        println!(
+                            "slot={} target={} shadow_ready={}{}",
+                            slot_report.slot_id,
+                            target_prefix,
+                            if slot_report.shadow_ready { "yes" } else { "no" },
+                            slot_report
+                                .denial_reason_code
+                                .as_ref()
+                                .map(|v| format!(" reason={v}"))
+                                .unwrap_or_default()
+                        );
+                    }
+                    println!("overall={:?}", report.overall_status);
+                    println!("out={}", out.display());
+                    if !matches!(report.overall_status, ucf_ops::AggregatedStatusV1::Pass) {
+                        std::process::exit(2);
+                    }
+                }
                 _ => {
                     return Err(
-                        "usage: ucf-ops models <verify|probe|stage|promote|rollback|list|active-check|recommend-rollback> ..."
+                        "usage: ucf-ops models <verify|probe|stage|promote|rollback|list|active-check|recommend-rollback|shadow-ready> ..."
                             .into(),
                     )
                 }

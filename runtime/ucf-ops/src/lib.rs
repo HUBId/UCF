@@ -42,9 +42,11 @@ pub use goldens::{
 };
 pub use models_lifecycle::{
     can_enable_active, models_active_check, models_list, models_probe_slot, models_promote,
-    models_recommend_rollback, models_rollback, models_stage,
+    models_recommend_rollback, models_rollback, models_shadow_ready, models_stage,
     models_verify as models_verify_lifecycle, parse_slot, ActiveCheckStatus,
-    ActiveEnablementDeniedCode, ActiveEnablementEvidenceV1, ModelsActiveCheckReport, ProbeReportV1,
+    ActiveEnablementDeniedCode, ActiveEnablementEvidenceV1, AggregatedEvidenceReportV1,
+    AggregatedStatusV1, ModelsActiveCheckReport, ProbeReportV1, ShadowReadyCheckRecordV1,
+    ShadowReadyEvidenceV1,
 };
 pub use nightly::{
     nightly_summarize, NightlyComponentReport, NightlyOverallStatus, NightlySummarizeArgs,
@@ -5529,6 +5531,39 @@ fn strict_v1_checks(
             }
         } else {
             checks.push(strict_pass("v2_world_parity_evidence_required"));
+        }
+
+        let strict_shadow_evidence_required = std::env::var("UCF_STRICT_SHADOW_EVIDENCE_REQUIRED")
+            .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+            .unwrap_or(false);
+        if strict_shadow_evidence_required {
+            let strict_shadow_evidence_hard_fail =
+                std::env::var("UCF_STRICT_SHADOW_EVIDENCE_HARD_FAIL")
+                    .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+                    .unwrap_or(false);
+            match models_lifecycle::models_shadow_ready(workdir, None, &workdir.join("out/shadow_ready_report.json")) {
+                Ok(report) if matches!(report.overall_status, models_lifecycle::AggregatedStatusV1::Pass) => {
+                    evidence_digest_prefixes.insert(
+                        "shadow_ready_report".to_string(),
+                        prefix_hex(&report.report_digest, 16),
+                    );
+                    checks.push(strict_pass("v2_shadow_ready_evidence_required"));
+                }
+                Ok(_) if strict_shadow_evidence_hard_fail => checks.push(strict_fail(
+                    "v2_shadow_ready_evidence_required",
+                    "strict.v2.shadow_ready.evidence_missing",
+                    "run `cargo run -p ucf-ops -- models shadow-ready --out ./out/shadow_ready_report.json` after compare windows are available",
+                )),
+                Ok(_) => checks.push(strict_pass("v2_shadow_ready_evidence_required")),
+                Err(_) if strict_shadow_evidence_hard_fail => checks.push(strict_fail(
+                    "v2_shadow_ready_evidence_required",
+                    "strict.v2.shadow_ready.evidence_missing",
+                    "run `cargo run -p ucf-ops -- models shadow-ready --out ./out/shadow_ready_report.json` once probe + compare evidence exists",
+                )),
+                Err(_) => checks.push(strict_pass("v2_shadow_ready_evidence_required")),
+            }
+        } else {
+            checks.push(strict_pass("v2_shadow_ready_evidence_required"));
         }
     } else {
         checks.push(strict_pass("v1_shadow_requires_drift_budget"));

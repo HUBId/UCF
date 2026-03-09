@@ -20,6 +20,8 @@ const MAX_MANIFEST_BYTES: usize = 1024 * 1024;
 const MAX_SLOT_FILES: usize = 512;
 const PROBE_SCHEMA_VERSION: u16 = 1;
 const PROBE_DIGEST_PREFIX_LEN: usize = 16;
+const SHADOW_READY_SCHEMA_VERSION: u16 = 1;
+const SHADOW_READY_MAX_SLOTS: usize = 2;
 const PROBE_OUTPUT_CAP: usize = 8;
 const PROBE_NOTES_CAP: usize = 8;
 const SAE_SPIKE_COUNT_KMAX: u32 = 1024;
@@ -102,6 +104,48 @@ pub struct ActiveEnablementEvidenceV1 {
     pub latest_drift_status: DriftStatusV1,
     pub evidence_window_ticks: u64,
     pub evidence_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ShadowReadyEvidenceV1 {
+    pub slot_id: String,
+    pub target_hash: String,
+    pub manifest_digest_prefix: String,
+    pub latest_probe_report_digest_prefix: String,
+    pub latest_probe_status: ProbeReportStatus,
+    pub latest_compare_window_digest_prefix: String,
+    pub compare_window_present: bool,
+    pub no_impact_verified: bool,
+    pub latest_drift_status: DriftStatusV1,
+    pub shadow_ready: bool,
+    pub denial_reason_code: Option<String>,
+    pub evidence_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ShadowReadyCheckRecordV1 {
+    pub slot_id: String,
+    pub target_hash: String,
+    pub status: ActiveCheckStatus,
+    pub evidence_digest_prefix: Option<String>,
+    pub denial_reason_code: Option<String>,
+    pub policy_graph_digest_prefix: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum AggregatedStatusV1 {
+    Pass,
+    Fail,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AggregatedEvidenceReportV1 {
+    pub schema_version: u16,
+    pub overall_status: AggregatedStatusV1,
+    pub slots: Vec<ShadowReadyEvidenceV1>,
+    pub generated_at: u64,
+    pub report_digest: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -476,6 +520,45 @@ pub fn models_active_check(
     Ok(report)
 }
 
+pub fn models_shadow_ready(
+    workdir: &Path,
+    requested_slot: Option<ModelSlot>,
+    out: &Path,
+) -> Result<AggregatedEvidenceReportV1, OpsError> {
+    let slots = supported_real_slots(requested_slot)?;
+    let mut slot_reports = Vec::new();
+    for slot in slots {
+        slot_reports.push(build_shadow_ready_evidence(slot, workdir)?);
+    }
+    slot_reports.sort_by(|a, b| a.slot_id.cmp(&b.slot_id));
+    let overall_status = if slot_reports.iter().all(|s| s.shadow_ready) {
+        AggregatedStatusV1::Pass
+    } else {
+        AggregatedStatusV1::Fail
+    };
+    let generated_at = now_secs();
+    let mut digest_source = Vec::new();
+    digest_source.extend_from_slice(SHADOW_READY_SCHEMA_VERSION.to_string().as_bytes());
+    digest_source.extend_from_slice(format!("{:?}", overall_status).as_bytes());
+    for slot in &slot_reports {
+        digest_source.extend_from_slice(slot.evidence_digest.as_bytes());
+    }
+    let report_digest = sha256_hex(&digest_source);
+    let report = AggregatedEvidenceReportV1 {
+        schema_version: SHADOW_READY_SCHEMA_VERSION,
+        overall_status,
+        slots: slot_reports,
+        generated_at,
+        report_digest,
+    };
+    if let Some(parent) = out.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(out, serde_json::to_vec_pretty(&report)?)?;
+    append_shadow_ready_records(workdir, &report)?;
+    Ok(report)
+}
+
 pub fn can_enable_active(
     slot: ModelSlot,
     target_hash: &str,
@@ -696,6 +779,234 @@ fn append_active_check_record(
     });
     fs::write(path, serde_json::to_vec_pretty(&all)?)?;
     Ok(())
+}
+
+fn append_shadow_ready_records(
+    workdir: &Path,
+    report: &AggregatedEvidenceReportV1,
+) -> Result<(), OpsError> {
+    let path = workdir.join("out").join("shadow_ready_checks.json");
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let mut all: Vec<ShadowReadyCheckRecordV1> = if path.exists() {
+        serde_json::from_str(&fs::read_to_string(&path)?)?
+    } else {
+        Vec::new()
+    };
+    let policy_graph_digest_prefix = read_policy_graph_digest_prefix();
+    for slot in &report.slots {
+        all.push(ShadowReadyCheckRecordV1 {
+            slot_id: slot.slot_id.clone(),
+            target_hash: slot.target_hash.clone(),
+            status: if slot.shadow_ready {
+                ActiveCheckStatus::Pass
+            } else {
+                ActiveCheckStatus::Fail
+            },
+            evidence_digest_prefix: Some(prefix_hex(&slot.evidence_digest, 16)),
+            denial_reason_code: slot.denial_reason_code.clone(),
+            policy_graph_digest_prefix: policy_graph_digest_prefix.clone(),
+        });
+    }
+    fs::write(path, serde_json::to_vec_pretty(&all)?)?;
+    Ok(())
+}
+
+fn read_policy_graph_digest_prefix() -> String {
+    fs::read_to_string(PathBuf::from("out").join("gate_report.json"))
+        .ok()
+        .and_then(|body| serde_json::from_str::<serde_json::Value>(&body).ok())
+        .and_then(|v| {
+            v.get("policy_graph_digest")
+                .and_then(|x| x.as_str())
+                .map(|x| x.to_string())
+        })
+        .map(|value| prefix_hex(&value, 16))
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
+fn supported_real_slots(requested_slot: Option<ModelSlot>) -> Result<Vec<ModelSlot>, OpsError> {
+    let second_slot = detect_second_real_slot_from_docs()?;
+    let mut supported = vec![ModelSlot::WorldJepa, second_slot];
+    supported.sort_by_key(|s| s.as_str().to_string());
+    supported.dedup();
+    if supported.len() != SHADOW_READY_MAX_SLOTS {
+        return Err(OpsError::Invalid(
+            "SHADOW_READY_UNSUPPORTED_SLOT_SET: expected exactly world_jepa plus one secondary slot".to_string(),
+        ));
+    }
+    if let Some(slot) = requested_slot {
+        if supported.contains(&slot) {
+            Ok(vec![slot])
+        } else {
+            Err(OpsError::Invalid(format!(
+                "SHADOW_READY_SLOT_NOT_SUPPORTED: slot {} not in supported set [world_jepa, {}]",
+                slot.as_str(),
+                second_slot.as_str()
+            )))
+        }
+    } else {
+        Ok(supported)
+    }
+}
+
+fn detect_second_real_slot_from_docs() -> Result<ModelSlot, OpsError> {
+    let direct = PathBuf::from("docs/series_state_snapshot.md");
+    let fallback = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join("docs/series_state_snapshot.md");
+    let body = fs::read_to_string(&direct)
+        .or_else(|_| fs::read_to_string(&fallback))
+        .map_err(|_| {
+            OpsError::Invalid(
+                "SHADOW_READY_SECOND_SLOT_UNKNOWN: missing docs/series_state_snapshot.md; set tiny real fixture second slot to sae or ssm and regenerate docs".to_string(),
+            )
+        })?;
+    for line in body.lines() {
+        if line.contains("Second supported slot") {
+            let lower = line.to_ascii_lowercase();
+            if lower.contains("`sae`") || lower.contains(" sae") {
+                return Ok(ModelSlot::Sae);
+            }
+            if lower.contains("`ssm`") || lower.contains(" ssm") {
+                return Ok(ModelSlot::Ssm);
+            }
+            return Err(OpsError::Invalid(
+                "SHADOW_READY_SECOND_SLOT_UNKNOWN: only sae or ssm are allowed; update docs/series_state_snapshot.md and rerun".to_string(),
+            ));
+        }
+    }
+    Err(OpsError::Invalid(
+        "SHADOW_READY_SECOND_SLOT_UNKNOWN: unable to locate second-slot declaration; add it to docs/series_state_snapshot.md".to_string(),
+    ))
+}
+
+fn build_shadow_ready_evidence(
+    slot: ModelSlot,
+    workdir: &Path,
+) -> Result<ShadowReadyEvidenceV1, OpsError> {
+    let manifest = load_or_init_manifest()?;
+    let slot_id = slot.as_str().to_string();
+    let target_hash = manifest
+        .slots
+        .iter()
+        .find(|s| s.slot_id == slot_id)
+        .and_then(|s| s.active_hash.clone())
+        .ok_or_else(|| OpsError::Invalid(format!("slot {} has no active hash", slot.as_str())))?;
+    let manifest_digest_prefix = prefix_hex(&manifest.manifest_digest, 16);
+    let probe_path = PathBuf::from("out").join(format!("probe_{}.json", slot.as_str()));
+    let probe: Option<ProbeReportV1> = fs::read_to_string(&probe_path)
+        .ok()
+        .and_then(|body| serde_json::from_str(&body).ok());
+    let latest_probe_report_digest_prefix = probe
+        .as_ref()
+        .map(|p| prefix_hex(&sha256_hex(&serde_json::to_vec(p).unwrap_or_default()), 16))
+        .unwrap_or_else(|| "missing".to_string());
+    let latest_probe_status = probe
+        .as_ref()
+        .map(|p| p.status.clone())
+        .unwrap_or(ProbeReportStatus::Fail);
+
+    let fixture_path = workdir.join("ess").join("ess_fixture.json");
+    let records = load_fixture_records(&fixture_path).unwrap_or_default();
+    let mut latest_compare: Option<ucf_ess::v1::SlotCompareWindowRecordV1> = None;
+    let mut drift_status = DriftStatusV1::Unknown;
+    for record in records {
+        if let ExperiencePayload::Audit(payload) = record.payload {
+            match payload {
+                AuditPayload::SlotCompareWindow(window) if window.slot_id == slot.as_str() => {
+                    latest_compare = Some(window);
+                }
+                AuditPayload::DriftAlarm(alarm) if alarm.slot_id == slot.as_str() => {
+                    drift_status = if alarm.severity.eq_ignore_ascii_case("severe") {
+                        DriftStatusV1::Severe
+                    } else {
+                        DriftStatusV1::Warn
+                    };
+                }
+                _ => {}
+            }
+        }
+    }
+    let compare_window_present = latest_compare.is_some();
+    let latest_compare_window_digest_prefix = latest_compare
+        .as_ref()
+        .map(compare_digest_prefix)
+        .unwrap_or_else(|| "missing".to_string());
+    if matches!(drift_status, DriftStatusV1::Unknown) {
+        drift_status = DriftStatusV1::Ok;
+    }
+    let no_impact_verified = fs::read_to_string(PathBuf::from("out").join("gate_report.json"))
+        .ok()
+        .and_then(|body| serde_json::from_str::<serde_json::Value>(&body).ok())
+        .and_then(|v| v.get("checks").and_then(|c| c.as_array()).cloned())
+        .map(|checks| {
+            checks.iter().any(|c| {
+                c.get("name").and_then(|v| v.as_str()) == Some("shadow_no_decision_impact")
+                    && c.get("status").and_then(|v| v.as_str()) == Some("PASS")
+            })
+        })
+        .unwrap_or(false);
+
+    let denial_reason_code = if !matches!(latest_probe_status, ProbeReportStatus::Pass) {
+        Some("SHADOW_READY_PROBE_REQUIRED".to_string())
+    } else if !compare_window_present {
+        Some("SHADOW_READY_COMPARE_WINDOW_MISSING".to_string())
+    } else if !no_impact_verified {
+        Some("SHADOW_READY_NO_IMPACT_MISSING".to_string())
+    } else if matches!(drift_status, DriftStatusV1::Severe) {
+        Some("SHADOW_READY_DRIFT_SEVERE".to_string())
+    } else {
+        None
+    };
+    let shadow_ready = denial_reason_code.is_none();
+
+    let mut digest_source = Vec::new();
+    digest_source.extend_from_slice(slot_id.as_bytes());
+    digest_source.extend_from_slice(target_hash.as_bytes());
+    digest_source.extend_from_slice(manifest_digest_prefix.as_bytes());
+    digest_source.extend_from_slice(latest_probe_report_digest_prefix.as_bytes());
+    digest_source.extend_from_slice(format!("{:?}", latest_probe_status).as_bytes());
+    digest_source.extend_from_slice(latest_compare_window_digest_prefix.as_bytes());
+    digest_source.extend_from_slice(if compare_window_present { b"1" } else { b"0" });
+    digest_source.extend_from_slice(if no_impact_verified { b"1" } else { b"0" });
+    digest_source.extend_from_slice(format!("{:?}", drift_status).as_bytes());
+    digest_source.extend_from_slice(if shadow_ready { b"1" } else { b"0" });
+    if let Some(reason) = denial_reason_code.as_ref() {
+        digest_source.extend_from_slice(reason.as_bytes());
+    }
+    let evidence_digest = sha256_hex(&digest_source);
+    Ok(ShadowReadyEvidenceV1 {
+        slot_id,
+        target_hash,
+        manifest_digest_prefix,
+        latest_probe_report_digest_prefix,
+        latest_probe_status,
+        latest_compare_window_digest_prefix,
+        compare_window_present,
+        no_impact_verified,
+        latest_drift_status: drift_status,
+        shadow_ready,
+        denial_reason_code,
+        evidence_digest,
+    })
+}
+
+fn compare_digest_prefix(compare: &ucf_ess::v1::SlotCompareWindowRecordV1) -> String {
+    let compare_digest = sha256_hex(
+        format!(
+            "{}:{}:{}:{}:{}:{}",
+            compare.slot_id,
+            compare.t0,
+            compare.t1,
+            compare.sample_count,
+            compare.mean_delta_q,
+            compare.p95_delta_q
+        )
+        .as_bytes(),
+    );
+    prefix_hex(&compare_digest, 16)
 }
 
 fn slot_mode_from_env(slot: ModelSlot) -> &'static str {
@@ -2166,6 +2477,91 @@ mod probe_tests {
         ));
     }
 
+    #[test]
+    fn detects_second_supported_real_slot_from_docs() {
+        let slot = detect_second_real_slot_from_docs().expect("second slot");
+        assert_eq!(slot, ModelSlot::Sae);
+    }
+
+    #[test]
+    fn unknown_second_slot_configuration_fails_with_hint() {
+        let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let _cwd = CwdGuard::enter(dir.path());
+        fs::create_dir_all("docs").expect("docs dir");
+        fs::write(
+            "docs/series_state_snapshot.md",
+            "- Second supported slot in this stage: `invalid_slot`
+",
+        )
+        .expect("series snapshot");
+        let err = supported_real_slots(None).expect_err("must fail");
+        assert!(err.to_string().contains("sae or ssm"));
+    }
+
+    #[test]
+    fn shadow_ready_evidence_digest_is_stable() {
+        let ev = ShadowReadyEvidenceV1 {
+            slot_id: "world_jepa".to_string(),
+            target_hash: "abc123".to_string(),
+            manifest_digest_prefix: "m1".to_string(),
+            latest_probe_report_digest_prefix: "p1".to_string(),
+            latest_probe_status: ProbeReportStatus::Pass,
+            latest_compare_window_digest_prefix: "c1".to_string(),
+            compare_window_present: true,
+            no_impact_verified: true,
+            latest_drift_status: DriftStatusV1::Ok,
+            shadow_ready: true,
+            denial_reason_code: None,
+            evidence_digest: "d1".to_string(),
+        };
+        let mut digest_source = Vec::new();
+        digest_source.extend_from_slice(ev.slot_id.as_bytes());
+        digest_source.extend_from_slice(ev.target_hash.as_bytes());
+        digest_source.extend_from_slice(ev.manifest_digest_prefix.as_bytes());
+        digest_source.extend_from_slice(ev.latest_probe_report_digest_prefix.as_bytes());
+        digest_source.extend_from_slice(format!("{:?}", ev.latest_probe_status).as_bytes());
+        digest_source.extend_from_slice(ev.latest_compare_window_digest_prefix.as_bytes());
+        digest_source.extend_from_slice(b"1");
+        digest_source.extend_from_slice(b"1");
+        digest_source.extend_from_slice(format!("{:?}", ev.latest_drift_status).as_bytes());
+        digest_source.extend_from_slice(b"1");
+        let a = sha256_hex(&digest_source);
+        let b = sha256_hex(&digest_source);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn models_shadow_ready_fails_without_required_evidence() {
+        let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let _cwd = CwdGuard::enter(dir.path());
+
+        fs::create_dir_all("docs").expect("docs dir");
+        fs::write(
+            "docs/series_state_snapshot.md",
+            "- Second supported slot in this stage: `sae`\n",
+        )
+        .expect("series snapshot");
+
+        let world_src = materialize_world_real_tiny_fixture(dir.path());
+        let sae_src = materialize_sae_real_tiny_fixture(dir.path());
+        let world_hash = models_stage(ModelSlot::WorldJepa, &world_src)
+            .expect("stage world")
+            .hash;
+        let sae_hash = models_stage(ModelSlot::Sae, &sae_src)
+            .expect("stage sae")
+            .hash;
+        models_promote(ModelSlot::WorldJepa, &world_hash, None).expect("promote world");
+        models_promote(ModelSlot::Sae, &sae_hash, None).expect("promote sae");
+
+        let out = PathBuf::from("out/shadow_ready_report.json");
+        let report = models_shadow_ready(Path::new("."), None, &out).expect("shadow-ready report");
+        assert!(matches!(report.overall_status, AggregatedStatusV1::Fail));
+        assert_eq!(report.slots.len(), 2);
+        assert!(report.slots.iter().all(|slot| !slot.shadow_ready));
+        assert!(out.exists());
+    }
     #[test]
     fn active_evidence_digest_is_stable() {
         let ev = ActiveEnablementEvidenceV1 {
