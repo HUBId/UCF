@@ -54,7 +54,10 @@ pub use soak::{
     parse_duration_secs, parse_inject, soak_run, InjectTrigger, SoakReport, SoakRunArgs, SoakStatus,
 };
 pub use spec_snapshot::{generate_spec_snapshot, SpecSnapshotArgs};
-pub use world_shadow::{world_shadow_report, WorldShadowReport};
+pub use world_shadow::{
+    world_parity_evidence_exists, world_parity_report, world_shadow_report,
+    WorldBackendEligibilityV1, WorldParityRecordV1, WorldParityReportV1, WorldShadowReport,
+};
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fs;
@@ -5503,6 +5506,29 @@ fn strict_v1_checks(
                 "strict.v1.shadow.compare_window_disabled",
                 "set UCF_SLOT_COMPARE_WINDOW to a positive integer to emit SlotCompareWindow records",
             ));
+        }
+
+        let world_compare_configured = std::env::var("UCF_WORLD_PARITY_COMPARE_ENABLED")
+            .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+            .unwrap_or(false);
+        let candle_shadow = std::env::var("UCF_WORLD_CANDLE_SHADOW_ENABLED")
+            .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+            .unwrap_or(false);
+        let burn_shadow = std::env::var("UCF_WORLD_BURN_SHADOW_ENABLED")
+            .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+            .unwrap_or(false);
+        if world_compare_configured && candle_shadow && burn_shadow {
+            if world_parity_evidence_exists(workdir) {
+                checks.push(strict_pass("v2_world_parity_evidence_required"));
+            } else {
+                checks.push(strict_fail(
+                    "v2_world_parity_evidence_required",
+                    "PARITY_EVIDENCE_MISSING",
+                    "run `cargo run -p ucf-ops -- world parity-report --run <id> --out ./out/world_parity_report.json`",
+                ));
+            }
+        } else {
+            checks.push(strict_pass("v2_world_parity_evidence_required"));
         }
     } else {
         checks.push(strict_pass("v1_shadow_requires_drift_budget"));
