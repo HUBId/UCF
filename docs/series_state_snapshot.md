@@ -36,3 +36,9 @@ Reference: `docs/next_10_prompts.md`
 - v1 completion requirement: **`ucf-ops v1 gate` overall PASS**.
 - v2 real backend work is optional, probe-first, and shadow-only by default.
 - Prompts are classified as MUST/NICE/DEFERRED at authoring time.
+
+## Tiny real fixture coverage (v2)
+
+- First supported slot: `world_jepa` (from previous prompt chain).
+- Second supported slot in this stage: `sae` (chosen over `ssm` for lower-invasiveness and already-auditable probe contract).
+- `sae` remains **shadow-only** at this stage; active requests are denied with `ACTIVE_NOT_ENABLED_FOR_SLOT_STAGE`.

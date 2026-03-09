@@ -113,6 +113,7 @@ pub enum ActiveEnablementDeniedCode {
     ActiveDeniedHashMismatch,
     ActiveDeniedStrictMode,
     ActiveDeniedBackendNotYetAllowed,
+    ActiveNotEnabledForSlotStage,
     ProbeRequired,
     BackendDisabled,
 }
@@ -492,6 +493,14 @@ pub fn can_enable_active(
         return Err(EnablementDenied {
             code: ActiveEnablementDeniedCode::ActiveDeniedBackendNotYetAllowed,
             detail: "ACTIVE_DENIED_BACKEND_NOT_YET_ALLOWED: burn world active mode is not supported in v0".to_string(),
+        });
+    }
+    if slot == ModelSlot::Sae {
+        return Err(EnablementDenied {
+            code: ActiveEnablementDeniedCode::ActiveNotEnabledForSlotStage,
+            detail:
+                "ACTIVE_NOT_ENABLED_FOR_SLOT_STAGE: sae remains shadow-only in tiny real fixture v2"
+                    .to_string(),
         });
     }
     let manifest = load_or_init_manifest().map_err(|e| EnablementDenied {
@@ -1814,6 +1823,18 @@ mod probe_tests {
         dir
     }
 
+    fn materialize_sae_real_tiny_fixture(dst_root: &Path) -> PathBuf {
+        let fixture_hex = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/weights/sae_real_tiny.safetensors.hex");
+        let raw_hex = fs::read_to_string(&fixture_hex).expect("fixture hex");
+        let bytes =
+            hex::decode(raw_hex.trim()).expect("fixture hex must decode into deterministic bytes");
+        let dir = dst_root.join("fixtures/weights/sae_real_tiny_dir");
+        fs::create_dir_all(&dir).expect("fixture dir");
+        fs::write(dir.join("model.safetensors"), bytes).expect("fixture model");
+        dir
+    }
+
     struct CwdGuard {
         prev: PathBuf,
     }
@@ -1990,6 +2011,78 @@ mod probe_tests {
     }
 
     #[test]
+    fn sae_real_tiny_fixture_hash_is_stable() {
+        let fixture_hex = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/weights/sae_real_tiny.safetensors.hex");
+        let raw_hex = fs::read_to_string(&fixture_hex).expect("fixture hex");
+        let bytes = hex::decode(raw_hex.trim()).expect("fixture bytes");
+        let digest = hex::encode(Sha256::digest(&bytes));
+        assert_eq!(
+            digest,
+            "0f1ea81381690179efb5058ff06379423142265b2e6e80ca731ecd8ad8330c57"
+        );
+    }
+
+    #[test]
+    fn sae_real_tiny_stage_probe_promote_probe_flow() {
+        let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let _cwd = CwdGuard::enter(dir.path());
+
+        let src = materialize_sae_real_tiny_fixture(dir.path());
+        let staged = models_stage(ModelSlot::Sae, &src).expect("stage");
+
+        let manifest_before = load_or_init_manifest()
+            .expect("manifest before")
+            .manifest_digest;
+        let staged_probe_out = dir.path().join("out/probe_sae_staged.json");
+        let staged_report =
+            models_probe_slot(ModelSlot::Sae, Some(&staged.hash), &staged_probe_out)
+                .expect("staged probe");
+        let manifest_after = load_or_init_manifest()
+            .expect("manifest after")
+            .manifest_digest;
+        assert!(staged_report.pass());
+        assert_eq!(manifest_before, manifest_after);
+
+        let promote = models_promote(ModelSlot::Sae, &staged.hash, Some(4)).expect("promote");
+        assert_eq!(promote.slot, "sae");
+        assert_eq!(promote.to_hash, staged.hash);
+
+        let active_probe_out = dir.path().join("out/probe_sae_active.json");
+        let active_report =
+            models_probe_slot(ModelSlot::Sae, None, &active_probe_out).expect("active probe");
+        assert!(active_report.pass());
+        assert_eq!(active_report.mode, ProbeMode::Active);
+        assert_eq!(
+            active_report.model_hash_prefix.as_deref(),
+            Some(&staged.hash[..PROBE_DIGEST_PREFIX_LEN])
+        );
+    }
+
+    #[test]
+    fn sae_tampered_promoted_fixture_fails_verify() {
+        let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let _cwd = CwdGuard::enter(dir.path());
+
+        let src = materialize_sae_real_tiny_fixture(dir.path());
+        let staged = models_stage(ModelSlot::Sae, &src).expect("stage");
+        let _promoted = models_promote(ModelSlot::Sae, &staged.hash, None).expect("promote");
+
+        let promoted_model = PathBuf::from("models")
+            .join("promoted")
+            .join("sae")
+            .join(&staged.hash)
+            .join("model.safetensors");
+        fs::write(promoted_model, b"tampered").expect("tamper");
+
+        let verify = models_verify(Path::new(MANIFEST_PATH)).expect("verify");
+        assert!(verify.manifest_present);
+        assert!(!verify.files_verified);
+    }
+
+    #[test]
     fn active_check_denies_without_probe() {
         let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
         let dir = tempfile::tempdir().expect("tempdir");
@@ -2018,6 +2111,41 @@ mod probe_tests {
         assert!(matches!(
             denied.code,
             ActiveEnablementDeniedCode::ProbeRequired
+        ));
+    }
+
+    #[test]
+    fn active_check_denies_sae_for_slot_stage() {
+        let denied = can_enable_active(ModelSlot::Sae, "deadbeef", Path::new("."), false, false)
+            .expect_err("must deny");
+        assert!(matches!(
+            denied.code,
+            ActiveEnablementDeniedCode::ActiveNotEnabledForSlotStage
+        ));
+    }
+
+    #[test]
+    fn strict_mode_active_hash_missing_promoted_artifact_fails() {
+        let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let _cwd = CwdGuard::enter(dir.path());
+
+        let src = dir.path().join("fixtures/models_dummy/ssm");
+        fs::create_dir_all(&src).expect("src");
+        fs::write(src.join("model.safetensors"), b"dummy-ssm-v1").expect("model");
+        let staged = models_stage(ModelSlot::Ssm, &src).expect("stage");
+        let _promoted = models_promote(ModelSlot::Ssm, &staged.hash, None).expect("promote");
+        let promoted_dir = PathBuf::from("models")
+            .join("promoted")
+            .join("ssm")
+            .join(&staged.hash);
+        fs::remove_dir_all(promoted_dir).expect("remove promoted");
+
+        let denied = can_enable_active(ModelSlot::Ssm, &staged.hash, Path::new("."), true, false)
+            .expect_err("must deny");
+        assert!(matches!(
+            denied.code,
+            ActiveEnablementDeniedCode::ActiveDeniedHashMismatch
         ));
     }
 
