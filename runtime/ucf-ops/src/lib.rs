@@ -41,12 +41,12 @@ pub use goldens::{
     GoldenVerifyScenarioReport,
 };
 pub use models_lifecycle::{
-    can_enable_active, models_active_check, models_list, models_probe_slot, models_promote,
-    models_recommend_rollback, models_rollback, models_shadow_ready, models_stage,
+    can_enable_active, models_active_check, models_active_evidence, models_list, models_probe_slot,
+    models_promote, models_recommend_rollback, models_rollback, models_shadow_ready, models_stage,
     models_verify as models_verify_lifecycle, parse_slot, ActiveCheckStatus,
     ActiveEnablementDeniedCode, ActiveEnablementEvidenceV1, AggregatedEvidenceReportV1,
     AggregatedStatusV1, ModelsActiveCheckReport, ProbeReportV1, ShadowReadyCheckRecordV1,
-    ShadowReadyEvidenceV1,
+    ShadowReadyEvidenceV1, SupportedRealSlotsActiveViewV1,
 };
 pub use nightly::{
     nightly_summarize, NightlyComponentReport, NightlyOverallStatus, NightlySummarizeArgs,
@@ -169,6 +169,12 @@ pub struct OpsConfig {
     pub stage_isolation_optional: bool,
     pub emergency_policy_pin: Option<String>,
     pub log_level: String,
+    pub active_evidence_probe_max_age_ticks: u64,
+    pub active_evidence_compare_max_age_ticks: u64,
+    pub active_evidence_no_impact_max_age_ticks: u64,
+    pub active_evidence_drift_status_max_age_ticks: u64,
+    pub active_evidence_allow_warn_drift_for_active: bool,
+    pub active_evidence_require_matching_target_hash: bool,
     pub config_digest: String,
 }
 
@@ -193,6 +199,12 @@ impl Default for OpsConfig {
             stage_isolation_optional: true,
             emergency_policy_pin: None,
             log_level: "info".to_string(),
+            active_evidence_probe_max_age_ticks: 256,
+            active_evidence_compare_max_age_ticks: 256,
+            active_evidence_no_impact_max_age_ticks: 256,
+            active_evidence_drift_status_max_age_ticks: 256,
+            active_evidence_allow_warn_drift_for_active: false,
+            active_evidence_require_matching_target_hash: true,
             config_digest: String::new(),
         }
     }
@@ -6537,6 +6549,12 @@ fn diff_ops_config_keys(current: &OpsConfig, updated: &OpsConfig) -> Vec<String>
     changed!(stage_isolation_optional);
     changed!(emergency_policy_pin);
     changed!(log_level);
+    changed!(active_evidence_probe_max_age_ticks);
+    changed!(active_evidence_compare_max_age_ticks);
+    changed!(active_evidence_no_impact_max_age_ticks);
+    changed!(active_evidence_drift_status_max_age_ticks);
+    changed!(active_evidence_allow_warn_drift_for_active);
+    changed!(active_evidence_require_matching_target_hash);
     keys.sort();
     keys
 }

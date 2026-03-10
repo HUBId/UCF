@@ -76,3 +76,8 @@ These are intentionally different:
 
 - `Shadow-Ready != Active-Eligible`
 - A slot can be shadow-ready and still be denied for active mode by policy/stage rules.
+
+
+## Superseded note (v3)
+- v2 single-slot framing is generalized in v3 to the supported real-slot set (world + declared second slot).
+- See `docs/active_evidence_v3.md` for unified freshness and denial-code semantics.

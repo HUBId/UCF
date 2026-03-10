@@ -22,6 +22,7 @@ const PROBE_SCHEMA_VERSION: u16 = 1;
 const PROBE_DIGEST_PREFIX_LEN: usize = 16;
 const SHADOW_READY_SCHEMA_VERSION: u16 = 1;
 const SHADOW_READY_MAX_SLOTS: usize = 2;
+const SUPPORTED_REAL_SLOT_SET_VERSION: &str = "v3_supported_real_slots_max2";
 const PROBE_OUTPUT_CAP: usize = 8;
 const PROBE_NOTES_CAP: usize = 8;
 const SAE_SPIKE_COUNT_KMAX: u32 = 1024;
@@ -103,7 +104,21 @@ pub struct ActiveEnablementEvidenceV1 {
     pub shadow_no_impact_verified: bool,
     pub latest_drift_status: DriftStatusV1,
     pub evidence_window_ticks: u64,
+    pub freshness_probe_age_ticks: u64,
+    pub freshness_compare_age_ticks: u64,
+    pub freshness_no_impact_age_ticks: u64,
+    pub freshness_drift_status_age_ticks: u64,
     pub evidence_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct UnifiedActiveEvidencePolicyV1 {
+    pub freshness_probe_max_age_ticks: u64,
+    pub freshness_compare_max_age_ticks: u64,
+    pub freshness_no_impact_max_age_ticks: u64,
+    pub freshness_drift_status_max_age_ticks: u64,
+    pub allow_warn_drift_for_active: bool,
+    pub require_matching_target_hash: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -152,8 +167,13 @@ pub struct AggregatedEvidenceReportV1 {
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ActiveEnablementDeniedCode {
     ActiveDeniedNoProbe,
-    ActiveDeniedNoShadowEvidence,
-    ActiveDeniedDrift,
+    ActiveDeniedStaleProbe,
+    ActiveDeniedNoCompare,
+    ActiveDeniedStaleCompare,
+    ActiveDeniedNoNoimpact,
+    ActiveDeniedStaleNoimpact,
+    ActiveDeniedDriftSevere,
+    ActiveDeniedDriftWarn,
     ActiveDeniedHashMismatch,
     ActiveDeniedStrictMode,
     ActiveDeniedBackendNotYetAllowed,
@@ -182,7 +202,33 @@ pub struct ActiveEnablementCheckRecordV1 {
     pub status: ActiveCheckStatus,
     pub denial_code: Option<ActiveEnablementDeniedCode>,
     pub evidence_digest_prefix: Option<String>,
+    pub freshness_probe_age_ticks: Option<u64>,
+    pub freshness_compare_age_ticks: Option<u64>,
+    pub freshness_no_impact_age_ticks: Option<u64>,
+    pub freshness_drift_status_age_ticks: Option<u64>,
     pub timestamp: u64,
+    pub supported_slot_set_scope: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SupportedRealSlotActiveViewEntryV1 {
+    pub slot_id: String,
+    pub target_hash: String,
+    pub active_eligible: bool,
+    pub denial_reason_code: Option<String>,
+    pub evidence_digest_prefix: Option<String>,
+    pub freshness_probe_age_ticks: Option<u64>,
+    pub freshness_compare_age_ticks: Option<u64>,
+    pub freshness_no_impact_age_ticks: Option<u64>,
+    pub freshness_drift_status_age_ticks: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SupportedRealSlotsActiveViewV1 {
+    pub schema_version: u16,
+    pub slot_set_scope: String,
+    pub slots: Vec<SupportedRealSlotActiveViewEntryV1>,
+    pub all_supported_slots_active_eligible: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -520,6 +566,70 @@ pub fn models_active_check(
     Ok(report)
 }
 
+pub fn models_active_evidence(
+    workdir: &Path,
+    out: &Path,
+) -> Result<SupportedRealSlotsActiveViewV1, OpsError> {
+    let slots = supported_real_slots(None)?;
+    let manifest = load_or_init_manifest()?;
+    let policy = unified_active_evidence_policy();
+    let mut entries = Vec::new();
+
+    for slot in slots {
+        let slot_id = slot.as_str().to_string();
+        let target_hash = manifest
+            .slots
+            .iter()
+            .find(|s| s.slot_id == slot_id)
+            .and_then(|s| s.active_hash.clone())
+            .unwrap_or_else(|| "missing".to_string());
+        let eval = if target_hash == "missing" {
+            Err(EnablementDenied {
+                code: ActiveEnablementDeniedCode::ActiveDeniedHashMismatch,
+                detail: "ACTIVE_DENIED_HASH_MISMATCH: slot has no active hash".to_string(),
+            })
+        } else {
+            evaluate_active_evidence(slot, &target_hash, workdir, &policy)
+        };
+        match eval {
+            Ok(ev) => entries.push(SupportedRealSlotActiveViewEntryV1 {
+                slot_id,
+                target_hash,
+                active_eligible: true,
+                denial_reason_code: None,
+                evidence_digest_prefix: Some(prefix_hex(&ev.evidence_digest, 16)),
+                freshness_probe_age_ticks: Some(ev.freshness_probe_age_ticks),
+                freshness_compare_age_ticks: Some(ev.freshness_compare_age_ticks),
+                freshness_no_impact_age_ticks: Some(ev.freshness_no_impact_age_ticks),
+                freshness_drift_status_age_ticks: Some(ev.freshness_drift_status_age_ticks),
+            }),
+            Err(denied) => entries.push(SupportedRealSlotActiveViewEntryV1 {
+                slot_id,
+                target_hash,
+                active_eligible: false,
+                denial_reason_code: Some(format!("{:?}", denied.code)),
+                evidence_digest_prefix: None,
+                freshness_probe_age_ticks: None,
+                freshness_compare_age_ticks: None,
+                freshness_no_impact_age_ticks: None,
+                freshness_drift_status_age_ticks: None,
+            }),
+        }
+    }
+    entries.sort_by(|a, b| a.slot_id.cmp(&b.slot_id));
+    let report = SupportedRealSlotsActiveViewV1 {
+        schema_version: 1,
+        slot_set_scope: SUPPORTED_REAL_SLOT_SET_VERSION.to_string(),
+        all_supported_slots_active_eligible: entries.iter().all(|e| e.active_eligible),
+        slots: entries,
+    };
+    if let Some(parent) = out.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(out, serde_json::to_vec_pretty(&report)?)?;
+    Ok(report)
+}
+
 pub fn models_shadow_ready(
     workdir: &Path,
     requested_slot: Option<ModelSlot>,
@@ -611,28 +721,53 @@ pub fn can_enable_active(
         });
     }
 
+    let policy = unified_active_evidence_policy();
+    evaluate_active_evidence(slot, target_hash, workdir, &policy)
+}
+
+fn unified_active_evidence_policy() -> UnifiedActiveEvidencePolicyV1 {
+    let cfg = crate::load_or_init_config(Path::new(".")).unwrap_or_default();
+    UnifiedActiveEvidencePolicyV1 {
+        freshness_probe_max_age_ticks: cfg.active_evidence_probe_max_age_ticks.max(1),
+        freshness_compare_max_age_ticks: cfg.active_evidence_compare_max_age_ticks.max(1),
+        freshness_no_impact_max_age_ticks: cfg.active_evidence_no_impact_max_age_ticks.max(1),
+        freshness_drift_status_max_age_ticks: cfg.active_evidence_drift_status_max_age_ticks.max(1),
+        allow_warn_drift_for_active: cfg.active_evidence_allow_warn_drift_for_active,
+        require_matching_target_hash: cfg.active_evidence_require_matching_target_hash,
+    }
+}
+
+fn evaluate_active_evidence(
+    slot: ModelSlot,
+    target_hash: &str,
+    workdir: &Path,
+    policy: &UnifiedActiveEvidencePolicyV1,
+) -> Result<ActiveEnablementEvidenceV1, EnablementDenied> {
     let probe_path = PathBuf::from("out").join(format!("probe_{}.json", slot.as_str()));
     let probe: ProbeReportV1 = fs::read_to_string(&probe_path)
         .ok()
         .and_then(|body| serde_json::from_str(&body).ok())
         .ok_or_else(|| EnablementDenied {
-            code: ActiveEnablementDeniedCode::ProbeRequired,
-            detail: format!(
-                "PROBE_REQUIRED: missing probe report: {}",
-                probe_path.display()
-            ),
+            code: ActiveEnablementDeniedCode::ActiveDeniedNoProbe,
+            detail: "ACTIVE_DENIED_NO_PROBE: missing probe report".to_string(),
         })?;
     let expected_hash_prefix = target_hash
         .chars()
         .take(PROBE_DIGEST_PREFIX_LEN)
         .collect::<String>();
-    if probe.slot_id != slot.as_str()
-        || probe.model_hash_prefix.as_deref() != Some(expected_hash_prefix.as_str())
-        || !probe.pass()
+    if !probe.pass() || probe.slot_id != slot.as_str() {
+        return Err(EnablementDenied {
+            code: ActiveEnablementDeniedCode::ActiveDeniedNoProbe,
+            detail: "ACTIVE_DENIED_NO_PROBE: latest probe missing PASS for slot".to_string(),
+        });
+    }
+    if policy.require_matching_target_hash
+        && probe.model_hash_prefix.as_deref() != Some(expected_hash_prefix.as_str())
     {
         return Err(EnablementDenied {
-            code: ActiveEnablementDeniedCode::ProbeRequired,
-            detail: "PROBE_REQUIRED: latest probe missing PASS for slot/hash".to_string(),
+            code: ActiveEnablementDeniedCode::ActiveDeniedHashMismatch,
+            detail: "ACTIVE_DENIED_HASH_MISMATCH: probe hash prefix does not match target hash"
+                .to_string(),
         });
     }
     let latest_probe_digest_prefix = prefix_hex(
@@ -643,16 +778,21 @@ pub fn can_enable_active(
     let fixture_path = workdir.join("ess").join("ess_fixture.json");
     let records = load_fixture_records(&fixture_path).unwrap_or_default();
     let mut latest_compare: Option<ucf_ess::v1::SlotCompareWindowRecordV1> = None;
+    let mut latest_compare_tick = 0_u64;
     let mut max_tick = 0_u64;
     let mut drift_status = DriftStatusV1::Unknown;
+    let mut latest_drift_tick = 0_u64;
     for record in records {
-        max_tick = max_tick.max(record.time.tick.get());
+        let tick = record.time.tick.get();
+        max_tick = max_tick.max(tick);
         if let ExperiencePayload::Audit(payload) = record.payload {
             match payload {
                 AuditPayload::SlotCompareWindow(window) if window.slot_id == slot.as_str() => {
+                    latest_compare_tick = tick;
                     latest_compare = Some(window);
                 }
                 AuditPayload::DriftAlarm(alarm) if alarm.slot_id == slot.as_str() => {
+                    latest_drift_tick = tick;
                     drift_status = if alarm.severity.eq_ignore_ascii_case("severe") {
                         DriftStatusV1::Severe
                     } else {
@@ -663,55 +803,89 @@ pub fn can_enable_active(
             }
         }
     }
+
     let Some(compare) = latest_compare else {
         return Err(EnablementDenied {
-            code: ActiveEnablementDeniedCode::ActiveDeniedNoShadowEvidence,
-            detail: "missing compare window evidence".to_string(),
+            code: ActiveEnablementDeniedCode::ActiveDeniedNoCompare,
+            detail: "ACTIVE_DENIED_NO_COMPARE: missing compare/parity window".to_string(),
         });
     };
-    let evidence_window_ticks = std::env::var("UCF_ACTIVE_EVIDENCE_WINDOW_TICKS")
-        .ok()
-        .and_then(|v| v.parse::<u64>().ok())
-        .unwrap_or(256)
-        .max(1);
-    if max_tick.saturating_sub(compare.t1) > evidence_window_ticks {
+    let freshness_compare_age_ticks = max_tick.saturating_sub(latest_compare_tick);
+    if freshness_compare_age_ticks > policy.freshness_compare_max_age_ticks {
         return Err(EnablementDenied {
-            code: ActiveEnablementDeniedCode::ActiveDeniedNoShadowEvidence,
-            detail: "compare window too old for freshness bound".to_string(),
+            code: ActiveEnablementDeniedCode::ActiveDeniedStaleCompare,
+            detail: "ACTIVE_DENIED_STALE_COMPARE: compare/parity window evidence is stale"
+                .to_string(),
         });
     }
-    let shadow_no_impact_verified =
-        fs::read_to_string(PathBuf::from("out").join("gate_report.json"))
-            .ok()
-            .and_then(|body| serde_json::from_str::<serde_json::Value>(&body).ok())
-            .and_then(|v| v.get("checks").and_then(|c| c.as_array()).cloned())
-            .map(|checks| {
-                checks.iter().any(|c| {
-                    c.get("name").and_then(|v| v.as_str()) == Some("shadow_no_decision_impact")
-                        && c.get("status").and_then(|v| v.as_str()) == Some("PASS")
-                })
+
+    let gate_path = PathBuf::from("out").join("gate_report.json");
+    let gate_json = fs::read_to_string(&gate_path)
+        .ok()
+        .and_then(|body| serde_json::from_str::<serde_json::Value>(&body).ok());
+    let shadow_no_impact_verified = gate_json
+        .as_ref()
+        .and_then(|v| v.get("checks").and_then(|c| c.as_array()))
+        .map(|checks| {
+            checks.iter().any(|c| {
+                c.get("name").and_then(|v| v.as_str()) == Some("shadow_no_decision_impact")
+                    && c.get("status").and_then(|v| v.as_str()) == Some("PASS")
             })
-            .unwrap_or(false);
+        })
+        .unwrap_or(false);
     if !shadow_no_impact_verified {
         return Err(EnablementDenied {
-            code: ActiveEnablementDeniedCode::ActiveDeniedNoShadowEvidence,
-            detail: "shadow no-impact evidence missing or failed".to_string(),
+            code: ActiveEnablementDeniedCode::ActiveDeniedNoNoimpact,
+            detail: "ACTIVE_DENIED_NO_NOIMPACT: no-decision-impact proof missing or failed"
+                .to_string(),
         });
     }
+    let gate_tick = gate_json
+        .as_ref()
+        .and_then(|v| v.get("run_id").and_then(|r| r.as_str()))
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(max_tick);
+    let freshness_no_impact_age_ticks = max_tick.saturating_sub(gate_tick);
+    if freshness_no_impact_age_ticks > policy.freshness_no_impact_max_age_ticks {
+        return Err(EnablementDenied {
+            code: ActiveEnablementDeniedCode::ActiveDeniedStaleNoimpact,
+            detail: "ACTIVE_DENIED_STALE_NOIMPACT: no-decision-impact evidence is stale"
+                .to_string(),
+        });
+    }
+
+    let freshness_probe_age_ticks = max_tick.saturating_sub(compare.t1);
+    if freshness_probe_age_ticks > policy.freshness_probe_max_age_ticks {
+        return Err(EnablementDenied {
+            code: ActiveEnablementDeniedCode::ActiveDeniedStaleProbe,
+            detail: "ACTIVE_DENIED_STALE_PROBE: probe evidence is stale".to_string(),
+        });
+    }
+
     if matches!(drift_status, DriftStatusV1::Unknown) {
         drift_status = DriftStatusV1::Ok;
+        latest_drift_tick = max_tick;
     }
-    let allow_warn = std::env::var("UCF_ACTIVE_ALLOW_DRIFT_WARN")
-        .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
-        .unwrap_or(false);
-    if matches!(drift_status, DriftStatusV1::Severe)
-        || (matches!(drift_status, DriftStatusV1::Warn) && !allow_warn)
-    {
+    let freshness_drift_status_age_ticks = max_tick.saturating_sub(latest_drift_tick);
+    if freshness_drift_status_age_ticks > policy.freshness_drift_status_max_age_ticks {
         return Err(EnablementDenied {
-            code: ActiveEnablementDeniedCode::ActiveDeniedDrift,
-            detail: "drift budget violated in active evidence window".to_string(),
+            code: ActiveEnablementDeniedCode::ActiveDeniedStaleCompare,
+            detail: "ACTIVE_DENIED_STALE_COMPARE: drift status evidence is stale".to_string(),
         });
     }
+    if matches!(drift_status, DriftStatusV1::Severe) {
+        return Err(EnablementDenied {
+            code: ActiveEnablementDeniedCode::ActiveDeniedDriftSevere,
+            detail: "ACTIVE_DENIED_DRIFT_SEVERE: drift status is severe".to_string(),
+        });
+    }
+    if matches!(drift_status, DriftStatusV1::Warn) && !policy.allow_warn_drift_for_active {
+        return Err(EnablementDenied {
+            code: ActiveEnablementDeniedCode::ActiveDeniedDriftWarn,
+            detail: "ACTIVE_DENIED_DRIFT_WARN: warn drift not allowed by policy".to_string(),
+        });
+    }
+
     let compare_digest = sha256_hex(
         format!(
             "{}:{}:{}:{}:{}:{}",
@@ -736,17 +910,31 @@ pub fn can_enable_active(
         b"0"
     });
     digest_source.extend_from_slice(format!("{:?}", drift_status).as_bytes());
-    digest_source.extend_from_slice(evidence_window_ticks.to_string().as_bytes());
+    digest_source.extend_from_slice(
+        policy
+            .freshness_compare_max_age_ticks
+            .to_string()
+            .as_bytes(),
+    );
+    digest_source.extend_from_slice(freshness_probe_age_ticks.to_string().as_bytes());
+    digest_source.extend_from_slice(freshness_compare_age_ticks.to_string().as_bytes());
+    digest_source.extend_from_slice(freshness_no_impact_age_ticks.to_string().as_bytes());
+    digest_source.extend_from_slice(freshness_drift_status_age_ticks.to_string().as_bytes());
     let evidence_digest = sha256_hex(&digest_source);
+
     Ok(ActiveEnablementEvidenceV1 {
-        slot_id,
+        slot_id: slot.as_str().to_string(),
         target_hash: target_hash.to_string(),
         latest_probe_report_digest_prefix: latest_probe_digest_prefix,
         latest_probe_status: probe.status,
         latest_compare_window_digest_prefix: prefix_hex(&compare_digest, 16),
         shadow_no_impact_verified,
         latest_drift_status: drift_status,
-        evidence_window_ticks,
+        evidence_window_ticks: policy.freshness_compare_max_age_ticks,
+        freshness_probe_age_ticks,
+        freshness_compare_age_ticks,
+        freshness_no_impact_age_ticks,
+        freshness_drift_status_age_ticks,
         evidence_digest,
     })
 }
@@ -775,7 +963,24 @@ fn append_active_check_record(
             .evidence
             .as_ref()
             .map(|e| prefix_hex(&e.evidence_digest, 16)),
+        freshness_probe_age_ticks: report
+            .evidence
+            .as_ref()
+            .map(|e| e.freshness_probe_age_ticks),
+        freshness_compare_age_ticks: report
+            .evidence
+            .as_ref()
+            .map(|e| e.freshness_compare_age_ticks),
+        freshness_no_impact_age_ticks: report
+            .evidence
+            .as_ref()
+            .map(|e| e.freshness_no_impact_age_ticks),
+        freshness_drift_status_age_ticks: report
+            .evidence
+            .as_ref()
+            .map(|e| e.freshness_drift_status_age_ticks),
         timestamp: now_secs(),
+        supported_slot_set_scope: Some(SUPPORTED_REAL_SLOT_SET_VERSION.to_string()),
     });
     fs::write(path, serde_json::to_vec_pretty(&all)?)?;
     Ok(())
@@ -2421,7 +2626,7 @@ mod probe_tests {
         #[cfg(not(feature = "backend-burn"))]
         assert!(matches!(
             denied.code,
-            ActiveEnablementDeniedCode::ProbeRequired
+            ActiveEnablementDeniedCode::ActiveDeniedNoProbe
         ));
     }
 
@@ -2573,6 +2778,10 @@ mod probe_tests {
             shadow_no_impact_verified: true,
             latest_drift_status: DriftStatusV1::Ok,
             evidence_window_ticks: 128,
+            freshness_probe_age_ticks: 2,
+            freshness_compare_age_ticks: 3,
+            freshness_no_impact_age_ticks: 4,
+            freshness_drift_status_age_ticks: 5,
             evidence_digest: "".to_string(),
         };
         let mut digest_source = Vec::new();
@@ -2584,8 +2793,43 @@ mod probe_tests {
         digest_source.extend_from_slice(b"1");
         digest_source.extend_from_slice(format!("{:?}", ev.latest_drift_status).as_bytes());
         digest_source.extend_from_slice(ev.evidence_window_ticks.to_string().as_bytes());
+        digest_source.extend_from_slice(ev.freshness_probe_age_ticks.to_string().as_bytes());
+        digest_source.extend_from_slice(ev.freshness_compare_age_ticks.to_string().as_bytes());
+        digest_source.extend_from_slice(ev.freshness_no_impact_age_ticks.to_string().as_bytes());
+        digest_source.extend_from_slice(ev.freshness_drift_status_age_ticks.to_string().as_bytes());
         let a = sha256_hex(&digest_source);
         let b = sha256_hex(&digest_source);
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn supported_real_slots_active_view_ordering_stable() {
+        let mut slots = [
+            SupportedRealSlotActiveViewEntryV1 {
+                slot_id: "world_jepa".to_string(),
+                target_hash: "b".to_string(),
+                active_eligible: true,
+                denial_reason_code: None,
+                evidence_digest_prefix: Some("1".to_string()),
+                freshness_probe_age_ticks: Some(1),
+                freshness_compare_age_ticks: Some(1),
+                freshness_no_impact_age_ticks: Some(1),
+                freshness_drift_status_age_ticks: Some(1),
+            },
+            SupportedRealSlotActiveViewEntryV1 {
+                slot_id: "sae".to_string(),
+                target_hash: "a".to_string(),
+                active_eligible: false,
+                denial_reason_code: Some("ACTIVE_DENIED_NO_PROBE".to_string()),
+                evidence_digest_prefix: None,
+                freshness_probe_age_ticks: None,
+                freshness_compare_age_ticks: None,
+                freshness_no_impact_age_ticks: None,
+                freshness_drift_status_age_ticks: None,
+            },
+        ];
+        slots.sort_by(|a, b| a.slot_id.cmp(&b.slot_id));
+        assert_eq!(slots[0].slot_id, "sae");
+        assert_eq!(slots[1].slot_id, "world_jepa");
     }
 }
