@@ -5568,21 +5568,69 @@ pub struct StrictModeFailureReport {
     #[serde(default)]
     pub v1_checks: Vec<StrictCheckResult>,
     #[serde(default)]
+    pub v3: Option<StrictFailureReportV3>,
+    #[serde(default)]
     pub evidence_digest_prefixes: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct StrictFailureReportV3 {
+    pub schema_version: u16,
+    pub strict_mode_enabled: bool,
+    pub overall_status: String,
+    pub checks: Vec<StrictCheckV3Result>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum StrictCheckV3Status {
+    Pass,
+    Fail,
+    Skip,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct StrictCheckV3Result {
+    pub check_id: String,
+    pub slot_id: Option<String>,
+    pub status: StrictCheckV3Status,
+    pub denial_code: Option<String>,
+    pub evidence_digest_prefixes: Vec<String>,
+    pub remediation_code: String,
 }
 
 impl StrictModeFailureReport {
     pub fn has_failures(&self) -> bool {
-        self.checks
+        let base_failed = self
+            .checks
             .iter()
             .chain(self.v1_checks.iter())
-            .any(|c| matches!(c.status, StrictCheckStatus::Fail))
+            .any(|c| matches!(c.status, StrictCheckStatus::Fail));
+        let v3_failed = self
+            .v3
+            .as_ref()
+            .map(|r| {
+                r.checks
+                    .iter()
+                    .any(|c| matches!(c.status, StrictCheckV3Status::Fail))
+            })
+            .unwrap_or(false);
+        base_failed || v3_failed
     }
 
     fn normalized_for_digest(&self) -> Self {
         let mut c = self.clone();
         c.checks.sort_by(|a, b| a.check_id.cmp(&b.check_id));
         c.v1_checks.sort_by(|a, b| a.check_id.cmp(&b.check_id));
+        if let Some(v3) = c.v3.as_mut() {
+            v3.checks.sort_by(|a, b| {
+                a.slot_id
+                    .as_deref()
+                    .unwrap_or("")
+                    .cmp(b.slot_id.as_deref().unwrap_or(""))
+                    .then(a.check_id.cmp(&b.check_id))
+            });
+        }
         c.evidence_digest_prefixes = c
             .evidence_digest_prefixes
             .iter()
@@ -5601,6 +5649,7 @@ impl StrictModeFailureReport {
 pub struct StrictModeEnforcer;
 
 impl StrictModeEnforcer {
+    #[allow(clippy::result_large_err)]
     pub fn check_all(
         workdir: &Path,
         cfg: &OpsConfig,
@@ -5766,12 +5815,14 @@ impl StrictModeEnforcer {
 
         checks.sort_by(|a, b| a.check_id.cmp(&b.check_id));
         let v1_checks = strict_v1_checks(workdir, cfg, &mut evidence_digest_prefixes);
+        let v3 = strict_v3_checks(workdir, cfg);
         let report = StrictModeFailureReport {
             schema_version: 1,
             strict_mode_enabled: true,
             profile: cfg.profile.clone(),
             checks,
             v1_checks,
+            v3: Some(v3),
             evidence_digest_prefixes,
         };
 
@@ -6120,6 +6171,351 @@ fn strict_v1_checks(
 
     checks.push(strict_pass("v1_shadow_no_decision_impact_guard"));
     checks
+}
+
+fn strict_v3_checks(workdir: &Path, cfg: &OpsConfig) -> StrictFailureReportV3 {
+    let mut checks = Vec::new();
+    let second_slot = detect_second_slot(workdir).ok();
+    let mut slots = vec![ModelSlot::WorldJepa];
+    if let Some(slot) = second_slot {
+        slots.push(slot);
+    }
+    slots.sort_by_key(|s| s.as_str().to_string());
+    slots.dedup();
+
+    if !cfg.strict_mode {
+        checks.push(strict_v3_check(
+            "STRICT_MANIFEST_VALID",
+            None,
+            StrictCheckV3Status::Skip,
+            None,
+            Vec::new(),
+            "REMEDIATE_MANIFEST",
+        ));
+        for slot in &slots {
+            let slot_id = Some(slot.as_str().to_string());
+            for (check_id, remediation) in [
+                ("STRICT_PROBE_READY", "REMEDIATE_PROBE"),
+                ("STRICT_SHADOW_READY", "REMEDIATE_SHADOW_READY"),
+                ("STRICT_ACTIVE_ELIGIBLE", "REMEDIATE_ACTIVE_ELIGIBILITY"),
+                ("STRICT_COMPARE_FRESH", "REMEDIATE_COMPARE_WINDOW"),
+                ("STRICT_DRIFT_OK", "REMEDIATE_DRIFT"),
+                ("STRICT_HASH_CONSISTENT", "REMEDIATE_HASH_ALIGNMENT"),
+            ] {
+                checks.push(strict_v3_check(
+                    check_id,
+                    slot_id.clone(),
+                    StrictCheckV3Status::Skip,
+                    None,
+                    Vec::new(),
+                    remediation,
+                ));
+            }
+        }
+        return StrictFailureReportV3 {
+            schema_version: 3,
+            strict_mode_enabled: false,
+            overall_status: "PASS".to_string(),
+            checks,
+        };
+    }
+
+    let slot_enablement = ucf_compute::SlotEnablement::from_env().unwrap_or_default();
+    let compare_max_age = cfg.active_evidence_compare_max_age_ticks.max(1);
+    let any_real_shadow_or_active_requested = slots.iter().any(|slot| {
+        matches!(
+            slot_enablement.for_slot(*slot),
+            ucf_compute::SlotMode::Shadow | ucf_compute::SlotMode::Active
+        )
+    });
+
+    let manifest_raw = fs::read_to_string(PathBuf::from("models").join("manifest.toml"))
+        .or_else(|_| fs::read_to_string(PathBuf::from("models").join("MANIFEST.toml")))
+        .ok();
+    let manifest = manifest_raw
+        .as_ref()
+        .and_then(|body| body.parse::<toml::Value>().ok());
+    let manifest_ok = manifest
+        .as_ref()
+        .and_then(|m| m.get("slots").and_then(|v| v.as_array()))
+        .is_some_and(|entries| {
+            entries.iter().any(|entry| {
+                let slot_id = entry
+                    .get("slot_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default();
+                let hash = entry
+                    .get("active_hash")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default();
+                slots.iter().any(|slot| slot.as_str() == slot_id)
+                    && !hash.is_empty()
+                    && hash != "missing"
+            })
+        });
+    checks.push(strict_v3_check(
+        "STRICT_MANIFEST_VALID",
+        None,
+        if !any_real_shadow_or_active_requested {
+            StrictCheckV3Status::Skip
+        } else if manifest_ok {
+            StrictCheckV3Status::Pass
+        } else {
+            StrictCheckV3Status::Fail
+        },
+        if !any_real_shadow_or_active_requested || manifest_ok {
+            None
+        } else {
+            Some("STRICT_MANIFEST_INVALID")
+        },
+        Vec::new(),
+        "REMEDIATE_MANIFEST",
+    ));
+
+    for slot in &slots {
+        let slot_id = slot.as_str().to_string();
+        let list = models_lifecycle::models_list(*slot).ok();
+        let mode = slot_enablement.for_slot(*slot);
+        let mode_requires_shadow = matches!(mode, ucf_compute::SlotMode::Shadow);
+        let mode_requires_active = matches!(mode, ucf_compute::SlotMode::Active);
+
+        let probe_ready = list.as_ref().is_some_and(|r| r.probe_ready);
+        let probe_denial = list
+            .as_ref()
+            .and_then(|r| r.denial_reason_probe.clone())
+            .unwrap_or_else(|| "STRICT_PROBE_NOT_READY".to_string());
+        checks.push(strict_v3_check(
+            "STRICT_PROBE_READY",
+            Some(slot_id.clone()),
+            if !mode_requires_shadow && !mode_requires_active {
+                StrictCheckV3Status::Skip
+            } else if probe_ready {
+                StrictCheckV3Status::Pass
+            } else {
+                StrictCheckV3Status::Fail
+            },
+            if !mode_requires_shadow && !mode_requires_active || probe_ready {
+                None
+            } else {
+                Some(&probe_denial)
+            },
+            list.as_ref()
+                .and_then(|r| r.last_evidence_digest_prefix.clone())
+                .into_iter()
+                .collect(),
+            "REMEDIATE_PROBE",
+        ));
+
+        let shadow_ready = list.as_ref().is_some_and(|r| r.shadow_ready);
+        let shadow_denial = list
+            .as_ref()
+            .and_then(|r| r.denial_reason_shadow.clone())
+            .unwrap_or_else(|| "STRICT_SHADOW_NOT_READY".to_string());
+        checks.push(strict_v3_check(
+            "STRICT_SHADOW_READY",
+            Some(slot_id.clone()),
+            if !mode_requires_shadow {
+                StrictCheckV3Status::Skip
+            } else if shadow_ready {
+                StrictCheckV3Status::Pass
+            } else {
+                StrictCheckV3Status::Fail
+            },
+            if !mode_requires_shadow || shadow_ready {
+                None
+            } else {
+                Some(&shadow_denial)
+            },
+            list.as_ref()
+                .and_then(|r| r.last_evidence_digest_prefix.clone())
+                .into_iter()
+                .collect(),
+            "REMEDIATE_SHADOW_READY",
+        ));
+
+        let active_eligible = list.as_ref().is_some_and(|r| r.active_eligible);
+        let active_denial = list
+            .as_ref()
+            .and_then(|r| r.denial_reason_active.clone())
+            .unwrap_or_else(|| "STRICT_ACTIVE_NOT_ELIGIBLE".to_string());
+        checks.push(strict_v3_check(
+            "STRICT_ACTIVE_ELIGIBLE",
+            Some(slot_id.clone()),
+            if !mode_requires_active {
+                StrictCheckV3Status::Skip
+            } else if active_eligible {
+                StrictCheckV3Status::Pass
+            } else {
+                StrictCheckV3Status::Fail
+            },
+            if !mode_requires_active || active_eligible {
+                None
+            } else {
+                Some(&active_denial)
+            },
+            list.as_ref()
+                .and_then(|r| r.last_evidence_digest_prefix.clone())
+                .into_iter()
+                .collect(),
+            "REMEDIATE_ACTIVE_ELIGIBILITY",
+        ));
+
+        let shadow_denial_code = list
+            .as_ref()
+            .and_then(|r| r.denial_reason_shadow.clone())
+            .unwrap_or_default();
+        let active_denial_code = list
+            .as_ref()
+            .and_then(|r| r.denial_reason_active.clone())
+            .unwrap_or_default();
+        let compare_ok = !(shadow_denial_code.contains("STALE_COMPARE")
+            || active_denial_code.contains("ActiveDeniedStaleCompare"));
+        checks.push(strict_v3_check(
+            "STRICT_COMPARE_FRESH",
+            Some(slot_id.clone()),
+            if !mode_requires_shadow && !mode_requires_active {
+                StrictCheckV3Status::Skip
+            } else if compare_ok {
+                StrictCheckV3Status::Pass
+            } else {
+                StrictCheckV3Status::Fail
+            },
+            if !mode_requires_shadow && !mode_requires_active || compare_ok {
+                None
+            } else {
+                Some("STRICT_COMPARE_WINDOW_STALE")
+            },
+            Vec::new(),
+            "REMEDIATE_COMPARE_WINDOW",
+        ));
+
+        let drift_ok = !(shadow_denial_code.contains("DRIFT_SEVERE")
+            || active_denial_code.contains("ActiveDeniedDriftSevere")
+            || active_denial_code.contains("ActiveDeniedDriftWarn"));
+        checks.push(strict_v3_check(
+            "STRICT_DRIFT_OK",
+            Some(slot_id.clone()),
+            if !mode_requires_shadow && !mode_requires_active {
+                StrictCheckV3Status::Skip
+            } else if drift_ok {
+                StrictCheckV3Status::Pass
+            } else {
+                StrictCheckV3Status::Fail
+            },
+            if !mode_requires_shadow && !mode_requires_active || drift_ok {
+                None
+            } else {
+                Some("STRICT_DRIFT_DENY")
+            },
+            Vec::new(),
+            "REMEDIATE_DRIFT",
+        ));
+
+        let probe_path = workdir
+            .join("out")
+            .join(format!("probe_{}.json", slot.as_str()));
+        let probe = fs::read_to_string(&probe_path)
+            .ok()
+            .and_then(|body| serde_json::from_str::<ProbeReportV1>(&body).ok());
+        let target_hash_prefix = manifest
+            .as_ref()
+            .and_then(|m| m.get("slots").and_then(|v| v.as_array()))
+            .and_then(|entries| {
+                entries.iter().find_map(|entry| {
+                    let id = entry.get("slot_id").and_then(|v| v.as_str())?;
+                    if id == slot_id {
+                        Some(
+                            entry
+                                .get("active_hash")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("missing"),
+                        )
+                    } else {
+                        None
+                    }
+                })
+            })
+            .map(|h| prefix_hex(h, 16))
+            .unwrap_or_else(|| "missing".to_string());
+        let probe_hash_ok = probe
+            .as_ref()
+            .and_then(|p| p.model_hash_prefix.as_ref())
+            .is_some_and(|h| h == &target_hash_prefix);
+
+        let mut max_tick = 0_u64;
+        let records =
+            load_fixture_records(&workdir.join("ess").join("ess_fixture.json")).unwrap_or_default();
+        for rec in records {
+            max_tick = max_tick.max(rec.time.tick.get());
+            if let ExperiencePayload::Audit(AuditPayload::SlotCompareWindow(_window)) = rec.payload
+            {
+            }
+        }
+        let _ = compare_freshness(Some(max_tick), max_tick, compare_max_age);
+        let hash_ok = probe_hash_ok && !active_denial_code.contains("HashMismatch");
+        checks.push(strict_v3_check(
+            "STRICT_HASH_CONSISTENT",
+            Some(slot_id),
+            if !mode_requires_shadow && !mode_requires_active {
+                StrictCheckV3Status::Skip
+            } else if hash_ok {
+                StrictCheckV3Status::Pass
+            } else {
+                StrictCheckV3Status::Fail
+            },
+            if !mode_requires_shadow && !mode_requires_active || hash_ok {
+                None
+            } else {
+                Some("STRICT_HASH_MISMATCH")
+            },
+            vec![target_hash_prefix],
+            "REMEDIATE_HASH_ALIGNMENT",
+        ));
+    }
+
+    checks.sort_by(|a, b| {
+        let a_global = a.slot_id.is_none();
+        let b_global = b.slot_id.is_none();
+        b_global
+            .cmp(&a_global)
+            .then(
+                a.slot_id
+                    .as_deref()
+                    .unwrap_or("")
+                    .cmp(b.slot_id.as_deref().unwrap_or("")),
+            )
+            .then(a.check_id.cmp(&b.check_id))
+    });
+    let failed = checks
+        .iter()
+        .any(|c| matches!(c.status, StrictCheckV3Status::Fail));
+    StrictFailureReportV3 {
+        schema_version: 3,
+        strict_mode_enabled: true,
+        overall_status: if failed { "FAIL" } else { "PASS" }.to_string(),
+        checks,
+    }
+}
+
+fn strict_v3_check(
+    check_id: &str,
+    slot_id: Option<String>,
+    status: StrictCheckV3Status,
+    denial_code: Option<&str>,
+    mut evidence_digest_prefixes: Vec<String>,
+    remediation_code: &str,
+) -> StrictCheckV3Result {
+    evidence_digest_prefixes.sort();
+    evidence_digest_prefixes.dedup();
+    evidence_digest_prefixes.truncate(4);
+    StrictCheckV3Result {
+        check_id: check_id.to_string(),
+        slot_id,
+        status,
+        denial_code: denial_code.map(|v| v.to_string()),
+        evidence_digest_prefixes,
+        remediation_code: remediation_code.to_string(),
+    }
 }
 
 fn strict_pass(id: &str) -> StrictCheckResult {
@@ -10549,6 +10945,7 @@ pub fn strict_check(
             profile: active_cfg.profile.clone(),
             checks: vec![strict_pass("strict_mode")],
             v1_checks: Vec::new(),
+            v3: Some(strict_v3_checks(workdir, &active_cfg)),
             evidence_digest_prefixes: BTreeMap::new(),
         },
         Err(r) => r,
@@ -11594,6 +11991,59 @@ slots = [{ slot_id = "world_jepa", active_hash = "missing", files = [{ path = "m
             .expect("drift check");
         assert!(matches!(check.status, GateStatus::Fail));
         assert!(matches!(report.overall_status, V2GateOverallStatus::Fail));
+    }
+
+    #[test]
+    fn strict_report_v3_has_required_check_ids() {
+        let _guard = crate::test_cwd_lock()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let root = repo_root();
+        let out = root.join("out/strict_check_v3_test.json");
+        let report = strict_check(&root.join(".ucf"), false, &out).expect("strict check");
+        let v3 = report.report.v3.expect("v3 report");
+        let ids = v3
+            .checks
+            .iter()
+            .map(|c| c.check_id.as_str())
+            .collect::<std::collections::BTreeSet<_>>();
+        for id in [
+            "STRICT_MANIFEST_VALID",
+            "STRICT_PROBE_READY",
+            "STRICT_SHADOW_READY",
+            "STRICT_ACTIVE_ELIGIBLE",
+            "STRICT_COMPARE_FRESH",
+            "STRICT_DRIFT_OK",
+            "STRICT_HASH_CONSISTENT",
+        ] {
+            assert!(ids.contains(id), "missing required v3 check id: {id}");
+        }
+    }
+
+    #[test]
+    fn strict_report_has_failures_considers_v3_failures() {
+        let report = StrictModeFailureReport {
+            schema_version: 1,
+            strict_mode_enabled: true,
+            profile: "test".to_string(),
+            checks: vec![strict_pass("base")],
+            v1_checks: Vec::new(),
+            v3: Some(StrictFailureReportV3 {
+                schema_version: 3,
+                strict_mode_enabled: true,
+                overall_status: "FAIL".to_string(),
+                checks: vec![strict_v3_check(
+                    "STRICT_PROBE_READY",
+                    Some("world_jepa".to_string()),
+                    StrictCheckV3Status::Fail,
+                    Some("STRICT_PROBE_NOT_READY"),
+                    Vec::new(),
+                    "REMEDIATE_PROBE",
+                )],
+            }),
+            evidence_digest_prefixes: BTreeMap::new(),
+        };
+        assert!(report.has_failures());
     }
 
     #[test]
