@@ -44,6 +44,16 @@ jobs:
         run: cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json
       - name: v0 gate (blocking)
         run: cargo run -p ucf-ops -- v0 gate --scenario fixtures/e2e/v0_flow_a.json --out ./out/v0_gate_report.json
+      - name: v1 gate (blocking)
+        run: cargo run -p ucf-ops -- v1 gate --out ./out/v1_gate_report.json
+      - name: v2 gate (blocking)
+        run: cargo run -p ucf-ops -- v2 gate --out ./out/v2_gate_report.json
+      - name: Unified eligibility report (smoke)
+        run: cargo run -p ucf-ops -- models eligibility --out ./out/models_eligibility_report.json
+      - name: Strict check v3 (smoke)
+        run: cargo run -p ucf-ops -- strict check --strict --out ./out/strict_check.json
+      - name: Operator report (smoke)
+        run: cargo run -p ucf-ops -- operator report --out ./out/operator_report.json
       - name: Change impact plan (informational)
         run: |
           cargo run -p ucf-ops -- change-impact --base HEAD~1 --head HEAD --out ./out/change_impact_plan.md --json-out ./out/change_impact_plan.json
@@ -65,6 +75,8 @@ jobs:
         run: cargo run -p ucf-ops -- readiness-gate --profile test --out ./out_gate/gate_report.json --workdir ./.ucf_gate
       - name: Portability check (linux)
         run: cargo run -p ucf-ops -- portability check --out ./out/portability_linux.json
+      - name: Portability report (linux)
+        run: cargo run -p ucf-ops -- portability report --out ./out/portability_report_linux.json
       - name: Goldens verify (linux)
         run: |
           cargo run -p ucf-ops -- goldens verify --scenario golden_a --os linux
@@ -92,11 +104,16 @@ jobs:
         run: cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json
       - name: v0 gate (blocking)
         run: cargo run -p ucf-ops -- v0 gate --scenario fixtures/e2e/v0_flow_a.json --out ./out/v0_gate_report.json
+      - name: v1 gate (blocking)
+        run: cargo run -p ucf-ops -- v1 gate --out ./out/v1_gate_report.json
+      - name: v2 gate (blocking)
+        run: cargo run -p ucf-ops -- v2 gate --out ./out/v2_gate_report.json
       - name: Hardware assumptions scan
         run: cargo run -p ucf-ops -- audit hardware-scan
       - name: Runtime path hygiene scan
         run: cargo run -p ucf-ops -- audit path-scan
       - name: Hidden network dependency scan
+        if: runner.os == 'Linux'
         run: cargo run -p ucf-ops -- audit net-deps --out ./out/net_deps.json
       - name: Models verify (if manifest present)
         if: runner.os == 'Linux'
@@ -125,14 +142,16 @@ jobs:
           cargo run -p ucf-ops -- models probe --slot llm --out ./out/probe_llm.json
           cargo run -p ucf-ops -- models probe --slot sae --out ./out/probe_sae.json
           cargo run -p ucf-ops -- models probe --slot world_jepa --out ./out/probe_world_jepa.json
-      - name: v1 smoke (minimal)
-        if: runner.os == 'Linux'
-        run: cargo run -p ucf-ops -- v1 smoke --shadow --out ./out/v1_smoke_report.json
-      - name: v1 smoke (minimal, no shadow)
-        if: runner.os == 'Windows'
-        run: cargo run -p ucf-ops -- v1 smoke --out ./out/v1_smoke_report.json
+      - name: Unified eligibility report (smoke)
+        run: cargo run -p ucf-ops -- models eligibility --out ./out/models_eligibility_report.json
+      - name: Strict check v3 (smoke)
+        run: cargo run -p ucf-ops -- strict check --strict --out ./out/strict_check.json
+      - name: Operator report (smoke)
+        run: cargo run -p ucf-ops -- operator report --out ./out/operator_report.json
       - name: Portability check
         run: cargo run -p ucf-ops -- portability check --out ./out/portability.json
+      - name: Portability report
+        run: cargo run -p ucf-ops -- portability report --out ./out/portability_report.json
       - name: Readiness gate (test profile)
         if: runner.os == 'Linux'
         run: cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/gate_report.json --workdir ./.ucf_gate
