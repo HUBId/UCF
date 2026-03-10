@@ -82,3 +82,14 @@ This keeps semantics aligned between:
 - `ucf-ops models eligibility`
 - strict startup/runtime checks
 - `ucf-ops strict check`
+
+
+## Operator first-stop
+
+For operations, start with the consolidated report first:
+
+```bash
+cargo run -p ucf-ops -- operator report --out ./out/operator_report.json
+```
+
+Then inspect `eligibility_section` in that report and drill into `models eligibility` only when needed.
