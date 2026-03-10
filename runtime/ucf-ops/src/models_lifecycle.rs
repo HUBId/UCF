@@ -1730,7 +1730,7 @@ pub fn models_probe_slot(
         .and_then(|s| s.contract_versions_supported.first().cloned())
         .unwrap_or_else(|| "v1".to_string());
 
-    let outputs = build_probe_outputs(
+    let (outputs, backend_id) = build_probe_outputs(
         slot,
         source_dir.as_deref(),
         model_hash.as_deref(),
@@ -1753,7 +1753,7 @@ pub fn models_probe_slot(
         model_hash_prefix: model_hash
             .as_ref()
             .map(|value| value.chars().take(PROBE_DIGEST_PREFIX_LEN).collect()),
-        backend_id: "offline_probe_stub_v1".to_string(),
+        backend_id,
         contract_version,
         outputs,
         latency_ms: started.elapsed().as_millis() as u64,
@@ -1777,7 +1777,7 @@ fn build_probe_outputs(
     model_hash: Option<&str>,
     manifest: &LifecycleManifest,
     mode: ProbeMode,
-) -> Result<ProbeOutputs, OpsError> {
+) -> Result<(ProbeOutputs, String), OpsError> {
     let slot_id = slot.as_str();
     let mut seed_material = Vec::new();
     seed_material.extend_from_slice(slot_id.as_bytes());
@@ -1932,11 +1932,87 @@ fn build_probe_outputs(
     counters.sort_by(|a, b| a.key.cmp(&b.key));
     counters.truncate(PROBE_OUTPUT_CAP);
 
-    Ok(ProbeOutputs {
-        digests,
-        scalars,
-        counters,
-    })
+    #[cfg(feature = "backend-candle")]
+    if slot == ModelSlot::Sae {
+        if let Some(dir) = source_dir {
+            let path = dir.join(MODEL_FILE_NAME);
+            if path.exists() {
+                let model_bytes = fs::read(&path)?;
+                let mut hash = [0_u8; 32];
+                if let Some(h) = model_hash {
+                    if let Ok(decoded) = hex::decode(h) {
+                        if decoded.len() == 32 {
+                            hash.copy_from_slice(&decoded);
+                        }
+                    }
+                }
+                if let Ok(adapter) =
+                    ucf_compute::stage_v1_candle::CandleSaeAdapterV0::from_safetensors_bytes(
+                        hash,
+                        &model_bytes,
+                    )
+                {
+                    let input = ucf_compute::stage_v1::SaeInputV1 {
+                        context_digest: [0x2Au8; 32],
+                        prediction_digest: [0x51u8; 32],
+                        top_k: 8,
+                    };
+                    if let Ok(out) = ucf_compute::stage_v1::SaeExtractorV1::infer(&adapter, &input)
+                    {
+                        let mut candle_digests = vec![ProbeDigestOutput {
+                            key: "spikes_digest".to_string(),
+                            digest_prefix: prefix_hex(
+                                &hex::encode(out.spikes_digest),
+                                PROBE_DIGEST_PREFIX_LEN,
+                            ),
+                        }];
+                        candle_digests.sort_by(|a, b| a.key.cmp(&b.key));
+                        let candle_scalars = vec![ProbeScalarOutput {
+                            key: "spike_ratio_q".to_string(),
+                            value_q: (u16::try_from(out.spikes.len())
+                                .unwrap_or(0)
+                                .saturating_mul(1000)
+                                / u16::try_from(SAE_SPIKE_COUNT_KMAX).unwrap_or(1))
+                            .min(Q01_MAX),
+                        }];
+                        let mut candle_counters = vec![ProbeCounterOutput {
+                            key: "spike_count".to_string(),
+                            value: out.spikes.len() as u32,
+                        }];
+                        if let Some(dir2) = source_dir {
+                            let model_path = dir2.join(MODEL_FILE_NAME);
+                            let model_len = fs::metadata(model_path)?.len() as u32;
+                            candle_counters.push(ProbeCounterOutput {
+                                key: "model_bytes".to_string(),
+                                value: model_len,
+                            });
+                            candle_counters.sort_by(|a, b| a.key.cmp(&b.key));
+                        }
+                        return Ok((
+                            ProbeOutputs {
+                                digests: candle_digests,
+                                scalars: candle_scalars,
+                                counters: candle_counters,
+                            },
+                            format!(
+                                "candle:sae:{}",
+                                ucf_compute::stage_v1::SaeExtractorV1::backend_id(&adapter)
+                            ),
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    Ok((
+        ProbeOutputs {
+            digests,
+            scalars,
+            counters,
+        },
+        "offline_probe_stub_v1".to_string(),
+    ))
 }
 
 fn build_envelope_checks(slot: ModelSlot, outputs: &ProbeOutputs) -> Vec<ProbeEnvelopeCheck> {
@@ -2919,6 +2995,8 @@ mod probe_tests {
             active_report.model_hash_prefix.as_deref(),
             Some(&staged.hash[..PROBE_DIGEST_PREFIX_LEN])
         );
+        #[cfg(feature = "backend-candle")]
+        assert!(active_report.backend_id.starts_with("candle:sae:"));
     }
 
     #[test]
