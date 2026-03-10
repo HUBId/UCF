@@ -126,6 +126,7 @@ pub struct EligibilityGeneratedFromV1 {
     pub probe_report_digests: Vec<String>,
     pub shadow_ready_report_digest: String,
     pub active_evidence_report_digest: String,
+    pub second_slot_parity_report_digest: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -609,6 +610,18 @@ pub fn models_eligibility(
     statuses.sort_by(|a, b| a.slot_id.cmp(&b.slot_id));
 
     let overall_status = derive_eligibility_overall_status(&statuses);
+    let second_slot = crate::detect_second_slot(workdir).ok();
+    let second_slot_parity_report_digest = second_slot
+        .and_then(|slot| {
+            let path = workdir
+                .join("out")
+                .join(format!("{}_parity_report.json", slot.as_str()));
+            fs::read(path)
+                .ok()
+                .map(|bytes| crate::prefix_hex(&crate::sha256_hex(&bytes), 16))
+        })
+        .unwrap_or_else(|| "missing".to_string());
+
     let generated_from = EligibilityGeneratedFromV1 {
         probe_report_digests: statuses
             .iter()
@@ -616,6 +629,7 @@ pub fn models_eligibility(
             .collect(),
         shadow_ready_report_digest: digest_shadow_generated_from(&statuses),
         active_evidence_report_digest: digest_active_generated_from(&statuses),
+        second_slot_parity_report_digest,
     };
     let policy_graph_digest_prefix = read_policy_graph_digest_prefix();
 
@@ -625,6 +639,7 @@ pub fn models_eligibility(
     digest_source.extend_from_slice(policy_graph_digest_prefix.as_bytes());
     digest_source.extend_from_slice(generated_from.shadow_ready_report_digest.as_bytes());
     digest_source.extend_from_slice(generated_from.active_evidence_report_digest.as_bytes());
+    digest_source.extend_from_slice(generated_from.second_slot_parity_report_digest.as_bytes());
     for probe_digest in &generated_from.probe_report_digests {
         digest_source.extend_from_slice(probe_digest.as_bytes());
     }
@@ -910,7 +925,6 @@ fn evaluate_active_evidence(
     let fixture_path = workdir.join("ess").join("ess_fixture.json");
     let records = load_fixture_records(&fixture_path).unwrap_or_default();
     let mut latest_compare: Option<ucf_ess::v1::SlotCompareWindowRecordV1> = None;
-    let mut latest_compare_tick = 0_u64;
     let mut max_tick = 0_u64;
     let mut drift_status = DriftStatusV1::Unknown;
     let mut latest_drift_tick = 0_u64;
@@ -920,7 +934,6 @@ fn evaluate_active_evidence(
         if let ExperiencePayload::Audit(payload) = record.payload {
             match payload {
                 AuditPayload::SlotCompareWindow(window) if window.slot_id == slot.as_str() => {
-                    latest_compare_tick = tick;
                     latest_compare = Some(window);
                 }
                 AuditPayload::DriftAlarm(alarm) if alarm.slot_id == slot.as_str() => {
@@ -942,8 +955,15 @@ fn evaluate_active_evidence(
             detail: "ACTIVE_DENIED_NO_COMPARE: missing compare/parity window".to_string(),
         });
     };
-    let freshness_compare_age_ticks = max_tick.saturating_sub(latest_compare_tick);
-    if freshness_compare_age_ticks > policy.freshness_compare_max_age_ticks {
+    let freshness_compare_age_ticks = max_tick.saturating_sub(compare.t1);
+    if matches!(
+        crate::compare_freshness(
+            Some(compare.t1),
+            max_tick,
+            policy.freshness_compare_max_age_ticks,
+        ),
+        crate::CompareWindowFreshnessV1::StaleCompare
+    ) {
         return Err(EnablementDenied {
             code: ActiveEnablementDeniedCode::ActiveDeniedStaleCompare,
             detail: "ACTIVE_DENIED_STALE_COMPARE: compare/parity window evidence is stale"
@@ -1462,7 +1482,9 @@ fn build_shadow_ready_evidence(
     let records = load_fixture_records(&fixture_path).unwrap_or_default();
     let mut latest_compare: Option<ucf_ess::v1::SlotCompareWindowRecordV1> = None;
     let mut drift_status = DriftStatusV1::Unknown;
+    let mut max_tick = 0_u64;
     for record in records {
+        max_tick = max_tick.max(record.time.tick.get());
         if let ExperiencePayload::Audit(payload) = record.payload {
             match payload {
                 AuditPayload::SlotCompareWindow(window) if window.slot_id == slot.as_str() => {
@@ -1484,6 +1506,14 @@ fn build_shadow_ready_evidence(
         .as_ref()
         .map(compare_digest_prefix)
         .unwrap_or_else(|| "missing".to_string());
+    let compare_max_age = crate::load_or_init_config(workdir)
+        .map(|cfg| cfg.active_evidence_compare_max_age_ticks.max(1))
+        .unwrap_or(256);
+    let compare_freshness = crate::compare_freshness(
+        latest_compare.as_ref().map(|w| w.t1),
+        max_tick,
+        compare_max_age,
+    );
     if matches!(drift_status, DriftStatusV1::Unknown) {
         drift_status = DriftStatusV1::Ok;
     }
@@ -1503,6 +1533,11 @@ fn build_shadow_ready_evidence(
         Some("SHADOW_READY_PROBE_REQUIRED".to_string())
     } else if !compare_window_present {
         Some("SHADOW_READY_COMPARE_WINDOW_MISSING".to_string())
+    } else if matches!(
+        compare_freshness,
+        crate::CompareWindowFreshnessV1::StaleCompare
+    ) {
+        Some("SHADOW_READY_STALE_COMPARE".to_string())
     } else if !no_impact_verified {
         Some("SHADOW_READY_NO_IMPACT_MISSING".to_string())
     } else if matches!(drift_status, DriftStatusV1::Severe) {
@@ -1520,6 +1555,7 @@ fn build_shadow_ready_evidence(
     digest_source.extend_from_slice(format!("{:?}", latest_probe_status).as_bytes());
     digest_source.extend_from_slice(latest_compare_window_digest_prefix.as_bytes());
     digest_source.extend_from_slice(if compare_window_present { b"1" } else { b"0" });
+    digest_source.extend_from_slice(format!("{:?}", compare_freshness).as_bytes());
     digest_source.extend_from_slice(if no_impact_verified { b"1" } else { b"0" });
     digest_source.extend_from_slice(format!("{:?}", drift_status).as_bytes());
     digest_source.extend_from_slice(if shadow_ready { b"1" } else { b"0" });
@@ -1544,12 +1580,14 @@ fn build_shadow_ready_evidence(
 }
 
 fn compare_digest_prefix(compare: &ucf_ess::v1::SlotCompareWindowRecordV1) -> String {
+    let window_id = crate::derive_window_id("compat", &compare.slot_id, compare.t0, compare.t1);
     let compare_digest = sha256_hex(
         format!(
-            "{}:{}:{}:{}:{}:{}",
+            "{}:{}:{}:{}:{}:{}:{}",
             compare.slot_id,
             compare.t0,
             compare.t1,
+            window_id,
             compare.sample_count,
             compare.mean_delta_q,
             compare.p95_delta_q

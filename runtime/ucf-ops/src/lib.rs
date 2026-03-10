@@ -6,6 +6,7 @@ mod alerts;
 mod bench;
 mod causal;
 mod change_impact;
+mod compare_window;
 mod config_contract;
 mod docs_lint;
 mod drift;
@@ -13,6 +14,7 @@ mod formal_invariants;
 mod goldens;
 mod models_lifecycle;
 mod nightly;
+mod second_slot_parity;
 mod soak;
 mod spec_snapshot;
 mod world_shadow;
@@ -30,6 +32,11 @@ pub use causal::{
     CounterfactualRequest, CounterfactualResult, EdgeType, EventNode, EventType, ExplainWhyReport,
 };
 pub use change_impact::{change_impact, ChangeImpactArgs};
+pub use compare_window::{
+    build_compare_window_meta, compare_freshness, derive_drift_inputs_from_slot_compare,
+    derive_window_id, sample_digest_prefixes, unified_compare_semantics_v1,
+    CompareWindowBackendStatusV1, CompareWindowFreshnessV1, CompareWindowMetaV1, DriftInputV1,
+};
 pub use config_contract::{
     export_policy_key_registry_v1, migrate_config_v1, ConfigV1, MigrateReport, PolicyKeyEntryV1,
 };
@@ -52,6 +59,10 @@ pub use models_lifecycle::{
 pub use nightly::{
     nightly_summarize, NightlyComponentReport, NightlyOverallStatus, NightlySummarizeArgs,
     NightlySummaryReport,
+};
+pub use second_slot_parity::{
+    detect_second_slot, second_slot_parity_evidence_exists, second_slot_parity_report,
+    SaeParityRecordV1, SecondSlotParityRecordV1, SecondSlotParityReportV1, SsmParityRecordV1,
 };
 pub use soak::{
     parse_duration_secs, parse_inject, soak_run, InjectTrigger, SoakReport, SoakRunArgs, SoakStatus,
@@ -2157,7 +2168,7 @@ pub fn v1_gate(workdir: &Path, out: &Path) -> Result<V1GateReportV1, OpsError> {
 pub fn v2_gate(workdir: &Path, out: &Path) -> Result<V2GateReportV1, OpsError> {
     ensure_layout(workdir)?;
     let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let second_slot = detect_v2_second_slot(&repo_root)?;
+    let second_slot = detect_second_slot(&repo_root)?;
     let mut checks = Vec::new();
 
     let v0_out = workdir.join("out").join("v0_gate_report_v2_gate.json");
@@ -2488,24 +2499,6 @@ pub fn v2_gate(workdir: &Path, out: &Path) -> Result<V2GateReportV1, OpsError> {
     };
     write_json(out, &report)?;
     Ok(report)
-}
-
-fn detect_v2_second_slot(repo_root: &Path) -> Result<ModelSlot, OpsError> {
-    let body = fs::read_to_string(repo_root.join("docs/series_state_snapshot.md"))?;
-    for line in body.lines() {
-        if line.contains("Second supported slot") {
-            let lower = line.to_ascii_lowercase();
-            if lower.contains("sae") {
-                return Ok(ModelSlot::Sae);
-            }
-            if lower.contains("ssm") {
-                return Ok(ModelSlot::Ssm);
-            }
-        }
-    }
-    Err(OpsError::Invalid(
-        "V2_SECOND_SLOT_UNKNOWN: expected sae or ssm in docs/series_state_snapshot.md".to_string(),
-    ))
 }
 
 fn v2_shadow_no_impact_check(workdir: &Path, slot: ModelSlot, note: &str) -> V2GateCheckV1 {
@@ -6015,6 +6008,24 @@ fn strict_v1_checks(
             }
         } else {
             checks.push(strict_pass("v2_world_parity_evidence_required"));
+        }
+
+        let second_slot = detect_second_slot(Path::new(".")).unwrap_or(ModelSlot::Sae);
+        let second_compare_required = std::env::var("UCF_SECOND_SLOT_PARITY_COMPARE_REQUIRED")
+            .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+            .unwrap_or(false);
+        if second_compare_required {
+            if second_slot_parity_evidence_exists(workdir, second_slot) {
+                checks.push(strict_pass("v3_second_slot_parity_evidence_required"));
+            } else {
+                checks.push(strict_fail(
+                    "v3_second_slot_parity_evidence_required",
+                    "PARITY_EVIDENCE_MISSING",
+                    "run `cargo run -p ucf-ops -- models parity --slot <sae|ssm> --run <id> --out ./out/<slot>_parity_report.json`",
+                ));
+            }
+        } else {
+            checks.push(strict_pass("v3_second_slot_parity_evidence_required"));
         }
 
         let strict_shadow_evidence_required = std::env::var("UCF_STRICT_SHADOW_EVIDENCE_REQUIRED")
