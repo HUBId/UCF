@@ -18,14 +18,14 @@ use ucf_ops::{
     parse_slot, path_scan, policy_diff, policy_explain, policy_validate, portability_check,
     preflight, readiness_gate, release_build_rc, release_rc1_gate, release_signoff_validate,
     replay_audit, replay_bugreport, repro_pack, repro_verify, run_status, runs_list, runs_search,
-    runs_show, save_counterfactual_result, security_verify_chain, simulate_counterfactual,
-    soak_run, strict_check, troubleshoot, v0_gate, v1_smoke, v2_gate, verify_bugreport,
-    world_parity_report, world_shadow_report, write_slice, AdversarialRunArgs, AirgapArtifactType,
-    AirgapImportArgs, AirgapImportMode, BenchArgs, BugKitBuildArgs, ChangeImpactArgs, ConfigV1,
-    CounterfactualRequest, DevLoopArgs, DocsLintArgs, DocsLintMode, DocsLintStatus,
-    ExplainTickRequest, ExportArgs, GateStatus, GoldenGenerateArgs, GoldenVerifyArgs,
-    GoldenVerifyReport, NightlySummarizeArgs, ReleaseBuildRcArgs, SoakRunArgs, SpecSnapshotArgs,
-    V2GateOverallStatus,
+    runs_show, save_counterfactual_result, second_slot_parity_report, security_verify_chain,
+    simulate_counterfactual, soak_run, strict_check, troubleshoot, v0_gate, v1_smoke, v2_gate,
+    verify_bugreport, world_parity_report, world_shadow_report, write_slice, AdversarialRunArgs,
+    AirgapArtifactType, AirgapImportArgs, AirgapImportMode, BenchArgs, BugKitBuildArgs,
+    ChangeImpactArgs, ConfigV1, CounterfactualRequest, DevLoopArgs, DocsLintArgs, DocsLintMode,
+    DocsLintStatus, ExplainTickRequest, ExportArgs, GateStatus, GoldenGenerateArgs,
+    GoldenVerifyArgs, GoldenVerifyReport, NightlySummarizeArgs, ReleaseBuildRcArgs, SoakRunArgs,
+    SpecSnapshotArgs, V2GateOverallStatus,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -1068,6 +1068,23 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     if !report.all_supported_slots_active_eligible {
                         std::process::exit(2);
                     }
+                }
+                "parity" => {
+                    let slot = parse_slot(&arg_value(&args, "--slot").ok_or("missing --slot")?)?;
+                    let Some(run_id) = arg_value(&args, "--run") else {
+                        return Err("usage: ucf-ops models parity --slot <sae|ssm> --run <id> --out <path>".into());
+                    };
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from(format!("./out/{}_parity_report.json", slot.as_str())));
+                    let report = second_slot_parity_report(&workdir, &run_id, &out, Some(slot))?;
+                    println!("slot={}", report.slot_id);
+                    println!("parity_windows={}", report.parity_records.len());
+                    println!("compared_backends={}", report.compared_backends.join(","));
+                    println!("burn_status={}", report.burn_status);
+                    println!("parity_ready_hint={}", if report.parity_ready_hint { "yes" } else { "no" });
+                    println!("shadow_ready_hint={}", if report.shadow_ready_hint { "yes" } else { "no" });
+                    println!("out={}", out.display());
                 }
                 "eligibility" => {
                     let slot = arg_value(&args, "--slot").map(|v| parse_slot(&v)).transpose()?;

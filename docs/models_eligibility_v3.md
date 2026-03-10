@@ -67,3 +67,7 @@ Pro Slot (`UnifiedEligibilityStatusV1`) sind u.a. enthalten:
 - `NONE_READY`: kein Slot probe-ready.
 
 Damit müssen Operatoren Probe-/Shadow-/Active-Reports nicht mehr manuell korrelieren.
+
+
+## Additional v3 evidence feed
+- Unified eligibility also includes second-slot parity report digest evidence (`out/<slot>_parity_report.json`) for shadow-readiness interpretation.
