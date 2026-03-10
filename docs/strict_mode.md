@@ -88,3 +88,14 @@ Strict mode now also exposes a unified `v3` report section in `out/strict_failur
 Runtime startup strict validation and `ucf-ops strict check` share the same v3 denial semantics/check IDs.
 
 See details in `docs/strict_mode_v3.md`.
+
+
+## Operator first-stop summary
+
+Before running isolated strict checks, operators should first run:
+
+```bash
+cargo run -p ucf-ops -- operator report --out ./out/operator_report.json
+```
+
+Then use `strict_section` to see whether strict is `OK|FAIL|MISSING` and continue with `ucf-ops strict check` for detail remediation.
