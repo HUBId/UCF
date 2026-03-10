@@ -8,7 +8,7 @@ use ucf_policy::policy_packs::{load_and_merge_policy_graph, DriftActionV1, Drift
 use ucf_replay::load_fixture_records;
 
 use crate::world_shadow::{WorldDriftAlarmRecord, WorldShadowWindowStats};
-use crate::{sha256_hex, GateStatus, OpsError};
+use crate::{derive_drift_inputs_from_slot_compare, sha256_hex, GateStatus, OpsError};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct DriftWindowStatsV1 {
@@ -101,29 +101,16 @@ pub fn drift_report(
             if w.sample_count == 0 {
                 continue;
             }
-            let sample_count = u32::from(w.sample_count).max(1);
-            let invalid_rate_q = ((u32::from(w.invalid_shadow_count) * 10_000) / sample_count)
-                .min(u16::MAX as u32) as u16;
-            let digest_mismatch_rate_q =
-                ((u32::from(w.digest_mismatch_count) * 10_000) / sample_count).min(10_000) as u16;
-            let mut scalar_deltas_q = BTreeMap::new();
-            scalar_deltas_q.insert(
-                "risk_mean_q".to_string(),
-                w.primary_mean_q.abs_diff(w.shadow_mean_q),
-            );
-            scalar_deltas_q.insert(
-                "risk_p95_q".to_string(),
-                w.primary_p95_q.abs_diff(w.shadow_p95_q),
-            );
+            let drift_input = derive_drift_inputs_from_slot_compare(&w.slot_id, run_id, &w, 0);
             slot_windows
                 .entry(w.slot_id.clone())
                 .or_default()
                 .push(DriftWindowStatsV1 {
-                    window_id: w.t1,
-                    latency_p95_ms_q: 0,
-                    invalid_rate_q,
-                    scalar_deltas_q,
-                    digest_mismatch_rate_q: Some(digest_mismatch_rate_q),
+                    window_id: drift_input.window_id,
+                    latency_p95_ms_q: drift_input.latency_p95_ms_q,
+                    invalid_rate_q: drift_input.invalid_rate_q,
+                    scalar_deltas_q: drift_input.scalar_deltas_q,
+                    digest_mismatch_rate_q: Some(drift_input.digest_mismatch_rate_q),
                     evidence_digest: sha256_hex(
                         format!(
                             "{}:{}:{}:{}:{}",

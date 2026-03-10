@@ -6,7 +6,11 @@ use ucf_compute::ModelSlot;
 use ucf_ess::v1::{AuditPayload, ExperiencePayload};
 use ucf_replay::load_fixture_records;
 
-use crate::{sha256_hex, GateStatus, OpsError, ProbeReport, ProbeStatus};
+use crate::{
+    build_compare_window_meta, sample_digest_prefixes, sha256_hex, unified_compare_semantics_v1,
+    CompareWindowBackendStatusV1, CompareWindowMetaV1, GateStatus, OpsError, ProbeReport,
+    ProbeStatus,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct WorldShadowWindowStats {
@@ -45,13 +49,6 @@ pub struct WorldShadowReport {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum WorldParityStatusV1 {
-    Ok,
-    Warn,
-    Severe,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WorldComparedBackendRecordV1 {
     pub backend_id: String,
     pub model_hash_prefix: String,
@@ -62,20 +59,16 @@ pub struct WorldComparedBackendRecordV1 {
     pub digest_mismatch_count: u16,
     pub invalid_output_count: u16,
     pub sample_prediction_digest_prefixes: Vec<String>,
-    pub status: WorldParityStatusV1,
+    pub status: CompareWindowBackendStatusV1,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WorldParityRecordV1 {
     pub schema_version: u16,
-    pub run_id: String,
-    pub window_id: u64,
-    pub t0: u64,
-    pub t1: u64,
-    pub primary_backend_id: String,
+    #[serde(default)]
+    pub meta: CompareWindowMetaV1,
     pub compared_backends: Vec<WorldComparedBackendRecordV1>,
     pub parity_digest: String,
-    pub policy_graph_digest_prefix: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -93,6 +86,7 @@ pub struct WorldBackendEligibilityV1 {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WorldParityReportV1 {
     pub run_id: String,
+    pub semantics: String,
     pub parity_records: Vec<WorldParityRecordV1>,
     pub eligibility: Vec<WorldBackendEligibilityV1>,
     pub remediation_hints: Vec<String>,
@@ -210,12 +204,12 @@ pub fn world_parity_report(
                 .into_iter()
                 .map(|backend_id| {
                     let status = if w.invalid_shadow_count > 0 {
-                        WorldParityStatusV1::Severe
+                        CompareWindowBackendStatusV1::Severe
                     } else if w.digest_mismatch_count > 0 || w.mean_delta_q > 0 || w.p95_delta_q > 0
                     {
-                        WorldParityStatusV1::Warn
+                        CompareWindowBackendStatusV1::Warn
                     } else {
-                        WorldParityStatusV1::Ok
+                        CompareWindowBackendStatusV1::Ok
                     };
                     WorldComparedBackendRecordV1 {
                         backend_id: backend_id.to_string(),
@@ -226,12 +220,9 @@ pub fn world_parity_report(
                         surprise_delta_q_max: w.p95_delta_q,
                         digest_mismatch_count: w.digest_mismatch_count,
                         invalid_output_count: w.invalid_shadow_count,
-                        sample_prediction_digest_prefixes: w
-                            .digest_prefix_samples
-                            .iter()
-                            .take(4)
-                            .map(hex::encode)
-                            .collect(),
+                        sample_prediction_digest_prefixes: sample_digest_prefixes(
+                            &w.digest_prefix_samples,
+                        ),
                         status,
                     }
                 })
@@ -240,22 +231,29 @@ pub fn world_parity_report(
             if compared_backends.len() > 2 {
                 compared_backends.truncate(2);
             }
+            let meta = build_compare_window_meta(
+                &w.slot_id,
+                run_id,
+                w.t0,
+                w.t1,
+                "stub_world_v1",
+                compared_backends
+                    .iter()
+                    .map(|v| v.backend_id.clone())
+                    .collect(),
+                "unknown".to_string(),
+            );
             let mut parity = WorldParityRecordV1 {
                 schema_version: 1,
-                run_id: run_id.to_string(),
-                window_id: w.t1,
-                t0: w.t0,
-                t1: w.t1,
-                primary_backend_id: "stub_world_v1".to_string(),
+                meta,
                 compared_backends,
                 parity_digest: String::new(),
-                policy_graph_digest_prefix: "unknown".to_string(),
             };
             parity.parity_digest = sha256_hex(&serde_json::to_vec(&parity)?);
             parity_records.push(parity);
         }
     }
-    parity_records.sort_by_key(|r| (r.t1, r.window_id));
+    parity_records.sort_by_key(|r| (r.meta.t1, r.meta.window_id));
     if parity_records.len() > 10 {
         parity_records = parity_records.split_off(parity_records.len() - 10);
     }
@@ -263,7 +261,7 @@ pub fn world_parity_report(
     let severe_drift_present = parity_records.iter().any(|r| {
         r.compared_backends
             .iter()
-            .any(|c| matches!(c.status, WorldParityStatusV1::Severe))
+            .any(|c| matches!(c.status, CompareWindowBackendStatusV1::Severe))
     });
     let shadow_window_present = !parity_records.is_empty();
     let mut eligibility = vec![
@@ -302,6 +300,7 @@ pub fn world_parity_report(
 
     let mut report = WorldParityReportV1 {
         run_id: run_id.to_string(),
+        semantics: unified_compare_semantics_v1().window_id_rule,
         parity_records,
         eligibility,
         remediation_hints: vec![
@@ -341,7 +340,7 @@ mod tests {
                 digest_mismatch_count: 0,
                 invalid_output_count: 0,
                 sample_prediction_digest_prefixes: vec!["00000000".to_string()],
-                status: WorldParityStatusV1::Ok,
+                status: CompareWindowBackendStatusV1::Ok,
             },
             WorldComparedBackendRecordV1 {
                 backend_id: "burn_world_v1".to_string(),
@@ -353,7 +352,7 @@ mod tests {
                 digest_mismatch_count: 0,
                 invalid_output_count: 0,
                 sample_prediction_digest_prefixes: vec!["11111111".to_string()],
-                status: WorldParityStatusV1::Ok,
+                status: CompareWindowBackendStatusV1::Ok,
             },
         ];
         b.sort_by(|a, b| a.backend_id.cmp(&b.backend_id));

@@ -54,3 +54,6 @@ requires parity evidence. Missing report fails with stable code:
 - `PARITY_EVIDENCE_MISSING`
 
 This does **not** auto-enable active mode for real backends.
+
+
+See shared semantics: `docs/compare_window_semantics_v3.md`.

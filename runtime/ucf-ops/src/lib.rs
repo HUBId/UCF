@@ -6,6 +6,7 @@ mod alerts;
 mod bench;
 mod causal;
 mod change_impact;
+mod compare_window;
 mod config_contract;
 mod docs_lint;
 mod drift;
@@ -31,6 +32,11 @@ pub use causal::{
     CounterfactualRequest, CounterfactualResult, EdgeType, EventNode, EventType, ExplainWhyReport,
 };
 pub use change_impact::{change_impact, ChangeImpactArgs};
+pub use compare_window::{
+    build_compare_window_meta, compare_freshness, derive_drift_inputs_from_slot_compare,
+    derive_window_id, sample_digest_prefixes, unified_compare_semantics_v1,
+    CompareWindowBackendStatusV1, CompareWindowFreshnessV1, CompareWindowMetaV1, DriftInputV1,
+};
 pub use config_contract::{
     export_policy_key_registry_v1, migrate_config_v1, ConfigV1, MigrateReport, PolicyKeyEntryV1,
 };
