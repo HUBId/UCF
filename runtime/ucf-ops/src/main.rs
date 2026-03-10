@@ -14,17 +14,18 @@ use ucf_ops::{
     models_active_check, models_active_evidence, models_eligibility, models_list, models_probe,
     models_probe_slot, models_promote, models_recommend_rollback, models_rollback,
     models_shadow_ready, models_stage, models_verify, models_verify_lifecycle, net_deps_audit,
-    nightly_summarize, one_command_bringup, out_manifest, parse_duration_secs, parse_inject,
-    parse_slot, path_scan, policy_diff, policy_explain, policy_validate, portability_check,
-    preflight, readiness_gate, release_build_rc, release_rc1_gate, release_signoff_validate,
-    replay_audit, replay_bugreport, repro_pack, repro_verify, run_status, runs_list, runs_search,
-    runs_show, save_counterfactual_result, second_slot_parity_report, security_verify_chain,
-    simulate_counterfactual, soak_run, strict_check, troubleshoot, v0_gate, v1_smoke, v2_gate,
-    verify_bugreport, world_parity_report, world_shadow_report, write_slice, AdversarialRunArgs,
-    AirgapArtifactType, AirgapImportArgs, AirgapImportMode, BenchArgs, BugKitBuildArgs,
-    ChangeImpactArgs, ConfigV1, CounterfactualRequest, DevLoopArgs, DocsLintArgs, DocsLintMode,
-    DocsLintStatus, ExplainTickRequest, ExportArgs, GateStatus, GoldenGenerateArgs,
-    GoldenVerifyArgs, GoldenVerifyReport, NightlySummarizeArgs, ReleaseBuildRcArgs, SoakRunArgs,
+    nightly_summarize, one_command_bringup, operator_report, operator_report_text, out_manifest,
+    parse_duration_secs, parse_inject, parse_slot, path_scan, policy_diff, policy_explain,
+    policy_validate, portability_check, preflight, readiness_gate, release_build_rc,
+    release_rc1_gate, release_signoff_validate, replay_audit, replay_bugreport, repro_pack,
+    repro_verify, run_status, runs_list, runs_search, runs_show, save_counterfactual_result,
+    second_slot_parity_report, security_verify_chain, simulate_counterfactual, soak_run,
+    strict_check, troubleshoot, v0_gate, v1_smoke, v2_gate, verify_bugreport, world_parity_report,
+    world_shadow_report, write_slice, AdversarialRunArgs, AirgapArtifactType, AirgapImportArgs,
+    AirgapImportMode, BenchArgs, BugKitBuildArgs, ChangeImpactArgs, ConfigV1,
+    CounterfactualRequest, DevLoopArgs, DocsLintArgs, DocsLintMode, DocsLintStatus,
+    ExplainTickRequest, ExportArgs, GateStatus, GoldenGenerateArgs, GoldenVerifyArgs,
+    GoldenVerifyReport, NightlySummarizeArgs, OperatorReportArgs, ReleaseBuildRcArgs, SoakRunArgs,
     SpecSnapshotArgs, V2GateOverallStatus,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
@@ -1497,6 +1498,35 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 std::process::exit(report.exit_code);
             }
         }
+        "operator" => {
+            let sub = args.get(2).map(String::as_str).unwrap_or("help");
+            match sub {
+                "report" => {
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/operator_report.json"));
+                    let report = operator_report(
+                        &workdir,
+                        &OperatorReportArgs {
+                            run_id: arg_value(&args, "--run"),
+                            latest: has_flag(&args, "--latest"),
+                        },
+                        &out,
+                    )?;
+                    println!("out={}", out.display());
+                    println!("overall_status={:?}", report.overall_status);
+                    println!("{}", operator_report_text(&report));
+                    if has_flag(&args, "--text") {
+                        println!("text_mode=true");
+                    }
+                }
+                _ => {
+                    return Err(
+                        "usage: ucf-ops operator report [--run <id>] [--latest] [--text] [--out <path>]".into(),
+                    )
+                }
+            }
+        }
         "readiness-gate" => {
             let profile = arg_value(&args, "--profile").unwrap_or_else(|| "test".to_string());
             let out = arg_value(&args, "--out")
@@ -2051,7 +2081,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             eprintln!(
-                "usage: ucf-ops <bringup|diag|health|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|attest|repro|readiness-gate|preflight|goldens|nightly|dev|troubleshoot|adversarial-run|out|release|bench|runs|status|strict|ess|ebm|drift|alerts|policy|portability|spec|change-impact|soak|v0|v1|version> [--workdir <path>] [--bundle <path>]"
+                "usage: ucf-ops <bringup|diag|health|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|attest|repro|readiness-gate|preflight|goldens|nightly|dev|troubleshoot|adversarial-run|out|release|bench|runs|status|strict|ess|ebm|drift|alerts|operator|policy|portability|spec|change-impact|soak|v0|v1|version> [--workdir <path>] [--bundle <path>]"
             );
             std::process::exit(1);
         }
