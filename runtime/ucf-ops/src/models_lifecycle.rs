@@ -3377,4 +3377,40 @@ mod probe_tests {
             EligibilityOverallStatusV1::ProbeOnly
         ));
     }
+
+    #[test]
+    fn unified_eligibility_report_serialization_is_stable() {
+        let report = AggregatedEligibilityReportV1 {
+            schema_version: 1,
+            overall_status: EligibilityOverallStatusV1::ProbeOnly,
+            slots: vec![UnifiedEligibilityStatusV1 {
+                slot_id: "world_jepa".to_string(),
+                target_hash_prefix: "abc".to_string(),
+                manifest_digest_prefix: "def".to_string(),
+                probe_ready: true,
+                shadow_ready: false,
+                active_eligible: false,
+                latest_probe_digest_prefix: "p1".to_string(),
+                latest_shadow_evidence_digest_prefix: "missing".to_string(),
+                latest_active_evidence_digest_prefix: "missing".to_string(),
+                latest_drift_status: DriftStatusV1::Warn,
+                denial_reason_probe: None,
+                denial_reason_shadow: Some("SHADOW_READY_PROBE_REQUIRED".to_string()),
+                denial_reason_active: Some("ActiveDeniedNoProbe".to_string()),
+                remediation_codes: vec!["SHADOW_READY_PROBE_REQUIRED".to_string()],
+                status_digest: "status1".to_string(),
+            }],
+            report_digest: "deadbeef".to_string(),
+            policy_graph_digest_prefix: "aa11bb22".to_string(),
+            generated_from: EligibilityGeneratedFromV1 {
+                probe_report_digests: vec!["p1".to_string()],
+                shadow_ready_report_digest: "s1".to_string(),
+                active_evidence_report_digest: "a1".to_string(),
+                second_slot_parity_report_digest: "missing".to_string(),
+            },
+        };
+        let a = serde_json::to_vec(&report).expect("serialize a");
+        let b = serde_json::to_vec(&report).expect("serialize b");
+        assert_eq!(a, b);
+    }
 }

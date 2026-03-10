@@ -58,6 +58,7 @@ pub fn docs_lint(args: &DocsLintArgs) -> Result<DocsLintReport, OpsError> {
         prompt_index_check(args)?,
         module_map_check(args)?,
         hardware_neutral_docs_check(args)?,
+        v3_docs_consistency_check(args)?,
     ];
     let ok = checks.iter().all(|c| c.status != DocsLintStatus::Fail);
     Ok(DocsLintReport {
@@ -242,6 +243,21 @@ fn hardware_neutral_docs_check(args: &DocsLintArgs) -> Result<DocsLintCheck, Ops
             false,
         ),
         ("deploy_portable", &args.deploy_doc, true),
+        (
+            "models_eligibility_v3",
+            &args.repo_root.join("docs").join("models_eligibility_v3.md"),
+            false,
+        ),
+        (
+            "strict_mode_v3",
+            &args.repo_root.join("docs").join("strict_mode_v3.md"),
+            false,
+        ),
+        (
+            "operator_report_v3",
+            &args.repo_root.join("docs").join("operator_report_v3.md"),
+            false,
+        ),
     ];
 
     let banned = [
@@ -311,6 +327,81 @@ fn hardware_neutral_docs_check(args: &DocsLintArgs) -> Result<DocsLintCheck, Ops
         name: "hardware_neutral_docs".to_string(),
         status: DocsLintStatus::Pass,
         detail: "no hardware-specific terms detected in guarded docs".to_string(),
+        remediation: None,
+    })
+}
+
+fn v3_docs_consistency_check(args: &DocsLintArgs) -> Result<DocsLintCheck, OpsError> {
+    let required = [
+        "docs/models_eligibility_v3.md",
+        "docs/strict_mode_v3.md",
+        "docs/operator_report_v3.md",
+    ];
+    for path in required {
+        if !args.repo_root.join(path).exists() {
+            return Ok(DocsLintCheck {
+                name: "v3_docs_consistency".to_string(),
+                status: DocsLintStatus::Fail,
+                detail: format!("missing required v3 doc: {path}"),
+                remediation: Some("restore missing v3 docs and re-run docs lint".to_string()),
+            });
+        }
+    }
+
+    let portability_gate = fs::read_to_string(args.repo_root.join("docs/portability_gate.md"))?;
+    let strict_mode = fs::read_to_string(args.repo_root.join("docs/strict_mode.md"))?;
+    let series_snapshot = fs::read_to_string(args.repo_root.join("docs/series_state_snapshot.md"))?;
+
+    let missing = [
+        (
+            "docs/portability_gate.md",
+            "models_eligibility_v3.md",
+            portability_gate.contains("models_eligibility_v3.md"),
+        ),
+        (
+            "docs/portability_gate.md",
+            "strict_mode_v3.md",
+            portability_gate.contains("strict_mode_v3.md"),
+        ),
+        (
+            "docs/portability_gate.md",
+            "operator_report_v3.md",
+            portability_gate.contains("operator_report_v3.md"),
+        ),
+        (
+            "docs/strict_mode.md",
+            "strict_mode_v3.md",
+            strict_mode.contains("strict_mode_v3.md"),
+        ),
+        (
+            "docs/series_state_snapshot.md",
+            "| 207 |",
+            series_snapshot.contains("| 207 |"),
+        ),
+    ]
+    .into_iter()
+    .filter_map(|(file, needle, present)| {
+        (!present).then_some(format!("{file} missing `{needle}`"))
+    })
+    .collect::<Vec<_>>();
+
+    if !missing.is_empty() {
+        return Ok(DocsLintCheck {
+            name: "v3_docs_consistency".to_string(),
+            status: DocsLintStatus::Fail,
+            detail: format!("v3 docs linkage mismatch: {}", missing.join("; ")),
+            remediation: Some(
+                "link v3 docs from portability/strict docs and keep prompt index + series snapshot in sync"
+                    .to_string(),
+            ),
+        });
+    }
+
+    Ok(DocsLintCheck {
+        name: "v3_docs_consistency".to_string(),
+        status: DocsLintStatus::Pass,
+        detail: "v3 docs are present and linked from portability/strict/index snapshots"
+            .to_string(),
         remediation: None,
     })
 }
@@ -467,7 +558,7 @@ fn first_diff_line(a: &str, b: &str) -> usize {
 mod tests {
     use super::{
         first_diff_line, hardware_neutral_docs_check, parse_module_map_keys, parse_prompt_ids,
-        DocsLintArgs, DocsLintMode, DocsLintStatus,
+        v3_docs_consistency_check, DocsLintArgs, DocsLintMode, DocsLintStatus,
     };
     use std::path::PathBuf;
 
@@ -511,6 +602,9 @@ mod tests {
         .expect("write");
         std::fs::write(docs.join("prompt_rulebook.md"), "# Rules\n").expect("write");
         std::fs::write(docs.join("deploy_portable.md"), "# Deploy\nRPi adapter\n").expect("write");
+        std::fs::write(docs.join("models_eligibility_v3.md"), "# v3\n").expect("write");
+        std::fs::write(docs.join("strict_mode_v3.md"), "# v3\n").expect("write");
+        std::fs::write(docs.join("operator_report_v3.md"), "# v3\n").expect("write");
         std::fs::write(docs.join("module_map.md"), "- **ucf-ops**: x\n").expect("write");
         std::fs::write(docs.join("spec_snapshot.md"), "# x\n").expect("write");
 
@@ -540,6 +634,9 @@ mod tests {
         .expect("write");
         std::fs::write(docs.join("prompt_rulebook.md"), "# Rules\n").expect("write");
         std::fs::write(docs.join("deploy_portable.md"), "# Deploy\n").expect("write");
+        std::fs::write(docs.join("models_eligibility_v3.md"), "# v3\n").expect("write");
+        std::fs::write(docs.join("strict_mode_v3.md"), "# v3\n").expect("write");
+        std::fs::write(docs.join("operator_report_v3.md"), "# v3\n").expect("write");
         std::fs::write(docs.join("module_map.md"), "- **ucf-ops**: x\n").expect("write");
         std::fs::write(docs.join("spec_snapshot.md"), "# x\n").expect("write");
 
@@ -555,5 +652,40 @@ mod tests {
         })
         .expect("check");
         assert_eq!(check.status, DocsLintStatus::Fail);
+    }
+
+    #[test]
+    fn v3_docs_consistency_requires_links() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let docs = dir.path().join("docs");
+        std::fs::create_dir_all(&docs).expect("mkdir");
+        std::fs::write(docs.join("prompt_series_index.md"), "| 207 | x |\n").expect("write");
+        std::fs::write(docs.join("prompt_rulebook.md"), "# Rules\n").expect("write");
+        std::fs::write(docs.join("deploy_portable.md"), "# Deploy\n").expect("write");
+        std::fs::write(docs.join("module_map.md"), "- **ucf-ops**: x\n").expect("write");
+        std::fs::write(docs.join("spec_snapshot.md"), "# x\n").expect("write");
+        std::fs::write(
+            docs.join("portability_gate.md"),
+            "models_eligibility_v3.md strict_mode_v3.md operator_report_v3.md\n",
+        )
+        .expect("write");
+        std::fs::write(docs.join("strict_mode.md"), "strict_mode_v3.md\n").expect("write");
+        std::fs::write(docs.join("series_state_snapshot.md"), "| 207 | x |\n").expect("write");
+        std::fs::write(docs.join("models_eligibility_v3.md"), "# x\n").expect("write");
+        std::fs::write(docs.join("strict_mode_v3.md"), "# x\n").expect("write");
+        std::fs::write(docs.join("operator_report_v3.md"), "# x\n").expect("write");
+
+        let check = v3_docs_consistency_check(&DocsLintArgs {
+            repo_root: dir.path().to_path_buf(),
+            policy_pack: PathBuf::from("policies/packs/base_v1"),
+            overlay_pack: None,
+            spec_snapshot: docs.join("spec_snapshot.md"),
+            prompt_index: docs.join("prompt_series_index.md"),
+            module_map: docs.join("module_map.md"),
+            deploy_doc: docs.join("deploy_portable.md"),
+            mode: DocsLintMode::Strict,
+        })
+        .expect("check");
+        assert_eq!(check.status, DocsLintStatus::Pass);
     }
 }

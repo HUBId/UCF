@@ -16,17 +16,17 @@ use ucf_ops::{
     models_shadow_ready, models_stage, models_verify, models_verify_lifecycle, net_deps_audit,
     nightly_summarize, one_command_bringup, operator_report, operator_report_text, out_manifest,
     parse_duration_secs, parse_inject, parse_slot, path_scan, policy_diff, policy_explain,
-    policy_validate, portability_check, preflight, readiness_gate, release_build_rc,
-    release_rc1_gate, release_signoff_validate, replay_audit, replay_bugreport, repro_pack,
-    repro_verify, run_status, runs_list, runs_search, runs_show, save_counterfactual_result,
-    second_slot_parity_report, security_verify_chain, simulate_counterfactual, soak_run,
-    strict_check, troubleshoot, v0_gate, v1_smoke, v2_gate, verify_bugreport, world_parity_report,
-    world_shadow_report, write_slice, AdversarialRunArgs, AirgapArtifactType, AirgapImportArgs,
-    AirgapImportMode, BenchArgs, BugKitBuildArgs, ChangeImpactArgs, ConfigV1,
-    CounterfactualRequest, DevLoopArgs, DocsLintArgs, DocsLintMode, DocsLintStatus,
-    ExplainTickRequest, ExportArgs, GateStatus, GoldenGenerateArgs, GoldenVerifyArgs,
-    GoldenVerifyReport, NightlySummarizeArgs, OperatorReportArgs, ReleaseBuildRcArgs, SoakRunArgs,
-    SpecSnapshotArgs, V2GateOverallStatus,
+    policy_validate, portability_check, portability_report, preflight, readiness_gate,
+    release_build_rc, release_rc1_gate, release_signoff_validate, replay_audit, replay_bugreport,
+    repro_pack, repro_verify, run_status, runs_list, runs_search, runs_show,
+    save_counterfactual_result, second_slot_parity_report, security_verify_chain,
+    simulate_counterfactual, soak_run, strict_check, troubleshoot, v0_gate, v1_smoke, v2_gate,
+    verify_bugreport, world_parity_report, world_shadow_report, write_slice, AdversarialRunArgs,
+    AirgapArtifactType, AirgapImportArgs, AirgapImportMode, BenchArgs, BugKitBuildArgs,
+    ChangeImpactArgs, ConfigV1, CounterfactualRequest, DevLoopArgs, DocsLintArgs, DocsLintMode,
+    DocsLintStatus, ExplainTickRequest, ExportArgs, GateStatus, GoldenGenerateArgs,
+    GoldenVerifyArgs, GoldenVerifyReport, NightlySummarizeArgs, OperatorReportArgs,
+    ReleaseBuildRcArgs, SoakRunArgs, SpecSnapshotArgs, V2GateOverallStatus,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -439,7 +439,31 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         std::process::exit(2);
                     }
                 }
-                _ => return Err("usage: ucf-ops portability check [--out <path>]".into()),
+                "report" => {
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/portability_report.json"));
+                    let report = portability_report(&workdir, &out)?;
+                    let has_fail = [
+                        &report.docs_lint,
+                        &report.path_scan,
+                        &report.hardware_scan,
+                        &report.v0_gate,
+                        &report.v1_gate,
+                        &report.v2_gate,
+                        &report.eligibility_smoke,
+                        &report.strict_check_smoke,
+                        &report.operator_report_smoke,
+                    ]
+                    .iter()
+                    .any(|check| matches!(check.status, ucf_ops::PortabilityGateStatus::Fail));
+                    println!("schema_version={}", report.schema_version);
+                    println!("out={}", out.display());
+                    if has_fail {
+                        std::process::exit(2);
+                    }
+                }
+                _ => return Err("usage: ucf-ops portability <check|report> [--out <path>]".into()),
             }
         }
 

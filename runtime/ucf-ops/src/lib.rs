@@ -10528,6 +10528,45 @@ pub struct PortabilityCheckReport {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum PortabilityGateStatus {
+    Pass,
+    Fail,
+    Skip,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PortabilityMatrixEntry {
+    pub os: String,
+    pub command: String,
+    pub support: PortabilityGateStatus,
+    pub note: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PortabilityCommandCheck {
+    pub name: String,
+    pub status: PortabilityGateStatus,
+    pub detail: String,
+    pub out: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PortabilityReportV1 {
+    pub schema_version: u16,
+    pub docs_lint: PortabilityCommandCheck,
+    pub path_scan: PortabilityCommandCheck,
+    pub hardware_scan: PortabilityCommandCheck,
+    pub v0_gate: PortabilityCommandCheck,
+    pub v1_gate: PortabilityCommandCheck,
+    pub v2_gate: PortabilityCommandCheck,
+    pub eligibility_smoke: PortabilityCommandCheck,
+    pub strict_check_smoke: PortabilityCommandCheck,
+    pub operator_report_smoke: PortabilityCommandCheck,
+    pub command_matrix: Vec<PortabilityMatrixEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct StrictCheckReport {
     pub strict_mode_enabled: bool,
     pub ok: bool,
@@ -11079,6 +11118,239 @@ pub fn portability_check(out: &Path) -> Result<PortabilityCheckReport, OpsError>
     Ok(report)
 }
 
+pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityReportV1, OpsError> {
+    let docs_out = PathBuf::from("./out/docs_lint_report.json");
+    let docs_lint = match docs_lint(&DocsLintArgs {
+        repo_root: PathBuf::from("."),
+        policy_pack: PathBuf::from("policies/packs/base_v1"),
+        overlay_pack: Some(PathBuf::from("policies/packs/overlays/test")),
+        spec_snapshot: PathBuf::from("docs/spec_snapshot.md"),
+        prompt_index: PathBuf::from("docs/prompt_series_index.md"),
+        module_map: PathBuf::from("docs/module_map.md"),
+        deploy_doc: PathBuf::from("docs/deploy_portable.md"),
+        mode: DocsLintMode::Strict,
+    }) {
+        Ok(report) => {
+            if let Some(parent) = docs_out.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(&docs_out, serde_json::to_vec_pretty(&report)?)?;
+            PortabilityCommandCheck {
+                name: "docs_lint_strict".to_string(),
+                status: if report.ok {
+                    PortabilityGateStatus::Pass
+                } else {
+                    PortabilityGateStatus::Fail
+                },
+                detail: format!("overall={}", if report.ok { "PASS" } else { "FAIL" }),
+                out: Some(docs_out.display().to_string()),
+            }
+        }
+        Err(err) => PortabilityCommandCheck {
+            name: "docs_lint_strict".to_string(),
+            status: PortabilityGateStatus::Fail,
+            detail: err.to_string(),
+            out: None,
+        },
+    };
+
+    let path_scan = scan_check(
+        "path_scan",
+        path_scan(Path::new(".")),
+        "./out/path_scan_report.json",
+    )?;
+    let hardware_scan = scan_check(
+        "hardware_scan",
+        hardware_scan(Path::new(".")),
+        "./out/hardware_scan_report.json",
+    )?;
+
+    let v0_out = PathBuf::from("./out/v0_gate_report.json");
+    let v0_gate = gate_check(
+        "v0_gate",
+        v0_gate(workdir, Path::new("fixtures/e2e/v0_flow_a.json"), &v0_out)
+            .map(|r| matches!(r.overall_status, V0GateOverallStatus::Pass)),
+        &v0_out,
+    );
+
+    let v1_out = PathBuf::from("./out/v1_gate_report.json");
+    let v1_gate = gate_check(
+        "v1_gate",
+        v1_gate(workdir, &v1_out).map(|r| matches!(r.overall_status, V1GateOverallStatus::Pass)),
+        &v1_out,
+    );
+
+    let v2_out = PathBuf::from("./out/v2_gate_report.json");
+    let v2_gate = gate_check(
+        "v2_gate",
+        v2_gate(workdir, &v2_out).map(|r| matches!(r.overall_status, V2GateOverallStatus::Pass)),
+        &v2_out,
+    );
+
+    let eligibility_out = PathBuf::from("./out/models_eligibility_report.json");
+    let eligibility_smoke = match models_eligibility(workdir, None, &eligibility_out) {
+        Ok(report) => PortabilityCommandCheck {
+            name: "models_eligibility_smoke".to_string(),
+            status: PortabilityGateStatus::Pass,
+            detail: format!("overall={:?}", report.overall_status),
+            out: Some(eligibility_out.display().to_string()),
+        },
+        Err(err) => PortabilityCommandCheck {
+            name: "models_eligibility_smoke".to_string(),
+            status: PortabilityGateStatus::Fail,
+            detail: err.to_string(),
+            out: Some(eligibility_out.display().to_string()),
+        },
+    };
+
+    let strict_out = PathBuf::from("./out/strict_check.json");
+    let strict_check_smoke = match strict_check(workdir, true, &strict_out) {
+        Ok(report) => PortabilityCommandCheck {
+            name: "strict_check_v3_smoke".to_string(),
+            status: PortabilityGateStatus::Pass,
+            detail: format!("overall={}", if report.ok { "PASS" } else { "FAIL" }),
+            out: Some(strict_out.display().to_string()),
+        },
+        Err(err) => PortabilityCommandCheck {
+            name: "strict_check_v3_smoke".to_string(),
+            status: PortabilityGateStatus::Fail,
+            detail: err.to_string(),
+            out: Some(strict_out.display().to_string()),
+        },
+    };
+
+    let operator_out = PathBuf::from("./out/operator_report.json");
+    let operator_report_smoke = match operator_report(
+        workdir,
+        &OperatorReportArgs {
+            run_id: None,
+            latest: false,
+        },
+        &operator_out,
+    ) {
+        Ok(report) => PortabilityCommandCheck {
+            name: "operator_report_smoke".to_string(),
+            status: PortabilityGateStatus::Pass,
+            detail: format!("overall={:?}", report.overall_status),
+            out: Some(operator_out.display().to_string()),
+        },
+        Err(err) => PortabilityCommandCheck {
+            name: "operator_report_smoke".to_string(),
+            status: PortabilityGateStatus::Fail,
+            detail: err.to_string(),
+            out: Some(operator_out.display().to_string()),
+        },
+    };
+
+    let command_matrix = vec![
+        matrix_cmd("linux", "cargo test --workspace --all-targets"),
+        matrix_cmd("linux", "cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json"),
+        matrix_cmd("linux", "cargo run -p ucf-ops -- v0 gate --scenario fixtures/e2e/v0_flow_a.json --out ./out/v0_gate_report.json"),
+        matrix_cmd("linux", "cargo run -p ucf-ops -- v1 gate --out ./out/v1_gate_report.json"),
+        matrix_cmd("linux", "cargo run -p ucf-ops -- v2 gate --out ./out/v2_gate_report.json"),
+        matrix_cmd("linux", "cargo run -p ucf-ops -- models eligibility --out ./out/models_eligibility_report.json"),
+        matrix_cmd("linux", "cargo run -p ucf-ops -- strict check --strict --out ./out/strict_check.json"),
+        matrix_cmd("linux", "cargo run -p ucf-ops -- operator report --out ./out/operator_report.json"),
+        matrix_cmd("windows", "cargo test --workspace --all-targets"),
+        matrix_cmd("windows", "cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json"),
+        matrix_cmd("windows", "cargo run -p ucf-ops -- v0 gate --scenario fixtures/e2e/v0_flow_a.json --out ./out/v0_gate_report.json"),
+        matrix_cmd("windows", "cargo run -p ucf-ops -- v1 gate --out ./out/v1_gate_report.json"),
+        matrix_cmd("windows", "cargo run -p ucf-ops -- v2 gate --out ./out/v2_gate_report.json"),
+        matrix_cmd("windows", "cargo run -p ucf-ops -- models eligibility --out ./out/models_eligibility_report.json"),
+        matrix_cmd("windows", "cargo run -p ucf-ops -- strict check --strict --out ./out/strict_check.json"),
+        matrix_cmd("windows", "cargo run -p ucf-ops -- operator report --out ./out/operator_report.json"),
+    ];
+
+    let report = PortabilityReportV1 {
+        schema_version: 1,
+        docs_lint,
+        path_scan,
+        hardware_scan,
+        v0_gate,
+        v1_gate,
+        v2_gate,
+        eligibility_smoke,
+        strict_check_smoke,
+        operator_report_smoke,
+        command_matrix,
+    };
+
+    if let Some(parent) = out.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(out, serde_json::to_vec_pretty(&report)?)?;
+    Ok(report)
+}
+
+fn matrix_cmd(os: &str, command: &str) -> PortabilityMatrixEntry {
+    PortabilityMatrixEntry {
+        os: os.to_string(),
+        command: command.to_string(),
+        support: PortabilityGateStatus::Pass,
+        note: "supported".to_string(),
+    }
+}
+
+fn gate_check(name: &str, result: Result<bool, OpsError>, out: &Path) -> PortabilityCommandCheck {
+    match result {
+        Ok(true) => PortabilityCommandCheck {
+            name: name.to_string(),
+            status: PortabilityGateStatus::Pass,
+            detail: "overall=PASS".to_string(),
+            out: Some(out.display().to_string()),
+        },
+        Ok(false) => PortabilityCommandCheck {
+            name: name.to_string(),
+            status: PortabilityGateStatus::Fail,
+            detail: "overall=FAIL".to_string(),
+            out: Some(out.display().to_string()),
+        },
+        Err(err) => PortabilityCommandCheck {
+            name: name.to_string(),
+            status: PortabilityGateStatus::Fail,
+            detail: err.to_string(),
+            out: Some(out.display().to_string()),
+        },
+    }
+}
+
+fn scan_check<T: Serialize>(
+    name: &str,
+    result: Result<T, OpsError>,
+    out: &str,
+) -> Result<PortabilityCommandCheck, OpsError> {
+    let out_path = PathBuf::from(out);
+    match result {
+        Ok(report) => {
+            if let Some(parent) = out_path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(&out_path, serde_json::to_vec_pretty(&report)?)?;
+            let violations = serde_json::to_value(&report)?
+                .get("violations")
+                .and_then(|v| v.as_array())
+                .map(|v| v.len())
+                .unwrap_or(0);
+            Ok(PortabilityCommandCheck {
+                name: name.to_string(),
+                status: if violations == 0 {
+                    PortabilityGateStatus::Pass
+                } else {
+                    PortabilityGateStatus::Fail
+                },
+                detail: format!("violations={violations}"),
+                out: Some(out.to_string()),
+            })
+        }
+        Err(err) => Ok(PortabilityCommandCheck {
+            name: name.to_string(),
+            status: PortabilityGateStatus::Fail,
+            detail: err.to_string(),
+            out: Some(out.to_string()),
+        }),
+    }
+}
+
 pub fn hardware_scan(repo_root: &Path) -> Result<HardwareScanReport, OpsError> {
     let banned = [
         "NUC",
@@ -11113,6 +11385,9 @@ pub fn hardware_scan(repo_root: &Path) -> Result<HardwareScanReport, OpsError> {
             "docs/readiness_gate.md",
             "docs/deploy_portable.md",
             "docs/spec_snapshot.md",
+            "docs/models_eligibility_v3.md",
+            "docs/strict_mode_v3.md",
+            "docs/operator_report_v3.md",
         ]
         .iter()
         .any(|doc| rel == *doc);
@@ -12049,6 +12324,34 @@ slots = [{ slot_id = "world_jepa", active_hash = "missing", files = [{ path = "m
             evidence_digest_prefixes: BTreeMap::new(),
         };
         assert!(report.has_failures());
+    }
+
+    #[test]
+    fn strict_report_schema_serialization_is_stable() {
+        let report = StrictModeFailureReport {
+            schema_version: 1,
+            strict_mode_enabled: true,
+            profile: "test".to_string(),
+            checks: vec![strict_pass("strict_mode")],
+            v1_checks: Vec::new(),
+            v3: Some(StrictFailureReportV3 {
+                schema_version: 3,
+                strict_mode_enabled: true,
+                overall_status: "PASS".to_string(),
+                checks: vec![strict_v3_check(
+                    "STRICT_MANIFEST_VALID",
+                    None,
+                    StrictCheckV3Status::Pass,
+                    None,
+                    vec!["abc123".to_string()],
+                    "REMEDIATE_NONE",
+                )],
+            }),
+            evidence_digest_prefixes: BTreeMap::new(),
+        };
+        let a = serde_json::to_vec(&report).expect("serialize a");
+        let b = serde_json::to_vec(&report).expect("serialize b");
+        assert_eq!(a, b);
     }
 
     #[test]

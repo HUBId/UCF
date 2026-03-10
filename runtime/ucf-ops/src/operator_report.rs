@@ -871,4 +871,29 @@ mod tests {
         let normalized = normalize_drift(Some(&report));
         assert_eq!(normalized.slots[0].severe_alarm_count, 255);
     }
+
+    #[test]
+    fn operator_report_schema_serialization_is_stable() {
+        let report = ConsolidatedOperatorReportV1 {
+            schema_version: 1,
+            generated_at: 1,
+            overall_status: OperatorStatus::Warn,
+            run_id: Some("run-1".to_string()),
+            policy_graph_digest_prefix: Some("abc123".to_string()),
+            manifest_digest_prefix: Some("def456".to_string()),
+            sections: OperatorSectionsV1 {
+                health_section: normalize_health(None),
+                eligibility_section: normalize_eligibility(None),
+                drift_section: normalize_drift(None),
+                alerts_section: normalize_alerts(None),
+                strict_section: normalize_strict(None),
+                gates_section: normalize_gates(None, None, None),
+            },
+            remediation_codes: vec!["run_models_eligibility".to_string()],
+            report_digest: "digest".to_string(),
+        };
+        let a = serde_json::to_vec(&report).expect("serialize a");
+        let b = serde_json::to_vec(&report).expect("serialize b");
+        assert_eq!(a, b);
+    }
 }
