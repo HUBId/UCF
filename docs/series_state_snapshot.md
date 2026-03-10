@@ -44,4 +44,5 @@ Reference: `docs/next_10_prompts.md`
 ## Supported real-slot baseline carried from v2
 - First supported slot: `world_jepa`.
 - Second supported slot declaration: `sae`.
+- Candle real-backend support is now available for both declared slots (`world_jepa`, `sae`) under probe-first + shadow-first operation.
 - v3 planning may broaden support, but this declaration remains available for compatibility checks until superseded by explicit schema/docs updates.

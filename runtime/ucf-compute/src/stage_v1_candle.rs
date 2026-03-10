@@ -174,6 +174,49 @@ impl CandleSaeAdapterV0 {
         }
     }
 
+    pub fn from_safetensors_bytes(model_hash: [u8; 32], bytes: &[u8]) -> Result<Self, StageError> {
+        let spec = sae_weight_spec(bytes.len() as u64);
+        let loaded = crate::candle_weights::load_safetensors_raw(ModelSlot::Sae, bytes, &spec)
+            .map_err(|_| StageError {
+                code: StageErrorCode::ValidationFailed,
+                reason: "sae candle weights validation failed",
+            })?;
+        let w_enc = loaded.tensors.get("sae.w_enc").ok_or(StageError {
+            code: StageErrorCode::ValidationFailed,
+            reason: "sae candle missing sae.w_enc",
+        })?;
+        let b_enc = loaded.tensors.get("sae.b_enc").ok_or(StageError {
+            code: StageErrorCode::ValidationFailed,
+            reason: "sae candle missing sae.b_enc",
+        })?;
+        let device = Device::Cpu;
+        let w_enc_t = Tensor::from_vec(
+            w_enc.values_f32.clone(),
+            (w_enc.shape[0], w_enc.shape[1]),
+            &device,
+        )
+        .map_err(|_| StageError {
+            code: StageErrorCode::ValidationFailed,
+            reason: "sae candle encoder load failed",
+        })?;
+        let b_enc_t =
+            Tensor::from_vec(b_enc.values_f32.clone(), b_enc.shape[0], &device).map_err(|_| {
+                StageError {
+                    code: StageErrorCode::ValidationFailed,
+                    reason: "sae candle bias load failed",
+                }
+            })?;
+        Ok(Self {
+            encoder: Some(CandleSaeModel {
+                model_hash,
+                feature_dim: w_enc.shape[0],
+                input_dim: w_enc.shape[1],
+                w_enc: w_enc_t,
+                b_enc: b_enc_t,
+            }),
+        })
+    }
+
     fn input_vector(input: &SaeInputV1) -> [f32; SAE_INPUT_DIM] {
         let mut out = [0.0_f32; SAE_INPUT_DIM];
         for (idx, item) in out.iter_mut().enumerate() {
@@ -433,6 +476,13 @@ mod tests {
         let loaded = crate::candle_weights::load_safetensors_raw(ModelSlot::Sae, &bytes, &spec)
             .expect("valid fixture");
         assert_eq!(loaded.tensors.len(), 2);
+    }
+
+    #[test]
+    fn sae_invalid_weights_fail_validation() {
+        let err = CandleSaeAdapterV0::from_safetensors_bytes([0; 32], b"not-safetensors")
+            .expect_err("must fail");
+        assert_eq!(err.code, StageErrorCode::ValidationFailed);
     }
 
     #[test]

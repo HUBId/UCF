@@ -6215,6 +6215,14 @@ fn sync_graph_from_cde_state(graph: &mut CausalGraph, state: &CdeState) {
 mod tests {
     use super::*;
     use std as stdlib;
+    use std::sync::{Mutex, OnceLock};
+
+    fn env_test_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+            .lock()
+            .expect("env lock")
+    }
 
     fn compute_summary_fixture() -> ucf_compute::ComputeSignalsSummary {
         ucf_compute::ComputeSignalsSummary {
@@ -6340,6 +6348,7 @@ mod tests {
     }
     #[test]
     fn fails_fast_on_bad_policy_bundle_hash() {
+        let _env_guard = env_test_lock();
         let original = std::env::var("UCF_POLICY_BUNDLE_SHA256").ok();
         std::env::set_var("UCF_POLICY_BUNDLE_SHA256", "deadbeef");
         let outcome = RuntimeOrchestrator::new_with_result();
@@ -6391,6 +6400,7 @@ mod tests {
 
     #[test]
     fn emergency_state_transitions_on_runaway_and_cooldown() {
+        let _env_guard = env_test_lock();
         if !std::path::Path::new("policies/manifest.toml").exists() {
             return;
         }
@@ -6446,6 +6456,7 @@ mod tests {
 
     #[test]
     fn runtime_returns_error_if_training_mode_env_is_enabled() {
+        let _env_guard = env_test_lock();
         let original = std::env::var("UCF_EBM_TRAINING_MODE").ok();
         std::env::set_var("UCF_EBM_TRAINING_MODE", "1");
         let outcome = RuntimeOrchestrator::new_with_result();
@@ -6474,6 +6485,7 @@ mod tests {
 
     #[test]
     fn panic_in_stage_compute_is_caught_and_recorded() {
+        let _env_guard = env_test_lock();
         let td = tempfile::tempdir().expect("tmp");
         std::env::set_var(
             "UCF_PANIC_LOG_PATH",
