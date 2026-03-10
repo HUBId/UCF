@@ -79,3 +79,12 @@ The report now also includes:
   - `UCF_STRICT_MODE=1`
   - `UCF_STRICT_PANIC_FAIL_FAST=1`
 - Without fail-fast, runtime uses deterministic degraded fallback semantics.
+
+
+### v3 strict refresh
+
+Strict mode now also exposes a unified `v3` report section in `out/strict_failure.json` for the supported real-slot set (`world_jepa` + declared second slot).
+
+Runtime startup strict validation and `ucf-ops strict check` share the same v3 denial semantics/check IDs.
+
+See details in `docs/strict_mode_v3.md`.

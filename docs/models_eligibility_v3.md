@@ -71,3 +71,14 @@ Damit müssen Operatoren Probe-/Shadow-/Active-Reports nicht mehr manuell korrel
 
 ## Additional v3 evidence feed
 - Unified eligibility also includes second-slot parity report digest evidence (`out/<slot>_parity_report.json`) for shadow-readiness interpretation.
+
+
+## Strict mode coupling
+
+Strict mode v3 consumes the same unified evidence primitives (probe, shadow-ready, active-eligible, normalized compare freshness + drift/hash denial reasons) instead of re-deriving an independent decision tree.
+
+This keeps semantics aligned between:
+
+- `ucf-ops models eligibility`
+- strict startup/runtime checks
+- `ucf-ops strict check`
