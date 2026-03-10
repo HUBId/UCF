@@ -6183,10 +6183,55 @@ fn strict_v3_checks(workdir: &Path, cfg: &OpsConfig) -> StrictFailureReportV3 {
     slots.sort_by_key(|s| s.as_str().to_string());
     slots.dedup();
 
+    if !cfg.strict_mode {
+        checks.push(strict_v3_check(
+            "STRICT_MANIFEST_VALID",
+            None,
+            StrictCheckV3Status::Skip,
+            None,
+            Vec::new(),
+            "REMEDIATE_MANIFEST",
+        ));
+        for slot in &slots {
+            let slot_id = Some(slot.as_str().to_string());
+            for (check_id, remediation) in [
+                ("STRICT_PROBE_READY", "REMEDIATE_PROBE"),
+                ("STRICT_SHADOW_READY", "REMEDIATE_SHADOW_READY"),
+                ("STRICT_ACTIVE_ELIGIBLE", "REMEDIATE_ACTIVE_ELIGIBILITY"),
+                ("STRICT_COMPARE_FRESH", "REMEDIATE_COMPARE_WINDOW"),
+                ("STRICT_DRIFT_OK", "REMEDIATE_DRIFT"),
+                ("STRICT_HASH_CONSISTENT", "REMEDIATE_HASH_ALIGNMENT"),
+            ] {
+                checks.push(strict_v3_check(
+                    check_id,
+                    slot_id.clone(),
+                    StrictCheckV3Status::Skip,
+                    None,
+                    Vec::new(),
+                    remediation,
+                ));
+            }
+        }
+        return StrictFailureReportV3 {
+            schema_version: 3,
+            strict_mode_enabled: false,
+            overall_status: "PASS".to_string(),
+            checks,
+        };
+    }
+
     let slot_enablement = ucf_compute::SlotEnablement::from_env().unwrap_or_default();
     let compare_max_age = cfg.active_evidence_compare_max_age_ticks.max(1);
+    let any_real_shadow_or_active_requested = slots.iter().any(|slot| {
+        matches!(
+            slot_enablement.for_slot(*slot),
+            ucf_compute::SlotMode::Shadow | ucf_compute::SlotMode::Active
+        )
+    });
 
-    let manifest_raw = fs::read_to_string(PathBuf::from("models").join("MANIFEST.toml")).ok();
+    let manifest_raw = fs::read_to_string(PathBuf::from("models").join("manifest.toml"))
+        .or_else(|_| fs::read_to_string(PathBuf::from("models").join("MANIFEST.toml")))
+        .ok();
     let manifest = manifest_raw
         .as_ref()
         .and_then(|body| body.parse::<toml::Value>().ok());
@@ -6211,12 +6256,14 @@ fn strict_v3_checks(workdir: &Path, cfg: &OpsConfig) -> StrictFailureReportV3 {
     checks.push(strict_v3_check(
         "STRICT_MANIFEST_VALID",
         None,
-        if manifest_ok {
+        if !any_real_shadow_or_active_requested {
+            StrictCheckV3Status::Skip
+        } else if manifest_ok {
             StrictCheckV3Status::Pass
         } else {
             StrictCheckV3Status::Fail
         },
-        if manifest_ok {
+        if !any_real_shadow_or_active_requested || manifest_ok {
             None
         } else {
             Some("STRICT_MANIFEST_INVALID")
