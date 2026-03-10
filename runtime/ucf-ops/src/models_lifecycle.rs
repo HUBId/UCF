@@ -126,6 +126,7 @@ pub struct EligibilityGeneratedFromV1 {
     pub probe_report_digests: Vec<String>,
     pub shadow_ready_report_digest: String,
     pub active_evidence_report_digest: String,
+    pub second_slot_parity_report_digest: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -609,6 +610,18 @@ pub fn models_eligibility(
     statuses.sort_by(|a, b| a.slot_id.cmp(&b.slot_id));
 
     let overall_status = derive_eligibility_overall_status(&statuses);
+    let second_slot = crate::detect_second_slot(workdir).ok();
+    let second_slot_parity_report_digest = second_slot
+        .and_then(|slot| {
+            let path = workdir
+                .join("out")
+                .join(format!("{}_parity_report.json", slot.as_str()));
+            fs::read(path)
+                .ok()
+                .map(|bytes| crate::prefix_hex(&crate::sha256_hex(&bytes), 16))
+        })
+        .unwrap_or_else(|| "missing".to_string());
+
     let generated_from = EligibilityGeneratedFromV1 {
         probe_report_digests: statuses
             .iter()
@@ -616,6 +629,7 @@ pub fn models_eligibility(
             .collect(),
         shadow_ready_report_digest: digest_shadow_generated_from(&statuses),
         active_evidence_report_digest: digest_active_generated_from(&statuses),
+        second_slot_parity_report_digest,
     };
     let policy_graph_digest_prefix = read_policy_graph_digest_prefix();
 
@@ -625,6 +639,7 @@ pub fn models_eligibility(
     digest_source.extend_from_slice(policy_graph_digest_prefix.as_bytes());
     digest_source.extend_from_slice(generated_from.shadow_ready_report_digest.as_bytes());
     digest_source.extend_from_slice(generated_from.active_evidence_report_digest.as_bytes());
+    digest_source.extend_from_slice(generated_from.second_slot_parity_report_digest.as_bytes());
     for probe_digest in &generated_from.probe_report_digests {
         digest_source.extend_from_slice(probe_digest.as_bytes());
     }
