@@ -11,17 +11,17 @@ use ucf_ops::{
     export_policy_key_registry_v1, gateway_threat_test, goldens_generate, goldens_update,
     goldens_verify, goldens_verify_detailed, hardware_scan, load_signoff_checklist, logs_prove,
     logs_verify_proof, metrics_snapshot, metrics_summary, metrics_trend, migrate_config_v1,
-    models_active_check, models_active_evidence, models_list, models_probe, models_probe_slot,
-    models_promote, models_recommend_rollback, models_rollback, models_shadow_ready, models_stage,
-    models_verify, models_verify_lifecycle, net_deps_audit, nightly_summarize, one_command_bringup,
-    out_manifest, parse_duration_secs, parse_inject, parse_slot, path_scan, policy_diff,
-    policy_explain, policy_validate, portability_check, preflight, readiness_gate,
-    release_build_rc, release_rc1_gate, release_signoff_validate, replay_audit, replay_bugreport,
-    repro_pack, repro_verify, run_status, runs_list, runs_search, runs_show,
-    save_counterfactual_result, security_verify_chain, simulate_counterfactual, soak_run,
-    strict_check, troubleshoot, v0_gate, v1_smoke, v2_gate, verify_bugreport, world_parity_report,
-    world_shadow_report, write_slice, AdversarialRunArgs, AirgapArtifactType, AirgapImportArgs,
-    AirgapImportMode, BenchArgs, BugKitBuildArgs, ChangeImpactArgs, ConfigV1,
+    models_active_check, models_active_evidence, models_eligibility, models_list, models_probe,
+    models_probe_slot, models_promote, models_recommend_rollback, models_rollback,
+    models_shadow_ready, models_stage, models_verify, models_verify_lifecycle, net_deps_audit,
+    nightly_summarize, one_command_bringup, out_manifest, parse_duration_secs, parse_inject,
+    parse_slot, path_scan, policy_diff, policy_explain, policy_validate, portability_check,
+    preflight, readiness_gate, release_build_rc, release_rc1_gate, release_signoff_validate,
+    replay_audit, replay_bugreport, repro_pack, repro_verify, run_status, runs_list, runs_search,
+    runs_show, save_counterfactual_result, security_verify_chain, simulate_counterfactual,
+    soak_run, strict_check, troubleshoot, v0_gate, v1_smoke, v2_gate, verify_bugreport,
+    world_parity_report, world_shadow_report, write_slice, AdversarialRunArgs, AirgapArtifactType,
+    AirgapImportArgs, AirgapImportMode, BenchArgs, BugKitBuildArgs, ChangeImpactArgs, ConfigV1,
     CounterfactualRequest, DevLoopArgs, DocsLintArgs, DocsLintMode, DocsLintStatus,
     ExplainTickRequest, ExportArgs, GateStatus, GoldenGenerateArgs, GoldenVerifyArgs,
     GoldenVerifyReport, NightlySummarizeArgs, ReleaseBuildRcArgs, SoakRunArgs, SpecSnapshotArgs,
@@ -1069,9 +1069,41 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         std::process::exit(2);
                     }
                 }
+                "eligibility" => {
+                    let slot = arg_value(&args, "--slot").map(|v| parse_slot(&v)).transpose()?;
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/models_eligibility_report.json"));
+                    let report = models_eligibility(&workdir, slot, &out)?;
+                    for slot in &report.slots {
+                        println!(
+                            "slot={} target={} probe_ready={} shadow_ready={} active_eligible={}{}",
+                            slot.slot_id,
+                            slot.target_hash_prefix,
+                            if slot.probe_ready { "yes" } else { "no" },
+                            if slot.shadow_ready { "yes" } else { "no" },
+                            if slot.active_eligible { "yes" } else { "no" },
+                            slot
+                                .denial_reason_active
+                                .as_ref()
+                                .or(slot.denial_reason_shadow.as_ref())
+                                .or(slot.denial_reason_probe.as_ref())
+                                .map(|v| format!(" reason={v}"))
+                                .unwrap_or_default()
+                        );
+                    }
+                    println!("overall={:?}", report.overall_status);
+                    println!("out={}", out.display());
+                    if !matches!(
+                        report.overall_status,
+                        ucf_ops::EligibilityOverallStatusV1::ActiveEligibleAll
+                    ) {
+                        std::process::exit(2);
+                    }
+                }
                 _ => {
                     return Err(
-                        "usage: ucf-ops models <verify|probe|stage|promote|rollback|list|active-check|active-evidence|recommend-rollback|shadow-ready> ..."
+                        "usage: ucf-ops models <verify|probe|stage|promote|rollback|list|active-check|active-evidence|eligibility|recommend-rollback|shadow-ready> ..."
                             .into(),
                     )
                 }

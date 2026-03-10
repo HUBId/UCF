@@ -13,9 +13,9 @@
 - **Queue policy:** immediate queue remains capped to 10 prompts.
 
 ## Last executed prompt / resume point
-- Last executed prompt ID: **199**.
-- Next prompt ID: **200**.
-- Resume from: **`PROMPT 200`**.
+- Last executed prompt ID: **201**.
+- Next prompt ID: **202**.
+- Resume from: **`PROMPT 202`**.
 - Numbering remains monotonic and append-only.
 
 ## Immediate next prompts (capped to 10)
@@ -23,8 +23,8 @@ Reference: `docs/next_10_prompts.md`
 
 | Prompt ID | Title (short) | v3 class | Status |
 |---:|---|---|---|
-| 200 | Active evidence expansion to supported real slots | MUST | planned |
-| 201 | Unified eligibility report for Probe/Shadow/Active | MUST | planned |
+| 200 | Active evidence expansion to supported real slots | MUST | complete |
+| 201 | Unified eligibility report for Probe/Shadow/Active | MUST | complete |
 | 202 | Candle second-slot adapter parity beyond fixture smoke | MUST | planned |
 | 203 | Burn or second-slot backend parity extension | NICE | planned |
 | 204 | Real-slot compare window normalization | MUST | planned |
