@@ -1952,33 +1952,89 @@ pub fn v1_gate(workdir: &Path, out: &Path) -> Result<V1GateReportV1, OpsError> {
 
     let models_dir = repo_root.join("models");
     if models_dir.exists() {
-        let verify = models_verify_lifecycle(&repo_root.join("models/MANIFEST.toml"));
-        let (status, evidence) = match verify {
-            Ok(report) => {
+        let mut verification_attempts = Vec::new();
+        let mut status = GateStatus::Fail;
+        let mut evidence = vec![("models_verify".to_string(), "missing".to_string())];
+        for manifest in [
+            repo_root.join("models/manifest.toml"),
+            repo_root.join("models/MANIFEST.toml"),
+        ] {
+            if !manifest.exists() {
+                continue;
+            }
+            if let Ok(report) = models_verify(&manifest) {
+                if report
+                    .slots
+                    .iter()
+                    .all(|slot| slot.status == "verified" || slot.status == "disabled")
+                {
+                    status = GateStatus::Pass;
+                    evidence = vec![
+                        (
+                            "manifest".to_string(),
+                            bounded_string(manifest.display().to_string(), 32),
+                        ),
+                        (
+                            "models_verify".to_string(),
+                            prefix_hex(&sha256_hex(&serde_json::to_vec(&report)?), 16),
+                        ),
+                    ];
+                    break;
+                }
+                verification_attempts.push(format!(
+                    "legacy:{}:not_all_verified",
+                    manifest
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("unknown")
+                ));
+            } else if let Ok(report) = models_verify_lifecycle(&manifest) {
                 let pass = report.manifest_present
                     && report.digest_match
                     && report.promoted_hashes_exist
                     && report.files_verified;
-                let digest = prefix_hex(&sha256_hex(&serde_json::to_vec(&report)?), 16);
-                (
-                    if pass {
-                        GateStatus::Pass
-                    } else {
-                        GateStatus::Fail
-                    },
-                    vec![("models_verify".to_string(), digest)],
-                )
+                if pass {
+                    status = GateStatus::Pass;
+                    evidence = vec![
+                        (
+                            "manifest".to_string(),
+                            bounded_string(manifest.display().to_string(), 32),
+                        ),
+                        (
+                            "models_verify_lifecycle".to_string(),
+                            prefix_hex(&sha256_hex(&serde_json::to_vec(&report)?), 16),
+                        ),
+                    ];
+                    break;
+                }
+                verification_attempts.push(format!(
+                    "lifecycle:{}:not_all_verified",
+                    manifest
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("unknown")
+                ));
+            } else {
+                verification_attempts.push(format!(
+                    "parse:{}:failed",
+                    manifest
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("unknown")
+                ));
             }
-            Err(err) => (
-                GateStatus::Fail,
-                vec![("error".to_string(), bounded_string(err.to_string(), 48))],
-            ),
-        };
+        }
+        if status == GateStatus::Fail {
+            evidence = vec![(
+                "attempts".to_string(),
+                bounded_string(verification_attempts.join("|"), 48),
+            )];
+        }
         checks.push(v1_gate_check(
             "models_manifest_verify",
             status,
             evidence,
-            "run `cargo run -p ucf-ops -- models verify --manifest models/MANIFEST.toml`",
+            "run `cargo run -p ucf-ops -- models verify --manifest models/manifest.toml` (or MANIFEST.toml) and ensure all slots are verified/disabled",
         ));
     } else {
         checks.push(v1_gate_check(
