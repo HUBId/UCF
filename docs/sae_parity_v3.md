@@ -34,5 +34,3 @@ This report does **not** enable Active by itself. Active remains separately gate
 ```bash
 cargo run -p ucf-ops -- models parity --slot sae --run <id> --out ./out/sae_parity_report.json
 ```
-
-See shared semantics: `docs/compare_window_semantics_v3.md`.

@@ -6,10 +6,15 @@ use ucf_compute::ModelSlot;
 use ucf_ess::v1::{AuditPayload, ExperiencePayload};
 use ucf_replay::load_fixture_records;
 
-use crate::{
-    build_compare_window_meta, prefix_hex, sample_digest_prefixes, sha256_hex,
-    unified_compare_semantics_v1, CompareWindowBackendStatusV1, CompareWindowMetaV1, OpsError,
-};
+use crate::models_lifecycle::AggregatedEvidenceReportV1;
+use crate::{prefix_hex, sha256_hex, OpsError};
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum SlotParityStatusV1 {
+    Ok,
+    Warn,
+    Severe,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SaeComparedBackendRecordV1 {
@@ -21,16 +26,20 @@ pub struct SaeComparedBackendRecordV1 {
     pub digest_mismatch_count: u16,
     pub invalid_output_count: u16,
     pub sample_output_digest_prefixes: Vec<String>,
-    pub status: CompareWindowBackendStatusV1,
+    pub status: SlotParityStatusV1,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SaeParityRecordV1 {
     pub schema_version: u16,
-    #[serde(default)]
-    pub meta: CompareWindowMetaV1,
+    pub run_id: String,
+    pub window_id: u64,
+    pub t0: u64,
+    pub t1: u64,
+    pub primary_backend_id: String,
     pub compared_backends: Vec<SaeComparedBackendRecordV1>,
     pub parity_digest: String,
+    pub policy_graph_digest_prefix: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -42,16 +51,20 @@ pub struct SsmComparedBackendRecordV1 {
     pub digest_mismatch_count: u16,
     pub invalid_output_count: u16,
     pub sample_output_digest_prefixes: Vec<String>,
-    pub status: CompareWindowBackendStatusV1,
+    pub status: SlotParityStatusV1,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SsmParityRecordV1 {
     pub schema_version: u16,
-    #[serde(default)]
-    pub meta: CompareWindowMetaV1,
+    pub run_id: String,
+    pub window_id: u64,
+    pub t0: u64,
+    pub t1: u64,
+    pub primary_backend_id: String,
     pub compared_backends: Vec<SsmComparedBackendRecordV1>,
     pub parity_digest: String,
+    pub policy_graph_digest_prefix: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -64,7 +77,6 @@ pub enum SecondSlotParityRecordV1 {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SecondSlotParityReportV1 {
     pub run_id: String,
-    pub semantics: String,
     pub slot_id: String,
     pub primary_backend_id: String,
     pub compared_backends: Vec<String>,
@@ -100,13 +112,13 @@ fn status_from_window(
     invalid_output_count: u16,
     delta_mean: u16,
     delta_max: u16,
-) -> CompareWindowBackendStatusV1 {
+) -> SlotParityStatusV1 {
     if invalid_output_count > 0 {
-        CompareWindowBackendStatusV1::Severe
+        SlotParityStatusV1::Severe
     } else if digest_mismatch_count > 0 || delta_mean > 0 || delta_max > 0 {
-        CompareWindowBackendStatusV1::Warn
+        SlotParityStatusV1::Warn
     } else {
-        CompareWindowBackendStatusV1::Ok
+        SlotParityStatusV1::Ok
     }
 }
 
@@ -148,7 +160,7 @@ pub fn second_slot_parity_report(
     out: &Path,
     requested_slot: Option<ModelSlot>,
 ) -> Result<SecondSlotParityReportV1, OpsError> {
-    let detected = detect_second_slot(Path::new("."))?;
+    let detected = detect_second_slot(workdir)?;
     let slot = requested_slot.unwrap_or(detected);
     if slot != detected {
         return Err(OpsError::Invalid(format!(
@@ -190,9 +202,12 @@ pub fn second_slot_parity_report(
                                 magnitude_delta_mean_q: w.mean_delta_q,
                                 digest_mismatch_count: w.digest_mismatch_count,
                                 invalid_output_count: w.invalid_shadow_count,
-                                sample_output_digest_prefixes: sample_digest_prefixes(
-                                    &w.digest_prefix_samples,
-                                ),
+                                sample_output_digest_prefixes: w
+                                    .digest_prefix_samples
+                                    .iter()
+                                    .take(4)
+                                    .map(hex::encode)
+                                    .collect(),
                                 status,
                             }
                         })
@@ -201,23 +216,16 @@ pub fn second_slot_parity_report(
                     if compared_backends.len() > 2 {
                         compared_backends.truncate(2);
                     }
-                    let meta = build_compare_window_meta(
-                        &w.slot_id,
-                        run_id,
-                        w.t0,
-                        w.t1,
-                        &primary_backend_id,
-                        compared_backends
-                            .iter()
-                            .map(|v| v.backend_id.clone())
-                            .collect(),
-                        "unknown".to_string(),
-                    );
                     let mut parity = SaeParityRecordV1 {
                         schema_version: 1,
-                        meta,
+                        run_id: run_id.to_string(),
+                        window_id: w.t1,
+                        t0: w.t0,
+                        t1: w.t1,
+                        primary_backend_id: primary_backend_id.clone(),
                         compared_backends,
                         parity_digest: String::new(),
+                        policy_graph_digest_prefix: "unknown".to_string(),
                     };
                     parity.parity_digest = sha256_hex(&serde_json::to_vec(&parity)?);
                     parity_records.push(SecondSlotParityRecordV1::Sae(parity));
@@ -239,9 +247,12 @@ pub fn second_slot_parity_report(
                                 pressure_delta_max_q: w.p95_delta_q,
                                 digest_mismatch_count: w.digest_mismatch_count,
                                 invalid_output_count: w.invalid_shadow_count,
-                                sample_output_digest_prefixes: sample_digest_prefixes(
-                                    &w.digest_prefix_samples,
-                                ),
+                                sample_output_digest_prefixes: w
+                                    .digest_prefix_samples
+                                    .iter()
+                                    .take(4)
+                                    .map(hex::encode)
+                                    .collect(),
                                 status,
                             }
                         })
@@ -250,23 +261,16 @@ pub fn second_slot_parity_report(
                     if compared_backends.len() > 2 {
                         compared_backends.truncate(2);
                     }
-                    let meta = build_compare_window_meta(
-                        &w.slot_id,
-                        run_id,
-                        w.t0,
-                        w.t1,
-                        &primary_backend_id,
-                        compared_backends
-                            .iter()
-                            .map(|v| v.backend_id.clone())
-                            .collect(),
-                        "unknown".to_string(),
-                    );
                     let mut parity = SsmParityRecordV1 {
                         schema_version: 1,
-                        meta,
+                        run_id: run_id.to_string(),
+                        window_id: w.t1,
+                        t0: w.t0,
+                        t1: w.t1,
+                        primary_backend_id: primary_backend_id.clone(),
                         compared_backends,
                         parity_digest: String::new(),
+                        policy_graph_digest_prefix: "unknown".to_string(),
                     };
                     parity.parity_digest = sha256_hex(&serde_json::to_vec(&parity)?);
                     parity_records.push(SecondSlotParityRecordV1::Ssm(parity));
@@ -276,8 +280,8 @@ pub fn second_slot_parity_report(
         }
     }
     parity_records.sort_by_key(|r| match r {
-        SecondSlotParityRecordV1::Sae(v) => (v.meta.t1, v.meta.window_id),
-        SecondSlotParityRecordV1::Ssm(v) => (v.meta.t1, v.meta.window_id),
+        SecondSlotParityRecordV1::Sae(v) => (v.t1, v.window_id),
+        SecondSlotParityRecordV1::Ssm(v) => (v.t1, v.window_id),
     });
     if parity_records.len() > 10 {
         parity_records = parity_records.split_off(parity_records.len() - 10);
@@ -301,7 +305,7 @@ pub fn second_slot_parity_report(
                 };
                 let severe_inc = if statuses
                     .iter()
-                    .any(|s| matches!(s, CompareWindowBackendStatusV1::Severe))
+                    .any(|s| matches!(s, SlotParityStatusV1::Severe))
                 {
                     1
                 } else {
@@ -310,7 +314,7 @@ pub fn second_slot_parity_report(
                 let warn_inc = if severe_inc == 0
                     && statuses
                         .iter()
-                        .any(|s| matches!(s, CompareWindowBackendStatusV1::Warn))
+                        .any(|s| matches!(s, SlotParityStatusV1::Warn))
                 {
                     1
                 } else {
@@ -331,7 +335,6 @@ pub fn second_slot_parity_report(
 
     let mut report = SecondSlotParityReportV1 {
         run_id: run_id.to_string(),
-        semantics: unified_compare_semantics_v1().window_id_rule,
         slot_id: slot.as_str().to_string(),
         primary_backend_id,
         compared_backends,
@@ -343,6 +346,14 @@ pub fn second_slot_parity_report(
         parity_ready_hint,
         report_digest: String::new(),
     };
+
+    let eligibility_report: Option<AggregatedEvidenceReportV1> =
+        fs::read_to_string(workdir.join("out/shadow_ready_report.json"))
+            .ok()
+            .and_then(|raw| serde_json::from_str(&raw).ok());
+    if let Some(e) = eligibility_report {
+        let _ = e.slots.iter().find(|s| s.slot_id == report.slot_id);
+    }
 
     report.report_digest = sha256_hex(&serde_json::to_vec(&report)?);
     fs::create_dir_all(out.parent().unwrap_or_else(|| Path::new(".")))?;
@@ -373,15 +384,11 @@ mod tests {
     fn parity_digest_is_stable() {
         let record = SaeParityRecordV1 {
             schema_version: 1,
-            meta: build_compare_window_meta(
-                "sae",
-                "r1",
-                0,
-                1,
-                "stub_sae_v1",
-                vec!["candle_sae_v1".to_string()],
-                "unknown".to_string(),
-            ),
+            run_id: "r1".to_string(),
+            window_id: 1,
+            t0: 0,
+            t1: 1,
+            primary_backend_id: "stub_sae_v1".to_string(),
             compared_backends: vec![SaeComparedBackendRecordV1 {
                 backend_id: "candle_sae_v1".to_string(),
                 model_hash_prefix: "abc".to_string(),
@@ -391,9 +398,10 @@ mod tests {
                 digest_mismatch_count: 0,
                 invalid_output_count: 0,
                 sample_output_digest_prefixes: vec!["0011aabb".to_string()],
-                status: CompareWindowBackendStatusV1::Ok,
+                status: SlotParityStatusV1::Ok,
             }],
             parity_digest: String::new(),
+            policy_graph_digest_prefix: "unknown".to_string(),
         };
         let digest_a = sha256_hex(&serde_json::to_vec(&record).expect("serialize"));
         let digest_b = sha256_hex(&serde_json::to_vec(&record).expect("serialize"));
