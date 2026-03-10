@@ -22,6 +22,7 @@ const PROBE_SCHEMA_VERSION: u16 = 1;
 const PROBE_DIGEST_PREFIX_LEN: usize = 16;
 const SHADOW_READY_SCHEMA_VERSION: u16 = 1;
 const SHADOW_READY_MAX_SLOTS: usize = 2;
+const ELIGIBILITY_SCHEMA_VERSION: u16 = 1;
 const SUPPORTED_REAL_SLOT_SET_VERSION: &str = "v3_supported_real_slots_max2";
 const PROBE_OUTPUT_CAP: usize = 8;
 const PROBE_NOTES_CAP: usize = 8;
@@ -81,8 +82,76 @@ pub struct ModelsListReport {
     pub staged_hashes: Vec<String>,
     pub promoted_hashes: Vec<String>,
     pub current_mode: String,
+    pub probe_ready: bool,
+    pub shadow_ready: bool,
     pub active_eligible: bool,
+    pub denial_reason_probe: Option<String>,
+    pub denial_reason_shadow: Option<String>,
+    pub denial_reason_active: Option<String>,
     pub last_evidence_digest_prefix: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum EligibilityOverallStatusV1 {
+    NoneReady,
+    ProbeOnly,
+    ShadowReadyPartial,
+    ShadowReadyAll,
+    ActiveEligiblePartial,
+    ActiveEligibleAll,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct UnifiedEligibilityStatusV1 {
+    pub slot_id: String,
+    pub target_hash_prefix: String,
+    pub manifest_digest_prefix: String,
+    pub probe_ready: bool,
+    pub shadow_ready: bool,
+    pub active_eligible: bool,
+    pub latest_probe_digest_prefix: String,
+    pub latest_shadow_evidence_digest_prefix: String,
+    pub latest_active_evidence_digest_prefix: String,
+    pub latest_drift_status: DriftStatusV1,
+    pub denial_reason_probe: Option<String>,
+    pub denial_reason_shadow: Option<String>,
+    pub denial_reason_active: Option<String>,
+    pub remediation_codes: Vec<String>,
+    pub status_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EligibilityGeneratedFromV1 {
+    pub probe_report_digests: Vec<String>,
+    pub shadow_ready_report_digest: String,
+    pub active_evidence_report_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AggregatedEligibilityReportV1 {
+    pub schema_version: u16,
+    pub overall_status: EligibilityOverallStatusV1,
+    pub slots: Vec<UnifiedEligibilityStatusV1>,
+    pub report_digest: String,
+    pub policy_graph_digest_prefix: String,
+    pub generated_from: EligibilityGeneratedFromV1,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EligibilitySnapshotRecordV1 {
+    pub invocation_id: u64,
+    pub slots: Vec<EligibilitySnapshotSlotV1>,
+    pub report_digest_prefix: String,
+    pub policy_graph_digest_prefix: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EligibilitySnapshotSlotV1 {
+    pub slot_id: String,
+    pub probe_ready: bool,
+    pub shadow_ready: bool,
+    pub active_eligible: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -492,14 +561,10 @@ pub fn models_list(slot: ModelSlot) -> Result<ModelsListReport, OpsError> {
         .iter()
         .find(|s| s.slot_id == slot_key)
         .and_then(|s| s.active_hash.clone());
-    let active_hash_for_check = active_hash.clone();
-    let active_check = active_hash_for_check
-        .as_deref()
-        .map(|hash| can_enable_active(slot, hash, Path::new("."), false, false));
-    let (active_eligible, last_evidence_digest_prefix) = match active_check {
-        Some(Ok(e)) => (true, Some(prefix_hex(&e.evidence_digest, 16))),
-        _ => (false, None),
-    };
+    let eligibility = supported_real_slots(None)
+        .ok()
+        .filter(|slots| slots.contains(&slot))
+        .and_then(|_| derive_unified_eligibility_status(slot, Path::new("."), &manifest).ok());
 
     Ok(ModelsListReport {
         slot: slot_key.clone(),
@@ -511,9 +576,76 @@ pub fn models_list(slot: ModelSlot) -> Result<ModelsListReport, OpsError> {
             &PathBuf::from("models").join("promoted").join(slot.as_str()),
         )?,
         current_mode: slot_mode_from_env(slot).to_string(),
-        active_eligible,
-        last_evidence_digest_prefix,
+        probe_ready: eligibility.as_ref().is_some_and(|e| e.probe_ready),
+        shadow_ready: eligibility.as_ref().is_some_and(|e| e.shadow_ready),
+        active_eligible: eligibility.as_ref().is_some_and(|e| e.active_eligible),
+        denial_reason_probe: eligibility
+            .as_ref()
+            .and_then(|e| e.denial_reason_probe.clone()),
+        denial_reason_shadow: eligibility
+            .as_ref()
+            .and_then(|e| e.denial_reason_shadow.clone()),
+        denial_reason_active: eligibility
+            .as_ref()
+            .and_then(|e| e.denial_reason_active.clone()),
+        last_evidence_digest_prefix: eligibility
+            .as_ref()
+            .map(|e| e.latest_active_evidence_digest_prefix.clone())
+            .filter(|v| v != "missing"),
     })
+}
+
+pub fn models_eligibility(
+    workdir: &Path,
+    requested_slot: Option<ModelSlot>,
+    out: &Path,
+) -> Result<AggregatedEligibilityReportV1, OpsError> {
+    let slots = supported_real_slots(requested_slot)?;
+    let manifest = load_or_init_manifest()?;
+    let mut statuses = Vec::new();
+    for slot in slots {
+        statuses.push(derive_unified_eligibility_status(slot, workdir, &manifest)?);
+    }
+    statuses.sort_by(|a, b| a.slot_id.cmp(&b.slot_id));
+
+    let overall_status = derive_eligibility_overall_status(&statuses);
+    let generated_from = EligibilityGeneratedFromV1 {
+        probe_report_digests: statuses
+            .iter()
+            .map(|s| s.latest_probe_digest_prefix.clone())
+            .collect(),
+        shadow_ready_report_digest: digest_shadow_generated_from(&statuses),
+        active_evidence_report_digest: digest_active_generated_from(&statuses),
+    };
+    let policy_graph_digest_prefix = read_policy_graph_digest_prefix();
+
+    let mut digest_source = Vec::new();
+    digest_source.extend_from_slice(ELIGIBILITY_SCHEMA_VERSION.to_string().as_bytes());
+    digest_source.extend_from_slice(format!("{:?}", overall_status).as_bytes());
+    digest_source.extend_from_slice(policy_graph_digest_prefix.as_bytes());
+    digest_source.extend_from_slice(generated_from.shadow_ready_report_digest.as_bytes());
+    digest_source.extend_from_slice(generated_from.active_evidence_report_digest.as_bytes());
+    for probe_digest in &generated_from.probe_report_digests {
+        digest_source.extend_from_slice(probe_digest.as_bytes());
+    }
+    for slot in &statuses {
+        digest_source.extend_from_slice(slot.status_digest.as_bytes());
+    }
+
+    let report = AggregatedEligibilityReportV1 {
+        schema_version: ELIGIBILITY_SCHEMA_VERSION,
+        overall_status,
+        slots: statuses,
+        report_digest: sha256_hex(&digest_source),
+        policy_graph_digest_prefix,
+        generated_from,
+    };
+    if let Some(parent) = out.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(out, serde_json::to_vec_pretty(&report)?)?;
+    append_eligibility_snapshot_record(workdir, &report)?;
+    Ok(report)
 }
 
 pub fn models_active_check(
@@ -1029,6 +1161,219 @@ fn read_policy_graph_digest_prefix() -> String {
         })
         .map(|value| prefix_hex(&value, 16))
         .unwrap_or_else(|| "unknown".to_string())
+}
+
+fn derive_unified_eligibility_status(
+    slot: ModelSlot,
+    workdir: &Path,
+    manifest: &LifecycleManifest,
+) -> Result<UnifiedEligibilityStatusV1, OpsError> {
+    let slot_id = slot.as_str().to_string();
+    let target_hash = manifest
+        .slots
+        .iter()
+        .find(|s| s.slot_id == slot_id)
+        .and_then(|s| s.active_hash.clone())
+        .unwrap_or_else(|| "missing".to_string());
+    let target_hash_prefix = prefix_hex(&target_hash, 16);
+    let manifest_digest_prefix = prefix_hex(&manifest.manifest_digest, 16);
+
+    let probe_path = PathBuf::from("out").join(format!("probe_{}.json", slot.as_str()));
+    let probe = fs::read_to_string(&probe_path)
+        .ok()
+        .and_then(|body| serde_json::from_str::<ProbeReportV1>(&body).ok());
+    let latest_probe_digest_prefix = probe
+        .as_ref()
+        .map(|p| prefix_hex(&sha256_hex(&serde_json::to_vec(p).unwrap_or_default()), 16))
+        .unwrap_or_else(|| "missing".to_string());
+    let expected_hash_prefix = target_hash
+        .chars()
+        .take(PROBE_DIGEST_PREFIX_LEN)
+        .collect::<String>();
+    let probe_hash_match = probe
+        .as_ref()
+        .and_then(|p| p.model_hash_prefix.as_deref())
+        .map(|v| v == expected_hash_prefix)
+        .unwrap_or(false);
+    let probe_ready = probe
+        .as_ref()
+        .map(|p| p.pass() && p.slot_id == slot.as_str() && probe_hash_match)
+        .unwrap_or(false);
+    let denial_reason_probe = if probe_ready {
+        None
+    } else if probe.is_none() {
+        Some("PROBE_REPORT_MISSING".to_string())
+    } else if !probe_hash_match {
+        Some("PROBE_HASH_MISMATCH".to_string())
+    } else {
+        Some("PROBE_NOT_PASS".to_string())
+    };
+
+    let shadow = build_shadow_ready_evidence(slot, workdir)?;
+    let latest_shadow_evidence_digest_prefix = prefix_hex(&shadow.evidence_digest, 16);
+
+    let policy = unified_active_evidence_policy();
+    let active_eval = if target_hash == "missing" {
+        Err(EnablementDenied {
+            code: ActiveEnablementDeniedCode::ActiveDeniedHashMismatch,
+            detail: "ACTIVE_DENIED_HASH_MISMATCH: slot has no active hash".to_string(),
+        })
+    } else {
+        evaluate_active_evidence(slot, &target_hash, workdir, &policy)
+    };
+    let (active_eligible, latest_active_evidence_digest_prefix, denial_reason_active, drift_status) =
+        match active_eval {
+            Ok(ev) => (
+                true,
+                prefix_hex(&ev.evidence_digest, 16),
+                None,
+                ev.latest_drift_status,
+            ),
+            Err(denied) => (
+                false,
+                "missing".to_string(),
+                Some(format!("{:?}", denied.code)),
+                shadow.latest_drift_status.clone(),
+            ),
+        };
+
+    let mut remediation_codes = vec![
+        denial_reason_probe.clone(),
+        shadow.denial_reason_code.clone(),
+        denial_reason_active.clone(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>();
+    remediation_codes.sort();
+    remediation_codes.dedup();
+    remediation_codes.truncate(4);
+
+    let mut digest_source = Vec::new();
+    digest_source.extend_from_slice(slot_id.as_bytes());
+    digest_source.extend_from_slice(target_hash_prefix.as_bytes());
+    digest_source.extend_from_slice(manifest_digest_prefix.as_bytes());
+    digest_source.extend_from_slice(if probe_ready { b"1" } else { b"0" });
+    digest_source.extend_from_slice(if shadow.shadow_ready { b"1" } else { b"0" });
+    digest_source.extend_from_slice(if active_eligible { b"1" } else { b"0" });
+    digest_source.extend_from_slice(latest_probe_digest_prefix.as_bytes());
+    digest_source.extend_from_slice(latest_shadow_evidence_digest_prefix.as_bytes());
+    digest_source.extend_from_slice(latest_active_evidence_digest_prefix.as_bytes());
+    digest_source.extend_from_slice(format!("{:?}", drift_status).as_bytes());
+    if let Some(reason) = denial_reason_probe.as_ref() {
+        digest_source.extend_from_slice(reason.as_bytes());
+    }
+    if let Some(reason) = shadow.denial_reason_code.as_ref() {
+        digest_source.extend_from_slice(reason.as_bytes());
+    }
+    if let Some(reason) = denial_reason_active.as_ref() {
+        digest_source.extend_from_slice(reason.as_bytes());
+    }
+    for code in &remediation_codes {
+        digest_source.extend_from_slice(code.as_bytes());
+    }
+
+    Ok(UnifiedEligibilityStatusV1 {
+        slot_id,
+        target_hash_prefix,
+        manifest_digest_prefix,
+        probe_ready,
+        shadow_ready: shadow.shadow_ready,
+        active_eligible,
+        latest_probe_digest_prefix,
+        latest_shadow_evidence_digest_prefix,
+        latest_active_evidence_digest_prefix,
+        latest_drift_status: drift_status,
+        denial_reason_probe,
+        denial_reason_shadow: shadow.denial_reason_code,
+        denial_reason_active,
+        remediation_codes,
+        status_digest: sha256_hex(&digest_source),
+    })
+}
+
+fn derive_eligibility_overall_status(
+    slots: &[UnifiedEligibilityStatusV1],
+) -> EligibilityOverallStatusV1 {
+    let all_active = slots.iter().all(|s| s.active_eligible);
+    let any_active = slots.iter().any(|s| s.active_eligible);
+    if all_active {
+        return EligibilityOverallStatusV1::ActiveEligibleAll;
+    }
+    if any_active {
+        return EligibilityOverallStatusV1::ActiveEligiblePartial;
+    }
+    let all_shadow = slots.iter().all(|s| s.shadow_ready);
+    let any_shadow = slots.iter().any(|s| s.shadow_ready);
+    if all_shadow {
+        return EligibilityOverallStatusV1::ShadowReadyAll;
+    }
+    if any_shadow {
+        return EligibilityOverallStatusV1::ShadowReadyPartial;
+    }
+    if slots.iter().any(|s| s.probe_ready) {
+        return EligibilityOverallStatusV1::ProbeOnly;
+    }
+    EligibilityOverallStatusV1::NoneReady
+}
+
+fn digest_shadow_generated_from(slots: &[UnifiedEligibilityStatusV1]) -> String {
+    let mut digest_source = Vec::new();
+    digest_source.extend_from_slice(SHADOW_READY_SCHEMA_VERSION.to_string().as_bytes());
+    for slot in slots {
+        digest_source.extend_from_slice(slot.latest_shadow_evidence_digest_prefix.as_bytes());
+    }
+    sha256_hex(&digest_source)
+}
+
+fn digest_active_generated_from(slots: &[UnifiedEligibilityStatusV1]) -> String {
+    let mut digest_source = Vec::new();
+    digest_source.extend_from_slice(SUPPORTED_REAL_SLOT_SET_VERSION.as_bytes());
+    for slot in slots {
+        digest_source.extend_from_slice(slot.latest_active_evidence_digest_prefix.as_bytes());
+        digest_source.extend_from_slice(if slot.active_eligible { b"1" } else { b"0" });
+        if let Some(reason) = slot.denial_reason_active.as_ref() {
+            digest_source.extend_from_slice(reason.as_bytes());
+        }
+    }
+    sha256_hex(&digest_source)
+}
+
+fn append_eligibility_snapshot_record(
+    workdir: &Path,
+    report: &AggregatedEligibilityReportV1,
+) -> Result<(), OpsError> {
+    let path = workdir
+        .join("out")
+        .join("records")
+        .join("models_eligibility_records.json");
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let mut all: Vec<EligibilitySnapshotRecordV1> = if path.exists() {
+        serde_json::from_str(&fs::read_to_string(&path)?).unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    let mut slots = report
+        .slots
+        .iter()
+        .map(|slot| EligibilitySnapshotSlotV1 {
+            slot_id: slot.slot_id.clone(),
+            probe_ready: slot.probe_ready,
+            shadow_ready: slot.shadow_ready,
+            active_eligible: slot.active_eligible,
+        })
+        .collect::<Vec<_>>();
+    slots.sort_by(|a, b| a.slot_id.cmp(&b.slot_id));
+    all.push(EligibilitySnapshotRecordV1 {
+        invocation_id: now_secs(),
+        slots,
+        report_digest_prefix: prefix_hex(&report.report_digest, 16),
+        policy_graph_digest_prefix: report.policy_graph_digest_prefix.clone(),
+    });
+    fs::write(path, serde_json::to_vec_pretty(&all)?)?;
+    Ok(())
 }
 
 fn supported_real_slots(requested_slot: Option<ModelSlot>) -> Result<Vec<ModelSlot>, OpsError> {
@@ -2831,5 +3176,89 @@ mod probe_tests {
         slots.sort_by(|a, b| a.slot_id.cmp(&b.slot_id));
         assert_eq!(slots[0].slot_id, "sae");
         assert_eq!(slots[1].slot_id, "world_jepa");
+    }
+
+    #[test]
+    fn unified_eligibility_overall_status_is_deterministic() {
+        let slots = vec![
+            UnifiedEligibilityStatusV1 {
+                slot_id: "sae".to_string(),
+                target_hash_prefix: "a".to_string(),
+                manifest_digest_prefix: "m".to_string(),
+                probe_ready: true,
+                shadow_ready: true,
+                active_eligible: false,
+                latest_probe_digest_prefix: "p1".to_string(),
+                latest_shadow_evidence_digest_prefix: "s1".to_string(),
+                latest_active_evidence_digest_prefix: "missing".to_string(),
+                latest_drift_status: DriftStatusV1::Warn,
+                denial_reason_probe: None,
+                denial_reason_shadow: None,
+                denial_reason_active: Some("ACTIVE_DENIED_DRIFT_WARN".to_string()),
+                remediation_codes: vec!["ACTIVE_DENIED_DRIFT_WARN".to_string()],
+                status_digest: "d1".to_string(),
+            },
+            UnifiedEligibilityStatusV1 {
+                slot_id: "world_jepa".to_string(),
+                target_hash_prefix: "b".to_string(),
+                manifest_digest_prefix: "m".to_string(),
+                probe_ready: true,
+                shadow_ready: true,
+                active_eligible: true,
+                latest_probe_digest_prefix: "p2".to_string(),
+                latest_shadow_evidence_digest_prefix: "s2".to_string(),
+                latest_active_evidence_digest_prefix: "a2".to_string(),
+                latest_drift_status: DriftStatusV1::Ok,
+                denial_reason_probe: None,
+                denial_reason_shadow: None,
+                denial_reason_active: None,
+                remediation_codes: vec![],
+                status_digest: "d2".to_string(),
+            },
+        ];
+        assert!(matches!(
+            derive_eligibility_overall_status(&slots),
+            EligibilityOverallStatusV1::ActiveEligiblePartial
+        ));
+        assert_eq!(
+            digest_shadow_generated_from(&slots),
+            digest_shadow_generated_from(&slots)
+        );
+        assert_eq!(
+            digest_active_generated_from(&slots),
+            digest_active_generated_from(&slots)
+        );
+    }
+
+    #[test]
+    fn unified_eligibility_overall_status_none_and_probe_only() {
+        let none_ready = vec![UnifiedEligibilityStatusV1 {
+            slot_id: "world_jepa".to_string(),
+            target_hash_prefix: "a".to_string(),
+            manifest_digest_prefix: "m".to_string(),
+            probe_ready: false,
+            shadow_ready: false,
+            active_eligible: false,
+            latest_probe_digest_prefix: "missing".to_string(),
+            latest_shadow_evidence_digest_prefix: "missing".to_string(),
+            latest_active_evidence_digest_prefix: "missing".to_string(),
+            latest_drift_status: DriftStatusV1::Unknown,
+            denial_reason_probe: Some("PROBE_REPORT_MISSING".to_string()),
+            denial_reason_shadow: Some("SHADOW_READY_PROBE_REQUIRED".to_string()),
+            denial_reason_active: Some("ActiveDeniedNoProbe".to_string()),
+            remediation_codes: vec!["PROBE_REPORT_MISSING".to_string()],
+            status_digest: "d".to_string(),
+        }];
+        assert!(matches!(
+            derive_eligibility_overall_status(&none_ready),
+            EligibilityOverallStatusV1::NoneReady
+        ));
+
+        let mut probe_only = none_ready.clone();
+        probe_only[0].probe_ready = true;
+        assert!(matches!(
+            derive_eligibility_overall_status(&probe_only),
+            EligibilityOverallStatusV1::ProbeOnly
+        ));
     }
 }
