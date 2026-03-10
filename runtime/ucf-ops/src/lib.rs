@@ -14,6 +14,7 @@ mod formal_invariants;
 mod goldens;
 mod models_lifecycle;
 mod nightly;
+mod operator_report;
 mod second_slot_parity;
 mod soak;
 mod spec_snapshot;
@@ -59,6 +60,10 @@ pub use models_lifecycle::{
 pub use nightly::{
     nightly_summarize, NightlyComponentReport, NightlyOverallStatus, NightlySummarizeArgs,
     NightlySummaryReport,
+};
+pub use operator_report::{
+    operator_report, operator_report_text, ConsolidatedOperatorReportV1, OperatorReportArgs,
+    OperatorStatus,
 };
 pub use second_slot_parity::{
     detect_second_slot, second_slot_parity_evidence_exists, second_slot_parity_report,

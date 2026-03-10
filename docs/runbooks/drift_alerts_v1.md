@@ -4,6 +4,14 @@ This runbook covers deterministic operator handling for drift and alert signals 
 
 > Scope note: v1 provides bounded drift/alert scaffolding and operator recommendations. Auto-remediation is intentionally limited.
 
+## 0) First-stop consolidated operator report
+
+```bash
+cargo run -p ucf-ops -- operator report --out ./out/operator_report.json
+```
+
+Use this report first for a bounded cross-section summary before diving into drift/alerts details.
+
 ## 1) Generate drift report
 
 ```bash
