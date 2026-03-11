@@ -6,9 +6,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::drift::DriftSlotReportV1;
 use crate::{
-    AggregatedEligibilityReportV1, AlertsReportV1, DriftReportV1, GateStatus, OpsError,
-    StrictCheckReport, V0GateOverallStatus, V0GateReportV1, V1GateOverallStatus, V1GateReportV1,
-    V2GateOverallStatus, V2GateReportV1,
+    AggregatedEligibilityReportV1, AlertsReportV1, BackendEvidenceSnapshotV1, DriftReportV1,
+    GateStatus, OpsError, StrictCheckReport, V0GateOverallStatus, V0GateReportV1,
+    V1GateOverallStatus, V1GateReportV1, V2GateOverallStatus, V2GateReportV1,
 };
 
 const REMEDIATION_MAX: usize = 12;
@@ -148,6 +148,11 @@ pub fn operator_report(
         "models_eligibility_report.json",
         args,
     ));
+    let evidence_snapshot = maybe_read_json::<BackendEvidenceSnapshotV1>(&discover_report(
+        &out_root,
+        "backend_evidence_snapshot.json",
+        args,
+    ));
     let drift =
         maybe_read_json::<DriftReportV1>(&discover_report(&out_root, "drift_report.json", args));
     let alerts =
@@ -166,7 +171,11 @@ pub fn operator_report(
         maybe_read_json::<V2GateReportV1>(&discover_report(&out_root, "v2_gate_report.json", args));
 
     let health_section = normalize_health(health_value.as_ref());
-    let eligibility_section = normalize_eligibility(eligibility.as_ref());
+    let eligibility_section = if let Some(report) = eligibility.as_ref() {
+        normalize_eligibility(Some(report))
+    } else {
+        normalize_eligibility_from_snapshot(evidence_snapshot.as_ref())
+    };
     let drift_section = normalize_drift(drift.as_ref());
     let alerts_section = normalize_alerts(alerts.as_ref());
     let strict_section = normalize_strict(strict.as_ref());
@@ -203,12 +212,22 @@ pub fn operator_report(
     let policy_graph_digest_prefix = eligibility
         .as_ref()
         .map(|r| r.policy_graph_digest_prefix.clone())
+        .or_else(|| {
+            evidence_snapshot
+                .as_ref()
+                .map(|s| s.policy_graph_digest_prefix.clone())
+        })
         .or_else(|| extract_strict_digest_prefix(strict.as_ref(), "policy_graph_digest"))
         .or_else(|| extract_health_prefix(health_value.as_ref(), "policy_graph_digest"));
 
     let manifest_digest_prefix = eligibility
         .as_ref()
         .and_then(|r| r.slots.first().map(|s| s.manifest_digest_prefix.clone()))
+        .or_else(|| {
+            evidence_snapshot
+                .as_ref()
+                .map(|s| s.manifest_digest_prefix.clone())
+        })
         .or_else(|| extract_strict_digest_prefix(strict.as_ref(), "manifest_digest"))
         .or_else(|| extract_health_prefix(health_value.as_ref(), "manifest_digest"));
 
@@ -390,6 +409,59 @@ pub fn normalize_eligibility(
         status,
         slots,
         evidence_digest_prefixes: vec![prefix(&input.report_digest)],
+        remediation_codes: remediation.into_iter().collect(),
+    }
+}
+
+fn normalize_eligibility_from_snapshot(
+    snapshot: Option<&BackendEvidenceSnapshotV1>,
+) -> NormalizedEligibilitySection {
+    let Some(snapshot) = snapshot else {
+        return normalize_eligibility(None);
+    };
+
+    let mut slots = snapshot
+        .slots
+        .iter()
+        .map(|slot| EligibilitySlotSummary {
+            slot_id: slot.slot_id.clone(),
+            probe_ready: slot.readiness.probe_ready,
+            shadow_ready: slot.readiness.shadow_ready,
+            active_eligible: slot.readiness.active_eligible,
+            primary_denial_reason: slot
+                .denials
+                .active
+                .as_ref()
+                .or(slot.denials.shadow.as_ref())
+                .or(slot.denials.probe.as_ref())
+                .map(|v| format!("{:?}", v)),
+        })
+        .collect::<Vec<_>>();
+    slots.sort_by(|a, b| a.slot_id.cmp(&b.slot_id));
+
+    let status = if slots.is_empty() {
+        OperatorStatus::Warn
+    } else if slots.iter().all(|s| s.active_eligible) {
+        OperatorStatus::Ok
+    } else if slots.iter().any(|s| s.shadow_ready || s.probe_ready) {
+        OperatorStatus::Warn
+    } else {
+        OperatorStatus::Degraded
+    };
+
+    let mut remediation = snapshot
+        .slots
+        .iter()
+        .flat_map(|s| s.remediation_codes.clone())
+        .collect::<BTreeSet<_>>();
+    if !matches!(status, OperatorStatus::Ok) {
+        remediation.insert("run_models_eligibility".to_string());
+    }
+
+    NormalizedEligibilitySection {
+        status,
+        slots,
+        evidence_digest_prefixes: vec![prefix(&snapshot.snapshot_digest)],
         remediation_codes: remediation.into_iter().collect(),
     }
 }

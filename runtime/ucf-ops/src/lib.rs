@@ -50,13 +50,15 @@ pub use goldens::{
 };
 pub use models_lifecycle::{
     can_enable_active, models_active_check, models_active_evidence, models_consistency_check,
-    models_eligibility, models_list, models_probe_slot, models_promote, models_recommend_rollback,
-    models_rollback, models_shadow_ready, models_stage, models_verify as models_verify_lifecycle,
-    parse_slot, ActiveCheckStatus, ActiveEnablementDeniedCode, ActiveEnablementEvidenceV1,
-    AggregatedEligibilityReportV1, AggregatedEvidenceReportV1, AggregatedStatusV1,
-    EligibilityOverallStatusV1, ModelsActiveCheckReport, ModelsConsistencyCheckReportV1,
-    ProbeReportV1, ShadowReadyCheckRecordV1, ShadowReadyEvidenceV1, SlotEvidenceSnapshotV1,
-    SupportedRealSlotSetV1, SupportedRealSlotsActiveViewV1, UnifiedEligibilityStatusV1,
+    models_eligibility, models_evidence_snapshot, models_list, models_probe_slot, models_promote,
+    models_recommend_rollback, models_rollback, models_shadow_ready, models_stage,
+    models_verify as models_verify_lifecycle, parse_slot, ActiveCheckStatus,
+    ActiveEnablementDeniedCode, ActiveEnablementEvidenceV1, AggregatedEligibilityReportV1,
+    AggregatedEvidenceReportV1, AggregatedStatusV1, BackendEvidenceSnapshotV1,
+    BackendSupportStateV1, EligibilityOverallStatusV1, ModelsActiveCheckReport,
+    ModelsConsistencyCheckReportV1, ProbeReportV1, ShadowReadyCheckRecordV1, ShadowReadyEvidenceV1,
+    SlotEvidenceSnapshotV1, SupportedRealSlotSetV1, SupportedRealSlotsActiveViewV1,
+    UnifiedEligibilityStatusV1,
 };
 pub use nightly::{
     nightly_summarize, NightlyComponentReport, NightlyOverallStatus, NightlySummarizeArgs,
