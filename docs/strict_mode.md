@@ -99,3 +99,7 @@ cargo run -p ucf-ops -- operator report --out ./out/operator_report.json
 ```
 
 Then use `strict_section` to see whether strict is `OK|FAIL|MISSING` and continue with `ucf-ops strict check` for detail remediation.
+
+
+## v4 consistency note
+Strict v3 checks now use the shared supported-slot set resolution path to align with eligibility/operator/gate evidence interpretation.

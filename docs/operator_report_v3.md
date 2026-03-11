@@ -52,3 +52,7 @@ Der Operator-Report ersetzt **nicht** die Quellreports. Er ist ein read-only Orc
 - keine Aktivierung/Promotion/Rollback-Aktionen
 - keine neue Entscheidungslogik
 - nur konsolidierte Sicht + bounded Remediation-Codes
+
+
+## v4 consistency note
+Operator reporting is expected to align with the shared slot/evidence semantics and denial reason family used by eligibility and strict checks.

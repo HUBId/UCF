@@ -93,3 +93,7 @@ cargo run -p ucf-ops -- operator report --out ./out/operator_report.json
 ```
 
 Then inspect `eligibility_section` in that report and drill into `models eligibility` only when needed.
+
+
+## v4 consistency note
+Eligibility now consumes the shared `SupportedRealSlotSetV1` and `SlotEvidenceSnapshotV1` evidence layer used across strict/operator/gate surfaces.
