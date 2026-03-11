@@ -557,7 +557,12 @@ mod tests {
         std::env::remove_var("UCF_SECOND_SLOT_BURN_SHADOW_ENABLED");
         let (ids, support, burn_status, present) = compared_backend_ids(ModelSlot::Sae, false);
         assert_eq!(ids, vec!["candle_sae_v1"]);
-        assert_eq!(support, OptionalBackendSupportStateV1::NotBuilt);
+        let expected_support = if cfg!(feature = "backend-burn") {
+            OptionalBackendSupportStateV1::NotConfigured
+        } else {
+            OptionalBackendSupportStateV1::NotBuilt
+        };
+        assert_eq!(support, expected_support);
         assert_eq!(burn_status, CompareWindowBackendStatusV1::Skip);
         assert!(!present);
     }
