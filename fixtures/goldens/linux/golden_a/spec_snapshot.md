@@ -9,6 +9,8 @@ Deterministic snapshot generated from code registries + policy pack manifests.
 - `compute.remote`: schema_version=`1`; key fields: schema_version, nonce, payload_digest
 - `policy.graph`: schema_version=`1`; key fields: schema_version, base_version, overlay_version
 - `ess.governance_state`: schema_version=`2`; key fields: schema_version, cooldown_until_tick, flags
+- `models.supported_real_slot_set_v1`: schema_version=`1`; key fields: schema_version, slots, set_digest
+- `models.backend_evidence_snapshot_v1`: schema_version=`1`; key fields: schema_version, supported_slot_set_digest, slots, snapshot_digest
 
 ## B) Stage contracts
 
@@ -115,6 +117,11 @@ Deterministic snapshot generated from code registries + policy pack manifests.
   - `vljepa.w2` shape=`[H,D]` dtype=`f32`
   - `vljepa.b2` shape=`[D]` dtype=`f32`
 
-## F) Safety invariants
+## F) Real-slot evidence contract
+
+- Supported real-slot set is bounded to `world_jepa` + exactly one of `sae`/`ssm`.
+- `BackendEvidenceSnapshotV1` backend support states (`stub|candle|burn`): `SUPPORTED|UNSUPPORTED|NOT_BUILT|NOT_CONFIGURED`.
+
+## G) Safety invariants
 
 - no inferable invariant flags exported by registries; section intentionally bounded.
