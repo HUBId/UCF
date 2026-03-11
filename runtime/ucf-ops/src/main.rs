@@ -1136,12 +1136,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     println!("overall={:?}", report.overall_status);
                     println!("out={}", out.display());
-                    if !matches!(
-                        report.overall_status,
-                        ucf_ops::EligibilityOverallStatusV1::ActiveEligibleAll
-                    ) {
-                        std::process::exit(2);
-                    }
                 }
                 _ => {
                     return Err(
