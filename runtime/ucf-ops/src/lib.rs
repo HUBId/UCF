@@ -49,13 +49,14 @@ pub use goldens::{
     GoldenVerifyScenarioReport,
 };
 pub use models_lifecycle::{
-    can_enable_active, models_active_check, models_active_evidence, models_eligibility,
-    models_list, models_probe_slot, models_promote, models_recommend_rollback, models_rollback,
-    models_shadow_ready, models_stage, models_verify as models_verify_lifecycle, parse_slot,
-    ActiveCheckStatus, ActiveEnablementDeniedCode, ActiveEnablementEvidenceV1,
+    can_enable_active, models_active_check, models_active_evidence, models_consistency_check,
+    models_eligibility, models_list, models_probe_slot, models_promote, models_recommend_rollback,
+    models_rollback, models_shadow_ready, models_stage, models_verify as models_verify_lifecycle,
+    parse_slot, ActiveCheckStatus, ActiveEnablementDeniedCode, ActiveEnablementEvidenceV1,
     AggregatedEligibilityReportV1, AggregatedEvidenceReportV1, AggregatedStatusV1,
-    EligibilityOverallStatusV1, ModelsActiveCheckReport, ProbeReportV1, ShadowReadyCheckRecordV1,
-    ShadowReadyEvidenceV1, SupportedRealSlotsActiveViewV1, UnifiedEligibilityStatusV1,
+    EligibilityOverallStatusV1, ModelsActiveCheckReport, ModelsConsistencyCheckReportV1,
+    ProbeReportV1, ShadowReadyCheckRecordV1, ShadowReadyEvidenceV1, SlotEvidenceSnapshotV1,
+    SupportedRealSlotSetV1, SupportedRealSlotsActiveViewV1, UnifiedEligibilityStatusV1,
 };
 pub use nightly::{
     nightly_summarize, NightlyComponentReport, NightlyOverallStatus, NightlySummarizeArgs,
@@ -6767,11 +6768,22 @@ fn strict_v1_checks(
 
 fn strict_v3_checks(workdir: &Path, cfg: &OpsConfig) -> StrictFailureReportV3 {
     let mut checks = Vec::new();
-    let second_slot = detect_second_slot(workdir).ok();
-    let mut slots = vec![ModelSlot::WorldJepa];
-    if let Some(slot) = second_slot {
-        slots.push(slot);
-    }
+    let mut slots = models_lifecycle::supported_real_slot_set_v1()
+        .ok()
+        .map(|set| {
+            set.slots
+                .iter()
+                .filter_map(|slot| parse_slot(slot).ok())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_else(|| {
+            let second_slot = detect_second_slot(workdir).ok();
+            let mut fallback = vec![ModelSlot::WorldJepa];
+            if let Some(slot) = second_slot {
+                fallback.push(slot);
+            }
+            fallback
+        });
     slots.sort_by_key(|s| s.as_str().to_string());
     slots.dedup();
 
