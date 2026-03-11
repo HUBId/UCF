@@ -68,7 +68,8 @@ pub use operator_report::{
 };
 pub use second_slot_parity::{
     detect_second_slot, second_slot_parity_evidence_exists, second_slot_parity_report,
-    SaeParityRecordV1, SecondSlotParityRecordV1, SecondSlotParityReportV1, SsmParityRecordV1,
+    OptionalBackendSupportStateV1, SaeParityRecordV1, SecondSlotParityRecordV1,
+    SecondSlotParityReportV1, SsmParityRecordV1,
 };
 pub use soak::{
     parse_duration_secs, parse_inject, soak_run, InjectTrigger, SoakReport, SoakRunArgs, SoakStatus,
@@ -6658,6 +6659,9 @@ fn strict_v1_checks(
         let second_compare_required = std::env::var("UCF_SECOND_SLOT_PARITY_COMPARE_REQUIRED")
             .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
             .unwrap_or(false);
+        let second_burn_required = std::env::var("UCF_SECOND_SLOT_BURN_PARITY_REQUIRED")
+            .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+            .unwrap_or(false);
         if second_compare_required {
             if second_slot_parity_evidence_exists(workdir, second_slot) {
                 checks.push(strict_pass("v3_second_slot_parity_evidence_required"));
@@ -6670,6 +6674,29 @@ fn strict_v1_checks(
             }
         } else {
             checks.push(strict_pass("v3_second_slot_parity_evidence_required"));
+        }
+
+        if second_burn_required {
+            let parity_path = workdir
+                .join("out")
+                .join(format!("{}_parity_report.json", second_slot.as_str()));
+            let has_burn_parity = fs::read_to_string(parity_path)
+                .ok()
+                .and_then(|body| {
+                    serde_json::from_str::<second_slot_parity::SecondSlotParityReportV1>(&body).ok()
+                })
+                .is_some_and(|report| report.burn_parity_present);
+            if has_burn_parity {
+                checks.push(strict_pass("v4_optional_backend_burn_parity_required"));
+            } else {
+                checks.push(strict_fail(
+                    "v4_optional_backend_burn_parity_required",
+                    "OPTIONAL_BACKEND_REQUIRED_BUT_MISSING",
+                    "set UCF_SECOND_SLOT_BURN_SHADOW_ENABLED=1 and build with --features backend-burn, or disable UCF_SECOND_SLOT_BURN_PARITY_REQUIRED",
+                ));
+            }
+        } else {
+            checks.push(strict_pass("v4_optional_backend_burn_parity_required"));
         }
 
         let strict_shadow_evidence_required = std::env::var("UCF_STRICT_SHADOW_EVIDENCE_REQUIRED")
@@ -12897,6 +12924,38 @@ slots = [{ slot_id = "world_jepa", active_hash = "missing", files = [{ path = "m
         ] {
             assert!(ids.contains(id), "missing required v3 check id: {id}");
         }
+    }
+
+    #[test]
+    fn strict_check_optional_burn_required_missing_fails_with_stable_code() {
+        let _guard = crate::test_cwd_lock()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let root = repo_root();
+        let _burn_required = EnvVarGuard::set(
+            "UCF_SECOND_SLOT_BURN_PARITY_REQUIRED",
+            std::ffi::OsStr::new("1"),
+        );
+        let _shadow_mode =
+            EnvVarGuard::set("UCF_REAL_ENABLEMENT_MODE", std::ffi::OsStr::new("shadow"));
+        let _burn_shadow = EnvVarGuard::set(
+            "UCF_SECOND_SLOT_BURN_SHADOW_ENABLED",
+            std::ffi::OsStr::new("0"),
+        );
+        let out = root.join("out/strict_check_v4_optional_backend.json");
+        let report = strict_check(&root.join(".ucf"), false, &out).expect("strict check");
+        let check = report
+            .report
+            .checks
+            .iter()
+            .chain(report.report.v1_checks.iter())
+            .find(|c| c.check_id == "v4_optional_backend_burn_parity_required")
+            .expect("v4 optional backend check");
+        assert!(matches!(check.status, StrictCheckStatus::Fail));
+        assert!(check
+            .error_codes
+            .iter()
+            .any(|code| code == "OPTIONAL_BACKEND_REQUIRED_BUT_MISSING"));
     }
 
     #[test]

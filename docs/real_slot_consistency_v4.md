@@ -26,6 +26,12 @@ Ordering is deterministic by `slot_id`. Ambiguity fails closed.
 
 This enables a single evidence interpretation path.
 
+`UnifiedEligibilityStatusV1` carries optional-backend observability for the configured second slot:
+- `burn_support_state` (`SUPPORTED|UNSUPPORTED|NOT_BUILT|NOT_CONFIGURED`)
+- `burn_parity_present` (`true|false`)
+
+These fields are observability/evidence only and do not grant Active eligibility by themselves.
+
 ## Freshness + denial semantics
 
 `EvidenceFreshnessPolicyV1` and `EvidenceDenialCodeV1` normalize reason families:

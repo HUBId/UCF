@@ -11,6 +11,7 @@ use ucf_compute::ModelSlot;
 use ucf_ess::v1::{AuditPayload, ExperiencePayload};
 use ucf_replay::load_fixture_records;
 
+use crate::second_slot_parity::{OptionalBackendSupportStateV1, SecondSlotParityReportV1};
 use crate::{prefix_hex, sha256_hex, OpsError};
 
 const MANIFEST_HISTORY_KEEP: usize = 20;
@@ -116,6 +117,8 @@ pub struct UnifiedEligibilityStatusV1 {
     pub latest_shadow_evidence_digest_prefix: String,
     pub latest_active_evidence_digest_prefix: String,
     pub latest_drift_status: DriftStatusV1,
+    pub burn_support_state: OptionalBackendSupportStateV1,
+    pub burn_parity_present: bool,
     pub denial_reason_probe: Option<String>,
     pub denial_reason_shadow: Option<String>,
     pub denial_reason_active: Option<String>,
@@ -1519,6 +1522,20 @@ fn derive_unified_eligibility_status(
     };
 
     let shadow = build_shadow_ready_evidence(slot, workdir)?;
+    let second_slot = crate::detect_second_slot(workdir).ok();
+    let parity_path = workdir
+        .join("out")
+        .join(format!("{}_parity_report.json", slot.as_str()));
+    let parity_report = fs::read_to_string(&parity_path)
+        .ok()
+        .and_then(|body| serde_json::from_str::<SecondSlotParityReportV1>(&body).ok());
+    let (burn_support_state, burn_parity_present) = if second_slot == Some(slot) {
+        parity_report
+            .map(|p| (p.burn_support_state, p.burn_parity_present))
+            .unwrap_or((OptionalBackendSupportStateV1::NotConfigured, false))
+    } else {
+        (OptionalBackendSupportStateV1::Unsupported, false)
+    };
     let active_eval = if target_hash == "missing" {
         Err(EnablementDenied {
             code: ActiveEnablementDeniedCode::ActiveDeniedHashMismatch,
@@ -1570,6 +1587,8 @@ fn derive_unified_eligibility_status(
     digest_source.extend_from_slice(snapshot.latest_shadow_ready_digest_prefix.as_bytes());
     digest_source.extend_from_slice(snapshot.latest_active_evidence_digest_prefix.as_bytes());
     digest_source.extend_from_slice(format!("{:?}", drift_status).as_bytes());
+    digest_source.extend_from_slice(format!("{:?}", burn_support_state).as_bytes());
+    digest_source.extend_from_slice(if burn_parity_present { b"1" } else { b"0" });
     for code in &remediation_codes {
         digest_source.extend_from_slice(code.as_bytes());
     }
@@ -1585,6 +1604,8 @@ fn derive_unified_eligibility_status(
         latest_shadow_evidence_digest_prefix: snapshot.latest_shadow_ready_digest_prefix,
         latest_active_evidence_digest_prefix: snapshot.latest_active_evidence_digest_prefix,
         latest_drift_status: drift_status,
+        burn_support_state,
+        burn_parity_present,
         denial_reason_probe,
         denial_reason_shadow,
         denial_reason_active,
@@ -3616,6 +3637,8 @@ mod probe_tests {
                 latest_shadow_evidence_digest_prefix: "s1".to_string(),
                 latest_active_evidence_digest_prefix: "missing".to_string(),
                 latest_drift_status: DriftStatusV1::Warn,
+                burn_support_state: OptionalBackendSupportStateV1::NotConfigured,
+                burn_parity_present: false,
                 denial_reason_probe: None,
                 denial_reason_shadow: None,
                 denial_reason_active: Some("ACTIVE_DENIED_DRIFT_WARN".to_string()),
@@ -3633,6 +3656,8 @@ mod probe_tests {
                 latest_shadow_evidence_digest_prefix: "s2".to_string(),
                 latest_active_evidence_digest_prefix: "a2".to_string(),
                 latest_drift_status: DriftStatusV1::Ok,
+                burn_support_state: OptionalBackendSupportStateV1::Unsupported,
+                burn_parity_present: false,
                 denial_reason_probe: None,
                 denial_reason_shadow: None,
                 denial_reason_active: None,
@@ -3667,6 +3692,8 @@ mod probe_tests {
             latest_shadow_evidence_digest_prefix: "missing".to_string(),
             latest_active_evidence_digest_prefix: "missing".to_string(),
             latest_drift_status: DriftStatusV1::Unknown,
+            burn_support_state: OptionalBackendSupportStateV1::NotConfigured,
+            burn_parity_present: false,
             denial_reason_probe: Some("PROBE_REPORT_MISSING".to_string()),
             denial_reason_shadow: Some("SHADOW_READY_PROBE_REQUIRED".to_string()),
             denial_reason_active: Some("ActiveDeniedNoProbe".to_string()),
@@ -3702,6 +3729,8 @@ mod probe_tests {
                 latest_shadow_evidence_digest_prefix: "missing".to_string(),
                 latest_active_evidence_digest_prefix: "missing".to_string(),
                 latest_drift_status: DriftStatusV1::Warn,
+                burn_support_state: OptionalBackendSupportStateV1::NotConfigured,
+                burn_parity_present: false,
                 denial_reason_probe: None,
                 denial_reason_shadow: Some("SHADOW_READY_PROBE_REQUIRED".to_string()),
                 denial_reason_active: Some("ActiveDeniedNoProbe".to_string()),
