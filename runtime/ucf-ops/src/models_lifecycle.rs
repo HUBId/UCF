@@ -1463,7 +1463,7 @@ fn build_shadow_ready_evidence(
         .iter()
         .find(|s| s.slot_id == slot_id)
         .and_then(|s| s.active_hash.clone())
-        .ok_or_else(|| OpsError::Invalid(format!("slot {} has no active hash", slot.as_str())))?;
+        .unwrap_or_else(|| "missing".to_string());
     let manifest_digest_prefix = prefix_hex(&manifest.manifest_digest, 16);
     let probe_path = PathBuf::from("out").join(format!("probe_{}.json", slot.as_str()));
     let probe: Option<ProbeReportV1> = fs::read_to_string(&probe_path)
@@ -1529,7 +1529,9 @@ fn build_shadow_ready_evidence(
         })
         .unwrap_or(false);
 
-    let denial_reason_code = if !matches!(latest_probe_status, ProbeReportStatus::Pass) {
+    let denial_reason_code = if target_hash == "missing" {
+        Some("SHADOW_READY_TARGET_HASH_MISSING".to_string())
+    } else if !matches!(latest_probe_status, ProbeReportStatus::Pass) {
         Some("SHADOW_READY_PROBE_REQUIRED".to_string())
     } else if !compare_window_present {
         Some("SHADOW_READY_COMPARE_WINDOW_MISSING".to_string())
