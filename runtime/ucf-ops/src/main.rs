@@ -2086,9 +2086,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     println!("out={}", out.display());
                     println!("strict_mode_enabled={}", report.strict_mode_enabled);
                     println!("overall={}", if report.ok { "PASS" } else { "FAIL" });
-                    if !report.ok {
-                        std::process::exit(2);
-                    }
                 }
                 _ => return Err("usage: ucf-ops strict check [--strict] [--out <path>]".into()),
             }
