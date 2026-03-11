@@ -15,18 +15,19 @@ use ucf_ops::{
     models_evidence_snapshot, models_list, models_probe, models_probe_slot, models_promote,
     models_recommend_rollback, models_rollback, models_shadow_ready, models_stage, models_verify,
     models_verify_lifecycle, net_deps_audit, nightly_summarize, one_command_bringup,
-    operator_report, operator_report_text, out_manifest, parse_duration_secs, parse_inject,
-    parse_slot, path_scan, policy_diff, policy_explain, policy_validate, portability_check,
-    portability_report, preflight, readiness_gate, release_build_rc, release_rc1_gate,
-    release_signoff_validate, replay_audit, replay_bugreport, repro_pack, repro_verify, run_status,
-    runs_list, runs_search, runs_show, save_counterfactual_result, second_slot_parity_report,
-    security_verify_chain, simulate_counterfactual, soak_run, strict_check, troubleshoot, v0_gate,
-    v1_smoke, v2_gate, v3_gate, verify_bugreport, world_parity_report, world_shadow_report,
-    write_slice, AdversarialRunArgs, AirgapArtifactType, AirgapImportArgs, AirgapImportMode,
-    BenchArgs, BugKitBuildArgs, ChangeImpactArgs, ConfigV1, CounterfactualRequest, DevLoopArgs,
-    DocsLintArgs, DocsLintMode, DocsLintStatus, ExplainTickRequest, ExportArgs, GateStatus,
-    GoldenGenerateArgs, GoldenVerifyArgs, GoldenVerifyReport, NightlySummarizeArgs,
-    OperatorReportArgs, ReleaseBuildRcArgs, SoakRunArgs, SpecSnapshotArgs, V2GateOverallStatus,
+    operator_report, operator_report_text, operator_signoff, operator_signoff_text, out_manifest,
+    parse_duration_secs, parse_inject, parse_slot, path_scan, policy_diff, policy_explain,
+    policy_validate, portability_check, portability_report, preflight, readiness_gate,
+    release_build_rc, release_rc1_gate, release_signoff_validate, replay_audit, replay_bugreport,
+    repro_pack, repro_verify, run_status, runs_list, runs_search, runs_show,
+    save_counterfactual_result, second_slot_parity_report, security_verify_chain,
+    simulate_counterfactual, soak_run, strict_check, troubleshoot, v0_gate, v1_smoke, v2_gate,
+    v3_gate, verify_bugreport, world_parity_report, world_shadow_report, write_slice,
+    AdversarialRunArgs, AirgapArtifactType, AirgapImportArgs, AirgapImportMode, BenchArgs,
+    BugKitBuildArgs, ChangeImpactArgs, ConfigV1, CounterfactualRequest, DevLoopArgs, DocsLintArgs,
+    DocsLintMode, DocsLintStatus, ExplainTickRequest, ExportArgs, GateStatus, GoldenGenerateArgs,
+    GoldenVerifyArgs, GoldenVerifyReport, NightlySummarizeArgs, OperatorReportArgs,
+    OperatorSignoffArgs, ReleaseBuildRcArgs, SoakRunArgs, SpecSnapshotArgs, V2GateOverallStatus,
     V3GateOverallStatus,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
@@ -1590,9 +1591,34 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         println!("text_mode=true");
                     }
                 }
+                "signoff" => {
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/operator_signoff.json"));
+                    let profile = std::env::var("UCF_PROFILE").unwrap_or_else(|_| "test".to_string());
+                    let decision = operator_signoff(
+                        &workdir,
+                        &OperatorSignoffArgs {
+                            run_id: arg_value(&args, "--run"),
+                            latest: has_flag(&args, "--latest"),
+                            profile,
+                        },
+                        &out,
+                    )?;
+                    println!("out={}", out.display());
+                    println!("decision={:?}", decision.decision);
+                    println!("gate_v3_digest={}", decision.gate_report_digests.v3);
+                    if !decision.reasons.is_empty() {
+                        println!("reasons={}", decision.reasons.join(","));
+                    }
+                    println!("{}", operator_signoff_text(&decision));
+                    if has_flag(&args, "--text") {
+                        println!("text_mode=true");
+                    }
+                }
                 _ => {
                     return Err(
-                        "usage: ucf-ops operator report [--run <id>] [--latest] [--text] [--out <path>]".into(),
+                        "usage: ucf-ops operator <report|signoff> [--run <id>] [--latest] [--text] [--out <path>]".into(),
                     )
                 }
             }

@@ -56,3 +56,13 @@ Der Operator-Report ersetzt **nicht** die Quellreports. Er ist ein read-only Orc
 
 ## v4 consistency note
 Operator reporting is expected to align with the shared slot/evidence semantics and denial reason family used by eligibility and strict checks.
+
+## Next step: deterministic signoff
+
+Nach dem konsolidierten Report sollte der Operator die deterministische Reduktion ausführen:
+
+```bash
+cargo run -p ucf-ops -- operator signoff --out ./out/operator_signoff.json
+```
+
+Die Signoff-Entscheidung (`READY_FOR_SHADOW`, `READY_FOR_ACTIVE_REVIEW`, `NOT_READY`) bleibt read-only und aktiviert nichts automatisch. Details: `docs/operator_signoff_v4.md`.

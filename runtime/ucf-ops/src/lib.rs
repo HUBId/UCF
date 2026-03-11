@@ -15,6 +15,7 @@ mod goldens;
 mod models_lifecycle;
 mod nightly;
 mod operator_report;
+mod operator_signoff;
 mod second_slot_parity;
 mod soak;
 mod spec_snapshot;
@@ -67,6 +68,10 @@ pub use nightly::{
 pub use operator_report::{
     operator_report, operator_report_text, ConsolidatedOperatorReportV1, OperatorReportArgs,
     OperatorStatus,
+};
+pub use operator_signoff::{
+    operator_signoff, operator_signoff_text, OperatorSignoffArgs, OperatorSignoffDecisionV1,
+    SignoffDecisionStateV1, SignoffPolicyV1,
 };
 pub use second_slot_parity::{
     detect_second_slot, second_slot_parity_evidence_exists, second_slot_parity_report,
@@ -7364,7 +7369,11 @@ fn run_compute_probe(cfg: &OpsConfig) -> Result<DiagCheck, OpsError> {
     );
     let input = compute_input_from_control(&ctrl);
     let out = backend.compute(&input, budget)?;
-    let pass = (0.0..=1.0).contains(&out.risk) && (0.0..=1.0).contains(&out.confidence);
+    let in_unit_interval = |value: f32| (-1.0e-6..=1.0 + 1.0e-6).contains(&value);
+    let pass = out.risk.is_finite()
+        && out.confidence.is_finite()
+        && in_unit_interval(out.risk)
+        && in_unit_interval(out.confidence);
 
     Ok(DiagCheck {
         name: "compute_probe".to_string(),
