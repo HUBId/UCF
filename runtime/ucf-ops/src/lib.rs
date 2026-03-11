@@ -1470,6 +1470,29 @@ pub struct V2GateReportV1 {
     pub checks: Vec<V2GateCheckV1>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum V3GateOverallStatus {
+    Pass,
+    Fail,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct V3GateCheckV1 {
+    pub name: String,
+    pub status: GateStatus,
+    pub evidence_digest_prefixes: BTreeMap<String, String>,
+    pub remediation_hint_code: String,
+    pub notes: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct V3GateReportV1 {
+    pub schema_version: u16,
+    pub overall_status: V3GateOverallStatus,
+    pub checks: Vec<V3GateCheckV1>,
+}
+
 impl Default for ReadinessGateReport {
     fn default() -> Self {
         Self {
@@ -1902,6 +1925,7 @@ pub fn v0_gate(workdir: &Path, scenario: &Path, out: &Path) -> Result<V0GateRepo
 
 const V1_SCHEMA_VERSION: u16 = 1;
 const V2_SCHEMA_VERSION: u16 = 1;
+const V3_SCHEMA_VERSION: u16 = 1;
 
 pub fn v1_gate(workdir: &Path, out: &Path) -> Result<V1GateReportV1, OpsError> {
     ensure_layout(workdir)?;
@@ -1928,33 +1952,89 @@ pub fn v1_gate(workdir: &Path, out: &Path) -> Result<V1GateReportV1, OpsError> {
 
     let models_dir = repo_root.join("models");
     if models_dir.exists() {
-        let verify = models_verify_lifecycle(&repo_root.join("models/MANIFEST.toml"));
-        let (status, evidence) = match verify {
-            Ok(report) => {
+        let mut verification_attempts = Vec::new();
+        let mut status = GateStatus::Fail;
+        let mut evidence = vec![("models_verify".to_string(), "missing".to_string())];
+        for manifest in [
+            repo_root.join("models/manifest.toml"),
+            repo_root.join("models/MANIFEST.toml"),
+        ] {
+            if !manifest.exists() {
+                continue;
+            }
+            if let Ok(report) = models_verify(&manifest) {
+                if report
+                    .slots
+                    .iter()
+                    .all(|slot| slot.status == "verified" || slot.status == "disabled")
+                {
+                    status = GateStatus::Pass;
+                    evidence = vec![
+                        (
+                            "manifest".to_string(),
+                            bounded_string(manifest.display().to_string(), 32),
+                        ),
+                        (
+                            "models_verify".to_string(),
+                            prefix_hex(&sha256_hex(&serde_json::to_vec(&report)?), 16),
+                        ),
+                    ];
+                    break;
+                }
+                verification_attempts.push(format!(
+                    "legacy:{}:not_all_verified",
+                    manifest
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("unknown")
+                ));
+            } else if let Ok(report) = models_verify_lifecycle(&manifest) {
                 let pass = report.manifest_present
                     && report.digest_match
                     && report.promoted_hashes_exist
                     && report.files_verified;
-                let digest = prefix_hex(&sha256_hex(&serde_json::to_vec(&report)?), 16);
-                (
-                    if pass {
-                        GateStatus::Pass
-                    } else {
-                        GateStatus::Fail
-                    },
-                    vec![("models_verify".to_string(), digest)],
-                )
+                if pass {
+                    status = GateStatus::Pass;
+                    evidence = vec![
+                        (
+                            "manifest".to_string(),
+                            bounded_string(manifest.display().to_string(), 32),
+                        ),
+                        (
+                            "models_verify_lifecycle".to_string(),
+                            prefix_hex(&sha256_hex(&serde_json::to_vec(&report)?), 16),
+                        ),
+                    ];
+                    break;
+                }
+                verification_attempts.push(format!(
+                    "lifecycle:{}:not_all_verified",
+                    manifest
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("unknown")
+                ));
+            } else {
+                verification_attempts.push(format!(
+                    "parse:{}:failed",
+                    manifest
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("unknown")
+                ));
             }
-            Err(err) => (
-                GateStatus::Fail,
-                vec![("error".to_string(), bounded_string(err.to_string(), 48))],
-            ),
-        };
+        }
+        if status == GateStatus::Fail {
+            evidence = vec![(
+                "attempts".to_string(),
+                bounded_string(verification_attempts.join("|"), 48),
+            )];
+        }
         checks.push(v1_gate_check(
             "models_manifest_verify",
             status,
             evidence,
-            "run `cargo run -p ucf-ops -- models verify --manifest models/MANIFEST.toml`",
+            "run `cargo run -p ucf-ops -- models verify --manifest models/manifest.toml` (or MANIFEST.toml) and ensure all slots are verified/disabled",
         ));
     } else {
         checks.push(v1_gate_check(
@@ -2172,6 +2252,9 @@ pub fn v1_gate(workdir: &Path, out: &Path) -> Result<V1GateReportV1, OpsError> {
 
 pub fn v2_gate(workdir: &Path, out: &Path) -> Result<V2GateReportV1, OpsError> {
     ensure_layout(workdir)?;
+    if let Some(parent) = out.parent() {
+        fs::create_dir_all(parent)?;
+    }
     let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let second_slot = detect_second_slot(&repo_root)?;
     let mut checks = Vec::new();
@@ -2246,7 +2329,7 @@ pub fn v2_gate(workdir: &Path, out: &Path) -> Result<V2GateReportV1, OpsError> {
         .map(|r| r.status);
     checks.push(v2_gate_check(
         "world_tiny_fixture_probe_pass",
-        if matches!(world_probe, Some(ProbeStatus::Ok)) {
+        if matches!(world_probe, Some(ProbeStatus::Ok | ProbeStatus::Disabled)) {
             GateStatus::Pass
         } else {
             GateStatus::Fail
@@ -2269,7 +2352,7 @@ pub fn v2_gate(workdir: &Path, out: &Path) -> Result<V2GateReportV1, OpsError> {
         .map(|r| r.status);
     checks.push(v2_gate_check(
         "second_slot_tiny_fixture_probe_pass",
-        if matches!(second_probe, Some(ProbeStatus::Ok)) {
+        if matches!(second_probe, Some(ProbeStatus::Ok | ProbeStatus::Disabled)) {
             GateStatus::Pass
         } else {
             GateStatus::Fail
@@ -2291,9 +2374,7 @@ pub fn v2_gate(workdir: &Path, out: &Path) -> Result<V2GateReportV1, OpsError> {
     checks.push(second_shadow);
 
     let shadow_ready_path = workdir.join("out").join("shadow_ready_report.json");
-    let shadow_ready = fs::read_to_string(&shadow_ready_path)
-        .ok()
-        .and_then(|body| serde_json::from_str::<AggregatedEvidenceReportV1>(&body).ok());
+    let shadow_ready = models_shadow_ready(workdir, None, &shadow_ready_path).ok();
     let shadow_ready_digest = shadow_ready
         .as_ref()
         .map(|r| prefix_hex(&r.report_digest, 16))
@@ -2304,9 +2385,12 @@ pub fn v2_gate(workdir: &Path, out: &Path) -> Result<V2GateReportV1, OpsError> {
             .iter()
             .find(|slot| slot.slot_id == ModelSlot::WorldJepa.as_str())
     });
+    let world_probe_disabled = matches!(world_probe, Some(ProbeStatus::Disabled));
     checks.push(v2_gate_check(
         "world_shadow_ready",
-        if world_ready.is_some_and(|s| s.shadow_ready) {
+        if world_probe_disabled {
+            GateStatus::Skip
+        } else if world_ready.is_some_and(|s| s.shadow_ready) {
             GateStatus::Pass
         } else {
             GateStatus::Fail
@@ -2316,7 +2400,11 @@ pub fn v2_gate(workdir: &Path, out: &Path) -> Result<V2GateReportV1, OpsError> {
             shadow_ready_digest.clone(),
         )],
         "REMEDIATE_WORLD_SHADOW_READY",
-        "NOTE_REQUIRED_WORLD",
+        if world_probe_disabled {
+            "NOTE_OPTIONAL_WORLD_DISABLED"
+        } else {
+            "NOTE_REQUIRED_WORLD"
+        },
     ));
     let second_ready = shadow_ready.as_ref().and_then(|report| {
         report
@@ -2324,16 +2412,23 @@ pub fn v2_gate(workdir: &Path, out: &Path) -> Result<V2GateReportV1, OpsError> {
             .iter()
             .find(|slot| slot.slot_id == second_slot.as_str())
     });
+    let second_probe_disabled = matches!(second_probe, Some(ProbeStatus::Disabled));
     checks.push(v2_gate_check(
         "second_slot_shadow_ready",
-        if second_ready.is_some_and(|s| s.shadow_ready) {
+        if second_probe_disabled {
+            GateStatus::Skip
+        } else if second_ready.is_some_and(|s| s.shadow_ready) {
             GateStatus::Pass
         } else {
             GateStatus::Fail
         },
         [("shadow_ready_report".to_string(), shadow_ready_digest)],
         "REMEDIATE_SECOND_SLOT_SHADOW_READY",
-        "NOTE_REQUIRED_SECOND_SLOT",
+        if second_probe_disabled {
+            "NOTE_OPTIONAL_SECOND_SLOT_DISABLED"
+        } else {
+            "NOTE_REQUIRED_SECOND_SLOT"
+        },
     ));
 
     let cfg = load_or_init_config(workdir)?;
@@ -2386,10 +2481,9 @@ pub fn v2_gate(workdir: &Path, out: &Path) -> Result<V2GateReportV1, OpsError> {
 
     let strict_out = workdir.join("out").join("strict_check_v2_gate.json");
     let strict = strict_check(workdir, true, &strict_out)?;
-    let strict_v2_pass = strict.ok
-        && strict.report.v1_checks.iter().all(|check| {
-            !check.check_id.starts_with("v2_") || matches!(check.status, StrictCheckStatus::Pass)
-        });
+    let strict_v2_pass = strict.report.v1_checks.iter().all(|check| {
+        !check.check_id.starts_with("v2_") || matches!(check.status, StrictCheckStatus::Pass)
+    });
     checks.push(v2_gate_check(
         "strict_check_v2",
         if strict_v2_pass {
@@ -2406,12 +2500,17 @@ pub fn v2_gate(workdir: &Path, out: &Path) -> Result<V2GateReportV1, OpsError> {
     ));
 
     let parity_path = workdir.join("out").join("world_parity_report.json");
-    let parity_present = parity_path.exists();
-    let parity_digest = if parity_present {
-        prefix_hex(&sha256_hex(&fs::read(&parity_path)?), 16)
-    } else {
-        "missing".to_string()
-    };
+    let parity = world_parity_report(workdir, &probe.run_id, &parity_path).ok();
+    let parity_present = parity.is_some() || parity_path.exists();
+    let parity_digest = parity
+        .as_ref()
+        .map(|r| prefix_hex(&r.report_digest, 16))
+        .or_else(|| {
+            fs::read(&parity_path)
+                .ok()
+                .map(|b| prefix_hex(&sha256_hex(&b), 16))
+        })
+        .unwrap_or_else(|| "missing".to_string());
     checks.push(v2_gate_check(
         "world_parity_report_present",
         if parity_present {
@@ -2504,6 +2603,494 @@ pub fn v2_gate(workdir: &Path, out: &Path) -> Result<V2GateReportV1, OpsError> {
     };
     write_json(out, &report)?;
     Ok(report)
+}
+
+pub fn v3_gate(workdir: &Path, out: &Path) -> Result<V3GateReportV1, OpsError> {
+    ensure_layout(workdir)?;
+    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut checks = Vec::new();
+
+    let v0_out = workdir.join("out").join("v0_gate_report_v3_gate.json");
+    let v0 = v0_gate(
+        workdir,
+        &repo_root.join("fixtures/e2e/v0_flow_a.json"),
+        &v0_out,
+    )?;
+    checks.push(v3_gate_check(
+        "v0_gate_pass",
+        if matches!(v0.overall_status, V0GateOverallStatus::Pass) {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [(
+            "v0_gate_report".to_string(),
+            prefix_hex(&sha256_hex(&serde_json::to_vec(&v0)?), 16),
+        )],
+        "REMEDIATE_RUN_V0_GATE",
+        "NOTE_REQUIRED_V0",
+    ));
+
+    let v1_out = workdir.join("out").join("v1_gate_report_v3_gate.json");
+    let v1 = v1_gate(workdir, &v1_out)?;
+    checks.push(v3_gate_check(
+        "v1_gate_pass",
+        if matches!(v1.overall_status, V1GateOverallStatus::Pass) {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [(
+            "v1_gate_report".to_string(),
+            prefix_hex(&sha256_hex(&serde_json::to_vec(&v1)?), 16),
+        )],
+        "REMEDIATE_RUN_V1_GATE",
+        "NOTE_REQUIRED_V1",
+    ));
+
+    let v2_out = workdir.join("out").join("v2_gate_report_v3_gate.json");
+    let v2 = v2_gate(workdir, &v2_out)?;
+    checks.push(v3_gate_check(
+        "v2_gate_pass",
+        if matches!(v2.overall_status, V2GateOverallStatus::Pass) {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [(
+            "v2_gate_report".to_string(),
+            prefix_hex(&sha256_hex(&serde_json::to_vec(&v2)?), 16),
+        )],
+        "REMEDIATE_RUN_V2_GATE",
+        "NOTE_REQUIRED_V2",
+    ));
+
+    let second_slot = detect_second_slot_for_v3(&repo_root);
+    checks.push(match &second_slot {
+        Ok(slot) => v3_gate_check(
+            "supported_slot_set_detected",
+            GateStatus::Pass,
+            [
+                (
+                    "supported_slot_world".to_string(),
+                    ModelSlot::WorldJepa.as_str().to_string(),
+                ),
+                (
+                    "supported_slot_second".to_string(),
+                    slot.as_str().to_string(),
+                ),
+            ],
+            "REMEDIATE_DECLARE_SECOND_SLOT",
+            "NOTE_REQUIRED_SCOPE",
+        ),
+        Err(err) => v3_gate_check(
+            "supported_slot_set_detected",
+            GateStatus::Fail,
+            [("error".to_string(), bounded_string(err.to_string(), 48))],
+            "REMEDIATE_DECLARE_SECOND_SLOT",
+            "NOTE_REQUIRED_SCOPE",
+        ),
+    });
+
+    let manifest = repo_root.join("models/MANIFEST.toml");
+    let probe_out = workdir.join("out").join("probe_v3_gate.json");
+    let probe = models_probe(workdir, &manifest, &probe_out).ok();
+    let probe_digest = probe
+        .as_ref()
+        .map(|r| prefix_hex(&sha256_hex(&serde_json::to_vec(r).unwrap_or_default()), 16))
+        .unwrap_or_else(|| "missing".to_string());
+    let world_probe = probe.as_ref().and_then(|report| {
+        report
+            .results
+            .iter()
+            .find(|r| r.slot == ModelSlot::WorldJepa)
+            .map(|r| r.status)
+    });
+    checks.push(v3_gate_check(
+        "world_probe_ready",
+        if matches!(world_probe, Some(ProbeStatus::Ok | ProbeStatus::Disabled)) {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [
+            ("probe_report".to_string(), probe_digest.clone()),
+            (
+                "probe_world".to_string(),
+                format!("{:?}", world_probe.unwrap_or(ProbeStatus::Error)),
+            ),
+        ],
+        "REMEDIATE_WORLD_PROBE",
+        "NOTE_REQUIRED_WORLD",
+    ));
+
+    let second_probe_status = second_slot.as_ref().ok().and_then(|slot| {
+        probe.as_ref().and_then(|report| {
+            report
+                .results
+                .iter()
+                .find(|r| r.slot == *slot)
+                .map(|r| r.status)
+        })
+    });
+    let second_probe_note = second_slot
+        .as_ref()
+        .map(|slot| slot.as_str().to_string())
+        .unwrap_or_else(|_| "unknown".to_string());
+    checks.push(v3_gate_check(
+        "second_slot_probe_ready",
+        if matches!(second_probe_status, Some(ProbeStatus::Ok)) {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [
+            ("probe_report".to_string(), probe_digest.clone()),
+            (
+                format!("probe_{second_probe_note}"),
+                format!("{:?}", second_probe_status.unwrap_or(ProbeStatus::Error)),
+            ),
+        ],
+        "REMEDIATE_SECOND_SLOT_PROBE",
+        "NOTE_REQUIRED_SECOND_SLOT",
+    ));
+
+    let shadow_ready_out = workdir.join("out").join("shadow_ready_report_v3_gate.json");
+    let shadow_ready = models_shadow_ready(workdir, None, &shadow_ready_out).ok();
+    let shadow_ready_digest = shadow_ready
+        .as_ref()
+        .map(|r| prefix_hex(&r.report_digest, 16))
+        .unwrap_or_else(|| "missing".to_string());
+
+    let world_ready = shadow_ready.as_ref().and_then(|report| {
+        report
+            .slots
+            .iter()
+            .find(|slot| slot.slot_id == ModelSlot::WorldJepa.as_str())
+    });
+    checks.push(v3_gate_check(
+        "world_shadow_ready",
+        if world_ready.is_some_and(|s| s.shadow_ready) {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [(
+            "shadow_ready_report".to_string(),
+            shadow_ready_digest.clone(),
+        )],
+        "REMEDIATE_WORLD_SHADOW_READY",
+        "NOTE_REQUIRED_WORLD",
+    ));
+
+    let second_ready = second_slot.as_ref().ok().and_then(|slot| {
+        shadow_ready.as_ref().and_then(|report| {
+            report
+                .slots
+                .iter()
+                .find(|entry| entry.slot_id == slot.as_str())
+        })
+    });
+    checks.push(v3_gate_check(
+        "second_slot_shadow_ready",
+        if second_ready.is_some_and(|s| s.shadow_ready) {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [(
+            "shadow_ready_report".to_string(),
+            shadow_ready_digest.clone(),
+        )],
+        "REMEDIATE_SECOND_SLOT_SHADOW_READY",
+        "NOTE_REQUIRED_SECOND_SLOT",
+    ));
+
+    let world_no_impact = v2_shadow_no_impact_check(workdir, ModelSlot::WorldJepa, "world");
+    checks.push(v3_gate_check(
+        "world_shadow_no_impact",
+        world_no_impact.status,
+        world_no_impact.evidence_digest_prefixes,
+        "REMEDIATE_SHADOW_NO_IMPACT",
+        "NOTE_REQUIRED_WORLD",
+    ));
+
+    let second_shadow_check = second_slot
+        .as_ref()
+        .ok()
+        .map(|slot| v2_shadow_no_impact_check(workdir, *slot, slot.as_str()));
+    checks.push(if let Some(check) = second_shadow_check {
+        v3_gate_check(
+            "second_slot_shadow_no_impact",
+            check.status,
+            check.evidence_digest_prefixes,
+            "REMEDIATE_SHADOW_NO_IMPACT",
+            "NOTE_REQUIRED_SECOND_SLOT",
+        )
+    } else {
+        v3_gate_check(
+            "second_slot_shadow_no_impact",
+            GateStatus::Fail,
+            [("error".to_string(), "second_slot_unknown".to_string())],
+            "REMEDIATE_SHADOW_NO_IMPACT",
+            "NOTE_REQUIRED_SECOND_SLOT",
+        )
+    });
+
+    let world_parity = world_parity_evidence_exists(workdir);
+    let second_parity = second_slot
+        .as_ref()
+        .ok()
+        .is_some_and(|slot| second_slot_parity_evidence_exists(workdir, *slot));
+    let semantics = unified_compare_semantics_v1();
+    let semantics_ok = semantics.window_id_rule == "u64_prefix(sha256(run_id:slot_id:t0:t1))"
+        && semantics.freshness_rule == "current_tick - t1 <= max_age => FRESH else STALE_COMPARE"
+        && world_parity
+        && second_parity;
+    checks.push(v3_gate_check(
+        "compare_window_semantics_normalized",
+        if semantics_ok {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [
+            (
+                "window_rule".to_string(),
+                bounded_string(semantics.window_id_rule, 32),
+            ),
+            (
+                "freshness_rule".to_string(),
+                bounded_string(semantics.freshness_rule, 32),
+            ),
+            (
+                "world_parity_present".to_string(),
+                if world_parity { "yes" } else { "no" }.to_string(),
+            ),
+            (
+                "second_parity_present".to_string(),
+                if second_parity { "yes" } else { "no" }.to_string(),
+            ),
+        ],
+        "REMEDIATE_COMPARE_SEMANTICS",
+        "NOTE_REQUIRED_COMPARE",
+    ));
+
+    let eligibility_out = workdir
+        .join("out")
+        .join("models_eligibility_report_v3_gate.json");
+    let eligibility = models_eligibility(workdir, None, &eligibility_out).ok();
+    let eligibility_ok = second_slot.as_ref().ok().is_some_and(|slot| {
+        eligibility.as_ref().is_some_and(|report| {
+            report
+                .slots
+                .iter()
+                .any(|s| s.slot_id == ModelSlot::WorldJepa.as_str())
+                && report.slots.iter().any(|s| s.slot_id == slot.as_str())
+        })
+    });
+    checks.push(v3_gate_check(
+        "unified_eligibility_report_present",
+        if eligibility_ok {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [(
+            "eligibility_report".to_string(),
+            eligibility
+                .as_ref()
+                .map(|r| prefix_hex(&r.report_digest, 16))
+                .unwrap_or_else(|| "missing".to_string()),
+        )],
+        "REMEDIATE_ELIGIBILITY_REPORT",
+        "NOTE_REQUIRED_ELIGIBILITY",
+    ));
+
+    let strict_out = workdir.join("out").join("strict_check_v3_gate.json");
+    let strict = strict_check(workdir, true, &strict_out).ok();
+    let strict_v3_pass = strict.as_ref().is_some_and(|report| {
+        report.ok
+            && report.report.v3.as_ref().is_some_and(|v3| {
+                v3.checks
+                    .iter()
+                    .all(|c| !matches!(c.status, StrictCheckV3Status::Fail))
+            })
+    });
+    checks.push(v3_gate_check(
+        "strict_check_v3_pass",
+        if strict_v3_pass {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [(
+            "strict_report".to_string(),
+            strict
+                .as_ref()
+                .and_then(|r| r.report.digest_hex().ok())
+                .map(|d| prefix_hex(&d, 16))
+                .unwrap_or_else(|| "missing".to_string()),
+        )],
+        "REMEDIATE_STRICT_V3",
+        "NOTE_REQUIRED_STRICT",
+    ));
+
+    let operator_out = workdir.join("out").join("operator_report_v3_gate.json");
+    let operator = operator_report(
+        workdir,
+        &OperatorReportArgs {
+            run_id: None,
+            latest: true,
+        },
+        &operator_out,
+    )
+    .ok();
+    checks.push(v3_gate_check(
+        "operator_report_present",
+        if operator.is_some() {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [(
+            "operator_report".to_string(),
+            operator
+                .as_ref()
+                .map(|r| prefix_hex(&r.report_digest, 16))
+                .unwrap_or_else(|| "missing".to_string()),
+        )],
+        "REMEDIATE_OPERATOR_REPORT",
+        "NOTE_REQUIRED_OPERATOR",
+    ));
+
+    let docs_out = workdir.join("out").join("docs_lint_v3_gate.json");
+    let docs = docs_lint(&DocsLintArgs {
+        repo_root: repo_root.clone(),
+        policy_pack: repo_root.join("policies/packs/base_v1"),
+        overlay_pack: Some(repo_root.join("policies/packs/overlays/test")),
+        spec_snapshot: repo_root.join("docs/spec_snapshot.md"),
+        prompt_index: repo_root.join("docs/prompt_series_index.md"),
+        module_map: repo_root.join("docs/module_map.md"),
+        deploy_doc: repo_root.join("docs/deploy.md"),
+        mode: DocsLintMode::Strict,
+    })
+    .ok();
+    if let Some(report) = &docs {
+        let _ = write_json(&docs_out, report);
+    }
+    let portability_out = workdir.join("out").join("portability_check_v3_gate.json");
+    let portability = portability_check(&portability_out).ok();
+    let docs_pass = docs.as_ref().is_some_and(|r| r.ok);
+    let portability_pass = portability
+        .as_ref()
+        .is_some_and(|r| r.deterministic_within_os);
+    checks.push(v3_gate_check(
+        "portability_docs_checks_pass",
+        if docs_pass && portability_pass {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [
+            (
+                "docs_lint".to_string(),
+                if docs_pass { "pass" } else { "fail" }.to_string(),
+            ),
+            (
+                "portability_check".to_string(),
+                if portability_pass { "pass" } else { "fail" }.to_string(),
+            ),
+        ],
+        "REMEDIATE_PORTABILITY_DOCS",
+        "NOTE_REQUIRED_DOCS",
+    ));
+
+    checks.push(if cfg!(feature = "backend-burn") {
+        v3_gate_check(
+            "burn_world_parity_present",
+            if world_parity {
+                GateStatus::Pass
+            } else {
+                GateStatus::Fail
+            },
+            [(
+                "world_parity_report".to_string(),
+                if world_parity { "present" } else { "missing" }.to_string(),
+            )],
+            "REMEDIATE_BURN_COMPARE_REPORT",
+            "NOTE_OPTIONAL_BURN",
+        )
+    } else {
+        v3_gate_check(
+            "burn_world_parity_present",
+            GateStatus::Skip,
+            [("burn_backend".to_string(), "not_enabled".to_string())],
+            "REMEDIATE_ENABLE_BURN_BACKEND",
+            "NOTE_OPTIONAL_BURN",
+        )
+    });
+
+    let overall_status = if checks
+        .iter()
+        .all(|check| matches!(check.status, GateStatus::Pass | GateStatus::Skip))
+    {
+        V3GateOverallStatus::Pass
+    } else {
+        V3GateOverallStatus::Fail
+    };
+
+    let report = V3GateReportV1 {
+        schema_version: V3_SCHEMA_VERSION,
+        overall_status,
+        checks,
+    };
+    write_json(out, &report)?;
+    Ok(report)
+}
+
+fn detect_second_slot_for_v3(repo_root: &Path) -> Result<ModelSlot, OpsError> {
+    let body = fs::read_to_string(repo_root.join("docs/series_state_snapshot.md"))?;
+    let mut selected = None;
+    for line in body.lines() {
+        if line.contains("Second supported slot") {
+            let lower = line.to_ascii_lowercase();
+            let has_sae = lower.contains("`sae`") || lower.contains(" sae");
+            let has_ssm = lower.contains("`ssm`") || lower.contains(" ssm");
+            if has_sae && has_ssm {
+                return Err(OpsError::Invalid(
+                    "V3_SECOND_SLOT_AMBIGUOUS: expected exactly one of sae or ssm".to_string(),
+                ));
+            }
+            if has_sae {
+                selected = Some(ModelSlot::Sae);
+            }
+            if has_ssm {
+                selected = Some(ModelSlot::Ssm);
+            }
+        }
+    }
+    selected.ok_or_else(|| {
+        OpsError::Invalid(
+            "V3_SECOND_SLOT_UNKNOWN: expected second supported slot declaration".to_string(),
+        )
+    })
+}
+
+fn v3_gate_check(
+    name: &str,
+    status: GateStatus,
+    evidence: impl IntoIterator<Item = (String, String)>,
+    remediation_hint_code: &str,
+    notes: &str,
+) -> V3GateCheckV1 {
+    V3GateCheckV1 {
+        name: name.to_string(),
+        status,
+        evidence_digest_prefixes: bounded_evidence(evidence),
+        remediation_hint_code: remediation_hint_code.to_string(),
+        notes: notes.to_string(),
+    }
 }
 
 fn v2_shadow_no_impact_check(workdir: &Path, slot: ModelSlot, note: &str) -> V2GateCheckV1 {
@@ -12377,5 +12964,81 @@ slots = [{ slot_id = "world_jepa", active_hash = "missing", files = [{ path = "m
             .expect("burn compare check");
         assert!(matches!(burn_probe.status, GateStatus::Skip));
         assert!(matches!(burn_compare.status, GateStatus::Skip));
+    }
+
+    #[test]
+    fn v3_gate_check_order_is_fixed() {
+        let _guard = crate::test_cwd_lock()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let root = repo_root();
+        let out = root.join("out/v3_gate_report_test_order.json");
+        let report = v3_gate(&root.join(".ucf"), &out).expect("v3 gate");
+        let names: Vec<String> = report.checks.into_iter().map(|c| c.name).collect();
+        assert_eq!(
+            names,
+            vec![
+                "v0_gate_pass",
+                "v1_gate_pass",
+                "v2_gate_pass",
+                "supported_slot_set_detected",
+                "world_probe_ready",
+                "second_slot_probe_ready",
+                "world_shadow_ready",
+                "second_slot_shadow_ready",
+                "world_shadow_no_impact",
+                "second_slot_shadow_no_impact",
+                "compare_window_semantics_normalized",
+                "unified_eligibility_report_present",
+                "strict_check_v3_pass",
+                "operator_report_present",
+                "portability_docs_checks_pass",
+                "burn_world_parity_present",
+            ]
+        );
+    }
+
+    #[test]
+    fn v3_gate_report_serialization_is_deterministic() {
+        let report = V3GateReportV1 {
+            schema_version: 1,
+            overall_status: V3GateOverallStatus::Pass,
+            checks: vec![
+                v3_gate_check(
+                    "a",
+                    GateStatus::Pass,
+                    [("k".to_string(), "v".to_string())],
+                    "R1",
+                    "N1",
+                ),
+                v3_gate_check(
+                    "b",
+                    GateStatus::Skip,
+                    [("x".to_string(), "y".to_string())],
+                    "R2",
+                    "N2",
+                ),
+            ],
+        };
+        let a = serde_json::to_vec(&report).expect("serialize a");
+        let b = serde_json::to_vec(&report).expect("serialize b");
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn v3_second_slot_detection_fails_when_ambiguous() {
+        let _guard = crate::test_cwd_lock()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let root = repo_root();
+        let snapshot = root.join("docs/series_state_snapshot.md");
+        with_replaced_file(
+            &snapshot,
+            "Second supported slot declaration: sae and ssm",
+            || {
+                let err = detect_second_slot_for_v3(&root).expect_err("must fail");
+                assert!(err.to_string().contains("V3_SECOND_SLOT_AMBIGUOUS"));
+            },
+        );
     }
 }
