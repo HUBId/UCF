@@ -1,10 +1,12 @@
 # Real Slot Consistency v4
 
-This document defines `SupportedRealSlotSetV1` and `SlotEvidenceSnapshotV1` as the shared source for:
+This document defines `SupportedRealSlotSetV1`, `SlotEvidenceSnapshotV1`, and `BackendEvidenceSnapshotV1` as the shared source for:
 - `ucf-ops models eligibility`
 - `ucf-ops strict check`
 - `ucf-ops operator report`
 - gate preconditions.
+
+`BackendEvidenceSnapshotV1` is the canonical exportable evidence surface under `./out/backend_evidence_snapshot.json`.
 
 ## Supported real slot set
 

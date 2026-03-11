@@ -12,21 +12,22 @@ use ucf_ops::{
     goldens_verify, goldens_verify_detailed, hardware_scan, load_signoff_checklist, logs_prove,
     logs_verify_proof, metrics_snapshot, metrics_summary, metrics_trend, migrate_config_v1,
     models_active_check, models_active_evidence, models_consistency_check, models_eligibility,
-    models_list, models_probe, models_probe_slot, models_promote, models_recommend_rollback,
-    models_rollback, models_shadow_ready, models_stage, models_verify, models_verify_lifecycle,
-    net_deps_audit, nightly_summarize, one_command_bringup, operator_report, operator_report_text,
-    out_manifest, parse_duration_secs, parse_inject, parse_slot, path_scan, policy_diff,
-    policy_explain, policy_validate, portability_check, portability_report, preflight,
-    readiness_gate, release_build_rc, release_rc1_gate, release_signoff_validate, replay_audit,
-    replay_bugreport, repro_pack, repro_verify, run_status, runs_list, runs_search, runs_show,
-    save_counterfactual_result, second_slot_parity_report, security_verify_chain,
-    simulate_counterfactual, soak_run, strict_check, troubleshoot, v0_gate, v1_smoke, v2_gate,
-    v3_gate, verify_bugreport, world_parity_report, world_shadow_report, write_slice,
-    AdversarialRunArgs, AirgapArtifactType, AirgapImportArgs, AirgapImportMode, BenchArgs,
-    BugKitBuildArgs, ChangeImpactArgs, ConfigV1, CounterfactualRequest, DevLoopArgs, DocsLintArgs,
-    DocsLintMode, DocsLintStatus, ExplainTickRequest, ExportArgs, GateStatus, GoldenGenerateArgs,
-    GoldenVerifyArgs, GoldenVerifyReport, NightlySummarizeArgs, OperatorReportArgs,
-    ReleaseBuildRcArgs, SoakRunArgs, SpecSnapshotArgs, V2GateOverallStatus, V3GateOverallStatus,
+    models_evidence_snapshot, models_list, models_probe, models_probe_slot, models_promote,
+    models_recommend_rollback, models_rollback, models_shadow_ready, models_stage, models_verify,
+    models_verify_lifecycle, net_deps_audit, nightly_summarize, one_command_bringup,
+    operator_report, operator_report_text, out_manifest, parse_duration_secs, parse_inject,
+    parse_slot, path_scan, policy_diff, policy_explain, policy_validate, portability_check,
+    portability_report, preflight, readiness_gate, release_build_rc, release_rc1_gate,
+    release_signoff_validate, replay_audit, replay_bugreport, repro_pack, repro_verify, run_status,
+    runs_list, runs_search, runs_show, save_counterfactual_result, second_slot_parity_report,
+    security_verify_chain, simulate_counterfactual, soak_run, strict_check, troubleshoot, v0_gate,
+    v1_smoke, v2_gate, v3_gate, verify_bugreport, world_parity_report, world_shadow_report,
+    write_slice, AdversarialRunArgs, AirgapArtifactType, AirgapImportArgs, AirgapImportMode,
+    BenchArgs, BugKitBuildArgs, ChangeImpactArgs, ConfigV1, CounterfactualRequest, DevLoopArgs,
+    DocsLintArgs, DocsLintMode, DocsLintStatus, ExplainTickRequest, ExportArgs, GateStatus,
+    GoldenGenerateArgs, GoldenVerifyArgs, GoldenVerifyReport, NightlySummarizeArgs,
+    OperatorReportArgs, ReleaseBuildRcArgs, SoakRunArgs, SpecSnapshotArgs, V2GateOverallStatus,
+    V3GateOverallStatus,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -1140,6 +1141,41 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     println!("overall={:?}", report.overall_status);
                     println!("out={}", out.display());
                 }
+                "evidence-snapshot" => {
+                    let slot = arg_value(&args, "--slot").map(|v| parse_slot(&v)).transpose()?;
+                    let run_id = arg_value(&args, "--run");
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/backend_evidence_snapshot.json"));
+                    let report = models_evidence_snapshot(&workdir, slot, run_id.as_deref())?;
+                    if let Some(parent) = out.parent() {
+                        std::fs::create_dir_all(parent)?;
+                    }
+                    std::fs::write(&out, serde_json::to_vec_pretty(&report)?)?;
+                    for slot in &report.slots {
+                        println!(
+                            "slot={} target={} probe_ready={} shadow_ready={} active_eligible={} backend_support=stub:{:?},candle:{:?},burn:{:?}{}",
+                            slot.slot_id,
+                            slot.target_hash_prefix,
+                            if slot.readiness.probe_ready { "yes" } else { "no" },
+                            if slot.readiness.shadow_ready { "yes" } else { "no" },
+                            if slot.readiness.active_eligible { "yes" } else { "no" },
+                            slot.backend_support.stub,
+                            slot.backend_support.candle,
+                            slot.backend_support.burn,
+                            slot
+                                .denials
+                                .active
+                                .as_ref()
+                                .or(slot.denials.shadow.as_ref())
+                                .or(slot.denials.probe.as_ref())
+                                .map(|v| format!(" reason={:?}", v))
+                                .unwrap_or_default(),
+                        );
+                    }
+                    println!("snapshot_digest={}", report.snapshot_digest);
+                    println!("out={}", out.display());
+                }
                 "consistency-check" => {
                     let out = arg_value(&args, "--out")
                         .map(PathBuf::from)
@@ -1155,7 +1191,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 _ => {
                     return Err(
-                        "usage: ucf-ops models <verify|probe|stage|promote|rollback|list|active-check|active-evidence|eligibility|consistency-check|recommend-rollback|shadow-ready> ..."
+                        "usage: ucf-ops models <verify|probe|stage|promote|rollback|list|active-check|active-evidence|eligibility|evidence-snapshot|consistency-check|recommend-rollback|shadow-ready> ..."
                             .into(),
                     )
                 }

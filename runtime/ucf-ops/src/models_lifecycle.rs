@@ -25,6 +25,7 @@ const PROBE_DIGEST_PREFIX_LEN: usize = 16;
 const SHADOW_READY_SCHEMA_VERSION: u16 = 1;
 const SHADOW_READY_MAX_SLOTS: usize = 2;
 const ELIGIBILITY_SCHEMA_VERSION: u16 = 1;
+const BACKEND_EVIDENCE_SNAPSHOT_SCHEMA_VERSION: u16 = 1;
 const SUPPORTED_REAL_SLOT_SET_VERSION: &str = "v3_supported_real_slots_max2";
 const SLOT_SET_MAX: usize = 2;
 const PROBE_OUTPUT_CAP: usize = 8;
@@ -173,6 +174,71 @@ pub struct SlotEvidenceSnapshotV1 {
     pub hash_consistent: bool,
     pub probe_missing: bool,
     pub compare_missing: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum BackendSupportStateV1 {
+    Supported,
+    Unsupported,
+    NotBuilt,
+    NotConfigured,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BackendSupportMatrixV1 {
+    pub stub: BackendSupportStateV1,
+    pub candle: BackendSupportStateV1,
+    pub burn: BackendSupportStateV1,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BackendEvidenceSlotReadinessV1 {
+    pub probe_ready: bool,
+    pub shadow_ready: bool,
+    pub active_eligible: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BackendEvidenceSlotDenialsV1 {
+    pub probe: Option<EvidenceDenialCodeV1>,
+    pub shadow: Option<EvidenceDenialCodeV1>,
+    pub active: Option<EvidenceDenialCodeV1>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BackendEvidenceSlotEvidenceV1 {
+    pub latest_probe_report_digest_prefix: String,
+    pub latest_compare_window_digest_prefix: String,
+    pub latest_shadow_ready_digest_prefix: String,
+    pub latest_active_evidence_digest_prefix: String,
+    pub latest_drift_status: DriftStatusV1,
+    pub freshness_probe_age_ticks: Option<u64>,
+    pub freshness_compare_age_ticks: Option<u64>,
+    pub freshness_no_impact_age_ticks: Option<u64>,
+    pub freshness_drift_status_age_ticks: Option<u64>,
+    pub hash_consistency_ok: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BackendEvidenceSlotSnapshotV1 {
+    pub slot_id: String,
+    pub target_hash_prefix: String,
+    pub backend_support: BackendSupportMatrixV1,
+    pub evidence: BackendEvidenceSlotEvidenceV1,
+    pub readiness: BackendEvidenceSlotReadinessV1,
+    pub denials: BackendEvidenceSlotDenialsV1,
+    pub remediation_codes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BackendEvidenceSnapshotV1 {
+    pub schema_version: u16,
+    pub supported_slot_set_digest: String,
+    pub policy_graph_digest_prefix: String,
+    pub manifest_digest_prefix: String,
+    pub slots: Vec<BackendEvidenceSlotSnapshotV1>,
+    pub snapshot_digest: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -664,12 +730,13 @@ pub fn models_eligibility(
     requested_slot: Option<ModelSlot>,
     out: &Path,
 ) -> Result<AggregatedEligibilityReportV1, OpsError> {
-    let slots = supported_real_slots(requested_slot)?;
+    let snapshot = models_evidence_snapshot(workdir, requested_slot, None)?;
     let manifest = load_or_init_manifest()?;
-    let mut statuses = Vec::new();
-    for slot in slots {
-        statuses.push(derive_unified_eligibility_status(slot, workdir, &manifest)?);
-    }
+    let mut statuses = snapshot
+        .slots
+        .iter()
+        .map(|slot| unified_eligibility_from_backend_snapshot(slot, &manifest))
+        .collect::<Vec<_>>();
     statuses.sort_by(|a, b| a.slot_id.cmp(&b.slot_id));
 
     let overall_status = derive_eligibility_overall_status(&statuses);
@@ -1612,6 +1679,245 @@ fn derive_unified_eligibility_status(
         remediation_codes,
         status_digest: sha256_hex(&digest_source),
     })
+}
+
+fn unified_eligibility_from_backend_snapshot(
+    slot: &BackendEvidenceSlotSnapshotV1,
+    manifest: &LifecycleManifest,
+) -> UnifiedEligibilityStatusV1 {
+    let manifest_digest_prefix = prefix_hex(&manifest.manifest_digest, 16);
+    let burn_support_state = match slot.backend_support.burn {
+        BackendSupportStateV1::Supported => OptionalBackendSupportStateV1::Supported,
+        BackendSupportStateV1::Unsupported => OptionalBackendSupportStateV1::Unsupported,
+        BackendSupportStateV1::NotBuilt => OptionalBackendSupportStateV1::NotBuilt,
+        BackendSupportStateV1::NotConfigured => OptionalBackendSupportStateV1::NotConfigured,
+    };
+    let denial_reason_probe = slot.denials.probe.as_ref().map(|d| format!("{:?}", d));
+    let denial_reason_shadow = slot.denials.shadow.as_ref().map(|d| format!("{:?}", d));
+    let denial_reason_active = slot.denials.active.as_ref().map(|d| format!("{:?}", d));
+
+    let mut digest_source = Vec::new();
+    digest_source.extend_from_slice(slot.slot_id.as_bytes());
+    digest_source.extend_from_slice(slot.target_hash_prefix.as_bytes());
+    digest_source.extend_from_slice(manifest_digest_prefix.as_bytes());
+    digest_source.extend_from_slice(if slot.readiness.probe_ready {
+        b"1"
+    } else {
+        b"0"
+    });
+    digest_source.extend_from_slice(if slot.readiness.shadow_ready {
+        b"1"
+    } else {
+        b"0"
+    });
+    digest_source.extend_from_slice(if slot.readiness.active_eligible {
+        b"1"
+    } else {
+        b"0"
+    });
+    digest_source.extend_from_slice(slot.evidence.latest_probe_report_digest_prefix.as_bytes());
+    digest_source.extend_from_slice(slot.evidence.latest_shadow_ready_digest_prefix.as_bytes());
+    digest_source.extend_from_slice(
+        slot.evidence
+            .latest_active_evidence_digest_prefix
+            .as_bytes(),
+    );
+    digest_source.extend_from_slice(format!("{:?}", slot.evidence.latest_drift_status).as_bytes());
+    digest_source.extend_from_slice(format!("{:?}", burn_support_state).as_bytes());
+    digest_source.extend_from_slice(
+        if slot.backend_support.burn == BackendSupportStateV1::Supported {
+            b"1"
+        } else {
+            b"0"
+        },
+    );
+    for code in &slot.remediation_codes {
+        digest_source.extend_from_slice(code.as_bytes());
+    }
+
+    UnifiedEligibilityStatusV1 {
+        slot_id: slot.slot_id.clone(),
+        target_hash_prefix: slot.target_hash_prefix.clone(),
+        manifest_digest_prefix,
+        probe_ready: slot.readiness.probe_ready,
+        shadow_ready: slot.readiness.shadow_ready,
+        active_eligible: slot.readiness.active_eligible,
+        latest_probe_digest_prefix: slot.evidence.latest_probe_report_digest_prefix.clone(),
+        latest_shadow_evidence_digest_prefix: slot
+            .evidence
+            .latest_shadow_ready_digest_prefix
+            .clone(),
+        latest_active_evidence_digest_prefix: slot
+            .evidence
+            .latest_active_evidence_digest_prefix
+            .clone(),
+        latest_drift_status: slot.evidence.latest_drift_status.clone(),
+        burn_support_state,
+        burn_parity_present: slot.backend_support.burn == BackendSupportStateV1::Supported,
+        denial_reason_probe,
+        denial_reason_shadow,
+        denial_reason_active,
+        remediation_codes: slot.remediation_codes.clone(),
+        status_digest: sha256_hex(&digest_source),
+    }
+}
+
+pub fn models_evidence_snapshot(
+    workdir: &Path,
+    requested_slot: Option<ModelSlot>,
+    run_id: Option<&str>,
+) -> Result<BackendEvidenceSnapshotV1, OpsError> {
+    let slot_set = supported_real_slot_set_v1()?;
+    let manifest = load_or_init_manifest()?;
+    let slots = supported_real_slots(requested_slot)?;
+    let second_slot = crate::detect_second_slot(workdir).ok();
+    let mut snapshots = Vec::new();
+
+    for slot in slots {
+        let slot_id = slot.as_str().to_string();
+        let target_hash = manifest
+            .slots
+            .iter()
+            .find(|s| s.slot_id == slot_id)
+            .and_then(|s| s.active_hash.clone())
+            .unwrap_or_else(|| "missing".to_string());
+        let slot_evidence = resolve_slot_evidence(slot, &target_hash, workdir, &manifest)?;
+        let eligibility = derive_unified_eligibility_status(slot, workdir, &manifest)?;
+        let parity_report = read_second_slot_parity_report(workdir, run_id, slot.as_str());
+        let backend_support = BackendSupportMatrixV1 {
+            stub: BackendSupportStateV1::Supported,
+            candle: resolve_candle_support_state(slot, second_slot, parity_report.as_ref()),
+            burn: resolve_burn_support_state(slot, second_slot, parity_report.as_ref()),
+        };
+        let mut remediation_codes = eligibility.remediation_codes;
+        remediation_codes.sort();
+        remediation_codes.dedup();
+        remediation_codes.truncate(4);
+        snapshots.push(BackendEvidenceSlotSnapshotV1 {
+            slot_id,
+            target_hash_prefix: slot_evidence.target_hash_prefix,
+            backend_support,
+            evidence: BackendEvidenceSlotEvidenceV1 {
+                latest_probe_report_digest_prefix: slot_evidence.latest_probe_report_digest_prefix,
+                latest_compare_window_digest_prefix: slot_evidence
+                    .latest_compare_window_digest_prefix,
+                latest_shadow_ready_digest_prefix: slot_evidence.latest_shadow_ready_digest_prefix,
+                latest_active_evidence_digest_prefix: slot_evidence
+                    .latest_active_evidence_digest_prefix,
+                latest_drift_status: slot_evidence.latest_drift_status,
+                freshness_probe_age_ticks: slot_evidence.freshness_probe_age_ticks,
+                freshness_compare_age_ticks: slot_evidence.freshness_compare_age_ticks,
+                freshness_no_impact_age_ticks: slot_evidence.freshness_no_impact_age_ticks,
+                freshness_drift_status_age_ticks: slot_evidence.freshness_drift_status_age_ticks,
+                hash_consistency_ok: slot_evidence.hash_consistent,
+            },
+            readiness: BackendEvidenceSlotReadinessV1 {
+                probe_ready: eligibility.probe_ready,
+                shadow_ready: eligibility.shadow_ready,
+                active_eligible: eligibility.active_eligible,
+            },
+            denials: BackendEvidenceSlotDenialsV1 {
+                probe: map_denial_reason_to_code(eligibility.denial_reason_probe.as_deref()),
+                shadow: map_denial_reason_to_code(eligibility.denial_reason_shadow.as_deref()),
+                active: map_denial_reason_to_code(eligibility.denial_reason_active.as_deref()),
+            },
+            remediation_codes,
+        });
+    }
+
+    snapshots.sort_by(|a, b| a.slot_id.cmp(&b.slot_id));
+    let mut digest_source = Vec::new();
+    digest_source.extend_from_slice(
+        BACKEND_EVIDENCE_SNAPSHOT_SCHEMA_VERSION
+            .to_string()
+            .as_bytes(),
+    );
+    digest_source.extend_from_slice(slot_set.set_digest.as_bytes());
+    let policy_graph_digest_prefix = read_policy_graph_digest_prefix();
+    digest_source.extend_from_slice(policy_graph_digest_prefix.as_bytes());
+    let manifest_digest_prefix = prefix_hex(&manifest.manifest_digest, 16);
+    digest_source.extend_from_slice(manifest_digest_prefix.as_bytes());
+    for slot in &snapshots {
+        digest_source.extend_from_slice(slot.slot_id.as_bytes());
+        digest_source.extend_from_slice(slot.target_hash_prefix.as_bytes());
+        digest_source.extend_from_slice(format!("{:?}", slot.backend_support.stub).as_bytes());
+        digest_source.extend_from_slice(format!("{:?}", slot.backend_support.candle).as_bytes());
+        digest_source.extend_from_slice(format!("{:?}", slot.backend_support.burn).as_bytes());
+        digest_source.extend_from_slice(slot.evidence.latest_probe_report_digest_prefix.as_bytes());
+        digest_source
+            .extend_from_slice(slot.evidence.latest_compare_window_digest_prefix.as_bytes());
+        digest_source.extend_from_slice(slot.evidence.latest_shadow_ready_digest_prefix.as_bytes());
+        digest_source.extend_from_slice(
+            slot.evidence
+                .latest_active_evidence_digest_prefix
+                .as_bytes(),
+        );
+        digest_source
+            .extend_from_slice(format!("{:?}", slot.evidence.latest_drift_status).as_bytes());
+    }
+
+    Ok(BackendEvidenceSnapshotV1 {
+        schema_version: BACKEND_EVIDENCE_SNAPSHOT_SCHEMA_VERSION,
+        supported_slot_set_digest: prefix_hex(&slot_set.set_digest, 16),
+        policy_graph_digest_prefix,
+        manifest_digest_prefix,
+        slots: snapshots,
+        snapshot_digest: sha256_hex(&digest_source),
+    })
+}
+
+fn read_second_slot_parity_report(
+    workdir: &Path,
+    run_id: Option<&str>,
+    slot_id: &str,
+) -> Option<SecondSlotParityReportV1> {
+    let run_path = run_id.map(|rid| {
+        workdir
+            .join("out")
+            .join(rid)
+            .join(format!("{}_parity_report.json", slot_id))
+    });
+    let default_path = workdir
+        .join("out")
+        .join(format!("{}_parity_report.json", slot_id));
+    run_path
+        .into_iter()
+        .chain(std::iter::once(default_path))
+        .find_map(|path| fs::read_to_string(path).ok())
+        .and_then(|body| serde_json::from_str::<SecondSlotParityReportV1>(&body).ok())
+}
+
+fn resolve_candle_support_state(
+    slot: ModelSlot,
+    second_slot: Option<ModelSlot>,
+    parity_report: Option<&SecondSlotParityReportV1>,
+) -> BackendSupportStateV1 {
+    if !cfg!(feature = "backend-candle") {
+        return BackendSupportStateV1::NotBuilt;
+    }
+    if second_slot == Some(slot) && parity_report.is_none() {
+        return BackendSupportStateV1::NotConfigured;
+    }
+    BackendSupportStateV1::Supported
+}
+
+fn resolve_burn_support_state(
+    slot: ModelSlot,
+    second_slot: Option<ModelSlot>,
+    parity_report: Option<&SecondSlotParityReportV1>,
+) -> BackendSupportStateV1 {
+    if second_slot != Some(slot) {
+        return BackendSupportStateV1::Unsupported;
+    }
+    match parity_report
+        .map(|r| r.burn_support_state.clone())
+        .unwrap_or(OptionalBackendSupportStateV1::NotConfigured)
+    {
+        OptionalBackendSupportStateV1::Supported => BackendSupportStateV1::Supported,
+        OptionalBackendSupportStateV1::Unsupported => BackendSupportStateV1::Unsupported,
+        OptionalBackendSupportStateV1::NotBuilt => BackendSupportStateV1::NotBuilt,
+        OptionalBackendSupportStateV1::NotConfigured => BackendSupportStateV1::NotConfigured,
+    }
 }
 
 fn derive_eligibility_overall_status(
@@ -3773,6 +4079,66 @@ mod probe_tests {
             let b = supported_real_slot_set_v1().expect("slot set");
             assert_eq!(a.slots, b.slots);
             assert_eq!(a.set_digest, b.set_digest);
+        }
+
+        #[test]
+        fn backend_support_state_order_is_stable() {
+            let support = BackendSupportMatrixV1 {
+                stub: BackendSupportStateV1::Supported,
+                candle: BackendSupportStateV1::NotBuilt,
+                burn: BackendSupportStateV1::NotConfigured,
+            };
+            let encoded = serde_json::to_string(&support).expect("encode");
+            let stub = encoded.find("stub").expect("stub");
+            let candle = encoded.find("candle").expect("candle");
+            let burn = encoded.find("burn").expect("burn");
+            assert!(stub < candle && candle < burn);
+        }
+
+        #[test]
+        fn backend_snapshot_digest_is_stable() {
+            let snapshot = BackendEvidenceSnapshotV1 {
+                schema_version: 1,
+                supported_slot_set_digest: "abc".to_string(),
+                policy_graph_digest_prefix: "def".to_string(),
+                manifest_digest_prefix: "123".to_string(),
+                slots: vec![BackendEvidenceSlotSnapshotV1 {
+                    slot_id: "world_jepa".to_string(),
+                    target_hash_prefix: "aaaa".to_string(),
+                    backend_support: BackendSupportMatrixV1 {
+                        stub: BackendSupportStateV1::Supported,
+                        candle: BackendSupportStateV1::Supported,
+                        burn: BackendSupportStateV1::Unsupported,
+                    },
+                    evidence: BackendEvidenceSlotEvidenceV1 {
+                        latest_probe_report_digest_prefix: "p".to_string(),
+                        latest_compare_window_digest_prefix: "c".to_string(),
+                        latest_shadow_ready_digest_prefix: "s".to_string(),
+                        latest_active_evidence_digest_prefix: "a".to_string(),
+                        latest_drift_status: DriftStatusV1::Ok,
+                        freshness_probe_age_ticks: Some(1),
+                        freshness_compare_age_ticks: Some(2),
+                        freshness_no_impact_age_ticks: Some(3),
+                        freshness_drift_status_age_ticks: Some(4),
+                        hash_consistency_ok: true,
+                    },
+                    readiness: BackendEvidenceSlotReadinessV1 {
+                        probe_ready: true,
+                        shadow_ready: true,
+                        active_eligible: false,
+                    },
+                    denials: BackendEvidenceSlotDenialsV1 {
+                        probe: None,
+                        shadow: None,
+                        active: Some(EvidenceDenialCodeV1::DriftWarn),
+                    },
+                    remediation_codes: vec!["DRIFT_WARN".to_string()],
+                }],
+                snapshot_digest: "beef".to_string(),
+            };
+            let a = serde_json::to_vec(&snapshot).expect("a");
+            let b = serde_json::to_vec(&snapshot).expect("b");
+            assert_eq!(a, b);
         }
     }
 }

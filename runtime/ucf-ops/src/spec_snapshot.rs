@@ -63,6 +63,21 @@ const RECORD_SCHEMA_SPECS: &[RecordSchemaSpec] = &[
         schema_version: 2,
         key_fields: &["schema_version", "cooldown_until_tick", "flags"],
     },
+    RecordSchemaSpec {
+        name: "models.supported_real_slot_set_v1",
+        schema_version: 1,
+        key_fields: &["schema_version", "slots", "set_digest"],
+    },
+    RecordSchemaSpec {
+        name: "models.backend_evidence_snapshot_v1",
+        schema_version: 1,
+        key_fields: &[
+            "schema_version",
+            "supported_slot_set_digest",
+            "slots",
+            "snapshot_digest",
+        ],
+    },
 ];
 
 const STAGE_CONTRACT_SPECS: &[StageContractSpec] = &[
@@ -394,7 +409,15 @@ fn render_snapshot(
         }
     }
 
-    out.push_str("\n## F) Safety invariants\n\n");
+    out.push_str("\n## F) Real-slot evidence contract\n\n");
+    out.push_str(
+        "- Supported real-slot set is bounded to `world_jepa` + exactly one of `sae`/`ssm`.\n",
+    );
+    out.push_str(
+        "- `BackendEvidenceSnapshotV1` backend support states (`stub|candle|burn`): `SUPPORTED|UNSUPPORTED|NOT_BUILT|NOT_CONFIGURED`.\n",
+    );
+
+    out.push_str("\n## G) Safety invariants\n\n");
     out.push_str(
         "- no inferable invariant flags exported by registries; section intentionally bounded.\n",
     );
