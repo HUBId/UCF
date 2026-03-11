@@ -1106,7 +1106,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     println!("slot={}", report.slot_id);
                     println!("parity_windows={}", report.parity_records.len());
                     println!("compared_backends={}", report.compared_backends.join(","));
-                    println!("burn_status={}", report.burn_status);
+                    println!("candle_status={:?}", report.candle_status);
+                    println!("burn_support_state={:?}", report.burn_support_state);
+                    println!("burn_parity_status={:?}", report.burn_parity_status);
+                    println!("burn_parity_present={}", if report.burn_parity_present { "yes" } else { "no" });
                     println!("parity_ready_hint={}", if report.parity_ready_hint { "yes" } else { "no" });
                     println!("shadow_ready_hint={}", if report.shadow_ready_hint { "yes" } else { "no" });
                     println!("out={}", out.display());

@@ -6,6 +6,9 @@ use ucf_compute::ModelSlot;
 use ucf_ess::v1::{AuditPayload, ExperiencePayload};
 use ucf_replay::load_fixture_records;
 
+use crate::compare_window::{
+    build_compare_window_meta, CompareWindowBackendStatusV1, CompareWindowMetaV1,
+};
 use crate::models_lifecycle::AggregatedEvidenceReportV1;
 use crate::{prefix_hex, sha256_hex, OpsError};
 
@@ -14,6 +17,16 @@ pub enum SlotParityStatusV1 {
     Ok,
     Warn,
     Severe,
+    Skip,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum OptionalBackendSupportStateV1 {
+    Supported,
+    Unsupported,
+    NotBuilt,
+    NotConfigured,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -37,6 +50,7 @@ pub struct SaeParityRecordV1 {
     pub t0: u64,
     pub t1: u64,
     pub primary_backend_id: String,
+    pub compare_window_meta: CompareWindowMetaV1,
     pub compared_backends: Vec<SaeComparedBackendRecordV1>,
     pub parity_digest: String,
     pub policy_graph_digest_prefix: String,
@@ -62,6 +76,7 @@ pub struct SsmParityRecordV1 {
     pub t0: u64,
     pub t1: u64,
     pub primary_backend_id: String,
+    pub compare_window_meta: CompareWindowMetaV1,
     pub compared_backends: Vec<SsmComparedBackendRecordV1>,
     pub parity_digest: String,
     pub policy_graph_digest_prefix: String,
@@ -80,7 +95,11 @@ pub struct SecondSlotParityReportV1 {
     pub slot_id: String,
     pub primary_backend_id: String,
     pub compared_backends: Vec<String>,
-    pub burn_status: String,
+    pub candle_status: CompareWindowBackendStatusV1,
+    pub burn_support_state: OptionalBackendSupportStateV1,
+    pub burn_parity_status: CompareWindowBackendStatusV1,
+    pub burn_parity_present: bool,
+    pub remediation_hints: Vec<String>,
     pub parity_records: Vec<SecondSlotParityRecordV1>,
     pub severe_windows: u16,
     pub warn_windows: u16,
@@ -122,7 +141,15 @@ fn status_from_window(
     }
 }
 
-fn compared_backend_ids(slot: ModelSlot) -> (Vec<&'static str>, &'static str) {
+fn compared_backend_ids(
+    slot: ModelSlot,
+    burn_required: bool,
+) -> (
+    Vec<&'static str>,
+    OptionalBackendSupportStateV1,
+    CompareWindowBackendStatusV1,
+    bool,
+) {
     let candle = match slot {
         ModelSlot::Sae => "candle_sae_v1",
         ModelSlot::Ssm => "candle_ssm_v1",
@@ -133,10 +160,47 @@ fn compared_backend_ids(slot: ModelSlot) -> (Vec<&'static str>, &'static str) {
         ModelSlot::Ssm => "burn_ssm_v1",
         _ => "burn_unknown_v1",
     };
-    if cfg!(feature = "backend-burn") {
-        (vec![candle, burn], "PRESENT")
+    if !matches!(slot, ModelSlot::Sae | ModelSlot::Ssm) {
+        return (
+            vec![candle],
+            OptionalBackendSupportStateV1::Unsupported,
+            CompareWindowBackendStatusV1::Skip,
+            false,
+        );
+    }
+
+    let burn_shadow_enabled = std::env::var("UCF_SECOND_SLOT_BURN_SHADOW_ENABLED")
+        .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+        .unwrap_or(false);
+    if cfg!(feature = "backend-burn") && burn_shadow_enabled {
+        (
+            vec![candle, burn],
+            OptionalBackendSupportStateV1::Supported,
+            CompareWindowBackendStatusV1::Ok,
+            true,
+        )
+    } else if cfg!(feature = "backend-burn") {
+        (
+            vec![candle],
+            OptionalBackendSupportStateV1::NotConfigured,
+            if burn_required {
+                CompareWindowBackendStatusV1::Severe
+            } else {
+                CompareWindowBackendStatusV1::Skip
+            },
+            false,
+        )
     } else {
-        (vec![candle], "SKIP")
+        (
+            vec![candle],
+            OptionalBackendSupportStateV1::NotBuilt,
+            if burn_required {
+                CompareWindowBackendStatusV1::Severe
+            } else {
+                CompareWindowBackendStatusV1::Skip
+            },
+            false,
+        )
     }
 }
 
@@ -175,7 +239,11 @@ pub fn second_slot_parity_report(
 
     let primary_backend_id = format!("stub_{}_v1", slot.as_str());
     let hash_prefix = model_hash_prefix(slot);
-    let (backend_ids, burn_status) = compared_backend_ids(slot);
+    let burn_required = std::env::var("UCF_SECOND_SLOT_BURN_PARITY_REQUIRED")
+        .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+        .unwrap_or(false);
+    let (backend_ids, burn_support_state, mut burn_parity_status, burn_parity_present) =
+        compared_backend_ids(slot, burn_required);
 
     let mut parity_records = Vec::new();
     for rec in fixture {
@@ -194,6 +262,12 @@ pub fn second_slot_parity_report(
                                 w.mean_delta_q,
                                 w.p95_delta_q,
                             );
+                            let status =
+                                if (*backend_id).starts_with("burn_") && !burn_parity_present {
+                                    SlotParityStatusV1::Skip
+                                } else {
+                                    status
+                                };
                             SaeComparedBackendRecordV1 {
                                 backend_id: (*backend_id).to_string(),
                                 model_hash_prefix: hash_prefix.clone(),
@@ -223,6 +297,15 @@ pub fn second_slot_parity_report(
                         t0: w.t0,
                         t1: w.t1,
                         primary_backend_id: primary_backend_id.clone(),
+                        compare_window_meta: build_compare_window_meta(
+                            slot.as_str(),
+                            run_id,
+                            w.t0,
+                            w.t1,
+                            &primary_backend_id,
+                            backend_ids.iter().map(|id| (*id).to_string()).collect(),
+                            "unknown".to_string(),
+                        ),
                         compared_backends,
                         parity_digest: String::new(),
                         policy_graph_digest_prefix: "unknown".to_string(),
@@ -240,6 +323,12 @@ pub fn second_slot_parity_report(
                                 w.mean_delta_q,
                                 w.p95_delta_q,
                             );
+                            let status =
+                                if (*backend_id).starts_with("burn_") && !burn_parity_present {
+                                    SlotParityStatusV1::Skip
+                                } else {
+                                    status
+                                };
                             SsmComparedBackendRecordV1 {
                                 backend_id: (*backend_id).to_string(),
                                 model_hash_prefix: hash_prefix.clone(),
@@ -268,6 +357,15 @@ pub fn second_slot_parity_report(
                         t0: w.t0,
                         t1: w.t1,
                         primary_backend_id: primary_backend_id.clone(),
+                        compare_window_meta: build_compare_window_meta(
+                            slot.as_str(),
+                            run_id,
+                            w.t0,
+                            w.t1,
+                            &primary_backend_id,
+                            backend_ids.iter().map(|id| (*id).to_string()).collect(),
+                            "unknown".to_string(),
+                        ),
                         compared_backends,
                         parity_digest: String::new(),
                         policy_graph_digest_prefix: "unknown".to_string(),
@@ -326,6 +424,32 @@ pub fn second_slot_parity_report(
                 )
             });
 
+    if burn_parity_present {
+        let any_burn_severe = parity_records.iter().any(|r| match r {
+            SecondSlotParityRecordV1::Sae(v) => v.compared_backends.iter().any(|b| {
+                b.backend_id.starts_with("burn_") && matches!(b.status, SlotParityStatusV1::Severe)
+            }),
+            SecondSlotParityRecordV1::Ssm(v) => v.compared_backends.iter().any(|b| {
+                b.backend_id.starts_with("burn_") && matches!(b.status, SlotParityStatusV1::Severe)
+            }),
+        });
+        let any_burn_warn = parity_records.iter().any(|r| match r {
+            SecondSlotParityRecordV1::Sae(v) => v.compared_backends.iter().any(|b| {
+                b.backend_id.starts_with("burn_") && matches!(b.status, SlotParityStatusV1::Warn)
+            }),
+            SecondSlotParityRecordV1::Ssm(v) => v.compared_backends.iter().any(|b| {
+                b.backend_id.starts_with("burn_") && matches!(b.status, SlotParityStatusV1::Warn)
+            }),
+        });
+        burn_parity_status = if any_burn_severe {
+            CompareWindowBackendStatusV1::Severe
+        } else if any_burn_warn {
+            CompareWindowBackendStatusV1::Warn
+        } else {
+            CompareWindowBackendStatusV1::Ok
+        };
+    }
+
     let shadow_ready_hint = severe_windows == 0 && !parity_records.is_empty();
     let parity_ready_hint = severe_windows == 0;
     let compared_backends = backend_ids
@@ -333,12 +457,24 @@ pub fn second_slot_parity_report(
         .map(|v| (*v).to_string())
         .collect::<Vec<_>>();
 
+    let mut remediation_hints = vec!["keep candle-only shadow".to_string()];
+    if !burn_parity_present {
+        remediation_hints.push("build with backend-burn".to_string());
+        remediation_hints.push("do not require burn in current profile".to_string());
+    }
+    remediation_hints.sort();
+    remediation_hints.dedup();
+
     let mut report = SecondSlotParityReportV1 {
         run_id: run_id.to_string(),
         slot_id: slot.as_str().to_string(),
         primary_backend_id,
         compared_backends,
-        burn_status: burn_status.to_string(),
+        candle_status: CompareWindowBackendStatusV1::Ok,
+        burn_support_state,
+        burn_parity_status,
+        burn_parity_present,
+        remediation_hints,
         parity_records,
         severe_windows,
         warn_windows,
@@ -389,6 +525,7 @@ mod tests {
             t0: 0,
             t1: 1,
             primary_backend_id: "stub_sae_v1".to_string(),
+            compare_window_meta: CompareWindowMetaV1::default(),
             compared_backends: vec![SaeComparedBackendRecordV1 {
                 backend_id: "candle_sae_v1".to_string(),
                 model_hash_prefix: "abc".to_string(),
@@ -406,5 +543,30 @@ mod tests {
         let digest_a = sha256_hex(&serde_json::to_vec(&record).expect("serialize"));
         let digest_b = sha256_hex(&serde_json::to_vec(&record).expect("serialize"));
         assert_eq!(digest_a, digest_b);
+    }
+
+    #[test]
+    fn optional_backend_support_state_serialization_is_stable() {
+        let encoded = serde_json::to_string(&OptionalBackendSupportStateV1::NotBuilt)
+            .expect("serialize support state");
+        assert_eq!(encoded, "\"NOT_BUILT\"");
+    }
+
+    #[test]
+    fn compared_backend_ids_skip_is_deterministic_when_not_required() {
+        std::env::remove_var("UCF_SECOND_SLOT_BURN_SHADOW_ENABLED");
+        let (ids, support, burn_status, present) = compared_backend_ids(ModelSlot::Sae, false);
+        assert_eq!(ids, vec!["candle_sae_v1"]);
+        assert_eq!(support, OptionalBackendSupportStateV1::NotBuilt);
+        assert_eq!(burn_status, CompareWindowBackendStatusV1::Skip);
+        assert!(!present);
+    }
+
+    #[test]
+    fn compared_backend_ids_fail_state_when_burn_required_but_missing() {
+        std::env::remove_var("UCF_SECOND_SLOT_BURN_SHADOW_ENABLED");
+        let (_, _, burn_status, present) = compared_backend_ids(ModelSlot::Sae, true);
+        assert_eq!(burn_status, CompareWindowBackendStatusV1::Severe);
+        assert!(!present);
     }
 }
