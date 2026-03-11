@@ -35,3 +35,6 @@ v3 scope is strictly limited to:
 - plus exactly one second supported slot (`sae` or `ssm`) declared in `docs/series_state_snapshot.md`
 
 Ambiguous or missing second-slot declaration is a hard gate failure.
+
+## Post-v3 continuation
+After v3 gate PASS, continue at Prompt 210 via `docs/next_10_prompts.md`.

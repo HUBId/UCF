@@ -1,85 +1,85 @@
-# Next 10 Prompts (v3 Anchor)
+# Next 10 Prompts (v4 Anchor)
 
-Anchor: `Real Compute Onboarding v3` (precondition: `ucf-ops v2 gate` PASS)
+Anchor: `Real Compute Onboarding v4` (precondition: `ucf-ops v3 gate` PASS)
 
 > Guardrail: This queue is capped to **10** entries unless an explicit request expands it.
 
-## Prompt 200 (MUST) — Extend Active evidence from one slot to supported real slots set
-Objective: Expand Active evidence requirements from single-slot assumptions to the supported real-slot set while preserving deterministic, offline-first enforcement.
+## Prompt 210 (MUST) — Extend Active evidence/signoff consistency for supported real-slot set
+Objective: Tighten Active-path evidence and signoff consistency across the declared supported real-slot set without broadening runtime semantics.
 - Acceptance:
-  - Active evidence schema/validation covers each supported real slot with stable field semantics.
-  - Missing slot evidence remains deny-by-default and reports deterministic remediation hints.
-  - Replay compatibility and canonical digest linkage remain intact.
-- Dependencies: v2 gate PASS (Prompt 198), Prompt 199 wrap complete.
+  - Active evidence/signoff expectations are documented consistently for each supported slot.
+  - Missing/inconsistent evidence remains fail-closed with deterministic remediation guidance.
+  - Probe-first and shadow-first precedence remain explicit.
+- Dependencies: v3 gate PASS (Prompt 208), Prompt 209 wrap complete.
 
-## Prompt 201 (MUST) — Unified Eligibility Report for Probe/Shadow/Active readiness
-Objective: Define one bounded eligibility report that unifies Probe, Shadow, and Active readiness outcomes across supported real slots.
+## Prompt 211 (NICE) — Optional parity extension for chosen second slot backend (if scaffold exists)
+Objective: Define an optional second backend parity extension for the chosen second slot only if compatible scaffolding is already present.
 - Acceptance:
-  - A single report schema emits per-slot readiness verdicts in deterministic order.
-  - Parity/drift and evidence checks feed one eligibility decision pipeline.
-  - Offline reproducibility is documented for report generation and verification.
-- Dependencies: 200.
+  - Scope remains conditional and does not create new mandatory runtime paths.
+  - Parity expectations remain bounded to supported slots and existing evidence pipelines.
+  - Hardware-neutral/offline-first language is preserved.
+- Dependencies: 210.
 
-## Prompt 202 (MUST) — Candle adapter extension for chosen second slot beyond fixture smoke
-Objective: Extend Candle adapter parity for the chosen second slot beyond fixture-smoke scope under probe-first constraints.
+## Prompt 212 (MUST) — Unified backend evidence snapshot/spec export refresh
+Objective: Refresh the unified evidence snapshot/spec export so supported backend paths produce one coherent, deterministic documentation baseline.
 - Acceptance:
-  - Probe-path adapter behavior for the second slot is specified beyond load-only smoke.
-  - Stub fallback behavior remains deterministic when optional backend paths are unavailable.
-  - No hardware-specific assumptions are introduced in adapter docs/spec.
-- Dependencies: 200, 201.
+  - Snapshot/spec export references supported backend evidence in stable order.
+  - Export artifacts remain reproducible offline with canonical formatting.
+  - No new runtime behavior is introduced.
+- Dependencies: 210, 211 (if 211 is exercised).
 
-## Prompt 203 (NICE) — Burn parity extension or second-slot backend parity (if scaffolded)
-Objective: Add bounded parity planning for Burn or equivalent second-slot backend path only where scaffolding already exists.
+## Prompt 213 (MUST) — Stricter operator signoff automation from consolidated reports + gates
+Objective: Strengthen operator signoff automation by consolidating report and gate outcomes into deterministic signoff criteria.
 - Acceptance:
-  - Scope is conditional and explicitly limited to pre-existing scaffolded backend paths.
-  - Parity outputs align with unified eligibility inputs without introducing new runtime requirements.
-  - Probe-first and shadow-first constraints remain unchanged.
-- Dependencies: 201, 202.
+  - Signoff automation rules are documented with explicit fail-closed outcomes.
+  - Consolidated reports/gates map to stable operator decisions.
+  - No expansion of runtime privileges or side effects.
+- Dependencies: 210, 212.
 
-## Prompt 204 (MUST) — Real-slot compare window normalization across World + second slot
-Objective: Normalize compare-window definitions so World and second-slot parity/drift checks share consistent evidence windows.
+## Prompt 214 (MUST) — Normalized remediation-code registry across reports/gates
+Objective: Normalize remediation-code usage so reports and gates share one bounded, deterministic remediation registry.
 - Acceptance:
-  - Compare-window terms and boundaries are harmonized across both slots.
-  - Normalization preserves deterministic replay outcomes for equivalent inputs.
-  - Drift verdict generation remains bounded and auditable.
-- Dependencies: 201, 202.
+  - Remediation codes are consistent across relevant report/gate outputs.
+  - Registry semantics and ownership are documented for operator use.
+  - Unknown/unsupported conditions remain deny-by-default.
+- Dependencies: 213.
 
-## Prompt 205 (MUST) — v3 strict-mode updates for broader real-slot evidence
-Objective: Update strict-mode docs/gates for broader multi-slot real-backend evidence expectations in v3.
+## Prompt 215 (MUST) — Report/schema snapshot checks for v4 artifacts
+Objective: Add/refresh snapshot checks that lock v4 report/schema artifacts to deterministic, reviewable expectations.
 - Acceptance:
-  - Strict-mode checks reference expanded evidence requirements for supported slots.
-  - Failure modes include stable remediation codes/messages for missing or inconsistent evidence.
-  - Offline-first and hardware-neutral constraints are explicitly preserved.
-- Dependencies: 200, 201, 204.
+  - Snapshot checks cover the v4 artifacts introduced/refreshed by the queue.
+  - Drift is surfaced through deterministic diffs/remediation guidance.
+  - Offline reproducibility remains explicit in docs.
+- Dependencies: 212, 214.
 
-## Prompt 206 (MUST) — v3 operator report and signoff consolidation
-Objective: Consolidate operator-facing readiness and signoff reporting for multi-slot real backend workflows.
+## Prompt 216 (NICE) — Portability/docs refresh for expanded evidence paths
+Objective: Refresh portability and runbook documentation to reflect expanded, still-bounded evidence paths in v4.
 - Acceptance:
-  - Operator report sections for probe/shadow/active readiness are unified and bounded.
-  - Signoff summary fields remain deterministic and easy to audit.
-  - Runbook guidance stays non-interactive and offline-first.
-- Dependencies: 201, 205.
+  - Portability notes remain hardware-neutral and device-profile agnostic.
+  - Runbook/docs updates align with probe-first/shadow-first constraints.
+  - Documentation changes avoid introducing new runtime obligations.
+- Dependencies: 212, 215.
 
-## Prompt 207 (NICE) — v3 portability and docs checks refresh
-Objective: Refresh portability-focused docs checks and governance docs to reflect v3 multi-slot evidence/reporting scope.
+## Prompt 217 (MUST) — v4 strict-mode/operator interplay hardening
+Objective: Harden strict-mode and operator-interaction expectations so evidence failures are handled consistently and safely.
 - Acceptance:
-  - Docs checks clearly cover updated v3 anchor and queue artifacts.
-  - Hardware-neutral wording checks continue to guard core planning docs.
-  - Updated docs references remain consistent with prompt rulebook constraints.
-- Dependencies: 205, 206.
+  - Strict-mode/operator interplay is documented with deterministic fail-closed behavior.
+  - Operator decision boundaries and remediation flow are unambiguous.
+  - Safety/determinism invariants remain unchanged.
+- Dependencies: 213, 214, 216.
 
-## Prompt 208 (MUST) — v3 gate schema and orchestration
-Objective: Define v3 gate schema/orchestration so eligibility, evidence, and reporting checks are evaluated in one deterministic signoff flow.
+## Prompt 218 (MUST) — v4 gate schema and orchestration
+Objective: Define v4 gate schema and orchestration expectations that verify evidence/signoff hardening outcomes.
 - Acceptance:
-  - Gate schema lists ordered checks and PASS/FAIL semantics for v3 scope.
-  - Orchestration integrates unified eligibility outputs and multi-slot evidence checks.
-  - Artifacts/output paths follow repository conventions and remain offline reproducible.
-- Dependencies: 205, 206, 207.
+  - Gate schema documents required inputs/outputs and deterministic ordering.
+  - Orchestration rules preserve offline-first execution and bounded runtime behavior.
+  - PASS/FAIL semantics are explicit and auditable.
+- Dependencies: 215, 217.
 
-## Prompt 209 (MUST) — v3 wrap and next anchor governance
-Objective: Close v3 planning/execution cycle with explicit wrap criteria and next-anchor governance updates.
+## Prompt 219 (MUST) — v4 wrap and next-anchor governance
+Objective: Close v4 planning/governance and re-anchor the series state for the subsequent phase without speculative scope creep.
 - Acceptance:
-  - v3 completion conditions and transition rules are documented without speculative scope expansion.
-  - Next immediate queue remains capped to 10 prompts unless explicitly expanded.
-  - Anchor/state snapshot docs are updated with deterministic resume metadata.
-- Dependencies: 208.
+  - Series snapshot, anchor, and queue docs are aligned at wrap time.
+  - Next-anchor proposal remains bounded by evidence and policy invariants.
+  - Queue cap and MUST/NICE/DEFERRED governance remain intact.
+- Dependencies: 218.
