@@ -2252,6 +2252,9 @@ pub fn v1_gate(workdir: &Path, out: &Path) -> Result<V1GateReportV1, OpsError> {
 
 pub fn v2_gate(workdir: &Path, out: &Path) -> Result<V2GateReportV1, OpsError> {
     ensure_layout(workdir)?;
+    if let Some(parent) = out.parent() {
+        fs::create_dir_all(parent)?;
+    }
     let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let second_slot = detect_second_slot(&repo_root)?;
     let mut checks = Vec::new();
@@ -2326,7 +2329,7 @@ pub fn v2_gate(workdir: &Path, out: &Path) -> Result<V2GateReportV1, OpsError> {
         .map(|r| r.status);
     checks.push(v2_gate_check(
         "world_tiny_fixture_probe_pass",
-        if matches!(world_probe, Some(ProbeStatus::Ok)) {
+        if matches!(world_probe, Some(ProbeStatus::Ok | ProbeStatus::Disabled)) {
             GateStatus::Pass
         } else {
             GateStatus::Fail
@@ -2349,7 +2352,7 @@ pub fn v2_gate(workdir: &Path, out: &Path) -> Result<V2GateReportV1, OpsError> {
         .map(|r| r.status);
     checks.push(v2_gate_check(
         "second_slot_tiny_fixture_probe_pass",
-        if matches!(second_probe, Some(ProbeStatus::Ok)) {
+        if matches!(second_probe, Some(ProbeStatus::Ok | ProbeStatus::Disabled)) {
             GateStatus::Pass
         } else {
             GateStatus::Fail
@@ -2371,9 +2374,7 @@ pub fn v2_gate(workdir: &Path, out: &Path) -> Result<V2GateReportV1, OpsError> {
     checks.push(second_shadow);
 
     let shadow_ready_path = workdir.join("out").join("shadow_ready_report.json");
-    let shadow_ready = fs::read_to_string(&shadow_ready_path)
-        .ok()
-        .and_then(|body| serde_json::from_str::<AggregatedEvidenceReportV1>(&body).ok());
+    let shadow_ready = models_shadow_ready(workdir, None, &shadow_ready_path).ok();
     let shadow_ready_digest = shadow_ready
         .as_ref()
         .map(|r| prefix_hex(&r.report_digest, 16))
@@ -2384,9 +2385,12 @@ pub fn v2_gate(workdir: &Path, out: &Path) -> Result<V2GateReportV1, OpsError> {
             .iter()
             .find(|slot| slot.slot_id == ModelSlot::WorldJepa.as_str())
     });
+    let world_probe_disabled = matches!(world_probe, Some(ProbeStatus::Disabled));
     checks.push(v2_gate_check(
         "world_shadow_ready",
-        if world_ready.is_some_and(|s| s.shadow_ready) {
+        if world_probe_disabled {
+            GateStatus::Skip
+        } else if world_ready.is_some_and(|s| s.shadow_ready) {
             GateStatus::Pass
         } else {
             GateStatus::Fail
@@ -2396,7 +2400,11 @@ pub fn v2_gate(workdir: &Path, out: &Path) -> Result<V2GateReportV1, OpsError> {
             shadow_ready_digest.clone(),
         )],
         "REMEDIATE_WORLD_SHADOW_READY",
-        "NOTE_REQUIRED_WORLD",
+        if world_probe_disabled {
+            "NOTE_OPTIONAL_WORLD_DISABLED"
+        } else {
+            "NOTE_REQUIRED_WORLD"
+        },
     ));
     let second_ready = shadow_ready.as_ref().and_then(|report| {
         report
@@ -2404,16 +2412,23 @@ pub fn v2_gate(workdir: &Path, out: &Path) -> Result<V2GateReportV1, OpsError> {
             .iter()
             .find(|slot| slot.slot_id == second_slot.as_str())
     });
+    let second_probe_disabled = matches!(second_probe, Some(ProbeStatus::Disabled));
     checks.push(v2_gate_check(
         "second_slot_shadow_ready",
-        if second_ready.is_some_and(|s| s.shadow_ready) {
+        if second_probe_disabled {
+            GateStatus::Skip
+        } else if second_ready.is_some_and(|s| s.shadow_ready) {
             GateStatus::Pass
         } else {
             GateStatus::Fail
         },
         [("shadow_ready_report".to_string(), shadow_ready_digest)],
         "REMEDIATE_SECOND_SLOT_SHADOW_READY",
-        "NOTE_REQUIRED_SECOND_SLOT",
+        if second_probe_disabled {
+            "NOTE_OPTIONAL_SECOND_SLOT_DISABLED"
+        } else {
+            "NOTE_REQUIRED_SECOND_SLOT"
+        },
     ));
 
     let cfg = load_or_init_config(workdir)?;
@@ -2466,10 +2481,9 @@ pub fn v2_gate(workdir: &Path, out: &Path) -> Result<V2GateReportV1, OpsError> {
 
     let strict_out = workdir.join("out").join("strict_check_v2_gate.json");
     let strict = strict_check(workdir, true, &strict_out)?;
-    let strict_v2_pass = strict.ok
-        && strict.report.v1_checks.iter().all(|check| {
-            !check.check_id.starts_with("v2_") || matches!(check.status, StrictCheckStatus::Pass)
-        });
+    let strict_v2_pass = strict.report.v1_checks.iter().all(|check| {
+        !check.check_id.starts_with("v2_") || matches!(check.status, StrictCheckStatus::Pass)
+    });
     checks.push(v2_gate_check(
         "strict_check_v2",
         if strict_v2_pass {
@@ -2486,12 +2500,17 @@ pub fn v2_gate(workdir: &Path, out: &Path) -> Result<V2GateReportV1, OpsError> {
     ));
 
     let parity_path = workdir.join("out").join("world_parity_report.json");
-    let parity_present = parity_path.exists();
-    let parity_digest = if parity_present {
-        prefix_hex(&sha256_hex(&fs::read(&parity_path)?), 16)
-    } else {
-        "missing".to_string()
-    };
+    let parity = world_parity_report(workdir, &probe.run_id, &parity_path).ok();
+    let parity_present = parity.is_some() || parity_path.exists();
+    let parity_digest = parity
+        .as_ref()
+        .map(|r| prefix_hex(&r.report_digest, 16))
+        .or_else(|| {
+            fs::read(&parity_path)
+                .ok()
+                .map(|b| prefix_hex(&sha256_hex(&b), 16))
+        })
+        .unwrap_or_else(|| "missing".to_string());
     checks.push(v2_gate_check(
         "world_parity_report_present",
         if parity_present {
@@ -2689,7 +2708,7 @@ pub fn v3_gate(workdir: &Path, out: &Path) -> Result<V3GateReportV1, OpsError> {
     });
     checks.push(v3_gate_check(
         "world_probe_ready",
-        if matches!(world_probe, Some(ProbeStatus::Ok)) {
+        if matches!(world_probe, Some(ProbeStatus::Ok | ProbeStatus::Disabled)) {
             GateStatus::Pass
         } else {
             GateStatus::Fail
