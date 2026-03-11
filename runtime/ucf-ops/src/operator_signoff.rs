@@ -1,0 +1,885 @@
+use std::collections::BTreeSet;
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use serde::{Deserialize, Serialize};
+
+use crate::operator_report::{ConsolidatedOperatorReportV1, OperatorStatus};
+use crate::{
+    BackendEvidenceSnapshotV1, GateStatus, OpsError, V0GateOverallStatus, V0GateReportV1,
+    V1GateOverallStatus, V1GateReportV1, V2GateOverallStatus, V2GateReportV1, V3GateOverallStatus,
+    V3GateReportV1,
+};
+
+const CODE_CAP: usize = 12;
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum SignoffDecisionStateV1 {
+    ReadyForShadow,
+    ReadyForActiveReview,
+    NotReady,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct GateReportDigestsV1 {
+    pub v0: String,
+    pub v1: String,
+    pub v2: String,
+    pub v3: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct OperatorSignoffDecisionV1 {
+    pub schema_version: u16,
+    pub decision: SignoffDecisionStateV1,
+    pub supported_slot_set_digest: String,
+    pub policy_graph_digest_prefix: String,
+    pub manifest_digest_prefix: String,
+    pub evidence_snapshot_digest_prefix: String,
+    pub operator_report_digest_prefix: String,
+    pub gate_report_digests: GateReportDigestsV1,
+    pub reasons: Vec<String>,
+    pub remediation_codes: Vec<String>,
+    pub decision_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SignoffPolicyV1 {
+    pub require_v0_gate_pass: bool,
+    pub require_v1_gate_pass: bool,
+    pub require_v2_gate_pass: bool,
+    pub require_v3_gate_pass: bool,
+    pub block_on_strict_fail: bool,
+    pub block_on_health_fail: bool,
+    pub block_on_severe_alerts: bool,
+    pub block_on_drift_severe: bool,
+}
+
+impl SignoffPolicyV1 {
+    pub fn from_profile(profile: &str) -> Self {
+        if profile.eq_ignore_ascii_case("dev") {
+            return Self {
+                require_v0_gate_pass: true,
+                require_v1_gate_pass: true,
+                require_v2_gate_pass: true,
+                require_v3_gate_pass: true,
+                block_on_strict_fail: true,
+                block_on_health_fail: true,
+                block_on_severe_alerts: true,
+                block_on_drift_severe: true,
+            };
+        }
+        Self {
+            require_v0_gate_pass: true,
+            require_v1_gate_pass: true,
+            require_v2_gate_pass: true,
+            require_v3_gate_pass: true,
+            block_on_strict_fail: true,
+            block_on_health_fail: true,
+            block_on_severe_alerts: true,
+            block_on_drift_severe: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct OperatorSignoffArgs {
+    pub run_id: Option<String>,
+    pub latest: bool,
+    pub profile: String,
+}
+
+pub fn operator_signoff(
+    workdir: &Path,
+    args: &OperatorSignoffArgs,
+    out: &Path,
+) -> Result<OperatorSignoffDecisionV1, OpsError> {
+    let out_root = PathBuf::from("./out");
+    let snapshot = maybe_read_json::<BackendEvidenceSnapshotV1>(&discover_report(
+        &out_root,
+        "backend_evidence_snapshot.json",
+        args,
+    ));
+    let operator = maybe_read_json::<ConsolidatedOperatorReportV1>(&discover_report(
+        &out_root,
+        "operator_report.json",
+        args,
+    ));
+    let v0 =
+        maybe_read_json::<V0GateReportV1>(&discover_report(&out_root, "v0_gate_report.json", args));
+    let v1 =
+        maybe_read_json::<V1GateReportV1>(&discover_report(&out_root, "v1_gate_report.json", args));
+    let v2 =
+        maybe_read_json::<V2GateReportV1>(&discover_report(&out_root, "v2_gate_report.json", args));
+    let v3 =
+        maybe_read_json::<V3GateReportV1>(&discover_report(&out_root, "v3_gate_report.json", args));
+
+    let policy = SignoffPolicyV1::from_profile(&args.profile);
+    let decision = reduce_signoff(
+        snapshot.as_ref(),
+        operator.as_ref(),
+        v0,
+        v1,
+        v2,
+        v3,
+        &policy,
+    )?;
+
+    if let Some(parent) = out.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(out, serde_json::to_string_pretty(&decision)?)?;
+
+    let _ = workdir;
+    Ok(decision)
+}
+
+pub fn operator_signoff_text(report: &OperatorSignoffDecisionV1) -> String {
+    format!(
+        "decision={:?}\nprimary_reasons={}\nremediation={}\nnext=cargo run -p ucf-ops -- operator signoff --out ./out/operator_signoff.json",
+        report.decision,
+        if report.reasons.is_empty() {
+            "none".to_string()
+        } else {
+            report.reasons.join(",")
+        },
+        if report.remediation_codes.is_empty() {
+            "none".to_string()
+        } else {
+            report.remediation_codes.join(",")
+        }
+    )
+}
+
+fn reduce_signoff(
+    snapshot: Option<&BackendEvidenceSnapshotV1>,
+    operator: Option<&ConsolidatedOperatorReportV1>,
+    v0: Option<V0GateReportV1>,
+    v1: Option<V1GateReportV1>,
+    v2: Option<V2GateReportV1>,
+    v3: Option<V3GateReportV1>,
+    policy: &SignoffPolicyV1,
+) -> Result<OperatorSignoffDecisionV1, OpsError> {
+    let mut reasons = BTreeSet::new();
+    let mut remediation = BTreeSet::new();
+
+    let Some(snapshot) = snapshot else {
+        reasons.insert("SIGNOFF_BLOCK_EVIDENCE_SNAPSHOT_MISSING".to_string());
+        remediation.insert("run_backend_evidence_snapshot".to_string());
+        return build_not_ready_minimal(reasons, remediation, v0, v1, v2, v3);
+    };
+    let Some(operator) = operator else {
+        reasons.insert("SIGNOFF_BLOCK_OPERATOR_REPORT_MISSING".to_string());
+        remediation.insert("run_operator_report".to_string());
+        return build_not_ready_from_snapshot(snapshot, reasons, remediation, v0, v1, v2, v3);
+    };
+
+    if snapshot.slots.len() != 2
+        || !snapshot
+            .slots
+            .iter()
+            .any(|slot| slot.slot_id.eq_ignore_ascii_case("world"))
+    {
+        reasons.insert("SIGNOFF_BLOCK_SLOT_SET_AMBIGUOUS".to_string());
+        remediation.insert("run_models_evidence_snapshot".to_string());
+    }
+
+    check_gate_v0(
+        v0.as_ref(),
+        policy.require_v0_gate_pass,
+        &mut reasons,
+        &mut remediation,
+    );
+    check_gate_v1(
+        v1.as_ref(),
+        policy.require_v1_gate_pass,
+        &mut reasons,
+        &mut remediation,
+    );
+    check_gate_v2(
+        v2.as_ref(),
+        policy.require_v2_gate_pass,
+        &mut reasons,
+        &mut remediation,
+    );
+    check_gate_v3(
+        v3.as_ref(),
+        policy.require_v3_gate_pass,
+        &mut reasons,
+        &mut remediation,
+    );
+
+    if policy.block_on_health_fail
+        && matches!(
+            operator.sections.health_section.status,
+            OperatorStatus::Fail | OperatorStatus::Missing
+        )
+    {
+        reasons.insert("SIGNOFF_BLOCK_HEALTH".to_string());
+        remediation.insert("run_health_check".to_string());
+    }
+
+    if policy.block_on_strict_fail
+        && matches!(
+            operator.sections.strict_section.latest_status,
+            OperatorStatus::Fail | OperatorStatus::Missing
+        )
+    {
+        reasons.insert("SIGNOFF_BLOCK_STRICT".to_string());
+        remediation.insert("run_strict_check".to_string());
+    }
+
+    let supported_slots = &snapshot.slots;
+    let shadow_ready = supported_slots
+        .iter()
+        .all(|slot| slot.readiness.probe_ready && slot.readiness.shadow_ready);
+    if !shadow_ready {
+        reasons.insert("SIGNOFF_BLOCK_SHADOW_NOT_READY".to_string());
+        remediation.insert("run_models_eligibility".to_string());
+    }
+
+    let any_active = supported_slots
+        .iter()
+        .any(|slot| slot.readiness.active_eligible);
+
+    let severe_alerts = matches!(
+        operator.sections.alerts_section.status,
+        OperatorStatus::Fail
+    );
+    if policy.block_on_severe_alerts && severe_alerts {
+        reasons.insert("SIGNOFF_BLOCK_ALERT_SEVERE".to_string());
+        remediation.insert("inspect_active_alerts".to_string());
+    }
+
+    let severe_drift = operator.sections.drift_section.slots.iter().any(|slot| {
+        matches!(slot.drift_status, OperatorStatus::Fail) || slot.severe_alarm_count > 0
+    }) || matches!(
+        operator.sections.drift_section.status,
+        OperatorStatus::Missing
+    );
+    if policy.block_on_drift_severe && severe_drift {
+        reasons.insert("SIGNOFF_BLOCK_DRIFT_SEVERE".to_string());
+        remediation.insert("run_drift_report".to_string());
+    }
+
+    if reasons.is_empty() && shadow_ready && any_active {
+        reasons.insert("SIGNOFF_READY_ACTIVE_REVIEW".to_string());
+        return build_decision(
+            SignoffDecisionStateV1::ReadyForActiveReview,
+            snapshot,
+            operator,
+            v0,
+            v1,
+            v2,
+            v3,
+            reasons,
+            remediation,
+        );
+    }
+
+    if reasons.is_empty() && shadow_ready {
+        reasons.insert("SIGNOFF_READY_SHADOW".to_string());
+        return build_decision(
+            SignoffDecisionStateV1::ReadyForShadow,
+            snapshot,
+            operator,
+            v0,
+            v1,
+            v2,
+            v3,
+            reasons,
+            remediation,
+        );
+    }
+
+    if shadow_ready && !any_active {
+        reasons.insert("SIGNOFF_BLOCK_ACTIVE_NOT_ELIGIBLE".to_string());
+        remediation.insert("run_models_active_check".to_string());
+    }
+
+    build_decision(
+        SignoffDecisionStateV1::NotReady,
+        snapshot,
+        operator,
+        v0,
+        v1,
+        v2,
+        v3,
+        reasons,
+        remediation,
+    )
+}
+
+fn build_not_ready_minimal(
+    reasons: BTreeSet<String>,
+    remediation: BTreeSet<String>,
+    v0: Option<V0GateReportV1>,
+    v1: Option<V1GateReportV1>,
+    v2: Option<V2GateReportV1>,
+    v3: Option<V3GateReportV1>,
+) -> Result<OperatorSignoffDecisionV1, OpsError> {
+    let mut out = OperatorSignoffDecisionV1 {
+        schema_version: 1,
+        decision: SignoffDecisionStateV1::NotReady,
+        supported_slot_set_digest: "MISSING".to_string(),
+        policy_graph_digest_prefix: "MISSING".to_string(),
+        manifest_digest_prefix: "MISSING".to_string(),
+        evidence_snapshot_digest_prefix: "MISSING".to_string(),
+        operator_report_digest_prefix: "MISSING".to_string(),
+        gate_report_digests: GateReportDigestsV1 {
+            v0: digest_opt(v0.as_ref())?,
+            v1: digest_opt(v1.as_ref())?,
+            v2: digest_opt(v2.as_ref())?,
+            v3: digest_opt(v3.as_ref())?,
+        },
+        reasons: bound_codes(reasons),
+        remediation_codes: bound_codes(remediation),
+        decision_digest: String::new(),
+    };
+    out.decision_digest = decision_digest(&out)?;
+    Ok(out)
+}
+
+fn build_not_ready_from_snapshot(
+    snapshot: &BackendEvidenceSnapshotV1,
+    reasons: BTreeSet<String>,
+    remediation: BTreeSet<String>,
+    v0: Option<V0GateReportV1>,
+    v1: Option<V1GateReportV1>,
+    v2: Option<V2GateReportV1>,
+    v3: Option<V3GateReportV1>,
+) -> Result<OperatorSignoffDecisionV1, OpsError> {
+    let mut out = OperatorSignoffDecisionV1 {
+        schema_version: 1,
+        decision: SignoffDecisionStateV1::NotReady,
+        supported_slot_set_digest: snapshot.supported_slot_set_digest.clone(),
+        policy_graph_digest_prefix: snapshot.policy_graph_digest_prefix.clone(),
+        manifest_digest_prefix: snapshot.manifest_digest_prefix.clone(),
+        evidence_snapshot_digest_prefix: prefix16(&snapshot.snapshot_digest),
+        operator_report_digest_prefix: "MISSING".to_string(),
+        gate_report_digests: GateReportDigestsV1 {
+            v0: digest_opt(v0.as_ref())?,
+            v1: digest_opt(v1.as_ref())?,
+            v2: digest_opt(v2.as_ref())?,
+            v3: digest_opt(v3.as_ref())?,
+        },
+        reasons: bound_codes(reasons),
+        remediation_codes: bound_codes(remediation),
+        decision_digest: String::new(),
+    };
+    out.decision_digest = decision_digest(&out)?;
+    Ok(out)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_decision(
+    decision: SignoffDecisionStateV1,
+    snapshot: &BackendEvidenceSnapshotV1,
+    operator: &ConsolidatedOperatorReportV1,
+    v0: Option<V0GateReportV1>,
+    v1: Option<V1GateReportV1>,
+    v2: Option<V2GateReportV1>,
+    v3: Option<V3GateReportV1>,
+    reasons: BTreeSet<String>,
+    remediation: BTreeSet<String>,
+) -> Result<OperatorSignoffDecisionV1, OpsError> {
+    let mut out = OperatorSignoffDecisionV1 {
+        schema_version: 1,
+        decision,
+        supported_slot_set_digest: snapshot.supported_slot_set_digest.clone(),
+        policy_graph_digest_prefix: snapshot.policy_graph_digest_prefix.clone(),
+        manifest_digest_prefix: snapshot.manifest_digest_prefix.clone(),
+        evidence_snapshot_digest_prefix: prefix16(&snapshot.snapshot_digest),
+        operator_report_digest_prefix: prefix16(&operator.report_digest),
+        gate_report_digests: GateReportDigestsV1 {
+            v0: digest_opt(v0.as_ref())?,
+            v1: digest_opt(v1.as_ref())?,
+            v2: digest_opt(v2.as_ref())?,
+            v3: digest_opt(v3.as_ref())?,
+        },
+        reasons: bound_codes(reasons),
+        remediation_codes: bound_codes(remediation),
+        decision_digest: String::new(),
+    };
+    out.decision_digest = decision_digest(&out)?;
+    Ok(out)
+}
+
+fn check_gate_v0(
+    gate: Option<&V0GateReportV1>,
+    required: bool,
+    reasons: &mut BTreeSet<String>,
+    remediation: &mut BTreeSet<String>,
+) {
+    if !required {
+        return;
+    }
+    let Some(gate) = gate else {
+        reasons.insert("SIGNOFF_BLOCK_GATE_V0_MISSING".to_string());
+        remediation.insert("run_v0_gate".to_string());
+        return;
+    };
+    if gate.overall_status != V0GateOverallStatus::Pass {
+        reasons.insert("SIGNOFF_BLOCK_GATE_V0".to_string());
+        remediation.insert("run_v0_gate".to_string());
+    }
+}
+
+fn check_gate_v1(
+    gate: Option<&V1GateReportV1>,
+    required: bool,
+    reasons: &mut BTreeSet<String>,
+    remediation: &mut BTreeSet<String>,
+) {
+    if !required {
+        return;
+    }
+    let Some(gate) = gate else {
+        reasons.insert("SIGNOFF_BLOCK_GATE_V1_MISSING".to_string());
+        remediation.insert("run_v1_gate".to_string());
+        return;
+    };
+    if gate.overall_status != V1GateOverallStatus::Pass {
+        reasons.insert("SIGNOFF_BLOCK_GATE_V1".to_string());
+        remediation.insert("run_v1_gate".to_string());
+    }
+}
+
+fn check_gate_v2(
+    gate: Option<&V2GateReportV1>,
+    required: bool,
+    reasons: &mut BTreeSet<String>,
+    remediation: &mut BTreeSet<String>,
+) {
+    if !required {
+        return;
+    }
+    let Some(gate) = gate else {
+        reasons.insert("SIGNOFF_BLOCK_GATE_V2_MISSING".to_string());
+        remediation.insert("run_v2_gate".to_string());
+        return;
+    };
+    if gate.overall_status != V2GateOverallStatus::Pass {
+        reasons.insert("SIGNOFF_BLOCK_GATE_V2".to_string());
+        remediation.insert("run_v2_gate".to_string());
+    }
+}
+
+fn check_gate_v3(
+    gate: Option<&V3GateReportV1>,
+    required: bool,
+    reasons: &mut BTreeSet<String>,
+    remediation: &mut BTreeSet<String>,
+) {
+    if !required {
+        return;
+    }
+    let Some(gate) = gate else {
+        reasons.insert("SIGNOFF_BLOCK_GATE_V3_MISSING".to_string());
+        remediation.insert("run_v3_gate".to_string());
+        return;
+    };
+    if gate.overall_status != V3GateOverallStatus::Pass {
+        reasons.insert("SIGNOFF_BLOCK_GATE_V3".to_string());
+        remediation.insert("run_v3_gate".to_string());
+    }
+    if gate.checks.iter().any(|c| c.status == GateStatus::Fail) {
+        reasons.insert("SIGNOFF_BLOCK_GATE_V3".to_string());
+    }
+}
+
+fn digest_opt<T: Serialize>(value: Option<&T>) -> Result<String, OpsError> {
+    match value {
+        Some(v) => Ok(prefix16(&crate::sha256_hex(&serde_json::to_vec(v)?))),
+        None => Ok("MISSING".to_string()),
+    }
+}
+
+fn prefix16(value: &str) -> String {
+    value.chars().take(16).collect()
+}
+
+fn bound_codes(codes: BTreeSet<String>) -> Vec<String> {
+    codes.into_iter().take(CODE_CAP).collect()
+}
+
+fn decision_digest(report: &OperatorSignoffDecisionV1) -> Result<String, OpsError> {
+    let mut cloned = report.clone();
+    cloned.decision_digest.clear();
+    Ok(crate::sha256_hex(&serde_json::to_vec(&cloned)?))
+}
+
+fn discover_report(out_root: &Path, file: &str, args: &OperatorSignoffArgs) -> Option<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Some(run_id) = &args.run_id {
+        candidates.push(out_root.join(run_id).join(file));
+    }
+    if args.latest {
+        let mut dirs = fs::read_dir(out_root)
+            .ok()?
+            .filter_map(|entry| {
+                let p = entry.ok()?.path();
+                if p.is_dir() {
+                    Some(p)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        dirs.sort();
+        dirs.reverse();
+        for dir in dirs {
+            candidates.push(dir.join(file));
+        }
+    }
+    candidates.push(out_root.join(file));
+    candidates.into_iter().find(|p| p.exists())
+}
+
+fn maybe_read_json<T: for<'de> Deserialize<'de>>(path: &Option<PathBuf>) -> Option<T> {
+    let path = path.as_ref()?;
+    serde_json::from_slice(&fs::read(path).ok()?).ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models_lifecycle::{
+        BackendEvidenceSlotDenialsV1, BackendEvidenceSlotEvidenceV1,
+        BackendEvidenceSlotReadinessV1, BackendEvidenceSlotSnapshotV1, BackendSupportMatrixV1,
+        DriftStatusV1, EvidenceDenialCodeV1,
+    };
+    use crate::operator_report::{DriftSlotSummary, EligibilitySlotSummary, GateStatusSummary};
+    use crate::operator_report::{
+        NormalizedAlertsSection, NormalizedDriftSection, NormalizedEligibilitySection,
+        NormalizedGatesSection, NormalizedHealthSection, NormalizedStrictSection,
+        OperatorSectionsV1,
+    };
+
+    fn snapshot(active_eligible: bool) -> BackendEvidenceSnapshotV1 {
+        BackendEvidenceSnapshotV1 {
+            schema_version: 1,
+            supported_slot_set_digest: "slotset123".to_string(),
+            policy_graph_digest_prefix: "policy123".to_string(),
+            manifest_digest_prefix: "manifest123".to_string(),
+            slots: vec![
+                BackendEvidenceSlotSnapshotV1 {
+                    slot_id: "world".to_string(),
+                    target_hash_prefix: "w".to_string(),
+                    backend_support: BackendSupportMatrixV1 {
+                        stub: crate::BackendSupportStateV1::Supported,
+                        candle: crate::BackendSupportStateV1::Supported,
+                        burn: crate::BackendSupportStateV1::Unsupported,
+                    },
+                    evidence: BackendEvidenceSlotEvidenceV1 {
+                        latest_probe_report_digest_prefix: "p1".to_string(),
+                        latest_compare_window_digest_prefix: "c1".to_string(),
+                        latest_shadow_ready_digest_prefix: "s1".to_string(),
+                        latest_active_evidence_digest_prefix: "a1".to_string(),
+                        latest_drift_status: DriftStatusV1::Ok,
+                        freshness_probe_age_ticks: Some(1),
+                        freshness_compare_age_ticks: Some(1),
+                        freshness_no_impact_age_ticks: Some(1),
+                        freshness_drift_status_age_ticks: Some(1),
+                        hash_consistency_ok: true,
+                    },
+                    readiness: BackendEvidenceSlotReadinessV1 {
+                        probe_ready: true,
+                        shadow_ready: true,
+                        active_eligible,
+                    },
+                    denials: BackendEvidenceSlotDenialsV1 {
+                        probe: None,
+                        shadow: None,
+                        active: None,
+                    },
+                    remediation_codes: vec![],
+                },
+                BackendEvidenceSlotSnapshotV1 {
+                    slot_id: "sae".to_string(),
+                    target_hash_prefix: "s".to_string(),
+                    backend_support: BackendSupportMatrixV1 {
+                        stub: crate::BackendSupportStateV1::Supported,
+                        candle: crate::BackendSupportStateV1::Supported,
+                        burn: crate::BackendSupportStateV1::Unsupported,
+                    },
+                    evidence: BackendEvidenceSlotEvidenceV1 {
+                        latest_probe_report_digest_prefix: "p2".to_string(),
+                        latest_compare_window_digest_prefix: "c2".to_string(),
+                        latest_shadow_ready_digest_prefix: "s2".to_string(),
+                        latest_active_evidence_digest_prefix: "a2".to_string(),
+                        latest_drift_status: DriftStatusV1::Ok,
+                        freshness_probe_age_ticks: Some(1),
+                        freshness_compare_age_ticks: Some(1),
+                        freshness_no_impact_age_ticks: Some(1),
+                        freshness_drift_status_age_ticks: Some(1),
+                        hash_consistency_ok: true,
+                    },
+                    readiness: BackendEvidenceSlotReadinessV1 {
+                        probe_ready: true,
+                        shadow_ready: true,
+                        active_eligible: false,
+                    },
+                    denials: BackendEvidenceSlotDenialsV1 {
+                        probe: None,
+                        shadow: None,
+                        active: Some(EvidenceDenialCodeV1::ActiveNotEnabled),
+                    },
+                    remediation_codes: vec![],
+                },
+            ],
+            snapshot_digest: "snapshotdigest123456".to_string(),
+        }
+    }
+
+    fn operator_report() -> ConsolidatedOperatorReportV1 {
+        ConsolidatedOperatorReportV1 {
+            schema_version: 1,
+            generated_at: 1,
+            overall_status: OperatorStatus::Ok,
+            run_id: Some("r1".to_string()),
+            policy_graph_digest_prefix: Some("pg".to_string()),
+            manifest_digest_prefix: Some("mg".to_string()),
+            sections: OperatorSectionsV1 {
+                health_section: NormalizedHealthSection {
+                    status: OperatorStatus::Ok,
+                    strict_mode_enabled: Some(true),
+                    last_tick_age_ms: Some(1),
+                    emergency_active: Some(false),
+                    evidence_digest_prefixes: vec![],
+                    remediation_codes: vec![],
+                },
+                eligibility_section: NormalizedEligibilitySection {
+                    status: OperatorStatus::Warn,
+                    slots: vec![EligibilitySlotSummary {
+                        slot_id: "world".to_string(),
+                        probe_ready: true,
+                        shadow_ready: true,
+                        active_eligible: false,
+                        primary_denial_reason: None,
+                    }],
+                    evidence_digest_prefixes: vec![],
+                    remediation_codes: vec![],
+                },
+                drift_section: NormalizedDriftSection {
+                    status: OperatorStatus::Ok,
+                    slots: vec![DriftSlotSummary {
+                        slot_id: "world".to_string(),
+                        drift_status: OperatorStatus::Ok,
+                        severe_alarm_count: 0,
+                    }],
+                    evidence_digest_prefixes: vec![],
+                    remediation_codes: vec![],
+                },
+                alerts_section: NormalizedAlertsSection {
+                    status: OperatorStatus::Ok,
+                    active_alert_count: 0,
+                    top_active_alerts: vec![],
+                    evidence_digest_prefixes: vec![],
+                    remediation_codes: vec![],
+                },
+                strict_section: NormalizedStrictSection {
+                    status: OperatorStatus::Ok,
+                    latest_status: OperatorStatus::Ok,
+                    primary_denial_code: None,
+                    evidence_digest_prefixes: vec![],
+                    remediation_codes: vec![],
+                },
+                gates_section: NormalizedGatesSection {
+                    status: OperatorStatus::Ok,
+                    gates: vec![GateStatusSummary {
+                        gate_id: "v3".to_string(),
+                        status: OperatorStatus::Ok,
+                    }],
+                    evidence_digest_prefixes: vec![],
+                    remediation_codes: vec![],
+                },
+            },
+            remediation_codes: vec![],
+            report_digest: "operatordigest123456".to_string(),
+        }
+    }
+
+    fn pass_v0() -> V0GateReportV1 {
+        V0GateReportV1 {
+            schema_version: 1,
+            overall_status: V0GateOverallStatus::Pass,
+            checks: vec![],
+        }
+    }
+
+    fn pass_v1() -> V1GateReportV1 {
+        V1GateReportV1 {
+            schema_version: 1,
+            overall_status: V1GateOverallStatus::Pass,
+            checks: vec![],
+        }
+    }
+
+    fn pass_v2() -> V2GateReportV1 {
+        V2GateReportV1 {
+            schema_version: 1,
+            overall_status: V2GateOverallStatus::Pass,
+            checks: vec![],
+        }
+    }
+
+    fn pass_v3() -> V3GateReportV1 {
+        V3GateReportV1 {
+            schema_version: 1,
+            overall_status: V3GateOverallStatus::Pass,
+            checks: vec![],
+        }
+    }
+
+    fn policy() -> SignoffPolicyV1 {
+        SignoffPolicyV1::from_profile("test")
+    }
+
+    #[test]
+    fn deterministic_reduction_equal_inputs_equal_outputs() {
+        let snapshot = snapshot(false);
+        let operator = operator_report();
+        let a = reduce_signoff(
+            Some(&snapshot),
+            Some(&operator),
+            Some(pass_v0()),
+            Some(pass_v1()),
+            Some(pass_v2()),
+            Some(pass_v3()),
+            &policy(),
+        )
+        .expect("decision a");
+        let b = reduce_signoff(
+            Some(&snapshot),
+            Some(&operator),
+            Some(pass_v0()),
+            Some(pass_v1()),
+            Some(pass_v2()),
+            Some(pass_v3()),
+            &policy(),
+        )
+        .expect("decision b");
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn shadow_ready_only_is_ready_for_shadow() {
+        let decision = reduce_signoff(
+            Some(&snapshot(false)),
+            Some(&operator_report()),
+            Some(pass_v0()),
+            Some(pass_v1()),
+            Some(pass_v2()),
+            Some(pass_v3()),
+            &policy(),
+        )
+        .expect("decision");
+        assert_eq!(decision.decision, SignoffDecisionStateV1::ReadyForShadow);
+        assert_eq!(decision.reasons, vec!["SIGNOFF_READY_SHADOW"]);
+    }
+
+    #[test]
+    fn active_eligible_slot_is_ready_for_active_review() {
+        let decision = reduce_signoff(
+            Some(&snapshot(true)),
+            Some(&operator_report()),
+            Some(pass_v0()),
+            Some(pass_v1()),
+            Some(pass_v2()),
+            Some(pass_v3()),
+            &policy(),
+        )
+        .expect("decision");
+        assert_eq!(
+            decision.decision,
+            SignoffDecisionStateV1::ReadyForActiveReview
+        );
+        assert_eq!(decision.reasons, vec!["SIGNOFF_READY_ACTIVE_REVIEW"]);
+    }
+
+    #[test]
+    fn strict_fail_or_v3_fail_is_not_ready() {
+        let mut operator = operator_report();
+        operator.sections.strict_section.latest_status = OperatorStatus::Fail;
+        let decision = reduce_signoff(
+            Some(&snapshot(true)),
+            Some(&operator),
+            Some(pass_v0()),
+            Some(pass_v1()),
+            Some(pass_v2()),
+            Some(V3GateReportV1 {
+                schema_version: 1,
+                overall_status: V3GateOverallStatus::Fail,
+                checks: vec![],
+            }),
+            &policy(),
+        )
+        .expect("decision");
+        assert_eq!(decision.decision, SignoffDecisionStateV1::NotReady);
+        assert!(decision
+            .reasons
+            .contains(&"SIGNOFF_BLOCK_STRICT".to_string()));
+        assert!(decision
+            .reasons
+            .contains(&"SIGNOFF_BLOCK_GATE_V3".to_string()));
+    }
+
+    #[test]
+    fn missing_snapshot_fails_closed() {
+        let decision = reduce_signoff(
+            None,
+            Some(&operator_report()),
+            Some(pass_v0()),
+            Some(pass_v1()),
+            Some(pass_v2()),
+            Some(pass_v3()),
+            &policy(),
+        )
+        .expect("decision");
+        assert_eq!(decision.decision, SignoffDecisionStateV1::NotReady);
+        assert_eq!(
+            decision.reasons,
+            vec!["SIGNOFF_BLOCK_EVIDENCE_SNAPSHOT_MISSING".to_string()]
+        );
+    }
+
+    #[test]
+    fn ambiguous_slot_set_fails_closed() {
+        let mut snapshot = snapshot(true);
+        snapshot.slots = vec![snapshot.slots[0].clone()];
+        let decision = reduce_signoff(
+            Some(&snapshot),
+            Some(&operator_report()),
+            Some(pass_v0()),
+            Some(pass_v1()),
+            Some(pass_v2()),
+            Some(pass_v3()),
+            &policy(),
+        )
+        .expect("decision");
+        assert_eq!(decision.decision, SignoffDecisionStateV1::NotReady);
+        assert!(decision
+            .reasons
+            .contains(&"SIGNOFF_BLOCK_SLOT_SET_AMBIGUOUS".to_string()));
+    }
+
+    #[test]
+    fn missing_required_gate_is_not_ready() {
+        let decision = reduce_signoff(
+            Some(&snapshot(true)),
+            Some(&operator_report()),
+            Some(pass_v0()),
+            Some(pass_v1()),
+            Some(pass_v2()),
+            None,
+            &policy(),
+        )
+        .expect("decision");
+        assert_eq!(decision.decision, SignoffDecisionStateV1::NotReady);
+        assert!(decision
+            .reasons
+            .contains(&"SIGNOFF_BLOCK_GATE_V3_MISSING".to_string()));
+    }
+}
