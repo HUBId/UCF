@@ -18,6 +18,7 @@ mod nightly;
 mod operator_report;
 mod operator_signoff;
 mod remediation;
+mod remediation_consistency;
 mod second_slot_parity;
 mod soak;
 mod spec_snapshot;
@@ -85,6 +86,11 @@ pub use operator_signoff::{
     SignoffDecisionStateV1, SignoffPolicyV1,
 };
 pub use remediation::all_registry_rows as remediation_registry_rows;
+pub use remediation_consistency::{
+    remediation_consistency_check, CanonicalRemediationObservationV1,
+    RemediationConsistencyCheckV1, RemediationConsistencyObservedV1,
+    RemediationConsistencyReportV1, RemediationConsistencyStatusV1, RemediationMismatchKindV1,
+};
 pub use second_slot_parity::{
     detect_second_slot, second_slot_parity_evidence_exists, second_slot_parity_report,
     OptionalBackendSupportStateV1, SaeParityRecordV1, SecondSlotParityRecordV1,
@@ -14458,6 +14464,8 @@ pub fn generate_remediation_codes_doc(out: &Path) -> Result<(), OpsError> {
     for (code, description, key) in remediation_registry_rows() {
         md.push_str(&format!("| {code} | {description} | `{key}` |\n"));
     }
+    md.push_str("\n## Remediation consistency enforcement\n\n");
+    md.push_str("Canonical remediation consistency is enforced across strict check, eligibility, operator report, operator signoff, v4 gate surfaces, and enriched export manifests via `ucf-ops remediation-consistency-check`.\n");
     if let Some(parent) = out.parent() {
         fs::create_dir_all(parent)?;
     }

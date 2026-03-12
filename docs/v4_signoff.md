@@ -101,3 +101,12 @@ v4 remains a conservative consistency/signoff hardening phase.
 ## Post-v4 continuation note
 
 After `ucf-ops v4 gate` reports PASS, continue execution at **Prompt 220** via `docs/next_10_prompts.md`.
+
+
+## Remediation consistency participation
+
+`v4 gate`, operator report, and operator signoff participate in canonical remediation consistency governance via:
+
+```bash
+cargo run -p ucf-ops -- remediation-consistency-check --out ./out/remediation_consistency.json
+```

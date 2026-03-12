@@ -70,3 +70,12 @@ See `docs/strict_operator_interplay_v4.md`.
 ```bash
 cargo run -p ucf-ops -- models active-review-snapshot --out ./out/active_review_snapshot.json
 ```
+
+
+## Canonical remediation consistency
+
+`OperatorSignoffDecisionV1` remediation outputs are part of the v5 canonical remediation consistency proof lane and are validated with:
+
+```bash
+cargo run -p ucf-ops -- remediation-consistency-check --out ./out/remediation_consistency.json
+```

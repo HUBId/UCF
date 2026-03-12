@@ -15,3 +15,7 @@ Generated from the canonical remediation registry source.
 | REMEDIATION_REGENERATE_OPERATOR_REPORT | Regenerate consolidated operator report artifacts. | `regenerate_operator_report` |
 | REMEDIATION_RESOLVE_HASH_MISMATCH | Resolve target/evidence hash mismatch before promotion. | `resolve_hash_mismatch` |
 | REMEDIATION_REVIEW_REPORT_MANUALLY | Perform manual operator review of bounded report evidence. | `review_report_manually` |
+
+## Remediation consistency enforcement
+
+Canonical remediation consistency is enforced across strict check, eligibility, operator report, operator signoff, v4 gate surfaces, and enriched export manifests via `ucf-ops remediation-consistency-check`.

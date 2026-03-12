@@ -20,12 +20,13 @@ use ucf_ops::{
     operator_signoff, operator_signoff_text, out_manifest, parse_duration_secs, parse_inject,
     parse_slot, path_scan, policy_diff, policy_explain, policy_validate, portability_check,
     portability_report, preflight, readiness_gate, release_build_rc, release_rc1_gate,
-    release_signoff_validate, replay_audit, replay_bugreport, repro_pack, repro_verify, run_status,
-    runs_list, runs_search, runs_show, save_counterfactual_result, second_slot_parity_report,
-    security_verify_chain, simulate_counterfactual, soak_run, strict_check, strict_explain,
-    troubleshoot, v0_gate, v1_smoke, v2_gate, v3_gate, v4_gate, verify_bugreport,
-    world_parity_report, world_shadow_report, write_slice, AdversarialRunArgs, AirgapArtifactType,
-    AirgapImportArgs, AirgapImportMode, BenchArgs, BugKitBuildArgs, ChangeImpactArgs, ConfigV1,
+    release_signoff_validate, remediation_consistency_check, replay_audit, replay_bugreport,
+    repro_pack, repro_verify, run_status, runs_list, runs_search, runs_show,
+    save_counterfactual_result, second_slot_parity_report, security_verify_chain,
+    simulate_counterfactual, soak_run, strict_check, strict_explain, troubleshoot, v0_gate,
+    v1_smoke, v2_gate, v3_gate, v4_gate, verify_bugreport, world_parity_report,
+    world_shadow_report, write_slice, AdversarialRunArgs, AirgapArtifactType, AirgapImportArgs,
+    AirgapImportMode, BenchArgs, BugKitBuildArgs, ChangeImpactArgs, ConfigV1,
     CounterfactualRequest, DevLoopArgs, DocsLintArgs, DocsLintMode, DocsLintStatus,
     ExplainTickRequest, ExportArgs, GateStatus, GoldenGenerateArgs, GoldenVerifyArgs,
     GoldenVerifyReport, NightlySummarizeArgs, OperatorReportArgs, OperatorSignoffArgs,
@@ -1847,6 +1848,26 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
                 _ => return Err("usage: ucf-ops v4 gate [--out <path>]".into()),
+            }
+        }
+        "remediation-consistency-check" => {
+            let out = arg_value(&args, "--out")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("./out/remediation_consistency.json"));
+            let report = remediation_consistency_check(&out)?;
+            println!(
+                "checked={} failed={} status={:?}",
+                report.summary.total_conditions, report.summary.fail_count, report.summary.status
+            );
+            if !report.summary.top_mismatch_categories.is_empty() {
+                println!(
+                    "mismatch_categories={}",
+                    report.summary.top_mismatch_categories.join(",")
+                );
+            }
+            println!("out={}", out.display());
+            if report.summary.fail_count > 0 {
+                std::process::exit(2);
             }
         }
         "v0" => {

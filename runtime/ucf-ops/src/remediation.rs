@@ -20,6 +20,11 @@ pub fn canonical_from_legacy_code(code: &str) -> Vec<String> {
         "HASH_MISMATCH" | "TARGET_HASH_MISMATCH" => CanonicalConditionV1::HashMismatch("target"),
         "DRIFT_SEVERE" => CanonicalConditionV1::DriftSevere("slot"),
         "STRICT_FAIL" => CanonicalConditionV1::StrictFail("strict"),
+        "MANIFEST_INVALID" => CanonicalConditionV1::ManifestInvalid("manifest"),
+        "OPTIONAL_BACKEND_CLOSED_UNSUPPORTED" => CanonicalConditionV1::OptionalBackendMissing {
+            slot: "world",
+            backend: "burn",
+        },
         _ => CanonicalConditionV1::Unknown,
     };
     remediation_code_strings_for_condition(condition)
@@ -30,13 +35,17 @@ pub fn canonical_from_legacy_remediation(remediation: &str) -> Vec<String> {
         "run_models_eligibility" | "run_probe" => CanonicalConditionV1::EvidenceMissing("probe"),
         "run_strict_check" => CanonicalConditionV1::StrictFail("strict"),
         "run_drift_report" | "inspect_active_alerts" => CanonicalConditionV1::DriftSevere("slot"),
-        "run_operator_report" | "run_backend_evidence_snapshot" => {
-            CanonicalConditionV1::GateFail("operator")
-        }
+        "run_operator_report" => CanonicalConditionV1::GateFail("operator"),
+        "run_backend_evidence_snapshot" => CanonicalConditionV1::EvidenceMissing("probe"),
         "run_v0_gate" | "run_v1_gate" | "run_v2_gate" | "run_v3_gate" | "run_missing_gates" => {
             CanonicalConditionV1::GateFail("v")
         }
         "run_models_active_check" => CanonicalConditionV1::ActiveUnsupported("slot"),
+        "run_portability_report" => CanonicalConditionV1::OptionalBackendMissing {
+            slot: "world",
+            backend: "burn",
+        },
+        "run_verify_manifest" => CanonicalConditionV1::ManifestInvalid("manifest"),
         _ => CanonicalConditionV1::Unknown,
     };
     remediation_code_strings_for_condition(condition)
