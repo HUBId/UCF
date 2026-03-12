@@ -1,0 +1,19 @@
+{
+  "artifact_id": "remediation_consistency_check_v1",
+  "type_name": "RemediationConsistencyReportV1",
+  "source_file": "runtime/ucf-ops/src/remediation_consistency.rs",
+  "required_fields": [
+    "checks",
+    "schema_version",
+    "suggestions",
+    "summary"
+  ],
+  "optional_fields": [],
+  "field_types": {
+    "checks": "Vec<RemediationConsistencyCheckV1>",
+    "schema_version": "u16",
+    "suggestions": "Vec<String>",
+    "summary": "RemediationConsistencySummaryV1"
+  },
+  "enum_variants": {}
+}

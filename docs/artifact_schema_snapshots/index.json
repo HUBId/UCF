@@ -2,7 +2,11 @@
   "schema_version": 1,
   "artifacts": [
     "active_review_snapshot_v1",
+    "backend_resolution_v1",
     "backend_evidence_snapshot_v1",
+    "repro_pack_manifest_v1",
+    "bugkit_manifest_v1",
+    "remediation_consistency_check_v1",
     "operator_report_v1",
     "operator_signoff_v1",
     "strict_failure_report_v3",
