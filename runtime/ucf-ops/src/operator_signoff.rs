@@ -7,10 +7,11 @@ use serde::{Deserialize, Serialize};
 use crate::operator_report::{ConsolidatedOperatorReportV1, OperatorStatus};
 use crate::remediation::merge_canonical_remediations;
 use crate::{
-    operator_block_from_strict, resolve_strict_evidence, BackendEvidenceSnapshotV1, GateStatus,
-    OpsError, StrictEvidenceContextV1, StrictEvidenceSnapshotV1, StrictEvidenceStatusV1,
-    V0GateOverallStatus, V0GateReportV1, V1GateOverallStatus, V1GateReportV1, V2GateOverallStatus,
-    V2GateReportV1, V3GateOverallStatus, V3GateReportV1,
+    operator_block_from_strict, resolve_strict_evidence, AggregatedActiveReviewSnapshotV1,
+    BackendEvidenceSnapshotV1, GateStatus, OpsError, StrictEvidenceContextV1,
+    StrictEvidenceSnapshotV1, StrictEvidenceStatusV1, V0GateOverallStatus, V0GateReportV1,
+    V1GateOverallStatus, V1GateReportV1, V2GateOverallStatus, V2GateReportV1, V3GateOverallStatus,
+    V3GateReportV1,
 };
 
 const CODE_CAP: usize = 12;
@@ -21,6 +22,7 @@ struct SignoffReductionInputs<'a> {
     operator: Option<&'a ConsolidatedOperatorReportV1>,
     gates: GateInputs,
     strict_snapshot: &'a StrictEvidenceSnapshotV1,
+    active_review_snapshot: Option<&'a AggregatedActiveReviewSnapshotV1>,
     policy: &'a SignoffPolicyV1,
 }
 
@@ -56,6 +58,7 @@ pub struct OperatorSignoffDecisionV1 {
     pub policy_graph_digest_prefix: String,
     pub manifest_digest_prefix: String,
     pub evidence_snapshot_digest_prefix: String,
+    pub active_review_snapshot_digest_prefix: Option<String>,
     pub operator_report_digest_prefix: String,
     pub gate_report_digests: GateReportDigestsV1,
     pub reasons: Vec<String>,
@@ -127,6 +130,9 @@ pub fn operator_signoff(
         "operator_report.json",
         args,
     ));
+    let active_review_snapshot = maybe_read_json::<AggregatedActiveReviewSnapshotV1>(
+        &discover_report(&out_root, "active_review_snapshot.json", args),
+    );
     let v0 =
         maybe_read_json::<V0GateReportV1>(&discover_report(&out_root, "v0_gate_report.json", args));
     let v1 =
@@ -169,6 +175,7 @@ pub fn operator_signoff(
         operator: operator.as_ref(),
         gates: GateInputs { v0, v1, v2, v3 },
         strict_snapshot: &strict_snapshot,
+        active_review_snapshot: active_review_snapshot.as_ref(),
         policy: &policy,
     })?;
 
@@ -203,6 +210,7 @@ fn reduce_signoff(
 ) -> Result<OperatorSignoffDecisionV1, OpsError> {
     let SignoffReductionInputs {
         snapshot,
+        active_review_snapshot,
         operator,
         gates: GateInputs { v0, v1, v2, v3 },
         strict_snapshot,
@@ -292,9 +300,21 @@ fn reduce_signoff(
         remediation.insert("run_models_eligibility".to_string());
     }
 
-    let any_active = supported_slots
-        .iter()
-        .any(|slot| slot.readiness.active_eligible);
+    let any_active = active_review_snapshot
+        .filter(|r| r.supported_slot_set_digest == snapshot.supported_slot_set_digest)
+        .map(|r| {
+            r.slots.iter().any(|slot| {
+                slot.active_eligible
+                    && !slot.strict_blocking
+                    && !slot.drift_blocking
+                    && !slot.alert_blocking
+            })
+        })
+        .unwrap_or_else(|| {
+            supported_slots
+                .iter()
+                .any(|slot| slot.readiness.active_eligible)
+        });
 
     let severe_alerts = matches!(
         operator.sections.alerts_section.status,
@@ -321,6 +341,7 @@ fn reduce_signoff(
         return build_decision(
             SignoffDecisionStateV1::ReadyForActiveReview,
             snapshot,
+            active_review_snapshot,
             operator,
             v0,
             v1,
@@ -336,6 +357,7 @@ fn reduce_signoff(
         return build_decision(
             SignoffDecisionStateV1::ReadyForShadow,
             snapshot,
+            active_review_snapshot,
             operator,
             v0,
             v1,
@@ -354,6 +376,7 @@ fn reduce_signoff(
     build_decision(
         SignoffDecisionStateV1::NotReady,
         snapshot,
+        active_review_snapshot,
         operator,
         v0,
         v1,
@@ -379,6 +402,7 @@ fn build_not_ready_minimal(
         policy_graph_digest_prefix: "MISSING".to_string(),
         manifest_digest_prefix: "MISSING".to_string(),
         evidence_snapshot_digest_prefix: "MISSING".to_string(),
+        active_review_snapshot_digest_prefix: None,
         operator_report_digest_prefix: "MISSING".to_string(),
         gate_report_digests: GateReportDigestsV1 {
             v0: digest_opt(v0.as_ref())?,
@@ -413,6 +437,7 @@ fn build_not_ready_from_snapshot(
         policy_graph_digest_prefix: snapshot.policy_graph_digest_prefix.clone(),
         manifest_digest_prefix: snapshot.manifest_digest_prefix.clone(),
         evidence_snapshot_digest_prefix: prefix16(&snapshot.snapshot_digest),
+        active_review_snapshot_digest_prefix: None,
         operator_report_digest_prefix: "MISSING".to_string(),
         gate_report_digests: GateReportDigestsV1 {
             v0: digest_opt(v0.as_ref())?,
@@ -435,6 +460,7 @@ fn build_not_ready_from_snapshot(
 fn build_decision(
     decision: SignoffDecisionStateV1,
     snapshot: &BackendEvidenceSnapshotV1,
+    active_review_snapshot: Option<&AggregatedActiveReviewSnapshotV1>,
     operator: &ConsolidatedOperatorReportV1,
     v0: Option<V0GateReportV1>,
     v1: Option<V1GateReportV1>,
@@ -450,6 +476,8 @@ fn build_decision(
         policy_graph_digest_prefix: snapshot.policy_graph_digest_prefix.clone(),
         manifest_digest_prefix: snapshot.manifest_digest_prefix.clone(),
         evidence_snapshot_digest_prefix: prefix16(&snapshot.snapshot_digest),
+        active_review_snapshot_digest_prefix: active_review_snapshot
+            .map(|v| prefix16(&v.snapshot_digest)),
         operator_report_digest_prefix: prefix16(&operator.report_digest),
         gate_report_digests: GateReportDigestsV1 {
             v0: digest_opt(v0.as_ref())?,
@@ -834,6 +862,7 @@ mod tests {
                 v3: Some(pass_v3()),
             },
             strict_snapshot: &strict_snapshot(StrictEvidenceStatusV1::Pass),
+            active_review_snapshot: None,
             policy: &policy(),
         })
         .expect("decision a");
@@ -847,6 +876,7 @@ mod tests {
                 v3: Some(pass_v3()),
             },
             strict_snapshot: &strict_snapshot(StrictEvidenceStatusV1::Pass),
+            active_review_snapshot: None,
             policy: &policy(),
         })
         .expect("decision b");
@@ -865,6 +895,7 @@ mod tests {
                 v3: Some(pass_v3()),
             },
             strict_snapshot: &strict_snapshot(StrictEvidenceStatusV1::Pass),
+            active_review_snapshot: None,
             policy: &policy(),
         })
         .expect("decision");
@@ -884,6 +915,7 @@ mod tests {
                 v3: Some(pass_v3()),
             },
             strict_snapshot: &strict_snapshot(StrictEvidenceStatusV1::Pass),
+            active_review_snapshot: None,
             policy: &policy(),
         })
         .expect("decision");
@@ -911,6 +943,7 @@ mod tests {
                 }),
             },
             strict_snapshot: &strict_snapshot(StrictEvidenceStatusV1::Fail),
+            active_review_snapshot: None,
             policy: &policy(),
         })
         .expect("decision");
@@ -933,6 +966,7 @@ mod tests {
                 v3: Some(pass_v3()),
             },
             strict_snapshot: &strict_snapshot(StrictEvidenceStatusV1::Pass),
+            active_review_snapshot: None,
             policy: &policy(),
         })
         .expect("decision");
@@ -957,6 +991,7 @@ mod tests {
                 v3: Some(pass_v3()),
             },
             strict_snapshot: &strict_snapshot(StrictEvidenceStatusV1::Pass),
+            active_review_snapshot: None,
             policy: &policy(),
         })
         .expect("decision");
@@ -978,6 +1013,7 @@ mod tests {
                 v3: None,
             },
             strict_snapshot: &strict_snapshot(StrictEvidenceStatusV1::Pass),
+            active_review_snapshot: None,
             policy: &policy(),
         })
         .expect("decision");

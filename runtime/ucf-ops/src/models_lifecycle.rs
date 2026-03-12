@@ -13,7 +13,10 @@ use ucf_replay::load_fixture_records;
 
 use crate::remediation::merge_canonical_remediations;
 use crate::second_slot_parity::{OptionalBackendSupportStateV1, SecondSlotParityReportV1};
-use crate::{prefix_hex, sha256_hex, OpsError};
+use crate::{
+    prefix_hex, resolve_strict_evidence, sha256_hex, OperatorSignoffDecisionV1, OpsError,
+    SignoffDecisionStateV1, StrictEvidenceContextV1, StrictEvidenceStatusV1,
+};
 
 const MANIFEST_HISTORY_KEEP: usize = 20;
 const MODEL_FILE_NAME: &str = "model.safetensors";
@@ -27,6 +30,8 @@ const SHADOW_READY_SCHEMA_VERSION: u16 = 1;
 const SHADOW_READY_MAX_SLOTS: usize = 2;
 const ELIGIBILITY_SCHEMA_VERSION: u16 = 1;
 const BACKEND_EVIDENCE_SNAPSHOT_SCHEMA_VERSION: u16 = 1;
+const ACTIVE_REVIEW_EVIDENCE_SCHEMA_VERSION: u16 = 1;
+const ACTIVE_REVIEW_REMEDIATION_MAX: usize = 4;
 const SUPPORTED_REAL_SLOT_SET_VERSION: &str = "v3_supported_real_slots_max2";
 const SUPPORTED_REAL_SLOT_SET_POLICY_V2_SCHEMA_VERSION: u16 = 2;
 const SLOT_EXPANSION_ELIGIBILITY_SCHEMA_VERSION: u16 = 1;
@@ -300,6 +305,71 @@ pub struct BackendEvidenceSnapshotV1 {
     pub manifest_digest_prefix: String,
     pub slots: Vec<BackendEvidenceSlotSnapshotV1>,
     pub snapshot_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ActiveReviewContributingDigestsV1 {
+    pub probe_report_digest_prefix: String,
+    pub shadow_ready_digest_prefix: String,
+    pub active_evidence_digest_prefix: String,
+    pub strict_evidence_digest_prefix: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ActiveReviewEvidenceV1 {
+    pub slot_id: String,
+    pub target_hash_prefix: String,
+    pub manifest_digest_prefix: String,
+    pub probe_ready: bool,
+    pub shadow_ready: bool,
+    pub active_eligible: bool,
+    pub strict_blocking: bool,
+    pub drift_blocking: bool,
+    pub alert_blocking: bool,
+    pub primary_denial_code: Option<String>,
+    pub remediation_codes: Vec<String>,
+    pub contributing_evidence_digests: ActiveReviewContributingDigestsV1,
+    pub evidence_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ActiveReviewOverallStatusV1 {
+    NoneReviewable,
+    PartialReviewable,
+    AllReviewable,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ActiveReviewSignoffAlignmentV1 {
+    pub aligned: bool,
+    pub status_code: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AggregatedActiveReviewSnapshotV1 {
+    pub schema_version: u16,
+    pub supported_slot_set_digest: String,
+    pub policy_graph_digest_prefix: String,
+    pub manifest_digest_prefix: String,
+    pub slots: Vec<ActiveReviewEvidenceV1>,
+    pub overall_review_status: ActiveReviewOverallStatusV1,
+    pub signoff_alignment: ActiveReviewSignoffAlignmentV1,
+    pub snapshot_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ActiveReviewSnapshotRecordV1 {
+    pub invocation_id: u64,
+    pub snapshot_digest_prefix: String,
+    pub supported_slot_set_digest_prefix: String,
+    pub slots: Vec<ActiveReviewSnapshotSlotV1>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ActiveReviewSnapshotSlotV1 {
+    pub slot_id: String,
+    pub reviewable: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -1928,6 +1998,328 @@ pub fn models_evidence_snapshot(
         slots: snapshots,
         snapshot_digest: sha256_hex(&digest_source),
     })
+}
+
+fn discover_latest_operator_signoff(workdir: &Path) -> Option<OperatorSignoffDecisionV1> {
+    let out_root = workdir.join("out");
+    let direct = out_root.join("operator_signoff.json");
+    if direct.exists() {
+        if let Ok(body) = fs::read_to_string(&direct) {
+            if let Ok(report) = serde_json::from_str::<OperatorSignoffDecisionV1>(&body) {
+                return Some(report);
+            }
+        }
+    }
+    None
+}
+
+fn discover_alert_blocking(workdir: &Path) -> bool {
+    let path = workdir.join("out").join("alerts_report.json");
+    fs::read_to_string(path)
+        .ok()
+        .and_then(|body| serde_json::from_str::<serde_json::Value>(&body).ok())
+        .and_then(|v| v.get("active_alerts").and_then(|x| x.as_array()).cloned())
+        .map(|alerts| {
+            alerts.iter().any(|a| {
+                a.get("severity")
+                    .and_then(|x| x.as_str())
+                    .is_some_and(|s| s.eq_ignore_ascii_case("severe"))
+            })
+        })
+        .unwrap_or(false)
+}
+
+fn derive_active_review_status(slots: &[ActiveReviewEvidenceV1]) -> ActiveReviewOverallStatusV1 {
+    let reviewable_count = slots
+        .iter()
+        .filter(|slot| {
+            slot.active_eligible
+                && !slot.strict_blocking
+                && !slot.drift_blocking
+                && !slot.alert_blocking
+        })
+        .count();
+    if reviewable_count == 0 {
+        return ActiveReviewOverallStatusV1::NoneReviewable;
+    }
+    if reviewable_count == slots.len() {
+        return ActiveReviewOverallStatusV1::AllReviewable;
+    }
+    ActiveReviewOverallStatusV1::PartialReviewable
+}
+
+fn derive_signoff_alignment(
+    signoff: Option<&OperatorSignoffDecisionV1>,
+    snapshot: &BackendEvidenceSnapshotV1,
+    overall_status: &ActiveReviewOverallStatusV1,
+) -> ActiveReviewSignoffAlignmentV1 {
+    let Some(signoff) = signoff else {
+        return ActiveReviewSignoffAlignmentV1 {
+            aligned: false,
+            status_code: "SIGNOFF_MISSING".to_string(),
+        };
+    };
+
+    if signoff.supported_slot_set_digest != snapshot.supported_slot_set_digest
+        || signoff.policy_graph_digest_prefix != snapshot.policy_graph_digest_prefix
+        || signoff.manifest_digest_prefix != snapshot.manifest_digest_prefix
+    {
+        return ActiveReviewSignoffAlignmentV1 {
+            aligned: false,
+            status_code: "SIGNOFF_INPUT_MISMATCH".to_string(),
+        };
+    }
+
+    let expects_active_review =
+        !matches!(overall_status, ActiveReviewOverallStatusV1::NoneReviewable);
+    let decision_is_active_review =
+        signoff.decision == SignoffDecisionStateV1::ReadyForActiveReview;
+    if expects_active_review == decision_is_active_review {
+        return ActiveReviewSignoffAlignmentV1 {
+            aligned: true,
+            status_code: "ALIGNED".to_string(),
+        };
+    }
+
+    ActiveReviewSignoffAlignmentV1 {
+        aligned: false,
+        status_code: "SIGNOFF_DECISION_MISMATCH".to_string(),
+    }
+}
+
+fn append_active_review_snapshot_record(
+    workdir: &Path,
+    report: &AggregatedActiveReviewSnapshotV1,
+) -> Result<(), OpsError> {
+    let path = workdir
+        .join("out")
+        .join("records")
+        .join("active_review_snapshot_records.json");
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let mut all: Vec<ActiveReviewSnapshotRecordV1> = if path.exists() {
+        serde_json::from_str(&fs::read_to_string(&path)?).unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    let mut slots = report
+        .slots
+        .iter()
+        .map(|slot| ActiveReviewSnapshotSlotV1 {
+            slot_id: slot.slot_id.clone(),
+            reviewable: slot.active_eligible
+                && !slot.strict_blocking
+                && !slot.drift_blocking
+                && !slot.alert_blocking,
+        })
+        .collect::<Vec<_>>();
+    slots.sort_by(|a, b| a.slot_id.cmp(&b.slot_id));
+    all.push(ActiveReviewSnapshotRecordV1 {
+        invocation_id: now_secs(),
+        snapshot_digest_prefix: prefix_hex(&report.snapshot_digest, 16),
+        supported_slot_set_digest_prefix: report.supported_slot_set_digest.clone(),
+        slots,
+    });
+    fs::write(path, serde_json::to_vec_pretty(&all)?)?;
+    Ok(())
+}
+
+pub fn models_active_review_snapshot(
+    workdir: &Path,
+    out: &Path,
+) -> Result<AggregatedActiveReviewSnapshotV1, OpsError> {
+    let backend_snapshot = models_evidence_snapshot(workdir, None, None)?;
+    if backend_snapshot.slots.is_empty() {
+        return Err(OpsError::Invalid(
+            "ACTIVE_REVIEW_SLOT_SET_EMPTY: supported real-slot set cannot be empty".to_string(),
+        ));
+    }
+
+    let strict_snapshot = resolve_strict_evidence(
+        &workdir.join("out"),
+        &StrictEvidenceContextV1 {
+            run_id: None,
+            latest: true,
+            strict_required: true,
+            expected_policy_graph_digest_prefix: Some(
+                backend_snapshot.policy_graph_digest_prefix.clone(),
+            ),
+            expected_manifest_digest_prefix: Some(backend_snapshot.manifest_digest_prefix.clone()),
+            expected_supported_slot_set_digest_prefix: Some(
+                backend_snapshot.supported_slot_set_digest.clone(),
+            ),
+        },
+    );
+    let strict_blocking = matches!(
+        strict_snapshot.strict_status,
+        StrictEvidenceStatusV1::Fail | StrictEvidenceStatusV1::Missing
+    );
+    let alert_blocking = discover_alert_blocking(workdir);
+
+    let strict_digest_prefix = if strict_snapshot.snapshot_digest.is_empty() {
+        "missing".to_string()
+    } else {
+        prefix_hex(&strict_snapshot.snapshot_digest, 16)
+    };
+
+    let mut slots = backend_snapshot
+        .slots
+        .iter()
+        .map(|slot| {
+            let drift_blocking = matches!(slot.evidence.latest_drift_status, DriftStatusV1::Severe);
+            let mut remediation = BTreeSet::new();
+            for code in slot
+                .canonical_remediation_codes
+                .iter()
+                .chain(slot.remediation_codes.iter())
+            {
+                remediation.insert(code.clone());
+            }
+            if strict_blocking {
+                remediation.insert("run_strict_check".to_string());
+            }
+            if drift_blocking {
+                remediation.insert("run_drift_report".to_string());
+            }
+            if alert_blocking {
+                remediation.insert("inspect_active_alerts".to_string());
+            }
+
+            let primary_denial_code = if strict_blocking {
+                strict_snapshot
+                    .primary_denial_code
+                    .clone()
+                    .or(Some("STRICT_BLOCKING".to_string()))
+            } else if drift_blocking {
+                Some("DRIFT_BLOCKING".to_string())
+            } else if alert_blocking {
+                Some("ALERT_BLOCKING".to_string())
+            } else {
+                slot.denials
+                    .active
+                    .as_ref()
+                    .or(slot.denials.shadow.as_ref())
+                    .or(slot.denials.probe.as_ref())
+                    .map(|code| format!("{:?}", code))
+            };
+
+            let mut evidence = ActiveReviewEvidenceV1 {
+                slot_id: slot.slot_id.clone(),
+                target_hash_prefix: slot.target_hash_prefix.clone(),
+                manifest_digest_prefix: backend_snapshot.manifest_digest_prefix.clone(),
+                probe_ready: slot.readiness.probe_ready,
+                shadow_ready: slot.readiness.shadow_ready,
+                active_eligible: slot.readiness.active_eligible,
+                strict_blocking,
+                drift_blocking,
+                alert_blocking,
+                primary_denial_code,
+                remediation_codes: remediation
+                    .into_iter()
+                    .take(ACTIVE_REVIEW_REMEDIATION_MAX)
+                    .collect(),
+                contributing_evidence_digests: ActiveReviewContributingDigestsV1 {
+                    probe_report_digest_prefix: slot
+                        .evidence
+                        .latest_probe_report_digest_prefix
+                        .clone(),
+                    shadow_ready_digest_prefix: slot
+                        .evidence
+                        .latest_shadow_ready_digest_prefix
+                        .clone(),
+                    active_evidence_digest_prefix: slot
+                        .evidence
+                        .latest_active_evidence_digest_prefix
+                        .clone(),
+                    strict_evidence_digest_prefix: strict_digest_prefix.clone(),
+                },
+                evidence_digest: String::new(),
+            };
+            let mut digest_source = Vec::new();
+            digest_source.extend_from_slice(evidence.slot_id.as_bytes());
+            digest_source.extend_from_slice(evidence.target_hash_prefix.as_bytes());
+            digest_source.extend_from_slice(evidence.manifest_digest_prefix.as_bytes());
+            digest_source.extend_from_slice(if evidence.probe_ready { b"1" } else { b"0" });
+            digest_source.extend_from_slice(if evidence.shadow_ready { b"1" } else { b"0" });
+            digest_source.extend_from_slice(if evidence.active_eligible { b"1" } else { b"0" });
+            digest_source.extend_from_slice(if evidence.strict_blocking { b"1" } else { b"0" });
+            digest_source.extend_from_slice(if evidence.drift_blocking { b"1" } else { b"0" });
+            digest_source.extend_from_slice(if evidence.alert_blocking { b"1" } else { b"0" });
+            if let Some(code) = evidence.primary_denial_code.as_ref() {
+                digest_source.extend_from_slice(code.as_bytes());
+            }
+            for code in &evidence.remediation_codes {
+                digest_source.extend_from_slice(code.as_bytes());
+            }
+            digest_source.extend_from_slice(
+                evidence
+                    .contributing_evidence_digests
+                    .probe_report_digest_prefix
+                    .as_bytes(),
+            );
+            digest_source.extend_from_slice(
+                evidence
+                    .contributing_evidence_digests
+                    .shadow_ready_digest_prefix
+                    .as_bytes(),
+            );
+            digest_source.extend_from_slice(
+                evidence
+                    .contributing_evidence_digests
+                    .active_evidence_digest_prefix
+                    .as_bytes(),
+            );
+            digest_source.extend_from_slice(
+                evidence
+                    .contributing_evidence_digests
+                    .strict_evidence_digest_prefix
+                    .as_bytes(),
+            );
+            evidence.evidence_digest = sha256_hex(&digest_source);
+            evidence
+        })
+        .collect::<Vec<_>>();
+    slots.sort_by(|a, b| a.slot_id.cmp(&b.slot_id));
+
+    let overall_review_status = derive_active_review_status(&slots);
+    let signoff = discover_latest_operator_signoff(workdir);
+    let signoff_alignment =
+        derive_signoff_alignment(signoff.as_ref(), &backend_snapshot, &overall_review_status);
+
+    let mut digest_source = Vec::new();
+    digest_source.extend_from_slice(ACTIVE_REVIEW_EVIDENCE_SCHEMA_VERSION.to_string().as_bytes());
+    digest_source.extend_from_slice(backend_snapshot.supported_slot_set_digest.as_bytes());
+    digest_source.extend_from_slice(backend_snapshot.policy_graph_digest_prefix.as_bytes());
+    digest_source.extend_from_slice(backend_snapshot.manifest_digest_prefix.as_bytes());
+    digest_source.extend_from_slice(format!("{:?}", overall_review_status).as_bytes());
+    digest_source.extend_from_slice(signoff_alignment.status_code.as_bytes());
+    digest_source.extend_from_slice(if signoff_alignment.aligned {
+        b"1"
+    } else {
+        b"0"
+    });
+    for slot in &slots {
+        digest_source.extend_from_slice(slot.evidence_digest.as_bytes());
+    }
+
+    let report = AggregatedActiveReviewSnapshotV1 {
+        schema_version: ACTIVE_REVIEW_EVIDENCE_SCHEMA_VERSION,
+        supported_slot_set_digest: backend_snapshot.supported_slot_set_digest,
+        policy_graph_digest_prefix: backend_snapshot.policy_graph_digest_prefix,
+        manifest_digest_prefix: backend_snapshot.manifest_digest_prefix,
+        slots,
+        overall_review_status,
+        signoff_alignment,
+        snapshot_digest: sha256_hex(&digest_source),
+    };
+
+    if let Some(parent) = out.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(out, serde_json::to_vec_pretty(&report)?)?;
+    append_active_review_snapshot_record(workdir, &report)?;
+    Ok(report)
 }
 
 pub fn models_supported_set_review(
@@ -4502,6 +4894,123 @@ mod probe_tests {
                 candidate.denial_reason_code.as_deref(),
                 Some("UNKNOWN_SLOT_METADATA")
             );
+        }
+
+        #[test]
+        fn active_review_overall_status_reduction_is_deterministic() {
+            let none = vec![ActiveReviewEvidenceV1 {
+                slot_id: "a".to_string(),
+                target_hash_prefix: "h".to_string(),
+                manifest_digest_prefix: "m".to_string(),
+                probe_ready: true,
+                shadow_ready: true,
+                active_eligible: false,
+                strict_blocking: false,
+                drift_blocking: false,
+                alert_blocking: false,
+                primary_denial_code: Some("NoProbe".to_string()),
+                remediation_codes: vec![],
+                contributing_evidence_digests: ActiveReviewContributingDigestsV1 {
+                    probe_report_digest_prefix: "p".to_string(),
+                    shadow_ready_digest_prefix: "s".to_string(),
+                    active_evidence_digest_prefix: "a".to_string(),
+                    strict_evidence_digest_prefix: "x".to_string(),
+                },
+                evidence_digest: "d".to_string(),
+            }];
+            assert_eq!(
+                derive_active_review_status(&none),
+                ActiveReviewOverallStatusV1::NoneReviewable
+            );
+
+            let partial = vec![
+                ActiveReviewEvidenceV1 {
+                    active_eligible: true,
+                    ..none[0].clone()
+                },
+                ActiveReviewEvidenceV1 {
+                    slot_id: "b".to_string(),
+                    active_eligible: false,
+                    ..none[0].clone()
+                },
+            ];
+            assert_eq!(
+                derive_active_review_status(&partial),
+                ActiveReviewOverallStatusV1::PartialReviewable
+            );
+
+            let all = vec![
+                ActiveReviewEvidenceV1 {
+                    slot_id: "a".to_string(),
+                    active_eligible: true,
+                    ..none[0].clone()
+                },
+                ActiveReviewEvidenceV1 {
+                    slot_id: "b".to_string(),
+                    active_eligible: true,
+                    ..none[0].clone()
+                },
+            ];
+            assert_eq!(
+                derive_active_review_status(&all),
+                ActiveReviewOverallStatusV1::AllReviewable
+            );
+        }
+
+        #[test]
+        fn signoff_alignment_derivation_is_stable() {
+            let snapshot = BackendEvidenceSnapshotV1 {
+                schema_version: 1,
+                supported_slot_set_digest: "set".to_string(),
+                policy_graph_digest_prefix: "policy".to_string(),
+                manifest_digest_prefix: "manifest".to_string(),
+                slots: vec![],
+                snapshot_digest: "snap".to_string(),
+            };
+            let missing = derive_signoff_alignment(
+                None,
+                &snapshot,
+                &ActiveReviewOverallStatusV1::NoneReviewable,
+            );
+            assert!(!missing.aligned);
+            assert_eq!(missing.status_code, "SIGNOFF_MISSING");
+
+            let signoff = OperatorSignoffDecisionV1 {
+                schema_version: 1,
+                decision: SignoffDecisionStateV1::ReadyForActiveReview,
+                supported_slot_set_digest: "set".to_string(),
+                policy_graph_digest_prefix: "policy".to_string(),
+                manifest_digest_prefix: "manifest".to_string(),
+                evidence_snapshot_digest_prefix: "ev".to_string(),
+                active_review_snapshot_digest_prefix: None,
+                operator_report_digest_prefix: "op".to_string(),
+                gate_report_digests: crate::operator_signoff::GateReportDigestsV1 {
+                    v0: "x".to_string(),
+                    v1: "x".to_string(),
+                    v2: "x".to_string(),
+                    v3: "x".to_string(),
+                },
+                reasons: vec![],
+                remediation_codes: vec![],
+                canonical_remediation_codes: vec![],
+                decision_digest: "d".to_string(),
+            };
+
+            let aligned = derive_signoff_alignment(
+                Some(&signoff),
+                &snapshot,
+                &ActiveReviewOverallStatusV1::PartialReviewable,
+            );
+            assert!(aligned.aligned);
+            assert_eq!(aligned.status_code, "ALIGNED");
+
+            let mismatch = derive_signoff_alignment(
+                Some(&signoff),
+                &snapshot,
+                &ActiveReviewOverallStatusV1::NoneReviewable,
+            );
+            assert!(!mismatch.aligned);
+            assert_eq!(mismatch.status_code, "SIGNOFF_DECISION_MISMATCH");
         }
 
         #[test]

@@ -63,7 +63,13 @@ struct ArtifactSpec {
     enum_names: &'static [&'static str],
 }
 
-const ARTIFACT_SPECS: [ArtifactSpec; 7] = [
+const ARTIFACT_SPECS: [ArtifactSpec; 8] = [
+    ArtifactSpec {
+        artifact_id: "active_review_snapshot_v1",
+        file_rel: "runtime/ucf-ops/src/models_lifecycle.rs",
+        type_name: "AggregatedActiveReviewSnapshotV1",
+        enum_names: &["ActiveReviewOverallStatusV1"],
+    },
     ArtifactSpec {
         artifact_id: "backend_evidence_snapshot_v1",
         file_rel: "runtime/ucf-ops/src/models_lifecycle.rs",

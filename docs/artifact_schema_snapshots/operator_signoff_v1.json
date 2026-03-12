@@ -16,9 +16,11 @@
     "supported_slot_set_digest"
   ],
   "optional_fields": [
+    "active_review_snapshot_digest_prefix",
     "canonical_remediation_codes"
   ],
   "field_types": {
+    "active_review_snapshot_digest_prefix": "Option<String>",
     "canonical_remediation_codes": "Vec<String>",
     "decision": "SignoffDecisionStateV1",
     "decision_digest": "String",
