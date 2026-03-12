@@ -13,8 +13,14 @@ Default behavior:
 - Includes `diagnostics_bundle.zip` (redacted diagnostics collection).
 - Includes `docs/spec_snapshot.md` and `policy_graph_ref.json`.
 - Includes available top-level diagnostics artifacts (strict/gate/drift/docs lint) as optional entries.
+- Includes context evidence artifacts when available and consistent:
+  - `evidence/backend_evidence_snapshot.json`
+  - `evidence/active_review_snapshot.json`
+  - `evidence/operator_signoff.json`
+  - `evidence/backend_resolution_<second_slot>.json` (optional)
 - Enforces `50MB` default cap (`--max-bytes` overrides).
 - Drops optional artifacts first if over cap and records warnings in `BUGKIT_MANIFEST.json`.
+- `BUGKIT_MANIFEST.json` records additive evidence references with explicit status (`INCLUDED|MISSING|EXCLUDED`) and reason codes.
 
 ## Verify offline
 
@@ -27,6 +33,7 @@ The verifier:
 2. Verifies per-file `sha256` checksums from `BUGKIT_MANIFEST.json`.
 3. Verifies `bugkit_digest` integrity.
 4. Runs `ucf-ops repro verify` against bundled `repro_pack.zip`.
+5. Validates hashes for evidence artifacts marked as `included=true`.
 
 No network access is required.
 
