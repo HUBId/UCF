@@ -34,6 +34,7 @@ Include all of these invariants explicitly:
 - **Budget**: bounded compute, storage, and runtime costs.
 - **Boundedness**: finite queues/retries/state growth and explicit failure exits.
 - **Hardware-neutral**: prompts must not assume specific hardware models, machine classes, clusters, or vendor platforms in core requirements.
+- **Probe-first / shadow-first / fail-closed**: prompts must preserve conservative progression and explicit fail-closed behavior for unsupported or missing evidence paths.
 
 ## Safety invariants (must remain true)
 - **No decision, no action**.
