@@ -418,7 +418,10 @@ fn remediation_registry_doc_check(args: &DocsLintArgs) -> Result<DocsLintCheck, 
     let generated_body = fs::read_to_string(&generated)?;
     let _ = fs::remove_file(&generated);
 
-    if committed_body == generated_body {
+    let committed_norm = normalize_newlines(&committed_body);
+    let generated_norm = normalize_newlines(&generated_body);
+
+    if committed_norm == generated_norm {
         return Ok(DocsLintCheck {
             name: "remediation_registry_doc".to_string(),
             status: DocsLintStatus::Pass,
@@ -432,13 +435,17 @@ fn remediation_registry_doc_check(args: &DocsLintArgs) -> Result<DocsLintCheck, 
         status: DocsLintStatus::Fail,
         detail: format!(
             "docs/remediation_codes_v1.md differs from generated registry at line {}",
-            first_diff_line(&committed_body, &generated_body)
+            first_diff_line(&committed_norm, &generated_norm)
         ),
         remediation: Some(
             "run: cargo run -p ucf-ops -- docs remediation-codes --out docs/remediation_codes_v1.md && git add docs/remediation_codes_v1.md"
                 .to_string(),
         ),
     })
+}
+
+fn normalize_newlines(input: &str) -> String {
+    input.replace("\r\n", "\n")
 }
 
 fn v4_docs_consistency_check(args: &DocsLintArgs) -> Result<DocsLintCheck, OpsError> {

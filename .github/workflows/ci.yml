@@ -142,7 +142,7 @@ jobs:
         shell: pwsh
         run: |
           cargo run -p ucf-ops -- docs remediation-codes --out ./out/remediation_codes_v1.generated.md
-          git diff --no-index --exit-code docs/remediation_codes_v1.md ./out/remediation_codes_v1.generated.md
+          git diff --ignore-cr-at-eol --no-index --exit-code docs/remediation_codes_v1.md ./out/remediation_codes_v1.generated.md
       - name: Models verify (if manifest present)
         if: runner.os == 'Linux'
         shell: bash

@@ -12179,14 +12179,16 @@ fn remediation_registry_doc_portability_check(
     generate_remediation_codes_doc(&generated)?;
     let committed_body = fs::read_to_string(&committed)?;
     let generated_body = fs::read_to_string(&generated)?;
+    let committed_norm = committed_body.replace("\r\n", "\n");
+    let generated_norm = generated_body.replace("\r\n", "\n");
     Ok(PortabilityCommandCheck {
         name: name.to_string(),
-        status: if committed_body == generated_body {
+        status: if committed_norm == generated_norm {
             PortabilityGateStatus::Pass
         } else {
             PortabilityGateStatus::Fail
         },
-        detail: if committed_body == generated_body {
+        detail: if committed_norm == generated_norm {
             "registry_doc=up_to_date".to_string()
         } else {
             "registry_doc_drift remediation=cargo run -p ucf-ops -- docs remediation-codes --out docs/remediation_codes_v1.md"
