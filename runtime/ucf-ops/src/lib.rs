@@ -1523,6 +1523,29 @@ pub struct V3GateReportV1 {
     pub checks: Vec<V3GateCheckV1>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum V4GateOverallStatus {
+    Pass,
+    Fail,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct V4GateCheckV1 {
+    pub name: String,
+    pub status: GateStatus,
+    pub evidence_digest_prefixes: BTreeMap<String, String>,
+    pub remediation_hint_code: String,
+    pub notes: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct V4GateReportV1 {
+    pub schema_version: u16,
+    pub overall_status: V4GateOverallStatus,
+    pub checks: Vec<V4GateCheckV1>,
+}
+
 impl Default for ReadinessGateReport {
     fn default() -> Self {
         Self {
@@ -3080,6 +3103,621 @@ pub fn v3_gate(workdir: &Path, out: &Path) -> Result<V3GateReportV1, OpsError> {
     Ok(report)
 }
 
+pub fn v4_gate(workdir: &Path, out: &Path) -> Result<V4GateReportV1, OpsError> {
+    ensure_layout(workdir)?;
+    if let Some(parent) = out.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut checks = Vec::new();
+
+    let v0_out = workdir.join("out").join("v0_gate_report_v4_gate.json");
+    let v0 = v0_gate(
+        workdir,
+        &repo_root.join("fixtures/e2e/v0_flow_a.json"),
+        &v0_out,
+    )?;
+    checks.push(v4_gate_check(
+        "v0_gate_pass",
+        if matches!(v0.overall_status, V0GateOverallStatus::Pass) {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [(
+            "v0_gate_report".to_string(),
+            prefix_hex(&sha256_hex(&serde_json::to_vec(&v0)?), 16),
+        )],
+        "REMEDIATE_RUN_V0_GATE",
+        "NOTE_REQUIRED_V0",
+    ));
+
+    let v1_out = workdir.join("out").join("v1_gate_report_v4_gate.json");
+    let v1 = v1_gate(workdir, &v1_out)?;
+    checks.push(v4_gate_check(
+        "v1_gate_pass",
+        if matches!(v1.overall_status, V1GateOverallStatus::Pass) {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [(
+            "v1_gate_report".to_string(),
+            prefix_hex(&sha256_hex(&serde_json::to_vec(&v1)?), 16),
+        )],
+        "REMEDIATE_RUN_V1_GATE",
+        "NOTE_REQUIRED_V1",
+    ));
+
+    let v2_out = workdir.join("out").join("v2_gate_report_v4_gate.json");
+    let v2 = v2_gate(workdir, &v2_out)?;
+    checks.push(v4_gate_check(
+        "v2_gate_pass",
+        if matches!(v2.overall_status, V2GateOverallStatus::Pass) {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [(
+            "v2_gate_report".to_string(),
+            prefix_hex(&sha256_hex(&serde_json::to_vec(&v2)?), 16),
+        )],
+        "REMEDIATE_RUN_V2_GATE",
+        "NOTE_REQUIRED_V2",
+    ));
+
+    let v3_out = workdir.join("out").join("v3_gate_report_v4_gate.json");
+    let v3 = v3_gate(workdir, &v3_out)?;
+    checks.push(v4_gate_check(
+        "v3_gate_pass",
+        if matches!(v3.overall_status, V3GateOverallStatus::Pass) {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [(
+            "v3_gate_report".to_string(),
+            prefix_hex(&sha256_hex(&serde_json::to_vec(&v3)?), 16),
+        )],
+        "REMEDIATE_RUN_V3_GATE",
+        "NOTE_REQUIRED_V3",
+    ));
+
+    let slot_set = models_lifecycle::supported_real_slot_set_v1()?;
+    let second_slot = detect_second_slot_for_v3(&repo_root)?;
+    let slot_set_consistent = slot_set.slots.len() == 2
+        && slot_set
+            .slots
+            .iter()
+            .any(|slot| slot == ModelSlot::WorldJepa.as_str())
+        && slot_set
+            .slots
+            .iter()
+            .any(|slot| slot == second_slot.as_str());
+    checks.push(v4_gate_check(
+        "supported_slot_set_consistent",
+        if slot_set_consistent {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [
+            (
+                "slot_set_digest".to_string(),
+                prefix_hex(&slot_set.set_digest, 16),
+            ),
+            ("slots".to_string(), slot_set.slots.join(",")),
+        ],
+        "REMEDIATE_MODELS_CONSISTENCY",
+        "NOTE_REQUIRED_SLOT_SET",
+    ));
+
+    let models_consistency_out = workdir
+        .join("out")
+        .join("models_consistency_check_v4_gate.json");
+    let models_consistency = models_consistency_check(workdir, &models_consistency_out)?;
+    let optional_backend_states_check = v4_gate_check(
+        "optional_backend_states_consistent",
+        if models_consistency.status == "PASS" {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [
+            (
+                "consistency_report".to_string(),
+                prefix_hex(&sha256_hex(&serde_json::to_vec(&models_consistency)?), 16),
+            ),
+            (
+                "mismatch_count".to_string(),
+                models_consistency.mismatch_categories.len().to_string(),
+            ),
+        ],
+        "REMEDIATE_MODELS_CONSISTENCY",
+        "NOTE_OPTIONAL_BACKEND_STATE",
+    );
+
+    let backend_snapshot_out = workdir
+        .join("out")
+        .join("backend_evidence_snapshot_v4_gate.json");
+    let backend_snapshot = models_evidence_snapshot(workdir, None, None)?;
+    write_json(&backend_snapshot_out, &backend_snapshot)?;
+    checks.push(v4_gate_check(
+        "backend_evidence_snapshot_present",
+        if backend_snapshot.slots.is_empty() {
+            GateStatus::Fail
+        } else {
+            GateStatus::Pass
+        },
+        [(
+            "snapshot_digest".to_string(),
+            prefix_hex(&backend_snapshot.snapshot_digest, 16),
+        )],
+        "REMEDIATE_BACKEND_EVIDENCE_SNAPSHOT",
+        "NOTE_REQUIRED_EVIDENCE",
+    ));
+
+    let artifact_schema = check_artifact_schema_snapshots(&artifact_schema::ArtifactSchemaArgs {
+        repo_root: repo_root.clone(),
+        out_dir: repo_root.join("docs/artifact_schema_snapshots"),
+    })?;
+    checks.push(v4_gate_check(
+        "backend_evidence_snapshot_schema_stable",
+        if artifact_schema
+            .diffs
+            .iter()
+            .all(|d| d.artifact != "backend_evidence_snapshot_v1")
+        {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [(
+            "backend_schema_drift".to_string(),
+            artifact_schema
+                .diffs
+                .iter()
+                .filter(|d| d.artifact == "backend_evidence_snapshot_v1")
+                .count()
+                .to_string(),
+        )],
+        "REMEDIATE_ARTIFACT_SCHEMA_SNAPSHOT",
+        "NOTE_REQUIRED_SCHEMA",
+    ));
+
+    let operator_out = workdir.join("out").join("operator_report_v4_gate.json");
+    let operator = operator_report(
+        workdir,
+        &OperatorReportArgs {
+            run_id: None,
+            latest: true,
+        },
+        &operator_out,
+    )?;
+    checks.push(v4_gate_check(
+        "operator_report_present",
+        GateStatus::Pass,
+        [(
+            "operator_report_digest".to_string(),
+            prefix_hex(&operator.report_digest, 16),
+        )],
+        "REMEDIATE_OPERATOR_REPORT",
+        "NOTE_REQUIRED_OPERATOR",
+    ));
+
+    let signoff_out = workdir.join("out").join("operator_signoff_v4_gate.json");
+    let signoff = operator_signoff(
+        workdir,
+        &OperatorSignoffArgs {
+            run_id: None,
+            latest: true,
+            profile: "test".to_string(),
+        },
+        &signoff_out,
+    )?;
+    checks.push(v4_gate_check(
+        "operator_signoff_present",
+        GateStatus::Pass,
+        [(
+            "operator_signoff_digest".to_string(),
+            prefix_hex(&signoff.decision_digest, 16),
+        )],
+        "REMEDIATE_OPERATOR_SIGNOFF",
+        "NOTE_REQUIRED_SIGNOFF",
+    ));
+
+    let signoff_consistent = signoff
+        .evidence_snapshot_digest_prefix
+        .starts_with(&prefix_hex(&backend_snapshot.snapshot_digest, 16))
+        && signoff
+            .operator_report_digest_prefix
+            .starts_with(&prefix_hex(&operator.report_digest, 16));
+    checks.push(v4_gate_check(
+        "operator_signoff_consistent_with_evidence",
+        if signoff_consistent {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [
+            (
+                "snapshot_digest".to_string(),
+                signoff.evidence_snapshot_digest_prefix.clone(),
+            ),
+            (
+                "operator_digest".to_string(),
+                signoff.operator_report_digest_prefix.clone(),
+            ),
+        ],
+        "REMEDIATE_OPERATOR_SIGNOFF",
+        "NOTE_REQUIRED_SIGNOFF_ALIGNMENT",
+    ));
+
+    let remediation_doc = repo_root.join("docs/remediation_codes_v1.md");
+    let remediation_doc_present = remediation_doc.exists();
+    checks.push(v4_gate_check(
+        "remediation_registry_present",
+        if remediation_doc_present {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [(
+            "registry_doc".to_string(),
+            if remediation_doc_present {
+                "present".to_string()
+            } else {
+                "missing".to_string()
+            },
+        )],
+        "REMEDIATE_REMEDIATION_REGISTRY",
+        "NOTE_REQUIRED_REMEDIATION_REGISTRY",
+    ));
+
+    let generated_registry_dir = tempfile::tempdir()?;
+    let generated_registry = generated_registry_dir
+        .path()
+        .join("remediation_codes_v1.md");
+    generate_remediation_codes_doc(&generated_registry)?;
+    let registry_consistent = fs::read_to_string(&generated_registry)?.replace("\r\n", "\n")
+        == fs::read_to_string(&remediation_doc)
+            .unwrap_or_default()
+            .replace("\r\n", "\n")
+        && remediation_codes_aligned(&operator, &signoff, &backend_snapshot, &repo_root)?;
+    checks.push(v4_gate_check(
+        "remediation_registry_consistent_across_reports",
+        if registry_consistent {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [(
+            "registry_alignment".to_string(),
+            if registry_consistent {
+                "ok".to_string()
+            } else {
+                "mismatch".to_string()
+            },
+        )],
+        "REMEDIATE_REMEDIATION_REGISTRY",
+        "NOTE_REQUIRED_REMEDIATION_REGISTRY_ALIGNMENT",
+    ));
+
+    let strict_snapshot = resolve_strict_evidence(
+        &PathBuf::from("./out"),
+        &StrictEvidenceContextV1 {
+            run_id: None,
+            latest: true,
+            strict_required: true,
+            expected_policy_graph_digest_prefix: Some(
+                backend_snapshot.policy_graph_digest_prefix.clone(),
+            ),
+            expected_manifest_digest_prefix: Some(backend_snapshot.manifest_digest_prefix.clone()),
+            expected_supported_slot_set_digest_prefix: Some(
+                backend_snapshot.supported_slot_set_digest.clone(),
+            ),
+        },
+    );
+    checks.push(v4_gate_check(
+        "strict_evidence_present",
+        if matches!(
+            strict_snapshot.strict_status,
+            StrictEvidenceStatusV1::Pass | StrictEvidenceStatusV1::Fail
+        ) {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [(
+            "strict_snapshot_digest".to_string(),
+            prefix_hex(&strict_snapshot.snapshot_digest, 16),
+        )],
+        "REMEDIATE_STRICT_V3",
+        "NOTE_REQUIRED_STRICT_EVIDENCE",
+    ));
+
+    let strict_alignment = operator.sections.strict_section.strict_status
+        == strict_snapshot.strict_status
+        && operator.sections.strict_section.primary_denial_code
+            == strict_snapshot.primary_denial_code
+        && strict_operator_signoff_alignment(&strict_snapshot, &operator, &signoff);
+    checks.push(v4_gate_check(
+        "strict_operator_alignment_ok",
+        if strict_alignment {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [(
+            "strict_status".to_string(),
+            format!("{:?}", strict_snapshot.strict_status),
+        )],
+        "REMEDIATE_STRICT_OPERATOR_ALIGNMENT",
+        "NOTE_REQUIRED_STRICT_ALIGNMENT",
+    ));
+
+    checks.push(v4_gate_check(
+        "artifact_schema_snapshot_checks_pass",
+        if artifact_schema.ok {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [(
+            "schema_diff_count".to_string(),
+            artifact_schema.diffs.len().to_string(),
+        )],
+        "REMEDIATE_ARTIFACT_SCHEMA_SNAPSHOT",
+        "NOTE_REQUIRED_SCHEMA",
+    ));
+
+    let docs = docs_lint(&DocsLintArgs {
+        repo_root: repo_root.clone(),
+        policy_pack: repo_root.join("policies/packs/base_v1"),
+        overlay_pack: Some(repo_root.join("policies/packs/overlays/test")),
+        spec_snapshot: repo_root.join("docs/spec_snapshot.md"),
+        prompt_index: repo_root.join("docs/prompt_series_index.md"),
+        module_map: repo_root.join("docs/module_map.md"),
+        deploy_doc: repo_root.join("docs/deploy.md"),
+        artifact_schema_snapshot_dir: PathBuf::from("docs/artifact_schema_snapshots"),
+        mode: DocsLintMode::Strict,
+    })?;
+    let portability_out = workdir.join("out").join("portability_check_v4_gate.json");
+    let portability = portability_check(&portability_out)?;
+    checks.push(v4_gate_check(
+        "portability_docs_checks_pass",
+        if docs.ok && portability.deterministic_within_os {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [
+            (
+                "docs_lint".to_string(),
+                if docs.ok { "pass" } else { "fail" }.to_string(),
+            ),
+            (
+                "portability_check".to_string(),
+                if portability.deterministic_within_os {
+                    "pass"
+                } else {
+                    "fail"
+                }
+                .to_string(),
+            ),
+        ],
+        "REMEDIATE_PORTABILITY_DOCS",
+        "NOTE_REQUIRED_DOCS",
+    ));
+
+    checks.push(optional_backend_states_check);
+
+    let parity_path = workdir
+        .join("out")
+        .join(format!("{}_parity_report.json", second_slot.as_str()));
+    checks.push(if parity_path.exists() {
+        let parity = fs::read_to_string(&parity_path)
+            .ok()
+            .and_then(|body| serde_json::from_str::<SecondSlotParityReportV1>(&body).ok());
+        v4_gate_check(
+            "burn_parity_optional_path_consistent",
+            if parity.is_some() {
+                GateStatus::Pass
+            } else {
+                GateStatus::Fail
+            },
+            [(
+                "parity_report".to_string(),
+                parity
+                    .as_ref()
+                    .map(|r| prefix_hex(&r.report_digest, 16))
+                    .unwrap_or_else(|| "parse_error".to_string()),
+            )],
+            "REMEDIATE_SECOND_SLOT_PARITY",
+            "NOTE_OPTIONAL_BURN",
+        )
+    } else {
+        v4_gate_check(
+            "burn_parity_optional_path_consistent",
+            GateStatus::Skip,
+            [("parity_report".to_string(), "not_configured".to_string())],
+            "REMEDIATE_SECOND_SLOT_PARITY",
+            "NOTE_OPTIONAL_BURN",
+        )
+    });
+
+    let overall_status = if checks
+        .iter()
+        .all(|check| matches!(check.status, GateStatus::Pass | GateStatus::Skip))
+    {
+        V4GateOverallStatus::Pass
+    } else {
+        V4GateOverallStatus::Fail
+    };
+
+    let report = V4GateReportV1 {
+        schema_version: 1,
+        overall_status,
+        checks,
+    };
+    write_json(out, &report)?;
+    Ok(report)
+}
+
+fn strict_operator_signoff_alignment(
+    strict_snapshot: &StrictEvidenceSnapshotV1,
+    operator: &ConsolidatedOperatorReportV1,
+    signoff: &OperatorSignoffDecisionV1,
+) -> bool {
+    if matches!(strict_snapshot.strict_status, StrictEvidenceStatusV1::Fail)
+        && operator.sections.strict_section.status != OperatorStatus::Fail
+    {
+        return false;
+    }
+    if matches!(
+        strict_snapshot.strict_status,
+        StrictEvidenceStatusV1::Missing
+    ) && operator.sections.strict_section.status != OperatorStatus::Missing
+    {
+        return false;
+    }
+    if let Some(primary) = strict_snapshot.primary_denial_code.as_ref() {
+        if !signoff.reasons.iter().any(|reason| reason == primary) {
+            return false;
+        }
+    }
+    true
+}
+
+fn remediation_codes_aligned(
+    operator: &ConsolidatedOperatorReportV1,
+    signoff: &OperatorSignoffDecisionV1,
+    snapshot: &BackendEvidenceSnapshotV1,
+    repo_root: &Path,
+) -> Result<bool, OpsError> {
+    let registry = fs::read_to_string(repo_root.join("docs/remediation_codes_v1.md"))?;
+    let mut codes = BTreeSet::new();
+    for code in &operator.canonical_remediation_codes {
+        codes.insert(code.clone());
+    }
+    for code in &signoff.canonical_remediation_codes {
+        codes.insert(code.clone());
+    }
+    for slot in &snapshot.slots {
+        for code in &slot.canonical_remediation_codes {
+            codes.insert(code.clone());
+        }
+    }
+    Ok(codes.iter().all(|code| registry.contains(code)))
+}
+
+fn v4_gate_check(
+    name: &str,
+    status: GateStatus,
+    evidence: impl IntoIterator<Item = (String, String)>,
+    remediation_hint_code: &str,
+    notes: &str,
+) -> V4GateCheckV1 {
+    V4GateCheckV1 {
+        name: name.to_string(),
+        status,
+        evidence_digest_prefixes: bounded_evidence(evidence),
+        remediation_hint_code: remediation_hint_code.to_string(),
+        notes: notes.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod v4_gate_tests {
+    use super::*;
+
+    #[test]
+    fn v4_gate_check_order_is_fixed() {
+        let checks = vec![
+            "v0_gate_pass",
+            "v1_gate_pass",
+            "v2_gate_pass",
+            "v3_gate_pass",
+            "supported_slot_set_consistent",
+            "backend_evidence_snapshot_present",
+            "backend_evidence_snapshot_schema_stable",
+            "operator_report_present",
+            "operator_signoff_present",
+            "operator_signoff_consistent_with_evidence",
+            "remediation_registry_present",
+            "remediation_registry_consistent_across_reports",
+            "strict_evidence_present",
+            "strict_operator_alignment_ok",
+            "artifact_schema_snapshot_checks_pass",
+            "portability_docs_checks_pass",
+            "optional_backend_states_consistent",
+            "burn_parity_optional_path_consistent",
+        ];
+        let report = V4GateReportV1 {
+            schema_version: 1,
+            overall_status: V4GateOverallStatus::Pass,
+            checks: checks
+                .iter()
+                .map(|name| v4_gate_check(name, GateStatus::Pass, [], "REMEDIATE", "NOTE"))
+                .collect(),
+        };
+        let names: Vec<String> = report.checks.into_iter().map(|c| c.name).collect();
+        assert_eq!(names, checks);
+    }
+
+    #[test]
+    fn v4_gate_report_serialization_is_deterministic() {
+        let report = V4GateReportV1 {
+            schema_version: 1,
+            overall_status: V4GateOverallStatus::Pass,
+            checks: vec![
+                v4_gate_check(
+                    "a",
+                    GateStatus::Pass,
+                    [("k".to_string(), "v".to_string())],
+                    "REMEDIATE_A",
+                    "NOTE_A",
+                ),
+                v4_gate_check(
+                    "b",
+                    GateStatus::Skip,
+                    [("x".to_string(), "y".to_string())],
+                    "REMEDIATE_B",
+                    "NOTE_B",
+                ),
+            ],
+        };
+        let a = serde_json::to_vec(&report).expect("serialize a");
+        let b = serde_json::to_vec(&report).expect("serialize b");
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn v4_gate_normalization_fail_closed() {
+        let report = V4GateReportV1 {
+            schema_version: 1,
+            overall_status: V4GateOverallStatus::Fail,
+            checks: vec![
+                v4_gate_check(
+                    "required",
+                    GateStatus::Fail,
+                    [],
+                    "REMEDIATE",
+                    "NOTE_REQUIRED",
+                ),
+                v4_gate_check(
+                    "optional",
+                    GateStatus::Skip,
+                    [],
+                    "REMEDIATE",
+                    "NOTE_OPTIONAL",
+                ),
+            ],
+        };
+        assert!(matches!(report.overall_status, V4GateOverallStatus::Fail));
+    }
+}
+
 fn detect_second_slot_for_v3(repo_root: &Path) -> Result<ModelSlot, OpsError> {
     let body = fs::read_to_string(repo_root.join("docs/series_state_snapshot.md"))?;
     let mut selected = None;
@@ -3116,6 +3754,25 @@ fn v3_gate_check(
     notes: &str,
 ) -> V3GateCheckV1 {
     V3GateCheckV1 {
+        name: name.to_string(),
+        status,
+        evidence_digest_prefixes: bounded_evidence(evidence),
+        remediation_hint_code: remediation_hint_code.to_string(),
+        canonical_remediation_codes: crate::remediation::canonical_from_legacy_code(
+            remediation_hint_code,
+        ),
+        notes: notes.to_string(),
+    }
+}
+
+fn v2_gate_check(
+    name: &str,
+    status: GateStatus,
+    evidence: impl IntoIterator<Item = (String, String)>,
+    remediation_hint_code: &str,
+    notes: &str,
+) -> V2GateCheckV1 {
+    V2GateCheckV1 {
         name: name.to_string(),
         status,
         evidence_digest_prefixes: bounded_evidence(evidence),
@@ -3196,25 +3853,6 @@ fn v2_shadow_no_impact_check(workdir: &Path, slot: ModelSlot, note: &str) -> V2G
             "REMEDIATE_SHADOW_NO_IMPACT",
             "NOTE_REQUIRED_SHADOW",
         ),
-    }
-}
-
-fn v2_gate_check(
-    name: &str,
-    status: GateStatus,
-    evidence: impl IntoIterator<Item = (String, String)>,
-    remediation_hint_code: &str,
-    notes: &str,
-) -> V2GateCheckV1 {
-    V2GateCheckV1 {
-        name: name.to_string(),
-        status,
-        evidence_digest_prefixes: bounded_evidence(evidence),
-        remediation_hint_code: remediation_hint_code.to_string(),
-        canonical_remediation_codes: crate::remediation::canonical_from_legacy_code(
-            remediation_hint_code,
-        ),
-        notes: notes.to_string(),
     }
 }
 

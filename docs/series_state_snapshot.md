@@ -10,13 +10,13 @@
 - **v1:** complete.
 - **v2:** complete (`ucf-ops v2 gate` overall PASS recorded at Prompt 198).
 - **v3:** complete (`ucf-ops v3 gate` overall PASS recorded at Prompt 208).
-- **v4:** not started yet.
+- **v4:** complete when `ucf-ops v4 gate` reports overall PASS.
 - **Queue policy:** immediate queue remains capped to 10 prompts.
 
 ## Last executed prompt / resume point
-- Last executed prompt ID: **209**.
-- Next prompt ID: **210**.
-- Resume from: **`PROMPT 210`**.
+- Last executed prompt ID: **218**.
+- Next prompt ID: **219**.
+- Resume from: **`PROMPT 219`**.
 - Numbering remains monotonic and append-only.
 
 ## Immediate next prompts (capped to 10)
@@ -24,15 +24,15 @@ Reference: `docs/next_10_prompts.md`
 
 | Prompt ID | Title (short) | v4 class | Status |
 |---:|---|---|---|
-| 210 | Active evidence/signoff consistency for supported real slots | MUST | planned |
-| 211 | Optional second-slot backend parity extension | NICE | planned |
-| 212 | Unified backend evidence snapshot/spec export refresh | MUST | planned |
-| 213 | Stricter operator signoff automation from consolidated reports | MUST | planned |
-| 214 | Normalized remediation-code registry across reports/gates | MUST | planned |
-| 215 | Report/schema snapshot checks for v4 artifacts | MUST | planned |
-| 216 | Portability/docs refresh for expanded evidence paths | NICE | planned |
-| 217 | Strict-mode/operator interplay hardening | MUST | planned |
-| 218 | v4 gate schema and orchestration | MUST | planned |
+| 210 | Active evidence/signoff consistency for supported real slots | MUST | complete |
+| 211 | Optional second-slot backend parity extension | NICE | complete |
+| 212 | Unified backend evidence snapshot/spec export refresh | MUST | complete |
+| 213 | Stricter operator signoff automation from consolidated reports | MUST | complete |
+| 214 | Normalized remediation-code registry across reports/gates | MUST | complete |
+| 215 | Report/schema snapshot checks for v4 artifacts | MUST | complete |
+| 216 | Portability/docs refresh for expanded evidence paths | NICE | complete |
+| 217 | Strict-mode/operator interplay hardening | MUST | complete |
+| 218 | v4 gate schema and orchestration | MUST | complete |
 | 219 | v4 wrap and next-anchor governance | MUST | planned |
 
 ## Series control notes
@@ -40,6 +40,7 @@ Reference: `docs/next_10_prompts.md`
 - v1 completion requirement: **`ucf-ops v1 gate` overall PASS**.
 - v2 completion requirement: **`ucf-ops v2 gate` overall PASS**.
 - v3 completion requirement: **`ucf-ops v3 gate` overall PASS at Prompt 208**.
+- v4 is complete once `ucf-ops v4 gate` is PASS; the next anchor only advances after this condition.
 - v4 remains hardware-neutral, offline-first, probe-first, shadow-first, and fail-closed.
 - Prompts are classified as MUST/NICE/DEFERRED at authoring time.
 
