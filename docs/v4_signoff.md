@@ -97,3 +97,7 @@ A v4 `PASS` does **not** imply:
 - GPU/remote compute/training readiness
 
 v4 remains a conservative consistency/signoff hardening phase.
+
+## Post-v4 continuation note
+
+After `ucf-ops v4 gate` reports PASS, continue execution at **Prompt 220** via `docs/next_10_prompts.md`.
