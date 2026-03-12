@@ -11236,6 +11236,11 @@ pub struct PortabilityReportV1 {
     pub docs_lint: PortabilityCommandCheck,
     pub path_scan: PortabilityCommandCheck,
     pub hardware_scan: PortabilityCommandCheck,
+    pub hidden_network_scan: PortabilityCommandCheck,
+    pub artifact_schema_snapshot_check: PortabilityCommandCheck,
+    pub backend_evidence_snapshot_smoke: PortabilityCommandCheck,
+    pub operator_signoff_smoke: PortabilityCommandCheck,
+    pub remediation_registry_doc_check: PortabilityCommandCheck,
     pub v0_gate: PortabilityCommandCheck,
     pub v1_gate: PortabilityCommandCheck,
     pub v2_gate: PortabilityCommandCheck,
@@ -11845,6 +11850,25 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         hardware_scan(Path::new(".")),
         "./out/hardware_scan_report.json",
     )?;
+    let hidden_network_scan = net_deps_check("hidden_network_scan", "./out/net_deps.json")?;
+    let artifact_schema_snapshot_check = artifact_schema_snapshot_portability_check(
+        "artifact_schema_snapshot_check",
+        "./out/artifact_schema_check.json",
+    )?;
+    let backend_evidence_snapshot_smoke = models_evidence_snapshot_smoke(
+        workdir,
+        "backend_evidence_snapshot_smoke",
+        "./out/backend_evidence_snapshot.json",
+    );
+    let operator_signoff_smoke = operator_signoff_smoke(
+        workdir,
+        "operator_signoff_smoke",
+        "./out/operator_signoff.json",
+    );
+    let remediation_registry_doc_check = remediation_registry_doc_portability_check(
+        "remediation_registry_doc_check",
+        "docs/remediation_codes_v1.md",
+    )?;
 
     let v0_out = PathBuf::from("./out/v0_gate_report.json");
     let v0_gate = gate_check(
@@ -11926,6 +11950,13 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
     let command_matrix = vec![
         matrix_cmd("linux", "cargo test --workspace --all-targets"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json"),
+        matrix_cmd("linux", "cargo run -p ucf-ops -- audit path-scan"),
+        matrix_cmd("linux", "cargo run -p ucf-ops -- audit hardware-scan"),
+        matrix_cmd("linux", "cargo run -p ucf-ops -- audit net-deps --out ./out/net_deps.json"),
+        matrix_cmd("linux", "cargo run -p ucf-ops -- spec artifact-schemas-check --out ./out/artifact_schema_check.json"),
+        matrix_cmd("linux", "cargo run -p ucf-ops -- models evidence-snapshot --out ./out/backend_evidence_snapshot.json"),
+        matrix_cmd("linux", "cargo run -p ucf-ops -- operator signoff --out ./out/operator_signoff.json"),
+        matrix_cmd("linux", "cargo run -p ucf-ops -- docs remediation-codes --out docs/remediation_codes_v1.md"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- v0 gate --scenario fixtures/e2e/v0_flow_a.json --out ./out/v0_gate_report.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- v1 gate --out ./out/v1_gate_report.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- v2 gate --out ./out/v2_gate_report.json"),
@@ -11934,6 +11965,12 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         matrix_cmd("linux", "cargo run -p ucf-ops -- operator report --out ./out/operator_report.json"),
         matrix_cmd("windows", "cargo test --workspace --all-targets"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json"),
+        matrix_cmd("windows", "cargo run -p ucf-ops -- audit path-scan"),
+        matrix_cmd("windows", "cargo run -p ucf-ops -- audit hardware-scan"),
+        matrix_cmd("windows", "cargo run -p ucf-ops -- spec artifact-schemas-check --out ./out/artifact_schema_check.json"),
+        matrix_cmd("windows", "cargo run -p ucf-ops -- models evidence-snapshot --out ./out/backend_evidence_snapshot.json"),
+        matrix_cmd("windows", "cargo run -p ucf-ops -- operator signoff --out ./out/operator_signoff.json"),
+        matrix_cmd("windows", "cargo run -p ucf-ops -- docs remediation-codes --out docs/remediation_codes_v1.md"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- v0 gate --scenario fixtures/e2e/v0_flow_a.json --out ./out/v0_gate_report.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- v1 gate --out ./out/v1_gate_report.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- v2 gate --out ./out/v2_gate_report.json"),
@@ -11947,6 +11984,11 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         docs_lint,
         path_scan,
         hardware_scan,
+        hidden_network_scan,
+        artifact_schema_snapshot_check,
+        backend_evidence_snapshot_smoke,
+        operator_signoff_smoke,
+        remediation_registry_doc_check,
         v0_gate,
         v1_gate,
         v2_gate,
@@ -11961,6 +12003,199 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
     }
     fs::write(out, serde_json::to_vec_pretty(&report)?)?;
     Ok(report)
+}
+
+fn net_deps_check(name: &str, out: &str) -> Result<PortabilityCommandCheck, OpsError> {
+    let out_path = PathBuf::from(out);
+    let allowlist = PathBuf::from("docs/network_allowlist.toml");
+    match net_deps_audit(Path::new("."), &allowlist) {
+        Ok(report) => {
+            if let Some(parent) = out_path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(&out_path, serde_json::to_vec_pretty(&report)?)?;
+            Ok(PortabilityCommandCheck {
+                name: name.to_string(),
+                status: if report.violations.is_empty() {
+                    PortabilityGateStatus::Pass
+                } else {
+                    PortabilityGateStatus::Fail
+                },
+                detail: format!("violations={}", report.violations.len()),
+                out: Some(out.to_string()),
+            })
+        }
+        Err(err) => Ok(PortabilityCommandCheck {
+            name: name.to_string(),
+            status: PortabilityGateStatus::Fail,
+            detail: err.to_string(),
+            out: Some(out.to_string()),
+        }),
+    }
+}
+
+fn artifact_schema_snapshot_portability_check(
+    name: &str,
+    out: &str,
+) -> Result<PortabilityCommandCheck, OpsError> {
+    let out_path = PathBuf::from(out);
+    let report = check_artifact_schema_snapshots(&ArtifactSchemaArgs {
+        repo_root: PathBuf::from("."),
+        out_dir: PathBuf::from("docs/artifact_schema_snapshots"),
+    })?;
+    if let Some(parent) = out_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(&out_path, serde_json::to_vec_pretty(&report)?)?;
+    let detail = if report.ok {
+        format!(
+            "ok=true covered_artifacts={}",
+            report.covered_artifacts.len()
+        )
+    } else {
+        report
+            .diffs
+            .iter()
+            .map(|d| format!("{}:{:?}:{}", d.artifact, d.drift_kind, d.summary))
+            .collect::<Vec<_>>()
+            .join(" | ")
+    };
+    Ok(PortabilityCommandCheck {
+        name: name.to_string(),
+        status: if report.ok {
+            PortabilityGateStatus::Pass
+        } else {
+            PortabilityGateStatus::Fail
+        },
+        detail,
+        out: Some(out.to_string()),
+    })
+}
+
+fn models_evidence_snapshot_smoke(
+    workdir: &Path,
+    name: &str,
+    out: &str,
+) -> PortabilityCommandCheck {
+    let out_path = PathBuf::from(out);
+    match models_evidence_snapshot(workdir, None, None) {
+        Ok(report) => {
+            let write_result = (|| -> Result<(), OpsError> {
+                if let Some(parent) = out_path.parent() {
+                    fs::create_dir_all(parent)?;
+                }
+                fs::write(&out_path, serde_json::to_vec_pretty(&report)?)?;
+                Ok(())
+            })();
+            match write_result {
+                Ok(()) => PortabilityCommandCheck {
+                    name: name.to_string(),
+                    status: PortabilityGateStatus::Pass,
+                    detail: format!(
+                        "schema={} slots={}",
+                        report.schema_version,
+                        report.slots.len()
+                    ),
+                    out: Some(out.to_string()),
+                },
+                Err(err) => PortabilityCommandCheck {
+                    name: name.to_string(),
+                    status: PortabilityGateStatus::Fail,
+                    detail: err.to_string(),
+                    out: Some(out.to_string()),
+                },
+            }
+        }
+        Err(err) => {
+            let msg = err.to_string();
+            if msg.contains("active model path") || msg.contains("manifest") {
+                PortabilityCommandCheck {
+                    name: name.to_string(),
+                    status: PortabilityGateStatus::Skip,
+                    detail: format!("optional backend path unavailable: {msg}"),
+                    out: Some(out.to_string()),
+                }
+            } else {
+                PortabilityCommandCheck {
+                    name: name.to_string(),
+                    status: PortabilityGateStatus::Fail,
+                    detail: msg,
+                    out: Some(out.to_string()),
+                }
+            }
+        }
+    }
+}
+
+fn operator_signoff_smoke(workdir: &Path, name: &str, out: &str) -> PortabilityCommandCheck {
+    let out_path = PathBuf::from(out);
+    match operator_signoff(
+        workdir,
+        &OperatorSignoffArgs {
+            run_id: None,
+            latest: false,
+            profile: "test".to_string(),
+        },
+        &out_path,
+    ) {
+        Ok(report) => PortabilityCommandCheck {
+            name: name.to_string(),
+            status: PortabilityGateStatus::Pass,
+            detail: format!(
+                "decision={:?} reasons={}",
+                report.decision,
+                report.reasons.len()
+            ),
+            out: Some(out.to_string()),
+        },
+        Err(err) => {
+            let msg = err.to_string();
+            if msg.contains("missing") {
+                PortabilityCommandCheck {
+                    name: name.to_string(),
+                    status: PortabilityGateStatus::Skip,
+                    detail: format!("optional report path unavailable: {msg}"),
+                    out: Some(out.to_string()),
+                }
+            } else {
+                PortabilityCommandCheck {
+                    name: name.to_string(),
+                    status: PortabilityGateStatus::Fail,
+                    detail: msg,
+                    out: Some(out.to_string()),
+                }
+            }
+        }
+    }
+}
+
+fn remediation_registry_doc_portability_check(
+    name: &str,
+    out: &str,
+) -> Result<PortabilityCommandCheck, OpsError> {
+    let committed = PathBuf::from(out);
+    let tmp = tempfile::tempdir()?;
+    let generated = tmp.path().join("remediation_codes_v1.md");
+    generate_remediation_codes_doc(&generated)?;
+    let committed_body = fs::read_to_string(&committed)?;
+    let generated_body = fs::read_to_string(&generated)?;
+    let committed_norm = committed_body.replace("\r\n", "\n");
+    let generated_norm = generated_body.replace("\r\n", "\n");
+    Ok(PortabilityCommandCheck {
+        name: name.to_string(),
+        status: if committed_norm == generated_norm {
+            PortabilityGateStatus::Pass
+        } else {
+            PortabilityGateStatus::Fail
+        },
+        detail: if committed_norm == generated_norm {
+            "registry_doc=up_to_date".to_string()
+        } else {
+            "registry_doc_drift remediation=cargo run -p ucf-ops -- docs remediation-codes --out docs/remediation_codes_v1.md"
+                .to_string()
+        },
+        out: Some(out.to_string()),
+    })
 }
 
 fn matrix_cmd(os: &str, command: &str) -> PortabilityMatrixEntry {

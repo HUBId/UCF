@@ -17,15 +17,21 @@ See `docs/feature_matrix.md` for details.
 - Spec snapshot: `cargo run -p ucf-ops -- spec snapshot --policy policies/packs/base_v1 --overlay policies/packs/overlays/test --out docs/spec_snapshot.md`
 - Docs lint (CI-blocking): `cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json`
 
-## Portability/docs gate (Linux + Windows, v3 refresh)
+## Portability/docs gate (Linux + Windows, v4 refresh)
+- `cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json`
+- `cargo run -p ucf-ops -- audit path-scan`
+- `cargo run -p ucf-ops -- audit hardware-scan`
+- `cargo run -p ucf-ops -- audit net-deps --out ./out/net_deps.json` (Linux lane)
+- `cargo run -p ucf-ops -- spec artifact-schemas-check --out ./out/artifact_schema_check.json`
+- `cargo run -p ucf-ops -- models evidence-snapshot --out ./out/backend_evidence_snapshot.json`
+- `cargo run -p ucf-ops -- operator signoff --out ./out/operator_signoff.json`
+- `cargo run -p ucf-ops -- docs remediation-codes --out ./out/remediation_codes_v1.generated.md`
 - `cargo run -p ucf-ops -- v0 gate --scenario fixtures/e2e/v0_flow_a.json --out ./out/v0_gate_report.json`
 - `cargo run -p ucf-ops -- v1 gate --out ./out/v1_gate_report.json`
 - `cargo run -p ucf-ops -- v2 gate --out ./out/v2_gate_report.json`
 - `cargo run -p ucf-ops -- models eligibility --out ./out/models_eligibility_report.json`
 - `cargo run -p ucf-ops -- strict check --strict --out ./out/strict_check.json`
 - `cargo run -p ucf-ops -- operator report --out ./out/operator_report.json`
-- `cargo run -p ucf-ops -- audit hardware-scan`
-- `cargo run -p ucf-ops -- audit path-scan`
 - `cargo run -p ucf-ops -- portability report --out ./out/portability_report.json`
 
 ## Architecture

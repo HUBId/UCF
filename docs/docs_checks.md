@@ -63,6 +63,23 @@ Modes:
      git add docs/artifact_schema_snapshots
      ```
 
+7. **Remediation registry doc up-to-date**
+   - Regenerates `docs/remediation_codes_v1.md` from the canonical remediation registry and compares against the committed file.
+   - Fails when generated output differs (stale registry docs are blocking).
+   - Remediation:
+     ```bash
+     cargo run -p ucf-ops -- docs remediation-codes --out docs/remediation_codes_v1.md
+     git add docs/remediation_codes_v1.md
+     ```
+
+8. **v4 docs linkage consistency**
+   - Requires presence and portability/docs linkage for:
+     - `docs/backend_evidence_snapshot_v4.md`
+     - `docs/operator_signoff_v4.md`
+     - `docs/remediation_codes_v1.md`
+     - `docs/artifact_schema_snapshots.md`
+   - Also requires Prompt 216 tracking in `docs/series_state_snapshot.md`.
+
 ## Report output
 
 When `--out` is provided, lint writes deterministic JSON with per-check status and remediation hints.
