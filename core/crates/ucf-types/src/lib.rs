@@ -5,6 +5,7 @@ use std::fmt;
 
 pub mod error_codes;
 pub mod record_schema;
+pub mod remediation_codes;
 
 pub const CANONICAL_QNAN_BITS_F32: u32 = 0x7FC0_0000;
 pub const CANONICAL_UNIT_QUANT_MAX: u16 = u16::MAX;

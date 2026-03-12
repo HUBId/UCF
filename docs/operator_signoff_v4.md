@@ -52,3 +52,7 @@ Signoff bleibt auf den aktuell unterstützten Real-Slot-Scope begrenzt:
 - plus genau ein zweiter Slot (`sae` oder `ssm`)
 
 Wenn dieser Scope nicht konsistent nachweisbar ist, lautet die Entscheidung `NOT_READY` mit stabilen Block-Codes.
+
+## Canonical remediation registry
+
+Operator signoff now emits `canonical_remediation_codes` derived from the shared RemediationCodeRegistryV1 mapping layer.

@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::drift::DriftSlotReportV1;
+use crate::remediation::merge_canonical_remediations;
 use crate::{
     AggregatedEligibilityReportV1, AlertsReportV1, BackendEvidenceSnapshotV1, DriftReportV1,
     GateStatus, OpsError, StrictCheckReport, V0GateOverallStatus, V0GateReportV1,
@@ -36,6 +37,8 @@ pub struct ConsolidatedOperatorReportV1 {
     pub manifest_digest_prefix: Option<String>,
     pub sections: OperatorSectionsV1,
     pub remediation_codes: Vec<String>,
+    #[serde(default)]
+    pub canonical_remediation_codes: Vec<String>,
     pub report_digest: String,
 }
 
@@ -250,8 +253,11 @@ pub fn operator_report(
         manifest_digest_prefix,
         sections,
         remediation_codes: remediation.into_iter().take(REMEDIATION_MAX).collect(),
+        canonical_remediation_codes: Vec::new(),
         report_digest: String::new(),
     };
+    report.canonical_remediation_codes =
+        merge_canonical_remediations(report.remediation_codes.iter(), REMEDIATION_MAX);
     report.report_digest = report_digest(&report)?;
 
     if let Some(parent) = out.parent() {
@@ -785,6 +791,7 @@ mod tests {
                     status: StrictCheckStatus::Fail,
                     error_codes: vec!["x".to_string()],
                     remediation: "fix".to_string(),
+                    canonical_remediation_codes: vec![],
                 }],
                 v1_checks: Vec::new(),
                 v3: None,
@@ -825,6 +832,7 @@ mod tests {
                     denial_reason_shadow: None,
                     denial_reason_active: Some("need_more_evidence".to_string()),
                     remediation_codes: vec![],
+                    canonical_remediation_codes: vec![],
                     status_digest: "sd1".to_string(),
                 },
                 crate::UnifiedEligibilityStatusV1 {
@@ -844,6 +852,7 @@ mod tests {
                     denial_reason_shadow: None,
                     denial_reason_active: None,
                     remediation_codes: vec![],
+                    canonical_remediation_codes: vec![],
                     status_digest: "sd2".to_string(),
                 },
             ],
@@ -966,6 +975,7 @@ mod tests {
                 gates_section: normalize_gates(None, None, None),
             },
             remediation_codes: vec!["run_models_eligibility".to_string()],
+            canonical_remediation_codes: vec![],
             report_digest: "digest".to_string(),
         };
         let a = serde_json::to_vec(&report).expect("serialize a");

@@ -66,3 +66,7 @@ cargo run -p ucf-ops -- operator signoff --out ./out/operator_signoff.json
 ```
 
 Die Signoff-Entscheidung (`READY_FOR_SHADOW`, `READY_FOR_ACTIVE_REVIEW`, `NOT_READY`) bleibt read-only und aktiviert nichts automatisch. Details: `docs/operator_signoff_v4.md`.
+
+## Canonical remediation registry
+
+Consolidated operator report now includes top-level `canonical_remediation_codes`, aligned with strict/eligibility/gates/signoff surfaces.

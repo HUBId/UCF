@@ -677,8 +677,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         std::process::exit(2);
                     }
                 }
+                "remediation-codes" => {
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("docs/remediation_codes_v1.md"));
+                    ucf_ops::generate_remediation_codes_doc(&out)?;
+                    println!("remediation_codes_doc={}", out.display());
+                }
                 _ => {
-                    return Err("usage: ucf-ops docs lint [--strict|--warn] [--out <path>] [--policy <dir>] [--overlay <dir>|--no-overlay] [--spec <path>] [--prompt-index <path>] [--module-map <path>]".into())
+                    return Err("usage: ucf-ops docs lint [--strict|--warn] [--out <path>] [--policy <dir>] [--overlay <dir>|--no-overlay] [--spec <path>] [--prompt-index <path>] [--module-map <path>] | docs remediation-codes [--out <path>]".into())
                 }
             }
         }

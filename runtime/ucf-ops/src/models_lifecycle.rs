@@ -11,6 +11,7 @@ use ucf_compute::ModelSlot;
 use ucf_ess::v1::{AuditPayload, ExperiencePayload};
 use ucf_replay::load_fixture_records;
 
+use crate::remediation::merge_canonical_remediations;
 use crate::second_slot_parity::{OptionalBackendSupportStateV1, SecondSlotParityReportV1};
 use crate::{prefix_hex, sha256_hex, OpsError};
 
@@ -124,6 +125,8 @@ pub struct UnifiedEligibilityStatusV1 {
     pub denial_reason_shadow: Option<String>,
     pub denial_reason_active: Option<String>,
     pub remediation_codes: Vec<String>,
+    #[serde(default)]
+    pub canonical_remediation_codes: Vec<String>,
     pub status_digest: String,
 }
 
@@ -229,6 +232,8 @@ pub struct BackendEvidenceSlotSnapshotV1 {
     pub readiness: BackendEvidenceSlotReadinessV1,
     pub denials: BackendEvidenceSlotDenialsV1,
     pub remediation_codes: Vec<String>,
+    #[serde(default)]
+    pub canonical_remediation_codes: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -1676,6 +1681,7 @@ fn derive_unified_eligibility_status(
         denial_reason_probe,
         denial_reason_shadow,
         denial_reason_active,
+        canonical_remediation_codes: merge_canonical_remediations(remediation_codes.iter(), 4),
         remediation_codes,
         status_digest: sha256_hex(&digest_source),
     })
@@ -1758,6 +1764,7 @@ fn unified_eligibility_from_backend_snapshot(
         denial_reason_shadow,
         denial_reason_active,
         remediation_codes: slot.remediation_codes.clone(),
+        canonical_remediation_codes: merge_canonical_remediations(slot.remediation_codes.iter(), 4),
         status_digest: sha256_hex(&digest_source),
     }
 }
@@ -1821,6 +1828,7 @@ pub fn models_evidence_snapshot(
                 shadow: map_denial_reason_to_code(eligibility.denial_reason_shadow.as_deref()),
                 active: map_denial_reason_to_code(eligibility.denial_reason_active.as_deref()),
             },
+            canonical_remediation_codes: merge_canonical_remediations(remediation_codes.iter(), 4),
             remediation_codes,
         });
     }
@@ -3949,6 +3957,7 @@ mod probe_tests {
                 denial_reason_shadow: None,
                 denial_reason_active: Some("ACTIVE_DENIED_DRIFT_WARN".to_string()),
                 remediation_codes: vec!["ACTIVE_DENIED_DRIFT_WARN".to_string()],
+                canonical_remediation_codes: vec![],
                 status_digest: "d1".to_string(),
             },
             UnifiedEligibilityStatusV1 {
@@ -3968,6 +3977,7 @@ mod probe_tests {
                 denial_reason_shadow: None,
                 denial_reason_active: None,
                 remediation_codes: vec![],
+                canonical_remediation_codes: vec![],
                 status_digest: "d2".to_string(),
             },
         ];
@@ -4004,6 +4014,7 @@ mod probe_tests {
             denial_reason_shadow: Some("SHADOW_READY_PROBE_REQUIRED".to_string()),
             denial_reason_active: Some("ActiveDeniedNoProbe".to_string()),
             remediation_codes: vec!["PROBE_REPORT_MISSING".to_string()],
+            canonical_remediation_codes: vec![],
             status_digest: "d".to_string(),
         }];
         assert!(matches!(
@@ -4041,6 +4052,7 @@ mod probe_tests {
                 denial_reason_shadow: Some("SHADOW_READY_PROBE_REQUIRED".to_string()),
                 denial_reason_active: Some("ActiveDeniedNoProbe".to_string()),
                 remediation_codes: vec!["SHADOW_READY_PROBE_REQUIRED".to_string()],
+                canonical_remediation_codes: vec![],
                 status_digest: "status1".to_string(),
             }],
             report_digest: "deadbeef".to_string(),
@@ -4133,6 +4145,7 @@ mod probe_tests {
                         active: Some(EvidenceDenialCodeV1::DriftWarn),
                     },
                     remediation_codes: vec!["DRIFT_WARN".to_string()],
+                    canonical_remediation_codes: vec![],
                 }],
                 snapshot_digest: "beef".to_string(),
             };

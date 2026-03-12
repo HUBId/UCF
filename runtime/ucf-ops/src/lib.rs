@@ -16,6 +16,7 @@ mod models_lifecycle;
 mod nightly;
 mod operator_report;
 mod operator_signoff;
+mod remediation;
 mod second_slot_parity;
 mod soak;
 mod spec_snapshot;
@@ -73,6 +74,7 @@ pub use operator_signoff::{
     operator_signoff, operator_signoff_text, OperatorSignoffArgs, OperatorSignoffDecisionV1,
     SignoffDecisionStateV1, SignoffPolicyV1,
 };
+pub use remediation::all_registry_rows as remediation_registry_rows;
 pub use second_slot_parity::{
     detect_second_slot, second_slot_parity_evidence_exists, second_slot_parity_report,
     OptionalBackendSupportStateV1, SaeParityRecordV1, SecondSlotParityRecordV1,
@@ -1425,6 +1427,8 @@ pub struct V0GateCheckV1 {
     pub status: GateStatus,
     pub evidence_digest_prefixes: BTreeMap<String, String>,
     pub remediation_hint_code: String,
+    #[serde(default)]
+    pub canonical_remediation_codes: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -1440,6 +1444,8 @@ pub struct V1GateCheckV1 {
     pub status: GateStatus,
     pub evidence_digest_prefixes: BTreeMap<String, String>,
     pub remediation_hint: String,
+    #[serde(default)]
+    pub canonical_remediation_codes: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -1462,6 +1468,8 @@ pub struct V2GateCheckV1 {
     pub status: GateStatus,
     pub evidence_digest_prefixes: BTreeMap<String, String>,
     pub remediation_hint_code: String,
+    #[serde(default)]
+    pub canonical_remediation_codes: Vec<String>,
     pub notes: String,
 }
 
@@ -1492,6 +1500,8 @@ pub struct V3GateCheckV1 {
     pub status: GateStatus,
     pub evidence_digest_prefixes: BTreeMap<String, String>,
     pub remediation_hint_code: String,
+    #[serde(default)]
+    pub canonical_remediation_codes: Vec<String>,
     pub notes: String,
 }
 
@@ -3098,6 +3108,9 @@ fn v3_gate_check(
         status,
         evidence_digest_prefixes: bounded_evidence(evidence),
         remediation_hint_code: remediation_hint_code.to_string(),
+        canonical_remediation_codes: crate::remediation::canonical_from_legacy_code(
+            remediation_hint_code,
+        ),
         notes: notes.to_string(),
     }
 }
@@ -3186,6 +3199,9 @@ fn v2_gate_check(
         status,
         evidence_digest_prefixes: bounded_evidence(evidence),
         remediation_hint_code: remediation_hint_code.to_string(),
+        canonical_remediation_codes: crate::remediation::canonical_from_legacy_code(
+            remediation_hint_code,
+        ),
         notes: notes.to_string(),
     }
 }
@@ -3201,6 +3217,9 @@ fn v1_gate_check(
         status,
         evidence_digest_prefixes: bounded_evidence(evidence),
         remediation_hint: remediation_hint.to_string(),
+        canonical_remediation_codes: crate::remediation::canonical_from_legacy_remediation(
+            remediation_hint,
+        ),
     }
 }
 
@@ -3215,6 +3234,9 @@ fn v0_gate_check(
         status,
         evidence_digest_prefixes: bounded_evidence(evidence),
         remediation_hint_code: remediation_hint_code.to_string(),
+        canonical_remediation_codes: crate::remediation::canonical_from_legacy_code(
+            remediation_hint_code,
+        ),
     }
 }
 
@@ -6158,6 +6180,8 @@ pub struct StrictCheckResult {
     pub status: StrictCheckStatus,
     pub error_codes: Vec<String>,
     pub remediation: String,
+    #[serde(default)]
+    pub canonical_remediation_codes: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -6198,6 +6222,8 @@ pub struct StrictCheckV3Result {
     pub denial_code: Option<String>,
     pub evidence_digest_prefixes: Vec<String>,
     pub remediation_code: String,
+    #[serde(default)]
+    pub canonical_remediation_codes: Vec<String>,
 }
 
 impl StrictModeFailureReport {
@@ -7153,6 +7179,9 @@ fn strict_v3_check(
         denial_code: denial_code.map(|v| v.to_string()),
         evidence_digest_prefixes,
         remediation_code: remediation_code.to_string(),
+        canonical_remediation_codes: crate::remediation::canonical_from_legacy_code(
+            remediation_code,
+        ),
     }
 }
 
@@ -7162,6 +7191,7 @@ fn strict_pass(id: &str) -> StrictCheckResult {
         status: StrictCheckStatus::Pass,
         error_codes: Vec::new(),
         remediation: "ok".to_string(),
+        canonical_remediation_codes: Vec::new(),
     }
 }
 
@@ -7171,6 +7201,9 @@ fn strict_fail(id: &str, code: &str, remediation: &str) -> StrictCheckResult {
         status: StrictCheckStatus::Fail,
         error_codes: vec![code.to_string()],
         remediation: remediation.to_string(),
+        canonical_remediation_codes: crate::remediation::canonical_from_legacy_remediation(
+            remediation,
+        ),
     }
 }
 
@@ -13123,4 +13156,16 @@ slots = [{ slot_id = "world_jepa", active_hash = "missing", files = [{ path = "m
             },
         );
     }
+}
+
+pub fn generate_remediation_codes_doc(out: &Path) -> Result<(), OpsError> {
+    let mut md = String::from("# Remediation Codes v1\n\nGenerated from the canonical remediation registry source.\n\n| Code | Description | Suggestion Key |\n|---|---|---|\n");
+    for (code, description, key) in remediation_registry_rows() {
+        md.push_str(&format!("| {code} | {description} | `{key}` |\n"));
+    }
+    if let Some(parent) = out.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(out, md)?;
+    Ok(())
 }
