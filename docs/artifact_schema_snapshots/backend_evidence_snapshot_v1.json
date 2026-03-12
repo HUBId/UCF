@@ -1,0 +1,23 @@
+{
+  "artifact_id": "backend_evidence_snapshot_v1",
+  "type_name": "BackendEvidenceSnapshotV1",
+  "source_file": "runtime/ucf-ops/src/models_lifecycle.rs",
+  "required_fields": [
+    "manifest_digest_prefix",
+    "policy_graph_digest_prefix",
+    "schema_version",
+    "slots",
+    "snapshot_digest",
+    "supported_slot_set_digest"
+  ],
+  "optional_fields": [],
+  "field_types": {
+    "manifest_digest_prefix": "String",
+    "policy_graph_digest_prefix": "String",
+    "schema_version": "u16",
+    "slots": "Vec<BackendEvidenceSlotSnapshotV1>",
+    "snapshot_digest": "String",
+    "supported_slot_set_digest": "String"
+  },
+  "enum_variants": {}
+}

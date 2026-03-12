@@ -52,6 +52,17 @@ Modes:
      cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json
      ```
 
+
+6. **Artifact schema snapshots up-to-date**
+   - Regenerates shape snapshots for v3/v4 operator artifacts and compares them with committed files in `docs/artifact_schema_snapshots/`.
+   - Classifies drift conservatively as `ADDITIVE`, `BREAKING`, or `UNKNOWN`; strict lint fails on drift.
+   - Remediation:
+     ```bash
+     cargo run -p ucf-ops -- spec artifact-schemas --out docs/artifact_schema_snapshots
+     cargo run -p ucf-ops -- spec artifact-schemas-check --out ./out/artifact_schema_check.json
+     git add docs/artifact_schema_snapshots
+     ```
+
 ## Report output
 
 When `--out` is provided, lint writes deterministic JSON with per-check status and remediation hints.

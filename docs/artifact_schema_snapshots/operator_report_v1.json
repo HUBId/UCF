@@ -1,0 +1,41 @@
+{
+  "artifact_id": "operator_report_v1",
+  "type_name": "ConsolidatedOperatorReportV1",
+  "source_file": "runtime/ucf-ops/src/operator_report.rs",
+  "required_fields": [
+    "generated_at",
+    "overall_status",
+    "remediation_codes",
+    "report_digest",
+    "schema_version",
+    "sections"
+  ],
+  "optional_fields": [
+    "canonical_remediation_codes",
+    "manifest_digest_prefix",
+    "policy_graph_digest_prefix",
+    "run_id"
+  ],
+  "field_types": {
+    "canonical_remediation_codes": "Vec<String>",
+    "generated_at": "u64",
+    "manifest_digest_prefix": "Option<String>",
+    "overall_status": "OperatorStatus",
+    "policy_graph_digest_prefix": "Option<String>",
+    "remediation_codes": "Vec<String>",
+    "report_digest": "String",
+    "run_id": "Option<String>",
+    "schema_version": "u16",
+    "sections": "OperatorSectionsV1"
+  },
+  "enum_variants": {
+    "OperatorStatus": [
+      "Degraded",
+      "Fail",
+      "Missing",
+      "Ok",
+      "Skip",
+      "Warn"
+    ]
+  }
+}
