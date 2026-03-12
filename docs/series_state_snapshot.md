@@ -49,6 +49,7 @@ Reference: `docs/next_10_prompts.md`
 - First supported slot: `world_jepa`.
 - Second supported slot declaration: `sae` (scope remains fixed to `world_jepa` + exactly one second slot unless explicitly superseded by evidence-bound governance).
 - v5 scope remains conservative: governance/evidence/signoff hardening first, optional parity depth only under existing probe/shadow evidence.
+- Supported real-slot set remains authoritative at runtime until `ucf-ops models supported-set-review` reports `EXPAND_BY_ONE` and a later prompt explicitly implements that reviewed candidate.
 
 ## Archived v4 queue reference
 

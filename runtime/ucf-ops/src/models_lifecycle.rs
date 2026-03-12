@@ -28,6 +28,8 @@ const SHADOW_READY_MAX_SLOTS: usize = 2;
 const ELIGIBILITY_SCHEMA_VERSION: u16 = 1;
 const BACKEND_EVIDENCE_SNAPSHOT_SCHEMA_VERSION: u16 = 1;
 const SUPPORTED_REAL_SLOT_SET_VERSION: &str = "v3_supported_real_slots_max2";
+const SUPPORTED_REAL_SLOT_SET_POLICY_V2_SCHEMA_VERSION: u16 = 2;
+const SLOT_EXPANSION_ELIGIBILITY_SCHEMA_VERSION: u16 = 1;
 const SLOT_SET_MAX: usize = 2;
 const PROBE_OUTPUT_CAP: usize = 8;
 const PROBE_NOTES_CAP: usize = 8;
@@ -136,6 +138,60 @@ pub struct SupportedRealSlotSetV1 {
     pub slots: Vec<String>,
     pub source: String,
     pub set_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum SupportedRealSlotSetDecisionV2 {
+    Freeze,
+    ExpandByOne,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SlotExpansionEligibilityV1 {
+    pub schema_version: u16,
+    pub slot_id: String,
+    pub trait_contract_exists: bool,
+    pub probe_path_exists_or_reusable: bool,
+    pub shadow_path_exists_or_trivially_attachable: bool,
+    pub compare_window_normalizable: bool,
+    pub strict_evidence_plumbing_representable_without_arch_fork: bool,
+    pub tiny_fixture_path_feasible: bool,
+    pub expansion_ready: bool,
+    pub denial_reason_code: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum KnownSlotClassificationV1 {
+    CurrentlySupportedRealSlot,
+    StubOnly,
+    PartiallyScaffolded,
+    UnsupportedAbsent,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct KnownSlotReviewV1 {
+    pub slot_id: String,
+    pub classification: KnownSlotClassificationV1,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SupportedRealSlotSetPolicyV2 {
+    pub schema_version: u16,
+    pub current_supported_slots: Vec<String>,
+    pub candidate_slots_considered: Vec<String>,
+    pub decision: SupportedRealSlotSetDecisionV2,
+    pub chosen_candidate_slot: Option<String>,
+    pub rationale_codes: Vec<String>,
+    pub policy_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SupportedSetReviewReportV1 {
+    pub policy: SupportedRealSlotSetPolicyV2,
+    pub known_slots: Vec<KnownSlotReviewV1>,
+    pub candidates: Vec<SlotExpansionEligibilityV1>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -1872,6 +1928,211 @@ pub fn models_evidence_snapshot(
         slots: snapshots,
         snapshot_digest: sha256_hex(&digest_source),
     })
+}
+
+pub fn models_supported_set_review(
+    _workdir: &Path,
+    out: &Path,
+) -> Result<SupportedSetReviewReportV1, OpsError> {
+    let supported = supported_real_slot_set_v1()?;
+    let current_set = supported
+        .slots
+        .iter()
+        .cloned()
+        .collect::<BTreeSet<String>>();
+    let mut known_slots = known_slots_ordered();
+    let mut candidates = Vec::new();
+    for slot_id in &known_slots {
+        if !current_set.contains(slot_id) {
+            candidates.push(evaluate_slot_expansion_candidate(
+                slot_id,
+                &current_set,
+                SLOT_SET_MAX,
+            ));
+        }
+    }
+    known_slots.sort();
+    candidates.sort_by(|a, b| a.slot_id.cmp(&b.slot_id));
+    let policy = select_supported_slot_set_policy_v2(&supported.slots, &candidates);
+    let known_slots = known_slots
+        .into_iter()
+        .map(|slot_id| KnownSlotReviewV1 {
+            classification: classify_known_slot(&slot_id, &current_set, &candidates),
+            slot_id,
+        })
+        .collect::<Vec<_>>();
+
+    let report = SupportedSetReviewReportV1 {
+        policy,
+        known_slots,
+        candidates,
+    };
+    if let Some(parent) = out.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(out, serde_json::to_vec_pretty(&report)?)?;
+    Ok(report)
+}
+
+fn known_slots_ordered() -> Vec<String> {
+    ModelSlot::all()
+        .iter()
+        .map(|slot| slot.as_str().to_string())
+        .collect::<Vec<_>>()
+}
+
+fn evaluate_slot_expansion_candidate(
+    slot_id: &str,
+    current_supported: &BTreeSet<String>,
+    max_supported_slots: usize,
+) -> SlotExpansionEligibilityV1 {
+    let Ok(slot) = parse_slot(slot_id) else {
+        return SlotExpansionEligibilityV1 {
+            schema_version: SLOT_EXPANSION_ELIGIBILITY_SCHEMA_VERSION,
+            slot_id: slot_id.to_string(),
+            trait_contract_exists: false,
+            probe_path_exists_or_reusable: false,
+            shadow_path_exists_or_trivially_attachable: false,
+            compare_window_normalizable: false,
+            strict_evidence_plumbing_representable_without_arch_fork: false,
+            tiny_fixture_path_feasible: false,
+            expansion_ready: false,
+            denial_reason_code: Some("UNKNOWN_SLOT_METADATA".to_string()),
+        };
+    };
+
+    let trait_contract_exists = !matches!(slot, ModelSlot::Llm);
+    let probe_path_exists_or_reusable = true;
+    let shadow_path_exists_or_trivially_attachable =
+        matches!(slot, ModelSlot::Sae | ModelSlot::Ssm);
+    let compare_window_normalizable = shadow_path_exists_or_trivially_attachable;
+    let strict_evidence_plumbing_representable_without_arch_fork =
+        shadow_path_exists_or_trivially_attachable && current_supported.len() < max_supported_slots;
+    let tiny_fixture_path_feasible = matches!(slot, ModelSlot::Sae | ModelSlot::Ssm);
+
+    let checks = [
+        (trait_contract_exists, "TRAIT_CONTRACT_MISSING"),
+        (probe_path_exists_or_reusable, "PROBE_PATH_MISSING"),
+        (
+            shadow_path_exists_or_trivially_attachable,
+            "SHADOW_PATH_MISSING",
+        ),
+        (compare_window_normalizable, "COMPARE_NORMALIZATION_MISSING"),
+        (
+            strict_evidence_plumbing_representable_without_arch_fork,
+            "STRICT_PLUMBING_ARCH_FORK_REQUIRED",
+        ),
+        (tiny_fixture_path_feasible, "TINY_FIXTURE_NOT_FEASIBLE"),
+    ];
+    let denial_reason_code =
+        checks
+            .iter()
+            .find_map(|(ok, code)| if *ok { None } else { Some((*code).to_string()) });
+    let expansion_ready = denial_reason_code.is_none();
+
+    SlotExpansionEligibilityV1 {
+        schema_version: SLOT_EXPANSION_ELIGIBILITY_SCHEMA_VERSION,
+        slot_id: slot_id.to_string(),
+        trait_contract_exists,
+        probe_path_exists_or_reusable,
+        shadow_path_exists_or_trivially_attachable,
+        compare_window_normalizable,
+        strict_evidence_plumbing_representable_without_arch_fork,
+        tiny_fixture_path_feasible,
+        expansion_ready,
+        denial_reason_code,
+    }
+}
+
+fn classify_known_slot(
+    slot_id: &str,
+    current_supported: &BTreeSet<String>,
+    candidates: &[SlotExpansionEligibilityV1],
+) -> KnownSlotClassificationV1 {
+    if current_supported.contains(slot_id) {
+        return KnownSlotClassificationV1::CurrentlySupportedRealSlot;
+    }
+    let Some(candidate) = candidates.iter().find(|c| c.slot_id == slot_id) else {
+        return KnownSlotClassificationV1::UnsupportedAbsent;
+    };
+    if !candidate.trait_contract_exists && !candidate.probe_path_exists_or_reusable {
+        return KnownSlotClassificationV1::UnsupportedAbsent;
+    }
+    if candidate.probe_path_exists_or_reusable
+        && !candidate.shadow_path_exists_or_trivially_attachable
+        && !candidate.compare_window_normalizable
+        && !candidate.strict_evidence_plumbing_representable_without_arch_fork
+    {
+        return KnownSlotClassificationV1::StubOnly;
+    }
+    KnownSlotClassificationV1::PartiallyScaffolded
+}
+
+fn select_supported_slot_set_policy_v2(
+    current_supported_slots: &[String],
+    candidates: &[SlotExpansionEligibilityV1],
+) -> SupportedRealSlotSetPolicyV2 {
+    let mut current_supported_slots = current_supported_slots.to_vec();
+    current_supported_slots.sort();
+    current_supported_slots.dedup();
+
+    let mut candidate_slots_considered = candidates
+        .iter()
+        .map(|c| c.slot_id.clone())
+        .collect::<Vec<_>>();
+    candidate_slots_considered.sort();
+
+    let ready = candidates
+        .iter()
+        .filter(|c| c.expansion_ready)
+        .map(|c| c.slot_id.clone())
+        .collect::<Vec<_>>();
+    let (decision, chosen_candidate_slot, rationale_codes) = match ready.len() {
+        1 => (
+            SupportedRealSlotSetDecisionV2::ExpandByOne,
+            Some(ready[0].clone()),
+            vec!["EXPANSION_READY_EXACTLY_ONE".to_string()],
+        ),
+        0 => (
+            SupportedRealSlotSetDecisionV2::Freeze,
+            None,
+            vec!["INSUFFICIENT_EVIDENCE_FREEZE".to_string()],
+        ),
+        _ => (
+            SupportedRealSlotSetDecisionV2::Freeze,
+            None,
+            vec!["AMBIGUOUS_MULTIPLE_CANDIDATES".to_string()],
+        ),
+    };
+    let mut digest_source = Vec::new();
+    digest_source.extend_from_slice(
+        SUPPORTED_REAL_SLOT_SET_POLICY_V2_SCHEMA_VERSION
+            .to_string()
+            .as_bytes(),
+    );
+    for slot in &current_supported_slots {
+        digest_source.extend_from_slice(slot.as_bytes());
+    }
+    for slot in &candidate_slots_considered {
+        digest_source.extend_from_slice(slot.as_bytes());
+    }
+    digest_source.extend_from_slice(format!("{:?}", decision).as_bytes());
+    if let Some(chosen) = chosen_candidate_slot.as_ref() {
+        digest_source.extend_from_slice(chosen.as_bytes());
+    }
+    for code in &rationale_codes {
+        digest_source.extend_from_slice(code.as_bytes());
+    }
+
+    SupportedRealSlotSetPolicyV2 {
+        schema_version: SUPPORTED_REAL_SLOT_SET_POLICY_V2_SCHEMA_VERSION,
+        current_supported_slots,
+        candidate_slots_considered,
+        decision,
+        chosen_candidate_slot,
+        rationale_codes,
+        policy_digest: sha256_hex(&digest_source),
+    }
 }
 
 fn read_second_slot_parity_report(
@@ -4105,6 +4366,142 @@ mod probe_tests {
             let candle = encoded.find("candle").expect("candle");
             let burn = encoded.find("burn").expect("burn");
             assert!(stub < candle && candle < burn);
+        }
+
+        #[test]
+        fn slot_candidate_evaluation_is_deterministic() {
+            let current = ["sae".to_string(), "world_jepa".to_string()]
+                .into_iter()
+                .collect::<BTreeSet<_>>();
+            let a = evaluate_slot_expansion_candidate("ssm", &current, 3);
+            let b = evaluate_slot_expansion_candidate("ssm", &current, 3);
+            assert_eq!(a, b);
+            assert!(a.expansion_ready);
+        }
+
+        #[test]
+        fn candidate_ordering_is_stable() {
+            let mut names = known_slots_ordered();
+            names.sort();
+            assert_eq!(
+                names,
+                vec![
+                    "ebm_reasoner",
+                    "lfm",
+                    "llm",
+                    "sae",
+                    "ssm",
+                    "world_jepa",
+                    "world_vljepa"
+                ]
+            );
+        }
+
+        #[test]
+        fn supported_set_review_defaults_to_freeze_for_current_repo_state() {
+            let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
+            let dir = tempfile::tempdir().expect("tempdir");
+            let _cwd = CwdGuard::enter(dir.path());
+            fs::create_dir_all("docs").expect("docs");
+            fs::write(
+                "docs/series_state_snapshot.md",
+                "- Second supported slot in this stage: `sae`
+",
+            )
+            .expect("snapshot");
+            let out = PathBuf::from("out/supported_set_review.json");
+            let report = models_supported_set_review(Path::new("."), &out).expect("review");
+            assert_eq!(
+                report.policy.decision,
+                SupportedRealSlotSetDecisionV2::Freeze
+            );
+            assert!(report.policy.chosen_candidate_slot.is_none());
+        }
+
+        #[test]
+        fn policy_selection_expand_by_one_when_exactly_one_candidate_is_ready() {
+            let candidates = vec![
+                SlotExpansionEligibilityV1 {
+                    schema_version: 1,
+                    slot_id: "ssm".to_string(),
+                    trait_contract_exists: true,
+                    probe_path_exists_or_reusable: true,
+                    shadow_path_exists_or_trivially_attachable: true,
+                    compare_window_normalizable: true,
+                    strict_evidence_plumbing_representable_without_arch_fork: true,
+                    tiny_fixture_path_feasible: true,
+                    expansion_ready: true,
+                    denial_reason_code: None,
+                },
+                SlotExpansionEligibilityV1 {
+                    schema_version: 1,
+                    slot_id: "world_vljepa".to_string(),
+                    trait_contract_exists: true,
+                    probe_path_exists_or_reusable: true,
+                    shadow_path_exists_or_trivially_attachable: false,
+                    compare_window_normalizable: false,
+                    strict_evidence_plumbing_representable_without_arch_fork: false,
+                    tiny_fixture_path_feasible: false,
+                    expansion_ready: false,
+                    denial_reason_code: Some("SHADOW_PATH_MISSING".to_string()),
+                },
+            ];
+            let policy = select_supported_slot_set_policy_v2(
+                &["world_jepa".to_string(), "sae".to_string()],
+                &candidates,
+            );
+            assert_eq!(policy.decision, SupportedRealSlotSetDecisionV2::ExpandByOne);
+            assert_eq!(policy.chosen_candidate_slot.as_deref(), Some("ssm"));
+        }
+
+        #[test]
+        fn policy_selection_freezes_on_ambiguous_multiple_ready_candidates() {
+            let candidates = vec![
+                SlotExpansionEligibilityV1 {
+                    schema_version: 1,
+                    slot_id: "ssm".to_string(),
+                    trait_contract_exists: true,
+                    probe_path_exists_or_reusable: true,
+                    shadow_path_exists_or_trivially_attachable: true,
+                    compare_window_normalizable: true,
+                    strict_evidence_plumbing_representable_without_arch_fork: true,
+                    tiny_fixture_path_feasible: true,
+                    expansion_ready: true,
+                    denial_reason_code: None,
+                },
+                SlotExpansionEligibilityV1 {
+                    schema_version: 1,
+                    slot_id: "world_vljepa".to_string(),
+                    trait_contract_exists: true,
+                    probe_path_exists_or_reusable: true,
+                    shadow_path_exists_or_trivially_attachable: true,
+                    compare_window_normalizable: true,
+                    strict_evidence_plumbing_representable_without_arch_fork: true,
+                    tiny_fixture_path_feasible: true,
+                    expansion_ready: true,
+                    denial_reason_code: None,
+                },
+            ];
+            let policy = select_supported_slot_set_policy_v2(
+                &["world_jepa".to_string(), "sae".to_string()],
+                &candidates,
+            );
+            assert_eq!(policy.decision, SupportedRealSlotSetDecisionV2::Freeze);
+            assert!(policy
+                .rationale_codes
+                .iter()
+                .any(|c| c == "AMBIGUOUS_MULTIPLE_CANDIDATES"));
+        }
+
+        #[test]
+        fn unknown_slot_metadata_is_not_eligible() {
+            let current = BTreeSet::new();
+            let candidate = evaluate_slot_expansion_candidate("unknown_slot", &current, 3);
+            assert!(!candidate.expansion_ready);
+            assert_eq!(
+                candidate.denial_reason_code.as_deref(),
+                Some("UNKNOWN_SLOT_METADATA")
+            );
         }
 
         #[test]
