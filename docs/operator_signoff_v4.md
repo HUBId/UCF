@@ -56,3 +56,8 @@ Wenn dieser Scope nicht konsistent nachweisbar ist, lautet die Entscheidung `NOT
 ## Canonical remediation registry
 
 Operator signoff now emits `canonical_remediation_codes` derived from the shared RemediationCodeRegistryV1 mapping layer.
+
+## Strict evidence input surface
+
+Operator signoff now consumes `StrictEvidenceSnapshotV1` and shared `operator_block_from_strict(...)` mapping for strict blocking. This keeps strict blocking reason/remediation aligned with operator report for identical strict input.
+See `docs/strict_operator_interplay_v4.md`.

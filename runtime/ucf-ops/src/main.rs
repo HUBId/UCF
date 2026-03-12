@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use ucf_ops::{
     adversarial_run, airgap_export_models, airgap_export_policies, airgap_export_repro,
@@ -21,14 +21,14 @@ use ucf_ops::{
     release_build_rc, release_rc1_gate, release_signoff_validate, replay_audit, replay_bugreport,
     repro_pack, repro_verify, run_status, runs_list, runs_search, runs_show,
     save_counterfactual_result, second_slot_parity_report, security_verify_chain,
-    simulate_counterfactual, soak_run, strict_check, troubleshoot, v0_gate, v1_smoke, v2_gate,
-    v3_gate, verify_bugreport, world_parity_report, world_shadow_report, write_slice,
-    AdversarialRunArgs, AirgapArtifactType, AirgapImportArgs, AirgapImportMode, BenchArgs,
-    BugKitBuildArgs, ChangeImpactArgs, ConfigV1, CounterfactualRequest, DevLoopArgs, DocsLintArgs,
-    DocsLintMode, DocsLintStatus, ExplainTickRequest, ExportArgs, GateStatus, GoldenGenerateArgs,
-    GoldenVerifyArgs, GoldenVerifyReport, NightlySummarizeArgs, OperatorReportArgs,
-    OperatorSignoffArgs, ReleaseBuildRcArgs, SoakRunArgs, SpecSnapshotArgs, V2GateOverallStatus,
-    V3GateOverallStatus,
+    simulate_counterfactual, soak_run, strict_check, strict_explain, troubleshoot, v0_gate,
+    v1_smoke, v2_gate, v3_gate, verify_bugreport, world_parity_report, world_shadow_report,
+    write_slice, AdversarialRunArgs, AirgapArtifactType, AirgapImportArgs, AirgapImportMode,
+    BenchArgs, BugKitBuildArgs, ChangeImpactArgs, ConfigV1, CounterfactualRequest, DevLoopArgs,
+    DocsLintArgs, DocsLintMode, DocsLintStatus, ExplainTickRequest, ExportArgs, GateStatus,
+    GoldenGenerateArgs, GoldenVerifyArgs, GoldenVerifyReport, NightlySummarizeArgs,
+    OperatorReportArgs, OperatorSignoffArgs, ReleaseBuildRcArgs, SoakRunArgs, SpecSnapshotArgs,
+    StrictEvidenceContextV1, V2GateOverallStatus, V3GateOverallStatus,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -2205,7 +2205,30 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     println!("strict_mode_enabled={}", report.strict_mode_enabled);
                     println!("overall={}", if report.ok { "PASS" } else { "FAIL" });
                 }
-                _ => return Err("usage: ucf-ops strict check [--strict] [--out <path>]".into()),
+                "explain" => {
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/strict_explain.json"));
+                    let explain = strict_explain(
+                        Path::new("./out"),
+                        &StrictEvidenceContextV1 {
+                            run_id: arg_value(&args, "--run"),
+                            latest: has_flag(&args, "--latest"),
+                            strict_required: true,
+                            expected_policy_graph_digest_prefix: None,
+                            expected_manifest_digest_prefix: None,
+                            expected_supported_slot_set_digest_prefix: None,
+                        },
+                    );
+                    if let Some(parent) = out.parent() {
+                        std::fs::create_dir_all(parent)?;
+                    }
+                    std::fs::write(&out, serde_json::to_string_pretty(&explain)?)?;
+                    println!("out={}", out.display());
+                    println!("strict_status={:?}", explain.snapshot.strict_status);
+                    println!("reason={}", explain.operator_blocking_view.primary_reason_code.unwrap_or_else(|| "none".to_string()));
+                }
+                _ => return Err("usage: ucf-ops strict <check|explain> [--strict] [--run <id>] [--latest] [--out <path>]".into()),
             }
         }
 

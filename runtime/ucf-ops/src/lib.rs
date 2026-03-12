@@ -21,6 +21,7 @@ mod remediation;
 mod second_slot_parity;
 mod soak;
 mod spec_snapshot;
+mod strict_evidence;
 mod world_shadow;
 pub use adversarial::{adversarial_run, AdversarialReport, AdversarialRunArgs, CaseResult};
 pub use airgap::{
@@ -89,6 +90,11 @@ pub use soak::{
     parse_duration_secs, parse_inject, soak_run, InjectTrigger, SoakReport, SoakRunArgs, SoakStatus,
 };
 pub use spec_snapshot::{generate_spec_snapshot, SpecSnapshotArgs};
+pub use strict_evidence::{
+    operator_block_from_strict, resolve_strict_evidence, strict_explain, OperatorBlockingViewV1,
+    StrictEvidenceContextV1, StrictEvidenceSnapshotV1, StrictEvidenceStatusV1,
+    StrictExplainReportV1,
+};
 pub use world_shadow::{
     world_parity_evidence_exists, world_parity_report, world_shadow_report,
     WorldBackendEligibilityV1, WorldParityRecordV1, WorldParityReportV1, WorldShadowReport,

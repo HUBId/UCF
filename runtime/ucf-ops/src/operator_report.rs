@@ -7,9 +7,10 @@ use serde::{Deserialize, Serialize};
 use crate::drift::DriftSlotReportV1;
 use crate::remediation::merge_canonical_remediations;
 use crate::{
-    AggregatedEligibilityReportV1, AlertsReportV1, BackendEvidenceSnapshotV1, DriftReportV1,
-    GateStatus, OpsError, StrictCheckReport, V0GateOverallStatus, V0GateReportV1,
-    V1GateOverallStatus, V1GateReportV1, V2GateOverallStatus, V2GateReportV1,
+    operator_block_from_strict, resolve_strict_evidence, AggregatedEligibilityReportV1,
+    AlertsReportV1, BackendEvidenceSnapshotV1, DriftReportV1, GateStatus, OpsError,
+    StrictEvidenceContextV1, StrictEvidenceSnapshotV1, StrictEvidenceStatusV1, V0GateOverallStatus,
+    V0GateReportV1, V1GateOverallStatus, V1GateReportV1, V2GateOverallStatus, V2GateReportV1,
 };
 
 const REMEDIATION_MAX: usize = 12;
@@ -113,8 +114,10 @@ pub struct NormalizedAlertsSection {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct NormalizedStrictSection {
     pub status: OperatorStatus,
-    pub latest_status: OperatorStatus,
+    pub strict_status: StrictEvidenceStatusV1,
     pub primary_denial_code: Option<String>,
+    pub strict_report_digest_prefix: Option<String>,
+    pub failing_check_ids: Vec<String>,
     pub evidence_digest_prefixes: Vec<String>,
     pub remediation_codes: Vec<String>,
 }
@@ -160,18 +163,40 @@ pub fn operator_report(
         maybe_read_json::<DriftReportV1>(&discover_report(&out_root, "drift_report.json", args));
     let alerts =
         maybe_read_json::<AlertsReportV1>(&discover_report(&out_root, "alerts_report.json", args));
-    let strict = maybe_read_json::<StrictCheckReport>(&discover_report(
-        &out_root,
-        "strict_check.json",
-        args,
-    ));
-
     let v0 =
         maybe_read_json::<V0GateReportV1>(&discover_report(&out_root, "v0_gate_report.json", args));
     let v1 =
         maybe_read_json::<V1GateReportV1>(&discover_report(&out_root, "v1_gate_report.json", args));
     let v2 =
         maybe_read_json::<V2GateReportV1>(&discover_report(&out_root, "v2_gate_report.json", args));
+
+    let strict_snapshot = resolve_strict_evidence(
+        &out_root,
+        &StrictEvidenceContextV1 {
+            run_id: args.run_id.clone(),
+            latest: args.latest,
+            strict_required: true,
+            expected_policy_graph_digest_prefix: eligibility
+                .as_ref()
+                .map(|r| r.policy_graph_digest_prefix.clone())
+                .or_else(|| {
+                    evidence_snapshot
+                        .as_ref()
+                        .map(|s| s.policy_graph_digest_prefix.clone())
+                }),
+            expected_manifest_digest_prefix: eligibility
+                .as_ref()
+                .and_then(|r| r.slots.first().map(|s| s.manifest_digest_prefix.clone()))
+                .or_else(|| {
+                    evidence_snapshot
+                        .as_ref()
+                        .map(|s| s.manifest_digest_prefix.clone())
+                }),
+            expected_supported_slot_set_digest_prefix: evidence_snapshot
+                .as_ref()
+                .map(|s| s.supported_slot_set_digest.clone()),
+        },
+    );
 
     let health_section = normalize_health(health_value.as_ref());
     let eligibility_section = if let Some(report) = eligibility.as_ref() {
@@ -181,7 +206,7 @@ pub fn operator_report(
     };
     let drift_section = normalize_drift(drift.as_ref());
     let alerts_section = normalize_alerts(alerts.as_ref());
-    let strict_section = normalize_strict(strict.as_ref());
+    let strict_section = normalize_strict(&strict_snapshot);
     let gates_section = normalize_gates(v0.as_ref(), v1.as_ref(), v2.as_ref());
 
     let overall_status = reduce_overall_status(
@@ -220,7 +245,6 @@ pub fn operator_report(
                 .as_ref()
                 .map(|s| s.policy_graph_digest_prefix.clone())
         })
-        .or_else(|| extract_strict_digest_prefix(strict.as_ref(), "policy_graph_digest"))
         .or_else(|| extract_health_prefix(health_value.as_ref(), "policy_graph_digest"));
 
     let manifest_digest_prefix = eligibility
@@ -231,7 +255,6 @@ pub fn operator_report(
                 .as_ref()
                 .map(|s| s.manifest_digest_prefix.clone())
         })
-        .or_else(|| extract_strict_digest_prefix(strict.as_ref(), "manifest_digest"))
         .or_else(|| extract_health_prefix(health_value.as_ref(), "manifest_digest"));
 
     let generated_at = unix_now_secs();
@@ -289,7 +312,7 @@ pub fn operator_report_text(report: &ConsolidatedOperatorReportV1) -> String {
         report.overall_status,
         if slots.is_empty() { "none" } else { &slots },
         report.sections.alerts_section.active_alert_count,
-        report.sections.strict_section.latest_status
+        report.sections.strict_section.strict_status
     )
 }
 
@@ -559,44 +582,30 @@ pub fn normalize_alerts(report: Option<&AlertsReportV1>) -> NormalizedAlertsSect
     }
 }
 
-pub fn normalize_strict(report: Option<&StrictCheckReport>) -> NormalizedStrictSection {
-    let Some(report) = report else {
-        return NormalizedStrictSection {
-            status: OperatorStatus::Missing,
-            latest_status: OperatorStatus::Missing,
-            primary_denial_code: None,
-            evidence_digest_prefixes: Vec::new(),
-            remediation_codes: vec!["run_strict_check".to_string()],
-        };
-    };
-
-    let primary_denial_code = report
-        .report
-        .checks
-        .iter()
-        .find(|check| format!("{:?}", check.status).eq_ignore_ascii_case("fail"))
-        .and_then(|check| check.error_codes.first().cloned());
-    let latest_status = if report.ok {
-        OperatorStatus::Ok
-    } else {
-        OperatorStatus::Fail
-    };
+pub fn normalize_strict(snapshot: &StrictEvidenceSnapshotV1) -> NormalizedStrictSection {
+    let block = operator_block_from_strict(snapshot);
+    let mut evidence_digest_prefixes = Vec::new();
+    if let Some(d) = snapshot.strict_report_digest_prefix.as_ref() {
+        evidence_digest_prefixes.push(d.clone());
+    }
+    if let Some(d) = snapshot.policy_graph_digest_prefix.as_ref() {
+        evidence_digest_prefixes.push(d.clone());
+    }
+    if let Some(d) = snapshot.manifest_digest_prefix.as_ref() {
+        evidence_digest_prefixes.push(d.clone());
+    }
+    if let Some(d) = snapshot.supported_slot_set_digest_prefix.as_ref() {
+        evidence_digest_prefixes.push(d.clone());
+    }
 
     NormalizedStrictSection {
-        status: latest_status.clone(),
-        latest_status,
-        primary_denial_code,
-        evidence_digest_prefixes: report
-            .report
-            .evidence_digest_prefixes
-            .values()
-            .map(|v| prefix(v))
-            .collect(),
-        remediation_codes: if report.ok {
-            Vec::new()
-        } else {
-            vec!["run_strict_check".to_string()]
-        },
+        status: block.status_contribution,
+        strict_status: snapshot.strict_status.clone(),
+        primary_denial_code: block.primary_reason_code,
+        strict_report_digest_prefix: snapshot.strict_report_digest_prefix.clone(),
+        failing_check_ids: snapshot.failing_check_ids.clone(),
+        evidence_digest_prefixes,
+        remediation_codes: block.remediation_codes,
     }
 }
 
@@ -674,7 +683,7 @@ fn reduce_overall_status(
     strict: &NormalizedStrictSection,
     gates: &NormalizedGatesSection,
 ) -> OperatorStatus {
-    if matches!(strict.latest_status, OperatorStatus::Fail)
+    if matches!(strict.status, OperatorStatus::Fail)
         || matches!(health.status, OperatorStatus::Fail)
         || matches!(alerts.status, OperatorStatus::Fail)
     {
@@ -733,12 +742,6 @@ fn prefix(input: &str) -> String {
     input.chars().take(16).collect()
 }
 
-fn extract_strict_digest_prefix(report: Option<&StrictCheckReport>, key: &str) -> Option<String> {
-    report
-        .and_then(|r| r.report.evidence_digest_prefixes.get(key))
-        .map(|v| prefix(v))
-}
-
 fn extract_health_prefix(value: Option<&serde_json::Value>, key: &str) -> Option<String> {
     value
         .and_then(|v| v.get(key))
@@ -765,10 +768,7 @@ mod tests {
     use super::*;
     use crate::drift::{DriftAlarmRecordV1, DriftSlotReportV1};
     use crate::models_lifecycle::{DriftStatusV1, EligibilityGeneratedFromV1};
-    use crate::{
-        AlertRecordV1, AlertsReportV1, DriftReportV1, StrictCheckResult, StrictCheckStatus,
-        StrictModeFailureReport,
-    };
+    use crate::{AlertRecordV1, AlertsReportV1, DriftReportV1};
 
     #[test]
     fn missing_sections_are_deterministic() {
@@ -779,25 +779,19 @@ mod tests {
 
     #[test]
     fn strict_fail_forces_overall_fail() {
-        let strict = normalize_strict(Some(&StrictCheckReport {
+        let strict = normalize_strict(&StrictEvidenceSnapshotV1 {
+            schema_version: 1,
             strict_mode_enabled: true,
-            ok: false,
-            report: StrictModeFailureReport {
-                schema_version: 1,
-                strict_mode_enabled: true,
-                profile: "test".to_string(),
-                checks: vec![StrictCheckResult {
-                    check_id: "strict_mode".to_string(),
-                    status: StrictCheckStatus::Fail,
-                    error_codes: vec!["x".to_string()],
-                    remediation: "fix".to_string(),
-                    canonical_remediation_codes: vec![],
-                }],
-                v1_checks: Vec::new(),
-                v3: None,
-                evidence_digest_prefixes: Default::default(),
-            },
-        }));
+            strict_status: StrictEvidenceStatusV1::Fail,
+            strict_report_digest_prefix: Some("abc".to_string()),
+            policy_graph_digest_prefix: None,
+            manifest_digest_prefix: None,
+            supported_slot_set_digest_prefix: None,
+            primary_denial_code: Some("strict.fail".to_string()),
+            remediation_codes: vec!["run_strict_check".to_string()],
+            failing_check_ids: vec!["strict_mode".to_string()],
+            snapshot_digest: "d".to_string(),
+        });
         let overall = reduce_overall_status(
             &normalize_health(None),
             &normalize_eligibility(None),
@@ -900,19 +894,19 @@ mod tests {
             summary_text: String::new(),
             report_digest: "a1".to_string(),
         }));
-        let strict = normalize_strict(Some(&StrictCheckReport {
+        let strict = normalize_strict(&StrictEvidenceSnapshotV1 {
+            schema_version: 1,
             strict_mode_enabled: true,
-            ok: true,
-            report: StrictModeFailureReport {
-                schema_version: 1,
-                strict_mode_enabled: true,
-                profile: "test".to_string(),
-                checks: vec![],
-                v1_checks: vec![],
-                v3: None,
-                evidence_digest_prefixes: Default::default(),
-            },
-        }));
+            strict_status: StrictEvidenceStatusV1::Pass,
+            strict_report_digest_prefix: Some("abc".to_string()),
+            policy_graph_digest_prefix: None,
+            manifest_digest_prefix: None,
+            supported_slot_set_digest_prefix: None,
+            primary_denial_code: None,
+            remediation_codes: vec![],
+            failing_check_ids: vec![],
+            snapshot_digest: "d".to_string(),
+        });
         let overall = reduce_overall_status(
             &normalize_health(Some(&serde_json::json!({"status":1}))),
             &eligibility,
@@ -971,7 +965,19 @@ mod tests {
                 eligibility_section: normalize_eligibility(None),
                 drift_section: normalize_drift(None),
                 alerts_section: normalize_alerts(None),
-                strict_section: normalize_strict(None),
+                strict_section: normalize_strict(&StrictEvidenceSnapshotV1 {
+                    schema_version: 1,
+                    strict_mode_enabled: true,
+                    strict_status: StrictEvidenceStatusV1::Missing,
+                    strict_report_digest_prefix: None,
+                    policy_graph_digest_prefix: None,
+                    manifest_digest_prefix: None,
+                    supported_slot_set_digest_prefix: None,
+                    primary_denial_code: Some("STRICT_EVIDENCE_MISSING".to_string()),
+                    remediation_codes: vec!["run_strict_check".to_string()],
+                    failing_check_ids: vec![],
+                    snapshot_digest: "d".to_string(),
+                }),
                 gates_section: normalize_gates(None, None, None),
             },
             remediation_codes: vec!["run_models_eligibility".to_string()],
