@@ -12272,6 +12272,11 @@ pub struct PortabilityReportV1 {
     pub hardware_scan: PortabilityCommandCheck,
     pub hidden_network_scan: PortabilityCommandCheck,
     pub artifact_schema_snapshot_check: PortabilityCommandCheck,
+    pub active_review_snapshot_smoke: PortabilityCommandCheck,
+    pub backend_resolution_smoke: PortabilityCommandCheck,
+    pub repro_pack_smoke: PortabilityCommandCheck,
+    pub bugkit_smoke: PortabilityCommandCheck,
+    pub remediation_consistency_smoke: PortabilityCommandCheck,
     pub backend_evidence_snapshot_smoke: PortabilityCommandCheck,
     pub operator_signoff_smoke: PortabilityCommandCheck,
     pub remediation_registry_doc_check: PortabilityCommandCheck,
@@ -12282,6 +12287,223 @@ pub struct PortabilityReportV1 {
     pub strict_check_smoke: PortabilityCommandCheck,
     pub operator_report_smoke: PortabilityCommandCheck,
     pub command_matrix: Vec<PortabilityMatrixEntry>,
+}
+
+fn reproducible_run_id_for_smoke(workdir: &Path) -> Result<String, OpsError> {
+    let _ = bringup(workdir, true, 16)?;
+    let run = runs_list(workdir, 1)?.into_iter().next().ok_or_else(|| {
+        OpsError::Invalid("no run metadata emitted for portability smoke".to_string())
+    })?;
+    Ok(run.run_id)
+}
+
+fn active_review_snapshot_smoke(workdir: &Path, name: &str, out: &str) -> PortabilityCommandCheck {
+    let out_path = PathBuf::from(out);
+    match models_active_review_snapshot(workdir, &out_path) {
+        Ok(report) => PortabilityCommandCheck {
+            name: name.to_string(),
+            status: PortabilityGateStatus::Pass,
+            detail: format!(
+                "schema={} slots={}",
+                report.schema_version,
+                report.slots.len()
+            ),
+            out: Some(out.to_string()),
+        },
+        Err(err) => PortabilityCommandCheck {
+            name: name.to_string(),
+            status: PortabilityGateStatus::Fail,
+            detail: err.to_string(),
+            out: Some(out.to_string()),
+        },
+    }
+}
+
+fn backend_resolution_smoke(workdir: &Path, name: &str, out: &str) -> PortabilityCommandCheck {
+    let out_path = PathBuf::from(out);
+    let slot = match detect_second_slot(workdir) {
+        Ok(slot) => slot,
+        Err(err) => {
+            return PortabilityCommandCheck {
+                name: name.to_string(),
+                status: PortabilityGateStatus::Skip,
+                detail: format!("optional backend path unavailable: {err}"),
+                out: Some(out.to_string()),
+            }
+        }
+    };
+    match models_backend_resolution(workdir, slot, None) {
+        Ok(report) => {
+            let write_result = (|| -> Result<(), OpsError> {
+                if let Some(parent) = out_path.parent() {
+                    fs::create_dir_all(parent)?;
+                }
+                fs::write(&out_path, serde_json::to_vec_pretty(&report)?)?;
+                Ok(())
+            })();
+            match write_result {
+                Ok(()) => PortabilityCommandCheck {
+                    name: name.to_string(),
+                    status: PortabilityGateStatus::Pass,
+                    detail: format!("slot={} resolution={:?}", report.slot_id, report.resolution),
+                    out: Some(out.to_string()),
+                },
+                Err(err) => PortabilityCommandCheck {
+                    name: name.to_string(),
+                    status: PortabilityGateStatus::Fail,
+                    detail: err.to_string(),
+                    out: Some(out.to_string()),
+                },
+            }
+        }
+        Err(err) => PortabilityCommandCheck {
+            name: name.to_string(),
+            status: PortabilityGateStatus::Skip,
+            detail: format!("optional backend path unavailable: {err}"),
+            out: Some(out.to_string()),
+        },
+    }
+}
+
+fn repro_pack_smoke(name: &str, out: &str, verify_out: &str) -> PortabilityCommandCheck {
+    let tmp = match tempfile::tempdir() {
+        Ok(dir) => dir,
+        Err(err) => {
+            return PortabilityCommandCheck {
+                name: name.to_string(),
+                status: PortabilityGateStatus::Fail,
+                detail: err.to_string(),
+                out: Some(out.to_string()),
+            }
+        }
+    };
+    let run_id = match reproducible_run_id_for_smoke(tmp.path()) {
+        Ok(run_id) => run_id,
+        Err(err) => {
+            return PortabilityCommandCheck {
+                name: name.to_string(),
+                status: PortabilityGateStatus::Fail,
+                detail: err.to_string(),
+                out: Some(out.to_string()),
+            }
+        }
+    };
+    let pack_out = PathBuf::from(out);
+    let verify_path = PathBuf::from(verify_out);
+    let result = (|| -> Result<ReproVerifyReport, OpsError> {
+        if let Some(parent) = pack_out.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        repro_pack(tmp.path(), &run_id, &pack_out)?;
+        repro_verify(&pack_out, &verify_path)
+    })();
+
+    match result {
+        Ok(report) if report.pass => PortabilityCommandCheck {
+            name: name.to_string(),
+            status: PortabilityGateStatus::Pass,
+            detail: format!(
+                "run_id={} checked_files={}",
+                report.run_id, report.checked_files
+            ),
+            out: Some(pack_out.display().to_string()),
+        },
+        Ok(report) => PortabilityCommandCheck {
+            name: name.to_string(),
+            status: PortabilityGateStatus::Fail,
+            detail: format!("verify failed: {}", report.reasons.join("; ")),
+            out: Some(pack_out.display().to_string()),
+        },
+        Err(err) => PortabilityCommandCheck {
+            name: name.to_string(),
+            status: PortabilityGateStatus::Fail,
+            detail: err.to_string(),
+            out: Some(pack_out.display().to_string()),
+        },
+    }
+}
+
+fn bugkit_smoke(name: &str, out: &str) -> PortabilityCommandCheck {
+    let tmp = match tempfile::tempdir() {
+        Ok(dir) => dir,
+        Err(err) => {
+            return PortabilityCommandCheck {
+                name: name.to_string(),
+                status: PortabilityGateStatus::Fail,
+                detail: err.to_string(),
+                out: Some(out.to_string()),
+            }
+        }
+    };
+    let run_id = match reproducible_run_id_for_smoke(tmp.path()) {
+        Ok(run_id) => run_id,
+        Err(err) => {
+            return PortabilityCommandCheck {
+                name: name.to_string(),
+                status: PortabilityGateStatus::Fail,
+                detail: err.to_string(),
+                out: Some(out.to_string()),
+            }
+        }
+    };
+    let out_path = PathBuf::from(out);
+    let report = (|| -> Result<BugKitManifestV1, OpsError> {
+        if let Some(parent) = out_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        bugkit_build(tmp.path(), &run_id, &out_path, &BugKitBuildArgs::default())?;
+        let archive = fs::File::open(&out_path)?;
+        let mut zip = zip::ZipArchive::new(archive)
+            .map_err(|e| OpsError::Invalid(format!("unable to open bugkit zip: {e}")))?;
+        let mut manifest_file = zip
+            .by_name("bugkit_manifest.json")
+            .map_err(|e| OpsError::Invalid(format!("missing bugkit_manifest.json: {e}")))?;
+        let mut body = String::new();
+        std::io::Read::read_to_string(&mut manifest_file, &mut body)?;
+        let manifest: BugKitManifestV1 = serde_json::from_str(&body)?;
+        Ok(manifest)
+    })();
+    match report {
+        Ok(manifest)
+            if !manifest.include_payload
+                && !manifest.include_weights
+                && [
+                    &manifest.backend_evidence_snapshot,
+                    &manifest.active_review_snapshot,
+                    &manifest.operator_signoff,
+                    &manifest.backend_resolution,
+                ]
+                .iter()
+                .all(|entry| {
+                    ["INCLUDED", "MISSING", "EXCLUDED"].contains(&entry.status.as_str())
+                }) =>
+        {
+            PortabilityCommandCheck {
+                name: name.to_string(),
+                status: PortabilityGateStatus::Pass,
+                detail: format!(
+                    "run_id={} files={} payload=false weights=false",
+                    manifest.run_id, manifest.file_count
+                ),
+                out: Some(out.to_string()),
+            }
+        }
+        Ok(manifest) => PortabilityCommandCheck {
+            name: name.to_string(),
+            status: PortabilityGateStatus::Fail,
+            detail: format!(
+                "unexpected bugkit manifest flags payload={} weights={}",
+                manifest.include_payload, manifest.include_weights
+            ),
+            out: Some(out.to_string()),
+        },
+        Err(err) => PortabilityCommandCheck {
+            name: name.to_string(),
+            status: PortabilityGateStatus::Fail,
+            detail: err.to_string(),
+            out: Some(out.to_string()),
+        },
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -12889,6 +13111,30 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         "artifact_schema_snapshot_check",
         "./out/artifact_schema_check.json",
     )?;
+    let active_review_snapshot_smoke = active_review_snapshot_smoke(
+        workdir,
+        "active_review_snapshot_smoke",
+        "./out/active_review_snapshot.json",
+    );
+    let backend_resolution_smoke = backend_resolution_smoke(
+        workdir,
+        "backend_resolution_smoke",
+        "./out/backend_resolution_portability.json",
+    );
+    let repro_pack_smoke = repro_pack_smoke(
+        "repro_pack_smoke",
+        "./out/repro_portability.zip",
+        "./out/repro_verify_portability.json",
+    );
+    let bugkit_smoke = bugkit_smoke("bugkit_smoke", "./out/bugkit_portability.zip");
+    let remediation_consistency_smoke = gate_check(
+        "remediation_consistency_smoke",
+        remediation_consistency_check(&PathBuf::from(
+            "./out/remediation_consistency_portability.json",
+        ))
+        .map(|r| r.summary.fail_count == 0),
+        &PathBuf::from("./out/remediation_consistency_portability.json"),
+    );
     let backend_evidence_snapshot_smoke = models_evidence_snapshot_smoke(
         workdir,
         "backend_evidence_snapshot_smoke",
@@ -12988,6 +13234,11 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         matrix_cmd("linux", "cargo run -p ucf-ops -- audit hardware-scan"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- audit net-deps --out ./out/net_deps.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- spec artifact-schemas-check --out ./out/artifact_schema_check.json"),
+        matrix_cmd("linux", "cargo run -p ucf-ops -- models active-review-snapshot --out ./out/active_review_snapshot.json"),
+        matrix_cmd("linux", "cargo run -p ucf-ops -- models backend-resolution --slot sae --out ./out/backend_resolution_sae.json || SKIP(optional second slot not sae)"),
+        matrix_cmd("linux", "cargo run -p ucf-ops -- repro pack --run <id> --out ./out/repro_portability.zip && cargo run -p ucf-ops -- repro verify --pack ./out/repro_portability.zip --out ./out/repro_verify_portability.json"),
+        matrix_cmd("linux", "cargo run -p ucf-ops -- bugkit build --run <id> --out ./out/bugkit_portability.zip"),
+        matrix_cmd("linux", "cargo run -p ucf-ops -- remediation-consistency-check --out ./out/remediation_consistency_portability.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- models evidence-snapshot --out ./out/backend_evidence_snapshot.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- operator signoff --out ./out/operator_signoff.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- docs remediation-codes --out docs/remediation_codes_v1.md"),
@@ -13002,6 +13253,11 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         matrix_cmd("windows", "cargo run -p ucf-ops -- audit path-scan"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- audit hardware-scan"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- spec artifact-schemas-check --out ./out/artifact_schema_check.json"),
+        matrix_cmd("windows", "cargo run -p ucf-ops -- models active-review-snapshot --out ./out/active_review_snapshot.json"),
+        matrix_cmd("windows", "cargo run -p ucf-ops -- models backend-resolution --slot sae --out ./out/backend_resolution_sae.json || SKIP(optional second slot not sae)"),
+        matrix_cmd("windows", "cargo run -p ucf-ops -- repro pack --run <id> --out ./out/repro_portability.zip && cargo run -p ucf-ops -- repro verify --pack ./out/repro_portability.zip --out ./out/repro_verify_portability.json"),
+        matrix_cmd("windows", "cargo run -p ucf-ops -- bugkit build --run <id> --out ./out/bugkit_portability.zip"),
+        matrix_cmd("windows", "cargo run -p ucf-ops -- remediation-consistency-check --out ./out/remediation_consistency_portability.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- models evidence-snapshot --out ./out/backend_evidence_snapshot.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- operator signoff --out ./out/operator_signoff.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- docs remediation-codes --out docs/remediation_codes_v1.md"),
@@ -13020,6 +13276,11 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         hardware_scan,
         hidden_network_scan,
         artifact_schema_snapshot_check,
+        active_review_snapshot_smoke,
+        backend_resolution_smoke,
+        repro_pack_smoke,
+        bugkit_smoke,
+        remediation_consistency_smoke,
         backend_evidence_snapshot_smoke,
         operator_signoff_smoke,
         remediation_registry_doc_check,

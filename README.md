@@ -17,12 +17,15 @@ See `docs/feature_matrix.md` for details.
 - Spec snapshot: `cargo run -p ucf-ops -- spec snapshot --policy policies/packs/base_v1 --overlay policies/packs/overlays/test --out docs/spec_snapshot.md`
 - Docs lint (CI-blocking): `cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json`
 
-## Portability/docs gate (Linux + Windows, v4 refresh)
+## Portability/docs gate (Linux + Windows, v5 refresh)
 - `cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json`
 - `cargo run -p ucf-ops -- audit path-scan`
 - `cargo run -p ucf-ops -- audit hardware-scan`
 - `cargo run -p ucf-ops -- audit net-deps --out ./out/net_deps.json` (Linux lane)
 - `cargo run -p ucf-ops -- spec artifact-schemas-check --out ./out/artifact_schema_check.json`
+- `cargo run -p ucf-ops -- models active-review-snapshot --out ./out/active_review_snapshot.json`
+- `cargo run -p ucf-ops -- models backend-resolution --slot sae --out ./out/backend_resolution_sae.json` *(optional path may SKIP if second-slot differs)*
+- `cargo run -p ucf-ops -- remediation-consistency-check --out ./out/remediation_consistency_portability.json`
 - `cargo run -p ucf-ops -- models evidence-snapshot --out ./out/backend_evidence_snapshot.json`
 - `cargo run -p ucf-ops -- operator signoff --out ./out/operator_signoff.json`
 - `cargo run -p ucf-ops -- docs remediation-codes --out ./out/remediation_codes_v1.generated.md`

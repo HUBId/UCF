@@ -64,6 +64,7 @@ pub fn docs_lint(args: &DocsLintArgs) -> Result<DocsLintReport, OpsError> {
         hardware_neutral_docs_check(args)?,
         v3_docs_consistency_check(args)?,
         v4_docs_consistency_check(args)?,
+        v5_docs_consistency_check(args)?,
         remediation_registry_doc_check(args)?,
         artifact_schema_snapshot_check(args)?,
     ];
@@ -333,6 +334,40 @@ fn hardware_neutral_docs_check(args: &DocsLintArgs) -> Result<DocsLintCheck, Ops
                 .join("artifact_schema_snapshots.md"),
             false,
         ),
+        (
+            "active_review_snapshot_v5",
+            &args
+                .repo_root
+                .join("docs")
+                .join("active_review_snapshot_v5.md"),
+            false,
+        ),
+        (
+            "sae_burn_resolution_v5",
+            &args
+                .repo_root
+                .join("docs")
+                .join("sae_burn_resolution_v5.md"),
+            false,
+        ),
+        (
+            "repro_pack",
+            &args.repo_root.join("docs").join("repro_pack.md"),
+            false,
+        ),
+        (
+            "bug_report_kit",
+            &args.repo_root.join("docs").join("bug_report_kit.md"),
+            false,
+        ),
+        (
+            "remediation_consistency_v5",
+            &args
+                .repo_root
+                .join("docs")
+                .join("remediation_consistency_v5.md"),
+            false,
+        ),
     ];
 
     let banned = [
@@ -530,6 +565,107 @@ fn v4_docs_consistency_check(args: &DocsLintArgs) -> Result<DocsLintCheck, OpsEr
         status: DocsLintStatus::Pass,
         detail: "v4 docs are present and linked from portability/docs checks/index snapshots"
             .to_string(),
+        remediation: None,
+    })
+}
+
+fn v5_docs_consistency_check(args: &DocsLintArgs) -> Result<DocsLintCheck, OpsError> {
+    let required = [
+        "docs/active_review_snapshot_v5.md",
+        "docs/sae_burn_resolution_v5.md",
+        "docs/repro_pack.md",
+        "docs/bug_report_kit.md",
+        "docs/remediation_consistency_v5.md",
+        "docs/artifact_schema_snapshots.md",
+    ];
+    for path in required {
+        if !args.repo_root.join(path).exists() {
+            return Ok(DocsLintCheck {
+                name: "v5_docs_consistency".to_string(),
+                status: DocsLintStatus::Fail,
+                detail: format!("missing required v5 doc: {path}"),
+                remediation: Some("restore missing v5 docs and re-run docs lint".to_string()),
+            });
+        }
+    }
+
+    let portability_gate = fs::read_to_string(args.repo_root.join("docs/portability_gate.md"))?;
+    let docs_checks = fs::read_to_string(args.repo_root.join("docs/docs_checks.md"))?;
+
+    let missing = [
+        (
+            "docs/portability_gate.md",
+            "active_review_snapshot_v5.md",
+            portability_gate.contains("active_review_snapshot_v5.md"),
+        ),
+        (
+            "docs/portability_gate.md",
+            "sae_burn_resolution_v5.md",
+            portability_gate.contains("sae_burn_resolution_v5.md"),
+        ),
+        (
+            "docs/portability_gate.md",
+            "repro_pack.md",
+            portability_gate.contains("repro_pack.md"),
+        ),
+        (
+            "docs/portability_gate.md",
+            "bug_report_kit.md",
+            portability_gate.contains("bug_report_kit.md"),
+        ),
+        (
+            "docs/portability_gate.md",
+            "remediation_consistency_v5.md",
+            portability_gate.contains("remediation_consistency_v5.md"),
+        ),
+        (
+            "docs/docs_checks.md",
+            "docs/active_review_snapshot_v5.md",
+            docs_checks.contains("docs/active_review_snapshot_v5.md"),
+        ),
+        (
+            "docs/docs_checks.md",
+            "docs/sae_burn_resolution_v5.md",
+            docs_checks.contains("docs/sae_burn_resolution_v5.md"),
+        ),
+        (
+            "docs/docs_checks.md",
+            "docs/repro_pack.md",
+            docs_checks.contains("docs/repro_pack.md"),
+        ),
+        (
+            "docs/docs_checks.md",
+            "docs/bug_report_kit.md",
+            docs_checks.contains("docs/bug_report_kit.md"),
+        ),
+        (
+            "docs/docs_checks.md",
+            "docs/remediation_consistency_v5.md",
+            docs_checks.contains("docs/remediation_consistency_v5.md"),
+        ),
+    ]
+    .into_iter()
+    .filter_map(|(file, needle, present)| {
+        (!present).then_some(format!("{file} missing `{needle}`"))
+    })
+    .collect::<Vec<_>>();
+
+    if !missing.is_empty() {
+        return Ok(DocsLintCheck {
+            name: "v5_docs_consistency".to_string(),
+            status: DocsLintStatus::Fail,
+            detail: format!("v5 docs linkage mismatch: {}", missing.join("; ")),
+            remediation: Some(
+                "link v5 docs from portability/docs checks and keep docs references in sync"
+                    .to_string(),
+            ),
+        });
+    }
+
+    Ok(DocsLintCheck {
+        name: "v5_docs_consistency".to_string(),
+        status: DocsLintStatus::Pass,
+        detail: "v5 docs are present and linked from portability/docs checks".to_string(),
         remediation: None,
     })
 }
@@ -762,7 +898,7 @@ mod tests {
     use super::{
         first_diff_line, hardware_neutral_docs_check, parse_module_map_keys, parse_prompt_ids,
         remediation_registry_doc_check, v3_docs_consistency_check, v4_docs_consistency_check,
-        DocsLintArgs, DocsLintMode, DocsLintStatus,
+        v5_docs_consistency_check, DocsLintArgs, DocsLintMode, DocsLintStatus,
     };
     use std::path::PathBuf;
 
@@ -813,6 +949,11 @@ mod tests {
         std::fs::write(docs.join("operator_signoff_v4.md"), "# v4\n").expect("write");
         std::fs::write(docs.join("remediation_codes_v1.md"), "# v4\n").expect("write");
         std::fs::write(docs.join("artifact_schema_snapshots.md"), "# v4\n").expect("write");
+        std::fs::write(docs.join("active_review_snapshot_v5.md"), "# v5\n").expect("write");
+        std::fs::write(docs.join("sae_burn_resolution_v5.md"), "# v5\n").expect("write");
+        std::fs::write(docs.join("repro_pack.md"), "# v5\n").expect("write");
+        std::fs::write(docs.join("bug_report_kit.md"), "# v5\n").expect("write");
+        std::fs::write(docs.join("remediation_consistency_v5.md"), "# v5\n").expect("write");
         std::fs::write(docs.join("module_map.md"), "- **ucf-ops**: x\n").expect("write");
         std::fs::write(docs.join("spec_snapshot.md"), "# x\n").expect("write");
 
@@ -850,6 +991,11 @@ mod tests {
         std::fs::write(docs.join("operator_signoff_v4.md"), "# v4\n").expect("write");
         std::fs::write(docs.join("remediation_codes_v1.md"), "NUC\n").expect("write");
         std::fs::write(docs.join("artifact_schema_snapshots.md"), "# v4\n").expect("write");
+        std::fs::write(docs.join("active_review_snapshot_v5.md"), "# v5\n").expect("write");
+        std::fs::write(docs.join("sae_burn_resolution_v5.md"), "# v5\n").expect("write");
+        std::fs::write(docs.join("repro_pack.md"), "# v5\n").expect("write");
+        std::fs::write(docs.join("bug_report_kit.md"), "# v5\n").expect("write");
+        std::fs::write(docs.join("remediation_consistency_v5.md"), "# v5\n").expect("write");
         std::fs::write(docs.join("module_map.md"), "- **ucf-ops**: x\n").expect("write");
         std::fs::write(docs.join("spec_snapshot.md"), "# x\n").expect("write");
 
@@ -934,6 +1080,55 @@ mod tests {
         std::fs::write(docs.join("artifact_schema_snapshots.md"), "# x\n").expect("write");
 
         let check = v4_docs_consistency_check(&DocsLintArgs {
+            repo_root: dir.path().to_path_buf(),
+            policy_pack: PathBuf::from("policies/packs/base_v1"),
+            overlay_pack: None,
+            spec_snapshot: docs.join("spec_snapshot.md"),
+            prompt_index: docs.join("prompt_series_index.md"),
+            module_map: docs.join("module_map.md"),
+            deploy_doc: docs.join("deploy_portable.md"),
+            artifact_schema_snapshot_dir: docs.join("artifact_schema_snapshots"),
+            mode: DocsLintMode::Strict,
+        })
+        .expect("check");
+        assert_eq!(check.status, DocsLintStatus::Pass);
+    }
+
+    #[test]
+    fn v5_docs_consistency_requires_links() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let docs = dir.path().join("docs");
+        std::fs::create_dir_all(&docs).expect("mkdir");
+        std::fs::write(docs.join("prompt_series_index.md"), "| 226 | x |\n").expect("write");
+        std::fs::write(docs.join("prompt_rulebook.md"), "# Rules\n").expect("write");
+        std::fs::write(docs.join("deploy_portable.md"), "# Deploy\n").expect("write");
+        std::fs::write(docs.join("module_map.md"), "- **ucf-ops**: x\n").expect("write");
+        std::fs::write(docs.join("spec_snapshot.md"), "# x\n").expect("write");
+        std::fs::write(
+            docs.join("portability_gate.md"),
+            "active_review_snapshot_v5.md sae_burn_resolution_v5.md repro_pack.md bug_report_kit.md remediation_consistency_v5.md\n",
+        )
+        .expect("write");
+        std::fs::write(
+            docs.join("docs_checks.md"),
+            "docs/active_review_snapshot_v5.md docs/sae_burn_resolution_v5.md docs/repro_pack.md docs/bug_report_kit.md docs/remediation_consistency_v5.md\n",
+        )
+        .expect("write");
+        std::fs::write(docs.join("series_state_snapshot.md"), "| 216 | x |\n").expect("write");
+        std::fs::write(docs.join("models_eligibility_v3.md"), "# x\n").expect("write");
+        std::fs::write(docs.join("strict_mode_v3.md"), "# x\n").expect("write");
+        std::fs::write(docs.join("operator_report_v3.md"), "# x\n").expect("write");
+        std::fs::write(docs.join("backend_evidence_snapshot_v4.md"), "# x\n").expect("write");
+        std::fs::write(docs.join("operator_signoff_v4.md"), "# x\n").expect("write");
+        std::fs::write(docs.join("remediation_codes_v1.md"), "# x\n").expect("write");
+        std::fs::write(docs.join("artifact_schema_snapshots.md"), "# x\n").expect("write");
+        std::fs::write(docs.join("active_review_snapshot_v5.md"), "# x\n").expect("write");
+        std::fs::write(docs.join("sae_burn_resolution_v5.md"), "# x\n").expect("write");
+        std::fs::write(docs.join("repro_pack.md"), "# x\n").expect("write");
+        std::fs::write(docs.join("bug_report_kit.md"), "# x\n").expect("write");
+        std::fs::write(docs.join("remediation_consistency_v5.md"), "# x\n").expect("write");
+
+        let check = v5_docs_consistency_check(&DocsLintArgs {
             repo_root: dir.path().to_path_buf(),
             policy_pack: PathBuf::from("policies/packs/base_v1"),
             overlay_pack: None,
