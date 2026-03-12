@@ -8,8 +8,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    check_artifact_schema_snapshots, generate_spec_snapshot, policy_validate, ArtifactSchemaArgs,
-    DriftKind, OpsError, SpecSnapshotArgs,
+    check_artifact_schema_snapshots, generate_remediation_codes_doc, generate_spec_snapshot,
+    policy_validate, ArtifactSchemaArgs, DriftKind, OpsError, SpecSnapshotArgs,
 };
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -63,6 +63,8 @@ pub fn docs_lint(args: &DocsLintArgs) -> Result<DocsLintReport, OpsError> {
         module_map_check(args)?,
         hardware_neutral_docs_check(args)?,
         v3_docs_consistency_check(args)?,
+        v4_docs_consistency_check(args)?,
+        remediation_registry_doc_check(args)?,
         artifact_schema_snapshot_check(args)?,
     ];
     let ok = checks.iter().all(|c| c.status != DocsLintStatus::Fail);
@@ -305,6 +307,32 @@ fn hardware_neutral_docs_check(args: &DocsLintArgs) -> Result<DocsLintCheck, Ops
             &args.repo_root.join("docs").join("operator_report_v3.md"),
             false,
         ),
+        (
+            "backend_evidence_snapshot_v4",
+            &args
+                .repo_root
+                .join("docs")
+                .join("backend_evidence_snapshot_v4.md"),
+            false,
+        ),
+        (
+            "operator_signoff_v4",
+            &args.repo_root.join("docs").join("operator_signoff_v4.md"),
+            false,
+        ),
+        (
+            "remediation_codes_v1",
+            &args.repo_root.join("docs").join("remediation_codes_v1.md"),
+            false,
+        ),
+        (
+            "artifact_schema_snapshots",
+            &args
+                .repo_root
+                .join("docs")
+                .join("artifact_schema_snapshots.md"),
+            false,
+        ),
     ];
 
     let banned = [
@@ -374,6 +402,127 @@ fn hardware_neutral_docs_check(args: &DocsLintArgs) -> Result<DocsLintCheck, Ops
         name: "hardware_neutral_docs".to_string(),
         status: DocsLintStatus::Pass,
         detail: "no hardware-specific terms detected in guarded docs".to_string(),
+        remediation: None,
+    })
+}
+
+fn remediation_registry_doc_check(args: &DocsLintArgs) -> Result<DocsLintCheck, OpsError> {
+    let committed = args.repo_root.join("docs/remediation_codes_v1.md");
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| OpsError::Invalid(format!("system clock error: {e}")))?
+        .as_nanos();
+    let generated = std::env::temp_dir().join(format!("ucf_remediation_codes_{ts}.md"));
+    generate_remediation_codes_doc(&generated)?;
+    let committed_body = fs::read_to_string(&committed)?;
+    let generated_body = fs::read_to_string(&generated)?;
+    let _ = fs::remove_file(&generated);
+
+    if committed_body == generated_body {
+        return Ok(DocsLintCheck {
+            name: "remediation_registry_doc".to_string(),
+            status: DocsLintStatus::Pass,
+            detail: "docs/remediation_codes_v1.md is up-to-date".to_string(),
+            remediation: None,
+        });
+    }
+
+    Ok(DocsLintCheck {
+        name: "remediation_registry_doc".to_string(),
+        status: DocsLintStatus::Fail,
+        detail: format!(
+            "docs/remediation_codes_v1.md differs from generated registry at line {}",
+            first_diff_line(&committed_body, &generated_body)
+        ),
+        remediation: Some(
+            "run: cargo run -p ucf-ops -- docs remediation-codes --out docs/remediation_codes_v1.md && git add docs/remediation_codes_v1.md"
+                .to_string(),
+        ),
+    })
+}
+
+fn v4_docs_consistency_check(args: &DocsLintArgs) -> Result<DocsLintCheck, OpsError> {
+    let required = [
+        "docs/backend_evidence_snapshot_v4.md",
+        "docs/operator_signoff_v4.md",
+        "docs/remediation_codes_v1.md",
+        "docs/artifact_schema_snapshots.md",
+    ];
+    for path in required {
+        if !args.repo_root.join(path).exists() {
+            return Ok(DocsLintCheck {
+                name: "v4_docs_consistency".to_string(),
+                status: DocsLintStatus::Fail,
+                detail: format!("missing required v4 doc: {path}"),
+                remediation: Some("restore missing v4 docs and re-run docs lint".to_string()),
+            });
+        }
+    }
+
+    let portability_gate = fs::read_to_string(args.repo_root.join("docs/portability_gate.md"))?;
+    let docs_checks = fs::read_to_string(args.repo_root.join("docs/docs_checks.md"))?;
+    let series_snapshot = fs::read_to_string(args.repo_root.join("docs/series_state_snapshot.md"))?;
+
+    let missing = [
+        (
+            "docs/portability_gate.md",
+            "backend_evidence_snapshot_v4.md",
+            portability_gate.contains("backend_evidence_snapshot_v4.md"),
+        ),
+        (
+            "docs/portability_gate.md",
+            "operator_signoff_v4.md",
+            portability_gate.contains("operator_signoff_v4.md"),
+        ),
+        (
+            "docs/portability_gate.md",
+            "remediation_codes_v1.md",
+            portability_gate.contains("remediation_codes_v1.md"),
+        ),
+        (
+            "docs/portability_gate.md",
+            "artifact_schema_snapshots.md",
+            portability_gate.contains("artifact_schema_snapshots.md"),
+        ),
+        (
+            "docs/docs_checks.md",
+            "docs/remediation_codes_v1.md",
+            docs_checks.contains("docs/remediation_codes_v1.md"),
+        ),
+        (
+            "docs/docs_checks.md",
+            "docs/artifact_schema_snapshots.md",
+            docs_checks.contains("docs/artifact_schema_snapshots.md"),
+        ),
+        (
+            "docs/series_state_snapshot.md",
+            "| 216 |",
+            series_snapshot.contains("| 216 |"),
+        ),
+    ]
+    .into_iter()
+    .filter_map(|(file, needle, present)| {
+        (!present).then_some(format!("{file} missing `{needle}`"))
+    })
+    .collect::<Vec<_>>();
+
+    if !missing.is_empty() {
+        return Ok(DocsLintCheck {
+            name: "v4_docs_consistency".to_string(),
+            status: DocsLintStatus::Fail,
+            detail: format!("v4 docs linkage mismatch: {}", missing.join("; ")),
+            remediation: Some(
+                "link v4 docs from portability/docs checks and keep series snapshot in sync"
+                    .to_string(),
+            ),
+        });
+    }
+
+    Ok(DocsLintCheck {
+        name: "v4_docs_consistency".to_string(),
+        status: DocsLintStatus::Pass,
+        detail: "v4 docs are present and linked from portability/docs checks/index snapshots"
+            .to_string(),
         remediation: None,
     })
 }
@@ -605,7 +754,8 @@ fn first_diff_line(a: &str, b: &str) -> usize {
 mod tests {
     use super::{
         first_diff_line, hardware_neutral_docs_check, parse_module_map_keys, parse_prompt_ids,
-        v3_docs_consistency_check, DocsLintArgs, DocsLintMode, DocsLintStatus,
+        remediation_registry_doc_check, v3_docs_consistency_check, v4_docs_consistency_check,
+        DocsLintArgs, DocsLintMode, DocsLintStatus,
     };
     use std::path::PathBuf;
 
@@ -652,6 +802,10 @@ mod tests {
         std::fs::write(docs.join("models_eligibility_v3.md"), "# v3\n").expect("write");
         std::fs::write(docs.join("strict_mode_v3.md"), "# v3\n").expect("write");
         std::fs::write(docs.join("operator_report_v3.md"), "# v3\n").expect("write");
+        std::fs::write(docs.join("backend_evidence_snapshot_v4.md"), "# v4\n").expect("write");
+        std::fs::write(docs.join("operator_signoff_v4.md"), "# v4\n").expect("write");
+        std::fs::write(docs.join("remediation_codes_v1.md"), "# v4\n").expect("write");
+        std::fs::write(docs.join("artifact_schema_snapshots.md"), "# v4\n").expect("write");
         std::fs::write(docs.join("module_map.md"), "- **ucf-ops**: x\n").expect("write");
         std::fs::write(docs.join("spec_snapshot.md"), "# x\n").expect("write");
 
@@ -685,6 +839,10 @@ mod tests {
         std::fs::write(docs.join("models_eligibility_v3.md"), "# v3\n").expect("write");
         std::fs::write(docs.join("strict_mode_v3.md"), "# v3\n").expect("write");
         std::fs::write(docs.join("operator_report_v3.md"), "# v3\n").expect("write");
+        std::fs::write(docs.join("backend_evidence_snapshot_v4.md"), "# v4\n").expect("write");
+        std::fs::write(docs.join("operator_signoff_v4.md"), "# v4\n").expect("write");
+        std::fs::write(docs.join("remediation_codes_v1.md"), "NUC\n").expect("write");
+        std::fs::write(docs.join("artifact_schema_snapshots.md"), "# v4\n").expect("write");
         std::fs::write(docs.join("module_map.md"), "- **ucf-ops**: x\n").expect("write");
         std::fs::write(docs.join("spec_snapshot.md"), "# x\n").expect("write");
 
@@ -737,5 +895,70 @@ mod tests {
         })
         .expect("check");
         assert_eq!(check.status, DocsLintStatus::Pass);
+    }
+
+    #[test]
+    fn v4_docs_consistency_requires_links() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let docs = dir.path().join("docs");
+        std::fs::create_dir_all(&docs).expect("mkdir");
+        std::fs::write(docs.join("prompt_series_index.md"), "| 216 | x |\n").expect("write");
+        std::fs::write(docs.join("prompt_rulebook.md"), "# Rules\n").expect("write");
+        std::fs::write(docs.join("deploy_portable.md"), "# Deploy\n").expect("write");
+        std::fs::write(docs.join("module_map.md"), "- **ucf-ops**: x\n").expect("write");
+        std::fs::write(docs.join("spec_snapshot.md"), "# x\n").expect("write");
+        std::fs::write(
+            docs.join("portability_gate.md"),
+            "backend_evidence_snapshot_v4.md operator_signoff_v4.md remediation_codes_v1.md artifact_schema_snapshots.md\n",
+        )
+        .expect("write");
+        std::fs::write(
+            docs.join("docs_checks.md"),
+            "docs/remediation_codes_v1.md docs/artifact_schema_snapshots.md\n",
+        )
+        .expect("write");
+        std::fs::write(docs.join("series_state_snapshot.md"), "| 216 | x |\n").expect("write");
+        std::fs::write(docs.join("models_eligibility_v3.md"), "# x\n").expect("write");
+        std::fs::write(docs.join("strict_mode_v3.md"), "# x\n").expect("write");
+        std::fs::write(docs.join("operator_report_v3.md"), "# x\n").expect("write");
+        std::fs::write(docs.join("backend_evidence_snapshot_v4.md"), "# x\n").expect("write");
+        std::fs::write(docs.join("operator_signoff_v4.md"), "# x\n").expect("write");
+        std::fs::write(docs.join("remediation_codes_v1.md"), "# x\n").expect("write");
+        std::fs::write(docs.join("artifact_schema_snapshots.md"), "# x\n").expect("write");
+
+        let check = v4_docs_consistency_check(&DocsLintArgs {
+            repo_root: dir.path().to_path_buf(),
+            policy_pack: PathBuf::from("policies/packs/base_v1"),
+            overlay_pack: None,
+            spec_snapshot: docs.join("spec_snapshot.md"),
+            prompt_index: docs.join("prompt_series_index.md"),
+            module_map: docs.join("module_map.md"),
+            deploy_doc: docs.join("deploy_portable.md"),
+            artifact_schema_snapshot_dir: docs.join("artifact_schema_snapshots"),
+            mode: DocsLintMode::Strict,
+        })
+        .expect("check");
+        assert_eq!(check.status, DocsLintStatus::Pass);
+    }
+
+    #[test]
+    fn remediation_registry_doc_check_detects_drift() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let docs = dir.path().join("docs");
+        std::fs::create_dir_all(&docs).expect("mkdir");
+        std::fs::write(docs.join("remediation_codes_v1.md"), "# stale\n").expect("write");
+        let check = remediation_registry_doc_check(&DocsLintArgs {
+            repo_root: dir.path().to_path_buf(),
+            policy_pack: PathBuf::from("policies/packs/base_v1"),
+            overlay_pack: None,
+            spec_snapshot: docs.join("spec_snapshot.md"),
+            prompt_index: docs.join("prompt_series_index.md"),
+            module_map: docs.join("module_map.md"),
+            deploy_doc: docs.join("deploy_portable.md"),
+            artifact_schema_snapshot_dir: docs.join("artifact_schema_snapshots"),
+            mode: DocsLintMode::Strict,
+        })
+        .expect("check");
+        assert_eq!(check.status, DocsLintStatus::Fail);
     }
 }

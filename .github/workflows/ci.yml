@@ -42,6 +42,16 @@ jobs:
         run: cargo build -p ucf-ops
       - name: Docs lint (blocking)
         run: cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json
+      - name: Artifact schema snapshot check (blocking)
+        run: cargo run -p ucf-ops -- spec artifact-schemas-check --out ./out/artifact_schema_check.json
+      - name: Backend evidence snapshot smoke
+        run: cargo run -p ucf-ops -- models evidence-snapshot --out ./out/backend_evidence_snapshot.json
+      - name: Operator signoff smoke
+        run: cargo run -p ucf-ops -- operator signoff --out ./out/operator_signoff.json
+      - name: Remediation codes doc generation check (blocking)
+        run: |
+          cargo run -p ucf-ops -- docs remediation-codes --out ./out/remediation_codes_v1.generated.md
+          diff -u docs/remediation_codes_v1.md ./out/remediation_codes_v1.generated.md
       - name: v0 gate (blocking)
         run: cargo run -p ucf-ops -- v0 gate --scenario fixtures/e2e/v0_flow_a.json --out ./out/v0_gate_report.json
       - name: v1 gate (blocking)
@@ -102,6 +112,8 @@ jobs:
         run: cargo test --workspace --all-targets
       - name: Docs lint (blocking)
         run: cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json
+      - name: Artifact schema snapshot check (blocking)
+        run: cargo run -p ucf-ops -- spec artifact-schemas-check --out ./out/artifact_schema_check.json
       - name: v0 gate (blocking)
         run: cargo run -p ucf-ops -- v0 gate --scenario fixtures/e2e/v0_flow_a.json --out ./out/v0_gate_report.json
       - name: v1 gate (blocking)
@@ -115,6 +127,22 @@ jobs:
       - name: Hidden network dependency scan
         if: runner.os == 'Linux'
         run: cargo run -p ucf-ops -- audit net-deps --out ./out/net_deps.json
+      - name: Backend evidence snapshot smoke
+        run: cargo run -p ucf-ops -- models evidence-snapshot --out ./out/backend_evidence_snapshot.json
+      - name: Operator signoff smoke
+        run: cargo run -p ucf-ops -- operator signoff --out ./out/operator_signoff.json
+      - name: Remediation codes doc generation check (linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          cargo run -p ucf-ops -- docs remediation-codes --out ./out/remediation_codes_v1.generated.md
+          diff -u docs/remediation_codes_v1.md ./out/remediation_codes_v1.generated.md
+      - name: Remediation codes doc generation check (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cargo run -p ucf-ops -- docs remediation-codes --out ./out/remediation_codes_v1.generated.md
+          git diff --no-index --exit-code docs/remediation_codes_v1.md ./out/remediation_codes_v1.generated.md
       - name: Models verify (if manifest present)
         if: runner.os == 'Linux'
         shell: bash
