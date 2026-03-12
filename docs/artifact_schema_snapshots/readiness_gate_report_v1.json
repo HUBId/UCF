@@ -1,0 +1,40 @@
+{
+  "artifact_id": "readiness_gate_report_v1",
+  "type_name": "ReadinessGateReport",
+  "source_file": "runtime/ucf-ops/src/lib.rs",
+  "required_fields": [
+    "checks",
+    "code_version_tag",
+    "status"
+  ],
+  "optional_fields": [
+    "backend_pack_digest_prefix",
+    "fixtures_digest_prefix",
+    "gpu_lane",
+    "sae_real",
+    "ssm_opt",
+    "timestamp",
+    "weights_lifecycle",
+    "world_vljepa_evidence"
+  ],
+  "field_types": {
+    "backend_pack_digest_prefix": "Option<String>",
+    "checks": "Vec<CheckResult>",
+    "code_version_tag": "String",
+    "fixtures_digest_prefix": "Option<String>",
+    "gpu_lane": "Option<CheckResult>",
+    "sae_real": "Option<CheckResult>",
+    "ssm_opt": "Option<CheckResult>",
+    "status": "GateStatus",
+    "timestamp": "Option<String>",
+    "weights_lifecycle": "Option<CheckResult>",
+    "world_vljepa_evidence": "Option<CheckResult>"
+  },
+  "enum_variants": {
+    "GateStatus": [
+      "Fail",
+      "Pass",
+      "Skip"
+    ]
+  }
+}

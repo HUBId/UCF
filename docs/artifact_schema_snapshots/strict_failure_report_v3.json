@@ -1,0 +1,36 @@
+{
+  "artifact_id": "strict_failure_report_v3",
+  "type_name": "StrictModeFailureReport",
+  "source_file": "runtime/ucf-ops/src/lib.rs",
+  "required_fields": [
+    "checks",
+    "profile",
+    "schema_version",
+    "strict_mode_enabled"
+  ],
+  "optional_fields": [
+    "evidence_digest_prefixes",
+    "v1_checks",
+    "v3"
+  ],
+  "field_types": {
+    "checks": "Vec<StrictCheckResult>",
+    "evidence_digest_prefixes": "BTreeMap<String,String>",
+    "profile": "String",
+    "schema_version": "u16",
+    "strict_mode_enabled": "bool",
+    "v1_checks": "Vec<StrictCheckResult>",
+    "v3": "Option<StrictFailureReportV3>"
+  },
+  "enum_variants": {
+    "StrictCheckStatus": [
+      "Fail",
+      "Pass"
+    ],
+    "StrictCheckV3Status": [
+      "Fail",
+      "Pass",
+      "Skip"
+    ]
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "artifacts": [
+    "backend_evidence_snapshot_v1",
+    "operator_report_v1",
+    "operator_signoff_v1",
+    "strict_failure_report_v3",
+    "v3_gate_report_v1",
+    "readiness_gate_report_v1"
+  ]
+}

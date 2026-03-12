@@ -1,0 +1,42 @@
+{
+  "artifact_id": "operator_signoff_v1",
+  "type_name": "OperatorSignoffDecisionV1",
+  "source_file": "runtime/ucf-ops/src/operator_signoff.rs",
+  "required_fields": [
+    "decision",
+    "decision_digest",
+    "evidence_snapshot_digest_prefix",
+    "gate_report_digests",
+    "manifest_digest_prefix",
+    "operator_report_digest_prefix",
+    "policy_graph_digest_prefix",
+    "reasons",
+    "remediation_codes",
+    "schema_version",
+    "supported_slot_set_digest"
+  ],
+  "optional_fields": [
+    "canonical_remediation_codes"
+  ],
+  "field_types": {
+    "canonical_remediation_codes": "Vec<String>",
+    "decision": "SignoffDecisionStateV1",
+    "decision_digest": "String",
+    "evidence_snapshot_digest_prefix": "String",
+    "gate_report_digests": "GateReportDigestsV1",
+    "manifest_digest_prefix": "String",
+    "operator_report_digest_prefix": "String",
+    "policy_graph_digest_prefix": "String",
+    "reasons": "Vec<String>",
+    "remediation_codes": "Vec<String>",
+    "schema_version": "u16",
+    "supported_slot_set_digest": "String"
+  },
+  "enum_variants": {
+    "SignoffDecisionStateV1": [
+      "NotReady",
+      "ReadyForActiveReview",
+      "ReadyForShadow"
+    ]
+  }
+}

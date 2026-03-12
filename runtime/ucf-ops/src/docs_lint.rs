@@ -7,7 +7,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
-use crate::{generate_spec_snapshot, policy_validate, OpsError, SpecSnapshotArgs};
+use crate::{
+    check_artifact_schema_snapshots, generate_spec_snapshot, policy_validate, ArtifactSchemaArgs,
+    DriftKind, OpsError, SpecSnapshotArgs,
+};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -25,6 +28,7 @@ pub struct DocsLintArgs {
     pub prompt_index: PathBuf,
     pub module_map: PathBuf,
     pub deploy_doc: PathBuf,
+    pub artifact_schema_snapshot_dir: PathBuf,
     pub mode: DocsLintMode,
 }
 
@@ -59,6 +63,7 @@ pub fn docs_lint(args: &DocsLintArgs) -> Result<DocsLintReport, OpsError> {
         module_map_check(args)?,
         hardware_neutral_docs_check(args)?,
         v3_docs_consistency_check(args)?,
+        artifact_schema_snapshot_check(args)?,
     ];
     let ok = checks.iter().all(|c| c.status != DocsLintStatus::Fail);
     Ok(DocsLintReport {
@@ -105,6 +110,48 @@ fn spec_snapshot_check(args: &DocsLintArgs) -> Result<DocsLintCheck, OpsError> {
             "run: cargo run -p ucf-ops -- spec snapshot --policy policies/packs/base_v1 --overlay policies/packs/overlays/test --out docs/spec_snapshot.md && git add docs/spec_snapshot.md"
                 .to_string(),
         ),
+    })
+}
+
+fn artifact_schema_snapshot_check(args: &DocsLintArgs) -> Result<DocsLintCheck, OpsError> {
+    let report = check_artifact_schema_snapshots(&ArtifactSchemaArgs {
+        repo_root: args.repo_root.clone(),
+        out_dir: args.artifact_schema_snapshot_dir.clone(),
+    })?;
+
+    if report.ok {
+        return Ok(DocsLintCheck {
+            name: "artifact_schema_snapshots".to_string(),
+            status: DocsLintStatus::Pass,
+            detail: format!(
+                "artifact schema snapshots are up-to-date ({} artifacts)",
+                report.covered_artifacts.len()
+            ),
+            remediation: None,
+        });
+    }
+
+    let summary = report
+        .diffs
+        .iter()
+        .map(|d| format!("{}:{:?}:{}", d.artifact, d.drift_kind, d.summary))
+        .collect::<Vec<_>>()
+        .join(" | ");
+
+    let breaking = report
+        .diffs
+        .iter()
+        .any(|d| matches!(d.drift_kind, DriftKind::Breaking | DriftKind::Unknown));
+
+    Ok(DocsLintCheck {
+        name: "artifact_schema_snapshots".to_string(),
+        status: if breaking || matches!(args.mode, DocsLintMode::Strict) {
+            DocsLintStatus::Fail
+        } else {
+            DocsLintStatus::Warn
+        },
+        detail: format!("schema snapshot drift detected: {summary}"),
+        remediation: Some("run: cargo run -p ucf-ops -- spec artifact-schemas --out docs/artifact_schema_snapshots && review git diff && git add docs/artifact_schema_snapshots".to_string()),
     })
 }
 
@@ -616,6 +663,7 @@ mod tests {
             prompt_index: docs.join("prompt_series_index.md"),
             module_map: docs.join("module_map.md"),
             deploy_doc: docs.join("deploy_portable.md"),
+            artifact_schema_snapshot_dir: docs.join("artifact_schema_snapshots"),
             mode: DocsLintMode::Strict,
         })
         .expect("check");
@@ -648,6 +696,7 @@ mod tests {
             prompt_index: docs.join("prompt_series_index.md"),
             module_map: docs.join("module_map.md"),
             deploy_doc: docs.join("deploy_portable.md"),
+            artifact_schema_snapshot_dir: docs.join("artifact_schema_snapshots"),
             mode: DocsLintMode::Strict,
         })
         .expect("check");
@@ -683,6 +732,7 @@ mod tests {
             prompt_index: docs.join("prompt_series_index.md"),
             module_map: docs.join("module_map.md"),
             deploy_doc: docs.join("deploy_portable.md"),
+            artifact_schema_snapshot_dir: docs.join("artifact_schema_snapshots"),
             mode: DocsLintMode::Strict,
         })
         .expect("check");

@@ -611,9 +611,41 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     })?;
                     println!("spec_snapshot={}", out.display());
                 }
+                "artifact-schemas" => {
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("docs/artifact_schema_snapshots"));
+                    let covered = ucf_ops::generate_artifact_schema_snapshots(&ucf_ops::ArtifactSchemaArgs {
+                        repo_root: PathBuf::from("."),
+                        out_dir: out.clone(),
+                    })?;
+                    println!("artifact_schema_snapshots={}", out.display());
+                    println!("covered_artifacts={}", covered.join(","));
+                }
+                "artifact-schemas-check" => {
+                    let snapshot_dir = PathBuf::from("docs/artifact_schema_snapshots");
+                    let report = ucf_ops::check_artifact_schema_snapshots(&ucf_ops::ArtifactSchemaArgs {
+                        repo_root: PathBuf::from("."),
+                        out_dir: snapshot_dir,
+                    })?;
+                    println!("overall={}", if report.ok { "PASS" } else { "FAIL" });
+                    for diff in &report.diffs {
+                        println!("[{:?}] {} :: {}", diff.drift_kind, diff.artifact, diff.summary);
+                    }
+                    if let Some(out) = arg_value(&args, "--out").map(PathBuf::from) {
+                        if let Some(parent) = out.parent() {
+                            std::fs::create_dir_all(parent)?;
+                        }
+                        std::fs::write(&out, serde_json::to_string_pretty(&report)?)?;
+                        println!("report={}", out.display());
+                    }
+                    if !report.ok {
+                        std::process::exit(2);
+                    }
+                }
                 _ => {
                     return Err(
-                        "usage: ucf-ops spec snapshot [--policy <dir>] [--overlay <dir>] [--out <path>]"
+                        "usage: ucf-ops spec snapshot [--policy <dir>] [--overlay <dir>] [--out <path>] | spec artifact-schemas [--out <dir>] | spec artifact-schemas-check [--out <path>]"
                             .into(),
                     )
                 }
@@ -650,6 +682,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             .map(PathBuf::from)
                             .unwrap_or_else(|| PathBuf::from("docs/module_map.md")),
                         deploy_doc: PathBuf::from("docs/deploy_portable.md"),
+                        artifact_schema_snapshot_dir: PathBuf::from("docs/artifact_schema_snapshots"),
                         mode,
                     })?;
                     for check in &report.checks {

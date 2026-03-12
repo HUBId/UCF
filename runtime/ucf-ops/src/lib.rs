@@ -3,6 +3,7 @@
 mod adversarial;
 mod airgap;
 mod alerts;
+mod artifact_schema;
 mod bench;
 mod causal;
 mod change_impact;
@@ -28,6 +29,10 @@ pub use airgap::{
     AirgapImportReport,
 };
 pub use alerts::{alerts_report, AlertClearRecordV1, AlertEventV1, AlertRecordV1, AlertsReportV1};
+pub use artifact_schema::{
+    check_artifact_schema_snapshots, classify_drift, generate_artifact_schema_snapshots,
+    ArtifactSchemaArgs, ArtifactSchemaCheckReport, ArtifactSchemaSnapshot, DriftKind,
+};
 pub use bench::{bench_run, BenchArgs, BenchReport};
 pub use causal::{
     causal_slice, event_id_for_decision, event_id_for_record, explain_why,
@@ -2992,6 +2997,7 @@ pub fn v3_gate(workdir: &Path, out: &Path) -> Result<V3GateReportV1, OpsError> {
         prompt_index: repo_root.join("docs/prompt_series_index.md"),
         module_map: repo_root.join("docs/module_map.md"),
         deploy_doc: repo_root.join("docs/deploy.md"),
+        artifact_schema_snapshot_dir: PathBuf::from("docs/artifact_schema_snapshots"),
         mode: DocsLintMode::Strict,
     })
     .ok();
@@ -4956,6 +4962,7 @@ pub fn dev_loop(workdir: &Path, args: &DevLoopArgs) -> Result<DevLoopReport, Ops
         prompt_index: PathBuf::from("docs/prompt_series_index.md"),
         module_map: PathBuf::from("docs/module_map.md"),
         deploy_doc: PathBuf::from("docs/deploy.md"),
+        artifact_schema_snapshot_dir: PathBuf::from("docs/artifact_schema_snapshots"),
         mode: DocsLintMode::Strict,
     });
     match docs_report {
@@ -6423,6 +6430,7 @@ impl StrictModeEnforcer {
                 prompt_index: PathBuf::from("docs/prompt_series_index.md"),
                 module_map: PathBuf::from("docs/module_map.md"),
                 deploy_doc: PathBuf::from("docs/deploy.md"),
+                artifact_schema_snapshot_dir: PathBuf::from("docs/artifact_schema_snapshots"),
                 mode: DocsLintMode::Strict,
             });
             match docs {
@@ -8543,6 +8551,7 @@ pub fn release_build_rc(
         prompt_index: repo_root.join("docs/prompt_series_index.md"),
         module_map: repo_root.join("docs/module_map.md"),
         deploy_doc: repo_root.join("docs/deploy_portable.md"),
+        artifact_schema_snapshot_dir: PathBuf::from("docs/artifact_schema_snapshots"),
         mode: DocsLintMode::Strict,
     })?;
     write_json(&docs_out, &docs_report)?;
@@ -11458,6 +11467,7 @@ fn preflight_docs_lint(bundle: &Path) -> Result<PreflightCheck, OpsError> {
         prompt_index: bundle.join("docs/prompt_series_index.md"),
         module_map: bundle.join("docs/module_map.md"),
         deploy_doc: bundle.join("docs/deploy_portable.md"),
+        artifact_schema_snapshot_dir: PathBuf::from("docs/artifact_schema_snapshots"),
         mode: DocsLintMode::Strict,
     });
     match report {
@@ -11798,6 +11808,7 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         prompt_index: PathBuf::from("docs/prompt_series_index.md"),
         module_map: PathBuf::from("docs/module_map.md"),
         deploy_doc: PathBuf::from("docs/deploy_portable.md"),
+        artifact_schema_snapshot_dir: PathBuf::from("docs/artifact_schema_snapshots"),
         mode: DocsLintMode::Strict,
     }) {
         Ok(report) => {

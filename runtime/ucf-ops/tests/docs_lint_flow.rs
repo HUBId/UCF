@@ -26,6 +26,7 @@ fn docs_lint_passes_on_repo_docs() {
         prompt_index: repo_path("docs/prompt_series_index.md"),
         module_map: repo_path("docs/module_map.md"),
         deploy_doc: repo_path("docs/deploy_portable.md"),
+        artifact_schema_snapshot_dir: repo_path("docs/artifact_schema_snapshots"),
         mode: DocsLintMode::Strict,
     })
     .expect("docs lint should run");
@@ -47,6 +48,7 @@ fn docs_lint_fails_on_snapshot_mismatch() {
         prompt_index: repo_path("docs/prompt_series_index.md"),
         module_map: repo_path("docs/module_map.md"),
         deploy_doc: repo_path("docs/deploy_portable.md"),
+        artifact_schema_snapshot_dir: repo_path("docs/artifact_schema_snapshots"),
         mode: DocsLintMode::Strict,
     })
     .expect("docs lint should run");
@@ -78,6 +80,7 @@ fn docs_lint_fails_on_hardware_terms_in_core_docs() {
         prompt_index: bad_prompt_index,
         module_map: repo_path("docs/module_map.md"),
         deploy_doc: repo_path("docs/deploy_portable.md"),
+        artifact_schema_snapshot_dir: repo_path("docs/artifact_schema_snapshots"),
         mode: DocsLintMode::Strict,
     })
     .expect("docs lint should run");
@@ -88,4 +91,44 @@ fn docs_lint_fails_on_hardware_terms_in_core_docs() {
         .find(|c| c.name == "hardware_neutral_docs")
         .expect("hardware check exists");
     assert_eq!(hardware.status, DocsLintStatus::Fail);
+}
+
+#[test]
+fn docs_lint_fails_on_artifact_schema_snapshot_mismatch() {
+    let dir = tempdir().expect("tempdir");
+    let snapshot_dir = dir.path().join("artifact_schema_snapshots");
+    fs::create_dir_all(&snapshot_dir).expect("mkdir");
+    for file in fs::read_dir(repo_path("docs/artifact_schema_snapshots")).expect("read") {
+        let entry = file.expect("entry");
+        let name = entry.file_name();
+        fs::copy(entry.path(), snapshot_dir.join(name)).expect("copy");
+    }
+    fs::write(
+        snapshot_dir.join("operator_report_v1.json"),
+        r#"{
+  "stale": true
+}
+"#,
+    )
+    .expect("write stale");
+
+    let report = docs_lint(&DocsLintArgs {
+        repo_root: repo_root(),
+        policy_pack: repo_path("policies/packs/base_v1"),
+        overlay_pack: Some(repo_path("policies/packs/overlays/test")),
+        spec_snapshot: repo_path("docs/spec_snapshot.md"),
+        prompt_index: repo_path("docs/prompt_series_index.md"),
+        module_map: repo_path("docs/module_map.md"),
+        deploy_doc: repo_path("docs/deploy_portable.md"),
+        artifact_schema_snapshot_dir: snapshot_dir,
+        mode: DocsLintMode::Strict,
+    })
+    .expect("docs lint should run");
+
+    let check = report
+        .checks
+        .iter()
+        .find(|c| c.name == "artifact_schema_snapshots")
+        .expect("artifact schema check exists");
+    assert_eq!(check.status, DocsLintStatus::Fail);
 }
