@@ -95,6 +95,7 @@ pub enum CanonicalConditionV1 {
         slot: &'static str,
         backend: &'static str,
     },
+    ManifestInvalid(&'static str),
     Unknown,
 }
 
@@ -141,6 +142,9 @@ pub fn remediation_for_condition(condition: CanonicalConditionV1) -> Vec<Remedia
                 RemediationCodeV1::CheckPortabilityReport,
                 RemediationCodeV1::StayShadow,
             ]
+        }
+        CanonicalConditionV1::ManifestInvalid(_) => {
+            vec![RemediationCodeV1::VerifyManifest]
         }
         CanonicalConditionV1::Unknown => vec![RemediationCodeV1::ReviewReportManually],
     };
