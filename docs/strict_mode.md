@@ -107,3 +107,8 @@ Strict v3 checks now use the shared supported-slot set resolution path to align 
 ## Canonical remediation registry v1
 
 Strict report checks continue emitting specialized denial codes, and now additionally carry canonical remediation codes from the shared registry mapping.
+
+## Operator interplay (v4 hardening)
+
+Strict evidence consumed by operator-facing surfaces is unified as `StrictEvidenceSnapshotV1`. Consolidated operator report and operator signoff read the same strict snapshot/mapping path, including explicit `MISSING` handling when strict evidence is required.
+See `docs/strict_operator_interplay_v4.md`.

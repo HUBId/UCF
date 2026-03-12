@@ -70,3 +70,8 @@ Die Signoff-Entscheidung (`READY_FOR_SHADOW`, `READY_FOR_ACTIVE_REVIEW`, `NOT_RE
 ## Canonical remediation registry
 
 Consolidated operator report now includes top-level `canonical_remediation_codes`, aligned with strict/eligibility/gates/signoff surfaces.
+
+## v4 strict evidence unification
+
+`strict_section` is now normalized from `StrictEvidenceSnapshotV1` only (no second strict interpretation path). Fields include `strict_status`, `primary_denial_code`, `remediation_codes`, `strict_report_digest_prefix`, and bounded `failing_check_ids`.
+See `docs/strict_operator_interplay_v4.md`.

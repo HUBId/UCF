@@ -7,12 +7,30 @@ use serde::{Deserialize, Serialize};
 use crate::operator_report::{ConsolidatedOperatorReportV1, OperatorStatus};
 use crate::remediation::merge_canonical_remediations;
 use crate::{
-    BackendEvidenceSnapshotV1, GateStatus, OpsError, V0GateOverallStatus, V0GateReportV1,
-    V1GateOverallStatus, V1GateReportV1, V2GateOverallStatus, V2GateReportV1, V3GateOverallStatus,
-    V3GateReportV1,
+    operator_block_from_strict, resolve_strict_evidence, BackendEvidenceSnapshotV1, GateStatus,
+    OpsError, StrictEvidenceContextV1, StrictEvidenceSnapshotV1, StrictEvidenceStatusV1,
+    V0GateOverallStatus, V0GateReportV1, V1GateOverallStatus, V1GateReportV1, V2GateOverallStatus,
+    V2GateReportV1, V3GateOverallStatus, V3GateReportV1,
 };
 
 const CODE_CAP: usize = 12;
+
+#[derive(Debug, Clone)]
+struct SignoffReductionInputs<'a> {
+    snapshot: Option<&'a BackendEvidenceSnapshotV1>,
+    operator: Option<&'a ConsolidatedOperatorReportV1>,
+    gates: GateInputs,
+    strict_snapshot: &'a StrictEvidenceSnapshotV1,
+    policy: &'a SignoffPolicyV1,
+}
+
+#[derive(Debug, Clone)]
+struct GateInputs {
+    v0: Option<V0GateReportV1>,
+    v1: Option<V1GateReportV1>,
+    v2: Option<V2GateReportV1>,
+    v3: Option<V3GateReportV1>,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -119,15 +137,40 @@ pub fn operator_signoff(
         maybe_read_json::<V3GateReportV1>(&discover_report(&out_root, "v3_gate_report.json", args));
 
     let policy = SignoffPolicyV1::from_profile(&args.profile);
-    let decision = reduce_signoff(
-        snapshot.as_ref(),
-        operator.as_ref(),
-        v0,
-        v1,
-        v2,
-        v3,
-        &policy,
-    )?;
+    let strict_snapshot = resolve_strict_evidence(
+        &out_root,
+        &StrictEvidenceContextV1 {
+            run_id: args.run_id.clone(),
+            latest: args.latest,
+            strict_required: policy.block_on_strict_fail,
+            expected_policy_graph_digest_prefix: snapshot
+                .as_ref()
+                .map(|s| s.policy_graph_digest_prefix.clone())
+                .or_else(|| {
+                    operator
+                        .as_ref()
+                        .and_then(|o| o.policy_graph_digest_prefix.clone())
+                }),
+            expected_manifest_digest_prefix: snapshot
+                .as_ref()
+                .map(|s| s.manifest_digest_prefix.clone())
+                .or_else(|| {
+                    operator
+                        .as_ref()
+                        .and_then(|o| o.manifest_digest_prefix.clone())
+                }),
+            expected_supported_slot_set_digest_prefix: snapshot
+                .as_ref()
+                .map(|s| s.supported_slot_set_digest.clone()),
+        },
+    );
+    let decision = reduce_signoff(SignoffReductionInputs {
+        snapshot: snapshot.as_ref(),
+        operator: operator.as_ref(),
+        gates: GateInputs { v0, v1, v2, v3 },
+        strict_snapshot: &strict_snapshot,
+        policy: &policy,
+    })?;
 
     if let Some(parent) = out.parent() {
         fs::create_dir_all(parent)?;
@@ -156,14 +199,16 @@ pub fn operator_signoff_text(report: &OperatorSignoffDecisionV1) -> String {
 }
 
 fn reduce_signoff(
-    snapshot: Option<&BackendEvidenceSnapshotV1>,
-    operator: Option<&ConsolidatedOperatorReportV1>,
-    v0: Option<V0GateReportV1>,
-    v1: Option<V1GateReportV1>,
-    v2: Option<V2GateReportV1>,
-    v3: Option<V3GateReportV1>,
-    policy: &SignoffPolicyV1,
+    inputs: SignoffReductionInputs<'_>,
 ) -> Result<OperatorSignoffDecisionV1, OpsError> {
+    let SignoffReductionInputs {
+        snapshot,
+        operator,
+        gates: GateInputs { v0, v1, v2, v3 },
+        strict_snapshot,
+        policy,
+    } = inputs;
+
     let mut reasons = BTreeSet::new();
     let mut remediation = BTreeSet::new();
 
@@ -223,14 +268,19 @@ fn reduce_signoff(
         remediation.insert("run_health_check".to_string());
     }
 
-    if policy.block_on_strict_fail
-        && matches!(
-            operator.sections.strict_section.latest_status,
-            OperatorStatus::Fail | OperatorStatus::Missing
-        )
-    {
-        reasons.insert("SIGNOFF_BLOCK_STRICT".to_string());
-        remediation.insert("run_strict_check".to_string());
+    if policy.block_on_strict_fail {
+        let strict_block = operator_block_from_strict(strict_snapshot);
+        if matches!(
+            strict_snapshot.strict_status,
+            StrictEvidenceStatusV1::Fail | StrictEvidenceStatusV1::Missing
+        ) {
+            reasons.insert(
+                strict_block
+                    .primary_reason_code
+                    .unwrap_or_else(|| "SIGNOFF_BLOCK_STRICT".to_string()),
+            );
+            remediation.extend(strict_block.remediation_codes);
+        }
     }
 
     let supported_slots = &snapshot.slots;
@@ -695,8 +745,10 @@ mod tests {
                 },
                 strict_section: NormalizedStrictSection {
                     status: OperatorStatus::Ok,
-                    latest_status: OperatorStatus::Ok,
+                    strict_status: StrictEvidenceStatusV1::Pass,
                     primary_denial_code: None,
+                    strict_report_digest_prefix: Some("strictdigest".to_string()),
+                    failing_check_ids: vec![],
                     evidence_digest_prefixes: vec![],
                     remediation_codes: vec![],
                 },
@@ -748,6 +800,22 @@ mod tests {
         }
     }
 
+    fn strict_snapshot(status: StrictEvidenceStatusV1) -> StrictEvidenceSnapshotV1 {
+        StrictEvidenceSnapshotV1 {
+            schema_version: 1,
+            strict_mode_enabled: true,
+            strict_status: status,
+            strict_report_digest_prefix: Some("strictdigest".to_string()),
+            policy_graph_digest_prefix: Some("pg".to_string()),
+            manifest_digest_prefix: Some("mg".to_string()),
+            supported_slot_set_digest_prefix: Some("slotset123".to_string()),
+            primary_denial_code: Some("STRICT_FAIL".to_string()),
+            remediation_codes: vec!["run_strict_check".to_string()],
+            failing_check_ids: vec!["strict_mode".to_string()],
+            snapshot_digest: "strictsnapshot".to_string(),
+        }
+    }
+
     fn policy() -> SignoffPolicyV1 {
         SignoffPolicyV1::from_profile("test")
     }
@@ -756,40 +824,49 @@ mod tests {
     fn deterministic_reduction_equal_inputs_equal_outputs() {
         let snapshot = snapshot(false);
         let operator = operator_report();
-        let a = reduce_signoff(
-            Some(&snapshot),
-            Some(&operator),
-            Some(pass_v0()),
-            Some(pass_v1()),
-            Some(pass_v2()),
-            Some(pass_v3()),
-            &policy(),
-        )
+        let a = reduce_signoff(SignoffReductionInputs {
+            snapshot: Some(&snapshot),
+            operator: Some(&operator),
+            gates: GateInputs {
+                v0: Some(pass_v0()),
+                v1: Some(pass_v1()),
+                v2: Some(pass_v2()),
+                v3: Some(pass_v3()),
+            },
+            strict_snapshot: &strict_snapshot(StrictEvidenceStatusV1::Pass),
+            policy: &policy(),
+        })
         .expect("decision a");
-        let b = reduce_signoff(
-            Some(&snapshot),
-            Some(&operator),
-            Some(pass_v0()),
-            Some(pass_v1()),
-            Some(pass_v2()),
-            Some(pass_v3()),
-            &policy(),
-        )
+        let b = reduce_signoff(SignoffReductionInputs {
+            snapshot: Some(&snapshot),
+            operator: Some(&operator),
+            gates: GateInputs {
+                v0: Some(pass_v0()),
+                v1: Some(pass_v1()),
+                v2: Some(pass_v2()),
+                v3: Some(pass_v3()),
+            },
+            strict_snapshot: &strict_snapshot(StrictEvidenceStatusV1::Pass),
+            policy: &policy(),
+        })
         .expect("decision b");
         assert_eq!(a, b);
     }
 
     #[test]
     fn shadow_ready_only_is_ready_for_shadow() {
-        let decision = reduce_signoff(
-            Some(&snapshot(false)),
-            Some(&operator_report()),
-            Some(pass_v0()),
-            Some(pass_v1()),
-            Some(pass_v2()),
-            Some(pass_v3()),
-            &policy(),
-        )
+        let decision = reduce_signoff(SignoffReductionInputs {
+            snapshot: Some(&snapshot(false)),
+            operator: Some(&operator_report()),
+            gates: GateInputs {
+                v0: Some(pass_v0()),
+                v1: Some(pass_v1()),
+                v2: Some(pass_v2()),
+                v3: Some(pass_v3()),
+            },
+            strict_snapshot: &strict_snapshot(StrictEvidenceStatusV1::Pass),
+            policy: &policy(),
+        })
         .expect("decision");
         assert_eq!(decision.decision, SignoffDecisionStateV1::ReadyForShadow);
         assert_eq!(decision.reasons, vec!["SIGNOFF_READY_SHADOW"]);
@@ -797,15 +874,18 @@ mod tests {
 
     #[test]
     fn active_eligible_slot_is_ready_for_active_review() {
-        let decision = reduce_signoff(
-            Some(&snapshot(true)),
-            Some(&operator_report()),
-            Some(pass_v0()),
-            Some(pass_v1()),
-            Some(pass_v2()),
-            Some(pass_v3()),
-            &policy(),
-        )
+        let decision = reduce_signoff(SignoffReductionInputs {
+            snapshot: Some(&snapshot(true)),
+            operator: Some(&operator_report()),
+            gates: GateInputs {
+                v0: Some(pass_v0()),
+                v1: Some(pass_v1()),
+                v2: Some(pass_v2()),
+                v3: Some(pass_v3()),
+            },
+            strict_snapshot: &strict_snapshot(StrictEvidenceStatusV1::Pass),
+            policy: &policy(),
+        })
         .expect("decision");
         assert_eq!(
             decision.decision,
@@ -816,26 +896,26 @@ mod tests {
 
     #[test]
     fn strict_fail_or_v3_fail_is_not_ready() {
-        let mut operator = operator_report();
-        operator.sections.strict_section.latest_status = OperatorStatus::Fail;
-        let decision = reduce_signoff(
-            Some(&snapshot(true)),
-            Some(&operator),
-            Some(pass_v0()),
-            Some(pass_v1()),
-            Some(pass_v2()),
-            Some(V3GateReportV1 {
-                schema_version: 1,
-                overall_status: V3GateOverallStatus::Fail,
-                checks: vec![],
-            }),
-            &policy(),
-        )
+        let operator = operator_report();
+        let decision = reduce_signoff(SignoffReductionInputs {
+            snapshot: Some(&snapshot(true)),
+            operator: Some(&operator),
+            gates: GateInputs {
+                v0: Some(pass_v0()),
+                v1: Some(pass_v1()),
+                v2: Some(pass_v2()),
+                v3: Some(V3GateReportV1 {
+                    schema_version: 1,
+                    overall_status: V3GateOverallStatus::Fail,
+                    checks: vec![],
+                }),
+            },
+            strict_snapshot: &strict_snapshot(StrictEvidenceStatusV1::Fail),
+            policy: &policy(),
+        })
         .expect("decision");
         assert_eq!(decision.decision, SignoffDecisionStateV1::NotReady);
-        assert!(decision
-            .reasons
-            .contains(&"SIGNOFF_BLOCK_STRICT".to_string()));
+        assert!(decision.reasons.contains(&"STRICT_FAIL".to_string()));
         assert!(decision
             .reasons
             .contains(&"SIGNOFF_BLOCK_GATE_V3".to_string()));
@@ -843,15 +923,18 @@ mod tests {
 
     #[test]
     fn missing_snapshot_fails_closed() {
-        let decision = reduce_signoff(
-            None,
-            Some(&operator_report()),
-            Some(pass_v0()),
-            Some(pass_v1()),
-            Some(pass_v2()),
-            Some(pass_v3()),
-            &policy(),
-        )
+        let decision = reduce_signoff(SignoffReductionInputs {
+            snapshot: None,
+            operator: Some(&operator_report()),
+            gates: GateInputs {
+                v0: Some(pass_v0()),
+                v1: Some(pass_v1()),
+                v2: Some(pass_v2()),
+                v3: Some(pass_v3()),
+            },
+            strict_snapshot: &strict_snapshot(StrictEvidenceStatusV1::Pass),
+            policy: &policy(),
+        })
         .expect("decision");
         assert_eq!(decision.decision, SignoffDecisionStateV1::NotReady);
         assert_eq!(
@@ -864,15 +947,18 @@ mod tests {
     fn ambiguous_slot_set_fails_closed() {
         let mut snapshot = snapshot(true);
         snapshot.slots = vec![snapshot.slots[0].clone()];
-        let decision = reduce_signoff(
-            Some(&snapshot),
-            Some(&operator_report()),
-            Some(pass_v0()),
-            Some(pass_v1()),
-            Some(pass_v2()),
-            Some(pass_v3()),
-            &policy(),
-        )
+        let decision = reduce_signoff(SignoffReductionInputs {
+            snapshot: Some(&snapshot),
+            operator: Some(&operator_report()),
+            gates: GateInputs {
+                v0: Some(pass_v0()),
+                v1: Some(pass_v1()),
+                v2: Some(pass_v2()),
+                v3: Some(pass_v3()),
+            },
+            strict_snapshot: &strict_snapshot(StrictEvidenceStatusV1::Pass),
+            policy: &policy(),
+        })
         .expect("decision");
         assert_eq!(decision.decision, SignoffDecisionStateV1::NotReady);
         assert!(decision
@@ -882,15 +968,18 @@ mod tests {
 
     #[test]
     fn missing_required_gate_is_not_ready() {
-        let decision = reduce_signoff(
-            Some(&snapshot(true)),
-            Some(&operator_report()),
-            Some(pass_v0()),
-            Some(pass_v1()),
-            Some(pass_v2()),
-            None,
-            &policy(),
-        )
+        let decision = reduce_signoff(SignoffReductionInputs {
+            snapshot: Some(&snapshot(true)),
+            operator: Some(&operator_report()),
+            gates: GateInputs {
+                v0: Some(pass_v0()),
+                v1: Some(pass_v1()),
+                v2: Some(pass_v2()),
+                v3: None,
+            },
+            strict_snapshot: &strict_snapshot(StrictEvidenceStatusV1::Pass),
+            policy: &policy(),
+        })
         .expect("decision");
         assert_eq!(decision.decision, SignoffDecisionStateV1::NotReady);
         assert!(decision
