@@ -148,8 +148,38 @@ pub fn check_artifact_schema_snapshots(
             continue;
         }
 
-        let old: ArtifactSchemaSnapshot = serde_json::from_str(&fs::read_to_string(&committed)?)?;
-        let new: ArtifactSchemaSnapshot = serde_json::from_str(&fs::read_to_string(&generated)?)?;
+        let old = match serde_json::from_str::<ArtifactSchemaSnapshot>(&fs::read_to_string(
+            &committed,
+        )?) {
+            Ok(snapshot) => snapshot,
+            Err(err) => {
+                diffs.push(ArtifactSchemaDiffEntry {
+                    artifact: artifact.clone(),
+                    drift_kind: DriftKind::Unknown,
+                    summary: format!(
+                        "committed snapshot parse error in {}: {err}",
+                        committed.display()
+                    ),
+                });
+                continue;
+            }
+        };
+        let new = match serde_json::from_str::<ArtifactSchemaSnapshot>(&fs::read_to_string(
+            &generated,
+        )?) {
+            Ok(snapshot) => snapshot,
+            Err(err) => {
+                diffs.push(ArtifactSchemaDiffEntry {
+                    artifact: artifact.clone(),
+                    drift_kind: DriftKind::Unknown,
+                    summary: format!(
+                        "generated snapshot parse error in {}: {err}",
+                        generated.display()
+                    ),
+                });
+                continue;
+            }
+        };
         if old == new {
             continue;
         }
