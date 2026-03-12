@@ -66,3 +66,13 @@ Support state does **not** automatically imply readiness, and readiness does **n
 ## Reuse guidance
 
 Downstream tools (gate reports, bugkits, repro packs) should reference or embed this artifact instead of re-deriving overlapping evidence independently.
+
+
+## Relationship to active-review snapshot
+
+`backend_evidence_snapshot_v1` remains the backend/evidence substrate.
+`active_review_snapshot_v1` derives a canonical active-review surface from this substrate plus strict/alert/signoff alignment context:
+
+```bash
+cargo run -p ucf-ops -- models active-review-snapshot --out ./out/active_review_snapshot.json
+```

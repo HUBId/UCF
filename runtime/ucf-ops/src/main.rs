@@ -11,20 +11,21 @@ use ucf_ops::{
     export_policy_key_registry_v1, gateway_threat_test, goldens_generate, goldens_update,
     goldens_verify, goldens_verify_detailed, hardware_scan, load_signoff_checklist, logs_prove,
     logs_verify_proof, metrics_snapshot, metrics_summary, metrics_trend, migrate_config_v1,
-    models_active_check, models_active_evidence, models_consistency_check, models_eligibility,
-    models_evidence_snapshot, models_list, models_probe, models_probe_slot, models_promote,
-    models_recommend_rollback, models_rollback, models_shadow_ready, models_stage,
-    models_supported_set_review, models_verify, models_verify_lifecycle, net_deps_audit,
-    nightly_summarize, one_command_bringup, operator_report, operator_report_text,
-    operator_signoff, operator_signoff_text, out_manifest, parse_duration_secs, parse_inject,
-    parse_slot, path_scan, policy_diff, policy_explain, policy_validate, portability_check,
-    portability_report, preflight, readiness_gate, release_build_rc, release_rc1_gate,
-    release_signoff_validate, replay_audit, replay_bugreport, repro_pack, repro_verify, run_status,
-    runs_list, runs_search, runs_show, save_counterfactual_result, second_slot_parity_report,
-    security_verify_chain, simulate_counterfactual, soak_run, strict_check, strict_explain,
-    troubleshoot, v0_gate, v1_smoke, v2_gate, v3_gate, v4_gate, verify_bugreport,
-    world_parity_report, world_shadow_report, write_slice, AdversarialRunArgs, AirgapArtifactType,
-    AirgapImportArgs, AirgapImportMode, BenchArgs, BugKitBuildArgs, ChangeImpactArgs, ConfigV1,
+    models_active_check, models_active_evidence, models_active_review_snapshot,
+    models_consistency_check, models_eligibility, models_evidence_snapshot, models_list,
+    models_probe, models_probe_slot, models_promote, models_recommend_rollback, models_rollback,
+    models_shadow_ready, models_stage, models_supported_set_review, models_verify,
+    models_verify_lifecycle, net_deps_audit, nightly_summarize, one_command_bringup,
+    operator_report, operator_report_text, operator_signoff, operator_signoff_text, out_manifest,
+    parse_duration_secs, parse_inject, parse_slot, path_scan, policy_diff, policy_explain,
+    policy_validate, portability_check, portability_report, preflight, readiness_gate,
+    release_build_rc, release_rc1_gate, release_signoff_validate, replay_audit, replay_bugreport,
+    repro_pack, repro_verify, run_status, runs_list, runs_search, runs_show,
+    save_counterfactual_result, second_slot_parity_report, security_verify_chain,
+    simulate_counterfactual, soak_run, strict_check, strict_explain, troubleshoot, v0_gate,
+    v1_smoke, v2_gate, v3_gate, v4_gate, verify_bugreport, world_parity_report,
+    world_shadow_report, write_slice, AdversarialRunArgs, AirgapArtifactType, AirgapImportArgs,
+    AirgapImportMode, BenchArgs, BugKitBuildArgs, ChangeImpactArgs, ConfigV1,
     CounterfactualRequest, DevLoopArgs, DocsLintArgs, DocsLintMode, DocsLintStatus,
     ExplainTickRequest, ExportArgs, GateStatus, GoldenGenerateArgs, GoldenVerifyArgs,
     GoldenVerifyReport, NightlySummarizeArgs, OperatorReportArgs, OperatorSignoffArgs,
@@ -1218,6 +1219,44 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     println!("snapshot_digest={}", report.snapshot_digest);
                     println!("out={}", out.display());
                 }
+                "active-review-snapshot" => {
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/active_review_snapshot.json"));
+                    let report = models_active_review_snapshot(&workdir, &out)?;
+                    for slot in &report.slots {
+                        let blocking = if slot.strict_blocking {
+                            "strict"
+                        } else if slot.drift_blocking {
+                            "drift"
+                        } else if slot.alert_blocking {
+                            "alert"
+                        } else if !slot.active_eligible {
+                            "eligibility"
+                        } else {
+                            "none"
+                        };
+                        println!(
+                            "slot={} target={} active_eligible={} blocking={} remediation={}",
+                            slot.slot_id,
+                            slot.target_hash_prefix,
+                            if slot.active_eligible { "yes" } else { "no" },
+                            blocking,
+                            slot.remediation_codes
+                                .first()
+                                .cloned()
+                                .unwrap_or_else(|| "none".to_string())
+                        );
+                    }
+                    println!("overall={:?}", report.overall_review_status);
+                    println!(
+                        "signoff_alignment={} code={}",
+                        if report.signoff_alignment.aligned { "yes" } else { "no" },
+                        report.signoff_alignment.status_code
+                    );
+                    println!("snapshot_digest={}", report.snapshot_digest);
+                    println!("out={}", out.display());
+                }
                 "supported-set-review" => {
                     let out = arg_value(&args, "--out")
                         .map(PathBuf::from)
@@ -1252,7 +1291,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 _ => {
                     return Err(
-                        "usage: ucf-ops models <verify|probe|stage|promote|rollback|list|active-check|active-evidence|eligibility|evidence-snapshot|supported-set-review|consistency-check|recommend-rollback|shadow-ready> ..."
+                        "usage: ucf-ops models <verify|probe|stage|promote|rollback|list|active-check|active-evidence|eligibility|evidence-snapshot|active-review-snapshot|supported-set-review|consistency-check|recommend-rollback|shadow-ready> ..."
                             .into(),
                     )
                 }

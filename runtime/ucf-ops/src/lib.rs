@@ -57,11 +57,13 @@ pub use goldens::{
     GoldenVerifyScenarioReport,
 };
 pub use models_lifecycle::{
-    can_enable_active, models_active_check, models_active_evidence, models_consistency_check,
-    models_eligibility, models_evidence_snapshot, models_list, models_probe_slot, models_promote,
-    models_recommend_rollback, models_rollback, models_shadow_ready, models_stage,
-    models_supported_set_review, models_verify as models_verify_lifecycle, parse_slot,
-    ActiveCheckStatus, ActiveEnablementDeniedCode, ActiveEnablementEvidenceV1,
+    can_enable_active, models_active_check, models_active_evidence, models_active_review_snapshot,
+    models_consistency_check, models_eligibility, models_evidence_snapshot, models_list,
+    models_probe_slot, models_promote, models_recommend_rollback, models_rollback,
+    models_shadow_ready, models_stage, models_supported_set_review,
+    models_verify as models_verify_lifecycle, parse_slot, ActiveCheckStatus,
+    ActiveEnablementDeniedCode, ActiveEnablementEvidenceV1, ActiveReviewEvidenceV1,
+    ActiveReviewOverallStatusV1, ActiveReviewSnapshotRecordV1, AggregatedActiveReviewSnapshotV1,
     AggregatedEligibilityReportV1, AggregatedEvidenceReportV1, AggregatedStatusV1,
     BackendEvidenceSnapshotV1, BackendSupportStateV1, EligibilityOverallStatusV1,
     ModelsActiveCheckReport, ModelsConsistencyCheckReportV1, ProbeReportV1,

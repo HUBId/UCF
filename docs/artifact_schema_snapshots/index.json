@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "artifacts": [
+    "active_review_snapshot_v1",
     "backend_evidence_snapshot_v1",
     "operator_report_v1",
     "operator_signoff_v1",
