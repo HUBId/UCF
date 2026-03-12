@@ -638,7 +638,7 @@ mod tests {
     use crate::models_lifecycle::{
         BackendEvidenceSlotDenialsV1, BackendEvidenceSlotEvidenceV1,
         BackendEvidenceSlotReadinessV1, BackendEvidenceSlotSnapshotV1, BackendSupportMatrixV1,
-        DriftStatusV1, EvidenceDenialCodeV1,
+        BurnResolutionStatusV1, BurnSupportResolutionV1, DriftStatusV1, EvidenceDenialCodeV1,
     };
     use crate::operator_report::{DriftSlotSummary, EligibilitySlotSummary, GateStatusSummary};
     use crate::operator_report::{
@@ -686,6 +686,13 @@ mod tests {
                     },
                     remediation_codes: vec![],
                     canonical_remediation_codes: vec![],
+                    burn_resolution: BurnSupportResolutionV1 {
+                        slot_id: "world_jepa".to_string(),
+                        resolution: BurnResolutionStatusV1::BurnClosedUnsupported,
+                        support_state: crate::OptionalBackendSupportStateV1::Unsupported,
+                        rationale_codes: vec!["BURN_SLOT_FORMALLY_UNSUPPORTED".to_string()],
+                        evidence_digest: "br1".to_string(),
+                    },
                 },
                 BackendEvidenceSlotSnapshotV1 {
                     slot_id: "sae".to_string(),
@@ -719,6 +726,13 @@ mod tests {
                     },
                     remediation_codes: vec![],
                     canonical_remediation_codes: vec![],
+                    burn_resolution: BurnSupportResolutionV1 {
+                        slot_id: "sae".to_string(),
+                        resolution: BurnResolutionStatusV1::BurnClosedUnsupported,
+                        support_state: crate::OptionalBackendSupportStateV1::NotConfigured,
+                        rationale_codes: vec!["BURN_SHADOW_NOT_CONFIGURED".to_string()],
+                        evidence_digest: "br2".to_string(),
+                    },
                 },
             ],
             snapshot_digest: "snapshotdigest123456".to_string(),

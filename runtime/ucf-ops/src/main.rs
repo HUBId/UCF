@@ -12,20 +12,20 @@ use ucf_ops::{
     goldens_verify, goldens_verify_detailed, hardware_scan, load_signoff_checklist, logs_prove,
     logs_verify_proof, metrics_snapshot, metrics_summary, metrics_trend, migrate_config_v1,
     models_active_check, models_active_evidence, models_active_review_snapshot,
-    models_consistency_check, models_eligibility, models_evidence_snapshot, models_list,
-    models_probe, models_probe_slot, models_promote, models_recommend_rollback, models_rollback,
-    models_shadow_ready, models_stage, models_supported_set_review, models_verify,
-    models_verify_lifecycle, net_deps_audit, nightly_summarize, one_command_bringup,
-    operator_report, operator_report_text, operator_signoff, operator_signoff_text, out_manifest,
-    parse_duration_secs, parse_inject, parse_slot, path_scan, policy_diff, policy_explain,
-    policy_validate, portability_check, portability_report, preflight, readiness_gate,
-    release_build_rc, release_rc1_gate, release_signoff_validate, replay_audit, replay_bugreport,
-    repro_pack, repro_verify, run_status, runs_list, runs_search, runs_show,
-    save_counterfactual_result, second_slot_parity_report, security_verify_chain,
-    simulate_counterfactual, soak_run, strict_check, strict_explain, troubleshoot, v0_gate,
-    v1_smoke, v2_gate, v3_gate, v4_gate, verify_bugreport, world_parity_report,
-    world_shadow_report, write_slice, AdversarialRunArgs, AirgapArtifactType, AirgapImportArgs,
-    AirgapImportMode, BenchArgs, BugKitBuildArgs, ChangeImpactArgs, ConfigV1,
+    models_backend_resolution, models_consistency_check, models_eligibility,
+    models_evidence_snapshot, models_list, models_probe, models_probe_slot, models_promote,
+    models_recommend_rollback, models_rollback, models_shadow_ready, models_stage,
+    models_supported_set_review, models_verify, models_verify_lifecycle, net_deps_audit,
+    nightly_summarize, one_command_bringup, operator_report, operator_report_text,
+    operator_signoff, operator_signoff_text, out_manifest, parse_duration_secs, parse_inject,
+    parse_slot, path_scan, policy_diff, policy_explain, policy_validate, portability_check,
+    portability_report, preflight, readiness_gate, release_build_rc, release_rc1_gate,
+    release_signoff_validate, replay_audit, replay_bugreport, repro_pack, repro_verify, run_status,
+    runs_list, runs_search, runs_show, save_counterfactual_result, second_slot_parity_report,
+    security_verify_chain, simulate_counterfactual, soak_run, strict_check, strict_explain,
+    troubleshoot, v0_gate, v1_smoke, v2_gate, v3_gate, v4_gate, verify_bugreport,
+    world_parity_report, world_shadow_report, write_slice, AdversarialRunArgs, AirgapArtifactType,
+    AirgapImportArgs, AirgapImportMode, BenchArgs, BugKitBuildArgs, ChangeImpactArgs, ConfigV1,
     CounterfactualRequest, DevLoopArgs, DocsLintArgs, DocsLintMode, DocsLintStatus,
     ExplainTickRequest, ExportArgs, GateStatus, GoldenGenerateArgs, GoldenVerifyArgs,
     GoldenVerifyReport, NightlySummarizeArgs, OperatorReportArgs, OperatorSignoffArgs,
@@ -1276,6 +1276,32 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     println!("rationale_codes={}", report.policy.rationale_codes.join(","));
                     println!("out={}", out.display());
                 }
+                "backend-resolution" => {
+                    let slot = parse_slot(&arg_value(&args, "--slot").ok_or("missing --slot")?)?;
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from(format!("./out/backend_resolution_{}.json", slot.as_str())));
+                    let run_id = arg_value(&args, "--run");
+                    let resolution = models_backend_resolution(&workdir, slot, run_id.as_deref())?;
+                    if let Some(parent) = out.parent() {
+                        std::fs::create_dir_all(parent)?;
+                    }
+                    std::fs::write(&out, serde_json::to_vec_pretty(&resolution)?)?;
+                    let evidence = models_evidence_snapshot(&workdir, Some(slot), run_id.as_deref())?;
+                    let candle_state = evidence
+                        .slots
+                        .iter()
+                        .find(|s| s.slot_id == slot.as_str())
+                        .map(|s| format!("{:?}", s.backend_support.candle))
+                        .unwrap_or_else(|| "Unknown".to_string());
+                    println!("slot={}", resolution.slot_id);
+                    println!("candle_support_state={}", candle_state);
+                    println!("burn_resolution={:?}", resolution.resolution);
+                    println!("burn_support_state={:?}", resolution.support_state);
+                    println!("rationale_codes={}", resolution.rationale_codes.join(","));
+                    println!("shadow_compare_available={}", if matches!(resolution.resolution, ucf_ops::BurnResolutionStatusV1::BurnSupportedForShadowCompare) { "yes" } else { "no" });
+                    println!("out={}", out.display());
+                }
                 "consistency-check" => {
                     let out = arg_value(&args, "--out")
                         .map(PathBuf::from)
@@ -1291,7 +1317,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 _ => {
                     return Err(
-                        "usage: ucf-ops models <verify|probe|stage|promote|rollback|list|active-check|active-evidence|eligibility|evidence-snapshot|active-review-snapshot|supported-set-review|consistency-check|recommend-rollback|shadow-ready> ..."
+                        "usage: ucf-ops models <verify|probe|stage|promote|rollback|list|active-check|active-evidence|eligibility|evidence-snapshot|active-review-snapshot|supported-set-review|backend-resolution|consistency-check|recommend-rollback|shadow-ready> ..."
                             .into(),
                     )
                 }
