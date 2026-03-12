@@ -6,6 +6,7 @@
     "operator_signoff_v1",
     "strict_failure_report_v3",
     "v3_gate_report_v1",
+    "v4_gate_report_v1",
     "readiness_gate_report_v1"
   ]
 }
