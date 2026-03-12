@@ -23,5 +23,10 @@ No broad runtime expansion is implied by this anchor.
 - Hardware-specific optimization assumptions.
 - Broad slot expansion without prior evidence scaffolding.
 
+## Supported-slot expansion guard (v5 MUST #1)
+- Execute `ucf-ops models supported-set-review` before any v5 slot-expansion implementation work.
+- Expansion is conditional: review must emit `EXPAND_BY_ONE` with exactly one chosen candidate.
+- On insufficient evidence or ambiguity, review must emit `FREEZE` and scope remains unchanged.
+
 ## v5 completion framing
 v5 completion is expected to culminate in a dedicated v5 gate prompt, followed by wrap governance that sets the next anchor only after evidence/signoff/doc checks are green.
