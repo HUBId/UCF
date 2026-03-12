@@ -58,19 +58,19 @@ pub use goldens::{
 };
 pub use models_lifecycle::{
     can_enable_active, models_active_check, models_active_evidence, models_active_review_snapshot,
-    models_consistency_check, models_eligibility, models_evidence_snapshot, models_list,
-    models_probe_slot, models_promote, models_recommend_rollback, models_rollback,
-    models_shadow_ready, models_stage, models_supported_set_review,
-    models_verify as models_verify_lifecycle, parse_slot, ActiveCheckStatus,
-    ActiveEnablementDeniedCode, ActiveEnablementEvidenceV1, ActiveReviewEvidenceV1,
-    ActiveReviewOverallStatusV1, ActiveReviewSnapshotRecordV1, AggregatedActiveReviewSnapshotV1,
-    AggregatedEligibilityReportV1, AggregatedEvidenceReportV1, AggregatedStatusV1,
-    BackendEvidenceSnapshotV1, BackendSupportStateV1, EligibilityOverallStatusV1,
-    ModelsActiveCheckReport, ModelsConsistencyCheckReportV1, ProbeReportV1,
-    ShadowReadyCheckRecordV1, ShadowReadyEvidenceV1, SlotEvidenceSnapshotV1,
-    SlotExpansionEligibilityV1, SupportedRealSlotSetDecisionV2, SupportedRealSlotSetPolicyV2,
-    SupportedRealSlotSetV1, SupportedRealSlotsActiveViewV1, SupportedSetReviewReportV1,
-    UnifiedEligibilityStatusV1,
+    models_backend_resolution, models_consistency_check, models_eligibility,
+    models_evidence_snapshot, models_list, models_probe_slot, models_promote,
+    models_recommend_rollback, models_rollback, models_shadow_ready, models_stage,
+    models_supported_set_review, models_verify as models_verify_lifecycle, parse_slot,
+    ActiveCheckStatus, ActiveEnablementDeniedCode, ActiveEnablementEvidenceV1,
+    ActiveReviewEvidenceV1, ActiveReviewOverallStatusV1, ActiveReviewSnapshotRecordV1,
+    AggregatedActiveReviewSnapshotV1, AggregatedEligibilityReportV1, AggregatedEvidenceReportV1,
+    AggregatedStatusV1, BackendEvidenceSnapshotV1, BackendSupportStateV1, BurnResolutionStatusV1,
+    BurnSupportResolutionV1, EligibilityOverallStatusV1, ModelsActiveCheckReport,
+    ModelsConsistencyCheckReportV1, ProbeReportV1, ShadowReadyCheckRecordV1, ShadowReadyEvidenceV1,
+    SlotEvidenceSnapshotV1, SlotExpansionEligibilityV1, SupportedRealSlotSetDecisionV2,
+    SupportedRealSlotSetPolicyV2, SupportedRealSlotSetV1, SupportedRealSlotsActiveViewV1,
+    SupportedSetReviewReportV1, UnifiedEligibilityStatusV1,
 };
 pub use nightly::{
     nightly_summarize, NightlyComponentReport, NightlyOverallStatus, NightlySummarizeArgs,
@@ -7366,22 +7366,26 @@ fn strict_v1_checks(
         }
 
         if second_burn_required {
-            let parity_path = workdir
-                .join("out")
-                .join(format!("{}_parity_report.json", second_slot.as_str()));
-            let has_burn_parity = fs::read_to_string(parity_path)
-                .ok()
-                .and_then(|body| {
-                    serde_json::from_str::<second_slot_parity::SecondSlotParityReportV1>(&body).ok()
-                })
-                .is_some_and(|report| report.burn_parity_present);
-            if has_burn_parity {
-                checks.push(strict_pass("v4_optional_backend_burn_parity_required"));
+            let resolution =
+                models_lifecycle::models_backend_resolution(workdir, second_slot, None).ok();
+            if let Some(resolution) = resolution {
+                if matches!(
+                    resolution.resolution,
+                    models_lifecycle::BurnResolutionStatusV1::BurnSupportedForShadowCompare
+                ) {
+                    checks.push(strict_pass("v4_optional_backend_burn_parity_required"));
+                } else {
+                    checks.push(strict_fail(
+                        "v4_optional_backend_burn_parity_required",
+                        "OPTIONAL_BACKEND_CLOSED_UNSUPPORTED",
+                        "Burn for configured second slot is formally closed unsupported in this phase; disable UCF_SECOND_SLOT_BURN_PARITY_REQUIRED or explicitly reopen via governance",
+                    ));
+                }
             } else {
                 checks.push(strict_fail(
                     "v4_optional_backend_burn_parity_required",
-                    "OPTIONAL_BACKEND_REQUIRED_BUT_MISSING",
-                    "set UCF_SECOND_SLOT_BURN_SHADOW_ENABLED=1 and build with --features backend-burn, or disable UCF_SECOND_SLOT_BURN_PARITY_REQUIRED",
+                    "OPTIONAL_BACKEND_CLOSED_UNSUPPORTED",
+                    "Burn resolution unavailable for configured second slot; regenerate parity/evidence artifacts and rerun",
                 ));
             }
         } else {
@@ -13893,7 +13897,7 @@ slots = [{ slot_id = "world_jepa", active_hash = "missing", files = [{ path = "m
         assert!(check
             .error_codes
             .iter()
-            .any(|code| code == "OPTIONAL_BACKEND_REQUIRED_BUT_MISSING"));
+            .any(|code| code == "OPTIONAL_BACKEND_CLOSED_UNSUPPORTED"));
     }
 
     #[test]

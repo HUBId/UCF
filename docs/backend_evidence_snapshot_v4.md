@@ -41,6 +41,7 @@ Per slot:
 - `readiness` booleans: `probe_ready`, `shadow_ready`, `active_eligible`
 - `denials` (probe/shadow/active), normalized denial code enums
 - `remediation_codes` (bounded to max 4)
+- `burn_resolution` (`BurnSupportResolutionV1`) with explicit binary outcome for optional Burn state
 
 ## Backend support states vs readiness booleans
 
@@ -76,3 +77,8 @@ Downstream tools (gate reports, bugkits, repro packs) should reference or embed 
 ```bash
 cargo run -p ucf-ops -- models active-review-snapshot --out ./out/active_review_snapshot.json
 ```
+
+
+## Burn resolution integration (v5)
+
+`BackendEvidenceSnapshotV1` now embeds a canonical `BurnSupportResolutionV1` per slot so optional Burn state is explicit and no longer ambiguous.

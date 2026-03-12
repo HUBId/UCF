@@ -32,6 +32,7 @@ Each slot includes:
 - `primary_denial_code`
 - bounded `remediation_codes` (max 4)
 - contributing evidence digest prefixes
+- `burn_resolution` (propagated from backend evidence snapshot)
 
 ## Aggregated view (`AggregatedActiveReviewSnapshotV1`)
 
@@ -68,3 +69,8 @@ A slot is reviewable iff:
 
 - Snapshot generation reuses existing evidence and signoff surfaces.
 - Output is suitable for later bugkit/repro/gate artifact attachment.
+
+
+## Burn state visibility (v5)
+
+Active-review snapshot now carries the chosen second-slot Burn resolution explicitly (supported-for-shadow-compare vs closed-unsupported), without granting any new active eligibility.

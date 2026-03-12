@@ -295,6 +295,7 @@ pub struct BackendEvidenceSlotSnapshotV1 {
     pub remediation_codes: Vec<String>,
     #[serde(default)]
     pub canonical_remediation_codes: Vec<String>,
+    pub burn_resolution: BurnSupportResolutionV1,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -329,6 +330,23 @@ pub struct ActiveReviewEvidenceV1 {
     pub primary_denial_code: Option<String>,
     pub remediation_codes: Vec<String>,
     pub contributing_evidence_digests: ActiveReviewContributingDigestsV1,
+    pub burn_resolution: BurnSupportResolutionV1,
+    pub evidence_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum BurnResolutionStatusV1 {
+    BurnSupportedForShadowCompare,
+    BurnClosedUnsupported,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BurnSupportResolutionV1 {
+    pub slot_id: String,
+    pub resolution: BurnResolutionStatusV1,
+    pub support_state: OptionalBackendSupportStateV1,
+    pub rationale_codes: Vec<String>,
     pub evidence_digest: String,
 }
 
@@ -1824,6 +1842,7 @@ fn unified_eligibility_from_backend_snapshot(
         BackendSupportStateV1::NotBuilt => OptionalBackendSupportStateV1::NotBuilt,
         BackendSupportStateV1::NotConfigured => OptionalBackendSupportStateV1::NotConfigured,
     };
+    let burn_resolution = slot.burn_resolution.clone();
     let denial_reason_probe = slot.denials.probe.as_ref().map(|d| format!("{:?}", d));
     let denial_reason_shadow = slot.denials.shadow.as_ref().map(|d| format!("{:?}", d));
     let denial_reason_active = slot.denials.active.as_ref().map(|d| format!("{:?}", d));
@@ -1856,6 +1875,8 @@ fn unified_eligibility_from_backend_snapshot(
     );
     digest_source.extend_from_slice(format!("{:?}", slot.evidence.latest_drift_status).as_bytes());
     digest_source.extend_from_slice(format!("{:?}", burn_support_state).as_bytes());
+    digest_source.extend_from_slice(format!("{:?}", burn_resolution.resolution).as_bytes());
+    digest_source.extend_from_slice(burn_resolution.evidence_digest.as_bytes());
     digest_source.extend_from_slice(
         if slot.backend_support.burn == BackendSupportStateV1::Supported {
             b"1"
@@ -1922,6 +1943,13 @@ pub fn models_evidence_snapshot(
             candle: resolve_candle_support_state(slot, second_slot, parity_report.as_ref()),
             burn: resolve_burn_support_state(slot, second_slot, parity_report.as_ref()),
         };
+        let burn_support_state = match backend_support.burn {
+            BackendSupportStateV1::Supported => OptionalBackendSupportStateV1::Supported,
+            BackendSupportStateV1::Unsupported => OptionalBackendSupportStateV1::Unsupported,
+            BackendSupportStateV1::NotBuilt => OptionalBackendSupportStateV1::NotBuilt,
+            BackendSupportStateV1::NotConfigured => OptionalBackendSupportStateV1::NotConfigured,
+        };
+        let burn_resolution = burn_support_resolution_from_state(slot, burn_support_state);
         let mut remediation_codes = eligibility.remediation_codes;
         remediation_codes.sort();
         remediation_codes.dedup();
@@ -1956,6 +1984,7 @@ pub fn models_evidence_snapshot(
             },
             canonical_remediation_codes: merge_canonical_remediations(remediation_codes.iter(), 4),
             remediation_codes,
+            burn_resolution,
         });
     }
 
@@ -1977,6 +2006,9 @@ pub fn models_evidence_snapshot(
         digest_source.extend_from_slice(format!("{:?}", slot.backend_support.stub).as_bytes());
         digest_source.extend_from_slice(format!("{:?}", slot.backend_support.candle).as_bytes());
         digest_source.extend_from_slice(format!("{:?}", slot.backend_support.burn).as_bytes());
+        digest_source
+            .extend_from_slice(format!("{:?}", slot.burn_resolution.resolution).as_bytes());
+        digest_source.extend_from_slice(slot.burn_resolution.evidence_digest.as_bytes());
         digest_source.extend_from_slice(slot.evidence.latest_probe_report_digest_prefix.as_bytes());
         digest_source
             .extend_from_slice(slot.evidence.latest_compare_window_digest_prefix.as_bytes());
@@ -1998,6 +2030,32 @@ pub fn models_evidence_snapshot(
         slots: snapshots,
         snapshot_digest: sha256_hex(&digest_source),
     })
+}
+
+pub fn models_backend_resolution(
+    workdir: &Path,
+    slot: ModelSlot,
+    run_id: Option<&str>,
+) -> Result<BurnSupportResolutionV1, OpsError> {
+    let detected = crate::detect_second_slot(workdir)?;
+    if slot != detected {
+        return Err(OpsError::Invalid(format!(
+            "SECOND_SLOT_SCOPE_VIOLATION: configured second slot is {}",
+            detected.as_str()
+        )));
+    }
+    let parity_report = read_second_slot_parity_report(workdir, run_id, slot.as_str());
+    let support_state = parity_report
+        .as_ref()
+        .map(|r| r.burn_support_state.clone())
+        .unwrap_or_else(|| {
+            if cfg!(feature = "backend-burn") {
+                OptionalBackendSupportStateV1::NotConfigured
+            } else {
+                OptionalBackendSupportStateV1::NotBuilt
+            }
+        });
+    Ok(burn_support_resolution_from_state(slot, support_state))
 }
 
 fn discover_latest_operator_signoff(workdir: &Path) -> Option<OperatorSignoffDecisionV1> {
@@ -2234,12 +2292,16 @@ pub fn models_active_review_snapshot(
                         .clone(),
                     strict_evidence_digest_prefix: strict_digest_prefix.clone(),
                 },
+                burn_resolution: slot.burn_resolution.clone(),
                 evidence_digest: String::new(),
             };
             let mut digest_source = Vec::new();
             digest_source.extend_from_slice(evidence.slot_id.as_bytes());
             digest_source.extend_from_slice(evidence.target_hash_prefix.as_bytes());
             digest_source.extend_from_slice(evidence.manifest_digest_prefix.as_bytes());
+            digest_source
+                .extend_from_slice(format!("{:?}", evidence.burn_resolution.resolution).as_bytes());
+            digest_source.extend_from_slice(evidence.burn_resolution.evidence_digest.as_bytes());
             digest_source.extend_from_slice(if evidence.probe_ready { b"1" } else { b"0" });
             digest_source.extend_from_slice(if evidence.shadow_ready { b"1" } else { b"0" });
             digest_source.extend_from_slice(if evidence.active_eligible { b"1" } else { b"0" });
@@ -2578,6 +2640,50 @@ fn resolve_burn_support_state(
         OptionalBackendSupportStateV1::Unsupported => BackendSupportStateV1::Unsupported,
         OptionalBackendSupportStateV1::NotBuilt => BackendSupportStateV1::NotBuilt,
         OptionalBackendSupportStateV1::NotConfigured => BackendSupportStateV1::NotConfigured,
+    }
+}
+
+fn burn_support_resolution_from_state(
+    slot: ModelSlot,
+    support_state: OptionalBackendSupportStateV1,
+) -> BurnSupportResolutionV1 {
+    let mut rationale_codes = Vec::new();
+    let resolution = match support_state {
+        OptionalBackendSupportStateV1::Supported => {
+            rationale_codes.push("BURN_SHADOW_COMPARE_AVAILABLE".to_string());
+            BurnResolutionStatusV1::BurnSupportedForShadowCompare
+        }
+        OptionalBackendSupportStateV1::Unsupported => {
+            rationale_codes.push("BURN_SLOT_FORMALLY_UNSUPPORTED".to_string());
+            BurnResolutionStatusV1::BurnClosedUnsupported
+        }
+        OptionalBackendSupportStateV1::NotBuilt => {
+            rationale_codes.push("BURN_FEATURE_NOT_BUILT".to_string());
+            BurnResolutionStatusV1::BurnClosedUnsupported
+        }
+        OptionalBackendSupportStateV1::NotConfigured => {
+            rationale_codes.push("BURN_SHADOW_NOT_CONFIGURED".to_string());
+            BurnResolutionStatusV1::BurnClosedUnsupported
+        }
+    };
+    rationale_codes.sort();
+    rationale_codes.dedup();
+    rationale_codes.truncate(4);
+
+    let mut digest_source = Vec::new();
+    digest_source.extend_from_slice(slot.as_str().as_bytes());
+    digest_source.extend_from_slice(format!("{:?}", resolution).as_bytes());
+    digest_source.extend_from_slice(format!("{:?}", support_state).as_bytes());
+    for code in &rationale_codes {
+        digest_source.extend_from_slice(code.as_bytes());
+    }
+
+    BurnSupportResolutionV1 {
+        slot_id: slot.as_str().to_string(),
+        resolution,
+        support_state,
+        rationale_codes,
+        evidence_digest: sha256_hex(&digest_source),
     }
 }
 
@@ -4916,6 +5022,13 @@ mod probe_tests {
                     active_evidence_digest_prefix: "a".to_string(),
                     strict_evidence_digest_prefix: "x".to_string(),
                 },
+                burn_resolution: BurnSupportResolutionV1 {
+                    slot_id: "a".to_string(),
+                    resolution: BurnResolutionStatusV1::BurnClosedUnsupported,
+                    support_state: OptionalBackendSupportStateV1::NotConfigured,
+                    rationale_codes: vec!["BURN_SHADOW_NOT_CONFIGURED".to_string()],
+                    evidence_digest: "br".to_string(),
+                },
                 evidence_digest: "d".to_string(),
             }];
             assert_eq!(
@@ -5014,6 +5127,20 @@ mod probe_tests {
         }
 
         #[test]
+        fn burn_support_resolution_digest_is_stable() {
+            let a = burn_support_resolution_from_state(
+                ModelSlot::Sae,
+                OptionalBackendSupportStateV1::NotConfigured,
+            );
+            let b = burn_support_resolution_from_state(
+                ModelSlot::Sae,
+                OptionalBackendSupportStateV1::NotConfigured,
+            );
+            assert_eq!(a.resolution, BurnResolutionStatusV1::BurnClosedUnsupported);
+            assert_eq!(a.evidence_digest, b.evidence_digest);
+        }
+
+        #[test]
         fn backend_snapshot_digest_is_stable() {
             let snapshot = BackendEvidenceSnapshotV1 {
                 schema_version: 1,
@@ -5052,6 +5179,13 @@ mod probe_tests {
                     },
                     remediation_codes: vec!["DRIFT_WARN".to_string()],
                     canonical_remediation_codes: vec![],
+                    burn_resolution: BurnSupportResolutionV1 {
+                        slot_id: "world_jepa".to_string(),
+                        resolution: BurnResolutionStatusV1::BurnClosedUnsupported,
+                        support_state: OptionalBackendSupportStateV1::Unsupported,
+                        rationale_codes: vec!["BURN_SLOT_FORMALLY_UNSUPPORTED".to_string()],
+                        evidence_digest: "br".to_string(),
+                    },
                 }],
                 snapshot_digest: "beef".to_string(),
             };
