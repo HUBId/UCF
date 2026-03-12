@@ -54,7 +54,7 @@ Modes:
 
 
 6. **Artifact schema snapshots up-to-date**
-   - Regenerates shape snapshots for v3/v4 operator artifacts and compares them with committed files in `docs/artifact_schema_snapshots/`.
+   - Regenerates shape snapshots for covered v3/v4/v5 governance/export artifacts and compares them with committed files in `docs/artifact_schema_snapshots/`.
    - Classifies drift conservatively as `ADDITIVE`, `BREAKING`, or `UNKNOWN`; strict lint fails on drift.
    - Remediation:
      ```bash

@@ -1,0 +1,26 @@
+{
+  "artifact_id": "backend_resolution_v1",
+  "type_name": "BurnSupportResolutionV1",
+  "source_file": "runtime/ucf-ops/src/models_lifecycle.rs",
+  "required_fields": [
+    "evidence_digest",
+    "rationale_codes",
+    "resolution",
+    "slot_id",
+    "support_state"
+  ],
+  "optional_fields": [],
+  "field_types": {
+    "evidence_digest": "String",
+    "rationale_codes": "Vec<String>",
+    "resolution": "BurnResolutionStatusV1",
+    "slot_id": "String",
+    "support_state": "OptionalBackendSupportStateV1"
+  },
+  "enum_variants": {
+    "BurnResolutionStatusV1": [
+      "BurnClosedUnsupported",
+      "BurnSupportedForShadowCompare"
+    ]
+  }
+}

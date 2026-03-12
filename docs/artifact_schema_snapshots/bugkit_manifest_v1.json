@@ -1,0 +1,41 @@
+{
+  "artifact_id": "bugkit_manifest_v1",
+  "type_name": "BugKitManifestV1",
+  "source_file": "runtime/ucf-ops/src/lib.rs",
+  "required_fields": [
+    "active_review_snapshot",
+    "backend_evidence_snapshot",
+    "backend_resolution",
+    "bugkit_digest",
+    "evidence_context",
+    "file_count",
+    "files",
+    "include_payload",
+    "include_weights",
+    "max_bytes",
+    "operator_signoff",
+    "run_id",
+    "schema_version",
+    "total_bytes",
+    "warnings"
+  ],
+  "optional_fields": [],
+  "field_types": {
+    "active_review_snapshot": "PackEvidenceArtifactRefV1",
+    "backend_evidence_snapshot": "PackEvidenceArtifactRefV1",
+    "backend_resolution": "PackEvidenceArtifactRefV1",
+    "bugkit_digest": "String",
+    "evidence_context": "PackEvidenceContextSummaryV1",
+    "file_count": "usize",
+    "files": "Vec<BugKitManifestEntry>",
+    "include_payload": "bool",
+    "include_weights": "bool",
+    "max_bytes": "u64",
+    "operator_signoff": "PackEvidenceArtifactRefV1",
+    "run_id": "String",
+    "schema_version": "u16",
+    "total_bytes": "u64",
+    "warnings": "Vec<String>"
+  },
+  "enum_variants": {}
+}

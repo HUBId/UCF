@@ -53,6 +53,7 @@ pub struct ArtifactSchemaCheckReport {
     pub ok: bool,
     pub covered_artifacts: Vec<String>,
     pub diffs: Vec<ArtifactSchemaDiffEntry>,
+    pub remediation: String,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -63,7 +64,7 @@ struct ArtifactSpec {
     enum_names: &'static [&'static str],
 }
 
-const ARTIFACT_SPECS: [ArtifactSpec; 8] = [
+const ARTIFACT_SPECS: [ArtifactSpec; 12] = [
     ArtifactSpec {
         artifact_id: "active_review_snapshot_v1",
         file_rel: "runtime/ucf-ops/src/models_lifecycle.rs",
@@ -71,9 +72,33 @@ const ARTIFACT_SPECS: [ArtifactSpec; 8] = [
         enum_names: &["ActiveReviewOverallStatusV1"],
     },
     ArtifactSpec {
+        artifact_id: "backend_resolution_v1",
+        file_rel: "runtime/ucf-ops/src/models_lifecycle.rs",
+        type_name: "BurnSupportResolutionV1",
+        enum_names: &["BurnResolutionStatusV1"],
+    },
+    ArtifactSpec {
         artifact_id: "backend_evidence_snapshot_v1",
         file_rel: "runtime/ucf-ops/src/models_lifecycle.rs",
         type_name: "BackendEvidenceSnapshotV1",
+        enum_names: &[],
+    },
+    ArtifactSpec {
+        artifact_id: "repro_pack_manifest_v1",
+        file_rel: "runtime/ucf-ops/src/lib.rs",
+        type_name: "ReproPackManifestV1",
+        enum_names: &[],
+    },
+    ArtifactSpec {
+        artifact_id: "bugkit_manifest_v1",
+        file_rel: "runtime/ucf-ops/src/lib.rs",
+        type_name: "BugKitManifestV1",
+        enum_names: &[],
+    },
+    ArtifactSpec {
+        artifact_id: "remediation_consistency_check_v1",
+        file_rel: "runtime/ucf-ops/src/remediation_consistency.rs",
+        type_name: "RemediationConsistencyReportV1",
         enum_names: &[],
     },
     ArtifactSpec {
@@ -226,10 +251,18 @@ pub fn check_artifact_schema_snapshots(
         });
     }
 
+    diffs.sort_by(|a, b| {
+        a.artifact
+            .cmp(&b.artifact)
+            .then_with(|| format!("{:?}", a.drift_kind).cmp(&format!("{:?}", b.drift_kind)))
+            .then_with(|| a.summary.cmp(&b.summary))
+    });
+
     Ok(ArtifactSchemaCheckReport {
         ok: diffs.is_empty(),
         covered_artifacts: covered,
         diffs,
+        remediation: "run: cargo run -p ucf-ops -- spec artifact-schemas --out docs/artifact_schema_snapshots && review git diff && git add docs/artifact_schema_snapshots".to_string(),
     })
 }
 
@@ -517,5 +550,63 @@ mod tests {
             parsed.optional_fields,
             vec!["optional_list".to_string(), "optional_number".to_string()]
         );
+    }
+
+    #[test]
+    fn parse_struct_field_order_is_stable_sorted() {
+        let source = r#"
+            pub struct Demo {
+                pub zeta: String,
+                pub alpha: String,
+                pub maybe: Option<u64>,
+            }
+        "#;
+        let parsed = parse_struct_shape(source, "Demo").expect("parse");
+        assert_eq!(
+            parsed.required_fields,
+            vec!["alpha".to_string(), "zeta".to_string()]
+        );
+        assert_eq!(parsed.optional_fields, vec!["maybe".to_string()]);
+    }
+
+    #[test]
+    fn generated_artifact_order_is_deterministic() {
+        let observed: Vec<_> = ARTIFACT_SPECS.iter().map(|spec| spec.artifact_id).collect();
+        assert_eq!(
+            observed,
+            vec![
+                "active_review_snapshot_v1",
+                "backend_resolution_v1",
+                "backend_evidence_snapshot_v1",
+                "repro_pack_manifest_v1",
+                "bugkit_manifest_v1",
+                "remediation_consistency_check_v1",
+                "operator_report_v1",
+                "operator_signoff_v1",
+                "strict_failure_report_v3",
+                "v3_gate_report_v1",
+                "v4_gate_report_v1",
+                "readiness_gate_report_v1",
+            ]
+        );
+    }
+
+    #[test]
+    fn check_reports_missing_snapshot_as_breaking() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let report = check_artifact_schema_snapshots(&ArtifactSchemaArgs {
+            repo_root: PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .expect("runtime parent")
+                .parent()
+                .expect("repo root")
+                .to_path_buf(),
+            out_dir: tmp.path().to_path_buf(),
+        })
+        .expect("check should complete");
+        assert!(!report.ok);
+        assert!(report.diffs.iter().any(|d| {
+            d.artifact == "active_review_snapshot_v1" && d.drift_kind == DriftKind::Breaking
+        }));
     }
 }

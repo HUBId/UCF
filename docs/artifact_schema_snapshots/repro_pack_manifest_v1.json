@@ -1,0 +1,42 @@
+{
+  "artifact_id": "repro_pack_manifest_v1",
+  "type_name": "ReproPackManifestV1",
+  "source_file": "runtime/ucf-ops/src/lib.rs",
+  "required_fields": [
+    "active_review_snapshot",
+    "backend_evidence_snapshot",
+    "backend_resolution",
+    "config_digest",
+    "ess_slice",
+    "evidence_context",
+    "included_artifacts",
+    "manifest_digest",
+    "operator_signoff",
+    "pack_id",
+    "policy_graph_digest",
+    "repro_pack_digest",
+    "run_id",
+    "schema_version"
+  ],
+  "optional_fields": [
+    "certificate_digest"
+  ],
+  "field_types": {
+    "active_review_snapshot": "PackEvidenceArtifactRefV1",
+    "backend_evidence_snapshot": "PackEvidenceArtifactRefV1",
+    "backend_resolution": "PackEvidenceArtifactRefV1",
+    "certificate_digest": "Option<String>",
+    "config_digest": "String",
+    "ess_slice": "ReproPackEssSlice",
+    "evidence_context": "PackEvidenceContextSummaryV1",
+    "included_artifacts": "Vec<ReproPackArtifact>",
+    "manifest_digest": "String",
+    "operator_signoff": "PackEvidenceArtifactRefV1",
+    "pack_id": "String",
+    "policy_graph_digest": "String",
+    "repro_pack_digest": "String",
+    "run_id": "String",
+    "schema_version": "u16"
+  },
+  "enum_variants": {}
+}

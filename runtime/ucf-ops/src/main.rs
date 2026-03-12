@@ -635,6 +635,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     for diff in &report.diffs {
                         println!("[{:?}] {} :: {}", diff.drift_kind, diff.artifact, diff.summary);
                     }
+                    if !report.ok {
+                        println!("remediation={}", report.remediation);
+                    }
                     if let Some(out) = arg_value(&args, "--out").map(PathBuf::from) {
                         if let Some(parent) = out.parent() {
                             std::fs::create_dir_all(parent)?;
