@@ -14,6 +14,9 @@ Default `ReproPackV1` zip includes:
 - `segment_roots.json` (Merkle segment roots for included slice)
 - `run_certificate.json` (optional, when present)
 - `readiness_gate_report.json` (optional, when present)
+- `evidence/backend_evidence_snapshot.json` (optional, included only if context-consistent)
+- `evidence/active_review_snapshot.json` (optional, included only if context-consistent)
+- `evidence/operator_signoff.json` (optional, included only if context-consistent)
 
 ## Build
 
@@ -24,6 +27,8 @@ cargo run -p ucf-ops -- repro pack --run <run_id> --range last --out ./out/repro
 Notes:
 - `--range last` is accepted for workflow compatibility and currently maps to bounded last records behavior.
 - The pack is deterministic: file set/order is canonicalized and digested.
+- `repro_pack_manifest.json` now contains additive evidence reference blocks (`backend_evidence_snapshot`, `active_review_snapshot`, `operator_signoff`, `backend_resolution`) and a bounded `evidence_context` digest-prefix summary.
+- Evidence refs are explicit by status: `INCLUDED`, `MISSING`, or `EXCLUDED` (with `reason_code`).
 
 ## Verify/Rehydrate
 
@@ -36,8 +41,9 @@ Verification flow:
 2. verify all artifact SHA-256 values from manifest
 3. verify `repro_pack_digest`
 4. verify `policy_graph_digest` and `manifest_digest` cross-file consistency
-5. run replay in verify-only mode on included ESS slice
-6. emit PASS/FAIL JSON report with first divergence (if any)
+5. verify included evidence artifact hashes and context consistency against manifest `evidence_context`
+6. run replay in verify-only mode on included ESS slice
+7. emit PASS/FAIL JSON report with first divergence (if any)
 
 ## Bug-report attachment guidance
 

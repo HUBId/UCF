@@ -10220,6 +10220,11 @@ pub struct ReproPackManifestV1 {
     pub included_artifacts: Vec<ReproPackArtifact>,
     pub ess_slice: ReproPackEssSlice,
     pub certificate_digest: Option<String>,
+    pub evidence_context: PackEvidenceContextSummaryV1,
+    pub backend_evidence_snapshot: PackEvidenceArtifactRefV1,
+    pub active_review_snapshot: PackEvidenceArtifactRefV1,
+    pub operator_signoff: PackEvidenceArtifactRefV1,
+    pub backend_resolution: PackEvidenceArtifactRefV1,
     pub repro_pack_digest: String,
 }
 
@@ -10278,8 +10283,246 @@ pub struct BugKitManifestV1 {
     pub total_bytes: u64,
     pub file_count: usize,
     pub files: Vec<BugKitManifestEntry>,
+    pub evidence_context: PackEvidenceContextSummaryV1,
+    pub backend_evidence_snapshot: PackEvidenceArtifactRefV1,
+    pub active_review_snapshot: PackEvidenceArtifactRefV1,
+    pub operator_signoff: PackEvidenceArtifactRefV1,
+    pub backend_resolution: PackEvidenceArtifactRefV1,
     pub warnings: Vec<String>,
     pub bugkit_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PackEvidenceContextSummaryV1 {
+    pub supported_slot_set_digest_prefix: String,
+    pub policy_graph_digest_prefix: String,
+    pub manifest_digest_prefix: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PackEvidenceArtifactRefV1 {
+    pub included: bool,
+    pub path: String,
+    pub sha256: String,
+    pub schema_version: u16,
+    pub digest_prefix: String,
+    pub status: String,
+    pub reason_code: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct EvidenceValidationContext {
+    supported_slot_set_digest_prefix: String,
+    policy_graph_digest_prefix: String,
+    manifest_digest_prefix: String,
+}
+
+fn missing_evidence_ref(path: &str, reason_code: &str) -> PackEvidenceArtifactRefV1 {
+    PackEvidenceArtifactRefV1 {
+        included: false,
+        path: path.to_string(),
+        sha256: String::new(),
+        schema_version: 0,
+        digest_prefix: String::new(),
+        status: "MISSING".to_string(),
+        reason_code: Some(reason_code.to_string()),
+    }
+}
+
+fn excluded_evidence_ref(path: &str, reason_code: &str) -> PackEvidenceArtifactRefV1 {
+    PackEvidenceArtifactRefV1 {
+        included: false,
+        path: path.to_string(),
+        sha256: String::new(),
+        schema_version: 0,
+        digest_prefix: String::new(),
+        status: "EXCLUDED".to_string(),
+        reason_code: Some(reason_code.to_string()),
+    }
+}
+
+fn included_evidence_ref(
+    path: &str,
+    sha256: String,
+    schema_version: u16,
+    digest_prefix: String,
+) -> PackEvidenceArtifactRefV1 {
+    PackEvidenceArtifactRefV1 {
+        included: true,
+        path: path.to_string(),
+        sha256,
+        schema_version,
+        digest_prefix,
+        status: "INCLUDED".to_string(),
+        reason_code: None,
+    }
+}
+
+fn validate_evidence_artifacts_against_context(
+    context: &EvidenceValidationContext,
+    supported_slot_set_digest_prefix: &str,
+    policy_graph_digest_prefix: &str,
+    manifest_digest_prefix: &str,
+) -> Option<String> {
+    if supported_slot_set_digest_prefix != context.supported_slot_set_digest_prefix {
+        return Some("SLOT_SET_DIGEST_MISMATCH".to_string());
+    }
+    if policy_graph_digest_prefix != context.policy_graph_digest_prefix {
+        return Some("POLICY_GRAPH_DIGEST_MISMATCH".to_string());
+    }
+    if manifest_digest_prefix != context.manifest_digest_prefix {
+        return Some("MANIFEST_DIGEST_MISMATCH".to_string());
+    }
+    None
+}
+
+fn discover_first_existing_json(workdir: &Path, candidates: &[PathBuf]) -> Option<PathBuf> {
+    candidates
+        .iter()
+        .map(|p| workdir.join(p))
+        .find(|p| p.exists())
+}
+
+fn enrich_evidence_artifacts(
+    workdir: &Path,
+    context: &EvidenceValidationContext,
+    include_backend_resolution: bool,
+    file_map: &mut BTreeMap<String, Vec<u8>>,
+) -> Result<
+    (
+        PackEvidenceArtifactRefV1,
+        PackEvidenceArtifactRefV1,
+        PackEvidenceArtifactRefV1,
+        PackEvidenceArtifactRefV1,
+    ),
+    OpsError,
+> {
+    let backend_path = discover_first_existing_json(
+        workdir,
+        &[
+            PathBuf::from("out/backend_evidence_snapshot.json"),
+            PathBuf::from("out/models_evidence_snapshot.json"),
+        ],
+    );
+    let backend_ref = if let Some(path) = backend_path {
+        let bytes = fs::read(&path)?;
+        let snapshot: BackendEvidenceSnapshotV1 = serde_json::from_slice(&bytes)?;
+        if let Some(reason) = validate_evidence_artifacts_against_context(
+            context,
+            &snapshot.supported_slot_set_digest,
+            &snapshot.policy_graph_digest_prefix,
+            &snapshot.manifest_digest_prefix,
+        ) {
+            excluded_evidence_ref("evidence/backend_evidence_snapshot.json", &reason)
+        } else {
+            let entry_path = "evidence/backend_evidence_snapshot.json";
+            file_map.insert(entry_path.to_string(), bytes.clone());
+            included_evidence_ref(
+                entry_path,
+                sha256_hex(&bytes),
+                snapshot.schema_version,
+                prefix_hex(&snapshot.snapshot_digest, 16),
+            )
+        }
+    } else {
+        missing_evidence_ref(
+            "evidence/backend_evidence_snapshot.json",
+            "BACKEND_EVIDENCE_SNAPSHOT_MISSING",
+        )
+    };
+
+    let active_path =
+        discover_first_existing_json(workdir, &[PathBuf::from("out/active_review_snapshot.json")]);
+    let active_ref = if let Some(path) = active_path {
+        let bytes = fs::read(&path)?;
+        let snapshot: AggregatedActiveReviewSnapshotV1 = serde_json::from_slice(&bytes)?;
+        if let Some(reason) = validate_evidence_artifacts_against_context(
+            context,
+            &snapshot.supported_slot_set_digest,
+            &snapshot.policy_graph_digest_prefix,
+            &snapshot.manifest_digest_prefix,
+        ) {
+            excluded_evidence_ref("evidence/active_review_snapshot.json", &reason)
+        } else {
+            let entry_path = "evidence/active_review_snapshot.json";
+            file_map.insert(entry_path.to_string(), bytes.clone());
+            included_evidence_ref(
+                entry_path,
+                sha256_hex(&bytes),
+                snapshot.schema_version,
+                prefix_hex(&snapshot.snapshot_digest, 16),
+            )
+        }
+    } else {
+        missing_evidence_ref(
+            "evidence/active_review_snapshot.json",
+            "ACTIVE_REVIEW_SNAPSHOT_MISSING",
+        )
+    };
+
+    let signoff_path =
+        discover_first_existing_json(workdir, &[PathBuf::from("out/operator_signoff.json")]);
+    let signoff_ref = if let Some(path) = signoff_path {
+        let bytes = fs::read(&path)?;
+        let signoff: OperatorSignoffDecisionV1 = serde_json::from_slice(&bytes)?;
+        if let Some(reason) = validate_evidence_artifacts_against_context(
+            context,
+            &signoff.supported_slot_set_digest,
+            &signoff.policy_graph_digest_prefix,
+            &signoff.manifest_digest_prefix,
+        ) {
+            excluded_evidence_ref("evidence/operator_signoff.json", &reason)
+        } else {
+            let entry_path = "evidence/operator_signoff.json";
+            file_map.insert(entry_path.to_string(), bytes.clone());
+            included_evidence_ref(
+                entry_path,
+                sha256_hex(&bytes),
+                signoff.schema_version,
+                prefix_hex(&signoff.decision_digest, 16),
+            )
+        }
+    } else {
+        missing_evidence_ref("evidence/operator_signoff.json", "OPERATOR_SIGNOFF_MISSING")
+    };
+
+    let backend_resolution_ref = if include_backend_resolution {
+        if let Ok(slot) = detect_second_slot(workdir) {
+            let resolution_path = discover_first_existing_json(
+                workdir,
+                &[PathBuf::from(format!(
+                    "out/backend_resolution_{}.json",
+                    slot.as_str()
+                ))],
+            );
+            if let Some(path) = resolution_path {
+                let bytes = fs::read(&path)?;
+                let resolution: BurnSupportResolutionV1 = serde_json::from_slice(&bytes)?;
+                let entry_path = format!("evidence/backend_resolution_{}.json", slot.as_str());
+                file_map.insert(entry_path.clone(), bytes.clone());
+                included_evidence_ref(
+                    &entry_path,
+                    sha256_hex(&bytes),
+                    1,
+                    prefix_hex(&resolution.evidence_digest, 16),
+                )
+            } else {
+                missing_evidence_ref(
+                    &format!("evidence/backend_resolution_{}.json", slot.as_str()),
+                    "BACKEND_RESOLUTION_MISSING",
+                )
+            }
+        } else {
+            excluded_evidence_ref(
+                "evidence/backend_resolution.json",
+                "SECOND_SLOT_UNAVAILABLE",
+            )
+        }
+    } else {
+        excluded_evidence_ref("evidence/backend_resolution.json", "NOT_REQUESTED")
+    };
+
+    Ok((backend_ref, active_ref, signoff_ref, backend_resolution_ref))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -10401,6 +10644,26 @@ pub fn bugkit_build(
         false,
     ));
 
+    let model_verify = models_verify(&resolve_attestation_inputs().2)?;
+    let evidence_context = match models_evidence_snapshot(workdir, None, Some(run_id)) {
+        Ok(context_snapshot) => EvidenceValidationContext {
+            supported_slot_set_digest_prefix: context_snapshot.supported_slot_set_digest,
+            policy_graph_digest_prefix: context_snapshot.policy_graph_digest_prefix,
+            manifest_digest_prefix: context_snapshot.manifest_digest_prefix,
+        },
+        Err(_) => EvidenceValidationContext {
+            supported_slot_set_digest_prefix: String::new(),
+            policy_graph_digest_prefix: prefix_hex(&policy.policy_graph_digest, 16),
+            manifest_digest_prefix: prefix_hex(&model_verify.model_hashes_digest, 16),
+        },
+    };
+    let mut evidence_file_map: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    let (backend_evidence_snapshot, active_review_snapshot, operator_signoff, backend_resolution) =
+        enrich_evidence_artifacts(workdir, &evidence_context, true, &mut evidence_file_map)?;
+    for (path, bytes) in evidence_file_map {
+        entries.push((path, bytes, true));
+    }
+
     for extra in [
         PathBuf::from("out/strict_check.json"),
         PathBuf::from("out/strict_failure.json"),
@@ -10476,6 +10739,15 @@ pub fn bugkit_build(
             .count()
             + 1,
         files: manifest_entries,
+        evidence_context: PackEvidenceContextSummaryV1 {
+            supported_slot_set_digest_prefix: evidence_context.supported_slot_set_digest_prefix,
+            policy_graph_digest_prefix: evidence_context.policy_graph_digest_prefix,
+            manifest_digest_prefix: evidence_context.manifest_digest_prefix,
+        },
+        backend_evidence_snapshot,
+        active_review_snapshot,
+        operator_signoff,
+        backend_resolution,
         warnings,
         bugkit_digest: String::new(),
     };
@@ -10575,6 +10847,12 @@ pub fn repro_pack(
             .filter_map(|s| s.sha256.as_ref().map(|h| serde_json::json!({"slot": s.slot, "sha256": h})))
             .collect::<Vec<_>>()
     });
+    let context_snapshot = models_evidence_snapshot(workdir, None, Some(run_id))?;
+    let evidence_context = EvidenceValidationContext {
+        supported_slot_set_digest_prefix: context_snapshot.supported_slot_set_digest,
+        policy_graph_digest_prefix: context_snapshot.policy_graph_digest_prefix,
+        manifest_digest_prefix: context_snapshot.manifest_digest_prefix,
+    };
 
     let mut file_map: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     file_map.insert("config_resolved.json".to_string(), fs::read(&config_path)?);
@@ -10612,6 +10890,9 @@ pub fn repro_pack(
             fs::read(&gate_path)?,
         );
     }
+
+    let (backend_evidence_snapshot, active_review_snapshot, operator_signoff, backend_resolution) =
+        enrich_evidence_artifacts(workdir, &evidence_context, false, &mut file_map)?;
 
     let cert_path = workdir.join("out").join(format!("run_cert_{run_id}.json"));
     let cert_digest = if cert_path.exists() {
@@ -10654,6 +10935,15 @@ pub fn repro_pack(
                 .collect(),
         },
         certificate_digest: cert_digest,
+        evidence_context: PackEvidenceContextSummaryV1 {
+            supported_slot_set_digest_prefix: evidence_context.supported_slot_set_digest_prefix,
+            policy_graph_digest_prefix: evidence_context.policy_graph_digest_prefix,
+            manifest_digest_prefix: evidence_context.manifest_digest_prefix,
+        },
+        backend_evidence_snapshot,
+        active_review_snapshot,
+        operator_signoff,
+        backend_resolution,
         repro_pack_digest: String::new(),
     };
     manifest.repro_pack_digest = repro_pack_digest_hex(&manifest)?;
@@ -10714,6 +11004,92 @@ pub fn repro_verify(pack: &Path, out: &Path) -> Result<ReproVerifyReport, OpsErr
         let bytes = fs::read(&p)?;
         if sha256_hex(&bytes) != art.sha256 {
             reasons.push(format!("artifact sha256 mismatch: {}", art.path));
+        }
+    }
+
+    for evidence in [
+        &manifest.backend_evidence_snapshot,
+        &manifest.active_review_snapshot,
+        &manifest.operator_signoff,
+        &manifest.backend_resolution,
+    ] {
+        if evidence.included {
+            let p = temp.path().join(&evidence.path);
+            let bytes = fs::read(&p)?;
+            if sha256_hex(&bytes) != evidence.sha256 {
+                reasons.push(format!("artifact sha256 mismatch: {}", evidence.path));
+            }
+        }
+    }
+
+    if manifest.backend_evidence_snapshot.included {
+        let path = temp.path().join(&manifest.backend_evidence_snapshot.path);
+        let snapshot: BackendEvidenceSnapshotV1 =
+            serde_json::from_str(&fs::read_to_string(&path)?)?;
+        if let Some(reason) = validate_evidence_artifacts_against_context(
+            &EvidenceValidationContext {
+                supported_slot_set_digest_prefix: manifest
+                    .evidence_context
+                    .supported_slot_set_digest_prefix
+                    .clone(),
+                policy_graph_digest_prefix: manifest
+                    .evidence_context
+                    .policy_graph_digest_prefix
+                    .clone(),
+                manifest_digest_prefix: manifest.evidence_context.manifest_digest_prefix.clone(),
+            },
+            &snapshot.supported_slot_set_digest,
+            &snapshot.policy_graph_digest_prefix,
+            &snapshot.manifest_digest_prefix,
+        ) {
+            reasons.push(format!("backend evidence context mismatch: {reason}"));
+        }
+    }
+
+    if manifest.active_review_snapshot.included {
+        let path = temp.path().join(&manifest.active_review_snapshot.path);
+        let snapshot: AggregatedActiveReviewSnapshotV1 =
+            serde_json::from_str(&fs::read_to_string(&path)?)?;
+        if let Some(reason) = validate_evidence_artifacts_against_context(
+            &EvidenceValidationContext {
+                supported_slot_set_digest_prefix: manifest
+                    .evidence_context
+                    .supported_slot_set_digest_prefix
+                    .clone(),
+                policy_graph_digest_prefix: manifest
+                    .evidence_context
+                    .policy_graph_digest_prefix
+                    .clone(),
+                manifest_digest_prefix: manifest.evidence_context.manifest_digest_prefix.clone(),
+            },
+            &snapshot.supported_slot_set_digest,
+            &snapshot.policy_graph_digest_prefix,
+            &snapshot.manifest_digest_prefix,
+        ) {
+            reasons.push(format!("active review context mismatch: {reason}"));
+        }
+    }
+
+    if manifest.operator_signoff.included {
+        let path = temp.path().join(&manifest.operator_signoff.path);
+        let signoff: OperatorSignoffDecisionV1 = serde_json::from_str(&fs::read_to_string(&path)?)?;
+        if let Some(reason) = validate_evidence_artifacts_against_context(
+            &EvidenceValidationContext {
+                supported_slot_set_digest_prefix: manifest
+                    .evidence_context
+                    .supported_slot_set_digest_prefix
+                    .clone(),
+                policy_graph_digest_prefix: manifest
+                    .evidence_context
+                    .policy_graph_digest_prefix
+                    .clone(),
+                manifest_digest_prefix: manifest.evidence_context.manifest_digest_prefix.clone(),
+            },
+            &signoff.supported_slot_set_digest,
+            &signoff.policy_graph_digest_prefix,
+            &signoff.manifest_digest_prefix,
+        ) {
+            reasons.push(format!("operator signoff context mismatch: {reason}"));
         }
     }
 
@@ -13418,6 +13794,27 @@ mod repro_pack_tests {
                 segment_roots: vec![],
             },
             certificate_digest: None,
+            evidence_context: PackEvidenceContextSummaryV1 {
+                supported_slot_set_digest_prefix: "11".repeat(8),
+                policy_graph_digest_prefix: "22".repeat(8),
+                manifest_digest_prefix: "33".repeat(8),
+            },
+            backend_evidence_snapshot: missing_evidence_ref(
+                "evidence/backend_evidence_snapshot.json",
+                "BACKEND_EVIDENCE_SNAPSHOT_MISSING",
+            ),
+            active_review_snapshot: missing_evidence_ref(
+                "evidence/active_review_snapshot.json",
+                "ACTIVE_REVIEW_SNAPSHOT_MISSING",
+            ),
+            operator_signoff: missing_evidence_ref(
+                "evidence/operator_signoff.json",
+                "OPERATOR_SIGNOFF_MISSING",
+            ),
+            backend_resolution: excluded_evidence_ref(
+                "evidence/backend_resolution.json",
+                "NOT_REQUESTED",
+            ),
             repro_pack_digest: String::new(),
         };
         let a = repro_pack_digest_hex(&manifest).expect("digest");

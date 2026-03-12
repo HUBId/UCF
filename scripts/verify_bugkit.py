@@ -78,6 +78,29 @@ def main() -> int:
                     + (proc.stderr.strip() or proc.stdout.strip() or f"exit={proc.returncode}")
                 )
 
+        for key in [
+            "backend_evidence_snapshot",
+            "active_review_snapshot",
+            "operator_signoff",
+            "backend_resolution",
+        ]:
+            ref = manifest.get(key)
+            if not isinstance(ref, dict):
+                failures.append(f"manifest missing evidence ref block: {key}")
+                continue
+            if ref.get("included", False):
+                rel = ref.get("path", "")
+                if not rel:
+                    failures.append(f"included evidence missing path: {key}")
+                    continue
+                path = tmp_path / rel
+                if not path.exists():
+                    failures.append(f"included evidence file missing: {rel}")
+                    continue
+                digest = sha256_bytes(path.read_bytes())
+                if digest != ref.get("sha256"):
+                    failures.append(f"evidence sha256 mismatch: {rel}")
+
         if failures:
             print("FAIL")
             for item in failures:
