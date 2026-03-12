@@ -48,3 +48,7 @@ cargo run -p ucf-ops -- models consistency-check --out ./out/models_consistency_
 ```
 
 The report returns `PASS`/`FAIL` and bounded mismatch categories (e.g. slot set, target hash, readiness booleans, denial reason alignment).
+
+## Remediation consistency
+
+Remediation consistency across eligibility, strict, operator report, signoff, and gate surfaces is guaranteed by a single canonical registry mapping layer (RemediationCodeRegistryV1).

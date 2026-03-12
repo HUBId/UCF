@@ -103,3 +103,7 @@ Then use `strict_section` to see whether strict is `OK|FAIL|MISSING` and continu
 
 ## v4 consistency note
 Strict v3 checks now use the shared supported-slot set resolution path to align with eligibility/operator/gate evidence interpretation.
+
+## Canonical remediation registry v1
+
+Strict report checks continue emitting specialized denial codes, and now additionally carry canonical remediation codes from the shared registry mapping.

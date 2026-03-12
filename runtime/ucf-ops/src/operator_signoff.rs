@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::operator_report::{ConsolidatedOperatorReportV1, OperatorStatus};
+use crate::remediation::merge_canonical_remediations;
 use crate::{
     BackendEvidenceSnapshotV1, GateStatus, OpsError, V0GateOverallStatus, V0GateReportV1,
     V1GateOverallStatus, V1GateReportV1, V2GateOverallStatus, V2GateReportV1, V3GateOverallStatus,
@@ -41,6 +42,8 @@ pub struct OperatorSignoffDecisionV1 {
     pub gate_report_digests: GateReportDigestsV1,
     pub reasons: Vec<String>,
     pub remediation_codes: Vec<String>,
+    #[serde(default)]
+    pub canonical_remediation_codes: Vec<String>,
     pub decision_digest: String,
 }
 
@@ -335,8 +338,11 @@ fn build_not_ready_minimal(
         },
         reasons: bound_codes(reasons),
         remediation_codes: bound_codes(remediation),
+        canonical_remediation_codes: Vec::new(),
         decision_digest: String::new(),
     };
+    out.canonical_remediation_codes =
+        merge_canonical_remediations(out.remediation_codes.iter(), CODE_CAP);
     out.decision_digest = decision_digest(&out)?;
     Ok(out)
 }
@@ -366,8 +372,11 @@ fn build_not_ready_from_snapshot(
         },
         reasons: bound_codes(reasons),
         remediation_codes: bound_codes(remediation),
+        canonical_remediation_codes: Vec::new(),
         decision_digest: String::new(),
     };
+    out.canonical_remediation_codes =
+        merge_canonical_remediations(out.remediation_codes.iter(), CODE_CAP);
     out.decision_digest = decision_digest(&out)?;
     Ok(out)
 }
@@ -400,8 +409,11 @@ fn build_decision(
         },
         reasons: bound_codes(reasons),
         remediation_codes: bound_codes(remediation),
+        canonical_remediation_codes: Vec::new(),
         decision_digest: String::new(),
     };
+    out.canonical_remediation_codes =
+        merge_canonical_remediations(out.remediation_codes.iter(), CODE_CAP);
     out.decision_digest = decision_digest(&out)?;
     Ok(out)
 }
@@ -595,6 +607,7 @@ mod tests {
                         active: None,
                     },
                     remediation_codes: vec![],
+                    canonical_remediation_codes: vec![],
                 },
                 BackendEvidenceSlotSnapshotV1 {
                     slot_id: "sae".to_string(),
@@ -627,6 +640,7 @@ mod tests {
                         active: Some(EvidenceDenialCodeV1::ActiveNotEnabled),
                     },
                     remediation_codes: vec![],
+                    canonical_remediation_codes: vec![],
                 },
             ],
             snapshot_digest: "snapshotdigest123456".to_string(),
@@ -697,6 +711,7 @@ mod tests {
                 },
             },
             remediation_codes: vec![],
+            canonical_remediation_codes: vec![],
             report_digest: "operatordigest123456".to_string(),
         }
     }
