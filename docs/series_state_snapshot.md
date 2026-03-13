@@ -52,6 +52,7 @@ Reference: `docs/next_10_prompts.md`
 - Second supported slot declaration: `sae` (scope remains fixed to `world_jepa` + exactly one second slot unless explicitly superseded by evidence-bound governance).
 - v6 starts with conservative governance/evidence/export/review reuse and normalization on the already supported set.
 - Supported real-slot expansion is considered only when `ucf-ops models supported-set-review` explicitly justifies expansion and follow-up prompts implement it.
+- v6 applied supported scope currently remains frozen until `ucf-ops models supported-set-apply` emits `decision=EXPANDED`; review policy alone does not change applied scope.
 
 ## Archived v5 queue reference
 
