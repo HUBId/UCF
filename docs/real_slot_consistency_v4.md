@@ -52,3 +52,14 @@ The report returns `PASS`/`FAIL` and bounded mismatch categories (e.g. slot set,
 ## Remediation consistency
 
 Remediation consistency across eligibility, strict, operator report, signoff, and gate surfaces is guaranteed by a single canonical registry mapping layer (RemediationCodeRegistryV1).
+
+
+## Cross-surface interop proof layer (v6)
+
+Applied slot scope consistency is also proven across governance and export artifacts by:
+
+```bash
+cargo run -p ucf-ops -- interop consistency-matrix --out ./out/interop_consistency_matrix.json
+```
+
+A scope mismatch is surfaced explicitly as `SCOPE_MISMATCH` (never silently ignored).

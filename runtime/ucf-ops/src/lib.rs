@@ -14,6 +14,7 @@ mod drift;
 mod formal_invariants;
 mod goldens;
 mod governance_surfaces;
+mod interop_consistency;
 mod models_lifecycle;
 mod nightly;
 mod operator_report;
@@ -65,6 +66,11 @@ pub use governance_surfaces::{
     validate_governance_primary_surfaces_with_applied_scope, GovernancePrimarySurfacesV1,
     GOVERNANCE_APPLIED_SET_MISMATCH_CODE, GOVERNANCE_PRIMARY_SURFACE_SCOPE_DRIFT_CODE,
     GOVERNANCE_SURFACE_MISMATCH_CODE, GOVERNANCE_SURFACE_MISSING_CODE,
+};
+pub use interop_consistency::{
+    interop_consistency_matrix, CrossSurfaceContextMatrixV1, CrossSurfaceEntryV1,
+    CrossSurfaceMatchRulesV1, InteropConsistencyMatrixReportV1, InteropMismatchCategoryV1,
+    InteropOverallStatusV1,
 };
 pub use models_lifecycle::{
     can_enable_active, load_applied_supported_set_context_v1, models_active_check,
