@@ -16,6 +16,7 @@ mod goldens;
 mod models_lifecycle;
 mod nightly;
 mod operator_report;
+mod operator_review_packet;
 mod operator_signoff;
 mod remediation;
 mod remediation_consistency;
@@ -80,6 +81,10 @@ pub use nightly::{
 pub use operator_report::{
     operator_report, operator_report_text, ConsolidatedOperatorReportV1, OperatorReportArgs,
     OperatorStatus,
+};
+pub use operator_review_packet::{
+    operator_review_packet, operator_review_packet_text, OperatorReviewPacketArgs,
+    OperatorReviewPacketV1, OperatorReviewStageV1,
 };
 pub use operator_signoff::{
     operator_signoff, operator_signoff_text, OperatorSignoffArgs, OperatorSignoffDecisionV1,

@@ -17,21 +17,22 @@ use ucf_ops::{
     models_recommend_rollback, models_rollback, models_shadow_ready, models_stage,
     models_supported_set_review, models_verify, models_verify_lifecycle, net_deps_audit,
     nightly_summarize, one_command_bringup, operator_report, operator_report_text,
-    operator_signoff, operator_signoff_text, out_manifest, parse_duration_secs, parse_inject,
-    parse_slot, path_scan, policy_diff, policy_explain, policy_validate, portability_check,
-    portability_report, preflight, readiness_gate, release_build_rc, release_rc1_gate,
-    release_signoff_validate, remediation_consistency_check, replay_audit, replay_bugreport,
-    repro_pack, repro_verify, run_status, runs_list, runs_search, runs_show,
-    save_counterfactual_result, second_slot_parity_report, security_verify_chain,
-    simulate_counterfactual, soak_run, strict_check, strict_explain, troubleshoot, v0_gate,
-    v1_smoke, v2_gate, v3_gate, v4_gate, verify_bugreport, world_parity_report,
-    world_shadow_report, write_slice, AdversarialRunArgs, AirgapArtifactType, AirgapImportArgs,
-    AirgapImportMode, BenchArgs, BugKitBuildArgs, ChangeImpactArgs, ConfigV1,
-    CounterfactualRequest, DevLoopArgs, DocsLintArgs, DocsLintMode, DocsLintStatus,
-    ExplainTickRequest, ExportArgs, GateStatus, GoldenGenerateArgs, GoldenVerifyArgs,
-    GoldenVerifyReport, NightlySummarizeArgs, OperatorReportArgs, OperatorSignoffArgs,
-    ReleaseBuildRcArgs, SoakRunArgs, SpecSnapshotArgs, StrictEvidenceContextV1,
-    V2GateOverallStatus, V3GateOverallStatus, V4GateOverallStatus,
+    operator_review_packet, operator_review_packet_text, operator_signoff, operator_signoff_text,
+    out_manifest, parse_duration_secs, parse_inject, parse_slot, path_scan, policy_diff,
+    policy_explain, policy_validate, portability_check, portability_report, preflight,
+    readiness_gate, release_build_rc, release_rc1_gate, release_signoff_validate,
+    remediation_consistency_check, replay_audit, replay_bugreport, repro_pack, repro_verify,
+    run_status, runs_list, runs_search, runs_show, save_counterfactual_result,
+    second_slot_parity_report, security_verify_chain, simulate_counterfactual, soak_run,
+    strict_check, strict_explain, troubleshoot, v0_gate, v1_smoke, v2_gate, v3_gate, v4_gate,
+    verify_bugreport, world_parity_report, world_shadow_report, write_slice, AdversarialRunArgs,
+    AirgapArtifactType, AirgapImportArgs, AirgapImportMode, BenchArgs, BugKitBuildArgs,
+    ChangeImpactArgs, ConfigV1, CounterfactualRequest, DevLoopArgs, DocsLintArgs, DocsLintMode,
+    DocsLintStatus, ExplainTickRequest, ExportArgs, GateStatus, GoldenGenerateArgs,
+    GoldenVerifyArgs, GoldenVerifyReport, NightlySummarizeArgs, OperatorReportArgs,
+    OperatorReviewPacketArgs, OperatorSignoffArgs, ReleaseBuildRcArgs, SoakRunArgs,
+    SpecSnapshotArgs, StrictEvidenceContextV1, V2GateOverallStatus, V3GateOverallStatus,
+    V4GateOverallStatus,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -1750,9 +1751,34 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         println!("text_mode=true");
                     }
                 }
+                "review-packet" => {
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/operator_review_packet.json"));
+                    let packet = operator_review_packet(
+                        &workdir,
+                        &OperatorReviewPacketArgs {
+                            run_id: arg_value(&args, "--run"),
+                            latest: has_flag(&args, "--latest"),
+                        },
+                        &out,
+                    )?;
+                    println!("out={}", out.display());
+                    println!("review_stage={:?}", packet.review_stage);
+                    if !packet.blocking_codes.is_empty() {
+                        println!("blocking_codes={}", packet.blocking_codes.join(","));
+                    }
+                    if !packet.remediation_codes.is_empty() {
+                        println!("remediation_codes={}", packet.remediation_codes.join(","));
+                    }
+                    println!("{}", operator_review_packet_text(&packet));
+                    if has_flag(&args, "--text") {
+                        println!("text_mode=true");
+                    }
+                }
                 _ => {
                     return Err(
-                        "usage: ucf-ops operator <report|signoff> [--run <id>] [--latest] [--text] [--out <path>]".into(),
+                        "usage: ucf-ops operator <report|signoff|review-packet> [--run <id>] [--latest] [--text] [--out <path>]".into(),
                     )
                 }
             }

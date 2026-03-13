@@ -1,0 +1,37 @@
+{
+  "artifact_id": "operator_review_packet_v1",
+  "type_name": "OperatorReviewPacketV1",
+  "source_file": "runtime/ucf-ops/src/operator_review_packet.rs",
+  "required_fields": [
+    "artifacts",
+    "blocking_codes",
+    "manifest_digest_prefix",
+    "packet_digest",
+    "policy_graph_digest_prefix",
+    "remediation_codes",
+    "review_stage",
+    "schema_version",
+    "supported_slot_set_digest",
+    "supported_slots"
+  ],
+  "optional_fields": [],
+  "field_types": {
+    "artifacts": "OperatorReviewPacketArtifactsV1",
+    "blocking_codes": "Vec<String>",
+    "manifest_digest_prefix": "String",
+    "packet_digest": "String",
+    "policy_graph_digest_prefix": "String",
+    "remediation_codes": "Vec<String>",
+    "review_stage": "OperatorReviewStageV1",
+    "schema_version": "u16",
+    "supported_slot_set_digest": "String",
+    "supported_slots": "Vec<OperatorReviewPacketSlotV1>"
+  },
+  "enum_variants": {
+    "OperatorReviewStageV1": [
+      "ReviewActiveReady",
+      "ReviewBlocked",
+      "ReviewShadowReady"
+    ]
+  }
+}
