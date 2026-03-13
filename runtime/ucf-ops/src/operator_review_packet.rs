@@ -10,9 +10,10 @@ use crate::models_lifecycle::{
 use crate::operator_report::ConsolidatedOperatorReportV1;
 use crate::operator_signoff::{OperatorSignoffDecisionV1, SignoffDecisionStateV1};
 use crate::{
-    validate_governance_primary_surfaces_optional, GovernancePrimarySurfacesV1, OpsError,
-    V0GateOverallStatus, V0GateReportV1, V1GateOverallStatus, V1GateReportV1, V2GateOverallStatus,
-    V2GateReportV1, V3GateOverallStatus, V3GateReportV1, V4GateOverallStatus, V4GateReportV1,
+    load_applied_supported_set_context_v1, validate_governance_primary_surfaces_from_workdir,
+    AppliedSupportedSetContextV1, GovernancePrimarySurfacesV1, OpsError, V0GateOverallStatus,
+    V0GateReportV1, V1GateOverallStatus, V1GateReportV1, V2GateOverallStatus, V2GateReportV1,
+    V3GateOverallStatus, V3GateReportV1, V4GateOverallStatus, V4GateReportV1,
 };
 
 const CODE_CAP: usize = 12;
@@ -33,6 +34,7 @@ pub struct OperatorReviewPacketArtifactsV1 {
     pub operator_report_digest_prefix: String,
     pub gate_digests: OperatorReviewPacketGateDigestsV1,
     pub backend_resolution_digest_prefix: Option<String>,
+    pub applied_supported_set_context_digest_prefix: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -133,11 +135,13 @@ pub fn operator_review_packet(
         })
     });
 
-    let governance_surfaces = validate_governance_primary_surfaces_optional(
-        backend_snapshot.as_ref(),
-        active_review.as_ref(),
-    )
-    .ok();
+    let applied_scope = load_applied_supported_set_context_v1(workdir)?;
+    let governance_surfaces = match (backend_snapshot.as_ref(), active_review.as_ref()) {
+        (Some(backend), Some(active)) => {
+            validate_governance_primary_surfaces_from_workdir(workdir, backend, active).ok()
+        }
+        _ => None,
+    };
 
     let packet = reduce_review_packet(
         backend_snapshot,
@@ -151,6 +155,7 @@ pub fn operator_review_packet(
         gate_v3,
         gate_v4,
         backend_resolution,
+        applied_scope,
     )?;
 
     if let Some(parent) = out.parent() {
@@ -200,6 +205,7 @@ fn reduce_review_packet(
     gate_v3: Option<V3GateReportV1>,
     gate_v4: Option<V4GateReportV1>,
     backend_resolution: Option<BurnSupportResolutionV1>,
+    applied_scope: AppliedSupportedSetContextV1,
 ) -> Result<OperatorReviewPacketV1, OpsError> {
     let mut blocking = BTreeSet::new();
     let mut remediation = BTreeSet::new();
@@ -217,6 +223,7 @@ fn reduce_review_packet(
                 gate_v2,
                 gate_v3,
                 gate_v4,
+                &applied_scope,
             );
         }
     };
@@ -239,6 +246,7 @@ fn reduce_review_packet(
                 backend_resolution,
                 blocking,
                 remediation,
+                &applied_scope,
             );
         }
     };
@@ -266,6 +274,7 @@ fn reduce_review_packet(
                 backend_resolution,
                 blocking,
                 remediation,
+                &applied_scope,
             );
         }
     };
@@ -288,18 +297,19 @@ fn reduce_review_packet(
                 backend_resolution,
                 blocking,
                 remediation,
+                &applied_scope,
             );
         }
     };
 
-    if snapshot.slots.len() != 2
-        || !snapshot.slots.iter().any(|slot| {
-            slot.slot_id.eq_ignore_ascii_case("world")
-                || slot.slot_id.eq_ignore_ascii_case("world_jepa")
-        })
-    {
-        blocking.insert("REVIEW_BLOCK_SLOT_SET_AMBIGUOUS".to_string());
-        remediation.insert("run_models_evidence_snapshot".to_string());
+    let snapshot_slots = snapshot
+        .slots
+        .iter()
+        .map(|slot| slot.slot_id.clone())
+        .collect::<Vec<_>>();
+    if snapshot_slots != applied_scope.slots {
+        blocking.insert("REVIEW_BLOCK_SCOPE_MISMATCH".to_string());
+        remediation.insert("run_models_applied_scope_check".to_string());
     }
 
     check_gates(
@@ -347,6 +357,7 @@ fn reduce_review_packet(
         stage,
         blocking,
         remediation,
+        &applied_scope,
     )?;
     packet.packet_digest = packet_digest(&packet)?;
     Ok(packet)
@@ -401,6 +412,7 @@ fn build_from_snapshot(
     backend_resolution: Option<BurnSupportResolutionV1>,
     blocking: BTreeSet<String>,
     remediation: BTreeSet<String>,
+    applied_scope: &AppliedSupportedSetContextV1,
 ) -> Result<OperatorReviewPacketV1, OpsError> {
     let active = active.unwrap_or_else(|| AggregatedActiveReviewSnapshotV1 {
         schema_version: 1,
@@ -505,11 +517,13 @@ fn build_from_snapshot(
         OperatorReviewStageV1::ReviewBlocked,
         blocking,
         remediation,
+        applied_scope,
     )?;
     packet.packet_digest = packet_digest(&packet)?;
     Ok(packet)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_blocked_minimal(
     blocking: BTreeSet<String>,
     remediation: BTreeSet<String>,
@@ -518,6 +532,7 @@ fn build_blocked_minimal(
     gate_v2: Option<V2GateReportV1>,
     gate_v3: Option<V3GateReportV1>,
     gate_v4: Option<V4GateReportV1>,
+    applied_scope: &AppliedSupportedSetContextV1,
 ) -> Result<OperatorReviewPacketV1, OpsError> {
     let mut packet = OperatorReviewPacketV1 {
         schema_version: 1,
@@ -538,6 +553,10 @@ fn build_blocked_minimal(
                 v4: digest_opt(gate_v4.as_ref())?,
             },
             backend_resolution_digest_prefix: None,
+            applied_supported_set_context_digest_prefix: crate::prefix_hex(
+                &applied_scope.context_digest,
+                16,
+            ),
         },
         supported_slots: Vec::new(),
         blocking_codes: bound_codes(blocking),
@@ -563,6 +582,7 @@ fn build_packet(
     review_stage: OperatorReviewStageV1,
     blocking: BTreeSet<String>,
     remediation: BTreeSet<String>,
+    applied_scope: &AppliedSupportedSetContextV1,
 ) -> Result<OperatorReviewPacketV1, OpsError> {
     let mut supported_slots = snapshot
         .slots
@@ -607,6 +627,7 @@ fn build_packet(
             },
             backend_resolution_digest_prefix: backend_resolution
                 .map(|resolution| prefix16(&resolution.evidence_digest)),
+            applied_supported_set_context_digest_prefix: prefix16(&applied_scope.context_digest),
         },
         supported_slots,
         blocking_codes: bound_codes(blocking),
@@ -727,10 +748,10 @@ mod tests {
     use super::*;
     use crate::models_lifecycle::{
         ActiveReviewContributingDigestsV1, ActiveReviewEvidenceV1, ActiveReviewOverallStatusV1,
-        ActiveReviewSignoffAlignmentV1, BackendEvidenceSlotDenialsV1,
+        ActiveReviewSignoffAlignmentV1, AppliedSupportedSetContextV1, BackendEvidenceSlotDenialsV1,
         BackendEvidenceSlotEvidenceV1, BackendEvidenceSlotReadinessV1,
         BackendEvidenceSlotSnapshotV1, BackendSupportMatrixV1, BackendSupportStateV1,
-        BurnResolutionStatusV1, DriftStatusV1,
+        BurnResolutionStatusV1, DriftStatusV1, SupportedRealSlotSetExecutionDecisionV2,
     };
     use crate::validate_governance_primary_surfaces;
 
@@ -952,6 +973,19 @@ mod tests {
         validate_governance_primary_surfaces(snapshot, active).expect("governance")
     }
 
+    fn applied_scope() -> AppliedSupportedSetContextV1 {
+        AppliedSupportedSetContextV1 {
+            schema_version: 1,
+            applied_set_digest_prefix: "slotset1".to_string(),
+            slots: vec!["world".to_string(), "sae".to_string()],
+            decision: SupportedRealSlotSetExecutionDecisionV2::Frozen,
+            previous_set_digest_prefix: "prev".to_string(),
+            policy_digest_prefix: "policy".to_string(),
+            context_digest: "abcd".repeat(16),
+            compatibility_code: None,
+        }
+    }
+
     #[test]
     fn packet_is_deterministic() {
         let p1 = reduce_review_packet(
@@ -966,6 +1000,7 @@ mod tests {
             Some(pass_v3()),
             Some(pass_v4()),
             None,
+            applied_scope(),
         )
         .expect("packet");
         let p2 = reduce_review_packet(
@@ -980,6 +1015,7 @@ mod tests {
             Some(pass_v3()),
             Some(pass_v4()),
             None,
+            applied_scope(),
         )
         .expect("packet");
         assert_eq!(p1.review_stage, OperatorReviewStageV1::ReviewActiveReady);
@@ -1012,6 +1048,7 @@ mod tests {
             Some(pass_v3()),
             Some(pass_v4()),
             None,
+            applied_scope(),
         )
         .expect("packet");
         assert_eq!(
@@ -1034,6 +1071,7 @@ mod tests {
             Some(pass_v3()),
             Some(pass_v4()),
             None,
+            applied_scope(),
         )
         .expect("packet");
         assert_eq!(packet.review_stage, OperatorReviewStageV1::ReviewBlocked);
@@ -1058,6 +1096,7 @@ mod tests {
             Some(pass_v3()),
             Some(pass_v4()),
             None,
+            applied_scope(),
         )
         .expect("packet");
         assert_eq!(packet.review_stage, OperatorReviewStageV1::ReviewBlocked);
@@ -1082,12 +1121,13 @@ mod tests {
             Some(pass_v3()),
             Some(pass_v4()),
             None,
+            applied_scope(),
         )
         .expect("packet");
         assert_eq!(packet.review_stage, OperatorReviewStageV1::ReviewBlocked);
         assert!(packet
             .blocking_codes
-            .contains(&"REVIEW_BLOCK_SLOT_SET_AMBIGUOUS".to_string()));
+            .contains(&"REVIEW_BLOCK_SCOPE_MISMATCH".to_string()));
     }
 
     #[test]
@@ -1108,6 +1148,7 @@ mod tests {
             Some(pass_v3()),
             Some(pass_v4()),
             None,
+            applied_scope(),
         )
         .expect("packet");
         assert_eq!(packet.review_stage, OperatorReviewStageV1::ReviewBlocked);

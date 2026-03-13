@@ -45,3 +45,6 @@ Behavior:
 Mismatch fails closed with stable code:
 
 - `GOVERNANCE_SURFACE_MISMATCH`
+
+## Applied scope authority (v6)
+`GovernancePrimarySurfacesV1` validation additionally enforces alignment of backend/active snapshots to `AppliedSupportedSetContextV1` (membership + order + digest-prefix consistency).

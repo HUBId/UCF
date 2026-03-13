@@ -90,3 +90,6 @@ Siehe `docs/operator_review_packet_v5.md`.
 ## v6 primary governance surface
 
 In v6 this snapshot is one of the two primary governance surfaces and is validated together with `BackendEvidenceSnapshotV1` via `GovernancePrimarySurfacesV1` before downstream governance consumers derive conclusions.
+
+## Applied scope authority (v6)
+Active review slot scope is sourced from `AppliedSupportedSetContextV1` (derived from applied `SupportedRealSlotSetV2`) and must reject extra-slot evidence and flag missing in-scope evidence with stable scope mismatch codes.

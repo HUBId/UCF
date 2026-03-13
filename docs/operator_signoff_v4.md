@@ -94,3 +94,6 @@ Siehe `docs/operator_review_packet_v5.md`.
 ## v6 consumption preference
 
 `OperatorSignoffDecisionV1` now prefers validated governance primary surfaces (`BackendEvidenceSnapshotV1` + `AggregatedActiveReviewSnapshotV1`) so signoff and review packet share the same primary snapshot worldview.
+
+## Applied scope authority (v6)
+Operator signoff reviewability is reduced only over `AppliedSupportedSetContextV1` scope. Legacy or extra-slot evidence cannot contribute silently; scope mismatches are fail-closed with explicit signoff codes.
