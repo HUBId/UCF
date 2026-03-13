@@ -35,6 +35,7 @@ const ACTIVE_REVIEW_REMEDIATION_MAX: usize = 4;
 const SUPPORTED_REAL_SLOT_SET_VERSION: &str = "v3_supported_real_slots_max2";
 const SUPPORTED_REAL_SLOT_SET_POLICY_V2_SCHEMA_VERSION: u16 = 2;
 const SUPPORTED_REAL_SLOT_SET_V2_SCHEMA_VERSION: u16 = 2;
+const APPLIED_SUPPORTED_SET_CONTEXT_SCHEMA_VERSION: u16 = 1;
 const SLOT_EXPANSION_ELIGIBILITY_SCHEMA_VERSION: u16 = 1;
 const SLOT_SET_MAX: usize = 2;
 const PROBE_OUTPUT_CAP: usize = 8;
@@ -161,6 +162,19 @@ pub struct SupportedRealSlotSetV2 {
     pub decision: SupportedRealSlotSetExecutionDecisionV2,
     pub previous_set_digest_prefix: String,
     pub set_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AppliedSupportedSetContextV1 {
+    pub schema_version: u16,
+    pub applied_set_digest_prefix: String,
+    pub slots: Vec<String>,
+    pub decision: SupportedRealSlotSetExecutionDecisionV2,
+    pub previous_set_digest_prefix: String,
+    pub policy_digest_prefix: String,
+    pub context_digest: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compatibility_code: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -462,6 +476,16 @@ pub struct ModelsConsistencyCheckReportV1 {
     pub slot_set_digest: String,
     pub mismatch_categories: Vec<String>,
     pub checked_slots: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AppliedScopeCheckReportV1 {
+    pub schema_version: u16,
+    pub status: String,
+    pub applied_scope_digest: String,
+    pub checked_artifacts: Vec<String>,
+    pub mismatch_categories: Vec<String>,
+    pub remediation_codes: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -1069,6 +1093,133 @@ pub fn models_consistency_check(
     }
     fs::write(out, serde_json::to_vec_pretty(&report)?)?;
     Ok(report)
+}
+
+pub fn models_applied_scope_check(
+    workdir: &Path,
+    out: &Path,
+) -> Result<AppliedScopeCheckReportV1, OpsError> {
+    let applied_scope = load_applied_supported_set_context_v1(workdir)?;
+    let mut mismatch = BTreeSet::new();
+    let mut remediation = BTreeSet::new();
+    let mut checked_artifacts = Vec::new();
+
+    let backend_path = workdir.join("out").join("backend_evidence_snapshot.json");
+    let active_path = workdir.join("out").join("active_review_snapshot.json");
+    let signoff_path = workdir.join("out").join("operator_signoff.json");
+    let review_packet_path = workdir.join("out").join("operator_review_packet.json");
+
+    let backend = read_json_file::<BackendEvidenceSnapshotV1>(&backend_path).ok();
+    if backend.is_none() {
+        mismatch.insert("APPLIED_SCOPE_BACKEND_EVIDENCE_MISSING".to_string());
+        remediation.insert("run_backend_evidence_snapshot".to_string());
+    } else {
+        checked_artifacts.push("BackendEvidenceSnapshot".to_string());
+    }
+    let active = read_json_file::<AggregatedActiveReviewSnapshotV1>(&active_path).ok();
+    if active.is_none() {
+        mismatch.insert("APPLIED_SCOPE_ACTIVE_REVIEW_MISSING".to_string());
+        remediation.insert("run_models_active_review_snapshot".to_string());
+    } else {
+        checked_artifacts.push("ActiveReviewSnapshot".to_string());
+    }
+    let signoff = read_json_file::<crate::OperatorSignoffDecisionV1>(&signoff_path).ok();
+    if signoff.is_none() {
+        mismatch.insert("APPLIED_SCOPE_OPERATOR_SIGNOFF_MISSING".to_string());
+        remediation.insert("run_operator_signoff".to_string());
+    } else {
+        checked_artifacts.push("OperatorSignoff".to_string());
+    }
+    let review_packet = read_json_file::<crate::OperatorReviewPacketV1>(&review_packet_path).ok();
+    if review_packet.is_none() {
+        mismatch.insert("APPLIED_SCOPE_OPERATOR_REVIEW_PACKET_MISSING".to_string());
+        remediation.insert("run_operator_review_packet".to_string());
+    } else {
+        checked_artifacts.push("OperatorReviewPacket".to_string());
+    }
+
+    if let Some(backend) = backend.as_ref() {
+        if prefix_hex(&backend.supported_slot_set_digest, 16)
+            != applied_scope.applied_set_digest_prefix
+        {
+            mismatch.insert("APPLIED_SCOPE_BACKEND_DIGEST_MISMATCH".to_string());
+            remediation.insert("run_backend_evidence_snapshot".to_string());
+        }
+        let backend_slots = backend
+            .slots
+            .iter()
+            .map(|slot| slot.slot_id.clone())
+            .collect::<Vec<_>>();
+        if backend_slots != applied_scope.slots {
+            mismatch.insert("APPLIED_SCOPE_BACKEND_SLOT_SCOPE_DRIFT".to_string());
+            remediation.insert("run_backend_evidence_snapshot".to_string());
+        }
+    }
+    if let Some(active) = active.as_ref() {
+        if prefix_hex(&active.supported_slot_set_digest, 16)
+            != applied_scope.applied_set_digest_prefix
+        {
+            mismatch.insert("APPLIED_SCOPE_ACTIVE_DIGEST_MISMATCH".to_string());
+            remediation.insert("run_models_active_review_snapshot".to_string());
+        }
+        let active_slots = active
+            .slots
+            .iter()
+            .map(|slot| slot.slot_id.clone())
+            .collect::<Vec<_>>();
+        if active_slots != applied_scope.slots {
+            mismatch.insert("APPLIED_SCOPE_ACTIVE_SLOT_SCOPE_DRIFT".to_string());
+            remediation.insert("run_models_active_review_snapshot".to_string());
+        }
+    }
+    if let Some(signoff) = signoff.as_ref() {
+        if signoff.supported_slot_set_digest != applied_scope.applied_set_digest_prefix {
+            mismatch.insert("APPLIED_SCOPE_SIGNOFF_DIGEST_MISMATCH".to_string());
+            remediation.insert("run_operator_signoff".to_string());
+        }
+    }
+    if let Some(packet) = review_packet.as_ref() {
+        if packet.supported_slot_set_digest != applied_scope.applied_set_digest_prefix {
+            mismatch.insert("APPLIED_SCOPE_REVIEW_PACKET_DIGEST_MISMATCH".to_string());
+            remediation.insert("run_operator_review_packet".to_string());
+        }
+        let packet_slots = packet
+            .supported_slots
+            .iter()
+            .map(|slot| slot.slot_id.clone())
+            .collect::<Vec<_>>();
+        if packet_slots != applied_scope.slots {
+            mismatch.insert("APPLIED_SCOPE_REVIEW_PACKET_SLOT_SCOPE_DRIFT".to_string());
+            remediation.insert("run_operator_review_packet".to_string());
+        }
+        if packet.artifacts.applied_supported_set_context_digest_prefix
+            != prefix_hex(&applied_scope.context_digest, 16)
+        {
+            mismatch.insert("APPLIED_SCOPE_REVIEW_PACKET_CONTEXT_DIGEST_MISMATCH".to_string());
+            remediation.insert("run_operator_review_packet".to_string());
+        }
+    }
+
+    checked_artifacts.sort();
+    checked_artifacts.dedup();
+    let report = AppliedScopeCheckReportV1 {
+        schema_version: 1,
+        status: if mismatch.is_empty() { "PASS" } else { "FAIL" }.to_string(),
+        applied_scope_digest: prefix_hex(&applied_scope.context_digest, 16),
+        checked_artifacts,
+        mismatch_categories: mismatch.into_iter().collect(),
+        remediation_codes: remediation.into_iter().collect(),
+    };
+    if let Some(parent) = out.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(out, serde_json::to_vec_pretty(&report)?)?;
+    Ok(report)
+}
+
+fn read_json_file<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T, OpsError> {
+    let body = fs::read_to_string(path)?;
+    serde_json::from_str(&body).map_err(|err| OpsError::Invalid(err.to_string()))
 }
 
 pub fn models_active_check(
@@ -2252,7 +2403,18 @@ pub fn models_active_review_snapshot(
     workdir: &Path,
     out: &Path,
 ) -> Result<AggregatedActiveReviewSnapshotV1, OpsError> {
+    let applied_scope = load_applied_supported_set_context_v1(workdir)?;
     let backend_snapshot = models_evidence_snapshot(workdir, None, None)?;
+    validate_snapshot_matches_applied_scope(
+        &backend_snapshot.supported_slot_set_digest,
+        &backend_snapshot
+            .slots
+            .iter()
+            .map(|slot| slot.slot_id.clone())
+            .collect::<Vec<_>>(),
+        &applied_scope,
+        "ACTIVE_REVIEW_SCOPE_MISMATCH",
+    )?;
     if backend_snapshot.slots.is_empty() {
         return Err(OpsError::Invalid(
             "ACTIVE_REVIEW_SLOT_SET_EMPTY: supported real-slot set cannot be empty".to_string(),
@@ -2407,6 +2569,16 @@ pub fn models_active_review_snapshot(
             evidence
         })
         .collect::<Vec<_>>();
+    let slot_set = slots
+        .iter()
+        .map(|slot| slot.slot_id.clone())
+        .collect::<Vec<_>>();
+    validate_slot_membership(
+        &slot_set,
+        &applied_scope.slots,
+        "ACTIVE_REVIEW_EXTRA_SLOT_EVIDENCE",
+        "ACTIVE_REVIEW_MISSING_IN_SCOPE_SLOT",
+    )?;
     slots.sort_by(|a, b| a.slot_id.cmp(&b.slot_id));
 
     let overall_review_status = derive_active_review_status(&slots);
@@ -3135,6 +3307,115 @@ pub fn current_supported_real_slot_set(workdir: &Path) -> Result<SupportedRealSl
         }),
         Err(_) => supported_real_slot_set_v1(),
     }
+}
+
+pub fn load_applied_supported_set_context_v1(
+    workdir: &Path,
+) -> Result<AppliedSupportedSetContextV1, OpsError> {
+    match load_applied_supported_real_slot_set_v2(workdir) {
+        Ok(applied) => Ok(build_applied_supported_set_context_from_v2(&applied, None)),
+        Err(_) => {
+            let legacy = supported_real_slot_set_v1()?;
+            Ok(build_legacy_applied_supported_set_context(&legacy))
+        }
+    }
+}
+
+fn build_applied_supported_set_context_from_v2(
+    applied: &SupportedRealSlotSetV2,
+    compatibility_code: Option<String>,
+) -> AppliedSupportedSetContextV1 {
+    let mut slots = applied.slots.clone();
+    slots.sort();
+    slots.dedup();
+    let mut digest_source = Vec::new();
+    digest_source.extend_from_slice(
+        APPLIED_SUPPORTED_SET_CONTEXT_SCHEMA_VERSION
+            .to_string()
+            .as_bytes(),
+    );
+    digest_source.extend_from_slice(prefix_hex(&applied.set_digest, 16).as_bytes());
+    digest_source.extend_from_slice(format!("{:?}", applied.decision).as_bytes());
+    digest_source.extend_from_slice(applied.previous_set_digest_prefix.as_bytes());
+    digest_source.extend_from_slice(applied.source_policy_digest_prefix.as_bytes());
+    for slot in &slots {
+        digest_source.extend_from_slice(slot.as_bytes());
+    }
+    AppliedSupportedSetContextV1 {
+        schema_version: APPLIED_SUPPORTED_SET_CONTEXT_SCHEMA_VERSION,
+        applied_set_digest_prefix: prefix_hex(&applied.set_digest, 16),
+        slots,
+        decision: applied.decision.clone(),
+        previous_set_digest_prefix: applied.previous_set_digest_prefix.clone(),
+        policy_digest_prefix: applied.source_policy_digest_prefix.clone(),
+        context_digest: sha256_hex(&digest_source),
+        compatibility_code,
+    }
+}
+
+fn build_legacy_applied_supported_set_context(
+    legacy: &SupportedRealSlotSetV1,
+) -> AppliedSupportedSetContextV1 {
+    let mut slots = legacy.slots.clone();
+    slots.sort();
+    slots.dedup();
+    let mut digest_source = Vec::new();
+    digest_source.extend_from_slice(
+        APPLIED_SUPPORTED_SET_CONTEXT_SCHEMA_VERSION
+            .to_string()
+            .as_bytes(),
+    );
+    digest_source.extend_from_slice(prefix_hex(&legacy.set_digest, 16).as_bytes());
+    digest_source.extend_from_slice(b"FROZEN");
+    digest_source.extend_from_slice(b"legacy_previous");
+    digest_source.extend_from_slice(b"legacy_policy");
+    for slot in &slots {
+        digest_source.extend_from_slice(slot.as_bytes());
+    }
+    AppliedSupportedSetContextV1 {
+        schema_version: APPLIED_SUPPORTED_SET_CONTEXT_SCHEMA_VERSION,
+        applied_set_digest_prefix: prefix_hex(&legacy.set_digest, 16),
+        slots,
+        decision: SupportedRealSlotSetExecutionDecisionV2::Frozen,
+        previous_set_digest_prefix: "legacy_previous".to_string(),
+        policy_digest_prefix: "legacy_policy".to_string(),
+        context_digest: sha256_hex(&digest_source),
+        compatibility_code: Some("LEGACY_SCOPE_TRANSLATED".to_string()),
+    }
+}
+
+fn validate_snapshot_matches_applied_scope(
+    slot_set_digest: &str,
+    slots: &[String],
+    applied_scope: &AppliedSupportedSetContextV1,
+    code: &str,
+) -> Result<(), OpsError> {
+    if prefix_hex(slot_set_digest, 16) != applied_scope.applied_set_digest_prefix {
+        return Err(OpsError::Invalid(format!("{code}:DIGEST_PREFIX_MISMATCH")));
+    }
+    validate_slot_membership(
+        slots,
+        &applied_scope.slots,
+        &format!("{code}_EXTRA_SLOT"),
+        &format!("{code}_MISSING_SLOT"),
+    )
+}
+
+fn validate_slot_membership(
+    observed_slots: &[String],
+    expected_slots: &[String],
+    extra_code: &str,
+    missing_code: &str,
+) -> Result<(), OpsError> {
+    let observed = observed_slots.iter().cloned().collect::<BTreeSet<_>>();
+    let expected = expected_slots.iter().cloned().collect::<BTreeSet<_>>();
+    if observed.iter().any(|slot| !expected.contains(slot)) {
+        return Err(OpsError::Invalid(extra_code.to_string()));
+    }
+    if expected.iter().any(|slot| !observed.contains(slot)) {
+        return Err(OpsError::Invalid(missing_code.to_string()));
+    }
+    Ok(())
 }
 
 pub fn supported_real_slot_set_v1() -> Result<SupportedRealSlotSetV1, OpsError> {

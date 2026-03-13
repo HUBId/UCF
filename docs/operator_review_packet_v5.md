@@ -62,3 +62,6 @@ Optional:
 ## v6 consumption preference
 
 `OperatorReviewPacketV1` now prefers validated governance primary surfaces (`BackendEvidenceSnapshotV1` + `AggregatedActiveReviewSnapshotV1`) via `GovernancePrimarySurfacesV1` and treats mismatches as fail-closed blockers.
+
+## Applied scope authority (v6)
+`OperatorReviewPacketV1` embeds applied-scope context digest reference and reports only applied slots. Extra-slot evidence is surfaced as blocking diagnostics and cannot elevate review stage.

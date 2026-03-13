@@ -7,12 +7,12 @@ use serde::{Deserialize, Serialize};
 use crate::operator_report::{ConsolidatedOperatorReportV1, OperatorStatus};
 use crate::remediation::merge_canonical_remediations;
 use crate::{
-    operator_block_from_strict, resolve_strict_evidence,
-    validate_governance_primary_surfaces_optional, AggregatedActiveReviewSnapshotV1,
-    BackendEvidenceSnapshotV1, GateStatus, OpsError, StrictEvidenceContextV1,
-    StrictEvidenceSnapshotV1, StrictEvidenceStatusV1, V0GateOverallStatus, V0GateReportV1,
-    V1GateOverallStatus, V1GateReportV1, V2GateOverallStatus, V2GateReportV1, V3GateOverallStatus,
-    V3GateReportV1,
+    load_applied_supported_set_context_v1, operator_block_from_strict, resolve_strict_evidence,
+    validate_governance_primary_surfaces_from_workdir, AggregatedActiveReviewSnapshotV1,
+    AppliedSupportedSetContextV1, BackendEvidenceSnapshotV1, GateStatus, OpsError,
+    StrictEvidenceContextV1, StrictEvidenceSnapshotV1, StrictEvidenceStatusV1, V0GateOverallStatus,
+    V0GateReportV1, V1GateOverallStatus, V1GateReportV1, V2GateOverallStatus, V2GateReportV1,
+    V3GateOverallStatus, V3GateReportV1,
 };
 
 const CODE_CAP: usize = 12;
@@ -24,6 +24,7 @@ struct SignoffReductionInputs<'a> {
     gates: GateInputs,
     strict_snapshot: &'a StrictEvidenceSnapshotV1,
     active_review_snapshot: Option<&'a AggregatedActiveReviewSnapshotV1>,
+    applied_scope: &'a AppliedSupportedSetContextV1,
     policy: &'a SignoffPolicyV1,
 }
 
@@ -143,11 +144,14 @@ pub fn operator_signoff(
     let v3 =
         maybe_read_json::<V3GateReportV1>(&discover_report(&out_root, "v3_gate_report.json", args));
 
-    let governance_surfaces_ok = validate_governance_primary_surfaces_optional(
-        snapshot.as_ref(),
-        active_review_snapshot.as_ref(),
-    )
-    .is_ok();
+    let applied_scope = load_applied_supported_set_context_v1(workdir)?;
+    let governance_surfaces_ok = match (snapshot.as_ref(), active_review_snapshot.as_ref()) {
+        (Some(snapshot), Some(active_review)) => {
+            validate_governance_primary_surfaces_from_workdir(workdir, snapshot, active_review)
+                .is_ok()
+        }
+        _ => false,
+    };
 
     let policy = SignoffPolicyV1::from_profile(&args.profile);
     let strict_snapshot = resolve_strict_evidence(
@@ -183,6 +187,7 @@ pub fn operator_signoff(
         gates: GateInputs { v0, v1, v2, v3 },
         strict_snapshot: &strict_snapshot,
         active_review_snapshot: active_review_snapshot.as_ref(),
+        applied_scope: &applied_scope,
         policy: &policy,
     })?;
 
@@ -250,6 +255,7 @@ fn reduce_signoff(
         operator,
         gates: GateInputs { v0, v1, v2, v3 },
         strict_snapshot,
+        applied_scope,
         policy,
     } = inputs;
 
@@ -267,14 +273,14 @@ fn reduce_signoff(
         return build_not_ready_from_snapshot(snapshot, reasons, remediation, v0, v1, v2, v3);
     };
 
-    if snapshot.slots.len() != 2
-        || !snapshot
-            .slots
-            .iter()
-            .any(|slot| slot.slot_id.eq_ignore_ascii_case("world"))
-    {
-        reasons.insert("SIGNOFF_BLOCK_SLOT_SET_AMBIGUOUS".to_string());
-        remediation.insert("run_models_evidence_snapshot".to_string());
+    let snapshot_slots = snapshot
+        .slots
+        .iter()
+        .map(|slot| slot.slot_id.clone())
+        .collect::<Vec<_>>();
+    if snapshot_slots != applied_scope.slots {
+        reasons.insert("SIGNOFF_SCOPE_MISMATCH".to_string());
+        remediation.insert("run_models_applied_scope_check".to_string());
     }
 
     check_gate_v0(
@@ -360,6 +366,20 @@ fn reduce_signoff(
                 .iter()
                 .any(|slot| slot.readiness.active_eligible)
         });
+
+    if active_review_snapshot.is_none() {
+        reasons.insert("SIGNOFF_MISSING_APPLIED_SET".to_string());
+        remediation.insert("run_models_active_review_snapshot".to_string());
+    } else if let Some(active) = active_review_snapshot {
+        if active
+            .slots
+            .iter()
+            .any(|slot| !applied_scope.slots.contains(&slot.slot_id))
+        {
+            reasons.insert("SIGNOFF_EXTRA_SLOT_EVIDENCE_IGNORED_OR_BLOCKED".to_string());
+            remediation.insert("run_models_applied_scope_check".to_string());
+        }
+    }
 
     let severe_alerts = matches!(
         operator.sections.alerts_section.status,
@@ -681,9 +701,10 @@ fn maybe_read_json<T: for<'de> Deserialize<'de>>(path: &Option<PathBuf>) -> Opti
 mod tests {
     use super::*;
     use crate::models_lifecycle::{
-        BackendEvidenceSlotDenialsV1, BackendEvidenceSlotEvidenceV1,
+        AppliedSupportedSetContextV1, BackendEvidenceSlotDenialsV1, BackendEvidenceSlotEvidenceV1,
         BackendEvidenceSlotReadinessV1, BackendEvidenceSlotSnapshotV1, BackendSupportMatrixV1,
         BurnResolutionStatusV1, BurnSupportResolutionV1, DriftStatusV1, EvidenceDenialCodeV1,
+        SupportedRealSlotSetExecutionDecisionV2,
     };
     use crate::operator_report::{DriftSlotSummary, EligibilitySlotSummary, GateStatusSummary};
     use crate::operator_report::{
@@ -903,6 +924,93 @@ mod tests {
         }
     }
 
+    fn applied_scope() -> AppliedSupportedSetContextV1 {
+        AppliedSupportedSetContextV1 {
+            schema_version: 1,
+            applied_set_digest_prefix: "slotset123".to_string(),
+            slots: vec!["world".to_string(), "sae".to_string()],
+            decision: SupportedRealSlotSetExecutionDecisionV2::Frozen,
+            previous_set_digest_prefix: "prev".to_string(),
+            policy_digest_prefix: "policy".to_string(),
+            context_digest: "ctx".repeat(16),
+            compatibility_code: None,
+        }
+    }
+
+    fn active_review_snapshot(active_eligible: bool) -> AggregatedActiveReviewSnapshotV1 {
+        AggregatedActiveReviewSnapshotV1 {
+            schema_version: 1,
+            supported_slot_set_digest: "slotset123".to_string(),
+            policy_graph_digest_prefix: "policy123".to_string(),
+            manifest_digest_prefix: "manifest123".to_string(),
+            slots: vec![
+                crate::models_lifecycle::ActiveReviewEvidenceV1 {
+                    slot_id: "sae".to_string(),
+                    target_hash_prefix: "s".to_string(),
+                    manifest_digest_prefix: "manifest123".to_string(),
+                    probe_ready: true,
+                    shadow_ready: true,
+                    active_eligible,
+                    strict_blocking: false,
+                    drift_blocking: false,
+                    alert_blocking: false,
+                    primary_denial_code: None,
+                    remediation_codes: Vec::new(),
+                    contributing_evidence_digests:
+                        crate::models_lifecycle::ActiveReviewContributingDigestsV1 {
+                            probe_report_digest_prefix: "p".to_string(),
+                            shadow_ready_digest_prefix: "s".to_string(),
+                            active_evidence_digest_prefix: "a".to_string(),
+                            strict_evidence_digest_prefix: "t".to_string(),
+                        },
+                    burn_resolution: BurnSupportResolutionV1 {
+                        slot_id: "sae".to_string(),
+                        resolution: BurnResolutionStatusV1::BurnClosedUnsupported,
+                        support_state: crate::OptionalBackendSupportStateV1::Unsupported,
+                        rationale_codes: vec!["X".to_string()],
+                        evidence_digest: "bd1".to_string(),
+                    },
+                    evidence_digest: "ed1".to_string(),
+                },
+                crate::models_lifecycle::ActiveReviewEvidenceV1 {
+                    slot_id: "world".to_string(),
+                    target_hash_prefix: "w".to_string(),
+                    manifest_digest_prefix: "manifest123".to_string(),
+                    probe_ready: true,
+                    shadow_ready: true,
+                    active_eligible,
+                    strict_blocking: false,
+                    drift_blocking: false,
+                    alert_blocking: false,
+                    primary_denial_code: None,
+                    remediation_codes: Vec::new(),
+                    contributing_evidence_digests:
+                        crate::models_lifecycle::ActiveReviewContributingDigestsV1 {
+                            probe_report_digest_prefix: "p".to_string(),
+                            shadow_ready_digest_prefix: "s".to_string(),
+                            active_evidence_digest_prefix: "a".to_string(),
+                            strict_evidence_digest_prefix: "t".to_string(),
+                        },
+                    burn_resolution: BurnSupportResolutionV1 {
+                        slot_id: "world".to_string(),
+                        resolution: BurnResolutionStatusV1::BurnClosedUnsupported,
+                        support_state: crate::OptionalBackendSupportStateV1::Unsupported,
+                        rationale_codes: vec!["X".to_string()],
+                        evidence_digest: "bd2".to_string(),
+                    },
+                    evidence_digest: "ed2".to_string(),
+                },
+            ],
+            overall_review_status:
+                crate::models_lifecycle::ActiveReviewOverallStatusV1::AllReviewable,
+            signoff_alignment: crate::models_lifecycle::ActiveReviewSignoffAlignmentV1 {
+                aligned: true,
+                status_code: "ALIGNED".to_string(),
+            },
+            snapshot_digest: "snapshot1111".to_string(),
+        }
+    }
+
     fn policy() -> SignoffPolicyV1 {
         SignoffPolicyV1::from_profile("test")
     }
@@ -921,7 +1029,8 @@ mod tests {
                 v3: Some(pass_v3()),
             },
             strict_snapshot: &strict_snapshot(StrictEvidenceStatusV1::Pass),
-            active_review_snapshot: None,
+            active_review_snapshot: Some(&active_review_snapshot(false)),
+            applied_scope: &applied_scope(),
             policy: &policy(),
         })
         .expect("decision a");
@@ -935,7 +1044,8 @@ mod tests {
                 v3: Some(pass_v3()),
             },
             strict_snapshot: &strict_snapshot(StrictEvidenceStatusV1::Pass),
-            active_review_snapshot: None,
+            active_review_snapshot: Some(&active_review_snapshot(false)),
+            applied_scope: &applied_scope(),
             policy: &policy(),
         })
         .expect("decision b");
@@ -954,7 +1064,8 @@ mod tests {
                 v3: Some(pass_v3()),
             },
             strict_snapshot: &strict_snapshot(StrictEvidenceStatusV1::Pass),
-            active_review_snapshot: None,
+            active_review_snapshot: Some(&active_review_snapshot(false)),
+            applied_scope: &applied_scope(),
             policy: &policy(),
         })
         .expect("decision");
@@ -974,7 +1085,8 @@ mod tests {
                 v3: Some(pass_v3()),
             },
             strict_snapshot: &strict_snapshot(StrictEvidenceStatusV1::Pass),
-            active_review_snapshot: None,
+            active_review_snapshot: Some(&active_review_snapshot(true)),
+            applied_scope: &applied_scope(),
             policy: &policy(),
         })
         .expect("decision");
@@ -1003,6 +1115,7 @@ mod tests {
             },
             strict_snapshot: &strict_snapshot(StrictEvidenceStatusV1::Fail),
             active_review_snapshot: None,
+            applied_scope: &applied_scope(),
             policy: &policy(),
         })
         .expect("decision");
@@ -1026,6 +1139,7 @@ mod tests {
             },
             strict_snapshot: &strict_snapshot(StrictEvidenceStatusV1::Pass),
             active_review_snapshot: None,
+            applied_scope: &applied_scope(),
             policy: &policy(),
         })
         .expect("decision");
@@ -1051,13 +1165,14 @@ mod tests {
             },
             strict_snapshot: &strict_snapshot(StrictEvidenceStatusV1::Pass),
             active_review_snapshot: None,
+            applied_scope: &applied_scope(),
             policy: &policy(),
         })
         .expect("decision");
         assert_eq!(decision.decision, SignoffDecisionStateV1::NotReady);
         assert!(decision
             .reasons
-            .contains(&"SIGNOFF_BLOCK_SLOT_SET_AMBIGUOUS".to_string()));
+            .contains(&"SIGNOFF_SCOPE_MISMATCH".to_string()));
     }
 
     #[test]
@@ -1073,6 +1188,7 @@ mod tests {
             },
             strict_snapshot: &strict_snapshot(StrictEvidenceStatusV1::Pass),
             active_review_snapshot: None,
+            applied_scope: &applied_scope(),
             policy: &policy(),
         })
         .expect("decision");

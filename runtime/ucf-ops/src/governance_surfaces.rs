@@ -1,11 +1,16 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    prefix_hex, sha256_hex, AggregatedActiveReviewSnapshotV1, BackendEvidenceSnapshotV1, OpsError,
+    load_applied_supported_set_context_v1, prefix_hex, sha256_hex,
+    AggregatedActiveReviewSnapshotV1, AppliedSupportedSetContextV1, BackendEvidenceSnapshotV1,
+    OpsError,
 };
 
 pub const GOVERNANCE_SURFACE_MISMATCH_CODE: &str = "GOVERNANCE_SURFACE_MISMATCH";
 pub const GOVERNANCE_SURFACE_MISSING_CODE: &str = "GOVERNANCE_PRIMARY_SURFACE_MISSING";
+pub const GOVERNANCE_APPLIED_SET_MISMATCH_CODE: &str = "GOVERNANCE_APPLIED_SET_MISMATCH";
+pub const GOVERNANCE_PRIMARY_SURFACE_SCOPE_DRIFT_CODE: &str =
+    "GOVERNANCE_PRIMARY_SURFACE_SCOPE_DRIFT";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct GovernancePrimarySurfacesV1 {
@@ -91,6 +96,55 @@ pub fn validate_governance_primary_surfaces(
         consistency_ok: true,
         governance_surfaces_digest: sha256_hex(&digest_source),
     })
+}
+
+pub fn validate_governance_primary_surfaces_with_applied_scope(
+    backend_snapshot: &BackendEvidenceSnapshotV1,
+    active_review_snapshot: &AggregatedActiveReviewSnapshotV1,
+    applied_scope: &AppliedSupportedSetContextV1,
+) -> Result<GovernancePrimarySurfacesV1, OpsError> {
+    if prefix_hex(&backend_snapshot.supported_slot_set_digest, 16)
+        != applied_scope.applied_set_digest_prefix
+        || prefix_hex(&active_review_snapshot.supported_slot_set_digest, 16)
+            != applied_scope.applied_set_digest_prefix
+    {
+        return Err(OpsError::Invalid(format!(
+            "{GOVERNANCE_APPLIED_SET_MISMATCH_CODE}:DIGEST_PREFIX"
+        )));
+    }
+
+    let backend_slots = backend_snapshot
+        .slots
+        .iter()
+        .map(|slot| slot.slot_id.clone())
+        .collect::<Vec<_>>();
+    let active_slots = active_review_snapshot
+        .slots
+        .iter()
+        .map(|slot| slot.slot_id.clone())
+        .collect::<Vec<_>>();
+    let expected_slots = applied_scope.slots.clone();
+
+    if backend_slots != expected_slots || active_slots != expected_slots {
+        return Err(OpsError::Invalid(format!(
+            "{GOVERNANCE_PRIMARY_SURFACE_SCOPE_DRIFT_CODE}:SLOT_MEMBERSHIP_OR_ORDER"
+        )));
+    }
+
+    validate_governance_primary_surfaces(backend_snapshot, active_review_snapshot)
+}
+
+pub fn validate_governance_primary_surfaces_from_workdir(
+    workdir: &std::path::Path,
+    backend_snapshot: &BackendEvidenceSnapshotV1,
+    active_review_snapshot: &AggregatedActiveReviewSnapshotV1,
+) -> Result<GovernancePrimarySurfacesV1, OpsError> {
+    let applied_scope = load_applied_supported_set_context_v1(workdir)?;
+    validate_governance_primary_surfaces_with_applied_scope(
+        backend_snapshot,
+        active_review_snapshot,
+        &applied_scope,
+    )
 }
 
 pub fn validate_governance_primary_surfaces_optional(
