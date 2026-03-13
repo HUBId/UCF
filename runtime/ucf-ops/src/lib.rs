@@ -10800,6 +10800,48 @@ pub struct ReproPackArtifact {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum CanonicalArtifactIncludedStateV1 {
+    Included,
+    Missing,
+    Excluded,
+    Skip,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CanonicalExportArtifactRefV1 {
+    pub artifact_kind: String,
+    pub relative_path: String,
+    pub included_state: CanonicalArtifactIncludedStateV1,
+    pub sha256: Option<String>,
+    pub schema_version: Option<u16>,
+    pub artifact_digest: Option<String>,
+    pub reason_code: Option<String>,
+    pub ref_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CanonicalExportContextV1 {
+    pub supported_slot_set_digest_prefix: String,
+    pub policy_graph_digest_prefix: String,
+    pub manifest_digest_prefix: String,
+    pub run_id: Option<String>,
+    pub operator_signoff_digest_prefix: Option<String>,
+    pub backend_evidence_snapshot_digest_prefix: Option<String>,
+    pub active_review_snapshot_digest_prefix: Option<String>,
+    pub context_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum CanonicalExportLayoutCompatibilityV1 {
+    Canonical,
+    LegacyExportLayout,
+    LegacyExportTranslated,
+    LegacyExportUnsupported,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ReproPackEssSlice {
     pub record_count: usize,
     pub segment_roots: Vec<String>,
@@ -10821,6 +10863,9 @@ pub struct ReproPackManifestV1 {
     pub active_review_snapshot: PackEvidenceArtifactRefV1,
     pub operator_signoff: PackEvidenceArtifactRefV1,
     pub backend_resolution: PackEvidenceArtifactRefV1,
+    pub export_context: CanonicalExportContextV1,
+    pub related_artifacts: Vec<CanonicalExportArtifactRefV1>,
+    pub export_layout_compatibility: CanonicalExportLayoutCompatibilityV1,
     pub repro_pack_digest: String,
 }
 
@@ -10884,6 +10929,9 @@ pub struct BugKitManifestV1 {
     pub active_review_snapshot: PackEvidenceArtifactRefV1,
     pub operator_signoff: PackEvidenceArtifactRefV1,
     pub backend_resolution: PackEvidenceArtifactRefV1,
+    pub export_context: CanonicalExportContextV1,
+    pub related_artifacts: Vec<CanonicalExportArtifactRefV1>,
+    pub export_layout_compatibility: CanonicalExportLayoutCompatibilityV1,
     pub warnings: Vec<String>,
     pub bugkit_digest: String,
 }
@@ -10952,6 +11000,88 @@ fn included_evidence_ref(
         status: "INCLUDED".to_string(),
         reason_code: None,
     }
+}
+
+fn canonical_artifact_ref_digest_hex(
+    artifact: &CanonicalExportArtifactRefV1,
+) -> Result<String, OpsError> {
+    let mut canonical = artifact.clone();
+    canonical.ref_digest.clear();
+    Ok(sha256_hex(&serde_json::to_vec(&canonical)?))
+}
+
+fn canonical_context_digest_hex(context: &CanonicalExportContextV1) -> Result<String, OpsError> {
+    let mut canonical = context.clone();
+    canonical.context_digest.clear();
+    Ok(sha256_hex(&serde_json::to_vec(&canonical)?))
+}
+
+fn canonical_state_from_status(status: &str) -> CanonicalArtifactIncludedStateV1 {
+    match status {
+        "INCLUDED" => CanonicalArtifactIncludedStateV1::Included,
+        "MISSING" => CanonicalArtifactIncludedStateV1::Missing,
+        "EXCLUDED" => CanonicalArtifactIncludedStateV1::Excluded,
+        _ => CanonicalArtifactIncludedStateV1::Skip,
+    }
+}
+
+fn canonical_export_ref_from_pack(
+    artifact_kind: &str,
+    legacy: &PackEvidenceArtifactRefV1,
+) -> Result<CanonicalExportArtifactRefV1, OpsError> {
+    let mut out = CanonicalExportArtifactRefV1 {
+        artifact_kind: artifact_kind.to_string(),
+        relative_path: legacy.path.clone(),
+        included_state: canonical_state_from_status(&legacy.status),
+        sha256: if legacy.sha256.is_empty() {
+            None
+        } else {
+            Some(legacy.sha256.clone())
+        },
+        schema_version: (legacy.schema_version != 0).then_some(legacy.schema_version),
+        artifact_digest: if legacy.digest_prefix.is_empty() {
+            None
+        } else {
+            Some(legacy.digest_prefix.clone())
+        },
+        reason_code: legacy.reason_code.clone(),
+        ref_digest: String::new(),
+    };
+    out.ref_digest = canonical_artifact_ref_digest_hex(&out)?;
+    Ok(out)
+}
+
+fn canonical_prefix_or_missing(value: &str) -> String {
+    if value.is_empty() {
+        "MISSING".to_string()
+    } else {
+        value.to_string()
+    }
+}
+
+fn canonical_export_context_from_parts(
+    context: &EvidenceValidationContext,
+    run_id: Option<&str>,
+    operator_signoff_digest_prefix: Option<String>,
+    backend_evidence_snapshot_digest_prefix: Option<String>,
+    active_review_snapshot_digest_prefix: Option<String>,
+) -> Result<CanonicalExportContextV1, OpsError> {
+    let mut out = CanonicalExportContextV1 {
+        supported_slot_set_digest_prefix: canonical_prefix_or_missing(
+            &context.supported_slot_set_digest_prefix,
+        ),
+        policy_graph_digest_prefix: canonical_prefix_or_missing(
+            &context.policy_graph_digest_prefix,
+        ),
+        manifest_digest_prefix: canonical_prefix_or_missing(&context.manifest_digest_prefix),
+        run_id: run_id.map(ToString::to_string),
+        operator_signoff_digest_prefix,
+        backend_evidence_snapshot_digest_prefix,
+        active_review_snapshot_digest_prefix,
+        context_digest: String::new(),
+    };
+    out.context_digest = canonical_context_digest_hex(&out)?;
+    Ok(out)
 }
 
 fn validate_evidence_artifacts_against_context(
@@ -11340,6 +11470,24 @@ pub fn bugkit_build(
         }
     }
 
+    let mut related_artifacts = vec![
+        canonical_export_ref_from_pack("backend_evidence_snapshot", &backend_evidence_snapshot)?,
+        canonical_export_ref_from_pack("active_review_snapshot", &active_review_snapshot)?,
+        canonical_export_ref_from_pack("operator_signoff", &operator_signoff)?,
+        canonical_export_ref_from_pack("backend_resolution", &backend_resolution)?,
+    ];
+    related_artifacts.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
+    let export_context = canonical_export_context_from_parts(
+        &evidence_context,
+        Some(run_id),
+        (!operator_signoff.digest_prefix.is_empty())
+            .then_some(operator_signoff.digest_prefix.clone()),
+        (!backend_evidence_snapshot.digest_prefix.is_empty())
+            .then_some(backend_evidence_snapshot.digest_prefix.clone()),
+        (!active_review_snapshot.digest_prefix.is_empty())
+            .then_some(active_review_snapshot.digest_prefix.clone()),
+    )?;
+
     let mut manifest = BugKitManifestV1 {
         schema_version: 1,
         run_id: run_id.to_string(),
@@ -11362,6 +11510,9 @@ pub fn bugkit_build(
         active_review_snapshot,
         operator_signoff,
         backend_resolution,
+        export_context,
+        related_artifacts,
+        export_layout_compatibility: CanonicalExportLayoutCompatibilityV1::Canonical,
         warnings,
         bugkit_digest: String::new(),
     };
@@ -11405,6 +11556,168 @@ pub fn bugkit_build(
         file_count: manifest.file_count,
         warnings: manifest.warnings,
     })
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ExportNormalizeMismatchCategoryV1 {
+    PathNamingDrift,
+    ContextFieldDrift,
+    IncludedStateDrift,
+    DigestFieldDrift,
+    LegacyExportLayout,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ExportNormalizeMismatchV1 {
+    pub category: ExportNormalizeMismatchCategoryV1,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ExportNormalizeCheckReportV1 {
+    pub schema_version: u16,
+    pub pass: bool,
+    pub mismatch_count: usize,
+    pub mismatches: Vec<ExportNormalizeMismatchV1>,
+    pub allowed_states: Vec<String>,
+}
+
+fn validate_canonical_artifact_ref(
+    refv: &CanonicalExportArtifactRefV1,
+) -> Vec<ExportNormalizeMismatchV1> {
+    let mut out = Vec::new();
+    if !refv.relative_path.starts_with("artifacts/") && !refv.relative_path.starts_with("evidence/")
+    {
+        out.push(ExportNormalizeMismatchV1 {
+            category: ExportNormalizeMismatchCategoryV1::PathNamingDrift,
+            detail: format!("{} path outside canonical prefixes", refv.artifact_kind),
+        });
+    }
+    if matches!(
+        refv.included_state,
+        CanonicalArtifactIncludedStateV1::Included
+    ) && refv.sha256.as_deref().unwrap_or_default().is_empty()
+    {
+        out.push(ExportNormalizeMismatchV1 {
+            category: ExportNormalizeMismatchCategoryV1::DigestFieldDrift,
+            detail: format!("{} included without sha256", refv.artifact_kind),
+        });
+    }
+    if !matches!(
+        refv.included_state,
+        CanonicalArtifactIncludedStateV1::Included
+    ) && refv.sha256.as_ref().is_some_and(|v| !v.is_empty())
+    {
+        out.push(ExportNormalizeMismatchV1 {
+            category: ExportNormalizeMismatchCategoryV1::IncludedStateDrift,
+            detail: format!("{} non-included has sha256", refv.artifact_kind),
+        });
+    }
+    out
+}
+
+fn validate_canonical_context(ctx: &CanonicalExportContextV1) -> Vec<ExportNormalizeMismatchV1> {
+    let mut out = Vec::new();
+    if ctx.supported_slot_set_digest_prefix.is_empty()
+        || ctx.policy_graph_digest_prefix.is_empty()
+        || ctx.manifest_digest_prefix.is_empty()
+    {
+        out.push(ExportNormalizeMismatchV1 {
+            category: ExportNormalizeMismatchCategoryV1::ContextFieldDrift,
+            detail: "required context digest prefix missing".to_string(),
+        });
+    }
+    if canonical_context_digest_hex(ctx).map_or(true, |d| d != ctx.context_digest) {
+        out.push(ExportNormalizeMismatchV1 {
+            category: ExportNormalizeMismatchCategoryV1::DigestFieldDrift,
+            detail: "context_digest mismatch".to_string(),
+        });
+    }
+    out
+}
+
+pub fn exports_normalize_check(
+    workdir: &Path,
+    out: &Path,
+) -> Result<ExportNormalizeCheckReportV1, OpsError> {
+    let mut mismatches = Vec::new();
+
+    let tmp = tempfile::tempdir()?;
+    let run_id = reproducible_run_id_for_smoke(tmp.path())?;
+    let repro_zip = workdir.join("out").join("repro_normalize_check.zip");
+    let _ = repro_pack(tmp.path(), &run_id, &repro_zip)?;
+
+    let repro_file = fs::File::open(&repro_zip)?;
+    let mut repro_archive = zip::ZipArchive::new(repro_file)
+        .map_err(|e| OpsError::Invalid(format!("unable to open repro zip: {e}")))?;
+    let mut repro_manifest_file = repro_archive
+        .by_name("repro_pack_manifest.json")
+        .map_err(|e| OpsError::Invalid(format!("missing repro manifest: {e}")))?;
+    let mut repro_manifest_body = String::new();
+    std::io::Read::read_to_string(&mut repro_manifest_file, &mut repro_manifest_body)?;
+    let repro_manifest: ReproPackManifestV1 = serde_json::from_str(&repro_manifest_body)?;
+    mismatches.extend(validate_canonical_context(&repro_manifest.export_context));
+    for r in &repro_manifest.related_artifacts {
+        mismatches.extend(validate_canonical_artifact_ref(r));
+    }
+    if !matches!(
+        repro_manifest.export_layout_compatibility,
+        CanonicalExportLayoutCompatibilityV1::Canonical
+    ) {
+        mismatches.push(ExportNormalizeMismatchV1 {
+            category: ExportNormalizeMismatchCategoryV1::LegacyExportLayout,
+            detail: "repro pack is not canonical layout".to_string(),
+        });
+    }
+
+    let bugkit_zip = workdir.join("out").join("bugkit_normalize_check.zip");
+    let _ = bugkit_build(
+        tmp.path(),
+        &run_id,
+        &bugkit_zip,
+        &BugKitBuildArgs::default(),
+    )?;
+    let bug_file = fs::File::open(&bugkit_zip)?;
+    let mut bug_archive = zip::ZipArchive::new(bug_file)
+        .map_err(|e| OpsError::Invalid(format!("unable to open bugkit zip: {e}")))?;
+    let mut manifest_file = bug_archive
+        .by_name("BUGKIT_MANIFEST.json")
+        .map_err(|e| OpsError::Invalid(format!("missing bugkit manifest: {e}")))?;
+    let mut body = String::new();
+    std::io::Read::read_to_string(&mut manifest_file, &mut body)?;
+    let bug_manifest: BugKitManifestV1 = serde_json::from_str(&body)?;
+    mismatches.extend(validate_canonical_context(&bug_manifest.export_context));
+    for r in &bug_manifest.related_artifacts {
+        mismatches.extend(validate_canonical_artifact_ref(r));
+    }
+    if !matches!(
+        bug_manifest.export_layout_compatibility,
+        CanonicalExportLayoutCompatibilityV1::Canonical
+    ) {
+        mismatches.push(ExportNormalizeMismatchV1 {
+            category: ExportNormalizeMismatchCategoryV1::LegacyExportLayout,
+            detail: "bugkit is not canonical layout".to_string(),
+        });
+    }
+
+    let report = ExportNormalizeCheckReportV1 {
+        schema_version: 1,
+        pass: mismatches.is_empty(),
+        mismatch_count: mismatches.len(),
+        mismatches,
+        allowed_states: vec![
+            "INCLUDED".to_string(),
+            "MISSING".to_string(),
+            "EXCLUDED".to_string(),
+            "SKIP".to_string(),
+        ],
+    };
+    if let Some(parent) = out.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    write_json(out, &report)?;
+    Ok(report)
 }
 
 pub fn repro_pack(
@@ -11528,6 +11841,24 @@ pub fn repro_pack(
         });
     }
 
+    let mut related_artifacts = vec![
+        canonical_export_ref_from_pack("backend_evidence_snapshot", &backend_evidence_snapshot)?,
+        canonical_export_ref_from_pack("active_review_snapshot", &active_review_snapshot)?,
+        canonical_export_ref_from_pack("operator_signoff", &operator_signoff)?,
+        canonical_export_ref_from_pack("backend_resolution", &backend_resolution)?,
+    ];
+    related_artifacts.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
+    let export_context = canonical_export_context_from_parts(
+        &evidence_context,
+        Some(run_id),
+        (!operator_signoff.digest_prefix.is_empty())
+            .then_some(operator_signoff.digest_prefix.clone()),
+        (!backend_evidence_snapshot.digest_prefix.is_empty())
+            .then_some(backend_evidence_snapshot.digest_prefix.clone()),
+        (!active_review_snapshot.digest_prefix.is_empty())
+            .then_some(active_review_snapshot.digest_prefix.clone()),
+    )?;
+
     let pack_id = format!("repro-{run_id}");
     let mut manifest = ReproPackManifestV1 {
         schema_version: 1,
@@ -11558,6 +11889,9 @@ pub fn repro_pack(
         active_review_snapshot,
         operator_signoff,
         backend_resolution,
+        export_context,
+        related_artifacts,
+        export_layout_compatibility: CanonicalExportLayoutCompatibilityV1::Canonical,
         repro_pack_digest: String::new(),
     };
     manifest.repro_pack_digest = repro_pack_digest_hex(&manifest)?;
@@ -14710,6 +15044,18 @@ mod repro_pack_tests {
                 "evidence/backend_resolution.json",
                 "NOT_REQUESTED",
             ),
+            export_context: CanonicalExportContextV1 {
+                supported_slot_set_digest_prefix: "11".repeat(8),
+                policy_graph_digest_prefix: "22".repeat(8),
+                manifest_digest_prefix: "33".repeat(8),
+                run_id: Some("run".to_string()),
+                operator_signoff_digest_prefix: None,
+                backend_evidence_snapshot_digest_prefix: None,
+                active_review_snapshot_digest_prefix: None,
+                context_digest: "44".repeat(32),
+            },
+            related_artifacts: vec![],
+            export_layout_compatibility: CanonicalExportLayoutCompatibilityV1::Canonical,
             repro_pack_digest: String::new(),
         };
         let a = repro_pack_digest_hex(&manifest).expect("digest");
@@ -14717,6 +15063,61 @@ mod repro_pack_tests {
         assert_eq!(a, b);
     }
 
+    #[test]
+    fn canonical_export_artifact_ref_digest_stable() {
+        let mut r = CanonicalExportArtifactRefV1 {
+            artifact_kind: "operator_signoff".to_string(),
+            relative_path: "artifacts/operator_signoff.json".to_string(),
+            included_state: CanonicalArtifactIncludedStateV1::Included,
+            sha256: Some("aa".repeat(32)),
+            schema_version: Some(1),
+            artifact_digest: Some("bb".repeat(8)),
+            reason_code: None,
+            ref_digest: String::new(),
+        };
+        r.ref_digest = canonical_artifact_ref_digest_hex(&r).expect("digest");
+        let a = canonical_artifact_ref_digest_hex(&r).expect("digest");
+        let b = canonical_artifact_ref_digest_hex(&r).expect("digest");
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn canonical_export_context_digest_stable() {
+        let mut c = CanonicalExportContextV1 {
+            supported_slot_set_digest_prefix: "11".repeat(8),
+            policy_graph_digest_prefix: "22".repeat(8),
+            manifest_digest_prefix: "33".repeat(8),
+            run_id: Some("run".to_string()),
+            operator_signoff_digest_prefix: None,
+            backend_evidence_snapshot_digest_prefix: None,
+            active_review_snapshot_digest_prefix: None,
+            context_digest: String::new(),
+        };
+        c.context_digest = canonical_context_digest_hex(&c).expect("digest");
+        let a = canonical_context_digest_hex(&c).expect("digest");
+        let b = canonical_context_digest_hex(&c).expect("digest");
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn canonical_state_semantics_are_stable() {
+        assert!(matches!(
+            canonical_state_from_status("INCLUDED"),
+            CanonicalArtifactIncludedStateV1::Included
+        ));
+        assert!(matches!(
+            canonical_state_from_status("MISSING"),
+            CanonicalArtifactIncludedStateV1::Missing
+        ));
+        assert!(matches!(
+            canonical_state_from_status("EXCLUDED"),
+            CanonicalArtifactIncludedStateV1::Excluded
+        ));
+        assert!(matches!(
+            canonical_state_from_status("UNKNOWN"),
+            CanonicalArtifactIncludedStateV1::Skip
+        ));
+    }
     #[test]
     fn repro_pack_and_verify_and_tamper() {
         let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
@@ -14849,6 +15250,19 @@ mod bugkit_tests {
             .warnings
             .iter()
             .any(|w| w.contains("dropped optional artifact")));
+    }
+
+    #[test]
+    fn exports_normalize_check_passes() {
+        let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
+        let prev = std::env::current_dir().expect("cwd");
+        let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        std::env::set_current_dir(&repo_root).expect("repo root");
+        let out = repo_root.join("out/export_normalize_check_test.json");
+        let report = exports_normalize_check(Path::new(".ucf"), &out).expect("normalize");
+        std::env::set_current_dir(prev).expect("restore cwd");
+        assert!(report.pass, "{:#?}", report.mismatches);
+        assert!(report.allowed_states.contains(&"SKIP".to_string()));
     }
 
     #[test]

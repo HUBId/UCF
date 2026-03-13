@@ -56,3 +56,8 @@ cargo run -p ucf-ops -- bugkit build --run <run_id> --out ./out/bugkit_<run_id>.
 2. Verify locally with `scripts/verify_bugkit.py`.
 3. Upload single `bugkit_<run_id>.zip` to issue tracker.
 4. Share optional warning context from `BUGKIT_MANIFEST.json` if size-capped.
+
+
+## Export normalization v6
+
+This surface participates in canonical export normalization (shared `CanonicalExportArtifactRefV1` and `CanonicalExportContextV1`) and is validated via `cargo run -p ucf-ops -- exports normalize-check --out ./out/export_normalize_check.json`. See `docs/export_normalization_v6.md` for semantics.
