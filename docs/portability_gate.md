@@ -111,6 +111,9 @@ run_json=$(ls -1 ./.ucf_portability_smoke/ess/runs/*.json | sort | tail -n1)
 run_id=$(basename "$run_json" .json)
 cargo run -p ucf-ops -- repro pack --run "$run_id" --out ./out/repro_portability.zip --workdir ./.ucf_portability_smoke
 cargo run -p ucf-ops -- repro verify --pack ./out/repro_portability.zip --out ./out/repro_verify_portability.json --workdir ./.ucf_portability_smoke
+mkdir -p ./.ucf_portability_smoke/out/$run_id
+cp ./out/portability_smoke_bringup/run_metadata.json ./.ucf_portability_smoke/out/$run_id/run_metadata.json
+cp ./out/portability_smoke_bringup/metrics_summary.json ./.ucf_portability_smoke/out/$run_id/metrics_summary.json
 cargo run -p ucf-ops -- bugkit build --run "$run_id" --out ./out/bugkit_portability.zip --workdir ./.ucf_portability_smoke
 cargo run -p ucf-ops -- remediation-consistency-check --out ./out/remediation_consistency_portability.json
 cargo run -p ucf-ops -- models evidence-snapshot --out ./out/backend_evidence_snapshot.json
@@ -145,6 +148,9 @@ if (-not $run_json) { throw "no run metadata json found under ./.ucf_portability
 $run_id = [System.IO.Path]::GetFileNameWithoutExtension($run_json.Name)
 cargo run -p ucf-ops -- repro pack --run $run_id --out ./out/repro_portability.zip --workdir ./.ucf_portability_smoke
 cargo run -p ucf-ops -- repro verify --pack ./out/repro_portability.zip --out ./out/repro_verify_portability.json --workdir ./.ucf_portability_smoke
+New-Item -ItemType Directory -Force -Path ".\.ucf_portability_smoke\out\$run_id" | Out-Null
+Copy-Item "./out/portability_smoke_bringup/run_metadata.json" ".\.ucf_portability_smoke\out\$run_id\run_metadata.json"
+Copy-Item "./out/portability_smoke_bringup/metrics_summary.json" ".\.ucf_portability_smoke\out\$run_id\metrics_summary.json"
 cargo run -p ucf-ops -- bugkit build --run $run_id --out ./out/bugkit_portability.zip --workdir ./.ucf_portability_smoke
 cargo run -p ucf-ops -- remediation-consistency-check --out ./out/remediation_consistency_portability.json
 cargo run -p ucf-ops -- models evidence-snapshot --out ./out/backend_evidence_snapshot.json
