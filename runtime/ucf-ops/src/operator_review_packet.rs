@@ -725,7 +725,6 @@ fn packet_digest(packet: &OperatorReviewPacketV1) -> Result<String, OpsError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::validate_governance_primary_surfaces;
     use crate::models_lifecycle::{
         ActiveReviewContributingDigestsV1, ActiveReviewEvidenceV1, ActiveReviewOverallStatusV1,
         ActiveReviewSignoffAlignmentV1, BackendEvidenceSlotDenialsV1,
@@ -733,6 +732,7 @@ mod tests {
         BackendEvidenceSlotSnapshotV1, BackendSupportMatrixV1, BackendSupportStateV1,
         BurnResolutionStatusV1, DriftStatusV1,
     };
+    use crate::validate_governance_primary_surfaces;
 
     fn pass_v0() -> V0GateReportV1 {
         V0GateReportV1 {
