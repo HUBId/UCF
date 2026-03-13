@@ -107,8 +107,7 @@ cargo run -p ucf-ops -- spec artifact-schemas-check --out ./out/artifact_schema_
 cargo run -p ucf-ops -- models active-review-snapshot --out ./out/active_review_snapshot.json
 cargo run -p ucf-ops -- models backend-resolution --slot sae --out ./out/backend_resolution_sae.json || echo "backend_resolution=skip optional_second_slot_path_unavailable"
 cargo run -p ucf-ops -- bringup --demo --ticks 16 --workdir ./.ucf_portability_smoke
-run_json=$(ls -1 ./.ucf_portability_smoke/ess/runs/*.json | sort | tail -n1)
-run_id=$(basename "$run_json" .json)
+run_id=$(python -c 'import json;print(json.load(open("./.ucf_portability_smoke/ess/run_metadata_record.json", "r", encoding="utf-8"))["run_id"])')
 cargo run -p ucf-ops -- repro pack --run "$run_id" --out ./out/repro_portability.zip --workdir ./.ucf_portability_smoke
 cargo run -p ucf-ops -- repro verify --pack ./out/repro_portability.zip --out ./out/repro_verify_portability.json --workdir ./.ucf_portability_smoke
 cargo run -p ucf-ops -- bugkit build --run "$run_id" --out ./out/bugkit_portability.zip --workdir ./.ucf_portability_smoke
@@ -140,9 +139,9 @@ cargo run -p ucf-ops -- models active-review-snapshot --out ./out/active_review_
 cargo run -p ucf-ops -- models backend-resolution --slot sae --out ./out/backend_resolution_sae.json
 if ($LASTEXITCODE -ne 0) { Write-Host "backend_resolution=skip optional_second_slot_path_unavailable"; $global:LASTEXITCODE = 0 }
 cargo run -p ucf-ops -- bringup --demo --ticks 16 --workdir ./.ucf_portability_smoke
-$run_json = Get-ChildItem ".\.ucf_portability_smoke\ess\runs\*.json" | Sort-Object Name | Select-Object -Last 1
-if (-not $run_json) { throw "no run metadata json found under ./.ucf_portability_smoke/ess/runs" }
-$run_id = [System.IO.Path]::GetFileNameWithoutExtension($run_json.Name)
+$run_record = Get-Content ".\.ucf_portability_smoke\ess\run_metadata_record.json" | ConvertFrom-Json
+if (-not $run_record.run_id) { throw "run_metadata_record.json missing run_id" }
+$run_id = $run_record.run_id
 cargo run -p ucf-ops -- repro pack --run $run_id --out ./out/repro_portability.zip --workdir ./.ucf_portability_smoke
 cargo run -p ucf-ops -- repro verify --pack ./out/repro_portability.zip --out ./out/repro_verify_portability.json --workdir ./.ucf_portability_smoke
 cargo run -p ucf-ops -- bugkit build --run $run_id --out ./out/bugkit_portability.zip --workdir ./.ucf_portability_smoke
