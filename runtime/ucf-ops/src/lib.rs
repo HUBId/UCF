@@ -11051,6 +11051,14 @@ fn canonical_export_ref_from_pack(
     Ok(out)
 }
 
+fn canonical_prefix_or_missing(value: &str) -> String {
+    if value.is_empty() {
+        "MISSING".to_string()
+    } else {
+        value.to_string()
+    }
+}
+
 fn canonical_export_context_from_parts(
     context: &EvidenceValidationContext,
     run_id: Option<&str>,
@@ -11059,9 +11067,13 @@ fn canonical_export_context_from_parts(
     active_review_snapshot_digest_prefix: Option<String>,
 ) -> Result<CanonicalExportContextV1, OpsError> {
     let mut out = CanonicalExportContextV1 {
-        supported_slot_set_digest_prefix: context.supported_slot_set_digest_prefix.clone(),
-        policy_graph_digest_prefix: context.policy_graph_digest_prefix.clone(),
-        manifest_digest_prefix: context.manifest_digest_prefix.clone(),
+        supported_slot_set_digest_prefix: canonical_prefix_or_missing(
+            &context.supported_slot_set_digest_prefix,
+        ),
+        policy_graph_digest_prefix: canonical_prefix_or_missing(
+            &context.policy_graph_digest_prefix,
+        ),
+        manifest_digest_prefix: canonical_prefix_or_missing(&context.manifest_digest_prefix),
         run_id: run_id.map(ToString::to_string),
         operator_signoff_digest_prefix,
         backend_evidence_snapshot_digest_prefix,
@@ -15243,10 +15255,12 @@ mod bugkit_tests {
     #[test]
     fn exports_normalize_check_passes() {
         let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
+        let prev = std::env::current_dir().expect("cwd");
         let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
         std::env::set_current_dir(&repo_root).expect("repo root");
         let out = repo_root.join("out/export_normalize_check_test.json");
         let report = exports_normalize_check(Path::new(".ucf"), &out).expect("normalize");
+        std::env::set_current_dir(prev).expect("restore cwd");
         assert!(report.pass, "{:#?}", report.mismatches);
         assert!(report.allowed_states.contains(&"SKIP".to_string()));
     }
