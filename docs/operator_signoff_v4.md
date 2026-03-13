@@ -97,3 +97,8 @@ Siehe `docs/operator_review_packet_v5.md`.
 
 ## Applied scope authority (v6)
 Operator signoff reviewability is reduced only over `AppliedSupportedSetContextV1` scope. Legacy or extra-slot evidence cannot contribute silently; scope mismatches are fail-closed with explicit signoff codes.
+
+
+## Export normalization v6
+
+This surface participates in canonical export normalization (shared `CanonicalExportArtifactRefV1` and `CanonicalExportContextV1`) and is validated via `cargo run -p ucf-ops -- exports normalize-check --out ./out/export_normalize_check.json`. See `docs/export_normalization_v6.md` for semantics.

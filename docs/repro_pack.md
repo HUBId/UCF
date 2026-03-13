@@ -56,3 +56,8 @@ This is safe-by-default for offline sharing because it excludes raw model weight
 ## Optional manual weights handoff
 
 If full model-byte rehydration is required, transmit model files separately via your secure channel and do **not** add them to the default repro pack.
+
+
+## Export normalization v6
+
+This surface participates in canonical export normalization (shared `CanonicalExportArtifactRefV1` and `CanonicalExportContextV1`) and is validated via `cargo run -p ucf-ops -- exports normalize-check --out ./out/export_normalize_check.json`. See `docs/export_normalization_v6.md` for semantics.

@@ -65,3 +65,8 @@ Optional:
 
 ## Applied scope authority (v6)
 `OperatorReviewPacketV1` embeds applied-scope context digest reference and reports only applied slots. Extra-slot evidence is surfaced as blocking diagnostics and cannot elevate review stage.
+
+
+## Export normalization v6
+
+This surface participates in canonical export normalization (shared `CanonicalExportArtifactRefV1` and `CanonicalExportContextV1`) and is validated via `cargo run -p ucf-ops -- exports normalize-check --out ./out/export_normalize_check.json`. See `docs/export_normalization_v6.md` for semantics.

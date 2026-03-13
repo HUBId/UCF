@@ -8,10 +8,10 @@ use ucf_ops::{
     attest_run, attest_verify, audit_scan, bench_run, bringup, causal_slice, determinism_scan,
     diagnostics, diagnostics_collect, drift_report, ebm_export_dataset, ess_compact, ess_snapshot,
     event_id_for_decision, explain_tick, explain_why, export_bugreport,
-    export_policy_key_registry_v1, gateway_threat_test, goldens_generate, goldens_update,
-    goldens_verify, goldens_verify_detailed, governance_surfaces_check, hardware_scan,
-    load_signoff_checklist, logs_prove, logs_verify_proof, metrics_snapshot, metrics_summary,
-    metrics_trend, migrate_config_v1, models_active_check, models_active_evidence,
+    export_policy_key_registry_v1, exports_normalize_check, gateway_threat_test, goldens_generate,
+    goldens_update, goldens_verify, goldens_verify_detailed, governance_surfaces_check,
+    hardware_scan, load_signoff_checklist, logs_prove, logs_verify_proof, metrics_snapshot,
+    metrics_summary, metrics_trend, migrate_config_v1, models_active_check, models_active_evidence,
     models_active_review_snapshot, models_applied_scope_check, models_backend_resolution,
     models_consistency_check, models_eligibility, models_evidence_snapshot, models_list,
     models_probe, models_probe_slot, models_promote, models_recommend_rollback, models_rollback,
@@ -1725,6 +1725,24 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         }
+        "exports" => {
+            let sub = args.get(2).map(String::as_str).unwrap_or("help");
+            match sub {
+                "normalize-check" => {
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/export_normalize_check.json"));
+                    let report = exports_normalize_check(&workdir, &out)?;
+                    println!("pass={}", report.pass);
+                    println!("mismatch_count={}", report.mismatch_count);
+                    println!("out={}", out.display());
+                    if !report.pass {
+                        std::process::exit(2);
+                    }
+                }
+                _ => return Err("usage: ucf-ops exports normalize-check --out <path>".into()),
+            }
+        }
         "preflight" => {
             let bundle = arg_value(&args, "--bundle")
                 .map(PathBuf::from)
@@ -2486,7 +2504,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             eprintln!(
-                "usage: ucf-ops <bringup|diag|health|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|attest|repro|readiness-gate|preflight|goldens|nightly|dev|troubleshoot|adversarial-run|out|release|bench|runs|status|strict|ess|ebm|drift|alerts|operator|policy|portability|spec|change-impact|soak|governance-surfaces-check|v0|v1|v2|v3|v4|v5|version> [--workdir <path>] [--bundle <path>]"
+                "usage: ucf-ops <bringup|diag|health|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|attest|repro|exports|readiness-gate|preflight|goldens|nightly|dev|troubleshoot|adversarial-run|out|release|bench|runs|status|strict|ess|ebm|drift|alerts|operator|policy|portability|spec|change-impact|soak|governance-surfaces-check|v0|v1|v2|v3|v4|v5|version> [--workdir <path>] [--bundle <path>]"
             );
             std::process::exit(1);
         }
