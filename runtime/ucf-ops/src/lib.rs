@@ -1561,6 +1561,29 @@ pub struct V4GateReportV1 {
     pub checks: Vec<V4GateCheckV1>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum V5GateOverallStatus {
+    Pass,
+    Fail,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct V5GateCheckV1 {
+    pub name: String,
+    pub status: GateStatus,
+    pub evidence_digest_prefixes: BTreeMap<String, String>,
+    pub remediation_hint_code: String,
+    pub notes: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct V5GateReportV1 {
+    pub schema_version: u16,
+    pub overall_status: V5GateOverallStatus,
+    pub checks: Vec<V5GateCheckV1>,
+}
+
 impl Default for ReadinessGateReport {
     fn default() -> Self {
         Self {
@@ -3579,6 +3602,476 @@ pub fn v4_gate(workdir: &Path, out: &Path) -> Result<V4GateReportV1, OpsError> {
     Ok(report)
 }
 
+pub fn v5_gate(workdir: &Path, out: &Path) -> Result<V5GateReportV1, OpsError> {
+    ensure_layout(workdir)?;
+    if let Some(parent) = out.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut checks = Vec::new();
+
+    let v0_out = workdir.join("out").join("v0_gate_report_v5_gate.json");
+    let v0 = v0_gate(
+        workdir,
+        &repo_root.join("fixtures/e2e/v0_flow_a.json"),
+        &v0_out,
+    )?;
+    checks.push(v5_gate_check(
+        "v0_gate_pass",
+        if matches!(v0.overall_status, V0GateOverallStatus::Pass) {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [(
+            "v0_gate_report".to_string(),
+            prefix_hex(&sha256_hex(&serde_json::to_vec(&v0)?), 16),
+        )],
+        "REMEDIATE_RUN_V0_GATE",
+        "NOTE_REQUIRED_V0",
+    ));
+
+    let v1_out = workdir.join("out").join("v1_gate_report_v5_gate.json");
+    let v1 = v1_gate(workdir, &v1_out)?;
+    checks.push(v5_gate_check(
+        "v1_gate_pass",
+        if matches!(v1.overall_status, V1GateOverallStatus::Pass) {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [(
+            "v1_gate_report".to_string(),
+            prefix_hex(&sha256_hex(&serde_json::to_vec(&v1)?), 16),
+        )],
+        "REMEDIATE_RUN_V1_GATE",
+        "NOTE_REQUIRED_V1",
+    ));
+
+    let v2_out = workdir.join("out").join("v2_gate_report_v5_gate.json");
+    let v2 = v2_gate(workdir, &v2_out)?;
+    checks.push(v5_gate_check(
+        "v2_gate_pass",
+        if matches!(v2.overall_status, V2GateOverallStatus::Pass) {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [(
+            "v2_gate_report".to_string(),
+            prefix_hex(&sha256_hex(&serde_json::to_vec(&v2)?), 16),
+        )],
+        "REMEDIATE_RUN_V2_GATE",
+        "NOTE_REQUIRED_V2",
+    ));
+
+    let v3_out = workdir.join("out").join("v3_gate_report_v5_gate.json");
+    let v3 = v3_gate(workdir, &v3_out)?;
+    checks.push(v5_gate_check(
+        "v3_gate_pass",
+        if matches!(v3.overall_status, V3GateOverallStatus::Pass) {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [(
+            "v3_gate_report".to_string(),
+            prefix_hex(&sha256_hex(&serde_json::to_vec(&v3)?), 16),
+        )],
+        "REMEDIATE_RUN_V3_GATE",
+        "NOTE_REQUIRED_V3",
+    ));
+
+    let v4_out = workdir.join("out").join("v4_gate_report_v5_gate.json");
+    let v4 = v4_gate(workdir, &v4_out)?;
+    checks.push(v5_gate_check(
+        "v4_gate_pass",
+        if matches!(v4.overall_status, V4GateOverallStatus::Pass) {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [(
+            "v4_gate_report".to_string(),
+            prefix_hex(&sha256_hex(&serde_json::to_vec(&v4)?), 16),
+        )],
+        "REMEDIATE_RUN_V4_GATE",
+        "NOTE_REQUIRED_V4",
+    ));
+
+    let second_slot = detect_second_slot_for_v3(&repo_root)?;
+    let supported_slots = models_lifecycle::supported_real_slot_set_v1()?;
+    let supported_set_out = workdir
+        .join("out")
+        .join("supported_set_review_v5_gate.json");
+    let supported_set = models_supported_set_review(workdir, &supported_set_out)?;
+    checks.push(v5_gate_check(
+        "supported_set_review_present",
+        if supported_set_out.exists() && !supported_set.policy.policy_digest.is_empty() {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [(
+            "supported_set_policy_digest".to_string(),
+            prefix_hex(&supported_set.policy.policy_digest, 16),
+        )],
+        "REMEDIATE_SUPPORTED_SET_REVIEW",
+        "NOTE_REQUIRED_SUPPORTED_SET",
+    ));
+    let supported_set_consistent = {
+        let expected = BTreeSet::from([
+            ModelSlot::WorldJepa.as_str().to_string(),
+            second_slot.as_str().to_string(),
+        ]);
+        let current = supported_slots
+            .slots
+            .iter()
+            .cloned()
+            .collect::<BTreeSet<String>>();
+        let reviewed = supported_set
+            .policy
+            .current_supported_slots
+            .iter()
+            .cloned()
+            .collect::<BTreeSet<String>>();
+        current == expected && reviewed == current
+    };
+    checks.push(v5_gate_check(
+        "supported_set_review_consistent",
+        if supported_set_consistent {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [
+            (
+                "supported_slot_set_digest".to_string(),
+                prefix_hex(&supported_slots.set_digest, 16),
+            ),
+            (
+                "supported_slots".to_string(),
+                supported_slots.slots.join(","),
+            ),
+        ],
+        "REMEDIATE_SUPPORTED_SET_REVIEW",
+        "NOTE_REQUIRED_SUPPORTED_SET_ALIGNMENT",
+    ));
+
+    let active_review_out = workdir
+        .join("out")
+        .join("active_review_snapshot_v5_gate.json");
+    let active_review = models_active_review_snapshot(workdir, &active_review_out)?;
+    checks.push(v5_gate_check(
+        "active_review_snapshot_present",
+        if !active_review.slots.is_empty() {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [(
+            "active_review_snapshot_digest".to_string(),
+            prefix_hex(&active_review.snapshot_digest, 16),
+        )],
+        "REMEDIATE_ACTIVE_REVIEW_SNAPSHOT",
+        "NOTE_REQUIRED_ACTIVE_REVIEW",
+    ));
+    let active_review_slots = active_review
+        .slots
+        .iter()
+        .map(|slot| slot.slot_id.clone())
+        .collect::<BTreeSet<_>>();
+    let active_review_consistent = active_review.supported_slot_set_digest
+        == supported_slots.set_digest
+        && active_review_slots
+            == supported_slots
+                .slots
+                .iter()
+                .cloned()
+                .collect::<BTreeSet<String>>()
+        && active_review.signoff_alignment.aligned;
+    checks.push(v5_gate_check(
+        "active_review_snapshot_consistent",
+        if active_review_consistent {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [(
+            "active_review_alignment".to_string(),
+            active_review.signoff_alignment.status_code.clone(),
+        )],
+        "REMEDIATE_ACTIVE_REVIEW_ALIGNMENT",
+        "NOTE_REQUIRED_ACTIVE_REVIEW_ALIGNMENT",
+    ));
+
+    let backend_resolution_out = workdir.join("out").join(format!(
+        "backend_resolution_{}_v5_gate.json",
+        second_slot.as_str()
+    ));
+    let backend_resolution = models_backend_resolution(workdir, second_slot, None)?;
+    write_json(&backend_resolution_out, &backend_resolution)?;
+    checks.push(v5_gate_check(
+        "backend_resolution_present",
+        if !backend_resolution.evidence_digest.is_empty() {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [(
+            "backend_resolution_digest".to_string(),
+            prefix_hex(&backend_resolution.evidence_digest, 16),
+        )],
+        "REMEDIATE_BACKEND_RESOLUTION",
+        "NOTE_REQUIRED_BACKEND_RESOLUTION",
+    ));
+    let backend_resolution_consistent = backend_resolution.slot_id == second_slot.as_str()
+        && active_review
+            .slots
+            .iter()
+            .find(|slot| slot.slot_id == second_slot.as_str())
+            .map(|slot| slot.burn_resolution == backend_resolution)
+            .unwrap_or(false);
+    checks.push(v5_gate_check(
+        "backend_resolution_consistent",
+        if backend_resolution_consistent {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [(
+            "backend_resolution_state".to_string(),
+            format!("{:?}", backend_resolution.support_state),
+        )],
+        "REMEDIATE_BACKEND_RESOLUTION_ALIGNMENT",
+        "NOTE_REQUIRED_BACKEND_RESOLUTION_ALIGNMENT",
+    ));
+
+    let repro_smoke = repro_pack_smoke(
+        "v5_repro_smoke",
+        "./out/repro_v5_gate.zip",
+        "./out/repro_verify_v5_gate.json",
+    );
+    checks.push(v5_gate_check(
+        "enriched_repro_export_smoke_pass",
+        if matches!(repro_smoke.status, PortabilityGateStatus::Pass) {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [("repro_smoke_detail".to_string(), repro_smoke.detail.clone())],
+        "REMEDIATE_REPRO_EXPORT",
+        "NOTE_REQUIRED_REPRO",
+    ));
+
+    let bugkit_smoke = bugkit_smoke("v5_bugkit_smoke", "./out/bugkit_v5_gate.zip");
+    checks.push(v5_gate_check(
+        "enriched_bugkit_export_smoke_pass",
+        if matches!(bugkit_smoke.status, PortabilityGateStatus::Pass) {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [(
+            "bugkit_smoke_detail".to_string(),
+            bugkit_smoke.detail.clone(),
+        )],
+        "REMEDIATE_BUGKIT_EXPORT",
+        "NOTE_REQUIRED_BUGKIT",
+    ));
+
+    let remediation_out = workdir
+        .join("out")
+        .join("remediation_consistency_v5_gate.json");
+    let remediation = remediation_consistency_check(&remediation_out)?;
+    checks.push(v5_gate_check(
+        "remediation_consistency_pass",
+        if remediation.summary.status == RemediationConsistencyStatusV1::Pass {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [(
+            "remediation_fail_count".to_string(),
+            remediation.summary.fail_count.to_string(),
+        )],
+        "REMEDIATE_REMEDIATION_CONSISTENCY",
+        "NOTE_REQUIRED_REMEDIATION_CONSISTENCY",
+    ));
+
+    let review_packet_out = workdir
+        .join("out")
+        .join("operator_review_packet_v5_gate.json");
+    let review_packet = operator_review_packet(
+        workdir,
+        &OperatorReviewPacketArgs {
+            run_id: None,
+            latest: true,
+        },
+        &review_packet_out,
+    )?;
+    checks.push(v5_gate_check(
+        "operator_review_packet_present",
+        if !review_packet.packet_digest.is_empty() {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [(
+            "operator_review_packet_digest".to_string(),
+            prefix_hex(&review_packet.packet_digest, 16),
+        )],
+        "REMEDIATE_OPERATOR_REVIEW_PACKET",
+        "NOTE_REQUIRED_REVIEW_PACKET",
+    ));
+    let gate_digests_aligned = review_packet.artifacts.gate_digests.v0
+        == prefix_hex(&sha256_hex(&serde_json::to_vec(&v0)?), 16)
+        && review_packet.artifacts.gate_digests.v1
+            == prefix_hex(&sha256_hex(&serde_json::to_vec(&v1)?), 16)
+        && review_packet.artifacts.gate_digests.v2
+            == prefix_hex(&sha256_hex(&serde_json::to_vec(&v2)?), 16)
+        && review_packet.artifacts.gate_digests.v3
+            == prefix_hex(&sha256_hex(&serde_json::to_vec(&v3)?), 16)
+        && review_packet.artifacts.gate_digests.v4
+            == prefix_hex(&sha256_hex(&serde_json::to_vec(&v4)?), 16);
+    let review_packet_consistent = review_packet.supported_slot_set_digest
+        == active_review.supported_slot_set_digest
+        && review_packet.policy_graph_digest_prefix == active_review.policy_graph_digest_prefix
+        && gate_digests_aligned;
+    checks.push(v5_gate_check(
+        "operator_review_packet_consistent",
+        if review_packet_consistent {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [(
+            "review_stage".to_string(),
+            format!("{:?}", review_packet.review_stage),
+        )],
+        "REMEDIATE_OPERATOR_REVIEW_PACKET_ALIGNMENT",
+        "NOTE_REQUIRED_REVIEW_PACKET_ALIGNMENT",
+    ));
+
+    let artifact_schema = check_artifact_schema_snapshots(&artifact_schema::ArtifactSchemaArgs {
+        repo_root: repo_root.clone(),
+        out_dir: repo_root.join("docs/artifact_schema_snapshots"),
+    })?;
+    checks.push(v5_gate_check(
+        "artifact_schema_snapshot_checks_pass",
+        if artifact_schema.ok {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [(
+            "schema_diff_count".to_string(),
+            artifact_schema.diffs.len().to_string(),
+        )],
+        "REMEDIATE_ARTIFACT_SCHEMA_SNAPSHOT",
+        "NOTE_REQUIRED_SCHEMA",
+    ));
+
+    let docs = docs_lint(&DocsLintArgs {
+        repo_root: repo_root.clone(),
+        policy_pack: repo_root.join("policies/packs/base_v1"),
+        overlay_pack: Some(repo_root.join("policies/packs/overlays/test")),
+        spec_snapshot: repo_root.join("docs/spec_snapshot.md"),
+        prompt_index: repo_root.join("docs/prompt_series_index.md"),
+        module_map: repo_root.join("docs/module_map.md"),
+        deploy_doc: repo_root.join("docs/deploy.md"),
+        artifact_schema_snapshot_dir: PathBuf::from("docs/artifact_schema_snapshots"),
+        mode: DocsLintMode::Strict,
+    })?;
+    let portability_out = workdir.join("out").join("portability_check_v5_gate.json");
+    let portability = portability_check(&portability_out)?;
+    checks.push(v5_gate_check(
+        "portability_docs_checks_pass",
+        if docs.ok && portability.deterministic_within_os {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [
+            (
+                "docs_lint".to_string(),
+                if docs.ok { "pass" } else { "fail" }.to_string(),
+            ),
+            (
+                "portability_check".to_string(),
+                if portability.deterministic_within_os {
+                    "pass"
+                } else {
+                    "fail"
+                }
+                .to_string(),
+            ),
+        ],
+        "REMEDIATE_PORTABILITY_DOCS",
+        "NOTE_REQUIRED_DOCS",
+    ));
+
+    let models_consistency_out = workdir
+        .join("out")
+        .join("models_consistency_check_v5_gate.json");
+    let models_consistency = models_consistency_check(workdir, &models_consistency_out)?;
+    checks.push(v5_gate_check(
+        "optional_backend_resolution_consistent",
+        if models_consistency.status == "PASS" {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [(
+            "mismatch_count".to_string(),
+            models_consistency.mismatch_categories.len().to_string(),
+        )],
+        "REMEDIATE_MODELS_CONSISTENCY",
+        "NOTE_OPTIONAL_BACKEND",
+    ));
+
+    checks.push(v5_gate_check(
+        "chosen_slot_burn_optional_path_consistent",
+        match backend_resolution.support_state {
+            OptionalBackendSupportStateV1::Unsupported
+            | OptionalBackendSupportStateV1::NotConfigured => GateStatus::Skip,
+            _ => {
+                if matches!(
+                    backend_resolution.resolution,
+                    BurnResolutionStatusV1::BurnSupportedForShadowCompare
+                ) {
+                    GateStatus::Pass
+                } else {
+                    GateStatus::Fail
+                }
+            }
+        },
+        [(
+            "burn_support_state".to_string(),
+            format!("{:?}", backend_resolution.support_state),
+        )],
+        "REMEDIATE_BACKEND_RESOLUTION",
+        "NOTE_OPTIONAL_BURN",
+    ));
+
+    let overall_status = if checks
+        .iter()
+        .all(|check| matches!(check.status, GateStatus::Pass | GateStatus::Skip))
+    {
+        V5GateOverallStatus::Pass
+    } else {
+        V5GateOverallStatus::Fail
+    };
+
+    let report = V5GateReportV1 {
+        schema_version: 1,
+        overall_status,
+        checks,
+    };
+    write_json(out, &report)?;
+    Ok(report)
+}
+
 fn strict_operator_signoff_alignment(
     strict_snapshot: &StrictEvidenceSnapshotV1,
     operator: &ConsolidatedOperatorReportV1,
@@ -3634,6 +4127,22 @@ fn v4_gate_check(
     notes: &str,
 ) -> V4GateCheckV1 {
     V4GateCheckV1 {
+        name: name.to_string(),
+        status,
+        evidence_digest_prefixes: bounded_evidence(evidence),
+        remediation_hint_code: remediation_hint_code.to_string(),
+        notes: notes.to_string(),
+    }
+}
+
+fn v5_gate_check(
+    name: &str,
+    status: GateStatus,
+    evidence: impl IntoIterator<Item = (String, String)>,
+    remediation_hint_code: &str,
+    notes: &str,
+) -> V5GateCheckV1 {
+    V5GateCheckV1 {
         name: name.to_string(),
         status,
         evidence_digest_prefixes: bounded_evidence(evidence),
@@ -14751,4 +15260,97 @@ pub fn generate_remediation_codes_doc(out: &Path) -> Result<(), OpsError> {
     }
     fs::write(out, md)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod v5_gate_tests {
+    use super::*;
+
+    #[test]
+    fn v5_gate_check_order_is_fixed() {
+        let checks = vec![
+            "v0_gate_pass",
+            "v1_gate_pass",
+            "v2_gate_pass",
+            "v3_gate_pass",
+            "v4_gate_pass",
+            "supported_set_review_present",
+            "supported_set_review_consistent",
+            "active_review_snapshot_present",
+            "active_review_snapshot_consistent",
+            "backend_resolution_present",
+            "backend_resolution_consistent",
+            "enriched_repro_export_smoke_pass",
+            "enriched_bugkit_export_smoke_pass",
+            "remediation_consistency_pass",
+            "operator_review_packet_present",
+            "operator_review_packet_consistent",
+            "artifact_schema_snapshot_checks_pass",
+            "portability_docs_checks_pass",
+            "optional_backend_resolution_consistent",
+            "chosen_slot_burn_optional_path_consistent",
+        ];
+        let report = V5GateReportV1 {
+            schema_version: 1,
+            overall_status: V5GateOverallStatus::Pass,
+            checks: checks
+                .iter()
+                .map(|name| v5_gate_check(name, GateStatus::Pass, [], "REMEDIATE", "NOTE"))
+                .collect(),
+        };
+        let names: Vec<String> = report.checks.into_iter().map(|c| c.name).collect();
+        assert_eq!(names, checks);
+    }
+
+    #[test]
+    fn v5_gate_report_serialization_is_deterministic() {
+        let report = V5GateReportV1 {
+            schema_version: 1,
+            overall_status: V5GateOverallStatus::Pass,
+            checks: vec![
+                v5_gate_check(
+                    "a",
+                    GateStatus::Pass,
+                    [("k".to_string(), "v".to_string())],
+                    "REMEDIATE_A",
+                    "NOTE_A",
+                ),
+                v5_gate_check(
+                    "b",
+                    GateStatus::Skip,
+                    [("x".to_string(), "y".to_string())],
+                    "REMEDIATE_B",
+                    "NOTE_B",
+                ),
+            ],
+        };
+        let a = serde_json::to_vec(&report).expect("serialize a");
+        let b = serde_json::to_vec(&report).expect("serialize b");
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn v5_gate_normalization_fail_closed() {
+        let report = V5GateReportV1 {
+            schema_version: 1,
+            overall_status: V5GateOverallStatus::Fail,
+            checks: vec![
+                v5_gate_check(
+                    "required",
+                    GateStatus::Fail,
+                    [("missing".to_string(), "1".to_string())],
+                    "REMEDIATE_REQUIRED",
+                    "NOTE_REQUIRED",
+                ),
+                v5_gate_check(
+                    "optional",
+                    GateStatus::Skip,
+                    [("unsupported".to_string(), "1".to_string())],
+                    "REMEDIATE_OPTIONAL",
+                    "NOTE_OPTIONAL",
+                ),
+            ],
+        };
+        assert!(matches!(report.overall_status, V5GateOverallStatus::Fail));
+    }
 }

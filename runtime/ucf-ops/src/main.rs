@@ -25,14 +25,14 @@ use ucf_ops::{
     run_status, runs_list, runs_search, runs_show, save_counterfactual_result,
     second_slot_parity_report, security_verify_chain, simulate_counterfactual, soak_run,
     strict_check, strict_explain, troubleshoot, v0_gate, v1_smoke, v2_gate, v3_gate, v4_gate,
-    verify_bugreport, world_parity_report, world_shadow_report, write_slice, AdversarialRunArgs,
-    AirgapArtifactType, AirgapImportArgs, AirgapImportMode, BenchArgs, BugKitBuildArgs,
-    ChangeImpactArgs, ConfigV1, CounterfactualRequest, DevLoopArgs, DocsLintArgs, DocsLintMode,
-    DocsLintStatus, ExplainTickRequest, ExportArgs, GateStatus, GoldenGenerateArgs,
+    v5_gate, verify_bugreport, world_parity_report, world_shadow_report, write_slice,
+    AdversarialRunArgs, AirgapArtifactType, AirgapImportArgs, AirgapImportMode, BenchArgs,
+    BugKitBuildArgs, ChangeImpactArgs, ConfigV1, CounterfactualRequest, DevLoopArgs, DocsLintArgs,
+    DocsLintMode, DocsLintStatus, ExplainTickRequest, ExportArgs, GateStatus, GoldenGenerateArgs,
     GoldenVerifyArgs, GoldenVerifyReport, NightlySummarizeArgs, OperatorReportArgs,
     OperatorReviewPacketArgs, OperatorSignoffArgs, ReleaseBuildRcArgs, SoakRunArgs,
     SpecSnapshotArgs, StrictEvidenceContextV1, V2GateOverallStatus, V3GateOverallStatus,
-    V4GateOverallStatus,
+    V4GateOverallStatus, V5GateOverallStatus,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -1884,6 +1884,24 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 _ => return Err("usage: ucf-ops v4 gate [--out <path>]".into()),
             }
         }
+        "v5" => {
+            let sub = args.get(2).map(String::as_str).unwrap_or("help");
+            match sub {
+                "gate" => {
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/v5_gate_report.json"));
+                    let report = v5_gate(&workdir, &out)?;
+                    println!("overall={:?}", report.overall_status);
+                    println!("schema_version={}", report.schema_version);
+                    println!("out={}", out.display());
+                    if !matches!(report.overall_status, V5GateOverallStatus::Pass) {
+                        std::process::exit(2);
+                    }
+                }
+                _ => return Err("usage: ucf-ops v5 gate [--out <path>]".into()),
+            }
+        }
         "remediation-consistency-check" => {
             let out = arg_value(&args, "--out")
                 .map(PathBuf::from)
@@ -2413,7 +2431,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             eprintln!(
-                "usage: ucf-ops <bringup|diag|health|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|attest|repro|readiness-gate|preflight|goldens|nightly|dev|troubleshoot|adversarial-run|out|release|bench|runs|status|strict|ess|ebm|drift|alerts|operator|policy|portability|spec|change-impact|soak|v0|v1|v2|v3|v4|version> [--workdir <path>] [--bundle <path>]"
+                "usage: ucf-ops <bringup|diag|health|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|attest|repro|readiness-gate|preflight|goldens|nightly|dev|troubleshoot|adversarial-run|out|release|bench|runs|status|strict|ess|ebm|drift|alerts|operator|policy|portability|spec|change-impact|soak|v0|v1|v2|v3|v4|v5|version> [--workdir <path>] [--bundle <path>]"
             );
             std::process::exit(1);
         }

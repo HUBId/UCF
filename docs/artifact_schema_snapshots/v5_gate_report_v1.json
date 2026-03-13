@@ -1,0 +1,27 @@
+{
+  "artifact_id": "v5_gate_report_v1",
+  "type_name": "V5GateReportV1",
+  "source_file": "runtime/ucf-ops/src/lib.rs",
+  "required_fields": [
+    "checks",
+    "overall_status",
+    "schema_version"
+  ],
+  "optional_fields": [],
+  "field_types": {
+    "checks": "Vec<V5GateCheckV1>",
+    "overall_status": "V5GateOverallStatus",
+    "schema_version": "u16"
+  },
+  "enum_variants": {
+    "GateStatus": [
+      "Fail",
+      "Pass",
+      "Skip"
+    ],
+    "V5GateOverallStatus": [
+      "Fail",
+      "Pass"
+    ]
+  }
+}
