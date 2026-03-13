@@ -11,13 +11,13 @@
 - **v2:** complete (`ucf-ops v2 gate` overall PASS recorded at Prompt 198).
 - **v3:** complete (`ucf-ops v3 gate` overall PASS recorded at Prompt 208).
 - **v4:** complete (`ucf-ops v4 gate` overall PASS recorded at Prompt 218).
-- **v5:** not started yet.
+- **v5:** complete (`ucf-ops v5 gate` overall PASS recorded at Prompt 228).
 - **Queue policy:** immediate queue remains capped to 10 prompts.
 
 ## Last executed prompt / resume point
-- Last executed prompt ID: **219**.
-- Next prompt ID: **220**.
-- Resume from: **`PROMPT 220`**.
+- Last executed prompt ID: **228**.
+- Next prompt ID: **229**.
+- Resume from: **`PROMPT 229`**.
 - Numbering remains monotonic and append-only.
 
 ## Immediate next prompts (capped to 10)
@@ -25,15 +25,15 @@ Reference: `docs/next_10_prompts.md`
 
 | Prompt ID | Title (short) | v5 class | Status |
 |---:|---|---|---|
-| 220 | Supported real-slot governance expansion (cautious) | MUST | planned |
-| 221 | Active-review evidence export unification | MUST | planned |
-| 222 | Optional second-slot Burn parity closure | NICE | planned |
-| 223 | Backend evidence/signoff reuse in repro exports | MUST | planned |
-| 224 | Gate/report remediation consistency hardening | MUST | planned |
-| 225 | v5 schema snapshot refresh | MUST | planned |
-| 226 | v5 portability/docs refresh for evidence/export | NICE | planned |
-| 227 | Read-only operator review workflow hardening | MUST | planned |
-| 228 | v5 gate schema and orchestration | MUST | planned |
+| 220 | Supported real-slot governance expansion (cautious) | MUST | complete |
+| 221 | Active-review evidence export unification | MUST | complete |
+| 222 | Optional second-slot Burn parity closure | NICE | complete |
+| 223 | Backend evidence/signoff reuse in repro exports | MUST | complete |
+| 224 | Gate/report remediation consistency hardening | MUST | complete |
+| 225 | v5 schema snapshot refresh | MUST | complete |
+| 226 | v5 portability/docs refresh for evidence/export | NICE | complete |
+| 227 | Read-only operator review workflow hardening | MUST | complete |
+| 228 | v5 gate schema and orchestration | MUST | complete |
 | 229 | v5 wrap and next-anchor governance | MUST | planned |
 
 ## Series control notes
@@ -42,6 +42,8 @@ Reference: `docs/next_10_prompts.md`
 - v2 completion requirement: **`ucf-ops v2 gate` overall PASS**.
 - v3 completion requirement: **`ucf-ops v3 gate` overall PASS at Prompt 208**.
 - v4 completion requirement: **`ucf-ops v4 gate` overall PASS at Prompt 218**.
+- v5 completion requirement: **`ucf-ops v5 gate` overall PASS at Prompt 228**.
+- Next anchor transition is allowed only after v5 gate PASS.
 - v5 remains hardware-neutral, offline-first, probe-first, shadow-first, and fail-closed.
 - Prompts are classified as MUST/NICE/DEFERRED at authoring time.
 
