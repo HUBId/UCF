@@ -13,6 +13,7 @@ mod docs_lint;
 mod drift;
 mod formal_invariants;
 mod goldens;
+mod governance_surfaces;
 mod models_lifecycle;
 mod nightly;
 mod operator_report;
@@ -57,6 +58,10 @@ pub use goldens::{
     goldens_generate, goldens_update, goldens_verify, goldens_verify_detailed, GoldenGenerateArgs,
     GoldenRefreshHeuristic, GoldenScenarioConfig, GoldenVerifyArgs, GoldenVerifyReport,
     GoldenVerifyScenarioReport,
+};
+pub use governance_surfaces::{
+    validate_governance_primary_surfaces, validate_governance_primary_surfaces_optional,
+    GovernancePrimarySurfacesV1, GOVERNANCE_SURFACE_MISMATCH_CODE, GOVERNANCE_SURFACE_MISSING_CODE,
 };
 pub use models_lifecycle::{
     can_enable_active, models_active_check, models_active_evidence, models_active_review_snapshot,
@@ -3602,6 +3607,49 @@ pub fn v4_gate(workdir: &Path, out: &Path) -> Result<V4GateReportV1, OpsError> {
     Ok(report)
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct GovernanceSurfacesCheckReportV1 {
+    pub schema_version: u16,
+    pub status: String,
+    pub summary_code: String,
+    pub governance_primary_surfaces: Option<GovernancePrimarySurfacesV1>,
+}
+
+pub fn governance_surfaces_check(
+    workdir: &Path,
+    out: &Path,
+) -> Result<GovernanceSurfacesCheckReportV1, OpsError> {
+    ensure_layout(workdir)?;
+    if let Some(parent) = out.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let backend_snapshot = models_evidence_snapshot(workdir, None, None)?;
+    let active_out = workdir
+        .join("out")
+        .join("active_review_snapshot_governance_surfaces_check.json");
+    let active_review_snapshot = models_active_review_snapshot(workdir, &active_out)?;
+
+    let report =
+        match validate_governance_primary_surfaces(&backend_snapshot, &active_review_snapshot) {
+            Ok(primary) => GovernanceSurfacesCheckReportV1 {
+                schema_version: 1,
+                status: "PASS".to_string(),
+                summary_code: "PASS".to_string(),
+                governance_primary_surfaces: Some(primary),
+            },
+            Err(err) => GovernanceSurfacesCheckReportV1 {
+                schema_version: 1,
+                status: "FAIL".to_string(),
+                summary_code: err.to_string(),
+                governance_primary_surfaces: None,
+            },
+        };
+
+    write_json(out, &report)?;
+    Ok(report)
+}
+
 pub fn v5_gate(workdir: &Path, out: &Path) -> Result<V5GateReportV1, OpsError> {
     ensure_layout(workdir)?;
     if let Some(parent) = out.parent() {
@@ -3758,6 +3806,7 @@ pub fn v5_gate(workdir: &Path, out: &Path) -> Result<V5GateReportV1, OpsError> {
         "NOTE_REQUIRED_SUPPORTED_SET_ALIGNMENT",
     ));
 
+    let backend_evidence_snapshot = models_evidence_snapshot(workdir, None, None)?;
     let active_review_out = workdir
         .join("out")
         .join("active_review_snapshot_v5_gate.json");
@@ -3776,13 +3825,15 @@ pub fn v5_gate(workdir: &Path, out: &Path) -> Result<V5GateReportV1, OpsError> {
         "REMEDIATE_ACTIVE_REVIEW_SNAPSHOT",
         "NOTE_REQUIRED_ACTIVE_REVIEW",
     ));
+    let governance_surfaces_validation =
+        validate_governance_primary_surfaces(&backend_evidence_snapshot, &active_review);
     let active_review_slots = active_review
         .slots
         .iter()
         .map(|slot| slot.slot_id.clone())
         .collect::<BTreeSet<_>>();
-    let active_review_consistent = active_review.supported_slot_set_digest
-        == supported_slots.set_digest
+    let active_review_consistent = governance_surfaces_validation.is_ok()
+        && active_review.supported_slot_set_digest == supported_slots.set_digest
         && active_review_slots
             == supported_slots
                 .slots
@@ -3803,6 +3854,23 @@ pub fn v5_gate(workdir: &Path, out: &Path) -> Result<V5GateReportV1, OpsError> {
         )],
         "REMEDIATE_ACTIVE_REVIEW_ALIGNMENT",
         "NOTE_REQUIRED_ACTIVE_REVIEW_ALIGNMENT",
+    ));
+    checks.push(v5_gate_check(
+        "governance_primary_surfaces_consistent",
+        if governance_surfaces_validation.is_ok() {
+            GateStatus::Pass
+        } else {
+            GateStatus::Fail
+        },
+        [(
+            "governance_surface_status".to_string(),
+            governance_surfaces_validation
+                .as_ref()
+                .map(|s| s.governance_surfaces_digest.clone())
+                .unwrap_or_else(|e| e.to_string()),
+        )],
+        "REMEDIATE_GOVERNANCE_SURFACES",
+        "NOTE_REQUIRED_GOVERNANCE_SURFACE_ALIGNMENT",
     ));
 
     let backend_resolution_out = workdir.join("out").join(format!(
@@ -10924,9 +10992,13 @@ fn enrich_evidence_artifacts(
             PathBuf::from("out/models_evidence_snapshot.json"),
         ],
     );
-    let backend_ref = if let Some(path) = backend_path {
+    let mut backend_snapshot_loaded: Option<BackendEvidenceSnapshotV1> = None;
+    let mut active_snapshot_loaded: Option<AggregatedActiveReviewSnapshotV1> = None;
+
+    let mut backend_ref = if let Some(path) = backend_path {
         let bytes = fs::read(&path)?;
         let snapshot: BackendEvidenceSnapshotV1 = serde_json::from_slice(&bytes)?;
+        backend_snapshot_loaded = Some(snapshot.clone());
         if let Some(reason) = validate_evidence_artifacts_against_context(
             context,
             &snapshot.supported_slot_set_digest,
@@ -10953,9 +11025,10 @@ fn enrich_evidence_artifacts(
 
     let active_path =
         discover_first_existing_json(workdir, &[PathBuf::from("out/active_review_snapshot.json")]);
-    let active_ref = if let Some(path) = active_path {
+    let mut active_ref = if let Some(path) = active_path {
         let bytes = fs::read(&path)?;
         let snapshot: AggregatedActiveReviewSnapshotV1 = serde_json::from_slice(&bytes)?;
+        active_snapshot_loaded = Some(snapshot.clone());
         if let Some(reason) = validate_evidence_artifacts_against_context(
             context,
             &snapshot.supported_slot_set_digest,
@@ -10979,6 +11052,25 @@ fn enrich_evidence_artifacts(
             "ACTIVE_REVIEW_SNAPSHOT_MISSING",
         )
     };
+
+    if let (Some(backend), Some(active)) = (
+        backend_snapshot_loaded.as_ref(),
+        active_snapshot_loaded.as_ref(),
+    ) {
+        if let Err(err) = validate_governance_primary_surfaces(backend, active) {
+            backend_ref = excluded_evidence_ref(
+                "evidence/backend_evidence_snapshot.json",
+                GOVERNANCE_SURFACE_MISMATCH_CODE,
+            );
+            active_ref = excluded_evidence_ref(
+                "evidence/active_review_snapshot.json",
+                GOVERNANCE_SURFACE_MISMATCH_CODE,
+            );
+            file_map.remove("evidence/backend_evidence_snapshot.json");
+            file_map.remove("evidence/active_review_snapshot.json");
+            let _ = err;
+        }
+    }
 
     let signoff_path =
         discover_first_existing_json(workdir, &[PathBuf::from("out/operator_signoff.json")]);
