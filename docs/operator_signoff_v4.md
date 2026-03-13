@@ -79,3 +79,13 @@ cargo run -p ucf-ops -- models active-review-snapshot --out ./out/active_review_
 ```bash
 cargo run -p ucf-ops -- remediation-consistency-check --out ./out/remediation_consistency.json
 ```
+
+## Top-level operator review surface
+
+Für die primäre, operator-freundliche Korrelation über Signoff + Gates + Snapshot-Artefakte nutze:
+
+```bash
+cargo run -p ucf-ops -- operator review-packet --out ./out/operator_review_packet.json
+```
+
+Siehe `docs/operator_review_packet_v5.md`.

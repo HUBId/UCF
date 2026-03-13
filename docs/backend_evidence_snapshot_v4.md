@@ -82,3 +82,14 @@ cargo run -p ucf-ops -- models active-review-snapshot --out ./out/active_review_
 ## Burn resolution integration (v5)
 
 `BackendEvidenceSnapshotV1` now embeds a canonical `BurnSupportResolutionV1` per slot so optional Burn state is explicit and no longer ambiguous.
+
+## Top-level operator entrypoint
+
+`backend_evidence_snapshot_v1` bleibt das Evidenz-Substrat.
+Für die deterministische Endkorrelation (Evidence + Active-Review + Signoff + Gates) nutze:
+
+```bash
+cargo run -p ucf-ops -- operator review-packet --out ./out/operator_review_packet.json
+```
+
+Siehe `docs/operator_review_packet_v5.md`.

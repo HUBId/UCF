@@ -1,0 +1,1094 @@
+use std::collections::BTreeSet;
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use serde::{Deserialize, Serialize};
+
+use crate::models_lifecycle::{
+    AggregatedActiveReviewSnapshotV1, BackendEvidenceSnapshotV1, BurnSupportResolutionV1,
+};
+use crate::operator_report::ConsolidatedOperatorReportV1;
+use crate::operator_signoff::{OperatorSignoffDecisionV1, SignoffDecisionStateV1};
+use crate::{
+    OpsError, V0GateOverallStatus, V0GateReportV1, V1GateOverallStatus, V1GateReportV1,
+    V2GateOverallStatus, V2GateReportV1, V3GateOverallStatus, V3GateReportV1, V4GateOverallStatus,
+    V4GateReportV1,
+};
+
+const CODE_CAP: usize = 12;
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum OperatorReviewStageV1 {
+    ReviewBlocked,
+    ReviewShadowReady,
+    ReviewActiveReady,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct OperatorReviewPacketArtifactsV1 {
+    pub backend_evidence_snapshot_digest_prefix: String,
+    pub active_review_snapshot_digest_prefix: String,
+    pub operator_signoff_digest_prefix: String,
+    pub operator_report_digest_prefix: String,
+    pub gate_digests: OperatorReviewPacketGateDigestsV1,
+    pub backend_resolution_digest_prefix: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct OperatorReviewPacketGateDigestsV1 {
+    pub v0: String,
+    pub v1: String,
+    pub v2: String,
+    pub v3: String,
+    pub v4: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct OperatorReviewPacketSlotV1 {
+    pub slot_id: String,
+    pub target_hash_prefix: String,
+    pub probe_ready: bool,
+    pub shadow_ready: bool,
+    pub active_eligible: bool,
+    pub primary_denial_code: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct OperatorReviewPacketV1 {
+    pub schema_version: u16,
+    pub review_stage: OperatorReviewStageV1,
+    pub supported_slot_set_digest: String,
+    pub policy_graph_digest_prefix: String,
+    pub manifest_digest_prefix: String,
+    pub artifacts: OperatorReviewPacketArtifactsV1,
+    pub supported_slots: Vec<OperatorReviewPacketSlotV1>,
+    pub blocking_codes: Vec<String>,
+    pub remediation_codes: Vec<String>,
+    pub packet_digest: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct OperatorReviewPacketArgs {
+    pub run_id: Option<String>,
+    pub latest: bool,
+}
+
+pub fn operator_review_packet(
+    workdir: &Path,
+    args: &OperatorReviewPacketArgs,
+    out: &Path,
+) -> Result<OperatorReviewPacketV1, OpsError> {
+    let out_root = PathBuf::from("./out");
+
+    let backend_snapshot = maybe_read_json::<BackendEvidenceSnapshotV1>(&discover_report(
+        &out_root,
+        "backend_evidence_snapshot.json",
+        args,
+    ));
+    let active_review = maybe_read_json::<AggregatedActiveReviewSnapshotV1>(&discover_report(
+        &out_root,
+        "active_review_snapshot.json",
+        args,
+    ));
+    let signoff = maybe_read_json::<OperatorSignoffDecisionV1>(&discover_report(
+        &out_root,
+        "operator_signoff.json",
+        args,
+    ));
+    let operator_report = maybe_read_json::<ConsolidatedOperatorReportV1>(&discover_report(
+        &out_root,
+        "operator_report.json",
+        args,
+    ));
+    let gate_v0 =
+        maybe_read_json::<V0GateReportV1>(&discover_report(&out_root, "v0_gate_report.json", args));
+    let gate_v1 =
+        maybe_read_json::<V1GateReportV1>(&discover_report(&out_root, "v1_gate_report.json", args));
+    let gate_v2 =
+        maybe_read_json::<V2GateReportV1>(&discover_report(&out_root, "v2_gate_report.json", args));
+    let gate_v3 =
+        maybe_read_json::<V3GateReportV1>(&discover_report(&out_root, "v3_gate_report.json", args));
+    let gate_v4 =
+        maybe_read_json::<V4GateReportV1>(&discover_report(&out_root, "v4_gate_report.json", args));
+
+    let backend_resolution = args.run_id.as_ref().and_then(|run_id| {
+        let run_dir = out_root.join(run_id);
+        fs::read_dir(&run_dir).ok().and_then(|entries| {
+            let mut files = entries
+                .filter_map(|entry| {
+                    let path = entry.ok()?.path();
+                    let name = path.file_name()?.to_str()?;
+                    if name.starts_with("backend_resolution_") && name.ends_with(".json") {
+                        Some(path)
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>();
+            files.sort();
+            files
+                .into_iter()
+                .find_map(|path| read_json::<BurnSupportResolutionV1>(&path).ok())
+        })
+    });
+
+    let packet = reduce_review_packet(
+        backend_snapshot,
+        active_review,
+        signoff,
+        operator_report,
+        gate_v0,
+        gate_v1,
+        gate_v2,
+        gate_v3,
+        gate_v4,
+        backend_resolution,
+    )?;
+
+    if let Some(parent) = out.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(out, serde_json::to_string_pretty(&packet)?)?;
+    let _ = workdir;
+    Ok(packet)
+}
+
+pub fn operator_review_packet_text(packet: &OperatorReviewPacketV1) -> String {
+    format!(
+        "review_stage={:?}\nsupported_slots={}\nblocking_codes={}\nremediation_codes={}",
+        packet.review_stage,
+        packet
+            .supported_slots
+            .iter()
+            .map(|slot| format!(
+                "{}:probe={},shadow={},active={}",
+                slot.slot_id, slot.probe_ready, slot.shadow_ready, slot.active_eligible
+            ))
+            .collect::<Vec<_>>()
+            .join(","),
+        if packet.blocking_codes.is_empty() {
+            "none".to_string()
+        } else {
+            packet.blocking_codes.join(",")
+        },
+        if packet.remediation_codes.is_empty() {
+            "none".to_string()
+        } else {
+            packet.remediation_codes.join(",")
+        }
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn reduce_review_packet(
+    backend_snapshot: Option<BackendEvidenceSnapshotV1>,
+    active_review: Option<AggregatedActiveReviewSnapshotV1>,
+    signoff: Option<OperatorSignoffDecisionV1>,
+    operator_report: Option<ConsolidatedOperatorReportV1>,
+    gate_v0: Option<V0GateReportV1>,
+    gate_v1: Option<V1GateReportV1>,
+    gate_v2: Option<V2GateReportV1>,
+    gate_v3: Option<V3GateReportV1>,
+    gate_v4: Option<V4GateReportV1>,
+    backend_resolution: Option<BurnSupportResolutionV1>,
+) -> Result<OperatorReviewPacketV1, OpsError> {
+    let mut blocking = BTreeSet::new();
+    let mut remediation = BTreeSet::new();
+
+    let snapshot = match backend_snapshot {
+        Some(snapshot) => snapshot,
+        None => {
+            blocking.insert("REVIEW_BLOCK_BACKEND_EVIDENCE_SNAPSHOT_MISSING".to_string());
+            remediation.insert("run_backend_evidence_snapshot".to_string());
+            return build_blocked_minimal(
+                blocking,
+                remediation,
+                gate_v0,
+                gate_v1,
+                gate_v2,
+                gate_v3,
+                gate_v4,
+            );
+        }
+    };
+
+    let active = match active_review {
+        Some(active) => active,
+        None => {
+            blocking.insert("REVIEW_BLOCK_ACTIVE_REVIEW_SNAPSHOT_MISSING".to_string());
+            remediation.insert("run_models_active_review_snapshot".to_string());
+            return build_from_snapshot(
+                snapshot,
+                None,
+                signoff,
+                operator_report,
+                gate_v0,
+                gate_v1,
+                gate_v2,
+                gate_v3,
+                gate_v4,
+                backend_resolution,
+                blocking,
+                remediation,
+            );
+        }
+    };
+
+    let signoff = match signoff {
+        Some(signoff) => signoff,
+        None => {
+            blocking.insert("REVIEW_BLOCK_OPERATOR_SIGNOFF_MISSING".to_string());
+            remediation.insert("run_operator_signoff".to_string());
+            return build_from_snapshot(
+                snapshot,
+                Some(active),
+                None,
+                operator_report,
+                gate_v0,
+                gate_v1,
+                gate_v2,
+                gate_v3,
+                gate_v4,
+                backend_resolution,
+                blocking,
+                remediation,
+            );
+        }
+    };
+
+    let operator_report = match operator_report {
+        Some(report) => report,
+        None => {
+            blocking.insert("REVIEW_BLOCK_OPERATOR_REPORT_MISSING".to_string());
+            remediation.insert("run_operator_report".to_string());
+            return build_from_snapshot(
+                snapshot,
+                Some(active),
+                Some(signoff),
+                None,
+                gate_v0,
+                gate_v1,
+                gate_v2,
+                gate_v3,
+                gate_v4,
+                backend_resolution,
+                blocking,
+                remediation,
+            );
+        }
+    };
+
+    if snapshot.slots.len() != 2
+        || !snapshot.slots.iter().any(|slot| {
+            slot.slot_id.eq_ignore_ascii_case("world")
+                || slot.slot_id.eq_ignore_ascii_case("world_jepa")
+        })
+    {
+        blocking.insert("REVIEW_BLOCK_SLOT_SET_AMBIGUOUS".to_string());
+        remediation.insert("run_models_evidence_snapshot".to_string());
+    }
+
+    check_gates(
+        &gate_v0,
+        &gate_v1,
+        &gate_v2,
+        &gate_v3,
+        &gate_v4,
+        &mut blocking,
+        &mut remediation,
+    );
+
+    if active.supported_slot_set_digest != snapshot.supported_slot_set_digest
+        || signoff.supported_slot_set_digest != snapshot.supported_slot_set_digest
+    {
+        blocking.insert("REVIEW_BLOCK_DIGEST_SLOT_SET_MISMATCH".to_string());
+        remediation.insert("rerun_operator_artifacts".to_string());
+    }
+
+    if active.policy_graph_digest_prefix != snapshot.policy_graph_digest_prefix
+        || signoff.policy_graph_digest_prefix != snapshot.policy_graph_digest_prefix
+        || active.manifest_digest_prefix != snapshot.manifest_digest_prefix
+        || signoff.manifest_digest_prefix != snapshot.manifest_digest_prefix
+    {
+        blocking.insert("REVIEW_BLOCK_DIGEST_CONTEXT_MISMATCH".to_string());
+        remediation.insert("rerun_operator_artifacts".to_string());
+    }
+
+    if signoff.evidence_snapshot_digest_prefix != prefix16(&snapshot.snapshot_digest)
+        || signoff.operator_report_digest_prefix != prefix16(&operator_report.report_digest)
+    {
+        blocking.insert("REVIEW_BLOCK_DIGEST_ARTIFACT_MISMATCH".to_string());
+        remediation.insert("rerun_operator_artifacts".to_string());
+    }
+
+    let stage = reduce_stage(&snapshot, &active, &signoff, &blocking);
+
+    let mut packet = build_packet(
+        &snapshot,
+        &active,
+        &signoff,
+        &operator_report,
+        gate_v0.as_ref(),
+        gate_v1.as_ref(),
+        gate_v2.as_ref(),
+        gate_v3.as_ref(),
+        gate_v4.as_ref(),
+        backend_resolution.as_ref(),
+        stage,
+        blocking,
+        remediation,
+    )?;
+    packet.packet_digest = packet_digest(&packet)?;
+    Ok(packet)
+}
+
+fn reduce_stage(
+    snapshot: &BackendEvidenceSnapshotV1,
+    active: &AggregatedActiveReviewSnapshotV1,
+    signoff: &OperatorSignoffDecisionV1,
+    blocking: &BTreeSet<String>,
+) -> OperatorReviewStageV1 {
+    if !blocking.is_empty() {
+        return OperatorReviewStageV1::ReviewBlocked;
+    }
+
+    let shadow_ready = snapshot
+        .slots
+        .iter()
+        .all(|slot| slot.readiness.probe_ready && slot.readiness.shadow_ready);
+
+    let reviewable_count = active
+        .slots
+        .iter()
+        .filter(|slot| slot.active_eligible)
+        .count();
+
+    if signoff.decision == SignoffDecisionStateV1::ReadyForActiveReview
+        && active.signoff_alignment.aligned
+        && reviewable_count > 0
+    {
+        return OperatorReviewStageV1::ReviewActiveReady;
+    }
+
+    if signoff.decision == SignoffDecisionStateV1::ReadyForShadow || shadow_ready {
+        return OperatorReviewStageV1::ReviewShadowReady;
+    }
+
+    OperatorReviewStageV1::ReviewBlocked
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_from_snapshot(
+    snapshot: BackendEvidenceSnapshotV1,
+    active: Option<AggregatedActiveReviewSnapshotV1>,
+    signoff: Option<OperatorSignoffDecisionV1>,
+    operator_report: Option<ConsolidatedOperatorReportV1>,
+    gate_v0: Option<V0GateReportV1>,
+    gate_v1: Option<V1GateReportV1>,
+    gate_v2: Option<V2GateReportV1>,
+    gate_v3: Option<V3GateReportV1>,
+    gate_v4: Option<V4GateReportV1>,
+    backend_resolution: Option<BurnSupportResolutionV1>,
+    blocking: BTreeSet<String>,
+    remediation: BTreeSet<String>,
+) -> Result<OperatorReviewPacketV1, OpsError> {
+    let active = active.unwrap_or_else(|| AggregatedActiveReviewSnapshotV1 {
+        schema_version: 1,
+        supported_slot_set_digest: snapshot.supported_slot_set_digest.clone(),
+        policy_graph_digest_prefix: snapshot.policy_graph_digest_prefix.clone(),
+        manifest_digest_prefix: snapshot.manifest_digest_prefix.clone(),
+        slots: Vec::new(),
+        overall_review_status: crate::ActiveReviewOverallStatusV1::NoneReviewable,
+        signoff_alignment: crate::models_lifecycle::ActiveReviewSignoffAlignmentV1 {
+            aligned: false,
+            status_code: "MISSING".to_string(),
+        },
+        snapshot_digest: "MISSING".to_string(),
+    });
+    let signoff = signoff.unwrap_or_else(|| OperatorSignoffDecisionV1 {
+        schema_version: 1,
+        decision: SignoffDecisionStateV1::NotReady,
+        supported_slot_set_digest: snapshot.supported_slot_set_digest.clone(),
+        policy_graph_digest_prefix: snapshot.policy_graph_digest_prefix.clone(),
+        manifest_digest_prefix: snapshot.manifest_digest_prefix.clone(),
+        evidence_snapshot_digest_prefix: "MISSING".to_string(),
+        active_review_snapshot_digest_prefix: None,
+        operator_report_digest_prefix: "MISSING".to_string(),
+        gate_report_digests: crate::operator_signoff::GateReportDigestsV1 {
+            v0: "MISSING".to_string(),
+            v1: "MISSING".to_string(),
+            v2: "MISSING".to_string(),
+            v3: "MISSING".to_string(),
+        },
+        reasons: Vec::new(),
+        remediation_codes: Vec::new(),
+        canonical_remediation_codes: Vec::new(),
+        decision_digest: "MISSING".to_string(),
+    });
+    let operator_report = operator_report.unwrap_or_else(|| ConsolidatedOperatorReportV1 {
+        schema_version: 1,
+        generated_at: 0,
+        overall_status: crate::operator_report::OperatorStatus::Missing,
+        run_id: None,
+        policy_graph_digest_prefix: None,
+        manifest_digest_prefix: None,
+        sections: crate::operator_report::OperatorSectionsV1 {
+            health_section: crate::operator_report::NormalizedHealthSection {
+                status: crate::operator_report::OperatorStatus::Missing,
+                strict_mode_enabled: None,
+                last_tick_age_ms: None,
+                emergency_active: None,
+                evidence_digest_prefixes: Vec::new(),
+                remediation_codes: Vec::new(),
+            },
+            eligibility_section: crate::operator_report::NormalizedEligibilitySection {
+                status: crate::operator_report::OperatorStatus::Missing,
+                slots: Vec::new(),
+                evidence_digest_prefixes: Vec::new(),
+                remediation_codes: Vec::new(),
+            },
+            drift_section: crate::operator_report::NormalizedDriftSection {
+                status: crate::operator_report::OperatorStatus::Missing,
+                slots: Vec::new(),
+                evidence_digest_prefixes: Vec::new(),
+                remediation_codes: Vec::new(),
+            },
+            alerts_section: crate::operator_report::NormalizedAlertsSection {
+                status: crate::operator_report::OperatorStatus::Missing,
+                active_alert_count: 0,
+                top_active_alerts: Vec::new(),
+                evidence_digest_prefixes: Vec::new(),
+                remediation_codes: Vec::new(),
+            },
+            strict_section: crate::operator_report::NormalizedStrictSection {
+                status: crate::operator_report::OperatorStatus::Missing,
+                strict_status: crate::StrictEvidenceStatusV1::Missing,
+                primary_denial_code: None,
+                strict_report_digest_prefix: None,
+                failing_check_ids: Vec::new(),
+                evidence_digest_prefixes: Vec::new(),
+                remediation_codes: Vec::new(),
+            },
+            gates_section: crate::operator_report::NormalizedGatesSection {
+                status: crate::operator_report::OperatorStatus::Missing,
+                gates: Vec::new(),
+                evidence_digest_prefixes: Vec::new(),
+                remediation_codes: Vec::new(),
+            },
+        },
+        remediation_codes: Vec::new(),
+        canonical_remediation_codes: Vec::new(),
+        report_digest: "MISSING".to_string(),
+    });
+
+    let mut packet = build_packet(
+        &snapshot,
+        &active,
+        &signoff,
+        &operator_report,
+        gate_v0.as_ref(),
+        gate_v1.as_ref(),
+        gate_v2.as_ref(),
+        gate_v3.as_ref(),
+        gate_v4.as_ref(),
+        backend_resolution.as_ref(),
+        OperatorReviewStageV1::ReviewBlocked,
+        blocking,
+        remediation,
+    )?;
+    packet.packet_digest = packet_digest(&packet)?;
+    Ok(packet)
+}
+
+fn build_blocked_minimal(
+    blocking: BTreeSet<String>,
+    remediation: BTreeSet<String>,
+    gate_v0: Option<V0GateReportV1>,
+    gate_v1: Option<V1GateReportV1>,
+    gate_v2: Option<V2GateReportV1>,
+    gate_v3: Option<V3GateReportV1>,
+    gate_v4: Option<V4GateReportV1>,
+) -> Result<OperatorReviewPacketV1, OpsError> {
+    let mut packet = OperatorReviewPacketV1 {
+        schema_version: 1,
+        review_stage: OperatorReviewStageV1::ReviewBlocked,
+        supported_slot_set_digest: "MISSING".to_string(),
+        policy_graph_digest_prefix: "MISSING".to_string(),
+        manifest_digest_prefix: "MISSING".to_string(),
+        artifacts: OperatorReviewPacketArtifactsV1 {
+            backend_evidence_snapshot_digest_prefix: "MISSING".to_string(),
+            active_review_snapshot_digest_prefix: "MISSING".to_string(),
+            operator_signoff_digest_prefix: "MISSING".to_string(),
+            operator_report_digest_prefix: "MISSING".to_string(),
+            gate_digests: OperatorReviewPacketGateDigestsV1 {
+                v0: digest_opt(gate_v0.as_ref())?,
+                v1: digest_opt(gate_v1.as_ref())?,
+                v2: digest_opt(gate_v2.as_ref())?,
+                v3: digest_opt(gate_v3.as_ref())?,
+                v4: digest_opt(gate_v4.as_ref())?,
+            },
+            backend_resolution_digest_prefix: None,
+        },
+        supported_slots: Vec::new(),
+        blocking_codes: bound_codes(blocking),
+        remediation_codes: bound_codes(remediation),
+        packet_digest: String::new(),
+    };
+    packet.packet_digest = packet_digest(&packet)?;
+    Ok(packet)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_packet(
+    snapshot: &BackendEvidenceSnapshotV1,
+    active: &AggregatedActiveReviewSnapshotV1,
+    signoff: &OperatorSignoffDecisionV1,
+    operator_report: &ConsolidatedOperatorReportV1,
+    gate_v0: Option<&V0GateReportV1>,
+    gate_v1: Option<&V1GateReportV1>,
+    gate_v2: Option<&V2GateReportV1>,
+    gate_v3: Option<&V3GateReportV1>,
+    gate_v4: Option<&V4GateReportV1>,
+    backend_resolution: Option<&BurnSupportResolutionV1>,
+    review_stage: OperatorReviewStageV1,
+    blocking: BTreeSet<String>,
+    remediation: BTreeSet<String>,
+) -> Result<OperatorReviewPacketV1, OpsError> {
+    let mut supported_slots = snapshot
+        .slots
+        .iter()
+        .map(|slot| {
+            let active_slot = active
+                .slots
+                .iter()
+                .find(|active_slot| active_slot.slot_id == slot.slot_id);
+            OperatorReviewPacketSlotV1 {
+                slot_id: slot.slot_id.clone(),
+                target_hash_prefix: slot.target_hash_prefix.clone(),
+                probe_ready: slot.readiness.probe_ready,
+                shadow_ready: slot.readiness.shadow_ready,
+                active_eligible: active_slot
+                    .map(|entry| entry.active_eligible)
+                    .unwrap_or(slot.readiness.active_eligible),
+                primary_denial_code: active_slot
+                    .and_then(|entry| entry.primary_denial_code.clone()),
+            }
+        })
+        .collect::<Vec<_>>();
+    supported_slots.sort_by(|a, b| a.slot_id.cmp(&b.slot_id));
+
+    Ok(OperatorReviewPacketV1 {
+        schema_version: 1,
+        review_stage,
+        supported_slot_set_digest: snapshot.supported_slot_set_digest.clone(),
+        policy_graph_digest_prefix: snapshot.policy_graph_digest_prefix.clone(),
+        manifest_digest_prefix: snapshot.manifest_digest_prefix.clone(),
+        artifacts: OperatorReviewPacketArtifactsV1 {
+            backend_evidence_snapshot_digest_prefix: prefix16(&snapshot.snapshot_digest),
+            active_review_snapshot_digest_prefix: prefix16(&active.snapshot_digest),
+            operator_signoff_digest_prefix: prefix16(&signoff.decision_digest),
+            operator_report_digest_prefix: prefix16(&operator_report.report_digest),
+            gate_digests: OperatorReviewPacketGateDigestsV1 {
+                v0: digest_opt(gate_v0)?,
+                v1: digest_opt(gate_v1)?,
+                v2: digest_opt(gate_v2)?,
+                v3: digest_opt(gate_v3)?,
+                v4: digest_opt(gate_v4)?,
+            },
+            backend_resolution_digest_prefix: backend_resolution
+                .map(|resolution| prefix16(&resolution.evidence_digest)),
+        },
+        supported_slots,
+        blocking_codes: bound_codes(blocking),
+        remediation_codes: bound_codes(remediation),
+        packet_digest: String::new(),
+    })
+}
+
+fn check_gates(
+    gate_v0: &Option<V0GateReportV1>,
+    gate_v1: &Option<V1GateReportV1>,
+    gate_v2: &Option<V2GateReportV1>,
+    gate_v3: &Option<V3GateReportV1>,
+    gate_v4: &Option<V4GateReportV1>,
+    blocking: &mut BTreeSet<String>,
+    remediation: &mut BTreeSet<String>,
+) {
+    if !gate_v0
+        .as_ref()
+        .is_some_and(|report| report.overall_status == V0GateOverallStatus::Pass)
+    {
+        blocking.insert("REVIEW_BLOCK_GATE_V0".to_string());
+        remediation.insert("run_v0_gate".to_string());
+    }
+    if !gate_v1
+        .as_ref()
+        .is_some_and(|report| report.overall_status == V1GateOverallStatus::Pass)
+    {
+        blocking.insert("REVIEW_BLOCK_GATE_V1".to_string());
+        remediation.insert("run_v1_gate".to_string());
+    }
+    if !gate_v2
+        .as_ref()
+        .is_some_and(|report| report.overall_status == V2GateOverallStatus::Pass)
+    {
+        blocking.insert("REVIEW_BLOCK_GATE_V2".to_string());
+        remediation.insert("run_v2_gate".to_string());
+    }
+    if !gate_v3
+        .as_ref()
+        .is_some_and(|report| report.overall_status == V3GateOverallStatus::Pass)
+    {
+        blocking.insert("REVIEW_BLOCK_GATE_V3".to_string());
+        remediation.insert("run_v3_gate".to_string());
+    }
+    if !gate_v4
+        .as_ref()
+        .is_some_and(|report| report.overall_status == V4GateOverallStatus::Pass)
+    {
+        blocking.insert("REVIEW_BLOCK_GATE_V4".to_string());
+        remediation.insert("run_v4_gate".to_string());
+    }
+}
+
+fn maybe_read_json<T: for<'de> Deserialize<'de>>(path: &Option<PathBuf>) -> Option<T> {
+    path.as_ref().and_then(|p| read_json::<T>(p).ok())
+}
+
+fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T, OpsError> {
+    let bytes = fs::read(path)?;
+    Ok(serde_json::from_slice(&bytes)?)
+}
+
+fn discover_report(
+    out_root: &Path,
+    file: &str,
+    args: &OperatorReviewPacketArgs,
+) -> Option<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Some(run_id) = &args.run_id {
+        candidates.push(out_root.join(run_id).join(file));
+    }
+    if args.latest {
+        let mut dirs = fs::read_dir(out_root)
+            .ok()?
+            .filter_map(|entry| {
+                let path = entry.ok()?.path();
+                if path.is_dir() {
+                    Some(path)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        dirs.sort();
+        dirs.reverse();
+        for dir in dirs {
+            candidates.push(dir.join(file));
+        }
+    }
+    candidates.push(out_root.join(file));
+    candidates.into_iter().find(|path| path.is_file())
+}
+
+fn digest_opt<T: Serialize>(value: Option<&T>) -> Result<String, OpsError> {
+    match value {
+        Some(v) => Ok(prefix16(&crate::sha256_hex(&serde_json::to_vec(v)?))),
+        None => Ok("MISSING".to_string()),
+    }
+}
+
+fn prefix16(value: &str) -> String {
+    value.chars().take(16).collect()
+}
+
+fn bound_codes(codes: BTreeSet<String>) -> Vec<String> {
+    codes.into_iter().take(CODE_CAP).collect()
+}
+
+fn packet_digest(packet: &OperatorReviewPacketV1) -> Result<String, OpsError> {
+    let mut cloned = packet.clone();
+    cloned.packet_digest.clear();
+    Ok(crate::sha256_hex(&serde_json::to_vec(&cloned)?))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models_lifecycle::{
+        ActiveReviewContributingDigestsV1, ActiveReviewEvidenceV1, ActiveReviewOverallStatusV1,
+        ActiveReviewSignoffAlignmentV1, BackendEvidenceSlotDenialsV1,
+        BackendEvidenceSlotEvidenceV1, BackendEvidenceSlotReadinessV1,
+        BackendEvidenceSlotSnapshotV1, BackendSupportMatrixV1, BackendSupportStateV1,
+        BurnResolutionStatusV1, DriftStatusV1,
+    };
+
+    fn pass_v0() -> V0GateReportV1 {
+        V0GateReportV1 {
+            schema_version: 1,
+            overall_status: V0GateOverallStatus::Pass,
+            checks: Vec::new(),
+        }
+    }
+    fn pass_v1() -> V1GateReportV1 {
+        V1GateReportV1 {
+            schema_version: 1,
+            overall_status: V1GateOverallStatus::Pass,
+            checks: Vec::new(),
+        }
+    }
+    fn pass_v2() -> V2GateReportV1 {
+        V2GateReportV1 {
+            schema_version: 1,
+            overall_status: V2GateOverallStatus::Pass,
+            checks: Vec::new(),
+        }
+    }
+    fn pass_v3() -> V3GateReportV1 {
+        V3GateReportV1 {
+            schema_version: 1,
+            overall_status: V3GateOverallStatus::Pass,
+            checks: Vec::new(),
+        }
+    }
+    fn pass_v4() -> V4GateReportV1 {
+        V4GateReportV1 {
+            schema_version: 1,
+            overall_status: V4GateOverallStatus::Pass,
+            checks: Vec::new(),
+        }
+    }
+
+    fn snapshot() -> BackendEvidenceSnapshotV1 {
+        let slot = |slot_id: &str, active_eligible: bool| BackendEvidenceSlotSnapshotV1 {
+            slot_id: slot_id.to_string(),
+            target_hash_prefix: "abc123".to_string(),
+            backend_support: BackendSupportMatrixV1 {
+                stub: BackendSupportStateV1::Supported,
+                candle: BackendSupportStateV1::Supported,
+                burn: BackendSupportStateV1::Supported,
+            },
+            evidence: BackendEvidenceSlotEvidenceV1 {
+                latest_probe_report_digest_prefix: "p".to_string(),
+                latest_compare_window_digest_prefix: "c".to_string(),
+                latest_shadow_ready_digest_prefix: "s".to_string(),
+                latest_active_evidence_digest_prefix: "a".to_string(),
+                latest_drift_status: DriftStatusV1::Ok,
+                freshness_probe_age_ticks: Some(1),
+                freshness_compare_age_ticks: Some(1),
+                freshness_no_impact_age_ticks: Some(1),
+                freshness_drift_status_age_ticks: Some(1),
+                hash_consistency_ok: true,
+            },
+            readiness: BackendEvidenceSlotReadinessV1 {
+                probe_ready: true,
+                shadow_ready: true,
+                active_eligible,
+            },
+            denials: BackendEvidenceSlotDenialsV1 {
+                probe: None,
+                shadow: None,
+                active: None,
+            },
+            remediation_codes: Vec::new(),
+            canonical_remediation_codes: Vec::new(),
+            burn_resolution: BurnSupportResolutionV1 {
+                slot_id: slot_id.to_string(),
+                resolution: BurnResolutionStatusV1::BurnSupportedForShadowCompare,
+                support_state: crate::OptionalBackendSupportStateV1::Supported,
+                rationale_codes: vec!["OK".to_string()],
+                evidence_digest: "burn".to_string(),
+            },
+        };
+        BackendEvidenceSnapshotV1 {
+            schema_version: 1,
+            supported_slot_set_digest: "slotset1".to_string(),
+            policy_graph_digest_prefix: "policy1".to_string(),
+            manifest_digest_prefix: "manifest1".to_string(),
+            slots: vec![slot("world", true), slot("sae", true)],
+            snapshot_digest: "snapshotdigest111111".to_string(),
+        }
+    }
+
+    fn active_snapshot() -> AggregatedActiveReviewSnapshotV1 {
+        let slot = |slot_id: &str, active_eligible: bool| ActiveReviewEvidenceV1 {
+            slot_id: slot_id.to_string(),
+            target_hash_prefix: "abc123".to_string(),
+            manifest_digest_prefix: "manifest1".to_string(),
+            probe_ready: true,
+            shadow_ready: true,
+            active_eligible,
+            strict_blocking: false,
+            drift_blocking: false,
+            alert_blocking: false,
+            primary_denial_code: None,
+            remediation_codes: Vec::new(),
+            contributing_evidence_digests: ActiveReviewContributingDigestsV1 {
+                probe_report_digest_prefix: "p".to_string(),
+                shadow_ready_digest_prefix: "s".to_string(),
+                active_evidence_digest_prefix: "a".to_string(),
+                strict_evidence_digest_prefix: "x".to_string(),
+            },
+            burn_resolution: BurnSupportResolutionV1 {
+                slot_id: slot_id.to_string(),
+                resolution: BurnResolutionStatusV1::BurnSupportedForShadowCompare,
+                support_state: crate::OptionalBackendSupportStateV1::Supported,
+                rationale_codes: vec!["OK".to_string()],
+                evidence_digest: "burn".to_string(),
+            },
+            evidence_digest: "evidence".to_string(),
+        };
+        AggregatedActiveReviewSnapshotV1 {
+            schema_version: 1,
+            supported_slot_set_digest: "slotset1".to_string(),
+            policy_graph_digest_prefix: "policy1".to_string(),
+            manifest_digest_prefix: "manifest1".to_string(),
+            slots: vec![slot("world", true), slot("sae", true)],
+            overall_review_status: ActiveReviewOverallStatusV1::AllReviewable,
+            signoff_alignment: ActiveReviewSignoffAlignmentV1 {
+                aligned: true,
+                status_code: "ALIGNED".to_string(),
+            },
+            snapshot_digest: "activedigest111111".to_string(),
+        }
+    }
+
+    fn signoff(decision: SignoffDecisionStateV1) -> OperatorSignoffDecisionV1 {
+        OperatorSignoffDecisionV1 {
+            schema_version: 1,
+            decision,
+            supported_slot_set_digest: "slotset1".to_string(),
+            policy_graph_digest_prefix: "policy1".to_string(),
+            manifest_digest_prefix: "manifest1".to_string(),
+            evidence_snapshot_digest_prefix: prefix16("snapshotdigest111111"),
+            active_review_snapshot_digest_prefix: Some(prefix16("activedigest111111")),
+            operator_report_digest_prefix: prefix16("reportdigest111111"),
+            gate_report_digests: crate::operator_signoff::GateReportDigestsV1 {
+                v0: "g0".to_string(),
+                v1: "g1".to_string(),
+                v2: "g2".to_string(),
+                v3: "g3".to_string(),
+            },
+            reasons: Vec::new(),
+            remediation_codes: Vec::new(),
+            canonical_remediation_codes: Vec::new(),
+            decision_digest: "decisiondigest111111".to_string(),
+        }
+    }
+
+    fn operator_report() -> ConsolidatedOperatorReportV1 {
+        ConsolidatedOperatorReportV1 {
+            schema_version: 1,
+            generated_at: 1,
+            overall_status: crate::operator_report::OperatorStatus::Ok,
+            run_id: Some("run".to_string()),
+            policy_graph_digest_prefix: Some("policy1".to_string()),
+            manifest_digest_prefix: Some("manifest1".to_string()),
+            sections: crate::operator_report::OperatorSectionsV1 {
+                health_section: crate::operator_report::NormalizedHealthSection {
+                    status: crate::operator_report::OperatorStatus::Ok,
+                    strict_mode_enabled: Some(true),
+                    last_tick_age_ms: Some(1),
+                    emergency_active: Some(false),
+                    evidence_digest_prefixes: Vec::new(),
+                    remediation_codes: Vec::new(),
+                },
+                eligibility_section: crate::operator_report::NormalizedEligibilitySection {
+                    status: crate::operator_report::OperatorStatus::Ok,
+                    slots: Vec::new(),
+                    evidence_digest_prefixes: Vec::new(),
+                    remediation_codes: Vec::new(),
+                },
+                drift_section: crate::operator_report::NormalizedDriftSection {
+                    status: crate::operator_report::OperatorStatus::Ok,
+                    slots: Vec::new(),
+                    evidence_digest_prefixes: Vec::new(),
+                    remediation_codes: Vec::new(),
+                },
+                alerts_section: crate::operator_report::NormalizedAlertsSection {
+                    status: crate::operator_report::OperatorStatus::Ok,
+                    active_alert_count: 0,
+                    top_active_alerts: Vec::new(),
+                    evidence_digest_prefixes: Vec::new(),
+                    remediation_codes: Vec::new(),
+                },
+                strict_section: crate::operator_report::NormalizedStrictSection {
+                    status: crate::operator_report::OperatorStatus::Ok,
+                    strict_status: crate::StrictEvidenceStatusV1::Pass,
+                    primary_denial_code: None,
+                    strict_report_digest_prefix: None,
+                    failing_check_ids: Vec::new(),
+                    evidence_digest_prefixes: Vec::new(),
+                    remediation_codes: Vec::new(),
+                },
+                gates_section: crate::operator_report::NormalizedGatesSection {
+                    status: crate::operator_report::OperatorStatus::Ok,
+                    gates: Vec::new(),
+                    evidence_digest_prefixes: Vec::new(),
+                    remediation_codes: Vec::new(),
+                },
+            },
+            remediation_codes: Vec::new(),
+            canonical_remediation_codes: Vec::new(),
+            report_digest: "reportdigest111111".to_string(),
+        }
+    }
+
+    #[test]
+    fn packet_is_deterministic() {
+        let p1 = reduce_review_packet(
+            Some(snapshot()),
+            Some(active_snapshot()),
+            Some(signoff(SignoffDecisionStateV1::ReadyForActiveReview)),
+            Some(operator_report()),
+            Some(pass_v0()),
+            Some(pass_v1()),
+            Some(pass_v2()),
+            Some(pass_v3()),
+            Some(pass_v4()),
+            None,
+        )
+        .expect("packet");
+        let p2 = reduce_review_packet(
+            Some(snapshot()),
+            Some(active_snapshot()),
+            Some(signoff(SignoffDecisionStateV1::ReadyForActiveReview)),
+            Some(operator_report()),
+            Some(pass_v0()),
+            Some(pass_v1()),
+            Some(pass_v2()),
+            Some(pass_v3()),
+            Some(pass_v4()),
+            None,
+        )
+        .expect("packet");
+        assert_eq!(p1.review_stage, OperatorReviewStageV1::ReviewActiveReady);
+        assert_eq!(p1.packet_digest, p2.packet_digest);
+        let slot_ids = p1
+            .supported_slots
+            .iter()
+            .map(|slot| slot.slot_id.clone())
+            .collect::<Vec<_>>();
+        assert_eq!(slot_ids, vec!["sae".to_string(), "world".to_string()]);
+    }
+
+    #[test]
+    fn shadow_ready_stage_when_not_active() {
+        let mut active = active_snapshot();
+        active
+            .slots
+            .iter_mut()
+            .for_each(|slot| slot.active_eligible = false);
+        active.overall_review_status = ActiveReviewOverallStatusV1::NoneReviewable;
+        let packet = reduce_review_packet(
+            Some(snapshot()),
+            Some(active),
+            Some(signoff(SignoffDecisionStateV1::ReadyForShadow)),
+            Some(operator_report()),
+            Some(pass_v0()),
+            Some(pass_v1()),
+            Some(pass_v2()),
+            Some(pass_v3()),
+            Some(pass_v4()),
+            None,
+        )
+        .expect("packet");
+        assert_eq!(
+            packet.review_stage,
+            OperatorReviewStageV1::ReviewShadowReady
+        );
+    }
+
+    #[test]
+    fn blocked_on_missing_artifact() {
+        let packet = reduce_review_packet(
+            None,
+            Some(active_snapshot()),
+            Some(signoff(SignoffDecisionStateV1::ReadyForActiveReview)),
+            Some(operator_report()),
+            Some(pass_v0()),
+            Some(pass_v1()),
+            Some(pass_v2()),
+            Some(pass_v3()),
+            Some(pass_v4()),
+            None,
+        )
+        .expect("packet");
+        assert_eq!(packet.review_stage, OperatorReviewStageV1::ReviewBlocked);
+        assert!(packet
+            .blocking_codes
+            .contains(&"REVIEW_BLOCK_BACKEND_EVIDENCE_SNAPSHOT_MISSING".to_string()));
+    }
+
+    #[test]
+    fn blocked_on_digest_mismatch() {
+        let mut bad_signoff = signoff(SignoffDecisionStateV1::ReadyForActiveReview);
+        bad_signoff.supported_slot_set_digest = "other".to_string();
+        let packet = reduce_review_packet(
+            Some(snapshot()),
+            Some(active_snapshot()),
+            Some(bad_signoff),
+            Some(operator_report()),
+            Some(pass_v0()),
+            Some(pass_v1()),
+            Some(pass_v2()),
+            Some(pass_v3()),
+            Some(pass_v4()),
+            None,
+        )
+        .expect("packet");
+        assert_eq!(packet.review_stage, OperatorReviewStageV1::ReviewBlocked);
+        assert!(packet
+            .blocking_codes
+            .contains(&"REVIEW_BLOCK_DIGEST_SLOT_SET_MISMATCH".to_string()));
+    }
+
+    #[test]
+    fn blocked_on_ambiguous_slot_context() {
+        let mut snap = snapshot();
+        snap.slots = vec![snap.slots[0].clone()];
+        let packet = reduce_review_packet(
+            Some(snap),
+            Some(active_snapshot()),
+            Some(signoff(SignoffDecisionStateV1::ReadyForActiveReview)),
+            Some(operator_report()),
+            Some(pass_v0()),
+            Some(pass_v1()),
+            Some(pass_v2()),
+            Some(pass_v3()),
+            Some(pass_v4()),
+            None,
+        )
+        .expect("packet");
+        assert_eq!(packet.review_stage, OperatorReviewStageV1::ReviewBlocked);
+        assert!(packet
+            .blocking_codes
+            .contains(&"REVIEW_BLOCK_SLOT_SET_AMBIGUOUS".to_string()));
+    }
+
+    #[test]
+    fn blocked_on_gate_failure() {
+        let packet = reduce_review_packet(
+            Some(snapshot()),
+            Some(active_snapshot()),
+            Some(signoff(SignoffDecisionStateV1::ReadyForActiveReview)),
+            Some(operator_report()),
+            Some(V0GateReportV1 {
+                schema_version: 1,
+                overall_status: V0GateOverallStatus::Fail,
+                checks: Vec::new(),
+            }),
+            Some(pass_v1()),
+            Some(pass_v2()),
+            Some(pass_v3()),
+            Some(pass_v4()),
+            None,
+        )
+        .expect("packet");
+        assert_eq!(packet.review_stage, OperatorReviewStageV1::ReviewBlocked);
+        assert!(packet
+            .blocking_codes
+            .contains(&"REVIEW_BLOCK_GATE_V0".to_string()));
+    }
+}

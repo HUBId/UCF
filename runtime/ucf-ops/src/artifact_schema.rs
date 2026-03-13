@@ -64,7 +64,7 @@ struct ArtifactSpec {
     enum_names: &'static [&'static str],
 }
 
-const ARTIFACT_SPECS: [ArtifactSpec; 12] = [
+const ARTIFACT_SPECS: [ArtifactSpec; 13] = [
     ArtifactSpec {
         artifact_id: "active_review_snapshot_v1",
         file_rel: "runtime/ucf-ops/src/models_lifecycle.rs",
@@ -112,6 +112,12 @@ const ARTIFACT_SPECS: [ArtifactSpec; 12] = [
         file_rel: "runtime/ucf-ops/src/operator_signoff.rs",
         type_name: "OperatorSignoffDecisionV1",
         enum_names: &["SignoffDecisionStateV1"],
+    },
+    ArtifactSpec {
+        artifact_id: "operator_review_packet_v1",
+        file_rel: "runtime/ucf-ops/src/operator_review_packet.rs",
+        type_name: "OperatorReviewPacketV1",
+        enum_names: &["OperatorReviewStageV1"],
     },
     ArtifactSpec {
         artifact_id: "strict_failure_report_v3",
@@ -583,6 +589,7 @@ mod tests {
                 "remediation_consistency_check_v1",
                 "operator_report_v1",
                 "operator_signoff_v1",
+                "operator_review_packet_v1",
                 "strict_failure_report_v3",
                 "v3_gate_report_v1",
                 "v4_gate_report_v1",

@@ -74,3 +74,14 @@ A slot is reviewable iff:
 ## Burn state visibility (v5)
 
 Active-review snapshot now carries the chosen second-slot Burn resolution explicitly (supported-for-shadow-compare vs closed-unsupported), without granting any new active eligibility.
+
+## Top-level operator entrypoint
+
+`active_review_snapshot_v1` bleibt die kanonische aktive Review-Evidenz.
+Die oberste Operator-Einstiegsfläche für korrelierte Prüfung ist jedoch:
+
+```bash
+cargo run -p ucf-ops -- operator review-packet --out ./out/operator_review_packet.json
+```
+
+Siehe `docs/operator_review_packet_v5.md`.
