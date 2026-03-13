@@ -44,6 +44,32 @@ jobs:
         run: cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json
       - name: Artifact schema snapshot check (blocking)
         run: cargo run -p ucf-ops -- spec artifact-schemas-check --out ./out/artifact_schema_check.json
+      - name: Active review snapshot smoke
+        run: cargo run -p ucf-ops -- models active-review-snapshot --out ./out/active_review_snapshot.json
+      - name: Backend resolution smoke (optional second-slot path)
+        shell: bash
+        run: |
+          slot=$(cargo run -p ucf-ops -- v4 gate --out ./out/v4_gate_report_for_slot.json 2>/dev/null >/dev/null || true; [ -f docs/sae_burn_resolution_v5.md ] && echo sae || echo ssm)
+          cargo run -p ucf-ops -- models backend-resolution --slot "$slot" --out ./out/backend_resolution_${slot}.json || echo "backend_resolution=skip optional_second_slot_path_unavailable"
+      - name: Repro pack build+verify smoke
+        shell: bash
+        run: |
+          cargo run -p ucf-ops -- bringup --scenario fixtures/e2e/v0_flow_a.json --ticks 16 --workdir ./.ucf_portability_smoke --out ./out/portability_smoke_bringup
+          run_json=$(ls -1 ./.ucf_portability_smoke/ess/runs/*.json | sort | tail -n1)
+          run_id=$(basename "$run_json" .json)
+          cargo run -p ucf-ops -- repro pack --run "$run_id" --out ./out/repro_portability.zip --workdir ./.ucf_portability_smoke
+          cargo run -p ucf-ops -- repro verify --pack ./out/repro_portability.zip --out ./out/repro_verify_portability.json --workdir ./.ucf_portability_smoke
+      - name: Bugkit build smoke
+        shell: bash
+        run: |
+          run_json=$(ls -1 ./.ucf_portability_smoke/ess/runs/*.json | sort | tail -n1)
+          run_id=$(basename "$run_json" .json)
+          mkdir -p ./.ucf_portability_smoke/out/$run_id
+          cp ./out/portability_smoke_bringup/run_metadata.json ./.ucf_portability_smoke/out/$run_id/run_metadata.json
+          cp ./out/portability_smoke_bringup/metrics_summary.json ./.ucf_portability_smoke/out/$run_id/metrics_summary.json
+          cargo run -p ucf-ops -- bugkit build --run "$run_id" --out ./out/bugkit_portability.zip --workdir ./.ucf_portability_smoke
+      - name: Remediation consistency smoke
+        run: cargo run -p ucf-ops -- remediation-consistency-check --out ./out/remediation_consistency_portability.json
       - name: Backend evidence snapshot smoke
         run: cargo run -p ucf-ops -- models evidence-snapshot --out ./out/backend_evidence_snapshot.json
       - name: Operator signoff smoke
@@ -114,6 +140,60 @@ jobs:
         run: cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json
       - name: Artifact schema snapshot check (blocking)
         run: cargo run -p ucf-ops -- spec artifact-schemas-check --out ./out/artifact_schema_check.json
+      - name: Active review snapshot smoke
+        run: cargo run -p ucf-ops -- models active-review-snapshot --out ./out/active_review_snapshot.json
+      - name: Backend resolution smoke (linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: cargo run -p ucf-ops -- models backend-resolution --slot sae --out ./out/backend_resolution_sae.json || echo "backend_resolution=skip optional_second_slot_path_unavailable"
+      - name: Backend resolution smoke (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cargo run -p ucf-ops -- models backend-resolution --slot sae --out ./out/backend_resolution_sae.json
+          if ($LASTEXITCODE -ne 0) { Write-Host "backend_resolution=skip optional_second_slot_path_unavailable"; exit 0 }
+      - name: Repro pack build+verify smoke (linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          cargo run -p ucf-ops -- bringup --scenario fixtures/e2e/v0_flow_a.json --ticks 16 --workdir ./.ucf_portability_smoke --out ./out/portability_smoke_bringup
+          run_json=$(ls -1 ./.ucf_portability_smoke/ess/runs/*.json | sort | tail -n1)
+          run_id=$(basename "$run_json" .json)
+          cargo run -p ucf-ops -- repro pack --run "$run_id" --out ./out/repro_portability.zip --workdir ./.ucf_portability_smoke
+          cargo run -p ucf-ops -- repro verify --pack ./out/repro_portability.zip --out ./out/repro_verify_portability.json --workdir ./.ucf_portability_smoke
+      - name: Repro pack build+verify smoke (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cargo run -p ucf-ops -- bringup --scenario fixtures/e2e/v0_flow_a.json --ticks 16 --workdir ./.ucf_portability_smoke --out ./out/portability_smoke_bringup
+          $run_json = Get-ChildItem ".\.ucf_portability_smoke\ess\runs\*.json" | Sort-Object Name | Select-Object -Last 1
+          if (-not $run_json) { throw "no run metadata json found under ./.ucf_portability_smoke/ess/runs" }
+          $run_id = [System.IO.Path]::GetFileNameWithoutExtension($run_json.Name)
+          cargo run -p ucf-ops -- repro pack --run $run_id --out ./out/repro_portability.zip --workdir ./.ucf_portability_smoke
+          cargo run -p ucf-ops -- repro verify --pack ./out/repro_portability.zip --out ./out/repro_verify_portability.json --workdir ./.ucf_portability_smoke
+      - name: Bugkit build smoke (linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          run_json=$(ls -1 ./.ucf_portability_smoke/ess/runs/*.json | sort | tail -n1)
+          run_id=$(basename "$run_json" .json)
+          mkdir -p ./.ucf_portability_smoke/out/$run_id
+          cp ./out/portability_smoke_bringup/run_metadata.json ./.ucf_portability_smoke/out/$run_id/run_metadata.json
+          cp ./out/portability_smoke_bringup/metrics_summary.json ./.ucf_portability_smoke/out/$run_id/metrics_summary.json
+          cargo run -p ucf-ops -- bugkit build --run "$run_id" --out ./out/bugkit_portability.zip --workdir ./.ucf_portability_smoke
+      - name: Bugkit build smoke (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $run_json = Get-ChildItem ".\.ucf_portability_smoke\ess\runs\*.json" | Sort-Object Name | Select-Object -Last 1
+          if (-not $run_json) { throw "no run metadata json found under ./.ucf_portability_smoke/ess/runs" }
+          $run_id = [System.IO.Path]::GetFileNameWithoutExtension($run_json.Name)
+          New-Item -ItemType Directory -Force -Path ".\.ucf_portability_smoke\out\$run_id" | Out-Null
+          Copy-Item "./out/portability_smoke_bringup/run_metadata.json" ".\.ucf_portability_smoke\out\$run_id\run_metadata.json"
+          Copy-Item "./out/portability_smoke_bringup/metrics_summary.json" ".\.ucf_portability_smoke\out\$run_id\metrics_summary.json"
+          cargo run -p ucf-ops -- bugkit build --run $run_id --out ./out/bugkit_portability.zip --workdir ./.ucf_portability_smoke
+      - name: Remediation consistency smoke
+        run: cargo run -p ucf-ops -- remediation-consistency-check --out ./out/remediation_consistency_portability.json
       - name: v0 gate (blocking)
         run: cargo run -p ucf-ops -- v0 gate --scenario fixtures/e2e/v0_flow_a.json --out ./out/v0_gate_report.json
       - name: v1 gate (blocking)

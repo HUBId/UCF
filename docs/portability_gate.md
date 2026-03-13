@@ -1,4 +1,4 @@
-# Portability Gate v4 Refresh (Linux + Windows)
+# Portability Gate v5 Refresh (Linux + Windows)
 
 `Portability Gate` blocks merges when core runtime/ops checks are not cross-platform safe.
 
@@ -41,7 +41,10 @@
      - `cargo run -p ucf-ops -- portability check --out ./out/portability.json`
      - `cargo run -p ucf-ops -- portability report --out ./out/portability_report.json`
 
-2. **v4 generation smoke checks (blocking unless explicitly optional)**
+2. **v5 generation smoke checks (blocking unless explicitly optional)**
+   - `models active-review-snapshot` and `models backend-resolution` must run in bounded offline mode (optional backend-resolution paths must SKIP cleanly).
+   - Enriched export smokes (`repro pack` + `repro verify`, `bugkit build`) must generate deterministic manifests with bounded fixtures and no payload/weight inclusion by default.
+   - `remediation-consistency-check` must pass and emit deterministic mismatch categories.
    - `models evidence-snapshot` must run in bounded offline mode and write deterministic JSON shape output.
    - `operator signoff` must produce deterministic signoff output and actionable remediation codes.
    - `docs remediation-codes` must match committed `docs/remediation_codes_v1.md`.
@@ -53,13 +56,22 @@
    - `audit net-deps` (Linux lane): hidden network dependency drift is blocked.
 
 4. **Docs consistency (via `docs lint --strict`)**
-   - Enforces v3 + v4 docs consistency and linkage.
+   - Enforces v3 + v4 + v5 docs consistency and linkage.
    - Enforces remediation registry doc freshness.
    - Enforces artifact schema snapshot freshness and deterministic drift reporting.
 
 5. **Consolidated portability summary (`portability report`)**
    - Orchestrates checks and writes `./out/portability_report.json`.
    - Emits explicit `PASS|FAIL|SKIP` per section.
+
+## v5 docs covered by portability/docs gates
+
+- `docs/active_review_snapshot_v5.md`
+- `docs/sae_burn_resolution_v5.md`
+- `docs/repro_pack.md`
+- `docs/bug_report_kit.md`
+- `docs/remediation_consistency_v5.md`
+- `docs/artifact_schema_snapshots.md`
 
 ## v4 docs covered by portability/docs gates
 
@@ -92,6 +104,18 @@ cargo run -p ucf-ops -- audit path-scan
 cargo run -p ucf-ops -- audit hardware-scan
 cargo run -p ucf-ops -- audit net-deps --out ./out/net_deps.json
 cargo run -p ucf-ops -- spec artifact-schemas-check --out ./out/artifact_schema_check.json
+cargo run -p ucf-ops -- models active-review-snapshot --out ./out/active_review_snapshot.json
+cargo run -p ucf-ops -- models backend-resolution --slot sae --out ./out/backend_resolution_sae.json || echo "backend_resolution=skip optional_second_slot_path_unavailable"
+cargo run -p ucf-ops -- bringup --scenario fixtures/e2e/v0_flow_a.json --ticks 16 --workdir ./.ucf_portability_smoke --out ./out/portability_smoke_bringup
+run_json=$(ls -1 ./.ucf_portability_smoke/ess/runs/*.json | sort | tail -n1)
+run_id=$(basename "$run_json" .json)
+cargo run -p ucf-ops -- repro pack --run "$run_id" --out ./out/repro_portability.zip --workdir ./.ucf_portability_smoke
+cargo run -p ucf-ops -- repro verify --pack ./out/repro_portability.zip --out ./out/repro_verify_portability.json --workdir ./.ucf_portability_smoke
+mkdir -p ./.ucf_portability_smoke/out/$run_id
+cp ./out/portability_smoke_bringup/run_metadata.json ./.ucf_portability_smoke/out/$run_id/run_metadata.json
+cp ./out/portability_smoke_bringup/metrics_summary.json ./.ucf_portability_smoke/out/$run_id/metrics_summary.json
+cargo run -p ucf-ops -- bugkit build --run "$run_id" --out ./out/bugkit_portability.zip --workdir ./.ucf_portability_smoke
+cargo run -p ucf-ops -- remediation-consistency-check --out ./out/remediation_consistency_portability.json
 cargo run -p ucf-ops -- models evidence-snapshot --out ./out/backend_evidence_snapshot.json
 cargo run -p ucf-ops -- operator signoff --out ./out/operator_signoff.json
 cargo run -p ucf-ops -- docs remediation-codes --out ./out/remediation_codes_v1.generated.md
@@ -106,6 +130,7 @@ cargo run -p ucf-ops -- portability check --out ./out/portability.json
 cargo run -p ucf-ops -- portability report --out ./out/portability_report.json
 ```
 
+
 ### Windows PowerShell
 
 ```powershell
@@ -114,6 +139,20 @@ cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json
 cargo run -p ucf-ops -- audit path-scan
 cargo run -p ucf-ops -- audit hardware-scan
 cargo run -p ucf-ops -- spec artifact-schemas-check --out ./out/artifact_schema_check.json
+cargo run -p ucf-ops -- models active-review-snapshot --out ./out/active_review_snapshot.json
+cargo run -p ucf-ops -- models backend-resolution --slot sae --out ./out/backend_resolution_sae.json
+if ($LASTEXITCODE -ne 0) { Write-Host "backend_resolution=skip optional_second_slot_path_unavailable"; $global:LASTEXITCODE = 0 }
+cargo run -p ucf-ops -- bringup --scenario fixtures/e2e/v0_flow_a.json --ticks 16 --workdir ./.ucf_portability_smoke --out ./out/portability_smoke_bringup
+$run_json = Get-ChildItem ".\.ucf_portability_smoke\ess\runs\*.json" | Sort-Object Name | Select-Object -Last 1
+if (-not $run_json) { throw "no run metadata json found under ./.ucf_portability_smoke/ess/runs" }
+$run_id = [System.IO.Path]::GetFileNameWithoutExtension($run_json.Name)
+cargo run -p ucf-ops -- repro pack --run $run_id --out ./out/repro_portability.zip --workdir ./.ucf_portability_smoke
+cargo run -p ucf-ops -- repro verify --pack ./out/repro_portability.zip --out ./out/repro_verify_portability.json --workdir ./.ucf_portability_smoke
+New-Item -ItemType Directory -Force -Path ".\.ucf_portability_smoke\out\$run_id" | Out-Null
+Copy-Item "./out/portability_smoke_bringup/run_metadata.json" ".\.ucf_portability_smoke\out\$run_id\run_metadata.json"
+Copy-Item "./out/portability_smoke_bringup/metrics_summary.json" ".\.ucf_portability_smoke\out\$run_id\metrics_summary.json"
+cargo run -p ucf-ops -- bugkit build --run $run_id --out ./out/bugkit_portability.zip --workdir ./.ucf_portability_smoke
+cargo run -p ucf-ops -- remediation-consistency-check --out ./out/remediation_consistency_portability.json
 cargo run -p ucf-ops -- models evidence-snapshot --out ./out/backend_evidence_snapshot.json
 cargo run -p ucf-ops -- operator signoff --out ./out/operator_signoff.json
 cargo run -p ucf-ops -- docs remediation-codes --out ./out/remediation_codes_v1.generated.md
@@ -127,6 +166,7 @@ cargo run -p ucf-ops -- operator report --out ./out/operator_report.json
 cargo run -p ucf-ops -- portability check --out ./out/portability.json
 cargo run -p ucf-ops -- portability report --out ./out/portability_report.json
 ```
+
 
 ## Common failures and remediation
 

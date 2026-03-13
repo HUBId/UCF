@@ -83,3 +83,13 @@ Modes:
 ## Report output
 
 When `--out` is provided, lint writes deterministic JSON with per-check status and remediation hints.
+
+
+9. **v5 docs linkage consistency**
+   - Requires presence and portability/docs linkage for:
+     - `docs/active_review_snapshot_v5.md`
+     - `docs/sae_burn_resolution_v5.md`
+     - `docs/repro_pack.md`
+     - `docs/bug_report_kit.md`
+     - `docs/remediation_consistency_v5.md`
+     - `docs/artifact_schema_snapshots.md`
