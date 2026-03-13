@@ -10,13 +10,14 @@ use ucf_ops::{
     event_id_for_decision, explain_tick, explain_why, export_bugreport,
     export_policy_key_registry_v1, exports_normalize_check, gateway_threat_test, goldens_generate,
     goldens_update, goldens_verify, goldens_verify_detailed, governance_surfaces_check,
-    hardware_scan, load_signoff_checklist, logs_prove, logs_verify_proof, metrics_snapshot,
-    metrics_summary, metrics_trend, migrate_config_v1, models_active_check, models_active_evidence,
-    models_active_review_snapshot, models_applied_scope_check, models_backend_resolution,
-    models_consistency_check, models_eligibility, models_evidence_snapshot, models_list,
-    models_probe, models_probe_slot, models_promote, models_recommend_rollback, models_rollback,
-    models_shadow_ready, models_stage, models_supported_set_apply, models_supported_set_review,
-    models_verify, models_verify_lifecycle, net_deps_audit, nightly_summarize, one_command_bringup,
+    hardware_scan, interop_consistency_matrix, load_signoff_checklist, logs_prove,
+    logs_verify_proof, metrics_snapshot, metrics_summary, metrics_trend, migrate_config_v1,
+    models_active_check, models_active_evidence, models_active_review_snapshot,
+    models_applied_scope_check, models_backend_resolution, models_consistency_check,
+    models_eligibility, models_evidence_snapshot, models_list, models_probe, models_probe_slot,
+    models_promote, models_recommend_rollback, models_rollback, models_shadow_ready, models_stage,
+    models_supported_set_apply, models_supported_set_review, models_verify,
+    models_verify_lifecycle, net_deps_audit, nightly_summarize, one_command_bringup,
     operator_report, operator_report_text, operator_review_packet, operator_review_packet_text,
     operator_signoff, operator_signoff_text, out_manifest, parse_duration_secs, parse_inject,
     parse_slot, path_scan, policy_diff, policy_explain, policy_validate, portability_check,
@@ -1993,6 +1994,38 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             println!("out={}", out.display());
             if report.summary.fail_count > 0 {
                 std::process::exit(2);
+            }
+        }
+        "interop" => {
+            let sub = args.get(2).map(String::as_str).unwrap_or("help");
+            match sub {
+                "consistency-matrix" => {
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/interop_consistency_matrix.json"));
+                    let report = interop_consistency_matrix(&workdir, &out)?;
+                    println!("status={:?}", report.summary.overall_status);
+                    if !report.match_rules.mismatch_categories.is_empty() {
+                        println!(
+                            "mismatch_categories={}",
+                            report
+                                .match_rules
+                                .mismatch_categories
+                                .iter()
+                                .map(|v| format!("{:?}", v))
+                                .collect::<Vec<_>>()
+                                .join(",")
+                        );
+                    }
+                    println!("out={}", out.display());
+                    if !matches!(
+                        report.summary.overall_status,
+                        ucf_ops::InteropOverallStatusV1::Pass
+                    ) {
+                        std::process::exit(2);
+                    }
+                }
+                _ => return Err("usage: ucf-ops interop consistency-matrix [--out <path>]".into()),
             }
         }
         "v0" => {

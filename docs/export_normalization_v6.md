@@ -57,3 +57,14 @@ Mismatch categories are bounded:
 - `INCLUDED_STATE_DRIFT`
 - `DIGEST_FIELD_DRIFT`
 - `LEGACY_EXPORT_LAYOUT`
+
+
+## Cross-surface interop proof (v6)
+
+Export normalization is additionally verified as part of the cross-surface interop matrix:
+
+```bash
+cargo run -p ucf-ops -- interop consistency-matrix --out ./out/interop_consistency_matrix.json
+```
+
+This enforces shared context/scope/digest/reference compatibility across gate, strict, snapshot, operator, and export surfaces.

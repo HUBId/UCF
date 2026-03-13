@@ -70,3 +70,14 @@ Optional:
 ## Export normalization v6
 
 This surface participates in canonical export normalization (shared `CanonicalExportArtifactRefV1` and `CanonicalExportContextV1`) and is validated via `cargo run -p ucf-ops -- exports normalize-check --out ./out/export_normalize_check.json`. See `docs/export_normalization_v6.md` for semantics.
+
+
+## Cross-surface interop proof (v6)
+
+`OperatorReviewPacketV1` is part of the canonical interop matrix and must align with gate/strict/snapshot/signoff/export references:
+
+```bash
+cargo run -p ucf-ops -- interop consistency-matrix --out ./out/interop_consistency_matrix.json
+```
+
+Key failures include `SNAPSHOT_REFERENCE_MISMATCH`, `REMEDIATION_MISMATCH`, and `REQUIRED_SURFACE_MISSING`.
