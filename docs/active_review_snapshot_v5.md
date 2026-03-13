@@ -85,3 +85,8 @@ cargo run -p ucf-ops -- operator review-packet --out ./out/operator_review_packe
 ```
 
 Siehe `docs/operator_review_packet_v5.md`.
+
+
+## v6 primary governance surface
+
+In v6 this snapshot is one of the two primary governance surfaces and is validated together with `BackendEvidenceSnapshotV1` via `GovernancePrimarySurfacesV1` before downstream governance consumers derive conclusions.

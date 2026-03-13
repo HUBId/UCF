@@ -57,3 +57,8 @@ Optional:
 - `REVIEW_BLOCKED`: erst Block-Codes beheben; Review nicht freigabefähig.
 - `REVIEW_SHADOW_READY`: Shadow-Review möglich, Active-Review noch nicht vollständig bereit.
 - `REVIEW_ACTIVE_READY`: Active-Review für menschliche Prüfung bereit; weiterhin kein Runtime-Control-Action.
+
+
+## v6 consumption preference
+
+`OperatorReviewPacketV1` now prefers validated governance primary surfaces (`BackendEvidenceSnapshotV1` + `AggregatedActiveReviewSnapshotV1`) via `GovernancePrimarySurfacesV1` and treats mismatches as fail-closed blockers.

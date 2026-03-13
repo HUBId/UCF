@@ -10,9 +10,9 @@ use crate::models_lifecycle::{
 use crate::operator_report::ConsolidatedOperatorReportV1;
 use crate::operator_signoff::{OperatorSignoffDecisionV1, SignoffDecisionStateV1};
 use crate::{
-    OpsError, V0GateOverallStatus, V0GateReportV1, V1GateOverallStatus, V1GateReportV1,
-    V2GateOverallStatus, V2GateReportV1, V3GateOverallStatus, V3GateReportV1, V4GateOverallStatus,
-    V4GateReportV1,
+    validate_governance_primary_surfaces_optional, GovernancePrimarySurfacesV1, OpsError,
+    V0GateOverallStatus, V0GateReportV1, V1GateOverallStatus, V1GateReportV1, V2GateOverallStatus,
+    V2GateReportV1, V3GateOverallStatus, V3GateReportV1, V4GateOverallStatus, V4GateReportV1,
 };
 
 const CODE_CAP: usize = 12;
@@ -133,9 +133,16 @@ pub fn operator_review_packet(
         })
     });
 
+    let governance_surfaces = validate_governance_primary_surfaces_optional(
+        backend_snapshot.as_ref(),
+        active_review.as_ref(),
+    )
+    .ok();
+
     let packet = reduce_review_packet(
         backend_snapshot,
         active_review,
+        governance_surfaces,
         signoff,
         operator_report,
         gate_v0,
@@ -184,6 +191,7 @@ pub fn operator_review_packet_text(packet: &OperatorReviewPacketV1) -> String {
 fn reduce_review_packet(
     backend_snapshot: Option<BackendEvidenceSnapshotV1>,
     active_review: Option<AggregatedActiveReviewSnapshotV1>,
+    governance_surfaces: Option<GovernancePrimarySurfacesV1>,
     signoff: Option<OperatorSignoffDecisionV1>,
     operator_report: Option<ConsolidatedOperatorReportV1>,
     gate_v0: Option<V0GateReportV1>,
@@ -234,6 +242,11 @@ fn reduce_review_packet(
             );
         }
     };
+
+    if governance_surfaces.is_none() {
+        blocking.insert("REVIEW_BLOCK_GOVERNANCE_SURFACES_MISMATCH".to_string());
+        remediation.insert("run_governance_surfaces_check".to_string());
+    }
 
     let signoff = match signoff {
         Some(signoff) => signoff,
@@ -299,16 +312,12 @@ fn reduce_review_packet(
         &mut remediation,
     );
 
-    if active.supported_slot_set_digest != snapshot.supported_slot_set_digest
-        || signoff.supported_slot_set_digest != snapshot.supported_slot_set_digest
-    {
+    if signoff.supported_slot_set_digest != snapshot.supported_slot_set_digest {
         blocking.insert("REVIEW_BLOCK_DIGEST_SLOT_SET_MISMATCH".to_string());
         remediation.insert("rerun_operator_artifacts".to_string());
     }
 
-    if active.policy_graph_digest_prefix != snapshot.policy_graph_digest_prefix
-        || signoff.policy_graph_digest_prefix != snapshot.policy_graph_digest_prefix
-        || active.manifest_digest_prefix != snapshot.manifest_digest_prefix
+    if signoff.policy_graph_digest_prefix != snapshot.policy_graph_digest_prefix
         || signoff.manifest_digest_prefix != snapshot.manifest_digest_prefix
     {
         blocking.insert("REVIEW_BLOCK_DIGEST_CONTEXT_MISMATCH".to_string());
@@ -723,6 +732,7 @@ mod tests {
         BackendEvidenceSlotSnapshotV1, BackendSupportMatrixV1, BackendSupportStateV1,
         BurnResolutionStatusV1, DriftStatusV1,
     };
+    use crate::validate_governance_primary_surfaces;
 
     fn pass_v0() -> V0GateReportV1 {
         V0GateReportV1 {
@@ -935,11 +945,19 @@ mod tests {
         }
     }
 
+    fn governance(
+        snapshot: &BackendEvidenceSnapshotV1,
+        active: &AggregatedActiveReviewSnapshotV1,
+    ) -> GovernancePrimarySurfacesV1 {
+        validate_governance_primary_surfaces(snapshot, active).expect("governance")
+    }
+
     #[test]
     fn packet_is_deterministic() {
         let p1 = reduce_review_packet(
             Some(snapshot()),
             Some(active_snapshot()),
+            Some(governance(&snapshot(), &active_snapshot())),
             Some(signoff(SignoffDecisionStateV1::ReadyForActiveReview)),
             Some(operator_report()),
             Some(pass_v0()),
@@ -953,6 +971,7 @@ mod tests {
         let p2 = reduce_review_packet(
             Some(snapshot()),
             Some(active_snapshot()),
+            Some(governance(&snapshot(), &active_snapshot())),
             Some(signoff(SignoffDecisionStateV1::ReadyForActiveReview)),
             Some(operator_report()),
             Some(pass_v0()),
@@ -983,7 +1002,8 @@ mod tests {
         active.overall_review_status = ActiveReviewOverallStatusV1::NoneReviewable;
         let packet = reduce_review_packet(
             Some(snapshot()),
-            Some(active),
+            Some(active.clone()),
+            Some(governance(&snapshot(), &active)),
             Some(signoff(SignoffDecisionStateV1::ReadyForShadow)),
             Some(operator_report()),
             Some(pass_v0()),
@@ -1005,6 +1025,7 @@ mod tests {
         let packet = reduce_review_packet(
             None,
             Some(active_snapshot()),
+            Some(governance(&snapshot(), &active_snapshot())),
             Some(signoff(SignoffDecisionStateV1::ReadyForActiveReview)),
             Some(operator_report()),
             Some(pass_v0()),
@@ -1028,6 +1049,7 @@ mod tests {
         let packet = reduce_review_packet(
             Some(snapshot()),
             Some(active_snapshot()),
+            Some(governance(&snapshot(), &active_snapshot())),
             Some(bad_signoff),
             Some(operator_report()),
             Some(pass_v0()),
@@ -1051,6 +1073,7 @@ mod tests {
         let packet = reduce_review_packet(
             Some(snap),
             Some(active_snapshot()),
+            Some(governance(&snapshot(), &active_snapshot())),
             Some(signoff(SignoffDecisionStateV1::ReadyForActiveReview)),
             Some(operator_report()),
             Some(pass_v0()),
@@ -1072,6 +1095,7 @@ mod tests {
         let packet = reduce_review_packet(
             Some(snapshot()),
             Some(active_snapshot()),
+            Some(governance(&snapshot(), &active_snapshot())),
             Some(signoff(SignoffDecisionStateV1::ReadyForActiveReview)),
             Some(operator_report()),
             Some(V0GateReportV1 {

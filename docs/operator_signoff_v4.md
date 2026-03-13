@@ -89,3 +89,8 @@ cargo run -p ucf-ops -- operator review-packet --out ./out/operator_review_packe
 ```
 
 Siehe `docs/operator_review_packet_v5.md`.
+
+
+## v6 consumption preference
+
+`OperatorSignoffDecisionV1` now prefers validated governance primary surfaces (`BackendEvidenceSnapshotV1` + `AggregatedActiveReviewSnapshotV1`) so signoff and review packet share the same primary snapshot worldview.

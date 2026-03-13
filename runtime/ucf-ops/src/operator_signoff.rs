@@ -7,7 +7,8 @@ use serde::{Deserialize, Serialize};
 use crate::operator_report::{ConsolidatedOperatorReportV1, OperatorStatus};
 use crate::remediation::merge_canonical_remediations;
 use crate::{
-    operator_block_from_strict, resolve_strict_evidence, AggregatedActiveReviewSnapshotV1,
+    operator_block_from_strict, resolve_strict_evidence,
+    validate_governance_primary_surfaces_optional, AggregatedActiveReviewSnapshotV1,
     BackendEvidenceSnapshotV1, GateStatus, OpsError, StrictEvidenceContextV1,
     StrictEvidenceSnapshotV1, StrictEvidenceStatusV1, V0GateOverallStatus, V0GateReportV1,
     V1GateOverallStatus, V1GateReportV1, V2GateOverallStatus, V2GateReportV1, V3GateOverallStatus,
@@ -142,6 +143,12 @@ pub fn operator_signoff(
     let v3 =
         maybe_read_json::<V3GateReportV1>(&discover_report(&out_root, "v3_gate_report.json", args));
 
+    let governance_surfaces_ok = validate_governance_primary_surfaces_optional(
+        snapshot.as_ref(),
+        active_review_snapshot.as_ref(),
+    )
+    .is_ok();
+
     let policy = SignoffPolicyV1::from_profile(&args.profile);
     let strict_snapshot = resolve_strict_evidence(
         &out_root,
@@ -170,7 +177,7 @@ pub fn operator_signoff(
                 .map(|s| s.supported_slot_set_digest.clone()),
         },
     );
-    let decision = reduce_signoff(SignoffReductionInputs {
+    let mut decision = reduce_signoff(SignoffReductionInputs {
         snapshot: snapshot.as_ref(),
         operator: operator.as_ref(),
         gates: GateInputs { v0, v1, v2, v3 },
@@ -178,6 +185,35 @@ pub fn operator_signoff(
         active_review_snapshot: active_review_snapshot.as_ref(),
         policy: &policy,
     })?;
+
+    if !governance_surfaces_ok {
+        decision.decision = SignoffDecisionStateV1::NotReady;
+        if !decision
+            .reasons
+            .iter()
+            .any(|r| r == "SIGNOFF_BLOCK_GOVERNANCE_SURFACES_MISMATCH")
+        {
+            decision
+                .reasons
+                .push("SIGNOFF_BLOCK_GOVERNANCE_SURFACES_MISMATCH".to_string());
+            decision.reasons.sort();
+            decision.reasons.dedup();
+        }
+        if !decision
+            .remediation_codes
+            .iter()
+            .any(|r| r == "run_governance_surfaces_check")
+        {
+            decision
+                .remediation_codes
+                .push("run_governance_surfaces_check".to_string());
+            decision.remediation_codes.sort();
+            decision.remediation_codes.dedup();
+        }
+        decision.canonical_remediation_codes =
+            merge_canonical_remediations(decision.remediation_codes.iter(), CODE_CAP);
+        decision.decision_digest = decision_digest(&decision)?;
+    }
 
     if let Some(parent) = out.parent() {
         fs::create_dir_all(parent)?;
@@ -292,9 +328,18 @@ fn reduce_signoff(
     }
 
     let supported_slots = &snapshot.slots;
-    let shadow_ready = supported_slots
-        .iter()
-        .all(|slot| slot.readiness.probe_ready && slot.readiness.shadow_ready);
+    let shadow_ready = active_review_snapshot
+        .filter(|r| r.supported_slot_set_digest == snapshot.supported_slot_set_digest)
+        .map(|r| {
+            r.slots
+                .iter()
+                .all(|slot| slot.probe_ready && slot.shadow_ready)
+        })
+        .unwrap_or_else(|| {
+            supported_slots
+                .iter()
+                .all(|slot| slot.readiness.probe_ready && slot.readiness.shadow_ready)
+        });
     if !shadow_ready {
         reasons.insert("SIGNOFF_BLOCK_SHADOW_NOT_READY".to_string());
         remediation.insert("run_models_eligibility".to_string());
