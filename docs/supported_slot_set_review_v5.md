@@ -46,3 +46,9 @@ cargo run -p ucf-ops -- models supported-set-review --out ./out/supported_set_re
 
 - `decision=FREEZE`: current supported real-slot set remains authoritative; no expansion is justified yet.
 - `decision=EXPAND_BY_ONE`: exactly one candidate is governance-approved for potential later implementation work, but runtime support remains unchanged until explicitly implemented.
+
+
+## Application handoff (v6)
+
+`SupportedRealSlotSetPolicyV2` is a review policy artifact, not the applied state.
+Use `supported-set-apply` to produce `SupportedRealSlotSetV2` as the canonical applied scope artifact consumed by downstream governance surfaces.

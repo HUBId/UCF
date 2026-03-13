@@ -34,6 +34,7 @@ const ACTIVE_REVIEW_EVIDENCE_SCHEMA_VERSION: u16 = 1;
 const ACTIVE_REVIEW_REMEDIATION_MAX: usize = 4;
 const SUPPORTED_REAL_SLOT_SET_VERSION: &str = "v3_supported_real_slots_max2";
 const SUPPORTED_REAL_SLOT_SET_POLICY_V2_SCHEMA_VERSION: u16 = 2;
+const SUPPORTED_REAL_SLOT_SET_V2_SCHEMA_VERSION: u16 = 2;
 const SLOT_EXPANSION_ELIGIBILITY_SCHEMA_VERSION: u16 = 1;
 const SLOT_SET_MAX: usize = 2;
 const PROBE_OUTPUT_CAP: usize = 8;
@@ -143,6 +144,70 @@ pub struct SupportedRealSlotSetV1 {
     pub slots: Vec<String>,
     pub source: String,
     pub set_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum SupportedRealSlotSetExecutionDecisionV2 {
+    Frozen,
+    Expanded,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SupportedRealSlotSetV2 {
+    pub schema_version: u16,
+    pub slots: Vec<String>,
+    pub source_policy_digest_prefix: String,
+    pub decision: SupportedRealSlotSetExecutionDecisionV2,
+    pub previous_set_digest_prefix: String,
+    pub set_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum SupportedSetExecutionDeniedCodeV1 {
+    SupportedSetExecutionDeniedStalePolicy,
+    SupportedSetExecutionDeniedIncompleteScaffold,
+    SupportedSetExecutionDeniedAmbiguousSlot,
+    SupportedSetExecutionDeniedScopeMismatch,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SupportedSetExecutionDeniedV1 {
+    pub code: SupportedSetExecutionDeniedCodeV1,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SupportedSetFreezeRecordV1 {
+    pub schema_version: u16,
+    pub previous_set_digest: String,
+    pub resulting_set_digest: String,
+    pub reason_codes: Vec<String>,
+    pub policy_digest_prefix: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SupportedSetExpansionRecordV1 {
+    pub schema_version: u16,
+    pub previous_set_digest: String,
+    pub resulting_set_digest: String,
+    pub added_slot_id: String,
+    pub policy_digest_prefix: String,
+    pub evidence_summary_digests: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SupportedSetApplyReportV1 {
+    pub schema_version: u16,
+    pub previous_slots: Vec<String>,
+    pub resulting_slots: Vec<String>,
+    pub decision: SupportedRealSlotSetExecutionDecisionV2,
+    pub denial_code: Option<SupportedSetExecutionDeniedCodeV1>,
+    pub rationale_codes: Vec<String>,
+    pub applied_set: SupportedRealSlotSetV2,
+    pub freeze_record: Option<SupportedSetFreezeRecordV1>,
+    pub expansion_record: Option<SupportedSetExpansionRecordV1>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -946,7 +1011,7 @@ pub fn models_consistency_check(
     workdir: &Path,
     out: &Path,
 ) -> Result<ModelsConsistencyCheckReportV1, OpsError> {
-    let slot_set = supported_real_slot_set_v1()?;
+    let slot_set = current_supported_real_slot_set(workdir)?;
     let manifest = load_or_init_manifest()?;
     let mut mismatch = BTreeSet::new();
     let mut checked_slots = Vec::new();
@@ -1921,7 +1986,7 @@ pub fn models_evidence_snapshot(
     requested_slot: Option<ModelSlot>,
     run_id: Option<&str>,
 ) -> Result<BackendEvidenceSnapshotV1, OpsError> {
-    let slot_set = supported_real_slot_set_v1()?;
+    let slot_set = current_supported_real_slot_set(workdir)?;
     let manifest = load_or_init_manifest()?;
     let slots = supported_real_slots(requested_slot)?;
     let second_slot = crate::detect_second_slot(workdir).ok();
@@ -2428,6 +2493,295 @@ pub fn models_supported_set_review(
     Ok(report)
 }
 
+pub fn models_supported_set_apply(
+    workdir: &Path,
+    out: &Path,
+) -> Result<SupportedSetApplyReportV1, OpsError> {
+    let policy = load_latest_supported_set_policy_v2(workdir)?;
+    let previous_set = supported_real_slot_set_v1()?;
+    let candidates = policy
+        .candidate_slots_considered
+        .iter()
+        .map(|slot_id| {
+            evaluate_slot_expansion_candidate(
+                slot_id,
+                &previous_set.slots.iter().cloned().collect::<BTreeSet<_>>(),
+                SLOT_SET_MAX + 1,
+            )
+        })
+        .collect::<Vec<_>>();
+
+    let execution = validate_supported_set_execution(&policy, &previous_set, &candidates);
+    let (applied_set, denial_code, mut rationale_codes) = match execution {
+        Ok(applied) => (applied, None, policy.rationale_codes.clone()),
+        Err(denied) => {
+            let frozen = build_supported_real_slot_set_v2(
+                previous_set.slots.clone(),
+                &policy.policy_digest,
+                &previous_set.set_digest,
+                SupportedRealSlotSetExecutionDecisionV2::Frozen,
+            );
+            let mut reasons = policy.rationale_codes.clone();
+            reasons.push(format!("{:?}", denied.code));
+            (frozen, Some(denied.code), reasons)
+        }
+    };
+    rationale_codes.sort();
+    rationale_codes.dedup();
+
+    let freeze_record = if applied_set.decision == SupportedRealSlotSetExecutionDecisionV2::Frozen {
+        Some(SupportedSetFreezeRecordV1 {
+            schema_version: 1,
+            previous_set_digest: previous_set.set_digest.clone(),
+            resulting_set_digest: applied_set.set_digest.clone(),
+            reason_codes: rationale_codes.clone(),
+            policy_digest_prefix: prefix_hex(&policy.policy_digest, 16),
+        })
+    } else {
+        None
+    };
+
+    let expansion_record = if applied_set.decision
+        == SupportedRealSlotSetExecutionDecisionV2::Expanded
+    {
+        let added_slot = applied_set
+            .slots
+            .iter()
+            .find(|slot| !previous_set.slots.contains(*slot))
+            .cloned()
+            .ok_or_else(|| OpsError::Invalid("SUPPORTED_SET_EXPANSION_MISSING_SLOT".to_string()))?;
+        let evidence_summary_digests = candidates
+            .iter()
+            .filter(|candidate| candidate.slot_id == added_slot)
+            .map(slot_expansion_candidate_digest)
+            .collect::<Vec<_>>();
+        Some(SupportedSetExpansionRecordV1 {
+            schema_version: 1,
+            previous_set_digest: previous_set.set_digest.clone(),
+            resulting_set_digest: applied_set.set_digest.clone(),
+            added_slot_id: added_slot,
+            policy_digest_prefix: prefix_hex(&policy.policy_digest, 16),
+            evidence_summary_digests,
+        })
+    } else {
+        None
+    };
+
+    let report = SupportedSetApplyReportV1 {
+        schema_version: 1,
+        previous_slots: previous_set.slots,
+        resulting_slots: applied_set.slots.clone(),
+        decision: applied_set.decision.clone(),
+        denial_code,
+        rationale_codes,
+        applied_set: applied_set.clone(),
+        freeze_record,
+        expansion_record,
+    };
+    if let Some(parent) = out.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(out, serde_json::to_vec_pretty(&report)?)?;
+    let canonical = workdir
+        .join("out")
+        .join("supported_real_slot_set_applied_v2.json");
+    if let Some(parent) = canonical.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(canonical, serde_json::to_vec_pretty(&applied_set)?)?;
+    Ok(report)
+}
+
+fn load_latest_supported_set_policy_v2(
+    workdir: &Path,
+) -> Result<SupportedRealSlotSetPolicyV2, OpsError> {
+    let path = workdir.join("out").join("supported_set_review.json");
+    let body = fs::read_to_string(&path).map_err(|_| {
+        OpsError::Invalid(
+            "SUPPORTED_SET_POLICY_V2_MISSING: run `ucf-ops models supported-set-review` first"
+                .to_string(),
+        )
+    })?;
+    let report: SupportedSetReviewReportV1 = serde_json::from_str(&body).map_err(|_| {
+        OpsError::Invalid(
+            "SUPPORTED_SET_POLICY_V2_INVALID: unable to decode review report".to_string(),
+        )
+    })?;
+    Ok(report.policy)
+}
+
+fn slot_expansion_candidate_digest(candidate: &SlotExpansionEligibilityV1) -> String {
+    let mut digest_source = Vec::new();
+    digest_source.extend_from_slice(candidate.slot_id.as_bytes());
+    digest_source.extend_from_slice(if candidate.trait_contract_exists {
+        b"1"
+    } else {
+        b"0"
+    });
+    digest_source.extend_from_slice(if candidate.probe_path_exists_or_reusable {
+        b"1"
+    } else {
+        b"0"
+    });
+    digest_source.extend_from_slice(if candidate.shadow_path_exists_or_trivially_attachable {
+        b"1"
+    } else {
+        b"0"
+    });
+    digest_source.extend_from_slice(if candidate.compare_window_normalizable {
+        b"1"
+    } else {
+        b"0"
+    });
+    digest_source.extend_from_slice(
+        if candidate.strict_evidence_plumbing_representable_without_arch_fork {
+            b"1"
+        } else {
+            b"0"
+        },
+    );
+    digest_source.extend_from_slice(if candidate.tiny_fixture_path_feasible {
+        b"1"
+    } else {
+        b"0"
+    });
+    sha256_hex(&digest_source)
+}
+
+fn validate_supported_set_execution(
+    policy: &SupportedRealSlotSetPolicyV2,
+    previous_set: &SupportedRealSlotSetV1,
+    candidates: &[SlotExpansionEligibilityV1],
+) -> Result<SupportedRealSlotSetV2, SupportedSetExecutionDeniedV1> {
+    let mut previous_slots = previous_set.slots.clone();
+    previous_slots.sort();
+    previous_slots.dedup();
+    let mut policy_slots = policy.current_supported_slots.clone();
+    policy_slots.sort();
+    policy_slots.dedup();
+    if previous_slots != policy_slots {
+        return Err(SupportedSetExecutionDeniedV1 {
+            code: SupportedSetExecutionDeniedCodeV1::SupportedSetExecutionDeniedStalePolicy,
+            detail: "policy current_supported_slots no longer matches repository baseline"
+                .to_string(),
+        });
+    }
+
+    match policy.decision {
+        SupportedRealSlotSetDecisionV2::Freeze => Ok(build_supported_real_slot_set_v2(
+            previous_slots,
+            &policy.policy_digest,
+            &previous_set.set_digest,
+            SupportedRealSlotSetExecutionDecisionV2::Frozen,
+        )),
+        SupportedRealSlotSetDecisionV2::ExpandByOne => {
+            let Some(chosen) = policy.chosen_candidate_slot.as_ref() else {
+                return Err(SupportedSetExecutionDeniedV1 {
+                    code:
+                        SupportedSetExecutionDeniedCodeV1::SupportedSetExecutionDeniedAmbiguousSlot,
+                    detail: "policy requested expansion but chose no candidate slot".to_string(),
+                });
+            };
+            if !policy
+                .candidate_slots_considered
+                .iter()
+                .any(|slot| slot == chosen)
+            {
+                return Err(SupportedSetExecutionDeniedV1 {
+                    code:
+                        SupportedSetExecutionDeniedCodeV1::SupportedSetExecutionDeniedScopeMismatch,
+                    detail: "chosen candidate slot is not in candidate_slots_considered"
+                        .to_string(),
+                });
+            }
+            let matching = candidates
+                .iter()
+                .filter(|candidate| candidate.slot_id == *chosen)
+                .collect::<Vec<_>>();
+            if matching.len() != 1 {
+                return Err(SupportedSetExecutionDeniedV1 {
+                    code:
+                        SupportedSetExecutionDeniedCodeV1::SupportedSetExecutionDeniedAmbiguousSlot,
+                    detail: "chosen candidate slot is ambiguous in execution candidates"
+                        .to_string(),
+                });
+            }
+            let candidate = matching[0];
+            if !candidate.trait_contract_exists
+                || !candidate.probe_path_exists_or_reusable
+                || !candidate.shadow_path_exists_or_trivially_attachable
+                || !candidate.compare_window_normalizable
+                || !candidate.strict_evidence_plumbing_representable_without_arch_fork
+            {
+                return Err(SupportedSetExecutionDeniedV1 {
+                    code: SupportedSetExecutionDeniedCodeV1::SupportedSetExecutionDeniedIncompleteScaffold,
+                    detail: "candidate slot scaffolding no longer satisfies expansion prerequisites"
+                        .to_string(),
+                });
+            }
+            let mut expanded = previous_slots;
+            expanded.push(chosen.clone());
+            expanded.sort();
+            expanded.dedup();
+            if expanded.len() != previous_set.slots.len() + 1 {
+                return Err(SupportedSetExecutionDeniedV1 {
+                    code:
+                        SupportedSetExecutionDeniedCodeV1::SupportedSetExecutionDeniedScopeMismatch,
+                    detail: "expansion must add exactly one slot".to_string(),
+                });
+            }
+            Ok(build_supported_real_slot_set_v2(
+                expanded,
+                &policy.policy_digest,
+                &previous_set.set_digest,
+                SupportedRealSlotSetExecutionDecisionV2::Expanded,
+            ))
+        }
+    }
+}
+
+fn build_supported_real_slot_set_v2(
+    mut slots: Vec<String>,
+    policy_digest: &str,
+    previous_set_digest: &str,
+    decision: SupportedRealSlotSetExecutionDecisionV2,
+) -> SupportedRealSlotSetV2 {
+    slots.sort();
+    slots.dedup();
+    let mut digest_source = Vec::new();
+    digest_source.extend_from_slice(
+        SUPPORTED_REAL_SLOT_SET_V2_SCHEMA_VERSION
+            .to_string()
+            .as_bytes(),
+    );
+    digest_source.extend_from_slice(prefix_hex(policy_digest, 16).as_bytes());
+    digest_source.extend_from_slice(prefix_hex(previous_set_digest, 16).as_bytes());
+    digest_source.extend_from_slice(format!("{:?}", decision).as_bytes());
+    for slot in &slots {
+        digest_source.extend_from_slice(slot.as_bytes());
+    }
+    SupportedRealSlotSetV2 {
+        schema_version: SUPPORTED_REAL_SLOT_SET_V2_SCHEMA_VERSION,
+        slots,
+        source_policy_digest_prefix: prefix_hex(policy_digest, 16),
+        decision,
+        previous_set_digest_prefix: prefix_hex(previous_set_digest, 16),
+        set_digest: sha256_hex(&digest_source),
+    }
+}
+
+fn load_applied_supported_real_slot_set_v2(
+    workdir: &Path,
+) -> Result<SupportedRealSlotSetV2, OpsError> {
+    let path = workdir
+        .join("out")
+        .join("supported_real_slot_set_applied_v2.json");
+    let body = fs::read_to_string(&path)
+        .map_err(|_| OpsError::Invalid("SUPPORTED_SET_APPLY_MISSING".to_string()))?;
+    serde_json::from_str(&body)
+        .map_err(|_| OpsError::Invalid("SUPPORTED_SET_APPLY_INVALID".to_string()))
+}
+
 fn known_slots_ordered() -> Vec<String> {
     ModelSlot::all()
         .iter()
@@ -2771,6 +3125,18 @@ fn append_eligibility_snapshot_record(
     Ok(())
 }
 
+pub fn current_supported_real_slot_set(workdir: &Path) -> Result<SupportedRealSlotSetV1, OpsError> {
+    match load_applied_supported_real_slot_set_v2(workdir) {
+        Ok(applied) => Ok(SupportedRealSlotSetV1 {
+            schema_version: 1,
+            slots: applied.slots,
+            source: "out/supported_real_slot_set_applied_v2.json".to_string(),
+            set_digest: applied.set_digest,
+        }),
+        Err(_) => supported_real_slot_set_v1(),
+    }
+}
+
 pub fn supported_real_slot_set_v1() -> Result<SupportedRealSlotSetV1, OpsError> {
     let second_slot = detect_second_real_slot_from_docs()?;
     let mut slots = vec![ModelSlot::WorldJepa, second_slot];
@@ -2800,7 +3166,7 @@ pub fn supported_real_slot_set_v1() -> Result<SupportedRealSlotSetV1, OpsError> 
 }
 
 fn supported_real_slots(requested_slot: Option<ModelSlot>) -> Result<Vec<ModelSlot>, OpsError> {
-    let set = supported_real_slot_set_v1()?;
+    let set = current_supported_real_slot_set(Path::new("."))?;
     let slots = set
         .slots
         .iter()
@@ -4999,6 +5365,103 @@ mod probe_tests {
             assert_eq!(
                 candidate.denial_reason_code.as_deref(),
                 Some("UNKNOWN_SLOT_METADATA")
+            );
+        }
+
+        #[test]
+        fn supported_set_apply_freeze_is_deterministic() {
+            let previous = SupportedRealSlotSetV1 {
+                schema_version: 1,
+                slots: vec!["sae".to_string(), "world_jepa".to_string()],
+                source: "docs".to_string(),
+                set_digest: "aa".repeat(32),
+            };
+            let policy = SupportedRealSlotSetPolicyV2 {
+                schema_version: 2,
+                current_supported_slots: previous.slots.clone(),
+                candidate_slots_considered: vec!["ssm".to_string()],
+                decision: SupportedRealSlotSetDecisionV2::Freeze,
+                chosen_candidate_slot: None,
+                rationale_codes: vec!["INSUFFICIENT_EVIDENCE_FREEZE".to_string()],
+                policy_digest: "bb".repeat(32),
+            };
+            let cands = vec![evaluate_slot_expansion_candidate(
+                "ssm",
+                &previous.slots.iter().cloned().collect::<BTreeSet<_>>(),
+                SLOT_SET_MAX + 1,
+            )];
+            let a = validate_supported_set_execution(&policy, &previous, &cands).expect("freeze a");
+            let b = validate_supported_set_execution(&policy, &previous, &cands).expect("freeze b");
+            assert_eq!(a, b);
+            assert_eq!(a.decision, SupportedRealSlotSetExecutionDecisionV2::Frozen);
+            assert_eq!(a.slots, vec!["sae".to_string(), "world_jepa".to_string()]);
+        }
+
+        #[test]
+        fn supported_set_apply_expands_by_one_when_scaffold_is_complete() {
+            let previous = SupportedRealSlotSetV1 {
+                schema_version: 1,
+                slots: vec!["sae".to_string(), "world_jepa".to_string()],
+                source: "docs".to_string(),
+                set_digest: "aa".repeat(32),
+            };
+            let policy = SupportedRealSlotSetPolicyV2 {
+                schema_version: 2,
+                current_supported_slots: previous.slots.clone(),
+                candidate_slots_considered: vec!["ssm".to_string()],
+                decision: SupportedRealSlotSetDecisionV2::ExpandByOne,
+                chosen_candidate_slot: Some("ssm".to_string()),
+                rationale_codes: vec!["EXPANSION_READY_EXACTLY_ONE".to_string()],
+                policy_digest: "cc".repeat(32),
+            };
+            let cands = vec![evaluate_slot_expansion_candidate(
+                "ssm",
+                &previous.slots.iter().cloned().collect::<BTreeSet<_>>(),
+                SLOT_SET_MAX + 1,
+            )];
+            let applied =
+                validate_supported_set_execution(&policy, &previous, &cands).expect("expanded");
+            assert_eq!(
+                applied.decision,
+                SupportedRealSlotSetExecutionDecisionV2::Expanded
+            );
+            assert_eq!(
+                applied.slots,
+                vec![
+                    "sae".to_string(),
+                    "ssm".to_string(),
+                    "world_jepa".to_string()
+                ]
+            );
+        }
+
+        #[test]
+        fn supported_set_apply_denies_on_incomplete_scaffold() {
+            let previous = SupportedRealSlotSetV1 {
+                schema_version: 1,
+                slots: vec!["sae".to_string(), "world_jepa".to_string()],
+                source: "docs".to_string(),
+                set_digest: "aa".repeat(32),
+            };
+            let policy = SupportedRealSlotSetPolicyV2 {
+                schema_version: 2,
+                current_supported_slots: previous.slots.clone(),
+                candidate_slots_considered: vec!["world_vljepa".to_string()],
+                decision: SupportedRealSlotSetDecisionV2::ExpandByOne,
+                chosen_candidate_slot: Some("world_vljepa".to_string()),
+                rationale_codes: vec!["EXPANSION_READY_EXACTLY_ONE".to_string()],
+                policy_digest: "dd".repeat(32),
+            };
+            let cands = vec![evaluate_slot_expansion_candidate(
+                "world_vljepa",
+                &previous.slots.iter().cloned().collect::<BTreeSet<_>>(),
+                SLOT_SET_MAX + 1,
+            )];
+            let denied = validate_supported_set_execution(&policy, &previous, &cands)
+                .expect_err("must deny");
+            assert_eq!(
+                denied.code,
+                SupportedSetExecutionDeniedCodeV1::SupportedSetExecutionDeniedIncompleteScaffold
             );
         }
 
