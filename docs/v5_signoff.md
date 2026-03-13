@@ -102,3 +102,7 @@ A v5 `PASS` does **not** certify:
 - GPU, remote compute, training, or large-model readiness
 
 v5 is strictly governance/export/review hardening.
+
+## Post-v5 continuation note
+
+After v5 gate PASS, continue at Prompt 230 via `docs/next_10_prompts.md`.
