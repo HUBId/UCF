@@ -12290,11 +12290,24 @@ pub struct PortabilityReportV1 {
 }
 
 fn reproducible_run_id_for_smoke(workdir: &Path) -> Result<String, OpsError> {
-    let _ = bringup(workdir, true, 16)?;
-    let run = runs_list(workdir, 1)?.into_iter().next().ok_or_else(|| {
-        OpsError::Invalid("no run metadata emitted for portability smoke".to_string())
-    })?;
-    Ok(run.run_id)
+    let scenario =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/e2e/v0_flow_a.json");
+    let smoke_out = workdir.join("out").join("portability_smoke_bringup");
+    let artifacts = one_command_bringup(workdir, &scenario, 16, &smoke_out, false)?;
+    let run_id = artifacts.run_metadata.run_id;
+
+    let run_out = workdir.join("out").join(&run_id);
+    fs::create_dir_all(&run_out)?;
+    fs::copy(
+        smoke_out.join("run_metadata.json"),
+        run_out.join("run_metadata.json"),
+    )?;
+    fs::copy(
+        smoke_out.join("metrics_summary.json"),
+        run_out.join("metrics_summary.json"),
+    )?;
+
+    Ok(run_id)
 }
 
 fn active_review_snapshot_smoke(workdir: &Path, name: &str, out: &str) -> PortabilityCommandCheck {
@@ -12455,9 +12468,16 @@ fn bugkit_smoke(name: &str, out: &str) -> PortabilityCommandCheck {
         let archive = fs::File::open(&out_path)?;
         let mut zip = zip::ZipArchive::new(archive)
             .map_err(|e| OpsError::Invalid(format!("unable to open bugkit zip: {e}")))?;
-        let mut manifest_file = zip
-            .by_name("bugkit_manifest.json")
-            .map_err(|e| OpsError::Invalid(format!("missing bugkit_manifest.json: {e}")))?;
+        let manifest_name = if zip.file_names().any(|name| name == "bugkit_manifest.json") {
+            "bugkit_manifest.json"
+        } else {
+            "BUGKIT_MANIFEST.json"
+        };
+        let mut manifest_file = zip.by_name(manifest_name).map_err(|e| {
+            OpsError::Invalid(format!(
+                "missing bugkit manifest (bugkit_manifest.json/BUGKIT_MANIFEST.json): {e}"
+            ))
+        })?;
         let mut body = String::new();
         std::io::Read::read_to_string(&mut manifest_file, &mut body)?;
         let manifest: BugKitManifestV1 = serde_json::from_str(&body)?;
