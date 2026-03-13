@@ -10670,22 +10670,16 @@ pub fn bugkit_build(
         entries.push((path, bytes, true));
     }
 
-    for extra in [
-        PathBuf::from("out/strict_check.json"),
-        PathBuf::from("out/strict_failure.json"),
-        PathBuf::from("out/drift_report.json"),
-        PathBuf::from("out/gate_report.json"),
-        PathBuf::from("out/docs_lint_report.json"),
+    for extra_name in [
+        "strict_check.json",
+        "strict_failure.json",
+        "drift_report.json",
+        "gate_report.json",
+        "docs_lint_report.json",
     ] {
+        let extra = workdir.join("out").join(extra_name);
         if extra.exists() {
-            let name = format!(
-                "diagnostics/{}",
-                extra
-                    .file_name()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("artifact.json")
-            );
-            entries.push((name, fs::read(extra)?, true));
+            entries.push((format!("diagnostics/{extra_name}"), fs::read(extra)?, true));
         }
     }
 
