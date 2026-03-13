@@ -816,10 +816,10 @@ mod tests {
         assert_eq!(
             rules.mismatch_categories,
             vec![
-                InteropMismatchCategoryV1::ManifestMismatch,
-                InteropMismatchCategoryV1::PolicyMismatch,
-                InteropMismatchCategoryV1::RequiredSurfaceMissing,
                 InteropMismatchCategoryV1::ScopeMismatch,
+                InteropMismatchCategoryV1::PolicyMismatch,
+                InteropMismatchCategoryV1::ManifestMismatch,
+                InteropMismatchCategoryV1::RequiredSurfaceMissing,
             ]
         );
     }
