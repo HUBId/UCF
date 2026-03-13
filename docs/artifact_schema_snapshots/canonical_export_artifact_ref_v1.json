@@ -1,0 +1,35 @@
+{
+  "artifact_id": "canonical_export_artifact_ref_v1",
+  "type_name": "CanonicalExportArtifactRefV1",
+  "source_file": "runtime/ucf-ops/src/lib.rs",
+  "required_fields": [
+    "artifact_kind",
+    "included_state",
+    "ref_digest",
+    "relative_path"
+  ],
+  "optional_fields": [
+    "artifact_digest",
+    "reason_code",
+    "schema_version",
+    "sha256"
+  ],
+  "field_types": {
+    "artifact_digest": "Option<String>",
+    "artifact_kind": "String",
+    "included_state": "CanonicalArtifactIncludedStateV1",
+    "reason_code": "Option<String>",
+    "ref_digest": "String",
+    "relative_path": "String",
+    "schema_version": "Option<u16>",
+    "sha256": "Option<String>"
+  },
+  "enum_variants": {
+    "CanonicalArtifactIncludedStateV1": [
+      "Excluded",
+      "Included",
+      "Missing",
+      "Skip"
+    ]
+  }
+}

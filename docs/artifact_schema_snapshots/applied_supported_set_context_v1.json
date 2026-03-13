@@ -1,0 +1,33 @@
+{
+  "artifact_id": "applied_supported_set_context_v1",
+  "type_name": "AppliedSupportedSetContextV1",
+  "source_file": "runtime/ucf-ops/src/models_lifecycle.rs",
+  "required_fields": [
+    "applied_set_digest_prefix",
+    "context_digest",
+    "decision",
+    "policy_digest_prefix",
+    "previous_set_digest_prefix",
+    "schema_version",
+    "slots"
+  ],
+  "optional_fields": [
+    "compatibility_code"
+  ],
+  "field_types": {
+    "applied_set_digest_prefix": "String",
+    "compatibility_code": "Option<String>",
+    "context_digest": "String",
+    "decision": "SupportedRealSlotSetExecutionDecisionV2",
+    "policy_digest_prefix": "String",
+    "previous_set_digest_prefix": "String",
+    "schema_version": "u16",
+    "slots": "Vec<String>"
+  },
+  "enum_variants": {
+    "SupportedRealSlotSetExecutionDecisionV2": [
+      "Expanded",
+      "Frozen"
+    ]
+  }
+}
