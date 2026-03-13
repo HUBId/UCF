@@ -11386,7 +11386,7 @@ pub fn bugkit_build(
             true,
         ));
     }
-    let spec_snapshot = PathBuf::from("docs/spec_snapshot.md");
+    let spec_snapshot = workdir.join("docs/spec_snapshot.md");
     if spec_snapshot.exists() {
         entries.push((
             "spec_snapshot.md".to_string(),
