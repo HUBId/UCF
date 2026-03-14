@@ -113,3 +113,7 @@ cargo run -p ucf-ops -- operator workflow --out ./out/operator_workflow_chain.js
 ```
 
 Siehe `docs/operator_workflow_chain_v6.md`.
+
+## v7 applied scope authority
+
+Canonical surfaces now require applied-scope authority from `AppliedSupportedSetContextV1`; legacy scope inference paths are blocked from canonical scope-authority checks.

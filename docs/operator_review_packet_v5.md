@@ -92,3 +92,7 @@ cargo run -p ucf-ops -- operator workflow --out ./out/operator_workflow_chain.js
 ```
 
 Das Workflow-Chain-Artefakt korreliert Governance-Surfaces, Applied-Scope, Review-Packet, Signoff, Interop-Matrix und Export-Normalisierung in eine einzige deterministische Stage (`WORKFLOW_BLOCKED|WORKFLOW_REVIEW_READY|WORKFLOW_EXPORT_READY`). Siehe `docs/operator_workflow_chain_v6.md`.
+
+## v7 applied scope authority
+
+Canonical surfaces now require applied-scope authority from `AppliedSupportedSetContextV1`; legacy scope inference paths are blocked from canonical scope-authority checks.
