@@ -93,3 +93,14 @@ When `--out` is provided, lint writes deterministic JSON with per-check status a
      - `docs/bug_report_kit.md`
      - `docs/remediation_consistency_v5.md`
      - `docs/artifact_schema_snapshots.md`
+
+
+10. **v6 docs linkage consistency**
+   - Note: portability smokes run `models supported-set-review` before `models supported-set-apply` so apply remains deterministic and offline.
+   - Requires presence and portability/docs linkage for:
+     - `docs/governance_primary_surfaces_v6.md`
+     - `docs/supported_set_apply_v6.md`
+     - `docs/applied_supported_scope_v6.md`
+     - `docs/export_normalization_v6.md`
+     - `docs/interop_consistency_v6.md`
+     - `docs/artifact_schema_snapshots.md`

@@ -65,6 +65,7 @@ pub fn docs_lint(args: &DocsLintArgs) -> Result<DocsLintReport, OpsError> {
         v3_docs_consistency_check(args)?,
         v4_docs_consistency_check(args)?,
         v5_docs_consistency_check(args)?,
+        v6_docs_consistency_check(args)?,
         remediation_registry_doc_check(args)?,
         artifact_schema_snapshot_check(args)?,
     ];
@@ -366,6 +367,46 @@ fn hardware_neutral_docs_check(args: &DocsLintArgs) -> Result<DocsLintCheck, Ops
                 .repo_root
                 .join("docs")
                 .join("remediation_consistency_v5.md"),
+            false,
+        ),
+        (
+            "governance_primary_surfaces_v6",
+            &args
+                .repo_root
+                .join("docs")
+                .join("governance_primary_surfaces_v6.md"),
+            false,
+        ),
+        (
+            "supported_set_apply_v6",
+            &args
+                .repo_root
+                .join("docs")
+                .join("supported_set_apply_v6.md"),
+            false,
+        ),
+        (
+            "applied_supported_scope_v6",
+            &args
+                .repo_root
+                .join("docs")
+                .join("applied_supported_scope_v6.md"),
+            false,
+        ),
+        (
+            "export_normalization_v6",
+            &args
+                .repo_root
+                .join("docs")
+                .join("export_normalization_v6.md"),
+            false,
+        ),
+        (
+            "interop_consistency_v6",
+            &args
+                .repo_root
+                .join("docs")
+                .join("interop_consistency_v6.md"),
             false,
         ),
     ];
@@ -745,6 +786,117 @@ fn v3_docs_consistency_check(args: &DocsLintArgs) -> Result<DocsLintCheck, OpsEr
     })
 }
 
+fn v6_docs_consistency_check(args: &DocsLintArgs) -> Result<DocsLintCheck, OpsError> {
+    let required = [
+        "docs/governance_primary_surfaces_v6.md",
+        "docs/supported_set_apply_v6.md",
+        "docs/applied_supported_scope_v6.md",
+        "docs/export_normalization_v6.md",
+        "docs/interop_consistency_v6.md",
+        "docs/artifact_schema_snapshots.md",
+    ];
+    for path in required {
+        if !args.repo_root.join(path).exists() {
+            return Ok(DocsLintCheck {
+                name: "v6_docs_consistency".to_string(),
+                status: DocsLintStatus::Fail,
+                detail: format!("missing required v6 doc: {path}"),
+                remediation: Some("restore missing v6 docs and re-run docs lint".to_string()),
+            });
+        }
+    }
+
+    let portability_gate = fs::read_to_string(args.repo_root.join("docs/portability_gate.md"))?;
+    let docs_checks = fs::read_to_string(args.repo_root.join("docs/docs_checks.md"))?;
+
+    let missing = [
+        (
+            "docs/portability_gate.md",
+            "governance_primary_surfaces_v6.md",
+            portability_gate.contains("governance_primary_surfaces_v6.md"),
+        ),
+        (
+            "docs/portability_gate.md",
+            "supported_set_apply_v6.md",
+            portability_gate.contains("supported_set_apply_v6.md"),
+        ),
+        (
+            "docs/portability_gate.md",
+            "applied_supported_scope_v6.md",
+            portability_gate.contains("applied_supported_scope_v6.md"),
+        ),
+        (
+            "docs/portability_gate.md",
+            "export_normalization_v6.md",
+            portability_gate.contains("export_normalization_v6.md"),
+        ),
+        (
+            "docs/portability_gate.md",
+            "interop_consistency_v6.md",
+            portability_gate.contains("interop_consistency_v6.md"),
+        ),
+        (
+            "docs/portability_gate.md",
+            "artifact_schema_snapshots.md",
+            portability_gate.contains("artifact_schema_snapshots.md"),
+        ),
+        (
+            "docs/docs_checks.md",
+            "docs/governance_primary_surfaces_v6.md",
+            docs_checks.contains("docs/governance_primary_surfaces_v6.md"),
+        ),
+        (
+            "docs/docs_checks.md",
+            "docs/supported_set_apply_v6.md",
+            docs_checks.contains("docs/supported_set_apply_v6.md"),
+        ),
+        (
+            "docs/docs_checks.md",
+            "docs/applied_supported_scope_v6.md",
+            docs_checks.contains("docs/applied_supported_scope_v6.md"),
+        ),
+        (
+            "docs/docs_checks.md",
+            "docs/export_normalization_v6.md",
+            docs_checks.contains("docs/export_normalization_v6.md"),
+        ),
+        (
+            "docs/docs_checks.md",
+            "docs/interop_consistency_v6.md",
+            docs_checks.contains("docs/interop_consistency_v6.md"),
+        ),
+        (
+            "docs/docs_checks.md",
+            "docs/artifact_schema_snapshots.md",
+            docs_checks.contains("docs/artifact_schema_snapshots.md"),
+        ),
+    ]
+    .into_iter()
+    .filter_map(|(file, needle, present)| {
+        (!present).then_some(format!("{file} missing `{needle}`"))
+    })
+    .collect::<Vec<_>>();
+
+    if !missing.is_empty() {
+        return Ok(DocsLintCheck {
+            name: "v6_docs_consistency".to_string(),
+            status: DocsLintStatus::Fail,
+            detail: format!("v6 docs linkage mismatch: {}", missing.join("; ")),
+            remediation: Some(
+                "link v6 docs from portability/docs checks and keep docs references in sync"
+                    .to_string(),
+            ),
+        });
+    }
+
+    Ok(DocsLintCheck {
+        name: "v6_docs_consistency".to_string(),
+        status: DocsLintStatus::Pass,
+        detail: "v6 docs are present and linked from portability/docs checks".to_string(),
+        remediation: None,
+    })
+}
+
 fn cargo_metadata_package_names(repo_root: &Path) -> Result<BTreeSet<String>, OpsError> {
     let output = Command::new("cargo")
         .arg("metadata")
@@ -898,7 +1050,8 @@ mod tests {
     use super::{
         first_diff_line, hardware_neutral_docs_check, parse_module_map_keys, parse_prompt_ids,
         remediation_registry_doc_check, v3_docs_consistency_check, v4_docs_consistency_check,
-        v5_docs_consistency_check, DocsLintArgs, DocsLintMode, DocsLintStatus,
+        v5_docs_consistency_check, v6_docs_consistency_check, DocsLintArgs, DocsLintMode,
+        DocsLintStatus,
     };
     use std::path::PathBuf;
 
@@ -954,6 +1107,11 @@ mod tests {
         std::fs::write(docs.join("repro_pack.md"), "# v5\n").expect("write");
         std::fs::write(docs.join("bug_report_kit.md"), "# v5\n").expect("write");
         std::fs::write(docs.join("remediation_consistency_v5.md"), "# v5\n").expect("write");
+        std::fs::write(docs.join("governance_primary_surfaces_v6.md"), "# v6\n").expect("write");
+        std::fs::write(docs.join("supported_set_apply_v6.md"), "# v6\n").expect("write");
+        std::fs::write(docs.join("applied_supported_scope_v6.md"), "# v6\n").expect("write");
+        std::fs::write(docs.join("export_normalization_v6.md"), "# v6\n").expect("write");
+        std::fs::write(docs.join("interop_consistency_v6.md"), "# v6\n").expect("write");
         std::fs::write(docs.join("module_map.md"), "- **ucf-ops**: x\n").expect("write");
         std::fs::write(docs.join("spec_snapshot.md"), "# x\n").expect("write");
 
@@ -996,6 +1154,11 @@ mod tests {
         std::fs::write(docs.join("repro_pack.md"), "# v5\n").expect("write");
         std::fs::write(docs.join("bug_report_kit.md"), "# v5\n").expect("write");
         std::fs::write(docs.join("remediation_consistency_v5.md"), "# v5\n").expect("write");
+        std::fs::write(docs.join("governance_primary_surfaces_v6.md"), "# v6\n").expect("write");
+        std::fs::write(docs.join("supported_set_apply_v6.md"), "# v6\n").expect("write");
+        std::fs::write(docs.join("applied_supported_scope_v6.md"), "# v6\n").expect("write");
+        std::fs::write(docs.join("export_normalization_v6.md"), "# v6\n").expect("write");
+        std::fs::write(docs.join("interop_consistency_v6.md"), "# v6\n").expect("write");
         std::fs::write(docs.join("module_map.md"), "- **ucf-ops**: x\n").expect("write");
         std::fs::write(docs.join("spec_snapshot.md"), "# x\n").expect("write");
 
@@ -1141,6 +1304,118 @@ mod tests {
         })
         .expect("check");
         assert_eq!(check.status, DocsLintStatus::Pass);
+    }
+
+    #[test]
+    fn v6_docs_consistency_requires_links() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let docs = dir.path().join("docs");
+        std::fs::create_dir_all(&docs).expect("mkdir");
+        std::fs::write(docs.join("prompt_series_index.md"), "| 236 | x |\n").expect("write");
+        std::fs::write(docs.join("prompt_rulebook.md"), "# Rules\n").expect("write");
+        std::fs::write(docs.join("deploy_portable.md"), "# Deploy\n").expect("write");
+        std::fs::write(docs.join("module_map.md"), "- **ucf-ops**: x\n").expect("write");
+        std::fs::write(docs.join("spec_snapshot.md"), "# x\n").expect("write");
+        std::fs::write(
+            docs.join("portability_gate.md"),
+            "governance_primary_surfaces_v6.md supported_set_apply_v6.md applied_supported_scope_v6.md export_normalization_v6.md interop_consistency_v6.md artifact_schema_snapshots.md\n",
+        )
+        .expect("write");
+        std::fs::write(
+            docs.join("docs_checks.md"),
+            "docs/governance_primary_surfaces_v6.md docs/supported_set_apply_v6.md docs/applied_supported_scope_v6.md docs/export_normalization_v6.md docs/interop_consistency_v6.md docs/artifact_schema_snapshots.md\n",
+        )
+        .expect("write");
+        std::fs::write(docs.join("series_state_snapshot.md"), "| 236 | x |\n").expect("write");
+        std::fs::write(docs.join("models_eligibility_v3.md"), "# x\n").expect("write");
+        std::fs::write(docs.join("strict_mode_v3.md"), "# x\n").expect("write");
+        std::fs::write(docs.join("operator_report_v3.md"), "# x\n").expect("write");
+        std::fs::write(docs.join("backend_evidence_snapshot_v4.md"), "# x\n").expect("write");
+        std::fs::write(docs.join("operator_signoff_v4.md"), "# x\n").expect("write");
+        std::fs::write(docs.join("remediation_codes_v1.md"), "# x\n").expect("write");
+        std::fs::write(docs.join("artifact_schema_snapshots.md"), "# x\n").expect("write");
+        std::fs::write(docs.join("active_review_snapshot_v5.md"), "# x\n").expect("write");
+        std::fs::write(docs.join("sae_burn_resolution_v5.md"), "# x\n").expect("write");
+        std::fs::write(docs.join("repro_pack.md"), "# x\n").expect("write");
+        std::fs::write(docs.join("bug_report_kit.md"), "# x\n").expect("write");
+        std::fs::write(docs.join("remediation_consistency_v5.md"), "# x\n").expect("write");
+        std::fs::write(docs.join("governance_primary_surfaces_v6.md"), "# x\n").expect("write");
+        std::fs::write(docs.join("supported_set_apply_v6.md"), "# x\n").expect("write");
+        std::fs::write(docs.join("applied_supported_scope_v6.md"), "# x\n").expect("write");
+        std::fs::write(docs.join("export_normalization_v6.md"), "# x\n").expect("write");
+        std::fs::write(docs.join("interop_consistency_v6.md"), "# x\n").expect("write");
+
+        let check = v6_docs_consistency_check(&DocsLintArgs {
+            repo_root: dir.path().to_path_buf(),
+            policy_pack: PathBuf::from("policies/packs/base_v1"),
+            overlay_pack: None,
+            spec_snapshot: docs.join("spec_snapshot.md"),
+            prompt_index: docs.join("prompt_series_index.md"),
+            module_map: docs.join("module_map.md"),
+            deploy_doc: docs.join("deploy_portable.md"),
+            artifact_schema_snapshot_dir: docs.join("artifact_schema_snapshots"),
+            mode: DocsLintMode::Strict,
+        })
+        .expect("check");
+        assert_eq!(check.status, DocsLintStatus::Pass);
+    }
+
+    #[test]
+    fn v6_docs_consistency_missing_link_fails() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let docs = dir.path().join("docs");
+        std::fs::create_dir_all(&docs).expect("mkdir");
+        std::fs::write(docs.join("prompt_series_index.md"), "| 236 | x |\n").expect("write");
+        std::fs::write(docs.join("prompt_rulebook.md"), "# Rules\n").expect("write");
+        std::fs::write(docs.join("deploy_portable.md"), "# Deploy\n").expect("write");
+        std::fs::write(docs.join("module_map.md"), "- **ucf-ops**: x\n").expect("write");
+        std::fs::write(docs.join("spec_snapshot.md"), "# x\n").expect("write");
+        std::fs::write(
+            docs.join("portability_gate.md"),
+            "governance_primary_surfaces_v6.md\n",
+        )
+        .expect("write");
+        std::fs::write(
+            docs.join("docs_checks.md"),
+            "docs/governance_primary_surfaces_v6.md\n",
+        )
+        .expect("write");
+        std::fs::write(docs.join("series_state_snapshot.md"), "| 236 | x |\n").expect("write");
+        for name in [
+            "models_eligibility_v3.md",
+            "strict_mode_v3.md",
+            "operator_report_v3.md",
+            "backend_evidence_snapshot_v4.md",
+            "operator_signoff_v4.md",
+            "remediation_codes_v1.md",
+            "artifact_schema_snapshots.md",
+            "active_review_snapshot_v5.md",
+            "sae_burn_resolution_v5.md",
+            "repro_pack.md",
+            "bug_report_kit.md",
+            "remediation_consistency_v5.md",
+            "governance_primary_surfaces_v6.md",
+            "supported_set_apply_v6.md",
+            "applied_supported_scope_v6.md",
+            "export_normalization_v6.md",
+            "interop_consistency_v6.md",
+        ] {
+            std::fs::write(docs.join(name), "# x\n").expect("write");
+        }
+
+        let check = v6_docs_consistency_check(&DocsLintArgs {
+            repo_root: dir.path().to_path_buf(),
+            policy_pack: PathBuf::from("policies/packs/base_v1"),
+            overlay_pack: None,
+            spec_snapshot: docs.join("spec_snapshot.md"),
+            prompt_index: docs.join("prompt_series_index.md"),
+            module_map: docs.join("module_map.md"),
+            deploy_doc: docs.join("deploy_portable.md"),
+            artifact_schema_snapshot_dir: docs.join("artifact_schema_snapshots"),
+            mode: DocsLintMode::Strict,
+        })
+        .expect("check");
+        assert_eq!(check.status, DocsLintStatus::Fail);
     }
 
     #[test]

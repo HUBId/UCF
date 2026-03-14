@@ -44,6 +44,21 @@ jobs:
         run: cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json
       - name: Artifact schema snapshot check (blocking)
         run: cargo run -p ucf-ops -- spec artifact-schemas-check --out ./out/artifact_schema_check.json
+      - name: Governance primary surfaces smoke
+        run: cargo run -p ucf-ops -- governance-surfaces-check --out ./out/governance_surfaces_check.json
+      - name: Supported set review smoke (prereq)
+        run: cargo run -p ucf-ops -- models supported-set-review --out ./out/supported_set_review.json --workdir .
+      - name: Supported set apply smoke
+        run: cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json --workdir .
+      - name: Applied scope check smoke
+        run: |
+          cargo run -p ucf-ops -- models active-review-snapshot --out ./out/active_review_snapshot.json --workdir .
+          cargo run -p ucf-ops -- models evidence-snapshot --out ./out/backend_evidence_snapshot.json --workdir .
+          cargo run -p ucf-ops -- operator signoff --out ./out/operator_signoff.json --workdir .
+          cargo run -p ucf-ops -- operator review-packet --out ./out/operator_review_packet.json --workdir .
+          cargo run -p ucf-ops -- models applied-scope-check --out ./out/applied_scope_check.json --workdir .
+      - name: Export normalize check smoke
+        run: cargo run -p ucf-ops -- exports normalize-check --out ./out/export_normalize_check.json
       - name: Active review snapshot smoke
         run: cargo run -p ucf-ops -- models active-review-snapshot --out ./out/active_review_snapshot.json
       - name: Backend resolution smoke (optional second-slot path)
@@ -90,6 +105,17 @@ jobs:
         run: cargo run -p ucf-ops -- strict check --strict --out ./out/strict_check.json
       - name: Operator report (smoke)
         run: cargo run -p ucf-ops -- operator report --out ./out/operator_report.json
+      - name: Interop consistency matrix smoke
+        shell: bash
+        run: |
+          cargo run -p ucf-ops -- interop consistency-matrix --out ./out/interop_consistency_matrix.json || {
+            code=$?
+            if [ "$code" -eq 2 ]; then
+              echo "interop_consistency_matrix=skip reason=required_surfaces_missing_in_bounded_smoke"
+            else
+              exit "$code"
+            fi
+          }
       - name: Change impact plan (informational)
         run: |
           cargo run -p ucf-ops -- change-impact --base HEAD~1 --head HEAD --out ./out/change_impact_plan.md --json-out ./out/change_impact_plan.json
@@ -140,6 +166,21 @@ jobs:
         run: cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json
       - name: Artifact schema snapshot check (blocking)
         run: cargo run -p ucf-ops -- spec artifact-schemas-check --out ./out/artifact_schema_check.json
+      - name: Governance primary surfaces smoke
+        run: cargo run -p ucf-ops -- governance-surfaces-check --out ./out/governance_surfaces_check.json
+      - name: Supported set review smoke (prereq)
+        run: cargo run -p ucf-ops -- models supported-set-review --out ./out/supported_set_review.json --workdir .
+      - name: Supported set apply smoke
+        run: cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json --workdir .
+      - name: Applied scope check smoke
+        run: |
+          cargo run -p ucf-ops -- models active-review-snapshot --out ./out/active_review_snapshot.json --workdir .
+          cargo run -p ucf-ops -- models evidence-snapshot --out ./out/backend_evidence_snapshot.json --workdir .
+          cargo run -p ucf-ops -- operator signoff --out ./out/operator_signoff.json --workdir .
+          cargo run -p ucf-ops -- operator review-packet --out ./out/operator_review_packet.json --workdir .
+          cargo run -p ucf-ops -- models applied-scope-check --out ./out/applied_scope_check.json --workdir .
+      - name: Export normalize check smoke
+        run: cargo run -p ucf-ops -- exports normalize-check --out ./out/export_normalize_check.json
       - name: Active review snapshot smoke
         run: cargo run -p ucf-ops -- models active-review-snapshot --out ./out/active_review_snapshot.json
       - name: Backend resolution smoke (linux)
@@ -256,6 +297,30 @@ jobs:
         run: cargo run -p ucf-ops -- strict check --strict --out ./out/strict_check.json
       - name: Operator report (smoke)
         run: cargo run -p ucf-ops -- operator report --out ./out/operator_report.json
+      - name: Interop consistency matrix smoke (linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          cargo run -p ucf-ops -- interop consistency-matrix --out ./out/interop_consistency_matrix.json || {
+            code=$?
+            if [ "$code" -eq 2 ]; then
+              echo "interop_consistency_matrix=skip reason=required_surfaces_missing_in_bounded_smoke"
+            else
+              exit "$code"
+            fi
+          }
+      - name: Interop consistency matrix smoke (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cargo run -p ucf-ops -- interop consistency-matrix --out ./out/interop_consistency_matrix.json
+          if ($LASTEXITCODE -eq 2) {
+            Write-Host "interop_consistency_matrix=skip reason=required_surfaces_missing_in_bounded_smoke"
+            exit 0
+          }
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
       - name: Portability check
         run: cargo run -p ucf-ops -- portability check --out ./out/portability.json
       - name: Portability report
