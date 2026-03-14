@@ -90,3 +90,5 @@ A v6 PASS does **not** certify:
 - GPU, remote compute, training, or large-model readiness
 
 v6 remains a governance/interop/workflow hardening phase.
+
+After v6 gate PASS, continue at Prompt 240 via `docs/next_10_prompts.md`.

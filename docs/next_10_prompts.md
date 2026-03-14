@@ -1,85 +1,85 @@
-# Next 10 Prompts (v6 Anchor)
+# Next 10 Prompts (v7 Anchor)
 
-Anchor: `Real Compute Onboarding v6` (precondition: `ucf-ops v5 gate` PASS at Prompt 228)
+Anchor: `Real Compute Onboarding v7` (precondition: `ucf-ops v6 gate` PASS at Prompt 238)
 
 > Guardrail: This queue is capped to **10** entries unless an explicit request expands it.
 
-## Prompt 230 (MUST) — Primary governance surfaces reuse unification
-Objective: Unify review/export/gate consumption around `BackendEvidenceSnapshotV1` and `AggregatedActiveReviewSnapshotV1` as primary governance surfaces.
+## Prompt 240 (MUST) — Applied-scope governance/export surface unification
+Objective: Unify applied-scope consumption across every remaining governance/export surface using existing primary review/evidence artifacts.
 - Acceptance:
-  - Review/export/gate paths prefer the two primary snapshots over direct lower-level evidence collection where reuse is possible.
-  - Snapshot mismatch is explicit and fail-closed with stable remediation semantics.
-  - Behavior remains read-only, offline-first, deterministic, and hardware-neutral.
-- Dependencies: 228, 229.
+  - Remaining governance/export surfaces consume applied-scope authority from shared canonical artifacts rather than ad hoc derivations.
+  - Inconsistencies are surfaced deterministically with fail-closed remediation semantics.
+  - Behavior remains offline-first, hardware-neutral, and runtime-semantics preserving.
+- Dependencies: 238, 239.
 
-## Prompt 231 (MUST) — Supported-slot expansion execution only if explicitly justified
-Objective: Execute a formal supported-slot expansion only when Supported-Set-Review and evidence explicitly justify it.
+## Prompt 241 (MUST) — Supported-scope expansion execution only if justified
+Objective: Execute supported-scope expansion only when v6 applied policy and evidence still explicitly justify the change.
 - Acceptance:
-  - Expansion is implemented only with explicit Supported-Set-Review justification and evidence references.
-  - If justification is missing, scope remains unchanged with clear fail-closed reporting.
-  - Probe-first/shadow-first precedence remains explicit for every affected slot.
-- Dependencies: 220, 230.
+  - Expansion is applied only with explicit Supported-Set policy approval and evidence references that remain valid.
+  - Without sufficient justification, applied scope remains unchanged with explicit fail-closed reporting.
+  - Probe-first and shadow-first progression remains explicit for all affected paths.
+- Dependencies: 240.
 
-## Prompt 232 (MUST) — Expanded-set active review/signoff consistency deepening
-Objective: Deepen active-review/signoff consistency for the supported set active in v6, including any explicitly approved expansion.
+## Prompt 242 (MUST) — Active review/signoff/review-packet consistency deepening
+Objective: Deepen consistency between active-review outputs, signoff artifacts, and review packets for the applied scope.
 - Acceptance:
-  - Active-review and signoff outputs remain deterministic and semantically aligned for the entire supported set.
-  - Missing or inconsistent inputs fail closed with bounded diagnostics.
-  - No runtime execution semantics are widened.
-- Dependencies: 230, 231.
+  - Review/signoff/packet outputs are deterministic and semantically aligned for the applied scope.
+  - Missing prerequisites or mismatched authority inputs fail closed with bounded diagnostics.
+  - No runtime capability widening is introduced.
+- Dependencies: 240, 241.
 
-## Prompt 233 (MUST) — Export bundle normalization across repro/bugkit/review/signoff artifacts
-Objective: Normalize export bundle structure and cross-references across repro, bugkit, review packet, and signoff artifacts.
+## Prompt 243 (MUST) — Governance-primary export bundle normalization end-to-end
+Objective: Normalize enriched export-bundle consumption of governance primary surfaces end-to-end.
 - Acceptance:
-  - Export bundles share canonical ordering and normalized governance references.
-  - Repro/bugkit/review/signoff artifacts remain offline-reproducible and deterministic.
-  - Existing evidence surfaces are reused instead of re-derived where feasible.
-- Dependencies: 230, 232.
+  - Export bundles use canonical structure, ordering, and references to governance primary surfaces.
+  - End-to-end export consumption remains offline-reproducible and deterministic.
+  - Existing governance/evidence surfaces are reused rather than re-derived where possible.
+- Dependencies: 240, 242.
 
-## Prompt 234 (MUST) — Gate/remediation/report interoperability hardening
-Objective: Harden interoperability between gates, remediation mapping, and reports across active v6 governance surfaces.
+## Prompt 244 (MUST) — Remediation/interoperability consistency across export/review/gate chains
+Objective: Harden remediation and interoperability consistency across export, review, and gate chains.
 - Acceptance:
-  - Gate/report/remediation semantics are consistent for equivalent evidence states.
-  - Inconsistencies are detected deterministically and fail closed.
-  - Interoperability remains hardware-neutral and bounded.
-- Dependencies: 232, 233.
+  - Equivalent evidence states produce consistent remediation and status semantics across chains.
+  - Divergence is detected deterministically and handled fail-closed.
+  - Interop behavior remains bounded, hardware-neutral, and evidence-bound.
+- Dependencies: 242, 243.
 
-## Prompt 235 (MUST) — v6 schema snapshot refresh for governance artifacts
-Objective: Refresh schema snapshots for v6 export/review/gate artifacts after normalization and interoperability hardening.
+## Prompt 245 (MUST) — v7 schema snapshot refresh for governance/export/workflow artifacts
+Objective: Refresh schema snapshots for v7 governance/export/workflow artifacts after normalization and interoperability hardening.
 - Acceptance:
-  - Snapshot outputs capture current v6 schemas with canonical encoding and stable ordering.
+  - Snapshot artifacts capture current schemas with canonical encoding and stable ordering.
   - Schema drift is detectable via deterministic checks.
-  - Docs references are updated to match refreshed snapshots.
-- Dependencies: 233, 234.
+  - Documentation references align with refreshed schema artifacts.
+- Dependencies: 243, 244.
 
-## Prompt 236 (NICE) — v6 portability and operator docs refresh
-Objective: Refresh portability and operator-facing docs for v6 review/export/gate surfaces.
+## Prompt 246 (NICE) — v7 portability and operator docs refresh
+Objective: Refresh portability and operator-facing documentation for v7 governance/export/review surfaces.
 - Acceptance:
-  - Documentation reflects v6 governance surfaces without hardware or cluster assumptions.
-  - Offline-first, probe-first, shadow-first, and fail-closed guidance remains explicit.
-  - Cross-doc links and operator flow references are coherent.
-- Dependencies: 235.
+  - Docs reflect v7 surfaces with hardware-neutral and offline-first language.
+  - Probe-first, shadow-first, and fail-closed guidance remains explicit and consistent.
+  - Cross-links between policy, review, export, and gate docs are coherent.
+- Dependencies: 245.
 
-## Prompt 237 (MUST) — Operator workflow hardening for review/export/signoff chain
-Objective: Harden the operator workflow chain spanning review, export, and signoff using normalized v6 governance surfaces.
+## Prompt 247 (MUST) — Operator workflow/export-chain hardening with applied-scope authority
+Objective: Harden operator workflow and export-chain steps so applied-scope authority is explicit throughout execution.
 - Acceptance:
-  - Workflow composition remains deterministic, read-only, and evidence-bound.
-  - Required artifact prerequisites are explicit with fail-closed handling on missing inputs.
-  - Operator guidance reuses normalized artifacts consistently.
-- Dependencies: 234, 235, 236.
+  - Workflow steps consume applied-scope authority consistently from canonical governance artifacts.
+  - Missing authority/evidence prerequisites fail closed with bounded remediation hints.
+  - Workflow behavior remains deterministic, read-only where required, and offline-first.
+- Dependencies: 244, 245, 246.
 
-## Prompt 238 (MUST) — v6 gate schema and orchestration
-Objective: Define and stabilize the v6 gate schema/orchestration for the v6 governance hardening scope.
+## Prompt 248 (MUST) — v7 gate schema and orchestration
+Objective: Define and stabilize v7 gate schema and orchestration over v7 governance/export/workflow invariants.
 - Acceptance:
-  - v6 gate checks map directly to v6 governance surfaces and interoperability invariants.
-  - PASS/FAIL behavior is deterministic with bounded and explicit remediation guidance.
-  - Optional paths remain explicitly bounded and do not weaken fail-closed behavior.
-- Dependencies: 237.
+  - v7 gate checks map directly to applied-scope governance, interoperability, and workflow invariants.
+  - PASS/FAIL behavior is deterministic with explicit bounded remediation guidance.
+  - Optional paths remain conservative and do not weaken fail-closed behavior.
+- Dependencies: 247.
 
-## Prompt 239 (MUST) — v6 wrap and next-anchor governance
-Objective: Close v6 governance work and prepare the next anchor with a bounded, evidence-backed handoff queue.
+## Prompt 249 (MUST) — v7 wrap and next-anchor governance
+Objective: Close v7 governance work and prepare the subsequent anchor with a bounded evidence-backed handoff queue.
 - Acceptance:
-  - v6 completion state and next-anchor decision are documented in series-state artifacts.
-  - Next prompt queue remains capped to 10 entries unless explicitly requested otherwise.
+  - v7 completion state and next-anchor decision are documented in series-state artifacts.
+  - Immediate prompt queue remains capped to 10 unless explicitly requested otherwise.
   - Wrap language remains hardware-neutral, offline-first, probe-first, shadow-first, and fail-closed.
-- Dependencies: 238.
+- Dependencies: 248.
