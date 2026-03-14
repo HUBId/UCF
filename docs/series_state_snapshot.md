@@ -12,13 +12,13 @@
 - **v3:** complete (`ucf-ops v3 gate` overall PASS recorded at Prompt 208).
 - **v4:** complete (`ucf-ops v4 gate` overall PASS recorded at Prompt 218).
 - **v5:** complete (`ucf-ops v5 gate` overall PASS recorded at Prompt 228).
-- **v6:** not started yet.
+- **v6:** in progress; complete when `ucf-ops v6 gate` reports overall PASS.
 - **Queue policy:** immediate queue remains capped to 10 prompts.
 
 ## Last executed prompt / resume point
-- Last executed prompt ID: **229**.
-- Next prompt ID: **230**.
-- Resume from: **`PROMPT 230`**.
+- Last executed prompt ID: **238**.
+- Next prompt ID: **239**.
+- Resume from: **`PROMPT 239`**.
 - Numbering remains monotonic and append-only.
 
 ## Immediate next prompts (capped to 10)
@@ -26,16 +26,16 @@ Reference: `docs/next_10_prompts.md`
 
 | Prompt ID | Title (short) | v6 class | Status |
 |---:|---|---|---|
-| 230 | Primary governance surfaces reuse unification | MUST | planned |
-| 231 | Supported-slot expansion execution (if justified) | MUST | planned |
-| 232 | Expanded-set active review/signoff consistency deepening | MUST | planned |
-| 233 | Export bundle normalization across v6 governance artifacts | MUST | planned |
-| 234 | Gate/remediation/report interoperability hardening | MUST | planned |
-| 235 | v6 schema snapshot refresh | MUST | planned |
-| 236 | v6 portability/docs refresh | NICE | planned |
-| 237 | Operator workflow hardening for review/export/signoff chain | MUST | planned |
-| 238 | v6 gate schema and orchestration | MUST | planned |
-| 239 | v6 wrap and next-anchor governance | MUST | planned |
+| 230 | Primary governance surfaces reuse unification | MUST | complete |
+| 231 | Supported-slot expansion execution (if justified) | MUST | complete |
+| 232 | Expanded-set active review/signoff consistency deepening | MUST | complete |
+| 233 | Export bundle normalization across v6 governance artifacts | MUST | complete |
+| 234 | Gate/remediation/report interoperability hardening | MUST | complete |
+| 235 | v6 schema snapshot refresh | MUST | complete |
+| 236 | v6 portability/docs refresh | NICE | complete |
+| 237 | Operator workflow hardening for review/export/signoff chain | MUST | complete |
+| 238 | v6 gate schema and orchestration | MUST | complete |
+| 239 | v6 wrap and next-anchor governance | MUST | next |
 
 ## Series control notes
 - v0 completion requirement: historical signoff recorded.
@@ -45,6 +45,8 @@ Reference: `docs/next_10_prompts.md`
 - v4 completion requirement: **`ucf-ops v4 gate` overall PASS at Prompt 218**.
 - v5 completion requirement: **`ucf-ops v5 gate` overall PASS at Prompt 228**.
 - v6 progression remains hardware-neutral, offline-first, probe-first, shadow-first, and fail-closed.
+- v6 completion requirement: **`ucf-ops v6 gate` overall PASS**.
+- Next-anchor progression is blocked until the v6 gate reports PASS.
 - Prompts are classified as MUST/NICE/DEFERRED at authoring time.
 
 ## Supported real-slot baseline carried into v6
