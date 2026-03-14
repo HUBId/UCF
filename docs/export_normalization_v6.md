@@ -68,3 +68,14 @@ cargo run -p ucf-ops -- interop consistency-matrix --out ./out/interop_consisten
 ```
 
 This enforces shared context/scope/digest/reference compatibility across gate, strict, snapshot, operator, and export surfaces.
+
+
+## Operator workflow chain integration
+
+`exports normalize-check` ist ein verpflichtender Input in der top-level Workflow-Orchestrierung:
+
+```bash
+cargo run -p ucf-ops -- operator workflow --out ./out/operator_workflow_chain.json
+```
+
+Wenn Normalisierung fehlschlägt, ist die Workflow-Stage fail-closed (`WORKFLOW_BLOCKED`) und Export-Readiness bleibt `false`. Siehe `docs/operator_workflow_chain_v6.md`.

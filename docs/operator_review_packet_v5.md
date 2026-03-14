@@ -81,3 +81,14 @@ cargo run -p ucf-ops -- interop consistency-matrix --out ./out/interop_consisten
 ```
 
 Key failures include `SNAPSHOT_REFERENCE_MISMATCH`, `REMEDIATION_MISMATCH`, and `REQUIRED_SURFACE_MISSING`.
+
+
+## Top-level operator workflow chain (v6)
+
+Als primären Operator-Einstieg für die gesamte Review/Export-Kette verwende:
+
+```bash
+cargo run -p ucf-ops -- operator workflow --out ./out/operator_workflow_chain.json
+```
+
+Das Workflow-Chain-Artefakt korreliert Governance-Surfaces, Applied-Scope, Review-Packet, Signoff, Interop-Matrix und Export-Normalisierung in eine einzige deterministische Stage (`WORKFLOW_BLOCKED|WORKFLOW_REVIEW_READY|WORKFLOW_EXPORT_READY`). Siehe `docs/operator_workflow_chain_v6.md`.

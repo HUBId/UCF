@@ -48,3 +48,14 @@ cargo run -p ucf-ops -- interop consistency-matrix --out ./out/interop_consisten
 ```
 
 Der Command ist read-only und liefert die primäre v6-Interop-Proof-Oberfläche.
+
+
+## Operator workflow chain integration
+
+Die Interop-Matrix wird in der top-level Workflow-Kette als harter Konsistenz-Input verwendet:
+
+```bash
+cargo run -p ucf-ops -- operator workflow --out ./out/operator_workflow_chain.json
+```
+
+Bei Interop-Fail ist die Workflow-Stage deterministisch `WORKFLOW_BLOCKED`. Siehe `docs/operator_workflow_chain_v6.md`.
