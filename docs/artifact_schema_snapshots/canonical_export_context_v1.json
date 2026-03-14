@@ -1,0 +1,28 @@
+{
+  "artifact_id": "canonical_export_context_v1",
+  "type_name": "CanonicalExportContextV1",
+  "source_file": "runtime/ucf-ops/src/lib.rs",
+  "required_fields": [
+    "context_digest",
+    "manifest_digest_prefix",
+    "policy_graph_digest_prefix",
+    "supported_slot_set_digest_prefix"
+  ],
+  "optional_fields": [
+    "active_review_snapshot_digest_prefix",
+    "backend_evidence_snapshot_digest_prefix",
+    "operator_signoff_digest_prefix",
+    "run_id"
+  ],
+  "field_types": {
+    "active_review_snapshot_digest_prefix": "Option<String>",
+    "backend_evidence_snapshot_digest_prefix": "Option<String>",
+    "context_digest": "String",
+    "manifest_digest_prefix": "String",
+    "operator_signoff_digest_prefix": "Option<String>",
+    "policy_graph_digest_prefix": "String",
+    "run_id": "Option<String>",
+    "supported_slot_set_digest_prefix": "String"
+  },
+  "enum_variants": {}
+}

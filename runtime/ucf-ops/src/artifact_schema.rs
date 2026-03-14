@@ -64,7 +64,7 @@ struct ArtifactSpec {
     enum_names: &'static [&'static str],
 }
 
-const ARTIFACT_SPECS: [ArtifactSpec; 14] = [
+const ARTIFACT_SPECS: [ArtifactSpec; 21] = [
     ArtifactSpec {
         artifact_id: "active_review_snapshot_v1",
         file_rel: "runtime/ucf-ops/src/models_lifecycle.rs",
@@ -84,6 +84,24 @@ const ARTIFACT_SPECS: [ArtifactSpec; 14] = [
         enum_names: &[],
     },
     ArtifactSpec {
+        artifact_id: "governance_primary_surfaces_v1",
+        file_rel: "runtime/ucf-ops/src/governance_surfaces.rs",
+        type_name: "GovernancePrimarySurfacesV1",
+        enum_names: &[],
+    },
+    ArtifactSpec {
+        artifact_id: "supported_real_slot_set_v2",
+        file_rel: "runtime/ucf-ops/src/models_lifecycle.rs",
+        type_name: "SupportedRealSlotSetV2",
+        enum_names: &["SupportedRealSlotSetExecutionDecisionV2"],
+    },
+    ArtifactSpec {
+        artifact_id: "applied_supported_set_context_v1",
+        file_rel: "runtime/ucf-ops/src/models_lifecycle.rs",
+        type_name: "AppliedSupportedSetContextV1",
+        enum_names: &["SupportedRealSlotSetExecutionDecisionV2"],
+    },
+    ArtifactSpec {
         artifact_id: "repro_pack_manifest_v1",
         file_rel: "runtime/ucf-ops/src/lib.rs",
         type_name: "ReproPackManifestV1",
@@ -96,9 +114,33 @@ const ARTIFACT_SPECS: [ArtifactSpec; 14] = [
         enum_names: &[],
     },
     ArtifactSpec {
+        artifact_id: "canonical_export_artifact_ref_v1",
+        file_rel: "runtime/ucf-ops/src/lib.rs",
+        type_name: "CanonicalExportArtifactRefV1",
+        enum_names: &["CanonicalArtifactIncludedStateV1"],
+    },
+    ArtifactSpec {
+        artifact_id: "canonical_export_context_v1",
+        file_rel: "runtime/ucf-ops/src/lib.rs",
+        type_name: "CanonicalExportContextV1",
+        enum_names: &[],
+    },
+    ArtifactSpec {
         artifact_id: "remediation_consistency_check_v1",
         file_rel: "runtime/ucf-ops/src/remediation_consistency.rs",
         type_name: "RemediationConsistencyReportV1",
+        enum_names: &[],
+    },
+    ArtifactSpec {
+        artifact_id: "cross_surface_context_matrix_v1",
+        file_rel: "runtime/ucf-ops/src/interop_consistency.rs",
+        type_name: "CrossSurfaceContextMatrixV1",
+        enum_names: &[],
+    },
+    ArtifactSpec {
+        artifact_id: "interop_consistency_matrix_report_v1",
+        file_rel: "runtime/ucf-ops/src/interop_consistency.rs",
+        type_name: "InteropConsistencyMatrixReportV1",
         enum_names: &[],
     },
     ArtifactSpec {
@@ -590,9 +632,16 @@ mod tests {
                 "active_review_snapshot_v1",
                 "backend_resolution_v1",
                 "backend_evidence_snapshot_v1",
+                "governance_primary_surfaces_v1",
+                "supported_real_slot_set_v2",
+                "applied_supported_set_context_v1",
                 "repro_pack_manifest_v1",
                 "bugkit_manifest_v1",
+                "canonical_export_artifact_ref_v1",
+                "canonical_export_context_v1",
                 "remediation_consistency_check_v1",
+                "cross_surface_context_matrix_v1",
+                "interop_consistency_matrix_report_v1",
                 "operator_report_v1",
                 "operator_signoff_v1",
                 "operator_review_packet_v1",

@@ -1,0 +1,28 @@
+{
+  "artifact_id": "supported_real_slot_set_v2",
+  "type_name": "SupportedRealSlotSetV2",
+  "source_file": "runtime/ucf-ops/src/models_lifecycle.rs",
+  "required_fields": [
+    "decision",
+    "previous_set_digest_prefix",
+    "schema_version",
+    "set_digest",
+    "slots",
+    "source_policy_digest_prefix"
+  ],
+  "optional_fields": [],
+  "field_types": {
+    "decision": "SupportedRealSlotSetExecutionDecisionV2",
+    "previous_set_digest_prefix": "String",
+    "schema_version": "u16",
+    "set_digest": "String",
+    "slots": "Vec<String>",
+    "source_policy_digest_prefix": "String"
+  },
+  "enum_variants": {
+    "SupportedRealSlotSetExecutionDecisionV2": [
+      "Expanded",
+      "Frozen"
+    ]
+  }
+}

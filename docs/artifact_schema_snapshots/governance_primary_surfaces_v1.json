@@ -1,0 +1,27 @@
+{
+  "artifact_id": "governance_primary_surfaces_v1",
+  "type_name": "GovernancePrimarySurfacesV1",
+  "source_file": "runtime/ucf-ops/src/governance_surfaces.rs",
+  "required_fields": [
+    "active_review_snapshot_digest_prefix",
+    "backend_evidence_snapshot_digest_prefix",
+    "consistency_ok",
+    "governance_surfaces_digest",
+    "manifest_digest_prefix",
+    "policy_graph_digest_prefix",
+    "schema_version",
+    "supported_slot_set_digest_prefix"
+  ],
+  "optional_fields": [],
+  "field_types": {
+    "active_review_snapshot_digest_prefix": "String",
+    "backend_evidence_snapshot_digest_prefix": "String",
+    "consistency_ok": "bool",
+    "governance_surfaces_digest": "String",
+    "manifest_digest_prefix": "String",
+    "policy_graph_digest_prefix": "String",
+    "schema_version": "u16",
+    "supported_slot_set_digest_prefix": "String"
+  },
+  "enum_variants": {}
+}

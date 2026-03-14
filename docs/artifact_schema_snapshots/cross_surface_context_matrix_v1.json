@@ -1,0 +1,23 @@
+{
+  "artifact_id": "cross_surface_context_matrix_v1",
+  "type_name": "CrossSurfaceContextMatrixV1",
+  "source_file": "runtime/ucf-ops/src/interop_consistency.rs",
+  "required_fields": [
+    "applied_supported_set_digest_prefix",
+    "manifest_digest_prefix",
+    "matrix_digest",
+    "policy_graph_digest_prefix",
+    "schema_version",
+    "surfaces"
+  ],
+  "optional_fields": [],
+  "field_types": {
+    "applied_supported_set_digest_prefix": "String",
+    "manifest_digest_prefix": "String",
+    "matrix_digest": "String",
+    "policy_graph_digest_prefix": "String",
+    "schema_version": "u16",
+    "surfaces": "Vec<CrossSurfaceEntryV1>"
+  },
+  "enum_variants": {}
+}

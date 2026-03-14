@@ -1,0 +1,21 @@
+{
+  "artifact_id": "interop_consistency_matrix_report_v1",
+  "type_name": "InteropConsistencyMatrixReportV1",
+  "source_file": "runtime/ucf-ops/src/interop_consistency.rs",
+  "required_fields": [
+    "interop_record",
+    "match_rules",
+    "matrix",
+    "schema_version",
+    "summary"
+  ],
+  "optional_fields": [],
+  "field_types": {
+    "interop_record": "InteropConsistencyRecordV1",
+    "match_rules": "CrossSurfaceMatchRulesV1",
+    "matrix": "CrossSurfaceContextMatrixV1",
+    "schema_version": "u16",
+    "summary": "InteropConsistencySummaryV1"
+  },
+  "enum_variants": {}
+}
