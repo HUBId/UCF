@@ -8791,7 +8791,16 @@ fn build_tag() -> Result<BuildTag, OpsError> {
     let output = std::process::Command::new("git")
         .args(["rev-parse", "HEAD"])
         .output()?;
-    let commit = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let commit = if output.status.success() {
+        let parsed = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if parsed.is_empty() {
+            "unknown".to_string()
+        } else {
+            parsed
+        }
+    } else {
+        "unknown".to_string()
+    };
     Ok(BuildTag {
         git_commit: commit,
         package_version: env!("CARGO_PKG_VERSION").to_string(),
