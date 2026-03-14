@@ -57,3 +57,9 @@ Reference: `docs/next_10_prompts.md`
 - v7 progression remains hardware-neutral, offline-first, probe-first, shadow-first, and fail-closed.
 - v7 completion requirement: **`ucf-ops v7 gate` overall PASS**.
 - Prompts are classified as MUST/NICE/DEFERRED at authoring time.
+
+
+## Supported real-slot baseline for current stage
+- First supported slot: `world_jepa`.
+- Second supported slot in this stage: `sae`.
+- Supported scope changes remain policy-gated, evidence-bound, and fail-closed until explicitly approved.
