@@ -20,6 +20,7 @@ mod nightly;
 mod operator_report;
 mod operator_review_packet;
 mod operator_signoff;
+mod operator_workflow;
 mod remediation;
 mod remediation_consistency;
 mod second_slot_parity;
@@ -108,6 +109,11 @@ pub use operator_review_packet::{
 pub use operator_signoff::{
     operator_signoff, operator_signoff_text, OperatorSignoffArgs, OperatorSignoffDecisionV1,
     SignoffDecisionStateV1, SignoffPolicyV1,
+};
+pub use operator_workflow::{
+    operator_workflow_chain, operator_workflow_chain_text, OperatorWorkflowArgs,
+    OperatorWorkflowChainV1, OperatorWorkflowExportTargetsV1, OperatorWorkflowPolicyV1,
+    OperatorWorkflowStageV2,
 };
 pub use remediation::all_registry_rows as remediation_registry_rows;
 pub use remediation_consistency::{

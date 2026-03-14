@@ -102,3 +102,14 @@ Operator signoff reviewability is reduced only over `AppliedSupportedSetContextV
 ## Export normalization v6
 
 This surface participates in canonical export normalization (shared `CanonicalExportArtifactRefV1` and `CanonicalExportContextV1`) and is validated via `cargo run -p ucf-ops -- exports normalize-check --out ./out/export_normalize_check.json`. See `docs/export_normalization_v6.md` for semantics.
+
+
+## Top-level operator workflow chain (v6)
+
+Signoff bleibt eine fokussierte Entscheidungsoberfläche. Für die gesamte v6-Operator-Reihenfolge (Governance -> Scope -> Review+Signoff -> Export-Readiness) nutze:
+
+```bash
+cargo run -p ucf-ops -- operator workflow --out ./out/operator_workflow_chain.json
+```
+
+Siehe `docs/operator_workflow_chain_v6.md`.
