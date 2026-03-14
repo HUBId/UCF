@@ -322,9 +322,9 @@ mod tests {
         assert_eq!(
             r.mismatch_categories,
             vec![
+                ScopeAuthorityMismatchCategoryV1::SurfaceDidNotUseAppliedScope,
                 ScopeAuthorityMismatchCategoryV1::ExtraSlotFromLegacyInference,
                 ScopeAuthorityMismatchCategoryV1::MissingInScopeSlot,
-                ScopeAuthorityMismatchCategoryV1::SurfaceDidNotUseAppliedScope,
             ]
         );
     }
