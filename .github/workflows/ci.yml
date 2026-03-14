@@ -59,8 +59,6 @@ jobs:
           cargo run -p ucf-ops -- models applied-scope-check --out ./out/applied_scope_check.json --workdir .
       - name: Export normalize check smoke
         run: cargo run -p ucf-ops -- exports normalize-check --out ./out/export_normalize_check.json
-      - name: Interop consistency matrix smoke
-        run: cargo run -p ucf-ops -- interop consistency-matrix --out ./out/interop_consistency_matrix.json
       - name: Active review snapshot smoke
         run: cargo run -p ucf-ops -- models active-review-snapshot --out ./out/active_review_snapshot.json
       - name: Backend resolution smoke (optional second-slot path)
@@ -107,6 +105,10 @@ jobs:
         run: cargo run -p ucf-ops -- strict check --strict --out ./out/strict_check.json
       - name: Operator report (smoke)
         run: cargo run -p ucf-ops -- operator report --out ./out/operator_report.json
+      - name: v5 gate (interop prereq)
+        run: cargo run -p ucf-ops -- v5 gate --out ./out/v5_gate_report.json
+      - name: Interop consistency matrix smoke
+        run: cargo run -p ucf-ops -- interop consistency-matrix --out ./out/interop_consistency_matrix.json
       - name: Change impact plan (informational)
         run: |
           cargo run -p ucf-ops -- change-impact --base HEAD~1 --head HEAD --out ./out/change_impact_plan.md --json-out ./out/change_impact_plan.json
@@ -172,8 +174,6 @@ jobs:
           cargo run -p ucf-ops -- models applied-scope-check --out ./out/applied_scope_check.json --workdir .
       - name: Export normalize check smoke
         run: cargo run -p ucf-ops -- exports normalize-check --out ./out/export_normalize_check.json
-      - name: Interop consistency matrix smoke
-        run: cargo run -p ucf-ops -- interop consistency-matrix --out ./out/interop_consistency_matrix.json
       - name: Active review snapshot smoke
         run: cargo run -p ucf-ops -- models active-review-snapshot --out ./out/active_review_snapshot.json
       - name: Backend resolution smoke (linux)
@@ -290,6 +290,10 @@ jobs:
         run: cargo run -p ucf-ops -- strict check --strict --out ./out/strict_check.json
       - name: Operator report (smoke)
         run: cargo run -p ucf-ops -- operator report --out ./out/operator_report.json
+      - name: v5 gate (interop prereq)
+        run: cargo run -p ucf-ops -- v5 gate --out ./out/v5_gate_report.json
+      - name: Interop consistency matrix smoke
+        run: cargo run -p ucf-ops -- interop consistency-matrix --out ./out/interop_consistency_matrix.json
       - name: Portability check
         run: cargo run -p ucf-ops -- portability check --out ./out/portability.json
       - name: Portability report
