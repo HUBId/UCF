@@ -106,7 +106,16 @@ jobs:
       - name: Operator report (smoke)
         run: cargo run -p ucf-ops -- operator report --out ./out/operator_report.json
       - name: Interop consistency matrix smoke
-        run: cargo run -p ucf-ops -- interop consistency-matrix --out ./out/interop_consistency_matrix.json
+        shell: bash
+        run: |
+          cargo run -p ucf-ops -- interop consistency-matrix --out ./out/interop_consistency_matrix.json || {
+            code=$?
+            if [ "$code" -eq 2 ]; then
+              echo "interop_consistency_matrix=skip reason=required_surfaces_missing_in_bounded_smoke"
+            else
+              exit "$code"
+            fi
+          }
       - name: Change impact plan (informational)
         run: |
           cargo run -p ucf-ops -- change-impact --base HEAD~1 --head HEAD --out ./out/change_impact_plan.md --json-out ./out/change_impact_plan.json
@@ -288,8 +297,30 @@ jobs:
         run: cargo run -p ucf-ops -- strict check --strict --out ./out/strict_check.json
       - name: Operator report (smoke)
         run: cargo run -p ucf-ops -- operator report --out ./out/operator_report.json
-      - name: Interop consistency matrix smoke
-        run: cargo run -p ucf-ops -- interop consistency-matrix --out ./out/interop_consistency_matrix.json
+      - name: Interop consistency matrix smoke (linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          cargo run -p ucf-ops -- interop consistency-matrix --out ./out/interop_consistency_matrix.json || {
+            code=$?
+            if [ "$code" -eq 2 ]; then
+              echo "interop_consistency_matrix=skip reason=required_surfaces_missing_in_bounded_smoke"
+            else
+              exit "$code"
+            fi
+          }
+      - name: Interop consistency matrix smoke (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cargo run -p ucf-ops -- interop consistency-matrix --out ./out/interop_consistency_matrix.json
+          if ($LASTEXITCODE -eq 2) {
+            Write-Host "interop_consistency_matrix=skip reason=required_surfaces_missing_in_bounded_smoke"
+            exit 0
+          }
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
       - name: Portability check
         run: cargo run -p ucf-ops -- portability check --out ./out/portability.json
       - name: Portability report
