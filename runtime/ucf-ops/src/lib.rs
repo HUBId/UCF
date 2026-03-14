@@ -14119,16 +14119,35 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         "artifact_schema_snapshot_check",
         "./out/artifact_schema_check.json",
     )?;
-    let governance_surfaces_smoke = out_smoke_check(
-        "governance_surfaces_smoke",
-        "./out/governance_surfaces_check.json",
-        |out_path| governance_surfaces_check(workdir, out_path),
-        |report| format!("status={} code={}", report.status, report.summary_code),
-    );
+    let governance_surfaces_smoke = {
+        let out_path = PathBuf::from("./out/governance_surfaces_check.json");
+        match governance_surfaces_check(workdir, &out_path) {
+            Ok(report) => PortabilityCommandCheck {
+                name: "governance_surfaces_smoke".to_string(),
+                status: if report.status == "PASS" {
+                    PortabilityGateStatus::Pass
+                } else {
+                    PortabilityGateStatus::Fail
+                },
+                detail: format!("status={} code={}", report.status, report.summary_code),
+                out: Some(out_path.display().to_string()),
+            },
+            Err(err) => PortabilityCommandCheck {
+                name: "governance_surfaces_smoke".to_string(),
+                status: PortabilityGateStatus::Fail,
+                detail: err.to_string(),
+                out: Some(out_path.display().to_string()),
+            },
+        }
+    };
     let supported_set_apply_smoke = out_smoke_check(
         "supported_set_apply_smoke",
         "./out/supported_set_apply.json",
-        |out_path| models_supported_set_apply(workdir, out_path),
+        |out_path| {
+            let review_out = PathBuf::from("./out/supported_set_review.json");
+            models_supported_set_review(workdir, &review_out)?;
+            models_supported_set_apply(workdir, out_path)
+        },
         |report| {
             format!(
                 "decision={:?} slots={}",
@@ -14137,30 +14156,100 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
             )
         },
     );
-    let applied_scope_check_smoke = out_smoke_check(
-        "applied_scope_check_smoke",
-        "./out/applied_scope_check.json",
-        |out_path| models_applied_scope_check(workdir, out_path),
-        |report| {
-            format!(
-                "status={} mismatches={}",
-                report.status,
-                report.mismatch_categories.len()
-            )
-        },
-    );
-    let export_normalize_check_smoke = out_smoke_check(
-        "export_normalize_check_smoke",
-        "./out/export_normalize_check.json",
-        |out_path| exports_normalize_check(workdir, out_path),
-        |report| format!("pass={} mismatches={}", report.pass, report.mismatch_count),
-    );
-    let interop_consistency_matrix_smoke = out_smoke_check(
-        "interop_consistency_matrix_smoke",
-        "./out/interop_consistency_matrix.json",
-        |out_path| interop_consistency_matrix(workdir, out_path),
-        |report| format!("overall={:?}", report.summary.overall_status),
-    );
+    let applied_scope_check_smoke = {
+        let out_path = PathBuf::from("./out/applied_scope_check.json");
+        let prep = (|| -> Result<AppliedScopeCheckReportV1, OpsError> {
+            let active_out = PathBuf::from("./out/active_review_snapshot.json");
+            let backend_out = PathBuf::from("./out/backend_evidence_snapshot.json");
+            let signoff_out = PathBuf::from("./out/operator_signoff.json");
+            let review_packet_out = PathBuf::from("./out/operator_review_packet.json");
+            models_active_review_snapshot(workdir, &active_out)?;
+            let backend = models_evidence_snapshot(workdir, None, None)?;
+            write_json(&backend_out, &backend)?;
+            operator_signoff(
+                workdir,
+                &OperatorSignoffArgs {
+                    run_id: None,
+                    latest: false,
+                    profile: "test".to_string(),
+                },
+                &signoff_out,
+            )?;
+            operator_review_packet(
+                workdir,
+                &OperatorReviewPacketArgs {
+                    run_id: None,
+                    latest: false,
+                },
+                &review_packet_out,
+            )?;
+            models_applied_scope_check(workdir, &out_path)
+        })();
+        match prep {
+            Ok(report) => PortabilityCommandCheck {
+                name: "applied_scope_check_smoke".to_string(),
+                status: if report.status == "PASS" {
+                    PortabilityGateStatus::Pass
+                } else {
+                    PortabilityGateStatus::Fail
+                },
+                detail: format!(
+                    "status={} mismatches={}",
+                    report.status,
+                    report.mismatch_categories.len()
+                ),
+                out: Some(out_path.display().to_string()),
+            },
+            Err(err) => PortabilityCommandCheck {
+                name: "applied_scope_check_smoke".to_string(),
+                status: PortabilityGateStatus::Fail,
+                detail: err.to_string(),
+                out: Some(out_path.display().to_string()),
+            },
+        }
+    };
+    let export_normalize_check_smoke = {
+        let out_path = PathBuf::from("./out/export_normalize_check.json");
+        match exports_normalize_check(workdir, &out_path) {
+            Ok(report) => PortabilityCommandCheck {
+                name: "export_normalize_check_smoke".to_string(),
+                status: if report.pass {
+                    PortabilityGateStatus::Pass
+                } else {
+                    PortabilityGateStatus::Fail
+                },
+                detail: format!("pass={} mismatches={}", report.pass, report.mismatch_count),
+                out: Some(out_path.display().to_string()),
+            },
+            Err(err) => PortabilityCommandCheck {
+                name: "export_normalize_check_smoke".to_string(),
+                status: PortabilityGateStatus::Fail,
+                detail: err.to_string(),
+                out: Some(out_path.display().to_string()),
+            },
+        }
+    };
+    let interop_consistency_matrix_smoke = {
+        let out_path = PathBuf::from("./out/interop_consistency_matrix.json");
+        match interop_consistency_matrix(workdir, &out_path) {
+            Ok(report) => PortabilityCommandCheck {
+                name: "interop_consistency_matrix_smoke".to_string(),
+                status: if matches!(report.summary.overall_status, InteropOverallStatusV1::Pass) {
+                    PortabilityGateStatus::Pass
+                } else {
+                    PortabilityGateStatus::Fail
+                },
+                detail: format!("overall={:?}", report.summary.overall_status),
+                out: Some(out_path.display().to_string()),
+            },
+            Err(err) => PortabilityCommandCheck {
+                name: "interop_consistency_matrix_smoke".to_string(),
+                status: PortabilityGateStatus::Fail,
+                detail: err.to_string(),
+                out: Some(out_path.display().to_string()),
+            },
+        }
+    };
     let active_review_snapshot_smoke = active_review_snapshot_smoke(
         workdir,
         "active_review_snapshot_smoke",
@@ -14285,8 +14374,9 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         matrix_cmd("linux", "cargo run -p ucf-ops -- audit net-deps --out ./out/net_deps.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- spec artifact-schemas-check --out ./out/artifact_schema_check.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- governance-surfaces-check --out ./out/governance_surfaces_check.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- models applied-scope-check --out ./out/applied_scope_check.json"),
+        matrix_cmd("linux", "cargo run -p ucf-ops -- models supported-set-review --out ./out/supported_set_review.json --workdir ."),
+        matrix_cmd("linux", "cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json --workdir ."),
+        matrix_cmd("linux", "cargo run -p ucf-ops -- models applied-scope-check --out ./out/applied_scope_check.json --workdir ."),
         matrix_cmd("linux", "cargo run -p ucf-ops -- exports normalize-check --out ./out/export_normalize_check.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- interop consistency-matrix --out ./out/interop_consistency_matrix.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- models active-review-snapshot --out ./out/active_review_snapshot.json"),
@@ -14309,8 +14399,9 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         matrix_cmd("windows", "cargo run -p ucf-ops -- audit hardware-scan"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- spec artifact-schemas-check --out ./out/artifact_schema_check.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- governance-surfaces-check --out ./out/governance_surfaces_check.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- models applied-scope-check --out ./out/applied_scope_check.json"),
+        matrix_cmd("windows", "cargo run -p ucf-ops -- models supported-set-review --out ./out/supported_set_review.json --workdir ."),
+        matrix_cmd("windows", "cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json --workdir ."),
+        matrix_cmd("windows", "cargo run -p ucf-ops -- models applied-scope-check --out ./out/applied_scope_check.json --workdir ."),
         matrix_cmd("windows", "cargo run -p ucf-ops -- exports normalize-check --out ./out/export_normalize_check.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- interop consistency-matrix --out ./out/interop_consistency_matrix.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- models active-review-snapshot --out ./out/active_review_snapshot.json"),

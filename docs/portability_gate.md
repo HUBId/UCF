@@ -13,8 +13,9 @@
      - `cargo run -p ucf-ops -- audit net-deps --out ./out/net_deps.json`
      - `cargo run -p ucf-ops -- spec artifact-schemas-check --out ./out/artifact_schema_check.json`
      - `cargo run -p ucf-ops -- governance-surfaces-check --out ./out/governance_surfaces_check.json`
-     - `cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json`
-     - `cargo run -p ucf-ops -- models applied-scope-check --out ./out/applied_scope_check.json`
+     - `cargo run -p ucf-ops -- models supported-set-review --out ./out/supported_set_review.json --workdir .`
+     - `cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json --workdir .`
+     - `cargo run -p ucf-ops -- models applied-scope-check --out ./out/applied_scope_check.json --workdir .`
      - `cargo run -p ucf-ops -- exports normalize-check --out ./out/export_normalize_check.json`
      - `cargo run -p ucf-ops -- interop consistency-matrix --out ./out/interop_consistency_matrix.json`
      - `cargo run -p ucf-ops -- models evidence-snapshot --out ./out/backend_evidence_snapshot.json`
@@ -35,8 +36,9 @@
      - `cargo run -p ucf-ops -- audit hardware-scan`
      - `cargo run -p ucf-ops -- spec artifact-schemas-check --out ./out/artifact_schema_check.json`
      - `cargo run -p ucf-ops -- governance-surfaces-check --out ./out/governance_surfaces_check.json`
-     - `cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json`
-     - `cargo run -p ucf-ops -- models applied-scope-check --out ./out/applied_scope_check.json`
+     - `cargo run -p ucf-ops -- models supported-set-review --out ./out/supported_set_review.json --workdir .`
+     - `cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json --workdir .`
+     - `cargo run -p ucf-ops -- models applied-scope-check --out ./out/applied_scope_check.json --workdir .`
      - `cargo run -p ucf-ops -- exports normalize-check --out ./out/export_normalize_check.json`
      - `cargo run -p ucf-ops -- interop consistency-matrix --out ./out/interop_consistency_matrix.json`
      - `cargo run -p ucf-ops -- models evidence-snapshot --out ./out/backend_evidence_snapshot.json`
@@ -124,13 +126,9 @@ cargo run -p ucf-ops -- audit hardware-scan
 cargo run -p ucf-ops -- audit net-deps --out ./out/net_deps.json
 cargo run -p ucf-ops -- spec artifact-schemas-check --out ./out/artifact_schema_check.json
 cargo run -p ucf-ops -- governance-surfaces-check --out ./out/governance_surfaces_check.json
-cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json
-cargo run -p ucf-ops -- models applied-scope-check --out ./out/applied_scope_check.json
-cargo run -p ucf-ops -- exports normalize-check --out ./out/export_normalize_check.json
-cargo run -p ucf-ops -- interop consistency-matrix --out ./out/interop_consistency_matrix.json
-cargo run -p ucf-ops -- governance-surfaces-check --out ./out/governance_surfaces_check.json
-cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json
-cargo run -p ucf-ops -- models applied-scope-check --out ./out/applied_scope_check.json
+cargo run -p ucf-ops -- models supported-set-review --out ./out/supported_set_review.json --workdir .
+cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json --workdir .
+cargo run -p ucf-ops -- models applied-scope-check --out ./out/applied_scope_check.json --workdir .
 cargo run -p ucf-ops -- exports normalize-check --out ./out/export_normalize_check.json
 cargo run -p ucf-ops -- interop consistency-matrix --out ./out/interop_consistency_matrix.json
 cargo run -p ucf-ops -- models active-review-snapshot --out ./out/active_review_snapshot.json

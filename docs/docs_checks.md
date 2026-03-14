@@ -96,6 +96,7 @@ When `--out` is provided, lint writes deterministic JSON with per-check status a
 
 
 10. **v6 docs linkage consistency**
+   - Note: portability smokes run `models supported-set-review` before `models supported-set-apply` so apply remains deterministic and offline.
    - Requires presence and portability/docs linkage for:
      - `docs/governance_primary_surfaces_v6.md`
      - `docs/supported_set_apply_v6.md`

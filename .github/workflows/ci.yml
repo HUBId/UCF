@@ -46,10 +46,17 @@ jobs:
         run: cargo run -p ucf-ops -- spec artifact-schemas-check --out ./out/artifact_schema_check.json
       - name: Governance primary surfaces smoke
         run: cargo run -p ucf-ops -- governance-surfaces-check --out ./out/governance_surfaces_check.json
+      - name: Supported set review smoke (prereq)
+        run: cargo run -p ucf-ops -- models supported-set-review --out ./out/supported_set_review.json --workdir .
       - name: Supported set apply smoke
-        run: cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json
+        run: cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json --workdir .
       - name: Applied scope check smoke
-        run: cargo run -p ucf-ops -- models applied-scope-check --out ./out/applied_scope_check.json
+        run: |
+          cargo run -p ucf-ops -- models active-review-snapshot --out ./out/active_review_snapshot.json --workdir .
+          cargo run -p ucf-ops -- models evidence-snapshot --out ./out/backend_evidence_snapshot.json --workdir .
+          cargo run -p ucf-ops -- operator signoff --out ./out/operator_signoff.json --workdir .
+          cargo run -p ucf-ops -- operator review-packet --out ./out/operator_review_packet.json --workdir .
+          cargo run -p ucf-ops -- models applied-scope-check --out ./out/applied_scope_check.json --workdir .
       - name: Export normalize check smoke
         run: cargo run -p ucf-ops -- exports normalize-check --out ./out/export_normalize_check.json
       - name: Interop consistency matrix smoke
@@ -152,10 +159,17 @@ jobs:
         run: cargo run -p ucf-ops -- spec artifact-schemas-check --out ./out/artifact_schema_check.json
       - name: Governance primary surfaces smoke
         run: cargo run -p ucf-ops -- governance-surfaces-check --out ./out/governance_surfaces_check.json
+      - name: Supported set review smoke (prereq)
+        run: cargo run -p ucf-ops -- models supported-set-review --out ./out/supported_set_review.json --workdir .
       - name: Supported set apply smoke
-        run: cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json
+        run: cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json --workdir .
       - name: Applied scope check smoke
-        run: cargo run -p ucf-ops -- models applied-scope-check --out ./out/applied_scope_check.json
+        run: |
+          cargo run -p ucf-ops -- models active-review-snapshot --out ./out/active_review_snapshot.json --workdir .
+          cargo run -p ucf-ops -- models evidence-snapshot --out ./out/backend_evidence_snapshot.json --workdir .
+          cargo run -p ucf-ops -- operator signoff --out ./out/operator_signoff.json --workdir .
+          cargo run -p ucf-ops -- operator review-packet --out ./out/operator_review_packet.json --workdir .
+          cargo run -p ucf-ops -- models applied-scope-check --out ./out/applied_scope_check.json --workdir .
       - name: Export normalize check smoke
         run: cargo run -p ucf-ops -- exports normalize-check --out ./out/export_normalize_check.json
       - name: Interop consistency matrix smoke
