@@ -1,4 +1,4 @@
-# Portability Gate v5 Refresh (Linux + Windows)
+# Portability Gate v6 Refresh (Linux + Windows)
 
 `Portability Gate` blocks merges when core runtime/ops checks are not cross-platform safe.
 
@@ -12,6 +12,11 @@
      - `cargo run -p ucf-ops -- audit hardware-scan`
      - `cargo run -p ucf-ops -- audit net-deps --out ./out/net_deps.json`
      - `cargo run -p ucf-ops -- spec artifact-schemas-check --out ./out/artifact_schema_check.json`
+     - `cargo run -p ucf-ops -- governance-surfaces-check --out ./out/governance_surfaces_check.json`
+     - `cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json`
+     - `cargo run -p ucf-ops -- models applied-scope-check --out ./out/applied_scope_check.json`
+     - `cargo run -p ucf-ops -- exports normalize-check --out ./out/export_normalize_check.json`
+     - `cargo run -p ucf-ops -- interop consistency-matrix --out ./out/interop_consistency_matrix.json`
      - `cargo run -p ucf-ops -- models evidence-snapshot --out ./out/backend_evidence_snapshot.json`
      - `cargo run -p ucf-ops -- operator signoff --out ./out/operator_signoff.json`
      - `cargo run -p ucf-ops -- docs remediation-codes --out ./out/remediation_codes_v1.generated.md` (must match `docs/remediation_codes_v1.md`)
@@ -29,6 +34,11 @@
      - `cargo run -p ucf-ops -- audit path-scan`
      - `cargo run -p ucf-ops -- audit hardware-scan`
      - `cargo run -p ucf-ops -- spec artifact-schemas-check --out ./out/artifact_schema_check.json`
+     - `cargo run -p ucf-ops -- governance-surfaces-check --out ./out/governance_surfaces_check.json`
+     - `cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json`
+     - `cargo run -p ucf-ops -- models applied-scope-check --out ./out/applied_scope_check.json`
+     - `cargo run -p ucf-ops -- exports normalize-check --out ./out/export_normalize_check.json`
+     - `cargo run -p ucf-ops -- interop consistency-matrix --out ./out/interop_consistency_matrix.json`
      - `cargo run -p ucf-ops -- models evidence-snapshot --out ./out/backend_evidence_snapshot.json`
      - `cargo run -p ucf-ops -- operator signoff --out ./out/operator_signoff.json`
      - `cargo run -p ucf-ops -- docs remediation-codes --out ./out/remediation_codes_v1.generated.md` (must match `docs/remediation_codes_v1.md`)
@@ -41,7 +51,7 @@
      - `cargo run -p ucf-ops -- portability check --out ./out/portability.json`
      - `cargo run -p ucf-ops -- portability report --out ./out/portability_report.json`
 
-2. **v5 generation smoke checks (blocking unless explicitly optional)**
+2. **v6 generation smoke checks (blocking unless explicitly optional)**
    - `models active-review-snapshot` and `models backend-resolution` must run in bounded offline mode (optional backend-resolution paths must SKIP cleanly).
    - Enriched export smokes (`repro pack` + `repro verify`, `bugkit build`) must generate deterministic manifests with bounded fixtures and no payload/weight inclusion by default.
    - `remediation-consistency-check` must pass and emit deterministic mismatch categories.
@@ -63,6 +73,15 @@
 5. **Consolidated portability summary (`portability report`)**
    - Orchestrates checks and writes `./out/portability_report.json`.
    - Emits explicit `PASS|FAIL|SKIP` per section.
+
+## v6 docs covered by portability/docs gates
+
+- `docs/governance_primary_surfaces_v6.md`
+- `docs/supported_set_apply_v6.md`
+- `docs/applied_supported_scope_v6.md`
+- `docs/export_normalization_v6.md`
+- `docs/interop_consistency_v6.md`
+- `docs/artifact_schema_snapshots.md`
 
 ## v5 docs covered by portability/docs gates
 
@@ -104,6 +123,16 @@ cargo run -p ucf-ops -- audit path-scan
 cargo run -p ucf-ops -- audit hardware-scan
 cargo run -p ucf-ops -- audit net-deps --out ./out/net_deps.json
 cargo run -p ucf-ops -- spec artifact-schemas-check --out ./out/artifact_schema_check.json
+cargo run -p ucf-ops -- governance-surfaces-check --out ./out/governance_surfaces_check.json
+cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json
+cargo run -p ucf-ops -- models applied-scope-check --out ./out/applied_scope_check.json
+cargo run -p ucf-ops -- exports normalize-check --out ./out/export_normalize_check.json
+cargo run -p ucf-ops -- interop consistency-matrix --out ./out/interop_consistency_matrix.json
+cargo run -p ucf-ops -- governance-surfaces-check --out ./out/governance_surfaces_check.json
+cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json
+cargo run -p ucf-ops -- models applied-scope-check --out ./out/applied_scope_check.json
+cargo run -p ucf-ops -- exports normalize-check --out ./out/export_normalize_check.json
+cargo run -p ucf-ops -- interop consistency-matrix --out ./out/interop_consistency_matrix.json
 cargo run -p ucf-ops -- models active-review-snapshot --out ./out/active_review_snapshot.json
 cargo run -p ucf-ops -- models backend-resolution --slot sae --out ./out/backend_resolution_sae.json || echo "backend_resolution=skip optional_second_slot_path_unavailable"
 cargo run -p ucf-ops -- bringup --scenario fixtures/e2e/v0_flow_a.json --ticks 16 --workdir ./.ucf_portability_smoke --out ./out/portability_smoke_bringup
@@ -191,3 +220,12 @@ cargo run -p ucf-ops -- portability report --out ./out/portability_report.json
 - **FAIL**: blocking regression; command executed but returned non-pass status or errored.
 - **SKIP**: optional backend/report path unavailable; command section is non-blocking and must emit explicit skip reason.
 - Required docs/path/hardware/schema checks are expected to `PASS` on supported Linux/Windows setups.
+
+
+- **`exports normalize-check` failed**
+  - Re-run bounded export normalization smoke and inspect mismatch categories:
+    - `cargo run -p ucf-ops -- exports normalize-check --out ./out/export_normalize_check.json`
+
+- **`interop consistency-matrix` failed**
+  - Regenerate bounded interoperability evidence and rerun matrix:
+    - `cargo run -p ucf-ops -- interop consistency-matrix --out ./out/interop_consistency_matrix.json`

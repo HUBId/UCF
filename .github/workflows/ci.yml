@@ -44,6 +44,16 @@ jobs:
         run: cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json
       - name: Artifact schema snapshot check (blocking)
         run: cargo run -p ucf-ops -- spec artifact-schemas-check --out ./out/artifact_schema_check.json
+      - name: Governance primary surfaces smoke
+        run: cargo run -p ucf-ops -- governance-surfaces-check --out ./out/governance_surfaces_check.json
+      - name: Supported set apply smoke
+        run: cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json
+      - name: Applied scope check smoke
+        run: cargo run -p ucf-ops -- models applied-scope-check --out ./out/applied_scope_check.json
+      - name: Export normalize check smoke
+        run: cargo run -p ucf-ops -- exports normalize-check --out ./out/export_normalize_check.json
+      - name: Interop consistency matrix smoke
+        run: cargo run -p ucf-ops -- interop consistency-matrix --out ./out/interop_consistency_matrix.json
       - name: Active review snapshot smoke
         run: cargo run -p ucf-ops -- models active-review-snapshot --out ./out/active_review_snapshot.json
       - name: Backend resolution smoke (optional second-slot path)
@@ -140,6 +150,16 @@ jobs:
         run: cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json
       - name: Artifact schema snapshot check (blocking)
         run: cargo run -p ucf-ops -- spec artifact-schemas-check --out ./out/artifact_schema_check.json
+      - name: Governance primary surfaces smoke
+        run: cargo run -p ucf-ops -- governance-surfaces-check --out ./out/governance_surfaces_check.json
+      - name: Supported set apply smoke
+        run: cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json
+      - name: Applied scope check smoke
+        run: cargo run -p ucf-ops -- models applied-scope-check --out ./out/applied_scope_check.json
+      - name: Export normalize check smoke
+        run: cargo run -p ucf-ops -- exports normalize-check --out ./out/export_normalize_check.json
+      - name: Interop consistency matrix smoke
+        run: cargo run -p ucf-ops -- interop consistency-matrix --out ./out/interop_consistency_matrix.json
       - name: Active review snapshot smoke
         run: cargo run -p ucf-ops -- models active-review-snapshot --out ./out/active_review_snapshot.json
       - name: Backend resolution smoke (linux)

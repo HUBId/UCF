@@ -17,12 +17,17 @@ See `docs/feature_matrix.md` for details.
 - Spec snapshot: `cargo run -p ucf-ops -- spec snapshot --policy policies/packs/base_v1 --overlay policies/packs/overlays/test --out docs/spec_snapshot.md`
 - Docs lint (CI-blocking): `cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json`
 
-## Portability/docs gate (Linux + Windows, v5 refresh)
+## Portability/docs gate (Linux + Windows, v6 refresh)
 - `cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json`
 - `cargo run -p ucf-ops -- audit path-scan`
 - `cargo run -p ucf-ops -- audit hardware-scan`
 - `cargo run -p ucf-ops -- audit net-deps --out ./out/net_deps.json` (Linux lane)
 - `cargo run -p ucf-ops -- spec artifact-schemas-check --out ./out/artifact_schema_check.json`
+- `cargo run -p ucf-ops -- governance-surfaces-check --out ./out/governance_surfaces_check.json`
+- `cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json`
+- `cargo run -p ucf-ops -- models applied-scope-check --out ./out/applied_scope_check.json`
+- `cargo run -p ucf-ops -- exports normalize-check --out ./out/export_normalize_check.json`
+- `cargo run -p ucf-ops -- interop consistency-matrix --out ./out/interop_consistency_matrix.json`
 - `cargo run -p ucf-ops -- models active-review-snapshot --out ./out/active_review_snapshot.json`
 - `cargo run -p ucf-ops -- models backend-resolution --slot sae --out ./out/backend_resolution_sae.json` *(optional path may SKIP if second-slot differs)*
 - `cargo run -p ucf-ops -- remediation-consistency-check --out ./out/remediation_consistency_portability.json`
