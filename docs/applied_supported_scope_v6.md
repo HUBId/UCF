@@ -27,3 +27,7 @@ cargo run -p ucf-ops -- models applied-scope-check --out ./out/applied_scope_che
 ```
 
 Mismatch categories are bounded and emitted in `mismatch_categories` with remediation codes.
+
+## v7 applied scope authority
+
+Canonical surfaces now require applied-scope authority from `AppliedSupportedSetContextV1`; legacy scope inference paths are blocked from canonical scope-authority checks.

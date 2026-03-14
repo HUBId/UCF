@@ -48,3 +48,7 @@ Mismatch fails closed with stable code:
 
 ## Applied scope authority (v6)
 `GovernancePrimarySurfacesV1` validation additionally enforces alignment of backend/active snapshots to `AppliedSupportedSetContextV1` (membership + order + digest-prefix consistency).
+
+## v7 applied scope authority
+
+Canonical surfaces now require applied-scope authority from `AppliedSupportedSetContextV1`; legacy scope inference paths are blocked from canonical scope-authority checks.

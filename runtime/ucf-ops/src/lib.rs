@@ -23,6 +23,7 @@ mod operator_signoff;
 mod operator_workflow;
 mod remediation;
 mod remediation_consistency;
+mod scope_authority;
 mod second_slot_parity;
 mod soak;
 mod spec_snapshot;
@@ -121,6 +122,11 @@ pub use remediation_consistency::{
     remediation_consistency_check, CanonicalRemediationObservationV1,
     RemediationConsistencyCheckV1, RemediationConsistencyObservedV1,
     RemediationConsistencyReportV1, RemediationConsistencyStatusV1, RemediationMismatchKindV1,
+};
+pub use scope_authority::{
+    scope_authority_check, ScopeAuthorityCheckReportV1, ScopeAuthorityMismatchCategoryV1,
+    ScopeAuthorityOverallStatusV1, ScopeAuthoritySurfaceResultV1, APPLIED_SCOPE_MISSING,
+    APPLIED_SCOPE_REQUIRED, APPLIED_SCOPE_TRANSLATION_FAILED, LEGACY_SCOPE_PATH_BLOCKED,
 };
 pub use second_slot_parity::{
     detect_second_slot, second_slot_parity_evidence_exists, second_slot_parity_report,
