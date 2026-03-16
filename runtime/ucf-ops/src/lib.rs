@@ -10925,6 +10925,293 @@ pub struct ReproVerifyReport {
     pub reasons: Vec<String>,
 }
 
+fn canonical_bundle_context_digest_hex(
+    context: &CanonicalBundleConsumptionContextV1,
+) -> Result<String, OpsError> {
+    let mut canonical = context.clone();
+    canonical.consumption_context_digest.clear();
+    Ok(sha256_hex(&serde_json::to_vec(&canonical)?))
+}
+
+fn bundle_roundtrip_digest_hex(report: &BundleRoundTripConsistencyV1) -> Result<String, OpsError> {
+    let mut canonical = report.clone();
+    canonical.roundtrip_digest.clear();
+    canonical.mismatch_codes.sort();
+    Ok(sha256_hex(&serde_json::to_vec(&canonical)?))
+}
+
+fn digest_prefix_str(value: &str, len: usize) -> String {
+    value.chars().take(len).collect()
+}
+
+fn canonical_artifact_refs_digest_prefix(
+    refs: &[CanonicalExportArtifactRefV1],
+) -> Result<String, OpsError> {
+    let mut canonical = refs.to_vec();
+    canonical.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
+    Ok(digest_prefix_str(
+        &sha256_hex(&serde_json::to_vec(&canonical)?),
+        16,
+    ))
+}
+
+fn parse_normalized_bundle_manifest(
+    bundle_kind: CanonicalBundleKindV1,
+    export_context: &CanonicalExportContextV1,
+    related_artifacts: &[CanonicalExportArtifactRefV1],
+) -> Result<CanonicalBundleConsumptionContextV1, OpsError> {
+    let mut included_artifact_kinds = related_artifacts
+        .iter()
+        .filter(|item| {
+            matches!(
+                item.included_state,
+                CanonicalArtifactIncludedStateV1::Included
+            )
+        })
+        .map(|item| item.artifact_kind.clone())
+        .collect::<Vec<_>>();
+    included_artifact_kinds.sort();
+    included_artifact_kinds.dedup();
+
+    let mut context = CanonicalBundleConsumptionContextV1 {
+        bundle_kind,
+        export_context_digest_prefix: digest_prefix_str(&export_context.context_digest, 16),
+        applied_supported_set_digest_prefix: export_context
+            .supported_slot_set_digest_prefix
+            .clone(),
+        policy_graph_digest_prefix: export_context.policy_graph_digest_prefix.clone(),
+        manifest_digest_prefix: export_context.manifest_digest_prefix.clone(),
+        artifact_refs_digest_prefix: canonical_artifact_refs_digest_prefix(related_artifacts)?,
+        included_artifact_kinds,
+        consumption_context_digest: String::new(),
+    };
+    context.consumption_context_digest = canonical_bundle_context_digest_hex(&context)?;
+    Ok(context)
+}
+
+fn merge_status(
+    a: BundleRoundTripMatchStatusV1,
+    b: BundleRoundTripMatchStatusV1,
+) -> BundleRoundTripMatchStatusV1 {
+    use BundleRoundTripMatchStatusV1::{Legacy, Match, Mismatch, Missing};
+    match (a, b) {
+        (Mismatch, _) | (_, Mismatch) => Mismatch,
+        (Legacy, _) | (_, Legacy) => Legacy,
+        (Missing, _) | (_, Missing) => Missing,
+        _ => Match,
+    }
+}
+
+struct BundleRoundTripInputs<'a> {
+    bundle_kind: CanonicalBundleKindV1,
+    bundle_digest: &'a str,
+    export_context: &'a CanonicalExportContextV1,
+    evidence_context: &'a PackEvidenceContextSummaryV1,
+    related_artifacts: &'a [CanonicalExportArtifactRefV1],
+    backend_evidence_snapshot: &'a PackEvidenceArtifactRefV1,
+    active_review_snapshot: &'a PackEvidenceArtifactRefV1,
+    operator_signoff: &'a PackEvidenceArtifactRefV1,
+    export_layout_compatibility: &'a CanonicalExportLayoutCompatibilityV1,
+}
+
+fn evaluate_bundle_roundtrip_consistency(
+    input: BundleRoundTripInputs<'_>,
+) -> Result<BundleRoundTripConsistencyV1, OpsError> {
+    let context = parse_normalized_bundle_manifest(
+        input.bundle_kind.clone(),
+        input.export_context,
+        input.related_artifacts,
+    )?;
+
+    let mut mismatch_codes = Vec::new();
+
+    let context_match_status = if canonical_context_digest_hex(input.export_context)?
+        != input.export_context.context_digest
+    {
+        mismatch_codes.push("BUNDLE_MANIFEST_MISMATCH".to_string());
+        BundleRoundTripMatchStatusV1::Mismatch
+    } else {
+        BundleRoundTripMatchStatusV1::Match
+    };
+
+    let scope_match_status = if context.applied_supported_set_digest_prefix
+        != canonical_prefix_or_missing(&input.evidence_context.supported_slot_set_digest_prefix)
+    {
+        mismatch_codes.push("BUNDLE_SCOPE_MISMATCH".to_string());
+        BundleRoundTripMatchStatusV1::Mismatch
+    } else {
+        BundleRoundTripMatchStatusV1::Match
+    };
+
+    let policy_match_status = if context.policy_graph_digest_prefix
+        != canonical_prefix_or_missing(&input.evidence_context.policy_graph_digest_prefix)
+    {
+        mismatch_codes.push("BUNDLE_POLICY_MISMATCH".to_string());
+        BundleRoundTripMatchStatusV1::Mismatch
+    } else {
+        BundleRoundTripMatchStatusV1::Match
+    };
+
+    let manifest_match_status = if context.manifest_digest_prefix
+        != canonical_prefix_or_missing(&input.evidence_context.manifest_digest_prefix)
+    {
+        mismatch_codes.push("BUNDLE_MANIFEST_MISMATCH".to_string());
+        BundleRoundTripMatchStatusV1::Mismatch
+    } else {
+        BundleRoundTripMatchStatusV1::Match
+    };
+
+    let mut governance_surface_ref_status = BundleRoundTripMatchStatusV1::Match;
+    for refv in [
+        input.backend_evidence_snapshot,
+        input.active_review_snapshot,
+    ] {
+        if refv.included && refv.digest_prefix.is_empty() {
+            mismatch_codes.push("BUNDLE_ARTIFACT_REF_MISMATCH".to_string());
+            governance_surface_ref_status = merge_status(
+                governance_surface_ref_status,
+                BundleRoundTripMatchStatusV1::Mismatch,
+            );
+        }
+        if !refv.included && refv.status == "MISSING" {
+            governance_surface_ref_status = merge_status(
+                governance_surface_ref_status,
+                BundleRoundTripMatchStatusV1::Missing,
+            );
+        }
+    }
+
+    let review_signoff_ref_status = if input.operator_signoff.included {
+        if input.operator_signoff.digest_prefix.is_empty() {
+            mismatch_codes.push("BUNDLE_INCLUDED_STATE_MISMATCH".to_string());
+            BundleRoundTripMatchStatusV1::Mismatch
+        } else {
+            BundleRoundTripMatchStatusV1::Match
+        }
+    } else if input.operator_signoff.status == "MISSING" {
+        BundleRoundTripMatchStatusV1::Missing
+    } else {
+        BundleRoundTripMatchStatusV1::Match
+    };
+
+    let layout_status = match input.export_layout_compatibility {
+        CanonicalExportLayoutCompatibilityV1::Canonical => BundleRoundTripMatchStatusV1::Match,
+        CanonicalExportLayoutCompatibilityV1::LegacyExportLayout => {
+            mismatch_codes.push("LEGACY_BUNDLE_LAYOUT".to_string());
+            BundleRoundTripMatchStatusV1::Legacy
+        }
+        CanonicalExportLayoutCompatibilityV1::LegacyExportTranslated => {
+            mismatch_codes.push("LEGACY_BUNDLE_TRANSLATED".to_string());
+            BundleRoundTripMatchStatusV1::Legacy
+        }
+        CanonicalExportLayoutCompatibilityV1::LegacyExportUnsupported => {
+            mismatch_codes.push("LEGACY_BUNDLE_UNSUPPORTED".to_string());
+            BundleRoundTripMatchStatusV1::Legacy
+        }
+    };
+
+    let overall_status = if mismatch_codes.is_empty() {
+        BundleRoundTripOverallStatusV1::Pass
+    } else {
+        BundleRoundTripOverallStatusV1::Fail
+    };
+
+    mismatch_codes.sort();
+    mismatch_codes.dedup();
+
+    let mut report = BundleRoundTripConsistencyV1 {
+        schema_version: 1,
+        bundle_kind: input.bundle_kind,
+        bundle_digest_prefix: digest_prefix_str(input.bundle_digest, 16),
+        context_match_status: merge_status(context_match_status, layout_status.clone()),
+        scope_match_status,
+        policy_match_status,
+        manifest_match_status,
+        governance_surface_ref_status: merge_status(
+            governance_surface_ref_status,
+            layout_status.clone(),
+        ),
+        review_signoff_ref_status: merge_status(review_signoff_ref_status, layout_status),
+        overall_status,
+        mismatch_codes,
+        roundtrip_digest: String::new(),
+    };
+    let _ = context;
+    report.roundtrip_digest = bundle_roundtrip_digest_hex(&report)?;
+    Ok(report)
+}
+
+pub fn exports_roundtrip_check(
+    input: &Path,
+    out: &Path,
+) -> Result<BundleRoundTripConsistencyV1, OpsError> {
+    let file = fs::File::open(input)?;
+    let mut archive = zip::ZipArchive::new(file)
+        .map_err(|e| OpsError::Invalid(format!("unable to open bundle zip: {e}")))?;
+    let mut repro_body = String::new();
+    let mut bugkit_body = String::new();
+    let has_repro = archive.by_name("repro_pack_manifest.json").is_ok();
+    let has_bugkit = archive.by_name("BUGKIT_MANIFEST.json").is_ok()
+        || archive.by_name("bugkit_manifest.json").is_ok();
+
+    if has_repro {
+        let mut mf = archive
+            .by_name("repro_pack_manifest.json")
+            .map_err(|e| OpsError::Invalid(format!("missing repro_pack_manifest.json: {e}")))?;
+        std::io::Read::read_to_string(&mut mf, &mut repro_body)?;
+        let manifest: ReproPackManifestV1 = serde_json::from_str(&repro_body)?;
+        let report = evaluate_bundle_roundtrip_consistency(BundleRoundTripInputs {
+            bundle_kind: CanonicalBundleKindV1::Repro,
+            bundle_digest: &manifest.repro_pack_digest,
+            export_context: &manifest.export_context,
+            evidence_context: &manifest.evidence_context,
+            related_artifacts: &manifest.related_artifacts,
+            backend_evidence_snapshot: &manifest.backend_evidence_snapshot,
+            active_review_snapshot: &manifest.active_review_snapshot,
+            operator_signoff: &manifest.operator_signoff,
+            export_layout_compatibility: &manifest.export_layout_compatibility,
+        })?;
+        if let Some(parent) = out.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        write_json(out, &report)?;
+        return Ok(report);
+    }
+
+    if has_bugkit {
+        let name = if archive.by_name("BUGKIT_MANIFEST.json").is_ok() {
+            "BUGKIT_MANIFEST.json"
+        } else {
+            "bugkit_manifest.json"
+        };
+        let mut mf = archive
+            .by_name(name)
+            .map_err(|e| OpsError::Invalid(format!("missing bugkit manifest: {e}")))?;
+        std::io::Read::read_to_string(&mut mf, &mut bugkit_body)?;
+        let manifest: BugKitManifestV1 = serde_json::from_str(&bugkit_body)?;
+        let report = evaluate_bundle_roundtrip_consistency(BundleRoundTripInputs {
+            bundle_kind: CanonicalBundleKindV1::Bugkit,
+            bundle_digest: &manifest.bugkit_digest,
+            export_context: &manifest.export_context,
+            evidence_context: &manifest.evidence_context,
+            related_artifacts: &manifest.related_artifacts,
+            backend_evidence_snapshot: &manifest.backend_evidence_snapshot,
+            active_review_snapshot: &manifest.active_review_snapshot,
+            operator_signoff: &manifest.operator_signoff,
+            export_layout_compatibility: &manifest.export_layout_compatibility,
+        })?;
+        if let Some(parent) = out.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        write_json(out, &report)?;
+        return Ok(report);
+    }
+
+    Err(OpsError::Invalid(
+        "bundle does not contain repro_pack_manifest.json or BUGKIT_MANIFEST.json".to_string(),
+    ))
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BugKitBuildArgs {
     pub include_payload: bool,
@@ -10971,6 +11258,57 @@ pub struct BugKitManifestV1 {
     pub export_layout_compatibility: CanonicalExportLayoutCompatibilityV1,
     pub warnings: Vec<String>,
     pub bugkit_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum CanonicalBundleKindV1 {
+    Repro,
+    Bugkit,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CanonicalBundleConsumptionContextV1 {
+    pub bundle_kind: CanonicalBundleKindV1,
+    pub export_context_digest_prefix: String,
+    pub applied_supported_set_digest_prefix: String,
+    pub policy_graph_digest_prefix: String,
+    pub manifest_digest_prefix: String,
+    pub artifact_refs_digest_prefix: String,
+    pub included_artifact_kinds: Vec<String>,
+    pub consumption_context_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum BundleRoundTripMatchStatusV1 {
+    Match,
+    Missing,
+    Mismatch,
+    Legacy,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum BundleRoundTripOverallStatusV1 {
+    Pass,
+    Fail,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BundleRoundTripConsistencyV1 {
+    pub schema_version: u16,
+    pub bundle_kind: CanonicalBundleKindV1,
+    pub bundle_digest_prefix: String,
+    pub context_match_status: BundleRoundTripMatchStatusV1,
+    pub scope_match_status: BundleRoundTripMatchStatusV1,
+    pub policy_match_status: BundleRoundTripMatchStatusV1,
+    pub manifest_match_status: BundleRoundTripMatchStatusV1,
+    pub governance_surface_ref_status: BundleRoundTripMatchStatusV1,
+    pub review_signoff_ref_status: BundleRoundTripMatchStatusV1,
+    pub overall_status: BundleRoundTripOverallStatusV1,
+    pub mismatch_codes: Vec<String>,
+    pub roundtrip_digest: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -11979,6 +12317,25 @@ pub fn repro_verify(pack: &Path, out: &Path) -> Result<ReproVerifyReport, OpsErr
 
     let manifest_path = temp.path().join("repro_pack_manifest.json");
     let manifest: ReproPackManifestV1 = serde_json::from_str(&fs::read_to_string(&manifest_path)?)?;
+    let roundtrip = evaluate_bundle_roundtrip_consistency(BundleRoundTripInputs {
+        bundle_kind: CanonicalBundleKindV1::Repro,
+        bundle_digest: &manifest.repro_pack_digest,
+        export_context: &manifest.export_context,
+        evidence_context: &manifest.evidence_context,
+        related_artifacts: &manifest.related_artifacts,
+        backend_evidence_snapshot: &manifest.backend_evidence_snapshot,
+        active_review_snapshot: &manifest.active_review_snapshot,
+        operator_signoff: &manifest.operator_signoff,
+        export_layout_compatibility: &manifest.export_layout_compatibility,
+    })?;
+    if matches!(
+        roundtrip.overall_status,
+        BundleRoundTripOverallStatusV1::Fail
+    ) {
+        for code in &roundtrip.mismatch_codes {
+            reasons.push(format!("bundle roundtrip mismatch: {code}"));
+        }
+    }
     let recomputed_pack = repro_pack_digest_hex(&manifest)?;
     if recomputed_pack != manifest.repro_pack_digest {
         reasons.push("repro_pack_digest mismatch".to_string());
@@ -15317,6 +15674,72 @@ mod repro_pack_tests {
         let a = canonical_context_digest_hex(&c).expect("digest");
         let b = canonical_context_digest_hex(&c).expect("digest");
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn canonical_bundle_consumption_context_digest_stable() {
+        let mut ctx = CanonicalBundleConsumptionContextV1 {
+            bundle_kind: CanonicalBundleKindV1::Repro,
+            export_context_digest_prefix: "aa".repeat(8),
+            applied_supported_set_digest_prefix: "bb".repeat(8),
+            policy_graph_digest_prefix: "cc".repeat(8),
+            manifest_digest_prefix: "dd".repeat(8),
+            artifact_refs_digest_prefix: "ee".repeat(8),
+            included_artifact_kinds: vec![
+                "active_review_snapshot".to_string(),
+                "operator_signoff".to_string(),
+            ],
+            consumption_context_digest: String::new(),
+        };
+        ctx.consumption_context_digest = canonical_bundle_context_digest_hex(&ctx).expect("digest");
+        let a = canonical_bundle_context_digest_hex(&ctx).expect("digest");
+        let b = canonical_bundle_context_digest_hex(&ctx).expect("digest");
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn roundtrip_consistency_legacy_layout_is_explicit() {
+        let export_context = CanonicalExportContextV1 {
+            supported_slot_set_digest_prefix: "11".repeat(8),
+            policy_graph_digest_prefix: "22".repeat(8),
+            manifest_digest_prefix: "33".repeat(8),
+            run_id: Some("run".to_string()),
+            operator_signoff_digest_prefix: Some("44".repeat(8)),
+            backend_evidence_snapshot_digest_prefix: Some("55".repeat(8)),
+            active_review_snapshot_digest_prefix: Some("66".repeat(8)),
+            context_digest: String::new(),
+        };
+        let mut export_context = export_context;
+        export_context.context_digest =
+            canonical_context_digest_hex(&export_context).expect("digest");
+        let evidence_context = PackEvidenceContextSummaryV1 {
+            supported_slot_set_digest_prefix: "11".repeat(8),
+            policy_graph_digest_prefix: "22".repeat(8),
+            manifest_digest_prefix: "33".repeat(8),
+        };
+        let backend = missing_evidence_ref("evidence/backend_evidence_snapshot.json", "MISSING");
+        let active = missing_evidence_ref("evidence/active_review_snapshot.json", "MISSING");
+        let signoff = missing_evidence_ref("evidence/operator_signoff.json", "MISSING");
+        let report = evaluate_bundle_roundtrip_consistency(BundleRoundTripInputs {
+            bundle_kind: CanonicalBundleKindV1::Bugkit,
+            bundle_digest: &"ab".repeat(32),
+            export_context: &export_context,
+            evidence_context: &evidence_context,
+            related_artifacts: &[],
+            backend_evidence_snapshot: &backend,
+            active_review_snapshot: &active,
+            operator_signoff: &signoff,
+            export_layout_compatibility: &CanonicalExportLayoutCompatibilityV1::LegacyExportLayout,
+        })
+        .expect("roundtrip");
+        assert!(report
+            .mismatch_codes
+            .iter()
+            .any(|c| c == "LEGACY_BUNDLE_LAYOUT"));
+        assert!(matches!(
+            report.overall_status,
+            BundleRoundTripOverallStatusV1::Fail
+        ));
     }
 
     #[test]

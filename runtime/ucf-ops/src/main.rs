@@ -8,17 +8,17 @@ use ucf_ops::{
     attest_run, attest_verify, audit_scan, bench_run, bringup, causal_slice, determinism_scan,
     diagnostics, diagnostics_collect, drift_report, ebm_export_dataset, ess_compact, ess_snapshot,
     event_id_for_decision, explain_tick, explain_why, export_bugreport,
-    export_policy_key_registry_v1, exports_normalize_check, gateway_threat_test, goldens_generate,
-    goldens_update, goldens_verify, goldens_verify_detailed, governance_surfaces_check,
-    hardware_scan, interop_consistency_matrix, load_applied_supported_set_context_v1,
-    load_signoff_checklist, logs_prove, logs_verify_proof, metrics_snapshot, metrics_summary,
-    metrics_trend, migrate_config_v1, models_active_check, models_active_evidence,
-    models_active_review_snapshot, models_applied_scope_check, models_backend_resolution,
-    models_consistency_check, models_eligibility, models_evidence_snapshot, models_list,
-    models_probe, models_probe_slot, models_promote, models_recommend_rollback, models_rollback,
-    models_shadow_ready, models_stage, models_supported_scope_reevaluate,
-    models_supported_set_apply, models_supported_set_review, models_verify,
-    models_verify_lifecycle, net_deps_audit, nightly_summarize, one_command_bringup,
+    export_policy_key_registry_v1, exports_normalize_check, exports_roundtrip_check,
+    gateway_threat_test, goldens_generate, goldens_update, goldens_verify, goldens_verify_detailed,
+    governance_surfaces_check, hardware_scan, interop_consistency_matrix,
+    load_applied_supported_set_context_v1, load_signoff_checklist, logs_prove, logs_verify_proof,
+    metrics_snapshot, metrics_summary, metrics_trend, migrate_config_v1, models_active_check,
+    models_active_evidence, models_active_review_snapshot, models_applied_scope_check,
+    models_backend_resolution, models_consistency_check, models_eligibility,
+    models_evidence_snapshot, models_list, models_probe, models_probe_slot, models_promote,
+    models_recommend_rollback, models_rollback, models_shadow_ready, models_stage,
+    models_supported_scope_reevaluate, models_supported_set_apply, models_supported_set_review,
+    models_verify, models_verify_lifecycle, net_deps_audit, nightly_summarize, one_command_bringup,
     operator_report, operator_report_text, operator_review_packet, operator_review_packet_text,
     operator_signoff, operator_signoff_text, operator_workflow_chain, operator_workflow_chain_text,
     out_manifest, parse_duration_secs, parse_inject, parse_slot, path_scan, policy_diff,
@@ -1757,7 +1757,59 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         std::process::exit(2);
                     }
                 }
-                _ => return Err("usage: ucf-ops exports normalize-check --out <path>".into()),
+                "roundtrip-check" => {
+                    let input = arg_value(&args, "--in").map(PathBuf::from).ok_or(
+                        "usage: ucf-ops exports roundtrip-check --in <bundle> --out <path>",
+                    )?;
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/export_roundtrip_check.json"));
+                    let report = exports_roundtrip_check(&input, &out)?;
+                    println!("bundle_kind={:?}", report.bundle_kind);
+                    println!(
+                        "context_match={}",
+                        matches!(
+                            report.context_match_status,
+                            ucf_ops::BundleRoundTripMatchStatusV1::Match
+                        )
+                    );
+                    println!(
+                        "scope_match={}",
+                        matches!(
+                            report.scope_match_status,
+                            ucf_ops::BundleRoundTripMatchStatusV1::Match
+                        )
+                    );
+                    println!(
+                        "policy_match={}",
+                        matches!(
+                            report.policy_match_status,
+                            ucf_ops::BundleRoundTripMatchStatusV1::Match
+                        )
+                    );
+                    println!(
+                        "manifest_match={}",
+                        matches!(
+                            report.manifest_match_status,
+                            ucf_ops::BundleRoundTripMatchStatusV1::Match
+                        )
+                    );
+                    if let Some(code) = report.mismatch_codes.first() {
+                        println!("main_mismatch_code={code}");
+                    }
+                    println!("out={}", out.display());
+                    if matches!(
+                        report.overall_status,
+                        ucf_ops::BundleRoundTripOverallStatusV1::Fail
+                    ) {
+                        std::process::exit(2);
+                    }
+                }
+                _ => {
+                    return Err(
+                        "usage: ucf-ops exports <normalize-check|roundtrip-check> ...".into(),
+                    )
+                }
             }
         }
         "preflight" => {

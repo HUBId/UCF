@@ -2,6 +2,8 @@
 
 This document defines the canonical export artifact model shared by Repro Pack, BugKit, BackendEvidenceSnapshotV1, AggregatedActiveReviewSnapshotV1, OperatorReviewPacketV1, and OperatorSignoffDecisionV1.
 
+Consumption/verification round-trip semantics are defined in `docs/export_roundtrip_v7.md` and enforced by `ucf-ops exports roundtrip-check`.
+
 ## CanonicalExportArtifactRefV1
 
 Fields:
