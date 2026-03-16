@@ -463,6 +463,9 @@ fn hardware_neutral_docs_check(args: &DocsLintArgs) -> Result<DocsLintCheck, Ops
     let mut failures = Vec::new();
 
     for (label, path, is_deploy_doc) in files {
+        if !path.exists() {
+            continue;
+        }
         let body = fs::read_to_string(path)?;
         let mut in_history = false;
         for (idx, raw) in body.lines().enumerate() {

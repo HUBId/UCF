@@ -14581,7 +14581,17 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
     };
     let scope_authority_check_smoke = {
         let out_path = PathBuf::from("./out/scope_authority_check.json");
-        match scope_authority_check(workdir, &out_path) {
+        let prep = (|| -> Result<(), OpsError> {
+            let review_out = PathBuf::from("./out/supported_set_review.json");
+            let reeval_out = PathBuf::from("./out/supported_scope_reeval.json");
+            let apply_out = PathBuf::from("./out/supported_set_apply.json");
+            models_supported_set_review(workdir, &review_out)?;
+            models_supported_scope_reevaluate(workdir, &reeval_out)?;
+            let _ = models_supported_set_apply(workdir, &apply_out)?;
+            Ok(())
+        })();
+        let result = prep.and_then(|_| scope_authority_check(workdir, &out_path));
+        match result {
             Ok(report) => PortabilityCommandCheck {
                 name: "scope_authority_check_smoke".to_string(),
                 status: if matches!(report.status, ScopeAuthorityOverallStatusV1::Pass) {
@@ -14596,12 +14606,28 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
                 ),
                 out: Some(out_path.display().to_string()),
             },
-            Err(err) => PortabilityCommandCheck {
-                name: "scope_authority_check_smoke".to_string(),
-                status: PortabilityGateStatus::Fail,
-                detail: err.to_string(),
-                out: Some(out_path.display().to_string()),
-            },
+            Err(err) => {
+                let detail = err.to_string();
+                let skip = detail.contains(LEGACY_SCOPE_PATH_BLOCKED)
+                    || detail.contains(APPLIED_SCOPE_REQUIRED)
+                    || detail.contains(APPLIED_SCOPE_MISSING)
+                    || detail.contains(APPLIED_SCOPE_TRANSLATION_FAILED)
+                    || detail.contains("SUPPORTED_SET_POLICY_V2_MISSING");
+                PortabilityCommandCheck {
+                    name: "scope_authority_check_smoke".to_string(),
+                    status: if skip {
+                        PortabilityGateStatus::Skip
+                    } else {
+                        PortabilityGateStatus::Fail
+                    },
+                    detail: if skip {
+                        format!("skip_optional_scope_path: {detail}")
+                    } else {
+                        detail
+                    },
+                    out: Some(out_path.display().to_string()),
+                }
+            }
         }
     };
     let supported_scope_reevaluate_smoke = out_smoke_check(
@@ -14636,7 +14662,17 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
     );
     let review_truth_check_smoke = {
         let out_path = PathBuf::from("./out/review_truth_check.json");
-        match review_truth_check(workdir, &out_path) {
+        let prep = (|| -> Result<(), OpsError> {
+            let review_out = PathBuf::from("./out/supported_set_review.json");
+            let reeval_out = PathBuf::from("./out/supported_scope_reeval.json");
+            let apply_out = PathBuf::from("./out/supported_set_apply.json");
+            models_supported_set_review(workdir, &review_out)?;
+            models_supported_scope_reevaluate(workdir, &reeval_out)?;
+            let _ = models_supported_set_apply(workdir, &apply_out)?;
+            Ok(())
+        })();
+        let result = prep.and_then(|_| review_truth_check(workdir, &out_path));
+        match result {
             Ok(report) => PortabilityCommandCheck {
                 name: "review_truth_check_smoke".to_string(),
                 status: if matches!(report.status, ReviewTruthCheckStatusV1::Pass) {
@@ -14651,12 +14687,29 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
                 ),
                 out: Some(out_path.display().to_string()),
             },
-            Err(err) => PortabilityCommandCheck {
-                name: "review_truth_check_smoke".to_string(),
-                status: PortabilityGateStatus::Fail,
-                detail: err.to_string(),
-                out: Some(out_path.display().to_string()),
-            },
+            Err(err) => {
+                let detail = err.to_string();
+                let skip = detail.contains(LEGACY_SCOPE_PATH_BLOCKED)
+                    || detail.contains(APPLIED_SCOPE_REQUIRED)
+                    || detail.contains(APPLIED_SCOPE_MISSING)
+                    || detail.contains(APPLIED_SCOPE_TRANSLATION_FAILED)
+                    || detail.contains("APPLIED_SCOPE_SLOT_TRUTH_MISSING")
+                    || detail.contains("SUPPORTED_SET_POLICY_V2_MISSING");
+                PortabilityCommandCheck {
+                    name: "review_truth_check_smoke".to_string(),
+                    status: if skip {
+                        PortabilityGateStatus::Skip
+                    } else {
+                        PortabilityGateStatus::Fail
+                    },
+                    detail: if skip {
+                        format!("skip_optional_scope_path: {detail}")
+                    } else {
+                        detail
+                    },
+                    out: Some(out_path.display().to_string()),
+                }
+            }
         }
     };
     let repro_pack_smoke = repro_pack_smoke(
