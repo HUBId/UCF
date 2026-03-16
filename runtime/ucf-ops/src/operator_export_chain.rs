@@ -294,12 +294,12 @@ mod tests {
             applied_supported_set_digest_prefix: applied.applied_set_digest_prefix.clone(),
             applied_context_digest_prefix: prefix_hex(&applied.context_digest, DIGEST_PREFIX_LEN),
             reviewability_reduction_digest_prefix: "33".repeat(8),
-            artifacts: crate::OperatorReviewPacketArtifactsV1 {
+            artifacts: crate::operator_review_packet::OperatorReviewPacketArtifactsV1 {
                 backend_evidence_snapshot_digest_prefix: "44".repeat(8),
                 active_review_snapshot_digest_prefix: "55".repeat(8),
                 operator_signoff_digest_prefix: "66".repeat(8),
                 operator_report_digest_prefix: "77".repeat(8),
-                gate_digests: crate::OperatorReviewPacketGateDigestsV1 {
+                gate_digests: crate::operator_review_packet::OperatorReviewPacketGateDigestsV1 {
                     v0: "1".repeat(16),
                     v1: "2".repeat(16),
                     v2: "3".repeat(16),
@@ -323,7 +323,7 @@ mod tests {
             evidence_snapshot_digest_prefix: "44".repeat(8),
             active_review_snapshot_digest_prefix: None,
             operator_report_digest_prefix: "77".repeat(8),
-            gate_report_digests: crate::GateReportDigestsV1 {
+            gate_report_digests: crate::operator_signoff::GateReportDigestsV1 {
                 v0: "1".repeat(16),
                 v1: "2".repeat(16),
                 v2: "3".repeat(16),

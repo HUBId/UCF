@@ -6476,6 +6476,9 @@ mod probe_tests {
                 evidence_snapshot_digest_prefix: "ev".to_string(),
                 active_review_snapshot_digest_prefix: None,
                 operator_report_digest_prefix: "op".to_string(),
+                applied_supported_set_digest_prefix: "set".to_string(),
+                applied_context_digest_prefix: "ctx".to_string(),
+                reviewability_reduction_digest_prefix: "MISSING".to_string(),
                 gate_report_digests: crate::operator_signoff::GateReportDigestsV1 {
                     v0: "x".to_string(),
                     v1: "x".to_string(),

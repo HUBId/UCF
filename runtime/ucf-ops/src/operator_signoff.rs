@@ -507,6 +507,7 @@ fn build_not_ready_minimal(
     Ok(out)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_not_ready_from_snapshot(
     snapshot: &BackendEvidenceSnapshotV1,
     reasons: BTreeSet<String>,

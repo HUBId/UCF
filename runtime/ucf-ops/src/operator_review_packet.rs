@@ -927,6 +927,9 @@ mod tests {
             evidence_snapshot_digest_prefix: prefix16("snapshotdigest111111"),
             active_review_snapshot_digest_prefix: Some(prefix16("activedigest111111")),
             operator_report_digest_prefix: prefix16("reportdigest111111"),
+            applied_supported_set_digest_prefix: "slotset1".to_string(),
+            applied_context_digest_prefix: "context1".to_string(),
+            reviewability_reduction_digest_prefix: "reduction1".to_string(),
             gate_report_digests: crate::operator_signoff::GateReportDigestsV1 {
                 v0: "g0".to_string(),
                 v1: "g1".to_string(),
