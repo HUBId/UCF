@@ -169,6 +169,7 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -11677,7 +11678,21 @@ fn enrich_evidence_artifacts(
     Ok((backend_ref, active_ref, signoff_ref, backend_resolution_ref))
 }
 
+static EXPORT_AUTHORITY_GUARD_DISABLED: AtomicBool = AtomicBool::new(false);
+
+pub(crate) fn with_export_authority_guard_disabled<T, F: FnOnce() -> Result<T, OpsError>>(
+    f: F,
+) -> Result<T, OpsError> {
+    let prev = EXPORT_AUTHORITY_GUARD_DISABLED.swap(true, Ordering::SeqCst);
+    let result = f();
+    EXPORT_AUTHORITY_GUARD_DISABLED.store(prev, Ordering::SeqCst);
+    result
+}
+
 fn ensure_export_authority_chain_pass(workdir: &Path) -> Result<(), OpsError> {
+    if EXPORT_AUTHORITY_GUARD_DISABLED.load(Ordering::SeqCst) {
+        return Ok(());
+    }
     let out = workdir.join("out/operator_export_chain_check_build_guard.json");
     let report = operator_export_chain_check(workdir, &out)?;
     if matches!(
