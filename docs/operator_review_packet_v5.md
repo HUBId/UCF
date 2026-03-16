@@ -96,3 +96,7 @@ Das Workflow-Chain-Artefakt korreliert Governance-Surfaces, Applied-Scope, Revie
 ## v7 applied scope authority
 
 Canonical surfaces now require applied-scope authority from `AppliedSupportedSetContextV1`; legacy scope inference paths are blocked from canonical scope-authority checks.
+
+
+## v7 reviewability truth alignment
+This surface derives per-slot reviewability from `SlotReviewabilityTruthV1` and aggregate status from `ReviewabilityReductionV1` for the authoritative applied scope. See `docs/reviewability_truth_v7.md`.

@@ -2323,6 +2323,7 @@ fn discover_alert_blocking(workdir: &Path) -> bool {
         .unwrap_or(false)
 }
 
+#[cfg(test)]
 fn derive_active_review_status(slots: &[ActiveReviewEvidenceV1]) -> ActiveReviewOverallStatusV1 {
     let reviewable_count = slots
         .iter()
@@ -2402,10 +2403,24 @@ fn append_active_review_snapshot_record(
         .iter()
         .map(|slot| ActiveReviewSnapshotSlotV1 {
             slot_id: slot.slot_id.clone(),
-            reviewable: slot.active_eligible
-                && !slot.strict_blocking
-                && !slot.drift_blocking
-                && !slot.alert_blocking,
+            reviewable: crate::slot_is_reviewable(&crate::SlotReviewabilityTruthV1 {
+                slot_id: slot.slot_id.clone(),
+                target_hash_prefix: slot.target_hash_prefix.clone(),
+                probe_ready: slot.probe_ready,
+                shadow_ready: slot.shadow_ready,
+                active_eligible: slot.active_eligible,
+                strict_blocking: slot.strict_blocking,
+                drift_blocking: slot.drift_blocking,
+                alert_blocking: slot.alert_blocking,
+                primary_denial_code: slot.primary_denial_code.clone(),
+                remediation_codes: slot.remediation_codes.clone(),
+                evidence_digests: crate::SlotReviewabilityEvidenceDigestsV1 {
+                    backend_evidence_snapshot_digest_prefix: String::new(),
+                    active_evidence_digest_prefix: String::new(),
+                    strict_evidence_digest_prefix: String::new(),
+                },
+                reviewability_truth_digest: String::new(),
+            }),
         })
         .collect::<Vec<_>>();
     slots.sort_by(|a, b| a.slot_id.cmp(&b.slot_id));
@@ -2601,7 +2616,36 @@ pub fn models_active_review_snapshot(
     )?;
     slots.sort_by(|a, b| a.slot_id.cmp(&b.slot_id));
 
-    let overall_review_status = derive_active_review_status(&slots);
+    let temp_snapshot = AggregatedActiveReviewSnapshotV1 {
+        schema_version: ACTIVE_REVIEW_EVIDENCE_SCHEMA_VERSION,
+        supported_slot_set_digest: backend_snapshot.supported_slot_set_digest.clone(),
+        policy_graph_digest_prefix: backend_snapshot.policy_graph_digest_prefix.clone(),
+        manifest_digest_prefix: backend_snapshot.manifest_digest_prefix.clone(),
+        slots: slots.clone(),
+        overall_review_status: ActiveReviewOverallStatusV1::NoneReviewable,
+        signoff_alignment: ActiveReviewSignoffAlignmentV1 {
+            aligned: false,
+            status_code: "PENDING".to_string(),
+        },
+        snapshot_digest: String::new(),
+    };
+    let truths = crate::derive_slot_reviewability_truths_from_active(
+        &applied_scope,
+        &backend_snapshot,
+        &temp_snapshot,
+    )?;
+    let reduction = crate::reduce_reviewability(&applied_scope, &truths)?;
+    let overall_review_status = match reduction.aggregate_readiness {
+        crate::ReviewabilityAggregateReadinessV1::NoneReviewable => {
+            ActiveReviewOverallStatusV1::NoneReviewable
+        }
+        crate::ReviewabilityAggregateReadinessV1::PartialReviewable => {
+            ActiveReviewOverallStatusV1::PartialReviewable
+        }
+        crate::ReviewabilityAggregateReadinessV1::AllReviewable => {
+            ActiveReviewOverallStatusV1::AllReviewable
+        }
+    };
     let signoff = discover_latest_operator_signoff(workdir);
     let signoff_alignment =
         derive_signoff_alignment(signoff.as_ref(), &backend_snapshot, &overall_review_status);
@@ -2618,6 +2662,7 @@ pub fn models_active_review_snapshot(
     } else {
         b"0"
     });
+    digest_source.extend_from_slice(reduction.reduction_digest.as_bytes());
     for slot in &slots {
         digest_source.extend_from_slice(slot.evidence_digest.as_bytes());
     }

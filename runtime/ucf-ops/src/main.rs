@@ -25,7 +25,7 @@ use ucf_ops::{
     policy_explain, policy_validate, portability_check, portability_report, preflight,
     readiness_gate, release_build_rc, release_rc1_gate, release_signoff_validate,
     remediation_consistency_check, replay_audit, replay_bugreport, repro_pack, repro_verify,
-    run_status, runs_list, runs_search, runs_show, save_counterfactual_result,
+    review_truth_check, run_status, runs_list, runs_search, runs_show, save_counterfactual_result,
     scope_authority_check, second_slot_parity_report, security_verify_chain,
     simulate_counterfactual, soak_run, strict_check, strict_explain, troubleshoot, v0_gate,
     v1_smoke, v2_gate, v3_gate, v4_gate, v5_gate, v6_gate, verify_bugreport, world_parity_report,
@@ -1847,6 +1847,23 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         println!("text_mode=true");
                     }
                 }
+                "review-truth-check" => {
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/review_truth_check.json"));
+                    let report = review_truth_check(&workdir, &out)?;
+                    println!("out={}", out.display());
+                    println!("status={:?}", report.status);
+                    if !report.mismatch_categories.is_empty() {
+                        println!("mismatch_categories={}", report.mismatch_categories.iter().map(|v| format!("{:?}", v)).collect::<Vec<_>>().join(","));
+                    }
+                    if !report.remediation_codes.is_empty() {
+                        println!("remediation_codes={}", report.remediation_codes.join(","));
+                    }
+                    if !matches!(report.status, ucf_ops::ReviewTruthCheckStatusV1::Pass) {
+                        std::process::exit(2);
+                    }
+                }
                 "workflow" => {
                     let out = arg_value(&args, "--out")
                         .map(PathBuf::from)
@@ -1880,7 +1897,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 _ => {
                     return Err(
-                        "usage: ucf-ops operator <report|signoff|review-packet|workflow> [--run <id>] [--latest] [--text] [--out <path>]".into(),
+                        "usage: ucf-ops operator <report|signoff|review-packet|review-truth-check|workflow> [--run <id>] [--latest] [--text] [--out <path>]".into(),
                     )
                 }
             }
