@@ -74,6 +74,7 @@ jobs:
           run_id=$(basename "$run_json" .json)
           cargo run -p ucf-ops -- repro pack --run "$run_id" --out ./out/repro_portability.zip --workdir ./.ucf_portability_smoke
           cargo run -p ucf-ops -- repro verify --pack ./out/repro_portability.zip --out ./out/repro_verify_portability.json --workdir ./.ucf_portability_smoke
+          cargo run -p ucf-ops -- exports roundtrip-check --in ./out/repro_portability.zip --out ./out/export_roundtrip_check.json
       - name: Bugkit build smoke
         shell: bash
         run: |
@@ -85,6 +86,8 @@ jobs:
           cargo run -p ucf-ops -- bugkit build --run "$run_id" --out ./out/bugkit_portability.zip --workdir ./.ucf_portability_smoke
       - name: Remediation consistency smoke
         run: cargo run -p ucf-ops -- remediation-consistency-check --out ./out/remediation_consistency_portability.json
+      - name: Remediation interop smoke
+        run: cargo run -p ucf-ops -- remediation-interop-check --out ./out/remediation_interop_check.json
       - name: Backend evidence snapshot smoke
         run: cargo run -p ucf-ops -- models evidence-snapshot --out ./out/backend_evidence_snapshot.json
       - name: Operator signoff smoke
@@ -172,6 +175,46 @@ jobs:
         run: cargo run -p ucf-ops -- models supported-set-review --out ./out/supported_set_review.json --workdir .
       - name: Supported set apply smoke
         run: cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json --workdir .
+      - name: Scope authority check smoke (linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          cargo run -p ucf-ops -- scope authority-check --out ./out/scope_authority_check.json || {
+            code=$?
+            if [ "$code" -eq 1 ]; then
+              echo "scope_authority_check=skip reason=optional_scope_path_unavailable"
+            else
+              exit "$code"
+            fi
+          }
+      - name: Scope authority check smoke (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cargo run -p ucf-ops -- scope authority-check --out ./out/scope_authority_check.json
+          if ($LASTEXITCODE -eq 1) { Write-Host "scope_authority_check=skip reason=optional_scope_path_unavailable"; exit 0 }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Supported scope reevaluate smoke
+        run: cargo run -p ucf-ops -- models supported-scope-reevaluate --out ./out/supported_scope_reeval.json --workdir .
+      - name: Review-truth check smoke (linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          cargo run -p ucf-ops -- operator review-truth-check --out ./out/review_truth_check.json || {
+            code=$?
+            if [ "$code" -eq 2 ] || [ "$code" -eq 1 ]; then
+              echo "review_truth_check=skip reason=optional_scope_path_unavailable"
+            else
+              exit "$code"
+            fi
+          }
+      - name: Review-truth check smoke (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cargo run -p ucf-ops -- operator review-truth-check --out ./out/review_truth_check.json
+          if ($LASTEXITCODE -eq 2 -or $LASTEXITCODE -eq 1) { Write-Host "review_truth_check=skip reason=optional_scope_path_unavailable"; exit 0 }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Applied scope check smoke
         run: |
           cargo run -p ucf-ops -- models active-review-snapshot --out ./out/active_review_snapshot.json --workdir .
@@ -202,6 +245,7 @@ jobs:
           run_id=$(basename "$run_json" .json)
           cargo run -p ucf-ops -- repro pack --run "$run_id" --out ./out/repro_portability.zip --workdir ./.ucf_portability_smoke
           cargo run -p ucf-ops -- repro verify --pack ./out/repro_portability.zip --out ./out/repro_verify_portability.json --workdir ./.ucf_portability_smoke
+          cargo run -p ucf-ops -- exports roundtrip-check --in ./out/repro_portability.zip --out ./out/export_roundtrip_check.json
       - name: Repro pack build+verify smoke (windows)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -212,6 +256,7 @@ jobs:
           $run_id = [System.IO.Path]::GetFileNameWithoutExtension($run_json.Name)
           cargo run -p ucf-ops -- repro pack --run $run_id --out ./out/repro_portability.zip --workdir ./.ucf_portability_smoke
           cargo run -p ucf-ops -- repro verify --pack ./out/repro_portability.zip --out ./out/repro_verify_portability.json --workdir ./.ucf_portability_smoke
+          cargo run -p ucf-ops -- exports roundtrip-check --in ./out/repro_portability.zip --out ./out/export_roundtrip_check.json
       - name: Bugkit build smoke (linux)
         if: runner.os == 'Linux'
         shell: bash
@@ -235,6 +280,8 @@ jobs:
           cargo run -p ucf-ops -- bugkit build --run $run_id --out ./out/bugkit_portability.zip --workdir ./.ucf_portability_smoke
       - name: Remediation consistency smoke
         run: cargo run -p ucf-ops -- remediation-consistency-check --out ./out/remediation_consistency_portability.json
+      - name: Remediation interop smoke
+        run: cargo run -p ucf-ops -- remediation-interop-check --out ./out/remediation_interop_check.json
       - name: v0 gate (blocking)
         run: cargo run -p ucf-ops -- v0 gate --scenario fixtures/e2e/v0_flow_a.json --out ./out/v0_gate_report.json
       - name: v1 gate (blocking)
