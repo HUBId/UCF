@@ -27,6 +27,8 @@ Canonical applied-set artifact path:
 
 - `./out/supported_real_slot_set_applied_v2.json`
 
+If `./out/supported_scope_reeval.json` is missing or stale for the current policy/applied-set digests, `supported-set-apply` deterministically regenerates it before execution.
+
 ## Important non-goals
 
 Applying supported-set governance does **not**:

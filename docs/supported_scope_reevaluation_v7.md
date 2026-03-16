@@ -23,7 +23,7 @@ cargo run -p ucf-ops -- models supported-scope-reevaluate --out ./out/supported_
 cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json
 ```
 
-The apply step consumes reevaluation output; stale or missing reevaluation is rejected.
+The apply step consumes reevaluation output. If the reevaluation artifact is missing or stale for the current policy/applied set, the apply command will regenerate reevaluation deterministically before executing freeze/expand.
 
 ## Scope and safety
 

@@ -2690,15 +2690,19 @@ pub fn models_supported_scope_reevaluate(
     out: &Path,
 ) -> Result<SupportedScopeReevaluationV1, OpsError> {
     let policy = load_latest_supported_set_policy_v2(workdir)?;
-    let applied_set = load_applied_supported_real_slot_set_v2(workdir).map_err(|_| {
-        OpsError::Invalid(
-            "SUPPORTED_SCOPE_REEVAL_APPLIED_SET_MISSING: run `ucf-ops models supported-set-apply` for baseline first".to_string(),
-        )
-    })?;
+    let baseline_set = current_supported_real_slot_set(workdir)?;
+    let applied_set = SupportedRealSlotSetV2 {
+        schema_version: SUPPORTED_REAL_SLOT_SET_V2_SCHEMA_VERSION,
+        slots: baseline_set.slots.clone(),
+        source_policy_digest_prefix: prefix_hex(&policy.policy_digest, 16),
+        decision: SupportedRealSlotSetExecutionDecisionV2::Frozen,
+        previous_set_digest_prefix: prefix_hex(&baseline_set.set_digest, 16),
+        set_digest: baseline_set.set_digest.clone(),
+    };
 
     let mut rationale_codes = Vec::new();
     let mut chosen_candidate_slot = None;
-    let reevaluation_decision = if policy.current_supported_slots != applied_set.slots {
+    let reevaluation_decision = if policy.current_supported_slots != baseline_set.slots {
         rationale_codes.push("SCOPE_REEVAL_STALE_POLICY".to_string());
         SupportedScopeReevaluationDecisionV1::ReaffirmFreeze
     } else {
@@ -2798,19 +2802,9 @@ pub fn models_supported_set_apply(
     out: &Path,
 ) -> Result<SupportedSetApplyReportV1, OpsError> {
     let policy = load_latest_supported_set_policy_v2(workdir)?;
-    let reevaluation = load_latest_supported_scope_reevaluation_v1(workdir)?;
     let previous_set = current_supported_real_slot_set(workdir)?;
-
-    if reevaluation.policy_digest_prefix != prefix_hex(&policy.policy_digest, 16) {
-        return Err(OpsError::Invalid(
-            "SUPPORTED_SET_APPLY_REEVAL_POLICY_MISMATCH: rerun `ucf-ops models supported-scope-reevaluate`".to_string(),
-        ));
-    }
-    if reevaluation.previous_applied_set_digest_prefix != prefix_hex(&previous_set.set_digest, 16) {
-        return Err(OpsError::Invalid(
-            "SUPPORTED_SET_APPLY_REEVAL_STALE_APPLIED_SCOPE: rerun `ucf-ops models supported-scope-reevaluate`".to_string(),
-        ));
-    }
+    let reevaluation =
+        ensure_current_supported_scope_reevaluation_v1(workdir, &policy, &previous_set)?;
 
     let mut reevaluated_policy = policy.clone();
     match reevaluation.reevaluation_decision {
@@ -3030,6 +3024,27 @@ fn load_latest_supported_scope_reevaluation_v1(
             "SUPPORTED_SCOPE_REEVAL_INVALID: unable to decode reevaluation report".to_string(),
         )
     })
+}
+
+fn ensure_current_supported_scope_reevaluation_v1(
+    workdir: &Path,
+    policy: &SupportedRealSlotSetPolicyV2,
+    previous_set: &SupportedRealSlotSetV1,
+) -> Result<SupportedScopeReevaluationV1, OpsError> {
+    let policy_digest_prefix = prefix_hex(&policy.policy_digest, 16);
+    let previous_digest_prefix = prefix_hex(&previous_set.set_digest, 16);
+    let stale_or_missing = match load_latest_supported_scope_reevaluation_v1(workdir) {
+        Ok(report) => {
+            report.policy_digest_prefix != policy_digest_prefix
+                || report.previous_applied_set_digest_prefix != previous_digest_prefix
+        }
+        Err(_) => true,
+    };
+    if stale_or_missing {
+        let reeval_out = workdir.join("out").join("supported_scope_reeval.json");
+        return models_supported_scope_reevaluate(workdir, &reeval_out);
+    }
+    load_latest_supported_scope_reevaluation_v1(workdir)
 }
 
 fn slot_expansion_candidate_digest(candidate: &SlotExpansionEligibilityV1) -> String {
@@ -6272,6 +6287,53 @@ mod probe_tests {
             assert!(report
                 .rationale_codes
                 .contains(&"SCOPE_REEVAL_AMBIGUOUS_CANDIDATE".to_string()));
+        }
+
+        #[test]
+        fn supported_set_apply_autogenerates_reeval_when_missing() {
+            let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
+            let dir = tempfile::tempdir().expect("tempdir");
+            let _cwd = CwdGuard::enter(dir.path());
+            fs::create_dir_all("out").expect("out");
+
+            let applied = build_supported_real_slot_set_v2(
+                vec!["sae".to_string(), "world_jepa".to_string()],
+                &"11".repeat(32),
+                &"22".repeat(32),
+                SupportedRealSlotSetExecutionDecisionV2::Frozen,
+            );
+            fs::write(
+                "out/supported_real_slot_set_applied_v2.json",
+                serde_json::to_vec_pretty(&applied).expect("applied"),
+            )
+            .expect("write applied");
+
+            let review = SupportedSetReviewReportV1 {
+                policy: SupportedRealSlotSetPolicyV2 {
+                    schema_version: 2,
+                    current_supported_slots: vec!["sae".to_string(), "world_jepa".to_string()],
+                    candidate_slots_considered: vec!["ssm".to_string()],
+                    decision: SupportedRealSlotSetDecisionV2::Freeze,
+                    chosen_candidate_slot: None,
+                    rationale_codes: vec!["INSUFFICIENT_EVIDENCE_FREEZE".to_string()],
+                    policy_digest: "33".repeat(32),
+                },
+                known_slots: vec![],
+                candidates: vec![],
+            };
+            fs::write(
+                "out/supported_set_review.json",
+                serde_json::to_vec_pretty(&review).expect("review"),
+            )
+            .expect("write review");
+
+            let out = PathBuf::from("out/supported_set_apply.json");
+            let report = models_supported_set_apply(Path::new("."), &out).expect("apply");
+            assert_eq!(
+                report.decision,
+                SupportedRealSlotSetExecutionDecisionV2::Frozen
+            );
+            assert!(Path::new("out/supported_scope_reeval.json").exists());
         }
 
         #[test]
