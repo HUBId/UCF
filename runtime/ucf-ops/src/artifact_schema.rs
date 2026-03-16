@@ -64,7 +64,7 @@ struct ArtifactSpec {
     enum_names: &'static [&'static str],
 }
 
-const ARTIFACT_SPECS: [ArtifactSpec; 21] = [
+const ARTIFACT_SPECS: [ArtifactSpec; 28] = [
     ArtifactSpec {
         artifact_id: "active_review_snapshot_v1",
         file_rel: "runtime/ucf-ops/src/models_lifecycle.rs",
@@ -96,6 +96,15 @@ const ARTIFACT_SPECS: [ArtifactSpec; 21] = [
         enum_names: &["SupportedRealSlotSetExecutionDecisionV2"],
     },
     ArtifactSpec {
+        artifact_id: "applied_scope_authority_v1",
+        file_rel: "runtime/ucf-ops/src/scope_authority.rs",
+        type_name: "ScopeAuthorityCheckReportV1",
+        enum_names: &[
+            "ScopeAuthorityMismatchCategoryV1",
+            "ScopeAuthorityOverallStatusV1",
+        ],
+    },
+    ArtifactSpec {
         artifact_id: "applied_supported_set_context_v1",
         file_rel: "runtime/ucf-ops/src/models_lifecycle.rs",
         type_name: "AppliedSupportedSetContextV1",
@@ -108,10 +117,26 @@ const ARTIFACT_SPECS: [ArtifactSpec; 21] = [
         enum_names: &[],
     },
     ArtifactSpec {
+        artifact_id: "bundle_roundtrip_consistency_v1",
+        file_rel: "runtime/ucf-ops/src/lib.rs",
+        type_name: "BundleRoundTripConsistencyV1",
+        enum_names: &[
+            "BundleRoundTripMatchStatusV1",
+            "BundleRoundTripOverallStatusV1",
+            "CanonicalBundleKindV1",
+        ],
+    },
+    ArtifactSpec {
         artifact_id: "bugkit_manifest_v1",
         file_rel: "runtime/ucf-ops/src/lib.rs",
         type_name: "BugKitManifestV1",
         enum_names: &[],
+    },
+    ArtifactSpec {
+        artifact_id: "canonical_bundle_consumption_context_v1",
+        file_rel: "runtime/ucf-ops/src/lib.rs",
+        type_name: "CanonicalBundleConsumptionContextV1",
+        enum_names: &["CanonicalBundleKindV1"],
     },
     ArtifactSpec {
         artifact_id: "canonical_export_artifact_ref_v1",
@@ -136,6 +161,12 @@ const ARTIFACT_SPECS: [ArtifactSpec; 21] = [
         file_rel: "runtime/ucf-ops/src/interop_consistency.rs",
         type_name: "CrossSurfaceContextMatrixV1",
         enum_names: &[],
+    },
+    ArtifactSpec {
+        artifact_id: "cross_surface_condition_observation_v1",
+        file_rel: "runtime/ucf-ops/src/remediation_consistency.rs",
+        type_name: "CrossSurfaceConditionObservationV1",
+        enum_names: &["CrossSurfaceObservationStatusV1"],
     },
     ArtifactSpec {
         artifact_id: "interop_consistency_matrix_report_v1",
@@ -190,6 +221,24 @@ const ARTIFACT_SPECS: [ArtifactSpec; 21] = [
         file_rel: "runtime/ucf-ops/src/lib.rs",
         type_name: "ReadinessGateReport",
         enum_names: &["GateStatus"],
+    },
+    ArtifactSpec {
+        artifact_id: "reviewability_reduction_v1",
+        file_rel: "runtime/ucf-ops/src/reviewability_truth.rs",
+        type_name: "ReviewabilityReductionV1",
+        enum_names: &["ReviewabilityAggregateReadinessV1"],
+    },
+    ArtifactSpec {
+        artifact_id: "slot_reviewability_truth_v1",
+        file_rel: "runtime/ucf-ops/src/reviewability_truth.rs",
+        type_name: "SlotReviewabilityTruthV1",
+        enum_names: &[],
+    },
+    ArtifactSpec {
+        artifact_id: "supported_scope_reevaluation_v1",
+        file_rel: "runtime/ucf-ops/src/models_lifecycle.rs",
+        type_name: "SupportedScopeReevaluationV1",
+        enum_names: &["SupportedScopeReevaluationDecisionV1"],
     },
 ];
 
@@ -634,13 +683,17 @@ mod tests {
                 "backend_evidence_snapshot_v1",
                 "governance_primary_surfaces_v1",
                 "supported_real_slot_set_v2",
+                "applied_scope_authority_v1",
                 "applied_supported_set_context_v1",
+                "bundle_roundtrip_consistency_v1",
                 "repro_pack_manifest_v1",
                 "bugkit_manifest_v1",
+                "canonical_bundle_consumption_context_v1",
                 "canonical_export_artifact_ref_v1",
                 "canonical_export_context_v1",
                 "remediation_consistency_check_v1",
                 "cross_surface_context_matrix_v1",
+                "cross_surface_condition_observation_v1",
                 "interop_consistency_matrix_report_v1",
                 "operator_report_v1",
                 "operator_signoff_v1",
@@ -650,6 +703,9 @@ mod tests {
                 "v4_gate_report_v1",
                 "v5_gate_report_v1",
                 "readiness_gate_report_v1",
+                "reviewability_reduction_v1",
+                "slot_reviewability_truth_v1",
+                "supported_scope_reevaluation_v1",
             ]
         );
     }

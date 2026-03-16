@@ -1,0 +1,36 @@
+{
+  "artifact_id": "slot_reviewability_truth_v1",
+  "type_name": "SlotReviewabilityTruthV1",
+  "source_file": "runtime/ucf-ops/src/reviewability_truth.rs",
+  "required_fields": [
+    "active_eligible",
+    "alert_blocking",
+    "drift_blocking",
+    "evidence_digests",
+    "probe_ready",
+    "remediation_codes",
+    "reviewability_truth_digest",
+    "shadow_ready",
+    "slot_id",
+    "strict_blocking",
+    "target_hash_prefix"
+  ],
+  "optional_fields": [
+    "primary_denial_code"
+  ],
+  "field_types": {
+    "active_eligible": "bool",
+    "alert_blocking": "bool",
+    "drift_blocking": "bool",
+    "evidence_digests": "SlotReviewabilityEvidenceDigestsV1",
+    "primary_denial_code": "Option<String>",
+    "probe_ready": "bool",
+    "remediation_codes": "Vec<String>",
+    "reviewability_truth_digest": "String",
+    "shadow_ready": "bool",
+    "slot_id": "String",
+    "strict_blocking": "bool",
+    "target_hash_prefix": "String"
+  },
+  "enum_variants": {}
+}

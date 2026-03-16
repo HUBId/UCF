@@ -1,0 +1,54 @@
+{
+  "artifact_id": "bundle_roundtrip_consistency_v1",
+  "type_name": "BundleRoundTripConsistencyV1",
+  "source_file": "runtime/ucf-ops/src/lib.rs",
+  "required_fields": [
+    "bundle_digest_prefix",
+    "bundle_kind",
+    "canonical_condition_codes",
+    "context_match_status",
+    "governance_surface_ref_status",
+    "manifest_match_status",
+    "mismatch_codes",
+    "overall_status",
+    "policy_match_status",
+    "primary_remediation_codes",
+    "review_signoff_ref_status",
+    "roundtrip_digest",
+    "schema_version",
+    "scope_match_status"
+  ],
+  "optional_fields": [],
+  "field_types": {
+    "bundle_digest_prefix": "String",
+    "bundle_kind": "CanonicalBundleKindV1",
+    "canonical_condition_codes": "Vec<String>",
+    "context_match_status": "BundleRoundTripMatchStatusV1",
+    "governance_surface_ref_status": "BundleRoundTripMatchStatusV1",
+    "manifest_match_status": "BundleRoundTripMatchStatusV1",
+    "mismatch_codes": "Vec<String>",
+    "overall_status": "BundleRoundTripOverallStatusV1",
+    "policy_match_status": "BundleRoundTripMatchStatusV1",
+    "primary_remediation_codes": "Vec<String>",
+    "review_signoff_ref_status": "BundleRoundTripMatchStatusV1",
+    "roundtrip_digest": "String",
+    "schema_version": "u16",
+    "scope_match_status": "BundleRoundTripMatchStatusV1"
+  },
+  "enum_variants": {
+    "BundleRoundTripMatchStatusV1": [
+      "Legacy",
+      "Match",
+      "Mismatch",
+      "Missing"
+    ],
+    "BundleRoundTripOverallStatusV1": [
+      "Fail",
+      "Pass"
+    ],
+    "CanonicalBundleKindV1": [
+      "Bugkit",
+      "Repro"
+    ]
+  }
+}

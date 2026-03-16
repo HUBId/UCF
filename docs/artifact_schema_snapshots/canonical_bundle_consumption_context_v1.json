@@ -1,0 +1,32 @@
+{
+  "artifact_id": "canonical_bundle_consumption_context_v1",
+  "type_name": "CanonicalBundleConsumptionContextV1",
+  "source_file": "runtime/ucf-ops/src/lib.rs",
+  "required_fields": [
+    "applied_supported_set_digest_prefix",
+    "artifact_refs_digest_prefix",
+    "bundle_kind",
+    "consumption_context_digest",
+    "export_context_digest_prefix",
+    "included_artifact_kinds",
+    "manifest_digest_prefix",
+    "policy_graph_digest_prefix"
+  ],
+  "optional_fields": [],
+  "field_types": {
+    "applied_supported_set_digest_prefix": "String",
+    "artifact_refs_digest_prefix": "String",
+    "bundle_kind": "CanonicalBundleKindV1",
+    "consumption_context_digest": "String",
+    "export_context_digest_prefix": "String",
+    "included_artifact_kinds": "Vec<String>",
+    "manifest_digest_prefix": "String",
+    "policy_graph_digest_prefix": "String"
+  },
+  "enum_variants": {
+    "CanonicalBundleKindV1": [
+      "Bugkit",
+      "Repro"
+    ]
+  }
+}

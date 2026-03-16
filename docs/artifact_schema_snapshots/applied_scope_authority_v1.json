@@ -1,0 +1,32 @@
+{
+  "artifact_id": "applied_scope_authority_v1",
+  "type_name": "ScopeAuthorityCheckReportV1",
+  "source_file": "runtime/ucf-ops/src/scope_authority.rs",
+  "required_fields": [
+    "applied_context_digest_prefix",
+    "applied_supported_set_digest_prefix",
+    "schema_version",
+    "status",
+    "surfaces"
+  ],
+  "optional_fields": [],
+  "field_types": {
+    "applied_context_digest_prefix": "String",
+    "applied_supported_set_digest_prefix": "String",
+    "schema_version": "u16",
+    "status": "ScopeAuthorityOverallStatusV1",
+    "surfaces": "Vec<ScopeAuthoritySurfaceResultV1>"
+  },
+  "enum_variants": {
+    "ScopeAuthorityMismatchCategoryV1": [
+      "ExtraSlotFromLegacyInference",
+      "LegacyScopePathPresent",
+      "MissingInScopeSlot",
+      "SurfaceDidNotUseAppliedScope"
+    ],
+    "ScopeAuthorityOverallStatusV1": [
+      "Fail",
+      "Pass"
+    ]
+  }
+}

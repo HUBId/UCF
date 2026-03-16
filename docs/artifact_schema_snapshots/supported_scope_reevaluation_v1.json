@@ -1,0 +1,31 @@
+{
+  "artifact_id": "supported_scope_reevaluation_v1",
+  "type_name": "SupportedScopeReevaluationV1",
+  "source_file": "runtime/ucf-ops/src/models_lifecycle.rs",
+  "required_fields": [
+    "policy_digest_prefix",
+    "previous_applied_set_digest_prefix",
+    "rationale_codes",
+    "reevaluation_decision",
+    "reevaluation_digest",
+    "schema_version"
+  ],
+  "optional_fields": [
+    "chosen_candidate_slot"
+  ],
+  "field_types": {
+    "chosen_candidate_slot": "Option<String>",
+    "policy_digest_prefix": "String",
+    "previous_applied_set_digest_prefix": "String",
+    "rationale_codes": "Vec<String>",
+    "reevaluation_decision": "SupportedScopeReevaluationDecisionV1",
+    "reevaluation_digest": "String",
+    "schema_version": "u16"
+  },
+  "enum_variants": {
+    "SupportedScopeReevaluationDecisionV1": [
+      "ExecuteExpandByOne",
+      "ReaffirmFreeze"
+    ]
+  }
+}
