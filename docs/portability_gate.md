@@ -1,4 +1,4 @@
-# Portability Gate v6 Refresh (Linux + Windows)
+# Portability Gate v7 Refresh (Linux + Windows)
 
 `Portability Gate` blocks merges when core runtime/ops checks are not cross-platform safe.
 
@@ -13,6 +13,9 @@
      - `cargo run -p ucf-ops -- audit net-deps --out ./out/net_deps.json`
      - `cargo run -p ucf-ops -- spec artifact-schemas-check --out ./out/artifact_schema_check.json`
      - `cargo run -p ucf-ops -- governance-surfaces-check --out ./out/governance_surfaces_check.json`
+     - `cargo run -p ucf-ops -- scope authority-check --out ./out/scope_authority_check.json`
+     - `cargo run -p ucf-ops -- models supported-scope-reevaluate --out ./out/supported_scope_reeval.json --workdir .`
+     - `cargo run -p ucf-ops -- operator review-truth-check --out ./out/review_truth_check.json`
      - `cargo run -p ucf-ops -- models supported-set-review --out ./out/supported_set_review.json --workdir .`
      - `cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json --workdir .`
      - `cargo run -p ucf-ops -- models applied-scope-check --out ./out/applied_scope_check.json --workdir .`
@@ -36,6 +39,9 @@
      - `cargo run -p ucf-ops -- audit hardware-scan`
      - `cargo run -p ucf-ops -- spec artifact-schemas-check --out ./out/artifact_schema_check.json`
      - `cargo run -p ucf-ops -- governance-surfaces-check --out ./out/governance_surfaces_check.json`
+     - `cargo run -p ucf-ops -- scope authority-check --out ./out/scope_authority_check.json`
+     - `cargo run -p ucf-ops -- models supported-scope-reevaluate --out ./out/supported_scope_reeval.json --workdir .`
+     - `cargo run -p ucf-ops -- operator review-truth-check --out ./out/review_truth_check.json`
      - `cargo run -p ucf-ops -- models supported-set-review --out ./out/supported_set_review.json --workdir .`
      - `cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json --workdir .`
      - `cargo run -p ucf-ops -- models applied-scope-check --out ./out/applied_scope_check.json --workdir .`
@@ -53,7 +59,7 @@
      - `cargo run -p ucf-ops -- portability check --out ./out/portability.json`
      - `cargo run -p ucf-ops -- portability report --out ./out/portability_report.json`
 
-2. **v6 generation smoke checks (blocking unless explicitly optional)**
+2. **v7 generation smoke checks (blocking unless explicitly optional)**
    - `models active-review-snapshot` and `models backend-resolution` must run in bounded offline mode (optional backend-resolution paths must SKIP cleanly).
    - Enriched export smokes (`repro pack` + `repro verify`, `bugkit build`) must generate deterministic manifests with bounded fixtures and no payload/weight inclusion by default.
    - `remediation-consistency-check` must pass and emit deterministic mismatch categories.
@@ -138,11 +144,13 @@ run_json=$(ls -1 ./.ucf_portability_smoke/ess/runs/*.json | sort | tail -n1)
 run_id=$(basename "$run_json" .json)
 cargo run -p ucf-ops -- repro pack --run "$run_id" --out ./out/repro_portability.zip --workdir ./.ucf_portability_smoke
 cargo run -p ucf-ops -- repro verify --pack ./out/repro_portability.zip --out ./out/repro_verify_portability.json --workdir ./.ucf_portability_smoke
+cargo run -p ucf-ops -- exports roundtrip-check --in ./out/repro_portability.zip --out ./out/export_roundtrip_check.json
 mkdir -p ./.ucf_portability_smoke/out/$run_id
 cp ./out/portability_smoke_bringup/run_metadata.json ./.ucf_portability_smoke/out/$run_id/run_metadata.json
 cp ./out/portability_smoke_bringup/metrics_summary.json ./.ucf_portability_smoke/out/$run_id/metrics_summary.json
 cargo run -p ucf-ops -- bugkit build --run "$run_id" --out ./out/bugkit_portability.zip --workdir ./.ucf_portability_smoke
 cargo run -p ucf-ops -- remediation-consistency-check --out ./out/remediation_consistency_portability.json
+cargo run -p ucf-ops -- remediation-interop-check --out ./out/remediation_interop_check.json
 cargo run -p ucf-ops -- models evidence-snapshot --out ./out/backend_evidence_snapshot.json
 cargo run -p ucf-ops -- operator signoff --out ./out/operator_signoff.json
 cargo run -p ucf-ops -- docs remediation-codes --out ./out/remediation_codes_v1.generated.md
@@ -175,11 +183,13 @@ if (-not $run_json) { throw "no run metadata json found under ./.ucf_portability
 $run_id = [System.IO.Path]::GetFileNameWithoutExtension($run_json.Name)
 cargo run -p ucf-ops -- repro pack --run $run_id --out ./out/repro_portability.zip --workdir ./.ucf_portability_smoke
 cargo run -p ucf-ops -- repro verify --pack ./out/repro_portability.zip --out ./out/repro_verify_portability.json --workdir ./.ucf_portability_smoke
+cargo run -p ucf-ops -- exports roundtrip-check --in ./out/repro_portability.zip --out ./out/export_roundtrip_check.json
 New-Item -ItemType Directory -Force -Path ".\.ucf_portability_smoke\out\$run_id" | Out-Null
 Copy-Item "./out/portability_smoke_bringup/run_metadata.json" ".\.ucf_portability_smoke\out\$run_id\run_metadata.json"
 Copy-Item "./out/portability_smoke_bringup/metrics_summary.json" ".\.ucf_portability_smoke\out\$run_id\metrics_summary.json"
 cargo run -p ucf-ops -- bugkit build --run $run_id --out ./out/bugkit_portability.zip --workdir ./.ucf_portability_smoke
 cargo run -p ucf-ops -- remediation-consistency-check --out ./out/remediation_consistency_portability.json
+cargo run -p ucf-ops -- remediation-interop-check --out ./out/remediation_interop_check.json
 cargo run -p ucf-ops -- models evidence-snapshot --out ./out/backend_evidence_snapshot.json
 cargo run -p ucf-ops -- operator signoff --out ./out/operator_signoff.json
 cargo run -p ucf-ops -- docs remediation-codes --out ./out/remediation_codes_v1.generated.md
@@ -227,3 +237,13 @@ cargo run -p ucf-ops -- portability report --out ./out/portability_report.json
 - **`interop consistency-matrix` failed**
   - Regenerate bounded interoperability evidence and rerun matrix:
     - `cargo run -p ucf-ops -- interop consistency-matrix --out ./out/interop_consistency_matrix.json`
+
+
+## v7 docs coverage
+
+- `docs/applied_scope_authority_v7.md`
+- `docs/supported_scope_reevaluation_v7.md`
+- `docs/reviewability_truth_v7.md`
+- `docs/export_roundtrip_v7.md`
+- `docs/remediation_interop_consistency_v7.md`
+- `docs/artifact_schema_snapshots.md`
