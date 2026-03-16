@@ -121,9 +121,11 @@ pub use operator_workflow::{
 };
 pub use remediation::all_registry_rows as remediation_registry_rows;
 pub use remediation_consistency::{
-    remediation_consistency_check, CanonicalRemediationObservationV1,
+    remediation_consistency_check, remediation_interop_check, CanonicalRemediationObservationV1,
+    CrossSurfaceConditionObservationV1, CrossSurfaceObservationStatusV1,
     RemediationConsistencyCheckV1, RemediationConsistencyObservedV1,
-    RemediationConsistencyReportV1, RemediationConsistencyStatusV1, RemediationMismatchKindV1,
+    RemediationConsistencyReportV1, RemediationConsistencyStatusV1,
+    RemediationInteropCheckReportV1, RemediationMismatchKindV1,
 };
 pub use reviewability_truth::{
     derive_slot_reviewability_truths, derive_slot_reviewability_truths_from_active,
@@ -10937,6 +10939,8 @@ fn bundle_roundtrip_digest_hex(report: &BundleRoundTripConsistencyV1) -> Result<
     let mut canonical = report.clone();
     canonical.roundtrip_digest.clear();
     canonical.mismatch_codes.sort();
+    canonical.canonical_condition_codes.sort();
+    canonical.primary_remediation_codes.sort();
     Ok(sha256_hex(&serde_json::to_vec(&canonical)?))
 }
 
@@ -11118,6 +11122,19 @@ fn evaluate_bundle_roundtrip_consistency(
 
     mismatch_codes.sort();
     mismatch_codes.dedup();
+    let mut canonical_condition_codes = mismatch_codes
+        .iter()
+        .filter_map(|code| crate::remediation::canonical_condition_for_roundtrip_mismatch(code))
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+    canonical_condition_codes.sort();
+    canonical_condition_codes.dedup();
+    let mut primary_remediation_codes = canonical_condition_codes
+        .iter()
+        .filter_map(|code| crate::remediation::primary_remediation_for_condition_code(code))
+        .collect::<Vec<_>>();
+    primary_remediation_codes.sort();
+    primary_remediation_codes.dedup();
 
     let mut report = BundleRoundTripConsistencyV1 {
         schema_version: 1,
@@ -11134,6 +11151,8 @@ fn evaluate_bundle_roundtrip_consistency(
         review_signoff_ref_status: merge_status(review_signoff_ref_status, layout_status),
         overall_status,
         mismatch_codes,
+        canonical_condition_codes,
+        primary_remediation_codes,
         roundtrip_digest: String::new(),
     };
     let _ = context;
@@ -11308,6 +11327,8 @@ pub struct BundleRoundTripConsistencyV1 {
     pub review_signoff_ref_status: BundleRoundTripMatchStatusV1,
     pub overall_status: BundleRoundTripOverallStatusV1,
     pub mismatch_codes: Vec<String>,
+    pub canonical_condition_codes: Vec<String>,
+    pub primary_remediation_codes: Vec<String>,
     pub roundtrip_digest: String,
 }
 
@@ -11947,6 +11968,8 @@ pub enum ExportNormalizeMismatchCategoryV1 {
 pub struct ExportNormalizeMismatchV1 {
     pub category: ExportNormalizeMismatchCategoryV1,
     pub detail: String,
+    pub canonical_condition_code: String,
+    pub primary_remediation_code: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -11958,6 +11981,21 @@ pub struct ExportNormalizeCheckReportV1 {
     pub allowed_states: Vec<String>,
 }
 
+fn canonicalize_normalize_mismatch(
+    category: &ExportNormalizeMismatchCategoryV1,
+) -> (String, String) {
+    let condition = match category {
+        ExportNormalizeMismatchCategoryV1::PathNamingDrift
+        | ExportNormalizeMismatchCategoryV1::ContextFieldDrift
+        | ExportNormalizeMismatchCategoryV1::DigestFieldDrift => "ManifestMismatch",
+        ExportNormalizeMismatchCategoryV1::IncludedStateDrift => "ExportRoundTripMismatch",
+        ExportNormalizeMismatchCategoryV1::LegacyExportLayout => "ExportLayoutMismatch",
+    };
+    let remediation = crate::remediation::primary_remediation_for_condition_code(condition)
+        .unwrap_or_else(|| "REMEDIATION_REVIEW_REPORT_MANUALLY".to_string());
+    (condition.to_string(), remediation)
+}
+
 fn validate_canonical_artifact_ref(
     refv: &CanonicalExportArtifactRefV1,
 ) -> Vec<ExportNormalizeMismatchV1> {
@@ -11967,6 +12005,8 @@ fn validate_canonical_artifact_ref(
         out.push(ExportNormalizeMismatchV1 {
             category: ExportNormalizeMismatchCategoryV1::PathNamingDrift,
             detail: format!("{} path outside canonical prefixes", refv.artifact_kind),
+            canonical_condition_code: String::new(),
+            primary_remediation_code: String::new(),
         });
     }
     if matches!(
@@ -11977,6 +12017,8 @@ fn validate_canonical_artifact_ref(
         out.push(ExportNormalizeMismatchV1 {
             category: ExportNormalizeMismatchCategoryV1::DigestFieldDrift,
             detail: format!("{} included without sha256", refv.artifact_kind),
+            canonical_condition_code: String::new(),
+            primary_remediation_code: String::new(),
         });
     }
     if !matches!(
@@ -11987,6 +12029,8 @@ fn validate_canonical_artifact_ref(
         out.push(ExportNormalizeMismatchV1 {
             category: ExportNormalizeMismatchCategoryV1::IncludedStateDrift,
             detail: format!("{} non-included has sha256", refv.artifact_kind),
+            canonical_condition_code: String::new(),
+            primary_remediation_code: String::new(),
         });
     }
     out
@@ -12001,12 +12045,16 @@ fn validate_canonical_context(ctx: &CanonicalExportContextV1) -> Vec<ExportNorma
         out.push(ExportNormalizeMismatchV1 {
             category: ExportNormalizeMismatchCategoryV1::ContextFieldDrift,
             detail: "required context digest prefix missing".to_string(),
+            canonical_condition_code: String::new(),
+            primary_remediation_code: String::new(),
         });
     }
     if canonical_context_digest_hex(ctx).map_or(true, |d| d != ctx.context_digest) {
         out.push(ExportNormalizeMismatchV1 {
             category: ExportNormalizeMismatchCategoryV1::DigestFieldDrift,
             detail: "context_digest mismatch".to_string(),
+            canonical_condition_code: String::new(),
+            primary_remediation_code: String::new(),
         });
     }
     out
@@ -12043,6 +12091,8 @@ pub fn exports_normalize_check(
         mismatches.push(ExportNormalizeMismatchV1 {
             category: ExportNormalizeMismatchCategoryV1::LegacyExportLayout,
             detail: "repro pack is not canonical layout".to_string(),
+            canonical_condition_code: String::new(),
+            primary_remediation_code: String::new(),
         });
     }
 
@@ -12073,7 +12123,15 @@ pub fn exports_normalize_check(
         mismatches.push(ExportNormalizeMismatchV1 {
             category: ExportNormalizeMismatchCategoryV1::LegacyExportLayout,
             detail: "bugkit is not canonical layout".to_string(),
+            canonical_condition_code: String::new(),
+            primary_remediation_code: String::new(),
         });
+    }
+
+    for mismatch in &mut mismatches {
+        let (condition, remediation) = canonicalize_normalize_mismatch(&mismatch.category);
+        mismatch.canonical_condition_code = condition;
+        mismatch.primary_remediation_code = remediation;
     }
 
     let report = ExportNormalizeCheckReportV1 {

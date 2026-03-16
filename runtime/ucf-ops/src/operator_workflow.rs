@@ -464,6 +464,8 @@ mod tests {
                 } else {
                     vec![InteropMismatchCategoryV1::ScopeMismatch]
                 },
+                canonical_condition_codes: Vec::new(),
+                primary_remediation_codes: Vec::new(),
             },
             summary: InteropConsistencySummaryV1 {
                 overall_status: if pass {

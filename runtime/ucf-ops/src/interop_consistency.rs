@@ -5,6 +5,9 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::remediation::{
+    canonical_condition_for_interop_category, primary_remediation_for_condition_code,
+};
 use crate::{
     load_applied_supported_set_context_v1, prefix_hex, resolve_strict_evidence, sha256_hex,
     AggregatedActiveReviewSnapshotV1, AppliedSupportedSetContextV1, BackendEvidenceSnapshotV1,
@@ -84,6 +87,8 @@ pub enum InteropOverallStatusV1 {
 pub struct CrossSurfaceMatchRulesV1 {
     pub schema_version: u16,
     pub mismatch_categories: Vec<InteropMismatchCategoryV1>,
+    pub canonical_condition_codes: Vec<String>,
+    pub primary_remediation_codes: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -233,7 +238,7 @@ pub fn interop_consistency_matrix(
         matrix_digest,
     };
 
-    let rules = evaluate_rules(
+    let rules = enrich_rules_with_canonical_mapping(evaluate_rules(
         &matrix,
         RuleInputs {
             strict: &strict,
@@ -244,7 +249,7 @@ pub fn interop_consistency_matrix(
             repro: repro.as_ref(),
             bugkit: bugkit.as_ref(),
         },
-    );
+    ));
 
     let mut counts: BTreeMap<InteropMismatchCategoryV1, usize> = BTreeMap::new();
     for c in &rules.mismatch_categories {
@@ -378,7 +383,31 @@ fn evaluate_rules(
     CrossSurfaceMatchRulesV1 {
         schema_version: 1,
         mismatch_categories: out.into_iter().collect(),
+        canonical_condition_codes: Vec::new(),
+        primary_remediation_codes: Vec::new(),
     }
+}
+
+fn enrich_rules_with_canonical_mapping(
+    mut rules: CrossSurfaceMatchRulesV1,
+) -> CrossSurfaceMatchRulesV1 {
+    let mut conditions = rules
+        .mismatch_categories
+        .iter()
+        .filter_map(|category| canonical_condition_for_interop_category(&format!("{category:?}")))
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+    conditions.sort();
+    conditions.dedup();
+    let mut remediations = conditions
+        .iter()
+        .filter_map(|condition| primary_remediation_for_condition_code(condition))
+        .collect::<Vec<_>>();
+    remediations.sort();
+    remediations.dedup();
+    rules.canonical_condition_codes = conditions;
+    rules.primary_remediation_codes = remediations;
+    rules
 }
 
 fn matrix_digest(
