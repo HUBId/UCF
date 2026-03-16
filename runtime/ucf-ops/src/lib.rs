@@ -81,7 +81,7 @@ pub use models_lifecycle::{
     models_backend_resolution, models_consistency_check, models_eligibility,
     models_evidence_snapshot, models_list, models_probe_slot, models_promote,
     models_recommend_rollback, models_rollback, models_shadow_ready, models_stage,
-    models_supported_set_apply, models_supported_set_review,
+    models_supported_scope_reevaluate, models_supported_set_apply, models_supported_set_review,
     models_verify as models_verify_lifecycle, parse_slot, ActiveCheckStatus,
     ActiveEnablementDeniedCode, ActiveEnablementEvidenceV1, ActiveReviewEvidenceV1,
     ActiveReviewOverallStatusV1, ActiveReviewSnapshotRecordV1, AggregatedActiveReviewSnapshotV1,
@@ -92,9 +92,10 @@ pub use models_lifecycle::{
     ProbeReportV1, ShadowReadyCheckRecordV1, ShadowReadyEvidenceV1, SlotEvidenceSnapshotV1,
     SlotExpansionEligibilityV1, SupportedRealSlotSetDecisionV2,
     SupportedRealSlotSetExecutionDecisionV2, SupportedRealSlotSetPolicyV2, SupportedRealSlotSetV1,
-    SupportedRealSlotSetV2, SupportedRealSlotsActiveViewV1, SupportedSetApplyReportV1,
-    SupportedSetExecutionDeniedCodeV1, SupportedSetExpansionRecordV1, SupportedSetFreezeRecordV1,
-    SupportedSetReviewReportV1, UnifiedEligibilityStatusV1,
+    SupportedRealSlotSetV2, SupportedRealSlotsActiveViewV1, SupportedScopeReevaluationDecisionV1,
+    SupportedScopeReevaluationV1, SupportedSetApplyReportV1, SupportedSetExecutionDeniedCodeV1,
+    SupportedSetExpansionRecordV1, SupportedSetFreezeRecordV1, SupportedSetReviewReportV1,
+    UnifiedEligibilityStatusV1,
 };
 pub use nightly::{
     nightly_summarize, NightlyComponentReport, NightlyOverallStatus, NightlySummarizeArgs,
@@ -14159,7 +14160,9 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         "./out/supported_set_apply.json",
         |out_path| {
             let review_out = PathBuf::from("./out/supported_set_review.json");
+            let reeval_out = PathBuf::from("./out/supported_scope_reeval.json");
             models_supported_set_review(workdir, &review_out)?;
+            models_supported_scope_reevaluate(workdir, &reeval_out)?;
             models_supported_set_apply(workdir, out_path)
         },
         |report| {
@@ -14389,6 +14392,7 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         matrix_cmd("linux", "cargo run -p ucf-ops -- spec artifact-schemas-check --out ./out/artifact_schema_check.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- governance-surfaces-check --out ./out/governance_surfaces_check.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- models supported-set-review --out ./out/supported_set_review.json --workdir ."),
+        matrix_cmd("linux", "cargo run -p ucf-ops -- models supported-scope-reevaluate --out ./out/supported_scope_reeval.json --workdir ."),
         matrix_cmd("linux", "cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json --workdir ."),
         matrix_cmd("linux", "cargo run -p ucf-ops -- models applied-scope-check --out ./out/applied_scope_check.json --workdir ."),
         matrix_cmd("linux", "cargo run -p ucf-ops -- exports normalize-check --out ./out/export_normalize_check.json"),
@@ -14414,6 +14418,7 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         matrix_cmd("windows", "cargo run -p ucf-ops -- spec artifact-schemas-check --out ./out/artifact_schema_check.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- governance-surfaces-check --out ./out/governance_surfaces_check.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- models supported-set-review --out ./out/supported_set_review.json --workdir ."),
+        matrix_cmd("windows", "cargo run -p ucf-ops -- models supported-scope-reevaluate --out ./out/supported_scope_reeval.json --workdir ."),
         matrix_cmd("windows", "cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json --workdir ."),
         matrix_cmd("windows", "cargo run -p ucf-ops -- models applied-scope-check --out ./out/applied_scope_check.json --workdir ."),
         matrix_cmd("windows", "cargo run -p ucf-ops -- exports normalize-check --out ./out/export_normalize_check.json"),

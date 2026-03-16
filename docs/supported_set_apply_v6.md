@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`models supported-set-apply` executes the governance decision from `SupportedRealSlotSetPolicyV2` and writes the **applied** supported-slot scope as `SupportedRealSlotSetV2`.
+`models supported-set-apply` executes the governance decision only after a current `SupportedScopeReevaluationV1` result is present and writes the **applied** supported-slot scope as `SupportedRealSlotSetV2`.
 
 This separates review from execution:
 
@@ -19,6 +19,7 @@ If expansion preconditions fail during apply, execution is denied with stable de
 ## Command
 
 ```bash
+cargo run -p ucf-ops -- models supported-scope-reevaluate --out ./out/supported_scope_reeval.json
 cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json
 ```
 
