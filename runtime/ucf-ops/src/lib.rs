@@ -17,6 +17,7 @@ mod governance_surfaces;
 mod interop_consistency;
 mod models_lifecycle;
 mod nightly;
+mod operator_export_chain;
 mod operator_report;
 mod operator_review_packet;
 mod operator_signoff;
@@ -101,6 +102,11 @@ pub use models_lifecycle::{
 pub use nightly::{
     nightly_summarize, NightlyComponentReport, NightlyOverallStatus, NightlySummarizeArgs,
     NightlySummaryReport,
+};
+pub use operator_export_chain::{
+    derive_operator_export_authority_chain, operator_export_chain_check,
+    OperatorExportAuthorityChainStatusV1, OperatorExportAuthorityChainV1,
+    OperatorExportAuthorityInputs, OperatorExportAuthorityMismatchCategoryV1,
 };
 pub use operator_report::{
     operator_report, operator_report_text, ConsolidatedOperatorReportV1, OperatorReportArgs,
@@ -11671,7 +11677,6 @@ fn enrich_evidence_artifacts(
     Ok((backend_ref, active_ref, signoff_ref, backend_resolution_ref))
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BugKitBuildReport {
     pub run_id: String,
     pub out: String,

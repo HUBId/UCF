@@ -3,6 +3,8 @@
   "type_name": "OperatorSignoffDecisionV1",
   "source_file": "runtime/ucf-ops/src/operator_signoff.rs",
   "required_fields": [
+    "applied_context_digest_prefix",
+    "applied_supported_set_digest_prefix",
     "decision",
     "decision_digest",
     "evidence_snapshot_digest_prefix",
@@ -12,6 +14,7 @@
     "policy_graph_digest_prefix",
     "reasons",
     "remediation_codes",
+    "reviewability_reduction_digest_prefix",
     "schema_version",
     "supported_slot_set_digest"
   ],
@@ -21,6 +24,8 @@
   ],
   "field_types": {
     "active_review_snapshot_digest_prefix": "Option<String>",
+    "applied_context_digest_prefix": "String",
+    "applied_supported_set_digest_prefix": "String",
     "canonical_remediation_codes": "Vec<String>",
     "decision": "SignoffDecisionStateV1",
     "decision_digest": "String",
@@ -31,6 +36,7 @@
     "policy_graph_digest_prefix": "String",
     "reasons": "Vec<String>",
     "remediation_codes": "Vec<String>",
+    "reviewability_reduction_digest_prefix": "String",
     "schema_version": "u16",
     "supported_slot_set_digest": "String"
   },

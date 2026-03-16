@@ -63,6 +63,9 @@ pub struct OperatorSignoffDecisionV1 {
     pub evidence_snapshot_digest_prefix: String,
     pub active_review_snapshot_digest_prefix: Option<String>,
     pub operator_report_digest_prefix: String,
+    pub applied_supported_set_digest_prefix: String,
+    pub applied_context_digest_prefix: String,
+    pub reviewability_reduction_digest_prefix: String,
     pub gate_report_digests: GateReportDigestsV1,
     pub reasons: Vec<String>,
     pub remediation_codes: Vec<String>,
@@ -266,12 +269,21 @@ fn reduce_signoff(
     let Some(snapshot) = snapshot else {
         reasons.insert("SIGNOFF_BLOCK_EVIDENCE_SNAPSHOT_MISSING".to_string());
         remediation.insert("run_backend_evidence_snapshot".to_string());
-        return build_not_ready_minimal(reasons, remediation, v0, v1, v2, v3);
+        return build_not_ready_minimal(reasons, remediation, v0, v1, v2, v3, applied_scope);
     };
     let Some(operator) = operator else {
         reasons.insert("SIGNOFF_BLOCK_OPERATOR_REPORT_MISSING".to_string());
         remediation.insert("run_operator_report".to_string());
-        return build_not_ready_from_snapshot(snapshot, reasons, remediation, v0, v1, v2, v3);
+        return build_not_ready_from_snapshot(
+            snapshot,
+            reasons,
+            remediation,
+            v0,
+            v1,
+            v2,
+            v3,
+            applied_scope,
+        );
     };
 
     let snapshot_slots = snapshot
@@ -334,6 +346,8 @@ fn reduce_signoff(
         }
     }
 
+    let mut reviewability_reduction_digest_prefix = "MISSING".to_string();
+
     let mut shadow_ready = snapshot
         .slots
         .iter()
@@ -349,6 +363,7 @@ fn reduce_signoff(
         let truths =
             derive_slot_reviewability_truths(applied_scope, snapshot, active, strict_snapshot)?;
         let reduction = reduce_reviewability(applied_scope, &truths)?;
+        reviewability_reduction_digest_prefix = prefix16(&reduction.reduction_digest);
         shadow_ready = truths
             .iter()
             .all(|slot| slot.probe_ready && slot.shadow_ready);
@@ -410,6 +425,8 @@ fn reduce_signoff(
             v3,
             reasons,
             remediation,
+            applied_scope,
+            &reviewability_reduction_digest_prefix,
         );
     }
 
@@ -426,6 +443,8 @@ fn reduce_signoff(
             v3,
             reasons,
             remediation,
+            applied_scope,
+            &reviewability_reduction_digest_prefix,
         );
     }
 
@@ -445,6 +464,8 @@ fn reduce_signoff(
         v3,
         reasons,
         remediation,
+        applied_scope,
+        &reviewability_reduction_digest_prefix,
     )
 }
 
@@ -455,6 +476,7 @@ fn build_not_ready_minimal(
     v1: Option<V1GateReportV1>,
     v2: Option<V2GateReportV1>,
     v3: Option<V3GateReportV1>,
+    applied_scope: &AppliedSupportedSetContextV1,
 ) -> Result<OperatorSignoffDecisionV1, OpsError> {
     let mut out = OperatorSignoffDecisionV1 {
         schema_version: 1,
@@ -465,6 +487,9 @@ fn build_not_ready_minimal(
         evidence_snapshot_digest_prefix: "MISSING".to_string(),
         active_review_snapshot_digest_prefix: None,
         operator_report_digest_prefix: "MISSING".to_string(),
+        applied_supported_set_digest_prefix: applied_scope.applied_set_digest_prefix.clone(),
+        applied_context_digest_prefix: prefix16(&applied_scope.context_digest),
+        reviewability_reduction_digest_prefix: "MISSING".to_string(),
         gate_report_digests: GateReportDigestsV1 {
             v0: digest_opt(v0.as_ref())?,
             v1: digest_opt(v1.as_ref())?,
@@ -482,6 +507,7 @@ fn build_not_ready_minimal(
     Ok(out)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_not_ready_from_snapshot(
     snapshot: &BackendEvidenceSnapshotV1,
     reasons: BTreeSet<String>,
@@ -490,6 +516,7 @@ fn build_not_ready_from_snapshot(
     v1: Option<V1GateReportV1>,
     v2: Option<V2GateReportV1>,
     v3: Option<V3GateReportV1>,
+    applied_scope: &AppliedSupportedSetContextV1,
 ) -> Result<OperatorSignoffDecisionV1, OpsError> {
     let mut out = OperatorSignoffDecisionV1 {
         schema_version: 1,
@@ -500,6 +527,9 @@ fn build_not_ready_from_snapshot(
         evidence_snapshot_digest_prefix: prefix16(&snapshot.snapshot_digest),
         active_review_snapshot_digest_prefix: None,
         operator_report_digest_prefix: "MISSING".to_string(),
+        applied_supported_set_digest_prefix: applied_scope.applied_set_digest_prefix.clone(),
+        applied_context_digest_prefix: prefix16(&applied_scope.context_digest),
+        reviewability_reduction_digest_prefix: "MISSING".to_string(),
         gate_report_digests: GateReportDigestsV1 {
             v0: digest_opt(v0.as_ref())?,
             v1: digest_opt(v1.as_ref())?,
@@ -529,6 +559,8 @@ fn build_decision(
     v3: Option<V3GateReportV1>,
     reasons: BTreeSet<String>,
     remediation: BTreeSet<String>,
+    applied_scope: &AppliedSupportedSetContextV1,
+    reviewability_reduction_digest_prefix: &str,
 ) -> Result<OperatorSignoffDecisionV1, OpsError> {
     let mut out = OperatorSignoffDecisionV1 {
         schema_version: 1,
@@ -540,6 +572,9 @@ fn build_decision(
         active_review_snapshot_digest_prefix: active_review_snapshot
             .map(|v| prefix16(&v.snapshot_digest)),
         operator_report_digest_prefix: prefix16(&operator.report_digest),
+        applied_supported_set_digest_prefix: applied_scope.applied_set_digest_prefix.clone(),
+        applied_context_digest_prefix: prefix16(&applied_scope.context_digest),
+        reviewability_reduction_digest_prefix: reviewability_reduction_digest_prefix.to_string(),
         gate_report_digests: GateReportDigestsV1 {
             v0: digest_opt(v0.as_ref())?,
             v1: digest_opt(v1.as_ref())?,

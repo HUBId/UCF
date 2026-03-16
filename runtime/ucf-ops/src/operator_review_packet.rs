@@ -65,6 +65,9 @@ pub struct OperatorReviewPacketV1 {
     pub supported_slot_set_digest: String,
     pub policy_graph_digest_prefix: String,
     pub manifest_digest_prefix: String,
+    pub applied_supported_set_digest_prefix: String,
+    pub applied_context_digest_prefix: String,
+    pub reviewability_reduction_digest_prefix: String,
     pub artifacts: OperatorReviewPacketArtifactsV1,
     pub supported_slots: Vec<OperatorReviewPacketSlotV1>,
     pub blocking_codes: Vec<String>,
@@ -343,20 +346,28 @@ fn reduce_review_packet(
         remediation.insert("rerun_operator_artifacts".to_string());
     }
 
-    let (aggregate_readiness, shadow_ready) =
+    let (aggregate_readiness, shadow_ready, reviewability_reduction_digest_prefix) =
         match derive_slot_reviewability_truths_from_active(&applied_scope, &snapshot, &active)
             .and_then(|truths| {
                 let shadow_ready = truths
                     .iter()
                     .all(|slot| slot.probe_ready && slot.shadow_ready);
                 let reduction = reduce_reviewability(&applied_scope, &truths)?;
-                Ok((reduction.aggregate_readiness, shadow_ready))
+                Ok((
+                    reduction.aggregate_readiness,
+                    shadow_ready,
+                    prefix16(&reduction.reduction_digest),
+                ))
             }) {
             Ok(result) => result,
             Err(_) => {
                 blocking.insert("LEGACY_REDUCTION_REJECTED".to_string());
                 remediation.insert("run_models_applied_scope_check".to_string());
-                (ReviewabilityAggregateReadinessV1::NoneReviewable, false)
+                (
+                    ReviewabilityAggregateReadinessV1::NoneReviewable,
+                    false,
+                    "MISSING".to_string(),
+                )
             }
         };
     let stage = reduce_stage(&signoff, &blocking, &aggregate_readiness, shadow_ready);
@@ -376,6 +387,7 @@ fn reduce_review_packet(
         blocking,
         remediation,
         &applied_scope,
+        &reviewability_reduction_digest_prefix,
     )?;
     packet.packet_digest = packet_digest(&packet)?;
     Ok(packet)
@@ -445,6 +457,9 @@ fn build_from_snapshot(
         evidence_snapshot_digest_prefix: "MISSING".to_string(),
         active_review_snapshot_digest_prefix: None,
         operator_report_digest_prefix: "MISSING".to_string(),
+        applied_supported_set_digest_prefix: applied_scope.applied_set_digest_prefix.clone(),
+        applied_context_digest_prefix: crate::prefix_hex(&applied_scope.context_digest, 16),
+        reviewability_reduction_digest_prefix: "MISSING".to_string(),
         gate_report_digests: crate::operator_signoff::GateReportDigestsV1 {
             v0: "MISSING".to_string(),
             v1: "MISSING".to_string(),
@@ -527,6 +542,7 @@ fn build_from_snapshot(
         blocking,
         remediation,
         applied_scope,
+        "MISSING",
     )?;
     packet.packet_digest = packet_digest(&packet)?;
     Ok(packet)
@@ -549,6 +565,9 @@ fn build_blocked_minimal(
         supported_slot_set_digest: "MISSING".to_string(),
         policy_graph_digest_prefix: "MISSING".to_string(),
         manifest_digest_prefix: "MISSING".to_string(),
+        applied_supported_set_digest_prefix: applied_scope.applied_set_digest_prefix.clone(),
+        applied_context_digest_prefix: crate::prefix_hex(&applied_scope.context_digest, 16),
+        reviewability_reduction_digest_prefix: "MISSING".to_string(),
         artifacts: OperatorReviewPacketArtifactsV1 {
             backend_evidence_snapshot_digest_prefix: "MISSING".to_string(),
             active_review_snapshot_digest_prefix: "MISSING".to_string(),
@@ -592,6 +611,7 @@ fn build_packet(
     blocking: BTreeSet<String>,
     remediation: BTreeSet<String>,
     applied_scope: &AppliedSupportedSetContextV1,
+    reviewability_reduction_digest_prefix: &str,
 ) -> Result<OperatorReviewPacketV1, OpsError> {
     let mut supported_slots = snapshot
         .slots
@@ -622,6 +642,9 @@ fn build_packet(
         supported_slot_set_digest: snapshot.supported_slot_set_digest.clone(),
         policy_graph_digest_prefix: snapshot.policy_graph_digest_prefix.clone(),
         manifest_digest_prefix: snapshot.manifest_digest_prefix.clone(),
+        applied_supported_set_digest_prefix: applied_scope.applied_set_digest_prefix.clone(),
+        applied_context_digest_prefix: crate::prefix_hex(&applied_scope.context_digest, 16),
+        reviewability_reduction_digest_prefix: reviewability_reduction_digest_prefix.to_string(),
         artifacts: OperatorReviewPacketArtifactsV1 {
             backend_evidence_snapshot_digest_prefix: prefix16(&snapshot.snapshot_digest),
             active_review_snapshot_digest_prefix: prefix16(&active.snapshot_digest),
@@ -904,6 +927,9 @@ mod tests {
             evidence_snapshot_digest_prefix: prefix16("snapshotdigest111111"),
             active_review_snapshot_digest_prefix: Some(prefix16("activedigest111111")),
             operator_report_digest_prefix: prefix16("reportdigest111111"),
+            applied_supported_set_digest_prefix: "slotset1".to_string(),
+            applied_context_digest_prefix: "context1".to_string(),
+            reviewability_reduction_digest_prefix: "reduction1".to_string(),
             gate_report_digests: crate::operator_signoff::GateReportDigestsV1 {
                 v0: "g0".to_string(),
                 v1: "g1".to_string(),

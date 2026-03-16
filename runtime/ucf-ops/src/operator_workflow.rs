@@ -37,6 +37,9 @@ pub struct OperatorWorkflowChainV1 {
     pub workflow_stage: OperatorWorkflowStageV2,
     pub governance_surfaces_digest_prefix: String,
     pub applied_supported_scope_digest_prefix: String,
+    pub applied_supported_set_digest_prefix: String,
+    pub applied_context_digest_prefix: String,
+    pub reviewability_reduction_digest_prefix: String,
     pub operator_review_packet_digest_prefix: String,
     pub operator_signoff_digest_prefix: String,
     pub interop_matrix_digest_prefix: String,
@@ -95,6 +98,24 @@ impl OperatorWorkflowPolicyV1 {
         if inputs.applied_scope.status != "PASS" {
             blocking.insert("WORKFLOW_BLOCK_APPLIED_SCOPE_MISMATCH".to_string());
             remediation.insert("run_models_applied_scope_check".to_string());
+        }
+
+        if inputs.review_packet.applied_supported_set_digest_prefix
+            != inputs.applied_scope.applied_scope_digest
+            || inputs.signoff.applied_supported_set_digest_prefix
+                != inputs.applied_scope.applied_scope_digest
+        {
+            blocking.insert("WORKFLOW_BLOCK_APPLIED_SCOPE_AUTHORITY_MISMATCH".to_string());
+            remediation.insert("run_operator_export_chain_check".to_string());
+        }
+
+        if inputs.review_packet.applied_context_digest_prefix
+            != inputs.signoff.applied_context_digest_prefix
+            || inputs.review_packet.reviewability_reduction_digest_prefix
+                != inputs.signoff.reviewability_reduction_digest_prefix
+        {
+            blocking.insert("WORKFLOW_BLOCK_REVIEWABILITY_BASIS_MISMATCH".to_string());
+            remediation.insert("run_review_truth_check".to_string());
         }
 
         if !matches!(
@@ -171,6 +192,16 @@ impl OperatorWorkflowPolicyV1 {
             .unwrap_or_default();
         let applied_supported_scope_digest_prefix =
             inputs.applied_scope.applied_scope_digest.clone();
+        let applied_supported_set_digest_prefix = inputs
+            .review_packet
+            .applied_supported_set_digest_prefix
+            .clone();
+        let applied_context_digest_prefix =
+            inputs.review_packet.applied_context_digest_prefix.clone();
+        let reviewability_reduction_digest_prefix = inputs
+            .review_packet
+            .reviewability_reduction_digest_prefix
+            .clone();
         let operator_review_packet_digest_prefix =
             prefix_hex(&inputs.review_packet.packet_digest, DIGEST_PREFIX_LEN);
         let operator_signoff_digest_prefix =
@@ -187,6 +218,9 @@ impl OperatorWorkflowPolicyV1 {
             workflow_stage,
             governance_surfaces_digest_prefix,
             applied_supported_scope_digest_prefix,
+            applied_supported_set_digest_prefix,
+            applied_context_digest_prefix,
+            reviewability_reduction_digest_prefix,
             operator_review_packet_digest_prefix,
             operator_signoff_digest_prefix,
             interop_matrix_digest_prefix,
@@ -366,6 +400,9 @@ mod tests {
             supported_slot_set_digest: "scope123456789012".to_string(),
             policy_graph_digest_prefix: "policy123456789012".to_string(),
             manifest_digest_prefix: "manifest1234567890".to_string(),
+            applied_supported_set_digest_prefix: "scope123456789012".to_string(),
+            applied_context_digest_prefix: "context1234567890".to_string(),
+            reviewability_reduction_digest_prefix: "reviewred12345678".to_string(),
             artifacts: OperatorReviewPacketArtifactsV1 {
                 backend_evidence_snapshot_digest_prefix: "a".repeat(16),
                 active_review_snapshot_digest_prefix: "b".repeat(16),
@@ -398,6 +435,9 @@ mod tests {
             evidence_snapshot_digest_prefix: "a".repeat(16),
             active_review_snapshot_digest_prefix: Some("b".repeat(16)),
             operator_report_digest_prefix: "c".repeat(16),
+            applied_supported_set_digest_prefix: "scope123456789012".to_string(),
+            applied_context_digest_prefix: "context1234567890".to_string(),
+            reviewability_reduction_digest_prefix: "reviewred12345678".to_string(),
             gate_report_digests: GateReportDigestsV1 {
                 v0: "d".repeat(16),
                 v1: "e".repeat(16),
