@@ -1,0 +1,27 @@
+{
+  "artifact_id": "reviewability_reduction_v1",
+  "type_name": "ReviewabilityReductionV1",
+  "source_file": "runtime/ucf-ops/src/reviewability_truth.rs",
+  "required_fields": [
+    "aggregate_readiness",
+    "overall_blocking_codes",
+    "overall_remediation_codes",
+    "per_slot",
+    "reduction_digest"
+  ],
+  "optional_fields": [],
+  "field_types": {
+    "aggregate_readiness": "ReviewabilityAggregateReadinessV1",
+    "overall_blocking_codes": "Vec<String>",
+    "overall_remediation_codes": "Vec<String>",
+    "per_slot": "Vec<ReviewabilityReductionSlotSummaryV1>",
+    "reduction_digest": "String"
+  },
+  "enum_variants": {
+    "ReviewabilityAggregateReadinessV1": [
+      "AllReviewable",
+      "NoneReviewable",
+      "PartialReviewable"
+    ]
+  }
+}

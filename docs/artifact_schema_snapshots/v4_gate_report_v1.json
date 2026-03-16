@@ -14,14 +14,14 @@
     "schema_version": "u16"
   },
   "enum_variants": {
+    "V4GateOverallStatus": [
+      "Fail",
+      "Pass"
+    ],
     "GateStatus": [
       "Fail",
       "Pass",
       "Skip"
-    ],
-    "V4GateOverallStatus": [
-      "Fail",
-      "Pass"
     ]
   }
 }
