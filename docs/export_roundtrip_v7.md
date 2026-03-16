@@ -32,3 +32,17 @@ For the same exported bundle bytes, bundle consumption must deterministically re
 - `LEGACY_BUNDLE_UNSUPPORTED`: legacy bundle could not be safely translated (fail closed).
 
 All checks are offline, deterministic, bounded, and read-only.
+
+
+## Canonical remediation linkage
+
+`BundleRoundTripConsistencyV1` now also includes:
+
+- `canonical_condition_codes`
+- `primary_remediation_codes`
+
+so roundtrip mismatch codes are explicitly normalized back into canonical condition/remediation semantics. The v7 cross-surface proof command is:
+
+```bash
+cargo run -p ucf-ops -- remediation-interop-check --out ./out/remediation_interop_check.json
+```

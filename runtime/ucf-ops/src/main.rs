@@ -24,13 +24,13 @@ use ucf_ops::{
     out_manifest, parse_duration_secs, parse_inject, parse_slot, path_scan, policy_diff,
     policy_explain, policy_validate, portability_check, portability_report, preflight,
     readiness_gate, release_build_rc, release_rc1_gate, release_signoff_validate,
-    remediation_consistency_check, replay_audit, replay_bugreport, repro_pack, repro_verify,
-    review_truth_check, run_status, runs_list, runs_search, runs_show, save_counterfactual_result,
-    scope_authority_check, second_slot_parity_report, security_verify_chain,
-    simulate_counterfactual, soak_run, strict_check, strict_explain, troubleshoot, v0_gate,
-    v1_smoke, v2_gate, v3_gate, v4_gate, v5_gate, v6_gate, verify_bugreport, world_parity_report,
-    world_shadow_report, write_slice, AdversarialRunArgs, AirgapArtifactType, AirgapImportArgs,
-    AirgapImportMode, BenchArgs, BugKitBuildArgs, ChangeImpactArgs, ConfigV1,
+    remediation_consistency_check, remediation_interop_check, replay_audit, replay_bugreport,
+    repro_pack, repro_verify, review_truth_check, run_status, runs_list, runs_search, runs_show,
+    save_counterfactual_result, scope_authority_check, second_slot_parity_report,
+    security_verify_chain, simulate_counterfactual, soak_run, strict_check, strict_explain,
+    troubleshoot, v0_gate, v1_smoke, v2_gate, v3_gate, v4_gate, v5_gate, v6_gate, verify_bugreport,
+    world_parity_report, world_shadow_report, write_slice, AdversarialRunArgs, AirgapArtifactType,
+    AirgapImportArgs, AirgapImportMode, BenchArgs, BugKitBuildArgs, ChangeImpactArgs, ConfigV1,
     CounterfactualRequest, DevLoopArgs, DocsLintArgs, DocsLintMode, DocsLintStatus,
     ExplainTickRequest, ExportArgs, GateStatus, GoldenGenerateArgs, GoldenVerifyArgs,
     GoldenVerifyReport, NightlySummarizeArgs, OperatorReportArgs, OperatorReviewPacketArgs,
@@ -2130,6 +2130,26 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 std::process::exit(2);
             }
         }
+        "remediation-interop-check" => {
+            let out = arg_value(&args, "--out")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("./out/remediation_interop_check.json"));
+            let report = remediation_interop_check(&out)?;
+            println!(
+                "conditions_checked={} mismatches_found={}",
+                report.conditions_checked, report.mismatches_found
+            );
+            if !report.top_mismatch_categories.is_empty() {
+                println!(
+                    "top_mismatch_categories={}",
+                    report.top_mismatch_categories.join(",")
+                );
+            }
+            println!("out={}", out.display());
+            if report.mismatches_found > 0 {
+                std::process::exit(2);
+            }
+        }
         "scope" => {
             let sub = args.get(2).map(String::as_str).unwrap_or("help");
             match sub {
@@ -2689,7 +2709,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             eprintln!(
-                "usage: ucf-ops <bringup|diag|health|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|attest|repro|exports|readiness-gate|preflight|goldens|nightly|dev|troubleshoot|adversarial-run|out|release|bench|runs|status|strict|ess|ebm|drift|alerts|operator|policy|portability|spec|change-impact|soak|governance-surfaces-check|v0|v1|v2|v3|v4|v5|version> [--workdir <path>] [--bundle <path>]"
+                "usage: ucf-ops <bringup|diag|health|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|attest|repro|exports|readiness-gate|preflight|goldens|nightly|dev|troubleshoot|adversarial-run|out|release|bench|runs|status|strict|ess|ebm|drift|alerts|operator|policy|portability|spec|change-impact|soak|governance-surfaces-check|remediation-consistency-check|remediation-interop-check|interop|v0|v1|v2|v3|v4|v5|version> [--workdir <path>] [--bundle <path>]"
             );
             std::process::exit(1);
         }

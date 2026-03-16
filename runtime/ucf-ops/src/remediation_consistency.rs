@@ -5,7 +5,11 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use ucf_types::remediation_codes::{remediation_for_condition, CanonicalConditionV1};
 
-use crate::remediation::{canonical_from_legacy_code, canonical_from_legacy_remediation};
+use crate::remediation::{
+    canonical_condition_for_export_normalize_category, canonical_condition_for_interop_category,
+    canonical_condition_for_roundtrip_mismatch, canonical_from_legacy_code,
+    canonical_from_legacy_remediation, primary_remediation_for_condition_code,
+};
 use crate::OpsError;
 use std::fs;
 
@@ -17,6 +21,23 @@ const SURFACE_ORDER: [&str; 6] = [
     "operator_signoff",
     "gate_v4",
     "export_manifest",
+];
+
+const CROSS_SURFACE_ORDER: [&str; 14] = [
+    "Strict",
+    "Eligibility",
+    "ActiveReviewSnapshot",
+    "OperatorReport",
+    "OperatorSignoff",
+    "OperatorReviewPacket",
+    "GateV3",
+    "GateV4",
+    "GateV5",
+    "GateV6",
+    "GateV7",
+    "ExportNormalizeCheck",
+    "ExportRoundTripCheck",
+    "InteropMatrix",
 ];
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -87,6 +108,41 @@ pub struct RemediationConsistencyReportV1 {
     pub suggestions: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum CrossSurfaceObservationStatusV1 {
+    Pass,
+    Fail,
+    Missing,
+    Skip,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CrossSurfaceObservedSurfaceV1 {
+    pub surface_kind: String,
+    pub primary_blocking_code: Option<String>,
+    pub primary_remediation_code: Option<String>,
+    pub status: CrossSurfaceObservationStatusV1,
+    pub source_digest_prefix: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CrossSurfaceConditionObservationV1 {
+    pub canonical_condition_code: String,
+    pub expected_primary_remediation_code: Option<String>,
+    pub observed_surfaces: Vec<CrossSurfaceObservedSurfaceV1>,
+    pub observation_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RemediationInteropCheckReportV1 {
+    pub schema_version: u16,
+    pub conditions_checked: usize,
+    pub mismatches_found: usize,
+    pub top_mismatch_categories: Vec<String>,
+    pub observations: Vec<CrossSurfaceConditionObservationV1>,
+}
+
 #[derive(Clone)]
 struct CoveredCondition {
     code: &'static str,
@@ -97,6 +153,7 @@ struct CoveredCondition {
 enum SurfaceSignal {
     LegacyCode(&'static str),
     LegacyRemediation(&'static str),
+    MappedCanonicalCondition(&'static str),
     Skip,
     Missing,
 }
@@ -169,6 +226,145 @@ pub fn remediation_consistency_check(
     }
     fs::write(out, serde_json::to_string_pretty(&report)?)?;
     Ok(report)
+}
+
+pub fn remediation_interop_check(out: &Path) -> Result<RemediationInteropCheckReportV1, OpsError> {
+    let observations = covered_cross_surface_conditions()
+        .into_iter()
+        .map(|condition_code| {
+            let expected_primary = primary_remediation_for_condition_code(condition_code);
+            let observed_surfaces = CROSS_SURFACE_ORDER
+                .iter()
+                .map(|surface| {
+                    observe_cross_surface(condition_code, surface, expected_primary.as_deref())
+                })
+                .collect::<Vec<_>>();
+            let mut hasher = Sha256::new();
+            hasher.update(serde_json::to_vec(&(
+                condition_code,
+                &expected_primary,
+                &observed_surfaces,
+            ))?);
+            Ok(CrossSurfaceConditionObservationV1 {
+                canonical_condition_code: condition_code.to_string(),
+                expected_primary_remediation_code: expected_primary,
+                observed_surfaces,
+                observation_digest: format!("{:x}", hasher.finalize()),
+            })
+        })
+        .collect::<Result<Vec<_>, OpsError>>()?;
+
+    let mut mismatch_hist = BTreeMap::<String, usize>::new();
+    let mut mismatches_found = 0usize;
+    for observation in &observations {
+        if let Some(expected) = observation.expected_primary_remediation_code.as_deref() {
+            for surface in &observation.observed_surfaces {
+                match surface.status {
+                    CrossSurfaceObservationStatusV1::Pass
+                    | CrossSurfaceObservationStatusV1::Skip => {}
+                    CrossSurfaceObservationStatusV1::Missing => {
+                        mismatches_found += 1;
+                        *mismatch_hist
+                            .entry("MISSING_SURFACE".to_string())
+                            .or_default() += 1;
+                    }
+                    CrossSurfaceObservationStatusV1::Fail => {
+                        mismatches_found += 1;
+                        if surface.primary_remediation_code.is_none() {
+                            *mismatch_hist
+                                .entry("UNKNOWN_CONDITION_MAPPING".to_string())
+                                .or_default() += 1;
+                        } else if surface.primary_remediation_code.as_deref() != Some(expected) {
+                            *mismatch_hist
+                                .entry("PRIMARY_REMEDIATION_MISMATCH".to_string())
+                                .or_default() += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let report = RemediationInteropCheckReportV1 {
+        schema_version: SCHEMA_VERSION,
+        conditions_checked: observations.len(),
+        mismatches_found,
+        top_mismatch_categories: mismatch_hist
+            .into_iter()
+            .map(|(k, v)| format!("{k}:{v}"))
+            .collect(),
+        observations,
+    };
+    if let Some(parent) = out.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(out, serde_json::to_string_pretty(&report)?)?;
+    Ok(report)
+}
+
+fn covered_cross_surface_conditions() -> Vec<&'static str> {
+    let mut out = vec![
+        "AppliedScopeMismatch",
+        "DriftSevere",
+        "EvidenceMissingCompare",
+        "EvidenceMissingProbe",
+        "EvidenceStaleCompare",
+        "ExportLayoutMismatch",
+        "ExportRoundTripMismatch",
+        "HashMismatch",
+        "InteropMatrixMismatch",
+        "ManifestMismatch",
+        "OptionalBackendClosedUnsupported",
+        "PolicyMismatch",
+        "ScopeMismatch",
+        "StrictFail",
+    ];
+    out.sort();
+    out
+}
+
+fn observe_cross_surface(
+    condition_code: &str,
+    surface: &str,
+    expected_primary: Option<&str>,
+) -> CrossSurfaceObservedSurfaceV1 {
+    let signal = signal_for_surface_condition(surface, condition_code);
+    let primary = mapped_primary_for_signal(&signal);
+    let status = match signal {
+        SurfaceSignal::Skip => CrossSurfaceObservationStatusV1::Skip,
+        SurfaceSignal::Missing => CrossSurfaceObservationStatusV1::Missing,
+        _ => {
+            if let Some(expected) = expected_primary {
+                if primary.as_deref() == Some(expected) {
+                    CrossSurfaceObservationStatusV1::Pass
+                } else {
+                    CrossSurfaceObservationStatusV1::Fail
+                }
+            } else {
+                CrossSurfaceObservationStatusV1::Fail
+            }
+        }
+    };
+    CrossSurfaceObservedSurfaceV1 {
+        surface_kind: surface.to_string(),
+        primary_blocking_code: Some(condition_code.to_string()),
+        primary_remediation_code: primary,
+        status,
+        source_digest_prefix: None,
+    }
+}
+
+fn mapped_primary_for_signal(signal: &SurfaceSignal) -> Option<String> {
+    match signal {
+        SurfaceSignal::LegacyCode(code) => canonical_from_legacy_code(code).first().cloned(),
+        SurfaceSignal::LegacyRemediation(code) => {
+            canonical_from_legacy_remediation(code).first().cloned()
+        }
+        SurfaceSignal::MappedCanonicalCondition(code) => {
+            primary_remediation_for_condition_code(code)
+        }
+        SurfaceSignal::Skip | SurfaceSignal::Missing => None,
+    }
 }
 
 fn covered_conditions() -> Vec<CoveredCondition> {
@@ -292,6 +488,35 @@ fn normalized_surface_map(
 }
 
 fn signal_for_surface_condition(surface: &str, condition_code: &str) -> SurfaceSignal {
+    if surface == "InteropMatrix" {
+        return canonical_condition_for_interop_category(condition_code)
+            .map(SurfaceSignal::MappedCanonicalCondition)
+            .unwrap_or(SurfaceSignal::Missing);
+    }
+    if surface == "ExportNormalizeCheck" {
+        return canonical_condition_for_export_normalize_category(condition_code)
+            .map(SurfaceSignal::MappedCanonicalCondition)
+            .unwrap_or(SurfaceSignal::Skip);
+    }
+    if surface == "ExportRoundTripCheck" {
+        return canonical_condition_for_roundtrip_mismatch(condition_code)
+            .map(SurfaceSignal::MappedCanonicalCondition)
+            .unwrap_or(SurfaceSignal::Skip);
+    }
+    if matches!(
+        surface,
+        "ActiveReviewSnapshot" | "OperatorReviewPacket" | "GateV3" | "GateV5" | "GateV6" | "GateV7"
+    ) {
+        return SurfaceSignal::Missing;
+    }
+    let surface = match surface {
+        "Strict" => "strict_check",
+        "Eligibility" => "eligibility",
+        "OperatorReport" => "operator_report",
+        "OperatorSignoff" => "operator_signoff",
+        "GateV4" => "gate_v4",
+        other => other,
+    };
     match (surface, condition_code) {
         ("strict_check", "StrictFail") => SurfaceSignal::LegacyCode("STRICT_FAIL"),
         ("eligibility", "EvidenceMissingProbe") => SurfaceSignal::LegacyCode("NO_PROBE"),
@@ -365,6 +590,11 @@ fn normalize_surface_remediation(
     let canonical_codes = match signal {
         SurfaceSignal::LegacyCode(code) => canonical_from_legacy_code(code),
         SurfaceSignal::LegacyRemediation(code) => canonical_from_legacy_remediation(code),
+        SurfaceSignal::MappedCanonicalCondition(code) => {
+            primary_remediation_for_condition_code(code)
+                .into_iter()
+                .collect()
+        }
         SurfaceSignal::Skip | SurfaceSignal::Missing => Vec::new(),
     };
     let primary = canonical_codes.first().cloned();
@@ -550,6 +780,28 @@ mod tests {
         assert_eq!(
             check.mismatch_kind,
             Some(RemediationMismatchKindV1::MissingSurface)
+        );
+    }
+
+    #[test]
+    fn cross_surface_observation_is_stably_ordered_and_digested() {
+        let expected = primary_remediation_for_condition_code("StrictFail");
+        let obs_a = CROSS_SURFACE_ORDER
+            .iter()
+            .map(|surface| observe_cross_surface("StrictFail", surface, expected.as_deref()))
+            .collect::<Vec<_>>();
+        let obs_b = CROSS_SURFACE_ORDER
+            .iter()
+            .map(|surface| observe_cross_surface("StrictFail", surface, expected.as_deref()))
+            .collect::<Vec<_>>();
+        assert_eq!(obs_a, obs_b);
+        let mut hasher_a = Sha256::new();
+        hasher_a.update(serde_json::to_vec(&obs_a).expect("serialize"));
+        let mut hasher_b = Sha256::new();
+        hasher_b.update(serde_json::to_vec(&obs_b).expect("serialize"));
+        assert_eq!(
+            format!("{:x}", hasher_a.finalize()),
+            format!("{:x}", hasher_b.finalize())
         );
     }
 }

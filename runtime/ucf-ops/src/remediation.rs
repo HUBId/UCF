@@ -77,3 +77,108 @@ pub fn all_registry_rows() -> Vec<(&'static str, &'static str, &'static str)> {
         })
         .collect()
 }
+
+pub fn primary_remediation_for_condition_code(code: &str) -> Option<String> {
+    canonical_condition_from_code(code)
+        .and_then(|condition| remediation_for_condition(condition).first().copied())
+        .map(|code| code.stable_code().to_string())
+}
+
+pub fn canonical_condition_from_code(code: &str) -> Option<CanonicalConditionV1> {
+    match code {
+        "ScopeMismatch" | "PolicyMismatch" | "InteropMatrixMismatch" | "AppliedScopeMismatch" => {
+            Some(CanonicalConditionV1::GateFail("interop"))
+        }
+        "ManifestMismatch" | "ManifestInvalid" => {
+            Some(CanonicalConditionV1::ManifestInvalid("manifest"))
+        }
+        "HashMismatch" => Some(CanonicalConditionV1::HashMismatch("target")),
+        "EvidenceMissingProbe" => Some(CanonicalConditionV1::EvidenceMissing("probe")),
+        "EvidenceMissingCompare" => Some(CanonicalConditionV1::EvidenceMissing("compare")),
+        "EvidenceStaleCompare" => Some(CanonicalConditionV1::EvidenceStale("compare")),
+        "DriftSevere" => Some(CanonicalConditionV1::DriftSevere("slot")),
+        "StrictFail" => Some(CanonicalConditionV1::StrictFail("strict")),
+        "OptionalBackendClosedUnsupported" => Some(CanonicalConditionV1::OptionalBackendMissing {
+            slot: "world",
+            backend: "burn",
+        }),
+        "ExportLayoutMismatch" | "ExportRoundTripMismatch" => {
+            Some(CanonicalConditionV1::GateFail("export"))
+        }
+        _ => None,
+    }
+}
+
+pub fn canonical_condition_for_interop_category(category: &str) -> Option<&'static str> {
+    match category {
+        "ScopeMismatch" => Some("ScopeMismatch"),
+        "PolicyMismatch" => Some("PolicyMismatch"),
+        "ManifestMismatch" => Some("ManifestMismatch"),
+        "InteropMatrixMismatch" => Some("InteropMatrixMismatch"),
+        "SnapshotReferenceMismatch" | "RemediationMismatch" | "ExportRefMismatch" => {
+            Some("InteropMatrixMismatch")
+        }
+        "LegacySurfacePresent" => Some("ExportLayoutMismatch"),
+        "RequiredSurfaceMissing" => Some("EvidenceMissingCompare"),
+        _ => None,
+    }
+}
+
+pub fn canonical_condition_for_export_normalize_category(category: &str) -> Option<&'static str> {
+    match category {
+        "ManifestMismatch" => Some("ManifestMismatch"),
+        "ExportRoundTripMismatch" => Some("ExportRoundTripMismatch"),
+        "ExportLayoutMismatch" => Some("ExportLayoutMismatch"),
+        "PathNamingDrift" | "ContextFieldDrift" | "DigestFieldDrift" => Some("ManifestMismatch"),
+        "IncludedStateDrift" => Some("ExportRoundTripMismatch"),
+        "LegacyExportLayout" => Some("ExportLayoutMismatch"),
+        _ => None,
+    }
+}
+
+pub fn canonical_condition_for_roundtrip_mismatch(code: &str) -> Option<&'static str> {
+    match code {
+        "ScopeMismatch" => Some("ScopeMismatch"),
+        "PolicyMismatch" => Some("PolicyMismatch"),
+        "ManifestMismatch" => Some("ManifestMismatch"),
+        "ExportRoundTripMismatch" => Some("ExportRoundTripMismatch"),
+        "ExportLayoutMismatch" => Some("ExportLayoutMismatch"),
+        "BUNDLE_SCOPE_MISMATCH" => Some("ScopeMismatch"),
+        "BUNDLE_POLICY_MISMATCH" => Some("PolicyMismatch"),
+        "BUNDLE_MANIFEST_MISMATCH" => Some("ManifestMismatch"),
+        "BUNDLE_ARTIFACT_REF_MISMATCH" | "BUNDLE_INCLUDED_STATE_MISMATCH" => {
+            Some("ExportRoundTripMismatch")
+        }
+        "LEGACY_BUNDLE_LAYOUT" | "LEGACY_BUNDLE_TRANSLATED" | "LEGACY_BUNDLE_UNSUPPORTED" => {
+            Some("ExportLayoutMismatch")
+        }
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn export_roundtrip_codes_map_to_canonical_conditions() {
+        assert_eq!(
+            canonical_condition_for_roundtrip_mismatch("BUNDLE_SCOPE_MISMATCH"),
+            Some("ScopeMismatch")
+        );
+        assert_eq!(
+            canonical_condition_for_roundtrip_mismatch("BUNDLE_ARTIFACT_REF_MISMATCH"),
+            Some("ExportRoundTripMismatch")
+        );
+    }
+
+    #[test]
+    fn interop_category_maps_to_known_primary_remediation() {
+        let condition = canonical_condition_for_interop_category("ScopeMismatch").unwrap();
+        let remediation = primary_remediation_for_condition_code(condition);
+        assert_eq!(
+            remediation,
+            Some("REMEDIATION_REGENERATE_OPERATOR_REPORT".to_string())
+        );
+    }
+}

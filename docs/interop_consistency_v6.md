@@ -59,3 +59,14 @@ cargo run -p ucf-ops -- operator workflow --out ./out/operator_workflow_chain.js
 ```
 
 Bei Interop-Fail ist die Workflow-Stage deterministisch `WORKFLOW_BLOCKED`. Siehe `docs/operator_workflow_chain_v6.md`.
+
+
+## v7 cross-proof linkage
+
+The interop matrix mismatch categories are additionally normalized into canonical condition/remediation semantics by:
+
+```bash
+cargo run -p ucf-ops -- remediation-interop-check --out ./out/remediation_interop_check.json
+```
+
+See `docs/remediation_interop_consistency_v7.md`.
