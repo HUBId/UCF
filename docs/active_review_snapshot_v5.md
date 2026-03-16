@@ -93,3 +93,7 @@ In v6 this snapshot is one of the two primary governance surfaces and is validat
 
 ## Applied scope authority (v6)
 Active review slot scope is sourced from `AppliedSupportedSetContextV1` (derived from applied `SupportedRealSlotSetV2`) and must reject extra-slot evidence and flag missing in-scope evidence with stable scope mismatch codes.
+
+
+## v7 reviewability truth alignment
+This surface derives per-slot reviewability from `SlotReviewabilityTruthV1` and aggregate status from `ReviewabilityReductionV1` for the authoritative applied scope. See `docs/reviewability_truth_v7.md`.

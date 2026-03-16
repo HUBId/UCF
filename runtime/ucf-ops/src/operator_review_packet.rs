@@ -10,10 +10,12 @@ use crate::models_lifecycle::{
 use crate::operator_report::ConsolidatedOperatorReportV1;
 use crate::operator_signoff::{OperatorSignoffDecisionV1, SignoffDecisionStateV1};
 use crate::{
-    load_applied_supported_set_context_v1, validate_governance_primary_surfaces_from_workdir,
-    AppliedSupportedSetContextV1, GovernancePrimarySurfacesV1, OpsError, V0GateOverallStatus,
-    V0GateReportV1, V1GateOverallStatus, V1GateReportV1, V2GateOverallStatus, V2GateReportV1,
-    V3GateOverallStatus, V3GateReportV1, V4GateOverallStatus, V4GateReportV1,
+    derive_slot_reviewability_truths_from_active, load_applied_supported_set_context_v1,
+    reduce_reviewability, validate_governance_primary_surfaces_from_workdir,
+    AppliedSupportedSetContextV1, GovernancePrimarySurfacesV1, OpsError,
+    ReviewabilityAggregateReadinessV1, V0GateOverallStatus, V0GateReportV1, V1GateOverallStatus,
+    V1GateReportV1, V2GateOverallStatus, V2GateReportV1, V3GateOverallStatus, V3GateReportV1,
+    V4GateOverallStatus, V4GateReportV1,
 };
 
 const CODE_CAP: usize = 12;
@@ -341,7 +343,23 @@ fn reduce_review_packet(
         remediation.insert("rerun_operator_artifacts".to_string());
     }
 
-    let stage = reduce_stage(&snapshot, &active, &signoff, &blocking);
+    let (aggregate_readiness, shadow_ready) =
+        match derive_slot_reviewability_truths_from_active(&applied_scope, &snapshot, &active)
+            .and_then(|truths| {
+                let shadow_ready = truths
+                    .iter()
+                    .all(|slot| slot.probe_ready && slot.shadow_ready);
+                let reduction = reduce_reviewability(&applied_scope, &truths)?;
+                Ok((reduction.aggregate_readiness, shadow_ready))
+            }) {
+            Ok(result) => result,
+            Err(_) => {
+                blocking.insert("LEGACY_REDUCTION_REJECTED".to_string());
+                remediation.insert("run_models_applied_scope_check".to_string());
+                (ReviewabilityAggregateReadinessV1::NoneReviewable, false)
+            }
+        };
+    let stage = reduce_stage(&signoff, &blocking, &aggregate_readiness, shadow_ready);
 
     let mut packet = build_packet(
         &snapshot,
@@ -364,34 +382,25 @@ fn reduce_review_packet(
 }
 
 fn reduce_stage(
-    snapshot: &BackendEvidenceSnapshotV1,
-    active: &AggregatedActiveReviewSnapshotV1,
     signoff: &OperatorSignoffDecisionV1,
     blocking: &BTreeSet<String>,
+    aggregate_readiness: &ReviewabilityAggregateReadinessV1,
+    any_shadow_ready: bool,
 ) -> OperatorReviewStageV1 {
     if !blocking.is_empty() {
         return OperatorReviewStageV1::ReviewBlocked;
     }
 
-    let shadow_ready = snapshot
-        .slots
-        .iter()
-        .all(|slot| slot.readiness.probe_ready && slot.readiness.shadow_ready);
-
-    let reviewable_count = active
-        .slots
-        .iter()
-        .filter(|slot| slot.active_eligible)
-        .count();
-
     if signoff.decision == SignoffDecisionStateV1::ReadyForActiveReview
-        && active.signoff_alignment.aligned
-        && reviewable_count > 0
+        && !matches!(
+            aggregate_readiness,
+            ReviewabilityAggregateReadinessV1::NoneReviewable
+        )
     {
         return OperatorReviewStageV1::ReviewActiveReady;
     }
 
-    if signoff.decision == SignoffDecisionStateV1::ReadyForShadow || shadow_ready {
+    if signoff.decision == SignoffDecisionStateV1::ReadyForShadow || any_shadow_ready {
         return OperatorReviewStageV1::ReviewShadowReady;
     }
 

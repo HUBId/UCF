@@ -7,12 +7,13 @@ use serde::{Deserialize, Serialize};
 use crate::operator_report::{ConsolidatedOperatorReportV1, OperatorStatus};
 use crate::remediation::merge_canonical_remediations;
 use crate::{
-    load_applied_supported_set_context_v1, operator_block_from_strict, resolve_strict_evidence,
+    derive_slot_reviewability_truths, load_applied_supported_set_context_v1,
+    operator_block_from_strict, reduce_reviewability, resolve_strict_evidence,
     validate_governance_primary_surfaces_from_workdir, AggregatedActiveReviewSnapshotV1,
     AppliedSupportedSetContextV1, BackendEvidenceSnapshotV1, GateStatus, OpsError,
-    StrictEvidenceContextV1, StrictEvidenceSnapshotV1, StrictEvidenceStatusV1, V0GateOverallStatus,
-    V0GateReportV1, V1GateOverallStatus, V1GateReportV1, V2GateOverallStatus, V2GateReportV1,
-    V3GateOverallStatus, V3GateReportV1,
+    ReviewabilityAggregateReadinessV1, StrictEvidenceContextV1, StrictEvidenceSnapshotV1,
+    StrictEvidenceStatusV1, V0GateOverallStatus, V0GateReportV1, V1GateOverallStatus,
+    V1GateReportV1, V2GateOverallStatus, V2GateReportV1, V3GateOverallStatus, V3GateReportV1,
 };
 
 const CODE_CAP: usize = 12;
@@ -333,39 +334,34 @@ fn reduce_signoff(
         }
     }
 
-    let supported_slots = &snapshot.slots;
-    let shadow_ready = active_review_snapshot
+    let mut shadow_ready = snapshot
+        .slots
+        .iter()
+        .all(|slot| slot.readiness.probe_ready && slot.readiness.shadow_ready);
+    let mut any_active = snapshot
+        .slots
+        .iter()
+        .any(|slot| slot.readiness.active_eligible);
+
+    if let Some(active) = active_review_snapshot
         .filter(|r| r.supported_slot_set_digest == snapshot.supported_slot_set_digest)
-        .map(|r| {
-            r.slots
-                .iter()
-                .all(|slot| slot.probe_ready && slot.shadow_ready)
-        })
-        .unwrap_or_else(|| {
-            supported_slots
-                .iter()
-                .all(|slot| slot.readiness.probe_ready && slot.readiness.shadow_ready)
-        });
+    {
+        let truths =
+            derive_slot_reviewability_truths(applied_scope, snapshot, active, strict_snapshot)?;
+        let reduction = reduce_reviewability(applied_scope, &truths)?;
+        shadow_ready = truths
+            .iter()
+            .all(|slot| slot.probe_ready && slot.shadow_ready);
+        any_active = !matches!(
+            reduction.aggregate_readiness,
+            ReviewabilityAggregateReadinessV1::NoneReviewable
+        );
+    }
+
     if !shadow_ready {
         reasons.insert("SIGNOFF_BLOCK_SHADOW_NOT_READY".to_string());
         remediation.insert("run_models_eligibility".to_string());
     }
-
-    let any_active = active_review_snapshot
-        .filter(|r| r.supported_slot_set_digest == snapshot.supported_slot_set_digest)
-        .map(|r| {
-            r.slots.iter().any(|slot| {
-                slot.active_eligible
-                    && !slot.strict_blocking
-                    && !slot.drift_blocking
-                    && !slot.alert_blocking
-            })
-        })
-        .unwrap_or_else(|| {
-            supported_slots
-                .iter()
-                .any(|slot| slot.readiness.active_eligible)
-        });
 
     if active_review_snapshot.is_none() {
         reasons.insert("SIGNOFF_MISSING_APPLIED_SET".to_string());

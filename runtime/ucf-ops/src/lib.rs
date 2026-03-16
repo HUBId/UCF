@@ -23,6 +23,7 @@ mod operator_signoff;
 mod operator_workflow;
 mod remediation;
 mod remediation_consistency;
+mod reviewability_truth;
 mod scope_authority;
 mod second_slot_parity;
 mod soak;
@@ -123,6 +124,12 @@ pub use remediation_consistency::{
     remediation_consistency_check, CanonicalRemediationObservationV1,
     RemediationConsistencyCheckV1, RemediationConsistencyObservedV1,
     RemediationConsistencyReportV1, RemediationConsistencyStatusV1, RemediationMismatchKindV1,
+};
+pub use reviewability_truth::{
+    derive_slot_reviewability_truths, derive_slot_reviewability_truths_from_active,
+    reduce_reviewability, review_truth_check, slot_is_reviewable, ReviewTruthCheckReportV1,
+    ReviewTruthCheckStatusV1, ReviewTruthMismatchCategoryV1, ReviewabilityAggregateReadinessV1,
+    ReviewabilityReductionV1, SlotReviewabilityEvidenceDigestsV1, SlotReviewabilityTruthV1,
 };
 pub use scope_authority::{
     scope_authority_check, ScopeAuthorityCheckReportV1, ScopeAuthorityMismatchCategoryV1,
