@@ -26,6 +26,7 @@ Default behavior:
 
 ```bash
 python scripts/verify_bugkit.py --bugkit ./out/bugkit_<run_id>.zip
+cargo run -p ucf-ops -- exports roundtrip-check --in ./out/bugkit_<run_id>.zip --out ./out/export_roundtrip_check.json
 ```
 
 The verifier:

@@ -65,18 +65,14 @@ def main() -> int:
         if digest != manifest.get("bugkit_digest"):
             failures.append("bugkit_digest mismatch")
 
-        repro = tmp_path / "repro_pack.zip"
-        if not repro.exists():
-            failures.append("repro_pack.zip missing")
-        else:
-            verify_out = tmp_path / "repro_verify.json"
-            cmd = f"{args.ucf_ops} repro verify --pack \"{repro}\" --out \"{verify_out}\""
-            proc = subprocess.run(cmd, shell=True, text=True, capture_output=True)
-            if proc.returncode != 0:
-                failures.append(
-                    "repro verify command failed: "
-                    + (proc.stderr.strip() or proc.stdout.strip() or f"exit={proc.returncode}")
-                )
+        roundtrip_out = tmp_path / "export_roundtrip_check.json"
+        cmd = f"{args.ucf_ops} exports roundtrip-check --in \"{args.bugkit}\" --out \"{roundtrip_out}\""
+        proc = subprocess.run(cmd, shell=True, text=True, capture_output=True)
+        if proc.returncode != 0:
+            failures.append(
+                "exports roundtrip-check command failed: "
+                + (proc.stderr.strip() or proc.stdout.strip() or f"exit={proc.returncode}")
+            )
 
         for key in [
             "backend_evidence_snapshot",

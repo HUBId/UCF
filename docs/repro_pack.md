@@ -34,6 +34,7 @@ Notes:
 
 ```bash
 cargo run -p ucf-ops -- repro verify --pack ./out/repro_<run_id>.zip --out ./out/repro_verify.json
+cargo run -p ucf-ops -- exports roundtrip-check --in ./out/repro_<run_id>.zip --out ./out/export_roundtrip_check.json
 ```
 
 Verification flow:
