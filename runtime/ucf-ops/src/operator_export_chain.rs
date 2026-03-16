@@ -178,16 +178,14 @@ pub fn operator_export_chain_check(
         },
         &workdir.join("out/operator_signoff_export_chain_check.json"),
     )?;
-    let workflow_chain = crate::with_export_authority_guard_disabled(|| {
-        operator_workflow_chain(
-            workdir,
-            &OperatorWorkflowArgs {
-                run_id: None,
-                latest: true,
-            },
-            &workdir.join("out/operator_workflow_chain_export_chain_check.json"),
-        )
-    })?;
+    let workflow_chain = operator_workflow_chain(
+        workdir,
+        &OperatorWorkflowArgs {
+            run_id: None,
+            latest: true,
+        },
+        &workdir.join("out/operator_workflow_chain_export_chain_check.json"),
+    )?;
 
     let (export_context_digest_prefix, export_scope_digest_prefix) =
         discover_export_context(workdir)?;

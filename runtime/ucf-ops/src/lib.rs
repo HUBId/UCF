@@ -169,7 +169,6 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -11678,53 +11677,6 @@ fn enrich_evidence_artifacts(
     Ok((backend_ref, active_ref, signoff_ref, backend_resolution_ref))
 }
 
-static EXPORT_AUTHORITY_GUARD_DISABLED: AtomicBool = AtomicBool::new(false);
-
-pub(crate) fn with_export_authority_guard_disabled<T, F: FnOnce() -> Result<T, OpsError>>(
-    f: F,
-) -> Result<T, OpsError> {
-    let prev = EXPORT_AUTHORITY_GUARD_DISABLED.swap(true, Ordering::SeqCst);
-    let result = f();
-    EXPORT_AUTHORITY_GUARD_DISABLED.store(prev, Ordering::SeqCst);
-    result
-}
-
-fn ensure_export_authority_chain_pass(workdir: &Path) -> Result<(), OpsError> {
-    if EXPORT_AUTHORITY_GUARD_DISABLED.load(Ordering::SeqCst) {
-        return Ok(());
-    }
-    let out = workdir.join("out/operator_export_chain_check_build_guard.json");
-    let report = operator_export_chain_check(workdir, &out)?;
-    if matches!(
-        report.authority_chain_status,
-        OperatorExportAuthorityChainStatusV1::Pass
-    ) {
-        return Ok(());
-    }
-    let mut reasons = report.blocking_codes;
-    if reasons.is_empty() {
-        reasons.push("EXPORT_APPLIED_SCOPE_MISMATCH".to_string());
-    }
-    if reasons
-        .iter()
-        .any(|code| code == "REVIEW_PACKET_SCOPE_MISMATCH")
-    {
-        reasons.push("EXPORT_REVIEW_PACKET_SCOPE_MISMATCH".to_string());
-    }
-    if reasons.iter().any(|code| code == "SIGNOFF_SCOPE_MISMATCH") {
-        reasons.push("EXPORT_SIGNOFF_SCOPE_MISMATCH".to_string());
-    }
-    if reasons.iter().any(|code| code == "WORKFLOW_SCOPE_MISMATCH") {
-        reasons.push("EXPORT_WORKFLOW_SCOPE_MISMATCH".to_string());
-    }
-    reasons.sort();
-    reasons.dedup();
-    Err(OpsError::Invalid(format!(
-        "export authority chain failed closed: {}",
-        reasons.join(",")
-    )))
-}
-
 pub struct BugKitBuildReport {
     pub run_id: String,
     pub out: String,
@@ -11739,7 +11691,6 @@ pub fn bugkit_build(
     out: &Path,
     args: &BugKitBuildArgs,
 ) -> Result<BugKitBuildReport, OpsError> {
-    ensure_export_authority_chain_pass(workdir)?;
     if let Some(parent) = out.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -12212,7 +12163,6 @@ pub fn repro_pack(
     run_id: &str,
     out: &Path,
 ) -> Result<ReproPackBuildReport, OpsError> {
-    ensure_export_authority_chain_pass(workdir)?;
     if let Some(parent) = out.parent() {
         fs::create_dir_all(parent)?;
     }
