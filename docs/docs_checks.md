@@ -104,3 +104,13 @@ When `--out` is provided, lint writes deterministic JSON with per-check status a
      - `docs/export_normalization_v6.md`
      - `docs/interop_consistency_v6.md`
      - `docs/artifact_schema_snapshots.md`
+
+
+11. **v7 docs linkage consistency**
+   - Requires presence and portability/docs linkage for:
+     - `docs/applied_scope_authority_v7.md`
+     - `docs/supported_scope_reevaluation_v7.md`
+     - `docs/reviewability_truth_v7.md`
+     - `docs/export_roundtrip_v7.md`
+     - `docs/remediation_interop_consistency_v7.md`
+     - `docs/artifact_schema_snapshots.md`
