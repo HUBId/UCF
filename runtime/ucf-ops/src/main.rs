@@ -10,12 +10,13 @@ use ucf_ops::{
     event_id_for_decision, explain_tick, explain_why, export_bugreport,
     export_policy_key_registry_v1, exports_normalize_check, gateway_threat_test, goldens_generate,
     goldens_update, goldens_verify, goldens_verify_detailed, governance_surfaces_check,
-    hardware_scan, interop_consistency_matrix, load_signoff_checklist, logs_prove,
-    logs_verify_proof, metrics_snapshot, metrics_summary, metrics_trend, migrate_config_v1,
-    models_active_check, models_active_evidence, models_active_review_snapshot,
-    models_applied_scope_check, models_backend_resolution, models_consistency_check,
-    models_eligibility, models_evidence_snapshot, models_list, models_probe, models_probe_slot,
-    models_promote, models_recommend_rollback, models_rollback, models_shadow_ready, models_stage,
+    hardware_scan, interop_consistency_matrix, load_applied_supported_set_context_v1,
+    load_signoff_checklist, logs_prove, logs_verify_proof, metrics_snapshot, metrics_summary,
+    metrics_trend, migrate_config_v1, models_active_check, models_active_evidence,
+    models_active_review_snapshot, models_applied_scope_check, models_backend_resolution,
+    models_consistency_check, models_eligibility, models_evidence_snapshot, models_list,
+    models_probe, models_probe_slot, models_promote, models_recommend_rollback, models_rollback,
+    models_shadow_ready, models_stage, models_supported_scope_reevaluate,
     models_supported_set_apply, models_supported_set_review, models_verify,
     models_verify_lifecycle, net_deps_audit, nightly_summarize, one_command_bringup,
     operator_report, operator_report_text, operator_review_packet, operator_review_packet_text,
@@ -1289,6 +1290,20 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     println!("rationale_codes={}", report.policy.rationale_codes.join(","));
                     println!("out={}", out.display());
                 }
+                "supported-scope-reevaluate" => {
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/supported_scope_reeval.json"));
+                    let report = models_supported_scope_reevaluate(&workdir, &out)?;
+                    let applied = load_applied_supported_set_context_v1(&workdir)?;
+                    println!("current_applied_set={}", applied.slots.join(","));
+                    println!("reevaluation_decision={:?}", report.reevaluation_decision);
+                    if let Some(slot) = report.chosen_candidate_slot.as_ref() {
+                        println!("chosen_candidate_slot={slot}");
+                    }
+                    println!("primary_reasons={}", report.rationale_codes.join(","));
+                    println!("out={}", out.display());
+                }
                 "supported-set-apply" => {
                     let out = arg_value(&args, "--out")
                         .map(PathBuf::from)
@@ -1365,7 +1380,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 _ => {
                     return Err(
-                        "usage: ucf-ops models <verify|probe|stage|promote|rollback|list|active-check|active-evidence|eligibility|evidence-snapshot|active-review-snapshot|supported-set-review|supported-set-apply|backend-resolution|consistency-check|applied-scope-check|recommend-rollback|shadow-ready> ..."
+                        "usage: ucf-ops models <verify|probe|stage|promote|rollback|list|active-check|active-evidence|eligibility|evidence-snapshot|active-review-snapshot|supported-set-review|supported-scope-reevaluate|supported-set-apply|backend-resolution|consistency-check|applied-scope-check|recommend-rollback|shadow-ready> ..."
                             .into(),
                     )
                 }
