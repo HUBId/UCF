@@ -20,3 +20,15 @@ cargo run -p ucf-ops -- scope authority-check --out ./out/scope_authority_check.
 ```
 
 The check is deterministic and fail-closed on missing/legacy applied-scope context.
+
+
+## Supported-scope expansion in v7
+
+Scope expansion is permitted only through reevaluation under applied-scope authority:
+
+```bash
+cargo run -p ucf-ops -- models supported-scope-reevaluate --out ./out/supported_scope_reeval.json
+```
+
+If reevaluation returns `REAFFIRM_FREEZE`, scope remains unchanged explicitly.
+If reevaluation returns `EXECUTE_EXPAND_BY_ONE`, apply may add exactly one slot via `supported-set-apply`.
