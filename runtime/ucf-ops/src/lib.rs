@@ -11035,7 +11035,7 @@ fn evaluate_bundle_roundtrip_consistency(
     };
 
     let scope_match_status = if context.applied_supported_set_digest_prefix
-        != input.evidence_context.supported_slot_set_digest_prefix
+        != canonical_prefix_or_missing(&input.evidence_context.supported_slot_set_digest_prefix)
     {
         mismatch_codes.push("BUNDLE_SCOPE_MISMATCH".to_string());
         BundleRoundTripMatchStatusV1::Mismatch
@@ -11044,7 +11044,7 @@ fn evaluate_bundle_roundtrip_consistency(
     };
 
     let policy_match_status = if context.policy_graph_digest_prefix
-        != input.evidence_context.policy_graph_digest_prefix
+        != canonical_prefix_or_missing(&input.evidence_context.policy_graph_digest_prefix)
     {
         mismatch_codes.push("BUNDLE_POLICY_MISMATCH".to_string());
         BundleRoundTripMatchStatusV1::Mismatch
@@ -11052,13 +11052,14 @@ fn evaluate_bundle_roundtrip_consistency(
         BundleRoundTripMatchStatusV1::Match
     };
 
-    let manifest_match_status =
-        if context.manifest_digest_prefix != input.evidence_context.manifest_digest_prefix {
-            mismatch_codes.push("BUNDLE_MANIFEST_MISMATCH".to_string());
-            BundleRoundTripMatchStatusV1::Mismatch
-        } else {
-            BundleRoundTripMatchStatusV1::Match
-        };
+    let manifest_match_status = if context.manifest_digest_prefix
+        != canonical_prefix_or_missing(&input.evidence_context.manifest_digest_prefix)
+    {
+        mismatch_codes.push("BUNDLE_MANIFEST_MISMATCH".to_string());
+        BundleRoundTripMatchStatusV1::Mismatch
+    } else {
+        BundleRoundTripMatchStatusV1::Match
+    };
 
     let mut governance_surface_ref_status = BundleRoundTripMatchStatusV1::Match;
     for refv in [
@@ -11092,15 +11093,6 @@ fn evaluate_bundle_roundtrip_consistency(
     } else {
         BundleRoundTripMatchStatusV1::Match
     };
-
-    let context_ref = input
-        .related_artifacts
-        .iter()
-        .map(|item| item.ref_digest.clone())
-        .collect::<Vec<_>>();
-    if context_ref.is_empty() {
-        mismatch_codes.push("BUNDLE_ARTIFACT_REF_MISMATCH".to_string());
-    }
 
     let layout_status = match input.export_layout_compatibility {
         CanonicalExportLayoutCompatibilityV1::Canonical => BundleRoundTripMatchStatusV1::Match,
