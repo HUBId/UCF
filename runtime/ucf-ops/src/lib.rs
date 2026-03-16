@@ -17,6 +17,7 @@ mod governance_surfaces;
 mod interop_consistency;
 mod models_lifecycle;
 mod nightly;
+mod operator_export_chain;
 mod operator_report;
 mod operator_review_packet;
 mod operator_signoff;
@@ -101,6 +102,11 @@ pub use models_lifecycle::{
 pub use nightly::{
     nightly_summarize, NightlyComponentReport, NightlyOverallStatus, NightlySummarizeArgs,
     NightlySummaryReport,
+};
+pub use operator_export_chain::{
+    derive_operator_export_authority_chain, operator_export_chain_check,
+    OperatorExportAuthorityChainStatusV1, OperatorExportAuthorityChainV1,
+    OperatorExportAuthorityInputs, OperatorExportAuthorityMismatchCategoryV1,
 };
 pub use operator_report::{
     operator_report, operator_report_text, ConsolidatedOperatorReportV1, OperatorReportArgs,
@@ -11671,7 +11677,39 @@ fn enrich_evidence_artifacts(
     Ok((backend_ref, active_ref, signoff_ref, backend_resolution_ref))
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+fn ensure_export_authority_chain_pass(workdir: &Path) -> Result<(), OpsError> {
+    let out = workdir.join("out/operator_export_chain_check_build_guard.json");
+    let report = operator_export_chain_check(workdir, &out)?;
+    if matches!(
+        report.authority_chain_status,
+        OperatorExportAuthorityChainStatusV1::Pass
+    ) {
+        return Ok(());
+    }
+    let mut reasons = report.blocking_codes;
+    if reasons.is_empty() {
+        reasons.push("EXPORT_APPLIED_SCOPE_MISMATCH".to_string());
+    }
+    if reasons
+        .iter()
+        .any(|code| code == "REVIEW_PACKET_SCOPE_MISMATCH")
+    {
+        reasons.push("EXPORT_REVIEW_PACKET_SCOPE_MISMATCH".to_string());
+    }
+    if reasons.iter().any(|code| code == "SIGNOFF_SCOPE_MISMATCH") {
+        reasons.push("EXPORT_SIGNOFF_SCOPE_MISMATCH".to_string());
+    }
+    if reasons.iter().any(|code| code == "WORKFLOW_SCOPE_MISMATCH") {
+        reasons.push("EXPORT_WORKFLOW_SCOPE_MISMATCH".to_string());
+    }
+    reasons.sort();
+    reasons.dedup();
+    Err(OpsError::Invalid(format!(
+        "export authority chain failed closed: {}",
+        reasons.join(",")
+    )))
+}
+
 pub struct BugKitBuildReport {
     pub run_id: String,
     pub out: String,
@@ -11686,6 +11724,7 @@ pub fn bugkit_build(
     out: &Path,
     args: &BugKitBuildArgs,
 ) -> Result<BugKitBuildReport, OpsError> {
+    ensure_export_authority_chain_pass(workdir)?;
     if let Some(parent) = out.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -12158,6 +12197,7 @@ pub fn repro_pack(
     run_id: &str,
     out: &Path,
 ) -> Result<ReproPackBuildReport, OpsError> {
+    ensure_export_authority_chain_pass(workdir)?;
     if let Some(parent) = out.parent() {
         fs::create_dir_all(parent)?;
     }

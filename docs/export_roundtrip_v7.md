@@ -46,3 +46,5 @@ so roundtrip mismatch codes are explicitly normalized back into canonical condit
 ```bash
 cargo run -p ucf-ops -- remediation-interop-check --out ./out/remediation_interop_check.json
 ```
+
+See also: `docs/operator_export_authority_chain_v7.md` and `ucf-ops operator export-chain-check` for applied-scope authority validation across review/signoff/workflow/export chain.

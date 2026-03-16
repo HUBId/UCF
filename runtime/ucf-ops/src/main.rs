@@ -19,11 +19,11 @@ use ucf_ops::{
     models_recommend_rollback, models_rollback, models_shadow_ready, models_stage,
     models_supported_scope_reevaluate, models_supported_set_apply, models_supported_set_review,
     models_verify, models_verify_lifecycle, net_deps_audit, nightly_summarize, one_command_bringup,
-    operator_report, operator_report_text, operator_review_packet, operator_review_packet_text,
-    operator_signoff, operator_signoff_text, operator_workflow_chain, operator_workflow_chain_text,
-    out_manifest, parse_duration_secs, parse_inject, parse_slot, path_scan, policy_diff,
-    policy_explain, policy_validate, portability_check, portability_report, preflight,
-    readiness_gate, release_build_rc, release_rc1_gate, release_signoff_validate,
+    operator_export_chain_check, operator_report, operator_report_text, operator_review_packet,
+    operator_review_packet_text, operator_signoff, operator_signoff_text, operator_workflow_chain,
+    operator_workflow_chain_text, out_manifest, parse_duration_secs, parse_inject, parse_slot,
+    path_scan, policy_diff, policy_explain, policy_validate, portability_check, portability_report,
+    preflight, readiness_gate, release_build_rc, release_rc1_gate, release_signoff_validate,
     remediation_consistency_check, remediation_interop_check, replay_audit, replay_bugreport,
     repro_pack, repro_verify, review_truth_check, run_status, runs_list, runs_search, runs_show,
     save_counterfactual_result, scope_authority_check, second_slot_parity_report,
@@ -1947,9 +1947,27 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         std::process::exit(2);
                     }
                 }
+
+                "export-chain-check" => {
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/operator_export_chain_check.json"));
+                    let chain = operator_export_chain_check(&workdir, &out)?;
+                    println!("out={}", out.display());
+                    println!("authority_chain_status={:?}", chain.authority_chain_status);
+                    if !chain.blocking_codes.is_empty() {
+                        println!("blocking_codes={}", chain.blocking_codes.join(","));
+                    }
+                    if !matches!(
+                        chain.authority_chain_status,
+                        ucf_ops::OperatorExportAuthorityChainStatusV1::Pass
+                    ) {
+                        std::process::exit(2);
+                    }
+                }
                 _ => {
                     return Err(
-                        "usage: ucf-ops operator <report|signoff|review-packet|review-truth-check|workflow> [--run <id>] [--latest] [--text] [--out <path>]".into(),
+                        "usage: ucf-ops operator <report|signoff|review-packet|review-truth-check|workflow|export-chain-check> [--run <id>] [--latest] [--text] [--out <path>]".into(),
                     )
                 }
             }
