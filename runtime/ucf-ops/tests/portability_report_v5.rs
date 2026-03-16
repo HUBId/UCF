@@ -65,6 +65,10 @@ fn portability_report_v6_contains_new_sections_in_stable_order() {
         .iter()
         .position(|c| c.contains("governance-surfaces-check"))
         .expect("governance surfaces command present");
+    let supported_reeval_idx = names
+        .iter()
+        .position(|c| c.contains("models supported-scope-reevaluate"))
+        .expect("supported-scope-reevaluate command present");
     let supported_apply_idx = names
         .iter()
         .position(|c| c.contains("models supported-set-apply"))
@@ -82,7 +86,8 @@ fn portability_report_v6_contains_new_sections_in_stable_order() {
         .position(|c| c.contains("interop consistency-matrix"))
         .expect("interop matrix command present");
 
-    assert!(governance_idx < supported_apply_idx);
+    assert!(governance_idx < supported_reeval_idx);
+    assert!(supported_reeval_idx < supported_apply_idx);
     assert!(supported_apply_idx < applied_scope_idx);
     assert!(applied_scope_idx < export_normalize_idx);
     assert!(export_normalize_idx < interop_idx);
