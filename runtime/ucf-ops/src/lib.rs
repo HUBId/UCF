@@ -11122,34 +11122,48 @@ fn evaluate_bundle_spine(
         mismatch_codes.push("BUNDLE_SPINE_INCLUDED_STATE_MISMATCH".to_string());
     }
 
-    let canonical_governance_entry_digest_prefix =
-        if input.backend_evidence_snapshot.included && input.active_review_snapshot.included {
-            if input
+    let canonical_governance_entry_digest_prefix = if input.backend_evidence_snapshot.included
+        && input.active_review_snapshot.included
+    {
+        if input
+            .export_context
+            .backend_evidence_snapshot_digest_prefix
+            .as_deref()
+            != Some(input.backend_evidence_snapshot.digest_prefix.as_str())
+            || input
                 .export_context
-                .backend_evidence_snapshot_digest_prefix
+                .active_review_snapshot_digest_prefix
                 .as_deref()
-                != Some(input.backend_evidence_snapshot.digest_prefix.as_str())
-                || input
-                    .export_context
-                    .active_review_snapshot_digest_prefix
-                    .as_deref()
-                    != Some(input.active_review_snapshot.digest_prefix.as_str())
-            {
-                mismatch_codes.push("BUNDLE_SPINE_GOVERNANCE_MISMATCH".to_string());
-            }
-            let digest = governance_entry_digest_from_prefixes(
-                &context.applied_supported_set_digest_prefix,
-                &context.export_context_digest_prefix,
-                &input.backend_evidence_snapshot.digest_prefix,
-                &input.active_review_snapshot.digest_prefix,
-                &context.policy_graph_digest_prefix,
-                &context.manifest_digest_prefix,
-            );
-            prefix_hex(&digest, 16)
-        } else {
+                != Some(input.active_review_snapshot.digest_prefix.as_str())
+        {
             mismatch_codes.push("BUNDLE_SPINE_GOVERNANCE_MISMATCH".to_string());
-            "MISSING".to_string()
-        };
+        }
+        let digest = governance_entry_digest_from_prefixes(
+            &context.applied_supported_set_digest_prefix,
+            &context.export_context_digest_prefix,
+            &input.backend_evidence_snapshot.digest_prefix,
+            &input.active_review_snapshot.digest_prefix,
+            &context.policy_graph_digest_prefix,
+            &context.manifest_digest_prefix,
+        );
+        prefix_hex(&digest, 16)
+    } else if !input.backend_evidence_snapshot.included && !input.active_review_snapshot.included {
+        if input
+            .export_context
+            .backend_evidence_snapshot_digest_prefix
+            .is_some()
+            || input
+                .export_context
+                .active_review_snapshot_digest_prefix
+                .is_some()
+        {
+            mismatch_codes.push("BUNDLE_SPINE_GOVERNANCE_MISMATCH".to_string());
+        }
+        "MISSING".to_string()
+    } else {
+        mismatch_codes.push("BUNDLE_SPINE_GOVERNANCE_MISMATCH".to_string());
+        "MISSING".to_string()
+    };
 
     let canonical_readiness_spine_digest_prefix = input
         .related_artifacts
@@ -11166,6 +11180,12 @@ fn evaluate_bundle_spine(
         {
             mismatch_codes.push("BUNDLE_SPINE_READINESS_MISMATCH".to_string());
         }
+    } else if input
+        .related_artifacts
+        .iter()
+        .any(|r| r.artifact_kind == "canonical_readiness_spine")
+    {
+        mismatch_codes.push("BUNDLE_SPINE_READINESS_MISMATCH".to_string());
     }
 
     if input.roundtrip.mismatch_codes.iter().any(|c| {
