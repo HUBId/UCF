@@ -689,6 +689,7 @@ mod tests {
                 "backend_evidence_snapshot_v1",
                 "governance_primary_surfaces_v1",
                 "supported_real_slot_set_v2",
+                "supported_scope_execution_v3",
                 "applied_scope_authority_v1",
                 "applied_supported_set_context_v1",
                 "repro_pack_manifest_v1",
