@@ -247,3 +247,25 @@ cargo run -p ucf-ops -- portability report --out ./out/portability_report.json
 - `docs/export_roundtrip_v7.md`
 - `docs/remediation_interop_consistency_v7.md`
 - `docs/artifact_schema_snapshots.md`
+
+
+## v8 portability/docs refresh
+
+The bounded Linux/Windows portability/docs gate now also blocks on these v8 spine/governance checks:
+
+- `cargo run -p ucf-ops -- governance-entry-check --out ./out/governance_entry_check.json`
+- `cargo run -p ucf-ops -- models supported-scope-execute --out ./out/supported_scope_execute_v3.json --workdir .`
+- `cargo run -p ucf-ops -- readiness-spine-check --out ./out/readiness_spine_check.json`
+- `cargo run -p ucf-ops -- exports bundle-spine-check --in ./out/repro_portability.zip --out ./out/bundle_spine_check.json`
+- `cargo run -p ucf-ops -- remediation-spine-check --out ./out/remediation_spine_check.json`
+
+These checks remain offline-first, bounded-fixture smokes, and hardware-neutral. Optional backend-only surfaces must emit explicit `SKIP` instead of panicking.
+
+### v8 docs coverage
+
+- `docs/canonical_governance_entry_v8.md`
+- `docs/supported_scope_execution_v8.md`
+- `docs/readiness_spine_v8.md`
+- `docs/bundle_spine_v8.md`
+- `docs/remediation_spine_consistency_v8.md`
+- `docs/artifact_schema_snapshots.md`
