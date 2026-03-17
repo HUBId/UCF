@@ -7,9 +7,11 @@ use serde::{Deserialize, Serialize};
 use crate::operator_report::{ConsolidatedOperatorReportV1, OperatorStatus};
 use crate::remediation::merge_canonical_remediations;
 use crate::{
+    derive_canonical_governance_entry, derive_canonical_readiness_spine,
     derive_slot_reviewability_truths, load_applied_supported_set_context_v1,
     operator_block_from_strict, reduce_reviewability, resolve_strict_evidence,
-    validate_governance_primary_surfaces_from_workdir, AggregatedActiveReviewSnapshotV1,
+    validate_governance_primary_surfaces_from_workdir,
+    validate_governance_primary_surfaces_with_applied_scope, AggregatedActiveReviewSnapshotV1,
     AppliedSupportedSetContextV1, BackendEvidenceSnapshotV1, GateStatus, OpsError,
     ReviewabilityAggregateReadinessV1, StrictEvidenceContextV1, StrictEvidenceSnapshotV1,
     StrictEvidenceStatusV1, V0GateOverallStatus, V0GateReportV1, V1GateOverallStatus,
@@ -66,6 +68,8 @@ pub struct OperatorSignoffDecisionV1 {
     pub applied_supported_set_digest_prefix: String,
     pub applied_context_digest_prefix: String,
     pub reviewability_reduction_digest_prefix: String,
+    #[serde(default)]
+    pub canonical_readiness_spine_digest_prefix: String,
     pub gate_report_digests: GateReportDigestsV1,
     pub reasons: Vec<String>,
     pub remediation_codes: Vec<String>,
@@ -347,6 +351,7 @@ fn reduce_signoff(
     }
 
     let mut reviewability_reduction_digest_prefix = "MISSING".to_string();
+    let mut canonical_spine_prefix = "MISSING".to_string();
 
     let mut shadow_ready = snapshot
         .slots
@@ -364,6 +369,24 @@ fn reduce_signoff(
             derive_slot_reviewability_truths(applied_scope, snapshot, active, strict_snapshot)?;
         let reduction = reduce_reviewability(applied_scope, &truths)?;
         reviewability_reduction_digest_prefix = prefix16(&reduction.reduction_digest);
+        if let Ok(surfaces) =
+            validate_governance_primary_surfaces_with_applied_scope(snapshot, active, applied_scope)
+        {
+            if let Ok(entry) = derive_canonical_governance_entry(applied_scope, &surfaces) {
+                if let Ok(spine) = derive_canonical_readiness_spine(
+                    applied_scope,
+                    &entry,
+                    &truths,
+                    &reduction,
+                    Some(&active.snapshot_digest),
+                    None,
+                    None,
+                    None,
+                ) {
+                    canonical_spine_prefix = prefix16(&spine.spine_digest);
+                }
+            }
+        }
         shadow_ready = truths
             .iter()
             .all(|slot| slot.probe_ready && slot.shadow_ready);
@@ -427,6 +450,7 @@ fn reduce_signoff(
             remediation,
             applied_scope,
             &reviewability_reduction_digest_prefix,
+            &canonical_spine_prefix,
         );
     }
 
@@ -445,6 +469,7 @@ fn reduce_signoff(
             remediation,
             applied_scope,
             &reviewability_reduction_digest_prefix,
+            &canonical_spine_prefix,
         );
     }
 
@@ -466,6 +491,7 @@ fn reduce_signoff(
         remediation,
         applied_scope,
         &reviewability_reduction_digest_prefix,
+        &canonical_spine_prefix,
     )
 }
 
@@ -490,6 +516,7 @@ fn build_not_ready_minimal(
         applied_supported_set_digest_prefix: applied_scope.applied_set_digest_prefix.clone(),
         applied_context_digest_prefix: prefix16(&applied_scope.context_digest),
         reviewability_reduction_digest_prefix: "MISSING".to_string(),
+        canonical_readiness_spine_digest_prefix: "MISSING".to_string(),
         gate_report_digests: GateReportDigestsV1 {
             v0: digest_opt(v0.as_ref())?,
             v1: digest_opt(v1.as_ref())?,
@@ -530,6 +557,7 @@ fn build_not_ready_from_snapshot(
         applied_supported_set_digest_prefix: applied_scope.applied_set_digest_prefix.clone(),
         applied_context_digest_prefix: prefix16(&applied_scope.context_digest),
         reviewability_reduction_digest_prefix: "MISSING".to_string(),
+        canonical_readiness_spine_digest_prefix: "MISSING".to_string(),
         gate_report_digests: GateReportDigestsV1 {
             v0: digest_opt(v0.as_ref())?,
             v1: digest_opt(v1.as_ref())?,
@@ -561,6 +589,7 @@ fn build_decision(
     remediation: BTreeSet<String>,
     applied_scope: &AppliedSupportedSetContextV1,
     reviewability_reduction_digest_prefix: &str,
+    canonical_readiness_spine_digest_prefix: &str,
 ) -> Result<OperatorSignoffDecisionV1, OpsError> {
     let mut out = OperatorSignoffDecisionV1 {
         schema_version: 1,
@@ -575,6 +604,8 @@ fn build_decision(
         applied_supported_set_digest_prefix: applied_scope.applied_set_digest_prefix.clone(),
         applied_context_digest_prefix: prefix16(&applied_scope.context_digest),
         reviewability_reduction_digest_prefix: reviewability_reduction_digest_prefix.to_string(),
+        canonical_readiness_spine_digest_prefix: canonical_readiness_spine_digest_prefix
+            .to_string(),
         gate_report_digests: GateReportDigestsV1 {
             v0: digest_opt(v0.as_ref())?,
             v1: digest_opt(v1.as_ref())?,

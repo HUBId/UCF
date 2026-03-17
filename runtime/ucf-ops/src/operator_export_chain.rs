@@ -294,6 +294,7 @@ mod tests {
             applied_supported_set_digest_prefix: applied.applied_set_digest_prefix.clone(),
             applied_context_digest_prefix: prefix_hex(&applied.context_digest, DIGEST_PREFIX_LEN),
             reviewability_reduction_digest_prefix: "33".repeat(8),
+            canonical_readiness_spine_digest_prefix: "MISSING".to_string(),
             artifacts: crate::operator_review_packet::OperatorReviewPacketArtifactsV1 {
                 backend_evidence_snapshot_digest_prefix: "44".repeat(8),
                 active_review_snapshot_digest_prefix: "55".repeat(8),
@@ -334,6 +335,9 @@ mod tests {
             reviewability_reduction_digest_prefix: review
                 .reviewability_reduction_digest_prefix
                 .clone(),
+            canonical_readiness_spine_digest_prefix: review
+                .canonical_readiness_spine_digest_prefix
+                .clone(),
             reasons: vec![],
             remediation_codes: vec![],
             canonical_remediation_codes: vec![],
@@ -348,6 +352,9 @@ mod tests {
             applied_context_digest_prefix: prefix_hex(&applied.context_digest, DIGEST_PREFIX_LEN),
             reviewability_reduction_digest_prefix: review
                 .reviewability_reduction_digest_prefix
+                .clone(),
+            canonical_readiness_spine_digest_prefix: review
+                .canonical_readiness_spine_digest_prefix
                 .clone(),
             operator_review_packet_digest_prefix: "ef".repeat(8),
             operator_signoff_digest_prefix: "01".repeat(8),

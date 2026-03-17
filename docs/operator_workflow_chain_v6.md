@@ -74,3 +74,5 @@ See also: `docs/operator_export_authority_chain_v7.md` and `ucf-ops operator exp
 
 
 See also canonical entrypoint rule: docs/canonical_governance_entry_v8.md
+
+See also: readiness spine canon (`docs/readiness_spine_v8.md`).
