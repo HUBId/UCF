@@ -1,0 +1,50 @@
+{
+  "artifact_id": "operator_workflow_chain_v1",
+  "type_name": "OperatorWorkflowChainV1",
+  "source_file": "runtime/ucf-ops/src/operator_workflow.rs",
+  "required_fields": [
+    "applied_context_digest_prefix",
+    "applied_supported_scope_digest_prefix",
+    "applied_supported_set_digest_prefix",
+    "blocking_codes",
+    "chain_digest",
+    "export_normalize_check_digest_prefix",
+    "export_targets",
+    "governance_surfaces_digest_prefix",
+    "interop_matrix_digest_prefix",
+    "operator_review_packet_digest_prefix",
+    "operator_signoff_digest_prefix",
+    "remediation_codes",
+    "reviewability_reduction_digest_prefix",
+    "schema_version",
+    "workflow_stage"
+  ],
+  "optional_fields": [
+    "canonical_readiness_spine_digest_prefix"
+  ],
+  "field_types": {
+    "applied_context_digest_prefix": "String",
+    "applied_supported_scope_digest_prefix": "String",
+    "applied_supported_set_digest_prefix": "String",
+    "blocking_codes": "Vec<String>",
+    "canonical_readiness_spine_digest_prefix": "String",
+    "chain_digest": "String",
+    "export_normalize_check_digest_prefix": "String",
+    "export_targets": "OperatorWorkflowExportTargetsV1",
+    "governance_surfaces_digest_prefix": "String",
+    "interop_matrix_digest_prefix": "String",
+    "operator_review_packet_digest_prefix": "String",
+    "operator_signoff_digest_prefix": "String",
+    "remediation_codes": "Vec<String>",
+    "reviewability_reduction_digest_prefix": "String",
+    "schema_version": "u16",
+    "workflow_stage": "OperatorWorkflowStageV2"
+  },
+  "enum_variants": {
+    "OperatorWorkflowStageV2": [
+      "WorkflowBlocked",
+      "WorkflowExportReady",
+      "WorkflowReviewReady"
+    ]
+  }
+}

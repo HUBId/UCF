@@ -1,0 +1,39 @@
+{
+  "artifact_id": "canonical_readiness_spine_v1",
+  "type_name": "CanonicalReadinessSpineV1",
+  "source_file": "runtime/ucf-ops/src/readiness_spine.rs",
+  "required_fields": [
+    "applied_supported_set_digest_prefix",
+    "canonical_governance_entry_digest_prefix",
+    "reviewability_reduction_digest_prefix",
+    "schema_version",
+    "slot_truths_digest_prefix",
+    "spine_digest",
+    "spine_status"
+  ],
+  "optional_fields": [
+    "active_review_snapshot_digest_prefix",
+    "review_packet_digest_prefix",
+    "signoff_digest_prefix",
+    "workflow_chain_digest_prefix"
+  ],
+  "field_types": {
+    "active_review_snapshot_digest_prefix": "Option<String>",
+    "applied_supported_set_digest_prefix": "String",
+    "canonical_governance_entry_digest_prefix": "String",
+    "review_packet_digest_prefix": "Option<String>",
+    "reviewability_reduction_digest_prefix": "String",
+    "schema_version": "u16",
+    "signoff_digest_prefix": "Option<String>",
+    "slot_truths_digest_prefix": "String",
+    "spine_digest": "String",
+    "spine_status": "CanonicalReadinessSpineStatusV1",
+    "workflow_chain_digest_prefix": "Option<String>"
+  },
+  "enum_variants": {
+    "CanonicalReadinessSpineStatusV1": [
+      "Fail",
+      "Pass"
+    ]
+  }
+}
