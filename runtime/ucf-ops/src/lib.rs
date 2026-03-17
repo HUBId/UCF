@@ -95,21 +95,21 @@ pub use models_lifecycle::{
     models_backend_resolution, models_consistency_check, models_eligibility,
     models_evidence_snapshot, models_list, models_probe_slot, models_promote,
     models_recommend_rollback, models_rollback, models_shadow_ready, models_stage,
-    models_supported_scope_reevaluate, models_supported_set_apply, models_supported_set_review,
-    models_verify as models_verify_lifecycle, parse_slot, ActiveCheckStatus,
-    ActiveEnablementDeniedCode, ActiveEnablementEvidenceV1, ActiveReviewEvidenceV1,
-    ActiveReviewOverallStatusV1, ActiveReviewSnapshotRecordV1, AggregatedActiveReviewSnapshotV1,
-    AggregatedEligibilityReportV1, AggregatedEvidenceReportV1, AggregatedStatusV1,
-    AppliedScopeCheckReportV1, AppliedSupportedSetContextV1, BackendEvidenceSnapshotV1,
-    BackendSupportStateV1, BurnResolutionStatusV1, BurnSupportResolutionV1,
-    EligibilityOverallStatusV1, ModelsActiveCheckReport, ModelsConsistencyCheckReportV1,
-    ProbeReportV1, ShadowReadyCheckRecordV1, ShadowReadyEvidenceV1, SlotEvidenceSnapshotV1,
-    SlotExpansionEligibilityV1, SupportedRealSlotSetDecisionV2,
+    models_supported_scope_execute, models_supported_scope_reevaluate, models_supported_set_apply,
+    models_supported_set_review, models_verify as models_verify_lifecycle, parse_slot,
+    ActiveCheckStatus, ActiveEnablementDeniedCode, ActiveEnablementEvidenceV1,
+    ActiveReviewEvidenceV1, ActiveReviewOverallStatusV1, ActiveReviewSnapshotRecordV1,
+    AggregatedActiveReviewSnapshotV1, AggregatedEligibilityReportV1, AggregatedEvidenceReportV1,
+    AggregatedStatusV1, AppliedScopeCheckReportV1, AppliedSupportedSetContextV1,
+    BackendEvidenceSnapshotV1, BackendSupportStateV1, BurnResolutionStatusV1,
+    BurnSupportResolutionV1, EligibilityOverallStatusV1, ModelsActiveCheckReport,
+    ModelsConsistencyCheckReportV1, ProbeReportV1, ShadowReadyCheckRecordV1, ShadowReadyEvidenceV1,
+    SlotEvidenceSnapshotV1, SlotExpansionEligibilityV1, SupportedRealSlotSetDecisionV2,
     SupportedRealSlotSetExecutionDecisionV2, SupportedRealSlotSetPolicyV2, SupportedRealSlotSetV1,
-    SupportedRealSlotSetV2, SupportedRealSlotsActiveViewV1, SupportedScopeReevaluationDecisionV1,
-    SupportedScopeReevaluationV1, SupportedSetApplyReportV1, SupportedSetExecutionDeniedCodeV1,
-    SupportedSetExpansionRecordV1, SupportedSetFreezeRecordV1, SupportedSetReviewReportV1,
-    UnifiedEligibilityStatusV1,
+    SupportedRealSlotSetV2, SupportedRealSlotsActiveViewV1, SupportedScopeExecutionDecisionV3,
+    SupportedScopeExecutionV3, SupportedScopeReevaluationDecisionV1, SupportedScopeReevaluationV1,
+    SupportedSetApplyReportV1, SupportedSetExecutionDeniedCodeV1, SupportedSetExpansionRecordV1,
+    SupportedSetFreezeRecordV1, SupportedSetReviewReportV1, UnifiedEligibilityStatusV1,
 };
 pub use nightly::{
     nightly_summarize, NightlyComponentReport, NightlyOverallStatus, NightlySummarizeArgs,
@@ -13687,6 +13687,7 @@ pub struct PortabilityReportV1 {
     pub governance_surfaces_smoke: PortabilityCommandCheck,
     pub scope_authority_check_smoke: PortabilityCommandCheck,
     pub supported_scope_reevaluate_smoke: PortabilityCommandCheck,
+    pub supported_scope_execute_smoke: PortabilityCommandCheck,
     pub supported_set_apply_smoke: PortabilityCommandCheck,
     pub review_truth_check_smoke: PortabilityCommandCheck,
     pub export_roundtrip_check_smoke: PortabilityCommandCheck,
@@ -14660,6 +14661,24 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
             )
         },
     );
+    let supported_scope_execute_smoke = out_smoke_check(
+        "supported_scope_execute_smoke",
+        "./out/supported_scope_execute_v3.json",
+        |out_path| {
+            let review_out = PathBuf::from("./out/supported_set_review.json");
+            let reeval_out = PathBuf::from("./out/supported_scope_reeval.json");
+            models_supported_set_review(workdir, &review_out)?;
+            models_supported_scope_reevaluate(workdir, &reeval_out)?;
+            models_supported_scope_execute(workdir, out_path)
+        },
+        |report| {
+            format!(
+                "decision={:?} slots={}",
+                report.execution_decision,
+                usize::from(report.chosen_candidate_slot.is_some())
+            )
+        },
+    );
     let supported_set_apply_smoke = out_smoke_check(
         "supported_set_apply_smoke",
         "./out/supported_set_apply.json",
@@ -14668,6 +14687,8 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
             let reeval_out = PathBuf::from("./out/supported_scope_reeval.json");
             models_supported_set_review(workdir, &review_out)?;
             models_supported_scope_reevaluate(workdir, &reeval_out)?;
+            let exec_out = PathBuf::from("./out/supported_scope_execute_v3.json");
+            models_supported_scope_execute(workdir, &exec_out)?;
             models_supported_set_apply(workdir, out_path)
         },
         |report| {
@@ -14908,6 +14929,7 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         matrix_cmd("linux", "cargo run -p ucf-ops -- scope authority-check --out ./out/scope_authority_check.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- models supported-set-review --out ./out/supported_set_review.json --workdir ."),
         matrix_cmd("linux", "cargo run -p ucf-ops -- models supported-scope-reevaluate --out ./out/supported_scope_reeval.json --workdir ."),
+        matrix_cmd("linux", "cargo run -p ucf-ops -- models supported-scope-execute --out ./out/supported_scope_execute_v3.json --workdir ."),
         matrix_cmd("linux", "cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json --workdir ."),
         matrix_cmd("linux", "cargo run -p ucf-ops -- models applied-scope-check --out ./out/applied_scope_check.json --workdir ."),
         matrix_cmd("linux", "cargo run -p ucf-ops -- exports normalize-check --out ./out/export_normalize_check.json"),
@@ -14938,6 +14960,7 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         matrix_cmd("windows", "cargo run -p ucf-ops -- scope authority-check --out ./out/scope_authority_check.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- models supported-set-review --out ./out/supported_set_review.json --workdir ."),
         matrix_cmd("windows", "cargo run -p ucf-ops -- models supported-scope-reevaluate --out ./out/supported_scope_reeval.json --workdir ."),
+        matrix_cmd("windows", "cargo run -p ucf-ops -- models supported-scope-execute --out ./out/supported_scope_execute_v3.json --workdir ."),
         matrix_cmd("windows", "cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json --workdir ."),
         matrix_cmd("windows", "cargo run -p ucf-ops -- models applied-scope-check --out ./out/applied_scope_check.json --workdir ."),
         matrix_cmd("windows", "cargo run -p ucf-ops -- exports normalize-check --out ./out/export_normalize_check.json"),
@@ -14971,6 +14994,7 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         governance_surfaces_smoke,
         scope_authority_check_smoke,
         supported_scope_reevaluate_smoke,
+        supported_scope_execute_smoke,
         supported_set_apply_smoke,
         review_truth_check_smoke,
         export_roundtrip_check_smoke,

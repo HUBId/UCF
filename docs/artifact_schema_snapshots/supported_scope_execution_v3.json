@@ -1,0 +1,37 @@
+{
+  "artifact_id": "supported_scope_execution_v3",
+  "type_name": "SupportedScopeExecutionV3",
+  "source_file": "runtime/ucf-ops/src/models_lifecycle.rs",
+  "required_fields": [
+    "canonical_governance_entry_digest_prefix",
+    "current_policy_digest_prefix",
+    "current_reevaluation_digest_prefix",
+    "execution_decision",
+    "execution_digest",
+    "previous_applied_set_digest_prefix",
+    "rationale_codes",
+    "resulting_supported_set_digest_prefix",
+    "schema_version"
+  ],
+  "optional_fields": [
+    "chosen_candidate_slot"
+  ],
+  "field_types": {
+    "canonical_governance_entry_digest_prefix": "String",
+    "chosen_candidate_slot": "Option<String>",
+    "current_policy_digest_prefix": "String",
+    "current_reevaluation_digest_prefix": "String",
+    "execution_decision": "SupportedScopeExecutionDecisionV3",
+    "execution_digest": "String",
+    "previous_applied_set_digest_prefix": "String",
+    "rationale_codes": "Vec<String>",
+    "resulting_supported_set_digest_prefix": "String",
+    "schema_version": "u16"
+  },
+  "enum_variants": {
+    "SupportedScopeExecutionDecisionV3": [
+      "ExecuteExpandByOne",
+      "ReaffirmFreeze"
+    ]
+  }
+}
