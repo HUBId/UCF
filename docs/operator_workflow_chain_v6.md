@@ -71,3 +71,6 @@ Optional:
 - Reuse bestehender kanonischer Checks/Artefakte statt ad-hoc Recompute von Business-Logik.
 
 See also: `docs/operator_export_authority_chain_v7.md` and `ucf-ops operator export-chain-check` for applied-scope authority validation across review/signoff/workflow/export chain.
+
+
+See also canonical entrypoint rule: docs/canonical_governance_entry_v8.md

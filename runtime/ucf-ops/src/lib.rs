@@ -5,6 +5,7 @@ mod airgap;
 mod alerts;
 mod artifact_schema;
 mod bench;
+mod canonical_governance_entry;
 mod causal;
 mod change_impact;
 mod compare_window;
@@ -13,6 +14,7 @@ mod docs_lint;
 mod drift;
 mod formal_invariants;
 mod goldens;
+mod governance_entry_check;
 mod governance_surfaces;
 mod interop_consistency;
 mod models_lifecycle;
@@ -45,6 +47,11 @@ pub use artifact_schema::{
     ArtifactSchemaArgs, ArtifactSchemaCheckReport, ArtifactSchemaSnapshot, DriftKind,
 };
 pub use bench::{bench_run, BenchArgs, BenchReport};
+pub use canonical_governance_entry::{
+    canonical_entry_from_optional, derive_canonical_governance_entry,
+    CanonicalGovernanceEntryStatusV1, CanonicalGovernanceEntryV1, CANONICAL_ENTRY_REQUIRED,
+    GOVERNANCE_PRIMARY_SURFACES_REQUIRED, SECONDARY_ENTRY_PATH_BLOCKED,
+};
 pub use causal::{
     causal_slice, event_id_for_decision, event_id_for_record, explain_why,
     save_counterfactual_result, simulate_counterfactual, write_slice, CausalEdge, CausalSlice,
@@ -65,6 +72,10 @@ pub use goldens::{
     goldens_generate, goldens_update, goldens_verify, goldens_verify_detailed, GoldenGenerateArgs,
     GoldenRefreshHeuristic, GoldenScenarioConfig, GoldenVerifyArgs, GoldenVerifyReport,
     GoldenVerifyScenarioReport,
+};
+pub use governance_entry_check::{
+    governance_entry_check, GovernanceEntryCheckReportV1, GovernanceEntryCheckStatusV1,
+    GovernanceEntryConsumerResultV1, GovernanceEntryMismatchCategoryV1,
 };
 pub use governance_surfaces::{
     validate_governance_primary_surfaces, validate_governance_primary_surfaces_from_workdir,
