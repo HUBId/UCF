@@ -62,3 +62,12 @@ cargo run -p ucf-ops -- bugkit build --run <run_id> --out ./out/bugkit_<run_id>.
 ## Export normalization v6
 
 This surface participates in canonical export normalization (shared `CanonicalExportArtifactRefV1` and `CanonicalExportContextV1`) and is validated via `cargo run -p ucf-ops -- exports normalize-check --out ./out/export_normalize_check.json`. See `docs/export_normalization_v6.md` for semantics.
+
+## Bundle-Spine-Validierung
+
+Für BugKits ist `bundle-spine-check` der kanonische End-to-End-Kohärenztest:
+
+```bash
+cargo run -p ucf-ops -- exports bundle-spine-check --in ./out/bugkit_<run_id>.zip --out ./out/bundle_spine_check.json
+```
+

@@ -10970,6 +10970,12 @@ fn bundle_roundtrip_digest_hex(report: &BundleRoundTripConsistencyV1) -> Result<
     Ok(sha256_hex(&serde_json::to_vec(&canonical)?))
 }
 
+fn bundle_spine_digest_hex(spine: &CanonicalBundleSpineV1) -> Result<String, OpsError> {
+    let mut canonical = spine.clone();
+    canonical.bundle_spine_digest.clear();
+    Ok(sha256_hex(&serde_json::to_vec(&canonical)?))
+}
+
 fn digest_prefix_str(value: &str, len: usize) -> String {
     value.chars().take(len).collect()
 }
@@ -11042,6 +11048,172 @@ struct BundleRoundTripInputs<'a> {
     active_review_snapshot: &'a PackEvidenceArtifactRefV1,
     operator_signoff: &'a PackEvidenceArtifactRefV1,
     export_layout_compatibility: &'a CanonicalExportLayoutCompatibilityV1,
+}
+
+struct BundleSpineInputs<'a> {
+    bundle_kind: CanonicalBundleKindV1,
+    export_context: &'a CanonicalExportContextV1,
+    evidence_context: &'a PackEvidenceContextSummaryV1,
+    related_artifacts: &'a [CanonicalExportArtifactRefV1],
+    backend_evidence_snapshot: &'a PackEvidenceArtifactRefV1,
+    active_review_snapshot: &'a PackEvidenceArtifactRefV1,
+    operator_signoff: &'a PackEvidenceArtifactRefV1,
+    roundtrip: &'a BundleRoundTripConsistencyV1,
+}
+
+fn governance_entry_digest_from_prefixes(
+    applied_supported_set_digest_prefix: &str,
+    applied_context_digest_prefix: &str,
+    backend_digest_prefix: &str,
+    active_digest_prefix: &str,
+    policy_graph_digest_prefix: &str,
+    manifest_digest_prefix: &str,
+) -> String {
+    let mut surfaces_bytes = Vec::new();
+    surfaces_bytes.extend_from_slice(b"governance_primary_surfaces_v1");
+    surfaces_bytes.extend_from_slice(backend_digest_prefix.as_bytes());
+    surfaces_bytes.extend_from_slice(active_digest_prefix.as_bytes());
+    surfaces_bytes.extend_from_slice(applied_supported_set_digest_prefix.as_bytes());
+    surfaces_bytes.extend_from_slice(policy_graph_digest_prefix.as_bytes());
+    surfaces_bytes.extend_from_slice(manifest_digest_prefix.as_bytes());
+    let surfaces_digest = sha256_hex(&surfaces_bytes);
+
+    let mut entry_bytes = Vec::new();
+    entry_bytes.extend_from_slice(b"canonical_governance_entry_v1");
+    entry_bytes.extend_from_slice(applied_supported_set_digest_prefix.as_bytes());
+    entry_bytes.extend_from_slice(applied_context_digest_prefix.as_bytes());
+    entry_bytes.extend_from_slice(prefix_hex(&surfaces_digest, 16).as_bytes());
+    sha256_hex(&entry_bytes)
+}
+
+fn evaluate_bundle_spine(
+    input: BundleSpineInputs<'_>,
+) -> Result<BundleSpineCheckReportV1, OpsError> {
+    let context = parse_normalized_bundle_manifest(
+        input.bundle_kind.clone(),
+        input.export_context,
+        input.related_artifacts,
+    )?;
+
+    let mut mismatch_codes = Vec::new();
+    if context.applied_supported_set_digest_prefix
+        != canonical_prefix_or_missing(&input.evidence_context.supported_slot_set_digest_prefix)
+    {
+        mismatch_codes.push("BUNDLE_SPINE_SCOPE_MISMATCH".to_string());
+    }
+
+    let artifact_refs_digest_prefix =
+        canonical_artifact_refs_digest_prefix(input.related_artifacts)?;
+    if artifact_refs_digest_prefix != context.artifact_refs_digest_prefix {
+        mismatch_codes.push("BUNDLE_SPINE_ARTIFACT_REF_MISMATCH".to_string());
+    }
+
+    if input.backend_evidence_snapshot.included
+        && input.backend_evidence_snapshot.digest_prefix.is_empty()
+    {
+        mismatch_codes.push("BUNDLE_SPINE_INCLUDED_STATE_MISMATCH".to_string());
+    }
+    if input.active_review_snapshot.included
+        && input.active_review_snapshot.digest_prefix.is_empty()
+    {
+        mismatch_codes.push("BUNDLE_SPINE_INCLUDED_STATE_MISMATCH".to_string());
+    }
+    if input.operator_signoff.included && input.operator_signoff.digest_prefix.is_empty() {
+        mismatch_codes.push("BUNDLE_SPINE_INCLUDED_STATE_MISMATCH".to_string());
+    }
+
+    let canonical_governance_entry_digest_prefix =
+        if input.backend_evidence_snapshot.included && input.active_review_snapshot.included {
+            if input
+                .export_context
+                .backend_evidence_snapshot_digest_prefix
+                .as_deref()
+                != Some(input.backend_evidence_snapshot.digest_prefix.as_str())
+                || input
+                    .export_context
+                    .active_review_snapshot_digest_prefix
+                    .as_deref()
+                    != Some(input.active_review_snapshot.digest_prefix.as_str())
+            {
+                mismatch_codes.push("BUNDLE_SPINE_GOVERNANCE_MISMATCH".to_string());
+            }
+            let digest = governance_entry_digest_from_prefixes(
+                &context.applied_supported_set_digest_prefix,
+                &context.export_context_digest_prefix,
+                &input.backend_evidence_snapshot.digest_prefix,
+                &input.active_review_snapshot.digest_prefix,
+                &context.policy_graph_digest_prefix,
+                &context.manifest_digest_prefix,
+            );
+            prefix_hex(&digest, 16)
+        } else {
+            mismatch_codes.push("BUNDLE_SPINE_GOVERNANCE_MISMATCH".to_string());
+            "MISSING".to_string()
+        };
+
+    let canonical_readiness_spine_digest_prefix = input
+        .related_artifacts
+        .iter()
+        .find(|r| r.artifact_kind == "canonical_readiness_spine")
+        .and_then(|r| r.artifact_digest.clone());
+    if let Some(readiness_digest_prefix) = canonical_readiness_spine_digest_prefix.as_deref() {
+        if input
+            .export_context
+            .operator_signoff_digest_prefix
+            .as_deref()
+            .is_some_and(|signoff| signoff != input.operator_signoff.digest_prefix)
+            || readiness_digest_prefix.is_empty()
+        {
+            mismatch_codes.push("BUNDLE_SPINE_READINESS_MISMATCH".to_string());
+        }
+    }
+
+    if input.roundtrip.mismatch_codes.iter().any(|c| {
+        matches!(
+            c.as_str(),
+            "LEGACY_BUNDLE_LAYOUT" | "LEGACY_BUNDLE_TRANSLATED" | "LEGACY_BUNDLE_UNSUPPORTED"
+        )
+    }) {
+        mismatch_codes.push("LEGACY_BUNDLE_SPINE_TRANSLATED".to_string());
+    }
+    if input
+        .roundtrip
+        .mismatch_codes
+        .iter()
+        .any(|c| c == "LEGACY_BUNDLE_UNSUPPORTED")
+    {
+        mismatch_codes.push("LEGACY_BUNDLE_SPINE_UNSUPPORTED".to_string());
+    }
+
+    mismatch_codes.sort();
+    mismatch_codes.dedup();
+    let status = if mismatch_codes.is_empty() {
+        BundleSpineStatusV1::Pass
+    } else {
+        BundleSpineStatusV1::Fail
+    };
+    let mut spine = CanonicalBundleSpineV1 {
+        bundle_kind: input.bundle_kind,
+        applied_supported_set_digest_prefix: context.applied_supported_set_digest_prefix,
+        canonical_governance_entry_digest_prefix,
+        canonical_readiness_spine_digest_prefix,
+        bundle_consumption_context_digest_prefix: prefix_hex(
+            &context.consumption_context_digest,
+            16,
+        ),
+        artifact_refs_digest_prefix: artifact_refs_digest_prefix.clone(),
+        roundtrip_consistency_digest_prefix: prefix_hex(&input.roundtrip.roundtrip_digest, 16),
+        bundle_spine_status: status,
+        bundle_spine_digest: String::new(),
+    };
+    spine.bundle_spine_digest = bundle_spine_digest_hex(&spine)?;
+    Ok(BundleSpineCheckReportV1 {
+        schema_version: 1,
+        pass: matches!(spine.bundle_spine_status, BundleSpineStatusV1::Pass),
+        bundle_kind: spine.bundle_kind.clone(),
+        mismatch_codes,
+        spine,
+    })
 }
 
 fn evaluate_bundle_roundtrip_consistency(
@@ -11257,6 +11429,91 @@ pub fn exports_roundtrip_check(
     ))
 }
 
+pub fn exports_bundle_spine_check(
+    input: &Path,
+    out: &Path,
+) -> Result<BundleSpineCheckReportV1, OpsError> {
+    let file = fs::File::open(input)?;
+    let mut archive = zip::ZipArchive::new(file)
+        .map_err(|e| OpsError::Invalid(format!("unable to open bundle zip: {e}")))?;
+    let mut repro_body = String::new();
+    let mut bugkit_body = String::new();
+    let has_repro = archive.by_name("repro_pack_manifest.json").is_ok();
+    let has_bugkit = archive.by_name("BUGKIT_MANIFEST.json").is_ok()
+        || archive.by_name("bugkit_manifest.json").is_ok();
+
+    let report = if has_repro {
+        let mut mf = archive
+            .by_name("repro_pack_manifest.json")
+            .map_err(|e| OpsError::Invalid(format!("missing repro_pack_manifest.json: {e}")))?;
+        std::io::Read::read_to_string(&mut mf, &mut repro_body)?;
+        let manifest: ReproPackManifestV1 = serde_json::from_str(&repro_body)?;
+        let roundtrip = evaluate_bundle_roundtrip_consistency(BundleRoundTripInputs {
+            bundle_kind: CanonicalBundleKindV1::Repro,
+            bundle_digest: &manifest.repro_pack_digest,
+            export_context: &manifest.export_context,
+            evidence_context: &manifest.evidence_context,
+            related_artifacts: &manifest.related_artifacts,
+            backend_evidence_snapshot: &manifest.backend_evidence_snapshot,
+            active_review_snapshot: &manifest.active_review_snapshot,
+            operator_signoff: &manifest.operator_signoff,
+            export_layout_compatibility: &manifest.export_layout_compatibility,
+        })?;
+        evaluate_bundle_spine(BundleSpineInputs {
+            bundle_kind: CanonicalBundleKindV1::Repro,
+            export_context: &manifest.export_context,
+            evidence_context: &manifest.evidence_context,
+            related_artifacts: &manifest.related_artifacts,
+            backend_evidence_snapshot: &manifest.backend_evidence_snapshot,
+            active_review_snapshot: &manifest.active_review_snapshot,
+            operator_signoff: &manifest.operator_signoff,
+            roundtrip: &roundtrip,
+        })?
+    } else if has_bugkit {
+        let name = if archive.by_name("BUGKIT_MANIFEST.json").is_ok() {
+            "BUGKIT_MANIFEST.json"
+        } else {
+            "bugkit_manifest.json"
+        };
+        let mut mf = archive
+            .by_name(name)
+            .map_err(|e| OpsError::Invalid(format!("missing bugkit manifest: {e}")))?;
+        std::io::Read::read_to_string(&mut mf, &mut bugkit_body)?;
+        let manifest: BugKitManifestV1 = serde_json::from_str(&bugkit_body)?;
+        let roundtrip = evaluate_bundle_roundtrip_consistency(BundleRoundTripInputs {
+            bundle_kind: CanonicalBundleKindV1::Bugkit,
+            bundle_digest: &manifest.bugkit_digest,
+            export_context: &manifest.export_context,
+            evidence_context: &manifest.evidence_context,
+            related_artifacts: &manifest.related_artifacts,
+            backend_evidence_snapshot: &manifest.backend_evidence_snapshot,
+            active_review_snapshot: &manifest.active_review_snapshot,
+            operator_signoff: &manifest.operator_signoff,
+            export_layout_compatibility: &manifest.export_layout_compatibility,
+        })?;
+        evaluate_bundle_spine(BundleSpineInputs {
+            bundle_kind: CanonicalBundleKindV1::Bugkit,
+            export_context: &manifest.export_context,
+            evidence_context: &manifest.evidence_context,
+            related_artifacts: &manifest.related_artifacts,
+            backend_evidence_snapshot: &manifest.backend_evidence_snapshot,
+            active_review_snapshot: &manifest.active_review_snapshot,
+            operator_signoff: &manifest.operator_signoff,
+            roundtrip: &roundtrip,
+        })?
+    } else {
+        return Err(OpsError::Invalid(
+            "bundle does not contain repro_pack_manifest.json or BUGKIT_MANIFEST.json".to_string(),
+        ));
+    };
+
+    if let Some(parent) = out.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    write_json(out, &report)?;
+    Ok(report)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BugKitBuildArgs {
     pub include_payload: bool,
@@ -11356,6 +11613,35 @@ pub struct BundleRoundTripConsistencyV1 {
     pub canonical_condition_codes: Vec<String>,
     pub primary_remediation_codes: Vec<String>,
     pub roundtrip_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum BundleSpineStatusV1 {
+    Pass,
+    Fail,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CanonicalBundleSpineV1 {
+    pub bundle_kind: CanonicalBundleKindV1,
+    pub applied_supported_set_digest_prefix: String,
+    pub canonical_governance_entry_digest_prefix: String,
+    pub canonical_readiness_spine_digest_prefix: Option<String>,
+    pub bundle_consumption_context_digest_prefix: String,
+    pub artifact_refs_digest_prefix: String,
+    pub roundtrip_consistency_digest_prefix: String,
+    pub bundle_spine_status: BundleSpineStatusV1,
+    pub bundle_spine_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BundleSpineCheckReportV1 {
+    pub schema_version: u16,
+    pub pass: bool,
+    pub bundle_kind: CanonicalBundleKindV1,
+    pub mismatch_codes: Vec<String>,
+    pub spine: CanonicalBundleSpineV1,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -12417,6 +12703,21 @@ pub fn repro_verify(pack: &Path, out: &Path) -> Result<ReproVerifyReport, OpsErr
     ) {
         for code in &roundtrip.mismatch_codes {
             reasons.push(format!("bundle roundtrip mismatch: {code}"));
+        }
+    }
+    let bundle_spine = evaluate_bundle_spine(BundleSpineInputs {
+        bundle_kind: CanonicalBundleKindV1::Repro,
+        export_context: &manifest.export_context,
+        evidence_context: &manifest.evidence_context,
+        related_artifacts: &manifest.related_artifacts,
+        backend_evidence_snapshot: &manifest.backend_evidence_snapshot,
+        active_review_snapshot: &manifest.active_review_snapshot,
+        operator_signoff: &manifest.operator_signoff,
+        roundtrip: &roundtrip,
+    })?;
+    if !bundle_spine.pass {
+        for code in &bundle_spine.mismatch_codes {
+            reasons.push(format!("bundle spine mismatch: {code}"));
         }
     }
     let recomputed_pack = repro_pack_digest_hex(&manifest)?;
@@ -15952,6 +16253,93 @@ mod repro_pack_tests {
             CanonicalArtifactIncludedStateV1::Skip
         ));
     }
+
+    #[test]
+    fn canonical_bundle_spine_digest_stable() {
+        let mut spine = CanonicalBundleSpineV1 {
+            bundle_kind: CanonicalBundleKindV1::Repro,
+            applied_supported_set_digest_prefix: "11".repeat(8),
+            canonical_governance_entry_digest_prefix: "22".repeat(8),
+            canonical_readiness_spine_digest_prefix: Some("33".repeat(8)),
+            bundle_consumption_context_digest_prefix: "44".repeat(8),
+            artifact_refs_digest_prefix: "55".repeat(8),
+            roundtrip_consistency_digest_prefix: "66".repeat(8),
+            bundle_spine_status: BundleSpineStatusV1::Pass,
+            bundle_spine_digest: String::new(),
+        };
+        spine.bundle_spine_digest = bundle_spine_digest_hex(&spine).expect("digest");
+        let a = bundle_spine_digest_hex(&spine).expect("digest");
+        let b = bundle_spine_digest_hex(&spine).expect("digest");
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn bundle_spine_scope_mismatch_is_deterministic() {
+        let mut export_context = CanonicalExportContextV1 {
+            supported_slot_set_digest_prefix: "11".repeat(8),
+            policy_graph_digest_prefix: "22".repeat(8),
+            manifest_digest_prefix: "33".repeat(8),
+            run_id: Some("run".to_string()),
+            operator_signoff_digest_prefix: Some("44".repeat(8)),
+            backend_evidence_snapshot_digest_prefix: Some("55".repeat(8)),
+            active_review_snapshot_digest_prefix: Some("66".repeat(8)),
+            context_digest: String::new(),
+        };
+        export_context.context_digest =
+            canonical_context_digest_hex(&export_context).expect("digest");
+        let evidence_context = PackEvidenceContextSummaryV1 {
+            supported_slot_set_digest_prefix: "aa".repeat(8),
+            policy_graph_digest_prefix: "22".repeat(8),
+            manifest_digest_prefix: "33".repeat(8),
+        };
+        let backend = included_evidence_ref(
+            "evidence/backend_evidence_snapshot.json",
+            "11".repeat(32),
+            1,
+            "55".repeat(8),
+        );
+        let active = included_evidence_ref(
+            "evidence/active_review_snapshot.json",
+            "22".repeat(32),
+            1,
+            "66".repeat(8),
+        );
+        let signoff = included_evidence_ref(
+            "evidence/operator_signoff.json",
+            "33".repeat(32),
+            1,
+            "44".repeat(8),
+        );
+        let roundtrip = evaluate_bundle_roundtrip_consistency(BundleRoundTripInputs {
+            bundle_kind: CanonicalBundleKindV1::Repro,
+            bundle_digest: &"ab".repeat(32),
+            export_context: &export_context,
+            evidence_context: &evidence_context,
+            related_artifacts: &[],
+            backend_evidence_snapshot: &backend,
+            active_review_snapshot: &active,
+            operator_signoff: &signoff,
+            export_layout_compatibility: &CanonicalExportLayoutCompatibilityV1::Canonical,
+        })
+        .expect("roundtrip");
+        let check = evaluate_bundle_spine(BundleSpineInputs {
+            bundle_kind: CanonicalBundleKindV1::Repro,
+            export_context: &export_context,
+            evidence_context: &evidence_context,
+            related_artifacts: &[],
+            backend_evidence_snapshot: &backend,
+            active_review_snapshot: &active,
+            operator_signoff: &signoff,
+            roundtrip: &roundtrip,
+        })
+        .expect("spine");
+        assert!(check
+            .mismatch_codes
+            .iter()
+            .any(|c| c == "BUNDLE_SPINE_SCOPE_MISMATCH"));
+        assert!(!check.pass);
+    }
+
     #[test]
     fn repro_pack_and_verify_and_tamper() {
         let _guard = crate::test_cwd_lock().lock().expect("cwd lock");

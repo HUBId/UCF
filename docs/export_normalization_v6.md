@@ -81,3 +81,12 @@ cargo run -p ucf-ops -- operator workflow --out ./out/operator_workflow_chain.js
 ```
 
 Wenn Normalisierung fehlschlägt, ist die Workflow-Stage fail-closed (`WORKFLOW_BLOCKED`) und Export-Readiness bleibt `false`. Siehe `docs/operator_workflow_chain_v6.md`.
+
+## Nachgelagerte End-to-End-Prüfung (v8)
+
+Die Normalisierung bleibt Grundlage; die Bundle-Endprüfung erfolgt mit:
+
+```bash
+cargo run -p ucf-ops -- exports bundle-spine-check --in <bundle.zip> --out ./out/bundle_spine_check.json
+```
+
