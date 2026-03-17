@@ -60,3 +60,6 @@ Optional checks:
 - `SKIP`: optional, explicitly unsupported/unconfigured path only.
 
 v7 is an applied-scope/review/export/interop hardening phase, not a compute capability expansion phase.
+
+
+After `ucf-ops v7 gate` PASS, continue at Prompt 250 via `docs/next_10_prompts.md`.
