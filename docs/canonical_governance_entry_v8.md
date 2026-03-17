@@ -32,3 +32,8 @@ Diese Artefakte werden im `governance-entry-check` gegen denselben kanonischen A
 ```bash
 cargo run -p ucf-ops -- governance-entry-check --out ./out/governance_entry_check.json
 ```
+
+
+## Auswirkungen auf Scope-Expansion
+
+`models supported-scope-execute` darf Expansion nur dann als `EXECUTE_EXPAND_BY_ONE` ausgeben, wenn `CanonicalGovernanceEntryV1` aktuell PASS ist und keine sekundären Entry-Pfade benötigt werden. Andernfalls wird explizit `REAFFIRM_FREEZE` ausgegeben.
