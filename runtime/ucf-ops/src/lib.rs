@@ -14966,7 +14966,40 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
     };
     let readiness_spine_smoke = {
         let out_path = PathBuf::from("./out/readiness_spine_check.json");
-        match readiness_spine_check(workdir, &out_path) {
+        let prep = (|| -> Result<(), OpsError> {
+            models_supported_set_review(
+                workdir,
+                &PathBuf::from("./out/supported_set_review.json"),
+            )?;
+            models_supported_scope_reevaluate(
+                workdir,
+                &PathBuf::from("./out/supported_scope_reeval.json"),
+            )?;
+            models_supported_scope_execute(
+                workdir,
+                &PathBuf::from("./out/supported_scope_execute_v3.json"),
+            )?;
+            let _ = models_supported_set_apply(
+                workdir,
+                &PathBuf::from("./out/supported_set_apply.json"),
+            )?;
+            let evidence = models_evidence_snapshot(workdir, None, None)?;
+            write_json(Path::new("./out/backend_evidence_snapshot.json"), &evidence)?;
+            models_active_review_snapshot(
+                workdir,
+                &PathBuf::from("./out/active_review_snapshot.json"),
+            )?;
+            let _ = operator_report(
+                workdir,
+                &OperatorReportArgs {
+                    run_id: None,
+                    latest: false,
+                },
+                &PathBuf::from("./out/operator_report.json"),
+            )?;
+            Ok(())
+        })();
+        match prep.and_then(|_| readiness_spine_check(workdir, &out_path)) {
             Ok(report) => PortabilityCommandCheck {
                 name: "readiness_spine_smoke".to_string(),
                 status: if matches!(report.status, ReadinessSpineCheckStatusV1::Pass) {
