@@ -28,3 +28,5 @@ Mismatch categories:
 - `LEGACY_READINESS_FIELD`
 - `LEGACY_READINESS_TRANSLATED`
 - `LEGACY_READINESS_REJECTED`
+
+Referenz: Für die übergreifende Blocking-/Remediation-Konsistenz inkl. Readiness-Spine `ucf-ops remediation-spine-check` nutzen (siehe `docs/remediation_spine_consistency_v8.md`).

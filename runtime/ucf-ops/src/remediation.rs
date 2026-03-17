@@ -156,6 +156,74 @@ pub fn canonical_condition_for_roundtrip_mismatch(code: &str) -> Option<&'static
     }
 }
 
+pub fn canonical_condition_for_scope_authority_mismatch(category: &str) -> Option<&'static str> {
+    match category {
+        "SurfaceDidNotUseAppliedScope" | "ExtraSlotFromLegacyInference" => {
+            Some("AppliedScopeMismatch")
+        }
+        "MissingInScopeSlot" => Some("AppliedScopeMissing"),
+        "LegacyScopePathPresent" => Some("AppliedScopeMismatch"),
+        _ => None,
+    }
+}
+
+pub fn canonical_condition_for_governance_entry_mismatch(category: &str) -> Option<&'static str> {
+    match category {
+        "ConsumerSkippedCanonicalEntry" | "ConsumerUsedSecondaryEntry" => {
+            Some("GovernanceEntryMissing")
+        }
+        "GovernanceEntryScopeMismatch" | "GovernanceEntryPrimarySurfacesMismatch" => {
+            Some("GovernanceEntryMismatch")
+        }
+        "LegacyEntryPathPresent" => Some("GovernanceEntryMismatch"),
+        _ => None,
+    }
+}
+
+pub fn canonical_condition_for_readiness_spine_mismatch(category: &str) -> Option<&'static str> {
+    match category {
+        "SlotTruthMismatch"
+        | "ReductionMismatch"
+        | "SignoffSpineDrift"
+        | "ReviewPacketSpineDrift"
+        | "WorkflowSpineDrift" => Some("ReadinessSpineMismatch"),
+        "AppliedScopeSpineMismatch" => Some("AppliedScopeMismatch"),
+        "LegacyReadinessField" | "LegacyReadinessTranslated" | "LegacyReadinessRejected" => {
+            Some("ReadinessSpineMismatch")
+        }
+        _ => None,
+    }
+}
+
+pub fn canonical_condition_for_bundle_spine_mismatch(code: &str) -> Option<&'static str> {
+    match code {
+        "BUNDLE_SPINE_SCOPE_MISMATCH" => Some("AppliedScopeMismatch"),
+        "BUNDLE_SPINE_GOVERNANCE_MISMATCH" => Some("GovernanceEntryMismatch"),
+        "BUNDLE_SPINE_READINESS_MISMATCH" => Some("ReadinessSpineMismatch"),
+        "BUNDLE_SPINE_ARTIFACT_REF_MISMATCH" | "BUNDLE_SPINE_INCLUDED_STATE_MISMATCH" => {
+            Some("BundleSpineMismatch")
+        }
+        "LEGACY_BUNDLE_SPINE_TRANSLATED" | "LEGACY_BUNDLE_SPINE_UNSUPPORTED" => {
+            Some("BundleSpineMismatch")
+        }
+        _ => None,
+    }
+}
+
+pub fn canonical_condition_for_operator_export_chain_mismatch(
+    category: &str,
+) -> Option<&'static str> {
+    match category {
+        "ReviewPacketScopeMismatch"
+        | "SignoffScopeMismatch"
+        | "WorkflowScopeMismatch"
+        | "ExportContextScopeMismatch" => Some("AppliedScopeMismatch"),
+        "ReviewabilityBasisMismatch" => Some("InteropMatrixMismatch"),
+        "AppliedScopeMissing" => Some("AppliedScopeMissing"),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

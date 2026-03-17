@@ -6,8 +6,12 @@ use sha2::{Digest, Sha256};
 use ucf_types::remediation_codes::{remediation_for_condition, CanonicalConditionV1};
 
 use crate::remediation::{
-    canonical_condition_for_export_normalize_category, canonical_condition_for_interop_category,
-    canonical_condition_for_roundtrip_mismatch, canonical_from_legacy_code,
+    canonical_condition_for_bundle_spine_mismatch,
+    canonical_condition_for_export_normalize_category,
+    canonical_condition_for_governance_entry_mismatch, canonical_condition_for_interop_category,
+    canonical_condition_for_operator_export_chain_mismatch,
+    canonical_condition_for_readiness_spine_mismatch, canonical_condition_for_roundtrip_mismatch,
+    canonical_condition_for_scope_authority_mismatch, canonical_from_legacy_code,
     canonical_from_legacy_remediation, primary_remediation_for_condition_code,
 };
 use crate::OpsError;
@@ -141,6 +145,24 @@ pub struct RemediationInteropCheckReportV1 {
     pub mismatches_found: usize,
     pub top_mismatch_categories: Vec<String>,
     pub observations: Vec<CrossSurfaceConditionObservationV1>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SpineConditionObservationV1 {
+    pub canonical_condition_code: String,
+    pub expected_primary_blocking_code: Option<String>,
+    pub expected_primary_remediation_code: Option<String>,
+    pub observed_surfaces: Vec<CrossSurfaceObservedSurfaceV1>,
+    pub observation_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RemediationSpineCheckReportV1 {
+    pub schema_version: u16,
+    pub conditions_checked: usize,
+    pub mismatches_found: usize,
+    pub top_mismatch_categories: Vec<String>,
+    pub observations: Vec<SpineConditionObservationV1>,
 }
 
 #[derive(Clone)]
@@ -300,6 +322,216 @@ pub fn remediation_interop_check(out: &Path) -> Result<RemediationInteropCheckRe
     }
     fs::write(out, serde_json::to_string_pretty(&report)?)?;
     Ok(report)
+}
+
+pub fn remediation_spine_check(out: &Path) -> Result<RemediationSpineCheckReportV1, OpsError> {
+    let surfaces = [
+        "AppliedScopeAuthority",
+        "CanonicalGovernanceEntry",
+        "CanonicalReadinessSpine",
+        "CanonicalBundleSpine",
+        "InteropMatrix",
+        "OperatorExportAuthorityChain",
+        "GateV4",
+        "GateV5",
+        "GateV6",
+        "GateV7",
+        "GateV8",
+        "OperatorSignoff",
+        "OperatorReviewPacket",
+        "ExportRoundTrip",
+        "BundleSpineCheck",
+    ];
+
+    let observations = covered_spine_conditions()
+        .into_iter()
+        .map(|condition_code| {
+            let expected_primary = primary_remediation_for_condition_code(condition_code);
+            let observed_surfaces = surfaces
+                .iter()
+                .map(|surface| {
+                    observe_spine_surface(condition_code, surface, expected_primary.as_deref())
+                })
+                .collect::<Vec<_>>();
+            let mut hasher = Sha256::new();
+            hasher.update(serde_json::to_vec(&(
+                condition_code,
+                &expected_primary,
+                &observed_surfaces,
+            ))?);
+            Ok(SpineConditionObservationV1 {
+                canonical_condition_code: condition_code.to_string(),
+                expected_primary_blocking_code: Some(condition_code.to_string()),
+                expected_primary_remediation_code: expected_primary,
+                observed_surfaces,
+                observation_digest: format!("{:x}", hasher.finalize()),
+            })
+        })
+        .collect::<Result<Vec<_>, OpsError>>()?;
+
+    let mut mismatch_hist = BTreeMap::<String, usize>::new();
+    let mut mismatches_found = 0usize;
+    for observation in &observations {
+        if let Some(expected) = observation.expected_primary_remediation_code.as_deref() {
+            for surface in &observation.observed_surfaces {
+                match surface.status {
+                    CrossSurfaceObservationStatusV1::Pass
+                    | CrossSurfaceObservationStatusV1::Skip => {}
+                    CrossSurfaceObservationStatusV1::Missing => {
+                        mismatches_found += 1;
+                        *mismatch_hist
+                            .entry("MISSING_SURFACE".to_string())
+                            .or_default() += 1;
+                    }
+                    CrossSurfaceObservationStatusV1::Fail => {
+                        mismatches_found += 1;
+                        if surface.primary_remediation_code.is_none() {
+                            *mismatch_hist
+                                .entry("UNKNOWN_CONDITION_MAPPING".to_string())
+                                .or_default() += 1;
+                        } else if surface.primary_remediation_code.as_deref() != Some(expected) {
+                            *mismatch_hist
+                                .entry("PRIMARY_REMEDIATION_MISMATCH".to_string())
+                                .or_default() += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let report = RemediationSpineCheckReportV1 {
+        schema_version: SCHEMA_VERSION,
+        conditions_checked: observations.len(),
+        mismatches_found,
+        top_mismatch_categories: mismatch_hist
+            .into_iter()
+            .map(|(k, v)| format!("{k}:{v}"))
+            .collect(),
+        observations,
+    };
+    if let Some(parent) = out.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(out, serde_json::to_string_pretty(&report)?)?;
+    Ok(report)
+}
+
+fn covered_spine_conditions() -> Vec<&'static str> {
+    let mut out = vec![
+        "AppliedScopeMissing",
+        "AppliedScopeMismatch",
+        "GovernanceEntryMissing",
+        "GovernanceEntryMismatch",
+        "ReadinessSpineMismatch",
+        "BundleSpineMismatch",
+        "InteropMatrixMismatch",
+        "ExportRoundTripMismatch",
+        "GateFailV8",
+        "RequiredSurfaceMissing",
+        "CanonicalEntryRequired",
+    ];
+    out.sort();
+    out
+}
+
+fn observe_spine_surface(
+    condition_code: &str,
+    surface: &str,
+    expected_primary: Option<&str>,
+) -> CrossSurfaceObservedSurfaceV1 {
+    let mapped_condition = match surface {
+        "AppliedScopeAuthority" => {
+            canonical_condition_for_scope_authority_mismatch(match condition_code {
+                "AppliedScopeMismatch" => "SurfaceDidNotUseAppliedScope",
+                "AppliedScopeMissing" => "MissingInScopeSlot",
+                _ => "UNKNOWN",
+            })
+        }
+        "CanonicalGovernanceEntry" => {
+            canonical_condition_for_governance_entry_mismatch(match condition_code {
+                "GovernanceEntryMissing" | "CanonicalEntryRequired" => {
+                    "ConsumerSkippedCanonicalEntry"
+                }
+                "GovernanceEntryMismatch" => "GovernanceEntryPrimarySurfacesMismatch",
+                _ => "UNKNOWN",
+            })
+        }
+        "CanonicalReadinessSpine" => {
+            canonical_condition_for_readiness_spine_mismatch(match condition_code {
+                "ReadinessSpineMismatch" => "ReductionMismatch",
+                "AppliedScopeMismatch" => "AppliedScopeSpineMismatch",
+                _ => "UNKNOWN",
+            })
+        }
+        "CanonicalBundleSpine" | "BundleSpineCheck" => {
+            canonical_condition_for_bundle_spine_mismatch(match condition_code {
+                "AppliedScopeMismatch" => "BUNDLE_SPINE_SCOPE_MISMATCH",
+                "GovernanceEntryMismatch" => "BUNDLE_SPINE_GOVERNANCE_MISMATCH",
+                "ReadinessSpineMismatch" => "BUNDLE_SPINE_READINESS_MISMATCH",
+                "BundleSpineMismatch" => "BUNDLE_SPINE_ARTIFACT_REF_MISMATCH",
+                _ => "UNKNOWN",
+            })
+        }
+        "InteropMatrix" => canonical_condition_for_interop_category(match condition_code {
+            "InteropMatrixMismatch" => "RemediationMismatch",
+            "RequiredSurfaceMissing" => "RequiredSurfaceMissing",
+            "AppliedScopeMismatch" => "ScopeMismatch",
+            _ => "UNKNOWN",
+        }),
+        "OperatorExportAuthorityChain" => {
+            canonical_condition_for_operator_export_chain_mismatch(match condition_code {
+                "AppliedScopeMismatch" => "ReviewPacketScopeMismatch",
+                "AppliedScopeMissing" => "AppliedScopeMissing",
+                "InteropMatrixMismatch" => "ReviewabilityBasisMismatch",
+                _ => "UNKNOWN",
+            })
+        }
+        "GateV4" | "GateV5" | "GateV6" | "GateV7" | "GateV8" => {
+            if condition_code.starts_with("GateFail") {
+                Some(condition_code)
+            } else {
+                None
+            }
+        }
+        "ExportRoundTrip" => canonical_condition_for_roundtrip_mismatch(match condition_code {
+            "ExportRoundTripMismatch" => "ExportRoundTripMismatch",
+            "AppliedScopeMismatch" => "ScopeMismatch",
+            _ => "UNKNOWN",
+        }),
+        "OperatorSignoff" | "OperatorReviewPacket" => None,
+        _ => None,
+    };
+
+    let primary = mapped_condition.and_then(primary_remediation_for_condition_code);
+    let status = if matches!(surface, "OperatorSignoff" | "OperatorReviewPacket") {
+        CrossSurfaceObservationStatusV1::Missing
+    } else if mapped_condition.is_none() {
+        if matches!(
+            condition_code,
+            "CanonicalEntryRequired" | "RequiredSurfaceMissing"
+        ) {
+            CrossSurfaceObservationStatusV1::Skip
+        } else {
+            CrossSurfaceObservationStatusV1::Fail
+        }
+    } else if let Some(expected) = expected_primary {
+        if primary.as_deref() == Some(expected) {
+            CrossSurfaceObservationStatusV1::Pass
+        } else {
+            CrossSurfaceObservationStatusV1::Fail
+        }
+    } else {
+        CrossSurfaceObservationStatusV1::Fail
+    };
+
+    CrossSurfaceObservedSurfaceV1 {
+        surface_kind: surface.to_string(),
+        primary_blocking_code: mapped_condition.map(str::to_string),
+        primary_remediation_code: primary,
+        status,
+        source_digest_prefix: None,
+    }
 }
 
 fn covered_cross_surface_conditions() -> Vec<&'static str> {
@@ -781,6 +1013,29 @@ mod tests {
             check.mismatch_kind,
             Some(RemediationMismatchKindV1::MissingSurface)
         );
+    }
+
+    #[test]
+    fn spine_observation_is_stably_ordered_and_digested() {
+        let expected = primary_remediation_for_condition_code("AppliedScopeMismatch");
+        let a = observe_spine_surface(
+            "AppliedScopeMismatch",
+            "AppliedScopeAuthority",
+            expected.as_deref(),
+        );
+        let b = observe_spine_surface(
+            "AppliedScopeMismatch",
+            "AppliedScopeAuthority",
+            expected.as_deref(),
+        );
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn unknown_spine_mapping_fails_conservatively() {
+        let obs = observe_spine_surface("BundleSpineMismatch", "GateV4", Some("X"));
+        assert!(matches!(obs.status, CrossSurfaceObservationStatusV1::Fail));
+        assert_eq!(obs.primary_remediation_code, None);
     }
 
     #[test]

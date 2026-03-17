@@ -59,3 +59,5 @@ Compared to `remediation-consistency-check`, v7 additionally detects drift betwe
 - extended gate/review/packet/snapshot surface families
 
 All checks remain offline, deterministic, bounded, and read-only.
+
+See `docs/remediation_spine_consistency_v8.md` for the stronger v8 spine-level cross-surface proof.
