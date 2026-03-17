@@ -37,3 +37,5 @@ cargo run -p ucf-ops -- governance-entry-check --out ./out/governance_entry_chec
 ## Auswirkungen auf Scope-Expansion
 
 `models supported-scope-execute` darf Expansion nur dann als `EXECUTE_EXPAND_BY_ONE` ausgeben, wenn `CanonicalGovernanceEntryV1` aktuell PASS ist und keine sekundären Entry-Pfade benötigt werden. Andernfalls wird explizit `REAFFIRM_FREEZE` ausgegeben.
+
+Zusatz: Der v8-Nachweis zur kanonischen Blocking/Remediation-Konsistenz über alle Spines läuft über `ucf-ops remediation-spine-check` (siehe `docs/remediation_spine_consistency_v8.md`).

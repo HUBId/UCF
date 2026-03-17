@@ -35,3 +35,5 @@ cargo run -p ucf-ops -- exports bundle-spine-check --in <bundle.zip> --out ./out
 ```
 
 Die Ausgabe enthält `PASS`/`FAIL`, Mismatch-Kategorien und den kanonischen Bundle-Spine.
+
+Referenz: Für die übergreifende Blocking-/Remediation-Konsistenz inkl. Bundle-Spine `ucf-ops remediation-spine-check` nutzen (siehe `docs/remediation_spine_consistency_v8.md`).
