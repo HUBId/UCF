@@ -64,7 +64,7 @@ struct ArtifactSpec {
     enum_names: &'static [&'static str],
 }
 
-const ARTIFACT_SPECS: [ArtifactSpec; 29] = [
+const ARTIFACT_SPECS: [ArtifactSpec; 35] = [
     ArtifactSpec {
         artifact_id: "active_review_snapshot_v1",
         file_rel: "runtime/ucf-ops/src/models_lifecycle.rs",
@@ -133,6 +133,12 @@ const ARTIFACT_SPECS: [ArtifactSpec; 29] = [
         ],
     },
     ArtifactSpec {
+        artifact_id: "canonical_bundle_spine_v1",
+        file_rel: "runtime/ucf-ops/src/lib.rs",
+        type_name: "CanonicalBundleSpineV1",
+        enum_names: &["BundleSpineStatusV1", "CanonicalBundleKindV1"],
+    },
+    ArtifactSpec {
         artifact_id: "bugkit_manifest_v1",
         file_rel: "runtime/ucf-ops/src/lib.rs",
         type_name: "BugKitManifestV1",
@@ -155,6 +161,18 @@ const ARTIFACT_SPECS: [ArtifactSpec; 29] = [
         file_rel: "runtime/ucf-ops/src/lib.rs",
         type_name: "CanonicalExportContextV1",
         enum_names: &[],
+    },
+    ArtifactSpec {
+        artifact_id: "canonical_governance_entry_v1",
+        file_rel: "runtime/ucf-ops/src/canonical_governance_entry.rs",
+        type_name: "CanonicalGovernanceEntryV1",
+        enum_names: &["CanonicalGovernanceEntryStatusV1"],
+    },
+    ArtifactSpec {
+        artifact_id: "canonical_readiness_spine_v1",
+        file_rel: "runtime/ucf-ops/src/readiness_spine.rs",
+        type_name: "CanonicalReadinessSpineV1",
+        enum_names: &["CanonicalReadinessSpineStatusV1"],
     },
     ArtifactSpec {
         artifact_id: "remediation_consistency_check_v1",
@@ -199,6 +217,12 @@ const ARTIFACT_SPECS: [ArtifactSpec; 29] = [
         enum_names: &["OperatorReviewStageV1"],
     },
     ArtifactSpec {
+        artifact_id: "operator_workflow_chain_v1",
+        file_rel: "runtime/ucf-ops/src/operator_workflow.rs",
+        type_name: "OperatorWorkflowChainV1",
+        enum_names: &["OperatorWorkflowStageV2"],
+    },
+    ArtifactSpec {
         artifact_id: "strict_failure_report_v3",
         file_rel: "runtime/ucf-ops/src/lib.rs",
         type_name: "StrictModeFailureReport",
@@ -241,19 +265,37 @@ const ARTIFACT_SPECS: [ArtifactSpec; 29] = [
         enum_names: &[],
     },
     ArtifactSpec {
+        artifact_id: "spine_condition_observation_v1",
+        file_rel: "runtime/ucf-ops/src/remediation_consistency.rs",
+        type_name: "SpineConditionObservationV1",
+        enum_names: &["CrossSurfaceObservationStatusV1"],
+    },
+    ArtifactSpec {
         artifact_id: "supported_scope_reevaluation_v1",
         file_rel: "runtime/ucf-ops/src/models_lifecycle.rs",
         type_name: "SupportedScopeReevaluationV1",
         enum_names: &["SupportedScopeReevaluationDecisionV1"],
     },
+    ArtifactSpec {
+        artifact_id: "v7_gate_report_v1",
+        file_rel: "runtime/ucf-ops/src/v7_gate.rs",
+        type_name: "V7GateReportV1",
+        enum_names: &["V7GateOverallStatus"],
+    },
 ];
+
+fn sorted_artifact_specs() -> Vec<ArtifactSpec> {
+    let mut specs = ARTIFACT_SPECS.to_vec();
+    specs.sort_by(|a, b| a.artifact_id.cmp(b.artifact_id));
+    specs
+}
 
 pub fn generate_artifact_schema_snapshots(
     args: &ArtifactSchemaArgs,
 ) -> Result<Vec<String>, OpsError> {
     fs::create_dir_all(&args.out_dir)?;
     let mut covered = Vec::new();
-    for spec in ARTIFACT_SPECS {
+    for spec in sorted_artifact_specs() {
         let snapshot = build_snapshot(&args.repo_root, spec)?;
         let out = args.out_dir.join(format!("{}.json", spec.artifact_id));
         fs::write(&out, serde_json::to_string_pretty(&snapshot)?)?;
@@ -680,39 +722,48 @@ mod tests {
 
     #[test]
     fn generated_artifact_order_is_deterministic() {
-        let observed: Vec<_> = ARTIFACT_SPECS.iter().map(|spec| spec.artifact_id).collect();
+        let observed: Vec<_> = sorted_artifact_specs()
+            .into_iter()
+            .map(|spec| spec.artifact_id)
+            .collect();
         assert_eq!(
             observed,
             vec![
                 "active_review_snapshot_v1",
-                "backend_resolution_v1",
-                "backend_evidence_snapshot_v1",
-                "governance_primary_surfaces_v1",
-                "supported_real_slot_set_v2",
-                "supported_scope_execution_v3",
                 "applied_scope_authority_v1",
                 "applied_supported_set_context_v1",
-                "repro_pack_manifest_v1",
-                "bundle_roundtrip_consistency_v1",
+                "backend_evidence_snapshot_v1",
+                "backend_resolution_v1",
                 "bugkit_manifest_v1",
+                "bundle_roundtrip_consistency_v1",
                 "canonical_bundle_consumption_context_v1",
+                "canonical_bundle_spine_v1",
                 "canonical_export_artifact_ref_v1",
                 "canonical_export_context_v1",
-                "remediation_consistency_check_v1",
-                "cross_surface_context_matrix_v1",
+                "canonical_governance_entry_v1",
+                "canonical_readiness_spine_v1",
                 "cross_surface_condition_observation_v1",
+                "cross_surface_context_matrix_v1",
+                "governance_primary_surfaces_v1",
                 "interop_consistency_matrix_report_v1",
                 "operator_report_v1",
-                "operator_signoff_v1",
                 "operator_review_packet_v1",
+                "operator_signoff_v1",
+                "operator_workflow_chain_v1",
+                "readiness_gate_report_v1",
+                "remediation_consistency_check_v1",
+                "repro_pack_manifest_v1",
+                "reviewability_reduction_v1",
+                "slot_reviewability_truth_v1",
+                "spine_condition_observation_v1",
                 "strict_failure_report_v3",
+                "supported_real_slot_set_v2",
+                "supported_scope_execution_v3",
+                "supported_scope_reevaluation_v1",
                 "v3_gate_report_v1",
                 "v4_gate_report_v1",
                 "v5_gate_report_v1",
-                "readiness_gate_report_v1",
-                "reviewability_reduction_v1",
-                "slot_reviewability_truth_v1",
-                "supported_scope_reevaluation_v1",
+                "v7_gate_report_v1",
             ]
         );
     }
