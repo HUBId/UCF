@@ -67,6 +67,7 @@ pub struct ReadinessSpineCheckReportV1 {
     pub canonical_readiness_spine: CanonicalReadinessSpineV1,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn derive_canonical_readiness_spine(
     applied_scope: &AppliedSupportedSetContextV1,
     entry: &CanonicalGovernanceEntryV1,

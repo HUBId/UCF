@@ -17,12 +17,15 @@
     "supported_slot_set_digest",
     "supported_slots"
   ],
-  "optional_fields": [],
+  "optional_fields": [
+    "canonical_readiness_spine_digest_prefix"
+  ],
   "field_types": {
     "applied_context_digest_prefix": "String",
     "applied_supported_set_digest_prefix": "String",
     "artifacts": "OperatorReviewPacketArtifactsV1",
     "blocking_codes": "Vec<String>",
+    "canonical_readiness_spine_digest_prefix": "String",
     "manifest_digest_prefix": "String",
     "packet_digest": "String",
     "policy_graph_digest_prefix": "String",

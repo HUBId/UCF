@@ -937,6 +937,7 @@ mod tests {
             applied_supported_set_digest_prefix: "slotset1".to_string(),
             applied_context_digest_prefix: "context1".to_string(),
             reviewability_reduction_digest_prefix: "reduction1".to_string(),
+            canonical_readiness_spine_digest_prefix: "spine1".to_string(),
             gate_report_digests: crate::operator_signoff::GateReportDigestsV1 {
                 v0: "g0".to_string(),
                 v1: "g1".to_string(),

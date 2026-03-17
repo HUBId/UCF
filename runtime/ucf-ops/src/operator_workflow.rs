@@ -417,6 +417,7 @@ mod tests {
             applied_supported_set_digest_prefix: "scope123456789012".to_string(),
             applied_context_digest_prefix: "context1234567890".to_string(),
             reviewability_reduction_digest_prefix: "reviewred12345678".to_string(),
+            canonical_readiness_spine_digest_prefix: "spine123456789012".to_string(),
             artifacts: OperatorReviewPacketArtifactsV1 {
                 backend_evidence_snapshot_digest_prefix: "a".repeat(16),
                 active_review_snapshot_digest_prefix: "b".repeat(16),
@@ -452,6 +453,7 @@ mod tests {
             applied_supported_set_digest_prefix: "scope123456789012".to_string(),
             applied_context_digest_prefix: "context1234567890".to_string(),
             reviewability_reduction_digest_prefix: "reviewred12345678".to_string(),
+            canonical_readiness_spine_digest_prefix: "spine123456789012".to_string(),
             gate_report_digests: GateReportDigestsV1 {
                 v0: "d".repeat(16),
                 v1: "e".repeat(16),
