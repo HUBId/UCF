@@ -10,7 +10,7 @@ use ucf_ops::{
     event_id_for_decision, explain_tick, explain_why, export_bugreport,
     export_policy_key_registry_v1, exports_normalize_check, exports_roundtrip_check,
     gateway_threat_test, goldens_generate, goldens_update, goldens_verify, goldens_verify_detailed,
-    governance_surfaces_check, hardware_scan, interop_consistency_matrix,
+    governance_entry_check, governance_surfaces_check, hardware_scan, interop_consistency_matrix,
     load_applied_supported_set_context_v1, load_signoff_checklist, logs_prove, logs_verify_proof,
     metrics_snapshot, metrics_summary, metrics_trend, migrate_config_v1, models_active_check,
     models_active_evidence, models_active_review_snapshot, models_applied_scope_check,
@@ -33,11 +33,11 @@ use ucf_ops::{
     AirgapArtifactType, AirgapImportArgs, AirgapImportMode, BenchArgs, BugKitBuildArgs,
     ChangeImpactArgs, ConfigV1, CounterfactualRequest, DevLoopArgs, DocsLintArgs, DocsLintMode,
     DocsLintStatus, ExplainTickRequest, ExportArgs, GateStatus, GoldenGenerateArgs,
-    GoldenVerifyArgs, GoldenVerifyReport, NightlySummarizeArgs, OperatorReportArgs,
-    OperatorReviewPacketArgs, OperatorSignoffArgs, OperatorWorkflowArgs, ReleaseBuildRcArgs,
-    SoakRunArgs, SpecSnapshotArgs, StrictEvidenceContextV1, V2GateOverallStatus,
-    V3GateOverallStatus, V4GateOverallStatus, V5GateOverallStatus, V6GateOverallStatus,
-    V7GateOverallStatus,
+    GoldenVerifyArgs, GoldenVerifyReport, GovernanceEntryCheckStatusV1, NightlySummarizeArgs,
+    OperatorReportArgs, OperatorReviewPacketArgs, OperatorSignoffArgs, OperatorWorkflowArgs,
+    ReleaseBuildRcArgs, SoakRunArgs, SpecSnapshotArgs, StrictEvidenceContextV1,
+    V2GateOverallStatus, V3GateOverallStatus, V4GateOverallStatus, V5GateOverallStatus,
+    V6GateOverallStatus, V7GateOverallStatus,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -2074,6 +2074,19 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 _ => return Err("usage: ucf-ops v4 gate [--out <path>]".into()),
             }
         }
+        "governance-entry-check" => {
+            let out = arg_value(&args, "--out")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("./out/governance_entry_check.json"));
+            let report = governance_entry_check(&workdir, &out)?;
+            println!("status={:?}", report.status);
+            println!("authority_digest_prefix={}", report.authority_digest_prefix);
+            println!("out={}", out.display());
+            if !matches!(report.status, GovernanceEntryCheckStatusV1::Pass) {
+                std::process::exit(2);
+            }
+        }
+
         "governance-surfaces-check" => {
             let out = arg_value(&args, "--out")
                 .map(PathBuf::from)
@@ -2757,7 +2770,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             eprintln!(
-                "usage: ucf-ops <bringup|diag|health|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|attest|repro|exports|readiness-gate|preflight|goldens|nightly|dev|troubleshoot|adversarial-run|out|release|bench|runs|status|strict|ess|ebm|drift|alerts|operator|policy|portability|spec|change-impact|soak|governance-surfaces-check|remediation-consistency-check|remediation-interop-check|interop|v0|v1|v2|v3|v4|v5|v6|v7|version> [--workdir <path>] [--bundle <path>]"
+                "usage: ucf-ops <bringup|diag|health|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|attest|repro|exports|readiness-gate|preflight|goldens|nightly|dev|troubleshoot|adversarial-run|out|release|bench|runs|status|strict|ess|ebm|drift|alerts|operator|policy|portability|spec|change-impact|soak|governance-surfaces-check|governance-entry-check|remediation-consistency-check|remediation-interop-check|interop|v0|v1|v2|v3|v4|v5|v6|v7|version> [--workdir <path>] [--bundle <path>]"
             );
             std::process::exit(1);
         }

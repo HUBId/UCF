@@ -32,3 +32,6 @@ cargo run -p ucf-ops -- models supported-scope-reevaluate --out ./out/supported_
 
 If reevaluation returns `REAFFIRM_FREEZE`, scope remains unchanged explicitly.
 If reevaluation returns `EXECUTE_EXPAND_BY_ONE`, apply may add exactly one slot via `supported-set-apply`.
+
+
+See also canonical entrypoint rule: docs/canonical_governance_entry_v8.md

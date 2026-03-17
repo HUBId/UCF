@@ -28,3 +28,6 @@ Unlike interop matrix and export roundtrip checks, this command is a direct end-
 proof for applied-scope alignment across operator and export readiness surfaces.
 
 Export build/readiness now fail-closed when the authority chain is not `PASS`.
+
+
+See also canonical entrypoint rule: docs/canonical_governance_entry_v8.md
