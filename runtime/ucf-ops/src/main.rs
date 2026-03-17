@@ -8,15 +8,15 @@ use ucf_ops::{
     attest_run, attest_verify, audit_scan, bench_run, bringup, causal_slice, determinism_scan,
     diagnostics, diagnostics_collect, drift_report, ebm_export_dataset, ess_compact, ess_snapshot,
     event_id_for_decision, explain_tick, explain_why, export_bugreport,
-    export_policy_key_registry_v1, exports_normalize_check, exports_roundtrip_check,
-    gateway_threat_test, goldens_generate, goldens_update, goldens_verify, goldens_verify_detailed,
-    governance_entry_check, governance_surfaces_check, hardware_scan, interop_consistency_matrix,
-    load_applied_supported_set_context_v1, load_signoff_checklist, logs_prove, logs_verify_proof,
-    metrics_snapshot, metrics_summary, metrics_trend, migrate_config_v1, models_active_check,
-    models_active_evidence, models_active_review_snapshot, models_applied_scope_check,
-    models_backend_resolution, models_consistency_check, models_eligibility,
-    models_evidence_snapshot, models_list, models_probe, models_probe_slot, models_promote,
-    models_recommend_rollback, models_rollback, models_shadow_ready, models_stage,
+    export_policy_key_registry_v1, exports_bundle_spine_check, exports_normalize_check,
+    exports_roundtrip_check, gateway_threat_test, goldens_generate, goldens_update, goldens_verify,
+    goldens_verify_detailed, governance_entry_check, governance_surfaces_check, hardware_scan,
+    interop_consistency_matrix, load_applied_supported_set_context_v1, load_signoff_checklist,
+    logs_prove, logs_verify_proof, metrics_snapshot, metrics_summary, metrics_trend,
+    migrate_config_v1, models_active_check, models_active_evidence, models_active_review_snapshot,
+    models_applied_scope_check, models_backend_resolution, models_consistency_check,
+    models_eligibility, models_evidence_snapshot, models_list, models_probe, models_probe_slot,
+    models_promote, models_recommend_rollback, models_rollback, models_shadow_ready, models_stage,
     models_supported_scope_execute, models_supported_scope_reevaluate, models_supported_set_apply,
     models_supported_set_review, models_verify, models_verify_lifecycle, net_deps_audit,
     nightly_summarize, one_command_bringup, operator_export_chain_check, operator_report,
@@ -1822,9 +1822,44 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         std::process::exit(2);
                     }
                 }
+                "bundle-spine-check" => {
+                    let input = arg_value(&args, "--in").map(PathBuf::from).ok_or(
+                        "usage: ucf-ops exports bundle-spine-check --in <bundle> --out <path>",
+                    )?;
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/bundle_spine_check.json"));
+                    let report = exports_bundle_spine_check(&input, &out)?;
+                    println!("bundle_kind={:?}", report.bundle_kind);
+                    println!(
+                        "applied_scope_digest={}",
+                        report.spine.applied_supported_set_digest_prefix
+                    );
+                    println!(
+                        "governance_coherent={}",
+                        !report
+                            .mismatch_codes
+                            .iter()
+                            .any(|c| c == "BUNDLE_SPINE_GOVERNANCE_MISMATCH")
+                    );
+                    println!(
+                        "readiness_coherent={}",
+                        !report
+                            .mismatch_codes
+                            .iter()
+                            .any(|c| c == "BUNDLE_SPINE_READINESS_MISMATCH")
+                    );
+                    if let Some(code) = report.mismatch_codes.first() {
+                        println!("main_mismatch_code={code}");
+                    }
+                    println!("out={}", out.display());
+                    if !report.pass {
+                        std::process::exit(2);
+                    }
+                }
                 _ => {
                     return Err(
-                        "usage: ucf-ops exports <normalize-check|roundtrip-check> ...".into(),
+                        "usage: ucf-ops exports <normalize-check|roundtrip-check|bundle-spine-check> ...".into(),
                     )
                 }
             }

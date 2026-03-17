@@ -62,3 +62,12 @@ If full model-byte rehydration is required, transmit model files separately via 
 ## Export normalization v6
 
 This surface participates in canonical export normalization (shared `CanonicalExportArtifactRefV1` and `CanonicalExportContextV1`) and is validated via `cargo run -p ucf-ops -- exports normalize-check --out ./out/export_normalize_check.json`. See `docs/export_normalization_v6.md` for semantics.
+
+## Bundle-Spine-Validierung
+
+Nach dem Build sollte zusätzlich die Spine-Prüfung laufen:
+
+```bash
+cargo run -p ucf-ops -- exports bundle-spine-check --in ./out/repro_<run_id>.zip --out ./out/bundle_spine_check.json
+```
+

@@ -48,3 +48,12 @@ cargo run -p ucf-ops -- remediation-interop-check --out ./out/remediation_intero
 ```
 
 See also: `docs/operator_export_authority_chain_v7.md` and `ucf-ops operator export-chain-check` for applied-scope authority validation across review/signoff/workflow/export chain.
+
+## Bundle Spine (v8)
+
+Als kanonischer End-to-End-Nachweis für Bundle-Kohärenz wird zusätzlich `exports bundle-spine-check` verwendet:
+
+```bash
+cargo run -p ucf-ops -- exports bundle-spine-check --in <bundle.zip> --out ./out/bundle_spine_check.json
+```
+
