@@ -24,6 +24,7 @@ mod operator_report;
 mod operator_review_packet;
 mod operator_signoff;
 mod operator_workflow;
+mod readiness_spine;
 mod remediation;
 mod remediation_consistency;
 mod reviewability_truth;
@@ -136,6 +137,12 @@ pub use operator_workflow::{
     operator_workflow_chain, operator_workflow_chain_text, OperatorWorkflowArgs,
     OperatorWorkflowChainV1, OperatorWorkflowExportTargetsV1, OperatorWorkflowPolicyV1,
     OperatorWorkflowStageV2,
+};
+pub use readiness_spine::{
+    attach_spine_prefix_to_packet, attach_spine_prefix_to_signoff, attach_spine_prefix_to_workflow,
+    derive_canonical_readiness_spine, readiness_spine_check, write_canonical_readiness_spine,
+    CanonicalReadinessSpineStatusV1, CanonicalReadinessSpineV1, ReadinessSpineCheckReportV1,
+    ReadinessSpineCheckStatusV1, ReadinessSpineMismatchCategoryV1,
 };
 pub use remediation::all_registry_rows as remediation_registry_rows;
 pub use remediation_consistency::{

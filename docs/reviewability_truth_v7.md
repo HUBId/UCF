@@ -31,3 +31,5 @@ Mismatch-Kategorien:
 - `LEGACY_REVIEWABILITY_FIELD`
 - `LEGACY_REDUCTION_TRANSLATED`
 - `LEGACY_REDUCTION_REJECTED`
+
+See also: readiness spine canon (`docs/readiness_spine_v8.md`).

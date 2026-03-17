@@ -68,6 +68,8 @@ pub struct OperatorReviewPacketV1 {
     pub applied_supported_set_digest_prefix: String,
     pub applied_context_digest_prefix: String,
     pub reviewability_reduction_digest_prefix: String,
+    #[serde(default)]
+    pub canonical_readiness_spine_digest_prefix: String,
     pub artifacts: OperatorReviewPacketArtifactsV1,
     pub supported_slots: Vec<OperatorReviewPacketSlotV1>,
     pub blocking_codes: Vec<String>,
@@ -460,6 +462,7 @@ fn build_from_snapshot(
         applied_supported_set_digest_prefix: applied_scope.applied_set_digest_prefix.clone(),
         applied_context_digest_prefix: crate::prefix_hex(&applied_scope.context_digest, 16),
         reviewability_reduction_digest_prefix: "MISSING".to_string(),
+        canonical_readiness_spine_digest_prefix: "MISSING".to_string(),
         gate_report_digests: crate::operator_signoff::GateReportDigestsV1 {
             v0: "MISSING".to_string(),
             v1: "MISSING".to_string(),
@@ -568,6 +571,7 @@ fn build_blocked_minimal(
         applied_supported_set_digest_prefix: applied_scope.applied_set_digest_prefix.clone(),
         applied_context_digest_prefix: crate::prefix_hex(&applied_scope.context_digest, 16),
         reviewability_reduction_digest_prefix: "MISSING".to_string(),
+        canonical_readiness_spine_digest_prefix: "MISSING".to_string(),
         artifacts: OperatorReviewPacketArtifactsV1 {
             backend_evidence_snapshot_digest_prefix: "MISSING".to_string(),
             active_review_snapshot_digest_prefix: "MISSING".to_string(),
@@ -645,6 +649,9 @@ fn build_packet(
         applied_supported_set_digest_prefix: applied_scope.applied_set_digest_prefix.clone(),
         applied_context_digest_prefix: crate::prefix_hex(&applied_scope.context_digest, 16),
         reviewability_reduction_digest_prefix: reviewability_reduction_digest_prefix.to_string(),
+        canonical_readiness_spine_digest_prefix: signoff
+            .canonical_readiness_spine_digest_prefix
+            .clone(),
         artifacts: OperatorReviewPacketArtifactsV1 {
             backend_evidence_snapshot_digest_prefix: prefix16(&snapshot.snapshot_digest),
             active_review_snapshot_digest_prefix: prefix16(&active.snapshot_digest),

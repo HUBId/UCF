@@ -123,3 +123,5 @@ Canonical surfaces now require applied-scope authority from `AppliedSupportedSet
 This surface derives per-slot reviewability from `SlotReviewabilityTruthV1` and aggregate status from `ReviewabilityReductionV1` for the authoritative applied scope. See `docs/reviewability_truth_v7.md`.
 
 See also: `docs/operator_export_authority_chain_v7.md` and `ucf-ops operator export-chain-check` for applied-scope authority validation across review/signoff/workflow/export chain.
+
+See also: readiness spine canon (`docs/readiness_spine_v8.md`).
