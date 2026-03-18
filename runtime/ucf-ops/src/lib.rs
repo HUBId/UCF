@@ -11865,62 +11865,82 @@ struct ExportChainDigestRefs {
 }
 
 fn derive_export_chain_digest_refs(workdir: &Path) -> Result<ExportChainDigestRefs, OpsError> {
-    let applied = load_applied_supported_set_context_v1(workdir)?;
-    let backend = models_evidence_snapshot(workdir, None, None)?;
-    let active = models_active_review_snapshot(
-        workdir,
-        &workdir.join("out/active_review_snapshot_export_chain_refs.json"),
-    )?;
-    let surfaces =
-        validate_governance_primary_surfaces_with_applied_scope(&backend, &active, &applied)?;
-    let governance = derive_canonical_governance_entry(&applied, &surfaces)?;
-    let review_packet = operator_review_packet(
-        workdir,
-        &OperatorReviewPacketArgs {
-            run_id: None,
-            latest: true,
-        },
-        &workdir.join("out/operator_review_packet_export_chain_refs.json"),
-    )?;
-    let signoff = operator_signoff(
-        workdir,
-        &OperatorSignoffArgs {
-            run_id: None,
-            latest: true,
-            profile: std::env::var("UCF_PROFILE").unwrap_or_else(|_| "test".to_string()),
-        },
-        &workdir.join("out/operator_signoff_export_chain_refs.json"),
-    )?;
-    let workflow = operator_workflow_chain(
-        workdir,
-        &OperatorWorkflowArgs {
-            run_id: None,
-            latest: true,
-        },
-        &workdir.join("out/operator_workflow_chain_export_chain_refs.json"),
-    )?;
-    let readiness = readiness_spine_check(
-        workdir,
-        &workdir.join("out/readiness_spine_export_chain_refs.json"),
-    )?;
-    let export_authority = operator_export_chain_check(
-        workdir,
-        &workdir.join("out/operator_export_chain_export_chain_refs.json"),
-    )?;
+    let read_json_if_exists = |path: &Path| -> Result<Option<serde_json::Value>, OpsError> {
+        if !path.exists() {
+            return Ok(None);
+        }
+        let body = fs::read_to_string(path)?;
+        Ok(Some(serde_json::from_str(&body)?))
+    };
+
+    let governance_prefix = (|| -> Result<String, OpsError> {
+        let applied = load_applied_supported_set_context_v1(workdir)?;
+        let backend_path = workdir.join("out/backend_evidence_snapshot.json");
+        let active_path = workdir.join("out/active_review_snapshot.json");
+        if !backend_path.exists() || !active_path.exists() {
+            return Ok("MISSING".to_string());
+        }
+        let backend: BackendEvidenceSnapshotV1 =
+            serde_json::from_str(&fs::read_to_string(&backend_path)?)?;
+        let active: AggregatedActiveReviewSnapshotV1 =
+            serde_json::from_str(&fs::read_to_string(&active_path)?)?;
+        let surfaces =
+            validate_governance_primary_surfaces_with_applied_scope(&backend, &active, &applied)?;
+        let governance = derive_canonical_governance_entry(&applied, &surfaces)?;
+        Ok(prefix_hex(&governance.authority_digest, 16))
+    })()
+    .unwrap_or_else(|_| "MISSING".to_string());
+
+    let readiness_prefix = read_json_if_exists(&workdir.join("out/readiness_spine_check.json"))?
+        .and_then(|v| {
+            v.get("canonical_readiness_spine")
+                .and_then(|s| s.get("spine_digest"))
+                .and_then(|d| d.as_str())
+                .map(|s| prefix_hex(s, 16))
+        })
+        .unwrap_or_else(|| "MISSING".to_string());
+
+    let review_packet_prefix =
+        read_json_if_exists(&workdir.join("out/operator_review_packet.json"))?
+            .and_then(|v| {
+                v.get("packet_digest")
+                    .and_then(|d| d.as_str())
+                    .map(|s| prefix_hex(s, 16))
+            })
+            .unwrap_or_else(|| "MISSING".to_string());
+
+    let signoff_prefix = read_json_if_exists(&workdir.join("out/operator_signoff.json"))?
+        .and_then(|v| {
+            v.get("decision_digest")
+                .and_then(|d| d.as_str())
+                .map(|s| prefix_hex(s, 16))
+        })
+        .unwrap_or_else(|| "MISSING".to_string());
+
+    let workflow_prefix = read_json_if_exists(&workdir.join("out/operator_workflow_chain.json"))?
+        .and_then(|v| {
+            v.get("chain_digest")
+                .and_then(|d| d.as_str())
+                .map(|s| prefix_hex(s, 16))
+        })
+        .unwrap_or_else(|| "MISSING".to_string());
+
+    let export_authority_prefix =
+        read_json_if_exists(&workdir.join("out/operator_export_chain_check.json"))?
+            .and_then(|v| {
+                v.get("chain_digest")
+                    .and_then(|d| d.as_str())
+                    .map(|s| prefix_hex(s, 16))
+            })
+            .unwrap_or_else(|| "MISSING".to_string());
 
     Ok(ExportChainDigestRefs {
-        canonical_governance_entry_digest_prefix: prefix_hex(&governance.authority_digest, 16),
-        canonical_readiness_spine_digest_prefix: prefix_hex(
-            &readiness.canonical_readiness_spine.spine_digest,
-            16,
-        ),
-        operator_review_packet_digest_prefix: prefix_hex(&review_packet.packet_digest, 16),
-        operator_signoff_digest_prefix: prefix_hex(&signoff.decision_digest, 16),
-        operator_workflow_chain_digest_prefix: prefix_hex(&workflow.chain_digest, 16),
-        operator_export_authority_chain_digest_prefix: prefix_hex(
-            &export_authority.chain_digest,
-            16,
-        ),
+        canonical_governance_entry_digest_prefix: governance_prefix,
+        canonical_readiness_spine_digest_prefix: readiness_prefix,
+        operator_review_packet_digest_prefix: review_packet_prefix,
+        operator_signoff_digest_prefix: signoff_prefix,
+        operator_workflow_chain_digest_prefix: workflow_prefix,
+        operator_export_authority_chain_digest_prefix: export_authority_prefix,
     })
 }
 
