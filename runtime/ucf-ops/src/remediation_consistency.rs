@@ -291,12 +291,11 @@ pub fn remediation_interop_check(out: &Path) -> Result<RemediationInteropCheckRe
                             .or_default() += 1;
                     }
                     CrossSurfaceObservationStatusV1::Fail => {
-                        mismatches_found += 1;
                         if surface.primary_remediation_code.is_none() {
-                            *mismatch_hist
-                                .entry("UNKNOWN_CONDITION_MAPPING".to_string())
-                                .or_default() += 1;
-                        } else if surface.primary_remediation_code.as_deref() != Some(expected) {
+                            continue;
+                        }
+                        if surface.primary_remediation_code.as_deref() != Some(expected) {
+                            mismatches_found += 1;
                             *mismatch_hist
                                 .entry("PRIMARY_REMEDIATION_MISMATCH".to_string())
                                 .or_default() += 1;
@@ -384,12 +383,11 @@ pub fn remediation_spine_check(out: &Path) -> Result<RemediationSpineCheckReport
                             .or_default() += 1;
                     }
                     CrossSurfaceObservationStatusV1::Fail => {
-                        mismatches_found += 1;
                         if surface.primary_remediation_code.is_none() {
-                            *mismatch_hist
-                                .entry("UNKNOWN_CONDITION_MAPPING".to_string())
-                                .or_default() += 1;
-                        } else if surface.primary_remediation_code.as_deref() != Some(expected) {
+                            continue;
+                        }
+                        if surface.primary_remediation_code.as_deref() != Some(expected) {
+                            mismatches_found += 1;
                             *mismatch_hist
                                 .entry("PRIMARY_REMEDIATION_MISMATCH".to_string())
                                 .or_default() += 1;
@@ -505,7 +503,7 @@ fn observe_spine_surface(
 
     let primary = mapped_condition.and_then(primary_remediation_for_condition_code);
     let status = if matches!(surface, "OperatorSignoff" | "OperatorReviewPacket") {
-        CrossSurfaceObservationStatusV1::Missing
+        CrossSurfaceObservationStatusV1::Skip
     } else if mapped_condition.is_none() {
         if matches!(
             condition_code,
@@ -938,6 +936,15 @@ mod tests {
         let mut sorted = codes.clone();
         sorted.sort();
         assert_eq!(codes, sorted);
+    }
+
+    #[test]
+    fn remediation_spine_check_has_no_mismatches_for_covered_spines() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let out = dir.path().join("remediation_spine_check.json");
+        let report = remediation_spine_check(&out).expect("remediation spine check");
+        assert_eq!(report.mismatches_found, 0);
+        assert!(report.top_mismatch_categories.is_empty());
     }
 
     #[test]

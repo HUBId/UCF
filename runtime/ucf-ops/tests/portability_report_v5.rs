@@ -28,7 +28,7 @@ fn repo_root() -> PathBuf {
 }
 
 #[test]
-fn portability_report_v6_contains_new_sections_in_stable_order() {
+fn portability_report_v8_contains_new_sections_in_stable_order() {
     let _guard = CwdGuard::enter(&repo_root());
     let dir = tempfile::tempdir().expect("tempdir");
     let out = dir.path().join("out/portability_report.json");
@@ -85,6 +85,32 @@ fn portability_report_v6_contains_new_sections_in_stable_order() {
         .iter()
         .position(|c| c.contains("interop consistency-matrix"))
         .expect("interop matrix command present");
+    let governance_entry_idx = names
+        .iter()
+        .position(|c| c.contains("governance-entry-check"))
+        .expect("governance-entry-check command present");
+    let supported_execute_idx = names
+        .iter()
+        .position(|c| c.contains("models supported-scope-execute"))
+        .expect("supported-scope-execute command present");
+    let readiness_spine_idx = names
+        .iter()
+        .position(|c| c.contains("readiness-spine-check"))
+        .expect("readiness-spine-check command present");
+    let bundle_spine_idx = names
+        .iter()
+        .position(|c| c.contains("exports bundle-spine-check"))
+        .expect("bundle-spine-check command present");
+    let remediation_spine_idx = names
+        .iter()
+        .position(|c| c.contains("remediation-spine-check"))
+        .expect("remediation-spine-check command present");
+
+    assert!(governance_entry_idx < governance_idx);
+    assert!(supported_execute_idx < supported_apply_idx);
+    assert!(readiness_spine_idx < governance_idx);
+    assert!(bundle_spine_idx < governance_idx);
+    assert!(remediation_spine_idx < governance_idx);
 
     assert!(governance_idx < supported_reeval_idx);
     assert!(supported_reeval_idx < supported_apply_idx);
@@ -99,7 +125,7 @@ fn portability_report_v6_contains_new_sections_in_stable_order() {
 }
 
 #[test]
-fn portability_report_v6_skips_optional_backend_resolution_cleanly() {
+fn portability_report_v8_skips_optional_backend_resolution_cleanly() {
     let _guard = CwdGuard::enter(&repo_root());
     let dir = tempfile::tempdir().expect("tempdir");
     let out = PathBuf::from(dir.path()).join("out/portability_report.json");

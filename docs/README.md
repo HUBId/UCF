@@ -38,3 +38,16 @@
 - [Branch Policy](branch_policy.md)
 - [Contributing Workflow](contributing_workflow.md)
 - [Codex Instructions (AGENTS.md)](../AGENTS.md)
+
+
+## v8 portability/docs quick run
+
+```bash
+cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json
+cargo run -p ucf-ops -- spec artifact-schemas-check --out ./out/artifact_schema_check.json
+cargo run -p ucf-ops -- governance-entry-check --out ./out/governance_entry_check.json
+cargo run -p ucf-ops -- models supported-scope-execute --out ./out/supported_scope_execute_v3.json --workdir .
+cargo run -p ucf-ops -- readiness-spine-check --out ./out/readiness_spine_check.json
+cargo run -p ucf-ops -- exports bundle-spine-check --in ./out/repro_portability.zip --out ./out/bundle_spine_check.json
+cargo run -p ucf-ops -- remediation-spine-check --out ./out/remediation_spine_check.json
+```

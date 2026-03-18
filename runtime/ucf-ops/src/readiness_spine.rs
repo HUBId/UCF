@@ -129,8 +129,8 @@ pub fn readiness_spine_check(
         &workdir.join("out"),
         &StrictEvidenceContextV1 {
             run_id: None,
-            latest: true,
-            strict_required: false,
+            latest: false,
+            strict_required: true,
             expected_policy_graph_digest_prefix: Some(backend.policy_graph_digest_prefix.clone()),
             expected_manifest_digest_prefix: Some(backend.manifest_digest_prefix.clone()),
             expected_supported_slot_set_digest_prefix: Some(
@@ -148,7 +148,7 @@ pub fn readiness_spine_check(
         workdir,
         &OperatorSignoffArgs {
             run_id: None,
-            latest: true,
+            latest: false,
             profile: std::env::var("UCF_PROFILE").unwrap_or_else(|_| "test".to_string()),
         },
         &workdir.join("out/operator_signoff_readiness_spine_check.json"),
@@ -157,7 +157,7 @@ pub fn readiness_spine_check(
         workdir,
         &OperatorReviewPacketArgs {
             run_id: None,
-            latest: true,
+            latest: false,
         },
         &workdir.join("out/operator_review_packet_readiness_spine_check.json"),
     )?;
@@ -165,7 +165,7 @@ pub fn readiness_spine_check(
         workdir,
         &OperatorWorkflowArgs {
             run_id: None,
-            latest: true,
+            latest: false,
         },
         &workdir.join("out/operator_workflow_chain_readiness_spine_check.json"),
     )?;
