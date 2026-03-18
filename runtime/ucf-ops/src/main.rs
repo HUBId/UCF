@@ -20,25 +20,26 @@ use ucf_ops::{
     models_supported_scope_execute, models_supported_scope_reevaluate, models_supported_set_apply,
     models_supported_set_review, models_verify, models_verify_lifecycle, net_deps_audit,
     nightly_summarize, one_command_bringup, operator_export_chain_check, operator_report,
-    operator_report_text, operator_review_packet, operator_review_packet_text, operator_signoff,
-    operator_signoff_text, operator_workflow_chain, operator_workflow_chain_text, out_manifest,
-    parse_duration_secs, parse_inject, parse_slot, path_scan, policy_diff, policy_explain,
-    policy_validate, portability_check, portability_report, preflight, readiness_gate,
-    readiness_spine_check, release_build_rc, release_rc1_gate, release_signoff_validate,
-    remediation_consistency_check, remediation_interop_check, remediation_spine_check,
-    replay_audit, replay_bugreport, repro_pack, repro_verify, review_truth_check, run_status,
-    runs_list, runs_search, runs_show, save_counterfactual_result, scope_authority_check,
-    second_slot_parity_report, security_verify_chain, simulate_counterfactual, soak_run,
-    strict_check, strict_explain, troubleshoot, v0_gate, v1_smoke, v2_gate, v3_gate, v4_gate,
-    v5_gate, v6_gate, v7_gate, verify_bugreport, world_parity_report, world_shadow_report,
-    write_slice, AdversarialRunArgs, AirgapArtifactType, AirgapImportArgs, AirgapImportMode,
-    BenchArgs, BugKitBuildArgs, ChangeImpactArgs, ConfigV1, CounterfactualRequest, DevLoopArgs,
-    DocsLintArgs, DocsLintMode, DocsLintStatus, ExplainTickRequest, ExportArgs, GateStatus,
-    GoldenGenerateArgs, GoldenVerifyArgs, GoldenVerifyReport, GovernanceEntryCheckStatusV1,
-    NightlySummarizeArgs, OperatorReportArgs, OperatorReviewPacketArgs, OperatorSignoffArgs,
-    OperatorWorkflowArgs, ReleaseBuildRcArgs, SoakRunArgs, SpecSnapshotArgs,
-    StrictEvidenceContextV1, V2GateOverallStatus, V3GateOverallStatus, V4GateOverallStatus,
-    V5GateOverallStatus, V6GateOverallStatus, V7GateOverallStatus,
+    operator_report_text, operator_review_packet, operator_review_packet_text,
+    operator_roundtrip_chain_check, operator_signoff, operator_signoff_text,
+    operator_workflow_chain, operator_workflow_chain_text, out_manifest, parse_duration_secs,
+    parse_inject, parse_slot, path_scan, policy_diff, policy_explain, policy_validate,
+    portability_check, portability_report, preflight, readiness_gate, readiness_spine_check,
+    release_build_rc, release_rc1_gate, release_signoff_validate, remediation_consistency_check,
+    remediation_interop_check, remediation_spine_check, replay_audit, replay_bugreport, repro_pack,
+    repro_verify, review_truth_check, run_status, runs_list, runs_search, runs_show,
+    save_counterfactual_result, scope_authority_check, second_slot_parity_report,
+    security_verify_chain, simulate_counterfactual, soak_run, strict_check, strict_explain,
+    troubleshoot, v0_gate, v1_smoke, v2_gate, v3_gate, v4_gate, v5_gate, v6_gate, v7_gate,
+    verify_bugreport, world_parity_report, world_shadow_report, write_slice, AdversarialRunArgs,
+    AirgapArtifactType, AirgapImportArgs, AirgapImportMode, BenchArgs, BugKitBuildArgs,
+    ChangeImpactArgs, ConfigV1, CounterfactualRequest, DevLoopArgs, DocsLintArgs, DocsLintMode,
+    DocsLintStatus, ExplainTickRequest, ExportArgs, GateStatus, GoldenGenerateArgs,
+    GoldenVerifyArgs, GoldenVerifyReport, GovernanceEntryCheckStatusV1, NightlySummarizeArgs,
+    OperatorReportArgs, OperatorReviewPacketArgs, OperatorSignoffArgs, OperatorWorkflowArgs,
+    ReleaseBuildRcArgs, SoakRunArgs, SpecSnapshotArgs, StrictEvidenceContextV1,
+    V2GateOverallStatus, V3GateOverallStatus, V4GateOverallStatus, V5GateOverallStatus,
+    V6GateOverallStatus, V7GateOverallStatus,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -2017,9 +2018,32 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         std::process::exit(2);
                     }
                 }
+                "roundtrip-chain-check" => {
+                    let bundle = arg_value(&args, "--bundle")
+                        .map(PathBuf::from)
+                        .ok_or_else(|| {
+                            "usage: ucf-ops operator roundtrip-chain-check --bundle <path> --out ./out/operator_roundtrip_chain_check.json".to_string()
+                        })?;
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/operator_roundtrip_chain_check.json"));
+                    let chain = operator_roundtrip_chain_check(&workdir, &bundle, &out)?;
+                    println!("out={}", out.display());
+                    println!("roundtrip_status={:?}", chain.roundtrip_status);
+                    if !chain.blocking_codes.is_empty() {
+                        println!("blocking_codes={}", chain.blocking_codes.join(","));
+                        println!("primary_mismatch_code={}", chain.blocking_codes[0]);
+                    }
+                    if !matches!(
+                        chain.roundtrip_status,
+                        ucf_ops::CanonicalRoundTripChainStatusV1::Pass
+                    ) {
+                        std::process::exit(2);
+                    }
+                }
                 _ => {
                     return Err(
-                        "usage: ucf-ops operator <report|signoff|review-packet|review-truth-check|workflow|export-chain-check> [--run <id>] [--latest] [--text] [--out <path>]".into(),
+                        "usage: ucf-ops operator <report|signoff|review-packet|review-truth-check|workflow|export-chain-check|roundtrip-chain-check> [--run <id>] [--latest] [--text] [--bundle <path>] [--out <path>]".into(),
                     )
                 }
             }

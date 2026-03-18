@@ -28,6 +28,7 @@ mod readiness_spine;
 mod remediation;
 mod remediation_consistency;
 mod reviewability_truth;
+mod roundtrip_chain;
 mod scope_authority;
 mod second_slot_parity;
 mod soak;
@@ -158,6 +159,9 @@ pub use reviewability_truth::{
     reduce_reviewability, review_truth_check, slot_is_reviewable, ReviewTruthCheckReportV1,
     ReviewTruthCheckStatusV1, ReviewTruthMismatchCategoryV1, ReviewabilityAggregateReadinessV1,
     ReviewabilityReductionV1, SlotReviewabilityEvidenceDigestsV1, SlotReviewabilityTruthV1,
+};
+pub use roundtrip_chain::{
+    operator_roundtrip_chain_check, CanonicalRoundTripChainStatusV1, CanonicalRoundTripChainV1,
 };
 pub use scope_authority::{
     scope_authority_check, ScopeAuthorityCheckReportV1, ScopeAuthorityMismatchCategoryV1,
@@ -11165,6 +11169,16 @@ fn evaluate_bundle_spine(
         mismatch_codes.push("BUNDLE_SPINE_GOVERNANCE_MISMATCH".to_string());
         "MISSING".to_string()
     };
+    let related_governance_digest = input
+        .related_artifacts
+        .iter()
+        .find(|r| r.artifact_kind == "canonical_governance_entry")
+        .and_then(|r| r.artifact_digest.clone());
+    if let Some(related_governance_digest) = related_governance_digest {
+        if related_governance_digest != canonical_governance_entry_digest_prefix {
+            mismatch_codes.push("ROUNDTRIP_CHAIN_GOVERNANCE_ENTRY_MISMATCH".to_string());
+        }
+    }
 
     let canonical_readiness_spine_digest_prefix = input
         .related_artifacts
@@ -11180,6 +11194,7 @@ fn evaluate_bundle_spine(
             || readiness_digest_prefix.is_empty()
         {
             mismatch_codes.push("BUNDLE_SPINE_READINESS_MISMATCH".to_string());
+            mismatch_codes.push("ROUNDTRIP_CHAIN_READINESS_SPINE_MISMATCH".to_string());
         }
     } else if input
         .related_artifacts
@@ -11187,6 +11202,7 @@ fn evaluate_bundle_spine(
         .any(|r| r.artifact_kind == "canonical_readiness_spine")
     {
         mismatch_codes.push("BUNDLE_SPINE_READINESS_MISMATCH".to_string());
+        mismatch_codes.push("ROUNDTRIP_CHAIN_READINESS_SPINE_MISMATCH".to_string());
     }
 
     if input.roundtrip.mismatch_codes.iter().any(|c| {
@@ -11316,6 +11332,16 @@ fn evaluate_bundle_roundtrip_consistency(
     } else {
         BundleRoundTripMatchStatusV1::Match
     };
+    if let Some(signoff_chain_ref) = input
+        .related_artifacts
+        .iter()
+        .find(|r| r.artifact_kind == "operator_signoff_decision")
+        .and_then(|r| r.artifact_digest.clone())
+    {
+        if signoff_chain_ref != input.operator_signoff.digest_prefix {
+            mismatch_codes.push("ROUNDTRIP_CHAIN_SIGNOFF_MISMATCH".to_string());
+        }
+    }
 
     let layout_status = match input.export_layout_compatibility {
         CanonicalExportLayoutCompatibilityV1::Canonical => BundleRoundTripMatchStatusV1::Match,
@@ -11780,6 +11806,115 @@ fn canonical_export_ref_from_pack(
     Ok(out)
 }
 
+fn canonical_digest_only_ref(
+    artifact_kind: &str,
+    relative_path: &str,
+    digest_prefix: String,
+) -> Result<CanonicalExportArtifactRefV1, OpsError> {
+    let mut out = CanonicalExportArtifactRefV1 {
+        artifact_kind: artifact_kind.to_string(),
+        relative_path: relative_path.to_string(),
+        included_state: CanonicalArtifactIncludedStateV1::Skip,
+        sha256: None,
+        schema_version: None,
+        artifact_digest: Some(digest_prefix),
+        reason_code: Some("CHAIN_REF".to_string()),
+        ref_digest: String::new(),
+    };
+    out.ref_digest = canonical_artifact_ref_digest_hex(&out)?;
+    Ok(out)
+}
+
+#[derive(Debug, Clone)]
+struct ExportChainDigestRefs {
+    canonical_governance_entry_digest_prefix: String,
+    canonical_readiness_spine_digest_prefix: String,
+    operator_review_packet_digest_prefix: String,
+    operator_signoff_digest_prefix: String,
+    operator_workflow_chain_digest_prefix: String,
+    operator_export_authority_chain_digest_prefix: String,
+}
+
+fn derive_export_chain_digest_refs(workdir: &Path) -> Result<ExportChainDigestRefs, OpsError> {
+    let read_json_if_exists = |path: &Path| -> Result<Option<serde_json::Value>, OpsError> {
+        if !path.exists() {
+            return Ok(None);
+        }
+        let body = fs::read_to_string(path)?;
+        Ok(Some(serde_json::from_str(&body)?))
+    };
+
+    let governance_prefix = (|| -> Result<String, OpsError> {
+        let applied = load_applied_supported_set_context_v1(workdir)?;
+        let backend_path = workdir.join("out/backend_evidence_snapshot.json");
+        let active_path = workdir.join("out/active_review_snapshot.json");
+        if !backend_path.exists() || !active_path.exists() {
+            return Ok("MISSING".to_string());
+        }
+        let backend: BackendEvidenceSnapshotV1 =
+            serde_json::from_str(&fs::read_to_string(&backend_path)?)?;
+        let active: AggregatedActiveReviewSnapshotV1 =
+            serde_json::from_str(&fs::read_to_string(&active_path)?)?;
+        let surfaces =
+            validate_governance_primary_surfaces_with_applied_scope(&backend, &active, &applied)?;
+        let governance = derive_canonical_governance_entry(&applied, &surfaces)?;
+        Ok(prefix_hex(&governance.authority_digest, 16))
+    })()
+    .unwrap_or_else(|_| "MISSING".to_string());
+
+    let readiness_prefix = read_json_if_exists(&workdir.join("out/readiness_spine_check.json"))?
+        .and_then(|v| {
+            v.get("canonical_readiness_spine")
+                .and_then(|s| s.get("spine_digest"))
+                .and_then(|d| d.as_str())
+                .map(|s| prefix_hex(s, 16))
+        })
+        .unwrap_or_else(|| "MISSING".to_string());
+
+    let review_packet_prefix =
+        read_json_if_exists(&workdir.join("out/operator_review_packet.json"))?
+            .and_then(|v| {
+                v.get("packet_digest")
+                    .and_then(|d| d.as_str())
+                    .map(|s| prefix_hex(s, 16))
+            })
+            .unwrap_or_else(|| "MISSING".to_string());
+
+    let signoff_prefix = read_json_if_exists(&workdir.join("out/operator_signoff.json"))?
+        .and_then(|v| {
+            v.get("decision_digest")
+                .and_then(|d| d.as_str())
+                .map(|s| prefix_hex(s, 16))
+        })
+        .unwrap_or_else(|| "MISSING".to_string());
+
+    let workflow_prefix = read_json_if_exists(&workdir.join("out/operator_workflow_chain.json"))?
+        .and_then(|v| {
+            v.get("chain_digest")
+                .and_then(|d| d.as_str())
+                .map(|s| prefix_hex(s, 16))
+        })
+        .unwrap_or_else(|| "MISSING".to_string());
+
+    let export_authority_prefix =
+        read_json_if_exists(&workdir.join("out/operator_export_chain_check.json"))?
+            .and_then(|v| {
+                v.get("chain_digest")
+                    .and_then(|d| d.as_str())
+                    .map(|s| prefix_hex(s, 16))
+            })
+            .unwrap_or_else(|| "MISSING".to_string());
+
+    Ok(ExportChainDigestRefs {
+        canonical_governance_entry_digest_prefix: governance_prefix,
+        canonical_readiness_spine_digest_prefix: readiness_prefix,
+        operator_review_packet_digest_prefix: review_packet_prefix,
+        operator_signoff_digest_prefix: signoff_prefix,
+        operator_workflow_chain_digest_prefix: workflow_prefix,
+        operator_export_authority_chain_digest_prefix: export_authority_prefix,
+    })
+}
+
 fn canonical_prefix_or_missing(value: &str) -> String {
     if value.is_empty() {
         "MISSING".to_string()
@@ -12198,12 +12333,49 @@ pub fn bugkit_build(
         }
     }
 
+    let chain_refs = derive_export_chain_digest_refs(workdir)?;
     let mut related_artifacts = vec![
         canonical_export_ref_from_pack("backend_evidence_snapshot", &backend_evidence_snapshot)?,
         canonical_export_ref_from_pack("active_review_snapshot", &active_review_snapshot)?,
         canonical_export_ref_from_pack("operator_signoff", &operator_signoff)?,
         canonical_export_ref_from_pack("backend_resolution", &backend_resolution)?,
     ];
+    for (kind, path, digest) in [
+        (
+            "canonical_governance_entry",
+            "artifacts/canonical_governance_entry.ref",
+            chain_refs.canonical_governance_entry_digest_prefix,
+        ),
+        (
+            "canonical_readiness_spine",
+            "artifacts/canonical_readiness_spine.ref",
+            chain_refs.canonical_readiness_spine_digest_prefix,
+        ),
+        (
+            "operator_review_packet",
+            "artifacts/operator_review_packet.ref",
+            chain_refs.operator_review_packet_digest_prefix,
+        ),
+        (
+            "operator_signoff_decision",
+            "artifacts/operator_signoff_decision.ref",
+            chain_refs.operator_signoff_digest_prefix,
+        ),
+        (
+            "operator_workflow_chain",
+            "artifacts/operator_workflow_chain.ref",
+            chain_refs.operator_workflow_chain_digest_prefix,
+        ),
+        (
+            "operator_export_authority_chain",
+            "artifacts/operator_export_authority_chain.ref",
+            chain_refs.operator_export_authority_chain_digest_prefix,
+        ),
+    ] {
+        if digest != "MISSING" {
+            related_artifacts.push(canonical_digest_only_ref(kind, path, digest)?);
+        }
+    }
     related_artifacts.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
     let export_context = canonical_export_context_from_parts(
         &evidence_context,
@@ -12606,12 +12778,49 @@ pub fn repro_pack(
         });
     }
 
+    let chain_refs = derive_export_chain_digest_refs(workdir)?;
     let mut related_artifacts = vec![
         canonical_export_ref_from_pack("backend_evidence_snapshot", &backend_evidence_snapshot)?,
         canonical_export_ref_from_pack("active_review_snapshot", &active_review_snapshot)?,
         canonical_export_ref_from_pack("operator_signoff", &operator_signoff)?,
         canonical_export_ref_from_pack("backend_resolution", &backend_resolution)?,
     ];
+    for (kind, path, digest) in [
+        (
+            "canonical_governance_entry",
+            "artifacts/canonical_governance_entry.ref",
+            chain_refs.canonical_governance_entry_digest_prefix,
+        ),
+        (
+            "canonical_readiness_spine",
+            "artifacts/canonical_readiness_spine.ref",
+            chain_refs.canonical_readiness_spine_digest_prefix,
+        ),
+        (
+            "operator_review_packet",
+            "artifacts/operator_review_packet.ref",
+            chain_refs.operator_review_packet_digest_prefix,
+        ),
+        (
+            "operator_signoff_decision",
+            "artifacts/operator_signoff_decision.ref",
+            chain_refs.operator_signoff_digest_prefix,
+        ),
+        (
+            "operator_workflow_chain",
+            "artifacts/operator_workflow_chain.ref",
+            chain_refs.operator_workflow_chain_digest_prefix,
+        ),
+        (
+            "operator_export_authority_chain",
+            "artifacts/operator_export_authority_chain.ref",
+            chain_refs.operator_export_authority_chain_digest_prefix,
+        ),
+    ] {
+        if digest != "MISSING" {
+            related_artifacts.push(canonical_digest_only_ref(kind, path, digest)?);
+        }
+    }
     related_artifacts.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
     let export_context = canonical_export_context_from_parts(
         &evidence_context,

@@ -57,3 +57,6 @@ Als kanonischer End-to-End-Nachweis für Bundle-Kohärenz wird zusätzlich `expo
 cargo run -p ucf-ops -- exports bundle-spine-check --in <bundle.zip> --out ./out/bundle_spine_check.json
 ```
 
+
+## v8 continuity
+Use `operator roundtrip-chain-check` as the top-level proof that bundle roundtrip aligns with operator governance/readiness/workflow state.
