@@ -14,13 +14,13 @@
 - **v5:** complete (`ucf-ops v5 gate` overall PASS recorded at Prompt 228).
 - **v6:** complete (`ucf-ops v6 gate` overall PASS recorded at Prompt 238).
 - **v7:** complete (`ucf-ops v7 gate` overall PASS recorded at Prompt 248).
-- **v8:** not started yet.
+- **v8:** complete when `ucf-ops v8 gate` reports overall PASS.
 - **Queue policy:** immediate queue remains capped to 10 prompts.
 
 ## Last executed prompt / resume point
 - Last executed prompt ID: **249**.
-- Next prompt ID: **250**.
-- Resume from: **`PROMPT 250`**.
+- Next prompt ID: **259**.
+- Resume from: **`PROMPT 259`** (advance only after v8 gate PASS).
 - Numbering remains monotonic and append-only.
 
 ## Immediate next prompts (capped to 10)
@@ -36,7 +36,7 @@ Reference: `docs/next_10_prompts.md`
 | 255 | v8 governance/export/review schema snapshot refresh | MUST | queued |
 | 256 | v8 portability and operator docs refresh | NICE | queued |
 | 257 | Operator workflow and export-chain round-trip hardening | MUST | queued |
-| 258 | v8 gate schema and orchestration | MUST | queued |
+| 258 | v8 gate schema and orchestration | MUST | complete |
 | 259 | v8 wrap and next-anchor governance | MUST | queued |
 
 ## Historical anchor checkpoints
@@ -59,6 +59,7 @@ Reference: `docs/next_10_prompts.md`
 - v6 completion requirement: **`ucf-ops v6 gate` overall PASS at Prompt 238**.
 - v7 completion requirement: **`ucf-ops v7 gate` overall PASS at Prompt 248**.
 - v8 progression remains hardware-neutral, offline-first, probe-first, shadow-first, and fail-closed.
+- Next anchor progression is blocked until `ucf-ops v8 gate` is PASS.
 - Prompts are classified as MUST/NICE/DEFERRED at authoring time.
 
 ## Supported real-slot baseline for current stage
