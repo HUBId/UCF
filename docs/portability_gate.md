@@ -257,6 +257,7 @@ cargo run -p ucf-ops -- portability report --out ./out/portability_report.json
 
 - **FAIL**: blocking regression; command executed but returned non-pass status or errored.
 - **SKIP**: optional backend/report path unavailable; command section is non-blocking and must emit explicit skip reason.
+- **SKIP**: bounded readiness context unavailable (for example readiness spine emits only bounded-context drift categories in smoke mode); command section is non-blocking and must emit explicit skip reason.
 - Required docs/path/hardware/schema checks are expected to `PASS` on supported Linux/Windows setups.
 
 

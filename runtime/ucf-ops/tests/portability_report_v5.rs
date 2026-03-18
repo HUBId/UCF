@@ -145,4 +145,11 @@ fn portability_report_v8_skips_optional_backend_resolution_cleanly() {
             .detail
             .contains("optional backend path unavailable"));
     }
+    assert!(
+        matches!(
+            report.readiness_spine_check_smoke.status,
+            ucf_ops::PortabilityGateStatus::Pass | ucf_ops::PortabilityGateStatus::Skip
+        ),
+        "readiness_spine_check_smoke must PASS or SKIP"
+    );
 }

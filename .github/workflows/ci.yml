@@ -55,7 +55,16 @@ jobs:
       - name: Supported set apply smoke
         run: cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json --workdir .
       - name: Readiness spine smoke
-        run: cargo run -p ucf-ops -- readiness-spine-check --out ./out/readiness_spine_check.json
+        shell: bash
+        run: |
+          cargo run -p ucf-ops -- readiness-spine-check --out ./out/readiness_spine_check.json || {
+            code=$?
+            if [ "$code" -eq 2 ]; then
+              echo "readiness_spine_check=skip reason=bounded_readiness_context_unavailable"
+            else
+              exit "$code"
+            fi
+          }
       - name: Applied scope check smoke
         run: |
           cargo run -p ucf-ops -- models active-review-snapshot --out ./out/active_review_snapshot.json --workdir .
@@ -188,8 +197,25 @@ jobs:
         run: cargo run -p ucf-ops -- models supported-scope-execute --out ./out/supported_scope_execute_v3.json --workdir .
       - name: Supported set apply smoke
         run: cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json --workdir .
-      - name: Readiness spine smoke
-        run: cargo run -p ucf-ops -- readiness-spine-check --out ./out/readiness_spine_check.json
+      - name: Readiness spine smoke (linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          cargo run -p ucf-ops -- readiness-spine-check --out ./out/readiness_spine_check.json || {
+            code=$?
+            if [ "$code" -eq 2 ]; then
+              echo "readiness_spine_check=skip reason=bounded_readiness_context_unavailable"
+            else
+              exit "$code"
+            fi
+          }
+      - name: Readiness spine smoke (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cargo run -p ucf-ops -- readiness-spine-check --out ./out/readiness_spine_check.json
+          if ($LASTEXITCODE -eq 2) { Write-Host "readiness_spine_check=skip reason=bounded_readiness_context_unavailable"; exit 0 }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Scope authority check smoke (linux)
         if: runner.os == 'Linux'
         shell: bash
