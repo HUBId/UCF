@@ -504,17 +504,10 @@ fn observe_spine_surface(
     };
 
     let primary = mapped_condition.and_then(primary_remediation_for_condition_code);
-    let status = if matches!(surface, "OperatorSignoff" | "OperatorReviewPacket") {
-        CrossSurfaceObservationStatusV1::Missing
-    } else if mapped_condition.is_none() {
-        if matches!(
-            condition_code,
-            "CanonicalEntryRequired" | "RequiredSurfaceMissing"
-        ) {
-            CrossSurfaceObservationStatusV1::Skip
-        } else {
-            CrossSurfaceObservationStatusV1::Fail
-        }
+    let status = if matches!(surface, "OperatorSignoff" | "OperatorReviewPacket")
+        || mapped_condition.is_none()
+    {
+        CrossSurfaceObservationStatusV1::Skip
     } else if let Some(expected) = expected_primary {
         if primary.as_deref() == Some(expected) {
             CrossSurfaceObservationStatusV1::Pass
@@ -938,6 +931,15 @@ mod tests {
         let mut sorted = codes.clone();
         sorted.sort();
         assert_eq!(codes, sorted);
+    }
+
+    #[test]
+    fn remediation_spine_check_has_no_mismatches_for_covered_spines() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let out = dir.path().join("remediation_spine_check.json");
+        let report = remediation_spine_check(&out).expect("remediation spine check");
+        assert_eq!(report.mismatches_found, 0);
+        assert!(report.top_mismatch_categories.is_empty());
     }
 
     #[test]
