@@ -64,7 +64,7 @@ struct ArtifactSpec {
     enum_names: &'static [&'static str],
 }
 
-const ARTIFACT_SPECS: [ArtifactSpec; 35] = [
+const ARTIFACT_SPECS: [ArtifactSpec; 36] = [
     ArtifactSpec {
         artifact_id: "active_review_snapshot_v1",
         file_rel: "runtime/ucf-ops/src/models_lifecycle.rs",
@@ -221,6 +221,12 @@ const ARTIFACT_SPECS: [ArtifactSpec; 35] = [
         file_rel: "runtime/ucf-ops/src/operator_workflow.rs",
         type_name: "OperatorWorkflowChainV1",
         enum_names: &["OperatorWorkflowStageV2"],
+    },
+    ArtifactSpec {
+        artifact_id: "canonical_roundtrip_chain_v1",
+        file_rel: "runtime/ucf-ops/src/roundtrip_chain.rs",
+        type_name: "CanonicalRoundTripChainV1",
+        enum_names: &["CanonicalRoundTripChainStatusV1"],
     },
     ArtifactSpec {
         artifact_id: "strict_failure_report_v3",
