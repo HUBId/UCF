@@ -114,3 +114,12 @@ When `--out` is provided, lint writes deterministic JSON with per-check status a
      - `docs/export_roundtrip_v7.md`
      - `docs/remediation_interop_consistency_v7.md`
      - `docs/artifact_schema_snapshots.md`
+
+12. **v8 docs linkage consistency**
+   - Requires presence and portability/docs linkage for:
+     - `docs/canonical_governance_entry_v8.md`
+     - `docs/supported_scope_execution_v8.md`
+     - `docs/readiness_spine_v8.md`
+     - `docs/bundle_spine_v8.md`
+     - `docs/remediation_spine_consistency_v8.md`
+     - `docs/artifact_schema_snapshots.md`

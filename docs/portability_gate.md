@@ -1,4 +1,4 @@
-# Portability Gate v7 Refresh (Linux + Windows)
+# Portability Gate v8 Refresh (Linux + Windows)
 
 `Portability Gate` blocks merges when core runtime/ops checks are not cross-platform safe.
 
@@ -13,8 +13,11 @@
      - `cargo run -p ucf-ops -- audit net-deps --out ./out/net_deps.json`
      - `cargo run -p ucf-ops -- spec artifact-schemas-check --out ./out/artifact_schema_check.json`
      - `cargo run -p ucf-ops -- governance-surfaces-check --out ./out/governance_surfaces_check.json`
+     - `cargo run -p ucf-ops -- governance-entry-check --out ./out/governance_entry_check.json`
      - `cargo run -p ucf-ops -- scope authority-check --out ./out/scope_authority_check.json`
      - `cargo run -p ucf-ops -- models supported-scope-reevaluate --out ./out/supported_scope_reeval.json --workdir .`
+     - `cargo run -p ucf-ops -- models supported-scope-execute --out ./out/supported_scope_execute_v3.json --workdir .`
+     - `cargo run -p ucf-ops -- readiness-spine-check --out ./out/readiness_spine_check.json`
      - `cargo run -p ucf-ops -- operator review-truth-check --out ./out/review_truth_check.json`
      - `cargo run -p ucf-ops -- models supported-set-review --out ./out/supported_set_review.json --workdir .`
      - `cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json --workdir .`
@@ -39,8 +42,11 @@
      - `cargo run -p ucf-ops -- audit hardware-scan`
      - `cargo run -p ucf-ops -- spec artifact-schemas-check --out ./out/artifact_schema_check.json`
      - `cargo run -p ucf-ops -- governance-surfaces-check --out ./out/governance_surfaces_check.json`
+     - `cargo run -p ucf-ops -- governance-entry-check --out ./out/governance_entry_check.json`
      - `cargo run -p ucf-ops -- scope authority-check --out ./out/scope_authority_check.json`
      - `cargo run -p ucf-ops -- models supported-scope-reevaluate --out ./out/supported_scope_reeval.json --workdir .`
+     - `cargo run -p ucf-ops -- models supported-scope-execute --out ./out/supported_scope_execute_v3.json --workdir .`
+     - `cargo run -p ucf-ops -- readiness-spine-check --out ./out/readiness_spine_check.json`
      - `cargo run -p ucf-ops -- operator review-truth-check --out ./out/review_truth_check.json`
      - `cargo run -p ucf-ops -- models supported-set-review --out ./out/supported_set_review.json --workdir .`
      - `cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json --workdir .`
@@ -59,7 +65,12 @@
      - `cargo run -p ucf-ops -- portability check --out ./out/portability.json`
      - `cargo run -p ucf-ops -- portability report --out ./out/portability_report.json`
 
-2. **v7 generation smoke checks (blocking unless explicitly optional)**
+2. **v8 generation smoke checks (blocking unless explicitly optional)**
+   - `governance-entry-check` must pass and preserve canonical governance entry usage across consumers.
+   - `models supported-scope-execute` must produce deterministic bounded execution decisions.
+   - `readiness-spine-check` must emit deterministic mismatch categories and remediation codes.
+   - `exports bundle-spine-check` must reconstruct canonical bundle spine deterministically from bounded fixture bundles.
+   - `remediation-spine-check` must map canonical conditions/remediations consistently across scope/governance/readiness/bundle surfaces.
    - `models active-review-snapshot` and `models backend-resolution` must run in bounded offline mode (optional backend-resolution paths must SKIP cleanly).
    - Enriched export smokes (`repro pack` + `repro verify`, `bugkit build`) must generate deterministic manifests with bounded fixtures and no payload/weight inclusion by default.
    - `remediation-consistency-check` must pass and emit deterministic mismatch categories.
@@ -74,7 +85,7 @@
    - `audit net-deps` (Linux lane): hidden network dependency drift is blocked.
 
 4. **Docs consistency (via `docs lint --strict`)**
-   - Enforces v3 + v4 + v5 docs consistency and linkage.
+   - Enforces v3 + v4 + v5 + v6 + v7 + v8 docs consistency and linkage.
    - Enforces remediation registry doc freshness.
    - Enforces artifact schema snapshot freshness and deterministic drift reporting.
 
@@ -89,6 +100,15 @@
 - `docs/applied_supported_scope_v6.md`
 - `docs/export_normalization_v6.md`
 - `docs/interop_consistency_v6.md`
+- `docs/artifact_schema_snapshots.md`
+
+## v8 docs covered by portability/docs gates
+
+- `docs/canonical_governance_entry_v8.md`
+- `docs/supported_scope_execution_v8.md`
+- `docs/readiness_spine_v8.md`
+- `docs/bundle_spine_v8.md`
+- `docs/remediation_spine_consistency_v8.md`
 - `docs/artifact_schema_snapshots.md`
 
 ## v5 docs covered by portability/docs gates
@@ -132,7 +152,10 @@ cargo run -p ucf-ops -- audit hardware-scan
 cargo run -p ucf-ops -- audit net-deps --out ./out/net_deps.json
 cargo run -p ucf-ops -- spec artifact-schemas-check --out ./out/artifact_schema_check.json
 cargo run -p ucf-ops -- governance-surfaces-check --out ./out/governance_surfaces_check.json
+cargo run -p ucf-ops -- governance-entry-check --out ./out/governance_entry_check.json
 cargo run -p ucf-ops -- models supported-set-review --out ./out/supported_set_review.json --workdir .
+cargo run -p ucf-ops -- models supported-scope-execute --out ./out/supported_scope_execute_v3.json --workdir .
+cargo run -p ucf-ops -- readiness-spine-check --out ./out/readiness_spine_check.json
 cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json --workdir .
 cargo run -p ucf-ops -- models applied-scope-check --out ./out/applied_scope_check.json --workdir .
 cargo run -p ucf-ops -- exports normalize-check --out ./out/export_normalize_check.json
@@ -145,12 +168,14 @@ run_id=$(basename "$run_json" .json)
 cargo run -p ucf-ops -- repro pack --run "$run_id" --out ./out/repro_portability.zip --workdir ./.ucf_portability_smoke
 cargo run -p ucf-ops -- repro verify --pack ./out/repro_portability.zip --out ./out/repro_verify_portability.json --workdir ./.ucf_portability_smoke
 cargo run -p ucf-ops -- exports roundtrip-check --in ./out/repro_portability.zip --out ./out/export_roundtrip_check.json
+cargo run -p ucf-ops -- exports bundle-spine-check --in ./out/repro_portability.zip --out ./out/bundle_spine_check.json
 mkdir -p ./.ucf_portability_smoke/out/$run_id
 cp ./out/portability_smoke_bringup/run_metadata.json ./.ucf_portability_smoke/out/$run_id/run_metadata.json
 cp ./out/portability_smoke_bringup/metrics_summary.json ./.ucf_portability_smoke/out/$run_id/metrics_summary.json
 cargo run -p ucf-ops -- bugkit build --run "$run_id" --out ./out/bugkit_portability.zip --workdir ./.ucf_portability_smoke
 cargo run -p ucf-ops -- remediation-consistency-check --out ./out/remediation_consistency_portability.json
 cargo run -p ucf-ops -- remediation-interop-check --out ./out/remediation_interop_check.json
+cargo run -p ucf-ops -- remediation-spine-check --out ./out/remediation_spine_check.json
 cargo run -p ucf-ops -- models evidence-snapshot --out ./out/backend_evidence_snapshot.json
 cargo run -p ucf-ops -- operator signoff --out ./out/operator_signoff.json
 cargo run -p ucf-ops -- docs remediation-codes --out ./out/remediation_codes_v1.generated.md
@@ -174,6 +199,9 @@ cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json
 cargo run -p ucf-ops -- audit path-scan
 cargo run -p ucf-ops -- audit hardware-scan
 cargo run -p ucf-ops -- spec artifact-schemas-check --out ./out/artifact_schema_check.json
+cargo run -p ucf-ops -- governance-entry-check --out ./out/governance_entry_check.json
+cargo run -p ucf-ops -- models supported-scope-execute --out ./out/supported_scope_execute_v3.json --workdir .
+cargo run -p ucf-ops -- readiness-spine-check --out ./out/readiness_spine_check.json
 cargo run -p ucf-ops -- models active-review-snapshot --out ./out/active_review_snapshot.json
 cargo run -p ucf-ops -- models backend-resolution --slot sae --out ./out/backend_resolution_sae.json
 if ($LASTEXITCODE -ne 0) { Write-Host "backend_resolution=skip optional_second_slot_path_unavailable"; $global:LASTEXITCODE = 0 }
@@ -184,12 +212,14 @@ $run_id = [System.IO.Path]::GetFileNameWithoutExtension($run_json.Name)
 cargo run -p ucf-ops -- repro pack --run $run_id --out ./out/repro_portability.zip --workdir ./.ucf_portability_smoke
 cargo run -p ucf-ops -- repro verify --pack ./out/repro_portability.zip --out ./out/repro_verify_portability.json --workdir ./.ucf_portability_smoke
 cargo run -p ucf-ops -- exports roundtrip-check --in ./out/repro_portability.zip --out ./out/export_roundtrip_check.json
+cargo run -p ucf-ops -- exports bundle-spine-check --in ./out/repro_portability.zip --out ./out/bundle_spine_check.json
 New-Item -ItemType Directory -Force -Path ".\.ucf_portability_smoke\out\$run_id" | Out-Null
 Copy-Item "./out/portability_smoke_bringup/run_metadata.json" ".\.ucf_portability_smoke\out\$run_id\run_metadata.json"
 Copy-Item "./out/portability_smoke_bringup/metrics_summary.json" ".\.ucf_portability_smoke\out\$run_id\metrics_summary.json"
 cargo run -p ucf-ops -- bugkit build --run $run_id --out ./out/bugkit_portability.zip --workdir ./.ucf_portability_smoke
 cargo run -p ucf-ops -- remediation-consistency-check --out ./out/remediation_consistency_portability.json
 cargo run -p ucf-ops -- remediation-interop-check --out ./out/remediation_interop_check.json
+cargo run -p ucf-ops -- remediation-spine-check --out ./out/remediation_spine_check.json
 cargo run -p ucf-ops -- models evidence-snapshot --out ./out/backend_evidence_snapshot.json
 cargo run -p ucf-ops -- operator signoff --out ./out/operator_signoff.json
 cargo run -p ucf-ops -- docs remediation-codes --out ./out/remediation_codes_v1.generated.md
@@ -227,6 +257,8 @@ cargo run -p ucf-ops -- portability report --out ./out/portability_report.json
 
 - **FAIL**: blocking regression; command executed but returned non-pass status or errored.
 - **SKIP**: optional backend/report path unavailable; command section is non-blocking and must emit explicit skip reason.
+- **SKIP**: bounded readiness context unavailable (for example readiness spine emits only bounded-context drift categories in smoke mode); command section is non-blocking and must emit explicit skip reason.
+- **SKIP**: bounded remediation context unavailable (for example remediation spine reports only `MISSING_SURFACE` / `UNKNOWN_CONDITION_MAPPING` categories in smoke mode); command section is non-blocking and must emit explicit skip reason.
 - Required docs/path/hardware/schema checks are expected to `PASS` on supported Linux/Windows setups.
 
 
@@ -246,4 +278,13 @@ cargo run -p ucf-ops -- portability report --out ./out/portability_report.json
 - `docs/reviewability_truth_v7.md`
 - `docs/export_roundtrip_v7.md`
 - `docs/remediation_interop_consistency_v7.md`
+- `docs/artifact_schema_snapshots.md`
+
+## v8 docs coverage
+
+- `docs/canonical_governance_entry_v8.md`
+- `docs/supported_scope_execution_v8.md`
+- `docs/readiness_spine_v8.md`
+- `docs/bundle_spine_v8.md`
+- `docs/remediation_spine_consistency_v8.md`
 - `docs/artifact_schema_snapshots.md`
