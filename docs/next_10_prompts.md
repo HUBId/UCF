@@ -1,85 +1,85 @@
-# Next 10 Prompts (v8 Anchor)
+# Next 10 Prompts (v9 Anchor)
 
-Anchor: `Real Compute Onboarding v8` (precondition: `ucf-ops v7 gate` PASS at Prompt 248)
+Anchor: `Real Compute Onboarding v9` (precondition: `ucf-ops v8 gate` PASS at Prompt 258)
 
 > Guardrail: This queue is capped to **10** entries unless an explicit request expands it.
 
-## Prompt 250 (MUST) — Applied-scope authority and governance-primary surface unification
-Objective: Unify every remaining governance/export consumer around applied-scope authority and governance-primary surfaces.
+## Prompt 260 (MUST) — Canonical governance entry and supported-set context unification
+Objective: Unify every remaining canonical consumer around `CanonicalGovernanceEntry` plus `AppliedSupportedSetContext` as the sole governance entry path.
 - Acceptance:
-  - All active governance/export consumers source applied-scope authority from canonical primary surfaces.
-  - Inconsistencies fail closed with deterministic, evidence-bounded diagnostics.
+  - All active governance/review/export/gate consumers read governance authority from `CanonicalGovernanceEntry` plus `AppliedSupportedSetContext`.
+  - Legacy or parallel governance-entry reads are removed or fail closed with deterministic diagnostics.
   - Behavior remains hardware-neutral, offline-first, and runtime-semantics preserving.
-- Dependencies: 248, 249.
+- Dependencies: 258, 259.
 
-## Prompt 251 (MUST) — Supported-scope expansion under live reevaluation authority
-Objective: Execute supported-scope expansion only if current reevaluation explicitly justifies it; otherwise reaffirm freeze.
+## Prompt 261 (MUST) — Supported-scope reevaluation-controlled expansion or reaffirmed freeze
+Objective: Re-execute supported-scope expansion only if current execution plus canonical governance state still justify it; otherwise reaffirm freeze.
 - Acceptance:
-  - Expansion proceeds only with explicit applied authority plus reevaluation plus evidence support.
+  - Scope expansion requires explicit canonical governance authority, current supported-scope execution support, and evidence continuity.
   - If justification is insufficient, supported scope remains frozen with explicit fail-closed reporting.
   - Probe-first and shadow-first progression remains explicit on all affected paths.
-- Dependencies: 250.
+- Dependencies: 260.
 
-## Prompt 252 (MUST) — Shared reviewability/signoff/operator-workflow truth deepening
-Objective: Deepen shared reviewability, signoff, and operator-workflow truth for the current applied scope.
+## Prompt 262 (MUST) — Canonical readiness-spine consumption deepening
+Objective: Deepen canonical readiness-spine consumption across all remaining operator/gate/export consumers.
 - Acceptance:
-  - Review/signoff/operator artifacts remain semantically aligned for applied scope authority.
-  - Missing prerequisites or authority mismatch fail closed with bounded diagnostics.
+  - All remaining consumers use one canonical readiness spine contract and ordering.
+  - Missing or stale readiness prerequisites fail closed with bounded, deterministic diagnostics.
   - No runtime capability widening is introduced.
-- Dependencies: 250, 251.
+- Dependencies: 260, 261.
 
-## Prompt 253 (MUST) — Canonical export bundle build/verify/inspect normalization
-Objective: Normalize export bundle build/verify/inspect semantics fully around canonical bundle-consumption context.
+## Prompt 263 (MUST) — Canonical bundle spine build/verify/inspect normalization
+Objective: Normalize bundle build/verify/inspect semantics completely around `CanonicalBundleSpine` and round-trip continuity.
 - Acceptance:
-  - Build/verify/inspect paths consume one canonical export bundle contract and ordering.
-  - Round-trip checks remain deterministic and offline-reproducible.
-  - Existing governance/review/export evidence surfaces are reused instead of re-derived when available.
-- Dependencies: 250, 252.
+  - Build/verify/inspect paths consume one canonical bundle spine contract.
+  - Operator→export→bundle round-trip checks remain deterministic and offline-reproducible.
+  - Governance/readiness evidence is reused from canonical surfaces instead of re-derived when available.
+- Dependencies: 260, 262.
 
-## Prompt 254 (MUST) — Remediation/interoperability consistency hardening
-Objective: Harden remediation and interoperability consistency across all active v8 governance/export/review surfaces.
+## Prompt 264 (MUST) — Canonical remediation and interop continuity hardening
+Objective: Harden canonical remediation/interop semantics across governance entry, readiness spine, bundle spine, and gate family.
 - Acceptance:
-  - Equivalent evidence states produce consistent remediation/status semantics across surfaces.
+  - Equivalent evidence states produce consistent remediation/status outcomes across all covered surfaces.
   - Divergence is detected deterministically and handled fail closed.
   - Interop semantics remain bounded, hardware-neutral, and evidence-bound.
-- Dependencies: 252, 253.
+- Dependencies: 262, 263.
 
-## Prompt 255 (MUST) — v8 schema snapshot refresh for governance/export/review/workflow artifacts
-Objective: Refresh schema snapshots for v8 governance/export/review/workflow artifacts after normalization/hardening.
+## Prompt 265 (MUST) — v9 schema snapshot refresh for governance/scope/readiness/bundle/workflow artifacts
+Objective: Refresh schema snapshots for v9 governance/scope/readiness/bundle/workflow artifacts after normalization and hardening.
 - Acceptance:
-  - Updated schema snapshots reflect current v8 artifact contracts with deterministic ordering.
+  - Updated snapshots reflect current canonical contracts with deterministic ordering.
   - Versioning and compatibility notes are documented for changed artifacts.
   - Snapshot outputs remain reproducible offline.
-- Dependencies: 253, 254.
+- Dependencies: 263, 264.
 
-## Prompt 256 (NICE) — Portability and operator-doc refresh for v8 surfaces
-Objective: Refresh portability and operator-facing docs for v8 governance/review/export surfaces.
+## Prompt 266 (NICE) — Portability and operator-doc refresh for v9 surfaces
+Objective: Refresh portability and operator-facing documentation for v9 governance/scope/readiness/bundle surfaces.
 - Acceptance:
-  - Operator docs reflect v8 conservative path expectations and evidence requirements.
+  - Operator docs reflect conservative v9 path expectations and evidence requirements.
   - Portability guidance remains hardware-neutral and offline-first.
-  - Documentation updates avoid introducing behavior-changing policy semantics.
-- Dependencies: 255.
+  - Documentation updates avoid behavior-changing policy semantics.
+- Dependencies: 265.
 
-## Prompt 257 (MUST) — Operator workflow and export-chain canonical round-trip hardening
-Objective: Harden operator workflow and export-chain guarantees with stronger canonical round-trip checks.
+## Prompt 267 (MUST) — Operator workflow and export-chain continuity hardening
+Objective: Harden operator workflow/export chain behavior with stronger canonical continuity requirements.
 - Acceptance:
-  - Workflow/export chain checks enforce canonical round-trip invariants across active v8 surfaces.
+  - Workflow/export continuity checks enforce canonical invariants across active v9 surfaces.
   - Failures emit bounded, actionable, deterministic diagnostics.
   - Probe-first/shadow-first/fail-closed guarantees remain explicit and preserved.
-- Dependencies: 254, 255, 256.
+- Dependencies: 264, 265, 266.
 
-## Prompt 258 (MUST) — v8 gate schema and orchestration
-Objective: Define and wire v8 gate schema and orchestration for consolidated governance/review/export assurances.
+## Prompt 268 (MUST) — v9 gate schema and orchestration
+Objective: Define and wire v9 gate schema and orchestration for consolidated governance/scope/readiness/bundle continuity assurances.
 - Acceptance:
-  - v8 gate verifies required v8 surfaces with deterministic ordering and normalized status semantics.
+  - v9 gate verifies required v9 surfaces with deterministic ordering and normalized status semantics.
   - Required-surface mismatches fail closed with explicit evidence references.
   - Gate semantics remain conservative and do not widen runtime behavior.
-- Dependencies: 257.
+- Dependencies: 267.
 
-## Prompt 259 (MUST) — v8 wrap and next-anchor governance
-Objective: Close v8 planning loop and prepare next-anchor governance artifacts after v8 gate readiness.
+## Prompt 269 (MUST) — v9 wrap and next-anchor governance
+Objective: Close v9 planning loop and prepare next-anchor governance artifacts after v9 gate readiness.
 - Acceptance:
-  - v8 wrap artifacts record closure state and next-anchor handoff points.
+  - v9 wrap artifacts record closure state and next-anchor handoff points.
   - Next prompt queue remains capped to 10 entries unless explicitly expanded.
-  - Wrap output remains hardware-neutral, offline-first, and evidence-bound.
-- Dependencies: 258.
+  - Wrap output remains hardware-neutral, offline-first, probe-first, shadow-first, fail-closed, and evidence-bound.
+- Dependencies: 268.

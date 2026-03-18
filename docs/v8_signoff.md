@@ -41,3 +41,6 @@ The authoritative scope for this gate is the **current applied supported scope**
 
 ## Phase framing
 v8 is a governance/scope/readiness/export-continuity hardening phase. It is not a compute-feature expansion phase.
+
+## Post-v8 continuation note
+After `ucf-ops v8 gate` PASS, continue at Prompt 260 via `docs/next_10_prompts.md`.
