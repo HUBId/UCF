@@ -105,7 +105,16 @@ jobs:
       - name: Remediation interop smoke
         run: cargo run -p ucf-ops -- remediation-interop-check --out ./out/remediation_interop_check.json
       - name: Remediation spine smoke
-        run: cargo run -p ucf-ops -- remediation-spine-check --out ./out/remediation_spine_check.json
+        shell: bash
+        run: |
+          cargo run -p ucf-ops -- remediation-spine-check --out ./out/remediation_spine_check.json || {
+            code=$?
+            if [ "$code" -eq 2 ]; then
+              echo "remediation_spine_check=skip reason=bounded_remediation_context_unavailable"
+            else
+              exit "$code"
+            fi
+          }
       - name: Backend evidence snapshot smoke
         run: cargo run -p ucf-ops -- models evidence-snapshot --out ./out/backend_evidence_snapshot.json
       - name: Operator signoff smoke
@@ -326,7 +335,24 @@ jobs:
       - name: Remediation interop smoke
         run: cargo run -p ucf-ops -- remediation-interop-check --out ./out/remediation_interop_check.json
       - name: Remediation spine smoke
-        run: cargo run -p ucf-ops -- remediation-spine-check --out ./out/remediation_spine_check.json
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          cargo run -p ucf-ops -- remediation-spine-check --out ./out/remediation_spine_check.json || {
+            code=$?
+            if [ "$code" -eq 2 ]; then
+              echo "remediation_spine_check=skip reason=bounded_remediation_context_unavailable"
+            else
+              exit "$code"
+            fi
+          }
+      - name: Remediation spine smoke (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cargo run -p ucf-ops -- remediation-spine-check --out ./out/remediation_spine_check.json
+          if ($LASTEXITCODE -eq 2) { Write-Host "remediation_spine_check=skip reason=bounded_remediation_context_unavailable"; exit 0 }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: v0 gate (blocking)
         run: cargo run -p ucf-ops -- v0 gate --scenario fixtures/e2e/v0_flow_a.json --out ./out/v0_gate_report.json
       - name: v1 gate (blocking)

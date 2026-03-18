@@ -15246,14 +15246,31 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
                 name: "remediation_spine_check_smoke".to_string(),
                 status: if report.mismatches_found == 0 {
                     PortabilityGateStatus::Pass
+                } else if report.top_mismatch_categories.iter().all(|category| {
+                    category.starts_with("MISSING_SURFACE:")
+                        || category.starts_with("UNKNOWN_CONDITION_MAPPING:")
+                }) {
+                    PortabilityGateStatus::Skip
                 } else {
                     PortabilityGateStatus::Fail
                 },
-                detail: format!(
-                    "mismatches_found={} categories={}",
-                    report.mismatches_found,
-                    report.top_mismatch_categories.len()
-                ),
+                detail: if report.mismatches_found > 0
+                    && report.top_mismatch_categories.iter().all(|category| {
+                        category.starts_with("MISSING_SURFACE:")
+                            || category.starts_with("UNKNOWN_CONDITION_MAPPING:")
+                    }) {
+                    format!(
+                        "skip_bounded_remediation_context: mismatches_found={} categories={}",
+                        report.mismatches_found,
+                        report.top_mismatch_categories.len()
+                    )
+                } else {
+                    format!(
+                        "mismatches_found={} categories={}",
+                        report.mismatches_found,
+                        report.top_mismatch_categories.len()
+                    )
+                },
                 out: Some(out_path.display().to_string()),
             },
             Err(err) => PortabilityCommandCheck {

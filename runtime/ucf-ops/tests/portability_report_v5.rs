@@ -152,4 +152,11 @@ fn portability_report_v8_skips_optional_backend_resolution_cleanly() {
         ),
         "readiness_spine_check_smoke must PASS or SKIP"
     );
+    assert!(
+        matches!(
+            report.remediation_spine_check_smoke.status,
+            ucf_ops::PortabilityGateStatus::Pass | ucf_ops::PortabilityGateStatus::Skip
+        ),
+        "remediation_spine_check_smoke must PASS or SKIP"
+    );
 }
