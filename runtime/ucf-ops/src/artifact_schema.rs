@@ -748,6 +748,7 @@ mod tests {
                 "canonical_export_context_v1",
                 "canonical_governance_entry_v1",
                 "canonical_readiness_spine_v1",
+                "canonical_roundtrip_chain_v1",
                 "cross_surface_condition_observation_v1",
                 "cross_surface_context_matrix_v1",
                 "governance_primary_surfaces_v1",

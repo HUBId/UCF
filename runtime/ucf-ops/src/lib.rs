@@ -11174,10 +11174,10 @@ fn evaluate_bundle_spine(
         .iter()
         .find(|r| r.artifact_kind == "canonical_governance_entry")
         .and_then(|r| r.artifact_digest.clone());
-    if related_governance_digest.as_deref()
-        != Some(canonical_governance_entry_digest_prefix.as_str())
-    {
-        mismatch_codes.push("ROUNDTRIP_CHAIN_GOVERNANCE_ENTRY_MISMATCH".to_string());
+    if let Some(related_governance_digest) = related_governance_digest {
+        if related_governance_digest != canonical_governance_entry_digest_prefix {
+            mismatch_codes.push("ROUNDTRIP_CHAIN_GOVERNANCE_ENTRY_MISMATCH".to_string());
+        }
     }
 
     let canonical_readiness_spine_digest_prefix = input
@@ -11203,33 +11203,6 @@ fn evaluate_bundle_spine(
     {
         mismatch_codes.push("BUNDLE_SPINE_READINESS_MISMATCH".to_string());
         mismatch_codes.push("ROUNDTRIP_CHAIN_READINESS_SPINE_MISMATCH".to_string());
-    } else {
-        mismatch_codes.push("ROUNDTRIP_CHAIN_READINESS_SPINE_MISMATCH".to_string());
-    }
-
-    for (kind, code) in [
-        (
-            "operator_review_packet",
-            "ROUNDTRIP_CHAIN_REVIEW_PACKET_MISMATCH",
-        ),
-        (
-            "operator_workflow_chain",
-            "ROUNDTRIP_CHAIN_WORKFLOW_MISMATCH",
-        ),
-        (
-            "operator_signoff_decision",
-            "ROUNDTRIP_CHAIN_SIGNOFF_MISMATCH",
-        ),
-    ] {
-        let present = input
-            .related_artifacts
-            .iter()
-            .find(|r| r.artifact_kind == kind)
-            .and_then(|r| r.artifact_digest.clone())
-            .is_some_and(|d| !d.is_empty());
-        if !present {
-            mismatch_codes.push(code.to_string());
-        }
     }
 
     if input.roundtrip.mismatch_codes.iter().any(|c| {
@@ -11368,8 +11341,6 @@ fn evaluate_bundle_roundtrip_consistency(
         if signoff_chain_ref != input.operator_signoff.digest_prefix {
             mismatch_codes.push("ROUNDTRIP_CHAIN_SIGNOFF_MISMATCH".to_string());
         }
-    } else if input.operator_signoff.digest_prefix.is_empty() {
-        mismatch_codes.push("ROUNDTRIP_CHAIN_SIGNOFF_MISMATCH".to_string());
     }
 
     let layout_status = match input.export_layout_compatibility {
@@ -12368,37 +12339,43 @@ pub fn bugkit_build(
         canonical_export_ref_from_pack("active_review_snapshot", &active_review_snapshot)?,
         canonical_export_ref_from_pack("operator_signoff", &operator_signoff)?,
         canonical_export_ref_from_pack("backend_resolution", &backend_resolution)?,
-        canonical_digest_only_ref(
+    ];
+    for (kind, path, digest) in [
+        (
             "canonical_governance_entry",
             "artifacts/canonical_governance_entry.ref",
             chain_refs.canonical_governance_entry_digest_prefix,
-        )?,
-        canonical_digest_only_ref(
+        ),
+        (
             "canonical_readiness_spine",
             "artifacts/canonical_readiness_spine.ref",
             chain_refs.canonical_readiness_spine_digest_prefix,
-        )?,
-        canonical_digest_only_ref(
+        ),
+        (
             "operator_review_packet",
             "artifacts/operator_review_packet.ref",
             chain_refs.operator_review_packet_digest_prefix,
-        )?,
-        canonical_digest_only_ref(
+        ),
+        (
             "operator_signoff_decision",
             "artifacts/operator_signoff_decision.ref",
             chain_refs.operator_signoff_digest_prefix,
-        )?,
-        canonical_digest_only_ref(
+        ),
+        (
             "operator_workflow_chain",
             "artifacts/operator_workflow_chain.ref",
             chain_refs.operator_workflow_chain_digest_prefix,
-        )?,
-        canonical_digest_only_ref(
+        ),
+        (
             "operator_export_authority_chain",
             "artifacts/operator_export_authority_chain.ref",
             chain_refs.operator_export_authority_chain_digest_prefix,
-        )?,
-    ];
+        ),
+    ] {
+        if digest != "MISSING" {
+            related_artifacts.push(canonical_digest_only_ref(kind, path, digest)?);
+        }
+    }
     related_artifacts.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
     let export_context = canonical_export_context_from_parts(
         &evidence_context,
@@ -12807,37 +12784,43 @@ pub fn repro_pack(
         canonical_export_ref_from_pack("active_review_snapshot", &active_review_snapshot)?,
         canonical_export_ref_from_pack("operator_signoff", &operator_signoff)?,
         canonical_export_ref_from_pack("backend_resolution", &backend_resolution)?,
-        canonical_digest_only_ref(
+    ];
+    for (kind, path, digest) in [
+        (
             "canonical_governance_entry",
             "artifacts/canonical_governance_entry.ref",
             chain_refs.canonical_governance_entry_digest_prefix,
-        )?,
-        canonical_digest_only_ref(
+        ),
+        (
             "canonical_readiness_spine",
             "artifacts/canonical_readiness_spine.ref",
             chain_refs.canonical_readiness_spine_digest_prefix,
-        )?,
-        canonical_digest_only_ref(
+        ),
+        (
             "operator_review_packet",
             "artifacts/operator_review_packet.ref",
             chain_refs.operator_review_packet_digest_prefix,
-        )?,
-        canonical_digest_only_ref(
+        ),
+        (
             "operator_signoff_decision",
             "artifacts/operator_signoff_decision.ref",
             chain_refs.operator_signoff_digest_prefix,
-        )?,
-        canonical_digest_only_ref(
+        ),
+        (
             "operator_workflow_chain",
             "artifacts/operator_workflow_chain.ref",
             chain_refs.operator_workflow_chain_digest_prefix,
-        )?,
-        canonical_digest_only_ref(
+        ),
+        (
             "operator_export_authority_chain",
             "artifacts/operator_export_authority_chain.ref",
             chain_refs.operator_export_authority_chain_digest_prefix,
-        )?,
-    ];
+        ),
+    ] {
+        if digest != "MISSING" {
+            related_artifacts.push(canonical_digest_only_ref(kind, path, digest)?);
+        }
+    }
     related_artifacts.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
     let export_context = canonical_export_context_from_parts(
         &evidence_context,
