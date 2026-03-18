@@ -7,8 +7,8 @@ use crate::{
     derive_canonical_governance_entry, governance_surfaces_check, interop_consistency_matrix,
     load_applied_supported_set_context_v1, models_active_review_snapshot, models_evidence_snapshot,
     operator_review_packet, operator_signoff, operator_workflow_chain, prefix_hex,
-    validate_governance_primary_surfaces_with_applied_scope, OperatorReviewPacketArgs,
-    OperatorSignoffArgs, OperatorWorkflowArgs, OpsError,
+    require_canonical_governance_entry, validate_governance_primary_surfaces_with_applied_scope,
+    OperatorReviewPacketArgs, OperatorSignoffArgs, OperatorWorkflowArgs, OpsError,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -56,6 +56,7 @@ pub fn governance_entry_check(
     let surfaces =
         validate_governance_primary_surfaces_with_applied_scope(&backend, &active, &applied)?;
     let entry = derive_canonical_governance_entry(&applied, &surfaces)?;
+    let entry = require_canonical_governance_entry(&applied, Some(&entry))?;
     let expected_scope = entry.applied_supported_set_digest_prefix.clone();
 
     let signoff = operator_signoff(

@@ -15,6 +15,7 @@ mod drift;
 mod formal_invariants;
 mod goldens;
 mod governance_entry_check;
+mod governance_entry_sweep;
 mod governance_surfaces;
 mod interop_consistency;
 mod models_lifecycle;
@@ -52,8 +53,10 @@ pub use artifact_schema::{
 pub use bench::{bench_run, BenchArgs, BenchReport};
 pub use canonical_governance_entry::{
     canonical_entry_from_optional, derive_canonical_governance_entry,
-    CanonicalGovernanceEntryStatusV1, CanonicalGovernanceEntryV1, CANONICAL_ENTRY_REQUIRED,
-    GOVERNANCE_PRIMARY_SURFACES_REQUIRED, SECONDARY_ENTRY_PATH_BLOCKED,
+    require_canonical_governance_entry, CanonicalGovernanceEntryStatusV1,
+    CanonicalGovernanceEntryV1, CANONICAL_ENTRY_REQUIRED, CANONICAL_GOVERNANCE_ENTRY_REQUIRED,
+    GOVERNANCE_ENTRY_SCOPE_MISMATCH, GOVERNANCE_PRIMARY_SURFACES_REQUIRED,
+    SECONDARY_ENTRY_PATH_BLOCKED,
 };
 pub use causal::{
     causal_slice, event_id_for_decision, event_id_for_record, explain_why,
@@ -79,6 +82,11 @@ pub use goldens::{
 pub use governance_entry_check::{
     governance_entry_check, GovernanceEntryCheckReportV1, GovernanceEntryCheckStatusV1,
     GovernanceEntryConsumerResultV1, GovernanceEntryMismatchCategoryV1,
+};
+pub use governance_entry_sweep::{
+    governance_entry_sweep, CanonicalGovernanceEntryAuthorityV2, GovernanceEntryAuthorityStatusV2,
+    GovernanceEntrySweepMismatchCategoryV1, GovernanceEntrySweepReportV1,
+    GovernanceEntrySweepSurfaceStatusV1,
 };
 pub use governance_surfaces::{
     validate_governance_primary_surfaces, validate_governance_primary_surfaces_from_workdir,

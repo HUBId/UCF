@@ -35,3 +35,7 @@ If reevaluation returns `EXECUTE_EXPAND_BY_ONE`, apply may add exactly one slot 
 
 
 See also canonical entrypoint rule: docs/canonical_governance_entry_v8.md
+
+## v9 continuity
+
+Applied scope authority is now consumed through the universal canonical governance entry sweep for covered canonical surfaces.

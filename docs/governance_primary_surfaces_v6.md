@@ -55,3 +55,7 @@ Canonical surfaces now require applied-scope authority from `AppliedSupportedSet
 
 
 See also canonical entrypoint rule: docs/canonical_governance_entry_v8.md
+
+## v9 continuity
+
+Governance primary surfaces are now enforced through `CanonicalGovernanceEntryV1` + `AppliedSupportedSetContextV1` as universal canonical entrypoint via `governance-entry-sweep`.

@@ -8,7 +8,7 @@ use crate::{
     derive_canonical_governance_entry, derive_slot_reviewability_truths,
     load_applied_supported_set_context_v1, models_active_review_snapshot, models_evidence_snapshot,
     operator_review_packet, operator_signoff, operator_workflow_chain, prefix_hex,
-    reduce_reviewability, resolve_strict_evidence,
+    reduce_reviewability, require_canonical_governance_entry, resolve_strict_evidence,
     validate_governance_primary_surfaces_with_applied_scope, AppliedSupportedSetContextV1,
     CanonicalGovernanceEntryV1, OperatorReviewPacketArgs, OperatorReviewPacketV1,
     OperatorSignoffArgs, OperatorSignoffDecisionV1, OperatorWorkflowArgs, OperatorWorkflowChainV1,
@@ -143,6 +143,7 @@ pub fn readiness_spine_check(
     let surfaces =
         validate_governance_primary_surfaces_with_applied_scope(&backend, &active, &applied_scope)?;
     let entry = derive_canonical_governance_entry(&applied_scope, &surfaces)?;
+    let entry = require_canonical_governance_entry(&applied_scope, Some(&entry))?;
 
     let signoff = operator_signoff(
         workdir,

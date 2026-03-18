@@ -5,6 +5,9 @@ use crate::{
 };
 
 pub const CANONICAL_ENTRY_REQUIRED: &str = "CANONICAL_ENTRY_REQUIRED";
+pub const APPLIED_SCOPE_REQUIRED: &str = "APPLIED_SCOPE_REQUIRED";
+pub const CANONICAL_GOVERNANCE_ENTRY_REQUIRED: &str = "CANONICAL_GOVERNANCE_ENTRY_REQUIRED";
+pub const GOVERNANCE_ENTRY_SCOPE_MISMATCH: &str = "GOVERNANCE_ENTRY_SCOPE_MISMATCH";
 pub const GOVERNANCE_PRIMARY_SURFACES_REQUIRED: &str = "GOVERNANCE_PRIMARY_SURFACES_REQUIRED";
 pub const SECONDARY_ENTRY_PATH_BLOCKED: &str = "SECONDARY_ENTRY_PATH_BLOCKED";
 
@@ -54,7 +57,7 @@ pub fn canonical_entry_from_optional(
     surfaces: Option<&GovernancePrimarySurfacesV1>,
 ) -> Result<CanonicalGovernanceEntryV1, OpsError> {
     let Some(applied) = applied else {
-        return Err(OpsError::Invalid("APPLIED_SCOPE_REQUIRED".to_string()));
+        return Err(OpsError::Invalid(APPLIED_SCOPE_REQUIRED.to_string()));
     };
     let Some(surfaces) = surfaces else {
         return Err(OpsError::Invalid(
@@ -62,4 +65,26 @@ pub fn canonical_entry_from_optional(
         ));
     };
     derive_canonical_governance_entry(applied, surfaces)
+}
+
+pub fn require_canonical_governance_entry(
+    applied: &AppliedSupportedSetContextV1,
+    entry: Option<&CanonicalGovernanceEntryV1>,
+) -> Result<CanonicalGovernanceEntryV1, OpsError> {
+    let Some(entry) = entry else {
+        return Err(OpsError::Invalid(
+            CANONICAL_GOVERNANCE_ENTRY_REQUIRED.to_string(),
+        ));
+    };
+    if entry.applied_supported_set_digest_prefix != applied.applied_set_digest_prefix
+        || entry.applied_context_digest_prefix != prefix_hex(&applied.context_digest, 16)
+    {
+        return Err(OpsError::Invalid(
+            GOVERNANCE_ENTRY_SCOPE_MISMATCH.to_string(),
+        ));
+    }
+    if !matches!(entry.entry_status, CanonicalGovernanceEntryStatusV1::Pass) {
+        return Err(OpsError::Invalid(SECONDARY_ENTRY_PATH_BLOCKED.to_string()));
+    }
+    Ok(entry.clone())
 }
