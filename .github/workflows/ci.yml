@@ -46,10 +46,16 @@ jobs:
         run: cargo run -p ucf-ops -- spec artifact-schemas-check --out ./out/artifact_schema_check.json
       - name: Governance primary surfaces smoke
         run: cargo run -p ucf-ops -- governance-surfaces-check --out ./out/governance_surfaces_check.json
+      - name: Governance entry smoke
+        run: cargo run -p ucf-ops -- governance-entry-check --out ./out/governance_entry_check.json
       - name: Supported set review smoke (prereq)
         run: cargo run -p ucf-ops -- models supported-set-review --out ./out/supported_set_review.json --workdir .
+      - name: Supported scope execute smoke
+        run: cargo run -p ucf-ops -- models supported-scope-execute --out ./out/supported_scope_execute_v3.json --workdir .
       - name: Supported set apply smoke
         run: cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json --workdir .
+      - name: Readiness spine smoke
+        run: cargo run -p ucf-ops -- readiness-spine-check --out ./out/readiness_spine_check.json
       - name: Applied scope check smoke
         run: |
           cargo run -p ucf-ops -- models active-review-snapshot --out ./out/active_review_snapshot.json --workdir .
@@ -75,6 +81,7 @@ jobs:
           cargo run -p ucf-ops -- repro pack --run "$run_id" --out ./out/repro_portability.zip --workdir ./.ucf_portability_smoke
           cargo run -p ucf-ops -- repro verify --pack ./out/repro_portability.zip --out ./out/repro_verify_portability.json --workdir ./.ucf_portability_smoke
           cargo run -p ucf-ops -- exports roundtrip-check --in ./out/repro_portability.zip --out ./out/export_roundtrip_check.json
+          cargo run -p ucf-ops -- exports bundle-spine-check --in ./out/repro_portability.zip --out ./out/bundle_spine_check.json
       - name: Bugkit build smoke
         shell: bash
         run: |
@@ -88,6 +95,8 @@ jobs:
         run: cargo run -p ucf-ops -- remediation-consistency-check --out ./out/remediation_consistency_portability.json
       - name: Remediation interop smoke
         run: cargo run -p ucf-ops -- remediation-interop-check --out ./out/remediation_interop_check.json
+      - name: Remediation spine smoke
+        run: cargo run -p ucf-ops -- remediation-spine-check --out ./out/remediation_spine_check.json
       - name: Backend evidence snapshot smoke
         run: cargo run -p ucf-ops -- models evidence-snapshot --out ./out/backend_evidence_snapshot.json
       - name: Operator signoff smoke
@@ -171,10 +180,16 @@ jobs:
         run: cargo run -p ucf-ops -- spec artifact-schemas-check --out ./out/artifact_schema_check.json
       - name: Governance primary surfaces smoke
         run: cargo run -p ucf-ops -- governance-surfaces-check --out ./out/governance_surfaces_check.json
+      - name: Governance entry smoke
+        run: cargo run -p ucf-ops -- governance-entry-check --out ./out/governance_entry_check.json
       - name: Supported set review smoke (prereq)
         run: cargo run -p ucf-ops -- models supported-set-review --out ./out/supported_set_review.json --workdir .
+      - name: Supported scope execute smoke
+        run: cargo run -p ucf-ops -- models supported-scope-execute --out ./out/supported_scope_execute_v3.json --workdir .
       - name: Supported set apply smoke
         run: cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json --workdir .
+      - name: Readiness spine smoke
+        run: cargo run -p ucf-ops -- readiness-spine-check --out ./out/readiness_spine_check.json
       - name: Scope authority check smoke (linux)
         if: runner.os == 'Linux'
         shell: bash
@@ -246,6 +261,7 @@ jobs:
           cargo run -p ucf-ops -- repro pack --run "$run_id" --out ./out/repro_portability.zip --workdir ./.ucf_portability_smoke
           cargo run -p ucf-ops -- repro verify --pack ./out/repro_portability.zip --out ./out/repro_verify_portability.json --workdir ./.ucf_portability_smoke
           cargo run -p ucf-ops -- exports roundtrip-check --in ./out/repro_portability.zip --out ./out/export_roundtrip_check.json
+          cargo run -p ucf-ops -- exports bundle-spine-check --in ./out/repro_portability.zip --out ./out/bundle_spine_check.json
       - name: Repro pack build+verify smoke (windows)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -257,6 +273,7 @@ jobs:
           cargo run -p ucf-ops -- repro pack --run $run_id --out ./out/repro_portability.zip --workdir ./.ucf_portability_smoke
           cargo run -p ucf-ops -- repro verify --pack ./out/repro_portability.zip --out ./out/repro_verify_portability.json --workdir ./.ucf_portability_smoke
           cargo run -p ucf-ops -- exports roundtrip-check --in ./out/repro_portability.zip --out ./out/export_roundtrip_check.json
+          cargo run -p ucf-ops -- exports bundle-spine-check --in ./out/repro_portability.zip --out ./out/bundle_spine_check.json
       - name: Bugkit build smoke (linux)
         if: runner.os == 'Linux'
         shell: bash
@@ -282,6 +299,8 @@ jobs:
         run: cargo run -p ucf-ops -- remediation-consistency-check --out ./out/remediation_consistency_portability.json
       - name: Remediation interop smoke
         run: cargo run -p ucf-ops -- remediation-interop-check --out ./out/remediation_interop_check.json
+      - name: Remediation spine smoke
+        run: cargo run -p ucf-ops -- remediation-spine-check --out ./out/remediation_spine_check.json
       - name: v0 gate (blocking)
         run: cargo run -p ucf-ops -- v0 gate --scenario fixtures/e2e/v0_flow_a.json --out ./out/v0_gate_report.json
       - name: v1 gate (blocking)
