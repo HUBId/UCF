@@ -68,6 +68,7 @@ pub fn docs_lint(args: &DocsLintArgs) -> Result<DocsLintReport, OpsError> {
         v6_docs_consistency_check(args)?,
         v7_docs_consistency_check(args)?,
         v8_docs_consistency_check(args)?,
+        v9_docs_consistency_check(args)?,
         remediation_registry_doc_check(args)?,
         artifact_schema_snapshot_check(args)?,
     ];
@@ -480,6 +481,46 @@ fn hardware_neutral_docs_check(args: &DocsLintArgs) -> Result<DocsLintCheck, Ops
                 .repo_root
                 .join("docs")
                 .join("remediation_spine_consistency_v8.md"),
+            false,
+        ),
+        (
+            "canonical_governance_entry_sweep_v9",
+            &args
+                .repo_root
+                .join("docs")
+                .join("canonical_governance_entry_sweep_v9.md"),
+            false,
+        ),
+        (
+            "supported_scope_execution_v9",
+            &args
+                .repo_root
+                .join("docs")
+                .join("supported_scope_execution_v9.md"),
+            false,
+        ),
+        (
+            "canonical_readiness_sweep_v9",
+            &args
+                .repo_root
+                .join("docs")
+                .join("canonical_readiness_sweep_v9.md"),
+            false,
+        ),
+        (
+            "canonical_bundle_sweep_v9",
+            &args
+                .repo_root
+                .join("docs")
+                .join("canonical_bundle_sweep_v9.md"),
+            false,
+        ),
+        (
+            "primary_semantics_sweep_v9",
+            &args
+                .repo_root
+                .join("docs")
+                .join("primary_semantics_sweep_v9.md"),
             false,
         ),
     ];
@@ -1195,6 +1236,117 @@ fn v8_docs_consistency_check(args: &DocsLintArgs) -> Result<DocsLintCheck, OpsEr
     })
 }
 
+fn v9_docs_consistency_check(args: &DocsLintArgs) -> Result<DocsLintCheck, OpsError> {
+    let required = [
+        "docs/canonical_governance_entry_sweep_v9.md",
+        "docs/supported_scope_execution_v9.md",
+        "docs/canonical_readiness_sweep_v9.md",
+        "docs/canonical_bundle_sweep_v9.md",
+        "docs/primary_semantics_sweep_v9.md",
+        "docs/artifact_schema_snapshots.md",
+    ];
+    for path in required {
+        if !args.repo_root.join(path).exists() {
+            return Ok(DocsLintCheck {
+                name: "v9_docs_consistency".to_string(),
+                status: DocsLintStatus::Fail,
+                detail: format!("missing required v9 doc: {path}"),
+                remediation: Some("restore missing v9 docs and re-run docs lint".to_string()),
+            });
+        }
+    }
+
+    let portability_gate = fs::read_to_string(args.repo_root.join("docs/portability_gate.md"))?;
+    let docs_checks = fs::read_to_string(args.repo_root.join("docs/docs_checks.md"))?;
+
+    let missing = [
+        (
+            "docs/portability_gate.md",
+            "canonical_governance_entry_sweep_v9.md",
+            portability_gate.contains("canonical_governance_entry_sweep_v9.md"),
+        ),
+        (
+            "docs/portability_gate.md",
+            "supported_scope_execution_v9.md",
+            portability_gate.contains("supported_scope_execution_v9.md"),
+        ),
+        (
+            "docs/portability_gate.md",
+            "canonical_readiness_sweep_v9.md",
+            portability_gate.contains("canonical_readiness_sweep_v9.md"),
+        ),
+        (
+            "docs/portability_gate.md",
+            "canonical_bundle_sweep_v9.md",
+            portability_gate.contains("canonical_bundle_sweep_v9.md"),
+        ),
+        (
+            "docs/portability_gate.md",
+            "primary_semantics_sweep_v9.md",
+            portability_gate.contains("primary_semantics_sweep_v9.md"),
+        ),
+        (
+            "docs/portability_gate.md",
+            "artifact_schema_snapshots.md",
+            portability_gate.contains("artifact_schema_snapshots.md"),
+        ),
+        (
+            "docs/docs_checks.md",
+            "docs/canonical_governance_entry_sweep_v9.md",
+            docs_checks.contains("docs/canonical_governance_entry_sweep_v9.md"),
+        ),
+        (
+            "docs/docs_checks.md",
+            "docs/supported_scope_execution_v9.md",
+            docs_checks.contains("docs/supported_scope_execution_v9.md"),
+        ),
+        (
+            "docs/docs_checks.md",
+            "docs/canonical_readiness_sweep_v9.md",
+            docs_checks.contains("docs/canonical_readiness_sweep_v9.md"),
+        ),
+        (
+            "docs/docs_checks.md",
+            "docs/canonical_bundle_sweep_v9.md",
+            docs_checks.contains("docs/canonical_bundle_sweep_v9.md"),
+        ),
+        (
+            "docs/docs_checks.md",
+            "docs/primary_semantics_sweep_v9.md",
+            docs_checks.contains("docs/primary_semantics_sweep_v9.md"),
+        ),
+        (
+            "docs/docs_checks.md",
+            "docs/artifact_schema_snapshots.md",
+            docs_checks.contains("docs/artifact_schema_snapshots.md"),
+        ),
+    ]
+    .into_iter()
+    .filter_map(|(file, needle, present)| {
+        (!present).then_some(format!("{file} missing `{needle}`"))
+    })
+    .collect::<Vec<_>>();
+
+    if !missing.is_empty() {
+        return Ok(DocsLintCheck {
+            name: "v9_docs_consistency".to_string(),
+            status: DocsLintStatus::Fail,
+            detail: format!("v9 docs linkage mismatch: {}", missing.join("; ")),
+            remediation: Some(
+                "link v9 docs from portability/docs checks and keep docs references in sync"
+                    .to_string(),
+            ),
+        });
+    }
+
+    Ok(DocsLintCheck {
+        name: "v9_docs_consistency".to_string(),
+        status: DocsLintStatus::Pass,
+        detail: "v9 docs are present and linked from portability/docs checks".to_string(),
+        remediation: None,
+    })
+}
+
 fn cargo_metadata_package_names(repo_root: &Path) -> Result<BTreeSet<String>, OpsError> {
     let output = Command::new("cargo")
         .arg("metadata")
@@ -1349,7 +1501,8 @@ mod tests {
         first_diff_line, hardware_neutral_docs_check, parse_module_map_keys, parse_prompt_ids,
         remediation_registry_doc_check, v3_docs_consistency_check, v4_docs_consistency_check,
         v5_docs_consistency_check, v6_docs_consistency_check, v7_docs_consistency_check,
-        v8_docs_consistency_check, DocsLintArgs, DocsLintMode, DocsLintStatus,
+        v8_docs_consistency_check, v9_docs_consistency_check, DocsLintArgs, DocsLintMode,
+        DocsLintStatus,
     };
     use std::path::PathBuf;
 
@@ -2047,5 +2200,51 @@ mod tests {
         })
         .expect("check");
         assert_eq!(check.status, DocsLintStatus::Fail);
+    }
+
+    #[test]
+    fn v9_docs_consistency_requires_links() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let docs = dir.path().join("docs");
+        std::fs::create_dir_all(&docs).expect("mkdir");
+        std::fs::write(docs.join("prompt_series_index.md"), "| 266 | x |\n").expect("write");
+        std::fs::write(docs.join("prompt_rulebook.md"), "# Rules\n").expect("write");
+        std::fs::write(docs.join("deploy_portable.md"), "# Deploy\n").expect("write");
+        std::fs::write(docs.join("module_map.md"), "- **ucf-ops**: x\n").expect("write");
+        std::fs::write(docs.join("spec_snapshot.md"), "# x\n").expect("write");
+        std::fs::write(
+            docs.join("portability_gate.md"),
+            "canonical_governance_entry_sweep_v9.md supported_scope_execution_v9.md canonical_readiness_sweep_v9.md canonical_bundle_sweep_v9.md primary_semantics_sweep_v9.md artifact_schema_snapshots.md\n",
+        )
+        .expect("write");
+        std::fs::write(
+            docs.join("docs_checks.md"),
+            "docs/canonical_governance_entry_sweep_v9.md docs/supported_scope_execution_v9.md docs/canonical_readiness_sweep_v9.md docs/canonical_bundle_sweep_v9.md docs/primary_semantics_sweep_v9.md docs/artifact_schema_snapshots.md\n",
+        )
+        .expect("write");
+        for name in [
+            "canonical_governance_entry_sweep_v9.md",
+            "supported_scope_execution_v9.md",
+            "canonical_readiness_sweep_v9.md",
+            "canonical_bundle_sweep_v9.md",
+            "primary_semantics_sweep_v9.md",
+            "artifact_schema_snapshots.md",
+        ] {
+            std::fs::write(docs.join(name), "# x\n").expect("write");
+        }
+
+        let check = v9_docs_consistency_check(&DocsLintArgs {
+            repo_root: dir.path().to_path_buf(),
+            policy_pack: PathBuf::from("policies/packs/base_v1"),
+            overlay_pack: None,
+            spec_snapshot: docs.join("spec_snapshot.md"),
+            prompt_index: docs.join("prompt_series_index.md"),
+            module_map: docs.join("module_map.md"),
+            deploy_doc: docs.join("deploy_portable.md"),
+            artifact_schema_snapshot_dir: docs.join("artifact_schema_snapshots"),
+            mode: DocsLintMode::Strict,
+        })
+        .expect("check");
+        assert_eq!(check.status, DocsLintStatus::Pass);
     }
 }

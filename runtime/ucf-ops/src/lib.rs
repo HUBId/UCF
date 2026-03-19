@@ -14577,11 +14577,15 @@ pub struct PortabilityReportV1 {
     pub artifact_schema_snapshot_check: PortabilityCommandCheck,
     pub governance_surfaces_smoke: PortabilityCommandCheck,
     pub governance_entry_check_smoke: PortabilityCommandCheck,
+    pub governance_entry_sweep_smoke: PortabilityCommandCheck,
     pub scope_authority_check_smoke: PortabilityCommandCheck,
     pub supported_scope_reevaluate_smoke: PortabilityCommandCheck,
     pub supported_scope_execute_smoke: PortabilityCommandCheck,
     pub readiness_spine_check_smoke: PortabilityCommandCheck,
+    pub readiness_spine_sweep_smoke: PortabilityCommandCheck,
     pub bundle_spine_check_smoke: PortabilityCommandCheck,
+    pub bundle_spine_sweep_smoke: PortabilityCommandCheck,
+    pub primary_semantics_sweep_smoke: PortabilityCommandCheck,
     pub remediation_spine_check_smoke: PortabilityCommandCheck,
     pub supported_set_apply_smoke: PortabilityCommandCheck,
     pub review_truth_check_smoke: PortabilityCommandCheck,
@@ -15518,6 +15522,60 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
             },
         }
     };
+    let governance_entry_sweep_smoke = {
+        let out_path = PathBuf::from("./out/governance_entry_sweep.json");
+        let prep = (|| -> Result<(), OpsError> {
+            let review_out = PathBuf::from("./out/supported_set_review.json");
+            let reeval_out = PathBuf::from("./out/supported_scope_reeval.json");
+            let apply_out = PathBuf::from("./out/supported_set_apply.json");
+            models_supported_set_review(workdir, &review_out)?;
+            models_supported_scope_reevaluate(workdir, &reeval_out)?;
+            let _ = models_supported_set_apply(workdir, &apply_out)?;
+            Ok(())
+        })();
+        let result = prep.and_then(|_| governance_entry_sweep(workdir, &out_path));
+        match result {
+            Ok(report) => PortabilityCommandCheck {
+                name: "governance_entry_sweep_smoke".to_string(),
+                status: if matches!(
+                    report.authority.authority_status,
+                    GovernanceEntryAuthorityStatusV2::Pass
+                ) {
+                    PortabilityGateStatus::Pass
+                } else {
+                    PortabilityGateStatus::Fail
+                },
+                detail: format!(
+                    "authority_status={:?} surfaces={}",
+                    report.authority.authority_status,
+                    report.surfaces.len()
+                ),
+                out: Some(out_path.display().to_string()),
+            },
+            Err(err) => {
+                let detail = err.to_string();
+                let skip = detail.contains(LEGACY_SCOPE_PATH_BLOCKED)
+                    || detail.contains(APPLIED_SCOPE_REQUIRED)
+                    || detail.contains(APPLIED_SCOPE_MISSING)
+                    || detail.contains(APPLIED_SCOPE_TRANSLATION_FAILED)
+                    || detail.contains("SUPPORTED_SET_POLICY_V2_MISSING");
+                PortabilityCommandCheck {
+                    name: "governance_entry_sweep_smoke".to_string(),
+                    status: if skip {
+                        PortabilityGateStatus::Skip
+                    } else {
+                        PortabilityGateStatus::Fail
+                    },
+                    detail: if skip {
+                        format!("skip_optional_scope_path: {detail}")
+                    } else {
+                        detail
+                    },
+                    out: Some(out_path.display().to_string()),
+                }
+            }
+        }
+    };
     let scope_authority_check_smoke = {
         let out_path = PathBuf::from("./out/scope_authority_check.json");
         let prep = (|| -> Result<(), OpsError> {
@@ -15649,6 +15707,44 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
             },
         }
     };
+    let readiness_spine_sweep_smoke = {
+        let out_path = PathBuf::from("./out/readiness_spine_sweep.json");
+        let prep = (|| -> Result<(), OpsError> {
+            let review_out = PathBuf::from("./out/supported_set_review.json");
+            let reeval_out = PathBuf::from("./out/supported_scope_reeval.json");
+            let apply_out = PathBuf::from("./out/supported_set_apply.json");
+            models_supported_set_review(workdir, &review_out)?;
+            models_supported_scope_reevaluate(workdir, &reeval_out)?;
+            let _ = models_supported_set_apply(workdir, &apply_out)?;
+            Ok(())
+        })();
+        let result = prep.and_then(|_| readiness_spine_sweep(workdir, &out_path));
+        match result {
+            Ok(report) => PortabilityCommandCheck {
+                name: "readiness_spine_sweep_smoke".to_string(),
+                status: if matches!(
+                    report.authority.authority_status,
+                    CanonicalReadinessAuthorityStatusV2::Pass
+                ) {
+                    PortabilityGateStatus::Pass
+                } else {
+                    PortabilityGateStatus::Fail
+                },
+                detail: format!(
+                    "authority_status={:?} surfaces={}",
+                    report.authority.authority_status,
+                    report.surfaces.len()
+                ),
+                out: Some(out_path.display().to_string()),
+            },
+            Err(err) => PortabilityCommandCheck {
+                name: "readiness_spine_sweep_smoke".to_string(),
+                status: PortabilityGateStatus::Fail,
+                detail: err.to_string(),
+                out: Some(out_path.display().to_string()),
+            },
+        }
+    };
     let supported_set_apply_smoke = out_smoke_check(
         "supported_set_apply_smoke",
         "./out/supported_set_apply.json",
@@ -15774,6 +15870,69 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
             },
             Err(err) => PortabilityCommandCheck {
                 name: "bundle_spine_check_smoke".to_string(),
+                status: PortabilityGateStatus::Fail,
+                detail: err.to_string(),
+                out: Some(out_path.display().to_string()),
+            },
+        }
+    };
+    let bundle_spine_sweep_smoke = {
+        let out_path = PathBuf::from("./out/bundle_spine_sweep.json");
+        let prep = (|| -> Result<(), OpsError> {
+            let review_out = PathBuf::from("./out/supported_set_review.json");
+            let reeval_out = PathBuf::from("./out/supported_scope_reeval.json");
+            let apply_out = PathBuf::from("./out/supported_set_apply.json");
+            models_supported_set_review(workdir, &review_out)?;
+            models_supported_scope_reevaluate(workdir, &reeval_out)?;
+            let _ = models_supported_set_apply(workdir, &apply_out)?;
+            Ok(())
+        })();
+        let result = prep.and_then(|_| exports_bundle_spine_sweep(workdir, &out_path));
+        match result {
+            Ok(report) => PortabilityCommandCheck {
+                name: "bundle_spine_sweep_smoke".to_string(),
+                status: if matches!(
+                    report.authority.authority_status,
+                    CanonicalBundleAuthorityStatusV2::Pass
+                ) {
+                    PortabilityGateStatus::Pass
+                } else {
+                    PortabilityGateStatus::Fail
+                },
+                detail: format!(
+                    "authority_status={:?} surfaces={}",
+                    report.authority.authority_status,
+                    report.surfaces.len()
+                ),
+                out: Some(out_path.display().to_string()),
+            },
+            Err(err) => PortabilityCommandCheck {
+                name: "bundle_spine_sweep_smoke".to_string(),
+                status: PortabilityGateStatus::Fail,
+                detail: err.to_string(),
+                out: Some(out_path.display().to_string()),
+            },
+        }
+    };
+    let primary_semantics_sweep_smoke = {
+        let out_path = PathBuf::from("./out/primary_semantics_sweep.json");
+        match primary_semantics_sweep(&out_path) {
+            Ok(report) => PortabilityCommandCheck {
+                name: "primary_semantics_sweep_smoke".to_string(),
+                status: if report.mismatches_found == 0 {
+                    PortabilityGateStatus::Pass
+                } else {
+                    PortabilityGateStatus::Fail
+                },
+                detail: format!(
+                    "mismatches_found={} categories={}",
+                    report.mismatches_found,
+                    report.top_mismatch_categories.len()
+                ),
+                out: Some(out_path.display().to_string()),
+            },
+            Err(err) => PortabilityCommandCheck {
+                name: "primary_semantics_sweep_smoke".to_string(),
                 status: PortabilityGateStatus::Fail,
                 detail: err.to_string(),
                 out: Some(out_path.display().to_string()),
@@ -15967,11 +16126,13 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         matrix_cmd("linux", "cargo run -p ucf-ops -- spec artifact-schemas-check --out ./out/artifact_schema_check.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- governance-surfaces-check --out ./out/governance_surfaces_check.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- governance-entry-check --out ./out/governance_entry_check.json"),
+        matrix_cmd("linux", "cargo run -p ucf-ops -- governance-entry-sweep --out ./out/governance_entry_sweep.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- scope authority-check --out ./out/scope_authority_check.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- models supported-set-review --out ./out/supported_set_review.json --workdir ."),
         matrix_cmd("linux", "cargo run -p ucf-ops -- models supported-scope-reevaluate --out ./out/supported_scope_reeval.json --workdir ."),
         matrix_cmd("linux", "cargo run -p ucf-ops -- models supported-scope-execute-v4 --out ./out/supported_scope_execute_v4.json --workdir ."),
         matrix_cmd("linux", "cargo run -p ucf-ops -- readiness-spine-check --out ./out/readiness_spine_check.json"),
+        matrix_cmd("linux", "cargo run -p ucf-ops -- readiness-spine-sweep --out ./out/readiness_spine_sweep.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json --workdir ."),
         matrix_cmd("linux", "cargo run -p ucf-ops -- models applied-scope-check --out ./out/applied_scope_check.json --workdir ."),
         matrix_cmd("linux", "cargo run -p ucf-ops -- exports normalize-check --out ./out/export_normalize_check.json"),
@@ -15979,6 +16140,8 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         matrix_cmd("linux", "cargo run -p ucf-ops -- operator review-truth-check --out ./out/review_truth_check.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- exports roundtrip-check --in ./out/repro_portability.zip --out ./out/export_roundtrip_check.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- exports bundle-spine-check --in ./out/repro_portability.zip --out ./out/bundle_spine_check.json"),
+        matrix_cmd("linux", "cargo run -p ucf-ops -- exports bundle-spine-sweep --out ./out/bundle_spine_sweep.json"),
+        matrix_cmd("linux", "cargo run -p ucf-ops -- primary-semantics-sweep --out ./out/primary_semantics_sweep.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- remediation-interop-check --out ./out/remediation_interop_check.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- remediation-spine-check --out ./out/remediation_spine_check.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- models active-review-snapshot --out ./out/active_review_snapshot.json"),
@@ -16002,11 +16165,13 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         matrix_cmd("windows", "cargo run -p ucf-ops -- spec artifact-schemas-check --out ./out/artifact_schema_check.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- governance-surfaces-check --out ./out/governance_surfaces_check.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- governance-entry-check --out ./out/governance_entry_check.json"),
+        matrix_cmd("windows", "cargo run -p ucf-ops -- governance-entry-sweep --out ./out/governance_entry_sweep.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- scope authority-check --out ./out/scope_authority_check.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- models supported-set-review --out ./out/supported_set_review.json --workdir ."),
         matrix_cmd("windows", "cargo run -p ucf-ops -- models supported-scope-reevaluate --out ./out/supported_scope_reeval.json --workdir ."),
         matrix_cmd("windows", "cargo run -p ucf-ops -- models supported-scope-execute-v4 --out ./out/supported_scope_execute_v4.json --workdir ."),
         matrix_cmd("windows", "cargo run -p ucf-ops -- readiness-spine-check --out ./out/readiness_spine_check.json"),
+        matrix_cmd("windows", "cargo run -p ucf-ops -- readiness-spine-sweep --out ./out/readiness_spine_sweep.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json --workdir ."),
         matrix_cmd("windows", "cargo run -p ucf-ops -- models applied-scope-check --out ./out/applied_scope_check.json --workdir ."),
         matrix_cmd("windows", "cargo run -p ucf-ops -- exports normalize-check --out ./out/export_normalize_check.json"),
@@ -16014,6 +16179,8 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         matrix_cmd("windows", "cargo run -p ucf-ops -- operator review-truth-check --out ./out/review_truth_check.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- exports roundtrip-check --in ./out/repro_portability.zip --out ./out/export_roundtrip_check.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- exports bundle-spine-check --in ./out/repro_portability.zip --out ./out/bundle_spine_check.json"),
+        matrix_cmd("windows", "cargo run -p ucf-ops -- exports bundle-spine-sweep --out ./out/bundle_spine_sweep.json"),
+        matrix_cmd("windows", "cargo run -p ucf-ops -- primary-semantics-sweep --out ./out/primary_semantics_sweep.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- remediation-interop-check --out ./out/remediation_interop_check.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- remediation-spine-check --out ./out/remediation_spine_check.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- models active-review-snapshot --out ./out/active_review_snapshot.json"),
@@ -16041,11 +16208,15 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         artifact_schema_snapshot_check,
         governance_surfaces_smoke,
         governance_entry_check_smoke,
+        governance_entry_sweep_smoke,
         scope_authority_check_smoke,
         supported_scope_reevaluate_smoke,
         supported_scope_execute_smoke,
         readiness_spine_check_smoke,
+        readiness_spine_sweep_smoke,
         bundle_spine_check_smoke,
+        bundle_spine_sweep_smoke,
+        primary_semantics_sweep_smoke,
         remediation_spine_check_smoke,
         supported_set_apply_smoke,
         review_truth_check_smoke,

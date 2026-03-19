@@ -1,4 +1,4 @@
-# Portability Gate v8 Refresh (Linux + Windows)
+# Portability Gate v9 Refresh (Linux + Windows)
 
 `Portability Gate` blocks merges when core runtime/ops checks are not cross-platform safe.
 
@@ -65,11 +65,16 @@
      - `cargo run -p ucf-ops -- portability check --out ./out/portability.json`
      - `cargo run -p ucf-ops -- portability report --out ./out/portability_report.json`
 
-2. **v8 generation smoke checks (blocking unless explicitly optional)**
+2. **v9 generation smoke checks (blocking unless explicitly optional)**
    - `governance-entry-check` must pass and preserve canonical governance entry usage across consumers.
+   - `governance-entry-sweep` must pass and prove deterministic canonical entry authority across final governance surfaces.
    - `models supported-scope-execute` must produce deterministic bounded execution decisions.
+   - `models supported-scope-execute-v4` must emit deterministic `REAFFIRM_FREEZE` / `EXECUTE_EXPAND_BY_ONE` execution decisions.
    - `readiness-spine-check` must emit deterministic mismatch categories and remediation codes.
+   - `readiness-spine-sweep` must pass and prove deterministic final readiness authority coverage.
    - `exports bundle-spine-check` must reconstruct canonical bundle spine deterministically from bounded fixture bundles.
+   - `exports bundle-spine-sweep` must reconstruct canonical bundle authority deterministically across repro/bugkit/export surfaces.
+   - `primary-semantics-sweep` must prove canonical primary blocking/remediation consistency with deterministic mismatch categories.
    - `remediation-spine-check` must map canonical conditions/remediations consistently across scope/governance/readiness/bundle surfaces.
    - `models active-review-snapshot` and `models backend-resolution` must run in bounded offline mode (optional backend-resolution paths must SKIP cleanly).
    - Enriched export smokes (`repro pack` + `repro verify`, `bugkit build`) must generate deterministic manifests with bounded fixtures and no payload/weight inclusion by default.
@@ -85,7 +90,7 @@
    - `audit net-deps` (Linux lane): hidden network dependency drift is blocked.
 
 4. **Docs consistency (via `docs lint --strict`)**
-   - Enforces v3 + v4 + v5 + v6 + v7 + v8 docs consistency and linkage.
+   - Enforces v3 + v4 + v5 + v6 + v7 + v8 + v9 docs consistency and linkage.
    - Enforces remediation registry doc freshness.
    - Enforces artifact schema snapshot freshness and deterministic drift reporting.
 
@@ -109,6 +114,15 @@
 - `docs/readiness_spine_v8.md`
 - `docs/bundle_spine_v8.md`
 - `docs/remediation_spine_consistency_v8.md`
+- `docs/artifact_schema_snapshots.md`
+
+## v9 docs covered by portability/docs gates
+
+- `docs/canonical_governance_entry_sweep_v9.md`
+- `docs/supported_scope_execution_v9.md`
+- `docs/canonical_readiness_sweep_v9.md`
+- `docs/canonical_bundle_sweep_v9.md`
+- `docs/primary_semantics_sweep_v9.md`
 - `docs/artifact_schema_snapshots.md`
 
 ## v5 docs covered by portability/docs gates
@@ -140,6 +154,12 @@
 - Schema/remediation drift failures include artifact-level detail and regeneration commands.
 - Optional backend/report paths may report `SKIP` (never panic) with stable skip reasons.
 
+## Interpreting FAIL vs SKIP
+
+- **FAIL**: deterministic portability/docs/schema/final-sweep invariants regressed and must be fixed before merge.
+- **SKIP**: bounded optional backend/report path is unavailable in the current environment; this is expected and non-panicking.
+- Required v9 final sweeps (`governance-entry-sweep`, `supported-scope-execute-v4`, `readiness-spine-sweep`, `bundle-spine-sweep`, `primary-semantics-sweep`) are blocking and should not downgrade to SKIP.
+
 ## Local run instructions
 
 ### Linux/macOS shell
@@ -153,9 +173,11 @@ cargo run -p ucf-ops -- audit net-deps --out ./out/net_deps.json
 cargo run -p ucf-ops -- spec artifact-schemas-check --out ./out/artifact_schema_check.json
 cargo run -p ucf-ops -- governance-surfaces-check --out ./out/governance_surfaces_check.json
 cargo run -p ucf-ops -- governance-entry-check --out ./out/governance_entry_check.json
+cargo run -p ucf-ops -- governance-entry-sweep --out ./out/governance_entry_sweep.json
 cargo run -p ucf-ops -- models supported-set-review --out ./out/supported_set_review.json --workdir .
 cargo run -p ucf-ops -- models supported-scope-execute-v4 --out ./out/supported_scope_execute_v4.json --workdir .
 cargo run -p ucf-ops -- readiness-spine-check --out ./out/readiness_spine_check.json
+cargo run -p ucf-ops -- readiness-spine-sweep --out ./out/readiness_spine_sweep.json
 cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json --workdir .
 cargo run -p ucf-ops -- models applied-scope-check --out ./out/applied_scope_check.json --workdir .
 cargo run -p ucf-ops -- exports normalize-check --out ./out/export_normalize_check.json
@@ -169,6 +191,8 @@ cargo run -p ucf-ops -- repro pack --run "$run_id" --out ./out/repro_portability
 cargo run -p ucf-ops -- repro verify --pack ./out/repro_portability.zip --out ./out/repro_verify_portability.json --workdir ./.ucf_portability_smoke
 cargo run -p ucf-ops -- exports roundtrip-check --in ./out/repro_portability.zip --out ./out/export_roundtrip_check.json
 cargo run -p ucf-ops -- exports bundle-spine-check --in ./out/repro_portability.zip --out ./out/bundle_spine_check.json
+cargo run -p ucf-ops -- exports bundle-spine-sweep --out ./out/bundle_spine_sweep.json
+cargo run -p ucf-ops -- primary-semantics-sweep --out ./out/primary_semantics_sweep.json
 mkdir -p ./.ucf_portability_smoke/out/$run_id
 cp ./out/portability_smoke_bringup/run_metadata.json ./.ucf_portability_smoke/out/$run_id/run_metadata.json
 cp ./out/portability_smoke_bringup/metrics_summary.json ./.ucf_portability_smoke/out/$run_id/metrics_summary.json
@@ -200,8 +224,10 @@ cargo run -p ucf-ops -- audit path-scan
 cargo run -p ucf-ops -- audit hardware-scan
 cargo run -p ucf-ops -- spec artifact-schemas-check --out ./out/artifact_schema_check.json
 cargo run -p ucf-ops -- governance-entry-check --out ./out/governance_entry_check.json
+cargo run -p ucf-ops -- governance-entry-sweep --out ./out/governance_entry_sweep.json
 cargo run -p ucf-ops -- models supported-scope-execute-v4 --out ./out/supported_scope_execute_v4.json --workdir .
 cargo run -p ucf-ops -- readiness-spine-check --out ./out/readiness_spine_check.json
+cargo run -p ucf-ops -- readiness-spine-sweep --out ./out/readiness_spine_sweep.json
 cargo run -p ucf-ops -- models active-review-snapshot --out ./out/active_review_snapshot.json
 cargo run -p ucf-ops -- models backend-resolution --slot sae --out ./out/backend_resolution_sae.json
 if ($LASTEXITCODE -ne 0) { Write-Host "backend_resolution=skip optional_second_slot_path_unavailable"; $global:LASTEXITCODE = 0 }
@@ -213,6 +239,8 @@ cargo run -p ucf-ops -- repro pack --run $run_id --out ./out/repro_portability.z
 cargo run -p ucf-ops -- repro verify --pack ./out/repro_portability.zip --out ./out/repro_verify_portability.json --workdir ./.ucf_portability_smoke
 cargo run -p ucf-ops -- exports roundtrip-check --in ./out/repro_portability.zip --out ./out/export_roundtrip_check.json
 cargo run -p ucf-ops -- exports bundle-spine-check --in ./out/repro_portability.zip --out ./out/bundle_spine_check.json
+cargo run -p ucf-ops -- exports bundle-spine-sweep --out ./out/bundle_spine_sweep.json
+cargo run -p ucf-ops -- primary-semantics-sweep --out ./out/primary_semantics_sweep.json
 New-Item -ItemType Directory -Force -Path ".\.ucf_portability_smoke\out\$run_id" | Out-Null
 Copy-Item "./out/portability_smoke_bringup/run_metadata.json" ".\.ucf_portability_smoke\out\$run_id\run_metadata.json"
 Copy-Item "./out/portability_smoke_bringup/metrics_summary.json" ".\.ucf_portability_smoke\out\$run_id\metrics_summary.json"
