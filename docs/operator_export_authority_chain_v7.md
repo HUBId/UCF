@@ -34,3 +34,7 @@ See also canonical entrypoint rule: docs/canonical_governance_entry_v8.md
 
 ## v8 continuity
 See `docs/roundtrip_chain_v8.md` for the top-level operator->export->bundle continuity proof command and mismatch semantics.
+
+
+## v9 note
+Operator/export authority continuity now includes canonical readiness spine/authority references and is checked by `readiness-spine-sweep` for spine-only readiness consumption.

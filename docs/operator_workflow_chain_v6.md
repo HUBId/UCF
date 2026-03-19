@@ -79,3 +79,7 @@ See also: readiness spine canon (`docs/readiness_spine_v8.md`).
 
 ## v8 continuity
 `OperatorWorkflowChainV1` is now consumed by `CanonicalRoundTripChainV1` as part of end-to-end operator->bundle continuity proof.
+
+
+## v9 note
+`OperatorWorkflowChainV1` now carries canonical readiness authority references and is expected to align with spine-only readiness consumption validated by `readiness-spine-sweep`.

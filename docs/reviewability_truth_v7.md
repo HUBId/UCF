@@ -33,3 +33,7 @@ Mismatch-Kategorien:
 - `LEGACY_REDUCTION_REJECTED`
 
 See also: readiness spine canon (`docs/readiness_spine_v8.md`).
+
+
+## v9 note
+Reviewability truth/reduction remain the canonical substrate inputs, but canonical operator/export surfaces are now validated through `CanonicalReadinessSpineV1` + `CanonicalReadinessAuthorityV2` (`readiness-spine-sweep`).
