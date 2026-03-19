@@ -64,7 +64,7 @@ struct ArtifactSpec {
     enum_names: &'static [&'static str],
 }
 
-const ARTIFACT_SPECS: [ArtifactSpec; 38] = [
+const ARTIFACT_SPECS: [ArtifactSpec; 39] = [
     ArtifactSpec {
         artifact_id: "active_review_snapshot_v1",
         file_rel: "runtime/ucf-ops/src/models_lifecycle.rs",
@@ -143,6 +143,12 @@ const ARTIFACT_SPECS: [ArtifactSpec; 38] = [
         file_rel: "runtime/ucf-ops/src/lib.rs",
         type_name: "CanonicalBundleSpineV1",
         enum_names: &["BundleSpineStatusV1", "CanonicalBundleKindV1"],
+    },
+    ArtifactSpec {
+        artifact_id: "canonical_bundle_authority_v2",
+        file_rel: "runtime/ucf-ops/src/lib.rs",
+        type_name: "CanonicalBundleAuthorityV2",
+        enum_names: &["CanonicalBundleAuthorityStatusV2"],
     },
     ArtifactSpec {
         artifact_id: "bugkit_manifest_v1",
@@ -754,6 +760,7 @@ mod tests {
                 "backend_resolution_v1",
                 "bugkit_manifest_v1",
                 "bundle_roundtrip_consistency_v1",
+                "canonical_bundle_authority_v2",
                 "canonical_bundle_consumption_context_v1",
                 "canonical_bundle_spine_v1",
                 "canonical_export_artifact_ref_v1",

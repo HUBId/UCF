@@ -10953,6 +10953,10 @@ pub struct ReproPackManifestV1 {
     pub backend_resolution: PackEvidenceArtifactRefV1,
     pub export_context: CanonicalExportContextV1,
     pub related_artifacts: Vec<CanonicalExportArtifactRefV1>,
+    #[serde(default = "missing_prefix_value")]
+    pub canonical_bundle_spine_digest_prefix: String,
+    #[serde(default = "missing_prefix_value")]
+    pub canonical_bundle_authority_digest_prefix: String,
     pub export_layout_compatibility: CanonicalExportLayoutCompatibilityV1,
     pub repro_pack_digest: String,
 }
@@ -10999,9 +11003,20 @@ fn bundle_spine_digest_hex(spine: &CanonicalBundleSpineV1) -> Result<String, Ops
     Ok(sha256_hex(&serde_json::to_vec(&canonical)?))
 }
 
+fn bundle_authority_digest_hex(authority: &CanonicalBundleAuthorityV2) -> Result<String, OpsError> {
+    let mut canonical = authority.clone();
+    canonical.authority_digest.clear();
+    Ok(sha256_hex(&serde_json::to_vec(&canonical)?))
+}
+
 fn digest_prefix_str(value: &str, len: usize) -> String {
     value.chars().take(len).collect()
 }
+
+pub const CANONICAL_BUNDLE_SPINE_REQUIRED: &str = "CANONICAL_BUNDLE_SPINE_REQUIRED";
+pub const CANONICAL_BUNDLE_CONTEXT_REQUIRED: &str = "CANONICAL_BUNDLE_CONTEXT_REQUIRED";
+pub const CANONICAL_EXPORT_REFS_REQUIRED: &str = "CANONICAL_EXPORT_REFS_REQUIRED";
+pub const SECONDARY_BUNDLE_PATH_BLOCKED: &str = "SECONDARY_BUNDLE_PATH_BLOCKED";
 
 fn canonical_artifact_refs_digest_prefix(
     refs: &[CanonicalExportArtifactRefV1],
@@ -11262,13 +11277,87 @@ fn evaluate_bundle_spine(
         bundle_spine_digest: String::new(),
     };
     spine.bundle_spine_digest = bundle_spine_digest_hex(&spine)?;
+    let authority = derive_canonical_bundle_authority_v2(&spine, 1, false)?;
     Ok(BundleSpineCheckReportV1 {
         schema_version: 1,
         pass: matches!(spine.bundle_spine_status, BundleSpineStatusV1::Pass),
         bundle_kind: spine.bundle_kind.clone(),
         mismatch_codes,
         spine,
+        authority_digest_prefix: Some(prefix_hex(&authority.authority_digest, 16)),
     })
+}
+
+pub fn require_canonical_bundle_spine(
+    applied: &AppliedSupportedSetContextV1,
+    governance: &CanonicalGovernanceEntryV1,
+    readiness: &CanonicalReadinessSpineV1,
+    spine: Option<&CanonicalBundleSpineV1>,
+) -> Result<CanonicalBundleSpineV1, OpsError> {
+    let Some(spine) = spine else {
+        return Err(OpsError::Invalid(
+            CANONICAL_BUNDLE_SPINE_REQUIRED.to_string(),
+        ));
+    };
+    if spine.bundle_consumption_context_digest_prefix.is_empty()
+        || spine.artifact_refs_digest_prefix.is_empty()
+    {
+        return Err(OpsError::Invalid(
+            CANONICAL_BUNDLE_CONTEXT_REQUIRED.to_string(),
+        ));
+    }
+    if spine.applied_supported_set_digest_prefix != applied.applied_set_digest_prefix {
+        return Err(OpsError::Invalid(
+            CANONICAL_BUNDLE_SPINE_REQUIRED.to_string(),
+        ));
+    }
+    if spine.canonical_governance_entry_digest_prefix
+        != prefix_hex(&governance.authority_digest, 16)
+    {
+        return Err(OpsError::Invalid(
+            CANONICAL_EXPORT_REFS_REQUIRED.to_string(),
+        ));
+    }
+    let readiness_prefix = prefix_hex(&readiness.spine_digest, 16);
+    if spine.canonical_readiness_spine_digest_prefix.as_deref() != Some(readiness_prefix.as_str()) {
+        return Err(OpsError::Invalid(
+            CANONICAL_EXPORT_REFS_REQUIRED.to_string(),
+        ));
+    }
+    if !matches!(spine.bundle_spine_status, BundleSpineStatusV1::Pass) {
+        return Err(OpsError::Invalid(SECONDARY_BUNDLE_PATH_BLOCKED.to_string()));
+    }
+    Ok(spine.clone())
+}
+
+fn derive_canonical_bundle_authority_v2(
+    spine: &CanonicalBundleSpineV1,
+    covered_surface_count: u16,
+    legacy_present: bool,
+) -> Result<CanonicalBundleAuthorityV2, OpsError> {
+    let mut authority = CanonicalBundleAuthorityV2 {
+        schema_version: 2,
+        applied_supported_set_digest_prefix: spine.applied_supported_set_digest_prefix.clone(),
+        canonical_governance_entry_digest_prefix: spine
+            .canonical_governance_entry_digest_prefix
+            .clone(),
+        canonical_readiness_spine_digest_prefix: spine
+            .canonical_readiness_spine_digest_prefix
+            .clone()
+            .unwrap_or_else(|| "MISSING".to_string()),
+        canonical_bundle_spine_digest_prefix: prefix_hex(&spine.bundle_spine_digest, 16),
+        covered_surface_count,
+        authority_status: if legacy_present {
+            CanonicalBundleAuthorityStatusV2::LegacyPresent
+        } else if matches!(spine.bundle_spine_status, BundleSpineStatusV1::Pass) {
+            CanonicalBundleAuthorityStatusV2::Pass
+        } else {
+            CanonicalBundleAuthorityStatusV2::Fail
+        },
+        authority_digest: String::new(),
+    };
+    authority.authority_digest = bundle_authority_digest_hex(&authority)?;
+    Ok(authority)
 }
 
 fn evaluate_bundle_roundtrip_consistency(
@@ -11579,6 +11668,133 @@ pub fn exports_bundle_spine_check(
     Ok(report)
 }
 
+pub fn exports_bundle_spine_sweep(
+    workdir: &Path,
+    out: &Path,
+) -> Result<BundleSpineSweepReportV1, OpsError> {
+    let applied = load_applied_supported_set_context_v1(workdir)?;
+    let backend = models_evidence_snapshot(workdir, None, None)?;
+    let active = models_active_review_snapshot(
+        workdir,
+        &workdir.join("out/active_review_snapshot_bundle_spine_sweep.json"),
+    )?;
+    let surfaces =
+        validate_governance_primary_surfaces_with_applied_scope(&backend, &active, &applied)?;
+    let governance = derive_canonical_governance_entry(&applied, &surfaces)?;
+    let governance = require_canonical_governance_entry(&applied, Some(&governance))?;
+    let readiness = readiness_spine_check(
+        workdir,
+        &workdir.join("out/readiness_spine_check_bundle_spine_sweep.json"),
+    )?
+    .canonical_readiness_spine;
+
+    let run_id = reproducible_run_id_for_smoke(workdir)?;
+    let repro_bundle = workdir
+        .join("out")
+        .join(format!("repro_{run_id}_bundle_spine_sweep.zip"));
+    let bugkit_bundle = workdir
+        .join("out")
+        .join(format!("bugkit_{run_id}_bundle_spine_sweep.zip"));
+    let _ = repro_pack(workdir, &run_id, &repro_bundle)?;
+    let _ = bugkit_build(
+        workdir,
+        &run_id,
+        &bugkit_bundle,
+        &BugKitBuildArgs::default(),
+    )?;
+
+    let repro_spine = exports_bundle_spine_check(
+        &repro_bundle,
+        &workdir.join("out/repro_bundle_spine_check_bundle_spine_sweep.json"),
+    )?;
+    let bugkit_spine = exports_bundle_spine_check(
+        &bugkit_bundle,
+        &workdir.join("out/bugkit_bundle_spine_check_bundle_spine_sweep.json"),
+    )?;
+
+    let covered = vec![
+        ("repro_pack_build", repro_spine.clone()),
+        ("repro_verify", repro_spine.clone()),
+        ("bugkit_build", bugkit_spine.clone()),
+        ("exports_roundtrip_check", repro_spine.clone()),
+        ("exports_bundle_spine_check", repro_spine.clone()),
+        ("operator_roundtrip_chain_helpers", repro_spine.clone()),
+        ("export_readiness_build_guards", repro_spine.clone()),
+    ];
+
+    let mut sweep_surfaces = Vec::new();
+    for (surface, report) in covered {
+        let mut mismatches = Vec::new();
+        if !report.pass {
+            mismatches.push(BundleSpineSweepMismatchCategoryV1::SurfaceSkippedCanonicalBundleSpine);
+        }
+        for code in &report.mismatch_codes {
+            match code.as_str() {
+                "BUNDLE_SPINE_SCOPE_MISMATCH" => {
+                    mismatches.push(BundleSpineSweepMismatchCategoryV1::BundleSpineScopeMismatch)
+                }
+                "BUNDLE_SPINE_GOVERNANCE_MISMATCH" => mismatches
+                    .push(BundleSpineSweepMismatchCategoryV1::BundleSpineGovernanceMismatch),
+                "BUNDLE_SPINE_READINESS_MISMATCH" => mismatches
+                    .push(BundleSpineSweepMismatchCategoryV1::BundleSpineReadinessMismatch),
+                "LEGACY_BUNDLE_SPINE_TRANSLATED" | "LEGACY_BUNDLE_SPINE_UNSUPPORTED" => {
+                    mismatches.push(BundleSpineSweepMismatchCategoryV1::LegacyBundlePathPresent)
+                }
+                _ => mismatches
+                    .push(BundleSpineSweepMismatchCategoryV1::SurfaceUsedSecondaryBundlePath),
+            }
+        }
+        mismatches.sort();
+        mismatches.dedup();
+        let status =
+            if mismatches.contains(&BundleSpineSweepMismatchCategoryV1::LegacyBundlePathPresent) {
+                CanonicalBundleAuthorityStatusV2::LegacyPresent
+            } else if mismatches.is_empty() {
+                CanonicalBundleAuthorityStatusV2::Pass
+            } else {
+                CanonicalBundleAuthorityStatusV2::Fail
+            };
+        sweep_surfaces.push(BundleSpineSweepSurfaceStatusV1 {
+            surface: surface.to_string(),
+            status,
+            mismatch_categories: mismatches,
+        });
+    }
+
+    let required_spine = require_canonical_bundle_spine(
+        &applied,
+        &governance,
+        &readiness,
+        Some(&repro_spine.spine),
+    )?;
+    let legacy_present = sweep_surfaces
+        .iter()
+        .any(|s| matches!(s.status, CanonicalBundleAuthorityStatusV2::LegacyPresent));
+    let mut authority = derive_canonical_bundle_authority_v2(
+        &required_spine,
+        sweep_surfaces.len() as u16,
+        legacy_present,
+    )?;
+    if sweep_surfaces
+        .iter()
+        .any(|s| matches!(s.status, CanonicalBundleAuthorityStatusV2::Fail))
+    {
+        authority.authority_status = CanonicalBundleAuthorityStatusV2::Fail;
+        authority.authority_digest = bundle_authority_digest_hex(&authority)?;
+    }
+
+    let report = BundleSpineSweepReportV1 {
+        schema_version: 1,
+        authority,
+        surfaces: sweep_surfaces,
+    };
+    if let Some(parent) = out.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    write_json(out, &report)?;
+    Ok(report)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BugKitBuildArgs {
     pub include_payload: bool,
@@ -11622,6 +11838,10 @@ pub struct BugKitManifestV1 {
     pub backend_resolution: PackEvidenceArtifactRefV1,
     pub export_context: CanonicalExportContextV1,
     pub related_artifacts: Vec<CanonicalExportArtifactRefV1>,
+    #[serde(default = "missing_prefix_value")]
+    pub canonical_bundle_spine_digest_prefix: String,
+    #[serde(default = "missing_prefix_value")]
+    pub canonical_bundle_authority_digest_prefix: String,
     pub export_layout_compatibility: CanonicalExportLayoutCompatibilityV1,
     pub warnings: Vec<String>,
     pub bugkit_digest: String,
@@ -11688,6 +11908,51 @@ pub enum BundleSpineStatusV1 {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum CanonicalBundleAuthorityStatusV2 {
+    Pass,
+    Fail,
+    LegacyPresent,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CanonicalBundleAuthorityV2 {
+    pub schema_version: u16,
+    pub applied_supported_set_digest_prefix: String,
+    pub canonical_governance_entry_digest_prefix: String,
+    pub canonical_readiness_spine_digest_prefix: String,
+    pub canonical_bundle_spine_digest_prefix: String,
+    pub covered_surface_count: u16,
+    pub authority_status: CanonicalBundleAuthorityStatusV2,
+    pub authority_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum BundleSpineSweepMismatchCategoryV1 {
+    SurfaceSkippedCanonicalBundleSpine,
+    SurfaceUsedSecondaryBundlePath,
+    BundleSpineScopeMismatch,
+    BundleSpineGovernanceMismatch,
+    BundleSpineReadinessMismatch,
+    LegacyBundlePathPresent,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BundleSpineSweepSurfaceStatusV1 {
+    pub surface: String,
+    pub status: CanonicalBundleAuthorityStatusV2,
+    pub mismatch_categories: Vec<BundleSpineSweepMismatchCategoryV1>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BundleSpineSweepReportV1 {
+    pub schema_version: u16,
+    pub authority: CanonicalBundleAuthorityV2,
+    pub surfaces: Vec<BundleSpineSweepSurfaceStatusV1>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CanonicalBundleSpineV1 {
     pub bundle_kind: CanonicalBundleKindV1,
     pub applied_supported_set_digest_prefix: String,
@@ -11707,6 +11972,7 @@ pub struct BundleSpineCheckReportV1 {
     pub bundle_kind: CanonicalBundleKindV1,
     pub mismatch_codes: Vec<String>,
     pub spine: CanonicalBundleSpineV1,
+    pub authority_digest_prefix: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -11880,14 +12146,20 @@ fn derive_export_chain_digest_refs(workdir: &Path) -> Result<ExportChainDigestRe
     })()
     .unwrap_or_else(|_| "MISSING".to_string());
 
-    let readiness_prefix = read_json_if_exists(&workdir.join("out/readiness_spine_check.json"))?
-        .and_then(|v| {
+    let readiness_prefix = [
+        workdir.join("out/readiness_spine_check.json"),
+        workdir.join("out/readiness_spine_check_bundle_spine_sweep.json"),
+    ]
+    .iter()
+    .find_map(|path| {
+        read_json_if_exists(path).ok().flatten().and_then(|v| {
             v.get("canonical_readiness_spine")
                 .and_then(|s| s.get("spine_digest"))
                 .and_then(|d| d.as_str())
                 .map(|s| prefix_hex(s, 16))
         })
-        .unwrap_or_else(|| "MISSING".to_string());
+    })
+    .unwrap_or_else(|| "MISSING".to_string());
 
     let review_packet_prefix =
         read_json_if_exists(&workdir.join("out/operator_review_packet.json"))?
@@ -11939,6 +12211,10 @@ fn canonical_prefix_or_missing(value: &str) -> String {
     } else {
         value.to_string()
     }
+}
+
+fn missing_prefix_value() -> String {
+    "MISSING".to_string()
 }
 
 fn canonical_export_context_from_parts(
@@ -12430,10 +12706,38 @@ pub fn bugkit_build(
         backend_resolution,
         export_context,
         related_artifacts,
+        canonical_bundle_spine_digest_prefix: "MISSING".to_string(),
+        canonical_bundle_authority_digest_prefix: "MISSING".to_string(),
         export_layout_compatibility: CanonicalExportLayoutCompatibilityV1::Canonical,
         warnings,
         bugkit_digest: String::new(),
     };
+    let roundtrip = evaluate_bundle_roundtrip_consistency(BundleRoundTripInputs {
+        bundle_kind: CanonicalBundleKindV1::Bugkit,
+        bundle_digest: "",
+        export_context: &manifest.export_context,
+        evidence_context: &manifest.evidence_context,
+        related_artifacts: &manifest.related_artifacts,
+        backend_evidence_snapshot: &manifest.backend_evidence_snapshot,
+        active_review_snapshot: &manifest.active_review_snapshot,
+        operator_signoff: &manifest.operator_signoff,
+        export_layout_compatibility: &manifest.export_layout_compatibility,
+    })?;
+    let spine_report = evaluate_bundle_spine(BundleSpineInputs {
+        bundle_kind: CanonicalBundleKindV1::Bugkit,
+        export_context: &manifest.export_context,
+        evidence_context: &manifest.evidence_context,
+        related_artifacts: &manifest.related_artifacts,
+        backend_evidence_snapshot: &manifest.backend_evidence_snapshot,
+        active_review_snapshot: &manifest.active_review_snapshot,
+        operator_signoff: &manifest.operator_signoff,
+        roundtrip: &roundtrip,
+    })?;
+    manifest.canonical_bundle_spine_digest_prefix =
+        prefix_hex(&spine_report.spine.bundle_spine_digest, 16);
+    if let Some(authority) = spine_report.authority_digest_prefix {
+        manifest.canonical_bundle_authority_digest_prefix = authority;
+    }
     let mut canonical = manifest.clone();
     canonical.bugkit_digest.clear();
     canonical.files.sort_by(|a, b| a.path.cmp(&b.path));
@@ -12883,9 +13187,37 @@ pub fn repro_pack(
         backend_resolution,
         export_context,
         related_artifacts,
+        canonical_bundle_spine_digest_prefix: "MISSING".to_string(),
+        canonical_bundle_authority_digest_prefix: "MISSING".to_string(),
         export_layout_compatibility: CanonicalExportLayoutCompatibilityV1::Canonical,
         repro_pack_digest: String::new(),
     };
+    let roundtrip = evaluate_bundle_roundtrip_consistency(BundleRoundTripInputs {
+        bundle_kind: CanonicalBundleKindV1::Repro,
+        bundle_digest: "",
+        export_context: &manifest.export_context,
+        evidence_context: &manifest.evidence_context,
+        related_artifacts: &manifest.related_artifacts,
+        backend_evidence_snapshot: &manifest.backend_evidence_snapshot,
+        active_review_snapshot: &manifest.active_review_snapshot,
+        operator_signoff: &manifest.operator_signoff,
+        export_layout_compatibility: &manifest.export_layout_compatibility,
+    })?;
+    let spine_report = evaluate_bundle_spine(BundleSpineInputs {
+        bundle_kind: CanonicalBundleKindV1::Repro,
+        export_context: &manifest.export_context,
+        evidence_context: &manifest.evidence_context,
+        related_artifacts: &manifest.related_artifacts,
+        backend_evidence_snapshot: &manifest.backend_evidence_snapshot,
+        active_review_snapshot: &manifest.active_review_snapshot,
+        operator_signoff: &manifest.operator_signoff,
+        roundtrip: &roundtrip,
+    })?;
+    manifest.canonical_bundle_spine_digest_prefix =
+        prefix_hex(&spine_report.spine.bundle_spine_digest, 16);
+    if let Some(authority) = spine_report.authority_digest_prefix {
+        manifest.canonical_bundle_authority_digest_prefix = authority;
+    }
     manifest.repro_pack_digest = repro_pack_digest_hex(&manifest)?;
     file_map.insert(
         "repro_pack_manifest.json".to_string(),
@@ -16533,6 +16865,8 @@ mod repro_pack_tests {
                 context_digest: "44".repeat(32),
             },
             related_artifacts: vec![],
+            canonical_bundle_spine_digest_prefix: "MISSING".to_string(),
+            canonical_bundle_authority_digest_prefix: "MISSING".to_string(),
             export_layout_compatibility: CanonicalExportLayoutCompatibilityV1::Canonical,
             repro_pack_digest: String::new(),
         };
@@ -16680,6 +17014,49 @@ mod repro_pack_tests {
         let a = bundle_spine_digest_hex(&spine).expect("digest");
         let b = bundle_spine_digest_hex(&spine).expect("digest");
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn canonical_bundle_authority_v2_digest_stable() {
+        let mut authority = CanonicalBundleAuthorityV2 {
+            schema_version: 2,
+            applied_supported_set_digest_prefix: "11".repeat(8),
+            canonical_governance_entry_digest_prefix: "22".repeat(8),
+            canonical_readiness_spine_digest_prefix: "33".repeat(8),
+            canonical_bundle_spine_digest_prefix: "44".repeat(8),
+            covered_surface_count: 7,
+            authority_status: CanonicalBundleAuthorityStatusV2::Pass,
+            authority_digest: String::new(),
+        };
+        authority.authority_digest = bundle_authority_digest_hex(&authority).expect("digest");
+        let a = bundle_authority_digest_hex(&authority).expect("digest");
+        let b = bundle_authority_digest_hex(&authority).expect("digest");
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn canonical_bundle_authority_status_deterministic() {
+        let spine = CanonicalBundleSpineV1 {
+            bundle_kind: CanonicalBundleKindV1::Repro,
+            applied_supported_set_digest_prefix: "11".repeat(8),
+            canonical_governance_entry_digest_prefix: "22".repeat(8),
+            canonical_readiness_spine_digest_prefix: Some("33".repeat(8)),
+            bundle_consumption_context_digest_prefix: "44".repeat(8),
+            artifact_refs_digest_prefix: "55".repeat(8),
+            roundtrip_consistency_digest_prefix: "66".repeat(8),
+            bundle_spine_status: BundleSpineStatusV1::Pass,
+            bundle_spine_digest: "77".repeat(8),
+        };
+        let pass = derive_canonical_bundle_authority_v2(&spine, 7, false).expect("pass");
+        let legacy = derive_canonical_bundle_authority_v2(&spine, 7, true).expect("legacy");
+        assert!(matches!(
+            pass.authority_status,
+            CanonicalBundleAuthorityStatusV2::Pass
+        ));
+        assert!(matches!(
+            legacy.authority_status,
+            CanonicalBundleAuthorityStatusV2::LegacyPresent
+        ));
     }
 
     #[test]

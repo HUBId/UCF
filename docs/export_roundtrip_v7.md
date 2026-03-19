@@ -60,3 +60,7 @@ cargo run -p ucf-ops -- exports bundle-spine-check --in <bundle.zip> --out ./out
 
 ## v8 continuity
 Use `operator roundtrip-chain-check` as the top-level proof that bundle roundtrip aligns with operator governance/readiness/workflow state.
+
+
+## v9 update
+Roundtrip validation is now part of the canonical bundle spine sweep (`exports bundle-spine-sweep`) and cannot act as an alternate bundle authority path.

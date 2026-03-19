@@ -8,10 +8,10 @@ use ucf_ops::{
     attest_run, attest_verify, audit_scan, bench_run, bringup, causal_slice, determinism_scan,
     diagnostics, diagnostics_collect, drift_report, ebm_export_dataset, ess_compact, ess_snapshot,
     event_id_for_decision, explain_tick, explain_why, export_bugreport,
-    export_policy_key_registry_v1, exports_bundle_spine_check, exports_normalize_check,
-    exports_roundtrip_check, gateway_threat_test, goldens_generate, goldens_update, goldens_verify,
-    goldens_verify_detailed, governance_entry_check, governance_entry_sweep,
-    governance_surfaces_check, hardware_scan, interop_consistency_matrix,
+    export_policy_key_registry_v1, exports_bundle_spine_check, exports_bundle_spine_sweep,
+    exports_normalize_check, exports_roundtrip_check, gateway_threat_test, goldens_generate,
+    goldens_update, goldens_verify, goldens_verify_detailed, governance_entry_check,
+    governance_entry_sweep, governance_surfaces_check, hardware_scan, interop_consistency_matrix,
     load_applied_supported_set_context_v1, load_signoff_checklist, logs_prove, logs_verify_proof,
     metrics_snapshot, metrics_summary, metrics_trend, migrate_config_v1, models_active_check,
     models_active_evidence, models_active_review_snapshot, models_applied_scope_check,
@@ -35,14 +35,14 @@ use ucf_ops::{
     v1_smoke, v2_gate, v3_gate, v4_gate, v5_gate, v6_gate, v7_gate, v8_gate, verify_bugreport,
     world_parity_report, world_shadow_report, write_slice, AdversarialRunArgs, AirgapArtifactType,
     AirgapImportArgs, AirgapImportMode, BenchArgs, BugKitBuildArgs,
-    CanonicalReadinessAuthorityStatusV2, ChangeImpactArgs, ConfigV1, CounterfactualRequest,
-    DevLoopArgs, DocsLintArgs, DocsLintMode, DocsLintStatus, ExplainTickRequest, ExportArgs,
-    GateStatus, GoldenGenerateArgs, GoldenVerifyArgs, GoldenVerifyReport,
-    GovernanceEntryAuthorityStatusV2, GovernanceEntryCheckStatusV1, NightlySummarizeArgs,
-    OperatorReportArgs, OperatorReviewPacketArgs, OperatorSignoffArgs, OperatorWorkflowArgs,
-    ReleaseBuildRcArgs, SoakRunArgs, SpecSnapshotArgs, StrictEvidenceContextV1,
-    V2GateOverallStatus, V3GateOverallStatus, V4GateOverallStatus, V5GateOverallStatus,
-    V6GateOverallStatus, V7GateOverallStatus, V8GateOverallStatus,
+    CanonicalBundleAuthorityStatusV2, CanonicalReadinessAuthorityStatusV2, ChangeImpactArgs,
+    ConfigV1, CounterfactualRequest, DevLoopArgs, DocsLintArgs, DocsLintMode, DocsLintStatus,
+    ExplainTickRequest, ExportArgs, GateStatus, GoldenGenerateArgs, GoldenVerifyArgs,
+    GoldenVerifyReport, GovernanceEntryAuthorityStatusV2, GovernanceEntryCheckStatusV1,
+    NightlySummarizeArgs, OperatorReportArgs, OperatorReviewPacketArgs, OperatorSignoffArgs,
+    OperatorWorkflowArgs, ReleaseBuildRcArgs, SoakRunArgs, SpecSnapshotArgs,
+    StrictEvidenceContextV1, V2GateOverallStatus, V3GateOverallStatus, V4GateOverallStatus,
+    V5GateOverallStatus, V6GateOverallStatus, V7GateOverallStatus, V8GateOverallStatus,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -1886,9 +1886,28 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         std::process::exit(2);
                     }
                 }
+                "bundle-spine-sweep" => {
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/bundle_spine_sweep.json"));
+                    let report = exports_bundle_spine_sweep(&workdir, &out)?;
+                    println!(
+                        "authority_status={}",
+                        matches!(report.authority.authority_status, CanonicalBundleAuthorityStatusV2::Pass)
+                    );
+                    println!(
+                        "covered_surface_count={}",
+                        report.authority.covered_surface_count
+                    );
+                    println!("out={}", out.display());
+                    if !matches!(report.authority.authority_status, CanonicalBundleAuthorityStatusV2::Pass)
+                    {
+                        std::process::exit(2);
+                    }
+                }
                 _ => {
                     return Err(
-                        "usage: ucf-ops exports <normalize-check|roundtrip-check|bundle-spine-check> ...".into(),
+                        "usage: ucf-ops exports <normalize-check|roundtrip-check|bundle-spine-check|bundle-spine-sweep> ...".into(),
                     )
                 }
             }
