@@ -7763,6 +7763,7 @@ mod probe_tests {
                 applied_context_digest_prefix: "ctx".to_string(),
                 reviewability_reduction_digest_prefix: "MISSING".to_string(),
                 canonical_readiness_spine_digest_prefix: "MISSING".to_string(),
+                canonical_readiness_authority_digest_prefix: "MISSING".to_string(),
                 gate_report_digests: crate::operator_signoff::GateReportDigestsV1 {
                     v0: "x".to_string(),
                     v1: "x".to_string(),

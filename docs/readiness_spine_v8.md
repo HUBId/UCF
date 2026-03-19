@@ -30,3 +30,7 @@ Mismatch categories:
 - `LEGACY_READINESS_REJECTED`
 
 Referenz: Für die übergreifende Blocking-/Remediation-Konsistenz inkl. Readiness-Spine `ucf-ops remediation-spine-check` nutzen (siehe `docs/remediation_spine_consistency_v8.md`).
+
+
+## v9 universal spine authority
+Canonical readiness authority is now audited via `readiness-spine-sweep` and `CanonicalReadinessAuthorityV2`; canonical consumers must use `require_canonical_readiness_spine(...)` and fail closed on missing spine. See `docs/canonical_readiness_sweep_v9.md`.

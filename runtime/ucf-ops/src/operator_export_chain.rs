@@ -31,6 +31,7 @@ pub enum OperatorExportAuthorityMismatchCategoryV1 {
     WorkflowScopeMismatch,
     ExportContextScopeMismatch,
     ReviewabilityBasisMismatch,
+    ReadinessSpineMismatch,
     AppliedScopeMissing,
 }
 
@@ -40,6 +41,8 @@ pub struct OperatorExportAuthorityChainV1 {
     pub applied_supported_set_digest_prefix: String,
     pub applied_context_digest_prefix: String,
     pub reviewability_reduction_digest_prefix: String,
+    pub canonical_readiness_spine_digest_prefix: String,
+    pub canonical_readiness_authority_digest_prefix: String,
     pub operator_review_packet_digest_prefix: String,
     pub operator_signoff_digest_prefix: String,
     pub operator_workflow_chain_digest_prefix: String,
@@ -108,6 +111,20 @@ pub fn derive_operator_export_authority_chain(
         mismatches.insert(OperatorExportAuthorityMismatchCategoryV1::ReviewabilityBasisMismatch);
         blocking.insert("REVIEWABILITY_BASIS_MISMATCH".to_string());
     }
+    let expected_spine = inputs
+        .review_packet
+        .canonical_readiness_spine_digest_prefix
+        .as_str();
+    if expected_spine == "MISSING"
+        || inputs.signoff.canonical_readiness_spine_digest_prefix != expected_spine
+        || inputs
+            .workflow_chain
+            .canonical_readiness_spine_digest_prefix
+            != expected_spine
+    {
+        mismatches.insert(OperatorExportAuthorityMismatchCategoryV1::ReadinessSpineMismatch);
+        blocking.insert("CANONICAL_READINESS_SPINE_REQUIRED".to_string());
+    }
 
     if let Some(scope_digest_prefix) = inputs.export_scope_digest_prefix.as_ref() {
         if scope_digest_prefix != applied_set {
@@ -124,6 +141,14 @@ pub fn derive_operator_export_authority_chain(
         reviewability_reduction_digest_prefix: inputs
             .review_packet
             .reviewability_reduction_digest_prefix
+            .clone(),
+        canonical_readiness_spine_digest_prefix: inputs
+            .review_packet
+            .canonical_readiness_spine_digest_prefix
+            .clone(),
+        canonical_readiness_authority_digest_prefix: inputs
+            .review_packet
+            .canonical_readiness_authority_digest_prefix
             .clone(),
         operator_review_packet_digest_prefix: prefix_hex(
             &inputs.review_packet.packet_digest,
@@ -295,6 +320,7 @@ mod tests {
             applied_context_digest_prefix: prefix_hex(&applied.context_digest, DIGEST_PREFIX_LEN),
             reviewability_reduction_digest_prefix: "33".repeat(8),
             canonical_readiness_spine_digest_prefix: "MISSING".to_string(),
+            canonical_readiness_authority_digest_prefix: "MISSING".to_string(),
             artifacts: crate::operator_review_packet::OperatorReviewPacketArtifactsV1 {
                 backend_evidence_snapshot_digest_prefix: "44".repeat(8),
                 active_review_snapshot_digest_prefix: "55".repeat(8),
@@ -338,6 +364,9 @@ mod tests {
             canonical_readiness_spine_digest_prefix: review
                 .canonical_readiness_spine_digest_prefix
                 .clone(),
+            canonical_readiness_authority_digest_prefix: review
+                .canonical_readiness_authority_digest_prefix
+                .clone(),
             reasons: vec![],
             remediation_codes: vec![],
             canonical_remediation_codes: vec![],
@@ -355,6 +384,9 @@ mod tests {
                 .clone(),
             canonical_readiness_spine_digest_prefix: review
                 .canonical_readiness_spine_digest_prefix
+                .clone(),
+            canonical_readiness_authority_digest_prefix: review
+                .canonical_readiness_authority_digest_prefix
                 .clone(),
             operator_review_packet_digest_prefix: "ef".repeat(8),
             operator_signoff_digest_prefix: "01".repeat(8),

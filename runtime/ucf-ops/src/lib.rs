@@ -152,9 +152,15 @@ pub use operator_workflow::{
 };
 pub use readiness_spine::{
     attach_spine_prefix_to_packet, attach_spine_prefix_to_signoff, attach_spine_prefix_to_workflow,
-    derive_canonical_readiness_spine, readiness_spine_check, write_canonical_readiness_spine,
+    derive_canonical_readiness_spine, readiness_spine_check, readiness_spine_sweep,
+    require_canonical_readiness_spine, write_canonical_readiness_spine,
+    CanonicalReadinessAuthorityStatusV2, CanonicalReadinessAuthorityV2,
     CanonicalReadinessSpineStatusV1, CanonicalReadinessSpineV1, ReadinessSpineCheckReportV1,
     ReadinessSpineCheckStatusV1, ReadinessSpineMismatchCategoryV1,
+    ReadinessSpineSweepMismatchCategoryV1, ReadinessSpineSweepReportV1,
+    ReadinessSpineSweepSurfaceStatusV1, CANONICAL_READINESS_SPINE_REQUIRED,
+    REVIEWABILITY_REDUCTION_REQUIRED, SECONDARY_READINESS_PATH_BLOCKED,
+    SLOT_REVIEWABILITY_TRUTH_REQUIRED,
 };
 pub use remediation::all_registry_rows as remediation_registry_rows;
 pub use remediation_consistency::{

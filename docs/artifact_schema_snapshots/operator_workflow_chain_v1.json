@@ -20,6 +20,7 @@
     "workflow_stage"
   ],
   "optional_fields": [
+    "canonical_readiness_authority_digest_prefix",
     "canonical_readiness_spine_digest_prefix"
   ],
   "field_types": {
@@ -27,6 +28,7 @@
     "applied_supported_scope_digest_prefix": "String",
     "applied_supported_set_digest_prefix": "String",
     "blocking_codes": "Vec<String>",
+    "canonical_readiness_authority_digest_prefix": "String",
     "canonical_readiness_spine_digest_prefix": "String",
     "chain_digest": "String",
     "export_normalize_check_digest_prefix": "String",

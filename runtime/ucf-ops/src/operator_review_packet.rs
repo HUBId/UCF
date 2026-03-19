@@ -70,6 +70,8 @@ pub struct OperatorReviewPacketV1 {
     pub reviewability_reduction_digest_prefix: String,
     #[serde(default)]
     pub canonical_readiness_spine_digest_prefix: String,
+    #[serde(default)]
+    pub canonical_readiness_authority_digest_prefix: String,
     pub artifacts: OperatorReviewPacketArtifactsV1,
     pub supported_slots: Vec<OperatorReviewPacketSlotV1>,
     pub blocking_codes: Vec<String>,
@@ -347,6 +349,10 @@ fn reduce_review_packet(
         blocking.insert("REVIEW_BLOCK_DIGEST_ARTIFACT_MISMATCH".to_string());
         remediation.insert("rerun_operator_artifacts".to_string());
     }
+    if signoff.canonical_readiness_spine_digest_prefix == "MISSING" {
+        blocking.insert("CANONICAL_READINESS_SPINE_REQUIRED".to_string());
+        remediation.insert("run_readiness_spine_sweep".to_string());
+    }
 
     let (aggregate_readiness, shadow_ready, reviewability_reduction_digest_prefix) =
         match derive_slot_reviewability_truths_from_active(&applied_scope, &snapshot, &active)
@@ -463,6 +469,7 @@ fn build_from_snapshot(
         applied_context_digest_prefix: crate::prefix_hex(&applied_scope.context_digest, 16),
         reviewability_reduction_digest_prefix: "MISSING".to_string(),
         canonical_readiness_spine_digest_prefix: "MISSING".to_string(),
+        canonical_readiness_authority_digest_prefix: "MISSING".to_string(),
         gate_report_digests: crate::operator_signoff::GateReportDigestsV1 {
             v0: "MISSING".to_string(),
             v1: "MISSING".to_string(),
@@ -572,6 +579,7 @@ fn build_blocked_minimal(
         applied_context_digest_prefix: crate::prefix_hex(&applied_scope.context_digest, 16),
         reviewability_reduction_digest_prefix: "MISSING".to_string(),
         canonical_readiness_spine_digest_prefix: "MISSING".to_string(),
+        canonical_readiness_authority_digest_prefix: "MISSING".to_string(),
         artifacts: OperatorReviewPacketArtifactsV1 {
             backend_evidence_snapshot_digest_prefix: "MISSING".to_string(),
             active_review_snapshot_digest_prefix: "MISSING".to_string(),
@@ -651,6 +659,9 @@ fn build_packet(
         reviewability_reduction_digest_prefix: reviewability_reduction_digest_prefix.to_string(),
         canonical_readiness_spine_digest_prefix: signoff
             .canonical_readiness_spine_digest_prefix
+            .clone(),
+        canonical_readiness_authority_digest_prefix: signoff
+            .canonical_readiness_authority_digest_prefix
             .clone(),
         artifacts: OperatorReviewPacketArtifactsV1 {
             backend_evidence_snapshot_digest_prefix: prefix16(&snapshot.snapshot_digest),
@@ -938,6 +949,7 @@ mod tests {
             applied_context_digest_prefix: "context1".to_string(),
             reviewability_reduction_digest_prefix: "reduction1".to_string(),
             canonical_readiness_spine_digest_prefix: "spine1".to_string(),
+            canonical_readiness_authority_digest_prefix: "spine1".to_string(),
             gate_report_digests: crate::operator_signoff::GateReportDigestsV1 {
                 v0: "g0".to_string(),
                 v1: "g1".to_string(),
