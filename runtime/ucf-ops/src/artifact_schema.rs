@@ -64,7 +64,7 @@ struct ArtifactSpec {
     enum_names: &'static [&'static str],
 }
 
-const ARTIFACT_SPECS: [ArtifactSpec; 39] = [
+const ARTIFACT_SPECS: [ArtifactSpec; 41] = [
     ArtifactSpec {
         artifact_id: "active_review_snapshot_v1",
         file_rel: "runtime/ucf-ops/src/models_lifecycle.rs",
@@ -287,6 +287,18 @@ const ARTIFACT_SPECS: [ArtifactSpec; 39] = [
         file_rel: "runtime/ucf-ops/src/remediation_consistency.rs",
         type_name: "SpineConditionObservationV1",
         enum_names: &["CrossSurfaceObservationStatusV1"],
+    },
+    ArtifactSpec {
+        artifact_id: "primary_semantics_observation_v1",
+        file_rel: "runtime/ucf-ops/src/remediation_consistency.rs",
+        type_name: "PrimarySemanticsObservationV1",
+        enum_names: &["CrossSurfaceObservationStatusV1"],
+    },
+    ArtifactSpec {
+        artifact_id: "canonical_primary_semantics_authority_v1",
+        file_rel: "runtime/ucf-ops/src/remediation_consistency.rs",
+        type_name: "CanonicalPrimarySemanticsAuthorityV1",
+        enum_names: &["CanonicalPrimarySemanticsAuthorityStatusV1"],
     },
     ArtifactSpec {
         artifact_id: "supported_scope_reevaluation_v1",

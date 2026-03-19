@@ -25,3 +25,5 @@ cargo run -p ucf-ops -- remediation-spine-check --out ./out/remediation_spine_ch
 - explicit `UNKNOWN_CONDITION_MAPPING` when a surface mismatch category cannot map to canonical conditions
 - explicit `MISSING_SURFACE` / `SKIP` semantics per surface rather than silent omission
 - gate-family consistency checks for canonical gate-fail conditions with deterministic fail-on-drift behavior
+
+Final v9 authority proof is consolidated in `docs/primary_semantics_sweep_v9.md` via `ucf-ops primary-semantics-sweep`.

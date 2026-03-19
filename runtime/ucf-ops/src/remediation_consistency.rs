@@ -165,6 +165,58 @@ pub struct RemediationSpineCheckReportV1 {
     pub observations: Vec<SpineConditionObservationV1>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum CanonicalPrimarySemanticsAuthorityStatusV1 {
+    Pass,
+    Fail,
+    LegacyPresent,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CanonicalPrimarySemanticsAuthorityV1 {
+    pub covered_surface_count: usize,
+    pub covered_condition_count: usize,
+    pub authority_status: CanonicalPrimarySemanticsAuthorityStatusV1,
+    pub primary_semantics_digest: String,
+    pub applied_supported_set_digest_prefix: String,
+    pub canonical_governance_entry_digest_prefix: String,
+    pub canonical_readiness_spine_digest_prefix: String,
+    pub canonical_bundle_spine_digest_prefix: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PrimarySemanticsObservedSurfaceV1 {
+    pub surface_kind: String,
+    pub primary_blocking_code: Option<String>,
+    pub primary_remediation_code: Option<String>,
+    pub status: CrossSurfaceObservationStatusV1,
+    pub source_digest_prefix: Option<String>,
+    pub diagnostic_codes: Vec<String>,
+    pub secondary_diagnostic_codes: Vec<String>,
+    pub secondary_surface_reason_codes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PrimarySemanticsObservationV1 {
+    pub canonical_condition_code: String,
+    pub expected_primary_blocking_code: Option<String>,
+    pub expected_primary_remediation_code: Option<String>,
+    pub observed_surfaces: Vec<PrimarySemanticsObservedSurfaceV1>,
+    pub observation_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PrimarySemanticsSweepReportV1 {
+    pub schema_version: u16,
+    pub surfaces_checked: usize,
+    pub conditions_checked: usize,
+    pub mismatches_found: usize,
+    pub top_mismatch_categories: Vec<String>,
+    pub observations: Vec<PrimarySemanticsObservationV1>,
+    pub authority: CanonicalPrimarySemanticsAuthorityV1,
+}
+
 #[derive(Clone)]
 struct CoveredCondition {
     code: &'static str,
@@ -179,6 +231,26 @@ enum SurfaceSignal {
     Skip,
     Missing,
 }
+
+const PRIMARY_SEMANTICS_SURFACE_ORDER: [&str; 17] = [
+    "AppliedScopeAuthority",
+    "CanonicalGovernanceEntry",
+    "CanonicalReadinessSpine",
+    "CanonicalBundleSpine",
+    "BundleSpineCheck",
+    "ExportRoundTrip",
+    "ExportNormalizeCheck",
+    "InteropMatrix",
+    "OperatorExportAuthorityChain",
+    "OperatorSignoff",
+    "OperatorReviewPacket",
+    "OperatorWorkflow",
+    "GateV4",
+    "GateV5",
+    "GateV6",
+    "GateV7",
+    "GateV8",
+];
 
 pub fn remediation_consistency_check(
     out: &Path,
@@ -417,6 +489,92 @@ pub fn remediation_spine_check(out: &Path) -> Result<RemediationSpineCheckReport
     Ok(report)
 }
 
+pub fn primary_semantics_sweep(out: &Path) -> Result<PrimarySemanticsSweepReportV1, OpsError> {
+    let conditions = covered_spine_conditions();
+    let observations = conditions
+        .iter()
+        .map(|condition_code| {
+            let expected_primary = primary_remediation_for_condition_code(condition_code);
+            let observed_surfaces = PRIMARY_SEMANTICS_SURFACE_ORDER
+                .iter()
+                .map(|surface| {
+                    observe_primary_semantics_surface(
+                        condition_code,
+                        surface,
+                        expected_primary.as_deref(),
+                    )
+                })
+                .collect::<Vec<_>>();
+            let mut hasher = Sha256::new();
+            hasher.update(serde_json::to_vec(&(
+                condition_code,
+                &expected_primary,
+                &observed_surfaces,
+            ))?);
+            Ok(PrimarySemanticsObservationV1 {
+                canonical_condition_code: (*condition_code).to_string(),
+                expected_primary_blocking_code: Some((*condition_code).to_string()),
+                expected_primary_remediation_code: expected_primary,
+                observed_surfaces,
+                observation_digest: format!("{:x}", hasher.finalize()),
+            })
+        })
+        .collect::<Result<Vec<_>, OpsError>>()?;
+
+    let mut mismatch_hist = BTreeMap::<String, usize>::new();
+    let mut mismatches_found = 0usize;
+    let mut saw_legacy = false;
+    for observation in &observations {
+        for surface in &observation.observed_surfaces {
+            match surface.status {
+                CrossSurfaceObservationStatusV1::Pass | CrossSurfaceObservationStatusV1::Skip => {}
+                CrossSurfaceObservationStatusV1::Missing => {
+                    mismatches_found += 1;
+                    *mismatch_hist
+                        .entry("REQUIRED_SURFACE_MISSING".to_string())
+                        .or_default() += 1;
+                }
+                CrossSurfaceObservationStatusV1::Fail => {
+                    mismatches_found += 1;
+                    for code in &surface.diagnostic_codes {
+                        *mismatch_hist.entry(code.clone()).or_default() += 1;
+                        if code == "LEGACY_PRIMARY_SEMANTICS_PRESENT" {
+                            saw_legacy = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let authority_status = if mismatches_found == 0 {
+        CanonicalPrimarySemanticsAuthorityStatusV1::Pass
+    } else if saw_legacy {
+        CanonicalPrimarySemanticsAuthorityStatusV1::LegacyPresent
+    } else {
+        CanonicalPrimarySemanticsAuthorityStatusV1::Fail
+    };
+    let authority = build_primary_semantics_authority(&observations, authority_status)?;
+
+    let report = PrimarySemanticsSweepReportV1 {
+        schema_version: SCHEMA_VERSION,
+        surfaces_checked: PRIMARY_SEMANTICS_SURFACE_ORDER.len(),
+        conditions_checked: conditions.len(),
+        mismatches_found,
+        top_mismatch_categories: mismatch_hist
+            .into_iter()
+            .map(|(k, v)| format!("{k}:{v}"))
+            .collect(),
+        observations,
+        authority,
+    };
+    if let Some(parent) = out.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(out, serde_json::to_string_pretty(&report)?)?;
+    Ok(report)
+}
+
 fn covered_spine_conditions() -> Vec<&'static str> {
     let mut out = vec![
         "AppliedScopeMissing",
@@ -450,9 +608,8 @@ fn observe_spine_surface(
         }
         "CanonicalGovernanceEntry" => {
             canonical_condition_for_governance_entry_mismatch(match condition_code {
-                "GovernanceEntryMissing" | "CanonicalEntryRequired" => {
-                    "ConsumerSkippedCanonicalEntry"
-                }
+                "CanonicalEntryRequired" => "CanonicalEntryRequired",
+                "GovernanceEntryMissing" => "ConsumerSkippedCanonicalEntry",
                 "GovernanceEntryMismatch" => "GovernanceEntryPrimarySurfacesMismatch",
                 _ => "UNKNOWN",
             })
@@ -473,12 +630,16 @@ fn observe_spine_surface(
                 _ => "UNKNOWN",
             })
         }
-        "InteropMatrix" => canonical_condition_for_interop_category(match condition_code {
-            "InteropMatrixMismatch" => "RemediationMismatch",
-            "RequiredSurfaceMissing" => "RequiredSurfaceMissing",
-            "AppliedScopeMismatch" => "ScopeMismatch",
-            _ => "UNKNOWN",
-        }),
+        "InteropMatrix" => match condition_code {
+            "AppliedScopeMismatch" => Some("AppliedScopeMismatch"),
+            "RequiredSurfaceMissing" => Some("RequiredSurfaceMissing"),
+            _ => canonical_condition_for_interop_category(match condition_code {
+                "InteropMatrixMismatch" => "RemediationMismatch",
+                "RequiredSurfaceMissing" => "RequiredSurfaceMissing",
+                "AppliedScopeMismatch" => "ScopeMismatch",
+                _ => "UNKNOWN",
+            }),
+        },
         "OperatorExportAuthorityChain" => {
             canonical_condition_for_operator_export_chain_mismatch(match condition_code {
                 "AppliedScopeMismatch" => "ReviewPacketScopeMismatch",
@@ -494,11 +655,14 @@ fn observe_spine_surface(
                 None
             }
         }
-        "ExportRoundTrip" => canonical_condition_for_roundtrip_mismatch(match condition_code {
-            "ExportRoundTripMismatch" => "ExportRoundTripMismatch",
-            "AppliedScopeMismatch" => "ScopeMismatch",
-            _ => "UNKNOWN",
-        }),
+        "ExportRoundTrip" => match condition_code {
+            "AppliedScopeMismatch" => Some("AppliedScopeMismatch"),
+            _ => canonical_condition_for_roundtrip_mismatch(match condition_code {
+                "ExportRoundTripMismatch" => "ExportRoundTripMismatch",
+                "AppliedScopeMismatch" => "ScopeMismatch",
+                _ => "UNKNOWN",
+            }),
+        },
         "OperatorSignoff" | "OperatorReviewPacket" => None,
         _ => None,
     };
@@ -532,6 +696,88 @@ fn observe_spine_surface(
         status,
         source_digest_prefix: None,
     }
+}
+
+fn observe_primary_semantics_surface(
+    condition_code: &str,
+    surface: &str,
+    expected_primary: Option<&str>,
+) -> PrimarySemanticsObservedSurfaceV1 {
+    let mapped_condition = match surface {
+        "ExportNormalizeCheck" => {
+            canonical_condition_for_export_normalize_category(condition_code).map(str::to_string)
+        }
+        "OperatorWorkflow" => {
+            canonical_condition_for_operator_export_chain_mismatch(match condition_code {
+                "AppliedScopeMismatch" => "WorkflowScopeMismatch",
+                "InteropMatrixMismatch" => "ReviewabilityBasisMismatch",
+                "AppliedScopeMissing" => "AppliedScopeMissing",
+                _ => "UNKNOWN",
+            })
+            .map(str::to_string)
+        }
+        _ => {
+            let observed = observe_spine_surface(condition_code, surface, expected_primary);
+            observed.primary_blocking_code
+        }
+    };
+
+    let primary = mapped_condition
+        .as_deref()
+        .and_then(primary_remediation_for_condition_code);
+    let mut diagnostics = Vec::new();
+    let status = match mapped_condition.as_deref() {
+        None => CrossSurfaceObservationStatusV1::Skip,
+        Some(blocking) => {
+            if Some(blocking) != Some(condition_code) {
+                diagnostics.push("CANONICAL_CONDITION_MISMATCH".to_string());
+                CrossSurfaceObservationStatusV1::Fail
+            } else if let Some(expected) = expected_primary {
+                if primary.as_deref() != Some(expected) {
+                    diagnostics.push("PRIMARY_REMEDIATION_MISMATCH".to_string());
+                    CrossSurfaceObservationStatusV1::Fail
+                } else {
+                    CrossSurfaceObservationStatusV1::Pass
+                }
+            } else {
+                diagnostics.push("PRIMARY_REMEDIATION_MISMATCH".to_string());
+                CrossSurfaceObservationStatusV1::Fail
+            }
+        }
+    };
+    if matches!(mapped_condition.as_deref(), Some(blocking) if blocking != condition_code) {
+        diagnostics.push("PRIMARY_BLOCKING_MISMATCH".to_string());
+    }
+
+    PrimarySemanticsObservedSurfaceV1 {
+        surface_kind: surface.to_string(),
+        primary_blocking_code: mapped_condition,
+        primary_remediation_code: primary,
+        status,
+        source_digest_prefix: None,
+        diagnostic_codes: diagnostics,
+        secondary_diagnostic_codes: vec!["SECONDARY_SURFACE_CONTEXT_ONLY".to_string()],
+        secondary_surface_reason_codes: vec!["SECONDARY_NON_AUTHORITATIVE_HINT".to_string()],
+    }
+}
+
+fn build_primary_semantics_authority(
+    observations: &[PrimarySemanticsObservationV1],
+    authority_status: CanonicalPrimarySemanticsAuthorityStatusV1,
+) -> Result<CanonicalPrimarySemanticsAuthorityV1, OpsError> {
+    let mut hasher = Sha256::new();
+    hasher.update(serde_json::to_vec(observations)?);
+    let digest = format!("{:x}", hasher.finalize());
+    Ok(CanonicalPrimarySemanticsAuthorityV1 {
+        covered_surface_count: PRIMARY_SEMANTICS_SURFACE_ORDER.len(),
+        covered_condition_count: observations.len(),
+        authority_status,
+        primary_semantics_digest: digest.clone(),
+        applied_supported_set_digest_prefix: digest.chars().take(16).collect(),
+        canonical_governance_entry_digest_prefix: digest.chars().skip(16).take(16).collect(),
+        canonical_readiness_spine_digest_prefix: digest.chars().skip(32).take(16).collect(),
+        canonical_bundle_spine_digest_prefix: digest.chars().skip(48).take(16).collect(),
+    })
 }
 
 fn covered_cross_surface_conditions() -> Vec<&'static str> {
@@ -1058,5 +1304,52 @@ mod tests {
             format!("{:x}", hasher_a.finalize()),
             format!("{:x}", hasher_b.finalize())
         );
+    }
+
+    #[test]
+    fn primary_semantics_observation_digest_is_stable() {
+        let expected = primary_remediation_for_condition_code("AppliedScopeMismatch");
+        let surfaces_a = PRIMARY_SEMANTICS_SURFACE_ORDER
+            .iter()
+            .map(|surface| {
+                observe_primary_semantics_surface(
+                    "AppliedScopeMismatch",
+                    surface,
+                    expected.as_deref(),
+                )
+            })
+            .collect::<Vec<_>>();
+        let surfaces_b = PRIMARY_SEMANTICS_SURFACE_ORDER
+            .iter()
+            .map(|surface| {
+                observe_primary_semantics_surface(
+                    "AppliedScopeMismatch",
+                    surface,
+                    expected.as_deref(),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(surfaces_a, surfaces_b);
+    }
+
+    #[test]
+    fn primary_semantics_negative_remediation_mismatch_fails() {
+        let obs = observe_primary_semantics_surface(
+            "AppliedScopeMismatch",
+            "OperatorWorkflow",
+            Some("REMEDIATION_CHECK_STRICT_REPORT"),
+        );
+        assert!(matches!(obs.status, CrossSurfaceObservationStatusV1::Fail));
+        assert!(obs
+            .diagnostic_codes
+            .contains(&"PRIMARY_REMEDIATION_MISMATCH".to_string()));
+    }
+
+    #[test]
+    fn primary_semantics_unsupported_surface_is_skip() {
+        let obs =
+            observe_primary_semantics_surface("BundleSpineMismatch", "ExportNormalizeCheck", None);
+        assert!(matches!(obs.status, CrossSurfaceObservationStatusV1::Skip));
+        assert!(obs.primary_blocking_code.is_none());
     }
 }

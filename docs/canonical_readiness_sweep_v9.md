@@ -20,3 +20,5 @@ Canonical flows must not produce parallel readiness truths. Any path that skips 
 ```bash
 cargo run -p ucf-ops -- readiness-spine-sweep --out ./out/readiness_spine_sweep.json
 ```
+
+For final canonical primary blocking/remediation authority across all covered surfaces, run `ucf-ops primary-semantics-sweep` (see `docs/primary_semantics_sweep_v9.md`).

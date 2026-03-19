@@ -164,12 +164,15 @@ pub use readiness_spine::{
 };
 pub use remediation::all_registry_rows as remediation_registry_rows;
 pub use remediation_consistency::{
-    remediation_consistency_check, remediation_interop_check, remediation_spine_check,
-    CanonicalRemediationObservationV1, CrossSurfaceConditionObservationV1,
-    CrossSurfaceObservationStatusV1, RemediationConsistencyCheckV1,
-    RemediationConsistencyObservedV1, RemediationConsistencyReportV1,
-    RemediationConsistencyStatusV1, RemediationInteropCheckReportV1, RemediationMismatchKindV1,
-    RemediationSpineCheckReportV1, SpineConditionObservationV1,
+    primary_semantics_sweep, remediation_consistency_check, remediation_interop_check,
+    remediation_spine_check, CanonicalPrimarySemanticsAuthorityStatusV1,
+    CanonicalPrimarySemanticsAuthorityV1, CanonicalRemediationObservationV1,
+    CrossSurfaceConditionObservationV1, CrossSurfaceObservationStatusV1,
+    PrimarySemanticsObservationV1, PrimarySemanticsObservedSurfaceV1,
+    PrimarySemanticsSweepReportV1, RemediationConsistencyCheckV1, RemediationConsistencyObservedV1,
+    RemediationConsistencyReportV1, RemediationConsistencyStatusV1,
+    RemediationInteropCheckReportV1, RemediationMismatchKindV1, RemediationSpineCheckReportV1,
+    SpineConditionObservationV1,
 };
 pub use reviewability_truth::{
     derive_slot_reviewability_truths, derive_slot_reviewability_truths_from_active,
