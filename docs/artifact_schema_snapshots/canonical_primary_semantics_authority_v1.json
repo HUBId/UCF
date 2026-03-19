@@ -1,0 +1,33 @@
+{
+  "artifact_id": "canonical_primary_semantics_authority_v1",
+  "type_name": "CanonicalPrimarySemanticsAuthorityV1",
+  "source_file": "runtime/ucf-ops/src/remediation_consistency.rs",
+  "required_fields": [
+    "applied_supported_set_digest_prefix",
+    "authority_status",
+    "canonical_bundle_spine_digest_prefix",
+    "canonical_governance_entry_digest_prefix",
+    "canonical_readiness_spine_digest_prefix",
+    "covered_condition_count",
+    "covered_surface_count",
+    "primary_semantics_digest"
+  ],
+  "optional_fields": [],
+  "field_types": {
+    "applied_supported_set_digest_prefix": "String",
+    "authority_status": "CanonicalPrimarySemanticsAuthorityStatusV1",
+    "canonical_bundle_spine_digest_prefix": "String",
+    "canonical_governance_entry_digest_prefix": "String",
+    "canonical_readiness_spine_digest_prefix": "String",
+    "covered_condition_count": "usize",
+    "covered_surface_count": "usize",
+    "primary_semantics_digest": "String"
+  },
+  "enum_variants": {
+    "CanonicalPrimarySemanticsAuthorityStatusV1": [
+      "Fail",
+      "LegacyPresent",
+      "Pass"
+    ]
+  }
+}

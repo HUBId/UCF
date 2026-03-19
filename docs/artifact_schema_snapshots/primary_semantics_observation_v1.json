@@ -1,0 +1,29 @@
+{
+  "artifact_id": "primary_semantics_observation_v1",
+  "type_name": "PrimarySemanticsObservationV1",
+  "source_file": "runtime/ucf-ops/src/remediation_consistency.rs",
+  "required_fields": [
+    "canonical_condition_code",
+    "observation_digest",
+    "observed_surfaces"
+  ],
+  "optional_fields": [
+    "expected_primary_blocking_code",
+    "expected_primary_remediation_code"
+  ],
+  "field_types": {
+    "canonical_condition_code": "String",
+    "expected_primary_blocking_code": "Option<String>",
+    "expected_primary_remediation_code": "Option<String>",
+    "observation_digest": "String",
+    "observed_surfaces": "Vec<PrimarySemanticsObservedSurfaceV1>"
+  },
+  "enum_variants": {
+    "CrossSurfaceObservationStatusV1": [
+      "Fail",
+      "Missing",
+      "Pass",
+      "Skip"
+    ]
+  }
+}
