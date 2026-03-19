@@ -1,6 +1,6 @@
 # Artifact Schema Snapshots
 
-This repository enforces deterministic shape snapshots for governance/review/export/interop artifacts that must remain stable across v3/v4/v5/v6/v7/v8 hardening.
+This repository enforces deterministic shape snapshots for governance/review/export/interop artifacts that must remain stable across v3/v4/v5/v6/v7/v8/v9 hardening.
 
 ## Covered artifacts
 
@@ -18,6 +18,8 @@ Snapshots are generated under `docs/artifact_schema_snapshots/`:
 - `canonical_export_artifact_ref_v1.json`
 - `canonical_export_context_v1.json`
 - `canonical_governance_entry_v1.json` (v8)
+- `canonical_governance_entry_authority_v2.json` (v9 final authority freeze)
+- `canonical_readiness_authority_v2.json` (v9 final authority freeze)
 - `canonical_readiness_spine_v1.json` (v8)
 - `cross_surface_condition_observation_v1.json` (v7)
 - `cross_surface_context_matrix_v1.json` (v6/v8 additive drift tracked)
@@ -36,6 +38,7 @@ Snapshots are generated under `docs/artifact_schema_snapshots/`:
 - `strict_failure_report_v3.json`
 - `supported_real_slot_set_v2.json`
 - `supported_scope_execution_v3.json` (v8)
+- `supported_scope_execution_v4.json` (v9 canonical supported-scope execution)
 - `supported_scope_reevaluation_v1.json` (v7)
 - `v3_gate_report_v1.json`
 - `v4_gate_report_v1.json`
@@ -43,7 +46,16 @@ Snapshots are generated under `docs/artifact_schema_snapshots/`:
 - `v7_gate_report_v1.json` (v8 lane coverage)
 - `index.json` (covered artifact index)
 
-v8 contract points now frozen here include canonical governance entry, supported scope execution, canonical readiness spine, canonical bundle spine, and spine-level condition observation; related additive updates in active-review/signoff/review-packet/workflow and interop/roundtrip schemas are also tracked.
+v9 contract points now frozen here include:
+
+- `canonical_governance_entry_authority_v2`
+- `supported_scope_execution_v4`
+- `canonical_readiness_authority_v2`
+- `canonical_bundle_authority_v2`
+- `canonical_primary_semantics_authority_v1`
+- `primary_semantics_observation_v1`
+
+Related additive updates in canonical governance/readiness/bundle spines, operator signoff/review/workflow, and gate/interop families remain tracked through the same snapshot lane.
 
 ## Regeneration
 
@@ -81,4 +93,4 @@ When a schema change is intentional:
 3. run the check command,
 4. commit snapshots together with rationale/docs updates.
 
-For governance/scope/readiness/bundle/interop artifacts, snapshots freeze contract shape only (fields, optionality, and enum variants), not runtime values. This explicitly guards shared cross-surface contracts from silent schema drift.
+For governance/scope/readiness/bundle/primary-semantics/interop artifacts, snapshots freeze contract shape only (fields, optionality, and enum variants), not runtime values. This explicitly guards shared cross-surface contracts from silent schema drift.

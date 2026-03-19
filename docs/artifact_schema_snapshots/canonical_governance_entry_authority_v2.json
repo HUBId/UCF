@@ -1,0 +1,31 @@
+{
+  "artifact_id": "canonical_governance_entry_authority_v2",
+  "type_name": "CanonicalGovernanceEntryAuthorityV2",
+  "source_file": "runtime/ucf-ops/src/governance_entry_sweep.rs",
+  "required_fields": [
+    "applied_context_digest_prefix",
+    "applied_supported_set_digest_prefix",
+    "authority_digest",
+    "authority_status",
+    "canonical_governance_entry_digest_prefix",
+    "covered_surface_count",
+    "schema_version"
+  ],
+  "optional_fields": [],
+  "field_types": {
+    "applied_context_digest_prefix": "String",
+    "applied_supported_set_digest_prefix": "String",
+    "authority_digest": "String",
+    "authority_status": "GovernanceEntryAuthorityStatusV2",
+    "canonical_governance_entry_digest_prefix": "String",
+    "covered_surface_count": "u16",
+    "schema_version": "u16"
+  },
+  "enum_variants": {
+    "GovernanceEntryAuthorityStatusV2": [
+      "Fail",
+      "LegacyPresent",
+      "Pass"
+    ]
+  }
+}

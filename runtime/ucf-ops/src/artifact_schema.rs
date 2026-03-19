@@ -64,7 +64,7 @@ struct ArtifactSpec {
     enum_names: &'static [&'static str],
 }
 
-const ARTIFACT_SPECS: [ArtifactSpec; 41] = [
+const ARTIFACT_SPECS: [ArtifactSpec; 43] = [
     ArtifactSpec {
         artifact_id: "active_review_snapshot_v1",
         file_rel: "runtime/ucf-ops/src/models_lifecycle.rs",
@@ -181,10 +181,22 @@ const ARTIFACT_SPECS: [ArtifactSpec; 41] = [
         enum_names: &["CanonicalGovernanceEntryStatusV1"],
     },
     ArtifactSpec {
+        artifact_id: "canonical_governance_entry_authority_v2",
+        file_rel: "runtime/ucf-ops/src/governance_entry_sweep.rs",
+        type_name: "CanonicalGovernanceEntryAuthorityV2",
+        enum_names: &["GovernanceEntryAuthorityStatusV2"],
+    },
+    ArtifactSpec {
         artifact_id: "canonical_readiness_spine_v1",
         file_rel: "runtime/ucf-ops/src/readiness_spine.rs",
         type_name: "CanonicalReadinessSpineV1",
         enum_names: &["CanonicalReadinessSpineStatusV1"],
+    },
+    ArtifactSpec {
+        artifact_id: "canonical_readiness_authority_v2",
+        file_rel: "runtime/ucf-ops/src/readiness_spine.rs",
+        type_name: "CanonicalReadinessAuthorityV2",
+        enum_names: &["CanonicalReadinessAuthorityStatusV2"],
     },
     ArtifactSpec {
         artifact_id: "remediation_consistency_check_v1",
@@ -778,7 +790,9 @@ mod tests {
                 "canonical_export_artifact_ref_v1",
                 "canonical_export_context_v1",
                 "canonical_governance_entry_v1",
+                "canonical_governance_entry_authority_v2",
                 "canonical_primary_semantics_authority_v1",
+                "canonical_readiness_authority_v2",
                 "canonical_readiness_spine_v1",
                 "canonical_roundtrip_chain_v1",
                 "cross_surface_condition_observation_v1",

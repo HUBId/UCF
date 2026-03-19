@@ -1,0 +1,31 @@
+{
+  "artifact_id": "canonical_readiness_authority_v2",
+  "type_name": "CanonicalReadinessAuthorityV2",
+  "source_file": "runtime/ucf-ops/src/readiness_spine.rs",
+  "required_fields": [
+    "applied_supported_set_digest_prefix",
+    "authority_digest",
+    "authority_status",
+    "canonical_governance_entry_digest_prefix",
+    "canonical_readiness_spine_digest_prefix",
+    "covered_surface_count",
+    "schema_version"
+  ],
+  "optional_fields": [],
+  "field_types": {
+    "applied_supported_set_digest_prefix": "String",
+    "authority_digest": "String",
+    "authority_status": "CanonicalReadinessAuthorityStatusV2",
+    "canonical_governance_entry_digest_prefix": "String",
+    "canonical_readiness_spine_digest_prefix": "String",
+    "covered_surface_count": "u16",
+    "schema_version": "u16"
+  },
+  "enum_variants": {
+    "CanonicalReadinessAuthorityStatusV2": [
+      "Fail",
+      "LegacyPresent",
+      "Pass"
+    ]
+  }
+}
