@@ -28,3 +28,5 @@ Legacy/secondary derivations are reported with explicit mismatch categories and 
 ```bash
 cargo run -p ucf-ops -- exports bundle-spine-sweep --out ./out/bundle_spine_sweep.json
 ```
+
+For final canonical primary blocking/remediation semantics across governance/readiness/bundle/review/export/interop/gate surfaces, see `docs/primary_semantics_sweep_v9.md` and run `ucf-ops primary-semantics-sweep`.

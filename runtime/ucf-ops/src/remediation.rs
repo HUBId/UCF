@@ -89,6 +89,14 @@ pub fn canonical_condition_from_code(code: &str) -> Option<CanonicalConditionV1>
         "ScopeMismatch" | "PolicyMismatch" | "InteropMatrixMismatch" | "AppliedScopeMismatch" => {
             Some(CanonicalConditionV1::GateFail("interop"))
         }
+        "AppliedScopeMissing" => Some(CanonicalConditionV1::GateFail("scope")),
+        "GovernanceEntryMissing" | "GovernanceEntryMismatch" | "CanonicalEntryRequired" => {
+            Some(CanonicalConditionV1::GateFail("governance"))
+        }
+        "ReadinessSpineMismatch" => Some(CanonicalConditionV1::GateFail("readiness")),
+        "BundleSpineMismatch" => Some(CanonicalConditionV1::GateFail("bundle")),
+        "GateFailV8" => Some(CanonicalConditionV1::GateFail("v8")),
+        "RequiredSurfaceMissing" => Some(CanonicalConditionV1::EvidenceMissing("compare")),
         "ManifestMismatch" | "ManifestInvalid" => {
             Some(CanonicalConditionV1::ManifestInvalid("manifest"))
         }
@@ -169,6 +177,7 @@ pub fn canonical_condition_for_scope_authority_mismatch(category: &str) -> Optio
 
 pub fn canonical_condition_for_governance_entry_mismatch(category: &str) -> Option<&'static str> {
     match category {
+        "CanonicalEntryRequired" => Some("CanonicalEntryRequired"),
         "ConsumerSkippedCanonicalEntry" | "ConsumerUsedSecondaryEntry" => {
             Some("GovernanceEntryMissing")
         }

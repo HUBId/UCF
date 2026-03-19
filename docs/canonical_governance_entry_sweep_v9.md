@@ -42,3 +42,5 @@ In v9 canonical flows fail closed when canonical governance entry authority is m
 - `GOVERNANCE_ENTRY_SCOPE_MISMATCH`
 - `GOVERNANCE_ENTRY_POLICY_MISMATCH`
 - `LEGACY_GOVERNANCE_ENTRY_PRESENT`
+
+The final cross-surface canonical primary blocking/remediation proof is tracked by `docs/primary_semantics_sweep_v9.md` (`ucf-ops primary-semantics-sweep`).

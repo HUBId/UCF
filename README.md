@@ -33,6 +33,7 @@ See `docs/feature_matrix.md` for details.
 - `cargo run -p ucf-ops -- exports bundle-spine-check --in ./out/repro_portability.zip --out ./out/bundle_spine_check.json`
 - `cargo run -p ucf-ops -- remediation-interop-check --out ./out/remediation_interop_check.json`
 - `cargo run -p ucf-ops -- remediation-spine-check --out ./out/remediation_spine_check.json`
+- `cargo run -p ucf-ops -- primary-semantics-sweep --out ./out/primary_semantics_sweep.json`
 - `cargo run -p ucf-ops -- governance-surfaces-check --out ./out/governance_surfaces_check.json`
 - `cargo run -p ucf-ops -- models supported-set-review --out ./out/supported_set_review.json --workdir .`
 - `cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json --workdir .`
