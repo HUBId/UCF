@@ -10,13 +10,14 @@ use ucf_ops::{
     event_id_for_decision, explain_tick, explain_why, export_bugreport,
     export_policy_key_registry_v1, exports_bundle_spine_check, exports_normalize_check,
     exports_roundtrip_check, gateway_threat_test, goldens_generate, goldens_update, goldens_verify,
-    goldens_verify_detailed, governance_entry_check, governance_surfaces_check, hardware_scan,
-    interop_consistency_matrix, load_applied_supported_set_context_v1, load_signoff_checklist,
-    logs_prove, logs_verify_proof, metrics_snapshot, metrics_summary, metrics_trend,
-    migrate_config_v1, models_active_check, models_active_evidence, models_active_review_snapshot,
-    models_applied_scope_check, models_backend_resolution, models_consistency_check,
-    models_eligibility, models_evidence_snapshot, models_list, models_probe, models_probe_slot,
-    models_promote, models_recommend_rollback, models_rollback, models_shadow_ready, models_stage,
+    goldens_verify_detailed, governance_entry_check, governance_entry_sweep,
+    governance_surfaces_check, hardware_scan, interop_consistency_matrix,
+    load_applied_supported_set_context_v1, load_signoff_checklist, logs_prove, logs_verify_proof,
+    metrics_snapshot, metrics_summary, metrics_trend, migrate_config_v1, models_active_check,
+    models_active_evidence, models_active_review_snapshot, models_applied_scope_check,
+    models_backend_resolution, models_consistency_check, models_eligibility,
+    models_evidence_snapshot, models_list, models_probe, models_probe_slot, models_promote,
+    models_recommend_rollback, models_rollback, models_shadow_ready, models_stage,
     models_supported_scope_execute, models_supported_scope_reevaluate, models_supported_set_apply,
     models_supported_set_review, models_verify, models_verify_lifecycle, net_deps_audit,
     nightly_summarize, one_command_bringup, operator_export_chain_check, operator_report,
@@ -35,11 +36,12 @@ use ucf_ops::{
     AirgapArtifactType, AirgapImportArgs, AirgapImportMode, BenchArgs, BugKitBuildArgs,
     ChangeImpactArgs, ConfigV1, CounterfactualRequest, DevLoopArgs, DocsLintArgs, DocsLintMode,
     DocsLintStatus, ExplainTickRequest, ExportArgs, GateStatus, GoldenGenerateArgs,
-    GoldenVerifyArgs, GoldenVerifyReport, GovernanceEntryCheckStatusV1, NightlySummarizeArgs,
-    OperatorReportArgs, OperatorReviewPacketArgs, OperatorSignoffArgs, OperatorWorkflowArgs,
-    ReleaseBuildRcArgs, SoakRunArgs, SpecSnapshotArgs, StrictEvidenceContextV1,
-    V2GateOverallStatus, V3GateOverallStatus, V4GateOverallStatus, V5GateOverallStatus,
-    V6GateOverallStatus, V7GateOverallStatus, V8GateOverallStatus,
+    GoldenVerifyArgs, GoldenVerifyReport, GovernanceEntryAuthorityStatusV2,
+    GovernanceEntryCheckStatusV1, NightlySummarizeArgs, OperatorReportArgs,
+    OperatorReviewPacketArgs, OperatorSignoffArgs, OperatorWorkflowArgs, ReleaseBuildRcArgs,
+    SoakRunArgs, SpecSnapshotArgs, StrictEvidenceContextV1, V2GateOverallStatus,
+    V3GateOverallStatus, V4GateOverallStatus, V5GateOverallStatus, V6GateOverallStatus,
+    V7GateOverallStatus, V8GateOverallStatus,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -2183,6 +2185,21 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 std::process::exit(2);
             }
         }
+        "governance-entry-sweep" => {
+            let out = arg_value(&args, "--out")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("./out/governance_entry_sweep.json"));
+            let report = governance_entry_sweep(&workdir, &out)?;
+            println!("status={:?}", report.authority.authority_status);
+            println!("authority_digest={}", report.authority.authority_digest);
+            println!("out={}", out.display());
+            if !matches!(
+                report.authority.authority_status,
+                GovernanceEntryAuthorityStatusV2::Pass
+            ) {
+                std::process::exit(2);
+            }
+        }
 
         "governance-surfaces-check" => {
             let out = arg_value(&args, "--out")
@@ -2905,7 +2922,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             eprintln!(
-                "usage: ucf-ops <bringup|diag|health|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|attest|repro|exports|readiness-gate|preflight|goldens|nightly|dev|troubleshoot|adversarial-run|out|release|bench|runs|status|strict|ess|ebm|drift|alerts|operator|policy|portability|spec|change-impact|soak|governance-surfaces-check|governance-entry-check|remediation-consistency-check|remediation-interop-check|remediation-spine-check|interop|v0|v1|v2|v3|v4|v5|v6|v7|v8|version> [--workdir <path>] [--bundle <path>]"
+                "usage: ucf-ops <bringup|diag|health|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|attest|repro|exports|readiness-gate|preflight|goldens|nightly|dev|troubleshoot|adversarial-run|out|release|bench|runs|status|strict|ess|ebm|drift|alerts|operator|policy|portability|spec|change-impact|soak|governance-surfaces-check|governance-entry-check|governance-entry-sweep|remediation-consistency-check|remediation-interop-check|remediation-spine-check|interop|v0|v1|v2|v3|v4|v5|v6|v7|v8|version> [--workdir <path>] [--bundle <path>]"
             );
             std::process::exit(1);
         }

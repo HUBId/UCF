@@ -8,9 +8,10 @@ use crate::{
     derive_canonical_governance_entry, exports_bundle_spine_check, exports_roundtrip_check,
     load_applied_supported_set_context_v1, models_active_review_snapshot, models_evidence_snapshot,
     operator_export_chain_check, operator_review_packet, operator_signoff, operator_workflow_chain,
-    prefix_hex, readiness_spine_check, validate_governance_primary_surfaces_with_applied_scope,
-    BugKitManifestV1, BundleSpineStatusV1, OperatorReviewPacketArgs, OperatorSignoffArgs,
-    OperatorWorkflowArgs, OpsError, ReproPackManifestV1, SignoffDecisionStateV1,
+    prefix_hex, readiness_spine_check, require_canonical_governance_entry,
+    validate_governance_primary_surfaces_with_applied_scope, BugKitManifestV1, BundleSpineStatusV1,
+    OperatorReviewPacketArgs, OperatorSignoffArgs, OperatorWorkflowArgs, OpsError,
+    ReproPackManifestV1, SignoffDecisionStateV1,
 };
 
 const DIGEST_PREFIX_LEN: usize = 16;
@@ -54,6 +55,7 @@ pub fn operator_roundtrip_chain_check(
     let governance_surfaces =
         validate_governance_primary_surfaces_with_applied_scope(&backend, &active, &applied)?;
     let governance_entry = derive_canonical_governance_entry(&applied, &governance_surfaces)?;
+    let governance_entry = require_canonical_governance_entry(&applied, Some(&governance_entry))?;
 
     let review_packet = operator_review_packet(
         workdir,
