@@ -20,11 +20,11 @@ v7 introduces `SupportedScopeReevaluationV1` so expansion is re-validated agains
 
 ```bash
 cargo run -p ucf-ops -- models supported-scope-reevaluate --out ./out/supported_scope_reeval.json
-cargo run -p ucf-ops -- models supported-scope-execute --out ./out/supported_scope_execute_v3.json
+cargo run -p ucf-ops -- models supported-scope-execute-v4 --out ./out/supported_scope_execute_v4.json
 cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json
 ```
 
-Reevaluation is now an intermediate input. `supported-set-apply` no longer executes reevaluation artifacts directly; it requires `SupportedScopeExecutionV3`, which itself is bound to canonical governance entry authority. If reevaluation is stale, execution/apply regenerate the current chain deterministically.
+Reevaluation is now an intermediate input. `supported-set-apply` no longer executes reevaluation artifacts directly; it requires `SupportedScopeExecutionV4`, which itself is bound to canonical governance entry authority. If reevaluation is stale, execution/apply regenerate the current chain deterministically.
 
 ## Scope and safety
 

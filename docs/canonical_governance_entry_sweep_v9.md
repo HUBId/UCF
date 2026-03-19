@@ -7,6 +7,8 @@
 
 The sweep emits `CanonicalGovernanceEntryAuthorityV2` and per-surface status records.
 
+`SupportedScopeExecutionV4` consumes this authority artifact directly, so scope expansion can run only under the final canonical governance entrypoint.
+
 ## Command
 
 ```bash

@@ -32,6 +32,7 @@
     "strict_failure_report_v3",
     "supported_real_slot_set_v2",
     "supported_scope_execution_v3",
+    "supported_scope_execution_v4",
     "supported_scope_reevaluation_v1",
     "v3_gate_report_v1",
     "v4_gate_report_v1",

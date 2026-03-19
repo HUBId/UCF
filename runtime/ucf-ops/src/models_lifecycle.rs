@@ -16,8 +16,9 @@ use crate::second_slot_parity::{OptionalBackendSupportStateV1, SecondSlotParityR
 use crate::{
     derive_canonical_governance_entry, prefix_hex, resolve_strict_evidence, sha256_hex,
     validate_governance_primary_surfaces_with_applied_scope, CanonicalGovernanceEntryStatusV1,
-    GovernanceEntryCheckReportV1, GovernanceEntryCheckStatusV1, OperatorSignoffDecisionV1,
-    OpsError, SignoffDecisionStateV1, StrictEvidenceContextV1, StrictEvidenceStatusV1,
+    GovernanceEntryAuthorityStatusV2, GovernanceEntryCheckReportV1, GovernanceEntryCheckStatusV1,
+    GovernanceEntrySweepReportV1, OperatorSignoffDecisionV1, OpsError, SignoffDecisionStateV1,
+    StrictEvidenceContextV1, StrictEvidenceStatusV1,
 };
 
 const MANIFEST_HISTORY_KEEP: usize = 20;
@@ -41,6 +42,7 @@ const APPLIED_SUPPORTED_SET_CONTEXT_SCHEMA_VERSION: u16 = 1;
 const SLOT_EXPANSION_ELIGIBILITY_SCHEMA_VERSION: u16 = 1;
 const SUPPORTED_SCOPE_REEVALUATION_V1_SCHEMA_VERSION: u16 = 1;
 const SUPPORTED_SCOPE_EXECUTION_V3_SCHEMA_VERSION: u16 = 3;
+const SUPPORTED_SCOPE_EXECUTION_V4_SCHEMA_VERSION: u16 = 4;
 const SLOT_SET_MAX: usize = 2;
 const PROBE_OUTPUT_CAP: usize = 8;
 const PROBE_NOTES_CAP: usize = 8;
@@ -316,6 +318,31 @@ pub struct SupportedScopeExecutionV3 {
     pub current_reevaluation_digest_prefix: String,
     pub canonical_governance_entry_digest_prefix: String,
     pub execution_decision: SupportedScopeExecutionDecisionV3,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chosen_candidate_slot: Option<String>,
+    pub resulting_supported_set_digest_prefix: String,
+    pub rationale_codes: Vec<String>,
+    pub execution_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum SupportedScopeExecutionDecisionV4 {
+    ReaffirmFreeze,
+    ExecuteExpandByOne,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SupportedScopeExecutionV4 {
+    pub schema_version: u16,
+    pub previous_applied_set_digest_prefix: String,
+    pub current_policy_digest_prefix: String,
+    pub current_reevaluation_digest_prefix: String,
+    pub canonical_governance_entry_digest_prefix: String,
+    pub canonical_governance_authority_digest_prefix: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prior_scope_execution_digest_prefix: Option<String>,
+    pub execution_decision: SupportedScopeExecutionDecisionV4,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub chosen_candidate_slot: Option<String>,
     pub resulting_supported_set_digest_prefix: String,
@@ -2873,16 +2900,16 @@ pub fn models_supported_set_apply(
 ) -> Result<SupportedSetApplyReportV1, OpsError> {
     let policy = load_latest_supported_set_policy_v2(workdir)?;
     let previous_set = current_supported_real_slot_set(workdir)?;
-    let execution = ensure_current_supported_scope_execution_v3(workdir, &policy, &previous_set)?;
+    let execution = ensure_current_supported_scope_execution_v4(workdir, &policy, &previous_set)?;
 
     let mut reevaluated_policy = policy.clone();
     match execution.execution_decision {
-        SupportedScopeExecutionDecisionV3::ReaffirmFreeze => {
+        SupportedScopeExecutionDecisionV4::ReaffirmFreeze => {
             reevaluated_policy.decision = SupportedRealSlotSetDecisionV2::Freeze;
             reevaluated_policy.chosen_candidate_slot = None;
             reevaluated_policy.rationale_codes = execution.rationale_codes.clone();
         }
-        SupportedScopeExecutionDecisionV3::ExecuteExpandByOne => {
+        SupportedScopeExecutionDecisionV4::ExecuteExpandByOne => {
             let Some(slot) = execution.chosen_candidate_slot.clone() else {
                 return Err(OpsError::Invalid(
                     "SUPPORTED_SET_APPLY_EXECUTION_INVALID: expansion decision missing candidate"
@@ -3074,6 +3101,52 @@ pub fn models_supported_scope_execute(
     }
     fs::write(out, serde_json::to_vec_pretty(&execution)?)?;
     Ok(execution)
+}
+
+pub fn models_supported_scope_execute_v4(
+    workdir: &Path,
+    out: &Path,
+) -> Result<SupportedScopeExecutionV4, OpsError> {
+    let policy = load_latest_supported_set_policy_v2(workdir)?;
+    let previous_set = current_supported_real_slot_set(workdir)?;
+    let reevaluation = load_latest_supported_scope_reevaluation_v1(workdir)?;
+    let policy_prefix = prefix_hex(&policy.policy_digest, 16);
+    let previous_prefix = prefix_hex(&previous_set.set_digest, 16);
+    if reevaluation.policy_digest_prefix != policy_prefix
+        || reevaluation.previous_applied_set_digest_prefix != previous_prefix
+    {
+        return Err(OpsError::Invalid(
+            "SCOPE_EXEC_V4_STALE_REEVALUATION: rerun `ucf-ops models supported-scope-reevaluate`"
+                .to_string(),
+        ));
+    }
+
+    let prior_scope_execution_digest_prefix = load_prior_scope_execution_digest_prefix(workdir)?;
+    let execution = validate_scope_execution_v4(
+        workdir,
+        &policy,
+        &previous_set,
+        &reevaluation,
+        prior_scope_execution_digest_prefix,
+    )?;
+    if let Some(parent) = out.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(out, serde_json::to_vec_pretty(&execution)?)?;
+    Ok(execution)
+}
+
+fn load_prior_scope_execution_digest_prefix(workdir: &Path) -> Result<Option<String>, OpsError> {
+    let v4_path = workdir.join("out").join("supported_scope_execute_v4.json");
+    if let Ok(report) = read_json_file::<SupportedScopeExecutionV4>(&v4_path) {
+        return Ok(Some(prefix_hex(&report.execution_digest, 16)));
+    }
+
+    let v3_path = workdir.join("out").join("supported_scope_execute_v3.json");
+    if let Ok(report) = read_json_file::<SupportedScopeExecutionV3>(&v3_path) {
+        return Ok(Some(prefix_hex(&report.execution_digest, 16)));
+    }
+    Ok(None)
 }
 
 fn validate_scope_execution_v3(
@@ -3283,20 +3356,273 @@ fn validate_scope_execution_v3(
     })
 }
 
-fn ensure_current_supported_scope_execution_v3(
+fn validate_scope_execution_v4(
     workdir: &Path,
     policy: &SupportedRealSlotSetPolicyV2,
     previous_set: &SupportedRealSlotSetV1,
-) -> Result<SupportedScopeExecutionV3, OpsError> {
-    let path = workdir.join("out").join("supported_scope_execute_v3.json");
-    if let Ok(report) = read_json_file::<SupportedScopeExecutionV3>(&path) {
+    reevaluation: &SupportedScopeReevaluationV1,
+    prior_scope_execution_digest_prefix: Option<String>,
+) -> Result<SupportedScopeExecutionV4, OpsError> {
+    let policy_prefix = prefix_hex(&policy.policy_digest, 16);
+    let previous_prefix = prefix_hex(&previous_set.set_digest, 16);
+    let reeval_prefix = prefix_hex(&reevaluation.reevaluation_digest, 16);
+
+    if let Ok(prior_v4) = read_json_file::<SupportedScopeExecutionV4>(
+        &workdir.join("out/supported_scope_execute_v4.json"),
+    ) {
+        if prior_v4.current_policy_digest_prefix != policy_prefix
+            || prior_v4.previous_applied_set_digest_prefix != previous_prefix
+            || prior_v4.current_reevaluation_digest_prefix != reeval_prefix
+        {
+            return Err(OpsError::Invalid(
+                "SCOPE_EXEC_V4_STALE_PRIOR_EXECUTION: remove stale out/supported_scope_execute_v4.json and rerun execution chain".to_string(),
+            ));
+        }
+    } else if let Ok(prior_v3) = read_json_file::<SupportedScopeExecutionV3>(
+        &workdir.join("out/supported_scope_execute_v3.json"),
+    ) {
+        if prior_v3.current_policy_digest_prefix != policy_prefix
+            || prior_v3.previous_applied_set_digest_prefix != previous_prefix
+            || prior_v3.current_reevaluation_digest_prefix != reeval_prefix
+        {
+            return Err(OpsError::Invalid(
+                "SCOPE_EXEC_V4_STALE_PRIOR_EXECUTION: remove stale out/supported_scope_execute_v3.json and rerun execution chain".to_string(),
+            ));
+        }
+    }
+
+    let applied_context = load_applied_supported_set_context_v1(workdir)?;
+    let expected_applied_prefix = prefix_hex(&previous_set.set_digest, 16);
+    if applied_context.applied_set_digest_prefix != expected_applied_prefix {
+        return Err(OpsError::Invalid(
+            "SCOPE_EXEC_V4_STALE_APPLIED_SCOPE: current applied context no longer matches supported scope baseline"
+                .to_string(),
+        ));
+    }
+
+    let mut rationale_codes = Vec::new();
+    let mut chosen_candidate_slot = None;
+    let mut execution_decision = SupportedScopeExecutionDecisionV4::ReaffirmFreeze;
+    let mut resulting_slots = previous_set.slots.clone();
+
+    let mut canonical_digest_prefix = "UNAVAILABLE".to_string();
+    let mut authority_digest_prefix = "UNAVAILABLE".to_string();
+
+    let canonical_entry = derive_and_validate_canonical_entry(workdir, &applied_context)
+        .map_err(|code| OpsError::Invalid(code.to_string()));
+    if let Ok(entry) = canonical_entry {
+        canonical_digest_prefix = prefix_hex(&entry.authority_digest, 16);
+    } else {
+        rationale_codes.push("SCOPE_EXEC_V4_GOVERNANCE_ENTRY_FAIL".to_string());
+    }
+
+    let authority =
+        load_and_validate_governance_authority(workdir, &applied_context, &canonical_digest_prefix)
+            .map_err(|code| OpsError::Invalid(code.to_string()));
+    let authority_ok = if let Ok(authority) = authority {
+        authority_digest_prefix = prefix_hex(&authority.authority_digest, 16);
+        true
+    } else {
+        rationale_codes.push("SCOPE_EXEC_V4_GOVERNANCE_AUTHORITY_FAIL".to_string());
+        false
+    };
+
+    let candidate_slots = policy
+        .candidate_slots_considered
+        .iter()
+        .map(|slot_id| {
+            evaluate_slot_expansion_candidate(
+                slot_id,
+                &previous_set.slots.iter().cloned().collect::<BTreeSet<_>>(),
+                SLOT_SET_MAX + 1,
+            )
+        })
+        .collect::<Vec<_>>();
+
+    let mut viable_candidates = Vec::new();
+    let applied_v2 = read_json_file::<SupportedRealSlotSetV2>(
+        &workdir.join("out/supported_real_slot_set_applied_v2.json"),
+    )
+    .unwrap_or_else(|_| {
+        build_supported_real_slot_set_v2(
+            previous_set.slots.clone(),
+            &policy.policy_digest,
+            &previous_set.set_digest,
+            SupportedRealSlotSetExecutionDecisionV2::Frozen,
+        )
+    });
+    for candidate in &candidate_slots {
+        if previous_set.slots.contains(&candidate.slot_id) {
+            rationale_codes.push("SCOPE_EXEC_V4_ALREADY_IN_SCOPE".to_string());
+            continue;
+        }
+
+        if !candidate.trait_contract_exists
+            || !candidate.probe_path_exists_or_reusable
+            || !candidate.shadow_path_exists_or_trivially_attachable
+            || !candidate.compare_window_normalizable
+            || !candidate.strict_evidence_plumbing_representable_without_arch_fork
+        {
+            rationale_codes.push("SCOPE_EXEC_V4_INCOMPLETE_SCAFFOLD".to_string());
+            continue;
+        }
+
+        let authority_failures =
+            validate_scope_expansion_under_authority(workdir, &applied_v2, candidate);
+        if authority_failures
+            .iter()
+            .any(|f| f == "SCOPE_REEVAL_GOVERNANCE_MISMATCH")
+        {
+            rationale_codes.push("SCOPE_EXEC_V4_SECONDARY_ENTRY_DEPENDENCY".to_string());
+            continue;
+        }
+        if authority_failures
+            .iter()
+            .any(|f| f == "SCOPE_REEVAL_EXPORT_INTEROP_GAP")
+        {
+            rationale_codes.push("SCOPE_EXEC_V4_EXPORT_BUNDLE_GAP".to_string());
+            continue;
+        }
+        if !authority_ok {
+            continue;
+        }
+        viable_candidates.push(candidate.slot_id.clone());
+    }
+
+    if viable_candidates.len() > 1 {
+        rationale_codes.push("SCOPE_EXEC_V4_AMBIGUOUS_CANDIDATE".to_string());
+    } else if let Some(slot) = viable_candidates.first() {
+        if reevaluation.reevaluation_decision
+            == SupportedScopeReevaluationDecisionV1::ExecuteExpandByOne
+            && reevaluation.chosen_candidate_slot.as_ref() == Some(slot)
+            && policy.chosen_candidate_slot.as_ref() == Some(slot)
+        {
+            execution_decision = SupportedScopeExecutionDecisionV4::ExecuteExpandByOne;
+            chosen_candidate_slot = Some(slot.clone());
+            resulting_slots.push(slot.clone());
+            resulting_slots.sort();
+            resulting_slots.dedup();
+            rationale_codes.push("SCOPE_EXEC_V4_EXPANSION_EXECUTED".to_string());
+            rationale_codes.push("SCOPE_EXEC_V4_NO_ACTIVE_IMPLICATIONS".to_string());
+        } else {
+            rationale_codes.push("SCOPE_EXEC_V4_SECONDARY_ENTRY_DEPENDENCY".to_string());
+        }
+    } else {
+        rationale_codes.push("SCOPE_EXEC_V4_REAFFIRM_FREEZE".to_string());
+    }
+
+    rationale_codes.sort();
+    rationale_codes.dedup();
+    let resulting = build_supported_real_slot_set_v2(
+        resulting_slots.clone(),
+        &policy.policy_digest,
+        &previous_set.set_digest,
+        if chosen_candidate_slot.is_some() {
+            SupportedRealSlotSetExecutionDecisionV2::Expanded
+        } else {
+            SupportedRealSlotSetExecutionDecisionV2::Frozen
+        },
+    );
+
+    let mut digest_source = Vec::new();
+    digest_source.extend_from_slice(
+        SUPPORTED_SCOPE_EXECUTION_V4_SCHEMA_VERSION
+            .to_string()
+            .as_bytes(),
+    );
+    digest_source.extend_from_slice(previous_prefix.as_bytes());
+    digest_source.extend_from_slice(policy_prefix.as_bytes());
+    digest_source.extend_from_slice(reeval_prefix.as_bytes());
+    digest_source.extend_from_slice(canonical_digest_prefix.as_bytes());
+    digest_source.extend_from_slice(authority_digest_prefix.as_bytes());
+    if let Some(prior) = prior_scope_execution_digest_prefix.as_ref() {
+        digest_source.extend_from_slice(prior.as_bytes());
+    }
+    digest_source.extend_from_slice(format!("{:?}", execution_decision).as_bytes());
+    if let Some(slot) = chosen_candidate_slot.as_ref() {
+        digest_source.extend_from_slice(slot.as_bytes());
+    }
+    for slot in &resulting_slots {
+        digest_source.extend_from_slice(slot.as_bytes());
+    }
+    for code in &rationale_codes {
+        digest_source.extend_from_slice(code.as_bytes());
+    }
+
+    Ok(SupportedScopeExecutionV4 {
+        schema_version: SUPPORTED_SCOPE_EXECUTION_V4_SCHEMA_VERSION,
+        previous_applied_set_digest_prefix: previous_prefix,
+        current_policy_digest_prefix: policy_prefix,
+        current_reevaluation_digest_prefix: reeval_prefix,
+        canonical_governance_entry_digest_prefix: canonical_digest_prefix,
+        canonical_governance_authority_digest_prefix: authority_digest_prefix,
+        prior_scope_execution_digest_prefix,
+        execution_decision,
+        chosen_candidate_slot,
+        resulting_supported_set_digest_prefix: prefix_hex(&resulting.set_digest, 16),
+        rationale_codes,
+        execution_digest: sha256_hex(&digest_source),
+    })
+}
+
+fn derive_and_validate_canonical_entry(
+    workdir: &Path,
+    applied_context: &AppliedSupportedSetContextV1,
+) -> Result<crate::CanonicalGovernanceEntryV1, &'static str> {
+    let backend = read_json_file::<BackendEvidenceSnapshotV1>(
+        &workdir.join("out/backend_evidence_snapshot.json"),
+    )
+    .map_err(|_| "SCOPE_EXEC_V4_GOVERNANCE_ENTRY_FAIL")?;
+    let active = read_json_file::<AggregatedActiveReviewSnapshotV1>(
+        &workdir.join("out/active_review_snapshot.json"),
+    )
+    .map_err(|_| "SCOPE_EXEC_V4_GOVERNANCE_ENTRY_FAIL")?;
+    let surfaces =
+        validate_governance_primary_surfaces_with_applied_scope(&backend, &active, applied_context)
+            .map_err(|_| "SCOPE_EXEC_V4_GOVERNANCE_ENTRY_FAIL")?;
+    let entry = derive_canonical_governance_entry(applied_context, &surfaces)
+        .map_err(|_| "SCOPE_EXEC_V4_GOVERNANCE_ENTRY_FAIL")?;
+    if entry.entry_status != CanonicalGovernanceEntryStatusV1::Pass {
+        return Err("SCOPE_EXEC_V4_GOVERNANCE_ENTRY_FAIL");
+    }
+    Ok(entry)
+}
+
+fn load_and_validate_governance_authority(
+    workdir: &Path,
+    applied_context: &AppliedSupportedSetContextV1,
+    canonical_digest_prefix: &str,
+) -> Result<crate::CanonicalGovernanceEntryAuthorityV2, &'static str> {
+    let sweep = read_json_file::<GovernanceEntrySweepReportV1>(
+        &workdir.join("out/governance_entry_sweep.json"),
+    )
+    .map_err(|_| "SCOPE_EXEC_V4_GOVERNANCE_AUTHORITY_FAIL")?;
+    if sweep.authority.authority_status != GovernanceEntryAuthorityStatusV2::Pass
+        || sweep.authority.applied_supported_set_digest_prefix
+            != applied_context.applied_set_digest_prefix
+        || sweep.authority.applied_context_digest_prefix
+            != prefix_hex(&applied_context.context_digest, 16)
+        || sweep.authority.canonical_governance_entry_digest_prefix != canonical_digest_prefix
+    {
+        return Err("SCOPE_EXEC_V4_GOVERNANCE_AUTHORITY_FAIL");
+    }
+    Ok(sweep.authority)
+}
+
+fn ensure_current_supported_scope_execution_v4(
+    workdir: &Path,
+    policy: &SupportedRealSlotSetPolicyV2,
+    previous_set: &SupportedRealSlotSetV1,
+) -> Result<SupportedScopeExecutionV4, OpsError> {
+    let path = workdir.join("out").join("supported_scope_execute_v4.json");
+    if let Ok(report) = read_json_file::<SupportedScopeExecutionV4>(&path) {
         if report.current_policy_digest_prefix == prefix_hex(&policy.policy_digest, 16)
             && report.previous_applied_set_digest_prefix == prefix_hex(&previous_set.set_digest, 16)
         {
             return Ok(report);
         }
     }
-    models_supported_scope_execute(workdir, &path)
+    models_supported_scope_execute_v4(workdir, &path)
 }
 
 fn load_latest_supported_set_policy_v2(
@@ -6456,6 +6782,33 @@ mod probe_tests {
             .expect("write governance entry");
         }
 
+        fn write_governance_entry_sweep_artifact(
+            root: &Path,
+            applied_digest_prefix: &str,
+            applied_context_digest_prefix: &str,
+            canonical_digest_prefix: &str,
+            status: GovernanceEntryAuthorityStatusV2,
+        ) {
+            let report = GovernanceEntrySweepReportV1 {
+                schema_version: 1,
+                authority: crate::CanonicalGovernanceEntryAuthorityV2 {
+                    schema_version: 2,
+                    applied_supported_set_digest_prefix: applied_digest_prefix.to_string(),
+                    applied_context_digest_prefix: applied_context_digest_prefix.to_string(),
+                    canonical_governance_entry_digest_prefix: canonical_digest_prefix.to_string(),
+                    covered_surface_count: 6,
+                    authority_status: status,
+                    authority_digest: "ab".repeat(32),
+                },
+                surfaces: vec![],
+            };
+            fs::write(
+                root.join("out/governance_entry_sweep.json"),
+                serde_json::to_vec_pretty(&report).expect("governance sweep json"),
+            )
+            .expect("write governance sweep");
+        }
+
         #[test]
         fn supported_scope_reeval_reaffirms_freeze_when_policy_stale() {
             let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
@@ -6742,6 +7095,523 @@ mod probe_tests {
                 SupportedScopeExecutionDecisionV3::ExecuteExpandByOne
             );
             assert_eq!(report.chosen_candidate_slot.as_deref(), Some("ssm"));
+        }
+
+        #[test]
+        fn supported_scope_execute_v4_expands_when_one_candidate_and_authority_pass() {
+            let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
+            let dir = tempfile::tempdir().expect("tempdir");
+            let _cwd = CwdGuard::enter(dir.path());
+            fs::create_dir_all("out").expect("out");
+
+            let applied = build_supported_real_slot_set_v2(
+                vec!["world_jepa".to_string()],
+                &"11".repeat(32),
+                &"22".repeat(32),
+                SupportedRealSlotSetExecutionDecisionV2::Frozen,
+            );
+            fs::write(
+                "out/supported_real_slot_set_applied_v2.json",
+                serde_json::to_vec_pretty(&applied).expect("applied"),
+            )
+            .expect("write applied");
+            write_scope_reeval_support_artifacts(
+                Path::new("."),
+                &applied.set_digest,
+                &["world_jepa"],
+            );
+
+            let review = SupportedSetReviewReportV1 {
+                policy: SupportedRealSlotSetPolicyV2 {
+                    schema_version: 2,
+                    current_supported_slots: vec!["world_jepa".to_string()],
+                    candidate_slots_considered: vec!["ssm".to_string()],
+                    decision: SupportedRealSlotSetDecisionV2::ExpandByOne,
+                    chosen_candidate_slot: Some("ssm".to_string()),
+                    rationale_codes: vec!["EXPANSION_READY_EXACTLY_ONE".to_string()],
+                    policy_digest: "33".repeat(32),
+                },
+                known_slots: vec![],
+                candidates: vec![],
+            };
+            fs::write(
+                "out/supported_set_review.json",
+                serde_json::to_vec_pretty(&review).expect("review"),
+            )
+            .expect("write review");
+
+            let reeval = models_supported_scope_reevaluate(
+                Path::new("."),
+                Path::new("out/supported_scope_reeval.json"),
+            )
+            .expect("reeval");
+            assert_eq!(
+                reeval.reevaluation_decision,
+                SupportedScopeReevaluationDecisionV1::ExecuteExpandByOne
+            );
+
+            let applied_ctx = load_applied_supported_set_context_v1(Path::new(".")).expect("ctx");
+            let backend = read_json_file::<BackendEvidenceSnapshotV1>(Path::new(
+                "out/backend_evidence_snapshot.json",
+            ))
+            .expect("backend");
+            let active = read_json_file::<AggregatedActiveReviewSnapshotV1>(Path::new(
+                "out/active_review_snapshot.json",
+            ))
+            .expect("active");
+            let surfaces = validate_governance_primary_surfaces_with_applied_scope(
+                &backend,
+                &active,
+                &applied_ctx,
+            )
+            .expect("surfaces");
+            let entry = derive_canonical_governance_entry(&applied_ctx, &surfaces).expect("entry");
+            write_governance_entry_sweep_artifact(
+                Path::new("."),
+                &applied_ctx.applied_set_digest_prefix,
+                &prefix_hex(&applied_ctx.context_digest, 16),
+                &prefix_hex(&entry.authority_digest, 16),
+                GovernanceEntryAuthorityStatusV2::Pass,
+            );
+
+            let out = PathBuf::from("out/supported_scope_execute_v4.json");
+            let report = models_supported_scope_execute_v4(Path::new("."), &out).expect("execute");
+            assert_eq!(
+                report.execution_decision,
+                SupportedScopeExecutionDecisionV4::ExecuteExpandByOne
+            );
+            assert_eq!(report.chosen_candidate_slot.as_deref(), Some("ssm"));
+            assert!(report
+                .rationale_codes
+                .contains(&"SCOPE_EXEC_V4_NO_ACTIVE_IMPLICATIONS".to_string()));
+        }
+
+        #[test]
+        fn supported_scope_execute_v4_reaffirms_freeze_when_two_candidates_viable() {
+            let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
+            let dir = tempfile::tempdir().expect("tempdir");
+            let _cwd = CwdGuard::enter(dir.path());
+            fs::create_dir_all("out").expect("out");
+
+            let applied = build_supported_real_slot_set_v2(
+                vec!["world_jepa".to_string()],
+                &"11".repeat(32),
+                &"22".repeat(32),
+                SupportedRealSlotSetExecutionDecisionV2::Frozen,
+            );
+            fs::write(
+                "out/supported_real_slot_set_applied_v2.json",
+                serde_json::to_vec_pretty(&applied).expect("applied"),
+            )
+            .expect("write applied");
+            write_scope_reeval_support_artifacts(
+                Path::new("."),
+                &applied.set_digest,
+                &["world_jepa"],
+            );
+
+            let review = SupportedSetReviewReportV1 {
+                policy: SupportedRealSlotSetPolicyV2 {
+                    schema_version: 2,
+                    current_supported_slots: vec!["world_jepa".to_string()],
+                    candidate_slots_considered: vec!["sae".to_string(), "ssm".to_string()],
+                    decision: SupportedRealSlotSetDecisionV2::ExpandByOne,
+                    chosen_candidate_slot: Some("ssm".to_string()),
+                    rationale_codes: vec!["EXPANSION_READY_EXACTLY_ONE".to_string()],
+                    policy_digest: "33".repeat(32),
+                },
+                known_slots: vec![],
+                candidates: vec![],
+            };
+            fs::write(
+                "out/supported_set_review.json",
+                serde_json::to_vec_pretty(&review).expect("review"),
+            )
+            .expect("write review");
+            let _ = models_supported_scope_reevaluate(
+                Path::new("."),
+                Path::new("out/supported_scope_reeval.json"),
+            )
+            .expect("reeval");
+
+            let applied_ctx = load_applied_supported_set_context_v1(Path::new(".")).expect("ctx");
+            let backend = read_json_file::<BackendEvidenceSnapshotV1>(Path::new(
+                "out/backend_evidence_snapshot.json",
+            ))
+            .expect("backend");
+            let active = read_json_file::<AggregatedActiveReviewSnapshotV1>(Path::new(
+                "out/active_review_snapshot.json",
+            ))
+            .expect("active");
+            let entry = derive_canonical_governance_entry(
+                &applied_ctx,
+                &validate_governance_primary_surfaces_with_applied_scope(
+                    &backend,
+                    &active,
+                    &applied_ctx,
+                )
+                .expect("surfaces"),
+            )
+            .expect("entry");
+            write_governance_entry_sweep_artifact(
+                Path::new("."),
+                &applied_ctx.applied_set_digest_prefix,
+                &prefix_hex(&applied_ctx.context_digest, 16),
+                &prefix_hex(&entry.authority_digest, 16),
+                GovernanceEntryAuthorityStatusV2::Pass,
+            );
+
+            let report = models_supported_scope_execute_v4(
+                Path::new("."),
+                Path::new("out/supported_scope_execute_v4.json"),
+            )
+            .expect("execute");
+            assert_eq!(
+                report.execution_decision,
+                SupportedScopeExecutionDecisionV4::ReaffirmFreeze
+            );
+            assert!(report
+                .rationale_codes
+                .contains(&"SCOPE_EXEC_V4_AMBIGUOUS_CANDIDATE".to_string()));
+        }
+
+        #[test]
+        fn supported_scope_execute_v4_digest_is_deterministic() {
+            let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
+            let dir = tempfile::tempdir().expect("tempdir");
+            let _cwd = CwdGuard::enter(dir.path());
+            fs::create_dir_all("out").expect("out");
+
+            let applied = build_supported_real_slot_set_v2(
+                vec!["world_jepa".to_string()],
+                &"11".repeat(32),
+                &"22".repeat(32),
+                SupportedRealSlotSetExecutionDecisionV2::Frozen,
+            );
+            fs::write(
+                "out/supported_real_slot_set_applied_v2.json",
+                serde_json::to_vec_pretty(&applied).expect("applied"),
+            )
+            .expect("write applied");
+            write_scope_reeval_support_artifacts(
+                Path::new("."),
+                &applied.set_digest,
+                &["world_jepa"],
+            );
+
+            let review = SupportedSetReviewReportV1 {
+                policy: SupportedRealSlotSetPolicyV2 {
+                    schema_version: 2,
+                    current_supported_slots: vec!["world_jepa".to_string()],
+                    candidate_slots_considered: vec!["ssm".to_string()],
+                    decision: SupportedRealSlotSetDecisionV2::Freeze,
+                    chosen_candidate_slot: None,
+                    rationale_codes: vec!["INSUFFICIENT_EVIDENCE_FREEZE".to_string()],
+                    policy_digest: "33".repeat(32),
+                },
+                known_slots: vec![],
+                candidates: vec![],
+            };
+            fs::write(
+                "out/supported_set_review.json",
+                serde_json::to_vec_pretty(&review).expect("review"),
+            )
+            .expect("write review");
+            let _ = models_supported_scope_reevaluate(
+                Path::new("."),
+                Path::new("out/supported_scope_reeval.json"),
+            )
+            .expect("reeval");
+
+            let applied_ctx = load_applied_supported_set_context_v1(Path::new(".")).expect("ctx");
+            let backend = read_json_file::<BackendEvidenceSnapshotV1>(Path::new(
+                "out/backend_evidence_snapshot.json",
+            ))
+            .expect("backend");
+            let active = read_json_file::<AggregatedActiveReviewSnapshotV1>(Path::new(
+                "out/active_review_snapshot.json",
+            ))
+            .expect("active");
+            let entry = derive_canonical_governance_entry(
+                &applied_ctx,
+                &validate_governance_primary_surfaces_with_applied_scope(
+                    &backend,
+                    &active,
+                    &applied_ctx,
+                )
+                .expect("surfaces"),
+            )
+            .expect("entry");
+            write_governance_entry_sweep_artifact(
+                Path::new("."),
+                &applied_ctx.applied_set_digest_prefix,
+                &prefix_hex(&applied_ctx.context_digest, 16),
+                &prefix_hex(&entry.authority_digest, 16),
+                GovernanceEntryAuthorityStatusV2::Pass,
+            );
+
+            let a = models_supported_scope_execute_v4(
+                Path::new("."),
+                Path::new("out/supported_scope_execute_v4_a.json"),
+            )
+            .expect("execute a");
+            let b = models_supported_scope_execute_v4(
+                Path::new("."),
+                Path::new("out/supported_scope_execute_v4_b.json"),
+            )
+            .expect("execute b");
+            assert_eq!(a.execution_digest, b.execution_digest);
+            assert_eq!(a.rationale_codes, b.rationale_codes);
+        }
+
+        #[test]
+        fn supported_scope_execute_v4_denies_stale_reevaluation() {
+            let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
+            let dir = tempfile::tempdir().expect("tempdir");
+            let _cwd = CwdGuard::enter(dir.path());
+            fs::create_dir_all("out").expect("out");
+
+            let applied = build_supported_real_slot_set_v2(
+                vec!["world_jepa".to_string()],
+                &"11".repeat(32),
+                &"22".repeat(32),
+                SupportedRealSlotSetExecutionDecisionV2::Frozen,
+            );
+            fs::write(
+                "out/supported_real_slot_set_applied_v2.json",
+                serde_json::to_vec_pretty(&applied).expect("applied"),
+            )
+            .expect("write applied");
+            let review = SupportedSetReviewReportV1 {
+                policy: SupportedRealSlotSetPolicyV2 {
+                    schema_version: 2,
+                    current_supported_slots: vec!["world_jepa".to_string()],
+                    candidate_slots_considered: vec!["ssm".to_string()],
+                    decision: SupportedRealSlotSetDecisionV2::Freeze,
+                    chosen_candidate_slot: None,
+                    rationale_codes: vec!["INSUFFICIENT_EVIDENCE_FREEZE".to_string()],
+                    policy_digest: "33".repeat(32),
+                },
+                known_slots: vec![],
+                candidates: vec![],
+            };
+            fs::write(
+                "out/supported_set_review.json",
+                serde_json::to_vec_pretty(&review).expect("review"),
+            )
+            .expect("write review");
+
+            let stale = SupportedScopeReevaluationV1 {
+                schema_version: 1,
+                previous_applied_set_digest_prefix: "ff".repeat(8),
+                policy_digest_prefix: "ee".repeat(8),
+                reevaluation_decision: SupportedScopeReevaluationDecisionV1::ReaffirmFreeze,
+                chosen_candidate_slot: None,
+                rationale_codes: vec!["SCOPE_REEVAL_FREEZE_DEFAULT".to_string()],
+                reevaluation_digest: "44".repeat(32),
+            };
+            fs::write(
+                "out/supported_scope_reeval.json",
+                serde_json::to_vec_pretty(&stale).expect("stale"),
+            )
+            .expect("write stale reeval");
+            let err = models_supported_scope_execute_v4(
+                Path::new("."),
+                Path::new("out/supported_scope_execute_v4.json"),
+            )
+            .expect_err("must reject stale reevaluation");
+            assert!(err.to_string().contains("SCOPE_EXEC_V4_STALE_REEVALUATION"));
+        }
+
+        #[test]
+        fn supported_scope_execute_v4_reaffirms_freeze_when_governance_authority_fails() {
+            let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
+            let dir = tempfile::tempdir().expect("tempdir");
+            let _cwd = CwdGuard::enter(dir.path());
+            fs::create_dir_all("out").expect("out");
+
+            let applied = build_supported_real_slot_set_v2(
+                vec!["world_jepa".to_string()],
+                &"11".repeat(32),
+                &"22".repeat(32),
+                SupportedRealSlotSetExecutionDecisionV2::Frozen,
+            );
+            fs::write(
+                "out/supported_real_slot_set_applied_v2.json",
+                serde_json::to_vec_pretty(&applied).expect("applied"),
+            )
+            .expect("write applied");
+            write_scope_reeval_support_artifacts(
+                Path::new("."),
+                &applied.set_digest,
+                &["world_jepa"],
+            );
+            let review = SupportedSetReviewReportV1 {
+                policy: SupportedRealSlotSetPolicyV2 {
+                    schema_version: 2,
+                    current_supported_slots: vec!["world_jepa".to_string()],
+                    candidate_slots_considered: vec!["ssm".to_string()],
+                    decision: SupportedRealSlotSetDecisionV2::ExpandByOne,
+                    chosen_candidate_slot: Some("ssm".to_string()),
+                    rationale_codes: vec!["EXPANSION_READY_EXACTLY_ONE".to_string()],
+                    policy_digest: "33".repeat(32),
+                },
+                known_slots: vec![],
+                candidates: vec![],
+            };
+            fs::write(
+                "out/supported_set_review.json",
+                serde_json::to_vec_pretty(&review).expect("review"),
+            )
+            .expect("write review");
+            let _ = models_supported_scope_reevaluate(
+                Path::new("."),
+                Path::new("out/supported_scope_reeval.json"),
+            )
+            .expect("reeval");
+
+            let applied_ctx = load_applied_supported_set_context_v1(Path::new(".")).expect("ctx");
+            let backend = read_json_file::<BackendEvidenceSnapshotV1>(Path::new(
+                "out/backend_evidence_snapshot.json",
+            ))
+            .expect("backend");
+            let active = read_json_file::<AggregatedActiveReviewSnapshotV1>(Path::new(
+                "out/active_review_snapshot.json",
+            ))
+            .expect("active");
+            let entry = derive_canonical_governance_entry(
+                &applied_ctx,
+                &validate_governance_primary_surfaces_with_applied_scope(
+                    &backend,
+                    &active,
+                    &applied_ctx,
+                )
+                .expect("surfaces"),
+            )
+            .expect("entry");
+            write_governance_entry_sweep_artifact(
+                Path::new("."),
+                &applied_ctx.applied_set_digest_prefix,
+                &prefix_hex(&applied_ctx.context_digest, 16),
+                &prefix_hex(&entry.authority_digest, 16),
+                GovernanceEntryAuthorityStatusV2::Fail,
+            );
+
+            let report = models_supported_scope_execute_v4(
+                Path::new("."),
+                Path::new("out/supported_scope_execute_v4.json"),
+            )
+            .expect("execute");
+            assert_eq!(
+                report.execution_decision,
+                SupportedScopeExecutionDecisionV4::ReaffirmFreeze
+            );
+            assert!(report
+                .rationale_codes
+                .contains(&"SCOPE_EXEC_V4_GOVERNANCE_AUTHORITY_FAIL".to_string()));
+        }
+
+        #[test]
+        fn supported_scope_execute_v4_denies_stale_prior_execution_artifact() {
+            let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
+            let dir = tempfile::tempdir().expect("tempdir");
+            let _cwd = CwdGuard::enter(dir.path());
+            fs::create_dir_all("out").expect("out");
+
+            let applied = build_supported_real_slot_set_v2(
+                vec!["world_jepa".to_string()],
+                &"11".repeat(32),
+                &"22".repeat(32),
+                SupportedRealSlotSetExecutionDecisionV2::Frozen,
+            );
+            fs::write(
+                "out/supported_real_slot_set_applied_v2.json",
+                serde_json::to_vec_pretty(&applied).expect("applied"),
+            )
+            .expect("write applied");
+            write_scope_reeval_support_artifacts(
+                Path::new("."),
+                &applied.set_digest,
+                &["world_jepa"],
+            );
+
+            let review = SupportedSetReviewReportV1 {
+                policy: SupportedRealSlotSetPolicyV2 {
+                    schema_version: 2,
+                    current_supported_slots: vec!["world_jepa".to_string()],
+                    candidate_slots_considered: vec!["ssm".to_string()],
+                    decision: SupportedRealSlotSetDecisionV2::ExpandByOne,
+                    chosen_candidate_slot: Some("ssm".to_string()),
+                    rationale_codes: vec!["EXPANSION_READY_EXACTLY_ONE".to_string()],
+                    policy_digest: "33".repeat(32),
+                },
+                known_slots: vec![],
+                candidates: vec![],
+            };
+            fs::write(
+                "out/supported_set_review.json",
+                serde_json::to_vec_pretty(&review).expect("review"),
+            )
+            .expect("write review");
+            let _ = models_supported_scope_reevaluate(
+                Path::new("."),
+                Path::new("out/supported_scope_reeval.json"),
+            )
+            .expect("reeval");
+
+            let stale_prior = SupportedScopeExecutionV3 {
+                schema_version: 3,
+                previous_applied_set_digest_prefix: "ff".repeat(8),
+                current_policy_digest_prefix: "ee".repeat(8),
+                current_reevaluation_digest_prefix: "dd".repeat(8),
+                canonical_governance_entry_digest_prefix: "cc".repeat(8),
+                execution_decision: SupportedScopeExecutionDecisionV3::ReaffirmFreeze,
+                chosen_candidate_slot: None,
+                resulting_supported_set_digest_prefix: "bb".repeat(8),
+                rationale_codes: vec!["SCOPE_EXEC_V3_REAFFIRM_FREEZE".to_string()],
+                execution_digest: "aa".repeat(32),
+            };
+            fs::write(
+                "out/supported_scope_execute_v3.json",
+                serde_json::to_vec_pretty(&stale_prior).expect("stale prior"),
+            )
+            .expect("write stale prior");
+
+            let applied_ctx = load_applied_supported_set_context_v1(Path::new(".")).expect("ctx");
+            let backend = read_json_file::<BackendEvidenceSnapshotV1>(Path::new(
+                "out/backend_evidence_snapshot.json",
+            ))
+            .expect("backend");
+            let active = read_json_file::<AggregatedActiveReviewSnapshotV1>(Path::new(
+                "out/active_review_snapshot.json",
+            ))
+            .expect("active");
+            let entry = derive_canonical_governance_entry(
+                &applied_ctx,
+                &validate_governance_primary_surfaces_with_applied_scope(
+                    &backend,
+                    &active,
+                    &applied_ctx,
+                )
+                .expect("surfaces"),
+            )
+            .expect("entry");
+            write_governance_entry_sweep_artifact(
+                Path::new("."),
+                &applied_ctx.applied_set_digest_prefix,
+                &prefix_hex(&applied_ctx.context_digest, 16),
+                &prefix_hex(&entry.authority_digest, 16),
+                GovernanceEntryAuthorityStatusV2::Pass,
+            );
+
+            let err = models_supported_scope_execute_v4(
+                Path::new("."),
+                Path::new("out/supported_scope_execute_v4.json"),
+            )
+            .expect_err("must reject stale prior execution");
+            assert!(err
+                .to_string()
+                .contains("SCOPE_EXEC_V4_STALE_PRIOR_EXECUTION"));
         }
 
         #[test]

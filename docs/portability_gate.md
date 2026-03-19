@@ -16,7 +16,7 @@
      - `cargo run -p ucf-ops -- governance-entry-check --out ./out/governance_entry_check.json`
      - `cargo run -p ucf-ops -- scope authority-check --out ./out/scope_authority_check.json`
      - `cargo run -p ucf-ops -- models supported-scope-reevaluate --out ./out/supported_scope_reeval.json --workdir .`
-     - `cargo run -p ucf-ops -- models supported-scope-execute --out ./out/supported_scope_execute_v3.json --workdir .`
+     - `cargo run -p ucf-ops -- models supported-scope-execute-v4 --out ./out/supported_scope_execute_v4.json --workdir .`
      - `cargo run -p ucf-ops -- readiness-spine-check --out ./out/readiness_spine_check.json`
      - `cargo run -p ucf-ops -- operator review-truth-check --out ./out/review_truth_check.json`
      - `cargo run -p ucf-ops -- models supported-set-review --out ./out/supported_set_review.json --workdir .`
@@ -45,7 +45,7 @@
      - `cargo run -p ucf-ops -- governance-entry-check --out ./out/governance_entry_check.json`
      - `cargo run -p ucf-ops -- scope authority-check --out ./out/scope_authority_check.json`
      - `cargo run -p ucf-ops -- models supported-scope-reevaluate --out ./out/supported_scope_reeval.json --workdir .`
-     - `cargo run -p ucf-ops -- models supported-scope-execute --out ./out/supported_scope_execute_v3.json --workdir .`
+     - `cargo run -p ucf-ops -- models supported-scope-execute-v4 --out ./out/supported_scope_execute_v4.json --workdir .`
      - `cargo run -p ucf-ops -- readiness-spine-check --out ./out/readiness_spine_check.json`
      - `cargo run -p ucf-ops -- operator review-truth-check --out ./out/review_truth_check.json`
      - `cargo run -p ucf-ops -- models supported-set-review --out ./out/supported_set_review.json --workdir .`
@@ -154,7 +154,7 @@ cargo run -p ucf-ops -- spec artifact-schemas-check --out ./out/artifact_schema_
 cargo run -p ucf-ops -- governance-surfaces-check --out ./out/governance_surfaces_check.json
 cargo run -p ucf-ops -- governance-entry-check --out ./out/governance_entry_check.json
 cargo run -p ucf-ops -- models supported-set-review --out ./out/supported_set_review.json --workdir .
-cargo run -p ucf-ops -- models supported-scope-execute --out ./out/supported_scope_execute_v3.json --workdir .
+cargo run -p ucf-ops -- models supported-scope-execute-v4 --out ./out/supported_scope_execute_v4.json --workdir .
 cargo run -p ucf-ops -- readiness-spine-check --out ./out/readiness_spine_check.json
 cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json --workdir .
 cargo run -p ucf-ops -- models applied-scope-check --out ./out/applied_scope_check.json --workdir .
@@ -200,7 +200,7 @@ cargo run -p ucf-ops -- audit path-scan
 cargo run -p ucf-ops -- audit hardware-scan
 cargo run -p ucf-ops -- spec artifact-schemas-check --out ./out/artifact_schema_check.json
 cargo run -p ucf-ops -- governance-entry-check --out ./out/governance_entry_check.json
-cargo run -p ucf-ops -- models supported-scope-execute --out ./out/supported_scope_execute_v3.json --workdir .
+cargo run -p ucf-ops -- models supported-scope-execute-v4 --out ./out/supported_scope_execute_v4.json --workdir .
 cargo run -p ucf-ops -- readiness-spine-check --out ./out/readiness_spine_check.json
 cargo run -p ucf-ops -- models active-review-snapshot --out ./out/active_review_snapshot.json
 cargo run -p ucf-ops -- models backend-resolution --slot sae --out ./out/backend_resolution_sae.json

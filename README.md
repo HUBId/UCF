@@ -26,7 +26,7 @@ See `docs/feature_matrix.md` for details.
 - `cargo run -p ucf-ops -- governance-entry-check --out ./out/governance_entry_check.json`
 - `cargo run -p ucf-ops -- scope authority-check --out ./out/scope_authority_check.json`
 - `cargo run -p ucf-ops -- models supported-scope-reevaluate --out ./out/supported_scope_reeval.json --workdir .`
-- `cargo run -p ucf-ops -- models supported-scope-execute --out ./out/supported_scope_execute_v3.json --workdir .`
+- `cargo run -p ucf-ops -- models supported-scope-execute-v4 --out ./out/supported_scope_execute_v4.json --workdir .`
 - `cargo run -p ucf-ops -- readiness-spine-check --out ./out/readiness_spine_check.json`
 - `cargo run -p ucf-ops -- operator review-truth-check --out ./out/review_truth_check.json`
 - `cargo run -p ucf-ops -- exports roundtrip-check --in ./out/repro_portability.zip --out ./out/export_roundtrip_check.json`

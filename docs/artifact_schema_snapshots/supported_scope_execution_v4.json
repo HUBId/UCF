@@ -1,0 +1,41 @@
+{
+  "artifact_id": "supported_scope_execution_v4",
+  "type_name": "SupportedScopeExecutionV4",
+  "source_file": "runtime/ucf-ops/src/models_lifecycle.rs",
+  "required_fields": [
+    "canonical_governance_authority_digest_prefix",
+    "canonical_governance_entry_digest_prefix",
+    "current_policy_digest_prefix",
+    "current_reevaluation_digest_prefix",
+    "execution_decision",
+    "execution_digest",
+    "previous_applied_set_digest_prefix",
+    "rationale_codes",
+    "resulting_supported_set_digest_prefix",
+    "schema_version"
+  ],
+  "optional_fields": [
+    "chosen_candidate_slot",
+    "prior_scope_execution_digest_prefix"
+  ],
+  "field_types": {
+    "canonical_governance_authority_digest_prefix": "String",
+    "canonical_governance_entry_digest_prefix": "String",
+    "chosen_candidate_slot": "Option<String>",
+    "current_policy_digest_prefix": "String",
+    "current_reevaluation_digest_prefix": "String",
+    "execution_decision": "SupportedScopeExecutionDecisionV4",
+    "execution_digest": "String",
+    "previous_applied_set_digest_prefix": "String",
+    "prior_scope_execution_digest_prefix": "Option<String>",
+    "rationale_codes": "Vec<String>",
+    "resulting_supported_set_digest_prefix": "String",
+    "schema_version": "u16"
+  },
+  "enum_variants": {
+    "SupportedScopeExecutionDecisionV4": [
+      "ExecuteExpandByOne",
+      "ReaffirmFreeze"
+    ]
+  }
+}
