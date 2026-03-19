@@ -3614,10 +3614,13 @@ fn ensure_current_supported_scope_execution_v4(
     policy: &SupportedRealSlotSetPolicyV2,
     previous_set: &SupportedRealSlotSetV1,
 ) -> Result<SupportedScopeExecutionV4, OpsError> {
+    let reeval = ensure_current_supported_scope_reevaluation_v1(workdir, policy, previous_set)?;
     let path = workdir.join("out").join("supported_scope_execute_v4.json");
     if let Ok(report) = read_json_file::<SupportedScopeExecutionV4>(&path) {
         if report.current_policy_digest_prefix == prefix_hex(&policy.policy_digest, 16)
             && report.previous_applied_set_digest_prefix == prefix_hex(&previous_set.set_digest, 16)
+            && report.current_reevaluation_digest_prefix
+                == prefix_hex(&reeval.reevaluation_digest, 16)
         {
             return Ok(report);
         }
