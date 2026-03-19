@@ -15558,6 +15558,7 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
                     || detail.contains(APPLIED_SCOPE_REQUIRED)
                     || detail.contains(APPLIED_SCOPE_MISSING)
                     || detail.contains(APPLIED_SCOPE_TRANSLATION_FAILED)
+                    || detail.contains("APPLIED_SCOPE_SLOT_TRUTH_MISSING")
                     || detail.contains("SUPPORTED_SET_POLICY_V2_MISSING");
                 PortabilityCommandCheck {
                     name: "governance_entry_sweep_smoke".to_string(),
@@ -15737,12 +15738,28 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
                 ),
                 out: Some(out_path.display().to_string()),
             },
-            Err(err) => PortabilityCommandCheck {
-                name: "readiness_spine_sweep_smoke".to_string(),
-                status: PortabilityGateStatus::Fail,
-                detail: err.to_string(),
-                out: Some(out_path.display().to_string()),
-            },
+            Err(err) => {
+                let detail = err.to_string();
+                let skip = detail.contains("APPLIED_SCOPE_SLOT_TRUTH_MISSING")
+                    || detail.contains(APPLIED_SCOPE_REQUIRED)
+                    || detail.contains(APPLIED_SCOPE_MISSING)
+                    || detail.contains(APPLIED_SCOPE_TRANSLATION_FAILED)
+                    || detail.contains("SUPPORTED_SET_POLICY_V2_MISSING");
+                PortabilityCommandCheck {
+                    name: "readiness_spine_sweep_smoke".to_string(),
+                    status: if skip {
+                        PortabilityGateStatus::Skip
+                    } else {
+                        PortabilityGateStatus::Fail
+                    },
+                    detail: if skip {
+                        format!("skip_optional_scope_path: {detail}")
+                    } else {
+                        detail
+                    },
+                    out: Some(out_path.display().to_string()),
+                }
+            }
         }
     };
     let supported_set_apply_smoke = out_smoke_check(

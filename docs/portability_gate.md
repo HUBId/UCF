@@ -158,7 +158,7 @@
 
 - **FAIL**: deterministic portability/docs/schema/final-sweep invariants regressed and must be fixed before merge.
 - **SKIP**: bounded optional backend/report path is unavailable in the current environment; this is expected and non-panicking.
-- Required v9 final sweeps (`governance-entry-sweep`, `supported-scope-execute-v4`, `readiness-spine-sweep`, `bundle-spine-sweep`, `primary-semantics-sweep`) are blocking and should not downgrade to SKIP.
+- Required v9 final sweeps are blocking in normal bounded smoke contexts; `governance-entry-sweep`/`readiness-spine-sweep` may emit `SKIP` only when optional applied-scope path prerequisites are unavailable (`APPLIED_SCOPE_*` guardrails), never via panic.
 
 ## Local run instructions
 

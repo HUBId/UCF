@@ -187,4 +187,11 @@ fn portability_report_v9_skips_optional_backend_resolution_cleanly() {
         ),
         "governance_entry_sweep_smoke must PASS or SKIP"
     );
+    assert!(
+        matches!(
+            report.readiness_spine_sweep_smoke.status,
+            ucf_ops::PortabilityGateStatus::Pass | ucf_ops::PortabilityGateStatus::Skip
+        ),
+        "readiness_spine_sweep_smoke must PASS or SKIP"
+    );
 }
