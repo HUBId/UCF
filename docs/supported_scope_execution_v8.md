@@ -4,9 +4,9 @@
 
 - `SupportedRealSlotSetPolicyV2` bleibt ein Review-/Policy-Artefakt.
 - `SupportedScopeReevaluationV1` bewertet den Policy-Vorschlag gegen den aktuellen Zustand neu.
-- `SupportedScopeExecutionV3` ist die **aktuelle autoritative Ausführungsentscheidung** für Freeze vs. Expansion.
+- `SupportedScopeExecutionV4` ist die **aktuelle autoritative Ausführungsentscheidung** für Freeze vs. Expansion.
 
-Nur `SupportedScopeExecutionV3` darf den nächsten angewendeten Supported-Scope fortschreiben.
+Nur `SupportedScopeExecutionV4` darf den nächsten angewendeten Supported-Scope fortschreiben.
 
 ## Warum Canonical Governance Entry verpflichtend ist
 
@@ -22,7 +22,7 @@ Wenn diese Kette nicht sauber trägt, wird **fail-closed** erneut `REAFFIRM_FREE
 
 ```bash
 cargo run -p ucf-ops -- models supported-scope-reevaluate --out ./out/supported_scope_reeval.json
-cargo run -p ucf-ops -- models supported-scope-execute --out ./out/supported_scope_execute_v3.json
+cargo run -p ucf-ops -- models supported-scope-execute-v4 --out ./out/supported_scope_execute_v4.json
 cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json
 ```
 
