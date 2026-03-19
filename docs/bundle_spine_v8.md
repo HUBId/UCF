@@ -40,3 +40,7 @@ Referenz: Für die übergreifende Blocking-/Remediation-Konsistenz inkl. Bundle-
 
 ## v8 continuity
 See `docs/roundtrip_chain_v8.md` for full-chain continuity requirements and `operator roundtrip-chain-check`.
+
+
+## v9 update
+Canonical export surfaces now require `CanonicalBundleSpineV1` as universal bundle authority, and final compliance is checked via `exports bundle-spine-sweep`.

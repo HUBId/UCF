@@ -71,3 +71,7 @@ Für BugKits ist `bundle-spine-check` der kanonische End-to-End-Kohärenztest:
 cargo run -p ucf-ops -- exports bundle-spine-check --in ./out/bugkit_<run_id>.zip --out ./out/bundle_spine_check.json
 ```
 
+
+
+## v9 update
+BugKit manifests now embed canonical bundle spine/authority digest prefixes and are validated by `exports bundle-spine-sweep`.

@@ -90,3 +90,7 @@ Die Normalisierung bleibt Grundlage; die Bundle-Endprüfung erfolgt mit:
 cargo run -p ucf-ops -- exports bundle-spine-check --in <bundle.zip> --out ./out/bundle_spine_check.json
 ```
 
+
+
+## v9 update
+Canonical export normalization now assumes bundle authority is finalized through `CanonicalBundleSpineV1` + `CanonicalBundleAuthorityV2` (`exports bundle-spine-sweep`).

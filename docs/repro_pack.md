@@ -71,3 +71,7 @@ Nach dem Build sollte zusätzlich die Spine-Prüfung laufen:
 cargo run -p ucf-ops -- exports bundle-spine-check --in ./out/repro_<run_id>.zip --out ./out/bundle_spine_check.json
 ```
 
+
+
+## v9 update
+Repro manifests now embed canonical bundle spine/authority digest prefixes and are validated by `exports bundle-spine-sweep`.
