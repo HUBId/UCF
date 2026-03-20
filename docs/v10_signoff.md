@@ -48,3 +48,7 @@ Optional checks are:
 ## Phase intent
 
 v10 is a final **consumer-authority / continuity-unification hardening** phase. The current applied supported scope remains the only authoritative scope for this gate.
+
+## Post-v10 continuation
+
+After v10 gate PASS, continue at Prompt 280 via `docs/next_10_prompts.md`.
