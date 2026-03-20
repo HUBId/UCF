@@ -94,3 +94,8 @@ cargo run -p ucf-ops -- exports bundle-spine-check --in <bundle.zip> --out ./out
 
 ## v9 update
 Canonical export normalization now assumes bundle authority is finalized through `CanonicalBundleSpineV1` + `CanonicalBundleAuthorityV2` (`exports bundle-spine-sweep`).
+
+
+## v10 finalization
+
+v10 finalizes universal bundle-input authority for canonical export consumers via `ucf-ops final-bundle-consumer-sweep`.

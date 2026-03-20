@@ -64,3 +64,8 @@ Use `operator roundtrip-chain-check` as the top-level proof that bundle roundtri
 
 ## v9 update
 Roundtrip validation is now part of the canonical bundle spine sweep (`exports bundle-spine-sweep`) and cannot act as an alternate bundle authority path.
+
+
+## v10 finalization
+
+v10 finalizes universal bundle-input authority for canonical export consumers via `ucf-ops final-bundle-consumer-sweep`.

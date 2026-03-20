@@ -34,3 +34,8 @@ For final canonical primary blocking/remediation semantics across governance/rea
 ## Final continuity authority (v9)
 Use `cargo run -p ucf-ops -- continuity-authority-check --bundle <path> --out ./out/continuity_authority_check.json` as final top-level proof that this surface aligns with canonical governance/readiness/operator/export/bundle continuity.
 
+
+
+## v10 finalization
+
+v10 finalizes universal bundle-input authority for canonical export consumers via `ucf-ops final-bundle-consumer-sweep`.

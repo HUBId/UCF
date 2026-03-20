@@ -13,6 +13,7 @@ mod config_contract;
 mod continuity_authority;
 mod docs_lint;
 mod drift;
+mod final_bundle_consumer_sweep;
 mod final_governance_authority;
 mod final_governance_consumer_sweep;
 mod final_readiness_consumer_sweep;
@@ -82,6 +83,11 @@ pub use continuity_authority::{
 };
 pub use docs_lint::{docs_lint, DocsLintArgs, DocsLintMode, DocsLintReport, DocsLintStatus};
 pub use drift::{drift_report, drift_status_map, DriftReportV1};
+pub use final_bundle_consumer_sweep::{
+    final_bundle_consumer_sweep, FinalBundleConsumerAuthorityStatusV1,
+    FinalBundleConsumerAuthorityV1, FinalBundleConsumerMismatchCategoryV1,
+    FinalBundleConsumerStatusV1, FinalBundleConsumerSweepReportV1,
+};
 pub use final_governance_authority::{
     require_final_governance_authority, FinalGovernanceAuthorityContextV1,
     FINAL_GOVERNANCE_AUTHORITY_REQUIRED, LEGACY_GOVERNANCE_INPUT_BLOCKED,
@@ -11046,7 +11052,11 @@ fn digest_prefix_str(value: &str, len: usize) -> String {
 pub const CANONICAL_BUNDLE_SPINE_REQUIRED: &str = "CANONICAL_BUNDLE_SPINE_REQUIRED";
 pub const CANONICAL_BUNDLE_CONTEXT_REQUIRED: &str = "CANONICAL_BUNDLE_CONTEXT_REQUIRED";
 pub const CANONICAL_EXPORT_REFS_REQUIRED: &str = "CANONICAL_EXPORT_REFS_REQUIRED";
+pub const CANONICAL_EXPORT_ARTIFACT_REFS_REQUIRED: &str = "CANONICAL_EXPORT_ARTIFACT_REFS_REQUIRED";
+pub const CANONICAL_EXPORT_CONTEXT_REQUIRED: &str = "CANONICAL_EXPORT_CONTEXT_REQUIRED";
 pub const SECONDARY_BUNDLE_PATH_BLOCKED: &str = "SECONDARY_BUNDLE_PATH_BLOCKED";
+pub const FINAL_BUNDLE_AUTHORITY_REQUIRED: &str = "FINAL_BUNDLE_AUTHORITY_REQUIRED";
+pub const LEGACY_BUNDLE_INPUT_BLOCKED: &str = "LEGACY_BUNDLE_INPUT_BLOCKED";
 
 fn canonical_artifact_refs_digest_prefix(
     refs: &[CanonicalExportArtifactRefV1],
@@ -11388,6 +11398,105 @@ fn derive_canonical_bundle_authority_v2(
     };
     authority.authority_digest = bundle_authority_digest_hex(&authority)?;
     Ok(authority)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct FinalBundleAuthorityContextV1 {
+    pub applied_supported_set_digest_prefix: String,
+    pub canonical_governance_entry_digest_prefix: String,
+    pub canonical_readiness_spine_digest_prefix: String,
+    pub canonical_bundle_spine_digest_prefix: String,
+    pub canonical_bundle_authority_digest_prefix: String,
+}
+
+pub fn require_final_bundle_authority(
+    applied: Option<&AppliedSupportedSetContextV1>,
+    governance: Option<&CanonicalGovernanceEntryV1>,
+    readiness: Option<&CanonicalReadinessSpineV1>,
+    bundle_spine: Option<&CanonicalBundleSpineV1>,
+    bundle_authority: Option<&CanonicalBundleAuthorityV2>,
+) -> Result<FinalBundleAuthorityContextV1, OpsError> {
+    let (
+        Some(applied),
+        Some(governance),
+        Some(readiness),
+        Some(bundle_spine),
+        Some(bundle_authority),
+    ) = (
+        applied,
+        governance,
+        readiness,
+        bundle_spine,
+        bundle_authority,
+    )
+    else {
+        return Err(OpsError::Invalid(
+            FINAL_BUNDLE_AUTHORITY_REQUIRED.to_string(),
+        ));
+    };
+    if bundle_spine
+        .bundle_consumption_context_digest_prefix
+        .is_empty()
+        || bundle_spine.artifact_refs_digest_prefix.is_empty()
+    {
+        return Err(OpsError::Invalid(
+            CANONICAL_EXPORT_ARTIFACT_REFS_REQUIRED.to_string(),
+        ));
+    }
+    if bundle_spine.applied_supported_set_digest_prefix != applied.applied_set_digest_prefix {
+        return Err(OpsError::Invalid(
+            FINAL_BUNDLE_AUTHORITY_REQUIRED.to_string(),
+        ));
+    }
+    let governance_prefix = prefix_hex(&governance.authority_digest, 16);
+    if bundle_spine.canonical_governance_entry_digest_prefix != governance_prefix {
+        return Err(OpsError::Invalid(
+            FINAL_BUNDLE_AUTHORITY_REQUIRED.to_string(),
+        ));
+    }
+    let readiness_prefix = prefix_hex(&readiness.spine_digest, 16);
+    if bundle_spine
+        .canonical_readiness_spine_digest_prefix
+        .as_deref()
+        != Some(readiness_prefix.as_str())
+    {
+        return Err(OpsError::Invalid(
+            FINAL_BUNDLE_AUTHORITY_REQUIRED.to_string(),
+        ));
+    }
+    if bundle_authority.canonical_bundle_spine_digest_prefix
+        != prefix_hex(&bundle_spine.bundle_spine_digest, 16)
+    {
+        return Err(OpsError::Invalid(
+            CANONICAL_BUNDLE_SPINE_REQUIRED.to_string(),
+        ));
+    }
+    if bundle_authority.applied_supported_set_digest_prefix != applied.applied_set_digest_prefix
+        || bundle_authority.canonical_governance_entry_digest_prefix != governance_prefix
+        || bundle_authority.canonical_readiness_spine_digest_prefix != readiness_prefix
+    {
+        return Err(OpsError::Invalid(
+            FINAL_BUNDLE_AUTHORITY_REQUIRED.to_string(),
+        ));
+    }
+    if !matches!(bundle_spine.bundle_spine_status, BundleSpineStatusV1::Pass)
+        || !matches!(
+            bundle_authority.authority_status,
+            CanonicalBundleAuthorityStatusV2::Pass
+        )
+    {
+        return Err(OpsError::Invalid(LEGACY_BUNDLE_INPUT_BLOCKED.to_string()));
+    }
+    Ok(FinalBundleAuthorityContextV1 {
+        applied_supported_set_digest_prefix: applied.applied_set_digest_prefix.clone(),
+        canonical_governance_entry_digest_prefix: governance_prefix,
+        canonical_readiness_spine_digest_prefix: readiness_prefix,
+        canonical_bundle_spine_digest_prefix: prefix_hex(&bundle_spine.bundle_spine_digest, 16),
+        canonical_bundle_authority_digest_prefix: prefix_hex(
+            &bundle_authority.authority_digest,
+            16,
+        ),
+    })
 }
 
 fn evaluate_bundle_roundtrip_consistency(
@@ -11812,6 +11921,13 @@ pub fn exports_bundle_spine_sweep(
         authority.authority_status = CanonicalBundleAuthorityStatusV2::Fail;
         authority.authority_digest = bundle_authority_digest_hex(&authority)?;
     }
+    let _final_bundle_authority = require_final_bundle_authority(
+        Some(&applied),
+        Some(&governance),
+        Some(&readiness),
+        Some(&required_spine),
+        Some(&authority),
+    )?;
 
     let report = BundleSpineSweepReportV1 {
         schema_version: 1,
@@ -17316,6 +17432,13 @@ mod repro_pack_tests {
             legacy.authority_status,
             CanonicalBundleAuthorityStatusV2::LegacyPresent
         ));
+    }
+
+    #[test]
+    fn require_final_bundle_authority_rejects_missing_inputs() {
+        let err =
+            require_final_bundle_authority(None, None, None, None, None).expect_err("must fail");
+        assert!(err.to_string().contains(FINAL_BUNDLE_AUTHORITY_REQUIRED));
     }
 
     #[test]

@@ -22,6 +22,7 @@
     "canonical_roundtrip_chain_v1",
     "cross_surface_condition_observation_v1",
     "cross_surface_context_matrix_v1",
+    "final_bundle_consumer_authority_v1",
     "governance_primary_surfaces_v1",
     "interop_consistency_matrix_report_v1",
     "operator_report_v1",
