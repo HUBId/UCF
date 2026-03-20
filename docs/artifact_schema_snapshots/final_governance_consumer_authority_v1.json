@@ -1,0 +1,29 @@
+{
+  "artifact_id": "final_governance_consumer_authority_v1",
+  "type_name": "FinalGovernanceConsumerAuthorityV1",
+  "source_file": "runtime/ucf-ops/src/final_governance_consumer_sweep.rs",
+  "required_fields": [
+    "applied_supported_set_digest_prefix",
+    "authority_digest",
+    "authority_status",
+    "canonical_governance_authority_digest_prefix",
+    "canonical_governance_entry_digest_prefix",
+    "covered_consumer_count"
+  ],
+  "optional_fields": [],
+  "field_types": {
+    "applied_supported_set_digest_prefix": "String",
+    "authority_digest": "String",
+    "authority_status": "FinalGovernanceConsumerAuthorityStatusV1",
+    "canonical_governance_authority_digest_prefix": "String",
+    "canonical_governance_entry_digest_prefix": "String",
+    "covered_consumer_count": "u16"
+  },
+  "enum_variants": {
+    "FinalGovernanceConsumerAuthorityStatusV1": [
+      "Fail",
+      "LegacyPresent",
+      "Pass"
+    ]
+  }
+}
