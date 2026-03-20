@@ -44,3 +44,8 @@ See `docs/roundtrip_chain_v8.md` for full-chain continuity requirements and `ope
 
 ## v9 update
 Canonical export surfaces now require `CanonicalBundleSpineV1` as universal bundle authority, and final compliance is checked via `exports bundle-spine-sweep`.
+
+
+## v10 finalization
+
+v10 finalizes universal bundle-input authority for canonical export consumers via `ucf-ops final-bundle-consumer-sweep`.
