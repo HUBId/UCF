@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`models supported-set-apply` executes the governance decision only after a current `SupportedScopeExecutionV4` result is present and writes the **applied** supported-slot scope as `SupportedRealSlotSetV2`.
+`models supported-set-apply` executes the governance decision only after a current `SupportedScopeExecutionV5` result is present and writes the **applied** supported-slot scope as `SupportedRealSlotSetV2`.
 
 This separates review from execution:
 
@@ -20,7 +20,8 @@ If expansion preconditions fail during apply, execution is denied with stable de
 
 ```bash
 cargo run -p ucf-ops -- models supported-scope-reevaluate --out ./out/supported_scope_reeval.json
-cargo run -p ucf-ops -- models supported-scope-execute-v4 --out ./out/supported_scope_execute_v4.json
+cargo run -p ucf-ops -- final-governance-consumer-sweep --out ./out/final_governance_consumer_sweep.json
+cargo run -p ucf-ops -- models supported-scope-execute-v5 --out ./out/supported_scope_execute_v5.json
 cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json
 ```
 
@@ -28,7 +29,7 @@ Canonical applied-set artifact path:
 
 - `./out/supported_real_slot_set_applied_v2.json`
 
-If `./out/supported_scope_execute_v4.json` is missing or stale for the current policy/applied-set digests, `supported-set-apply` deterministically regenerates reevaluation + execution before execution.
+If `./out/supported_scope_execute_v5.json` is missing or stale for the current policy/applied-set digests, `supported-set-apply` deterministically regenerates reevaluation + execution before execution.
 
 ## Important non-goals
 
