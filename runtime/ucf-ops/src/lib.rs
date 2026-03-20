@@ -15,6 +15,7 @@ mod docs_lint;
 mod drift;
 mod final_governance_authority;
 mod final_governance_consumer_sweep;
+mod final_readiness_consumer_sweep;
 mod formal_invariants;
 mod goldens;
 mod governance_entry_check;
@@ -89,6 +90,11 @@ pub use final_governance_consumer_sweep::{
     final_governance_consumer_sweep, FinalGovernanceConsumerAuthorityStatusV1,
     FinalGovernanceConsumerAuthorityV1, FinalGovernanceConsumerMismatchCategoryV1,
     FinalGovernanceConsumerStatusV1, FinalGovernanceConsumerSweepReportV1,
+};
+pub use final_readiness_consumer_sweep::{
+    final_readiness_consumer_sweep, FinalReadinessConsumerAuthorityStatusV1,
+    FinalReadinessConsumerAuthorityV1, FinalReadinessConsumerMismatchCategoryV1,
+    FinalReadinessConsumerStatusV1, FinalReadinessConsumerSweepReportV1,
 };
 pub use goldens::{
     goldens_generate, goldens_update, goldens_verify, goldens_verify_detailed, GoldenGenerateArgs,
@@ -170,13 +176,15 @@ pub use operator_workflow::{
 };
 pub use readiness_spine::{
     attach_spine_prefix_to_packet, attach_spine_prefix_to_signoff, attach_spine_prefix_to_workflow,
-    derive_canonical_readiness_spine, readiness_spine_check, readiness_spine_sweep,
-    require_canonical_readiness_spine, write_canonical_readiness_spine,
+    derive_canonical_readiness_authority_v2, derive_canonical_readiness_spine,
+    readiness_spine_check, readiness_spine_sweep, require_canonical_readiness_spine,
+    require_final_readiness_authority, write_canonical_readiness_spine,
     CanonicalReadinessAuthorityStatusV2, CanonicalReadinessAuthorityV2,
-    CanonicalReadinessSpineStatusV1, CanonicalReadinessSpineV1, ReadinessSpineCheckReportV1,
-    ReadinessSpineCheckStatusV1, ReadinessSpineMismatchCategoryV1,
+    CanonicalReadinessSpineStatusV1, CanonicalReadinessSpineV1, FinalReadinessAuthorityContextV1,
+    ReadinessSpineCheckReportV1, ReadinessSpineCheckStatusV1, ReadinessSpineMismatchCategoryV1,
     ReadinessSpineSweepMismatchCategoryV1, ReadinessSpineSweepReportV1,
     ReadinessSpineSweepSurfaceStatusV1, CANONICAL_READINESS_SPINE_REQUIRED,
+    FINAL_READINESS_AUTHORITY_REQUIRED, LEGACY_READINESS_INPUT_BLOCKED,
     REVIEWABILITY_REDUCTION_REQUIRED, SECONDARY_READINESS_PATH_BLOCKED,
     SLOT_REVIEWABILITY_TRUTH_REQUIRED,
 };

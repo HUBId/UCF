@@ -37,3 +37,7 @@ See also: readiness spine canon (`docs/readiness_spine_v8.md`).
 
 ## v9 note
 Reviewability truth/reduction remain the canonical substrate inputs, but canonical operator/export surfaces are now validated through `CanonicalReadinessSpineV1` + `CanonicalReadinessAuthorityV2` (`readiness-spine-sweep`).
+
+## v10 final readiness-consumer authority
+
+`SlotReviewabilityTruthV1` and `ReviewabilityReductionV1` remain the first authoritative readiness inputs and are now validated in the final consumer sweep (`final-readiness-consumer-sweep`) together with `CanonicalReadinessSpineV1` and `CanonicalReadinessAuthorityV2`.
