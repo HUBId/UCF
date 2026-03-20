@@ -34,3 +34,7 @@ Referenz: Für die übergreifende Blocking-/Remediation-Konsistenz inkl. Readine
 
 ## v9 universal spine authority
 Canonical readiness authority is now audited via `readiness-spine-sweep` and `CanonicalReadinessAuthorityV2`; canonical consumers must use `require_canonical_readiness_spine(...)` and fail closed on missing spine. See `docs/canonical_readiness_sweep_v9.md`.
+
+## v10 finalization
+
+Canonical readiness consumer authority is finalized by `final-readiness-consumer-sweep` and `FinalReadinessConsumerAuthorityV1`, extending v9 spine authority checks to a final consumer sweep for canonical flows.

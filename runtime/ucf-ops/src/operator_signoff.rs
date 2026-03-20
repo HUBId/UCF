@@ -7,15 +7,17 @@ use serde::{Deserialize, Serialize};
 use crate::operator_report::{ConsolidatedOperatorReportV1, OperatorStatus};
 use crate::remediation::merge_canonical_remediations;
 use crate::{
-    derive_canonical_governance_entry, derive_canonical_readiness_spine,
-    derive_slot_reviewability_truths, load_applied_supported_set_context_v1,
-    operator_block_from_strict, reduce_reviewability, require_canonical_readiness_spine,
-    resolve_strict_evidence, validate_governance_primary_surfaces_from_workdir,
+    derive_canonical_governance_entry, derive_canonical_readiness_authority_v2,
+    derive_canonical_readiness_spine, derive_slot_reviewability_truths,
+    load_applied_supported_set_context_v1, operator_block_from_strict, reduce_reviewability,
+    require_canonical_readiness_spine, resolve_strict_evidence,
+    validate_governance_primary_surfaces_from_workdir,
     validate_governance_primary_surfaces_with_applied_scope, AggregatedActiveReviewSnapshotV1,
-    AppliedSupportedSetContextV1, BackendEvidenceSnapshotV1, GateStatus, OpsError,
-    ReviewabilityAggregateReadinessV1, StrictEvidenceContextV1, StrictEvidenceSnapshotV1,
-    StrictEvidenceStatusV1, V0GateOverallStatus, V0GateReportV1, V1GateOverallStatus,
-    V1GateReportV1, V2GateOverallStatus, V2GateReportV1, V3GateOverallStatus, V3GateReportV1,
+    AppliedSupportedSetContextV1, BackendEvidenceSnapshotV1, CanonicalReadinessAuthorityStatusV2,
+    GateStatus, OpsError, ReviewabilityAggregateReadinessV1, StrictEvidenceContextV1,
+    StrictEvidenceSnapshotV1, StrictEvidenceStatusV1, V0GateOverallStatus, V0GateReportV1,
+    V1GateOverallStatus, V1GateReportV1, V2GateOverallStatus, V2GateReportV1, V3GateOverallStatus,
+    V3GateReportV1,
 };
 
 const CODE_CAP: usize = 12;
@@ -390,8 +392,15 @@ fn reduce_signoff(
                         require_canonical_readiness_spine(applied_scope, &entry, Some(&spine))
                     {
                         canonical_spine_prefix = prefix16(&spine.spine_digest);
+                        let authority = derive_canonical_readiness_authority_v2(
+                            &applied_scope.applied_set_digest_prefix,
+                            &prefix16(&entry.authority_digest),
+                            &canonical_spine_prefix,
+                            4,
+                            CanonicalReadinessAuthorityStatusV2::Pass,
+                        );
                         canonical_readiness_authority_digest_prefix =
-                            canonical_spine_prefix.clone();
+                            prefix16(&authority.authority_digest);
                     } else {
                         reasons.insert("CANONICAL_READINESS_SPINE_REQUIRED".to_string());
                         remediation.insert("run_readiness_spine_sweep".to_string());

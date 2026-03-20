@@ -16,8 +16,10 @@ use crate::{
 };
 
 pub const CANONICAL_READINESS_SPINE_REQUIRED: &str = "CANONICAL_READINESS_SPINE_REQUIRED";
+pub const FINAL_READINESS_AUTHORITY_REQUIRED: &str = "FINAL_READINESS_AUTHORITY_REQUIRED";
 pub const SLOT_REVIEWABILITY_TRUTH_REQUIRED: &str = "SLOT_REVIEWABILITY_TRUTH_REQUIRED";
 pub const REVIEWABILITY_REDUCTION_REQUIRED: &str = "REVIEWABILITY_REDUCTION_REQUIRED";
+pub const LEGACY_READINESS_INPUT_BLOCKED: &str = "LEGACY_READINESS_INPUT_BLOCKED";
 pub const SECONDARY_READINESS_PATH_BLOCKED: &str = "SECONDARY_READINESS_PATH_BLOCKED";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -89,6 +91,14 @@ pub struct CanonicalReadinessAuthorityV2 {
     pub covered_surface_count: u16,
     pub authority_status: CanonicalReadinessAuthorityStatusV2,
     pub authority_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct FinalReadinessAuthorityContextV1 {
+    pub applied_supported_set_digest_prefix: String,
+    pub canonical_governance_entry_digest_prefix: String,
+    pub canonical_readiness_spine_digest_prefix: String,
+    pub canonical_readiness_authority_digest_prefix: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -417,7 +427,7 @@ pub fn readiness_spine_sweep(
     } else {
         CanonicalReadinessAuthorityStatusV2::Fail
     };
-    let authority = derive_readiness_authority_v2(
+    let authority = derive_canonical_readiness_authority_v2(
         expected_scope,
         &expected_governance,
         &expected_spine,
@@ -473,7 +483,7 @@ fn check_surface_status(
     }
 }
 
-fn derive_readiness_authority_v2(
+pub fn derive_canonical_readiness_authority_v2(
     applied_supported_set_digest_prefix: &str,
     canonical_governance_entry_digest_prefix: &str,
     canonical_readiness_spine_digest_prefix: &str,
@@ -498,6 +508,48 @@ fn derive_readiness_authority_v2(
         authority_status,
         authority_digest: crate::sha256_hex(&bytes),
     }
+}
+
+pub fn require_final_readiness_authority(
+    applied_scope: &AppliedSupportedSetContextV1,
+    entry: &CanonicalGovernanceEntryV1,
+    spine: Option<&CanonicalReadinessSpineV1>,
+    authority: Option<&CanonicalReadinessAuthorityV2>,
+) -> Result<FinalReadinessAuthorityContextV1, OpsError> {
+    let spine = require_canonical_readiness_spine(applied_scope, entry, spine)?;
+    let Some(authority) = authority else {
+        return Err(OpsError::Invalid(
+            FINAL_READINESS_AUTHORITY_REQUIRED.to_string(),
+        ));
+    };
+    if !matches!(
+        authority.authority_status,
+        CanonicalReadinessAuthorityStatusV2::Pass
+    ) {
+        return Err(OpsError::Invalid(
+            LEGACY_READINESS_INPUT_BLOCKED.to_string(),
+        ));
+    }
+    let governance_prefix = prefix_hex(&entry.authority_digest, 16);
+    let spine_prefix = prefix_hex(&spine.spine_digest, 16);
+    if authority.applied_supported_set_digest_prefix != applied_scope.applied_set_digest_prefix
+        || authority.canonical_governance_entry_digest_prefix != governance_prefix
+        || authority.canonical_readiness_spine_digest_prefix != spine_prefix
+    {
+        return Err(OpsError::Invalid(
+            FINAL_READINESS_AUTHORITY_REQUIRED.to_string(),
+        ));
+    }
+    Ok(FinalReadinessAuthorityContextV1 {
+        applied_supported_set_digest_prefix: authority.applied_supported_set_digest_prefix.clone(),
+        canonical_governance_entry_digest_prefix: authority
+            .canonical_governance_entry_digest_prefix
+            .clone(),
+        canonical_readiness_spine_digest_prefix: authority
+            .canonical_readiness_spine_digest_prefix
+            .clone(),
+        canonical_readiness_authority_digest_prefix: prefix_hex(&authority.authority_digest, 16),
+    })
 }
 
 fn sha_truths(truths: &[SlotReviewabilityTruthV1]) -> String {
@@ -535,14 +587,14 @@ mod tests {
 
     #[test]
     fn readiness_authority_v2_digest_is_stable() {
-        let a = derive_readiness_authority_v2(
+        let a = derive_canonical_readiness_authority_v2(
             "scope123456789012",
             "governance1234567",
             "spine123456789012",
             4,
             CanonicalReadinessAuthorityStatusV2::Pass,
         );
-        let b = derive_readiness_authority_v2(
+        let b = derive_canonical_readiness_authority_v2(
             "scope123456789012",
             "governance1234567",
             "spine123456789012",

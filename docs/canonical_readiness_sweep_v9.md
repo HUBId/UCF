@@ -22,3 +22,7 @@ cargo run -p ucf-ops -- readiness-spine-sweep --out ./out/readiness_spine_sweep.
 ```
 
 For final canonical primary blocking/remediation authority across all covered surfaces, run `ucf-ops primary-semantics-sweep` (see `docs/primary_semantics_sweep_v9.md`).
+
+## v10 follow-up
+
+v10 adds `final-readiness-consumer-sweep` to prove canonical consumers uniformly bind to final readiness authority inputs (truths + reduction + spine + authority) and flags remaining legacy readiness primary-input usage as fail-closed.
