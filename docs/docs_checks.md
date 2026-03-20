@@ -123,3 +123,12 @@ When `--out` is provided, lint writes deterministic JSON with per-check status a
      - `docs/bundle_spine_v8.md`
      - `docs/remediation_spine_consistency_v8.md`
      - `docs/artifact_schema_snapshots.md`
+
+13. **v9 docs linkage consistency**
+   - Requires presence and portability/docs linkage for:
+     - `docs/canonical_governance_entry_sweep_v9.md`
+     - `docs/supported_scope_execution_v9.md`
+     - `docs/canonical_readiness_sweep_v9.md`
+     - `docs/canonical_bundle_sweep_v9.md`
+     - `docs/primary_semantics_sweep_v9.md`
+     - `docs/artifact_schema_snapshots.md`

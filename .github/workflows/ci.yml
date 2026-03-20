@@ -50,10 +50,24 @@ jobs:
         run: cargo run -p ucf-ops -- governance-entry-check --out ./out/governance_entry_check.json
       - name: Supported set review smoke (prereq)
         run: cargo run -p ucf-ops -- models supported-set-review --out ./out/supported_set_review.json --workdir .
+      - name: Supported scope reevaluate smoke
+        run: cargo run -p ucf-ops -- models supported-scope-reevaluate --out ./out/supported_scope_reeval.json --workdir .
       - name: Supported scope execute smoke
-        run: cargo run -p ucf-ops -- models supported-scope-execute --out ./out/supported_scope_execute_v3.json --workdir .
+        run: cargo run -p ucf-ops -- models supported-scope-execute-v4 --out ./out/supported_scope_execute_v4.json --workdir .
       - name: Supported set apply smoke
         run: cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json --workdir .
+      - name: Governance entry sweep smoke (linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          cargo run -p ucf-ops -- governance-entry-sweep --out ./out/governance_entry_sweep.json --workdir . || {
+            code=$?
+            if [ "$code" -eq 1 ] || [ "$code" -eq 2 ]; then
+              echo "governance_entry_sweep=skip reason=optional_scope_path_unavailable"
+            else
+              exit "$code"
+            fi
+          }
       - name: Readiness spine smoke
         shell: bash
         run: |
@@ -61,6 +75,18 @@ jobs:
             code=$?
             if [ "$code" -eq 2 ]; then
               echo "readiness_spine_check=skip reason=bounded_readiness_context_unavailable"
+            else
+              exit "$code"
+            fi
+          }
+      - name: Readiness spine sweep smoke (linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          cargo run -p ucf-ops -- readiness-spine-sweep --out ./out/readiness_spine_sweep.json --workdir . || {
+            code=$?
+            if [ "$code" -eq 1 ] || [ "$code" -eq 2 ]; then
+              echo "readiness_spine_sweep=skip reason=optional_scope_path_unavailable"
             else
               exit "$code"
             fi
@@ -91,6 +117,17 @@ jobs:
           cargo run -p ucf-ops -- repro verify --pack ./out/repro_portability.zip --out ./out/repro_verify_portability.json --workdir ./.ucf_portability_smoke
           cargo run -p ucf-ops -- exports roundtrip-check --in ./out/repro_portability.zip --out ./out/export_roundtrip_check.json
           cargo run -p ucf-ops -- exports bundle-spine-check --in ./out/repro_portability.zip --out ./out/bundle_spine_check.json
+      - name: Bundle spine sweep smoke (linux)
+        shell: bash
+        run: |
+          cargo run -p ucf-ops -- exports bundle-spine-sweep --out ./out/bundle_spine_sweep.json --workdir . || {
+            code=$?
+            if [ "$code" -eq 1 ]; then
+              echo "bundle_spine_sweep=skip reason=optional_export_refs_unavailable"
+            else
+              exit "$code"
+            fi
+          }
       - name: Bugkit build smoke
         shell: bash
         run: |
@@ -115,6 +152,8 @@ jobs:
               exit "$code"
             fi
           }
+      - name: Primary semantics sweep smoke
+        run: cargo run -p ucf-ops -- primary-semantics-sweep --out ./out/primary_semantics_sweep.json
       - name: Backend evidence snapshot smoke
         run: cargo run -p ucf-ops -- models evidence-snapshot --out ./out/backend_evidence_snapshot.json
       - name: Operator signoff smoke
@@ -202,10 +241,31 @@ jobs:
         run: cargo run -p ucf-ops -- governance-entry-check --out ./out/governance_entry_check.json
       - name: Supported set review smoke (prereq)
         run: cargo run -p ucf-ops -- models supported-set-review --out ./out/supported_set_review.json --workdir .
+      - name: Supported scope reevaluate smoke
+        run: cargo run -p ucf-ops -- models supported-scope-reevaluate --out ./out/supported_scope_reeval.json --workdir .
       - name: Supported scope execute smoke
-        run: cargo run -p ucf-ops -- models supported-scope-execute --out ./out/supported_scope_execute_v3.json --workdir .
+        run: cargo run -p ucf-ops -- models supported-scope-execute-v4 --out ./out/supported_scope_execute_v4.json --workdir .
       - name: Supported set apply smoke
         run: cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json --workdir .
+      - name: Governance entry sweep smoke (linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          cargo run -p ucf-ops -- governance-entry-sweep --out ./out/governance_entry_sweep.json --workdir . || {
+            code=$?
+            if [ "$code" -eq 1 ] || [ "$code" -eq 2 ]; then
+              echo "governance_entry_sweep=skip reason=optional_scope_path_unavailable"
+            else
+              exit "$code"
+            fi
+          }
+      - name: Governance entry sweep smoke (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cargo run -p ucf-ops -- governance-entry-sweep --out ./out/governance_entry_sweep.json --workdir .
+          if ($LASTEXITCODE -eq 1 -or $LASTEXITCODE -eq 2) { Write-Host "governance_entry_sweep=skip reason=optional_scope_path_unavailable"; exit 0 }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Readiness spine smoke (linux)
         if: runner.os == 'Linux'
         shell: bash
@@ -224,6 +284,25 @@ jobs:
         run: |
           cargo run -p ucf-ops -- readiness-spine-check --out ./out/readiness_spine_check.json
           if ($LASTEXITCODE -eq 2) { Write-Host "readiness_spine_check=skip reason=bounded_readiness_context_unavailable"; exit 0 }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Readiness spine sweep smoke (linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          cargo run -p ucf-ops -- readiness-spine-sweep --out ./out/readiness_spine_sweep.json --workdir . || {
+            code=$?
+            if [ "$code" -eq 1 ] || [ "$code" -eq 2 ]; then
+              echo "readiness_spine_sweep=skip reason=optional_scope_path_unavailable"
+            else
+              exit "$code"
+            fi
+          }
+      - name: Readiness spine sweep smoke (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cargo run -p ucf-ops -- readiness-spine-sweep --out ./out/readiness_spine_sweep.json --workdir .
+          if ($LASTEXITCODE -eq 1 -or $LASTEXITCODE -eq 2) { Write-Host "readiness_spine_sweep=skip reason=optional_scope_path_unavailable"; exit 0 }
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Scope authority check smoke (linux)
         if: runner.os == 'Linux'
@@ -244,8 +323,6 @@ jobs:
           cargo run -p ucf-ops -- scope authority-check --out ./out/scope_authority_check.json
           if ($LASTEXITCODE -eq 1) { Write-Host "scope_authority_check=skip reason=optional_scope_path_unavailable"; exit 0 }
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Supported scope reevaluate smoke
-        run: cargo run -p ucf-ops -- models supported-scope-reevaluate --out ./out/supported_scope_reeval.json --workdir .
       - name: Review-truth check smoke (linux)
         if: runner.os == 'Linux'
         shell: bash
@@ -309,6 +386,25 @@ jobs:
           cargo run -p ucf-ops -- repro verify --pack ./out/repro_portability.zip --out ./out/repro_verify_portability.json --workdir ./.ucf_portability_smoke
           cargo run -p ucf-ops -- exports roundtrip-check --in ./out/repro_portability.zip --out ./out/export_roundtrip_check.json
           cargo run -p ucf-ops -- exports bundle-spine-check --in ./out/repro_portability.zip --out ./out/bundle_spine_check.json
+      - name: Bundle spine sweep smoke (linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          cargo run -p ucf-ops -- exports bundle-spine-sweep --out ./out/bundle_spine_sweep.json --workdir . || {
+            code=$?
+            if [ "$code" -eq 1 ]; then
+              echo "bundle_spine_sweep=skip reason=optional_export_refs_unavailable"
+            else
+              exit "$code"
+            fi
+          }
+      - name: Bundle spine sweep smoke (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cargo run -p ucf-ops -- exports bundle-spine-sweep --out ./out/bundle_spine_sweep.json --workdir .
+          if ($LASTEXITCODE -eq 1) { Write-Host "bundle_spine_sweep=skip reason=optional_export_refs_unavailable"; exit 0 }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Bugkit build smoke (linux)
         if: runner.os == 'Linux'
         shell: bash
@@ -353,6 +449,8 @@ jobs:
           cargo run -p ucf-ops -- remediation-spine-check --out ./out/remediation_spine_check.json
           if ($LASTEXITCODE -eq 2) { Write-Host "remediation_spine_check=skip reason=bounded_remediation_context_unavailable"; exit 0 }
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Primary semantics sweep smoke
+        run: cargo run -p ucf-ops -- primary-semantics-sweep --out ./out/primary_semantics_sweep.json
       - name: v0 gate (blocking)
         run: cargo run -p ucf-ops -- v0 gate --scenario fixtures/e2e/v0_flow_a.json --out ./out/v0_gate_report.json
       - name: v1 gate (blocking)
