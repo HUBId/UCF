@@ -39,6 +39,7 @@ mod strict_evidence;
 mod v6_gate;
 mod v7_gate;
 mod v8_gate;
+mod v9_gate;
 mod world_shadow;
 pub use adversarial::{adversarial_run, AdversarialReport, AdversarialRunArgs, CaseResult};
 pub use airgap::{
@@ -209,6 +210,7 @@ pub use strict_evidence::{
 pub use v6_gate::{v6_gate, V6GateCheckV1, V6GateOverallStatus, V6GateReportV1};
 pub use v7_gate::{v7_gate, V7GateCheckV1, V7GateOverallStatus, V7GateReportV1};
 pub use v8_gate::{v8_gate, V8GateCheckV1, V8GateOverallStatus, V8GateReportV1};
+pub use v9_gate::{v9_gate, V9GateCheckV1, V9GateOverallStatus, V9GateReportV1};
 pub use world_shadow::{
     world_parity_evidence_exists, world_parity_report, world_shadow_report,
     WorldBackendEligibilityV1, WorldParityRecordV1, WorldParityReportV1, WorldShadowReport,
