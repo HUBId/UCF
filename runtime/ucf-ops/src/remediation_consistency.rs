@@ -6,15 +6,16 @@ use sha2::{Digest, Sha256};
 use ucf_types::remediation_codes::{remediation_for_condition, CanonicalConditionV1};
 
 use crate::remediation::{
-    canonical_condition_for_bundle_spine_mismatch,
+    all_registry_rows, canonical_condition_for_bundle_spine_mismatch,
     canonical_condition_for_export_normalize_category,
     canonical_condition_for_governance_entry_mismatch, canonical_condition_for_interop_category,
     canonical_condition_for_operator_export_chain_mismatch,
     canonical_condition_for_readiness_spine_mismatch, canonical_condition_for_roundtrip_mismatch,
-    canonical_condition_for_scope_authority_mismatch, canonical_from_legacy_code,
-    canonical_from_legacy_remediation, primary_remediation_for_condition_code,
+    canonical_condition_for_scope_authority_mismatch, canonical_condition_from_code,
+    canonical_from_legacy_code, canonical_from_legacy_remediation,
+    primary_remediation_for_condition_code,
 };
-use crate::OpsError;
+use crate::{prefix_hex, sha256_hex, OpsError};
 use std::fs;
 
 const SCHEMA_VERSION: u16 = 1;
@@ -215,6 +216,58 @@ pub struct PrimarySemanticsSweepReportV1 {
     pub top_mismatch_categories: Vec<String>,
     pub observations: Vec<PrimarySemanticsObservationV1>,
     pub authority: CanonicalPrimarySemanticsAuthorityV1,
+}
+
+pub const FINAL_PRIMARY_SEMANTICS_AUTHORITY_REQUIRED: &str =
+    "FINAL_PRIMARY_SEMANTICS_AUTHORITY_REQUIRED";
+pub const CANONICAL_CONDITION_MODEL_REQUIRED: &str = "CANONICAL_CONDITION_MODEL_REQUIRED";
+pub const CANONICAL_REMEDIATION_REGISTRY_REQUIRED: &str = "CANONICAL_REMEDIATION_REGISTRY_REQUIRED";
+pub const LEGACY_PRIMARY_SEMANTICS_INPUT_BLOCKED: &str = "LEGACY_PRIMARY_SEMANTICS_INPUT_BLOCKED";
+pub const LEGACY_PRIMARY_SEMANTICS_TRANSLATED: &str = "LEGACY_PRIMARY_SEMANTICS_TRANSLATED";
+pub const LEGACY_PRIMARY_SEMANTICS_REJECTED: &str = "LEGACY_PRIMARY_SEMANTICS_REJECTED";
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum FinalPrimarySemanticsConsumerAuthorityStatusV1 {
+    Pass,
+    Fail,
+    LegacyPresent,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct FinalPrimarySemanticsConsumerSurfaceStatusV1 {
+    pub surface_kind: String,
+    pub status: CrossSurfaceObservationStatusV1,
+    pub mismatch_categories: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct FinalPrimarySemanticsConsumerAuthorityV1 {
+    pub canonical_governance_entry_digest_prefix: String,
+    pub canonical_readiness_spine_digest_prefix: String,
+    pub canonical_bundle_spine_digest_prefix: String,
+    pub canonical_primary_semantics_authority_digest_prefix: String,
+    pub covered_consumer_count: usize,
+    pub authority_status: FinalPrimarySemanticsConsumerAuthorityStatusV1,
+    pub authority_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct FinalPrimarySemanticsSweepReportV1 {
+    pub schema_version: u16,
+    pub conditions_checked: usize,
+    pub mismatches_found: usize,
+    pub top_mismatch_categories: Vec<String>,
+    pub surface_statuses: Vec<FinalPrimarySemanticsConsumerSurfaceStatusV1>,
+    pub authority: FinalPrimarySemanticsConsumerAuthorityV1,
+}
+
+#[derive(Debug, Clone)]
+pub struct FinalPrimarySemanticsAuthorityContextV1 {
+    pub canonical_governance_entry_digest_prefix: String,
+    pub canonical_readiness_spine_digest_prefix: String,
+    pub canonical_bundle_spine_digest_prefix: String,
+    pub canonical_primary_semantics_authority_digest_prefix: String,
 }
 
 #[derive(Clone)]
@@ -573,6 +626,240 @@ pub fn primary_semantics_sweep(out: &Path) -> Result<PrimarySemanticsSweepReport
     }
     fs::write(out, serde_json::to_string_pretty(&report)?)?;
     Ok(report)
+}
+
+pub fn require_final_primary_semantics_authority(
+    primary: &CanonicalPrimarySemanticsAuthorityV1,
+) -> Result<FinalPrimarySemanticsAuthorityContextV1, OpsError> {
+    if !matches!(
+        primary.authority_status,
+        CanonicalPrimarySemanticsAuthorityStatusV1::Pass
+    ) {
+        return Err(OpsError::Invalid(
+            FINAL_PRIMARY_SEMANTICS_AUTHORITY_REQUIRED.to_string(),
+        ));
+    }
+    let covered_conditions = covered_spine_conditions();
+    if covered_conditions
+        .iter()
+        .any(|code| canonical_condition_from_code(code).is_none())
+    {
+        return Err(OpsError::Invalid(
+            CANONICAL_CONDITION_MODEL_REQUIRED.to_string(),
+        ));
+    }
+    if covered_conditions
+        .iter()
+        .any(|code| primary_remediation_for_condition_code(code).is_none())
+    {
+        return Err(OpsError::Invalid(
+            CANONICAL_REMEDIATION_REGISTRY_REQUIRED.to_string(),
+        ));
+    }
+    if all_registry_rows().is_empty() {
+        return Err(OpsError::Invalid(
+            CANONICAL_REMEDIATION_REGISTRY_REQUIRED.to_string(),
+        ));
+    }
+    Ok(FinalPrimarySemanticsAuthorityContextV1 {
+        canonical_governance_entry_digest_prefix: primary
+            .canonical_governance_entry_digest_prefix
+            .clone(),
+        canonical_readiness_spine_digest_prefix: primary
+            .canonical_readiness_spine_digest_prefix
+            .clone(),
+        canonical_bundle_spine_digest_prefix: primary.canonical_bundle_spine_digest_prefix.clone(),
+        canonical_primary_semantics_authority_digest_prefix: prefix16(
+            &primary.primary_semantics_digest,
+        ),
+    })
+}
+
+pub fn final_primary_semantics_sweep(
+    workdir: &Path,
+    out: &Path,
+) -> Result<FinalPrimarySemanticsSweepReportV1, OpsError> {
+    let primary = primary_semantics_sweep(&workdir.join("out/primary_semantics_sweep_v10.json"))?;
+    let context = require_final_primary_semantics_authority(&primary.authority)?;
+    let _ = crate::governance_entry_sweep(
+        workdir,
+        &workdir.join("out/governance_entry_sweep_v10_final_primary_semantics.json"),
+    )?;
+    let _ = crate::readiness_spine_sweep(
+        workdir,
+        &workdir.join("out/readiness_spine_sweep_v10_final_primary_semantics.json"),
+    )?;
+    let _ = crate::exports_bundle_spine_sweep(
+        workdir,
+        &workdir.join("out/bundle_spine_sweep_v10_final_primary_semantics.json"),
+    )?;
+    let _ = crate::operator_signoff(
+        workdir,
+        &crate::OperatorSignoffArgs {
+            run_id: None,
+            latest: true,
+            profile: "test".to_string(),
+        },
+        &workdir.join("out/operator_signoff_v10_final_primary_semantics.json"),
+    )?;
+    let _ = crate::operator_review_packet(
+        workdir,
+        &crate::OperatorReviewPacketArgs {
+            run_id: None,
+            latest: true,
+        },
+        &workdir.join("out/operator_review_packet_v10_final_primary_semantics.json"),
+    )?;
+    let _ = crate::operator_workflow_chain(
+        workdir,
+        &crate::OperatorWorkflowArgs {
+            run_id: None,
+            latest: true,
+        },
+        &workdir.join("out/operator_workflow_v10_final_primary_semantics.json"),
+    )?;
+    let _ = crate::interop_consistency_matrix(
+        workdir,
+        &workdir.join("out/interop_consistency_v10_final_primary_semantics.json"),
+    )?;
+    let _ = crate::exports_normalize_check(
+        workdir,
+        &workdir.join("out/export_normalize_check_v10_final_primary_semantics.json"),
+    )?;
+    let _ = crate::v9_gate(
+        workdir,
+        &workdir.join("out/v9_gate_v10_final_primary_semantics.json"),
+    )?;
+
+    let (surface_statuses, top_mismatch_categories, mismatches_found, status) =
+        evaluate_final_primary_surface_statuses(&primary.observations);
+    let authority = derive_final_primary_consumer_authority(
+        &context,
+        surface_statuses.len(),
+        status,
+        &top_mismatch_categories,
+    )?;
+    let report = FinalPrimarySemanticsSweepReportV1 {
+        schema_version: SCHEMA_VERSION,
+        conditions_checked: primary.conditions_checked,
+        mismatches_found,
+        top_mismatch_categories,
+        surface_statuses,
+        authority,
+    };
+    if let Some(parent) = out.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(out, serde_json::to_string_pretty(&report)?)?;
+    Ok(report)
+}
+
+fn evaluate_final_primary_surface_statuses(
+    observations: &[PrimarySemanticsObservationV1],
+) -> (
+    Vec<FinalPrimarySemanticsConsumerSurfaceStatusV1>,
+    Vec<String>,
+    usize,
+    FinalPrimarySemanticsConsumerAuthorityStatusV1,
+) {
+    let mut by_surface = BTreeMap::<String, Vec<String>>::new();
+    for observation in observations {
+        for surface in &observation.observed_surfaces {
+            let categories = by_surface.entry(surface.surface_kind.clone()).or_default();
+            for code in &surface.diagnostic_codes {
+                categories.push(code.clone());
+            }
+            if surface.primary_blocking_code.is_none()
+                && !matches!(surface.status, CrossSurfaceObservationStatusV1::Skip)
+            {
+                categories.push("SURFACE_SKIPPED_FINAL_PRIMARY_SEMANTICS_AUTHORITY".to_string());
+            }
+            if surface
+                .diagnostic_codes
+                .iter()
+                .any(|c| c.contains("LEGACY"))
+            {
+                categories.push("SURFACE_USED_LEGACY_PRIMARY_SEMANTICS_INPUT".to_string());
+            }
+        }
+    }
+
+    let mut hist = BTreeMap::<String, usize>::new();
+    let mut statuses = Vec::new();
+    let mut mismatches_found = 0usize;
+    let mut saw_legacy = false;
+    for (surface_kind, mut mismatch_categories) in by_surface {
+        mismatch_categories.sort();
+        mismatch_categories.dedup();
+        for cat in &mismatch_categories {
+            *hist.entry(cat.clone()).or_default() += 1;
+            if cat.contains("LEGACY") {
+                saw_legacy = true;
+            }
+        }
+        let status = if mismatch_categories.is_empty() {
+            CrossSurfaceObservationStatusV1::Pass
+        } else {
+            mismatches_found += mismatch_categories.len();
+            CrossSurfaceObservationStatusV1::Fail
+        };
+        statuses.push(FinalPrimarySemanticsConsumerSurfaceStatusV1 {
+            surface_kind,
+            status,
+            mismatch_categories,
+        });
+    }
+    statuses.sort_by(|a, b| a.surface_kind.cmp(&b.surface_kind));
+
+    let authority_status = if mismatches_found == 0 {
+        FinalPrimarySemanticsConsumerAuthorityStatusV1::Pass
+    } else if saw_legacy {
+        FinalPrimarySemanticsConsumerAuthorityStatusV1::LegacyPresent
+    } else {
+        FinalPrimarySemanticsConsumerAuthorityStatusV1::Fail
+    };
+    (
+        statuses,
+        hist.into_iter().map(|(k, v)| format!("{k}:{v}")).collect(),
+        mismatches_found,
+        authority_status,
+    )
+}
+
+fn derive_final_primary_consumer_authority(
+    context: &FinalPrimarySemanticsAuthorityContextV1,
+    covered_consumer_count: usize,
+    authority_status: FinalPrimarySemanticsConsumerAuthorityStatusV1,
+    mismatch_categories: &[String],
+) -> Result<FinalPrimarySemanticsConsumerAuthorityV1, OpsError> {
+    let payload = serde_json::to_vec(&(
+        &context.canonical_governance_entry_digest_prefix,
+        &context.canonical_readiness_spine_digest_prefix,
+        &context.canonical_bundle_spine_digest_prefix,
+        &context.canonical_primary_semantics_authority_digest_prefix,
+        covered_consumer_count,
+        &authority_status,
+        mismatch_categories,
+    ))?;
+    Ok(FinalPrimarySemanticsConsumerAuthorityV1 {
+        canonical_governance_entry_digest_prefix: context
+            .canonical_governance_entry_digest_prefix
+            .clone(),
+        canonical_readiness_spine_digest_prefix: context
+            .canonical_readiness_spine_digest_prefix
+            .clone(),
+        canonical_bundle_spine_digest_prefix: context.canonical_bundle_spine_digest_prefix.clone(),
+        canonical_primary_semantics_authority_digest_prefix: context
+            .canonical_primary_semantics_authority_digest_prefix
+            .clone(),
+        covered_consumer_count,
+        authority_status,
+        authority_digest: sha256_hex(&payload),
+    })
+}
+
+fn prefix16(value: &str) -> String {
+    prefix_hex(value, 16)
 }
 
 fn covered_spine_conditions() -> Vec<&'static str> {
@@ -1351,5 +1638,80 @@ mod tests {
             observe_primary_semantics_surface("BundleSpineMismatch", "ExportNormalizeCheck", None);
         assert!(matches!(obs.status, CrossSurfaceObservationStatusV1::Skip));
         assert!(obs.primary_blocking_code.is_none());
+    }
+
+    #[test]
+    fn final_primary_consumer_authority_digest_is_stable() {
+        let context = FinalPrimarySemanticsAuthorityContextV1 {
+            canonical_governance_entry_digest_prefix: "11".repeat(8),
+            canonical_readiness_spine_digest_prefix: "22".repeat(8),
+            canonical_bundle_spine_digest_prefix: "33".repeat(8),
+            canonical_primary_semantics_authority_digest_prefix: "44".repeat(8),
+        };
+        let cats = vec!["PRIMARY_BLOCKING_PRECEDENCE_MISMATCH:1".to_string()];
+        let a = derive_final_primary_consumer_authority(
+            &context,
+            17,
+            FinalPrimarySemanticsConsumerAuthorityStatusV1::Fail,
+            &cats,
+        )
+        .expect("authority");
+        let b = derive_final_primary_consumer_authority(
+            &context,
+            17,
+            FinalPrimarySemanticsConsumerAuthorityStatusV1::Fail,
+            &cats,
+        )
+        .expect("authority");
+        assert_eq!(a.authority_digest, b.authority_digest);
+    }
+
+    #[test]
+    fn final_primary_surface_status_detects_legacy_input() {
+        let observations = vec![PrimarySemanticsObservationV1 {
+            canonical_condition_code: "AppliedScopeMismatch".to_string(),
+            expected_primary_blocking_code: Some("AppliedScopeMismatch".to_string()),
+            expected_primary_remediation_code: Some("REMEDIATION_RUN_INTEROP_MATRIX".to_string()),
+            observed_surfaces: vec![PrimarySemanticsObservedSurfaceV1 {
+                surface_kind: "OperatorWorkflow".to_string(),
+                primary_blocking_code: Some("AppliedScopeMismatch".to_string()),
+                primary_remediation_code: Some("REMEDIATION_RUN_INTEROP_MATRIX".to_string()),
+                status: CrossSurfaceObservationStatusV1::Fail,
+                source_digest_prefix: None,
+                diagnostic_codes: vec!["LEGACY_PRIMARY_SEMANTICS_PRESENT".to_string()],
+                secondary_diagnostic_codes: vec![],
+                secondary_surface_reason_codes: vec![],
+            }],
+            observation_digest: "a".repeat(64),
+        }];
+        let (_statuses, top, mismatches, status) =
+            evaluate_final_primary_surface_statuses(&observations);
+        assert!(top
+            .iter()
+            .any(|v| v.starts_with("SURFACE_USED_LEGACY_PRIMARY_SEMANTICS_INPUT:")));
+        assert!(mismatches > 0);
+        assert!(matches!(
+            status,
+            FinalPrimarySemanticsConsumerAuthorityStatusV1::LegacyPresent
+        ));
+    }
+
+    #[test]
+    fn final_primary_requires_pass_authority() {
+        let err =
+            require_final_primary_semantics_authority(&CanonicalPrimarySemanticsAuthorityV1 {
+                covered_surface_count: 1,
+                covered_condition_count: 1,
+                authority_status: CanonicalPrimarySemanticsAuthorityStatusV1::Fail,
+                primary_semantics_digest: "aa".repeat(32),
+                applied_supported_set_digest_prefix: "aa".repeat(8),
+                canonical_governance_entry_digest_prefix: "bb".repeat(8),
+                canonical_readiness_spine_digest_prefix: "cc".repeat(8),
+                canonical_bundle_spine_digest_prefix: "dd".repeat(8),
+            })
+            .expect_err("must fail closed");
+        assert!(err
+            .to_string()
+            .contains(FINAL_PRIMARY_SEMANTICS_AUTHORITY_REQUIRED));
     }
 }
