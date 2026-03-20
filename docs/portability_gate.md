@@ -1,4 +1,4 @@
-# Portability Gate v9 Refresh (Linux + Windows)
+# Portability Gate v10 Refresh (Linux + Windows)
 
 `Portability Gate` blocks merges when core runtime/ops checks are not cross-platform safe.
 
@@ -17,13 +17,18 @@
      - `cargo run -p ucf-ops -- scope authority-check --out ./out/scope_authority_check.json`
      - `cargo run -p ucf-ops -- models supported-scope-reevaluate --out ./out/supported_scope_reeval.json --workdir .`
      - `cargo run -p ucf-ops -- models supported-scope-execute-v4 --out ./out/supported_scope_execute_v4.json --workdir .`
+     - `cargo run -p ucf-ops -- final-governance-consumer-sweep --out ./out/final_governance_consumer_sweep.json`
+     - `cargo run -p ucf-ops -- models supported-scope-execute-v5 --out ./out/supported_scope_execute_v5.json --workdir .`
      - `cargo run -p ucf-ops -- readiness-spine-check --out ./out/readiness_spine_check.json`
+     - `cargo run -p ucf-ops -- final-readiness-consumer-sweep --out ./out/final_readiness_consumer_sweep.json`
      - `cargo run -p ucf-ops -- operator review-truth-check --out ./out/review_truth_check.json`
      - `cargo run -p ucf-ops -- models supported-set-review --out ./out/supported_set_review.json --workdir .`
      - `cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json --workdir .`
      - `cargo run -p ucf-ops -- models applied-scope-check --out ./out/applied_scope_check.json --workdir .`
      - `cargo run -p ucf-ops -- exports normalize-check --out ./out/export_normalize_check.json`
      - `cargo run -p ucf-ops -- interop consistency-matrix --out ./out/interop_consistency_matrix.json`
+     - `cargo run -p ucf-ops -- final-bundle-consumer-sweep --out ./out/final_bundle_consumer_sweep.json`
+     - `cargo run -p ucf-ops -- final-primary-semantics-sweep --out ./out/final_primary_semantics_sweep.json`
      - `cargo run -p ucf-ops -- models evidence-snapshot --out ./out/backend_evidence_snapshot.json`
      - `cargo run -p ucf-ops -- operator signoff --out ./out/operator_signoff.json`
      - `cargo run -p ucf-ops -- docs remediation-codes --out ./out/remediation_codes_v1.generated.md` (must match `docs/remediation_codes_v1.md`)
@@ -46,13 +51,18 @@
      - `cargo run -p ucf-ops -- scope authority-check --out ./out/scope_authority_check.json`
      - `cargo run -p ucf-ops -- models supported-scope-reevaluate --out ./out/supported_scope_reeval.json --workdir .`
      - `cargo run -p ucf-ops -- models supported-scope-execute-v4 --out ./out/supported_scope_execute_v4.json --workdir .`
+     - `cargo run -p ucf-ops -- final-governance-consumer-sweep --out ./out/final_governance_consumer_sweep.json`
+     - `cargo run -p ucf-ops -- models supported-scope-execute-v5 --out ./out/supported_scope_execute_v5.json --workdir .`
      - `cargo run -p ucf-ops -- readiness-spine-check --out ./out/readiness_spine_check.json`
+     - `cargo run -p ucf-ops -- final-readiness-consumer-sweep --out ./out/final_readiness_consumer_sweep.json`
      - `cargo run -p ucf-ops -- operator review-truth-check --out ./out/review_truth_check.json`
      - `cargo run -p ucf-ops -- models supported-set-review --out ./out/supported_set_review.json --workdir .`
      - `cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json --workdir .`
      - `cargo run -p ucf-ops -- models applied-scope-check --out ./out/applied_scope_check.json --workdir .`
      - `cargo run -p ucf-ops -- exports normalize-check --out ./out/export_normalize_check.json`
      - `cargo run -p ucf-ops -- interop consistency-matrix --out ./out/interop_consistency_matrix.json`
+     - `cargo run -p ucf-ops -- final-bundle-consumer-sweep --out ./out/final_bundle_consumer_sweep.json`
+     - `cargo run -p ucf-ops -- final-primary-semantics-sweep --out ./out/final_primary_semantics_sweep.json`
      - `cargo run -p ucf-ops -- models evidence-snapshot --out ./out/backend_evidence_snapshot.json`
      - `cargo run -p ucf-ops -- operator signoff --out ./out/operator_signoff.json`
      - `cargo run -p ucf-ops -- docs remediation-codes --out ./out/remediation_codes_v1.generated.md` (must match `docs/remediation_codes_v1.md`)
@@ -65,11 +75,15 @@
      - `cargo run -p ucf-ops -- portability check --out ./out/portability.json`
      - `cargo run -p ucf-ops -- portability report --out ./out/portability_report.json`
 
-2. **v9 generation smoke checks (blocking unless explicitly optional)**
+2. **v10 generation smoke checks (blocking unless explicitly optional)**
    - `governance-entry-check` must pass and preserve canonical governance entry usage across consumers.
    - `governance-entry-sweep` must pass and prove deterministic canonical entry authority across final governance surfaces.
    - `models supported-scope-execute` must produce deterministic bounded execution decisions.
    - `models supported-scope-execute-v4` must emit deterministic `REAFFIRM_FREEZE` / `EXECUTE_EXPAND_BY_ONE` execution decisions.
+   - `final-governance-consumer-sweep` must pass and prove deterministic final governance consumer authority coverage.
+   - `models supported-scope-execute-v5` must emit deterministic `REAFFIRM_FREEZE` / `EXECUTE_EXPAND_BY_ONE` decisions against final governance consumer authority.
+   - `final-readiness-consumer-sweep` must pass and emit deterministic mismatch categories for canonical final readiness consumers.
+   - `final-bundle-consumer-sweep` must pass and prove canonical bundle-input authority consumption across canonical consumers.
    - `readiness-spine-check` must emit deterministic mismatch categories and remediation codes.
    - `readiness-spine-sweep` must pass and prove deterministic final readiness authority coverage.
    - `exports bundle-spine-check` must reconstruct canonical bundle spine deterministically from bounded fixture bundles.
@@ -91,7 +105,7 @@
    - `audit net-deps` (Linux lane): hidden network dependency drift is blocked.
 
 4. **Docs consistency (via `docs lint --strict`)**
-   - Enforces v3 + v4 + v5 + v6 + v7 + v8 + v9 docs consistency and linkage.
+   - Enforces v3 + v4 + v5 + v6 + v7 + v8 + v9 + v10 docs consistency and linkage.
    - Enforces remediation registry doc freshness.
    - Enforces artifact schema snapshot freshness and deterministic drift reporting.
 
@@ -115,6 +129,16 @@
 - `docs/readiness_spine_v8.md`
 - `docs/bundle_spine_v8.md`
 - `docs/remediation_spine_consistency_v8.md`
+- `docs/artifact_schema_snapshots.md`
+
+
+## v10 docs covered by portability/docs gates
+
+- `docs/final_governance_consumer_sweep_v10.md`
+- `docs/supported_scope_execution_v10.md`
+- `docs/final_readiness_consumer_sweep_v10.md`
+- `docs/final_bundle_consumer_sweep_v10.md`
+- `docs/final_primary_semantics_sweep_v10.md`
 - `docs/artifact_schema_snapshots.md`
 
 ## v9 docs covered by portability/docs gates
@@ -159,7 +183,7 @@
 
 - **FAIL**: deterministic portability/docs/schema/final-sweep invariants regressed and must be fixed before merge.
 - **SKIP**: bounded optional backend/report path is unavailable in the current environment; this is expected and non-panicking.
-- Required v9 final sweeps are blocking in normal bounded smoke contexts; `governance-entry-sweep`/`readiness-spine-sweep` may emit `SKIP` only when optional applied-scope prerequisites are unavailable (`APPLIED_SCOPE_*` guardrails), and `bundle-spine-sweep` may emit `SKIP` when optional canonical export refs are unavailable (`CANONICAL_EXPORT_REFS_REQUIRED`-class guardrails), never via panic.
+- Required v10 final sweeps are blocking in normal bounded smoke contexts; `governance-entry-sweep`/`readiness-spine-sweep`/`final-governance-consumer-sweep`/`final-readiness-consumer-sweep` may emit `SKIP` only when optional applied-scope prerequisites are unavailable (`APPLIED_SCOPE_*` guardrails), and `bundle-spine-sweep`/`final-bundle-consumer-sweep` may emit `SKIP` when optional canonical export refs are unavailable (`CANONICAL_EXPORT_REFS_REQUIRED`-class guardrails), never via panic.
 
 ## Local run instructions
 
@@ -194,6 +218,11 @@ cargo run -p ucf-ops -- exports roundtrip-check --in ./out/repro_portability.zip
 cargo run -p ucf-ops -- exports bundle-spine-check --in ./out/repro_portability.zip --out ./out/bundle_spine_check.json
 cargo run -p ucf-ops -- exports bundle-spine-sweep --out ./out/bundle_spine_sweep.json
 cargo run -p ucf-ops -- primary-semantics-sweep --out ./out/primary_semantics_sweep.json
+cargo run -p ucf-ops -- final-governance-consumer-sweep --out ./out/final_governance_consumer_sweep.json
+cargo run -p ucf-ops -- models supported-scope-execute-v5 --out ./out/supported_scope_execute_v5.json --workdir .
+cargo run -p ucf-ops -- final-readiness-consumer-sweep --out ./out/final_readiness_consumer_sweep.json
+cargo run -p ucf-ops -- final-bundle-consumer-sweep --out ./out/final_bundle_consumer_sweep.json
+cargo run -p ucf-ops -- final-primary-semantics-sweep --out ./out/final_primary_semantics_sweep.json
 mkdir -p ./.ucf_portability_smoke/out/$run_id
 cp ./out/portability_smoke_bringup/run_metadata.json ./.ucf_portability_smoke/out/$run_id/run_metadata.json
 cp ./out/portability_smoke_bringup/metrics_summary.json ./.ucf_portability_smoke/out/$run_id/metrics_summary.json
@@ -242,6 +271,11 @@ cargo run -p ucf-ops -- exports roundtrip-check --in ./out/repro_portability.zip
 cargo run -p ucf-ops -- exports bundle-spine-check --in ./out/repro_portability.zip --out ./out/bundle_spine_check.json
 cargo run -p ucf-ops -- exports bundle-spine-sweep --out ./out/bundle_spine_sweep.json
 cargo run -p ucf-ops -- primary-semantics-sweep --out ./out/primary_semantics_sweep.json
+cargo run -p ucf-ops -- final-governance-consumer-sweep --out ./out/final_governance_consumer_sweep.json
+cargo run -p ucf-ops -- models supported-scope-execute-v5 --out ./out/supported_scope_execute_v5.json --workdir .
+cargo run -p ucf-ops -- final-readiness-consumer-sweep --out ./out/final_readiness_consumer_sweep.json
+cargo run -p ucf-ops -- final-bundle-consumer-sweep --out ./out/final_bundle_consumer_sweep.json
+cargo run -p ucf-ops -- final-primary-semantics-sweep --out ./out/final_primary_semantics_sweep.json
 New-Item -ItemType Directory -Force -Path ".\.ucf_portability_smoke\out\$run_id" | Out-Null
 Copy-Item "./out/portability_smoke_bringup/run_metadata.json" ".\.ucf_portability_smoke\out\$run_id\run_metadata.json"
 Copy-Item "./out/portability_smoke_bringup/metrics_summary.json" ".\.ucf_portability_smoke\out\$run_id\metrics_summary.json"
