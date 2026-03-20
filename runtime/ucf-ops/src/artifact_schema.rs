@@ -64,7 +64,7 @@ struct ArtifactSpec {
     enum_names: &'static [&'static str],
 }
 
-const ARTIFACT_SPECS: [ArtifactSpec; 51] = [
+const ARTIFACT_SPECS: [ArtifactSpec; 52] = [
     ArtifactSpec {
         artifact_id: "active_review_snapshot_v1",
         file_rel: "runtime/ucf-ops/src/models_lifecycle.rs",
@@ -380,6 +380,12 @@ const ARTIFACT_SPECS: [ArtifactSpec; 51] = [
         file_rel: "runtime/ucf-ops/src/v9_gate.rs",
         type_name: "V9GateReportV1",
         enum_names: &["V9GateOverallStatus"],
+    },
+    ArtifactSpec {
+        artifact_id: "v10_gate_report_v1",
+        file_rel: "runtime/ucf-ops/src/v10_gate.rs",
+        type_name: "V10GateReportV1",
+        enum_names: &["V10GateOverallStatus"],
     },
 ];
 
@@ -873,6 +879,7 @@ mod tests {
                 "supported_scope_execution_v4",
                 "supported_scope_execution_v5",
                 "supported_scope_reevaluation_v1",
+                "v10_gate_report_v1",
                 "v3_gate_report_v1",
                 "v4_gate_report_v1",
                 "v5_gate_report_v1",
