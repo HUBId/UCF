@@ -183,7 +183,7 @@
 
 - **FAIL**: deterministic portability/docs/schema/final-sweep invariants regressed and must be fixed before merge.
 - **SKIP**: bounded optional backend/report path is unavailable in the current environment; this is expected and non-panicking.
-- Required v10 final sweeps are blocking in normal bounded smoke contexts; `governance-entry-sweep`/`readiness-spine-sweep`/`final-governance-consumer-sweep`/`final-readiness-consumer-sweep` may emit `SKIP` only when optional applied-scope prerequisites are unavailable (`APPLIED_SCOPE_*` guardrails), and `bundle-spine-sweep`/`final-bundle-consumer-sweep` may emit `SKIP` when optional canonical export refs are unavailable (`CANONICAL_EXPORT_REFS_REQUIRED`-class guardrails), never via panic.
+- Required v10 final sweeps are blocking in normal bounded smoke contexts; `governance-entry-sweep`/`readiness-spine-sweep`/`final-governance-consumer-sweep`/`final-readiness-consumer-sweep` may emit `SKIP` only when optional applied-scope prerequisites are unavailable (`APPLIED_SCOPE_*` guardrails), and `bundle-spine-sweep`/`final-bundle-consumer-sweep`/`final-primary-semantics-sweep` may emit `SKIP` when optional canonical export refs are unavailable (`CANONICAL_EXPORT_REFS_REQUIRED`-class guardrails), never via panic.
 
 ## Local run instructions
 
