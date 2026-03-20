@@ -28,6 +28,7 @@ Snapshots are generated under `docs/artifact_schema_snapshots/`:
 - `cross_surface_condition_observation_v1.json` (v7)
 - `cross_surface_context_matrix_v1.json` (v6/v8 additive drift tracked)
 - `final_bundle_consumer_authority_v1.json` (v10 final consumer-authority freeze)
+- `final_continuity_authority_v2.json` (v10 sole top-level continuity authority)
 - `final_governance_consumer_authority_v1.json` (v10 final consumer-authority freeze)
 - `final_primary_semantics_consumer_authority_v1.json` (v10 final consumer-authority freeze)
 - `final_readiness_consumer_authority_v1.json` (v10 final consumer-authority freeze)
@@ -53,6 +54,9 @@ Snapshots are generated under `docs/artifact_schema_snapshots/`:
 - `v4_gate_report_v1.json`
 - `v5_gate_report_v1.json`
 - `v7_gate_report_v1.json` (v8 lane coverage)
+- `v8_gate_report_v1.json`
+- `v9_gate_report_v1.json`
+- `v10_gate_report_v1.json` (v10 consolidated gate)
 - `index.json` (covered artifact index)
 
 v10 contract points now frozen here include:

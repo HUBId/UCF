@@ -41,6 +41,7 @@ mod second_slot_parity;
 mod soak;
 mod spec_snapshot;
 mod strict_evidence;
+mod v10_gate;
 mod v6_gate;
 mod v7_gate;
 mod v8_gate;
@@ -244,6 +245,7 @@ pub use strict_evidence::{
     StrictEvidenceContextV1, StrictEvidenceSnapshotV1, StrictEvidenceStatusV1,
     StrictExplainReportV1,
 };
+pub use v10_gate::{v10_gate, V10GateCheckV1, V10GateOverallStatus, V10GateReportV1};
 pub use v6_gate::{v6_gate, V6GateCheckV1, V6GateOverallStatus, V6GateReportV1};
 pub use v7_gate::{v7_gate, V7GateCheckV1, V7GateOverallStatus, V7GateReportV1};
 pub use v8_gate::{v8_gate, V8GateCheckV1, V8GateOverallStatus, V8GateReportV1};
