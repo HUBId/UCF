@@ -69,5 +69,7 @@ Reference: `docs/next_10_prompts.md`
 - Prompts are classified as MUST/NICE/DEFERRED at authoring time.
 
 ## Supported real-slot baseline for current stage
+- First supported slot: `world_jepa`.
+- Second supported slot in this stage: `sae`.
 - Supported scope remains authority-gated and evidence-bound.
 - Scope changes require explicit final governance authority plus current supported-scope execution support.
