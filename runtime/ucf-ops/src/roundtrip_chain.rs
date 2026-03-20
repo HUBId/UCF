@@ -6,9 +6,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     derive_canonical_governance_entry, exports_bundle_spine_check, exports_roundtrip_check,
-    load_applied_supported_set_context_v1, models_active_review_snapshot, models_evidence_snapshot,
-    operator_export_chain_check, operator_review_packet, operator_signoff, operator_workflow_chain,
-    prefix_hex, readiness_spine_check, require_canonical_governance_entry,
+    governance_entry_sweep, load_applied_supported_set_context_v1, models_active_review_snapshot,
+    models_evidence_snapshot, operator_export_chain_check, operator_review_packet,
+    operator_signoff, operator_workflow_chain, prefix_hex, readiness_spine_check,
+    readiness_spine_sweep, require_canonical_governance_entry,
     validate_governance_primary_surfaces_with_applied_scope, BugKitManifestV1, BundleSpineStatusV1,
     OperatorReviewPacketArgs, OperatorSignoffArgs, OperatorWorkflowArgs, OpsError,
     ReproPackManifestV1, SignoffDecisionStateV1,
@@ -29,12 +30,15 @@ pub struct CanonicalRoundTripChainV1 {
     pub schema_version: u16,
     pub applied_supported_set_digest_prefix: String,
     pub canonical_governance_entry_digest_prefix: String,
+    pub canonical_governance_authority_digest_prefix: String,
     pub canonical_readiness_spine_digest_prefix: String,
+    pub canonical_readiness_authority_digest_prefix: String,
     pub operator_review_packet_digest_prefix: String,
     pub operator_signoff_digest_prefix: String,
     pub operator_workflow_chain_digest_prefix: String,
     pub operator_export_authority_chain_digest_prefix: String,
     pub canonical_bundle_spine_digest_prefix: Option<String>,
+    pub canonical_bundle_authority_digest_prefix: Option<String>,
     pub roundtrip_status: CanonicalRoundTripChainStatusV1,
     pub blocking_codes: Vec<String>,
     pub remediation_codes: Vec<String>,
@@ -56,6 +60,10 @@ pub fn operator_roundtrip_chain_check(
         validate_governance_primary_surfaces_with_applied_scope(&backend, &active, &applied)?;
     let governance_entry = derive_canonical_governance_entry(&applied, &governance_surfaces)?;
     let governance_entry = require_canonical_governance_entry(&applied, Some(&governance_entry))?;
+    let governance_sweep = governance_entry_sweep(
+        workdir,
+        &workdir.join("out/governance_entry_sweep_roundtrip_chain_check.json"),
+    )?;
 
     let review_packet = operator_review_packet(
         workdir,
@@ -89,6 +97,10 @@ pub fn operator_roundtrip_chain_check(
     let readiness = readiness_spine_check(
         workdir,
         &workdir.join("out/readiness_spine_roundtrip_chain_check.json"),
+    )?;
+    let readiness_sweep = readiness_spine_sweep(
+        workdir,
+        &workdir.join("out/readiness_spine_sweep_roundtrip_chain_check.json"),
     )?;
 
     let roundtrip = exports_roundtrip_check(
@@ -161,6 +173,15 @@ pub fn operator_roundtrip_chain_check(
         blocking.insert("ROUNDTRIP_CHAIN_BUNDLE_SPINE_FAIL".to_string());
         remediation.insert("run_exports_bundle_spine_check".to_string());
     }
+    if bundle_refs.canonical_bundle_authority_digest_prefix
+        != bundle_spine_report
+            .authority_digest_prefix
+            .clone()
+            .unwrap_or_else(|| "MISSING".to_string())
+    {
+        blocking.insert("ROUNDTRIP_CHAIN_BUNDLE_AUTHORITY_MISMATCH".to_string());
+        remediation.insert("run_exports_bundle_spine_check".to_string());
+    }
 
     if matches!(signoff.decision, SignoffDecisionStateV1::NotReady) {
         blocking.insert("ROUNDTRIP_CHAIN_OPERATOR_NOT_READY".to_string());
@@ -174,7 +195,15 @@ pub fn operator_roundtrip_chain_check(
             &governance_entry.authority_digest,
             DIGEST_PREFIX_LEN,
         ),
+        canonical_governance_authority_digest_prefix: prefix_hex(
+            &governance_sweep.authority.authority_digest,
+            DIGEST_PREFIX_LEN,
+        ),
         canonical_readiness_spine_digest_prefix: readiness_expected,
+        canonical_readiness_authority_digest_prefix: prefix_hex(
+            &readiness_sweep.authority.authority_digest,
+            DIGEST_PREFIX_LEN,
+        ),
         operator_review_packet_digest_prefix: packet_expected,
         operator_signoff_digest_prefix: signoff_expected,
         operator_workflow_chain_digest_prefix: workflow_expected,
@@ -183,6 +212,7 @@ pub fn operator_roundtrip_chain_check(
             &bundle_spine_report.spine.bundle_spine_digest,
             DIGEST_PREFIX_LEN,
         )),
+        canonical_bundle_authority_digest_prefix: bundle_spine_report.authority_digest_prefix,
         roundtrip_status: if blocking.is_empty() {
             CanonicalRoundTripChainStatusV1::Pass
         } else {
@@ -209,6 +239,7 @@ struct BundleChainRefs {
     operator_signoff_digest_prefix: String,
     operator_workflow_chain_digest_prefix: String,
     operator_export_authority_chain_digest_prefix: String,
+    canonical_bundle_authority_digest_prefix: String,
 }
 
 fn extract_bundle_chain_refs(bundle: &Path) -> Result<BundleChainRefs, OpsError> {
@@ -226,6 +257,7 @@ fn extract_bundle_chain_refs(bundle: &Path) -> Result<BundleChainRefs, OpsError>
         return Ok(refs_from_related(
             &manifest.related_artifacts,
             &manifest.operator_signoff.digest_prefix,
+            &manifest.canonical_bundle_authority_digest_prefix,
         ));
     }
 
@@ -243,12 +275,14 @@ fn extract_bundle_chain_refs(bundle: &Path) -> Result<BundleChainRefs, OpsError>
     Ok(refs_from_related(
         &manifest.related_artifacts,
         &manifest.operator_signoff.digest_prefix,
+        &manifest.canonical_bundle_authority_digest_prefix,
     ))
 }
 
 fn refs_from_related(
     related: &[crate::CanonicalExportArtifactRefV1],
     signoff_fallback: &str,
+    bundle_authority_fallback: &str,
 ) -> BundleChainRefs {
     let find = |kind: &str| {
         related
@@ -276,6 +310,11 @@ fn refs_from_related(
         },
         operator_workflow_chain_digest_prefix: find("operator_workflow_chain"),
         operator_export_authority_chain_digest_prefix: find("operator_export_authority_chain"),
+        canonical_bundle_authority_digest_prefix: if bundle_authority_fallback.is_empty() {
+            "MISSING".to_string()
+        } else {
+            bundle_authority_fallback.to_string()
+        },
     }
 }
 
@@ -297,12 +336,15 @@ mod tests {
             schema_version: 1,
             applied_supported_set_digest_prefix: "11".repeat(8),
             canonical_governance_entry_digest_prefix: "22".repeat(8),
+            canonical_governance_authority_digest_prefix: "23".repeat(8),
             canonical_readiness_spine_digest_prefix: "33".repeat(8),
+            canonical_readiness_authority_digest_prefix: "34".repeat(8),
             operator_review_packet_digest_prefix: "44".repeat(8),
             operator_signoff_digest_prefix: "55".repeat(8),
             operator_workflow_chain_digest_prefix: "66".repeat(8),
             operator_export_authority_chain_digest_prefix: "77".repeat(8),
             canonical_bundle_spine_digest_prefix: Some("88".repeat(8)),
+            canonical_bundle_authority_digest_prefix: Some("89".repeat(8)),
             roundtrip_status: CanonicalRoundTripChainStatusV1::Pass,
             blocking_codes: vec![],
             remediation_codes: vec!["run_x".to_string()],

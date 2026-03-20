@@ -87,20 +87,21 @@ impl OperatorWorkflowPolicyV1 {
         &self,
         inputs: OperatorWorkflowReductionInputs<'_>,
     ) -> Result<OperatorWorkflowChainV1, OpsError> {
-        let mut blocking = BTreeSet::new();
+        let mut stage_blocking = BTreeSet::new();
+        let mut export_blocking = BTreeSet::new();
         let mut remediation = BTreeSet::new();
 
         if inputs.governance.status != "PASS" {
-            blocking.insert("WORKFLOW_BLOCK_GOVERNANCE_SURFACES_INVALID".to_string());
+            stage_blocking.insert("WORKFLOW_BLOCK_GOVERNANCE_SURFACES_INVALID".to_string());
             remediation.insert("run_governance_surfaces_check".to_string());
         }
         if inputs.governance.governance_primary_surfaces.is_none() {
-            blocking.insert("WORKFLOW_BLOCK_GOVERNANCE_SURFACES_MISSING".to_string());
+            stage_blocking.insert("WORKFLOW_BLOCK_GOVERNANCE_SURFACES_MISSING".to_string());
             remediation.insert("run_governance_surfaces_check".to_string());
         }
 
         if inputs.applied_scope.status != "PASS" {
-            blocking.insert("WORKFLOW_BLOCK_APPLIED_SCOPE_MISMATCH".to_string());
+            stage_blocking.insert("WORKFLOW_BLOCK_APPLIED_SCOPE_MISMATCH".to_string());
             remediation.insert("run_models_applied_scope_check".to_string());
         }
 
@@ -109,7 +110,7 @@ impl OperatorWorkflowPolicyV1 {
             || inputs.signoff.applied_supported_set_digest_prefix
                 != inputs.applied_scope.applied_scope_digest
         {
-            blocking.insert("WORKFLOW_BLOCK_APPLIED_SCOPE_AUTHORITY_MISMATCH".to_string());
+            stage_blocking.insert("WORKFLOW_BLOCK_APPLIED_SCOPE_AUTHORITY_MISMATCH".to_string());
             remediation.insert("run_operator_export_chain_check".to_string());
         }
 
@@ -118,7 +119,7 @@ impl OperatorWorkflowPolicyV1 {
             || inputs.review_packet.reviewability_reduction_digest_prefix
                 != inputs.signoff.reviewability_reduction_digest_prefix
         {
-            blocking.insert("WORKFLOW_BLOCK_REVIEWABILITY_BASIS_MISMATCH".to_string());
+            stage_blocking.insert("WORKFLOW_BLOCK_REVIEWABILITY_BASIS_MISMATCH".to_string());
             remediation.insert("run_review_truth_check".to_string());
         }
         if inputs.review_packet.canonical_readiness_spine_digest_prefix == "MISSING"
@@ -126,7 +127,7 @@ impl OperatorWorkflowPolicyV1 {
             || inputs.review_packet.canonical_readiness_spine_digest_prefix
                 != inputs.signoff.canonical_readiness_spine_digest_prefix
         {
-            blocking.insert("WORKFLOW_BLOCK_READINESS_SPINE_DRIFT".to_string());
+            stage_blocking.insert("WORKFLOW_BLOCK_READINESS_SPINE_DRIFT".to_string());
             remediation.insert("run_readiness_spine_check".to_string());
         }
         if inputs
@@ -135,7 +136,7 @@ impl OperatorWorkflowPolicyV1 {
             == "MISSING"
             || inputs.signoff.canonical_readiness_authority_digest_prefix == "MISSING"
         {
-            blocking.insert("CANONICAL_READINESS_SPINE_REQUIRED".to_string());
+            stage_blocking.insert("CANONICAL_READINESS_SPINE_REQUIRED".to_string());
             remediation.insert("run_readiness_spine_sweep".to_string());
         }
 
@@ -144,22 +145,22 @@ impl OperatorWorkflowPolicyV1 {
             crate::OperatorReviewStageV1::ReviewActiveReady
                 | crate::OperatorReviewStageV1::ReviewShadowReady
         ) {
-            blocking.insert("WORKFLOW_BLOCK_REVIEW_PACKET_BLOCKED".to_string());
+            stage_blocking.insert("WORKFLOW_BLOCK_REVIEW_PACKET_BLOCKED".to_string());
             remediation.insert("run_operator_review_packet".to_string());
         }
         if matches!(inputs.signoff.decision, SignoffDecisionStateV1::NotReady) {
-            blocking.insert("WORKFLOW_BLOCK_OPERATOR_SIGNOFF_NOT_READY".to_string());
+            stage_blocking.insert("WORKFLOW_BLOCK_OPERATOR_SIGNOFF_NOT_READY".to_string());
             remediation.insert("run_operator_signoff".to_string());
         }
         if !matches!(
             inputs.interop.summary.overall_status,
             InteropOverallStatusV1::Pass
         ) {
-            blocking.insert("WORKFLOW_BLOCK_INTEROP_CONSISTENCY_FAIL".to_string());
+            stage_blocking.insert("WORKFLOW_BLOCK_INTEROP_CONSISTENCY_FAIL".to_string());
             remediation.insert("run_interop_consistency_matrix".to_string());
         }
         if !inputs.normalize.pass {
-            blocking.insert("WORKFLOW_BLOCK_EXPORT_NORMALIZE_FAIL".to_string());
+            stage_blocking.insert("WORKFLOW_BLOCK_EXPORT_NORMALIZE_FAIL".to_string());
             remediation.insert("run_exports_normalize_check".to_string());
         }
 
@@ -180,30 +181,36 @@ impl OperatorWorkflowPolicyV1 {
 
         let repro_verify_expected_pass = inputs.repro_verify.unwrap_or(true);
 
-        let core_ready = blocking.is_empty();
+        let core_ready = stage_blocking.is_empty();
         let repro_ready = core_ready && has_repro_surface && repro_verify_expected_pass;
         let bugkit_ready = core_ready && has_bugkit_surface;
 
         if core_ready {
             if !has_repro_surface {
+                export_blocking.insert("WORKFLOW_BLOCK_EXPORT_REPRO_ARTIFACT_MISSING".to_string());
                 remediation.insert("run_repro_pack".to_string());
                 remediation.insert("run_repro_verify".to_string());
             }
             if !has_bugkit_surface {
+                export_blocking.insert("WORKFLOW_BLOCK_EXPORT_BUGKIT_ARTIFACT_MISSING".to_string());
                 remediation.insert("run_bugkit_build".to_string());
             }
             if !repro_verify_expected_pass {
+                export_blocking.insert("WORKFLOW_BLOCK_EXPORT_REPRO_VERIFY_FAIL".to_string());
                 remediation.insert("run_repro_verify".to_string());
             }
         }
 
-        let workflow_stage = if !blocking.is_empty() {
+        let workflow_stage = if !stage_blocking.is_empty() {
             OperatorWorkflowStageV2::WorkflowBlocked
-        } else if repro_ready && bugkit_ready {
+        } else if export_blocking.is_empty() && repro_ready && bugkit_ready {
             OperatorWorkflowStageV2::WorkflowExportReady
         } else {
             OperatorWorkflowStageV2::WorkflowReviewReady
         };
+
+        let mut blocking = stage_blocking;
+        blocking.extend(export_blocking);
 
         let governance_surfaces_digest_prefix = inputs
             .governance

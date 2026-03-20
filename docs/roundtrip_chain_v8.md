@@ -37,3 +37,6 @@ and reconstructed from the provided bundle without drift.
 - `ROUNDTRIP_CHAIN_SIGNOFF_MISMATCH`
 - `ROUNDTRIP_CHAIN_REVIEW_PACKET_MISMATCH`
 
+## Final continuity authority (v9)
+Use `cargo run -p ucf-ops -- continuity-authority-check --bundle <path> --out ./out/continuity_authority_check.json` as final top-level proof that this surface aligns with canonical governance/readiness/operator/export/bundle continuity.
+

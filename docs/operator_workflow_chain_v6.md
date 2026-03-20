@@ -83,3 +83,7 @@ See also: readiness spine canon (`docs/readiness_spine_v8.md`).
 
 ## v9 note
 `OperatorWorkflowChainV1` now carries canonical readiness authority references and is expected to align with spine-only readiness consumption validated by `readiness-spine-sweep`.
+
+## Final continuity authority (v9)
+Use `cargo run -p ucf-ops -- continuity-authority-check --bundle <path> --out ./out/continuity_authority_check.json` as final top-level proof that this surface aligns with canonical governance/readiness/operator/export/bundle continuity.
+

@@ -38,3 +38,7 @@ See `docs/roundtrip_chain_v8.md` for the top-level operator->export->bundle cont
 
 ## v9 note
 Operator/export authority continuity now includes canonical readiness spine/authority references and is checked by `readiness-spine-sweep` for spine-only readiness consumption.
+
+## Final continuity authority (v9)
+Use `cargo run -p ucf-ops -- continuity-authority-check --bundle <path> --out ./out/continuity_authority_check.json` as final top-level proof that this surface aligns with canonical governance/readiness/operator/export/bundle continuity.
+
