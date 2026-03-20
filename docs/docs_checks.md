@@ -140,4 +140,5 @@ When `--out` is provided, lint writes deterministic JSON with per-check status a
      - `docs/final_readiness_consumer_sweep_v10.md`
      - `docs/final_bundle_consumer_sweep_v10.md`
      - `docs/final_primary_semantics_sweep_v10.md`
+     - `docs/final_continuity_sweep_v10.md`
      - `docs/artifact_schema_snapshots.md`

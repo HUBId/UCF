@@ -64,7 +64,7 @@ struct ArtifactSpec {
     enum_names: &'static [&'static str],
 }
 
-const ARTIFACT_SPECS: [ArtifactSpec; 50] = [
+const ARTIFACT_SPECS: [ArtifactSpec; 51] = [
     ArtifactSpec {
         artifact_id: "active_review_snapshot_v1",
         file_rel: "runtime/ucf-ops/src/models_lifecycle.rs",
@@ -161,6 +161,15 @@ const ARTIFACT_SPECS: [ArtifactSpec; 50] = [
         file_rel: "runtime/ucf-ops/src/final_bundle_consumer_sweep.rs",
         type_name: "FinalBundleConsumerAuthorityV1",
         enum_names: &["FinalBundleConsumerAuthorityStatusV1"],
+    },
+    ArtifactSpec {
+        artifact_id: "final_continuity_authority_v2",
+        file_rel: "runtime/ucf-ops/src/final_continuity_sweep.rs",
+        type_name: "FinalContinuityAuthorityV2",
+        enum_names: &[
+            "FinalContinuityStatusV2",
+            "FinalContinuityMismatchCategoryV1",
+        ],
     },
     ArtifactSpec {
         artifact_id: "final_governance_consumer_authority_v1",
@@ -841,6 +850,7 @@ mod tests {
                 "cross_surface_condition_observation_v1",
                 "cross_surface_context_matrix_v1",
                 "final_bundle_consumer_authority_v1",
+                "final_continuity_authority_v2",
                 "final_governance_consumer_authority_v1",
                 "final_primary_semantics_consumer_authority_v1",
                 "final_readiness_consumer_authority_v1",

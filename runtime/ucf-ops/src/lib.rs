@@ -14,6 +14,7 @@ mod continuity_authority;
 mod docs_lint;
 mod drift;
 mod final_bundle_consumer_sweep;
+mod final_continuity_sweep;
 mod final_governance_authority;
 mod final_governance_consumer_sweep;
 mod final_readiness_consumer_sweep;
@@ -87,6 +88,10 @@ pub use final_bundle_consumer_sweep::{
     final_bundle_consumer_sweep, FinalBundleConsumerAuthorityStatusV1,
     FinalBundleConsumerAuthorityV1, FinalBundleConsumerMismatchCategoryV1,
     FinalBundleConsumerStatusV1, FinalBundleConsumerSweepReportV1,
+};
+pub use final_continuity_sweep::{
+    final_continuity_sweep, FinalContinuityAuthorityV2, FinalContinuityMismatchCategoryV1,
+    FinalContinuityStatusV2,
 };
 pub use final_governance_authority::{
     require_final_governance_authority, FinalGovernanceAuthorityContextV1,

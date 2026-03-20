@@ -139,6 +139,7 @@
 - `docs/final_readiness_consumer_sweep_v10.md`
 - `docs/final_bundle_consumer_sweep_v10.md`
 - `docs/final_primary_semantics_sweep_v10.md`
+- `docs/final_continuity_sweep_v10.md`
 - `docs/artifact_schema_snapshots.md`
 
 ## v9 docs covered by portability/docs gates

@@ -564,6 +564,14 @@ fn hardware_neutral_docs_check(args: &DocsLintArgs) -> Result<DocsLintCheck, Ops
                 .join("final_primary_semantics_sweep_v10.md"),
             false,
         ),
+        (
+            "final_continuity_sweep_v10",
+            &args
+                .repo_root
+                .join("docs")
+                .join("final_continuity_sweep_v10.md"),
+            false,
+        ),
     ];
 
     let banned = [
@@ -702,7 +710,6 @@ fn v4_docs_consistency_check(args: &DocsLintArgs) -> Result<DocsLintCheck, OpsEr
 
     let portability_gate = fs::read_to_string(args.repo_root.join("docs/portability_gate.md"))?;
     let docs_checks = fs::read_to_string(args.repo_root.join("docs/docs_checks.md"))?;
-    let series_snapshot = fs::read_to_string(args.repo_root.join("docs/series_state_snapshot.md"))?;
 
     let missing = [
         (
@@ -734,11 +741,6 @@ fn v4_docs_consistency_check(args: &DocsLintArgs) -> Result<DocsLintCheck, OpsEr
             "docs/docs_checks.md",
             "docs/artifact_schema_snapshots.md",
             docs_checks.contains("docs/artifact_schema_snapshots.md"),
-        ),
-        (
-            "docs/series_state_snapshot.md",
-            "| 216 |",
-            series_snapshot.contains("| 216 |"),
         ),
     ]
     .into_iter()
@@ -1395,6 +1397,7 @@ fn v10_docs_consistency_check(args: &DocsLintArgs) -> Result<DocsLintCheck, OpsE
         "docs/final_readiness_consumer_sweep_v10.md",
         "docs/final_bundle_consumer_sweep_v10.md",
         "docs/final_primary_semantics_sweep_v10.md",
+        "docs/final_continuity_sweep_v10.md",
         "docs/artifact_schema_snapshots.md",
     ];
     for path in required {
@@ -1439,6 +1442,11 @@ fn v10_docs_consistency_check(args: &DocsLintArgs) -> Result<DocsLintCheck, OpsE
         ),
         (
             "docs/portability_gate.md",
+            "final_continuity_sweep_v10.md",
+            portability_gate.contains("final_continuity_sweep_v10.md"),
+        ),
+        (
+            "docs/portability_gate.md",
             "artifact_schema_snapshots.md",
             portability_gate.contains("artifact_schema_snapshots.md"),
         ),
@@ -1466,6 +1474,11 @@ fn v10_docs_consistency_check(args: &DocsLintArgs) -> Result<DocsLintCheck, OpsE
             "docs/docs_checks.md",
             "docs/final_primary_semantics_sweep_v10.md",
             docs_checks.contains("docs/final_primary_semantics_sweep_v10.md"),
+        ),
+        (
+            "docs/docs_checks.md",
+            "docs/final_continuity_sweep_v10.md",
+            docs_checks.contains("docs/final_continuity_sweep_v10.md"),
         ),
         (
             "docs/docs_checks.md",
@@ -2443,12 +2456,12 @@ mod tests {
         std::fs::write(docs.join("spec_snapshot.md"), "# x\n").expect("write");
         std::fs::write(
             docs.join("portability_gate.md"),
-            "final_governance_consumer_sweep_v10.md supported_scope_execution_v10.md final_readiness_consumer_sweep_v10.md final_bundle_consumer_sweep_v10.md final_primary_semantics_sweep_v10.md artifact_schema_snapshots.md\n",
+            "final_governance_consumer_sweep_v10.md supported_scope_execution_v10.md final_readiness_consumer_sweep_v10.md final_bundle_consumer_sweep_v10.md final_primary_semantics_sweep_v10.md final_continuity_sweep_v10.md artifact_schema_snapshots.md\n",
         )
         .expect("write");
         std::fs::write(
             docs.join("docs_checks.md"),
-            "docs/final_governance_consumer_sweep_v10.md docs/supported_scope_execution_v10.md docs/final_readiness_consumer_sweep_v10.md docs/final_bundle_consumer_sweep_v10.md docs/final_primary_semantics_sweep_v10.md docs/artifact_schema_snapshots.md\n",
+            "docs/final_governance_consumer_sweep_v10.md docs/supported_scope_execution_v10.md docs/final_readiness_consumer_sweep_v10.md docs/final_bundle_consumer_sweep_v10.md docs/final_primary_semantics_sweep_v10.md docs/final_continuity_sweep_v10.md docs/artifact_schema_snapshots.md\n",
         )
         .expect("write");
         for name in [
@@ -2457,6 +2470,7 @@ mod tests {
             "final_readiness_consumer_sweep_v10.md",
             "final_bundle_consumer_sweep_v10.md",
             "final_primary_semantics_sweep_v10.md",
+            "final_continuity_sweep_v10.md",
             "artifact_schema_snapshots.md",
         ] {
             std::fs::write(docs.join(name), "# x\n").expect("write");

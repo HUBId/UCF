@@ -10,16 +10,16 @@ use ucf_ops::{
     ebm_export_dataset, ess_compact, ess_snapshot, event_id_for_decision, explain_tick,
     explain_why, export_bugreport, export_policy_key_registry_v1, exports_bundle_spine_check,
     exports_bundle_spine_sweep, exports_normalize_check, exports_roundtrip_check,
-    final_bundle_consumer_sweep, final_governance_consumer_sweep, final_primary_semantics_sweep,
-    final_readiness_consumer_sweep, gateway_threat_test, goldens_generate, goldens_update,
-    goldens_verify, goldens_verify_detailed, governance_entry_check, governance_entry_sweep,
-    governance_surfaces_check, hardware_scan, interop_consistency_matrix,
-    load_applied_supported_set_context_v1, load_signoff_checklist, logs_prove, logs_verify_proof,
-    metrics_snapshot, metrics_summary, metrics_trend, migrate_config_v1, models_active_check,
-    models_active_evidence, models_active_review_snapshot, models_applied_scope_check,
-    models_backend_resolution, models_consistency_check, models_eligibility,
-    models_evidence_snapshot, models_list, models_probe, models_probe_slot, models_promote,
-    models_recommend_rollback, models_rollback, models_shadow_ready, models_stage,
+    final_bundle_consumer_sweep, final_continuity_sweep, final_governance_consumer_sweep,
+    final_primary_semantics_sweep, final_readiness_consumer_sweep, gateway_threat_test,
+    goldens_generate, goldens_update, goldens_verify, goldens_verify_detailed,
+    governance_entry_check, governance_entry_sweep, governance_surfaces_check, hardware_scan,
+    interop_consistency_matrix, load_applied_supported_set_context_v1, load_signoff_checklist,
+    logs_prove, logs_verify_proof, metrics_snapshot, metrics_summary, metrics_trend,
+    migrate_config_v1, models_active_check, models_active_evidence, models_active_review_snapshot,
+    models_applied_scope_check, models_backend_resolution, models_consistency_check,
+    models_eligibility, models_evidence_snapshot, models_list, models_probe, models_probe_slot,
+    models_promote, models_recommend_rollback, models_rollback, models_shadow_ready, models_stage,
     models_supported_scope_execute, models_supported_scope_execute_v4,
     models_supported_scope_execute_v5, models_supported_scope_reevaluate,
     models_supported_set_apply, models_supported_set_review, models_verify,
@@ -41,14 +41,15 @@ use ucf_ops::{
     BugKitBuildArgs, CanonicalBundleAuthorityStatusV2, CanonicalReadinessAuthorityStatusV2,
     ChangeImpactArgs, ConfigV1, ContinuityAuthorityStatusV1, CounterfactualRequest, DevLoopArgs,
     DocsLintArgs, DocsLintMode, DocsLintStatus, ExplainTickRequest, ExportArgs,
-    FinalBundleConsumerAuthorityStatusV1, FinalGovernanceConsumerAuthorityStatusV1,
-    FinalPrimarySemanticsConsumerAuthorityStatusV1, FinalReadinessConsumerAuthorityStatusV1,
-    GateStatus, GoldenGenerateArgs, GoldenVerifyArgs, GoldenVerifyReport,
-    GovernanceEntryAuthorityStatusV2, GovernanceEntryCheckStatusV1, NightlySummarizeArgs,
-    OperatorReportArgs, OperatorReviewPacketArgs, OperatorSignoffArgs, OperatorWorkflowArgs,
-    ReleaseBuildRcArgs, SoakRunArgs, SpecSnapshotArgs, StrictEvidenceContextV1,
-    V2GateOverallStatus, V3GateOverallStatus, V4GateOverallStatus, V5GateOverallStatus,
-    V6GateOverallStatus, V7GateOverallStatus, V8GateOverallStatus, V9GateOverallStatus,
+    FinalBundleConsumerAuthorityStatusV1, FinalContinuityStatusV2,
+    FinalGovernanceConsumerAuthorityStatusV1, FinalPrimarySemanticsConsumerAuthorityStatusV1,
+    FinalReadinessConsumerAuthorityStatusV1, GateStatus, GoldenGenerateArgs, GoldenVerifyArgs,
+    GoldenVerifyReport, GovernanceEntryAuthorityStatusV2, GovernanceEntryCheckStatusV1,
+    NightlySummarizeArgs, OperatorReportArgs, OperatorReviewPacketArgs, OperatorSignoffArgs,
+    OperatorWorkflowArgs, ReleaseBuildRcArgs, SoakRunArgs, SpecSnapshotArgs,
+    StrictEvidenceContextV1, V2GateOverallStatus, V3GateOverallStatus, V4GateOverallStatus,
+    V5GateOverallStatus, V6GateOverallStatus, V7GateOverallStatus, V8GateOverallStatus,
+    V9GateOverallStatus,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -2162,11 +2163,30 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 std::process::exit(2);
             }
         }
+        "final-continuity-sweep" => {
+            let bundle = arg_value(&args, "--bundle")
+                .map(PathBuf::from)
+                .ok_or_else(|| {
+                    "usage: ucf-ops final-continuity-sweep --bundle <path> --out ./out/final_continuity_sweep.json".to_string()
+                })?;
+            let out = arg_value(&args, "--out")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("./out/final_continuity_sweep.json"));
+            let report = final_continuity_sweep(&workdir, &bundle, &out)?;
+            println!("out={}", out.display());
+            println!("continuity_status={:?}", report.continuity_status);
+            if !report.blocking_codes.is_empty() {
+                println!("blocking_codes={}", report.blocking_codes.join(","));
+            }
+            if !matches!(report.continuity_status, FinalContinuityStatusV2::Pass) {
+                std::process::exit(2);
+            }
+        }
         "continuity-authority-check" => {
             let bundle = arg_value(&args, "--bundle")
                 .map(PathBuf::from)
                 .ok_or_else(|| {
-                    "usage: ucf-ops continuity-authority-check --bundle <path> --out ./out/continuity_authority_check.json".to_string()
+                    "usage: ucf-ops continuity-authority-check --bundle <path> --out ./out/continuity_authority_check.json (legacy subordinate)".to_string()
                 })?;
             let out = arg_value(&args, "--out")
                 .map(PathBuf::from)
@@ -3139,7 +3159,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             eprintln!(
-                "usage: ucf-ops <bringup|diag|health|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|attest|repro|exports|readiness-gate|preflight|goldens|nightly|dev|troubleshoot|adversarial-run|out|release|bench|runs|status|strict|ess|ebm|drift|alerts|operator|policy|portability|spec|change-impact|soak|governance-surfaces-check|governance-entry-check|governance-entry-sweep|final-governance-consumer-sweep|final-readiness-consumer-sweep|final-bundle-consumer-sweep|remediation-consistency-check|remediation-interop-check|remediation-spine-check|primary-semantics-sweep|final-primary-semantics-sweep|interop|v0|v1|v2|v3|v4|v5|v6|v7|v8|v9|version> [--workdir <path>] [--bundle <path>]"
+                "usage: ucf-ops <bringup|diag|health|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|attest|repro|exports|readiness-gate|preflight|goldens|nightly|dev|troubleshoot|adversarial-run|out|release|bench|runs|status|strict|ess|ebm|drift|alerts|operator|policy|portability|spec|change-impact|soak|governance-surfaces-check|governance-entry-check|governance-entry-sweep|final-governance-consumer-sweep|final-readiness-consumer-sweep|final-bundle-consumer-sweep|final-continuity-sweep|remediation-consistency-check|remediation-interop-check|remediation-spine-check|primary-semantics-sweep|final-primary-semantics-sweep|interop|v0|v1|v2|v3|v4|v5|v6|v7|v8|v9|version> [--workdir <path>] [--bundle <path>]"
             );
             std::process::exit(1);
         }

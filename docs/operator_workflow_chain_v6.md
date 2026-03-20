@@ -87,3 +87,8 @@ See also: readiness spine canon (`docs/readiness_spine_v8.md`).
 ## Final continuity authority (v9)
 Use `cargo run -p ucf-ops -- continuity-authority-check --bundle <path> --out ./out/continuity_authority_check.json` as final top-level proof that this surface aligns with canonical governance/readiness/operator/export/bundle continuity.
 
+
+## v10 Continuity Position
+
+`OperatorWorkflowChainV1` ist weiterhin deterministische Workflow-Stufe, aber **nicht** mehr top-level continuity proof.
+Top-level continuity authority wird ausschließlich über `final-continuity-sweep` festgestellt.
