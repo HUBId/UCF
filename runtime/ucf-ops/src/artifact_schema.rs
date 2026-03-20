@@ -833,6 +833,7 @@ mod tests {
                 "v5_gate_report_v1",
                 "v7_gate_report_v1",
                 "v8_gate_report_v1",
+                "v9_gate_report_v1",
             ]
         );
     }
