@@ -38,3 +38,8 @@ cargo run -p ucf-ops -- primary-semantics-sweep --out ./out/primary_semantics_sw
 - `CANONICAL_CONDITION_MISMATCH`
 - `LEGACY_PRIMARY_SEMANTICS_PRESENT`
 - `REQUIRED_SURFACE_MISSING`
+
+
+## v10 finalization
+
+Universal canonical consumer enforcement is finalized in `docs/final_primary_semantics_sweep_v10.md` via `ucf-ops final-primary-semantics-sweep`.

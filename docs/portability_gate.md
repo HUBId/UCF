@@ -75,6 +75,7 @@
    - `exports bundle-spine-check` must reconstruct canonical bundle spine deterministically from bounded fixture bundles.
    - `exports bundle-spine-sweep` must reconstruct canonical bundle authority deterministically across repro/bugkit/export surfaces.
    - `primary-semantics-sweep` must prove canonical primary blocking/remediation consistency with deterministic mismatch categories.
+   - `final-primary-semantics-sweep` must prove universal consumer enforcement of the same canonical primary authority inputs across canonical surfaces.
    - `remediation-spine-check` must map canonical conditions/remediations consistently across scope/governance/readiness/bundle surfaces.
    - `models active-review-snapshot` and `models backend-resolution` must run in bounded offline mode (optional backend-resolution paths must SKIP cleanly).
    - Enriched export smokes (`repro pack` + `repro verify`, `bugkit build`) must generate deterministic manifests with bounded fixtures and no payload/weight inclusion by default.

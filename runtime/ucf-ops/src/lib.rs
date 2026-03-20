@@ -196,15 +196,20 @@ pub use readiness_spine::{
 };
 pub use remediation::all_registry_rows as remediation_registry_rows;
 pub use remediation_consistency::{
-    primary_semantics_sweep, remediation_consistency_check, remediation_interop_check,
-    remediation_spine_check, CanonicalPrimarySemanticsAuthorityStatusV1,
+    final_primary_semantics_sweep, primary_semantics_sweep, remediation_consistency_check,
+    remediation_interop_check, remediation_spine_check, CanonicalPrimarySemanticsAuthorityStatusV1,
     CanonicalPrimarySemanticsAuthorityV1, CanonicalRemediationObservationV1,
     CrossSurfaceConditionObservationV1, CrossSurfaceObservationStatusV1,
-    PrimarySemanticsObservationV1, PrimarySemanticsObservedSurfaceV1,
-    PrimarySemanticsSweepReportV1, RemediationConsistencyCheckV1, RemediationConsistencyObservedV1,
+    FinalPrimarySemanticsConsumerAuthorityStatusV1, FinalPrimarySemanticsConsumerAuthorityV1,
+    FinalPrimarySemanticsSweepReportV1, PrimarySemanticsObservationV1,
+    PrimarySemanticsObservedSurfaceV1, PrimarySemanticsSweepReportV1,
+    RemediationConsistencyCheckV1, RemediationConsistencyObservedV1,
     RemediationConsistencyReportV1, RemediationConsistencyStatusV1,
     RemediationInteropCheckReportV1, RemediationMismatchKindV1, RemediationSpineCheckReportV1,
-    SpineConditionObservationV1,
+    SpineConditionObservationV1, CANONICAL_CONDITION_MODEL_REQUIRED,
+    CANONICAL_REMEDIATION_REGISTRY_REQUIRED, FINAL_PRIMARY_SEMANTICS_AUTHORITY_REQUIRED,
+    LEGACY_PRIMARY_SEMANTICS_INPUT_BLOCKED, LEGACY_PRIMARY_SEMANTICS_REJECTED,
+    LEGACY_PRIMARY_SEMANTICS_TRANSLATED,
 };
 pub use reviewability_truth::{
     derive_slot_reviewability_truths, derive_slot_reviewability_truths_from_active,

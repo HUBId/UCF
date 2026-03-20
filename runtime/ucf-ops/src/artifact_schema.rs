@@ -64,7 +64,7 @@ struct ArtifactSpec {
     enum_names: &'static [&'static str],
 }
 
-const ARTIFACT_SPECS: [ArtifactSpec; 47] = [
+const ARTIFACT_SPECS: [ArtifactSpec; 48] = [
     ArtifactSpec {
         artifact_id: "active_review_snapshot_v1",
         file_rel: "runtime/ucf-ops/src/models_lifecycle.rs",
@@ -329,6 +329,12 @@ const ARTIFACT_SPECS: [ArtifactSpec; 47] = [
         file_rel: "runtime/ucf-ops/src/remediation_consistency.rs",
         type_name: "CanonicalPrimarySemanticsAuthorityV1",
         enum_names: &["CanonicalPrimarySemanticsAuthorityStatusV1"],
+    },
+    ArtifactSpec {
+        artifact_id: "final_primary_semantics_consumer_authority_v1",
+        file_rel: "runtime/ucf-ops/src/remediation_consistency.rs",
+        type_name: "FinalPrimarySemanticsConsumerAuthorityV1",
+        enum_names: &["FinalPrimarySemanticsConsumerAuthorityStatusV1"],
     },
     ArtifactSpec {
         artifact_id: "supported_scope_reevaluation_v1",
@@ -823,6 +829,7 @@ mod tests {
                 "cross_surface_condition_observation_v1",
                 "cross_surface_context_matrix_v1",
                 "final_bundle_consumer_authority_v1",
+                "final_primary_semantics_consumer_authority_v1",
                 "governance_primary_surfaces_v1",
                 "interop_consistency_matrix_report_v1",
                 "operator_report_v1",

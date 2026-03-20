@@ -60,4 +60,4 @@ Compared to `remediation-consistency-check`, v7 additionally detects drift betwe
 
 All checks remain offline, deterministic, bounded, and read-only.
 
-See `docs/remediation_spine_consistency_v8.md` for the stronger v8 spine-level cross-surface proof and `docs/primary_semantics_sweep_v9.md` for the final v9 canonical primary semantics authority.
+See `docs/remediation_spine_consistency_v8.md` for the stronger v8 spine-level cross-surface proof, `docs/primary_semantics_sweep_v9.md` for v9 canonical primary semantics authority, and `docs/final_primary_semantics_sweep_v10.md` for the final universal consumer sweep.
