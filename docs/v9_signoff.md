@@ -43,3 +43,7 @@ Optional checks are:
 - `legacy_bundle_translation_ok`
 - `legacy_governance_entry_translation_ok`
 - `legacy_readiness_translation_ok`
+
+## Post-PASS continuation
+
+After `ucf-ops v9 gate` PASS, continue at **Prompt 270** via `docs/next_10_prompts.md`.
