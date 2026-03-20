@@ -10,6 +10,7 @@ mod causal;
 mod change_impact;
 mod compare_window;
 mod config_contract;
+mod continuity_authority;
 mod docs_lint;
 mod drift;
 mod formal_invariants;
@@ -71,6 +72,9 @@ pub use compare_window::{
 };
 pub use config_contract::{
     export_policy_key_registry_v1, migrate_config_v1, ConfigV1, MigrateReport, PolicyKeyEntryV1,
+};
+pub use continuity_authority::{
+    continuity_authority_check, CanonicalContinuityAuthorityV1, ContinuityAuthorityStatusV1,
 };
 pub use docs_lint::{docs_lint, DocsLintArgs, DocsLintMode, DocsLintReport, DocsLintStatus};
 pub use drift::{drift_report, drift_status_map, DriftReportV1};

@@ -64,7 +64,7 @@ struct ArtifactSpec {
     enum_names: &'static [&'static str],
 }
 
-const ARTIFACT_SPECS: [ArtifactSpec; 43] = [
+const ARTIFACT_SPECS: [ArtifactSpec; 44] = [
     ArtifactSpec {
         artifact_id: "active_review_snapshot_v1",
         file_rel: "runtime/ucf-ops/src/models_lifecycle.rs",
@@ -251,6 +251,12 @@ const ARTIFACT_SPECS: [ArtifactSpec; 43] = [
         file_rel: "runtime/ucf-ops/src/roundtrip_chain.rs",
         type_name: "CanonicalRoundTripChainV1",
         enum_names: &["CanonicalRoundTripChainStatusV1"],
+    },
+    ArtifactSpec {
+        artifact_id: "canonical_continuity_authority_v1",
+        file_rel: "runtime/ucf-ops/src/continuity_authority.rs",
+        type_name: "CanonicalContinuityAuthorityV1",
+        enum_names: &["ContinuityAuthorityStatusV1"],
     },
     ArtifactSpec {
         artifact_id: "strict_failure_report_v3",
@@ -787,6 +793,7 @@ mod tests {
                 "canonical_bundle_authority_v2",
                 "canonical_bundle_consumption_context_v1",
                 "canonical_bundle_spine_v1",
+                "canonical_continuity_authority_v1",
                 "canonical_export_artifact_ref_v1",
                 "canonical_export_context_v1",
                 "canonical_governance_entry_authority_v2",

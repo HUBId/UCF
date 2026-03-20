@@ -30,3 +30,7 @@ cargo run -p ucf-ops -- exports bundle-spine-sweep --out ./out/bundle_spine_swee
 ```
 
 For final canonical primary blocking/remediation semantics across governance/readiness/bundle/review/export/interop/gate surfaces, see `docs/primary_semantics_sweep_v9.md` and run `ucf-ops primary-semantics-sweep`.
+
+## Final continuity authority (v9)
+Use `cargo run -p ucf-ops -- continuity-authority-check --bundle <path> --out ./out/continuity_authority_check.json` as final top-level proof that this surface aligns with canonical governance/readiness/operator/export/bundle continuity.
+

@@ -5,19 +5,19 @@ use std::path::{Path, PathBuf};
 use ucf_ops::{
     adversarial_run, airgap_export_models, airgap_export_policies, airgap_export_repro,
     airgap_export_run_cert, airgap_import, alerts_report, attest_bundle, attest_keys_generate,
-    attest_run, attest_verify, audit_scan, bench_run, bringup, causal_slice, determinism_scan,
-    diagnostics, diagnostics_collect, drift_report, ebm_export_dataset, ess_compact, ess_snapshot,
-    event_id_for_decision, explain_tick, explain_why, export_bugreport,
-    export_policy_key_registry_v1, exports_bundle_spine_check, exports_bundle_spine_sweep,
-    exports_normalize_check, exports_roundtrip_check, gateway_threat_test, goldens_generate,
-    goldens_update, goldens_verify, goldens_verify_detailed, governance_entry_check,
-    governance_entry_sweep, governance_surfaces_check, hardware_scan, interop_consistency_matrix,
-    load_applied_supported_set_context_v1, load_signoff_checklist, logs_prove, logs_verify_proof,
-    metrics_snapshot, metrics_summary, metrics_trend, migrate_config_v1, models_active_check,
-    models_active_evidence, models_active_review_snapshot, models_applied_scope_check,
-    models_backend_resolution, models_consistency_check, models_eligibility,
-    models_evidence_snapshot, models_list, models_probe, models_probe_slot, models_promote,
-    models_recommend_rollback, models_rollback, models_shadow_ready, models_stage,
+    attest_run, attest_verify, audit_scan, bench_run, bringup, causal_slice,
+    continuity_authority_check, determinism_scan, diagnostics, diagnostics_collect, drift_report,
+    ebm_export_dataset, ess_compact, ess_snapshot, event_id_for_decision, explain_tick,
+    explain_why, export_bugreport, export_policy_key_registry_v1, exports_bundle_spine_check,
+    exports_bundle_spine_sweep, exports_normalize_check, exports_roundtrip_check,
+    gateway_threat_test, goldens_generate, goldens_update, goldens_verify, goldens_verify_detailed,
+    governance_entry_check, governance_entry_sweep, governance_surfaces_check, hardware_scan,
+    interop_consistency_matrix, load_applied_supported_set_context_v1, load_signoff_checklist,
+    logs_prove, logs_verify_proof, metrics_snapshot, metrics_summary, metrics_trend,
+    migrate_config_v1, models_active_check, models_active_evidence, models_active_review_snapshot,
+    models_applied_scope_check, models_backend_resolution, models_consistency_check,
+    models_eligibility, models_evidence_snapshot, models_list, models_probe, models_probe_slot,
+    models_promote, models_recommend_rollback, models_rollback, models_shadow_ready, models_stage,
     models_supported_scope_execute, models_supported_scope_execute_v4,
     models_supported_scope_reevaluate, models_supported_set_apply, models_supported_set_review,
     models_verify, models_verify_lifecycle, net_deps_audit, nightly_summarize, one_command_bringup,
@@ -36,13 +36,14 @@ use ucf_ops::{
     verify_bugreport, world_parity_report, world_shadow_report, write_slice, AdversarialRunArgs,
     AirgapArtifactType, AirgapImportArgs, AirgapImportMode, BenchArgs, BugKitBuildArgs,
     CanonicalBundleAuthorityStatusV2, CanonicalReadinessAuthorityStatusV2, ChangeImpactArgs,
-    ConfigV1, CounterfactualRequest, DevLoopArgs, DocsLintArgs, DocsLintMode, DocsLintStatus,
-    ExplainTickRequest, ExportArgs, GateStatus, GoldenGenerateArgs, GoldenVerifyArgs,
-    GoldenVerifyReport, GovernanceEntryAuthorityStatusV2, GovernanceEntryCheckStatusV1,
-    NightlySummarizeArgs, OperatorReportArgs, OperatorReviewPacketArgs, OperatorSignoffArgs,
-    OperatorWorkflowArgs, ReleaseBuildRcArgs, SoakRunArgs, SpecSnapshotArgs,
-    StrictEvidenceContextV1, V2GateOverallStatus, V3GateOverallStatus, V4GateOverallStatus,
-    V5GateOverallStatus, V6GateOverallStatus, V7GateOverallStatus, V8GateOverallStatus,
+    ConfigV1, ContinuityAuthorityStatusV1, CounterfactualRequest, DevLoopArgs, DocsLintArgs,
+    DocsLintMode, DocsLintStatus, ExplainTickRequest, ExportArgs, GateStatus, GoldenGenerateArgs,
+    GoldenVerifyArgs, GoldenVerifyReport, GovernanceEntryAuthorityStatusV2,
+    GovernanceEntryCheckStatusV1, NightlySummarizeArgs, OperatorReportArgs,
+    OperatorReviewPacketArgs, OperatorSignoffArgs, OperatorWorkflowArgs, ReleaseBuildRcArgs,
+    SoakRunArgs, SpecSnapshotArgs, StrictEvidenceContextV1, V2GateOverallStatus,
+    V3GateOverallStatus, V4GateOverallStatus, V5GateOverallStatus, V6GateOverallStatus,
+    V7GateOverallStatus, V8GateOverallStatus,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -2128,6 +2129,25 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 report.authority.authority_status,
                 CanonicalReadinessAuthorityStatusV2::Pass
             ) {
+                std::process::exit(2);
+            }
+        }
+        "continuity-authority-check" => {
+            let bundle = arg_value(&args, "--bundle")
+                .map(PathBuf::from)
+                .ok_or_else(|| {
+                    "usage: ucf-ops continuity-authority-check --bundle <path> --out ./out/continuity_authority_check.json".to_string()
+                })?;
+            let out = arg_value(&args, "--out")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("./out/continuity_authority_check.json"));
+            let report = continuity_authority_check(&workdir, &bundle, &out)?;
+            println!("out={}", out.display());
+            println!("continuity_status={:?}", report.continuity_status);
+            if !report.blocking_codes.is_empty() {
+                println!("blocking_codes={}", report.blocking_codes.join(","));
+            }
+            if !matches!(report.continuity_status, ContinuityAuthorityStatusV1::Pass) {
                 std::process::exit(2);
             }
         }
