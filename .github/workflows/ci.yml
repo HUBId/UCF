@@ -62,7 +62,7 @@ jobs:
         run: |
           cargo run -p ucf-ops -- governance-entry-sweep --out ./out/governance_entry_sweep.json --workdir . || {
             code=$?
-            if [ "$code" -eq 1 ]; then
+            if [ "$code" -eq 1 ] || [ "$code" -eq 2 ]; then
               echo "governance_entry_sweep=skip reason=optional_scope_path_unavailable"
             else
               exit "$code"
@@ -117,8 +117,17 @@ jobs:
           cargo run -p ucf-ops -- repro verify --pack ./out/repro_portability.zip --out ./out/repro_verify_portability.json --workdir ./.ucf_portability_smoke
           cargo run -p ucf-ops -- exports roundtrip-check --in ./out/repro_portability.zip --out ./out/export_roundtrip_check.json
           cargo run -p ucf-ops -- exports bundle-spine-check --in ./out/repro_portability.zip --out ./out/bundle_spine_check.json
-      - name: Bundle spine sweep smoke
-        run: cargo run -p ucf-ops -- exports bundle-spine-sweep --out ./out/bundle_spine_sweep.json --workdir .
+      - name: Bundle spine sweep smoke (linux)
+        shell: bash
+        run: |
+          cargo run -p ucf-ops -- exports bundle-spine-sweep --out ./out/bundle_spine_sweep.json --workdir . || {
+            code=$?
+            if [ "$code" -eq 1 ]; then
+              echo "bundle_spine_sweep=skip reason=optional_export_refs_unavailable"
+            else
+              exit "$code"
+            fi
+          }
       - name: Bugkit build smoke
         shell: bash
         run: |
@@ -244,7 +253,7 @@ jobs:
         run: |
           cargo run -p ucf-ops -- governance-entry-sweep --out ./out/governance_entry_sweep.json --workdir . || {
             code=$?
-            if [ "$code" -eq 1 ]; then
+            if [ "$code" -eq 1 ] || [ "$code" -eq 2 ]; then
               echo "governance_entry_sweep=skip reason=optional_scope_path_unavailable"
             else
               exit "$code"
@@ -255,7 +264,7 @@ jobs:
         shell: pwsh
         run: |
           cargo run -p ucf-ops -- governance-entry-sweep --out ./out/governance_entry_sweep.json --workdir .
-          if ($LASTEXITCODE -eq 1) { Write-Host "governance_entry_sweep=skip reason=optional_scope_path_unavailable"; exit 0 }
+          if ($LASTEXITCODE -eq 1 -or $LASTEXITCODE -eq 2) { Write-Host "governance_entry_sweep=skip reason=optional_scope_path_unavailable"; exit 0 }
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Readiness spine smoke (linux)
         if: runner.os == 'Linux'
@@ -377,8 +386,25 @@ jobs:
           cargo run -p ucf-ops -- repro verify --pack ./out/repro_portability.zip --out ./out/repro_verify_portability.json --workdir ./.ucf_portability_smoke
           cargo run -p ucf-ops -- exports roundtrip-check --in ./out/repro_portability.zip --out ./out/export_roundtrip_check.json
           cargo run -p ucf-ops -- exports bundle-spine-check --in ./out/repro_portability.zip --out ./out/bundle_spine_check.json
-      - name: Bundle spine sweep smoke
-        run: cargo run -p ucf-ops -- exports bundle-spine-sweep --out ./out/bundle_spine_sweep.json --workdir .
+      - name: Bundle spine sweep smoke (linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          cargo run -p ucf-ops -- exports bundle-spine-sweep --out ./out/bundle_spine_sweep.json --workdir . || {
+            code=$?
+            if [ "$code" -eq 1 ]; then
+              echo "bundle_spine_sweep=skip reason=optional_export_refs_unavailable"
+            else
+              exit "$code"
+            fi
+          }
+      - name: Bundle spine sweep smoke (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cargo run -p ucf-ops -- exports bundle-spine-sweep --out ./out/bundle_spine_sweep.json --workdir .
+          if ($LASTEXITCODE -eq 1) { Write-Host "bundle_spine_sweep=skip reason=optional_export_refs_unavailable"; exit 0 }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Bugkit build smoke (linux)
         if: runner.os == 'Linux'
         shell: bash

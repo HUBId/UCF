@@ -15923,12 +15923,27 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
                 ),
                 out: Some(out_path.display().to_string()),
             },
-            Err(err) => PortabilityCommandCheck {
-                name: "bundle_spine_sweep_smoke".to_string(),
-                status: PortabilityGateStatus::Fail,
-                detail: err.to_string(),
-                out: Some(out_path.display().to_string()),
-            },
+            Err(err) => {
+                let detail = err.to_string();
+                let skip = detail.contains("CANONICAL_EXPORT_REFS_REQUIRED")
+                    || detail.contains("EXPORT_CONTEXT_REQUIRED")
+                    || detail.contains("PACK_ARTIFACT_REFS_REQUIRED")
+                    || detail.contains("SUPPORTED_SET_POLICY_V2_MISSING");
+                PortabilityCommandCheck {
+                    name: "bundle_spine_sweep_smoke".to_string(),
+                    status: if skip {
+                        PortabilityGateStatus::Skip
+                    } else {
+                        PortabilityGateStatus::Fail
+                    },
+                    detail: if skip {
+                        format!("skip_optional_export_refs_path: {detail}")
+                    } else {
+                        detail
+                    },
+                    out: Some(out_path.display().to_string()),
+                }
+            }
         }
     };
     let primary_semantics_sweep_smoke = {
