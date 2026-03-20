@@ -43,3 +43,8 @@ Zusatz: Der v8-Nachweis zur kanonischen Blocking/Remediation-Konsistenz über al
 ## v9 update
 
 v9 makes canonical governance entry universal across covered canonical surfaces via `governance-entry-sweep`.
+
+
+## v10 update
+
+Canonical governance entry v8 is now consumed together with governance-entry authority and the v10 final consumer authority proof.

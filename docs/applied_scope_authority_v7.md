@@ -39,3 +39,8 @@ See also canonical entrypoint rule: docs/canonical_governance_entry_v8.md
 ## v9 continuity
 
 Applied scope authority is now consumed through the universal canonical governance entry sweep for covered canonical surfaces.
+
+
+## v10 update
+
+Applied scope authority v7 remains foundational and is now universally chained through v10 final governance-consumer authority checks.
