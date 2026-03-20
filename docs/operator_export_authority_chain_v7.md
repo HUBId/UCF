@@ -42,3 +42,8 @@ Operator/export authority continuity now includes canonical readiness spine/auth
 ## Final continuity authority (v9)
 Use `cargo run -p ucf-ops -- continuity-authority-check --bundle <path> --out ./out/continuity_authority_check.json` as final top-level proof that this surface aligns with canonical governance/readiness/operator/export/bundle continuity.
 
+
+## v10 Continuity Position
+
+`operator export-chain-check`/Roundtrip-nahe Surfaces liefern weiterhin Diagnostik, sind aber keine konkurrierenden top-level continuity proofs mehr.
+Sole top-level continuity proof: `ucf-ops final-continuity-sweep`.

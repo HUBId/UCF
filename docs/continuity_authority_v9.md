@@ -38,3 +38,8 @@ Status is bounded to `PASS | FAIL | LEGACY_PRESENT` and fail-closed mismatch cat
 - `CONTINUITY_EXPORT_READY_MISMATCH`
 - `CONTINUITY_BUNDLE_MISMATCH`
 - `LEGACY_CONTINUITY_PATH_PRESENT`
+
+## v10 Demotion
+
+`continuity-authority-check` bleibt als **SUBORDINATE_CONTINUITY_CONTRIBUTOR** erhalten.
+Die einzige top-level Kontinuitätsautorität ist `final-continuity-sweep` (`FinalContinuityAuthorityV2`).

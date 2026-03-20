@@ -40,3 +40,8 @@ and reconstructed from the provided bundle without drift.
 ## Final continuity authority (v9)
 Use `cargo run -p ucf-ops -- continuity-authority-check --bundle <path> --out ./out/continuity_authority_check.json` as final top-level proof that this surface aligns with canonical governance/readiness/operator/export/bundle continuity.
 
+
+## v10 Continuity Position
+
+`CanonicalRoundTripChainV1` ist ab v10 ein **SUBORDINATE_CONTINUITY_CONTRIBUTOR**.
+Finale PASS/FAIL-Top-Level-Autorität erfolgt ausschließlich über `final-continuity-sweep`.
