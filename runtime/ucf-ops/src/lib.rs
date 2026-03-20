@@ -13,6 +13,8 @@ mod config_contract;
 mod continuity_authority;
 mod docs_lint;
 mod drift;
+mod final_governance_authority;
+mod final_governance_consumer_sweep;
 mod formal_invariants;
 mod goldens;
 mod governance_entry_check;
@@ -79,6 +81,15 @@ pub use continuity_authority::{
 };
 pub use docs_lint::{docs_lint, DocsLintArgs, DocsLintMode, DocsLintReport, DocsLintStatus};
 pub use drift::{drift_report, drift_status_map, DriftReportV1};
+pub use final_governance_authority::{
+    require_final_governance_authority, FinalGovernanceAuthorityContextV1,
+    FINAL_GOVERNANCE_AUTHORITY_REQUIRED, LEGACY_GOVERNANCE_INPUT_BLOCKED,
+};
+pub use final_governance_consumer_sweep::{
+    final_governance_consumer_sweep, FinalGovernanceConsumerAuthorityStatusV1,
+    FinalGovernanceConsumerAuthorityV1, FinalGovernanceConsumerMismatchCategoryV1,
+    FinalGovernanceConsumerStatusV1, FinalGovernanceConsumerSweepReportV1,
+};
 pub use goldens::{
     goldens_generate, goldens_update, goldens_verify, goldens_verify_detailed, GoldenGenerateArgs,
     GoldenRefreshHeuristic, GoldenScenarioConfig, GoldenVerifyArgs, GoldenVerifyReport,

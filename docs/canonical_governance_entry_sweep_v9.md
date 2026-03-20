@@ -44,3 +44,8 @@ In v9 canonical flows fail closed when canonical governance entry authority is m
 - `LEGACY_GOVERNANCE_ENTRY_PRESENT`
 
 The final cross-surface canonical primary blocking/remediation proof is tracked by `docs/primary_semantics_sweep_v9.md` (`ucf-ops primary-semantics-sweep`).
+
+
+## v10 update
+
+v10 finalizes universal governance-input authority across canonical consumers via `final-governance-consumer-sweep` and `FinalGovernanceConsumerAuthorityV1`.
