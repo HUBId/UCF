@@ -1,7 +1,10 @@
 use std::fs;
 
 use tempfile::tempdir;
-use ucf_ops::{docs_lint, DocsLintArgs, DocsLintMode, DocsLintStatus};
+use ucf_ops::{
+    docs_lint, generate_artifact_schema_snapshots, ArtifactSchemaArgs, DocsLintArgs, DocsLintMode,
+    DocsLintStatus,
+};
 
 fn repo_root() -> std::path::PathBuf {
     std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -97,12 +100,12 @@ fn docs_lint_fails_on_hardware_terms_in_core_docs() {
 fn docs_lint_fails_on_artifact_schema_snapshot_mismatch() {
     let dir = tempdir().expect("tempdir");
     let snapshot_dir = dir.path().join("artifact_schema_snapshots");
-    fs::create_dir_all(&snapshot_dir).expect("mkdir");
-    for file in fs::read_dir(repo_path("docs/artifact_schema_snapshots")).expect("read") {
-        let entry = file.expect("entry");
-        let name = entry.file_name();
-        fs::copy(entry.path(), snapshot_dir.join(name)).expect("copy");
-    }
+    let repo = repo_root();
+    generate_artifact_schema_snapshots(&ArtifactSchemaArgs {
+        repo_root: repo.clone(),
+        out_dir: snapshot_dir.clone(),
+    })
+    .expect("generate snapshots");
     fs::write(
         snapshot_dir.join("operator_report_v1.json"),
         r#"{
