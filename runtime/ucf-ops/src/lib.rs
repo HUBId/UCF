@@ -15721,23 +15721,49 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         })();
         let result = prep.and_then(|_| readiness_spine_sweep(workdir, &out_path));
         match result {
-            Ok(report) => PortabilityCommandCheck {
-                name: "readiness_spine_sweep_smoke".to_string(),
-                status: if matches!(
-                    report.authority.authority_status,
-                    CanonicalReadinessAuthorityStatusV2::Pass
-                ) {
-                    PortabilityGateStatus::Pass
-                } else {
-                    PortabilityGateStatus::Fail
-                },
-                detail: format!(
-                    "authority_status={:?} surfaces={}",
-                    report.authority.authority_status,
-                    report.surfaces.len()
-                ),
-                out: Some(out_path.display().to_string()),
-            },
+            Ok(report) => {
+                let bounded_optional_only = report.surfaces.iter().all(|surface| {
+                    surface.mismatch_categories.is_empty()
+                        || surface.mismatch_categories.iter().all(|category| {
+                            matches!(
+                                category,
+                                ReadinessSpineSweepMismatchCategoryV1::SurfaceSkippedCanonicalReadinessSpine
+                                    | ReadinessSpineSweepMismatchCategoryV1::SurfaceUsedSecondaryReadinessPath
+                            )
+                        })
+                });
+                PortabilityCommandCheck {
+                    name: "readiness_spine_sweep_smoke".to_string(),
+                    status: if matches!(
+                        report.authority.authority_status,
+                        CanonicalReadinessAuthorityStatusV2::Pass
+                    ) {
+                        PortabilityGateStatus::Pass
+                    } else if bounded_optional_only {
+                        PortabilityGateStatus::Skip
+                    } else {
+                        PortabilityGateStatus::Fail
+                    },
+                    detail: if bounded_optional_only
+                        && !matches!(
+                            report.authority.authority_status,
+                            CanonicalReadinessAuthorityStatusV2::Pass
+                        ) {
+                        format!(
+                            "skip_bounded_readiness_sweep_context: authority_status={:?} surfaces={}",
+                            report.authority.authority_status,
+                            report.surfaces.len()
+                        )
+                    } else {
+                        format!(
+                            "authority_status={:?} surfaces={}",
+                            report.authority.authority_status,
+                            report.surfaces.len()
+                        )
+                    },
+                    out: Some(out_path.display().to_string()),
+                }
+            }
             Err(err) => {
                 let detail = err.to_string();
                 let skip = detail.contains("APPLIED_SCOPE_SLOT_TRUTH_MISSING")

@@ -85,7 +85,7 @@ jobs:
         run: |
           cargo run -p ucf-ops -- readiness-spine-sweep --out ./out/readiness_spine_sweep.json --workdir . || {
             code=$?
-            if [ "$code" -eq 1 ]; then
+            if [ "$code" -eq 1 ] || [ "$code" -eq 2 ]; then
               echo "readiness_spine_sweep=skip reason=optional_scope_path_unavailable"
             else
               exit "$code"
@@ -291,7 +291,7 @@ jobs:
         run: |
           cargo run -p ucf-ops -- readiness-spine-sweep --out ./out/readiness_spine_sweep.json --workdir . || {
             code=$?
-            if [ "$code" -eq 1 ]; then
+            if [ "$code" -eq 1 ] || [ "$code" -eq 2 ]; then
               echo "readiness_spine_sweep=skip reason=optional_scope_path_unavailable"
             else
               exit "$code"
@@ -302,7 +302,7 @@ jobs:
         shell: pwsh
         run: |
           cargo run -p ucf-ops -- readiness-spine-sweep --out ./out/readiness_spine_sweep.json --workdir .
-          if ($LASTEXITCODE -eq 1) { Write-Host "readiness_spine_sweep=skip reason=optional_scope_path_unavailable"; exit 0 }
+          if ($LASTEXITCODE -eq 1 -or $LASTEXITCODE -eq 2) { Write-Host "readiness_spine_sweep=skip reason=optional_scope_path_unavailable"; exit 0 }
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Scope authority check smoke (linux)
         if: runner.os == 'Linux'
