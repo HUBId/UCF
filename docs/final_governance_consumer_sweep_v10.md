@@ -19,6 +19,8 @@ Covered canonical consumers:
 
 Legacy governance inputs are not allowed as primary truth in canonical flows. Remaining legacy paths are surfaced as deterministic fail-closed mismatches.
 
+`models supported-scope-execute-v5` consumes `FinalGovernanceConsumerAuthorityV1` directly; expansion must reaffirm freeze unless this authority is `PASS` under current applied scope.
+
 ## Command
 
 ```bash

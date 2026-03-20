@@ -1,10 +1,12 @@
 # Supported Scope Execution v9
 
+> Superseded by `docs/supported_scope_execution_v10.md` for current execution authority.
+
 ## Policy vs Reevaluation vs Execution
 
 - `SupportedRealSlotSetPolicyV2` stays a review recommendation artifact.
 - `SupportedScopeReevaluationV1` re-checks policy intent against current applied scope.
-- `SupportedScopeExecutionV4` is the **current authoritative execution artifact** that can reaffirm freeze or execute a one-slot expansion.
+- `SupportedScopeExecutionV4` is the v9 execution artifact that can reaffirm freeze or execute a one-slot expansion.
 
 `SupportedScopeExecutionV4` is the only execution record that may authorize `models supported-set-apply` in v9.
 
