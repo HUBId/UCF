@@ -38,6 +38,7 @@ mod readiness_residual_sweep;
 mod readiness_spine;
 mod remediation;
 mod remediation_consistency;
+mod residual_free_continuity_sweep;
 mod reviewability_truth;
 mod roundtrip_chain;
 mod scope_authority;
@@ -247,6 +248,10 @@ pub use remediation_consistency::{
     LEGACY_PRIMARY_SEMANTICS_REJECTED, LEGACY_PRIMARY_SEMANTICS_TRANSLATED,
     RESIDUAL_PRIMARY_SEMANTICS_PATH_BLOCKED, RESIDUAL_PRIMARY_SEMANTICS_PATH_REJECTED,
     RESIDUAL_PRIMARY_SEMANTICS_PATH_TRANSLATED,
+};
+pub use residual_free_continuity_sweep::{
+    residual_free_continuity_sweep, ResidualFreeContinuityAuthorityV1,
+    ResidualFreeContinuityMismatchCategoryV1, ResidualFreeContinuityStatusV1,
 };
 pub use reviewability_truth::{
     derive_slot_reviewability_truths, derive_slot_reviewability_truths_from_active,

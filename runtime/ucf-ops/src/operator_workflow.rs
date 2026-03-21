@@ -54,6 +54,12 @@ pub struct OperatorWorkflowChainV1 {
     pub final_readiness_consumer_authority_digest_prefix: String,
     #[serde(default)]
     pub readiness_residual_sweep_digest_prefix: String,
+    #[serde(default)]
+    pub final_bundle_residual_sweep_digest_prefix: String,
+    #[serde(default)]
+    pub final_primary_semantics_residual_sweep_digest_prefix: String,
+    #[serde(default)]
+    pub residual_free_continuity_authority_digest_prefix: String,
     pub operator_review_packet_digest_prefix: String,
     pub operator_signoff_digest_prefix: String,
     pub interop_matrix_digest_prefix: String,
@@ -287,6 +293,9 @@ impl OperatorWorkflowPolicyV1 {
                 .review_packet
                 .readiness_residual_sweep_digest_prefix
                 .clone(),
+            final_bundle_residual_sweep_digest_prefix: "MISSING".to_string(),
+            final_primary_semantics_residual_sweep_digest_prefix: "MISSING".to_string(),
+            residual_free_continuity_authority_digest_prefix: "MISSING".to_string(),
             operator_review_packet_digest_prefix,
             operator_signoff_digest_prefix,
             interop_matrix_digest_prefix,
@@ -346,15 +355,36 @@ pub fn operator_workflow_chain(
         &out_root.join("export_normalize_check_operator_workflow.json"),
     )?;
 
-    let chain = OperatorWorkflowPolicyV1::default().reduce(OperatorWorkflowReductionInputs {
-        governance: &governance,
-        applied_scope: &applied_scope,
-        review_packet: &review_packet,
-        signoff: &signoff,
-        interop: &interop,
-        normalize: &normalize,
-        repro_verify: discover_repro_verify_expectation(&out_root),
-    })?;
+    let mut chain =
+        OperatorWorkflowPolicyV1::default().reduce(OperatorWorkflowReductionInputs {
+            governance: &governance,
+            applied_scope: &applied_scope,
+            review_packet: &review_packet,
+            signoff: &signoff,
+            interop: &interop,
+            normalize: &normalize,
+            repro_verify: discover_repro_verify_expectation(&out_root),
+        })?;
+
+    chain.final_bundle_residual_sweep_digest_prefix = discover_digest_prefix(
+        &out_root,
+        "bundle_residual_sweep.json",
+        "sweep.sweep_digest",
+    )
+    .unwrap_or_else(|| "MISSING".to_string());
+    chain.final_primary_semantics_residual_sweep_digest_prefix = discover_digest_prefix(
+        &out_root,
+        "primary_semantics_residual_sweep.json",
+        "sweep.sweep_digest",
+    )
+    .unwrap_or_else(|| "MISSING".to_string());
+    chain.residual_free_continuity_authority_digest_prefix = discover_digest_prefix(
+        &out_root,
+        "residual_free_continuity_sweep.json",
+        "authority_digest",
+    )
+    .unwrap_or_else(|| "MISSING".to_string());
+    chain.chain_digest = chain_digest_hex(&chain)?;
 
     if let Some(parent) = out.parent() {
         fs::create_dir_all(parent)?;
@@ -405,6 +435,16 @@ fn discover_repro_verify_expectation(out_root: &Path) -> Option<bool> {
 fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T, OpsError> {
     let body = fs::read_to_string(path)?;
     Ok(serde_json::from_str(&body)?)
+}
+
+fn discover_digest_prefix(out_root: &Path, rel: &str, key_path: &str) -> Option<String> {
+    let body = fs::read_to_string(out_root.join(rel)).ok()?;
+    let value: serde_json::Value = serde_json::from_str(&body).ok()?;
+    let mut current = &value;
+    for key in key_path.split('.') {
+        current = current.get(key)?;
+    }
+    current.as_str().map(|v| prefix_hex(v, DIGEST_PREFIX_LEN))
 }
 
 fn chain_digest_hex(chain: &OperatorWorkflowChainV1) -> Result<String, OpsError> {

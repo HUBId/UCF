@@ -92,3 +92,9 @@ Use `cargo run -p ucf-ops -- continuity-authority-check --bundle <path> --out ./
 
 `OperatorWorkflowChainV1` ist weiterhin deterministische Workflow-Stufe, aber **nicht** mehr top-level continuity proof.
 Top-level continuity authority wird ausschließlich über `final-continuity-sweep` festgestellt.
+
+
+## v11 residual-free alignment
+
+`OperatorWorkflowChainV1` remains a workflow-stage artifact and references residual sweep lineage.
+Top-level continuity truth is delegated exclusively to `ResidualFreeContinuityAuthorityV1`.

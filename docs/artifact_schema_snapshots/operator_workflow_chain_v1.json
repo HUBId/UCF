@@ -23,10 +23,13 @@
     "canonical_governance_entry_digest_prefix",
     "canonical_readiness_authority_digest_prefix",
     "canonical_readiness_spine_digest_prefix",
+    "final_bundle_residual_sweep_digest_prefix",
     "final_governance_consumer_authority_digest_prefix",
+    "final_primary_semantics_residual_sweep_digest_prefix",
     "final_readiness_consumer_authority_digest_prefix",
     "governance_residual_sweep_digest_prefix",
-    "readiness_residual_sweep_digest_prefix"
+    "readiness_residual_sweep_digest_prefix",
+    "residual_free_continuity_authority_digest_prefix"
   ],
   "field_types": {
     "applied_context_digest_prefix": "String",
@@ -39,7 +42,9 @@
     "chain_digest": "String",
     "export_normalize_check_digest_prefix": "String",
     "export_targets": "OperatorWorkflowExportTargetsV1",
+    "final_bundle_residual_sweep_digest_prefix": "String",
     "final_governance_consumer_authority_digest_prefix": "String",
+    "final_primary_semantics_residual_sweep_digest_prefix": "String",
     "final_readiness_consumer_authority_digest_prefix": "String",
     "governance_residual_sweep_digest_prefix": "String",
     "governance_surfaces_digest_prefix": "String",
@@ -48,6 +53,7 @@
     "operator_signoff_digest_prefix": "String",
     "readiness_residual_sweep_digest_prefix": "String",
     "remediation_codes": "Vec<String>",
+    "residual_free_continuity_authority_digest_prefix": "String",
     "reviewability_reduction_digest_prefix": "String",
     "schema_version": "u16",
     "workflow_stage": "OperatorWorkflowStageV2"
