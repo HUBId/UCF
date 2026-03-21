@@ -15,15 +15,19 @@
   "optional_fields": [
     "canonical_governance_entry_digest_prefix",
     "final_governance_consumer_authority_digest_prefix",
-    "governance_residual_sweep_digest_prefix"
+    "final_readiness_consumer_authority_digest_prefix",
+    "governance_residual_sweep_digest_prefix",
+    "readiness_residual_sweep_digest_prefix"
   ],
   "field_types": {
     "canonical_governance_entry_digest_prefix": "String",
     "final_governance_consumer_authority_digest_prefix": "String",
+    "final_readiness_consumer_authority_digest_prefix": "String",
     "governance_residual_sweep_digest_prefix": "String",
     "manifest_digest_prefix": "String",
     "overall_review_status": "ActiveReviewOverallStatusV1",
     "policy_graph_digest_prefix": "String",
+    "readiness_residual_sweep_digest_prefix": "String",
     "schema_version": "u16",
     "signoff_alignment": "ActiveReviewSignoffAlignmentV1",
     "slots": "Vec<ActiveReviewEvidenceV1>",

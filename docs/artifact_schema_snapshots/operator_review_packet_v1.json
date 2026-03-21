@@ -22,7 +22,9 @@
     "canonical_readiness_authority_digest_prefix",
     "canonical_readiness_spine_digest_prefix",
     "final_governance_consumer_authority_digest_prefix",
-    "governance_residual_sweep_digest_prefix"
+    "final_readiness_consumer_authority_digest_prefix",
+    "governance_residual_sweep_digest_prefix",
+    "readiness_residual_sweep_digest_prefix"
   ],
   "field_types": {
     "applied_context_digest_prefix": "String",
@@ -33,10 +35,12 @@
     "canonical_readiness_authority_digest_prefix": "String",
     "canonical_readiness_spine_digest_prefix": "String",
     "final_governance_consumer_authority_digest_prefix": "String",
+    "final_readiness_consumer_authority_digest_prefix": "String",
     "governance_residual_sweep_digest_prefix": "String",
     "manifest_digest_prefix": "String",
     "packet_digest": "String",
     "policy_graph_digest_prefix": "String",
+    "readiness_residual_sweep_digest_prefix": "String",
     "remediation_codes": "Vec<String>",
     "review_stage": "OperatorReviewStageV1",
     "reviewability_reduction_digest_prefix": "String",

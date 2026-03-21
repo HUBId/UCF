@@ -24,7 +24,9 @@
     "canonical_readiness_authority_digest_prefix",
     "canonical_readiness_spine_digest_prefix",
     "final_governance_consumer_authority_digest_prefix",
-    "governance_residual_sweep_digest_prefix"
+    "final_readiness_consumer_authority_digest_prefix",
+    "governance_residual_sweep_digest_prefix",
+    "readiness_residual_sweep_digest_prefix"
   ],
   "field_types": {
     "applied_context_digest_prefix": "String",
@@ -38,11 +40,13 @@
     "export_normalize_check_digest_prefix": "String",
     "export_targets": "OperatorWorkflowExportTargetsV1",
     "final_governance_consumer_authority_digest_prefix": "String",
+    "final_readiness_consumer_authority_digest_prefix": "String",
     "governance_residual_sweep_digest_prefix": "String",
     "governance_surfaces_digest_prefix": "String",
     "interop_matrix_digest_prefix": "String",
     "operator_review_packet_digest_prefix": "String",
     "operator_signoff_digest_prefix": "String",
+    "readiness_residual_sweep_digest_prefix": "String",
     "remediation_codes": "Vec<String>",
     "reviewability_reduction_digest_prefix": "String",
     "schema_version": "u16",
