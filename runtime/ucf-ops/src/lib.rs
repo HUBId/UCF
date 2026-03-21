@@ -33,6 +33,7 @@ mod operator_report;
 mod operator_review_packet;
 mod operator_signoff;
 mod operator_workflow;
+mod primary_semantics_residual_sweep;
 mod readiness_residual_sweep;
 mod readiness_spine;
 mod remediation;
@@ -201,6 +202,11 @@ pub use operator_workflow::{
     OperatorWorkflowChainV1, OperatorWorkflowExportTargetsV1, OperatorWorkflowPolicyV1,
     OperatorWorkflowStageV2,
 };
+pub use primary_semantics_residual_sweep::{
+    primary_semantics_residual_sweep, FinalPrimarySemanticsResidualMismatchCategoryV1,
+    FinalPrimarySemanticsResidualSurfaceStatusV1, FinalPrimarySemanticsResidualSweepReportV1,
+    FinalPrimarySemanticsResidualSweepStatusV1, FinalPrimarySemanticsResidualSweepV1,
+};
 pub use readiness_residual_sweep::{
     readiness_residual_sweep, FinalReadinessResidualConsumerStatusV1,
     FinalReadinessResidualMismatchCategoryV1, FinalReadinessResidualSweepReportV1,
@@ -225,10 +231,11 @@ pub use readiness_spine::{
 pub use remediation::all_registry_rows as remediation_registry_rows;
 pub use remediation_consistency::{
     final_primary_semantics_sweep, primary_semantics_sweep, remediation_consistency_check,
-    remediation_interop_check, remediation_spine_check, CanonicalPrimarySemanticsAuthorityStatusV1,
-    CanonicalPrimarySemanticsAuthorityV1, CanonicalRemediationObservationV1,
-    CrossSurfaceConditionObservationV1, CrossSurfaceObservationStatusV1,
-    FinalPrimarySemanticsConsumerAuthorityStatusV1, FinalPrimarySemanticsConsumerAuthorityV1,
+    remediation_interop_check, remediation_spine_check, require_final_primary_semantics_inputs,
+    CanonicalPrimarySemanticsAuthorityStatusV1, CanonicalPrimarySemanticsAuthorityV1,
+    CanonicalRemediationObservationV1, CrossSurfaceConditionObservationV1,
+    CrossSurfaceObservationStatusV1, FinalPrimarySemanticsConsumerAuthorityStatusV1,
+    FinalPrimarySemanticsConsumerAuthorityV1, FinalPrimarySemanticsInputsContextV1,
     FinalPrimarySemanticsSweepReportV1, PrimarySemanticsObservationV1,
     PrimarySemanticsObservedSurfaceV1, PrimarySemanticsSweepReportV1,
     RemediationConsistencyCheckV1, RemediationConsistencyObservedV1,
@@ -236,8 +243,10 @@ pub use remediation_consistency::{
     RemediationInteropCheckReportV1, RemediationMismatchKindV1, RemediationSpineCheckReportV1,
     SpineConditionObservationV1, CANONICAL_CONDITION_MODEL_REQUIRED,
     CANONICAL_REMEDIATION_REGISTRY_REQUIRED, FINAL_PRIMARY_SEMANTICS_AUTHORITY_REQUIRED,
-    LEGACY_PRIMARY_SEMANTICS_INPUT_BLOCKED, LEGACY_PRIMARY_SEMANTICS_REJECTED,
-    LEGACY_PRIMARY_SEMANTICS_TRANSLATED,
+    FINAL_PRIMARY_SEMANTICS_INPUTS_REQUIRED, LEGACY_PRIMARY_SEMANTICS_INPUT_BLOCKED,
+    LEGACY_PRIMARY_SEMANTICS_REJECTED, LEGACY_PRIMARY_SEMANTICS_TRANSLATED,
+    RESIDUAL_PRIMARY_SEMANTICS_PATH_BLOCKED, RESIDUAL_PRIMARY_SEMANTICS_PATH_REJECTED,
+    RESIDUAL_PRIMARY_SEMANTICS_PATH_TRANSLATED,
 };
 pub use reviewability_truth::{
     derive_slot_reviewability_truths, derive_slot_reviewability_truths_from_active,

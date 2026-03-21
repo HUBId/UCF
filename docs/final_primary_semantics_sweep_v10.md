@@ -30,3 +30,7 @@ cargo run -p ucf-ops -- final-primary-semantics-sweep --out ./out/final_primary_
 ## Why local primary semantics are no longer allowed
 
 Local top-level reason ordering, surface-specific action-hint precedence, and ad-hoc legacy mappings can diverge and produce inconsistent primary language. v10 enforces one canonical primary blocking/remediation authority for canonical flows and demotes local inputs to secondary diagnostics only.
+
+## v11 residual-sweep note
+
+v11 adds `primary-semantics-residual-sweep`, which removes/blocks the last canonical residual primary-semantics reconstruction paths.

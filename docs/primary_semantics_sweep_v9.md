@@ -43,3 +43,7 @@ cargo run -p ucf-ops -- primary-semantics-sweep --out ./out/primary_semantics_sw
 ## v10 finalization
 
 Universal canonical consumer enforcement is finalized in `docs/final_primary_semantics_sweep_v10.md` via `ucf-ops final-primary-semantics-sweep`.
+
+## v11 residual-sweep note
+
+v11 supersedes remaining residual reconstruction paths via `primary-semantics-residual-sweep` and final-input fail-closed checks.
