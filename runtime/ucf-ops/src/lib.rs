@@ -149,8 +149,8 @@ pub use models_lifecycle::{
     models_evidence_snapshot, models_list, models_probe_slot, models_promote,
     models_recommend_rollback, models_rollback, models_shadow_ready, models_stage,
     models_supported_scope_execute, models_supported_scope_execute_v4,
-    models_supported_scope_execute_v5, models_supported_scope_reevaluate,
-    models_supported_set_apply, models_supported_set_review,
+    models_supported_scope_execute_v5, models_supported_scope_execute_v6,
+    models_supported_scope_reevaluate, models_supported_set_apply, models_supported_set_review,
     models_verify as models_verify_lifecycle, parse_slot, ActiveCheckStatus,
     ActiveEnablementDeniedCode, ActiveEnablementEvidenceV1, ActiveReviewEvidenceV1,
     ActiveReviewOverallStatusV1, ActiveReviewSnapshotRecordV1, AggregatedActiveReviewSnapshotV1,
@@ -163,10 +163,11 @@ pub use models_lifecycle::{
     SupportedRealSlotSetExecutionDecisionV2, SupportedRealSlotSetPolicyV2, SupportedRealSlotSetV1,
     SupportedRealSlotSetV2, SupportedRealSlotsActiveViewV1, SupportedScopeExecutionDecisionV3,
     SupportedScopeExecutionDecisionV4, SupportedScopeExecutionDecisionV5,
-    SupportedScopeExecutionV3, SupportedScopeExecutionV4, SupportedScopeExecutionV5,
-    SupportedScopeReevaluationDecisionV1, SupportedScopeReevaluationV1, SupportedSetApplyReportV1,
-    SupportedSetExecutionDeniedCodeV1, SupportedSetExpansionRecordV1, SupportedSetFreezeRecordV1,
-    SupportedSetReviewReportV1, UnifiedEligibilityStatusV1,
+    SupportedScopeExecutionDecisionV6, SupportedScopeExecutionV3, SupportedScopeExecutionV4,
+    SupportedScopeExecutionV5, SupportedScopeExecutionV6, SupportedScopeReevaluationDecisionV1,
+    SupportedScopeReevaluationV1, SupportedSetApplyReportV1, SupportedSetExecutionDeniedCodeV1,
+    SupportedSetExpansionRecordV1, SupportedSetFreezeRecordV1, SupportedSetReviewReportV1,
+    UnifiedEligibilityStatusV1,
 };
 pub use nightly::{
     nightly_summarize, NightlyComponentReport, NightlyOverallStatus, NightlySummarizeArgs,
@@ -14750,7 +14751,7 @@ pub struct PortabilityReportV1 {
     pub bundle_spine_sweep_smoke: PortabilityCommandCheck,
     pub primary_semantics_sweep_smoke: PortabilityCommandCheck,
     pub final_governance_consumer_sweep_smoke: PortabilityCommandCheck,
-    pub supported_scope_execute_v5_smoke: PortabilityCommandCheck,
+    pub supported_scope_execute_v6_smoke: PortabilityCommandCheck,
     pub final_readiness_consumer_sweep_smoke: PortabilityCommandCheck,
     pub final_bundle_consumer_sweep_smoke: PortabilityCommandCheck,
     pub final_primary_semantics_sweep_smoke: PortabilityCommandCheck,
@@ -16220,17 +16221,19 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
             }
         }
     };
-    let supported_scope_execute_v5_smoke = out_smoke_check(
-        "supported_scope_execute_v5_smoke",
-        "./out/supported_scope_execute_v5.json",
+    let supported_scope_execute_v6_smoke = out_smoke_check(
+        "supported_scope_execute_v6_smoke",
+        "./out/supported_scope_execute_v6.json",
         |out_path| {
             let review_out = PathBuf::from("./out/supported_set_review.json");
             let reeval_out = PathBuf::from("./out/supported_scope_reeval.json");
             let final_governance_out = PathBuf::from("./out/final_governance_consumer_sweep.json");
+            let residual_out = PathBuf::from("./out/governance_residual_sweep.json");
             models_supported_set_review(workdir, &review_out)?;
             models_supported_scope_reevaluate(workdir, &reeval_out)?;
             final_governance_consumer_sweep(workdir, &final_governance_out)?;
-            models_supported_scope_execute_v5(workdir, out_path)
+            governance_residual_sweep(workdir, &residual_out)?;
+            models_supported_scope_execute_v6(workdir, out_path)
         },
         |report| {
             format!(
@@ -16622,7 +16625,7 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         matrix_cmd("linux", "cargo run -p ucf-ops -- exports bundle-spine-sweep --out ./out/bundle_spine_sweep.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- primary-semantics-sweep --out ./out/primary_semantics_sweep.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- final-governance-consumer-sweep --out ./out/final_governance_consumer_sweep.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- models supported-scope-execute-v5 --out ./out/supported_scope_execute_v5.json --workdir ."),
+        matrix_cmd("linux", "cargo run -p ucf-ops -- models supported-scope-execute-v6 --out ./out/supported_scope_execute_v6.json --workdir ."),
         matrix_cmd("linux", "cargo run -p ucf-ops -- final-readiness-consumer-sweep --out ./out/final_readiness_consumer_sweep.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- final-bundle-consumer-sweep --out ./out/final_bundle_consumer_sweep.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- final-primary-semantics-sweep --out ./out/final_primary_semantics_sweep.json"),
@@ -16666,7 +16669,7 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         matrix_cmd("windows", "cargo run -p ucf-ops -- exports bundle-spine-sweep --out ./out/bundle_spine_sweep.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- primary-semantics-sweep --out ./out/primary_semantics_sweep.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- final-governance-consumer-sweep --out ./out/final_governance_consumer_sweep.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- models supported-scope-execute-v5 --out ./out/supported_scope_execute_v5.json --workdir ."),
+        matrix_cmd("windows", "cargo run -p ucf-ops -- models supported-scope-execute-v6 --out ./out/supported_scope_execute_v6.json --workdir ."),
         matrix_cmd("windows", "cargo run -p ucf-ops -- final-readiness-consumer-sweep --out ./out/final_readiness_consumer_sweep.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- final-bundle-consumer-sweep --out ./out/final_bundle_consumer_sweep.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- final-primary-semantics-sweep --out ./out/final_primary_semantics_sweep.json"),
@@ -16707,7 +16710,7 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         bundle_spine_sweep_smoke,
         primary_semantics_sweep_smoke,
         final_governance_consumer_sweep_smoke,
-        supported_scope_execute_v5_smoke,
+        supported_scope_execute_v6_smoke,
         final_readiness_consumer_sweep_smoke,
         final_bundle_consumer_sweep_smoke,
         final_primary_semantics_sweep_smoke,
