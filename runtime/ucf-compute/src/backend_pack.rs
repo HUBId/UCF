@@ -757,20 +757,6 @@ pub fn slot_verified_or_reason(slot: ModelSlot) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Mutex, OnceLock};
-
-    fn env_lock() -> &'static Mutex<()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
-    }
-
-    fn clear_model_env() {
-        std::env::remove_var("UCF_MODEL_MANIFEST");
-        for slot in ModelSlot::all() {
-            std::env::remove_var(format!("UCF_MODEL_{}_ENABLED", slot.env_key()));
-            std::env::remove_var(format!("UCF_MODEL_PIN_{}", slot.env_key()));
-        }
-    }
 
     #[test]
     fn fixture_digest_stable() {
@@ -783,8 +769,10 @@ mod tests {
 
     #[test]
     fn factory_deterministic() {
-        let _guard = env_lock().lock().expect("env lock");
-        clear_model_env();
+        let _guard = crate::test_env::env_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _env = crate::test_env::clear_model_env_overrides();
         let a = BackendPackFactory::build(BackendPackConfig::default()).expect("a");
         let b = BackendPackFactory::build(BackendPackConfig::default()).expect("b");
         assert_eq!(a.meta().digest, b.meta().digest);
@@ -808,8 +796,10 @@ mod tests {
 
     #[test]
     fn toy_lnn_feature_gate_behavior() {
-        let _guard = env_lock().lock().expect("env lock");
-        clear_model_env();
+        let _guard = crate::test_env::env_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _env = crate::test_env::clear_model_env_overrides();
         let cfg = BackendPackConfig {
             pack: BackendPackKind::ToyLnnV1,
             seed: 5,
@@ -832,8 +822,10 @@ mod tests {
 
     #[test]
     fn candle_liquid_feature_gate_behavior() {
-        let _guard = env_lock().lock().expect("env lock");
-        clear_model_env();
+        let _guard = crate::test_env::env_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _env = crate::test_env::clear_model_env_overrides();
         let cfg = BackendPackConfig {
             pack: BackendPackKind::CandleLiquidV1,
             seed: 5,
@@ -868,8 +860,10 @@ mod tests {
 
     #[test]
     fn enabled_slot_requires_manifest_at_startup() {
-        let _guard = env_lock().lock().expect("env lock");
-        clear_model_env();
+        let _guard = crate::test_env::env_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _env = crate::test_env::clear_model_env_overrides();
         let dir = tempfile::tempdir().expect("tempdir");
         let missing_manifest = dir.path().join("missing-manifest.toml");
         std::env::set_var("UCF_MODEL_LLM_ENABLED", "true");
@@ -877,7 +871,5 @@ mod tests {
 
         let res = BackendPackFactory::build(BackendPackConfig::default());
         assert!(matches!(res, Err(ComputeError::InvalidInput { .. })));
-
-        clear_model_env();
     }
 }
