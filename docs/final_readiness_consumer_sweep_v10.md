@@ -29,3 +29,7 @@ It emits `FinalReadinessConsumerAuthorityV1` and per-consumer statuses.
 ```bash
 cargo run -p ucf-ops -- final-readiness-consumer-sweep --out ./out/final_readiness_consumer_sweep.json
 ```
+
+## v11 residual cleanup extension
+
+v11 adds `readiness-residual-sweep` to remove/block remaining residual readiness reconstruction from canonical consumers and to bind artifacts to `FinalReadinessResidualSweepV1`.

@@ -63,6 +63,10 @@ pub struct CrossSurfaceContextMatrixV1 {
     pub final_governance_consumer_authority_digest_prefix: String,
     #[serde(default)]
     pub governance_residual_sweep_digest_prefix: String,
+    #[serde(default)]
+    pub final_readiness_consumer_authority_digest_prefix: String,
+    #[serde(default)]
+    pub readiness_residual_sweep_digest_prefix: String,
     pub policy_graph_digest_prefix: String,
     pub manifest_digest_prefix: String,
     pub surfaces: Vec<CrossSurfaceEntryV1>,
@@ -253,6 +257,18 @@ pub fn interop_consistency_matrix(
         governance_residual_sweep_digest_prefix: operator_review
             .as_ref()
             .map(|review| review.governance_residual_sweep_digest_prefix.clone())
+            .unwrap_or_else(|| "MISSING".to_string()),
+        final_readiness_consumer_authority_digest_prefix: operator_review
+            .as_ref()
+            .map(|review| {
+                review
+                    .final_readiness_consumer_authority_digest_prefix
+                    .clone()
+            })
+            .unwrap_or_else(|| "MISSING".to_string()),
+        readiness_residual_sweep_digest_prefix: operator_review
+            .as_ref()
+            .map(|review| review.readiness_residual_sweep_digest_prefix.clone())
             .unwrap_or_else(|| "MISSING".to_string()),
         policy_graph_digest_prefix: expected_policy,
         manifest_digest_prefix: expected_manifest,
@@ -814,6 +830,8 @@ mod tests {
             canonical_governance_entry_digest_prefix: "e".to_string(),
             final_governance_consumer_authority_digest_prefix: "g".to_string(),
             governance_residual_sweep_digest_prefix: "r".to_string(),
+            final_readiness_consumer_authority_digest_prefix: "fr".to_string(),
+            readiness_residual_sweep_digest_prefix: "rr".to_string(),
             policy_graph_digest_prefix: "p".to_string(),
             manifest_digest_prefix: "m".to_string(),
             surfaces: vec![

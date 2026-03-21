@@ -50,6 +50,10 @@ pub struct OperatorWorkflowChainV1 {
     pub final_governance_consumer_authority_digest_prefix: String,
     #[serde(default)]
     pub governance_residual_sweep_digest_prefix: String,
+    #[serde(default)]
+    pub final_readiness_consumer_authority_digest_prefix: String,
+    #[serde(default)]
+    pub readiness_residual_sweep_digest_prefix: String,
     pub operator_review_packet_digest_prefix: String,
     pub operator_signoff_digest_prefix: String,
     pub interop_matrix_digest_prefix: String,
@@ -275,6 +279,14 @@ impl OperatorWorkflowPolicyV1 {
                 .review_packet
                 .governance_residual_sweep_digest_prefix
                 .clone(),
+            final_readiness_consumer_authority_digest_prefix: inputs
+                .review_packet
+                .final_readiness_consumer_authority_digest_prefix
+                .clone(),
+            readiness_residual_sweep_digest_prefix: inputs
+                .review_packet
+                .readiness_residual_sweep_digest_prefix
+                .clone(),
             operator_review_packet_digest_prefix,
             operator_signoff_digest_prefix,
             interop_matrix_digest_prefix,
@@ -462,6 +474,8 @@ mod tests {
             canonical_governance_entry_digest_prefix: "entry123456789012".to_string(),
             final_governance_consumer_authority_digest_prefix: "gov1234567890123".to_string(),
             governance_residual_sweep_digest_prefix: "sweep12345678901".to_string(),
+            final_readiness_consumer_authority_digest_prefix: "ready123456789012".to_string(),
+            readiness_residual_sweep_digest_prefix: "rrs1234567890123".to_string(),
             artifacts: OperatorReviewPacketArtifactsV1 {
                 backend_evidence_snapshot_digest_prefix: "a".repeat(16),
                 active_review_snapshot_digest_prefix: "b".repeat(16),
@@ -502,6 +516,8 @@ mod tests {
             canonical_governance_entry_digest_prefix: "entry123456789012".to_string(),
             final_governance_consumer_authority_digest_prefix: "gov1234567890123".to_string(),
             governance_residual_sweep_digest_prefix: "sweep12345678901".to_string(),
+            final_readiness_consumer_authority_digest_prefix: "ready123456789012".to_string(),
+            readiness_residual_sweep_digest_prefix: "rrs1234567890123".to_string(),
             gate_report_digests: GateReportDigestsV1 {
                 v0: "d".repeat(16),
                 v1: "e".repeat(16),
@@ -559,6 +575,8 @@ mod tests {
                 canonical_governance_entry_digest_prefix: "entry123456789012".to_string(),
                 final_governance_consumer_authority_digest_prefix: "gov1234567890123".to_string(),
                 governance_residual_sweep_digest_prefix: "sweep12345678901".to_string(),
+                final_readiness_consumer_authority_digest_prefix: "ready123456789012".to_string(),
+                readiness_residual_sweep_digest_prefix: "rrs1234567890123".to_string(),
                 policy_graph_digest_prefix: "policy123456789012".to_string(),
                 manifest_digest_prefix: "manifest1234567890".to_string(),
                 surfaces,

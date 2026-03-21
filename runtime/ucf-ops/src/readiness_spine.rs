@@ -17,10 +17,12 @@ use crate::{
 
 pub const CANONICAL_READINESS_SPINE_REQUIRED: &str = "CANONICAL_READINESS_SPINE_REQUIRED";
 pub const FINAL_READINESS_AUTHORITY_REQUIRED: &str = "FINAL_READINESS_AUTHORITY_REQUIRED";
+pub const FINAL_READINESS_INPUTS_REQUIRED: &str = "FINAL_READINESS_INPUTS_REQUIRED";
 pub const SLOT_REVIEWABILITY_TRUTH_REQUIRED: &str = "SLOT_REVIEWABILITY_TRUTH_REQUIRED";
 pub const REVIEWABILITY_REDUCTION_REQUIRED: &str = "REVIEWABILITY_REDUCTION_REQUIRED";
 pub const LEGACY_READINESS_INPUT_BLOCKED: &str = "LEGACY_READINESS_INPUT_BLOCKED";
 pub const SECONDARY_READINESS_PATH_BLOCKED: &str = "SECONDARY_READINESS_PATH_BLOCKED";
+pub const RESIDUAL_READINESS_PATH_BLOCKED: &str = "RESIDUAL_READINESS_PATH_BLOCKED";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -99,6 +101,15 @@ pub struct FinalReadinessAuthorityContextV1 {
     pub canonical_governance_entry_digest_prefix: String,
     pub canonical_readiness_spine_digest_prefix: String,
     pub canonical_readiness_authority_digest_prefix: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct FinalReadinessInputsContextV1 {
+    pub applied_supported_set_digest_prefix: String,
+    pub canonical_governance_entry_digest_prefix: String,
+    pub canonical_readiness_spine_digest_prefix: String,
+    pub canonical_readiness_authority_digest_prefix: String,
+    pub final_readiness_consumer_authority_digest_prefix: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -549,6 +560,67 @@ pub fn require_final_readiness_authority(
             .canonical_readiness_spine_digest_prefix
             .clone(),
         canonical_readiness_authority_digest_prefix: prefix_hex(&authority.authority_digest, 16),
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn require_final_readiness_inputs(
+    truths: &[SlotReviewabilityTruthV1],
+    reduction: Option<&ReviewabilityReductionV1>,
+    applied_scope: &AppliedSupportedSetContextV1,
+    entry: &CanonicalGovernanceEntryV1,
+    spine: Option<&CanonicalReadinessSpineV1>,
+    authority: Option<&CanonicalReadinessAuthorityV2>,
+    final_consumer_authority: Option<&crate::FinalReadinessConsumerAuthorityV1>,
+) -> Result<FinalReadinessInputsContextV1, OpsError> {
+    if truths.is_empty() {
+        return Err(OpsError::Invalid(
+            SLOT_REVIEWABILITY_TRUTH_REQUIRED.to_string(),
+        ));
+    }
+    if reduction.is_none() {
+        return Err(OpsError::Invalid(
+            REVIEWABILITY_REDUCTION_REQUIRED.to_string(),
+        ));
+    }
+    let final_authority =
+        require_final_readiness_authority(applied_scope, entry, spine, authority)?;
+    let Some(final_consumer_authority) = final_consumer_authority else {
+        return Err(OpsError::Invalid(
+            FINAL_READINESS_INPUTS_REQUIRED.to_string(),
+        ));
+    };
+    if !matches!(
+        final_consumer_authority.authority_status,
+        crate::FinalReadinessConsumerAuthorityStatusV1::Pass
+    ) {
+        return Err(OpsError::Invalid(
+            RESIDUAL_READINESS_PATH_BLOCKED.to_string(),
+        ));
+    }
+    let expected_final_consumer_digest = prefix_hex(&final_consumer_authority.authority_digest, 16);
+    if final_consumer_authority.applied_supported_set_digest_prefix
+        != final_authority.applied_supported_set_digest_prefix
+        || final_consumer_authority.canonical_governance_entry_digest_prefix
+            != final_authority.canonical_governance_entry_digest_prefix
+        || final_consumer_authority.canonical_readiness_spine_digest_prefix
+            != final_authority.canonical_readiness_spine_digest_prefix
+        || final_consumer_authority.canonical_readiness_authority_digest_prefix
+            != final_authority.canonical_readiness_authority_digest_prefix
+    {
+        return Err(OpsError::Invalid(
+            FINAL_READINESS_INPUTS_REQUIRED.to_string(),
+        ));
+    }
+    Ok(FinalReadinessInputsContextV1 {
+        applied_supported_set_digest_prefix: final_authority.applied_supported_set_digest_prefix,
+        canonical_governance_entry_digest_prefix: final_authority
+            .canonical_governance_entry_digest_prefix,
+        canonical_readiness_spine_digest_prefix: final_authority
+            .canonical_readiness_spine_digest_prefix,
+        canonical_readiness_authority_digest_prefix: final_authority
+            .canonical_readiness_authority_digest_prefix,
+        final_readiness_consumer_authority_digest_prefix: expected_final_consumer_digest,
     })
 }
 
