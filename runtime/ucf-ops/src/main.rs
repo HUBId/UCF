@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use ucf_ops::{
     adversarial_run, airgap_export_models, airgap_export_policies, airgap_export_repro,
     airgap_export_run_cert, airgap_import, alerts_report, attest_bundle, attest_keys_generate,
-    attest_run, attest_verify, audit_scan, bench_run, bringup, causal_slice,
+    attest_run, attest_verify, audit_scan, bench_run, bringup, bundle_residual_sweep, causal_slice,
     continuity_authority_check, determinism_scan, diagnostics, diagnostics_collect, drift_report,
     ebm_export_dataset, ess_compact, ess_snapshot, event_id_for_decision, explain_tick,
     explain_why, export_bugreport, export_policy_key_registry_v1, exports_bundle_spine_check,
@@ -42,7 +42,8 @@ use ucf_ops::{
     BenchArgs, BugKitBuildArgs, CanonicalBundleAuthorityStatusV2,
     CanonicalReadinessAuthorityStatusV2, ChangeImpactArgs, ConfigV1, ContinuityAuthorityStatusV1,
     CounterfactualRequest, DevLoopArgs, DocsLintArgs, DocsLintMode, DocsLintStatus,
-    ExplainTickRequest, ExportArgs, FinalBundleConsumerAuthorityStatusV1, FinalContinuityStatusV2,
+    ExplainTickRequest, ExportArgs, FinalBundleConsumerAuthorityStatusV1,
+    FinalBundleResidualSweepStatusV1, FinalContinuityStatusV2,
     FinalGovernanceConsumerAuthorityStatusV1, FinalPrimarySemanticsConsumerAuthorityStatusV1,
     FinalReadinessConsumerAuthorityStatusV1, FinalReadinessResidualSweepStatusV1, GateStatus,
     GoldenGenerateArgs, GoldenVerifyArgs, GoldenVerifyReport, GovernanceEntryAuthorityStatusV2,
@@ -2431,6 +2432,21 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 std::process::exit(2);
             }
         }
+        "bundle-residual-sweep" => {
+            let out = arg_value(&args, "--out")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("./out/bundle_residual_sweep.json"));
+            let report = bundle_residual_sweep(&workdir, &out)?;
+            println!("status={:?}", report.sweep.sweep_status);
+            println!("sweep_digest={}", report.sweep.sweep_digest);
+            println!("out={}", out.display());
+            if !matches!(
+                report.sweep.sweep_status,
+                FinalBundleResidualSweepStatusV1::Pass
+            ) {
+                std::process::exit(2);
+            }
+        }
 
         "governance-surfaces-check" => {
             let out = arg_value(&args, "--out")
@@ -3234,7 +3250,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             eprintln!(
-                "usage: ucf-ops <bringup|diag|health|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|attest|repro|exports|readiness-gate|preflight|goldens|nightly|dev|troubleshoot|adversarial-run|out|release|bench|runs|status|strict|ess|ebm|drift|alerts|operator|policy|portability|spec|change-impact|soak|governance-surfaces-check|governance-entry-check|governance-entry-sweep|final-governance-consumer-sweep|governance-residual-sweep|final-readiness-consumer-sweep|readiness-residual-sweep|final-bundle-consumer-sweep|final-continuity-sweep|remediation-consistency-check|remediation-interop-check|remediation-spine-check|primary-semantics-sweep|final-primary-semantics-sweep|interop|v0|v1|v2|v3|v4|v5|v6|v7|v8|v9|v10|version> [--workdir <path>] [--bundle <path>]"
+                "usage: ucf-ops <bringup|diag|health|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|attest|repro|exports|readiness-gate|preflight|goldens|nightly|dev|troubleshoot|adversarial-run|out|release|bench|runs|status|strict|ess|ebm|drift|alerts|operator|policy|portability|spec|change-impact|soak|governance-surfaces-check|governance-entry-check|governance-entry-sweep|final-governance-consumer-sweep|governance-residual-sweep|final-readiness-consumer-sweep|readiness-residual-sweep|final-bundle-consumer-sweep|bundle-residual-sweep|final-continuity-sweep|remediation-consistency-check|remediation-interop-check|remediation-spine-check|primary-semantics-sweep|final-primary-semantics-sweep|interop|v0|v1|v2|v3|v4|v5|v6|v7|v8|v9|v10|version> [--workdir <path>] [--bundle <path>]"
             );
             std::process::exit(1);
         }

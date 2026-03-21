@@ -39,6 +39,8 @@ pub struct CanonicalRoundTripChainV1 {
     pub operator_export_authority_chain_digest_prefix: String,
     pub canonical_bundle_spine_digest_prefix: Option<String>,
     pub canonical_bundle_authority_digest_prefix: Option<String>,
+    pub final_bundle_consumer_authority_digest_prefix: Option<String>,
+    pub bundle_residual_sweep_digest_prefix: Option<String>,
     pub roundtrip_status: CanonicalRoundTripChainStatusV1,
     pub blocking_codes: Vec<String>,
     pub remediation_codes: Vec<String>,
@@ -182,6 +184,18 @@ pub fn operator_roundtrip_chain_check(
         blocking.insert("ROUNDTRIP_CHAIN_BUNDLE_AUTHORITY_MISMATCH".to_string());
         remediation.insert("run_exports_bundle_spine_check".to_string());
     }
+    if bundle_refs.final_bundle_consumer_authority_digest_prefix
+        != roundtrip.final_bundle_consumer_authority_digest_prefix
+    {
+        blocking.insert("ROUNDTRIP_CHAIN_FINAL_BUNDLE_CONSUMER_MISMATCH".to_string());
+        remediation.insert("run_final_bundle_consumer_sweep".to_string());
+    }
+    if bundle_refs.bundle_residual_sweep_digest_prefix
+        != roundtrip.bundle_residual_sweep_digest_prefix
+    {
+        blocking.insert("ROUNDTRIP_CHAIN_BUNDLE_RESIDUAL_SWEEP_MISMATCH".to_string());
+        remediation.insert("run_bundle_residual_sweep".to_string());
+    }
 
     if matches!(signoff.decision, SignoffDecisionStateV1::NotReady) {
         blocking.insert("ROUNDTRIP_CHAIN_OPERATOR_NOT_READY".to_string());
@@ -213,6 +227,14 @@ pub fn operator_roundtrip_chain_check(
             DIGEST_PREFIX_LEN,
         )),
         canonical_bundle_authority_digest_prefix: bundle_spine_report.authority_digest_prefix,
+        final_bundle_consumer_authority_digest_prefix: Some(
+            roundtrip
+                .final_bundle_consumer_authority_digest_prefix
+                .clone(),
+        ),
+        bundle_residual_sweep_digest_prefix: Some(
+            roundtrip.bundle_residual_sweep_digest_prefix.clone(),
+        ),
         roundtrip_status: if blocking.is_empty() {
             CanonicalRoundTripChainStatusV1::Pass
         } else {
@@ -240,6 +262,8 @@ struct BundleChainRefs {
     operator_workflow_chain_digest_prefix: String,
     operator_export_authority_chain_digest_prefix: String,
     canonical_bundle_authority_digest_prefix: String,
+    final_bundle_consumer_authority_digest_prefix: String,
+    bundle_residual_sweep_digest_prefix: String,
 }
 
 fn extract_bundle_chain_refs(bundle: &Path) -> Result<BundleChainRefs, OpsError> {
@@ -258,6 +282,8 @@ fn extract_bundle_chain_refs(bundle: &Path) -> Result<BundleChainRefs, OpsError>
             &manifest.related_artifacts,
             &manifest.operator_signoff.digest_prefix,
             &manifest.canonical_bundle_authority_digest_prefix,
+            &manifest.final_bundle_consumer_authority_digest_prefix,
+            &manifest.bundle_residual_sweep_digest_prefix,
         ));
     }
 
@@ -276,6 +302,8 @@ fn extract_bundle_chain_refs(bundle: &Path) -> Result<BundleChainRefs, OpsError>
         &manifest.related_artifacts,
         &manifest.operator_signoff.digest_prefix,
         &manifest.canonical_bundle_authority_digest_prefix,
+        &manifest.final_bundle_consumer_authority_digest_prefix,
+        &manifest.bundle_residual_sweep_digest_prefix,
     ))
 }
 
@@ -283,6 +311,8 @@ fn refs_from_related(
     related: &[crate::CanonicalExportArtifactRefV1],
     signoff_fallback: &str,
     bundle_authority_fallback: &str,
+    final_bundle_consumer_authority_fallback: &str,
+    bundle_residual_sweep_fallback: &str,
 ) -> BundleChainRefs {
     let find = |kind: &str| {
         related
@@ -315,6 +345,18 @@ fn refs_from_related(
         } else {
             bundle_authority_fallback.to_string()
         },
+        final_bundle_consumer_authority_digest_prefix: if final_bundle_consumer_authority_fallback
+            .is_empty()
+        {
+            "MISSING".to_string()
+        } else {
+            final_bundle_consumer_authority_fallback.to_string()
+        },
+        bundle_residual_sweep_digest_prefix: if bundle_residual_sweep_fallback.is_empty() {
+            "MISSING".to_string()
+        } else {
+            bundle_residual_sweep_fallback.to_string()
+        },
     }
 }
 
@@ -345,6 +387,8 @@ mod tests {
             operator_export_authority_chain_digest_prefix: "77".repeat(8),
             canonical_bundle_spine_digest_prefix: Some("88".repeat(8)),
             canonical_bundle_authority_digest_prefix: Some("89".repeat(8)),
+            final_bundle_consumer_authority_digest_prefix: Some("8a".repeat(8)),
+            bundle_residual_sweep_digest_prefix: Some("8b".repeat(8)),
             roundtrip_status: CanonicalRoundTripChainStatusV1::Pass,
             blocking_codes: vec![],
             remediation_codes: vec!["run_x".to_string()],

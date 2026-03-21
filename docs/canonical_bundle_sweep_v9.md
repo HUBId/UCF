@@ -39,3 +39,7 @@ Use `cargo run -p ucf-ops -- continuity-authority-check --bundle <path> --out ./
 ## v10 finalization
 
 v10 finalizes universal bundle-input authority for canonical export consumers via `ucf-ops final-bundle-consumer-sweep`.
+
+## v11 residual cleanup
+
+v11 finalizes residual elimination with `ucf-ops bundle-residual-sweep`, ensuring canonical consumers cannot fall back to manifest-local bundle reconstruction.
