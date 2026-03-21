@@ -72,6 +72,12 @@ pub struct OperatorReviewPacketV1 {
     pub canonical_readiness_spine_digest_prefix: String,
     #[serde(default)]
     pub canonical_readiness_authority_digest_prefix: String,
+    #[serde(default)]
+    pub canonical_governance_entry_digest_prefix: String,
+    #[serde(default)]
+    pub final_governance_consumer_authority_digest_prefix: String,
+    #[serde(default)]
+    pub governance_residual_sweep_digest_prefix: String,
     pub artifacts: OperatorReviewPacketArtifactsV1,
     pub supported_slots: Vec<OperatorReviewPacketSlotV1>,
     pub blocking_codes: Vec<String>,
@@ -397,6 +403,13 @@ fn reduce_review_packet(
         &applied_scope,
         &reviewability_reduction_digest_prefix,
     )?;
+    packet.final_governance_consumer_authority_digest_prefix =
+        read_final_governance_prefix(Path::new("."), "out/final_governance_consumer_sweep.json");
+    packet.governance_residual_sweep_digest_prefix = read_sweep_digest_prefix(
+        Path::new("."),
+        "out/governance_residual_sweep.json",
+        "sweep_digest",
+    );
     packet.packet_digest = packet_digest(&packet)?;
     Ok(packet)
 }
@@ -454,6 +467,9 @@ fn build_from_snapshot(
             aligned: false,
             status_code: "MISSING".to_string(),
         },
+        canonical_governance_entry_digest_prefix: "MISSING".to_string(),
+        final_governance_consumer_authority_digest_prefix: "MISSING".to_string(),
+        governance_residual_sweep_digest_prefix: "MISSING".to_string(),
         snapshot_digest: "MISSING".to_string(),
     });
     let signoff = signoff.unwrap_or_else(|| OperatorSignoffDecisionV1 {
@@ -470,6 +486,9 @@ fn build_from_snapshot(
         reviewability_reduction_digest_prefix: "MISSING".to_string(),
         canonical_readiness_spine_digest_prefix: "MISSING".to_string(),
         canonical_readiness_authority_digest_prefix: "MISSING".to_string(),
+        canonical_governance_entry_digest_prefix: "MISSING".to_string(),
+        final_governance_consumer_authority_digest_prefix: "MISSING".to_string(),
+        governance_residual_sweep_digest_prefix: "MISSING".to_string(),
         gate_report_digests: crate::operator_signoff::GateReportDigestsV1 {
             v0: "MISSING".to_string(),
             v1: "MISSING".to_string(),
@@ -554,6 +573,13 @@ fn build_from_snapshot(
         applied_scope,
         "MISSING",
     )?;
+    packet.final_governance_consumer_authority_digest_prefix =
+        read_final_governance_prefix(Path::new("."), "out/final_governance_consumer_sweep.json");
+    packet.governance_residual_sweep_digest_prefix = read_sweep_digest_prefix(
+        Path::new("."),
+        "out/governance_residual_sweep.json",
+        "sweep_digest",
+    );
     packet.packet_digest = packet_digest(&packet)?;
     Ok(packet)
 }
@@ -580,6 +606,9 @@ fn build_blocked_minimal(
         reviewability_reduction_digest_prefix: "MISSING".to_string(),
         canonical_readiness_spine_digest_prefix: "MISSING".to_string(),
         canonical_readiness_authority_digest_prefix: "MISSING".to_string(),
+        canonical_governance_entry_digest_prefix: "MISSING".to_string(),
+        final_governance_consumer_authority_digest_prefix: "MISSING".to_string(),
+        governance_residual_sweep_digest_prefix: "MISSING".to_string(),
         artifacts: OperatorReviewPacketArtifactsV1 {
             backend_evidence_snapshot_digest_prefix: "MISSING".to_string(),
             active_review_snapshot_digest_prefix: "MISSING".to_string(),
@@ -663,6 +692,15 @@ fn build_packet(
         canonical_readiness_authority_digest_prefix: signoff
             .canonical_readiness_authority_digest_prefix
             .clone(),
+        canonical_governance_entry_digest_prefix: signoff
+            .canonical_governance_entry_digest_prefix
+            .clone(),
+        final_governance_consumer_authority_digest_prefix: signoff
+            .final_governance_consumer_authority_digest_prefix
+            .clone(),
+        governance_residual_sweep_digest_prefix: signoff
+            .governance_residual_sweep_digest_prefix
+            .clone(),
         artifacts: OperatorReviewPacketArtifactsV1 {
             backend_evidence_snapshot_digest_prefix: prefix16(&snapshot.snapshot_digest),
             active_review_snapshot_digest_prefix: prefix16(&active.snapshot_digest),
@@ -734,6 +772,36 @@ fn check_gates(
 
 fn maybe_read_json<T: for<'de> Deserialize<'de>>(path: &Option<PathBuf>) -> Option<T> {
     path.as_ref().and_then(|p| read_json::<T>(p).ok())
+}
+
+fn read_final_governance_prefix(workdir: &Path, rel_path: &str) -> String {
+    let Ok(bytes) = fs::read(workdir.join(rel_path)) else {
+        return "MISSING".to_string();
+    };
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+        return "MISSING".to_string();
+    };
+    value
+        .get("authority")
+        .and_then(|authority| authority.get("authority_digest"))
+        .and_then(serde_json::Value::as_str)
+        .map(prefix16)
+        .unwrap_or_else(|| "MISSING".to_string())
+}
+
+fn read_sweep_digest_prefix(workdir: &Path, rel_path: &str, field: &str) -> String {
+    let Ok(bytes) = fs::read(workdir.join(rel_path)) else {
+        return "MISSING".to_string();
+    };
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+        return "MISSING".to_string();
+    };
+    value
+        .get("sweep")
+        .and_then(|sweep| sweep.get(field))
+        .and_then(serde_json::Value::as_str)
+        .map(prefix16)
+        .unwrap_or_else(|| "MISSING".to_string())
 }
 
 fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T, OpsError> {
@@ -931,6 +999,9 @@ mod tests {
                 aligned: true,
                 status_code: "ALIGNED".to_string(),
             },
+            canonical_governance_entry_digest_prefix: "MISSING".to_string(),
+            final_governance_consumer_authority_digest_prefix: "MISSING".to_string(),
+            governance_residual_sweep_digest_prefix: "MISSING".to_string(),
             snapshot_digest: "activedigest111111".to_string(),
         }
     }
@@ -950,6 +1021,9 @@ mod tests {
             reviewability_reduction_digest_prefix: "reduction1".to_string(),
             canonical_readiness_spine_digest_prefix: "spine1".to_string(),
             canonical_readiness_authority_digest_prefix: "spine1".to_string(),
+            canonical_governance_entry_digest_prefix: "entry1".to_string(),
+            final_governance_consumer_authority_digest_prefix: "gov1".to_string(),
+            governance_residual_sweep_digest_prefix: "sweep1".to_string(),
             gate_report_digests: crate::operator_signoff::GateReportDigestsV1 {
                 v0: "g0".to_string(),
                 v1: "g1".to_string(),

@@ -49,3 +49,4 @@ The final cross-surface canonical primary blocking/remediation proof is tracked 
 ## v10 update
 
 v10 finalizes universal governance-input authority across canonical consumers via `final-governance-consumer-sweep` and `FinalGovernanceConsumerAuthorityV1`.
+v11 adds `governance-residual-sweep` to eliminate the last residual governance reconstruction paths from canonical consumers.

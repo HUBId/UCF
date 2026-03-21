@@ -44,6 +44,12 @@ pub struct OperatorWorkflowChainV1 {
     pub canonical_readiness_spine_digest_prefix: String,
     #[serde(default)]
     pub canonical_readiness_authority_digest_prefix: String,
+    #[serde(default)]
+    pub canonical_governance_entry_digest_prefix: String,
+    #[serde(default)]
+    pub final_governance_consumer_authority_digest_prefix: String,
+    #[serde(default)]
+    pub governance_residual_sweep_digest_prefix: String,
     pub operator_review_packet_digest_prefix: String,
     pub operator_signoff_digest_prefix: String,
     pub interop_matrix_digest_prefix: String,
@@ -257,6 +263,18 @@ impl OperatorWorkflowPolicyV1 {
                 .review_packet
                 .canonical_readiness_authority_digest_prefix
                 .clone(),
+            canonical_governance_entry_digest_prefix: inputs
+                .review_packet
+                .canonical_governance_entry_digest_prefix
+                .clone(),
+            final_governance_consumer_authority_digest_prefix: inputs
+                .review_packet
+                .final_governance_consumer_authority_digest_prefix
+                .clone(),
+            governance_residual_sweep_digest_prefix: inputs
+                .review_packet
+                .governance_residual_sweep_digest_prefix
+                .clone(),
             operator_review_packet_digest_prefix,
             operator_signoff_digest_prefix,
             interop_matrix_digest_prefix,
@@ -441,6 +459,9 @@ mod tests {
             reviewability_reduction_digest_prefix: "reviewred12345678".to_string(),
             canonical_readiness_spine_digest_prefix: "spine123456789012".to_string(),
             canonical_readiness_authority_digest_prefix: "spine123456789012".to_string(),
+            canonical_governance_entry_digest_prefix: "entry123456789012".to_string(),
+            final_governance_consumer_authority_digest_prefix: "gov1234567890123".to_string(),
+            governance_residual_sweep_digest_prefix: "sweep12345678901".to_string(),
             artifacts: OperatorReviewPacketArtifactsV1 {
                 backend_evidence_snapshot_digest_prefix: "a".repeat(16),
                 active_review_snapshot_digest_prefix: "b".repeat(16),
@@ -478,6 +499,9 @@ mod tests {
             reviewability_reduction_digest_prefix: "reviewred12345678".to_string(),
             canonical_readiness_spine_digest_prefix: "spine123456789012".to_string(),
             canonical_readiness_authority_digest_prefix: "spine123456789012".to_string(),
+            canonical_governance_entry_digest_prefix: "entry123456789012".to_string(),
+            final_governance_consumer_authority_digest_prefix: "gov1234567890123".to_string(),
+            governance_residual_sweep_digest_prefix: "sweep12345678901".to_string(),
             gate_report_digests: GateReportDigestsV1 {
                 v0: "d".repeat(16),
                 v1: "e".repeat(16),
@@ -532,6 +556,9 @@ mod tests {
             matrix: CrossSurfaceContextMatrixV1 {
                 schema_version: 1,
                 applied_supported_set_digest_prefix: "scope123456789012".to_string(),
+                canonical_governance_entry_digest_prefix: "entry123456789012".to_string(),
+                final_governance_consumer_authority_digest_prefix: "gov1234567890123".to_string(),
+                governance_residual_sweep_digest_prefix: "sweep12345678901".to_string(),
                 policy_graph_digest_prefix: "policy123456789012".to_string(),
                 manifest_digest_prefix: "manifest1234567890".to_string(),
                 surfaces,

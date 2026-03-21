@@ -74,6 +74,12 @@ pub struct OperatorSignoffDecisionV1 {
     pub canonical_readiness_spine_digest_prefix: String,
     #[serde(default)]
     pub canonical_readiness_authority_digest_prefix: String,
+    #[serde(default)]
+    pub canonical_governance_entry_digest_prefix: String,
+    #[serde(default)]
+    pub final_governance_consumer_authority_digest_prefix: String,
+    #[serde(default)]
+    pub governance_residual_sweep_digest_prefix: String,
     pub gate_report_digests: GateReportDigestsV1,
     pub reasons: Vec<String>,
     pub remediation_codes: Vec<String>,
@@ -231,6 +237,17 @@ pub fn operator_signoff(
             merge_canonical_remediations(decision.remediation_codes.iter(), CODE_CAP);
         decision.decision_digest = decision_digest(&decision)?;
     }
+    if decision.canonical_governance_entry_digest_prefix.is_empty() {
+        decision.canonical_governance_entry_digest_prefix = "MISSING".to_string();
+    }
+    decision.final_governance_consumer_authority_digest_prefix =
+        read_final_governance_prefix(workdir, "out/final_governance_consumer_sweep.json");
+    decision.governance_residual_sweep_digest_prefix = read_sweep_digest_prefix(
+        workdir,
+        "out/governance_residual_sweep.json",
+        "sweep_digest",
+    );
+    decision.decision_digest = decision_digest(&decision)?;
 
     if let Some(parent) = out.parent() {
         fs::create_dir_all(parent)?;
@@ -542,6 +559,9 @@ fn build_not_ready_minimal(
         reviewability_reduction_digest_prefix: "MISSING".to_string(),
         canonical_readiness_spine_digest_prefix: "MISSING".to_string(),
         canonical_readiness_authority_digest_prefix: "MISSING".to_string(),
+        canonical_governance_entry_digest_prefix: "MISSING".to_string(),
+        final_governance_consumer_authority_digest_prefix: "MISSING".to_string(),
+        governance_residual_sweep_digest_prefix: "MISSING".to_string(),
         gate_report_digests: GateReportDigestsV1 {
             v0: digest_opt(v0.as_ref())?,
             v1: digest_opt(v1.as_ref())?,
@@ -584,6 +604,9 @@ fn build_not_ready_from_snapshot(
         reviewability_reduction_digest_prefix: "MISSING".to_string(),
         canonical_readiness_spine_digest_prefix: "MISSING".to_string(),
         canonical_readiness_authority_digest_prefix: "MISSING".to_string(),
+        canonical_governance_entry_digest_prefix: "MISSING".to_string(),
+        final_governance_consumer_authority_digest_prefix: "MISSING".to_string(),
+        governance_residual_sweep_digest_prefix: "MISSING".to_string(),
         gate_report_digests: GateReportDigestsV1 {
             v0: digest_opt(v0.as_ref())?,
             v1: digest_opt(v1.as_ref())?,
@@ -635,6 +658,9 @@ fn build_decision(
             .to_string(),
         canonical_readiness_authority_digest_prefix: canonical_readiness_authority_digest_prefix
             .to_string(),
+        canonical_governance_entry_digest_prefix: "MISSING".to_string(),
+        final_governance_consumer_authority_digest_prefix: "MISSING".to_string(),
+        governance_residual_sweep_digest_prefix: "MISSING".to_string(),
         gate_report_digests: GateReportDigestsV1 {
             v0: digest_opt(v0.as_ref())?,
             v1: digest_opt(v1.as_ref())?,
@@ -786,6 +812,36 @@ fn discover_report(out_root: &Path, file: &str, args: &OperatorSignoffArgs) -> O
 fn maybe_read_json<T: for<'de> Deserialize<'de>>(path: &Option<PathBuf>) -> Option<T> {
     let path = path.as_ref()?;
     serde_json::from_slice(&fs::read(path).ok()?).ok()
+}
+
+fn read_final_governance_prefix(workdir: &Path, rel_path: &str) -> String {
+    let Ok(bytes) = fs::read(workdir.join(rel_path)) else {
+        return "MISSING".to_string();
+    };
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+        return "MISSING".to_string();
+    };
+    value
+        .get("authority")
+        .and_then(|authority| authority.get("authority_digest"))
+        .and_then(serde_json::Value::as_str)
+        .map(prefix16)
+        .unwrap_or_else(|| "MISSING".to_string())
+}
+
+fn read_sweep_digest_prefix(workdir: &Path, rel_path: &str, field: &str) -> String {
+    let Ok(bytes) = fs::read(workdir.join(rel_path)) else {
+        return "MISSING".to_string();
+    };
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+        return "MISSING".to_string();
+    };
+    value
+        .get("sweep")
+        .and_then(|sweep| sweep.get(field))
+        .and_then(serde_json::Value::as_str)
+        .map(prefix16)
+        .unwrap_or_else(|| "MISSING".to_string())
 }
 
 #[cfg(test)]
@@ -1098,6 +1154,9 @@ mod tests {
                 aligned: true,
                 status_code: "ALIGNED".to_string(),
             },
+            canonical_governance_entry_digest_prefix: "MISSING".to_string(),
+            final_governance_consumer_authority_digest_prefix: "MISSING".to_string(),
+            governance_residual_sweep_digest_prefix: "MISSING".to_string(),
             snapshot_digest: "snapshot1111".to_string(),
         }
     }
