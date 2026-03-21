@@ -1,6 +1,6 @@
 # Artifact Schema Snapshots
 
-This repository enforces deterministic shape snapshots for governance/review/export/interop artifacts that must remain stable across v3/v4/v5/v6/v7/v8/v9/v10 hardening.
+This repository enforces deterministic shape snapshots for governance/review/export/interop artifacts that must remain stable across v3/v4/v5/v6/v7/v8/v9/v10/v11 hardening.
 
 ## Covered artifacts
 
@@ -28,10 +28,14 @@ Snapshots are generated under `docs/artifact_schema_snapshots/`:
 - `cross_surface_condition_observation_v1.json` (v7)
 - `cross_surface_context_matrix_v1.json` (v6/v8 additive drift tracked)
 - `final_bundle_consumer_authority_v1.json` (v10 final consumer-authority freeze)
+- `final_bundle_residual_sweep_v1.json` (v11 final residual-sweep freeze)
 - `final_continuity_authority_v2.json` (v10 sole top-level continuity authority)
 - `final_governance_consumer_authority_v1.json` (v10 final consumer-authority freeze)
+- `final_governance_residual_sweep_v1.json` (v11 final residual-sweep freeze)
 - `final_primary_semantics_consumer_authority_v1.json` (v10 final consumer-authority freeze)
+- `final_primary_semantics_residual_sweep_v1.json` (v11 final residual-sweep freeze)
 - `final_readiness_consumer_authority_v1.json` (v10 final consumer-authority freeze)
+- `final_readiness_residual_sweep_v1.json` (v11 final residual-sweep freeze)
 - `governance_primary_surfaces_v1.json`
 - `interop_consistency_matrix_report_v1.json`
 - `operator_report_v1.json`
@@ -49,6 +53,7 @@ Snapshots are generated under `docs/artifact_schema_snapshots/`:
 - `supported_scope_execution_v3.json` (v8)
 - `supported_scope_execution_v4.json` (v9 canonical supported-scope execution)
 - `supported_scope_execution_v5.json` (v10 final supported-scope execution)
+- `supported_scope_execution_v6.json` (v11 supported-scope execution freeze)
 - `supported_scope_reevaluation_v1.json` (v7)
 - `v3_gate_report_v1.json`
 - `v4_gate_report_v1.json`
@@ -59,10 +64,10 @@ Snapshots are generated under `docs/artifact_schema_snapshots/`:
 - `v10_gate_report_v1.json` (v10 consolidated gate)
 - `index.json` (covered artifact index)
 
-v10 contract points now frozen here include:
+v11 contract points now frozen here include:
 
 - `canonical_governance_entry_authority_v2`
-- `supported_scope_execution_v5`
+- `supported_scope_execution_v6`
 - `canonical_readiness_authority_v2`
 - `canonical_bundle_authority_v2`
 - `canonical_primary_semantics_authority_v1`
@@ -70,8 +75,12 @@ v10 contract points now frozen here include:
 - `final_readiness_consumer_authority_v1`
 - `final_bundle_consumer_authority_v1`
 - `final_primary_semantics_consumer_authority_v1`
+- `final_governance_residual_sweep_v1`
+- `final_readiness_residual_sweep_v1`
+- `final_bundle_residual_sweep_v1`
+- `final_primary_semantics_residual_sweep_v1`
 
-Related additive updates in canonical governance/readiness/bundle/primary-semantics authority families, operator signoff/review/workflow, and v9/v10-adjacent gate/interop families remain tracked through the same snapshot lane.
+Related additive updates in canonical governance/readiness/bundle/primary-semantics authority families, operator signoff/review/workflow, and v9/v10/v11-adjacent gate/interop families remain tracked through the same snapshot lane.
 
 ## Regeneration
 

@@ -1,0 +1,40 @@
+{
+  "artifact_id": "final_governance_residual_sweep_v1",
+  "type_name": "FinalGovernanceResidualSweepV1",
+  "source_file": "runtime/ucf-ops/src/governance_residual_sweep.rs",
+  "required_fields": [
+    "applied_supported_set_digest_prefix",
+    "canonical_governance_authority_digest_prefix",
+    "canonical_governance_entry_digest_prefix",
+    "covered_consumer_count",
+    "final_governance_consumer_authority_digest_prefix",
+    "residual_path_count",
+    "sweep_digest",
+    "sweep_status"
+  ],
+  "optional_fields": [],
+  "field_types": {
+    "applied_supported_set_digest_prefix": "String",
+    "canonical_governance_authority_digest_prefix": "String",
+    "canonical_governance_entry_digest_prefix": "String",
+    "covered_consumer_count": "u16",
+    "final_governance_consumer_authority_digest_prefix": "String",
+    "residual_path_count": "u16",
+    "sweep_digest": "String",
+    "sweep_status": "GovernanceResidualSweepStatusV1"
+  },
+  "enum_variants": {
+    "GovernanceResidualMismatchCategoryV1": [
+      "ConsumerSkippedFinalGovernanceInputs",
+      "ConsumerUsedResidualGovernancePath",
+      "GovernanceInputEntryMismatch",
+      "GovernanceInputScopeMismatch",
+      "ResidualGovernancePathPresent"
+    ],
+    "GovernanceResidualSweepStatusV1": [
+      "Fail",
+      "LegacyPresent",
+      "Pass"
+    ]
+  }
+}
