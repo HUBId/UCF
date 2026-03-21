@@ -226,6 +226,20 @@ mod tests {
     use super::*;
     #[cfg(any(feature = "compute-candle", feature = "compute-burn"))]
     use crate::{ComputeInput, FrameId};
+    use std::sync::{Mutex, OnceLock};
+
+    fn env_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    fn clear_model_env_overrides() {
+        std::env::remove_var("UCF_MODEL_MANIFEST");
+        for slot in crate::model_store::ModelSlot::all() {
+            std::env::remove_var(format!("UCF_MODEL_{}_ENABLED", slot.env_key()));
+            std::env::remove_var(format!("UCF_MODEL_PIN_{}", slot.env_key()));
+        }
+    }
 
     #[test]
     fn env_parse_defaults() {
@@ -265,6 +279,8 @@ mod tests {
     }
     #[test]
     fn candle_disabled_without_feature() {
+        let _lock = env_lock().lock().expect("lock poisoned");
+        clear_model_env_overrides();
         let cfg = ComputeBackendConfig {
             kind: ComputeBackendKind::Candle,
             ..ComputeBackendConfig::default()
@@ -289,6 +305,8 @@ mod tests {
 
     #[test]
     fn burn_profile_behavior() {
+        let _lock = env_lock().lock().expect("lock poisoned");
+        clear_model_env_overrides();
         let cfg = ComputeBackendConfig {
             kind: ComputeBackendKind::Burn,
             ..ComputeBackendConfig::default()
@@ -327,6 +345,8 @@ mod tests {
     #[cfg(feature = "compute-candle")]
     #[test]
     fn candle_profile_differs_from_stub_deterministically() {
+        let _lock = env_lock().lock().expect("lock poisoned");
+        clear_model_env_overrides();
         let input = ComputeInput {
             frame_id: FrameId(11),
             t: 5,
