@@ -6,16 +6,15 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     artifact_schema, check_artifact_schema_snapshots, docs_lint, final_bundle_consumer_sweep,
-    final_continuity_sweep, final_governance_consumer_sweep, final_primary_semantics_sweep,
-    final_readiness_consumer_sweep, load_applied_supported_set_context_v1,
-    models_consistency_check, portability_check, v0_gate, v1_gate, v2_gate, v3_gate, v4_gate,
-    v5_gate, v6_gate, v7_gate, v8_gate, v9_gate, DocsLintArgs, DocsLintMode,
-    FinalBundleConsumerAuthorityStatusV1, FinalContinuityStatusV2,
+    final_governance_consumer_sweep, final_primary_semantics_sweep, final_readiness_consumer_sweep,
+    load_applied_supported_set_context_v1, models_consistency_check, portability_check,
+    residual_free_continuity_sweep, v0_gate, v1_gate, v2_gate, v3_gate, v4_gate, v5_gate, v6_gate,
+    v7_gate, v8_gate, v9_gate, DocsLintArgs, DocsLintMode, FinalBundleConsumerAuthorityStatusV1,
     FinalGovernanceConsumerAuthorityStatusV1, FinalPrimarySemanticsConsumerAuthorityStatusV1,
-    FinalReadinessConsumerAuthorityStatusV1, GateStatus, OpsError, SupportedScopeExecutionV5,
-    V0GateOverallStatus, V1GateOverallStatus, V2GateOverallStatus, V3GateOverallStatus,
-    V4GateOverallStatus, V5GateOverallStatus, V6GateOverallStatus, V7GateOverallStatus,
-    V8GateOverallStatus, V9GateOverallStatus,
+    FinalReadinessConsumerAuthorityStatusV1, GateStatus, OpsError, ResidualFreeContinuityStatusV1,
+    SupportedScopeExecutionV5, V0GateOverallStatus, V1GateOverallStatus, V2GateOverallStatus,
+    V3GateOverallStatus, V4GateOverallStatus, V5GateOverallStatus, V6GateOverallStatus,
+    V7GateOverallStatus, V8GateOverallStatus, V9GateOverallStatus,
 };
 
 const DIGEST_PREFIX_LEN: usize = 16;
@@ -274,10 +273,10 @@ pub fn v10_gate(workdir: &Path, out: &Path) -> Result<V10GateReportV1, OpsError>
     let continuity = continuity_bundle
         .as_ref()
         .map(|bundle_path| {
-            final_continuity_sweep(
+            residual_free_continuity_sweep(
                 workdir,
                 bundle_path,
-                &workdir.join("out/final_continuity_sweep_v10_gate.json"),
+                &workdir.join("out/residual_free_continuity_sweep_v10_gate.json"),
             )
         })
         .transpose()?;
@@ -285,7 +284,10 @@ pub fn v10_gate(workdir: &Path, out: &Path) -> Result<V10GateReportV1, OpsError>
         GateStatus::Fail
     } else {
         gate_from_bool(continuity.as_ref().is_some_and(|report| {
-            matches!(report.continuity_status, FinalContinuityStatusV2::Pass)
+            matches!(
+                report.continuity_status,
+                ResidualFreeContinuityStatusV1::Pass
+            )
         }))
     };
     checks.push(v10_gate_check(
@@ -298,7 +300,7 @@ pub fn v10_gate(workdir: &Path, out: &Path) -> Result<V10GateReportV1, OpsError>
                 .map(|p| p.display().to_string())
                 .unwrap_or_else(|| "missing".to_string()),
         )],
-        "REMEDIATE_FINAL_CONTINUITY_AUTHORITY",
+        "REMEDIATE_RESIDUAL_FREE_CONTINUITY_AUTHORITY",
         "NOTE_REQUIRED_SOLE_TOP_LEVEL_CONTINUITY",
     ));
 
@@ -444,7 +446,7 @@ pub fn v10_gate(workdir: &Path, out: &Path) -> Result<V10GateReportV1, OpsError>
         if continuity.as_ref().is_some_and(|report| {
             matches!(
                 report.continuity_status,
-                FinalContinuityStatusV2::LegacyPresent
+                ResidualFreeContinuityStatusV1::LegacyPresent
             )
         }) {
             GateStatus::Fail
@@ -458,7 +460,7 @@ pub fn v10_gate(workdir: &Path, out: &Path) -> Result<V10GateReportV1, OpsError>
                 .is_some_and(|report| {
                     matches!(
                         report.continuity_status,
-                        FinalContinuityStatusV2::LegacyPresent
+                        ResidualFreeContinuityStatusV1::LegacyPresent
                     )
                 })
                 .to_string(),

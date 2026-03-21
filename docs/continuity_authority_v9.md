@@ -43,3 +43,9 @@ Status is bounded to `PASS | FAIL | LEGACY_PRESENT` and fail-closed mismatch cat
 
 `continuity-authority-check` bleibt als **SUBORDINATE_CONTINUITY_CONTRIBUTOR** erhalten.
 Die einzige top-level Kontinuitätsautorität ist `final-continuity-sweep` (`FinalContinuityAuthorityV2`).
+
+
+## v11 note
+
+`continuity-authority-check` is a subordinate contributor; it is not the top-level continuity proof.
+The sole top-level proof is `residual-free-continuity-sweep`.

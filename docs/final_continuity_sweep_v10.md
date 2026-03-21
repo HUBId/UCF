@@ -52,3 +52,9 @@ cargo run -p ucf-ops -- final-continuity-sweep --bundle <path> --out ./out/final
 3. `cargo run -p ucf-ops -- final-bundle-consumer-sweep --out ./out/final_bundle_consumer_sweep.json`
 4. `cargo run -p ucf-ops -- final-primary-semantics-sweep --out ./out/final_primary_semantics_sweep.json`
 5. `cargo run -p ucf-ops -- final-continuity-sweep --bundle <path> --out ./out/final_continuity_sweep.json`
+
+
+## v11 residual-free finalization
+
+`final-continuity-sweep` is now a legacy subordinate continuity surface.
+Top-level authority moved to `residual-free-continuity-sweep` (`ResidualFreeContinuityAuthorityV1`).

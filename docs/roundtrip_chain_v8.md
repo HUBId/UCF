@@ -45,3 +45,9 @@ Use `cargo run -p ucf-ops -- continuity-authority-check --bundle <path> --out ./
 
 `CanonicalRoundTripChainV1` ist ab v10 ein **SUBORDINATE_CONTINUITY_CONTRIBUTOR**.
 Finale PASS/FAIL-Top-Level-Autorität erfolgt ausschließlich über `final-continuity-sweep`.
+
+
+## v11 residual-free alignment
+
+`CanonicalRoundTripChainV1` is a subordinate continuity contributor only.
+Residual-free top-level PASS/FAIL is emitted exclusively by `residual-free-continuity-sweep`.

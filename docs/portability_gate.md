@@ -381,3 +381,5 @@ cargo run -p ucf-ops -- portability report --out ./out/portability_report.json
 - `docs/bundle_spine_v8.md`
 - `docs/remediation_spine_consistency_v8.md`
 - `docs/artifact_schema_snapshots.md`
+
+- `docs/residual_free_continuity_v11.md`

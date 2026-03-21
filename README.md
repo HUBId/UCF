@@ -181,3 +181,5 @@ Local API compatibility checks:
 - `python scripts/sdk_api_snapshot.py check --baseline-ref HEAD^`
 
 See `docs/sdk_versioning.md` for semver and deprecation policy.
+
+- `docs/residual_free_continuity_v11.md`
