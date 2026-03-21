@@ -1,42 +1,19 @@
 # Supported Set Apply v6
 
-## Purpose
+`models supported-set-apply` now requires a current `SupportedScopeExecutionV6` execution artifact and writes canonical applied scope as `SupportedRealSlotSetV2`.
 
-`models supported-set-apply` executes the governance decision only after a current `SupportedScopeExecutionV5` result is present and writes the **applied** supported-slot scope as `SupportedRealSlotSetV2`.
+## v11 behavior
 
-This separates review from execution:
+- `REAFFIRM_FREEZE` execution emits a fresh frozen applied artifact bound to current governance state.
+- `EXECUTE_EXPAND_BY_ONE` may add exactly one slot.
+- Stale policy/reevaluation/prior execution artifacts are denied in execution and do not apply directly.
 
-- review (`supported-set-review`) is advisory policy output,
-- apply (`supported-set-apply`) is the authoritative applied scope artifact.
-
-## FREEZE vs EXPANDED
-
-- `FROZEN`: resulting set remains equal to the previous supported set. A `SupportedSetFreezeRecordV1` is emitted.
-- `EXPANDED`: resulting set equals previous set plus exactly one slot, only when scaffolding checks still pass at execution time. A `SupportedSetExpansionRecordV1` is emitted.
-
-If expansion preconditions fail during apply, execution is denied with stable denial codes and falls back to `FROZEN`.
-
-## Command
+## Command chain
 
 ```bash
 cargo run -p ucf-ops -- models supported-scope-reevaluate --out ./out/supported_scope_reeval.json
 cargo run -p ucf-ops -- final-governance-consumer-sweep --out ./out/final_governance_consumer_sweep.json
-cargo run -p ucf-ops -- models supported-scope-execute-v5 --out ./out/supported_scope_execute_v5.json
+cargo run -p ucf-ops -- governance-residual-sweep --out ./out/governance_residual_sweep.json
+cargo run -p ucf-ops -- models supported-scope-execute-v6 --out ./out/supported_scope_execute_v6.json
 cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json
 ```
-
-Canonical applied-set artifact path:
-
-- `./out/supported_real_slot_set_applied_v2.json`
-
-If `./out/supported_scope_execute_v5.json` is missing or stale for the current policy/applied-set digests, `supported-set-apply` deterministically regenerates reevaluation + execution before execution.
-
-## Important non-goals
-
-Applying supported-set governance does **not**:
-
-- activate slots,
-- promote models,
-- alter active runtime mode.
-
-Newly expanded scope remains probe/shadow-governed and fail-closed.
