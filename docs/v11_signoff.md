@@ -39,3 +39,6 @@ PASS does **not** imply:
 ## Authority note
 The current applied supported scope from authoritative `supported_scope_execute_v6` + applied-scope artifacts is the only valid scope for this gate.
 No implicit expansion or legacy scope inference is allowed.
+
+## Post-PASS continuation note
+After `ucf-ops v11 gate` PASS, continue at Prompt 290 via `docs/next_10_prompts.md`.
