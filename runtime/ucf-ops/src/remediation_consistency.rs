@@ -220,11 +220,17 @@ pub struct PrimarySemanticsSweepReportV1 {
 
 pub const FINAL_PRIMARY_SEMANTICS_AUTHORITY_REQUIRED: &str =
     "FINAL_PRIMARY_SEMANTICS_AUTHORITY_REQUIRED";
+pub const FINAL_PRIMARY_SEMANTICS_INPUTS_REQUIRED: &str = "FINAL_PRIMARY_SEMANTICS_INPUTS_REQUIRED";
 pub const CANONICAL_CONDITION_MODEL_REQUIRED: &str = "CANONICAL_CONDITION_MODEL_REQUIRED";
 pub const CANONICAL_REMEDIATION_REGISTRY_REQUIRED: &str = "CANONICAL_REMEDIATION_REGISTRY_REQUIRED";
 pub const LEGACY_PRIMARY_SEMANTICS_INPUT_BLOCKED: &str = "LEGACY_PRIMARY_SEMANTICS_INPUT_BLOCKED";
 pub const LEGACY_PRIMARY_SEMANTICS_TRANSLATED: &str = "LEGACY_PRIMARY_SEMANTICS_TRANSLATED";
 pub const LEGACY_PRIMARY_SEMANTICS_REJECTED: &str = "LEGACY_PRIMARY_SEMANTICS_REJECTED";
+pub const RESIDUAL_PRIMARY_SEMANTICS_PATH_BLOCKED: &str = "RESIDUAL_PRIMARY_SEMANTICS_PATH_BLOCKED";
+pub const RESIDUAL_PRIMARY_SEMANTICS_PATH_TRANSLATED: &str =
+    "RESIDUAL_PRIMARY_SEMANTICS_PATH_TRANSLATED";
+pub const RESIDUAL_PRIMARY_SEMANTICS_PATH_REJECTED: &str =
+    "RESIDUAL_PRIMARY_SEMANTICS_PATH_REJECTED";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -268,6 +274,15 @@ pub struct FinalPrimarySemanticsAuthorityContextV1 {
     pub canonical_readiness_spine_digest_prefix: String,
     pub canonical_bundle_spine_digest_prefix: String,
     pub canonical_primary_semantics_authority_digest_prefix: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct FinalPrimarySemanticsInputsContextV1 {
+    pub canonical_governance_entry_digest_prefix: String,
+    pub canonical_readiness_spine_digest_prefix: String,
+    pub canonical_bundle_spine_digest_prefix: String,
+    pub canonical_primary_semantics_authority_digest_prefix: String,
+    pub final_primary_semantics_consumer_authority_digest_prefix: String,
 }
 
 #[derive(Clone)]
@@ -739,6 +754,12 @@ pub fn final_primary_semantics_sweep(
         status,
         &top_mismatch_categories,
     )?;
+    let _ = require_final_primary_semantics_inputs(
+        None,
+        None,
+        Some(&primary.authority),
+        Some(&authority),
+    )?;
     let report = FinalPrimarySemanticsSweepReportV1 {
         schema_version: SCHEMA_VERSION,
         conditions_checked: primary.conditions_checked,
@@ -752,6 +773,86 @@ pub fn final_primary_semantics_sweep(
     }
     fs::write(out, serde_json::to_string_pretty(&report)?)?;
     Ok(report)
+}
+
+pub fn require_final_primary_semantics_inputs(
+    canonical_condition_model: Option<&[String]>,
+    canonical_remediation_registry: Option<&[String]>,
+    canonical_primary_semantics_authority: Option<&CanonicalPrimarySemanticsAuthorityV1>,
+    final_primary_semantics_consumer_authority: Option<&FinalPrimarySemanticsConsumerAuthorityV1>,
+) -> Result<FinalPrimarySemanticsInputsContextV1, OpsError> {
+    let primary = canonical_primary_semantics_authority
+        .ok_or_else(|| OpsError::Invalid(FINAL_PRIMARY_SEMANTICS_INPUTS_REQUIRED.to_string()))?;
+    let final_consumer = final_primary_semantics_consumer_authority
+        .ok_or_else(|| OpsError::Invalid(FINAL_PRIMARY_SEMANTICS_INPUTS_REQUIRED.to_string()))?;
+
+    let condition_codes = canonical_condition_model
+        .map(|codes| codes.to_vec())
+        .unwrap_or_else(|| {
+            covered_spine_conditions()
+                .into_iter()
+                .map(ToString::to_string)
+                .collect()
+        });
+    if condition_codes.is_empty()
+        || condition_codes
+            .iter()
+            .any(|code| canonical_condition_from_code(code).is_none())
+    {
+        return Err(OpsError::Invalid(
+            CANONICAL_CONDITION_MODEL_REQUIRED.to_string(),
+        ));
+    }
+
+    let remediation_codes = canonical_remediation_registry
+        .map(|codes| codes.to_vec())
+        .unwrap_or_else(|| {
+            all_registry_rows()
+                .into_iter()
+                .map(|row| row.0.to_string())
+                .collect()
+        });
+    if remediation_codes.is_empty() {
+        return Err(OpsError::Invalid(
+            CANONICAL_REMEDIATION_REGISTRY_REQUIRED.to_string(),
+        ));
+    }
+
+    let primary_context = require_final_primary_semantics_authority(primary)?;
+    if !matches!(
+        final_consumer.authority_status,
+        FinalPrimarySemanticsConsumerAuthorityStatusV1::Pass
+    ) {
+        return Err(OpsError::Invalid(
+            RESIDUAL_PRIMARY_SEMANTICS_PATH_BLOCKED.to_string(),
+        ));
+    }
+    if final_consumer.canonical_governance_entry_digest_prefix
+        != primary_context.canonical_governance_entry_digest_prefix
+        || final_consumer.canonical_readiness_spine_digest_prefix
+            != primary_context.canonical_readiness_spine_digest_prefix
+        || final_consumer.canonical_bundle_spine_digest_prefix
+            != primary_context.canonical_bundle_spine_digest_prefix
+        || final_consumer.canonical_primary_semantics_authority_digest_prefix
+            != primary_context.canonical_primary_semantics_authority_digest_prefix
+    {
+        return Err(OpsError::Invalid(
+            FINAL_PRIMARY_SEMANTICS_INPUTS_REQUIRED.to_string(),
+        ));
+    }
+
+    Ok(FinalPrimarySemanticsInputsContextV1 {
+        canonical_governance_entry_digest_prefix: primary_context
+            .canonical_governance_entry_digest_prefix,
+        canonical_readiness_spine_digest_prefix: primary_context
+            .canonical_readiness_spine_digest_prefix,
+        canonical_bundle_spine_digest_prefix: primary_context.canonical_bundle_spine_digest_prefix,
+        canonical_primary_semantics_authority_digest_prefix: primary_context
+            .canonical_primary_semantics_authority_digest_prefix,
+        final_primary_semantics_consumer_authority_digest_prefix: prefix16(
+            &final_consumer.authority_digest,
+        ),
+    })
 }
 
 fn evaluate_final_primary_surface_statuses(
