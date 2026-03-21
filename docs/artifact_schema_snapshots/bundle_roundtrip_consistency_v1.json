@@ -5,8 +5,10 @@
   "required_fields": [
     "bundle_digest_prefix",
     "bundle_kind",
+    "bundle_residual_sweep_digest_prefix",
     "canonical_condition_codes",
     "context_match_status",
+    "final_bundle_consumer_authority_digest_prefix",
     "governance_surface_ref_status",
     "manifest_match_status",
     "mismatch_codes",
@@ -22,8 +24,10 @@
   "field_types": {
     "bundle_digest_prefix": "String",
     "bundle_kind": "CanonicalBundleKindV1",
+    "bundle_residual_sweep_digest_prefix": "String",
     "canonical_condition_codes": "Vec<String>",
     "context_match_status": "BundleRoundTripMatchStatusV1",
+    "final_bundle_consumer_authority_digest_prefix": "String",
     "governance_surface_ref_status": "BundleRoundTripMatchStatusV1",
     "manifest_match_status": "BundleRoundTripMatchStatusV1",
     "mismatch_codes": "Vec<String>",

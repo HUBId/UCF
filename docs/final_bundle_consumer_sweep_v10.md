@@ -41,3 +41,7 @@ Mismatch categories:
 ```bash
 cargo run -p ucf-ops -- final-bundle-consumer-sweep --out ./out/final_bundle_consumer_sweep.json
 ```
+
+## v11 residual cleanup
+
+v11 adds `bundle-residual-sweep` to remove and block the last residual bundle-reconstruction paths in canonical export flows.

@@ -19,12 +19,15 @@
     "schema_version"
   ],
   "optional_fields": [
+    "bundle_residual_sweep_digest_prefix",
     "canonical_bundle_authority_digest_prefix",
-    "canonical_bundle_spine_digest_prefix"
+    "canonical_bundle_spine_digest_prefix",
+    "final_bundle_consumer_authority_digest_prefix"
   ],
   "field_types": {
     "applied_supported_set_digest_prefix": "String",
     "blocking_codes": "Vec<String>",
+    "bundle_residual_sweep_digest_prefix": "Option<String>",
     "canonical_bundle_authority_digest_prefix": "Option<String>",
     "canonical_bundle_spine_digest_prefix": "Option<String>",
     "canonical_governance_authority_digest_prefix": "String",
@@ -32,6 +35,7 @@
     "canonical_readiness_authority_digest_prefix": "String",
     "canonical_readiness_spine_digest_prefix": "String",
     "chain_digest": "String",
+    "final_bundle_consumer_authority_digest_prefix": "Option<String>",
     "operator_export_authority_chain_digest_prefix": "String",
     "operator_review_packet_digest_prefix": "String",
     "operator_signoff_digest_prefix": "String",

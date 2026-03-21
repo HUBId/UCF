@@ -49,3 +49,7 @@ Canonical export surfaces now require `CanonicalBundleSpineV1` as universal bund
 ## v10 finalization
 
 v10 finalizes universal bundle-input authority for canonical export consumers via `ucf-ops final-bundle-consumer-sweep`.
+
+## v11 residual cleanup
+
+v11 ergänzt den letzten Residual-Sweep (`bundle-residual-sweep`), damit kanonische Export-Consumer keine Bundle-Rekonstruktion mehr als Primärsubstrat nutzen können.
