@@ -32,6 +32,7 @@ mod operator_report;
 mod operator_review_packet;
 mod operator_signoff;
 mod operator_workflow;
+mod readiness_residual_sweep;
 mod readiness_spine;
 mod remediation;
 mod remediation_consistency;
@@ -195,17 +196,24 @@ pub use operator_workflow::{
     OperatorWorkflowChainV1, OperatorWorkflowExportTargetsV1, OperatorWorkflowPolicyV1,
     OperatorWorkflowStageV2,
 };
+pub use readiness_residual_sweep::{
+    readiness_residual_sweep, FinalReadinessResidualConsumerStatusV1,
+    FinalReadinessResidualMismatchCategoryV1, FinalReadinessResidualSweepReportV1,
+    FinalReadinessResidualSweepStatusV1, FinalReadinessResidualSweepV1,
+};
 pub use readiness_spine::{
     attach_spine_prefix_to_packet, attach_spine_prefix_to_signoff, attach_spine_prefix_to_workflow,
     derive_canonical_readiness_authority_v2, derive_canonical_readiness_spine,
     readiness_spine_check, readiness_spine_sweep, require_canonical_readiness_spine,
-    require_final_readiness_authority, write_canonical_readiness_spine,
-    CanonicalReadinessAuthorityStatusV2, CanonicalReadinessAuthorityV2,
-    CanonicalReadinessSpineStatusV1, CanonicalReadinessSpineV1, FinalReadinessAuthorityContextV1,
-    ReadinessSpineCheckReportV1, ReadinessSpineCheckStatusV1, ReadinessSpineMismatchCategoryV1,
+    require_final_readiness_authority, require_final_readiness_inputs,
+    write_canonical_readiness_spine, CanonicalReadinessAuthorityStatusV2,
+    CanonicalReadinessAuthorityV2, CanonicalReadinessSpineStatusV1, CanonicalReadinessSpineV1,
+    FinalReadinessAuthorityContextV1, FinalReadinessInputsContextV1, ReadinessSpineCheckReportV1,
+    ReadinessSpineCheckStatusV1, ReadinessSpineMismatchCategoryV1,
     ReadinessSpineSweepMismatchCategoryV1, ReadinessSpineSweepReportV1,
     ReadinessSpineSweepSurfaceStatusV1, CANONICAL_READINESS_SPINE_REQUIRED,
-    FINAL_READINESS_AUTHORITY_REQUIRED, LEGACY_READINESS_INPUT_BLOCKED,
+    FINAL_READINESS_AUTHORITY_REQUIRED, FINAL_READINESS_INPUTS_REQUIRED,
+    LEGACY_READINESS_INPUT_BLOCKED, RESIDUAL_READINESS_PATH_BLOCKED,
     REVIEWABILITY_REDUCTION_REQUIRED, SECONDARY_READINESS_PATH_BLOCKED,
     SLOT_REVIEWABILITY_TRUTH_REQUIRED,
 };
@@ -16627,6 +16635,7 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         matrix_cmd("linux", "cargo run -p ucf-ops -- final-governance-consumer-sweep --out ./out/final_governance_consumer_sweep.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- models supported-scope-execute-v6 --out ./out/supported_scope_execute_v6.json --workdir ."),
         matrix_cmd("linux", "cargo run -p ucf-ops -- final-readiness-consumer-sweep --out ./out/final_readiness_consumer_sweep.json"),
+        matrix_cmd("linux", "cargo run -p ucf-ops -- readiness-residual-sweep --out ./out/readiness_residual_sweep.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- final-bundle-consumer-sweep --out ./out/final_bundle_consumer_sweep.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- final-primary-semantics-sweep --out ./out/final_primary_semantics_sweep.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- remediation-interop-check --out ./out/remediation_interop_check.json"),
@@ -16671,6 +16680,7 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         matrix_cmd("windows", "cargo run -p ucf-ops -- final-governance-consumer-sweep --out ./out/final_governance_consumer_sweep.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- models supported-scope-execute-v6 --out ./out/supported_scope_execute_v6.json --workdir ."),
         matrix_cmd("windows", "cargo run -p ucf-ops -- final-readiness-consumer-sweep --out ./out/final_readiness_consumer_sweep.json"),
+        matrix_cmd("windows", "cargo run -p ucf-ops -- readiness-residual-sweep --out ./out/readiness_residual_sweep.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- final-bundle-consumer-sweep --out ./out/final_bundle_consumer_sweep.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- final-primary-semantics-sweep --out ./out/final_primary_semantics_sweep.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- remediation-interop-check --out ./out/remediation_interop_check.json"),

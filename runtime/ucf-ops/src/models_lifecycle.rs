@@ -586,6 +586,10 @@ pub struct AggregatedActiveReviewSnapshotV1 {
     pub final_governance_consumer_authority_digest_prefix: String,
     #[serde(default)]
     pub governance_residual_sweep_digest_prefix: String,
+    #[serde(default)]
+    pub final_readiness_consumer_authority_digest_prefix: String,
+    #[serde(default)]
+    pub readiness_residual_sweep_digest_prefix: String,
     pub snapshot_digest: String,
 }
 
@@ -2744,6 +2748,8 @@ pub fn models_active_review_snapshot(
         canonical_governance_entry_digest_prefix: "MISSING".to_string(),
         final_governance_consumer_authority_digest_prefix: "MISSING".to_string(),
         governance_residual_sweep_digest_prefix: "MISSING".to_string(),
+        final_readiness_consumer_authority_digest_prefix: "MISSING".to_string(),
+        readiness_residual_sweep_digest_prefix: "MISSING".to_string(),
         snapshot_digest: String::new(),
     };
     let truths = crate::derive_slot_reviewability_truths_from_active(
@@ -2784,6 +2790,13 @@ pub fn models_active_review_snapshot(
         "out/governance_residual_sweep.json",
         "sweep_digest",
     );
+    let final_readiness_consumer_authority_digest_prefix = read_sweep_digest_prefix(
+        workdir,
+        "out/final_readiness_consumer_sweep.json",
+        "authority_digest",
+    );
+    let readiness_residual_sweep_digest_prefix =
+        read_sweep_digest_prefix(workdir, "out/readiness_residual_sweep.json", "sweep_digest");
 
     let mut digest_source = Vec::new();
     digest_source.extend_from_slice(ACTIVE_REVIEW_EVIDENCE_SCHEMA_VERSION.to_string().as_bytes());
@@ -2801,6 +2814,8 @@ pub fn models_active_review_snapshot(
     digest_source.extend_from_slice(canonical_governance_entry_digest_prefix.as_bytes());
     digest_source.extend_from_slice(final_governance_consumer_authority_digest_prefix.as_bytes());
     digest_source.extend_from_slice(governance_residual_sweep_digest_prefix.as_bytes());
+    digest_source.extend_from_slice(final_readiness_consumer_authority_digest_prefix.as_bytes());
+    digest_source.extend_from_slice(readiness_residual_sweep_digest_prefix.as_bytes());
     for slot in &slots {
         digest_source.extend_from_slice(slot.evidence_digest.as_bytes());
     }
@@ -2816,6 +2831,8 @@ pub fn models_active_review_snapshot(
         canonical_governance_entry_digest_prefix,
         final_governance_consumer_authority_digest_prefix,
         governance_residual_sweep_digest_prefix,
+        final_readiness_consumer_authority_digest_prefix,
+        readiness_residual_sweep_digest_prefix,
         snapshot_digest: sha256_hex(&digest_source),
     };
 
@@ -7453,6 +7470,8 @@ mod probe_tests {
                 canonical_governance_entry_digest_prefix: "MISSING".to_string(),
                 final_governance_consumer_authority_digest_prefix: "MISSING".to_string(),
                 governance_residual_sweep_digest_prefix: "MISSING".to_string(),
+                final_readiness_consumer_authority_digest_prefix: "MISSING".to_string(),
+                readiness_residual_sweep_digest_prefix: "MISSING".to_string(),
                 snapshot_digest: "ee".repeat(32),
             };
             fs::write(
@@ -9287,6 +9306,8 @@ mod probe_tests {
                 canonical_governance_entry_digest_prefix: "MISSING".to_string(),
                 final_governance_consumer_authority_digest_prefix: "MISSING".to_string(),
                 governance_residual_sweep_digest_prefix: "MISSING".to_string(),
+                final_readiness_consumer_authority_digest_prefix: "MISSING".to_string(),
+                readiness_residual_sweep_digest_prefix: "MISSING".to_string(),
                 gate_report_digests: crate::operator_signoff::GateReportDigestsV1 {
                     v0: "x".to_string(),
                     v1: "x".to_string(),

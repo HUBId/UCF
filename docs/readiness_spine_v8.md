@@ -38,3 +38,7 @@ Canonical readiness authority is now audited via `readiness-spine-sweep` and `Ca
 ## v10 finalization
 
 Canonical readiness consumer authority is finalized by `final-readiness-consumer-sweep` and `FinalReadinessConsumerAuthorityV1`, extending v9 spine authority checks to a final consumer sweep for canonical flows.
+
+## v11 finalization
+
+v11 finalizes canonical readiness consumers by requiring final readiness inputs (`SlotReviewabilityTruthV1` + `ReviewabilityReductionV1` + `CanonicalReadinessSpineV1` + `CanonicalReadinessAuthorityV2` + `FinalReadinessConsumerAuthorityV1`) and auditing with `readiness-residual-sweep`.

@@ -554,6 +554,8 @@ mod tests {
             canonical_governance_entry_digest_prefix: "MISSING".to_string(),
             final_governance_consumer_authority_digest_prefix: "MISSING".to_string(),
             governance_residual_sweep_digest_prefix: "MISSING".to_string(),
+            final_readiness_consumer_authority_digest_prefix: "MISSING".to_string(),
+            readiness_residual_sweep_digest_prefix: "MISSING".to_string(),
             snapshot_digest: "active_digest".to_string(),
         }
     }

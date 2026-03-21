@@ -26,3 +26,7 @@ For final canonical primary blocking/remediation authority across all covered su
 ## v10 follow-up
 
 v10 adds `final-readiness-consumer-sweep` to prove canonical consumers uniformly bind to final readiness authority inputs (truths + reduction + spine + authority) and flags remaining legacy readiness primary-input usage as fail-closed.
+
+## v11 note
+
+After v10 final consumer authority, v11 completes the residual sweep (`readiness-residual-sweep`) so canonical consumers no longer accept residual readiness reconstruction paths.
