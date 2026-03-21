@@ -27,6 +27,7 @@ cargo run -p ucf-ops -- models supported-set-review --out ./out/supported_set_re
 cargo run -p ucf-ops -- models supported-scope-reevaluate --out ./out/supported_scope_reeval.json
 cargo run -p ucf-ops -- governance-entry-sweep --out ./out/governance_entry_sweep.json
 cargo run -p ucf-ops -- final-governance-consumer-sweep --out ./out/final_governance_consumer_sweep.json
+cargo run -p ucf-ops -- governance-residual-sweep --out ./out/governance_residual_sweep.json
 cargo run -p ucf-ops -- models supported-scope-execute-v5 --out ./out/supported_scope_execute_v5.json
 cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json
 ```

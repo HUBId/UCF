@@ -265,6 +265,10 @@ mod tests {
     }
     #[test]
     fn candle_disabled_without_feature() {
+        let _lock = crate::test_env::env_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _env = crate::test_env::clear_model_env_overrides();
         let cfg = ComputeBackendConfig {
             kind: ComputeBackendKind::Candle,
             ..ComputeBackendConfig::default()
@@ -289,6 +293,10 @@ mod tests {
 
     #[test]
     fn burn_profile_behavior() {
+        let _lock = crate::test_env::env_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _env = crate::test_env::clear_model_env_overrides();
         let cfg = ComputeBackendConfig {
             kind: ComputeBackendKind::Burn,
             ..ComputeBackendConfig::default()
@@ -327,6 +335,10 @@ mod tests {
     #[cfg(feature = "compute-candle")]
     #[test]
     fn candle_profile_differs_from_stub_deterministically() {
+        let _lock = crate::test_env::env_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _env = crate::test_env::clear_model_env_overrides();
         let input = ComputeInput {
             frame_id: FrameId(11),
             t: 5,

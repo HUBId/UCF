@@ -551,6 +551,9 @@ mod tests {
                 aligned: true,
                 status_code: "ALIGNED".to_string(),
             },
+            canonical_governance_entry_digest_prefix: "MISSING".to_string(),
+            final_governance_consumer_authority_digest_prefix: "MISSING".to_string(),
+            governance_residual_sweep_digest_prefix: "MISSING".to_string(),
             snapshot_digest: "active_digest".to_string(),
         }
     }

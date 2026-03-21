@@ -26,3 +26,5 @@ Legacy governance inputs are not allowed as primary truth in canonical flows. Re
 ```bash
 cargo run -p ucf-ops -- final-governance-consumer-sweep --out ./out/final_governance_consumer_sweep.json
 ```
+
+v11 extends this with `governance-residual-sweep`, which removes/blocks remaining residual governance reconstruction paths from canonical consumers.

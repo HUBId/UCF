@@ -22,6 +22,7 @@ mod formal_invariants;
 mod goldens;
 mod governance_entry_check;
 mod governance_entry_sweep;
+mod governance_residual_sweep;
 mod governance_surfaces;
 mod interop_consistency;
 mod models_lifecycle;
@@ -95,8 +96,10 @@ pub use final_continuity_sweep::{
     FinalContinuityStatusV2,
 };
 pub use final_governance_authority::{
-    require_final_governance_authority, FinalGovernanceAuthorityContextV1,
-    FINAL_GOVERNANCE_AUTHORITY_REQUIRED, LEGACY_GOVERNANCE_INPUT_BLOCKED,
+    require_final_governance_authority, require_final_governance_inputs,
+    FinalGovernanceAuthorityContextV1, FINAL_GOVERNANCE_AUTHORITY_REQUIRED,
+    FINAL_GOVERNANCE_INPUTS_REQUIRED, LEGACY_GOVERNANCE_INPUT_BLOCKED,
+    RESIDUAL_GOVERNANCE_PATH_BLOCKED,
 };
 pub use final_governance_consumer_sweep::{
     final_governance_consumer_sweep, FinalGovernanceConsumerAuthorityStatusV1,
@@ -121,6 +124,11 @@ pub use governance_entry_sweep::{
     governance_entry_sweep, CanonicalGovernanceEntryAuthorityV2, GovernanceEntryAuthorityStatusV2,
     GovernanceEntrySweepMismatchCategoryV1, GovernanceEntrySweepReportV1,
     GovernanceEntrySweepSurfaceStatusV1,
+};
+pub use governance_residual_sweep::{
+    governance_residual_sweep, FinalGovernanceResidualSweepV1, GovernanceResidualConsumerStatusV1,
+    GovernanceResidualMismatchCategoryV1, GovernanceResidualSweepReportV1,
+    GovernanceResidualSweepStatusV1,
 };
 pub use governance_surfaces::{
     validate_governance_primary_surfaces, validate_governance_primary_surfaces_from_workdir,

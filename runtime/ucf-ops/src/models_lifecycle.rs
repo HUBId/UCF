@@ -552,6 +552,12 @@ pub struct AggregatedActiveReviewSnapshotV1 {
     pub slots: Vec<ActiveReviewEvidenceV1>,
     pub overall_review_status: ActiveReviewOverallStatusV1,
     pub signoff_alignment: ActiveReviewSignoffAlignmentV1,
+    #[serde(default)]
+    pub canonical_governance_entry_digest_prefix: String,
+    #[serde(default)]
+    pub final_governance_consumer_authority_digest_prefix: String,
+    #[serde(default)]
+    pub governance_residual_sweep_digest_prefix: String,
     pub snapshot_digest: String,
 }
 
@@ -2707,6 +2713,9 @@ pub fn models_active_review_snapshot(
             aligned: false,
             status_code: "PENDING".to_string(),
         },
+        canonical_governance_entry_digest_prefix: "MISSING".to_string(),
+        final_governance_consumer_authority_digest_prefix: "MISSING".to_string(),
+        governance_residual_sweep_digest_prefix: "MISSING".to_string(),
         snapshot_digest: String::new(),
     };
     let truths = crate::derive_slot_reviewability_truths_from_active(
@@ -2729,6 +2738,24 @@ pub fn models_active_review_snapshot(
     let signoff = discover_latest_operator_signoff(workdir);
     let signoff_alignment =
         derive_signoff_alignment(signoff.as_ref(), &backend_snapshot, &overall_review_status);
+    let canonical_governance_entry_digest_prefix =
+        match validate_governance_primary_surfaces_with_applied_scope(
+            &backend_snapshot,
+            &temp_snapshot,
+            &applied_scope,
+        )
+        .and_then(|surfaces| derive_canonical_governance_entry(&applied_scope, &surfaces))
+        {
+            Ok(entry) => prefix_hex(&entry.authority_digest, 16),
+            Err(_) => "MISSING".to_string(),
+        };
+    let final_governance_consumer_authority_digest_prefix =
+        read_final_governance_prefix(workdir, "out/final_governance_consumer_sweep.json");
+    let governance_residual_sweep_digest_prefix = read_sweep_digest_prefix(
+        workdir,
+        "out/governance_residual_sweep.json",
+        "sweep_digest",
+    );
 
     let mut digest_source = Vec::new();
     digest_source.extend_from_slice(ACTIVE_REVIEW_EVIDENCE_SCHEMA_VERSION.to_string().as_bytes());
@@ -2743,6 +2770,9 @@ pub fn models_active_review_snapshot(
         b"0"
     });
     digest_source.extend_from_slice(reduction.reduction_digest.as_bytes());
+    digest_source.extend_from_slice(canonical_governance_entry_digest_prefix.as_bytes());
+    digest_source.extend_from_slice(final_governance_consumer_authority_digest_prefix.as_bytes());
+    digest_source.extend_from_slice(governance_residual_sweep_digest_prefix.as_bytes());
     for slot in &slots {
         digest_source.extend_from_slice(slot.evidence_digest.as_bytes());
     }
@@ -2755,6 +2785,9 @@ pub fn models_active_review_snapshot(
         slots,
         overall_review_status,
         signoff_alignment,
+        canonical_governance_entry_digest_prefix,
+        final_governance_consumer_authority_digest_prefix,
+        governance_residual_sweep_digest_prefix,
         snapshot_digest: sha256_hex(&digest_source),
     };
 
@@ -2764,6 +2797,38 @@ pub fn models_active_review_snapshot(
     fs::write(out, serde_json::to_vec_pretty(&report)?)?;
     append_active_review_snapshot_record(workdir, &report)?;
     Ok(report)
+}
+
+fn read_final_governance_prefix(workdir: &Path, rel_path: &str) -> String {
+    let path = workdir.join(rel_path);
+    let Ok(bytes) = fs::read(path) else {
+        return "MISSING".to_string();
+    };
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+        return "MISSING".to_string();
+    };
+    value
+        .get("authority")
+        .and_then(|authority| authority.get("authority_digest"))
+        .and_then(serde_json::Value::as_str)
+        .map(|digest| prefix_hex(digest, 16))
+        .unwrap_or_else(|| "MISSING".to_string())
+}
+
+fn read_sweep_digest_prefix(workdir: &Path, rel_path: &str, field: &str) -> String {
+    let path = workdir.join(rel_path);
+    let Ok(bytes) = fs::read(path) else {
+        return "MISSING".to_string();
+    };
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+        return "MISSING".to_string();
+    };
+    value
+        .get("sweep")
+        .and_then(|sweep| sweep.get(field))
+        .and_then(serde_json::Value::as_str)
+        .map(|digest| prefix_hex(digest, 16))
+        .unwrap_or_else(|| "MISSING".to_string())
 }
 
 pub fn models_supported_set_review(
@@ -7053,6 +7118,9 @@ mod probe_tests {
                     aligned: true,
                     status_code: "ALIGNED".to_string(),
                 },
+                canonical_governance_entry_digest_prefix: "MISSING".to_string(),
+                final_governance_consumer_authority_digest_prefix: "MISSING".to_string(),
+                governance_residual_sweep_digest_prefix: "MISSING".to_string(),
                 snapshot_digest: "ee".repeat(32),
             };
             fs::write(
@@ -8460,6 +8528,9 @@ mod probe_tests {
                 reviewability_reduction_digest_prefix: "MISSING".to_string(),
                 canonical_readiness_spine_digest_prefix: "MISSING".to_string(),
                 canonical_readiness_authority_digest_prefix: "MISSING".to_string(),
+                canonical_governance_entry_digest_prefix: "MISSING".to_string(),
+                final_governance_consumer_authority_digest_prefix: "MISSING".to_string(),
+                governance_residual_sweep_digest_prefix: "MISSING".to_string(),
                 gate_report_digests: crate::operator_signoff::GateReportDigestsV1 {
                     v0: "x".to_string(),
                     v1: "x".to_string(),

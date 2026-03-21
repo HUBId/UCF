@@ -44,6 +44,8 @@ pub mod stage_v1;
 pub mod stage_v1_burn;
 #[cfg(feature = "backend-candle")]
 pub mod stage_v1_candle;
+#[cfg(test)]
+pub mod test_env;
 pub mod work_meter;
 pub mod worker_backend;
 pub mod world_model;

@@ -2,12 +2,15 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     prefix_hex, AppliedSupportedSetContextV1, CanonicalGovernanceEntryAuthorityV2,
-    CanonicalGovernanceEntryV1, GovernanceEntryAuthorityStatusV2, OpsError,
+    CanonicalGovernanceEntryV1, FinalGovernanceConsumerAuthorityStatusV1,
+    FinalGovernanceConsumerAuthorityV1, GovernanceEntryAuthorityStatusV2, OpsError,
 };
 
 pub const FINAL_GOVERNANCE_AUTHORITY_REQUIRED: &str = "FINAL_GOVERNANCE_AUTHORITY_REQUIRED";
+pub const FINAL_GOVERNANCE_INPUTS_REQUIRED: &str = "FINAL_GOVERNANCE_INPUTS_REQUIRED";
 pub const APPLIED_SCOPE_REQUIRED: &str = "APPLIED_SCOPE_REQUIRED";
 pub const CANONICAL_GOVERNANCE_ENTRY_REQUIRED: &str = "CANONICAL_GOVERNANCE_ENTRY_REQUIRED";
+pub const RESIDUAL_GOVERNANCE_PATH_BLOCKED: &str = "RESIDUAL_GOVERNANCE_PATH_BLOCKED";
 pub const LEGACY_GOVERNANCE_INPUT_BLOCKED: &str = "LEGACY_GOVERNANCE_INPUT_BLOCKED";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -15,12 +18,22 @@ pub struct FinalGovernanceAuthorityContextV1 {
     pub applied_supported_set_digest_prefix: String,
     pub canonical_governance_entry_digest_prefix: String,
     pub canonical_governance_authority_digest_prefix: String,
+    pub final_governance_consumer_authority_digest_prefix: String,
 }
 
 pub fn require_final_governance_authority(
     applied: Option<&AppliedSupportedSetContextV1>,
     entry: Option<&CanonicalGovernanceEntryV1>,
     authority: Option<&CanonicalGovernanceEntryAuthorityV2>,
+) -> Result<FinalGovernanceAuthorityContextV1, OpsError> {
+    require_final_governance_inputs(applied, entry, authority, None)
+}
+
+pub fn require_final_governance_inputs(
+    applied: Option<&AppliedSupportedSetContextV1>,
+    entry: Option<&CanonicalGovernanceEntryV1>,
+    authority: Option<&CanonicalGovernanceEntryAuthorityV2>,
+    final_consumer: Option<&FinalGovernanceConsumerAuthorityV1>,
 ) -> Result<FinalGovernanceAuthorityContextV1, OpsError> {
     let Some(applied) = applied else {
         return Err(OpsError::Invalid(APPLIED_SCOPE_REQUIRED.to_string()));
@@ -35,7 +48,6 @@ pub fn require_final_governance_authority(
             FINAL_GOVERNANCE_AUTHORITY_REQUIRED.to_string(),
         ));
     };
-
     let expected_scope = applied.applied_set_digest_prefix.clone();
     let expected_entry = prefix_hex(&entry.authority_digest, 16);
     let expected_authority = prefix_hex(&authority.authority_digest, 16);
@@ -51,11 +63,30 @@ pub fn require_final_governance_authority(
             LEGACY_GOVERNANCE_INPUT_BLOCKED.to_string(),
         ));
     }
+    let expected_final_consumer = if let Some(final_consumer) = final_consumer {
+        let expected = prefix_hex(&final_consumer.authority_digest, 16);
+        if final_consumer.applied_supported_set_digest_prefix != expected_scope
+            || final_consumer.canonical_governance_entry_digest_prefix != expected_entry
+            || final_consumer.canonical_governance_authority_digest_prefix != expected_authority
+            || !matches!(
+                final_consumer.authority_status,
+                FinalGovernanceConsumerAuthorityStatusV1::Pass
+            )
+        {
+            return Err(OpsError::Invalid(
+                RESIDUAL_GOVERNANCE_PATH_BLOCKED.to_string(),
+            ));
+        }
+        expected
+    } else {
+        String::new()
+    };
 
     Ok(FinalGovernanceAuthorityContextV1 {
         applied_supported_set_digest_prefix: expected_scope,
         canonical_governance_entry_digest_prefix: expected_entry,
         canonical_governance_authority_digest_prefix: expected_authority,
+        final_governance_consumer_authority_digest_prefix: expected_final_consumer,
     })
 }
 
@@ -98,7 +129,7 @@ mod tests {
             applied_supported_set_digest_prefix: applied.applied_set_digest_prefix.clone(),
             applied_context_digest_prefix: prefix_hex(&applied.context_digest, 16),
             canonical_governance_entry_digest_prefix: prefix_hex(&entry.authority_digest, 16),
-            covered_surface_count: 1,
+            covered_surface_count: 0,
             authority_status: GovernanceEntryAuthorityStatusV2::Pass,
             authority_digest: "f".repeat(64),
         };
