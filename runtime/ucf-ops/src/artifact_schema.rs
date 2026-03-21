@@ -1006,7 +1006,7 @@ mod tests {
                 .expect("parse snapshot");
         snapshot
             .field_types
-            .insert("authority_digest".to_string(), "u64".to_string());
+            .insert("sweep_digest".to_string(), "u64".to_string());
         fs::write(
             &snapshot_path,
             serde_json::to_string_pretty(&snapshot).expect("serialize snapshot"),
