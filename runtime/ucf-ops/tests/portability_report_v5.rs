@@ -28,7 +28,7 @@ fn repo_root() -> PathBuf {
 }
 
 #[test]
-fn portability_report_v9_contains_final_sweep_sections_in_stable_order() {
+fn portability_report_v11_contains_final_sweep_sections_in_stable_order() {
     let _guard = CwdGuard::enter(&repo_root());
     let dir = tempfile::tempdir().expect("tempdir");
     let out = dir.path().join("out/portability_report.json");
@@ -121,6 +121,26 @@ fn portability_report_v9_contains_final_sweep_sections_in_stable_order() {
         .iter()
         .position(|c| c.contains("remediation-spine-check"))
         .expect("remediation spine command present");
+    let governance_residual_idx = names
+        .iter()
+        .position(|c| c.contains("governance-residual-sweep"))
+        .expect("governance residual sweep command present");
+    let supported_execute_v6_idx = names
+        .iter()
+        .position(|c| c.contains("models supported-scope-execute-v6"))
+        .expect("supported-scope-execute-v6 command present");
+    let readiness_residual_idx = names
+        .iter()
+        .position(|c| c.contains("readiness-residual-sweep"))
+        .expect("readiness-residual-sweep command present");
+    let bundle_residual_idx = names
+        .iter()
+        .position(|c| c.contains("bundle-residual-sweep"))
+        .expect("bundle-residual-sweep command present");
+    let primary_residual_idx = names
+        .iter()
+        .position(|c| c.contains("primary-semantics-residual-sweep"))
+        .expect("primary-semantics-residual-sweep command present");
 
     assert!(governance_idx < governance_entry_idx);
     assert!(governance_entry_idx < governance_entry_sweep_idx);
@@ -137,6 +157,11 @@ fn portability_report_v9_contains_final_sweep_sections_in_stable_order() {
     assert!(bundle_spine_idx < remediation_spine_idx);
     assert!(bundle_spine_idx < bundle_spine_sweep_idx);
     assert!(bundle_spine_sweep_idx < primary_semantics_sweep_idx);
+    assert!(governance_idx < governance_residual_idx);
+    assert!(governance_residual_idx < supported_execute_v6_idx);
+    assert!(supported_execute_v6_idx < readiness_residual_idx);
+    assert!(readiness_residual_idx < bundle_residual_idx);
+    assert!(bundle_residual_idx < primary_residual_idx);
     assert!(interop_idx < active_idx);
     assert!(active_idx < backend_idx);
     assert!(backend_idx < repro_idx);
@@ -145,7 +170,7 @@ fn portability_report_v9_contains_final_sweep_sections_in_stable_order() {
 }
 
 #[test]
-fn portability_report_v9_skips_optional_backend_resolution_cleanly() {
+fn portability_report_v11_skips_optional_backend_resolution_cleanly() {
     let _guard = CwdGuard::enter(&repo_root());
     let dir = tempfile::tempdir().expect("tempdir");
     let out = PathBuf::from(dir.path()).join("out/portability_report.json");
@@ -200,5 +225,33 @@ fn portability_report_v9_skips_optional_backend_resolution_cleanly() {
             ucf_ops::PortabilityGateStatus::Pass | ucf_ops::PortabilityGateStatus::Skip
         ),
         "bundle_spine_sweep_smoke must PASS or SKIP"
+    );
+    assert!(
+        matches!(
+            report.governance_residual_sweep_smoke.status,
+            ucf_ops::PortabilityGateStatus::Pass | ucf_ops::PortabilityGateStatus::Skip
+        ),
+        "governance_residual_sweep_smoke must PASS or SKIP"
+    );
+    assert!(
+        matches!(
+            report.readiness_residual_sweep_smoke.status,
+            ucf_ops::PortabilityGateStatus::Pass | ucf_ops::PortabilityGateStatus::Skip
+        ),
+        "readiness_residual_sweep_smoke must PASS or SKIP"
+    );
+    assert!(
+        matches!(
+            report.bundle_residual_sweep_smoke.status,
+            ucf_ops::PortabilityGateStatus::Pass | ucf_ops::PortabilityGateStatus::Skip
+        ),
+        "bundle_residual_sweep_smoke must PASS or SKIP"
+    );
+    assert!(
+        matches!(
+            report.primary_semantics_residual_sweep_smoke.status,
+            ucf_ops::PortabilityGateStatus::Pass | ucf_ops::PortabilityGateStatus::Skip
+        ),
+        "primary_semantics_residual_sweep_smoke must PASS or SKIP"
     );
 }
