@@ -37,21 +37,22 @@ use ucf_ops::{
     repro_verify, residual_free_continuity_sweep, review_truth_check, run_status, runs_list,
     runs_search, runs_show, save_counterfactual_result, scope_authority_check,
     second_slot_parity_report, security_verify_chain, simulate_counterfactual, soak_run,
-    strict_check, strict_explain, troubleshoot, v0_gate, v10_gate, v1_smoke, v2_gate, v3_gate,
-    v4_gate, v5_gate, v6_gate, v7_gate, v8_gate, v9_gate, verify_bugreport, world_parity_report,
-    world_shadow_report, write_slice, AdversarialRunArgs, AirgapArtifactType, AirgapImportArgs,
-    AirgapImportMode, BenchArgs, BugKitBuildArgs, CanonicalBundleAuthorityStatusV2,
-    CanonicalReadinessAuthorityStatusV2, ChangeImpactArgs, ConfigV1, ContinuityAuthorityStatusV1,
-    CounterfactualRequest, DevLoopArgs, DocsLintArgs, DocsLintMode, DocsLintStatus,
-    ExplainTickRequest, ExportArgs, FinalBundleConsumerAuthorityStatusV1,
-    FinalBundleResidualSweepStatusV1, FinalGovernanceConsumerAuthorityStatusV1,
-    FinalPrimarySemanticsConsumerAuthorityStatusV1, FinalPrimarySemanticsResidualSweepStatusV1,
-    FinalReadinessConsumerAuthorityStatusV1, FinalReadinessResidualSweepStatusV1, GateStatus,
-    GoldenGenerateArgs, GoldenVerifyArgs, GoldenVerifyReport, GovernanceEntryAuthorityStatusV2,
-    GovernanceEntryCheckStatusV1, GovernanceResidualSweepStatusV1, NightlySummarizeArgs,
-    OperatorReportArgs, OperatorReviewPacketArgs, OperatorSignoffArgs, OperatorWorkflowArgs,
-    ReleaseBuildRcArgs, ResidualFreeContinuityStatusV1, SoakRunArgs, SpecSnapshotArgs,
-    StrictEvidenceContextV1, V10GateOverallStatus, V2GateOverallStatus, V3GateOverallStatus,
+    strict_check, strict_explain, troubleshoot, v0_gate, v10_gate, v11_gate, v1_smoke, v2_gate,
+    v3_gate, v4_gate, v5_gate, v6_gate, v7_gate, v8_gate, v9_gate, verify_bugreport,
+    world_parity_report, world_shadow_report, write_slice, AdversarialRunArgs, AirgapArtifactType,
+    AirgapImportArgs, AirgapImportMode, BenchArgs, BugKitBuildArgs,
+    CanonicalBundleAuthorityStatusV2, CanonicalReadinessAuthorityStatusV2, ChangeImpactArgs,
+    ConfigV1, ContinuityAuthorityStatusV1, CounterfactualRequest, DevLoopArgs, DocsLintArgs,
+    DocsLintMode, DocsLintStatus, ExplainTickRequest, ExportArgs,
+    FinalBundleConsumerAuthorityStatusV1, FinalBundleResidualSweepStatusV1,
+    FinalGovernanceConsumerAuthorityStatusV1, FinalPrimarySemanticsConsumerAuthorityStatusV1,
+    FinalPrimarySemanticsResidualSweepStatusV1, FinalReadinessConsumerAuthorityStatusV1,
+    FinalReadinessResidualSweepStatusV1, GateStatus, GoldenGenerateArgs, GoldenVerifyArgs,
+    GoldenVerifyReport, GovernanceEntryAuthorityStatusV2, GovernanceEntryCheckStatusV1,
+    GovernanceResidualSweepStatusV1, NightlySummarizeArgs, OperatorReportArgs,
+    OperatorReviewPacketArgs, OperatorSignoffArgs, OperatorWorkflowArgs, ReleaseBuildRcArgs,
+    ResidualFreeContinuityStatusV1, SoakRunArgs, SpecSnapshotArgs, StrictEvidenceContextV1,
+    V10GateOverallStatus, V11GateOverallStatus, V2GateOverallStatus, V3GateOverallStatus,
     V4GateOverallStatus, V5GateOverallStatus, V6GateOverallStatus, V7GateOverallStatus,
     V8GateOverallStatus, V9GateOverallStatus,
 };
@@ -2594,6 +2595,24 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
                 _ => return Err("usage: ucf-ops v10 gate [--out <path>]".into()),
+            }
+        }
+        "v11" => {
+            let sub = args.get(2).map(String::as_str).unwrap_or("help");
+            match sub {
+                "gate" => {
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/v11_gate_report.json"));
+                    let report = v11_gate(&workdir, &out)?;
+                    println!("overall={:?}", report.overall_status);
+                    println!("schema_version={}", report.schema_version);
+                    println!("out={}", out.display());
+                    if !matches!(report.overall_status, V11GateOverallStatus::Pass) {
+                        std::process::exit(2);
+                    }
+                }
+                _ => return Err("usage: ucf-ops v11 gate [--out <path>]".into()),
             }
         }
         "remediation-consistency-check" => {
