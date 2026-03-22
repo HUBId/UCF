@@ -86,6 +86,8 @@ pub struct OperatorSignoffDecisionV1 {
     pub final_readiness_consumer_authority_digest_prefix: String,
     #[serde(default)]
     pub readiness_residual_sweep_digest_prefix: String,
+    #[serde(default)]
+    pub residual_free_readiness_authority_digest_prefix: String,
     pub gate_report_digests: GateReportDigestsV1,
     pub reasons: Vec<String>,
     pub remediation_codes: Vec<String>,
@@ -265,6 +267,11 @@ pub fn operator_signoff(
     );
     decision.readiness_residual_sweep_digest_prefix =
         read_sweep_digest_prefix(workdir, "out/readiness_residual_sweep.json", "sweep_digest");
+    decision.residual_free_readiness_authority_digest_prefix = read_sweep_digest_prefix(
+        workdir,
+        "out/residual_free_readiness_sweep.json",
+        "authority_digest",
+    );
     decision.decision_digest = decision_digest(&decision)?;
 
     if let Some(parent) = out.parent() {
@@ -583,6 +590,7 @@ fn build_not_ready_minimal(
         residual_free_governance_authority_digest_prefix: "MISSING".to_string(),
         final_readiness_consumer_authority_digest_prefix: "MISSING".to_string(),
         readiness_residual_sweep_digest_prefix: "MISSING".to_string(),
+        residual_free_readiness_authority_digest_prefix: "MISSING".to_string(),
         gate_report_digests: GateReportDigestsV1 {
             v0: digest_opt(v0.as_ref())?,
             v1: digest_opt(v1.as_ref())?,
@@ -631,6 +639,7 @@ fn build_not_ready_from_snapshot(
         residual_free_governance_authority_digest_prefix: "MISSING".to_string(),
         final_readiness_consumer_authority_digest_prefix: "MISSING".to_string(),
         readiness_residual_sweep_digest_prefix: "MISSING".to_string(),
+        residual_free_readiness_authority_digest_prefix: "MISSING".to_string(),
         gate_report_digests: GateReportDigestsV1 {
             v0: digest_opt(v0.as_ref())?,
             v1: digest_opt(v1.as_ref())?,
@@ -688,6 +697,7 @@ fn build_decision(
         residual_free_governance_authority_digest_prefix: "MISSING".to_string(),
         final_readiness_consumer_authority_digest_prefix: "MISSING".to_string(),
         readiness_residual_sweep_digest_prefix: "MISSING".to_string(),
+        residual_free_readiness_authority_digest_prefix: "MISSING".to_string(),
         gate_report_digests: GateReportDigestsV1 {
             v0: digest_opt(v0.as_ref())?,
             v1: digest_opt(v1.as_ref())?,
@@ -1187,6 +1197,7 @@ mod tests {
             residual_free_governance_authority_digest_prefix: "MISSING".to_string(),
             final_readiness_consumer_authority_digest_prefix: "MISSING".to_string(),
             readiness_residual_sweep_digest_prefix: "MISSING".to_string(),
+            residual_free_readiness_authority_digest_prefix: "MISSING".to_string(),
             snapshot_digest: "snapshot1111".to_string(),
         }
     }

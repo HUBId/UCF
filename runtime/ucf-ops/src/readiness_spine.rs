@@ -18,11 +18,16 @@ use crate::{
 pub const CANONICAL_READINESS_SPINE_REQUIRED: &str = "CANONICAL_READINESS_SPINE_REQUIRED";
 pub const FINAL_READINESS_AUTHORITY_REQUIRED: &str = "FINAL_READINESS_AUTHORITY_REQUIRED";
 pub const FINAL_READINESS_INPUTS_REQUIRED: &str = "FINAL_READINESS_INPUTS_REQUIRED";
+pub const RESIDUAL_FREE_FINAL_READINESS_INPUTS_REQUIRED: &str =
+    "RESIDUAL_FREE_FINAL_READINESS_INPUTS_REQUIRED";
 pub const SLOT_REVIEWABILITY_TRUTH_REQUIRED: &str = "SLOT_REVIEWABILITY_TRUTH_REQUIRED";
 pub const REVIEWABILITY_REDUCTION_REQUIRED: &str = "REVIEWABILITY_REDUCTION_REQUIRED";
 pub const LEGACY_READINESS_INPUT_BLOCKED: &str = "LEGACY_READINESS_INPUT_BLOCKED";
 pub const SECONDARY_READINESS_PATH_BLOCKED: &str = "SECONDARY_READINESS_PATH_BLOCKED";
 pub const RESIDUAL_READINESS_PATH_BLOCKED: &str = "RESIDUAL_READINESS_PATH_BLOCKED";
+pub const HISTORICAL_READINESS_PATH_BLOCKED: &str = "HISTORICAL_READINESS_PATH_BLOCKED";
+pub const HISTORICAL_READINESS_PATH_TRANSLATED: &str = "HISTORICAL_READINESS_PATH_TRANSLATED";
+pub const HISTORICAL_READINESS_PATH_REJECTED: &str = "HISTORICAL_READINESS_PATH_REJECTED";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -110,6 +115,17 @@ pub struct FinalReadinessInputsContextV1 {
     pub canonical_readiness_spine_digest_prefix: String,
     pub canonical_readiness_authority_digest_prefix: String,
     pub final_readiness_consumer_authority_digest_prefix: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ResidualFreeFinalReadinessInputsV1 {
+    pub applied_supported_set_digest_prefix: String,
+    pub canonical_governance_entry_digest_prefix: String,
+    pub canonical_readiness_spine_digest_prefix: String,
+    pub canonical_readiness_authority_digest_prefix: String,
+    pub final_readiness_consumer_authority_digest_prefix: String,
+    pub final_readiness_residual_sweep_digest_prefix: String,
+    pub authority_digest: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -621,6 +637,95 @@ pub fn require_final_readiness_inputs(
         canonical_readiness_authority_digest_prefix: final_authority
             .canonical_readiness_authority_digest_prefix,
         final_readiness_consumer_authority_digest_prefix: expected_final_consumer_digest,
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn require_residual_free_final_readiness_inputs(
+    truths: &[SlotReviewabilityTruthV1],
+    reduction: Option<&ReviewabilityReductionV1>,
+    applied_scope: &AppliedSupportedSetContextV1,
+    entry: &CanonicalGovernanceEntryV1,
+    spine: Option<&CanonicalReadinessSpineV1>,
+    authority: Option<&CanonicalReadinessAuthorityV2>,
+    final_consumer_authority: Option<&crate::FinalReadinessConsumerAuthorityV1>,
+    residual_sweep: Option<&crate::FinalReadinessResidualSweepV1>,
+) -> Result<ResidualFreeFinalReadinessInputsV1, OpsError> {
+    let final_inputs = require_final_readiness_inputs(
+        truths,
+        reduction,
+        applied_scope,
+        entry,
+        spine,
+        authority,
+        final_consumer_authority,
+    )?;
+    let Some(residual_sweep) = residual_sweep else {
+        return Err(OpsError::Invalid(
+            RESIDUAL_FREE_FINAL_READINESS_INPUTS_REQUIRED.to_string(),
+        ));
+    };
+    if !matches!(
+        residual_sweep.sweep_status,
+        crate::FinalReadinessResidualSweepStatusV1::Pass
+    ) {
+        return Err(OpsError::Invalid(
+            HISTORICAL_READINESS_PATH_BLOCKED.to_string(),
+        ));
+    }
+    let residual_prefix = prefix_hex(&residual_sweep.sweep_digest, 16);
+    if residual_sweep.applied_supported_set_digest_prefix
+        != final_inputs.applied_supported_set_digest_prefix
+        || residual_sweep.canonical_governance_entry_digest_prefix
+            != final_inputs.canonical_governance_entry_digest_prefix
+        || residual_sweep.canonical_readiness_spine_digest_prefix
+            != final_inputs.canonical_readiness_spine_digest_prefix
+        || residual_sweep.canonical_readiness_authority_digest_prefix
+            != final_inputs.canonical_readiness_authority_digest_prefix
+        || residual_sweep.final_readiness_consumer_authority_digest_prefix
+            != final_inputs.final_readiness_consumer_authority_digest_prefix
+    {
+        return Err(OpsError::Invalid(
+            RESIDUAL_FREE_FINAL_READINESS_INPUTS_REQUIRED.to_string(),
+        ));
+    }
+    let mut digest_source = Vec::new();
+    digest_source.extend_from_slice(b"residual_free_final_readiness_inputs_v1");
+    digest_source.extend_from_slice(final_inputs.applied_supported_set_digest_prefix.as_bytes());
+    digest_source.extend_from_slice(
+        final_inputs
+            .canonical_governance_entry_digest_prefix
+            .as_bytes(),
+    );
+    digest_source.extend_from_slice(
+        final_inputs
+            .canonical_readiness_spine_digest_prefix
+            .as_bytes(),
+    );
+    digest_source.extend_from_slice(
+        final_inputs
+            .canonical_readiness_authority_digest_prefix
+            .as_bytes(),
+    );
+    digest_source.extend_from_slice(
+        final_inputs
+            .final_readiness_consumer_authority_digest_prefix
+            .as_bytes(),
+    );
+    digest_source.extend_from_slice(residual_prefix.as_bytes());
+
+    Ok(ResidualFreeFinalReadinessInputsV1 {
+        applied_supported_set_digest_prefix: final_inputs.applied_supported_set_digest_prefix,
+        canonical_governance_entry_digest_prefix: final_inputs
+            .canonical_governance_entry_digest_prefix,
+        canonical_readiness_spine_digest_prefix: final_inputs
+            .canonical_readiness_spine_digest_prefix,
+        canonical_readiness_authority_digest_prefix: final_inputs
+            .canonical_readiness_authority_digest_prefix,
+        final_readiness_consumer_authority_digest_prefix: final_inputs
+            .final_readiness_consumer_authority_digest_prefix,
+        final_readiness_residual_sweep_digest_prefix: residual_prefix,
+        authority_digest: crate::sha256_hex(&digest_source),
     })
 }
 

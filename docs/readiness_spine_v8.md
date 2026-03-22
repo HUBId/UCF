@@ -42,3 +42,7 @@ Canonical readiness consumer authority is finalized by `final-readiness-consumer
 ## v11 finalization
 
 v11 finalizes canonical readiness consumers by requiring final readiness inputs (`SlotReviewabilityTruthV1` + `ReviewabilityReductionV1` + `CanonicalReadinessSpineV1` + `CanonicalReadinessAuthorityV2` + `FinalReadinessConsumerAuthorityV1`) and auditing with `readiness-residual-sweep`.
+
+## v12 residual-free canonical consumer guarantee
+
+v12 hardens canonical readiness consumers with `require_residual_free_final_readiness_inputs(...)` and `residual-free-readiness-sweep`, removing remaining historical/implicit/aggregate readiness traces from canonical production/governance/export/gate flows.

@@ -84,6 +84,8 @@ pub struct OperatorReviewPacketV1 {
     pub final_readiness_consumer_authority_digest_prefix: String,
     #[serde(default)]
     pub readiness_residual_sweep_digest_prefix: String,
+    #[serde(default)]
+    pub residual_free_readiness_authority_digest_prefix: String,
     pub artifacts: OperatorReviewPacketArtifactsV1,
     pub supported_slots: Vec<OperatorReviewPacketSlotV1>,
     pub blocking_codes: Vec<String>,
@@ -431,6 +433,11 @@ fn reduce_review_packet(
         "out/readiness_residual_sweep.json",
         "sweep_digest",
     );
+    packet.residual_free_readiness_authority_digest_prefix = read_sweep_digest_prefix(
+        Path::new("."),
+        "out/residual_free_readiness_sweep.json",
+        "authority_digest",
+    );
     packet.packet_digest = packet_digest(&packet)?;
     Ok(packet)
 }
@@ -494,6 +501,7 @@ fn build_from_snapshot(
         residual_free_governance_authority_digest_prefix: "MISSING".to_string(),
         final_readiness_consumer_authority_digest_prefix: "MISSING".to_string(),
         readiness_residual_sweep_digest_prefix: "MISSING".to_string(),
+        residual_free_readiness_authority_digest_prefix: "MISSING".to_string(),
         snapshot_digest: "MISSING".to_string(),
     });
     let signoff = signoff.unwrap_or_else(|| OperatorSignoffDecisionV1 {
@@ -516,6 +524,7 @@ fn build_from_snapshot(
         residual_free_governance_authority_digest_prefix: "MISSING".to_string(),
         final_readiness_consumer_authority_digest_prefix: "MISSING".to_string(),
         readiness_residual_sweep_digest_prefix: "MISSING".to_string(),
+        residual_free_readiness_authority_digest_prefix: "MISSING".to_string(),
         gate_report_digests: crate::operator_signoff::GateReportDigestsV1 {
             v0: "MISSING".to_string(),
             v1: "MISSING".to_string(),
@@ -654,6 +663,7 @@ fn build_blocked_minimal(
         residual_free_governance_authority_digest_prefix: "MISSING".to_string(),
         final_readiness_consumer_authority_digest_prefix: "MISSING".to_string(),
         readiness_residual_sweep_digest_prefix: "MISSING".to_string(),
+        residual_free_readiness_authority_digest_prefix: "MISSING".to_string(),
         artifacts: OperatorReviewPacketArtifactsV1 {
             backend_evidence_snapshot_digest_prefix: "MISSING".to_string(),
             active_review_snapshot_digest_prefix: "MISSING".to_string(),
@@ -754,6 +764,9 @@ fn build_packet(
             .clone(),
         readiness_residual_sweep_digest_prefix: signoff
             .readiness_residual_sweep_digest_prefix
+            .clone(),
+        residual_free_readiness_authority_digest_prefix: signoff
+            .residual_free_readiness_authority_digest_prefix
             .clone(),
         artifacts: OperatorReviewPacketArtifactsV1 {
             backend_evidence_snapshot_digest_prefix: prefix16(&snapshot.snapshot_digest),
@@ -1059,6 +1072,7 @@ mod tests {
             residual_free_governance_authority_digest_prefix: "MISSING".to_string(),
             final_readiness_consumer_authority_digest_prefix: "MISSING".to_string(),
             readiness_residual_sweep_digest_prefix: "MISSING".to_string(),
+            residual_free_readiness_authority_digest_prefix: "MISSING".to_string(),
             snapshot_digest: "activedigest111111".to_string(),
         }
     }
@@ -1084,6 +1098,7 @@ mod tests {
             residual_free_governance_authority_digest_prefix: "MISSING".to_string(),
             final_readiness_consumer_authority_digest_prefix: "ready1".to_string(),
             readiness_residual_sweep_digest_prefix: "rrs1".to_string(),
+            residual_free_readiness_authority_digest_prefix: "MISSING".to_string(),
             gate_report_digests: crate::operator_signoff::GateReportDigestsV1 {
                 v0: "g0".to_string(),
                 v1: "g1".to_string(),

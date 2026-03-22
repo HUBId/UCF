@@ -40,3 +40,7 @@ Canonical flows are fail-closed when final readiness inputs are missing, stale, 
 ```bash
 cargo run -p ucf-ops -- readiness-residual-sweep --out ./out/readiness_residual_sweep.json
 ```
+
+## v12 residual-free consumer finalization
+
+v12 adds `residual-free-readiness-sweep` and `ResidualFreeReadinessConsumerAuthorityV1` to prove that canonical consumers no longer retain historical, implicit, or aggregate readiness reconstruction in canonical flows.

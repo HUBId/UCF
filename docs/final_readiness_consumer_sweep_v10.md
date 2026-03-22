@@ -33,3 +33,7 @@ cargo run -p ucf-ops -- final-readiness-consumer-sweep --out ./out/final_readine
 ## v11 residual cleanup extension
 
 v11 adds `readiness-residual-sweep` to remove/block remaining residual readiness reconstruction from canonical consumers and to bind artifacts to `FinalReadinessResidualSweepV1`.
+
+## v12 ultimate consumer sweep
+
+The v12 `residual-free-readiness-sweep` extends final consumer authority by requiring `FinalReadinessResidualSweepV1` and explicit residual-free readiness authority references across canonical readiness consumers.
