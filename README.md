@@ -17,7 +17,7 @@ See `docs/feature_matrix.md` for details.
 - Spec snapshot: `cargo run -p ucf-ops -- spec snapshot --policy policies/packs/base_v1 --overlay policies/packs/overlays/test --out docs/spec_snapshot.md`
 - Docs lint (CI-blocking): `cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json`
 
-## Portability/docs gate (Linux + Windows, v11 refresh)
+## Portability/docs gate (Linux + Windows, v12 refresh)
 - `cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json`
 - `cargo run -p ucf-ops -- audit path-scan`
 - `cargo run -p ucf-ops -- audit hardware-scan`
@@ -30,22 +30,26 @@ See `docs/feature_matrix.md` for details.
 - `cargo run -p ucf-ops -- models supported-scope-execute-v4 --out ./out/supported_scope_execute_v4.json --workdir .`
 - `cargo run -p ucf-ops -- final-governance-consumer-sweep --out ./out/final_governance_consumer_sweep.json`
 - `cargo run -p ucf-ops -- governance-residual-sweep --out ./out/governance_residual_sweep.json`
+- `cargo run -p ucf-ops -- residual-free-governance-sweep --out ./out/residual_free_governance_sweep.json`
 - `cargo run -p ucf-ops -- models supported-scope-execute-v7 --out ./out/supported_scope_execute_v7.json --workdir .`
 - `cargo run -p ucf-ops -- readiness-spine-check --out ./out/readiness_spine_check.json`
 - `cargo run -p ucf-ops -- readiness-spine-sweep --out ./out/readiness_spine_sweep.json`
 - `cargo run -p ucf-ops -- final-readiness-consumer-sweep --out ./out/final_readiness_consumer_sweep.json`
 - `cargo run -p ucf-ops -- readiness-residual-sweep --out ./out/readiness_residual_sweep.json`
+- `cargo run -p ucf-ops -- residual-free-readiness-sweep --out ./out/residual_free_readiness_sweep.json`
 - `cargo run -p ucf-ops -- operator review-truth-check --out ./out/review_truth_check.json`
 - `cargo run -p ucf-ops -- exports roundtrip-check --in ./out/repro_portability.zip --out ./out/export_roundtrip_check.json`
 - `cargo run -p ucf-ops -- exports bundle-spine-check --in ./out/repro_portability.zip --out ./out/bundle_spine_check.json`
 - `cargo run -p ucf-ops -- exports bundle-spine-sweep --out ./out/bundle_spine_sweep.json`
 - `cargo run -p ucf-ops -- final-bundle-consumer-sweep --out ./out/final_bundle_consumer_sweep.json`
 - `cargo run -p ucf-ops -- bundle-residual-sweep --out ./out/bundle_residual_sweep.json`
+- `cargo run -p ucf-ops -- residual-free-bundle-sweep --out ./out/residual_free_bundle_sweep.json`
 - `cargo run -p ucf-ops -- remediation-interop-check --out ./out/remediation_interop_check.json`
 - `cargo run -p ucf-ops -- remediation-spine-check --out ./out/remediation_spine_check.json`
 - `cargo run -p ucf-ops -- primary-semantics-sweep --out ./out/primary_semantics_sweep.json`
 - `cargo run -p ucf-ops -- final-primary-semantics-sweep --out ./out/final_primary_semantics_sweep.json`
 - `cargo run -p ucf-ops -- primary-semantics-residual-sweep --out ./out/primary_semantics_residual_sweep.json`
+- `cargo run -p ucf-ops -- residual-free-primary-semantics-sweep --out ./out/residual_free_primary_semantics_sweep.json`
 - `cargo run -p ucf-ops -- governance-surfaces-check --out ./out/governance_surfaces_check.json`
 - `cargo run -p ucf-ops -- models supported-set-review --out ./out/supported_set_review.json --workdir .`
 - `cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json --workdir .`

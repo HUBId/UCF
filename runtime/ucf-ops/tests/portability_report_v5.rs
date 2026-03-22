@@ -125,6 +125,10 @@ fn portability_report_v11_contains_final_sweep_sections_in_stable_order() {
         .iter()
         .position(|c| c.contains("governance-residual-sweep"))
         .expect("governance residual sweep command present");
+    let residual_free_governance_idx = names
+        .iter()
+        .position(|c| c.contains("residual-free-governance-sweep"))
+        .expect("residual-free-governance-sweep command present");
     let supported_execute_v7_idx = names
         .iter()
         .position(|c| c.contains("models supported-scope-execute-v7"))
@@ -133,14 +137,26 @@ fn portability_report_v11_contains_final_sweep_sections_in_stable_order() {
         .iter()
         .position(|c| c.contains("readiness-residual-sweep"))
         .expect("readiness-residual-sweep command present");
+    let residual_free_readiness_idx = names
+        .iter()
+        .position(|c| c.contains("residual-free-readiness-sweep"))
+        .expect("residual-free-readiness-sweep command present");
     let bundle_residual_idx = names
         .iter()
         .position(|c| c.contains("bundle-residual-sweep"))
         .expect("bundle-residual-sweep command present");
+    let residual_free_bundle_idx = names
+        .iter()
+        .position(|c| c.contains("residual-free-bundle-sweep"))
+        .expect("residual-free-bundle-sweep command present");
     let primary_residual_idx = names
         .iter()
         .position(|c| c.contains("primary-semantics-residual-sweep"))
         .expect("primary-semantics-residual-sweep command present");
+    let residual_free_primary_idx = names
+        .iter()
+        .position(|c| c.contains("residual-free-primary-semantics-sweep"))
+        .expect("residual-free-primary-semantics-sweep command present");
 
     assert!(governance_idx < governance_entry_idx);
     assert!(governance_entry_idx < governance_entry_sweep_idx);
@@ -158,10 +174,14 @@ fn portability_report_v11_contains_final_sweep_sections_in_stable_order() {
     assert!(bundle_spine_idx < bundle_spine_sweep_idx);
     assert!(bundle_spine_sweep_idx < primary_semantics_sweep_idx);
     assert!(governance_idx < governance_residual_idx);
-    assert!(governance_residual_idx < supported_execute_v7_idx);
+    assert!(governance_residual_idx < residual_free_governance_idx);
+    assert!(residual_free_governance_idx < supported_execute_v7_idx);
     assert!(supported_execute_v7_idx < readiness_residual_idx);
-    assert!(readiness_residual_idx < bundle_residual_idx);
-    assert!(bundle_residual_idx < primary_residual_idx);
+    assert!(readiness_residual_idx < residual_free_readiness_idx);
+    assert!(residual_free_readiness_idx < bundle_residual_idx);
+    assert!(bundle_residual_idx < residual_free_bundle_idx);
+    assert!(residual_free_bundle_idx < primary_residual_idx);
+    assert!(primary_residual_idx < residual_free_primary_idx);
     assert!(interop_idx < active_idx);
     assert!(active_idx < backend_idx);
     assert!(backend_idx < repro_idx);
@@ -235,10 +255,24 @@ fn portability_report_v11_skips_optional_backend_resolution_cleanly() {
     );
     assert!(
         matches!(
+            report.residual_free_governance_sweep_smoke.status,
+            ucf_ops::PortabilityGateStatus::Pass | ucf_ops::PortabilityGateStatus::Skip
+        ),
+        "residual_free_governance_sweep_smoke must PASS or SKIP"
+    );
+    assert!(
+        matches!(
             report.readiness_residual_sweep_smoke.status,
             ucf_ops::PortabilityGateStatus::Pass | ucf_ops::PortabilityGateStatus::Skip
         ),
         "readiness_residual_sweep_smoke must PASS or SKIP"
+    );
+    assert!(
+        matches!(
+            report.residual_free_readiness_sweep_smoke.status,
+            ucf_ops::PortabilityGateStatus::Pass | ucf_ops::PortabilityGateStatus::Skip
+        ),
+        "residual_free_readiness_sweep_smoke must PASS or SKIP"
     );
     assert!(
         matches!(
@@ -249,9 +283,23 @@ fn portability_report_v11_skips_optional_backend_resolution_cleanly() {
     );
     assert!(
         matches!(
+            report.residual_free_bundle_sweep_smoke.status,
+            ucf_ops::PortabilityGateStatus::Pass | ucf_ops::PortabilityGateStatus::Skip
+        ),
+        "residual_free_bundle_sweep_smoke must PASS or SKIP"
+    );
+    assert!(
+        matches!(
             report.primary_semantics_residual_sweep_smoke.status,
             ucf_ops::PortabilityGateStatus::Pass | ucf_ops::PortabilityGateStatus::Skip
         ),
         "primary_semantics_residual_sweep_smoke must PASS or SKIP"
+    );
+    assert!(
+        matches!(
+            report.residual_free_primary_semantics_sweep_smoke.status,
+            ucf_ops::PortabilityGateStatus::Pass | ucf_ops::PortabilityGateStatus::Skip
+        ),
+        "residual_free_primary_semantics_sweep_smoke must PASS or SKIP"
     );
 }
