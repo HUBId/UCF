@@ -31,6 +31,7 @@ See `docs/feature_matrix.md` for details.
 - `cargo run -p ucf-ops -- final-governance-consumer-sweep --out ./out/final_governance_consumer_sweep.json`
 - `cargo run -p ucf-ops -- governance-residual-sweep --out ./out/governance_residual_sweep.json`
 - `cargo run -p ucf-ops -- residual-free-governance-sweep --out ./out/residual_free_governance_sweep.json`
+- `cargo run -p ucf-ops -- governance-absolute-sweep --out ./out/governance_absolute_sweep.json`
 - `cargo run -p ucf-ops -- models supported-scope-execute-v7 --out ./out/supported_scope_execute_v7.json --workdir .`
 - `cargo run -p ucf-ops -- readiness-spine-check --out ./out/readiness_spine_check.json`
 - `cargo run -p ucf-ops -- readiness-spine-sweep --out ./out/readiness_spine_sweep.json`

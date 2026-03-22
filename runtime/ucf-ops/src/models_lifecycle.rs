@@ -620,6 +620,8 @@ pub struct AggregatedActiveReviewSnapshotV1 {
     #[serde(default)]
     pub residual_free_governance_authority_digest_prefix: String,
     #[serde(default)]
+    pub governance_absolute_sweep_digest_prefix: String,
+    #[serde(default)]
     pub final_readiness_consumer_authority_digest_prefix: String,
     #[serde(default)]
     pub readiness_residual_sweep_digest_prefix: String,
@@ -2784,6 +2786,7 @@ pub fn models_active_review_snapshot(
         final_governance_consumer_authority_digest_prefix: "MISSING".to_string(),
         governance_residual_sweep_digest_prefix: "MISSING".to_string(),
         residual_free_governance_authority_digest_prefix: "MISSING".to_string(),
+        governance_absolute_sweep_digest_prefix: "MISSING".to_string(),
         final_readiness_consumer_authority_digest_prefix: "MISSING".to_string(),
         readiness_residual_sweep_digest_prefix: "MISSING".to_string(),
         residual_free_readiness_authority_digest_prefix: "MISSING".to_string(),
@@ -2832,6 +2835,11 @@ pub fn models_active_review_snapshot(
         "out/residual_free_governance_sweep.json",
         "authority_digest",
     );
+    let governance_absolute_sweep_digest_prefix = read_sweep_digest_prefix(
+        workdir,
+        "out/governance_absolute_sweep.json",
+        "sweep.sweep_digest",
+    );
     let final_readiness_consumer_authority_digest_prefix = read_sweep_digest_prefix(
         workdir,
         "out/final_readiness_consumer_sweep.json",
@@ -2862,6 +2870,7 @@ pub fn models_active_review_snapshot(
     digest_source.extend_from_slice(final_governance_consumer_authority_digest_prefix.as_bytes());
     digest_source.extend_from_slice(governance_residual_sweep_digest_prefix.as_bytes());
     digest_source.extend_from_slice(residual_free_governance_authority_digest_prefix.as_bytes());
+    digest_source.extend_from_slice(governance_absolute_sweep_digest_prefix.as_bytes());
     digest_source.extend_from_slice(final_readiness_consumer_authority_digest_prefix.as_bytes());
     digest_source.extend_from_slice(readiness_residual_sweep_digest_prefix.as_bytes());
     digest_source.extend_from_slice(residual_free_readiness_authority_digest_prefix.as_bytes());
@@ -2881,6 +2890,7 @@ pub fn models_active_review_snapshot(
         final_governance_consumer_authority_digest_prefix,
         governance_residual_sweep_digest_prefix,
         residual_free_governance_authority_digest_prefix,
+        governance_absolute_sweep_digest_prefix,
         final_readiness_consumer_authority_digest_prefix,
         readiness_residual_sweep_digest_prefix,
         residual_free_readiness_authority_digest_prefix,
@@ -7850,6 +7860,7 @@ mod probe_tests {
                 final_governance_consumer_authority_digest_prefix: "MISSING".to_string(),
                 governance_residual_sweep_digest_prefix: "MISSING".to_string(),
                 residual_free_governance_authority_digest_prefix: "MISSING".to_string(),
+                governance_absolute_sweep_digest_prefix: "MISSING".to_string(),
                 final_readiness_consumer_authority_digest_prefix: "MISSING".to_string(),
                 readiness_residual_sweep_digest_prefix: "MISSING".to_string(),
                 residual_free_readiness_authority_digest_prefix: "MISSING".to_string(),
@@ -10141,6 +10152,7 @@ mod probe_tests {
                 final_governance_consumer_authority_digest_prefix: "MISSING".to_string(),
                 governance_residual_sweep_digest_prefix: "MISSING".to_string(),
                 residual_free_governance_authority_digest_prefix: "MISSING".to_string(),
+                governance_absolute_sweep_digest_prefix: "MISSING".to_string(),
                 final_readiness_consumer_authority_digest_prefix: "MISSING".to_string(),
                 readiness_residual_sweep_digest_prefix: "MISSING".to_string(),
                 residual_free_readiness_authority_digest_prefix: "MISSING".to_string(),

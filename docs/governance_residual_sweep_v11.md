@@ -17,3 +17,8 @@ cargo run -p ucf-ops -- governance-residual-sweep --out ./out/governance_residua
 ## v12 update
 
 v12 adds `residual-free-governance-sweep` and requires canonical governance consumers to carry residual-free authority references (`ResidualFreeGovernanceConsumerAuthorityV1`) instead of historical reconstruction hints.
+
+## v13 follow-up
+
+v13 finalizes canonical consumer cleanup with `governance-absolute-sweep`, requiring residual-free final governance inputs across covered governance/review/export/gate consumers.
+
