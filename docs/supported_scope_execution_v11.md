@@ -5,19 +5,21 @@
 - `SupportedRealSlotSetPolicyV2`: review recommendation only.
 - `SupportedScopeReevaluationV1`: reevaluation against current applied scope.
 - `SupportedScopeExecutionV4` / `SupportedScopeExecutionV5`: prior execution artifacts kept for continuity.
-- `SupportedScopeExecutionV6`: **current authoritative execution artifact**.
+- `SupportedScopeExecutionV6`: v11 authoritative execution artifact (retained for continuity only in v12).
+- `SupportedScopeExecutionV7`: **current authoritative execution artifact in v12**.
 
-Only `SupportedScopeExecutionV6` may authorize the next `models supported-set-apply` result in v11.
+In v12, only `SupportedScopeExecutionV7` may authorize the next `models supported-set-apply` result.
 
 ## Why v11 requires residual-governance cleanup
 
-`SupportedScopeExecutionV6` is fail-closed unless all current governance inputs are present and PASS:
+`SupportedScopeExecutionV7` is fail-closed unless all current residual-free governance inputs are present and PASS:
 
 1. `AppliedSupportedSetContextV1`
 2. `CanonicalGovernanceEntryV1`
 3. `CanonicalGovernanceEntryAuthorityV2`
 4. `FinalGovernanceConsumerAuthorityV1`
 5. `FinalGovernanceResidualSweepV1`
+6. `ResidualFreeGovernanceConsumerAuthorityV1`
 
 Older policy/reevaluation/execution outputs are not sufficient by themselves.
 
@@ -36,7 +38,7 @@ cargo run -p ucf-ops -- models supported-scope-reevaluate --out ./out/supported_
 cargo run -p ucf-ops -- governance-entry-sweep --out ./out/governance_entry_sweep.json
 cargo run -p ucf-ops -- final-governance-consumer-sweep --out ./out/final_governance_consumer_sweep.json
 cargo run -p ucf-ops -- governance-residual-sweep --out ./out/governance_residual_sweep.json
-cargo run -p ucf-ops -- models supported-scope-execute-v6 --out ./out/supported_scope_execute_v6.json
+cargo run -p ucf-ops -- models supported-scope-execute-v7 --out ./out/supported_scope_execute_v7.json
 cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json
 ```
 

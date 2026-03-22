@@ -125,10 +125,10 @@ fn portability_report_v11_contains_final_sweep_sections_in_stable_order() {
         .iter()
         .position(|c| c.contains("governance-residual-sweep"))
         .expect("governance residual sweep command present");
-    let supported_execute_v6_idx = names
+    let supported_execute_v7_idx = names
         .iter()
-        .position(|c| c.contains("models supported-scope-execute-v6"))
-        .expect("supported-scope-execute-v6 command present");
+        .position(|c| c.contains("models supported-scope-execute-v7"))
+        .expect("supported-scope-execute-v7 command present");
     let readiness_residual_idx = names
         .iter()
         .position(|c| c.contains("readiness-residual-sweep"))
@@ -158,8 +158,8 @@ fn portability_report_v11_contains_final_sweep_sections_in_stable_order() {
     assert!(bundle_spine_idx < bundle_spine_sweep_idx);
     assert!(bundle_spine_sweep_idx < primary_semantics_sweep_idx);
     assert!(governance_idx < governance_residual_idx);
-    assert!(governance_residual_idx < supported_execute_v6_idx);
-    assert!(supported_execute_v6_idx < readiness_residual_idx);
+    assert!(governance_residual_idx < supported_execute_v7_idx);
+    assert!(supported_execute_v7_idx < readiness_residual_idx);
     assert!(readiness_residual_idx < bundle_residual_idx);
     assert!(bundle_residual_idx < primary_residual_idx);
     assert!(interop_idx < active_idx);
