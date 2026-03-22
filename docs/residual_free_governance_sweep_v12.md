@@ -12,6 +12,8 @@
 
 The command emits `ResidualFreeGovernanceConsumerAuthorityV1` plus per-consumer status and fails closed when required inputs are missing, stale, or contradictory.
 
+`SupportedScopeExecutionV7` consumes this authority directly; expansion is denied unless residual-free governance authority is `PASS` and digest prefixes match current applied/canonical/final governance inputs.
+
 ## Covered canonical consumers
 
 - ActiveReviewSnapshot

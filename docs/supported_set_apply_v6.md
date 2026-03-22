@@ -1,6 +1,6 @@
 # Supported Set Apply v6
 
-`models supported-set-apply` now requires a current `SupportedScopeExecutionV6` execution artifact and writes canonical applied scope as `SupportedRealSlotSetV2`.
+`models supported-set-apply` now requires a current `SupportedScopeExecutionV7` execution artifact and writes canonical applied scope as `SupportedRealSlotSetV2`.
 
 ## v11 behavior
 
@@ -14,6 +14,6 @@
 cargo run -p ucf-ops -- models supported-scope-reevaluate --out ./out/supported_scope_reeval.json
 cargo run -p ucf-ops -- final-governance-consumer-sweep --out ./out/final_governance_consumer_sweep.json
 cargo run -p ucf-ops -- governance-residual-sweep --out ./out/governance_residual_sweep.json
-cargo run -p ucf-ops -- models supported-scope-execute-v6 --out ./out/supported_scope_execute_v6.json
+cargo run -p ucf-ops -- models supported-scope-execute-v7 --out ./out/supported_scope_execute_v7.json
 cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json
 ```

@@ -54,6 +54,7 @@ Snapshots are generated under `docs/artifact_schema_snapshots/`:
 - `supported_scope_execution_v4.json` (v9 canonical supported-scope execution)
 - `supported_scope_execution_v5.json` (v10 final supported-scope execution)
 - `supported_scope_execution_v6.json` (v11 supported-scope execution freeze)
+- `supported_scope_execution_v7.json` (v12 residual-free supported-scope execution)
 - `supported_scope_reevaluation_v1.json` (v7)
 - `v3_gate_report_v1.json`
 - `v4_gate_report_v1.json`
