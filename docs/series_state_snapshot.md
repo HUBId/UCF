@@ -1,8 +1,8 @@
 # Prompt Series State Snapshot
 
 ## Current anchor
-- **Current anchor milestone:** `Real Compute Onboarding v12`.
-- **Anchor definition:** v12 planning queue in `docs/next_10_prompts.md` (entry set `290-299`).
+- **Current anchor milestone:** `Real Compute Onboarding v13`.
+- **Anchor definition:** v13 planning queue in `docs/next_10_prompts.md` (entry set `300-309`).
 - **Prompt index source:** `docs/prompt_series_index.md`.
 
 ## Status against anchor milestones
@@ -18,30 +18,31 @@
 - **v9:** complete (`ucf-ops v9 gate` overall PASS recorded at Prompt 268).
 - **v10:** complete (`ucf-ops v10 gate` overall PASS recorded at Prompt 278).
 - **v11:** complete (`ucf-ops v11 gate` overall PASS recorded at Prompt 288).
-- **v12:** in progress; complete only after `ucf-ops v12 gate` overall PASS (Prompt 298 gate criterion).
+- **v12:** complete (`ucf-ops v12 gate` overall PASS recorded at Prompt 298).
+- **v13:** not started yet.
 - **Queue policy:** immediate queue remains capped to 10 prompts.
 
 ## Last executed prompt / resume point
-- Last executed prompt ID: **289**.
-- Next prompt ID: **290**.
-- Resume from: **`PROMPT 290`**.
+- Last executed prompt ID: **299**.
+- Next prompt ID: **300**.
+- Resume from: **`PROMPT 300`**.
 - Numbering remains monotonic and append-only.
 
 ## Immediate next prompts (capped to 10)
 Reference: `docs/next_10_prompts.md`
 
-| Prompt ID | Title (short) | v12 class | Status |
+| Prompt ID | Title (short) | v13 class | Status |
 |---:|---|---|---|
-| 290 | Residual-free governance truth unification completion | MUST | queued |
-| 291 | Supported-scope expansion re-execution or freeze reaffirmation | MUST | queued |
-| 292 | Residual-free readiness-input consumption deepening | MUST | queued |
-| 293 | Residual-free bundle input and continuity-proof normalization | MUST | queued |
-| 294 | Residual-free primary blocking/remediation hardening | MUST | queued |
-| 295 | v12 schema snapshot refresh | MUST | queued |
-| 296 | v12 portability and docs refresh | NICE | queued |
-| 297 | Operator workflow/export continuity authority hardening | MUST | queued |
-| 298 | v12 gate schema and orchestration | MUST | queued |
-| 299 | v12 wrap and next-anchor governance | MUST | queued |
+| 300 | Residual-free governance truth unification completion | MUST | queued |
+| 301 | Supported-scope expansion re-execution or freeze reaffirmation | MUST | queued |
+| 302 | Residual-free readiness-input consumption deepening | MUST | queued |
+| 303 | Residual-free bundle input and continuity-proof normalization | MUST | queued |
+| 304 | Residual-free primary blocking/remediation hardening | MUST | queued |
+| 305 | v13 schema snapshot refresh | MUST | queued |
+| 306 | v13 portability and docs refresh | NICE | queued |
+| 307 | Operator workflow/export continuity authority hardening | MUST | queued |
+| 308 | v13 gate schema and orchestration | MUST | queued |
+| 309 | v13 wrap and next-anchor governance | MUST | queued |
 
 ## Historical anchor checkpoints
 
@@ -56,6 +57,7 @@ Reference: `docs/next_10_prompts.md`
 | 268 | v9 gate closure | complete |
 | 278 | v10 gate closure | complete |
 | 288 | v11 gate closure | complete |
+| 298 | v12 gate closure | complete |
 
 ## Series control notes
 - v0 completion requirement: historical signoff recorded.
@@ -70,9 +72,8 @@ Reference: `docs/next_10_prompts.md`
 - v9 completion requirement: **`ucf-ops v9 gate` overall PASS at Prompt 268**.
 - v10 completion requirement: **`ucf-ops v10 gate` overall PASS at Prompt 278**.
 - v11 completion requirement: **`ucf-ops v11 gate` overall PASS at Prompt 288**.
-- v12 completion requirement: **`ucf-ops v12 gate` overall PASS**.
-- Next anchor advancement is blocked until v12 gate PASS is recorded.
-- v12 progression remains hardware-neutral, offline-first, probe-first, shadow-first, and fail-closed.
+- v12 completion requirement: **`ucf-ops v12 gate` overall PASS at Prompt 298**.
+- v13 advancement remains hardware-neutral, offline-first, probe-first, shadow-first, and fail-closed.
 - Prompts are classified as MUST/NICE/DEFERRED at authoring time.
 
 ## Supported real-slot baseline for current stage
