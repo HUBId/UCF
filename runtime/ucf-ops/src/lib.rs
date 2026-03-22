@@ -40,6 +40,7 @@ mod remediation;
 mod remediation_consistency;
 mod residual_free_continuity_sweep;
 mod residual_free_governance_sweep;
+mod residual_free_readiness_sweep;
 mod reviewability_truth;
 mod roundtrip_chain;
 mod scope_authority;
@@ -223,14 +224,17 @@ pub use readiness_spine::{
     derive_canonical_readiness_authority_v2, derive_canonical_readiness_spine,
     readiness_spine_check, readiness_spine_sweep, require_canonical_readiness_spine,
     require_final_readiness_authority, require_final_readiness_inputs,
-    write_canonical_readiness_spine, CanonicalReadinessAuthorityStatusV2,
-    CanonicalReadinessAuthorityV2, CanonicalReadinessSpineStatusV1, CanonicalReadinessSpineV1,
-    FinalReadinessAuthorityContextV1, FinalReadinessInputsContextV1, ReadinessSpineCheckReportV1,
-    ReadinessSpineCheckStatusV1, ReadinessSpineMismatchCategoryV1,
-    ReadinessSpineSweepMismatchCategoryV1, ReadinessSpineSweepReportV1,
-    ReadinessSpineSweepSurfaceStatusV1, CANONICAL_READINESS_SPINE_REQUIRED,
+    require_residual_free_final_readiness_inputs, write_canonical_readiness_spine,
+    CanonicalReadinessAuthorityStatusV2, CanonicalReadinessAuthorityV2,
+    CanonicalReadinessSpineStatusV1, CanonicalReadinessSpineV1, FinalReadinessAuthorityContextV1,
+    FinalReadinessInputsContextV1, ReadinessSpineCheckReportV1, ReadinessSpineCheckStatusV1,
+    ReadinessSpineMismatchCategoryV1, ReadinessSpineSweepMismatchCategoryV1,
+    ReadinessSpineSweepReportV1, ReadinessSpineSweepSurfaceStatusV1,
+    ResidualFreeFinalReadinessInputsV1, CANONICAL_READINESS_SPINE_REQUIRED,
     FINAL_READINESS_AUTHORITY_REQUIRED, FINAL_READINESS_INPUTS_REQUIRED,
-    LEGACY_READINESS_INPUT_BLOCKED, RESIDUAL_READINESS_PATH_BLOCKED,
+    HISTORICAL_READINESS_PATH_BLOCKED, HISTORICAL_READINESS_PATH_REJECTED,
+    HISTORICAL_READINESS_PATH_TRANSLATED, LEGACY_READINESS_INPUT_BLOCKED,
+    RESIDUAL_FREE_FINAL_READINESS_INPUTS_REQUIRED, RESIDUAL_READINESS_PATH_BLOCKED,
     REVIEWABILITY_REDUCTION_REQUIRED, SECONDARY_READINESS_PATH_BLOCKED,
     SLOT_REVIEWABILITY_TRUTH_REQUIRED,
 };
@@ -262,6 +266,11 @@ pub use residual_free_governance_sweep::{
     residual_free_governance_sweep, ResidualFreeGovernanceConsumerAuthorityStatusV1,
     ResidualFreeGovernanceConsumerAuthorityV1, ResidualFreeGovernanceConsumerStatusV1,
     ResidualFreeGovernanceMismatchCategoryV1, ResidualFreeGovernanceSweepReportV1,
+};
+pub use residual_free_readiness_sweep::{
+    residual_free_readiness_sweep, ResidualFreeReadinessConsumerAuthorityStatusV1,
+    ResidualFreeReadinessConsumerAuthorityV1, ResidualFreeReadinessConsumerStatusV1,
+    ResidualFreeReadinessMismatchCategoryV1, ResidualFreeReadinessSweepReportV1,
 };
 pub use reviewability_truth::{
     derive_slot_reviewability_truths, derive_slot_reviewability_truths_from_active,

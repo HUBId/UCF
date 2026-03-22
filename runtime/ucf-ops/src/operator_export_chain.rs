@@ -327,6 +327,7 @@ mod tests {
             residual_free_governance_authority_digest_prefix: "MISSING".to_string(),
             final_readiness_consumer_authority_digest_prefix: "MISSING".to_string(),
             readiness_residual_sweep_digest_prefix: "MISSING".to_string(),
+            residual_free_readiness_authority_digest_prefix: "MISSING".to_string(),
             artifacts: crate::operator_review_packet::OperatorReviewPacketArtifactsV1 {
                 backend_evidence_snapshot_digest_prefix: "44".repeat(8),
                 active_review_snapshot_digest_prefix: "55".repeat(8),
@@ -379,6 +380,7 @@ mod tests {
             residual_free_governance_authority_digest_prefix: "MISSING".to_string(),
             final_readiness_consumer_authority_digest_prefix: "MISSING".to_string(),
             readiness_residual_sweep_digest_prefix: "MISSING".to_string(),
+            residual_free_readiness_authority_digest_prefix: "MISSING".to_string(),
             reasons: vec![],
             remediation_codes: vec![],
             canonical_remediation_codes: vec![],
@@ -406,6 +408,7 @@ mod tests {
             residual_free_governance_authority_digest_prefix: "MISSING".to_string(),
             final_readiness_consumer_authority_digest_prefix: "MISSING".to_string(),
             readiness_residual_sweep_digest_prefix: "MISSING".to_string(),
+            residual_free_readiness_authority_digest_prefix: "MISSING".to_string(),
             final_bundle_residual_sweep_digest_prefix: "MISSING".to_string(),
             final_primary_semantics_residual_sweep_digest_prefix: "MISSING".to_string(),
             residual_free_continuity_authority_digest_prefix: "MISSING".to_string(),
