@@ -54,7 +54,8 @@ Modes:
 
 
 6. **Artifact schema snapshots up-to-date**
-   - Regenerates shape snapshots for covered v3/v4/v5/v6/v7/v8/v9/v10/v11 governance/scope/readiness/review/export/interop artifacts and compares them with committed files in `docs/artifact_schema_snapshots/`.
+   - Regenerates shape snapshots for covered v3/v4/v5/v6/v7/v8/v9/v10/v11/v12 governance/scope/readiness/review/export/interop artifacts and compares them with committed files in `docs/artifact_schema_snapshots/`.
+   - v12 residual-free final-input contract points (`residual_free_*_consumer_authority_v1` plus `supported_scope_execution_v7`) are enforced in the same lane.
    - Classifies drift conservatively as `ADDITIVE`, `BREAKING`, or `UNKNOWN`; strict lint fails on drift.
    - Remediation:
      ```bash
