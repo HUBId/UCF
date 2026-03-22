@@ -51,3 +51,7 @@ Finale PASS/FAIL-Top-Level-Autorität erfolgt ausschließlich über `final-conti
 
 `CanonicalRoundTripChainV1` is a subordinate continuity contributor only.
 Residual-free top-level PASS/FAIL is emitted exclusively by `residual-free-continuity-sweep`.
+
+## v12 update
+`CanonicalRoundTripChainV1` ist ab v12 ausschließlich **SUBORDINATE_CONTINUITY_CONTRIBUTOR**. Top-level PASS/FAIL für kanonische Operator/Export-Flows kommt nur aus `final-input-continuity-sweep`.
+

@@ -1,0 +1,65 @@
+{
+  "artifact_id": "final_input_continuity_authority_v1",
+  "type_name": "FinalInputContinuityAuthorityV1",
+  "source_file": "runtime/ucf-ops/src/final_input_continuity_sweep.rs",
+  "required_fields": [
+    "applied_supported_set_digest_prefix",
+    "authority_digest",
+    "blocking_codes",
+    "canonical_bundle_spine_digest_prefix",
+    "canonical_governance_entry_digest_prefix",
+    "canonical_primary_semantics_authority_digest_prefix",
+    "canonical_readiness_spine_digest_prefix",
+    "canonical_roundtrip_chain_digest_prefix",
+    "continuity_status",
+    "operator_review_packet_digest_prefix",
+    "operator_signoff_digest_prefix",
+    "operator_workflow_chain_digest_prefix",
+    "remediation_codes",
+    "residual_free_bundle_consumer_authority_digest_prefix",
+    "residual_free_continuity_authority_digest_prefix",
+    "residual_free_governance_consumer_authority_digest_prefix",
+    "residual_free_primary_semantics_consumer_authority_digest_prefix",
+    "residual_free_readiness_consumer_authority_digest_prefix",
+    "schema_version"
+  ],
+  "optional_fields": [],
+  "field_types": {
+    "applied_supported_set_digest_prefix": "String",
+    "authority_digest": "String",
+    "blocking_codes": "Vec<String>",
+    "canonical_bundle_spine_digest_prefix": "String",
+    "canonical_governance_entry_digest_prefix": "String",
+    "canonical_primary_semantics_authority_digest_prefix": "String",
+    "canonical_readiness_spine_digest_prefix": "String",
+    "canonical_roundtrip_chain_digest_prefix": "String",
+    "continuity_status": "FinalInputContinuityStatusV1",
+    "operator_review_packet_digest_prefix": "String",
+    "operator_signoff_digest_prefix": "String",
+    "operator_workflow_chain_digest_prefix": "String",
+    "remediation_codes": "Vec<String>",
+    "residual_free_bundle_consumer_authority_digest_prefix": "String",
+    "residual_free_continuity_authority_digest_prefix": "String",
+    "residual_free_governance_consumer_authority_digest_prefix": "String",
+    "residual_free_primary_semantics_consumer_authority_digest_prefix": "String",
+    "residual_free_readiness_consumer_authority_digest_prefix": "String",
+    "schema_version": "u16"
+  },
+  "enum_variants": {
+    "FinalInputContinuityMismatchCategoryV1": [
+      "FinalInputBundleMismatch",
+      "FinalInputGovernanceMismatch",
+      "FinalInputPrimarySemanticsMismatch",
+      "FinalInputReadinessMismatch",
+      "FinalInputScopeMismatch",
+      "FinalInputWorkflowMismatch",
+      "LegacyTopLevelContinuityPresent",
+      "ResidualPathDependencyPresent"
+    ],
+    "FinalInputContinuityStatusV1": [
+      "Fail",
+      "LegacyPresent",
+      "Pass"
+    ]
+  }
+}

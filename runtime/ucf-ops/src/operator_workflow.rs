@@ -66,6 +66,8 @@ pub struct OperatorWorkflowChainV1 {
     pub residual_free_primary_semantics_authority_digest_prefix: String,
     #[serde(default)]
     pub residual_free_continuity_authority_digest_prefix: String,
+    #[serde(default)]
+    pub final_input_continuity_authority_digest_prefix: String,
     pub operator_review_packet_digest_prefix: String,
     pub operator_signoff_digest_prefix: String,
     pub interop_matrix_digest_prefix: String,
@@ -311,6 +313,7 @@ impl OperatorWorkflowPolicyV1 {
             final_primary_semantics_residual_sweep_digest_prefix: "MISSING".to_string(),
             residual_free_primary_semantics_authority_digest_prefix: "MISSING".to_string(),
             residual_free_continuity_authority_digest_prefix: "MISSING".to_string(),
+            final_input_continuity_authority_digest_prefix: "MISSING".to_string(),
             operator_review_packet_digest_prefix,
             operator_signoff_digest_prefix,
             interop_matrix_digest_prefix,
@@ -402,6 +405,12 @@ pub fn operator_workflow_chain(
     chain.residual_free_continuity_authority_digest_prefix = discover_digest_prefix(
         &out_root,
         "residual_free_continuity_sweep.json",
+        "authority_digest",
+    )
+    .unwrap_or_else(|| "MISSING".to_string());
+    chain.final_input_continuity_authority_digest_prefix = discover_digest_prefix(
+        &out_root,
+        "final_input_continuity_sweep.json",
         "authority_digest",
     )
     .unwrap_or_else(|| "MISSING".to_string());

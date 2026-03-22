@@ -18,6 +18,7 @@ mod final_bundle_consumer_sweep;
 mod final_continuity_sweep;
 mod final_governance_authority;
 mod final_governance_consumer_sweep;
+mod final_input_continuity_sweep;
 mod final_readiness_consumer_sweep;
 mod formal_invariants;
 mod goldens;
@@ -119,6 +120,10 @@ pub use final_governance_consumer_sweep::{
     final_governance_consumer_sweep, FinalGovernanceConsumerAuthorityStatusV1,
     FinalGovernanceConsumerAuthorityV1, FinalGovernanceConsumerMismatchCategoryV1,
     FinalGovernanceConsumerStatusV1, FinalGovernanceConsumerSweepReportV1,
+};
+pub use final_input_continuity_sweep::{
+    final_input_continuity_sweep, FinalInputContinuityAuthorityV1,
+    FinalInputContinuityMismatchCategoryV1, FinalInputContinuityStatusV1,
 };
 pub use final_readiness_consumer_sweep::{
     final_readiness_consumer_sweep, FinalReadinessConsumerAuthorityStatusV1,
