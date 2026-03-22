@@ -1,6 +1,6 @@
 # Artifact Schema Snapshots
 
-This repository enforces deterministic shape snapshots for governance/review/export/interop artifacts that must remain stable across v3/v4/v5/v6/v7/v8/v9/v10/v11 hardening.
+This repository enforces deterministic shape snapshots for governance/review/export/interop artifacts that must remain stable across v3/v4/v5/v6/v7/v8/v9/v10/v11/v12 hardening.
 
 ## Covered artifacts
 
@@ -83,6 +83,20 @@ v11 contract points now frozen here include:
 
 Related additive updates in canonical governance/readiness/bundle/primary-semantics authority families, operator signoff/review/workflow, and v9/v10/v11-adjacent gate/interop families remain tracked through the same snapshot lane.
 
+v12 contract points now frozen here include:
+
+- `residual_free_governance_consumer_authority_v1`
+- `supported_scope_execution_v7`
+- `residual_free_readiness_consumer_authority_v1`
+- `residual_free_bundle_consumer_authority_v1`
+- `residual_free_primary_semantics_consumer_authority_v1`
+- additive updates to `final_governance_residual_sweep_v1`
+- additive updates to `final_readiness_residual_sweep_v1`
+- additive updates to `final_bundle_residual_sweep_v1`
+- additive updates to `final_primary_semantics_residual_sweep_v1`
+- additive updates to `operator_signoff_v1`, `operator_review_packet_v1`, and `operator_workflow_chain_v1`
+- additive updates to consolidated gate report families covered by the same lane
+
 ## Regeneration
 
 ```bash
@@ -120,3 +134,11 @@ When a schema change is intentional:
 4. commit snapshots together with rationale/docs updates.
 
 For governance/scope/readiness/bundle/primary-semantics/interop artifacts, snapshots freeze contract shape only (fields, optionality, and enum variants), not runtime values. This explicitly guards shared cross-surface contracts from silent schema drift.
+
+For v12 residual-free final-input surfaces, this freeze is now first-class for cross-surface contracts and CI review:
+
+- residual-free governance consumer authority,
+- supported-scope execution v7,
+- residual-free readiness consumer authority,
+- residual-free bundle consumer authority,
+- residual-free primary-semantics consumer authority.
