@@ -46,3 +46,7 @@ After `supported-set-apply`, compare:
 
 - `previous_slots` vs `resulting_slots` in `./out/supported_set_apply.json`
 - `decision` (`FROZEN` means unchanged, `EXPANDED` means exactly one added slot)
+
+## v12 update
+
+`SupportedScopeExecutionV11` documentation is superseded by v12 residual-free governance consumer requirements: canonical consumers may not derive governance from execution or reevaluation history.

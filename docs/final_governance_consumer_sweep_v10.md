@@ -28,3 +28,7 @@ cargo run -p ucf-ops -- final-governance-consumer-sweep --out ./out/final_govern
 ```
 
 v11 extends this with `governance-residual-sweep`, which removes/blocks remaining residual governance reconstruction paths from canonical consumers.
+
+## v12 update
+
+Canonical consumer flows now additionally embed `residual_free_governance_authority_digest_prefix`, proving residual-free governance authority lineage in v12.

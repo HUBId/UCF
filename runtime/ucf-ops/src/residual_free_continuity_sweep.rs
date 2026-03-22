@@ -51,6 +51,7 @@ pub struct ResidualFreeContinuityAuthorityV1 {
     pub canonical_governance_entry_digest_prefix: String,
     pub final_governance_consumer_authority_digest_prefix: String,
     pub final_governance_residual_sweep_digest_prefix: String,
+
     pub canonical_readiness_spine_digest_prefix: String,
     pub final_readiness_consumer_authority_digest_prefix: String,
     pub final_readiness_residual_sweep_digest_prefix: String,

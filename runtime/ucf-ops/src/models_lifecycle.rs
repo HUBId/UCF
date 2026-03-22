@@ -396,6 +396,7 @@ pub struct SupportedScopeExecutionV6 {
     pub canonical_governance_authority_digest_prefix: String,
     pub final_governance_consumer_authority_digest_prefix: String,
     pub final_governance_residual_sweep_digest_prefix: String,
+
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prior_scope_execution_digest_prefix: Option<String>,
     pub execution_decision: SupportedScopeExecutionDecisionV6,
@@ -586,6 +587,8 @@ pub struct AggregatedActiveReviewSnapshotV1 {
     pub final_governance_consumer_authority_digest_prefix: String,
     #[serde(default)]
     pub governance_residual_sweep_digest_prefix: String,
+    #[serde(default)]
+    pub residual_free_governance_authority_digest_prefix: String,
     #[serde(default)]
     pub final_readiness_consumer_authority_digest_prefix: String,
     #[serde(default)]
@@ -2748,6 +2751,7 @@ pub fn models_active_review_snapshot(
         canonical_governance_entry_digest_prefix: "MISSING".to_string(),
         final_governance_consumer_authority_digest_prefix: "MISSING".to_string(),
         governance_residual_sweep_digest_prefix: "MISSING".to_string(),
+        residual_free_governance_authority_digest_prefix: "MISSING".to_string(),
         final_readiness_consumer_authority_digest_prefix: "MISSING".to_string(),
         readiness_residual_sweep_digest_prefix: "MISSING".to_string(),
         snapshot_digest: String::new(),
@@ -2790,6 +2794,11 @@ pub fn models_active_review_snapshot(
         "out/governance_residual_sweep.json",
         "sweep_digest",
     );
+    let residual_free_governance_authority_digest_prefix = read_sweep_digest_prefix(
+        workdir,
+        "out/residual_free_governance_sweep.json",
+        "authority_digest",
+    );
     let final_readiness_consumer_authority_digest_prefix = read_sweep_digest_prefix(
         workdir,
         "out/final_readiness_consumer_sweep.json",
@@ -2814,6 +2823,7 @@ pub fn models_active_review_snapshot(
     digest_source.extend_from_slice(canonical_governance_entry_digest_prefix.as_bytes());
     digest_source.extend_from_slice(final_governance_consumer_authority_digest_prefix.as_bytes());
     digest_source.extend_from_slice(governance_residual_sweep_digest_prefix.as_bytes());
+    digest_source.extend_from_slice(residual_free_governance_authority_digest_prefix.as_bytes());
     digest_source.extend_from_slice(final_readiness_consumer_authority_digest_prefix.as_bytes());
     digest_source.extend_from_slice(readiness_residual_sweep_digest_prefix.as_bytes());
     for slot in &slots {
@@ -2831,6 +2841,7 @@ pub fn models_active_review_snapshot(
         canonical_governance_entry_digest_prefix,
         final_governance_consumer_authority_digest_prefix,
         governance_residual_sweep_digest_prefix,
+        residual_free_governance_authority_digest_prefix,
         final_readiness_consumer_authority_digest_prefix,
         readiness_residual_sweep_digest_prefix,
         snapshot_digest: sha256_hex(&digest_source),
@@ -7470,6 +7481,7 @@ mod probe_tests {
                 canonical_governance_entry_digest_prefix: "MISSING".to_string(),
                 final_governance_consumer_authority_digest_prefix: "MISSING".to_string(),
                 governance_residual_sweep_digest_prefix: "MISSING".to_string(),
+                residual_free_governance_authority_digest_prefix: "MISSING".to_string(),
                 final_readiness_consumer_authority_digest_prefix: "MISSING".to_string(),
                 readiness_residual_sweep_digest_prefix: "MISSING".to_string(),
                 snapshot_digest: "ee".repeat(32),
@@ -9306,6 +9318,7 @@ mod probe_tests {
                 canonical_governance_entry_digest_prefix: "MISSING".to_string(),
                 final_governance_consumer_authority_digest_prefix: "MISSING".to_string(),
                 governance_residual_sweep_digest_prefix: "MISSING".to_string(),
+                residual_free_governance_authority_digest_prefix: "MISSING".to_string(),
                 final_readiness_consumer_authority_digest_prefix: "MISSING".to_string(),
                 readiness_residual_sweep_digest_prefix: "MISSING".to_string(),
                 gate_report_digests: crate::operator_signoff::GateReportDigestsV1 {

@@ -27,7 +27,8 @@
     "final_governance_consumer_authority_digest_prefix",
     "final_readiness_consumer_authority_digest_prefix",
     "governance_residual_sweep_digest_prefix",
-    "readiness_residual_sweep_digest_prefix"
+    "readiness_residual_sweep_digest_prefix",
+    "residual_free_governance_authority_digest_prefix"
   ],
   "field_types": {
     "active_review_snapshot_digest_prefix": "Option<String>",
@@ -50,6 +51,7 @@
     "readiness_residual_sweep_digest_prefix": "String",
     "reasons": "Vec<String>",
     "remediation_codes": "Vec<String>",
+    "residual_free_governance_authority_digest_prefix": "String",
     "reviewability_reduction_digest_prefix": "String",
     "schema_version": "u16",
     "supported_slot_set_digest": "String"
