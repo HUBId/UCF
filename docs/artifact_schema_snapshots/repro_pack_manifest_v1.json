@@ -22,6 +22,7 @@
     "policy_graph_digest",
     "related_artifacts",
     "repro_pack_digest",
+    "residual_free_bundle_consumer_authority_digest_prefix",
     "run_id",
     "schema_version"
   ],
@@ -49,6 +50,7 @@
     "policy_graph_digest": "String",
     "related_artifacts": "Vec<CanonicalExportArtifactRefV1>",
     "repro_pack_digest": "String",
+    "residual_free_bundle_consumer_authority_digest_prefix": "String",
     "run_id": "String",
     "schema_version": "u16"
   },

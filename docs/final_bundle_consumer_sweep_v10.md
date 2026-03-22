@@ -45,3 +45,7 @@ cargo run -p ucf-ops -- final-bundle-consumer-sweep --out ./out/final_bundle_con
 ## v11 residual cleanup
 
 v11 adds `bundle-residual-sweep` to remove and block the last residual bundle-reconstruction paths in canonical export flows.
+
+## v12 residual-free consumer guarantee
+
+`residual-free-bundle-sweep` is now the bounded v12 authority proving that canonical export consumers no longer rely on manifest history, ad-hoc inspect summaries, roundtrip-only reconstruction, or bundle-local heuristics as primary bundle truth.
