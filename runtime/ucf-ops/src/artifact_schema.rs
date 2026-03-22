@@ -1141,12 +1141,10 @@ mod tests {
         let mut snapshot: ArtifactSchemaSnapshot =
             serde_json::from_str(&fs::read_to_string(&snapshot_path).expect("read snapshot"))
                 .expect("parse snapshot");
-        snapshot
-            .field_types
-            .insert(
-                "resulting_supported_set_digest_prefix".to_string(),
-                "u32".to_string(),
-            );
+        snapshot.field_types.insert(
+            "resulting_supported_set_digest_prefix".to_string(),
+            "u32".to_string(),
+        );
         fs::write(
             &snapshot_path,
             serde_json::to_string_pretty(&snapshot).expect("serialize snapshot"),
