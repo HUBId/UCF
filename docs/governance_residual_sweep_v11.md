@@ -13,3 +13,7 @@ cargo run -p ucf-ops -- governance-residual-sweep --out ./out/governance_residua
 ```
 
 `REAFFIRM_FREEZE` remains a valid success result when residual paths remain or expansion prerequisites are not uniquely satisfied.
+
+## v12 update
+
+v12 adds `residual-free-governance-sweep` and requires canonical governance consumers to carry residual-free authority references (`ResidualFreeGovernanceConsumerAuthorityV1`) instead of historical reconstruction hints.
