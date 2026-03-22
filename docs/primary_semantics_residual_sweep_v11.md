@@ -40,3 +40,7 @@ Any residual path (local main-reason ordering, local action-hint ordering, ad-ho
 ```bash
 cargo run -p ucf-ops -- primary-semantics-residual-sweep --out ./out/primary_semantics_residual_sweep.json
 ```
+
+## v12 update
+
+v12 (`residual-free-primary-semantics-sweep`) finalizes the canonical consumer cleanup and blocks remaining historical/implicit/local primary-semantics reconstruction in canonical flows.

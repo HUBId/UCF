@@ -31,3 +31,7 @@ Final v9 authority proof is consolidated in `docs/primary_semantics_sweep_v9.md`
 ## v11 residual-sweep note
 
 v11 note: residual primary-semantics reconstruction in canonical flows is now explicitly swept/blocked by `primary-semantics-residual-sweep`.
+
+## v12 update
+
+v12 removes any remaining canonical dependence on ad-hoc condition→remediation reconstruction as primary truth; such paths are now blocked or secondary-only.

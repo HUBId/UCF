@@ -88,6 +88,10 @@ pub struct OperatorSignoffDecisionV1 {
     pub readiness_residual_sweep_digest_prefix: String,
     #[serde(default)]
     pub residual_free_readiness_authority_digest_prefix: String,
+    #[serde(default)]
+    pub final_primary_semantics_residual_sweep_digest_prefix: String,
+    #[serde(default)]
+    pub residual_free_primary_semantics_authority_digest_prefix: String,
     pub gate_report_digests: GateReportDigestsV1,
     pub reasons: Vec<String>,
     pub remediation_codes: Vec<String>,
@@ -271,6 +275,16 @@ pub fn operator_signoff(
         workdir,
         "out/residual_free_readiness_sweep.json",
         "authority_digest",
+    );
+    decision.final_primary_semantics_residual_sweep_digest_prefix = read_sweep_digest_prefix(
+        workdir,
+        "out/primary_semantics_residual_sweep.json",
+        "sweep_digest",
+    );
+    decision.residual_free_primary_semantics_authority_digest_prefix = read_sweep_digest_prefix(
+        workdir,
+        "out/residual_free_primary_semantics_sweep.json",
+        "authority.authority_digest",
     );
     decision.decision_digest = decision_digest(&decision)?;
 
@@ -591,6 +605,8 @@ fn build_not_ready_minimal(
         final_readiness_consumer_authority_digest_prefix: "MISSING".to_string(),
         readiness_residual_sweep_digest_prefix: "MISSING".to_string(),
         residual_free_readiness_authority_digest_prefix: "MISSING".to_string(),
+        final_primary_semantics_residual_sweep_digest_prefix: "MISSING".to_string(),
+        residual_free_primary_semantics_authority_digest_prefix: "MISSING".to_string(),
         gate_report_digests: GateReportDigestsV1 {
             v0: digest_opt(v0.as_ref())?,
             v1: digest_opt(v1.as_ref())?,
@@ -640,6 +656,8 @@ fn build_not_ready_from_snapshot(
         final_readiness_consumer_authority_digest_prefix: "MISSING".to_string(),
         readiness_residual_sweep_digest_prefix: "MISSING".to_string(),
         residual_free_readiness_authority_digest_prefix: "MISSING".to_string(),
+        final_primary_semantics_residual_sweep_digest_prefix: "MISSING".to_string(),
+        residual_free_primary_semantics_authority_digest_prefix: "MISSING".to_string(),
         gate_report_digests: GateReportDigestsV1 {
             v0: digest_opt(v0.as_ref())?,
             v1: digest_opt(v1.as_ref())?,
@@ -698,6 +716,8 @@ fn build_decision(
         final_readiness_consumer_authority_digest_prefix: "MISSING".to_string(),
         readiness_residual_sweep_digest_prefix: "MISSING".to_string(),
         residual_free_readiness_authority_digest_prefix: "MISSING".to_string(),
+        final_primary_semantics_residual_sweep_digest_prefix: "MISSING".to_string(),
+        residual_free_primary_semantics_authority_digest_prefix: "MISSING".to_string(),
         gate_report_digests: GateReportDigestsV1 {
             v0: digest_opt(v0.as_ref())?,
             v1: digest_opt(v1.as_ref())?,

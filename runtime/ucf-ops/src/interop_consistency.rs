@@ -71,6 +71,10 @@ pub struct CrossSurfaceContextMatrixV1 {
     pub readiness_residual_sweep_digest_prefix: String,
     #[serde(default)]
     pub residual_free_readiness_authority_digest_prefix: String,
+    #[serde(default)]
+    pub final_primary_semantics_residual_sweep_digest_prefix: String,
+    #[serde(default)]
+    pub residual_free_primary_semantics_authority_digest_prefix: String,
     pub policy_graph_digest_prefix: String,
     pub manifest_digest_prefix: String,
     pub surfaces: Vec<CrossSurfaceEntryV1>,
@@ -287,6 +291,22 @@ pub fn interop_consistency_matrix(
             .map(|review| {
                 review
                     .residual_free_readiness_authority_digest_prefix
+                    .clone()
+            })
+            .unwrap_or_else(|| "MISSING".to_string()),
+        final_primary_semantics_residual_sweep_digest_prefix: operator_review
+            .as_ref()
+            .map(|review| {
+                review
+                    .final_primary_semantics_residual_sweep_digest_prefix
+                    .clone()
+            })
+            .unwrap_or_else(|| "MISSING".to_string()),
+        residual_free_primary_semantics_authority_digest_prefix: operator_review
+            .as_ref()
+            .map(|review| {
+                review
+                    .residual_free_primary_semantics_authority_digest_prefix
                     .clone()
             })
             .unwrap_or_else(|| "MISSING".to_string()),
@@ -854,6 +874,8 @@ mod tests {
             final_readiness_consumer_authority_digest_prefix: "fr".to_string(),
             readiness_residual_sweep_digest_prefix: "rr".to_string(),
             residual_free_readiness_authority_digest_prefix: "MISSING".to_string(),
+            final_primary_semantics_residual_sweep_digest_prefix: "MISSING".to_string(),
+            residual_free_primary_semantics_authority_digest_prefix: "MISSING".to_string(),
             policy_graph_digest_prefix: "p".to_string(),
             manifest_digest_prefix: "m".to_string(),
             surfaces: vec![

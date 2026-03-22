@@ -41,6 +41,7 @@ mod remediation_consistency;
 mod residual_free_bundle_sweep;
 mod residual_free_continuity_sweep;
 mod residual_free_governance_sweep;
+mod residual_free_primary_semantics_sweep;
 mod residual_free_readiness_sweep;
 mod reviewability_truth;
 mod roundtrip_chain;
@@ -243,6 +244,7 @@ pub use remediation::all_registry_rows as remediation_registry_rows;
 pub use remediation_consistency::{
     final_primary_semantics_sweep, primary_semantics_sweep, remediation_consistency_check,
     remediation_interop_check, remediation_spine_check, require_final_primary_semantics_inputs,
+    require_residual_free_final_primary_semantics_inputs,
     CanonicalPrimarySemanticsAuthorityStatusV1, CanonicalPrimarySemanticsAuthorityV1,
     CanonicalRemediationObservationV1, CrossSurfaceConditionObservationV1,
     CrossSurfaceObservationStatusV1, FinalPrimarySemanticsConsumerAuthorityStatusV1,
@@ -252,10 +254,11 @@ pub use remediation_consistency::{
     RemediationConsistencyCheckV1, RemediationConsistencyObservedV1,
     RemediationConsistencyReportV1, RemediationConsistencyStatusV1,
     RemediationInteropCheckReportV1, RemediationMismatchKindV1, RemediationSpineCheckReportV1,
-    SpineConditionObservationV1, CANONICAL_CONDITION_MODEL_REQUIRED,
-    CANONICAL_REMEDIATION_REGISTRY_REQUIRED, FINAL_PRIMARY_SEMANTICS_AUTHORITY_REQUIRED,
-    FINAL_PRIMARY_SEMANTICS_INPUTS_REQUIRED, LEGACY_PRIMARY_SEMANTICS_INPUT_BLOCKED,
-    LEGACY_PRIMARY_SEMANTICS_REJECTED, LEGACY_PRIMARY_SEMANTICS_TRANSLATED,
+    ResidualFreeFinalPrimarySemanticsInputsV1, SpineConditionObservationV1,
+    CANONICAL_CONDITION_MODEL_REQUIRED, CANONICAL_REMEDIATION_REGISTRY_REQUIRED,
+    FINAL_PRIMARY_SEMANTICS_AUTHORITY_REQUIRED, FINAL_PRIMARY_SEMANTICS_INPUTS_REQUIRED,
+    LEGACY_PRIMARY_SEMANTICS_INPUT_BLOCKED, LEGACY_PRIMARY_SEMANTICS_REJECTED,
+    LEGACY_PRIMARY_SEMANTICS_TRANSLATED, RESIDUAL_FREE_FINAL_PRIMARY_SEMANTICS_INPUTS_REQUIRED,
     RESIDUAL_PRIMARY_SEMANTICS_PATH_BLOCKED, RESIDUAL_PRIMARY_SEMANTICS_PATH_REJECTED,
     RESIDUAL_PRIMARY_SEMANTICS_PATH_TRANSLATED,
 };
@@ -272,6 +275,12 @@ pub use residual_free_governance_sweep::{
     residual_free_governance_sweep, ResidualFreeGovernanceConsumerAuthorityStatusV1,
     ResidualFreeGovernanceConsumerAuthorityV1, ResidualFreeGovernanceConsumerStatusV1,
     ResidualFreeGovernanceMismatchCategoryV1, ResidualFreeGovernanceSweepReportV1,
+};
+pub use residual_free_primary_semantics_sweep::{
+    residual_free_primary_semantics_authority_digest_prefix, residual_free_primary_semantics_sweep,
+    ResidualFreePrimarySemanticsAuthorityStatusV1, ResidualFreePrimarySemanticsConsumerAuthorityV1,
+    ResidualFreePrimarySemanticsMismatchCategoryV1, ResidualFreePrimarySemanticsSurfaceStatusV1,
+    ResidualFreePrimarySemanticsSweepReportV1,
 };
 pub use residual_free_readiness_sweep::{
     residual_free_readiness_sweep, ResidualFreeReadinessConsumerAuthorityStatusV1,
