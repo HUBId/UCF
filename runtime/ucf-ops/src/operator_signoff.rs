@@ -81,6 +81,8 @@ pub struct OperatorSignoffDecisionV1 {
     #[serde(default)]
     pub governance_residual_sweep_digest_prefix: String,
     #[serde(default)]
+    pub residual_free_governance_authority_digest_prefix: String,
+    #[serde(default)]
     pub final_readiness_consumer_authority_digest_prefix: String,
     #[serde(default)]
     pub readiness_residual_sweep_digest_prefix: String,
@@ -250,6 +252,11 @@ pub fn operator_signoff(
         workdir,
         "out/governance_residual_sweep.json",
         "sweep_digest",
+    );
+    decision.residual_free_governance_authority_digest_prefix = read_sweep_digest_prefix(
+        workdir,
+        "out/residual_free_governance_sweep.json",
+        "authority_digest",
     );
     decision.final_readiness_consumer_authority_digest_prefix = read_sweep_digest_prefix(
         workdir,
@@ -573,6 +580,7 @@ fn build_not_ready_minimal(
         canonical_governance_entry_digest_prefix: "MISSING".to_string(),
         final_governance_consumer_authority_digest_prefix: "MISSING".to_string(),
         governance_residual_sweep_digest_prefix: "MISSING".to_string(),
+        residual_free_governance_authority_digest_prefix: "MISSING".to_string(),
         final_readiness_consumer_authority_digest_prefix: "MISSING".to_string(),
         readiness_residual_sweep_digest_prefix: "MISSING".to_string(),
         gate_report_digests: GateReportDigestsV1 {
@@ -620,6 +628,7 @@ fn build_not_ready_from_snapshot(
         canonical_governance_entry_digest_prefix: "MISSING".to_string(),
         final_governance_consumer_authority_digest_prefix: "MISSING".to_string(),
         governance_residual_sweep_digest_prefix: "MISSING".to_string(),
+        residual_free_governance_authority_digest_prefix: "MISSING".to_string(),
         final_readiness_consumer_authority_digest_prefix: "MISSING".to_string(),
         readiness_residual_sweep_digest_prefix: "MISSING".to_string(),
         gate_report_digests: GateReportDigestsV1 {
@@ -676,6 +685,7 @@ fn build_decision(
         canonical_governance_entry_digest_prefix: "MISSING".to_string(),
         final_governance_consumer_authority_digest_prefix: "MISSING".to_string(),
         governance_residual_sweep_digest_prefix: "MISSING".to_string(),
+        residual_free_governance_authority_digest_prefix: "MISSING".to_string(),
         final_readiness_consumer_authority_digest_prefix: "MISSING".to_string(),
         readiness_residual_sweep_digest_prefix: "MISSING".to_string(),
         gate_report_digests: GateReportDigestsV1 {
@@ -1174,6 +1184,7 @@ mod tests {
             canonical_governance_entry_digest_prefix: "MISSING".to_string(),
             final_governance_consumer_authority_digest_prefix: "MISSING".to_string(),
             governance_residual_sweep_digest_prefix: "MISSING".to_string(),
+            residual_free_governance_authority_digest_prefix: "MISSING".to_string(),
             final_readiness_consumer_authority_digest_prefix: "MISSING".to_string(),
             readiness_residual_sweep_digest_prefix: "MISSING".to_string(),
             snapshot_digest: "snapshot1111".to_string(),

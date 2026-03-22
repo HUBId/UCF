@@ -39,6 +39,7 @@ mod readiness_spine;
 mod remediation;
 mod remediation_consistency;
 mod residual_free_continuity_sweep;
+mod residual_free_governance_sweep;
 mod reviewability_truth;
 mod roundtrip_chain;
 mod scope_authority;
@@ -106,7 +107,8 @@ pub use final_continuity_sweep::{
 };
 pub use final_governance_authority::{
     require_final_governance_authority, require_final_governance_inputs,
-    FinalGovernanceAuthorityContextV1, FINAL_GOVERNANCE_AUTHORITY_REQUIRED,
+    require_residual_free_final_governance_inputs, FinalGovernanceAuthorityContextV1,
+    ResidualFreeFinalGovernanceInputsV1, FINAL_GOVERNANCE_AUTHORITY_REQUIRED,
     FINAL_GOVERNANCE_INPUTS_REQUIRED, LEGACY_GOVERNANCE_INPUT_BLOCKED,
     RESIDUAL_GOVERNANCE_PATH_BLOCKED,
 };
@@ -253,6 +255,11 @@ pub use remediation_consistency::{
 pub use residual_free_continuity_sweep::{
     residual_free_continuity_sweep, ResidualFreeContinuityAuthorityV1,
     ResidualFreeContinuityMismatchCategoryV1, ResidualFreeContinuityStatusV1,
+};
+pub use residual_free_governance_sweep::{
+    residual_free_governance_sweep, ResidualFreeGovernanceConsumerAuthorityStatusV1,
+    ResidualFreeGovernanceConsumerAuthorityV1, ResidualFreeGovernanceConsumerStatusV1,
+    ResidualFreeGovernanceMismatchCategoryV1, ResidualFreeGovernanceSweepReportV1,
 };
 pub use reviewability_truth::{
     derive_slot_reviewability_truths, derive_slot_reviewability_truths_from_active,
@@ -17090,6 +17097,7 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         matrix_cmd("linux", "cargo run -p ucf-ops -- primary-semantics-sweep --out ./out/primary_semantics_sweep.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- final-governance-consumer-sweep --out ./out/final_governance_consumer_sweep.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- governance-residual-sweep --out ./out/governance_residual_sweep.json"),
+        matrix_cmd("linux", "cargo run -p ucf-ops -- residual-free-governance-sweep --out ./out/residual_free_governance_sweep.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- models supported-scope-execute-v6 --out ./out/supported_scope_execute_v6.json --workdir ."),
         matrix_cmd("linux", "cargo run -p ucf-ops -- final-readiness-consumer-sweep --out ./out/final_readiness_consumer_sweep.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- readiness-residual-sweep --out ./out/readiness_residual_sweep.json"),
@@ -17138,6 +17146,7 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         matrix_cmd("windows", "cargo run -p ucf-ops -- primary-semantics-sweep --out ./out/primary_semantics_sweep.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- final-governance-consumer-sweep --out ./out/final_governance_consumer_sweep.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- governance-residual-sweep --out ./out/governance_residual_sweep.json"),
+        matrix_cmd("windows", "cargo run -p ucf-ops -- residual-free-governance-sweep --out ./out/residual_free_governance_sweep.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- models supported-scope-execute-v6 --out ./out/supported_scope_execute_v6.json --workdir ."),
         matrix_cmd("windows", "cargo run -p ucf-ops -- final-readiness-consumer-sweep --out ./out/final_readiness_consumer_sweep.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- readiness-residual-sweep --out ./out/readiness_residual_sweep.json"),

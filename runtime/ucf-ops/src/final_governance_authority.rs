@@ -3,7 +3,8 @@ use serde::{Deserialize, Serialize};
 use crate::{
     prefix_hex, AppliedSupportedSetContextV1, CanonicalGovernanceEntryAuthorityV2,
     CanonicalGovernanceEntryV1, FinalGovernanceConsumerAuthorityStatusV1,
-    FinalGovernanceConsumerAuthorityV1, GovernanceEntryAuthorityStatusV2, OpsError,
+    FinalGovernanceConsumerAuthorityV1, FinalGovernanceResidualSweepV1,
+    GovernanceEntryAuthorityStatusV2, GovernanceResidualSweepStatusV1, OpsError,
 };
 
 pub const FINAL_GOVERNANCE_AUTHORITY_REQUIRED: &str = "FINAL_GOVERNANCE_AUTHORITY_REQUIRED";
@@ -12,6 +13,17 @@ pub const APPLIED_SCOPE_REQUIRED: &str = "APPLIED_SCOPE_REQUIRED";
 pub const CANONICAL_GOVERNANCE_ENTRY_REQUIRED: &str = "CANONICAL_GOVERNANCE_ENTRY_REQUIRED";
 pub const RESIDUAL_GOVERNANCE_PATH_BLOCKED: &str = "RESIDUAL_GOVERNANCE_PATH_BLOCKED";
 pub const LEGACY_GOVERNANCE_INPUT_BLOCKED: &str = "LEGACY_GOVERNANCE_INPUT_BLOCKED";
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ResidualFreeFinalGovernanceInputsV1 {
+    pub applied_supported_set_digest_prefix: String,
+    pub canonical_governance_entry_digest_prefix: String,
+    pub canonical_governance_authority_digest_prefix: String,
+    pub final_governance_consumer_authority_digest_prefix: String,
+    pub final_governance_residual_sweep_digest_prefix: String,
+
+    pub authority_digest: String,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct FinalGovernanceAuthorityContextV1 {
@@ -27,6 +39,61 @@ pub fn require_final_governance_authority(
     authority: Option<&CanonicalGovernanceEntryAuthorityV2>,
 ) -> Result<FinalGovernanceAuthorityContextV1, OpsError> {
     require_final_governance_inputs(applied, entry, authority, None)
+}
+
+pub fn require_residual_free_final_governance_inputs(
+    applied: Option<&AppliedSupportedSetContextV1>,
+    entry: Option<&CanonicalGovernanceEntryV1>,
+    authority: Option<&CanonicalGovernanceEntryAuthorityV2>,
+    final_consumer: Option<&FinalGovernanceConsumerAuthorityV1>,
+    residual_sweep: Option<&FinalGovernanceResidualSweepV1>,
+) -> Result<ResidualFreeFinalGovernanceInputsV1, OpsError> {
+    let base = require_final_governance_inputs(applied, entry, authority, final_consumer)?;
+    let Some(residual_sweep) = residual_sweep else {
+        return Err(OpsError::Invalid(
+            FINAL_GOVERNANCE_INPUTS_REQUIRED.to_string(),
+        ));
+    };
+    if !matches!(
+        residual_sweep.sweep_status,
+        GovernanceResidualSweepStatusV1::Pass
+    ) || residual_sweep.applied_supported_set_digest_prefix
+        != base.applied_supported_set_digest_prefix
+        || residual_sweep.canonical_governance_entry_digest_prefix
+            != base.canonical_governance_entry_digest_prefix
+        || residual_sweep.canonical_governance_authority_digest_prefix
+            != base.canonical_governance_authority_digest_prefix
+        || residual_sweep.final_governance_consumer_authority_digest_prefix
+            != base.final_governance_consumer_authority_digest_prefix
+    {
+        return Err(OpsError::Invalid(
+            RESIDUAL_GOVERNANCE_PATH_BLOCKED.to_string(),
+        ));
+    }
+
+    let final_governance_residual_sweep_digest_prefix =
+        prefix_hex(&residual_sweep.sweep_digest, 16);
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(b"residual_free_final_governance_inputs_v1");
+    bytes.extend_from_slice(base.applied_supported_set_digest_prefix.as_bytes());
+    bytes.extend_from_slice(base.canonical_governance_entry_digest_prefix.as_bytes());
+    bytes.extend_from_slice(base.canonical_governance_authority_digest_prefix.as_bytes());
+    bytes.extend_from_slice(
+        base.final_governance_consumer_authority_digest_prefix
+            .as_bytes(),
+    );
+    bytes.extend_from_slice(final_governance_residual_sweep_digest_prefix.as_bytes());
+
+    Ok(ResidualFreeFinalGovernanceInputsV1 {
+        applied_supported_set_digest_prefix: base.applied_supported_set_digest_prefix,
+        canonical_governance_entry_digest_prefix: base.canonical_governance_entry_digest_prefix,
+        canonical_governance_authority_digest_prefix: base
+            .canonical_governance_authority_digest_prefix,
+        final_governance_consumer_authority_digest_prefix: base
+            .final_governance_consumer_authority_digest_prefix,
+        final_governance_residual_sweep_digest_prefix,
+        authority_digest: crate::sha256_hex(&bytes),
+    })
 }
 
 pub fn require_final_governance_inputs(
