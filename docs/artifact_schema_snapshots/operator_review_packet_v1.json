@@ -24,7 +24,8 @@
     "final_governance_consumer_authority_digest_prefix",
     "final_readiness_consumer_authority_digest_prefix",
     "governance_residual_sweep_digest_prefix",
-    "readiness_residual_sweep_digest_prefix"
+    "readiness_residual_sweep_digest_prefix",
+    "residual_free_governance_authority_digest_prefix"
   ],
   "field_types": {
     "applied_context_digest_prefix": "String",
@@ -42,6 +43,7 @@
     "policy_graph_digest_prefix": "String",
     "readiness_residual_sweep_digest_prefix": "String",
     "remediation_codes": "Vec<String>",
+    "residual_free_governance_authority_digest_prefix": "String",
     "review_stage": "OperatorReviewStageV1",
     "reviewability_reduction_digest_prefix": "String",
     "schema_version": "u16",

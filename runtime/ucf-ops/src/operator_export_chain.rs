@@ -324,6 +324,7 @@ mod tests {
             canonical_governance_entry_digest_prefix: "MISSING".to_string(),
             final_governance_consumer_authority_digest_prefix: "MISSING".to_string(),
             governance_residual_sweep_digest_prefix: "MISSING".to_string(),
+            residual_free_governance_authority_digest_prefix: "MISSING".to_string(),
             final_readiness_consumer_authority_digest_prefix: "MISSING".to_string(),
             readiness_residual_sweep_digest_prefix: "MISSING".to_string(),
             artifacts: crate::operator_review_packet::OperatorReviewPacketArtifactsV1 {
@@ -375,6 +376,7 @@ mod tests {
             canonical_governance_entry_digest_prefix: "MISSING".to_string(),
             final_governance_consumer_authority_digest_prefix: "MISSING".to_string(),
             governance_residual_sweep_digest_prefix: "MISSING".to_string(),
+            residual_free_governance_authority_digest_prefix: "MISSING".to_string(),
             final_readiness_consumer_authority_digest_prefix: "MISSING".to_string(),
             readiness_residual_sweep_digest_prefix: "MISSING".to_string(),
             reasons: vec![],
@@ -401,6 +403,7 @@ mod tests {
             canonical_governance_entry_digest_prefix: "MISSING".to_string(),
             final_governance_consumer_authority_digest_prefix: "MISSING".to_string(),
             governance_residual_sweep_digest_prefix: "MISSING".to_string(),
+            residual_free_governance_authority_digest_prefix: "MISSING".to_string(),
             final_readiness_consumer_authority_digest_prefix: "MISSING".to_string(),
             readiness_residual_sweep_digest_prefix: "MISSING".to_string(),
             final_bundle_residual_sweep_digest_prefix: "MISSING".to_string(),

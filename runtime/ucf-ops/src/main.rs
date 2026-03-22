@@ -34,16 +34,16 @@ use ucf_ops::{
     readiness_residual_sweep, readiness_spine_check, readiness_spine_sweep, release_build_rc,
     release_rc1_gate, release_signoff_validate, remediation_consistency_check,
     remediation_interop_check, remediation_spine_check, replay_audit, replay_bugreport, repro_pack,
-    repro_verify, residual_free_continuity_sweep, review_truth_check, run_status, runs_list,
-    runs_search, runs_show, save_counterfactual_result, scope_authority_check,
-    second_slot_parity_report, security_verify_chain, simulate_counterfactual, soak_run,
-    strict_check, strict_explain, troubleshoot, v0_gate, v10_gate, v11_gate, v1_smoke, v2_gate,
-    v3_gate, v4_gate, v5_gate, v6_gate, v7_gate, v8_gate, v9_gate, verify_bugreport,
-    world_parity_report, world_shadow_report, write_slice, AdversarialRunArgs, AirgapArtifactType,
-    AirgapImportArgs, AirgapImportMode, BenchArgs, BugKitBuildArgs,
-    CanonicalBundleAuthorityStatusV2, CanonicalReadinessAuthorityStatusV2, ChangeImpactArgs,
-    ConfigV1, ContinuityAuthorityStatusV1, CounterfactualRequest, DevLoopArgs, DocsLintArgs,
-    DocsLintMode, DocsLintStatus, ExplainTickRequest, ExportArgs,
+    repro_verify, residual_free_continuity_sweep, residual_free_governance_sweep,
+    review_truth_check, run_status, runs_list, runs_search, runs_show, save_counterfactual_result,
+    scope_authority_check, second_slot_parity_report, security_verify_chain,
+    simulate_counterfactual, soak_run, strict_check, strict_explain, troubleshoot, v0_gate,
+    v10_gate, v11_gate, v1_smoke, v2_gate, v3_gate, v4_gate, v5_gate, v6_gate, v7_gate, v8_gate,
+    v9_gate, verify_bugreport, world_parity_report, world_shadow_report, write_slice,
+    AdversarialRunArgs, AirgapArtifactType, AirgapImportArgs, AirgapImportMode, BenchArgs,
+    BugKitBuildArgs, CanonicalBundleAuthorityStatusV2, CanonicalReadinessAuthorityStatusV2,
+    ChangeImpactArgs, ConfigV1, ContinuityAuthorityStatusV1, CounterfactualRequest, DevLoopArgs,
+    DocsLintArgs, DocsLintMode, DocsLintStatus, ExplainTickRequest, ExportArgs,
     FinalBundleConsumerAuthorityStatusV1, FinalBundleResidualSweepStatusV1,
     FinalGovernanceConsumerAuthorityStatusV1, FinalPrimarySemanticsConsumerAuthorityStatusV1,
     FinalPrimarySemanticsResidualSweepStatusV1, FinalReadinessConsumerAuthorityStatusV1,
@@ -51,10 +51,10 @@ use ucf_ops::{
     GoldenVerifyReport, GovernanceEntryAuthorityStatusV2, GovernanceEntryCheckStatusV1,
     GovernanceResidualSweepStatusV1, NightlySummarizeArgs, OperatorReportArgs,
     OperatorReviewPacketArgs, OperatorSignoffArgs, OperatorWorkflowArgs, ReleaseBuildRcArgs,
-    ResidualFreeContinuityStatusV1, SoakRunArgs, SpecSnapshotArgs, StrictEvidenceContextV1,
-    V10GateOverallStatus, V11GateOverallStatus, V2GateOverallStatus, V3GateOverallStatus,
-    V4GateOverallStatus, V5GateOverallStatus, V6GateOverallStatus, V7GateOverallStatus,
-    V8GateOverallStatus, V9GateOverallStatus,
+    ResidualFreeContinuityStatusV1, ResidualFreeGovernanceConsumerAuthorityStatusV1, SoakRunArgs,
+    SpecSnapshotArgs, StrictEvidenceContextV1, V10GateOverallStatus, V11GateOverallStatus,
+    V2GateOverallStatus, V3GateOverallStatus, V4GateOverallStatus, V5GateOverallStatus,
+    V6GateOverallStatus, V7GateOverallStatus, V8GateOverallStatus, V9GateOverallStatus,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -2409,6 +2409,21 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 std::process::exit(2);
             }
         }
+        "residual-free-governance-sweep" => {
+            let out = arg_value(&args, "--out")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("./out/residual_free_governance_sweep.json"));
+            let report = residual_free_governance_sweep(&workdir, &out)?;
+            println!("status={:?}", report.authority.authority_status);
+            println!("authority_digest={}", report.authority.authority_digest);
+            println!("out={}", out.display());
+            if !matches!(
+                report.authority.authority_status,
+                ResidualFreeGovernanceConsumerAuthorityStatusV1::Pass
+            ) {
+                std::process::exit(2);
+            }
+        }
         "final-readiness-consumer-sweep" => {
             let out = arg_value(&args, "--out")
                 .map(PathBuf::from)
@@ -3305,7 +3320,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             eprintln!(
-                "usage: ucf-ops <bringup|diag|health|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|attest|repro|exports|readiness-gate|preflight|goldens|nightly|dev|troubleshoot|adversarial-run|out|release|bench|runs|status|strict|ess|ebm|drift|alerts|operator|policy|portability|spec|change-impact|soak|governance-surfaces-check|governance-entry-check|governance-entry-sweep|final-governance-consumer-sweep|governance-residual-sweep|final-readiness-consumer-sweep|readiness-residual-sweep|final-bundle-consumer-sweep|bundle-residual-sweep|final-continuity-sweep|residual-free-continuity-sweep|remediation-consistency-check|remediation-interop-check|remediation-spine-check|primary-semantics-sweep|final-primary-semantics-sweep|primary-semantics-residual-sweep|interop|v0|v1|v2|v3|v4|v5|v6|v7|v8|v9|v10|version> [--workdir <path>] [--bundle <path>]"
+                "usage: ucf-ops <bringup|diag|health|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|attest|repro|exports|readiness-gate|preflight|goldens|nightly|dev|troubleshoot|adversarial-run|out|release|bench|runs|status|strict|ess|ebm|drift|alerts|operator|policy|portability|spec|change-impact|soak|governance-surfaces-check|governance-entry-check|governance-entry-sweep|final-governance-consumer-sweep|governance-residual-sweep|residual-free-governance-sweep|final-readiness-consumer-sweep|readiness-residual-sweep|final-bundle-consumer-sweep|bundle-residual-sweep|final-continuity-sweep|residual-free-continuity-sweep|remediation-consistency-check|remediation-interop-check|remediation-spine-check|primary-semantics-sweep|final-primary-semantics-sweep|primary-semantics-residual-sweep|interop|v0|v1|v2|v3|v4|v5|v6|v7|v8|v9|v10|version> [--workdir <path>] [--bundle <path>]"
             );
             std::process::exit(1);
         }
