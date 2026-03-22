@@ -417,6 +417,7 @@ mod tests {
             final_primary_semantics_residual_sweep_digest_prefix: "MISSING".to_string(),
             residual_free_primary_semantics_authority_digest_prefix: "MISSING".to_string(),
             residual_free_continuity_authority_digest_prefix: "MISSING".to_string(),
+            final_input_continuity_authority_digest_prefix: "MISSING".to_string(),
             operator_review_packet_digest_prefix: "ef".repeat(8),
             operator_signoff_digest_prefix: "01".repeat(8),
             interop_matrix_digest_prefix: "23".repeat(8),

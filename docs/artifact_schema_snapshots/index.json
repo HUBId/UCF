@@ -27,6 +27,7 @@
     "final_continuity_authority_v2",
     "final_governance_consumer_authority_v1",
     "final_governance_residual_sweep_v1",
+    "final_input_continuity_authority_v1",
     "final_primary_semantics_consumer_authority_v1",
     "final_primary_semantics_residual_sweep_v1",
     "final_readiness_consumer_authority_v1",

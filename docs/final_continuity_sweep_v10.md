@@ -58,3 +58,7 @@ cargo run -p ucf-ops -- final-continuity-sweep --bundle <path> --out ./out/final
 
 `final-continuity-sweep` is now a legacy subordinate continuity surface.
 Top-level authority moved to `residual-free-continuity-sweep` (`ResidualFreeContinuityAuthorityV1`).
+
+## v12 update
+`final-continuity-sweep` ist ab v12 explizit ein **LEGACY_TOP_LEVEL_CONTINUITY_PROOF** und nur noch diagnostisch/subordinate. Die einzige top-level Autorität ist `final-input-continuity-sweep` (`FinalInputContinuityAuthorityV1`).
+

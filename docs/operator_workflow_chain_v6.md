@@ -98,3 +98,7 @@ Top-level continuity authority wird ausschließlich über `final-continuity-swee
 
 `OperatorWorkflowChainV1` remains a workflow-stage artifact and references residual sweep lineage.
 Top-level continuity truth is delegated exclusively to `ResidualFreeContinuityAuthorityV1`.
+
+## v12 update
+`OperatorWorkflowChainV1` bleibt Workflow-Stufe und referenziert residual-free Consumer-Autoritäten. Top-level Kontinuitätswahrheit wird ausschließlich durch `FinalInputContinuityAuthorityV1` festgestellt.
+

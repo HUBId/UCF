@@ -27,3 +27,7 @@ cargo run -p ucf-ops -- residual-free-continuity-sweep --bundle <path> --out ./o
 
 - `final-continuity-sweep` is retained as a legacy subordinate diagnostic surface.
 - `continuity-authority-check` and `CanonicalRoundTripChainV1` remain subordinate contributors.
+
+## v12 update
+`ResidualFreeContinuityAuthorityV1` bleibt ein residual-freier Kontinuitätsnachweis, ist ab v12 aber nur noch ein **SUBORDINATE_CONTINUITY_CONTRIBUTOR** unter `FinalInputContinuityAuthorityV1` (`final-input-continuity-sweep`).
+
