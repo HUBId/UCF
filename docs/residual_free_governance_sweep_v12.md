@@ -32,3 +32,8 @@ Canonical flows must not rebuild governance truth from execution metadata, reeva
 ```bash
 cargo run -p ucf-ops -- residual-free-governance-sweep --out ./out/residual_free_governance_sweep.json
 ```
+
+## v13 follow-up
+
+The v13 `governance-absolute-sweep` consumes this authority and removes the last canonical historical/embedded governance lineage traces from covered consumers.
+

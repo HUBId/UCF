@@ -53,6 +53,8 @@ pub struct OperatorWorkflowChainV1 {
     #[serde(default)]
     pub residual_free_governance_authority_digest_prefix: String,
     #[serde(default)]
+    pub governance_absolute_sweep_digest_prefix: String,
+    #[serde(default)]
     pub final_readiness_consumer_authority_digest_prefix: String,
     #[serde(default)]
     pub readiness_residual_sweep_digest_prefix: String,
@@ -296,6 +298,10 @@ impl OperatorWorkflowPolicyV1 {
             residual_free_governance_authority_digest_prefix: inputs
                 .review_packet
                 .residual_free_governance_authority_digest_prefix
+                .clone(),
+            governance_absolute_sweep_digest_prefix: inputs
+                .review_packet
+                .governance_absolute_sweep_digest_prefix
                 .clone(),
             final_readiness_consumer_authority_digest_prefix: inputs
                 .review_packet
@@ -545,6 +551,7 @@ mod tests {
             final_governance_consumer_authority_digest_prefix: "gov1234567890123".to_string(),
             governance_residual_sweep_digest_prefix: "sweep12345678901".to_string(),
             residual_free_governance_authority_digest_prefix: "MISSING".to_string(),
+            governance_absolute_sweep_digest_prefix: "MISSING".to_string(),
             final_readiness_consumer_authority_digest_prefix: "ready123456789012".to_string(),
             readiness_residual_sweep_digest_prefix: "rrs1234567890123".to_string(),
             residual_free_readiness_authority_digest_prefix: "MISSING".to_string(),
@@ -591,6 +598,7 @@ mod tests {
             final_governance_consumer_authority_digest_prefix: "gov1234567890123".to_string(),
             governance_residual_sweep_digest_prefix: "sweep12345678901".to_string(),
             residual_free_governance_authority_digest_prefix: "MISSING".to_string(),
+            governance_absolute_sweep_digest_prefix: "MISSING".to_string(),
             final_readiness_consumer_authority_digest_prefix: "ready123456789012".to_string(),
             readiness_residual_sweep_digest_prefix: "rrs1234567890123".to_string(),
             residual_free_readiness_authority_digest_prefix: "MISSING".to_string(),
@@ -654,6 +662,7 @@ mod tests {
                 final_governance_consumer_authority_digest_prefix: "gov1234567890123".to_string(),
                 governance_residual_sweep_digest_prefix: "sweep12345678901".to_string(),
                 residual_free_governance_authority_digest_prefix: "MISSING".to_string(),
+                governance_absolute_sweep_digest_prefix: "MISSING".to_string(),
                 final_readiness_consumer_authority_digest_prefix: "ready123456789012".to_string(),
                 readiness_residual_sweep_digest_prefix: "rrs1234567890123".to_string(),
                 residual_free_readiness_authority_digest_prefix: "MISSING".to_string(),

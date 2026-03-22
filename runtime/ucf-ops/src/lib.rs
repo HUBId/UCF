@@ -22,6 +22,7 @@ mod final_input_continuity_sweep;
 mod final_readiness_consumer_sweep;
 mod formal_invariants;
 mod goldens;
+mod governance_absolute_sweep;
 mod governance_entry_check;
 mod governance_entry_sweep;
 mod governance_residual_sweep;
@@ -112,9 +113,11 @@ pub use final_continuity_sweep::{
 };
 pub use final_governance_authority::{
     require_final_governance_authority, require_final_governance_inputs,
-    require_residual_free_final_governance_inputs, FinalGovernanceAuthorityContextV1,
-    ResidualFreeFinalGovernanceInputsV1, FINAL_GOVERNANCE_AUTHORITY_REQUIRED,
-    FINAL_GOVERNANCE_INPUTS_REQUIRED, LEGACY_GOVERNANCE_INPUT_BLOCKED,
+    require_residual_free_final_governance_inputs,
+    require_residual_free_governance_absolute_inputs, FinalGovernanceAuthorityContextV1,
+    ResidualFreeFinalGovernanceInputsV1, ResidualFreeGovernanceAbsoluteInputsV1,
+    FINAL_GOVERNANCE_AUTHORITY_REQUIRED, FINAL_GOVERNANCE_INPUTS_REQUIRED,
+    LEGACY_GOVERNANCE_INPUT_BLOCKED, RESIDUAL_FREE_FINAL_GOVERNANCE_INPUTS_REQUIRED,
     RESIDUAL_GOVERNANCE_PATH_BLOCKED,
 };
 pub use final_governance_consumer_sweep::{
@@ -135,6 +138,11 @@ pub use goldens::{
     goldens_generate, goldens_update, goldens_verify, goldens_verify_detailed, GoldenGenerateArgs,
     GoldenRefreshHeuristic, GoldenScenarioConfig, GoldenVerifyArgs, GoldenVerifyReport,
     GoldenVerifyScenarioReport,
+};
+pub use governance_absolute_sweep::{
+    governance_absolute_sweep, GovernanceAbsoluteConsumerStatusV1,
+    GovernanceAbsoluteMismatchCategoryV1, GovernanceAbsoluteSweepReportV1,
+    ResidualFreeGovernanceAbsoluteSweepStatusV1, ResidualFreeGovernanceAbsoluteSweepV1,
 };
 pub use governance_entry_check::{
     governance_entry_check, GovernanceEntryCheckReportV1, GovernanceEntryCheckStatusV1,
