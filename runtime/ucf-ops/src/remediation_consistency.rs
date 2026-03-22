@@ -231,6 +231,8 @@ pub const RESIDUAL_PRIMARY_SEMANTICS_PATH_TRANSLATED: &str =
     "RESIDUAL_PRIMARY_SEMANTICS_PATH_TRANSLATED";
 pub const RESIDUAL_PRIMARY_SEMANTICS_PATH_REJECTED: &str =
     "RESIDUAL_PRIMARY_SEMANTICS_PATH_REJECTED";
+pub const RESIDUAL_FREE_FINAL_PRIMARY_SEMANTICS_INPUTS_REQUIRED: &str =
+    "RESIDUAL_FREE_FINAL_PRIMARY_SEMANTICS_INPUTS_REQUIRED";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -283,6 +285,17 @@ pub struct FinalPrimarySemanticsInputsContextV1 {
     pub canonical_bundle_spine_digest_prefix: String,
     pub canonical_primary_semantics_authority_digest_prefix: String,
     pub final_primary_semantics_consumer_authority_digest_prefix: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ResidualFreeFinalPrimarySemanticsInputsV1 {
+    pub canonical_governance_entry_digest_prefix: String,
+    pub canonical_readiness_spine_digest_prefix: String,
+    pub canonical_bundle_spine_digest_prefix: String,
+    pub canonical_primary_semantics_authority_digest_prefix: String,
+    pub final_primary_semantics_consumer_authority_digest_prefix: String,
+    pub final_primary_semantics_residual_sweep_digest_prefix: String,
+    pub authority_digest: String,
 }
 
 #[derive(Clone)]
@@ -852,6 +865,71 @@ pub fn require_final_primary_semantics_inputs(
         final_primary_semantics_consumer_authority_digest_prefix: prefix16(
             &final_consumer.authority_digest,
         ),
+    })
+}
+
+pub fn require_residual_free_final_primary_semantics_inputs(
+    canonical_condition_model: Option<&[String]>,
+    canonical_remediation_registry: Option<&[String]>,
+    canonical_primary_semantics_authority: Option<&CanonicalPrimarySemanticsAuthorityV1>,
+    final_primary_semantics_consumer_authority: Option<&FinalPrimarySemanticsConsumerAuthorityV1>,
+    final_primary_semantics_residual_sweep: Option<&crate::FinalPrimarySemanticsResidualSweepV1>,
+) -> Result<ResidualFreeFinalPrimarySemanticsInputsV1, OpsError> {
+    let final_inputs = require_final_primary_semantics_inputs(
+        canonical_condition_model,
+        canonical_remediation_registry,
+        canonical_primary_semantics_authority,
+        final_primary_semantics_consumer_authority,
+    )?;
+    let Some(residual_sweep) = final_primary_semantics_residual_sweep else {
+        return Err(OpsError::Invalid(
+            RESIDUAL_FREE_FINAL_PRIMARY_SEMANTICS_INPUTS_REQUIRED.to_string(),
+        ));
+    };
+    if !matches!(
+        residual_sweep.sweep_status,
+        crate::FinalPrimarySemanticsResidualSweepStatusV1::Pass
+    ) {
+        return Err(OpsError::Invalid(
+            RESIDUAL_PRIMARY_SEMANTICS_PATH_BLOCKED.to_string(),
+        ));
+    }
+    let residual_prefix = prefix16(&residual_sweep.sweep_digest);
+    if residual_sweep.canonical_governance_entry_digest_prefix
+        != final_inputs.canonical_governance_entry_digest_prefix
+        || residual_sweep.canonical_readiness_spine_digest_prefix
+            != final_inputs.canonical_readiness_spine_digest_prefix
+        || residual_sweep.canonical_bundle_spine_digest_prefix
+            != final_inputs.canonical_bundle_spine_digest_prefix
+        || residual_sweep.canonical_primary_semantics_authority_digest_prefix
+            != final_inputs.canonical_primary_semantics_authority_digest_prefix
+        || residual_sweep.final_primary_semantics_consumer_authority_digest_prefix
+            != final_inputs.final_primary_semantics_consumer_authority_digest_prefix
+    {
+        return Err(OpsError::Invalid(
+            RESIDUAL_FREE_FINAL_PRIMARY_SEMANTICS_INPUTS_REQUIRED.to_string(),
+        ));
+    }
+    let payload = serde_json::to_vec(&(
+        &final_inputs.canonical_governance_entry_digest_prefix,
+        &final_inputs.canonical_readiness_spine_digest_prefix,
+        &final_inputs.canonical_bundle_spine_digest_prefix,
+        &final_inputs.canonical_primary_semantics_authority_digest_prefix,
+        &final_inputs.final_primary_semantics_consumer_authority_digest_prefix,
+        &residual_prefix,
+    ))?;
+    Ok(ResidualFreeFinalPrimarySemanticsInputsV1 {
+        canonical_governance_entry_digest_prefix: final_inputs
+            .canonical_governance_entry_digest_prefix,
+        canonical_readiness_spine_digest_prefix: final_inputs
+            .canonical_readiness_spine_digest_prefix,
+        canonical_bundle_spine_digest_prefix: final_inputs.canonical_bundle_spine_digest_prefix,
+        canonical_primary_semantics_authority_digest_prefix: final_inputs
+            .canonical_primary_semantics_authority_digest_prefix,
+        final_primary_semantics_consumer_authority_digest_prefix: final_inputs
+            .final_primary_semantics_consumer_authority_digest_prefix,
+        final_primary_semantics_residual_sweep_digest_prefix: residual_prefix,
+        authority_digest: sha256_hex(&payload),
     })
 }
 
@@ -1814,5 +1892,62 @@ mod tests {
         assert!(err
             .to_string()
             .contains(FINAL_PRIMARY_SEMANTICS_AUTHORITY_REQUIRED));
+    }
+
+    #[test]
+    fn residual_free_final_primary_inputs_digest_is_stable() {
+        let primary = CanonicalPrimarySemanticsAuthorityV1 {
+            covered_surface_count: 17,
+            covered_condition_count: 10,
+            authority_status: CanonicalPrimarySemanticsAuthorityStatusV1::Pass,
+            primary_semantics_digest: "aa".repeat(32),
+            applied_supported_set_digest_prefix: "bb".repeat(8),
+            canonical_governance_entry_digest_prefix: "11".repeat(8),
+            canonical_readiness_spine_digest_prefix: "22".repeat(8),
+            canonical_bundle_spine_digest_prefix: "33".repeat(8),
+        };
+        let final_consumer = FinalPrimarySemanticsConsumerAuthorityV1 {
+            canonical_governance_entry_digest_prefix: "11".repeat(8),
+            canonical_readiness_spine_digest_prefix: "22".repeat(8),
+            canonical_bundle_spine_digest_prefix: "33".repeat(8),
+            canonical_primary_semantics_authority_digest_prefix: prefix16(
+                &primary.primary_semantics_digest,
+            ),
+            covered_consumer_count: 17,
+            authority_status: FinalPrimarySemanticsConsumerAuthorityStatusV1::Pass,
+            authority_digest: "cc".repeat(32),
+        };
+        let residual = crate::FinalPrimarySemanticsResidualSweepV1 {
+            canonical_governance_entry_digest_prefix: "11".repeat(8),
+            canonical_readiness_spine_digest_prefix: "22".repeat(8),
+            canonical_bundle_spine_digest_prefix: "33".repeat(8),
+            canonical_primary_semantics_authority_digest_prefix: prefix16(
+                &primary.primary_semantics_digest,
+            ),
+            final_primary_semantics_consumer_authority_digest_prefix: prefix16(
+                &final_consumer.authority_digest,
+            ),
+            covered_surface_count: 17,
+            residual_path_count: 0,
+            sweep_status: crate::FinalPrimarySemanticsResidualSweepStatusV1::Pass,
+            sweep_digest: "dd".repeat(32),
+        };
+        let a = require_residual_free_final_primary_semantics_inputs(
+            None,
+            None,
+            Some(&primary),
+            Some(&final_consumer),
+            Some(&residual),
+        )
+        .expect("inputs");
+        let b = require_residual_free_final_primary_semantics_inputs(
+            None,
+            None,
+            Some(&primary),
+            Some(&final_consumer),
+            Some(&residual),
+        )
+        .expect("inputs");
+        assert_eq!(a.authority_digest, b.authority_digest);
     }
 }

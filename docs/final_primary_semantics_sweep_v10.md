@@ -34,3 +34,7 @@ Local top-level reason ordering, surface-specific action-hint precedence, and ad
 ## v11 residual-sweep note
 
 v11 adds `primary-semantics-residual-sweep`, which removes/blocks the last canonical residual primary-semantics reconstruction paths.
+
+## v12 update
+
+v12 introduces the residual-free consumer authority proof and makes residual-free final primary-semantics inputs mandatory for canonical consumer surfaces.

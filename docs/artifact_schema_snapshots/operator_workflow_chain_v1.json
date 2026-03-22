@@ -31,6 +31,7 @@
     "readiness_residual_sweep_digest_prefix",
     "residual_free_continuity_authority_digest_prefix",
     "residual_free_governance_authority_digest_prefix",
+    "residual_free_primary_semantics_authority_digest_prefix",
     "residual_free_readiness_authority_digest_prefix"
   ],
   "field_types": {
@@ -57,6 +58,7 @@
     "remediation_codes": "Vec<String>",
     "residual_free_continuity_authority_digest_prefix": "String",
     "residual_free_governance_authority_digest_prefix": "String",
+    "residual_free_primary_semantics_authority_digest_prefix": "String",
     "residual_free_readiness_authority_digest_prefix": "String",
     "reviewability_reduction_digest_prefix": "String",
     "schema_version": "u16",
