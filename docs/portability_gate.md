@@ -19,7 +19,7 @@
      - `cargo run -p ucf-ops -- models supported-scope-execute-v4 --out ./out/supported_scope_execute_v4.json --workdir .`
      - `cargo run -p ucf-ops -- final-governance-consumer-sweep --out ./out/final_governance_consumer_sweep.json`
      - `cargo run -p ucf-ops -- governance-residual-sweep --out ./out/governance_residual_sweep.json`
-     - `cargo run -p ucf-ops -- models supported-scope-execute-v6 --out ./out/supported_scope_execute_v6.json --workdir .`
+     - `cargo run -p ucf-ops -- models supported-scope-execute-v7 --out ./out/supported_scope_execute_v7.json --workdir .`
      - `cargo run -p ucf-ops -- readiness-spine-check --out ./out/readiness_spine_check.json`
      - `cargo run -p ucf-ops -- final-readiness-consumer-sweep --out ./out/final_readiness_consumer_sweep.json`
      - `cargo run -p ucf-ops -- readiness-residual-sweep --out ./out/readiness_residual_sweep.json`
@@ -57,7 +57,7 @@
      - `cargo run -p ucf-ops -- models supported-scope-execute-v4 --out ./out/supported_scope_execute_v4.json --workdir .`
      - `cargo run -p ucf-ops -- final-governance-consumer-sweep --out ./out/final_governance_consumer_sweep.json`
      - `cargo run -p ucf-ops -- governance-residual-sweep --out ./out/governance_residual_sweep.json`
-     - `cargo run -p ucf-ops -- models supported-scope-execute-v6 --out ./out/supported_scope_execute_v6.json --workdir .`
+     - `cargo run -p ucf-ops -- models supported-scope-execute-v7 --out ./out/supported_scope_execute_v7.json --workdir .`
      - `cargo run -p ucf-ops -- readiness-spine-check --out ./out/readiness_spine_check.json`
      - `cargo run -p ucf-ops -- final-readiness-consumer-sweep --out ./out/final_readiness_consumer_sweep.json`
      - `cargo run -p ucf-ops -- readiness-residual-sweep --out ./out/readiness_residual_sweep.json`
@@ -90,7 +90,7 @@
    - `models supported-scope-execute-v4` must emit deterministic `REAFFIRM_FREEZE` / `EXECUTE_EXPAND_BY_ONE` execution decisions.
    - `final-governance-consumer-sweep` must pass and prove deterministic final governance consumer authority coverage.
    - `governance-residual-sweep` must pass and prove deterministic final residual-governance cleanup authority.
-   - `models supported-scope-execute-v6` must emit deterministic `REAFFIRM_FREEZE` / `EXECUTE_EXPAND_BY_ONE` decisions against final residual-governance authority.
+   - `models supported-scope-execute-v7` must emit deterministic `REAFFIRM_FREEZE` / `EXECUTE_EXPAND_BY_ONE` decisions against final residual-governance authority.
    - `final-readiness-consumer-sweep` must pass and emit deterministic mismatch categories for canonical final readiness consumers.
    - `readiness-residual-sweep` must pass and emit deterministic mismatch categories for canonical residual readiness consumers.
    - `final-bundle-consumer-sweep` must pass and prove canonical bundle-input authority consumption across canonical consumers.
@@ -242,7 +242,7 @@ cargo run -p ucf-ops -- exports bundle-spine-sweep --out ./out/bundle_spine_swee
 cargo run -p ucf-ops -- primary-semantics-sweep --out ./out/primary_semantics_sweep.json
 cargo run -p ucf-ops -- final-governance-consumer-sweep --out ./out/final_governance_consumer_sweep.json
 cargo run -p ucf-ops -- governance-residual-sweep --out ./out/governance_residual_sweep.json
-cargo run -p ucf-ops -- models supported-scope-execute-v6 --out ./out/supported_scope_execute_v6.json --workdir .
+cargo run -p ucf-ops -- models supported-scope-execute-v7 --out ./out/supported_scope_execute_v7.json --workdir .
 cargo run -p ucf-ops -- final-readiness-consumer-sweep --out ./out/final_readiness_consumer_sweep.json
 cargo run -p ucf-ops -- readiness-residual-sweep --out ./out/readiness_residual_sweep.json
 cargo run -p ucf-ops -- final-bundle-consumer-sweep --out ./out/final_bundle_consumer_sweep.json
@@ -299,7 +299,7 @@ cargo run -p ucf-ops -- exports bundle-spine-sweep --out ./out/bundle_spine_swee
 cargo run -p ucf-ops -- primary-semantics-sweep --out ./out/primary_semantics_sweep.json
 cargo run -p ucf-ops -- final-governance-consumer-sweep --out ./out/final_governance_consumer_sweep.json
 cargo run -p ucf-ops -- governance-residual-sweep --out ./out/governance_residual_sweep.json
-cargo run -p ucf-ops -- models supported-scope-execute-v6 --out ./out/supported_scope_execute_v6.json --workdir .
+cargo run -p ucf-ops -- models supported-scope-execute-v7 --out ./out/supported_scope_execute_v7.json --workdir .
 cargo run -p ucf-ops -- final-readiness-consumer-sweep --out ./out/final_readiness_consumer_sweep.json
 cargo run -p ucf-ops -- readiness-residual-sweep --out ./out/readiness_residual_sweep.json
 cargo run -p ucf-ops -- final-bundle-consumer-sweep --out ./out/final_bundle_consumer_sweep.json

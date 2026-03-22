@@ -5,13 +5,14 @@
 ## Execution hierarchy in v11
 
 - Reevaluation does **not** apply scope directly.
-- `SupportedScopeExecutionV6` is the authoritative execution artifact.
-- `supported-set-apply` accepts only current `SupportedScopeExecutionV6` authorization.
+- `SupportedScopeExecutionV6` is retained for continuity only.
+- `SupportedScopeExecutionV7` is the authoritative execution artifact.
+- `supported-set-apply` accepts only current `SupportedScopeExecutionV7` authorization.
 
 ## Commands
 
 ```bash
 cargo run -p ucf-ops -- models supported-scope-reevaluate --out ./out/supported_scope_reeval.json
-cargo run -p ucf-ops -- models supported-scope-execute-v6 --out ./out/supported_scope_execute_v6.json
+cargo run -p ucf-ops -- models supported-scope-execute-v7 --out ./out/supported_scope_execute_v7.json
 cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json
 ```
