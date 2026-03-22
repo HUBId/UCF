@@ -18,7 +18,7 @@
 - **v9:** complete (`ucf-ops v9 gate` overall PASS recorded at Prompt 268).
 - **v10:** complete (`ucf-ops v10 gate` overall PASS recorded at Prompt 278).
 - **v11:** complete (`ucf-ops v11 gate` overall PASS recorded at Prompt 288).
-- **v12:** not started yet.
+- **v12:** in progress; complete only after `ucf-ops v12 gate` overall PASS (Prompt 298 gate criterion).
 - **Queue policy:** immediate queue remains capped to 10 prompts.
 
 ## Last executed prompt / resume point
@@ -70,6 +70,8 @@ Reference: `docs/next_10_prompts.md`
 - v9 completion requirement: **`ucf-ops v9 gate` overall PASS at Prompt 268**.
 - v10 completion requirement: **`ucf-ops v10 gate` overall PASS at Prompt 278**.
 - v11 completion requirement: **`ucf-ops v11 gate` overall PASS at Prompt 288**.
+- v12 completion requirement: **`ucf-ops v12 gate` overall PASS**.
+- Next anchor advancement is blocked until v12 gate PASS is recorded.
 - v12 progression remains hardware-neutral, offline-first, probe-first, shadow-first, and fail-closed.
 - Prompts are classified as MUST/NICE/DEFERRED at authoring time.
 
