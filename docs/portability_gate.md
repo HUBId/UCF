@@ -1,4 +1,4 @@
-# Portability Gate v11 Refresh (Linux + Windows)
+# Portability Gate v12 Refresh (Linux + Windows)
 
 `Portability Gate` blocks merges when core runtime/ops checks are not cross-platform safe.
 
@@ -83,18 +83,21 @@
      - `cargo run -p ucf-ops -- portability check --out ./out/portability.json`
      - `cargo run -p ucf-ops -- portability report --out ./out/portability_report.json`
 
-2. **v11 generation smoke checks (blocking unless explicitly optional)**
+2. **v12 generation smoke checks (blocking unless explicitly optional)**
    - `governance-entry-check` must pass and preserve canonical governance entry usage across consumers.
    - `governance-entry-sweep` must pass and prove deterministic canonical entry authority across final governance surfaces.
    - `models supported-scope-execute` must produce deterministic bounded execution decisions.
    - `models supported-scope-execute-v4` must emit deterministic `REAFFIRM_FREEZE` / `EXECUTE_EXPAND_BY_ONE` execution decisions.
    - `final-governance-consumer-sweep` must pass and prove deterministic final governance consumer authority coverage.
    - `governance-residual-sweep` must pass and prove deterministic final residual-governance cleanup authority.
-   - `models supported-scope-execute-v7` must emit deterministic `REAFFIRM_FREEZE` / `EXECUTE_EXPAND_BY_ONE` decisions against final residual-governance authority.
+   - `residual-free-governance-sweep` must pass and prove deterministic canonical governance authority after historical/heuristic cleanup.
+   - `models supported-scope-execute-v7` must emit deterministic `REAFFIRM_FREEZE` / `EXECUTE_EXPAND_BY_ONE` decisions against residual-free governance authority.
    - `final-readiness-consumer-sweep` must pass and emit deterministic mismatch categories for canonical final readiness consumers.
    - `readiness-residual-sweep` must pass and emit deterministic mismatch categories for canonical residual readiness consumers.
+   - `residual-free-readiness-sweep` must pass and emit deterministic mismatch categories for residual-free canonical readiness authority.
    - `final-bundle-consumer-sweep` must pass and prove canonical bundle-input authority consumption across canonical consumers.
    - `bundle-residual-sweep` must pass and prove canonical bundle-input authority after residual cleanup.
+   - `residual-free-bundle-sweep` must pass and prove canonical bundle-input authority after historical/heuristic cleanup.
    - `readiness-spine-check` must emit deterministic mismatch categories and remediation codes.
    - `readiness-spine-sweep` must pass and prove deterministic final readiness authority coverage.
    - `exports bundle-spine-check` must reconstruct canonical bundle spine deterministically from bounded fixture bundles.
@@ -102,6 +105,7 @@
    - `primary-semantics-sweep` must prove canonical primary blocking/remediation consistency with deterministic mismatch categories.
    - `final-primary-semantics-sweep` must prove universal consumer enforcement of the same canonical primary authority inputs across canonical surfaces.
    - `primary-semantics-residual-sweep` must prove canonical primary blocking/remediation authority after residual cleanup.
+   - `residual-free-primary-semantics-sweep` must prove canonical primary blocking/remediation authority after historical/local cleanup.
    - `remediation-spine-check` must map canonical conditions/remediations consistently across scope/governance/readiness/bundle surfaces.
    - `models active-review-snapshot` and `models backend-resolution` must run in bounded offline mode (optional backend-resolution paths must SKIP cleanly).
    - Enriched export smokes (`repro pack` + `repro verify`, `bugkit build`) must generate deterministic manifests with bounded fixtures and no payload/weight inclusion by default.
@@ -117,7 +121,7 @@
    - `audit net-deps` (Linux lane): hidden network dependency drift is blocked.
 
 4. **Docs consistency (via `docs lint --strict`)**
-   - Enforces v3 + v4 + v5 + v6 + v7 + v8 + v9 + v10 + v11 docs consistency and linkage.
+   - Enforces v3 + v4 + v5 + v6 + v7 + v8 + v9 + v10 + v11 + v12 docs consistency and linkage.
    - Enforces remediation registry doc freshness.
    - Enforces artifact schema snapshot freshness and deterministic drift reporting.
 
@@ -163,6 +167,15 @@
 - `docs/primary_semantics_residual_sweep_v11.md`
 - `docs/artifact_schema_snapshots.md`
 
+## v12 docs covered by portability/docs gates
+
+- `docs/residual_free_governance_sweep_v12.md`
+- `docs/supported_scope_execution_v12.md`
+- `docs/residual_free_readiness_sweep_v12.md`
+- `docs/residual_free_bundle_sweep_v12.md`
+- `docs/residual_free_primary_semantics_sweep_v12.md`
+- `docs/artifact_schema_snapshots.md`
+
 ## v9 docs covered by portability/docs gates
 
 - `docs/canonical_governance_entry_sweep_v9.md`
@@ -205,7 +218,7 @@
 
 - **FAIL**: deterministic portability/docs/schema/final-sweep invariants regressed and must be fixed before merge.
 - **SKIP**: bounded optional backend/report path is unavailable in the current environment; this is expected and non-panicking.
-- Required v11 final/residual sweeps are blocking in normal bounded smoke contexts; scope-governance/readiness residual sweeps may emit `SKIP` only when optional applied-scope prerequisites are unavailable (`APPLIED_SCOPE_*` guardrails), and bundle/primary residual sweeps may emit `SKIP` only when optional canonical export refs are unavailable (`CANONICAL_EXPORT_REFS_REQUIRED`-class guardrails), never via panic.
+- Required v12 residual-free/final sweeps are blocking in normal bounded smoke contexts; scope-governance/readiness sweeps may emit `SKIP` only when optional applied-scope prerequisites are unavailable (`APPLIED_SCOPE_*` guardrails), and bundle/primary sweeps may emit `SKIP` only when optional canonical export refs are unavailable (`CANONICAL_EXPORT_REFS_REQUIRED`-class guardrails), never via panic.
 
 ## Local run instructions
 
@@ -381,5 +394,3 @@ cargo run -p ucf-ops -- portability report --out ./out/portability_report.json
 - `docs/bundle_spine_v8.md`
 - `docs/remediation_spine_consistency_v8.md`
 - `docs/artifact_schema_snapshots.md`
-
-- `docs/residual_free_continuity_v11.md`
