@@ -64,7 +64,7 @@ struct ArtifactSpec {
     enum_names: &'static [&'static str],
 }
 
-const ARTIFACT_SPECS: [ArtifactSpec; 62] = [
+const ARTIFACT_SPECS: [ArtifactSpec; 63] = [
     ArtifactSpec {
         artifact_id: "active_review_snapshot_v1",
         file_rel: "runtime/ucf-ops/src/models_lifecycle.rs",
@@ -430,6 +430,15 @@ const ARTIFACT_SPECS: [ArtifactSpec; 62] = [
         enum_names: &[
             "ResidualFreeReadinessConsumerAuthorityStatusV1",
             "ResidualFreeReadinessMismatchCategoryV1",
+        ],
+    },
+    ArtifactSpec {
+        artifact_id: "residual_free_bundle_consumer_authority_v1",
+        file_rel: "runtime/ucf-ops/src/residual_free_bundle_sweep.rs",
+        type_name: "ResidualFreeBundleConsumerAuthorityV1",
+        enum_names: &[
+            "ResidualFreeBundleConsumerAuthorityStatusV1",
+            "ResidualFreeBundleMismatchCategoryV1",
         ],
     },
     ArtifactSpec {
@@ -955,6 +964,7 @@ mod tests {
                 "readiness_gate_report_v1",
                 "remediation_consistency_check_v1",
                 "repro_pack_manifest_v1",
+                "residual_free_bundle_consumer_authority_v1",
                 "residual_free_continuity_authority_v1",
                 "residual_free_governance_consumer_authority_v1",
                 "residual_free_readiness_consumer_authority_v1",

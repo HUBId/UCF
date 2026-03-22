@@ -53,3 +53,7 @@ v10 finalizes universal bundle-input authority for canonical export consumers vi
 ## v11 residual cleanup
 
 v11 ergänzt den letzten Residual-Sweep (`bundle-residual-sweep`), damit kanonische Export-Consumer keine Bundle-Rekonstruktion mehr als Primärsubstrat nutzen können.
+
+## v12 residual-free final bundle authority
+
+v12 requires `require_residual_free_final_bundle_inputs(...)` and validates canonical consumers with `residual-free-bundle-sweep`, removing remaining historical or bundle-local primary reconstruction paths.

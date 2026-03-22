@@ -1,0 +1,27 @@
+# Residual Free Bundle Sweep (v12)
+
+`residual-free-bundle-sweep` is the v12 proof artifact that canonical export consumers derive bundle truth only from residual-free final bundle inputs.
+
+## Covered authoritative inputs
+
+Canonical consumers must resolve and validate:
+
+1. `CanonicalExportArtifactRefV1`
+2. `CanonicalExportContextV1`
+3. `CanonicalBundleConsumptionContextV1`
+4. `CanonicalBundleSpineV1`
+5. `CanonicalBundleAuthorityV2`
+6. `FinalBundleConsumerAuthorityV1`
+7. `FinalBundleResidualSweepV1`
+
+The command emits `ResidualFreeBundleConsumerAuthorityV1` with deterministic PASS/FAIL/LEGACY_PRESENT status.
+
+## Command
+
+```bash
+cargo run -p ucf-ops -- residual-free-bundle-sweep --out ./out/residual_free_bundle_sweep.json
+```
+
+## Why this exists
+
+v12 blocks the last historical, implicit, and bundle-local reconstruction traces in canonical export flows. If required final inputs are missing, stale, or contradictory, canonical flows fail closed.
