@@ -178,8 +178,8 @@ pub use models_lifecycle::{
     models_recommend_rollback, models_rollback, models_shadow_ready, models_stage,
     models_supported_scope_execute, models_supported_scope_execute_v4,
     models_supported_scope_execute_v5, models_supported_scope_execute_v6,
-    models_supported_scope_execute_v7, models_supported_scope_reevaluate,
-    models_supported_set_apply, models_supported_set_review,
+    models_supported_scope_execute_v7, models_supported_scope_execute_v8,
+    models_supported_scope_reevaluate, models_supported_set_apply, models_supported_set_review,
     models_verify as models_verify_lifecycle, parse_slot, ActiveCheckStatus,
     ActiveEnablementDeniedCode, ActiveEnablementEvidenceV1, ActiveReviewEvidenceV1,
     ActiveReviewOverallStatusV1, ActiveReviewSnapshotRecordV1, AggregatedActiveReviewSnapshotV1,
@@ -193,11 +193,11 @@ pub use models_lifecycle::{
     SupportedRealSlotSetV2, SupportedRealSlotsActiveViewV1, SupportedScopeExecutionDecisionV3,
     SupportedScopeExecutionDecisionV4, SupportedScopeExecutionDecisionV5,
     SupportedScopeExecutionDecisionV6, SupportedScopeExecutionDecisionV7,
-    SupportedScopeExecutionV3, SupportedScopeExecutionV4, SupportedScopeExecutionV5,
-    SupportedScopeExecutionV6, SupportedScopeExecutionV7, SupportedScopeReevaluationDecisionV1,
-    SupportedScopeReevaluationV1, SupportedSetApplyReportV1, SupportedSetExecutionDeniedCodeV1,
-    SupportedSetExpansionRecordV1, SupportedSetFreezeRecordV1, SupportedSetReviewReportV1,
-    UnifiedEligibilityStatusV1,
+    SupportedScopeExecutionDecisionV8, SupportedScopeExecutionV3, SupportedScopeExecutionV4,
+    SupportedScopeExecutionV5, SupportedScopeExecutionV6, SupportedScopeExecutionV7,
+    SupportedScopeExecutionV8, SupportedScopeReevaluationDecisionV1, SupportedScopeReevaluationV1,
+    SupportedSetApplyReportV1, SupportedSetExecutionDeniedCodeV1, SupportedSetExpansionRecordV1,
+    SupportedSetFreezeRecordV1, SupportedSetReviewReportV1, UnifiedEligibilityStatusV1,
 };
 pub use nightly::{
     nightly_summarize, NightlyComponentReport, NightlyOverallStatus, NightlySummarizeArgs,
@@ -16744,7 +16744,7 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
     };
     let supported_scope_execute_v6_smoke = out_smoke_check(
         "supported_scope_execute_v6_smoke",
-        "./out/supported_scope_execute_v7.json",
+        "./out/supported_scope_execute_v8.json",
         |out_path| {
             let review_out = PathBuf::from("./out/supported_set_review.json");
             let reeval_out = PathBuf::from("./out/supported_scope_reeval.json");
@@ -16756,7 +16756,11 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
             final_governance_consumer_sweep(workdir, &final_governance_out)?;
             governance_residual_sweep(workdir, &residual_out)?;
             residual_free_governance_sweep(workdir, &residual_free_out)?;
-            models_supported_scope_execute_v7(workdir, out_path)
+            governance_absolute_sweep(
+                workdir,
+                &PathBuf::from("./out/governance_absolute_sweep.json"),
+            )?;
+            models_supported_scope_execute_v8(workdir, out_path)
         },
         |report| {
             format!(
@@ -17585,7 +17589,7 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         matrix_cmd("linux", "cargo run -p ucf-ops -- final-governance-consumer-sweep --out ./out/final_governance_consumer_sweep.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- governance-residual-sweep --out ./out/governance_residual_sweep.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- residual-free-governance-sweep --out ./out/residual_free_governance_sweep.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- models supported-scope-execute-v7 --out ./out/supported_scope_execute_v7.json --workdir ."),
+        matrix_cmd("linux", "cargo run -p ucf-ops -- governance-absolute-sweep --out ./out/governance_absolute_sweep.json && cargo run -p ucf-ops -- models supported-scope-execute-v8 --out ./out/supported_scope_execute_v8.json --workdir ."),
         matrix_cmd("linux", "cargo run -p ucf-ops -- final-readiness-consumer-sweep --out ./out/final_readiness_consumer_sweep.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- readiness-residual-sweep --out ./out/readiness_residual_sweep.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- residual-free-readiness-sweep --out ./out/residual_free_readiness_sweep.json"),
@@ -17637,7 +17641,7 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         matrix_cmd("windows", "cargo run -p ucf-ops -- final-governance-consumer-sweep --out ./out/final_governance_consumer_sweep.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- governance-residual-sweep --out ./out/governance_residual_sweep.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- residual-free-governance-sweep --out ./out/residual_free_governance_sweep.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- models supported-scope-execute-v7 --out ./out/supported_scope_execute_v7.json --workdir ."),
+        matrix_cmd("windows", "cargo run -p ucf-ops -- governance-absolute-sweep --out ./out/governance_absolute_sweep.json && cargo run -p ucf-ops -- models supported-scope-execute-v8 --out ./out/supported_scope_execute_v8.json --workdir ."),
         matrix_cmd("windows", "cargo run -p ucf-ops -- final-readiness-consumer-sweep --out ./out/final_readiness_consumer_sweep.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- readiness-residual-sweep --out ./out/readiness_residual_sweep.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- residual-free-readiness-sweep --out ./out/residual_free_readiness_sweep.json"),
