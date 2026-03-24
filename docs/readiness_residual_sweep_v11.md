@@ -44,3 +44,8 @@ cargo run -p ucf-ops -- readiness-residual-sweep --out ./out/readiness_residual_
 ## v12 residual-free consumer finalization
 
 v12 adds `residual-free-readiness-sweep` and `ResidualFreeReadinessConsumerAuthorityV1` to prove that canonical consumers no longer retain historical, implicit, or aggregate readiness reconstruction in canonical flows.
+
+
+## v13 note
+
+v13 finalizes canonical readiness consumers by requiring the residual-free absolute readiness input chain and blocking lineage reconstruction paths.

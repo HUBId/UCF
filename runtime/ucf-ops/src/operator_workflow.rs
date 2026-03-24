@@ -61,6 +61,8 @@ pub struct OperatorWorkflowChainV1 {
     #[serde(default)]
     pub residual_free_readiness_authority_digest_prefix: String,
     #[serde(default)]
+    pub readiness_absolute_sweep_digest_prefix: String,
+    #[serde(default)]
     pub final_bundle_residual_sweep_digest_prefix: String,
     #[serde(default)]
     pub final_primary_semantics_residual_sweep_digest_prefix: String,
@@ -315,6 +317,10 @@ impl OperatorWorkflowPolicyV1 {
                 .review_packet
                 .residual_free_readiness_authority_digest_prefix
                 .clone(),
+            readiness_absolute_sweep_digest_prefix: inputs
+                .review_packet
+                .readiness_absolute_sweep_digest_prefix
+                .clone(),
             final_bundle_residual_sweep_digest_prefix: "MISSING".to_string(),
             final_primary_semantics_residual_sweep_digest_prefix: "MISSING".to_string(),
             residual_free_primary_semantics_authority_digest_prefix: "MISSING".to_string(),
@@ -555,6 +561,7 @@ mod tests {
             final_readiness_consumer_authority_digest_prefix: "ready123456789012".to_string(),
             readiness_residual_sweep_digest_prefix: "rrs1234567890123".to_string(),
             residual_free_readiness_authority_digest_prefix: "MISSING".to_string(),
+            readiness_absolute_sweep_digest_prefix: "MISSING".to_string(),
             final_primary_semantics_residual_sweep_digest_prefix: "MISSING".to_string(),
             residual_free_primary_semantics_authority_digest_prefix: "MISSING".to_string(),
             artifacts: OperatorReviewPacketArtifactsV1 {
@@ -602,6 +609,7 @@ mod tests {
             final_readiness_consumer_authority_digest_prefix: "ready123456789012".to_string(),
             readiness_residual_sweep_digest_prefix: "rrs1234567890123".to_string(),
             residual_free_readiness_authority_digest_prefix: "MISSING".to_string(),
+            readiness_absolute_sweep_digest_prefix: "MISSING".to_string(),
             final_primary_semantics_residual_sweep_digest_prefix: "MISSING".to_string(),
             residual_free_primary_semantics_authority_digest_prefix: "MISSING".to_string(),
             gate_report_digests: GateReportDigestsV1 {
@@ -666,6 +674,7 @@ mod tests {
                 final_readiness_consumer_authority_digest_prefix: "ready123456789012".to_string(),
                 readiness_residual_sweep_digest_prefix: "rrs1234567890123".to_string(),
                 residual_free_readiness_authority_digest_prefix: "MISSING".to_string(),
+                readiness_absolute_sweep_digest_prefix: "MISSING".to_string(),
                 final_primary_semantics_residual_sweep_digest_prefix: "MISSING".to_string(),
                 residual_free_primary_semantics_authority_digest_prefix: "MISSING".to_string(),
                 policy_graph_digest_prefix: "policy123456789012".to_string(),

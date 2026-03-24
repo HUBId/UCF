@@ -57,6 +57,7 @@
     "supported_scope_execution_v5",
     "supported_scope_execution_v6",
     "supported_scope_execution_v7",
+    "supported_scope_execution_v8",
     "supported_scope_reevaluation_v1",
     "v10_gate_report_v1",
     "v11_gate_report_v1",
