@@ -1,18 +1,18 @@
 # Supported Scope Reevaluation v7
 
-`SupportedScopeReevaluationV1` remains an intermediate reevaluation artifact (policy intent rechecked against current applied scope).
+`SupportedScopeReevaluationV1` remains an intermediate reevaluation artifact.
 
-## Execution hierarchy in v11
+## Current hierarchy (v13)
 
-- Reevaluation does **not** apply scope directly.
-- `SupportedScopeExecutionV6` is retained for continuity only.
-- `SupportedScopeExecutionV7` is the authoritative execution artifact.
-- `supported-set-apply` accepts only current `SupportedScopeExecutionV7` authorization.
+- Reevaluation does not apply scope directly.
+- `SupportedScopeExecutionV8` is the authoritative execution artifact.
+- `supported-set-apply` accepts only current `SupportedScopeExecutionV8` authorization.
 
 ## Commands
 
 ```bash
 cargo run -p ucf-ops -- models supported-scope-reevaluate --out ./out/supported_scope_reeval.json
-cargo run -p ucf-ops -- models supported-scope-execute-v7 --out ./out/supported_scope_execute_v7.json
+cargo run -p ucf-ops -- governance-absolute-sweep --out ./out/governance_absolute_sweep.json
+cargo run -p ucf-ops -- models supported-scope-execute-v8 --out ./out/supported_scope_execute_v8.json
 cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json
 ```
