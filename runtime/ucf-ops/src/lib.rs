@@ -36,6 +36,7 @@ mod operator_report;
 mod operator_review_packet;
 mod operator_signoff;
 mod operator_workflow;
+mod primary_semantics_absolute_sweep;
 mod primary_semantics_residual_sweep;
 mod readiness_absolute_sweep;
 mod readiness_residual_sweep;
@@ -232,6 +233,11 @@ pub use operator_workflow::{
     OperatorWorkflowChainV1, OperatorWorkflowExportTargetsV1, OperatorWorkflowPolicyV1,
     OperatorWorkflowStageV2,
 };
+pub use primary_semantics_absolute_sweep::{
+    primary_semantics_absolute_sweep, PrimarySemanticsAbsoluteMismatchCategoryV1,
+    PrimarySemanticsAbsoluteSurfaceStatusV1, PrimarySemanticsAbsoluteSweepReportV1,
+    ResidualFreePrimarySemanticsAbsoluteSweepStatusV1, ResidualFreePrimarySemanticsAbsoluteSweepV1,
+};
 pub use primary_semantics_residual_sweep::{
     primary_semantics_residual_sweep, FinalPrimarySemanticsResidualMismatchCategoryV1,
     FinalPrimarySemanticsResidualSurfaceStatusV1, FinalPrimarySemanticsResidualSweepReportV1,
@@ -272,6 +278,7 @@ pub use remediation_consistency::{
     final_primary_semantics_sweep, primary_semantics_sweep, remediation_consistency_check,
     remediation_interop_check, remediation_spine_check, require_final_primary_semantics_inputs,
     require_residual_free_final_primary_semantics_inputs,
+    require_residual_free_primary_semantics_absolute_inputs,
     CanonicalPrimarySemanticsAuthorityStatusV1, CanonicalPrimarySemanticsAuthorityV1,
     CanonicalRemediationObservationV1, CrossSurfaceConditionObservationV1,
     CrossSurfaceObservationStatusV1, FinalPrimarySemanticsConsumerAuthorityStatusV1,
@@ -281,9 +288,11 @@ pub use remediation_consistency::{
     RemediationConsistencyCheckV1, RemediationConsistencyObservedV1,
     RemediationConsistencyReportV1, RemediationConsistencyStatusV1,
     RemediationInteropCheckReportV1, RemediationMismatchKindV1, RemediationSpineCheckReportV1,
-    ResidualFreeFinalPrimarySemanticsInputsV1, SpineConditionObservationV1,
-    CANONICAL_CONDITION_MODEL_REQUIRED, CANONICAL_REMEDIATION_REGISTRY_REQUIRED,
-    FINAL_PRIMARY_SEMANTICS_AUTHORITY_REQUIRED, FINAL_PRIMARY_SEMANTICS_INPUTS_REQUIRED,
+    ResidualFreeFinalPrimarySemanticsInputsV1, ResidualFreePrimarySemanticsAbsoluteInputsV1,
+    SpineConditionObservationV1, CANONICAL_CONDITION_MODEL_REQUIRED,
+    CANONICAL_REMEDIATION_REGISTRY_REQUIRED, FINAL_PRIMARY_SEMANTICS_AUTHORITY_REQUIRED,
+    FINAL_PRIMARY_SEMANTICS_INPUTS_REQUIRED, HISTORICAL_PRIMARY_SEMANTICS_LINEAGE_BLOCKED,
+    HISTORICAL_PRIMARY_SEMANTICS_LINEAGE_REJECTED, HISTORICAL_PRIMARY_SEMANTICS_LINEAGE_TRANSLATED,
     LEGACY_PRIMARY_SEMANTICS_INPUT_BLOCKED, LEGACY_PRIMARY_SEMANTICS_REJECTED,
     LEGACY_PRIMARY_SEMANTICS_TRANSLATED, RESIDUAL_FREE_FINAL_PRIMARY_SEMANTICS_INPUTS_REQUIRED,
     RESIDUAL_PRIMARY_SEMANTICS_PATH_BLOCKED, RESIDUAL_PRIMARY_SEMANTICS_PATH_REJECTED,
