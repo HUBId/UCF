@@ -1,85 +1,85 @@
-# Next 10 Prompts (v13 Anchor)
+# Next 10 Prompts (v14 Anchor)
 
-Anchor: `Real Compute Onboarding v13` (precondition: `ucf-ops v12 gate` PASS at Prompt 298)
+Anchor: `Real Compute Onboarding v14` (precondition: `ucf-ops v13 gate` PASS at Prompt 308)
 
 > Guardrail: This queue is capped to **10** entries unless an explicit request expands it.
 
-## Prompt 300 (MUST) — Residual-free governance truth unification completion
-Objective: Unify every remaining canonical consumer around residual-free final governance inputs as sole governance truth.
+## Prompt 310 (MUST) — Residual-free governance truth unification completion
+Objective: Unify every remaining canonical consumer around absolute residual-free final governance inputs as sole governance truth.
 - Acceptance:
-  - All active governance/review/export/gate consumers read only residual-free final governance inputs and aligned applied-scope authority from canonical sources.
+  - All active governance/review/export/gate consumers read only absolute residual-free final governance inputs and aligned applied-scope authority from canonical sources.
   - Residual or parallel governance truth paths are removed or fail closed with deterministic diagnostics.
   - Behavior remains hardware-neutral, offline-first, and runtime-semantics preserving.
-- Dependencies: 298, 299.
+- Dependencies: 308, 309.
 
-## Prompt 301 (MUST) — Supported-scope expansion re-execution or freeze reaffirmation
-Objective: Re-execute supported-scope expansion only if residual-free final inputs plus current scope execution still justify it; otherwise reaffirm freeze.
+## Prompt 311 (MUST) — Supported-scope expansion re-execution or freeze reaffirmation
+Objective: Re-execute supported-scope expansion only if absolute residual-free final inputs plus current scope execution still justify it; otherwise reaffirm freeze.
 - Acceptance:
-  - Expansion requires residual-free final-input coherence, current supported-scope execution evidence, and explicit bounded justification.
+  - Expansion requires absolute residual-free final-input coherence, current supported-scope execution evidence, and explicit bounded justification.
   - If evidence is missing or inconsistent, scope remains frozen and reports fail closed deterministically.
   - Probe-first and shadow-first progression remains explicit and unchanged.
-- Dependencies: 300.
+- Dependencies: 310.
 
-## Prompt 302 (MUST) — Residual-free readiness-input consumption deepening
-Objective: Deepen residual-free final readiness-input consumption across all remaining operator/export/gate consumers.
+## Prompt 312 (MUST) — Residual-free readiness-input consumption deepening
+Objective: Deepen absolute residual-free final readiness-input consumption across all remaining operator/export/gate consumers.
 - Acceptance:
-  - Remaining consumers adopt one canonical residual-free final readiness-input contract.
+  - Remaining consumers adopt one canonical absolute residual-free final readiness-input contract.
   - Missing, stale, or conflicting readiness prerequisites fail closed with bounded deterministic diagnostics.
   - No runtime capability widening is introduced.
-- Dependencies: 300, 301.
+- Dependencies: 310, 311.
 
-## Prompt 303 (MUST) — Residual-free bundle input and continuity-proof normalization
-Objective: Normalize bundle build/verify/inspect semantics completely around residual-free final bundle inputs and sole continuity proof.
+## Prompt 313 (MUST) — Residual-free bundle input and continuity-proof normalization
+Objective: Normalize bundle build/verify/inspect semantics completely around absolute residual-free final bundle inputs and sole continuity proof.
 - Acceptance:
-  - Build/verify/inspect flows consume only residual-free final bundle inputs and the sole residual-free top-level continuity proof.
+  - Build/verify/inspect flows consume only absolute residual-free final bundle inputs and the sole absolute residual-free final-input top-level continuity proof.
   - Governance/readiness evidence reuse is canonical and deterministic across bundle surfaces.
   - Operator/export/bundle round-trip remains offline reproducible.
-- Dependencies: 300, 302.
+- Dependencies: 310, 312.
 
-## Prompt 304 (MUST) — Residual-free primary blocking/remediation hardening
-Objective: Harden residual-free final primary blocking/remediation semantics across governance/readiness/bundle/continuity/gate consumers.
+## Prompt 314 (MUST) — Residual-free primary blocking/remediation hardening
+Objective: Harden absolute residual-free final primary blocking/remediation semantics across governance/readiness/bundle/continuity/gate consumers.
 - Acceptance:
   - Equivalent evidence states produce consistent blocking/remediation outcomes across covered consumers.
   - Divergence is detected deterministically and handled fail closed.
   - Semantics remain conservative, hardware-neutral, and evidence-bound.
-- Dependencies: 302, 303.
+- Dependencies: 312, 313.
 
-## Prompt 305 (MUST) — v13 schema snapshot refresh
-Objective: Refresh schema snapshots for v13 residual-free final-input, execution, readiness, bundle, and continuity artifacts.
+## Prompt 315 (MUST) — v14 schema snapshot refresh
+Objective: Refresh schema snapshots for v14 absolute residual-free final-input, execution, readiness, bundle, and continuity artifacts.
 - Acceptance:
-  - Snapshots reflect canonical v13 contracts with deterministic ordering.
+  - Snapshots reflect canonical v14 contracts with deterministic ordering.
   - Compatibility/version notes are documented for any changed artifacts.
   - Snapshot outputs remain reproducible offline.
-- Dependencies: 303, 304.
+- Dependencies: 313, 314.
 
-## Prompt 306 (NICE) — v13 portability and docs refresh
-Objective: Refresh portability and operator documentation for v13 governance/readiness/bundle/continuity surfaces.
+## Prompt 316 (NICE) — v14 portability and docs refresh
+Objective: Refresh portability and operator documentation for v14 governance/readiness/bundle/continuity surfaces.
 - Acceptance:
-  - Documentation reflects conservative v13 path expectations and evidence requirements.
+  - Documentation reflects conservative v14 path expectations and evidence requirements.
   - Guidance remains hardware-neutral and offline-first.
   - Documentation-only updates do not change policy/runtime semantics.
-- Dependencies: 305.
+- Dependencies: 315.
 
-## Prompt 307 (MUST) — Operator workflow/export continuity authority hardening
-Objective: Harden operator workflow/export chains with sole residual-free final-input top-level continuity proof as the only continuity authority.
+## Prompt 317 (MUST) — Operator workflow/export continuity authority hardening
+Objective: Harden operator workflow/export chains with sole absolute residual-free final-input top-level continuity proof as the only continuity authority.
 - Acceptance:
-  - Workflow/export continuity checks enforce the sole residual-free final-input top-level continuity proof across active v13 surfaces.
+  - Workflow/export continuity checks enforce the sole absolute residual-free final-input top-level continuity proof across active v14 surfaces.
   - Failures emit bounded, actionable, deterministic diagnostics.
   - Probe-first/shadow-first/fail-closed guarantees remain explicit and preserved.
-- Dependencies: 304, 305, 306.
+- Dependencies: 314, 315, 316.
 
-## Prompt 308 (MUST) — v13 gate schema and orchestration
-Objective: Define and wire v13 gate schema/orchestration for consolidated governance/execution/readiness/bundle/continuity assurances.
+## Prompt 318 (MUST) — v14 gate schema and orchestration
+Objective: Define and wire v14 gate schema/orchestration for consolidated governance/execution/readiness/bundle/continuity assurances.
 - Acceptance:
-  - v13 gate verifies required v13 surfaces with deterministic ordering and normalized status semantics.
+  - v14 gate verifies required v14 surfaces with deterministic ordering and normalized status semantics.
   - Required-surface mismatches fail closed with explicit evidence references.
   - Gate semantics remain conservative and do not widen runtime behavior.
-- Dependencies: 307.
+- Dependencies: 317.
 
-## Prompt 309 (MUST) — v13 wrap and next-anchor governance
-Objective: Close the v13 planning loop and prepare the next anchor governance artifacts.
+## Prompt 319 (MUST) — v14 wrap and next-anchor governance
+Objective: Close the v14 planning loop and prepare the next anchor governance artifacts.
 - Acceptance:
-  - v13 wrap artifacts record closure state and next-anchor handoff points.
+  - v14 wrap artifacts record closure state and next-anchor handoff points.
   - Next prompt queue remains capped to 10 entries unless explicitly expanded.
   - Wrap outputs remain hardware-neutral, offline-first, probe-first, shadow-first, fail-closed, and evidence-bound.
-- Dependencies: 308.
+- Dependencies: 318.
