@@ -37,3 +37,8 @@ v11 adds `readiness-residual-sweep` to remove/block remaining residual readiness
 ## v12 ultimate consumer sweep
 
 The v12 `residual-free-readiness-sweep` extends final consumer authority by requiring `FinalReadinessResidualSweepV1` and explicit residual-free readiness authority references across canonical readiness consumers.
+
+
+## v13 note
+
+v13 supersedes this sweep with an absolute readiness consumer sweep that removes remaining lineage or aggregate readiness reconstruction in canonical flows.

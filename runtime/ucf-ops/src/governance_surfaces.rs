@@ -215,6 +215,7 @@ mod tests {
             final_readiness_consumer_authority_digest_prefix: "MISSING".to_string(),
             readiness_residual_sweep_digest_prefix: "MISSING".to_string(),
             residual_free_readiness_authority_digest_prefix: "MISSING".to_string(),
+            readiness_absolute_sweep_digest_prefix: "MISSING".to_string(),
             snapshot_digest: "55".repeat(32),
         }
     }
