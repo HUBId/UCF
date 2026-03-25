@@ -1,0 +1,39 @@
+{
+  "artifact_id": "residual_free_primary_semantics_absolute_sweep_v1",
+  "type_name": "ResidualFreePrimarySemanticsAbsoluteSweepV1",
+  "source_file": "runtime/ucf-ops/src/primary_semantics_absolute_sweep.rs",
+  "required_fields": [
+    "canonical_bundle_spine_digest_prefix",
+    "canonical_governance_entry_digest_prefix",
+    "canonical_primary_semantics_authority_digest_prefix",
+    "canonical_readiness_spine_digest_prefix",
+    "covered_surface_count",
+    "final_primary_semantics_consumer_authority_digest_prefix",
+    "final_primary_semantics_residual_sweep_digest_prefix",
+    "residual_free_primary_semantics_consumer_authority_digest_prefix",
+    "residual_path_count",
+    "sweep_digest",
+    "sweep_status"
+  ],
+  "optional_fields": [],
+  "field_types": {
+    "canonical_bundle_spine_digest_prefix": "String",
+    "canonical_governance_entry_digest_prefix": "String",
+    "canonical_primary_semantics_authority_digest_prefix": "String",
+    "canonical_readiness_spine_digest_prefix": "String",
+    "covered_surface_count": "u16",
+    "final_primary_semantics_consumer_authority_digest_prefix": "String",
+    "final_primary_semantics_residual_sweep_digest_prefix": "String",
+    "residual_free_primary_semantics_consumer_authority_digest_prefix": "String",
+    "residual_path_count": "u16",
+    "sweep_digest": "String",
+    "sweep_status": "ResidualFreePrimarySemanticsAbsoluteSweepStatusV1"
+  },
+  "enum_variants": {
+    "ResidualFreePrimarySemanticsAbsoluteSweepStatusV1": [
+      "Fail",
+      "LegacyPresent",
+      "Pass"
+    ]
+  }
+}
