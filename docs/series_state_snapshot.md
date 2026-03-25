@@ -19,13 +19,13 @@
 - **v10:** complete (`ucf-ops v10 gate` overall PASS recorded at Prompt 278).
 - **v11:** complete (`ucf-ops v11 gate` overall PASS recorded at Prompt 288).
 - **v12:** complete (`ucf-ops v12 gate` overall PASS recorded at Prompt 298).
-- **v13:** not started yet.
+- **v13:** complete (`ucf-ops v13 gate` overall PASS recorded at Prompt 308).
 - **Queue policy:** immediate queue remains capped to 10 prompts.
 
 ## Last executed prompt / resume point
-- Last executed prompt ID: **299**.
-- Next prompt ID: **300**.
-- Resume from: **`PROMPT 300`**.
+- Last executed prompt ID: **308**.
+- Next prompt ID: **309**.
+- Resume from: **`PROMPT 309`**.
 - Numbering remains monotonic and append-only.
 
 ## Immediate next prompts (capped to 10)
@@ -41,7 +41,7 @@ Reference: `docs/next_10_prompts.md`
 | 305 | v13 schema snapshot refresh | MUST | queued |
 | 306 | v13 portability and docs refresh | NICE | queued |
 | 307 | Operator workflow/export continuity authority hardening | MUST | queued |
-| 308 | v13 gate schema and orchestration | MUST | queued |
+| 308 | v13 gate schema and orchestration | MUST | complete |
 | 309 | v13 wrap and next-anchor governance | MUST | queued |
 
 ## Historical anchor checkpoints
@@ -58,6 +58,7 @@ Reference: `docs/next_10_prompts.md`
 | 278 | v10 gate closure | complete |
 | 288 | v11 gate closure | complete |
 | 298 | v12 gate closure | complete |
+| 308 | v13 gate closure | complete |
 
 ## Series control notes
 - v0 completion requirement: historical signoff recorded.
@@ -73,6 +74,8 @@ Reference: `docs/next_10_prompts.md`
 - v10 completion requirement: **`ucf-ops v10 gate` overall PASS at Prompt 278**.
 - v11 completion requirement: **`ucf-ops v11 gate` overall PASS at Prompt 288**.
 - v12 completion requirement: **`ucf-ops v12 gate` overall PASS at Prompt 298**.
+- v13 completion requirement: **`ucf-ops v13 gate` overall PASS at Prompt 308**.
+- Next anchor moves only after v13 gate PASS.
 - v13 advancement remains hardware-neutral, offline-first, probe-first, shadow-first, and fail-closed.
 - Prompts are classified as MUST/NICE/DEFERRED at authoring time.
 
