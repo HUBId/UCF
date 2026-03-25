@@ -47,6 +47,8 @@ pub struct V12GateCheckV1 {
 pub struct V12GateReportV1 {
     pub schema_version: u16,
     pub overall_status: V12GateOverallStatus,
+    #[serde(default)]
+    pub primary_semantics_absolute_sweep_digest_prefix: String,
     pub checks: Vec<V12GateCheckV1>,
 }
 
@@ -476,6 +478,11 @@ pub fn v12_gate(workdir: &Path, out: &Path) -> Result<V12GateReportV1, OpsError>
     let report = V12GateReportV1 {
         schema_version: 1,
         overall_status: overall_from_checks(&checks),
+        primary_semantics_absolute_sweep_digest_prefix: read_sweep_digest_prefix(
+            workdir,
+            "out/primary_semantics_absolute_sweep.json",
+            "sweep.sweep_digest",
+        ),
         checks,
     };
     crate::write_json(out, &report)?;
@@ -571,6 +578,27 @@ fn digest_prefix<T: Serialize>(value: &T) -> Result<String, OpsError> {
     ))
 }
 
+fn read_sweep_digest_prefix(workdir: &Path, rel_path: &str, pointer: &str) -> String {
+    let path = workdir.join(rel_path);
+    let Ok(bytes) = fs::read(path) else {
+        return "MISSING".to_string();
+    };
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+        return "MISSING".to_string();
+    };
+    let mut cursor = &value;
+    for segment in pointer.split('.') {
+        let Some(next) = cursor.get(segment) else {
+            return "MISSING".to_string();
+        };
+        cursor = next;
+    }
+    cursor
+        .as_str()
+        .map(prefix_hex)
+        .unwrap_or_else(|| "MISSING".to_string())
+}
+
 fn prefix_hex(digest: &str) -> String {
     crate::prefix_hex(digest, DIGEST_PREFIX_LEN)
 }
@@ -628,6 +656,7 @@ mod tests {
         let report = V12GateReportV1 {
             schema_version: 1,
             overall_status: V12GateOverallStatus::Pass,
+            primary_semantics_absolute_sweep_digest_prefix: "MISSING".to_string(),
             checks: checks
                 .iter()
                 .map(|name| v12_gate_check(name, GateStatus::Pass, [], "REMEDIATE", "NOTE"))
@@ -642,6 +671,7 @@ mod tests {
         let report = V12GateReportV1 {
             schema_version: 1,
             overall_status: V12GateOverallStatus::Pass,
+            primary_semantics_absolute_sweep_digest_prefix: "MISSING".to_string(),
             checks: vec![
                 v12_gate_check(
                     "a",

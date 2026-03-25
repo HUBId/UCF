@@ -38,3 +38,5 @@ v11 adds `primary-semantics-residual-sweep`, which removes/blocks the last canon
 ## v12 update
 
 v12 introduces the residual-free consumer authority proof and makes residual-free final primary-semantics inputs mandatory for canonical consumer surfaces.
+
+v13 adds `primary-semantics-absolute-sweep` to prove no canonical surface still depends on historical/embedded/cached/override primary-semantics lineage.
