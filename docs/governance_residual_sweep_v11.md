@@ -22,3 +22,6 @@ v12 adds `residual-free-governance-sweep` and requires canonical governance cons
 
 v13 finalizes canonical consumer cleanup with `governance-absolute-sweep`, requiring residual-free final governance inputs across covered governance/review/export/gate consumers.
 
+## v14 follow-up
+
+v14 adds `governance-terminal-sweep` to remove the final governance echo/summary/lineage traces from canonical consumers and enforce terminal absolute governance inputs.

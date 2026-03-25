@@ -5,6 +5,7 @@ use crate::{
     CanonicalGovernanceEntryV1, FinalGovernanceConsumerAuthorityStatusV1,
     FinalGovernanceConsumerAuthorityV1, FinalGovernanceResidualSweepV1,
     GovernanceEntryAuthorityStatusV2, GovernanceResidualSweepStatusV1, OpsError,
+    ResidualFreeGovernanceAbsoluteSweepStatusV1, ResidualFreeGovernanceAbsoluteSweepV1,
     ResidualFreeGovernanceConsumerAuthorityStatusV1, ResidualFreeGovernanceConsumerAuthorityV1,
 };
 
@@ -17,6 +18,9 @@ pub const LEGACY_GOVERNANCE_INPUT_BLOCKED: &str = "LEGACY_GOVERNANCE_INPUT_BLOCK
 pub const RESIDUAL_FREE_FINAL_GOVERNANCE_INPUTS_REQUIRED: &str =
     "RESIDUAL_FREE_FINAL_GOVERNANCE_INPUTS_REQUIRED";
 pub const HISTORICAL_GOVERNANCE_LINEAGE_BLOCKED: &str = "HISTORICAL_GOVERNANCE_LINEAGE_BLOCKED";
+pub const ABSOLUTE_RESIDUAL_FREE_FINAL_GOVERNANCE_INPUTS_REQUIRED: &str =
+    "ABSOLUTE_RESIDUAL_FREE_FINAL_GOVERNANCE_INPUTS_REQUIRED";
+pub const GOVERNANCE_ECHO_PATH_BLOCKED: &str = "GOVERNANCE_ECHO_PATH_BLOCKED";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ResidualFreeFinalGovernanceInputsV1 {
@@ -45,6 +49,18 @@ pub struct ResidualFreeGovernanceAbsoluteInputsV1 {
     pub final_governance_consumer_authority_digest_prefix: String,
     pub final_governance_residual_sweep_digest_prefix: String,
     pub residual_free_governance_consumer_authority_digest_prefix: String,
+    pub authority_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AbsoluteFinalGovernanceTerminalInputsV1 {
+    pub applied_supported_set_digest_prefix: String,
+    pub canonical_governance_entry_digest_prefix: String,
+    pub canonical_governance_authority_digest_prefix: String,
+    pub final_governance_consumer_authority_digest_prefix: String,
+    pub final_governance_residual_sweep_digest_prefix: String,
+    pub residual_free_governance_consumer_authority_digest_prefix: String,
+    pub residual_free_governance_absolute_sweep_digest_prefix: String,
     pub authority_digest: String,
 }
 
@@ -176,6 +192,82 @@ pub fn require_residual_free_governance_absolute_inputs(
         final_governance_residual_sweep_digest_prefix: base
             .final_governance_residual_sweep_digest_prefix,
         residual_free_governance_consumer_authority_digest_prefix: expected_residual_free_prefix,
+        authority_digest: crate::sha256_hex(&bytes),
+    })
+}
+
+pub fn require_absolute_final_governance_terminal_inputs(
+    applied: Option<&AppliedSupportedSetContextV1>,
+    entry: Option<&CanonicalGovernanceEntryV1>,
+    authority: Option<&CanonicalGovernanceEntryAuthorityV2>,
+    final_consumer: Option<&FinalGovernanceConsumerAuthorityV1>,
+    residual_sweep: Option<&FinalGovernanceResidualSweepV1>,
+    residual_free_consumer: Option<&ResidualFreeGovernanceConsumerAuthorityV1>,
+    absolute_sweep: Option<&ResidualFreeGovernanceAbsoluteSweepV1>,
+) -> Result<AbsoluteFinalGovernanceTerminalInputsV1, OpsError> {
+    let base = require_residual_free_governance_absolute_inputs(
+        applied,
+        entry,
+        authority,
+        final_consumer,
+        residual_sweep,
+        residual_free_consumer,
+    )?;
+    let Some(absolute_sweep) = absolute_sweep else {
+        return Err(OpsError::Invalid(
+            ABSOLUTE_RESIDUAL_FREE_FINAL_GOVERNANCE_INPUTS_REQUIRED.to_string(),
+        ));
+    };
+    let expected_absolute_prefix = prefix_hex(&absolute_sweep.sweep_digest, 16);
+    if !matches!(
+        absolute_sweep.sweep_status,
+        ResidualFreeGovernanceAbsoluteSweepStatusV1::Pass
+    ) || absolute_sweep.applied_supported_set_digest_prefix
+        != base.applied_supported_set_digest_prefix
+        || absolute_sweep.canonical_governance_entry_digest_prefix
+            != base.canonical_governance_entry_digest_prefix
+        || absolute_sweep.canonical_governance_authority_digest_prefix
+            != base.canonical_governance_authority_digest_prefix
+        || absolute_sweep.final_governance_consumer_authority_digest_prefix
+            != base.final_governance_consumer_authority_digest_prefix
+        || absolute_sweep.final_governance_residual_sweep_digest_prefix
+            != base.final_governance_residual_sweep_digest_prefix
+        || absolute_sweep.residual_free_governance_consumer_authority_digest_prefix
+            != base.residual_free_governance_consumer_authority_digest_prefix
+    {
+        return Err(OpsError::Invalid(GOVERNANCE_ECHO_PATH_BLOCKED.to_string()));
+    }
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(b"absolute_final_governance_terminal_inputs_v1");
+    bytes.extend_from_slice(base.applied_supported_set_digest_prefix.as_bytes());
+    bytes.extend_from_slice(base.canonical_governance_entry_digest_prefix.as_bytes());
+    bytes.extend_from_slice(base.canonical_governance_authority_digest_prefix.as_bytes());
+    bytes.extend_from_slice(
+        base.final_governance_consumer_authority_digest_prefix
+            .as_bytes(),
+    );
+    bytes.extend_from_slice(
+        base.final_governance_residual_sweep_digest_prefix
+            .as_bytes(),
+    );
+    bytes.extend_from_slice(
+        base.residual_free_governance_consumer_authority_digest_prefix
+            .as_bytes(),
+    );
+    bytes.extend_from_slice(expected_absolute_prefix.as_bytes());
+
+    Ok(AbsoluteFinalGovernanceTerminalInputsV1 {
+        applied_supported_set_digest_prefix: base.applied_supported_set_digest_prefix,
+        canonical_governance_entry_digest_prefix: base.canonical_governance_entry_digest_prefix,
+        canonical_governance_authority_digest_prefix: base
+            .canonical_governance_authority_digest_prefix,
+        final_governance_consumer_authority_digest_prefix: base
+            .final_governance_consumer_authority_digest_prefix,
+        final_governance_residual_sweep_digest_prefix: base
+            .final_governance_residual_sweep_digest_prefix,
+        residual_free_governance_consumer_authority_digest_prefix: base
+            .residual_free_governance_consumer_authority_digest_prefix,
+        residual_free_governance_absolute_sweep_digest_prefix: expected_absolute_prefix,
         authority_digest: crate::sha256_hex(&bytes),
     })
 }

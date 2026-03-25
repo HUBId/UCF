@@ -9,3 +9,5 @@
 ```bash
 cargo run -p ucf-ops -- governance-absolute-sweep --out ./out/governance_absolute_sweep.json
 ```
+
+v14 ergänzt darauf den terminalen Consumer-Sweep (`governance-terminal-sweep`) und blockiert die letzten Echo-/Summary-/Lineage-Reste in kanonischen Governance-Consumer-Flows.
