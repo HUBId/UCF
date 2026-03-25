@@ -984,6 +984,7 @@ mod tests {
         assert_eq!(
             observed,
             vec![
+                "absolute_final_input_continuity_authority_v1",
                 "active_review_snapshot_v1",
                 "applied_scope_authority_v1",
                 "applied_supported_set_context_v1",
