@@ -37,3 +37,4 @@ cargo run -p ucf-ops -- residual-free-governance-sweep --out ./out/residual_free
 
 The v13 `governance-absolute-sweep` consumes this authority and removes the last canonical historical/embedded governance lineage traces from covered consumers.
 
+v14 (`governance-terminal-sweep`) finalisiert den Consumer-Sweep und blockiert verbleibende Governance-Echo-/Summary-Pfade in kanonischen Flows.

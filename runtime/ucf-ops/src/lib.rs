@@ -29,6 +29,7 @@ mod governance_entry_check;
 mod governance_entry_sweep;
 mod governance_residual_sweep;
 mod governance_surfaces;
+mod governance_terminal_sweep;
 mod interop_consistency;
 mod models_lifecycle;
 mod nightly;
@@ -126,11 +127,13 @@ pub use final_continuity_sweep::{
     FinalContinuityStatusV2,
 };
 pub use final_governance_authority::{
-    require_final_governance_authority, require_final_governance_inputs,
-    require_residual_free_final_governance_inputs,
-    require_residual_free_governance_absolute_inputs, FinalGovernanceAuthorityContextV1,
-    ResidualFreeFinalGovernanceInputsV1, ResidualFreeGovernanceAbsoluteInputsV1,
-    FINAL_GOVERNANCE_AUTHORITY_REQUIRED, FINAL_GOVERNANCE_INPUTS_REQUIRED,
+    require_absolute_final_governance_terminal_inputs, require_final_governance_authority,
+    require_final_governance_inputs, require_residual_free_final_governance_inputs,
+    require_residual_free_governance_absolute_inputs, AbsoluteFinalGovernanceTerminalInputsV1,
+    FinalGovernanceAuthorityContextV1, ResidualFreeFinalGovernanceInputsV1,
+    ResidualFreeGovernanceAbsoluteInputsV1,
+    ABSOLUTE_RESIDUAL_FREE_FINAL_GOVERNANCE_INPUTS_REQUIRED, FINAL_GOVERNANCE_AUTHORITY_REQUIRED,
+    FINAL_GOVERNANCE_INPUTS_REQUIRED, GOVERNANCE_ECHO_PATH_BLOCKED,
     LEGACY_GOVERNANCE_INPUT_BLOCKED, RESIDUAL_FREE_FINAL_GOVERNANCE_INPUTS_REQUIRED,
     RESIDUAL_GOVERNANCE_PATH_BLOCKED,
 };
@@ -178,6 +181,11 @@ pub use governance_surfaces::{
     validate_governance_primary_surfaces_with_applied_scope, GovernancePrimarySurfacesV1,
     GOVERNANCE_APPLIED_SET_MISMATCH_CODE, GOVERNANCE_PRIMARY_SURFACE_SCOPE_DRIFT_CODE,
     GOVERNANCE_SURFACE_MISMATCH_CODE, GOVERNANCE_SURFACE_MISSING_CODE,
+};
+pub use governance_terminal_sweep::{
+    governance_terminal_sweep, AbsoluteFinalGovernanceTerminalSweepStatusV1,
+    AbsoluteFinalGovernanceTerminalSweepV1, GovernanceTerminalConsumerStatusV1,
+    GovernanceTerminalMismatchCategoryV1, GovernanceTerminalSweepReportV1,
 };
 pub use interop_consistency::{
     interop_consistency_matrix, CrossSurfaceContextMatrixV1, CrossSurfaceEntryV1,
