@@ -59,6 +59,7 @@ mod strict_evidence;
 mod v10_gate;
 mod v11_gate;
 mod v12_gate;
+mod v13_gate;
 mod v6_gate;
 mod v7_gate;
 mod v8_gate;
@@ -359,6 +360,7 @@ pub use strict_evidence::{
 pub use v10_gate::{v10_gate, V10GateCheckV1, V10GateOverallStatus, V10GateReportV1};
 pub use v11_gate::{v11_gate, V11GateCheckV1, V11GateOverallStatus, V11GateReportV1};
 pub use v12_gate::{v12_gate, V12GateCheckV1, V12GateOverallStatus, V12GateReportV1};
+pub use v13_gate::{v13_gate, V13GateCheckV1, V13GateOverallStatus, V13GateReportV1};
 pub use v6_gate::{v6_gate, V6GateCheckV1, V6GateOverallStatus, V6GateReportV1};
 pub use v7_gate::{v7_gate, V7GateCheckV1, V7GateOverallStatus, V7GateReportV1};
 pub use v8_gate::{v8_gate, V8GateCheckV1, V8GateOverallStatus, V8GateReportV1};
