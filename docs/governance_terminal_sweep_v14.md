@@ -16,6 +16,10 @@ Der Sweep ist **PASS** nur wenn alle abgedeckten Consumer zuerst diese autoritat
 
 `AbsoluteFinalGovernanceTerminalSweepV1` fasst das Ergebnis kompakt zusammen (inkl. `sweep_digest`).
 
+## Rolle für Supported Scope Execution v14
+
+`SupportedScopeExecutionV9` darf nur expandieren, wenn `AbsoluteFinalGovernanceTerminalSweepV1` PASS und digest-aligned zu den anderen Governance-Inputs ist. Bei FAIL oder Legacy-Status wird fail-closed auf `REAFFIRM_FREEZE` entschieden.
+
 ## Abgedeckte Consumer
 
 - `ActiveReviewSnapshot`
@@ -24,10 +28,6 @@ Der Sweep ist **PASS** nur wenn alle abgedeckten Consumer zuerst diese autoritat
 - `OperatorWorkflowChain`
 - `InteropConsistencyMatrix`
 - `V14PrepGateHelper`
-
-## Warum Echo/Summary/Lineage nicht mehr zulässig sind
-
-Kanonische Flows müssen Governance-Truth fail-closed aus finalen absoluten Inputs auflösen. Historische Rekonstruktion über Echos, Summaries, Lineage-Spuren oder eingebettete Hinweise ist kein autoritativer Einstieg mehr.
 
 ## Kommando
 
