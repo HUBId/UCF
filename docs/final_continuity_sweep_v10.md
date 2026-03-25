@@ -62,3 +62,7 @@ Top-level authority moved to `residual-free-continuity-sweep` (`ResidualFreeCont
 ## v12 update
 `final-continuity-sweep` ist ab v12 explizit ein **LEGACY_TOP_LEVEL_CONTINUITY_PROOF** und nur noch diagnostisch/subordinate. Die einzige top-level Autorität ist `final-input-continuity-sweep` (`FinalInputContinuityAuthorityV1`).
 
+
+
+## v13 update
+`final-continuity-sweep` is retained only as `LEGACY_TOP_LEVEL_CONTINUITY_PROOF` diagnostics.

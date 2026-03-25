@@ -102,3 +102,7 @@ Top-level continuity truth is delegated exclusively to `ResidualFreeContinuityAu
 ## v12 update
 `OperatorWorkflowChainV1` bleibt Workflow-Stufe und referenziert residual-free Consumer-Autoritäten. Top-level Kontinuitätswahrheit wird ausschließlich durch `FinalInputContinuityAuthorityV1` festgestellt.
 
+
+
+## v13 absolute continuity authority
+`OperatorWorkflowChainV1` remains workflow-stage evidence. Top-level continuity truth is delegated only to `absolute-final-input-continuity-sweep` (`AbsoluteFinalInputContinuityAuthorityV1`).
