@@ -502,6 +502,7 @@ mod tests {
             final_bundle_consumer_authority_digest_prefix: "66".repeat(8),
             bundle_residual_sweep_digest_prefix: "77".repeat(8),
             residual_free_bundle_consumer_authority_digest_prefix: "MISSING".to_string(),
+            bundle_absolute_sweep_digest_prefix: "MISSING".to_string(),
             export_layout_compatibility: CanonicalExportLayoutCompatibilityV1::LegacyExportLayout,
             repro_pack_digest: "x".to_string(),
         };
