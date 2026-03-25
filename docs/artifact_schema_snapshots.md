@@ -1,6 +1,6 @@
 # Artifact Schema Snapshots
 
-This repository enforces deterministic shape snapshots for governance/review/export/interop artifacts that must remain stable across v3/v4/v5/v6/v7/v8/v9/v10/v11/v12 hardening.
+This repository enforces deterministic shape snapshots for governance/review/export/interop artifacts that must remain stable across v3/v4/v5/v6/v7/v8/v9/v10/v11/v12/v13 hardening.
 
 ## Covered artifacts
 
@@ -45,6 +45,15 @@ Snapshots are generated under `docs/artifact_schema_snapshots/`:
 - `readiness_gate_report_v1.json`
 - `remediation_consistency_check_v1.json`
 - `repro_pack_manifest_v1.json`
+- `residual_free_bundle_absolute_sweep_v1.json` (v13 absolute residual-free contract)
+- `residual_free_bundle_consumer_authority_v1.json` (v12 residual-free consumer authority)
+- `residual_free_continuity_authority_v1.json`
+- `residual_free_governance_absolute_sweep_v1.json` (v13 absolute residual-free contract)
+- `residual_free_governance_consumer_authority_v1.json` (v12 residual-free consumer authority)
+- `residual_free_primary_semantics_absolute_sweep_v1.json` (v13 absolute residual-free contract)
+- `residual_free_primary_semantics_consumer_authority_v1.json` (v12 residual-free consumer authority)
+- `residual_free_readiness_absolute_sweep_v1.json` (v13 absolute residual-free contract)
+- `residual_free_readiness_consumer_authority_v1.json` (v12 residual-free consumer authority)
 - `reviewability_reduction_v1.json` (v7)
 - `slot_reviewability_truth_v1.json` (v7)
 - `spine_condition_observation_v1.json` (v8)
@@ -55,6 +64,7 @@ Snapshots are generated under `docs/artifact_schema_snapshots/`:
 - `supported_scope_execution_v5.json` (v10 final supported-scope execution)
 - `supported_scope_execution_v6.json` (v11 supported-scope execution freeze)
 - `supported_scope_execution_v7.json` (v12 residual-free supported-scope execution)
+- `supported_scope_execution_v8.json` (v13 absolute residual-free supported-scope execution)
 - `supported_scope_reevaluation_v1.json` (v7)
 - `v3_gate_report_v1.json`
 - `v4_gate_report_v1.json`
@@ -142,3 +152,11 @@ For v12 residual-free final-input surfaces, this freeze is now first-class for c
 - residual-free readiness consumer authority,
 - residual-free bundle consumer authority,
 - residual-free primary-semantics consumer authority.
+
+For v13 absolute residual-free surfaces, this freeze is now first-class for cross-surface contracts and CI review:
+
+- residual-free governance absolute sweep,
+- supported-scope execution v8,
+- residual-free readiness absolute sweep,
+- residual-free bundle absolute sweep,
+- residual-free primary-semantics absolute sweep.

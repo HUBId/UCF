@@ -64,7 +64,7 @@ struct ArtifactSpec {
     enum_names: &'static [&'static str],
 }
 
-const ARTIFACT_SPECS: [ArtifactSpec; 68] = [
+const ARTIFACT_SPECS: [ArtifactSpec; 71] = [
     ArtifactSpec {
         artifact_id: "active_review_snapshot_v1",
         file_rel: "runtime/ucf-ops/src/models_lifecycle.rs",
@@ -239,6 +239,12 @@ const ARTIFACT_SPECS: [ArtifactSpec; 68] = [
             "ResidualFreeGovernanceConsumerAuthorityStatusV1",
             "ResidualFreeGovernanceMismatchCategoryV1",
         ],
+    },
+    ArtifactSpec {
+        artifact_id: "residual_free_governance_absolute_sweep_v1",
+        file_rel: "runtime/ucf-ops/src/governance_absolute_sweep.rs",
+        type_name: "ResidualFreeGovernanceAbsoluteSweepV1",
+        enum_names: &["ResidualFreeGovernanceAbsoluteSweepStatusV1"],
     },
     ArtifactSpec {
         artifact_id: "bugkit_manifest_v1",
@@ -433,6 +439,12 @@ const ARTIFACT_SPECS: [ArtifactSpec; 68] = [
         ],
     },
     ArtifactSpec {
+        artifact_id: "residual_free_primary_semantics_absolute_sweep_v1",
+        file_rel: "runtime/ucf-ops/src/primary_semantics_absolute_sweep.rs",
+        type_name: "ResidualFreePrimarySemanticsAbsoluteSweepV1",
+        enum_names: &["ResidualFreePrimarySemanticsAbsoluteSweepStatusV1"],
+    },
+    ArtifactSpec {
         artifact_id: "final_readiness_consumer_authority_v1",
         file_rel: "runtime/ucf-ops/src/final_readiness_consumer_sweep.rs",
         type_name: "FinalReadinessConsumerAuthorityV1",
@@ -455,6 +467,12 @@ const ARTIFACT_SPECS: [ArtifactSpec; 68] = [
             "ResidualFreeReadinessConsumerAuthorityStatusV1",
             "ResidualFreeReadinessMismatchCategoryV1",
         ],
+    },
+    ArtifactSpec {
+        artifact_id: "residual_free_readiness_absolute_sweep_v1",
+        file_rel: "runtime/ucf-ops/src/readiness_absolute_sweep.rs",
+        type_name: "ResidualFreeReadinessAbsoluteSweepV1",
+        enum_names: &["ResidualFreeReadinessAbsoluteSweepStatusV1"],
     },
     ArtifactSpec {
         artifact_id: "residual_free_bundle_consumer_authority_v1",
@@ -1004,8 +1022,11 @@ mod tests {
                 "residual_free_bundle_absolute_sweep_v1",
                 "residual_free_bundle_consumer_authority_v1",
                 "residual_free_continuity_authority_v1",
+                "residual_free_governance_absolute_sweep_v1",
                 "residual_free_governance_consumer_authority_v1",
+                "residual_free_primary_semantics_absolute_sweep_v1",
                 "residual_free_primary_semantics_consumer_authority_v1",
+                "residual_free_readiness_absolute_sweep_v1",
                 "residual_free_readiness_consumer_authority_v1",
                 "reviewability_reduction_v1",
                 "slot_reviewability_truth_v1",
@@ -1113,6 +1134,38 @@ mod tests {
     }
 
     #[test]
+    fn check_reports_missing_v13_absolute_residual_free_snapshot_as_breaking() {
+        let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("runtime parent")
+            .parent()
+            .expect("repo root")
+            .to_path_buf();
+        let tmp = tempfile::tempdir().expect("tempdir");
+        generate_artifact_schema_snapshots(&ArtifactSchemaArgs {
+            repo_root: repo_root.clone(),
+            out_dir: tmp.path().to_path_buf(),
+        })
+        .expect("generate snapshots");
+        fs::remove_file(
+            tmp.path()
+                .join("residual_free_governance_absolute_sweep_v1.json"),
+        )
+        .expect("remove snapshot");
+
+        let report = check_artifact_schema_snapshots(&ArtifactSchemaArgs {
+            repo_root,
+            out_dir: tmp.path().to_path_buf(),
+        })
+        .expect("check should complete");
+        assert!(!report.ok);
+        assert!(report.diffs.iter().any(|d| {
+            d.artifact == "residual_free_governance_absolute_sweep_v1"
+                && d.drift_kind == DriftKind::Breaking
+        }));
+    }
+
+    #[test]
     fn check_reports_v11_residual_shape_drift() {
         let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .parent()
@@ -1154,7 +1207,7 @@ mod tests {
     }
 
     #[test]
-    fn check_reports_v12_supported_scope_execution_shape_drift() {
+    fn check_reports_v13_supported_scope_execution_shape_drift() {
         let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .parent()
             .expect("runtime parent")
@@ -1168,7 +1221,7 @@ mod tests {
         })
         .expect("generate snapshots");
 
-        let snapshot_path = tmp.path().join("supported_scope_execution_v7.json");
+        let snapshot_path = tmp.path().join("supported_scope_execution_v8.json");
         let mut snapshot: ArtifactSchemaSnapshot =
             serde_json::from_str(&fs::read_to_string(&snapshot_path).expect("read snapshot"))
                 .expect("parse snapshot");
@@ -1189,7 +1242,7 @@ mod tests {
         .expect("check should complete");
         assert!(!report.ok);
         assert!(report.diffs.iter().any(|d| {
-            d.artifact == "supported_scope_execution_v7"
+            d.artifact == "supported_scope_execution_v8"
                 && d.drift_kind == DriftKind::Breaking
                 && d.summary.contains("field type changed")
         }));
