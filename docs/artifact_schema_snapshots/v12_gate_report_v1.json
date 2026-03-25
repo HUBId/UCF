@@ -7,10 +7,13 @@
     "overall_status",
     "schema_version"
   ],
-  "optional_fields": [],
+  "optional_fields": [
+    "primary_semantics_absolute_sweep_digest_prefix"
+  ],
   "field_types": {
     "checks": "Vec<V12GateCheckV1>",
     "overall_status": "V12GateOverallStatus",
+    "primary_semantics_absolute_sweep_digest_prefix": "String",
     "schema_version": "u16"
   },
   "enum_variants": {
