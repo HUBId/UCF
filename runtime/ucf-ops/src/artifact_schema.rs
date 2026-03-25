@@ -1001,6 +1001,7 @@ mod tests {
                 "readiness_gate_report_v1",
                 "remediation_consistency_check_v1",
                 "repro_pack_manifest_v1",
+                "residual_free_bundle_absolute_sweep_v1",
                 "residual_free_bundle_consumer_authority_v1",
                 "residual_free_continuity_authority_v1",
                 "residual_free_governance_consumer_authority_v1",
