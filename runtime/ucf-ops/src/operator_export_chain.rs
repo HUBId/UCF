@@ -33,6 +33,21 @@ pub enum OperatorExportAuthorityMismatchCategoryV1 {
     ReviewabilityBasisMismatch,
     ReadinessSpineMismatch,
     AppliedScopeMissing,
+    AbsoluteFinalInputContinuityMissing,
+    AbsoluteFinalInputContinuityFail,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum AbsoluteFinalInputStatusV1 {
+    Pass,
+    Fail,
+    LegacyPresent,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct AbsoluteFinalInputProbeV1 {
+    continuity_status: AbsoluteFinalInputStatusV1,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -252,6 +267,37 @@ pub fn operator_export_chain_check(
         }
         chain.chain_digest = chain_digest(&chain)?;
     }
+
+    let absolute_path = workdir.join("out/absolute_final_input_continuity_sweep.json");
+    match fs::read_to_string(&absolute_path) {
+        Ok(body) => {
+            let probe: AbsoluteFinalInputProbeV1 = serde_json::from_str(&body)?;
+            if !matches!(probe.continuity_status, AbsoluteFinalInputStatusV1::Pass) {
+                chain.authority_chain_status = OperatorExportAuthorityChainStatusV1::Fail;
+                chain.mismatch_categories.push(
+                    OperatorExportAuthorityMismatchCategoryV1::AbsoluteFinalInputContinuityFail,
+                );
+                chain
+                    .blocking_codes
+                    .push("ABSOLUTE_FINAL_INPUT_CONTINUITY_REQUIRED".to_string());
+            }
+        }
+        Err(_) => {
+            chain.authority_chain_status = OperatorExportAuthorityChainStatusV1::Fail;
+            chain.mismatch_categories.push(
+                OperatorExportAuthorityMismatchCategoryV1::AbsoluteFinalInputContinuityMissing,
+            );
+            chain
+                .blocking_codes
+                .push("ABSOLUTE_FINAL_INPUT_CONTINUITY_REQUIRED".to_string());
+        }
+    }
+    chain.mismatch_categories.sort();
+    chain.mismatch_categories.dedup();
+    chain.blocking_codes.sort();
+    chain.blocking_codes.dedup();
+    chain.blocking_codes.truncate(BLOCKING_CAP);
+    chain.chain_digest = chain_digest(&chain)?;
 
     if let Some(parent) = out.parent() {
         fs::create_dir_all(parent)?;

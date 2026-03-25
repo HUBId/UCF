@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+mod absolute_final_input_continuity_sweep;
 mod adversarial;
 mod airgap;
 mod alerts;
@@ -63,6 +64,10 @@ mod v7_gate;
 mod v8_gate;
 mod v9_gate;
 mod world_shadow;
+pub use absolute_final_input_continuity_sweep::{
+    absolute_final_input_continuity_sweep, AbsoluteFinalInputContinuityAuthorityV1,
+    AbsoluteFinalInputContinuityStatusV1,
+};
 pub use adversarial::{adversarial_run, AdversarialReport, AdversarialRunArgs, CaseResult};
 pub use airgap::{
     airgap_export_models, airgap_export_policies, airgap_export_repro, airgap_export_run_cert,

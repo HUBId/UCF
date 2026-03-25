@@ -31,3 +31,7 @@ cargo run -p ucf-ops -- residual-free-continuity-sweep --bundle <path> --out ./o
 ## v12 update
 `ResidualFreeContinuityAuthorityV1` bleibt ein residual-freier Kontinuitätsnachweis, ist ab v12 aber nur noch ein **SUBORDINATE_CONTINUITY_CONTRIBUTOR** unter `FinalInputContinuityAuthorityV1` (`final-input-continuity-sweep`).
 
+
+
+## v13 update
+`ResidualFreeContinuityAuthorityV1` remains residual-free evidence but is subordinate in v13. Sole top-level authority is `AbsoluteFinalInputContinuityAuthorityV1`.

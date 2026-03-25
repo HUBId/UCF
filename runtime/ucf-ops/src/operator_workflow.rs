@@ -431,9 +431,16 @@ pub fn operator_workflow_chain(
     .unwrap_or_else(|| "MISSING".to_string());
     chain.final_input_continuity_authority_digest_prefix = discover_digest_prefix(
         &out_root,
-        "final_input_continuity_sweep.json",
+        "absolute_final_input_continuity_sweep.json",
         "authority_digest",
     )
+    .or_else(|| {
+        discover_digest_prefix(
+            &out_root,
+            "final_input_continuity_sweep.json",
+            "authority_digest",
+        )
+    })
     .unwrap_or_else(|| "MISSING".to_string());
     chain.chain_digest = chain_digest_hex(&chain)?;
 

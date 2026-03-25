@@ -58,3 +58,7 @@ Die folgenden Surfaces sind v12 nur noch **subordinate continuity contributors**
 - `operator roundtrip-chain-check`
 - `exports roundtrip-check`
 - `exports bundle-spine-sweep`
+
+
+## v13 update
+`FinalInputContinuityAuthorityV1` is now a **SUBORDINATE_CONTINUITY_CONTRIBUTOR** under `AbsoluteFinalInputContinuityAuthorityV1` (`absolute-final-input-continuity-sweep`).
