@@ -527,6 +527,44 @@ jobs:
           cargo run -p ucf-ops -- residual-free-governance-sweep --out ./out/residual_free_governance_sweep.json
           if ($LASTEXITCODE -eq 1 -or $LASTEXITCODE -eq 2) { Write-Host "residual_free_governance_sweep=skip reason=optional_scope_path_unavailable"; exit 0 }
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Governance absolute sweep smoke (linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          cargo run -p ucf-ops -- governance-absolute-sweep --out ./out/governance_absolute_sweep.json || {
+            code=$?
+            if [ "$code" -eq 1 ] || [ "$code" -eq 2 ]; then
+              echo "governance_absolute_sweep=skip reason=optional_scope_path_unavailable"
+            else
+              exit "$code"
+            fi
+          }
+      - name: Governance absolute sweep smoke (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cargo run -p ucf-ops -- governance-absolute-sweep --out ./out/governance_absolute_sweep.json
+          if ($LASTEXITCODE -eq 1 -or $LASTEXITCODE -eq 2) { Write-Host "governance_absolute_sweep=skip reason=optional_scope_path_unavailable"; exit 0 }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Supported scope execute v8 smoke (linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          cargo run -p ucf-ops -- models supported-scope-execute-v8 --out ./out/supported_scope_execute_v8.json --workdir . || {
+            code=$?
+            if [ "$code" -eq 1 ] || [ "$code" -eq 2 ]; then
+              echo "supported_scope_execute_v8=skip reason=optional_scope_path_unavailable"
+            else
+              exit "$code"
+            fi
+          }
+      - name: Supported scope execute v8 smoke (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cargo run -p ucf-ops -- models supported-scope-execute-v8 --out ./out/supported_scope_execute_v8.json --workdir .
+          if ($LASTEXITCODE -eq 1 -or $LASTEXITCODE -eq 2) { Write-Host "supported_scope_execute_v8=skip reason=optional_scope_path_unavailable"; exit 0 }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Final readiness consumer sweep smoke (linux)
         if: runner.os == 'Linux'
         shell: bash
@@ -583,6 +621,25 @@ jobs:
         run: |
           cargo run -p ucf-ops -- residual-free-readiness-sweep --out ./out/residual_free_readiness_sweep.json
           if ($LASTEXITCODE -eq 1 -or $LASTEXITCODE -eq 2) { Write-Host "residual_free_readiness_sweep=skip reason=optional_scope_path_unavailable"; exit 0 }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Readiness absolute sweep smoke (linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          cargo run -p ucf-ops -- readiness-absolute-sweep --out ./out/readiness_absolute_sweep.json || {
+            code=$?
+            if [ "$code" -eq 1 ] || [ "$code" -eq 2 ]; then
+              echo "readiness_absolute_sweep=skip reason=optional_scope_path_unavailable"
+            else
+              exit "$code"
+            fi
+          }
+      - name: Readiness absolute sweep smoke (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cargo run -p ucf-ops -- readiness-absolute-sweep --out ./out/readiness_absolute_sweep.json
+          if ($LASTEXITCODE -eq 1 -or $LASTEXITCODE -eq 2) { Write-Host "readiness_absolute_sweep=skip reason=optional_scope_path_unavailable"; exit 0 }
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Final bundle consumer sweep smoke (linux)
         if: runner.os == 'Linux'
@@ -641,6 +698,25 @@ jobs:
           cargo run -p ucf-ops -- residual-free-bundle-sweep --out ./out/residual_free_bundle_sweep.json
           if ($LASTEXITCODE -eq 1 -or $LASTEXITCODE -eq 2) { Write-Host "residual_free_bundle_sweep=skip reason=optional_export_refs_path_unavailable"; exit 0 }
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Bundle absolute sweep smoke (linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          cargo run -p ucf-ops -- bundle-absolute-sweep --out ./out/bundle_absolute_sweep.json || {
+            code=$?
+            if [ "$code" -eq 1 ] || [ "$code" -eq 2 ]; then
+              echo "bundle_absolute_sweep=skip reason=optional_export_refs_path_unavailable"
+            else
+              exit "$code"
+            fi
+          }
+      - name: Bundle absolute sweep smoke (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cargo run -p ucf-ops -- bundle-absolute-sweep --out ./out/bundle_absolute_sweep.json
+          if ($LASTEXITCODE -eq 1 -or $LASTEXITCODE -eq 2) { Write-Host "bundle_absolute_sweep=skip reason=optional_export_refs_path_unavailable"; exit 0 }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Final primary semantics sweep smoke (linux)
         if: runner.os == 'Linux'
         shell: bash
@@ -697,6 +773,25 @@ jobs:
         run: |
           cargo run -p ucf-ops -- residual-free-primary-semantics-sweep --out ./out/residual_free_primary_semantics_sweep.json
           if ($LASTEXITCODE -eq 1 -or $LASTEXITCODE -eq 2) { Write-Host "residual_free_primary_semantics_sweep=skip reason=optional_export_or_scope_path_unavailable"; exit 0 }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Primary semantics absolute sweep smoke (linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          cargo run -p ucf-ops -- primary-semantics-absolute-sweep --out ./out/primary_semantics_absolute_sweep.json || {
+            code=$?
+            if [ "$code" -eq 1 ] || [ "$code" -eq 2 ]; then
+              echo "primary_semantics_absolute_sweep=skip reason=optional_export_or_scope_path_unavailable"
+            else
+              exit "$code"
+            fi
+          }
+      - name: Primary semantics absolute sweep smoke (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cargo run -p ucf-ops -- primary-semantics-absolute-sweep --out ./out/primary_semantics_absolute_sweep.json
+          if ($LASTEXITCODE -eq 1 -or $LASTEXITCODE -eq 2) { Write-Host "primary_semantics_absolute_sweep=skip reason=optional_export_or_scope_path_unavailable"; exit 0 }
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: v0 gate (blocking)
         run: cargo run -p ucf-ops -- v0 gate --scenario fixtures/e2e/v0_flow_a.json --out ./out/v0_gate_report.json

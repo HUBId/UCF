@@ -15369,16 +15369,20 @@ pub struct PortabilityReportV1 {
     pub final_governance_consumer_sweep_smoke: PortabilityCommandCheck,
     pub governance_residual_sweep_smoke: PortabilityCommandCheck,
     pub residual_free_governance_sweep_smoke: PortabilityCommandCheck,
-    pub supported_scope_execute_v6_smoke: PortabilityCommandCheck,
+    pub governance_absolute_sweep_smoke: PortabilityCommandCheck,
+    pub supported_scope_execute_v8_smoke: PortabilityCommandCheck,
     pub final_readiness_consumer_sweep_smoke: PortabilityCommandCheck,
     pub readiness_residual_sweep_smoke: PortabilityCommandCheck,
     pub residual_free_readiness_sweep_smoke: PortabilityCommandCheck,
+    pub readiness_absolute_sweep_smoke: PortabilityCommandCheck,
     pub final_bundle_consumer_sweep_smoke: PortabilityCommandCheck,
     pub bundle_residual_sweep_smoke: PortabilityCommandCheck,
     pub residual_free_bundle_sweep_smoke: PortabilityCommandCheck,
+    pub bundle_absolute_sweep_smoke: PortabilityCommandCheck,
     pub final_primary_semantics_sweep_smoke: PortabilityCommandCheck,
     pub primary_semantics_residual_sweep_smoke: PortabilityCommandCheck,
     pub residual_free_primary_semantics_sweep_smoke: PortabilityCommandCheck,
+    pub primary_semantics_absolute_sweep_smoke: PortabilityCommandCheck,
     pub remediation_spine_check_smoke: PortabilityCommandCheck,
     pub supported_set_apply_smoke: PortabilityCommandCheck,
     pub review_truth_check_smoke: PortabilityCommandCheck,
@@ -15513,6 +15517,45 @@ where
             detail: err.to_string(),
             out: Some(out.to_string()),
         },
+    }
+}
+
+fn out_smoke_check_with_skip<T, F>(
+    name: &str,
+    out: &str,
+    command: F,
+    detail: impl FnOnce(&T) -> String,
+    skip_if: impl FnOnce(&str) -> bool,
+) -> PortabilityCommandCheck
+where
+    F: FnOnce(&Path) -> Result<T, OpsError>,
+{
+    let out_path = PathBuf::from(out);
+    match command(&out_path) {
+        Ok(report) => PortabilityCommandCheck {
+            name: name.to_string(),
+            status: PortabilityGateStatus::Pass,
+            detail: detail(&report),
+            out: Some(out.to_string()),
+        },
+        Err(err) => {
+            let msg = err.to_string();
+            let should_skip = skip_if(&msg);
+            PortabilityCommandCheck {
+                name: name.to_string(),
+                status: if should_skip {
+                    PortabilityGateStatus::Skip
+                } else {
+                    PortabilityGateStatus::Fail
+                },
+                detail: if should_skip {
+                    format!("skip_optional_path: {msg}")
+                } else {
+                    msg
+                },
+                out: Some(out.to_string()),
+            }
+        }
     }
 }
 
@@ -16904,8 +16947,44 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
             }
         }
     };
-    let supported_scope_execute_v6_smoke = out_smoke_check(
-        "supported_scope_execute_v6_smoke",
+    let governance_absolute_sweep_smoke = out_smoke_check_with_skip(
+        "governance_absolute_sweep_smoke",
+        "./out/governance_absolute_sweep.json",
+        |out_path| {
+            let review_out = PathBuf::from("./out/supported_set_review.json");
+            let reeval_out = PathBuf::from("./out/supported_scope_reeval.json");
+            let final_governance_out = PathBuf::from("./out/final_governance_consumer_sweep.json");
+            let residual_out = PathBuf::from("./out/governance_residual_sweep.json");
+            let residual_free_out = PathBuf::from("./out/residual_free_governance_sweep.json");
+            models_supported_set_review(workdir, &review_out)?;
+            models_supported_scope_reevaluate(workdir, &reeval_out)?;
+            final_governance_consumer_sweep(workdir, &final_governance_out)?;
+            governance_residual_sweep(workdir, &residual_out)?;
+            residual_free_governance_sweep(workdir, &residual_free_out)?;
+            governance_absolute_sweep(workdir, out_path)
+        },
+        |report| {
+            format!(
+                "sweep_status={:?} mismatch_categories={}",
+                report.sweep.sweep_status,
+                report
+                    .consumers
+                    .iter()
+                    .map(|consumer| consumer.mismatch_categories.len())
+                    .sum::<usize>()
+            )
+        },
+        |detail| {
+            detail.contains(LEGACY_SCOPE_PATH_BLOCKED)
+                || detail.contains(APPLIED_SCOPE_REQUIRED)
+                || detail.contains(APPLIED_SCOPE_MISSING)
+                || detail.contains(APPLIED_SCOPE_TRANSLATION_FAILED)
+                || detail.contains("APPLIED_SCOPE_SLOT_TRUTH_MISSING")
+                || detail.contains("SUPPORTED_SET_POLICY_V2_MISSING")
+        },
+    );
+    let supported_scope_execute_v8_smoke = out_smoke_check_with_skip(
+        "supported_scope_execute_v8_smoke",
         "./out/supported_scope_execute_v8.json",
         |out_path| {
             let review_out = PathBuf::from("./out/supported_set_review.json");
@@ -16930,6 +17009,14 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
                 report.execution_decision,
                 usize::from(report.chosen_candidate_slot.is_some())
             )
+        },
+        |detail| {
+            detail.contains(LEGACY_SCOPE_PATH_BLOCKED)
+                || detail.contains(APPLIED_SCOPE_REQUIRED)
+                || detail.contains(APPLIED_SCOPE_MISSING)
+                || detail.contains(APPLIED_SCOPE_TRANSLATION_FAILED)
+                || detail.contains("APPLIED_SCOPE_SLOT_TRUTH_MISSING")
+                || detail.contains("SUPPORTED_SET_POLICY_V2_MISSING")
         },
     );
     let residual_free_governance_sweep_smoke = {
@@ -17176,6 +17263,44 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
             }
         }
     };
+    let readiness_absolute_sweep_smoke = out_smoke_check_with_skip(
+        "readiness_absolute_sweep_smoke",
+        "./out/readiness_absolute_sweep.json",
+        |out_path| {
+            let review_out = PathBuf::from("./out/supported_set_review.json");
+            let reeval_out = PathBuf::from("./out/supported_scope_reeval.json");
+            let apply_out = PathBuf::from("./out/supported_set_apply.json");
+            let final_readiness_out = PathBuf::from("./out/final_readiness_consumer_sweep.json");
+            let residual_out = PathBuf::from("./out/readiness_residual_sweep.json");
+            let residual_free_out = PathBuf::from("./out/residual_free_readiness_sweep.json");
+            models_supported_set_review(workdir, &review_out)?;
+            models_supported_scope_reevaluate(workdir, &reeval_out)?;
+            let _ = models_supported_set_apply(workdir, &apply_out)?;
+            final_readiness_consumer_sweep(workdir, &final_readiness_out)?;
+            readiness_residual_sweep(workdir, &residual_out)?;
+            residual_free_readiness_sweep(workdir, &residual_free_out)?;
+            readiness_absolute_sweep(workdir, out_path)
+        },
+        |report| {
+            format!(
+                "sweep_status={:?} mismatch_categories={}",
+                report.sweep.sweep_status,
+                report
+                    .consumers
+                    .iter()
+                    .map(|consumer| consumer.mismatch_categories.len())
+                    .sum::<usize>()
+            )
+        },
+        |detail| {
+            detail.contains(LEGACY_SCOPE_PATH_BLOCKED)
+                || detail.contains(APPLIED_SCOPE_REQUIRED)
+                || detail.contains(APPLIED_SCOPE_MISSING)
+                || detail.contains(APPLIED_SCOPE_TRANSLATION_FAILED)
+                || detail.contains("APPLIED_SCOPE_SLOT_TRUTH_MISSING")
+                || detail.contains("SUPPORTED_SET_POLICY_V2_MISSING")
+        },
+    );
     let final_bundle_consumer_sweep_smoke = {
         let out_path = PathBuf::from("./out/final_bundle_consumer_sweep.json");
         let prep = (|| -> Result<(), OpsError> {
@@ -17353,6 +17478,43 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
             }
         }
     };
+    let bundle_absolute_sweep_smoke = out_smoke_check_with_skip(
+        "bundle_absolute_sweep_smoke",
+        "./out/bundle_absolute_sweep.json",
+        |out_path| {
+            let review_out = PathBuf::from("./out/supported_set_review.json");
+            let reeval_out = PathBuf::from("./out/supported_scope_reeval.json");
+            let apply_out = PathBuf::from("./out/supported_set_apply.json");
+            let final_bundle_out = PathBuf::from("./out/final_bundle_consumer_sweep.json");
+            let residual_out = PathBuf::from("./out/bundle_residual_sweep.json");
+            let residual_free_out = PathBuf::from("./out/residual_free_bundle_sweep.json");
+            models_supported_set_review(workdir, &review_out)?;
+            models_supported_scope_reevaluate(workdir, &reeval_out)?;
+            let _ = models_supported_set_apply(workdir, &apply_out)?;
+            final_bundle_consumer_sweep(workdir, &final_bundle_out)?;
+            bundle_residual_sweep(workdir, &residual_out)?;
+            residual_free_bundle_sweep(workdir, &residual_free_out)?;
+            bundle_absolute_sweep(workdir, out_path)
+        },
+        |report| {
+            format!(
+                "sweep_status={:?} mismatch_categories={}",
+                report.sweep.sweep_status,
+                report
+                    .consumers
+                    .iter()
+                    .map(|consumer| consumer.mismatch_categories.len())
+                    .sum::<usize>()
+            )
+        },
+        |detail| {
+            detail.contains("CANONICAL_EXPORT_REFS_REQUIRED")
+                || detail.contains("EXPORT_CONTEXT_REQUIRED")
+                || detail.contains("PACK_ARTIFACT_REFS_REQUIRED")
+                || detail.contains("SUPPORTED_SET_POLICY_V2_MISSING")
+                || detail.contains("APPLIED_SCOPE_SLOT_TRUTH_MISSING")
+        },
+    );
     let final_primary_semantics_sweep_smoke = {
         let out_path = PathBuf::from("./out/final_primary_semantics_sweep.json");
         let prep = (|| -> Result<(), OpsError> {
@@ -17545,6 +17707,48 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
             }
         }
     };
+    let primary_semantics_absolute_sweep_smoke = out_smoke_check_with_skip(
+        "primary_semantics_absolute_sweep_smoke",
+        "./out/primary_semantics_absolute_sweep.json",
+        |out_path| {
+            let review_out = PathBuf::from("./out/supported_set_review.json");
+            let reeval_out = PathBuf::from("./out/supported_scope_reeval.json");
+            let apply_out = PathBuf::from("./out/supported_set_apply.json");
+            let final_out = PathBuf::from("./out/final_primary_semantics_sweep.json");
+            let residual_out = PathBuf::from("./out/primary_semantics_residual_sweep.json");
+            let residual_free_out =
+                PathBuf::from("./out/residual_free_primary_semantics_sweep.json");
+            models_supported_set_review(workdir, &review_out)?;
+            models_supported_scope_reevaluate(workdir, &reeval_out)?;
+            let _ = models_supported_set_apply(workdir, &apply_out)?;
+            final_primary_semantics_sweep(workdir, &final_out)?;
+            primary_semantics_residual_sweep(workdir, &residual_out)?;
+            residual_free_primary_semantics_sweep(workdir, &residual_free_out)?;
+            primary_semantics_absolute_sweep(workdir, out_path)
+        },
+        |report| {
+            format!(
+                "sweep_status={:?} mismatch_categories={}",
+                report.sweep.sweep_status,
+                report
+                    .surfaces
+                    .iter()
+                    .map(|surface| surface.mismatch_categories.len())
+                    .sum::<usize>()
+            )
+        },
+        |detail| {
+            detail.contains(LEGACY_SCOPE_PATH_BLOCKED)
+                || detail.contains(APPLIED_SCOPE_REQUIRED)
+                || detail.contains(APPLIED_SCOPE_MISSING)
+                || detail.contains(APPLIED_SCOPE_TRANSLATION_FAILED)
+                || detail.contains("APPLIED_SCOPE_SLOT_TRUTH_MISSING")
+                || detail.contains("SUPPORTED_SET_POLICY_V2_MISSING")
+                || detail.contains("CANONICAL_EXPORT_REFS_REQUIRED")
+                || detail.contains("EXPORT_CONTEXT_REQUIRED")
+                || detail.contains("PACK_ARTIFACT_REFS_REQUIRED")
+        },
+    );
     let remediation_interop_check_smoke = {
         let out_path = PathBuf::from("./out/remediation_interop_check.json");
         match remediation_interop_check(&out_path) {
@@ -17751,10 +17955,12 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         matrix_cmd("linux", "cargo run -p ucf-ops -- final-governance-consumer-sweep --out ./out/final_governance_consumer_sweep.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- governance-residual-sweep --out ./out/governance_residual_sweep.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- residual-free-governance-sweep --out ./out/residual_free_governance_sweep.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- governance-absolute-sweep --out ./out/governance_absolute_sweep.json && cargo run -p ucf-ops -- models supported-scope-execute-v8 --out ./out/supported_scope_execute_v8.json --workdir ."),
+        matrix_cmd("linux", "cargo run -p ucf-ops -- governance-absolute-sweep --out ./out/governance_absolute_sweep.json"),
+        matrix_cmd("linux", "cargo run -p ucf-ops -- models supported-scope-execute-v8 --out ./out/supported_scope_execute_v8.json --workdir ."),
         matrix_cmd("linux", "cargo run -p ucf-ops -- final-readiness-consumer-sweep --out ./out/final_readiness_consumer_sweep.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- readiness-residual-sweep --out ./out/readiness_residual_sweep.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- residual-free-readiness-sweep --out ./out/residual_free_readiness_sweep.json"),
+        matrix_cmd("linux", "cargo run -p ucf-ops -- readiness-absolute-sweep --out ./out/readiness_absolute_sweep.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- final-bundle-consumer-sweep --out ./out/final_bundle_consumer_sweep.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- bundle-residual-sweep --out ./out/bundle_residual_sweep.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- residual-free-bundle-sweep --out ./out/residual_free_bundle_sweep.json"),
@@ -17762,6 +17968,7 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         matrix_cmd("linux", "cargo run -p ucf-ops -- final-primary-semantics-sweep --out ./out/final_primary_semantics_sweep.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- primary-semantics-residual-sweep --out ./out/primary_semantics_residual_sweep.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- residual-free-primary-semantics-sweep --out ./out/residual_free_primary_semantics_sweep.json"),
+        matrix_cmd("linux", "cargo run -p ucf-ops -- primary-semantics-absolute-sweep --out ./out/primary_semantics_absolute_sweep.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- remediation-interop-check --out ./out/remediation_interop_check.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- remediation-spine-check --out ./out/remediation_spine_check.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- models active-review-snapshot --out ./out/active_review_snapshot.json"),
@@ -17804,10 +18011,12 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         matrix_cmd("windows", "cargo run -p ucf-ops -- final-governance-consumer-sweep --out ./out/final_governance_consumer_sweep.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- governance-residual-sweep --out ./out/governance_residual_sweep.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- residual-free-governance-sweep --out ./out/residual_free_governance_sweep.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- governance-absolute-sweep --out ./out/governance_absolute_sweep.json && cargo run -p ucf-ops -- models supported-scope-execute-v8 --out ./out/supported_scope_execute_v8.json --workdir ."),
+        matrix_cmd("windows", "cargo run -p ucf-ops -- governance-absolute-sweep --out ./out/governance_absolute_sweep.json"),
+        matrix_cmd("windows", "cargo run -p ucf-ops -- models supported-scope-execute-v8 --out ./out/supported_scope_execute_v8.json --workdir ."),
         matrix_cmd("windows", "cargo run -p ucf-ops -- final-readiness-consumer-sweep --out ./out/final_readiness_consumer_sweep.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- readiness-residual-sweep --out ./out/readiness_residual_sweep.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- residual-free-readiness-sweep --out ./out/residual_free_readiness_sweep.json"),
+        matrix_cmd("windows", "cargo run -p ucf-ops -- readiness-absolute-sweep --out ./out/readiness_absolute_sweep.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- final-bundle-consumer-sweep --out ./out/final_bundle_consumer_sweep.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- bundle-residual-sweep --out ./out/bundle_residual_sweep.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- residual-free-bundle-sweep --out ./out/residual_free_bundle_sweep.json"),
@@ -17815,6 +18024,7 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         matrix_cmd("windows", "cargo run -p ucf-ops -- final-primary-semantics-sweep --out ./out/final_primary_semantics_sweep.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- primary-semantics-residual-sweep --out ./out/primary_semantics_residual_sweep.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- residual-free-primary-semantics-sweep --out ./out/residual_free_primary_semantics_sweep.json"),
+        matrix_cmd("windows", "cargo run -p ucf-ops -- primary-semantics-absolute-sweep --out ./out/primary_semantics_absolute_sweep.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- remediation-interop-check --out ./out/remediation_interop_check.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- remediation-spine-check --out ./out/remediation_spine_check.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- models active-review-snapshot --out ./out/active_review_snapshot.json"),
@@ -17854,16 +18064,20 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         final_governance_consumer_sweep_smoke,
         governance_residual_sweep_smoke,
         residual_free_governance_sweep_smoke,
-        supported_scope_execute_v6_smoke,
+        governance_absolute_sweep_smoke,
+        supported_scope_execute_v8_smoke,
         final_readiness_consumer_sweep_smoke,
         readiness_residual_sweep_smoke,
         residual_free_readiness_sweep_smoke,
+        readiness_absolute_sweep_smoke,
         final_bundle_consumer_sweep_smoke,
         bundle_residual_sweep_smoke,
         residual_free_bundle_sweep_smoke,
+        bundle_absolute_sweep_smoke,
         final_primary_semantics_sweep_smoke,
         primary_semantics_residual_sweep_smoke,
         residual_free_primary_semantics_sweep_smoke,
+        primary_semantics_absolute_sweep_smoke,
         remediation_spine_check_smoke,
         supported_set_apply_smoke,
         review_truth_check_smoke,
