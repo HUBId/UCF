@@ -3,6 +3,7 @@
   "type_name": "BundleRoundTripConsistencyV1",
   "source_file": "runtime/ucf-ops/src/lib.rs",
   "required_fields": [
+    "bundle_absolute_sweep_digest_prefix",
     "bundle_digest_prefix",
     "bundle_kind",
     "bundle_residual_sweep_digest_prefix",
@@ -23,6 +24,7 @@
   ],
   "optional_fields": [],
   "field_types": {
+    "bundle_absolute_sweep_digest_prefix": "String",
     "bundle_digest_prefix": "String",
     "bundle_kind": "CanonicalBundleKindV1",
     "bundle_residual_sweep_digest_prefix": "String",

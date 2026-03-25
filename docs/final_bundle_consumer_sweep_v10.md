@@ -49,3 +49,8 @@ v11 adds `bundle-residual-sweep` to remove and block the last residual bundle-re
 ## v12 residual-free consumer guarantee
 
 `residual-free-bundle-sweep` is now the bounded v12 authority proving that canonical export consumers no longer rely on manifest history, ad-hoc inspect summaries, roundtrip-only reconstruction, or bundle-local heuristics as primary bundle truth.
+
+
+## v13 note
+
+v13 finalizes the bundle consumer migration: canonical export consumers must bind to residual-free final bundle inputs and absolute sweep references.

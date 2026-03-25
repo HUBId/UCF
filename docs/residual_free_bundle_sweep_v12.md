@@ -25,3 +25,8 @@ cargo run -p ucf-ops -- residual-free-bundle-sweep --out ./out/residual_free_bun
 ## Why this exists
 
 v12 blocks the last historical, implicit, and bundle-local reconstruction traces in canonical export flows. If required final inputs are missing, stale, or contradictory, canonical flows fail closed.
+
+
+## v13 note
+
+v13 adds `bundle-absolute-sweep`, which consumes `ResidualFreeBundleConsumerAuthorityV1` and removes the final historical/bundle-local lineage traces from canonical export consumers.

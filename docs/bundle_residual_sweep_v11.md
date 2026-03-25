@@ -35,3 +35,8 @@ cargo run -p ucf-ops -- bundle-residual-sweep --out ./out/bundle_residual_sweep.
 ## v12 residual-free consumer finalization
 
 v12 adds `residual-free-bundle-sweep` and `ResidualFreeBundleConsumerAuthorityV1`, which fail-closed canonical export consumers unless residual-free final bundle inputs are the sole authority.
+
+
+## v13 note
+
+v13 closes remaining canonical consumer lineage paths by requiring the absolute residual-free bundle input chain via `bundle-absolute-sweep`.
