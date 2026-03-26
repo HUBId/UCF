@@ -64,7 +64,7 @@ struct ArtifactSpec {
     enum_names: &'static [&'static str],
 }
 
-const ARTIFACT_SPECS: [ArtifactSpec; 73] = [
+const ARTIFACT_SPECS: [ArtifactSpec; 74] = [
     ArtifactSpec {
         artifact_id: "active_review_snapshot_v1",
         file_rel: "runtime/ucf-ops/src/models_lifecycle.rs",
@@ -494,6 +494,12 @@ const ARTIFACT_SPECS: [ArtifactSpec; 73] = [
         file_rel: "runtime/ucf-ops/src/bundle_absolute_sweep.rs",
         type_name: "ResidualFreeBundleAbsoluteSweepV1",
         enum_names: &["ResidualFreeBundleAbsoluteSweepStatusV1"],
+    },
+    ArtifactSpec {
+        artifact_id: "absolute_final_bundle_terminal_sweep_v1",
+        file_rel: "runtime/ucf-ops/src/bundle_terminal_sweep.rs",
+        type_name: "AbsoluteFinalBundleTerminalSweepV1",
+        enum_names: &["AbsoluteFinalBundleTerminalSweepStatusV1"],
     },
     ArtifactSpec {
         artifact_id: "supported_scope_reevaluation_v1",

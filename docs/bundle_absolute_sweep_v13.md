@@ -34,3 +34,7 @@ cargo run -p ucf-ops -- bundle-absolute-sweep --out ./out/bundle_absolute_sweep.
 ```
 
 A non-`PASS` sweep status fails closed.
+
+## v14 terminal note
+
+v14 adds `bundle-terminal-sweep` to remove remaining canonical consumer dependence on bundle echoes, summaries, lineage memory, and embedded export-summary traces.

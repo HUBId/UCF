@@ -30,3 +30,7 @@ v12 blocks the last historical, implicit, and bundle-local reconstruction traces
 ## v13 note
 
 v13 adds `bundle-absolute-sweep`, which consumes `ResidualFreeBundleConsumerAuthorityV1` and removes the final historical/bundle-local lineage traces from canonical export consumers.
+
+## v14 terminal note
+
+The v14 terminal sweep closes the final canonical export consumer residual paths by requiring absolute final bundle inputs across covered consumers.
