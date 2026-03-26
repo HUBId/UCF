@@ -25,3 +25,8 @@ cargo run -p ucf-ops -- absolute-final-input-continuity-sweep --bundle <path> --
 - `final-input-continuity-sweep`: subordinate continuity contributor.
 - `residual-free-continuity-sweep`: subordinate continuity contributor.
 - `final-continuity-sweep` / `continuity-authority-check`: legacy continuity diagnostics.
+
+
+## v14 update
+`AbsoluteFinalInputContinuityAuthorityV1` is now a **SUBORDINATE_CONTINUITY_CONTRIBUTOR**.
+The sole top-level proof is `TerminalAbsoluteFinalInputContinuityAuthorityV1` via `terminal-absolute-final-input-continuity-sweep`.

@@ -62,3 +62,8 @@ Die folgenden Surfaces sind v12 nur noch **subordinate continuity contributors**
 
 ## v13 update
 `FinalInputContinuityAuthorityV1` is now a **SUBORDINATE_CONTINUITY_CONTRIBUTOR** under `AbsoluteFinalInputContinuityAuthorityV1` (`absolute-final-input-continuity-sweep`).
+
+
+## v14 update
+`FinalInputContinuityAuthorityV1` remains a subordinate contributor only.
+Canonical top-level PASS/FAIL now comes exclusively from `terminal-absolute-final-input-continuity-sweep` (`TerminalAbsoluteFinalInputContinuityAuthorityV1`).

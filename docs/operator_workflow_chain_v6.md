@@ -106,3 +106,8 @@ Top-level continuity truth is delegated exclusively to `ResidualFreeContinuityAu
 
 ## v13 absolute continuity authority
 `OperatorWorkflowChainV1` remains workflow-stage evidence. Top-level continuity truth is delegated only to `absolute-final-input-continuity-sweep` (`AbsoluteFinalInputContinuityAuthorityV1`).
+
+
+## v14 terminal continuity delegation
+`OperatorWorkflowChainV1` stays a workflow-stage artifact and must not be interpreted as top-level continuity truth.
+Top-level continuity is delegated only to `terminal-absolute-final-input-continuity-sweep` (`TerminalAbsoluteFinalInputContinuityAuthorityV1`).
