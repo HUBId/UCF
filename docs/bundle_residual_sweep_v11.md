@@ -40,3 +40,7 @@ v12 adds `residual-free-bundle-sweep` and `ResidualFreeBundleConsumerAuthorityV1
 ## v13 note
 
 v13 closes remaining canonical consumer lineage paths by requiring the absolute residual-free bundle input chain via `bundle-absolute-sweep`.
+
+## v14 terminal note
+
+v14 demotes/blocks residual bundle-echo and summary-derived canonical paths via `bundle-terminal-sweep`.
