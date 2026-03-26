@@ -7,10 +7,19 @@
     "overall_status",
     "schema_version"
   ],
-  "optional_fields": [],
+  "optional_fields": [
+    "final_primary_semantics_consumer_authority_digest_prefix",
+    "final_primary_semantics_residual_sweep_digest_prefix",
+    "primary_semantics_absolute_sweep_digest_prefix",
+    "residual_free_primary_semantics_authority_digest_prefix"
+  ],
   "field_types": {
     "checks": "Vec<V13GateCheckV1>",
+    "final_primary_semantics_consumer_authority_digest_prefix": "String",
+    "final_primary_semantics_residual_sweep_digest_prefix": "String",
     "overall_status": "V13GateOverallStatus",
+    "primary_semantics_absolute_sweep_digest_prefix": "String",
+    "residual_free_primary_semantics_authority_digest_prefix": "String",
     "schema_version": "u16"
   },
   "enum_variants": {
