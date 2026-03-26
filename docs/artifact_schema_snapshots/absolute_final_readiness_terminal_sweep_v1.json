@@ -1,0 +1,41 @@
+{
+  "artifact_id": "absolute_final_readiness_terminal_sweep_v1",
+  "type_name": "AbsoluteFinalReadinessTerminalSweepV1",
+  "source_file": "runtime/ucf-ops/src/readiness_terminal_sweep.rs",
+  "required_fields": [
+    "applied_supported_set_digest_prefix",
+    "canonical_governance_entry_digest_prefix",
+    "canonical_readiness_authority_digest_prefix",
+    "canonical_readiness_spine_digest_prefix",
+    "covered_consumer_count",
+    "final_readiness_consumer_authority_digest_prefix",
+    "final_readiness_residual_sweep_digest_prefix",
+    "residual_free_readiness_absolute_sweep_digest_prefix",
+    "residual_free_readiness_consumer_authority_digest_prefix",
+    "residual_path_count",
+    "sweep_digest",
+    "sweep_status"
+  ],
+  "optional_fields": [],
+  "field_types": {
+    "applied_supported_set_digest_prefix": "String",
+    "canonical_governance_entry_digest_prefix": "String",
+    "canonical_readiness_authority_digest_prefix": "String",
+    "canonical_readiness_spine_digest_prefix": "String",
+    "covered_consumer_count": "u16",
+    "final_readiness_consumer_authority_digest_prefix": "String",
+    "final_readiness_residual_sweep_digest_prefix": "String",
+    "residual_free_readiness_absolute_sweep_digest_prefix": "String",
+    "residual_free_readiness_consumer_authority_digest_prefix": "String",
+    "residual_path_count": "u16",
+    "sweep_digest": "String",
+    "sweep_status": "AbsoluteFinalReadinessTerminalSweepStatusV1"
+  },
+  "enum_variants": {
+    "AbsoluteFinalReadinessTerminalSweepStatusV1": [
+      "Fail",
+      "LegacyPresent",
+      "Pass"
+    ]
+  }
+}

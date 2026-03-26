@@ -2,8 +2,10 @@
   "schema_version": 1,
   "artifacts": [
     "absolute_final_bundle_terminal_sweep_v1",
+    "absolute_final_governance_terminal_sweep_v1",
     "absolute_final_input_continuity_authority_v1",
     "absolute_final_primary_semantics_terminal_sweep_v1",
+    "absolute_final_readiness_terminal_sweep_v1",
     "active_review_snapshot_v1",
     "applied_scope_authority_v1",
     "applied_supported_set_context_v1",
@@ -65,6 +67,7 @@
     "supported_scope_execution_v6",
     "supported_scope_execution_v7",
     "supported_scope_execution_v8",
+    "supported_scope_execution_v9",
     "supported_scope_reevaluation_v1",
     "v10_gate_report_v1",
     "v11_gate_report_v1",
