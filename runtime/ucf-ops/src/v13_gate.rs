@@ -47,6 +47,14 @@ pub struct V13GateCheckV1 {
 pub struct V13GateReportV1 {
     pub schema_version: u16,
     pub overall_status: V13GateOverallStatus,
+    #[serde(default)]
+    pub final_primary_semantics_consumer_authority_digest_prefix: String,
+    #[serde(default)]
+    pub final_primary_semantics_residual_sweep_digest_prefix: String,
+    #[serde(default)]
+    pub residual_free_primary_semantics_authority_digest_prefix: String,
+    #[serde(default)]
+    pub primary_semantics_absolute_sweep_digest_prefix: String,
     pub checks: Vec<V13GateCheckV1>,
 }
 
@@ -487,6 +495,22 @@ pub fn v13_gate(workdir: &Path, out: &Path) -> Result<V13GateReportV1, OpsError>
     let report = V13GateReportV1 {
         schema_version: 1,
         overall_status: overall_from_checks(&checks),
+        final_primary_semantics_consumer_authority_digest_prefix: semantics
+            .sweep
+            .final_primary_semantics_consumer_authority_digest_prefix
+            .clone(),
+        final_primary_semantics_residual_sweep_digest_prefix: semantics
+            .sweep
+            .final_primary_semantics_residual_sweep_digest_prefix
+            .clone(),
+        residual_free_primary_semantics_authority_digest_prefix: semantics
+            .sweep
+            .residual_free_primary_semantics_consumer_authority_digest_prefix
+            .clone(),
+        primary_semantics_absolute_sweep_digest_prefix: crate::prefix_hex(
+            &semantics.sweep.sweep_digest,
+            DIGEST_PREFIX_LEN,
+        ),
         checks,
     };
     crate::write_json(out, &report)?;
@@ -638,6 +662,10 @@ mod tests {
         let report = V13GateReportV1 {
             schema_version: 1,
             overall_status: V13GateOverallStatus::Pass,
+            final_primary_semantics_consumer_authority_digest_prefix: "aa".repeat(8),
+            final_primary_semantics_residual_sweep_digest_prefix: "bb".repeat(8),
+            residual_free_primary_semantics_authority_digest_prefix: "cc".repeat(8),
+            primary_semantics_absolute_sweep_digest_prefix: "dd".repeat(8),
             checks: checks
                 .iter()
                 .map(|name| v13_gate_check(name, GateStatus::Pass, [], "REMEDIATE", "NOTE"))
@@ -652,6 +680,10 @@ mod tests {
         let report = V13GateReportV1 {
             schema_version: 1,
             overall_status: V13GateOverallStatus::Pass,
+            final_primary_semantics_consumer_authority_digest_prefix: "aa".repeat(8),
+            final_primary_semantics_residual_sweep_digest_prefix: "bb".repeat(8),
+            residual_free_primary_semantics_authority_digest_prefix: "cc".repeat(8),
+            primary_semantics_absolute_sweep_digest_prefix: "dd".repeat(8),
             checks: vec![
                 v13_gate_check(
                     "a",
