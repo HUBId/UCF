@@ -996,6 +996,7 @@ mod tests {
         assert_eq!(
             observed,
             vec![
+                "absolute_final_bundle_terminal_sweep_v1",
                 "absolute_final_input_continuity_authority_v1",
                 "active_review_snapshot_v1",
                 "applied_scope_authority_v1",
