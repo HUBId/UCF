@@ -38,3 +38,8 @@ Canonical flows must fail closed when residual-free final readiness inputs are m
 ```bash
 cargo run -p ucf-ops -- readiness-absolute-sweep --out ./out/readiness_absolute_sweep.json
 ```
+
+## v14 follow-up
+
+v14 introduces `readiness-terminal-sweep` to remove terminal consumer dependence on readiness echoes/summaries/aggregate-memory traces in canonical flows.
+

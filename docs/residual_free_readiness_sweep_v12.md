@@ -49,3 +49,8 @@ cargo run -p ucf-ops -- residual-free-readiness-sweep --out ./out/residual_free_
 ## v13 note
 
 v13 adds the readiness absolute sweep to remove any remaining historical or aggregate readiness lineage traces from canonical consumers.
+
+## v14 follow-up
+
+Terminal consumer sweep in v14 (`readiness-terminal-sweep`) finalizes canonical consumer cleanup and blocks residual readiness echo paths at terminal inputs.
+
