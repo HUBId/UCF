@@ -64,7 +64,7 @@ struct ArtifactSpec {
     enum_names: &'static [&'static str],
 }
 
-const ARTIFACT_SPECS: [ArtifactSpec; 75] = [
+const ARTIFACT_SPECS: [ArtifactSpec; 78] = [
     ArtifactSpec {
         artifact_id: "active_review_snapshot_v1",
         file_rel: "runtime/ucf-ops/src/models_lifecycle.rs",
@@ -130,6 +130,12 @@ const ARTIFACT_SPECS: [ArtifactSpec; 75] = [
         file_rel: "runtime/ucf-ops/src/models_lifecycle.rs",
         type_name: "SupportedScopeExecutionV8",
         enum_names: &["SupportedScopeExecutionDecisionV8"],
+    },
+    ArtifactSpec {
+        artifact_id: "supported_scope_execution_v9",
+        file_rel: "runtime/ucf-ops/src/models_lifecycle.rs",
+        type_name: "SupportedScopeExecutionV9",
+        enum_names: &["SupportedScopeExecutionDecisionV9"],
     },
     ArtifactSpec {
         artifact_id: "applied_scope_authority_v1",
@@ -206,6 +212,12 @@ const ARTIFACT_SPECS: [ArtifactSpec; 75] = [
             "ResidualFreeContinuityStatusV1",
             "ResidualFreeContinuityMismatchCategoryV1",
         ],
+    },
+    ArtifactSpec {
+        artifact_id: "absolute_final_governance_terminal_sweep_v1",
+        file_rel: "runtime/ucf-ops/src/governance_terminal_sweep.rs",
+        type_name: "AbsoluteFinalGovernanceTerminalSweepV1",
+        enum_names: &["AbsoluteFinalGovernanceTerminalSweepStatusV1"],
     },
     ArtifactSpec {
         artifact_id: "absolute_final_input_continuity_authority_v1",
@@ -455,6 +467,12 @@ const ARTIFACT_SPECS: [ArtifactSpec; 75] = [
         file_rel: "runtime/ucf-ops/src/primary_semantics_terminal_sweep.rs",
         type_name: "AbsoluteFinalPrimarySemanticsTerminalSweepV1",
         enum_names: &["AbsoluteFinalPrimarySemanticsTerminalSweepStatusV1"],
+    },
+    ArtifactSpec {
+        artifact_id: "absolute_final_readiness_terminal_sweep_v1",
+        file_rel: "runtime/ucf-ops/src/readiness_terminal_sweep.rs",
+        type_name: "AbsoluteFinalReadinessTerminalSweepV1",
+        enum_names: &["AbsoluteFinalReadinessTerminalSweepStatusV1"],
     },
     ArtifactSpec {
         artifact_id: "final_readiness_consumer_authority_v1",
@@ -1003,8 +1021,10 @@ mod tests {
             observed,
             vec![
                 "absolute_final_bundle_terminal_sweep_v1",
+                "absolute_final_governance_terminal_sweep_v1",
                 "absolute_final_input_continuity_authority_v1",
                 "absolute_final_primary_semantics_terminal_sweep_v1",
+                "absolute_final_readiness_terminal_sweep_v1",
                 "active_review_snapshot_v1",
                 "applied_scope_authority_v1",
                 "applied_supported_set_context_v1",
@@ -1066,6 +1086,7 @@ mod tests {
                 "supported_scope_execution_v6",
                 "supported_scope_execution_v7",
                 "supported_scope_execution_v8",
+                "supported_scope_execution_v9",
                 "supported_scope_reevaluation_v1",
                 "v10_gate_report_v1",
                 "v11_gate_report_v1",

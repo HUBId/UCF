@@ -1,11 +1,16 @@
 # Artifact Schema Snapshots
 
-This repository enforces deterministic shape snapshots for governance/review/export/interop artifacts that must remain stable across v3/v4/v5/v6/v7/v8/v9/v10/v11/v12/v13 hardening.
+This repository enforces deterministic shape snapshots for governance/review/export/interop artifacts that must remain stable across v3/v4/v5/v6/v7/v8/v9/v10/v11/v12/v13/v14 hardening.
 
 ## Covered artifacts
 
 Snapshots are generated under `docs/artifact_schema_snapshots/`:
 
+- `absolute_final_bundle_terminal_sweep_v1.json` (v14 terminal absolute residual-free bundle contract)
+- `absolute_final_governance_terminal_sweep_v1.json` (v14 terminal absolute residual-free governance contract)
+- `absolute_final_input_continuity_authority_v1.json`
+- `absolute_final_primary_semantics_terminal_sweep_v1.json` (v14 terminal absolute residual-free primary-semantics contract)
+- `absolute_final_readiness_terminal_sweep_v1.json` (v14 terminal absolute residual-free readiness contract)
 - `active_review_snapshot_v1.json`
 - `applied_scope_authority_v1.json` (v7)
 - `applied_supported_set_context_v1.json`
@@ -65,6 +70,7 @@ Snapshots are generated under `docs/artifact_schema_snapshots/`:
 - `supported_scope_execution_v6.json` (v11 supported-scope execution freeze)
 - `supported_scope_execution_v7.json` (v12 residual-free supported-scope execution)
 - `supported_scope_execution_v8.json` (v13 absolute residual-free supported-scope execution)
+- `supported_scope_execution_v9.json` (v14 current supported-scope execution)
 - `supported_scope_reevaluation_v1.json` (v7)
 - `v3_gate_report_v1.json`
 - `v4_gate_report_v1.json`
@@ -160,3 +166,11 @@ For v13 absolute residual-free surfaces, this freeze is now first-class for cros
 - residual-free readiness absolute sweep,
 - residual-free bundle absolute sweep,
 - residual-free primary-semantics absolute sweep.
+
+For v14 terminal absolute residual-free surfaces, this freeze is now first-class for cross-surface contracts and CI review:
+
+- absolute-final governance terminal sweep,
+- supported-scope execution v9,
+- absolute-final readiness terminal sweep,
+- absolute-final bundle terminal sweep,
+- absolute-final primary-semantics terminal sweep.
