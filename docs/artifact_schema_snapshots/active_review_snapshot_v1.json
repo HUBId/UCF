@@ -20,6 +20,7 @@
     "governance_residual_sweep_digest_prefix",
     "readiness_absolute_sweep_digest_prefix",
     "readiness_residual_sweep_digest_prefix",
+    "readiness_terminal_sweep_digest_prefix",
     "residual_free_governance_authority_digest_prefix",
     "residual_free_readiness_authority_digest_prefix"
   ],
@@ -34,6 +35,7 @@
     "policy_graph_digest_prefix": "String",
     "readiness_absolute_sweep_digest_prefix": "String",
     "readiness_residual_sweep_digest_prefix": "String",
+    "readiness_terminal_sweep_digest_prefix": "String",
     "residual_free_governance_authority_digest_prefix": "String",
     "residual_free_readiness_authority_digest_prefix": "String",
     "schema_version": "u16",

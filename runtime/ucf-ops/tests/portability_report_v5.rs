@@ -141,6 +141,10 @@ fn portability_report_v11_contains_final_sweep_sections_in_stable_order() {
         .iter()
         .position(|c| c.contains("residual-free-readiness-sweep"))
         .expect("residual-free-readiness-sweep command present");
+    let readiness_terminal_idx = names
+        .iter()
+        .position(|c| c.contains("readiness-terminal-sweep"))
+        .expect("readiness-terminal-sweep command present");
     let bundle_residual_idx = names
         .iter()
         .position(|c| c.contains("bundle-residual-sweep"))
@@ -178,7 +182,8 @@ fn portability_report_v11_contains_final_sweep_sections_in_stable_order() {
     assert!(residual_free_governance_idx < supported_execute_v8_idx);
     assert!(supported_execute_v8_idx < readiness_residual_idx);
     assert!(readiness_residual_idx < residual_free_readiness_idx);
-    assert!(residual_free_readiness_idx < bundle_residual_idx);
+    assert!(residual_free_readiness_idx < readiness_terminal_idx);
+    assert!(readiness_terminal_idx < bundle_residual_idx);
     assert!(bundle_residual_idx < residual_free_bundle_idx);
     assert!(residual_free_bundle_idx < primary_residual_idx);
     assert!(primary_residual_idx < residual_free_primary_idx);

@@ -49,3 +49,8 @@ v12 adds `residual-free-readiness-sweep` and `ResidualFreeReadinessConsumerAutho
 ## v13 note
 
 v13 finalizes canonical readiness consumers by requiring the residual-free absolute readiness input chain and blocking lineage reconstruction paths.
+
+## v14 follow-up
+
+v14 terminal readiness sweep completes removal of residual readiness echo and embedded summary traces from canonical consumers.
+

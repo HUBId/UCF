@@ -76,6 +76,8 @@ pub struct CrossSurfaceContextMatrixV1 {
     #[serde(default)]
     pub readiness_absolute_sweep_digest_prefix: String,
     #[serde(default)]
+    pub readiness_terminal_sweep_digest_prefix: String,
+    #[serde(default)]
     pub final_primary_semantics_residual_sweep_digest_prefix: String,
     #[serde(default)]
     pub residual_free_primary_semantics_authority_digest_prefix: String,
@@ -307,6 +309,10 @@ pub fn interop_consistency_matrix(
         readiness_absolute_sweep_digest_prefix: operator_review
             .as_ref()
             .map(|review| review.readiness_absolute_sweep_digest_prefix.clone())
+            .unwrap_or_else(|| "MISSING".to_string()),
+        readiness_terminal_sweep_digest_prefix: operator_review
+            .as_ref()
+            .map(|review| review.readiness_terminal_sweep_digest_prefix.clone())
             .unwrap_or_else(|| "MISSING".to_string()),
         final_primary_semantics_residual_sweep_digest_prefix: operator_review
             .as_ref()
@@ -898,6 +904,7 @@ mod tests {
             readiness_residual_sweep_digest_prefix: "rr".to_string(),
             residual_free_readiness_authority_digest_prefix: "MISSING".to_string(),
             readiness_absolute_sweep_digest_prefix: "MISSING".to_string(),
+            readiness_terminal_sweep_digest_prefix: "MISSING".to_string(),
             final_primary_semantics_residual_sweep_digest_prefix: "MISSING".to_string(),
             residual_free_primary_semantics_authority_digest_prefix: "MISSING".to_string(),
             primary_semantics_absolute_sweep_digest_prefix: "MISSING".to_string(),
