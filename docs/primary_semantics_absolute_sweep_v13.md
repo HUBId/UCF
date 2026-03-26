@@ -37,3 +37,8 @@ Any such path is treated as lineage and flagged through deterministic mismatch c
 ```bash
 cargo run -p ucf-ops -- primary-semantics-absolute-sweep --out ./out/primary_semantics_absolute_sweep.json
 ```
+
+## v14 terminal note
+
+v14 adds `primary-semantics-terminal-sweep` and removes remaining canonical primary-semantics echo/summary/cache/override traces from terminal consumers.
+

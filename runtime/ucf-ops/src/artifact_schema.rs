@@ -64,7 +64,7 @@ struct ArtifactSpec {
     enum_names: &'static [&'static str],
 }
 
-const ARTIFACT_SPECS: [ArtifactSpec; 74] = [
+const ARTIFACT_SPECS: [ArtifactSpec; 75] = [
     ArtifactSpec {
         artifact_id: "active_review_snapshot_v1",
         file_rel: "runtime/ucf-ops/src/models_lifecycle.rs",
@@ -449,6 +449,12 @@ const ARTIFACT_SPECS: [ArtifactSpec; 74] = [
         file_rel: "runtime/ucf-ops/src/primary_semantics_absolute_sweep.rs",
         type_name: "ResidualFreePrimarySemanticsAbsoluteSweepV1",
         enum_names: &["ResidualFreePrimarySemanticsAbsoluteSweepStatusV1"],
+    },
+    ArtifactSpec {
+        artifact_id: "absolute_final_primary_semantics_terminal_sweep_v1",
+        file_rel: "runtime/ucf-ops/src/primary_semantics_terminal_sweep.rs",
+        type_name: "AbsoluteFinalPrimarySemanticsTerminalSweepV1",
+        enum_names: &["AbsoluteFinalPrimarySemanticsTerminalSweepStatusV1"],
     },
     ArtifactSpec {
         artifact_id: "final_readiness_consumer_authority_v1",
@@ -998,6 +1004,7 @@ mod tests {
             vec![
                 "absolute_final_bundle_terminal_sweep_v1",
                 "absolute_final_input_continuity_authority_v1",
+                "absolute_final_primary_semantics_terminal_sweep_v1",
                 "active_review_snapshot_v1",
                 "applied_scope_authority_v1",
                 "applied_supported_set_context_v1",

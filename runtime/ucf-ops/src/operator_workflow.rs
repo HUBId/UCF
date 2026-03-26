@@ -73,6 +73,8 @@ pub struct OperatorWorkflowChainV1 {
     #[serde(default)]
     pub primary_semantics_absolute_sweep_digest_prefix: String,
     #[serde(default)]
+    pub primary_semantics_terminal_sweep_digest_prefix: String,
+    #[serde(default)]
     pub residual_free_continuity_authority_digest_prefix: String,
     #[serde(default)]
     pub final_input_continuity_authority_digest_prefix: String,
@@ -333,6 +335,7 @@ impl OperatorWorkflowPolicyV1 {
             final_primary_semantics_residual_sweep_digest_prefix: "MISSING".to_string(),
             residual_free_primary_semantics_authority_digest_prefix: "MISSING".to_string(),
             primary_semantics_absolute_sweep_digest_prefix: "MISSING".to_string(),
+            primary_semantics_terminal_sweep_digest_prefix: "MISSING".to_string(),
             residual_free_continuity_authority_digest_prefix: "MISSING".to_string(),
             final_input_continuity_authority_digest_prefix: "MISSING".to_string(),
             operator_review_packet_digest_prefix,
@@ -426,6 +429,12 @@ pub fn operator_workflow_chain(
     chain.primary_semantics_absolute_sweep_digest_prefix = discover_digest_prefix(
         &out_root,
         "primary_semantics_absolute_sweep.json",
+        "sweep.sweep_digest",
+    )
+    .unwrap_or_else(|| "MISSING".to_string());
+    chain.primary_semantics_terminal_sweep_digest_prefix = discover_digest_prefix(
+        &out_root,
+        "primary_semantics_terminal_sweep.json",
         "sweep.sweep_digest",
     )
     .unwrap_or_else(|| "MISSING".to_string());
@@ -588,6 +597,7 @@ mod tests {
             final_primary_semantics_residual_sweep_digest_prefix: "MISSING".to_string(),
             residual_free_primary_semantics_authority_digest_prefix: "MISSING".to_string(),
             primary_semantics_absolute_sweep_digest_prefix: "MISSING".to_string(),
+            primary_semantics_terminal_sweep_digest_prefix: "MISSING".to_string(),
             artifacts: OperatorReviewPacketArtifactsV1 {
                 backend_evidence_snapshot_digest_prefix: "a".repeat(16),
                 active_review_snapshot_digest_prefix: "b".repeat(16),
@@ -638,6 +648,7 @@ mod tests {
             final_primary_semantics_residual_sweep_digest_prefix: "MISSING".to_string(),
             residual_free_primary_semantics_authority_digest_prefix: "MISSING".to_string(),
             primary_semantics_absolute_sweep_digest_prefix: "MISSING".to_string(),
+            primary_semantics_terminal_sweep_digest_prefix: "MISSING".to_string(),
             gate_report_digests: GateReportDigestsV1 {
                 v0: "d".repeat(16),
                 v1: "e".repeat(16),
@@ -705,6 +716,7 @@ mod tests {
                 final_primary_semantics_residual_sweep_digest_prefix: "MISSING".to_string(),
                 residual_free_primary_semantics_authority_digest_prefix: "MISSING".to_string(),
                 primary_semantics_absolute_sweep_digest_prefix: "MISSING".to_string(),
+                primary_semantics_terminal_sweep_digest_prefix: "MISSING".to_string(),
                 policy_graph_digest_prefix: "policy123456789012".to_string(),
                 manifest_digest_prefix: "manifest1234567890".to_string(),
                 surfaces,

@@ -36,3 +36,8 @@ cargo run -p ucf-ops -- residual-free-primary-semantics-sweep --out ./out/residu
 The command returns non-zero when residual/historical primary semantics paths are still present.
 
 v13 (`primary-semantics-absolute-sweep`) closes the last canonical consumer lineage by requiring absolute residual-free final primary-semantics inputs across governance/readiness/bundle/review/export/interop/gate surfaces.
+
+## v14 terminal note
+
+The v14 terminal sweep (`primary-semantics-terminal-sweep`) finalizes canonical consumer cleanup by blocking any remaining primary-semantics echo/summary/cache/override residue in canonical flows.
+

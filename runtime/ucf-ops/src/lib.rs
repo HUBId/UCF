@@ -41,6 +41,7 @@ mod operator_signoff;
 mod operator_workflow;
 mod primary_semantics_absolute_sweep;
 mod primary_semantics_residual_sweep;
+mod primary_semantics_terminal_sweep;
 mod readiness_absolute_sweep;
 mod readiness_residual_sweep;
 mod readiness_spine;
@@ -266,6 +267,11 @@ pub use primary_semantics_residual_sweep::{
     FinalPrimarySemanticsResidualSurfaceStatusV1, FinalPrimarySemanticsResidualSweepReportV1,
     FinalPrimarySemanticsResidualSweepStatusV1, FinalPrimarySemanticsResidualSweepV1,
 };
+pub use primary_semantics_terminal_sweep::{
+    primary_semantics_terminal_sweep, AbsoluteFinalPrimarySemanticsTerminalSweepStatusV1,
+    AbsoluteFinalPrimarySemanticsTerminalSweepV1, PrimarySemanticsTerminalMismatchCategoryV1,
+    PrimarySemanticsTerminalSurfaceStatusV1, PrimarySemanticsTerminalSweepReportV1,
+};
 pub use readiness_absolute_sweep::{
     readiness_absolute_sweep, ReadinessAbsoluteConsumerStatusV1,
     ReadinessAbsoluteMismatchCategoryV1, ReadinessAbsoluteSweepReportV1,
@@ -307,25 +313,28 @@ pub use readiness_terminal_sweep::{
 pub use remediation::all_registry_rows as remediation_registry_rows;
 pub use remediation_consistency::{
     final_primary_semantics_sweep, primary_semantics_sweep, remediation_consistency_check,
-    remediation_interop_check, remediation_spine_check, require_final_primary_semantics_inputs,
-    require_residual_free_final_primary_semantics_inputs,
+    remediation_interop_check, remediation_spine_check,
+    require_absolute_final_primary_semantics_terminal_inputs,
+    require_final_primary_semantics_inputs, require_residual_free_final_primary_semantics_inputs,
     require_residual_free_primary_semantics_absolute_inputs,
-    CanonicalPrimarySemanticsAuthorityStatusV1, CanonicalPrimarySemanticsAuthorityV1,
-    CanonicalRemediationObservationV1, CrossSurfaceConditionObservationV1,
-    CrossSurfaceObservationStatusV1, FinalPrimarySemanticsConsumerAuthorityStatusV1,
-    FinalPrimarySemanticsConsumerAuthorityV1, FinalPrimarySemanticsInputsContextV1,
-    FinalPrimarySemanticsSweepReportV1, PrimarySemanticsObservationV1,
-    PrimarySemanticsObservedSurfaceV1, PrimarySemanticsSweepReportV1,
-    RemediationConsistencyCheckV1, RemediationConsistencyObservedV1,
+    AbsoluteFinalPrimarySemanticsTerminalInputsV1, CanonicalPrimarySemanticsAuthorityStatusV1,
+    CanonicalPrimarySemanticsAuthorityV1, CanonicalRemediationObservationV1,
+    CrossSurfaceConditionObservationV1, CrossSurfaceObservationStatusV1,
+    FinalPrimarySemanticsConsumerAuthorityStatusV1, FinalPrimarySemanticsConsumerAuthorityV1,
+    FinalPrimarySemanticsInputsContextV1, FinalPrimarySemanticsSweepReportV1,
+    PrimarySemanticsObservationV1, PrimarySemanticsObservedSurfaceV1,
+    PrimarySemanticsSweepReportV1, RemediationConsistencyCheckV1, RemediationConsistencyObservedV1,
     RemediationConsistencyReportV1, RemediationConsistencyStatusV1,
     RemediationInteropCheckReportV1, RemediationMismatchKindV1, RemediationSpineCheckReportV1,
     ResidualFreeFinalPrimarySemanticsInputsV1, ResidualFreePrimarySemanticsAbsoluteInputsV1,
-    SpineConditionObservationV1, CANONICAL_CONDITION_MODEL_REQUIRED,
-    CANONICAL_REMEDIATION_REGISTRY_REQUIRED, FINAL_PRIMARY_SEMANTICS_AUTHORITY_REQUIRED,
-    FINAL_PRIMARY_SEMANTICS_INPUTS_REQUIRED, HISTORICAL_PRIMARY_SEMANTICS_LINEAGE_BLOCKED,
-    HISTORICAL_PRIMARY_SEMANTICS_LINEAGE_REJECTED, HISTORICAL_PRIMARY_SEMANTICS_LINEAGE_TRANSLATED,
-    LEGACY_PRIMARY_SEMANTICS_INPUT_BLOCKED, LEGACY_PRIMARY_SEMANTICS_REJECTED,
-    LEGACY_PRIMARY_SEMANTICS_TRANSLATED, RESIDUAL_FREE_FINAL_PRIMARY_SEMANTICS_INPUTS_REQUIRED,
+    SpineConditionObservationV1, ABSOLUTE_RESIDUAL_FREE_FINAL_PRIMARY_SEMANTICS_INPUTS_REQUIRED,
+    CANONICAL_CONDITION_MODEL_REQUIRED, CANONICAL_REMEDIATION_REGISTRY_REQUIRED,
+    FINAL_PRIMARY_SEMANTICS_AUTHORITY_REQUIRED, FINAL_PRIMARY_SEMANTICS_INPUTS_REQUIRED,
+    HISTORICAL_PRIMARY_SEMANTICS_LINEAGE_BLOCKED, HISTORICAL_PRIMARY_SEMANTICS_LINEAGE_REJECTED,
+    HISTORICAL_PRIMARY_SEMANTICS_LINEAGE_TRANSLATED, LEGACY_PRIMARY_SEMANTICS_INPUT_BLOCKED,
+    LEGACY_PRIMARY_SEMANTICS_REJECTED, LEGACY_PRIMARY_SEMANTICS_TRANSLATED,
+    PRIMARY_SEMANTICS_ECHO_PATH_BLOCKED, PRIMARY_SEMANTICS_ECHO_PATH_REJECTED,
+    PRIMARY_SEMANTICS_ECHO_PATH_TRANSLATED, RESIDUAL_FREE_FINAL_PRIMARY_SEMANTICS_INPUTS_REQUIRED,
     RESIDUAL_PRIMARY_SEMANTICS_PATH_BLOCKED, RESIDUAL_PRIMARY_SEMANTICS_PATH_REJECTED,
     RESIDUAL_PRIMARY_SEMANTICS_PATH_TRANSLATED,
 };
@@ -18158,6 +18167,7 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         matrix_cmd("linux", "cargo run -p ucf-ops -- primary-semantics-residual-sweep --out ./out/primary_semantics_residual_sweep.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- residual-free-primary-semantics-sweep --out ./out/residual_free_primary_semantics_sweep.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- primary-semantics-absolute-sweep --out ./out/primary_semantics_absolute_sweep.json"),
+        matrix_cmd("linux", "cargo run -p ucf-ops -- primary-semantics-terminal-sweep --out ./out/primary_semantics_terminal_sweep.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- remediation-interop-check --out ./out/remediation_interop_check.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- remediation-spine-check --out ./out/remediation_spine_check.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- models active-review-snapshot --out ./out/active_review_snapshot.json"),
@@ -18215,6 +18225,7 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         matrix_cmd("windows", "cargo run -p ucf-ops -- primary-semantics-residual-sweep --out ./out/primary_semantics_residual_sweep.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- residual-free-primary-semantics-sweep --out ./out/residual_free_primary_semantics_sweep.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- primary-semantics-absolute-sweep --out ./out/primary_semantics_absolute_sweep.json"),
+        matrix_cmd("windows", "cargo run -p ucf-ops -- primary-semantics-terminal-sweep --out ./out/primary_semantics_terminal_sweep.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- remediation-interop-check --out ./out/remediation_interop_check.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- remediation-spine-check --out ./out/remediation_spine_check.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- models active-review-snapshot --out ./out/active_review_snapshot.json"),

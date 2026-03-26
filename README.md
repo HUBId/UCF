@@ -55,6 +55,7 @@ See `docs/feature_matrix.md` for details.
 - `cargo run -p ucf-ops -- primary-semantics-residual-sweep --out ./out/primary_semantics_residual_sweep.json`
 - `cargo run -p ucf-ops -- residual-free-primary-semantics-sweep --out ./out/residual_free_primary_semantics_sweep.json`
 - `cargo run -p ucf-ops -- primary-semantics-absolute-sweep --out ./out/primary_semantics_absolute_sweep.json`
+- `cargo run -p ucf-ops -- primary-semantics-terminal-sweep --out ./out/primary_semantics_terminal_sweep.json`
 - `cargo run -p ucf-ops -- governance-surfaces-check --out ./out/governance_surfaces_check.json`
 - `cargo run -p ucf-ops -- models supported-set-review --out ./out/supported_set_review.json --workdir .`
 - `cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json --workdir .`
