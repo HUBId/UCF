@@ -1,4 +1,4 @@
-# Portability Gate v13 Refresh (Linux + Windows)
+# Portability Gate v14 Refresh (Linux + Windows)
 
 `Portability Gate` blocks merges when core runtime/ops checks are not cross-platform safe.
 
@@ -92,7 +92,7 @@
      - `cargo run -p ucf-ops -- portability check --out ./out/portability.json`
      - `cargo run -p ucf-ops -- portability report --out ./out/portability_report.json`
 
-2. **v13 generation smoke checks (blocking unless explicitly optional)**
+2. **v13/v14 generation smoke checks (blocking unless explicitly optional)**
    - `governance-entry-check` must pass and preserve canonical governance entry usage across consumers.
    - `governance-entry-sweep` must pass and prove deterministic canonical entry authority across final governance surfaces.
    - `models supported-scope-execute` must produce deterministic bounded execution decisions.
@@ -101,16 +101,20 @@
    - `governance-residual-sweep` must pass and prove deterministic final residual-governance cleanup authority.
    - `residual-free-governance-sweep` must pass and prove deterministic canonical governance authority after historical/heuristic cleanup.
    - `governance-absolute-sweep` must pass and prove deterministic canonical governance authority after absolute residual cleanup.
+   - `governance-terminal-sweep` must pass and prove deterministic terminal absolute governance authority (no residual echo/summary/lineage usage).
    - `models supported-scope-execute-v7` must emit deterministic `REAFFIRM_FREEZE` / `EXECUTE_EXPAND_BY_ONE` decisions against residual-free governance authority.
    - `models supported-scope-execute-v8` must emit deterministic `REAFFIRM_FREEZE` / `EXECUTE_EXPAND_BY_ONE` decisions against absolute governance authority.
+   - `models supported-scope-execute-v9` must emit deterministic `REAFFIRM_FREEZE` / `EXECUTE_EXPAND_BY_ONE` decisions against terminal absolute governance authority.
    - `final-readiness-consumer-sweep` must pass and emit deterministic mismatch categories for canonical final readiness consumers.
    - `readiness-residual-sweep` must pass and emit deterministic mismatch categories for canonical residual readiness consumers.
    - `residual-free-readiness-sweep` must pass and emit deterministic mismatch categories for residual-free canonical readiness authority.
    - `readiness-absolute-sweep` must pass and emit deterministic mismatch categories for absolute residual-free readiness authority.
+   - `readiness-terminal-sweep` must pass and emit deterministic mismatch categories for terminal absolute residual-free readiness authority.
    - `final-bundle-consumer-sweep` must pass and prove canonical bundle-input authority consumption across canonical consumers.
    - `bundle-residual-sweep` must pass and prove canonical bundle-input authority after residual cleanup.
    - `residual-free-bundle-sweep` must pass and prove canonical bundle-input authority after historical/heuristic cleanup.
    - `bundle-absolute-sweep` must pass and prove canonical bundle-input authority after absolute lineage/history cleanup.
+   - `bundle-terminal-sweep` must pass and prove canonical bundle-input authority after terminal absolute echo/history cleanup.
    - `readiness-spine-check` must emit deterministic mismatch categories and remediation codes.
    - `readiness-spine-sweep` must pass and prove deterministic final readiness authority coverage.
    - `exports bundle-spine-check` must reconstruct canonical bundle spine deterministically from bounded fixture bundles.
@@ -120,6 +124,7 @@
    - `primary-semantics-residual-sweep` must prove canonical primary blocking/remediation authority after residual cleanup.
    - `residual-free-primary-semantics-sweep` must prove canonical primary blocking/remediation authority after historical/local cleanup.
    - `primary-semantics-absolute-sweep` must prove canonical primary blocking/remediation authority after absolute historical/local override cleanup.
+   - `primary-semantics-terminal-sweep` must prove canonical primary blocking/remediation authority after terminal absolute echo/cache/override cleanup.
    - `remediation-spine-check` must map canonical conditions/remediations consistently across scope/governance/readiness/bundle surfaces.
    - `models active-review-snapshot` and `models backend-resolution` must run in bounded offline mode (optional backend-resolution paths must SKIP cleanly).
    - Enriched export smokes (`repro pack` + `repro verify`, `bugkit build`) must generate deterministic manifests with bounded fixtures and no payload/weight inclusion by default.
@@ -135,7 +140,7 @@
    - `audit net-deps` (Linux lane): hidden network dependency drift is blocked.
 
 4. **Docs consistency (via `docs lint --strict`)**
-   - Enforces v3 + v4 + v5 + v6 + v7 + v8 + v9 + v10 + v11 + v12 + v13 docs consistency and linkage.
+   - Enforces v3 + v4 + v5 + v6 + v7 + v8 + v9 + v10 + v11 + v12 + v13 + v14 docs consistency and linkage.
    - Enforces remediation registry doc freshness.
    - Enforces artifact schema snapshot freshness and deterministic drift reporting.
 
@@ -197,6 +202,15 @@
 - `docs/readiness_absolute_sweep_v13.md`
 - `docs/bundle_absolute_sweep_v13.md`
 - `docs/primary_semantics_absolute_sweep_v13.md`
+- `docs/artifact_schema_snapshots.md`
+
+## v14 docs covered by portability/docs gates
+
+- `docs/governance_terminal_sweep_v14.md`
+- `docs/supported_scope_execution_v14.md`
+- `docs/readiness_terminal_sweep_v14.md`
+- `docs/bundle_terminal_sweep_v14.md`
+- `docs/primary_semantics_terminal_sweep_v14.md`
 - `docs/artifact_schema_snapshots.md`
 
 ## v9 docs covered by portability/docs gates
