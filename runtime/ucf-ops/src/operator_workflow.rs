@@ -55,6 +55,8 @@ pub struct OperatorWorkflowChainV1 {
     #[serde(default)]
     pub governance_absolute_sweep_digest_prefix: String,
     #[serde(default)]
+    pub governance_terminal_sweep_digest_prefix: String,
+    #[serde(default)]
     pub final_readiness_consumer_authority_digest_prefix: String,
     #[serde(default)]
     pub readiness_residual_sweep_digest_prefix: String,
@@ -75,9 +77,13 @@ pub struct OperatorWorkflowChainV1 {
     #[serde(default)]
     pub primary_semantics_terminal_sweep_digest_prefix: String,
     #[serde(default)]
+    pub bundle_terminal_sweep_digest_prefix: String,
+    #[serde(default)]
     pub residual_free_continuity_authority_digest_prefix: String,
     #[serde(default)]
     pub final_input_continuity_authority_digest_prefix: String,
+    #[serde(default)]
+    pub terminal_absolute_final_input_continuity_authority_digest_prefix: String,
     pub operator_review_packet_digest_prefix: String,
     pub operator_signoff_digest_prefix: String,
     pub interop_matrix_digest_prefix: String,
@@ -311,6 +317,7 @@ impl OperatorWorkflowPolicyV1 {
                 .review_packet
                 .governance_absolute_sweep_digest_prefix
                 .clone(),
+            governance_terminal_sweep_digest_prefix: "MISSING".to_string(),
             final_readiness_consumer_authority_digest_prefix: inputs
                 .review_packet
                 .final_readiness_consumer_authority_digest_prefix
@@ -336,8 +343,10 @@ impl OperatorWorkflowPolicyV1 {
             residual_free_primary_semantics_authority_digest_prefix: "MISSING".to_string(),
             primary_semantics_absolute_sweep_digest_prefix: "MISSING".to_string(),
             primary_semantics_terminal_sweep_digest_prefix: "MISSING".to_string(),
+            bundle_terminal_sweep_digest_prefix: "MISSING".to_string(),
             residual_free_continuity_authority_digest_prefix: "MISSING".to_string(),
             final_input_continuity_authority_digest_prefix: "MISSING".to_string(),
+            terminal_absolute_final_input_continuity_authority_digest_prefix: "MISSING".to_string(),
             operator_review_packet_digest_prefix,
             operator_signoff_digest_prefix,
             interop_matrix_digest_prefix,
@@ -438,6 +447,18 @@ pub fn operator_workflow_chain(
         "sweep.sweep_digest",
     )
     .unwrap_or_else(|| "MISSING".to_string());
+    chain.governance_terminal_sweep_digest_prefix = discover_digest_prefix(
+        &out_root,
+        "governance_terminal_sweep.json",
+        "sweep.sweep_digest",
+    )
+    .unwrap_or_else(|| "MISSING".to_string());
+    chain.bundle_terminal_sweep_digest_prefix = discover_digest_prefix(
+        &out_root,
+        "bundle_terminal_sweep.json",
+        "sweep.sweep_digest",
+    )
+    .unwrap_or_else(|| "MISSING".to_string());
     chain.residual_free_continuity_authority_digest_prefix = discover_digest_prefix(
         &out_root,
         "residual_free_continuity_sweep.json",
@@ -446,17 +467,17 @@ pub fn operator_workflow_chain(
     .unwrap_or_else(|| "MISSING".to_string());
     chain.final_input_continuity_authority_digest_prefix = discover_digest_prefix(
         &out_root,
-        "absolute_final_input_continuity_sweep.json",
+        "terminal_absolute_final_input_continuity_sweep.json",
         "authority_digest",
     )
-    .or_else(|| {
+    .unwrap_or_else(|| "MISSING".to_string());
+    chain.terminal_absolute_final_input_continuity_authority_digest_prefix =
         discover_digest_prefix(
             &out_root,
-            "final_input_continuity_sweep.json",
+            "terminal_absolute_final_input_continuity_sweep.json",
             "authority_digest",
         )
-    })
-    .unwrap_or_else(|| "MISSING".to_string());
+        .unwrap_or_else(|| "MISSING".to_string());
     chain.chain_digest = chain_digest_hex(&chain)?;
 
     if let Some(parent) = out.parent() {

@@ -35,3 +35,8 @@ cargo run -p ucf-ops -- residual-free-continuity-sweep --bundle <path> --out ./o
 
 ## v13 update
 `ResidualFreeContinuityAuthorityV1` remains residual-free evidence but is subordinate in v13. Sole top-level authority is `AbsoluteFinalInputContinuityAuthorityV1`.
+
+
+## v14 update
+`ResidualFreeContinuityAuthorityV1` is a subordinate diagnostic contributor.
+Top-level continuity authority is finalized as `TerminalAbsoluteFinalInputContinuityAuthorityV1`.

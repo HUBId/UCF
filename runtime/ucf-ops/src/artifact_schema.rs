@@ -64,7 +64,7 @@ struct ArtifactSpec {
     enum_names: &'static [&'static str],
 }
 
-const ARTIFACT_SPECS: [ArtifactSpec; 78] = [
+const ARTIFACT_SPECS: [ArtifactSpec; 79] = [
     ArtifactSpec {
         artifact_id: "active_review_snapshot_v1",
         file_rel: "runtime/ucf-ops/src/models_lifecycle.rs",
@@ -224,6 +224,12 @@ const ARTIFACT_SPECS: [ArtifactSpec; 78] = [
         file_rel: "runtime/ucf-ops/src/absolute_final_input_continuity_sweep.rs",
         type_name: "AbsoluteFinalInputContinuityAuthorityV1",
         enum_names: &["AbsoluteFinalInputContinuityStatusV1"],
+    },
+    ArtifactSpec {
+        artifact_id: "terminal_absolute_final_input_continuity_authority_v1",
+        file_rel: "runtime/ucf-ops/src/terminal_absolute_final_input_continuity_sweep.rs",
+        type_name: "TerminalAbsoluteFinalInputContinuityAuthorityV1",
+        enum_names: &["TerminalAbsoluteFinalInputContinuityStatusV1"],
     },
     ArtifactSpec {
         artifact_id: "final_input_continuity_authority_v1",
@@ -1088,6 +1094,7 @@ mod tests {
                 "supported_scope_execution_v8",
                 "supported_scope_execution_v9",
                 "supported_scope_reevaluation_v1",
+                "terminal_absolute_final_input_continuity_authority_v1",
                 "v10_gate_report_v1",
                 "v11_gate_report_v1",
                 "v12_gate_report_v1",
