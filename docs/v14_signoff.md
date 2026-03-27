@@ -43,3 +43,6 @@ No implicit expansion, legacy scope inference, or unsupported-slot widening is a
 ## Phase note
 v14 is a terminal absolute residual-free final-input / sole-top-level-continuity hardening phase.
 This gate is governance/scope/readiness/bundle/primary-semantics/continuity hygiene, not a compute capability gate.
+
+## Continuation note
+After v14 gate PASS, continue at Prompt 320 via `docs/next_10_prompts.md`.
