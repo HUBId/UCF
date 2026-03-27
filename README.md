@@ -17,7 +17,7 @@ See `docs/feature_matrix.md` for details.
 - Spec snapshot: `cargo run -p ucf-ops -- spec snapshot --policy policies/packs/base_v1 --overlay policies/packs/overlays/test --out docs/spec_snapshot.md`
 - Docs lint (CI-blocking): `cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json`
 
-## Portability/docs gate (Linux + Windows, v14 refresh)
+## Portability/docs gate (Linux + Windows, v15 refresh)
 - `cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json`
 - `cargo run -p ucf-ops -- audit path-scan`
 - `cargo run -p ucf-ops -- audit hardware-scan`
@@ -33,9 +33,11 @@ See `docs/feature_matrix.md` for details.
 - `cargo run -p ucf-ops -- residual-free-governance-sweep --out ./out/residual_free_governance_sweep.json`
 - `cargo run -p ucf-ops -- governance-absolute-sweep --out ./out/governance_absolute_sweep.json`
 - `cargo run -p ucf-ops -- governance-terminal-sweep --out ./out/governance_terminal_sweep.json`
+- `cargo run -p ucf-ops -- governance-ultimate-sweep --out ./out/governance_ultimate_sweep.json`
 - `cargo run -p ucf-ops -- models supported-scope-execute-v7 --out ./out/supported_scope_execute_v7.json --workdir .`
 - `cargo run -p ucf-ops -- models supported-scope-execute-v8 --out ./out/supported_scope_execute_v8.json --workdir .`
 - `cargo run -p ucf-ops -- models supported-scope-execute-v9 --out ./out/supported_scope_execute_v9.json --workdir .`
+- `cargo run -p ucf-ops -- models supported-scope-execute-v10 --out ./out/supported_scope_execute_v10.json --workdir .`
 - `cargo run -p ucf-ops -- readiness-spine-check --out ./out/readiness_spine_check.json`
 - `cargo run -p ucf-ops -- readiness-spine-sweep --out ./out/readiness_spine_sweep.json`
 - `cargo run -p ucf-ops -- final-readiness-consumer-sweep --out ./out/final_readiness_consumer_sweep.json`
@@ -43,6 +45,7 @@ See `docs/feature_matrix.md` for details.
 - `cargo run -p ucf-ops -- residual-free-readiness-sweep --out ./out/residual_free_readiness_sweep.json`
 - `cargo run -p ucf-ops -- readiness-absolute-sweep --out ./out/readiness_absolute_sweep.json`
 - `cargo run -p ucf-ops -- readiness-terminal-sweep --out ./out/readiness_terminal_sweep.json`
+- `cargo run -p ucf-ops -- readiness-ultimate-sweep --out ./out/readiness_ultimate_sweep.json`
 - `cargo run -p ucf-ops -- operator review-truth-check --out ./out/review_truth_check.json`
 - `cargo run -p ucf-ops -- exports roundtrip-check --in ./out/repro_portability.zip --out ./out/export_roundtrip_check.json`
 - `cargo run -p ucf-ops -- exports bundle-spine-check --in ./out/repro_portability.zip --out ./out/bundle_spine_check.json`
