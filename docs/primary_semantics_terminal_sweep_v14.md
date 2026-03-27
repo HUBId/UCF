@@ -44,3 +44,7 @@ These may remain only as secondary diagnostics; canonical primary semantics must
 ```bash
 cargo run -p ucf-ops -- primary-semantics-terminal-sweep --out ./out/primary_semantics_terminal_sweep.json
 ```
+
+## v15 follow-up
+
+v15 (`primary-semantics-ultimate-sweep`) removes remaining canonical consumer dependence on primary-semantics echo caches, precedence mirrors, and embedded remediation snapshots in canonical flows.

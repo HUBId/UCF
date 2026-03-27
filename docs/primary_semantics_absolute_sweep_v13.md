@@ -42,3 +42,6 @@ cargo run -p ucf-ops -- primary-semantics-absolute-sweep --out ./out/primary_sem
 
 v14 adds `primary-semantics-terminal-sweep` and removes remaining canonical primary-semantics echo/summary/cache/override traces from terminal consumers.
 
+## v15 follow-up
+
+v15 ultimate sweep finalizes canonical consumer cleanup and blocks/demotes remaining cache/mirror/snapshot-based primary-semantics reconstruction paths.

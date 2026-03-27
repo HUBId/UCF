@@ -36,8 +36,8 @@ use ucf_ops::{
     parse_duration_secs, parse_inject, parse_slot, path_scan, policy_diff, policy_explain,
     policy_validate, portability_check, portability_report, preflight,
     primary_semantics_absolute_sweep, primary_semantics_residual_sweep, primary_semantics_sweep,
-    primary_semantics_terminal_sweep, readiness_absolute_sweep, readiness_gate,
-    readiness_residual_sweep, readiness_spine_check, readiness_spine_sweep,
+    primary_semantics_terminal_sweep, primary_semantics_ultimate_sweep, readiness_absolute_sweep,
+    readiness_gate, readiness_residual_sweep, readiness_spine_check, readiness_spine_sweep,
     readiness_terminal_sweep, readiness_ultimate_sweep, release_build_rc, release_rc1_gate,
     release_signoff_validate, remediation_consistency_check, remediation_interop_check,
     remediation_spine_check, replay_audit, replay_bugreport, repro_pack, repro_verify,
@@ -71,10 +71,11 @@ use ucf_ops::{
     ResidualFreeReadinessConsumerAuthorityStatusV1, SoakRunArgs, SpecSnapshotArgs,
     StrictEvidenceContextV1, TerminalAbsoluteFinalInputContinuityStatusV1,
     TerminalBundleUltimateSweepStatusV1, TerminalGovernanceUltimateSweepStatusV1,
-    TerminalReadinessUltimateSweepStatusV1, V10GateOverallStatus, V11GateOverallStatus,
-    V12GateOverallStatus, V13GateOverallStatus, V14GateOverallStatus, V2GateOverallStatus,
-    V3GateOverallStatus, V4GateOverallStatus, V5GateOverallStatus, V6GateOverallStatus,
-    V7GateOverallStatus, V8GateOverallStatus, V9GateOverallStatus,
+    TerminalPrimarySemanticsUltimateSweepStatusV1, TerminalReadinessUltimateSweepStatusV1,
+    V10GateOverallStatus, V11GateOverallStatus, V12GateOverallStatus, V13GateOverallStatus,
+    V14GateOverallStatus, V2GateOverallStatus, V3GateOverallStatus, V4GateOverallStatus,
+    V5GateOverallStatus, V6GateOverallStatus, V7GateOverallStatus, V8GateOverallStatus,
+    V9GateOverallStatus,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -3208,6 +3209,21 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 std::process::exit(2);
             }
         }
+        "primary-semantics-ultimate-sweep" => {
+            let out = arg_value(&args, "--out")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("./out/primary_semantics_ultimate_sweep.json"));
+            let report = primary_semantics_ultimate_sweep(&workdir, &out)?;
+            println!("status={:?}", report.sweep.sweep_status);
+            println!("sweep_digest={}", report.sweep.sweep_digest);
+            println!("out={}", out.display());
+            if !matches!(
+                report.sweep.sweep_status,
+                TerminalPrimarySemanticsUltimateSweepStatusV1::Pass
+            ) {
+                std::process::exit(2);
+            }
+        }
         "scope" => {
             let sub = args.get(2).map(String::as_str).unwrap_or("help");
             match sub {
@@ -3767,7 +3783,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             eprintln!(
-                "usage: ucf-ops <bringup|diag|health|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|attest|repro|exports|readiness-gate|preflight|goldens|nightly|dev|troubleshoot|adversarial-run|out|release|bench|runs|status|strict|ess|ebm|drift|alerts|operator|policy|portability|spec|change-impact|soak|governance-surfaces-check|governance-entry-check|governance-entry-sweep|final-governance-consumer-sweep|governance-residual-sweep|residual-free-governance-sweep|governance-absolute-sweep|governance-terminal-sweep|governance-ultimate-sweep|final-readiness-consumer-sweep|readiness-residual-sweep|residual-free-readiness-sweep|readiness-absolute-sweep|readiness-terminal-sweep|readiness-ultimate-sweep|final-bundle-consumer-sweep|bundle-residual-sweep|residual-free-bundle-sweep|bundle-absolute-sweep|bundle-terminal-sweep|bundle-ultimate-sweep|final-continuity-sweep|residual-free-continuity-sweep|absolute-final-input-continuity-sweep|terminal-absolute-final-input-continuity-sweep|remediation-consistency-check|remediation-interop-check|remediation-spine-check|primary-semantics-sweep|final-primary-semantics-sweep|primary-semantics-residual-sweep|residual-free-primary-semantics-sweep|primary-semantics-absolute-sweep|primary-semantics-terminal-sweep|interop|v0|v1|v2|v3|v4|v5|v6|v7|v8|v9|v10|v11|v12|v13|v14|version> [--workdir <path>] [--bundle <path>]"
+                "usage: ucf-ops <bringup|diag|health|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|attest|repro|exports|readiness-gate|preflight|goldens|nightly|dev|troubleshoot|adversarial-run|out|release|bench|runs|status|strict|ess|ebm|drift|alerts|operator|policy|portability|spec|change-impact|soak|governance-surfaces-check|governance-entry-check|governance-entry-sweep|final-governance-consumer-sweep|governance-residual-sweep|residual-free-governance-sweep|governance-absolute-sweep|governance-terminal-sweep|governance-ultimate-sweep|final-readiness-consumer-sweep|readiness-residual-sweep|residual-free-readiness-sweep|readiness-absolute-sweep|readiness-terminal-sweep|readiness-ultimate-sweep|final-bundle-consumer-sweep|bundle-residual-sweep|residual-free-bundle-sweep|bundle-absolute-sweep|bundle-terminal-sweep|bundle-ultimate-sweep|final-continuity-sweep|residual-free-continuity-sweep|absolute-final-input-continuity-sweep|terminal-absolute-final-input-continuity-sweep|remediation-consistency-check|remediation-interop-check|remediation-spine-check|primary-semantics-sweep|final-primary-semantics-sweep|primary-semantics-residual-sweep|residual-free-primary-semantics-sweep|primary-semantics-absolute-sweep|primary-semantics-terminal-sweep|primary-semantics-ultimate-sweep|interop|v0|v1|v2|v3|v4|v5|v6|v7|v8|v9|v10|v11|v12|v13|v14|version> [--workdir <path>] [--bundle <path>]"
             );
             std::process::exit(1);
         }
