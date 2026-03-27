@@ -38,3 +38,8 @@ A non-`PASS` sweep status fails closed.
 ## v14 terminal note
 
 v14 adds `bundle-terminal-sweep` to remove remaining canonical consumer dependence on bundle echoes, summaries, lineage memory, and embedded export-summary traces.
+
+
+## v15 note
+
+Final canonical cache/mirror/snapshot cleanup is enforced by `bundle-ultimate-sweep` (`TerminalBundleUltimateSweepV1`).

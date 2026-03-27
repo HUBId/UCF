@@ -71,6 +71,7 @@
     "supported_scope_execution_v9",
     "supported_scope_reevaluation_v1",
     "terminal_absolute_final_input_continuity_authority_v1",
+    "terminal_bundle_ultimate_sweep_v1",
     "terminal_governance_ultimate_sweep_v1",
     "terminal_readiness_ultimate_sweep_v1",
     "v10_gate_report_v1",

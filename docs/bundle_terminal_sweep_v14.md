@@ -35,3 +35,8 @@ cargo run -p ucf-ops -- bundle-terminal-sweep --out ./out/bundle_terminal_sweep.
 ```
 
 `PASS` means no canonical consumer path relies on bundle echo/summary/history reconstruction as primary bundle truth.
+
+
+## v15 hardening
+
+v15 (`bundle-ultimate-sweep`) removes remaining canonical bundle cache/mirror/snapshot traces by requiring `bundle_ultimate_sweep_digest_prefix` and terminal digest continuity on covered consumers.

@@ -6,12 +6,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     absolute_final_input_continuity_sweep, bundle_absolute_sweep, bundle_terminal_sweep,
-    derive_canonical_governance_entry, governance_absolute_sweep, governance_terminal_sweep,
-    load_applied_supported_set_context_v1, models_active_review_snapshot, models_evidence_snapshot,
-    operator_review_packet, operator_roundtrip_chain_check, operator_signoff,
-    operator_workflow_chain, prefix_hex, primary_semantics_absolute_sweep,
-    primary_semantics_terminal_sweep, readiness_absolute_sweep, readiness_terminal_sweep,
-    validate_governance_primary_surfaces_with_applied_scope,
+    bundle_ultimate_sweep, derive_canonical_governance_entry, governance_absolute_sweep,
+    governance_terminal_sweep, load_applied_supported_set_context_v1,
+    models_active_review_snapshot, models_evidence_snapshot, operator_review_packet,
+    operator_roundtrip_chain_check, operator_signoff, operator_workflow_chain, prefix_hex,
+    primary_semantics_absolute_sweep, primary_semantics_terminal_sweep, readiness_absolute_sweep,
+    readiness_terminal_sweep, validate_governance_primary_surfaces_with_applied_scope,
     AbsoluteFinalBundleTerminalSweepStatusV1, AbsoluteFinalGovernanceTerminalSweepStatusV1,
     AbsoluteFinalInputContinuityStatusV1, AbsoluteFinalPrimarySemanticsTerminalSweepStatusV1,
     AbsoluteFinalReadinessTerminalSweepStatusV1, CanonicalRoundTripChainStatusV1,
@@ -44,6 +44,7 @@ pub struct TerminalAbsoluteFinalInputContinuityAuthorityV1 {
     pub canonical_bundle_spine_digest_prefix: String,
     pub residual_free_bundle_absolute_sweep_digest_prefix: String,
     pub absolute_final_bundle_terminal_sweep_digest_prefix: String,
+    pub bundle_ultimate_sweep_digest_prefix: String,
     pub canonical_primary_semantics_authority_digest_prefix: String,
     pub residual_free_primary_semantics_absolute_sweep_digest_prefix: String,
     pub absolute_final_primary_semantics_terminal_sweep_digest_prefix: String,
@@ -109,6 +110,11 @@ pub fn terminal_absolute_final_input_continuity_sweep(
         workdir,
         &workdir
             .join("out/bundle_terminal_sweep_terminal_absolute_final_input_continuity_sweep.json"),
+    )?;
+    let bundle_ultimate = bundle_ultimate_sweep(
+        workdir,
+        &workdir
+            .join("out/bundle_ultimate_sweep_terminal_absolute_final_input_continuity_sweep.json"),
     )?;
 
     let primary_absolute = primary_semantics_absolute_sweep(
@@ -304,6 +310,10 @@ pub fn terminal_absolute_final_input_continuity_sweep(
             &bundle_terminal.sweep.sweep_digest,
             DIGEST_PREFIX_LEN,
         ),
+        bundle_ultimate_sweep_digest_prefix: prefix_hex(
+            &bundle_ultimate.sweep.sweep_digest,
+            DIGEST_PREFIX_LEN,
+        ),
         canonical_primary_semantics_authority_digest_prefix: primary_terminal
             .sweep
             .canonical_primary_semantics_authority_digest_prefix,
@@ -386,6 +396,7 @@ mod tests {
             canonical_bundle_spine_digest_prefix: "22".repeat(8),
             residual_free_bundle_absolute_sweep_digest_prefix: "33".repeat(8),
             absolute_final_bundle_terminal_sweep_digest_prefix: "44".repeat(8),
+            bundle_ultimate_sweep_digest_prefix: "54".repeat(8),
             canonical_primary_semantics_authority_digest_prefix: "55".repeat(8),
             residual_free_primary_semantics_absolute_sweep_digest_prefix: "66".repeat(8),
             absolute_final_primary_semantics_terminal_sweep_digest_prefix: "77".repeat(8),
