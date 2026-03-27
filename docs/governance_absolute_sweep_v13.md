@@ -11,3 +11,8 @@ cargo run -p ucf-ops -- governance-absolute-sweep --out ./out/governance_absolut
 ```
 
 v14 ergänzt darauf den terminalen Consumer-Sweep (`governance-terminal-sweep`) und blockiert die letzten Echo-/Summary-/Lineage-Reste in kanonischen Governance-Consumer-Flows.
+
+## v15 note
+
+v15 finalizes consumer-side cleanup: canonical flows no longer admit governance cache/mirror/embedded snapshot traces as primary authority once ultimate sweep enforcement is active.
+

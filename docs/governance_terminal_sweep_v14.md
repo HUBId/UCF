@@ -34,3 +34,8 @@ Der Sweep ist **PASS** nur wenn alle abgedeckten Consumer zuerst diese autoritat
 ```bash
 cargo run -p ucf-ops -- governance-terminal-sweep --out ./out/governance_terminal_sweep.json
 ```
+
+## v15 note
+
+v15 (`governance-ultimate-sweep`) removes remaining canonical governance cache/mirror/snapshot traces by requiring `governance_ultimate_sweep_digest_prefix` and absolute terminal digest continuity on covered consumers.
+
