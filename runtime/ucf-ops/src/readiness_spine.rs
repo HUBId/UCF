@@ -34,6 +34,11 @@ pub const ABSOLUTE_RESIDUAL_FREE_FINAL_READINESS_INPUTS_REQUIRED: &str =
 pub const READINESS_ECHO_PATH_BLOCKED: &str = "READINESS_ECHO_PATH_BLOCKED";
 pub const READINESS_ECHO_PATH_TRANSLATED: &str = "READINESS_ECHO_PATH_TRANSLATED";
 pub const READINESS_ECHO_PATH_REJECTED: &str = "READINESS_ECHO_PATH_REJECTED";
+pub const TERMINAL_ABSOLUTE_RESIDUAL_FREE_FINAL_READINESS_INPUTS_REQUIRED: &str =
+    "TERMINAL_ABSOLUTE_RESIDUAL_FREE_FINAL_READINESS_INPUTS_REQUIRED";
+pub const READINESS_CACHE_PATH_BLOCKED: &str = "READINESS_CACHE_PATH_BLOCKED";
+pub const READINESS_CACHE_PATH_TRANSLATED: &str = "READINESS_CACHE_PATH_TRANSLATED";
+pub const READINESS_CACHE_PATH_REJECTED: &str = "READINESS_CACHE_PATH_REJECTED";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -156,6 +161,20 @@ pub struct AbsoluteFinalReadinessTerminalInputsV1 {
     pub final_readiness_residual_sweep_digest_prefix: String,
     pub residual_free_readiness_consumer_authority_digest_prefix: String,
     pub residual_free_readiness_absolute_sweep_digest_prefix: String,
+    pub authority_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TerminalReadinessUltimateInputsV1 {
+    pub applied_supported_set_digest_prefix: String,
+    pub canonical_governance_entry_digest_prefix: String,
+    pub canonical_readiness_spine_digest_prefix: String,
+    pub canonical_readiness_authority_digest_prefix: String,
+    pub final_readiness_consumer_authority_digest_prefix: String,
+    pub final_readiness_residual_sweep_digest_prefix: String,
+    pub residual_free_readiness_consumer_authority_digest_prefix: String,
+    pub residual_free_readiness_absolute_sweep_digest_prefix: String,
+    pub absolute_final_readiness_terminal_sweep_digest_prefix: String,
     pub authority_digest: String,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -917,6 +936,101 @@ pub fn require_absolute_final_readiness_terminal_inputs(
         residual_free_readiness_consumer_authority_digest_prefix: base
             .residual_free_readiness_consumer_authority_digest_prefix,
         residual_free_readiness_absolute_sweep_digest_prefix: expected_absolute_prefix,
+        authority_digest: crate::sha256_hex(&digest_source),
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn require_terminal_readiness_ultimate_inputs(
+    truths: &[SlotReviewabilityTruthV1],
+    reduction: Option<&ReviewabilityReductionV1>,
+    applied_scope: &AppliedSupportedSetContextV1,
+    entry: &CanonicalGovernanceEntryV1,
+    spine: Option<&CanonicalReadinessSpineV1>,
+    authority: Option<&CanonicalReadinessAuthorityV2>,
+    final_consumer_authority: Option<&crate::FinalReadinessConsumerAuthorityV1>,
+    residual_sweep: Option<&crate::FinalReadinessResidualSweepV1>,
+    residual_free_consumer: Option<&crate::ResidualFreeReadinessConsumerAuthorityV1>,
+    absolute_sweep: Option<&crate::ResidualFreeReadinessAbsoluteSweepV1>,
+    terminal_sweep: Option<&crate::AbsoluteFinalReadinessTerminalSweepV1>,
+) -> Result<TerminalReadinessUltimateInputsV1, OpsError> {
+    let base = require_absolute_final_readiness_terminal_inputs(
+        truths,
+        reduction,
+        applied_scope,
+        entry,
+        spine,
+        authority,
+        final_consumer_authority,
+        residual_sweep,
+        residual_free_consumer,
+        absolute_sweep,
+    )?;
+    let Some(terminal_sweep) = terminal_sweep else {
+        return Err(OpsError::Invalid(
+            TERMINAL_ABSOLUTE_RESIDUAL_FREE_FINAL_READINESS_INPUTS_REQUIRED.to_string(),
+        ));
+    };
+    let terminal_prefix = prefix_hex(&terminal_sweep.sweep_digest, 16);
+    if !matches!(
+        terminal_sweep.sweep_status,
+        crate::AbsoluteFinalReadinessTerminalSweepStatusV1::Pass
+    ) || terminal_sweep.applied_supported_set_digest_prefix
+        != base.applied_supported_set_digest_prefix
+        || terminal_sweep.canonical_governance_entry_digest_prefix
+            != base.canonical_governance_entry_digest_prefix
+        || terminal_sweep.canonical_readiness_spine_digest_prefix
+            != base.canonical_readiness_spine_digest_prefix
+        || terminal_sweep.canonical_readiness_authority_digest_prefix
+            != base.canonical_readiness_authority_digest_prefix
+        || terminal_sweep.final_readiness_consumer_authority_digest_prefix
+            != base.final_readiness_consumer_authority_digest_prefix
+        || terminal_sweep.final_readiness_residual_sweep_digest_prefix
+            != base.final_readiness_residual_sweep_digest_prefix
+        || terminal_sweep.residual_free_readiness_consumer_authority_digest_prefix
+            != base.residual_free_readiness_consumer_authority_digest_prefix
+        || terminal_sweep.residual_free_readiness_absolute_sweep_digest_prefix
+            != base.residual_free_readiness_absolute_sweep_digest_prefix
+    {
+        return Err(OpsError::Invalid(READINESS_CACHE_PATH_BLOCKED.to_string()));
+    }
+
+    let mut digest_source = Vec::new();
+    digest_source.extend_from_slice(b"terminal_readiness_ultimate_inputs_v1");
+    digest_source.extend_from_slice(base.applied_supported_set_digest_prefix.as_bytes());
+    digest_source.extend_from_slice(base.canonical_governance_entry_digest_prefix.as_bytes());
+    digest_source.extend_from_slice(base.canonical_readiness_spine_digest_prefix.as_bytes());
+    digest_source.extend_from_slice(base.canonical_readiness_authority_digest_prefix.as_bytes());
+    digest_source.extend_from_slice(
+        base.final_readiness_consumer_authority_digest_prefix
+            .as_bytes(),
+    );
+    digest_source.extend_from_slice(base.final_readiness_residual_sweep_digest_prefix.as_bytes());
+    digest_source.extend_from_slice(
+        base.residual_free_readiness_consumer_authority_digest_prefix
+            .as_bytes(),
+    );
+    digest_source.extend_from_slice(
+        base.residual_free_readiness_absolute_sweep_digest_prefix
+            .as_bytes(),
+    );
+    digest_source.extend_from_slice(terminal_prefix.as_bytes());
+
+    Ok(TerminalReadinessUltimateInputsV1 {
+        applied_supported_set_digest_prefix: base.applied_supported_set_digest_prefix,
+        canonical_governance_entry_digest_prefix: base.canonical_governance_entry_digest_prefix,
+        canonical_readiness_spine_digest_prefix: base.canonical_readiness_spine_digest_prefix,
+        canonical_readiness_authority_digest_prefix: base
+            .canonical_readiness_authority_digest_prefix,
+        final_readiness_consumer_authority_digest_prefix: base
+            .final_readiness_consumer_authority_digest_prefix,
+        final_readiness_residual_sweep_digest_prefix: base
+            .final_readiness_residual_sweep_digest_prefix,
+        residual_free_readiness_consumer_authority_digest_prefix: base
+            .residual_free_readiness_consumer_authority_digest_prefix,
+        residual_free_readiness_absolute_sweep_digest_prefix: base
+            .residual_free_readiness_absolute_sweep_digest_prefix,
+        absolute_final_readiness_terminal_sweep_digest_prefix: terminal_prefix,
         authority_digest: crate::sha256_hex(&digest_source),
     })
 }
