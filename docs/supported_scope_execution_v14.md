@@ -1,6 +1,6 @@
-# Supported Scope Execution v14
+# Supported Scope Execution v14 (historical)
 
-`SupportedScopeExecutionV9` ist die aktuelle, autoritative Ausführungsentscheidung für Supported-Scope-Änderungen nach terminaler Governance-Echo-Eliminierung.
+`SupportedScopeExecutionV9` war die autoritative Ausführungsentscheidung in v14.
 
 ## Hierarchie (v14)
 
@@ -8,6 +8,7 @@
 - `SupportedScopeReevaluationV1`: aktuelle Reevaluation, **nicht** direkt anwendbar.
 - `SupportedScopeExecutionV3`-`V8`: Historie/Audit.
 - `SupportedScopeExecutionV9`: einzige zulässige Autorisierung für `supported-set-apply` in v14.
+- In v15 durch `SupportedScopeExecutionV10` ersetzt.
 
 ## Warum v14 zusätzlich notwendig ist
 

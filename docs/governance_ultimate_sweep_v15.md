@@ -2,6 +2,8 @@
 
 `governance-ultimate-sweep` provides the terminal proof that canonical governance consumers derive authority only from the final residual-free governance input chain.
 
+`SupportedScopeExecutionV10` is fail-closed unless this sweep is `PASS` and digest-aligned with current applied scope plus final governance inputs.
+
 ## What this proves
 
 `TerminalGovernanceUltimateSweepV1` binds and verifies:
