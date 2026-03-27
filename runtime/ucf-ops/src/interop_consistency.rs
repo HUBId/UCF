@@ -68,6 +68,10 @@ pub struct CrossSurfaceContextMatrixV1 {
     #[serde(default)]
     pub governance_absolute_sweep_digest_prefix: String,
     #[serde(default)]
+    pub absolute_final_governance_terminal_sweep_digest_prefix: String,
+    #[serde(default)]
+    pub governance_ultimate_sweep_digest_prefix: String,
+    #[serde(default)]
     pub final_readiness_consumer_authority_digest_prefix: String,
     #[serde(default)]
     pub readiness_residual_sweep_digest_prefix: String,
@@ -287,6 +291,18 @@ pub fn interop_consistency_matrix(
         governance_absolute_sweep_digest_prefix: operator_review
             .as_ref()
             .map(|review| review.governance_absolute_sweep_digest_prefix.clone())
+            .unwrap_or_else(|| "MISSING".to_string()),
+        absolute_final_governance_terminal_sweep_digest_prefix: operator_review
+            .as_ref()
+            .map(|review| {
+                review
+                    .absolute_final_governance_terminal_sweep_digest_prefix
+                    .clone()
+            })
+            .unwrap_or_else(|| "MISSING".to_string()),
+        governance_ultimate_sweep_digest_prefix: operator_review
+            .as_ref()
+            .map(|review| review.governance_ultimate_sweep_digest_prefix.clone())
             .unwrap_or_else(|| "MISSING".to_string()),
         final_readiness_consumer_authority_digest_prefix: operator_review
             .as_ref()
@@ -910,6 +926,8 @@ mod tests {
             governance_residual_sweep_digest_prefix: "r".to_string(),
             residual_free_governance_authority_digest_prefix: "MISSING".to_string(),
             governance_absolute_sweep_digest_prefix: "MISSING".to_string(),
+            absolute_final_governance_terminal_sweep_digest_prefix: "MISSING".to_string(),
+            governance_ultimate_sweep_digest_prefix: "MISSING".to_string(),
             final_readiness_consumer_authority_digest_prefix: "fr".to_string(),
             readiness_residual_sweep_digest_prefix: "rr".to_string(),
             residual_free_readiness_authority_digest_prefix: "MISSING".to_string(),

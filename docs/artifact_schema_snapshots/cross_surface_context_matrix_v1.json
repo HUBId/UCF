@@ -11,12 +11,14 @@
     "surfaces"
   ],
   "optional_fields": [
+    "absolute_final_governance_terminal_sweep_digest_prefix",
     "canonical_governance_entry_digest_prefix",
     "final_governance_consumer_authority_digest_prefix",
     "final_primary_semantics_residual_sweep_digest_prefix",
     "final_readiness_consumer_authority_digest_prefix",
     "governance_absolute_sweep_digest_prefix",
     "governance_residual_sweep_digest_prefix",
+    "governance_ultimate_sweep_digest_prefix",
     "primary_semantics_absolute_sweep_digest_prefix",
     "primary_semantics_terminal_sweep_digest_prefix",
     "readiness_absolute_sweep_digest_prefix",
@@ -27,6 +29,7 @@
     "residual_free_readiness_authority_digest_prefix"
   ],
   "field_types": {
+    "absolute_final_governance_terminal_sweep_digest_prefix": "String",
     "applied_supported_set_digest_prefix": "String",
     "canonical_governance_entry_digest_prefix": "String",
     "final_governance_consumer_authority_digest_prefix": "String",
@@ -34,6 +37,7 @@
     "final_readiness_consumer_authority_digest_prefix": "String",
     "governance_absolute_sweep_digest_prefix": "String",
     "governance_residual_sweep_digest_prefix": "String",
+    "governance_ultimate_sweep_digest_prefix": "String",
     "manifest_digest_prefix": "String",
     "matrix_digest": "String",
     "policy_graph_digest_prefix": "String",

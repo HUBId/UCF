@@ -57,6 +57,10 @@ pub struct OperatorWorkflowChainV1 {
     #[serde(default)]
     pub governance_terminal_sweep_digest_prefix: String,
     #[serde(default)]
+    pub absolute_final_governance_terminal_sweep_digest_prefix: String,
+    #[serde(default)]
+    pub governance_ultimate_sweep_digest_prefix: String,
+    #[serde(default)]
     pub final_readiness_consumer_authority_digest_prefix: String,
     #[serde(default)]
     pub readiness_residual_sweep_digest_prefix: String,
@@ -318,6 +322,14 @@ impl OperatorWorkflowPolicyV1 {
                 .governance_absolute_sweep_digest_prefix
                 .clone(),
             governance_terminal_sweep_digest_prefix: "MISSING".to_string(),
+            absolute_final_governance_terminal_sweep_digest_prefix: inputs
+                .review_packet
+                .absolute_final_governance_terminal_sweep_digest_prefix
+                .clone(),
+            governance_ultimate_sweep_digest_prefix: inputs
+                .review_packet
+                .governance_ultimate_sweep_digest_prefix
+                .clone(),
             final_readiness_consumer_authority_digest_prefix: inputs
                 .review_packet
                 .final_readiness_consumer_authority_digest_prefix
@@ -450,6 +462,14 @@ pub fn operator_workflow_chain(
     chain.governance_terminal_sweep_digest_prefix = discover_digest_prefix(
         &out_root,
         "governance_terminal_sweep.json",
+        "sweep.sweep_digest",
+    )
+    .unwrap_or_else(|| "MISSING".to_string());
+    chain.absolute_final_governance_terminal_sweep_digest_prefix =
+        chain.governance_terminal_sweep_digest_prefix.clone();
+    chain.governance_ultimate_sweep_digest_prefix = discover_digest_prefix(
+        &out_root,
+        "governance_ultimate_sweep.json",
         "sweep.sweep_digest",
     )
     .unwrap_or_else(|| "MISSING".to_string());
@@ -610,6 +630,8 @@ mod tests {
             governance_residual_sweep_digest_prefix: "sweep12345678901".to_string(),
             residual_free_governance_authority_digest_prefix: "MISSING".to_string(),
             governance_absolute_sweep_digest_prefix: "MISSING".to_string(),
+            absolute_final_governance_terminal_sweep_digest_prefix: "MISSING".to_string(),
+            governance_ultimate_sweep_digest_prefix: "MISSING".to_string(),
             final_readiness_consumer_authority_digest_prefix: "ready123456789012".to_string(),
             readiness_residual_sweep_digest_prefix: "rrs1234567890123".to_string(),
             residual_free_readiness_authority_digest_prefix: "MISSING".to_string(),
@@ -661,6 +683,8 @@ mod tests {
             governance_residual_sweep_digest_prefix: "sweep12345678901".to_string(),
             residual_free_governance_authority_digest_prefix: "MISSING".to_string(),
             governance_absolute_sweep_digest_prefix: "MISSING".to_string(),
+            absolute_final_governance_terminal_sweep_digest_prefix: "MISSING".to_string(),
+            governance_ultimate_sweep_digest_prefix: "MISSING".to_string(),
             final_readiness_consumer_authority_digest_prefix: "ready123456789012".to_string(),
             readiness_residual_sweep_digest_prefix: "rrs1234567890123".to_string(),
             residual_free_readiness_authority_digest_prefix: "MISSING".to_string(),
@@ -729,6 +753,8 @@ mod tests {
                 governance_residual_sweep_digest_prefix: "sweep12345678901".to_string(),
                 residual_free_governance_authority_digest_prefix: "MISSING".to_string(),
                 governance_absolute_sweep_digest_prefix: "MISSING".to_string(),
+                absolute_final_governance_terminal_sweep_digest_prefix: "MISSING".to_string(),
+                governance_ultimate_sweep_digest_prefix: "MISSING".to_string(),
                 final_readiness_consumer_authority_digest_prefix: "ready123456789012".to_string(),
                 readiness_residual_sweep_digest_prefix: "rrs1234567890123".to_string(),
                 residual_free_readiness_authority_digest_prefix: "MISSING".to_string(),

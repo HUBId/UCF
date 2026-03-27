@@ -556,6 +556,8 @@ mod tests {
             governance_residual_sweep_digest_prefix: "MISSING".to_string(),
             residual_free_governance_authority_digest_prefix: "MISSING".to_string(),
             governance_absolute_sweep_digest_prefix: "MISSING".to_string(),
+            absolute_final_governance_terminal_sweep_digest_prefix: "MISSING".to_string(),
+            governance_ultimate_sweep_digest_prefix: "MISSING".to_string(),
             final_readiness_consumer_authority_digest_prefix: "MISSING".to_string(),
             readiness_residual_sweep_digest_prefix: "MISSING".to_string(),
             residual_free_readiness_authority_digest_prefix: "MISSING".to_string(),
