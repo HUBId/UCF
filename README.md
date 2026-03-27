@@ -52,6 +52,7 @@ See `docs/feature_matrix.md` for details.
 - `cargo run -p ucf-ops -- residual-free-bundle-sweep --out ./out/residual_free_bundle_sweep.json`
 - `cargo run -p ucf-ops -- bundle-absolute-sweep --out ./out/bundle_absolute_sweep.json`
 - `cargo run -p ucf-ops -- bundle-terminal-sweep --out ./out/bundle_terminal_sweep.json`
+- `cargo run -p ucf-ops -- bundle-ultimate-sweep --out ./out/bundle_ultimate_sweep.json`
 - `cargo run -p ucf-ops -- remediation-interop-check --out ./out/remediation_interop_check.json`
 - `cargo run -p ucf-ops -- remediation-spine-check --out ./out/remediation_spine_check.json`
 - `cargo run -p ucf-ops -- primary-semantics-sweep --out ./out/primary_semantics_sweep.json`

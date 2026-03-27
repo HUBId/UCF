@@ -34,3 +34,8 @@ v13 adds `bundle-absolute-sweep`, which consumes `ResidualFreeBundleConsumerAuth
 ## v14 terminal note
 
 The v14 terminal sweep closes the final canonical export consumer residual paths by requiring absolute final bundle inputs across covered consumers.
+
+
+## v15 note
+
+Canonical export consumers now reference `bundle_ultimate_sweep_digest_prefix`, and cache/mirror/snapshot reconstruction paths are blocked from canonical use.
