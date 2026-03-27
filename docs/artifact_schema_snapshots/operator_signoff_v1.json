@@ -36,6 +36,7 @@
     "readiness_absolute_sweep_digest_prefix",
     "readiness_residual_sweep_digest_prefix",
     "readiness_terminal_sweep_digest_prefix",
+    "readiness_ultimate_sweep_digest_prefix",
     "residual_free_governance_authority_digest_prefix",
     "residual_free_primary_semantics_authority_digest_prefix",
     "residual_free_readiness_authority_digest_prefix"
@@ -67,6 +68,7 @@
     "readiness_absolute_sweep_digest_prefix": "String",
     "readiness_residual_sweep_digest_prefix": "String",
     "readiness_terminal_sweep_digest_prefix": "String",
+    "readiness_ultimate_sweep_digest_prefix": "String",
     "reasons": "Vec<String>",
     "remediation_codes": "Vec<String>",
     "residual_free_governance_authority_digest_prefix": "String",

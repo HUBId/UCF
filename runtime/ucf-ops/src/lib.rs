@@ -47,6 +47,7 @@ mod readiness_absolute_sweep;
 mod readiness_residual_sweep;
 mod readiness_spine;
 mod readiness_terminal_sweep;
+mod readiness_ultimate_sweep;
 mod remediation;
 mod remediation_consistency;
 mod residual_free_bundle_sweep;
@@ -300,27 +301,35 @@ pub use readiness_spine::{
     readiness_spine_check, readiness_spine_sweep, require_absolute_final_readiness_terminal_inputs,
     require_canonical_readiness_spine, require_final_readiness_authority,
     require_final_readiness_inputs, require_residual_free_final_readiness_inputs,
-    require_residual_free_readiness_absolute_inputs, write_canonical_readiness_spine,
-    AbsoluteFinalReadinessTerminalInputsV1, CanonicalReadinessAuthorityStatusV2,
-    CanonicalReadinessAuthorityV2, CanonicalReadinessSpineStatusV1, CanonicalReadinessSpineV1,
-    FinalReadinessAuthorityContextV1, FinalReadinessInputsContextV1, ReadinessSpineCheckReportV1,
-    ReadinessSpineCheckStatusV1, ReadinessSpineMismatchCategoryV1,
-    ReadinessSpineSweepMismatchCategoryV1, ReadinessSpineSweepReportV1,
-    ReadinessSpineSweepSurfaceStatusV1, ResidualFreeFinalReadinessInputsV1,
-    ResidualFreeReadinessAbsoluteInputsV1, ABSOLUTE_RESIDUAL_FREE_FINAL_READINESS_INPUTS_REQUIRED,
+    require_residual_free_readiness_absolute_inputs, require_terminal_readiness_ultimate_inputs,
+    write_canonical_readiness_spine, AbsoluteFinalReadinessTerminalInputsV1,
+    CanonicalReadinessAuthorityStatusV2, CanonicalReadinessAuthorityV2,
+    CanonicalReadinessSpineStatusV1, CanonicalReadinessSpineV1, FinalReadinessAuthorityContextV1,
+    FinalReadinessInputsContextV1, ReadinessSpineCheckReportV1, ReadinessSpineCheckStatusV1,
+    ReadinessSpineMismatchCategoryV1, ReadinessSpineSweepMismatchCategoryV1,
+    ReadinessSpineSweepReportV1, ReadinessSpineSweepSurfaceStatusV1,
+    ResidualFreeFinalReadinessInputsV1, ResidualFreeReadinessAbsoluteInputsV1,
+    TerminalReadinessUltimateInputsV1, ABSOLUTE_RESIDUAL_FREE_FINAL_READINESS_INPUTS_REQUIRED,
     CANONICAL_READINESS_SPINE_REQUIRED, FINAL_READINESS_AUTHORITY_REQUIRED,
     FINAL_READINESS_INPUTS_REQUIRED, HISTORICAL_READINESS_LINEAGE_BLOCKED,
     HISTORICAL_READINESS_PATH_BLOCKED, HISTORICAL_READINESS_PATH_REJECTED,
     HISTORICAL_READINESS_PATH_TRANSLATED, LEGACY_READINESS_INPUT_BLOCKED,
+    READINESS_CACHE_PATH_BLOCKED, READINESS_CACHE_PATH_REJECTED, READINESS_CACHE_PATH_TRANSLATED,
     READINESS_ECHO_PATH_BLOCKED, READINESS_ECHO_PATH_REJECTED, READINESS_ECHO_PATH_TRANSLATED,
     RESIDUAL_FREE_FINAL_READINESS_INPUTS_REQUIRED, RESIDUAL_READINESS_PATH_BLOCKED,
     REVIEWABILITY_REDUCTION_REQUIRED, SECONDARY_READINESS_PATH_BLOCKED,
     SLOT_REVIEWABILITY_TRUTH_REQUIRED,
+    TERMINAL_ABSOLUTE_RESIDUAL_FREE_FINAL_READINESS_INPUTS_REQUIRED,
 };
 pub use readiness_terminal_sweep::{
     readiness_terminal_sweep, AbsoluteFinalReadinessTerminalSweepStatusV1,
     AbsoluteFinalReadinessTerminalSweepV1, ReadinessTerminalConsumerStatusV1,
     ReadinessTerminalMismatchCategoryV1, ReadinessTerminalSweepReportV1,
+};
+pub use readiness_ultimate_sweep::{
+    readiness_ultimate_sweep, ReadinessUltimateConsumerStatusV1,
+    ReadinessUltimateMismatchCategoryV1, ReadinessUltimateSweepReportV1,
+    TerminalReadinessUltimateSweepStatusV1, TerminalReadinessUltimateSweepV1,
 };
 pub use remediation::all_registry_rows as remediation_registry_rows;
 pub use remediation_consistency::{

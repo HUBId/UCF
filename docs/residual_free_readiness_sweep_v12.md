@@ -54,3 +54,7 @@ v13 adds the readiness absolute sweep to remove any remaining historical or aggr
 
 Terminal consumer sweep in v14 (`readiness-terminal-sweep`) finalizes canonical consumer cleanup and blocks residual readiness echo paths at terminal inputs.
 
+## v15 Hinweis
+
+Die in v12 eingeführte residual-free Authority wird in v15 als verpflichtender Teil der Ultimate-Inputs für alle kanonischen Consumer durchgesetzt.
+

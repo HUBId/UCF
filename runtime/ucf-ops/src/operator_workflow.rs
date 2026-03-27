@@ -71,6 +71,8 @@ pub struct OperatorWorkflowChainV1 {
     #[serde(default)]
     pub readiness_terminal_sweep_digest_prefix: String,
     #[serde(default)]
+    pub readiness_ultimate_sweep_digest_prefix: String,
+    #[serde(default)]
     pub final_bundle_residual_sweep_digest_prefix: String,
     #[serde(default)]
     pub final_primary_semantics_residual_sweep_digest_prefix: String,
@@ -350,6 +352,10 @@ impl OperatorWorkflowPolicyV1 {
                 .review_packet
                 .readiness_terminal_sweep_digest_prefix
                 .clone(),
+            readiness_ultimate_sweep_digest_prefix: inputs
+                .review_packet
+                .readiness_ultimate_sweep_digest_prefix
+                .clone(),
             final_bundle_residual_sweep_digest_prefix: "MISSING".to_string(),
             final_primary_semantics_residual_sweep_digest_prefix: "MISSING".to_string(),
             residual_free_primary_semantics_authority_digest_prefix: "MISSING".to_string(),
@@ -467,6 +473,12 @@ pub fn operator_workflow_chain(
     .unwrap_or_else(|| "MISSING".to_string());
     chain.absolute_final_governance_terminal_sweep_digest_prefix =
         chain.governance_terminal_sweep_digest_prefix.clone();
+    chain.readiness_ultimate_sweep_digest_prefix = discover_digest_prefix(
+        &out_root,
+        "readiness_ultimate_sweep.json",
+        "sweep.sweep_digest",
+    )
+    .unwrap_or_else(|| "MISSING".to_string());
     chain.governance_ultimate_sweep_digest_prefix = discover_digest_prefix(
         &out_root,
         "governance_ultimate_sweep.json",
@@ -637,6 +649,7 @@ mod tests {
             residual_free_readiness_authority_digest_prefix: "MISSING".to_string(),
             readiness_absolute_sweep_digest_prefix: "MISSING".to_string(),
             readiness_terminal_sweep_digest_prefix: "MISSING".to_string(),
+            readiness_ultimate_sweep_digest_prefix: "MISSING".to_string(),
             final_primary_semantics_residual_sweep_digest_prefix: "MISSING".to_string(),
             residual_free_primary_semantics_authority_digest_prefix: "MISSING".to_string(),
             primary_semantics_absolute_sweep_digest_prefix: "MISSING".to_string(),
@@ -690,6 +703,7 @@ mod tests {
             residual_free_readiness_authority_digest_prefix: "MISSING".to_string(),
             readiness_absolute_sweep_digest_prefix: "MISSING".to_string(),
             readiness_terminal_sweep_digest_prefix: "MISSING".to_string(),
+            readiness_ultimate_sweep_digest_prefix: "MISSING".to_string(),
             final_primary_semantics_residual_sweep_digest_prefix: "MISSING".to_string(),
             residual_free_primary_semantics_authority_digest_prefix: "MISSING".to_string(),
             primary_semantics_absolute_sweep_digest_prefix: "MISSING".to_string(),
@@ -760,6 +774,7 @@ mod tests {
                 residual_free_readiness_authority_digest_prefix: "MISSING".to_string(),
                 readiness_absolute_sweep_digest_prefix: "MISSING".to_string(),
                 readiness_terminal_sweep_digest_prefix: "MISSING".to_string(),
+                readiness_ultimate_sweep_digest_prefix: "MISSING".to_string(),
                 final_primary_semantics_residual_sweep_digest_prefix: "MISSING".to_string(),
                 residual_free_primary_semantics_authority_digest_prefix: "MISSING".to_string(),
                 primary_semantics_absolute_sweep_digest_prefix: "MISSING".to_string(),

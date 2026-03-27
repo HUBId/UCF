@@ -32,3 +32,8 @@ cargo run -p ucf-ops -- readiness-terminal-sweep --out ./out/readiness_terminal_
 ```
 
 A PASS status means canonical readiness consumers are residual-free at terminal input boundaries.
+
+## v15 Hinweis
+
+Ab v15 (`readiness-ultimate-sweep`) sind letzte kanonische Consumer-Restpfade auf Readiness-Caches/Stage-Mirrors/embedded Snapshots entfernt bzw. blockiert.
+

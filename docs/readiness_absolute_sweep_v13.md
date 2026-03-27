@@ -43,3 +43,7 @@ cargo run -p ucf-ops -- readiness-absolute-sweep --out ./out/readiness_absolute_
 
 v14 introduces `readiness-terminal-sweep` to remove terminal consumer dependence on readiness echoes/summaries/aggregate-memory traces in canonical flows.
 
+## v15 Hinweis
+
+v15 (`readiness-ultimate-sweep`) erweitert v13 auf den finalen Consumer-Sweep und eliminiert verbleibende kanonische Cache-/Snapshot-Restnutzung.
+
