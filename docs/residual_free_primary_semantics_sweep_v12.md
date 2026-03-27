@@ -41,3 +41,6 @@ v13 (`primary-semantics-absolute-sweep`) closes the last canonical consumer line
 
 The v14 terminal sweep (`primary-semantics-terminal-sweep`) finalizes canonical consumer cleanup by blocking any remaining primary-semantics echo/summary/cache/override residue in canonical flows.
 
+## v15 follow-up
+
+`primary-semantics-ultimate-sweep` provides the terminal consumer proof that canonical surfaces no longer reconstruct primary semantics from caches/mirrors/snapshots.

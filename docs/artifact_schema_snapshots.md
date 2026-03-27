@@ -10,6 +10,7 @@ Snapshots are generated under `docs/artifact_schema_snapshots/`:
 - `absolute_final_governance_terminal_sweep_v1.json` (v14 terminal absolute residual-free governance contract)
 - `absolute_final_input_continuity_authority_v1.json`
 - `absolute_final_primary_semantics_terminal_sweep_v1.json` (v14 terminal absolute residual-free primary-semantics contract)
+- `terminal_primary_semantics_ultimate_sweep_v1.json` (v15 ultimate terminal primary-semantics consumer contract)
 - `absolute_final_readiness_terminal_sweep_v1.json` (v14 terminal absolute residual-free readiness contract)
 - `active_review_snapshot_v1.json`
 - `applied_scope_authority_v1.json` (v7)
