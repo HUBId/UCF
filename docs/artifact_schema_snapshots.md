@@ -1,6 +1,6 @@
 # Artifact Schema Snapshots
 
-This repository enforces deterministic shape snapshots for governance/review/export/interop artifacts that must remain stable across v3/v4/v5/v6/v7/v8/v9/v10/v11/v12/v13/v14 hardening.
+This repository enforces deterministic shape snapshots for governance/review/export/interop artifacts that must remain stable across v3/v4/v5/v6/v7/v8/v9/v10/v11/v12/v13/v14/v15 hardening.
 
 ## Covered artifacts
 
@@ -10,7 +10,10 @@ Snapshots are generated under `docs/artifact_schema_snapshots/`:
 - `absolute_final_governance_terminal_sweep_v1.json` (v14 terminal absolute residual-free governance contract)
 - `absolute_final_input_continuity_authority_v1.json`
 - `absolute_final_primary_semantics_terminal_sweep_v1.json` (v14 terminal absolute residual-free primary-semantics contract)
+- `terminal_bundle_ultimate_sweep_v1.json` (v15 ultimate terminal bundle consumer contract)
+- `terminal_governance_ultimate_sweep_v1.json` (v15 ultimate terminal governance consumer contract)
 - `terminal_primary_semantics_ultimate_sweep_v1.json` (v15 ultimate terminal primary-semantics consumer contract)
+- `terminal_readiness_ultimate_sweep_v1.json` (v15 ultimate terminal readiness consumer contract)
 - `absolute_final_readiness_terminal_sweep_v1.json` (v14 terminal absolute residual-free readiness contract)
 - `active_review_snapshot_v1.json`
 - `applied_scope_authority_v1.json` (v7)
@@ -177,3 +180,11 @@ For v14 terminal absolute residual-free surfaces, this freeze is now first-class
 - absolute-final readiness terminal sweep,
 - absolute-final bundle terminal sweep,
 - absolute-final primary-semantics terminal sweep.
+
+For v15 ultimate terminal absolute residual-free surfaces, this freeze is now first-class for cross-surface contracts and CI review:
+
+- terminal-governance ultimate sweep,
+- supported-scope execution v10,
+- terminal-readiness ultimate sweep,
+- terminal-bundle ultimate sweep,
+- terminal-primary-semantics ultimate sweep.
