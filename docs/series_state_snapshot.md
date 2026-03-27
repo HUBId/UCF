@@ -20,7 +20,7 @@
 - **v11:** complete.
 - **v12:** complete.
 - **v13:** complete (`ucf-ops v13 gate` overall PASS recorded at Prompt 308).
-- **v14:** not started yet.
+- **v14:** in progress (completion requires `ucf-ops v14 gate` overall PASS).
 - **Queue policy:** immediate queue remains capped to 10 prompts.
 
 ## Last executed prompt / resume point
@@ -42,7 +42,7 @@ Reference: `docs/next_10_prompts.md`
 | 315 | v14 schema snapshot refresh | MUST | queued |
 | 316 | v14 portability and docs refresh | NICE | queued |
 | 317 | Operator workflow/export continuity authority hardening | MUST | queued |
-| 318 | v14 gate schema and orchestration | MUST | queued |
+| 318 | v14 gate schema and orchestration | MUST | complete |
 | 319 | v14 wrap and next-anchor governance | MUST | queued |
 
 ## Historical anchor checkpoints
@@ -76,7 +76,8 @@ Reference: `docs/next_10_prompts.md`
 - v11 completion requirement: **`ucf-ops v11 gate` overall PASS at Prompt 288**.
 - v12 completion requirement: **`ucf-ops v12 gate` overall PASS at Prompt 298**.
 - v13 completion requirement: **`ucf-ops v13 gate` overall PASS at Prompt 308**.
-- v14 completion criterion: pending v14 gate PASS.
+- v14 completion criterion: **`ucf-ops v14 gate` overall PASS**.
+- Next anchor advancement is blocked until v14 gate PASS is recorded.
 - v14 advancement remains hardware-neutral, offline-first, probe-first, shadow-first, and fail-closed.
 - Prompts are classified as MUST/NICE/DEFERRED at authoring time.
 
