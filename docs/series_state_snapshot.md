@@ -1,8 +1,8 @@
 # Prompt Series State Snapshot
 
 ## Current anchor
-- **Current anchor milestone:** `Real Compute Onboarding v14`.
-- **Anchor definition:** v14 planning queue in `docs/next_10_prompts.md` (entry set `310-319`).
+- **Current anchor milestone:** `Real Compute Onboarding v15`.
+- **Anchor definition:** v15 planning queue in `docs/next_10_prompts.md` (entry set `320-329`).
 - **Prompt index source:** `docs/prompt_series_index.md`.
 
 ## Status against anchor milestones
@@ -20,30 +20,31 @@
 - **v11:** complete.
 - **v12:** complete.
 - **v13:** complete (`ucf-ops v13 gate` overall PASS recorded at Prompt 308).
-- **v14:** in progress (completion requires `ucf-ops v14 gate` overall PASS).
+- **v14:** complete (`ucf-ops v14 gate` overall PASS recorded at Prompt 318).
+- **v15:** not started yet.
 - **Queue policy:** immediate queue remains capped to 10 prompts.
 
 ## Last executed prompt / resume point
-- Last executed prompt ID: **309**.
-- Next prompt ID: **310**.
-- Resume from: **`PROMPT 310`**.
+- Last executed prompt ID: **319**.
+- Next prompt ID: **320**.
+- Resume from: **`PROMPT 320`**.
 - Numbering remains monotonic and append-only.
 
 ## Immediate next prompts (capped to 10)
 Reference: `docs/next_10_prompts.md`
 
-| Prompt ID | Title (short) | v14 class | Status |
+| Prompt ID | Title (short) | v15 class | Status |
 |---:|---|---|---|
-| 310 | Residual-free governance truth unification completion | MUST | queued |
-| 311 | Supported-scope expansion re-execution or freeze reaffirmation | MUST | queued |
-| 312 | Residual-free readiness-input consumption deepening | MUST | queued |
-| 313 | Residual-free bundle input and continuity-proof normalization | MUST | queued |
-| 314 | Residual-free primary blocking/remediation hardening | MUST | queued |
-| 315 | v14 schema snapshot refresh | MUST | queued |
-| 316 | v14 portability and docs refresh | NICE | queued |
-| 317 | Operator workflow/export continuity authority hardening | MUST | queued |
-| 318 | v14 gate schema and orchestration | MUST | complete |
-| 319 | v14 wrap and next-anchor governance | MUST | queued |
+| 320 | Residual-free governance truth unification completion for all canonical consumers | MUST | queued |
+| 321 | Supported-scope expansion re-execution or freeze reaffirmation | MUST | queued |
+| 322 | Residual-free readiness-input consumption deepening | MUST | queued |
+| 323 | Residual-free bundle input and continuity-proof normalization | MUST | queued |
+| 324 | Residual-free primary blocking/remediation hardening | MUST | queued |
+| 325 | v15 schema snapshot refresh | MUST | queued |
+| 326 | v15 portability and docs refresh | NICE | queued |
+| 327 | Operator workflow/export continuity authority hardening | MUST | queued |
+| 328 | v15 gate schema and orchestration | MUST | queued |
+| 329 | v15 wrap and next-anchor governance | MUST | queued |
 
 ## Historical anchor checkpoints
 
@@ -60,6 +61,7 @@ Reference: `docs/next_10_prompts.md`
 | 288 | v11 gate closure | complete |
 | 298 | v12 gate closure | complete |
 | 308 | v13 gate closure | complete |
+| 318 | v14 gate closure | complete |
 
 ## Series control notes
 - v0 completion requirement: historical signoff recorded.
@@ -76,13 +78,13 @@ Reference: `docs/next_10_prompts.md`
 - v11 completion requirement: **`ucf-ops v11 gate` overall PASS at Prompt 288**.
 - v12 completion requirement: **`ucf-ops v12 gate` overall PASS at Prompt 298**.
 - v13 completion requirement: **`ucf-ops v13 gate` overall PASS at Prompt 308**.
-- v14 completion criterion: **`ucf-ops v14 gate` overall PASS**.
-- Next anchor advancement is blocked until v14 gate PASS is recorded.
-- v14 advancement remains hardware-neutral, offline-first, probe-first, shadow-first, and fail-closed.
+- v14 completion criterion: **`ucf-ops v14 gate` overall PASS at Prompt 318**.
+- Next anchor advancement is blocked until v15 gate PASS is recorded.
+- v15 advancement remains hardware-neutral, offline-first, probe-first, shadow-first, and fail-closed.
 - Prompts are classified as MUST/NICE/DEFERRED at authoring time.
 
 ## Supported real-slot baseline for current stage
 - First supported slot: `world_jepa`.
 - Second supported slot in this stage: `sae`.
 - Supported scope remains authority-gated and evidence-bound.
-- Scope changes require explicit residual-free final governance inputs plus current supported-scope execution evidence.
+- Scope changes require explicit terminal absolute residual-free final governance inputs plus current supported-scope execution evidence.
