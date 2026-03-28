@@ -33,21 +33,21 @@ pub enum OperatorExportAuthorityMismatchCategoryV1 {
     ReviewabilityBasisMismatch,
     ReadinessSpineMismatch,
     AppliedScopeMissing,
-    TerminalAbsoluteFinalInputContinuityMissing,
-    TerminalAbsoluteFinalInputContinuityFail,
+    UltimateTerminalAbsoluteFinalInputContinuityMissing,
+    UltimateTerminalAbsoluteFinalInputContinuityFail,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum TerminalAbsoluteFinalInputStatusV1 {
+pub enum UltimateTerminalAbsoluteFinalInputStatusV1 {
     Pass,
     Fail,
     LegacyPresent,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct TerminalAbsoluteFinalInputProbeV1 {
-    continuity_status: TerminalAbsoluteFinalInputStatusV1,
+struct UltimateTerminalAbsoluteFinalInputProbeV1 {
+    continuity_status: UltimateTerminalAbsoluteFinalInputStatusV1,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -268,31 +268,32 @@ pub fn operator_export_chain_check(
         chain.chain_digest = chain_digest(&chain)?;
     }
 
-    let absolute_path = workdir.join("out/terminal_absolute_final_input_continuity_sweep.json");
+    let absolute_path =
+        workdir.join("out/ultimate_terminal_absolute_final_input_continuity_sweep.json");
     match fs::read_to_string(&absolute_path) {
         Ok(body) => {
-            let probe: TerminalAbsoluteFinalInputProbeV1 = serde_json::from_str(&body)?;
+            let probe: UltimateTerminalAbsoluteFinalInputProbeV1 = serde_json::from_str(&body)?;
             if !matches!(
                 probe.continuity_status,
-                TerminalAbsoluteFinalInputStatusV1::Pass
+                UltimateTerminalAbsoluteFinalInputStatusV1::Pass
             ) {
                 chain.authority_chain_status = OperatorExportAuthorityChainStatusV1::Fail;
                 chain.mismatch_categories.push(
-                    OperatorExportAuthorityMismatchCategoryV1::TerminalAbsoluteFinalInputContinuityFail,
+                    OperatorExportAuthorityMismatchCategoryV1::UltimateTerminalAbsoluteFinalInputContinuityFail,
                 );
                 chain
                     .blocking_codes
-                    .push("TERMINAL_ABSOLUTE_FINAL_INPUT_CONTINUITY_REQUIRED".to_string());
+                    .push("ULTIMATE_TERMINAL_ABSOLUTE_FINAL_INPUT_CONTINUITY_REQUIRED".to_string());
             }
         }
         Err(_) => {
             chain.authority_chain_status = OperatorExportAuthorityChainStatusV1::Fail;
             chain.mismatch_categories.push(
-                OperatorExportAuthorityMismatchCategoryV1::TerminalAbsoluteFinalInputContinuityMissing,
+                OperatorExportAuthorityMismatchCategoryV1::UltimateTerminalAbsoluteFinalInputContinuityMissing,
             );
             chain
                 .blocking_codes
-                .push("TERMINAL_ABSOLUTE_FINAL_INPUT_CONTINUITY_REQUIRED".to_string());
+                .push("ULTIMATE_TERMINAL_ABSOLUTE_FINAL_INPUT_CONTINUITY_REQUIRED".to_string());
         }
     }
     chain.mismatch_categories.sort();
@@ -494,6 +495,8 @@ mod tests {
             residual_free_continuity_authority_digest_prefix: "MISSING".to_string(),
             final_input_continuity_authority_digest_prefix: "MISSING".to_string(),
             terminal_absolute_final_input_continuity_authority_digest_prefix: "MISSING".to_string(),
+            ultimate_terminal_absolute_final_input_continuity_authority_digest_prefix: "MISSING"
+                .to_string(),
             operator_review_packet_digest_prefix: "ef".repeat(8),
             operator_signoff_digest_prefix: "01".repeat(8),
             interop_matrix_digest_prefix: "23".repeat(8),

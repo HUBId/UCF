@@ -35,3 +35,8 @@ cargo run -p ucf-ops -- terminal-absolute-final-input-continuity-sweep --bundle 
 4. Build/export bundle artifacts
 5. `terminal-absolute-final-input-continuity-sweep`
 6. Optional subordinate diagnostics (`absolute-final-input-continuity-sweep`, `final-input-continuity-sweep`, `residual-free-continuity-sweep`, `operator roundtrip-chain-check`)
+
+
+## v15 update
+`TerminalAbsoluteFinalInputContinuityAuthorityV1` is now a **SUBORDINATE_CONTINUITY_CONTRIBUTOR**.
+The sole top-level continuity proof is `UltimateTerminalAbsoluteFinalInputContinuityAuthorityV1` via `ultimate-terminal-absolute-final-input-continuity-sweep`.

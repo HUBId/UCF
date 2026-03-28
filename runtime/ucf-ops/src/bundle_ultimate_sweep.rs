@@ -179,7 +179,7 @@ pub fn bundle_ultimate_sweep(
         check_consumer(
             "ContinuityArtifacts",
             workdir,
-            "out/terminal_absolute_final_input_continuity_sweep.json",
+            "out/ultimate_terminal_absolute_final_input_continuity_sweep.json",
             &authority_ctx,
         )?,
         check_consumer(

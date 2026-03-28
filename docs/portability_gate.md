@@ -225,6 +225,7 @@
 - `docs/readiness_ultimate_sweep_v15.md`
 - `docs/bundle_ultimate_sweep_v15.md`
 - `docs/primary_semantics_ultimate_sweep_v15.md`
+- `docs/ultimate_terminal_absolute_final_input_continuity_v15.md`
 - `docs/artifact_schema_snapshots.md`
 
 ## v9 docs covered by portability/docs gates

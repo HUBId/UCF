@@ -65,6 +65,7 @@ mod soak;
 mod spec_snapshot;
 mod strict_evidence;
 mod terminal_absolute_final_input_continuity_sweep;
+mod ultimate_terminal_absolute_final_input_continuity_sweep;
 mod v10_gate;
 mod v11_gate;
 mod v12_gate;
@@ -431,6 +432,11 @@ pub use strict_evidence::{
 pub use terminal_absolute_final_input_continuity_sweep::{
     terminal_absolute_final_input_continuity_sweep,
     TerminalAbsoluteFinalInputContinuityAuthorityV1, TerminalAbsoluteFinalInputContinuityStatusV1,
+};
+pub use ultimate_terminal_absolute_final_input_continuity_sweep::{
+    ultimate_terminal_absolute_final_input_continuity_sweep,
+    UltimateTerminalAbsoluteFinalInputContinuityAuthorityV1,
+    UltimateTerminalAbsoluteFinalInputContinuityStatusV1,
 };
 pub use v10_gate::{v10_gate, V10GateCheckV1, V10GateOverallStatus, V10GateReportV1};
 pub use v11_gate::{v11_gate, V11GateCheckV1, V11GateOverallStatus, V11GateReportV1};

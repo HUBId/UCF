@@ -90,6 +90,8 @@ pub struct OperatorWorkflowChainV1 {
     pub final_input_continuity_authority_digest_prefix: String,
     #[serde(default)]
     pub terminal_absolute_final_input_continuity_authority_digest_prefix: String,
+    #[serde(default)]
+    pub ultimate_terminal_absolute_final_input_continuity_authority_digest_prefix: String,
     pub operator_review_packet_digest_prefix: String,
     pub operator_signoff_digest_prefix: String,
     pub interop_matrix_digest_prefix: String,
@@ -365,6 +367,8 @@ impl OperatorWorkflowPolicyV1 {
             residual_free_continuity_authority_digest_prefix: "MISSING".to_string(),
             final_input_continuity_authority_digest_prefix: "MISSING".to_string(),
             terminal_absolute_final_input_continuity_authority_digest_prefix: "MISSING".to_string(),
+            ultimate_terminal_absolute_final_input_continuity_authority_digest_prefix: "MISSING"
+                .to_string(),
             operator_review_packet_digest_prefix,
             operator_signoff_digest_prefix,
             interop_matrix_digest_prefix,
@@ -499,7 +503,7 @@ pub fn operator_workflow_chain(
     .unwrap_or_else(|| "MISSING".to_string());
     chain.final_input_continuity_authority_digest_prefix = discover_digest_prefix(
         &out_root,
-        "terminal_absolute_final_input_continuity_sweep.json",
+        "ultimate_terminal_absolute_final_input_continuity_sweep.json",
         "authority_digest",
     )
     .unwrap_or_else(|| "MISSING".to_string());
@@ -507,6 +511,13 @@ pub fn operator_workflow_chain(
         discover_digest_prefix(
             &out_root,
             "terminal_absolute_final_input_continuity_sweep.json",
+            "authority_digest",
+        )
+        .unwrap_or_else(|| "MISSING".to_string());
+    chain.ultimate_terminal_absolute_final_input_continuity_authority_digest_prefix =
+        discover_digest_prefix(
+            &out_root,
+            "ultimate_terminal_absolute_final_input_continuity_sweep.json",
             "authority_digest",
         )
         .unwrap_or_else(|| "MISSING".to_string());
