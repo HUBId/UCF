@@ -64,7 +64,7 @@ struct ArtifactSpec {
     enum_names: &'static [&'static str],
 }
 
-const ARTIFACT_SPECS: [ArtifactSpec; 89] = [
+const ARTIFACT_SPECS: [ArtifactSpec; 90] = [
     ArtifactSpec {
         artifact_id: "active_review_snapshot_v1",
         file_rel: "runtime/ucf-ops/src/models_lifecycle.rs",
@@ -205,6 +205,15 @@ const ARTIFACT_SPECS: [ArtifactSpec; 89] = [
         enum_names: &[
             "FinalBundleResidualSweepStatusV1",
             "BundleResidualMismatchCategoryV1",
+        ],
+    },
+    ArtifactSpec {
+        artifact_id: "bundle_convergence_sweep_v1",
+        file_rel: "runtime/ucf-ops/src/bundle_convergence_sweep.rs",
+        type_name: "BundleConvergenceSweepV1",
+        enum_names: &[
+            "BundleConvergenceStatusV1",
+            "BundleConvergenceMismatchCategoryV1",
         ],
     },
     ArtifactSpec {
@@ -1100,6 +1109,7 @@ mod tests {
                 "backend_evidence_snapshot_v1",
                 "backend_resolution_v1",
                 "bugkit_manifest_v1",
+                "bundle_convergence_sweep_v1",
                 "bundle_roundtrip_consistency_v1",
                 "canonical_bundle_authority_v2",
                 "canonical_bundle_consumption_context_v1",
