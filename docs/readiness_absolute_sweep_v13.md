@@ -47,3 +47,8 @@ v14 introduces `readiness-terminal-sweep` to remove terminal consumer dependence
 
 v15 (`readiness-ultimate-sweep`) erweitert v13 auf den finalen Consumer-Sweep und eliminiert verbleibende kanonische Cache-/Snapshot-Restnutzung.
 
+
+
+## v16 Update
+
+v16 (`readiness-convergence-sweep`) blockiert verbleibende Memo-/Copy-/Mirror-Readinesspfade in kanonischen Flows.
