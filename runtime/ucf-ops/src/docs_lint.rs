@@ -2088,6 +2088,7 @@ fn v15_docs_consistency_check(args: &DocsLintArgs) -> Result<DocsLintCheck, OpsE
         "docs/readiness_ultimate_sweep_v15.md",
         "docs/bundle_ultimate_sweep_v15.md",
         "docs/primary_semantics_ultimate_sweep_v15.md",
+        "docs/ultimate_terminal_absolute_final_input_continuity_v15.md",
         "docs/artifact_schema_snapshots.md",
     ];
     for path in required {
@@ -2132,6 +2133,11 @@ fn v15_docs_consistency_check(args: &DocsLintArgs) -> Result<DocsLintCheck, OpsE
         ),
         (
             "docs/portability_gate.md",
+            "ultimate_terminal_absolute_final_input_continuity_v15.md",
+            portability_gate.contains("ultimate_terminal_absolute_final_input_continuity_v15.md"),
+        ),
+        (
+            "docs/portability_gate.md",
             "artifact_schema_snapshots.md",
             portability_gate.contains("artifact_schema_snapshots.md"),
         ),
@@ -2159,6 +2165,11 @@ fn v15_docs_consistency_check(args: &DocsLintArgs) -> Result<DocsLintCheck, OpsE
             "docs/docs_checks.md",
             "docs/primary_semantics_ultimate_sweep_v15.md",
             docs_checks.contains("docs/primary_semantics_ultimate_sweep_v15.md"),
+        ),
+        (
+            "docs/docs_checks.md",
+            "docs/ultimate_terminal_absolute_final_input_continuity_v15.md",
+            docs_checks.contains("docs/ultimate_terminal_absolute_final_input_continuity_v15.md"),
         ),
         (
             "docs/docs_checks.md",
@@ -3369,12 +3380,12 @@ mod tests {
         std::fs::write(docs.join("spec_snapshot.md"), "# x\n").expect("write");
         std::fs::write(
             docs.join("portability_gate.md"),
-            "governance_ultimate_sweep_v15.md supported_scope_execution_v15.md readiness_ultimate_sweep_v15.md bundle_ultimate_sweep_v15.md primary_semantics_ultimate_sweep_v15.md artifact_schema_snapshots.md\n",
+            "governance_ultimate_sweep_v15.md supported_scope_execution_v15.md readiness_ultimate_sweep_v15.md bundle_ultimate_sweep_v15.md primary_semantics_ultimate_sweep_v15.md ultimate_terminal_absolute_final_input_continuity_v15.md artifact_schema_snapshots.md\n",
         )
         .expect("write");
         std::fs::write(
             docs.join("docs_checks.md"),
-            "docs/governance_ultimate_sweep_v15.md docs/supported_scope_execution_v15.md docs/readiness_ultimate_sweep_v15.md docs/bundle_ultimate_sweep_v15.md docs/primary_semantics_ultimate_sweep_v15.md docs/artifact_schema_snapshots.md\n",
+            "docs/governance_ultimate_sweep_v15.md docs/supported_scope_execution_v15.md docs/readiness_ultimate_sweep_v15.md docs/bundle_ultimate_sweep_v15.md docs/primary_semantics_ultimate_sweep_v15.md docs/ultimate_terminal_absolute_final_input_continuity_v15.md docs/artifact_schema_snapshots.md\n",
         )
         .expect("write");
         for name in [
@@ -3383,6 +3394,7 @@ mod tests {
             "readiness_ultimate_sweep_v15.md",
             "bundle_ultimate_sweep_v15.md",
             "primary_semantics_ultimate_sweep_v15.md",
+            "ultimate_terminal_absolute_final_input_continuity_v15.md",
             "artifact_schema_snapshots.md",
         ] {
             std::fs::write(docs.join(name), "# x\n").expect("write");

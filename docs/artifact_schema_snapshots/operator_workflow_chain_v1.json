@@ -44,7 +44,8 @@
     "residual_free_governance_authority_digest_prefix",
     "residual_free_primary_semantics_authority_digest_prefix",
     "residual_free_readiness_authority_digest_prefix",
-    "terminal_absolute_final_input_continuity_authority_digest_prefix"
+    "terminal_absolute_final_input_continuity_authority_digest_prefix",
+    "ultimate_terminal_absolute_final_input_continuity_authority_digest_prefix"
   ],
   "field_types": {
     "absolute_final_governance_terminal_sweep_digest_prefix": "String",
@@ -86,6 +87,7 @@
     "reviewability_reduction_digest_prefix": "String",
     "schema_version": "u16",
     "terminal_absolute_final_input_continuity_authority_digest_prefix": "String",
+    "ultimate_terminal_absolute_final_input_continuity_authority_digest_prefix": "String",
     "workflow_stage": "OperatorWorkflowStageV2"
   },
   "enum_variants": {

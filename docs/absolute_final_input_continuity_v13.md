@@ -30,3 +30,8 @@ cargo run -p ucf-ops -- absolute-final-input-continuity-sweep --bundle <path> --
 ## v14 update
 `AbsoluteFinalInputContinuityAuthorityV1` is now a **SUBORDINATE_CONTINUITY_CONTRIBUTOR**.
 The sole top-level proof is `TerminalAbsoluteFinalInputContinuityAuthorityV1` via `terminal-absolute-final-input-continuity-sweep`.
+
+
+## v15 update
+`AbsoluteFinalInputContinuityAuthorityV1` remains a **SUBORDINATE_CONTINUITY_CONTRIBUTOR** in v15.
+Top-level continuity is only `ultimate-terminal-absolute-final-input-continuity-sweep` (`UltimateTerminalAbsoluteFinalInputContinuityAuthorityV1`).

@@ -8,16 +8,16 @@ use crate::{
     artifact_schema, bundle_terminal_sweep, check_artifact_schema_snapshots, docs_lint,
     governance_terminal_sweep, load_applied_supported_set_context_v1, models_consistency_check,
     portability_check, primary_semantics_terminal_sweep, readiness_terminal_sweep,
-    terminal_absolute_final_input_continuity_sweep, v0_gate, v10_gate, v11_gate, v12_gate,
+    ultimate_terminal_absolute_final_input_continuity_sweep, v0_gate, v10_gate, v11_gate, v12_gate,
     v13_gate, v1_gate, v2_gate, v3_gate, v4_gate, v5_gate, v6_gate, v7_gate, v8_gate, v9_gate,
     AbsoluteFinalBundleTerminalSweepStatusV1, AbsoluteFinalGovernanceTerminalSweepStatusV1,
     AbsoluteFinalPrimarySemanticsTerminalSweepStatusV1,
     AbsoluteFinalReadinessTerminalSweepStatusV1, DocsLintArgs, DocsLintMode, GateStatus, OpsError,
-    SupportedScopeExecutionV9, TerminalAbsoluteFinalInputContinuityStatusV1, V0GateOverallStatus,
-    V10GateOverallStatus, V11GateOverallStatus, V12GateOverallStatus, V13GateOverallStatus,
-    V1GateOverallStatus, V2GateOverallStatus, V3GateOverallStatus, V4GateOverallStatus,
-    V5GateOverallStatus, V6GateOverallStatus, V7GateOverallStatus, V8GateOverallStatus,
-    V9GateOverallStatus,
+    SupportedScopeExecutionV9, UltimateTerminalAbsoluteFinalInputContinuityStatusV1,
+    V0GateOverallStatus, V10GateOverallStatus, V11GateOverallStatus, V12GateOverallStatus,
+    V13GateOverallStatus, V1GateOverallStatus, V2GateOverallStatus, V3GateOverallStatus,
+    V4GateOverallStatus, V5GateOverallStatus, V6GateOverallStatus, V7GateOverallStatus,
+    V8GateOverallStatus, V9GateOverallStatus,
 };
 
 const DIGEST_PREFIX_LEN: usize = 16;
@@ -323,10 +323,12 @@ pub fn v14_gate(workdir: &Path, out: &Path) -> Result<V14GateReportV1, OpsError>
     let continuity = continuity_bundle
         .as_ref()
         .map(|bundle_path| {
-            terminal_absolute_final_input_continuity_sweep(
+            ultimate_terminal_absolute_final_input_continuity_sweep(
                 workdir,
                 bundle_path,
-                &workdir.join("out/terminal_absolute_final_input_continuity_sweep_v14_gate.json"),
+                &workdir.join(
+                    "out/ultimate_terminal_absolute_final_input_continuity_sweep_v14_gate.json",
+                ),
             )
         })
         .transpose()?;
@@ -336,7 +338,7 @@ pub fn v14_gate(workdir: &Path, out: &Path) -> Result<V14GateReportV1, OpsError>
         gate_from_bool(continuity.as_ref().is_some_and(|report| {
             matches!(
                 report.continuity_status,
-                TerminalAbsoluteFinalInputContinuityStatusV1::Pass
+                UltimateTerminalAbsoluteFinalInputContinuityStatusV1::Pass
             )
         }))
     };
@@ -350,8 +352,8 @@ pub fn v14_gate(workdir: &Path, out: &Path) -> Result<V14GateReportV1, OpsError>
                 .map(|p| p.display().to_string())
                 .unwrap_or_else(|| "missing".to_string()),
         )],
-        "REMEDIATE_TERMINAL_ABSOLUTE_FINAL_INPUT_CONTINUITY",
-        "NOTE_REQUIRED_TERMINAL_ABSOLUTE_FINAL_INPUT_CONTINUITY",
+        "REMEDIATE_ULTIMATE_TERMINAL_ABSOLUTE_FINAL_INPUT_CONTINUITY",
+        "NOTE_REQUIRED_ULTIMATE_TERMINAL_ABSOLUTE_FINAL_INPUT_CONTINUITY",
     ));
 
     let artifact_schema = check_artifact_schema_snapshots(&artifact_schema::ArtifactSchemaArgs {
@@ -475,7 +477,7 @@ pub fn v14_gate(workdir: &Path, out: &Path) -> Result<V14GateReportV1, OpsError>
         continuity.as_ref().map_or(GateStatus::Skip, |report| {
             if matches!(
                 report.continuity_status,
-                TerminalAbsoluteFinalInputContinuityStatusV1::LegacyPresent
+                UltimateTerminalAbsoluteFinalInputContinuityStatusV1::LegacyPresent
             ) {
                 GateStatus::Fail
             } else {
@@ -489,7 +491,7 @@ pub fn v14_gate(workdir: &Path, out: &Path) -> Result<V14GateReportV1, OpsError>
                 .is_some_and(|report| {
                     matches!(
                         report.continuity_status,
-                        TerminalAbsoluteFinalInputContinuityStatusV1::LegacyPresent
+                        UltimateTerminalAbsoluteFinalInputContinuityStatusV1::LegacyPresent
                     )
                 })
                 .to_string(),
