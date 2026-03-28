@@ -1,8 +1,8 @@
 # Prompt Series State Snapshot
 
 ## Current anchor
-- **Current anchor milestone:** `Real Compute Onboarding v15`.
-- **Anchor definition:** v15 planning queue in `docs/next_10_prompts.md` (entry set `320-329`).
+- **Current anchor milestone:** `Real Compute Onboarding v16`.
+- **Anchor definition:** v16 planning queue in `docs/next_10_prompts.md` (entry set `330-339`).
 - **Prompt index source:** `docs/prompt_series_index.md`.
 
 ## Status against anchor milestones
@@ -19,32 +19,33 @@
 - **v10:** complete.
 - **v11:** complete.
 - **v12:** complete.
-- **v13:** complete (`ucf-ops v13 gate` overall PASS recorded at Prompt 308).
-- **v14:** complete (`ucf-ops v14 gate` overall PASS recorded at Prompt 318).
-- **v15:** complete when `ucf-ops v15 gate` overall PASS is recorded.
+- **v13:** complete.
+- **v14:** complete.
+- **v15:** complete (`ucf-ops v15 gate` overall PASS recorded at Prompt 328).
+- **v16:** not started yet.
 - **Queue policy:** immediate queue remains capped to 10 prompts.
 
 ## Last executed prompt / resume point
-- Last executed prompt ID: **319**.
-- Next prompt ID: **320**.
-- Resume from: **`PROMPT 320`**.
+- Last executed prompt ID: **329**.
+- Next prompt ID: **330**.
+- Resume from: **`PROMPT 330`**.
 - Numbering remains monotonic and append-only.
 
 ## Immediate next prompts (capped to 10)
 Reference: `docs/next_10_prompts.md`
 
-| Prompt ID | Title (short) | v15 class | Status |
+| Prompt ID | Title (short) | v16 class | Status |
 |---:|---|---|---|
-| 320 | Residual-free governance truth unification completion for all canonical consumers | MUST | queued |
-| 321 | Supported-scope expansion re-execution or freeze reaffirmation | MUST | queued |
-| 322 | Residual-free readiness-input consumption deepening | MUST | queued |
-| 323 | Residual-free bundle input and continuity-proof normalization | MUST | queued |
-| 324 | Residual-free primary blocking/remediation hardening | MUST | queued |
-| 325 | v15 schema snapshot refresh | MUST | queued |
-| 326 | v15 portability and docs refresh | NICE | queued |
-| 327 | Operator workflow/export continuity authority hardening | MUST | queued |
-| 328 | v15 gate schema and orchestration | MUST | queued |
-| 329 | v15 wrap and next-anchor governance | MUST | queued |
+| 330 | Residual-free governance truth unification completion for all canonical consumers | MUST | queued |
+| 331 | Supported-scope expansion re-execution or freeze reaffirmation | MUST | queued |
+| 332 | Residual-free readiness-input consumption deepening | MUST | queued |
+| 333 | Residual-free bundle input and continuity-proof normalization | MUST | queued |
+| 334 | Residual-free primary blocking/remediation hardening | MUST | queued |
+| 335 | v16 schema snapshot refresh | MUST | queued |
+| 336 | v16 portability and docs refresh | NICE | queued |
+| 337 | Operator workflow/export continuity authority hardening | MUST | queued |
+| 338 | v16 gate schema and orchestration | MUST | queued |
+| 339 | v16 wrap and next-anchor governance | MUST | queued |
 
 ## Historical anchor checkpoints
 
@@ -62,6 +63,7 @@ Reference: `docs/next_10_prompts.md`
 | 298 | v12 gate closure | complete |
 | 308 | v13 gate closure | complete |
 | 318 | v14 gate closure | complete |
+| 328 | v15 gate closure | complete |
 
 ## Series control notes
 - v0 completion requirement: historical signoff recorded.
@@ -78,10 +80,10 @@ Reference: `docs/next_10_prompts.md`
 - v11 completion requirement: **`ucf-ops v11 gate` overall PASS at Prompt 288**.
 - v12 completion requirement: **`ucf-ops v12 gate` overall PASS at Prompt 298**.
 - v13 completion requirement: **`ucf-ops v13 gate` overall PASS at Prompt 308**.
-- v14 completion criterion: **`ucf-ops v14 gate` overall PASS at Prompt 318**.
-- v15 completion criterion: **`ucf-ops v15 gate` overall PASS**.
-- Next anchor advancement is blocked until v15 gate PASS is recorded.
-- v15 advancement remains hardware-neutral, offline-first, probe-first, shadow-first, and fail-closed.
+- v14 completion requirement: **`ucf-ops v14 gate` overall PASS at Prompt 318**.
+- v15 completion criterion: **`ucf-ops v15 gate` overall PASS at Prompt 328**.
+- Next anchor advancement is blocked until v16 gate PASS is recorded.
+- v16 advancement remains hardware-neutral, offline-first, probe-first, shadow-first, and fail-closed.
 - Prompts are classified as MUST/NICE/DEFERRED at authoring time.
 
 ## Supported real-slot baseline for current stage
