@@ -39,3 +39,7 @@ cargo run -p ucf-ops -- governance-terminal-sweep --out ./out/governance_termina
 
 v15 (`governance-ultimate-sweep`) removes remaining canonical governance cache/mirror/snapshot traces by requiring `governance_ultimate_sweep_digest_prefix` and absolute terminal digest continuity on covered consumers.
 
+
+## v16 convergence note
+
+v16 convergence formally demotes or blocks governance memoization/copy/mirror paths for canonical consumers and requires terminal+ultimate chain alignment via `governance-convergence-sweep`.
