@@ -106,6 +106,10 @@ pub struct OperatorReviewPacketV1 {
     pub primary_semantics_absolute_sweep_digest_prefix: String,
     #[serde(default)]
     pub primary_semantics_terminal_sweep_digest_prefix: String,
+    #[serde(default)]
+    pub primary_semantics_ultimate_sweep_digest_prefix: String,
+    #[serde(default)]
+    pub primary_semantics_convergence_sweep_digest_prefix: String,
     pub artifacts: OperatorReviewPacketArtifactsV1,
     pub supported_slots: Vec<OperatorReviewPacketSlotV1>,
     pub blocking_codes: Vec<String>,
@@ -508,6 +512,16 @@ fn reduce_review_packet(
         "out/primary_semantics_terminal_sweep.json",
         "sweep.sweep_digest",
     );
+    packet.primary_semantics_ultimate_sweep_digest_prefix = read_sweep_digest_prefix(
+        Path::new("."),
+        "out/primary_semantics_ultimate_sweep.json",
+        "sweep.sweep_digest",
+    );
+    packet.primary_semantics_convergence_sweep_digest_prefix = read_sweep_digest_prefix(
+        Path::new("."),
+        "out/primary_semantics_convergence_sweep.json",
+        "sweep.convergence_digest",
+    );
     packet.packet_digest = packet_digest(&packet)?;
     Ok(packet)
 }
@@ -611,6 +625,8 @@ fn build_from_snapshot(
         residual_free_primary_semantics_authority_digest_prefix: "MISSING".to_string(),
         primary_semantics_absolute_sweep_digest_prefix: "MISSING".to_string(),
         primary_semantics_terminal_sweep_digest_prefix: "MISSING".to_string(),
+        primary_semantics_ultimate_sweep_digest_prefix: "MISSING".to_string(),
+        primary_semantics_convergence_sweep_digest_prefix: "MISSING".to_string(),
         gate_report_digests: crate::operator_signoff::GateReportDigestsV1 {
             v0: "MISSING".to_string(),
             v1: "MISSING".to_string(),
@@ -810,6 +826,8 @@ fn build_blocked_minimal(
         residual_free_primary_semantics_authority_digest_prefix: "MISSING".to_string(),
         primary_semantics_absolute_sweep_digest_prefix: "MISSING".to_string(),
         primary_semantics_terminal_sweep_digest_prefix: "MISSING".to_string(),
+        primary_semantics_ultimate_sweep_digest_prefix: "MISSING".to_string(),
+        primary_semantics_convergence_sweep_digest_prefix: "MISSING".to_string(),
         artifacts: OperatorReviewPacketArtifactsV1 {
             backend_evidence_snapshot_digest_prefix: "MISSING".to_string(),
             active_review_snapshot_digest_prefix: "MISSING".to_string(),
@@ -943,6 +961,12 @@ fn build_packet(
             .clone(),
         primary_semantics_terminal_sweep_digest_prefix: signoff
             .primary_semantics_terminal_sweep_digest_prefix
+            .clone(),
+        primary_semantics_ultimate_sweep_digest_prefix: signoff
+            .primary_semantics_ultimate_sweep_digest_prefix
+            .clone(),
+        primary_semantics_convergence_sweep_digest_prefix: signoff
+            .primary_semantics_convergence_sweep_digest_prefix
             .clone(),
         artifacts: OperatorReviewPacketArtifactsV1 {
             backend_evidence_snapshot_digest_prefix: prefix16(&snapshot.snapshot_digest),
@@ -1291,6 +1315,8 @@ mod tests {
             residual_free_primary_semantics_authority_digest_prefix: "MISSING".to_string(),
             primary_semantics_absolute_sweep_digest_prefix: "MISSING".to_string(),
             primary_semantics_terminal_sweep_digest_prefix: "MISSING".to_string(),
+            primary_semantics_ultimate_sweep_digest_prefix: "MISSING".to_string(),
+            primary_semantics_convergence_sweep_digest_prefix: "MISSING".to_string(),
             gate_report_digests: crate::operator_signoff::GateReportDigestsV1 {
                 v0: "g0".to_string(),
                 v1: "g1".to_string(),

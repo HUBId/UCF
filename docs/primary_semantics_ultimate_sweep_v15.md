@@ -44,3 +44,7 @@ Mismatch categories include:
 - `PRIMARY_SEMANTICS_CACHE_PATH_PRESENT`
 
 Any missing/stale/contradictory terminal inputs fail closed.
+
+## v16 convergence note
+
+v16 (`primary-semantics-convergence-sweep`) removes remaining canonical memo/copy/mirror residues and requires terminal+ultimate primary-semantics convergence for covered canonical surfaces.

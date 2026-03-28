@@ -38,11 +38,6 @@
     "terminal_bundle_ultimate_sweep_digest_prefix": "String"
   },
   "enum_variants": {
-    "BundleConvergenceStatusV1": [
-      "Fail",
-      "LegacyPresent",
-      "Pass"
-    ],
     "BundleConvergenceMismatchCategoryV1": [
       "BundleInputExportContextMismatch",
       "BundleInputScopeMismatch",
@@ -50,6 +45,11 @@
       "BundleMemoPathPresent",
       "ConsumerSkippedBundleConvergence",
       "ConsumerUsedBundleMemoPath"
+    ],
+    "BundleConvergenceStatusV1": [
+      "Fail",
+      "LegacyPresent",
+      "Pass"
     ]
   }
 }

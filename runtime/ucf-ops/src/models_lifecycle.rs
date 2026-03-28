@@ -13589,6 +13589,8 @@ mod probe_tests {
                 residual_free_primary_semantics_authority_digest_prefix: "MISSING".to_string(),
                 primary_semantics_absolute_sweep_digest_prefix: "MISSING".to_string(),
                 primary_semantics_terminal_sweep_digest_prefix: "MISSING".to_string(),
+                primary_semantics_ultimate_sweep_digest_prefix: "MISSING".to_string(),
+                primary_semantics_convergence_sweep_digest_prefix: "MISSING".to_string(),
                 gate_report_digests: crate::operator_signoff::GateReportDigestsV1 {
                     v0: "x".to_string(),
                     v1: "x".to_string(),

@@ -45,3 +45,7 @@ v14 adds `primary-semantics-terminal-sweep` and removes remaining canonical prim
 ## v15 follow-up
 
 v15 ultimate sweep finalizes canonical consumer cleanup and blocks/demotes remaining cache/mirror/snapshot-based primary-semantics reconstruction paths.
+
+## v16 convergence note
+
+v16 finalizes convergence across canonical surfaces and disallows residual primary-semantics memoization, precedence copies, and derived remediation mirrors as canonical truth.

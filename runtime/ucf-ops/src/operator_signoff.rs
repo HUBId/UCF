@@ -108,6 +108,10 @@ pub struct OperatorSignoffDecisionV1 {
     pub primary_semantics_absolute_sweep_digest_prefix: String,
     #[serde(default)]
     pub primary_semantics_terminal_sweep_digest_prefix: String,
+    #[serde(default)]
+    pub primary_semantics_ultimate_sweep_digest_prefix: String,
+    #[serde(default)]
+    pub primary_semantics_convergence_sweep_digest_prefix: String,
     pub gate_report_digests: GateReportDigestsV1,
     pub reasons: Vec<String>,
     pub remediation_codes: Vec<String>,
@@ -335,6 +339,16 @@ pub fn operator_signoff(
         workdir,
         "out/primary_semantics_terminal_sweep.json",
         "sweep.sweep_digest",
+    );
+    decision.primary_semantics_ultimate_sweep_digest_prefix = read_sweep_digest_prefix(
+        workdir,
+        "out/primary_semantics_ultimate_sweep.json",
+        "sweep.sweep_digest",
+    );
+    decision.primary_semantics_convergence_sweep_digest_prefix = read_sweep_digest_prefix(
+        workdir,
+        "out/primary_semantics_convergence_sweep.json",
+        "sweep.convergence_digest",
     );
     decision.decision_digest = decision_digest(&decision)?;
 
@@ -665,6 +679,8 @@ fn build_not_ready_minimal(
         residual_free_primary_semantics_authority_digest_prefix: "MISSING".to_string(),
         primary_semantics_absolute_sweep_digest_prefix: "MISSING".to_string(),
         primary_semantics_terminal_sweep_digest_prefix: "MISSING".to_string(),
+        primary_semantics_ultimate_sweep_digest_prefix: "MISSING".to_string(),
+        primary_semantics_convergence_sweep_digest_prefix: "MISSING".to_string(),
         gate_report_digests: GateReportDigestsV1 {
             v0: digest_opt(v0.as_ref())?,
             v1: digest_opt(v1.as_ref())?,
@@ -724,6 +740,8 @@ fn build_not_ready_from_snapshot(
         residual_free_primary_semantics_authority_digest_prefix: "MISSING".to_string(),
         primary_semantics_absolute_sweep_digest_prefix: "MISSING".to_string(),
         primary_semantics_terminal_sweep_digest_prefix: "MISSING".to_string(),
+        primary_semantics_ultimate_sweep_digest_prefix: "MISSING".to_string(),
+        primary_semantics_convergence_sweep_digest_prefix: "MISSING".to_string(),
         gate_report_digests: GateReportDigestsV1 {
             v0: digest_opt(v0.as_ref())?,
             v1: digest_opt(v1.as_ref())?,
@@ -792,6 +810,8 @@ fn build_decision(
         residual_free_primary_semantics_authority_digest_prefix: "MISSING".to_string(),
         primary_semantics_absolute_sweep_digest_prefix: "MISSING".to_string(),
         primary_semantics_terminal_sweep_digest_prefix: "MISSING".to_string(),
+        primary_semantics_ultimate_sweep_digest_prefix: "MISSING".to_string(),
+        primary_semantics_convergence_sweep_digest_prefix: "MISSING".to_string(),
         gate_report_digests: GateReportDigestsV1 {
             v0: digest_opt(v0.as_ref())?,
             v1: digest_opt(v1.as_ref())?,
