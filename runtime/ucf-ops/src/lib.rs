@@ -44,6 +44,7 @@ mod operator_review_packet;
 mod operator_signoff;
 mod operator_workflow;
 mod primary_semantics_absolute_sweep;
+mod primary_semantics_convergence_sweep;
 mod primary_semantics_residual_sweep;
 mod primary_semantics_terminal_sweep;
 mod primary_semantics_ultimate_sweep;
@@ -302,6 +303,11 @@ pub use primary_semantics_absolute_sweep::{
     PrimarySemanticsAbsoluteSurfaceStatusV1, PrimarySemanticsAbsoluteSweepReportV1,
     ResidualFreePrimarySemanticsAbsoluteSweepStatusV1, ResidualFreePrimarySemanticsAbsoluteSweepV1,
 };
+pub use primary_semantics_convergence_sweep::{
+    primary_semantics_convergence_sweep, PrimarySemanticsConvergenceMismatchCategoryV1,
+    PrimarySemanticsConvergenceStatusV1, PrimarySemanticsConvergenceSurfaceStatusV1,
+    PrimarySemanticsConvergenceSweepReportV1, PrimarySemanticsConvergenceSweepV1,
+};
 pub use primary_semantics_residual_sweep::{
     primary_semantics_residual_sweep, FinalPrimarySemanticsResidualMismatchCategoryV1,
     FinalPrimarySemanticsResidualSurfaceStatusV1, FinalPrimarySemanticsResidualSweepReportV1,
@@ -375,7 +381,8 @@ pub use remediation_consistency::{
     final_primary_semantics_sweep, primary_semantics_sweep, remediation_consistency_check,
     remediation_interop_check, remediation_spine_check,
     require_absolute_final_primary_semantics_terminal_inputs,
-    require_final_primary_semantics_inputs, require_residual_free_final_primary_semantics_inputs,
+    require_final_primary_semantics_inputs, require_primary_semantics_convergence_inputs,
+    require_residual_free_final_primary_semantics_inputs,
     require_residual_free_primary_semantics_absolute_inputs,
     require_terminal_primary_semantics_ultimate_inputs,
     AbsoluteFinalPrimarySemanticsTerminalInputsV1, CanonicalPrimarySemanticsAuthorityStatusV1,
@@ -383,8 +390,9 @@ pub use remediation_consistency::{
     CrossSurfaceConditionObservationV1, CrossSurfaceObservationStatusV1,
     FinalPrimarySemanticsConsumerAuthorityStatusV1, FinalPrimarySemanticsConsumerAuthorityV1,
     FinalPrimarySemanticsInputsContextV1, FinalPrimarySemanticsSweepReportV1,
-    PrimarySemanticsObservationV1, PrimarySemanticsObservedSurfaceV1,
-    PrimarySemanticsSweepReportV1, RemediationConsistencyCheckV1, RemediationConsistencyObservedV1,
+    PrimarySemanticsConvergenceInputsV1, PrimarySemanticsObservationV1,
+    PrimarySemanticsObservedSurfaceV1, PrimarySemanticsSweepReportV1,
+    RemediationConsistencyCheckV1, RemediationConsistencyObservedV1,
     RemediationConsistencyReportV1, RemediationConsistencyStatusV1,
     RemediationInteropCheckReportV1, RemediationMismatchKindV1, RemediationSpineCheckReportV1,
     ResidualFreeFinalPrimarySemanticsInputsV1, ResidualFreePrimarySemanticsAbsoluteInputsV1,
@@ -398,9 +406,12 @@ pub use remediation_consistency::{
     PRIMARY_SEMANTICS_CACHE_PATH_BLOCKED, PRIMARY_SEMANTICS_CACHE_PATH_REJECTED,
     PRIMARY_SEMANTICS_CACHE_PATH_TRANSLATED, PRIMARY_SEMANTICS_ECHO_PATH_BLOCKED,
     PRIMARY_SEMANTICS_ECHO_PATH_REJECTED, PRIMARY_SEMANTICS_ECHO_PATH_TRANSLATED,
-    RESIDUAL_FREE_FINAL_PRIMARY_SEMANTICS_INPUTS_REQUIRED, RESIDUAL_PRIMARY_SEMANTICS_PATH_BLOCKED,
-    RESIDUAL_PRIMARY_SEMANTICS_PATH_REJECTED, RESIDUAL_PRIMARY_SEMANTICS_PATH_TRANSLATED,
+    PRIMARY_SEMANTICS_MEMO_PATH_BLOCKED, PRIMARY_SEMANTICS_MEMO_PATH_REJECTED,
+    PRIMARY_SEMANTICS_MEMO_PATH_TRANSLATED, RESIDUAL_FREE_FINAL_PRIMARY_SEMANTICS_INPUTS_REQUIRED,
+    RESIDUAL_PRIMARY_SEMANTICS_PATH_BLOCKED, RESIDUAL_PRIMARY_SEMANTICS_PATH_REJECTED,
+    RESIDUAL_PRIMARY_SEMANTICS_PATH_TRANSLATED,
     TERMINAL_ABSOLUTE_RESIDUAL_FREE_FINAL_PRIMARY_SEMANTICS_INPUTS_REQUIRED,
+    ULTIMATE_TERMINAL_ABSOLUTE_PRIMARY_SEMANTICS_INPUTS_REQUIRED,
 };
 pub use residual_free_bundle_sweep::{
     residual_free_bundle_sweep, ResidualFreeBundleConsumerAuthorityStatusV1,
@@ -18923,6 +18934,7 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         matrix_cmd("linux", "cargo run -p ucf-ops -- primary-semantics-absolute-sweep --out ./out/primary_semantics_absolute_sweep.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- primary-semantics-terminal-sweep --out ./out/primary_semantics_terminal_sweep.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- primary-semantics-ultimate-sweep --out ./out/primary_semantics_ultimate_sweep.json"),
+        matrix_cmd("linux", "cargo run -p ucf-ops -- primary-semantics-convergence-sweep --out ./out/primary_semantics_convergence_sweep.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- remediation-interop-check --out ./out/remediation_interop_check.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- remediation-spine-check --out ./out/remediation_spine_check.json"),
         matrix_cmd("linux", "cargo run -p ucf-ops -- models active-review-snapshot --out ./out/active_review_snapshot.json"),
@@ -18990,6 +19002,7 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         matrix_cmd("windows", "cargo run -p ucf-ops -- primary-semantics-absolute-sweep --out ./out/primary_semantics_absolute_sweep.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- primary-semantics-terminal-sweep --out ./out/primary_semantics_terminal_sweep.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- primary-semantics-ultimate-sweep --out ./out/primary_semantics_ultimate_sweep.json"),
+        matrix_cmd("windows", "cargo run -p ucf-ops -- primary-semantics-convergence-sweep --out ./out/primary_semantics_convergence_sweep.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- remediation-interop-check --out ./out/remediation_interop_check.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- remediation-spine-check --out ./out/remediation_spine_check.json"),
         matrix_cmd("windows", "cargo run -p ucf-ops -- models active-review-snapshot --out ./out/active_review_snapshot.json"),

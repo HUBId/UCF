@@ -197,6 +197,10 @@ fn portability_report_v11_contains_final_sweep_sections_in_stable_order() {
         .iter()
         .position(|c| c.contains("primary-semantics-ultimate-sweep"))
         .expect("primary-semantics-ultimate-sweep command present");
+    let primary_convergence_idx = names
+        .iter()
+        .position(|c| c.contains("primary-semantics-convergence-sweep"))
+        .expect("primary-semantics-convergence-sweep command present");
 
     assert!(governance_idx < governance_entry_idx);
     assert!(governance_entry_idx < governance_entry_sweep_idx);
@@ -233,6 +237,7 @@ fn portability_report_v11_contains_final_sweep_sections_in_stable_order() {
     assert!(primary_residual_idx < residual_free_primary_idx);
     assert!(residual_free_primary_idx < primary_terminal_idx);
     assert!(primary_terminal_idx < primary_ultimate_idx);
+    assert!(primary_ultimate_idx < primary_convergence_idx);
     assert!(interop_idx < active_idx);
     assert!(active_idx < backend_idx);
     assert!(backend_idx < repro_idx);

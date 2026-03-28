@@ -1,0 +1,53 @@
+{
+  "artifact_id": "primary_semantics_convergence_sweep_v1",
+  "type_name": "PrimarySemanticsConvergenceSweepV1",
+  "source_file": "runtime/ucf-ops/src/primary_semantics_convergence_sweep.rs",
+  "required_fields": [
+    "absolute_final_primary_semantics_terminal_sweep_digest_prefix",
+    "canonical_bundle_spine_digest_prefix",
+    "canonical_governance_entry_digest_prefix",
+    "canonical_primary_semantics_authority_digest_prefix",
+    "canonical_readiness_spine_digest_prefix",
+    "convergence_digest",
+    "convergence_status",
+    "covered_surface_count",
+    "final_primary_semantics_consumer_authority_digest_prefix",
+    "final_primary_semantics_residual_sweep_digest_prefix",
+    "residual_free_primary_semantics_absolute_sweep_digest_prefix",
+    "residual_free_primary_semantics_consumer_authority_digest_prefix",
+    "residual_path_count",
+    "terminal_primary_semantics_ultimate_sweep_digest_prefix"
+  ],
+  "optional_fields": [],
+  "field_types": {
+    "absolute_final_primary_semantics_terminal_sweep_digest_prefix": "String",
+    "canonical_bundle_spine_digest_prefix": "String",
+    "canonical_governance_entry_digest_prefix": "String",
+    "canonical_primary_semantics_authority_digest_prefix": "String",
+    "canonical_readiness_spine_digest_prefix": "String",
+    "convergence_digest": "String",
+    "convergence_status": "PrimarySemanticsConvergenceStatusV1",
+    "covered_surface_count": "u16",
+    "final_primary_semantics_consumer_authority_digest_prefix": "String",
+    "final_primary_semantics_residual_sweep_digest_prefix": "String",
+    "residual_free_primary_semantics_absolute_sweep_digest_prefix": "String",
+    "residual_free_primary_semantics_consumer_authority_digest_prefix": "String",
+    "residual_path_count": "u16",
+    "terminal_primary_semantics_ultimate_sweep_digest_prefix": "String"
+  },
+  "enum_variants": {
+    "PrimarySemanticsConvergenceMismatchCategoryV1": [
+      "CanonicalConditionMappingMismatch",
+      "PrimaryBlockingOrderMismatch",
+      "PrimaryRemediationOrderMismatch",
+      "PrimarySemanticsMemoPathPresent",
+      "SurfaceSkippedPrimarySemanticsConvergence",
+      "SurfaceUsedPrimarySemanticsMemoPath"
+    ],
+    "PrimarySemanticsConvergenceStatusV1": [
+      "Fail",
+      "LegacyPresent",
+      "Pass"
+    ]
+  }
+}

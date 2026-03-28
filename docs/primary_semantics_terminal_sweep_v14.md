@@ -48,3 +48,7 @@ cargo run -p ucf-ops -- primary-semantics-terminal-sweep --out ./out/primary_sem
 ## v15 follow-up
 
 v15 (`primary-semantics-ultimate-sweep`) removes remaining canonical consumer dependence on primary-semantics echo caches, precedence mirrors, and embedded remediation snapshots in canonical flows.
+
+## v16 convergence note
+
+v16 (`primary-semantics-convergence-sweep`) extends terminal cleanup by blocking/demoting any remaining memoized/copied/derived primary-semantics paths in canonical flows.
