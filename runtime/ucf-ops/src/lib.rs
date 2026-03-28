@@ -7,6 +7,7 @@ mod alerts;
 mod artifact_schema;
 mod bench;
 mod bundle_absolute_sweep;
+mod bundle_convergence_sweep;
 mod bundle_residual_sweep;
 mod bundle_terminal_sweep;
 mod bundle_ultimate_sweep;
@@ -99,6 +100,11 @@ pub use bundle_absolute_sweep::{
     bundle_absolute_sweep, BundleAbsoluteConsumerStatusV1, BundleAbsoluteMismatchCategoryV1,
     BundleAbsoluteSweepReportV1, ResidualFreeBundleAbsoluteSweepStatusV1,
     ResidualFreeBundleAbsoluteSweepV1,
+};
+pub use bundle_convergence_sweep::{
+    bundle_convergence_sweep, BundleConvergenceConsumerStatusV1,
+    BundleConvergenceMismatchCategoryV1, BundleConvergenceStatusV1, BundleConvergenceSweepReportV1,
+    BundleConvergenceSweepV1,
 };
 pub use bundle_residual_sweep::{
     bundle_residual_sweep, BundleResidualConsumerStatusV1, BundleResidualMismatchCategoryV1,
@@ -11325,6 +11331,11 @@ pub const TERMINAL_ABSOLUTE_RESIDUAL_FREE_FINAL_BUNDLE_INPUTS_REQUIRED: &str =
 pub const BUNDLE_CACHE_PATH_BLOCKED: &str = "BUNDLE_CACHE_PATH_BLOCKED";
 pub const BUNDLE_CACHE_PATH_TRANSLATED: &str = "BUNDLE_CACHE_PATH_TRANSLATED";
 pub const BUNDLE_CACHE_PATH_REJECTED: &str = "BUNDLE_CACHE_PATH_REJECTED";
+pub const ULTIMATE_TERMINAL_ABSOLUTE_BUNDLE_INPUTS_REQUIRED: &str =
+    "ULTIMATE_TERMINAL_ABSOLUTE_BUNDLE_INPUTS_REQUIRED";
+pub const BUNDLE_MEMO_PATH_BLOCKED: &str = "BUNDLE_MEMO_PATH_BLOCKED";
+pub const BUNDLE_MEMO_PATH_TRANSLATED: &str = "BUNDLE_MEMO_PATH_TRANSLATED";
+pub const BUNDLE_MEMO_PATH_REJECTED: &str = "BUNDLE_MEMO_PATH_REJECTED";
 
 fn canonical_artifact_refs_digest_prefix(
     refs: &[CanonicalExportArtifactRefV1],
@@ -11768,6 +11779,22 @@ pub struct TerminalBundleUltimateInputsV1 {
     pub residual_free_bundle_consumer_authority_digest_prefix: String,
     pub residual_free_bundle_absolute_sweep_digest_prefix: String,
     pub absolute_final_bundle_terminal_sweep_digest_prefix: String,
+    pub authority_digest: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BundleConvergenceInputsV1 {
+    pub applied_supported_set_digest_prefix: String,
+    pub canonical_governance_entry_digest_prefix: String,
+    pub canonical_readiness_spine_digest_prefix: String,
+    pub canonical_bundle_spine_digest_prefix: String,
+    pub canonical_bundle_authority_digest_prefix: String,
+    pub final_bundle_consumer_authority_digest_prefix: String,
+    pub final_bundle_residual_sweep_digest_prefix: String,
+    pub residual_free_bundle_consumer_authority_digest_prefix: String,
+    pub residual_free_bundle_absolute_sweep_digest_prefix: String,
+    pub absolute_final_bundle_terminal_sweep_digest_prefix: String,
+    pub terminal_bundle_ultimate_sweep_digest_prefix: String,
     pub authority_digest: String,
 }
 
@@ -12361,6 +12388,123 @@ pub fn require_terminal_bundle_ultimate_inputs(
         residual_free_bundle_absolute_sweep_digest_prefix: base
             .residual_free_bundle_absolute_sweep_digest_prefix,
         absolute_final_bundle_terminal_sweep_digest_prefix: expected_terminal_prefix,
+        authority_digest: sha256_hex(&digest_source),
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn require_bundle_convergence_inputs(
+    bundle_kind: CanonicalBundleKindV1,
+    export_context: Option<&CanonicalExportContextV1>,
+    related_artifacts: Option<&[CanonicalExportArtifactRefV1]>,
+    bundle_consumption_context: Option<&CanonicalBundleConsumptionContextV1>,
+    bundle_spine: Option<&CanonicalBundleSpineV1>,
+    bundle_authority: Option<&CanonicalBundleAuthorityV2>,
+    final_bundle_consumer_authority: Option<&crate::FinalBundleConsumerAuthorityV1>,
+    final_bundle_residual_sweep: Option<&crate::FinalBundleResidualSweepV1>,
+    residual_free_bundle_consumer_authority: Option<&crate::ResidualFreeBundleConsumerAuthorityV1>,
+    residual_free_bundle_absolute_sweep: Option<&crate::ResidualFreeBundleAbsoluteSweepV1>,
+    absolute_final_bundle_terminal_sweep: Option<&crate::AbsoluteFinalBundleTerminalSweepV1>,
+    terminal_bundle_ultimate_sweep: Option<&crate::TerminalBundleUltimateSweepV1>,
+    applied: Option<&AppliedSupportedSetContextV1>,
+    governance: Option<&CanonicalGovernanceEntryV1>,
+    readiness: Option<&CanonicalReadinessSpineV1>,
+) -> Result<BundleConvergenceInputsV1, OpsError> {
+    let base = require_terminal_bundle_ultimate_inputs(
+        bundle_kind,
+        export_context,
+        related_artifacts,
+        bundle_consumption_context,
+        bundle_spine,
+        bundle_authority,
+        final_bundle_consumer_authority,
+        final_bundle_residual_sweep,
+        residual_free_bundle_consumer_authority,
+        residual_free_bundle_absolute_sweep,
+        absolute_final_bundle_terminal_sweep,
+        applied,
+        governance,
+        readiness,
+    )
+    .map_err(|_| {
+        OpsError::Invalid(ULTIMATE_TERMINAL_ABSOLUTE_BUNDLE_INPUTS_REQUIRED.to_string())
+    })?;
+
+    let Some(terminal_bundle_ultimate_sweep) = terminal_bundle_ultimate_sweep else {
+        return Err(OpsError::Invalid(
+            ULTIMATE_TERMINAL_ABSOLUTE_BUNDLE_INPUTS_REQUIRED.to_string(),
+        ));
+    };
+    let expected_ultimate_prefix = prefix_hex(&terminal_bundle_ultimate_sweep.sweep_digest, 16);
+    if !matches!(
+        terminal_bundle_ultimate_sweep.sweep_status,
+        crate::TerminalBundleUltimateSweepStatusV1::Pass
+    ) || terminal_bundle_ultimate_sweep.applied_supported_set_digest_prefix
+        != base.applied_supported_set_digest_prefix
+        || terminal_bundle_ultimate_sweep.canonical_governance_entry_digest_prefix
+            != base.canonical_governance_entry_digest_prefix
+        || terminal_bundle_ultimate_sweep.canonical_readiness_spine_digest_prefix
+            != base.canonical_readiness_spine_digest_prefix
+        || terminal_bundle_ultimate_sweep.canonical_bundle_spine_digest_prefix
+            != base.canonical_bundle_spine_digest_prefix
+        || terminal_bundle_ultimate_sweep.canonical_bundle_authority_digest_prefix
+            != base.canonical_bundle_authority_digest_prefix
+        || terminal_bundle_ultimate_sweep.final_bundle_consumer_authority_digest_prefix
+            != base.final_bundle_consumer_authority_digest_prefix
+        || terminal_bundle_ultimate_sweep.final_bundle_residual_sweep_digest_prefix
+            != base.final_bundle_residual_sweep_digest_prefix
+        || terminal_bundle_ultimate_sweep.residual_free_bundle_consumer_authority_digest_prefix
+            != base.residual_free_bundle_consumer_authority_digest_prefix
+        || terminal_bundle_ultimate_sweep.residual_free_bundle_absolute_sweep_digest_prefix
+            != base.residual_free_bundle_absolute_sweep_digest_prefix
+        || terminal_bundle_ultimate_sweep.absolute_final_bundle_terminal_sweep_digest_prefix
+            != base.absolute_final_bundle_terminal_sweep_digest_prefix
+    {
+        return Err(OpsError::Invalid(BUNDLE_MEMO_PATH_BLOCKED.to_string()));
+    }
+
+    let mut digest_source = Vec::new();
+    digest_source.extend_from_slice(b"bundle_convergence_inputs_v1");
+    digest_source.extend_from_slice(base.applied_supported_set_digest_prefix.as_bytes());
+    digest_source.extend_from_slice(base.canonical_governance_entry_digest_prefix.as_bytes());
+    digest_source.extend_from_slice(base.canonical_readiness_spine_digest_prefix.as_bytes());
+    digest_source.extend_from_slice(base.canonical_bundle_spine_digest_prefix.as_bytes());
+    digest_source.extend_from_slice(base.canonical_bundle_authority_digest_prefix.as_bytes());
+    digest_source.extend_from_slice(
+        base.final_bundle_consumer_authority_digest_prefix
+            .as_bytes(),
+    );
+    digest_source.extend_from_slice(base.final_bundle_residual_sweep_digest_prefix.as_bytes());
+    digest_source.extend_from_slice(
+        base.residual_free_bundle_consumer_authority_digest_prefix
+            .as_bytes(),
+    );
+    digest_source.extend_from_slice(
+        base.residual_free_bundle_absolute_sweep_digest_prefix
+            .as_bytes(),
+    );
+    digest_source.extend_from_slice(
+        base.absolute_final_bundle_terminal_sweep_digest_prefix
+            .as_bytes(),
+    );
+    digest_source.extend_from_slice(expected_ultimate_prefix.as_bytes());
+
+    Ok(BundleConvergenceInputsV1 {
+        applied_supported_set_digest_prefix: base.applied_supported_set_digest_prefix,
+        canonical_governance_entry_digest_prefix: base.canonical_governance_entry_digest_prefix,
+        canonical_readiness_spine_digest_prefix: base.canonical_readiness_spine_digest_prefix,
+        canonical_bundle_spine_digest_prefix: base.canonical_bundle_spine_digest_prefix,
+        canonical_bundle_authority_digest_prefix: base.canonical_bundle_authority_digest_prefix,
+        final_bundle_consumer_authority_digest_prefix: base
+            .final_bundle_consumer_authority_digest_prefix,
+        final_bundle_residual_sweep_digest_prefix: base.final_bundle_residual_sweep_digest_prefix,
+        residual_free_bundle_consumer_authority_digest_prefix: base
+            .residual_free_bundle_consumer_authority_digest_prefix,
+        residual_free_bundle_absolute_sweep_digest_prefix: base
+            .residual_free_bundle_absolute_sweep_digest_prefix,
+        absolute_final_bundle_terminal_sweep_digest_prefix: base
+            .absolute_final_bundle_terminal_sweep_digest_prefix,
+        terminal_bundle_ultimate_sweep_digest_prefix: expected_ultimate_prefix,
         authority_digest: sha256_hex(&digest_source),
     })
 }

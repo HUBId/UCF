@@ -41,3 +41,7 @@ cargo run -p ucf-ops -- bundle-ultimate-sweep --out ./out/bundle_ultimate_sweep.
 ```
 
 `PASS` means no covered canonical consumer path uses cache/mirror/snapshot reconstruction as primary bundle input substrate.
+
+## v16 convergence note
+
+v16 adds `bundle-convergence-sweep` to remove the final canonical dependencies on memoized/copied/derived bundle truth in canonical export consumers.

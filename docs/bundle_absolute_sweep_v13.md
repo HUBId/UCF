@@ -43,3 +43,7 @@ v14 adds `bundle-terminal-sweep` to remove remaining canonical consumer dependen
 ## v15 note
 
 Final canonical cache/mirror/snapshot cleanup is enforced by `bundle-ultimate-sweep` (`TerminalBundleUltimateSweepV1`).
+
+## v16 convergence note
+
+`bundle-convergence-sweep` finalizes canonical export convergence and blocks remaining memoized/copied/derived bundle residues in canonical flows.

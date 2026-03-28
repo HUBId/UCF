@@ -40,3 +40,7 @@ cargo run -p ucf-ops -- bundle-terminal-sweep --out ./out/bundle_terminal_sweep.
 ## v15 hardening
 
 v15 (`bundle-ultimate-sweep`) removes remaining canonical bundle cache/mirror/snapshot traces by requiring `bundle_ultimate_sweep_digest_prefix` and terminal digest continuity on covered consumers.
+
+## v16 convergence note
+
+Canonical export consumers are now converged through `bundle-convergence-sweep` and no longer allow memoized/copied/derived bundle authority as primary truth.

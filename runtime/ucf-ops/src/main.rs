@@ -6,10 +6,10 @@ use ucf_ops::{
     absolute_final_input_continuity_sweep, adversarial_run, airgap_export_models,
     airgap_export_policies, airgap_export_repro, airgap_export_run_cert, airgap_import,
     alerts_report, attest_bundle, attest_keys_generate, attest_run, attest_verify, audit_scan,
-    bench_run, bringup, bundle_absolute_sweep, bundle_residual_sweep, bundle_terminal_sweep,
-    bundle_ultimate_sweep, causal_slice, continuity_authority_check, determinism_scan, diagnostics,
-    diagnostics_collect, drift_report, ebm_export_dataset, ess_compact, ess_snapshot,
-    event_id_for_decision, explain_tick, explain_why, export_bugreport,
+    bench_run, bringup, bundle_absolute_sweep, bundle_convergence_sweep, bundle_residual_sweep,
+    bundle_terminal_sweep, bundle_ultimate_sweep, causal_slice, continuity_authority_check,
+    determinism_scan, diagnostics, diagnostics_collect, drift_report, ebm_export_dataset,
+    ess_compact, ess_snapshot, event_id_for_decision, explain_tick, explain_why, export_bugreport,
     export_policy_key_registry_v1, exports_bundle_spine_check, exports_bundle_spine_sweep,
     exports_normalize_check, exports_roundtrip_check, final_bundle_consumer_sweep,
     final_continuity_sweep, final_governance_consumer_sweep, final_input_continuity_sweep,
@@ -54,7 +54,7 @@ use ucf_ops::{
     AbsoluteFinalBundleTerminalSweepStatusV1, AbsoluteFinalGovernanceTerminalSweepStatusV1,
     AbsoluteFinalPrimarySemanticsTerminalSweepStatusV1,
     AbsoluteFinalReadinessTerminalSweepStatusV1, AdversarialRunArgs, AirgapArtifactType,
-    AirgapImportArgs, AirgapImportMode, BenchArgs, BugKitBuildArgs,
+    AirgapImportArgs, AirgapImportMode, BenchArgs, BugKitBuildArgs, BundleConvergenceStatusV1,
     CanonicalBundleAuthorityStatusV2, CanonicalReadinessAuthorityStatusV2, ChangeImpactArgs,
     ConfigV1, ContinuityAuthorityStatusV1, CounterfactualRequest, DevLoopArgs, DocsLintArgs,
     DocsLintMode, DocsLintStatus, ExplainTickRequest, ExportArgs,
@@ -2911,6 +2911,21 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             if !matches!(
                 report.sweep.sweep_status,
                 TerminalBundleUltimateSweepStatusV1::Pass
+            ) {
+                std::process::exit(2);
+            }
+        }
+        "bundle-convergence-sweep" => {
+            let out = arg_value(&args, "--out")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("./out/bundle_convergence_sweep.json"));
+            let report = bundle_convergence_sweep(&workdir, &out)?;
+            println!("out={}", out.display());
+            println!("status={:?}", report.sweep.convergence_status);
+            println!("convergence_digest={}", report.sweep.convergence_digest);
+            if !matches!(
+                report.sweep.convergence_status,
+                BundleConvergenceStatusV1::Pass
             ) {
                 std::process::exit(2);
             }
