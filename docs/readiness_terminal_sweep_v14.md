@@ -37,3 +37,8 @@ A PASS status means canonical readiness consumers are residual-free at terminal 
 
 Ab v15 (`readiness-ultimate-sweep`) sind letzte kanonische Consumer-Restpfade auf Readiness-Caches/Stage-Mirrors/embedded Snapshots entfernt bzw. blockiert.
 
+
+
+## v16 Update
+
+v16 (`readiness-convergence-sweep`) finalisiert die Convergence auf die terminalen absoluten residual-freien finalen Readiness-Inputs für kanonische Consumer.

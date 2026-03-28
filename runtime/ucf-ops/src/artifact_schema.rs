@@ -64,7 +64,7 @@ struct ArtifactSpec {
     enum_names: &'static [&'static str],
 }
 
-const ARTIFACT_SPECS: [ArtifactSpec; 88] = [
+const ARTIFACT_SPECS: [ArtifactSpec; 89] = [
     ArtifactSpec {
         artifact_id: "active_review_snapshot_v1",
         file_rel: "runtime/ucf-ops/src/models_lifecycle.rs",
@@ -515,6 +515,15 @@ const ARTIFACT_SPECS: [ArtifactSpec; 88] = [
         file_rel: "runtime/ucf-ops/src/readiness_ultimate_sweep.rs",
         type_name: "TerminalReadinessUltimateSweepV1",
         enum_names: &["TerminalReadinessUltimateSweepStatusV1"],
+    },
+    ArtifactSpec {
+        artifact_id: "readiness_convergence_sweep_v1",
+        file_rel: "runtime/ucf-ops/src/readiness_convergence_sweep.rs",
+        type_name: "ReadinessConvergenceSweepV1",
+        enum_names: &[
+            "ReadinessConvergenceStatusV1",
+            "ReadinessConvergenceMismatchCategoryV1",
+        ],
     },
     ArtifactSpec {
         artifact_id: "final_readiness_consumer_authority_v1",
@@ -1123,6 +1132,7 @@ mod tests {
                 "operator_signoff_v1",
                 "operator_workflow_chain_v1",
                 "primary_semantics_observation_v1",
+                "readiness_convergence_sweep_v1",
                 "readiness_gate_report_v1",
                 "remediation_consistency_check_v1",
                 "repro_pack_manifest_v1",

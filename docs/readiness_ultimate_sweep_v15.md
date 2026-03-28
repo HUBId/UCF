@@ -41,3 +41,8 @@ Verstöße werden deterministisch als mismatch categories ausgewiesen (z. B. `CO
 ```bash
 cargo run -p ucf-ops -- readiness-ultimate-sweep --out ./out/readiness_ultimate_sweep.json
 ```
+
+
+## v16 Update
+
+v16 (`readiness-convergence-sweep`) entfernt die letzten memoized, kopierten oder abgeleiteten Readiness-Restpfade aus kanonischen Consumern.
