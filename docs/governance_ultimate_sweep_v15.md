@@ -38,3 +38,7 @@ If any consumer tries to rely on governance cache/mirror/snapshot residue as pri
 ```bash
 cargo run -p ucf-ops -- governance-ultimate-sweep --out ./out/governance_ultimate_sweep.json
 ```
+
+## v16 convergence note
+
+v16 adds `governance-convergence-sweep` to remove remaining canonical consumer dependence on governance memoization, copied authorities, and derived governance mirrors in canonical flows.

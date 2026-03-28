@@ -16,3 +16,7 @@ v14 ergänzt darauf den terminalen Consumer-Sweep (`governance-terminal-sweep`) 
 
 v15 finalizes consumer-side cleanup: canonical flows no longer admit governance cache/mirror/embedded snapshot traces as primary authority once ultimate sweep enforcement is active.
 
+
+## v16 convergence note
+
+v16 closes remaining governance residue by requiring canonical consumers to source governance truth only from the terminal canonical governance authority chain and by rejecting memoized governance mirrors in canonical flow checks.
