@@ -76,6 +76,7 @@ Snapshots are generated under `docs/artifact_schema_snapshots/`:
 - `supported_scope_execution_v8.json` (v13 absolute residual-free supported-scope execution)
 - `supported_scope_execution_v9.json` (v14 current supported-scope execution)
 - `supported_scope_execution_v10.json` (v15 ultimate-governance-gated supported-scope execution)
+- `supported_scope_execution_v11.json` (v16 governance-convergence-gated supported-scope execution)
 - `supported_scope_reevaluation_v1.json` (v7)
 - `v3_gate_report_v1.json`
 - `v4_gate_report_v1.json`
@@ -177,6 +178,7 @@ For v14 terminal absolute residual-free surfaces, this freeze is now first-class
 - absolute-final governance terminal sweep,
 - supported-scope execution v9,
 - supported-scope execution v10,
+- supported-scope execution v11,
 - absolute-final readiness terminal sweep,
 - absolute-final bundle terminal sweep,
 - absolute-final primary-semantics terminal sweep.

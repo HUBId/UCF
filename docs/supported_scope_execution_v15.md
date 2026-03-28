@@ -1,13 +1,15 @@
 # Supported Scope Execution v15
 
-`SupportedScopeExecutionV10` ist die aktuelle autoritative Ausführungsentscheidung für Supported-Scope-Änderungen in v15.
+`SupportedScopeExecutionV10` war die autoritative Ausführungsentscheidung für Supported-Scope-Änderungen in v15.
+In v16 wurde diese Rolle von `SupportedScopeExecutionV11` übernommen.
 
 ## Ausführungs-Hierarchie
 
 - `SupportedRealSlotSetPolicyV2`: Policy-Absicht, nie direkt anwendbar.
 - `SupportedScopeReevaluationV1`: aktuelle Reevaluation gegen Applied Scope, nie direkt anwendbar.
 - `SupportedScopeExecutionV3`–`V9`: Historie/Audit.
-- `SupportedScopeExecutionV10`: einzige zulässige Autorisierung für `models supported-set-apply` in v15.
+- `SupportedScopeExecutionV10`: v15-Ausführungsebene.
+- `SupportedScopeExecutionV11`: aktuelle v16-Ausführungsebene mit zusätzlicher Governance-Convergence-Pflicht.
 
 ## Warum Governance-Cache-Eliminierung zwingend ist
 
