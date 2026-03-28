@@ -64,7 +64,7 @@ struct ArtifactSpec {
     enum_names: &'static [&'static str],
 }
 
-const ARTIFACT_SPECS: [ArtifactSpec; 86] = [
+const ARTIFACT_SPECS: [ArtifactSpec; 87] = [
     ArtifactSpec {
         artifact_id: "active_review_snapshot_v1",
         file_rel: "runtime/ucf-ops/src/models_lifecycle.rs",
@@ -621,6 +621,12 @@ const ARTIFACT_SPECS: [ArtifactSpec; 86] = [
         type_name: "V14GateReportV1",
         enum_names: &["V14GateOverallStatus"],
     },
+    ArtifactSpec {
+        artifact_id: "v15_gate_report_v1",
+        file_rel: "runtime/ucf-ops/src/v15_gate.rs",
+        type_name: "V15GateReportV1",
+        enum_names: &["V15GateOverallStatus"],
+    },
 ];
 
 fn sorted_artifact_specs() -> Vec<ArtifactSpec> {
@@ -1148,6 +1154,7 @@ mod tests {
                 "v12_gate_report_v1",
                 "v13_gate_report_v1",
                 "v14_gate_report_v1",
+                "v15_gate_report_v1",
                 "v3_gate_report_v1",
                 "v4_gate_report_v1",
                 "v5_gate_report_v1",
