@@ -1132,6 +1132,7 @@ mod tests {
                 "operator_signoff_v1",
                 "operator_workflow_chain_v1",
                 "primary_semantics_observation_v1",
+                "readiness_convergence_sweep_v1",
                 "readiness_gate_report_v1",
                 "remediation_consistency_check_v1",
                 "repro_pack_manifest_v1",
