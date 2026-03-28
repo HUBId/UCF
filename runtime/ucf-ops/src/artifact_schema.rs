@@ -1109,6 +1109,7 @@ mod tests {
                 "backend_evidence_snapshot_v1",
                 "backend_resolution_v1",
                 "bugkit_manifest_v1",
+                "bundle_convergence_sweep_v1",
                 "bundle_roundtrip_consistency_v1",
                 "canonical_bundle_authority_v2",
                 "canonical_bundle_consumption_context_v1",
