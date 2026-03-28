@@ -42,3 +42,8 @@ cargo run -p ucf-ops -- governance-convergence-sweep --out ./out/governance_conv
 ```
 
 A PASS requires all covered consumers to align with the terminal canonical governance chain and report `convergence_status=PASS`.
+
+## Beziehung zu Supported-Scope-Execution v16
+
+`SupportedScopeExecutionV11` darf Expansion nur ausführen, wenn dieser Sweep PASS und digest-aligned mit der aktuellen Applied-Scope-Basis ist.
+Bei FAIL/Legacy/Drift ist nur `REAFFIRM_FREEZE` zulässig.
