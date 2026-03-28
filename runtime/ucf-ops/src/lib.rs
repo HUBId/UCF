@@ -17394,6 +17394,7 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
                 || detail.contains(APPLIED_SCOPE_REQUIRED)
                 || detail.contains(APPLIED_SCOPE_MISSING)
                 || detail.contains(APPLIED_SCOPE_TRANSLATION_FAILED)
+                || detail.contains(RESIDUAL_GOVERNANCE_PATH_BLOCKED)
                 || detail.contains("APPLIED_SCOPE_SLOT_TRUTH_MISSING")
                 || detail.contains("SUPPORTED_SET_POLICY_V2_MISSING")
         },
@@ -17434,6 +17435,7 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
                 || detail.contains(APPLIED_SCOPE_REQUIRED)
                 || detail.contains(APPLIED_SCOPE_MISSING)
                 || detail.contains(APPLIED_SCOPE_TRANSLATION_FAILED)
+                || detail.contains(RESIDUAL_GOVERNANCE_PATH_BLOCKED)
                 || detail.contains("APPLIED_SCOPE_SLOT_TRUTH_MISSING")
                 || detail.contains("SUPPORTED_SET_POLICY_V2_MISSING")
         },
@@ -17619,6 +17621,7 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
                 || detail.contains(APPLIED_SCOPE_REQUIRED)
                 || detail.contains(APPLIED_SCOPE_MISSING)
                 || detail.contains(APPLIED_SCOPE_TRANSLATION_FAILED)
+                || detail.contains(RESIDUAL_GOVERNANCE_PATH_BLOCKED)
                 || detail.contains("APPLIED_SCOPE_SLOT_TRUTH_MISSING")
                 || detail.contains("SUPPORTED_SET_POLICY_V2_MISSING")
         },
