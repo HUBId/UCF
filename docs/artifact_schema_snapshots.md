@@ -1,6 +1,6 @@
 # Artifact Schema Snapshots
 
-This repository enforces deterministic shape snapshots for governance/review/export/interop artifacts that must remain stable across v3/v4/v5/v6/v7/v8/v9/v10/v11/v12/v13/v14/v15 hardening.
+This repository enforces deterministic shape snapshots for governance/review/export/interop artifacts that must remain stable across v3/v4/v5/v6/v7/v8/v9/v10/v11/v12/v13/v14/v15/v16 hardening.
 
 ## Covered artifacts
 
@@ -45,6 +45,7 @@ Snapshots are generated under `docs/artifact_schema_snapshots/`:
 - `final_primary_semantics_residual_sweep_v1.json` (v11 final residual-sweep freeze)
 - `final_readiness_consumer_authority_v1.json` (v10 final consumer-authority freeze)
 - `final_readiness_residual_sweep_v1.json` (v11 final residual-sweep freeze)
+- `governance_convergence_sweep_v1.json` (v16 governance convergence contract)
 - `governance_primary_surfaces_v1.json`
 - `interop_consistency_matrix_report_v1.json`
 - `operator_report_v1.json`
@@ -190,3 +191,12 @@ For v15 ultimate terminal absolute residual-free surfaces, this freeze is now fi
 - terminal-readiness ultimate sweep,
 - terminal-bundle ultimate sweep,
 - terminal-primary-semantics ultimate sweep.
+
+For v16 convergence and current scope-execution surfaces, this freeze is now first-class for cross-surface contracts and CI review:
+
+- governance-convergence sweep,
+- supported-scope execution v11,
+- readiness-convergence sweep,
+- bundle-convergence sweep,
+- primary-semantics-convergence sweep,
+- additive shape updates (if any) in terminal ultimate sweeps, operator signoff/review/workflow artifacts, and gate-report schemas are reviewed through the same drift lane (`ADDITIVE` vs `BREAKING` vs `UNKNOWN`).
