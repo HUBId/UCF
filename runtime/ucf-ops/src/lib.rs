@@ -16862,6 +16862,7 @@ pub fn portability_check(out: &Path) -> Result<PortabilityCheckReport, OpsError>
     Ok(report)
 }
 
+#[allow(clippy::vec_init_then_push)]
 pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityReportV1, OpsError> {
     let docs_out = PathBuf::from("./out/docs_lint_report.json");
     let docs_lint = match docs_lint(&DocsLintArgs {
@@ -19045,151 +19046,307 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         },
     };
 
-    let command_matrix = vec![
-        matrix_cmd("linux", "cargo test --workspace --all-targets"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- audit path-scan"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- audit hardware-scan"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- audit net-deps --out ./out/net_deps.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- spec artifact-schemas-check --out ./out/artifact_schema_check.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- governance-surfaces-check --out ./out/governance_surfaces_check.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- governance-entry-check --out ./out/governance_entry_check.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- governance-entry-sweep --out ./out/governance_entry_sweep.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- scope authority-check --out ./out/scope_authority_check.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- models supported-set-review --out ./out/supported_set_review.json --workdir ."),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- models supported-scope-reevaluate --out ./out/supported_scope_reeval.json --workdir ."),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- models supported-scope-execute-v4 --out ./out/supported_scope_execute_v4.json --workdir ."),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- readiness-spine-check --out ./out/readiness_spine_check.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- readiness-spine-sweep --out ./out/readiness_spine_sweep.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json --workdir ."),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- models applied-scope-check --out ./out/applied_scope_check.json --workdir ."),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- exports normalize-check --out ./out/export_normalize_check.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- interop consistency-matrix --out ./out/interop_consistency_matrix.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- operator review-truth-check --out ./out/review_truth_check.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- exports roundtrip-check --in ./out/repro_portability.zip --out ./out/export_roundtrip_check.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- exports bundle-spine-check --in ./out/repro_portability.zip --out ./out/bundle_spine_check.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- exports bundle-spine-sweep --out ./out/bundle_spine_sweep.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- primary-semantics-sweep --out ./out/primary_semantics_sweep.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- final-governance-consumer-sweep --out ./out/final_governance_consumer_sweep.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- governance-residual-sweep --out ./out/governance_residual_sweep.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- residual-free-governance-sweep --out ./out/residual_free_governance_sweep.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- governance-absolute-sweep --out ./out/governance_absolute_sweep.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- governance-terminal-sweep --out ./out/governance_terminal_sweep.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- governance-ultimate-sweep --out ./out/governance_ultimate_sweep.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- governance-convergence-sweep --out ./out/governance_convergence_sweep.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- models supported-scope-execute-v8 --out ./out/supported_scope_execute_v8.json --workdir ."),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- models supported-scope-execute-v9 --out ./out/supported_scope_execute_v9.json --workdir ."),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- models supported-scope-execute-v10 --out ./out/supported_scope_execute_v10.json --workdir ."),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- models supported-scope-execute-v11 --out ./out/supported_scope_execute_v11.json --workdir ."),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- final-readiness-consumer-sweep --out ./out/final_readiness_consumer_sweep.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- readiness-residual-sweep --out ./out/readiness_residual_sweep.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- residual-free-readiness-sweep --out ./out/residual_free_readiness_sweep.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- readiness-absolute-sweep --out ./out/readiness_absolute_sweep.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- readiness-terminal-sweep --out ./out/readiness_terminal_sweep.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- readiness-ultimate-sweep --out ./out/readiness_ultimate_sweep.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- readiness-convergence-sweep --out ./out/readiness_convergence_sweep.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- final-bundle-consumer-sweep --out ./out/final_bundle_consumer_sweep.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- bundle-residual-sweep --out ./out/bundle_residual_sweep.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- residual-free-bundle-sweep --out ./out/residual_free_bundle_sweep.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- bundle-absolute-sweep --out ./out/bundle_absolute_sweep.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- bundle-terminal-sweep --out ./out/bundle_terminal_sweep.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- bundle-ultimate-sweep --out ./out/bundle_ultimate_sweep.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- bundle-convergence-sweep --out ./out/bundle_convergence_sweep.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- final-primary-semantics-sweep --out ./out/final_primary_semantics_sweep.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- primary-semantics-residual-sweep --out ./out/primary_semantics_residual_sweep.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- residual-free-primary-semantics-sweep --out ./out/residual_free_primary_semantics_sweep.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- primary-semantics-absolute-sweep --out ./out/primary_semantics_absolute_sweep.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- primary-semantics-terminal-sweep --out ./out/primary_semantics_terminal_sweep.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- primary-semantics-ultimate-sweep --out ./out/primary_semantics_ultimate_sweep.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- primary-semantics-convergence-sweep --out ./out/primary_semantics_convergence_sweep.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- remediation-interop-check --out ./out/remediation_interop_check.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- remediation-spine-check --out ./out/remediation_spine_check.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- models active-review-snapshot --out ./out/active_review_snapshot.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- models backend-resolution --slot sae --out ./out/backend_resolution_sae.json || SKIP(optional second slot not sae)"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- repro pack --run <id> --out ./out/repro_portability.zip && cargo run -p ucf-ops -- repro verify --pack ./out/repro_portability.zip --out ./out/repro_verify_portability.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- bugkit build --run <id> --out ./out/bugkit_portability.zip"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- remediation-consistency-check --out ./out/remediation_consistency_portability.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- models evidence-snapshot --out ./out/backend_evidence_snapshot.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- operator signoff --out ./out/operator_signoff.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- docs remediation-codes --out docs/remediation_codes_v1.md"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- v0 gate --scenario fixtures/e2e/v0_flow_a.json --out ./out/v0_gate_report.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- v1 gate --out ./out/v1_gate_report.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- v2 gate --out ./out/v2_gate_report.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- models eligibility --out ./out/models_eligibility_report.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- strict check --strict --out ./out/strict_check.json"),
-        matrix_cmd("linux", "cargo run -p ucf-ops -- operator report --out ./out/operator_report.json"),
-        matrix_cmd("windows", "cargo test --workspace --all-targets"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- audit path-scan"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- audit hardware-scan"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- spec artifact-schemas-check --out ./out/artifact_schema_check.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- governance-surfaces-check --out ./out/governance_surfaces_check.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- governance-entry-check --out ./out/governance_entry_check.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- governance-entry-sweep --out ./out/governance_entry_sweep.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- scope authority-check --out ./out/scope_authority_check.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- models supported-set-review --out ./out/supported_set_review.json --workdir ."),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- models supported-scope-reevaluate --out ./out/supported_scope_reeval.json --workdir ."),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- models supported-scope-execute-v4 --out ./out/supported_scope_execute_v4.json --workdir ."),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- readiness-spine-check --out ./out/readiness_spine_check.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- readiness-spine-sweep --out ./out/readiness_spine_sweep.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json --workdir ."),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- models applied-scope-check --out ./out/applied_scope_check.json --workdir ."),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- exports normalize-check --out ./out/export_normalize_check.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- interop consistency-matrix --out ./out/interop_consistency_matrix.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- operator review-truth-check --out ./out/review_truth_check.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- exports roundtrip-check --in ./out/repro_portability.zip --out ./out/export_roundtrip_check.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- exports bundle-spine-check --in ./out/repro_portability.zip --out ./out/bundle_spine_check.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- exports bundle-spine-sweep --out ./out/bundle_spine_sweep.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- primary-semantics-sweep --out ./out/primary_semantics_sweep.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- final-governance-consumer-sweep --out ./out/final_governance_consumer_sweep.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- governance-residual-sweep --out ./out/governance_residual_sweep.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- residual-free-governance-sweep --out ./out/residual_free_governance_sweep.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- governance-absolute-sweep --out ./out/governance_absolute_sweep.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- governance-terminal-sweep --out ./out/governance_terminal_sweep.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- governance-ultimate-sweep --out ./out/governance_ultimate_sweep.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- governance-convergence-sweep --out ./out/governance_convergence_sweep.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- models supported-scope-execute-v8 --out ./out/supported_scope_execute_v8.json --workdir ."),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- models supported-scope-execute-v9 --out ./out/supported_scope_execute_v9.json --workdir ."),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- models supported-scope-execute-v10 --out ./out/supported_scope_execute_v10.json --workdir ."),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- models supported-scope-execute-v11 --out ./out/supported_scope_execute_v11.json --workdir ."),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- final-readiness-consumer-sweep --out ./out/final_readiness_consumer_sweep.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- readiness-residual-sweep --out ./out/readiness_residual_sweep.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- residual-free-readiness-sweep --out ./out/residual_free_readiness_sweep.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- readiness-absolute-sweep --out ./out/readiness_absolute_sweep.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- readiness-terminal-sweep --out ./out/readiness_terminal_sweep.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- readiness-ultimate-sweep --out ./out/readiness_ultimate_sweep.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- readiness-convergence-sweep --out ./out/readiness_convergence_sweep.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- final-bundle-consumer-sweep --out ./out/final_bundle_consumer_sweep.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- bundle-residual-sweep --out ./out/bundle_residual_sweep.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- residual-free-bundle-sweep --out ./out/residual_free_bundle_sweep.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- bundle-absolute-sweep --out ./out/bundle_absolute_sweep.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- bundle-terminal-sweep --out ./out/bundle_terminal_sweep.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- bundle-ultimate-sweep --out ./out/bundle_ultimate_sweep.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- bundle-convergence-sweep --out ./out/bundle_convergence_sweep.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- final-primary-semantics-sweep --out ./out/final_primary_semantics_sweep.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- primary-semantics-residual-sweep --out ./out/primary_semantics_residual_sweep.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- residual-free-primary-semantics-sweep --out ./out/residual_free_primary_semantics_sweep.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- primary-semantics-absolute-sweep --out ./out/primary_semantics_absolute_sweep.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- primary-semantics-terminal-sweep --out ./out/primary_semantics_terminal_sweep.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- primary-semantics-ultimate-sweep --out ./out/primary_semantics_ultimate_sweep.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- primary-semantics-convergence-sweep --out ./out/primary_semantics_convergence_sweep.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- remediation-interop-check --out ./out/remediation_interop_check.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- remediation-spine-check --out ./out/remediation_spine_check.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- models active-review-snapshot --out ./out/active_review_snapshot.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- models backend-resolution --slot sae --out ./out/backend_resolution_sae.json || SKIP(optional second slot not sae)"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- repro pack --run <id> --out ./out/repro_portability.zip && cargo run -p ucf-ops -- repro verify --pack ./out/repro_portability.zip --out ./out/repro_verify_portability.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- bugkit build --run <id> --out ./out/bugkit_portability.zip"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- remediation-consistency-check --out ./out/remediation_consistency_portability.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- models evidence-snapshot --out ./out/backend_evidence_snapshot.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- operator signoff --out ./out/operator_signoff.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- docs remediation-codes --out docs/remediation_codes_v1.md"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- v0 gate --scenario fixtures/e2e/v0_flow_a.json --out ./out/v0_gate_report.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- v1 gate --out ./out/v1_gate_report.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- v2 gate --out ./out/v2_gate_report.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- models eligibility --out ./out/models_eligibility_report.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- strict check --strict --out ./out/strict_check.json"),
-        matrix_cmd("windows", "cargo run -p ucf-ops -- operator report --out ./out/operator_report.json"),
-    ];
+    #[allow(clippy::vec_init_then_push)]
+    let mut command_matrix = Vec::new();
+    command_matrix.push(matrix_cmd("linux", "cargo test --workspace --all-targets"));
+    command_matrix.push(matrix_cmd(
+        "linux",
+        "cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json",
+    ));
+    command_matrix.push(matrix_cmd(
+        "linux",
+        "cargo run -p ucf-ops -- audit path-scan",
+    ));
+    command_matrix.push(matrix_cmd(
+        "linux",
+        "cargo run -p ucf-ops -- audit hardware-scan",
+    ));
+    command_matrix.push(matrix_cmd(
+        "linux",
+        "cargo run -p ucf-ops -- audit net-deps --out ./out/net_deps.json",
+    ));
+    command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- spec artifact-schemas-check --out ./out/artifact_schema_check.json"));
+    command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- governance-surfaces-check --out ./out/governance_surfaces_check.json"));
+    command_matrix.push(matrix_cmd(
+        "linux",
+        "cargo run -p ucf-ops -- governance-entry-check --out ./out/governance_entry_check.json",
+    ));
+    command_matrix.push(matrix_cmd(
+        "linux",
+        "cargo run -p ucf-ops -- governance-entry-sweep --out ./out/governance_entry_sweep.json",
+    ));
+    command_matrix.push(matrix_cmd(
+        "linux",
+        "cargo run -p ucf-ops -- scope authority-check --out ./out/scope_authority_check.json",
+    ));
+    command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- models supported-set-review --out ./out/supported_set_review.json --workdir ."));
+    command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- models supported-scope-reevaluate --out ./out/supported_scope_reeval.json --workdir ."));
+    command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- models supported-scope-execute-v4 --out ./out/supported_scope_execute_v4.json --workdir ."));
+    command_matrix.push(matrix_cmd(
+        "linux",
+        "cargo run -p ucf-ops -- readiness-spine-check --out ./out/readiness_spine_check.json",
+    ));
+    command_matrix.push(matrix_cmd(
+        "linux",
+        "cargo run -p ucf-ops -- readiness-spine-sweep --out ./out/readiness_spine_sweep.json",
+    ));
+    command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json --workdir ."));
+    command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- models applied-scope-check --out ./out/applied_scope_check.json --workdir ."));
+    command_matrix.push(matrix_cmd(
+        "linux",
+        "cargo run -p ucf-ops -- exports normalize-check --out ./out/export_normalize_check.json",
+    ));
+    command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- interop consistency-matrix --out ./out/interop_consistency_matrix.json"));
+    command_matrix.push(matrix_cmd(
+        "linux",
+        "cargo run -p ucf-ops -- operator review-truth-check --out ./out/review_truth_check.json",
+    ));
+    command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- exports roundtrip-check --in ./out/repro_portability.zip --out ./out/export_roundtrip_check.json"));
+    command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- exports bundle-spine-check --in ./out/repro_portability.zip --out ./out/bundle_spine_check.json"));
+    command_matrix.push(matrix_cmd(
+        "linux",
+        "cargo run -p ucf-ops -- exports bundle-spine-sweep --out ./out/bundle_spine_sweep.json",
+    ));
+    command_matrix.push(matrix_cmd(
+        "linux",
+        "cargo run -p ucf-ops -- primary-semantics-sweep --out ./out/primary_semantics_sweep.json",
+    ));
+    command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- final-governance-consumer-sweep --out ./out/final_governance_consumer_sweep.json"));
+    command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- governance-residual-sweep --out ./out/governance_residual_sweep.json"));
+    command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- residual-free-governance-sweep --out ./out/residual_free_governance_sweep.json"));
+    command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- governance-absolute-sweep --out ./out/governance_absolute_sweep.json"));
+    command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- governance-terminal-sweep --out ./out/governance_terminal_sweep.json"));
+    command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- governance-ultimate-sweep --out ./out/governance_ultimate_sweep.json"));
+    command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- governance-convergence-sweep --out ./out/governance_convergence_sweep.json"));
+    command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- models supported-scope-execute-v8 --out ./out/supported_scope_execute_v8.json --workdir ."));
+    command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- models supported-scope-execute-v9 --out ./out/supported_scope_execute_v9.json --workdir ."));
+    command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- models supported-scope-execute-v10 --out ./out/supported_scope_execute_v10.json --workdir ."));
+    command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- models supported-scope-execute-v11 --out ./out/supported_scope_execute_v11.json --workdir ."));
+    command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- final-readiness-consumer-sweep --out ./out/final_readiness_consumer_sweep.json"));
+    command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- readiness-residual-sweep --out ./out/readiness_residual_sweep.json"));
+    command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- residual-free-readiness-sweep --out ./out/residual_free_readiness_sweep.json"));
+    command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- readiness-absolute-sweep --out ./out/readiness_absolute_sweep.json"));
+    command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- readiness-terminal-sweep --out ./out/readiness_terminal_sweep.json"));
+    command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- readiness-ultimate-sweep --out ./out/readiness_ultimate_sweep.json"));
+    command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- readiness-convergence-sweep --out ./out/readiness_convergence_sweep.json"));
+    command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- final-bundle-consumer-sweep --out ./out/final_bundle_consumer_sweep.json"));
+    command_matrix.push(matrix_cmd(
+        "linux",
+        "cargo run -p ucf-ops -- bundle-residual-sweep --out ./out/bundle_residual_sweep.json",
+    ));
+    command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- residual-free-bundle-sweep --out ./out/residual_free_bundle_sweep.json"));
+    command_matrix.push(matrix_cmd(
+        "linux",
+        "cargo run -p ucf-ops -- bundle-absolute-sweep --out ./out/bundle_absolute_sweep.json",
+    ));
+    command_matrix.push(matrix_cmd(
+        "linux",
+        "cargo run -p ucf-ops -- bundle-terminal-sweep --out ./out/bundle_terminal_sweep.json",
+    ));
+    command_matrix.push(matrix_cmd(
+        "linux",
+        "cargo run -p ucf-ops -- bundle-ultimate-sweep --out ./out/bundle_ultimate_sweep.json",
+    ));
+    command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- bundle-convergence-sweep --out ./out/bundle_convergence_sweep.json"));
+    command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- final-primary-semantics-sweep --out ./out/final_primary_semantics_sweep.json"));
+    command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- primary-semantics-residual-sweep --out ./out/primary_semantics_residual_sweep.json"));
+    command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- residual-free-primary-semantics-sweep --out ./out/residual_free_primary_semantics_sweep.json"));
+    command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- primary-semantics-absolute-sweep --out ./out/primary_semantics_absolute_sweep.json"));
+    command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- primary-semantics-terminal-sweep --out ./out/primary_semantics_terminal_sweep.json"));
+    command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- primary-semantics-ultimate-sweep --out ./out/primary_semantics_ultimate_sweep.json"));
+    command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- primary-semantics-convergence-sweep --out ./out/primary_semantics_convergence_sweep.json"));
+    command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- remediation-interop-check --out ./out/remediation_interop_check.json"));
+    command_matrix.push(matrix_cmd(
+        "linux",
+        "cargo run -p ucf-ops -- remediation-spine-check --out ./out/remediation_spine_check.json",
+    ));
+    command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- models active-review-snapshot --out ./out/active_review_snapshot.json"));
+    command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- models backend-resolution --slot sae --out ./out/backend_resolution_sae.json || SKIP(optional second slot not sae)"));
+    command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- repro pack --run <id> --out ./out/repro_portability.zip && cargo run -p ucf-ops -- repro verify --pack ./out/repro_portability.zip --out ./out/repro_verify_portability.json"));
+    command_matrix.push(matrix_cmd(
+        "linux",
+        "cargo run -p ucf-ops -- bugkit build --run <id> --out ./out/bugkit_portability.zip",
+    ));
+    command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- remediation-consistency-check --out ./out/remediation_consistency_portability.json"));
+    command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- models evidence-snapshot --out ./out/backend_evidence_snapshot.json"));
+    command_matrix.push(matrix_cmd(
+        "linux",
+        "cargo run -p ucf-ops -- operator signoff --out ./out/operator_signoff.json",
+    ));
+    command_matrix.push(matrix_cmd(
+        "linux",
+        "cargo run -p ucf-ops -- docs remediation-codes --out docs/remediation_codes_v1.md",
+    ));
+    command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- v0 gate --scenario fixtures/e2e/v0_flow_a.json --out ./out/v0_gate_report.json"));
+    command_matrix.push(matrix_cmd(
+        "linux",
+        "cargo run -p ucf-ops -- v1 gate --out ./out/v1_gate_report.json",
+    ));
+    command_matrix.push(matrix_cmd(
+        "linux",
+        "cargo run -p ucf-ops -- v2 gate --out ./out/v2_gate_report.json",
+    ));
+    command_matrix.push(matrix_cmd(
+        "linux",
+        "cargo run -p ucf-ops -- models eligibility --out ./out/models_eligibility_report.json",
+    ));
+    command_matrix.push(matrix_cmd(
+        "linux",
+        "cargo run -p ucf-ops -- strict check --strict --out ./out/strict_check.json",
+    ));
+    command_matrix.push(matrix_cmd(
+        "linux",
+        "cargo run -p ucf-ops -- operator report --out ./out/operator_report.json",
+    ));
+    command_matrix.push(matrix_cmd(
+        "windows",
+        "cargo test --workspace --all-targets",
+    ));
+    command_matrix.push(matrix_cmd(
+        "windows",
+        "cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json",
+    ));
+    command_matrix.push(matrix_cmd(
+        "windows",
+        "cargo run -p ucf-ops -- audit path-scan",
+    ));
+    command_matrix.push(matrix_cmd(
+        "windows",
+        "cargo run -p ucf-ops -- audit hardware-scan",
+    ));
+    command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- spec artifact-schemas-check --out ./out/artifact_schema_check.json"));
+    command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- governance-surfaces-check --out ./out/governance_surfaces_check.json"));
+    command_matrix.push(matrix_cmd(
+        "windows",
+        "cargo run -p ucf-ops -- governance-entry-check --out ./out/governance_entry_check.json",
+    ));
+    command_matrix.push(matrix_cmd(
+        "windows",
+        "cargo run -p ucf-ops -- governance-entry-sweep --out ./out/governance_entry_sweep.json",
+    ));
+    command_matrix.push(matrix_cmd(
+        "windows",
+        "cargo run -p ucf-ops -- scope authority-check --out ./out/scope_authority_check.json",
+    ));
+    command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- models supported-set-review --out ./out/supported_set_review.json --workdir ."));
+    command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- models supported-scope-reevaluate --out ./out/supported_scope_reeval.json --workdir ."));
+    command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- models supported-scope-execute-v4 --out ./out/supported_scope_execute_v4.json --workdir ."));
+    command_matrix.push(matrix_cmd(
+        "windows",
+        "cargo run -p ucf-ops -- readiness-spine-check --out ./out/readiness_spine_check.json",
+    ));
+    command_matrix.push(matrix_cmd(
+        "windows",
+        "cargo run -p ucf-ops -- readiness-spine-sweep --out ./out/readiness_spine_sweep.json",
+    ));
+    command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json --workdir ."));
+    command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- models applied-scope-check --out ./out/applied_scope_check.json --workdir ."));
+    command_matrix.push(matrix_cmd(
+        "windows",
+        "cargo run -p ucf-ops -- exports normalize-check --out ./out/export_normalize_check.json",
+    ));
+    command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- interop consistency-matrix --out ./out/interop_consistency_matrix.json"));
+    command_matrix.push(matrix_cmd(
+        "windows",
+        "cargo run -p ucf-ops -- operator review-truth-check --out ./out/review_truth_check.json",
+    ));
+    command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- exports roundtrip-check --in ./out/repro_portability.zip --out ./out/export_roundtrip_check.json"));
+    command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- exports bundle-spine-check --in ./out/repro_portability.zip --out ./out/bundle_spine_check.json"));
+    command_matrix.push(matrix_cmd(
+        "windows",
+        "cargo run -p ucf-ops -- exports bundle-spine-sweep --out ./out/bundle_spine_sweep.json",
+    ));
+    command_matrix.push(matrix_cmd(
+        "windows",
+        "cargo run -p ucf-ops -- primary-semantics-sweep --out ./out/primary_semantics_sweep.json",
+    ));
+    command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- final-governance-consumer-sweep --out ./out/final_governance_consumer_sweep.json"));
+    command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- governance-residual-sweep --out ./out/governance_residual_sweep.json"));
+    command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- residual-free-governance-sweep --out ./out/residual_free_governance_sweep.json"));
+    command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- governance-absolute-sweep --out ./out/governance_absolute_sweep.json"));
+    command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- governance-terminal-sweep --out ./out/governance_terminal_sweep.json"));
+    command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- governance-ultimate-sweep --out ./out/governance_ultimate_sweep.json"));
+    command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- governance-convergence-sweep --out ./out/governance_convergence_sweep.json"));
+    command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- models supported-scope-execute-v8 --out ./out/supported_scope_execute_v8.json --workdir ."));
+    command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- models supported-scope-execute-v9 --out ./out/supported_scope_execute_v9.json --workdir ."));
+    command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- models supported-scope-execute-v10 --out ./out/supported_scope_execute_v10.json --workdir ."));
+    command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- models supported-scope-execute-v11 --out ./out/supported_scope_execute_v11.json --workdir ."));
+    command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- final-readiness-consumer-sweep --out ./out/final_readiness_consumer_sweep.json"));
+    command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- readiness-residual-sweep --out ./out/readiness_residual_sweep.json"));
+    command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- residual-free-readiness-sweep --out ./out/residual_free_readiness_sweep.json"));
+    command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- readiness-absolute-sweep --out ./out/readiness_absolute_sweep.json"));
+    command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- readiness-terminal-sweep --out ./out/readiness_terminal_sweep.json"));
+    command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- readiness-ultimate-sweep --out ./out/readiness_ultimate_sweep.json"));
+    command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- readiness-convergence-sweep --out ./out/readiness_convergence_sweep.json"));
+    command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- final-bundle-consumer-sweep --out ./out/final_bundle_consumer_sweep.json"));
+    command_matrix.push(matrix_cmd(
+        "windows",
+        "cargo run -p ucf-ops -- bundle-residual-sweep --out ./out/bundle_residual_sweep.json",
+    ));
+    command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- residual-free-bundle-sweep --out ./out/residual_free_bundle_sweep.json"));
+    command_matrix.push(matrix_cmd(
+        "windows",
+        "cargo run -p ucf-ops -- bundle-absolute-sweep --out ./out/bundle_absolute_sweep.json",
+    ));
+    command_matrix.push(matrix_cmd(
+        "windows",
+        "cargo run -p ucf-ops -- bundle-terminal-sweep --out ./out/bundle_terminal_sweep.json",
+    ));
+    command_matrix.push(matrix_cmd(
+        "windows",
+        "cargo run -p ucf-ops -- bundle-ultimate-sweep --out ./out/bundle_ultimate_sweep.json",
+    ));
+    command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- bundle-convergence-sweep --out ./out/bundle_convergence_sweep.json"));
+    command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- final-primary-semantics-sweep --out ./out/final_primary_semantics_sweep.json"));
+    command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- primary-semantics-residual-sweep --out ./out/primary_semantics_residual_sweep.json"));
+    command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- residual-free-primary-semantics-sweep --out ./out/residual_free_primary_semantics_sweep.json"));
+    command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- primary-semantics-absolute-sweep --out ./out/primary_semantics_absolute_sweep.json"));
+    command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- primary-semantics-terminal-sweep --out ./out/primary_semantics_terminal_sweep.json"));
+    command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- primary-semantics-ultimate-sweep --out ./out/primary_semantics_ultimate_sweep.json"));
+    command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- primary-semantics-convergence-sweep --out ./out/primary_semantics_convergence_sweep.json"));
+    command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- remediation-interop-check --out ./out/remediation_interop_check.json"));
+    command_matrix.push(matrix_cmd(
+        "windows",
+        "cargo run -p ucf-ops -- remediation-spine-check --out ./out/remediation_spine_check.json",
+    ));
+    command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- models active-review-snapshot --out ./out/active_review_snapshot.json"));
+    command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- models backend-resolution --slot sae --out ./out/backend_resolution_sae.json || SKIP(optional second slot not sae)"));
+    command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- repro pack --run <id> --out ./out/repro_portability.zip && cargo run -p ucf-ops -- repro verify --pack ./out/repro_portability.zip --out ./out/repro_verify_portability.json"));
+    command_matrix.push(matrix_cmd(
+        "windows",
+        "cargo run -p ucf-ops -- bugkit build --run <id> --out ./out/bugkit_portability.zip",
+    ));
+    command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- remediation-consistency-check --out ./out/remediation_consistency_portability.json"));
+    command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- models evidence-snapshot --out ./out/backend_evidence_snapshot.json"));
+    command_matrix.push(matrix_cmd(
+        "windows",
+        "cargo run -p ucf-ops -- operator signoff --out ./out/operator_signoff.json",
+    ));
+    command_matrix.push(matrix_cmd(
+        "windows",
+        "cargo run -p ucf-ops -- docs remediation-codes --out docs/remediation_codes_v1.md",
+    ));
+    command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- v0 gate --scenario fixtures/e2e/v0_flow_a.json --out ./out/v0_gate_report.json"));
+    command_matrix.push(matrix_cmd(
+        "windows",
+        "cargo run -p ucf-ops -- v1 gate --out ./out/v1_gate_report.json",
+    ));
+    command_matrix.push(matrix_cmd(
+        "windows",
+        "cargo run -p ucf-ops -- v2 gate --out ./out/v2_gate_report.json",
+    ));
+    command_matrix.push(matrix_cmd(
+        "windows",
+        "cargo run -p ucf-ops -- models eligibility --out ./out/models_eligibility_report.json",
+    ));
+    command_matrix.push(matrix_cmd(
+        "windows",
+        "cargo run -p ucf-ops -- strict check --strict --out ./out/strict_check.json",
+    ));
+    command_matrix.push(matrix_cmd(
+        "windows",
+        "cargo run -p ucf-ops -- operator report --out ./out/operator_report.json",
+    ));
 
     let report = PortabilityReportV1 {
         schema_version: 1,
