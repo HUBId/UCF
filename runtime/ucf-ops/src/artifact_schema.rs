@@ -64,7 +64,7 @@ struct ArtifactSpec {
     enum_names: &'static [&'static str],
 }
 
-const ARTIFACT_SPECS: [ArtifactSpec; 96] = [
+const ARTIFACT_SPECS: [ArtifactSpec; 97] = [
     ArtifactSpec {
         artifact_id: "active_review_snapshot_v1",
         file_rel: "runtime/ucf-ops/src/models_lifecycle.rs",
@@ -571,6 +571,15 @@ const ARTIFACT_SPECS: [ArtifactSpec; 96] = [
         enum_names: &[
             "ReadinessConvergenceStatusV1",
             "ReadinessConvergenceMismatchCategoryV1",
+        ],
+    },
+    ArtifactSpec {
+        artifact_id: "readiness_stabilization_sweep_v1",
+        file_rel: "runtime/ucf-ops/src/readiness_stabilization_sweep.rs",
+        type_name: "ReadinessStabilizationSweepV1",
+        enum_names: &[
+            "ReadinessStabilizationStatusV1",
+            "ReadinessStabilizationMismatchCategoryV1",
         ],
     },
     ArtifactSpec {

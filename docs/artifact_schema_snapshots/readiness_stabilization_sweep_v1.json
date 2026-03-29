@@ -1,0 +1,54 @@
+{
+  "artifact_id": "readiness_stabilization_sweep_v1",
+  "type_name": "ReadinessStabilizationSweepV1",
+  "source_file": "runtime/ucf-ops/src/readiness_stabilization_sweep.rs",
+  "required_fields": [
+    "absolute_final_readiness_terminal_sweep_digest_prefix",
+    "applied_supported_set_digest_prefix",
+    "canonical_governance_entry_digest_prefix",
+    "canonical_readiness_authority_digest_prefix",
+    "canonical_readiness_spine_digest_prefix",
+    "covered_consumer_count",
+    "final_readiness_consumer_authority_digest_prefix",
+    "final_readiness_residual_sweep_digest_prefix",
+    "readiness_convergence_sweep_digest_prefix",
+    "residual_free_readiness_absolute_sweep_digest_prefix",
+    "residual_free_readiness_consumer_authority_digest_prefix",
+    "residual_path_count",
+    "stabilization_digest",
+    "stabilization_status",
+    "terminal_readiness_ultimate_sweep_digest_prefix"
+  ],
+  "optional_fields": [],
+  "field_types": {
+    "absolute_final_readiness_terminal_sweep_digest_prefix": "String",
+    "applied_supported_set_digest_prefix": "String",
+    "canonical_governance_entry_digest_prefix": "String",
+    "canonical_readiness_authority_digest_prefix": "String",
+    "canonical_readiness_spine_digest_prefix": "String",
+    "covered_consumer_count": "u16",
+    "final_readiness_consumer_authority_digest_prefix": "String",
+    "final_readiness_residual_sweep_digest_prefix": "String",
+    "readiness_convergence_sweep_digest_prefix": "String",
+    "residual_free_readiness_absolute_sweep_digest_prefix": "String",
+    "residual_free_readiness_consumer_authority_digest_prefix": "String",
+    "residual_path_count": "u16",
+    "stabilization_digest": "String",
+    "stabilization_status": "ReadinessStabilizationStatusV1",
+    "terminal_readiness_ultimate_sweep_digest_prefix": "String"
+  },
+  "enum_variants": {
+    "ReadinessStabilizationMismatchCategoryV1": [
+      "ConsumerSkippedReadinessStabilization",
+      "ConsumerUsedReadinessAdapterPath",
+      "ReadinessAdapterPathPresent",
+      "ReadinessInputScopeMismatch",
+      "ReadinessInputSpineMismatch"
+    ],
+    "ReadinessStabilizationStatusV1": [
+      "Fail",
+      "LegacyPresent",
+      "Pass"
+    ]
+  }
+}

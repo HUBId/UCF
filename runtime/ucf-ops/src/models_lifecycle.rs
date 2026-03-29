@@ -801,6 +801,8 @@ pub struct AggregatedActiveReviewSnapshotV1 {
     pub readiness_terminal_sweep_digest_prefix: String,
     #[serde(default)]
     pub readiness_ultimate_sweep_digest_prefix: String,
+    #[serde(default)]
+    pub readiness_stabilization_sweep_digest_prefix: String,
     pub snapshot_digest: String,
 }
 
@@ -2969,6 +2971,7 @@ pub fn models_active_review_snapshot(
         readiness_absolute_sweep_digest_prefix: "MISSING".to_string(),
         readiness_terminal_sweep_digest_prefix: "MISSING".to_string(),
         readiness_ultimate_sweep_digest_prefix: "MISSING".to_string(),
+        readiness_stabilization_sweep_digest_prefix: "MISSING".to_string(),
         snapshot_digest: String::new(),
     };
     let truths = crate::derive_slot_reviewability_truths_from_active(
@@ -3056,6 +3059,11 @@ pub fn models_active_review_snapshot(
         "out/readiness_ultimate_sweep.json",
         "sweep.sweep_digest",
     );
+    let readiness_stabilization_sweep_digest_prefix = read_sweep_digest_prefix(
+        workdir,
+        "out/readiness_stabilization_sweep.json",
+        "sweep.stabilization_digest",
+    );
 
     let mut digest_source = Vec::new();
     digest_source.extend_from_slice(ACTIVE_REVIEW_EVIDENCE_SCHEMA_VERSION.to_string().as_bytes());
@@ -3084,6 +3092,7 @@ pub fn models_active_review_snapshot(
     digest_source.extend_from_slice(readiness_absolute_sweep_digest_prefix.as_bytes());
     digest_source.extend_from_slice(readiness_terminal_sweep_digest_prefix.as_bytes());
     digest_source.extend_from_slice(readiness_ultimate_sweep_digest_prefix.as_bytes());
+    digest_source.extend_from_slice(readiness_stabilization_sweep_digest_prefix.as_bytes());
     for slot in &slots {
         digest_source.extend_from_slice(slot.evidence_digest.as_bytes());
     }
@@ -3109,6 +3118,7 @@ pub fn models_active_review_snapshot(
         readiness_absolute_sweep_digest_prefix,
         readiness_terminal_sweep_digest_prefix,
         readiness_ultimate_sweep_digest_prefix,
+        readiness_stabilization_sweep_digest_prefix,
         snapshot_digest: sha256_hex(&digest_source),
     };
 
@@ -10140,6 +10150,7 @@ mod probe_tests {
                 readiness_absolute_sweep_digest_prefix: "MISSING".to_string(),
                 readiness_terminal_sweep_digest_prefix: "MISSING".to_string(),
                 readiness_ultimate_sweep_digest_prefix: "MISSING".to_string(),
+                readiness_stabilization_sweep_digest_prefix: "MISSING".to_string(),
                 snapshot_digest: "ee".repeat(32),
             };
             fs::write(
@@ -14456,6 +14467,7 @@ mod probe_tests {
                 readiness_absolute_sweep_digest_prefix: "MISSING".to_string(),
                 readiness_terminal_sweep_digest_prefix: "MISSING".to_string(),
                 readiness_ultimate_sweep_digest_prefix: "MISSING".to_string(),
+                readiness_stabilization_sweep_digest_prefix: "MISSING".to_string(),
                 final_primary_semantics_residual_sweep_digest_prefix: "MISSING".to_string(),
                 residual_free_primary_semantics_authority_digest_prefix: "MISSING".to_string(),
                 primary_semantics_absolute_sweep_digest_prefix: "MISSING".to_string(),
