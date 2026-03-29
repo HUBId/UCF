@@ -1,8 +1,8 @@
 # Prompt Series State Snapshot
 
 ## Current anchor
-- **Current anchor milestone:** `Real Compute Onboarding v16`.
-- **Anchor definition:** v16 planning queue in `docs/next_10_prompts.md` (entry set `330-339`).
+- **Current anchor milestone:** `Real Compute Onboarding v17`.
+- **Anchor definition:** v17 planning queue in `docs/next_10_prompts.md` (entry set `340-349`).
 - **Prompt index source:** `docs/prompt_series_index.md`.
 
 ## Status against anchor milestones
@@ -22,30 +22,31 @@
 - **v13:** complete.
 - **v14:** complete.
 - **v15:** complete (`ucf-ops v15 gate` overall PASS recorded at Prompt 328).
-- **v16:** complete when `ucf-ops v16 gate` reports overall PASS (current completion criterion).
+- **v16:** complete (`ucf-ops v16 gate` overall PASS recorded at Prompt 338).
+- **v17:** not started yet.
 - **Queue policy:** immediate queue remains capped to 10 prompts.
 
 ## Last executed prompt / resume point
-- Last executed prompt ID: **329**.
-- Next prompt ID: **330**.
-- Resume from: **`PROMPT 330`**.
+- Last executed prompt ID: **339**.
+- Next prompt ID: **340**.
+- Resume from: **`PROMPT 340`**.
 - Numbering remains monotonic and append-only.
 
 ## Immediate next prompts (capped to 10)
 Reference: `docs/next_10_prompts.md`
 
-| Prompt ID | Title (short) | v16 class | Status |
+| Prompt ID | Title (short) | v17 class | Status |
 |---:|---|---|---|
-| 330 | Residual-free governance truth unification completion for all canonical consumers | MUST | queued |
-| 331 | Supported-scope expansion re-execution or freeze reaffirmation | MUST | queued |
-| 332 | Residual-free readiness-input consumption deepening | MUST | queued |
-| 333 | Residual-free bundle input and continuity-proof normalization | MUST | queued |
-| 334 | Residual-free primary blocking/remediation hardening | MUST | queued |
-| 335 | v16 schema snapshot refresh | MUST | queued |
-| 336 | v16 portability and docs refresh | NICE | queued |
-| 337 | Operator workflow/export continuity authority hardening | MUST | queued |
-| 338 | v16 gate schema and orchestration | MUST | queued |
-| 339 | v16 wrap and next-anchor governance | MUST | queued |
+| 340 | Canonical governance chain as sole truth for remaining consumers | MUST | queued |
+| 341 | Supported-scope expansion re-check or freeze reaffirmation | MUST | queued |
+| 342 | Readiness-input convergence completion for remaining consumers | MUST | queued |
+| 343 | Bundle semantics fully normalized to converged chain | MUST | queued |
+| 344 | Primary blocking/remediation convergence hardening | MUST | queued |
+| 345 | v17 schema snapshot refresh | MUST | queued |
+| 346 | v17 portability and docs refresh | NICE | queued |
+| 347 | Workflow/export continuity authority hardening | MUST | queued |
+| 348 | v17 gate schema and orchestration | MUST | queued |
+| 349 | v17 wrap and next-anchor governance | MUST | queued |
 
 ## Historical anchor checkpoints
 
@@ -64,6 +65,7 @@ Reference: `docs/next_10_prompts.md`
 | 308 | v13 gate closure | complete |
 | 318 | v14 gate closure | complete |
 | 328 | v15 gate closure | complete |
+| 338 | v16 gate closure | complete |
 
 ## Series control notes
 - v0 completion requirement: historical signoff recorded.
@@ -82,12 +84,12 @@ Reference: `docs/next_10_prompts.md`
 - v13 completion requirement: **`ucf-ops v13 gate` overall PASS at Prompt 308**.
 - v14 completion requirement: **`ucf-ops v14 gate` overall PASS at Prompt 318**.
 - v15 completion criterion: **`ucf-ops v15 gate` overall PASS at Prompt 328**.
-- Next anchor advancement is blocked until v16 gate PASS is recorded.
-- v16 advancement remains hardware-neutral, offline-first, probe-first, shadow-first, and fail-closed.
+- v16 completion criterion: **`ucf-ops v16 gate` overall PASS at Prompt 338**.
+- v17 advancement remains hardware-neutral, offline-first, probe-first, shadow-first, and fail-closed.
 - Prompts are classified as MUST/NICE/DEFERRED at authoring time.
 
 ## Supported real-slot baseline for current stage
 - First supported slot: `world_jepa`.
 - Second supported slot in this stage: `sae`.
 - Supported scope remains authority-gated and evidence-bound.
-- Scope changes require explicit terminal absolute residual-free final governance inputs plus current supported-scope execution evidence.
+- Scope changes require explicit terminal residual-free final governance inputs plus current supported-scope execution evidence.
