@@ -22,7 +22,7 @@
 - **v13:** complete.
 - **v14:** complete.
 - **v15:** complete (`ucf-ops v15 gate` overall PASS recorded at Prompt 328).
-- **v16:** not started yet.
+- **v16:** complete when `ucf-ops v16 gate` reports overall PASS (current completion criterion).
 - **Queue policy:** immediate queue remains capped to 10 prompts.
 
 ## Last executed prompt / resume point
