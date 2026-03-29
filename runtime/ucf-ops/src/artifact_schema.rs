@@ -1139,6 +1139,7 @@ mod tests {
                 "canonical_bundle_consumption_context_v1",
                 "canonical_bundle_spine_v1",
                 "canonical_continuity_authority_v1",
+                "canonical_convergence_continuity_authority_v1",
                 "canonical_export_artifact_ref_v1",
                 "canonical_export_context_v1",
                 "canonical_governance_entry_authority_v2",
