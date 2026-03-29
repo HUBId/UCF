@@ -11,6 +11,7 @@ mod bundle_convergence_sweep;
 mod bundle_residual_sweep;
 mod bundle_terminal_sweep;
 mod bundle_ultimate_sweep;
+mod canonical_convergence_continuity_sweep;
 mod canonical_governance_entry;
 mod causal;
 mod change_impact;
@@ -120,6 +121,10 @@ pub use bundle_ultimate_sweep::{
     bundle_ultimate_sweep, BundleUltimateConsumerStatusV1, BundleUltimateMismatchCategoryV1,
     BundleUltimateSweepReportV1, TerminalBundleUltimateSweepStatusV1,
     TerminalBundleUltimateSweepV1,
+};
+pub use canonical_convergence_continuity_sweep::{
+    canonical_convergence_continuity_sweep, CanonicalConvergenceContinuityAuthorityV1,
+    CanonicalConvergenceContinuityStatusV1,
 };
 pub use canonical_governance_entry::{
     canonical_entry_from_optional, derive_canonical_governance_entry,

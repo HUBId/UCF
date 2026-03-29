@@ -40,3 +40,6 @@ cargo run -p ucf-ops -- terminal-absolute-final-input-continuity-sweep --bundle 
 ## v15 update
 `TerminalAbsoluteFinalInputContinuityAuthorityV1` is now a **SUBORDINATE_CONTINUITY_CONTRIBUTOR**.
 The sole top-level continuity proof is `UltimateTerminalAbsoluteFinalInputContinuityAuthorityV1` via `ultimate-terminal-absolute-final-input-continuity-sweep`.
+
+> v16 update: canonical top-level continuity proof is now only `canonical-convergence-continuity-sweep` (`CanonicalConvergenceContinuityAuthorityV1`). This surface is subordinate continuity evidence.
+

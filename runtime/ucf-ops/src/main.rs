@@ -7,23 +7,24 @@ use ucf_ops::{
     airgap_export_policies, airgap_export_repro, airgap_export_run_cert, airgap_import,
     alerts_report, attest_bundle, attest_keys_generate, attest_run, attest_verify, audit_scan,
     bench_run, bringup, bundle_absolute_sweep, bundle_convergence_sweep, bundle_residual_sweep,
-    bundle_terminal_sweep, bundle_ultimate_sweep, causal_slice, continuity_authority_check,
-    determinism_scan, diagnostics, diagnostics_collect, drift_report, ebm_export_dataset,
-    ess_compact, ess_snapshot, event_id_for_decision, explain_tick, explain_why, export_bugreport,
-    export_policy_key_registry_v1, exports_bundle_spine_check, exports_bundle_spine_sweep,
-    exports_normalize_check, exports_roundtrip_check, final_bundle_consumer_sweep,
-    final_continuity_sweep, final_governance_consumer_sweep, final_input_continuity_sweep,
-    final_primary_semantics_sweep, final_readiness_consumer_sweep, gateway_threat_test,
-    goldens_generate, goldens_update, goldens_verify, goldens_verify_detailed,
-    governance_absolute_sweep, governance_convergence_sweep, governance_entry_check,
-    governance_entry_sweep, governance_residual_sweep, governance_surfaces_check,
-    governance_terminal_sweep, governance_ultimate_sweep, hardware_scan,
-    interop_consistency_matrix, load_applied_supported_set_context_v1, load_signoff_checklist,
-    logs_prove, logs_verify_proof, metrics_snapshot, metrics_summary, metrics_trend,
-    migrate_config_v1, models_active_check, models_active_evidence, models_active_review_snapshot,
-    models_applied_scope_check, models_backend_resolution, models_consistency_check,
-    models_eligibility, models_evidence_snapshot, models_list, models_probe, models_probe_slot,
-    models_promote, models_recommend_rollback, models_rollback, models_shadow_ready, models_stage,
+    bundle_terminal_sweep, bundle_ultimate_sweep, canonical_convergence_continuity_sweep,
+    causal_slice, continuity_authority_check, determinism_scan, diagnostics, diagnostics_collect,
+    drift_report, ebm_export_dataset, ess_compact, ess_snapshot, event_id_for_decision,
+    explain_tick, explain_why, export_bugreport, export_policy_key_registry_v1,
+    exports_bundle_spine_check, exports_bundle_spine_sweep, exports_normalize_check,
+    exports_roundtrip_check, final_bundle_consumer_sweep, final_continuity_sweep,
+    final_governance_consumer_sweep, final_input_continuity_sweep, final_primary_semantics_sweep,
+    final_readiness_consumer_sweep, gateway_threat_test, goldens_generate, goldens_update,
+    goldens_verify, goldens_verify_detailed, governance_absolute_sweep,
+    governance_convergence_sweep, governance_entry_check, governance_entry_sweep,
+    governance_residual_sweep, governance_surfaces_check, governance_terminal_sweep,
+    governance_ultimate_sweep, hardware_scan, interop_consistency_matrix,
+    load_applied_supported_set_context_v1, load_signoff_checklist, logs_prove, logs_verify_proof,
+    metrics_snapshot, metrics_summary, metrics_trend, migrate_config_v1, models_active_check,
+    models_active_evidence, models_active_review_snapshot, models_applied_scope_check,
+    models_backend_resolution, models_consistency_check, models_eligibility,
+    models_evidence_snapshot, models_list, models_probe, models_probe_slot, models_promote,
+    models_recommend_rollback, models_rollback, models_shadow_ready, models_stage,
     models_supported_scope_execute, models_supported_scope_execute_v10,
     models_supported_scope_execute_v11, models_supported_scope_execute_v4,
     models_supported_scope_execute_v5, models_supported_scope_execute_v6,
@@ -56,16 +57,17 @@ use ucf_ops::{
     AbsoluteFinalPrimarySemanticsTerminalSweepStatusV1,
     AbsoluteFinalReadinessTerminalSweepStatusV1, AdversarialRunArgs, AirgapArtifactType,
     AirgapImportArgs, AirgapImportMode, BenchArgs, BugKitBuildArgs, BundleConvergenceStatusV1,
-    CanonicalBundleAuthorityStatusV2, CanonicalReadinessAuthorityStatusV2, ChangeImpactArgs,
-    ConfigV1, ContinuityAuthorityStatusV1, CounterfactualRequest, DevLoopArgs, DocsLintArgs,
-    DocsLintMode, DocsLintStatus, ExplainTickRequest, ExportArgs,
-    FinalBundleConsumerAuthorityStatusV1, FinalBundleResidualSweepStatusV1,
-    FinalGovernanceConsumerAuthorityStatusV1, FinalPrimarySemanticsConsumerAuthorityStatusV1,
-    FinalPrimarySemanticsResidualSweepStatusV1, FinalReadinessConsumerAuthorityStatusV1,
-    FinalReadinessResidualSweepStatusV1, GateStatus, GoldenGenerateArgs, GoldenVerifyArgs,
-    GoldenVerifyReport, GovernanceConvergenceStatusV1, GovernanceEntryAuthorityStatusV2,
-    GovernanceEntryCheckStatusV1, GovernanceResidualSweepStatusV1, NightlySummarizeArgs,
-    OperatorReportArgs, OperatorReviewPacketArgs, OperatorSignoffArgs, OperatorWorkflowArgs,
+    CanonicalBundleAuthorityStatusV2, CanonicalConvergenceContinuityStatusV1,
+    CanonicalReadinessAuthorityStatusV2, ChangeImpactArgs, ConfigV1, ContinuityAuthorityStatusV1,
+    CounterfactualRequest, DevLoopArgs, DocsLintArgs, DocsLintMode, DocsLintStatus,
+    ExplainTickRequest, ExportArgs, FinalBundleConsumerAuthorityStatusV1,
+    FinalBundleResidualSweepStatusV1, FinalGovernanceConsumerAuthorityStatusV1,
+    FinalPrimarySemanticsConsumerAuthorityStatusV1, FinalPrimarySemanticsResidualSweepStatusV1,
+    FinalReadinessConsumerAuthorityStatusV1, FinalReadinessResidualSweepStatusV1, GateStatus,
+    GoldenGenerateArgs, GoldenVerifyArgs, GoldenVerifyReport, GovernanceConvergenceStatusV1,
+    GovernanceEntryAuthorityStatusV2, GovernanceEntryCheckStatusV1,
+    GovernanceResidualSweepStatusV1, NightlySummarizeArgs, OperatorReportArgs,
+    OperatorReviewPacketArgs, OperatorSignoffArgs, OperatorWorkflowArgs,
     PrimarySemanticsConvergenceStatusV1, ReadinessConvergenceStatusV1, ReleaseBuildRcArgs,
     ResidualFreeBundleAbsoluteSweepStatusV1, ResidualFreeBundleConsumerAuthorityStatusV1,
     ResidualFreeContinuityStatusV1, ResidualFreeGovernanceAbsoluteSweepStatusV1,
@@ -76,11 +78,10 @@ use ucf_ops::{
     StrictEvidenceContextV1, TerminalAbsoluteFinalInputContinuityStatusV1,
     TerminalBundleUltimateSweepStatusV1, TerminalGovernanceUltimateSweepStatusV1,
     TerminalPrimarySemanticsUltimateSweepStatusV1, TerminalReadinessUltimateSweepStatusV1,
-    UltimateTerminalAbsoluteFinalInputContinuityStatusV1, V10GateOverallStatus,
-    V11GateOverallStatus, V12GateOverallStatus, V13GateOverallStatus, V14GateOverallStatus,
-    V15GateOverallStatus, V2GateOverallStatus, V3GateOverallStatus, V4GateOverallStatus,
-    V5GateOverallStatus, V6GateOverallStatus, V7GateOverallStatus, V8GateOverallStatus,
-    V9GateOverallStatus,
+    V10GateOverallStatus, V11GateOverallStatus, V12GateOverallStatus, V13GateOverallStatus,
+    V14GateOverallStatus, V15GateOverallStatus, V2GateOverallStatus, V3GateOverallStatus,
+    V4GateOverallStatus, V5GateOverallStatus, V6GateOverallStatus, V7GateOverallStatus,
+    V8GateOverallStatus, V9GateOverallStatus,
 };
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
@@ -2446,6 +2447,30 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 std::process::exit(2);
             }
         }
+        "canonical-convergence-continuity-sweep" => {
+            let bundle = arg_value(&args, "--bundle")
+                .map(PathBuf::from)
+                .ok_or_else(|| {
+                    "usage: ucf-ops canonical-convergence-continuity-sweep --bundle <path> --out ./out/canonical_convergence_continuity_sweep.json".to_string()
+                })?;
+            let out = arg_value(&args, "--out")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| {
+                    PathBuf::from("./out/canonical_convergence_continuity_sweep.json")
+                });
+            let report = canonical_convergence_continuity_sweep(&workdir, &bundle, &out)?;
+            println!("out={}", out.display());
+            println!("continuity_status={:?}", report.continuity_status);
+            if !report.blocking_codes.is_empty() {
+                println!("blocking_codes={}", report.blocking_codes.join(","));
+            }
+            if !matches!(
+                report.continuity_status,
+                CanonicalConvergenceContinuityStatusV1::Pass
+            ) {
+                std::process::exit(2);
+            }
+        }
         "ultimate-terminal-absolute-final-input-continuity-sweep" => {
             let bundle = arg_value(&args, "--bundle")
                 .map(PathBuf::from)
@@ -2466,12 +2491,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             if !report.blocking_codes.is_empty() {
                 println!("blocking_codes={}", report.blocking_codes.join(","));
             }
-            if !matches!(
-                report.continuity_status,
-                UltimateTerminalAbsoluteFinalInputContinuityStatusV1::Pass
-            ) {
-                std::process::exit(2);
-            }
+            println!("note=SUBORDINATE_CONTINUITY_CONTRIBUTOR");
         }
         "continuity-authority-check" => {
             let bundle = arg_value(&args, "--bundle")

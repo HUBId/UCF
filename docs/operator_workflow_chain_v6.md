@@ -116,3 +116,6 @@ Top-level continuity is delegated only to `terminal-absolute-final-input-continu
 ## v15 ultimate continuity delegation
 `OperatorWorkflowChainV1` remains workflow-stage evidence and must not be interpreted as a top-level continuity proof.
 Canonical top-level continuity truth for operator/export/build/verify is delegated only to `ultimate-terminal-absolute-final-input-continuity-sweep` (`UltimateTerminalAbsoluteFinalInputContinuityAuthorityV1`).
+
+> v16 update: canonical top-level continuity proof is now only `canonical-convergence-continuity-sweep` (`CanonicalConvergenceContinuityAuthorityV1`). This surface is subordinate continuity evidence.
+
