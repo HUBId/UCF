@@ -17,14 +17,14 @@ use ucf_ops::{
     final_readiness_consumer_sweep, gateway_threat_test, goldens_generate, goldens_update,
     goldens_verify, goldens_verify_detailed, governance_absolute_sweep,
     governance_convergence_sweep, governance_entry_check, governance_entry_sweep,
-    governance_residual_sweep, governance_surfaces_check, governance_terminal_sweep,
-    governance_ultimate_sweep, hardware_scan, interop_consistency_matrix,
-    load_applied_supported_set_context_v1, load_signoff_checklist, logs_prove, logs_verify_proof,
-    metrics_snapshot, metrics_summary, metrics_trend, migrate_config_v1, models_active_check,
-    models_active_evidence, models_active_review_snapshot, models_applied_scope_check,
-    models_backend_resolution, models_consistency_check, models_eligibility,
-    models_evidence_snapshot, models_list, models_probe, models_probe_slot, models_promote,
-    models_recommend_rollback, models_rollback, models_shadow_ready, models_stage,
+    governance_residual_sweep, governance_stabilization_sweep, governance_surfaces_check,
+    governance_terminal_sweep, governance_ultimate_sweep, hardware_scan,
+    interop_consistency_matrix, load_applied_supported_set_context_v1, load_signoff_checklist,
+    logs_prove, logs_verify_proof, metrics_snapshot, metrics_summary, metrics_trend,
+    migrate_config_v1, models_active_check, models_active_evidence, models_active_review_snapshot,
+    models_applied_scope_check, models_backend_resolution, models_consistency_check,
+    models_eligibility, models_evidence_snapshot, models_list, models_probe, models_probe_slot,
+    models_promote, models_recommend_rollback, models_rollback, models_shadow_ready, models_stage,
     models_supported_scope_execute, models_supported_scope_execute_v10,
     models_supported_scope_execute_v11, models_supported_scope_execute_v4,
     models_supported_scope_execute_v5, models_supported_scope_execute_v6,
@@ -67,8 +67,8 @@ use ucf_ops::{
     FinalReadinessConsumerAuthorityStatusV1, FinalReadinessResidualSweepStatusV1, GateStatus,
     GoldenGenerateArgs, GoldenVerifyArgs, GoldenVerifyReport, GovernanceConvergenceStatusV1,
     GovernanceEntryAuthorityStatusV2, GovernanceEntryCheckStatusV1,
-    GovernanceResidualSweepStatusV1, NightlySummarizeArgs, OperatorReportArgs,
-    OperatorReviewPacketArgs, OperatorSignoffArgs, OperatorWorkflowArgs,
+    GovernanceResidualSweepStatusV1, GovernanceStabilizationStatusV1, NightlySummarizeArgs,
+    OperatorReportArgs, OperatorReviewPacketArgs, OperatorSignoffArgs, OperatorWorkflowArgs,
     PrimarySemanticsConvergenceStatusV1, ReadinessConvergenceStatusV1, ReleaseBuildRcArgs,
     ResidualFreeBundleAbsoluteSweepStatusV1, ResidualFreeBundleConsumerAuthorityStatusV1,
     ResidualFreeContinuityStatusV1, ResidualFreeGovernanceAbsoluteSweepStatusV1,
@@ -2750,6 +2750,22 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 std::process::exit(2);
             }
         }
+        "governance-stabilization-sweep" => {
+            let out = arg_value(&args, "--out")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("./out/governance_stabilization_sweep.json"));
+            let report = governance_stabilization_sweep(&workdir, &out)?;
+            println!("out={}", out.display());
+            println!("covered_consumers={}", report.sweep.covered_consumer_count);
+            println!("residual_paths={}", report.sweep.residual_path_count);
+            println!("stabilization_digest={}", report.sweep.stabilization_digest);
+            if !matches!(
+                report.sweep.stabilization_status,
+                GovernanceStabilizationStatusV1::Pass
+            ) {
+                std::process::exit(2);
+            }
+        }
         "final-readiness-consumer-sweep" => {
             let out = arg_value(&args, "--out")
                 .map(PathBuf::from)
@@ -3965,7 +3981,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             eprintln!(
-                "usage: ucf-ops <bringup|diag|health|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|attest|repro|exports|readiness-gate|preflight|goldens|nightly|dev|troubleshoot|adversarial-run|out|release|bench|runs|status|strict|ess|ebm|drift|alerts|operator|policy|portability|spec|change-impact|soak|governance-surfaces-check|governance-entry-check|governance-entry-sweep|final-governance-consumer-sweep|governance-residual-sweep|residual-free-governance-sweep|governance-absolute-sweep|governance-terminal-sweep|governance-ultimate-sweep|governance-convergence-sweep|final-readiness-consumer-sweep|readiness-residual-sweep|residual-free-readiness-sweep|readiness-absolute-sweep|readiness-terminal-sweep|readiness-ultimate-sweep|readiness-convergence-sweep|final-bundle-consumer-sweep|bundle-residual-sweep|residual-free-bundle-sweep|bundle-absolute-sweep|bundle-terminal-sweep|bundle-ultimate-sweep|final-continuity-sweep|residual-free-continuity-sweep|absolute-final-input-continuity-sweep|terminal-absolute-final-input-continuity-sweep|ultimate-terminal-absolute-final-input-continuity-sweep|remediation-consistency-check|remediation-interop-check|remediation-spine-check|primary-semantics-sweep|final-primary-semantics-sweep|primary-semantics-residual-sweep|residual-free-primary-semantics-sweep|primary-semantics-absolute-sweep|primary-semantics-terminal-sweep|primary-semantics-ultimate-sweep|primary-semantics-convergence-sweep|interop|v0|v1|v2|v3|v4|v5|v6|v7|v8|v9|v10|v11|v12|v13|v14|v15|v16|version> [--workdir <path>] [--bundle <path>]"
+                "usage: ucf-ops <bringup|diag|health|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|attest|repro|exports|readiness-gate|preflight|goldens|nightly|dev|troubleshoot|adversarial-run|out|release|bench|runs|status|strict|ess|ebm|drift|alerts|operator|policy|portability|spec|change-impact|soak|governance-surfaces-check|governance-entry-check|governance-entry-sweep|final-governance-consumer-sweep|governance-residual-sweep|residual-free-governance-sweep|governance-absolute-sweep|governance-terminal-sweep|governance-ultimate-sweep|governance-convergence-sweep|governance-stabilization-sweep|final-readiness-consumer-sweep|readiness-residual-sweep|residual-free-readiness-sweep|readiness-absolute-sweep|readiness-terminal-sweep|readiness-ultimate-sweep|readiness-convergence-sweep|final-bundle-consumer-sweep|bundle-residual-sweep|residual-free-bundle-sweep|bundle-absolute-sweep|bundle-terminal-sweep|bundle-ultimate-sweep|final-continuity-sweep|residual-free-continuity-sweep|absolute-final-input-continuity-sweep|terminal-absolute-final-input-continuity-sweep|ultimate-terminal-absolute-final-input-continuity-sweep|remediation-consistency-check|remediation-interop-check|remediation-spine-check|primary-semantics-sweep|final-primary-semantics-sweep|primary-semantics-residual-sweep|residual-free-primary-semantics-sweep|primary-semantics-absolute-sweep|primary-semantics-terminal-sweep|primary-semantics-ultimate-sweep|primary-semantics-convergence-sweep|interop|v0|v1|v2|v3|v4|v5|v6|v7|v8|v9|v10|v11|v12|v13|v14|v15|v16|version> [--workdir <path>] [--bundle <path>]"
             );
             std::process::exit(1);
         }
