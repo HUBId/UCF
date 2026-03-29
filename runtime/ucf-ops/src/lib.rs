@@ -260,11 +260,11 @@ pub use models_lifecycle::{
     models_evidence_snapshot, models_list, models_probe_slot, models_promote,
     models_recommend_rollback, models_rollback, models_shadow_ready, models_stage,
     models_supported_scope_execute, models_supported_scope_execute_v10,
-    models_supported_scope_execute_v11, models_supported_scope_execute_v4,
-    models_supported_scope_execute_v5, models_supported_scope_execute_v6,
-    models_supported_scope_execute_v7, models_supported_scope_execute_v8,
-    models_supported_scope_execute_v9, models_supported_scope_reevaluate,
-    models_supported_set_apply, models_supported_set_review,
+    models_supported_scope_execute_v11, models_supported_scope_execute_v12,
+    models_supported_scope_execute_v4, models_supported_scope_execute_v5,
+    models_supported_scope_execute_v6, models_supported_scope_execute_v7,
+    models_supported_scope_execute_v8, models_supported_scope_execute_v9,
+    models_supported_scope_reevaluate, models_supported_set_apply, models_supported_set_review,
     models_verify as models_verify_lifecycle, parse_slot, ActiveCheckStatus,
     ActiveEnablementDeniedCode, ActiveEnablementEvidenceV1, ActiveReviewEvidenceV1,
     ActiveReviewOverallStatusV1, ActiveReviewSnapshotRecordV1, AggregatedActiveReviewSnapshotV1,
@@ -276,16 +276,17 @@ pub use models_lifecycle::{
     SlotExpansionEligibilityV1, SupportedRealSlotSetDecisionV2,
     SupportedRealSlotSetExecutionDecisionV2, SupportedRealSlotSetPolicyV2, SupportedRealSlotSetV1,
     SupportedRealSlotSetV2, SupportedRealSlotsActiveViewV1, SupportedScopeExecutionDecisionV10,
-    SupportedScopeExecutionDecisionV11, SupportedScopeExecutionDecisionV3,
-    SupportedScopeExecutionDecisionV4, SupportedScopeExecutionDecisionV5,
-    SupportedScopeExecutionDecisionV6, SupportedScopeExecutionDecisionV7,
-    SupportedScopeExecutionDecisionV8, SupportedScopeExecutionDecisionV9,
-    SupportedScopeExecutionV10, SupportedScopeExecutionV11, SupportedScopeExecutionV3,
-    SupportedScopeExecutionV4, SupportedScopeExecutionV5, SupportedScopeExecutionV6,
-    SupportedScopeExecutionV7, SupportedScopeExecutionV8, SupportedScopeExecutionV9,
-    SupportedScopeReevaluationDecisionV1, SupportedScopeReevaluationV1, SupportedSetApplyReportV1,
-    SupportedSetExecutionDeniedCodeV1, SupportedSetExpansionRecordV1, SupportedSetFreezeRecordV1,
-    SupportedSetReviewReportV1, UnifiedEligibilityStatusV1,
+    SupportedScopeExecutionDecisionV11, SupportedScopeExecutionDecisionV12,
+    SupportedScopeExecutionDecisionV3, SupportedScopeExecutionDecisionV4,
+    SupportedScopeExecutionDecisionV5, SupportedScopeExecutionDecisionV6,
+    SupportedScopeExecutionDecisionV7, SupportedScopeExecutionDecisionV8,
+    SupportedScopeExecutionDecisionV9, SupportedScopeExecutionV10, SupportedScopeExecutionV11,
+    SupportedScopeExecutionV12, SupportedScopeExecutionV3, SupportedScopeExecutionV4,
+    SupportedScopeExecutionV5, SupportedScopeExecutionV6, SupportedScopeExecutionV7,
+    SupportedScopeExecutionV8, SupportedScopeExecutionV9, SupportedScopeReevaluationDecisionV1,
+    SupportedScopeReevaluationV1, SupportedSetApplyReportV1, SupportedSetExecutionDeniedCodeV1,
+    SupportedSetExpansionRecordV1, SupportedSetFreezeRecordV1, SupportedSetReviewReportV1,
+    UnifiedEligibilityStatusV1,
 };
 pub use nightly::{
     nightly_summarize, NightlyComponentReport, NightlyOverallStatus, NightlySummarizeArgs,
@@ -19137,7 +19138,7 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
     command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- models supported-scope-execute-v8 --out ./out/supported_scope_execute_v8.json --workdir ."));
     command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- models supported-scope-execute-v9 --out ./out/supported_scope_execute_v9.json --workdir ."));
     command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- models supported-scope-execute-v10 --out ./out/supported_scope_execute_v10.json --workdir ."));
-    command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- models supported-scope-execute-v11 --out ./out/supported_scope_execute_v11.json --workdir ."));
+    command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- models supported-scope-execute-v12 --out ./out/supported_scope_execute_v12.json --workdir ."));
     command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- final-readiness-consumer-sweep --out ./out/final_readiness_consumer_sweep.json"));
     command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- readiness-residual-sweep --out ./out/readiness_residual_sweep.json"));
     command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- residual-free-readiness-sweep --out ./out/residual_free_readiness_sweep.json"));
@@ -19286,7 +19287,7 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
     command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- models supported-scope-execute-v8 --out ./out/supported_scope_execute_v8.json --workdir ."));
     command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- models supported-scope-execute-v9 --out ./out/supported_scope_execute_v9.json --workdir ."));
     command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- models supported-scope-execute-v10 --out ./out/supported_scope_execute_v10.json --workdir ."));
-    command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- models supported-scope-execute-v11 --out ./out/supported_scope_execute_v11.json --workdir ."));
+    command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- models supported-scope-execute-v12 --out ./out/supported_scope_execute_v12.json --workdir ."));
     command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- final-readiness-consumer-sweep --out ./out/final_readiness_consumer_sweep.json"));
     command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- readiness-residual-sweep --out ./out/readiness_residual_sweep.json"));
     command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- residual-free-readiness-sweep --out ./out/residual_free_readiness_sweep.json"));

@@ -36,3 +36,8 @@ Canonical flows must now fail closed if converged canonical governance inputs ar
 ```bash
 cargo run -p ucf-ops -- governance-stabilization-sweep --out ./out/governance_stabilization_sweep.json
 ```
+
+
+## Beziehung zu Supported-Scope-Execution v17
+
+`GovernanceStabilizationSweepV1` ist in v17 ein Pflichtinput für `models supported-scope-execute-v12`. Ohne PASS + digest alignment muss die Scope-Execution `REAFFIRM_FREEZE` ausgeben.

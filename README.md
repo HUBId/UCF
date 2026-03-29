@@ -39,7 +39,7 @@ See `docs/feature_matrix.md` for details.
 - `cargo run -p ucf-ops -- models supported-scope-execute-v8 --out ./out/supported_scope_execute_v8.json --workdir .`
 - `cargo run -p ucf-ops -- models supported-scope-execute-v9 --out ./out/supported_scope_execute_v9.json --workdir .`
 - `cargo run -p ucf-ops -- models supported-scope-execute-v10 --out ./out/supported_scope_execute_v10.json --workdir .`
-- `cargo run -p ucf-ops -- models supported-scope-execute-v11 --out ./out/supported_scope_execute_v11.json --workdir .`
+- `cargo run -p ucf-ops -- models supported-scope-execute-v12 --out ./out/supported_scope_execute_v12.json --workdir .`
 - `cargo run -p ucf-ops -- readiness-spine-check --out ./out/readiness_spine_check.json`
 - `cargo run -p ucf-ops -- readiness-spine-sweep --out ./out/readiness_spine_sweep.json`
 - `cargo run -p ucf-ops -- final-readiness-consumer-sweep --out ./out/final_readiness_consumer_sweep.json`

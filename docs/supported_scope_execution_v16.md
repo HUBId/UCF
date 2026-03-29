@@ -51,3 +51,6 @@ cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_app
 - `out/supported_set_apply.json`
   - `decision=EXPANDED` => Applied Scope geändert.
   - `decision=FROZEN` => Applied Scope unverändert.
+
+
+> Hinweis (v17): Die aktuelle Autorisierungsebene ist `SupportedScopeExecutionV12` mit zusätzlicher `GovernanceStabilizationSweepV1`-Pflicht. Siehe `docs/supported_scope_execution_v17.md`.
