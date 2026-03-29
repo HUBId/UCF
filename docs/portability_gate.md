@@ -1,4 +1,4 @@
-# Portability Gate v15 Refresh (Linux + Windows)
+# Portability Gate v16 Refresh (Linux + Windows)
 
 `Portability Gate` blocks merges when core runtime/ops checks are not cross-platform safe.
 
@@ -103,22 +103,26 @@
    - `governance-absolute-sweep` must pass and prove deterministic canonical governance authority after absolute residual cleanup.
    - `governance-terminal-sweep` must pass and prove deterministic terminal absolute governance authority (no residual echo/summary/lineage usage).
    - `governance-ultimate-sweep` must pass and prove deterministic ultimate terminal absolute residual-free governance authority.
+   - `governance-convergence-sweep` must pass and prove deterministic canonical governance authority after memo/copy/mirror cleanup.
    - `models supported-scope-execute-v7` must emit deterministic `REAFFIRM_FREEZE` / `EXECUTE_EXPAND_BY_ONE` decisions against residual-free governance authority.
    - `models supported-scope-execute-v8` must emit deterministic `REAFFIRM_FREEZE` / `EXECUTE_EXPAND_BY_ONE` decisions against absolute governance authority.
    - `models supported-scope-execute-v9` must emit deterministic `REAFFIRM_FREEZE` / `EXECUTE_EXPAND_BY_ONE` decisions against terminal absolute governance authority.
    - `models supported-scope-execute-v10` must emit deterministic `REAFFIRM_FREEZE` / `EXECUTE_EXPAND_BY_ONE` decisions against ultimate terminal absolute residual-free governance authority.
+   - `models supported-scope-execute-v11` must emit deterministic `REAFFIRM_FREEZE` / `EXECUTE_EXPAND_BY_ONE` decisions against v16 governance convergence authority.
    - `final-readiness-consumer-sweep` must pass and emit deterministic mismatch categories for canonical final readiness consumers.
    - `readiness-residual-sweep` must pass and emit deterministic mismatch categories for canonical residual readiness consumers.
    - `residual-free-readiness-sweep` must pass and emit deterministic mismatch categories for residual-free canonical readiness authority.
    - `readiness-absolute-sweep` must pass and emit deterministic mismatch categories for absolute residual-free readiness authority.
    - `readiness-terminal-sweep` must pass and emit deterministic mismatch categories for terminal absolute residual-free readiness authority.
    - `readiness-ultimate-sweep` must pass and emit deterministic mismatch categories for ultimate terminal absolute residual-free readiness authority.
+   - `readiness-convergence-sweep` must pass and emit deterministic mismatch categories after memo/copy/mirror cleanup.
    - `final-bundle-consumer-sweep` must pass and prove canonical bundle-input authority consumption across canonical consumers.
    - `bundle-residual-sweep` must pass and prove canonical bundle-input authority after residual cleanup.
    - `residual-free-bundle-sweep` must pass and prove canonical bundle-input authority after historical/heuristic cleanup.
    - `bundle-absolute-sweep` must pass and prove canonical bundle-input authority after absolute lineage/history cleanup.
    - `bundle-terminal-sweep` must pass and prove canonical bundle-input authority after terminal absolute echo/history cleanup.
    - `bundle-ultimate-sweep` must pass and prove canonical bundle-input authority after terminal absolute cache/mirror/snapshot cleanup.
+   - `bundle-convergence-sweep` must pass and prove canonical bundle-input authority after memo/copy/mirror cleanup.
    - `readiness-spine-check` must emit deterministic mismatch categories and remediation codes.
    - `readiness-spine-sweep` must pass and prove deterministic final readiness authority coverage.
    - `exports bundle-spine-check` must reconstruct canonical bundle spine deterministically from bounded fixture bundles.
@@ -130,6 +134,7 @@
    - `primary-semantics-absolute-sweep` must prove canonical primary blocking/remediation authority after absolute historical/local override cleanup.
    - `primary-semantics-terminal-sweep` must prove canonical primary blocking/remediation authority after terminal absolute echo/cache/override cleanup.
    - `primary-semantics-ultimate-sweep` must prove canonical primary blocking/remediation authority after terminal absolute cache/mirror/snapshot cleanup.
+   - `primary-semantics-convergence-sweep` must prove canonical primary blocking/remediation authority after memo/copy/mirror cleanup.
    - `remediation-spine-check` must map canonical conditions/remediations consistently across scope/governance/readiness/bundle surfaces.
    - `models active-review-snapshot` and `models backend-resolution` must run in bounded offline mode (optional backend-resolution paths must SKIP cleanly).
    - Enriched export smokes (`repro pack` + `repro verify`, `bugkit build`) must generate deterministic manifests with bounded fixtures and no payload/weight inclusion by default.
@@ -228,6 +233,15 @@
 - `docs/ultimate_terminal_absolute_final_input_continuity_v15.md`
 - `docs/artifact_schema_snapshots.md`
 
+## v16 docs covered by portability/docs gates
+
+- `docs/governance_convergence_sweep_v16.md`
+- `docs/supported_scope_execution_v16.md`
+- `docs/readiness_convergence_sweep_v16.md`
+- `docs/bundle_convergence_sweep_v16.md`
+- `docs/primary_semantics_convergence_sweep_v16.md`
+- `docs/artifact_schema_snapshots.md`
+
 ## v9 docs covered by portability/docs gates
 
 - `docs/canonical_governance_entry_sweep_v9.md`
@@ -310,15 +324,20 @@ cargo run -p ucf-ops -- governance-residual-sweep --out ./out/governance_residua
 cargo run -p ucf-ops -- models supported-scope-execute-v7 --out ./out/supported_scope_execute_v7.json --workdir .
 cargo run -p ucf-ops -- governance-absolute-sweep --out ./out/governance_absolute_sweep.json
 cargo run -p ucf-ops -- models supported-scope-execute-v8 --out ./out/supported_scope_execute_v8.json --workdir .
+cargo run -p ucf-ops -- governance-convergence-sweep --out ./out/governance_convergence_sweep.json
+cargo run -p ucf-ops -- models supported-scope-execute-v11 --out ./out/supported_scope_execute_v11.json --workdir .
 cargo run -p ucf-ops -- final-readiness-consumer-sweep --out ./out/final_readiness_consumer_sweep.json
 cargo run -p ucf-ops -- readiness-residual-sweep --out ./out/readiness_residual_sweep.json
 cargo run -p ucf-ops -- readiness-absolute-sweep --out ./out/readiness_absolute_sweep.json
+cargo run -p ucf-ops -- readiness-convergence-sweep --out ./out/readiness_convergence_sweep.json
 cargo run -p ucf-ops -- final-bundle-consumer-sweep --out ./out/final_bundle_consumer_sweep.json
 cargo run -p ucf-ops -- bundle-residual-sweep --out ./out/bundle_residual_sweep.json
 cargo run -p ucf-ops -- bundle-absolute-sweep --out ./out/bundle_absolute_sweep.json
+cargo run -p ucf-ops -- bundle-convergence-sweep --out ./out/bundle_convergence_sweep.json
 cargo run -p ucf-ops -- final-primary-semantics-sweep --out ./out/final_primary_semantics_sweep.json
 cargo run -p ucf-ops -- primary-semantics-residual-sweep --out ./out/primary_semantics_residual_sweep.json
 cargo run -p ucf-ops -- primary-semantics-absolute-sweep --out ./out/primary_semantics_absolute_sweep.json
+cargo run -p ucf-ops -- primary-semantics-convergence-sweep --out ./out/primary_semantics_convergence_sweep.json
 mkdir -p ./.ucf_portability_smoke/out/$run_id
 cp ./out/portability_smoke_bringup/run_metadata.json ./.ucf_portability_smoke/out/$run_id/run_metadata.json
 cp ./out/portability_smoke_bringup/metrics_summary.json ./.ucf_portability_smoke/out/$run_id/metrics_summary.json

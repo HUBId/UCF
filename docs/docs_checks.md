@@ -189,3 +189,11 @@ When `--out` is provided, lint writes deterministic JSON with per-check status a
      - `docs/primary_semantics_ultimate_sweep_v15.md`
      - `docs/ultimate_terminal_absolute_final_input_continuity_v15.md`
      - `docs/artifact_schema_snapshots.md`
+20. **v16 docs linkage consistency**
+   - Requires presence and portability/docs linkage for:
+     - `docs/governance_convergence_sweep_v16.md`
+     - `docs/supported_scope_execution_v16.md`
+     - `docs/readiness_convergence_sweep_v16.md`
+     - `docs/bundle_convergence_sweep_v16.md`
+     - `docs/primary_semantics_convergence_sweep_v16.md`
+     - `docs/artifact_schema_snapshots.md`

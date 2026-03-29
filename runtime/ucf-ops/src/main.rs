@@ -497,7 +497,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     let out = arg_value(&args, "--out")
                         .map(PathBuf::from)
                         .unwrap_or_else(|| PathBuf::from("./out/portability_report.json"));
-                    let report = portability_report(&workdir, &out)?;
+                    let portability_workdir = workdir.clone();
+                    let portability_out = out.clone();
+                    let report = std::thread::Builder::new()
+                        .name("ucf-portability-report".to_string())
+                        .stack_size(32 * 1024 * 1024)
+                        .spawn(move || portability_report(&portability_workdir, &portability_out))
+                        .map_err(|err| format!("failed to spawn portability report thread: {err}"))?
+                        .join()
+                        .map_err(|_| "portability report thread panicked".to_string())??;
                     let has_fail = [
                         &report.docs_lint,
                         &report.path_scan,
