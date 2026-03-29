@@ -56,6 +56,7 @@ const SUPPORTED_SCOPE_EXECUTION_V8_SCHEMA_VERSION: u16 = 8;
 const SUPPORTED_SCOPE_EXECUTION_V9_SCHEMA_VERSION: u16 = 9;
 const SUPPORTED_SCOPE_EXECUTION_V10_SCHEMA_VERSION: u16 = 10;
 const SUPPORTED_SCOPE_EXECUTION_V11_SCHEMA_VERSION: u16 = 11;
+const SUPPORTED_SCOPE_EXECUTION_V12_SCHEMA_VERSION: u16 = 12;
 const SLOT_SET_MAX: usize = 2;
 const PROBE_OUTPUT_CAP: usize = 8;
 const PROBE_NOTES_CAP: usize = 8;
@@ -519,6 +520,13 @@ pub enum SupportedScopeExecutionDecisionV11 {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum SupportedScopeExecutionDecisionV12 {
+    ReaffirmFreeze,
+    ExecuteExpandByOne,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SupportedScopeExecutionV10 {
     pub schema_version: u16,
     pub previous_applied_set_digest_prefix: String,
@@ -560,6 +568,32 @@ pub struct SupportedScopeExecutionV11 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prior_scope_execution_digest_prefix: Option<String>,
     pub execution_decision: SupportedScopeExecutionDecisionV11,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chosen_candidate_slot: Option<String>,
+    pub resulting_supported_set_digest_prefix: String,
+    pub rationale_codes: Vec<String>,
+    pub execution_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SupportedScopeExecutionV12 {
+    pub schema_version: u16,
+    pub previous_applied_set_digest_prefix: String,
+    pub current_policy_digest_prefix: String,
+    pub current_reevaluation_digest_prefix: String,
+    pub canonical_governance_entry_digest_prefix: String,
+    pub canonical_governance_authority_digest_prefix: String,
+    pub final_governance_consumer_authority_digest_prefix: String,
+    pub final_governance_residual_sweep_digest_prefix: String,
+    pub residual_free_governance_consumer_authority_digest_prefix: String,
+    pub residual_free_governance_absolute_sweep_digest_prefix: String,
+    pub absolute_final_governance_terminal_sweep_digest_prefix: String,
+    pub terminal_governance_ultimate_sweep_digest_prefix: String,
+    pub governance_convergence_sweep_digest_prefix: String,
+    pub governance_stabilization_sweep_digest_prefix: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prior_scope_execution_digest_prefix: Option<String>,
+    pub execution_decision: SupportedScopeExecutionDecisionV12,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub chosen_candidate_slot: Option<String>,
     pub resulting_supported_set_digest_prefix: String,
@@ -3280,16 +3314,16 @@ pub fn models_supported_set_apply(
 ) -> Result<SupportedSetApplyReportV1, OpsError> {
     let policy = load_latest_supported_set_policy_v2(workdir)?;
     let previous_set = current_supported_real_slot_set(workdir)?;
-    let execution = ensure_current_supported_scope_execution_v11(workdir, &policy, &previous_set)?;
+    let execution = ensure_current_supported_scope_execution_v12(workdir, &policy, &previous_set)?;
 
     let mut reevaluated_policy = policy.clone();
     match execution.execution_decision {
-        SupportedScopeExecutionDecisionV11::ReaffirmFreeze => {
+        SupportedScopeExecutionDecisionV12::ReaffirmFreeze => {
             reevaluated_policy.decision = SupportedRealSlotSetDecisionV2::Freeze;
             reevaluated_policy.chosen_candidate_slot = None;
             reevaluated_policy.rationale_codes = execution.rationale_codes.clone();
         }
-        SupportedScopeExecutionDecisionV11::ExecuteExpandByOne => {
+        SupportedScopeExecutionDecisionV12::ExecuteExpandByOne => {
             let Some(slot) = execution.chosen_candidate_slot.clone() else {
                 return Err(OpsError::Invalid(
                     "SUPPORTED_SET_APPLY_EXECUTION_INVALID: expansion decision missing candidate"
@@ -3747,7 +3781,45 @@ pub fn models_supported_scope_execute_v11(
     Ok(execution)
 }
 
+pub fn models_supported_scope_execute_v12(
+    workdir: &Path,
+    out: &Path,
+) -> Result<SupportedScopeExecutionV12, OpsError> {
+    let policy = load_latest_supported_set_policy_v2(workdir)?;
+    let previous_set = current_supported_real_slot_set(workdir)?;
+    let reevaluation = load_latest_supported_scope_reevaluation_v1(workdir)?;
+    let policy_prefix = prefix_hex(&policy.policy_digest, 16);
+    let previous_prefix = prefix_hex(&previous_set.set_digest, 16);
+    if reevaluation.policy_digest_prefix != policy_prefix
+        || reevaluation.previous_applied_set_digest_prefix != previous_prefix
+    {
+        return Err(OpsError::Invalid(
+            "SCOPE_EXEC_V12_STALE_REEVALUATION: rerun `ucf-ops models supported-scope-reevaluate`"
+                .to_string(),
+        ));
+    }
+
+    let prior_scope_execution_digest_prefix = load_prior_scope_execution_digest_prefix(workdir)?;
+    let execution = validate_scope_execution_v12(
+        workdir,
+        &policy,
+        &previous_set,
+        &reevaluation,
+        prior_scope_execution_digest_prefix,
+    )?;
+    if let Some(parent) = out.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(out, serde_json::to_vec_pretty(&execution)?)?;
+    Ok(execution)
+}
+
 fn load_prior_scope_execution_digest_prefix(workdir: &Path) -> Result<Option<String>, OpsError> {
+    let v12_path = workdir.join("out").join("supported_scope_execute_v12.json");
+    if let Ok(report) = read_json_file::<SupportedScopeExecutionV12>(&v12_path) {
+        return Ok(Some(prefix_hex(&report.execution_digest, 16)));
+    }
+
     let v11_path = workdir.join("out").join("supported_scope_execute_v11.json");
     if let Ok(report) = read_json_file::<SupportedScopeExecutionV11>(&v11_path) {
         return Ok(Some(prefix_hex(&report.execution_digest, 16)));
@@ -6229,6 +6301,392 @@ fn validate_scope_execution_v11(
     })
 }
 
+fn validate_scope_execution_v12(
+    workdir: &Path,
+    policy: &SupportedRealSlotSetPolicyV2,
+    previous_set: &SupportedRealSlotSetV1,
+    reevaluation: &SupportedScopeReevaluationV1,
+    prior_scope_execution_digest_prefix: Option<String>,
+) -> Result<SupportedScopeExecutionV12, OpsError> {
+    let policy_prefix = prefix_hex(&policy.policy_digest, 16);
+    let previous_prefix = prefix_hex(&previous_set.set_digest, 16);
+    let reeval_prefix = prefix_hex(&reevaluation.reevaluation_digest, 16);
+
+    if let Ok(prior_v12) = read_json_file::<SupportedScopeExecutionV12>(
+        &workdir.join("out/supported_scope_execute_v12.json"),
+    ) {
+        if prior_v12.current_policy_digest_prefix != policy_prefix
+            || prior_v12.previous_applied_set_digest_prefix != previous_prefix
+            || prior_v12.current_reevaluation_digest_prefix != reeval_prefix
+        {
+            return Err(OpsError::Invalid(
+                "SCOPE_EXEC_V12_STALE_PRIOR_EXECUTION: remove stale out/supported_scope_execute_v12.json and rerun execution chain".to_string(),
+            ));
+        }
+    }
+
+    let applied_context = load_applied_supported_set_context_v1(workdir)?;
+    let expected_applied_prefix = prefix_hex(&previous_set.set_digest, 16);
+    if applied_context.applied_set_digest_prefix != expected_applied_prefix {
+        return Err(OpsError::Invalid(
+            "SCOPE_EXEC_V12_STALE_APPLIED_SCOPE: current applied context no longer matches supported scope baseline"
+                .to_string(),
+        ));
+    }
+
+    let mut rationale_codes = Vec::new();
+    let mut chosen_candidate_slot = None;
+    let mut execution_decision = SupportedScopeExecutionDecisionV12::ReaffirmFreeze;
+    let mut resulting_slots = previous_set.slots.clone();
+
+    let mut canonical_digest_prefix = "UNAVAILABLE".to_string();
+    let mut authority_digest_prefix = "UNAVAILABLE".to_string();
+    let mut final_consumer_authority_digest_prefix = "UNAVAILABLE".to_string();
+    let mut residual_sweep_digest_prefix = "UNAVAILABLE".to_string();
+    let mut residual_free_governance_authority_digest_prefix = "UNAVAILABLE".to_string();
+    let mut residual_free_governance_absolute_sweep_digest_prefix = "UNAVAILABLE".to_string();
+    let mut terminal_governance_sweep_digest_prefix = "UNAVAILABLE".to_string();
+    let mut terminal_governance_ultimate_sweep_digest_prefix = "UNAVAILABLE".to_string();
+    let mut governance_convergence_sweep_digest_prefix = "UNAVAILABLE".to_string();
+    let mut governance_stabilization_sweep_digest_prefix = "UNAVAILABLE".to_string();
+
+    let canonical_entry = derive_and_validate_canonical_entry(workdir, &applied_context)
+        .map_err(|code| OpsError::Invalid(code.to_string()));
+    if let Ok(entry) = canonical_entry {
+        canonical_digest_prefix = prefix_hex(&entry.authority_digest, 16);
+    } else {
+        rationale_codes.push("SCOPE_EXEC_V12_GOVERNANCE_ENTRY_FAIL".to_string());
+    }
+
+    let authority =
+        load_and_validate_governance_authority(workdir, &applied_context, &canonical_digest_prefix)
+            .map_err(|_| OpsError::Invalid("SCOPE_EXEC_V12_GOVERNANCE_AUTHORITY_FAIL".to_string()));
+    let authority_ok = if let Ok(authority) = authority {
+        authority_digest_prefix = prefix_hex(&authority.authority_digest, 16);
+        true
+    } else {
+        rationale_codes.push("SCOPE_EXEC_V12_GOVERNANCE_AUTHORITY_FAIL".to_string());
+        false
+    };
+
+    let final_authority = load_and_validate_final_consumer_authority(
+        workdir,
+        &applied_context,
+        &canonical_digest_prefix,
+        &authority_digest_prefix,
+    )
+    .map_err(|_| OpsError::Invalid("SCOPE_EXEC_V12_FINAL_CONSUMER_AUTHORITY_FAIL".to_string()));
+    let final_authority_ok = if let Ok(authority) = final_authority {
+        final_consumer_authority_digest_prefix = prefix_hex(&authority.authority_digest, 16);
+        true
+    } else {
+        rationale_codes.push("SCOPE_EXEC_V12_FINAL_CONSUMER_AUTHORITY_FAIL".to_string());
+        false
+    };
+
+    let residual_sweep = load_and_validate_governance_residual_sweep(
+        workdir,
+        &applied_context,
+        &canonical_digest_prefix,
+        &authority_digest_prefix,
+        &final_consumer_authority_digest_prefix,
+    )
+    .map_err(|_| OpsError::Invalid("SCOPE_EXEC_V12_RESIDUAL_SWEEP_FAIL".to_string()));
+    let residual_sweep_ok = if let Ok(sweep) = residual_sweep {
+        residual_sweep_digest_prefix = prefix_hex(&sweep.sweep_digest, 16);
+        true
+    } else {
+        rationale_codes.push("SCOPE_EXEC_V12_RESIDUAL_SWEEP_FAIL".to_string());
+        false
+    };
+
+    let residual_free = load_and_validate_residual_free_governance_authority(
+        workdir,
+        &applied_context,
+        &canonical_digest_prefix,
+        &authority_digest_prefix,
+        &final_consumer_authority_digest_prefix,
+        &residual_sweep_digest_prefix,
+    )
+    .map_err(|_| OpsError::Invalid("SCOPE_EXEC_V12_RESIDUAL_FREE_GOVERNANCE_FAIL".to_string()));
+    let residual_free_ok = if let Ok(authority) = residual_free {
+        residual_free_governance_authority_digest_prefix =
+            prefix_hex(&authority.authority_digest, 16);
+        true
+    } else {
+        rationale_codes.push("SCOPE_EXEC_V12_RESIDUAL_FREE_GOVERNANCE_FAIL".to_string());
+        false
+    };
+
+    let absolute_sweep = load_and_validate_governance_absolute_sweep(
+        workdir,
+        &applied_context,
+        &canonical_digest_prefix,
+        &authority_digest_prefix,
+        &final_consumer_authority_digest_prefix,
+        &residual_sweep_digest_prefix,
+        &residual_free_governance_authority_digest_prefix,
+    )
+    .map_err(|_| OpsError::Invalid("SCOPE_EXEC_V12_ABSOLUTE_GOVERNANCE_SWEEP_FAIL".to_string()));
+    let absolute_sweep_ok = if let Ok(sweep) = absolute_sweep {
+        residual_free_governance_absolute_sweep_digest_prefix = prefix_hex(&sweep.sweep_digest, 16);
+        true
+    } else {
+        rationale_codes.push("SCOPE_EXEC_V12_ABSOLUTE_GOVERNANCE_SWEEP_FAIL".to_string());
+        false
+    };
+
+    let terminal_sweep = load_and_validate_terminal_governance_sweep(
+        workdir,
+        &applied_context,
+        &canonical_digest_prefix,
+        &authority_digest_prefix,
+        &final_consumer_authority_digest_prefix,
+        &residual_sweep_digest_prefix,
+        &residual_free_governance_authority_digest_prefix,
+        &residual_free_governance_absolute_sweep_digest_prefix,
+    )
+    .map_err(|_| OpsError::Invalid("SCOPE_EXEC_V12_TERMINAL_GOVERNANCE_SWEEP_FAIL".to_string()));
+    let terminal_sweep_ok = if let Ok(sweep) = terminal_sweep {
+        terminal_governance_sweep_digest_prefix = prefix_hex(&sweep.sweep_digest, 16);
+        true
+    } else {
+        rationale_codes.push("SCOPE_EXEC_V12_TERMINAL_GOVERNANCE_SWEEP_FAIL".to_string());
+        false
+    };
+
+    let ultimate_sweep = load_and_validate_governance_ultimate_sweep(
+        workdir,
+        &applied_context,
+        &canonical_digest_prefix,
+        &authority_digest_prefix,
+        &final_consumer_authority_digest_prefix,
+        &residual_sweep_digest_prefix,
+        &residual_free_governance_authority_digest_prefix,
+        &residual_free_governance_absolute_sweep_digest_prefix,
+        &terminal_governance_sweep_digest_prefix,
+    )
+    .map_err(|_| OpsError::Invalid("SCOPE_EXEC_V12_ULTIMATE_GOVERNANCE_SWEEP_FAIL".to_string()));
+    let ultimate_sweep_ok = if let Ok(sweep) = ultimate_sweep {
+        terminal_governance_ultimate_sweep_digest_prefix = prefix_hex(&sweep.sweep_digest, 16);
+        true
+    } else {
+        rationale_codes.push("SCOPE_EXEC_V12_ULTIMATE_GOVERNANCE_SWEEP_FAIL".to_string());
+        false
+    };
+
+    let convergence_sweep = load_and_validate_governance_convergence_sweep(
+        workdir,
+        &applied_context,
+        &canonical_digest_prefix,
+        &authority_digest_prefix,
+        &final_consumer_authority_digest_prefix,
+        &residual_sweep_digest_prefix,
+        &residual_free_governance_authority_digest_prefix,
+        &residual_free_governance_absolute_sweep_digest_prefix,
+        &terminal_governance_ultimate_sweep_digest_prefix,
+    )
+    .map_err(|_| OpsError::Invalid("SCOPE_EXEC_V12_GOVERNANCE_CONVERGENCE_FAIL".to_string()));
+    let convergence_sweep_ok = if let Ok(sweep) = convergence_sweep {
+        governance_convergence_sweep_digest_prefix = prefix_hex(&sweep.convergence_digest, 16);
+        true
+    } else {
+        rationale_codes.push("SCOPE_EXEC_V12_GOVERNANCE_CONVERGENCE_FAIL".to_string());
+        false
+    };
+
+    let stabilization_sweep = load_and_validate_governance_stabilization_sweep(
+        workdir,
+        &applied_context,
+        &canonical_digest_prefix,
+        &authority_digest_prefix,
+        &final_consumer_authority_digest_prefix,
+        &residual_sweep_digest_prefix,
+        &residual_free_governance_authority_digest_prefix,
+        &residual_free_governance_absolute_sweep_digest_prefix,
+        &terminal_governance_ultimate_sweep_digest_prefix,
+        &governance_convergence_sweep_digest_prefix,
+    )
+    .map_err(|_| OpsError::Invalid("SCOPE_EXEC_V12_GOVERNANCE_STABILIZATION_FAIL".to_string()));
+    let stabilization_sweep_ok = if let Ok(sweep) = stabilization_sweep {
+        governance_stabilization_sweep_digest_prefix = prefix_hex(&sweep.stabilization_digest, 16);
+        true
+    } else {
+        rationale_codes.push("SCOPE_EXEC_V12_GOVERNANCE_STABILIZATION_FAIL".to_string());
+        false
+    };
+
+    if applied_context.schema_version == 0 {
+        rationale_codes.push("SCOPE_EXEC_V12_APPLIED_SCOPE_FAIL".to_string());
+    }
+
+    let candidate_slots = policy
+        .candidate_slots_considered
+        .iter()
+        .map(|slot_id| {
+            evaluate_slot_expansion_candidate(
+                slot_id,
+                &previous_set.slots.iter().cloned().collect::<BTreeSet<_>>(),
+                SLOT_SET_MAX + 1,
+            )
+        })
+        .collect::<Vec<_>>();
+
+    let applied_v2 = read_json_file::<SupportedRealSlotSetV2>(
+        &workdir.join("out/supported_real_slot_set_applied_v2.json"),
+    )
+    .unwrap_or_else(|_| {
+        build_supported_real_slot_set_v2(
+            previous_set.slots.clone(),
+            &policy.policy_digest,
+            &previous_set.set_digest,
+            SupportedRealSlotSetExecutionDecisionV2::Frozen,
+        )
+    });
+
+    let mut viable_candidates = Vec::new();
+    for candidate in &candidate_slots {
+        if previous_set.slots.contains(&candidate.slot_id) {
+            rationale_codes.push("SCOPE_EXEC_V12_ALREADY_IN_SCOPE".to_string());
+            continue;
+        }
+        if !candidate.trait_contract_exists
+            || !candidate.probe_path_exists_or_reusable
+            || !candidate.shadow_path_exists_or_trivially_attachable
+            || !candidate.compare_window_normalizable
+            || !candidate.strict_evidence_plumbing_representable_without_arch_fork
+            || !candidate.tiny_fixture_path_feasible
+        {
+            rationale_codes.push("SCOPE_EXEC_V12_INCOMPLETE_SCAFFOLD".to_string());
+            continue;
+        }
+
+        let authority_failures =
+            validate_scope_expansion_under_authority(workdir, &applied_v2, candidate);
+        if authority_failures
+            .iter()
+            .any(|f| f == "SCOPE_REEVAL_GOVERNANCE_MISMATCH")
+        {
+            rationale_codes.push("SCOPE_EXEC_V12_GOVERNANCE_ADAPTER_DEPENDENCY".to_string());
+            continue;
+        }
+        if authority_failures
+            .iter()
+            .any(|f| f == "SCOPE_REEVAL_EXPORT_INTEROP_GAP")
+        {
+            rationale_codes.push("SCOPE_EXEC_V12_EXPORT_CONTINUITY_GAP".to_string());
+            continue;
+        }
+        if !(authority_ok
+            && final_authority_ok
+            && residual_sweep_ok
+            && residual_free_ok
+            && absolute_sweep_ok
+            && terminal_sweep_ok
+            && ultimate_sweep_ok
+            && convergence_sweep_ok
+            && stabilization_sweep_ok)
+        {
+            continue;
+        }
+        viable_candidates.push(candidate.slot_id.clone());
+    }
+
+    if viable_candidates.len() > 1 {
+        rationale_codes.push("SCOPE_EXEC_V12_AMBIGUOUS_CANDIDATE".to_string());
+    } else if let Some(slot) = viable_candidates.first() {
+        if reevaluation.reevaluation_decision
+            == SupportedScopeReevaluationDecisionV1::ExecuteExpandByOne
+            && reevaluation.chosen_candidate_slot.as_ref() == Some(slot)
+            && policy.chosen_candidate_slot.as_ref() == Some(slot)
+        {
+            execution_decision = SupportedScopeExecutionDecisionV12::ExecuteExpandByOne;
+            chosen_candidate_slot = Some(slot.clone());
+            resulting_slots.push(slot.clone());
+            resulting_slots.sort();
+            resulting_slots.dedup();
+            rationale_codes.push("SCOPE_EXEC_V12_EXPANSION_EXECUTED".to_string());
+            rationale_codes.push("SCOPE_EXEC_V12_NO_ACTIVE_IMPLICATIONS".to_string());
+        } else {
+            rationale_codes.push("SCOPE_EXEC_V12_REAFFIRM_FREEZE".to_string());
+        }
+    } else {
+        rationale_codes.push("SCOPE_EXEC_V12_REAFFIRM_FREEZE".to_string());
+    }
+
+    rationale_codes.sort();
+    rationale_codes.dedup();
+    let resulting = build_supported_real_slot_set_v2(
+        resulting_slots.clone(),
+        &policy.policy_digest,
+        &previous_set.set_digest,
+        if chosen_candidate_slot.is_some() {
+            SupportedRealSlotSetExecutionDecisionV2::Expanded
+        } else {
+            SupportedRealSlotSetExecutionDecisionV2::Frozen
+        },
+    );
+
+    let mut digest_source = Vec::new();
+    digest_source.extend_from_slice(
+        SUPPORTED_SCOPE_EXECUTION_V12_SCHEMA_VERSION
+            .to_string()
+            .as_bytes(),
+    );
+    digest_source.extend_from_slice(previous_prefix.as_bytes());
+    digest_source.extend_from_slice(policy_prefix.as_bytes());
+    digest_source.extend_from_slice(reeval_prefix.as_bytes());
+    digest_source.extend_from_slice(canonical_digest_prefix.as_bytes());
+    digest_source.extend_from_slice(authority_digest_prefix.as_bytes());
+    digest_source.extend_from_slice(final_consumer_authority_digest_prefix.as_bytes());
+    digest_source.extend_from_slice(residual_sweep_digest_prefix.as_bytes());
+    digest_source.extend_from_slice(residual_free_governance_authority_digest_prefix.as_bytes());
+    digest_source
+        .extend_from_slice(residual_free_governance_absolute_sweep_digest_prefix.as_bytes());
+    digest_source.extend_from_slice(terminal_governance_sweep_digest_prefix.as_bytes());
+    digest_source.extend_from_slice(terminal_governance_ultimate_sweep_digest_prefix.as_bytes());
+    digest_source.extend_from_slice(governance_convergence_sweep_digest_prefix.as_bytes());
+    digest_source.extend_from_slice(governance_stabilization_sweep_digest_prefix.as_bytes());
+    if let Some(prior) = prior_scope_execution_digest_prefix.as_ref() {
+        digest_source.extend_from_slice(prior.as_bytes());
+    }
+    digest_source.extend_from_slice(format!("{:?}", execution_decision).as_bytes());
+    if let Some(slot) = chosen_candidate_slot.as_ref() {
+        digest_source.extend_from_slice(slot.as_bytes());
+    }
+    for slot in &resulting_slots {
+        digest_source.extend_from_slice(slot.as_bytes());
+    }
+    for code in &rationale_codes {
+        digest_source.extend_from_slice(code.as_bytes());
+    }
+
+    Ok(SupportedScopeExecutionV12 {
+        schema_version: SUPPORTED_SCOPE_EXECUTION_V12_SCHEMA_VERSION,
+        previous_applied_set_digest_prefix: previous_prefix,
+        current_policy_digest_prefix: policy_prefix,
+        current_reevaluation_digest_prefix: reeval_prefix,
+        canonical_governance_entry_digest_prefix: canonical_digest_prefix,
+        canonical_governance_authority_digest_prefix: authority_digest_prefix,
+        final_governance_consumer_authority_digest_prefix: final_consumer_authority_digest_prefix,
+        final_governance_residual_sweep_digest_prefix: residual_sweep_digest_prefix,
+        residual_free_governance_consumer_authority_digest_prefix:
+            residual_free_governance_authority_digest_prefix,
+        residual_free_governance_absolute_sweep_digest_prefix,
+        absolute_final_governance_terminal_sweep_digest_prefix:
+            terminal_governance_sweep_digest_prefix,
+        terminal_governance_ultimate_sweep_digest_prefix,
+        governance_convergence_sweep_digest_prefix,
+        governance_stabilization_sweep_digest_prefix,
+        prior_scope_execution_digest_prefix,
+        execution_decision,
+        chosen_candidate_slot,
+        resulting_supported_set_digest_prefix: prefix_hex(&resulting.set_digest, 16),
+        rationale_codes,
+        execution_digest: sha256_hex(&digest_source),
+    })
+}
+
 fn derive_and_validate_canonical_entry(
     workdir: &Path,
     applied_context: &AppliedSupportedSetContextV1,
@@ -6493,14 +6951,53 @@ fn load_and_validate_governance_convergence_sweep(
     Ok(sweep)
 }
 
-fn ensure_current_supported_scope_execution_v11(
+#[allow(clippy::too_many_arguments)]
+fn load_and_validate_governance_stabilization_sweep(
+    workdir: &Path,
+    applied_context: &AppliedSupportedSetContextV1,
+    canonical_digest_prefix: &str,
+    authority_digest_prefix: &str,
+    final_consumer_authority_digest_prefix: &str,
+    residual_sweep_digest_prefix: &str,
+    residual_free_authority_digest_prefix: &str,
+    absolute_sweep_digest_prefix: &str,
+    ultimate_sweep_digest_prefix: &str,
+    convergence_sweep_digest_prefix: &str,
+) -> Result<crate::GovernanceStabilizationSweepV1, &'static str> {
+    let report = read_json_file::<crate::GovernanceStabilizationSweepReportV1>(
+        &workdir.join("out/governance_stabilization_sweep.json"),
+    )
+    .map_err(|_| "SCOPE_EXEC_V12_GOVERNANCE_STABILIZATION_FAIL")?;
+    let sweep = report.sweep;
+    if !matches!(
+        sweep.stabilization_status,
+        crate::GovernanceStabilizationStatusV1::Pass
+    ) || sweep.applied_supported_set_digest_prefix != applied_context.applied_set_digest_prefix
+        || sweep.canonical_governance_entry_digest_prefix != canonical_digest_prefix
+        || sweep.canonical_governance_authority_digest_prefix != authority_digest_prefix
+        || sweep.final_governance_consumer_authority_digest_prefix
+            != final_consumer_authority_digest_prefix
+        || sweep.final_governance_residual_sweep_digest_prefix != residual_sweep_digest_prefix
+        || sweep.residual_free_governance_consumer_authority_digest_prefix
+            != residual_free_authority_digest_prefix
+        || sweep.residual_free_governance_absolute_sweep_digest_prefix
+            != absolute_sweep_digest_prefix
+        || sweep.terminal_governance_ultimate_sweep_digest_prefix != ultimate_sweep_digest_prefix
+        || sweep.governance_convergence_sweep_digest_prefix != convergence_sweep_digest_prefix
+    {
+        return Err("SCOPE_EXEC_V12_GOVERNANCE_STABILIZATION_FAIL");
+    }
+    Ok(sweep)
+}
+
+fn ensure_current_supported_scope_execution_v12(
     workdir: &Path,
     policy: &SupportedRealSlotSetPolicyV2,
     previous_set: &SupportedRealSlotSetV1,
-) -> Result<SupportedScopeExecutionV11, OpsError> {
+) -> Result<SupportedScopeExecutionV12, OpsError> {
     let reeval = ensure_current_supported_scope_reevaluation_v1(workdir, policy, previous_set)?;
-    let path = workdir.join("out").join("supported_scope_execute_v11.json");
-    if let Ok(report) = read_json_file::<SupportedScopeExecutionV11>(&path) {
+    let path = workdir.join("out").join("supported_scope_execute_v12.json");
+    if let Ok(report) = read_json_file::<SupportedScopeExecutionV12>(&path) {
         if report.current_policy_digest_prefix == prefix_hex(&policy.policy_digest, 16)
             && report.previous_applied_set_digest_prefix == prefix_hex(&previous_set.set_digest, 16)
             && report.current_reevaluation_digest_prefix
@@ -6509,7 +7006,7 @@ fn ensure_current_supported_scope_execution_v11(
             return Ok(report);
         }
     }
-    models_supported_scope_execute_v11(workdir, &path)
+    models_supported_scope_execute_v12(workdir, &path)
 }
 
 fn load_latest_supported_set_policy_v2(
@@ -10011,6 +10508,65 @@ mod probe_tests {
             .expect("write governance convergence sweep");
         }
 
+        #[allow(clippy::too_many_arguments)]
+        fn write_governance_stabilization_sweep_artifact(
+            root: &Path,
+            applied_digest_prefix: &str,
+            canonical_digest_prefix: &str,
+            authority_digest_prefix: &str,
+            final_consumer_authority_digest_prefix: &str,
+            residual_sweep_digest_prefix: &str,
+            residual_free_authority_digest_prefix: &str,
+            absolute_sweep_digest_prefix: &str,
+            ultimate_sweep_digest_prefix: &str,
+            convergence_sweep_digest_prefix: &str,
+            status: crate::GovernanceStabilizationStatusV1,
+        ) {
+            let report = crate::GovernanceStabilizationSweepReportV1 {
+                schema_version: 1,
+                sweep: crate::GovernanceStabilizationSweepV1 {
+                    applied_supported_set_digest_prefix: applied_digest_prefix.to_string(),
+                    canonical_governance_entry_digest_prefix: canonical_digest_prefix.to_string(),
+                    canonical_governance_authority_digest_prefix: authority_digest_prefix
+                        .to_string(),
+                    final_governance_consumer_authority_digest_prefix:
+                        final_consumer_authority_digest_prefix.to_string(),
+                    final_governance_residual_sweep_digest_prefix: residual_sweep_digest_prefix
+                        .to_string(),
+                    residual_free_governance_consumer_authority_digest_prefix:
+                        residual_free_authority_digest_prefix.to_string(),
+                    residual_free_governance_absolute_sweep_digest_prefix:
+                        absolute_sweep_digest_prefix.to_string(),
+                    absolute_final_governance_terminal_sweep_digest_prefix: "56".repeat(8),
+                    terminal_governance_ultimate_sweep_digest_prefix: ultimate_sweep_digest_prefix
+                        .to_string(),
+                    governance_convergence_sweep_digest_prefix: convergence_sweep_digest_prefix
+                        .to_string(),
+                    covered_consumer_count: 6,
+                    residual_path_count: if matches!(
+                        status,
+                        crate::GovernanceStabilizationStatusV1::Pass
+                    ) {
+                        0
+                    } else {
+                        1
+                    },
+                    stabilization_status: status.clone(),
+                    stabilization_digest: "9a".repeat(32),
+                },
+                consumers: vec![crate::GovernanceStabilizationConsumerStatusV1 {
+                    consumer: "active_review_snapshot".to_string(),
+                    status,
+                    mismatch_categories: Vec::new(),
+                }],
+            };
+            fs::write(
+                root.join("out/governance_stabilization_sweep.json"),
+                serde_json::to_vec_pretty(&report).expect("governance stabilization sweep json"),
+            )
+            .expect("write governance stabilization sweep");
+        }
+
         #[test]
         fn supported_scope_reeval_reaffirms_freeze_when_policy_stale() {
             let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
@@ -13423,6 +13979,321 @@ mod probe_tests {
             assert!(err
                 .to_string()
                 .contains("SCOPE_EXEC_V11_STALE_PRIOR_EXECUTION"));
+        }
+
+        #[test]
+        fn supported_scope_execute_v12_expands_when_stabilized_chain_passes() {
+            let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
+            let dir = tempfile::tempdir().expect("tempdir");
+            let _cwd = CwdGuard::enter(dir.path());
+            fs::create_dir_all("out").expect("out");
+            let applied = build_supported_real_slot_set_v2(
+                vec!["world_jepa".to_string()],
+                &"11".repeat(32),
+                &"22".repeat(32),
+                SupportedRealSlotSetExecutionDecisionV2::Frozen,
+            );
+            fs::write(
+                "out/supported_real_slot_set_applied_v2.json",
+                serde_json::to_vec_pretty(&applied).expect("applied"),
+            )
+            .expect("write applied");
+            write_scope_reeval_support_artifacts(
+                Path::new("."),
+                &applied.set_digest,
+                &["world_jepa"],
+            );
+            fs::write(
+                "out/supported_set_review.json",
+                serde_json::to_vec_pretty(&SupportedSetReviewReportV1 {
+                    policy: SupportedRealSlotSetPolicyV2 {
+                        schema_version: 2,
+                        current_supported_slots: vec!["world_jepa".to_string()],
+                        candidate_slots_considered: vec!["ssm".to_string()],
+                        decision: SupportedRealSlotSetDecisionV2::ExpandByOne,
+                        chosen_candidate_slot: Some("ssm".to_string()),
+                        rationale_codes: vec!["EXPANSION_READY_EXACTLY_ONE".to_string()],
+                        policy_digest: "33".repeat(32),
+                    },
+                    known_slots: vec![],
+                    candidates: vec![],
+                })
+                .expect("review"),
+            )
+            .expect("write review");
+            let _ = models_supported_scope_reevaluate(
+                Path::new("."),
+                Path::new("out/supported_scope_reeval.json"),
+            )
+            .expect("reeval");
+            let applied_ctx =
+                load_applied_supported_set_context_v1(Path::new(".")).expect("applied ctx");
+            let backend = read_json_file::<BackendEvidenceSnapshotV1>(&PathBuf::from(
+                "out/backend_evidence_snapshot.json",
+            ))
+            .expect("backend");
+            let active = read_json_file::<AggregatedActiveReviewSnapshotV1>(&PathBuf::from(
+                "out/active_review_snapshot.json",
+            ))
+            .expect("active");
+            let surfaces = validate_governance_primary_surfaces_with_applied_scope(
+                &backend,
+                &active,
+                &applied_ctx,
+            )
+            .expect("surfaces");
+            let entry = derive_canonical_governance_entry(&applied_ctx, &surfaces).expect("entry");
+            let canonical_prefix = prefix_hex(&entry.authority_digest, 16);
+            let authority_prefix = "ab".repeat(8);
+            let final_consumer_prefix = prefix_hex("cd".repeat(32).as_str(), 16);
+            let residual_prefix = prefix_hex("ef".repeat(32).as_str(), 16);
+            let residual_free_prefix = prefix_hex("12".repeat(32).as_str(), 16);
+            let absolute_prefix = prefix_hex("34".repeat(32).as_str(), 16);
+            let terminal_prefix = prefix_hex("56".repeat(32).as_str(), 16);
+            let ultimate_prefix = prefix_hex("78".repeat(32).as_str(), 16);
+            let convergence_prefix = prefix_hex("90".repeat(32).as_str(), 16);
+            write_governance_entry_sweep_artifact(
+                Path::new("."),
+                &applied_ctx.applied_set_digest_prefix,
+                &prefix_hex(&applied_ctx.context_digest, 16),
+                &canonical_prefix,
+                GovernanceEntryAuthorityStatusV2::Pass,
+            );
+            write_final_governance_consumer_sweep_artifact(
+                Path::new("."),
+                &applied_ctx.applied_set_digest_prefix,
+                &canonical_prefix,
+                &authority_prefix,
+                FinalGovernanceConsumerAuthorityStatusV1::Pass,
+            );
+            write_governance_residual_sweep_artifact(
+                Path::new("."),
+                &applied_ctx.applied_set_digest_prefix,
+                &canonical_prefix,
+                &authority_prefix,
+                &final_consumer_prefix,
+                crate::GovernanceResidualSweepStatusV1::Pass,
+            );
+            write_residual_free_governance_sweep_artifact(
+                Path::new("."),
+                &applied_ctx.applied_set_digest_prefix,
+                &canonical_prefix,
+                &authority_prefix,
+                &final_consumer_prefix,
+                &residual_prefix,
+                crate::ResidualFreeGovernanceConsumerAuthorityStatusV1::Pass,
+            );
+            write_governance_absolute_sweep_artifact(
+                Path::new("."),
+                &applied_ctx.applied_set_digest_prefix,
+                &canonical_prefix,
+                &authority_prefix,
+                &final_consumer_prefix,
+                &residual_prefix,
+                &residual_free_prefix,
+                crate::ResidualFreeGovernanceAbsoluteSweepStatusV1::Pass,
+            );
+            write_governance_terminal_sweep_artifact(
+                Path::new("."),
+                &applied_ctx.applied_set_digest_prefix,
+                &canonical_prefix,
+                &authority_prefix,
+                &final_consumer_prefix,
+                &residual_prefix,
+                &residual_free_prefix,
+                &absolute_prefix,
+                crate::AbsoluteFinalGovernanceTerminalSweepStatusV1::Pass,
+            );
+            write_governance_ultimate_sweep_artifact(
+                Path::new("."),
+                &applied_ctx.applied_set_digest_prefix,
+                &canonical_prefix,
+                &authority_prefix,
+                &final_consumer_prefix,
+                &residual_prefix,
+                &residual_free_prefix,
+                &absolute_prefix,
+                &terminal_prefix,
+                crate::TerminalGovernanceUltimateSweepStatusV1::Pass,
+            );
+            write_governance_convergence_sweep_artifact(
+                Path::new("."),
+                &applied_ctx.applied_set_digest_prefix,
+                &canonical_prefix,
+                &authority_prefix,
+                &final_consumer_prefix,
+                &residual_prefix,
+                &residual_free_prefix,
+                &absolute_prefix,
+                &ultimate_prefix,
+                crate::GovernanceConvergenceStatusV1::Pass,
+            );
+            write_governance_stabilization_sweep_artifact(
+                Path::new("."),
+                &applied_ctx.applied_set_digest_prefix,
+                &canonical_prefix,
+                &authority_prefix,
+                &final_consumer_prefix,
+                &residual_prefix,
+                &residual_free_prefix,
+                &absolute_prefix,
+                &ultimate_prefix,
+                &convergence_prefix,
+                crate::GovernanceStabilizationStatusV1::Pass,
+            );
+
+            let report = models_supported_scope_execute_v12(
+                Path::new("."),
+                Path::new("out/supported_scope_execute_v12.json"),
+            )
+            .expect("execute");
+            assert_eq!(
+                report.execution_decision,
+                SupportedScopeExecutionDecisionV12::ExecuteExpandByOne
+            );
+        }
+
+        #[test]
+        fn supported_scope_execute_v12_freezes_when_stabilization_fails() {
+            let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
+            let dir = tempfile::tempdir().expect("tempdir");
+            let _cwd = CwdGuard::enter(dir.path());
+            fs::create_dir_all("out").expect("out");
+            let applied = build_supported_real_slot_set_v2(
+                vec!["world_jepa".to_string()],
+                &"11".repeat(32),
+                &"22".repeat(32),
+                SupportedRealSlotSetExecutionDecisionV2::Frozen,
+            );
+            fs::write(
+                "out/supported_real_slot_set_applied_v2.json",
+                serde_json::to_vec_pretty(&applied).expect("applied"),
+            )
+            .expect("write applied");
+            write_scope_reeval_support_artifacts(
+                Path::new("."),
+                &applied.set_digest,
+                &["world_jepa"],
+            );
+            fs::write(
+                "out/supported_set_review.json",
+                serde_json::to_vec_pretty(&SupportedSetReviewReportV1 {
+                    policy: SupportedRealSlotSetPolicyV2 {
+                        schema_version: 2,
+                        current_supported_slots: vec!["world_jepa".to_string()],
+                        candidate_slots_considered: vec!["ssm".to_string()],
+                        decision: SupportedRealSlotSetDecisionV2::ExpandByOne,
+                        chosen_candidate_slot: Some("ssm".to_string()),
+                        rationale_codes: vec!["EXPANSION_READY_EXACTLY_ONE".to_string()],
+                        policy_digest: "33".repeat(32),
+                    },
+                    known_slots: vec![],
+                    candidates: vec![],
+                })
+                .expect("review"),
+            )
+            .expect("write review");
+            let _ = models_supported_scope_reevaluate(
+                Path::new("."),
+                Path::new("out/supported_scope_reeval.json"),
+            )
+            .expect("reeval");
+
+            let report = models_supported_scope_execute_v12(
+                Path::new("."),
+                Path::new("out/supported_scope_execute_v12.json"),
+            )
+            .expect("execute");
+            assert_eq!(
+                report.execution_decision,
+                SupportedScopeExecutionDecisionV12::ReaffirmFreeze
+            );
+            assert!(report
+                .rationale_codes
+                .contains(&"SCOPE_EXEC_V12_GOVERNANCE_STABILIZATION_FAIL".to_string()));
+        }
+
+        #[test]
+        fn supported_scope_execute_v12_denies_stale_prior_execution_artifact() {
+            let _guard = crate::test_cwd_lock().lock().expect("cwd lock");
+            let dir = tempfile::tempdir().expect("tempdir");
+            let _cwd = CwdGuard::enter(dir.path());
+            fs::create_dir_all("out").expect("out");
+            let applied = build_supported_real_slot_set_v2(
+                vec!["world_jepa".to_string()],
+                &"11".repeat(32),
+                &"22".repeat(32),
+                SupportedRealSlotSetExecutionDecisionV2::Frozen,
+            );
+            fs::write(
+                "out/supported_real_slot_set_applied_v2.json",
+                serde_json::to_vec_pretty(&applied).expect("applied"),
+            )
+            .expect("write applied");
+            write_scope_reeval_support_artifacts(
+                Path::new("."),
+                &applied.set_digest,
+                &["world_jepa"],
+            );
+            fs::write(
+                "out/supported_set_review.json",
+                serde_json::to_vec_pretty(&SupportedSetReviewReportV1 {
+                    policy: SupportedRealSlotSetPolicyV2 {
+                        schema_version: 2,
+                        current_supported_slots: vec!["world_jepa".to_string()],
+                        candidate_slots_considered: vec!["ssm".to_string()],
+                        decision: SupportedRealSlotSetDecisionV2::Freeze,
+                        chosen_candidate_slot: None,
+                        rationale_codes: vec!["INSUFFICIENT_EVIDENCE_FREEZE".to_string()],
+                        policy_digest: "33".repeat(32),
+                    },
+                    known_slots: vec![],
+                    candidates: vec![],
+                })
+                .expect("review"),
+            )
+            .expect("write review");
+            let _ = models_supported_scope_reevaluate(
+                Path::new("."),
+                Path::new("out/supported_scope_reeval.json"),
+            )
+            .expect("reeval");
+            fs::write(
+                "out/supported_scope_execute_v12.json",
+                serde_json::to_vec_pretty(&SupportedScopeExecutionV12 {
+                    schema_version: 12,
+                    previous_applied_set_digest_prefix: "aa".repeat(8),
+                    current_policy_digest_prefix: "bb".repeat(8),
+                    current_reevaluation_digest_prefix: "cc".repeat(8),
+                    canonical_governance_entry_digest_prefix: "dd".repeat(8),
+                    canonical_governance_authority_digest_prefix: "ee".repeat(8),
+                    final_governance_consumer_authority_digest_prefix: "ff".repeat(8),
+                    final_governance_residual_sweep_digest_prefix: "11".repeat(8),
+                    residual_free_governance_consumer_authority_digest_prefix: "22".repeat(8),
+                    residual_free_governance_absolute_sweep_digest_prefix: "33".repeat(8),
+                    absolute_final_governance_terminal_sweep_digest_prefix: "44".repeat(8),
+                    terminal_governance_ultimate_sweep_digest_prefix: "55".repeat(8),
+                    governance_convergence_sweep_digest_prefix: "66".repeat(8),
+                    governance_stabilization_sweep_digest_prefix: "77".repeat(8),
+                    prior_scope_execution_digest_prefix: None,
+                    execution_decision: SupportedScopeExecutionDecisionV12::ReaffirmFreeze,
+                    chosen_candidate_slot: None,
+                    resulting_supported_set_digest_prefix: "88".repeat(8),
+                    rationale_codes: vec!["stale".to_string()],
+                    execution_digest: "99".repeat(32),
+                })
+                .expect("stale"),
+            )
+            .expect("write stale");
+
+            let err = models_supported_scope_execute_v12(
+                Path::new("."),
+                Path::new("out/supported_scope_execute_v12_current.json"),
+            )
+            .expect_err("must reject stale prior execution");
+            assert!(err
+                .to_string()
+                .contains("SCOPE_EXEC_V12_STALE_PRIOR_EXECUTION"));
         }
 
         #[test]
