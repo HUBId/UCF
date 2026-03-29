@@ -46,3 +46,6 @@ cargo run -p ucf-ops -- readiness-ultimate-sweep --out ./out/readiness_ultimate_
 ## v16 Update
 
 v16 (`readiness-convergence-sweep`) entfernt die letzten memoized, kopierten oder abgeleiteten Readiness-Restpfade aus kanonischen Consumern.
+
+v17 (`readiness-stabilization-sweep`) entfernt verbleibende Readiness-Adapter-/Translations-/indirekte Projektionspfade aus kanonischen Consumern und macht die Stabilisierung über `ReadinessStabilizationSweepV1` auditierbar.
+

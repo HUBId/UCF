@@ -42,3 +42,6 @@ Ab v15 (`readiness-ultimate-sweep`) sind letzte kanonische Consumer-Restpfade au
 ## v16 Update
 
 v16 (`readiness-convergence-sweep`) finalisiert die Convergence auf die terminalen absoluten residual-freien finalen Readiness-Inputs für kanonische Consumer.
+
+v17 (`readiness-stabilization-sweep`) entfernt verbleibende Readiness-Adapter-/Translations-/indirekte Projektionspfade aus kanonischen Consumern und macht die Stabilisierung über `ReadinessStabilizationSweepV1` auditierbar.
+

@@ -37,3 +37,6 @@ Kanonische Flows müssen eine eindeutige Readiness-Authority besitzen. Memoized/
 ```bash
 cargo run -p ucf-ops -- readiness-convergence-sweep --out ./out/readiness_convergence_sweep.json
 ```
+
+v17 (`readiness-stabilization-sweep`) entfernt verbleibende Readiness-Adapter-/Translations-/indirekte Projektionspfade aus kanonischen Consumern und macht die Stabilisierung über `ReadinessStabilizationSweepV1` auditierbar.
+
