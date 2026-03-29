@@ -54,11 +54,12 @@ Modes:
 
 
 6. **Artifact schema snapshots up-to-date**
-   - Regenerates shape snapshots for covered v3/v4/v5/v6/v7/v8/v9/v10/v11/v12/v13/v14/v15 governance/scope/readiness/review/export/interop artifacts and compares them with committed files in `docs/artifact_schema_snapshots/`.
+   - Regenerates shape snapshots for covered v3/v4/v5/v6/v7/v8/v9/v10/v11/v12/v13/v14/v15/v16 governance/scope/readiness/review/export/interop artifacts and compares them with committed files in `docs/artifact_schema_snapshots/`.
    - v12 residual-free final-input contract points (`residual_free_*_consumer_authority_v1` plus `supported_scope_execution_v7`) are enforced in the same lane.
    - v13 absolute residual-free contract points (`residual_free_*_absolute_sweep_v1` plus `supported_scope_execution_v8`) are enforced in the same lane.
    - v14 terminal absolute residual-free contract points (`absolute_final_*_terminal_sweep_v1` plus `supported_scope_execution_v9`) are enforced in the same lane.
    - v15 ultimate terminal absolute residual-free contract points (`terminal_*_ultimate_sweep_v1` plus `supported_scope_execution_v10`) are enforced in the same lane.
+   - v16 convergence + current scope-execution contract points (`governance_convergence_sweep_v1`, `supported_scope_execution_v11`, `readiness_convergence_sweep_v1`, `bundle_convergence_sweep_v1`, `primary_semantics_convergence_sweep_v1`) are enforced in the same lane.
    - Classifies drift conservatively as `ADDITIVE`, `BREAKING`, or `UNKNOWN`; strict lint fails on drift.
    - Remediation:
      ```bash

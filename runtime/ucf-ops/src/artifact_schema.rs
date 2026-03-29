@@ -64,7 +64,7 @@ struct ArtifactSpec {
     enum_names: &'static [&'static str],
 }
 
-const ARTIFACT_SPECS: [ArtifactSpec; 91] = [
+const ARTIFACT_SPECS: [ArtifactSpec; 92] = [
     ArtifactSpec {
         artifact_id: "active_review_snapshot_v1",
         file_rel: "runtime/ucf-ops/src/models_lifecycle.rs",
@@ -245,6 +245,15 @@ const ARTIFACT_SPECS: [ArtifactSpec; 91] = [
         file_rel: "runtime/ucf-ops/src/governance_ultimate_sweep.rs",
         type_name: "TerminalGovernanceUltimateSweepV1",
         enum_names: &["TerminalGovernanceUltimateSweepStatusV1"],
+    },
+    ArtifactSpec {
+        artifact_id: "governance_convergence_sweep_v1",
+        file_rel: "runtime/ucf-ops/src/governance_convergence_sweep.rs",
+        type_name: "GovernanceConvergenceSweepV1",
+        enum_names: &[
+            "GovernanceConvergenceStatusV1",
+            "GovernanceConvergenceMismatchCategoryV1",
+        ],
     },
     ArtifactSpec {
         artifact_id: "absolute_final_input_continuity_authority_v1",
@@ -1144,6 +1153,7 @@ mod tests {
                 "final_primary_semantics_residual_sweep_v1",
                 "final_readiness_consumer_authority_v1",
                 "final_readiness_residual_sweep_v1",
+                "governance_convergence_sweep_v1",
                 "governance_primary_surfaces_v1",
                 "interop_consistency_matrix_report_v1",
                 "operator_report_v1",
@@ -1489,6 +1499,75 @@ mod tests {
         assert!(!report.ok);
         assert!(report.diffs.iter().any(|d| {
             d.artifact == "supported_scope_execution_v10"
+                && d.drift_kind == DriftKind::Breaking
+                && d.summary.contains("field type changed")
+        }));
+    }
+
+    #[test]
+    fn check_reports_missing_v16_governance_convergence_snapshot_as_breaking() {
+        let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("runtime parent")
+            .parent()
+            .expect("repo root")
+            .to_path_buf();
+        let tmp = tempfile::tempdir().expect("tempdir");
+        generate_artifact_schema_snapshots(&ArtifactSchemaArgs {
+            repo_root: repo_root.clone(),
+            out_dir: tmp.path().to_path_buf(),
+        })
+        .expect("generate snapshots");
+        fs::remove_file(tmp.path().join("governance_convergence_sweep_v1.json"))
+            .expect("remove snapshot");
+
+        let report = check_artifact_schema_snapshots(&ArtifactSchemaArgs {
+            repo_root,
+            out_dir: tmp.path().to_path_buf(),
+        })
+        .expect("check should complete");
+        assert!(!report.ok);
+        assert!(report.diffs.iter().any(|d| {
+            d.artifact == "governance_convergence_sweep_v1" && d.drift_kind == DriftKind::Breaking
+        }));
+    }
+
+    #[test]
+    fn check_reports_v16_governance_convergence_shape_drift() {
+        let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("runtime parent")
+            .parent()
+            .expect("repo root")
+            .to_path_buf();
+        let tmp = tempfile::tempdir().expect("tempdir");
+        generate_artifact_schema_snapshots(&ArtifactSchemaArgs {
+            repo_root: repo_root.clone(),
+            out_dir: tmp.path().to_path_buf(),
+        })
+        .expect("generate snapshots");
+
+        let snapshot_path = tmp.path().join("governance_convergence_sweep_v1.json");
+        let mut snapshot: ArtifactSchemaSnapshot =
+            serde_json::from_str(&fs::read_to_string(&snapshot_path).expect("read snapshot"))
+                .expect("parse snapshot");
+        snapshot
+            .field_types
+            .insert("convergence_digest".to_string(), "u64".to_string());
+        fs::write(
+            &snapshot_path,
+            serde_json::to_string_pretty(&snapshot).expect("serialize snapshot"),
+        )
+        .expect("write snapshot");
+
+        let report = check_artifact_schema_snapshots(&ArtifactSchemaArgs {
+            repo_root,
+            out_dir: tmp.path().to_path_buf(),
+        })
+        .expect("check should complete");
+        assert!(!report.ok);
+        assert!(report.diffs.iter().any(|d| {
+            d.artifact == "governance_convergence_sweep_v1"
                 && d.drift_kind == DriftKind::Breaking
                 && d.summary.contains("field type changed")
         }));
