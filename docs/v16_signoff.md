@@ -43,3 +43,6 @@ No implicit expansion, legacy scope inference, or unsupported-slot widening is a
 ## Phase note
 v16 is a convergence / sole-top-level-continuity hardening phase.
 This gate is governance/scope/readiness/bundle/primary-semantics/continuity hygiene, not a compute capability gate.
+
+## Continuation
+After v16 gate PASS, continue at Prompt 340 via `docs/next_10_prompts.md`.
