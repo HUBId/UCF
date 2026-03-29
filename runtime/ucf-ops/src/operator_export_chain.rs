@@ -33,21 +33,21 @@ pub enum OperatorExportAuthorityMismatchCategoryV1 {
     ReviewabilityBasisMismatch,
     ReadinessSpineMismatch,
     AppliedScopeMissing,
-    UltimateTerminalAbsoluteFinalInputContinuityMissing,
-    UltimateTerminalAbsoluteFinalInputContinuityFail,
+    CanonicalConvergenceContinuityMissing,
+    CanonicalConvergenceContinuityFail,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum UltimateTerminalAbsoluteFinalInputStatusV1 {
+pub enum CanonicalConvergenceContinuityStatusV1 {
     Pass,
     Fail,
     LegacyPresent,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct UltimateTerminalAbsoluteFinalInputProbeV1 {
-    continuity_status: UltimateTerminalAbsoluteFinalInputStatusV1,
+struct CanonicalConvergenceContinuityProbeV1 {
+    continuity_status: CanonicalConvergenceContinuityStatusV1,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -268,32 +268,31 @@ pub fn operator_export_chain_check(
         chain.chain_digest = chain_digest(&chain)?;
     }
 
-    let absolute_path =
-        workdir.join("out/ultimate_terminal_absolute_final_input_continuity_sweep.json");
+    let absolute_path = workdir.join("out/canonical_convergence_continuity_sweep.json");
     match fs::read_to_string(&absolute_path) {
         Ok(body) => {
-            let probe: UltimateTerminalAbsoluteFinalInputProbeV1 = serde_json::from_str(&body)?;
+            let probe: CanonicalConvergenceContinuityProbeV1 = serde_json::from_str(&body)?;
             if !matches!(
                 probe.continuity_status,
-                UltimateTerminalAbsoluteFinalInputStatusV1::Pass
+                CanonicalConvergenceContinuityStatusV1::Pass
             ) {
                 chain.authority_chain_status = OperatorExportAuthorityChainStatusV1::Fail;
                 chain.mismatch_categories.push(
-                    OperatorExportAuthorityMismatchCategoryV1::UltimateTerminalAbsoluteFinalInputContinuityFail,
+                    OperatorExportAuthorityMismatchCategoryV1::CanonicalConvergenceContinuityFail,
                 );
                 chain
                     .blocking_codes
-                    .push("ULTIMATE_TERMINAL_ABSOLUTE_FINAL_INPUT_CONTINUITY_REQUIRED".to_string());
+                    .push("CANONICAL_CONVERGENCE_CONTINUITY_REQUIRED".to_string());
             }
         }
         Err(_) => {
             chain.authority_chain_status = OperatorExportAuthorityChainStatusV1::Fail;
             chain.mismatch_categories.push(
-                OperatorExportAuthorityMismatchCategoryV1::UltimateTerminalAbsoluteFinalInputContinuityMissing,
+                OperatorExportAuthorityMismatchCategoryV1::CanonicalConvergenceContinuityMissing,
             );
             chain
                 .blocking_codes
-                .push("ULTIMATE_TERMINAL_ABSOLUTE_FINAL_INPUT_CONTINUITY_REQUIRED".to_string());
+                .push("CANONICAL_CONVERGENCE_CONTINUITY_REQUIRED".to_string());
         }
     }
     chain.mismatch_categories.sort();
@@ -497,6 +496,10 @@ mod tests {
             primary_semantics_terminal_sweep_digest_prefix: "MISSING".to_string(),
             primary_semantics_ultimate_sweep_digest_prefix: "MISSING".to_string(),
             primary_semantics_convergence_sweep_digest_prefix: "MISSING".to_string(),
+            governance_convergence_sweep_digest_prefix: "MISSING".to_string(),
+            readiness_convergence_sweep_digest_prefix: "MISSING".to_string(),
+            bundle_convergence_sweep_digest_prefix: "MISSING".to_string(),
+            canonical_convergence_continuity_authority_digest_prefix: "MISSING".to_string(),
             bundle_terminal_sweep_digest_prefix: "MISSING".to_string(),
             residual_free_continuity_authority_digest_prefix: "MISSING".to_string(),
             final_input_continuity_authority_digest_prefix: "MISSING".to_string(),

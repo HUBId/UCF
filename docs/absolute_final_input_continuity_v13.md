@@ -35,3 +35,6 @@ The sole top-level proof is `TerminalAbsoluteFinalInputContinuityAuthorityV1` vi
 ## v15 update
 `AbsoluteFinalInputContinuityAuthorityV1` remains a **SUBORDINATE_CONTINUITY_CONTRIBUTOR** in v15.
 Top-level continuity is only `ultimate-terminal-absolute-final-input-continuity-sweep` (`UltimateTerminalAbsoluteFinalInputContinuityAuthorityV1`).
+
+> v16 update: canonical top-level continuity proof is now only `canonical-convergence-continuity-sweep` (`CanonicalConvergenceContinuityAuthorityV1`). This surface is subordinate continuity evidence.
+

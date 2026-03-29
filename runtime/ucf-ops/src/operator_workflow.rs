@@ -87,6 +87,14 @@ pub struct OperatorWorkflowChainV1 {
     #[serde(default)]
     pub primary_semantics_convergence_sweep_digest_prefix: String,
     #[serde(default)]
+    pub governance_convergence_sweep_digest_prefix: String,
+    #[serde(default)]
+    pub readiness_convergence_sweep_digest_prefix: String,
+    #[serde(default)]
+    pub bundle_convergence_sweep_digest_prefix: String,
+    #[serde(default)]
+    pub canonical_convergence_continuity_authority_digest_prefix: String,
+    #[serde(default)]
     pub bundle_terminal_sweep_digest_prefix: String,
     #[serde(default)]
     pub residual_free_continuity_authority_digest_prefix: String,
@@ -369,6 +377,10 @@ impl OperatorWorkflowPolicyV1 {
             primary_semantics_terminal_sweep_digest_prefix: "MISSING".to_string(),
             primary_semantics_ultimate_sweep_digest_prefix: "MISSING".to_string(),
             primary_semantics_convergence_sweep_digest_prefix: "MISSING".to_string(),
+            governance_convergence_sweep_digest_prefix: "MISSING".to_string(),
+            readiness_convergence_sweep_digest_prefix: "MISSING".to_string(),
+            bundle_convergence_sweep_digest_prefix: "MISSING".to_string(),
+            canonical_convergence_continuity_authority_digest_prefix: "MISSING".to_string(),
             bundle_terminal_sweep_digest_prefix: "MISSING".to_string(),
             residual_free_continuity_authority_digest_prefix: "MISSING".to_string(),
             final_input_continuity_authority_digest_prefix: "MISSING".to_string(),
@@ -485,6 +497,30 @@ pub fn operator_workflow_chain(
         &out_root,
         "primary_semantics_convergence_sweep.json",
         "sweep.convergence_digest",
+    )
+    .unwrap_or_else(|| "MISSING".to_string());
+    chain.governance_convergence_sweep_digest_prefix = discover_digest_prefix(
+        &out_root,
+        "governance_convergence_sweep.json",
+        "sweep.convergence_digest",
+    )
+    .unwrap_or_else(|| "MISSING".to_string());
+    chain.readiness_convergence_sweep_digest_prefix = discover_digest_prefix(
+        &out_root,
+        "readiness_convergence_sweep.json",
+        "sweep.convergence_digest",
+    )
+    .unwrap_or_else(|| "MISSING".to_string());
+    chain.bundle_convergence_sweep_digest_prefix = discover_digest_prefix(
+        &out_root,
+        "bundle_convergence_sweep.json",
+        "sweep.convergence_digest",
+    )
+    .unwrap_or_else(|| "MISSING".to_string());
+    chain.canonical_convergence_continuity_authority_digest_prefix = discover_digest_prefix(
+        &out_root,
+        "canonical_convergence_continuity_sweep.json",
+        "authority_digest",
     )
     .unwrap_or_else(|| "MISSING".to_string());
     chain.governance_terminal_sweep_digest_prefix = discover_digest_prefix(

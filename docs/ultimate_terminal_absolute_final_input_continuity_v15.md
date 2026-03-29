@@ -52,3 +52,6 @@ The following surfaces remain diagnostic/subordinate only and are not top-level 
 - `terminal-absolute-final-input-continuity-sweep`
 - `absolute-final-input-continuity-sweep`
 - `final-input-continuity-sweep`
+
+> v16 update: canonical top-level continuity proof is now only `canonical-convergence-continuity-sweep` (`CanonicalConvergenceContinuityAuthorityV1`). This surface is subordinate continuity evidence.
+
