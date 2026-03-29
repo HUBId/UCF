@@ -64,7 +64,7 @@ struct ArtifactSpec {
     enum_names: &'static [&'static str],
 }
 
-const ARTIFACT_SPECS: [ArtifactSpec; 94] = [
+const ARTIFACT_SPECS: [ArtifactSpec; 95] = [
     ArtifactSpec {
         artifact_id: "active_review_snapshot_v1",
         file_rel: "runtime/ucf-ops/src/models_lifecycle.rs",
@@ -253,6 +253,15 @@ const ARTIFACT_SPECS: [ArtifactSpec; 94] = [
         enum_names: &[
             "GovernanceConvergenceStatusV1",
             "GovernanceConvergenceMismatchCategoryV1",
+        ],
+    },
+    ArtifactSpec {
+        artifact_id: "governance_stabilization_sweep_v1",
+        file_rel: "runtime/ucf-ops/src/governance_stabilization_sweep.rs",
+        type_name: "GovernanceStabilizationSweepV1",
+        enum_names: &[
+            "GovernanceStabilizationStatusV1",
+            "GovernanceStabilizationMismatchCategoryV1",
         ],
     },
     ArtifactSpec {
@@ -1168,6 +1177,7 @@ mod tests {
                 "final_readiness_residual_sweep_v1",
                 "governance_convergence_sweep_v1",
                 "governance_primary_surfaces_v1",
+                "governance_stabilization_sweep_v1",
                 "interop_consistency_matrix_report_v1",
                 "operator_report_v1",
                 "operator_review_packet_v1",

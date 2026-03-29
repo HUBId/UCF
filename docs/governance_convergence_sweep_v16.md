@@ -47,3 +47,8 @@ A PASS requires all covered consumers to align with the terminal canonical gover
 
 `SupportedScopeExecutionV11` darf Expansion nur ausführen, wenn dieser Sweep PASS und digest-aligned mit der aktuellen Applied-Scope-Basis ist.
 Bei FAIL/Legacy/Drift ist nur `REAFFIRM_FREEZE` zulässig.
+
+
+## v17 stabilization follow-up
+
+v17 adds `governance-stabilization-sweep` to remove remaining canonical governance-adapter and translation residues from canonical consumers.

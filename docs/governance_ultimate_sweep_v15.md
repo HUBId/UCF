@@ -42,3 +42,8 @@ cargo run -p ucf-ops -- governance-ultimate-sweep --out ./out/governance_ultimat
 ## v16 convergence note
 
 v16 adds `governance-convergence-sweep` to remove remaining canonical consumer dependence on governance memoization, copied authorities, and derived governance mirrors in canonical flows.
+
+
+## v17 note
+
+After v16 convergence, v17 stabilization removes remaining governance adapter/translation residues from canonical consumers via `governance-stabilization-sweep`.

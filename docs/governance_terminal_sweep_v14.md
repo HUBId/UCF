@@ -43,3 +43,8 @@ v15 (`governance-ultimate-sweep`) removes remaining canonical governance cache/m
 ## v16 convergence note
 
 v16 convergence formally demotes or blocks governance memoization/copy/mirror paths for canonical consumers and requires terminal+ultimate chain alignment via `governance-convergence-sweep`.
+
+
+## v17 note
+
+v17 finalizes canonical consumer stabilization by blocking remaining governance adapter or projection residues outside the converged chain.
