@@ -1,8 +1,8 @@
 # Prompt Series State Snapshot
 
 ## Current anchor
-- **Current anchor milestone:** `Real Compute Onboarding v17`.
-- **Anchor definition:** v17 planning queue in `docs/next_10_prompts.md` (entry set `340-349`).
+- **Current anchor milestone:** `Real Compute Onboarding v18`.
+- **Anchor definition:** v18 planning queue in `docs/next_10_prompts.md` (entry set `350-359`).
 - **Prompt index source:** `docs/prompt_series_index.md`.
 
 ## Status against anchor milestones
@@ -23,30 +23,31 @@
 - **v14:** complete.
 - **v15:** complete (`ucf-ops v15 gate` overall PASS recorded at Prompt 328).
 - **v16:** complete (`ucf-ops v16 gate` overall PASS recorded at Prompt 338).
-- **v17:** in progress (Prompt 348 implemented; completion requires `ucf-ops v17 gate` PASS).
+- **v17:** complete (`ucf-ops v17 gate` overall PASS recorded at Prompt 348).
+- **v18:** not started yet.
 - **Queue policy:** immediate queue remains capped to 10 prompts.
 
 ## Last executed prompt / resume point
-- Last executed prompt ID: **348**.
-- Next prompt ID: **349**.
-- Resume from: **`PROMPT 349`**.
+- Last executed prompt ID: **349**.
+- Next prompt ID: **350**.
+- Resume from: **`PROMPT 350`**.
 - Numbering remains monotonic and append-only.
 
 ## Immediate next prompts (capped to 10)
 Reference: `docs/next_10_prompts.md`
 
-| Prompt ID | Title (short) | v17 class | Status |
+| Prompt ID | Title (short) | v18 class | Status |
 |---:|---|---|---|
-| 340 | Canonical governance chain as sole truth for remaining consumers | MUST | queued |
-| 341 | Supported-scope expansion re-check or freeze reaffirmation | MUST | queued |
-| 342 | Readiness-input convergence completion for remaining consumers | MUST | queued |
-| 343 | Bundle semantics fully normalized to converged chain | MUST | queued |
-| 344 | Primary blocking/remediation convergence hardening | MUST | queued |
-| 345 | v17 schema snapshot refresh | MUST | queued |
-| 346 | v17 portability and docs refresh | NICE | queued |
-| 347 | Workflow/export continuity authority hardening | MUST | queued |
-| 348 | v17 gate schema and orchestration | MUST | complete |
-| 349 | v17 wrap and next-anchor governance | MUST | queued |
+| 350 | Canonical governance chain as sole truth for remaining consumers | MUST | queued |
+| 351 | Supported-scope expansion re-check or freeze reaffirmation | MUST | queued |
+| 352 | Readiness-input convergence completion for remaining consumers | MUST | queued |
+| 353 | Bundle semantics fully normalized to converged chain | MUST | queued |
+| 354 | Primary blocking/remediation convergence hardening | MUST | queued |
+| 355 | v18 schema snapshot refresh | MUST | queued |
+| 356 | v18 portability and docs refresh | NICE | queued |
+| 357 | Workflow/export continuity authority hardening | MUST | queued |
+| 358 | v18 gate schema and orchestration | MUST | queued |
+| 359 | v18 wrap and next-anchor governance | MUST | queued |
 
 ## Historical anchor checkpoints
 
@@ -66,6 +67,7 @@ Reference: `docs/next_10_prompts.md`
 | 318 | v14 gate closure | complete |
 | 328 | v15 gate closure | complete |
 | 338 | v16 gate closure | complete |
+| 348 | v17 gate closure | complete |
 
 ## Series control notes
 - v0 completion requirement: historical signoff recorded.
@@ -85,9 +87,8 @@ Reference: `docs/next_10_prompts.md`
 - v14 completion requirement: **`ucf-ops v14 gate` overall PASS at Prompt 318**.
 - v15 completion criterion: **`ucf-ops v15 gate` overall PASS at Prompt 328**.
 - v16 completion criterion: **`ucf-ops v16 gate` overall PASS at Prompt 338**.
-- v17 completion criterion: **`ucf-ops v17 gate` overall PASS**.
-- Next anchor advancement is blocked until v17 gate PASS.
-- v17 advancement remains hardware-neutral, offline-first, probe-first, shadow-first, and fail-closed.
+- v17 completion criterion: **`ucf-ops v17 gate` overall PASS at Prompt 348**.
+- v18 advancement remains hardware-neutral, offline-first, probe-first, shadow-first, and fail-closed.
 - Prompts are classified as MUST/NICE/DEFERRED at authoring time.
 
 ## Supported real-slot baseline for current stage
