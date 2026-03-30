@@ -1,6 +1,6 @@
 # Artifact Schema Snapshots
 
-This repository enforces deterministic shape snapshots for governance/review/export/interop artifacts that must remain stable across v3/v4/v5/v6/v7/v8/v9/v10/v11/v12/v13/v14/v15/v16 hardening.
+This repository enforces deterministic shape snapshots for governance/review/export/interop artifacts that must remain stable across v3/v4/v5/v6/v7/v8/v9/v10/v11/v12/v13/v14/v15/v16/v17 hardening.
 
 ## Covered artifacts
 
@@ -52,6 +52,7 @@ Snapshots are generated under `docs/artifact_schema_snapshots/`:
 - `operator_review_packet_v1.json` (v7/v8 additive shape drift tracked)
 - `operator_signoff_v1.json` (v7/v8 additive shape drift tracked)
 - `operator_workflow_chain_v1.json` (v8 additive shape drift tracked)
+- `primary_semantics_stabilization_sweep_v1.json` (v17 primary-semantics stabilization contract)
 - `readiness_gate_report_v1.json`
 - `remediation_consistency_check_v1.json`
 - `repro_pack_manifest_v1.json`
@@ -200,3 +201,12 @@ For v16 convergence and current scope-execution surfaces, this freeze is now fir
 - bundle-convergence sweep,
 - primary-semantics-convergence sweep,
 - additive shape updates (if any) in terminal ultimate sweeps, operator signoff/review/workflow artifacts, and gate-report schemas are reviewed through the same drift lane (`ADDITIVE` vs `BREAKING` vs `UNKNOWN`).
+
+For v17 stabilization and current scope-execution surfaces, this freeze is now first-class for cross-surface contracts and CI review:
+
+- governance-stabilization sweep,
+- supported-scope execution v12 (current authoritative execution surface),
+- readiness-stabilization sweep,
+- bundle-stabilization sweep,
+- primary-semantics-stabilization sweep,
+- additive shape updates (if any) in convergence sweep artifacts, operator signoff/review/workflow artifacts, and covered gate-report schemas are reviewed through the same drift lane (`ADDITIVE` vs `BREAKING` vs `UNKNOWN`).
