@@ -1,0 +1,22 @@
+{
+  "artifact_id": "v17_gate_report_v1",
+  "type_name": "V17GateReportV1",
+  "source_file": "runtime/ucf-ops/src/v17_gate.rs",
+  "required_fields": [
+    "checks",
+    "overall_status",
+    "schema_version"
+  ],
+  "optional_fields": [],
+  "field_types": {
+    "checks": "Vec<V17GateCheckV1>",
+    "overall_status": "V17GateOverallStatus",
+    "schema_version": "u16"
+  },
+  "enum_variants": {
+    "V17GateOverallStatus": [
+      "Fail",
+      "Pass"
+    ]
+  }
+}
