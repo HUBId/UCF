@@ -4,9 +4,11 @@
   "source_file": "runtime/ucf-ops/src/lib.rs",
   "required_fields": [
     "bundle_absolute_sweep_digest_prefix",
+    "bundle_convergence_sweep_digest_prefix",
     "bundle_digest_prefix",
     "bundle_kind",
     "bundle_residual_sweep_digest_prefix",
+    "bundle_stabilization_sweep_digest_prefix",
     "bundle_terminal_sweep_digest_prefix",
     "bundle_ultimate_sweep_digest_prefix",
     "canonical_condition_codes",
@@ -27,9 +29,11 @@
   "optional_fields": [],
   "field_types": {
     "bundle_absolute_sweep_digest_prefix": "String",
+    "bundle_convergence_sweep_digest_prefix": "String",
     "bundle_digest_prefix": "String",
     "bundle_kind": "CanonicalBundleKindV1",
     "bundle_residual_sweep_digest_prefix": "String",
+    "bundle_stabilization_sweep_digest_prefix": "String",
     "bundle_terminal_sweep_digest_prefix": "String",
     "bundle_ultimate_sweep_digest_prefix": "String",
     "canonical_condition_codes": "Vec<String>",
