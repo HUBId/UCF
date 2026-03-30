@@ -48,3 +48,7 @@ Any missing/stale/contradictory terminal inputs fail closed.
 ## v16 convergence note
 
 v16 (`primary-semantics-convergence-sweep`) removes remaining canonical memo/copy/mirror residues and requires terminal+ultimate primary-semantics convergence for covered canonical surfaces.
+
+## v17 stabilization note
+
+v17 finalizes canonical-surface stabilization: primary-semantics adapter paths and translation residues are blocked/demoted from canonical authority use and audited via `primary-semantics-stabilization-sweep`.
