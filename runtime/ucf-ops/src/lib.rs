@@ -14,6 +14,7 @@ mod bundle_terminal_sweep;
 mod bundle_ultimate_sweep;
 mod canonical_convergence_continuity_sweep;
 mod canonical_governance_entry;
+mod canonical_stabilization_continuity_sweep;
 mod causal;
 mod change_impact;
 mod compare_window;
@@ -142,6 +143,10 @@ pub use canonical_governance_entry::{
     CanonicalGovernanceEntryV1, CANONICAL_ENTRY_REQUIRED, CANONICAL_GOVERNANCE_ENTRY_REQUIRED,
     GOVERNANCE_ENTRY_SCOPE_MISMATCH, GOVERNANCE_PRIMARY_SURFACES_REQUIRED,
     SECONDARY_ENTRY_PATH_BLOCKED,
+};
+pub use canonical_stabilization_continuity_sweep::{
+    canonical_stabilization_continuity_sweep, CanonicalStabilizationContinuityAuthorityV1,
+    CanonicalStabilizationContinuityStatusV1,
 };
 pub use causal::{
     causal_slice, event_id_for_decision, event_id_for_record, explain_why,

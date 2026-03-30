@@ -23,6 +23,7 @@ cargo run -p ucf-ops -- operator export-chain-check --out ./out/operator_export_
 - `EXPORT_CONTEXT_SCOPE_MISMATCH`
 - `REVIEWABILITY_BASIS_MISMATCH`
 - `APPLIED_SCOPE_MISSING`
+- `CANONICAL_STABILIZATION_CONTINUITY_REQUIRED`
 
 Unlike interop matrix and export roundtrip checks, this command is a direct end-to-end authority
 proof for applied-scope alignment across operator and export readiness surfaces.
@@ -47,3 +48,6 @@ Use `cargo run -p ucf-ops -- continuity-authority-check --bundle <path> --out ./
 
 `operator export-chain-check`/Roundtrip-nahe Surfaces liefern weiterhin Diagnostik, sind aber keine konkurrierenden top-level continuity proofs mehr.
 Sole top-level continuity proof: `ucf-ops final-continuity-sweep`.
+
+## v17 update
+Export readiness/build guard requires `canonical-stabilization-continuity-sweep` PASS as sole top-level continuity precondition.

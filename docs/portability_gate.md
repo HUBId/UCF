@@ -483,4 +483,5 @@ cargo run -p ucf-ops -- portability report --out ./out/portability_report.json
 - `docs/readiness_stabilization_sweep_v17.md`
 - `docs/bundle_stabilization_sweep_v17.md`
 - `docs/primary_semantics_stabilization_sweep_v17.md`
+- `docs/canonical_stabilization_continuity_v17.md`
 - `docs/artifact_schema_snapshots.md`

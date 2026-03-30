@@ -119,3 +119,6 @@ Canonical top-level continuity truth for operator/export/build/verify is delegat
 
 > v16 update: canonical top-level continuity proof is now only `canonical-convergence-continuity-sweep` (`CanonicalConvergenceContinuityAuthorityV1`). This surface is subordinate continuity evidence.
 
+## v17 stabilization delegation
+`OperatorWorkflowChainV1` remains workflow-stage evidence and must not be interpreted as top-level continuity truth.
+Top-level continuity is delegated only to `canonical-stabilization-continuity-sweep` (`CanonicalStabilizationContinuityAuthorityV1`).

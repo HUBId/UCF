@@ -28,6 +28,7 @@
     "canonical_readiness_authority_v2",
     "canonical_readiness_spine_v1",
     "canonical_roundtrip_chain_v1",
+    "canonical_stabilization_continuity_authority_v1",
     "cross_surface_condition_observation_v1",
     "cross_surface_context_matrix_v1",
     "final_bundle_consumer_authority_v1",
