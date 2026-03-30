@@ -36,6 +36,7 @@ See `docs/feature_matrix.md` for details.
 - `cargo run -p ucf-ops -- governance-ultimate-sweep --out ./out/governance_ultimate_sweep.json`
 - `cargo run -p ucf-ops -- governance-convergence-sweep --out ./out/governance_convergence_sweep.json`
 - `cargo run -p ucf-ops -- governance-stabilization-sweep --out ./out/governance_stabilization_sweep.json`
+- `cargo run -p ucf-ops -- governance-final-consolidation-sweep --out ./out/governance_final_consolidation_sweep.json`
 - `cargo run -p ucf-ops -- models supported-scope-execute-v7 --out ./out/supported_scope_execute_v7.json --workdir .`
 - `cargo run -p ucf-ops -- models supported-scope-execute-v8 --out ./out/supported_scope_execute_v8.json --workdir .`
 - `cargo run -p ucf-ops -- models supported-scope-execute-v9 --out ./out/supported_scope_execute_v9.json --workdir .`

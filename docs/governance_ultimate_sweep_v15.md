@@ -47,3 +47,5 @@ v16 adds `governance-convergence-sweep` to remove remaining canonical consumer d
 ## v17 note
 
 After v16 convergence, v17 stabilization removes remaining governance adapter/translation residues from canonical consumers via `governance-stabilization-sweep`.
+
+> v18 update: canonical consumers now include the final consolidation sweep step to ensure no governance facade/alias/shadow path survives as authoritative input.

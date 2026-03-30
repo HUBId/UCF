@@ -41,3 +41,5 @@ cargo run -p ucf-ops -- governance-stabilization-sweep --out ./out/governance_st
 ## Beziehung zu Supported-Scope-Execution v17
 
 `GovernanceStabilizationSweepV1` ist in v17 ein Pflichtinput für `models supported-scope-execute-v12`. Ohne PASS + digest alignment muss die Scope-Execution `REAFFIRM_FREEZE` ausgeben.
+
+> v18 update: `governance-final-consolidation-sweep` removes remaining governance-facade, alias-layer, and shadow-governance residues from canonical consumers and emits `GovernanceFinalConsolidationSweepV1`.
