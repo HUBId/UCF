@@ -52,3 +52,7 @@ v15 (`primary-semantics-ultimate-sweep`) removes remaining canonical consumer de
 ## v16 convergence note
 
 v16 (`primary-semantics-convergence-sweep`) extends terminal cleanup by blocking/demoting any remaining memoized/copied/derived primary-semantics paths in canonical flows.
+
+## v17 stabilization note
+
+The v17 stabilization sweep removes remaining canonical dependence on adapter/translation/projection primary-semantics paths and makes convergence-chain usage auditable across canonical surfaces.

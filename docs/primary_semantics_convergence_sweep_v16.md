@@ -36,3 +36,7 @@ cargo run -p ucf-ops -- primary-semantics-convergence-sweep --out ./out/primary_
 ```
 
 The resulting artifact includes `convergence_status`, `residual_path_count`, and `convergence_digest` for deterministic auditability.
+
+## v17 stabilization note
+
+v17 adds `PrimarySemanticsStabilizationSweepV1` and requires canonical surfaces to consume primary blocking/remediation semantics only through the converged canonical primary-semantics chain. Residual adapter/translation/projection paths are no longer canonical authorities.
