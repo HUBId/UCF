@@ -44,3 +44,7 @@ v15 (`bundle-ultimate-sweep`) removes remaining canonical bundle cache/mirror/sn
 ## v16 convergence note
 
 Canonical export consumers are now converged through `bundle-convergence-sweep` and no longer allow memoized/copied/derived bundle authority as primary truth.
+
+## v17 stabilization note
+
+v17 finalizes canonical export consumer stabilization and blocks adapter/translation/projection bundle truth paths in canonical flows.

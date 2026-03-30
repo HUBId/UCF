@@ -45,3 +45,7 @@ cargo run -p ucf-ops -- bundle-ultimate-sweep --out ./out/bundle_ultimate_sweep.
 ## v16 convergence note
 
 v16 adds `bundle-convergence-sweep` to remove the final canonical dependencies on memoized/copied/derived bundle truth in canonical export consumers.
+
+## v17 stabilization note
+
+v17 completes stabilization by requiring canonical export consumers to use the converged canonical bundle chain and by demoting/removing residual adapter paths from canonical use.

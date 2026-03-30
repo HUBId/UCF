@@ -50,3 +50,7 @@ These surfaces are now mismatch classes and produce deterministic non-pass outco
 ```bash
 cargo run -p ucf-ops -- bundle-convergence-sweep --out ./out/bundle_convergence_sweep.json
 ```
+
+## v17 stabilization note
+
+v17 (`bundle-stabilization-sweep`) removes remaining canonical dependence on bundle adapters, translation layers, and indirect export projections in canonical export consumers.
