@@ -1,0 +1,57 @@
+{
+  "artifact_id": "bundle_stabilization_sweep_v1",
+  "type_name": "BundleStabilizationSweepV1",
+  "source_file": "runtime/ucf-ops/src/bundle_stabilization_sweep.rs",
+  "required_fields": [
+    "absolute_final_bundle_terminal_sweep_digest_prefix",
+    "applied_supported_set_digest_prefix",
+    "bundle_convergence_sweep_digest_prefix",
+    "canonical_bundle_authority_digest_prefix",
+    "canonical_bundle_spine_digest_prefix",
+    "canonical_governance_entry_digest_prefix",
+    "canonical_readiness_spine_digest_prefix",
+    "covered_consumer_count",
+    "final_bundle_consumer_authority_digest_prefix",
+    "final_bundle_residual_sweep_digest_prefix",
+    "residual_free_bundle_absolute_sweep_digest_prefix",
+    "residual_free_bundle_consumer_authority_digest_prefix",
+    "residual_path_count",
+    "stabilization_digest",
+    "stabilization_status",
+    "terminal_bundle_ultimate_sweep_digest_prefix"
+  ],
+  "optional_fields": [],
+  "field_types": {
+    "absolute_final_bundle_terminal_sweep_digest_prefix": "String",
+    "applied_supported_set_digest_prefix": "String",
+    "bundle_convergence_sweep_digest_prefix": "String",
+    "canonical_bundle_authority_digest_prefix": "String",
+    "canonical_bundle_spine_digest_prefix": "String",
+    "canonical_governance_entry_digest_prefix": "String",
+    "canonical_readiness_spine_digest_prefix": "String",
+    "covered_consumer_count": "u16",
+    "final_bundle_consumer_authority_digest_prefix": "String",
+    "final_bundle_residual_sweep_digest_prefix": "String",
+    "residual_free_bundle_absolute_sweep_digest_prefix": "String",
+    "residual_free_bundle_consumer_authority_digest_prefix": "String",
+    "residual_path_count": "u16",
+    "stabilization_digest": "String",
+    "stabilization_status": "BundleStabilizationStatusV1",
+    "terminal_bundle_ultimate_sweep_digest_prefix": "String"
+  },
+  "enum_variants": {
+    "BundleStabilizationMismatchCategoryV1": [
+      "BundleAdapterPathPresent",
+      "BundleInputExportContextMismatch",
+      "BundleInputScopeMismatch",
+      "BundleInputSpineMismatch",
+      "ConsumerSkippedBundleStabilization",
+      "ConsumerUsedBundleAdapterPath"
+    ],
+    "BundleStabilizationStatusV1": [
+      "Fail",
+      "LegacyPresent",
+      "Pass"
+    ]
+  }
+}
