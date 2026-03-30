@@ -50,6 +50,7 @@
     "operator_workflow_chain_v1",
     "primary_semantics_convergence_sweep_v1",
     "primary_semantics_observation_v1",
+    "primary_semantics_stabilization_sweep_v1",
     "readiness_convergence_sweep_v1",
     "readiness_gate_report_v1",
     "readiness_stabilization_sweep_v1",

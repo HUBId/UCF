@@ -64,7 +64,7 @@ struct ArtifactSpec {
     enum_names: &'static [&'static str],
 }
 
-const ARTIFACT_SPECS: [ArtifactSpec; 98] = [
+const ARTIFACT_SPECS: [ArtifactSpec; 99] = [
     ArtifactSpec {
         artifact_id: "active_review_snapshot_v1",
         file_rel: "runtime/ucf-ops/src/models_lifecycle.rs",
@@ -559,6 +559,15 @@ const ARTIFACT_SPECS: [ArtifactSpec; 98] = [
         enum_names: &[
             "PrimarySemanticsConvergenceStatusV1",
             "PrimarySemanticsConvergenceMismatchCategoryV1",
+        ],
+    },
+    ArtifactSpec {
+        artifact_id: "primary_semantics_stabilization_sweep_v1",
+        file_rel: "runtime/ucf-ops/src/primary_semantics_stabilization_sweep.rs",
+        type_name: "PrimarySemanticsStabilizationSweepV1",
+        enum_names: &[
+            "PrimarySemanticsStabilizationStatusV1",
+            "PrimarySemanticsStabilizationMismatchCategoryV1",
         ],
     },
     ArtifactSpec {
@@ -1210,6 +1219,7 @@ mod tests {
                 "operator_workflow_chain_v1",
                 "primary_semantics_convergence_sweep_v1",
                 "primary_semantics_observation_v1",
+                "primary_semantics_stabilization_sweep_v1",
                 "readiness_convergence_sweep_v1",
                 "readiness_gate_report_v1",
                 "readiness_stabilization_sweep_v1",
@@ -1619,6 +1629,81 @@ mod tests {
         assert!(!report.ok);
         assert!(report.diffs.iter().any(|d| {
             d.artifact == "governance_convergence_sweep_v1"
+                && d.drift_kind == DriftKind::Breaking
+                && d.summary.contains("field type changed")
+        }));
+    }
+
+    #[test]
+    fn check_reports_missing_v17_primary_semantics_stabilization_snapshot_as_breaking() {
+        let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("runtime parent")
+            .parent()
+            .expect("repo root")
+            .to_path_buf();
+        let tmp = tempfile::tempdir().expect("tempdir");
+        generate_artifact_schema_snapshots(&ArtifactSchemaArgs {
+            repo_root: repo_root.clone(),
+            out_dir: tmp.path().to_path_buf(),
+        })
+        .expect("generate snapshots");
+        fs::remove_file(
+            tmp.path()
+                .join("primary_semantics_stabilization_sweep_v1.json"),
+        )
+        .expect("remove snapshot");
+
+        let report = check_artifact_schema_snapshots(&ArtifactSchemaArgs {
+            repo_root,
+            out_dir: tmp.path().to_path_buf(),
+        })
+        .expect("check should complete");
+        assert!(!report.ok);
+        assert!(report.diffs.iter().any(|d| {
+            d.artifact == "primary_semantics_stabilization_sweep_v1"
+                && d.drift_kind == DriftKind::Breaking
+        }));
+    }
+
+    #[test]
+    fn check_reports_v17_primary_semantics_stabilization_shape_drift() {
+        let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("runtime parent")
+            .parent()
+            .expect("repo root")
+            .to_path_buf();
+        let tmp = tempfile::tempdir().expect("tempdir");
+        generate_artifact_schema_snapshots(&ArtifactSchemaArgs {
+            repo_root: repo_root.clone(),
+            out_dir: tmp.path().to_path_buf(),
+        })
+        .expect("generate snapshots");
+
+        let snapshot_path = tmp
+            .path()
+            .join("primary_semantics_stabilization_sweep_v1.json");
+        let mut snapshot: ArtifactSchemaSnapshot =
+            serde_json::from_str(&fs::read_to_string(&snapshot_path).expect("read snapshot"))
+                .expect("parse snapshot");
+        snapshot
+            .field_types
+            .insert("stabilization_digest".to_string(), "u64".to_string());
+        fs::write(
+            &snapshot_path,
+            serde_json::to_string_pretty(&snapshot).expect("serialize snapshot"),
+        )
+        .expect("write snapshot");
+
+        let report = check_artifact_schema_snapshots(&ArtifactSchemaArgs {
+            repo_root,
+            out_dir: tmp.path().to_path_buf(),
+        })
+        .expect("check should complete");
+        assert!(!report.ok);
+        assert!(report.diffs.iter().any(|d| {
+            d.artifact == "primary_semantics_stabilization_sweep_v1"
                 && d.drift_kind == DriftKind::Breaking
                 && d.summary.contains("field type changed")
         }));
