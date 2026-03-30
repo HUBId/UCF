@@ -1,4 +1,4 @@
-# Portability Gate v16 Refresh (Linux + Windows)
+# Portability Gate v17 Refresh (Linux + Windows)
 
 `Portability Gate` blocks merges when core runtime/ops checks are not cross-platform safe.
 
@@ -474,4 +474,13 @@ cargo run -p ucf-ops -- portability report --out ./out/portability_report.json
 - `docs/readiness_spine_v8.md`
 - `docs/bundle_spine_v8.md`
 - `docs/remediation_spine_consistency_v8.md`
+- `docs/artifact_schema_snapshots.md`
+
+## v17 docs covered by portability/docs gates
+
+- `docs/governance_stabilization_sweep_v17.md`
+- `docs/supported_scope_execution_v17.md`
+- `docs/readiness_stabilization_sweep_v17.md`
+- `docs/bundle_stabilization_sweep_v17.md`
+- `docs/primary_semantics_stabilization_sweep_v17.md`
 - `docs/artifact_schema_snapshots.md`
