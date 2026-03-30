@@ -45,3 +45,7 @@ cargo run -p ucf-ops -- canonical-convergence-continuity-sweep --bundle <path> -
 3. Verify bundle continuity contributors (`bundle-spine`, `roundtrip`).
 4. Run `canonical-convergence-continuity-sweep`.
 5. Use only this output for top-level continuity PASS/FAIL.
+
+## v17 update
+`CanonicalConvergenceContinuityAuthorityV1` is now a **SUBORDINATE_CONTINUITY_CONTRIBUTOR**.
+Sole top-level continuity proof after stabilization cleanup is `canonical-stabilization-continuity-sweep` (`CanonicalStabilizationContinuityAuthorityV1`).

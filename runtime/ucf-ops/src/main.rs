@@ -8,14 +8,14 @@ use ucf_ops::{
     alerts_report, attest_bundle, attest_keys_generate, attest_run, attest_verify, audit_scan,
     bench_run, bringup, bundle_absolute_sweep, bundle_convergence_sweep, bundle_residual_sweep,
     bundle_stabilization_sweep, bundle_terminal_sweep, bundle_ultimate_sweep,
-    canonical_convergence_continuity_sweep, causal_slice, continuity_authority_check,
-    determinism_scan, diagnostics, diagnostics_collect, drift_report, ebm_export_dataset,
-    ess_compact, ess_snapshot, event_id_for_decision, explain_tick, explain_why, export_bugreport,
-    export_policy_key_registry_v1, exports_bundle_spine_check, exports_bundle_spine_sweep,
-    exports_normalize_check, exports_roundtrip_check, final_bundle_consumer_sweep,
-    final_continuity_sweep, final_governance_consumer_sweep, final_input_continuity_sweep,
-    final_primary_semantics_sweep, final_readiness_consumer_sweep, gateway_threat_test,
-    goldens_generate, goldens_update, goldens_verify, goldens_verify_detailed,
+    canonical_convergence_continuity_sweep, canonical_stabilization_continuity_sweep, causal_slice,
+    continuity_authority_check, determinism_scan, diagnostics, diagnostics_collect, drift_report,
+    ebm_export_dataset, ess_compact, ess_snapshot, event_id_for_decision, explain_tick,
+    explain_why, export_bugreport, export_policy_key_registry_v1, exports_bundle_spine_check,
+    exports_bundle_spine_sweep, exports_normalize_check, exports_roundtrip_check,
+    final_bundle_consumer_sweep, final_continuity_sweep, final_governance_consumer_sweep,
+    final_input_continuity_sweep, final_primary_semantics_sweep, final_readiness_consumer_sweep,
+    gateway_threat_test, goldens_generate, goldens_update, goldens_verify, goldens_verify_detailed,
     governance_absolute_sweep, governance_convergence_sweep, governance_entry_check,
     governance_entry_sweep, governance_residual_sweep, governance_stabilization_sweep,
     governance_surfaces_check, governance_terminal_sweep, governance_ultimate_sweep, hardware_scan,
@@ -60,9 +60,9 @@ use ucf_ops::{
     AbsoluteFinalReadinessTerminalSweepStatusV1, AdversarialRunArgs, AirgapArtifactType,
     AirgapImportArgs, AirgapImportMode, BenchArgs, BugKitBuildArgs, BundleConvergenceStatusV1,
     BundleStabilizationStatusV1, CanonicalBundleAuthorityStatusV2,
-    CanonicalConvergenceContinuityStatusV1, CanonicalReadinessAuthorityStatusV2, ChangeImpactArgs,
-    ConfigV1, ContinuityAuthorityStatusV1, CounterfactualRequest, DevLoopArgs, DocsLintArgs,
-    DocsLintMode, DocsLintStatus, ExplainTickRequest, ExportArgs,
+    CanonicalReadinessAuthorityStatusV2, CanonicalStabilizationContinuityStatusV1,
+    ChangeImpactArgs, ConfigV1, ContinuityAuthorityStatusV1, CounterfactualRequest, DevLoopArgs,
+    DocsLintArgs, DocsLintMode, DocsLintStatus, ExplainTickRequest, ExportArgs,
     FinalBundleConsumerAuthorityStatusV1, FinalBundleResidualSweepStatusV1,
     FinalGovernanceConsumerAuthorityStatusV1, FinalPrimarySemanticsConsumerAuthorityStatusV1,
     FinalPrimarySemanticsResidualSweepStatusV1, FinalReadinessConsumerAuthorityStatusV1,
@@ -2489,9 +2489,29 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             if !report.blocking_codes.is_empty() {
                 println!("blocking_codes={}", report.blocking_codes.join(","));
             }
+            println!("note=SUBORDINATE_CONTINUITY_CONTRIBUTOR");
+        }
+
+        "canonical-stabilization-continuity-sweep" => {
+            let bundle = arg_value(&args, "--bundle")
+                .map(PathBuf::from)
+                .ok_or_else(|| {
+                    "usage: ucf-ops canonical-stabilization-continuity-sweep --bundle <path> --out ./out/canonical_stabilization_continuity_sweep.json".to_string()
+                })?;
+            let out = arg_value(&args, "--out")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| {
+                    PathBuf::from("./out/canonical_stabilization_continuity_sweep.json")
+                });
+            let report = canonical_stabilization_continuity_sweep(&workdir, &bundle, &out)?;
+            println!("out={}", out.display());
+            println!("continuity_status={:?}", report.continuity_status);
+            if !report.blocking_codes.is_empty() {
+                println!("blocking_codes={}", report.blocking_codes.join(","));
+            }
             if !matches!(
                 report.continuity_status,
-                CanonicalConvergenceContinuityStatusV1::Pass
+                CanonicalStabilizationContinuityStatusV1::Pass
             ) {
                 std::process::exit(2);
             }
