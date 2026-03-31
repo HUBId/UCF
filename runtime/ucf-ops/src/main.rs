@@ -3016,7 +3016,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let out = arg_value(&args, "--out")
                 .map(PathBuf::from)
                 .unwrap_or_else(|| PathBuf::from("./out/bundle_terminal_sweep.json"));
-            let report = bundle_terminal_sweep(&workdir, &out)?;
+            let workdir_cloned = workdir.clone();
+            let out_cloned = out.clone();
+            let report = std::thread::Builder::new()
+                .name("bundle-terminal-sweep".to_string())
+                .stack_size(32 * 1024 * 1024)
+                .spawn(move || bundle_terminal_sweep(&workdir_cloned, &out_cloned))
+                .map_err(|err| format!("failed to spawn bundle terminal sweep thread: {err}"))?
+                .join()
+                .map_err(|_| "bundle terminal sweep panicked".to_string())??;
             println!("out={}", out.display());
             println!("status={:?}", report.sweep.sweep_status);
             println!("sweep_digest={}", report.sweep.sweep_digest);
