@@ -3046,7 +3046,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let out = arg_value(&args, "--out")
                 .map(PathBuf::from)
                 .unwrap_or_else(|| PathBuf::from("./out/bundle_convergence_sweep.json"));
-            let report = bundle_convergence_sweep(&workdir, &out)?;
+            let workdir_cloned = workdir.clone();
+            let out_cloned = out.clone();
+            let report = std::thread::Builder::new()
+                .name("bundle-convergence-sweep".to_string())
+                .stack_size(32 * 1024 * 1024)
+                .spawn(move || bundle_convergence_sweep(&workdir_cloned, &out_cloned))
+                .map_err(|err| format!("failed to spawn bundle convergence sweep thread: {err}"))?
+                .join()
+                .map_err(|_| "bundle convergence sweep panicked".to_string())??;
             println!("out={}", out.display());
             println!("status={:?}", report.sweep.convergence_status);
             println!("convergence_digest={}", report.sweep.convergence_digest);
