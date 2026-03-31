@@ -1232,6 +1232,7 @@ mod tests {
                 "final_readiness_consumer_authority_v1",
                 "final_readiness_residual_sweep_v1",
                 "governance_convergence_sweep_v1",
+                "governance_final_consolidation_sweep_v1",
                 "governance_primary_surfaces_v1",
                 "governance_stabilization_sweep_v1",
                 "interop_consistency_matrix_report_v1",

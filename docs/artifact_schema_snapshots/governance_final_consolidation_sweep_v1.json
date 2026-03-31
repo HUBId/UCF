@@ -1,0 +1,54 @@
+{
+  "artifact_id": "governance_final_consolidation_sweep_v1",
+  "type_name": "GovernanceFinalConsolidationSweepV1",
+  "source_file": "runtime/ucf-ops/src/governance_final_consolidation_sweep.rs",
+  "required_fields": [
+    "absolute_final_governance_terminal_sweep_digest_prefix",
+    "applied_supported_set_digest_prefix",
+    "canonical_governance_authority_digest_prefix",
+    "canonical_governance_entry_digest_prefix",
+    "consolidation_digest",
+    "consolidation_status",
+    "covered_consumer_count",
+    "final_governance_consumer_authority_digest_prefix",
+    "final_governance_residual_sweep_digest_prefix",
+    "governance_convergence_sweep_digest_prefix",
+    "governance_stabilization_sweep_digest_prefix",
+    "residual_free_governance_absolute_sweep_digest_prefix",
+    "residual_free_governance_consumer_authority_digest_prefix",
+    "residual_path_count",
+    "terminal_governance_ultimate_sweep_digest_prefix"
+  ],
+  "optional_fields": [],
+  "field_types": {
+    "absolute_final_governance_terminal_sweep_digest_prefix": "String",
+    "applied_supported_set_digest_prefix": "String",
+    "canonical_governance_authority_digest_prefix": "String",
+    "canonical_governance_entry_digest_prefix": "String",
+    "consolidation_digest": "String",
+    "consolidation_status": "GovernanceFinalConsolidationStatusV1",
+    "covered_consumer_count": "u16",
+    "final_governance_consumer_authority_digest_prefix": "String",
+    "final_governance_residual_sweep_digest_prefix": "String",
+    "governance_convergence_sweep_digest_prefix": "String",
+    "governance_stabilization_sweep_digest_prefix": "String",
+    "residual_free_governance_absolute_sweep_digest_prefix": "String",
+    "residual_free_governance_consumer_authority_digest_prefix": "String",
+    "residual_path_count": "u16",
+    "terminal_governance_ultimate_sweep_digest_prefix": "String"
+  },
+  "enum_variants": {
+    "GovernanceFinalConsolidationMismatchCategoryV1": [
+      "ConsumerSkippedGovernanceFinalConsolidation",
+      "ConsumerUsedGovernanceFacadePath",
+      "GovernanceFacadePathPresent",
+      "GovernanceInputEntryMismatch",
+      "GovernanceInputScopeMismatch"
+    ],
+    "GovernanceFinalConsolidationStatusV1": [
+      "Fail",
+      "LegacyPresent",
+      "Pass"
+    ]
+  }
+}
