@@ -9,7 +9,6 @@
     "schema_version",
     "signoff_alignment",
     "slots",
-    "snapshot_digest",
     "supported_slot_set_digest"
   ],
   "optional_fields": [
@@ -26,7 +25,8 @@
     "readiness_terminal_sweep_digest_prefix",
     "readiness_ultimate_sweep_digest_prefix",
     "residual_free_governance_authority_digest_prefix",
-    "residual_free_readiness_authority_digest_prefix"
+    "residual_free_readiness_authority_digest_prefix",
+    "snapshot_digest"
   ],
   "field_types": {
     "absolute_final_governance_terminal_sweep_digest_prefix": "String",
