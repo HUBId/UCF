@@ -52,3 +52,5 @@ v16 (`primary-semantics-convergence-sweep`) removes remaining canonical memo/cop
 ## v17 stabilization note
 
 v17 finalizes canonical-surface stabilization: primary-semantics adapter paths and translation residues are blocked/demoted from canonical authority use and audited via `primary-semantics-stabilization-sweep`.
+
+> v18 update: canonical consumers now include `primary-semantics-final-consolidation-sweep` to ensure no primary-semantics facade, alias, or shadow remediation view remains authoritative.

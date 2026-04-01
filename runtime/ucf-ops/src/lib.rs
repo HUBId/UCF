@@ -51,6 +51,7 @@ mod operator_signoff;
 mod operator_workflow;
 mod primary_semantics_absolute_sweep;
 mod primary_semantics_convergence_sweep;
+mod primary_semantics_final_consolidation_sweep;
 mod primary_semantics_residual_sweep;
 mod primary_semantics_stabilization_sweep;
 mod primary_semantics_terminal_sweep;
@@ -356,6 +357,12 @@ pub use primary_semantics_convergence_sweep::{
     PrimarySemanticsConvergenceStatusV1, PrimarySemanticsConvergenceSurfaceStatusV1,
     PrimarySemanticsConvergenceSweepReportV1, PrimarySemanticsConvergenceSweepV1,
 };
+pub use primary_semantics_final_consolidation_sweep::{
+    primary_semantics_final_consolidation_sweep,
+    PrimarySemanticsFinalConsolidationMismatchCategoryV1,
+    PrimarySemanticsFinalConsolidationStatusV1, PrimarySemanticsFinalConsolidationSurfaceStatusV1,
+    PrimarySemanticsFinalConsolidationSweepReportV1, PrimarySemanticsFinalConsolidationSweepV1,
+};
 pub use primary_semantics_residual_sweep::{
     primary_semantics_residual_sweep, FinalPrimarySemanticsResidualMismatchCategoryV1,
     FinalPrimarySemanticsResidualSurfaceStatusV1, FinalPrimarySemanticsResidualSweepReportV1,
@@ -451,6 +458,7 @@ pub use remediation_consistency::{
     remediation_interop_check, remediation_spine_check,
     require_absolute_final_primary_semantics_terminal_inputs,
     require_final_primary_semantics_inputs, require_primary_semantics_convergence_inputs,
+    require_primary_semantics_final_consolidation_inputs,
     require_primary_semantics_stabilization_inputs,
     require_residual_free_final_primary_semantics_inputs,
     require_residual_free_primary_semantics_absolute_inputs,
@@ -460,9 +468,10 @@ pub use remediation_consistency::{
     CrossSurfaceConditionObservationV1, CrossSurfaceObservationStatusV1,
     FinalPrimarySemanticsConsumerAuthorityStatusV1, FinalPrimarySemanticsConsumerAuthorityV1,
     FinalPrimarySemanticsInputsContextV1, FinalPrimarySemanticsSweepReportV1,
-    PrimarySemanticsConvergenceInputsV1, PrimarySemanticsObservationV1,
-    PrimarySemanticsObservedSurfaceV1, PrimarySemanticsStabilizationInputsV1,
-    PrimarySemanticsSweepReportV1, RemediationConsistencyCheckV1, RemediationConsistencyObservedV1,
+    PrimarySemanticsConvergenceInputsV1, PrimarySemanticsFinalConsolidationInputsV1,
+    PrimarySemanticsObservationV1, PrimarySemanticsObservedSurfaceV1,
+    PrimarySemanticsStabilizationInputsV1, PrimarySemanticsSweepReportV1,
+    RemediationConsistencyCheckV1, RemediationConsistencyObservedV1,
     RemediationConsistencyReportV1, RemediationConsistencyStatusV1,
     RemediationInteropCheckReportV1, RemediationMismatchKindV1, RemediationSpineCheckReportV1,
     ResidualFreeFinalPrimarySemanticsInputsV1, ResidualFreePrimarySemanticsAbsoluteInputsV1,
@@ -478,10 +487,13 @@ pub use remediation_consistency::{
     PRIMARY_SEMANTICS_ADAPTER_PATH_TRANSLATED, PRIMARY_SEMANTICS_CACHE_PATH_BLOCKED,
     PRIMARY_SEMANTICS_CACHE_PATH_REJECTED, PRIMARY_SEMANTICS_CACHE_PATH_TRANSLATED,
     PRIMARY_SEMANTICS_ECHO_PATH_BLOCKED, PRIMARY_SEMANTICS_ECHO_PATH_REJECTED,
-    PRIMARY_SEMANTICS_ECHO_PATH_TRANSLATED, PRIMARY_SEMANTICS_MEMO_PATH_BLOCKED,
-    PRIMARY_SEMANTICS_MEMO_PATH_REJECTED, PRIMARY_SEMANTICS_MEMO_PATH_TRANSLATED,
-    RESIDUAL_FREE_FINAL_PRIMARY_SEMANTICS_INPUTS_REQUIRED, RESIDUAL_PRIMARY_SEMANTICS_PATH_BLOCKED,
-    RESIDUAL_PRIMARY_SEMANTICS_PATH_REJECTED, RESIDUAL_PRIMARY_SEMANTICS_PATH_TRANSLATED,
+    PRIMARY_SEMANTICS_ECHO_PATH_TRANSLATED, PRIMARY_SEMANTICS_FACADE_PATH_BLOCKED,
+    PRIMARY_SEMANTICS_FACADE_PATH_REJECTED, PRIMARY_SEMANTICS_FACADE_PATH_TRANSLATED,
+    PRIMARY_SEMANTICS_MEMO_PATH_BLOCKED, PRIMARY_SEMANTICS_MEMO_PATH_REJECTED,
+    PRIMARY_SEMANTICS_MEMO_PATH_TRANSLATED, RESIDUAL_FREE_FINAL_PRIMARY_SEMANTICS_INPUTS_REQUIRED,
+    RESIDUAL_PRIMARY_SEMANTICS_PATH_BLOCKED, RESIDUAL_PRIMARY_SEMANTICS_PATH_REJECTED,
+    RESIDUAL_PRIMARY_SEMANTICS_PATH_TRANSLATED,
+    STABILIZED_CONVERGED_CANONICAL_PRIMARY_SEMANTICS_INPUTS_REQUIRED,
     TERMINAL_ABSOLUTE_RESIDUAL_FREE_FINAL_PRIMARY_SEMANTICS_INPUTS_REQUIRED,
     ULTIMATE_TERMINAL_ABSOLUTE_PRIMARY_SEMANTICS_INPUTS_REQUIRED,
 };

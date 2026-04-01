@@ -64,7 +64,7 @@ struct ArtifactSpec {
     enum_names: &'static [&'static str],
 }
 
-const ARTIFACT_SPECS: [ArtifactSpec; 105] = [
+const ARTIFACT_SPECS: [ArtifactSpec; 106] = [
     ArtifactSpec {
         artifact_id: "active_review_snapshot_v1",
         file_rel: "runtime/ucf-ops/src/models_lifecycle.rs",
@@ -598,6 +598,15 @@ const ARTIFACT_SPECS: [ArtifactSpec; 105] = [
         enum_names: &[
             "PrimarySemanticsStabilizationStatusV1",
             "PrimarySemanticsStabilizationMismatchCategoryV1",
+        ],
+    },
+    ArtifactSpec {
+        artifact_id: "primary_semantics_final_consolidation_sweep_v1",
+        file_rel: "runtime/ucf-ops/src/primary_semantics_final_consolidation_sweep.rs",
+        type_name: "PrimarySemanticsFinalConsolidationSweepV1",
+        enum_names: &[
+            "PrimarySemanticsFinalConsolidationStatusV1",
+            "PrimarySemanticsFinalConsolidationMismatchCategoryV1",
         ],
     },
     ArtifactSpec {
