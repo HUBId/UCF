@@ -54,3 +54,5 @@ cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_app
 - `out/supported_set_apply.json`
   - `decision=EXPANDED` => Applied Scope geändert.
   - `decision=FROZEN` => Applied Scope unverändert.
+
+> v18 update: `SupportedScopeExecutionV13` ersetzt v12 als aktuelle Apply-Autorität unter zusätzlicher `GovernanceFinalConsolidationSweepV1`-Pflicht.

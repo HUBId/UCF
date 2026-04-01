@@ -19,3 +19,5 @@ cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_app
 
 
 Ab v17 bleibt Reevaluation weiterhin nur vorbereitend; ausführen darf ausschließlich `SupportedScopeExecutionV12` unter Governance-Stabilization-PASS.
+
+> v18 update: Reevaluation bleibt vorbereitend; anwenden darf ausschließlich `SupportedScopeExecutionV13` mit Final-Consolidation-PASS.
