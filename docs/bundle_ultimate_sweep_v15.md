@@ -49,3 +49,8 @@ v16 adds `bundle-convergence-sweep` to remove the final canonical dependencies o
 ## v17 stabilization note
 
 v17 completes stabilization by requiring canonical export consumers to use the converged canonical bundle chain and by demoting/removing residual adapter paths from canonical use.
+
+
+## v18 follow-up
+
+v18 (`bundle-final-consolidation-sweep`) removes remaining canonical facade/alias/shadow bundle residues from canonical export consumers and binds them to the stabilized chain.

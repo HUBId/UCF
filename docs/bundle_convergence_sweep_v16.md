@@ -54,3 +54,8 @@ cargo run -p ucf-ops -- bundle-convergence-sweep --out ./out/bundle_convergence_
 ## v17 stabilization note
 
 v17 (`bundle-stabilization-sweep`) removes remaining canonical dependence on bundle adapters, translation layers, and indirect export projections in canonical export consumers.
+
+
+## v18 follow-up
+
+v18 (`bundle-final-consolidation-sweep`) removes remaining canonical facade/alias/shadow bundle residues from canonical export consumers and binds them to the stabilized chain.
