@@ -15137,6 +15137,7 @@ mod probe_tests {
                 readiness_terminal_sweep_digest_prefix: "MISSING".to_string(),
                 readiness_ultimate_sweep_digest_prefix: "MISSING".to_string(),
                 readiness_stabilization_sweep_digest_prefix: "MISSING".to_string(),
+                readiness_final_consolidation_sweep_digest_prefix: "MISSING".to_string(),
                 governance_final_consolidation_sweep_digest_prefix: "MISSING".to_string(),
                 final_primary_semantics_residual_sweep_digest_prefix: "MISSING".to_string(),
                 residual_free_primary_semantics_authority_digest_prefix: "MISSING".to_string(),

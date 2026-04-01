@@ -46,9 +46,14 @@ pub const ULTIMATE_TERMINAL_ABSOLUTE_READINESS_INPUTS_REQUIRED: &str =
     "ULTIMATE_TERMINAL_ABSOLUTE_READINESS_INPUTS_REQUIRED";
 pub const CONVERGED_CANONICAL_READINESS_INPUTS_REQUIRED: &str =
     "CONVERGED_CANONICAL_READINESS_INPUTS_REQUIRED";
+pub const STABILIZED_CONVERGED_CANONICAL_READINESS_INPUTS_REQUIRED: &str =
+    "STABILIZED_CONVERGED_CANONICAL_READINESS_INPUTS_REQUIRED";
 pub const READINESS_ADAPTER_PATH_BLOCKED: &str = "READINESS_ADAPTER_PATH_BLOCKED";
 pub const READINESS_ADAPTER_PATH_TRANSLATED: &str = "READINESS_ADAPTER_PATH_TRANSLATED";
 pub const READINESS_ADAPTER_PATH_REJECTED: &str = "READINESS_ADAPTER_PATH_REJECTED";
+pub const READINESS_FACADE_PATH_BLOCKED: &str = "READINESS_FACADE_PATH_BLOCKED";
+pub const READINESS_FACADE_PATH_TRANSLATED: &str = "READINESS_FACADE_PATH_TRANSLATED";
+pub const READINESS_FACADE_PATH_REJECTED: &str = "READINESS_FACADE_PATH_REJECTED";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -205,6 +210,23 @@ pub struct ReadinessConvergenceInputsV1 {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ReadinessStabilizationInputsV1 {
+    pub applied_supported_set_digest_prefix: String,
+    pub canonical_governance_entry_digest_prefix: String,
+    pub canonical_readiness_spine_digest_prefix: String,
+    pub canonical_readiness_authority_digest_prefix: String,
+    pub final_readiness_consumer_authority_digest_prefix: String,
+    pub final_readiness_residual_sweep_digest_prefix: String,
+    pub residual_free_readiness_consumer_authority_digest_prefix: String,
+    pub residual_free_readiness_absolute_sweep_digest_prefix: String,
+    pub absolute_final_readiness_terminal_sweep_digest_prefix: String,
+    pub terminal_readiness_ultimate_sweep_digest_prefix: String,
+    pub readiness_convergence_sweep_digest_prefix: String,
+    pub readiness_stabilization_sweep_digest_prefix: String,
+    pub authority_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ReadinessFinalConsolidationInputsV1 {
     pub applied_supported_set_digest_prefix: String,
     pub canonical_governance_entry_digest_prefix: String,
     pub canonical_readiness_spine_digest_prefix: String,
@@ -1334,6 +1356,160 @@ pub fn require_readiness_stabilization_inputs(
             .terminal_readiness_ultimate_sweep_digest_prefix,
         readiness_convergence_sweep_digest_prefix: convergence_prefix,
         readiness_stabilization_sweep_digest_prefix: String::new(),
+        authority_digest: crate::sha256_hex(&digest_source),
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn require_readiness_final_consolidation_inputs(
+    truths: &[SlotReviewabilityTruthV1],
+    reduction: Option<&ReviewabilityReductionV1>,
+    applied_scope: Option<&AppliedSupportedSetContextV1>,
+    entry: Option<&CanonicalGovernanceEntryV1>,
+    spine: Option<&CanonicalReadinessSpineV1>,
+    authority: Option<&CanonicalReadinessAuthorityV2>,
+    final_consumer_authority: Option<&crate::FinalReadinessConsumerAuthorityV1>,
+    residual_sweep: Option<&crate::FinalReadinessResidualSweepV1>,
+    residual_free_consumer: Option<&crate::ResidualFreeReadinessConsumerAuthorityV1>,
+    absolute_sweep: Option<&crate::ResidualFreeReadinessAbsoluteSweepV1>,
+    terminal_sweep: Option<&crate::AbsoluteFinalReadinessTerminalSweepV1>,
+    ultimate_sweep: Option<&crate::TerminalReadinessUltimateSweepV1>,
+    convergence_sweep: Option<&crate::ReadinessConvergenceSweepV1>,
+    stabilization_sweep: Option<&crate::ReadinessStabilizationSweepV1>,
+) -> Result<ReadinessFinalConsolidationInputsV1, OpsError> {
+    let stabilization_inputs = require_readiness_stabilization_inputs(
+        truths,
+        reduction,
+        applied_scope,
+        entry,
+        spine,
+        authority,
+        final_consumer_authority,
+        residual_sweep,
+        residual_free_consumer,
+        absolute_sweep,
+        terminal_sweep,
+        ultimate_sweep,
+        convergence_sweep,
+    )?;
+    let Some(stabilization_sweep) = stabilization_sweep else {
+        return Err(OpsError::Invalid(
+            STABILIZED_CONVERGED_CANONICAL_READINESS_INPUTS_REQUIRED.to_string(),
+        ));
+    };
+    let stabilization_prefix = prefix_hex(&stabilization_sweep.stabilization_digest, 16);
+    if !matches!(
+        stabilization_sweep.stabilization_status,
+        crate::ReadinessStabilizationStatusV1::Pass
+    ) || stabilization_sweep.applied_supported_set_digest_prefix
+        != stabilization_inputs.applied_supported_set_digest_prefix
+        || stabilization_sweep.canonical_governance_entry_digest_prefix
+            != stabilization_inputs.canonical_governance_entry_digest_prefix
+        || stabilization_sweep.canonical_readiness_spine_digest_prefix
+            != stabilization_inputs.canonical_readiness_spine_digest_prefix
+        || stabilization_sweep.canonical_readiness_authority_digest_prefix
+            != stabilization_inputs.canonical_readiness_authority_digest_prefix
+        || stabilization_sweep.final_readiness_consumer_authority_digest_prefix
+            != stabilization_inputs.final_readiness_consumer_authority_digest_prefix
+        || stabilization_sweep.final_readiness_residual_sweep_digest_prefix
+            != stabilization_inputs.final_readiness_residual_sweep_digest_prefix
+        || stabilization_sweep.residual_free_readiness_consumer_authority_digest_prefix
+            != stabilization_inputs.residual_free_readiness_consumer_authority_digest_prefix
+        || stabilization_sweep.residual_free_readiness_absolute_sweep_digest_prefix
+            != stabilization_inputs.residual_free_readiness_absolute_sweep_digest_prefix
+        || stabilization_sweep.absolute_final_readiness_terminal_sweep_digest_prefix
+            != stabilization_inputs.absolute_final_readiness_terminal_sweep_digest_prefix
+        || stabilization_sweep.terminal_readiness_ultimate_sweep_digest_prefix
+            != stabilization_inputs.terminal_readiness_ultimate_sweep_digest_prefix
+        || stabilization_sweep.readiness_convergence_sweep_digest_prefix
+            != stabilization_inputs.readiness_convergence_sweep_digest_prefix
+    {
+        return Err(OpsError::Invalid(READINESS_FACADE_PATH_BLOCKED.to_string()));
+    }
+
+    let mut digest_source = Vec::new();
+    digest_source.extend_from_slice(b"readiness_final_consolidation_inputs_v1");
+    digest_source.extend_from_slice(
+        stabilization_inputs
+            .applied_supported_set_digest_prefix
+            .as_bytes(),
+    );
+    digest_source.extend_from_slice(
+        stabilization_inputs
+            .canonical_governance_entry_digest_prefix
+            .as_bytes(),
+    );
+    digest_source.extend_from_slice(
+        stabilization_inputs
+            .canonical_readiness_spine_digest_prefix
+            .as_bytes(),
+    );
+    digest_source.extend_from_slice(
+        stabilization_inputs
+            .canonical_readiness_authority_digest_prefix
+            .as_bytes(),
+    );
+    digest_source.extend_from_slice(
+        stabilization_inputs
+            .final_readiness_consumer_authority_digest_prefix
+            .as_bytes(),
+    );
+    digest_source.extend_from_slice(
+        stabilization_inputs
+            .final_readiness_residual_sweep_digest_prefix
+            .as_bytes(),
+    );
+    digest_source.extend_from_slice(
+        stabilization_inputs
+            .residual_free_readiness_consumer_authority_digest_prefix
+            .as_bytes(),
+    );
+    digest_source.extend_from_slice(
+        stabilization_inputs
+            .residual_free_readiness_absolute_sweep_digest_prefix
+            .as_bytes(),
+    );
+    digest_source.extend_from_slice(
+        stabilization_inputs
+            .absolute_final_readiness_terminal_sweep_digest_prefix
+            .as_bytes(),
+    );
+    digest_source.extend_from_slice(
+        stabilization_inputs
+            .terminal_readiness_ultimate_sweep_digest_prefix
+            .as_bytes(),
+    );
+    digest_source.extend_from_slice(
+        stabilization_inputs
+            .readiness_convergence_sweep_digest_prefix
+            .as_bytes(),
+    );
+    digest_source.extend_from_slice(stabilization_prefix.as_bytes());
+
+    Ok(ReadinessFinalConsolidationInputsV1 {
+        applied_supported_set_digest_prefix: stabilization_inputs
+            .applied_supported_set_digest_prefix,
+        canonical_governance_entry_digest_prefix: stabilization_inputs
+            .canonical_governance_entry_digest_prefix,
+        canonical_readiness_spine_digest_prefix: stabilization_inputs
+            .canonical_readiness_spine_digest_prefix,
+        canonical_readiness_authority_digest_prefix: stabilization_inputs
+            .canonical_readiness_authority_digest_prefix,
+        final_readiness_consumer_authority_digest_prefix: stabilization_inputs
+            .final_readiness_consumer_authority_digest_prefix,
+        final_readiness_residual_sweep_digest_prefix: stabilization_inputs
+            .final_readiness_residual_sweep_digest_prefix,
+        residual_free_readiness_consumer_authority_digest_prefix: stabilization_inputs
+            .residual_free_readiness_consumer_authority_digest_prefix,
+        residual_free_readiness_absolute_sweep_digest_prefix: stabilization_inputs
+            .residual_free_readiness_absolute_sweep_digest_prefix,
+        absolute_final_readiness_terminal_sweep_digest_prefix: stabilization_inputs
+            .absolute_final_readiness_terminal_sweep_digest_prefix,
+        terminal_readiness_ultimate_sweep_digest_prefix: stabilization_inputs
+            .terminal_readiness_ultimate_sweep_digest_prefix,
+        readiness_convergence_sweep_digest_prefix: stabilization_inputs
+            .readiness_convergence_sweep_digest_prefix,
+        readiness_stabilization_sweep_digest_prefix: stabilization_prefix,
         authority_digest: crate::sha256_hex(&digest_source),
     })
 }
