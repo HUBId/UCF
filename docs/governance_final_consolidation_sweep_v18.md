@@ -48,3 +48,6 @@ Der Sweep meldet deterministische Mismatch-Kategorien:
 ```bash
 cargo run -p ucf-ops -- governance-final-consolidation-sweep --out ./out/governance_final_consolidation_sweep.json
 ```
+
+## Scope execution coupling
+Ab v18 muss `models supported-scope-execute-v13` diesen Sweep im PASS-Zustand nachweisen; sonst ist nur `REAFFIRM_FREEZE` zulässig.
