@@ -40,3 +40,5 @@ cargo run -p ucf-ops -- readiness-convergence-sweep --out ./out/readiness_conver
 
 v17 (`readiness-stabilization-sweep`) entfernt verbleibende Readiness-Adapter-/Translations-/indirekte Projektionspfade aus kanonischen Consumern und macht die Stabilisierung über `ReadinessStabilizationSweepV1` auditierbar.
 
+> v18 update: `readiness-final-consolidation-sweep` entfernt verbleibende Readiness-Facade-/Alias-/Shadow-View-Residuen aus kanonischen Consumern und emittiert `ReadinessFinalConsolidationSweepV1`.
+

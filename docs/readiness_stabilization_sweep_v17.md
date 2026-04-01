@@ -43,3 +43,6 @@ Any canonical mismatch is classified deterministically and fails closed.
 ```bash
 cargo run -p ucf-ops -- readiness-stabilization-sweep --out ./out/readiness_stabilization_sweep.json
 ```
+
+> v18 update: `readiness-final-consolidation-sweep` entfernt verbleibende Readiness-Facade-/Alias-/Shadow-View-Residuen aus kanonischen Consumern und emittiert `ReadinessFinalConsolidationSweepV1`.
+
