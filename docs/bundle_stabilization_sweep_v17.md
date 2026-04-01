@@ -38,3 +38,8 @@ These paths can provide competing bundle truth. v17 enforces fail-closed behavio
 ```bash
 cargo run -p ucf-ops -- bundle-stabilization-sweep --out ./out/bundle_stabilization_sweep.json
 ```
+
+
+## v18 follow-up
+
+v18 (`bundle-final-consolidation-sweep`) removes remaining canonical facade/alias/shadow bundle residues from canonical export consumers and binds them to the stabilized chain.
