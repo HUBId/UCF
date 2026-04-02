@@ -46,3 +46,7 @@ The gate is scope-conservative: the **current applied supported scope** from aut
 ## Phase intent
 
 v18 is a final-consolidation and sole-top-level-continuity hardening phase, not a compute-capability expansion phase.
+
+## Post-v18 continuation
+
+After v18 gate PASS, continue at Prompt 360 via `docs/next_10_prompts.md`.
