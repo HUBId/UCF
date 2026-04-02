@@ -51,3 +51,7 @@ cargo run -p ucf-ops -- governance-final-consolidation-sweep --out ./out/governa
 
 ## Scope execution coupling
 Ab v18 muss `models supported-scope-execute-v13` diesen Sweep im PASS-Zustand nachweisen; sonst ist nur `REAFFIRM_FREEZE` zulässig.
+
+## v19 closure note
+
+v19 adds `governance-closure-sweep` and removes remaining canonical dependence on governance wrappers/crosswalks/secondary renderings in canonical consumer flows.

@@ -9,8 +9,8 @@ use crate::{
     exports_bundle_spine_check, final_bundle_consumer_sweep, load_applied_supported_set_context_v1,
     models_active_review_snapshot, models_evidence_snapshot, prefix_hex, readiness_spine_check,
     repro_pack, require_canonical_governance_entry, require_residual_free_final_bundle_inputs,
-    validate_governance_primary_surfaces_with_applied_scope, BugKitBuildArgs,
-    CanonicalBundleConsumptionContextV1, OpsError, ReproPackManifestV1,
+    validate_governance_primary_surfaces_with_applied_scope, CanonicalBundleConsumptionContextV1,
+    OpsError, ReproPackManifestV1,
 };
 
 const DIGEST_PREFIX_LEN: usize = 16;
@@ -97,16 +97,7 @@ pub fn residual_free_bundle_sweep(
     let repro_bundle = workdir
         .join("out")
         .join(format!("repro_{run_id}_residual_free_bundle_sweep.zip"));
-    let bugkit_bundle = workdir
-        .join("out")
-        .join(format!("bugkit_{run_id}_residual_free_bundle_sweep.zip"));
     let _ = repro_pack(workdir, &run_id, &repro_bundle)?;
-    let _ = crate::bugkit_build(
-        workdir,
-        &run_id,
-        &bugkit_bundle,
-        &BugKitBuildArgs::default(),
-    )?;
     let repro_spine = exports_bundle_spine_check(
         &repro_bundle,
         &workdir.join("out/repro_bundle_spine_check_residual_free_bundle_sweep.json"),
