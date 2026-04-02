@@ -40,3 +40,5 @@ In kanonischen Flows dürfen diese Pfade keine konkurrierende Readiness-Wahrheit
 ```bash
 cargo run -p ucf-ops -- readiness-final-consolidation-sweep --out ./out/readiness_final_consolidation_sweep.json
 ```
+
+> v19 update: `readiness-closure-sweep` erzwingt den finalen Closure-Sweep; kanonische Consumer dürfen keine Readiness-Compatibility-Wrapper, Crosswalk-Layer oder secondary reviewability renderings mehr als primäre Wahrheit verwenden.

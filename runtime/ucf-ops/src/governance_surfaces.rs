@@ -221,6 +221,8 @@ mod tests {
             readiness_terminal_sweep_digest_prefix: "MISSING".to_string(),
             readiness_ultimate_sweep_digest_prefix: "MISSING".to_string(),
             readiness_stabilization_sweep_digest_prefix: "MISSING".to_string(),
+            readiness_final_consolidation_sweep_digest_prefix: "MISSING".to_string(),
+            readiness_closure_sweep_digest_prefix: "MISSING".to_string(),
             snapshot_digest: "55".repeat(32),
         }
     }
