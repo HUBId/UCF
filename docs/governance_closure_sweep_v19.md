@@ -1,6 +1,8 @@
 # Governance Closure Sweep v19
 
-`GovernanceClosureSweepV1` proves that canonical governance consumers derive authority from the stabilized canonical governance chain only:
+`GovernanceClosureSweepV1` ist der terminale Nachweis, dass kanonische Governance-Consumer ausschließlich auf der final-konsolidierten stabilisierten Governance-Kette laufen.
+
+## Closure chain (required)
 
 - `AppliedSupportedSetContextV1`
 - `CanonicalGovernanceEntryV1`
@@ -14,24 +16,15 @@
 - `GovernanceConvergenceSweepV1`
 - `GovernanceStabilizationSweepV1`
 - `GovernanceFinalConsolidationSweepV1`
+- `GovernanceClosureSweepV1`
 
-The sweep rejects canonical consumers that still expose governance compatibility wrappers, authority crosswalk layers, secondary governance renderings, export governance notes, or raw evidence entrypoints as primary governance truth.
+## Relationship to supported-scope execution
+Ab v19 darf `models supported-scope-execute-v14` nur expandieren, wenn `closure_status: PASS` vorliegt und der Kandidat ohne Governance-Wrapper-, Crosswalk- oder Secondary-Rendering-Sonderpfade konsumierbar bleibt.
 
-## Covered canonical consumers
-
-- ActiveReviewSnapshot
-- OperatorSignoff
-- OperatorReviewPacket
-- OperatorWorkflowChain
-- ExportReadinessGuard
-- BundleBuildVerifyOrchestration
-- InteropConsistencyMatrix
-- V19PrepGateHelper (`v18_gate_report` preflight consumer)
+Wenn `GovernanceClosureSweepV1` nicht PASS ist, muss die Execution auf `REAFFIRM_FREEZE` zurückfallen (fail-closed).
 
 ## Command
 
 ```bash
 cargo run -p ucf-ops -- governance-closure-sweep --out ./out/governance_closure_sweep.json
 ```
-
-A passing run emits `closure_status: PASS` and a deterministic `closure_digest`.

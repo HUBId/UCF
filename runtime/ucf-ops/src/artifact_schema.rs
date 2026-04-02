@@ -64,7 +64,7 @@ struct ArtifactSpec {
     enum_names: &'static [&'static str],
 }
 
-const ARTIFACT_SPECS: [ArtifactSpec; 107] = [
+const ARTIFACT_SPECS: [ArtifactSpec; 108] = [
     ArtifactSpec {
         artifact_id: "active_review_snapshot_v1",
         file_rel: "runtime/ucf-ops/src/models_lifecycle.rs",
@@ -160,6 +160,12 @@ const ARTIFACT_SPECS: [ArtifactSpec; 107] = [
         file_rel: "runtime/ucf-ops/src/models_lifecycle.rs",
         type_name: "SupportedScopeExecutionV13",
         enum_names: &["SupportedScopeExecutionDecisionV13"],
+    },
+    ArtifactSpec {
+        artifact_id: "supported_scope_execution_v14",
+        file_rel: "runtime/ucf-ops/src/models_lifecycle.rs",
+        type_name: "SupportedScopeExecutionV14",
+        enum_names: &["SupportedScopeExecutionDecisionV14"],
     },
     ArtifactSpec {
         artifact_id: "applied_scope_authority_v1",
@@ -1309,6 +1315,7 @@ mod tests {
                 "supported_scope_execution_v11",
                 "supported_scope_execution_v12",
                 "supported_scope_execution_v13",
+                "supported_scope_execution_v14",
                 "supported_scope_execution_v3",
                 "supported_scope_execution_v4",
                 "supported_scope_execution_v5",
