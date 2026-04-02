@@ -122,3 +122,8 @@ Canonical top-level continuity truth for operator/export/build/verify is delegat
 ## v17 stabilization delegation
 `OperatorWorkflowChainV1` remains workflow-stage evidence and must not be interpreted as top-level continuity truth.
 Top-level continuity is delegated only to `canonical-stabilization-continuity-sweep` (`CanonicalStabilizationContinuityAuthorityV1`).
+
+
+## v18 final continuity delegation
+`OperatorWorkflowChainV1` remains workflow-stage evidence and is not top-level continuity truth.
+Top-level continuity PASS/FAIL for canonical operator/export/build/verify flows is delegated only to `canonical-final-consolidation-continuity-sweep` (`CanonicalFinalConsolidationContinuityAuthorityV1`).

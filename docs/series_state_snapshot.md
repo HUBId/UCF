@@ -45,7 +45,7 @@ Reference: `docs/next_10_prompts.md`
 | 354 | Primary blocking/remediation convergence hardening | MUST | queued |
 | 355 | v18 schema snapshot refresh | MUST | queued |
 | 356 | v18 portability and docs refresh | NICE | queued |
-| 357 | Workflow/export continuity authority hardening | MUST | queued |
+| 357 | Workflow/export continuity authority hardening | MUST | complete |
 | 358 | v18 gate schema and orchestration | MUST | queued |
 | 359 | v18 wrap and next-anchor governance | MUST | queued |
 

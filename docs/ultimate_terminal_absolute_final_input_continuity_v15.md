@@ -58,3 +58,6 @@ The following surfaces remain diagnostic/subordinate only and are not top-level 
 ## v17 update
 `UltimateTerminalAbsoluteFinalInputContinuityAuthorityV1` remains a subordinate continuity contributor.
 Canonical top-level continuity PASS/FAIL is delegated only to `canonical-stabilization-continuity-sweep` (`CanonicalStabilizationContinuityAuthorityV1`).
+
+
+> v18 finalization: this surface is a subordinate continuity contributor. Sole top-level continuity proof is `canonical-final-consolidation-continuity-sweep`.
