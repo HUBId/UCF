@@ -206,7 +206,7 @@ pub fn bundle_final_consolidation_sweep(
         check_consumer(
             "Continuity",
             workdir,
-            "out/ultimate_terminal_absolute_final_input_continuity_sweep.json",
+            "out/canonical_final_consolidation_continuity_sweep.json",
             &authority_ctx,
         )?,
         check_consumer(

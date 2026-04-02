@@ -109,6 +109,8 @@ pub struct OperatorWorkflowChainV1 {
     #[serde(default)]
     pub canonical_stabilization_continuity_authority_digest_prefix: String,
     #[serde(default)]
+    pub canonical_final_consolidation_continuity_authority_digest_prefix: String,
+    #[serde(default)]
     pub bundle_terminal_sweep_digest_prefix: String,
     #[serde(default)]
     pub residual_free_continuity_authority_digest_prefix: String,
@@ -402,6 +404,7 @@ impl OperatorWorkflowPolicyV1 {
             bundle_convergence_sweep_digest_prefix: "MISSING".to_string(),
             canonical_convergence_continuity_authority_digest_prefix: "MISSING".to_string(),
             canonical_stabilization_continuity_authority_digest_prefix: "MISSING".to_string(),
+            canonical_final_consolidation_continuity_authority_digest_prefix: "MISSING".to_string(),
             bundle_terminal_sweep_digest_prefix: "MISSING".to_string(),
             residual_free_continuity_authority_digest_prefix: "MISSING".to_string(),
             final_input_continuity_authority_digest_prefix: "MISSING".to_string(),
@@ -586,6 +589,13 @@ pub fn operator_workflow_chain(
         "authority_digest",
     )
     .unwrap_or_else(|| "MISSING".to_string());
+    chain.canonical_final_consolidation_continuity_authority_digest_prefix =
+        discover_digest_prefix(
+            &out_root,
+            "canonical_final_consolidation_continuity_sweep.json",
+            "authority_digest",
+        )
+        .unwrap_or_else(|| "MISSING".to_string());
     chain.governance_terminal_sweep_digest_prefix = discover_digest_prefix(
         &out_root,
         "governance_terminal_sweep.json",

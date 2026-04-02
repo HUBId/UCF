@@ -49,3 +49,6 @@ cargo run -p ucf-ops -- canonical-convergence-continuity-sweep --bundle <path> -
 ## v17 update
 `CanonicalConvergenceContinuityAuthorityV1` is now a **SUBORDINATE_CONTINUITY_CONTRIBUTOR**.
 Sole top-level continuity proof after stabilization cleanup is `canonical-stabilization-continuity-sweep` (`CanonicalStabilizationContinuityAuthorityV1`).
+
+
+> v18 finalization: top-level continuity is delegated only to `canonical-final-consolidation-continuity-sweep` (`CanonicalFinalConsolidationContinuityAuthorityV1`). This convergence sweep is subordinate continuity evidence.
