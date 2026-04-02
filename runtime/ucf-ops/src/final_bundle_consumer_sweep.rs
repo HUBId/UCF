@@ -528,6 +528,7 @@ mod tests {
             bundle_convergence_sweep_digest_prefix: "MISSING".to_string(),
             bundle_stabilization_sweep_digest_prefix: "MISSING".to_string(),
             bundle_final_consolidation_sweep_digest_prefix: "MISSING".to_string(),
+            bundle_closure_sweep_digest_prefix: "MISSING".to_string(),
             export_layout_compatibility: CanonicalExportLayoutCompatibilityV1::LegacyExportLayout,
             repro_pack_digest: "x".to_string(),
         };

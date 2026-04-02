@@ -43,3 +43,7 @@ cargo run -p ucf-ops -- bundle-stabilization-sweep --out ./out/bundle_stabilizat
 ## v18 follow-up
 
 v18 (`bundle-final-consolidation-sweep`) removes remaining canonical facade/alias/shadow bundle residues from canonical export consumers and binds them to the stabilized chain.
+
+## v19 closure follow-up
+
+v19 (`bundle-closure-sweep`) performs the final closure sweep so canonical export flows no longer accept bundle wrapper/crosswalk/secondary-rendering paths as competing authority substrates.

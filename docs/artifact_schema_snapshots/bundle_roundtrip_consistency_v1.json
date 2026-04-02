@@ -4,6 +4,7 @@
   "source_file": "runtime/ucf-ops/src/lib.rs",
   "required_fields": [
     "bundle_absolute_sweep_digest_prefix",
+    "bundle_closure_sweep_digest_prefix",
     "bundle_convergence_sweep_digest_prefix",
     "bundle_digest_prefix",
     "bundle_final_consolidation_sweep_digest_prefix",
@@ -30,6 +31,7 @@
   "optional_fields": [],
   "field_types": {
     "bundle_absolute_sweep_digest_prefix": "String",
+    "bundle_closure_sweep_digest_prefix": "String",
     "bundle_convergence_sweep_digest_prefix": "String",
     "bundle_digest_prefix": "String",
     "bundle_final_consolidation_sweep_digest_prefix": "String",

@@ -24,6 +24,7 @@ Snapshots are generated under `docs/artifact_schema_snapshots/`:
 - `bundle_roundtrip_consistency_v1.json` (v7/v8 additive drift tracked)
 - `bundle_stabilization_sweep_v1.json` (v17 bundle stabilization contract)
 - `bundle_final_consolidation_sweep_v1.json` (v18 bundle final-consolidation contract)
+- `bundle_closure_sweep_v1.json` (v19 bundle closure contract)
 - `canonical_bundle_consumption_context_v1.json` (v7)
 - `canonical_bundle_spine_v1.json` (v8)
 - `canonical_export_artifact_ref_v1.json`
