@@ -1,6 +1,6 @@
 # Artifact Schema Snapshots
 
-This repository enforces deterministic shape snapshots for governance/review/export/interop artifacts that must remain stable across v3/v4/v5/v6/v7/v8/v9/v10/v11/v12/v13/v14/v15/v16/v17 hardening.
+This repository enforces deterministic shape snapshots for governance/review/export/interop artifacts that must remain stable across v3/v4/v5/v6/v7/v8/v9/v10/v11/v12/v13/v14/v15/v16/v17/v18 hardening.
 
 ## Covered artifacts
 
@@ -22,6 +22,8 @@ Snapshots are generated under `docs/artifact_schema_snapshots/`:
 - `backend_resolution_v1.json`
 - `bugkit_manifest_v1.json`
 - `bundle_roundtrip_consistency_v1.json` (v7/v8 additive drift tracked)
+- `bundle_stabilization_sweep_v1.json` (v17 bundle stabilization contract)
+- `bundle_final_consolidation_sweep_v1.json` (v18 bundle final-consolidation contract)
 - `canonical_bundle_consumption_context_v1.json` (v7)
 - `canonical_bundle_spine_v1.json` (v8)
 - `canonical_export_artifact_ref_v1.json`
@@ -46,6 +48,8 @@ Snapshots are generated under `docs/artifact_schema_snapshots/`:
 - `final_readiness_consumer_authority_v1.json` (v10 final consumer-authority freeze)
 - `final_readiness_residual_sweep_v1.json` (v11 final residual-sweep freeze)
 - `governance_convergence_sweep_v1.json` (v16 governance convergence contract)
+- `governance_stabilization_sweep_v1.json` (v17 governance stabilization contract)
+- `governance_final_consolidation_sweep_v1.json` (v18 governance final-consolidation contract)
 - `governance_primary_surfaces_v1.json`
 - `interop_consistency_matrix_report_v1.json`
 - `operator_report_v1.json`
@@ -53,7 +57,10 @@ Snapshots are generated under `docs/artifact_schema_snapshots/`:
 - `operator_signoff_v1.json` (v7/v8 additive shape drift tracked)
 - `operator_workflow_chain_v1.json` (v8 additive shape drift tracked)
 - `primary_semantics_stabilization_sweep_v1.json` (v17 primary-semantics stabilization contract)
+- `primary_semantics_final_consolidation_sweep_v1.json` (v18 primary-semantics final-consolidation contract)
 - `readiness_gate_report_v1.json`
+- `readiness_stabilization_sweep_v1.json` (v17 readiness stabilization contract)
+- `readiness_final_consolidation_sweep_v1.json` (v18 readiness final-consolidation contract)
 - `remediation_consistency_check_v1.json`
 - `repro_pack_manifest_v1.json`
 - `residual_free_bundle_absolute_sweep_v1.json` (v13 absolute residual-free contract)
@@ -79,6 +86,8 @@ Snapshots are generated under `docs/artifact_schema_snapshots/`:
 - `supported_scope_execution_v9.json` (v14 current supported-scope execution)
 - `supported_scope_execution_v10.json` (v15 ultimate-governance-gated supported-scope execution)
 - `supported_scope_execution_v11.json` (v16 governance-convergence-gated supported-scope execution)
+- `supported_scope_execution_v12.json` (v17 stabilization-gated supported-scope execution)
+- `supported_scope_execution_v13.json` (v18 final-consolidation-gated current supported-scope execution)
 - `supported_scope_reevaluation_v1.json` (v7)
 - `v3_gate_report_v1.json`
 - `v4_gate_report_v1.json`
@@ -87,6 +96,13 @@ Snapshots are generated under `docs/artifact_schema_snapshots/`:
 - `v8_gate_report_v1.json`
 - `v9_gate_report_v1.json`
 - `v10_gate_report_v1.json` (v10 consolidated gate)
+- `v11_gate_report_v1.json`
+- `v12_gate_report_v1.json`
+- `v13_gate_report_v1.json`
+- `v14_gate_report_v1.json`
+- `v15_gate_report_v1.json`
+- `v16_gate_report_v1.json`
+- `v17_gate_report_v1.json`
 - `index.json` (covered artifact index)
 
 v11 contract points now frozen here include:
@@ -210,3 +226,12 @@ For v17 stabilization and current scope-execution surfaces, this freeze is now f
 - bundle-stabilization sweep,
 - primary-semantics-stabilization sweep,
 - additive shape updates (if any) in convergence sweep artifacts, operator signoff/review/workflow artifacts, and covered gate-report schemas are reviewed through the same drift lane (`ADDITIVE` vs `BREAKING` vs `UNKNOWN`).
+
+For v18 final-consolidation and current scope-execution surfaces, this freeze is now first-class for cross-surface contracts and CI review:
+
+- governance-final-consolidation sweep,
+- supported-scope execution v13 (current authoritative execution surface),
+- readiness-final-consolidation sweep,
+- bundle-final-consolidation sweep,
+- primary-semantics-final-consolidation sweep,
+- additive shape updates (if any) in stabilization sweep artifacts, operator signoff/review/workflow artifacts, and covered gate-report schemas are reviewed through the same drift lane (`ADDITIVE` vs `BREAKING` vs `UNKNOWN`).

@@ -52,6 +52,7 @@
     "operator_signoff_v1",
     "operator_workflow_chain_v1",
     "primary_semantics_convergence_sweep_v1",
+    "primary_semantics_final_consolidation_sweep_v1",
     "primary_semantics_observation_v1",
     "primary_semantics_stabilization_sweep_v1",
     "readiness_convergence_sweep_v1",
