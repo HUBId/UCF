@@ -24,7 +24,7 @@
 - **v15:** complete (`ucf-ops v15 gate` overall PASS recorded at Prompt 328).
 - **v16:** complete (`ucf-ops v16 gate` overall PASS recorded at Prompt 338).
 - **v17:** complete (`ucf-ops v17 gate` overall PASS recorded at Prompt 348).
-- **v18:** not started yet.
+- **v18:** in progress (v18 completion requires `ucf-ops v18 gate` PASS).
 - **Queue policy:** immediate queue remains capped to 10 prompts.
 
 ## Last executed prompt / resume point
@@ -46,7 +46,7 @@ Reference: `docs/next_10_prompts.md`
 | 355 | v18 schema snapshot refresh | MUST | queued |
 | 356 | v18 portability and docs refresh | NICE | queued |
 | 357 | Workflow/export continuity authority hardening | MUST | complete |
-| 358 | v18 gate schema and orchestration | MUST | queued |
+| 358 | v18 gate schema and orchestration | MUST | complete |
 | 359 | v18 wrap and next-anchor governance | MUST | queued |
 
 ## Historical anchor checkpoints
@@ -88,6 +88,8 @@ Reference: `docs/next_10_prompts.md`
 - v15 completion criterion: **`ucf-ops v15 gate` overall PASS at Prompt 328**.
 - v16 completion criterion: **`ucf-ops v16 gate` overall PASS at Prompt 338**.
 - v17 completion criterion: **`ucf-ops v17 gate` overall PASS at Prompt 348**.
+- v18 completion criterion: **`ucf-ops v18 gate` overall PASS**.
+- Next anchor transition is blocked until v18 gate PASS is recorded.
 - v18 advancement remains hardware-neutral, offline-first, probe-first, shadow-first, and fail-closed.
 - Prompts are classified as MUST/NICE/DEFERRED at authoring time.
 
