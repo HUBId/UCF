@@ -1,8 +1,8 @@
 # Prompt Series State Snapshot
 
 ## Current anchor
-- **Current anchor milestone:** `Real Compute Onboarding v18`.
-- **Anchor definition:** v18 planning queue in `docs/next_10_prompts.md` (entry set `350-359`).
+- **Current anchor milestone:** `Real Compute Onboarding v19`.
+- **Anchor definition:** v19 planning queue in `docs/next_10_prompts.md` (entry set `360-369`).
 - **Prompt index source:** `docs/prompt_series_index.md`.
 
 ## Status against anchor milestones
@@ -24,30 +24,31 @@
 - **v15:** complete (`ucf-ops v15 gate` overall PASS recorded at Prompt 328).
 - **v16:** complete (`ucf-ops v16 gate` overall PASS recorded at Prompt 338).
 - **v17:** complete (`ucf-ops v17 gate` overall PASS recorded at Prompt 348).
-- **v18:** in progress (v18 completion requires `ucf-ops v18 gate` PASS).
+- **v18:** complete (`ucf-ops v18 gate` overall PASS recorded at Prompt 358).
+- **v19:** not started yet.
 - **Queue policy:** immediate queue remains capped to 10 prompts.
 
 ## Last executed prompt / resume point
-- Last executed prompt ID: **349**.
-- Next prompt ID: **350**.
-- Resume from: **`PROMPT 350`**.
+- Last executed prompt ID: **359**.
+- Next prompt ID: **360**.
+- Resume from: **`PROMPT 360`**.
 - Numbering remains monotonic and append-only.
 
 ## Immediate next prompts (capped to 10)
 Reference: `docs/next_10_prompts.md`
 
-| Prompt ID | Title (short) | v18 class | Status |
+| Prompt ID | Title (short) | v19 class | Status |
 |---:|---|---|---|
-| 350 | Canonical governance chain as sole truth for remaining consumers | MUST | queued |
-| 351 | Supported-scope expansion re-check or freeze reaffirmation | MUST | queued |
-| 352 | Readiness-input convergence completion for remaining consumers | MUST | queued |
-| 353 | Bundle semantics fully normalized to converged chain | MUST | queued |
-| 354 | Primary blocking/remediation convergence hardening | MUST | queued |
-| 355 | v18 schema snapshot refresh | MUST | queued |
-| 356 | v18 portability and docs refresh | NICE | queued |
-| 357 | Workflow/export continuity authority hardening | MUST | complete |
-| 358 | v18 gate schema and orchestration | MUST | complete |
-| 359 | v18 wrap and next-anchor governance | MUST | queued |
+| 360 | Canonical governance truth completion for all remaining consumers | MUST | queued |
+| 361 | Supported-scope re-check or freeze reaffirmation | MUST | queued |
+| 362 | Readiness-input canonical consumption completion | MUST | queued |
+| 363 | Bundle chain and continuity proof normalization | MUST | queued |
+| 364 | Primary blocking/remediation semantics hardening | MUST | queued |
+| 365 | v19 schema snapshot refresh | MUST | queued |
+| 366 | v19 portability and docs refresh | NICE | queued |
+| 367 | Workflow/export continuity authority hardening | MUST | queued |
+| 368 | v19 gate schema and orchestration | MUST | queued |
+| 369 | v19 wrap and next-anchor governance | MUST | queued |
 
 ## Historical anchor checkpoints
 
@@ -68,6 +69,7 @@ Reference: `docs/next_10_prompts.md`
 | 328 | v15 gate closure | complete |
 | 338 | v16 gate closure | complete |
 | 348 | v17 gate closure | complete |
+| 358 | v18 gate closure | complete |
 
 ## Series control notes
 - v0 completion requirement: historical signoff recorded.
@@ -88,9 +90,9 @@ Reference: `docs/next_10_prompts.md`
 - v15 completion criterion: **`ucf-ops v15 gate` overall PASS at Prompt 328**.
 - v16 completion criterion: **`ucf-ops v16 gate` overall PASS at Prompt 338**.
 - v17 completion criterion: **`ucf-ops v17 gate` overall PASS at Prompt 348**.
-- v18 completion criterion: **`ucf-ops v18 gate` overall PASS**.
-- Next anchor transition is blocked until v18 gate PASS is recorded.
-- v18 advancement remains hardware-neutral, offline-first, probe-first, shadow-first, and fail-closed.
+- v18 completion criterion: **`ucf-ops v18 gate` overall PASS at Prompt 358**.
+- v19 completion criterion: **`ucf-ops v19 gate` overall PASS**.
+- v19 advancement remains hardware-neutral, offline-first, probe-first, shadow-first, and fail-closed.
 - Prompts are classified as MUST/NICE/DEFERRED at authoring time.
 
 ## Supported real-slot baseline for current stage
