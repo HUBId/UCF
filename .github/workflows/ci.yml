@@ -96,6 +96,44 @@ jobs:
           cargo run -p ucf-ops -- models supported-scope-execute-v12 --out ./out/supported_scope_execute_v12.json --workdir .
           if ($LASTEXITCODE -eq 1 -or $LASTEXITCODE -eq 2) { Write-Host "supported_scope_execute_v12=skip reason=optional_scope_path_unavailable"; exit 0 }
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Governance final consolidation sweep smoke (linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          cargo run -p ucf-ops -- governance-final-consolidation-sweep --out ./out/governance_final_consolidation_sweep.json --workdir . || {
+            code=$?
+            if [ "$code" -eq 1 ] || [ "$code" -eq 2 ]; then
+              echo "governance_final_consolidation_sweep=skip reason=optional_scope_path_unavailable"
+            else
+              exit "$code"
+            fi
+          }
+      - name: Governance final consolidation sweep smoke (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cargo run -p ucf-ops -- governance-final-consolidation-sweep --out ./out/governance_final_consolidation_sweep.json --workdir .
+          if ($LASTEXITCODE -eq 1 -or $LASTEXITCODE -eq 2) { Write-Host "governance_final_consolidation_sweep=skip reason=optional_scope_path_unavailable"; exit 0 }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Supported scope execute v13 smoke (linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          cargo run -p ucf-ops -- models supported-scope-execute-v13 --out ./out/supported_scope_execute_v13.json --workdir . || {
+            code=$?
+            if [ "$code" -eq 1 ] || [ "$code" -eq 2 ]; then
+              echo "supported_scope_execute_v13=skip reason=optional_scope_path_unavailable"
+            else
+              exit "$code"
+            fi
+          }
+      - name: Supported scope execute v13 smoke (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cargo run -p ucf-ops -- models supported-scope-execute-v13 --out ./out/supported_scope_execute_v13.json --workdir .
+          if ($LASTEXITCODE -eq 1 -or $LASTEXITCODE -eq 2) { Write-Host "supported_scope_execute_v13=skip reason=optional_scope_path_unavailable"; exit 0 }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Supported scope execute v9 smoke (linux)
         if: runner.os == 'Linux'
         shell: bash
@@ -387,6 +425,25 @@ jobs:
         run: |
           cargo run -p ucf-ops -- readiness-stabilization-sweep --out ./out/readiness_stabilization_sweep.json --workdir .
           if ($LASTEXITCODE -eq 1 -or $LASTEXITCODE -eq 2) { Write-Host "readiness_stabilization_sweep=skip reason=optional_scope_path_unavailable"; exit 0 }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Readiness final consolidation sweep smoke (linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          cargo run -p ucf-ops -- readiness-final-consolidation-sweep --out ./out/readiness_final_consolidation_sweep.json --workdir . || {
+            code=$?
+            if [ "$code" -eq 1 ] || [ "$code" -eq 2 ]; then
+              echo "readiness_final_consolidation_sweep=skip reason=optional_scope_path_unavailable"
+            else
+              exit "$code"
+            fi
+          }
+      - name: Readiness final consolidation sweep smoke (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cargo run -p ucf-ops -- readiness-final-consolidation-sweep --out ./out/readiness_final_consolidation_sweep.json --workdir .
+          if ($LASTEXITCODE -eq 1 -or $LASTEXITCODE -eq 2) { Write-Host "readiness_final_consolidation_sweep=skip reason=optional_scope_path_unavailable"; exit 0 }
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Scope authority check smoke (linux)
         if: runner.os == 'Linux'
@@ -1027,6 +1084,25 @@ jobs:
           cargo run -p ucf-ops -- bundle-stabilization-sweep --out ./out/bundle_stabilization_sweep.json
           if ($LASTEXITCODE -eq 1 -or $LASTEXITCODE -eq 2) { Write-Host "bundle_stabilization_sweep=skip reason=optional_export_or_scope_path_unavailable"; exit 0 }
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Bundle final consolidation sweep smoke (linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          cargo run -p ucf-ops -- bundle-final-consolidation-sweep --out ./out/bundle_final_consolidation_sweep.json || {
+            code=$?
+            if [ "$code" -eq 1 ] || [ "$code" -eq 2 ]; then
+              echo "bundle_final_consolidation_sweep=skip reason=optional_export_or_scope_path_unavailable"
+            else
+              exit "$code"
+            fi
+          }
+      - name: Bundle final consolidation sweep smoke (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cargo run -p ucf-ops -- bundle-final-consolidation-sweep --out ./out/bundle_final_consolidation_sweep.json
+          if ($LASTEXITCODE -eq 1 -or $LASTEXITCODE -eq 2) { Write-Host "bundle_final_consolidation_sweep=skip reason=optional_export_or_scope_path_unavailable"; exit 0 }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Final primary semantics sweep smoke (linux)
         if: runner.os == 'Linux'
         shell: bash
@@ -1178,6 +1254,25 @@ jobs:
         run: |
           cargo run -p ucf-ops -- primary-semantics-stabilization-sweep --out ./out/primary_semantics_stabilization_sweep.json
           if ($LASTEXITCODE -eq 1 -or $LASTEXITCODE -eq 2) { Write-Host "primary_semantics_stabilization_sweep=skip reason=optional_export_or_scope_path_unavailable"; exit 0 }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Primary semantics final consolidation sweep smoke (linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          cargo run -p ucf-ops -- primary-semantics-final-consolidation-sweep --out ./out/primary_semantics_final_consolidation_sweep.json || {
+            code=$?
+            if [ "$code" -eq 1 ] || [ "$code" -eq 2 ]; then
+              echo "primary_semantics_final_consolidation_sweep=skip reason=optional_export_or_scope_path_unavailable"
+            else
+              exit "$code"
+            fi
+          }
+      - name: Primary semantics final consolidation sweep smoke (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cargo run -p ucf-ops -- primary-semantics-final-consolidation-sweep --out ./out/primary_semantics_final_consolidation_sweep.json
+          if ($LASTEXITCODE -eq 1 -or $LASTEXITCODE -eq 2) { Write-Host "primary_semantics_final_consolidation_sweep=skip reason=optional_export_or_scope_path_unavailable"; exit 0 }
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: v0 gate (blocking)
         run: cargo run -p ucf-ops -- v0 gate --scenario fixtures/e2e/v0_flow_a.json --out ./out/v0_gate_report.json

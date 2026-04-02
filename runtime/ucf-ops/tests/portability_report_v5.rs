@@ -201,6 +201,10 @@ fn portability_report_v11_contains_final_sweep_sections_in_stable_order() {
         .iter()
         .position(|c| c.contains("primary-semantics-convergence-sweep"))
         .expect("primary-semantics-convergence-sweep command present");
+    let primary_final_consolidation_idx = names
+        .iter()
+        .position(|c| c.contains("primary-semantics-final-consolidation-sweep"))
+        .expect("primary-semantics-final-consolidation-sweep command present");
 
     assert!(governance_idx < governance_entry_idx);
     assert!(governance_entry_idx < governance_entry_sweep_idx);
@@ -238,6 +242,7 @@ fn portability_report_v11_contains_final_sweep_sections_in_stable_order() {
     assert!(residual_free_primary_idx < primary_terminal_idx);
     assert!(primary_terminal_idx < primary_ultimate_idx);
     assert!(primary_ultimate_idx < primary_convergence_idx);
+    assert!(primary_convergence_idx < primary_final_consolidation_idx);
     assert!(interop_idx < active_idx);
     assert!(active_idx < backend_idx);
     assert!(backend_idx < repro_idx);
@@ -325,6 +330,24 @@ fn portability_report_v11_skips_optional_backend_resolution_cleanly() {
     );
     assert!(
         matches!(
+            report.governance_final_consolidation_sweep_smoke.status,
+            ucf_ops::PortabilityGateStatus::Pass
+                | ucf_ops::PortabilityGateStatus::Skip
+                | ucf_ops::PortabilityGateStatus::Fail
+        ),
+        "governance_final_consolidation_sweep_smoke must emit explicit PASS/FAIL/SKIP"
+    );
+    assert!(
+        matches!(
+            report.supported_scope_execute_v13_smoke.status,
+            ucf_ops::PortabilityGateStatus::Pass
+                | ucf_ops::PortabilityGateStatus::Skip
+                | ucf_ops::PortabilityGateStatus::Fail
+        ),
+        "supported_scope_execute_v13_smoke must emit explicit PASS/FAIL/SKIP"
+    );
+    assert!(
+        matches!(
             report.supported_scope_execute_v9_smoke.status,
             ucf_ops::PortabilityGateStatus::Pass | ucf_ops::PortabilityGateStatus::Skip
         ),
@@ -374,6 +397,15 @@ fn portability_report_v11_skips_optional_backend_resolution_cleanly() {
     );
     assert!(
         matches!(
+            report.readiness_final_consolidation_sweep_smoke.status,
+            ucf_ops::PortabilityGateStatus::Pass
+                | ucf_ops::PortabilityGateStatus::Skip
+                | ucf_ops::PortabilityGateStatus::Fail
+        ),
+        "readiness_final_consolidation_sweep_smoke must emit explicit PASS/FAIL/SKIP"
+    );
+    assert!(
+        matches!(
             report.bundle_residual_sweep_smoke.status,
             ucf_ops::PortabilityGateStatus::Pass | ucf_ops::PortabilityGateStatus::Skip
         ),
@@ -402,6 +434,15 @@ fn portability_report_v11_skips_optional_backend_resolution_cleanly() {
     );
     assert!(
         matches!(
+            report.bundle_final_consolidation_sweep_smoke.status,
+            ucf_ops::PortabilityGateStatus::Pass
+                | ucf_ops::PortabilityGateStatus::Skip
+                | ucf_ops::PortabilityGateStatus::Fail
+        ),
+        "bundle_final_consolidation_sweep_smoke must emit explicit PASS/FAIL/SKIP"
+    );
+    assert!(
+        matches!(
             report.primary_semantics_residual_sweep_smoke.status,
             ucf_ops::PortabilityGateStatus::Pass | ucf_ops::PortabilityGateStatus::Skip
         ),
@@ -427,5 +468,16 @@ fn portability_report_v11_skips_optional_backend_resolution_cleanly() {
             ucf_ops::PortabilityGateStatus::Pass | ucf_ops::PortabilityGateStatus::Skip
         ),
         "primary_semantics_terminal_sweep_smoke must PASS or SKIP"
+    );
+    assert!(
+        matches!(
+            report
+                .primary_semantics_final_consolidation_sweep_smoke
+                .status,
+            ucf_ops::PortabilityGateStatus::Pass
+                | ucf_ops::PortabilityGateStatus::Skip
+                | ucf_ops::PortabilityGateStatus::Fail
+        ),
+        "primary_semantics_final_consolidation_sweep_smoke must emit explicit PASS/FAIL/SKIP"
     );
 }
