@@ -40,3 +40,5 @@ The resulting artifact includes `convergence_status`, `residual_path_count`, and
 ## v17 stabilization note
 
 v17 adds `PrimarySemanticsStabilizationSweepV1` and requires canonical surfaces to consume primary blocking/remediation semantics only through the converged canonical primary-semantics chain. Residual adapter/translation/projection paths are no longer canonical authorities.
+
+> v18 update: final consolidation now requires `PrimarySemanticsStabilizationSweepV1` plus `PrimarySemanticsFinalConsolidationSweepV1` for canonical surfaces that expose top-level primary blocking/remediation semantics.

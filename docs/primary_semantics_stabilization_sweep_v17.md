@@ -38,3 +38,5 @@ The sweep inspects canonical governance/readiness/bundle/review/export/interop/g
 ```bash
 cargo run -p ucf-ops -- primary-semantics-stabilization-sweep --out ./out/primary_semantics_stabilization_sweep.json
 ```
+
+> v18 update: `primary-semantics-final-consolidation-sweep` removes remaining canonical primary-semantics facade/alias/shadow residues from canonical consumer flows and emits `PrimarySemanticsFinalConsolidationSweepV1`.
