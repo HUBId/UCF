@@ -98,7 +98,17 @@ use ucf_ops::{
 use ucf_replay::{ReplayMode, ReplayStrictness};
 
 fn main() {
-    if let Err(err) = run() {
+    let run_result = std::thread::Builder::new()
+        .name("ucf-ops-main".to_string())
+        .stack_size(32 * 1024 * 1024)
+        .spawn(|| run().map_err(|err| err.to_string()))
+        .map_err(|err| format!("failed to spawn main thread: {err}"))
+        .and_then(|handle| {
+            handle
+                .join()
+                .map_err(|_| "main thread panicked".to_string())?
+        });
+    if let Err(err) = run_result {
         eprintln!("error: {err}");
         std::process::exit(1);
     }
