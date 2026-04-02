@@ -103,6 +103,8 @@ pub struct OperatorReviewPacketV1 {
     #[serde(default)]
     pub readiness_final_consolidation_sweep_digest_prefix: String,
     #[serde(default)]
+    pub readiness_closure_sweep_digest_prefix: String,
+    #[serde(default)]
     pub governance_final_consolidation_sweep_digest_prefix: String,
     #[serde(default)]
     pub governance_closure_sweep_digest_prefix: String,
@@ -606,6 +608,8 @@ fn build_from_snapshot(
         readiness_terminal_sweep_digest_prefix: "MISSING".to_string(),
         readiness_ultimate_sweep_digest_prefix: "MISSING".to_string(),
         readiness_stabilization_sweep_digest_prefix: "MISSING".to_string(),
+        readiness_final_consolidation_sweep_digest_prefix: "MISSING".to_string(),
+        readiness_closure_sweep_digest_prefix: "MISSING".to_string(),
         snapshot_digest: "MISSING".to_string(),
     });
     let signoff = signoff.unwrap_or_else(|| OperatorSignoffDecisionV1 {
@@ -637,6 +641,7 @@ fn build_from_snapshot(
         readiness_ultimate_sweep_digest_prefix: "MISSING".to_string(),
         readiness_stabilization_sweep_digest_prefix: "MISSING".to_string(),
         readiness_final_consolidation_sweep_digest_prefix: "MISSING".to_string(),
+        readiness_closure_sweep_digest_prefix: "MISSING".to_string(),
         governance_final_consolidation_sweep_digest_prefix: "MISSING".to_string(),
         governance_closure_sweep_digest_prefix: "MISSING".to_string(),
         final_primary_semantics_residual_sweep_digest_prefix: "MISSING".to_string(),
@@ -847,6 +852,7 @@ fn build_blocked_minimal(
         readiness_ultimate_sweep_digest_prefix: "MISSING".to_string(),
         readiness_stabilization_sweep_digest_prefix: "MISSING".to_string(),
         readiness_final_consolidation_sweep_digest_prefix: "MISSING".to_string(),
+        readiness_closure_sweep_digest_prefix: "MISSING".to_string(),
         governance_final_consolidation_sweep_digest_prefix: "MISSING".to_string(),
         governance_closure_sweep_digest_prefix: "MISSING".to_string(),
         final_primary_semantics_residual_sweep_digest_prefix: "MISSING".to_string(),
@@ -982,6 +988,9 @@ fn build_packet(
             .clone(),
         readiness_final_consolidation_sweep_digest_prefix: signoff
             .readiness_final_consolidation_sweep_digest_prefix
+            .clone(),
+        readiness_closure_sweep_digest_prefix: signoff
+            .readiness_closure_sweep_digest_prefix
             .clone(),
         governance_final_consolidation_sweep_digest_prefix: signoff
             .governance_final_consolidation_sweep_digest_prefix
@@ -1319,6 +1328,8 @@ mod tests {
             readiness_terminal_sweep_digest_prefix: "MISSING".to_string(),
             readiness_ultimate_sweep_digest_prefix: "MISSING".to_string(),
             readiness_stabilization_sweep_digest_prefix: "MISSING".to_string(),
+            readiness_final_consolidation_sweep_digest_prefix: "MISSING".to_string(),
+            readiness_closure_sweep_digest_prefix: "MISSING".to_string(),
             snapshot_digest: "activedigest111111".to_string(),
         }
     }
@@ -1353,6 +1364,7 @@ mod tests {
             readiness_ultimate_sweep_digest_prefix: "MISSING".to_string(),
             readiness_stabilization_sweep_digest_prefix: "MISSING".to_string(),
             readiness_final_consolidation_sweep_digest_prefix: "MISSING".to_string(),
+            readiness_closure_sweep_digest_prefix: "MISSING".to_string(),
             governance_final_consolidation_sweep_digest_prefix: "MISSING".to_string(),
             governance_closure_sweep_digest_prefix: "MISSING".to_string(),
             final_primary_semantics_residual_sweep_digest_prefix: "MISSING".to_string(),

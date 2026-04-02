@@ -105,6 +105,8 @@ pub struct OperatorSignoffDecisionV1 {
     #[serde(default)]
     pub readiness_final_consolidation_sweep_digest_prefix: String,
     #[serde(default)]
+    pub readiness_closure_sweep_digest_prefix: String,
+    #[serde(default)]
     pub governance_final_consolidation_sweep_digest_prefix: String,
     #[serde(default)]
     pub governance_closure_sweep_digest_prefix: String,
@@ -342,6 +344,11 @@ pub fn operator_signoff(
         workdir,
         "out/governance_final_consolidation_sweep.json",
         "sweep.consolidation_digest",
+    );
+    decision.readiness_closure_sweep_digest_prefix = read_sweep_digest_prefix(
+        workdir,
+        "out/readiness_closure_sweep.json",
+        "sweep.closure_digest",
     );
     decision.governance_closure_sweep_digest_prefix = read_sweep_digest_prefix(
         workdir,
@@ -705,6 +712,7 @@ fn build_not_ready_minimal(
         readiness_ultimate_sweep_digest_prefix: "MISSING".to_string(),
         readiness_stabilization_sweep_digest_prefix: "MISSING".to_string(),
         readiness_final_consolidation_sweep_digest_prefix: "MISSING".to_string(),
+        readiness_closure_sweep_digest_prefix: "MISSING".to_string(),
         governance_final_consolidation_sweep_digest_prefix: "MISSING".to_string(),
         governance_closure_sweep_digest_prefix: "MISSING".to_string(),
         final_primary_semantics_residual_sweep_digest_prefix: "MISSING".to_string(),
@@ -770,6 +778,7 @@ fn build_not_ready_from_snapshot(
         readiness_ultimate_sweep_digest_prefix: "MISSING".to_string(),
         readiness_stabilization_sweep_digest_prefix: "MISSING".to_string(),
         readiness_final_consolidation_sweep_digest_prefix: "MISSING".to_string(),
+        readiness_closure_sweep_digest_prefix: "MISSING".to_string(),
         governance_final_consolidation_sweep_digest_prefix: "MISSING".to_string(),
         governance_closure_sweep_digest_prefix: "MISSING".to_string(),
         final_primary_semantics_residual_sweep_digest_prefix: "MISSING".to_string(),
@@ -844,6 +853,7 @@ fn build_decision(
         readiness_ultimate_sweep_digest_prefix: "MISSING".to_string(),
         readiness_stabilization_sweep_digest_prefix: "MISSING".to_string(),
         readiness_final_consolidation_sweep_digest_prefix: "MISSING".to_string(),
+        readiness_closure_sweep_digest_prefix: "MISSING".to_string(),
         governance_final_consolidation_sweep_digest_prefix: "MISSING".to_string(),
         governance_closure_sweep_digest_prefix: "MISSING".to_string(),
         final_primary_semantics_residual_sweep_digest_prefix: "MISSING".to_string(),
@@ -1359,6 +1369,8 @@ mod tests {
             readiness_terminal_sweep_digest_prefix: "MISSING".to_string(),
             readiness_ultimate_sweep_digest_prefix: "MISSING".to_string(),
             readiness_stabilization_sweep_digest_prefix: "MISSING".to_string(),
+            readiness_final_consolidation_sweep_digest_prefix: "MISSING".to_string(),
+            readiness_closure_sweep_digest_prefix: "MISSING".to_string(),
             snapshot_digest: "snapshot1111".to_string(),
         }
     }

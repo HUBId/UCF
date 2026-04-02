@@ -42,3 +42,5 @@ v17 (`readiness-stabilization-sweep`) entfernt verbleibende Readiness-Adapter-/T
 
 > v18 update: `readiness-final-consolidation-sweep` entfernt verbleibende Readiness-Facade-/Alias-/Shadow-View-Residuen aus kanonischen Consumern und emittiert `ReadinessFinalConsolidationSweepV1`.
 
+
+> v19 update: Closure-Sweep entfernt die letzten kanonischen Wrapper-/Crosswalk-/secondary-render Abhängigkeiten über `readiness-closure-sweep`.

@@ -46,3 +46,5 @@ cargo run -p ucf-ops -- readiness-stabilization-sweep --out ./out/readiness_stab
 
 > v18 update: `readiness-final-consolidation-sweep` entfernt verbleibende Readiness-Facade-/Alias-/Shadow-View-Residuen aus kanonischen Consumern und emittiert `ReadinessFinalConsolidationSweepV1`.
 
+
+> v19 update: verbleibende Wrapper-/Crosswalk-/secondary-render-Reste in kanonischen Readiness-Consumern werden durch `readiness-closure-sweep` blockiert.

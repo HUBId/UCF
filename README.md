@@ -54,6 +54,7 @@ See `docs/feature_matrix.md` for details.
 - `cargo run -p ucf-ops -- readiness-convergence-sweep --out ./out/readiness_convergence_sweep.json`
 - `cargo run -p ucf-ops -- readiness-stabilization-sweep --out ./out/readiness_stabilization_sweep.json`
 - `cargo run -p ucf-ops -- readiness-final-consolidation-sweep --out ./out/readiness_final_consolidation_sweep.json`
+- `cargo run -p ucf-ops -- readiness-closure-sweep --out ./out/readiness_closure_sweep.json`
 - `cargo run -p ucf-ops -- operator review-truth-check --out ./out/review_truth_check.json`
 - `cargo run -p ucf-ops -- exports roundtrip-check --in ./out/repro_portability.zip --out ./out/export_roundtrip_check.json`
 - `cargo run -p ucf-ops -- exports bundle-spine-check --in ./out/repro_portability.zip --out ./out/bundle_spine_check.json`
