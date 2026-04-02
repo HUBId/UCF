@@ -105,6 +105,8 @@ pub struct OperatorReviewPacketV1 {
     #[serde(default)]
     pub governance_final_consolidation_sweep_digest_prefix: String,
     #[serde(default)]
+    pub governance_closure_sweep_digest_prefix: String,
+    #[serde(default)]
     pub final_primary_semantics_residual_sweep_digest_prefix: String,
     #[serde(default)]
     pub residual_free_primary_semantics_authority_digest_prefix: String,
@@ -636,6 +638,7 @@ fn build_from_snapshot(
         readiness_stabilization_sweep_digest_prefix: "MISSING".to_string(),
         readiness_final_consolidation_sweep_digest_prefix: "MISSING".to_string(),
         governance_final_consolidation_sweep_digest_prefix: "MISSING".to_string(),
+        governance_closure_sweep_digest_prefix: "MISSING".to_string(),
         final_primary_semantics_residual_sweep_digest_prefix: "MISSING".to_string(),
         residual_free_primary_semantics_authority_digest_prefix: "MISSING".to_string(),
         primary_semantics_absolute_sweep_digest_prefix: "MISSING".to_string(),
@@ -845,6 +848,7 @@ fn build_blocked_minimal(
         readiness_stabilization_sweep_digest_prefix: "MISSING".to_string(),
         readiness_final_consolidation_sweep_digest_prefix: "MISSING".to_string(),
         governance_final_consolidation_sweep_digest_prefix: "MISSING".to_string(),
+        governance_closure_sweep_digest_prefix: "MISSING".to_string(),
         final_primary_semantics_residual_sweep_digest_prefix: "MISSING".to_string(),
         residual_free_primary_semantics_authority_digest_prefix: "MISSING".to_string(),
         primary_semantics_absolute_sweep_digest_prefix: "MISSING".to_string(),
@@ -981,6 +985,9 @@ fn build_packet(
             .clone(),
         governance_final_consolidation_sweep_digest_prefix: signoff
             .governance_final_consolidation_sweep_digest_prefix
+            .clone(),
+        governance_closure_sweep_digest_prefix: signoff
+            .governance_closure_sweep_digest_prefix
             .clone(),
         final_primary_semantics_residual_sweep_digest_prefix: signoff
             .final_primary_semantics_residual_sweep_digest_prefix
@@ -1347,6 +1354,7 @@ mod tests {
             readiness_stabilization_sweep_digest_prefix: "MISSING".to_string(),
             readiness_final_consolidation_sweep_digest_prefix: "MISSING".to_string(),
             governance_final_consolidation_sweep_digest_prefix: "MISSING".to_string(),
+            governance_closure_sweep_digest_prefix: "MISSING".to_string(),
             final_primary_semantics_residual_sweep_digest_prefix: "MISSING".to_string(),
             residual_free_primary_semantics_authority_digest_prefix: "MISSING".to_string(),
             primary_semantics_absolute_sweep_digest_prefix: "MISSING".to_string(),

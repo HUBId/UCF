@@ -54,3 +54,7 @@ Bei FAIL/Legacy/Drift ist nur `REAFFIRM_FREEZE` zulässig.
 v17 adds `governance-stabilization-sweep` to remove remaining canonical governance-adapter and translation residues from canonical consumers.
 
 > v18 update: after v17 stabilization, canonical consumers additionally require v18 final consolidation to eliminate remaining governance facade/alias/shadow residues in canonical flows.
+
+## v19 closure note
+
+v19 finalizes convergence outcomes with a closure sweep that blocks residual governance compatibility wrappers and secondary renderings in canonical flows.
