@@ -1447,7 +1447,7 @@ mod tests {
     }
 
     #[test]
-    fn generator_then_check_passes_for_full_v15_coverage() {
+    fn generator_then_check_passes_for_full_v18_coverage() {
         let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .parent()
             .expect("runtime parent")
@@ -1765,6 +1765,80 @@ mod tests {
         assert!(!report.ok);
         assert!(report.diffs.iter().any(|d| {
             d.artifact == "primary_semantics_stabilization_sweep_v1"
+                && d.drift_kind == DriftKind::Breaking
+                && d.summary.contains("field type changed")
+        }));
+    }
+
+    #[test]
+    fn check_reports_missing_v18_final_consolidation_snapshot_as_breaking() {
+        let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("runtime parent")
+            .parent()
+            .expect("repo root")
+            .to_path_buf();
+        let tmp = tempfile::tempdir().expect("tempdir");
+        generate_artifact_schema_snapshots(&ArtifactSchemaArgs {
+            repo_root: repo_root.clone(),
+            out_dir: tmp.path().to_path_buf(),
+        })
+        .expect("generate snapshots");
+        fs::remove_file(
+            tmp.path()
+                .join("governance_final_consolidation_sweep_v1.json"),
+        )
+        .expect("remove snapshot");
+
+        let report = check_artifact_schema_snapshots(&ArtifactSchemaArgs {
+            repo_root,
+            out_dir: tmp.path().to_path_buf(),
+        })
+        .expect("check should complete");
+        assert!(!report.ok);
+        assert!(report.diffs.iter().any(|d| {
+            d.artifact == "governance_final_consolidation_sweep_v1"
+                && d.drift_kind == DriftKind::Breaking
+        }));
+    }
+
+    #[test]
+    fn check_reports_v18_supported_scope_execution_shape_drift() {
+        let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("runtime parent")
+            .parent()
+            .expect("repo root")
+            .to_path_buf();
+        let tmp = tempfile::tempdir().expect("tempdir");
+        generate_artifact_schema_snapshots(&ArtifactSchemaArgs {
+            repo_root: repo_root.clone(),
+            out_dir: tmp.path().to_path_buf(),
+        })
+        .expect("generate snapshots");
+
+        let snapshot_path = tmp.path().join("supported_scope_execution_v13.json");
+        let mut snapshot: ArtifactSchemaSnapshot =
+            serde_json::from_str(&fs::read_to_string(&snapshot_path).expect("read snapshot"))
+                .expect("parse snapshot");
+        snapshot.field_types.insert(
+            "governance_final_consolidation_sweep_digest_prefix".to_string(),
+            "u32".to_string(),
+        );
+        fs::write(
+            &snapshot_path,
+            serde_json::to_string_pretty(&snapshot).expect("serialize snapshot"),
+        )
+        .expect("write snapshot");
+
+        let report = check_artifact_schema_snapshots(&ArtifactSchemaArgs {
+            repo_root,
+            out_dir: tmp.path().to_path_buf(),
+        })
+        .expect("check should complete");
+        assert!(!report.ok);
+        assert!(report.diffs.iter().any(|d| {
+            d.artifact == "supported_scope_execution_v13"
                 && d.drift_kind == DriftKind::Breaking
                 && d.summary.contains("field type changed")
         }));
