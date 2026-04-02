@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
+use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
@@ -15,6 +16,7 @@ use crate::{
 };
 
 const DIGEST_PREFIX_LEN: usize = 16;
+const REPRO_PACK_STACK_SIZE_BYTES: usize = 32 * 1024 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -94,7 +96,7 @@ pub fn bundle_residual_sweep(
     let bugkit_bundle = workdir
         .join("out")
         .join(format!("bugkit_{run_id}_bundle_residual_sweep.zip"));
-    let _ = repro_pack(workdir, &run_id, &repro_bundle)?;
+    run_repro_pack_with_extended_stack(workdir, &run_id, &repro_bundle)?;
     let _ = crate::bugkit_build(
         workdir,
         &run_id,
@@ -224,6 +226,24 @@ pub fn bundle_residual_sweep(
     }
     fs::write(out, serde_json::to_vec_pretty(&report)?)?;
     Ok(report)
+}
+
+fn run_repro_pack_with_extended_stack(
+    workdir: &Path,
+    run_id: &str,
+    repro_bundle: &Path,
+) -> Result<(), OpsError> {
+    let workdir = PathBuf::from(workdir);
+    let run_id = run_id.to_string();
+    let repro_bundle = PathBuf::from(repro_bundle);
+    std::thread::Builder::new()
+        .name("bundle_residual_repro_pack".to_string())
+        .stack_size(REPRO_PACK_STACK_SIZE_BYTES)
+        .spawn(move || repro_pack(&workdir, &run_id, &repro_bundle))
+        .map_err(|e| OpsError::Invalid(format!("repro pack thread spawn failed: {e}")))?
+        .join()
+        .map_err(|_| OpsError::Invalid("repro pack thread panicked".to_string()))??;
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]

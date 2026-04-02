@@ -1,23 +1,20 @@
 # Supported Scope Reevaluation v7
 
-`SupportedScopeReevaluationV1` bleibt ein intermediäres Reevaluation-Artefakt.
+`SupportedScopeReevaluationV1` bleibt ein intermediäres, nicht-anwendendes Artefakt.
 
-## Current hierarchy (v16)
+## Current hierarchy (v19)
 
 - Reevaluation darf den Scope nie direkt anwenden.
-- `SupportedScopeExecutionV12` ist die autoritative Execution-Entscheidung.
-- `supported-set-apply` akzeptiert in v16 nur Autorisierung aus aktuellem `SupportedScopeExecutionV12`.
+- `SupportedScopeExecutionV14` ist die aktuelle autoritative Execution-Entscheidung.
+- `supported-set-apply` akzeptiert in v19 nur Autorisierung aus aktuellem `SupportedScopeExecutionV14`.
 
-## Commands
+## Commands (v19 execution path)
 
 ```bash
 cargo run -p ucf-ops -- models supported-scope-reevaluate --out ./out/supported_scope_reeval.json
-cargo run -p ucf-ops -- governance-convergence-sweep --out ./out/governance_convergence_sweep.json
-cargo run -p ucf-ops -- models supported-scope-execute-v12 --out ./out/supported_scope_execute_v12.json
+cargo run -p ucf-ops -- governance-closure-sweep --out ./out/governance_closure_sweep.json
+cargo run -p ucf-ops -- models supported-scope-execute-v14 --out ./out/supported_scope_execute_v14.json
 cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json
 ```
 
-
-Ab v17 bleibt Reevaluation weiterhin nur vorbereitend; ausführen darf ausschließlich `SupportedScopeExecutionV12` unter Governance-Stabilization-PASS.
-
-> v18 update: Reevaluation bleibt vorbereitend; anwenden darf ausschließlich `SupportedScopeExecutionV13` mit Final-Consolidation-PASS.
+Reevaluation bleibt vorbereitend; ausführen/anwenden darf ausschließlich die aktuelle Execution-Stufe unter closure-kompletter Governance-PASS-Lage.

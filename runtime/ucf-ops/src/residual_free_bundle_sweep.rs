@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
+use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
@@ -14,6 +15,7 @@ use crate::{
 };
 
 const DIGEST_PREFIX_LEN: usize = 16;
+const REPRO_PACK_STACK_SIZE_BYTES: usize = 32 * 1024 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -97,7 +99,7 @@ pub fn residual_free_bundle_sweep(
     let repro_bundle = workdir
         .join("out")
         .join(format!("repro_{run_id}_residual_free_bundle_sweep.zip"));
-    let _ = repro_pack(workdir, &run_id, &repro_bundle)?;
+    run_repro_pack_with_extended_stack(workdir, &run_id, &repro_bundle)?;
     let repro_spine = exports_bundle_spine_check(
         &repro_bundle,
         &workdir.join("out/repro_bundle_spine_check_residual_free_bundle_sweep.json"),
@@ -201,6 +203,24 @@ pub fn residual_free_bundle_sweep(
     }
     fs::write(out, serde_json::to_vec_pretty(&report)?)?;
     Ok(report)
+}
+
+fn run_repro_pack_with_extended_stack(
+    workdir: &Path,
+    run_id: &str,
+    repro_bundle: &Path,
+) -> Result<(), OpsError> {
+    let workdir = PathBuf::from(workdir);
+    let run_id = run_id.to_string();
+    let repro_bundle = PathBuf::from(repro_bundle);
+    std::thread::Builder::new()
+        .name("residual_free_bundle_repro_pack".to_string())
+        .stack_size(REPRO_PACK_STACK_SIZE_BYTES)
+        .spawn(move || repro_pack(&workdir, &run_id, &repro_bundle))
+        .map_err(|e| OpsError::Invalid(format!("repro pack thread spawn failed: {e}")))?
+        .join()
+        .map_err(|_| OpsError::Invalid("repro pack thread panicked".to_string()))??;
+    Ok(())
 }
 
 fn check_consumer(
