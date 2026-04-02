@@ -3090,7 +3090,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let out = arg_value(&args, "--out")
                 .map(PathBuf::from)
                 .unwrap_or_else(|| PathBuf::from("./out/residual_free_bundle_sweep.json"));
-            let report = residual_free_bundle_sweep(&workdir, &out)?;
+            let workdir_cloned = workdir.clone();
+            let out_cloned = out.clone();
+            let report = std::thread::Builder::new()
+                .name("residual-free-bundle-sweep".to_string())
+                .stack_size(64 * 1024 * 1024)
+                .spawn(move || residual_free_bundle_sweep(&workdir_cloned, &out_cloned))
+                .map_err(|err| format!("failed to spawn residual-free-bundle-sweep thread: {err}"))?
+                .join()
+                .map_err(|_| "residual-free-bundle-sweep panicked".to_string())??;
             println!("status={:?}", report.authority.authority_status);
             println!("authority_digest={}", report.authority.authority_digest);
             println!("out={}", out.display());
