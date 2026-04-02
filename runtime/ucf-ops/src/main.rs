@@ -6,7 +6,7 @@ use ucf_ops::{
     absolute_final_input_continuity_sweep, adversarial_run, airgap_export_models,
     airgap_export_policies, airgap_export_repro, airgap_export_run_cert, airgap_import,
     alerts_report, attest_bundle, attest_keys_generate, attest_run, attest_verify, audit_scan,
-    bench_run, bringup, bundle_absolute_sweep, bundle_convergence_sweep,
+    bench_run, bringup, bundle_absolute_sweep, bundle_closure_sweep, bundle_convergence_sweep,
     bundle_final_consolidation_sweep, bundle_residual_sweep, bundle_stabilization_sweep,
     bundle_terminal_sweep, bundle_ultimate_sweep, canonical_convergence_continuity_sweep,
     canonical_final_consolidation_continuity_sweep, canonical_stabilization_continuity_sweep,
@@ -63,8 +63,8 @@ use ucf_ops::{
     AbsoluteFinalGovernanceTerminalSweepStatusV1,
     AbsoluteFinalPrimarySemanticsTerminalSweepStatusV1,
     AbsoluteFinalReadinessTerminalSweepStatusV1, AdversarialRunArgs, AirgapArtifactType,
-    AirgapImportArgs, AirgapImportMode, BenchArgs, BugKitBuildArgs, BundleConvergenceStatusV1,
-    BundleFinalConsolidationStatusV1, BundleStabilizationStatusV1,
+    AirgapImportArgs, AirgapImportMode, BenchArgs, BugKitBuildArgs, BundleClosureStatusV1,
+    BundleConvergenceStatusV1, BundleFinalConsolidationStatusV1, BundleStabilizationStatusV1,
     CanonicalBundleAuthorityStatusV2, CanonicalFinalConsolidationContinuityStatusV1,
     CanonicalReadinessAuthorityStatusV2, ChangeImpactArgs, ConfigV1, ContinuityAuthorityStatusV1,
     CounterfactualRequest, DevLoopArgs, DocsLintArgs, DocsLintMode, DocsLintStatus,
@@ -3276,6 +3276,23 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 std::process::exit(2);
             }
         }
+        "bundle-closure-sweep" => {
+            let out = arg_value(&args, "--out")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("./out/bundle_closure_sweep.json"));
+            let report = bundle_closure_sweep(&workdir, &out)?;
+            println!(
+                "status={:?} consumers={} residual_paths={} digest={}",
+                report.sweep.closure_status,
+                report.sweep.covered_consumer_count,
+                report.sweep.residual_path_count,
+                report.sweep.closure_digest
+            );
+            println!("out={}", out.display());
+            if !matches!(report.sweep.closure_status, BundleClosureStatusV1::Pass) {
+                std::process::exit(2);
+            }
+        }
 
         "governance-surfaces-check" => {
             let out = arg_value(&args, "--out")
@@ -4352,7 +4369,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             eprintln!(
-                "usage: ucf-ops <bringup|diag|health|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|attest|repro|exports|readiness-gate|preflight|goldens|nightly|dev|troubleshoot|adversarial-run|out|release|bench|runs|status|strict|ess|ebm|drift|alerts|operator|policy|portability|spec|change-impact|soak|governance-surfaces-check|governance-entry-check|governance-entry-sweep|final-governance-consumer-sweep|governance-residual-sweep|residual-free-governance-sweep|governance-absolute-sweep|governance-terminal-sweep|governance-ultimate-sweep|governance-convergence-sweep|governance-stabilization-sweep|governance-final-consolidation-sweep|governance-closure-sweep|final-readiness-consumer-sweep|readiness-residual-sweep|residual-free-readiness-sweep|readiness-absolute-sweep|readiness-terminal-sweep|readiness-ultimate-sweep|readiness-convergence-sweep|readiness-stabilization-sweep|readiness-final-consolidation-sweep|readiness-closure-sweep|final-bundle-consumer-sweep|bundle-residual-sweep|residual-free-bundle-sweep|bundle-absolute-sweep|bundle-terminal-sweep|bundle-ultimate-sweep|bundle-convergence-sweep|bundle-stabilization-sweep|bundle-final-consolidation-sweep|final-continuity-sweep|residual-free-continuity-sweep|absolute-final-input-continuity-sweep|terminal-absolute-final-input-continuity-sweep|ultimate-terminal-absolute-final-input-continuity-sweep|remediation-consistency-check|remediation-interop-check|remediation-spine-check|primary-semantics-sweep|final-primary-semantics-sweep|primary-semantics-residual-sweep|residual-free-primary-semantics-sweep|primary-semantics-absolute-sweep|primary-semantics-terminal-sweep|primary-semantics-ultimate-sweep|primary-semantics-convergence-sweep|primary-semantics-stabilization-sweep|primary-semantics-final-consolidation-sweep|interop|v0|v1|v2|v3|v4|v5|v6|v7|v8|v9|v10|v11|v12|v13|v14|v15|v16|v17|v18|version> [--workdir <path>] [--bundle <path>]"
+                "usage: ucf-ops <bringup|diag|health|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|attest|repro|exports|readiness-gate|preflight|goldens|nightly|dev|troubleshoot|adversarial-run|out|release|bench|runs|status|strict|ess|ebm|drift|alerts|operator|policy|portability|spec|change-impact|soak|governance-surfaces-check|governance-entry-check|governance-entry-sweep|final-governance-consumer-sweep|governance-residual-sweep|residual-free-governance-sweep|governance-absolute-sweep|governance-terminal-sweep|governance-ultimate-sweep|governance-convergence-sweep|governance-stabilization-sweep|governance-final-consolidation-sweep|governance-closure-sweep|final-readiness-consumer-sweep|readiness-residual-sweep|residual-free-readiness-sweep|readiness-absolute-sweep|readiness-terminal-sweep|readiness-ultimate-sweep|readiness-convergence-sweep|readiness-stabilization-sweep|readiness-final-consolidation-sweep|readiness-closure-sweep|final-bundle-consumer-sweep|bundle-residual-sweep|residual-free-bundle-sweep|bundle-absolute-sweep|bundle-terminal-sweep|bundle-ultimate-sweep|bundle-convergence-sweep|bundle-stabilization-sweep|bundle-final-consolidation-sweep|bundle-closure-sweep|final-continuity-sweep|residual-free-continuity-sweep|absolute-final-input-continuity-sweep|terminal-absolute-final-input-continuity-sweep|ultimate-terminal-absolute-final-input-continuity-sweep|remediation-consistency-check|remediation-interop-check|remediation-spine-check|primary-semantics-sweep|final-primary-semantics-sweep|primary-semantics-residual-sweep|residual-free-primary-semantics-sweep|primary-semantics-absolute-sweep|primary-semantics-terminal-sweep|primary-semantics-ultimate-sweep|primary-semantics-convergence-sweep|primary-semantics-stabilization-sweep|primary-semantics-final-consolidation-sweep|interop|v0|v1|v2|v3|v4|v5|v6|v7|v8|v9|v10|v11|v12|v13|v14|v15|v16|v17|v18|version> [--workdir <path>] [--bundle <path>]"
             );
             std::process::exit(1);
         }

@@ -5,7 +5,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    bundle_final_consolidation_sweep, derive_canonical_governance_entry,
+    bundle_closure_sweep, bundle_final_consolidation_sweep, derive_canonical_governance_entry,
     governance_final_consolidation_sweep, load_applied_supported_set_context_v1,
     models_active_review_snapshot, models_evidence_snapshot, operator_review_packet,
     operator_roundtrip_chain_check, operator_signoff, operator_workflow_chain, prefix_hex,
@@ -38,6 +38,7 @@ pub struct CanonicalFinalConsolidationContinuityAuthorityV1 {
     pub readiness_final_consolidation_sweep_digest_prefix: String,
     pub canonical_bundle_spine_digest_prefix: String,
     pub bundle_final_consolidation_sweep_digest_prefix: String,
+    pub bundle_closure_sweep_digest_prefix: String,
     pub canonical_primary_semantics_authority_digest_prefix: String,
     pub primary_semantics_final_consolidation_sweep_digest_prefix: String,
     pub operator_review_packet_digest_prefix: String,
@@ -84,6 +85,11 @@ pub fn canonical_final_consolidation_continuity_sweep(
         &workdir.join(
             "out/bundle_final_consolidation_sweep_canonical_final_consolidation_continuity_sweep.json",
         ),
+    )?;
+    let bundle_closure = bundle_closure_sweep(
+        workdir,
+        &workdir
+            .join("out/bundle_closure_sweep_canonical_final_consolidation_continuity_sweep.json"),
     )?;
     let primary_final = primary_semantics_final_consolidation_sweep(
         workdir,
@@ -188,9 +194,12 @@ pub fn canonical_final_consolidation_continuity_sweep(
     ) || !matches!(
         bundle_final.sweep.consolidation_status,
         BundleFinalConsolidationStatusV1::Pass
+    ) || !matches!(
+        bundle_closure.sweep.closure_status,
+        crate::BundleClosureStatusV1::Pass
     ) {
         blocking.insert("FINAL_CONSOLIDATION_BUNDLE_MISMATCH");
-        remediation.insert("run_bundle_final_consolidation_sweep");
+        remediation.insert("run_bundle_closure_sweep");
     }
 
     if governance_final.sweep.residual_path_count > 0
@@ -244,6 +253,10 @@ pub fn canonical_final_consolidation_continuity_sweep(
             .canonical_bundle_spine_digest_prefix,
         bundle_final_consolidation_sweep_digest_prefix: prefix_hex(
             &bundle_final.sweep.consolidation_digest,
+            DIGEST_PREFIX_LEN,
+        ),
+        bundle_closure_sweep_digest_prefix: prefix_hex(
+            &bundle_closure.sweep.closure_digest,
             DIGEST_PREFIX_LEN,
         ),
         canonical_primary_semantics_authority_digest_prefix: primary_final
@@ -322,6 +335,7 @@ mod tests {
             readiness_final_consolidation_sweep_digest_prefix: "55".repeat(8),
             canonical_bundle_spine_digest_prefix: "66".repeat(8),
             bundle_final_consolidation_sweep_digest_prefix: "77".repeat(8),
+            bundle_closure_sweep_digest_prefix: "78".repeat(8),
             canonical_primary_semantics_authority_digest_prefix: "88".repeat(8),
             primary_semantics_final_consolidation_sweep_digest_prefix: "99".repeat(8),
             operator_review_packet_digest_prefix: "aa".repeat(8),

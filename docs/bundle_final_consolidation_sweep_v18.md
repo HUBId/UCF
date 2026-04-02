@@ -41,3 +41,7 @@ Canonical export flows must not accept competing bundle truth substrates from fa
 ```bash
 cargo run -p ucf-ops -- bundle-final-consolidation-sweep --out ./out/bundle_final_consolidation_sweep.json
 ```
+
+## v19 closure follow-up
+
+v19 (`bundle-closure-sweep`) removes/blocks any remaining canonical dependence on bundle compatibility wrappers, authority crosswalk layers, and secondary export renderings across canonical export consumers.
