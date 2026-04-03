@@ -16706,6 +16706,8 @@ pub struct PortabilityReportV1 {
     pub supported_scope_execute_v12_smoke: PortabilityCommandCheck,
     pub governance_final_consolidation_sweep_smoke: PortabilityCommandCheck,
     pub supported_scope_execute_v13_smoke: PortabilityCommandCheck,
+    pub governance_closure_sweep_smoke: PortabilityCommandCheck,
+    pub supported_scope_execute_v14_smoke: PortabilityCommandCheck,
     pub final_readiness_consumer_sweep_smoke: PortabilityCommandCheck,
     pub readiness_residual_sweep_smoke: PortabilityCommandCheck,
     pub residual_free_readiness_sweep_smoke: PortabilityCommandCheck,
@@ -16715,6 +16717,7 @@ pub struct PortabilityReportV1 {
     pub readiness_convergence_sweep_smoke: PortabilityCommandCheck,
     pub readiness_stabilization_sweep_smoke: PortabilityCommandCheck,
     pub readiness_final_consolidation_sweep_smoke: PortabilityCommandCheck,
+    pub readiness_closure_sweep_smoke: PortabilityCommandCheck,
     pub final_bundle_consumer_sweep_smoke: PortabilityCommandCheck,
     pub bundle_residual_sweep_smoke: PortabilityCommandCheck,
     pub residual_free_bundle_sweep_smoke: PortabilityCommandCheck,
@@ -16724,6 +16727,7 @@ pub struct PortabilityReportV1 {
     pub bundle_convergence_sweep_smoke: PortabilityCommandCheck,
     pub bundle_stabilization_sweep_smoke: PortabilityCommandCheck,
     pub bundle_final_consolidation_sweep_smoke: PortabilityCommandCheck,
+    pub bundle_closure_sweep_smoke: PortabilityCommandCheck,
     pub final_primary_semantics_sweep_smoke: PortabilityCommandCheck,
     pub primary_semantics_residual_sweep_smoke: PortabilityCommandCheck,
     pub residual_free_primary_semantics_sweep_smoke: PortabilityCommandCheck,
@@ -16733,7 +16737,7 @@ pub struct PortabilityReportV1 {
     pub primary_semantics_convergence_sweep_smoke: PortabilityCommandCheck,
     pub primary_semantics_stabilization_sweep_smoke: PortabilityCommandCheck,
     pub primary_semantics_final_consolidation_sweep_smoke: PortabilityCommandCheck,
-    primary_semantics_closure_sweep_smoke: PortabilityCommandCheck,
+    pub primary_semantics_closure_sweep_smoke: PortabilityCommandCheck,
     pub remediation_spine_check_smoke: PortabilityCommandCheck,
     pub supported_set_apply_smoke: PortabilityCommandCheck,
     pub review_truth_check_smoke: PortabilityCommandCheck,
@@ -18742,6 +18746,61 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
                 || detail.contains("GOVERNANCE_FINAL_CONSOLIDATION_INPUTS_REQUIRED")
         },
     );
+    let governance_closure_sweep_smoke = out_smoke_check_with_skip(
+        "governance_closure_sweep_smoke",
+        "./out/governance_closure_sweep.json",
+        |out_path| governance_closure_sweep(workdir, out_path),
+        |report| {
+            format!(
+                "closure_status={:?} mismatch_categories={}",
+                report.sweep.closure_status,
+                report
+                    .consumers
+                    .iter()
+                    .map(|consumer| consumer.mismatch_categories.len())
+                    .sum::<usize>()
+            )
+        },
+        |detail| {
+            detail.contains(LEGACY_SCOPE_PATH_BLOCKED)
+                || detail.contains(APPLIED_SCOPE_REQUIRED)
+                || detail.contains(APPLIED_SCOPE_MISSING)
+                || detail.contains(APPLIED_SCOPE_TRANSLATION_FAILED)
+                || detail.contains(RESIDUAL_GOVERNANCE_PATH_BLOCKED)
+                || detail.contains("PATH_BLOCKED")
+                || detail.contains("APPLIED_SCOPE_SLOT_TRUTH_MISSING")
+                || detail.contains("SUPPORTED_SET_POLICY_V2_MISSING")
+                || detail
+                    .contains("FINAL_CONSOLIDATED_STABILIZED_CANONICAL_GOVERNANCE_INPUTS_REQUIRED")
+        },
+    );
+    let supported_scope_execute_v14_smoke = out_smoke_check_with_skip(
+        "supported_scope_execute_v14_smoke",
+        "./out/supported_scope_execute_v14.json",
+        |out_path| {
+            let closure_out = PathBuf::from("./out/governance_closure_sweep.json");
+            governance_closure_sweep(workdir, &closure_out)?;
+            models_supported_scope_execute_v14(workdir, out_path)
+        },
+        |report| {
+            format!(
+                "decision={:?} candidates={}",
+                report.execution_decision,
+                usize::from(report.chosen_candidate_slot.is_some())
+            )
+        },
+        |detail| {
+            detail.contains(LEGACY_SCOPE_PATH_BLOCKED)
+                || detail.contains(APPLIED_SCOPE_REQUIRED)
+                || detail.contains(APPLIED_SCOPE_MISSING)
+                || detail.contains(APPLIED_SCOPE_TRANSLATION_FAILED)
+                || detail.contains(RESIDUAL_GOVERNANCE_PATH_BLOCKED)
+                || detail.contains("PATH_BLOCKED")
+                || detail.contains("APPLIED_SCOPE_SLOT_TRUTH_MISSING")
+                || detail.contains("SUPPORTED_SET_POLICY_V2_MISSING")
+                || detail.contains("GOVERNANCE_CLOSURE_INPUTS_REQUIRED")
+        },
+    );
     let final_readiness_consumer_sweep_smoke = {
         let out_path = PathBuf::from("./out/final_readiness_consumer_sweep.json");
         let prep = (|| -> Result<(), OpsError> {
@@ -19112,6 +19171,31 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
                 || detail.contains("APPLIED_SCOPE_SLOT_TRUTH_MISSING")
                 || detail.contains("SUPPORTED_SET_POLICY_V2_MISSING")
                 || detail.contains("READINESS_FINAL_CONSOLIDATION_INPUTS_REQUIRED")
+        },
+    );
+    let readiness_closure_sweep_smoke = out_smoke_check_with_skip(
+        "readiness_closure_sweep_smoke",
+        "./out/readiness_closure_sweep.json",
+        |out_path| readiness_closure_sweep(workdir, out_path),
+        |report| {
+            format!(
+                "closure_status={:?} mismatch_categories={}",
+                report.sweep.closure_status,
+                report
+                    .consumers
+                    .iter()
+                    .map(|consumer| consumer.mismatch_categories.len())
+                    .sum::<usize>()
+            )
+        },
+        |detail| {
+            detail.contains("APPLIED_SCOPE_SLOT_TRUTH_MISSING")
+                || detail.contains(APPLIED_SCOPE_REQUIRED)
+                || detail.contains(APPLIED_SCOPE_MISSING)
+                || detail.contains(APPLIED_SCOPE_TRANSLATION_FAILED)
+                || detail.contains("SUPPORTED_SET_POLICY_V2_MISSING")
+                || detail
+                    .contains("FINAL_CONSOLIDATED_STABILIZED_CANONICAL_READINESS_INPUTS_REQUIRED")
         },
     );
     let final_bundle_consumer_sweep_smoke = {
@@ -19488,6 +19572,31 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
                 || detail.contains("EXPORT_CONTEXT_REQUIRED")
                 || detail.contains("PACK_ARTIFACT_REFS_REQUIRED")
                 || detail.contains("BUNDLE_FINAL_CONSOLIDATION_INPUTS_REQUIRED")
+        },
+    );
+    let bundle_closure_sweep_smoke = out_smoke_check_with_skip(
+        "bundle_closure_sweep_smoke",
+        "./out/bundle_closure_sweep.json",
+        |out_path| bundle_closure_sweep(workdir, out_path),
+        |report| {
+            format!(
+                "closure_status={:?} mismatch_categories={}",
+                report.sweep.closure_status,
+                report
+                    .consumers
+                    .iter()
+                    .map(|consumer| consumer.mismatch_categories.len())
+                    .sum::<usize>()
+            )
+        },
+        |detail| {
+            detail.contains(LEGACY_SCOPE_PATH_BLOCKED)
+                || detail.contains(APPLIED_SCOPE_REQUIRED)
+                || detail.contains(APPLIED_SCOPE_MISSING)
+                || detail.contains(APPLIED_SCOPE_TRANSLATION_FAILED)
+                || detail.contains("APPLIED_SCOPE_SLOT_TRUTH_MISSING")
+                || detail.contains("SUPPORTED_SET_POLICY_V2_MISSING")
+                || detail.contains("FINAL_CONSOLIDATED_STABILIZED_CANONICAL_BUNDLE_INPUTS_REQUIRED")
         },
     );
     let final_primary_semantics_sweep_smoke = {
@@ -20169,6 +20278,7 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
     command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- governance-convergence-sweep --out ./out/governance_convergence_sweep.json"));
     command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- governance-stabilization-sweep --out ./out/governance_stabilization_sweep.json"));
     command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- governance-final-consolidation-sweep --out ./out/governance_final_consolidation_sweep.json"));
+    command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- governance-closure-sweep --out ./out/governance_closure_sweep.json"));
     command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- models supported-scope-execute-v8 --out ./out/supported_scope_execute_v8.json --workdir ."));
     command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- models supported-scope-execute-v9 --out ./out/supported_scope_execute_v9.json --workdir ."));
     command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- models supported-scope-execute-v10 --out ./out/supported_scope_execute_v10.json --workdir ."));
@@ -20209,6 +20319,10 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
     command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- bundle-convergence-sweep --out ./out/bundle_convergence_sweep.json"));
     command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- bundle-stabilization-sweep --out ./out/bundle_stabilization_sweep.json"));
     command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- bundle-final-consolidation-sweep --out ./out/bundle_final_consolidation_sweep.json"));
+    command_matrix.push(matrix_cmd(
+        "linux",
+        "cargo run -p ucf-ops -- bundle-closure-sweep --out ./out/bundle_closure_sweep.json",
+    ));
     command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- final-primary-semantics-sweep --out ./out/final_primary_semantics_sweep.json"));
     command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- primary-semantics-residual-sweep --out ./out/primary_semantics_residual_sweep.json"));
     command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- residual-free-primary-semantics-sweep --out ./out/residual_free_primary_semantics_sweep.json"));
@@ -20333,6 +20447,7 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
     command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- governance-convergence-sweep --out ./out/governance_convergence_sweep.json"));
     command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- governance-stabilization-sweep --out ./out/governance_stabilization_sweep.json"));
     command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- governance-final-consolidation-sweep --out ./out/governance_final_consolidation_sweep.json"));
+    command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- governance-closure-sweep --out ./out/governance_closure_sweep.json"));
     command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- models supported-scope-execute-v8 --out ./out/supported_scope_execute_v8.json --workdir ."));
     command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- models supported-scope-execute-v9 --out ./out/supported_scope_execute_v9.json --workdir ."));
     command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- models supported-scope-execute-v10 --out ./out/supported_scope_execute_v10.json --workdir ."));
@@ -20373,6 +20488,10 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
     command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- bundle-convergence-sweep --out ./out/bundle_convergence_sweep.json"));
     command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- bundle-stabilization-sweep --out ./out/bundle_stabilization_sweep.json"));
     command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- bundle-final-consolidation-sweep --out ./out/bundle_final_consolidation_sweep.json"));
+    command_matrix.push(matrix_cmd(
+        "windows",
+        "cargo run -p ucf-ops -- bundle-closure-sweep --out ./out/bundle_closure_sweep.json",
+    ));
     command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- final-primary-semantics-sweep --out ./out/final_primary_semantics_sweep.json"));
     command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- primary-semantics-residual-sweep --out ./out/primary_semantics_residual_sweep.json"));
     command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- residual-free-primary-semantics-sweep --out ./out/residual_free_primary_semantics_sweep.json"));
@@ -20460,6 +20579,8 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         supported_scope_execute_v12_smoke,
         governance_final_consolidation_sweep_smoke,
         supported_scope_execute_v13_smoke,
+        governance_closure_sweep_smoke,
+        supported_scope_execute_v14_smoke,
         final_readiness_consumer_sweep_smoke,
         readiness_residual_sweep_smoke,
         residual_free_readiness_sweep_smoke,
@@ -20469,6 +20590,7 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         readiness_convergence_sweep_smoke,
         readiness_stabilization_sweep_smoke,
         readiness_final_consolidation_sweep_smoke,
+        readiness_closure_sweep_smoke,
         final_bundle_consumer_sweep_smoke,
         bundle_residual_sweep_smoke,
         residual_free_bundle_sweep_smoke,
@@ -20478,6 +20600,7 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         bundle_convergence_sweep_smoke,
         bundle_stabilization_sweep_smoke,
         bundle_final_consolidation_sweep_smoke,
+        bundle_closure_sweep_smoke,
         final_primary_semantics_sweep_smoke,
         primary_semantics_residual_sweep_smoke,
         residual_free_primary_semantics_sweep_smoke,
