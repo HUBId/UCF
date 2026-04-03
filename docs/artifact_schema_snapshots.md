@@ -1,6 +1,6 @@
 # Artifact Schema Snapshots
 
-This repository enforces deterministic shape snapshots for governance/review/export/interop artifacts that must remain stable across v3/v4/v5/v6/v7/v8/v9/v10/v11/v12/v13/v14/v15/v16/v17/v18 hardening.
+This repository enforces deterministic shape snapshots for governance/review/export/interop artifacts that must remain stable across v3/v4/v5/v6/v7/v8/v9/v10/v11/v12/v13/v14/v15/v16/v17/v18/v19 hardening.
 
 ## Covered artifacts
 
@@ -51,6 +51,7 @@ Snapshots are generated under `docs/artifact_schema_snapshots/`:
 - `governance_convergence_sweep_v1.json` (v16 governance convergence contract)
 - `governance_stabilization_sweep_v1.json` (v17 governance stabilization contract)
 - `governance_final_consolidation_sweep_v1.json` (v18 governance final-consolidation contract)
+- `governance_closure_sweep_v1.json` (v19 governance closure contract)
 - `governance_primary_surfaces_v1.json`
 - `interop_consistency_matrix_report_v1.json`
 - `operator_report_v1.json`
@@ -62,6 +63,7 @@ Snapshots are generated under `docs/artifact_schema_snapshots/`:
 - `readiness_gate_report_v1.json`
 - `readiness_stabilization_sweep_v1.json` (v17 readiness stabilization contract)
 - `readiness_final_consolidation_sweep_v1.json` (v18 readiness final-consolidation contract)
+- `readiness_closure_sweep_v1.json` (v19 readiness closure contract)
 - `remediation_consistency_check_v1.json`
 - `repro_pack_manifest_v1.json`
 - `residual_free_bundle_absolute_sweep_v1.json` (v13 absolute residual-free contract)
@@ -89,6 +91,7 @@ Snapshots are generated under `docs/artifact_schema_snapshots/`:
 - `supported_scope_execution_v11.json` (v16 governance-convergence-gated supported-scope execution)
 - `supported_scope_execution_v12.json` (v17 stabilization-gated supported-scope execution)
 - `supported_scope_execution_v13.json` (v18 final-consolidation-gated current supported-scope execution)
+- `supported_scope_execution_v14.json` (v19 closure-gated current supported-scope execution)
 - `supported_scope_reevaluation_v1.json` (v7)
 - `v3_gate_report_v1.json`
 - `v4_gate_report_v1.json`
@@ -104,6 +107,7 @@ Snapshots are generated under `docs/artifact_schema_snapshots/`:
 - `v15_gate_report_v1.json`
 - `v16_gate_report_v1.json`
 - `v17_gate_report_v1.json`
+- `v18_gate_report_v1.json`
 - `index.json` (covered artifact index)
 
 v11 contract points now frozen here include:
@@ -237,4 +241,11 @@ For v18 final-consolidation and current scope-execution surfaces, this freeze is
 - primary-semantics-final-consolidation sweep,
 - additive shape updates (if any) in stabilization sweep artifacts, operator signoff/review/workflow artifacts, and covered gate-report schemas are reviewed through the same drift lane (`ADDITIVE` vs `BREAKING` vs `UNKNOWN`).
 
-- `primary_semantics_closure_sweep_v1.json` (v19 primary-semantics closure contract)
+For v19 closure and current scope-execution surfaces, this freeze is now first-class for cross-surface contracts and CI review:
+
+- governance-closure sweep,
+- supported-scope execution v14 (current authoritative execution surface),
+- readiness-closure sweep,
+- bundle-closure sweep,
+- primary-semantics-closure sweep,
+- additive shape updates (if any) in final-consolidation sweep artifacts, operator signoff/review/workflow artifacts, and covered gate-report schemas (including `v18_gate_report_v1`) are reviewed through the same drift lane (`ADDITIVE` vs `BREAKING` vs `UNKNOWN`).

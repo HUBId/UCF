@@ -64,7 +64,7 @@ struct ArtifactSpec {
     enum_names: &'static [&'static str],
 }
 
-const ARTIFACT_SPECS: [ArtifactSpec; 110] = [
+const ARTIFACT_SPECS: [ArtifactSpec; 113] = [
     ArtifactSpec {
         artifact_id: "active_review_snapshot_v1",
         file_rel: "runtime/ucf-ops/src/models_lifecycle.rs",
@@ -304,6 +304,15 @@ const ARTIFACT_SPECS: [ArtifactSpec; 110] = [
         enum_names: &[
             "GovernanceStabilizationStatusV1",
             "GovernanceStabilizationMismatchCategoryV1",
+        ],
+    },
+    ArtifactSpec {
+        artifact_id: "governance_closure_sweep_v1",
+        file_rel: "runtime/ucf-ops/src/governance_closure_sweep.rs",
+        type_name: "GovernanceClosureSweepV1",
+        enum_names: &[
+            "GovernanceClosureStatusV1",
+            "GovernanceClosureMismatchCategoryV1",
         ],
     },
     ArtifactSpec {
@@ -667,6 +676,15 @@ const ARTIFACT_SPECS: [ArtifactSpec; 110] = [
         ],
     },
     ArtifactSpec {
+        artifact_id: "readiness_closure_sweep_v1",
+        file_rel: "runtime/ucf-ops/src/readiness_closure_sweep.rs",
+        type_name: "ReadinessClosureSweepV1",
+        enum_names: &[
+            "ReadinessClosureStatusV1",
+            "ReadinessClosureMismatchCategoryV1",
+        ],
+    },
+    ArtifactSpec {
         artifact_id: "readiness_final_consolidation_sweep_v1",
         file_rel: "runtime/ucf-ops/src/readiness_final_consolidation_sweep.rs",
         type_name: "ReadinessFinalConsolidationSweepV1",
@@ -797,6 +815,12 @@ const ARTIFACT_SPECS: [ArtifactSpec; 110] = [
         file_rel: "runtime/ucf-ops/src/v16_gate.rs",
         type_name: "V16GateReportV1",
         enum_names: &["V16GateOverallStatus"],
+    },
+    ArtifactSpec {
+        artifact_id: "v18_gate_report_v1",
+        file_rel: "runtime/ucf-ops/src/v18_gate.rs",
+        type_name: "V18GateReportV1",
+        enum_names: &["V18GateOverallStatus"],
     },
     ArtifactSpec {
         artifact_id: "v17_gate_report_v1",
@@ -1294,6 +1318,7 @@ mod tests {
                 "final_primary_semantics_residual_sweep_v1",
                 "final_readiness_consumer_authority_v1",
                 "final_readiness_residual_sweep_v1",
+                "governance_closure_sweep_v1",
                 "governance_convergence_sweep_v1",
                 "governance_final_consolidation_sweep_v1",
                 "governance_primary_surfaces_v1",
@@ -1308,6 +1333,7 @@ mod tests {
                 "primary_semantics_final_consolidation_sweep_v1",
                 "primary_semantics_observation_v1",
                 "primary_semantics_stabilization_sweep_v1",
+                "readiness_closure_sweep_v1",
                 "readiness_convergence_sweep_v1",
                 "readiness_final_consolidation_sweep_v1",
                 "readiness_gate_report_v1",
@@ -1355,6 +1381,7 @@ mod tests {
                 "v15_gate_report_v1",
                 "v16_gate_report_v1",
                 "v17_gate_report_v1",
+                "v18_gate_report_v1",
                 "v3_gate_report_v1",
                 "v4_gate_report_v1",
                 "v5_gate_report_v1",
