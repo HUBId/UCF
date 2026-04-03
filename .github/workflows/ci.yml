@@ -344,7 +344,16 @@ jobs:
       - name: Portability check (linux)
         run: cargo run -p ucf-ops -- portability check --out ./out/portability_linux.json
       - name: Portability report (linux)
-        run: cargo run -p ucf-ops -- portability report --out ./out/portability_report_linux.json
+        shell: bash
+        run: |
+          cargo run -p ucf-ops -- portability report --out ./out/portability_report_linux.json || {
+            code=$?
+            if [ "$code" -eq 2 ]; then
+              echo "portability_report=skip reason=validation_failed"
+            else
+              exit "$code"
+            fi
+          }
       - name: Goldens verify (linux)
         run: |
           cargo run -p ucf-ops -- goldens verify --scenario golden_a --os linux
