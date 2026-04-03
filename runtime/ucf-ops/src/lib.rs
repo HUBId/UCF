@@ -53,6 +53,7 @@ mod operator_review_packet;
 mod operator_signoff;
 mod operator_workflow;
 mod primary_semantics_absolute_sweep;
+mod primary_semantics_closure_sweep;
 mod primary_semantics_convergence_sweep;
 mod primary_semantics_final_consolidation_sweep;
 mod primary_semantics_residual_sweep;
@@ -374,6 +375,11 @@ pub use primary_semantics_absolute_sweep::{
     PrimarySemanticsAbsoluteSurfaceStatusV1, PrimarySemanticsAbsoluteSweepReportV1,
     ResidualFreePrimarySemanticsAbsoluteSweepStatusV1, ResidualFreePrimarySemanticsAbsoluteSweepV1,
 };
+pub use primary_semantics_closure_sweep::{
+    primary_semantics_closure_sweep, PrimarySemanticsClosureMismatchCategoryV1,
+    PrimarySemanticsClosureStatusV1, PrimarySemanticsClosureSurfaceStatusV1,
+    PrimarySemanticsClosureSweepReportV1, PrimarySemanticsClosureSweepV1,
+};
 pub use primary_semantics_convergence_sweep::{
     primary_semantics_convergence_sweep, PrimarySemanticsConvergenceMismatchCategoryV1,
     PrimarySemanticsConvergenceStatusV1, PrimarySemanticsConvergenceSurfaceStatusV1,
@@ -487,7 +493,8 @@ pub use remediation_consistency::{
     final_primary_semantics_sweep, primary_semantics_sweep, remediation_consistency_check,
     remediation_interop_check, remediation_spine_check,
     require_absolute_final_primary_semantics_terminal_inputs,
-    require_final_primary_semantics_inputs, require_primary_semantics_convergence_inputs,
+    require_final_primary_semantics_inputs, require_primary_semantics_closure_inputs,
+    require_primary_semantics_convergence_inputs,
     require_primary_semantics_final_consolidation_inputs,
     require_primary_semantics_stabilization_inputs,
     require_residual_free_final_primary_semantics_inputs,
@@ -498,10 +505,10 @@ pub use remediation_consistency::{
     CrossSurfaceConditionObservationV1, CrossSurfaceObservationStatusV1,
     FinalPrimarySemanticsConsumerAuthorityStatusV1, FinalPrimarySemanticsConsumerAuthorityV1,
     FinalPrimarySemanticsInputsContextV1, FinalPrimarySemanticsSweepReportV1,
-    PrimarySemanticsConvergenceInputsV1, PrimarySemanticsFinalConsolidationInputsV1,
-    PrimarySemanticsObservationV1, PrimarySemanticsObservedSurfaceV1,
-    PrimarySemanticsStabilizationInputsV1, PrimarySemanticsSweepReportV1,
-    RemediationConsistencyCheckV1, RemediationConsistencyObservedV1,
+    PrimarySemanticsClosureInputsV1, PrimarySemanticsConvergenceInputsV1,
+    PrimarySemanticsFinalConsolidationInputsV1, PrimarySemanticsObservationV1,
+    PrimarySemanticsObservedSurfaceV1, PrimarySemanticsStabilizationInputsV1,
+    PrimarySemanticsSweepReportV1, RemediationConsistencyCheckV1, RemediationConsistencyObservedV1,
     RemediationConsistencyReportV1, RemediationConsistencyStatusV1,
     RemediationInteropCheckReportV1, RemediationMismatchKindV1, RemediationSpineCheckReportV1,
     ResidualFreeFinalPrimarySemanticsInputsV1, ResidualFreePrimarySemanticsAbsoluteInputsV1,
@@ -509,6 +516,7 @@ pub use remediation_consistency::{
     ABSOLUTE_RESIDUAL_FREE_FINAL_PRIMARY_SEMANTICS_INPUTS_REQUIRED,
     CANONICAL_CONDITION_MODEL_REQUIRED, CANONICAL_REMEDIATION_REGISTRY_REQUIRED,
     CONVERGED_CANONICAL_PRIMARY_SEMANTICS_INPUTS_REQUIRED,
+    FINAL_CONSOLIDATED_STABILIZED_CANONICAL_PRIMARY_SEMANTICS_INPUTS_REQUIRED,
     FINAL_PRIMARY_SEMANTICS_AUTHORITY_REQUIRED, FINAL_PRIMARY_SEMANTICS_INPUTS_REQUIRED,
     HISTORICAL_PRIMARY_SEMANTICS_LINEAGE_BLOCKED, HISTORICAL_PRIMARY_SEMANTICS_LINEAGE_REJECTED,
     HISTORICAL_PRIMARY_SEMANTICS_LINEAGE_TRANSLATED, LEGACY_PRIMARY_SEMANTICS_INPUT_BLOCKED,
@@ -520,9 +528,10 @@ pub use remediation_consistency::{
     PRIMARY_SEMANTICS_ECHO_PATH_TRANSLATED, PRIMARY_SEMANTICS_FACADE_PATH_BLOCKED,
     PRIMARY_SEMANTICS_FACADE_PATH_REJECTED, PRIMARY_SEMANTICS_FACADE_PATH_TRANSLATED,
     PRIMARY_SEMANTICS_MEMO_PATH_BLOCKED, PRIMARY_SEMANTICS_MEMO_PATH_REJECTED,
-    PRIMARY_SEMANTICS_MEMO_PATH_TRANSLATED, RESIDUAL_FREE_FINAL_PRIMARY_SEMANTICS_INPUTS_REQUIRED,
-    RESIDUAL_PRIMARY_SEMANTICS_PATH_BLOCKED, RESIDUAL_PRIMARY_SEMANTICS_PATH_REJECTED,
-    RESIDUAL_PRIMARY_SEMANTICS_PATH_TRANSLATED,
+    PRIMARY_SEMANTICS_MEMO_PATH_TRANSLATED, PRIMARY_SEMANTICS_WRAPPER_PATH_BLOCKED,
+    PRIMARY_SEMANTICS_WRAPPER_PATH_REJECTED, PRIMARY_SEMANTICS_WRAPPER_PATH_TRANSLATED,
+    RESIDUAL_FREE_FINAL_PRIMARY_SEMANTICS_INPUTS_REQUIRED, RESIDUAL_PRIMARY_SEMANTICS_PATH_BLOCKED,
+    RESIDUAL_PRIMARY_SEMANTICS_PATH_REJECTED, RESIDUAL_PRIMARY_SEMANTICS_PATH_TRANSLATED,
     STABILIZED_CONVERGED_CANONICAL_PRIMARY_SEMANTICS_INPUTS_REQUIRED,
     TERMINAL_ABSOLUTE_RESIDUAL_FREE_FINAL_PRIMARY_SEMANTICS_INPUTS_REQUIRED,
     ULTIMATE_TERMINAL_ABSOLUTE_PRIMARY_SEMANTICS_INPUTS_REQUIRED,
@@ -16724,6 +16733,7 @@ pub struct PortabilityReportV1 {
     pub primary_semantics_convergence_sweep_smoke: PortabilityCommandCheck,
     pub primary_semantics_stabilization_sweep_smoke: PortabilityCommandCheck,
     pub primary_semantics_final_consolidation_sweep_smoke: PortabilityCommandCheck,
+    primary_semantics_closure_sweep_smoke: PortabilityCommandCheck,
     pub remediation_spine_check_smoke: PortabilityCommandCheck,
     pub supported_set_apply_smoke: PortabilityCommandCheck,
     pub review_truth_check_smoke: PortabilityCommandCheck,
@@ -19877,6 +19887,36 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
                 || detail.contains("PRIMARY_SEMANTICS_FINAL_CONSOLIDATION_INPUTS_REQUIRED")
         },
     );
+    let primary_semantics_closure_sweep_smoke = out_smoke_check_with_skip(
+        "primary_semantics_closure_sweep_smoke",
+        "./out/primary_semantics_closure_sweep.json",
+        |out_path| primary_semantics_closure_sweep(workdir, out_path),
+        |report| {
+            format!(
+                "closure_status={:?} mismatch_categories={}",
+                report.sweep.closure_status,
+                report
+                    .surfaces
+                    .iter()
+                    .map(|surface| surface.mismatch_categories.len())
+                    .sum::<usize>()
+            )
+        },
+        |detail| {
+            detail.contains(LEGACY_SCOPE_PATH_BLOCKED)
+                || detail.contains(APPLIED_SCOPE_REQUIRED)
+                || detail.contains(APPLIED_SCOPE_MISSING)
+                || detail.contains(APPLIED_SCOPE_TRANSLATION_FAILED)
+                || detail.contains("APPLIED_SCOPE_SLOT_TRUTH_MISSING")
+                || detail.contains("SUPPORTED_SET_POLICY_V2_MISSING")
+                || detail.contains("CANONICAL_EXPORT_REFS_REQUIRED")
+                || detail.contains("EXPORT_CONTEXT_REQUIRED")
+                || detail.contains("PACK_ARTIFACT_REFS_REQUIRED")
+                || detail.contains(
+                    "FINAL_CONSOLIDATED_STABILIZED_CANONICAL_PRIMARY_SEMANTICS_INPUTS_REQUIRED",
+                )
+        },
+    );
     let remediation_interop_check_smoke = {
         let out_path = PathBuf::from("./out/remediation_interop_check.json");
         match remediation_interop_check(&out_path) {
@@ -20178,6 +20218,7 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
     command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- primary-semantics-convergence-sweep --out ./out/primary_semantics_convergence_sweep.json"));
     command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- primary-semantics-stabilization-sweep --out ./out/primary_semantics_stabilization_sweep.json"));
     command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- primary-semantics-final-consolidation-sweep --out ./out/primary_semantics_final_consolidation_sweep.json"));
+    command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- primary-semantics-closure-sweep --out ./out/primary_semantics_closure_sweep.json"));
     command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- remediation-interop-check --out ./out/remediation_interop_check.json"));
     command_matrix.push(matrix_cmd(
         "linux",
@@ -20341,6 +20382,7 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
     command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- primary-semantics-convergence-sweep --out ./out/primary_semantics_convergence_sweep.json"));
     command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- primary-semantics-stabilization-sweep --out ./out/primary_semantics_stabilization_sweep.json"));
     command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- primary-semantics-final-consolidation-sweep --out ./out/primary_semantics_final_consolidation_sweep.json"));
+    command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- primary-semantics-closure-sweep --out ./out/primary_semantics_closure_sweep.json"));
     command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- remediation-interop-check --out ./out/remediation_interop_check.json"));
     command_matrix.push(matrix_cmd(
         "windows",
@@ -20445,6 +20487,7 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         primary_semantics_convergence_sweep_smoke,
         primary_semantics_stabilization_sweep_smoke,
         primary_semantics_final_consolidation_sweep_smoke,
+        primary_semantics_closure_sweep_smoke,
         remediation_spine_check_smoke,
         supported_set_apply_smoke,
         review_truth_check_smoke,

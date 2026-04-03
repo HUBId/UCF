@@ -40,3 +40,5 @@ cargo run -p ucf-ops -- primary-semantics-stabilization-sweep --out ./out/primar
 ```
 
 > v18 update: `primary-semantics-final-consolidation-sweep` removes remaining canonical primary-semantics facade/alias/shadow residues from canonical consumer flows and emits `PrimarySemanticsFinalConsolidationSweepV1`.
+
+> v19 update: closure is finalized by `primary-semantics-closure-sweep`, which enforces final-consolidated canonical-only primary semantics across covered canonical surfaces.
