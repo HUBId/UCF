@@ -41,6 +41,7 @@ mod governance_entry_check;
 mod governance_entry_sweep;
 mod governance_final_consolidation_sweep;
 mod governance_residual_sweep;
+mod governance_seal_sweep;
 mod governance_stabilization_sweep;
 mod governance_surfaces;
 mod governance_terminal_sweep;
@@ -211,13 +212,15 @@ pub use final_governance_authority::{
     require_absolute_final_governance_terminal_inputs, require_final_governance_authority,
     require_final_governance_inputs, require_governance_closure_inputs,
     require_governance_convergence_inputs, require_governance_final_consolidation_inputs,
-    require_governance_stabilization_inputs, require_residual_free_final_governance_inputs,
+    require_governance_seal_inputs, require_governance_stabilization_inputs,
+    require_residual_free_final_governance_inputs,
     require_residual_free_governance_absolute_inputs, require_terminal_governance_ultimate_inputs,
     AbsoluteFinalGovernanceTerminalInputsV1, FinalGovernanceAuthorityContextV1,
     GovernanceClosureInputsV1, GovernanceConvergenceInputsV1, GovernanceFinalConsolidationInputsV1,
-    GovernanceStabilizationInputsV1, ResidualFreeFinalGovernanceInputsV1,
+    GovernanceSealInputsV1, GovernanceStabilizationInputsV1, ResidualFreeFinalGovernanceInputsV1,
     ResidualFreeGovernanceAbsoluteInputsV1, TerminalGovernanceUltimateInputsV1,
     ABSOLUTE_RESIDUAL_FREE_FINAL_GOVERNANCE_INPUTS_REQUIRED,
+    CLOSURE_COMPLETE_FINAL_CONSOLIDATED_STABILIZED_CANONICAL_GOVERNANCE_INPUTS_REQUIRED,
     CONVERGED_CANONICAL_GOVERNANCE_INPUTS_REQUIRED,
     FINAL_CONSOLIDATED_STABILIZED_CANONICAL_GOVERNANCE_INPUTS_REQUIRED,
     FINAL_GOVERNANCE_AUTHORITY_REQUIRED, FINAL_GOVERNANCE_INPUTS_REQUIRED,
@@ -226,7 +229,8 @@ pub use final_governance_authority::{
     GOVERNANCE_CACHE_PATH_REJECTED, GOVERNANCE_CACHE_PATH_TRANSLATED, GOVERNANCE_ECHO_PATH_BLOCKED,
     GOVERNANCE_FACADE_PATH_BLOCKED, GOVERNANCE_FACADE_PATH_REJECTED,
     GOVERNANCE_FACADE_PATH_TRANSLATED, GOVERNANCE_MEMO_PATH_BLOCKED, GOVERNANCE_MEMO_PATH_REJECTED,
-    GOVERNANCE_MEMO_PATH_TRANSLATED, GOVERNANCE_WRAPPER_PATH_BLOCKED,
+    GOVERNANCE_MEMO_PATH_TRANSLATED, GOVERNANCE_SHELL_PATH_BLOCKED, GOVERNANCE_SHELL_PATH_REJECTED,
+    GOVERNANCE_SHELL_PATH_TRANSLATED, GOVERNANCE_WRAPPER_PATH_BLOCKED,
     GOVERNANCE_WRAPPER_PATH_REJECTED, GOVERNANCE_WRAPPER_PATH_TRANSLATED,
     LEGACY_GOVERNANCE_INPUT_BLOCKED, RESIDUAL_FREE_FINAL_GOVERNANCE_INPUTS_REQUIRED,
     RESIDUAL_GOVERNANCE_PATH_BLOCKED, STABILIZED_CONVERGED_CANONICAL_GOVERNANCE_INPUTS_REQUIRED,
@@ -285,6 +289,10 @@ pub use governance_residual_sweep::{
     governance_residual_sweep, FinalGovernanceResidualSweepV1, GovernanceResidualConsumerStatusV1,
     GovernanceResidualMismatchCategoryV1, GovernanceResidualSweepReportV1,
     GovernanceResidualSweepStatusV1,
+};
+pub use governance_seal_sweep::{
+    governance_seal_sweep, GovernanceSealConsumerStatusV1, GovernanceSealMismatchCategoryV1,
+    GovernanceSealStatusV1, GovernanceSealSweepReportV1, GovernanceSealSweepV1,
 };
 pub use governance_stabilization_sweep::{
     governance_stabilization_sweep, GovernanceStabilizationConsumerStatusV1,
@@ -20298,6 +20306,10 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
     command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- governance-stabilization-sweep --out ./out/governance_stabilization_sweep.json"));
     command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- governance-final-consolidation-sweep --out ./out/governance_final_consolidation_sweep.json"));
     command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- governance-closure-sweep --out ./out/governance_closure_sweep.json"));
+    command_matrix.push(matrix_cmd(
+        "linux",
+        "cargo run -p ucf-ops -- governance-seal-sweep --out ./out/governance_seal_sweep.json",
+    ));
     command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- models supported-scope-execute-v8 --out ./out/supported_scope_execute_v8.json --workdir ."));
     command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- models supported-scope-execute-v9 --out ./out/supported_scope_execute_v9.json --workdir ."));
     command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- models supported-scope-execute-v10 --out ./out/supported_scope_execute_v10.json --workdir ."));
@@ -20467,6 +20479,10 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
     command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- governance-stabilization-sweep --out ./out/governance_stabilization_sweep.json"));
     command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- governance-final-consolidation-sweep --out ./out/governance_final_consolidation_sweep.json"));
     command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- governance-closure-sweep --out ./out/governance_closure_sweep.json"));
+    command_matrix.push(matrix_cmd(
+        "windows",
+        "cargo run -p ucf-ops -- governance-seal-sweep --out ./out/governance_seal_sweep.json",
+    ));
     command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- models supported-scope-execute-v8 --out ./out/supported_scope_execute_v8.json --workdir ."));
     command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- models supported-scope-execute-v9 --out ./out/supported_scope_execute_v9.json --workdir ."));
     command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- models supported-scope-execute-v10 --out ./out/supported_scope_execute_v10.json --workdir ."));

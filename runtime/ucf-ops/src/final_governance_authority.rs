@@ -5,13 +5,14 @@ use crate::{
     AbsoluteFinalGovernanceTerminalSweepV1, AppliedSupportedSetContextV1,
     CanonicalGovernanceEntryAuthorityV2, CanonicalGovernanceEntryV1,
     FinalGovernanceConsumerAuthorityStatusV1, FinalGovernanceConsumerAuthorityV1,
-    FinalGovernanceResidualSweepV1, GovernanceConvergenceStatusV1, GovernanceConvergenceSweepV1,
-    GovernanceEntryAuthorityStatusV2, GovernanceFinalConsolidationStatusV1,
-    GovernanceFinalConsolidationSweepV1, GovernanceResidualSweepStatusV1,
-    GovernanceStabilizationStatusV1, GovernanceStabilizationSweepV1, OpsError,
-    ResidualFreeGovernanceAbsoluteSweepStatusV1, ResidualFreeGovernanceAbsoluteSweepV1,
-    ResidualFreeGovernanceConsumerAuthorityStatusV1, ResidualFreeGovernanceConsumerAuthorityV1,
-    TerminalGovernanceUltimateSweepStatusV1, TerminalGovernanceUltimateSweepV1,
+    FinalGovernanceResidualSweepV1, GovernanceClosureStatusV1, GovernanceClosureSweepV1,
+    GovernanceConvergenceStatusV1, GovernanceConvergenceSweepV1, GovernanceEntryAuthorityStatusV2,
+    GovernanceFinalConsolidationStatusV1, GovernanceFinalConsolidationSweepV1,
+    GovernanceResidualSweepStatusV1, GovernanceStabilizationStatusV1,
+    GovernanceStabilizationSweepV1, OpsError, ResidualFreeGovernanceAbsoluteSweepStatusV1,
+    ResidualFreeGovernanceAbsoluteSweepV1, ResidualFreeGovernanceConsumerAuthorityStatusV1,
+    ResidualFreeGovernanceConsumerAuthorityV1, TerminalGovernanceUltimateSweepStatusV1,
+    TerminalGovernanceUltimateSweepV1,
 };
 
 pub const FINAL_GOVERNANCE_AUTHORITY_REQUIRED: &str = "FINAL_GOVERNANCE_AUTHORITY_REQUIRED";
@@ -51,6 +52,11 @@ pub const FINAL_CONSOLIDATED_STABILIZED_CANONICAL_GOVERNANCE_INPUTS_REQUIRED: &s
 pub const GOVERNANCE_WRAPPER_PATH_BLOCKED: &str = "GOVERNANCE_WRAPPER_PATH_BLOCKED";
 pub const GOVERNANCE_WRAPPER_PATH_TRANSLATED: &str = "GOVERNANCE_WRAPPER_PATH_TRANSLATED";
 pub const GOVERNANCE_WRAPPER_PATH_REJECTED: &str = "GOVERNANCE_WRAPPER_PATH_REJECTED";
+pub const CLOSURE_COMPLETE_FINAL_CONSOLIDATED_STABILIZED_CANONICAL_GOVERNANCE_INPUTS_REQUIRED:
+    &str = "CLOSURE_COMPLETE_FINAL_CONSOLIDATED_STABILIZED_CANONICAL_GOVERNANCE_INPUTS_REQUIRED";
+pub const GOVERNANCE_SHELL_PATH_BLOCKED: &str = "GOVERNANCE_SHELL_PATH_BLOCKED";
+pub const GOVERNANCE_SHELL_PATH_TRANSLATED: &str = "GOVERNANCE_SHELL_PATH_TRANSLATED";
+pub const GOVERNANCE_SHELL_PATH_REJECTED: &str = "GOVERNANCE_SHELL_PATH_REJECTED";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ResidualFreeFinalGovernanceInputsV1 {
@@ -167,6 +173,24 @@ pub struct GovernanceClosureInputsV1 {
     pub governance_convergence_sweep_digest_prefix: String,
     pub governance_stabilization_sweep_digest_prefix: String,
     pub governance_final_consolidation_sweep_digest_prefix: String,
+    pub authority_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct GovernanceSealInputsV1 {
+    pub applied_supported_set_digest_prefix: String,
+    pub canonical_governance_entry_digest_prefix: String,
+    pub canonical_governance_authority_digest_prefix: String,
+    pub final_governance_consumer_authority_digest_prefix: String,
+    pub final_governance_residual_sweep_digest_prefix: String,
+    pub residual_free_governance_consumer_authority_digest_prefix: String,
+    pub residual_free_governance_absolute_sweep_digest_prefix: String,
+    pub absolute_final_governance_terminal_sweep_digest_prefix: String,
+    pub terminal_governance_ultimate_sweep_digest_prefix: String,
+    pub governance_convergence_sweep_digest_prefix: String,
+    pub governance_stabilization_sweep_digest_prefix: String,
+    pub governance_final_consolidation_sweep_digest_prefix: String,
+    pub governance_closure_sweep_digest_prefix: String,
     pub authority_digest: String,
 }
 
@@ -1060,6 +1084,166 @@ pub fn require_governance_closure_inputs(
         governance_stabilization_sweep_digest_prefix: consolidation_inputs
             .governance_stabilization_sweep_digest_prefix,
         governance_final_consolidation_sweep_digest_prefix: expected_final_consolidation_prefix,
+        authority_digest: crate::sha256_hex(&bytes),
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn require_governance_seal_inputs(
+    applied: Option<&AppliedSupportedSetContextV1>,
+    entry: Option<&CanonicalGovernanceEntryV1>,
+    authority: Option<&CanonicalGovernanceEntryAuthorityV2>,
+    final_consumer: Option<&FinalGovernanceConsumerAuthorityV1>,
+    residual_sweep: Option<&FinalGovernanceResidualSweepV1>,
+    residual_free_consumer: Option<&ResidualFreeGovernanceConsumerAuthorityV1>,
+    absolute_sweep: Option<&ResidualFreeGovernanceAbsoluteSweepV1>,
+    terminal_sweep: Option<&AbsoluteFinalGovernanceTerminalSweepV1>,
+    ultimate_sweep: Option<&TerminalGovernanceUltimateSweepV1>,
+    convergence_sweep: Option<&GovernanceConvergenceSweepV1>,
+    stabilization_sweep: Option<&GovernanceStabilizationSweepV1>,
+    final_consolidation_sweep: Option<&GovernanceFinalConsolidationSweepV1>,
+    closure_sweep: Option<&GovernanceClosureSweepV1>,
+) -> Result<GovernanceSealInputsV1, OpsError> {
+    let closure_inputs = require_governance_closure_inputs(
+        applied,
+        entry,
+        authority,
+        final_consumer,
+        residual_sweep,
+        residual_free_consumer,
+        absolute_sweep,
+        terminal_sweep,
+        ultimate_sweep,
+        convergence_sweep,
+        stabilization_sweep,
+        final_consolidation_sweep,
+    )?;
+    let Some(closure_sweep) = closure_sweep else {
+        return Err(OpsError::Invalid(
+            CLOSURE_COMPLETE_FINAL_CONSOLIDATED_STABILIZED_CANONICAL_GOVERNANCE_INPUTS_REQUIRED
+                .to_string(),
+        ));
+    };
+    let expected_closure_prefix = prefix_hex(&closure_sweep.closure_digest, 16);
+    if !matches!(
+        closure_sweep.closure_status,
+        GovernanceClosureStatusV1::Pass
+    ) || closure_sweep.applied_supported_set_digest_prefix
+        != closure_inputs.applied_supported_set_digest_prefix
+        || closure_sweep.canonical_governance_entry_digest_prefix
+            != closure_inputs.canonical_governance_entry_digest_prefix
+        || closure_sweep.canonical_governance_authority_digest_prefix
+            != closure_inputs.canonical_governance_authority_digest_prefix
+        || closure_sweep.final_governance_consumer_authority_digest_prefix
+            != closure_inputs.final_governance_consumer_authority_digest_prefix
+        || closure_sweep.final_governance_residual_sweep_digest_prefix
+            != closure_inputs.final_governance_residual_sweep_digest_prefix
+        || closure_sweep.residual_free_governance_consumer_authority_digest_prefix
+            != closure_inputs.residual_free_governance_consumer_authority_digest_prefix
+        || closure_sweep.residual_free_governance_absolute_sweep_digest_prefix
+            != closure_inputs.residual_free_governance_absolute_sweep_digest_prefix
+        || closure_sweep.absolute_final_governance_terminal_sweep_digest_prefix
+            != closure_inputs.absolute_final_governance_terminal_sweep_digest_prefix
+        || closure_sweep.terminal_governance_ultimate_sweep_digest_prefix
+            != closure_inputs.terminal_governance_ultimate_sweep_digest_prefix
+        || closure_sweep.governance_convergence_sweep_digest_prefix
+            != closure_inputs.governance_convergence_sweep_digest_prefix
+        || closure_sweep.governance_stabilization_sweep_digest_prefix
+            != closure_inputs.governance_stabilization_sweep_digest_prefix
+        || closure_sweep.governance_final_consolidation_sweep_digest_prefix
+            != closure_inputs.governance_final_consolidation_sweep_digest_prefix
+    {
+        return Err(OpsError::Invalid(GOVERNANCE_SHELL_PATH_BLOCKED.to_string()));
+    }
+
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(b"governance_seal_inputs_v1");
+    bytes.extend_from_slice(
+        closure_inputs
+            .applied_supported_set_digest_prefix
+            .as_bytes(),
+    );
+    bytes.extend_from_slice(
+        closure_inputs
+            .canonical_governance_entry_digest_prefix
+            .as_bytes(),
+    );
+    bytes.extend_from_slice(
+        closure_inputs
+            .canonical_governance_authority_digest_prefix
+            .as_bytes(),
+    );
+    bytes.extend_from_slice(
+        closure_inputs
+            .final_governance_consumer_authority_digest_prefix
+            .as_bytes(),
+    );
+    bytes.extend_from_slice(
+        closure_inputs
+            .final_governance_residual_sweep_digest_prefix
+            .as_bytes(),
+    );
+    bytes.extend_from_slice(
+        closure_inputs
+            .residual_free_governance_consumer_authority_digest_prefix
+            .as_bytes(),
+    );
+    bytes.extend_from_slice(
+        closure_inputs
+            .residual_free_governance_absolute_sweep_digest_prefix
+            .as_bytes(),
+    );
+    bytes.extend_from_slice(
+        closure_inputs
+            .absolute_final_governance_terminal_sweep_digest_prefix
+            .as_bytes(),
+    );
+    bytes.extend_from_slice(
+        closure_inputs
+            .terminal_governance_ultimate_sweep_digest_prefix
+            .as_bytes(),
+    );
+    bytes.extend_from_slice(
+        closure_inputs
+            .governance_convergence_sweep_digest_prefix
+            .as_bytes(),
+    );
+    bytes.extend_from_slice(
+        closure_inputs
+            .governance_stabilization_sweep_digest_prefix
+            .as_bytes(),
+    );
+    bytes.extend_from_slice(
+        closure_inputs
+            .governance_final_consolidation_sweep_digest_prefix
+            .as_bytes(),
+    );
+    bytes.extend_from_slice(expected_closure_prefix.as_bytes());
+    Ok(GovernanceSealInputsV1 {
+        applied_supported_set_digest_prefix: closure_inputs.applied_supported_set_digest_prefix,
+        canonical_governance_entry_digest_prefix: closure_inputs
+            .canonical_governance_entry_digest_prefix,
+        canonical_governance_authority_digest_prefix: closure_inputs
+            .canonical_governance_authority_digest_prefix,
+        final_governance_consumer_authority_digest_prefix: closure_inputs
+            .final_governance_consumer_authority_digest_prefix,
+        final_governance_residual_sweep_digest_prefix: closure_inputs
+            .final_governance_residual_sweep_digest_prefix,
+        residual_free_governance_consumer_authority_digest_prefix: closure_inputs
+            .residual_free_governance_consumer_authority_digest_prefix,
+        residual_free_governance_absolute_sweep_digest_prefix: closure_inputs
+            .residual_free_governance_absolute_sweep_digest_prefix,
+        absolute_final_governance_terminal_sweep_digest_prefix: closure_inputs
+            .absolute_final_governance_terminal_sweep_digest_prefix,
+        terminal_governance_ultimate_sweep_digest_prefix: closure_inputs
+            .terminal_governance_ultimate_sweep_digest_prefix,
+        governance_convergence_sweep_digest_prefix: closure_inputs
+            .governance_convergence_sweep_digest_prefix,
+        governance_stabilization_sweep_digest_prefix: closure_inputs
+            .governance_stabilization_sweep_digest_prefix,
+        governance_final_consolidation_sweep_digest_prefix: closure_inputs
+            .governance_final_consolidation_sweep_digest_prefix,
+        governance_closure_sweep_digest_prefix: expected_closure_prefix,
         authority_digest: crate::sha256_hex(&bytes),
     })
 }

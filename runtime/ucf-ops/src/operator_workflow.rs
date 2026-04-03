@@ -101,6 +101,8 @@ pub struct OperatorWorkflowChainV1 {
     #[serde(default)]
     pub governance_closure_sweep_digest_prefix: String,
     #[serde(default)]
+    pub governance_seal_sweep_digest_prefix: String,
+    #[serde(default)]
     pub governance_stabilization_sweep_digest_prefix: String,
     #[serde(default)]
     pub bundle_stabilization_sweep_digest_prefix: String,
@@ -406,6 +408,7 @@ impl OperatorWorkflowPolicyV1 {
             readiness_closure_sweep_digest_prefix: "MISSING".to_string(),
             governance_final_consolidation_sweep_digest_prefix: "MISSING".to_string(),
             governance_closure_sweep_digest_prefix: "MISSING".to_string(),
+            governance_seal_sweep_digest_prefix: "MISSING".to_string(),
             governance_stabilization_sweep_digest_prefix: "MISSING".to_string(),
             bundle_stabilization_sweep_digest_prefix: "MISSING".to_string(),
             primary_semantics_stabilization_sweep_digest_prefix: "MISSING".to_string(),
@@ -574,6 +577,9 @@ pub fn operator_workflow_chain(
         "sweep.closure_digest",
     )
     .unwrap_or_else(|| "MISSING".to_string());
+    chain.governance_seal_sweep_digest_prefix =
+        discover_digest_prefix(&out_root, "governance_seal_sweep.json", "sweep.seal_digest")
+            .unwrap_or_else(|| "MISSING".to_string());
     chain.governance_stabilization_sweep_digest_prefix = discover_digest_prefix(
         &out_root,
         "governance_stabilization_sweep.json",
@@ -820,6 +826,7 @@ mod tests {
             readiness_closure_sweep_digest_prefix: "MISSING".to_string(),
             governance_final_consolidation_sweep_digest_prefix: "MISSING".to_string(),
             governance_closure_sweep_digest_prefix: "MISSING".to_string(),
+            governance_seal_sweep_digest_prefix: "MISSING".to_string(),
             final_primary_semantics_residual_sweep_digest_prefix: "MISSING".to_string(),
             residual_free_primary_semantics_authority_digest_prefix: "MISSING".to_string(),
             primary_semantics_absolute_sweep_digest_prefix: "MISSING".to_string(),
@@ -881,6 +888,7 @@ mod tests {
             readiness_closure_sweep_digest_prefix: "MISSING".to_string(),
             governance_final_consolidation_sweep_digest_prefix: "MISSING".to_string(),
             governance_closure_sweep_digest_prefix: "MISSING".to_string(),
+            governance_seal_sweep_digest_prefix: "MISSING".to_string(),
             final_primary_semantics_residual_sweep_digest_prefix: "MISSING".to_string(),
             residual_free_primary_semantics_authority_digest_prefix: "MISSING".to_string(),
             primary_semantics_absolute_sweep_digest_prefix: "MISSING".to_string(),
@@ -959,6 +967,7 @@ mod tests {
                 readiness_closure_sweep_digest_prefix: "MISSING".to_string(),
                 governance_final_consolidation_sweep_digest_prefix: "MISSING".to_string(),
                 governance_closure_sweep_digest_prefix: "MISSING".to_string(),
+                governance_seal_sweep_digest_prefix: "MISSING".to_string(),
                 final_primary_semantics_residual_sweep_digest_prefix: "MISSING".to_string(),
                 residual_free_primary_semantics_authority_digest_prefix: "MISSING".to_string(),
                 primary_semantics_absolute_sweep_digest_prefix: "MISSING".to_string(),

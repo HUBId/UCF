@@ -52,6 +52,7 @@ Snapshots are generated under `docs/artifact_schema_snapshots/`:
 - `governance_stabilization_sweep_v1.json` (v17 governance stabilization contract)
 - `governance_final_consolidation_sweep_v1.json` (v18 governance final-consolidation contract)
 - `governance_closure_sweep_v1.json` (v19 governance closure contract)
+- `governance_seal_sweep_v1.json` (v20 governance seal contract)
 - `governance_primary_surfaces_v1.json`
 - `interop_consistency_matrix_report_v1.json`
 - `operator_report_v1.json`

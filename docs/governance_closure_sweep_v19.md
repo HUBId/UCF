@@ -28,3 +28,5 @@ Wenn `GovernanceClosureSweepV1` nicht PASS ist, muss die Execution auf `REAFFIRM
 ```bash
 cargo run -p ucf-ops -- governance-closure-sweep --out ./out/governance_closure_sweep.json
 ```
+
+> v20 adds `governance-seal-sweep` and seals remaining canonical shell/bridge/auxiliary governance residues across covered consumers.
