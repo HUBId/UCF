@@ -149,6 +149,14 @@ fn portability_report_v11_contains_final_sweep_sections_in_stable_order() {
         .iter()
         .position(|c| c.contains("models supported-scope-execute-v10"))
         .expect("supported-scope-execute-v10 command present");
+    let governance_closure_idx = names
+        .iter()
+        .position(|c| c.contains("governance-closure-sweep"))
+        .expect("governance-closure-sweep command present");
+    let supported_execute_v14_idx = names
+        .iter()
+        .position(|c| c.contains("models supported-scope-execute-v14"))
+        .expect("supported-scope-execute-v14 command present");
     let readiness_residual_idx = names
         .iter()
         .position(|c| c.contains("readiness-residual-sweep"))
@@ -181,6 +189,14 @@ fn portability_report_v11_contains_final_sweep_sections_in_stable_order() {
         .iter()
         .position(|c| c.contains("bundle-ultimate-sweep"))
         .expect("bundle-ultimate-sweep command present");
+    let readiness_closure_idx = names
+        .iter()
+        .position(|c| c.contains("readiness-closure-sweep"))
+        .expect("readiness-closure-sweep command present");
+    let bundle_closure_idx = names
+        .iter()
+        .position(|c| c.contains("bundle-closure-sweep"))
+        .expect("bundle-closure-sweep command present");
     let primary_residual_idx = names
         .iter()
         .position(|c| c.contains("primary-semantics-residual-sweep"))
@@ -205,6 +221,10 @@ fn portability_report_v11_contains_final_sweep_sections_in_stable_order() {
         .iter()
         .position(|c| c.contains("primary-semantics-final-consolidation-sweep"))
         .expect("primary-semantics-final-consolidation-sweep command present");
+    let primary_closure_idx = names
+        .iter()
+        .position(|c| c.contains("primary-semantics-closure-sweep"))
+        .expect("primary-semantics-closure-sweep command present");
 
     assert!(governance_idx < governance_entry_idx);
     assert!(governance_entry_idx < governance_entry_sweep_idx);
@@ -228,14 +248,18 @@ fn portability_report_v11_contains_final_sweep_sections_in_stable_order() {
     assert!(governance_terminal_idx < supported_execute_v8_idx);
     assert!(supported_execute_v8_idx < supported_execute_v9_idx);
     assert!(supported_execute_v9_idx < supported_execute_v10_idx);
+    assert!(governance_closure_idx < supported_execute_v10_idx);
+    assert!(governance_closure_idx < supported_execute_v14_idx);
     assert!(supported_execute_v8_idx < readiness_residual_idx);
     assert!(readiness_residual_idx < residual_free_readiness_idx);
     assert!(residual_free_readiness_idx < readiness_terminal_idx);
     assert!(readiness_terminal_idx < readiness_ultimate_idx);
+    assert!(readiness_ultimate_idx < readiness_closure_idx);
     assert!(readiness_terminal_idx < bundle_residual_idx);
     assert!(bundle_residual_idx < residual_free_bundle_idx);
     assert!(residual_free_bundle_idx < bundle_terminal_idx);
     assert!(bundle_terminal_idx < bundle_ultimate_idx);
+    assert!(bundle_ultimate_idx < bundle_closure_idx);
     assert!(bundle_terminal_idx < primary_residual_idx);
     assert!(residual_free_bundle_idx < primary_residual_idx);
     assert!(primary_residual_idx < residual_free_primary_idx);
@@ -243,6 +267,7 @@ fn portability_report_v11_contains_final_sweep_sections_in_stable_order() {
     assert!(primary_terminal_idx < primary_ultimate_idx);
     assert!(primary_ultimate_idx < primary_convergence_idx);
     assert!(primary_convergence_idx < primary_final_consolidation_idx);
+    assert!(primary_final_consolidation_idx < primary_closure_idx);
     assert!(interop_idx < active_idx);
     assert!(active_idx < backend_idx);
     assert!(backend_idx < repro_idx);
@@ -339,12 +364,30 @@ fn portability_report_v11_skips_optional_backend_resolution_cleanly() {
     );
     assert!(
         matches!(
+            report.governance_closure_sweep_smoke.status,
+            ucf_ops::PortabilityGateStatus::Pass
+                | ucf_ops::PortabilityGateStatus::Skip
+                | ucf_ops::PortabilityGateStatus::Fail
+        ),
+        "governance_closure_sweep_smoke must emit explicit PASS/FAIL/SKIP"
+    );
+    assert!(
+        matches!(
             report.supported_scope_execute_v13_smoke.status,
             ucf_ops::PortabilityGateStatus::Pass
                 | ucf_ops::PortabilityGateStatus::Skip
                 | ucf_ops::PortabilityGateStatus::Fail
         ),
         "supported_scope_execute_v13_smoke must emit explicit PASS/FAIL/SKIP"
+    );
+    assert!(
+        matches!(
+            report.supported_scope_execute_v14_smoke.status,
+            ucf_ops::PortabilityGateStatus::Pass
+                | ucf_ops::PortabilityGateStatus::Skip
+                | ucf_ops::PortabilityGateStatus::Fail
+        ),
+        "supported_scope_execute_v14_smoke must emit explicit PASS/FAIL/SKIP"
     );
     assert!(
         matches!(
@@ -406,6 +449,15 @@ fn portability_report_v11_skips_optional_backend_resolution_cleanly() {
     );
     assert!(
         matches!(
+            report.readiness_closure_sweep_smoke.status,
+            ucf_ops::PortabilityGateStatus::Pass
+                | ucf_ops::PortabilityGateStatus::Skip
+                | ucf_ops::PortabilityGateStatus::Fail
+        ),
+        "readiness_closure_sweep_smoke must emit explicit PASS/FAIL/SKIP"
+    );
+    assert!(
+        matches!(
             report.bundle_residual_sweep_smoke.status,
             ucf_ops::PortabilityGateStatus::Pass | ucf_ops::PortabilityGateStatus::Skip
         ),
@@ -440,6 +492,15 @@ fn portability_report_v11_skips_optional_backend_resolution_cleanly() {
                 | ucf_ops::PortabilityGateStatus::Fail
         ),
         "bundle_final_consolidation_sweep_smoke must emit explicit PASS/FAIL/SKIP"
+    );
+    assert!(
+        matches!(
+            report.bundle_closure_sweep_smoke.status,
+            ucf_ops::PortabilityGateStatus::Pass
+                | ucf_ops::PortabilityGateStatus::Skip
+                | ucf_ops::PortabilityGateStatus::Fail
+        ),
+        "bundle_closure_sweep_smoke must emit explicit PASS/FAIL/SKIP"
     );
     assert!(
         matches!(
@@ -479,5 +540,14 @@ fn portability_report_v11_skips_optional_backend_resolution_cleanly() {
                 | ucf_ops::PortabilityGateStatus::Fail
         ),
         "primary_semantics_final_consolidation_sweep_smoke must emit explicit PASS/FAIL/SKIP"
+    );
+    assert!(
+        matches!(
+            report.primary_semantics_closure_sweep_smoke.status,
+            ucf_ops::PortabilityGateStatus::Pass
+                | ucf_ops::PortabilityGateStatus::Skip
+                | ucf_ops::PortabilityGateStatus::Fail
+        ),
+        "primary_semantics_closure_sweep_smoke must emit explicit PASS/FAIL/SKIP"
     );
 }

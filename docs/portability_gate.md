@@ -1,4 +1,4 @@
-# Portability Gate v18 Refresh (Linux + Windows)
+# Portability Gate v19 Refresh (Linux + Windows)
 
 `Portability Gate` blocks merges when core runtime/ops checks are not cross-platform safe.
 
@@ -493,4 +493,24 @@ cargo run -p ucf-ops -- portability report --out ./out/portability_report.json
 - `docs/readiness_final_consolidation_sweep_v18.md`
 - `docs/bundle_final_consolidation_sweep_v18.md`
 - `docs/primary_semantics_final_consolidation_sweep_v18.md`
+- `docs/artifact_schema_snapshots.md`
+
+## v19 closure refresh (bounded smoke extension)
+
+- Added bounded Linux/Windows portability smoke coverage for:
+  - `governance-closure-sweep`
+  - `models supported-scope-execute-v14`
+  - `readiness-closure-sweep`
+  - `bundle-closure-sweep`
+  - `primary-semantics-closure-sweep`
+- The v19 closure additions remain offline, deterministic, hardware-neutral, and bounded.
+- Optional backend/scope paths still emit clean `SKIP` (not panic), while docs/path/hardware/schema/closure regressions remain blocking failures.
+
+## v19 docs covered by portability/docs gates
+
+- `docs/governance_closure_sweep_v19.md`
+- `docs/supported_scope_execution_v19.md`
+- `docs/readiness_closure_sweep_v19.md`
+- `docs/bundle_closure_sweep_v19.md`
+- `docs/primary_semantics_closure_sweep_v19.md`
 - `docs/artifact_schema_snapshots.md`

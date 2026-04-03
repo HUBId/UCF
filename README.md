@@ -43,6 +43,8 @@ See `docs/feature_matrix.md` for details.
 - `cargo run -p ucf-ops -- models supported-scope-execute-v10 --out ./out/supported_scope_execute_v10.json --workdir .`
 - `cargo run -p ucf-ops -- models supported-scope-execute-v12 --out ./out/supported_scope_execute_v12.json --workdir .`
 - `cargo run -p ucf-ops -- models supported-scope-execute-v13 --out ./out/supported_scope_execute_v13.json --workdir .`
+- `cargo run -p ucf-ops -- governance-closure-sweep --out ./out/governance_closure_sweep.json`
+- `cargo run -p ucf-ops -- models supported-scope-execute-v14 --out ./out/supported_scope_execute_v14.json --workdir .`
 - `cargo run -p ucf-ops -- readiness-spine-check --out ./out/readiness_spine_check.json`
 - `cargo run -p ucf-ops -- readiness-spine-sweep --out ./out/readiness_spine_sweep.json`
 - `cargo run -p ucf-ops -- final-readiness-consumer-sweep --out ./out/final_readiness_consumer_sweep.json`
@@ -68,6 +70,7 @@ See `docs/feature_matrix.md` for details.
 - `cargo run -p ucf-ops -- bundle-convergence-sweep --out ./out/bundle_convergence_sweep.json`
 - `cargo run -p ucf-ops -- bundle-stabilization-sweep --out ./out/bundle_stabilization_sweep.json`
 - `cargo run -p ucf-ops -- bundle-final-consolidation-sweep --out ./out/bundle_final_consolidation_sweep.json`
+- `cargo run -p ucf-ops -- bundle-closure-sweep --out ./out/bundle_closure_sweep.json`
 - `cargo run -p ucf-ops -- remediation-interop-check --out ./out/remediation_interop_check.json`
 - `cargo run -p ucf-ops -- remediation-spine-check --out ./out/remediation_spine_check.json`
 - `cargo run -p ucf-ops -- primary-semantics-sweep --out ./out/primary_semantics_sweep.json`
@@ -80,6 +83,7 @@ See `docs/feature_matrix.md` for details.
 - `cargo run -p ucf-ops -- primary-semantics-convergence-sweep --out ./out/primary_semantics_convergence_sweep.json`
 - `cargo run -p ucf-ops -- primary-semantics-stabilization-sweep --out ./out/primary_semantics_stabilization_sweep.json`
 - `cargo run -p ucf-ops -- primary-semantics-final-consolidation-sweep --out ./out/primary_semantics_final_consolidation_sweep.json`
+- `cargo run -p ucf-ops -- primary-semantics-closure-sweep --out ./out/primary_semantics_closure_sweep.json`
 - `cargo run -p ucf-ops -- governance-surfaces-check --out ./out/governance_surfaces_check.json`
 - `cargo run -p ucf-ops -- models supported-set-review --out ./out/supported_set_review.json --workdir .`
 - `cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json --workdir .`
