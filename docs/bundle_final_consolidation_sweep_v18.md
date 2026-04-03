@@ -45,3 +45,8 @@ cargo run -p ucf-ops -- bundle-final-consolidation-sweep --out ./out/bundle_fina
 ## v19 closure follow-up
 
 v19 (`bundle-closure-sweep`) removes/blocks any remaining canonical dependence on bundle compatibility wrappers, authority crosswalk layers, and secondary export renderings across canonical export consumers.
+
+
+## v20 seal-sweep note
+
+v20 (`bundle-seal-sweep`) removes remaining canonical dependence on bundle compatibility shells, bridge layers, and auxiliary export views across canonical export consumers.

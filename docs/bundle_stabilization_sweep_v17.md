@@ -47,3 +47,8 @@ v18 (`bundle-final-consolidation-sweep`) removes remaining canonical facade/alia
 ## v19 closure follow-up
 
 v19 (`bundle-closure-sweep`) performs the final closure sweep so canonical export flows no longer accept bundle wrapper/crosswalk/secondary-rendering paths as competing authority substrates.
+
+
+## v20 seal-sweep note
+
+v20 (`bundle-seal-sweep`) removes remaining canonical dependence on bundle compatibility shells, bridge layers, and auxiliary export views across canonical export consumers.

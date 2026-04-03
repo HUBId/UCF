@@ -64,7 +64,7 @@ struct ArtifactSpec {
     enum_names: &'static [&'static str],
 }
 
-const ARTIFACT_SPECS: [ArtifactSpec; 118] = [
+const ARTIFACT_SPECS: [ArtifactSpec; 119] = [
     ArtifactSpec {
         artifact_id: "active_review_snapshot_v1",
         file_rel: "runtime/ucf-ops/src/models_lifecycle.rs",
@@ -263,6 +263,12 @@ const ARTIFACT_SPECS: [ArtifactSpec; 118] = [
         file_rel: "runtime/ucf-ops/src/bundle_closure_sweep.rs",
         type_name: "BundleClosureSweepV1",
         enum_names: &["BundleClosureStatusV1", "BundleClosureMismatchCategoryV1"],
+    },
+    ArtifactSpec {
+        artifact_id: "bundle_seal_sweep_v1",
+        file_rel: "runtime/ucf-ops/src/bundle_seal_sweep.rs",
+        type_name: "BundleSealSweepV1",
+        enum_names: &["BundleSealStatusV1", "BundleSealMismatchCategoryV1"],
     },
     ArtifactSpec {
         artifact_id: "final_continuity_authority_v2",
@@ -1320,6 +1326,7 @@ mod tests {
                 "bundle_convergence_sweep_v1",
                 "bundle_final_consolidation_sweep_v1",
                 "bundle_roundtrip_consistency_v1",
+                "bundle_seal_sweep_v1",
                 "bundle_stabilization_sweep_v1",
                 "canonical_bundle_authority_v2",
                 "canonical_bundle_consumption_context_v1",
