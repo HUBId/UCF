@@ -2,6 +2,8 @@
 
 `ucf-ops v19 gate` is the v19 closure gate for governance/current-supported-scope-execution/readiness/bundle/primary-semantics hardening and sole closure-complete canonical top-level continuity proof enforcement.
 
+After v19 gate PASS, continue at Prompt 370 via `docs/next_10_prompts.md`.
+
 ## Command
 
 ```bash
