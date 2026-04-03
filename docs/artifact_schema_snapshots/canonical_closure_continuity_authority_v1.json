@@ -1,0 +1,55 @@
+{
+  "artifact_id": "canonical_closure_continuity_authority_v1",
+  "type_name": "CanonicalClosureContinuityAuthorityV1",
+  "source_file": "runtime/ucf-ops/src/canonical_closure_continuity_sweep.rs",
+  "required_fields": [
+    "applied_supported_set_digest_prefix",
+    "authority_digest",
+    "blocking_codes",
+    "bundle_closure_sweep_digest_prefix",
+    "canonical_bundle_spine_digest_prefix",
+    "canonical_final_consolidation_continuity_authority_digest_prefix",
+    "canonical_governance_entry_digest_prefix",
+    "canonical_primary_semantics_authority_digest_prefix",
+    "canonical_readiness_spine_digest_prefix",
+    "canonical_roundtrip_chain_digest_prefix",
+    "continuity_status",
+    "governance_closure_sweep_digest_prefix",
+    "operator_review_packet_digest_prefix",
+    "operator_signoff_digest_prefix",
+    "operator_workflow_chain_digest_prefix",
+    "primary_semantics_closure_sweep_digest_prefix",
+    "readiness_closure_sweep_digest_prefix",
+    "remediation_codes",
+    "schema_version"
+  ],
+  "optional_fields": [],
+  "field_types": {
+    "applied_supported_set_digest_prefix": "String",
+    "authority_digest": "String",
+    "blocking_codes": "Vec<String>",
+    "bundle_closure_sweep_digest_prefix": "String",
+    "canonical_bundle_spine_digest_prefix": "String",
+    "canonical_final_consolidation_continuity_authority_digest_prefix": "String",
+    "canonical_governance_entry_digest_prefix": "String",
+    "canonical_primary_semantics_authority_digest_prefix": "String",
+    "canonical_readiness_spine_digest_prefix": "String",
+    "canonical_roundtrip_chain_digest_prefix": "String",
+    "continuity_status": "CanonicalClosureContinuityStatusV1",
+    "governance_closure_sweep_digest_prefix": "String",
+    "operator_review_packet_digest_prefix": "String",
+    "operator_signoff_digest_prefix": "String",
+    "operator_workflow_chain_digest_prefix": "String",
+    "primary_semantics_closure_sweep_digest_prefix": "String",
+    "readiness_closure_sweep_digest_prefix": "String",
+    "remediation_codes": "Vec<String>",
+    "schema_version": "u16"
+  },
+  "enum_variants": {
+    "CanonicalClosureContinuityStatusV1": [
+      "Fail",
+      "LegacyPresent",
+      "Pass"
+    ]
+  }
+}

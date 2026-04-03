@@ -64,7 +64,7 @@ struct ArtifactSpec {
     enum_names: &'static [&'static str],
 }
 
-const ARTIFACT_SPECS: [ArtifactSpec; 113] = [
+const ARTIFACT_SPECS: [ArtifactSpec; 114] = [
     ArtifactSpec {
         artifact_id: "active_review_snapshot_v1",
         file_rel: "runtime/ucf-ops/src/models_lifecycle.rs",
@@ -359,6 +359,12 @@ const ARTIFACT_SPECS: [ArtifactSpec; 113] = [
         file_rel: "runtime/ucf-ops/src/canonical_final_consolidation_continuity_sweep.rs",
         type_name: "CanonicalFinalConsolidationContinuityAuthorityV1",
         enum_names: &["CanonicalFinalConsolidationContinuityStatusV1"],
+    },
+    ArtifactSpec {
+        artifact_id: "canonical_closure_continuity_authority_v1",
+        file_rel: "runtime/ucf-ops/src/canonical_closure_continuity_sweep.rs",
+        type_name: "CanonicalClosureContinuityAuthorityV1",
+        enum_names: &["CanonicalClosureContinuityStatusV1"],
     },
     ArtifactSpec {
         artifact_id: "final_input_continuity_authority_v1",
@@ -1294,6 +1300,7 @@ mod tests {
                 "canonical_bundle_authority_v2",
                 "canonical_bundle_consumption_context_v1",
                 "canonical_bundle_spine_v1",
+                "canonical_closure_continuity_authority_v1",
                 "canonical_continuity_authority_v1",
                 "canonical_convergence_continuity_authority_v1",
                 "canonical_export_artifact_ref_v1",

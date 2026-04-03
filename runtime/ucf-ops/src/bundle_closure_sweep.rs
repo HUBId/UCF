@@ -212,7 +212,7 @@ pub fn bundle_closure_sweep(
         check_consumer(
             "Continuity",
             workdir,
-            "out/canonical_final_consolidation_continuity_sweep.json",
+            "out/canonical_closure_continuity_sweep.json",
             &authority_ctx,
         )?,
         check_consumer(

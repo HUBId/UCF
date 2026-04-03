@@ -1,6 +1,6 @@
 # Canonical Final Consolidation Continuity (v18)
 
-`CanonicalFinalConsolidationContinuityAuthorityV1` is the **sole top-level continuity proof** for canonical operator/export/build/verify flows after v18 final consolidation cleanup.
+`CanonicalFinalConsolidationContinuityAuthorityV1` is a **subordinate continuity contributor** after v19 closure finalization. Sole top-level proof is `CanonicalClosureContinuityAuthorityV1`.
 
 ## What it proves
 `ucf-ops canonical-final-consolidation-continuity-sweep` binds one deterministic chain over:
