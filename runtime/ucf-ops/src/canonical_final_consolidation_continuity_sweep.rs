@@ -9,12 +9,12 @@ use crate::{
     governance_final_consolidation_sweep, load_applied_supported_set_context_v1,
     models_active_review_snapshot, models_evidence_snapshot, operator_review_packet,
     operator_roundtrip_chain_check, operator_signoff, operator_workflow_chain, prefix_hex,
-    primary_semantics_final_consolidation_sweep, readiness_final_consolidation_sweep,
-    validate_governance_primary_surfaces_with_applied_scope, BundleFinalConsolidationStatusV1,
-    CanonicalRoundTripChainStatusV1, CanonicalStabilizationContinuityStatusV1,
-    GovernanceFinalConsolidationStatusV1, OperatorReviewPacketArgs, OperatorSignoffArgs,
-    OperatorWorkflowArgs, OpsError, PrimarySemanticsFinalConsolidationStatusV1,
-    ReadinessFinalConsolidationStatusV1,
+    primary_semantics_closure_sweep, primary_semantics_final_consolidation_sweep,
+    readiness_final_consolidation_sweep, validate_governance_primary_surfaces_with_applied_scope,
+    BundleFinalConsolidationStatusV1, CanonicalRoundTripChainStatusV1,
+    CanonicalStabilizationContinuityStatusV1, GovernanceFinalConsolidationStatusV1,
+    OperatorReviewPacketArgs, OperatorSignoffArgs, OperatorWorkflowArgs, OpsError,
+    PrimarySemanticsFinalConsolidationStatusV1, ReadinessFinalConsolidationStatusV1,
 };
 
 const DIGEST_PREFIX_LEN: usize = 16;
@@ -41,6 +41,7 @@ pub struct CanonicalFinalConsolidationContinuityAuthorityV1 {
     pub bundle_closure_sweep_digest_prefix: String,
     pub canonical_primary_semantics_authority_digest_prefix: String,
     pub primary_semantics_final_consolidation_sweep_digest_prefix: String,
+    pub primary_semantics_closure_sweep_digest_prefix: String,
     pub operator_review_packet_digest_prefix: String,
     pub operator_signoff_digest_prefix: String,
     pub operator_workflow_chain_digest_prefix: String,
@@ -97,7 +98,12 @@ pub fn canonical_final_consolidation_continuity_sweep(
             "out/primary_semantics_final_consolidation_sweep_canonical_final_consolidation_continuity_sweep.json",
         ),
     )?;
-
+    let primary_closure = primary_semantics_closure_sweep(
+        workdir,
+        &workdir.join(
+            "out/primary_semantics_closure_sweep_canonical_final_consolidation_continuity_sweep.json",
+        ),
+    )?;
     let review_packet = operator_review_packet(
         workdir,
         &OperatorReviewPacketArgs {
@@ -178,6 +184,9 @@ pub fn canonical_final_consolidation_continuity_sweep(
     if !matches!(
         primary_final.sweep.consolidation_status,
         PrimarySemanticsFinalConsolidationStatusV1::Pass
+    ) || !matches!(
+        primary_closure.sweep.closure_status,
+        crate::PrimarySemanticsClosureStatusV1::Pass
     ) {
         blocking.insert("FINAL_CONSOLIDATION_PRIMARY_SEMANTICS_MISMATCH");
         remediation.insert("run_primary_semantics_final_consolidation_sweep");
@@ -266,6 +275,10 @@ pub fn canonical_final_consolidation_continuity_sweep(
             &primary_final.sweep.consolidation_digest,
             DIGEST_PREFIX_LEN,
         ),
+        primary_semantics_closure_sweep_digest_prefix: prefix_hex(
+            &primary_closure.sweep.closure_digest,
+            DIGEST_PREFIX_LEN,
+        ),
         operator_review_packet_digest_prefix: prefix_hex(
             &review_packet.packet_digest,
             DIGEST_PREFIX_LEN,
@@ -338,6 +351,7 @@ mod tests {
             bundle_closure_sweep_digest_prefix: "78".repeat(8),
             canonical_primary_semantics_authority_digest_prefix: "88".repeat(8),
             primary_semantics_final_consolidation_sweep_digest_prefix: "99".repeat(8),
+            primary_semantics_closure_sweep_digest_prefix: "9a".repeat(8),
             operator_review_packet_digest_prefix: "aa".repeat(8),
             operator_signoff_digest_prefix: "bb".repeat(8),
             operator_workflow_chain_digest_prefix: "cc".repeat(8),

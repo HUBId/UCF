@@ -236,3 +236,5 @@ For v18 final-consolidation and current scope-execution surfaces, this freeze is
 - bundle-final-consolidation sweep,
 - primary-semantics-final-consolidation sweep,
 - additive shape updates (if any) in stabilization sweep artifacts, operator signoff/review/workflow artifacts, and covered gate-report schemas are reviewed through the same drift lane (`ADDITIVE` vs `BREAKING` vs `UNKNOWN`).
+
+- `primary_semantics_closure_sweep_v1.json` (v19 primary-semantics closure contract)

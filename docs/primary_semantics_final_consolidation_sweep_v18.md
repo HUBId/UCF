@@ -53,3 +53,5 @@ This closes remaining canonical dependencies on primary-semantics facades, alias
 ```bash
 cargo run -p ucf-ops -- primary-semantics-final-consolidation-sweep --out ./out/primary_semantics_final_consolidation_sweep.json
 ```
+
+> v19 update: `primary-semantics-closure-sweep` removes remaining compatibility-wrapper/crosswalk/secondary-render residues from canonical surfaces and emits `PrimarySemanticsClosureSweepV1`.
