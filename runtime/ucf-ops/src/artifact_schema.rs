@@ -1341,6 +1341,7 @@ mod tests {
                 "governance_convergence_sweep_v1",
                 "governance_final_consolidation_sweep_v1",
                 "governance_primary_surfaces_v1",
+                "governance_seal_sweep_v1",
                 "governance_stabilization_sweep_v1",
                 "interop_consistency_matrix_report_v1",
                 "operator_report_v1",
