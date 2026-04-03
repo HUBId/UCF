@@ -33,21 +33,21 @@ pub enum OperatorExportAuthorityMismatchCategoryV1 {
     ReviewabilityBasisMismatch,
     ReadinessSpineMismatch,
     AppliedScopeMissing,
-    CanonicalFinalConsolidationContinuityMissing,
-    CanonicalFinalConsolidationContinuityFail,
+    CanonicalClosureContinuityMissing,
+    CanonicalClosureContinuityFail,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum CanonicalFinalConsolidationContinuityStatusV1 {
+pub enum CanonicalClosureContinuityStatusV1 {
     Pass,
     Fail,
     LegacyPresent,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct CanonicalFinalConsolidationContinuityProbeV1 {
-    continuity_status: CanonicalFinalConsolidationContinuityStatusV1,
+struct CanonicalClosureContinuityProbeV1 {
+    continuity_status: CanonicalClosureContinuityStatusV1,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -268,31 +268,31 @@ pub fn operator_export_chain_check(
         chain.chain_digest = chain_digest(&chain)?;
     }
 
-    let absolute_path = workdir.join("out/canonical_final_consolidation_continuity_sweep.json");
+    let absolute_path = workdir.join("out/canonical_closure_continuity_sweep.json");
     match fs::read_to_string(&absolute_path) {
         Ok(body) => {
-            let probe: CanonicalFinalConsolidationContinuityProbeV1 = serde_json::from_str(&body)?;
+            let probe: CanonicalClosureContinuityProbeV1 = serde_json::from_str(&body)?;
             if !matches!(
                 probe.continuity_status,
-                CanonicalFinalConsolidationContinuityStatusV1::Pass
+                CanonicalClosureContinuityStatusV1::Pass
             ) {
                 chain.authority_chain_status = OperatorExportAuthorityChainStatusV1::Fail;
                 chain.mismatch_categories.push(
-                    OperatorExportAuthorityMismatchCategoryV1::CanonicalFinalConsolidationContinuityFail,
+                    OperatorExportAuthorityMismatchCategoryV1::CanonicalClosureContinuityFail,
                 );
                 chain
                     .blocking_codes
-                    .push("CANONICAL_FINAL_CONSOLIDATION_CONTINUITY_REQUIRED".to_string());
+                    .push("CANONICAL_CLOSURE_CONTINUITY_REQUIRED".to_string());
             }
         }
         Err(_) => {
             chain.authority_chain_status = OperatorExportAuthorityChainStatusV1::Fail;
-            chain.mismatch_categories.push(
-                OperatorExportAuthorityMismatchCategoryV1::CanonicalFinalConsolidationContinuityMissing,
-            );
+            chain
+                .mismatch_categories
+                .push(OperatorExportAuthorityMismatchCategoryV1::CanonicalClosureContinuityMissing);
             chain
                 .blocking_codes
-                .push("CANONICAL_FINAL_CONSOLIDATION_CONTINUITY_REQUIRED".to_string());
+                .push("CANONICAL_CLOSURE_CONTINUITY_REQUIRED".to_string());
         }
     }
     chain.mismatch_categories.sort();
@@ -520,6 +520,7 @@ mod tests {
             canonical_convergence_continuity_authority_digest_prefix: "MISSING".to_string(),
             canonical_stabilization_continuity_authority_digest_prefix: "MISSING".to_string(),
             canonical_final_consolidation_continuity_authority_digest_prefix: "MISSING".to_string(),
+            canonical_closure_continuity_authority_digest_prefix: "MISSING".to_string(),
             bundle_terminal_sweep_digest_prefix: "MISSING".to_string(),
             residual_free_continuity_authority_digest_prefix: "MISSING".to_string(),
             final_input_continuity_authority_digest_prefix: "MISSING".to_string(),

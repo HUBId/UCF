@@ -50,4 +50,4 @@ The following remain subordinate/legacy diagnostics and are not top-level contin
 - `continuity-authority-check`
 
 
-> v18 finalization: canonical top-level continuity proof is now only `canonical-final-consolidation-continuity-sweep` (`CanonicalFinalConsolidationContinuityAuthorityV1`). `canonical-stabilization-continuity-sweep` is subordinate continuity evidence.
+> v19 closure finalization: sole top-level continuity proof is now `canonical-closure-continuity-sweep` (`CanonicalClosureContinuityAuthorityV1`). `canonical-stabilization-continuity-sweep` remains subordinate continuity evidence.

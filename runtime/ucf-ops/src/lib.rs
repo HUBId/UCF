@@ -14,6 +14,7 @@ mod bundle_residual_sweep;
 mod bundle_stabilization_sweep;
 mod bundle_terminal_sweep;
 mod bundle_ultimate_sweep;
+mod canonical_closure_continuity_sweep;
 mod canonical_convergence_continuity_sweep;
 mod canonical_final_consolidation_continuity_sweep;
 mod canonical_governance_entry;
@@ -152,6 +153,10 @@ pub use bundle_ultimate_sweep::{
     bundle_ultimate_sweep, BundleUltimateConsumerStatusV1, BundleUltimateMismatchCategoryV1,
     BundleUltimateSweepReportV1, TerminalBundleUltimateSweepStatusV1,
     TerminalBundleUltimateSweepV1,
+};
+pub use canonical_closure_continuity_sweep::{
+    canonical_closure_continuity_sweep, CanonicalClosureContinuityAuthorityV1,
+    CanonicalClosureContinuityStatusV1,
 };
 pub use canonical_convergence_continuity_sweep::{
     canonical_convergence_continuity_sweep, CanonicalConvergenceContinuityAuthorityV1,
