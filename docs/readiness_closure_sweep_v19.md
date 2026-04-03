@@ -52,3 +52,6 @@ Danach wird geprüft, dass keine kanonische Consumer-Route mehr einen Readiness-
 ```bash
 cargo run -p ucf-ops -- readiness-closure-sweep --out ./out/readiness_closure_sweep.json
 ```
+
+
+> v20 update: `readiness-seal-sweep` seals canonical readiness consumers and removes remaining readiness compatibility-shell/bridge/auxiliary-view authority paths from canonical flows.

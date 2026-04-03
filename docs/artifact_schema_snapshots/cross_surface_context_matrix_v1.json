@@ -7,6 +7,7 @@
     "manifest_digest_prefix",
     "matrix_digest",
     "policy_graph_digest_prefix",
+    "readiness_seal_sweep_digest_prefix",
     "schema_version",
     "surfaces"
   ],
@@ -61,6 +62,7 @@
     "readiness_closure_sweep_digest_prefix": "String",
     "readiness_final_consolidation_sweep_digest_prefix": "String",
     "readiness_residual_sweep_digest_prefix": "String",
+    "readiness_seal_sweep_digest_prefix": "String",
     "readiness_stabilization_sweep_digest_prefix": "String",
     "readiness_terminal_sweep_digest_prefix": "String",
     "readiness_ultimate_sweep_digest_prefix": "String",

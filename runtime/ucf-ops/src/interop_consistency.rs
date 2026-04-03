@@ -89,6 +89,7 @@ pub struct CrossSurfaceContextMatrixV1 {
     pub readiness_final_consolidation_sweep_digest_prefix: String,
     #[serde(default)]
     pub readiness_closure_sweep_digest_prefix: String,
+    pub readiness_seal_sweep_digest_prefix: String,
     #[serde(default)]
     pub governance_final_consolidation_sweep_digest_prefix: String,
     #[serde(default)]
@@ -369,6 +370,10 @@ pub fn interop_consistency_matrix(
         readiness_closure_sweep_digest_prefix: operator_review
             .as_ref()
             .map(|review| review.readiness_closure_sweep_digest_prefix.clone())
+            .unwrap_or_else(|| "MISSING".to_string()),
+        readiness_seal_sweep_digest_prefix: operator_review
+            .as_ref()
+            .map(|review| review.readiness_seal_sweep_digest_prefix.clone())
             .unwrap_or_else(|| "MISSING".to_string()),
         governance_final_consolidation_sweep_digest_prefix: operator_review
             .as_ref()
@@ -1007,6 +1012,7 @@ mod tests {
             readiness_stabilization_sweep_digest_prefix: "MISSING".to_string(),
             readiness_final_consolidation_sweep_digest_prefix: "MISSING".to_string(),
             readiness_closure_sweep_digest_prefix: "MISSING".to_string(),
+            readiness_seal_sweep_digest_prefix: "MISSING".to_string(),
             governance_final_consolidation_sweep_digest_prefix: "MISSING".to_string(),
             governance_closure_sweep_digest_prefix: "MISSING".to_string(),
             governance_seal_sweep_digest_prefix: "MISSING".to_string(),

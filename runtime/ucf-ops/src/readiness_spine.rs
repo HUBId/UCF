@@ -59,6 +59,11 @@ pub const FINAL_CONSOLIDATED_STABILIZED_CANONICAL_READINESS_INPUTS_REQUIRED: &st
 pub const READINESS_WRAPPER_PATH_BLOCKED: &str = "READINESS_WRAPPER_PATH_BLOCKED";
 pub const READINESS_WRAPPER_PATH_TRANSLATED: &str = "READINESS_WRAPPER_PATH_TRANSLATED";
 pub const READINESS_WRAPPER_PATH_REJECTED: &str = "READINESS_WRAPPER_PATH_REJECTED";
+pub const CLOSURE_COMPLETE_FINAL_CONSOLIDATED_STABILIZED_CANONICAL_READINESS_INPUTS_REQUIRED: &str =
+    "CLOSURE_COMPLETE_FINAL_CONSOLIDATED_STABILIZED_CANONICAL_READINESS_INPUTS_REQUIRED";
+pub const READINESS_SHELL_PATH_BLOCKED: &str = "READINESS_SHELL_PATH_BLOCKED";
+pub const READINESS_SHELL_PATH_TRANSLATED: &str = "READINESS_SHELL_PATH_TRANSLATED";
+pub const READINESS_SHELL_PATH_REJECTED: &str = "READINESS_SHELL_PATH_REJECTED";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -262,6 +267,25 @@ pub struct ReadinessClosureInputsV1 {
     pub readiness_convergence_sweep_digest_prefix: String,
     pub readiness_stabilization_sweep_digest_prefix: String,
     pub readiness_final_consolidation_sweep_digest_prefix: String,
+    pub authority_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ReadinessSealInputsV1 {
+    pub applied_supported_set_digest_prefix: String,
+    pub canonical_governance_entry_digest_prefix: String,
+    pub canonical_readiness_spine_digest_prefix: String,
+    pub canonical_readiness_authority_digest_prefix: String,
+    pub final_readiness_consumer_authority_digest_prefix: String,
+    pub final_readiness_residual_sweep_digest_prefix: String,
+    pub residual_free_readiness_consumer_authority_digest_prefix: String,
+    pub residual_free_readiness_absolute_sweep_digest_prefix: String,
+    pub absolute_final_readiness_terminal_sweep_digest_prefix: String,
+    pub terminal_readiness_ultimate_sweep_digest_prefix: String,
+    pub readiness_convergence_sweep_digest_prefix: String,
+    pub readiness_stabilization_sweep_digest_prefix: String,
+    pub readiness_final_consolidation_sweep_digest_prefix: String,
+    pub readiness_closure_sweep_digest_prefix: String,
     pub authority_digest: String,
 }
 
@@ -1701,6 +1725,182 @@ pub fn require_readiness_closure_inputs(
         readiness_stabilization_sweep_digest_prefix: consolidation_inputs
             .readiness_stabilization_sweep_digest_prefix,
         readiness_final_consolidation_sweep_digest_prefix: expected_final_consolidation_prefix,
+        authority_digest: crate::sha256_hex(&bytes),
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn require_readiness_seal_inputs(
+    truths: &[SlotReviewabilityTruthV1],
+    reduction: Option<&ReviewabilityReductionV1>,
+    applied_scope: Option<&AppliedSupportedSetContextV1>,
+    entry: Option<&CanonicalGovernanceEntryV1>,
+    spine: Option<&CanonicalReadinessSpineV1>,
+    authority: Option<&CanonicalReadinessAuthorityV2>,
+    final_consumer_authority: Option<&crate::FinalReadinessConsumerAuthorityV1>,
+    residual_sweep: Option<&crate::FinalReadinessResidualSweepV1>,
+    residual_free_consumer: Option<&crate::ResidualFreeReadinessConsumerAuthorityV1>,
+    absolute_sweep: Option<&crate::ResidualFreeReadinessAbsoluteSweepV1>,
+    terminal_sweep: Option<&crate::AbsoluteFinalReadinessTerminalSweepV1>,
+    ultimate_sweep: Option<&crate::TerminalReadinessUltimateSweepV1>,
+    convergence_sweep: Option<&crate::ReadinessConvergenceSweepV1>,
+    stabilization_sweep: Option<&crate::ReadinessStabilizationSweepV1>,
+    final_consolidation_sweep: Option<&crate::ReadinessFinalConsolidationSweepV1>,
+    closure_sweep: Option<&crate::ReadinessClosureSweepV1>,
+) -> Result<ReadinessSealInputsV1, OpsError> {
+    let closure_inputs = require_readiness_closure_inputs(
+        truths,
+        reduction,
+        applied_scope,
+        entry,
+        spine,
+        authority,
+        final_consumer_authority,
+        residual_sweep,
+        residual_free_consumer,
+        absolute_sweep,
+        terminal_sweep,
+        ultimate_sweep,
+        convergence_sweep,
+        stabilization_sweep,
+        final_consolidation_sweep,
+    )?;
+    let Some(closure_sweep) = closure_sweep else {
+        return Err(OpsError::Invalid(
+            CLOSURE_COMPLETE_FINAL_CONSOLIDATED_STABILIZED_CANONICAL_READINESS_INPUTS_REQUIRED
+                .to_string(),
+        ));
+    };
+    let expected_closure_prefix = prefix_hex(&closure_sweep.closure_digest, 16);
+    if !matches!(
+        closure_sweep.closure_status,
+        crate::ReadinessClosureStatusV1::Pass
+    ) || closure_sweep.applied_supported_set_digest_prefix
+        != closure_inputs.applied_supported_set_digest_prefix
+        || closure_sweep.canonical_governance_entry_digest_prefix
+            != closure_inputs.canonical_governance_entry_digest_prefix
+        || closure_sweep.canonical_readiness_spine_digest_prefix
+            != closure_inputs.canonical_readiness_spine_digest_prefix
+        || closure_sweep.canonical_readiness_authority_digest_prefix
+            != closure_inputs.canonical_readiness_authority_digest_prefix
+        || closure_sweep.final_readiness_consumer_authority_digest_prefix
+            != closure_inputs.final_readiness_consumer_authority_digest_prefix
+        || closure_sweep.final_readiness_residual_sweep_digest_prefix
+            != closure_inputs.final_readiness_residual_sweep_digest_prefix
+        || closure_sweep.residual_free_readiness_consumer_authority_digest_prefix
+            != closure_inputs.residual_free_readiness_consumer_authority_digest_prefix
+        || closure_sweep.residual_free_readiness_absolute_sweep_digest_prefix
+            != closure_inputs.residual_free_readiness_absolute_sweep_digest_prefix
+        || closure_sweep.absolute_final_readiness_terminal_sweep_digest_prefix
+            != closure_inputs.absolute_final_readiness_terminal_sweep_digest_prefix
+        || closure_sweep.terminal_readiness_ultimate_sweep_digest_prefix
+            != closure_inputs.terminal_readiness_ultimate_sweep_digest_prefix
+        || closure_sweep.readiness_convergence_sweep_digest_prefix
+            != closure_inputs.readiness_convergence_sweep_digest_prefix
+        || closure_sweep.readiness_stabilization_sweep_digest_prefix
+            != closure_inputs.readiness_stabilization_sweep_digest_prefix
+        || closure_sweep.readiness_final_consolidation_sweep_digest_prefix
+            != closure_inputs.readiness_final_consolidation_sweep_digest_prefix
+    {
+        return Err(OpsError::Invalid(READINESS_SHELL_PATH_BLOCKED.to_string()));
+    }
+
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(b"readiness_seal_inputs_v1");
+    bytes.extend_from_slice(
+        closure_inputs
+            .applied_supported_set_digest_prefix
+            .as_bytes(),
+    );
+    bytes.extend_from_slice(
+        closure_inputs
+            .canonical_governance_entry_digest_prefix
+            .as_bytes(),
+    );
+    bytes.extend_from_slice(
+        closure_inputs
+            .canonical_readiness_spine_digest_prefix
+            .as_bytes(),
+    );
+    bytes.extend_from_slice(
+        closure_inputs
+            .canonical_readiness_authority_digest_prefix
+            .as_bytes(),
+    );
+    bytes.extend_from_slice(
+        closure_inputs
+            .final_readiness_consumer_authority_digest_prefix
+            .as_bytes(),
+    );
+    bytes.extend_from_slice(
+        closure_inputs
+            .final_readiness_residual_sweep_digest_prefix
+            .as_bytes(),
+    );
+    bytes.extend_from_slice(
+        closure_inputs
+            .residual_free_readiness_consumer_authority_digest_prefix
+            .as_bytes(),
+    );
+    bytes.extend_from_slice(
+        closure_inputs
+            .residual_free_readiness_absolute_sweep_digest_prefix
+            .as_bytes(),
+    );
+    bytes.extend_from_slice(
+        closure_inputs
+            .absolute_final_readiness_terminal_sweep_digest_prefix
+            .as_bytes(),
+    );
+    bytes.extend_from_slice(
+        closure_inputs
+            .terminal_readiness_ultimate_sweep_digest_prefix
+            .as_bytes(),
+    );
+    bytes.extend_from_slice(
+        closure_inputs
+            .readiness_convergence_sweep_digest_prefix
+            .as_bytes(),
+    );
+    bytes.extend_from_slice(
+        closure_inputs
+            .readiness_stabilization_sweep_digest_prefix
+            .as_bytes(),
+    );
+    bytes.extend_from_slice(
+        closure_inputs
+            .readiness_final_consolidation_sweep_digest_prefix
+            .as_bytes(),
+    );
+    bytes.extend_from_slice(expected_closure_prefix.as_bytes());
+
+    Ok(ReadinessSealInputsV1 {
+        applied_supported_set_digest_prefix: closure_inputs.applied_supported_set_digest_prefix,
+        canonical_governance_entry_digest_prefix: closure_inputs
+            .canonical_governance_entry_digest_prefix,
+        canonical_readiness_spine_digest_prefix: closure_inputs
+            .canonical_readiness_spine_digest_prefix,
+        canonical_readiness_authority_digest_prefix: closure_inputs
+            .canonical_readiness_authority_digest_prefix,
+        final_readiness_consumer_authority_digest_prefix: closure_inputs
+            .final_readiness_consumer_authority_digest_prefix,
+        final_readiness_residual_sweep_digest_prefix: closure_inputs
+            .final_readiness_residual_sweep_digest_prefix,
+        residual_free_readiness_consumer_authority_digest_prefix: closure_inputs
+            .residual_free_readiness_consumer_authority_digest_prefix,
+        residual_free_readiness_absolute_sweep_digest_prefix: closure_inputs
+            .residual_free_readiness_absolute_sweep_digest_prefix,
+        absolute_final_readiness_terminal_sweep_digest_prefix: closure_inputs
+            .absolute_final_readiness_terminal_sweep_digest_prefix,
+        terminal_readiness_ultimate_sweep_digest_prefix: closure_inputs
+            .terminal_readiness_ultimate_sweep_digest_prefix,
+        readiness_convergence_sweep_digest_prefix: closure_inputs
+            .readiness_convergence_sweep_digest_prefix,
+        readiness_stabilization_sweep_digest_prefix: closure_inputs
+            .readiness_stabilization_sweep_digest_prefix,
+        readiness_final_consolidation_sweep_digest_prefix: closure_inputs
+            .readiness_final_consolidation_sweep_digest_prefix,
+        readiness_closure_sweep_digest_prefix: expected_closure_prefix,
         authority_digest: crate::sha256_hex(&bytes),
     })
 }

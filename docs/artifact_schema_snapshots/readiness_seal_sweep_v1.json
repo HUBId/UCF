@@ -1,0 +1,60 @@
+{
+  "artifact_id": "readiness_seal_sweep_v1",
+  "type_name": "ReadinessSealSweepV1",
+  "source_file": "runtime/ucf-ops/src/readiness_seal_sweep.rs",
+  "required_fields": [
+    "absolute_final_readiness_terminal_sweep_digest_prefix",
+    "applied_supported_set_digest_prefix",
+    "canonical_governance_entry_digest_prefix",
+    "canonical_readiness_authority_digest_prefix",
+    "canonical_readiness_spine_digest_prefix",
+    "covered_consumer_count",
+    "final_readiness_consumer_authority_digest_prefix",
+    "final_readiness_residual_sweep_digest_prefix",
+    "readiness_closure_sweep_digest_prefix",
+    "readiness_convergence_sweep_digest_prefix",
+    "readiness_final_consolidation_sweep_digest_prefix",
+    "readiness_stabilization_sweep_digest_prefix",
+    "residual_free_readiness_absolute_sweep_digest_prefix",
+    "residual_free_readiness_consumer_authority_digest_prefix",
+    "residual_path_count",
+    "seal_digest",
+    "seal_status",
+    "terminal_readiness_ultimate_sweep_digest_prefix"
+  ],
+  "optional_fields": [],
+  "field_types": {
+    "absolute_final_readiness_terminal_sweep_digest_prefix": "String",
+    "applied_supported_set_digest_prefix": "String",
+    "canonical_governance_entry_digest_prefix": "String",
+    "canonical_readiness_authority_digest_prefix": "String",
+    "canonical_readiness_spine_digest_prefix": "String",
+    "covered_consumer_count": "u16",
+    "final_readiness_consumer_authority_digest_prefix": "String",
+    "final_readiness_residual_sweep_digest_prefix": "String",
+    "readiness_closure_sweep_digest_prefix": "String",
+    "readiness_convergence_sweep_digest_prefix": "String",
+    "readiness_final_consolidation_sweep_digest_prefix": "String",
+    "readiness_stabilization_sweep_digest_prefix": "String",
+    "residual_free_readiness_absolute_sweep_digest_prefix": "String",
+    "residual_free_readiness_consumer_authority_digest_prefix": "String",
+    "residual_path_count": "u16",
+    "seal_digest": "String",
+    "seal_status": "ReadinessSealStatusV1",
+    "terminal_readiness_ultimate_sweep_digest_prefix": "String"
+  },
+  "enum_variants": {
+    "ReadinessSealMismatchCategoryV1": [
+      "ConsumerSkippedReadinessSeal",
+      "ConsumerUsedReadinessShellPath",
+      "ReadinessInputScopeMismatch",
+      "ReadinessInputSpineMismatch",
+      "ReadinessShellPathPresent"
+    ],
+    "ReadinessSealStatusV1": [
+      "Fail",
+      "LegacyPresent",
+      "Pass"
+    ]
+  }
+}

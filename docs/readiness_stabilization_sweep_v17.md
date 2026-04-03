@@ -48,3 +48,6 @@ cargo run -p ucf-ops -- readiness-stabilization-sweep --out ./out/readiness_stab
 
 
 > v19 update: verbleibende Wrapper-/Crosswalk-/secondary-render-Reste in kanonischen Readiness-Consumern werden durch `readiness-closure-sweep` blockiert.
+
+
+> v20 update: stabilization remains required input, and v20 readiness seal sweep removes remaining shell/bridge/auxiliary readiness residues in canonical consumers.
