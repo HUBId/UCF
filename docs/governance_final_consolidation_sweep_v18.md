@@ -55,3 +55,5 @@ Ab v18 muss `models supported-scope-execute-v13` diesen Sweep im PASS-Zustand na
 ## v19 closure note
 
 v19 adds `governance-closure-sweep` and removes remaining canonical dependence on governance wrappers/crosswalks/secondary renderings in canonical consumer flows.
+
+> v20 (`governance-seal-sweep`) hardens canonical consumers so no compatibility-shell, bridge-layer, or auxiliary governance view remains authoritative in canonical flows.
