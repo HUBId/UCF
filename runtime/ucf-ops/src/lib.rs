@@ -67,6 +67,7 @@ mod readiness_closure_sweep;
 mod readiness_convergence_sweep;
 mod readiness_final_consolidation_sweep;
 mod readiness_residual_sweep;
+mod readiness_seal_sweep;
 mod readiness_spine;
 mod readiness_stabilization_sweep;
 mod readiness_terminal_sweep;
@@ -451,6 +452,10 @@ pub use readiness_residual_sweep::{
     FinalReadinessResidualMismatchCategoryV1, FinalReadinessResidualSweepReportV1,
     FinalReadinessResidualSweepStatusV1, FinalReadinessResidualSweepV1,
 };
+pub use readiness_seal_sweep::{
+    readiness_seal_sweep, ReadinessSealConsumerStatusV1, ReadinessSealMismatchCategoryV1,
+    ReadinessSealStatusV1, ReadinessSealSweepReportV1, ReadinessSealSweepV1,
+};
 pub use readiness_spine::{
     attach_spine_prefix_to_packet, attach_spine_prefix_to_signoff, attach_spine_prefix_to_workflow,
     derive_canonical_readiness_authority_v2, derive_canonical_readiness_spine,
@@ -458,18 +463,20 @@ pub use readiness_spine::{
     require_canonical_readiness_spine, require_final_readiness_authority,
     require_final_readiness_inputs, require_readiness_closure_inputs,
     require_readiness_convergence_inputs, require_readiness_final_consolidation_inputs,
-    require_readiness_stabilization_inputs, require_residual_free_final_readiness_inputs,
-    require_residual_free_readiness_absolute_inputs, require_terminal_readiness_ultimate_inputs,
-    write_canonical_readiness_spine, AbsoluteFinalReadinessTerminalInputsV1,
-    CanonicalReadinessAuthorityStatusV2, CanonicalReadinessAuthorityV2,
-    CanonicalReadinessSpineStatusV1, CanonicalReadinessSpineV1, FinalReadinessAuthorityContextV1,
-    FinalReadinessInputsContextV1, ReadinessClosureInputsV1, ReadinessConvergenceInputsV1,
-    ReadinessFinalConsolidationInputsV1, ReadinessSpineCheckReportV1, ReadinessSpineCheckStatusV1,
-    ReadinessSpineMismatchCategoryV1, ReadinessSpineSweepMismatchCategoryV1,
-    ReadinessSpineSweepReportV1, ReadinessSpineSweepSurfaceStatusV1,
-    ReadinessStabilizationInputsV1, ResidualFreeFinalReadinessInputsV1,
-    ResidualFreeReadinessAbsoluteInputsV1, TerminalReadinessUltimateInputsV1,
-    ABSOLUTE_RESIDUAL_FREE_FINAL_READINESS_INPUTS_REQUIRED, CANONICAL_READINESS_SPINE_REQUIRED,
+    require_readiness_seal_inputs, require_readiness_stabilization_inputs,
+    require_residual_free_final_readiness_inputs, require_residual_free_readiness_absolute_inputs,
+    require_terminal_readiness_ultimate_inputs, write_canonical_readiness_spine,
+    AbsoluteFinalReadinessTerminalInputsV1, CanonicalReadinessAuthorityStatusV2,
+    CanonicalReadinessAuthorityV2, CanonicalReadinessSpineStatusV1, CanonicalReadinessSpineV1,
+    FinalReadinessAuthorityContextV1, FinalReadinessInputsContextV1, ReadinessClosureInputsV1,
+    ReadinessConvergenceInputsV1, ReadinessFinalConsolidationInputsV1, ReadinessSealInputsV1,
+    ReadinessSpineCheckReportV1, ReadinessSpineCheckStatusV1, ReadinessSpineMismatchCategoryV1,
+    ReadinessSpineSweepMismatchCategoryV1, ReadinessSpineSweepReportV1,
+    ReadinessSpineSweepSurfaceStatusV1, ReadinessStabilizationInputsV1,
+    ResidualFreeFinalReadinessInputsV1, ResidualFreeReadinessAbsoluteInputsV1,
+    TerminalReadinessUltimateInputsV1, ABSOLUTE_RESIDUAL_FREE_FINAL_READINESS_INPUTS_REQUIRED,
+    CANONICAL_READINESS_SPINE_REQUIRED,
+    CLOSURE_COMPLETE_FINAL_CONSOLIDATED_STABILIZED_CANONICAL_READINESS_INPUTS_REQUIRED,
     CONVERGED_CANONICAL_READINESS_INPUTS_REQUIRED,
     FINAL_CONSOLIDATED_STABILIZED_CANONICAL_READINESS_INPUTS_REQUIRED,
     FINAL_READINESS_AUTHORITY_REQUIRED, FINAL_READINESS_INPUTS_REQUIRED,
@@ -481,7 +488,8 @@ pub use readiness_spine::{
     READINESS_ECHO_PATH_BLOCKED, READINESS_ECHO_PATH_REJECTED, READINESS_ECHO_PATH_TRANSLATED,
     READINESS_FACADE_PATH_BLOCKED, READINESS_FACADE_PATH_REJECTED,
     READINESS_FACADE_PATH_TRANSLATED, READINESS_MEMO_PATH_BLOCKED, READINESS_MEMO_PATH_REJECTED,
-    READINESS_MEMO_PATH_TRANSLATED, READINESS_WRAPPER_PATH_BLOCKED,
+    READINESS_MEMO_PATH_TRANSLATED, READINESS_SHELL_PATH_BLOCKED, READINESS_SHELL_PATH_REJECTED,
+    READINESS_SHELL_PATH_TRANSLATED, READINESS_WRAPPER_PATH_BLOCKED,
     READINESS_WRAPPER_PATH_REJECTED, READINESS_WRAPPER_PATH_TRANSLATED,
     RESIDUAL_FREE_FINAL_READINESS_INPUTS_REQUIRED, RESIDUAL_READINESS_PATH_BLOCKED,
     REVIEWABILITY_REDUCTION_REQUIRED, SECONDARY_READINESS_PATH_BLOCKED,
@@ -20361,6 +20369,10 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         "linux",
         "cargo run -p ucf-ops -- readiness-closure-sweep --out ./out/readiness_closure_sweep.json",
     ));
+    command_matrix.push(matrix_cmd(
+        "linux",
+        "cargo run -p ucf-ops -- readiness-seal-sweep --out ./out/readiness_seal_sweep.json",
+    ));
     command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- final-bundle-consumer-sweep --out ./out/final_bundle_consumer_sweep.json"));
     command_matrix.push(matrix_cmd(
         "linux",
@@ -20534,6 +20546,10 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
     command_matrix.push(matrix_cmd(
         "windows",
         "cargo run -p ucf-ops -- readiness-closure-sweep --out ./out/readiness_closure_sweep.json",
+    ));
+    command_matrix.push(matrix_cmd(
+        "windows",
+        "cargo run -p ucf-ops -- readiness-seal-sweep --out ./out/readiness_seal_sweep.json",
     ));
     command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- final-bundle-consumer-sweep --out ./out/final_bundle_consumer_sweep.json"));
     command_matrix.push(matrix_cmd(

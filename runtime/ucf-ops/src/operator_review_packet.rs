@@ -104,6 +104,7 @@ pub struct OperatorReviewPacketV1 {
     pub readiness_final_consolidation_sweep_digest_prefix: String,
     #[serde(default)]
     pub readiness_closure_sweep_digest_prefix: String,
+    pub readiness_seal_sweep_digest_prefix: String,
     #[serde(default)]
     pub governance_final_consolidation_sweep_digest_prefix: String,
     #[serde(default)]
@@ -612,6 +613,7 @@ fn build_from_snapshot(
         readiness_stabilization_sweep_digest_prefix: "MISSING".to_string(),
         readiness_final_consolidation_sweep_digest_prefix: "MISSING".to_string(),
         readiness_closure_sweep_digest_prefix: "MISSING".to_string(),
+        readiness_seal_sweep_digest_prefix: "MISSING".to_string(),
         snapshot_digest: "MISSING".to_string(),
     });
     let signoff = signoff.unwrap_or_else(|| OperatorSignoffDecisionV1 {
@@ -644,6 +646,7 @@ fn build_from_snapshot(
         readiness_stabilization_sweep_digest_prefix: "MISSING".to_string(),
         readiness_final_consolidation_sweep_digest_prefix: "MISSING".to_string(),
         readiness_closure_sweep_digest_prefix: "MISSING".to_string(),
+        readiness_seal_sweep_digest_prefix: "MISSING".to_string(),
         governance_final_consolidation_sweep_digest_prefix: "MISSING".to_string(),
         governance_closure_sweep_digest_prefix: "MISSING".to_string(),
         governance_seal_sweep_digest_prefix: "MISSING".to_string(),
@@ -856,6 +859,7 @@ fn build_blocked_minimal(
         readiness_stabilization_sweep_digest_prefix: "MISSING".to_string(),
         readiness_final_consolidation_sweep_digest_prefix: "MISSING".to_string(),
         readiness_closure_sweep_digest_prefix: "MISSING".to_string(),
+        readiness_seal_sweep_digest_prefix: "MISSING".to_string(),
         governance_final_consolidation_sweep_digest_prefix: "MISSING".to_string(),
         governance_closure_sweep_digest_prefix: "MISSING".to_string(),
         governance_seal_sweep_digest_prefix: "MISSING".to_string(),
@@ -996,6 +1000,7 @@ fn build_packet(
         readiness_closure_sweep_digest_prefix: signoff
             .readiness_closure_sweep_digest_prefix
             .clone(),
+        readiness_seal_sweep_digest_prefix: signoff.readiness_seal_sweep_digest_prefix.clone(),
         governance_final_consolidation_sweep_digest_prefix: signoff
             .governance_final_consolidation_sweep_digest_prefix
             .clone(),
@@ -1335,6 +1340,7 @@ mod tests {
             readiness_stabilization_sweep_digest_prefix: "MISSING".to_string(),
             readiness_final_consolidation_sweep_digest_prefix: "MISSING".to_string(),
             readiness_closure_sweep_digest_prefix: "MISSING".to_string(),
+            readiness_seal_sweep_digest_prefix: "MISSING".to_string(),
             snapshot_digest: "activedigest111111".to_string(),
         }
     }
@@ -1370,6 +1376,7 @@ mod tests {
             readiness_stabilization_sweep_digest_prefix: "MISSING".to_string(),
             readiness_final_consolidation_sweep_digest_prefix: "MISSING".to_string(),
             readiness_closure_sweep_digest_prefix: "MISSING".to_string(),
+            readiness_seal_sweep_digest_prefix: "MISSING".to_string(),
             governance_final_consolidation_sweep_digest_prefix: "MISSING".to_string(),
             governance_closure_sweep_digest_prefix: "MISSING".to_string(),
             governance_seal_sweep_digest_prefix: "MISSING".to_string(),

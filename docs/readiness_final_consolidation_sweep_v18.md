@@ -42,3 +42,6 @@ cargo run -p ucf-ops -- readiness-final-consolidation-sweep --out ./out/readines
 ```
 
 > v19 update: `readiness-closure-sweep` erzwingt den finalen Closure-Sweep; kanonische Consumer dürfen keine Readiness-Compatibility-Wrapper, Crosswalk-Layer oder secondary reviewability renderings mehr als primäre Wahrheit verwenden.
+
+
+> v20 update: canonical consumers now additionally require the closure-derived readiness seal (`readiness-seal-sweep`) before exposing authoritative readiness views.

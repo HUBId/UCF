@@ -96,6 +96,7 @@ pub struct OperatorWorkflowChainV1 {
     pub readiness_final_consolidation_sweep_digest_prefix: String,
     #[serde(default)]
     pub readiness_closure_sweep_digest_prefix: String,
+    pub readiness_seal_sweep_digest_prefix: String,
     #[serde(default)]
     pub governance_final_consolidation_sweep_digest_prefix: String,
     #[serde(default)]
@@ -406,6 +407,7 @@ impl OperatorWorkflowPolicyV1 {
             readiness_stabilization_sweep_digest_prefix: "MISSING".to_string(),
             readiness_final_consolidation_sweep_digest_prefix: "MISSING".to_string(),
             readiness_closure_sweep_digest_prefix: "MISSING".to_string(),
+            readiness_seal_sweep_digest_prefix: "MISSING".to_string(),
             governance_final_consolidation_sweep_digest_prefix: "MISSING".to_string(),
             governance_closure_sweep_digest_prefix: "MISSING".to_string(),
             governance_seal_sweep_digest_prefix: "MISSING".to_string(),
@@ -565,6 +567,9 @@ pub fn operator_workflow_chain(
         "sweep.closure_digest",
     )
     .unwrap_or_else(|| "MISSING".to_string());
+    chain.readiness_seal_sweep_digest_prefix =
+        discover_digest_prefix(&out_root, "readiness_seal_sweep.json", "sweep.seal_digest")
+            .unwrap_or_else(|| "MISSING".to_string());
     chain.governance_final_consolidation_sweep_digest_prefix = discover_digest_prefix(
         &out_root,
         "governance_final_consolidation_sweep.json",
@@ -824,6 +829,7 @@ mod tests {
             readiness_stabilization_sweep_digest_prefix: "MISSING".to_string(),
             readiness_final_consolidation_sweep_digest_prefix: "MISSING".to_string(),
             readiness_closure_sweep_digest_prefix: "MISSING".to_string(),
+            readiness_seal_sweep_digest_prefix: "MISSING".to_string(),
             governance_final_consolidation_sweep_digest_prefix: "MISSING".to_string(),
             governance_closure_sweep_digest_prefix: "MISSING".to_string(),
             governance_seal_sweep_digest_prefix: "MISSING".to_string(),
@@ -886,6 +892,7 @@ mod tests {
             readiness_stabilization_sweep_digest_prefix: "MISSING".to_string(),
             readiness_final_consolidation_sweep_digest_prefix: "MISSING".to_string(),
             readiness_closure_sweep_digest_prefix: "MISSING".to_string(),
+            readiness_seal_sweep_digest_prefix: "MISSING".to_string(),
             governance_final_consolidation_sweep_digest_prefix: "MISSING".to_string(),
             governance_closure_sweep_digest_prefix: "MISSING".to_string(),
             governance_seal_sweep_digest_prefix: "MISSING".to_string(),
@@ -965,6 +972,7 @@ mod tests {
                 readiness_stabilization_sweep_digest_prefix: "MISSING".to_string(),
                 readiness_final_consolidation_sweep_digest_prefix: "MISSING".to_string(),
                 readiness_closure_sweep_digest_prefix: "MISSING".to_string(),
+                readiness_seal_sweep_digest_prefix: "MISSING".to_string(),
                 governance_final_consolidation_sweep_digest_prefix: "MISSING".to_string(),
                 governance_closure_sweep_digest_prefix: "MISSING".to_string(),
                 governance_seal_sweep_digest_prefix: "MISSING".to_string(),

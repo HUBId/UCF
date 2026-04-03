@@ -64,7 +64,7 @@ struct ArtifactSpec {
     enum_names: &'static [&'static str],
 }
 
-const ARTIFACT_SPECS: [ArtifactSpec; 117] = [
+const ARTIFACT_SPECS: [ArtifactSpec; 118] = [
     ArtifactSpec {
         artifact_id: "active_review_snapshot_v1",
         file_rel: "runtime/ucf-ops/src/models_lifecycle.rs",
@@ -701,6 +701,12 @@ const ARTIFACT_SPECS: [ArtifactSpec; 117] = [
             "ReadinessClosureStatusV1",
             "ReadinessClosureMismatchCategoryV1",
         ],
+    },
+    ArtifactSpec {
+        artifact_id: "readiness_seal_sweep_v1",
+        file_rel: "runtime/ucf-ops/src/readiness_seal_sweep.rs",
+        type_name: "ReadinessSealSweepV1",
+        enum_names: &["ReadinessSealStatusV1", "ReadinessSealMismatchCategoryV1"],
     },
     ArtifactSpec {
         artifact_id: "readiness_final_consolidation_sweep_v1",
@@ -1363,6 +1369,7 @@ mod tests {
                 "readiness_convergence_sweep_v1",
                 "readiness_final_consolidation_sweep_v1",
                 "readiness_gate_report_v1",
+                "readiness_seal_sweep_v1",
                 "readiness_stabilization_sweep_v1",
                 "remediation_consistency_check_v1",
                 "repro_pack_manifest_v1",
