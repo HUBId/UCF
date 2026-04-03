@@ -95,6 +95,7 @@ mod v15_gate;
 mod v16_gate;
 mod v17_gate;
 mod v18_gate;
+mod v19_gate;
 mod v6_gate;
 mod v7_gate;
 mod v8_gate;
@@ -612,6 +613,7 @@ pub use v15_gate::{v15_gate, V15GateCheckV1, V15GateOverallStatus, V15GateReport
 pub use v16_gate::{v16_gate, V16GateCheckV1, V16GateOverallStatus, V16GateReportV1};
 pub use v17_gate::{v17_gate, V17GateCheckV1, V17GateOverallStatus, V17GateReportV1};
 pub use v18_gate::{v18_gate, V18GateCheckV1, V18GateOverallStatus, V18GateReportV1};
+pub use v19_gate::{v19_gate, V19GateCheckV1, V19GateOverallStatus, V19GateReportV1};
 pub use v6_gate::{v6_gate, V6GateCheckV1, V6GateOverallStatus, V6GateReportV1};
 pub use v7_gate::{v7_gate, V7GateCheckV1, V7GateOverallStatus, V7GateReportV1};
 pub use v8_gate::{v8_gate, V8GateCheckV1, V8GateOverallStatus, V8GateReportV1};
