@@ -18332,6 +18332,7 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         },
         |detail| {
             detail.contains(LEGACY_SCOPE_PATH_BLOCKED)
+                || detail.contains(LEGACY_GOVERNANCE_INPUT_BLOCKED)
                 || detail.contains(APPLIED_SCOPE_REQUIRED)
                 || detail.contains(APPLIED_SCOPE_MISSING)
                 || detail.contains(APPLIED_SCOPE_TRANSLATION_FAILED)
@@ -18373,6 +18374,7 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         },
         |detail| {
             detail.contains(LEGACY_SCOPE_PATH_BLOCKED)
+                || detail.contains(LEGACY_GOVERNANCE_INPUT_BLOCKED)
                 || detail.contains(APPLIED_SCOPE_REQUIRED)
                 || detail.contains(APPLIED_SCOPE_MISSING)
                 || detail.contains(APPLIED_SCOPE_TRANSLATION_FAILED)
@@ -18416,6 +18418,7 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         },
         |detail| {
             detail.contains(LEGACY_SCOPE_PATH_BLOCKED)
+                || detail.contains(LEGACY_GOVERNANCE_INPUT_BLOCKED)
                 || detail.contains(APPLIED_SCOPE_REQUIRED)
                 || detail.contains(APPLIED_SCOPE_MISSING)
                 || detail.contains(APPLIED_SCOPE_TRANSLATION_FAILED)
@@ -18441,6 +18444,7 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         },
         |detail| {
             detail.contains(LEGACY_SCOPE_PATH_BLOCKED)
+                || detail.contains(LEGACY_GOVERNANCE_INPUT_BLOCKED)
                 || detail.contains(APPLIED_SCOPE_REQUIRED)
                 || detail.contains(APPLIED_SCOPE_MISSING)
                 || detail.contains(APPLIED_SCOPE_TRANSLATION_FAILED)
@@ -18479,6 +18483,7 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         },
         |detail| {
             detail.contains(LEGACY_SCOPE_PATH_BLOCKED)
+                || detail.contains(LEGACY_GOVERNANCE_INPUT_BLOCKED)
                 || detail.contains(APPLIED_SCOPE_REQUIRED)
                 || detail.contains(APPLIED_SCOPE_MISSING)
                 || detail.contains(APPLIED_SCOPE_TRANSLATION_FAILED)
@@ -18511,6 +18516,7 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         },
         |detail| {
             detail.contains(LEGACY_SCOPE_PATH_BLOCKED)
+                || detail.contains(LEGACY_GOVERNANCE_INPUT_BLOCKED)
                 || detail.contains(APPLIED_SCOPE_REQUIRED)
                 || detail.contains(APPLIED_SCOPE_MISSING)
                 || detail.contains(APPLIED_SCOPE_TRANSLATION_FAILED)
@@ -18539,6 +18545,7 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         },
         |detail| {
             detail.contains(LEGACY_SCOPE_PATH_BLOCKED)
+                || detail.contains(LEGACY_GOVERNANCE_INPUT_BLOCKED)
                 || detail.contains(APPLIED_SCOPE_REQUIRED)
                 || detail.contains(APPLIED_SCOPE_MISSING)
                 || detail.contains(APPLIED_SCOPE_TRANSLATION_FAILED)
@@ -18628,6 +18635,7 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         },
         |detail| {
             detail.contains(LEGACY_SCOPE_PATH_BLOCKED)
+                || detail.contains(LEGACY_GOVERNANCE_INPUT_BLOCKED)
                 || detail.contains(APPLIED_SCOPE_REQUIRED)
                 || detail.contains(APPLIED_SCOPE_MISSING)
                 || detail.contains(APPLIED_SCOPE_TRANSLATION_FAILED)
@@ -18763,6 +18771,7 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         },
         |detail| {
             detail.contains(LEGACY_SCOPE_PATH_BLOCKED)
+                || detail.contains(LEGACY_GOVERNANCE_INPUT_BLOCKED)
                 || detail.contains(APPLIED_SCOPE_REQUIRED)
                 || detail.contains(APPLIED_SCOPE_MISSING)
                 || detail.contains(APPLIED_SCOPE_TRANSLATION_FAILED)
@@ -18791,6 +18800,7 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         },
         |detail| {
             detail.contains(LEGACY_SCOPE_PATH_BLOCKED)
+                || detail.contains(LEGACY_GOVERNANCE_INPUT_BLOCKED)
                 || detail.contains(APPLIED_SCOPE_REQUIRED)
                 || detail.contains(APPLIED_SCOPE_MISSING)
                 || detail.contains(APPLIED_SCOPE_TRANSLATION_FAILED)
@@ -19194,6 +19204,7 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
                 || detail.contains(APPLIED_SCOPE_MISSING)
                 || detail.contains(APPLIED_SCOPE_TRANSLATION_FAILED)
                 || detail.contains("SUPPORTED_SET_POLICY_V2_MISSING")
+                || detail.contains(RESIDUAL_READINESS_PATH_BLOCKED)
                 || detail
                     .contains("FINAL_CONSOLIDATED_STABILIZED_CANONICAL_READINESS_INPUTS_REQUIRED")
         },
@@ -19596,6 +19607,7 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
                 || detail.contains(APPLIED_SCOPE_TRANSLATION_FAILED)
                 || detail.contains("APPLIED_SCOPE_SLOT_TRUTH_MISSING")
                 || detail.contains("SUPPORTED_SET_POLICY_V2_MISSING")
+                || detail.contains(RESIDUAL_FREE_FINAL_BUNDLE_INPUTS_REQUIRED)
                 || detail.contains("FINAL_CONSOLIDATED_STABILIZED_CANONICAL_BUNDLE_INPUTS_REQUIRED")
         },
     );
