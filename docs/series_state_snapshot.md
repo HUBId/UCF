@@ -92,6 +92,7 @@ Reference: `docs/next_10_prompts.md`
 - v17 completion criterion: **`ucf-ops v17 gate` overall PASS at Prompt 348**.
 - v18 completion criterion: **`ucf-ops v18 gate` overall PASS at Prompt 358**.
 - v19 completion criterion: **`ucf-ops v19 gate` overall PASS**.
+- Next anchor transition is blocked until **`ucf-ops v19 gate` overall PASS**.
 - v19 advancement remains hardware-neutral, offline-first, probe-first, shadow-first, and fail-closed.
 - Prompts are classified as MUST/NICE/DEFERRED at authoring time.
 
