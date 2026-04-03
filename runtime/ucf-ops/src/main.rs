@@ -31,11 +31,12 @@ use ucf_ops::{
     models_supported_scope_execute, models_supported_scope_execute_v10,
     models_supported_scope_execute_v11, models_supported_scope_execute_v12,
     models_supported_scope_execute_v13, models_supported_scope_execute_v14,
-    models_supported_scope_execute_v4, models_supported_scope_execute_v5,
-    models_supported_scope_execute_v6, models_supported_scope_execute_v7,
-    models_supported_scope_execute_v8, models_supported_scope_execute_v9,
-    models_supported_scope_reevaluate, models_supported_set_apply, models_supported_set_review,
-    models_verify, models_verify_lifecycle, net_deps_audit, nightly_summarize, one_command_bringup,
+    models_supported_scope_execute_v15, models_supported_scope_execute_v4,
+    models_supported_scope_execute_v5, models_supported_scope_execute_v6,
+    models_supported_scope_execute_v7, models_supported_scope_execute_v8,
+    models_supported_scope_execute_v9, models_supported_scope_reevaluate,
+    models_supported_set_apply, models_supported_set_review, models_verify,
+    models_verify_lifecycle, net_deps_audit, nightly_summarize, one_command_bringup,
     operator_export_chain_check, operator_report, operator_report_text, operator_review_packet,
     operator_review_packet_text, operator_roundtrip_chain_check, operator_signoff,
     operator_signoff_text, operator_workflow_chain, operator_workflow_chain_text, out_manifest,
@@ -1660,6 +1661,28 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     );
                     println!("out={}", out.display());
                 }
+                "supported-scope-execute-v15" => {
+                    let out = arg_value(&args, "--out")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("./out/supported_scope_execute_v15.json"));
+                    let report = models_supported_scope_execute_v15(&workdir, &out)?;
+                    let applied = load_applied_supported_set_context_v1(&workdir)?;
+                    println!("previous_applied_scope={}", applied.slots.join(","));
+                    println!("decision={:?}", report.execution_decision);
+                    if let Some(slot) = report.chosen_candidate_slot.as_ref() {
+                        println!("chosen_candidate_slot={slot}");
+                    }
+                    println!("resulting_scope={}", report.resulting_supported_set_digest_prefix);
+                    println!(
+                        "primary_rationale={}",
+                        report
+                            .rationale_codes
+                            .first()
+                            .cloned()
+                            .unwrap_or_else(|| "NONE".to_string())
+                    );
+                    println!("out={}", out.display());
+                }
                 "supported-set-apply" => {
                     let out = arg_value(&args, "--out")
                         .map(PathBuf::from)
@@ -1736,7 +1759,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 _ => {
                     return Err(
-                        "usage: ucf-ops models <verify|probe|stage|promote|rollback|list|active-check|active-evidence|eligibility|evidence-snapshot|active-review-snapshot|supported-set-review|supported-scope-reevaluate|supported-scope-execute|supported-scope-execute-v4|supported-scope-execute-v5|supported-scope-execute-v6|supported-scope-execute-v7|supported-scope-execute-v8|supported-scope-execute-v9|supported-scope-execute-v10|supported-scope-execute-v11|supported-scope-execute-v12|supported-scope-execute-v13|supported-scope-execute-v14|supported-set-apply|backend-resolution|consistency-check|applied-scope-check|recommend-rollback|shadow-ready> ..."
+                        "usage: ucf-ops models <verify|probe|stage|promote|rollback|list|active-check|active-evidence|eligibility|evidence-snapshot|active-review-snapshot|supported-set-review|supported-scope-reevaluate|supported-scope-execute|supported-scope-execute-v4|supported-scope-execute-v5|supported-scope-execute-v6|supported-scope-execute-v7|supported-scope-execute-v8|supported-scope-execute-v9|supported-scope-execute-v10|supported-scope-execute-v11|supported-scope-execute-v12|supported-scope-execute-v13|supported-scope-execute-v14|supported-scope-execute-v15|supported-set-apply|backend-resolution|consistency-check|applied-scope-check|recommend-rollback|shadow-ready> ..."
                             .into(),
                     )
                 }
