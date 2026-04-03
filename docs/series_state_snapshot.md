@@ -1,8 +1,8 @@
 # Prompt Series State Snapshot
 
 ## Current anchor
-- **Current anchor milestone:** `Real Compute Onboarding v19`.
-- **Anchor definition:** v19 planning queue in `docs/next_10_prompts.md` (entry set `360-369`).
+- **Current anchor milestone:** `Real Compute Onboarding v20`.
+- **Anchor definition:** v20 planning queue in `docs/next_10_prompts.md` (entry set `370-379`).
 - **Prompt index source:** `docs/prompt_series_index.md`.
 
 ## Status against anchor milestones
@@ -25,30 +25,31 @@
 - **v16:** complete (`ucf-ops v16 gate` overall PASS recorded at Prompt 338).
 - **v17:** complete (`ucf-ops v17 gate` overall PASS recorded at Prompt 348).
 - **v18:** complete (`ucf-ops v18 gate` overall PASS recorded at Prompt 358).
-- **v19:** not started yet.
+- **v19:** complete (`ucf-ops v19 gate` overall PASS recorded at Prompt 368).
+- **v20:** not started yet.
 - **Queue policy:** immediate queue remains capped to 10 prompts.
 
 ## Last executed prompt / resume point
-- Last executed prompt ID: **359**.
-- Next prompt ID: **360**.
-- Resume from: **`PROMPT 360`**.
+- Last executed prompt ID: **369**.
+- Next prompt ID: **370**.
+- Resume from: **`PROMPT 370`**.
 - Numbering remains monotonic and append-only.
 
 ## Immediate next prompts (capped to 10)
 Reference: `docs/next_10_prompts.md`
 
-| Prompt ID | Title (short) | v19 class | Status |
+| Prompt ID | Title (short) | v20 class | Status |
 |---:|---|---|---|
-| 360 | Canonical governance truth completion for all remaining consumers | MUST | queued |
-| 361 | Supported-scope re-check or freeze reaffirmation | MUST | queued |
-| 362 | Readiness-input canonical consumption completion | MUST | queued |
-| 363 | Bundle chain and continuity proof normalization | MUST | queued |
-| 364 | Primary blocking/remediation semantics hardening | MUST | queued |
-| 365 | v19 schema snapshot refresh | MUST | queued |
-| 366 | v19 portability and docs refresh | NICE | queued |
-| 367 | Workflow/export continuity authority hardening | MUST | queued |
-| 368 | v19 gate schema and orchestration | MUST | queued |
-| 369 | v19 wrap and next-anchor governance | MUST | queued |
+| 370 | Canonical governance truth completion for all remaining consumers | MUST | queued |
+| 371 | Supported-scope re-check or freeze reaffirmation | MUST | queued |
+| 372 | Readiness-input canonical consumption completion | MUST | queued |
+| 373 | Bundle chain and continuity proof normalization | MUST | queued |
+| 374 | Primary blocking/remediation semantics hardening | MUST | queued |
+| 375 | v20 schema snapshot refresh | MUST | queued |
+| 376 | v20 portability and docs refresh | NICE | queued |
+| 377 | Workflow/export continuity authority hardening | MUST | queued |
+| 378 | v20 gate schema and orchestration | MUST | queued |
+| 379 | v20 wrap and next-anchor governance | MUST | queued |
 
 ## Historical anchor checkpoints
 
@@ -70,6 +71,7 @@ Reference: `docs/next_10_prompts.md`
 | 338 | v16 gate closure | complete |
 | 348 | v17 gate closure | complete |
 | 358 | v18 gate closure | complete |
+| 368 | v19 gate closure | complete |
 
 ## Series control notes
 - v0 completion requirement: historical signoff recorded.
@@ -91,9 +93,9 @@ Reference: `docs/next_10_prompts.md`
 - v16 completion criterion: **`ucf-ops v16 gate` overall PASS at Prompt 338**.
 - v17 completion criterion: **`ucf-ops v17 gate` overall PASS at Prompt 348**.
 - v18 completion criterion: **`ucf-ops v18 gate` overall PASS at Prompt 358**.
-- v19 completion criterion: **`ucf-ops v19 gate` overall PASS**.
-- Next anchor transition is blocked until **`ucf-ops v19 gate` overall PASS**.
-- v19 advancement remains hardware-neutral, offline-first, probe-first, shadow-first, and fail-closed.
+- v19 completion criterion: **`ucf-ops v19 gate` overall PASS at Prompt 368**.
+- Next anchor transition is blocked until **`ucf-ops v20 gate` overall PASS**.
+- v20 advancement remains hardware-neutral, offline-first, probe-first, shadow-first, and fail-closed.
 - Prompts are classified as MUST/NICE/DEFERRED at authoring time.
 
 ## Supported real-slot baseline for current stage
