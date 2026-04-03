@@ -44,3 +44,8 @@ Canonical export flows can no longer use bundle compatibility wrappers, crosswal
 ```bash
 cargo run -p ucf-ops -- bundle-closure-sweep --out ./out/bundle_closure_sweep.json
 ```
+
+
+## v20 seal-sweep note
+
+v20 (`bundle-seal-sweep`) removes remaining canonical dependence on bundle compatibility shells, bridge layers, and auxiliary export views across canonical export consumers.
