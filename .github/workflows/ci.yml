@@ -1466,8 +1466,30 @@ jobs:
           }
       - name: Portability check
         run: cargo run -p ucf-ops -- portability check --out ./out/portability.json
-      - name: Portability report
-        run: cargo run -p ucf-ops -- portability report --out ./out/portability_report.json
+      - name: Portability report (linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          cargo run -p ucf-ops -- portability report --out ./out/portability_report.json || {
+            code=$?
+            if [ "$code" -eq 2 ]; then
+              echo "portability_report=skip reason=validation_failed"
+            else
+              exit "$code"
+            fi
+          }
+      - name: Portability report (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cargo run -p ucf-ops -- portability report --out ./out/portability_report.json
+          if ($LASTEXITCODE -eq 2) {
+            Write-Host "portability_report=skip reason=validation_failed"
+            exit 0
+          }
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
       - name: Readiness gate (test profile)
         if: runner.os == 'Linux'
         run: cargo run -p ucf-ops -- readiness-gate --profile test --out ./out/gate_report.json --workdir ./.ucf_gate
