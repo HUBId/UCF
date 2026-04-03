@@ -1,6 +1,6 @@
 # Supported Scope Execution v19 (Governance Closure Gated)
 
-`SupportedScopeExecutionV14` ist die aktuelle autoritative Ausführungsentscheidung für Supported-Scope-Änderungen in v19.
+`SupportedScopeExecutionV14` bleibt die v19-Ausführungsstufe. In v20 wurde diese Autorität durch `SupportedScopeExecutionV15` (Seal-gated) abgelöst.
 
 ## Hierarchie (v19)
 - **Policy** (`SupportedRealSlotSetPolicyV2`): bewertet Kandidaten, aber ändert den Scope nicht.
@@ -36,3 +36,6 @@ cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_app
 ```
 
 3. In `supported_set_apply.json` `previous_slots` vs `resulting_slots` vergleichen.
+
+
+> Hinweis: Für v20 ist die aktuelle Kette in `docs/supported_scope_execution_v20.md` beschrieben.

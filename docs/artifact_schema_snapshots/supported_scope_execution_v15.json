@@ -1,0 +1,63 @@
+{
+  "artifact_id": "supported_scope_execution_v15",
+  "type_name": "SupportedScopeExecutionV15",
+  "source_file": "runtime/ucf-ops/src/models_lifecycle.rs",
+  "required_fields": [
+    "absolute_final_governance_terminal_sweep_digest_prefix",
+    "canonical_governance_authority_digest_prefix",
+    "canonical_governance_entry_digest_prefix",
+    "current_policy_digest_prefix",
+    "current_reevaluation_digest_prefix",
+    "execution_decision",
+    "execution_digest",
+    "final_governance_consumer_authority_digest_prefix",
+    "final_governance_residual_sweep_digest_prefix",
+    "governance_closure_sweep_digest_prefix",
+    "governance_convergence_sweep_digest_prefix",
+    "governance_final_consolidation_sweep_digest_prefix",
+    "governance_seal_sweep_digest_prefix",
+    "governance_stabilization_sweep_digest_prefix",
+    "previous_applied_set_digest_prefix",
+    "rationale_codes",
+    "residual_free_governance_absolute_sweep_digest_prefix",
+    "residual_free_governance_consumer_authority_digest_prefix",
+    "resulting_supported_set_digest_prefix",
+    "schema_version",
+    "terminal_governance_ultimate_sweep_digest_prefix"
+  ],
+  "optional_fields": [
+    "chosen_candidate_slot",
+    "prior_scope_execution_digest_prefix"
+  ],
+  "field_types": {
+    "absolute_final_governance_terminal_sweep_digest_prefix": "String",
+    "canonical_governance_authority_digest_prefix": "String",
+    "canonical_governance_entry_digest_prefix": "String",
+    "chosen_candidate_slot": "Option<String>",
+    "current_policy_digest_prefix": "String",
+    "current_reevaluation_digest_prefix": "String",
+    "execution_decision": "SupportedScopeExecutionDecisionV15",
+    "execution_digest": "String",
+    "final_governance_consumer_authority_digest_prefix": "String",
+    "final_governance_residual_sweep_digest_prefix": "String",
+    "governance_closure_sweep_digest_prefix": "String",
+    "governance_convergence_sweep_digest_prefix": "String",
+    "governance_final_consolidation_sweep_digest_prefix": "String",
+    "governance_seal_sweep_digest_prefix": "String",
+    "governance_stabilization_sweep_digest_prefix": "String",
+    "previous_applied_set_digest_prefix": "String",
+    "prior_scope_execution_digest_prefix": "Option<String>",
+    "rationale_codes": "Vec<String>",
+    "residual_free_governance_absolute_sweep_digest_prefix": "String",
+    "residual_free_governance_consumer_authority_digest_prefix": "String",
+    "resulting_supported_set_digest_prefix": "String",
+    "schema_version": "u16",
+    "terminal_governance_ultimate_sweep_digest_prefix": "String"
+  },
+  "enum_variants": {
+    "SupportedScopeExecutionDecisionV15": [
+      "ExecuteExpandByOne",
+      "ReaffirmFreeze"
+    ]
+  }
+}

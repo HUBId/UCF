@@ -40,3 +40,7 @@
 ```bash
 cargo run -p ucf-ops -- governance-seal-sweep --out ./out/governance_seal_sweep.json
 ```
+
+## Zusammenhang mit Supported-Scope-Execution
+
+Ab v20 darf `models supported-scope-execute-v15` nur expandieren, wenn `seal_status: PASS` vorliegt und der Kandidat weiterhin ohne Governance-Shell-/Bridge-/Auxiliary-View-Sonderpfade sowie ohne Export-/Bundle-/Continuity-Sonderpfade tragfähig bleibt.

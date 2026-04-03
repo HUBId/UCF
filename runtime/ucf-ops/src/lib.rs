@@ -330,10 +330,11 @@ pub use models_lifecycle::{
     models_supported_scope_execute, models_supported_scope_execute_v10,
     models_supported_scope_execute_v11, models_supported_scope_execute_v12,
     models_supported_scope_execute_v13, models_supported_scope_execute_v14,
-    models_supported_scope_execute_v4, models_supported_scope_execute_v5,
-    models_supported_scope_execute_v6, models_supported_scope_execute_v7,
-    models_supported_scope_execute_v8, models_supported_scope_execute_v9,
-    models_supported_scope_reevaluate, models_supported_set_apply, models_supported_set_review,
+    models_supported_scope_execute_v15, models_supported_scope_execute_v4,
+    models_supported_scope_execute_v5, models_supported_scope_execute_v6,
+    models_supported_scope_execute_v7, models_supported_scope_execute_v8,
+    models_supported_scope_execute_v9, models_supported_scope_reevaluate,
+    models_supported_set_apply, models_supported_set_review,
     models_verify as models_verify_lifecycle, parse_slot, ActiveCheckStatus,
     ActiveEnablementDeniedCode, ActiveEnablementEvidenceV1, ActiveReviewEvidenceV1,
     ActiveReviewOverallStatusV1, ActiveReviewSnapshotRecordV1, AggregatedActiveReviewSnapshotV1,
@@ -347,11 +348,12 @@ pub use models_lifecycle::{
     SupportedRealSlotSetV2, SupportedRealSlotsActiveViewV1, SupportedScopeExecutionDecisionV10,
     SupportedScopeExecutionDecisionV11, SupportedScopeExecutionDecisionV12,
     SupportedScopeExecutionDecisionV13, SupportedScopeExecutionDecisionV14,
-    SupportedScopeExecutionDecisionV3, SupportedScopeExecutionDecisionV4,
-    SupportedScopeExecutionDecisionV5, SupportedScopeExecutionDecisionV6,
-    SupportedScopeExecutionDecisionV7, SupportedScopeExecutionDecisionV8,
-    SupportedScopeExecutionDecisionV9, SupportedScopeExecutionV10, SupportedScopeExecutionV11,
-    SupportedScopeExecutionV12, SupportedScopeExecutionV13, SupportedScopeExecutionV14,
+    SupportedScopeExecutionDecisionV15, SupportedScopeExecutionDecisionV3,
+    SupportedScopeExecutionDecisionV4, SupportedScopeExecutionDecisionV5,
+    SupportedScopeExecutionDecisionV6, SupportedScopeExecutionDecisionV7,
+    SupportedScopeExecutionDecisionV8, SupportedScopeExecutionDecisionV9,
+    SupportedScopeExecutionV10, SupportedScopeExecutionV11, SupportedScopeExecutionV12,
+    SupportedScopeExecutionV13, SupportedScopeExecutionV14, SupportedScopeExecutionV15,
     SupportedScopeExecutionV3, SupportedScopeExecutionV4, SupportedScopeExecutionV5,
     SupportedScopeExecutionV6, SupportedScopeExecutionV7, SupportedScopeExecutionV8,
     SupportedScopeExecutionV9, SupportedScopeReevaluationDecisionV1, SupportedScopeReevaluationV1,
@@ -16723,6 +16725,7 @@ pub struct PortabilityReportV1 {
     pub supported_scope_execute_v13_smoke: PortabilityCommandCheck,
     pub governance_closure_sweep_smoke: PortabilityCommandCheck,
     pub supported_scope_execute_v14_smoke: PortabilityCommandCheck,
+    pub supported_scope_execute_v15_smoke: PortabilityCommandCheck,
     pub final_readiness_consumer_sweep_smoke: PortabilityCommandCheck,
     pub readiness_residual_sweep_smoke: PortabilityCommandCheck,
     pub residual_free_readiness_sweep_smoke: PortabilityCommandCheck,
@@ -18826,6 +18829,34 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
                 || detail.contains("GOVERNANCE_CLOSURE_INPUTS_REQUIRED")
         },
     );
+    let supported_scope_execute_v15_smoke = out_smoke_check_with_skip(
+        "supported_scope_execute_v15_smoke",
+        "./out/supported_scope_execute_v15.json",
+        |out_path| {
+            let seal_out = PathBuf::from("./out/governance_seal_sweep.json");
+            governance_seal_sweep(workdir, &seal_out)?;
+            models_supported_scope_execute_v15(workdir, out_path)
+        },
+        |report| {
+            format!(
+                "decision={:?} candidates={}",
+                report.execution_decision,
+                usize::from(report.chosen_candidate_slot.is_some())
+            )
+        },
+        |detail| {
+            detail.contains(LEGACY_SCOPE_PATH_BLOCKED)
+                || detail.contains(LEGACY_GOVERNANCE_INPUT_BLOCKED)
+                || detail.contains(APPLIED_SCOPE_REQUIRED)
+                || detail.contains(APPLIED_SCOPE_MISSING)
+                || detail.contains(APPLIED_SCOPE_TRANSLATION_FAILED)
+                || detail.contains(RESIDUAL_GOVERNANCE_PATH_BLOCKED)
+                || detail.contains("PATH_BLOCKED")
+                || detail.contains("APPLIED_SCOPE_SLOT_TRUTH_MISSING")
+                || detail.contains("SUPPORTED_SET_POLICY_V2_MISSING")
+                || detail.contains("GOVERNANCE_SEAL_INPUTS_REQUIRED")
+        },
+    );
     let final_readiness_consumer_sweep_smoke = {
         let out_path = PathBuf::from("./out/final_readiness_consumer_sweep.json");
         let prep = (|| -> Result<(), OpsError> {
@@ -20316,6 +20347,7 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
     command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- models supported-scope-execute-v12 --out ./out/supported_scope_execute_v12.json --workdir ."));
     command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- models supported-scope-execute-v13 --out ./out/supported_scope_execute_v13.json --workdir ."));
     command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- models supported-scope-execute-v14 --out ./out/supported_scope_execute_v14.json --workdir ."));
+    command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- models supported-scope-execute-v15 --out ./out/supported_scope_execute_v15.json --workdir ."));
     command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- final-readiness-consumer-sweep --out ./out/final_readiness_consumer_sweep.json"));
     command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- readiness-residual-sweep --out ./out/readiness_residual_sweep.json"));
     command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- residual-free-readiness-sweep --out ./out/residual_free_readiness_sweep.json"));
@@ -20489,6 +20521,7 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
     command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- models supported-scope-execute-v12 --out ./out/supported_scope_execute_v12.json --workdir ."));
     command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- models supported-scope-execute-v13 --out ./out/supported_scope_execute_v13.json --workdir ."));
     command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- models supported-scope-execute-v14 --out ./out/supported_scope_execute_v14.json --workdir ."));
+    command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- models supported-scope-execute-v15 --out ./out/supported_scope_execute_v15.json --workdir ."));
     command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- final-readiness-consumer-sweep --out ./out/final_readiness_consumer_sweep.json"));
     command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- readiness-residual-sweep --out ./out/readiness_residual_sweep.json"));
     command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- residual-free-readiness-sweep --out ./out/residual_free_readiness_sweep.json"));
@@ -20616,6 +20649,7 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         supported_scope_execute_v13_smoke,
         governance_closure_sweep_smoke,
         supported_scope_execute_v14_smoke,
+        supported_scope_execute_v15_smoke,
         final_readiness_consumer_sweep_smoke,
         readiness_residual_sweep_smoke,
         residual_free_readiness_sweep_smoke,
