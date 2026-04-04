@@ -55,3 +55,5 @@ cargo run -p ucf-ops -- primary-semantics-final-consolidation-sweep --out ./out/
 ```
 
 > v19 update: `primary-semantics-closure-sweep` removes remaining compatibility-wrapper/crosswalk/secondary-render residues from canonical surfaces and emits `PrimarySemanticsClosureSweepV1`.
+
+> v20 update: seal sweep (`primary-semantics-seal-sweep`) removes last shell/bridge/auxiliary-view primary semantics residues from canonical governance/readiness/bundle/review/export/interop/gate surfaces.

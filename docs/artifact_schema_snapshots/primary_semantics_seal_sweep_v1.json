@@ -1,0 +1,61 @@
+{
+  "artifact_id": "primary_semantics_seal_sweep_v1",
+  "type_name": "PrimarySemanticsSealSweepV1",
+  "source_file": "runtime/ucf-ops/src/primary_semantics_seal_sweep.rs",
+  "required_fields": [
+    "absolute_final_primary_semantics_terminal_sweep_digest_prefix",
+    "canonical_bundle_spine_digest_prefix",
+    "canonical_governance_entry_digest_prefix",
+    "canonical_primary_semantics_authority_digest_prefix",
+    "canonical_readiness_spine_digest_prefix",
+    "covered_surface_count",
+    "final_primary_semantics_consumer_authority_digest_prefix",
+    "final_primary_semantics_residual_sweep_digest_prefix",
+    "primary_semantics_closure_sweep_digest_prefix",
+    "primary_semantics_convergence_sweep_digest_prefix",
+    "primary_semantics_final_consolidation_sweep_digest_prefix",
+    "primary_semantics_stabilization_sweep_digest_prefix",
+    "residual_free_primary_semantics_absolute_sweep_digest_prefix",
+    "residual_free_primary_semantics_consumer_authority_digest_prefix",
+    "residual_path_count",
+    "seal_digest",
+    "seal_status",
+    "terminal_primary_semantics_ultimate_sweep_digest_prefix"
+  ],
+  "optional_fields": [],
+  "field_types": {
+    "absolute_final_primary_semantics_terminal_sweep_digest_prefix": "String",
+    "canonical_bundle_spine_digest_prefix": "String",
+    "canonical_governance_entry_digest_prefix": "String",
+    "canonical_primary_semantics_authority_digest_prefix": "String",
+    "canonical_readiness_spine_digest_prefix": "String",
+    "covered_surface_count": "u16",
+    "final_primary_semantics_consumer_authority_digest_prefix": "String",
+    "final_primary_semantics_residual_sweep_digest_prefix": "String",
+    "primary_semantics_closure_sweep_digest_prefix": "String",
+    "primary_semantics_convergence_sweep_digest_prefix": "String",
+    "primary_semantics_final_consolidation_sweep_digest_prefix": "String",
+    "primary_semantics_stabilization_sweep_digest_prefix": "String",
+    "residual_free_primary_semantics_absolute_sweep_digest_prefix": "String",
+    "residual_free_primary_semantics_consumer_authority_digest_prefix": "String",
+    "residual_path_count": "u16",
+    "seal_digest": "String",
+    "seal_status": "PrimarySemanticsSealStatusV1",
+    "terminal_primary_semantics_ultimate_sweep_digest_prefix": "String"
+  },
+  "enum_variants": {
+    "PrimarySemanticsSealMismatchCategoryV1": [
+      "CanonicalConditionMappingMismatch",
+      "PrimaryBlockingOrderMismatch",
+      "PrimaryRemediationOrderMismatch",
+      "PrimarySemanticsShellPathPresent",
+      "SurfaceSkippedPrimarySemanticsSeal",
+      "SurfaceUsedPrimarySemanticsShellPath"
+    ],
+    "PrimarySemanticsSealStatusV1": [
+      "Fail",
+      "LegacyPresent",
+      "Pass"
+    ]
+  }
+}

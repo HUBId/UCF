@@ -37,3 +37,5 @@ cargo run -p ucf-ops -- primary-semantics-closure-sweep --out ./out/primary_sema
 ## Fail-closed behavior
 
 The sweep fails closed when final-consolidated stabilized canonical primary-semantics inputs are missing, stale, contradictory, or when wrapper/crosswalk/secondary-render paths are still used as authoritative.
+
+> v20 update: `primary-semantics-seal-sweep` seals canonical surfaces so no primary-semantics compatibility shell, bridge layer, or auxiliary remediation view remains authoritative outside the closure-complete canonical chain.

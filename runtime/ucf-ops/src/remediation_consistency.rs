@@ -272,6 +272,11 @@ pub const PRIMARY_SEMANTICS_WRAPPER_PATH_BLOCKED: &str = "PRIMARY_SEMANTICS_WRAP
 pub const PRIMARY_SEMANTICS_WRAPPER_PATH_TRANSLATED: &str =
     "PRIMARY_SEMANTICS_WRAPPER_PATH_TRANSLATED";
 pub const PRIMARY_SEMANTICS_WRAPPER_PATH_REJECTED: &str = "PRIMARY_SEMANTICS_WRAPPER_PATH_REJECTED";
+pub const PRIMARY_SEMANTICS_SHELL_PATH_BLOCKED: &str = "PRIMARY_SEMANTICS_SHELL_PATH_BLOCKED";
+pub const PRIMARY_SEMANTICS_SHELL_PATH_TRANSLATED: &str = "PRIMARY_SEMANTICS_SHELL_PATH_TRANSLATED";
+pub const PRIMARY_SEMANTICS_SHELL_PATH_REJECTED: &str = "PRIMARY_SEMANTICS_SHELL_PATH_REJECTED";
+pub const CLOSURE_COMPLETE_FINAL_CONSOLIDATED_STABILIZED_CANONICAL_PRIMARY_SEMANTICS_INPUTS_REQUIRED: &str =
+    "CLOSURE_COMPLETE_FINAL_CONSOLIDATED_STABILIZED_CANONICAL_PRIMARY_SEMANTICS_INPUTS_REQUIRED";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -439,6 +444,25 @@ pub struct PrimarySemanticsClosureInputsV1 {
     pub primary_semantics_convergence_sweep_digest_prefix: String,
     pub primary_semantics_stabilization_sweep_digest_prefix: String,
     pub primary_semantics_final_consolidation_sweep_digest_prefix: String,
+    pub authority_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PrimarySemanticsSealInputsV1 {
+    pub canonical_governance_entry_digest_prefix: String,
+    pub canonical_readiness_spine_digest_prefix: String,
+    pub canonical_bundle_spine_digest_prefix: String,
+    pub canonical_primary_semantics_authority_digest_prefix: String,
+    pub final_primary_semantics_consumer_authority_digest_prefix: String,
+    pub final_primary_semantics_residual_sweep_digest_prefix: String,
+    pub residual_free_primary_semantics_consumer_authority_digest_prefix: String,
+    pub residual_free_primary_semantics_absolute_sweep_digest_prefix: String,
+    pub absolute_final_primary_semantics_terminal_sweep_digest_prefix: String,
+    pub terminal_primary_semantics_ultimate_sweep_digest_prefix: String,
+    pub primary_semantics_convergence_sweep_digest_prefix: String,
+    pub primary_semantics_stabilization_sweep_digest_prefix: String,
+    pub primary_semantics_final_consolidation_sweep_digest_prefix: String,
+    pub primary_semantics_closure_sweep_digest_prefix: String,
     pub authority_digest: String,
 }
 
@@ -1788,6 +1812,149 @@ pub fn require_primary_semantics_closure_inputs(
         primary_semantics_stabilization_sweep_digest_prefix: base
             .primary_semantics_stabilization_sweep_digest_prefix,
         primary_semantics_final_consolidation_sweep_digest_prefix: final_consolidation_prefix,
+        authority_digest: sha256_hex(&payload),
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn require_primary_semantics_seal_inputs(
+    canonical_condition_model: Option<&[String]>,
+    canonical_remediation_registry: Option<&[String]>,
+    canonical_primary_semantics_authority: Option<&CanonicalPrimarySemanticsAuthorityV1>,
+    final_primary_semantics_consumer_authority: Option<&FinalPrimarySemanticsConsumerAuthorityV1>,
+    final_primary_semantics_residual_sweep: Option<&crate::FinalPrimarySemanticsResidualSweepV1>,
+    residual_free_primary_semantics_consumer_authority: Option<
+        &crate::ResidualFreePrimarySemanticsConsumerAuthorityV1,
+    >,
+    residual_free_primary_semantics_absolute_sweep: Option<
+        &crate::ResidualFreePrimarySemanticsAbsoluteSweepV1,
+    >,
+    absolute_final_primary_semantics_terminal_sweep: Option<
+        &crate::AbsoluteFinalPrimarySemanticsTerminalSweepV1,
+    >,
+    terminal_primary_semantics_ultimate_sweep: Option<
+        &crate::TerminalPrimarySemanticsUltimateSweepV1,
+    >,
+    primary_semantics_convergence_sweep: Option<&crate::PrimarySemanticsConvergenceSweepV1>,
+    primary_semantics_stabilization_sweep: Option<&crate::PrimarySemanticsStabilizationSweepV1>,
+    primary_semantics_final_consolidation_sweep: Option<
+        &crate::PrimarySemanticsFinalConsolidationSweepV1,
+    >,
+    primary_semantics_closure_sweep: Option<&crate::PrimarySemanticsClosureSweepV1>,
+) -> Result<PrimarySemanticsSealInputsV1, OpsError> {
+    let closure_inputs = require_primary_semantics_closure_inputs(
+        canonical_condition_model,
+        canonical_remediation_registry,
+        canonical_primary_semantics_authority,
+        final_primary_semantics_consumer_authority,
+        final_primary_semantics_residual_sweep,
+        residual_free_primary_semantics_consumer_authority,
+        residual_free_primary_semantics_absolute_sweep,
+        absolute_final_primary_semantics_terminal_sweep,
+        terminal_primary_semantics_ultimate_sweep,
+        primary_semantics_convergence_sweep,
+        primary_semantics_stabilization_sweep,
+        primary_semantics_final_consolidation_sweep,
+    )
+    .map_err(|_| {
+        OpsError::Invalid(
+            CLOSURE_COMPLETE_FINAL_CONSOLIDATED_STABILIZED_CANONICAL_PRIMARY_SEMANTICS_INPUTS_REQUIRED
+                .to_string(),
+        )
+    })?;
+
+    let Some(closure) = primary_semantics_closure_sweep else {
+        return Err(OpsError::Invalid(
+            CLOSURE_COMPLETE_FINAL_CONSOLIDATED_STABILIZED_CANONICAL_PRIMARY_SEMANTICS_INPUTS_REQUIRED
+                .to_string(),
+        ));
+    };
+    if !matches!(
+        closure.closure_status,
+        crate::PrimarySemanticsClosureStatusV1::Pass
+    ) {
+        return Err(OpsError::Invalid(
+            PRIMARY_SEMANTICS_SHELL_PATH_BLOCKED.to_string(),
+        ));
+    }
+
+    let closure_prefix = prefix16(&closure.closure_digest);
+    if closure.canonical_governance_entry_digest_prefix
+        != closure_inputs.canonical_governance_entry_digest_prefix
+        || closure.canonical_readiness_spine_digest_prefix
+            != closure_inputs.canonical_readiness_spine_digest_prefix
+        || closure.canonical_bundle_spine_digest_prefix
+            != closure_inputs.canonical_bundle_spine_digest_prefix
+        || closure.canonical_primary_semantics_authority_digest_prefix
+            != closure_inputs.canonical_primary_semantics_authority_digest_prefix
+        || closure.final_primary_semantics_consumer_authority_digest_prefix
+            != closure_inputs.final_primary_semantics_consumer_authority_digest_prefix
+        || closure.final_primary_semantics_residual_sweep_digest_prefix
+            != closure_inputs.final_primary_semantics_residual_sweep_digest_prefix
+        || closure.residual_free_primary_semantics_consumer_authority_digest_prefix
+            != closure_inputs.residual_free_primary_semantics_consumer_authority_digest_prefix
+        || closure.residual_free_primary_semantics_absolute_sweep_digest_prefix
+            != closure_inputs.residual_free_primary_semantics_absolute_sweep_digest_prefix
+        || closure.absolute_final_primary_semantics_terminal_sweep_digest_prefix
+            != closure_inputs.absolute_final_primary_semantics_terminal_sweep_digest_prefix
+        || closure.terminal_primary_semantics_ultimate_sweep_digest_prefix
+            != closure_inputs.terminal_primary_semantics_ultimate_sweep_digest_prefix
+        || closure.primary_semantics_convergence_sweep_digest_prefix
+            != closure_inputs.primary_semantics_convergence_sweep_digest_prefix
+        || closure.primary_semantics_stabilization_sweep_digest_prefix
+            != closure_inputs.primary_semantics_stabilization_sweep_digest_prefix
+        || closure.primary_semantics_final_consolidation_sweep_digest_prefix
+            != closure_inputs.primary_semantics_final_consolidation_sweep_digest_prefix
+    {
+        return Err(OpsError::Invalid(
+            PRIMARY_SEMANTICS_SHELL_PATH_REJECTED.to_string(),
+        ));
+    }
+
+    let payload = serde_json::to_vec(&(
+        &closure_inputs.canonical_governance_entry_digest_prefix,
+        &closure_inputs.canonical_readiness_spine_digest_prefix,
+        &closure_inputs.canonical_bundle_spine_digest_prefix,
+        &closure_inputs.canonical_primary_semantics_authority_digest_prefix,
+        &closure_inputs.final_primary_semantics_consumer_authority_digest_prefix,
+        &closure_inputs.final_primary_semantics_residual_sweep_digest_prefix,
+        &closure_inputs.residual_free_primary_semantics_consumer_authority_digest_prefix,
+        &closure_inputs.residual_free_primary_semantics_absolute_sweep_digest_prefix,
+        &closure_inputs.absolute_final_primary_semantics_terminal_sweep_digest_prefix,
+        &closure_inputs.terminal_primary_semantics_ultimate_sweep_digest_prefix,
+        &closure_inputs.primary_semantics_convergence_sweep_digest_prefix,
+        &closure_inputs.primary_semantics_stabilization_sweep_digest_prefix,
+        &closure_inputs.primary_semantics_final_consolidation_sweep_digest_prefix,
+        &closure_prefix,
+    ))?;
+
+    Ok(PrimarySemanticsSealInputsV1 {
+        canonical_governance_entry_digest_prefix: closure_inputs
+            .canonical_governance_entry_digest_prefix,
+        canonical_readiness_spine_digest_prefix: closure_inputs
+            .canonical_readiness_spine_digest_prefix,
+        canonical_bundle_spine_digest_prefix: closure_inputs.canonical_bundle_spine_digest_prefix,
+        canonical_primary_semantics_authority_digest_prefix: closure_inputs
+            .canonical_primary_semantics_authority_digest_prefix,
+        final_primary_semantics_consumer_authority_digest_prefix: closure_inputs
+            .final_primary_semantics_consumer_authority_digest_prefix,
+        final_primary_semantics_residual_sweep_digest_prefix: closure_inputs
+            .final_primary_semantics_residual_sweep_digest_prefix,
+        residual_free_primary_semantics_consumer_authority_digest_prefix: closure_inputs
+            .residual_free_primary_semantics_consumer_authority_digest_prefix,
+        residual_free_primary_semantics_absolute_sweep_digest_prefix: closure_inputs
+            .residual_free_primary_semantics_absolute_sweep_digest_prefix,
+        absolute_final_primary_semantics_terminal_sweep_digest_prefix: closure_inputs
+            .absolute_final_primary_semantics_terminal_sweep_digest_prefix,
+        terminal_primary_semantics_ultimate_sweep_digest_prefix: closure_inputs
+            .terminal_primary_semantics_ultimate_sweep_digest_prefix,
+        primary_semantics_convergence_sweep_digest_prefix: closure_inputs
+            .primary_semantics_convergence_sweep_digest_prefix,
+        primary_semantics_stabilization_sweep_digest_prefix: closure_inputs
+            .primary_semantics_stabilization_sweep_digest_prefix,
+        primary_semantics_final_consolidation_sweep_digest_prefix: closure_inputs
+            .primary_semantics_final_consolidation_sweep_digest_prefix,
+        primary_semantics_closure_sweep_digest_prefix: closure_prefix,
         authority_digest: sha256_hex(&payload),
     })
 }
