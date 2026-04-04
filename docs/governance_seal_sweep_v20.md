@@ -44,3 +44,6 @@ cargo run -p ucf-ops -- governance-seal-sweep --out ./out/governance_seal_sweep.
 ## Zusammenhang mit Supported-Scope-Execution
 
 Ab v20 darf `models supported-scope-execute-v15` nur expandieren, wenn `seal_status: PASS` vorliegt und der Kandidat weiterhin ohne Governance-Shell-/Bridge-/Auxiliary-View-Sonderpfade sowie ohne Export-/Bundle-/Continuity-Sonderpfade tragfähig bleibt.
+
+
+> v21 update: canonical consumers must now pass `GovernanceLockSweepV1`; residual governance compatibility-frame, relay, and auxiliary-projection paths are removed or blocked in canonical flows.

@@ -64,7 +64,7 @@ struct ArtifactSpec {
     enum_names: &'static [&'static str],
 }
 
-const ARTIFACT_SPECS: [ArtifactSpec; 122] = [
+const ARTIFACT_SPECS: [ArtifactSpec; 123] = [
     ArtifactSpec {
         artifact_id: "active_review_snapshot_v1",
         file_rel: "runtime/ucf-ops/src/models_lifecycle.rs",
@@ -332,6 +332,12 @@ const ARTIFACT_SPECS: [ArtifactSpec; 122] = [
         file_rel: "runtime/ucf-ops/src/governance_seal_sweep.rs",
         type_name: "GovernanceSealSweepV1",
         enum_names: &["GovernanceSealStatusV1", "GovernanceSealMismatchCategoryV1"],
+    },
+    ArtifactSpec {
+        artifact_id: "governance_lock_sweep_v1",
+        file_rel: "runtime/ucf-ops/src/governance_lock_sweep.rs",
+        type_name: "GovernanceLockSweepV1",
+        enum_names: &["GovernanceLockStatusV1", "GovernanceLockMismatchCategoryV1"],
     },
     ArtifactSpec {
         artifact_id: "governance_final_consolidation_sweep_v1",

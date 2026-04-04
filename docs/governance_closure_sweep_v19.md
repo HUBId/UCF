@@ -30,3 +30,6 @@ cargo run -p ucf-ops -- governance-closure-sweep --out ./out/governance_closure_
 ```
 
 > v20 adds `governance-seal-sweep` and seals remaining canonical shell/bridge/auxiliary governance residues across covered consumers.
+
+
+> v21 update: canonical consumers must now pass `GovernanceLockSweepV1`; residual governance compatibility-frame, relay, and auxiliary-projection paths are removed or blocked in canonical flows.

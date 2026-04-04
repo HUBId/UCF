@@ -42,6 +42,7 @@ mod governance_convergence_sweep;
 mod governance_entry_check;
 mod governance_entry_sweep;
 mod governance_final_consolidation_sweep;
+mod governance_lock_sweep;
 mod governance_residual_sweep;
 mod governance_seal_sweep;
 mod governance_stabilization_sweep;
@@ -225,14 +226,14 @@ pub use final_governance_authority::{
     require_absolute_final_governance_terminal_inputs, require_final_governance_authority,
     require_final_governance_inputs, require_governance_closure_inputs,
     require_governance_convergence_inputs, require_governance_final_consolidation_inputs,
-    require_governance_seal_inputs, require_governance_stabilization_inputs,
-    require_residual_free_final_governance_inputs,
+    require_governance_lock_inputs, require_governance_seal_inputs,
+    require_governance_stabilization_inputs, require_residual_free_final_governance_inputs,
     require_residual_free_governance_absolute_inputs, require_terminal_governance_ultimate_inputs,
     AbsoluteFinalGovernanceTerminalInputsV1, FinalGovernanceAuthorityContextV1,
     GovernanceClosureInputsV1, GovernanceConvergenceInputsV1, GovernanceFinalConsolidationInputsV1,
-    GovernanceSealInputsV1, GovernanceStabilizationInputsV1, ResidualFreeFinalGovernanceInputsV1,
-    ResidualFreeGovernanceAbsoluteInputsV1, TerminalGovernanceUltimateInputsV1,
-    ABSOLUTE_RESIDUAL_FREE_FINAL_GOVERNANCE_INPUTS_REQUIRED,
+    GovernanceLockInputsV1, GovernanceSealInputsV1, GovernanceStabilizationInputsV1,
+    ResidualFreeFinalGovernanceInputsV1, ResidualFreeGovernanceAbsoluteInputsV1,
+    TerminalGovernanceUltimateInputsV1, ABSOLUTE_RESIDUAL_FREE_FINAL_GOVERNANCE_INPUTS_REQUIRED,
     CLOSURE_COMPLETE_FINAL_CONSOLIDATED_STABILIZED_CANONICAL_GOVERNANCE_INPUTS_REQUIRED,
     CONVERGED_CANONICAL_GOVERNANCE_INPUTS_REQUIRED,
     FINAL_CONSOLIDATED_STABILIZED_CANONICAL_GOVERNANCE_INPUTS_REQUIRED,
@@ -241,7 +242,8 @@ pub use final_governance_authority::{
     GOVERNANCE_ADAPTER_PATH_TRANSLATED, GOVERNANCE_CACHE_PATH_BLOCKED,
     GOVERNANCE_CACHE_PATH_REJECTED, GOVERNANCE_CACHE_PATH_TRANSLATED, GOVERNANCE_ECHO_PATH_BLOCKED,
     GOVERNANCE_FACADE_PATH_BLOCKED, GOVERNANCE_FACADE_PATH_REJECTED,
-    GOVERNANCE_FACADE_PATH_TRANSLATED, GOVERNANCE_MEMO_PATH_BLOCKED, GOVERNANCE_MEMO_PATH_REJECTED,
+    GOVERNANCE_FACADE_PATH_TRANSLATED, GOVERNANCE_FRAME_PATH_BLOCKED,
+    GOVERNANCE_FRAME_PATH_REJECTED, GOVERNANCE_MEMO_PATH_BLOCKED, GOVERNANCE_MEMO_PATH_REJECTED,
     GOVERNANCE_MEMO_PATH_TRANSLATED, GOVERNANCE_SHELL_PATH_BLOCKED, GOVERNANCE_SHELL_PATH_REJECTED,
     GOVERNANCE_SHELL_PATH_TRANSLATED, GOVERNANCE_WRAPPER_PATH_BLOCKED,
     GOVERNANCE_WRAPPER_PATH_REJECTED, GOVERNANCE_WRAPPER_PATH_TRANSLATED,
@@ -297,6 +299,10 @@ pub use governance_final_consolidation_sweep::{
     governance_final_consolidation_sweep, GovernanceFinalConsolidationConsumerStatusV1,
     GovernanceFinalConsolidationMismatchCategoryV1, GovernanceFinalConsolidationStatusV1,
     GovernanceFinalConsolidationSweepReportV1, GovernanceFinalConsolidationSweepV1,
+};
+pub use governance_lock_sweep::{
+    governance_lock_sweep, GovernanceLockConsumerStatusV1, GovernanceLockMismatchCategoryV1,
+    GovernanceLockStatusV1, GovernanceLockSweepReportV1, GovernanceLockSweepV1,
 };
 pub use governance_residual_sweep::{
     governance_residual_sweep, FinalGovernanceResidualSweepV1, GovernanceResidualConsumerStatusV1,
