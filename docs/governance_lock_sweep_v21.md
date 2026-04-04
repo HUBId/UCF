@@ -41,3 +41,6 @@ cargo run -p ucf-ops -- governance-lock-sweep --out ./out/governance_lock_sweep.
 ## v21 scope decision note
 
 Governance lock alone does not widen supported scope. Scope changes require an explicit binary `supported-scope-decision` result (`SCOPE_EXPANSION_APPLIED` or `SCOPE_FREEZE_REINFORCED`).
+
+
+> v21 update: readiness consumers must also pass `ReadinessLockSweepV1` and align with `SupportedScopeExpansionDecisionV1` plus canonical execution reality evidence.
