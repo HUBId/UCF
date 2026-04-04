@@ -37,3 +37,7 @@ Canonical flows must fail closed if governance truth is reconstructed from compa
 ```bash
 cargo run -p ucf-ops -- governance-lock-sweep --out ./out/governance_lock_sweep.json
 ```
+
+## v21 scope decision note
+
+Governance lock alone does not widen supported scope. Scope changes require an explicit binary `supported-scope-decision` result (`SCOPE_EXPANSION_APPLIED` or `SCOPE_FREEZE_REINFORCED`).

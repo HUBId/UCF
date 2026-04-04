@@ -62,6 +62,7 @@ const SUPPORTED_SCOPE_EXECUTION_V12_SCHEMA_VERSION: u16 = 12;
 const SUPPORTED_SCOPE_EXECUTION_V13_SCHEMA_VERSION: u16 = 13;
 const SUPPORTED_SCOPE_EXECUTION_V14_SCHEMA_VERSION: u16 = 14;
 const SUPPORTED_SCOPE_EXECUTION_V15_SCHEMA_VERSION: u16 = 15;
+const SUPPORTED_SCOPE_EXPANSION_DECISION_V1_SCHEMA_VERSION: u16 = 1;
 const SLOT_SET_MAX: usize = 2;
 const PROBE_OUTPUT_CAP: usize = 8;
 const PROBE_NOTES_CAP: usize = 8;
@@ -709,6 +710,89 @@ pub struct SupportedScopeExecutionV15 {
     pub resulting_supported_set_digest_prefix: String,
     pub rationale_codes: Vec<String>,
     pub execution_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum SupportedScopeExpansionDecisionStatusV1 {
+    ScopeExpansionApplied,
+    ScopeFreezeReinforced,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum SupportedScopeExpansionReasonCodeV1 {
+    NoEligibleCandidateSlot,
+    GovernanceBlocksExpansion,
+    CurrentScopeExecutionInsufficient,
+    ReadinessPrerequisiteMissing,
+    BundleExportSemanticsInsufficient,
+    PrimarySemanticsWouldOverstate,
+    ContinuityChainWouldFork,
+    ExactlyOneSlotExpanded,
+    MultipleCandidatesPresentRequireFreeze,
+    CanonicalScopeSurfaceContradiction,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum SupportedScopeDecisionMismatchCategoryV1 {
+    CandidateNotCanonical,
+    GovernanceDenied,
+    GovernanceScopeMismatch,
+    ExecutionPathMissing,
+    ExecutionPathNonCanonical,
+    RuntimeActivationRequired,
+    ReadinessBlocked,
+    ExportScopeWideningRisk,
+    PrimarySemanticsContradiction,
+    ContinuityConflict,
+    MultiSlotExpansionForbidden,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SupportedScopeDecisionCandidateV1 {
+    pub slot_id: String,
+    pub currently_supported: bool,
+    pub status: SupportedScopeExpansionDecisionStatusV1,
+    pub reason_code: SupportedScopeExpansionReasonCodeV1,
+    pub mismatch_categories: Vec<SupportedScopeDecisionMismatchCategoryV1>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SupportedScopeExpansionDecisionV1 {
+    pub applied_supported_set_digest_prefix: String,
+    pub canonical_governance_entry_digest_prefix: String,
+    pub canonical_governance_authority_digest_prefix: String,
+    pub final_governance_consumer_authority_digest_prefix: String,
+    pub final_governance_residual_sweep_digest_prefix: String,
+    pub residual_free_governance_consumer_authority_digest_prefix: String,
+    pub residual_free_governance_absolute_sweep_digest_prefix: String,
+    pub absolute_final_governance_terminal_sweep_digest_prefix: String,
+    pub terminal_governance_ultimate_sweep_digest_prefix: String,
+    pub governance_convergence_sweep_digest_prefix: String,
+    pub governance_stabilization_sweep_digest_prefix: String,
+    pub governance_final_consolidation_sweep_digest_prefix: String,
+    pub governance_closure_sweep_digest_prefix: String,
+    pub governance_seal_sweep_digest_prefix: String,
+    pub governance_lock_sweep_digest_prefix: String,
+    pub current_supported_scope_digest_prefix: String,
+    pub candidate_count: u16,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub winning_candidate_slot: Option<String>,
+    pub decision_status: SupportedScopeExpansionDecisionStatusV1,
+    pub decision_reason_code: SupportedScopeExpansionReasonCodeV1,
+    pub evaluated_consumer_count: u16,
+    pub contradictory_surface_count: u16,
+    pub unsupported_slot_count: u16,
+    pub decision_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SupportedScopeExpansionDecisionReportV1 {
+    pub schema_version: u16,
+    pub decision: SupportedScopeExpansionDecisionV1,
+    pub candidates: Vec<SupportedScopeDecisionCandidateV1>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -4061,6 +4145,255 @@ pub fn models_supported_scope_execute_v15(
     }
     fs::write(out, serde_json::to_vec_pretty(&execution)?)?;
     Ok(execution)
+}
+
+pub fn models_supported_scope_decision(
+    workdir: &Path,
+    out: &Path,
+) -> Result<SupportedScopeExpansionDecisionReportV1, OpsError> {
+    let policy = load_latest_supported_set_policy_v2(workdir)?;
+    let current_set = current_supported_real_slot_set(workdir)?;
+    let execution = ensure_current_supported_scope_execution_v15(workdir, &policy, &current_set)?;
+    let governance_lock = read_json_file::<crate::GovernanceLockSweepReportV1>(
+        &workdir.join("out/governance_lock_sweep.json"),
+    )?;
+    if !matches!(
+        governance_lock.sweep.lock_status,
+        crate::GovernanceLockStatusV1::Pass
+    ) {
+        return Err(OpsError::Invalid(
+            "SUPPORTED_SCOPE_DECISION_REQUIRED: governance lock must PASS before supported-scope-decision".to_string(),
+        ));
+    }
+    if governance_lock
+        .sweep
+        .canonical_governance_entry_digest_prefix
+        != execution.canonical_governance_entry_digest_prefix
+        || governance_lock
+            .sweep
+            .canonical_governance_authority_digest_prefix
+            != execution.canonical_governance_authority_digest_prefix
+    {
+        return Err(OpsError::Invalid(
+            "CANONICAL_SCOPE_SURFACE_CONTRADICTION: governance lock digests do not align with current supported scope execution".to_string(),
+        ));
+    }
+
+    let mut candidates = Vec::new();
+    let mut pass_candidates = Vec::new();
+    let current_slots: BTreeSet<_> = current_set.slots.iter().cloned().collect();
+    for slot in &policy.candidate_slots_considered {
+        let in_scope = current_slots.contains(slot);
+        if in_scope {
+            continue;
+        }
+        let (mut mismatch_categories, reason_code) = if !matches!(
+            execution.execution_decision,
+            SupportedScopeExecutionDecisionV15::ExecuteExpandByOne
+        ) {
+            (
+                vec![
+                    SupportedScopeDecisionMismatchCategoryV1::GovernanceDenied,
+                    SupportedScopeDecisionMismatchCategoryV1::ExecutionPathNonCanonical,
+                ],
+                SupportedScopeExpansionReasonCodeV1::CurrentScopeExecutionInsufficient,
+            )
+        } else if execution.chosen_candidate_slot.as_ref() != Some(slot) {
+            (
+                vec![
+                    SupportedScopeDecisionMismatchCategoryV1::GovernanceDenied,
+                    SupportedScopeDecisionMismatchCategoryV1::MultiSlotExpansionForbidden,
+                ],
+                SupportedScopeExpansionReasonCodeV1::MultipleCandidatesPresentRequireFreeze,
+            )
+        } else {
+            pass_candidates.push(slot.clone());
+            (
+                Vec::new(),
+                SupportedScopeExpansionReasonCodeV1::ExactlyOneSlotExpanded,
+            )
+        };
+        mismatch_categories.sort();
+        mismatch_categories.dedup();
+        candidates.push(SupportedScopeDecisionCandidateV1 {
+            slot_id: slot.clone(),
+            currently_supported: false,
+            status: if mismatch_categories.is_empty() {
+                SupportedScopeExpansionDecisionStatusV1::ScopeExpansionApplied
+            } else {
+                SupportedScopeExpansionDecisionStatusV1::ScopeFreezeReinforced
+            },
+            reason_code,
+            mismatch_categories,
+        });
+    }
+    candidates.sort_by(|a, b| a.slot_id.cmp(&b.slot_id));
+
+    let (decision_status, decision_reason_code, winning_candidate_slot) =
+        if pass_candidates.len() == 1 {
+            (
+                SupportedScopeExpansionDecisionStatusV1::ScopeExpansionApplied,
+                SupportedScopeExpansionReasonCodeV1::ExactlyOneSlotExpanded,
+                Some(pass_candidates[0].clone()),
+            )
+        } else if pass_candidates.len() > 1 {
+            (
+                SupportedScopeExpansionDecisionStatusV1::ScopeFreezeReinforced,
+                SupportedScopeExpansionReasonCodeV1::MultipleCandidatesPresentRequireFreeze,
+                None,
+            )
+        } else if candidates.is_empty() {
+            (
+                SupportedScopeExpansionDecisionStatusV1::ScopeFreezeReinforced,
+                SupportedScopeExpansionReasonCodeV1::NoEligibleCandidateSlot,
+                None,
+            )
+        } else {
+            (
+                SupportedScopeExpansionDecisionStatusV1::ScopeFreezeReinforced,
+                SupportedScopeExpansionReasonCodeV1::CurrentScopeExecutionInsufficient,
+                None,
+            )
+        };
+
+    let unsupported_slot_count = candidates
+        .iter()
+        .filter(|c| {
+            matches!(
+                c.status,
+                SupportedScopeExpansionDecisionStatusV1::ScopeFreezeReinforced
+            )
+        })
+        .count() as u16;
+    let contradictory_surface_count = if matches!(
+        decision_reason_code,
+        SupportedScopeExpansionReasonCodeV1::CanonicalScopeSurfaceContradiction
+    ) {
+        1
+    } else {
+        0
+    };
+
+    let mut digest_bytes = Vec::new();
+    digest_bytes.extend_from_slice(
+        SUPPORTED_SCOPE_EXPANSION_DECISION_V1_SCHEMA_VERSION
+            .to_string()
+            .as_bytes(),
+    );
+    digest_bytes.extend_from_slice(execution.previous_applied_set_digest_prefix.as_bytes());
+    digest_bytes.extend_from_slice(
+        execution
+            .canonical_governance_entry_digest_prefix
+            .as_bytes(),
+    );
+    digest_bytes.extend_from_slice(
+        execution
+            .canonical_governance_authority_digest_prefix
+            .as_bytes(),
+    );
+    digest_bytes.extend_from_slice(
+        execution
+            .final_governance_consumer_authority_digest_prefix
+            .as_bytes(),
+    );
+    digest_bytes.extend_from_slice(
+        execution
+            .final_governance_residual_sweep_digest_prefix
+            .as_bytes(),
+    );
+    digest_bytes.extend_from_slice(
+        execution
+            .residual_free_governance_consumer_authority_digest_prefix
+            .as_bytes(),
+    );
+    digest_bytes.extend_from_slice(
+        execution
+            .residual_free_governance_absolute_sweep_digest_prefix
+            .as_bytes(),
+    );
+    digest_bytes.extend_from_slice(
+        execution
+            .absolute_final_governance_terminal_sweep_digest_prefix
+            .as_bytes(),
+    );
+    digest_bytes.extend_from_slice(
+        execution
+            .terminal_governance_ultimate_sweep_digest_prefix
+            .as_bytes(),
+    );
+    digest_bytes.extend_from_slice(
+        execution
+            .governance_convergence_sweep_digest_prefix
+            .as_bytes(),
+    );
+    digest_bytes.extend_from_slice(
+        execution
+            .governance_stabilization_sweep_digest_prefix
+            .as_bytes(),
+    );
+    digest_bytes.extend_from_slice(
+        execution
+            .governance_final_consolidation_sweep_digest_prefix
+            .as_bytes(),
+    );
+    digest_bytes.extend_from_slice(execution.governance_closure_sweep_digest_prefix.as_bytes());
+    digest_bytes.extend_from_slice(execution.governance_seal_sweep_digest_prefix.as_bytes());
+    digest_bytes.extend_from_slice(prefix_hex(&governance_lock.sweep.lock_digest, 16).as_bytes());
+    digest_bytes.extend_from_slice(prefix_hex(&current_set.set_digest, 16).as_bytes());
+    digest_bytes.extend_from_slice(format!("{:?}", decision_status).as_bytes());
+    digest_bytes.extend_from_slice(format!("{:?}", decision_reason_code).as_bytes());
+    if let Some(slot) = winning_candidate_slot.as_ref() {
+        digest_bytes.extend_from_slice(slot.as_bytes());
+    }
+
+    let decision = SupportedScopeExpansionDecisionV1 {
+        applied_supported_set_digest_prefix: execution.previous_applied_set_digest_prefix,
+        canonical_governance_entry_digest_prefix: execution
+            .canonical_governance_entry_digest_prefix,
+        canonical_governance_authority_digest_prefix: execution
+            .canonical_governance_authority_digest_prefix,
+        final_governance_consumer_authority_digest_prefix: execution
+            .final_governance_consumer_authority_digest_prefix,
+        final_governance_residual_sweep_digest_prefix: execution
+            .final_governance_residual_sweep_digest_prefix,
+        residual_free_governance_consumer_authority_digest_prefix: execution
+            .residual_free_governance_consumer_authority_digest_prefix,
+        residual_free_governance_absolute_sweep_digest_prefix: execution
+            .residual_free_governance_absolute_sweep_digest_prefix,
+        absolute_final_governance_terminal_sweep_digest_prefix: execution
+            .absolute_final_governance_terminal_sweep_digest_prefix,
+        terminal_governance_ultimate_sweep_digest_prefix: execution
+            .terminal_governance_ultimate_sweep_digest_prefix,
+        governance_convergence_sweep_digest_prefix: execution
+            .governance_convergence_sweep_digest_prefix,
+        governance_stabilization_sweep_digest_prefix: execution
+            .governance_stabilization_sweep_digest_prefix,
+        governance_final_consolidation_sweep_digest_prefix: execution
+            .governance_final_consolidation_sweep_digest_prefix,
+        governance_closure_sweep_digest_prefix: execution.governance_closure_sweep_digest_prefix,
+        governance_seal_sweep_digest_prefix: execution.governance_seal_sweep_digest_prefix,
+        governance_lock_sweep_digest_prefix: prefix_hex(&governance_lock.sweep.lock_digest, 16),
+        current_supported_scope_digest_prefix: prefix_hex(&current_set.set_digest, 16),
+        candidate_count: candidates.len() as u16,
+        winning_candidate_slot,
+        decision_status,
+        decision_reason_code,
+        evaluated_consumer_count: governance_lock.sweep.covered_consumer_count,
+        contradictory_surface_count,
+        unsupported_slot_count,
+        decision_digest: sha256_hex(&digest_bytes),
+    };
+    let report = SupportedScopeExpansionDecisionReportV1 {
+        schema_version: SUPPORTED_SCOPE_EXPANSION_DECISION_V1_SCHEMA_VERSION,
+        decision,
+        candidates,
+    };
+
+    if let Some(parent) = out.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(out, serde_json::to_vec_pretty(&report)?)?;
+    Ok(report)
 }
 
 fn load_prior_scope_execution_digest_prefix(workdir: &Path) -> Result<Option<String>, OpsError> {
