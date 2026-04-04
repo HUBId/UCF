@@ -84,6 +84,11 @@ See `docs/feature_matrix.md` for details.
 - `cargo run -p ucf-ops -- primary-semantics-stabilization-sweep --out ./out/primary_semantics_stabilization_sweep.json`
 - `cargo run -p ucf-ops -- primary-semantics-final-consolidation-sweep --out ./out/primary_semantics_final_consolidation_sweep.json`
 - `cargo run -p ucf-ops -- primary-semantics-closure-sweep --out ./out/primary_semantics_closure_sweep.json`
+- `cargo run -p ucf-ops -- governance-seal-sweep --out ./out/governance_seal_sweep.json`
+- `cargo run -p ucf-ops -- models supported-scope-execute-v15 --out ./out/supported_scope_execute_v15.json --workdir .`
+- `cargo run -p ucf-ops -- readiness-seal-sweep --out ./out/readiness_seal_sweep.json`
+- `cargo run -p ucf-ops -- bundle-seal-sweep --out ./out/bundle_seal_sweep.json`
+- `cargo run -p ucf-ops -- primary-semantics-seal-sweep --out ./out/primary_semantics_seal_sweep.json`
 - `cargo run -p ucf-ops -- governance-surfaces-check --out ./out/governance_surfaces_check.json`
 - `cargo run -p ucf-ops -- models supported-set-review --out ./out/supported_set_review.json --workdir .`
 - `cargo run -p ucf-ops -- models supported-set-apply --out ./out/supported_set_apply.json --workdir .`
@@ -103,6 +108,7 @@ See `docs/feature_matrix.md` for details.
 - `cargo run -p ucf-ops -- strict check --strict --out ./out/strict_check.json`
 - `cargo run -p ucf-ops -- operator report --out ./out/operator_report.json`
 - `cargo run -p ucf-ops -- portability report --out ./out/portability_report.json`
+- `cargo run -p ucf-ops -- portability report --out ./out/portability_report_v20.json`
 
 ## Architecture
 - See `docs/architecture/COHERENCE_LOOP.md`.

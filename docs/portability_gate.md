@@ -523,3 +523,31 @@ cargo run -p ucf-ops -- portability report --out ./out/portability_report.json
 - `docs/bundle_seal_sweep_v20.md`
 - `docs/primary_semantics_seal_sweep_v20.md`
 - `docs/artifact_schema_snapshots.md`
+
+## v20 portability/docs refresh (seal + supported-scope execution v15)
+
+- Added bounded Linux/Windows portability smoke coverage for:
+  - `governance-seal-sweep`
+  - `models supported-scope-execute-v15`
+  - `readiness-seal-sweep`
+  - `bundle-seal-sweep`
+  - `primary-semantics-seal-sweep`
+- v20 portability/docs checks remain offline, deterministic, and hardware-neutral.
+- Interpretation:
+  - **FAIL** => real portability/docs/schema/seal regression; fix before merge.
+  - **SKIP** => optional backend/scope/export path unavailable in bounded smoke context; no panic and no hidden fallback semantics.
+
+### Local v20 portability/docs command set
+
+```bash
+cargo run -p ucf-ops -- docs lint --strict --out ./out/docs_lint_report.json
+cargo run -p ucf-ops -- audit path-scan
+cargo run -p ucf-ops -- audit hardware-scan
+cargo run -p ucf-ops -- spec artifact-schemas-check --out ./out/artifact_schema_check.json
+cargo run -p ucf-ops -- governance-seal-sweep --out ./out/governance_seal_sweep.json
+cargo run -p ucf-ops -- models supported-scope-execute-v15 --out ./out/supported_scope_execute_v15.json --workdir .
+cargo run -p ucf-ops -- readiness-seal-sweep --out ./out/readiness_seal_sweep.json
+cargo run -p ucf-ops -- bundle-seal-sweep --out ./out/bundle_seal_sweep.json
+cargo run -p ucf-ops -- primary-semantics-seal-sweep --out ./out/primary_semantics_seal_sweep.json
+cargo run -p ucf-ops -- portability report --out ./out/portability_report_v20.json
+```
