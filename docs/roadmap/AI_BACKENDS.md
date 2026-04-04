@@ -1,38 +1,17 @@
-# AI backend roadmap (T102 next phase)
+# AI backend roadmap (compatibility boundary)
 
-This repository now uses a strict `ModelHost` ABI via `ucf-ai-host-abi` so runtime backends can be swapped without destabilizing the coherence loop.
+## Canonical runtime boundary
 
-## Current state
+- `runtime/ucf-compute` is the canonical backend execution path for real compute onboarding.
+- `domains/ai-host-abi` defines host ABI contracts.
+- `domains/ai` wraps ABI contracts for host-facing runtime usage.
+- `domains/ai-backends` remains compile-time adapter scaffolding for host ABI compatibility.
 
-- Default runtime path uses `MockBackend` (`ucf-ai-host-abi`) through `AiHostRuntime` (`domains/ai`).
-- `ucf-ai-backends` contains feature-gated adapter placeholders for Candle and Burn.
-- No Candle/Burn dependencies are enabled by default.
+## Current implementation status
 
-## Feature flags
+- `domains/ai-backends` Candle/Burn backends are placeholder adapters returning bounded empty ABI outputs.
+- Real compute-oriented Candle/Burn stage wiring currently exists in `runtime/ucf-compute` (deterministic CPU paths with guarded degradation behavior).
 
-At the workspace root, opt into future backends with:
+## Immediate rule
 
-- `ai-candle`
-- `ai-burn`
-
-Example:
-
-```bash
-cargo test -q --features ai-candle
-```
-
-## What Candle/Burn adapters must implement
-
-1. **Tensor I/O boundary**
-   - Map `AiHostAbiInput` scalars + commit references to model input tensors.
-   - Convert model outputs into bounded ABI vectors (`feature_events`, `output_candidates`, `internal_thoughts`).
-2. **SAE hooks**
-   - Surface sparse-activation pathways and commit traces required by downstream diagnostics.
-3. **Lens hooks**
-   - Expose interpretability checkpoints for lens readouts across LFM/RLM blocks.
-4. **Commit coherence**
-   - Preserve deterministic `abi_commit` semantics so router/coherence paths remain auditable.
-
-## Integration guideline
-
-Until tensor runtimes are wired, keep adapters compile-only and deterministic stubs so default CI (`cargo test -q`) remains stable.
+Treat `domains/ai*` as compatibility layer. Put canonical model-pipeline expansion work in `runtime/ucf-compute`.

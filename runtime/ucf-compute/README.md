@@ -50,6 +50,11 @@ Default remains `stub` when env vars are unset.
 - Output deterministic from `(context_digest, seed, t)`.
 - Bounded outputs: capped spikes/notes and digest-only persistence for large vectors/state.
 
+## Model manifest source
+
+- Canonical manifest path: `models/manifest.toml`.
+- Override path only via `UCF_MODEL_MANIFEST` when explicit compatibility behavior is required.
+
 ## Adding future backends
 
 To add a real backend later without refactoring orchestrator/frame contracts:

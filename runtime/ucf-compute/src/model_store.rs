@@ -9,6 +9,7 @@ use sha2::{Digest, Sha256};
 use crate::ComputeError;
 
 const DEFAULT_ALLOWLIST_ROOT: &str = "models";
+const DEFAULT_MANIFEST_PATH: &str = "models/manifest.toml";
 const DEFAULT_MAX_BYTES: u64 = 64 * 1024 * 1024;
 
 #[derive(
@@ -186,7 +187,7 @@ impl ModelStore {
     pub fn from_env_default() -> Result<Self, ModelLoadError> {
         let path = std::env::var("UCF_MODEL_MANIFEST")
             .map(PathBuf::from)
-            .unwrap_or_else(|_| PathBuf::from("models/MANIFEST.toml"));
+            .unwrap_or_else(|_| PathBuf::from(DEFAULT_MANIFEST_PATH));
         Self::from_manifest_and_env(&path)
     }
 
@@ -608,5 +609,52 @@ mod tests {
                 slot: ModelSlot::EbmReasoner
             }
         ));
+    }
+
+    #[test]
+    fn from_env_default_prefers_lowercase_manifest_path() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path();
+        let original_cwd = std::env::current_dir().expect("cwd");
+        let original_manifest = std::env::var("UCF_MODEL_MANIFEST").ok();
+        std::env::set_current_dir(root).expect("chdir");
+
+        let models = root.join("models");
+        fs::create_dir_all(&models).expect("mkdir models");
+        fs::write(
+            models.join("manifest.toml"),
+            r#"
+allowlist_root = "models"
+[slots.llm]
+enabled = true
+path = "llm.bin"
+expected_sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+max_bytes = 1024
+format = "custom"
+device = "cpu_only"
+"#,
+        )
+        .expect("write lowercase manifest");
+
+        fs::write(
+            models.join("MANIFEST.toml"),
+            r#"
+allowlist_root = "models"
+[slots.llm]
+enabled = false
+"#,
+        )
+        .expect("write uppercase manifest");
+
+        std::env::remove_var("UCF_MODEL_MANIFEST");
+        let store = ModelStore::from_env_default().expect("load store");
+        let llm = store.specs.get(&ModelSlot::Llm).expect("llm spec");
+        assert!(llm.enabled, "lowercase manifest must be canonical default");
+        std::env::set_current_dir(original_cwd).expect("restore cwd");
+        if let Some(value) = original_manifest {
+            std::env::set_var("UCF_MODEL_MANIFEST", value);
+        } else {
+            std::env::remove_var("UCF_MODEL_MANIFEST");
+        }
     }
 }

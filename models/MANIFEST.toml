@@ -1,3 +1,5 @@
+# Legacy compatibility filename only.
+# Canonical runtime model manifest path is `models/manifest.toml`.
 manifest_version = 1
 manifest_digest = ""
 
