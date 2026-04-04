@@ -64,6 +64,12 @@ pub const CLOSURE_COMPLETE_FINAL_CONSOLIDATED_STABILIZED_CANONICAL_READINESS_INP
 pub const READINESS_SHELL_PATH_BLOCKED: &str = "READINESS_SHELL_PATH_BLOCKED";
 pub const READINESS_SHELL_PATH_TRANSLATED: &str = "READINESS_SHELL_PATH_TRANSLATED";
 pub const READINESS_SHELL_PATH_REJECTED: &str = "READINESS_SHELL_PATH_REJECTED";
+pub const GOVERNANCE_LOCK_INPUTS_REQUIRED: &str = "GOVERNANCE_LOCK_INPUTS_REQUIRED";
+pub const SUPPORTED_SCOPE_DECISION_REQUIRED: &str = "SUPPORTED_SCOPE_DECISION_REQUIRED";
+pub const CANONICAL_EXECUTION_REALITY_REQUIRED: &str = "CANONICAL_EXECUTION_REALITY_REQUIRED";
+pub const READINESS_INFLATION_PATH_BLOCKED: &str = "READINESS_INFLATION_PATH_BLOCKED";
+pub const READINESS_SCOPE_OVERRUN: &str = "READINESS_SCOPE_OVERRUN";
+pub const READINESS_AUXILIARY_PATH_REJECTED: &str = "READINESS_AUXILIARY_PATH_REJECTED";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -286,6 +292,28 @@ pub struct ReadinessSealInputsV1 {
     pub readiness_stabilization_sweep_digest_prefix: String,
     pub readiness_final_consolidation_sweep_digest_prefix: String,
     pub readiness_closure_sweep_digest_prefix: String,
+    pub authority_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ReadinessLockInputsV1 {
+    pub applied_supported_set_digest_prefix: String,
+    pub canonical_governance_entry_digest_prefix: String,
+    pub canonical_governance_authority_digest_prefix: String,
+    pub final_governance_consumer_authority_digest_prefix: String,
+    pub final_governance_residual_sweep_digest_prefix: String,
+    pub residual_free_governance_consumer_authority_digest_prefix: String,
+    pub residual_free_governance_absolute_sweep_digest_prefix: String,
+    pub absolute_final_governance_terminal_sweep_digest_prefix: String,
+    pub terminal_governance_ultimate_sweep_digest_prefix: String,
+    pub governance_convergence_sweep_digest_prefix: String,
+    pub governance_stabilization_sweep_digest_prefix: String,
+    pub governance_final_consolidation_sweep_digest_prefix: String,
+    pub governance_closure_sweep_digest_prefix: String,
+    pub governance_seal_sweep_digest_prefix: String,
+    pub governance_lock_sweep_digest_prefix: String,
+    pub supported_scope_decision_digest_prefix: String,
+    pub canonical_execution_reality_digest_prefix: String,
     pub authority_digest: String,
 }
 
@@ -1901,6 +1929,191 @@ pub fn require_readiness_seal_inputs(
         readiness_final_consolidation_sweep_digest_prefix: closure_inputs
             .readiness_final_consolidation_sweep_digest_prefix,
         readiness_closure_sweep_digest_prefix: expected_closure_prefix,
+        authority_digest: crate::sha256_hex(&bytes),
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn require_readiness_lock_inputs(
+    governance_lock_inputs: Option<&crate::GovernanceLockInputsV1>,
+    governance_lock_sweep: Option<&crate::GovernanceLockSweepV1>,
+    supported_scope_decision: Option<&crate::SupportedScopeExpansionDecisionV1>,
+    canonical_execution_reality_digest_prefix: Option<&str>,
+) -> Result<ReadinessLockInputsV1, OpsError> {
+    let Some(governance_lock_inputs) = governance_lock_inputs else {
+        return Err(OpsError::Invalid(
+            GOVERNANCE_LOCK_INPUTS_REQUIRED.to_string(),
+        ));
+    };
+    let Some(governance_lock_sweep) = governance_lock_sweep else {
+        return Err(OpsError::Invalid(
+            GOVERNANCE_LOCK_INPUTS_REQUIRED.to_string(),
+        ));
+    };
+    let Some(supported_scope_decision) = supported_scope_decision else {
+        return Err(OpsError::Invalid(
+            SUPPORTED_SCOPE_DECISION_REQUIRED.to_string(),
+        ));
+    };
+    let Some(canonical_execution_reality_digest_prefix) = canonical_execution_reality_digest_prefix
+    else {
+        return Err(OpsError::Invalid(
+            CANONICAL_EXECUTION_REALITY_REQUIRED.to_string(),
+        ));
+    };
+    if canonical_execution_reality_digest_prefix == "MISSING" {
+        return Err(OpsError::Invalid(
+            CANONICAL_EXECUTION_REALITY_REQUIRED.to_string(),
+        ));
+    }
+    let expected_lock_prefix = prefix_hex(&governance_lock_sweep.lock_digest, 16);
+    if !matches!(
+        governance_lock_sweep.lock_status,
+        crate::GovernanceLockStatusV1::Pass
+    ) || governance_lock_sweep.applied_supported_set_digest_prefix
+        != governance_lock_inputs.applied_supported_set_digest_prefix
+        || governance_lock_sweep.canonical_governance_entry_digest_prefix
+            != governance_lock_inputs.canonical_governance_entry_digest_prefix
+        || governance_lock_sweep.governance_seal_sweep_digest_prefix
+            != governance_lock_inputs.governance_seal_sweep_digest_prefix
+    {
+        return Err(OpsError::Invalid(
+            GOVERNANCE_LOCK_INPUTS_REQUIRED.to_string(),
+        ));
+    }
+    if supported_scope_decision.applied_supported_set_digest_prefix
+        != governance_lock_inputs.applied_supported_set_digest_prefix
+        || supported_scope_decision.governance_lock_sweep_digest_prefix != expected_lock_prefix
+    {
+        return Err(OpsError::Invalid(READINESS_SCOPE_OVERRUN.to_string()));
+    }
+
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(b"readiness_lock_inputs_v1");
+    bytes.extend_from_slice(
+        governance_lock_inputs
+            .applied_supported_set_digest_prefix
+            .as_bytes(),
+    );
+    bytes.extend_from_slice(
+        governance_lock_inputs
+            .canonical_governance_entry_digest_prefix
+            .as_bytes(),
+    );
+    bytes.extend_from_slice(
+        governance_lock_inputs
+            .canonical_governance_authority_digest_prefix
+            .as_bytes(),
+    );
+    bytes.extend_from_slice(
+        governance_lock_inputs
+            .final_governance_consumer_authority_digest_prefix
+            .as_bytes(),
+    );
+    bytes.extend_from_slice(
+        governance_lock_inputs
+            .final_governance_residual_sweep_digest_prefix
+            .as_bytes(),
+    );
+    bytes.extend_from_slice(
+        governance_lock_inputs
+            .residual_free_governance_consumer_authority_digest_prefix
+            .as_bytes(),
+    );
+    bytes.extend_from_slice(
+        governance_lock_inputs
+            .residual_free_governance_absolute_sweep_digest_prefix
+            .as_bytes(),
+    );
+    bytes.extend_from_slice(
+        governance_lock_inputs
+            .absolute_final_governance_terminal_sweep_digest_prefix
+            .as_bytes(),
+    );
+    bytes.extend_from_slice(
+        governance_lock_inputs
+            .terminal_governance_ultimate_sweep_digest_prefix
+            .as_bytes(),
+    );
+    bytes.extend_from_slice(
+        governance_lock_inputs
+            .governance_convergence_sweep_digest_prefix
+            .as_bytes(),
+    );
+    bytes.extend_from_slice(
+        governance_lock_inputs
+            .governance_stabilization_sweep_digest_prefix
+            .as_bytes(),
+    );
+    bytes.extend_from_slice(
+        governance_lock_inputs
+            .governance_final_consolidation_sweep_digest_prefix
+            .as_bytes(),
+    );
+    bytes.extend_from_slice(
+        governance_lock_inputs
+            .governance_closure_sweep_digest_prefix
+            .as_bytes(),
+    );
+    bytes.extend_from_slice(
+        governance_lock_inputs
+            .governance_seal_sweep_digest_prefix
+            .as_bytes(),
+    );
+    bytes.extend_from_slice(expected_lock_prefix.as_bytes());
+    bytes.extend_from_slice(prefix_hex(&supported_scope_decision.decision_digest, 16).as_bytes());
+    bytes.extend_from_slice(canonical_execution_reality_digest_prefix.as_bytes());
+
+    Ok(ReadinessLockInputsV1 {
+        applied_supported_set_digest_prefix: governance_lock_inputs
+            .applied_supported_set_digest_prefix
+            .clone(),
+        canonical_governance_entry_digest_prefix: governance_lock_inputs
+            .canonical_governance_entry_digest_prefix
+            .clone(),
+        canonical_governance_authority_digest_prefix: governance_lock_inputs
+            .canonical_governance_authority_digest_prefix
+            .clone(),
+        final_governance_consumer_authority_digest_prefix: governance_lock_inputs
+            .final_governance_consumer_authority_digest_prefix
+            .clone(),
+        final_governance_residual_sweep_digest_prefix: governance_lock_inputs
+            .final_governance_residual_sweep_digest_prefix
+            .clone(),
+        residual_free_governance_consumer_authority_digest_prefix: governance_lock_inputs
+            .residual_free_governance_consumer_authority_digest_prefix
+            .clone(),
+        residual_free_governance_absolute_sweep_digest_prefix: governance_lock_inputs
+            .residual_free_governance_absolute_sweep_digest_prefix
+            .clone(),
+        absolute_final_governance_terminal_sweep_digest_prefix: governance_lock_inputs
+            .absolute_final_governance_terminal_sweep_digest_prefix
+            .clone(),
+        terminal_governance_ultimate_sweep_digest_prefix: governance_lock_inputs
+            .terminal_governance_ultimate_sweep_digest_prefix
+            .clone(),
+        governance_convergence_sweep_digest_prefix: governance_lock_inputs
+            .governance_convergence_sweep_digest_prefix
+            .clone(),
+        governance_stabilization_sweep_digest_prefix: governance_lock_inputs
+            .governance_stabilization_sweep_digest_prefix
+            .clone(),
+        governance_final_consolidation_sweep_digest_prefix: governance_lock_inputs
+            .governance_final_consolidation_sweep_digest_prefix
+            .clone(),
+        governance_closure_sweep_digest_prefix: governance_lock_inputs
+            .governance_closure_sweep_digest_prefix
+            .clone(),
+        governance_seal_sweep_digest_prefix: governance_lock_inputs
+            .governance_seal_sweep_digest_prefix
+            .clone(),
+        governance_lock_sweep_digest_prefix: expected_lock_prefix,
+        supported_scope_decision_digest_prefix: prefix_hex(
+            &supported_scope_decision.decision_digest,
+            16,
+        ),
+        canonical_execution_reality_digest_prefix: canonical_execution_reality_digest_prefix
+            .to_string(),
         authority_digest: crate::sha256_hex(&bytes),
     })
 }

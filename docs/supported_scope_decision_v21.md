@@ -37,3 +37,6 @@ cargo run -p ucf-ops -- supported-scope-decision --out ./out/supported_scope_dec
 
 - `SCOPE_EXPANSION_APPLIED`: genau ein Slot wurde als vollständig evidenzgetragen bestätigt.
 - `SCOPE_FREEZE_REINFORCED`: kein Slot erfüllt die komplette Kette; bestehender Scope bleibt unverändert und fail-closed.
+
+
+> v21 update: canonical readiness claims are additionally constrained by `ReadinessLockSweepV1`; no auxiliary/handoff readiness projection may be primary truth.

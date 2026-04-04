@@ -70,6 +70,7 @@ mod readiness_absolute_sweep;
 mod readiness_closure_sweep;
 mod readiness_convergence_sweep;
 mod readiness_final_consolidation_sweep;
+mod readiness_lock_sweep;
 mod readiness_residual_sweep;
 mod readiness_seal_sweep;
 mod readiness_spine;
@@ -473,6 +474,10 @@ pub use readiness_final_consolidation_sweep::{
     ReadinessFinalConsolidationMismatchCategoryV1, ReadinessFinalConsolidationStatusV1,
     ReadinessFinalConsolidationSweepReportV1, ReadinessFinalConsolidationSweepV1,
 };
+pub use readiness_lock_sweep::{
+    readiness_lock_sweep, ReadinessLockConsumerStatusV1, ReadinessLockMismatchCategoryV1,
+    ReadinessLockStatusV1, ReadinessLockSweepReportV1, ReadinessLockSweepV1,
+};
 pub use readiness_residual_sweep::{
     readiness_residual_sweep, FinalReadinessResidualConsumerStatusV1,
     FinalReadinessResidualMismatchCategoryV1, FinalReadinessResidualSweepReportV1,
@@ -489,37 +494,41 @@ pub use readiness_spine::{
     require_canonical_readiness_spine, require_final_readiness_authority,
     require_final_readiness_inputs, require_readiness_closure_inputs,
     require_readiness_convergence_inputs, require_readiness_final_consolidation_inputs,
-    require_readiness_seal_inputs, require_readiness_stabilization_inputs,
-    require_residual_free_final_readiness_inputs, require_residual_free_readiness_absolute_inputs,
-    require_terminal_readiness_ultimate_inputs, write_canonical_readiness_spine,
-    AbsoluteFinalReadinessTerminalInputsV1, CanonicalReadinessAuthorityStatusV2,
-    CanonicalReadinessAuthorityV2, CanonicalReadinessSpineStatusV1, CanonicalReadinessSpineV1,
-    FinalReadinessAuthorityContextV1, FinalReadinessInputsContextV1, ReadinessClosureInputsV1,
-    ReadinessConvergenceInputsV1, ReadinessFinalConsolidationInputsV1, ReadinessSealInputsV1,
+    require_readiness_lock_inputs, require_readiness_seal_inputs,
+    require_readiness_stabilization_inputs, require_residual_free_final_readiness_inputs,
+    require_residual_free_readiness_absolute_inputs, require_terminal_readiness_ultimate_inputs,
+    write_canonical_readiness_spine, AbsoluteFinalReadinessTerminalInputsV1,
+    CanonicalReadinessAuthorityStatusV2, CanonicalReadinessAuthorityV2,
+    CanonicalReadinessSpineStatusV1, CanonicalReadinessSpineV1, FinalReadinessAuthorityContextV1,
+    FinalReadinessInputsContextV1, ReadinessClosureInputsV1, ReadinessConvergenceInputsV1,
+    ReadinessFinalConsolidationInputsV1, ReadinessLockInputsV1, ReadinessSealInputsV1,
     ReadinessSpineCheckReportV1, ReadinessSpineCheckStatusV1, ReadinessSpineMismatchCategoryV1,
     ReadinessSpineSweepMismatchCategoryV1, ReadinessSpineSweepReportV1,
     ReadinessSpineSweepSurfaceStatusV1, ReadinessStabilizationInputsV1,
     ResidualFreeFinalReadinessInputsV1, ResidualFreeReadinessAbsoluteInputsV1,
     TerminalReadinessUltimateInputsV1, ABSOLUTE_RESIDUAL_FREE_FINAL_READINESS_INPUTS_REQUIRED,
-    CANONICAL_READINESS_SPINE_REQUIRED,
+    CANONICAL_EXECUTION_REALITY_REQUIRED, CANONICAL_READINESS_SPINE_REQUIRED,
     CLOSURE_COMPLETE_FINAL_CONSOLIDATED_STABILIZED_CANONICAL_READINESS_INPUTS_REQUIRED,
     CONVERGED_CANONICAL_READINESS_INPUTS_REQUIRED,
     FINAL_CONSOLIDATED_STABILIZED_CANONICAL_READINESS_INPUTS_REQUIRED,
     FINAL_READINESS_AUTHORITY_REQUIRED, FINAL_READINESS_INPUTS_REQUIRED,
-    HISTORICAL_READINESS_LINEAGE_BLOCKED, HISTORICAL_READINESS_PATH_BLOCKED,
-    HISTORICAL_READINESS_PATH_REJECTED, HISTORICAL_READINESS_PATH_TRANSLATED,
-    LEGACY_READINESS_INPUT_BLOCKED, READINESS_ADAPTER_PATH_BLOCKED,
-    READINESS_ADAPTER_PATH_REJECTED, READINESS_ADAPTER_PATH_TRANSLATED,
+    GOVERNANCE_LOCK_INPUTS_REQUIRED, HISTORICAL_READINESS_LINEAGE_BLOCKED,
+    HISTORICAL_READINESS_PATH_BLOCKED, HISTORICAL_READINESS_PATH_REJECTED,
+    HISTORICAL_READINESS_PATH_TRANSLATED, LEGACY_READINESS_INPUT_BLOCKED,
+    READINESS_ADAPTER_PATH_BLOCKED, READINESS_ADAPTER_PATH_REJECTED,
+    READINESS_ADAPTER_PATH_TRANSLATED, READINESS_AUXILIARY_PATH_REJECTED,
     READINESS_CACHE_PATH_BLOCKED, READINESS_CACHE_PATH_REJECTED, READINESS_CACHE_PATH_TRANSLATED,
     READINESS_ECHO_PATH_BLOCKED, READINESS_ECHO_PATH_REJECTED, READINESS_ECHO_PATH_TRANSLATED,
     READINESS_FACADE_PATH_BLOCKED, READINESS_FACADE_PATH_REJECTED,
-    READINESS_FACADE_PATH_TRANSLATED, READINESS_MEMO_PATH_BLOCKED, READINESS_MEMO_PATH_REJECTED,
-    READINESS_MEMO_PATH_TRANSLATED, READINESS_SHELL_PATH_BLOCKED, READINESS_SHELL_PATH_REJECTED,
+    READINESS_FACADE_PATH_TRANSLATED, READINESS_INFLATION_PATH_BLOCKED,
+    READINESS_MEMO_PATH_BLOCKED, READINESS_MEMO_PATH_REJECTED, READINESS_MEMO_PATH_TRANSLATED,
+    READINESS_SCOPE_OVERRUN, READINESS_SHELL_PATH_BLOCKED, READINESS_SHELL_PATH_REJECTED,
     READINESS_SHELL_PATH_TRANSLATED, READINESS_WRAPPER_PATH_BLOCKED,
     READINESS_WRAPPER_PATH_REJECTED, READINESS_WRAPPER_PATH_TRANSLATED,
     RESIDUAL_FREE_FINAL_READINESS_INPUTS_REQUIRED, RESIDUAL_READINESS_PATH_BLOCKED,
     REVIEWABILITY_REDUCTION_REQUIRED, SECONDARY_READINESS_PATH_BLOCKED,
     SLOT_REVIEWABILITY_TRUTH_REQUIRED, STABILIZED_CONVERGED_CANONICAL_READINESS_INPUTS_REQUIRED,
+    SUPPORTED_SCOPE_DECISION_REQUIRED,
     TERMINAL_ABSOLUTE_RESIDUAL_FREE_FINAL_READINESS_INPUTS_REQUIRED,
     ULTIMATE_TERMINAL_ABSOLUTE_READINESS_INPUTS_REQUIRED,
 };
@@ -20723,6 +20732,10 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
         "linux",
         "cargo run -p ucf-ops -- readiness-seal-sweep --out ./out/readiness_seal_sweep.json",
     ));
+    command_matrix.push(matrix_cmd(
+        "linux",
+        "cargo run -p ucf-ops -- readiness-lock-sweep --out ./out/readiness_lock_sweep.json",
+    ));
     command_matrix.push(matrix_cmd("linux", "cargo run -p ucf-ops -- final-bundle-consumer-sweep --out ./out/final_bundle_consumer_sweep.json"));
     command_matrix.push(matrix_cmd(
         "linux",
@@ -20901,6 +20914,10 @@ pub fn portability_report(workdir: &Path, out: &Path) -> Result<PortabilityRepor
     command_matrix.push(matrix_cmd(
         "windows",
         "cargo run -p ucf-ops -- readiness-seal-sweep --out ./out/readiness_seal_sweep.json",
+    ));
+    command_matrix.push(matrix_cmd(
+        "windows",
+        "cargo run -p ucf-ops -- readiness-lock-sweep --out ./out/readiness_lock_sweep.json",
     ));
     command_matrix.push(matrix_cmd("windows", "cargo run -p ucf-ops -- final-bundle-consumer-sweep --out ./out/final_bundle_consumer_sweep.json"));
     command_matrix.push(matrix_cmd(
