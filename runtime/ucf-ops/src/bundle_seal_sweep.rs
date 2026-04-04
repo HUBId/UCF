@@ -215,7 +215,7 @@ pub fn bundle_seal_sweep(workdir: &Path, out: &Path) -> Result<BundleSealSweepRe
         check_consumer(
             "Continuity",
             workdir,
-            "out/canonical_closure_continuity_sweep.json",
+            "out/canonical_seal_continuity_sweep.json",
             &authority_ctx,
         )?,
         check_consumer(

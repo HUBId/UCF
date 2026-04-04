@@ -41,3 +41,5 @@ These surfaces remain diagnostic/subordinate only:
 - `absolute-final-input-continuity-sweep`
 - `final-input-continuity-sweep`
 - `CanonicalRoundTripChainV1`, bundle spine/roundtrip checks
+
+> v20 seal finalization: this remains subordinate continuity evidence under `CanonicalSealContinuityAuthorityV1`.

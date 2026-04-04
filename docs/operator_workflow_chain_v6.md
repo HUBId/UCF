@@ -127,3 +127,5 @@ Top-level continuity is delegated only to `canonical-stabilization-continuity-sw
 ## v18 final continuity delegation
 `OperatorWorkflowChainV1` remains workflow-stage evidence and is not top-level continuity truth.
 Top-level continuity PASS/FAIL for canonical operator/export/build/verify flows is delegated only to `canonical-closure-continuity-sweep` (`CanonicalClosureContinuityAuthorityV1`).
+
+> v20 seal finalization: `OperatorWorkflowChainV1` remains workflow-stage evidence and references `CanonicalSealContinuityAuthorityV1`; it is not a top-level continuity proof.

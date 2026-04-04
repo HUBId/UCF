@@ -43,3 +43,5 @@ Nach v19 sind diese Surfaces **nicht top-level**, sondern nur subordinat/diagnos
 - `canonical-stabilization-continuity-sweep`
 - `canonical-convergence-continuity-sweep`
 - `CanonicalRoundTripChainV1` und bundle spine/roundtrip checks
+
+> v20 seal finalization: `canonical-closure-continuity-sweep` is **SUBORDINATE_CONTINUITY_CONTRIBUTOR**; sole top-level proof is `canonical-seal-continuity-sweep` (`CanonicalSealContinuityAuthorityV1`).
