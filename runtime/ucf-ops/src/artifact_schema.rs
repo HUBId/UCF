@@ -1387,6 +1387,7 @@ mod tests {
                 "governance_closure_sweep_v1",
                 "governance_convergence_sweep_v1",
                 "governance_final_consolidation_sweep_v1",
+                "governance_lock_sweep_v1",
                 "governance_primary_surfaces_v1",
                 "governance_seal_sweep_v1",
                 "governance_stabilization_sweep_v1",
