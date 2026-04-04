@@ -250,3 +250,8 @@ For v19 closure and current scope-execution surfaces, this freeze is now first-c
 - bundle-closure sweep,
 - primary-semantics-closure sweep,
 - additive shape updates (if any) in final-consolidation sweep artifacts, operator signoff/review/workflow artifacts, and covered gate-report schemas (including `v18_gate_report_v1`) are reviewed through the same drift lane (`ADDITIVE` vs `BREAKING` vs `UNKNOWN`).
+
+For v20 primary-semantics seal surfaces, this freeze additionally tracks:
+
+- primary-semantics-seal sweep,
+- additive shape updates (if any) in closure/seal artifacts and canonical operator/interop continuity artifacts through the same drift lane (`ADDITIVE` vs `BREAKING` vs `UNKNOWN`).
