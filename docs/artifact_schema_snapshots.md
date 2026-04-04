@@ -1,6 +1,6 @@
 # Artifact Schema Snapshots
 
-This repository enforces deterministic shape snapshots for governance/review/export/interop artifacts that must remain stable across v3/v4/v5/v6/v7/v8/v9/v10/v11/v12/v13/v14/v15/v16/v17/v18/v19 hardening.
+This repository enforces deterministic shape snapshots for governance/review/export/interop artifacts that must remain stable across v3/v4/v5/v6/v7/v8/v9/v10/v11/v12/v13/v14/v15/v16/v17/v18/v19/v20 hardening.
 
 ## Covered artifacts
 
@@ -93,6 +93,7 @@ Snapshots are generated under `docs/artifact_schema_snapshots/`:
 - `supported_scope_execution_v12.json` (v17 stabilization-gated supported-scope execution)
 - `supported_scope_execution_v13.json` (v18 final-consolidation-gated current supported-scope execution)
 - `supported_scope_execution_v14.json` (v19 closure-gated current supported-scope execution)
+- `supported_scope_execution_v15.json` (v20 seal-gated current supported-scope execution)
 - `supported_scope_reevaluation_v1.json` (v7)
 - `v3_gate_report_v1.json`
 - `v4_gate_report_v1.json`
@@ -251,7 +252,11 @@ For v19 closure and current scope-execution surfaces, this freeze is now first-c
 - primary-semantics-closure sweep,
 - additive shape updates (if any) in final-consolidation sweep artifacts, operator signoff/review/workflow artifacts, and covered gate-report schemas (including `v18_gate_report_v1`) are reviewed through the same drift lane (`ADDITIVE` vs `BREAKING` vs `UNKNOWN`).
 
-For v20 primary-semantics seal surfaces, this freeze additionally tracks:
+For v20 seal and current scope-execution surfaces, this freeze is now first-class for cross-surface contracts and CI review:
 
+- governance-seal sweep,
+- supported-scope execution v15 (current authoritative execution surface),
+- readiness-seal sweep,
+- bundle-seal sweep,
 - primary-semantics-seal sweep,
-- additive shape updates (if any) in closure/seal artifacts and canonical operator/interop continuity artifacts through the same drift lane (`ADDITIVE` vs `BREAKING` vs `UNKNOWN`).
+- additive shape updates (if any) in closure sweep artifacts, operator signoff/review/workflow artifacts, and covered gate-report schemas are reviewed through the same drift lane (`ADDITIVE` vs `BREAKING` vs `UNKNOWN`).
