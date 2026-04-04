@@ -26,7 +26,7 @@
 - **v17:** complete (`ucf-ops v17 gate` overall PASS recorded at Prompt 348).
 - **v18:** complete (`ucf-ops v18 gate` overall PASS recorded at Prompt 358).
 - **v19:** complete (`ucf-ops v19 gate` overall PASS recorded at Prompt 368).
-- **v20:** not started yet.
+- **v20:** complete when `ucf-ops v20 gate` overall PASS.
 - **Queue policy:** immediate queue remains capped to 10 prompts.
 
 ## Last executed prompt / resume point
@@ -48,7 +48,7 @@ Reference: `docs/next_10_prompts.md`
 | 375 | v20 schema snapshot refresh | MUST | queued |
 | 376 | v20 portability and docs refresh | NICE | queued |
 | 377 | Workflow/export continuity authority hardening | MUST | queued |
-| 378 | v20 gate schema and orchestration | MUST | queued |
+| 378 | v20 gate schema and orchestration | MUST | complete |
 | 379 | v20 wrap and next-anchor governance | MUST | queued |
 
 ## Historical anchor checkpoints
