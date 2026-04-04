@@ -514,3 +514,12 @@ cargo run -p ucf-ops -- portability report --out ./out/portability_report.json
 - `docs/bundle_closure_sweep_v19.md`
 - `docs/primary_semantics_closure_sweep_v19.md`
 - `docs/artifact_schema_snapshots.md`
+
+## v20 docs covered by portability/docs gates
+
+- `docs/governance_seal_sweep_v20.md`
+- `docs/supported_scope_execution_v20.md`
+- `docs/readiness_seal_sweep_v20.md`
+- `docs/bundle_seal_sweep_v20.md`
+- `docs/primary_semantics_seal_sweep_v20.md`
+- `docs/artifact_schema_snapshots.md`

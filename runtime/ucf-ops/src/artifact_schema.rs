@@ -1953,4 +1953,73 @@ mod tests {
                 && d.summary.contains("field type changed")
         }));
     }
+
+    #[test]
+    fn check_reports_missing_v20_governance_seal_snapshot_as_breaking() {
+        let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("runtime parent")
+            .parent()
+            .expect("repo root")
+            .to_path_buf();
+        let tmp = tempfile::tempdir().expect("tempdir");
+        generate_artifact_schema_snapshots(&ArtifactSchemaArgs {
+            repo_root: repo_root.clone(),
+            out_dir: tmp.path().to_path_buf(),
+        })
+        .expect("generate snapshots");
+        fs::remove_file(tmp.path().join("governance_seal_sweep_v1.json")).expect("remove snapshot");
+
+        let report = check_artifact_schema_snapshots(&ArtifactSchemaArgs {
+            repo_root,
+            out_dir: tmp.path().to_path_buf(),
+        })
+        .expect("check should complete");
+        assert!(!report.ok);
+        assert!(report.diffs.iter().any(|d| {
+            d.artifact == "governance_seal_sweep_v1" && d.drift_kind == DriftKind::Breaking
+        }));
+    }
+
+    #[test]
+    fn check_reports_v20_supported_scope_execution_shape_drift() {
+        let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("runtime parent")
+            .parent()
+            .expect("repo root")
+            .to_path_buf();
+        let tmp = tempfile::tempdir().expect("tempdir");
+        generate_artifact_schema_snapshots(&ArtifactSchemaArgs {
+            repo_root: repo_root.clone(),
+            out_dir: tmp.path().to_path_buf(),
+        })
+        .expect("generate snapshots");
+
+        let snapshot_path = tmp.path().join("supported_scope_execution_v15.json");
+        let mut snapshot: ArtifactSchemaSnapshot =
+            serde_json::from_str(&fs::read_to_string(&snapshot_path).expect("read snapshot"))
+                .expect("parse snapshot");
+        snapshot.field_types.insert(
+            "governance_seal_sweep_digest_prefix".to_string(),
+            "u32".to_string(),
+        );
+        fs::write(
+            &snapshot_path,
+            serde_json::to_string_pretty(&snapshot).expect("serialize snapshot"),
+        )
+        .expect("write snapshot");
+
+        let report = check_artifact_schema_snapshots(&ArtifactSchemaArgs {
+            repo_root,
+            out_dir: tmp.path().to_path_buf(),
+        })
+        .expect("check should complete");
+        assert!(!report.ok);
+        assert!(report.diffs.iter().any(|d| {
+            d.artifact == "supported_scope_execution_v15"
+                && d.drift_kind == DriftKind::Breaking
+                && d.summary.contains("field type changed")
+        }));
+    }
 }
