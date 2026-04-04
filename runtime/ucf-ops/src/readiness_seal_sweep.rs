@@ -211,9 +211,9 @@ pub fn readiness_seal_sweep(
             &authority_ctx,
         )?,
         check_consumer(
-            "CanonicalClosureContinuity",
+            "CanonicalSealContinuity",
             workdir,
-            "out/canonical_closure_continuity_sweep.json",
+            "out/canonical_seal_continuity_sweep.json",
             &authority_ctx,
         )?,
         check_consumer(

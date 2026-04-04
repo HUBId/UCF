@@ -120,6 +120,8 @@ pub struct OperatorWorkflowChainV1 {
     #[serde(default)]
     pub canonical_closure_continuity_authority_digest_prefix: String,
     #[serde(default)]
+    pub canonical_seal_continuity_authority_digest_prefix: String,
+    #[serde(default)]
     pub bundle_terminal_sweep_digest_prefix: String,
     #[serde(default)]
     pub residual_free_continuity_authority_digest_prefix: String,
@@ -419,6 +421,7 @@ impl OperatorWorkflowPolicyV1 {
             canonical_stabilization_continuity_authority_digest_prefix: "MISSING".to_string(),
             canonical_final_consolidation_continuity_authority_digest_prefix: "MISSING".to_string(),
             canonical_closure_continuity_authority_digest_prefix: "MISSING".to_string(),
+            canonical_seal_continuity_authority_digest_prefix: "MISSING".to_string(),
             bundle_terminal_sweep_digest_prefix: "MISSING".to_string(),
             residual_free_continuity_authority_digest_prefix: "MISSING".to_string(),
             final_input_continuity_authority_digest_prefix: "MISSING".to_string(),
@@ -631,6 +634,12 @@ pub fn operator_workflow_chain(
     chain.canonical_closure_continuity_authority_digest_prefix = discover_digest_prefix(
         &out_root,
         "canonical_closure_continuity_sweep.json",
+        "authority_digest",
+    )
+    .unwrap_or_else(|| "MISSING".to_string());
+    chain.canonical_seal_continuity_authority_digest_prefix = discover_digest_prefix(
+        &out_root,
+        "canonical_seal_continuity_sweep.json",
         "authority_digest",
     )
     .unwrap_or_else(|| "MISSING".to_string());

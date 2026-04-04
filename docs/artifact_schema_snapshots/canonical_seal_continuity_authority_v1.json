@@ -1,0 +1,55 @@
+{
+  "artifact_id": "canonical_seal_continuity_authority_v1",
+  "type_name": "CanonicalSealContinuityAuthorityV1",
+  "source_file": "runtime/ucf-ops/src/canonical_seal_continuity_sweep.rs",
+  "required_fields": [
+    "applied_supported_set_digest_prefix",
+    "authority_digest",
+    "blocking_codes",
+    "bundle_seal_sweep_digest_prefix",
+    "canonical_bundle_spine_digest_prefix",
+    "canonical_closure_continuity_authority_digest_prefix",
+    "canonical_governance_entry_digest_prefix",
+    "canonical_primary_semantics_authority_digest_prefix",
+    "canonical_readiness_spine_digest_prefix",
+    "canonical_roundtrip_chain_digest_prefix",
+    "continuity_status",
+    "governance_seal_sweep_digest_prefix",
+    "operator_review_packet_digest_prefix",
+    "operator_signoff_digest_prefix",
+    "operator_workflow_chain_digest_prefix",
+    "primary_semantics_seal_sweep_digest_prefix",
+    "readiness_seal_sweep_digest_prefix",
+    "remediation_codes",
+    "schema_version"
+  ],
+  "optional_fields": [],
+  "field_types": {
+    "applied_supported_set_digest_prefix": "String",
+    "authority_digest": "String",
+    "blocking_codes": "Vec<String>",
+    "bundle_seal_sweep_digest_prefix": "String",
+    "canonical_bundle_spine_digest_prefix": "String",
+    "canonical_closure_continuity_authority_digest_prefix": "String",
+    "canonical_governance_entry_digest_prefix": "String",
+    "canonical_primary_semantics_authority_digest_prefix": "String",
+    "canonical_readiness_spine_digest_prefix": "String",
+    "canonical_roundtrip_chain_digest_prefix": "String",
+    "continuity_status": "CanonicalSealContinuityStatusV1",
+    "governance_seal_sweep_digest_prefix": "String",
+    "operator_review_packet_digest_prefix": "String",
+    "operator_signoff_digest_prefix": "String",
+    "operator_workflow_chain_digest_prefix": "String",
+    "primary_semantics_seal_sweep_digest_prefix": "String",
+    "readiness_seal_sweep_digest_prefix": "String",
+    "remediation_codes": "Vec<String>",
+    "schema_version": "u16"
+  },
+  "enum_variants": {
+    "CanonicalSealContinuityStatusV1": [
+      "Fail",
+      "LegacyPresent",
+      "Pass"
+    ]
+  }
+}

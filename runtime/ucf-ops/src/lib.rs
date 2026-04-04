@@ -19,6 +19,7 @@ mod canonical_closure_continuity_sweep;
 mod canonical_convergence_continuity_sweep;
 mod canonical_final_consolidation_continuity_sweep;
 mod canonical_governance_entry;
+mod canonical_seal_continuity_sweep;
 mod canonical_stabilization_continuity_sweep;
 mod causal;
 mod change_impact;
@@ -182,6 +183,10 @@ pub use canonical_governance_entry::{
     CanonicalGovernanceEntryV1, CANONICAL_ENTRY_REQUIRED, CANONICAL_GOVERNANCE_ENTRY_REQUIRED,
     GOVERNANCE_ENTRY_SCOPE_MISMATCH, GOVERNANCE_PRIMARY_SURFACES_REQUIRED,
     SECONDARY_ENTRY_PATH_BLOCKED,
+};
+pub use canonical_seal_continuity_sweep::{
+    canonical_seal_continuity_sweep, CanonicalSealContinuityAuthorityV1,
+    CanonicalSealContinuityStatusV1,
 };
 pub use canonical_stabilization_continuity_sweep::{
     canonical_stabilization_continuity_sweep, CanonicalStabilizationContinuityAuthorityV1,
