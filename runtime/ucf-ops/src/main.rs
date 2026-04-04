@@ -30,15 +30,15 @@ use ucf_ops::{
     models_backend_resolution, models_consistency_check, models_eligibility,
     models_evidence_snapshot, models_list, models_probe, models_probe_slot, models_promote,
     models_recommend_rollback, models_rollback, models_shadow_ready, models_stage,
-    models_supported_scope_execute, models_supported_scope_execute_v10,
-    models_supported_scope_execute_v11, models_supported_scope_execute_v12,
-    models_supported_scope_execute_v13, models_supported_scope_execute_v14,
-    models_supported_scope_execute_v15, models_supported_scope_execute_v4,
-    models_supported_scope_execute_v5, models_supported_scope_execute_v6,
-    models_supported_scope_execute_v7, models_supported_scope_execute_v8,
-    models_supported_scope_execute_v9, models_supported_scope_reevaluate,
-    models_supported_set_apply, models_supported_set_review, models_verify,
-    models_verify_lifecycle, net_deps_audit, nightly_summarize, one_command_bringup,
+    models_supported_scope_decision, models_supported_scope_execute,
+    models_supported_scope_execute_v10, models_supported_scope_execute_v11,
+    models_supported_scope_execute_v12, models_supported_scope_execute_v13,
+    models_supported_scope_execute_v14, models_supported_scope_execute_v15,
+    models_supported_scope_execute_v4, models_supported_scope_execute_v5,
+    models_supported_scope_execute_v6, models_supported_scope_execute_v7,
+    models_supported_scope_execute_v8, models_supported_scope_execute_v9,
+    models_supported_scope_reevaluate, models_supported_set_apply, models_supported_set_review,
+    models_verify, models_verify_lifecycle, net_deps_audit, nightly_summarize, one_command_bringup,
     operator_export_chain_check, operator_report, operator_report_text, operator_review_packet,
     operator_review_packet_text, operator_roundtrip_chain_check, operator_signoff,
     operator_signoff_text, operator_workflow_chain, operator_workflow_chain_text, out_manifest,
@@ -3032,6 +3032,27 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 std::process::exit(2);
             }
         }
+        "supported-scope-decision" => {
+            let out = arg_value(&args, "--out")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("./out/supported_scope_decision.json"));
+            let report = models_supported_scope_decision(&workdir, &out)?;
+            println!("out={}", out.display());
+            println!(
+                "status={:?} reason={:?} candidates={} digest={}",
+                report.decision.decision_status,
+                report.decision.decision_reason_code,
+                report.decision.candidate_count,
+                report.decision.decision_digest
+            );
+            if !matches!(
+                report.decision.decision_status,
+                ucf_ops::SupportedScopeExpansionDecisionStatusV1::ScopeExpansionApplied
+                    | ucf_ops::SupportedScopeExpansionDecisionStatusV1::ScopeFreezeReinforced
+            ) {
+                std::process::exit(2);
+            }
+        }
         "final-readiness-consumer-sweep" => {
             let out = arg_value(&args, "--out")
                 .map(PathBuf::from)
@@ -4573,7 +4594,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             eprintln!(
-                "usage: ucf-ops <bringup|diag|health|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|attest|repro|exports|readiness-gate|preflight|goldens|nightly|dev|troubleshoot|adversarial-run|out|release|bench|runs|status|strict|ess|ebm|drift|alerts|operator|policy|portability|spec|change-impact|soak|governance-surfaces-check|governance-entry-check|governance-entry-sweep|final-governance-consumer-sweep|governance-residual-sweep|residual-free-governance-sweep|governance-absolute-sweep|governance-terminal-sweep|governance-ultimate-sweep|governance-convergence-sweep|governance-stabilization-sweep|governance-final-consolidation-sweep|governance-closure-sweep|governance-seal-sweep|governance-lock-sweep|final-readiness-consumer-sweep|readiness-residual-sweep|residual-free-readiness-sweep|readiness-absolute-sweep|readiness-terminal-sweep|readiness-ultimate-sweep|readiness-convergence-sweep|readiness-stabilization-sweep|readiness-final-consolidation-sweep|readiness-closure-sweep|readiness-seal-sweep|final-bundle-consumer-sweep|bundle-residual-sweep|residual-free-bundle-sweep|bundle-absolute-sweep|bundle-terminal-sweep|bundle-ultimate-sweep|bundle-convergence-sweep|bundle-stabilization-sweep|bundle-final-consolidation-sweep|bundle-closure-sweep|bundle-seal-sweep|final-continuity-sweep|residual-free-continuity-sweep|absolute-final-input-continuity-sweep|terminal-absolute-final-input-continuity-sweep|ultimate-terminal-absolute-final-input-continuity-sweep|remediation-consistency-check|remediation-interop-check|remediation-spine-check|primary-semantics-sweep|final-primary-semantics-sweep|primary-semantics-residual-sweep|residual-free-primary-semantics-sweep|primary-semantics-absolute-sweep|primary-semantics-terminal-sweep|primary-semantics-ultimate-sweep|primary-semantics-convergence-sweep|primary-semantics-stabilization-sweep|primary-semantics-final-consolidation-sweep|primary-semantics-closure-sweep|primary-semantics-seal-sweep|canonical-closure-continuity-sweep|canonical-seal-continuity-sweep|interop|v0|v1|v2|v3|v4|v5|v6|v7|v8|v9|v10|v11|v12|v13|v14|v15|v16|v17|v18|v19|v20|version> [--workdir <path>] [--bundle <path>]"
+                "usage: ucf-ops <bringup|diag|health|diagnostics|export-bugreport|verify-bugreport|replay-bugreport|replay|metrics-snapshot|explain-tick|metrics|models|security|attest|repro|exports|readiness-gate|preflight|goldens|nightly|dev|troubleshoot|adversarial-run|out|release|bench|runs|status|strict|ess|ebm|drift|alerts|operator|policy|portability|spec|change-impact|soak|governance-surfaces-check|governance-entry-check|governance-entry-sweep|final-governance-consumer-sweep|governance-residual-sweep|residual-free-governance-sweep|governance-absolute-sweep|governance-terminal-sweep|governance-ultimate-sweep|governance-convergence-sweep|governance-stabilization-sweep|governance-final-consolidation-sweep|governance-closure-sweep|governance-seal-sweep|governance-lock-sweep|supported-scope-decision|final-readiness-consumer-sweep|readiness-residual-sweep|residual-free-readiness-sweep|readiness-absolute-sweep|readiness-terminal-sweep|readiness-ultimate-sweep|readiness-convergence-sweep|readiness-stabilization-sweep|readiness-final-consolidation-sweep|readiness-closure-sweep|readiness-seal-sweep|final-bundle-consumer-sweep|bundle-residual-sweep|residual-free-bundle-sweep|bundle-absolute-sweep|bundle-terminal-sweep|bundle-ultimate-sweep|bundle-convergence-sweep|bundle-stabilization-sweep|bundle-final-consolidation-sweep|bundle-closure-sweep|bundle-seal-sweep|final-continuity-sweep|residual-free-continuity-sweep|absolute-final-input-continuity-sweep|terminal-absolute-final-input-continuity-sweep|ultimate-terminal-absolute-final-input-continuity-sweep|remediation-consistency-check|remediation-interop-check|remediation-spine-check|primary-semantics-sweep|final-primary-semantics-sweep|primary-semantics-residual-sweep|residual-free-primary-semantics-sweep|primary-semantics-absolute-sweep|primary-semantics-terminal-sweep|primary-semantics-ultimate-sweep|primary-semantics-convergence-sweep|primary-semantics-stabilization-sweep|primary-semantics-final-consolidation-sweep|primary-semantics-closure-sweep|primary-semantics-seal-sweep|canonical-closure-continuity-sweep|canonical-seal-continuity-sweep|interop|v0|v1|v2|v3|v4|v5|v6|v7|v8|v9|v10|v11|v12|v13|v14|v15|v16|v17|v18|v19|v20|version> [--workdir <path>] [--bundle <path>]"
             );
             std::process::exit(1);
         }
