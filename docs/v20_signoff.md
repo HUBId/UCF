@@ -43,3 +43,7 @@ Optional backend/legacy translation checks may be `SKIP` only where the path is 
 - `SKIP`: only allowed for explicitly optional unsupported/unconfigured paths.
 
 v20 is a seal and sole-top-level-continuity hardening phase. The current applied supported scope (from authoritative applied-scope + supported-scope execution artifacts) is the only authoritative scope for this gate.
+
+## Continuation note
+
+After v20 gate PASS, continue at Prompt 380 via `docs/next_10_prompts.md`.
