@@ -24,6 +24,81 @@ use crate::{
     EvidenceRef, RiskSignal, SignalQuality,
 };
 
+pub const CANONICAL_STAGE_SEQUENCE: [CanonicalStageId; 4] = [
+    CanonicalStageId::World,
+    CanonicalStageId::Sae,
+    CanonicalStageId::Ssm,
+    CanonicalStageId::Lfm,
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CanonicalStageId {
+    World,
+    Sae,
+    Ssm,
+    Lfm,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CanonicalPipelineState {
+    Ok,
+    Degraded,
+    Unavailable,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CanonicalFailureKind {
+    InvalidInput,
+    BackendDisabled,
+    BackendContractMismatch,
+    ArtifactUnavailable,
+    ValidationDegraded,
+    BudgetExceeded,
+    ExecutionError,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CanonicalPipelineFailure {
+    pub kind: CanonicalFailureKind,
+    pub stage: Option<CanonicalStageId>,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CanonicalBackendRoute {
+    pub pack_id: u32,
+    pub world_backend: u8,
+    pub sae_backend: u8,
+    pub ssm_backend: u8,
+    pub lfm_backend: u8,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CanonicalPipelineResult {
+    pub request: ComputeInput,
+    pub stage_order: [CanonicalStageId; 4],
+    pub route: CanonicalBackendRoute,
+    pub state: CanonicalPipelineState,
+    pub failure: Option<CanonicalPipelineFailure>,
+    pub validation_status: ValidationStatus,
+    pub violation_reason_mask: u32,
+    pub signals: ComputeSignals,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CanonicalPipelineRequest {
+    pub input: ComputeInput,
+    pub budget: ComputeBudget,
+}
+
+struct UnavailableResultContext {
+    validation_status: ValidationStatus,
+    violation_reason_mask: u32,
+    failure: CanonicalPipelineFailure,
+    backend_id: Option<u16>,
+    budget_stage: Option<&'static str>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FusionConfig {
     pub world_weight: f32,
@@ -96,6 +171,22 @@ impl AiComputeBackend for ComputePipelineBackend {
         input: &ComputeInput,
         budget: ComputeBudget,
     ) -> Result<ComputeSignals, ComputeError> {
+        Ok(self
+            .compute_canonical(CanonicalPipelineRequest {
+                input: input.clone(),
+                budget,
+            })?
+            .signals)
+    }
+}
+
+impl ComputePipelineBackend {
+    pub fn compute_canonical(
+        &self,
+        request: CanonicalPipelineRequest,
+    ) -> Result<CanonicalPipelineResult, ComputeError> {
+        let input = request.input;
+        let budget = request.budget;
         if input.t == 0 {
             return Err(ComputeError::InvalidInput {
                 reason: "t must be non-zero".to_string(),
@@ -110,6 +201,13 @@ impl AiComputeBackend for ComputePipelineBackend {
 
         let mut exceeded_stage: Option<&'static str> = None;
         let pack_meta = self.pack.meta();
+        let route = CanonicalBackendRoute {
+            pack_id: pack_meta.pack_id.0,
+            world_backend: pack_meta.world_backend as u8,
+            sae_backend: pack_meta.sae_backend as u8,
+            ssm_backend: pack_meta.ssm_backend as u8,
+            lfm_backend: pack_meta.lfm_backend as u8,
+        };
         let registry = StageContractRegistry;
         let requested = StageContractVersion::V1;
 
@@ -129,12 +227,30 @@ impl AiComputeBackend for ComputePipelineBackend {
             world.contract_version(),
         ) || world.contract_version() != requested
         {
-            let mut unavailable = ComputeSignals::unavailable(input, budget, self.name());
-            unavailable.validation_status = ValidationStatus::Degraded;
-            unavailable.violation_reason_mask =
-                1_u32 << (ViolationCode::BackendContractMismatch as u32);
-            unavailable.backend_id = pack_meta.world_backend as u16;
-            return Ok(unavailable);
+            let kind = if pack_meta.world_backend == crate::BackendComponentId::Disabled {
+                CanonicalFailureKind::BackendDisabled
+            } else {
+                CanonicalFailureKind::BackendContractMismatch
+            };
+            return Ok(self.unavailable_result(
+                &input,
+                budget,
+                route,
+                UnavailableResultContext {
+                    validation_status: ValidationStatus::Degraded,
+                    violation_reason_mask: 1_u32 << (ViolationCode::BackendContractMismatch as u32),
+                    failure: CanonicalPipelineFailure {
+                        kind,
+                        stage: Some(CanonicalStageId::World),
+                        detail: format!(
+                            "world backend {:?} contract {:?} unsupported",
+                            pack_meta.world_backend, requested
+                        ),
+                    },
+                    backend_id: Some(pack_meta.world_backend as u16),
+                    budget_stage: None,
+                },
+            ));
         }
         let world_input = WorldModelInput {
             t: input.t,
@@ -147,9 +263,22 @@ impl AiComputeBackend for ComputePipelineBackend {
             Err(ComputeError::BudgetExceeded { stage, .. }) => {
                 exceeded_stage = Some(stage);
                 if budget.degrade_policy == DegradePolicy::FailFast {
-                    let mut unavailable = ComputeSignals::unavailable(input, budget, self.name());
-                    unavailable.budget_exceeded_stage = Some(stage);
-                    return Ok(unavailable);
+                    return Ok(self.unavailable_result(
+                        &input,
+                        budget,
+                        route,
+                        UnavailableResultContext {
+                            validation_status: ValidationStatus::Degraded,
+                            violation_reason_mask: 0,
+                            failure: CanonicalPipelineFailure {
+                                kind: CanonicalFailureKind::BudgetExceeded,
+                                stage: Some(CanonicalStageId::World),
+                                detail: format!("world stage budget exceeded at {stage}"),
+                            },
+                            backend_id: None,
+                            budget_stage: Some(stage),
+                        },
+                    ));
                 }
                 WorldModelOutput::degraded_budget(stage)
             }
@@ -208,7 +337,7 @@ impl AiComputeBackend for ComputePipelineBackend {
         global_meter.spend(220, "sae/extract")?;
         let evidence_seed: [u8; 32] = Sha256::digest(input.context_digest).into();
         let sae_input =
-            ToySaeExtractor::make_input(input, &world_model_out, budget.seed, evidence_seed);
+            ToySaeExtractor::make_input(&input, &world_model_out, budget.seed, evidence_seed);
         if !registry.supports(
             StageKind::Sae,
             pack_meta.sae_backend,
@@ -216,10 +345,30 @@ impl AiComputeBackend for ComputePipelineBackend {
         ) || self.pack.sae().contract_version() != requested
         {
             validation_report.add_hard(ViolationCode::BackendContractMismatch);
-            let mut out = ComputeSignals::unavailable(input, budget, self.name());
-            out.backend_id = pack_meta.sae_backend as u16;
-            out.violation_reason_mask = validation_report.violation_mask;
-            return Ok(out);
+            let kind = if pack_meta.sae_backend == crate::BackendComponentId::Disabled {
+                CanonicalFailureKind::BackendDisabled
+            } else {
+                CanonicalFailureKind::BackendContractMismatch
+            };
+            return Ok(self.unavailable_result(
+                &input,
+                budget,
+                route,
+                UnavailableResultContext {
+                    validation_status: validation_report.status,
+                    violation_reason_mask: validation_report.violation_mask,
+                    failure: CanonicalPipelineFailure {
+                        kind,
+                        stage: Some(CanonicalStageId::Sae),
+                        detail: format!(
+                            "sae backend {:?} contract {:?} unsupported",
+                            pack_meta.sae_backend, requested
+                        ),
+                    },
+                    backend_id: Some(pack_meta.sae_backend as u16),
+                    budget_stage: None,
+                },
+            ));
         }
         let sae_span = tracing::info_span!(
             "sae.extract",
@@ -233,7 +382,22 @@ impl AiComputeBackend for ComputePipelineBackend {
                 Err(ComputeError::BudgetExceeded { stage, .. }) => {
                     exceeded_stage = Some(stage);
                     if budget.degrade_policy == DegradePolicy::FailFast {
-                        return Ok(ComputeSignals::unavailable(input, budget, self.name()));
+                        return Ok(self.unavailable_result(
+                            &input,
+                            budget,
+                            route,
+                            UnavailableResultContext {
+                                validation_status: ValidationStatus::Degraded,
+                                violation_reason_mask: 0,
+                                failure: CanonicalPipelineFailure {
+                                    kind: CanonicalFailureKind::BudgetExceeded,
+                                    stage: Some(CanonicalStageId::Sae),
+                                    detail: format!("sae stage budget exceeded at {stage}"),
+                                },
+                                backend_id: None,
+                                budget_stage: Some(stage),
+                            },
+                        ));
                     }
                     (Self::empty_sae(), true)
                 }
@@ -242,7 +406,22 @@ impl AiComputeBackend for ComputePipelineBackend {
             Err(ComputeError::BudgetExceeded { stage, .. }) => {
                 exceeded_stage = Some(stage);
                 if budget.degrade_policy == DegradePolicy::FailFast {
-                    return Ok(ComputeSignals::unavailable(input, budget, self.name()));
+                    return Ok(self.unavailable_result(
+                        &input,
+                        budget,
+                        route,
+                        UnavailableResultContext {
+                            validation_status: ValidationStatus::Degraded,
+                            violation_reason_mask: 0,
+                            failure: CanonicalPipelineFailure {
+                                kind: CanonicalFailureKind::BudgetExceeded,
+                                stage: Some(CanonicalStageId::Sae),
+                                detail: format!("sae stage budget exceeded at {stage}"),
+                            },
+                            backend_id: None,
+                            budget_stage: Some(stage),
+                        },
+                    ));
                 }
                 (Self::empty_sae(), true)
             }
@@ -281,10 +460,30 @@ impl AiComputeBackend for ComputePipelineBackend {
                 .contract_version(),
         ) {
             validation_report.add_hard(ViolationCode::BackendContractMismatch);
-            let mut out = ComputeSignals::unavailable(input, budget, self.name());
-            out.backend_id = pack_meta.ssm_backend as u16;
-            out.violation_reason_mask = validation_report.violation_mask;
-            return Ok(out);
+            let kind = if pack_meta.ssm_backend == crate::BackendComponentId::Disabled {
+                CanonicalFailureKind::BackendDisabled
+            } else {
+                CanonicalFailureKind::BackendContractMismatch
+            };
+            return Ok(self.unavailable_result(
+                &input,
+                budget,
+                route,
+                UnavailableResultContext {
+                    validation_status: validation_report.status,
+                    violation_reason_mask: validation_report.violation_mask,
+                    failure: CanonicalPipelineFailure {
+                        kind,
+                        stage: Some(CanonicalStageId::Ssm),
+                        detail: format!(
+                            "ssm backend {:?} contract {:?} unsupported",
+                            pack_meta.ssm_backend, requested
+                        ),
+                    },
+                    backend_id: Some(pack_meta.ssm_backend as u16),
+                    budget_stage: None,
+                },
+            ));
         }
         let mut ssm = self
             .pack
@@ -302,7 +501,22 @@ impl AiComputeBackend for ComputePipelineBackend {
                 Err(ComputeError::BudgetExceeded { stage, .. }) => {
                     exceeded_stage = Some(stage);
                     if budget.degrade_policy == DegradePolicy::FailFast {
-                        return Ok(ComputeSignals::unavailable(input, budget, self.name()));
+                        return Ok(self.unavailable_result(
+                            &input,
+                            budget,
+                            route,
+                            UnavailableResultContext {
+                                validation_status: ValidationStatus::Degraded,
+                                violation_reason_mask: 0,
+                                failure: CanonicalPipelineFailure {
+                                    kind: CanonicalFailureKind::BudgetExceeded,
+                                    stage: Some(CanonicalStageId::Ssm),
+                                    detail: format!("ssm stage budget exceeded at {stage}"),
+                                },
+                                backend_id: None,
+                                budget_stage: Some(stage),
+                            },
+                        ));
                     }
                     (SsmOutput::degraded("budget_exceeded"), true)
                 }
@@ -311,7 +525,22 @@ impl AiComputeBackend for ComputePipelineBackend {
             Err(ComputeError::BudgetExceeded { stage, .. }) => {
                 exceeded_stage = Some(stage);
                 if budget.degrade_policy == DegradePolicy::FailFast {
-                    return Ok(ComputeSignals::unavailable(input, budget, self.name()));
+                    return Ok(self.unavailable_result(
+                        &input,
+                        budget,
+                        route,
+                        UnavailableResultContext {
+                            validation_status: ValidationStatus::Degraded,
+                            violation_reason_mask: 0,
+                            failure: CanonicalPipelineFailure {
+                                kind: CanonicalFailureKind::BudgetExceeded,
+                                stage: Some(CanonicalStageId::Ssm),
+                                detail: format!("ssm stage budget exceeded at {stage}"),
+                            },
+                            backend_id: None,
+                            budget_stage: Some(stage),
+                        },
+                    ));
                 }
                 (SsmOutput::degraded("budget_exceeded"), true)
             }
@@ -360,10 +589,30 @@ impl AiComputeBackend for ComputePipelineBackend {
                 .contract_version(),
         ) {
             validation_report.add_hard(ViolationCode::BackendContractMismatch);
-            let mut out = ComputeSignals::unavailable(input, budget, self.name());
-            out.backend_id = pack_meta.lfm_backend as u16;
-            out.violation_reason_mask = validation_report.violation_mask;
-            return Ok(out);
+            let kind = if pack_meta.lfm_backend == crate::BackendComponentId::Disabled {
+                CanonicalFailureKind::BackendDisabled
+            } else {
+                CanonicalFailureKind::BackendContractMismatch
+            };
+            return Ok(self.unavailable_result(
+                &input,
+                budget,
+                route,
+                UnavailableResultContext {
+                    validation_status: validation_report.status,
+                    violation_reason_mask: validation_report.violation_mask,
+                    failure: CanonicalPipelineFailure {
+                        kind,
+                        stage: Some(CanonicalStageId::Lfm),
+                        detail: format!(
+                            "lfm backend {:?} contract {:?} unsupported",
+                            pack_meta.lfm_backend, requested
+                        ),
+                    },
+                    backend_id: Some(pack_meta.lfm_backend as u16),
+                    budget_stage: None,
+                },
+            ));
         }
         let mut lfm = self
             .pack
@@ -382,7 +631,22 @@ impl AiComputeBackend for ComputePipelineBackend {
                 Err(ComputeError::BudgetExceeded { stage, .. }) => {
                     exceeded_stage = Some(stage);
                     if budget.degrade_policy == DegradePolicy::FailFast {
-                        return Ok(ComputeSignals::unavailable(input, budget, self.name()));
+                        return Ok(self.unavailable_result(
+                            &input,
+                            budget,
+                            route,
+                            UnavailableResultContext {
+                                validation_status: ValidationStatus::Degraded,
+                                violation_reason_mask: 0,
+                                failure: CanonicalPipelineFailure {
+                                    kind: CanonicalFailureKind::BudgetExceeded,
+                                    stage: Some(CanonicalStageId::Lfm),
+                                    detail: format!("lfm stage budget exceeded at {stage}"),
+                                },
+                                backend_id: None,
+                                budget_stage: Some(stage),
+                            },
+                        ));
                     }
                     (LfmOutput::degraded("budget_exceeded"), true)
                 }
@@ -391,7 +655,22 @@ impl AiComputeBackend for ComputePipelineBackend {
             Err(ComputeError::BudgetExceeded { stage, .. }) => {
                 exceeded_stage = Some(stage);
                 if budget.degrade_policy == DegradePolicy::FailFast {
-                    return Ok(ComputeSignals::unavailable(input, budget, self.name()));
+                    return Ok(self.unavailable_result(
+                        &input,
+                        budget,
+                        route,
+                        UnavailableResultContext {
+                            validation_status: ValidationStatus::Degraded,
+                            violation_reason_mask: 0,
+                            failure: CanonicalPipelineFailure {
+                                kind: CanonicalFailureKind::BudgetExceeded,
+                                stage: Some(CanonicalStageId::Lfm),
+                                detail: format!("lfm stage budget exceeded at {stage}"),
+                            },
+                            backend_id: None,
+                            budget_stage: Some(stage),
+                        },
+                    ));
                 }
                 (LfmOutput::degraded("budget_exceeded"), true)
             }
@@ -584,7 +863,7 @@ impl AiComputeBackend for ComputePipelineBackend {
 
         let chain_report =
             validate_evidence_chain_digest(&crate::evidence::EvidenceChain::from_compute(
-                input,
+                &input,
                 &sae_out.spikes,
                 &risk_signal,
                 Some(sae_out.quality),
@@ -593,7 +872,20 @@ impl AiComputeBackend for ComputePipelineBackend {
             ));
         validation_report = validation_report.merge(chain_report);
 
-        Ok(ComputeSignals {
+        let mut state = CanonicalPipelineState::Ok;
+        let mut failure = None;
+        if validation_report.status == ValidationStatus::Degraded {
+            state = CanonicalPipelineState::Degraded;
+            failure = Some(CanonicalPipelineFailure {
+                kind: CanonicalFailureKind::ValidationDegraded,
+                stage: None,
+                detail: "one or more stage validators degraded output".to_string(),
+            });
+        } else if quality == SignalQuality::DegradedFallback {
+            state = CanonicalPipelineState::Degraded;
+        }
+
+        let signals = ComputeSignals {
             surprise,
             pressure,
             risk: risk_signal.risk,
@@ -632,13 +924,53 @@ impl AiComputeBackend for ComputePipelineBackend {
             validation_status: validation_report.status,
             violation_reason_mask: validation_report.violation_mask,
         }
-        .bounded())
+        .bounded();
+
+        Ok(CanonicalPipelineResult {
+            request: input,
+            stage_order: CANONICAL_STAGE_SEQUENCE,
+            route,
+            state,
+            failure,
+            validation_status: signals.validation_status,
+            violation_reason_mask: signals.violation_reason_mask,
+            signals,
+        })
+    }
+
+    fn unavailable_result(
+        &self,
+        input: &ComputeInput,
+        budget: ComputeBudget,
+        route: CanonicalBackendRoute,
+        ctx: UnavailableResultContext,
+    ) -> CanonicalPipelineResult {
+        let mut signals = ComputeSignals::unavailable(input, budget, self.name());
+        signals.validation_status = ctx.validation_status;
+        signals.violation_reason_mask = ctx.violation_reason_mask;
+        if let Some(id) = ctx.backend_id {
+            signals.backend_id = id;
+        }
+        signals.budget_exceeded_stage = ctx.budget_stage;
+        signals
+            .notes
+            .push(format!("pipeline_failure={:?}", ctx.failure.kind).to_ascii_lowercase());
+        CanonicalPipelineResult {
+            request: input.clone(),
+            stage_order: CANONICAL_STAGE_SEQUENCE,
+            route,
+            state: CanonicalPipelineState::Unavailable,
+            failure: Some(ctx.failure),
+            validation_status: ctx.validation_status,
+            violation_reason_mask: ctx.violation_reason_mask,
+            signals,
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::FrameId;
+    use crate::{BackendPackKind, FrameId};
 
     use crate::{BackendPackConfig, BackendPackFactory};
 
@@ -662,6 +994,40 @@ mod tests {
             .compute(&input(), budget)
             .expect("compute");
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn canonical_pipeline_request_uses_world_sae_ssm_lfm_order() {
+        let backend = ComputePipelineBackend::stub();
+        let result = backend
+            .compute_canonical(CanonicalPipelineRequest {
+                input: input(),
+                budget: ComputeBudget::default(),
+            })
+            .expect("canonical compute");
+        assert_eq!(result.stage_order, CANONICAL_STAGE_SEQUENCE);
+        assert_ne!(result.state, CanonicalPipelineState::Unavailable);
+    }
+
+    #[test]
+    fn stub_pack_contract_mismatch_is_structured_unavailable() {
+        let pack = BackendPackFactory::build(BackendPackConfig {
+            pack: BackendPackKind::StubV0,
+            ..BackendPackConfig::default()
+        })
+        .expect("stub pack");
+        let backend =
+            ComputePipelineBackend::new(pack, FusionConfig::default(), LimitsConfig::default());
+        let result = backend
+            .compute_canonical(CanonicalPipelineRequest {
+                input: input(),
+                budget: ComputeBudget::default(),
+            })
+            .expect("canonical compute");
+        assert_eq!(result.state, CanonicalPipelineState::Unavailable);
+        let failure = result.failure.expect("failure");
+        assert_eq!(failure.kind, CanonicalFailureKind::BackendContractMismatch);
+        assert_eq!(failure.stage, Some(CanonicalStageId::World));
     }
 
     #[test]
@@ -691,6 +1057,13 @@ mod tests {
         let out = backend.compute(&input(), budget).expect("compute");
         assert_eq!(out.risk_signal.quality, SignalQuality::DegradedFallback);
         assert_eq!(out.budget_exceeded_stage, Some("sae/extract"));
+        let canonical = backend
+            .compute_canonical(CanonicalPipelineRequest {
+                input: input(),
+                budget,
+            })
+            .expect("canonical compute");
+        assert_eq!(canonical.state, CanonicalPipelineState::Degraded);
     }
 
     #[test]
@@ -705,5 +1078,31 @@ mod tests {
         assert_eq!(out.risk_signal.quality, SignalQuality::Unavailable);
         assert_eq!(out.risk, 1.0);
         assert_eq!(out.confidence, 0.0);
+        let canonical = backend
+            .compute_canonical(CanonicalPipelineRequest {
+                input: input(),
+                budget,
+            })
+            .expect("canonical compute");
+        assert_eq!(canonical.state, CanonicalPipelineState::Unavailable);
+        assert_eq!(
+            canonical.failure.expect("failure").kind,
+            CanonicalFailureKind::BudgetExceeded
+        );
+    }
+
+    #[test]
+    fn invalid_input_remains_hard_execution_error() {
+        let backend = ComputePipelineBackend::stub();
+        let invalid = ComputeInput {
+            frame_id: FrameId(7),
+            t: 0,
+            context_digest: [9; 32],
+        };
+        let result = backend.compute_canonical(CanonicalPipelineRequest {
+            input: invalid,
+            budget: ComputeBudget::default(),
+        });
+        assert!(matches!(result, Err(ComputeError::InvalidInput { .. })));
     }
 }

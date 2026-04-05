@@ -64,7 +64,11 @@ pub use feature_matrix::ReleaseFeatureMatrix;
 pub use model_store::{
     ModelDevice, ModelFormat, ModelLoadError, ModelSlot, ModelSlotSpec, ModelStore,
 };
-pub use pipeline::ComputePipelineBackend;
+pub use pipeline::{
+    CanonicalBackendRoute, CanonicalFailureKind, CanonicalPipelineFailure,
+    CanonicalPipelineRequest, CanonicalPipelineResult, CanonicalPipelineState, CanonicalStageId,
+    ComputePipelineBackend, CANONICAL_STAGE_SEQUENCE,
+};
 #[cfg(feature = "remote-compute")]
 pub use remote_compute::{
     NodeSigner, RemoteComputeClient, RemoteErr, RemoteGovernor, RemoteGovernorConfig,
