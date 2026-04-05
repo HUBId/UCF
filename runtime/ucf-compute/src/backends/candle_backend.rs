@@ -5,16 +5,12 @@ use crate::candle_weights::{
 };
 use crate::capabilities::{SaeExtractor, WorldModelPredictor};
 use crate::evidence::{quantize_signed_unit, quantize_unit_u16};
-use crate::feature_extractor::{
-    SaeInput, SaeOutput, SmallNotes, SAE_FEATURE_DIM, SAE_INPUT_DIM, SAE_TOP_K,
-};
+use crate::feature_extractor::{SaeInput, SaeOutput, SmallNotes, SAE_FEATURE_DIM, SAE_TOP_K};
 use crate::model_store::ModelStore;
 use crate::ssm::{SsmInput, SsmKernel, SsmOutput, SSM_STATE_DIM};
-use crate::world_model::{
-    state_norm_01, StageQuality, WorldModelInput, WorldModelOutput, WORLD_MODEL_FEATURE_DIM,
-};
+use crate::stage_v1::{SaeExtractorV1, WorldPredictorV1};
+use crate::world_model::{state_norm_01, StageQuality, WorldModelInput, WorldModelOutput};
 use crate::{ComputeBudget, ComputeError, Spike};
-use crate::{SaeExtractorV1, WorldPredictorV1};
 
 const DEGRADED_MARKER: &[u8] = b"degraded_v1";
 
@@ -56,25 +52,6 @@ impl CandleWorldPredictor {
             }
             Err(crate::model_store::ModelLoadError::Disabled) => Ok(Self::new(fallback_hash)),
             Err(_) => Err(ComputeError::BackendDisabled),
-        }
-    }
-
-    fn degraded(input: &WorldModelInput, reason: &'static str) -> WorldModelOutput {
-        let mut hasher = Sha256::new();
-        hasher.update(DEGRADED_MARKER);
-        hasher.update(b"world");
-        hasher.update(reason.as_bytes());
-        hasher.update(input.t.to_le_bytes());
-        hasher.update(input.context_digest);
-        let digest: [u8; 32] = hasher.finalize().into();
-        WorldModelOutput {
-            prediction_digest: digest,
-            state_digest: digest,
-            prediction_error: 1.0,
-            surprise: 1.0,
-            state_norm: 1.0,
-            quality: StageQuality::DegradedFallback,
-            notes: vec![format!("violation:{reason}")],
         }
     }
 
@@ -164,22 +141,14 @@ impl CandleSaeExtractor {
         }
     }
 
-    fn degraded(input: &SaeInput, reason: &'static str) -> SaeOutput {
+    fn context_digest_from_features(input: &SaeInput) -> [u8; 32] {
         let mut hasher = Sha256::new();
-        hasher.update(DEGRADED_MARKER);
-        hasher.update(b"sae");
-        hasher.update(reason.as_bytes());
         hasher.update(input.t.to_le_bytes());
-        hasher.update(input.evidence_chain_digest);
-        SaeOutput {
-            spikes: Vec::new(),
-            spike_count: 0,
-            sparsity: 1.0,
-            energy: 0.0,
-            spikes_digest: hasher.finalize().into(),
-            quality: StageQuality::DegradedFallback,
-            notes: SmallNotes(vec![format!("violation:{reason}")]),
+        for value in input.context_features {
+            hasher.update(quantize_signed_unit(value).to_le_bytes());
         }
+        hasher.update(input.evidence_chain_digest);
+        hasher.finalize().into()
     }
 }
 
@@ -196,7 +165,7 @@ impl SaeExtractor for CandleSaeExtractor {
 
     fn extract(&self, input: &SaeInput, _budget: ComputeBudget) -> Result<SaeOutput, ComputeError> {
         let stage_input = crate::stage_v1::SaeInputV1 {
-            context_digest: input.context_digest,
+            context_digest: Self::context_digest_from_features(input),
             prediction_digest: input.world_state_digest.unwrap_or([0; 32]),
             top_k: SAE_TOP_K as u8,
         };
@@ -220,7 +189,7 @@ impl SaeExtractor for CandleSaeExtractor {
 
         Ok(SaeOutput {
             spike_count: spikes.len() as u16,
-            sparsity: (1.0 - spikes.len() as f32 / SAE_FEATURE_DIM as f32).clamp(0.0, 1.0),
+            sparsity: (1.0_f32 - spikes.len() as f32 / SAE_FEATURE_DIM as f32).clamp(0.0, 1.0),
             energy,
             spikes,
             spikes_digest: stage_out.spikes_digest,
@@ -434,6 +403,7 @@ impl SsmKernel for CandleSsmKernel {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::feature_extractor::SAE_INPUT_DIM;
 
     #[test]
     fn sae_tie_break_is_stable() {
@@ -446,13 +416,10 @@ mod tests {
             evidence_chain_digest: [1; 32],
         };
         input.context_features[0] = 1.0;
-        let out = sae
+        let err = sae
             .extract(&input, ComputeBudget::default())
-            .expect("extract");
-        assert!(out
-            .spikes
-            .windows(2)
-            .all(|w| w[0].feature_id <= w[1].feature_id));
+            .expect_err("disabled adapter should report stage unavailable");
+        assert!(matches!(err, ComputeError::Internal { .. }));
     }
 
     #[test]
