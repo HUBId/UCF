@@ -594,7 +594,10 @@ impl BackendPackFactory {
             BackendPackKind::CandleToyV1 => {
                 #[cfg(feature = "compute-candle")]
                 {
-                    Box::new(CandleWorldPredictor::new(_world_model_hash))
+                    Box::new(CandleWorldPredictor::from_model_store_or_hash(
+                        &model_store,
+                        _world_model_hash,
+                    )?)
                 }
                 #[cfg(not(feature = "compute-candle"))]
                 {
@@ -618,7 +621,10 @@ impl BackendPackFactory {
             BackendPackKind::CandleToyV1 => {
                 #[cfg(feature = "compute-candle")]
                 {
-                    Arc::new(CandleSaeExtractor::new(_sae_model_hash))
+                    Arc::new(CandleSaeExtractor::from_model_store_or_hash(
+                        &model_store,
+                        _sae_model_hash,
+                    )?)
                 }
                 #[cfg(not(feature = "compute-candle"))]
                 {

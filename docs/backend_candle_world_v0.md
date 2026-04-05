@@ -1,39 +1,32 @@
-# Backend Candle World V0
+# Backend Candle World V0 (canonical runtime seam)
 
-`backend-candle` introduces a feature-gated, CPU-only Candle adapter skeleton for the `world_jepa` slot.
+Status: active in `runtime/ucf-compute` as a canonical world-stage adapter.
 
-## Feature flag
+## Runtime binding
 
-Default builds stay on stubs/toy backends.
+- Candle world execution is wired through the canonical runtime backend path:
+  `backend_pack.rs` -> `backends/candle_backend.rs` -> `pipeline.rs`.
+- The world stage uses `stage_v1_candle::CandleWorldAdapterV0` (contract v1), not a
+  separate pipeline contract.
+- Candle and Burn both return through `CanonicalPipelineResult` and
+  `CanonicalPipelineFailure`.
 
-```bash
-cargo build -p ucf-compute
-cargo build -p ucf-compute --features backend-candle
-cargo run -p ucf-ops --features backend-candle -- models probe --manifest models/MANIFEST.toml --out ./out/probe_report.json
-```
+## Artifact and compatibility rules
 
-## Weight spec (strict)
+- Slot verification still goes through `ModelStore::verify_slot`.
+- Candle world requires `world_jepa` to be `format = "candle_safetensors"` and
+  `contract_version = "v1"` (or `"1"`), enforced in `backend_pack`.
+- Failures remain structured through canonical categories:
+  - backend disabled
+  - artifact unavailable / verification failed / incompatible
+  - stage unavailable (adapter cannot execute even with verified slot)
+  - contract mismatch
+  - hard execution error
 
-When promoted world weights are present, `CandleWorldAdapterV0` validates strict `WeightSpec` tensors:
+## Honest readiness
 
-- `w1`: `[D,H]` `f32`
-- `b1`: `[H]` `f32`
-- `w2`: `[H,D]` `f32`
-- `b2`: `[D]` `f32`
-
-If the promoted weights are missing or invalid, the adapter is disabled and returns `BACKEND_DISABLED`.
-
-## Shadow-only semantics
-
-The adapter is probe-first and shadow-first:
-
-- default runtime remains unaffected without the feature
-- world probe prefers candle adapter only when `backend-candle` is enabled **and** verified weights exist
-- decision path remains unchanged; compare windows report primary vs shadow deltas (`mean_delta_q`, `p95_delta_q`)
-
-## Probe interpretation
-
-`models probe` includes a `backend_id` carrying pack + world backend component id:
-
-- format: `<pack_name>:<pack_digest_prefix>/world:<component_id>`
-- if candle world cannot initialize from local promoted weights, probe falls back to stub/toy path and remains non-crashing
+- Real path available: world stage can execute with verified candle weights via
+  `CandleWorldAdapterV0`.
+- Remaining blocker: if a verified slot cannot be executed by the adapter
+  (unexpected tensor payload), runtime emits `stage_unavailable` instead of
+  silently falling back.

@@ -42,8 +42,12 @@ Structured failure taxonomy (`CanonicalFailureKind`):
 
 - `invalid_input`
 - `backend_disabled`
-- `backend_contract_mismatch`
+- `stage_contract_mismatch`
 - `artifact_unavailable`
+- `artifact_verification_failed`
+- `artifact_incompatible`
+- `stage_unavailable`
+- `degraded_fallback`
 - `validation_degraded`
 - `budget_exceeded`
 - `execution_error`
@@ -61,7 +65,8 @@ Routing remains in `backends.rs` + `backend_pack.rs`, while canonical execution 
 Role split for this hardening step:
 
 - Burn: primary production-intent runtime backend lane.
-- Candle: explicit backend/execution seam for parity and adapter isolation.
+- Candle: explicit backend/execution seam bound to the same stage contracts and
+  artifact/manifest compatibility checks as Burn.
 
 No implicit fallback from disabled Candle/Burn to hidden production defaults is introduced by this step; unsupported feature lanes still fail explicitly.
 
