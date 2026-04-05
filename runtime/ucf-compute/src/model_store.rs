@@ -156,6 +156,10 @@ pub struct ModelStore {
 }
 
 impl ModelStore {
+    fn default_manifest_path() -> &'static str {
+        DEFAULT_MANIFEST_PATH
+    }
+
     pub fn from_manifest_and_env(manifest_path: &Path) -> Result<Self, ModelLoadError> {
         let manifest_exists = manifest_path.exists();
         let mut doc = if manifest_path.exists() {
@@ -187,7 +191,7 @@ impl ModelStore {
     pub fn from_env_default() -> Result<Self, ModelLoadError> {
         let path = std::env::var("UCF_MODEL_MANIFEST")
             .map(PathBuf::from)
-            .unwrap_or_else(|_| PathBuf::from(DEFAULT_MANIFEST_PATH));
+            .unwrap_or_else(|_| PathBuf::from(Self::default_manifest_path()));
         Self::from_manifest_and_env(&path)
     }
 
@@ -612,26 +616,22 @@ mod tests {
     }
 
     #[test]
-    fn from_env_default_prefers_lowercase_manifest_path() {
-        struct CwdRestore(std::path::PathBuf);
+    fn default_manifest_path_is_lowercase_canonical() {
+        assert_eq!(ModelStore::default_manifest_path(), "models/manifest.toml");
+    }
 
-        impl Drop for CwdRestore {
-            fn drop(&mut self) {
-                let _ = std::env::set_current_dir(&self.0);
-            }
-        }
-
+    #[test]
+    fn from_env_default_uses_manifest_env_override() {
         let _guard = crate::test_env::env_lock().lock().expect("env lock");
         let _env = crate::test_env::clear_model_env_overrides();
         let temp = tempfile::tempdir().expect("tempdir");
         let root = temp.path();
-        let restore = CwdRestore(std::env::current_dir().expect("cwd"));
-        std::env::set_current_dir(root).expect("chdir");
 
         let models = root.join("models");
         fs::create_dir_all(&models).expect("mkdir models");
+        let lowercase_manifest = models.join("manifest.toml");
         fs::write(
-            models.join("manifest.toml"),
+            &lowercase_manifest,
             r#"
 allowlist_root = "models"
 [slots.llm]
@@ -655,10 +655,9 @@ enabled = false
         )
         .expect("write uppercase manifest");
 
-        std::env::remove_var("UCF_MODEL_MANIFEST");
+        std::env::set_var("UCF_MODEL_MANIFEST", &lowercase_manifest);
         let store = ModelStore::from_env_default().expect("load store");
         let llm = store.specs.get(&ModelSlot::Llm).expect("llm spec");
-        assert!(llm.enabled, "lowercase manifest must be canonical default");
-        drop(restore);
+        assert!(llm.enabled, "env override manifest must be honored");
     }
 }
