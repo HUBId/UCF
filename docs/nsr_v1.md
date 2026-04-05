@@ -46,3 +46,27 @@ Explain output is digest-only:
 - `nsr_rules_digest_prefix`
 
 No raw payloads or full proof traces are exposed.
+
+## Runtime readiness (canonical pipeline attachment)
+
+NSR readiness is tracked with the canonical stage ladder:
+
+- `scaffolded`
+- `contract-ready`
+- `artifact-ready`
+- `runtime-path-ready`
+- `production-blocked`
+
+Current repo status (`runtime/ucf-compute`):
+
+- `contract-ready`: yes (`NsrRequest` / `NsrResult` / `NsrFailureKind` in `contracts.rs`)
+- `artifact-ready`: partial (`ebm_reasoner` slot provenance wired; no dedicated NSR slot family yet)
+- `runtime-path-ready`: partial (`UCF_NSR_MODE=best_effort|required` runs NSR as post-inference hook)
+- `production-blocked`: yes
+
+Primary blockers to broader production usage:
+
+1. Intent projection into NSR is minimal (no full action/tool plan contract in `ucf-compute` path yet).
+2. NSR artifact contract currently reuses `ebm_reasoner` seam; dedicated NSR slot contract is not finalized.
+3. No backend-specific NSR execution matrix across Burn/Candle runtime packs beyond the shared post-hook.
+4. Required-mode rollout policy/thresholds are not calibrated for production traffic.

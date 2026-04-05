@@ -39,6 +39,7 @@ half = "2"
 ucf-frames = { path = "../../domains/ucf-frames" }
 ucf-core = { path = "../../core/ucf-core" }
 ucf-types = { path = "../../core/crates/ucf-types" }
+ucf-nsr = { path = "../../core/crates/ucf-nsr" }
 
 [dev-dependencies]
 serde_json = "1"

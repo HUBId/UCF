@@ -2,6 +2,8 @@
 
 `ucf-compute` supports local model slots (`llm`, `world_jepa`, `world_vljepa`, `sae`, `lfm`, `ssm`, `ebm_reasoner`) via `models/manifest.toml`.
 
+`ebm_reasoner` is also the current compatibility seam used by the optional NSR post-inference hook in the canonical compute pipeline.
+
 ## Guarantees
 - no network fetch path (filesystem only)
 - allowlisted root (`allowlist_root`, default `models/`)

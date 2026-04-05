@@ -10,6 +10,7 @@ use crate::world_model::{WorldModelInput, WorldModelOutput};
 
 pub const MAX_REASON_CODES: usize = 8;
 pub const MAX_STAGE_ENCODED_BYTES: usize = 64 * 1024;
+pub const NSR_CONTRACT_VERSION_V1: &str = "v1";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[repr(u16)]
@@ -298,6 +299,55 @@ pub fn validate_evidence_chain_digest(chain: &EvidenceChain) -> ValidationReport
         report.add_hard(ViolationCode::ChainDigestMismatch);
     }
     report
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[repr(u8)]
+pub enum NsrContractVersion {
+    V1 = 1,
+}
+
+impl NsrContractVersion {
+    pub const fn as_u8(self) -> u8 {
+        self as u8
+    }
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::V1 => NSR_CONTRACT_VERSION_V1,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct NsrRequest {
+    pub base_risk: f32,
+    pub base_confidence: f32,
+    pub pressure: f32,
+    pub surprise: f32,
+    pub compute_degraded: bool,
+    pub contract_version: NsrContractVersion,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NsrFailureKind {
+    Disabled,
+    Unavailable,
+    ArtifactVerificationFailed,
+    ContractMismatch,
+    BackendUnavailable,
+    ExecutionError,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct NsrResult {
+    pub risk: f32,
+    pub confidence: f32,
+    pub reason_codes: Vec<String>,
+    pub digest: [u8; 32],
+    pub engine_id: String,
+    pub contract_version: NsrContractVersion,
 }
 
 #[cfg(test)]
