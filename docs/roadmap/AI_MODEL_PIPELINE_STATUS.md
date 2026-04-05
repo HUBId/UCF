@@ -30,7 +30,7 @@ This status file fixes the canonical architecture for Real Compute Onboarding ba
 
 - **Primary runtime path**: `UCF_COMPUTE_BACKEND=burn` resolves to `BackendPackKind::BurnToyV1` inside `runtime/ucf-compute`, not to `domains/ai-backends`.
 - **Honest minimal E2E path (real today)**: `World -> SAE -> SSM` runs with Burn components and verified model slots (`world_jepa`, `sae`, `ssm`).
-- **LFM in Burn lane**: currently marked as explicitly disabled for the Burn pack in canonical runtime metadata; pipeline emits a **degraded but usable** result instead of silently substituting a toy/mock LFM stage.
+- **LFM in Burn lane**: Burn pack now requires a verified `lfm` slot and routes LFM through a dedicated Burn runtime kernel (`burn_lfm_liquid_scalar_v1`) in the canonical pipeline path.
 - **Failure semantics**:
   - artifact missing/verification/incompatible are classified as typed canonical failures before execution;
   - stage backend disabled and stage execution errors are distinguished and returned as structured canonical failures;
@@ -47,8 +47,8 @@ This status file fixes the canonical architecture for Real Compute Onboarding ba
 2. **Artifact resolution / compatibility**
    - Standardize tooling/docs to `models/manifest.toml` as single canonical path.
    - Keep env override `UCF_MODEL_MANIFEST` for explicit compatibility only.
-3. **Burn LFM completion**
-   - Replace explicit Burn-LFM-disabled marker with a real Burn LFM kernel implementation and keep degraded semantics deterministic for budget/fail-fast only.
+3. **Burn LFM hardening**
+   - Keep Burn LFM on the canonical path (`runtime/ucf-compute`) and expand from scalar minimal runtime toward full tensor parity without re-introducing silent toy fallback paths.
 4. **Candle as backend seam**
    - Keep candle runtime seam parity with the same artifact validation + structured failure model.
 5. **Bounded compute service afterwards**
@@ -72,3 +72,20 @@ This section records JEPA against the canonical readiness ladder:
 2. **Cross-cycle persistence is session-local**: world state continuity is explicit in-process (`previous_state_digest`), but there is no durable/recoverable world-state persistence contract for process restarts.
 3. **Candle availability remains environment/feature dependent**: Candle JEPA path is a compatible seam, but can still be unavailable when feature/runtime prerequisites are missing.
 4. **Failure handling is now typed but still pipeline-local**: JEPA-specific failure classes are represented in canonical failure/provenance, but downstream operator automation and runbook wiring are not fully specialized yet.
+
+## LFM readiness (repo-truth as of this change)
+
+| readiness stage | current LFM status | repo-truth notes |
+|---|---|---|
+| `scaffolded` | ✅ complete | Canonical LFM stage structs/contracts exist (`LfmInput`, `LfmOutput`, `LfmValidatorV1`) and are part of the fixed stage sequence. |
+| `contract-ready` | ✅ complete | LFM uses the same canonical `StageContractVersion::V1` boundary as world/sae/ssm and is validated in the canonical request→stage→result path. |
+| `artifact-ready` | ✅ minimal honest path complete | Burn pack treats `lfm` as required slot and maps slot state into structured runtime/provenance (`used`, `disabled`, `unavailable`, `verification_failed`, `incompatible`). |
+| `runtime-path-ready` | ✅ minimal honest path complete | Burn pack runs `World -> Sae -> Ssm -> Lfm` with `BurnLfmV1` route metadata and emits explicit LFM stage diagnostics (`state`, `readiness`, `runtime`, slot provenance). |
+| `production-blocked` | ⚠️ still true overall | Runtime path is real and typed, but still a constrained minimal burn scalar path (not full production tensor parity). |
+
+### Current LFM blockers (3–5 concrete)
+
+1. **Burn LFM runtime is minimal scalar path**: current Burn kernel is a deterministic scalar runtime path, not yet full tensor-runtime parity with broader model expectations.
+2. **No dedicated burn-typed LFM weight loader yet**: LFM slot is hash/manifest verified, but there is no dedicated Burn LFM tensor schema loader equivalent to mature world/sae/ssm weight spec flows.
+3. **Candle/Burn LFM parity remains partial**: Candle and LNN lanes exist, but backend-level runtime parity and compatibility diagnostics are still uneven across lanes.
+4. **Operator-grade failure automation is pending**: canonical failures are typed, but runbook automation for LFM-specific remediation (artifact class → operator action) is not fully wired.

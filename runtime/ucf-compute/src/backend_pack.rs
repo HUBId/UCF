@@ -54,6 +54,7 @@ pub enum BackendComponentId {
     BurnJepaV1 = 20,
     BurnSaeV1 = 21,
     BurnSsmV1 = 22,
+    BurnLfmV1 = 23,
     Disabled = 255,
 }
 
@@ -546,10 +547,19 @@ impl BackendPackFactory {
                         return Err(ComputeError::BackendDisabled);
                     }
                 }
-                BackendPackKind::BurnToyV1 => (
-                    BackendComponentId::Disabled,
-                    Box::new(ToyLfmKernel::default()),
-                ),
+                BackendPackKind::BurnToyV1 => {
+                    #[cfg(feature = "lfm-burn")]
+                    {
+                        (
+                            BackendComponentId::BurnLfmV1,
+                            Box::new(BurnLfmKernel::from_model_store(&model_store)?),
+                        )
+                    }
+                    #[cfg(not(feature = "lfm-burn"))]
+                    {
+                        return Err(ComputeError::BackendDisabled);
+                    }
+                }
                 BackendPackKind::ToyLnnV1 => {
                     #[cfg(feature = "lfm-lnn")]
                     {
@@ -702,8 +712,14 @@ fn first_blocking_artifact_failure(
 
 fn required_slots_for_pack(pack: BackendPackKind) -> Vec<ModelSlot> {
     match pack {
-        BackendPackKind::CandleToyV1 | BackendPackKind::BurnToyV1 => {
-            vec![ModelSlot::WorldJepa, ModelSlot::Sae, ModelSlot::Ssm]
+        BackendPackKind::CandleToyV1 => vec![ModelSlot::WorldJepa, ModelSlot::Sae, ModelSlot::Ssm],
+        BackendPackKind::BurnToyV1 => {
+            vec![
+                ModelSlot::WorldJepa,
+                ModelSlot::Sae,
+                ModelSlot::Lfm,
+                ModelSlot::Ssm,
+            ]
         }
         _ => Vec::new(),
     }
@@ -799,6 +815,7 @@ fn check_slot_compatibility(
         | (BackendPackKind::CandleToyV1, ModelSlot::Ssm) => &[ModelFormat::CandleSafetensors],
         (BackendPackKind::BurnToyV1, ModelSlot::WorldJepa)
         | (BackendPackKind::BurnToyV1, ModelSlot::Sae)
+        | (BackendPackKind::BurnToyV1, ModelSlot::Lfm)
         | (BackendPackKind::BurnToyV1, ModelSlot::Ssm) => &[ModelFormat::Burn],
         _ => &[],
     };
@@ -1249,5 +1266,49 @@ mod tests {
             .find(|entry| entry.slot == ModelSlot::Sae)
             .expect("sae slot");
         assert_eq!(sae.status, SlotRuntimeStatus::Disabled);
+    }
+
+    #[test]
+    fn burn_pack_requires_lfm_slot() {
+        let required = required_slots_for_pack(BackendPackKind::BurnToyV1);
+        assert!(required.contains(&ModelSlot::Lfm));
+    }
+
+    #[cfg(feature = "lfm-burn")]
+    #[test]
+    fn burn_pack_uses_burn_lfm_component_when_slot_is_valid() {
+        let _guard = crate::test_env::env_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _env = crate::test_env::clear_model_env_overrides();
+        let temp = tempfile::tempdir().expect("tempdir");
+        let models = temp.path().join("models");
+        fs::create_dir_all(&models).expect("models dir");
+
+        let mut manifest = format!("allowlist_root = '{}'\n", models.display());
+        for slot in ["world_jepa", "sae", "lfm", "ssm"] {
+            let bytes = format!("{slot}-weights").into_bytes();
+            let hash = hex::encode(Sha256::digest(&bytes));
+            let model_path = models
+                .join("promoted")
+                .join(slot)
+                .join(&hash)
+                .join("model.safetensors");
+            fs::create_dir_all(model_path.parent().expect("parent")).expect("mkdirs");
+            fs::write(&model_path, bytes).expect("write");
+            manifest.push_str(&format!(
+                "[slots.{slot}]\nenabled = true\nexpected_sha256 = \"{hash}\"\nactive_hash = \"{hash}\"\nformat = \"burn\"\ncontract_version = \"v1\"\n"
+            ));
+        }
+        let manifest_path = temp.path().join("manifest.toml");
+        fs::write(&manifest_path, manifest).expect("manifest");
+        std::env::set_var("UCF_MODEL_MANIFEST", &manifest_path);
+
+        let pack = BackendPackFactory::build(BackendPackConfig {
+            pack: BackendPackKind::BurnToyV1,
+            seed: 9,
+        })
+        .expect("burn pack");
+        assert_eq!(pack.meta().lfm_backend, BackendComponentId::BurnLfmV1);
     }
 }

@@ -100,9 +100,45 @@ pub struct CanonicalPipelineResult {
     pub validation_status: ValidationStatus,
     pub violation_reason_mask: u32,
     pub world_stage: WorldStageStatus,
+    pub lfm_stage: LfmStageStatus,
     pub nsr_stage: NsrStageStatus,
     pub model_slots: Vec<ModelSlotProvenance>,
     pub signals: ComputeSignals,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LfmStageReadiness {
+    Scaffolded,
+    ContractReady,
+    ArtifactReady,
+    RuntimePathReady,
+    ProductionBlocked,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LfmStageState {
+    Disabled,
+    Used,
+    Unavailable,
+    VerificationFailed,
+    Incompatible,
+    ContractMismatch,
+    BackendUnavailable,
+    ExecutionError,
+    DegradedBypass,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LfmStageStatus {
+    pub slot: Option<ModelSlotProvenance>,
+    pub state: LfmStageState,
+    pub used: bool,
+    pub runtime: String,
+    pub backend: u8,
+    pub readiness: LfmStageReadiness,
+    pub detail: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -179,6 +215,7 @@ struct UnavailableResultContext {
     violation_reason_mask: u32,
     failure: CanonicalPipelineFailure,
     world_stage: Option<WorldStageStatus>,
+    lfm_stage: Option<LfmStageStatus>,
     nsr_stage: Option<NsrStageStatus>,
     backend_id: Option<u16>,
     budget_stage: Option<&'static str>,
@@ -615,6 +652,7 @@ impl ComputePipelineBackend {
                     violation_reason_mask: 0,
                     failure,
                     world_stage: Some(world_stage),
+                    lfm_stage: None,
                     nsr_stage: Some(nsr_disabled_stage(nsr_slot.clone(), nsr_mode)),
                     backend_id: None,
                     budget_stage: None,
@@ -672,6 +710,7 @@ impl ComputePipelineBackend {
                         ),
                         detail: Some("world contract mismatch".to_string()),
                     }),
+                    lfm_stage: None,
                     nsr_stage: None,
                     backend_id: Some(pack_meta.world_backend as u16),
                     budget_stage: None,
@@ -703,6 +742,7 @@ impl ComputePipelineBackend {
                                 detail: format!("world stage budget exceeded at {stage}"),
                             },
                             world_stage: None,
+                            lfm_stage: None,
                             nsr_stage: None,
                             backend_id: None,
                             budget_stage: Some(stage),
@@ -725,6 +765,7 @@ impl ComputePipelineBackend {
                             "world stage execution failed",
                         ),
                         world_stage: None,
+                        lfm_stage: None,
                         nsr_stage: None,
                         backend_id: Some(pack_meta.world_backend as u16),
                         budget_stage: None,
@@ -828,6 +869,7 @@ impl ComputePipelineBackend {
                         ),
                     },
                     world_stage: None,
+                    lfm_stage: None,
                     nsr_stage: None,
                     backend_id: Some(pack_meta.sae_backend as u16),
                     budget_stage: None,
@@ -859,6 +901,7 @@ impl ComputePipelineBackend {
                                     detail: format!("sae stage budget exceeded at {stage}"),
                                 },
                                 world_stage: None,
+                                lfm_stage: None,
                                 nsr_stage: None,
                                 backend_id: None,
                                 budget_stage: Some(stage),
@@ -881,6 +924,7 @@ impl ComputePipelineBackend {
                                 "sae stage execution failed",
                             ),
                             world_stage: None,
+                            lfm_stage: None,
                             nsr_stage: None,
                             backend_id: Some(pack_meta.sae_backend as u16),
                             budget_stage: None,
@@ -904,6 +948,7 @@ impl ComputePipelineBackend {
                                 detail: format!("sae stage budget exceeded at {stage}"),
                             },
                             world_stage: None,
+                            lfm_stage: None,
                             nsr_stage: None,
                             backend_id: None,
                             budget_stage: Some(stage),
@@ -969,6 +1014,7 @@ impl ComputePipelineBackend {
                         ),
                     },
                     world_stage: None,
+                    lfm_stage: None,
                     nsr_stage: None,
                     backend_id: Some(pack_meta.ssm_backend as u16),
                     budget_stage: None,
@@ -1004,6 +1050,7 @@ impl ComputePipelineBackend {
                                     detail: format!("ssm stage budget exceeded at {stage}"),
                                 },
                                 world_stage: None,
+                                lfm_stage: None,
                                 nsr_stage: None,
                                 backend_id: None,
                                 budget_stage: Some(stage),
@@ -1026,6 +1073,7 @@ impl ComputePipelineBackend {
                                 "ssm stage execution failed",
                             ),
                             world_stage: None,
+                            lfm_stage: None,
                             nsr_stage: None,
                             backend_id: Some(pack_meta.ssm_backend as u16),
                             budget_stage: None,
@@ -1049,6 +1097,7 @@ impl ComputePipelineBackend {
                                 detail: format!("ssm stage budget exceeded at {stage}"),
                             },
                             world_stage: None,
+                            lfm_stage: None,
                             nsr_stage: None,
                             backend_id: None,
                             budget_stage: Some(stage),
@@ -1127,6 +1176,7 @@ impl ComputePipelineBackend {
                         ),
                     },
                     world_stage: None,
+                    lfm_stage: None,
                     nsr_stage: None,
                     backend_id: Some(pack_meta.lfm_backend as u16),
                     budget_stage: None,
@@ -1176,6 +1226,7 @@ impl ComputePipelineBackend {
                                         detail: format!("lfm stage budget exceeded at {stage}"),
                                     },
                                     world_stage: None,
+                                    lfm_stage: None,
                                     nsr_stage: None,
                                     backend_id: None,
                                     budget_stage: Some(stage),
@@ -1198,6 +1249,7 @@ impl ComputePipelineBackend {
                                     "lfm stage execution failed",
                                 ),
                                 world_stage: None,
+                                lfm_stage: None,
                                 nsr_stage: None,
                                 backend_id: Some(pack_meta.lfm_backend as u16),
                                 budget_stage: None,
@@ -1221,6 +1273,7 @@ impl ComputePipelineBackend {
                                     detail: format!("lfm stage budget exceeded at {stage}"),
                                 },
                                 world_stage: None,
+                                lfm_stage: None,
                                 nsr_stage: None,
                                 backend_id: None,
                                 budget_stage: Some(stage),
@@ -1259,6 +1312,42 @@ impl ComputePipelineBackend {
         }
 
         validation_report = validation_report.merge(LfmValidatorV1::validate(&lfm_input, &lfm_out));
+        let lfm_slot = lfm_slot_provenance(self.pack.model_slot_provenance());
+        let lfm_stage = if lfm_stage_disabled {
+            LfmStageStatus {
+                slot: lfm_slot.clone(),
+                state: LfmStageState::Disabled,
+                used: false,
+                runtime: lfm_name.clone(),
+                backend: pack_meta.lfm_backend as u8,
+                readiness: LfmStageReadiness::Scaffolded,
+                detail: "lfm backend disabled".to_string(),
+            }
+        } else if lfm_budget_degraded {
+            LfmStageStatus {
+                slot: lfm_slot.clone(),
+                state: LfmStageState::DegradedBypass,
+                used: true,
+                runtime: lfm_name.clone(),
+                backend: pack_meta.lfm_backend as u8,
+                readiness: LfmStageReadiness::RuntimePathReady,
+                detail: "lfm budget exceeded, degraded output used".to_string(),
+            }
+        } else {
+            LfmStageStatus {
+                slot: lfm_slot.clone(),
+                state: LfmStageState::Used,
+                used: true,
+                runtime: lfm_name.clone(),
+                backend: pack_meta.lfm_backend as u8,
+                readiness: if lfm_out.quality == StageQuality::Ok {
+                    LfmStageReadiness::RuntimePathReady
+                } else {
+                    LfmStageReadiness::ProductionBlocked
+                },
+                detail: format!("lfm quality={:?}", lfm_out.quality),
+            }
+        };
         let pressure = ssm_out.pressure;
         let (base_risk, base_confidence) = fuse_signals(
             surprise * self.fusion.world_weight,
@@ -1352,6 +1441,7 @@ impl ComputePipelineBackend {
                             format!("required nsr stage failed: {}", nsr_outcome.status.detail),
                         ),
                         world_stage: Some(world_stage.clone()),
+                        lfm_stage: Some(lfm_stage.clone()),
                         nsr_stage: Some(nsr_outcome.status.clone()),
                         backend_id: None,
                         budget_stage: None,
@@ -1412,6 +1502,8 @@ impl ComputePipelineBackend {
             format!("feature_extractor={}", self.pack.sae().name()),
             format!("working_memory={}", ssm_name),
             format!("lfm={}", lfm_name),
+            format!("lfm_state={:?}", lfm_stage.state).to_ascii_lowercase(),
+            format!("lfm_readiness={:?}", lfm_stage.readiness).to_ascii_lowercase(),
             format!(
                 "pred_digest={}",
                 &hex::encode(world_model_out.prediction_digest)[..12]
@@ -1554,6 +1646,7 @@ impl ComputePipelineBackend {
             validation_status: signals.validation_status,
             violation_reason_mask: signals.violation_reason_mask,
             world_stage,
+            lfm_stage,
             nsr_stage: nsr_outcome.status,
             model_slots: self.pack.model_slot_provenance().to_vec(),
             signals,
@@ -1589,6 +1682,9 @@ impl ComputePipelineBackend {
             world_stage: ctx
                 .world_stage
                 .unwrap_or_else(|| world_stage_from_slots(self.pack.model_slot_provenance())),
+            lfm_stage: ctx
+                .lfm_stage
+                .unwrap_or_else(|| lfm_stage_from_slots(self.pack.model_slot_provenance())),
             nsr_stage: ctx.nsr_stage.unwrap_or_else(|| {
                 nsr_disabled_stage(
                     nsr_slot_provenance(self.pack.model_slot_provenance()),
@@ -1726,6 +1822,58 @@ fn world_stage_from_slots(slots: &[ModelSlotProvenance]) -> WorldStageStatus {
             | None => WorldStageReadiness::ProductionBlocked,
         },
         detail: world.and_then(|entry| entry.detail.clone()),
+    }
+}
+
+fn lfm_slot_provenance(slots: &[ModelSlotProvenance]) -> Option<ModelSlotProvenance> {
+    slots
+        .iter()
+        .find(|entry| entry.slot == crate::ModelSlot::Lfm)
+        .cloned()
+}
+
+fn lfm_stage_from_slots(slots: &[ModelSlotProvenance]) -> LfmStageStatus {
+    let slot = lfm_slot_provenance(slots);
+    let (state, readiness, detail) = match slot.as_ref().map(|entry| entry.status) {
+        Some(SlotRuntimeStatus::Used) => (
+            LfmStageState::BackendUnavailable,
+            LfmStageReadiness::ArtifactReady,
+            "lfm slot validated but runtime path not executed".to_string(),
+        ),
+        Some(SlotRuntimeStatus::Disabled) => (
+            LfmStageState::Disabled,
+            LfmStageReadiness::Scaffolded,
+            "lfm slot disabled".to_string(),
+        ),
+        Some(SlotRuntimeStatus::Unavailable) => (
+            LfmStageState::Unavailable,
+            LfmStageReadiness::ProductionBlocked,
+            "lfm slot unavailable".to_string(),
+        ),
+        Some(SlotRuntimeStatus::VerificationFailed) => (
+            LfmStageState::VerificationFailed,
+            LfmStageReadiness::ProductionBlocked,
+            "lfm slot verification failed".to_string(),
+        ),
+        Some(SlotRuntimeStatus::Incompatible) => (
+            LfmStageState::Incompatible,
+            LfmStageReadiness::ProductionBlocked,
+            "lfm slot incompatible".to_string(),
+        ),
+        None => (
+            LfmStageState::Disabled,
+            LfmStageReadiness::Scaffolded,
+            "lfm slot missing from runtime provenance".to_string(),
+        ),
+    };
+    LfmStageStatus {
+        slot,
+        state,
+        used: false,
+        runtime: "unavailable".to_string(),
+        backend: crate::BackendComponentId::Disabled as u8,
+        readiness,
+        detail,
     }
 }
 
@@ -2097,7 +2245,7 @@ mod tests {
 
     #[cfg(feature = "compute-burn")]
     #[test]
-    fn burn_pack_runs_honest_core_e2e_and_marks_lfm_degraded() {
+    fn burn_pack_runs_honest_core_e2e_with_lfm_runtime_path() {
         let _guard = crate::test_env::env_lock()
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -2107,7 +2255,7 @@ mod tests {
         fs::create_dir_all(&models).expect("models dir");
 
         let mut manifest = format!("allowlist_root = '{}'\n", models.display());
-        for slot in ["world_jepa", "sae", "ssm"] {
+        for slot in ["world_jepa", "sae", "lfm", "ssm"] {
             let bytes = format!("{slot}-weights").into_bytes();
             let hash = hex::encode(Sha256::digest(&bytes));
             let model_path = models
@@ -2144,7 +2292,8 @@ mod tests {
             vec![
                 CanonicalStageId::World,
                 CanonicalStageId::Sae,
-                CanonicalStageId::Ssm
+                CanonicalStageId::Ssm,
+                CanonicalStageId::Lfm
             ]
         );
         assert_eq!(
@@ -2161,10 +2310,15 @@ mod tests {
         );
         assert_eq!(
             result.route.lfm_backend,
-            crate::BackendComponentId::Disabled as u8
+            crate::BackendComponentId::BurnLfmV1 as u8
         );
-        assert_eq!(result.state, CanonicalPipelineState::Degraded);
-        assert!(result
+        assert_eq!(result.lfm_stage.state, LfmStageState::Used);
+        assert_eq!(
+            result.lfm_stage.readiness,
+            LfmStageReadiness::RuntimePathReady
+        );
+        assert_eq!(result.lfm_stage.runtime, "burn_lfm_liquid_scalar_v1");
+        assert!(!result
             .signals
             .notes
             .iter()
