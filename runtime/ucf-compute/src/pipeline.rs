@@ -6,9 +6,9 @@ use crate::backend_pack::{
     ArtifactFailureCode, BackendPack, BackendPackFactory, ModelSlotProvenance, SlotRuntimeStatus,
 };
 use crate::contracts::{
-    validate_evidence_chain_digest, ContractRegistry, LfmValidatorV1, SaeValidatorV1,
-    SsmValidatorV1, StageContractRegistry, StageContractVersion, StageKind, ValidationStatus,
-    ViolationCode, WorldValidatorV1,
+    validate_evidence_chain_digest, ContractRegistry, LfmValidatorV1, NsrContractVersion,
+    NsrFailureKind, NsrRequest, NsrResult, SaeValidatorV1, SsmValidatorV1, StageContractRegistry,
+    StageContractVersion, StageKind, ValidationStatus, ViolationCode, WorldValidatorV1,
 };
 use crate::feature_extractor::{SaeOutput, ToySaeExtractor};
 use crate::lfm::{LfmInput, LfmOutput};
@@ -24,6 +24,10 @@ use crate::{
     clamp01, fuse_signals, validate_risk_signal, AiComputeBackend, BackendPackConfig,
     BackendProfileId, ComputeBudget, ComputeError, ComputeInput, ComputeSignals, DegradePolicy,
     EvidenceRef, RiskSignal, SignalQuality,
+};
+use ucf_nsr::{
+    ActionType, DecisionIntentSummary, NsrBudget, NsrContext, NsrDatalogLiteEngine, NsrError,
+    NsrPolicyEcologyEngine, OutputClass, PolicyTag, ReasonCode,
 };
 
 pub const CANONICAL_STAGE_SEQUENCE: [CanonicalStageId; 4] = [
@@ -61,6 +65,12 @@ pub enum CanonicalFailureKind {
     ValidationDegraded,
     BudgetExceeded,
     ExecutionError,
+    NsrDisabled,
+    NsrUnavailable,
+    NsrArtifactVerificationFailed,
+    NsrContractMismatch,
+    NsrBackendUnavailable,
+    NsrExecutionError,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -90,8 +100,51 @@ pub struct CanonicalPipelineResult {
     pub validation_status: ValidationStatus,
     pub violation_reason_mask: u32,
     pub world_stage: WorldStageStatus,
+    pub nsr_stage: NsrStageStatus,
     pub model_slots: Vec<ModelSlotProvenance>,
     pub signals: ComputeSignals,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NsrStageReadiness {
+    Scaffolded,
+    ContractReady,
+    ArtifactReady,
+    RuntimePathReady,
+    ProductionBlocked,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NsrStageState {
+    Disabled,
+    Used,
+    Unavailable,
+    VerificationFailed,
+    Incompatible,
+    ContractMismatch,
+    BackendUnavailable,
+    ExecutionError,
+    DegradedBypass,
+}
+
+impl NsrStageState {
+    fn as_u8(self) -> u8 {
+        self as u8
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NsrStageStatus {
+    pub slot: ModelSlotProvenance,
+    pub mode: String,
+    pub state: NsrStageState,
+    pub used: bool,
+    pub readiness: NsrStageReadiness,
+    pub detail: String,
+    pub reason_codes: Vec<String>,
+    pub digest_prefix: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -126,6 +179,7 @@ struct UnavailableResultContext {
     violation_reason_mask: u32,
     failure: CanonicalPipelineFailure,
     world_stage: Option<WorldStageStatus>,
+    nsr_stage: Option<NsrStageStatus>,
     backend_id: Option<u16>,
     budget_stage: Option<&'static str>,
 }
@@ -192,6 +246,312 @@ impl ComputePipelineBackend {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NsrMode {
+    Disabled,
+    BestEffort,
+    Required,
+}
+
+impl NsrMode {
+    fn from_env() -> Self {
+        match std::env::var("UCF_NSR_MODE")
+            .unwrap_or_else(|_| "disabled".to_string())
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "required" => Self::Required,
+            "best_effort" | "besteffort" | "enabled" => Self::BestEffort,
+            _ => Self::Disabled,
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Disabled => "disabled",
+            Self::BestEffort => "best_effort",
+            Self::Required => "required",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct NsrOutcome {
+    status: NsrStageStatus,
+    result: Result<NsrResult, NsrFailureKind>,
+    required_failure: bool,
+}
+
+fn nsr_slot_provenance(slots: &[ModelSlotProvenance]) -> ModelSlotProvenance {
+    slots
+        .iter()
+        .find(|slot| slot.slot == crate::ModelSlot::EbmReasoner)
+        .cloned()
+        .unwrap_or(ModelSlotProvenance {
+            slot: crate::ModelSlot::EbmReasoner,
+            stage: "ebm_reasoner",
+            required_for_pack: false,
+            status: SlotRuntimeStatus::Disabled,
+            code: Some(ArtifactFailureCode::Disabled),
+            detail: Some("slot missing from provenance".to_string()),
+            resolved_path: None,
+            hash_prefix: None,
+            contract_version: None,
+            format: None,
+        })
+}
+
+fn nsr_disabled_stage(slot: ModelSlotProvenance, mode: NsrMode) -> NsrStageStatus {
+    NsrStageStatus {
+        slot,
+        mode: mode.as_str().to_string(),
+        state: NsrStageState::Disabled,
+        used: false,
+        readiness: NsrStageReadiness::Scaffolded,
+        detail: "nsr stage disabled".to_string(),
+        reason_codes: Vec::new(),
+        digest_prefix: None,
+    }
+}
+
+fn run_nsr_stage(
+    mode: NsrMode,
+    slot: ModelSlotProvenance,
+    req: &NsrRequest,
+    fail_fast: bool,
+) -> NsrOutcome {
+    if mode == NsrMode::Disabled {
+        return NsrOutcome {
+            status: nsr_disabled_stage(slot, mode),
+            result: Err(NsrFailureKind::Disabled),
+            required_failure: false,
+        };
+    }
+
+    if matches!(slot.status, SlotRuntimeStatus::Disabled) {
+        return NsrOutcome {
+            status: NsrStageStatus {
+                slot,
+                mode: mode.as_str().to_string(),
+                state: NsrStageState::Disabled,
+                used: false,
+                readiness: NsrStageReadiness::Scaffolded,
+                detail: "nsr slot disabled".to_string(),
+                reason_codes: Vec::new(),
+                digest_prefix: None,
+            },
+            result: Err(NsrFailureKind::Disabled),
+            required_failure: mode == NsrMode::Required || fail_fast,
+        };
+    }
+
+    let version = slot
+        .contract_version
+        .clone()
+        .unwrap_or_else(|| "v1".to_string());
+    if version != req.contract_version.as_str() {
+        return NsrOutcome {
+            status: NsrStageStatus {
+                slot,
+                mode: mode.as_str().to_string(),
+                state: NsrStageState::ContractMismatch,
+                used: false,
+                readiness: NsrStageReadiness::ProductionBlocked,
+                detail: format!(
+                    "nsr contract mismatch: slot={version}, runtime={}",
+                    req.contract_version.as_str()
+                ),
+                reason_codes: Vec::new(),
+                digest_prefix: None,
+            },
+            result: Err(NsrFailureKind::ContractMismatch),
+            required_failure: mode == NsrMode::Required || fail_fast,
+        };
+    }
+
+    match slot.status {
+        SlotRuntimeStatus::Unavailable => {
+            return NsrOutcome {
+                status: NsrStageStatus {
+                    slot,
+                    mode: mode.as_str().to_string(),
+                    state: NsrStageState::Unavailable,
+                    used: false,
+                    readiness: NsrStageReadiness::ProductionBlocked,
+                    detail: "nsr slot unavailable".to_string(),
+                    reason_codes: Vec::new(),
+                    digest_prefix: None,
+                },
+                result: Err(NsrFailureKind::Unavailable),
+                required_failure: mode == NsrMode::Required || fail_fast,
+            };
+        }
+        SlotRuntimeStatus::VerificationFailed => {
+            return NsrOutcome {
+                status: NsrStageStatus {
+                    slot,
+                    mode: mode.as_str().to_string(),
+                    state: NsrStageState::VerificationFailed,
+                    used: false,
+                    readiness: NsrStageReadiness::ProductionBlocked,
+                    detail: "nsr slot verification failed".to_string(),
+                    reason_codes: Vec::new(),
+                    digest_prefix: None,
+                },
+                result: Err(NsrFailureKind::ArtifactVerificationFailed),
+                required_failure: mode == NsrMode::Required || fail_fast,
+            };
+        }
+        SlotRuntimeStatus::Incompatible => {
+            return NsrOutcome {
+                status: NsrStageStatus {
+                    slot,
+                    mode: mode.as_str().to_string(),
+                    state: NsrStageState::Incompatible,
+                    used: false,
+                    readiness: NsrStageReadiness::ProductionBlocked,
+                    detail: "nsr slot incompatible".to_string(),
+                    reason_codes: Vec::new(),
+                    digest_prefix: None,
+                },
+                result: Err(NsrFailureKind::Unavailable),
+                required_failure: mode == NsrMode::Required || fail_fast,
+            };
+        }
+        SlotRuntimeStatus::Used | SlotRuntimeStatus::Disabled => {}
+    }
+
+    let engine = NsrDatalogLiteEngine::default();
+    let ctx = NsrContext {
+        risk: req.base_risk,
+        confidence: req.base_confidence,
+        coherence: None,
+        instability: None,
+        pressure: Some(req.pressure),
+        surprise: Some(req.surprise),
+        cortisol: None,
+        arousal: None,
+        has_capability_token: false,
+        compute_degraded_ratio: Some(if req.compute_degraded { 1.0 } else { 0.0 }),
+    };
+    let intent = DecisionIntentSummary {
+        action_type: ActionType::Answer,
+        tool_kinds: Vec::new(),
+        target_domain_hashes: Vec::new(),
+        target_path_hashes: Vec::new(),
+        output_class: if req.base_risk > 0.75 {
+            OutputClass::ExecIntent
+        } else {
+            OutputClass::SafeText
+        },
+    };
+    let policy_tags = if req.base_risk > 0.8 {
+        vec![PolicyTag::Sensitive]
+    } else {
+        Vec::new()
+    };
+    let budget = NsrBudget::default();
+    match engine.assess(&ctx, &intent, &policy_tags, budget) {
+        Ok(assessment) => {
+            let reason_codes = assessment
+                .reasons
+                .iter()
+                .map(reason_code_token)
+                .collect::<Vec<_>>();
+            NsrOutcome {
+                status: NsrStageStatus {
+                    slot,
+                    mode: mode.as_str().to_string(),
+                    state: NsrStageState::Used,
+                    used: true,
+                    readiness: NsrStageReadiness::RuntimePathReady,
+                    detail: "nsr post-inference hook executed".to_string(),
+                    reason_codes: reason_codes.clone(),
+                    digest_prefix: Some(hex::encode(&assessment.digest[..6])),
+                },
+                result: Ok(NsrResult {
+                    risk: assessment.nsr_risk.clamp(0.0, 1.0),
+                    confidence: assessment.nsr_confidence.clamp(0.0, 1.0),
+                    reason_codes,
+                    digest: assessment.digest,
+                    engine_id: assessment.engine_id.to_string(),
+                    contract_version: NsrContractVersion::V1,
+                }),
+                required_failure: false,
+            }
+        }
+        Err(err) => {
+            let (kind, state, detail) = match err {
+                NsrError::BudgetExceeded => (
+                    NsrFailureKind::ExecutionError,
+                    NsrStageState::ExecutionError,
+                    "nsr budget exceeded".to_string(),
+                ),
+                NsrError::BackendDisabled => (
+                    NsrFailureKind::Disabled,
+                    NsrStageState::Disabled,
+                    "nsr backend disabled".to_string(),
+                ),
+                NsrError::NotImplemented => (
+                    NsrFailureKind::BackendUnavailable,
+                    NsrStageState::BackendUnavailable,
+                    "nsr backend not implemented".to_string(),
+                ),
+                NsrError::Unavailable(reason) => (
+                    NsrFailureKind::Unavailable,
+                    NsrStageState::Unavailable,
+                    format!("nsr unavailable: {reason}"),
+                ),
+            };
+            NsrOutcome {
+                status: NsrStageStatus {
+                    slot,
+                    mode: mode.as_str().to_string(),
+                    state,
+                    used: false,
+                    readiness: NsrStageReadiness::ProductionBlocked,
+                    detail,
+                    reason_codes: Vec::new(),
+                    digest_prefix: None,
+                },
+                result: Err(kind),
+                required_failure: mode == NsrMode::Required || fail_fast,
+            }
+        }
+    }
+}
+
+fn canonical_failure_for_nsr(kind: NsrFailureKind, detail: String) -> CanonicalPipelineFailure {
+    let kind = match kind {
+        NsrFailureKind::Disabled => CanonicalFailureKind::NsrDisabled,
+        NsrFailureKind::Unavailable => CanonicalFailureKind::NsrUnavailable,
+        NsrFailureKind::ArtifactVerificationFailed => {
+            CanonicalFailureKind::NsrArtifactVerificationFailed
+        }
+        NsrFailureKind::ContractMismatch => CanonicalFailureKind::NsrContractMismatch,
+        NsrFailureKind::BackendUnavailable => CanonicalFailureKind::NsrBackendUnavailable,
+        NsrFailureKind::ExecutionError => CanonicalFailureKind::NsrExecutionError,
+    };
+    CanonicalPipelineFailure {
+        kind,
+        stage: None,
+        detail,
+    }
+}
+
+fn reason_code_token(reason: &ReasonCode) -> String {
+    match reason {
+        ReasonCode::ViolatesDenyByDefault => "violates_deny_by_default".to_string(),
+        ReasonCode::CoherenceGateTriggered => "coherence_gate_triggered".to_string(),
+        ReasonCode::HighRiskToolRequest => "high_risk_tool_request".to_string(),
+        ReasonCode::UntrustedTarget => "untrusted_target".to_string(),
+        ReasonCode::BudgetStress => "budget_stress".to_string(),
+        ReasonCode::LowConfidenceContext => "low_confidence_context".to_string(),
+        ReasonCode::SensitiveOutputClass => "sensitive_output_class".to_string(),
+        ReasonCode::PolicyRuleHit(id) => format!("policy_rule_hit_{id}"),
+    }
+}
+
 impl AiComputeBackend for ComputePipelineBackend {
     fn name(&self) -> &'static str {
         self.pack.meta().pack_name
@@ -242,6 +602,8 @@ impl ComputePipelineBackend {
         };
         let registry = StageContractRegistry;
         let requested = StageContractVersion::V1;
+        let nsr_mode = NsrMode::from_env();
+        let nsr_slot = nsr_slot_provenance(self.pack.model_slot_provenance());
         if let Some(failure) = first_artifact_failure(self.pack.model_slot_provenance()) {
             let world_stage = world_stage_from_slots(self.pack.model_slot_provenance());
             return Ok(self.unavailable_result(
@@ -253,6 +615,7 @@ impl ComputePipelineBackend {
                     violation_reason_mask: 0,
                     failure,
                     world_stage: Some(world_stage),
+                    nsr_stage: Some(nsr_disabled_stage(nsr_slot.clone(), nsr_mode)),
                     backend_id: None,
                     budget_stage: None,
                 },
@@ -309,6 +672,7 @@ impl ComputePipelineBackend {
                         ),
                         detail: Some("world contract mismatch".to_string()),
                     }),
+                    nsr_stage: None,
                     backend_id: Some(pack_meta.world_backend as u16),
                     budget_stage: None,
                 },
@@ -339,6 +703,7 @@ impl ComputePipelineBackend {
                                 detail: format!("world stage budget exceeded at {stage}"),
                             },
                             world_stage: None,
+                            nsr_stage: None,
                             backend_id: None,
                             budget_stage: Some(stage),
                         },
@@ -360,6 +725,7 @@ impl ComputePipelineBackend {
                             "world stage execution failed",
                         ),
                         world_stage: None,
+                        nsr_stage: None,
                         backend_id: Some(pack_meta.world_backend as u16),
                         budget_stage: None,
                     },
@@ -462,6 +828,7 @@ impl ComputePipelineBackend {
                         ),
                     },
                     world_stage: None,
+                    nsr_stage: None,
                     backend_id: Some(pack_meta.sae_backend as u16),
                     budget_stage: None,
                 },
@@ -492,6 +859,7 @@ impl ComputePipelineBackend {
                                     detail: format!("sae stage budget exceeded at {stage}"),
                                 },
                                 world_stage: None,
+                                nsr_stage: None,
                                 backend_id: None,
                                 budget_stage: Some(stage),
                             },
@@ -513,6 +881,7 @@ impl ComputePipelineBackend {
                                 "sae stage execution failed",
                             ),
                             world_stage: None,
+                            nsr_stage: None,
                             backend_id: Some(pack_meta.sae_backend as u16),
                             budget_stage: None,
                         },
@@ -535,6 +904,7 @@ impl ComputePipelineBackend {
                                 detail: format!("sae stage budget exceeded at {stage}"),
                             },
                             world_stage: None,
+                            nsr_stage: None,
                             backend_id: None,
                             budget_stage: Some(stage),
                         },
@@ -599,6 +969,7 @@ impl ComputePipelineBackend {
                         ),
                     },
                     world_stage: None,
+                    nsr_stage: None,
                     backend_id: Some(pack_meta.ssm_backend as u16),
                     budget_stage: None,
                 },
@@ -633,6 +1004,7 @@ impl ComputePipelineBackend {
                                     detail: format!("ssm stage budget exceeded at {stage}"),
                                 },
                                 world_stage: None,
+                                nsr_stage: None,
                                 backend_id: None,
                                 budget_stage: Some(stage),
                             },
@@ -654,6 +1026,7 @@ impl ComputePipelineBackend {
                                 "ssm stage execution failed",
                             ),
                             world_stage: None,
+                            nsr_stage: None,
                             backend_id: Some(pack_meta.ssm_backend as u16),
                             budget_stage: None,
                         },
@@ -676,6 +1049,7 @@ impl ComputePipelineBackend {
                                 detail: format!("ssm stage budget exceeded at {stage}"),
                             },
                             world_stage: None,
+                            nsr_stage: None,
                             backend_id: None,
                             budget_stage: Some(stage),
                         },
@@ -753,6 +1127,7 @@ impl ComputePipelineBackend {
                         ),
                     },
                     world_stage: None,
+                    nsr_stage: None,
                     backend_id: Some(pack_meta.lfm_backend as u16),
                     budget_stage: None,
                 },
@@ -801,6 +1176,7 @@ impl ComputePipelineBackend {
                                         detail: format!("lfm stage budget exceeded at {stage}"),
                                     },
                                     world_stage: None,
+                                    nsr_stage: None,
                                     backend_id: None,
                                     budget_stage: Some(stage),
                                 },
@@ -822,6 +1198,7 @@ impl ComputePipelineBackend {
                                     "lfm stage execution failed",
                                 ),
                                 world_stage: None,
+                                nsr_stage: None,
                                 backend_id: Some(pack_meta.lfm_backend as u16),
                                 budget_stage: None,
                             },
@@ -844,6 +1221,7 @@ impl ComputePipelineBackend {
                                     detail: format!("lfm stage budget exceeded at {stage}"),
                                 },
                                 world_stage: None,
+                                nsr_stage: None,
                                 backend_id: None,
                                 budget_stage: Some(stage),
                             },
@@ -943,6 +1321,44 @@ impl ComputePipelineBackend {
             risk_signal.confidence = 0.0;
             risk_signal.quality = SignalQuality::Unavailable;
         }
+        let nsr_request = NsrRequest {
+            base_risk: risk_signal.risk,
+            base_confidence: risk_signal.confidence,
+            pressure,
+            surprise,
+            compute_degraded: quality != SignalQuality::VerifiedPipeline,
+            contract_version: NsrContractVersion::V1,
+        };
+        let nsr_outcome = run_nsr_stage(
+            nsr_mode,
+            nsr_slot.clone(),
+            &nsr_request,
+            budget.degrade_policy == DegradePolicy::FailFast,
+        );
+        if let Ok(result) = &nsr_outcome.result {
+            risk_signal.risk = clamp01(risk_signal.risk.max(result.risk));
+            risk_signal.confidence = clamp01(risk_signal.confidence.min(result.confidence));
+        } else if let Err(kind) = &nsr_outcome.result {
+            if nsr_outcome.required_failure {
+                return Ok(self.unavailable_result(
+                    &input,
+                    budget,
+                    route,
+                    UnavailableResultContext {
+                        validation_status: ValidationStatus::Degraded,
+                        violation_reason_mask: validation_report.violation_mask,
+                        failure: canonical_failure_for_nsr(
+                            *kind,
+                            format!("required nsr stage failed: {}", nsr_outcome.status.detail),
+                        ),
+                        world_stage: Some(world_stage.clone()),
+                        nsr_stage: Some(nsr_outcome.status.clone()),
+                        backend_id: None,
+                        budget_stage: None,
+                    },
+                ));
+            }
+        }
 
         let summary = ComputeSignals {
             surprise,
@@ -972,6 +1388,8 @@ impl ComputePipelineBackend {
             } else {
                 Some(lfm_out.liquid_state_digest)
             },
+            nsr_digest: nsr_outcome.result.as_ref().ok().map(|result| result.digest),
+            nsr_status: nsr_outcome.status.state.as_u8(),
             signal_bundle_digest: None,
             sae_quality: Some(sae_out.quality),
             ssm_quality: Some(ssm_out.quality),
@@ -1045,6 +1463,11 @@ impl ComputePipelineBackend {
         if lfm_stage_disabled {
             notes.push("degraded:lfm_skipped_backend_disabled".to_string());
         }
+        notes.push(format!("nsr_mode={}", nsr_outcome.status.mode));
+        notes.push(format!("nsr_state={:?}", nsr_outcome.status.state).to_ascii_lowercase());
+        if let Some(prefix) = &nsr_outcome.status.digest_prefix {
+            notes.push(format!("nsr_digest={prefix}"));
+        }
         notes.sort();
 
         let chain_report =
@@ -1052,6 +1475,8 @@ impl ComputePipelineBackend {
                 &input,
                 &sae_out.spikes,
                 &risk_signal,
+                nsr_outcome.result.as_ref().ok().map(|result| result.digest),
+                nsr_outcome.status.state.as_u8(),
                 Some(sae_out.quality),
                 Some(ssm_out.quality),
                 Some(lfm_out.quality),
@@ -1104,6 +1529,8 @@ impl ComputePipelineBackend {
             } else {
                 Some(lfm_out.liquid_state_digest)
             },
+            nsr_digest: nsr_outcome.result.as_ref().ok().map(|result| result.digest),
+            nsr_status: nsr_outcome.status.state.as_u8(),
             signal_bundle_digest: None,
             sae_quality: Some(sae_out.quality),
             ssm_quality: Some(ssm_out.quality),
@@ -1127,6 +1554,7 @@ impl ComputePipelineBackend {
             validation_status: signals.validation_status,
             violation_reason_mask: signals.violation_reason_mask,
             world_stage,
+            nsr_stage: nsr_outcome.status,
             model_slots: self.pack.model_slot_provenance().to_vec(),
             signals,
         })
@@ -1161,6 +1589,12 @@ impl ComputePipelineBackend {
             world_stage: ctx
                 .world_stage
                 .unwrap_or_else(|| world_stage_from_slots(self.pack.model_slot_provenance())),
+            nsr_stage: ctx.nsr_stage.unwrap_or_else(|| {
+                nsr_disabled_stage(
+                    nsr_slot_provenance(self.pack.model_slot_provenance()),
+                    NsrMode::Disabled,
+                )
+            }),
             model_slots: self.pack.model_slot_provenance().to_vec(),
             signals,
         }
@@ -1574,6 +2008,91 @@ mod tests {
             "ssm stage execution failed",
         );
         assert_eq!(execution.kind, CanonicalFailureKind::ExecutionError);
+    }
+
+    #[test]
+    fn nsr_required_verification_failed_maps_to_structured_failure_kind() {
+        let slot = ModelSlotProvenance {
+            slot: ModelSlot::EbmReasoner,
+            stage: "ebm_reasoner",
+            required_for_pack: false,
+            status: SlotRuntimeStatus::VerificationFailed,
+            code: Some(ArtifactFailureCode::HashMismatch),
+            detail: Some("hash mismatch".to_string()),
+            resolved_path: None,
+            hash_prefix: None,
+            contract_version: Some("v1".to_string()),
+            format: None,
+        };
+        let req = NsrRequest {
+            base_risk: 0.3,
+            base_confidence: 0.6,
+            pressure: 0.2,
+            surprise: 0.2,
+            compute_degraded: false,
+            contract_version: NsrContractVersion::V1,
+        };
+        let out = run_nsr_stage(NsrMode::Required, slot, &req, false);
+        assert!(matches!(
+            out.result,
+            Err(NsrFailureKind::ArtifactVerificationFailed)
+        ));
+        assert!(out.required_failure);
+        let failure = canonical_failure_for_nsr(
+            out.result.expect_err("expected nsr failure"),
+            "verification failed".to_string(),
+        );
+        assert_eq!(
+            failure.kind,
+            CanonicalFailureKind::NsrArtifactVerificationFailed
+        );
+    }
+
+    #[test]
+    fn nsr_contract_mismatch_is_explicit() {
+        let slot = ModelSlotProvenance {
+            slot: ModelSlot::EbmReasoner,
+            stage: "ebm_reasoner",
+            required_for_pack: false,
+            status: SlotRuntimeStatus::Used,
+            code: None,
+            detail: None,
+            resolved_path: Some("models/ebm_reasoner/model.safetensors".to_string()),
+            hash_prefix: Some("abcdef".to_string()),
+            contract_version: Some("v0".to_string()),
+            format: None,
+        };
+        let req = NsrRequest {
+            base_risk: 0.3,
+            base_confidence: 0.6,
+            pressure: 0.2,
+            surprise: 0.2,
+            compute_degraded: false,
+            contract_version: NsrContractVersion::V1,
+        };
+        let out = run_nsr_stage(NsrMode::BestEffort, slot, &req, false);
+        assert!(matches!(out.result, Err(NsrFailureKind::ContractMismatch)));
+        assert_eq!(out.status.state, NsrStageState::ContractMismatch);
+    }
+
+    #[test]
+    fn canonical_pipeline_exposes_nsr_disabled_status_by_default() {
+        let _guard = crate::test_env::env_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _env = crate::test_env::clear_model_env_overrides();
+        std::env::remove_var("UCF_NSR_MODE");
+
+        let backend = ComputePipelineBackend::stub();
+        let result = backend
+            .compute_canonical(CanonicalPipelineRequest {
+                input: input(),
+                budget: ComputeBudget::default(),
+            })
+            .expect("canonical compute");
+        assert_eq!(result.nsr_stage.state, NsrStageState::Disabled);
+        assert!(!result.nsr_stage.used);
+        assert_eq!(result.signals.nsr_digest, None);
     }
 
     #[cfg(feature = "compute-burn")]

@@ -25,7 +25,14 @@ The canonical core stage sequence is fixed to:
 
 Encoded as `CANONICAL_STAGE_SEQUENCE` and emitted in `CanonicalPipelineResult.stage_order`.
 
-NSR is intentionally **not** injected as a mandatory core stage in this step. NSR remains a separate/optional extension point and is not forced into this core inference path.
+NSR is intentionally **not** injected as a mandatory core stage in this step. NSR is wired as an optional **post-inference reasoning/evidence hook** after core `World -> SAE -> SSM -> LFM` execution, so the canonical core stage order remains unchanged.
+
+Current NSR boundary in `runtime/ucf-compute`:
+
+- request: `contracts::NsrRequest` (base risk/confidence + bounded runtime context)
+- result: `contracts::NsrResult` (tightening-only risk/confidence + reason codes + digest)
+- failure: `contracts::NsrFailureKind`
+- runtime visibility: `CanonicalPipelineResult.nsr_stage` + `ComputeSignals.nsr_digest/nsr_status`
 
 ## Top-level result / failure semantics
 
@@ -51,6 +58,12 @@ Structured failure taxonomy (`CanonicalFailureKind`):
 - `validation_degraded`
 - `budget_exceeded`
 - `execution_error`
+- `nsr_disabled`
+- `nsr_unavailable`
+- `nsr_artifact_verification_failed`
+- `nsr_contract_mismatch`
+- `nsr_backend_unavailable`
+- `nsr_execution_error`
 
 Separation rules in canonical path:
 

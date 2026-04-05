@@ -95,6 +95,8 @@ pub struct EvidenceChain {
     pub spikes_digest: Option<[u8; 32]>,
     pub ssm_digest: Option<[u8; 32]>,
     pub lfm_digest: Option<[u8; 32]>,
+    pub nsr_digest: Option<[u8; 32]>,
+    pub nsr_status: u8,
     pub risk_digest: [u8; 32],
     pub sae_quality: Option<StageQuality>,
     pub ssm_quality: Option<StageQuality>,
@@ -103,10 +105,13 @@ pub struct EvidenceChain {
 }
 
 impl EvidenceChain {
+    #[allow(clippy::too_many_arguments)]
     pub fn from_compute(
         input: &ComputeInput,
         spikes: &[Spike],
         risk_signal: &RiskSignal,
+        nsr_digest: Option<[u8; 32]>,
+        nsr_status: u8,
         sae_quality: Option<StageQuality>,
         ssm_quality: Option<StageQuality>,
         lfm_quality: Option<StageQuality>,
@@ -134,6 +139,8 @@ impl EvidenceChain {
                 .or_else(|| (!spikes.is_empty()).then(|| spikes_digest(spikes))),
             ssm_digest: risk_signal.evidence.ssm_digest,
             lfm_digest: risk_signal.evidence.lfm_digest,
+            nsr_digest,
+            nsr_status,
             risk_digest,
             sae_quality,
             ssm_quality,
@@ -246,6 +253,8 @@ impl CanonicalEncode for EvidenceChain {
         encode_opt_digest(out, self.spikes_digest);
         encode_opt_digest(out, self.ssm_digest);
         encode_opt_digest(out, self.lfm_digest);
+        encode_opt_digest(out, self.nsr_digest);
+        out.push(self.nsr_status);
         out.extend_from_slice(&self.risk_digest);
         match self.sae_quality {
             Some(q) => {
@@ -411,8 +420,8 @@ mod tests {
                 },
                 version: 1,
             };
-            let a = EvidenceChain::from_compute(&input, &[], &risk_signal, None, None, None);
-            let b = EvidenceChain::from_compute(&input, &[], &risk_signal, None, None, None);
+            let a = EvidenceChain::from_compute(&input, &[], &risk_signal, None, 0, None, None, None);
+            let b = EvidenceChain::from_compute(&input, &[], &risk_signal, None, 0, None, None, None);
             prop_assert_eq!(a.chain_digest, b.chain_digest);
             prop_assert_eq!(digest_canonical(&a), digest_canonical(&b));
             assert_evidence_chain(&a);
@@ -445,8 +454,8 @@ mod tests {
                 },
                 version: 1,
             };
-            let a = EvidenceChain::from_compute(&input, &[], &mk(seed), None, None, None);
-            let b = EvidenceChain::from_compute(&input, &[], &mk(seed.saturating_add(bump)), None, None, None);
+            let a = EvidenceChain::from_compute(&input, &[], &mk(seed), None, 0, None, None, None);
+            let b = EvidenceChain::from_compute(&input, &[], &mk(seed.saturating_add(bump)), None, 0, None, None, None);
             prop_assert_ne!(a.chain_digest, b.chain_digest);
             assert_evidence_chain(&a);
             assert_evidence_chain(&b);
@@ -485,17 +494,19 @@ mod tests {
             version: 1,
         };
 
-        let base = EvidenceChain::from_compute(&input, &[], &risk, None, None, None);
-        let same = EvidenceChain::from_compute(&input, &[], &risk, None, None, None);
+        let base = EvidenceChain::from_compute(&input, &[], &risk, None, 0, None, None, None);
+        let same = EvidenceChain::from_compute(&input, &[], &risk, None, 0, None, None, None);
         assert_eq!(base.chain_digest, same.chain_digest);
 
         risk.evidence.seed = 12;
-        let changed_seed = EvidenceChain::from_compute(&input, &[], &risk, None, None, None);
+        let changed_seed =
+            EvidenceChain::from_compute(&input, &[], &risk, None, 0, None, None, None);
         assert_ne!(base.chain_digest, changed_seed.chain_digest);
 
         risk.evidence.seed = 11;
         risk.evidence.backend_profile = BackendProfileId::BurnV1;
-        let changed_backend = EvidenceChain::from_compute(&input, &[], &risk, None, None, None);
+        let changed_backend =
+            EvidenceChain::from_compute(&input, &[], &risk, None, 0, None, None, None);
         assert_ne!(base.chain_digest, changed_backend.chain_digest);
     }
 }

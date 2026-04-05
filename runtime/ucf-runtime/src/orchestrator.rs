@@ -6268,6 +6268,8 @@ mod tests {
             lfm_saturation_ratio: Some(0.0),
             lfm_nan_inf_detected: false,
             lfm_digest: Some([10; 32]),
+            nsr_digest: None,
+            nsr_status: 0,
             signal_bundle_digest: None,
             budget_profile_id: 1,
             seed: 1,
