@@ -1,28 +1,13 @@
-# AI Stack Roadmap (T91)
+# AI Stack Roadmap (canonicalized for Real Compute Onboarding)
 
-## Current state (implemented now)
-- **ONN v1 phase bus** — core routing + phase bus backbone in place.
-- **SNN v1 spike bus** — spike transport + bus interfaces wired.
-- **SSM v1 selective scan** — selective scan core implemented.
-- **JEPA placeholder** — placeholder wired for downstream integration.
-- **TCF auto lock-window** — lock-window scheduling in place.
-- **NSR phase/spike facts + stabilize gating** — facts + gating implemented.
-- **CDE observation binding** — observation hooks wired into the commit flow.
-- **ThoughtOnly non-leak enforcement + coherence gate tests** — guardrails and tests in place.
+## Canonical architecture decision (Phase A)
 
-## Near-term (next 5 milestones)
-1. Replace JEPA placeholder with a **world latent provider trait**.
-2. Replace mock SAE/Lens producers with a **real feature extraction adapter trait** (still no model).
-3. Introduce **ModelHost** abstraction (Candle/Burn later) for LFM/RLM hooks.
-4. Implement **CDE v1 causal discovery** over observation commits (graph skeleton + interventions API).
-5. Implement **IIT monitor v1** over commit dependencies + PLV/lag metrics.
+- `runtime/ucf-compute` is the canonical runtime model pipeline for Real Compute Onboarding.
+- `domains/ai`, `domains/ai-host-abi`, and `domains/ai-backends` are retained as ABI/compatibility layers and are **not** the primary runtime pipeline path.
+- Canonical model manifest path for runtime bootstrap is `models/manifest.toml`.
 
-## Mid-term (real compute)
-- Candle/Burn integration points.
-- SAE training pipeline (offline).
-- Lens extraction points.
-- BlueBrain bridge (FFI, streaming).
+## Repository-truth status
 
-## Long-term
-- RSA/OpenEvolve safe sandboxed optimization + budgets.
-- memristor/photonic hardware abstraction (drivers behind traits).
+- World-model, feature extraction, SSM, LFM, model store, capability wiring, and stage orchestration are implemented under `runtime/ucf-compute`.
+- `domains/ai*` provides host-facing ABI types, adapter boundaries, and mock/placeholder backends.
+- Detailed inventory and gap matrix is maintained in `docs/roadmap/AI_MODEL_PIPELINE_STATUS.md`.

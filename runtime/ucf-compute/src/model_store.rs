@@ -9,6 +9,7 @@ use sha2::{Digest, Sha256};
 use crate::ComputeError;
 
 const DEFAULT_ALLOWLIST_ROOT: &str = "models";
+const DEFAULT_MANIFEST_PATH: &str = "models/manifest.toml";
 const DEFAULT_MAX_BYTES: u64 = 64 * 1024 * 1024;
 
 #[derive(
@@ -155,6 +156,10 @@ pub struct ModelStore {
 }
 
 impl ModelStore {
+    fn default_manifest_path() -> &'static str {
+        DEFAULT_MANIFEST_PATH
+    }
+
     pub fn from_manifest_and_env(manifest_path: &Path) -> Result<Self, ModelLoadError> {
         let manifest_exists = manifest_path.exists();
         let mut doc = if manifest_path.exists() {
@@ -186,7 +191,7 @@ impl ModelStore {
     pub fn from_env_default() -> Result<Self, ModelLoadError> {
         let path = std::env::var("UCF_MODEL_MANIFEST")
             .map(PathBuf::from)
-            .unwrap_or_else(|_| PathBuf::from("models/MANIFEST.toml"));
+            .unwrap_or_else(|_| PathBuf::from(Self::default_manifest_path()));
         Self::from_manifest_and_env(&path)
     }
 
@@ -608,5 +613,53 @@ mod tests {
                 slot: ModelSlot::EbmReasoner
             }
         ));
+    }
+
+    #[test]
+    fn default_manifest_path_is_lowercase_canonical() {
+        assert_eq!(ModelStore::default_manifest_path(), "models/manifest.toml");
+    }
+
+    #[test]
+    fn from_manifest_and_env_reads_lowercase_manifest_file() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path();
+
+        let lower_models = root.join("lower").join("models");
+        fs::create_dir_all(&lower_models).expect("mkdir lower models");
+        let lowercase_manifest = lower_models.join("manifest.toml");
+        fs::write(
+            &lowercase_manifest,
+            r#"
+allowlist_root = "lower_models"
+[slots.llm]
+enabled = true
+path = "llm.bin"
+expected_sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+max_bytes = 1024
+format = "custom"
+device = "cpu_only"
+"#,
+        )
+        .expect("write lowercase manifest");
+
+        let upper_models = root.join("upper").join("models");
+        fs::create_dir_all(&upper_models).expect("mkdir upper models");
+        fs::write(
+            upper_models.join("MANIFEST.toml"),
+            r#"
+allowlist_root = "upper_models"
+[slots.llm]
+enabled = false
+"#,
+        )
+        .expect("write uppercase manifest");
+
+        let store = ModelStore::from_manifest_and_env(&lowercase_manifest).expect("load store");
+        assert_eq!(
+            store.allowlist_root,
+            PathBuf::from("lower_models"),
+            "lowercase manifest file must be honored"
+        );
     }
 }
