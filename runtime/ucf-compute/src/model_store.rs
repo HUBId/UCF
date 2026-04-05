@@ -631,7 +631,7 @@ mod tests {
         fs::write(
             &lowercase_manifest,
             r#"
-allowlist_root = "models"
+allowlist_root = "lower_models"
 [slots.llm]
 enabled = true
 path = "llm.bin"
@@ -646,7 +646,7 @@ device = "cpu_only"
         fs::write(
             models.join("MANIFEST.toml"),
             r#"
-allowlist_root = "models"
+allowlist_root = "upper_models"
 [slots.llm]
 enabled = false
 "#,
@@ -654,7 +654,10 @@ enabled = false
         .expect("write uppercase manifest");
 
         let store = ModelStore::from_manifest_and_env(&lowercase_manifest).expect("load store");
-        let llm = store.specs.get(&ModelSlot::Llm).expect("llm spec");
-        assert!(llm.enabled, "lowercase manifest file must be honored");
+        assert_eq!(
+            store.allowlist_root,
+            PathBuf::from("lower_models"),
+            "lowercase manifest file must be honored"
+        );
     }
 }
