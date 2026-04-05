@@ -15,15 +15,21 @@ The top-level runtime contract stays `AiComputeBackend`, but concrete backends a
 
 ## Profile mapping (factory)
 
-`build_backend` wires `ComputeBackendKind` into capability profiles:
+`build_backend` wires `ComputeBackendKind` into runtime packs:
 
-- `stub`: `MockJepaPredictor` + `MockSaeExtractor` + `ToySsmKernel`
-- `candle` (`--features compute-candle`):
-  `MockJepaPredictor` + `CandleFeatureExtractor` + `ToySsmKernel`
-- `burn` (`--features compute-burn`):
-  `MockJepaPredictor` + `BurnFeatureExtractor` + `ToySsmKernel`
+- `stub`: `BackendPackKind::ToyV1`
+- `candle` (`--features compute-candle`): `BackendPackKind::CandleToyV1`
+- `burn` (`--features compute-burn,backend-burn`): `BackendPackKind::BurnToyV1`
 
-Burn v0 is an explicit skeleton. With feature enabled, compute returns `ComputeError::NotImplemented` deterministically. Without feature, backend selection fails fast with `ComputeError::BackendDisabled`.
+### Burn canonical lane (current honest scope)
+
+- Real verified slots required for the minimal path: `world_jepa`, `sae`, `ssm` (`format = "burn"`).
+- Real stage execution path: `World -> SAE -> SSM`.
+- LFM is currently **explicitly disabled** in the Burn pack metadata (no silent mock substitution in canonical path).
+- Canonical compute result reports:
+  - configured stage order and actually executed stages,
+  - backend route (`world/sae/ssm/lfm` component ids),
+  - model slot provenance and structured failure kind.
 
 ## Backend selection (runtime)
 

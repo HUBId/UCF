@@ -546,16 +546,10 @@ impl BackendPackFactory {
                         return Err(ComputeError::BackendDisabled);
                     }
                 }
-                BackendPackKind::BurnToyV1 => {
-                    #[cfg(feature = "lfm-burn")]
-                    {
-                        (BackendComponentId::BurnToyV1, Box::new(BurnLfmKernel))
-                    }
-                    #[cfg(not(feature = "lfm-burn"))]
-                    {
-                        (BackendComponentId::ToyV1, Box::new(ToyLfmKernel::default()))
-                    }
-                }
+                BackendPackKind::BurnToyV1 => (
+                    BackendComponentId::Disabled,
+                    Box::new(ToyLfmKernel::default()),
+                ),
                 BackendPackKind::ToyLnnV1 => {
                     #[cfg(feature = "lfm-lnn")]
                     {

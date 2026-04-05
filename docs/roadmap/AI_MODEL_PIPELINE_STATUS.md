@@ -26,13 +26,18 @@ This status file fixes the canonical architecture for Real Compute Onboarding ba
 | `models/MANIFEST.toml` | Legacy alternate filename present in repo. | Effectively non-canonical for runtime default after this phase. | Historical docs mention mixed casing; canonical path is now fixed to lowercase. |
 | `docs/roadmap/AI_STACK.md` + `docs/roadmap/AI_BACKENDS.md` | Updated to reflect canonical runtime path + compatibility-layer role. | Prior wording had ambiguity about primary path. | Future milestones remain roadmap-only until implemented. |
 
-## Honest status by requested components
+## Canonical Burn runtime status (repo-truth, v1 narrow path)
 
-- **JEPA**: implemented deterministic core and runtime integration path; currently lightweight/fixture-style rather than production learned model weights.
-- **NSR**: implemented core and policy reasoning plumbing in dedicated crate; not the bottleneck for model artifact onboarding.
-- **LFM**: implemented runtime kernel and contracts in `runtime/ucf-compute`, with fixture-driven and gated paths.
-- **Burn**: runtime-side seam exists with deterministic implementations/skeleton behavior; host-ABI-side adapter in `domains/ai-backends` is placeholder.
-- **Candle**: runtime-side seam exists with deterministic implementations and model-store integration; host-ABI-side adapter in `domains/ai-backends` is placeholder.
+- **Primary runtime path**: `UCF_COMPUTE_BACKEND=burn` resolves to `BackendPackKind::BurnToyV1` inside `runtime/ucf-compute`, not to `domains/ai-backends`.
+- **Honest minimal E2E path (real today)**: `World -> SAE -> SSM` runs with Burn components and verified model slots (`world_jepa`, `sae`, `ssm`).
+- **LFM in Burn lane**: currently marked as explicitly disabled for the Burn pack in canonical runtime metadata; pipeline emits a **degraded but usable** result instead of silently substituting a toy/mock LFM stage.
+- **Failure semantics**:
+  - artifact missing/verification/incompatible are classified as typed canonical failures before execution;
+  - stage backend disabled and stage execution errors are distinguished and returned as structured canonical failures;
+  - degraded core results are explicit and include stage/route/provenance.
+- **Visibility/provenance**:
+  - canonical response includes both configured stage order and actually executed stages;
+  - backend route and model slot provenance remain attached in every canonical result.
 
 ## Immediate follow-up tasks (next, concrete)
 
@@ -42,9 +47,9 @@ This status file fixes the canonical architecture for Real Compute Onboarding ba
 2. **Artifact resolution / compatibility**
    - Standardize tooling/docs to `models/manifest.toml` as single canonical path.
    - Keep env override `UCF_MODEL_MANIFEST` for explicit compatibility only.
-3. **Burn as primary runtime path (incremental)**
-   - Promote burn runtime stages from fixture/skeleton behavior toward verified slot-backed execution under existing safety bounds.
+3. **Burn LFM completion**
+   - Replace explicit Burn-LFM-disabled marker with a real Burn LFM kernel implementation and keep degraded semantics deterministic for budget/fail-fast only.
 4. **Candle as backend seam**
-   - Keep candle runtime seam parity with burn on model-store contracts and deterministic degradation semantics.
+   - Keep candle runtime seam parity with the same artifact validation + structured failure model.
 5. **Bounded compute service afterwards**
    - After runtime stage parity and artifact path stabilization, wire bounded service surface on top of canonical runtime pipeline.

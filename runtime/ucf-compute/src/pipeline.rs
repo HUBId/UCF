@@ -82,6 +82,7 @@ pub struct CanonicalBackendRoute {
 pub struct CanonicalPipelineResult {
     pub request: ComputeInput,
     pub stage_order: [CanonicalStageId; 4],
+    pub executed_stages: Vec<CanonicalStageId>,
     pub route: CanonicalBackendRoute,
     pub state: CanonicalPipelineState,
     pub failure: Option<CanonicalPipelineFailure>,
@@ -206,6 +207,7 @@ impl ComputePipelineBackend {
         let mut lfm_meter = WorkMeter::new(budget.lfm_units);
 
         let mut exceeded_stage: Option<&'static str> = None;
+        let mut executed_stages = Vec::with_capacity(CANONICAL_STAGE_SEQUENCE.len());
         let pack_meta = self.pack.meta();
         let route = CanonicalBackendRoute {
             pack_id: pack_meta.pack_id.0,
@@ -302,11 +304,29 @@ impl ComputePipelineBackend {
                 }
                 WorldModelOutput::degraded_budget(stage)
             }
-            Err(other) => return Err(other),
+            Err(other) => {
+                return Ok(self.unavailable_result(
+                    &input,
+                    budget,
+                    route,
+                    UnavailableResultContext {
+                        validation_status: ValidationStatus::Degraded,
+                        violation_reason_mask: 0,
+                        failure: classify_stage_execution_error(
+                            CanonicalStageId::World,
+                            other,
+                            "world stage execution failed",
+                        ),
+                        backend_id: Some(pack_meta.world_backend as u16),
+                        budget_stage: None,
+                    },
+                ));
+            }
         };
         let span = tracing::info_span!("world_model.step", predictor = world_model_name, t = input.t, pred = %hex::encode(&world_model_out.prediction_digest[..4]));
         let _enter = span.enter();
         drop(world);
+        executed_stages.push(CanonicalStageId::World);
 
         if std::env::var("UCF_SLOT_WORLD_VLJEPA_MODE").ok().as_deref() == Some("shadow")
             && !shadow_disabled()
@@ -421,7 +441,24 @@ impl ComputePipelineBackend {
                     }
                     (Self::empty_sae(), true)
                 }
-                Err(other) => return Err(other),
+                Err(other) => {
+                    return Ok(self.unavailable_result(
+                        &input,
+                        budget,
+                        route,
+                        UnavailableResultContext {
+                            validation_status: ValidationStatus::Degraded,
+                            violation_reason_mask: validation_report.violation_mask,
+                            failure: classify_stage_execution_error(
+                                CanonicalStageId::Sae,
+                                other,
+                                "sae stage execution failed",
+                            ),
+                            backend_id: Some(pack_meta.sae_backend as u16),
+                            budget_stage: None,
+                        },
+                    ));
+                }
             },
             Err(ComputeError::BudgetExceeded { stage, .. }) => {
                 exceeded_stage = Some(stage);
@@ -449,6 +486,7 @@ impl ComputePipelineBackend {
         };
 
         metrics::histogram!("ucf_sae_spike_count").record(f64::from(sae_out.spike_count));
+        executed_stages.push(CanonicalStageId::Sae);
         validation_report = validation_report.merge(SaeValidatorV1::validate(&sae_input, &sae_out));
         metrics::gauge!("ucf_sae_sparsity").set(f64::from(sae_out.sparsity));
         metrics::histogram!("ucf_sae_energy").record(f64::from(sae_out.energy));
@@ -540,7 +578,24 @@ impl ComputePipelineBackend {
                     }
                     (SsmOutput::degraded("budget_exceeded"), true)
                 }
-                Err(other) => return Err(other),
+                Err(other) => {
+                    return Ok(self.unavailable_result(
+                        &input,
+                        budget,
+                        route,
+                        UnavailableResultContext {
+                            validation_status: ValidationStatus::Degraded,
+                            violation_reason_mask: validation_report.violation_mask,
+                            failure: classify_stage_execution_error(
+                                CanonicalStageId::Ssm,
+                                other,
+                                "ssm stage execution failed",
+                            ),
+                            backend_id: Some(pack_meta.ssm_backend as u16),
+                            budget_stage: None,
+                        },
+                    ));
+                }
             },
             Err(ComputeError::BudgetExceeded { stage, .. }) => {
                 exceeded_stage = Some(stage);
@@ -569,6 +624,7 @@ impl ComputePipelineBackend {
 
         validation_report =
             validation_report.merge(SsmValidatorV1::validate(&ssm_input, &ssm_out, None));
+        executed_stages.push(CanonicalStageId::Ssm);
         metrics::histogram!("ucf_ssm_pressure").record(f64::from(ssm_out.pressure));
         metrics::gauge!("ucf_ssm_state_norm").set(f64::from(ssm_out.state_norm));
         if ssm_out.quality == StageQuality::DegradedFallback {
@@ -597,17 +653,20 @@ impl ComputePipelineBackend {
         };
 
         global_meter.spend(220, "lfm/step")?;
-        if !registry.supports(
-            StageKind::Lfm,
-            pack_meta.lfm_backend,
-            self.pack
-                .lfm()
-                .lock()
-                .map_err(|_| ComputeError::InvalidInput {
-                    reason: "lfm mutex poisoned".to_string(),
-                })?
-                .contract_version(),
-        ) {
+        let lfm_stage_disabled = pack_meta.lfm_backend == crate::BackendComponentId::Disabled;
+        if !lfm_stage_disabled
+            && !registry.supports(
+                StageKind::Lfm,
+                pack_meta.lfm_backend,
+                self.pack
+                    .lfm()
+                    .lock()
+                    .map_err(|_| ComputeError::InvalidInput {
+                        reason: "lfm mutex poisoned".to_string(),
+                    })?
+                    .contract_version(),
+            )
+        {
             validation_report.add_hard(ViolationCode::BackendContractMismatch);
             let kind = if pack_meta.lfm_backend == crate::BackendComponentId::Disabled {
                 CanonicalFailureKind::BackendDisabled
@@ -634,20 +693,74 @@ impl ComputePipelineBackend {
                 },
             ));
         }
-        let mut lfm = self
-            .pack
-            .lfm()
-            .lock()
-            .map_err(|_| ComputeError::InvalidInput {
-                reason: "lfm mutex poisoned".to_string(),
-            })?;
-        let lfm_name = lfm.name();
-        let lfm_span = tracing::info_span!("lfm.step", kernel = lfm_name, t = input.t);
-        let _lfm_enter = lfm_span.enter();
-        let lfm_started = Instant::now();
-        let (lfm_out, lfm_degraded) = match lfm_meter.spend(220, "lfm/step") {
-            Ok(()) => match lfm.step(&lfm_input, budget) {
-                Ok(output) => (output, false),
+        let (lfm_out, lfm_degraded, lfm_budget_degraded, lfm_name): (
+            LfmOutput,
+            bool,
+            bool,
+            String,
+        ) = if lfm_stage_disabled {
+            (
+                LfmOutput::degraded("backend_disabled"),
+                true,
+                false,
+                "disabled".to_string(),
+            )
+        } else {
+            let mut lfm = self
+                .pack
+                .lfm()
+                .lock()
+                .map_err(|_| ComputeError::InvalidInput {
+                    reason: "lfm mutex poisoned".to_string(),
+                })?;
+            let lfm_name = lfm.name();
+            let lfm_span = tracing::info_span!("lfm.step", kernel = lfm_name, t = input.t);
+            let _lfm_enter = lfm_span.enter();
+            let lfm_started = Instant::now();
+            let result = match lfm_meter.spend(220, "lfm/step") {
+                Ok(()) => match lfm.step(&lfm_input, budget) {
+                    Ok(output) => (output, false, false),
+                    Err(ComputeError::BudgetExceeded { stage, .. }) => {
+                        exceeded_stage = Some(stage);
+                        if budget.degrade_policy == DegradePolicy::FailFast {
+                            return Ok(self.unavailable_result(
+                                &input,
+                                budget,
+                                route,
+                                UnavailableResultContext {
+                                    validation_status: ValidationStatus::Degraded,
+                                    violation_reason_mask: 0,
+                                    failure: CanonicalPipelineFailure {
+                                        kind: CanonicalFailureKind::BudgetExceeded,
+                                        stage: Some(CanonicalStageId::Lfm),
+                                        detail: format!("lfm stage budget exceeded at {stage}"),
+                                    },
+                                    backend_id: None,
+                                    budget_stage: Some(stage),
+                                },
+                            ));
+                        }
+                        (LfmOutput::degraded("budget_exceeded"), true, true)
+                    }
+                    Err(other) => {
+                        return Ok(self.unavailable_result(
+                            &input,
+                            budget,
+                            route,
+                            UnavailableResultContext {
+                                validation_status: ValidationStatus::Degraded,
+                                violation_reason_mask: validation_report.violation_mask,
+                                failure: classify_stage_execution_error(
+                                    CanonicalStageId::Lfm,
+                                    other,
+                                    "lfm stage execution failed",
+                                ),
+                                backend_id: Some(pack_meta.lfm_backend as u16),
+                                budget_stage: None,
+                            },
+                        ));
+                    }
+                },
                 Err(ComputeError::BudgetExceeded { stage, .. }) => {
                     exceeded_stage = Some(stage);
                     if budget.degrade_policy == DegradePolicy::FailFast {
@@ -668,37 +781,18 @@ impl ComputePipelineBackend {
                             },
                         ));
                     }
-                    (LfmOutput::degraded("budget_exceeded"), true)
+                    (LfmOutput::degraded("budget_exceeded"), true, true)
                 }
                 Err(other) => return Err(other),
-            },
-            Err(ComputeError::BudgetExceeded { stage, .. }) => {
-                exceeded_stage = Some(stage);
-                if budget.degrade_policy == DegradePolicy::FailFast {
-                    return Ok(self.unavailable_result(
-                        &input,
-                        budget,
-                        route,
-                        UnavailableResultContext {
-                            validation_status: ValidationStatus::Degraded,
-                            violation_reason_mask: 0,
-                            failure: CanonicalPipelineFailure {
-                                kind: CanonicalFailureKind::BudgetExceeded,
-                                stage: Some(CanonicalStageId::Lfm),
-                                detail: format!("lfm stage budget exceeded at {stage}"),
-                            },
-                            backend_id: None,
-                            budget_stage: Some(stage),
-                        },
-                    ));
-                }
-                (LfmOutput::degraded("budget_exceeded"), true)
-            }
-            Err(other) => return Err(other),
+            };
+            metrics::histogram!("ucf_lfm_ode_step_micros")
+                .record(lfm_started.elapsed().as_micros() as f64);
+            (result.0, result.1, result.2, lfm_name.to_string())
         };
         let plasticity_record = lfm_out.plasticity.clone();
-        metrics::histogram!("ucf_lfm_ode_step_micros")
-            .record(lfm_started.elapsed().as_micros() as f64);
+        if !lfm_stage_disabled {
+            executed_stages.push(CanonicalStageId::Lfm);
+        }
 
         let lfm_backend_label = if lfm_name.contains("candle") {
             "candle"
@@ -876,8 +970,11 @@ impl ComputePipelineBackend {
         if ssm_degraded {
             notes.push("degraded:ssm_budget_exceeded".to_string());
         }
-        if lfm_degraded {
+        if lfm_budget_degraded {
             notes.push("degraded:lfm_budget_exceeded".to_string());
+        }
+        if lfm_stage_disabled {
+            notes.push("degraded:lfm_skipped_backend_disabled".to_string());
         }
         notes.sort();
 
@@ -954,6 +1051,7 @@ impl ComputePipelineBackend {
         Ok(CanonicalPipelineResult {
             request: input,
             stage_order: CANONICAL_STAGE_SEQUENCE,
+            executed_stages,
             route,
             state,
             failure,
@@ -984,6 +1082,7 @@ impl ComputePipelineBackend {
         CanonicalPipelineResult {
             request: input.clone(),
             stage_order: CANONICAL_STAGE_SEQUENCE,
+            executed_stages: Vec::new(),
             route,
             state: CanonicalPipelineState::Unavailable,
             failure: Some(ctx.failure),
@@ -1044,8 +1143,32 @@ fn first_artifact_failure(slots: &[ModelSlotProvenance]) -> Option<CanonicalPipe
     })
 }
 
+fn classify_stage_execution_error(
+    stage: CanonicalStageId,
+    err: ComputeError,
+    detail_prefix: &str,
+) -> CanonicalPipelineFailure {
+    let (kind, detail) = match err {
+        ComputeError::BackendDisabled => (
+            CanonicalFailureKind::BackendDisabled,
+            "backend disabled".to_string(),
+        ),
+        other => (CanonicalFailureKind::ExecutionError, other.to_string()),
+    };
+    CanonicalPipelineFailure {
+        kind,
+        stage: Some(stage),
+        detail: format!("{detail_prefix}: {detail}"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "compute-burn")]
+    use sha2::{Digest, Sha256};
+    #[cfg(feature = "compute-burn")]
+    use std::fs;
+
     use crate::{BackendPackKind, FrameId};
 
     use crate::{
@@ -1085,6 +1208,7 @@ mod tests {
             })
             .expect("canonical compute");
         assert_eq!(result.stage_order, CANONICAL_STAGE_SEQUENCE);
+        assert_eq!(result.executed_stages, CANONICAL_STAGE_SEQUENCE.to_vec());
         assert_ne!(result.state, CanonicalPipelineState::Unavailable);
     }
 
@@ -1107,6 +1231,7 @@ mod tests {
         let failure = result.failure.expect("failure");
         assert_eq!(failure.kind, CanonicalFailureKind::StageContractMismatch);
         assert_eq!(failure.stage, Some(CanonicalStageId::World));
+        assert!(result.executed_stages.is_empty());
     }
 
     #[test]
@@ -1228,5 +1353,100 @@ mod tests {
             failure_kind,
             CanonicalFailureKind::DegradedFallback | CanonicalFailureKind::ValidationDegraded
         ));
+    }
+
+    #[test]
+    fn execution_error_classifier_distinguishes_backend_disabled() {
+        let disabled = classify_stage_execution_error(
+            CanonicalStageId::Ssm,
+            ComputeError::BackendDisabled,
+            "ssm stage execution failed",
+        );
+        assert_eq!(disabled.kind, CanonicalFailureKind::BackendDisabled);
+
+        let execution = classify_stage_execution_error(
+            CanonicalStageId::Ssm,
+            ComputeError::Internal {
+                reason: "boom".to_string(),
+            },
+            "ssm stage execution failed",
+        );
+        assert_eq!(execution.kind, CanonicalFailureKind::ExecutionError);
+    }
+
+    #[cfg(feature = "compute-burn")]
+    #[test]
+    fn burn_pack_runs_honest_core_e2e_and_marks_lfm_degraded() {
+        let _guard = crate::test_env::env_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _env = crate::test_env::clear_model_env_overrides();
+        let temp = tempfile::tempdir().expect("tempdir");
+        let models = temp.path().join("models");
+        fs::create_dir_all(&models).expect("models dir");
+
+        let mut manifest = format!("allowlist_root = '{}'\n", models.display());
+        for slot in ["world_jepa", "sae", "ssm"] {
+            let bytes = format!("{slot}-weights").into_bytes();
+            let hash = hex::encode(Sha256::digest(&bytes));
+            let model_path = models
+                .join("promoted")
+                .join(slot)
+                .join(&hash)
+                .join("model.safetensors");
+            fs::create_dir_all(model_path.parent().expect("parent")).expect("mkdirs");
+            fs::write(&model_path, &bytes).expect("write");
+            manifest.push_str(&format!(
+                "[slots.{slot}]\nenabled = true\nexpected_sha256 = \"{hash}\"\nactive_hash = \"{hash}\"\nformat = \"burn\"\ncontract_version = \"v1\"\n"
+            ));
+        }
+        let manifest_path = temp.path().join("manifest.toml");
+        fs::write(&manifest_path, manifest).expect("manifest");
+        std::env::set_var("UCF_MODEL_MANIFEST", &manifest_path);
+
+        let pack = BackendPackFactory::build(BackendPackConfig {
+            pack: BackendPackKind::BurnToyV1,
+            seed: 7,
+        })
+        .expect("burn pack");
+        let backend =
+            ComputePipelineBackend::new(pack, FusionConfig::default(), LimitsConfig::default());
+        let result = backend
+            .compute_canonical(CanonicalPipelineRequest {
+                input: input(),
+                budget: ComputeBudget::default(),
+            })
+            .expect("compute");
+
+        assert_eq!(
+            result.executed_stages,
+            vec![
+                CanonicalStageId::World,
+                CanonicalStageId::Sae,
+                CanonicalStageId::Ssm
+            ]
+        );
+        assert_eq!(
+            result.route.world_backend,
+            crate::BackendComponentId::BurnJepaV1 as u8
+        );
+        assert_eq!(
+            result.route.sae_backend,
+            crate::BackendComponentId::BurnSaeV1 as u8
+        );
+        assert_eq!(
+            result.route.ssm_backend,
+            crate::BackendComponentId::BurnSsmV1 as u8
+        );
+        assert_eq!(
+            result.route.lfm_backend,
+            crate::BackendComponentId::Disabled as u8
+        );
+        assert_eq!(result.state, CanonicalPipelineState::Degraded);
+        assert!(result
+            .signals
+            .notes
+            .iter()
+            .any(|note| note == "degraded:lfm_skipped_backend_disabled"));
     }
 }
