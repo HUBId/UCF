@@ -613,10 +613,19 @@ mod tests {
 
     #[test]
     fn from_env_default_prefers_lowercase_manifest_path() {
+        struct CwdRestore(std::path::PathBuf);
+
+        impl Drop for CwdRestore {
+            fn drop(&mut self) {
+                let _ = std::env::set_current_dir(&self.0);
+            }
+        }
+
+        let _guard = crate::test_env::env_lock().lock().expect("env lock");
+        let _env = crate::test_env::clear_model_env_overrides();
         let temp = tempfile::tempdir().expect("tempdir");
         let root = temp.path();
-        let original_cwd = std::env::current_dir().expect("cwd");
-        let original_manifest = std::env::var("UCF_MODEL_MANIFEST").ok();
+        let restore = CwdRestore(std::env::current_dir().expect("cwd"));
         std::env::set_current_dir(root).expect("chdir");
 
         let models = root.join("models");
@@ -650,11 +659,6 @@ enabled = false
         let store = ModelStore::from_env_default().expect("load store");
         let llm = store.specs.get(&ModelSlot::Llm).expect("llm spec");
         assert!(llm.enabled, "lowercase manifest must be canonical default");
-        std::env::set_current_dir(original_cwd).expect("restore cwd");
-        if let Some(value) = original_manifest {
-            std::env::set_var("UCF_MODEL_MANIFEST", value);
-        } else {
-            std::env::remove_var("UCF_MODEL_MANIFEST");
-        }
+        drop(restore);
     }
 }
