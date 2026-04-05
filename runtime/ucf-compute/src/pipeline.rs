@@ -89,8 +89,30 @@ pub struct CanonicalPipelineResult {
     pub failure: Option<CanonicalPipelineFailure>,
     pub validation_status: ValidationStatus,
     pub violation_reason_mask: u32,
+    pub world_stage: WorldStageStatus,
     pub model_slots: Vec<ModelSlotProvenance>,
     pub signals: ComputeSignals,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorldStageReadiness {
+    Scaffolded,
+    ContractReady,
+    ArtifactReady,
+    RuntimePathReady,
+    ProductionBlocked,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct WorldStageStatus {
+    pub predictor: String,
+    pub slot: Option<crate::ModelSlot>,
+    pub slot_status: Option<SlotRuntimeStatus>,
+    pub slot_code: Option<ArtifactFailureCode>,
+    pub used: bool,
+    pub readiness: WorldStageReadiness,
+    pub detail: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -103,6 +125,7 @@ struct UnavailableResultContext {
     validation_status: ValidationStatus,
     violation_reason_mask: u32,
     failure: CanonicalPipelineFailure,
+    world_stage: Option<WorldStageStatus>,
     backend_id: Option<u16>,
     budget_stage: Option<&'static str>,
 }
@@ -220,6 +243,7 @@ impl ComputePipelineBackend {
         let registry = StageContractRegistry;
         let requested = StageContractVersion::V1;
         if let Some(failure) = first_artifact_failure(self.pack.model_slot_provenance()) {
+            let world_stage = world_stage_from_slots(self.pack.model_slot_provenance());
             return Ok(self.unavailable_result(
                 &input,
                 budget,
@@ -228,6 +252,7 @@ impl ComputePipelineBackend {
                     validation_status: ValidationStatus::Degraded,
                     violation_reason_mask: 0,
                     failure,
+                    world_stage: Some(world_stage),
                     backend_id: None,
                     budget_stage: None,
                 },
@@ -244,6 +269,8 @@ impl ComputePipelineBackend {
                 reason: "world model mutex poisoned".to_string(),
             })?;
         let world_model_name = world.name();
+        let world_slot = world.canonical_slot();
+        let previous_state_digest = world.current_state_digest();
         if !registry.supports(
             StageKind::World,
             pack_meta.world_backend,
@@ -270,6 +297,18 @@ impl ComputePipelineBackend {
                             pack_meta.world_backend, requested
                         ),
                     },
+                    world_stage: Some(WorldStageStatus {
+                        predictor: world_model_name.to_string(),
+                        slot: world_slot,
+                        slot_status: slot_status_for(world_slot, self.pack.model_slot_provenance()),
+                        slot_code: slot_code_for(world_slot, self.pack.model_slot_provenance()),
+                        used: false,
+                        readiness: readiness_for_unavailable_world(
+                            world_slot,
+                            self.pack.model_slot_provenance(),
+                        ),
+                        detail: Some("world contract mismatch".to_string()),
+                    }),
                     backend_id: Some(pack_meta.world_backend as u16),
                     budget_stage: None,
                 },
@@ -278,6 +317,7 @@ impl ComputePipelineBackend {
         let world_input = WorldModelInput {
             t: input.t,
             context_digest: input.context_digest,
+            previous_state_digest,
             obs_features: obs_features_from_context(input.context_digest),
             seed: budget.seed,
         };
@@ -298,6 +338,7 @@ impl ComputePipelineBackend {
                                 stage: Some(CanonicalStageId::World),
                                 detail: format!("world stage budget exceeded at {stage}"),
                             },
+                            world_stage: None,
                             backend_id: None,
                             budget_stage: Some(stage),
                         },
@@ -318,6 +359,7 @@ impl ComputePipelineBackend {
                             other,
                             "world stage execution failed",
                         ),
+                        world_stage: None,
                         backend_id: Some(pack_meta.world_backend as u16),
                         budget_stage: None,
                     },
@@ -326,6 +368,19 @@ impl ComputePipelineBackend {
         };
         let span = tracing::info_span!("world_model.step", predictor = world_model_name, t = input.t, pred = %hex::encode(&world_model_out.prediction_digest[..4]));
         let _enter = span.enter();
+        let world_stage = WorldStageStatus {
+            predictor: world_model_name.to_string(),
+            slot: world_slot,
+            slot_status: slot_status_for(world_slot, self.pack.model_slot_provenance()),
+            slot_code: slot_code_for(world_slot, self.pack.model_slot_provenance()),
+            used: true,
+            readiness: readiness_from_runtime(
+                world_model_out.quality,
+                world_slot,
+                self.pack.model_slot_provenance(),
+            ),
+            detail: world_model_out.notes.first().cloned(),
+        };
         drop(world);
         executed_stages.push(CanonicalStageId::World);
 
@@ -406,6 +461,7 @@ impl ComputePipelineBackend {
                             pack_meta.sae_backend, requested
                         ),
                     },
+                    world_stage: None,
                     backend_id: Some(pack_meta.sae_backend as u16),
                     budget_stage: None,
                 },
@@ -435,6 +491,7 @@ impl ComputePipelineBackend {
                                     stage: Some(CanonicalStageId::Sae),
                                     detail: format!("sae stage budget exceeded at {stage}"),
                                 },
+                                world_stage: None,
                                 backend_id: None,
                                 budget_stage: Some(stage),
                             },
@@ -455,6 +512,7 @@ impl ComputePipelineBackend {
                                 other,
                                 "sae stage execution failed",
                             ),
+                            world_stage: None,
                             backend_id: Some(pack_meta.sae_backend as u16),
                             budget_stage: None,
                         },
@@ -476,6 +534,7 @@ impl ComputePipelineBackend {
                                 stage: Some(CanonicalStageId::Sae),
                                 detail: format!("sae stage budget exceeded at {stage}"),
                             },
+                            world_stage: None,
                             backend_id: None,
                             budget_stage: Some(stage),
                         },
@@ -539,6 +598,7 @@ impl ComputePipelineBackend {
                             pack_meta.ssm_backend, requested
                         ),
                     },
+                    world_stage: None,
                     backend_id: Some(pack_meta.ssm_backend as u16),
                     budget_stage: None,
                 },
@@ -572,6 +632,7 @@ impl ComputePipelineBackend {
                                     stage: Some(CanonicalStageId::Ssm),
                                     detail: format!("ssm stage budget exceeded at {stage}"),
                                 },
+                                world_stage: None,
                                 backend_id: None,
                                 budget_stage: Some(stage),
                             },
@@ -592,6 +653,7 @@ impl ComputePipelineBackend {
                                 other,
                                 "ssm stage execution failed",
                             ),
+                            world_stage: None,
                             backend_id: Some(pack_meta.ssm_backend as u16),
                             budget_stage: None,
                         },
@@ -613,6 +675,7 @@ impl ComputePipelineBackend {
                                 stage: Some(CanonicalStageId::Ssm),
                                 detail: format!("ssm stage budget exceeded at {stage}"),
                             },
+                            world_stage: None,
                             backend_id: None,
                             budget_stage: Some(stage),
                         },
@@ -689,6 +752,7 @@ impl ComputePipelineBackend {
                             pack_meta.lfm_backend, requested
                         ),
                     },
+                    world_stage: None,
                     backend_id: Some(pack_meta.lfm_backend as u16),
                     budget_stage: None,
                 },
@@ -736,6 +800,7 @@ impl ComputePipelineBackend {
                                         stage: Some(CanonicalStageId::Lfm),
                                         detail: format!("lfm stage budget exceeded at {stage}"),
                                     },
+                                    world_stage: None,
                                     backend_id: None,
                                     budget_stage: Some(stage),
                                 },
@@ -756,6 +821,7 @@ impl ComputePipelineBackend {
                                     other,
                                     "lfm stage execution failed",
                                 ),
+                                world_stage: None,
                                 backend_id: Some(pack_meta.lfm_backend as u16),
                                 budget_stage: None,
                             },
@@ -777,6 +843,7 @@ impl ComputePipelineBackend {
                                     stage: Some(CanonicalStageId::Lfm),
                                     detail: format!("lfm stage budget exceeded at {stage}"),
                                 },
+                                world_stage: None,
                                 backend_id: None,
                                 budget_stage: Some(stage),
                             },
@@ -923,6 +990,7 @@ impl ComputePipelineBackend {
             format!("frame={}", input.frame_id.0),
             format!("budget_profile_id={}", budget.profile_id),
             format!("world_model={}", world_model_name),
+            format!("world_readiness={:?}", world_stage.readiness).to_ascii_lowercase(),
             format!("feature_extractor={}", self.pack.sae().name()),
             format!("working_memory={}", ssm_name),
             format!("lfm={}", lfm_name),
@@ -1058,6 +1126,7 @@ impl ComputePipelineBackend {
             failure,
             validation_status: signals.validation_status,
             violation_reason_mask: signals.violation_reason_mask,
+            world_stage,
             model_slots: self.pack.model_slot_provenance().to_vec(),
             signals,
         })
@@ -1089,6 +1158,9 @@ impl ComputePipelineBackend {
             failure: Some(ctx.failure),
             validation_status: ctx.validation_status,
             violation_reason_mask: ctx.violation_reason_mask,
+            world_stage: ctx
+                .world_stage
+                .unwrap_or_else(|| world_stage_from_slots(self.pack.model_slot_provenance())),
             model_slots: self.pack.model_slot_provenance().to_vec(),
             signals,
         }
@@ -1142,6 +1214,85 @@ fn first_artifact_failure(slots: &[ModelSlotProvenance]) -> Option<CanonicalPipe
             }
         }
     })
+}
+
+fn slot_status_for(
+    slot: Option<crate::ModelSlot>,
+    slots: &[ModelSlotProvenance],
+) -> Option<SlotRuntimeStatus> {
+    slot.and_then(|target| {
+        slots
+            .iter()
+            .find(|entry| entry.slot == target)
+            .map(|entry| entry.status)
+    })
+}
+
+fn slot_code_for(
+    slot: Option<crate::ModelSlot>,
+    slots: &[ModelSlotProvenance],
+) -> Option<ArtifactFailureCode> {
+    slot.and_then(|target| {
+        slots
+            .iter()
+            .find(|entry| entry.slot == target)
+            .and_then(|entry| entry.code)
+    })
+}
+
+fn readiness_for_unavailable_world(
+    slot: Option<crate::ModelSlot>,
+    slots: &[ModelSlotProvenance],
+) -> WorldStageReadiness {
+    match slot_status_for(slot, slots) {
+        Some(SlotRuntimeStatus::Used) => WorldStageReadiness::ContractReady,
+        Some(SlotRuntimeStatus::Disabled) => WorldStageReadiness::Scaffolded,
+        Some(SlotRuntimeStatus::Unavailable)
+        | Some(SlotRuntimeStatus::VerificationFailed)
+        | Some(SlotRuntimeStatus::Incompatible) => WorldStageReadiness::ProductionBlocked,
+        None => WorldStageReadiness::Scaffolded,
+    }
+}
+
+fn readiness_from_runtime(
+    quality: StageQuality,
+    slot: Option<crate::ModelSlot>,
+    slots: &[ModelSlotProvenance],
+) -> WorldStageReadiness {
+    match quality {
+        StageQuality::Ok => {
+            if slot_status_for(slot, slots) == Some(SlotRuntimeStatus::Used) {
+                WorldStageReadiness::RuntimePathReady
+            } else {
+                WorldStageReadiness::ContractReady
+            }
+        }
+        StageQuality::DegradedFallback => WorldStageReadiness::ArtifactReady,
+        StageQuality::Unavailable => WorldStageReadiness::ProductionBlocked,
+    }
+}
+
+fn world_stage_from_slots(slots: &[ModelSlotProvenance]) -> WorldStageStatus {
+    let world = slots
+        .iter()
+        .find(|entry| entry.slot == crate::ModelSlot::WorldJepa);
+    let status = world.map(|entry| entry.status);
+    WorldStageStatus {
+        predictor: "unavailable".to_string(),
+        slot: Some(crate::ModelSlot::WorldJepa),
+        slot_status: status,
+        slot_code: world.and_then(|entry| entry.code),
+        used: false,
+        readiness: match status {
+            Some(SlotRuntimeStatus::Used) => WorldStageReadiness::ArtifactReady,
+            Some(SlotRuntimeStatus::Disabled) => WorldStageReadiness::Scaffolded,
+            Some(SlotRuntimeStatus::Unavailable)
+            | Some(SlotRuntimeStatus::VerificationFailed)
+            | Some(SlotRuntimeStatus::Incompatible)
+            | None => WorldStageReadiness::ProductionBlocked,
+        },
+        detail: world.and_then(|entry| entry.detail.clone()),
+    }
 }
 
 fn classify_stage_execution_error(
@@ -1334,6 +1485,44 @@ mod tests {
             CanonicalFailureKind::ArtifactVerificationFailed
         );
         assert_eq!(failure.stage, Some(CanonicalStageId::Ssm));
+    }
+
+    #[test]
+    fn world_slot_unavailable_maps_to_world_artifact_failure() {
+        let slots = vec![ModelSlotProvenance {
+            slot: ModelSlot::WorldJepa,
+            stage: "world",
+            required_for_pack: true,
+            status: SlotRuntimeStatus::Unavailable,
+            code: Some(ArtifactFailureCode::MissingPath),
+            detail: Some("slot missing path".to_string()),
+            resolved_path: None,
+            hash_prefix: None,
+            contract_version: Some("v1".to_string()),
+            format: None,
+        }];
+        let failure = first_artifact_failure(&slots).expect("failure");
+        assert_eq!(failure.kind, CanonicalFailureKind::ArtifactUnavailable);
+        assert_eq!(failure.stage, Some(CanonicalStageId::World));
+        assert!(failure.detail.contains("world_jepa"));
+    }
+
+    #[test]
+    fn canonical_result_contains_world_stage_provenance() {
+        let backend = ComputePipelineBackend::stub();
+        let result = backend
+            .compute_canonical(CanonicalPipelineRequest {
+                input: input(),
+                budget: ComputeBudget::default(),
+            })
+            .expect("canonical compute");
+        assert!(result.world_stage.used);
+        assert_eq!(result.world_stage.slot, Some(ModelSlot::WorldJepa));
+        assert_eq!(result.world_stage.predictor, "mock_jepa_v0");
+        assert!(matches!(
+            result.world_stage.readiness,
+            WorldStageReadiness::ContractReady | WorldStageReadiness::RuntimePathReady
+        ));
     }
 
     #[test]

@@ -63,6 +63,12 @@ pub trait WorldModelPredictor: Send + Sync {
     fn contract_version(&self) -> StageContractVersion {
         StageContractVersion::V1
     }
+    fn canonical_slot(&self) -> Option<crate::ModelSlot> {
+        None
+    }
+    fn current_state_digest(&self) -> Option<[u8; 32]> {
+        None
+    }
     fn step(
         &mut self,
         input: &WorldModelInput,

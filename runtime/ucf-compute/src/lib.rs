@@ -68,7 +68,7 @@ pub use model_store::{
 pub use pipeline::{
     CanonicalBackendRoute, CanonicalFailureKind, CanonicalPipelineFailure,
     CanonicalPipelineRequest, CanonicalPipelineResult, CanonicalPipelineState, CanonicalStageId,
-    ComputePipelineBackend, CANONICAL_STAGE_SEQUENCE,
+    ComputePipelineBackend, WorldStageReadiness, WorldStageStatus, CANONICAL_STAGE_SEQUENCE,
 };
 #[cfg(feature = "remote-compute")]
 pub use remote_compute::{
@@ -709,6 +709,7 @@ mod tests {
                 &WorldModelInput {
                     t: input.t,
                     context_digest: input.context_digest,
+                    previous_state_digest: None,
                     obs_features: obs_features_from_context(input.context_digest),
                     seed: budget.seed,
                 },
