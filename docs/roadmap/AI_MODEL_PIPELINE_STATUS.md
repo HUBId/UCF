@@ -53,3 +53,22 @@ This status file fixes the canonical architecture for Real Compute Onboarding ba
    - Keep candle runtime seam parity with the same artifact validation + structured failure model.
 5. **Bounded compute service afterwards**
    - After runtime stage parity and artifact path stabilization, wire bounded service surface on top of canonical runtime pipeline.
+
+## JEPA world-stage readiness (repo-truth as of this change)
+
+This section records JEPA against the canonical readiness ladder:
+
+| readiness stage | current JEPA status | repo-truth notes |
+|---|---|---|
+| `scaffolded` | ✅ complete | `core/crates/ucf-jepa` already had deterministic JEPA structs/commit logic and a world boundary trait. |
+| `contract-ready` | ✅ complete | `runtime/ucf-compute` world stage stays on canonical stage contracts (`StageContractVersion::V1`) and now carries explicit `previous_state_digest` input at the world boundary. |
+| `artifact-ready` | ✅ complete | `world_jepa` slot is validated through canonical model store + compatibility checks and appears in `model_slots` provenance with explicit status/code (`used`, `disabled`, `unavailable`, `verification_failed`, `incompatible`). |
+| `runtime-path-ready` | ✅ minimal honest path complete | Canonical `compute_canonical` now records world-stage status (`world_stage`) including predictor, slot, runtime usage, and readiness; Burn/Candle JEPA predictors are routed through the canonical world stage and consume/emit world state digest continuity. |
+| `production-blocked` | ⚠️ still true overall | JEPA path is honest/minimal but not yet production-complete; blockers below remain. |
+
+### Current JEPA blockers (3–5 concrete)
+
+1. **No full JEPA tensor-model semantics yet for all lanes**: Burn/Candle world paths are deterministic runtime implementations, but still represent a constrained minimal JEPA lane rather than full production model parity.
+2. **Cross-cycle persistence is session-local**: world state continuity is explicit in-process (`previous_state_digest`), but there is no durable/recoverable world-state persistence contract for process restarts.
+3. **Candle availability remains environment/feature dependent**: Candle JEPA path is a compatible seam, but can still be unavailable when feature/runtime prerequisites are missing.
+4. **Failure handling is now typed but still pipeline-local**: JEPA-specific failure classes are represented in canonical failure/provenance, but downstream operator automation and runbook wiring are not fully specialized yet.

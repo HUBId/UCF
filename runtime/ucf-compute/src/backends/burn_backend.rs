@@ -22,6 +22,7 @@ pub struct BurnWorldPredictor {
     d: usize,
     h: usize,
     model_hash: [u8; 32],
+    last_state_digest: Option<[u8; 32]>,
 }
 
 impl BurnWorldPredictor {
@@ -56,6 +57,7 @@ impl BurnWorldPredictor {
             d,
             h,
             model_hash,
+            last_state_digest: None,
         }
     }
 
@@ -90,6 +92,12 @@ impl BurnWorldPredictor {
         hasher.update(self.model_hash);
         hasher.update(input.t.to_le_bytes());
         hasher.update(input.context_digest);
+        if let Some(previous) = input.previous_state_digest {
+            hasher.update([1]);
+            hasher.update(previous);
+        } else {
+            hasher.update([0]);
+        }
         hasher.finalize().into()
     }
 }
@@ -97,6 +105,14 @@ impl BurnWorldPredictor {
 impl WorldModelPredictor for BurnWorldPredictor {
     fn name(&self) -> &'static str {
         "burn_jepa_v1"
+    }
+
+    fn canonical_slot(&self) -> Option<crate::ModelSlot> {
+        Some(crate::ModelSlot::WorldJepa)
+    }
+
+    fn current_state_digest(&self) -> Option<[u8; 32]> {
+        self.last_state_digest
     }
 
     fn step(
@@ -129,6 +145,7 @@ impl WorldModelPredictor for BurnWorldPredictor {
 
         let err = (y.iter().map(|v| v.abs()).sum::<f32>() / self.d as f32).clamp(0.0, 1.0);
         let prediction_digest = self.prediction_digest(&y, input);
+        self.last_state_digest = Some(prediction_digest);
 
         Ok(WorldModelOutput {
             prediction_digest,

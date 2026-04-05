@@ -1691,6 +1691,7 @@ fn run_world_probe(
     let input = WorldModelInput {
         t: 1,
         context_digest: [0x44; 32],
+        previous_state_digest: None,
         obs_features: obs,
         seed: spec.seed,
     };

@@ -253,6 +253,7 @@ pub fn bench_run(args: &BenchArgs) -> Result<BenchReport, OpsError> {
         let world_input = WorldModelInput {
             t: input.t,
             context_digest: input.context_digest,
+            previous_state_digest: None,
             obs_features: obs_features_from_context(input.context_digest),
             seed: budget.seed,
         };

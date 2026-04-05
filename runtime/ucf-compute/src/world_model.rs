@@ -11,6 +11,14 @@ impl WorldModelPredictor for MockJepaPredictor {
         "mock_jepa_v0"
     }
 
+    fn canonical_slot(&self) -> Option<crate::ModelSlot> {
+        Some(crate::ModelSlot::WorldJepa)
+    }
+
+    fn current_state_digest(&self) -> Option<[u8; 32]> {
+        self.last_state_digest
+    }
+
     fn step(
         &mut self,
         input: &WorldModelInput,
@@ -55,6 +63,7 @@ impl WorldModelPredictor for MockJepaPredictor {
             input.t.saturating_add(1),
             self.fixture.weights_digest,
         );
+        self.last_state_digest = Some(state_digest);
         let output = WorldModelOutput {
             prediction_digest,
             state_digest,
@@ -97,6 +106,7 @@ impl StageQuality {
 pub struct WorldModelInput {
     pub t: u64,
     pub context_digest: [u8; 32],
+    pub previous_state_digest: Option<[u8; 32]>,
     pub obs_features: [f32; WORLD_MODEL_FEATURE_DIM],
     pub seed: u64,
 }
@@ -146,6 +156,7 @@ pub struct WorldFixtureDigest {
 #[derive(Debug, Clone)]
 pub struct MockJepaPredictor {
     state: [f32; WORLD_MODEL_FEATURE_DIM],
+    last_state_digest: Option<[u8; 32]>,
     initialized: bool,
     fixture: DynFixture,
 }
@@ -263,6 +274,7 @@ impl Default for MockJepaPredictor {
             .expect("embedded JEPA fixture must be valid");
         Self {
             state: [0.0; WORLD_MODEL_FEATURE_DIM],
+            last_state_digest: None,
             initialized: false,
             fixture,
         }
@@ -311,6 +323,7 @@ impl MockJepaPredictor {
 impl MockJepaPredictor {
     pub fn reset_for_tests(&mut self) {
         self.state = [0.0; WORLD_MODEL_FEATURE_DIM];
+        self.last_state_digest = None;
         self.initialized = false;
     }
 }
@@ -341,6 +354,7 @@ mod tests {
         WorldModelInput {
             t: 12,
             context_digest: [0xAB; 32],
+            previous_state_digest: None,
             obs_features: obs_features_from_context([0xAB; 32]),
             seed: 123,
         }

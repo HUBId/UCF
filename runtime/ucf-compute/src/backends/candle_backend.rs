@@ -18,6 +18,7 @@ const DEGRADED_MARKER: &[u8] = b"degraded_v1";
 pub struct CandleWorldPredictor {
     adapter: crate::stage_v1_candle::CandleWorldAdapterV0,
     model_hash: [u8; 32],
+    last_state_digest: Option<[u8; 32]>,
 }
 
 impl CandleWorldPredictor {
@@ -25,6 +26,7 @@ impl CandleWorldPredictor {
         Self {
             adapter: crate::stage_v1_candle::CandleWorldAdapterV0::disabled(),
             model_hash,
+            last_state_digest: None,
         }
     }
 
@@ -48,6 +50,7 @@ impl CandleWorldPredictor {
                 Ok(Self {
                     adapter,
                     model_hash: verified.sha256,
+                    last_state_digest: None,
                 })
             }
             Err(crate::model_store::ModelLoadError::Disabled) => Ok(Self::new(fallback_hash)),
@@ -65,6 +68,14 @@ impl WorldModelPredictor for CandleWorldPredictor {
         "candle_jepa_v1"
     }
 
+    fn canonical_slot(&self) -> Option<crate::ModelSlot> {
+        Some(crate::ModelSlot::WorldJepa)
+    }
+
+    fn current_state_digest(&self) -> Option<[u8; 32]> {
+        self.last_state_digest
+    }
+
     fn step(
         &mut self,
         input: &WorldModelInput,
@@ -72,7 +83,7 @@ impl WorldModelPredictor for CandleWorldPredictor {
     ) -> Result<WorldModelOutput, ComputeError> {
         let stage_input = crate::stage_v1::WorldInputV1 {
             context_digest: input.context_digest,
-            previous_world_state_digest: None,
+            previous_world_state_digest: input.previous_state_digest,
             signal_q: Self::signal_q(input),
         };
         let output = self
@@ -83,6 +94,7 @@ impl WorldModelPredictor for CandleWorldPredictor {
             })?;
         let err = f32::from(output.prediction_error_q) / f32::from(u16::MAX);
         let surprise = f32::from(output.surprise_q) / f32::from(u16::MAX);
+        self.last_state_digest = Some(output.prediction_digest);
 
         Ok(WorldModelOutput {
             prediction_digest: output.prediction_digest,
