@@ -1,6 +1,6 @@
 # Model Slots (Local-only, hash-locked)
 
-`ucf-compute` supports local model slots (`llm`, `world_jepa`, `sae`, `lfm`, `ssm`) via `models/manifest.toml`.
+`ucf-compute` supports local model slots (`llm`, `world_jepa`, `world_vljepa`, `sae`, `lfm`, `ssm`, `ebm_reasoner`) via `models/manifest.toml`.
 
 ## Guarantees
 - no network fetch path (filesystem only)
@@ -26,6 +26,10 @@ device = "cpu_only"
 ```
 
 ## Env overrides
+- Canonical manifest source remains `models/manifest.toml`.
+- `UCF_MODEL_MANIFEST` is a **legacy/explicit compatibility override only**; production bootstrap should keep the canonical path.
+
+Per-slot overrides:
 - `UCF_MODEL_<SLOT>_PATH`
 - `UCF_MODEL_<SLOT>_SHA256`
 - `UCF_MODEL_<SLOT>_MAX_BYTES`
@@ -86,3 +90,33 @@ Tokenizer asset (hash-locked, offline) is required for active LLM slot loading:
 If tokenizer hash verification fails, slot creation falls back safely to stub/toy backend.
 
 Dimension symbols (`D/H/F/N`) are slot-local bind variables and must stay consistent across tensors in a slot.
+
+## Runtime compatibility + failure semantics
+
+`runtime/ucf-compute` resolves each slot into a structured runtime status:
+
+- `used`
+- `disabled`
+- `unavailable`
+- `verification_failed`
+- `incompatible`
+
+Failure codes are emitted per slot and distinguish:
+
+- `disabled`
+- `missing_path`
+- `missing_expected_hash`
+- `hash_mismatch`
+- `oversized`
+- `path_violation`
+- `artifact_unavailable`
+- `artifact_incompatible`
+
+Canonical pipeline failures map these slot outcomes into explicit failure kinds:
+
+- `artifact_unavailable`
+- `artifact_verification_failed`
+- `artifact_incompatible`
+- `backend_disabled`
+- `stage_contract_mismatch`
+- `degraded_fallback`

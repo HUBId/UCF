@@ -23,7 +23,7 @@ use crate::lfm::{LfmKernel, ToyLfmKernel};
 use crate::ssm::{SsmKernel, ToySsmKernel};
 use crate::worker_backend::WorkerBackendPack;
 use crate::world_model::MockJepaPredictor;
-use crate::{CodeVersionTag, ComputeError, ModelLoadError, ModelSlot, ModelStore};
+use crate::{CodeVersionTag, ComputeError, ModelFormat, ModelLoadError, ModelSlot, ModelStore};
 
 const FIXTURE_SCHEMA_V1: u16 = 1;
 const MAX_FIXTURE_BYTES: usize = 1024 * 1024;
@@ -166,6 +166,7 @@ impl BackendPackMeta {
 
 pub trait BackendPack: Send + Sync {
     fn meta(&self) -> &BackendPackMeta;
+    fn model_slot_provenance(&self) -> &[ModelSlotProvenance];
     fn llm(&self) -> &dyn LlmInference;
     fn world(&self) -> &Mutex<Box<dyn WorldModelPredictor + Send + Sync>>;
     fn sae(&self) -> &dyn SaeExtractor;
@@ -177,8 +178,47 @@ pub trait BackendPack: Send + Sync {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ArtifactFailureCode {
+    Disabled,
+    MissingPath,
+    MissingExpectedHash,
+    HashMismatch,
+    Oversized,
+    PathViolation,
+    ArtifactUnavailable,
+    ArtifactVerificationFailed,
+    ArtifactIncompatible,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SlotRuntimeStatus {
+    Used,
+    Disabled,
+    Unavailable,
+    VerificationFailed,
+    Incompatible,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ModelSlotProvenance {
+    pub slot: ModelSlot,
+    pub stage: &'static str,
+    pub required_for_pack: bool,
+    pub status: SlotRuntimeStatus,
+    pub code: Option<ArtifactFailureCode>,
+    pub detail: Option<String>,
+    pub resolved_path: Option<String>,
+    pub hash_prefix: Option<String>,
+    pub contract_version: Option<String>,
+    pub format: Option<ModelFormat>,
+}
+
 pub struct UnifiedBackendPack {
     meta: BackendPackMeta,
+    slot_provenance: Vec<ModelSlotProvenance>,
     llm: Arc<dyn LlmInference + Send + Sync>,
     world: Mutex<Box<dyn WorldModelPredictor + Send + Sync>>,
     sae: Arc<dyn SaeExtractor + Send + Sync>,
@@ -189,6 +229,10 @@ pub struct UnifiedBackendPack {
 impl BackendPack for UnifiedBackendPack {
     fn meta(&self) -> &BackendPackMeta {
         &self.meta
+    }
+
+    fn model_slot_provenance(&self) -> &[ModelSlotProvenance] {
+        &self.slot_provenance
     }
 
     fn llm(&self) -> &dyn LlmInference {
@@ -339,6 +383,23 @@ impl BackendPackFactory {
             }
         };
         enforce_promoted_only_for_enabled_slots(&model_store)?;
+        let slot_provenance = resolve_slot_provenance(&model_store, cfg.pack);
+        if let Some(blocking) = first_blocking_artifact_failure(cfg.pack, &slot_provenance) {
+            return Err(ComputeError::InvalidInput {
+                reason: format!(
+                    "model slot {} rejected for stage {}: {:?} ({})",
+                    blocking.slot.as_str(),
+                    blocking.stage,
+                    blocking
+                        .code
+                        .unwrap_or(ArtifactFailureCode::ArtifactUnavailable),
+                    blocking
+                        .detail
+                        .as_deref()
+                        .unwrap_or("no additional detail provided")
+                ),
+            });
+        }
         let model_hashes_digest = model_store.model_hashes_digest();
         let (llm_component, world_component, sae_component, ssm_component) = match cfg.pack {
             BackendPackKind::StubV0 => (
@@ -612,12 +673,214 @@ impl BackendPackFactory {
 
         Ok(Arc::new(UnifiedBackendPack {
             meta,
+            slot_provenance,
             llm,
             world: Mutex::new(world_backend),
             sae: sae_backend,
             ssm: Mutex::new(ssm_backend),
             lfm: Mutex::new(lfm_kernel),
         }))
+    }
+}
+
+fn first_blocking_artifact_failure(
+    pack: BackendPackKind,
+    provenance: &[ModelSlotProvenance],
+) -> Option<ModelSlotProvenance> {
+    required_slots_for_pack(pack).into_iter().find_map(|slot| {
+        provenance
+            .iter()
+            .find(|p| p.slot == slot)
+            .and_then(|entry| match entry.status {
+                SlotRuntimeStatus::Unavailable
+                | SlotRuntimeStatus::VerificationFailed
+                | SlotRuntimeStatus::Incompatible => Some(entry.clone()),
+                SlotRuntimeStatus::Used | SlotRuntimeStatus::Disabled => None,
+            })
+    })
+}
+
+fn required_slots_for_pack(pack: BackendPackKind) -> Vec<ModelSlot> {
+    match pack {
+        BackendPackKind::CandleToyV1 | BackendPackKind::BurnToyV1 => {
+            vec![ModelSlot::WorldJepa, ModelSlot::Sae, ModelSlot::Ssm]
+        }
+        _ => Vec::new(),
+    }
+}
+
+fn resolve_slot_provenance(store: &ModelStore, pack: BackendPackKind) -> Vec<ModelSlotProvenance> {
+    ModelSlot::all()
+        .into_iter()
+        .map(|slot| {
+            let Some(spec) = store.specs.get(&slot) else {
+                return ModelSlotProvenance {
+                    slot,
+                    stage: expected_stage_for_slot(slot),
+                    required_for_pack: required_slots_for_pack(pack).contains(&slot),
+                    status: SlotRuntimeStatus::Disabled,
+                    code: Some(ArtifactFailureCode::Disabled),
+                    detail: Some("slot missing from manifest spec map".to_string()),
+                    resolved_path: None,
+                    hash_prefix: None,
+                    contract_version: None,
+                    format: None,
+                };
+            };
+            if !spec.enabled {
+                return ModelSlotProvenance {
+                    slot,
+                    stage: expected_stage_for_slot(slot),
+                    required_for_pack: required_slots_for_pack(pack).contains(&slot),
+                    status: SlotRuntimeStatus::Disabled,
+                    code: Some(ArtifactFailureCode::Disabled),
+                    detail: Some("slot disabled by manifest/env".to_string()),
+                    resolved_path: None,
+                    hash_prefix: None,
+                    contract_version: spec.contract_version.clone(),
+                    format: Some(spec.format),
+                };
+            }
+            match store.verify_slot(slot) {
+                Ok(verified) => {
+                    let (status, code, detail) = check_slot_compatibility(
+                        pack,
+                        slot,
+                        spec.format,
+                        spec.contract_version.as_deref(),
+                    );
+                    ModelSlotProvenance {
+                        slot,
+                        stage: expected_stage_for_slot(slot),
+                        required_for_pack: required_slots_for_pack(pack).contains(&slot),
+                        status,
+                        code,
+                        detail,
+                        resolved_path: Some(verified.path.display().to_string()),
+                        hash_prefix: Some(hex::encode(&verified.sha256[..6])),
+                        contract_version: verified.contract_version.clone(),
+                        format: Some(verified.format),
+                    }
+                }
+                Err(err) => {
+                    let (status, code, detail) = classify_model_error(err);
+                    ModelSlotProvenance {
+                        slot,
+                        stage: expected_stage_for_slot(slot),
+                        required_for_pack: required_slots_for_pack(pack).contains(&slot),
+                        status,
+                        code: Some(code),
+                        detail: Some(detail),
+                        resolved_path: None,
+                        hash_prefix: None,
+                        contract_version: spec.contract_version.clone(),
+                        format: Some(spec.format),
+                    }
+                }
+            }
+        })
+        .collect()
+}
+
+fn check_slot_compatibility(
+    pack: BackendPackKind,
+    slot: ModelSlot,
+    format: ModelFormat,
+    contract_version: Option<&str>,
+) -> (
+    SlotRuntimeStatus,
+    Option<ArtifactFailureCode>,
+    Option<String>,
+) {
+    let expected_formats: &[ModelFormat] = match (pack, slot) {
+        (BackendPackKind::CandleToyV1, ModelSlot::Llm)
+        | (BackendPackKind::CandleToyV1, ModelSlot::WorldJepa)
+        | (BackendPackKind::CandleToyV1, ModelSlot::Sae)
+        | (BackendPackKind::CandleToyV1, ModelSlot::Ssm) => &[ModelFormat::CandleSafetensors],
+        (BackendPackKind::BurnToyV1, ModelSlot::WorldJepa)
+        | (BackendPackKind::BurnToyV1, ModelSlot::Sae)
+        | (BackendPackKind::BurnToyV1, ModelSlot::Ssm) => &[ModelFormat::Burn],
+        _ => &[],
+    };
+    if !expected_formats.is_empty() && !expected_formats.contains(&format) {
+        return (
+            SlotRuntimeStatus::Incompatible,
+            Some(ArtifactFailureCode::ArtifactIncompatible),
+            Some(format!(
+                "slot format {:?} incompatible with backend pack {}",
+                format,
+                pack.as_str()
+            )),
+        );
+    }
+    if required_slots_for_pack(pack).contains(&slot) {
+        let version = contract_version.unwrap_or("v1");
+        if version != "v1" && version != "1" {
+            return (
+                SlotRuntimeStatus::Incompatible,
+                Some(ArtifactFailureCode::ArtifactIncompatible),
+                Some(format!(
+                    "slot contract_version {version} incompatible with expected v1"
+                )),
+            );
+        }
+    }
+    (SlotRuntimeStatus::Used, None, None)
+}
+
+fn classify_model_error(err: ModelLoadError) -> (SlotRuntimeStatus, ArtifactFailureCode, String) {
+    match err {
+        ModelLoadError::Disabled => (
+            SlotRuntimeStatus::Disabled,
+            ArtifactFailureCode::Disabled,
+            "slot disabled".to_string(),
+        ),
+        ModelLoadError::MissingPath => (
+            SlotRuntimeStatus::Unavailable,
+            ArtifactFailureCode::MissingPath,
+            "slot missing path".to_string(),
+        ),
+        ModelLoadError::MissingExpectedHash { slot } => (
+            SlotRuntimeStatus::VerificationFailed,
+            ArtifactFailureCode::MissingExpectedHash,
+            format!("missing expected hash for {}", slot.as_str()),
+        ),
+        ModelLoadError::HashMismatch { .. } => (
+            SlotRuntimeStatus::VerificationFailed,
+            ArtifactFailureCode::HashMismatch,
+            "model hash mismatch".to_string(),
+        ),
+        ModelLoadError::Oversized { .. } => (
+            SlotRuntimeStatus::VerificationFailed,
+            ArtifactFailureCode::Oversized,
+            "model exceeds max_bytes".to_string(),
+        ),
+        ModelLoadError::PathOutsideAllowlist { .. } | ModelLoadError::PathTraversal { .. } => (
+            SlotRuntimeStatus::VerificationFailed,
+            ArtifactFailureCode::PathViolation,
+            "model path violates allowlist root".to_string(),
+        ),
+        ModelLoadError::OpenFailed { reason, .. } => (
+            SlotRuntimeStatus::Unavailable,
+            ArtifactFailureCode::ArtifactUnavailable,
+            format!("artifact unavailable: {reason}"),
+        ),
+        ModelLoadError::ManifestParse(reason) => (
+            SlotRuntimeStatus::Unavailable,
+            ArtifactFailureCode::ArtifactUnavailable,
+            format!("manifest parse failed: {reason}"),
+        ),
+    }
+}
+
+fn expected_stage_for_slot(slot: ModelSlot) -> &'static str {
+    match slot {
+        ModelSlot::Llm => "llm",
+        ModelSlot::WorldJepa | ModelSlot::WorldVljepa => "world",
+        ModelSlot::Sae => "sae",
+        ModelSlot::Lfm => "lfm",
+        ModelSlot::Ssm => "ssm",
+        ModelSlot::EbmReasoner => "ebm_reasoner",
     }
 }
 
@@ -706,6 +969,7 @@ impl BackendPackFactory {
         Ok(Arc::new(RemoteBackendPack {
             inner: UnifiedBackendPack {
                 meta,
+                slot_provenance: Vec::new(),
                 llm: Arc::new(LlmStubBackend),
                 world: Mutex::new(Box::new(MockJepaPredictor::default())),
                 sae: Arc::new(ToySaeExtractor::default()),
@@ -727,6 +991,9 @@ pub struct RemoteBackendPack {
 impl BackendPack for RemoteBackendPack {
     fn meta(&self) -> &BackendPackMeta {
         self.inner.meta()
+    }
+    fn model_slot_provenance(&self) -> &[ModelSlotProvenance] {
+        self.inner.model_slot_provenance()
     }
     fn llm(&self) -> &dyn LlmInference {
         self.inner.llm()
@@ -757,6 +1024,8 @@ pub fn slot_verified_or_reason(slot: ModelSlot) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sha2::{Digest, Sha256};
+    use std::fs;
 
     #[test]
     fn fixture_digest_stable() {
@@ -871,5 +1140,114 @@ mod tests {
 
         let res = BackendPackFactory::build(BackendPackConfig::default());
         assert!(matches!(res, Err(ComputeError::InvalidInput { .. })));
+    }
+
+    #[test]
+    fn provenance_marks_valid_required_slot_as_used() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let models = temp.path().join("models");
+        fs::create_dir_all(&models).expect("models dir");
+        let bytes = b"world-jepa";
+        let hash = hex::encode(Sha256::digest(bytes));
+        let model_path = models
+            .join("promoted")
+            .join("world_jepa")
+            .join(&hash)
+            .join("model.safetensors");
+        fs::create_dir_all(model_path.parent().expect("parent")).expect("mkdirs");
+        fs::write(&model_path, bytes).expect("write");
+        let manifest_path = temp.path().join("manifest.toml");
+        fs::write(
+            &manifest_path,
+            format!(
+                "allowlist_root = '{}'\n[slots.world_jepa]\nenabled = true\nexpected_sha256 = \"{}\"\nactive_hash = \"{}\"\nformat = \"burn\"\ncontract_version = \"v1\"\n",
+                models.display(),
+                hash,
+                hash
+            ),
+        )
+        .expect("manifest");
+        let store = ModelStore::from_manifest_and_env(&manifest_path).expect("store");
+        let provenance = resolve_slot_provenance(&store, BackendPackKind::BurnToyV1);
+        let world = provenance
+            .iter()
+            .find(|entry| entry.slot == ModelSlot::WorldJepa)
+            .expect("world slot");
+        assert!(world.required_for_pack);
+        assert_eq!(world.status, SlotRuntimeStatus::Used);
+        assert!(world.hash_prefix.is_some());
+    }
+
+    #[test]
+    fn provenance_marks_missing_expected_hash_as_verification_failed() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let models = temp.path().join("models");
+        fs::create_dir_all(&models).expect("models dir");
+        let bytes = b"world-jepa";
+        let hash = hex::encode(Sha256::digest(bytes));
+        let model_path = models
+            .join("promoted")
+            .join("world_jepa")
+            .join(&hash)
+            .join("model.safetensors");
+        fs::create_dir_all(model_path.parent().expect("parent")).expect("mkdirs");
+        fs::write(&model_path, bytes).expect("write");
+        let manifest_path = temp.path().join("manifest.toml");
+        fs::write(
+            &manifest_path,
+            format!(
+                "allowlist_root = '{}'\n[slots.world_jepa]\nenabled = true\npath = \"world_jepa.bin\"\nformat = \"burn\"\ncontract_version = \"v1\"\n",
+                models.display(),
+            ),
+        )
+        .expect("manifest");
+        fs::write(models.join("world_jepa.bin"), bytes).expect("artifact");
+        let store = ModelStore::from_manifest_and_env(&manifest_path).expect("store");
+        let provenance = resolve_slot_provenance(&store, BackendPackKind::BurnToyV1);
+        let world = provenance
+            .iter()
+            .find(|entry| entry.slot == ModelSlot::WorldJepa)
+            .expect("world slot");
+        assert_eq!(world.status, SlotRuntimeStatus::VerificationFailed);
+        assert_eq!(world.code, Some(ArtifactFailureCode::MissingExpectedHash));
+    }
+
+    #[test]
+    fn provenance_distinguishes_disabled_from_incompatible() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let models = temp.path().join("models");
+        fs::create_dir_all(&models).expect("models dir");
+        let bytes = b"weights";
+        let hash = hex::encode(Sha256::digest(bytes));
+        let model_path = models
+            .join("promoted")
+            .join("world_jepa")
+            .join(&hash)
+            .join("model.safetensors");
+        fs::create_dir_all(model_path.parent().expect("parent")).expect("mkdirs");
+        fs::write(&model_path, bytes).expect("write");
+        let manifest_path = temp.path().join("manifest.toml");
+        fs::write(
+            &manifest_path,
+            format!(
+                "allowlist_root = '{}'\n[slots.world_jepa]\nenabled = true\nexpected_sha256 = \"{}\"\nactive_hash = \"{}\"\nformat = \"burn\"\ncontract_version = \"v1\"\n[slots.sae]\nenabled = false\n",
+                models.display(),
+                hash,
+                hash
+            ),
+        )
+        .expect("manifest");
+        let store = ModelStore::from_manifest_and_env(&manifest_path).expect("store");
+        let provenance = resolve_slot_provenance(&store, BackendPackKind::CandleToyV1);
+        let world = provenance
+            .iter()
+            .find(|entry| entry.slot == ModelSlot::WorldJepa)
+            .expect("world slot");
+        assert_eq!(world.status, SlotRuntimeStatus::Incompatible);
+        let sae = provenance
+            .iter()
+            .find(|entry| entry.slot == ModelSlot::Sae)
+            .expect("sae slot");
+        assert_eq!(sae.status, SlotRuntimeStatus::Disabled);
     }
 }
