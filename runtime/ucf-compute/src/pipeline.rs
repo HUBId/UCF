@@ -56,6 +56,7 @@ pub enum CanonicalFailureKind {
     ArtifactUnavailable,
     ArtifactVerificationFailed,
     ArtifactIncompatible,
+    StageUnavailable,
     DegradedFallback,
     ValidationDegraded,
     BudgetExceeded,
@@ -1153,6 +1154,9 @@ fn classify_stage_execution_error(
             CanonicalFailureKind::BackendDisabled,
             "backend disabled".to_string(),
         ),
+        ComputeError::Internal { reason } if reason.starts_with("candle_stage_unavailable:") => {
+            (CanonicalFailureKind::StageUnavailable, reason)
+        }
         other => (CanonicalFailureKind::ExecutionError, other.to_string()),
     };
     CanonicalPipelineFailure {
@@ -1363,6 +1367,15 @@ mod tests {
             "ssm stage execution failed",
         );
         assert_eq!(disabled.kind, CanonicalFailureKind::BackendDisabled);
+
+        let unavailable = classify_stage_execution_error(
+            CanonicalStageId::World,
+            ComputeError::Internal {
+                reason: "candle_stage_unavailable:world".to_string(),
+            },
+            "world stage execution failed",
+        );
+        assert_eq!(unavailable.kind, CanonicalFailureKind::StageUnavailable);
 
         let execution = classify_stage_execution_error(
             CanonicalStageId::Ssm,
