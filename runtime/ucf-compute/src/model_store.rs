@@ -625,9 +625,9 @@ mod tests {
         let temp = tempfile::tempdir().expect("tempdir");
         let root = temp.path();
 
-        let models = root.join("models");
-        fs::create_dir_all(&models).expect("mkdir models");
-        let lowercase_manifest = models.join("manifest.toml");
+        let lower_models = root.join("lower").join("models");
+        fs::create_dir_all(&lower_models).expect("mkdir lower models");
+        let lowercase_manifest = lower_models.join("manifest.toml");
         fs::write(
             &lowercase_manifest,
             r#"
@@ -643,8 +643,10 @@ device = "cpu_only"
         )
         .expect("write lowercase manifest");
 
+        let upper_models = root.join("upper").join("models");
+        fs::create_dir_all(&upper_models).expect("mkdir upper models");
         fs::write(
-            models.join("MANIFEST.toml"),
+            upper_models.join("MANIFEST.toml"),
             r#"
 allowlist_root = "upper_models"
 [slots.llm]
