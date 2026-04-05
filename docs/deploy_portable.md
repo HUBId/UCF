@@ -36,7 +36,7 @@ Health checks are backed by gateway `health` endpoint and provide strict exit co
 
 Portable bundles should carry model governance files and directories explicitly:
 
-- `models/manifest.toml` (or `models/MANIFEST.toml` depending on repository casing)
+- `models/manifest.toml` (canonical runtime path)
 - `models/promoted/<slot>/<sha256>/...`
 - `models/manifests/history/`
 
@@ -46,7 +46,7 @@ Validate model manifest integrity from bundle root:
 ./bin/ucf-ops models verify --manifest ./models/manifest.toml --out ./out/models_verify.json
 ```
 
-If the repository/bundle uses uppercase manifest filename, use `./models/MANIFEST.toml` instead.
+Uppercase legacy manifest filenames are not canonical for runtime bootstrap; normalize bundles to `models/manifest.toml`.
 
 ## 4) Runtime startup validation
 

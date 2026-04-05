@@ -2,7 +2,9 @@ use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use std::time::Instant;
 
-use crate::backend_pack::{BackendPack, BackendPackFactory};
+use crate::backend_pack::{
+    ArtifactFailureCode, BackendPack, BackendPackFactory, ModelSlotProvenance, SlotRuntimeStatus,
+};
 use crate::contracts::{
     validate_evidence_chain_digest, ContractRegistry, LfmValidatorV1, SaeValidatorV1,
     SsmValidatorV1, StageContractRegistry, StageContractVersion, StageKind, ValidationStatus,
@@ -50,8 +52,11 @@ pub enum CanonicalPipelineState {
 pub enum CanonicalFailureKind {
     InvalidInput,
     BackendDisabled,
-    BackendContractMismatch,
+    StageContractMismatch,
     ArtifactUnavailable,
+    ArtifactVerificationFailed,
+    ArtifactIncompatible,
+    DegradedFallback,
     ValidationDegraded,
     BudgetExceeded,
     ExecutionError,
@@ -82,6 +87,7 @@ pub struct CanonicalPipelineResult {
     pub failure: Option<CanonicalPipelineFailure>,
     pub validation_status: ValidationStatus,
     pub violation_reason_mask: u32,
+    pub model_slots: Vec<ModelSlotProvenance>,
     pub signals: ComputeSignals,
 }
 
@@ -210,6 +216,20 @@ impl ComputePipelineBackend {
         };
         let registry = StageContractRegistry;
         let requested = StageContractVersion::V1;
+        if let Some(failure) = first_artifact_failure(self.pack.model_slot_provenance()) {
+            return Ok(self.unavailable_result(
+                &input,
+                budget,
+                route,
+                UnavailableResultContext {
+                    validation_status: ValidationStatus::Degraded,
+                    violation_reason_mask: 0,
+                    failure,
+                    backend_id: None,
+                    budget_stage: None,
+                },
+            ));
+        }
 
         global_meter.spend(40, "world_model/step")?;
         world_meter.spend(40, "world_model/step")?;
@@ -230,7 +250,7 @@ impl ComputePipelineBackend {
             let kind = if pack_meta.world_backend == crate::BackendComponentId::Disabled {
                 CanonicalFailureKind::BackendDisabled
             } else {
-                CanonicalFailureKind::BackendContractMismatch
+                CanonicalFailureKind::StageContractMismatch
             };
             return Ok(self.unavailable_result(
                 &input,
@@ -348,7 +368,7 @@ impl ComputePipelineBackend {
             let kind = if pack_meta.sae_backend == crate::BackendComponentId::Disabled {
                 CanonicalFailureKind::BackendDisabled
             } else {
-                CanonicalFailureKind::BackendContractMismatch
+                CanonicalFailureKind::StageContractMismatch
             };
             return Ok(self.unavailable_result(
                 &input,
@@ -463,7 +483,7 @@ impl ComputePipelineBackend {
             let kind = if pack_meta.ssm_backend == crate::BackendComponentId::Disabled {
                 CanonicalFailureKind::BackendDisabled
             } else {
-                CanonicalFailureKind::BackendContractMismatch
+                CanonicalFailureKind::StageContractMismatch
             };
             return Ok(self.unavailable_result(
                 &input,
@@ -592,7 +612,7 @@ impl ComputePipelineBackend {
             let kind = if pack_meta.lfm_backend == crate::BackendComponentId::Disabled {
                 CanonicalFailureKind::BackendDisabled
             } else {
-                CanonicalFailureKind::BackendContractMismatch
+                CanonicalFailureKind::StageContractMismatch
             };
             return Ok(self.unavailable_result(
                 &input,
@@ -883,6 +903,11 @@ impl ComputePipelineBackend {
             });
         } else if quality == SignalQuality::DegradedFallback {
             state = CanonicalPipelineState::Degraded;
+            failure = Some(CanonicalPipelineFailure {
+                kind: CanonicalFailureKind::DegradedFallback,
+                stage: None,
+                detail: "degraded but usable fallback output".to_string(),
+            });
         }
 
         let signals = ComputeSignals {
@@ -934,6 +959,7 @@ impl ComputePipelineBackend {
             failure,
             validation_status: signals.validation_status,
             violation_reason_mask: signals.violation_reason_mask,
+            model_slots: self.pack.model_slot_provenance().to_vec(),
             signals,
         })
     }
@@ -963,16 +989,70 @@ impl ComputePipelineBackend {
             failure: Some(ctx.failure),
             validation_status: ctx.validation_status,
             violation_reason_mask: ctx.violation_reason_mask,
+            model_slots: self.pack.model_slot_provenance().to_vec(),
             signals,
         }
     }
+}
+
+fn first_artifact_failure(slots: &[ModelSlotProvenance]) -> Option<CanonicalPipelineFailure> {
+    slots.iter().find_map(|slot| {
+        if !slot.required_for_pack {
+            return None;
+        }
+        match slot.status {
+            SlotRuntimeStatus::Used => None,
+            SlotRuntimeStatus::Disabled
+            | SlotRuntimeStatus::Unavailable
+            | SlotRuntimeStatus::VerificationFailed
+            | SlotRuntimeStatus::Incompatible => {
+                let kind = match slot.code {
+                    Some(ArtifactFailureCode::Disabled) => CanonicalFailureKind::BackendDisabled,
+                    Some(ArtifactFailureCode::MissingPath)
+                    | Some(ArtifactFailureCode::ArtifactUnavailable) => {
+                        CanonicalFailureKind::ArtifactUnavailable
+                    }
+                    Some(ArtifactFailureCode::MissingExpectedHash)
+                    | Some(ArtifactFailureCode::HashMismatch)
+                    | Some(ArtifactFailureCode::Oversized)
+                    | Some(ArtifactFailureCode::PathViolation)
+                    | Some(ArtifactFailureCode::ArtifactVerificationFailed) => {
+                        CanonicalFailureKind::ArtifactVerificationFailed
+                    }
+                    Some(ArtifactFailureCode::ArtifactIncompatible) => {
+                        CanonicalFailureKind::ArtifactIncompatible
+                    }
+                    None => CanonicalFailureKind::ArtifactUnavailable,
+                };
+                Some(CanonicalPipelineFailure {
+                    kind,
+                    stage: Some(match slot.stage {
+                        "world" => CanonicalStageId::World,
+                        "sae" => CanonicalStageId::Sae,
+                        "ssm" => CanonicalStageId::Ssm,
+                        "lfm" => CanonicalStageId::Lfm,
+                        _ => CanonicalStageId::World,
+                    }),
+                    detail: format!(
+                        "slot {} status {:?}: {}",
+                        slot.slot.as_str(),
+                        slot.status,
+                        slot.detail.as_deref().unwrap_or("n/a")
+                    ),
+                })
+            }
+        }
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use crate::{BackendPackKind, FrameId};
 
-    use crate::{BackendPackConfig, BackendPackFactory};
+    use crate::{
+        ArtifactFailureCode, BackendPackConfig, BackendPackFactory, ModelSlot, ModelSlotProvenance,
+        SlotRuntimeStatus,
+    };
 
     use super::*;
 
@@ -1026,7 +1106,7 @@ mod tests {
             .expect("canonical compute");
         assert_eq!(result.state, CanonicalPipelineState::Unavailable);
         let failure = result.failure.expect("failure");
-        assert_eq!(failure.kind, CanonicalFailureKind::BackendContractMismatch);
+        assert_eq!(failure.kind, CanonicalFailureKind::StageContractMismatch);
         assert_eq!(failure.stage, Some(CanonicalStageId::World));
     }
 
@@ -1104,5 +1184,50 @@ mod tests {
             budget: ComputeBudget::default(),
         });
         assert!(matches!(result, Err(ComputeError::InvalidInput { .. })));
+    }
+
+    #[test]
+    fn artifact_failures_are_classified() {
+        let slots = vec![ModelSlotProvenance {
+            slot: ModelSlot::Ssm,
+            stage: "ssm",
+            required_for_pack: true,
+            status: SlotRuntimeStatus::VerificationFailed,
+            code: Some(ArtifactFailureCode::HashMismatch),
+            detail: Some("model hash mismatch".to_string()),
+            resolved_path: None,
+            hash_prefix: None,
+            contract_version: Some("v1".to_string()),
+            format: None,
+        }];
+        let failure = first_artifact_failure(&slots).expect("failure");
+        assert_eq!(
+            failure.kind,
+            CanonicalFailureKind::ArtifactVerificationFailed
+        );
+        assert_eq!(failure.stage, Some(CanonicalStageId::Ssm));
+    }
+
+    #[test]
+    fn degraded_fallback_sets_explicit_failure_kind() {
+        let backend = ComputePipelineBackend::stub();
+        let budget = ComputeBudget {
+            sae_units: 100,
+            global_work_units: 900,
+            profile_id: 3,
+            ..ComputeBudget::default()
+        };
+        let canonical = backend
+            .compute_canonical(CanonicalPipelineRequest {
+                input: input(),
+                budget,
+            })
+            .expect("canonical compute");
+        assert_eq!(canonical.state, CanonicalPipelineState::Degraded);
+        let failure_kind = canonical.failure.expect("failure").kind;
+        assert!(matches!(
+            failure_kind,
+            CanonicalFailureKind::DegradedFallback | CanonicalFailureKind::ValidationDegraded
+        ));
     }
 }

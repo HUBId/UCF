@@ -51,8 +51,9 @@ pub mod worker_backend;
 pub mod world_model;
 pub mod world_vljepa_shadow;
 pub use backend_pack::{
-    BackendComponentId, BackendPack, BackendPackConfig, BackendPackFactory, BackendPackId,
-    BackendPackKind, BackendPackMeta, BackendSwapRequest, FixtureId, FixtureManager,
+    ArtifactFailureCode, BackendComponentId, BackendPack, BackendPackConfig, BackendPackFactory,
+    BackendPackId, BackendPackKind, BackendPackMeta, BackendSwapRequest, FixtureId, FixtureManager,
+    ModelSlotProvenance, SlotRuntimeStatus,
 };
 pub use backends::{build_backend, ComputeBackendConfig, ComputeBackendKind};
 pub use contracts::{StageContractVersion, ValidationStatus};

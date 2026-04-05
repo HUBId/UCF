@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 
 use crate::backend_pack::{
     BackendComponentId, BackendPack, BackendPackId, BackendPackMeta, FixtureManager,
+    ModelSlotProvenance,
 };
 use crate::capabilities::{
     LlmInference, LlmRequest, LlmResponse, LlmStubBackend, SaeExtractor, WorldModelPredictor,
@@ -379,6 +380,7 @@ impl LlmInference for WorkerLlm {
 
 pub struct WorkerBackendPack {
     meta: BackendPackMeta,
+    slot_provenance: Vec<ModelSlotProvenance>,
     llm: Arc<dyn LlmInference + Send + Sync>,
     world: Mutex<Box<dyn WorldModelPredictor + Send + Sync>>,
     sae: Arc<dyn SaeExtractor + Send + Sync>,
@@ -410,6 +412,7 @@ impl WorkerBackendPack {
         meta.digest = meta.canonical_digest();
         Ok(Arc::new(Self {
             meta,
+            slot_provenance: Vec::new(),
             llm: Arc::new(WorkerLlm {
                 manager: manager.clone(),
             }),
@@ -430,6 +433,9 @@ impl WorkerBackendPack {
 impl BackendPack for WorkerBackendPack {
     fn meta(&self) -> &BackendPackMeta {
         &self.meta
+    }
+    fn model_slot_provenance(&self) -> &[ModelSlotProvenance] {
+        &self.slot_provenance
     }
     fn llm(&self) -> &dyn LlmInference {
         self.llm.as_ref()
