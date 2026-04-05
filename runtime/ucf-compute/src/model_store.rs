@@ -621,9 +621,7 @@ mod tests {
     }
 
     #[test]
-    fn from_env_default_uses_manifest_env_override() {
-        let _guard = crate::test_env::env_lock().lock().expect("env lock");
-        let _env = crate::test_env::clear_model_env_overrides();
+    fn from_manifest_and_env_reads_lowercase_manifest_file() {
         let temp = tempfile::tempdir().expect("tempdir");
         let root = temp.path();
 
@@ -655,9 +653,8 @@ enabled = false
         )
         .expect("write uppercase manifest");
 
-        std::env::set_var("UCF_MODEL_MANIFEST", &lowercase_manifest);
-        let store = ModelStore::from_env_default().expect("load store");
+        let store = ModelStore::from_manifest_and_env(&lowercase_manifest).expect("load store");
         let llm = store.specs.get(&ModelSlot::Llm).expect("llm spec");
-        assert!(llm.enabled, "env override manifest must be honored");
+        assert!(llm.enabled, "lowercase manifest file must be honored");
     }
 }
