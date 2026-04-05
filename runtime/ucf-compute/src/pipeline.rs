@@ -1001,9 +1001,8 @@ fn first_artifact_failure(slots: &[ModelSlotProvenance]) -> Option<CanonicalPipe
             return None;
         }
         match slot.status {
-            SlotRuntimeStatus::Used => None,
-            SlotRuntimeStatus::Disabled
-            | SlotRuntimeStatus::Unavailable
+            SlotRuntimeStatus::Used | SlotRuntimeStatus::Disabled => None,
+            SlotRuntimeStatus::Unavailable
             | SlotRuntimeStatus::VerificationFailed
             | SlotRuntimeStatus::Incompatible => {
                 let kind = match slot.code {

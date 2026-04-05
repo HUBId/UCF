@@ -692,11 +692,10 @@ fn first_blocking_artifact_failure(
             .iter()
             .find(|p| p.slot == slot)
             .and_then(|entry| match entry.status {
-                SlotRuntimeStatus::Disabled
-                | SlotRuntimeStatus::Unavailable
+                SlotRuntimeStatus::Unavailable
                 | SlotRuntimeStatus::VerificationFailed
                 | SlotRuntimeStatus::Incompatible => Some(entry.clone()),
-                SlotRuntimeStatus::Used => None,
+                SlotRuntimeStatus::Used | SlotRuntimeStatus::Disabled => None,
             })
     })
 }
@@ -1161,7 +1160,7 @@ mod tests {
         fs::write(
             &manifest_path,
             format!(
-                "allowlist_root = \"{}\"\n[slots.world_jepa]\nenabled = true\nexpected_sha256 = \"{}\"\nactive_hash = \"{}\"\nformat = \"burn\"\ncontract_version = \"v1\"\n",
+                "allowlist_root = '{}'\n[slots.world_jepa]\nenabled = true\nexpected_sha256 = \"{}\"\nactive_hash = \"{}\"\nformat = \"burn\"\ncontract_version = \"v1\"\n",
                 models.display(),
                 hash,
                 hash
@@ -1197,7 +1196,7 @@ mod tests {
         fs::write(
             &manifest_path,
             format!(
-                "allowlist_root = \"{}\"\n[slots.world_jepa]\nenabled = true\npath = \"world_jepa.bin\"\nformat = \"burn\"\ncontract_version = \"v1\"\n",
+                "allowlist_root = '{}'\n[slots.world_jepa]\nenabled = true\npath = \"world_jepa.bin\"\nformat = \"burn\"\ncontract_version = \"v1\"\n",
                 models.display(),
             ),
         )
@@ -1231,7 +1230,7 @@ mod tests {
         fs::write(
             &manifest_path,
             format!(
-                "allowlist_root = \"{}\"\n[slots.world_jepa]\nenabled = true\nexpected_sha256 = \"{}\"\nactive_hash = \"{}\"\nformat = \"burn\"\ncontract_version = \"v1\"\n[slots.sae]\nenabled = false\n",
+                "allowlist_root = '{}'\n[slots.world_jepa]\nenabled = true\nexpected_sha256 = \"{}\"\nactive_hash = \"{}\"\nformat = \"burn\"\ncontract_version = \"v1\"\n[slots.sae]\nenabled = false\n",
                 models.display(),
                 hash,
                 hash
