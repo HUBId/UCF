@@ -41,6 +41,8 @@ Top-level result contract:
 - `CanonicalPipelineResult`
   - carries `signals: ComputeSignals` (final compute output)
   - carries `validation_status` and `violation_reason_mask`
+  - carries domain-scoped validation summary (`validation`)
+  - carries load-bearing runtime diagnostics (`diagnostics`)
   - carries stage/backend provenance (`stage_order`, `route`)
   - carries canonical state (`ok`, `degraded`, `unavailable`)
   - carries structured failure detail (`CanonicalPipelineFailure`)
@@ -49,6 +51,7 @@ Structured failure taxonomy (`CanonicalFailureKind`):
 
 - `invalid_input`
 - `backend_disabled`
+- `contract_mismatch`
 - `stage_contract_mismatch`
 - `artifact_unavailable`
 - `artifact_verification_failed`
@@ -57,6 +60,7 @@ Structured failure taxonomy (`CanonicalFailureKind`):
 - `degraded_fallback`
 - `validation_degraded`
 - `budget_exceeded`
+- `timeout` (budget/timeout stage naming indicates timeout boundary)
 - `execution_error`
 - `nsr_disabled`
 - `nsr_unavailable`
@@ -69,7 +73,7 @@ Separation rules in canonical path:
 
 - `degraded` = pipeline produced output but with degraded quality/validation.
 - `unavailable` = output forced to safe unavailable envelope (`risk=1`, `confidence=0`) with structured failure.
-- hard execution errors remain Rust `Err(ComputeError::...)` (e.g. invalid input).
+- `invalid_input` is emitted as structured canonical `unavailable` failure, not as opaque runtime panic/error.
 
 ## Backend/device routing role split
 
@@ -93,6 +97,10 @@ Stub/Toy paths remain explicit development/testing paths, not hidden production-
 - used backend route (`route` = pack + stage backend ids)
 - degraded/unavailable state (`state`)
 - validation status + violation mask
+- validation domains (`validation.input/stage/artifacts/output/evidence`)
 - structured failure (kind, stage, detail) when present
+- work/budget snapshot (`diagnostics.work`: per-stage remaining units + exceeded stage)
+- timing snapshot (`diagnostics.timing`: total + per-stage latency hints)
+- evidence/provenance digest hook (`diagnostics.evidence_chain_digest_prefix`)
 
 This keeps diagnostics focused on canonical inference execution without introducing broad telemetry/governance extensions.

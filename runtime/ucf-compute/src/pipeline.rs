@@ -56,6 +56,7 @@ pub enum CanonicalPipelineState {
 pub enum CanonicalFailureKind {
     InvalidInput,
     BackendDisabled,
+    ContractMismatch,
     StageContractMismatch,
     ArtifactUnavailable,
     ArtifactVerificationFailed,
@@ -64,6 +65,7 @@ pub enum CanonicalFailureKind {
     DegradedFallback,
     ValidationDegraded,
     BudgetExceeded,
+    Timeout,
     ExecutionError,
     NsrDisabled,
     NsrUnavailable,
@@ -71,6 +73,56 @@ pub enum CanonicalFailureKind {
     NsrContractMismatch,
     NsrBackendUnavailable,
     NsrExecutionError,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CanonicalValidationSummary {
+    pub input: ValidationStatus,
+    pub stage: ValidationStatus,
+    pub artifacts: ValidationStatus,
+    pub output: ValidationStatus,
+    pub evidence: ValidationStatus,
+    pub violation_reason_mask: u32,
+}
+
+impl CanonicalValidationSummary {
+    fn unavailable() -> Self {
+        Self {
+            input: ValidationStatus::Ok,
+            stage: ValidationStatus::Degraded,
+            artifacts: ValidationStatus::Degraded,
+            output: ValidationStatus::Degraded,
+            evidence: ValidationStatus::Degraded,
+            violation_reason_mask: 0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CanonicalTimingSummary {
+    pub total_micros: u64,
+    pub world_micros: Option<u64>,
+    pub sae_micros: Option<u64>,
+    pub ssm_micros: Option<u64>,
+    pub lfm_micros: Option<u64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CanonicalWorkSummary {
+    pub global_budget_units: u64,
+    pub global_remaining_units: u64,
+    pub world_remaining_units: u64,
+    pub sae_remaining_units: u64,
+    pub ssm_remaining_units: u64,
+    pub lfm_remaining_units: u64,
+    pub budget_exceeded_stage: Option<&'static str>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CanonicalRunDiagnostics {
+    pub timing: CanonicalTimingSummary,
+    pub work: CanonicalWorkSummary,
+    pub evidence_chain_digest_prefix: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -99,6 +151,8 @@ pub struct CanonicalPipelineResult {
     pub failure: Option<CanonicalPipelineFailure>,
     pub validation_status: ValidationStatus,
     pub violation_reason_mask: u32,
+    pub validation: CanonicalValidationSummary,
+    pub diagnostics: CanonicalRunDiagnostics,
     pub world_stage: WorldStageStatus,
     pub lfm_stage: LfmStageStatus,
     pub nsr_stage: NsrStageStatus,
@@ -213,12 +267,14 @@ pub struct CanonicalPipelineRequest {
 struct UnavailableResultContext {
     validation_status: ValidationStatus,
     violation_reason_mask: u32,
+    validation: Option<CanonicalValidationSummary>,
     failure: CanonicalPipelineFailure,
     world_stage: Option<WorldStageStatus>,
     lfm_stage: Option<LfmStageStatus>,
     nsr_stage: Option<NsrStageStatus>,
     backend_id: Option<u16>,
     budget_stage: Option<&'static str>,
+    diagnostics: Option<CanonicalRunDiagnostics>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -615,20 +671,6 @@ impl ComputePipelineBackend {
     ) -> Result<CanonicalPipelineResult, ComputeError> {
         let input = request.input;
         let budget = request.budget;
-        if input.t == 0 {
-            return Err(ComputeError::InvalidInput {
-                reason: "t must be non-zero".to_string(),
-            });
-        }
-
-        let mut global_meter = WorkMeter::new(budget.global_work_units);
-        let mut world_meter = WorkMeter::new(budget.world_units);
-        let mut sae_meter = WorkMeter::new(budget.sae_units);
-        let mut ssm_meter = WorkMeter::new(budget.ssm_units);
-        let mut lfm_meter = WorkMeter::new(budget.lfm_units);
-
-        let mut exceeded_stage: Option<&'static str> = None;
-        let mut executed_stages = Vec::with_capacity(CANONICAL_STAGE_SEQUENCE.len());
         let pack_meta = self.pack.meta();
         let route = CanonicalBackendRoute {
             pack_id: pack_meta.pack_id.0,
@@ -637,6 +679,47 @@ impl ComputePipelineBackend {
             ssm_backend: pack_meta.ssm_backend as u8,
             lfm_backend: pack_meta.lfm_backend as u8,
         };
+        if input.t == 0 {
+            return Ok(self.unavailable_result(
+                &input,
+                budget,
+                route,
+                UnavailableResultContext {
+                    validation_status: ValidationStatus::Degraded,
+                    violation_reason_mask: 0,
+                    validation: Some(CanonicalValidationSummary {
+                        input: ValidationStatus::Degraded,
+                        stage: ValidationStatus::Degraded,
+                        artifacts: ValidationStatus::Warned,
+                        output: ValidationStatus::Degraded,
+                        evidence: ValidationStatus::Warned,
+                        violation_reason_mask: 0,
+                    }),
+                    failure: CanonicalPipelineFailure {
+                        kind: CanonicalFailureKind::InvalidInput,
+                        stage: None,
+                        detail: "invalid request: t must be non-zero".to_string(),
+                    },
+                    world_stage: None,
+                    lfm_stage: None,
+                    nsr_stage: None,
+                    backend_id: None,
+                    budget_stage: None,
+                    diagnostics: None,
+                },
+            ));
+        }
+
+        let started_total = Instant::now();
+        let mut timing = CanonicalTimingSummary::default();
+        let mut global_meter = WorkMeter::new(budget.global_work_units);
+        let mut world_meter = WorkMeter::new(budget.world_units);
+        let mut sae_meter = WorkMeter::new(budget.sae_units);
+        let mut ssm_meter = WorkMeter::new(budget.ssm_units);
+        let mut lfm_meter = WorkMeter::new(budget.lfm_units);
+
+        let mut exceeded_stage: Option<&'static str> = None;
+        let mut executed_stages = Vec::with_capacity(CANONICAL_STAGE_SEQUENCE.len());
         let registry = StageContractRegistry;
         let requested = StageContractVersion::V1;
         let nsr_mode = NsrMode::from_env();
@@ -650,16 +733,26 @@ impl ComputePipelineBackend {
                 UnavailableResultContext {
                     validation_status: ValidationStatus::Degraded,
                     violation_reason_mask: 0,
+                    validation: Some(CanonicalValidationSummary {
+                        input: ValidationStatus::Ok,
+                        stage: ValidationStatus::Degraded,
+                        artifacts: ValidationStatus::Degraded,
+                        output: ValidationStatus::Degraded,
+                        evidence: ValidationStatus::Warned,
+                        violation_reason_mask: 0,
+                    }),
                     failure,
                     world_stage: Some(world_stage),
                     lfm_stage: None,
                     nsr_stage: Some(nsr_disabled_stage(nsr_slot.clone(), nsr_mode)),
                     backend_id: None,
                     budget_stage: None,
+                    diagnostics: None,
                 },
             ));
         }
 
+        let world_started = Instant::now();
         global_meter.spend(40, "world_model/step")?;
         world_meter.spend(40, "world_model/step")?;
         let mut world = self
@@ -690,6 +783,7 @@ impl ComputePipelineBackend {
                 UnavailableResultContext {
                     validation_status: ValidationStatus::Degraded,
                     violation_reason_mask: 1_u32 << (ViolationCode::BackendContractMismatch as u32),
+                    validation: None,
                     failure: CanonicalPipelineFailure {
                         kind,
                         stage: Some(CanonicalStageId::World),
@@ -714,6 +808,7 @@ impl ComputePipelineBackend {
                     nsr_stage: None,
                     backend_id: Some(pack_meta.world_backend as u16),
                     budget_stage: None,
+                    diagnostics: None,
                 },
             ));
         }
@@ -736,8 +831,9 @@ impl ComputePipelineBackend {
                         UnavailableResultContext {
                             validation_status: ValidationStatus::Degraded,
                             violation_reason_mask: 0,
+                            validation: None,
                             failure: CanonicalPipelineFailure {
-                                kind: CanonicalFailureKind::BudgetExceeded,
+                                kind: budget_failure_kind(stage),
                                 stage: Some(CanonicalStageId::World),
                                 detail: format!("world stage budget exceeded at {stage}"),
                             },
@@ -746,6 +842,7 @@ impl ComputePipelineBackend {
                             nsr_stage: None,
                             backend_id: None,
                             budget_stage: Some(stage),
+                            diagnostics: None,
                         },
                     ));
                 }
@@ -759,6 +856,7 @@ impl ComputePipelineBackend {
                     UnavailableResultContext {
                         validation_status: ValidationStatus::Degraded,
                         violation_reason_mask: 0,
+                        validation: None,
                         failure: classify_stage_execution_error(
                             CanonicalStageId::World,
                             other,
@@ -769,6 +867,7 @@ impl ComputePipelineBackend {
                         nsr_stage: None,
                         backend_id: Some(pack_meta.world_backend as u16),
                         budget_stage: None,
+                        diagnostics: None,
                     },
                 ));
             }
@@ -788,6 +887,7 @@ impl ComputePipelineBackend {
             ),
             detail: world_model_out.notes.first().cloned(),
         };
+        timing.world_micros = Some(world_started.elapsed().as_micros() as u64);
         drop(world);
         executed_stages.push(CanonicalStageId::World);
 
@@ -837,6 +937,7 @@ impl ComputePipelineBackend {
             metrics::counter!("ucf_world_degraded_total").increment(1);
         }
 
+        let sae_started = Instant::now();
         global_meter.spend(220, "sae/extract")?;
         let evidence_seed: [u8; 32] = Sha256::digest(input.context_digest).into();
         let sae_input =
@@ -860,6 +961,7 @@ impl ComputePipelineBackend {
                 UnavailableResultContext {
                     validation_status: validation_report.status,
                     violation_reason_mask: validation_report.violation_mask,
+                    validation: None,
                     failure: CanonicalPipelineFailure {
                         kind,
                         stage: Some(CanonicalStageId::Sae),
@@ -873,6 +975,7 @@ impl ComputePipelineBackend {
                     nsr_stage: None,
                     backend_id: Some(pack_meta.sae_backend as u16),
                     budget_stage: None,
+                    diagnostics: None,
                 },
             ));
         }
@@ -895,8 +998,9 @@ impl ComputePipelineBackend {
                             UnavailableResultContext {
                                 validation_status: ValidationStatus::Degraded,
                                 violation_reason_mask: 0,
+                                validation: None,
                                 failure: CanonicalPipelineFailure {
-                                    kind: CanonicalFailureKind::BudgetExceeded,
+                                    kind: budget_failure_kind(stage),
                                     stage: Some(CanonicalStageId::Sae),
                                     detail: format!("sae stage budget exceeded at {stage}"),
                                 },
@@ -905,6 +1009,7 @@ impl ComputePipelineBackend {
                                 nsr_stage: None,
                                 backend_id: None,
                                 budget_stage: Some(stage),
+                                diagnostics: None,
                             },
                         ));
                     }
@@ -918,6 +1023,7 @@ impl ComputePipelineBackend {
                         UnavailableResultContext {
                             validation_status: ValidationStatus::Degraded,
                             violation_reason_mask: validation_report.violation_mask,
+                            validation: None,
                             failure: classify_stage_execution_error(
                                 CanonicalStageId::Sae,
                                 other,
@@ -928,6 +1034,7 @@ impl ComputePipelineBackend {
                             nsr_stage: None,
                             backend_id: Some(pack_meta.sae_backend as u16),
                             budget_stage: None,
+                            diagnostics: None,
                         },
                     ));
                 }
@@ -942,8 +1049,9 @@ impl ComputePipelineBackend {
                         UnavailableResultContext {
                             validation_status: ValidationStatus::Degraded,
                             violation_reason_mask: 0,
+                            validation: None,
                             failure: CanonicalPipelineFailure {
-                                kind: CanonicalFailureKind::BudgetExceeded,
+                                kind: budget_failure_kind(stage),
                                 stage: Some(CanonicalStageId::Sae),
                                 detail: format!("sae stage budget exceeded at {stage}"),
                             },
@@ -952,6 +1060,7 @@ impl ComputePipelineBackend {
                             nsr_stage: None,
                             backend_id: None,
                             budget_stage: Some(stage),
+                            diagnostics: None,
                         },
                     ));
                 }
@@ -962,6 +1071,7 @@ impl ComputePipelineBackend {
 
         metrics::histogram!("ucf_sae_spike_count").record(f64::from(sae_out.spike_count));
         executed_stages.push(CanonicalStageId::Sae);
+        timing.sae_micros = Some(sae_started.elapsed().as_micros() as u64);
         validation_report = validation_report.merge(SaeValidatorV1::validate(&sae_input, &sae_out));
         metrics::gauge!("ucf_sae_sparsity").set(f64::from(sae_out.sparsity));
         metrics::histogram!("ucf_sae_energy").record(f64::from(sae_out.energy));
@@ -980,6 +1090,7 @@ impl ComputePipelineBackend {
             context_digest: input.context_digest,
         };
 
+        let ssm_started = Instant::now();
         global_meter.spend(220, "ssm/step")?;
         if !registry.supports(
             StageKind::Ssm,
@@ -1005,6 +1116,7 @@ impl ComputePipelineBackend {
                 UnavailableResultContext {
                     validation_status: validation_report.status,
                     violation_reason_mask: validation_report.violation_mask,
+                    validation: None,
                     failure: CanonicalPipelineFailure {
                         kind,
                         stage: Some(CanonicalStageId::Ssm),
@@ -1018,6 +1130,7 @@ impl ComputePipelineBackend {
                     nsr_stage: None,
                     backend_id: Some(pack_meta.ssm_backend as u16),
                     budget_stage: None,
+                    diagnostics: None,
                 },
             ));
         }
@@ -1044,8 +1157,9 @@ impl ComputePipelineBackend {
                             UnavailableResultContext {
                                 validation_status: ValidationStatus::Degraded,
                                 violation_reason_mask: 0,
+                                validation: None,
                                 failure: CanonicalPipelineFailure {
-                                    kind: CanonicalFailureKind::BudgetExceeded,
+                                    kind: budget_failure_kind(stage),
                                     stage: Some(CanonicalStageId::Ssm),
                                     detail: format!("ssm stage budget exceeded at {stage}"),
                                 },
@@ -1054,6 +1168,7 @@ impl ComputePipelineBackend {
                                 nsr_stage: None,
                                 backend_id: None,
                                 budget_stage: Some(stage),
+                                diagnostics: None,
                             },
                         ));
                     }
@@ -1067,6 +1182,7 @@ impl ComputePipelineBackend {
                         UnavailableResultContext {
                             validation_status: ValidationStatus::Degraded,
                             violation_reason_mask: validation_report.violation_mask,
+                            validation: None,
                             failure: classify_stage_execution_error(
                                 CanonicalStageId::Ssm,
                                 other,
@@ -1077,6 +1193,7 @@ impl ComputePipelineBackend {
                             nsr_stage: None,
                             backend_id: Some(pack_meta.ssm_backend as u16),
                             budget_stage: None,
+                            diagnostics: None,
                         },
                     ));
                 }
@@ -1091,8 +1208,9 @@ impl ComputePipelineBackend {
                         UnavailableResultContext {
                             validation_status: ValidationStatus::Degraded,
                             violation_reason_mask: 0,
+                            validation: None,
                             failure: CanonicalPipelineFailure {
-                                kind: CanonicalFailureKind::BudgetExceeded,
+                                kind: budget_failure_kind(stage),
                                 stage: Some(CanonicalStageId::Ssm),
                                 detail: format!("ssm stage budget exceeded at {stage}"),
                             },
@@ -1101,6 +1219,7 @@ impl ComputePipelineBackend {
                             nsr_stage: None,
                             backend_id: None,
                             budget_stage: Some(stage),
+                            diagnostics: None,
                         },
                     ));
                 }
@@ -1112,6 +1231,7 @@ impl ComputePipelineBackend {
         validation_report =
             validation_report.merge(SsmValidatorV1::validate(&ssm_input, &ssm_out, None));
         executed_stages.push(CanonicalStageId::Ssm);
+        timing.ssm_micros = Some(ssm_started.elapsed().as_micros() as u64);
         metrics::histogram!("ucf_ssm_pressure").record(f64::from(ssm_out.pressure));
         metrics::gauge!("ucf_ssm_state_norm").set(f64::from(ssm_out.state_norm));
         if ssm_out.quality == StageQuality::DegradedFallback {
@@ -1139,6 +1259,7 @@ impl ComputePipelineBackend {
             seed: budget.seed,
         };
 
+        let lfm_started = Instant::now();
         global_meter.spend(220, "lfm/step")?;
         let lfm_stage_disabled = pack_meta.lfm_backend == crate::BackendComponentId::Disabled;
         if !lfm_stage_disabled
@@ -1167,6 +1288,7 @@ impl ComputePipelineBackend {
                 UnavailableResultContext {
                     validation_status: validation_report.status,
                     violation_reason_mask: validation_report.violation_mask,
+                    validation: None,
                     failure: CanonicalPipelineFailure {
                         kind,
                         stage: Some(CanonicalStageId::Lfm),
@@ -1180,6 +1302,7 @@ impl ComputePipelineBackend {
                     nsr_stage: None,
                     backend_id: Some(pack_meta.lfm_backend as u16),
                     budget_stage: None,
+                    diagnostics: None,
                 },
             ));
         }
@@ -1206,7 +1329,7 @@ impl ComputePipelineBackend {
             let lfm_name = lfm.name();
             let lfm_span = tracing::info_span!("lfm.step", kernel = lfm_name, t = input.t);
             let _lfm_enter = lfm_span.enter();
-            let lfm_started = Instant::now();
+            let lfm_stage_started = Instant::now();
             let result = match lfm_meter.spend(220, "lfm/step") {
                 Ok(()) => match lfm.step(&lfm_input, budget) {
                     Ok(output) => (output, false, false),
@@ -1220,8 +1343,9 @@ impl ComputePipelineBackend {
                                 UnavailableResultContext {
                                     validation_status: ValidationStatus::Degraded,
                                     violation_reason_mask: 0,
+                                    validation: None,
                                     failure: CanonicalPipelineFailure {
-                                        kind: CanonicalFailureKind::BudgetExceeded,
+                                        kind: budget_failure_kind(stage),
                                         stage: Some(CanonicalStageId::Lfm),
                                         detail: format!("lfm stage budget exceeded at {stage}"),
                                     },
@@ -1230,6 +1354,7 @@ impl ComputePipelineBackend {
                                     nsr_stage: None,
                                     backend_id: None,
                                     budget_stage: Some(stage),
+                                    diagnostics: None,
                                 },
                             ));
                         }
@@ -1243,6 +1368,7 @@ impl ComputePipelineBackend {
                             UnavailableResultContext {
                                 validation_status: ValidationStatus::Degraded,
                                 violation_reason_mask: validation_report.violation_mask,
+                                validation: None,
                                 failure: classify_stage_execution_error(
                                     CanonicalStageId::Lfm,
                                     other,
@@ -1253,6 +1379,7 @@ impl ComputePipelineBackend {
                                 nsr_stage: None,
                                 backend_id: Some(pack_meta.lfm_backend as u16),
                                 budget_stage: None,
+                                diagnostics: None,
                             },
                         ));
                     }
@@ -1267,8 +1394,9 @@ impl ComputePipelineBackend {
                             UnavailableResultContext {
                                 validation_status: ValidationStatus::Degraded,
                                 violation_reason_mask: 0,
+                                validation: None,
                                 failure: CanonicalPipelineFailure {
-                                    kind: CanonicalFailureKind::BudgetExceeded,
+                                    kind: budget_failure_kind(stage),
                                     stage: Some(CanonicalStageId::Lfm),
                                     detail: format!("lfm stage budget exceeded at {stage}"),
                                 },
@@ -1277,6 +1405,7 @@ impl ComputePipelineBackend {
                                 nsr_stage: None,
                                 backend_id: None,
                                 budget_stage: Some(stage),
+                                diagnostics: None,
                             },
                         ));
                     }
@@ -1285,13 +1414,14 @@ impl ComputePipelineBackend {
                 Err(other) => return Err(other),
             };
             metrics::histogram!("ucf_lfm_ode_step_micros")
-                .record(lfm_started.elapsed().as_micros() as f64);
+                .record(lfm_stage_started.elapsed().as_micros() as f64);
             (result.0, result.1, result.2, lfm_name.to_string())
         };
         let plasticity_record = lfm_out.plasticity.clone();
         if !lfm_stage_disabled {
             executed_stages.push(CanonicalStageId::Lfm);
         }
+        timing.lfm_micros = Some(lfm_started.elapsed().as_micros() as u64);
 
         let lfm_backend_label = if lfm_name.contains("candle") {
             "candle"
@@ -1436,6 +1566,7 @@ impl ComputePipelineBackend {
                     UnavailableResultContext {
                         validation_status: ValidationStatus::Degraded,
                         violation_reason_mask: validation_report.violation_mask,
+                        validation: None,
                         failure: canonical_failure_for_nsr(
                             *kind,
                             format!("required nsr stage failed: {}", nsr_outcome.status.detail),
@@ -1445,6 +1576,7 @@ impl ComputePipelineBackend {
                         nsr_stage: Some(nsr_outcome.status.clone()),
                         backend_id: None,
                         budget_stage: None,
+                        diagnostics: None,
                     },
                 ));
             }
@@ -1562,18 +1694,50 @@ impl ComputePipelineBackend {
         }
         notes.sort();
 
-        let chain_report =
-            validate_evidence_chain_digest(&crate::evidence::EvidenceChain::from_compute(
-                &input,
-                &sae_out.spikes,
-                &risk_signal,
-                nsr_outcome.result.as_ref().ok().map(|result| result.digest),
-                nsr_outcome.status.state.as_u8(),
-                Some(sae_out.quality),
-                Some(ssm_out.quality),
-                Some(lfm_out.quality),
-            ));
+        let evidence_chain = crate::evidence::EvidenceChain::from_compute(
+            &input,
+            &sae_out.spikes,
+            &risk_signal,
+            nsr_outcome.result.as_ref().ok().map(|result| result.digest),
+            nsr_outcome.status.state.as_u8(),
+            Some(sae_out.quality),
+            Some(ssm_out.quality),
+            Some(lfm_out.quality),
+        );
+        let chain_report = validate_evidence_chain_digest(&evidence_chain);
         validation_report = validation_report.merge(chain_report);
+        timing.total_micros = started_total.elapsed().as_micros() as u64;
+
+        let validation = CanonicalValidationSummary {
+            input: ValidationStatus::Ok,
+            stage: validation_report.status,
+            artifacts: if first_artifact_failure(self.pack.model_slot_provenance()).is_some() {
+                ValidationStatus::Degraded
+            } else {
+                ValidationStatus::Ok
+            },
+            output: if quality == SignalQuality::DegradedFallback {
+                ValidationStatus::Warned
+            } else {
+                ValidationStatus::Ok
+            },
+            evidence: chain_report.status,
+            violation_reason_mask: validation_report.violation_mask,
+        };
+
+        let diagnostics = CanonicalRunDiagnostics {
+            timing,
+            work: CanonicalWorkSummary {
+                global_budget_units: budget.global_work_units,
+                global_remaining_units: global_meter.remaining(),
+                world_remaining_units: world_meter.remaining(),
+                sae_remaining_units: sae_meter.remaining(),
+                ssm_remaining_units: ssm_meter.remaining(),
+                lfm_remaining_units: lfm_meter.remaining(),
+                budget_exceeded_stage: exceeded_stage,
+            },
+            evidence_chain_digest_prefix: Some(evidence_chain.digest_prefix_hex()),
+        };
 
         let mut state = CanonicalPipelineState::Ok;
         let mut failure = None;
@@ -1645,6 +1809,8 @@ impl ComputePipelineBackend {
             failure,
             validation_status: signals.validation_status,
             violation_reason_mask: signals.violation_reason_mask,
+            validation,
+            diagnostics,
             world_stage,
             lfm_stage,
             nsr_stage: nsr_outcome.status,
@@ -1670,6 +1836,22 @@ impl ComputePipelineBackend {
         signals
             .notes
             .push(format!("pipeline_failure={:?}", ctx.failure.kind).to_ascii_lowercase());
+        let validation = ctx
+            .validation
+            .unwrap_or_else(CanonicalValidationSummary::unavailable);
+        let diagnostics = ctx.diagnostics.unwrap_or(CanonicalRunDiagnostics {
+            timing: CanonicalTimingSummary::default(),
+            work: CanonicalWorkSummary {
+                global_budget_units: budget.global_work_units,
+                global_remaining_units: budget.global_work_units,
+                world_remaining_units: budget.world_units,
+                sae_remaining_units: budget.sae_units,
+                ssm_remaining_units: budget.ssm_units,
+                lfm_remaining_units: budget.lfm_units,
+                budget_exceeded_stage: ctx.budget_stage,
+            },
+            evidence_chain_digest_prefix: None,
+        });
         CanonicalPipelineResult {
             request: input.clone(),
             stage_order: CANONICAL_STAGE_SEQUENCE,
@@ -1679,6 +1861,8 @@ impl ComputePipelineBackend {
             failure: Some(ctx.failure),
             validation_status: ctx.validation_status,
             violation_reason_mask: ctx.violation_reason_mask,
+            validation,
+            diagnostics,
             world_stage: ctx
                 .world_stage
                 .unwrap_or_else(|| world_stage_from_slots(self.pack.model_slot_provenance())),
@@ -1899,6 +2083,14 @@ fn classify_stage_execution_error(
     }
 }
 
+fn budget_failure_kind(stage: &'static str) -> CanonicalFailureKind {
+    if stage.contains("timeout") {
+        CanonicalFailureKind::Timeout
+    } else {
+        CanonicalFailureKind::BudgetExceeded
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[cfg(feature = "compute-burn")]
@@ -2033,18 +2225,25 @@ mod tests {
     }
 
     #[test]
-    fn invalid_input_remains_hard_execution_error() {
+    fn invalid_input_is_structured_unavailable() {
         let backend = ComputePipelineBackend::stub();
         let invalid = ComputeInput {
             frame_id: FrameId(7),
             t: 0,
             context_digest: [9; 32],
         };
-        let result = backend.compute_canonical(CanonicalPipelineRequest {
-            input: invalid,
-            budget: ComputeBudget::default(),
-        });
-        assert!(matches!(result, Err(ComputeError::InvalidInput { .. })));
+        let result = backend
+            .compute_canonical(CanonicalPipelineRequest {
+                input: invalid,
+                budget: ComputeBudget::default(),
+            })
+            .expect("canonical compute");
+        assert_eq!(result.state, CanonicalPipelineState::Unavailable);
+        assert_eq!(
+            result.failure.expect("failure").kind,
+            CanonicalFailureKind::InvalidInput
+        );
+        assert_eq!(result.validation.input, ValidationStatus::Degraded);
     }
 
     #[test]
@@ -2090,6 +2289,25 @@ mod tests {
     }
 
     #[test]
+    fn artifact_incompatible_is_classified() {
+        let slots = vec![ModelSlotProvenance {
+            slot: ModelSlot::Lfm,
+            stage: "lfm",
+            required_for_pack: true,
+            status: SlotRuntimeStatus::Incompatible,
+            code: Some(ArtifactFailureCode::ArtifactIncompatible),
+            detail: Some("slot incompatible with runtime".to_string()),
+            resolved_path: None,
+            hash_prefix: None,
+            contract_version: Some("v9".to_string()),
+            format: None,
+        }];
+        let failure = first_artifact_failure(&slots).expect("failure");
+        assert_eq!(failure.kind, CanonicalFailureKind::ArtifactIncompatible);
+        assert_eq!(failure.stage, Some(CanonicalStageId::Lfm));
+    }
+
+    #[test]
     fn canonical_result_contains_world_stage_provenance() {
         let backend = ComputePipelineBackend::stub();
         let result = backend
@@ -2105,6 +2323,12 @@ mod tests {
             result.world_stage.readiness,
             WorldStageReadiness::ContractReady | WorldStageReadiness::RuntimePathReady
         ));
+        assert!(result.diagnostics.timing.total_micros > 0);
+        assert_eq!(
+            result.validation.violation_reason_mask,
+            result.violation_reason_mask
+        );
+        assert!(result.diagnostics.evidence_chain_digest_prefix.is_some());
     }
 
     #[test]
