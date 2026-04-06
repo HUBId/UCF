@@ -55,7 +55,10 @@ pub use backend_pack::{
     BackendPackId, BackendPackKind, BackendPackMeta, BackendSwapRequest, FixtureId, FixtureManager,
     ModelSlotProvenance, SlotRuntimeStatus,
 };
-pub use backends::{build_backend, ComputeBackendConfig, ComputeBackendKind};
+pub use backends::{
+    build_backend, build_onboarding_reference_backend, ComputeBackendConfig, ComputeBackendKind,
+    CANONICAL_ONBOARDING_BACKEND, CANONICAL_ONBOARDING_PACK,
+};
 pub use contracts::{StageContractVersion, ValidationStatus};
 pub use enablement::{
     EnablementComputeBackend, EnablementConfig, RealEnablementMode, SlotEnablement, SlotMode,

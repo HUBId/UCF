@@ -2296,6 +2296,7 @@ mod tests {
                 CanonicalStageId::Lfm
             ]
         );
+        assert_eq!(result.stage_order, CANONICAL_STAGE_SEQUENCE);
         assert_eq!(
             result.route.world_backend,
             crate::BackendComponentId::BurnJepaV1 as u8
@@ -2317,6 +2318,23 @@ mod tests {
             result.lfm_stage.readiness,
             LfmStageReadiness::RuntimePathReady
         );
+        assert_eq!(result.nsr_stage.state, NsrStageState::Disabled);
+        assert!(!result.nsr_stage.used);
+        assert!(result.model_slots.iter().any(
+            |slot| slot.slot == ModelSlot::WorldJepa && slot.status == SlotRuntimeStatus::Used
+        ));
+        assert!(result
+            .model_slots
+            .iter()
+            .any(|slot| slot.slot == ModelSlot::Sae && slot.status == SlotRuntimeStatus::Used));
+        assert!(result
+            .model_slots
+            .iter()
+            .any(|slot| slot.slot == ModelSlot::Ssm && slot.status == SlotRuntimeStatus::Used));
+        assert!(result
+            .model_slots
+            .iter()
+            .any(|slot| slot.slot == ModelSlot::Lfm && slot.status == SlotRuntimeStatus::Used));
         assert_eq!(result.lfm_stage.runtime, "burn_lfm_liquid_scalar_v1");
         assert!(!result
             .signals
