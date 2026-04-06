@@ -13,6 +13,7 @@ The service core wraps the existing canonical `CanonicalPipelineRequest -> canon
 - in-memory queue + lifecycle event log,
 - bounded local scheduler cycle (`run_scheduler_cycle`) with configurable dispatch capacity,
 - local canonical execution path and worker IPC-backed execution path (`new_worker`),
+- optional multi-worker execution registry (`MultiWorkerComputeService`) for explicit local vs secondary-worker placement,
 - minimal technical job accounting summary (`JobAccountingSummary`) attached to each `JobRecord`.
 
 No distributed orchestration, persistence, billing/tenant policy, governance scoring, quota economy, or monitoring platform is introduced here.
@@ -37,6 +38,13 @@ Execution always goes through `ComputePipelineBackend::compute_canonical`; the s
 - `JobExecutionPath::WorkerIpc`: canonical pipeline backed by worker pack components (worker spawn + IPC transport in `worker_backend`).
 
 Both paths preserve the same `CanonicalPipelineResult` / `CanonicalPipelineFailure` surface.
+
+`MultiWorkerComputeService` extends this with a thin execution-unit registry:
+- `ExecutionUnitKind::Local` and `ExecutionUnitKind::Worker`,
+- deterministic worker ids (`ExecutionUnitId`) and explicit availability (`available` / `unavailable`),
+- optional per-job placement hint (`requested_unit`) with deterministic fallback to round-robin selection.
+
+The worker side still executes the same canonical pipeline contract (`CanonicalPipelineRequest -> CanonicalPipelineResult`), including the same stage-order and failure-kind semantics.
 
 ## Technical accounting surface (job-level, non-billing)
 
@@ -67,6 +75,13 @@ Terminal mapping stays lifecycle-native and reuses canonical fault taxonomy:
 - `worker_ipc_failure`: worker/IPC execution-path failure classified as execution error.
 
 Worker launch/IPC transport errors are surfaced as structured execution failures (`CanonicalFailureKind::ExecutionError`) and remain linked to execution-path provenance in lifecycle events.
+
+For multi-worker execution, dispatch outcome is classified with a single linked surface:
+- `unavailable`,
+- `dispatch_failure`,
+- `execution_failure`,
+- `timeout`,
+- `completed`.
 
 ## Canonical job lifecycle states
 
