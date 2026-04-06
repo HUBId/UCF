@@ -5,6 +5,9 @@ use crate::{
     RealEnablementMode,
 };
 
+pub const CANONICAL_ONBOARDING_BACKEND: ComputeBackendKind = ComputeBackendKind::Burn;
+pub const CANONICAL_ONBOARDING_PACK: BackendPackKind = BackendPackKind::BurnToyV1;
+
 #[cfg(feature = "compute-candle")]
 mod candle_backend;
 
@@ -221,6 +224,20 @@ pub fn build_backend(
     )))
 }
 
+pub fn build_onboarding_reference_backend(
+    seed: u64,
+) -> Result<ComputePipelineBackend, ComputeError> {
+    let pack = BackendPackFactory::build(BackendPackConfig {
+        pack: CANONICAL_ONBOARDING_PACK,
+        seed,
+    })?;
+    Ok(ComputePipelineBackend::new(
+        pack,
+        FusionConfig::default(),
+        LimitsConfig::default(),
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -329,6 +346,35 @@ mod tests {
                 Err(ComputeError::BackendDisabled) => {}
                 Err(other) => panic!("unexpected burn compute error: {other:?}"),
             }
+        }
+    }
+
+    #[test]
+    fn onboarding_reference_profile_is_pinned_to_burn_pack() {
+        assert_eq!(CANONICAL_ONBOARDING_BACKEND, ComputeBackendKind::Burn);
+        assert_eq!(CANONICAL_ONBOARDING_PACK, BackendPackKind::BurnToyV1);
+    }
+
+    #[test]
+    fn onboarding_reference_backend_build_state_is_honest() {
+        let _lock = crate::test_env::env_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _env = crate::test_env::clear_model_env_overrides();
+
+        let result = build_onboarding_reference_backend(7);
+        #[cfg(all(feature = "compute-burn", feature = "lfm-burn"))]
+        {
+            if let Ok(backend) = result {
+                assert!(backend.name().contains("compute_pipeline"));
+            }
+        }
+        #[cfg(not(all(feature = "compute-burn", feature = "lfm-burn")))]
+        {
+            assert!(matches!(
+                result,
+                Err(ComputeError::BackendDisabled) | Err(ComputeError::InvalidInput { .. })
+            ));
         }
     }
 

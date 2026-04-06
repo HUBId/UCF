@@ -21,15 +21,22 @@ The top-level runtime contract stays `AiComputeBackend`, but concrete backends a
 - `candle` (`--features compute-candle`): `BackendPackKind::CandleToyV1`
 - `burn` (`--features compute-burn,backend-burn`): `BackendPackKind::BurnToyV1`
 
-### Burn canonical lane (current honest scope)
+### Canonical onboarding lane (single reference path)
 
-- Real verified slots required for the minimal path: `world_jepa`, `sae`, `ssm` (`format = "burn"`).
-- Real stage execution path: `World -> SAE -> SSM`.
-- LFM is currently **explicitly disabled** in the Burn pack metadata (no silent mock substitution in canonical path).
-- Canonical compute result reports:
-  - configured stage order and actually executed stages,
-  - backend route (`world/sae/ssm/lfm` component ids),
-  - model slot provenance and structured failure kind.
+- The canonical onboarding entrypoint is now pinned to Burn via
+  `build_onboarding_reference_backend` (`CANONICAL_ONBOARDING_PACK = BurnToyV1`).
+- Canonical request/result/failure contract stays:
+  `CanonicalPipelineRequest -> ComputePipelineBackend::compute_canonical -> CanonicalPipelineResult|CanonicalPipelineFailure`.
+- Canonical stage sequence is fixed as `World -> SAE -> SSM -> LFM`
+  (`CANONICAL_STAGE_SEQUENCE`), with honest runtime state per stage:
+  - required productive core: `World`, `SAE`, `SSM`;
+  - `LFM` runs when Burn LFM runtime is enabled (`lfm-burn`), otherwise backend init is
+    explicitly blocked (`BackendDisabled`) — no silent fallback lane.
+- `NSR` remains an optional attachment and is surfaced explicitly in `CanonicalPipelineResult.nsr_stage`
+  (`disabled`, `used`, `contract_mismatch`, `verification_failed`, etc.).
+- `Candle` remains a compatibility seam and is **not** a second onboarding default path.
+
+See also `docs/compute_onboarding_reference_path.md` for the compact readiness matrix.
 
 ## Backend selection (runtime)
 
