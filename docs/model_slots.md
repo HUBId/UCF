@@ -122,3 +122,36 @@ Canonical pipeline failures map these slot outcomes into explicit failure kinds:
 - `backend_disabled`
 - `stage_contract_mismatch`
 - `degraded_fallback`
+
+## Canonical pack/slot lifecycle (runtime-facing)
+
+`ucf-compute` keeps one canonical slot path and classifies it deterministically:
+
+- `disabled`: slot disabled by manifest/env.
+- `discovered`: slot enabled but artifact path is unavailable.
+- `verified`: artifact path is present but failed verification constraints (hash/max/path).
+- `active`: promoted artifact hash resolved + verified + compatible with selected pack/contract.
+- `incompatible`: artifact verified, but format or `contract_version` is not pack-compatible.
+
+Primary activation is always promoted-hash based (`active_hash` or `UCF_MODEL_PIN_<SLOT>`).
+`ModelStore::plan_slot_activation(...)` validates the activation intent explicitly (slot, hash, contract compatibility, pin conflicts) before use.
+
+Diagnostic side paths are intentionally non-primary:
+
+- `UCF_MODEL_CANDIDATE_<SLOT>`
+- `UCF_MODEL_COMPARE_<SLOT>`
+- `UCF_MODEL_SHADOW_<SLOT>`
+
+They are surfaced in slot provenance detail strings (hash prefixes + slot mode), but must not replace the primary active path implicitly.
+
+## Activation / promotion failure classes (runtime mapping)
+
+Activation planning distinguishes:
+
+- artifact not verified (`artifact_not_verified`)
+- incompatible pack/contract/backend (`incompatible_pack_contract_backend`)
+- activation rejected (`activation_rejected`, e.g. pin conflict)
+- active slot missing (`active_slot_missing`)
+- compare/shadow path unavailable (`compare_shadow_path_unavailable`)
+
+Pipeline admission/failure mapping continues to use the existing canonical runtime failure taxonomy (`artifact_unavailable`, `artifact_verification_failed`, `artifact_incompatible`, etc.).

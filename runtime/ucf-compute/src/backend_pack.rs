@@ -736,7 +736,11 @@ fn resolve_slot_provenance(store: &ModelStore, pack: BackendPackKind) -> Vec<Mod
                     required_for_pack: required_slots_for_pack(pack).contains(&slot),
                     status: SlotRuntimeStatus::Disabled,
                     code: Some(ArtifactFailureCode::Disabled),
-                    detail: Some("slot missing from manifest spec map".to_string()),
+                    detail: Some(lifecycle_detail(
+                        slot,
+                        "disabled",
+                        Some("slot missing from manifest spec map"),
+                    )),
                     resolved_path: None,
                     hash_prefix: None,
                     contract_version: None,
@@ -750,7 +754,11 @@ fn resolve_slot_provenance(store: &ModelStore, pack: BackendPackKind) -> Vec<Mod
                     required_for_pack: required_slots_for_pack(pack).contains(&slot),
                     status: SlotRuntimeStatus::Disabled,
                     code: Some(ArtifactFailureCode::Disabled),
-                    detail: Some("slot disabled by manifest/env".to_string()),
+                    detail: Some(lifecycle_detail(
+                        slot,
+                        "disabled",
+                        Some("slot disabled by manifest/env"),
+                    )),
                     resolved_path: None,
                     hash_prefix: None,
                     contract_version: spec.contract_version.clone(),
@@ -765,13 +773,31 @@ fn resolve_slot_provenance(store: &ModelStore, pack: BackendPackKind) -> Vec<Mod
                         spec.format,
                         spec.contract_version.as_deref(),
                     );
+                    let activation_note = selected_hash_for_slot(slot, spec)
+                        .and_then(|hash| {
+                            store
+                                .plan_slot_activation(slot, &hash, spec.contract_version.as_deref())
+                                .err()
+                        })
+                        .map(|err| format!("activation={err:?}"));
                     ModelSlotProvenance {
                         slot,
                         stage: expected_stage_for_slot(slot),
                         required_for_pack: required_slots_for_pack(pack).contains(&slot),
                         status,
                         code,
-                        detail,
+                        detail: Some(lifecycle_detail(
+                            slot,
+                            if status == SlotRuntimeStatus::Used {
+                                "active"
+                            } else {
+                                "incompatible"
+                            },
+                            detail
+                                .as_deref()
+                                .or(activation_note.as_deref())
+                                .or(Some("slot verified")),
+                        )),
                         resolved_path: Some(verified.path.display().to_string()),
                         hash_prefix: Some(hex::encode(&verified.sha256[..6])),
                         contract_version: verified.contract_version.clone(),
@@ -786,7 +812,17 @@ fn resolve_slot_provenance(store: &ModelStore, pack: BackendPackKind) -> Vec<Mod
                         required_for_pack: required_slots_for_pack(pack).contains(&slot),
                         status,
                         code: Some(code),
-                        detail: Some(detail),
+                        detail: Some(lifecycle_detail(
+                            slot,
+                            match status {
+                                SlotRuntimeStatus::Disabled => "disabled",
+                                SlotRuntimeStatus::Unavailable => "discovered",
+                                SlotRuntimeStatus::VerificationFailed => "verified",
+                                SlotRuntimeStatus::Incompatible => "incompatible",
+                                SlotRuntimeStatus::Used => "active",
+                            },
+                            Some(detail.as_str()),
+                        )),
                         resolved_path: None,
                         hash_prefix: None,
                         contract_version: spec.contract_version.clone(),
@@ -796,6 +832,46 @@ fn resolve_slot_provenance(store: &ModelStore, pack: BackendPackKind) -> Vec<Mod
             }
         })
         .collect()
+}
+
+fn selected_hash_for_slot(slot: ModelSlot, spec: &crate::ModelSlotSpec) -> Option<String> {
+    std::env::var(format!("UCF_MODEL_PIN_{}", slot.env_key()))
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+        .or_else(|| spec.active_hash.clone())
+}
+
+fn lifecycle_detail(slot: ModelSlot, state: &str, base: Option<&str>) -> String {
+    let pin = std::env::var(format!("UCF_MODEL_PIN_{}", slot.env_key())).ok();
+    let candidate = std::env::var(format!("UCF_MODEL_CANDIDATE_{}", slot.env_key())).ok();
+    let compare = std::env::var(format!("UCF_MODEL_COMPARE_{}", slot.env_key())).ok();
+    let shadow = std::env::var(format!("UCF_MODEL_SHADOW_{}", slot.env_key())).ok();
+    let slot_mode = std::env::var(format!("UCF_SLOT_{}_MODE", slot.env_key()))
+        .ok()
+        .unwrap_or_else(|| "toy".to_string());
+    let mut parts = Vec::with_capacity(7);
+    parts.push(base.unwrap_or("slot resolved").to_string());
+    parts.push(format!("state={state}"));
+    parts.push(format!(
+        "selector={}",
+        if pin.as_deref().is_some_and(|v| !v.trim().is_empty()) {
+            "pin"
+        } else {
+            "active_hash"
+        }
+    ));
+    parts.push(format!("slot_mode={slot_mode}"));
+    parts.push(format!("candidate={}", hash_prefix(candidate.as_deref())));
+    parts.push(format!("compare={}", hash_prefix(compare.as_deref())));
+    parts.push(format!("shadow={}", hash_prefix(shadow.as_deref())));
+    parts.join("; ")
+}
+
+fn hash_prefix(hash: Option<&str>) -> String {
+    hash.map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+        .map(|v| v.chars().take(12).collect::<String>())
+        .unwrap_or_else(|| "none".to_string())
 }
 
 fn check_slot_compatibility(
@@ -1161,6 +1237,10 @@ mod tests {
 
     #[test]
     fn provenance_marks_valid_required_slot_as_used() {
+        let _guard = crate::test_env::env_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _env = crate::test_env::clear_model_env_overrides();
         let temp = tempfile::tempdir().expect("tempdir");
         let models = temp.path().join("models");
         fs::create_dir_all(&models).expect("models dir");
@@ -1193,6 +1273,54 @@ mod tests {
         assert!(world.required_for_pack);
         assert_eq!(world.status, SlotRuntimeStatus::Used);
         assert!(world.hash_prefix.is_some());
+        let detail = world.detail.as_deref().expect("detail");
+        assert!(detail.contains("state=active"));
+        assert!(detail.contains("selector=active_hash"));
+    }
+
+    #[test]
+    fn compare_or_shadow_diagnostic_hash_does_not_block_primary_slot() {
+        let _guard = crate::test_env::env_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _env = crate::test_env::clear_model_env_overrides();
+        let temp = tempfile::tempdir().expect("tempdir");
+        let models = temp.path().join("models");
+        fs::create_dir_all(&models).expect("models dir");
+        let bytes = b"world-jepa";
+        let hash = hex::encode(Sha256::digest(bytes));
+        let model_path = models
+            .join("promoted")
+            .join("world_jepa")
+            .join(&hash)
+            .join("model.safetensors");
+        fs::create_dir_all(model_path.parent().expect("parent")).expect("mkdirs");
+        fs::write(&model_path, bytes).expect("write");
+        std::env::set_var(
+            "UCF_MODEL_COMPARE_WORLD_JEPA",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        );
+        let manifest_path = temp.path().join("manifest.toml");
+        fs::write(
+            &manifest_path,
+            format!(
+                "allowlist_root = '{}'\n[slots.world_jepa]\nenabled = true\nexpected_sha256 = \"{}\"\nactive_hash = \"{}\"\nformat = \"burn\"\ncontract_version = \"v1\"\n",
+                models.display(),
+                hash,
+                hash
+            ),
+        )
+        .expect("manifest");
+        let store = ModelStore::from_manifest_and_env(&manifest_path).expect("store");
+        let provenance = resolve_slot_provenance(&store, BackendPackKind::BurnToyV1);
+        let world = provenance
+            .iter()
+            .find(|entry| entry.slot == ModelSlot::WorldJepa)
+            .expect("world slot");
+        assert_eq!(world.status, SlotRuntimeStatus::Used);
+        let detail = world.detail.as_deref().expect("detail");
+        assert!(detail.contains("compare=aaaaaaaaaaaa"));
+        std::env::remove_var("UCF_MODEL_COMPARE_WORLD_JEPA");
     }
 
     #[test]

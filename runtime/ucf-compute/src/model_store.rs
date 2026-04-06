@@ -122,6 +122,53 @@ pub enum ModelLoadError {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SlotTargetState {
+    Discovered,
+    Verified,
+    Active,
+    Candidate,
+    Compare,
+    Shadow,
+    Disabled,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ModelActivationError {
+    ArtifactNotVerified {
+        slot: ModelSlot,
+        hash: String,
+        reason: ModelLoadError,
+    },
+    IncompatiblePackContractBackend {
+        slot: ModelSlot,
+        expected_contract_version: Option<String>,
+        requested_contract_version: Option<String>,
+    },
+    ActivationRejected {
+        slot: ModelSlot,
+        reason: String,
+    },
+    ActiveSlotMissing {
+        slot: ModelSlot,
+    },
+    CompareShadowPathUnavailable {
+        slot: ModelSlot,
+        path_kind: SlotTargetState,
+        reason: ModelLoadError,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct SlotActivationPlan {
+    pub slot: ModelSlot,
+    pub target_hash: String,
+    pub target_state: SlotTargetState,
+    pub selected_via: String,
+    pub contract_version: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VerifiedModelSlot {
     pub slot: ModelSlot,
@@ -355,6 +402,122 @@ impl ModelStore {
             }
         }
         hasher.finalize().into()
+    }
+
+    pub fn plan_slot_activation(
+        &self,
+        slot: ModelSlot,
+        target_hash: &str,
+        requested_contract_version: Option<&str>,
+    ) -> Result<SlotActivationPlan, ModelActivationError> {
+        let Some(spec) = self.specs.get(&slot) else {
+            return Err(ModelActivationError::ActiveSlotMissing { slot });
+        };
+        if !spec.enabled {
+            return Err(ModelActivationError::ActivationRejected {
+                slot,
+                reason: "slot disabled by manifest/env".to_string(),
+            });
+        }
+        let target_hash = target_hash.trim();
+        if parse_hash(target_hash) == [0; 32] {
+            return Err(ModelActivationError::ActivationRejected {
+                slot,
+                reason: "target hash must be 64 hex chars".to_string(),
+            });
+        }
+        if std::env::var(format!("UCF_MODEL_PIN_{}", slot.env_key()))
+            .ok()
+            .as_deref()
+            .is_some_and(|pin| !pin.trim().is_empty() && pin.trim() != target_hash)
+        {
+            return Err(ModelActivationError::ActivationRejected {
+                slot,
+                reason: "pin override conflicts with requested activation hash".to_string(),
+            });
+        }
+
+        self.verify_promoted_hash(slot, target_hash)
+            .map_err(|reason| ModelActivationError::ArtifactNotVerified {
+                slot,
+                hash: target_hash.to_string(),
+                reason,
+            })?;
+        self.ensure_optional_path_verified(slot, SlotTargetState::Compare)?;
+        self.ensure_optional_path_verified(slot, SlotTargetState::Shadow)?;
+
+        let expected_contract_version = spec.contract_version.clone();
+        if let Some(requested) = requested_contract_version {
+            if expected_contract_version
+                .as_deref()
+                .is_some_and(|v| v != requested)
+            {
+                return Err(ModelActivationError::IncompatiblePackContractBackend {
+                    slot,
+                    expected_contract_version,
+                    requested_contract_version: Some(requested.to_string()),
+                });
+            }
+        }
+
+        Ok(SlotActivationPlan {
+            slot,
+            target_hash: target_hash.to_string(),
+            target_state: SlotTargetState::Active,
+            selected_via: if std::env::var(format!("UCF_MODEL_PIN_{}", slot.env_key())).is_ok() {
+                "pin_override".to_string()
+            } else {
+                "active_hash".to_string()
+            },
+            contract_version: requested_contract_version
+                .map(ToOwned::to_owned)
+                .or(expected_contract_version),
+        })
+    }
+
+    fn ensure_optional_path_verified(
+        &self,
+        slot: ModelSlot,
+        path_kind: SlotTargetState,
+    ) -> Result<(), ModelActivationError> {
+        let env_key = match path_kind {
+            SlotTargetState::Compare => format!("UCF_MODEL_COMPARE_{}", slot.env_key()),
+            SlotTargetState::Shadow => format!("UCF_MODEL_SHADOW_{}", slot.env_key()),
+            _ => return Ok(()),
+        };
+        let Some(hash) = std::env::var(env_key).ok().map(|v| v.trim().to_string()) else {
+            return Ok(());
+        };
+        self.verify_promoted_hash(slot, &hash).map_err(|reason| {
+            ModelActivationError::CompareShadowPathUnavailable {
+                slot,
+                path_kind,
+                reason,
+            }
+        })?;
+        Ok(())
+    }
+
+    fn verify_promoted_hash(&self, slot: ModelSlot, hash: &str) -> Result<(), ModelLoadError> {
+        let Some(spec) = self.specs.get(&slot) else {
+            return Err(ModelLoadError::Disabled);
+        };
+        let mut scoped = spec.clone();
+        scoped.path = Some(PathBuf::from(format!(
+            "promoted/{}/{}/model.safetensors",
+            slot.as_str(),
+            hash.trim()
+        )));
+        scoped.active_hash = None;
+        scoped.expected_sha256 = parse_hash(hash);
+
+        let mut scratch_specs = self.specs.clone();
+        scratch_specs.insert(slot, scoped);
+        let store = Self {
+            allowlist_root: self.allowlist_root.clone(),
+            specs: scratch_specs,
+        };
+        store.verify_slot(slot).map(|_| ())
     }
 }
 
@@ -661,5 +824,102 @@ enabled = false
             PathBuf::from("lower_models"),
             "lowercase manifest file must be honored"
         );
+    }
+
+    #[test]
+    fn plan_slot_activation_accepts_verified_promoted_hash() {
+        let _lock = crate::test_env::env_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        std::env::remove_var("UCF_MODEL_COMPARE_WORLD_JEPA");
+        std::env::remove_var("UCF_MODEL_SHADOW_WORLD_JEPA");
+        let temp = tempfile::tempdir().expect("tempdir");
+        let models = temp.path().join("models");
+        fs::create_dir_all(&models).expect("models");
+        let bytes = b"verified-model";
+        let hash = hex::encode(Sha256::digest(bytes));
+        let model_path = models
+            .join("promoted")
+            .join("world_jepa")
+            .join(&hash)
+            .join("model.safetensors");
+        fs::create_dir_all(model_path.parent().expect("parent")).expect("mkdirs");
+        fs::write(&model_path, bytes).expect("write");
+
+        let mut specs = BTreeMap::new();
+        specs.insert(
+            ModelSlot::WorldJepa,
+            ModelSlotSpec {
+                slot: ModelSlot::WorldJepa,
+                enabled: true,
+                path: None,
+                expected_sha256: parse_hash(&hash),
+                max_bytes: 1024,
+                format: ModelFormat::Burn,
+                device: ModelDevice::CpuOnly,
+                active_hash: Some(hash.clone()),
+                contract_version: Some("v1".to_string()),
+            },
+        );
+        let store = ModelStore {
+            allowlist_root: models,
+            specs,
+        };
+
+        let plan = store
+            .plan_slot_activation(ModelSlot::WorldJepa, &hash, Some("v1"))
+            .expect("activation plan");
+        assert_eq!(plan.slot, ModelSlot::WorldJepa);
+        assert_eq!(plan.target_state, SlotTargetState::Active);
+        assert_eq!(plan.target_hash, hash);
+    }
+
+    #[test]
+    fn plan_slot_activation_rejects_incompatible_contract_version() {
+        let _lock = crate::test_env::env_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        std::env::remove_var("UCF_MODEL_COMPARE_SAE");
+        std::env::remove_var("UCF_MODEL_SHADOW_SAE");
+        let temp = tempfile::tempdir().expect("tempdir");
+        let models = temp.path().join("models");
+        fs::create_dir_all(&models).expect("models");
+        let bytes = b"verified-model";
+        let hash = hex::encode(Sha256::digest(bytes));
+        let model_path = models
+            .join("promoted")
+            .join("sae")
+            .join(&hash)
+            .join("model.safetensors");
+        fs::create_dir_all(model_path.parent().expect("parent")).expect("mkdirs");
+        fs::write(&model_path, bytes).expect("write");
+
+        let mut specs = BTreeMap::new();
+        specs.insert(
+            ModelSlot::Sae,
+            ModelSlotSpec {
+                slot: ModelSlot::Sae,
+                enabled: true,
+                path: None,
+                expected_sha256: parse_hash(&hash),
+                max_bytes: 1024,
+                format: ModelFormat::Burn,
+                device: ModelDevice::CpuOnly,
+                active_hash: Some(hash.clone()),
+                contract_version: Some("v2".to_string()),
+            },
+        );
+        let store = ModelStore {
+            allowlist_root: models,
+            specs,
+        };
+
+        let err = store
+            .plan_slot_activation(ModelSlot::Sae, &hash, Some("v1"))
+            .expect_err("must reject");
+        assert!(matches!(
+            err,
+            ModelActivationError::IncompatiblePackContractBackend { .. }
+        ));
     }
 }
