@@ -2700,6 +2700,14 @@ mod tests {
         assert!(result.model_slots.iter().any(
             |slot| slot.slot == ModelSlot::WorldJepa && slot.status == SlotRuntimeStatus::Used
         ));
+        let world_detail = result
+            .model_slots
+            .iter()
+            .find(|slot| slot.slot == ModelSlot::WorldJepa)
+            .and_then(|slot| slot.detail.as_deref())
+            .expect("world slot detail");
+        assert!(world_detail.contains("state=active"));
+        assert!(world_detail.contains("selector=active_hash"));
         assert!(result
             .model_slots
             .iter()
