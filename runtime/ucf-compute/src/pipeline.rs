@@ -264,6 +264,12 @@ pub struct CanonicalPipelineRequest {
     pub budget: ComputeBudget,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CanonicalAdmissionDecision {
+    pub route: CanonicalBackendRoute,
+    pub failure: Option<CanonicalPipelineFailure>,
+}
+
 struct UnavailableResultContext {
     validation_status: ValidationStatus,
     violation_reason_mask: u32,
@@ -665,6 +671,153 @@ impl AiComputeBackend for ComputePipelineBackend {
 }
 
 impl ComputePipelineBackend {
+    pub fn technical_admission(
+        &self,
+        request: &CanonicalPipelineRequest,
+    ) -> CanonicalAdmissionDecision {
+        let input = &request.input;
+        let budget = request.budget;
+        let pack_meta = self.pack.meta();
+        let route = CanonicalBackendRoute {
+            pack_id: pack_meta.pack_id.0,
+            world_backend: pack_meta.world_backend as u8,
+            sae_backend: pack_meta.sae_backend as u8,
+            ssm_backend: pack_meta.ssm_backend as u8,
+            lfm_backend: pack_meta.lfm_backend as u8,
+        };
+
+        if input.t == 0 {
+            return CanonicalAdmissionDecision {
+                route,
+                failure: Some(CanonicalPipelineFailure {
+                    kind: CanonicalFailureKind::InvalidInput,
+                    stage: None,
+                    detail: "invalid request: t must be non-zero".to_string(),
+                }),
+            };
+        }
+        if budget.max_micros == 0 || budget.hard_timeout_micros == 0 {
+            return CanonicalAdmissionDecision {
+                route,
+                failure: Some(CanonicalPipelineFailure {
+                    kind: CanonicalFailureKind::InvalidInput,
+                    stage: None,
+                    detail: "invalid budget: max_micros and hard_timeout_micros must be non-zero"
+                        .to_string(),
+                }),
+            };
+        }
+        if budget.max_micros > budget.hard_timeout_micros {
+            return CanonicalAdmissionDecision {
+                route,
+                failure: Some(CanonicalPipelineFailure {
+                    kind: CanonicalFailureKind::ContractMismatch,
+                    stage: None,
+                    detail: format!(
+                        "incompatible budget: max_micros {} exceeds hard_timeout_micros {}",
+                        budget.max_micros, budget.hard_timeout_micros
+                    ),
+                }),
+            };
+        }
+        for (label, units) in [
+            ("global", budget.global_work_units),
+            ("world", budget.world_units),
+            ("sae", budget.sae_units),
+            ("ssm", budget.ssm_units),
+            ("lfm", budget.lfm_units),
+        ] {
+            if units == 0 {
+                return CanonicalAdmissionDecision {
+                    route,
+                    failure: Some(CanonicalPipelineFailure {
+                        kind: CanonicalFailureKind::BudgetExceeded,
+                        stage: None,
+                        detail: format!(
+                            "request too large for configured work budget: {label}_units=0"
+                        ),
+                    }),
+                };
+            }
+        }
+
+        if let Some(failure) = first_artifact_failure(self.pack.model_slot_provenance()) {
+            return CanonicalAdmissionDecision {
+                route,
+                failure: Some(failure),
+            };
+        }
+
+        let registry = StageContractRegistry;
+        let requested = StageContractVersion::V1;
+        let checks = [
+            (
+                CanonicalStageId::World,
+                StageKind::World,
+                pack_meta.world_backend,
+                self.pack
+                    .world()
+                    .lock()
+                    .ok()
+                    .map(|w| w.contract_version())
+                    .unwrap_or(requested),
+            ),
+            (
+                CanonicalStageId::Sae,
+                StageKind::Sae,
+                pack_meta.sae_backend,
+                self.pack.sae().contract_version(),
+            ),
+            (
+                CanonicalStageId::Ssm,
+                StageKind::Ssm,
+                pack_meta.ssm_backend,
+                self.pack
+                    .ssm()
+                    .lock()
+                    .ok()
+                    .map(|s| s.contract_version())
+                    .unwrap_or(requested),
+            ),
+            (
+                CanonicalStageId::Lfm,
+                StageKind::Lfm,
+                pack_meta.lfm_backend,
+                self.pack
+                    .lfm()
+                    .lock()
+                    .ok()
+                    .map(|l| l.contract_version())
+                    .unwrap_or(requested),
+            ),
+        ];
+        for (stage_id, stage_kind, backend_id, contract_version) in checks {
+            if !registry.supports(stage_kind, backend_id, contract_version)
+                || contract_version != requested
+            {
+                return CanonicalAdmissionDecision {
+                    route,
+                    failure: Some(CanonicalPipelineFailure {
+                        kind: if backend_id == crate::BackendComponentId::Disabled {
+                            CanonicalFailureKind::BackendDisabled
+                        } else {
+                            CanonicalFailureKind::StageContractMismatch
+                        },
+                        stage: Some(stage_id),
+                        detail: format!(
+                            "{stage_kind:?} backend {backend_id:?} contract {contract_version:?} unsupported"
+                        ),
+                    }),
+                };
+            }
+        }
+
+        CanonicalAdmissionDecision {
+            route,
+            failure: None,
+        }
+    }
+
     pub fn compute_canonical(
         &self,
         request: CanonicalPipelineRequest,
