@@ -1,9 +1,9 @@
 use std::collections::{BTreeMap, VecDeque};
 
 use crate::pipeline::{
-    CanonicalAdmissionDecision, CanonicalFailureKind, CanonicalPipelineFailure,
-    CanonicalPipelineRequest, CanonicalPipelineResult, CanonicalPipelineState,
-    ComputePipelineBackend,
+    CanonicalAdmissionDecision, CanonicalBackendRoute, CanonicalFailureKind,
+    CanonicalPipelineFailure, CanonicalPipelineRequest, CanonicalPipelineResult,
+    CanonicalPipelineState, ComputePipelineBackend,
 };
 use crate::ComputeError;
 
@@ -39,8 +39,10 @@ pub enum JobLifecycleState {
 pub struct JobLifecycleEvent {
     pub job_id: JobId,
     pub state: JobLifecycleState,
+    pub route: Option<CanonicalBackendRoute>,
     pub failure_kind: Option<CanonicalFailureKind>,
     pub detail: Option<String>,
+    pub evidence_chain_digest_prefix: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -93,7 +95,7 @@ impl InMemoryComputeService {
             execution_failure: None,
             result: None,
         };
-        self.record_event(job_id, JobLifecycleState::Submitted, None, None);
+        self.record_event(job_id, JobLifecycleState::Submitted, None, None, None, None);
         match admission.failure {
             Some(failure) => {
                 record.state = JobLifecycleState::Rejected;
@@ -101,16 +103,25 @@ impl InMemoryComputeService {
                 self.record_event(
                     job_id,
                     JobLifecycleState::Rejected,
+                    Some(admission.route),
                     Some(failure.kind),
                     Some(failure.detail),
+                    None,
                 );
             }
             None => {
                 record.state = JobLifecycleState::Admitted;
-                self.record_event(job_id, JobLifecycleState::Admitted, None, None);
+                self.record_event(
+                    job_id,
+                    JobLifecycleState::Admitted,
+                    Some(admission.route),
+                    None,
+                    None,
+                    None,
+                );
                 record.state = JobLifecycleState::Queued;
                 self.queue.push_back(job_id);
-                self.record_event(job_id, JobLifecycleState::Queued, None, None);
+                self.record_event(job_id, JobLifecycleState::Queued, None, None, None, None);
             }
         }
         self.jobs.insert(job_id, record);
@@ -128,10 +139,12 @@ impl InMemoryComputeService {
             }
             None => return Ok(None),
         };
-        self.record_event(job_id, JobLifecycleState::Running, None, None);
+        self.record_event(job_id, JobLifecycleState::Running, None, None, None, None);
 
         let result = self.backend.compute_canonical(request)?;
         let failure = result.failure.clone();
+        let route = result.route;
+        let evidence_chain_digest_prefix = result.diagnostics.evidence_chain_digest_prefix.clone();
         let state = match (&result.state, &failure) {
             (
                 _,
@@ -154,11 +167,20 @@ impl InMemoryComputeService {
             self.record_event(
                 job_id,
                 state,
+                Some(route),
                 Some(failure.kind),
                 Some(failure.detail.clone()),
+                evidence_chain_digest_prefix,
             );
         } else {
-            self.record_event(job_id, state, None, None);
+            self.record_event(
+                job_id,
+                state,
+                Some(route),
+                None,
+                None,
+                evidence_chain_digest_prefix,
+            );
         }
         Ok(self.jobs.get(&job_id))
     }
@@ -175,14 +197,18 @@ impl InMemoryComputeService {
         &mut self,
         job_id: JobId,
         state: JobLifecycleState,
+        route: Option<CanonicalBackendRoute>,
         failure_kind: Option<CanonicalFailureKind>,
         detail: Option<String>,
+        evidence_chain_digest_prefix: Option<String>,
     ) {
         self.lifecycle.push(JobLifecycleEvent {
             job_id,
             state,
+            route,
             failure_kind,
             detail,
+            evidence_chain_digest_prefix,
         });
     }
 }
@@ -434,6 +460,33 @@ mod tests {
     }
 
     #[test]
+    fn backend_unavailable_rejects_during_admission() {
+        let pack = pack_with(BackendComponentId::ToyV1, Vec::new());
+        let world = pack.world();
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _lock = world.lock().expect("world lock should be available");
+            panic!("poison world lock for admission test");
+        }));
+        let mut service = service_with_pack(pack);
+        let record = service.submit(
+            valid_request(),
+            JobSubmissionMeta {
+                submitted_at_unix_ms: 7,
+                submitted_by: None,
+            },
+        );
+        assert_eq!(record.state, JobLifecycleState::Rejected);
+        assert_eq!(
+            record
+                .rejection
+                .as_ref()
+                .expect("backend unavailable rejection")
+                .kind,
+            CanonicalFailureKind::BackendUnavailable
+        );
+    }
+
+    #[test]
     fn admitted_job_runs_on_canonical_pipeline_path() {
         let mut service = service_with_pack(pack_with(BackendComponentId::ToyV1, Vec::new()));
         let job_id = service
@@ -449,7 +502,8 @@ mod tests {
         let executed = service
             .run_next()
             .expect("run should execute")
-            .expect("queued job should exist");
+            .expect("queued job should exist")
+            .clone();
         assert_eq!(executed.job.id, job_id);
         assert!(matches!(
             executed.state,
@@ -458,5 +512,27 @@ mod tests {
         assert!(executed.result.is_some());
         let result = executed.result.as_ref().expect("canonical result");
         assert_eq!(result.request, executed.job.request.input);
+        let lifecycle = service.lifecycle_events();
+        let admitted = lifecycle
+            .iter()
+            .find(|event| event.state == JobLifecycleState::Admitted)
+            .expect("admitted event should exist");
+        assert_eq!(admitted.route, Some(result.route));
+        let terminal = lifecycle
+            .iter()
+            .rev()
+            .find(|event| {
+                matches!(
+                    event.state,
+                    JobLifecycleState::Completed
+                        | JobLifecycleState::Failed
+                        | JobLifecycleState::TimedOut
+                )
+            })
+            .expect("terminal event should exist");
+        assert_eq!(
+            terminal.evidence_chain_digest_prefix,
+            result.diagnostics.evidence_chain_digest_prefix
+        );
     }
 }

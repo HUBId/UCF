@@ -56,6 +56,7 @@ pub enum CanonicalPipelineState {
 pub enum CanonicalFailureKind {
     InvalidInput,
     BackendDisabled,
+    BackendUnavailable,
     ContractMismatch,
     StageContractMismatch,
     ArtifactUnavailable,
@@ -750,17 +751,51 @@ impl ComputePipelineBackend {
 
         let registry = StageContractRegistry;
         let requested = StageContractVersion::V1;
+        let world_contract = match self.pack.world().lock() {
+            Ok(world) => world.contract_version(),
+            Err(_) => {
+                return CanonicalAdmissionDecision {
+                    route,
+                    failure: Some(CanonicalPipelineFailure {
+                        kind: CanonicalFailureKind::BackendUnavailable,
+                        stage: Some(CanonicalStageId::World),
+                        detail: "world backend unavailable: lock poisoned".to_string(),
+                    }),
+                };
+            }
+        };
+        let ssm_contract = match self.pack.ssm().lock() {
+            Ok(ssm) => ssm.contract_version(),
+            Err(_) => {
+                return CanonicalAdmissionDecision {
+                    route,
+                    failure: Some(CanonicalPipelineFailure {
+                        kind: CanonicalFailureKind::BackendUnavailable,
+                        stage: Some(CanonicalStageId::Ssm),
+                        detail: "ssm backend unavailable: lock poisoned".to_string(),
+                    }),
+                };
+            }
+        };
+        let lfm_contract = match self.pack.lfm().lock() {
+            Ok(lfm) => lfm.contract_version(),
+            Err(_) => {
+                return CanonicalAdmissionDecision {
+                    route,
+                    failure: Some(CanonicalPipelineFailure {
+                        kind: CanonicalFailureKind::BackendUnavailable,
+                        stage: Some(CanonicalStageId::Lfm),
+                        detail: "lfm backend unavailable: lock poisoned".to_string(),
+                    }),
+                };
+            }
+        };
         let checks = [
             (
                 CanonicalStageId::World,
                 StageKind::World,
                 pack_meta.world_backend,
-                self.pack
-                    .world()
-                    .lock()
-                    .ok()
-                    .map(|w| w.contract_version())
-                    .unwrap_or(requested),
+                world_contract,
             ),
             (
                 CanonicalStageId::Sae,
@@ -772,23 +807,13 @@ impl ComputePipelineBackend {
                 CanonicalStageId::Ssm,
                 StageKind::Ssm,
                 pack_meta.ssm_backend,
-                self.pack
-                    .ssm()
-                    .lock()
-                    .ok()
-                    .map(|s| s.contract_version())
-                    .unwrap_or(requested),
+                ssm_contract,
             ),
             (
                 CanonicalStageId::Lfm,
                 StageKind::Lfm,
                 pack_meta.lfm_backend,
-                self.pack
-                    .lfm()
-                    .lock()
-                    .ok()
-                    .map(|l| l.contract_version())
-                    .unwrap_or(requested),
+                lfm_contract,
             ),
         ];
         for (stage_id, stage_kind, backend_id, contract_version) in checks {
