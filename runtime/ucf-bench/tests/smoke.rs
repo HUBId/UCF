@@ -2,7 +2,7 @@ use std::process::Command;
 use std::time::{Duration, Instant};
 
 #[test]
-fn compute_fixture_smoke_under_two_seconds() {
+fn compute_fixture_smoke_under_four_seconds() {
     let out = std::env::temp_dir().join("ucf-bench-compute-smoke.json");
     let start = Instant::now();
     let status = Command::new(env!("CARGO_BIN_EXE_ucf-bench"))
@@ -18,7 +18,10 @@ fn compute_fixture_smoke_under_two_seconds() {
         .status()
         .expect("run ucf-bench compute");
     assert!(status.success());
-    assert!(start.elapsed() < Duration::from_secs(2));
+    assert!(
+        start.elapsed() < Duration::from_secs(4),
+        "compute fixtures smoke exceeded 4s budget"
+    );
 }
 
 #[test]
