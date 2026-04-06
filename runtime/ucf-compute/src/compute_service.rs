@@ -1,9 +1,10 @@
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
+use crate::backend_pack::{BackendPackConfig, BackendPackFactory, BackendPackKind};
 use crate::pipeline::{
     CanonicalAdmissionDecision, CanonicalFailureKind, CanonicalPipelineFailure,
     CanonicalPipelineRequest, CanonicalPipelineResult, CanonicalPipelineState,
-    ComputePipelineBackend,
+    ComputePipelineBackend, FusionConfig, LimitsConfig,
 };
 use crate::ComputeError;
 
@@ -51,25 +52,89 @@ pub struct JobRecord {
     pub rejection: Option<CanonicalPipelineFailure>,
     pub execution_failure: Option<CanonicalPipelineFailure>,
     pub result: Option<CanonicalPipelineResult>,
+    pub execution_path: JobExecutionPath,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JobExecutionPath {
+    LocalCanonical,
+    WorkerIpc,
+}
+
+impl JobExecutionPath {
+    fn as_detail(self) -> &'static str {
+        match self {
+            Self::LocalCanonical => "execution_path=local_canonical",
+            Self::WorkerIpc => "execution_path=worker_ipc",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SchedulerConfig {
+    pub max_concurrent_jobs: usize,
+    pub execution_path: JobExecutionPath,
+}
+
+impl Default for SchedulerConfig {
+    fn default() -> Self {
+        Self {
+            max_concurrent_jobs: 1,
+            execution_path: JobExecutionPath::LocalCanonical,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SchedulerSnapshot {
+    pub max_concurrent_jobs: usize,
+    pub queued_jobs: usize,
+    pub running_jobs: usize,
+    pub execution_path: JobExecutionPath,
 }
 
 pub struct InMemoryComputeService {
     backend: ComputePipelineBackend,
+    scheduler: SchedulerConfig,
     next_job_id: u64,
     jobs: BTreeMap<JobId, JobRecord>,
     queue: VecDeque<JobId>,
+    running: BTreeSet<JobId>,
     lifecycle: Vec<JobLifecycleEvent>,
 }
 
 impl InMemoryComputeService {
     pub fn new(backend: ComputePipelineBackend) -> Self {
+        Self::with_scheduler(backend, SchedulerConfig::default())
+    }
+
+    pub fn with_scheduler(backend: ComputePipelineBackend, mut scheduler: SchedulerConfig) -> Self {
+        scheduler.max_concurrent_jobs = scheduler.max_concurrent_jobs.max(1);
         Self {
             backend,
+            scheduler,
             next_job_id: 1,
             jobs: BTreeMap::new(),
             queue: VecDeque::new(),
+            running: BTreeSet::new(),
             lifecycle: Vec::new(),
         }
+    }
+
+    pub fn new_worker(seed: u64, max_concurrent_jobs: usize) -> Result<Self, ComputeError> {
+        let pack = BackendPackFactory::build(BackendPackConfig {
+            pack: BackendPackKind::WorkerV1,
+            seed,
+        })?;
+        let backend =
+            ComputePipelineBackend::new(pack, FusionConfig::default(), LimitsConfig::default());
+        Ok(Self::with_scheduler(
+            backend,
+            SchedulerConfig {
+                max_concurrent_jobs,
+                execution_path: JobExecutionPath::WorkerIpc,
+            },
+        ))
     }
 
     pub fn submit(
@@ -92,6 +157,7 @@ impl InMemoryComputeService {
             rejection: None,
             execution_failure: None,
             result: None,
+            execution_path: self.scheduler.execution_path,
         };
         self.record_event(job_id, JobLifecycleState::Submitted, None, None);
         match admission.failure {
@@ -118,49 +184,119 @@ impl InMemoryComputeService {
     }
 
     pub fn run_next(&mut self) -> Result<Option<&JobRecord>, ComputeError> {
-        let Some(job_id) = self.queue.pop_front() else {
-            return Ok(None);
-        };
+        self.run_scheduler_cycle(1)
+            .map(|mut done| done.pop().and_then(|job_id| self.jobs.get(&job_id)))
+    }
+
+    pub fn run_scheduler_cycle(&mut self, max_jobs: usize) -> Result<Vec<JobId>, ComputeError> {
+        let mut completed = Vec::new();
+        let dispatch_cap = max_jobs.max(1);
+        while completed.len() < dispatch_cap
+            && self.running.len() < self.scheduler.max_concurrent_jobs
+        {
+            let Some(job_id) = self.queue.pop_front() else {
+                break;
+            };
+            self.execute_job(job_id)?;
+            completed.push(job_id);
+        }
+        Ok(completed)
+    }
+
+    fn execute_job(&mut self, job_id: JobId) -> Result<(), ComputeError> {
         let request = match self.jobs.get_mut(&job_id) {
             Some(record) => {
                 record.state = JobLifecycleState::Running;
                 record.job.request.clone()
             }
-            None => return Ok(None),
+            None => return Ok(()),
         };
-        self.record_event(job_id, JobLifecycleState::Running, None, None);
+        self.running.insert(job_id);
+        self.record_event(
+            job_id,
+            JobLifecycleState::Running,
+            None,
+            Some(self.scheduler.execution_path.as_detail().to_string()),
+        );
 
-        let result = self.backend.compute_canonical(request)?;
-        let failure = result.failure.clone();
-        let state = match (&result.state, &failure) {
-            (
-                _,
-                Some(CanonicalPipelineFailure {
-                    kind: CanonicalFailureKind::Timeout,
-                    ..
-                }),
-            ) => JobLifecycleState::TimedOut,
-            (_, Some(_)) => JobLifecycleState::Failed,
-            (CanonicalPipelineState::Unavailable, None) => JobLifecycleState::Failed,
-            _ => JobLifecycleState::Completed,
+        let run_outcome = self.backend.compute_canonical(request);
+        let (state, result, execution_failure) = match run_outcome {
+            Ok(result) => {
+                let failure = result.failure.clone();
+                let state = match (&result.state, &failure) {
+                    (
+                        _,
+                        Some(CanonicalPipelineFailure {
+                            kind: CanonicalFailureKind::Timeout,
+                            ..
+                        }),
+                    ) => JobLifecycleState::TimedOut,
+                    (_, Some(_)) => JobLifecycleState::Failed,
+                    (CanonicalPipelineState::Unavailable, None) => JobLifecycleState::Failed,
+                    _ => JobLifecycleState::Completed,
+                };
+                (state, Some(result), failure)
+            }
+            Err(err) => {
+                let failure = canonical_execution_failure(err);
+                let state = if failure.kind == CanonicalFailureKind::Timeout {
+                    JobLifecycleState::TimedOut
+                } else {
+                    JobLifecycleState::Failed
+                };
+                (state, None, Some(failure))
+            }
         };
+
         let Some(record) = self.jobs.get_mut(&job_id) else {
-            return Ok(None);
+            self.running.remove(&job_id);
+            return Ok(());
         };
-        record.result = Some(result);
+        record.result = result;
         record.state = state;
-        if let Some(failure) = failure {
-            record.execution_failure = Some(failure.clone());
+        record.execution_failure = execution_failure.clone();
+        self.running.remove(&job_id);
+        if let Some(failure) = execution_failure {
             self.record_event(
                 job_id,
                 state,
                 Some(failure.kind),
-                Some(failure.detail.clone()),
+                Some(format!(
+                    "{}; {}",
+                    self.scheduler.execution_path.as_detail(),
+                    failure.detail
+                )),
             );
         } else {
-            self.record_event(job_id, state, None, None);
+            self.record_event(
+                job_id,
+                state,
+                None,
+                Some(self.scheduler.execution_path.as_detail().to_string()),
+            );
         }
-        Ok(self.jobs.get(&job_id))
+        Ok(())
+    }
+
+    pub fn scheduler_snapshot(&self) -> SchedulerSnapshot {
+        SchedulerSnapshot {
+            max_concurrent_jobs: self.scheduler.max_concurrent_jobs,
+            queued_jobs: self.queue.len(),
+            running_jobs: self.running.len(),
+            execution_path: self.scheduler.execution_path,
+        }
+    }
+
+    pub fn queue_len(&self) -> usize {
+        self.queue.len()
+    }
+
+    pub fn running_len(&self) -> usize {
+        self.running.len()
+    }
+
+    pub fn execution_path(&self) -> JobExecutionPath {
+        self.scheduler.execution_path
     }
 
     pub fn job(&self, job_id: JobId) -> Option<&JobRecord> {
@@ -187,6 +323,18 @@ impl InMemoryComputeService {
     }
 }
 
+fn canonical_execution_failure(err: ComputeError) -> CanonicalPipelineFailure {
+    let kind = match err {
+        ComputeError::BudgetExceeded { .. } => CanonicalFailureKind::Timeout,
+        _ => CanonicalFailureKind::ExecutionError,
+    };
+    CanonicalPipelineFailure {
+        kind,
+        stage: None,
+        detail: err.to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::{Arc, Mutex};
@@ -208,7 +356,10 @@ mod tests {
     use crate::world_model::MockJepaPredictor;
     use crate::{ComputeBudget, ComputeError, ComputeInput, FrameId, ModelSlot};
 
-    use super::{InMemoryComputeService, JobLifecycleState, JobSubmissionMeta};
+    use super::{
+        InMemoryComputeService, JobExecutionPath, JobLifecycleState, JobSubmissionMeta,
+        SchedulerConfig,
+    };
 
     struct NullLlm;
     impl LlmInference for NullLlm {
@@ -304,6 +455,15 @@ mod tests {
         let backend =
             ComputePipelineBackend::new(pack, FusionConfig::default(), LimitsConfig::default());
         InMemoryComputeService::new(backend)
+    }
+
+    fn service_with_pack_and_scheduler(
+        pack: Arc<dyn BackendPack>,
+        scheduler: SchedulerConfig,
+    ) -> InMemoryComputeService {
+        let backend =
+            ComputePipelineBackend::new(pack, FusionConfig::default(), LimitsConfig::default());
+        InMemoryComputeService::with_scheduler(backend, scheduler)
     }
 
     fn valid_request() -> CanonicalPipelineRequest {
@@ -458,5 +618,112 @@ mod tests {
         assert!(executed.result.is_some());
         let result = executed.result.as_ref().expect("canonical result");
         assert_eq!(result.request, executed.job.request.input);
+    }
+
+    #[test]
+    fn scheduler_cycle_respects_bounded_dispatch_capacity() {
+        let mut service = service_with_pack_and_scheduler(
+            pack_with(BackendComponentId::ToyV1, Vec::new()),
+            SchedulerConfig {
+                max_concurrent_jobs: 2,
+                execution_path: JobExecutionPath::LocalCanonical,
+            },
+        );
+        for t in 10..13 {
+            let mut request = valid_request();
+            request.input.t = t;
+            service.submit(
+                request,
+                JobSubmissionMeta {
+                    submitted_at_unix_ms: t,
+                    submitted_by: Some("scheduler".to_string()),
+                },
+            );
+        }
+        let completed = service
+            .run_scheduler_cycle(2)
+            .expect("scheduler cycle should run");
+        assert_eq!(completed.len(), 2);
+        assert_eq!(service.queue_len(), 1);
+        let snapshot = service.scheduler_snapshot();
+        assert_eq!(snapshot.max_concurrent_jobs, 2);
+        assert_eq!(snapshot.execution_path, JobExecutionPath::LocalCanonical);
+    }
+
+    #[test]
+    fn budget_exceeded_execution_is_classified_as_timed_out() {
+        let mut service = service_with_pack(pack_with(BackendComponentId::ToyV1, Vec::new()));
+        let mut request = valid_request();
+        request.budget.global_work_units = 1;
+        request.budget.world_units = 1;
+        let job_id = service
+            .submit(
+                request,
+                JobSubmissionMeta {
+                    submitted_at_unix_ms: 7,
+                    submitted_by: Some("timeout".to_string()),
+                },
+            )
+            .job
+            .id;
+        let record = service
+            .run_next()
+            .expect("scheduler run should succeed")
+            .expect("job should exist");
+        assert_eq!(record.job.id, job_id);
+        assert_eq!(record.state, JobLifecycleState::TimedOut);
+        assert_eq!(
+            record
+                .execution_failure
+                .as_ref()
+                .expect("failure should be set")
+                .kind,
+            CanonicalFailureKind::Timeout
+        );
+    }
+
+    #[test]
+    fn worker_launch_failure_is_reported_as_structured_execution_error() {
+        let previous = std::env::var("UCF_WORKER_BIN").ok();
+        std::env::set_var("UCF_WORKER_BIN", "definitely-missing-ucf-worker-binary");
+        let mut service =
+            InMemoryComputeService::new_worker(42, 1).expect("worker backend should construct");
+        let job_id = service
+            .submit(
+                valid_request(),
+                JobSubmissionMeta {
+                    submitted_at_unix_ms: 8,
+                    submitted_by: Some("worker".to_string()),
+                },
+            )
+            .job
+            .id;
+        let record = service
+            .run_next()
+            .expect("run_next should map errors into lifecycle record")
+            .expect("job record should be available");
+        assert_eq!(record.job.id, job_id);
+        assert_eq!(record.state, JobLifecycleState::Failed);
+        let failure = record
+            .execution_failure
+            .as_ref()
+            .expect("worker spawn failure should be mapped");
+        assert_eq!(failure.kind, CanonicalFailureKind::ExecutionError);
+        assert!(failure.detail.contains("spawn worker failed"));
+        assert_eq!(record.execution_path, JobExecutionPath::WorkerIpc);
+        assert!(service
+            .lifecycle_events()
+            .iter()
+            .filter(|event| event.job_id == job_id)
+            .any(|event| event
+                .detail
+                .as_deref()
+                .unwrap_or_default()
+                .contains("execution_path=worker_ipc")));
+
+        match previous {
+            Some(value) => std::env::set_var("UCF_WORKER_BIN", value),
+            None => std::env::remove_var("UCF_WORKER_BIN"),
+        }
     }
 }
