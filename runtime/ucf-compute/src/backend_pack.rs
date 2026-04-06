@@ -1311,4 +1311,21 @@ mod tests {
         .expect("burn pack");
         assert_eq!(pack.meta().lfm_backend, BackendComponentId::BurnLfmV1);
     }
+
+    #[cfg(all(feature = "lfm-burn", feature = "backend-burn"))]
+    #[test]
+    fn burn_pack_tolerates_disabled_lfm_slot_without_manifest() {
+        let _guard = crate::test_env::env_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _env = crate::test_env::clear_model_env_overrides();
+        std::env::remove_var("UCF_MODEL_MANIFEST");
+
+        let pack = BackendPackFactory::build(BackendPackConfig {
+            pack: BackendPackKind::BurnToyV1,
+            seed: 3,
+        })
+        .expect("burn pack should build with disabled slots");
+        assert_eq!(pack.meta().lfm_backend, BackendComponentId::BurnLfmV1);
+    }
 }

@@ -3,6 +3,8 @@ use sha2::{Digest, Sha256};
 use crate::contracts::StageContractVersion;
 use crate::evidence::{quantize_signed_unit, quantize_unit_u16};
 use crate::feature_extractor::SmallNotes;
+#[cfg(feature = "lfm-burn")]
+use crate::model_store::ModelLoadError;
 #[cfg(feature = "lfm-lnn")]
 use crate::model_store::VerifiedModelSlot;
 #[cfg(any(feature = "lfm-lnn", feature = "lfm-burn"))]
@@ -1338,16 +1340,16 @@ pub struct BurnLfmKernel {
 #[cfg(feature = "lfm-burn")]
 impl BurnLfmKernel {
     pub fn from_model_store(store: &ModelStore) -> Result<Self, ComputeError> {
-        let verified =
-            store
-                .verify_slot(ModelSlot::Lfm)
-                .map_err(|err| ComputeError::InvalidInput {
-                    reason: format!("lfm burn slot unavailable: {err:?}"),
-                })?;
-        Ok(Self {
-            inner: ToyLfmKernel::default(),
-            slot_digest: verified.sha256,
-        })
+        match store.verify_slot(ModelSlot::Lfm) {
+            Ok(verified) => Ok(Self {
+                inner: ToyLfmKernel::default(),
+                slot_digest: verified.sha256,
+            }),
+            Err(ModelLoadError::Disabled) => Ok(Self::default()),
+            Err(err) => Err(ComputeError::InvalidInput {
+                reason: format!("lfm burn slot unavailable: {err:?}"),
+            }),
+        }
     }
 }
 
