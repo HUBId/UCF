@@ -1,10 +1,13 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-use crate::backend_pack::{BackendPackConfig, BackendPackFactory, BackendPackKind};
+use crate::backend_pack::{
+    BackendPackConfig, BackendPackFactory, BackendPackKind, ModelSlotProvenance,
+};
 use crate::pipeline::{
     CanonicalAdmissionDecision, CanonicalFailureKind, CanonicalPipelineFailure,
-    CanonicalPipelineRequest, CanonicalPipelineResult, CanonicalPipelineState,
-    ComputePipelineBackend, FusionConfig, LimitsConfig,
+    CanonicalPipelineRequest, CanonicalPipelineResult, CanonicalPipelineState, CanonicalStageId,
+    CanonicalWorkSummary, ComputePipelineBackend, FusionConfig, LimitsConfig,
 };
 use crate::ComputeError;
 
@@ -42,6 +45,39 @@ pub struct JobLifecycleEvent {
     pub state: JobLifecycleState,
     pub failure_kind: Option<CanonicalFailureKind>,
     pub detail: Option<String>,
+    pub observed_at_unix_ms: u64,
+    pub execution_path: JobExecutionPath,
+    pub completion_class: Option<JobCompletionClass>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JobCompletionClass {
+    RejectedBeforeExecution,
+    Completed,
+    DegradedCompleted,
+    FailedDuringExecution,
+    TimedOut,
+    WorkerIpcFailure,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JobAccountingSummary {
+    pub job_id: JobId,
+    pub status: JobLifecycleState,
+    pub completion_class: JobCompletionClass,
+    pub submitted_at_unix_ms: u64,
+    pub started_at_unix_ms: Option<u64>,
+    pub finished_at_unix_ms: Option<u64>,
+    pub queue_wait_ms: Option<u64>,
+    pub execution_duration_micros: Option<u64>,
+    pub total_duration_ms: Option<u64>,
+    pub failure_kind: Option<CanonicalFailureKind>,
+    pub work_summary: Option<CanonicalWorkSummary>,
+    pub pipeline_state: Option<CanonicalPipelineState>,
+    pub stage_order: Option<[CanonicalStageId; 4]>,
+    pub executed_stages: Vec<CanonicalStageId>,
+    pub model_slots: Vec<ModelSlotProvenance>,
+    pub execution_path: JobExecutionPath,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -53,6 +89,7 @@ pub struct JobRecord {
     pub execution_failure: Option<CanonicalPipelineFailure>,
     pub result: Option<CanonicalPipelineResult>,
     pub execution_path: JobExecutionPath,
+    pub accounting: JobAccountingSummary,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -144,6 +181,7 @@ impl InMemoryComputeService {
     ) -> &JobRecord {
         let job_id = JobId(self.next_job_id);
         self.next_job_id = self.next_job_id.saturating_add(1);
+        let submitted_at_unix_ms = meta.submitted_at_unix_ms;
         let job = ComputeJob {
             id: job_id,
             request: request.clone(),
@@ -158,25 +196,75 @@ impl InMemoryComputeService {
             execution_failure: None,
             result: None,
             execution_path: self.scheduler.execution_path,
+            accounting: JobAccountingSummary {
+                job_id,
+                status: JobLifecycleState::Submitted,
+                completion_class: JobCompletionClass::RejectedBeforeExecution,
+                submitted_at_unix_ms,
+                started_at_unix_ms: None,
+                finished_at_unix_ms: None,
+                queue_wait_ms: None,
+                execution_duration_micros: None,
+                total_duration_ms: None,
+                failure_kind: None,
+                work_summary: None,
+                pipeline_state: None,
+                stage_order: None,
+                executed_stages: Vec::new(),
+                model_slots: Vec::new(),
+                execution_path: self.scheduler.execution_path,
+            },
         };
-        self.record_event(job_id, JobLifecycleState::Submitted, None, None);
+        self.record_event(JobLifecycleEvent {
+            job_id,
+            state: JobLifecycleState::Submitted,
+            failure_kind: None,
+            detail: None,
+            observed_at_unix_ms: submitted_at_unix_ms,
+            execution_path: self.scheduler.execution_path,
+            completion_class: None,
+        });
         match admission.failure {
             Some(failure) => {
                 record.state = JobLifecycleState::Rejected;
                 record.rejection = Some(failure.clone());
-                self.record_event(
+                record.accounting.status = JobLifecycleState::Rejected;
+                record.accounting.completion_class = JobCompletionClass::RejectedBeforeExecution;
+                record.accounting.failure_kind = Some(failure.kind);
+                self.record_event(JobLifecycleEvent {
                     job_id,
-                    JobLifecycleState::Rejected,
-                    Some(failure.kind),
-                    Some(failure.detail),
-                );
+                    state: JobLifecycleState::Rejected,
+                    failure_kind: Some(failure.kind),
+                    detail: Some(failure.detail),
+                    observed_at_unix_ms: now_unix_ms(),
+                    execution_path: self.scheduler.execution_path,
+                    completion_class: Some(JobCompletionClass::RejectedBeforeExecution),
+                });
             }
             None => {
                 record.state = JobLifecycleState::Admitted;
-                self.record_event(job_id, JobLifecycleState::Admitted, None, None);
+                record.accounting.status = JobLifecycleState::Admitted;
+                self.record_event(JobLifecycleEvent {
+                    job_id,
+                    state: JobLifecycleState::Admitted,
+                    failure_kind: None,
+                    detail: None,
+                    observed_at_unix_ms: now_unix_ms(),
+                    execution_path: self.scheduler.execution_path,
+                    completion_class: None,
+                });
                 record.state = JobLifecycleState::Queued;
+                record.accounting.status = JobLifecycleState::Queued;
                 self.queue.push_back(job_id);
-                self.record_event(job_id, JobLifecycleState::Queued, None, None);
+                self.record_event(JobLifecycleEvent {
+                    job_id,
+                    state: JobLifecycleState::Queued,
+                    failure_kind: None,
+                    detail: None,
+                    observed_at_unix_ms: now_unix_ms(),
+                    execution_path: self.scheduler.execution_path,
+                    completion_class: None,
+                });
             }
         }
         self.jobs.insert(job_id, record);
@@ -204,20 +292,29 @@ impl InMemoryComputeService {
     }
 
     fn execute_job(&mut self, job_id: JobId) -> Result<(), ComputeError> {
+        let started_at_unix_ms = now_unix_ms();
+        let execution_started = Instant::now();
         let request = match self.jobs.get_mut(&job_id) {
             Some(record) => {
                 record.state = JobLifecycleState::Running;
+                record.accounting.status = JobLifecycleState::Running;
+                record.accounting.started_at_unix_ms = Some(started_at_unix_ms);
+                record.accounting.queue_wait_ms =
+                    Some(started_at_unix_ms.saturating_sub(record.accounting.submitted_at_unix_ms));
                 record.job.request.clone()
             }
             None => return Ok(()),
         };
         self.running.insert(job_id);
-        self.record_event(
+        self.record_event(JobLifecycleEvent {
             job_id,
-            JobLifecycleState::Running,
-            None,
-            Some(self.scheduler.execution_path.as_detail().to_string()),
-        );
+            state: JobLifecycleState::Running,
+            failure_kind: None,
+            detail: Some(self.scheduler.execution_path.as_detail().to_string()),
+            observed_at_unix_ms: started_at_unix_ms,
+            execution_path: self.scheduler.execution_path,
+            completion_class: None,
+        });
 
         let run_outcome = self.backend.compute_canonical(request);
         let (state, result, execution_failure) = match run_outcome {
@@ -252,28 +349,56 @@ impl InMemoryComputeService {
             self.running.remove(&job_id);
             return Ok(());
         };
+        let finished_at_unix_ms = now_unix_ms();
+        let execution_duration_micros = execution_started.elapsed().as_micros() as u64;
+        let completion_class = completion_class_for(
+            state,
+            &execution_failure,
+            self.scheduler.execution_path,
+            result.as_ref(),
+        );
         record.result = result;
         record.state = state;
         record.execution_failure = execution_failure.clone();
+        record.accounting.status = state;
+        record.accounting.completion_class = completion_class;
+        record.accounting.finished_at_unix_ms = Some(finished_at_unix_ms);
+        record.accounting.execution_duration_micros = Some(execution_duration_micros);
+        record.accounting.total_duration_ms =
+            Some(finished_at_unix_ms.saturating_sub(record.accounting.submitted_at_unix_ms));
+        record.accounting.failure_kind = execution_failure.as_ref().map(|f| f.kind);
+        if let Some(canonical_result) = record.result.as_ref() {
+            record.accounting.work_summary = Some(canonical_result.diagnostics.work);
+            record.accounting.pipeline_state = Some(canonical_result.state);
+            record.accounting.stage_order = Some(canonical_result.stage_order);
+            record.accounting.executed_stages = canonical_result.executed_stages.clone();
+            record.accounting.model_slots = canonical_result.model_slots.clone();
+        }
         self.running.remove(&job_id);
         if let Some(failure) = execution_failure {
-            self.record_event(
+            self.record_event(JobLifecycleEvent {
                 job_id,
                 state,
-                Some(failure.kind),
-                Some(format!(
+                failure_kind: Some(failure.kind),
+                detail: Some(format!(
                     "{}; {}",
                     self.scheduler.execution_path.as_detail(),
                     failure.detail
                 )),
-            );
+                observed_at_unix_ms: finished_at_unix_ms,
+                execution_path: self.scheduler.execution_path,
+                completion_class: Some(completion_class),
+            });
         } else {
-            self.record_event(
+            self.record_event(JobLifecycleEvent {
                 job_id,
                 state,
-                None,
-                Some(self.scheduler.execution_path.as_detail().to_string()),
-            );
+                failure_kind: None,
+                detail: Some(self.scheduler.execution_path.as_detail().to_string()),
+                observed_at_unix_ms: finished_at_unix_ms,
+                execution_path: self.scheduler.execution_path,
+                completion_class: Some(completion_class),
+            });
         }
         Ok(())
     }
@@ -307,19 +432,49 @@ impl InMemoryComputeService {
         &self.lifecycle
     }
 
-    fn record_event(
-        &mut self,
-        job_id: JobId,
-        state: JobLifecycleState,
-        failure_kind: Option<CanonicalFailureKind>,
-        detail: Option<String>,
-    ) {
-        self.lifecycle.push(JobLifecycleEvent {
-            job_id,
-            state,
-            failure_kind,
-            detail,
-        });
+    fn record_event(&mut self, event: JobLifecycleEvent) {
+        self.lifecycle.push(event);
+    }
+}
+
+fn now_unix_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_millis() as u64)
+}
+
+fn completion_class_for(
+    state: JobLifecycleState,
+    execution_failure: &Option<CanonicalPipelineFailure>,
+    execution_path: JobExecutionPath,
+    result: Option<&CanonicalPipelineResult>,
+) -> JobCompletionClass {
+    match state {
+        JobLifecycleState::Rejected => JobCompletionClass::RejectedBeforeExecution,
+        JobLifecycleState::TimedOut => JobCompletionClass::TimedOut,
+        JobLifecycleState::Completed => {
+            if result
+                .map(|r| r.state == CanonicalPipelineState::Degraded)
+                .unwrap_or(false)
+            {
+                JobCompletionClass::DegradedCompleted
+            } else {
+                JobCompletionClass::Completed
+            }
+        }
+        JobLifecycleState::Failed => {
+            if execution_path == JobExecutionPath::WorkerIpc
+                && execution_failure
+                    .as_ref()
+                    .map(|failure| failure.kind == CanonicalFailureKind::ExecutionError)
+                    .unwrap_or(false)
+            {
+                JobCompletionClass::WorkerIpcFailure
+            } else {
+                JobCompletionClass::FailedDuringExecution
+            }
+        }
+        _ => JobCompletionClass::FailedDuringExecution,
     }
 }
 
@@ -357,8 +512,8 @@ mod tests {
     use crate::{ComputeBudget, ComputeError, ComputeInput, FrameId, ModelSlot};
 
     use super::{
-        InMemoryComputeService, JobExecutionPath, JobLifecycleState, JobSubmissionMeta,
-        SchedulerConfig,
+        InMemoryComputeService, JobCompletionClass, JobExecutionPath, JobLifecycleState,
+        JobSubmissionMeta, SchedulerConfig,
     };
 
     struct NullLlm;
@@ -725,5 +880,110 @@ mod tests {
             Some(value) => std::env::set_var("UCF_WORKER_BIN", value),
             None => std::env::remove_var("UCF_WORKER_BIN"),
         }
+    }
+
+    #[test]
+    fn smoke_lifecycle_accounting_and_provenance_are_populated() {
+        let mut service = service_with_pack(pack_with(BackendComponentId::ToyV1, Vec::new()));
+        let job_id = service
+            .submit(
+                valid_request(),
+                JobSubmissionMeta {
+                    submitted_at_unix_ms: 100,
+                    submitted_by: Some("smoke".to_string()),
+                },
+            )
+            .job
+            .id;
+        let record = service
+            .run_next()
+            .expect("run_next should succeed")
+            .expect("job must exist");
+        assert_eq!(record.job.id, job_id);
+        assert!(record.accounting.started_at_unix_ms.is_some());
+        assert!(record.accounting.finished_at_unix_ms.is_some());
+        assert!(record.accounting.execution_duration_micros.is_some());
+        assert!(record.accounting.total_duration_ms.is_some());
+        assert!(record.accounting.work_summary.is_some());
+        assert!(record.accounting.pipeline_state.is_some());
+        assert!(record.accounting.stage_order.is_some());
+        assert!(!record.accounting.executed_stages.is_empty());
+        assert_eq!(
+            record.accounting.execution_path,
+            JobExecutionPath::LocalCanonical
+        );
+        assert_eq!(record.accounting.job_id, job_id);
+    }
+
+    #[test]
+    fn rejection_sets_rejected_completion_class() {
+        let mut service = service_with_pack(pack_with(BackendComponentId::ToyV1, Vec::new()));
+        let mut request = valid_request();
+        request.input.t = 0;
+        let record = service.submit(
+            request,
+            JobSubmissionMeta {
+                submitted_at_unix_ms: 9,
+                submitted_by: None,
+            },
+        );
+        assert_eq!(record.state, JobLifecycleState::Rejected);
+        assert_eq!(
+            record.accounting.completion_class,
+            JobCompletionClass::RejectedBeforeExecution
+        );
+        assert_eq!(
+            record.accounting.failure_kind,
+            Some(CanonicalFailureKind::InvalidInput)
+        );
+        let rejected_event = service
+            .lifecycle_events()
+            .iter()
+            .find(|event| event.state == JobLifecycleState::Rejected)
+            .expect("missing rejection event");
+        assert_eq!(
+            rejected_event.completion_class,
+            Some(JobCompletionClass::RejectedBeforeExecution)
+        );
+    }
+
+    #[test]
+    fn integration_onboarding_reference_backend_via_service_keeps_pipeline_surface() {
+        let _lock = crate::test_env::env_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _env = crate::test_env::clear_model_env_overrides();
+        let backend = match crate::build_onboarding_reference_backend(13) {
+            Ok(backend) => backend,
+            Err(ComputeError::BackendDisabled) | Err(ComputeError::InvalidInput { .. }) => return,
+            Err(other) => panic!("unexpected onboarding backend init error: {other:?}"),
+        };
+        let mut service = InMemoryComputeService::new(backend);
+        let record = service.submit(
+            valid_request(),
+            JobSubmissionMeta {
+                submitted_at_unix_ms: 12,
+                submitted_by: Some("integration".to_string()),
+            },
+        );
+        assert_eq!(record.state, JobLifecycleState::Queued);
+        let completed = service
+            .run_next()
+            .expect("run_next should execute")
+            .expect("queued job must run");
+        let result = completed
+            .result
+            .as_ref()
+            .expect("onboarding backend should return canonical result");
+        assert_eq!(result.stage_order, crate::CANONICAL_STAGE_SEQUENCE);
+        assert_eq!(
+            completed.accounting.stage_order,
+            Some(crate::CANONICAL_STAGE_SEQUENCE)
+        );
+        assert_eq!(
+            completed.accounting.executed_stages,
+            result.executed_stages.clone()
+        );
+        assert_eq!(completed.accounting.pipeline_state, Some(result.state));
     }
 }

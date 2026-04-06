@@ -1,4 +1,4 @@
-# Bounded Compute Service Core v1 (Job Lifecycle + Scheduling + Worker Execution)
+# Bounded Compute Service Core v1 (Lifecycle + Accounting + Observability + Service Hardening)
 
 Status: implemented as a **minimal in-memory bounded service** on top of the canonical runtime pipeline in `runtime/ucf-compute`.
 
@@ -12,9 +12,10 @@ The service core wraps the existing canonical `CanonicalPipelineRequest -> canon
 - structured admission rejection vs. post-admission execution failure separation,
 - in-memory queue + lifecycle event log,
 - bounded local scheduler cycle (`run_scheduler_cycle`) with configurable dispatch capacity,
-- local canonical execution path and worker IPC-backed execution path (`new_worker`).
+- local canonical execution path and worker IPC-backed execution path (`new_worker`),
+- minimal technical job accounting summary (`JobAccountingSummary`) attached to each `JobRecord`.
 
-No distributed orchestration, persistence, billing/tenant policy, governance scoring, or quota economy is introduced here.
+No distributed orchestration, persistence, billing/tenant policy, governance scoring, quota economy, or monitoring platform is introduced here.
 
 ## Scheduler model (bounded, local)
 
@@ -37,15 +38,35 @@ Execution always goes through `ComputePipelineBackend::compute_canonical`; the s
 
 Both paths preserve the same `CanonicalPipelineResult` / `CanonicalPipelineFailure` surface.
 
-## Result and failure mapping
+## Technical accounting surface (job-level, non-billing)
 
-Terminal state mapping is lifecycle-native while preserving canonical fault taxonomy:
+Each `JobRecord` now carries `accounting: JobAccountingSummary` with load-bearing technical fields:
 
-- `completed`: canonical result without failure,
-- `failed`: canonical result with non-timeout failure or execution error from backend call,
-- `timed_out`: canonical timeout failure, including backend budget/timeout execution errors mapped to `CanonicalFailureKind::Timeout`.
+- `job_id`, lifecycle `status`, and `completion_class`,
+- submitted/start/end timestamps,
+- queue wait, execution duration, total duration,
+- canonical failure class (if present),
+- canonical work budget summary (`CanonicalWorkSummary`) when execution reached pipeline result,
+- pipeline provenance mirror:
+  - stage order + executed stages,
+  - pipeline state (`ok` / `degraded` / `unavailable`),
+  - model slot provenance list,
+  - execution path (`local_canonical` / `worker_ipc`).
 
-Worker launch/IPC transport errors are surfaced as structured execution failures (`CanonicalFailureKind::ExecutionError`) and recorded in lifecycle details with execution-path provenance.
+This is intentionally technical accounting only. No prices, no tenant quota policy, no invoicing schema.
+
+## Result, completion, and failure mapping
+
+Terminal mapping stays lifecycle-native and reuses canonical fault taxonomy:
+
+- `rejected_before_execution`: admission rejection before run,
+- `completed`: canonical result without failure and non-degraded state,
+- `degraded_completed`: canonical completion with `CanonicalPipelineState::Degraded`,
+- `failed_during_execution`: run started and ended in non-timeout failure,
+- `timed_out`: canonical timeout failure, including backend budget/timeout execution errors mapped to `CanonicalFailureKind::Timeout`,
+- `worker_ipc_failure`: worker/IPC execution-path failure classified as execution error.
+
+Worker launch/IPC transport errors are surfaced as structured execution failures (`CanonicalFailureKind::ExecutionError`) and remain linked to execution-path provenance in lifecycle events.
 
 ## Canonical job lifecycle states
 
@@ -59,6 +80,19 @@ Worker launch/IPC transport errors are surfaced as structured execution failures
 - `timed_out`
 
 `canceled` is intentionally not added in this step because there is no canonical cancellation execution path yet.
+
+## Service-level observability guarantees
+
+Lifecycle events now include:
+
+- `job_id`,
+- lifecycle `state`,
+- failure kind (if any),
+- execution-path detail,
+- observed timestamp,
+- completion class on terminal transitions.
+
+Together with `JobAccountingSummary`, this gives a minimal but load-bearing per-job trace for admission decision, queueing, execution, and completion/failure.
 
 ## Technical admission checks (pre-run)
 
@@ -78,6 +112,16 @@ Admission runs via `ComputePipelineBackend::technical_admission` and rejects bef
 
 All admission rejections reuse canonical pipeline failure kinds (`CanonicalFailureKind`) to avoid creating a second error taxonomy.
 
+## Smoke + integration hardening reference coverage
+
+`runtime/ucf-compute/src/compute_service.rs` includes service-focused tests covering:
+
+- submit → admit → queue → run → complete terminal flow,
+- submit → reject for invalid input, budget mismatch, artifact/backend admission issues,
+- run-time failure mapping (timeout class and worker launch/IPC error mapping),
+- accounting + provenance population for completed jobs,
+- integration path: canonical onboarding reference backend wrapped through bounded service (when backend features are available in current build).
+
 ## What is deliberately not built yet
 
 - scheduler policies beyond FIFO dispatch
@@ -85,5 +129,6 @@ All admission rejections reuse canonical pipeline failure kinds (`CanonicalFailu
 - worker fleet orchestration and remote placement
 - governance/billing/tenant policy layers
 - service-level cancellation or preemption protocols
+- external metrics/tracing/datastore platform
 
 This keeps the core load-bearing and minimal while preserving a clean handoff to later scheduling/execution expansion.
