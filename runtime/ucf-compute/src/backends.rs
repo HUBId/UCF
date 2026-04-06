@@ -366,7 +366,7 @@ mod tests {
         #[cfg(all(feature = "compute-burn", feature = "lfm-burn"))]
         {
             if let Ok(backend) = result {
-                assert!(backend.name().contains("compute_pipeline"));
+                assert_eq!(backend.name(), CANONICAL_ONBOARDING_PACK.as_str());
             }
         }
         #[cfg(not(all(feature = "compute-burn", feature = "lfm-burn")))]
