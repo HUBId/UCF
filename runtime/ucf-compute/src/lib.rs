@@ -26,6 +26,7 @@ pub mod backends;
 ))]
 pub mod candle_weights;
 pub mod capabilities;
+pub mod compute_service;
 pub mod contracts;
 pub mod enablement;
 pub mod evidence;
@@ -59,6 +60,10 @@ pub use backends::{
     build_backend, build_onboarding_reference_backend, ComputeBackendConfig, ComputeBackendKind,
     CANONICAL_ONBOARDING_BACKEND, CANONICAL_ONBOARDING_PACK,
 };
+pub use compute_service::{
+    ComputeJob, InMemoryComputeService, JobId, JobLifecycleEvent, JobLifecycleState, JobRecord,
+    JobSubmissionMeta,
+};
 pub use contracts::{StageContractVersion, ValidationStatus};
 pub use enablement::{
     EnablementComputeBackend, EnablementConfig, RealEnablementMode, SlotEnablement, SlotMode,
@@ -69,9 +74,10 @@ pub use model_store::{
     ModelDevice, ModelFormat, ModelLoadError, ModelSlot, ModelSlotSpec, ModelStore,
 };
 pub use pipeline::{
-    CanonicalBackendRoute, CanonicalFailureKind, CanonicalPipelineFailure,
-    CanonicalPipelineRequest, CanonicalPipelineResult, CanonicalPipelineState, CanonicalStageId,
-    ComputePipelineBackend, WorldStageReadiness, WorldStageStatus, CANONICAL_STAGE_SEQUENCE,
+    CanonicalAdmissionDecision, CanonicalBackendRoute, CanonicalFailureKind,
+    CanonicalPipelineFailure, CanonicalPipelineRequest, CanonicalPipelineResult,
+    CanonicalPipelineState, CanonicalStageId, ComputePipelineBackend, WorldStageReadiness,
+    WorldStageStatus, CANONICAL_STAGE_SEQUENCE,
 };
 #[cfg(feature = "remote-compute")]
 pub use remote_compute::{
