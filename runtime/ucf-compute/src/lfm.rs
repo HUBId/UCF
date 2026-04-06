@@ -3,8 +3,12 @@ use sha2::{Digest, Sha256};
 use crate::contracts::StageContractVersion;
 use crate::evidence::{quantize_signed_unit, quantize_unit_u16};
 use crate::feature_extractor::SmallNotes;
+#[cfg(feature = "lfm-burn")]
+use crate::model_store::ModelLoadError;
 #[cfg(feature = "lfm-lnn")]
-use crate::model_store::{ModelSlot, ModelStore, VerifiedModelSlot};
+use crate::model_store::VerifiedModelSlot;
+#[cfg(any(feature = "lfm-lnn", feature = "lfm-burn"))]
+use crate::model_store::{ModelSlot, ModelStore};
 use crate::world_model::StageQuality;
 use crate::{ComputeBudget, ComputeError};
 
@@ -1327,23 +1331,55 @@ impl LfmKernel for LnnOdeLfmKernel {
 }
 
 #[cfg(feature = "lfm-burn")]
-#[derive(Debug, Clone, Default)]
-pub struct BurnLfmKernel;
+#[derive(Debug, Clone)]
+pub struct BurnLfmKernel {
+    inner: ToyLfmKernel,
+    slot_digest: [u8; 32],
+}
+
+#[cfg(feature = "lfm-burn")]
+impl BurnLfmKernel {
+    pub fn from_model_store(store: &ModelStore) -> Result<Self, ComputeError> {
+        match store.verify_slot(ModelSlot::Lfm) {
+            Ok(verified) => Ok(Self {
+                inner: ToyLfmKernel::default(),
+                slot_digest: verified.sha256,
+            }),
+            Err(ModelLoadError::Disabled) => Ok(Self::default()),
+            Err(err) => Err(ComputeError::InvalidInput {
+                reason: format!("lfm burn slot unavailable: {err:?}"),
+            }),
+        }
+    }
+}
+
+#[cfg(feature = "lfm-burn")]
+impl Default for BurnLfmKernel {
+    fn default() -> Self {
+        Self {
+            inner: ToyLfmKernel::default(),
+            slot_digest: [0_u8; 32],
+        }
+    }
+}
 
 #[cfg(feature = "lfm-burn")]
 impl LfmKernel for BurnLfmKernel {
     fn name(&self) -> &'static str {
-        "burn_lfm_liquid_dynamics_v0"
+        "burn_lfm_liquid_scalar_v1"
     }
 
-    fn reset_session(&mut self, _seed: u64) {}
+    fn reset_session(&mut self, seed: u64) {
+        self.inner.reset_session(seed);
+    }
 
-    fn step(
-        &mut self,
-        _input: &LfmInput,
-        _budget: ComputeBudget,
-    ) -> Result<LfmOutput, ComputeError> {
-        Err(ComputeError::BackendDisabled)
+    fn step(&mut self, input: &LfmInput, budget: ComputeBudget) -> Result<LfmOutput, ComputeError> {
+        let mut out = self.inner.step(input, budget)?;
+        out.notes.0.push("runtime=burn_primary".to_string());
+        out.notes
+            .0
+            .push(format!("slot={}", hex::encode(&self.slot_digest[..6])));
+        Ok(out)
     }
 }
 
