@@ -61,9 +61,10 @@ pub use backends::{
     CANONICAL_ONBOARDING_BACKEND, CANONICAL_ONBOARDING_PACK,
 };
 pub use compute_service::{
-    ComputeJob, InMemoryComputeService, JobAccountingSummary, JobCompletionClass, JobExecutionPath,
-    JobId, JobLifecycleEvent, JobLifecycleState, JobRecord, JobSubmissionMeta, SchedulerConfig,
-    SchedulerSnapshot,
+    ComputeJob, ExecutionPlacement, ExecutionUnitId, ExecutionUnitKind, ExecutionUnitSnapshot,
+    InMemoryComputeService, JobAccountingSummary, JobCompletionClass, JobExecutionPath, JobId,
+    JobLifecycleEvent, JobLifecycleState, JobRecord, JobSubmissionMeta, MultiWorkerComputeService,
+    SchedulerConfig, SchedulerSnapshot, WorkerAvailability, WorkerDispatchOutcome,
 };
 pub use contracts::{StageContractVersion, ValidationStatus};
 pub use enablement::{
