@@ -11,6 +11,7 @@ The service core wraps the existing canonical `CanonicalPipelineRequest -> canon
 - technical admission before execution,
 - structured admission rejection vs. post-admission execution failure separation,
 - in-memory queue + lifecycle event log.
+- minimal job-level observability fields (`job_id`, lifecycle state transitions, admission route, failure kind/detail, evidence-chain digest prefix after execution).
 
 No distributed orchestration, persistence, billing/tenant policy, governance scoring, or quota economy is introduced here.
 
@@ -41,6 +42,7 @@ Admission runs via `ComputePipelineBackend::technical_admission` and rejects bef
    - required slot failures map to canonical artifact failure kinds
 4. backend / contract compatibility:
    - disabled stage backends are rejected
+   - unavailable stage backends are rejected
    - stage contract compatibility (`StageContractVersion::V1`) must hold
 
 All admission rejections reuse canonical pipeline failure kinds (`CanonicalFailureKind`) to avoid creating a second error taxonomy.
