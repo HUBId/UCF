@@ -104,3 +104,8 @@ This section records JEPA against the canonical readiness ladder:
 2. **No dedicated burn-typed LFM weight loader yet**: LFM slot is hash/manifest verified, but there is no dedicated Burn LFM tensor schema loader equivalent to mature world/sae/ssm weight spec flows.
 3. **Candle/Burn LFM parity remains partial**: Candle and LNN lanes exist, but backend-level runtime parity and compatibility diagnostics are still uneven across lanes.
 4. **Operator-grade failure automation is pending**: canonical failures are typed, but runbook automation for LFM-specific remediation (artifact class → operator action) is not fully wired.
+
+## Transition checkpoint
+
+The canonical onboarding->stack transition decision is recorded in `docs/roadmap/REAL_COMPUTE_TRANSITION.md`.
+
