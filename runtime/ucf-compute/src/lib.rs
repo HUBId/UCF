@@ -65,7 +65,8 @@ pub use compute_service::{
     ComputeJob, ExecutionPlacement, ExecutionUnitId, ExecutionUnitKind, ExecutionUnitSnapshot,
     InMemoryComputeService, JobAccountingSummary, JobCompletionClass, JobExecutionPath, JobId,
     JobLifecycleEvent, JobLifecycleState, JobRecord, JobSubmissionMeta, MultiWorkerComputeService,
-    SchedulerConfig, SchedulerSnapshot, WorkerAvailability, WorkerDispatchOutcome,
+    PlacementCandidateAssessment, PlacementFailureKind, PlacementSuitability, SchedulerConfig,
+    SchedulerSnapshot, WorkerAvailability, WorkerDispatchOutcome,
 };
 pub use contracts::{StageContractVersion, ValidationStatus};
 pub use enablement::{
@@ -77,7 +78,7 @@ pub use model_store::{
     ModelDevice, ModelFormat, ModelLoadError, ModelSlot, ModelSlotSpec, ModelStore,
 };
 pub use pipeline::{
-    CanonicalAdmissionDecision, CanonicalBackendRoute, CanonicalFailureKind,
+    BackendExecutionLane, CanonicalAdmissionDecision, CanonicalBackendRoute, CanonicalFailureKind,
     CanonicalPipelineFailure, CanonicalPipelineRequest, CanonicalPipelineResult,
     CanonicalPipelineState, CanonicalStageId, ComputePipelineBackend, WorldStageReadiness,
     WorldStageStatus, CANONICAL_STAGE_SEQUENCE,

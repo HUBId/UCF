@@ -5,9 +5,10 @@ use crate::backend_pack::{
     BackendPackConfig, BackendPackFactory, BackendPackKind, ModelSlotProvenance,
 };
 use crate::pipeline::{
-    CanonicalAdmissionDecision, CanonicalFailureKind, CanonicalPipelineFailure,
-    CanonicalPipelineRequest, CanonicalPipelineResult, CanonicalPipelineState, CanonicalStageId,
-    CanonicalWorkSummary, ComputePipelineBackend, FusionConfig, LimitsConfig,
+    BackendExecutionLane, CanonicalAdmissionDecision, CanonicalFailureKind,
+    CanonicalPipelineFailure, CanonicalPipelineRequest, CanonicalPipelineResult,
+    CanonicalPipelineState, CanonicalStageId, CanonicalWorkSummary, ComputePipelineBackend,
+    FusionConfig, LimitsConfig,
 };
 use crate::ComputeError;
 
@@ -424,6 +425,17 @@ impl InMemoryComputeService {
         self.scheduler.execution_path
     }
 
+    pub fn technical_admission(
+        &self,
+        request: &CanonicalPipelineRequest,
+    ) -> CanonicalAdmissionDecision {
+        self.backend.technical_admission(request)
+    }
+
+    pub fn execution_lane(&self) -> BackendExecutionLane {
+        self.backend.execution_lane()
+    }
+
     pub fn job(&self, job_id: JobId) -> Option<&JobRecord> {
         self.jobs.get(&job_id)
     }
@@ -519,6 +531,36 @@ pub struct ExecutionPlacement {
     pub unit_id: ExecutionUnitId,
     pub unit_kind: ExecutionUnitKind,
     pub execution_path: JobExecutionPath,
+    pub lane: BackendExecutionLane,
+    pub suitability: PlacementSuitability,
+    pub degraded_fallback: bool,
+    pub reason: String,
+    pub considered: Vec<PlacementCandidateAssessment>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlacementSuitability {
+    Suitable,
+    Incompatible,
+    Disabled,
+    Unavailable,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlacementFailureKind {
+    NoSuitableBackend,
+    BackendIncompatible,
+    BackendUnavailable,
+    WorkerPlacementFailed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlacementCandidateAssessment {
+    pub unit_id: ExecutionUnitId,
+    pub unit_kind: ExecutionUnitKind,
+    pub lane: BackendExecutionLane,
+    pub suitability: PlacementSuitability,
+    pub detail: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -529,6 +571,7 @@ pub struct MultiWorkerJobRecord {
     pub result: Option<CanonicalPipelineResult>,
     pub placement: ExecutionPlacement,
     pub worker_dispatch_outcome: Option<WorkerDispatchOutcome>,
+    pub placement_failure: Option<PlacementFailureKind>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -553,6 +596,11 @@ struct QueuedJob {
     request: CanonicalPipelineRequest,
     meta: JobSubmissionMeta,
     requested_unit: Option<ExecutionUnitId>,
+}
+
+struct UnitSelection {
+    idx: usize,
+    placement: ExecutionPlacement,
 }
 
 pub struct MultiWorkerComputeService {
@@ -667,9 +715,11 @@ impl MultiWorkerComputeService {
             let Some(job) = self.queue.pop_front() else {
                 break;
             };
-            let placement = match self.select_unit(job.requested_unit.clone()) {
-                Some(idx) => idx,
+            let selection = match self.select_unit(&job.request, job.requested_unit.clone()) {
+                Some(selection) => selection,
                 None => {
+                    let (placement, placement_failure, worker_dispatch_outcome) =
+                        self.rejected_placement(&job);
                     if let Some(requested_unit) = job.requested_unit.clone() {
                         let record = MultiWorkerJobRecord {
                             id: job.id,
@@ -677,25 +727,36 @@ impl MultiWorkerComputeService {
                             execution_failure: Some(CanonicalPipelineFailure {
                                 kind: CanonicalFailureKind::ExecutionError,
                                 stage: None,
-                                detail: format!("worker dispatch failure: {}", requested_unit.0),
+                                detail: format!("worker placement failed: {}", requested_unit.0),
                             }),
                             result: None,
-                            placement: ExecutionPlacement {
-                                unit_id: requested_unit,
-                                unit_kind: ExecutionUnitKind::Worker,
-                                execution_path: JobExecutionPath::WorkerIpc,
-                            },
-                            worker_dispatch_outcome: Some(WorkerDispatchOutcome::DispatchFailure),
+                            placement,
+                            worker_dispatch_outcome,
+                            placement_failure: Some(placement_failure),
                         };
                         done.push(record.id);
                         self.records.insert(record.id, record);
                         continue;
                     }
-                    self.queue.push_front(job);
-                    break;
+                    let record = MultiWorkerJobRecord {
+                        id: job.id,
+                        state: JobLifecycleState::Failed,
+                        execution_failure: Some(CanonicalPipelineFailure {
+                            kind: CanonicalFailureKind::ExecutionError,
+                            stage: None,
+                            detail: "no suitable backend".to_string(),
+                        }),
+                        result: None,
+                        placement,
+                        worker_dispatch_outcome,
+                        placement_failure: Some(placement_failure),
+                    };
+                    done.push(record.id);
+                    self.records.insert(record.id, record);
+                    continue;
                 }
             };
-            let record = self.execute(job, placement);
+            let record = self.execute(job, selection);
             done.push(record.id);
             self.records.insert(record.id, record);
         }
@@ -718,35 +779,208 @@ impl MultiWorkerComputeService {
             .collect()
     }
 
-    fn select_unit(&mut self, requested: Option<ExecutionUnitId>) -> Option<usize> {
-        if let Some(requested) = requested {
-            return self.units.iter().position(|unit| unit.id == requested);
+    fn rejected_placement(
+        &self,
+        job: &QueuedJob,
+    ) -> (
+        ExecutionPlacement,
+        PlacementFailureKind,
+        Option<WorkerDispatchOutcome>,
+    ) {
+        let mut considered = self.assess_candidates(&job.request);
+        if let Some(requested) = job.requested_unit.clone() {
+            let candidate = considered
+                .iter()
+                .find(|candidate| candidate.unit_id == requested)
+                .cloned();
+            let suitability = candidate
+                .as_ref()
+                .map(|candidate| candidate.suitability)
+                .unwrap_or(PlacementSuitability::Unavailable);
+            let kind = if candidate.is_none() {
+                PlacementFailureKind::WorkerPlacementFailed
+            } else {
+                placement_failure_kind(suitability)
+            };
+            let dispatch = if suitability == PlacementSuitability::Unavailable
+                && candidate.is_some()
+            {
+                Some(WorkerDispatchOutcome::Unavailable)
+            } else {
+                Some(WorkerDispatchOutcome::DispatchFailure)
+            };
+            return (
+                ExecutionPlacement {
+                    unit_id: requested,
+                    unit_kind: ExecutionUnitKind::Worker,
+                    execution_path: JobExecutionPath::WorkerIpc,
+                    lane: BackendExecutionLane::Worker,
+                    suitability,
+                    degraded_fallback: false,
+                    reason: "requested unit not placeable".to_string(),
+                    considered,
+                },
+                kind,
+                dispatch,
+            );
         }
-        let len = self.units.len();
-        if len == 0 {
-            return None;
-        }
-        for offset in 0..len {
-            let idx = (self.round_robin_cursor + offset) % len;
-            let unit = &self.units[idx];
-            if unit.availability == WorkerAvailability::Available {
-                self.round_robin_cursor = (idx + 1) % len;
-                return Some(idx);
-            }
-        }
-        None
+        let best = if considered
+            .iter()
+            .any(|candidate| candidate.suitability == PlacementSuitability::Incompatible)
+        {
+            PlacementFailureKind::BackendIncompatible
+        } else if considered
+            .iter()
+            .any(|candidate| candidate.suitability == PlacementSuitability::Disabled)
+        {
+            PlacementFailureKind::BackendUnavailable
+        } else {
+            PlacementFailureKind::NoSuitableBackend
+        };
+        considered.sort_by(|a, b| a.unit_id.cmp(&b.unit_id));
+        (
+            ExecutionPlacement {
+                unit_id: ExecutionUnitId("none".to_string()),
+                unit_kind: ExecutionUnitKind::Local,
+                execution_path: JobExecutionPath::LocalCanonical,
+                lane: BackendExecutionLane::Toy,
+                suitability: PlacementSuitability::Unavailable,
+                degraded_fallback: false,
+                reason: "no suitable execution unit".to_string(),
+                considered,
+            },
+            best,
+            None,
+        )
     }
 
-    fn execute(&mut self, job: QueuedJob, unit_idx: usize) -> MultiWorkerJobRecord {
-        let unit = &mut self.units[unit_idx];
-        let placement = ExecutionPlacement {
-            unit_id: unit.id.clone(),
-            unit_kind: unit.kind,
-            execution_path: match unit.kind {
-                ExecutionUnitKind::Local => JobExecutionPath::LocalCanonical,
-                ExecutionUnitKind::Worker => JobExecutionPath::WorkerIpc,
+    fn assess_candidates(
+        &self,
+        request: &CanonicalPipelineRequest,
+    ) -> Vec<PlacementCandidateAssessment> {
+        self.units
+            .iter()
+            .map(|unit| {
+                if unit.availability != WorkerAvailability::Available {
+                    return PlacementCandidateAssessment {
+                        unit_id: unit.id.clone(),
+                        unit_kind: unit.kind,
+                        lane: unit.service.execution_lane(),
+                        suitability: PlacementSuitability::Unavailable,
+                        detail: "unit marked unavailable".to_string(),
+                    };
+                }
+                let admission = unit.service.technical_admission(request);
+                if let Some(failure) = admission.failure {
+                    PlacementCandidateAssessment {
+                        unit_id: unit.id.clone(),
+                        unit_kind: unit.kind,
+                        lane: unit.service.execution_lane(),
+                        suitability: suitability_for_failure(failure.kind),
+                        detail: failure.detail,
+                    }
+                } else {
+                    PlacementCandidateAssessment {
+                        unit_id: unit.id.clone(),
+                        unit_kind: unit.kind,
+                        lane: unit.service.execution_lane(),
+                        suitability: PlacementSuitability::Suitable,
+                        detail: "admitted".to_string(),
+                    }
+                }
+            })
+            .collect()
+    }
+
+    fn select_unit(
+        &mut self,
+        request: &CanonicalPipelineRequest,
+        requested: Option<ExecutionUnitId>,
+    ) -> Option<UnitSelection> {
+        let assessments = self.assess_candidates(request);
+        if let Some(requested) = requested {
+            let idx = self.units.iter().position(|unit| unit.id == requested)?;
+            let selected = assessments
+                .iter()
+                .find(|candidate| candidate.unit_id == requested)?;
+            if selected.suitability != PlacementSuitability::Suitable {
+                return None;
+            }
+            return Some(UnitSelection {
+                idx,
+                placement: ExecutionPlacement {
+                    unit_id: requested,
+                    unit_kind: selected.unit_kind,
+                    execution_path: match selected.unit_kind {
+                        ExecutionUnitKind::Local => JobExecutionPath::LocalCanonical,
+                        ExecutionUnitKind::Worker => JobExecutionPath::WorkerIpc,
+                    },
+                    lane: selected.lane,
+                    suitability: selected.suitability,
+                    degraded_fallback: false,
+                    reason: "requested execution unit selected".to_string(),
+                    considered: assessments,
+                },
+            });
+        }
+        let mut suitable = assessments
+            .iter()
+            .filter(|candidate| candidate.suitability == PlacementSuitability::Suitable)
+            .cloned()
+            .collect::<Vec<_>>();
+        if suitable.is_empty() {
+            return None;
+        }
+        suitable.sort_by_key(|candidate| {
+            let lane_rank = match candidate.lane {
+                BackendExecutionLane::Burn => 0usize,
+                BackendExecutionLane::Candle => 1,
+                BackendExecutionLane::Worker => 2,
+                BackendExecutionLane::Toy | BackendExecutionLane::Mixed => 3,
+            };
+            let base = self
+                .units
+                .iter()
+                .position(|unit| unit.id == candidate.unit_id)
+                .unwrap_or(usize::MAX);
+            (
+                lane_rank,
+                (base + self.round_robin_cursor) % self.units.len().max(1),
+            )
+        });
+        let selected = suitable.first()?.clone();
+        let idx = self
+            .units
+            .iter()
+            .position(|unit| unit.id == selected.unit_id)?;
+        self.round_robin_cursor = (idx + 1) % self.units.len().max(1);
+        Some(UnitSelection {
+            idx,
+            placement: ExecutionPlacement {
+                unit_id: selected.unit_id,
+                unit_kind: selected.unit_kind,
+                execution_path: match selected.unit_kind {
+                    ExecutionUnitKind::Local => JobExecutionPath::LocalCanonical,
+                    ExecutionUnitKind::Worker => JobExecutionPath::WorkerIpc,
+                },
+                lane: selected.lane,
+                suitability: selected.suitability,
+                degraded_fallback: selected.lane == BackendExecutionLane::Candle,
+                reason: if selected.lane == BackendExecutionLane::Burn {
+                    "selected burn-capable unit".to_string()
+                } else if selected.lane == BackendExecutionLane::Candle {
+                    "burn unavailable; selected candle fallback".to_string()
+                } else {
+                    "selected available non-burn unit".to_string()
+                },
+                considered: assessments,
             },
-        };
+        })
+    }
+
+    fn execute(&mut self, job: QueuedJob, selection: UnitSelection) -> MultiWorkerJobRecord {
+        let unit = &mut self.units[selection.idx];
+        let placement = selection.placement;
         if unit.availability != WorkerAvailability::Available {
             let failure = CanonicalPipelineFailure {
                 kind: CanonicalFailureKind::ExecutionError,
@@ -760,6 +994,7 @@ impl MultiWorkerComputeService {
                 result: None,
                 placement,
                 worker_dispatch_outcome: Some(WorkerDispatchOutcome::Unavailable),
+                placement_failure: Some(PlacementFailureKind::BackendUnavailable),
             };
         }
         let submitted_job_id = {
@@ -781,12 +1016,13 @@ impl MultiWorkerComputeService {
                     Some(WorkerDispatchOutcome::DispatchFailure)
                 };
                 MultiWorkerJobRecord {
-                    id: record.job.id,
+                    id: job.id,
                     state: record.state,
                     execution_failure: record.execution_failure.clone(),
                     result: record.result.clone(),
                     placement,
                     worker_dispatch_outcome: dispatch_outcome,
+                    placement_failure: None,
                 }
             }
             Ok(_) => MultiWorkerJobRecord {
@@ -800,6 +1036,7 @@ impl MultiWorkerComputeService {
                 result: None,
                 placement,
                 worker_dispatch_outcome: Some(WorkerDispatchOutcome::DispatchFailure),
+                placement_failure: Some(PlacementFailureKind::WorkerPlacementFailed),
             },
             Err(err) => {
                 let failure = canonical_execution_failure(err);
@@ -820,8 +1057,34 @@ impl MultiWorkerComputeService {
                     result: None,
                     placement,
                     worker_dispatch_outcome: Some(dispatch_outcome),
+                    placement_failure: Some(PlacementFailureKind::WorkerPlacementFailed),
                 }
             }
+        }
+    }
+}
+
+fn suitability_for_failure(kind: CanonicalFailureKind) -> PlacementSuitability {
+    match kind {
+        CanonicalFailureKind::BackendDisabled => PlacementSuitability::Disabled,
+        CanonicalFailureKind::StageContractMismatch
+        | CanonicalFailureKind::ContractMismatch
+        | CanonicalFailureKind::ArtifactIncompatible => PlacementSuitability::Incompatible,
+        CanonicalFailureKind::ArtifactUnavailable
+        | CanonicalFailureKind::ArtifactVerificationFailed
+        | CanonicalFailureKind::StageUnavailable
+        | CanonicalFailureKind::NsrUnavailable
+        | CanonicalFailureKind::NsrBackendUnavailable => PlacementSuitability::Unavailable,
+        _ => PlacementSuitability::Unavailable,
+    }
+}
+
+fn placement_failure_kind(suitability: PlacementSuitability) -> PlacementFailureKind {
+    match suitability {
+        PlacementSuitability::Suitable => PlacementFailureKind::WorkerPlacementFailed,
+        PlacementSuitability::Incompatible => PlacementFailureKind::BackendIncompatible,
+        PlacementSuitability::Disabled | PlacementSuitability::Unavailable => {
+            PlacementFailureKind::BackendUnavailable
         }
     }
 }
@@ -850,7 +1113,8 @@ mod tests {
     use super::{
         ExecutionUnitId, ExecutionUnitKind, InMemoryComputeService, JobCompletionClass,
         JobExecutionPath, JobLifecycleState, JobSubmissionMeta, MultiWorkerComputeService,
-        SchedulerConfig, WorkerAvailability, WorkerDispatchOutcome,
+        PlacementFailureKind, PlacementSuitability, SchedulerConfig, WorkerAvailability,
+        WorkerDispatchOutcome,
     };
 
     struct NullLlm;
@@ -1347,6 +1611,8 @@ mod tests {
             record.placement.execution_path,
             JobExecutionPath::LocalCanonical
         );
+        assert_eq!(record.placement.suitability, PlacementSuitability::Suitable);
+        assert!(!record.placement.considered.is_empty());
         assert!(record.result.is_some());
     }
 
@@ -1376,6 +1642,7 @@ mod tests {
         let record = service.job(job_id).expect("job result must exist");
         assert_eq!(record.placement.unit_id, worker_id);
         assert_eq!(record.placement.unit_kind, ExecutionUnitKind::Worker);
+        assert_eq!(record.placement.suitability, PlacementSuitability::Suitable);
         assert_eq!(
             record.worker_dispatch_outcome,
             Some(WorkerDispatchOutcome::Completed)
@@ -1426,12 +1693,16 @@ mod tests {
             unavailable.worker_dispatch_outcome,
             Some(WorkerDispatchOutcome::Unavailable)
         );
+        assert_eq!(
+            unavailable.placement_failure,
+            Some(PlacementFailureKind::BackendUnavailable)
+        );
         assert!(unavailable
             .execution_failure
             .as_ref()
             .expect("failure expected")
             .detail
-            .contains("worker unavailable"));
+            .contains("worker placement failed"));
 
         let dispatch_failure = service
             .job(dispatch_failure_job)
@@ -1440,11 +1711,106 @@ mod tests {
             dispatch_failure.worker_dispatch_outcome,
             Some(WorkerDispatchOutcome::DispatchFailure)
         );
+        assert_eq!(
+            dispatch_failure.placement_failure,
+            Some(PlacementFailureKind::WorkerPlacementFailed)
+        );
         assert!(dispatch_failure
             .execution_failure
             .as_ref()
             .expect("failure expected")
             .detail
-            .contains("worker dispatch failure"));
+            .contains("worker placement failed"));
+    }
+
+    #[test]
+    fn multi_worker_prefers_burn_then_candle_fallback_with_provenance() {
+        let local_backend = ComputePipelineBackend::new(
+            pack_with(BackendComponentId::CandleJepaV1, Vec::new()),
+            FusionConfig::default(),
+            LimitsConfig::default(),
+        );
+        let mut service = MultiWorkerComputeService::new(local_backend, 1);
+        let burn_worker = ComputePipelineBackend::new(
+            pack_with(BackendComponentId::BurnJepaV1, Vec::new()),
+            FusionConfig::default(),
+            LimitsConfig::default(),
+        );
+        service.register_worker_backend("burn-worker", burn_worker, 1);
+
+        let burn_job = service.submit(
+            valid_request(),
+            JobSubmissionMeta {
+                submitted_at_unix_ms: 17,
+                submitted_by: Some("placement".to_string()),
+            },
+            None,
+        );
+        service.run_scheduler_cycle(1);
+        let burn_record = service.job(burn_job).expect("burn result");
+        assert!(!burn_record.placement.degraded_fallback);
+        assert!(burn_record.placement.reason.contains("burn"));
+
+        for unit in service.execution_units() {
+            if unit.id.0 == "burn-worker" {
+                service.set_worker_availability(&unit.id, WorkerAvailability::Unavailable);
+            }
+        }
+        let candle_job = service.submit(
+            valid_request(),
+            JobSubmissionMeta {
+                submitted_at_unix_ms: 18,
+                submitted_by: Some("placement".to_string()),
+            },
+            None,
+        );
+        service.run_scheduler_cycle(1);
+        let candle_record = service.job(candle_job).expect("candle result");
+        assert!(candle_record.placement.degraded_fallback);
+        assert!(candle_record.placement.reason.contains("fallback"));
+    }
+
+    #[test]
+    fn requested_incompatible_worker_is_rejected_with_structured_failure() {
+        let local_backend = ComputePipelineBackend::new(
+            pack_with(BackendComponentId::ToyV1, Vec::new()),
+            FusionConfig::default(),
+            LimitsConfig::default(),
+        );
+        let mut service = MultiWorkerComputeService::new(local_backend, 1);
+        let disabled_world = vec![ModelSlotProvenance {
+            slot: ModelSlot::WorldJepa,
+            stage: "world",
+            required_for_pack: true,
+            status: SlotRuntimeStatus::Incompatible,
+            code: Some(ArtifactFailureCode::ArtifactIncompatible),
+            detail: Some("slot incompatible for test".to_string()),
+            resolved_path: None,
+            hash_prefix: None,
+            contract_version: Some("v1".to_string()),
+            format: None,
+        }];
+        let incompatible_backend = ComputePipelineBackend::new(
+            pack_with(BackendComponentId::ToyV1, disabled_world),
+            FusionConfig::default(),
+            LimitsConfig::default(),
+        );
+        let worker_id =
+            service.register_worker_backend("incompatible-worker", incompatible_backend, 1);
+        let job = service.submit(
+            valid_request(),
+            JobSubmissionMeta {
+                submitted_at_unix_ms: 19,
+                submitted_by: Some("placement".to_string()),
+            },
+            Some(worker_id),
+        );
+        service.run_scheduler_cycle(1);
+        let record = service.job(job).expect("record");
+        assert_eq!(
+            record.placement_failure,
+            Some(PlacementFailureKind::BackendIncompatible)
+        );
+        assert_eq!(record.result, None);
     }
 }
