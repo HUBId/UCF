@@ -2,7 +2,9 @@ use crate::compute_service::{
     InMemoryComputeService, JobCompletionClass, JobExecutionPath, JobId, JobLifecycleEvent,
     JobLifecycleState, JobRecord, JobSubmissionMeta,
 };
-use crate::job_history::{JobHistoryStore, JobHistoryStoreError, PersistedJobRecord};
+use crate::job_history::{
+    JobHistoryStore, JobHistoryStoreError, PersistedCanonicalRequest, PersistedJobRecord,
+};
 use crate::pipeline::{
     CanonicalFailureKind, CanonicalPipelineFailure, CanonicalPipelineRequest,
     CanonicalPipelineState, CanonicalWorkSummary,
@@ -280,6 +282,133 @@ impl CanonicalComputeEntryPoint {
         &mut self.service
     }
 
+    pub fn replay(
+        &mut self,
+        handle: ComputeJobHandle,
+    ) -> Result<ComputeReplayOutcome, crate::ComputeError> {
+        let source = match self.replay_source(handle.job_id) {
+            Some(source) => source,
+            None => {
+                return Ok(ComputeReplayOutcome::NotReplayable {
+                    source_job_id: handle.job_id,
+                    code: ReplayFailureCode::RecordMissing,
+                    detail: "replay record missing".to_string(),
+                })
+            }
+        };
+        let Some(request) = source.request else {
+            return Ok(ComputeReplayOutcome::NotReplayable {
+                source_job_id: source.job_id,
+                code: ReplayFailureCode::ConfigurationIncomplete,
+                detail: "replay configuration incomplete (canonical request unavailable)"
+                    .to_string(),
+            });
+        };
+        let admission = self.service.technical_admission(&request);
+        if let Some(failure) = admission.failure {
+            let (code, detail) = match failure.kind {
+                CanonicalFailureKind::ArtifactUnavailable
+                | CanonicalFailureKind::ArtifactVerificationFailed
+                | CanonicalFailureKind::ArtifactIncompatible => (
+                    ReplayFailureCode::RequiredArtifactUnavailable,
+                    format!(
+                        "required artifact/slot no longer available: {}",
+                        failure.detail
+                    ),
+                ),
+                CanonicalFailureKind::BackendDisabled
+                | CanonicalFailureKind::StageUnavailable
+                | CanonicalFailureKind::NsrBackendUnavailable => (
+                    ReplayFailureCode::BackendOrDeviceUnavailable,
+                    format!(
+                        "backend/worker/device no longer suitable: {}",
+                        failure.detail
+                    ),
+                ),
+                _ => (
+                    ReplayFailureCode::ConfigurationIncomplete,
+                    format!("replay configuration incomplete: {}", failure.detail),
+                ),
+            };
+            return Ok(ComputeReplayOutcome::NotReplayable {
+                source_job_id: source.job_id,
+                code,
+                detail,
+            });
+        }
+
+        let submitted = self.service.submit(
+            request,
+            JobSubmissionMeta {
+                submitted_at_unix_ms: now_unix_ms(),
+                submitted_by: Some(format!("replay_of_job_{}", source.job_id.0)),
+            },
+        );
+        let replay_id = submitted.job.id;
+        self.persist_job(replay_id);
+        let _ = self.service.run_next()?;
+        self.persist_job(replay_id);
+        let replayed = self
+            .service
+            .job(replay_id)
+            .expect("replay job should be available");
+
+        let replay_slots = replayed
+            .accounting
+            .model_slots
+            .iter()
+            .map(|slot| {
+                format!(
+                    "{:?}:{:?}:{}",
+                    slot.slot, slot.status, slot.required_for_pack
+                )
+            })
+            .collect::<Vec<_>>();
+        let diff = ReplayConfigurationDiff {
+            execution_path_match: source.execution_path == format!("{:?}", replayed.execution_path),
+            execution_lane_match: source.execution_lane
+                == Some(format!("{:?}", replayed.accounting.execution_lane)),
+            backend_route_match: source.backend_route == replayed.result.as_ref().map(|r| r.route),
+            model_slots_match: source.model_slots == replay_slots,
+        };
+        let replay_succeeded = replayed.state == JobLifecycleState::Completed;
+        let completion_class_match = source.completion_class
+            == Some(completion_class_name(replayed.accounting.completion_class).to_string());
+        let failure_kind_match = source.failure_kind
+            == replayed
+                .accounting
+                .failure_kind
+                .map(|kind| canonical_failure_kind_name(kind).to_string());
+        let determinism_class = if diff.execution_path_match
+            && diff.execution_lane_match
+            && diff.backend_route_match
+            && diff.model_slots_match
+        {
+            ReplayDeterminismClass::SameEffectiveConfiguration
+        } else if replay_succeeded {
+            ReplayDeterminismClass::ReplayableNotStrictlyDeterministic
+        } else {
+            ReplayDeterminismClass::NotReplayableUnderCurrentRuntimeState
+        };
+        let replay_failure = if !replay_succeeded {
+            Some(ReplayFailureCode::ReplayExecutionFailed)
+        } else if determinism_class == ReplayDeterminismClass::ReplayableNotStrictlyDeterministic {
+            Some(ReplayFailureCode::ReplayCompletedWithChangedConfiguration)
+        } else {
+            None
+        };
+        Ok(ComputeReplayOutcome::Completed(ComputeReplayReport {
+            source_job_id: source.job_id,
+            replay_job_id: replay_id,
+            determinism_class,
+            configuration_diff: diff,
+            replay_succeeded,
+            completion_class_match,
+            failure_kind_match,
+            replay_failure,
+        }))
+    }
+
     pub fn operations_snapshot(&self) -> RuntimeOpsSnapshot {
         let scheduler = self.service.scheduler_snapshot();
         let mut submitted_total = 0usize;
@@ -408,6 +537,38 @@ impl CanonicalComputeEntryPoint {
         }
     }
 
+    fn replay_source(&self, job_id: JobId) -> Option<ReplaySourceRecord> {
+        if let Some(record) = self.service.job(job_id) {
+            return Some(ReplaySourceRecord {
+                job_id,
+                request: Some(record.job.request.clone()),
+                execution_path: format!("{:?}", record.execution_path),
+                execution_lane: Some(format!("{:?}", record.accounting.execution_lane)),
+                backend_route: record.result.as_ref().map(|result| result.route),
+                model_slots: record
+                    .accounting
+                    .model_slots
+                    .iter()
+                    .map(|slot| {
+                        format!(
+                            "{:?}:{:?}:{}",
+                            slot.slot, slot.status, slot.required_for_pack
+                        )
+                    })
+                    .collect(),
+                completion_class: Some(
+                    completion_class_name(record.accounting.completion_class).to_string(),
+                ),
+                failure_kind: record
+                    .accounting
+                    .failure_kind
+                    .map(|kind| canonical_failure_kind_name(kind).to_string()),
+            });
+        }
+        let persisted = self.history_store.as_ref()?.get(job_id)?;
+        Some(ReplaySourceRecord::from_persisted(persisted))
+    }
+
     fn persist_job(&mut self, job_id: JobId) {
         let Some(store) = self.history_store.as_mut() else {
             return;
@@ -441,6 +602,166 @@ pub enum ComputeJobHistoryLookup {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ComputeHistoryLookupError {
     StoreUnavailable,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReplayDeterminismClass {
+    SameEffectiveConfiguration,
+    ReplayableNotStrictlyDeterministic,
+    NotReplayableUnderCurrentRuntimeState,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReplayFailureCode {
+    RecordMissing,
+    ConfigurationIncomplete,
+    RequiredArtifactUnavailable,
+    BackendOrDeviceUnavailable,
+    ReplayExecutionFailed,
+    ReplayCompletedWithChangedConfiguration,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReplayConfigurationDiff {
+    pub execution_path_match: bool,
+    pub execution_lane_match: bool,
+    pub backend_route_match: bool,
+    pub model_slots_match: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ComputeReplayReport {
+    pub source_job_id: JobId,
+    pub replay_job_id: JobId,
+    pub determinism_class: ReplayDeterminismClass,
+    pub configuration_diff: ReplayConfigurationDiff,
+    pub replay_succeeded: bool,
+    pub completion_class_match: bool,
+    pub failure_kind_match: bool,
+    pub replay_failure: Option<ReplayFailureCode>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ComputeReplayOutcome {
+    Completed(ComputeReplayReport),
+    NotReplayable {
+        source_job_id: JobId,
+        code: ReplayFailureCode,
+        detail: String,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ReplaySourceRecord {
+    job_id: JobId,
+    request: Option<CanonicalPipelineRequest>,
+    execution_path: String,
+    execution_lane: Option<String>,
+    backend_route: Option<crate::pipeline::CanonicalBackendRoute>,
+    model_slots: Vec<String>,
+    completion_class: Option<String>,
+    failure_kind: Option<String>,
+}
+
+impl ReplaySourceRecord {
+    fn from_persisted(persisted: &PersistedJobRecord) -> Self {
+        Self {
+            job_id: JobId(persisted.job_id),
+            request: persisted
+                .canonical_request
+                .as_ref()
+                .and_then(canonical_request_from_persisted),
+            execution_path: persisted.execution_path.clone(),
+            execution_lane: persisted.execution_lane.clone(),
+            backend_route: persisted.backend_route.as_ref().map(|route| {
+                crate::pipeline::CanonicalBackendRoute {
+                    pack_id: route.pack_id,
+                    world_backend: route.world_backend,
+                    sae_backend: route.sae_backend,
+                    ssm_backend: route.ssm_backend,
+                    lfm_backend: route.lfm_backend,
+                }
+            }),
+            model_slots: persisted
+                .model_slots
+                .iter()
+                .map(|slot| format!("{}:{}:{}", slot.slot, slot.status, slot.required_for_pack))
+                .collect(),
+            completion_class: persisted.completion_class.clone(),
+            failure_kind: persisted.failure_kind.clone(),
+        }
+    }
+}
+
+fn canonical_request_from_persisted(
+    request: &PersistedCanonicalRequest,
+) -> Option<CanonicalPipelineRequest> {
+    let context_digest = hex::decode(&request.context_digest_hex).ok()?;
+    if context_digest.len() != 32 {
+        return None;
+    }
+    let mut digest = [0u8; 32];
+    digest.copy_from_slice(&context_digest);
+    let degrade_policy = match request.budget.degrade_policy.as_str() {
+        "DegradeStages" => crate::DegradePolicy::DegradeStages,
+        "FailFast" => crate::DegradePolicy::FailFast,
+        _ => return None,
+    };
+    Some(CanonicalPipelineRequest {
+        input: crate::ComputeInput {
+            frame_id: crate::FrameId(request.frame_id),
+            t: request.t,
+            context_digest: digest,
+        },
+        budget: crate::ComputeBudget {
+            max_micros: request.budget.max_micros,
+            hard_timeout_micros: request.budget.hard_timeout_micros,
+            seed: request.budget.seed,
+            profile_id: request.budget.profile_id,
+            global_work_units: request.budget.global_work_units,
+            world_units: request.budget.world_units,
+            sae_units: request.budget.sae_units,
+            ssm_units: request.budget.ssm_units,
+            lfm_units: request.budget.lfm_units,
+            degrade_policy,
+            governor_tier: request.budget.governor_tier,
+        },
+    })
+}
+
+fn canonical_failure_kind_name(kind: CanonicalFailureKind) -> &'static str {
+    match kind {
+        CanonicalFailureKind::InvalidInput => "invalid_input",
+        CanonicalFailureKind::BackendDisabled => "backend_disabled",
+        CanonicalFailureKind::ContractMismatch => "contract_mismatch",
+        CanonicalFailureKind::StageContractMismatch => "stage_contract_mismatch",
+        CanonicalFailureKind::ArtifactUnavailable => "artifact_unavailable",
+        CanonicalFailureKind::ArtifactVerificationFailed => "artifact_verification_failed",
+        CanonicalFailureKind::ArtifactIncompatible => "artifact_incompatible",
+        CanonicalFailureKind::StageUnavailable => "stage_unavailable",
+        CanonicalFailureKind::DegradedFallback => "degraded_fallback",
+        CanonicalFailureKind::ValidationDegraded => "validation_degraded",
+        CanonicalFailureKind::BudgetExceeded => "budget_exceeded",
+        CanonicalFailureKind::Timeout => "timeout",
+        CanonicalFailureKind::ExecutionError => "execution_error",
+        CanonicalFailureKind::NsrDisabled => "nsr_disabled",
+        CanonicalFailureKind::NsrUnavailable => "nsr_unavailable",
+        CanonicalFailureKind::NsrArtifactVerificationFailed => "nsr_artifact_verification_failed",
+        CanonicalFailureKind::NsrContractMismatch => "nsr_contract_mismatch",
+        CanonicalFailureKind::NsrBackendUnavailable => "nsr_backend_unavailable",
+        CanonicalFailureKind::NsrExecutionError => "nsr_execution_error",
+    }
+}
+
+fn completion_class_name(class: JobCompletionClass) -> &'static str {
+    match class {
+        JobCompletionClass::RejectedBeforeExecution => "rejected_before_execution",
+        JobCompletionClass::Completed => "completed",
+        JobCompletionClass::DegradedCompleted => "degraded_completed",
+        JobCompletionClass::FailedDuringExecution => "failed_during_execution",
+        JobCompletionClass::TimedOut => "timed_out",
+        JobCompletionClass::WorkerIpcFailure => "worker_ipc_failure",
+    }
 }
 
 fn validate_request(request: &ComputeSubmitRequest) -> Option<ComputeInvalidRequest> {
@@ -506,8 +827,9 @@ fn now_unix_ms() -> u64 {
 mod tests {
     use super::{
         CanonicalComputeEntryPoint, ComputeExecutionMode, ComputeHistoryLookupError,
-        ComputeJobHandle, ComputeJobHistoryLookup, ComputeRequestValidationCode,
-        ComputeSubmitOutcome, ComputeSubmitRequest, RuntimeOperation, RuntimeOperationCode,
+        ComputeJobHandle, ComputeJobHistoryLookup, ComputeReplayOutcome,
+        ComputeRequestValidationCode, ComputeSubmitOutcome, ComputeSubmitRequest,
+        ReplayDeterminismClass, ReplayFailureCode, RuntimeOperation, RuntimeOperationCode,
         RuntimeOpsState, RuntimeSignalState,
     };
     use crate::pipeline::{CanonicalFailureKind, CanonicalPipelineRequest};
@@ -778,5 +1100,77 @@ mod tests {
         assert!(history.configured);
         assert!(!history.available);
         assert!(history.last_error.is_some());
+    }
+
+    #[test]
+    fn replay_runs_through_canonical_path_and_links_source_job() {
+        let mut entry = service();
+        let outcome = entry
+            .submit(ComputeSubmitRequest {
+                pipeline_request: valid_request(),
+                submitted_by: Some("svc-test".to_string()),
+                submitted_at_unix_ms: Some(100),
+                execution_mode: ComputeExecutionMode::ExecuteInline,
+            })
+            .expect("submit should not fail");
+        let source = match outcome {
+            ComputeSubmitOutcome::Accepted { completion, .. } => {
+                completion.expect("completion should exist").handle
+            }
+            other => panic!("expected accepted, got {other:?}"),
+        };
+        let replay = entry.replay(source).expect("replay call");
+        match replay {
+            ComputeReplayOutcome::Completed(report) => {
+                assert_eq!(report.source_job_id, source.job_id);
+                assert_ne!(report.replay_job_id, source.job_id);
+                assert!(matches!(
+                    report.determinism_class,
+                    ReplayDeterminismClass::SameEffectiveConfiguration
+                        | ReplayDeterminismClass::ReplayableNotStrictlyDeterministic
+                        | ReplayDeterminismClass::NotReplayableUnderCurrentRuntimeState
+                ));
+            }
+            other => panic!("expected completed replay, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn replay_reports_missing_record() {
+        let mut entry = service();
+        let replay = entry
+            .replay(ComputeJobHandle { job_id: JobId(42) })
+            .expect("replay");
+        match replay {
+            ComputeReplayOutcome::NotReplayable { code, .. } => {
+                assert_eq!(code, ReplayFailureCode::RecordMissing);
+            }
+            other => panic!("expected non-replayable, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn replay_from_legacy_history_without_request_is_configuration_incomplete() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let history_path = dir.path().join("job_history.jsonl");
+        std::fs::write(
+            &history_path,
+            r#"{"schema_version":1,"job_id":7,"submitted_by":"svc","request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101"},"lifecycle_state":"completed","completion_class":"completed","execution_path":"LocalCanonical","submitted_at_unix_ms":1,"started_at_unix_ms":2,"finished_at_unix_ms":3,"queue_wait_ms":1,"execution_duration_micros":5,"total_duration_ms":2,"failure_kind":null,"pipeline_state":"ok","work_summary":null,"model_slots":[]}"#,
+        )
+        .expect("history fixture");
+        let mut entry = CanonicalComputeEntryPoint::with_history_path(
+            InMemoryComputeService::new(crate::pipeline::ComputePipelineBackend::stub()),
+            &history_path,
+        )
+        .expect("entry with history");
+        let replay = entry
+            .replay(ComputeJobHandle { job_id: JobId(7) })
+            .expect("replay");
+        match replay {
+            ComputeReplayOutcome::NotReplayable { code, .. } => {
+                assert_eq!(code, ReplayFailureCode::ConfigurationIncomplete);
+            }
+            other => panic!("expected non-replayable, got {other:?}"),
+        }
     }
 }

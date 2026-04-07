@@ -79,6 +79,7 @@ pub struct JobAccountingSummary {
     pub executed_stages: Vec<CanonicalStageId>,
     pub model_slots: Vec<ModelSlotProvenance>,
     pub execution_path: JobExecutionPath,
+    pub execution_lane: BackendExecutionLane,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -214,6 +215,7 @@ impl InMemoryComputeService {
                 executed_stages: Vec::new(),
                 model_slots: Vec::new(),
                 execution_path: self.scheduler.execution_path,
+                execution_lane: self.backend.execution_lane(),
             },
         };
         self.record_event(JobLifecycleEvent {
