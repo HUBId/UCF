@@ -2,6 +2,7 @@ use crate::compute_service::{
     InMemoryComputeService, JobCompletionClass, JobExecutionPath, JobId, JobLifecycleEvent,
     JobLifecycleState, JobRecord, JobSubmissionMeta,
 };
+use crate::job_history::{JobHistoryStore, JobHistoryStoreError, PersistedJobRecord};
 use crate::pipeline::{
     CanonicalFailureKind, CanonicalPipelineFailure, CanonicalPipelineRequest,
     CanonicalPipelineState, CanonicalWorkSummary,
@@ -145,11 +146,36 @@ pub struct RuntimeOpsSnapshot {
 
 pub struct CanonicalComputeEntryPoint {
     service: InMemoryComputeService,
+    history_store: Option<JobHistoryStore>,
+    last_history_error: Option<JobHistoryStoreError>,
 }
 
 impl CanonicalComputeEntryPoint {
     pub fn new(service: InMemoryComputeService) -> Self {
-        Self { service }
+        Self {
+            service,
+            history_store: None,
+            last_history_error: None,
+        }
+    }
+
+    pub fn with_history_store(
+        service: InMemoryComputeService,
+        history_store: JobHistoryStore,
+    ) -> Self {
+        Self {
+            service,
+            history_store: Some(history_store),
+            last_history_error: None,
+        }
+    }
+
+    pub fn with_history_path(
+        service: InMemoryComputeService,
+        path: impl Into<std::path::PathBuf>,
+    ) -> Result<Self, JobHistoryStoreError> {
+        let history_store = JobHistoryStore::open(path)?;
+        Ok(Self::with_history_store(service, history_store))
     }
 
     pub fn submit(
@@ -161,14 +187,17 @@ impl CanonicalComputeEntryPoint {
         }
 
         let submitted_at_unix_ms = request.submitted_at_unix_ms.unwrap_or_else(now_unix_ms);
-        let submitted = self.service.submit(
-            request.pipeline_request,
-            JobSubmissionMeta {
-                submitted_at_unix_ms,
-                submitted_by: request.submitted_by,
-            },
-        );
-        let submit_status = status_from_record(submitted);
+        let (submit_status, submitted_job_id) = {
+            let submitted = self.service.submit(
+                request.pipeline_request,
+                JobSubmissionMeta {
+                    submitted_at_unix_ms,
+                    submitted_by: request.submitted_by,
+                },
+            );
+            (status_from_record(submitted), submitted.job.id)
+        };
+        self.persist_job(submitted_job_id);
         if submit_status.lifecycle_state == JobLifecycleState::Rejected {
             return Ok(ComputeSubmitOutcome::Rejected {
                 status: submit_status,
@@ -182,7 +211,14 @@ impl CanonicalComputeEntryPoint {
             }),
             ComputeExecutionMode::ExecuteInline => {
                 let completed = self.service.run_next()?;
-                let completion = completed.map(status_from_record);
+                let (completion, completed_job_id) = {
+                    let completion = completed.map(status_from_record);
+                    let completed_job_id = completed.map(|record| record.job.id);
+                    (completion, completed_job_id)
+                };
+                if let Some(job_id) = completed_job_id {
+                    self.persist_job(job_id);
+                }
                 Ok(ComputeSubmitOutcome::Accepted {
                     status: submit_status,
                     completion,
@@ -193,6 +229,38 @@ impl CanonicalComputeEntryPoint {
 
     pub fn status(&self, handle: ComputeJobHandle) -> Option<ComputeJobStatus> {
         self.service.job(handle.job_id).map(status_from_record)
+    }
+
+    pub fn history_status(&self) -> ComputeHistoryStoreStatus {
+        ComputeHistoryStoreStatus {
+            configured: self.history_store.is_some(),
+            available: self.last_history_error.is_none(),
+            persisted_jobs: self.history_store.as_ref().map_or(0, JobHistoryStore::len),
+            path: self
+                .history_store
+                .as_ref()
+                .map(|store| store.path().display().to_string()),
+            last_error: self.last_history_error.clone(),
+        }
+    }
+
+    pub fn history_lookup(
+        &self,
+        handle: ComputeJobHandle,
+    ) -> Result<ComputeJobHistoryLookup, ComputeHistoryLookupError> {
+        if let Some(record) = self.service.job(handle.job_id) {
+            return Ok(ComputeJobHistoryLookup::Found(Box::new(
+                PersistedJobRecord::from_job_record(record),
+            )));
+        }
+        let store = self
+            .history_store
+            .as_ref()
+            .ok_or(ComputeHistoryLookupError::StoreUnavailable)?;
+        let Some(found) = store.get(handle.job_id) else {
+            return Ok(ComputeJobHistoryLookup::NotFound);
+        };
+        Ok(ComputeJobHistoryLookup::Found(Box::new(found.clone())))
     }
 
     pub fn lifecycle(&self, handle: ComputeJobHandle) -> Vec<JobLifecycleEvent> {
@@ -321,6 +389,9 @@ impl CanonicalComputeEntryPoint {
             }),
             RuntimeOperation::DrainScheduler { max_jobs } => {
                 let completed_jobs = self.service.run_scheduler_cycle(max_jobs.max(1))?;
+                for job_id in &completed_jobs {
+                    self.persist_job(*job_id);
+                }
                 Ok(RuntimeOperationOutcome {
                     operation,
                     code: RuntimeOperationCode::Applied,
@@ -336,6 +407,40 @@ impl CanonicalComputeEntryPoint {
             }),
         }
     }
+
+    fn persist_job(&mut self, job_id: JobId) {
+        let Some(store) = self.history_store.as_mut() else {
+            return;
+        };
+        let Some(record) = self.service.job(job_id) else {
+            return;
+        };
+        if let Err(err) = store.upsert_from_job_record(record) {
+            self.last_history_error = Some(err);
+        } else {
+            self.last_history_error = None;
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ComputeHistoryStoreStatus {
+    pub configured: bool,
+    pub available: bool,
+    pub persisted_jobs: usize,
+    pub path: Option<String>,
+    pub last_error: Option<JobHistoryStoreError>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ComputeJobHistoryLookup {
+    Found(Box<PersistedJobRecord>),
+    NotFound,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ComputeHistoryLookupError {
+    StoreUnavailable,
 }
 
 fn validate_request(request: &ComputeSubmitRequest) -> Option<ComputeInvalidRequest> {
@@ -400,17 +505,26 @@ fn now_unix_ms() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::{
-        CanonicalComputeEntryPoint, ComputeExecutionMode, ComputeRequestValidationCode,
+        CanonicalComputeEntryPoint, ComputeExecutionMode, ComputeHistoryLookupError,
+        ComputeJobHandle, ComputeJobHistoryLookup, ComputeRequestValidationCode,
         ComputeSubmitOutcome, ComputeSubmitRequest, RuntimeOperation, RuntimeOperationCode,
         RuntimeOpsState, RuntimeSignalState,
     };
     use crate::pipeline::{CanonicalFailureKind, CanonicalPipelineRequest};
-    use crate::{InMemoryComputeService, JobLifecycleState};
+    use crate::{InMemoryComputeService, JobHistoryStore, JobId, JobLifecycleState};
 
     fn service() -> CanonicalComputeEntryPoint {
         CanonicalComputeEntryPoint::new(InMemoryComputeService::new(
             crate::pipeline::ComputePipelineBackend::stub(),
         ))
+    }
+
+    fn service_with_history(path: &std::path::Path) -> CanonicalComputeEntryPoint {
+        let store = JobHistoryStore::open(path).expect("history store should open");
+        CanonicalComputeEntryPoint::with_history_store(
+            InMemoryComputeService::new(crate::pipeline::ComputePipelineBackend::stub()),
+            store,
+        )
     }
 
     fn valid_request() -> CanonicalPipelineRequest {
@@ -565,5 +679,104 @@ mod tests {
             .run_operation(RuntimeOperation::RefreshRuntime)
             .expect("refresh operation");
         assert_eq!(unsupported.code, RuntimeOperationCode::Unsupported);
+    }
+
+    #[test]
+    fn completed_jobs_are_persisted_in_history_lookup() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let history_path = dir.path().join("job_history.jsonl");
+        let mut entry = service_with_history(&history_path);
+        let outcome = entry
+            .submit(ComputeSubmitRequest {
+                pipeline_request: valid_request(),
+                submitted_by: Some("svc-test".to_string()),
+                submitted_at_unix_ms: Some(100),
+                execution_mode: ComputeExecutionMode::ExecuteInline,
+            })
+            .expect("submit should not fail");
+        let handle = match outcome {
+            ComputeSubmitOutcome::Accepted { completion, .. } => {
+                completion.expect("completion should exist").handle
+            }
+            other => panic!("expected accepted, got {other:?}"),
+        };
+        let lookup = entry.history_lookup(handle).expect("lookup should succeed");
+        match lookup {
+            ComputeJobHistoryLookup::Found(record) => {
+                assert_eq!(record.job_id, handle.job_id.0);
+                assert!(record.completion_class.is_some());
+                assert!(record.finished_at_unix_ms.is_some());
+            }
+            ComputeJobHistoryLookup::NotFound => panic!("history record expected"),
+        }
+    }
+
+    #[test]
+    fn rejected_and_failed_jobs_keep_failure_summary_in_history() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let history_path = dir.path().join("job_history.jsonl");
+        let mut entry = service_with_history(&history_path);
+        let mut rejected = valid_request();
+        rejected.input.t = 0;
+        let outcome = entry
+            .submit(ComputeSubmitRequest {
+                pipeline_request: rejected,
+                submitted_by: Some("svc-test".to_string()),
+                submitted_at_unix_ms: Some(100),
+                execution_mode: ComputeExecutionMode::EnqueueOnly,
+            })
+            .expect("submit should not fail");
+        let handle = match outcome {
+            ComputeSubmitOutcome::Rejected { status } => status.handle,
+            other => panic!("expected rejected, got {other:?}"),
+        };
+        let lookup = entry.history_lookup(handle).expect("lookup should succeed");
+        match lookup {
+            ComputeJobHistoryLookup::Found(record) => {
+                assert_eq!(record.lifecycle_state, "rejected");
+                assert_eq!(record.failure_kind.as_deref(), Some("invalid_input"));
+            }
+            ComputeJobHistoryLookup::NotFound => panic!("history record expected"),
+        }
+    }
+
+    #[test]
+    fn history_lookup_reports_store_unavailable_and_not_found_distinctly() {
+        let entry = service();
+        let error = entry
+            .history_lookup(ComputeJobHandle { job_id: JobId(999) })
+            .expect_err("missing store should error");
+        assert_eq!(error, ComputeHistoryLookupError::StoreUnavailable);
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let history_path = dir.path().join("job_history.jsonl");
+        let entry = service_with_history(&history_path);
+        let lookup = entry
+            .history_lookup(ComputeJobHandle { job_id: JobId(999) })
+            .expect("configured store should not error");
+        assert_eq!(lookup, ComputeJobHistoryLookup::NotFound);
+    }
+
+    #[test]
+    fn persistence_failure_is_exposed_without_hiding_job_execution() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let history_path = dir.path().join("job_history.jsonl");
+        let mut entry = service_with_history(&history_path);
+        std::fs::remove_file(&history_path).ok();
+        std::fs::create_dir(&history_path).expect("create directory to force append-open failure");
+
+        let outcome = entry
+            .submit(ComputeSubmitRequest {
+                pipeline_request: valid_request(),
+                submitted_by: Some("svc-test".to_string()),
+                submitted_at_unix_ms: Some(100),
+                execution_mode: ComputeExecutionMode::ExecuteInline,
+            })
+            .expect("execution should still complete");
+        assert!(matches!(outcome, ComputeSubmitOutcome::Accepted { .. }));
+        let history = entry.history_status();
+        assert!(history.configured);
+        assert!(!history.available);
+        assert!(history.last_error.is_some());
     }
 }

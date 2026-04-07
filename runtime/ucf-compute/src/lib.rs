@@ -33,6 +33,7 @@ pub mod evidence;
 pub mod feature_extractor;
 pub mod feature_matrix;
 pub mod ipc;
+pub mod job_history;
 pub mod lfm;
 pub mod model_store;
 pub mod pipeline;
@@ -75,6 +76,7 @@ pub use enablement::{
 };
 pub use evidence::{CodeVersionTag, EvidenceChain, COMPUTE_SUMMARY_SCHEMA_VERSION};
 pub use feature_matrix::ReleaseFeatureMatrix;
+pub use job_history::{JobHistoryStore, JobHistoryStoreError, PersistedJobRecord};
 pub use model_store::{
     ModelDevice, ModelFormat, ModelLoadError, ModelSlot, ModelSlotSpec, ModelStore,
 };
@@ -94,7 +96,8 @@ pub use risk_contract::{
     RiskSignal, SignalQuality,
 };
 pub use service_surface::{
-    CanonicalComputeEntryPoint, ComputeExecutionMode, ComputeInvalidRequest, ComputeJobHandle,
+    CanonicalComputeEntryPoint, ComputeExecutionMode, ComputeHistoryLookupError,
+    ComputeHistoryStoreStatus, ComputeInvalidRequest, ComputeJobHandle, ComputeJobHistoryLookup,
     ComputeJobStatus, ComputeRequestValidationCode, ComputeSubmitOutcome, ComputeSubmitRequest,
     RuntimeOperation, RuntimeOperationCode, RuntimeOperationOutcome, RuntimeOpsSnapshot,
     RuntimeOpsState, RuntimeSignalState,
