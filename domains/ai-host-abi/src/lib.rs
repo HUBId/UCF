@@ -1,4 +1,8 @@
 #![forbid(unsafe_code)]
+//! Host ABI compatibility contract for legacy adapters.
+//!
+//! This crate does not define the canonical compute pipeline/runtime path;
+//! canonical runtime compute is implemented in `runtime/ucf-compute`.
 
 use blake3::Hasher;
 use ucf_spikebus::SpikeKind;

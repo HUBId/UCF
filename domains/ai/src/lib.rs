@@ -1,4 +1,9 @@
 #![forbid(unsafe_code)]
+//! Compatibility wrapper around the legacy host ABI contract.
+//!
+//! Canonical runtime compute execution lives in `runtime/ucf-compute`.
+//! This crate stays intentionally narrow and is retained for adapter and
+//! compatibility seams only.
 
 use ucf_ai_host_abi::AiBackend;
 pub use ucf_ai_host_abi::{
