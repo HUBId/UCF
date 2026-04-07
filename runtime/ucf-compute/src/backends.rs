@@ -23,20 +23,27 @@ pub use burn_backend::{BurnSaeExtractor, BurnSsmKernel, BurnWorldPredictor};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ComputeBackendKind {
+    /// Legacy/dev compatibility lane.
+    ///
+    /// This backend is deterministic and bounded, but it is not the canonical
+    /// production onboarding path.
     #[default]
     Stub,
+    /// Compatibility seam for candle-based experiments and parity checks.
     Candle,
+    /// Canonical production onboarding backend kind.
     Burn,
+    /// Internal worker execution lane used by process-isolated workers.
     Worker,
 }
 
 impl ComputeBackendKind {
     pub fn parse(value: &str) -> Option<Self> {
         match value.trim().to_ascii_lowercase().as_str() {
-            "stub" | "cpu_stub" => Some(Self::Stub),
-            "candle" | "candle_dummy" => Some(Self::Candle),
-            "burn" | "burn_dummy" => Some(Self::Burn),
-            "worker" | "worker_v1" => Some(Self::Worker),
+            "stub" => Some(Self::Stub),
+            "candle" => Some(Self::Candle),
+            "burn" => Some(Self::Burn),
+            "worker" => Some(Self::Worker),
             _ => None,
         }
     }
@@ -224,6 +231,17 @@ pub fn build_backend(
     )))
 }
 
+/// Build the canonical production onboarding backend.
+///
+/// This is intentionally separate from `build_backend` so call sites can
+/// explicitly opt into the canonical Burn onboarding lane rather than relying
+/// on compatibility-oriented `ComputeBackendConfig` defaults.
+pub fn build_canonical_production_backend(
+    seed: u64,
+) -> Result<Box<dyn AiComputeBackend + Send + Sync>, ComputeError> {
+    Ok(Box::new(build_onboarding_reference_backend(seed)?))
+}
+
 pub fn build_onboarding_reference_backend(
     seed: u64,
 ) -> Result<ComputePipelineBackend, ComputeError> {
@@ -259,10 +277,6 @@ mod tests {
             Some(ComputeBackendKind::Stub)
         );
         assert_eq!(
-            ComputeBackendKind::parse("cpu_stub"),
-            Some(ComputeBackendKind::Stub)
-        );
-        assert_eq!(
             ComputeBackendKind::parse("candle"),
             Some(ComputeBackendKind::Candle)
         );
@@ -271,6 +285,13 @@ mod tests {
             Some(ComputeBackendKind::Burn)
         );
         assert_eq!(ComputeBackendKind::parse("unknown"), None);
+    }
+
+    #[test]
+    fn rejects_legacy_backend_kind_aliases() {
+        for legacy in ["cpu_stub", "candle_dummy", "burn_dummy", "worker_v1"] {
+            assert_eq!(ComputeBackendKind::parse(legacy), None);
+        }
     }
 
     #[test]

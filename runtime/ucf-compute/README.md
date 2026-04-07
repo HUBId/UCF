@@ -17,14 +17,19 @@ The top-level runtime contract stays `AiComputeBackend`, but concrete backends a
 
 `build_backend` wires `ComputeBackendKind` into runtime packs:
 
-- `stub`: `BackendPackKind::ToyV1`
-- `candle` (`--features compute-candle`): `BackendPackKind::CandleToyV1`
-- `burn` (`--features compute-burn,backend-burn`): `BackendPackKind::BurnToyV1`
+- `stub` (**compat/dev lane**): `BackendPackKind::ToyV1`
+- `candle` (**compat seam**, `--features compute-candle`): `BackendPackKind::CandleToyV1`
+- `burn` (**canonical production lane**, `--features compute-burn,backend-burn`): `BackendPackKind::BurnToyV1`
+- `worker` (**internal execution lane**): `BackendPackKind::WorkerV1`
+
+Legacy aliases (`cpu_stub`, `candle_dummy`, `burn_dummy`, `worker_v1`) are no longer accepted in
+`UCF_COMPUTE_BACKEND`; use canonical names only.
 
 ### Canonical onboarding lane (single reference path)
 
 - The canonical onboarding entrypoint is now pinned to Burn via
-  `build_onboarding_reference_backend` (`CANONICAL_ONBOARDING_PACK = BurnToyV1`).
+  `build_onboarding_reference_backend`
+  / `build_canonical_production_backend` (`CANONICAL_ONBOARDING_PACK = BurnToyV1`).
 - Canonical request/result/failure contract stays:
   `CanonicalPipelineRequest -> ComputePipelineBackend::compute_canonical -> CanonicalPipelineResult|CanonicalPipelineFailure`.
 - Canonical stage sequence is fixed as `World -> SAE -> SSM -> LFM`
@@ -57,12 +62,14 @@ inventory or hardware orchestration in this layer.
 
 The orchestrator can be bootstrapped from env config via `RuntimeOrchestrator::try_new_from_env`.
 
-- `UCF_COMPUTE_BACKEND=stub|candle|burn`
+- `UCF_COMPUTE_BACKEND=stub|candle|burn|worker`
 - `UCF_COMPUTE_SEED=<u64>`
 - `UCF_COMPUTE_MAX_MICROS=<u64>`
 - `UCF_COMPUTE_HARD_TIMEOUT_MICROS=<u64>`
 
-Default remains `stub` when env vars are unset.
+Default remains `stub` when env vars are unset (compatibility/dev-safe default).
+Production callers should set `UCF_COMPUTE_BACKEND=burn` explicitly or call
+`build_canonical_production_backend`.
 
 ## Candle feature extractor v0 (offline dummy weights)
 

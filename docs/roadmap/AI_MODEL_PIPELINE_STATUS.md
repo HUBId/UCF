@@ -11,6 +11,14 @@ This status file fixes the canonical architecture for Real Compute Onboarding ba
    - `domains/ai-backends`
 3. Canonical manifest path for runtime model loading: `models/manifest.toml`
 
+### Compute surface status (canonical vs legacy/internal)
+
+- **Canonical production compute path**: `runtime/ucf-compute` via Burn onboarding lane
+  (`build_onboarding_reference_backend` / `build_canonical_production_backend`).
+- **Compatibility/dev lanes**: `build_backend(kind=stub|candle)` and `domains/ai*` adapter crates.
+- **Internal-only lane**: `build_backend(kind=worker)` for process-isolated worker execution wiring.
+- **Removed legacy entry aliases**: `cpu_stub`, `candle_dummy`, `burn_dummy`, `worker_v1` are no longer accepted backend names.
+
 ## Inventory and gap matrix (repo-truth only)
 
 | Area | real implementiert | scaffolded / placeholder | dokumentiert, aber nicht implementiert |
@@ -108,4 +116,3 @@ This section records JEPA against the canonical readiness ladder:
 ## Transition checkpoint
 
 The canonical onboarding->stack transition decision is recorded in `docs/roadmap/REAL_COMPUTE_TRANSITION.md`.
-

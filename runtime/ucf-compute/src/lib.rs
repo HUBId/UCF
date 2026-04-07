@@ -59,8 +59,9 @@ pub use backend_pack::{
     ModelSlotProvenance, ProductionBlockReason, ProductionCompatibilityGate, SlotRuntimeStatus,
 };
 pub use backends::{
-    build_backend, build_onboarding_reference_backend, ComputeBackendConfig, ComputeBackendKind,
-    CANONICAL_ONBOARDING_BACKEND, CANONICAL_ONBOARDING_PACK,
+    build_backend, build_canonical_production_backend, build_onboarding_reference_backend,
+    ComputeBackendConfig, ComputeBackendKind, CANONICAL_ONBOARDING_BACKEND,
+    CANONICAL_ONBOARDING_PACK,
 };
 pub use compute_service::{
     ComputeJob, DeviceSuitability, ExecutionDeviceClass, ExecutionPlacement, ExecutionUnitId,
