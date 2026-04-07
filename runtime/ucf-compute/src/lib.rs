@@ -96,12 +96,14 @@ pub use risk_contract::{
     RiskSignal, SignalQuality,
 };
 pub use service_surface::{
-    CanonicalComputeEntryPoint, ComputeExecutionMode, ComputeHistoryLookupError,
-    ComputeHistoryStoreStatus, ComputeInvalidRequest, ComputeJobHandle, ComputeJobHistoryLookup,
-    ComputeJobStatus, ComputeReplayOutcome, ComputeReplayReport, ComputeRequestValidationCode,
-    ComputeSubmitOutcome, ComputeSubmitRequest, ReplayConfigurationDiff, ReplayDeterminismClass,
-    ReplayFailureCode, RuntimeOperation, RuntimeOperationCode, RuntimeOperationOutcome,
-    RuntimeOpsSnapshot, RuntimeOpsState, RuntimeSignalState,
+    BaselineComparisonFailureCode, BaselineComparisonOutcome, BaselineComparisonResult,
+    BaselineComparisonSummary, BaselineReference, CanonicalComputeEntryPoint, ComputeExecutionMode,
+    ComputeHistoryLookupError, ComputeHistoryStoreStatus, ComputeInvalidRequest, ComputeJobHandle,
+    ComputeJobHistoryLookup, ComputeJobStatus, ComputeReplayOutcome, ComputeReplayReport,
+    ComputeRequestValidationCode, ComputeSubmitOutcome, ComputeSubmitRequest,
+    ReplayConfigurationDiff, ReplayDeterminismClass, ReplayFailureCode, RuntimeOperation,
+    RuntimeOperationCode, RuntimeOperationOutcome, RuntimeOpsSnapshot, RuntimeOpsState,
+    RuntimeSignalState,
 };
 pub use work_meter::WorkMeter;
 

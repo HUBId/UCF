@@ -248,6 +248,10 @@ technical runtime control only (no second admin/control plane):
 The `candidate/compare/shadow` fields are intentionally present but currently `None` in the
 in-memory service because no extra promotion/compare queue exists at this layer.
 
+`RuntimeOpsSnapshot` now also carries `latest_baseline_comparison` when an explicit
+candidate-vs-baseline check was executed through the canonical entry point. This keeps comparison
+visibility in the same ops snapshot surface already used for runtime diagnosis and promotion prep.
+
 ### Runtime state semantics
 
 State is derived from real service signals only:
@@ -304,6 +308,44 @@ The replay surface uses one bounded failure taxonomy:
 
 This distinguishes unavailable historical records, incomplete replay inputs, runtime drift, and
 execution failure without adding a second error world.
+
+## Minimal baseline comparison surface (v1)
+
+`CanonicalComputeEntryPoint` now exposes one narrow comparison trigger:
+
+- `compare_against_baseline(candidate, baseline_ref) -> BaselineComparisonResult`
+
+Baseline selection is intentionally bounded:
+
+- explicit baseline by `job_id`,
+- or `latest_by_request_identity` (same request identity + same canonical budget fingerprint +
+  same lane/backend context).
+
+No second benchmark database or independent comparison pipeline is introduced.
+
+### Canonical comparison semantics
+
+- `Compared(summary)` when candidate and baseline are terminal and configuration-compatible.
+- `NotComparable` with bounded failure codes:
+  - `no_baseline_available`
+  - `baseline_incompatible`
+  - `candidate_incompatible`
+  - `comparison_execution_failed`
+  - `not_meaningful_under_runtime_change`
+
+This keeps non-comparability explicit and aligned with existing replay/runtime drift semantics.
+
+### Load-bearing signals compared
+
+The comparison layer is intentionally minimal and uses existing runtime summaries:
+
+- terminal completion class delta (improved / equivalent / regressed ranking),
+- failure kind change,
+- degraded vs non-degraded pipeline state change,
+- work-summary equality + remaining global work units snapshot,
+- execution path/lane/backend route/model-slot compatibility checks.
+
+No statistical suite, leaderboard, or governance signoff layer is added at this stage.
 
 ### Supported operations
 
