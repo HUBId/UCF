@@ -802,13 +802,12 @@ impl MultiWorkerComputeService {
             } else {
                 placement_failure_kind(suitability)
             };
-            let dispatch = if suitability == PlacementSuitability::Unavailable
-                && candidate.is_some()
-            {
-                Some(WorkerDispatchOutcome::Unavailable)
-            } else {
-                Some(WorkerDispatchOutcome::DispatchFailure)
-            };
+            let dispatch =
+                if suitability == PlacementSuitability::Unavailable && candidate.is_some() {
+                    Some(WorkerDispatchOutcome::Unavailable)
+                } else {
+                    Some(WorkerDispatchOutcome::DispatchFailure)
+                };
             return (
                 ExecutionPlacement {
                     unit_id: requested,
