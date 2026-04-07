@@ -8,13 +8,36 @@ use thiserror::Error;
 use crate::compute_service::{JobCompletionClass, JobId, JobLifecycleState, JobRecord};
 use crate::pipeline::{CanonicalFailureKind, CanonicalPipelineState};
 
-const JOB_HISTORY_SCHEMA_VERSION: u16 = 1;
+const JOB_HISTORY_SCHEMA_VERSION: u16 = 2;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PersistedJobRequestIdentity {
     pub frame_id: u64,
     pub t: u64,
     pub context_digest_hex: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct PersistedComputeBudget {
+    pub max_micros: u64,
+    pub hard_timeout_micros: u64,
+    pub seed: u64,
+    pub profile_id: u32,
+    pub global_work_units: u64,
+    pub world_units: u64,
+    pub sae_units: u64,
+    pub ssm_units: u64,
+    pub lfm_units: u64,
+    pub degrade_policy: String,
+    pub governor_tier: u8,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct PersistedCanonicalRequest {
+    pub frame_id: u64,
+    pub t: u64,
+    pub context_digest_hex: String,
+    pub budget: PersistedComputeBudget,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -36,11 +59,22 @@ pub struct PersistedModelSlotSummary {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct PersistedBackendRouteSummary {
+    pub pack_id: u32,
+    pub world_backend: u8,
+    pub sae_backend: u8,
+    pub ssm_backend: u8,
+    pub lfm_backend: u8,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PersistedJobRecord {
     pub schema_version: u16,
     pub job_id: u64,
     pub submitted_by: Option<String>,
     pub request: PersistedJobRequestIdentity,
+    #[serde(default)]
+    pub canonical_request: Option<PersistedCanonicalRequest>,
     pub lifecycle_state: String,
     pub completion_class: Option<String>,
     pub execution_path: String,
@@ -52,6 +86,10 @@ pub struct PersistedJobRecord {
     pub total_duration_ms: Option<u64>,
     pub failure_kind: Option<String>,
     pub pipeline_state: Option<String>,
+    #[serde(default)]
+    pub execution_lane: Option<String>,
+    #[serde(default)]
+    pub backend_route: Option<PersistedBackendRouteSummary>,
     pub work_summary: Option<PersistedWorkSummary>,
     pub model_slots: Vec<PersistedModelSlotSummary>,
 }
@@ -69,6 +107,24 @@ impl PersistedJobRecord {
                 t: request.t,
                 context_digest_hex: hex::encode(request.context_digest),
             },
+            canonical_request: Some(PersistedCanonicalRequest {
+                frame_id: request.frame_id.0,
+                t: request.t,
+                context_digest_hex: hex::encode(request.context_digest),
+                budget: PersistedComputeBudget {
+                    max_micros: record.job.request.budget.max_micros,
+                    hard_timeout_micros: record.job.request.budget.hard_timeout_micros,
+                    seed: record.job.request.budget.seed,
+                    profile_id: record.job.request.budget.profile_id,
+                    global_work_units: record.job.request.budget.global_work_units,
+                    world_units: record.job.request.budget.world_units,
+                    sae_units: record.job.request.budget.sae_units,
+                    ssm_units: record.job.request.budget.ssm_units,
+                    lfm_units: record.job.request.budget.lfm_units,
+                    degrade_policy: format!("{:?}", record.job.request.budget.degrade_policy),
+                    governor_tier: record.job.request.budget.governor_tier,
+                },
+            }),
             lifecycle_state: lifecycle_state_name(record.state).to_string(),
             completion_class: is_terminal(record.state)
                 .then(|| completion_class_name(record.accounting.completion_class).to_string()),
@@ -85,6 +141,17 @@ impl PersistedJobRecord {
             pipeline_state: accounting
                 .pipeline_state
                 .map(|state| pipeline_state_name(state).to_string()),
+            execution_lane: Some(execution_lane_name(accounting.execution_lane).to_string()),
+            backend_route: record
+                .result
+                .as_ref()
+                .map(|result| PersistedBackendRouteSummary {
+                    pack_id: result.route.pack_id,
+                    world_backend: result.route.world_backend,
+                    sae_backend: result.route.sae_backend,
+                    ssm_backend: result.route.ssm_backend,
+                    lfm_backend: result.route.lfm_backend,
+                }),
             work_summary: accounting.work_summary.map(|summary| PersistedWorkSummary {
                 global_budget_units: summary.global_budget_units,
                 global_remaining_units: summary.global_remaining_units,
@@ -274,6 +341,16 @@ fn pipeline_state_name(state: CanonicalPipelineState) -> &'static str {
         CanonicalPipelineState::Ok => "ok",
         CanonicalPipelineState::Degraded => "degraded",
         CanonicalPipelineState::Unavailable => "unavailable",
+    }
+}
+
+fn execution_lane_name(lane: crate::pipeline::BackendExecutionLane) -> &'static str {
+    match lane {
+        crate::pipeline::BackendExecutionLane::Toy => "toy",
+        crate::pipeline::BackendExecutionLane::Candle => "candle",
+        crate::pipeline::BackendExecutionLane::Burn => "burn",
+        crate::pipeline::BackendExecutionLane::Mixed => "mixed",
+        crate::pipeline::BackendExecutionLane::Worker => "worker",
     }
 }
 

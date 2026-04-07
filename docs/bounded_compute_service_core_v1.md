@@ -259,6 +259,52 @@ State is derived from real service signals only:
 
 No synthetic “always green” health outcome is emitted.
 
+## Minimal replay + reproducibility surface (v1)
+
+`CanonicalComputeEntryPoint` now exposes a narrow replay trigger:
+
+- `replay(ComputeJobHandle) -> ComputeReplayOutcome`
+
+Replay is intentionally grounded in the same canonical compute path (`submit` + `run_next`) and
+does not introduce a second replay pipeline.
+
+### Replay record basis
+
+Replay uses existing job/history persistence (`PersistedJobRecord`) and extends it with minimal
+load-bearing replay fields:
+
+- canonical request snapshot (`input` + budget profile/scalars),
+- execution lane summary,
+- backend route summary,
+- model slot/runtime summary,
+- existing completion/fault/accounting summary.
+
+This keeps replay tied to the same history layer used by normal jobs.
+
+### Replayability and determinism classes
+
+Replay outcomes are explicitly classified:
+
+- `same_effective_configuration`: replay ran with matching execution path/lane/backend route/slot summary,
+- `replayable_not_strictly_deterministic`: replay completed, but effective configuration changed,
+- `not_replayable_under_current_runtime_state`: replay run failed under current runtime conditions.
+
+No global strict determinism promise is made.
+
+### Structured replay failure semantics
+
+The replay surface uses one bounded failure taxonomy:
+
+- `record_missing`
+- `configuration_incomplete`
+- `required_artifact_unavailable`
+- `backend_or_device_unavailable`
+- `replay_execution_failed`
+- `replay_completed_with_changed_configuration`
+
+This distinguishes unavailable historical records, incomplete replay inputs, runtime drift, and
+execution failure without adding a second error world.
+
 ### Supported operations
 
 - `RuntimeOperation::Snapshot`: explicit snapshot action (always applied)
