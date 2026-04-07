@@ -39,6 +39,7 @@ pub mod pipeline;
 #[cfg(feature = "remote-compute")]
 pub mod remote_compute;
 pub mod risk_contract;
+pub mod service_surface;
 pub mod ssm;
 pub mod stage_v1;
 #[cfg(feature = "backend-burn")]
@@ -89,6 +90,10 @@ pub use remote_compute::{
 pub use risk_contract::{
     clamp01, stable_budget_profile_id, validate_risk_signal, BackendProfileId, EvidenceRef,
     RiskSignal, SignalQuality,
+};
+pub use service_surface::{
+    CanonicalComputeEntryPoint, ComputeExecutionMode, ComputeInvalidRequest, ComputeJobHandle,
+    ComputeJobStatus, ComputeRequestValidationCode, ComputeSubmitOutcome, ComputeSubmitRequest,
 };
 pub use work_meter::WorkMeter;
 

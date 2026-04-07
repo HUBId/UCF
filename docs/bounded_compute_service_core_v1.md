@@ -147,3 +147,36 @@ All admission rejections reuse canonical pipeline failure kinds (`CanonicalFailu
 - external metrics/tracing/datastore platform
 
 This keeps the core load-bearing and minimal while preserving a clean handoff to later scheduling/execution expansion.
+
+## Canonical technical compute service surface (v1)
+
+For service-level integration, the canonical technical entrypoint is now `CanonicalComputeEntryPoint` (`runtime/ucf-compute/src/service_surface.rs`).
+
+This surface sits directly on top of `InMemoryComputeService` and keeps one coherent request/result world:
+
+- request: `ComputeSubmitRequest` (`pipeline_request`, submit metadata, execution mode),
+- invalid request: `ComputeSubmitOutcome::Invalid` (input envelope validation before bounded service submit),
+- admitted/rejected split:
+  - `ComputeSubmitOutcome::Rejected { status }` for canonical admission rejection,
+  - `ComputeSubmitOutcome::Accepted { status, completion }` for admitted jobs.
+
+Execution behavior is explicit and narrow:
+
+- `ComputeExecutionMode::EnqueueOnly`: submit/admit/queue and return job handle + queued status,
+- `ComputeExecutionMode::ExecuteInline`: submit then trigger one scheduler step and return optional terminal completion status.
+
+Job and status surface is unified through:
+
+- `ComputeJobHandle { job_id }`,
+- `CanonicalComputeEntryPoint::status(handle)` for lifecycle/completion/fault/provenance snapshot,
+- `CanonicalComputeEntryPoint::lifecycle(handle)` for per-job lifecycle events.
+
+The status snapshot mirrors load-bearing service provenance already tracked by bounded compute service:
+
+- admission failure vs execution failure,
+- lifecycle state + completion class,
+- failure kind taxonomy (`CanonicalFailureKind`),
+- execution path (`local_canonical` / `worker_ipc`),
+- pipeline state/work summary/model slot provenance.
+
+Low-level `InMemoryComputeService::submit/run_next/run_scheduler_cycle` remains available as an internal primitive for tests and runtime internals, but service consumers should use `CanonicalComputeEntryPoint` as primary compute ingress.
