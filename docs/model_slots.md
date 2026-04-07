@@ -113,6 +113,7 @@ Failure codes are emitted per slot and distinguish:
 - `path_violation`
 - `artifact_unavailable`
 - `artifact_incompatible`
+- `activation_blocked`
 
 Canonical pipeline failures map these slot outcomes into explicit failure kinds:
 
@@ -155,3 +156,31 @@ Activation planning distinguishes:
 - compare/shadow path unavailable (`compare_shadow_path_unavailable`)
 
 Pipeline admission/failure mapping continues to use the existing canonical runtime failure taxonomy (`artifact_unavailable`, `artifact_verification_failed`, `artifact_incompatible`, etc.).
+
+## Canonical production compatibility gates
+
+`ModelSlotProvenance` now includes a canonical `gate` payload that makes productive-use readiness explicit per slot:
+
+- `contract_compatible`
+- `slot_compatible`
+- `backend_compatible`
+- `placement_device_compatible`
+- `promotable`
+- `activatable`
+- `blocked_reason`
+
+`blocked_reason` is normalized to one of:
+
+- `verification_failed`
+- `contract_incompatible`
+- `slot_incompatible`
+- `backend_incompatible`
+- `placement_device_worker_incompatible`
+- `activation_blocked`
+- `blocked_from_production_use`
+
+Runtime rules stay narrow and technical:
+
+- verified + compatible slots are only treated as active/usable when activation is technically valid on the canonical promoted-hash path.
+- required slots that fail activation planning are marked `incompatible` with `activation_blocked` and are rejected for production pack use.
+- placement/worker/device suitability remains evaluated by compute-service placement (`placement_failure` / candidate assessments), not by a second capability system.

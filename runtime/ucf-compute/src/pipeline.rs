@@ -445,6 +445,7 @@ fn nsr_slot_provenance(slots: &[ModelSlotProvenance]) -> ModelSlotProvenance {
             hash_prefix: None,
             contract_version: None,
             format: None,
+            gate: Default::default(),
         })
 }
 
@@ -2108,6 +2109,9 @@ fn first_artifact_failure(slots: &[ModelSlotProvenance]) -> Option<CanonicalPipe
                     Some(ArtifactFailureCode::ArtifactIncompatible) => {
                         CanonicalFailureKind::ArtifactIncompatible
                     }
+                    Some(ArtifactFailureCode::ActivationBlocked) => {
+                        CanonicalFailureKind::ArtifactIncompatible
+                    }
                     None => CanonicalFailureKind::ArtifactUnavailable,
                 };
                 Some(CanonicalPipelineFailure {
@@ -2460,6 +2464,7 @@ mod tests {
             hash_prefix: None,
             contract_version: Some("v1".to_string()),
             format: None,
+            gate: Default::default(),
         }];
         let failure = first_artifact_failure(&slots).expect("failure");
         assert_eq!(
@@ -2482,6 +2487,7 @@ mod tests {
             hash_prefix: None,
             contract_version: Some("v1".to_string()),
             format: None,
+            gate: Default::default(),
         }];
         let failure = first_artifact_failure(&slots).expect("failure");
         assert_eq!(failure.kind, CanonicalFailureKind::ArtifactUnavailable);
@@ -2502,6 +2508,7 @@ mod tests {
             hash_prefix: None,
             contract_version: Some("v9".to_string()),
             format: None,
+            gate: Default::default(),
         }];
         let failure = first_artifact_failure(&slots).expect("failure");
         assert_eq!(failure.kind, CanonicalFailureKind::ArtifactIncompatible);
@@ -2596,6 +2603,7 @@ mod tests {
             hash_prefix: None,
             contract_version: Some("v1".to_string()),
             format: None,
+            gate: Default::default(),
         };
         let req = NsrRequest {
             base_risk: 0.3,
@@ -2634,6 +2642,7 @@ mod tests {
             hash_prefix: Some("abcdef".to_string()),
             contract_version: Some("v0".to_string()),
             format: None,
+            gate: Default::default(),
         };
         let req = NsrRequest {
             base_risk: 0.3,

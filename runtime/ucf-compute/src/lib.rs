@@ -56,7 +56,7 @@ pub mod world_vljepa_shadow;
 pub use backend_pack::{
     ArtifactFailureCode, BackendComponentId, BackendPack, BackendPackConfig, BackendPackFactory,
     BackendPackId, BackendPackKind, BackendPackMeta, BackendSwapRequest, FixtureId, FixtureManager,
-    ModelSlotProvenance, SlotRuntimeStatus,
+    ModelSlotProvenance, ProductionBlockReason, ProductionCompatibilityGate, SlotRuntimeStatus,
 };
 pub use backends::{
     build_backend, build_onboarding_reference_backend, ComputeBackendConfig, ComputeBackendKind,

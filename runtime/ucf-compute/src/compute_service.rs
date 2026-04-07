@@ -1458,6 +1458,7 @@ mod tests {
                 hash_prefix: None,
                 contract_version: None,
                 format: None,
+                gate: Default::default(),
             }],
         ));
         let artifact_record = artifact_service.submit(
@@ -1952,6 +1953,7 @@ mod tests {
             hash_prefix: None,
             contract_version: Some("v1".to_string()),
             format: None,
+            gate: Default::default(),
         }];
         let incompatible_backend = ComputePipelineBackend::new(
             pack_with(BackendComponentId::ToyV1, disabled_world),
