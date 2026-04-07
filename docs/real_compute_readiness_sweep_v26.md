@@ -50,6 +50,7 @@ Ziel: harte Abschlussprüfung der realen Compute-Surface (nicht Governance/Relea
 - **Problem:** LFM/NSR sind ehrlich typisiert (disabled/unavailable/blocked), aber je nach Feature/Mode optional statt global erzwungen.
 - **Produktivrelevanz:** Unterschiedliche Deployments können formal „grün“ erscheinen, obwohl die gleiche Stage-Abdeckung fehlt.
 - **Minimaler Fix:** Einen kleinen „required stage profile“-Check (z. B. burn-prod) im Readiness-Gate fest verdrahten.
+- **Status (2026-04-07, Prompt 28):** **gezielt entschärft im produktiven Readiness-Gate**. `readiness-gate` enthält jetzt `required_stage_profile`: im `prod`-Profil wird fail-closed erzwungen, dass NSR im Explain-Outcome als `used` vorliegt und LFM-Stagesichtbarkeit vorhanden ist; nicht-`prod` bleibt explizit `SKIP`.
 
 ### C) Multi-Worker bleibt device-semantisch minimal
 - **Modul/Pfad:** `runtime/ucf-compute/src/compute_service.rs`.
@@ -91,3 +92,13 @@ Der Real-Compute-Stack ist für den **kanonischen Burn-basierten Referenzpfad** 
 - **Behoben:** Produktionsprofil (`configs/prod.toml`) ist auf Burn gepinnt; Config-Ladder verweigert `prod` ohne Burn.
 - **Readiness-Effekt:** Der kanonische produktive Pfad ist jetzt im realen Ops-Startpfad hart gegen Stub-Drift abgesichert.
 - **Weiterhin offen:** B) Required-Stage-Profilhärtung (LFM/NSR), C) feinere Worker-Capabilities, D) History required-on in allen Prod-Launchpfaden.
+
+## 8) Readiness-Delta nach Prompt 28 (gezielter Single-Blocker-Fix)
+
+- **Gewählter Blocker:** B) LFM/NSR readiness war explizit, aber nicht profilgebunden hart-gated.
+- **Vorheriger Fehlerzustand:** `prod` konnte im Gate ohne harte Required-Stage-Prüfung formal passieren, obwohl NSR nicht als tatsächlich genutzte Stage (`used`) abgesichert war.
+- **Behoben:** `readiness-gate` führt jetzt den Check `required_stage_profile` aus:
+  - `prod`: `FAIL`, wenn NSR nicht `used` oder LFM-Sichtbarkeit fehlt.
+  - nicht-`prod`: bewusst `SKIP` (keine stille Ausweitung auf Dev/Test).
+- **Readiness-Effekt:** Der kanonische produktive Pfad hat jetzt eine explizite, diagnostisch sichtbare Stage-Coverage-Härtung direkt im Gate-Report statt impliziter Hoffnung.
+- **Weiterhin offen:** C) feinere Worker-Capabilities, D) History required-on in allen Prod-Launchpfaden.
