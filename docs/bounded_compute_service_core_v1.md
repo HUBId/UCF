@@ -185,7 +185,7 @@ All admission rejections reuse canonical pipeline failure kinds (`CanonicalFailu
 ## What is deliberately not built yet
 
 - scheduler policies beyond FIFO dispatch
-- distributed queueing / persistent job store
+- distributed queueing / crash-recoverable queue replay
 - worker fleet orchestration and remote placement
 - governance/billing/tenant policy layers
 - service-level cancellation or preemption protocols
@@ -268,3 +268,36 @@ No synthetic “always green” health outcome is emitted.
 
 `RuntimeOperationOutcome` separates `Applied`, `Unsupported`, and `Failed` outcome classes to keep
 operations failure semantics explicit and aligned with the canonical runtime failure world.
+
+## Minimal job history persistence (v1)
+
+`CanonicalComputeEntryPoint` can now be initialized with a file-backed history store:
+
+- `CanonicalComputeEntryPoint::with_history_path(service, path)`
+- `CanonicalComputeEntryPoint::with_history_store(service, store)`
+
+The store is intentionally narrow (`runtime/ucf-compute/src/job_history.rs`):
+
+- append-only JSONL records,
+- one canonical load-bearing record per job id (last write wins in memory when reloaded),
+- no DB, no event-sourcing layer, no analytics/query engine.
+
+Persisted job record coverage is limited to the load-bearing fields:
+
+- identity: `job_id`, submitter, request identity (`frame_id`, `t`, `context_digest`),
+- lifecycle: last known state + terminal completion class,
+- timing: submit/start/finish, queue wait, execution duration, total duration,
+- failure/completion class: failure kind + pipeline state,
+- accounting/provenance summary: work budget summary and model slot provenance summary.
+
+History lookup is intentionally minimal and technical:
+
+- `history_lookup(handle)` supports lookup by `job_id`,
+- returns either `Found(record)` or `NotFound`,
+- returns `StoreUnavailable` when no persistent history store is configured.
+
+Persistence failure semantics stay separate from compute execution semantics:
+
+- jobs can still complete/failed/timed_out/rejected in-memory even when history writes fail,
+- persistence errors are surfaced through `history_status()` (`configured`, `available`, `last_error`),
+- this keeps “job execution failed” distinct from “job succeeded but history persistence failed”.
