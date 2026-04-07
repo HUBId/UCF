@@ -269,18 +269,19 @@ impl CanonicalComputeEntryPoint {
         } else {
             RuntimeSignalState::Known
         };
-        let no_successful_runtime_path =
-            submitted_total > 0 && completed_total == 0 && total_terminal_failures == submitted_total;
-        let state = if (has_missing_required_slot && completed_total == 0) || no_successful_runtime_path
-        {
-            RuntimeOpsState::Unavailable
-        } else if has_missing_required_slot || scheduler.queued_jobs > 0 {
-            RuntimeOpsState::PartiallyUnavailable
-        } else if has_failure_ratio_degraded || degraded_total > 0 {
-            RuntimeOpsState::Degraded
-        } else {
-            RuntimeOpsState::HealthyReady
-        };
+        let no_successful_runtime_path = submitted_total > 0
+            && completed_total == 0
+            && total_terminal_failures == submitted_total;
+        let state =
+            if (has_missing_required_slot && completed_total == 0) || no_successful_runtime_path {
+                RuntimeOpsState::Unavailable
+            } else if has_missing_required_slot || scheduler.queued_jobs > 0 {
+                RuntimeOpsState::PartiallyUnavailable
+            } else if has_failure_ratio_degraded || degraded_total > 0 {
+                RuntimeOpsState::Degraded
+            } else {
+                RuntimeOpsState::HealthyReady
+            };
         RuntimeOpsSnapshot {
             state,
             state_signal,
