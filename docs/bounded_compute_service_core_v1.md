@@ -42,7 +42,34 @@ Both paths preserve the same `CanonicalPipelineResult` / `CanonicalPipelineFailu
 `MultiWorkerComputeService` extends this with a thin execution-unit registry:
 - `ExecutionUnitKind::Local` and `ExecutionUnitKind::Worker`,
 - deterministic worker ids (`ExecutionUnitId`) and explicit availability (`available` / `unavailable`),
-- optional per-job placement hint (`requested_unit`) with deterministic fallback to round-robin selection.
+- optional per-job placement hint (`requested_unit`) with deterministic fallback to capability-aware placement.
+
+## Backend capability matrix + execution placement (technical, narrow)
+
+Placement now uses a small capability assessment for every execution unit before dispatch:
+
+- lane classification from backend composition (`burn`, `candle`, `worker`, `toy`, `mixed`),
+- technical admission compatibility (`ComputePipelineBackend::technical_admission`),
+- explicit suitability state per candidate:
+  - `suitable`
+  - `incompatible`
+  - `disabled`
+  - `unavailable`
+
+Selection rules stay intentionally simple:
+
+1. requested unit: must be `suitable`, otherwise fail with structured placement failure.
+2. automatic selection:
+   - prefer `burn` suitable units (primary productive lane),
+   - otherwise use `candle` suitable units as explicit degraded fallback (secondary seam),
+   - otherwise any other suitable unit.
+
+The resulting `ExecutionPlacement` now carries provenance fields:
+
+- selected lane + suitability,
+- `degraded_fallback` flag,
+- selection reason,
+- full candidate assessment list (`considered`) so non-selected backends/workers are diagnosable.
 
 The worker side still executes the same canonical pipeline contract (`CanonicalPipelineRequest -> CanonicalPipelineResult`), including the same stage-order and failure-kind semantics.
 
@@ -75,6 +102,13 @@ Terminal mapping stays lifecycle-native and reuses canonical fault taxonomy:
 - `worker_ipc_failure`: worker/IPC execution-path failure classified as execution error.
 
 Worker launch/IPC transport errors are surfaced as structured execution failures (`CanonicalFailureKind::ExecutionError`) and remain linked to execution-path provenance in lifecycle events.
+
+Placement-level failures are additionally tagged as:
+
+- `no_suitable_backend`
+- `backend_incompatible`
+- `backend_unavailable`
+- `worker_placement_failed`
 
 For multi-worker execution, dispatch outcome is classified with a single linked surface:
 - `unavailable`,

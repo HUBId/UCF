@@ -3,7 +3,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use crate::backend_pack::{
-    ArtifactFailureCode, BackendPack, BackendPackFactory, ModelSlotProvenance, SlotRuntimeStatus,
+    ArtifactFailureCode, BackendComponentId, BackendPack, BackendPackFactory, ModelSlotProvenance,
+    SlotRuntimeStatus,
 };
 use crate::contracts::{
     validate_evidence_chain_digest, ContractRegistry, LfmValidatorV1, NsrContractVersion,
@@ -317,6 +318,15 @@ pub struct ComputePipelineBackend {
     _limits: LimitsConfig,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BackendExecutionLane {
+    Toy,
+    Candle,
+    Burn,
+    Worker,
+    Mixed,
+}
+
 impl ComputePipelineBackend {
     pub fn new(pack: Arc<dyn BackendPack>, fusion: FusionConfig, limits: LimitsConfig) -> Self {
         Self {
@@ -341,6 +351,44 @@ impl ComputePipelineBackend {
             spikes_digest: [0_u8; 32],
             quality: StageQuality::DegradedFallback,
             notes: crate::feature_extractor::SmallNotes(vec!["degraded:empty".to_string()]),
+        }
+    }
+
+    pub fn execution_lane(&self) -> BackendExecutionLane {
+        let meta = self.pack.meta();
+        if meta.pack_name == "worker_v1" {
+            return BackendExecutionLane::Worker;
+        }
+        let components = [
+            meta.world_backend,
+            meta.sae_backend,
+            meta.ssm_backend,
+            meta.lfm_backend,
+        ];
+        let has_burn = components.iter().any(|id| {
+            matches!(
+                id,
+                BackendComponentId::BurnJepaV1
+                    | BackendComponentId::BurnSaeV1
+                    | BackendComponentId::BurnSsmV1
+                    | BackendComponentId::BurnLfmV1
+            )
+        });
+        let has_candle = components.iter().any(|id| {
+            matches!(
+                id,
+                BackendComponentId::CandleJepaV1
+                    | BackendComponentId::CandleSaeV1
+                    | BackendComponentId::CandleSsmV1
+                    | BackendComponentId::CandleEbmV1
+                    | BackendComponentId::CandleVljepaV1
+            )
+        });
+        match (has_burn, has_candle) {
+            (true, false) => BackendExecutionLane::Burn,
+            (false, true) => BackendExecutionLane::Candle,
+            (false, false) => BackendExecutionLane::Toy,
+            (true, true) => BackendExecutionLane::Mixed,
         }
     }
 }
