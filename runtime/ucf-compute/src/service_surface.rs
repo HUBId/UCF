@@ -6,7 +6,7 @@ use crate::pipeline::{
     CanonicalFailureKind, CanonicalPipelineFailure, CanonicalPipelineRequest,
     CanonicalPipelineState, CanonicalWorkSummary,
 };
-use crate::ModelSlotProvenance;
+use crate::{ModelSlot, ModelSlotProvenance, SlotRuntimeStatus};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ComputeExecutionMode {
@@ -66,6 +66,81 @@ pub enum ComputeSubmitOutcome {
         status: ComputeJobStatus,
         completion: Option<ComputeJobStatus>,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuntimeOpsState {
+    HealthyReady,
+    Degraded,
+    PartiallyUnavailable,
+    Unavailable,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuntimeSignalState {
+    Known,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuntimeOperation {
+    Snapshot,
+    DrainScheduler { max_jobs: usize },
+    RefreshRuntime,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuntimeOperationCode {
+    Applied,
+    Unsupported,
+    Failed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeOperationOutcome {
+    pub operation: RuntimeOperation,
+    pub code: RuntimeOperationCode,
+    pub detail: String,
+    pub completed_jobs: Vec<JobId>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ComputeQueueSnapshot {
+    pub queued_jobs: usize,
+    pub running_jobs: usize,
+    pub max_concurrent_jobs: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ComputeJobSummary {
+    pub submitted_total: usize,
+    pub completed_total: usize,
+    pub failed_total: usize,
+    pub rejected_total: usize,
+    pub timed_out_total: usize,
+    pub degraded_total: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeSlotSnapshot {
+    pub slot: ModelSlot,
+    pub status: SlotRuntimeStatus,
+    pub required_for_pack: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeOpsSnapshot {
+    pub state: RuntimeOpsState,
+    pub state_signal: RuntimeSignalState,
+    pub execution_path: JobExecutionPath,
+    pub queue: ComputeQueueSnapshot,
+    pub jobs: ComputeJobSummary,
+    pub available_slots: Vec<RuntimeSlotSnapshot>,
+    pub active_job: Option<ComputeJobHandle>,
+    pub candidate_job: Option<ComputeJobHandle>,
+    pub compare_job: Option<ComputeJobHandle>,
+    pub shadow_job: Option<ComputeJobHandle>,
+    pub has_missing_required_slot: bool,
 }
 
 pub struct CanonicalComputeEntryPoint {
@@ -136,6 +211,130 @@ impl CanonicalComputeEntryPoint {
     pub fn service_mut(&mut self) -> &mut InMemoryComputeService {
         &mut self.service
     }
+
+    pub fn operations_snapshot(&self) -> RuntimeOpsSnapshot {
+        let scheduler = self.service.scheduler_snapshot();
+        let mut submitted_total = 0usize;
+        let mut completed_total = 0usize;
+        let mut failed_total = 0usize;
+        let mut rejected_total = 0usize;
+        let mut timed_out_total = 0usize;
+        let mut degraded_total = 0usize;
+        let mut slots = Vec::new();
+        let mut last_job = None;
+
+        for record in self.service.jobs() {
+            submitted_total = submitted_total.saturating_add(1);
+            last_job = Some(record.job.id);
+            match record.state {
+                JobLifecycleState::Completed => {
+                    completed_total = completed_total.saturating_add(1);
+                    if record.accounting.pipeline_state == Some(CanonicalPipelineState::Degraded) {
+                        degraded_total = degraded_total.saturating_add(1);
+                    }
+                }
+                JobLifecycleState::Failed => failed_total = failed_total.saturating_add(1),
+                JobLifecycleState::Rejected => rejected_total = rejected_total.saturating_add(1),
+                JobLifecycleState::TimedOut => timed_out_total = timed_out_total.saturating_add(1),
+                _ => {}
+            }
+            if !record.accounting.model_slots.is_empty() {
+                slots = record
+                    .accounting
+                    .model_slots
+                    .iter()
+                    .map(|slot| RuntimeSlotSnapshot {
+                        slot: slot.slot,
+                        status: slot.status,
+                        required_for_pack: slot.required_for_pack,
+                    })
+                    .collect();
+            }
+        }
+        slots.sort_by_key(|slot| slot.slot);
+        let has_missing_required_slot = slots.iter().any(|slot| {
+            slot.required_for_pack
+                && !matches!(
+                    slot.status,
+                    SlotRuntimeStatus::Used | SlotRuntimeStatus::Disabled
+                )
+        });
+        let total_terminal_failures = failed_total
+            .saturating_add(rejected_total)
+            .saturating_add(timed_out_total);
+        let has_failure_ratio_degraded =
+            submitted_total > 0 && total_terminal_failures.saturating_mul(2) >= submitted_total;
+        let state_signal = if submitted_total == 0 {
+            RuntimeSignalState::Unknown
+        } else {
+            RuntimeSignalState::Known
+        };
+        let no_successful_runtime_path =
+            submitted_total > 0 && completed_total == 0 && total_terminal_failures == submitted_total;
+        let state = if (has_missing_required_slot && completed_total == 0) || no_successful_runtime_path
+        {
+            RuntimeOpsState::Unavailable
+        } else if has_missing_required_slot || scheduler.queued_jobs > 0 {
+            RuntimeOpsState::PartiallyUnavailable
+        } else if has_failure_ratio_degraded || degraded_total > 0 {
+            RuntimeOpsState::Degraded
+        } else {
+            RuntimeOpsState::HealthyReady
+        };
+        RuntimeOpsSnapshot {
+            state,
+            state_signal,
+            execution_path: scheduler.execution_path,
+            queue: ComputeQueueSnapshot {
+                queued_jobs: scheduler.queued_jobs,
+                running_jobs: scheduler.running_jobs,
+                max_concurrent_jobs: scheduler.max_concurrent_jobs,
+            },
+            jobs: ComputeJobSummary {
+                submitted_total,
+                completed_total,
+                failed_total,
+                rejected_total,
+                timed_out_total,
+                degraded_total,
+            },
+            available_slots: slots,
+            active_job: last_job.map(|job_id| ComputeJobHandle { job_id }),
+            candidate_job: None,
+            compare_job: None,
+            shadow_job: None,
+            has_missing_required_slot,
+        }
+    }
+
+    pub fn run_operation(
+        &mut self,
+        operation: RuntimeOperation,
+    ) -> Result<RuntimeOperationOutcome, crate::ComputeError> {
+        match operation {
+            RuntimeOperation::Snapshot => Ok(RuntimeOperationOutcome {
+                operation,
+                code: RuntimeOperationCode::Applied,
+                detail: "runtime snapshot captured".to_string(),
+                completed_jobs: Vec::new(),
+            }),
+            RuntimeOperation::DrainScheduler { max_jobs } => {
+                let completed_jobs = self.service.run_scheduler_cycle(max_jobs.max(1))?;
+                Ok(RuntimeOperationOutcome {
+                    operation,
+                    code: RuntimeOperationCode::Applied,
+                    detail: format!("scheduler drained {} jobs", completed_jobs.len()),
+                    completed_jobs,
+                })
+            }
+            RuntimeOperation::RefreshRuntime => Ok(RuntimeOperationOutcome {
+                operation,
+                code: RuntimeOperationCode::Unsupported,
+                detail: "refresh_runtime unsupported for in-memory compute service".to_string(),
+                completed_jobs: Vec::new(),
+            }),
+        }
+    }
 }
 
 fn validate_request(request: &ComputeSubmitRequest) -> Option<ComputeInvalidRequest> {
@@ -201,7 +400,8 @@ fn now_unix_ms() -> u64 {
 mod tests {
     use super::{
         CanonicalComputeEntryPoint, ComputeExecutionMode, ComputeRequestValidationCode,
-        ComputeSubmitOutcome, ComputeSubmitRequest,
+        ComputeSubmitOutcome, ComputeSubmitRequest, RuntimeOperation, RuntimeOperationCode,
+        RuntimeOpsState, RuntimeSignalState,
     };
     use crate::pipeline::{CanonicalFailureKind, CanonicalPipelineRequest};
     use crate::{InMemoryComputeService, JobLifecycleState};
@@ -299,5 +499,70 @@ mod tests {
             JobLifecycleState::Completed | JobLifecycleState::Failed | JobLifecycleState::TimedOut
         ));
         assert!(!entry.lifecycle(handle).is_empty());
+    }
+
+    #[test]
+    fn operations_snapshot_marks_unknown_without_job_signal() {
+        let entry = service();
+        let snapshot = entry.operations_snapshot();
+        assert_eq!(snapshot.state, RuntimeOpsState::HealthyReady);
+        assert_eq!(snapshot.state_signal, RuntimeSignalState::Unknown);
+        assert_eq!(snapshot.jobs.submitted_total, 0);
+    }
+
+    #[test]
+    fn operations_snapshot_distinguishes_unavailable_and_partially_unavailable() {
+        let mut entry = service();
+        let mut rejected = valid_request();
+        rejected.input.t = 0;
+        entry
+            .submit(ComputeSubmitRequest {
+                pipeline_request: rejected,
+                submitted_by: Some("svc-test".to_string()),
+                submitted_at_unix_ms: Some(100),
+                execution_mode: ComputeExecutionMode::EnqueueOnly,
+            })
+            .expect("submit should not fail");
+        let unavailable = entry.operations_snapshot();
+        assert_eq!(unavailable.state_signal, RuntimeSignalState::Known);
+        assert_eq!(unavailable.state, RuntimeOpsState::Unavailable);
+
+        entry
+            .submit(ComputeSubmitRequest {
+                pipeline_request: valid_request(),
+                submitted_by: Some("svc-test".to_string()),
+                submitted_at_unix_ms: Some(101),
+                execution_mode: ComputeExecutionMode::EnqueueOnly,
+            })
+            .expect("submit should not fail");
+        let partially_unavailable = entry.operations_snapshot();
+        assert_eq!(
+            partially_unavailable.state,
+            RuntimeOpsState::PartiallyUnavailable
+        );
+    }
+
+    #[test]
+    fn operations_actions_are_applied_or_structured_unsupported() {
+        let mut entry = service();
+        entry
+            .submit(ComputeSubmitRequest {
+                pipeline_request: valid_request(),
+                submitted_by: Some("svc-test".to_string()),
+                submitted_at_unix_ms: Some(100),
+                execution_mode: ComputeExecutionMode::EnqueueOnly,
+            })
+            .expect("submit should not fail");
+
+        let drained = entry
+            .run_operation(RuntimeOperation::DrainScheduler { max_jobs: 1 })
+            .expect("drain operation");
+        assert_eq!(drained.code, RuntimeOperationCode::Applied);
+        assert_eq!(drained.completed_jobs.len(), 1);
+
+        let unsupported = entry
+            .run_operation(RuntimeOperation::RefreshRuntime)
+            .expect("refresh operation");
+        assert_eq!(unsupported.code, RuntimeOperationCode::Unsupported);
     }
 }

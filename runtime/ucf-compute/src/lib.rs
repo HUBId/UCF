@@ -96,6 +96,8 @@ pub use risk_contract::{
 pub use service_surface::{
     CanonicalComputeEntryPoint, ComputeExecutionMode, ComputeInvalidRequest, ComputeJobHandle,
     ComputeJobStatus, ComputeRequestValidationCode, ComputeSubmitOutcome, ComputeSubmitRequest,
+    RuntimeOperation, RuntimeOperationCode, RuntimeOperationOutcome, RuntimeOpsSnapshot,
+    RuntimeOpsState, RuntimeSignalState,
 };
 pub use work_meter::WorkMeter;
 

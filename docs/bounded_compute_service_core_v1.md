@@ -225,3 +225,46 @@ The status snapshot mirrors load-bearing service provenance already tracked by b
 - pipeline state/work summary/model slot provenance.
 
 Low-level `InMemoryComputeService::submit/run_next/run_scheduler_cycle` remains available as an internal primitive for tests and runtime internals, but service consumers should use `CanonicalComputeEntryPoint` as primary compute ingress.
+
+## Minimal runtime operations surface (v1)
+
+`CanonicalComputeEntryPoint` now also exposes a narrow operations-facing layer intended for
+technical runtime control only (no second admin/control plane):
+
+- `operations_snapshot() -> RuntimeOpsSnapshot`
+- `run_operation(RuntimeOperation) -> RuntimeOperationOutcome`
+
+### Runtime snapshot coverage
+
+`RuntimeOpsSnapshot` provides the minimal load-bearing state for runtime operations:
+
+- runtime state: `healthy_ready | degraded | partially_unavailable | unavailable`
+- runtime signal quality: `known | unknown` (unknown when no job-derived signal exists yet)
+- scheduler/queue envelope: queued, running, max-concurrency, execution path
+- job summary counters (submitted/completed/failed/rejected/timed_out/degraded)
+- latest slot provenance snapshot (required slots + runtime status)
+- canonical job handles (`active_job` plus reserved `candidate/compare/shadow` fields)
+
+The `candidate/compare/shadow` fields are intentionally present but currently `None` in the
+in-memory service because no extra promotion/compare queue exists at this layer.
+
+### Runtime state semantics
+
+State is derived from real service signals only:
+
+- `unavailable`: missing required slot signals and no successful completion observed
+- `partially_unavailable`: missing required slots or queued backlog still pending
+- `degraded`: high terminal failure ratio and/or completed degraded pipeline outputs
+- `healthy_ready`: none of the above conditions hold
+
+No synthetic “always green” health outcome is emitted.
+
+### Supported operations
+
+- `RuntimeOperation::Snapshot`: explicit snapshot action (always applied)
+- `RuntimeOperation::DrainScheduler { max_jobs }`: controlled execution of queued jobs
+- `RuntimeOperation::RefreshRuntime`: currently returns structured `Unsupported` for
+  `InMemoryComputeService` (no hidden refresh side-path)
+
+`RuntimeOperationOutcome` separates `Applied`, `Unsupported`, and `Failed` outcome classes to keep
+operations failure semantics explicit and aligned with the canonical runtime failure world.

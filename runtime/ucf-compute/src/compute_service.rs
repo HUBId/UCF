@@ -444,6 +444,10 @@ impl InMemoryComputeService {
         &self.lifecycle
     }
 
+    pub fn jobs(&self) -> impl Iterator<Item = &JobRecord> {
+        self.jobs.values()
+    }
+
     fn record_event(&mut self, event: JobLifecycleEvent) {
         self.lifecycle.push(event);
     }
