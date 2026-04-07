@@ -19,6 +19,8 @@ cargo run -p ucf-ops -- bringup --demo --ticks 100
 
 Resolved config lives in `./.ucf/config_resolved.json` and is loaded from `configs/<profile>.toml` + allowlisted env overrides (`UCF_POLICY_OVERLAY`, `UCF_SLOT_EBM_MODE`, `UCF_STAGE_ISOLATION`, `UCF_EMERGENCY_POLICY_PIN`). Unknown keys fail config load.
 
+For `UCF_PROFILE=prod`, `compute_backend` is required to be `burn` (canonical production lane). `stub` is rejected by config-ladder validation.
+
 ## Expected output artifacts
 - `.ucf/ess/ess_fixture.json`
 - `.ucf/ess/run_metadata_record.json`

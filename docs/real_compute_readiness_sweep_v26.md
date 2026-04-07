@@ -43,6 +43,7 @@ Ziel: harte Abschlussprüfung der realen Compute-Surface (nicht Governance/Relea
 - **Problem:** Kanonischer Pfad ist Burn, aber `ComputeBackendConfig::default()` bleibt `Stub`.
 - **Produktivrelevanz:** Ohne explizite Env-/Builder-Setzung kann produktionsnahe Laufzeit ungewollt in Compat-Lane landen.
 - **Minimaler Fix:** In produktiven Startpfaden explizit `build_canonical_production_backend` (oder `UCF_COMPUTE_BACKEND=burn`) erzwingen und das in Ops-Runbooks als Pflicht markieren.
+- **Status (2026-04-07, Prompt 27):** **gezielt entschärft im produktiven Profilpfad**. `configs/prod.toml` pinnt jetzt `compute_backend = "burn"` und `validate_config_ladder` erzwingt für `prod` hart `compute_backend=burn` (kein stiller Fallback auf Stub).
 
 ### B) LFM/NSR readiness is explicit but not uniformly hard-gated
 - **Modul/Pfad:** `runtime/ucf-compute/src/pipeline.rs`.
@@ -83,3 +84,10 @@ Kern bleibt: kanonischer Compute-Pfad, belastbare Failure-/Provenance-Semantik, 
 ## 6) Abschlussurteil
 
 Der Real-Compute-Stack ist für den **kanonischen Burn-basierten Referenzpfad** technisch belastbar. Für breitere Produktionsnutzung sind vor allem Default-/Profile-Härtung und verpflichtende Replay/History-Disziplin die verbleibenden High-Leverage-Lücken.
+
+## 7) Readiness-Delta nach Prompt 27 (gezielter Single-Blocker-Fix)
+
+- **Gewählter Blocker:** A) Canonical vs Runtime-Default (`prod` konnte auf Stub stehen bleiben).
+- **Behoben:** Produktionsprofil (`configs/prod.toml`) ist auf Burn gepinnt; Config-Ladder verweigert `prod` ohne Burn.
+- **Readiness-Effekt:** Der kanonische produktive Pfad ist jetzt im realen Ops-Startpfad hart gegen Stub-Drift abgesichert.
+- **Weiterhin offen:** B) Required-Stage-Profilhärtung (LFM/NSR), C) feinere Worker-Capabilities, D) History required-on in allen Prod-Launchpfaden.
