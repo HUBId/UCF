@@ -144,12 +144,14 @@ pub struct RuntimeOpsSnapshot {
     pub compare_job: Option<ComputeJobHandle>,
     pub shadow_job: Option<ComputeJobHandle>,
     pub has_missing_required_slot: bool,
+    pub latest_baseline_comparison: Option<BaselineComparisonSummary>,
 }
 
 pub struct CanonicalComputeEntryPoint {
     service: InMemoryComputeService,
     history_store: Option<JobHistoryStore>,
     last_history_error: Option<JobHistoryStoreError>,
+    latest_baseline_comparison: Option<BaselineComparisonSummary>,
 }
 
 impl CanonicalComputeEntryPoint {
@@ -158,6 +160,7 @@ impl CanonicalComputeEntryPoint {
             service,
             history_store: None,
             last_history_error: None,
+            latest_baseline_comparison: None,
         }
     }
 
@@ -169,6 +172,7 @@ impl CanonicalComputeEntryPoint {
             service,
             history_store: Some(history_store),
             last_history_error: None,
+            latest_baseline_comparison: None,
         }
     }
 
@@ -409,6 +413,121 @@ impl CanonicalComputeEntryPoint {
         }))
     }
 
+    pub fn compare_against_baseline(
+        &mut self,
+        candidate: ComputeJobHandle,
+        baseline: BaselineReference,
+    ) -> BaselineComparisonResult {
+        let Some(candidate_record) = self.replay_source(candidate.job_id) else {
+            return BaselineComparisonResult::NotComparable {
+                candidate_job_id: candidate.job_id,
+                baseline_job_id: None,
+                code: BaselineComparisonFailureCode::CandidateIncompatible,
+                detail: "candidate record missing".to_string(),
+            };
+        };
+        if candidate_record.completion_class.is_none() {
+            return BaselineComparisonResult::NotComparable {
+                candidate_job_id: candidate.job_id,
+                baseline_job_id: None,
+                code: BaselineComparisonFailureCode::CandidateIncompatible,
+                detail: "candidate must be terminal before baseline comparison".to_string(),
+            };
+        }
+        let baseline_record = match baseline {
+            BaselineReference::Job(handle) => self.replay_source(handle.job_id),
+            BaselineReference::LatestByRequestIdentity => {
+                self.latest_baseline_for_candidate(candidate.job_id)
+            }
+        };
+        let Some(baseline_record) = baseline_record else {
+            return BaselineComparisonResult::NotComparable {
+                candidate_job_id: candidate.job_id,
+                baseline_job_id: None,
+                code: BaselineComparisonFailureCode::NoBaselineAvailable,
+                detail: "no baseline available for candidate context".to_string(),
+            };
+        };
+        if baseline_record.job_id == candidate.job_id {
+            return BaselineComparisonResult::NotComparable {
+                candidate_job_id: candidate.job_id,
+                baseline_job_id: Some(baseline_record.job_id),
+                code: BaselineComparisonFailureCode::BaselineIncompatible,
+                detail: "baseline must reference a different completed job".to_string(),
+            };
+        }
+        if baseline_record.completion_class.is_none() {
+            return BaselineComparisonResult::NotComparable {
+                candidate_job_id: candidate.job_id,
+                baseline_job_id: Some(baseline_record.job_id),
+                code: BaselineComparisonFailureCode::BaselineIncompatible,
+                detail: "baseline must be terminal before comparison".to_string(),
+            };
+        }
+
+        let config_equal = candidate_record.execution_path == baseline_record.execution_path
+            && candidate_record.execution_lane == baseline_record.execution_lane
+            && candidate_record.backend_route == baseline_record.backend_route
+            && candidate_record.model_slots == baseline_record.model_slots
+            && candidate_record.request_identity == baseline_record.request_identity
+            && candidate_record.request_budget == baseline_record.request_budget;
+        if !config_equal {
+            return BaselineComparisonResult::NotComparable {
+                candidate_job_id: candidate.job_id,
+                baseline_job_id: Some(baseline_record.job_id),
+                code: BaselineComparisonFailureCode::NotMeaningfulUnderRuntimeChange,
+                detail:
+                    "candidate and baseline are not comparable under changed runtime configuration"
+                        .to_string(),
+            };
+        }
+
+        let completion_class_changed =
+            candidate_record.completion_class != baseline_record.completion_class;
+        let failure_kind_changed = candidate_record.failure_kind != baseline_record.failure_kind;
+        let degraded_changed = candidate_record.pipeline_state != baseline_record.pipeline_state;
+        let work_equal = candidate_record.work_summary == baseline_record.work_summary;
+
+        let outcome = match (
+            completion_rank(candidate_record.completion_class.as_deref()),
+            completion_rank(baseline_record.completion_class.as_deref()),
+        ) {
+            (Some(c), Some(b)) if c > b => BaselineComparisonOutcome::Improved,
+            (Some(c), Some(b)) if c < b => BaselineComparisonOutcome::Regressed,
+            (Some(_), Some(_)) if degraded_changed || failure_kind_changed => {
+                if candidate_record.pipeline_state.as_deref() == Some("degraded")
+                    || candidate_record.failure_kind.is_some()
+                {
+                    BaselineComparisonOutcome::Regressed
+                } else {
+                    BaselineComparisonOutcome::Improved
+                }
+            }
+            _ => BaselineComparisonOutcome::Equivalent,
+        };
+
+        let summary = BaselineComparisonSummary {
+            candidate_job_id: candidate.job_id,
+            baseline_job_id: baseline_record.job_id,
+            outcome,
+            completion_class_changed,
+            failure_kind_changed,
+            degraded_changed,
+            config_equal,
+            work_equal,
+            candidate_remaining_global_units: candidate_record
+                .work_summary
+                .as_ref()
+                .map(|summary| summary.global_remaining_units),
+            baseline_remaining_global_units: baseline_record
+                .work_summary
+                .as_ref()
+                .map(|summary| summary.global_remaining_units),
+        };
+        self.latest_baseline_comparison = Some(summary.clone());
+        BaselineComparisonResult::Compared(summary)
+    }
+
     pub fn operations_snapshot(&self) -> RuntimeOpsSnapshot {
         let scheduler = self.service.scheduler_snapshot();
         let mut submitted_total = 0usize;
@@ -502,6 +621,7 @@ impl CanonicalComputeEntryPoint {
             compare_job: None,
             shadow_job: None,
             has_missing_required_slot,
+            latest_baseline_comparison: self.latest_baseline_comparison.clone(),
         }
     }
 
@@ -539,31 +659,7 @@ impl CanonicalComputeEntryPoint {
 
     fn replay_source(&self, job_id: JobId) -> Option<ReplaySourceRecord> {
         if let Some(record) = self.service.job(job_id) {
-            return Some(ReplaySourceRecord {
-                job_id,
-                request: Some(record.job.request.clone()),
-                execution_path: format!("{:?}", record.execution_path),
-                execution_lane: Some(format!("{:?}", record.accounting.execution_lane)),
-                backend_route: record.result.as_ref().map(|result| result.route),
-                model_slots: record
-                    .accounting
-                    .model_slots
-                    .iter()
-                    .map(|slot| {
-                        format!(
-                            "{:?}:{:?}:{}",
-                            slot.slot, slot.status, slot.required_for_pack
-                        )
-                    })
-                    .collect(),
-                completion_class: Some(
-                    completion_class_name(record.accounting.completion_class).to_string(),
-                ),
-                failure_kind: record
-                    .accounting
-                    .failure_kind
-                    .map(|kind| canonical_failure_kind_name(kind).to_string()),
-            });
+            return Some(ReplaySourceRecord::from_record(record));
         }
         let persisted = self.history_store.as_ref()?.get(job_id)?;
         Some(ReplaySourceRecord::from_persisted(persisted))
@@ -581,6 +677,31 @@ impl CanonicalComputeEntryPoint {
         } else {
             self.last_history_error = None;
         }
+    }
+
+    fn latest_baseline_for_candidate(&self, candidate_job_id: JobId) -> Option<ReplaySourceRecord> {
+        let candidate = self.replay_source(candidate_job_id)?;
+        self.replay_sources_desc().into_iter().find(|record| {
+            record.job_id != candidate_job_id
+                && record.request_identity == candidate.request_identity
+                && record.request_budget == candidate.request_budget
+                && record.completion_class.is_some()
+                && record.execution_lane == candidate.execution_lane
+                && record.backend_route == candidate.backend_route
+        })
+    }
+
+    fn replay_sources_desc(&self) -> Vec<ReplaySourceRecord> {
+        let mut records = self
+            .service
+            .jobs()
+            .map(ReplaySourceRecord::from_record)
+            .collect::<Vec<_>>();
+        if let Some(store) = self.history_store.as_ref() {
+            records.extend(store.records().map(ReplaySourceRecord::from_persisted));
+        }
+        records.sort_by_key(|record| std::cmp::Reverse(record.job_id.0));
+        records
     }
 }
 
@@ -651,19 +772,123 @@ pub enum ComputeReplayOutcome {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BaselineReference {
+    Job(ComputeJobHandle),
+    LatestByRequestIdentity,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BaselineComparisonOutcome {
+    Improved,
+    Equivalent,
+    Regressed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BaselineComparisonFailureCode {
+    NoBaselineAvailable,
+    BaselineIncompatible,
+    CandidateIncompatible,
+    ComparisonExecutionFailed,
+    NotMeaningfulUnderRuntimeChange,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BaselineComparisonSummary {
+    pub candidate_job_id: JobId,
+    pub baseline_job_id: JobId,
+    pub outcome: BaselineComparisonOutcome,
+    pub completion_class_changed: bool,
+    pub failure_kind_changed: bool,
+    pub degraded_changed: bool,
+    pub config_equal: bool,
+    pub work_equal: bool,
+    pub candidate_remaining_global_units: Option<u64>,
+    pub baseline_remaining_global_units: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BaselineComparisonResult {
+    Compared(BaselineComparisonSummary),
+    NotComparable {
+        candidate_job_id: JobId,
+        baseline_job_id: Option<JobId>,
+        code: BaselineComparisonFailureCode,
+        detail: String,
+    },
+}
+
+type BudgetComparisonFingerprint = (u64, u64, u64, u64, u64, u64, u64, u32, String);
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ReplaySourceRecord {
     job_id: JobId,
     request: Option<CanonicalPipelineRequest>,
+    request_identity: Option<(u64, u64, String)>,
+    request_budget: Option<BudgetComparisonFingerprint>,
     execution_path: String,
     execution_lane: Option<String>,
     backend_route: Option<crate::pipeline::CanonicalBackendRoute>,
     model_slots: Vec<String>,
     completion_class: Option<String>,
     failure_kind: Option<String>,
+    pipeline_state: Option<String>,
+    work_summary: Option<CanonicalWorkSummary>,
 }
 
 impl ReplaySourceRecord {
+    fn from_record(record: &JobRecord) -> Self {
+        let request = record.job.request.clone();
+        Self {
+            job_id: record.job.id,
+            request_identity: Some((
+                request.input.frame_id.0,
+                request.input.t,
+                hex::encode(request.input.context_digest),
+            )),
+            request_budget: Some((
+                request.budget.max_micros,
+                request.budget.hard_timeout_micros,
+                request.budget.global_work_units,
+                request.budget.world_units,
+                request.budget.sae_units,
+                request.budget.ssm_units,
+                request.budget.lfm_units,
+                request.budget.profile_id,
+                format!("{:?}", request.budget.degrade_policy),
+            )),
+            request: Some(request),
+            execution_path: format!("{:?}", record.execution_path),
+            execution_lane: Some(format!("{:?}", record.accounting.execution_lane)),
+            backend_route: record.result.as_ref().map(|result| result.route),
+            model_slots: record
+                .accounting
+                .model_slots
+                .iter()
+                .map(|slot| {
+                    format!(
+                        "{:?}:{:?}:{}",
+                        slot.slot, slot.status, slot.required_for_pack
+                    )
+                })
+                .collect(),
+            completion_class: Some(
+                completion_class_name(record.accounting.completion_class).to_string(),
+            ),
+            failure_kind: record
+                .accounting
+                .failure_kind
+                .map(|kind| canonical_failure_kind_name(kind).to_string()),
+            pipeline_state: record
+                .accounting
+                .pipeline_state
+                .map(pipeline_state_name)
+                .map(str::to_string),
+            work_summary: record.accounting.work_summary,
+        }
+    }
+
     fn from_persisted(persisted: &PersistedJobRecord) -> Self {
         Self {
             job_id: JobId(persisted.job_id),
@@ -671,6 +896,24 @@ impl ReplaySourceRecord {
                 .canonical_request
                 .as_ref()
                 .and_then(canonical_request_from_persisted),
+            request_identity: Some((
+                persisted.request.frame_id,
+                persisted.request.t,
+                persisted.request.context_digest_hex.clone(),
+            )),
+            request_budget: persisted.canonical_request.as_ref().map(|request| {
+                (
+                    request.budget.max_micros,
+                    request.budget.hard_timeout_micros,
+                    request.budget.global_work_units,
+                    request.budget.world_units,
+                    request.budget.sae_units,
+                    request.budget.ssm_units,
+                    request.budget.lfm_units,
+                    request.budget.profile_id,
+                    request.budget.degrade_policy.clone(),
+                )
+            }),
             execution_path: persisted.execution_path.clone(),
             execution_lane: persisted.execution_lane.clone(),
             backend_route: persisted.backend_route.as_ref().map(|route| {
@@ -689,6 +932,19 @@ impl ReplaySourceRecord {
                 .collect(),
             completion_class: persisted.completion_class.clone(),
             failure_kind: persisted.failure_kind.clone(),
+            pipeline_state: persisted.pipeline_state.clone(),
+            work_summary: persisted
+                .work_summary
+                .as_ref()
+                .map(|summary| CanonicalWorkSummary {
+                    global_budget_units: summary.global_budget_units,
+                    global_remaining_units: summary.global_remaining_units,
+                    world_remaining_units: summary.world_remaining_units,
+                    sae_remaining_units: summary.sae_remaining_units,
+                    ssm_remaining_units: summary.ssm_remaining_units,
+                    lfm_remaining_units: summary.lfm_remaining_units,
+                    budget_exceeded_stage: None,
+                }),
         }
     }
 }
@@ -764,6 +1020,25 @@ fn completion_class_name(class: JobCompletionClass) -> &'static str {
     }
 }
 
+fn pipeline_state_name(state: CanonicalPipelineState) -> &'static str {
+    match state {
+        CanonicalPipelineState::Ok => "ok",
+        CanonicalPipelineState::Degraded => "degraded",
+        CanonicalPipelineState::Unavailable => "unavailable",
+    }
+}
+
+fn completion_rank(class: Option<&str>) -> Option<u8> {
+    match class {
+        Some("completed") => Some(4),
+        Some("degraded_completed") => Some(3),
+        Some("timed_out") => Some(2),
+        Some("failed_during_execution") | Some("worker_ipc_failure") => Some(1),
+        Some("rejected_before_execution") => Some(0),
+        _ => None,
+    }
+}
+
 fn validate_request(request: &ComputeSubmitRequest) -> Option<ComputeInvalidRequest> {
     if let Some(submitted_by) = request.submitted_by.as_ref() {
         if submitted_by.trim().is_empty() {
@@ -826,6 +1101,7 @@ fn now_unix_ms() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::{
+        BaselineComparisonFailureCode, BaselineComparisonResult, BaselineReference,
         CanonicalComputeEntryPoint, ComputeExecutionMode, ComputeHistoryLookupError,
         ComputeJobHandle, ComputeJobHistoryLookup, ComputeReplayOutcome,
         ComputeRequestValidationCode, ComputeSubmitOutcome, ComputeSubmitRequest,
@@ -1172,5 +1448,152 @@ mod tests {
             }
             other => panic!("expected non-replayable, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn candidate_can_be_compared_against_explicit_baseline() {
+        let mut entry = service();
+        let baseline = entry
+            .submit(ComputeSubmitRequest {
+                pipeline_request: valid_request(),
+                submitted_by: Some("svc-test".to_string()),
+                submitted_at_unix_ms: Some(100),
+                execution_mode: ComputeExecutionMode::ExecuteInline,
+            })
+            .expect("baseline submit");
+        let baseline_handle = match baseline {
+            ComputeSubmitOutcome::Accepted { completion, .. } => {
+                completion.expect("completion").handle
+            }
+            other => panic!("expected accepted baseline, got {other:?}"),
+        };
+        let candidate = entry
+            .submit(ComputeSubmitRequest {
+                pipeline_request: valid_request(),
+                submitted_by: Some("svc-test".to_string()),
+                submitted_at_unix_ms: Some(101),
+                execution_mode: ComputeExecutionMode::ExecuteInline,
+            })
+            .expect("candidate submit");
+        let candidate_handle = match candidate {
+            ComputeSubmitOutcome::Accepted { completion, .. } => {
+                completion.expect("completion").handle
+            }
+            other => panic!("expected accepted candidate, got {other:?}"),
+        };
+        let compare = entry
+            .compare_against_baseline(candidate_handle, BaselineReference::Job(baseline_handle));
+        match compare {
+            BaselineComparisonResult::Compared(summary) => {
+                assert_eq!(summary.candidate_job_id, candidate_handle.job_id);
+                assert_eq!(summary.baseline_job_id, baseline_handle.job_id);
+                assert!(summary.config_equal);
+            }
+            other => panic!("expected compared result, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn missing_or_incompatible_baseline_is_structured() {
+        let mut entry = service();
+        let candidate = entry
+            .submit(ComputeSubmitRequest {
+                pipeline_request: valid_request(),
+                submitted_by: Some("svc-test".to_string()),
+                submitted_at_unix_ms: Some(100),
+                execution_mode: ComputeExecutionMode::ExecuteInline,
+            })
+            .expect("candidate submit");
+        let candidate_handle = match candidate {
+            ComputeSubmitOutcome::Accepted { completion, .. } => {
+                completion.expect("completion").handle
+            }
+            other => panic!("expected accepted candidate, got {other:?}"),
+        };
+
+        let missing = entry.compare_against_baseline(
+            candidate_handle,
+            BaselineReference::Job(ComputeJobHandle {
+                job_id: JobId(9999),
+            }),
+        );
+        match missing {
+            BaselineComparisonResult::NotComparable { code, .. } => {
+                assert_eq!(code, BaselineComparisonFailureCode::NoBaselineAvailable);
+            }
+            other => panic!("expected not-comparable result, got {other:?}"),
+        }
+
+        let mut changed = valid_request();
+        changed.budget.profile_id = 2;
+        let baseline = entry
+            .submit(ComputeSubmitRequest {
+                pipeline_request: changed,
+                submitted_by: Some("svc-test".to_string()),
+                submitted_at_unix_ms: Some(101),
+                execution_mode: ComputeExecutionMode::ExecuteInline,
+            })
+            .expect("changed baseline submit");
+        let baseline_handle = match baseline {
+            ComputeSubmitOutcome::Accepted { completion, .. } => {
+                completion.expect("completion").handle
+            }
+            other => panic!("expected accepted baseline, got {other:?}"),
+        };
+        let changed_compare = entry
+            .compare_against_baseline(candidate_handle, BaselineReference::Job(baseline_handle));
+        match changed_compare {
+            BaselineComparisonResult::NotComparable { code, .. } => {
+                assert_eq!(
+                    code,
+                    BaselineComparisonFailureCode::NotMeaningfulUnderRuntimeChange
+                );
+            }
+            other => panic!("expected not-comparable changed-config result, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn baseline_comparison_is_visible_in_runtime_snapshot() {
+        let mut entry = service();
+        let baseline = entry
+            .submit(ComputeSubmitRequest {
+                pipeline_request: valid_request(),
+                submitted_by: Some("svc-test".to_string()),
+                submitted_at_unix_ms: Some(100),
+                execution_mode: ComputeExecutionMode::ExecuteInline,
+            })
+            .expect("baseline submit");
+        let baseline_handle = match baseline {
+            ComputeSubmitOutcome::Accepted { completion, .. } => {
+                completion.expect("completion").handle
+            }
+            other => panic!("expected accepted baseline, got {other:?}"),
+        };
+        let candidate = entry
+            .submit(ComputeSubmitRequest {
+                pipeline_request: valid_request(),
+                submitted_by: Some("svc-test".to_string()),
+                submitted_at_unix_ms: Some(101),
+                execution_mode: ComputeExecutionMode::ExecuteInline,
+            })
+            .expect("candidate submit");
+        let candidate_handle = match candidate {
+            ComputeSubmitOutcome::Accepted { completion, .. } => {
+                completion.expect("completion").handle
+            }
+            other => panic!("expected accepted candidate, got {other:?}"),
+        };
+
+        let _ = entry
+            .compare_against_baseline(candidate_handle, BaselineReference::Job(baseline_handle));
+        let snapshot = entry.operations_snapshot();
+        assert_eq!(
+            snapshot
+                .latest_baseline_comparison
+                .as_ref()
+                .map(|summary| summary.candidate_job_id),
+            Some(candidate_handle.job_id)
+        );
     }
 }

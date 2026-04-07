@@ -240,6 +240,10 @@ impl JobHistoryStore {
         self.records.get(&id)
     }
 
+    pub fn records(&self) -> impl Iterator<Item = &PersistedJobRecord> {
+        self.records.values()
+    }
+
     pub fn upsert_from_job_record(
         &mut self,
         record: &JobRecord,
