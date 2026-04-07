@@ -530,9 +530,14 @@ pub enum WorkerDispatchOutcome {
 pub struct ExecutionPlacement {
     pub unit_id: ExecutionUnitId,
     pub unit_kind: ExecutionUnitKind,
+    pub device_class: ExecutionDeviceClass,
     pub execution_path: JobExecutionPath,
     pub lane: BackendExecutionLane,
     pub suitability: PlacementSuitability,
+    pub device_suitability: DeviceSuitability,
+    pub device_preference: Option<ExecutionDeviceClass>,
+    pub device_preference_met: bool,
+    pub device_fallback_from: Option<ExecutionDeviceClass>,
     pub degraded_fallback: bool,
     pub reason: String,
     pub considered: Vec<PlacementCandidateAssessment>,
@@ -549,16 +554,36 @@ pub enum PlacementSuitability {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlacementFailureKind {
     NoSuitableBackend,
+    NoSuitableDevice,
     BackendIncompatible,
+    BackendDeviceIncompatible,
+    DeviceUnavailable,
     BackendUnavailable,
     WorkerPlacementFailed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExecutionDeviceClass {
+    Cpu,
+    Worker,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeviceSuitability {
+    Suitable,
+    Unsuitable,
+    Disabled,
+    Unavailable,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlacementCandidateAssessment {
     pub unit_id: ExecutionUnitId,
     pub unit_kind: ExecutionUnitKind,
+    pub device_class: ExecutionDeviceClass,
     pub lane: BackendExecutionLane,
+    pub backend_suitability: PlacementSuitability,
+    pub device_suitability: DeviceSuitability,
     pub suitability: PlacementSuitability,
     pub detail: String,
 }
@@ -797,10 +822,14 @@ impl MultiWorkerComputeService {
                 .as_ref()
                 .map(|candidate| candidate.suitability)
                 .unwrap_or(PlacementSuitability::Unavailable);
+            let device_suitability = candidate
+                .as_ref()
+                .map(|candidate| candidate.device_suitability)
+                .unwrap_or(DeviceSuitability::Unavailable);
             let kind = if candidate.is_none() {
                 PlacementFailureKind::WorkerPlacementFailed
             } else {
-                placement_failure_kind(suitability)
+                placement_failure_kind(suitability, device_suitability)
             };
             let dispatch =
                 if suitability == PlacementSuitability::Unavailable && candidate.is_some() {
@@ -812,9 +841,20 @@ impl MultiWorkerComputeService {
                 ExecutionPlacement {
                     unit_id: requested,
                     unit_kind: ExecutionUnitKind::Worker,
+                    device_class: ExecutionDeviceClass::Worker,
                     execution_path: JobExecutionPath::WorkerIpc,
                     lane: BackendExecutionLane::Worker,
                     suitability,
+                    device_suitability,
+                    device_preference: Some(ExecutionDeviceClass::Worker),
+                    device_preference_met: candidate
+                        .as_ref()
+                        .map(|c| {
+                            c.device_class == ExecutionDeviceClass::Worker
+                                && c.device_suitability == DeviceSuitability::Suitable
+                        })
+                        .unwrap_or(false),
+                    device_fallback_from: None,
                     degraded_fallback: false,
                     reason: "requested unit not placeable".to_string(),
                     considered,
@@ -830,9 +870,24 @@ impl MultiWorkerComputeService {
             PlacementFailureKind::BackendIncompatible
         } else if considered
             .iter()
+            .any(|candidate| candidate.device_suitability == DeviceSuitability::Unsuitable)
+        {
+            PlacementFailureKind::BackendDeviceIncompatible
+        } else if considered
+            .iter()
+            .any(|candidate| candidate.device_suitability == DeviceSuitability::Unavailable)
+        {
+            PlacementFailureKind::DeviceUnavailable
+        } else if considered
+            .iter()
             .any(|candidate| candidate.suitability == PlacementSuitability::Disabled)
         {
             PlacementFailureKind::BackendUnavailable
+        } else if considered.iter().any(|candidate| {
+            candidate.suitability == PlacementSuitability::Suitable
+                && candidate.device_suitability == DeviceSuitability::Disabled
+        }) {
+            PlacementFailureKind::NoSuitableDevice
         } else {
             PlacementFailureKind::NoSuitableBackend
         };
@@ -841,9 +896,14 @@ impl MultiWorkerComputeService {
             ExecutionPlacement {
                 unit_id: ExecutionUnitId("none".to_string()),
                 unit_kind: ExecutionUnitKind::Local,
+                device_class: ExecutionDeviceClass::Cpu,
                 execution_path: JobExecutionPath::LocalCanonical,
                 lane: BackendExecutionLane::Toy,
                 suitability: PlacementSuitability::Unavailable,
+                device_suitability: DeviceSuitability::Unavailable,
+                device_preference: None,
+                device_preference_met: true,
+                device_fallback_from: None,
                 degraded_fallback: false,
                 reason: "no suitable execution unit".to_string(),
                 considered,
@@ -860,30 +920,48 @@ impl MultiWorkerComputeService {
         self.units
             .iter()
             .map(|unit| {
+                let lane = unit.service.execution_lane();
+                let device_class = unit_device_class(unit.kind);
+                let device_suitability = device_suitability_for(unit.kind, lane, unit.availability);
                 if unit.availability != WorkerAvailability::Available {
                     return PlacementCandidateAssessment {
                         unit_id: unit.id.clone(),
                         unit_kind: unit.kind,
-                        lane: unit.service.execution_lane(),
+                        device_class,
+                        lane,
+                        backend_suitability: PlacementSuitability::Unavailable,
+                        device_suitability,
                         suitability: PlacementSuitability::Unavailable,
                         detail: "unit marked unavailable".to_string(),
                     };
                 }
                 let admission = unit.service.technical_admission(request);
+                let backend_suitability = admission
+                    .failure
+                    .as_ref()
+                    .map(|failure| suitability_for_failure(failure.kind))
+                    .unwrap_or(PlacementSuitability::Suitable);
+                let suitability = combine_suitability(backend_suitability, device_suitability);
                 if let Some(failure) = admission.failure {
                     PlacementCandidateAssessment {
                         unit_id: unit.id.clone(),
                         unit_kind: unit.kind,
-                        lane: unit.service.execution_lane(),
-                        suitability: suitability_for_failure(failure.kind),
+                        device_class,
+                        lane,
+                        backend_suitability,
+                        device_suitability,
+                        suitability,
                         detail: failure.detail,
                     }
                 } else {
                     PlacementCandidateAssessment {
                         unit_id: unit.id.clone(),
                         unit_kind: unit.kind,
-                        lane: unit.service.execution_lane(),
-                        suitability: PlacementSuitability::Suitable,
+                        device_class,
+                        lane,
+                        backend_suitability,
+                        device_suitability,
+                        suitability,
                         detail: "admitted".to_string(),
                     }
                 }
@@ -910,12 +988,17 @@ impl MultiWorkerComputeService {
                 placement: ExecutionPlacement {
                     unit_id: requested,
                     unit_kind: selected.unit_kind,
+                    device_class: selected.device_class,
                     execution_path: match selected.unit_kind {
                         ExecutionUnitKind::Local => JobExecutionPath::LocalCanonical,
                         ExecutionUnitKind::Worker => JobExecutionPath::WorkerIpc,
                     },
                     lane: selected.lane,
                     suitability: selected.suitability,
+                    device_suitability: selected.device_suitability,
+                    device_preference: Some(unit_device_class(selected.unit_kind)),
+                    device_preference_met: true,
+                    device_fallback_from: None,
                     degraded_fallback: false,
                     reason: "requested execution unit selected".to_string(),
                     considered: assessments,
@@ -958,12 +1041,17 @@ impl MultiWorkerComputeService {
             placement: ExecutionPlacement {
                 unit_id: selected.unit_id,
                 unit_kind: selected.unit_kind,
+                device_class: selected.device_class,
                 execution_path: match selected.unit_kind {
                     ExecutionUnitKind::Local => JobExecutionPath::LocalCanonical,
                     ExecutionUnitKind::Worker => JobExecutionPath::WorkerIpc,
                 },
                 lane: selected.lane,
                 suitability: selected.suitability,
+                device_suitability: selected.device_suitability,
+                device_preference: None,
+                device_preference_met: true,
+                device_fallback_from: None,
                 degraded_fallback: selected.lane == BackendExecutionLane::Candle,
                 reason: if selected.lane == BackendExecutionLane::Burn {
                     "selected burn-capable unit".to_string()
@@ -1078,11 +1166,58 @@ fn suitability_for_failure(kind: CanonicalFailureKind) -> PlacementSuitability {
     }
 }
 
-fn placement_failure_kind(suitability: PlacementSuitability) -> PlacementFailureKind {
-    match suitability {
-        PlacementSuitability::Suitable => PlacementFailureKind::WorkerPlacementFailed,
-        PlacementSuitability::Incompatible => PlacementFailureKind::BackendIncompatible,
-        PlacementSuitability::Disabled | PlacementSuitability::Unavailable => {
+fn unit_device_class(kind: ExecutionUnitKind) -> ExecutionDeviceClass {
+    match kind {
+        ExecutionUnitKind::Local => ExecutionDeviceClass::Cpu,
+        ExecutionUnitKind::Worker => ExecutionDeviceClass::Worker,
+    }
+}
+
+fn device_suitability_for(
+    unit_kind: ExecutionUnitKind,
+    lane: BackendExecutionLane,
+    availability: WorkerAvailability,
+) -> DeviceSuitability {
+    if availability != WorkerAvailability::Available {
+        return DeviceSuitability::Unavailable;
+    }
+    match (unit_kind, lane) {
+        (ExecutionUnitKind::Local, BackendExecutionLane::Worker) => DeviceSuitability::Unsuitable,
+        _ => DeviceSuitability::Suitable,
+    }
+}
+
+fn combine_suitability(
+    backend_suitability: PlacementSuitability,
+    device_suitability: DeviceSuitability,
+) -> PlacementSuitability {
+    match device_suitability {
+        DeviceSuitability::Suitable => backend_suitability,
+        DeviceSuitability::Unsuitable => {
+            if backend_suitability == PlacementSuitability::Suitable {
+                PlacementSuitability::Incompatible
+            } else {
+                backend_suitability
+            }
+        }
+        DeviceSuitability::Disabled => PlacementSuitability::Disabled,
+        DeviceSuitability::Unavailable => PlacementSuitability::Unavailable,
+    }
+}
+
+fn placement_failure_kind(
+    suitability: PlacementSuitability,
+    device_suitability: DeviceSuitability,
+) -> PlacementFailureKind {
+    match (suitability, device_suitability) {
+        (PlacementSuitability::Suitable, DeviceSuitability::Suitable) => {
+            PlacementFailureKind::WorkerPlacementFailed
+        }
+        (_, DeviceSuitability::Unsuitable) => PlacementFailureKind::BackendDeviceIncompatible,
+        (_, DeviceSuitability::Unavailable) => PlacementFailureKind::DeviceUnavailable,
+        (_, DeviceSuitability::Disabled) => PlacementFailureKind::NoSuitableDevice,
+        (PlacementSuitability::Incompatible, _) => PlacementFailureKind::BackendIncompatible,
+        (PlacementSuitability::Disabled | PlacementSuitability::Unavailable, _) => {
             PlacementFailureKind::BackendUnavailable
         }
     }
@@ -1110,10 +1245,10 @@ mod tests {
     use crate::{ComputeBudget, ComputeError, ComputeInput, FrameId, ModelSlot};
 
     use super::{
-        ExecutionUnitId, ExecutionUnitKind, InMemoryComputeService, JobCompletionClass,
-        JobExecutionPath, JobLifecycleState, JobSubmissionMeta, MultiWorkerComputeService,
-        PlacementFailureKind, PlacementSuitability, SchedulerConfig, WorkerAvailability,
-        WorkerDispatchOutcome,
+        DeviceSuitability, ExecutionDeviceClass, ExecutionUnitId, ExecutionUnitKind,
+        InMemoryComputeService, JobCompletionClass, JobExecutionPath, JobLifecycleState,
+        JobSubmissionMeta, MultiWorkerComputeService, PlacementFailureKind, PlacementSuitability,
+        SchedulerConfig, WorkerAvailability, WorkerDispatchOutcome,
     };
 
     struct NullLlm;
@@ -1180,9 +1315,17 @@ mod tests {
         world_backend: BackendComponentId,
         slots: Vec<ModelSlotProvenance>,
     ) -> Arc<dyn BackendPack> {
+        pack_with_name("test_pack", world_backend, slots)
+    }
+
+    fn pack_with_name(
+        pack_name: &'static str,
+        world_backend: BackendComponentId,
+        slots: Vec<ModelSlotProvenance>,
+    ) -> Arc<dyn BackendPack> {
         let mut meta = BackendPackMeta {
             schema_version: 1,
-            pack_name: "test_pack",
+            pack_name,
             pack_id: BackendPackId(999),
             llm_backend: BackendComponentId::ToyV1,
             world_backend,
@@ -1606,11 +1749,16 @@ mod tests {
         service.run_scheduler_cycle(1);
         let record = service.job(job_id).expect("job result must exist");
         assert_eq!(record.placement.unit_kind, ExecutionUnitKind::Local);
+        assert_eq!(record.placement.device_class, ExecutionDeviceClass::Cpu);
         assert_eq!(
             record.placement.execution_path,
             JobExecutionPath::LocalCanonical
         );
         assert_eq!(record.placement.suitability, PlacementSuitability::Suitable);
+        assert_eq!(
+            record.placement.device_suitability,
+            DeviceSuitability::Suitable
+        );
         assert!(!record.placement.considered.is_empty());
         assert!(record.result.is_some());
     }
@@ -1641,7 +1789,17 @@ mod tests {
         let record = service.job(job_id).expect("job result must exist");
         assert_eq!(record.placement.unit_id, worker_id);
         assert_eq!(record.placement.unit_kind, ExecutionUnitKind::Worker);
+        assert_eq!(record.placement.device_class, ExecutionDeviceClass::Worker);
         assert_eq!(record.placement.suitability, PlacementSuitability::Suitable);
+        assert_eq!(
+            record.placement.device_suitability,
+            DeviceSuitability::Suitable
+        );
+        assert_eq!(
+            record.placement.device_preference,
+            Some(ExecutionDeviceClass::Worker)
+        );
+        assert!(record.placement.device_preference_met);
         assert_eq!(
             record.worker_dispatch_outcome,
             Some(WorkerDispatchOutcome::Completed)
@@ -1694,7 +1852,7 @@ mod tests {
         );
         assert_eq!(
             unavailable.placement_failure,
-            Some(PlacementFailureKind::BackendUnavailable)
+            Some(PlacementFailureKind::DeviceUnavailable)
         );
         assert!(unavailable
             .execution_failure
@@ -1811,5 +1969,71 @@ mod tests {
             Some(PlacementFailureKind::BackendIncompatible)
         );
         assert_eq!(record.result, None);
+    }
+
+    #[test]
+    fn requested_worker_tracks_device_provenance_when_unavailable() {
+        let local_backend = ComputePipelineBackend::new(
+            pack_with(BackendComponentId::ToyV1, Vec::new()),
+            FusionConfig::default(),
+            LimitsConfig::default(),
+        );
+        let mut service = MultiWorkerComputeService::new(local_backend, 1);
+        let worker_backend = ComputePipelineBackend::new(
+            pack_with(BackendComponentId::ToyV1, Vec::new()),
+            FusionConfig::default(),
+            LimitsConfig::default(),
+        );
+        let worker_id = service.register_worker_backend("secondary-c", worker_backend, 1);
+        service.set_worker_availability(&worker_id, WorkerAvailability::Unavailable);
+        let job = service.submit(
+            valid_request(),
+            JobSubmissionMeta {
+                submitted_at_unix_ms: 20,
+                submitted_by: Some("device".to_string()),
+            },
+            Some(worker_id),
+        );
+        service.run_scheduler_cycle(1);
+        let record = service.job(job).expect("record");
+        assert_eq!(record.placement.device_class, ExecutionDeviceClass::Worker);
+        assert_eq!(
+            record.placement.device_suitability,
+            DeviceSuitability::Unavailable
+        );
+        assert_eq!(
+            record.placement.device_preference,
+            Some(ExecutionDeviceClass::Worker)
+        );
+        assert!(!record.placement.device_preference_met);
+    }
+
+    #[test]
+    fn backend_device_incompatibility_is_reported_for_local_worker_lane() {
+        let local_backend = ComputePipelineBackend::new(
+            pack_with_name("worker_v1", BackendComponentId::ToyV1, Vec::new()),
+            FusionConfig::default(),
+            LimitsConfig::default(),
+        );
+        let mut service = MultiWorkerComputeService::new(local_backend, 1);
+        let job = service.submit(
+            valid_request(),
+            JobSubmissionMeta {
+                submitted_at_unix_ms: 21,
+                submitted_by: Some("device".to_string()),
+            },
+            None,
+        );
+        service.run_scheduler_cycle(1);
+        let record = service.job(job).expect("record");
+        assert_eq!(
+            record.placement_failure,
+            Some(PlacementFailureKind::BackendIncompatible)
+        );
+        assert!(record
+            .placement
+            .considered
+            .iter()
+            .any(|candidate| candidate.device_suitability == DeviceSuitability::Unsuitable));
     }
 }

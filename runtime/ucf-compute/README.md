@@ -38,6 +38,21 @@ The top-level runtime contract stays `AiComputeBackend`, but concrete backends a
 
 See also `docs/compute_onboarding_reference_path.md` for the compact readiness matrix.
 
+## Execution-device classes (bounded service placement)
+
+`MultiWorkerComputeService` now keeps a narrow execution-device layer for placement:
+
+- `cpu`: in-process/local execution units.
+- `worker`: isolated worker execution units (`worker_ipc` path).
+
+Per candidate, placement tracks backend suitability and device suitability separately:
+
+- backend: `suitable|incompatible|disabled|unavailable`
+- device: `suitable|unsuitable|disabled|unavailable`
+
+This is intentionally technical and minimal. The repo does **not** introduce GPU vendor/driver
+inventory or hardware orchestration in this layer.
+
 ## Backend selection (runtime)
 
 The orchestrator can be bootstrapped from env config via `RuntimeOrchestrator::try_new_from_env`.
