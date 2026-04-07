@@ -9106,6 +9106,11 @@ fn validate_config_ladder(cfg: &OpsConfig) -> Result<(), OpsError> {
     }
 
     if rank >= profile_rank("prod") {
+        if cfg.compute_backend != ComputeBackendKind::Burn {
+            return Err(OpsError::Invalid(
+                "prod requires compute_backend=burn".to_string(),
+            ));
+        }
         if cfg.capabilities_default != "deny" {
             return Err(OpsError::Invalid(
                 "prod requires capabilities_default=deny".to_string(),
@@ -9828,6 +9833,33 @@ mod tests {
         let trend = metrics_trend(dir.path(), 0, u64::MAX).expect("trend");
         assert!(trend.len() <= 256);
         assert!(!trend.is_empty());
+    }
+
+    #[test]
+    fn validate_config_ladder_rejects_prod_stub_backend() {
+        let cfg = OpsConfig {
+            profile: "prod".to_string(),
+            policy_overlay: "prod".to_string(),
+            docs_lint_required: true,
+            compute_backend: ComputeBackendKind::Stub,
+            ..OpsConfig::default()
+        };
+        let err = validate_config_ladder(&cfg).expect_err("prod stub must fail");
+        assert!(err
+            .to_string()
+            .contains("prod requires compute_backend=burn"));
+    }
+
+    #[test]
+    fn validate_config_ladder_accepts_prod_burn_backend() {
+        let cfg = OpsConfig {
+            profile: "prod".to_string(),
+            policy_overlay: "prod".to_string(),
+            docs_lint_required: true,
+            compute_backend: ComputeBackendKind::Burn,
+            ..OpsConfig::default()
+        };
+        validate_config_ladder(&cfg).expect("prod burn must pass");
     }
 
     #[test]
