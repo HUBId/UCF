@@ -49,10 +49,16 @@ Both paths preserve the same `CanonicalPipelineResult` / `CanonicalPipelineFailu
 Placement now uses a small capability assessment for every execution unit before dispatch:
 
 - lane classification from backend composition (`burn`, `candle`, `worker`, `toy`, `mixed`),
+- execution device class classification (`cpu`, `worker`),
 - technical admission compatibility (`ComputePipelineBackend::technical_admission`),
-- explicit suitability state per candidate:
+- explicit backend suitability state per candidate:
   - `suitable`
   - `incompatible`
+  - `disabled`
+  - `unavailable`
+- explicit device suitability state per candidate:
+  - `suitable`
+  - `unsuitable`
   - `disabled`
   - `unavailable`
 
@@ -67,6 +73,8 @@ Selection rules stay intentionally simple:
 The resulting `ExecutionPlacement` now carries provenance fields:
 
 - selected lane + suitability,
+- selected execution device class + device suitability,
+- device preference/provenance for requested worker placement (`device_preference`, `device_preference_met`, fallback-from),
 - `degraded_fallback` flag,
 - selection reason,
 - full candidate assessment list (`considered`) so non-selected backends/workers are diagnosable.
@@ -106,7 +114,10 @@ Worker launch/IPC transport errors are surfaced as structured execution failures
 Placement-level failures are additionally tagged as:
 
 - `no_suitable_backend`
+- `no_suitable_device`
 - `backend_incompatible`
+- `backend_device_incompatible`
+- `device_unavailable`
 - `backend_unavailable`
 - `worker_placement_failed`
 
