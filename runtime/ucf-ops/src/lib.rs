@@ -2277,6 +2277,7 @@ pub fn readiness_gate(
     let mut checks = vec![
         check_workspace_tests(),
         check_offline_profile(profile),
+        check_required_stage_profile(profile, &artifacts_b.explain),
         check_backend_disabled_pack(),
         check_schema_versions(&artifacts_b.run_metadata),
         check_required_records(&explain_last),
@@ -5447,6 +5448,48 @@ fn check_offline_profile(profile: &str) -> CheckResult {
             ],
             "offline mode not enforced",
             "Run with --profile test and UCF_OFFLINE=1.",
+        )
+    }
+}
+
+const NSR_STAGE_USED_STATUS: u8 = 1;
+
+fn check_required_stage_profile(profile: &str, explain: &ExplainTickReport) -> CheckResult {
+    if profile != "prod" {
+        return check_skip(
+            "required_stage_profile",
+            [("profile".to_string(), profile.to_string())],
+            "required stage profile is only enforced in prod",
+            "Use --profile prod to enforce required NSR/LFM stage coverage.",
+        );
+    }
+
+    let nsr_status = explain.decision.nsr_status.unwrap_or_default();
+    let nsr_required = nsr_status == NSR_STAGE_USED_STATUS;
+    let lfm_quality_present = explain.compute.lfm.quality.is_some();
+
+    if nsr_required && lfm_quality_present {
+        check_pass(
+            "required_stage_profile",
+            [
+                ("profile".to_string(), profile.to_string()),
+                ("nsr_status".to_string(), nsr_status.to_string()),
+                ("lfm_quality_present".to_string(), "true".to_string()),
+            ],
+        )
+    } else {
+        check_fail(
+            "required_stage_profile",
+            [
+                ("profile".to_string(), profile.to_string()),
+                ("nsr_status".to_string(), nsr_status.to_string()),
+                (
+                    "lfm_quality_present".to_string(),
+                    lfm_quality_present.to_string(),
+                ),
+            ],
+            "prod stage profile requires NSR used and LFM stage visibility",
+            "Set UCF_NSR_MODE=required for prod bringup and keep canonical Burn LFM stage wired.",
         )
     }
 }
@@ -21722,6 +21765,111 @@ C:\agent\file.rs:2"#,
         std::env::remove_var("CI");
         assert_eq!(check.name, "build_workspace_tests");
         assert_eq!(check.status, GateStatus::Skip);
+    }
+
+    fn sample_explain_report() -> ExplainTickReport {
+        ExplainTickReport {
+            header: ExplainHeader {
+                t: 1,
+                decision_id: 1,
+                backend_pack_digest_prefix: None,
+                evidence_chain_digest_prefix: None,
+            },
+            compute: ExplainCompute {
+                world: ExplainWorld {
+                    surprise: None,
+                    prediction_error: None,
+                    world_digest_prefix: None,
+                    quality: None,
+                },
+                sae: ExplainSae {
+                    spike_count: None,
+                    energy: None,
+                    spikes_digest_prefix: None,
+                    quality: None,
+                },
+                ssm: ExplainSsm {
+                    pressure: None,
+                    ssm_digest_prefix: None,
+                    quality: None,
+                },
+                lfm: ExplainLfm {
+                    uncertainty: None,
+                    stability: None,
+                    lfm_digest_prefix: None,
+                    quality: Some(1),
+                },
+                coherence: None,
+                risk: ExplainRisk {
+                    risk: None,
+                    confidence: None,
+                    risk_digest_prefix: None,
+                },
+                drift: ExplainDrift {
+                    statuses: BTreeMap::new(),
+                    alarm_ids: Vec::new(),
+                    reason_codes: Vec::new(),
+                },
+            },
+            governance: ExplainGovernance {
+                governor_score: None,
+                tier: None,
+                emergency_active: false,
+                issuance: Vec::new(),
+                ebm: None,
+            },
+            decision: ExplainDecision {
+                candidate_count: None,
+                selected_candidate_id: None,
+                selected_candidate_digest_prefix: None,
+                policy_hints: Vec::new(),
+                nsr_risk_q: None,
+                nsr_status: Some(NSR_STAGE_USED_STATUS),
+                nsr_rules_digest_prefix: None,
+                nsr_reasons: Vec::new(),
+            },
+            output: ExplainOutput {
+                output_class: None,
+                llm_backend: None,
+                request_digest_prefix: None,
+                response_digest_prefix: None,
+                status: None,
+                finish_reason: None,
+                max_tokens_eff: None,
+                text_preview: None,
+                redacted: None,
+                content_digest_prefix: None,
+                payload_len: None,
+            },
+            links: ExplainLinks {
+                record_ids: Vec::new(),
+                record_kinds: Vec::new(),
+            },
+            warnings: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn required_stage_profile_skips_non_prod() {
+        let report = sample_explain_report();
+        let check = check_required_stage_profile("test", &report);
+        assert_eq!(check.status, GateStatus::Skip);
+    }
+
+    #[test]
+    fn required_stage_profile_fails_prod_when_nsr_disabled() {
+        let mut report = sample_explain_report();
+        report.decision.nsr_status = Some(0);
+        let check = check_required_stage_profile("prod", &report);
+        assert_eq!(check.status, GateStatus::Fail);
+    }
+
+    #[test]
+    fn required_stage_profile_passes_prod_when_stages_present() {
+        let mut report = sample_explain_report();
+        report.decision.nsr_status = Some(NSR_STAGE_USED_STATUS);
+        let check = check_required_stage_profile("prod", &report);
+        assert_eq!(check.status, GateStatus::Pass);
     }
 }
 
