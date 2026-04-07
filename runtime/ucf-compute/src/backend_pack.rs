@@ -191,6 +191,7 @@ pub enum ArtifactFailureCode {
     ArtifactUnavailable,
     ArtifactVerificationFailed,
     ArtifactIncompatible,
+    ActivationBlocked,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -201,6 +202,29 @@ pub enum SlotRuntimeStatus {
     Unavailable,
     VerificationFailed,
     Incompatible,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProductionBlockReason {
+    VerificationFailed,
+    ContractIncompatible,
+    SlotIncompatible,
+    BackendIncompatible,
+    PlacementDeviceWorkerIncompatible,
+    ActivationBlocked,
+    BlockedFromProductionUse,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
+pub struct ProductionCompatibilityGate {
+    pub contract_compatible: bool,
+    pub slot_compatible: bool,
+    pub backend_compatible: bool,
+    pub placement_device_compatible: bool,
+    pub promotable: bool,
+    pub activatable: bool,
+    pub blocked_reason: Option<ProductionBlockReason>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -215,6 +239,8 @@ pub struct ModelSlotProvenance {
     pub hash_prefix: Option<String>,
     pub contract_version: Option<String>,
     pub format: Option<ModelFormat>,
+    #[serde(default)]
+    pub gate: ProductionCompatibilityGate,
 }
 
 pub struct UnifiedBackendPack {
@@ -745,6 +771,15 @@ fn resolve_slot_provenance(store: &ModelStore, pack: BackendPackKind) -> Vec<Mod
                     hash_prefix: None,
                     contract_version: None,
                     format: None,
+                    gate: ProductionCompatibilityGate {
+                        contract_compatible: false,
+                        slot_compatible: false,
+                        backend_compatible: false,
+                        placement_device_compatible: false,
+                        promotable: false,
+                        activatable: false,
+                        blocked_reason: Some(ProductionBlockReason::BlockedFromProductionUse),
+                    },
                 };
             };
             if !spec.enabled {
@@ -763,23 +798,51 @@ fn resolve_slot_provenance(store: &ModelStore, pack: BackendPackKind) -> Vec<Mod
                     hash_prefix: None,
                     contract_version: spec.contract_version.clone(),
                     format: Some(spec.format),
+                    gate: ProductionCompatibilityGate {
+                        contract_compatible: false,
+                        slot_compatible: false,
+                        backend_compatible: false,
+                        placement_device_compatible: false,
+                        promotable: false,
+                        activatable: false,
+                        blocked_reason: Some(ProductionBlockReason::BlockedFromProductionUse),
+                    },
                 };
             }
             match store.verify_slot(slot) {
                 Ok(verified) => {
-                    let (status, code, detail) = check_slot_compatibility(
+                    let (status, code, detail, mut gate) = check_slot_compatibility(
                         pack,
                         slot,
                         spec.format,
                         spec.contract_version.as_deref(),
                     );
-                    let activation_note = selected_hash_for_slot(slot, spec)
-                        .and_then(|hash| {
-                            store
-                                .plan_slot_activation(slot, &hash, spec.contract_version.as_deref())
-                                .err()
-                        })
-                        .map(|err| format!("activation={err:?}"));
+                    let activation_error = selected_hash_for_slot(slot, spec).and_then(|hash| {
+                        store
+                            .plan_slot_activation(slot, &hash, spec.contract_version.as_deref())
+                            .err()
+                    });
+                    let activation_note = activation_error.as_ref().map(|err| format!("{err:?}"));
+                    let activation_blocked = status == SlotRuntimeStatus::Used
+                        && required_slots_for_pack(pack).contains(&slot)
+                        && activation_error.is_some();
+                    let (status, code, detail) = if activation_blocked {
+                        gate.activatable = false;
+                        gate.blocked_reason = Some(ProductionBlockReason::ActivationBlocked);
+                        (
+                            SlotRuntimeStatus::Incompatible,
+                            Some(ArtifactFailureCode::ActivationBlocked),
+                            Some(
+                                activation_note
+                                    .as_deref()
+                                    .unwrap_or("activation rejected")
+                                    .to_string(),
+                            ),
+                        )
+                    } else {
+                        gate.activatable = status == SlotRuntimeStatus::Used;
+                        (status, code, detail)
+                    };
                     ModelSlotProvenance {
                         slot,
                         stage: expected_stage_for_slot(slot),
@@ -802,6 +865,7 @@ fn resolve_slot_provenance(store: &ModelStore, pack: BackendPackKind) -> Vec<Mod
                         hash_prefix: Some(hex::encode(&verified.sha256[..6])),
                         contract_version: verified.contract_version.clone(),
                         format: Some(verified.format),
+                        gate,
                     }
                 }
                 Err(err) => {
@@ -827,6 +891,15 @@ fn resolve_slot_provenance(store: &ModelStore, pack: BackendPackKind) -> Vec<Mod
                         hash_prefix: None,
                         contract_version: spec.contract_version.clone(),
                         format: Some(spec.format),
+                        gate: ProductionCompatibilityGate {
+                            contract_compatible: false,
+                            slot_compatible: false,
+                            backend_compatible: false,
+                            placement_device_compatible: false,
+                            promotable: false,
+                            activatable: false,
+                            blocked_reason: Some(ProductionBlockReason::VerificationFailed),
+                        },
                     }
                 }
             }
@@ -883,7 +956,17 @@ fn check_slot_compatibility(
     SlotRuntimeStatus,
     Option<ArtifactFailureCode>,
     Option<String>,
+    ProductionCompatibilityGate,
 ) {
+    let mut gate = ProductionCompatibilityGate {
+        contract_compatible: true,
+        slot_compatible: true,
+        backend_compatible: true,
+        placement_device_compatible: true,
+        promotable: true,
+        activatable: false,
+        blocked_reason: None,
+    };
     let expected_formats: &[ModelFormat] = match (pack, slot) {
         (BackendPackKind::CandleToyV1, ModelSlot::Llm)
         | (BackendPackKind::CandleToyV1, ModelSlot::WorldJepa)
@@ -896,6 +979,10 @@ fn check_slot_compatibility(
         _ => &[],
     };
     if !expected_formats.is_empty() && !expected_formats.contains(&format) {
+        gate.slot_compatible = false;
+        gate.backend_compatible = false;
+        gate.promotable = false;
+        gate.blocked_reason = Some(ProductionBlockReason::BackendIncompatible);
         return (
             SlotRuntimeStatus::Incompatible,
             Some(ArtifactFailureCode::ArtifactIncompatible),
@@ -904,21 +991,26 @@ fn check_slot_compatibility(
                 format,
                 pack.as_str()
             )),
+            gate,
         );
     }
     if required_slots_for_pack(pack).contains(&slot) {
         let version = contract_version.unwrap_or("v1");
         if version != "v1" && version != "1" {
+            gate.contract_compatible = false;
+            gate.promotable = false;
+            gate.blocked_reason = Some(ProductionBlockReason::ContractIncompatible);
             return (
                 SlotRuntimeStatus::Incompatible,
                 Some(ArtifactFailureCode::ArtifactIncompatible),
                 Some(format!(
                     "slot contract_version {version} incompatible with expected v1"
                 )),
+                gate,
             );
         }
     }
-    (SlotRuntimeStatus::Used, None, None)
+    (SlotRuntimeStatus::Used, None, None, gate)
 }
 
 fn classify_model_error(err: ModelLoadError) -> (SlotRuntimeStatus, ArtifactFailureCode, String) {
@@ -1273,6 +1365,12 @@ mod tests {
         assert!(world.required_for_pack);
         assert_eq!(world.status, SlotRuntimeStatus::Used);
         assert!(world.hash_prefix.is_some());
+        assert!(world.gate.contract_compatible);
+        assert!(world.gate.slot_compatible);
+        assert!(world.gate.backend_compatible);
+        assert!(world.gate.promotable);
+        assert!(world.gate.activatable);
+        assert!(world.gate.blocked_reason.is_none());
         let detail = world.detail.as_deref().expect("detail");
         assert!(detail.contains("state=active"));
         assert!(detail.contains("selector=active_hash"));
@@ -1312,12 +1410,13 @@ mod tests {
         )
         .expect("manifest");
         let store = ModelStore::from_manifest_and_env(&manifest_path).expect("store");
-        let provenance = resolve_slot_provenance(&store, BackendPackKind::BurnToyV1);
+        let provenance = resolve_slot_provenance(&store, BackendPackKind::ToyV1);
         let world = provenance
             .iter()
             .find(|entry| entry.slot == ModelSlot::WorldJepa)
             .expect("world slot");
         assert_eq!(world.status, SlotRuntimeStatus::Used);
+        assert!(world.gate.promotable);
         let detail = world.detail.as_deref().expect("detail");
         assert!(detail.contains("compare=aaaaaaaaaaaa"));
         std::env::remove_var("UCF_MODEL_COMPARE_WORLD_JEPA");
@@ -1355,6 +1454,10 @@ mod tests {
             .expect("world slot");
         assert_eq!(world.status, SlotRuntimeStatus::VerificationFailed);
         assert_eq!(world.code, Some(ArtifactFailureCode::MissingExpectedHash));
+        assert_eq!(
+            world.gate.blocked_reason,
+            Some(ProductionBlockReason::VerificationFailed)
+        );
     }
 
     #[test]
@@ -1389,6 +1492,10 @@ mod tests {
             .find(|entry| entry.slot == ModelSlot::WorldJepa)
             .expect("world slot");
         assert_eq!(world.status, SlotRuntimeStatus::Incompatible);
+        assert_eq!(
+            world.gate.blocked_reason,
+            Some(ProductionBlockReason::BackendIncompatible)
+        );
         let sae = provenance
             .iter()
             .find(|entry| entry.slot == ModelSlot::Sae)
@@ -1400,6 +1507,55 @@ mod tests {
     fn burn_pack_requires_lfm_slot() {
         let required = required_slots_for_pack(BackendPackKind::BurnToyV1);
         assert!(required.contains(&ModelSlot::Lfm));
+    }
+
+    #[test]
+    fn required_slot_with_broken_compare_path_is_activation_blocked() {
+        let _guard = crate::test_env::env_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _env = crate::test_env::clear_model_env_overrides();
+        let temp = tempfile::tempdir().expect("tempdir");
+        let models = temp.path().join("models");
+        fs::create_dir_all(&models).expect("models dir");
+        let bytes = b"world-jepa";
+        let hash = hex::encode(Sha256::digest(bytes));
+        let model_path = models
+            .join("promoted")
+            .join("world_jepa")
+            .join(&hash)
+            .join("model.safetensors");
+        fs::create_dir_all(model_path.parent().expect("parent")).expect("mkdirs");
+        fs::write(&model_path, bytes).expect("write");
+        std::env::set_var(
+            "UCF_MODEL_COMPARE_WORLD_JEPA",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        );
+        let manifest_path = temp.path().join("manifest.toml");
+        fs::write(
+            &manifest_path,
+            format!(
+                "allowlist_root = '{}'\n[slots.world_jepa]\nenabled = true\nexpected_sha256 = \"{}\"\nactive_hash = \"{}\"\nformat = \"burn\"\ncontract_version = \"v1\"\n",
+                models.display(),
+                hash,
+                hash
+            ),
+        )
+        .expect("manifest");
+        let store = ModelStore::from_manifest_and_env(&manifest_path).expect("store");
+        let provenance = resolve_slot_provenance(&store, BackendPackKind::BurnToyV1);
+        let world = provenance
+            .iter()
+            .find(|entry| entry.slot == ModelSlot::WorldJepa)
+            .expect("world slot");
+        assert_eq!(world.status, SlotRuntimeStatus::Incompatible);
+        assert_eq!(world.code, Some(ArtifactFailureCode::ActivationBlocked));
+        assert_eq!(
+            world.gate.blocked_reason,
+            Some(ProductionBlockReason::ActivationBlocked)
+        );
+        assert!(!world.gate.activatable);
+        std::env::remove_var("UCF_MODEL_COMPARE_WORLD_JEPA");
     }
 
     #[cfg(feature = "lfm-burn")]
