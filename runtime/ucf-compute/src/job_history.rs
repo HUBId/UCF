@@ -11,7 +11,7 @@ use crate::compute_service::{
 };
 use crate::pipeline::{CanonicalFailureKind, CanonicalPipelineState};
 
-const JOB_HISTORY_SCHEMA_VERSION: u16 = 5;
+const JOB_HISTORY_SCHEMA_VERSION: u16 = 6;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PersistedJobRequestIdentity {
@@ -78,6 +78,8 @@ pub struct PersistedModelSlotSummary {
     pub slot: String,
     pub status: String,
     pub required_for_pack: bool,
+    #[serde(default)]
+    pub warmup_state: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -238,6 +240,7 @@ impl PersistedJobRecord {
                     slot: format!("{:?}", slot.slot),
                     status: format!("{:?}", slot.status),
                     required_for_pack: slot.required_for_pack,
+                    warmup_state: extract_warmup_state(slot.detail.as_deref()),
                 })
                 .collect(),
             recovery_source_job_id: None,
@@ -256,6 +259,25 @@ impl PersistedJobRecord {
         self.recovery_status = recovery_status;
         self.recovery_note = recovery_note;
         self
+    }
+}
+
+fn extract_warmup_state(detail: Option<&str>) -> Option<String> {
+    let detail = detail?;
+    if detail.contains("Active:warm:") {
+        Some("warm".to_string())
+    } else if detail.contains("Active:prepared:")
+        || detail.contains("Candidate:prepared:")
+        || detail.contains("Compare:prepared:")
+        || detail.contains("Shadow:prepared:")
+    {
+        Some("prepared".to_string())
+    } else if detail.contains("Active:blocked:") || detail.contains("Blocked:blocked:") {
+        Some("blocked".to_string())
+    } else if detail.contains("Active:cold:") {
+        Some("cold".to_string())
+    } else {
+        None
     }
 }
 

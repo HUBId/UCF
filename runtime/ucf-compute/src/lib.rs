@@ -81,6 +81,7 @@ pub use feature_matrix::ReleaseFeatureMatrix;
 pub use job_history::{JobHistoryStore, JobHistoryStoreError, PersistedJobRecord};
 pub use model_store::{
     ModelDevice, ModelFormat, ModelLoadError, ModelSlot, ModelSlotSpec, ModelStore,
+    SlotWarmupState, SlotWarmupStatus,
 };
 pub use pipeline::{
     BackendExecutionLane, CanonicalAdmissionDecision, CanonicalBackendRoute, CanonicalFailureKind,
@@ -105,7 +106,7 @@ pub use service_surface::{
     ComputeReplayReport, ComputeRequestValidationCode, ComputeSubmitOutcome, ComputeSubmitRequest,
     RecoveredJobStatus, RecoveryDisposition, ReplayConfigurationDiff, ReplayDeterminismClass,
     ReplayFailureCode, RuntimeOperation, RuntimeOperationCode, RuntimeOperationOutcome,
-    RuntimeOpsSnapshot, RuntimeOpsState, RuntimeSignalState,
+    RuntimeOpsSnapshot, RuntimeOpsState, RuntimeSignalState, RuntimeWarmupState,
 };
 pub use work_meter::WorkMeter;
 

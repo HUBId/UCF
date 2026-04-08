@@ -179,6 +179,23 @@ pub struct SlotPathStatus {
     pub detail: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SlotWarmupState {
+    Cold,
+    Prepared,
+    Warm,
+    Blocked,
+    Stale,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct SlotWarmupStatus {
+    pub target_state: SlotTargetState,
+    pub state: SlotWarmupState,
+    pub detail: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VerifiedModelSlot {
     pub slot: ModelSlot,
@@ -539,6 +556,75 @@ impl ModelStore {
             comparable: false,
             detail: blocked.unwrap_or_else(|| "none".to_string()),
         });
+        out
+    }
+
+    pub fn warmup_slot_paths(&self, slot: ModelSlot) -> Vec<SlotWarmupStatus> {
+        let statuses = self.slot_path_statuses(slot);
+        let mut out = Vec::with_capacity(statuses.len());
+        for status in statuses {
+            match status.target_state {
+                SlotTargetState::Disabled => out.push(SlotWarmupStatus {
+                    target_state: status.target_state,
+                    state: SlotWarmupState::Blocked,
+                    detail: status.detail,
+                }),
+                SlotTargetState::Blocked => out.push(SlotWarmupStatus {
+                    target_state: status.target_state,
+                    state: if status.verified {
+                        SlotWarmupState::Prepared
+                    } else {
+                        SlotWarmupState::Blocked
+                    },
+                    detail: status.detail,
+                }),
+                SlotTargetState::Active => {
+                    if status.verified {
+                        match self.verify_slot(slot).and_then(|verified| {
+                            self.read_verified_bytes(&verified).map(|_| verified)
+                        }) {
+                            Ok(_) => out.push(SlotWarmupStatus {
+                                target_state: status.target_state,
+                                state: SlotWarmupState::Warm,
+                                detail: "artifact verified and prefetched".to_string(),
+                            }),
+                            Err(err) => out.push(SlotWarmupStatus {
+                                target_state: status.target_state,
+                                state: SlotWarmupState::Blocked,
+                                detail: format!("warmup failed: {err:?}"),
+                            }),
+                        }
+                    } else {
+                        out.push(SlotWarmupStatus {
+                            target_state: status.target_state,
+                            state: SlotWarmupState::Cold,
+                            detail: status.detail,
+                        });
+                    }
+                }
+                SlotTargetState::Candidate | SlotTargetState::Compare | SlotTargetState::Shadow => {
+                    let state = if status.verified && status.configured_hash.is_some() {
+                        SlotWarmupState::Prepared
+                    } else if status.configured_hash.is_none() {
+                        SlotWarmupState::Cold
+                    } else {
+                        SlotWarmupState::Blocked
+                    };
+                    out.push(SlotWarmupStatus {
+                        target_state: status.target_state,
+                        state,
+                        detail: status.detail,
+                    });
+                }
+                SlotTargetState::Discovered | SlotTargetState::Verified => {
+                    out.push(SlotWarmupStatus {
+                        target_state: status.target_state,
+                        state: SlotWarmupState::Cold,
+                        detail: status.detail,
+                    })
+                }
+            }
+        }
         out
     }
 
@@ -1117,6 +1203,71 @@ enabled = false
             .expect("blocked");
         assert!(!blocked.verified);
         assert!(blocked.detail.contains("Compare"));
+
+        std::env::remove_var("UCF_MODEL_CANDIDATE_WORLD_JEPA");
+        std::env::remove_var("UCF_MODEL_COMPARE_WORLD_JEPA");
+    }
+
+    #[test]
+    fn warmup_slot_paths_marks_active_warm_candidate_prepared_and_compare_blocked() {
+        let _lock = crate::test_env::env_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        std::env::remove_var("UCF_MODEL_PIN_WORLD_JEPA");
+        let temp = tempfile::tempdir().expect("tempdir");
+        let models = temp.path().join("models");
+        fs::create_dir_all(&models).expect("models");
+        let bytes = b"verified-model";
+        let hash = hex::encode(Sha256::digest(bytes));
+        let model_path = models
+            .join("promoted")
+            .join("world_jepa")
+            .join(&hash)
+            .join("model.safetensors");
+        fs::create_dir_all(model_path.parent().expect("parent")).expect("mkdirs");
+        fs::write(&model_path, bytes).expect("write");
+        std::env::set_var("UCF_MODEL_CANDIDATE_WORLD_JEPA", &hash);
+        std::env::set_var(
+            "UCF_MODEL_COMPARE_WORLD_JEPA",
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        );
+
+        let mut specs = BTreeMap::new();
+        specs.insert(
+            ModelSlot::WorldJepa,
+            ModelSlotSpec {
+                slot: ModelSlot::WorldJepa,
+                enabled: true,
+                path: None,
+                expected_sha256: parse_hash(&hash),
+                max_bytes: 1024,
+                format: ModelFormat::Burn,
+                device: ModelDevice::CpuOnly,
+                active_hash: Some(hash.clone()),
+                contract_version: Some("v1".to_string()),
+            },
+        );
+        let store = ModelStore {
+            allowlist_root: models,
+            specs,
+        };
+
+        let warm = store.warmup_slot_paths(ModelSlot::WorldJepa);
+        let active = warm
+            .iter()
+            .find(|entry| entry.target_state == SlotTargetState::Active)
+            .expect("active");
+        assert_eq!(active.state, SlotWarmupState::Warm);
+        let candidate = warm
+            .iter()
+            .find(|entry| entry.target_state == SlotTargetState::Candidate)
+            .expect("candidate");
+        assert_eq!(candidate.state, SlotWarmupState::Prepared);
+        let compare = warm
+            .iter()
+            .find(|entry| entry.target_state == SlotTargetState::Compare)
+            .expect("compare");
+        assert_eq!(compare.state, SlotWarmupState::Blocked);
 
         std::env::remove_var("UCF_MODEL_CANDIDATE_WORLD_JEPA");
         std::env::remove_var("UCF_MODEL_COMPARE_WORLD_JEPA");
