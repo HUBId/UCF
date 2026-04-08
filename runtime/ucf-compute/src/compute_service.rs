@@ -527,9 +527,21 @@ pub enum WorkerAvailability {
 pub enum WorkerDispatchOutcome {
     Unavailable,
     DispatchFailure,
+    TransportFailure,
     ExecutionFailure,
     Timeout,
     Completed,
+    RedispatchedLocal,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkerRuntimeStatus {
+    Known,
+    Ready,
+    Busy,
+    Saturated,
+    Unavailable,
+    Unhealthy,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -603,6 +615,15 @@ pub struct MultiWorkerJobRecord {
     pub placement: ExecutionPlacement,
     pub worker_dispatch_outcome: Option<WorkerDispatchOutcome>,
     pub placement_failure: Option<PlacementFailureKind>,
+    pub provenance: WorkerExecutionProvenance,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkerExecutionProvenance {
+    pub selected_unit: ExecutionUnitId,
+    pub completed_unit: ExecutionUnitId,
+    pub was_remote: bool,
+    pub redispatched_to_local: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -610,7 +631,14 @@ pub struct ExecutionUnitSnapshot {
     pub id: ExecutionUnitId,
     pub kind: ExecutionUnitKind,
     pub availability: WorkerAvailability,
+    pub status: WorkerRuntimeStatus,
     pub max_parallel_jobs: usize,
+    pub active_jobs: usize,
+    pub consecutive_failures: u32,
+    pub last_job_id: Option<JobId>,
+    pub last_dispatch_outcome: Option<WorkerDispatchOutcome>,
+    pub last_error: Option<String>,
+    pub last_used_at_unix_ms: Option<u64>,
 }
 
 struct ExecutionUnit {
@@ -618,6 +646,12 @@ struct ExecutionUnit {
     kind: ExecutionUnitKind,
     availability: WorkerAvailability,
     max_parallel_jobs: usize,
+    active_jobs: usize,
+    consecutive_failures: u32,
+    last_job_id: Option<JobId>,
+    last_dispatch_outcome: Option<WorkerDispatchOutcome>,
+    last_error: Option<String>,
+    last_used_at_unix_ms: Option<u64>,
     service: InMemoryComputeService,
 }
 
@@ -649,6 +683,12 @@ impl MultiWorkerComputeService {
             kind: ExecutionUnitKind::Local,
             availability: WorkerAvailability::Available,
             max_parallel_jobs: max_parallel_jobs.max(1),
+            active_jobs: 0,
+            consecutive_failures: 0,
+            last_job_id: None,
+            last_dispatch_outcome: None,
+            last_error: None,
+            last_used_at_unix_ms: None,
             service: InMemoryComputeService::with_scheduler(
                 local_backend,
                 SchedulerConfig {
@@ -707,6 +747,12 @@ impl MultiWorkerComputeService {
             kind: ExecutionUnitKind::Worker,
             availability: WorkerAvailability::Available,
             max_parallel_jobs: max_parallel_jobs.max(1),
+            active_jobs: 0,
+            consecutive_failures: 0,
+            last_job_id: None,
+            last_dispatch_outcome: None,
+            last_error: None,
+            last_used_at_unix_ms: None,
             service: worker,
         });
     }
@@ -764,6 +810,12 @@ impl MultiWorkerComputeService {
                             placement,
                             worker_dispatch_outcome,
                             placement_failure: Some(placement_failure),
+                            provenance: WorkerExecutionProvenance {
+                                selected_unit: requested_unit.clone(),
+                                completed_unit: requested_unit,
+                                was_remote: true,
+                                redispatched_to_local: false,
+                            },
                         };
                         done.push(record.id);
                         self.records.insert(record.id, record);
@@ -781,6 +833,12 @@ impl MultiWorkerComputeService {
                         placement,
                         worker_dispatch_outcome,
                         placement_failure: Some(placement_failure),
+                        provenance: WorkerExecutionProvenance {
+                            selected_unit: ExecutionUnitId("none".to_string()),
+                            completed_unit: ExecutionUnitId("none".to_string()),
+                            was_remote: false,
+                            redispatched_to_local: false,
+                        },
                     };
                     done.push(record.id);
                     self.records.insert(record.id, record);
@@ -805,7 +863,14 @@ impl MultiWorkerComputeService {
                 id: unit.id.clone(),
                 kind: unit.kind,
                 availability: unit.availability,
+                status: unit.runtime_status(),
                 max_parallel_jobs: unit.max_parallel_jobs,
+                active_jobs: unit.active_jobs,
+                consecutive_failures: unit.consecutive_failures,
+                last_job_id: unit.last_job_id,
+                last_dispatch_outcome: unit.last_dispatch_outcome,
+                last_error: unit.last_error.clone(),
+                last_used_at_unix_ms: unit.last_used_at_unix_ms,
             })
             .collect()
     }
@@ -928,8 +993,9 @@ impl MultiWorkerComputeService {
             .map(|unit| {
                 let lane = unit.service.execution_lane();
                 let device_class = unit_device_class(unit.kind);
-                let device_suitability = device_suitability_for(unit.kind, lane, unit.availability);
-                if unit.availability != WorkerAvailability::Available {
+                let status = unit.runtime_status();
+                let device_suitability = device_suitability_for(unit.kind, lane, status);
+                if !unit.can_accept_dispatch() {
                     return PlacementCandidateAssessment {
                         unit_id: unit.id.clone(),
                         unit_kind: unit.kind,
@@ -938,7 +1004,7 @@ impl MultiWorkerComputeService {
                         backend_suitability: PlacementSuitability::Unavailable,
                         device_suitability,
                         suitability: PlacementSuitability::Unavailable,
-                        detail: "unit marked unavailable".to_string(),
+                        detail: format!("unit not dispatchable ({status:?})"),
                     };
                 }
                 let admission = unit.service.technical_admission(request);
@@ -1072,14 +1138,20 @@ impl MultiWorkerComputeService {
     }
 
     fn execute(&mut self, job: QueuedJob, selection: UnitSelection) -> MultiWorkerJobRecord {
-        let unit = &mut self.units[selection.idx];
         let placement = selection.placement;
-        if unit.availability != WorkerAvailability::Available {
+        let unit_idx = selection.idx;
+        if !self.units[unit_idx].can_accept_dispatch() {
+            let unit = &mut self.units[unit_idx];
             let failure = CanonicalPipelineFailure {
                 kind: CanonicalFailureKind::ExecutionError,
                 stage: None,
                 detail: format!("worker unavailable: {}", unit.id.0),
             };
+            unit.note_failure(
+                job.id,
+                WorkerDispatchOutcome::Unavailable,
+                failure.detail.clone(),
+            );
             return MultiWorkerJobRecord {
                 id: job.id,
                 state: JobLifecycleState::Failed,
@@ -1088,49 +1160,135 @@ impl MultiWorkerComputeService {
                 placement,
                 worker_dispatch_outcome: Some(WorkerDispatchOutcome::Unavailable),
                 placement_failure: Some(PlacementFailureKind::BackendUnavailable),
+                provenance: WorkerExecutionProvenance {
+                    selected_unit: unit.id.clone(),
+                    completed_unit: unit.id.clone(),
+                    was_remote: unit.kind == ExecutionUnitKind::Worker,
+                    redispatched_to_local: false,
+                },
             };
         }
-        let submitted_job_id = {
-            let submitted = unit.service.submit(job.request, job.meta);
-            submitted.job.id
+
+        let (submitted_job_id, run_result) = {
+            let unit = &mut self.units[unit_idx];
+            unit.active_jobs = unit.active_jobs.saturating_add(1);
+            unit.last_job_id = Some(job.id);
+            unit.last_used_at_unix_ms = Some(now_unix_ms());
+            let submitted = unit.service.submit(job.request.clone(), job.meta.clone());
+            let submitted_job_id = submitted.job.id;
+            let run_result = match unit.service.run_next() {
+                Ok(Some(record)) => Ok(Some((
+                    record.job.id,
+                    record.state,
+                    record.execution_failure.clone(),
+                    record.result.clone(),
+                ))),
+                Ok(None) => Ok(None),
+                Err(err) => Err(err),
+            };
+            unit.active_jobs = unit.active_jobs.saturating_sub(1);
+            (submitted_job_id, run_result)
         };
-        let run = unit.service.run_next();
-        match run {
-            Ok(Some(record)) if submitted_job_id == record.job.id => {
+
+        match run_result {
+            Ok(Some((record_job_id, state, execution_failure, result)))
+                if submitted_job_id == record_job_id =>
+            {
+                let unit = &mut self.units[unit_idx];
+                let selected_unit = unit.id.clone();
+                let was_remote = unit.kind == ExecutionUnitKind::Worker;
                 let dispatch_outcome = if placement.unit_kind != ExecutionUnitKind::Worker {
                     None
-                } else if record.state == JobLifecycleState::TimedOut {
+                } else if state == JobLifecycleState::TimedOut {
                     Some(WorkerDispatchOutcome::Timeout)
-                } else if record.result.is_some() {
+                } else if result.is_some() {
                     Some(WorkerDispatchOutcome::Completed)
-                } else if record.state == JobLifecycleState::Failed {
+                } else if state == JobLifecycleState::Failed {
                     Some(WorkerDispatchOutcome::ExecutionFailure)
                 } else {
                     Some(WorkerDispatchOutcome::DispatchFailure)
                 };
+                if let Some(outcome) = dispatch_outcome {
+                    if state == JobLifecycleState::Completed && result.is_some() {
+                        unit.note_success(job.id, outcome);
+                    } else {
+                        let detail = execution_failure
+                            .as_ref()
+                            .map(|f| f.detail.clone())
+                            .unwrap_or_else(|| "worker execution failure".to_string());
+                        unit.note_failure(job.id, outcome, detail);
+                    }
+                }
+                let fallback_candidate = if placement.unit_kind == ExecutionUnitKind::Worker
+                    && state == JobLifecycleState::Failed
+                    && job.requested_unit.is_none()
+                {
+                    Some(selected_unit.clone())
+                } else {
+                    None
+                };
+                if let Some(failed_worker) = fallback_candidate {
+                    if let Some(redispatched) =
+                        self.try_local_fallback(&job, &placement, failed_worker)
+                    {
+                        return redispatched;
+                    }
+                }
                 MultiWorkerJobRecord {
                     id: job.id,
-                    state: record.state,
-                    execution_failure: record.execution_failure.clone(),
-                    result: record.result.clone(),
+                    state,
+                    execution_failure,
+                    result,
                     placement,
                     worker_dispatch_outcome: dispatch_outcome,
                     placement_failure: None,
+                    provenance: WorkerExecutionProvenance {
+                        selected_unit: selected_unit.clone(),
+                        completed_unit: selected_unit,
+                        was_remote,
+                        redispatched_to_local: false,
+                    },
                 }
             }
-            Ok(_) => MultiWorkerJobRecord {
-                id: job.id,
-                state: JobLifecycleState::Failed,
-                execution_failure: Some(CanonicalPipelineFailure {
-                    kind: CanonicalFailureKind::ExecutionError,
-                    stage: None,
-                    detail: format!("worker dispatch failure: {}", unit.id.0),
-                }),
-                result: None,
-                placement,
-                worker_dispatch_outcome: Some(WorkerDispatchOutcome::DispatchFailure),
-                placement_failure: Some(PlacementFailureKind::WorkerPlacementFailed),
-            },
+            Ok(_) => {
+                let failed_unit = {
+                    let unit = &mut self.units[unit_idx];
+                    unit.note_failure(
+                        job.id,
+                        WorkerDispatchOutcome::TransportFailure,
+                        format!("worker transport failure: {}", unit.id.0),
+                    );
+                    unit.id.clone()
+                };
+                if self.units[unit_idx].kind == ExecutionUnitKind::Worker
+                    && job.requested_unit.is_none()
+                {
+                    if let Some(redispatched) =
+                        self.try_local_fallback(&job, &placement, failed_unit.clone())
+                    {
+                        return redispatched;
+                    }
+                }
+                MultiWorkerJobRecord {
+                    id: job.id,
+                    state: JobLifecycleState::Failed,
+                    execution_failure: Some(CanonicalPipelineFailure {
+                        kind: CanonicalFailureKind::ExecutionError,
+                        stage: None,
+                        detail: format!("worker transport failure: {}", failed_unit.0),
+                    }),
+                    result: None,
+                    placement,
+                    worker_dispatch_outcome: Some(WorkerDispatchOutcome::TransportFailure),
+                    placement_failure: Some(PlacementFailureKind::WorkerPlacementFailed),
+                    provenance: WorkerExecutionProvenance {
+                        selected_unit: failed_unit.clone(),
+                        completed_unit: failed_unit,
+                        was_remote: true,
+                        redispatched_to_local: false,
+                    },
+                }
+            }
             Err(err) => {
                 let failure = canonical_execution_failure(err);
                 let state = if failure.kind == CanonicalFailureKind::Timeout {
@@ -1143,6 +1301,21 @@ impl MultiWorkerComputeService {
                 } else {
                     WorkerDispatchOutcome::ExecutionFailure
                 };
+                let failed_unit = {
+                    let unit = &mut self.units[unit_idx];
+                    unit.note_failure(job.id, dispatch_outcome, failure.detail.clone());
+                    unit.id.clone()
+                };
+                if self.units[unit_idx].kind == ExecutionUnitKind::Worker
+                    && dispatch_outcome != WorkerDispatchOutcome::Timeout
+                    && job.requested_unit.is_none()
+                {
+                    if let Some(redispatched) =
+                        self.try_local_fallback(&job, &placement, failed_unit.clone())
+                    {
+                        return redispatched;
+                    }
+                }
                 MultiWorkerJobRecord {
                     id: job.id,
                     state,
@@ -1151,9 +1324,127 @@ impl MultiWorkerComputeService {
                     placement,
                     worker_dispatch_outcome: Some(dispatch_outcome),
                     placement_failure: Some(PlacementFailureKind::WorkerPlacementFailed),
+                    provenance: WorkerExecutionProvenance {
+                        selected_unit: failed_unit.clone(),
+                        completed_unit: failed_unit,
+                        was_remote: self.units[unit_idx].kind == ExecutionUnitKind::Worker,
+                        redispatched_to_local: false,
+                    },
                 }
             }
         }
+    }
+
+    fn try_local_fallback(
+        &mut self,
+        job: &QueuedJob,
+        original_placement: &ExecutionPlacement,
+        failed_worker: ExecutionUnitId,
+    ) -> Option<MultiWorkerJobRecord> {
+        let local_idx = self
+            .units
+            .iter()
+            .position(|unit| unit.kind == ExecutionUnitKind::Local && unit.can_accept_dispatch())?;
+        let local = &mut self.units[local_idx];
+        local.active_jobs = local.active_jobs.saturating_add(1);
+        local.last_job_id = Some(job.id);
+        local.last_used_at_unix_ms = Some(now_unix_ms());
+        let submitted_job_id = {
+            let submitted = local.service.submit(job.request.clone(), job.meta.clone());
+            submitted.job.id
+        };
+        let run_result = match local.service.run_next() {
+            Ok(Some(record)) => Ok(Some((
+                record.job.id,
+                record.state,
+                record.execution_failure.clone(),
+                record.result.clone(),
+            ))),
+            Ok(None) => Ok(None),
+            Err(err) => Err(err),
+        };
+        local.active_jobs = local.active_jobs.saturating_sub(1);
+        match run_result {
+            Ok(Some((record_job_id, state, execution_failure, result)))
+                if submitted_job_id == record_job_id =>
+            {
+                local.note_success(job.id, WorkerDispatchOutcome::RedispatchedLocal);
+                Some(MultiWorkerJobRecord {
+                    id: job.id,
+                    state,
+                    execution_failure,
+                    result,
+                    placement: ExecutionPlacement {
+                        unit_id: local.id.clone(),
+                        unit_kind: ExecutionUnitKind::Local,
+                        device_class: ExecutionDeviceClass::Cpu,
+                        execution_path: JobExecutionPath::LocalCanonical,
+                        lane: local.service.execution_lane(),
+                        suitability: PlacementSuitability::Suitable,
+                        device_suitability: DeviceSuitability::Suitable,
+                        device_preference: Some(ExecutionDeviceClass::Worker),
+                        device_preference_met: false,
+                        device_fallback_from: Some(ExecutionDeviceClass::Worker),
+                        degraded_fallback: true,
+                        reason: format!("worker {} failed; redispatched to local", failed_worker.0),
+                        considered: original_placement.considered.clone(),
+                    },
+                    worker_dispatch_outcome: Some(WorkerDispatchOutcome::RedispatchedLocal),
+                    placement_failure: None,
+                    provenance: WorkerExecutionProvenance {
+                        selected_unit: failed_worker,
+                        completed_unit: local.id.clone(),
+                        was_remote: true,
+                        redispatched_to_local: true,
+                    },
+                })
+            }
+            _ => None,
+        }
+    }
+}
+
+impl ExecutionUnit {
+    fn runtime_status(&self) -> WorkerRuntimeStatus {
+        if self.availability != WorkerAvailability::Available {
+            return WorkerRuntimeStatus::Unavailable;
+        }
+        if self.consecutive_failures >= 3 {
+            return WorkerRuntimeStatus::Unhealthy;
+        }
+        if self.active_jobs >= self.max_parallel_jobs {
+            return WorkerRuntimeStatus::Saturated;
+        }
+        if self.active_jobs > 0 {
+            WorkerRuntimeStatus::Busy
+        } else if self.last_job_id.is_some() {
+            WorkerRuntimeStatus::Ready
+        } else {
+            WorkerRuntimeStatus::Known
+        }
+    }
+
+    fn can_accept_dispatch(&self) -> bool {
+        matches!(
+            self.runtime_status(),
+            WorkerRuntimeStatus::Known | WorkerRuntimeStatus::Ready | WorkerRuntimeStatus::Busy
+        )
+    }
+
+    fn note_success(&mut self, job_id: JobId, outcome: WorkerDispatchOutcome) {
+        self.last_job_id = Some(job_id);
+        self.last_dispatch_outcome = Some(outcome);
+        self.last_error = None;
+        self.consecutive_failures = 0;
+        self.last_used_at_unix_ms = Some(now_unix_ms());
+    }
+
+    fn note_failure(&mut self, job_id: JobId, outcome: WorkerDispatchOutcome, detail: String) {
+        self.last_job_id = Some(job_id);
+        self.last_dispatch_outcome = Some(outcome);
+        self.last_error = Some(detail);
+        self.consecutive_failures = self.consecutive_failures.saturating_add(1);
+        self.last_used_at_unix_ms = Some(now_unix_ms());
     }
 }
 
@@ -1182,9 +1473,14 @@ fn unit_device_class(kind: ExecutionUnitKind) -> ExecutionDeviceClass {
 fn device_suitability_for(
     unit_kind: ExecutionUnitKind,
     lane: BackendExecutionLane,
-    availability: WorkerAvailability,
+    status: WorkerRuntimeStatus,
 ) -> DeviceSuitability {
-    if availability != WorkerAvailability::Available {
+    if matches!(
+        status,
+        WorkerRuntimeStatus::Unavailable
+            | WorkerRuntimeStatus::Unhealthy
+            | WorkerRuntimeStatus::Saturated
+    ) {
         return DeviceSuitability::Unavailable;
     }
     match (unit_kind, lane) {
@@ -1254,7 +1550,7 @@ mod tests {
         DeviceSuitability, ExecutionDeviceClass, ExecutionUnitId, ExecutionUnitKind,
         InMemoryComputeService, JobCompletionClass, JobExecutionPath, JobLifecycleState,
         JobSubmissionMeta, MultiWorkerComputeService, PlacementFailureKind, PlacementSuitability,
-        SchedulerConfig, WorkerAvailability, WorkerDispatchOutcome,
+        SchedulerConfig, WorkerAvailability, WorkerDispatchOutcome, WorkerRuntimeStatus,
     };
 
     struct NullLlm;
@@ -1912,8 +2208,13 @@ mod tests {
         );
         service.run_scheduler_cycle(1);
         let burn_record = service.job(burn_job).expect("burn result");
-        assert!(!burn_record.placement.degraded_fallback);
-        assert!(burn_record.placement.reason.contains("burn"));
+        if burn_record.worker_dispatch_outcome == Some(WorkerDispatchOutcome::RedispatchedLocal) {
+            assert!(burn_record.placement.degraded_fallback);
+            assert!(burn_record.placement.reason.contains("redispatched"));
+        } else {
+            assert!(!burn_record.placement.degraded_fallback);
+            assert!(burn_record.placement.reason.contains("burn"));
+        }
 
         for unit in service.execution_units() {
             if unit.id.0 == "burn-worker" {
@@ -2043,5 +2344,87 @@ mod tests {
             .considered
             .iter()
             .any(|candidate| candidate.device_suitability == DeviceSuitability::Unsuitable));
+    }
+
+    #[test]
+    fn remote_execution_failure_can_redispatch_to_local_with_provenance() {
+        let _lock = crate::test_env::env_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let previous = std::env::var("UCF_WORKER_BIN").ok();
+        std::env::set_var("UCF_WORKER_BIN", "definitely-missing-ucf-worker-binary");
+        let local_backend = ComputePipelineBackend::new(
+            pack_with(BackendComponentId::ToyV1, Vec::new()),
+            FusionConfig::default(),
+            LimitsConfig::default(),
+        );
+        let mut service = MultiWorkerComputeService::new(local_backend, 1);
+        service
+            .register_worker("remote-failing", 99, 1)
+            .expect("register worker");
+        let job_id = service.submit(
+            valid_request(),
+            JobSubmissionMeta {
+                submitted_at_unix_ms: 22,
+                submitted_by: Some("fallback".to_string()),
+            },
+            None,
+        );
+        service.run_scheduler_cycle(1);
+        let record = service.job(job_id).expect("record");
+        assert_eq!(
+            record.worker_dispatch_outcome,
+            Some(WorkerDispatchOutcome::RedispatchedLocal)
+        );
+        assert!(record.provenance.redispatched_to_local);
+        assert!(record.provenance.was_remote);
+        assert_eq!(record.provenance.completed_unit.0, "local");
+        assert!(record.result.is_some());
+        match previous {
+            Some(value) => std::env::set_var("UCF_WORKER_BIN", value),
+            None => std::env::remove_var("UCF_WORKER_BIN"),
+        }
+    }
+
+    #[test]
+    fn worker_snapshot_reports_unhealthy_after_repeated_failures() {
+        let _lock = crate::test_env::env_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let previous = std::env::var("UCF_WORKER_BIN").ok();
+        std::env::set_var("UCF_WORKER_BIN", "definitely-missing-ucf-worker-binary");
+        let local_backend = ComputePipelineBackend::new(
+            pack_with(BackendComponentId::ToyV1, Vec::new()),
+            FusionConfig::default(),
+            LimitsConfig::default(),
+        );
+        let mut service = MultiWorkerComputeService::new(local_backend, 1);
+        let worker_id = service
+            .register_worker("remote-unhealthy", 100, 1)
+            .expect("register worker");
+        for t in 30..33 {
+            let job_id = service.submit(
+                valid_request(),
+                JobSubmissionMeta {
+                    submitted_at_unix_ms: t,
+                    submitted_by: Some("health".to_string()),
+                },
+                Some(worker_id.clone()),
+            );
+            service.run_scheduler_cycle(1);
+            let record = service.job(job_id).expect("record");
+            assert_eq!(record.state, JobLifecycleState::Failed);
+        }
+        let snapshot = service
+            .execution_units()
+            .into_iter()
+            .find(|unit| unit.id == worker_id)
+            .expect("worker snapshot");
+        assert_eq!(snapshot.status, WorkerRuntimeStatus::Unhealthy);
+        assert!(snapshot.last_error.is_some());
+        match previous {
+            Some(value) => std::env::set_var("UCF_WORKER_BIN", value),
+            None => std::env::remove_var("UCF_WORKER_BIN"),
+        }
     }
 }

@@ -43,6 +43,8 @@ Both paths preserve the same `CanonicalPipelineResult` / `CanonicalPipelineFailu
 - `ExecutionUnitKind::Local` and `ExecutionUnitKind::Worker`,
 - deterministic worker ids (`ExecutionUnitId`) and explicit availability (`available` / `unavailable`),
 - optional per-job placement hint (`requested_unit`) with deterministic fallback to capability-aware placement.
+- runtime worker lifecycle state (`known|ready|busy|saturated|unavailable|unhealthy`) derived from
+  dispatchability, in-flight usage, and consecutive failure streak.
 
 ## Backend capability matrix + execution placement (technical, narrow)
 
@@ -124,9 +126,15 @@ Placement-level failures are additionally tagged as:
 For multi-worker execution, dispatch outcome is classified with a single linked surface:
 - `unavailable`,
 - `dispatch_failure`,
+- `transport_failure`,
 - `execution_failure`,
 - `timeout`,
-- `completed`.
+- `completed`,
+- `redispatched_local` (worker failed, job completed via explicit local fallback).
+
+When a non-requested worker fails at dispatch/execution and a local unit is still suitable, a
+single minimal re-dispatch to local is attempted. Requested-worker submissions stay strict and do
+not auto-fallback.
 
 ## Canonical job lifecycle states
 
