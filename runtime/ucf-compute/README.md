@@ -66,6 +66,25 @@ Multi-worker scheduling remains intentionally compact: jobs are either placed im
 queued as currently-unschedulable (capacity/device temporarily unavailable), or rejected when no
 technical backend/device placement is possible.
 
+## Resource classes and capacity accounting (runtime scope)
+
+Capacity is modeled as a narrow runtime signal (not a cluster manager):
+
+- Resource classes: `light`, `standard`, `heavy` (derived from canonical `global_work_units`).
+- Class weights: `1`, `2`, `3` capacity units respectively.
+- Each execution unit exposes `max_parallel_jobs * 2` capacity units.
+
+Scheduler/admission behavior uses these signals to distinguish:
+
+- admitted + queued due to capacity pressure,
+- deferred due to transient capacity saturation,
+- rejected as currently not supportable under class/capacity constraints,
+- placement fallback/degradation decisions under capacity pressure.
+
+Runtime/job provenance now includes resource class, queue/reject capacity disposition, and
+capacity pressure (`nominal|saturated|overloaded`) so ops/history can separate scheduling-capacity
+decisions from execution failures.
+
 ## Backend selection (runtime)
 
 The orchestrator can be bootstrapped from env config via `RuntimeOrchestrator::try_new_from_env`.

@@ -5,10 +5,13 @@ use std::path::{Path, PathBuf};
 
 use thiserror::Error;
 
-use crate::compute_service::{JobCompletionClass, JobId, JobLifecycleState, JobRecord};
+use crate::compute_service::{
+    CapacityPressure, CapacityQueueDisposition, JobCompletionClass, JobId, JobLifecycleState,
+    JobRecord, ResourceClass,
+};
 use crate::pipeline::{CanonicalFailureKind, CanonicalPipelineState};
 
-const JOB_HISTORY_SCHEMA_VERSION: u16 = 3;
+const JOB_HISTORY_SCHEMA_VERSION: u16 = 4;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PersistedJobRequestIdentity {
@@ -89,6 +92,12 @@ pub struct PersistedJobRecord {
     #[serde(default)]
     pub execution_lane: Option<String>,
     #[serde(default)]
+    pub resource_class: Option<String>,
+    #[serde(default)]
+    pub capacity_queue_disposition: Option<String>,
+    #[serde(default)]
+    pub capacity_pressure: Option<String>,
+    #[serde(default)]
     pub backend_route: Option<PersistedBackendRouteSummary>,
     pub work_summary: Option<PersistedWorkSummary>,
     pub model_slots: Vec<PersistedModelSlotSummary>,
@@ -148,6 +157,13 @@ impl PersistedJobRecord {
                 .pipeline_state
                 .map(|state| pipeline_state_name(state).to_string()),
             execution_lane: Some(execution_lane_name(accounting.execution_lane).to_string()),
+            resource_class: Some(resource_class_name(accounting.resource_class).to_string()),
+            capacity_queue_disposition: Some(
+                capacity_queue_disposition_name(accounting.capacity_queue_disposition).to_string(),
+            ),
+            capacity_pressure: Some(
+                capacity_pressure_name(accounting.capacity_pressure).to_string(),
+            ),
             backend_route: record
                 .result
                 .as_ref()
@@ -383,6 +399,31 @@ fn execution_lane_name(lane: crate::pipeline::BackendExecutionLane) -> &'static 
     }
 }
 
+fn resource_class_name(class: ResourceClass) -> &'static str {
+    match class {
+        ResourceClass::Light => "light",
+        ResourceClass::Standard => "standard",
+        ResourceClass::Heavy => "heavy",
+    }
+}
+
+fn capacity_queue_disposition_name(disposition: CapacityQueueDisposition) -> &'static str {
+    match disposition {
+        CapacityQueueDisposition::None => "none",
+        CapacityQueueDisposition::QueuedDueToCapacity => "queued_due_to_capacity",
+        CapacityQueueDisposition::DeferredDueToCapacity => "deferred_due_to_capacity",
+        CapacityQueueDisposition::RejectedDueToCapacity => "rejected_due_to_capacity",
+    }
+}
+
+fn capacity_pressure_name(pressure: CapacityPressure) -> &'static str {
+    match pressure {
+        CapacityPressure::Nominal => "nominal",
+        CapacityPressure::Saturated => "saturated",
+        CapacityPressure::Overloaded => "overloaded",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::JobHistoryStore;
@@ -423,5 +464,8 @@ mod tests {
         assert_eq!(loaded.job_id, job_id.0);
         assert!(loaded.completion_class.is_some());
         assert!(loaded.finished_at_unix_ms.is_some());
+        assert_eq!(loaded.resource_class.as_deref(), Some("light"));
+        assert_eq!(loaded.capacity_queue_disposition.as_deref(), Some("none"));
+        assert!(loaded.capacity_pressure.is_some());
     }
 }

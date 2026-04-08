@@ -64,12 +64,13 @@ pub use backends::{
     CANONICAL_ONBOARDING_PACK,
 };
 pub use compute_service::{
-    ComputeJob, DeviceSuitability, ExecutionDeviceClass, ExecutionPlacement, ExecutionUnitId,
-    ExecutionUnitKind, ExecutionUnitSnapshot, InMemoryComputeService, JobAccountingSummary,
-    JobCompletionClass, JobExecutionPath, JobId, JobLifecycleEvent, JobLifecycleState, JobRecord,
-    JobSubmissionMeta, MultiWorkerComputeService, PlacementCandidateAssessment,
-    PlacementFailureKind, PlacementSuitability, SchedulerConfig, SchedulerSnapshot,
-    WorkerAvailability, WorkerDispatchOutcome,
+    CapacityPressure, CapacityQueueDisposition, ComputeJob, DeviceSuitability,
+    ExecutionDeviceClass, ExecutionPlacement, ExecutionUnitId, ExecutionUnitKind,
+    ExecutionUnitSnapshot, InMemoryComputeService, JobAccountingSummary, JobCompletionClass,
+    JobExecutionPath, JobId, JobLifecycleEvent, JobLifecycleState, JobRecord, JobSubmissionMeta,
+    MultiWorkerComputeService, PlacementCandidateAssessment, PlacementFailureKind,
+    PlacementSuitability, ResourceClass, SchedulerConfig, SchedulerSnapshot, WorkerAvailability,
+    WorkerDispatchOutcome,
 };
 pub use contracts::{StageContractVersion, ValidationStatus};
 pub use enablement::{

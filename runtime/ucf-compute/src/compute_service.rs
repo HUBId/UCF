@@ -61,6 +61,49 @@ pub enum JobCompletionClass {
     WorkerIpcFailure,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResourceClass {
+    Light,
+    Standard,
+    Heavy,
+}
+
+impl ResourceClass {
+    fn classify(request: &CanonicalPipelineRequest) -> Self {
+        let budget = request.budget.global_work_units;
+        if budget <= 32_768 {
+            Self::Light
+        } else if budget <= 98_304 {
+            Self::Standard
+        } else {
+            Self::Heavy
+        }
+    }
+
+    fn capacity_weight(self) -> usize {
+        match self {
+            Self::Light => 1,
+            Self::Standard => 2,
+            Self::Heavy => 3,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CapacityPressure {
+    Nominal,
+    Saturated,
+    Overloaded,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CapacityQueueDisposition {
+    None,
+    QueuedDueToCapacity,
+    DeferredDueToCapacity,
+    RejectedDueToCapacity,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JobAccountingSummary {
     pub job_id: JobId,
@@ -80,6 +123,9 @@ pub struct JobAccountingSummary {
     pub model_slots: Vec<ModelSlotProvenance>,
     pub execution_path: JobExecutionPath,
     pub execution_lane: BackendExecutionLane,
+    pub resource_class: ResourceClass,
+    pub capacity_queue_disposition: CapacityQueueDisposition,
+    pub capacity_pressure: CapacityPressure,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -124,12 +170,22 @@ impl Default for SchedulerConfig {
     }
 }
 
+impl SchedulerConfig {
+    fn capacity_limit_units(self) -> usize {
+        self.max_concurrent_jobs.max(1).saturating_mul(2)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SchedulerSnapshot {
     pub max_concurrent_jobs: usize,
     pub queued_jobs: usize,
     pub running_jobs: usize,
     pub execution_path: JobExecutionPath,
+    pub capacity_limit_units: usize,
+    pub used_capacity_units: usize,
+    pub free_capacity_units: usize,
+    pub pressure: CapacityPressure,
 }
 
 pub struct InMemoryComputeService {
@@ -189,6 +245,7 @@ impl InMemoryComputeService {
             request: request.clone(),
             meta,
         };
+        let resource_class = ResourceClass::classify(&request);
         let admission = self.backend.technical_admission(&request);
         let mut record = JobRecord {
             job,
@@ -216,6 +273,9 @@ impl InMemoryComputeService {
                 model_slots: Vec::new(),
                 execution_path: self.scheduler.execution_path,
                 execution_lane: self.backend.execution_lane(),
+                resource_class,
+                capacity_queue_disposition: CapacityQueueDisposition::None,
+                capacity_pressure: CapacityPressure::Nominal,
             },
         };
         self.record_event(JobLifecycleEvent {
@@ -258,6 +318,13 @@ impl InMemoryComputeService {
                 });
                 record.state = JobLifecycleState::Queued;
                 record.accounting.status = JobLifecycleState::Queued;
+                record.accounting.capacity_queue_disposition =
+                    CapacityQueueDisposition::QueuedDueToCapacity;
+                record.accounting.capacity_pressure = if self.queue.is_empty() {
+                    CapacityPressure::Nominal
+                } else {
+                    CapacityPressure::Saturated
+                };
                 self.queue.push_back(job_id);
                 self.record_event(JobLifecycleEvent {
                     job_id,
@@ -304,6 +371,7 @@ impl InMemoryComputeService {
                 record.accounting.started_at_unix_ms = Some(started_at_unix_ms);
                 record.accounting.queue_wait_ms =
                     Some(started_at_unix_ms.saturating_sub(record.accounting.submitted_at_unix_ms));
+                record.accounting.capacity_queue_disposition = CapacityQueueDisposition::None;
                 record.job.request.clone()
             }
             None => return Ok(()),
@@ -348,6 +416,13 @@ impl InMemoryComputeService {
             }
         };
 
+        let used_capacity_units = self
+            .running
+            .iter()
+            .filter_map(|running_job| self.jobs.get(running_job))
+            .map(|job| job.accounting.resource_class.capacity_weight())
+            .sum::<usize>();
+        let capacity_limit_units = self.scheduler.capacity_limit_units();
         let Some(record) = self.jobs.get_mut(&job_id) else {
             self.running.remove(&job_id);
             return Ok(());
@@ -370,6 +445,11 @@ impl InMemoryComputeService {
         record.accounting.total_duration_ms =
             Some(finished_at_unix_ms.saturating_sub(record.accounting.submitted_at_unix_ms));
         record.accounting.failure_kind = execution_failure.as_ref().map(|f| f.kind);
+        record.accounting.capacity_pressure = capacity_pressure_for(
+            used_capacity_units,
+            capacity_limit_units,
+            !self.queue.is_empty(),
+        );
         if let Some(canonical_result) = record.result.as_ref() {
             record.accounting.work_summary = Some(canonical_result.diagnostics.work);
             record.accounting.pipeline_state = Some(canonical_result.state);
@@ -407,11 +487,26 @@ impl InMemoryComputeService {
     }
 
     pub fn scheduler_snapshot(&self) -> SchedulerSnapshot {
+        let used_capacity_units = self
+            .running
+            .iter()
+            .filter_map(|job_id| self.jobs.get(job_id))
+            .map(|record| record.accounting.resource_class.capacity_weight())
+            .sum::<usize>();
+        let capacity_limit_units = self.scheduler.capacity_limit_units();
         SchedulerSnapshot {
             max_concurrent_jobs: self.scheduler.max_concurrent_jobs,
             queued_jobs: self.queue.len(),
             running_jobs: self.running.len(),
             execution_path: self.scheduler.execution_path,
+            capacity_limit_units,
+            used_capacity_units,
+            free_capacity_units: capacity_limit_units.saturating_sub(used_capacity_units),
+            pressure: capacity_pressure_for(
+                used_capacity_units,
+                capacity_limit_units,
+                !self.queue.is_empty(),
+            ),
         }
     }
 
@@ -558,6 +653,8 @@ pub struct ExecutionPlacement {
     pub device_preference_met: bool,
     pub device_fallback_from: Option<ExecutionDeviceClass>,
     pub degraded_fallback: bool,
+    pub resource_class: ResourceClass,
+    pub capacity_pressure: CapacityPressure,
     pub reason: String,
     pub considered: Vec<PlacementCandidateAssessment>,
 }
@@ -580,6 +677,7 @@ pub enum PlacementFailureKind {
     BackendUnavailable,
     WorkerPlacementFailed,
     CurrentlyUnschedulable,
+    CapacityRejected,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -617,6 +715,7 @@ pub struct MultiWorkerJobRecord {
     pub placement: ExecutionPlacement,
     pub worker_dispatch_outcome: Option<WorkerDispatchOutcome>,
     pub placement_failure: Option<PlacementFailureKind>,
+    pub capacity_disposition: CapacityQueueDisposition,
     pub provenance: WorkerExecutionProvenance,
 }
 
@@ -636,6 +735,8 @@ pub struct ExecutionUnitSnapshot {
     pub status: WorkerRuntimeStatus,
     pub max_parallel_jobs: usize,
     pub active_jobs: usize,
+    pub used_capacity_units: usize,
+    pub free_capacity_units: usize,
     pub consecutive_failures: u32,
     pub last_job_id: Option<JobId>,
     pub last_dispatch_outcome: Option<WorkerDispatchOutcome>,
@@ -649,6 +750,7 @@ struct ExecutionUnit {
     availability: WorkerAvailability,
     max_parallel_jobs: usize,
     active_jobs: usize,
+    used_capacity_units: usize,
     consecutive_failures: u32,
     last_job_id: Option<JobId>,
     last_dispatch_outcome: Option<WorkerDispatchOutcome>,
@@ -662,6 +764,7 @@ struct QueuedJob {
     id: JobId,
     request: CanonicalPipelineRequest,
     meta: JobSubmissionMeta,
+    resource_class: ResourceClass,
     requested_unit: Option<ExecutionUnitId>,
     placement_attempts: u8,
 }
@@ -695,6 +798,7 @@ impl MultiWorkerComputeService {
             availability: WorkerAvailability::Available,
             max_parallel_jobs: max_parallel_jobs.max(1),
             active_jobs: 0,
+            used_capacity_units: 0,
             consecutive_failures: 0,
             last_job_id: None,
             last_dispatch_outcome: None,
@@ -760,6 +864,7 @@ impl MultiWorkerComputeService {
             availability: WorkerAvailability::Available,
             max_parallel_jobs: max_parallel_jobs.max(1),
             active_jobs: 0,
+            used_capacity_units: 0,
             consecutive_failures: 0,
             last_job_id: None,
             last_dispatch_outcome: None,
@@ -789,10 +894,12 @@ impl MultiWorkerComputeService {
     ) -> JobId {
         let id = JobId(self.next_job_id);
         self.next_job_id = self.next_job_id.saturating_add(1);
+        let resource_class = ResourceClass::classify(&request);
         self.queue.push_back(QueuedJob {
             id,
             request,
             meta,
+            resource_class,
             requested_unit,
             placement_attempts: 0,
         });
@@ -805,7 +912,11 @@ impl MultiWorkerComputeService {
             let Some(job) = self.queue.pop_front() else {
                 break;
             };
-            let selection = match self.select_unit(&job.request, job.requested_unit.clone()) {
+            let selection = match self.select_unit(
+                &job.request,
+                job.resource_class,
+                job.requested_unit.clone(),
+            ) {
                 Some(selection) => selection,
                 None => {
                     let scheduling = self.scheduling_decision(&job);
@@ -826,6 +937,7 @@ impl MultiWorkerComputeService {
                             worker_dispatch_outcome: worker_dispatch_outcome
                                 .or(Some(WorkerDispatchOutcome::Deferred)),
                             placement_failure: Some(PlacementFailureKind::CurrentlyUnschedulable),
+                            capacity_disposition: CapacityQueueDisposition::DeferredDueToCapacity,
                             provenance: WorkerExecutionProvenance {
                                 selected_unit: ExecutionUnitId("deferred".to_string()),
                                 completed_unit: ExecutionUnitId("deferred".to_string()),
@@ -852,6 +964,7 @@ impl MultiWorkerComputeService {
                             placement,
                             worker_dispatch_outcome,
                             placement_failure: Some(placement_failure),
+                            capacity_disposition: CapacityQueueDisposition::RejectedDueToCapacity,
                             provenance: WorkerExecutionProvenance {
                                 selected_unit: requested_unit.clone(),
                                 completed_unit: requested_unit,
@@ -882,6 +995,10 @@ impl MultiWorkerComputeService {
                                 | SchedulingDecision::QueueRequired => {
                                     "job remained unschedulable under current capacity".to_string()
                                 }
+                                SchedulingDecision::NotPlaceable(
+                                    PlacementFailureKind::CapacityRejected,
+                                ) => "job rejected due to resource-class capacity pressure"
+                                    .to_string(),
                                 _ => "no suitable backend".to_string(),
                             },
                         }),
@@ -892,6 +1009,7 @@ impl MultiWorkerComputeService {
                             SchedulingDecision::NotPlaceable(kind) => kind,
                             _ => placement_failure,
                         }),
+                        capacity_disposition: CapacityQueueDisposition::RejectedDueToCapacity,
                         provenance: WorkerExecutionProvenance {
                             selected_unit: ExecutionUnitId("none".to_string()),
                             completed_unit: ExecutionUnitId("none".to_string()),
@@ -925,6 +1043,10 @@ impl MultiWorkerComputeService {
                 status: unit.runtime_status(),
                 max_parallel_jobs: unit.max_parallel_jobs,
                 active_jobs: unit.active_jobs,
+                used_capacity_units: unit.used_capacity_units,
+                free_capacity_units: unit
+                    .capacity_limit_units()
+                    .saturating_sub(unit.used_capacity_units),
                 consecutive_failures: unit.consecutive_failures,
                 last_job_id: unit.last_job_id,
                 last_dispatch_outcome: unit.last_dispatch_outcome,
@@ -942,7 +1064,7 @@ impl MultiWorkerComputeService {
         PlacementFailureKind,
         Option<WorkerDispatchOutcome>,
     ) {
-        let mut considered = self.assess_candidates(&job.request);
+        let mut considered = self.assess_candidates(&job.request, job.resource_class);
         if let Some(requested) = job.requested_unit.clone() {
             let candidate = considered
                 .iter()
@@ -986,6 +1108,8 @@ impl MultiWorkerComputeService {
                         .unwrap_or(false),
                     device_fallback_from: None,
                     degraded_fallback: false,
+                    resource_class: job.resource_class,
+                    capacity_pressure: CapacityPressure::Overloaded,
                     reason: "requested unit not placeable".to_string(),
                     considered,
                 },
@@ -994,6 +1118,11 @@ impl MultiWorkerComputeService {
             );
         }
         let best = if considered
+            .iter()
+            .any(|candidate| candidate.detail.contains("insufficient capacity units"))
+        {
+            PlacementFailureKind::CapacityRejected
+        } else if considered
             .iter()
             .any(|candidate| candidate.suitability == PlacementSuitability::Incompatible)
         {
@@ -1035,6 +1164,8 @@ impl MultiWorkerComputeService {
                 device_preference_met: true,
                 device_fallback_from: None,
                 degraded_fallback: false,
+                resource_class: job.resource_class,
+                capacity_pressure: CapacityPressure::Overloaded,
                 reason: "no suitable execution unit".to_string(),
                 considered,
             },
@@ -1044,10 +1175,14 @@ impl MultiWorkerComputeService {
     }
 
     fn scheduling_decision(&self, job: &QueuedJob) -> SchedulingDecision {
-        if self.selectable_candidate_exists(&job.request, job.requested_unit.as_ref()) {
+        if self.selectable_candidate_exists(
+            &job.request,
+            job.resource_class,
+            job.requested_unit.as_ref(),
+        ) {
             return SchedulingDecision::RunNow;
         }
-        let considered = self.assess_candidates(&job.request);
+        let considered = self.assess_candidates(&job.request, job.resource_class);
         if job.requested_unit.is_some() {
             return SchedulingDecision::NotPlaceable(PlacementFailureKind::WorkerPlacementFailed);
         }
@@ -1072,15 +1207,22 @@ impl MultiWorkerComputeService {
                 PlacementFailureKind::BackendDeviceIncompatible,
             );
         }
+        if considered
+            .iter()
+            .any(|candidate| candidate.detail.contains("insufficient capacity units"))
+        {
+            return SchedulingDecision::NotPlaceable(PlacementFailureKind::CapacityRejected);
+        }
         SchedulingDecision::NotPlaceable(PlacementFailureKind::NoSuitableBackend)
     }
 
     fn selectable_candidate_exists(
         &self,
         request: &CanonicalPipelineRequest,
+        resource_class: ResourceClass,
         requested: Option<&ExecutionUnitId>,
     ) -> bool {
-        let considered = self.assess_candidates(request);
+        let considered = self.assess_candidates(request, resource_class);
         match requested {
             Some(requested_unit) => considered.iter().any(|candidate| {
                 &candidate.unit_id == requested_unit
@@ -1095,6 +1237,7 @@ impl MultiWorkerComputeService {
     fn assess_candidates(
         &self,
         request: &CanonicalPipelineRequest,
+        resource_class: ResourceClass,
     ) -> Vec<PlacementCandidateAssessment> {
         self.units
             .iter()
@@ -1113,6 +1256,24 @@ impl MultiWorkerComputeService {
                         device_suitability,
                         suitability: PlacementSuitability::Unavailable,
                         detail: format!("unit not dispatchable ({status:?})"),
+                    };
+                }
+                let required_units = resource_class.capacity_weight();
+                let free_units = unit
+                    .capacity_limit_units()
+                    .saturating_sub(unit.used_capacity_units);
+                if required_units > free_units {
+                    return PlacementCandidateAssessment {
+                        unit_id: unit.id.clone(),
+                        unit_kind: unit.kind,
+                        device_class,
+                        lane,
+                        backend_suitability: PlacementSuitability::Suitable,
+                        device_suitability,
+                        suitability: PlacementSuitability::Unavailable,
+                        detail: format!(
+                            "insufficient capacity units required={required_units} free={free_units}"
+                        ),
                     };
                 }
                 let admission = unit.service.technical_admission(request);
@@ -1152,9 +1313,10 @@ impl MultiWorkerComputeService {
     fn select_unit(
         &mut self,
         request: &CanonicalPipelineRequest,
+        resource_class: ResourceClass,
         requested: Option<ExecutionUnitId>,
     ) -> Option<UnitSelection> {
-        let assessments = self.assess_candidates(request);
+        let assessments = self.assess_candidates(request, resource_class);
         if let Some(requested) = requested {
             let idx = self.units.iter().position(|unit| unit.id == requested)?;
             let selected = assessments
@@ -1180,6 +1342,8 @@ impl MultiWorkerComputeService {
                     device_preference_met: true,
                     device_fallback_from: None,
                     degraded_fallback: false,
+                    resource_class: ResourceClass::classify(request),
+                    capacity_pressure: self.units[idx].capacity_pressure(),
                     reason: "requested execution unit selected".to_string(),
                     considered: assessments,
                 },
@@ -1233,6 +1397,8 @@ impl MultiWorkerComputeService {
                 device_preference_met: true,
                 device_fallback_from: None,
                 degraded_fallback: selected.lane == BackendExecutionLane::Candle,
+                resource_class: ResourceClass::classify(request),
+                capacity_pressure: self.units[idx].capacity_pressure(),
                 reason: if selected.lane == BackendExecutionLane::Burn {
                     "selected burn-capable unit".to_string()
                 } else if selected.lane == BackendExecutionLane::Candle {
@@ -1248,6 +1414,7 @@ impl MultiWorkerComputeService {
     fn execute(&mut self, job: QueuedJob, selection: UnitSelection) -> MultiWorkerJobRecord {
         let placement = selection.placement;
         let unit_idx = selection.idx;
+        let required_units = job.resource_class.capacity_weight();
         if !self.units[unit_idx].can_accept_dispatch() {
             let unit = &mut self.units[unit_idx];
             let failure = CanonicalPipelineFailure {
@@ -1268,6 +1435,7 @@ impl MultiWorkerComputeService {
                 placement,
                 worker_dispatch_outcome: Some(WorkerDispatchOutcome::Unavailable),
                 placement_failure: Some(PlacementFailureKind::BackendUnavailable),
+                capacity_disposition: CapacityQueueDisposition::RejectedDueToCapacity,
                 provenance: WorkerExecutionProvenance {
                     selected_unit: unit.id.clone(),
                     completed_unit: unit.id.clone(),
@@ -1280,6 +1448,7 @@ impl MultiWorkerComputeService {
         let (submitted_job_id, run_result) = {
             let unit = &mut self.units[unit_idx];
             unit.active_jobs = unit.active_jobs.saturating_add(1);
+            unit.used_capacity_units = unit.used_capacity_units.saturating_add(required_units);
             unit.last_job_id = Some(job.id);
             unit.last_used_at_unix_ms = Some(now_unix_ms());
             let submitted = unit.service.submit(job.request.clone(), job.meta.clone());
@@ -1295,6 +1464,7 @@ impl MultiWorkerComputeService {
                 Err(err) => Err(err),
             };
             unit.active_jobs = unit.active_jobs.saturating_sub(1);
+            unit.used_capacity_units = unit.used_capacity_units.saturating_sub(required_units);
             (submitted_job_id, run_result)
         };
 
@@ -1350,6 +1520,7 @@ impl MultiWorkerComputeService {
                     placement,
                     worker_dispatch_outcome: dispatch_outcome,
                     placement_failure: None,
+                    capacity_disposition: CapacityQueueDisposition::None,
                     provenance: WorkerExecutionProvenance {
                         selected_unit: selected_unit.clone(),
                         completed_unit: selected_unit,
@@ -1389,6 +1560,7 @@ impl MultiWorkerComputeService {
                     placement,
                     worker_dispatch_outcome: Some(WorkerDispatchOutcome::TransportFailure),
                     placement_failure: Some(PlacementFailureKind::WorkerPlacementFailed),
+                    capacity_disposition: CapacityQueueDisposition::RejectedDueToCapacity,
                     provenance: WorkerExecutionProvenance {
                         selected_unit: failed_unit.clone(),
                         completed_unit: failed_unit,
@@ -1432,6 +1604,7 @@ impl MultiWorkerComputeService {
                     placement,
                     worker_dispatch_outcome: Some(dispatch_outcome),
                     placement_failure: Some(PlacementFailureKind::WorkerPlacementFailed),
+                    capacity_disposition: CapacityQueueDisposition::RejectedDueToCapacity,
                     provenance: WorkerExecutionProvenance {
                         selected_unit: failed_unit.clone(),
                         completed_unit: failed_unit,
@@ -1454,7 +1627,9 @@ impl MultiWorkerComputeService {
             .iter()
             .position(|unit| unit.kind == ExecutionUnitKind::Local && unit.can_accept_dispatch())?;
         let local = &mut self.units[local_idx];
+        let required_units = job.resource_class.capacity_weight();
         local.active_jobs = local.active_jobs.saturating_add(1);
+        local.used_capacity_units = local.used_capacity_units.saturating_add(required_units);
         local.last_job_id = Some(job.id);
         local.last_used_at_unix_ms = Some(now_unix_ms());
         let submitted_job_id = {
@@ -1472,6 +1647,7 @@ impl MultiWorkerComputeService {
             Err(err) => Err(err),
         };
         local.active_jobs = local.active_jobs.saturating_sub(1);
+        local.used_capacity_units = local.used_capacity_units.saturating_sub(required_units);
         match run_result {
             Ok(Some((record_job_id, state, execution_failure, result)))
                 if submitted_job_id == record_job_id =>
@@ -1494,11 +1670,14 @@ impl MultiWorkerComputeService {
                         device_preference_met: false,
                         device_fallback_from: Some(ExecutionDeviceClass::Worker),
                         degraded_fallback: true,
+                        resource_class: job.resource_class,
+                        capacity_pressure: local.capacity_pressure(),
                         reason: format!("worker {} failed; redispatched to local", failed_worker.0),
                         considered: original_placement.considered.clone(),
                     },
                     worker_dispatch_outcome: Some(WorkerDispatchOutcome::RedispatchedLocal),
                     placement_failure: None,
+                    capacity_disposition: CapacityQueueDisposition::None,
                     provenance: WorkerExecutionProvenance {
                         selected_unit: failed_worker,
                         completed_unit: local.id.clone(),
@@ -1513,6 +1692,10 @@ impl MultiWorkerComputeService {
 }
 
 impl ExecutionUnit {
+    fn capacity_limit_units(&self) -> usize {
+        self.max_parallel_jobs.max(1).saturating_mul(2)
+    }
+
     fn runtime_status(&self) -> WorkerRuntimeStatus {
         if self.availability != WorkerAvailability::Available {
             return WorkerRuntimeStatus::Unavailable;
@@ -1520,7 +1703,9 @@ impl ExecutionUnit {
         if self.consecutive_failures >= 3 {
             return WorkerRuntimeStatus::Unhealthy;
         }
-        if self.active_jobs >= self.max_parallel_jobs {
+        if self.active_jobs >= self.max_parallel_jobs
+            || self.used_capacity_units >= self.capacity_limit_units()
+        {
             return WorkerRuntimeStatus::Saturated;
         }
         if self.active_jobs > 0 {
@@ -1530,6 +1715,14 @@ impl ExecutionUnit {
         } else {
             WorkerRuntimeStatus::Known
         }
+    }
+
+    fn capacity_pressure(&self) -> CapacityPressure {
+        capacity_pressure_for(
+            self.used_capacity_units,
+            self.capacity_limit_units(),
+            self.active_jobs > 0,
+        )
     }
 
     fn can_accept_dispatch(&self) -> bool {
@@ -1615,6 +1808,20 @@ fn combine_suitability(
     }
 }
 
+fn capacity_pressure_for(
+    used_units: usize,
+    limit_units: usize,
+    has_backlog: bool,
+) -> CapacityPressure {
+    if used_units >= limit_units {
+        CapacityPressure::Overloaded
+    } else if has_backlog || used_units.saturating_mul(10) >= limit_units.saturating_mul(8) {
+        CapacityPressure::Saturated
+    } else {
+        CapacityPressure::Nominal
+    }
+}
+
 fn placement_failure_kind(
     suitability: PlacementSuitability,
     device_suitability: DeviceSuitability,
@@ -1655,10 +1862,11 @@ mod tests {
     use crate::{ComputeBudget, ComputeError, ComputeInput, FrameId, ModelSlot};
 
     use super::{
-        DeviceSuitability, ExecutionDeviceClass, ExecutionUnitId, ExecutionUnitKind,
-        InMemoryComputeService, JobCompletionClass, JobExecutionPath, JobLifecycleState,
-        JobSubmissionMeta, MultiWorkerComputeService, PlacementFailureKind, PlacementSuitability,
-        SchedulerConfig, WorkerAvailability, WorkerDispatchOutcome, WorkerRuntimeStatus,
+        CapacityQueueDisposition, DeviceSuitability, ExecutionDeviceClass, ExecutionUnitId,
+        ExecutionUnitKind, InMemoryComputeService, JobCompletionClass, JobExecutionPath,
+        JobLifecycleState, JobSubmissionMeta, MultiWorkerComputeService, PlacementFailureKind,
+        PlacementSuitability, ResourceClass, SchedulerConfig, WorkerAvailability,
+        WorkerDispatchOutcome, WorkerRuntimeStatus,
     };
 
     struct NullLlm;
@@ -1797,6 +2005,11 @@ mod tests {
         );
         assert_eq!(record.state, JobLifecycleState::Queued);
         assert!(record.rejection.is_none());
+        assert_eq!(record.accounting.resource_class, ResourceClass::Light);
+        assert_eq!(
+            record.accounting.capacity_queue_disposition,
+            CapacityQueueDisposition::QueuedDueToCapacity
+        );
         assert_eq!(
             service
                 .lifecycle_events()
@@ -2321,6 +2534,10 @@ mod tests {
             deferred.worker_dispatch_outcome,
             Some(WorkerDispatchOutcome::Deferred)
         );
+        assert_eq!(
+            deferred.capacity_disposition,
+            CapacityQueueDisposition::DeferredDueToCapacity
+        );
 
         for unit in service.execution_units() {
             service.set_worker_availability(&unit.id, WorkerAvailability::Available);
@@ -2362,6 +2579,10 @@ mod tests {
         assert_eq!(
             failed.placement_failure,
             Some(PlacementFailureKind::DeviceUnavailable)
+        );
+        assert_eq!(
+            failed.capacity_disposition,
+            CapacityQueueDisposition::RejectedDueToCapacity
         );
         assert!(failed
             .execution_failure
