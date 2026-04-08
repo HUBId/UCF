@@ -23,7 +23,10 @@ use crate::lfm::{LfmKernel, ToyLfmKernel};
 use crate::ssm::{SsmKernel, ToySsmKernel};
 use crate::worker_backend::WorkerBackendPack;
 use crate::world_model::MockJepaPredictor;
-use crate::{CodeVersionTag, ComputeError, ModelFormat, ModelLoadError, ModelSlot, ModelStore};
+use crate::{
+    CodeVersionTag, ComputeError, ModelFormat, ModelLoadError, ModelSlot, ModelStore,
+    SlotWarmupState,
+};
 
 const FIXTURE_SCHEMA_V1: u16 = 1;
 const MAX_FIXTURE_BYTES: usize = 1024 * 1024;
@@ -827,6 +830,7 @@ fn resolve_slot_provenance(store: &ModelStore, pack: BackendPackKind) -> Vec<Mod
                         && required_slots_for_pack(pack).contains(&slot)
                         && activation_error.is_some();
                     let rollout_status = store.slot_path_statuses(slot);
+                    let warmup_status = store.warmup_slot_paths(slot);
                     let (status, code, detail) = if activation_blocked {
                         gate.activatable = false;
                         gate.blocked_reason = Some(ProductionBlockReason::ActivationBlocked);
@@ -861,7 +865,7 @@ fn resolve_slot_provenance(store: &ModelStore, pack: BackendPackKind) -> Vec<Mod
                                 .as_deref()
                                 .or(activation_note.as_deref())
                                 .or(Some("slot verified")),
-                            Some(&rollout_status_detail(&rollout_status)),
+                            Some(&rollout_status_detail(&rollout_status, &warmup_status)),
                         )),
                         resolved_path: Some(verified.path.display().to_string()),
                         hash_prefix: Some(hex::encode(&verified.sha256[..6])),
@@ -955,8 +959,11 @@ fn hash_prefix(hash: Option<&str>) -> String {
         .unwrap_or_else(|| "none".to_string())
 }
 
-fn rollout_status_detail(statuses: &[crate::model_store::SlotPathStatus]) -> String {
-    statuses
+fn rollout_status_detail(
+    statuses: &[crate::model_store::SlotPathStatus],
+    warmup: &[crate::model_store::SlotWarmupStatus],
+) -> String {
+    let path = statuses
         .iter()
         .map(|status| {
             format!(
@@ -976,7 +983,30 @@ fn rollout_status_detail(statuses: &[crate::model_store::SlotPathStatus]) -> Str
             )
         })
         .collect::<Vec<_>>()
-        .join("|")
+        .join("|");
+    let warmup = warmup
+        .iter()
+        .map(|entry| {
+            format!(
+                "{:?}:{}:{}",
+                entry.target_state,
+                warmup_state_token(entry.state),
+                entry.detail
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("|");
+    format!("{path};warmup={warmup}")
+}
+
+fn warmup_state_token(state: SlotWarmupState) -> &'static str {
+    match state {
+        SlotWarmupState::Cold => "cold",
+        SlotWarmupState::Prepared => "prepared",
+        SlotWarmupState::Warm => "warm",
+        SlotWarmupState::Blocked => "blocked",
+        SlotWarmupState::Stale => "stale",
+    }
 }
 
 fn check_slot_compatibility(

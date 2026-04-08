@@ -134,6 +134,17 @@ pub struct RuntimeSlotSnapshot {
     pub slot: ModelSlot,
     pub status: SlotRuntimeStatus,
     pub required_for_pack: bool,
+    pub warmup_state: RuntimeWarmupState,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RuntimeWarmupState {
+    Cold,
+    Preparing,
+    Ready,
+    Blocked,
+    Unknown,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -620,6 +631,7 @@ impl CanonicalComputeEntryPoint {
                         slot: slot.slot,
                         status: slot.status,
                         required_for_pack: slot.required_for_pack,
+                        warmup_state: parse_warmup_state(slot.detail.as_deref()),
                     })
                     .collect();
             }
@@ -862,6 +874,30 @@ impl CanonicalComputeEntryPoint {
         }
         records.sort_by_key(|record| std::cmp::Reverse(record.job_id.0));
         records
+    }
+}
+
+fn parse_warmup_state(detail: Option<&str>) -> RuntimeWarmupState {
+    let Some(detail) = detail else {
+        return RuntimeWarmupState::Unknown;
+    };
+    if detail.contains("warmup=") && detail.contains("Active:warm:") {
+        RuntimeWarmupState::Ready
+    } else if detail.contains("warmup=")
+        && (detail.contains("Active:prepared:")
+            || detail.contains("Candidate:prepared:")
+            || detail.contains("Compare:prepared:")
+            || detail.contains("Shadow:prepared:"))
+    {
+        RuntimeWarmupState::Preparing
+    } else if detail.contains("warmup=")
+        && (detail.contains("Active:blocked:") || detail.contains("Blocked:blocked:"))
+    {
+        RuntimeWarmupState::Blocked
+    } else if detail.contains("warmup=") && detail.contains("Active:cold:") {
+        RuntimeWarmupState::Cold
+    } else {
+        RuntimeWarmupState::Unknown
     }
 }
 
@@ -1375,12 +1411,12 @@ fn now_unix_ms() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::{
-        BaselineComparisonFailureCode, BaselineComparisonResult, BaselineReference,
-        CanonicalComputeEntryPoint, ComputeExecutionMode, ComputeHistoryLookupError,
-        ComputeJobHandle, ComputeJobHistoryLookup, ComputeReplayOutcome,
+        parse_warmup_state, BaselineComparisonFailureCode, BaselineComparisonResult,
+        BaselineReference, CanonicalComputeEntryPoint, ComputeExecutionMode,
+        ComputeHistoryLookupError, ComputeJobHandle, ComputeJobHistoryLookup, ComputeReplayOutcome,
         ComputeRequestValidationCode, ComputeSubmitOutcome, ComputeSubmitRequest,
         RecoveryDisposition, ReplayDeterminismClass, ReplayFailureCode, RuntimeOperation,
-        RuntimeOperationCode, RuntimeOpsState, RuntimeSignalState,
+        RuntimeOperationCode, RuntimeOpsState, RuntimeSignalState, RuntimeWarmupState,
     };
     use crate::pipeline::{CanonicalFailureKind, CanonicalPipelineRequest};
     use crate::{InMemoryComputeService, JobHistoryStore, JobId, JobLifecycleState};
@@ -1526,6 +1562,26 @@ mod tests {
         assert_eq!(
             partially_unavailable.state,
             RuntimeOpsState::PartiallyUnavailable
+        );
+    }
+
+    #[test]
+    fn parse_warmup_state_distinguishes_cold_preparing_ready_blocked() {
+        assert_eq!(
+            parse_warmup_state(Some("rollout=x;warmup=Active:warm:artifact verified")),
+            RuntimeWarmupState::Ready
+        );
+        assert_eq!(
+            parse_warmup_state(Some("rollout=x;warmup=Candidate:prepared:verified")),
+            RuntimeWarmupState::Preparing
+        );
+        assert_eq!(
+            parse_warmup_state(Some("rollout=x;warmup=Active:blocked:warmup failed")),
+            RuntimeWarmupState::Blocked
+        );
+        assert_eq!(
+            parse_warmup_state(Some("rollout=x;warmup=Active:cold:not configured")),
+            RuntimeWarmupState::Cold
         );
     }
 

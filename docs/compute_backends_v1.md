@@ -61,6 +61,19 @@ Run deterministic compute probe paths by building ucf-compute tests or `ucf-ops 
 ## Offline fixtures
 Golden/negative safetensors fixtures are generated in unit tests at runtime (offline, deterministic) to keep the repository text-only and VCS-compatible.
 
+## Minimal artifact warmup/readiness semantics
+- `ModelStore::warmup_slot_paths(slot)` now provides a narrow readiness view per path (`active`, `candidate`, `compare`, `shadow`, `blocked`).
+- Canonical warmup states:
+  - `cold`: not prefetched yet (or optional path not configured).
+  - `prepared`: hash/path verified and available for rollout path probing.
+  - `warm`: active slot bytes were verified and prefetched via `read_verified_bytes`.
+  - `blocked`: warmup/readiness cannot proceed (verification/path/hash failure).
+  - `stale`: reserved for future refresh signaling (not yet promoted to policy gating).
+- Backend pack provenance includes rollout + warmup detail in a single deterministic detail string (`rollout=...;warmup=...`), so admission/placement/ops surfaces can distinguish cold vs prepared/warm vs blocked without introducing a separate lifecycle platform.
+- Runtime ops snapshots expose a compact warmup view per slot (`cold`, `preparing`, `ready`, `blocked`, `unknown`) derived from that canonical provenance detail.
+- Job history persists per-slot warmup state (best-effort extraction) so cold-start vs warm/ready effects can be correlated with execution timing/hotspot summaries.
+- Intentional boundary: this is a slim readiness seam for active/candidate/compare/shadow paths, not a global cache manager or preload orchestrator.
+
 
 ## Envelope checks / fail-safe
 - Any `NaN`/`Inf` during JEPA/SAE/SSM yields deterministic degraded fallback (`StageQuality::DegradedFallback`).
