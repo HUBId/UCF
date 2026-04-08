@@ -76,6 +76,82 @@ pub enum CanonicalFailureKind {
     NsrExecutionError,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CanonicalFaultDomain {
+    ArtifactModel,
+    Stage,
+    Backend,
+    WorkerTransport,
+    PlacementCapacity,
+    RuntimeService,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CanonicalIsolationDisposition {
+    LocallyIsolated,
+    DegradedButServiceable,
+    HardEscalationJobFailure,
+    ServiceRuntimeImpact,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CanonicalFailureClassification {
+    pub domain: CanonicalFaultDomain,
+    pub isolation: CanonicalIsolationDisposition,
+    pub systemic: bool,
+}
+
+pub fn classify_failure_kind(kind: CanonicalFailureKind) -> CanonicalFailureClassification {
+    use CanonicalFailureKind as K;
+    match kind {
+        K::ArtifactUnavailable
+        | K::ArtifactVerificationFailed
+        | K::ArtifactIncompatible
+        | K::NsrArtifactVerificationFailed => CanonicalFailureClassification {
+            domain: CanonicalFaultDomain::ArtifactModel,
+            isolation: CanonicalIsolationDisposition::HardEscalationJobFailure,
+            systemic: false,
+        },
+        K::StageContractMismatch | K::StageUnavailable | K::ValidationDegraded => {
+            CanonicalFailureClassification {
+                domain: CanonicalFaultDomain::Stage,
+                isolation: CanonicalIsolationDisposition::HardEscalationJobFailure,
+                systemic: false,
+            }
+        }
+        K::DegradedFallback => CanonicalFailureClassification {
+            domain: CanonicalFaultDomain::Stage,
+            isolation: CanonicalIsolationDisposition::DegradedButServiceable,
+            systemic: false,
+        },
+        K::BackendDisabled
+        | K::ContractMismatch
+        | K::NsrContractMismatch
+        | K::NsrBackendUnavailable => CanonicalFailureClassification {
+            domain: CanonicalFaultDomain::Backend,
+            isolation: CanonicalIsolationDisposition::HardEscalationJobFailure,
+            systemic: false,
+        },
+        K::ExecutionError | K::NsrExecutionError => CanonicalFailureClassification {
+            domain: CanonicalFaultDomain::WorkerTransport,
+            isolation: CanonicalIsolationDisposition::HardEscalationJobFailure,
+            systemic: false,
+        },
+        K::BudgetExceeded | K::Timeout => CanonicalFailureClassification {
+            domain: CanonicalFaultDomain::PlacementCapacity,
+            isolation: CanonicalIsolationDisposition::HardEscalationJobFailure,
+            systemic: false,
+        },
+        K::InvalidInput | K::NsrDisabled | K::NsrUnavailable => CanonicalFailureClassification {
+            domain: CanonicalFaultDomain::RuntimeService,
+            isolation: CanonicalIsolationDisposition::ServiceRuntimeImpact,
+            systemic: true,
+        },
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CanonicalValidationSummary {
     pub input: ValidationStatus,
@@ -163,6 +239,12 @@ pub struct CanonicalPipelineFailure {
     pub kind: CanonicalFailureKind,
     pub stage: Option<CanonicalStageId>,
     pub detail: String,
+}
+
+impl CanonicalPipelineFailure {
+    pub fn classification(&self) -> CanonicalFailureClassification {
+        classify_failure_kind(self.kind)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1945,8 +2027,6 @@ impl ComputePipelineBackend {
         if let Some(prefix) = &nsr_outcome.status.digest_prefix {
             notes.push(format!("nsr_digest={prefix}"));
         }
-        notes.sort();
-
         let evidence_chain = crate::evidence::EvidenceChain::from_compute(
             &input,
             &sae_out.spikes,
@@ -2036,6 +2116,15 @@ impl ComputePipelineBackend {
                 detail: "degraded but usable fallback output".to_string(),
             });
         }
+        if let Some(pipeline_failure) = &failure {
+            let classification = pipeline_failure.classification();
+            notes.push(format!("fault_domain={:?}", classification.domain).to_ascii_lowercase());
+            notes.push(
+                format!("fault_isolation={:?}", classification.isolation).to_ascii_lowercase(),
+            );
+            notes.push(format!("fault_systemic={}", classification.systemic));
+        }
+        notes.sort();
 
         let signals = ComputeSignals {
             surprise,
@@ -2116,6 +2205,16 @@ impl ComputePipelineBackend {
         signals
             .notes
             .push(format!("pipeline_failure={:?}", ctx.failure.kind).to_ascii_lowercase());
+        let classification = ctx.failure.classification();
+        signals
+            .notes
+            .push(format!("fault_domain={:?}", classification.domain).to_ascii_lowercase());
+        signals
+            .notes
+            .push(format!("fault_isolation={:?}", classification.isolation).to_ascii_lowercase());
+        signals
+            .notes
+            .push(format!("fault_systemic={}", classification.systemic));
         let validation = ctx
             .validation
             .unwrap_or_else(CanonicalValidationSummary::unavailable);
@@ -2885,6 +2984,65 @@ mod tests {
             "ssm stage execution failed",
         );
         assert_eq!(execution.kind, CanonicalFailureKind::ExecutionError);
+    }
+
+    #[test]
+    fn failure_kind_maps_to_fault_domains_and_isolation() {
+        let artifact = classify_failure_kind(CanonicalFailureKind::ArtifactVerificationFailed);
+        assert_eq!(artifact.domain, CanonicalFaultDomain::ArtifactModel);
+        assert_eq!(
+            artifact.isolation,
+            CanonicalIsolationDisposition::HardEscalationJobFailure
+        );
+        assert!(!artifact.systemic);
+
+        let degraded = classify_failure_kind(CanonicalFailureKind::DegradedFallback);
+        assert_eq!(degraded.domain, CanonicalFaultDomain::Stage);
+        assert_eq!(
+            degraded.isolation,
+            CanonicalIsolationDisposition::DegradedButServiceable
+        );
+        assert!(!degraded.systemic);
+
+        let runtime = classify_failure_kind(CanonicalFailureKind::InvalidInput);
+        assert_eq!(runtime.domain, CanonicalFaultDomain::RuntimeService);
+        assert_eq!(
+            runtime.isolation,
+            CanonicalIsolationDisposition::ServiceRuntimeImpact
+        );
+        assert!(runtime.systemic);
+    }
+
+    #[test]
+    fn degraded_path_exposes_fault_domain_notes() {
+        let backend = ComputePipelineBackend::stub();
+        let budget = ComputeBudget {
+            sae_units: 100,
+            global_work_units: 900,
+            profile_id: 3,
+            ..ComputeBudget::default()
+        };
+        let result = backend
+            .compute_canonical(CanonicalPipelineRequest {
+                input: input(),
+                budget,
+            })
+            .expect("canonical compute");
+        assert_eq!(result.state, CanonicalPipelineState::Degraded);
+        assert!(result
+            .signals
+            .notes
+            .iter()
+            .any(|note| note == "fault_domain=stage"));
+        assert!(result.signals.notes.iter().any(|note| {
+            note == "fault_isolation=degradedbutserviceable"
+                || note == "fault_isolation=hardescalationjobfailure"
+        }));
+        assert!(result
+            .signals
+            .notes
+            .iter()
+            .any(|note| note == "fault_systemic=false"));
     }
 
     #[test]

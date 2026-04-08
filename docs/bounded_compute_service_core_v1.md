@@ -171,6 +171,38 @@ Lifecycle events now include:
 
 Together with `JobAccountingSummary`, this gives a minimal but load-bearing per-job trace for admission decision, queueing, execution, and completion/failure.
 
+## Fault domains + isolation boundaries (minimal, canonical)
+
+The runtime now exposes a narrow fault-domain classification for canonical failures, without adding a parallel reliability control plane.
+
+Canonical fault domains:
+
+- `artifact_model`: model/artifact slot failures (unavailable, verification failed, incompatible),
+- `stage`: stage-local contract/runtime degradation and stage unavailability,
+- `backend`: backend capability/contract disablement or incompatibility,
+- `worker_transport`: execution-path/transport execution errors,
+- `placement_capacity`: budget/timeout/capacity pressure escalations,
+- `runtime_service`: request/runtime service level faults.
+
+Each canonical failure kind maps to one isolation disposition:
+
+- `locally_isolated`: local containment with no job-level impact,
+- `degraded_but_serviceable`: degraded but still serviceable output,
+- `hard_escalation_job_failure`: non-isolatable escalation to job failure,
+- `service_runtime_impact`: runtime/service-level impact.
+
+Current canonical behavior intentionally stays minimal:
+
+- stage-level degraded fallbacks are marked `degraded_but_serviceable`,
+- artifact/backend/placement/worker faults are explicit and escalate honestly,
+- failure-domain and isolation context are propagated into runtime notes and persisted history (`fault_domain`, `fault_isolation`, `fault_systemic`) for ops/diagnostics.
+
+Deliberate limits in this step:
+
+- no incident-management workflow,
+- no orchestration/sandbox/container isolation framework,
+- no automated global self-healing controller.
+
 ## Technical admission checks (pre-run)
 
 Admission runs via `ComputePipelineBackend::technical_admission` and rejects before execution when any of these fail:

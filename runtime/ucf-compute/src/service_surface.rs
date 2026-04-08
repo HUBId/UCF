@@ -6,8 +6,9 @@ use crate::job_history::{
     JobHistoryStore, JobHistoryStoreError, PersistedCanonicalRequest, PersistedJobRecord,
 };
 use crate::pipeline::{
-    CanonicalFailureKind, CanonicalHotspotSummary, CanonicalPipelineFailure,
-    CanonicalPipelineRequest, CanonicalPipelineState, CanonicalWorkSummary,
+    classify_failure_kind, CanonicalFailureKind, CanonicalFaultDomain, CanonicalHotspotSummary,
+    CanonicalIsolationDisposition, CanonicalPipelineFailure, CanonicalPipelineRequest,
+    CanonicalPipelineState, CanonicalWorkSummary,
 };
 use crate::{ModelSlot, ModelSlotProvenance, SlotRuntimeStatus};
 use std::collections::BTreeMap;
@@ -53,6 +54,9 @@ pub struct ComputeJobStatus {
     pub admission_failure: Option<CanonicalPipelineFailure>,
     pub execution_failure: Option<CanonicalPipelineFailure>,
     pub failure_kind: Option<CanonicalFailureKind>,
+    pub fault_domain: Option<CanonicalFaultDomain>,
+    pub fault_isolation: Option<CanonicalIsolationDisposition>,
+    pub fault_systemic: Option<bool>,
     pub pipeline_state: Option<CanonicalPipelineState>,
     pub work_summary: Option<CanonicalWorkSummary>,
     pub hotspot_summary: Option<CanonicalHotspotSummary>,
@@ -1263,6 +1267,7 @@ fn status_from_record(
     record: &JobRecord,
     recovery: Option<&RecoveredJobStatus>,
 ) -> ComputeJobStatus {
+    let failure_classification = record.accounting.failure_kind.map(classify_failure_kind);
     ComputeJobStatus {
         handle: ComputeJobHandle {
             job_id: record.job.id,
@@ -1283,6 +1288,9 @@ fn status_from_record(
         admission_failure: record.rejection.clone(),
         execution_failure: record.execution_failure.clone(),
         failure_kind: record.accounting.failure_kind,
+        fault_domain: failure_classification.map(|classification| classification.domain),
+        fault_isolation: failure_classification.map(|classification| classification.isolation),
+        fault_systemic: failure_classification.map(|classification| classification.systemic),
         pipeline_state: record.accounting.pipeline_state,
         work_summary: record.accounting.work_summary,
         hotspot_summary: record.accounting.hotspot_summary,
