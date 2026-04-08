@@ -27,6 +27,10 @@ The scheduler keeps admitted jobs in a FIFO queue and executes them in determini
   - `max_jobs` (caller-provided cycle bound),
   - `SchedulerConfig.max_concurrent_jobs` (service capacity bound),
 - queue/running counts are exposed via `scheduler_snapshot`.
+- in multi-worker mode, scheduling uses a minimal technical triage:
+  - `run_now` (currently placeable),
+  - `queue_required` (admissible but currently unavailable/saturated),
+  - `not_placeable` (backend/device incompatibility).
 
 There is no fairness/policy layer beyond FIFO and capacity bounds.
 
@@ -71,6 +75,9 @@ Selection rules stay intentionally simple:
    - prefer `burn` suitable units (primary productive lane),
    - otherwise use `candle` suitable units as explicit degraded fallback (secondary seam),
    - otherwise any other suitable unit.
+3. if no candidate is suitable right now:
+   - transient unavailability is deferred (re-queued with bounded retry),
+   - structural incompatibility is rejected as placement failure.
 
 The resulting `ExecutionPlacement` now carries provenance fields:
 
@@ -122,9 +129,11 @@ Placement-level failures are additionally tagged as:
 - `device_unavailable`
 - `backend_unavailable`
 - `worker_placement_failed`
+- `currently_unschedulable`
 
 For multi-worker execution, dispatch outcome is classified with a single linked surface:
 - `unavailable`,
+- `deferred`,
 - `dispatch_failure`,
 - `transport_failure`,
 - `execution_failure`,
