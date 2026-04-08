@@ -40,6 +40,7 @@ pub mod pipeline;
 #[cfg(feature = "remote-compute")]
 pub mod remote_compute;
 pub mod risk_contract;
+pub mod runtime_profile;
 pub mod service_surface;
 pub mod ssm;
 pub mod stage_v1;
@@ -98,6 +99,7 @@ pub use risk_contract::{
     clamp01, stable_budget_profile_id, validate_risk_signal, BackendProfileId, EvidenceRef,
     RiskSignal, SignalQuality,
 };
+pub use runtime_profile::{DeploymentProfile, RuntimeDiagnosticFlags, RuntimeMode, RuntimeProfile};
 pub use service_surface::{
     BaselineComparisonFailureCode, BaselineComparisonOutcome, BaselineComparisonResult,
     BaselineComparisonSummary, BaselineReference, CanonicalComputeEntryPoint, ComputeExecutionMode,

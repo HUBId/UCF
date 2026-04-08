@@ -131,3 +131,17 @@ The same load-bearing profile is threaded into job/history views:
 - persisted job history (`PersistedJobRecord.stage_profiles` + `hotspot_summary`)
 
 This keeps one canonical diagnostics surface across runtime execution, job accounting, and replay/history summaries.
+
+## Runtime mode/profile consolidation
+
+Runtime config semantics are consolidated in `runtime_profile` (`RuntimeProfile::from_env`) and documented in:
+
+- `docs/runtime_modes_compute_v1.md`
+
+Canonical `RuntimeOpsSnapshot` includes:
+
+- `runtime_mode`
+- `deployment_profile`
+- `diagnostic_flags` (`compare_enabled`, `shadow_enabled`, `slot_shadow_enabled`)
+
+This keeps production vs diagnostic/test behavior explicit and visible, while remaining within the existing runtime/ops surfaces.
