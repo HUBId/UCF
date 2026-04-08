@@ -58,6 +58,10 @@ Per candidate, placement tracks backend suitability and device suitability separ
 This is intentionally technical and minimal. The repo does **not** introduce GPU vendor/driver
 inventory or hardware orchestration in this layer.
 
+Worker snapshots now also expose a narrow runtime lifecycle signal:
+`known|ready|busy|saturated|unavailable|unhealthy`, plus last dispatch/error metadata for
+operational triage without introducing fleet-management control planes.
+
 ## Backend selection (runtime)
 
 The orchestrator can be bootstrapped from env config via `RuntimeOrchestrator::try_new_from_env`.
