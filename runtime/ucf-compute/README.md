@@ -64,9 +64,16 @@ Per candidate, placement tracks backend suitability and device suitability separ
 This is intentionally technical and minimal. The repo does **not** introduce GPU vendor/driver
 inventory or hardware orchestration in this layer.
 
-Worker snapshots now also expose a narrow runtime lifecycle signal:
-`known|ready|busy|saturated|unavailable|unhealthy`, plus last dispatch/error metadata for
-operational triage without introducing fleet-management control planes.
+Worker snapshots now expose a narrow registry/health signal set:
+- registry identity: worker id + class (`local_primary|remote_secondary`) + role (`primary|secondary`);
+- runtime health status:
+  `known|ready|busy|saturated|degraded|unavailable|stale|unknown|unhealthy`;
+- last health-contact timestamp, optional cooldown/quarantine-until timestamp, and
+  last dispatch/error metadata.
+
+Dispatch candidacy is tied to those health states: `degraded`, `stale`, `unknown`,
+`unavailable`, `saturated`, and `unhealthy` units are explicitly skipped and reflected in
+placement candidate diagnostics.
 
 Multi-worker scheduling remains intentionally compact: jobs are either placed immediately, kept
 queued as currently-unschedulable (capacity/device temporarily unavailable), or rejected when no

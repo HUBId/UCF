@@ -619,6 +619,18 @@ pub enum ExecutionUnitKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkerClass {
+    LocalPrimary,
+    RemoteSecondary,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkerRegistryRole {
+    Primary,
+    Secondary,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WorkerAvailability {
     Available,
     Unavailable,
@@ -642,7 +654,10 @@ pub enum WorkerRuntimeStatus {
     Ready,
     Busy,
     Saturated,
+    Degraded,
     Unavailable,
+    Stale,
+    Unknown,
     Unhealthy,
 }
 
@@ -704,8 +719,11 @@ pub enum DeviceSuitability {
 pub struct PlacementCandidateAssessment {
     pub unit_id: ExecutionUnitId,
     pub unit_kind: ExecutionUnitKind,
+    pub worker_class: WorkerClass,
+    pub registry_role: WorkerRegistryRole,
     pub device_class: ExecutionDeviceClass,
     pub lane: BackendExecutionLane,
+    pub runtime_status: WorkerRuntimeStatus,
     pub backend_suitability: PlacementSuitability,
     pub device_suitability: DeviceSuitability,
     pub suitability: PlacementSuitability,
@@ -737,6 +755,8 @@ pub struct WorkerExecutionProvenance {
 pub struct ExecutionUnitSnapshot {
     pub id: ExecutionUnitId,
     pub kind: ExecutionUnitKind,
+    pub worker_class: WorkerClass,
+    pub registry_role: WorkerRegistryRole,
     pub availability: WorkerAvailability,
     pub status: WorkerRuntimeStatus,
     pub max_parallel_jobs: usize,
@@ -748,11 +768,15 @@ pub struct ExecutionUnitSnapshot {
     pub last_dispatch_outcome: Option<WorkerDispatchOutcome>,
     pub last_error: Option<String>,
     pub last_used_at_unix_ms: Option<u64>,
+    pub last_health_contact_at_unix_ms: Option<u64>,
+    pub quarantine_until_unix_ms: Option<u64>,
 }
 
 struct ExecutionUnit {
     id: ExecutionUnitId,
     kind: ExecutionUnitKind,
+    worker_class: WorkerClass,
+    registry_role: WorkerRegistryRole,
     availability: WorkerAvailability,
     max_parallel_jobs: usize,
     active_jobs: usize,
@@ -762,6 +786,8 @@ struct ExecutionUnit {
     last_dispatch_outcome: Option<WorkerDispatchOutcome>,
     last_error: Option<String>,
     last_used_at_unix_ms: Option<u64>,
+    last_health_contact_at_unix_ms: Option<u64>,
+    quarantine_until_unix_ms: Option<u64>,
     service: InMemoryComputeService,
 }
 
@@ -801,6 +827,8 @@ impl MultiWorkerComputeService {
         let local = ExecutionUnit {
             id: ExecutionUnitId("local".to_string()),
             kind: ExecutionUnitKind::Local,
+            worker_class: WorkerClass::LocalPrimary,
+            registry_role: WorkerRegistryRole::Primary,
             availability: WorkerAvailability::Available,
             max_parallel_jobs: max_parallel_jobs.max(1),
             active_jobs: 0,
@@ -810,6 +838,8 @@ impl MultiWorkerComputeService {
             last_dispatch_outcome: None,
             last_error: None,
             last_used_at_unix_ms: None,
+            last_health_contact_at_unix_ms: Some(now_unix_ms()),
+            quarantine_until_unix_ms: None,
             service: InMemoryComputeService::with_scheduler(
                 local_backend,
                 SchedulerConfig {
@@ -867,6 +897,8 @@ impl MultiWorkerComputeService {
         self.units.push(ExecutionUnit {
             id: id.clone(),
             kind: ExecutionUnitKind::Worker,
+            worker_class: WorkerClass::RemoteSecondary,
+            registry_role: WorkerRegistryRole::Secondary,
             availability: WorkerAvailability::Available,
             max_parallel_jobs: max_parallel_jobs.max(1),
             active_jobs: 0,
@@ -876,6 +908,8 @@ impl MultiWorkerComputeService {
             last_dispatch_outcome: None,
             last_error: None,
             last_used_at_unix_ms: None,
+            last_health_contact_at_unix_ms: Some(now_unix_ms()),
+            quarantine_until_unix_ms: None,
             service: worker,
         });
     }
@@ -888,6 +922,23 @@ impl MultiWorkerComputeService {
         for unit in &mut self.units {
             if &unit.id == worker_id {
                 unit.availability = availability;
+                unit.last_health_contact_at_unix_ms = Some(now_unix_ms());
+                if availability == WorkerAvailability::Available {
+                    unit.quarantine_until_unix_ms = None;
+                }
+            }
+        }
+    }
+
+    #[cfg(test)]
+    fn set_worker_last_health_contact_for_test(
+        &mut self,
+        worker_id: &ExecutionUnitId,
+        last_health_contact_at_unix_ms: Option<u64>,
+    ) {
+        for unit in &mut self.units {
+            if &unit.id == worker_id {
+                unit.last_health_contact_at_unix_ms = last_health_contact_at_unix_ms;
             }
         }
     }
@@ -1045,6 +1096,8 @@ impl MultiWorkerComputeService {
             .map(|unit| ExecutionUnitSnapshot {
                 id: unit.id.clone(),
                 kind: unit.kind,
+                worker_class: unit.worker_class,
+                registry_role: unit.registry_role,
                 availability: unit.availability,
                 status: unit.runtime_status(),
                 max_parallel_jobs: unit.max_parallel_jobs,
@@ -1058,6 +1111,8 @@ impl MultiWorkerComputeService {
                 last_dispatch_outcome: unit.last_dispatch_outcome,
                 last_error: unit.last_error.clone(),
                 last_used_at_unix_ms: unit.last_used_at_unix_ms,
+                last_health_contact_at_unix_ms: unit.last_health_contact_at_unix_ms,
+                quarantine_until_unix_ms: unit.quarantine_until_unix_ms,
             })
             .collect()
     }
@@ -1256,8 +1311,11 @@ impl MultiWorkerComputeService {
                     return PlacementCandidateAssessment {
                         unit_id: unit.id.clone(),
                         unit_kind: unit.kind,
+                        worker_class: unit.worker_class,
+                        registry_role: unit.registry_role,
                         device_class,
                         lane,
+                        runtime_status: status,
                         backend_suitability: PlacementSuitability::Unavailable,
                         device_suitability,
                         suitability: PlacementSuitability::Unavailable,
@@ -1272,8 +1330,11 @@ impl MultiWorkerComputeService {
                     return PlacementCandidateAssessment {
                         unit_id: unit.id.clone(),
                         unit_kind: unit.kind,
+                        worker_class: unit.worker_class,
+                        registry_role: unit.registry_role,
                         device_class,
                         lane,
+                        runtime_status: status,
                         backend_suitability: PlacementSuitability::Suitable,
                         device_suitability,
                         suitability: PlacementSuitability::Unavailable,
@@ -1293,8 +1354,11 @@ impl MultiWorkerComputeService {
                     PlacementCandidateAssessment {
                         unit_id: unit.id.clone(),
                         unit_kind: unit.kind,
+                        worker_class: unit.worker_class,
+                        registry_role: unit.registry_role,
                         device_class,
                         lane,
+                        runtime_status: status,
                         backend_suitability,
                         device_suitability,
                         suitability,
@@ -1304,8 +1368,11 @@ impl MultiWorkerComputeService {
                     PlacementCandidateAssessment {
                         unit_id: unit.id.clone(),
                         unit_kind: unit.kind,
+                        worker_class: unit.worker_class,
+                        registry_role: unit.registry_role,
                         device_class,
                         lane,
+                        runtime_status: status,
                         backend_suitability,
                         device_suitability,
                         suitability,
@@ -1698,13 +1765,31 @@ impl MultiWorkerComputeService {
 }
 
 impl ExecutionUnit {
+    const STALE_AFTER_MS: u64 = 30_000;
+    const COOLDOWN_BASE_MS: u64 = 2_000;
+    const COOLDOWN_MAX_MS: u64 = 30_000;
+
     fn capacity_limit_units(&self) -> usize {
         self.max_parallel_jobs.max(1).saturating_mul(2)
     }
 
     fn runtime_status(&self) -> WorkerRuntimeStatus {
+        let now = now_unix_ms();
+        let last_contact = self.last_health_contact_at_unix_ms;
+        if last_contact.is_none() {
+            return WorkerRuntimeStatus::Unknown;
+        }
+        if now.saturating_sub(last_contact.unwrap_or(now)) > Self::STALE_AFTER_MS {
+            return WorkerRuntimeStatus::Stale;
+        }
         if self.availability != WorkerAvailability::Available {
             return WorkerRuntimeStatus::Unavailable;
+        }
+        if self
+            .quarantine_until_unix_ms
+            .is_some_and(|until| now < until)
+        {
+            return WorkerRuntimeStatus::Degraded;
         }
         if self.consecutive_failures >= 3 {
             return WorkerRuntimeStatus::Unhealthy;
@@ -1744,6 +1829,8 @@ impl ExecutionUnit {
         self.last_error = None;
         self.consecutive_failures = 0;
         self.last_used_at_unix_ms = Some(now_unix_ms());
+        self.last_health_contact_at_unix_ms = self.last_used_at_unix_ms;
+        self.quarantine_until_unix_ms = None;
     }
 
     fn note_failure(&mut self, job_id: JobId, outcome: WorkerDispatchOutcome, detail: String) {
@@ -1751,7 +1838,13 @@ impl ExecutionUnit {
         self.last_dispatch_outcome = Some(outcome);
         self.last_error = Some(detail);
         self.consecutive_failures = self.consecutive_failures.saturating_add(1);
-        self.last_used_at_unix_ms = Some(now_unix_ms());
+        let now = now_unix_ms();
+        self.last_used_at_unix_ms = Some(now);
+        self.last_health_contact_at_unix_ms = Some(now);
+        let exp = self.consecutive_failures.saturating_sub(1).min(4);
+        let cooldown_ms =
+            (Self::COOLDOWN_BASE_MS.saturating_mul(1_u64 << exp)).min(Self::COOLDOWN_MAX_MS);
+        self.quarantine_until_unix_ms = Some(now.saturating_add(cooldown_ms));
     }
 }
 
@@ -1787,6 +1880,9 @@ fn device_suitability_for(
         WorkerRuntimeStatus::Unavailable
             | WorkerRuntimeStatus::Unhealthy
             | WorkerRuntimeStatus::Saturated
+            | WorkerRuntimeStatus::Degraded
+            | WorkerRuntimeStatus::Stale
+            | WorkerRuntimeStatus::Unknown
     ) {
         return DeviceSuitability::Unavailable;
     }
@@ -1871,8 +1967,8 @@ mod tests {
         CapacityQueueDisposition, DeviceSuitability, ExecutionDeviceClass, ExecutionUnitId,
         ExecutionUnitKind, InMemoryComputeService, JobCompletionClass, JobExecutionPath,
         JobLifecycleState, JobSubmissionMeta, MultiWorkerComputeService, PlacementFailureKind,
-        PlacementSuitability, ResourceClass, SchedulerConfig, WorkerAvailability,
-        WorkerDispatchOutcome, WorkerRuntimeStatus,
+        PlacementSuitability, ResourceClass, SchedulerConfig, WorkerAvailability, WorkerClass,
+        WorkerDispatchOutcome, WorkerRegistryRole, WorkerRuntimeStatus,
     };
 
     struct NullLlm;
@@ -2845,11 +2941,87 @@ mod tests {
             .into_iter()
             .find(|unit| unit.id == worker_id)
             .expect("worker snapshot");
-        assert_eq!(snapshot.status, WorkerRuntimeStatus::Unhealthy);
+        assert!(matches!(
+            snapshot.status,
+            WorkerRuntimeStatus::Degraded | WorkerRuntimeStatus::Unhealthy
+        ));
         assert!(snapshot.last_error.is_some());
         match previous {
             Some(value) => std::env::set_var("UCF_WORKER_BIN", value),
             None => std::env::remove_var("UCF_WORKER_BIN"),
         }
+    }
+
+    #[test]
+    fn worker_registry_snapshot_reports_class_role_and_health_timestamps() {
+        let backend = ComputePipelineBackend::new(
+            pack_with(BackendComponentId::ToyV1, Vec::new()),
+            FusionConfig::default(),
+            LimitsConfig::default(),
+        );
+        let mut service = MultiWorkerComputeService::new(backend, 1);
+        let worker_backend = ComputePipelineBackend::new(
+            pack_with(BackendComponentId::ToyV1, Vec::new()),
+            FusionConfig::default(),
+            LimitsConfig::default(),
+        );
+        let worker_id = service.register_worker_backend("registry-worker", worker_backend, 1);
+        let snapshots = service.execution_units();
+        let local = snapshots
+            .iter()
+            .find(|unit| unit.id.0 == "local")
+            .expect("local snapshot");
+        assert_eq!(local.worker_class, WorkerClass::LocalPrimary);
+        assert_eq!(local.registry_role, WorkerRegistryRole::Primary);
+        assert!(local.last_health_contact_at_unix_ms.is_some());
+        let worker = snapshots
+            .iter()
+            .find(|unit| unit.id == worker_id)
+            .expect("worker snapshot");
+        assert_eq!(worker.worker_class, WorkerClass::RemoteSecondary);
+        assert_eq!(worker.registry_role, WorkerRegistryRole::Secondary);
+        assert!(worker.last_health_contact_at_unix_ms.is_some());
+    }
+
+    #[test]
+    fn stale_worker_status_is_classified_and_rejected_for_requested_dispatch() {
+        let backend = ComputePipelineBackend::new(
+            pack_with(BackendComponentId::ToyV1, Vec::new()),
+            FusionConfig::default(),
+            LimitsConfig::default(),
+        );
+        let mut service = MultiWorkerComputeService::new(backend, 1);
+        let worker_backend = ComputePipelineBackend::new(
+            pack_with(BackendComponentId::ToyV1, Vec::new()),
+            FusionConfig::default(),
+            LimitsConfig::default(),
+        );
+        let worker_id = service.register_worker_backend("stale-worker", worker_backend, 1);
+        service.set_worker_last_health_contact_for_test(&worker_id, Some(1));
+        let job = service.submit(
+            valid_request(),
+            JobSubmissionMeta {
+                submitted_at_unix_ms: 40,
+                submitted_by: Some("stale".to_string()),
+            },
+            Some(worker_id.clone()),
+        );
+        service.run_scheduler_cycle(1);
+        let record = service.job(job).expect("record");
+        assert_eq!(
+            record.worker_dispatch_outcome,
+            Some(WorkerDispatchOutcome::Unavailable)
+        );
+        assert_eq!(
+            record.placement_failure,
+            Some(PlacementFailureKind::DeviceUnavailable)
+        );
+        assert!(record
+            .placement
+            .considered
+            .iter()
+            .any(|c| c.unit_id == worker_id
+                && c.runtime_status == WorkerRuntimeStatus::Stale
+                && c.detail.contains("not dispatchable")));
     }
 }
