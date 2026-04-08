@@ -24,7 +24,16 @@ impl Drop for EnvSnapshot {
 }
 
 pub fn clear_model_env_overrides() -> EnvSnapshot {
-    let mut keys = vec!["UCF_MODEL_MANIFEST".to_string()];
+    let mut keys = vec![
+        "UCF_MODEL_MANIFEST".to_string(),
+        "UCF_REAL_ENABLEMENT_MODE".to_string(),
+        "UCF_SHADOW_EVERY_N_TICKS".to_string(),
+        "UCF_SLOT_SHADOW_RATE".to_string(),
+        "UCF_SLOT_COMPARE_WINDOW".to_string(),
+        "UCF_RUNTIME_MODE".to_string(),
+        "UCF_DEPLOYMENT_PROFILE".to_string(),
+        "UCF_COMPUTE_BACKEND".to_string(),
+    ];
     for slot in ModelSlot::all() {
         keys.push(format!("UCF_MODEL_{}_ENABLED", slot.env_key()));
         keys.push(format!("UCF_MODEL_PIN_{}", slot.env_key()));

@@ -1,8 +1,8 @@
 use crate::pipeline::{ComputePipelineBackend, FusionConfig, LimitsConfig};
 use crate::{
     AiComputeBackend, BackendPackConfig, BackendPackFactory, BackendPackKind, ComputeBudget,
-    ComputeBudgetProfile, ComputeError, EnablementComputeBackend, EnablementConfig,
-    RealEnablementMode,
+    ComputeBudgetProfile, ComputeError, EnablementComputeBackend, RealEnablementMode,
+    RuntimeProfile,
 };
 
 pub const CANONICAL_ONBOARDING_BACKEND: ComputeBackendKind = ComputeBackendKind::Burn;
@@ -204,7 +204,8 @@ pub fn build_backend(
     };
 
     let primary: Box<dyn AiComputeBackend + Send + Sync> = Box::new(backend);
-    let enablement = EnablementConfig::from_env().unwrap_or_default();
+    let runtime_profile = RuntimeProfile::from_env(cfg)?;
+    let enablement = runtime_profile.enablement;
     if enablement.mode == RealEnablementMode::Off {
         return Ok(primary);
     }

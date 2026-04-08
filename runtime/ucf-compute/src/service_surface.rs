@@ -10,7 +10,10 @@ use crate::pipeline::{
     CanonicalIsolationDisposition, CanonicalPipelineFailure, CanonicalPipelineRequest,
     CanonicalPipelineState, CanonicalWorkSummary,
 };
-use crate::{ModelSlot, ModelSlotProvenance, SlotRuntimeStatus};
+use crate::{
+    DeploymentProfile, ModelSlot, ModelSlotProvenance, RuntimeDiagnosticFlags, RuntimeMode,
+    RuntimeProfile, SlotRuntimeStatus,
+};
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -154,6 +157,9 @@ pub enum RuntimeWarmupState {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuntimeOpsSnapshot {
     pub state: RuntimeOpsState,
+    pub runtime_mode: RuntimeMode,
+    pub deployment_profile: DeploymentProfile,
+    pub diagnostic_flags: RuntimeDiagnosticFlags,
     pub state_signal: RuntimeSignalState,
     pub execution_path: JobExecutionPath,
     pub queue: ComputeQueueSnapshot,
@@ -671,8 +677,15 @@ impl CanonicalComputeEntryPoint {
             } else {
                 RuntimeOpsState::HealthyReady
             };
+        let runtime_profile = RuntimeProfile::from_runtime_env().unwrap_or_else(|_| {
+            RuntimeProfile::fallback_for_execution_path(scheduler.execution_path)
+        });
+
         RuntimeOpsSnapshot {
             state,
+            runtime_mode: runtime_profile.mode,
+            deployment_profile: runtime_profile.deployment,
+            diagnostic_flags: runtime_profile.diagnostics,
             state_signal,
             execution_path: scheduler.execution_path,
             queue: ComputeQueueSnapshot {
@@ -1571,6 +1584,28 @@ mod tests {
             partially_unavailable.state,
             RuntimeOpsState::PartiallyUnavailable
         );
+    }
+
+    #[test]
+    fn operations_snapshot_surfaces_runtime_profile_flags() {
+        let _lock = crate::test_env::env_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _env = crate::test_env::clear_model_env_overrides();
+
+        std::env::set_var("UCF_RUNTIME_MODE", "diagnostic");
+        std::env::set_var("UCF_REAL_ENABLEMENT_MODE", "compare");
+
+        let entry = service();
+        let snapshot = entry.operations_snapshot();
+
+        assert_eq!(snapshot.runtime_mode, crate::RuntimeMode::Diagnostic);
+        assert_eq!(
+            snapshot.deployment_profile,
+            crate::DeploymentProfile::LocalOnly
+        );
+        assert!(snapshot.diagnostic_flags.compare_enabled);
+        assert!(snapshot.diagnostic_flags.shadow_enabled);
     }
 
     #[test]
