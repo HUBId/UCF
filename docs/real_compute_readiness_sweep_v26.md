@@ -102,3 +102,33 @@ Der Real-Compute-Stack ist für den **kanonischen Burn-basierten Referenzpfad** 
   - nicht-`prod`: bewusst `SKIP` (keine stille Ausweitung auf Dev/Test).
 - **Readiness-Effekt:** Der kanonische produktive Pfad hat jetzt eine explizite, diagnostisch sichtbare Stage-Coverage-Härtung direkt im Gate-Report statt impliziter Hoffnung.
 - **Weiterhin offen:** C) feinere Worker-Capabilities, D) History required-on in allen Prod-Launchpfaden.
+
+## 9) Entscheidung nach Prompt 29: Restblocker-Phase sauber beendet
+
+### Repo-basierte Neubewertung der verbleibenden Punkte
+
+- **C) Multi-Worker Device-Semantik minimal (`Cpu`/`Worker`)**
+  - **Einordnung:** technisch echt offen, aber **kein Load-Bearing-Blocker** für den kanonischen Burn-Produktivpfad.
+  - **Grund:** Der aktuelle kanonische Pfad benötigt keine weiter ausdifferenzierte Accelerator-Klassifikation, um deterministisch/fail-closed/produktiv nutzbar zu sein.
+- **D) History required-on in allen Prod-Launchpfaden**
+  - **Einordnung:** hohes Audit-/Repro-Verbesserungspotenzial, aber **kein verbleibender Kernblocker** für den bereits gehärteten kanonischen Compute-Startpfad.
+  - **Grund:** Replay/Compare-Failures sind bereits explizit typisiert und diagnostisch sichtbar; fehlende History ist damit ein klarer, nachvollziehbarer Betriebszustand statt stiller Inkonsistenz.
+
+### Harte Entscheidung
+
+Es bleibt **kein weiterer load-bearing Restblocker** übrig, der die Reihenfolge des Ausbaupfads weiterhin zwingend auf „Restblockerabbau“ festnagelt.
+
+Damit ist die **Restblocker-Phase abgeschlossen**. Ab diesem Stand ist der Wechsel auf den nächsten echten Ausbaupfad legitim.
+
+### Erreichte Mindeststabilität (technische Beendigungsgrenze)
+
+- Kanonischer Prod-Backendpfad ist fail-closed auf Burn gehärtet (`prod` ohne Stub-Drift).
+- Required-Stage-Profile sind im `prod`-Readiness-Gate hart und sichtbar verdrahtet (NSR/LFM-Sichtbarkeit).
+- Failure-/Provenance-/Readiness-Semantik bleibt explizit, strukturiert und diagnostisch auswertbar.
+
+### Nachrangige offene Punkte (nicht blockerhaft, nächster Ausbaupfad)
+
+1. Additive Worker-Capability-Tags für ehrlichere Heterogenitäts-Placement-Entscheide.
+2. `history required-on` für produktive Launchprofile als Repro/Audit-Härtung.
+3. Zusätzlicher Guard-Test für historische Persistenzpflicht im Prod-Profil.
+4. Optional feinere Replay/Baseline-Betriebsreports für Ops-Ergonomie.
