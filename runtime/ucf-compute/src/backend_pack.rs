@@ -826,6 +826,7 @@ fn resolve_slot_provenance(store: &ModelStore, pack: BackendPackKind) -> Vec<Mod
                     let activation_blocked = status == SlotRuntimeStatus::Used
                         && required_slots_for_pack(pack).contains(&slot)
                         && activation_error.is_some();
+                    let rollout_status = store.slot_path_statuses(slot);
                     let (status, code, detail) = if activation_blocked {
                         gate.activatable = false;
                         gate.blocked_reason = Some(ProductionBlockReason::ActivationBlocked);
@@ -849,7 +850,7 @@ fn resolve_slot_provenance(store: &ModelStore, pack: BackendPackKind) -> Vec<Mod
                         required_for_pack: required_slots_for_pack(pack).contains(&slot),
                         status,
                         code,
-                        detail: Some(lifecycle_detail(
+                        detail: Some(lifecycle_detail_with_rollout(
                             slot,
                             if status == SlotRuntimeStatus::Used {
                                 "active"
@@ -860,6 +861,7 @@ fn resolve_slot_provenance(store: &ModelStore, pack: BackendPackKind) -> Vec<Mod
                                 .as_deref()
                                 .or(activation_note.as_deref())
                                 .or(Some("slot verified")),
+                            Some(&rollout_status_detail(&rollout_status)),
                         )),
                         resolved_path: Some(verified.path.display().to_string()),
                         hash_prefix: Some(hex::encode(&verified.sha256[..6])),
@@ -915,14 +917,20 @@ fn selected_hash_for_slot(slot: ModelSlot, spec: &crate::ModelSlotSpec) -> Optio
 }
 
 fn lifecycle_detail(slot: ModelSlot, state: &str, base: Option<&str>) -> String {
+    lifecycle_detail_with_rollout(slot, state, base, None)
+}
+
+fn lifecycle_detail_with_rollout(
+    slot: ModelSlot,
+    state: &str,
+    base: Option<&str>,
+    rollout: Option<&str>,
+) -> String {
     let pin = std::env::var(format!("UCF_MODEL_PIN_{}", slot.env_key())).ok();
-    let candidate = std::env::var(format!("UCF_MODEL_CANDIDATE_{}", slot.env_key())).ok();
-    let compare = std::env::var(format!("UCF_MODEL_COMPARE_{}", slot.env_key())).ok();
-    let shadow = std::env::var(format!("UCF_MODEL_SHADOW_{}", slot.env_key())).ok();
     let slot_mode = std::env::var(format!("UCF_SLOT_{}_MODE", slot.env_key()))
         .ok()
         .unwrap_or_else(|| "toy".to_string());
-    let mut parts = Vec::with_capacity(7);
+    let mut parts = Vec::with_capacity(8);
     parts.push(base.unwrap_or("slot resolved").to_string());
     parts.push(format!("state={state}"));
     parts.push(format!(
@@ -934,9 +942,9 @@ fn lifecycle_detail(slot: ModelSlot, state: &str, base: Option<&str>) -> String 
         }
     ));
     parts.push(format!("slot_mode={slot_mode}"));
-    parts.push(format!("candidate={}", hash_prefix(candidate.as_deref())));
-    parts.push(format!("compare={}", hash_prefix(compare.as_deref())));
-    parts.push(format!("shadow={}", hash_prefix(shadow.as_deref())));
+    if let Some(rollout) = rollout {
+        parts.push(format!("rollout={rollout}"));
+    }
     parts.join("; ")
 }
 
@@ -945,6 +953,30 @@ fn hash_prefix(hash: Option<&str>) -> String {
         .filter(|v| !v.is_empty())
         .map(|v| v.chars().take(12).collect::<String>())
         .unwrap_or_else(|| "none".to_string())
+}
+
+fn rollout_status_detail(statuses: &[crate::model_store::SlotPathStatus]) -> String {
+    statuses
+        .iter()
+        .map(|status| {
+            format!(
+                "{:?}:{}:{}:{}",
+                status.target_state,
+                hash_prefix(status.configured_hash.as_deref()),
+                if status.verified {
+                    "verified"
+                } else {
+                    "blocked"
+                },
+                if status.comparable {
+                    "comparable"
+                } else {
+                    "not_comparable"
+                }
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("|")
 }
 
 fn check_slot_compatibility(
@@ -1418,7 +1450,8 @@ mod tests {
         assert_eq!(world.status, SlotRuntimeStatus::Used);
         assert!(world.gate.promotable);
         let detail = world.detail.as_deref().expect("detail");
-        assert!(detail.contains("compare=aaaaaaaaaaaa"));
+        assert!(detail.contains("rollout=Active:"));
+        assert!(detail.contains("Compare:aaaaaaaaaaaa:blocked:not_comparable"));
         std::env::remove_var("UCF_MODEL_COMPARE_WORLD_JEPA");
     }
 
@@ -1555,6 +1588,9 @@ mod tests {
             Some(ProductionBlockReason::ActivationBlocked)
         );
         assert!(!world.gate.activatable);
+        let detail = world.detail.as_deref().expect("detail");
+        assert!(detail.contains("rollout=Active:"));
+        assert!(detail.contains("Compare:aaaaaaaaaaaa:blocked:not_comparable"));
         std::env::remove_var("UCF_MODEL_COMPARE_WORLD_JEPA");
     }
 

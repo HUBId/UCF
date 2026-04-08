@@ -132,6 +132,7 @@ pub enum SlotTargetState {
     Compare,
     Shadow,
     Disabled,
+    Blocked,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -167,6 +168,15 @@ pub struct SlotActivationPlan {
     pub target_state: SlotTargetState,
     pub selected_via: String,
     pub contract_version: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct SlotPathStatus {
+    pub target_state: SlotTargetState,
+    pub configured_hash: Option<String>,
+    pub verified: bool,
+    pub comparable: bool,
+    pub detail: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -475,6 +485,63 @@ impl ModelStore {
         })
     }
 
+    pub fn slot_path_statuses(&self, slot: ModelSlot) -> Vec<SlotPathStatus> {
+        let Some(spec) = self.specs.get(&slot) else {
+            return vec![SlotPathStatus {
+                target_state: SlotTargetState::Disabled,
+                configured_hash: None,
+                verified: false,
+                comparable: false,
+                detail: "slot missing from manifest spec map".to_string(),
+            }];
+        };
+        if !spec.enabled {
+            return vec![SlotPathStatus {
+                target_state: SlotTargetState::Disabled,
+                configured_hash: None,
+                verified: false,
+                comparable: false,
+                detail: "slot disabled by manifest/env".to_string(),
+            }];
+        }
+        let mut out = Vec::with_capacity(5);
+        out.push(self.path_status_for(slot, SlotTargetState::Active, selected_hash(slot, spec)));
+        out.push(self.path_status_for(
+            slot,
+            SlotTargetState::Candidate,
+            std::env::var(format!("UCF_MODEL_CANDIDATE_{}", slot.env_key())).ok(),
+        ));
+        out.push(self.path_status_for(
+            slot,
+            SlotTargetState::Compare,
+            std::env::var(format!("UCF_MODEL_COMPARE_{}", slot.env_key())).ok(),
+        ));
+        out.push(self.path_status_for(
+            slot,
+            SlotTargetState::Shadow,
+            std::env::var(format!("UCF_MODEL_SHADOW_{}", slot.env_key())).ok(),
+        ));
+        let blocked = out
+            .iter()
+            .find(|entry| {
+                matches!(
+                    entry.target_state,
+                    SlotTargetState::Active | SlotTargetState::Compare | SlotTargetState::Shadow
+                ) && !entry.verified
+                    && (entry.configured_hash.is_some()
+                        || entry.target_state == SlotTargetState::Active)
+            })
+            .map(|entry| format!("{:?} blocked: {}", entry.target_state, entry.detail));
+        out.push(SlotPathStatus {
+            target_state: SlotTargetState::Blocked,
+            configured_hash: None,
+            verified: blocked.is_none(),
+            comparable: false,
+            detail: blocked.unwrap_or_else(|| "none".to_string()),
+        });
+        out
+    }
+
     fn ensure_optional_path_verified(
         &self,
         slot: ModelSlot,
@@ -519,6 +586,70 @@ impl ModelStore {
         };
         store.verify_slot(slot).map(|_| ())
     }
+
+    fn path_status_for(
+        &self,
+        slot: ModelSlot,
+        target_state: SlotTargetState,
+        configured_hash: Option<String>,
+    ) -> SlotPathStatus {
+        let configured_hash = configured_hash
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty());
+        let Some(hash) = configured_hash.clone() else {
+            if target_state == SlotTargetState::Active {
+                return match self.verify_slot(slot) {
+                    Ok(_) => SlotPathStatus {
+                        target_state,
+                        configured_hash: None,
+                        verified: true,
+                        comparable: false,
+                        detail: "verified".to_string(),
+                    },
+                    Err(err) => SlotPathStatus {
+                        target_state,
+                        configured_hash: None,
+                        verified: false,
+                        comparable: false,
+                        detail: format!("{err:?}"),
+                    },
+                };
+            }
+            return SlotPathStatus {
+                target_state,
+                configured_hash: None,
+                verified: false,
+                comparable: false,
+                detail: "not configured".to_string(),
+            };
+        };
+        match self.verify_promoted_hash(slot, &hash) {
+            Ok(()) => SlotPathStatus {
+                target_state,
+                configured_hash: Some(hash),
+                verified: true,
+                comparable: matches!(
+                    target_state,
+                    SlotTargetState::Candidate | SlotTargetState::Compare | SlotTargetState::Shadow
+                ),
+                detail: "verified".to_string(),
+            },
+            Err(err) => SlotPathStatus {
+                target_state,
+                configured_hash: Some(hash),
+                verified: false,
+                comparable: false,
+                detail: format!("{err:?}"),
+            },
+        }
+    }
+}
+
+fn selected_hash(slot: ModelSlot, spec: &ModelSlotSpec) -> Option<String> {
+    std::env::var(format!("UCF_MODEL_PIN_{}", slot.env_key()))
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+        .or_else(|| spec.active_hash.clone())
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -921,5 +1052,73 @@ enabled = false
             err,
             ModelActivationError::IncompatiblePackContractBackend { .. }
         ));
+    }
+
+    #[test]
+    fn slot_path_statuses_distinguish_candidate_compare_shadow_and_blocked() {
+        let _lock = crate::test_env::env_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        std::env::remove_var("UCF_MODEL_PIN_WORLD_JEPA");
+        let temp = tempfile::tempdir().expect("tempdir");
+        let models = temp.path().join("models");
+        fs::create_dir_all(&models).expect("models");
+        let bytes = b"verified-model";
+        let hash = hex::encode(Sha256::digest(bytes));
+        let model_path = models
+            .join("promoted")
+            .join("world_jepa")
+            .join(&hash)
+            .join("model.safetensors");
+        fs::create_dir_all(model_path.parent().expect("parent")).expect("mkdirs");
+        fs::write(&model_path, bytes).expect("write");
+        std::env::set_var("UCF_MODEL_CANDIDATE_WORLD_JEPA", &hash);
+        std::env::set_var(
+            "UCF_MODEL_COMPARE_WORLD_JEPA",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        );
+
+        let mut specs = BTreeMap::new();
+        specs.insert(
+            ModelSlot::WorldJepa,
+            ModelSlotSpec {
+                slot: ModelSlot::WorldJepa,
+                enabled: true,
+                path: None,
+                expected_sha256: parse_hash(&hash),
+                max_bytes: 1024,
+                format: ModelFormat::Burn,
+                device: ModelDevice::CpuOnly,
+                active_hash: Some(hash.clone()),
+                contract_version: Some("v1".to_string()),
+            },
+        );
+        let store = ModelStore {
+            allowlist_root: models,
+            specs,
+        };
+
+        let statuses = store.slot_path_statuses(ModelSlot::WorldJepa);
+        let candidate = statuses
+            .iter()
+            .find(|entry| entry.target_state == SlotTargetState::Candidate)
+            .expect("candidate");
+        assert!(candidate.verified);
+        assert!(candidate.comparable);
+        let compare = statuses
+            .iter()
+            .find(|entry| entry.target_state == SlotTargetState::Compare)
+            .expect("compare");
+        assert!(!compare.verified);
+        assert!(!compare.comparable);
+        let blocked = statuses
+            .iter()
+            .find(|entry| entry.target_state == SlotTargetState::Blocked)
+            .expect("blocked");
+        assert!(!blocked.verified);
+        assert!(blocked.detail.contains("Compare"));
+
+        std::env::remove_var("UCF_MODEL_CANDIDATE_WORLD_JEPA");
+        std::env::remove_var("UCF_MODEL_COMPARE_WORLD_JEPA");
     }
 }

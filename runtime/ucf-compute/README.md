@@ -94,6 +94,35 @@ Production callers should set `UCF_COMPUTE_BACKEND=burn` explicitly or call
 - Canonical manifest path: `models/manifest.toml`.
 - Override path only via `UCF_MODEL_MANIFEST` when explicit compatibility behavior is required.
 
+## Rollout path semantics (candidate/compare/shadow/promotion)
+
+Runtime rollout diagnostics use a narrow canonical state set per slot path:
+
+- `active`: selected primary hash/path for the slot.
+- `candidate`: staged hash under `UCF_MODEL_CANDIDATE_<SLOT>`.
+- `compare`: side-by-side compare hash under `UCF_MODEL_COMPARE_<SLOT>`.
+- `shadow`: observational shadow hash under `UCF_MODEL_SHADOW_<SLOT>`.
+- `disabled`: slot not configured or disabled by manifest/env.
+- `blocked`: required rollout path is configured but cannot be verified.
+
+`ModelStore::slot_path_statuses` verifies these paths against promoted artifacts and surfaces
+whether a candidate/compare/shadow path is technically comparable (`verified + comparable`) or
+blocked with explicit reason text.
+
+`BackendPack` slot provenance carries this rollout digest in lifecycle details so ops/history views
+can distinguish:
+
+- active path reference,
+- candidate/compare/shadow side paths,
+- compare/shadow availability failures that block activation for required slots.
+
+Boundaries (intentional):
+
+- no approval workflow/governance engine in runtime;
+- no experiment/statistics suite in rollout paths;
+- promotion still uses existing compatibility gates and artifact verification, now with richer
+  blocked diagnostics.
+
 ## Adding future backends
 
 To add a real backend later without refactoring orchestrator/frame contracts:
