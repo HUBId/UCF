@@ -11,7 +11,7 @@ use crate::compute_service::{
 };
 use crate::pipeline::{CanonicalFailureKind, CanonicalPipelineState};
 
-const JOB_HISTORY_SCHEMA_VERSION: u16 = 4;
+const JOB_HISTORY_SCHEMA_VERSION: u16 = 5;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PersistedJobRequestIdentity {
@@ -52,6 +52,25 @@ pub struct PersistedWorkSummary {
     pub ssm_remaining_units: u64,
     pub lfm_remaining_units: u64,
     pub budget_exceeded_stage: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct PersistedStageProfileSummary {
+    pub stage: String,
+    pub state: String,
+    pub duration_micros: Option<u64>,
+    pub detail: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct PersistedHotspotSummary {
+    pub slowest_stage: Option<String>,
+    pub dominant_stage: Option<String>,
+    pub dominant_stage_share_bps: Option<u16>,
+    pub degraded_stage_count: u8,
+    pub skipped_stage_count: u8,
+    pub unavailable_stage_count: u8,
+    pub failed_stage_count: u8,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -100,6 +119,10 @@ pub struct PersistedJobRecord {
     #[serde(default)]
     pub backend_route: Option<PersistedBackendRouteSummary>,
     pub work_summary: Option<PersistedWorkSummary>,
+    #[serde(default)]
+    pub stage_profiles: Vec<PersistedStageProfileSummary>,
+    #[serde(default)]
+    pub hotspot_summary: Option<PersistedHotspotSummary>,
     pub model_slots: Vec<PersistedModelSlotSummary>,
     #[serde(default)]
     pub recovery_source_job_id: Option<u64>,
@@ -183,6 +206,31 @@ impl PersistedJobRecord {
                 lfm_remaining_units: summary.lfm_remaining_units,
                 budget_exceeded_stage: summary.budget_exceeded_stage.map(str::to_string),
             }),
+            stage_profiles: accounting
+                .stage_profiles
+                .iter()
+                .map(|profile| PersistedStageProfileSummary {
+                    stage: format!("{:?}", profile.stage).to_ascii_lowercase(),
+                    state: format!("{:?}", profile.state).to_ascii_lowercase(),
+                    duration_micros: profile.duration_micros,
+                    detail: profile.detail.clone(),
+                })
+                .collect(),
+            hotspot_summary: accounting
+                .hotspot_summary
+                .map(|hotspot| PersistedHotspotSummary {
+                    slowest_stage: hotspot
+                        .slowest_stage
+                        .map(|stage| format!("{:?}", stage).to_ascii_lowercase()),
+                    dominant_stage: hotspot
+                        .dominant_stage
+                        .map(|stage| format!("{:?}", stage).to_ascii_lowercase()),
+                    dominant_stage_share_bps: hotspot.dominant_stage_share_bps,
+                    degraded_stage_count: hotspot.degraded_stage_count,
+                    skipped_stage_count: hotspot.skipped_stage_count,
+                    unavailable_stage_count: hotspot.unavailable_stage_count,
+                    failed_stage_count: hotspot.failed_stage_count,
+                }),
             model_slots: accounting
                 .model_slots
                 .iter()
@@ -467,5 +515,7 @@ mod tests {
         assert_eq!(loaded.resource_class.as_deref(), Some("light"));
         assert_eq!(loaded.capacity_queue_disposition.as_deref(), Some("none"));
         assert!(loaded.capacity_pressure.is_some());
+        assert!(!loaded.stage_profiles.is_empty());
+        assert!(loaded.hotspot_summary.is_some());
     }
 }
