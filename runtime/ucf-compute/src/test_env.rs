@@ -28,6 +28,9 @@ pub fn clear_model_env_overrides() -> EnvSnapshot {
     for slot in ModelSlot::all() {
         keys.push(format!("UCF_MODEL_{}_ENABLED", slot.env_key()));
         keys.push(format!("UCF_MODEL_PIN_{}", slot.env_key()));
+        keys.push(format!("UCF_MODEL_CANDIDATE_{}", slot.env_key()));
+        keys.push(format!("UCF_MODEL_COMPARE_{}", slot.env_key()));
+        keys.push(format!("UCF_MODEL_SHADOW_{}", slot.env_key()));
     }
     let values = keys
         .iter()
