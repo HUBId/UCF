@@ -759,7 +759,7 @@ mod tests {
             .expect("predict");
 
         assert!((out.surprise - model.surprise).abs() <= 1e-6);
-        assert!(out.notes.iter().any(|n| n.starts_with("pred_digest=")));
+        assert_eq!(out.world_digest, Some(model.prediction_digest));
     }
 
     #[test]
