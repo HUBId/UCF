@@ -8,7 +8,7 @@ use thiserror::Error;
 use crate::compute_service::{JobCompletionClass, JobId, JobLifecycleState, JobRecord};
 use crate::pipeline::{CanonicalFailureKind, CanonicalPipelineState};
 
-const JOB_HISTORY_SCHEMA_VERSION: u16 = 2;
+const JOB_HISTORY_SCHEMA_VERSION: u16 = 3;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PersistedJobRequestIdentity {
@@ -92,6 +92,12 @@ pub struct PersistedJobRecord {
     pub backend_route: Option<PersistedBackendRouteSummary>,
     pub work_summary: Option<PersistedWorkSummary>,
     pub model_slots: Vec<PersistedModelSlotSummary>,
+    #[serde(default)]
+    pub recovery_source_job_id: Option<u64>,
+    #[serde(default)]
+    pub recovery_status: Option<String>,
+    #[serde(default)]
+    pub recovery_note: Option<String>,
 }
 
 impl PersistedJobRecord {
@@ -170,7 +176,22 @@ impl PersistedJobRecord {
                     required_for_pack: slot.required_for_pack,
                 })
                 .collect(),
+            recovery_source_job_id: None,
+            recovery_status: None,
+            recovery_note: None,
         }
+    }
+
+    pub fn with_recovery(
+        mut self,
+        source_job_id: Option<u64>,
+        recovery_status: Option<String>,
+        recovery_note: Option<String>,
+    ) -> Self {
+        self.recovery_source_job_id = source_job_id;
+        self.recovery_status = recovery_status;
+        self.recovery_note = recovery_note;
+        self
     }
 }
 
@@ -249,6 +270,10 @@ impl JobHistoryStore {
         record: &JobRecord,
     ) -> Result<(), JobHistoryStoreError> {
         let persisted = PersistedJobRecord::from_job_record(record);
+        self.upsert(persisted)
+    }
+
+    pub fn upsert(&mut self, persisted: PersistedJobRecord) -> Result<(), JobHistoryStoreError> {
         let encoded =
             serde_json::to_string(&persisted).map_err(|err| JobHistoryStoreError::Encode {
                 reason: err.to_string(),
