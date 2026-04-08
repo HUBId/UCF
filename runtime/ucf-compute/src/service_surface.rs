@@ -10,6 +10,7 @@ use crate::pipeline::{
     CanonicalPipelineState, CanonicalWorkSummary,
 };
 use crate::{ModelSlot, ModelSlotProvenance, SlotRuntimeStatus};
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ComputeExecutionMode {
@@ -57,9 +58,12 @@ pub struct ComputeJobStatus {
     pub model_slots: Vec<ModelSlotProvenance>,
     pub submitted_at_unix_ms: u64,
     pub finished_at_unix_ms: Option<u64>,
+    pub recovery_disposition: Option<RecoveryDisposition>,
+    pub recovery_source_job_id: Option<JobId>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[allow(clippy::large_enum_variant)]
 pub enum ComputeSubmitOutcome {
     Invalid(ComputeInvalidRequest),
     Rejected {
@@ -145,6 +149,39 @@ pub struct RuntimeOpsSnapshot {
     pub shadow_job: Option<ComputeJobHandle>,
     pub has_missing_required_slot: bool,
     pub latest_baseline_comparison: Option<BaselineComparisonSummary>,
+    pub recovery: Option<ComputeRecoverySnapshot>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RecoveryDisposition {
+    CompletedBeforeRestart,
+    PersistedNotYetResumed,
+    RunningStateUncertainAfterRestart,
+    Resumable,
+    ResumeUnsupported,
+    RerunRequired,
+    LostDueToRestart,
+    RecoveryCompletedSuccessfully,
+    RestartRecoveryFailed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecoveredJobStatus {
+    pub source_job_id: JobId,
+    pub source_lifecycle_state: String,
+    pub disposition: RecoveryDisposition,
+    pub resumed_as_job_id: Option<JobId>,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ComputeRecoverySnapshot {
+    pub recovered_jobs: usize,
+    pub resumed_jobs: usize,
+    pub rerun_required_jobs: usize,
+    pub uncertain_jobs: usize,
+    pub failed_jobs: usize,
+    pub records: Vec<RecoveredJobStatus>,
 }
 
 pub struct CanonicalComputeEntryPoint {
@@ -152,6 +189,8 @@ pub struct CanonicalComputeEntryPoint {
     history_store: Option<JobHistoryStore>,
     last_history_error: Option<JobHistoryStoreError>,
     latest_baseline_comparison: Option<BaselineComparisonSummary>,
+    recovery_by_job: BTreeMap<JobId, RecoveredJobStatus>,
+    recovery_snapshot: Option<ComputeRecoverySnapshot>,
 }
 
 impl CanonicalComputeEntryPoint {
@@ -161,6 +200,8 @@ impl CanonicalComputeEntryPoint {
             history_store: None,
             last_history_error: None,
             latest_baseline_comparison: None,
+            recovery_by_job: BTreeMap::new(),
+            recovery_snapshot: None,
         }
     }
 
@@ -168,12 +209,16 @@ impl CanonicalComputeEntryPoint {
         service: InMemoryComputeService,
         history_store: JobHistoryStore,
     ) -> Self {
-        Self {
+        let mut entry = Self {
             service,
             history_store: Some(history_store),
             last_history_error: None,
             latest_baseline_comparison: None,
-        }
+            recovery_by_job: BTreeMap::new(),
+            recovery_snapshot: None,
+        };
+        entry.rehydrate_from_history();
+        entry
     }
 
     pub fn with_history_path(
@@ -201,7 +246,7 @@ impl CanonicalComputeEntryPoint {
                     submitted_by: request.submitted_by,
                 },
             );
-            (status_from_record(submitted), submitted.job.id)
+            (status_from_record(submitted, None), submitted.job.id)
         };
         self.persist_job(submitted_job_id);
         if submit_status.lifecycle_state == JobLifecycleState::Rejected {
@@ -218,7 +263,7 @@ impl CanonicalComputeEntryPoint {
             ComputeExecutionMode::ExecuteInline => {
                 let completed = self.service.run_next()?;
                 let (completion, completed_job_id) = {
-                    let completion = completed.map(status_from_record);
+                    let completion = completed.map(|record| status_from_record(record, None));
                     let completed_job_id = completed.map(|record| record.job.id);
                     (completion, completed_job_id)
                 };
@@ -234,7 +279,13 @@ impl CanonicalComputeEntryPoint {
     }
 
     pub fn status(&self, handle: ComputeJobHandle) -> Option<ComputeJobStatus> {
-        self.service.job(handle.job_id).map(status_from_record)
+        self.service
+            .job(handle.job_id)
+            .map(|record| self.status_from_record(record))
+    }
+
+    pub fn recovery_status(&self) -> Option<&ComputeRecoverySnapshot> {
+        self.recovery_snapshot.as_ref()
     }
 
     pub fn history_status(&self) -> ComputeHistoryStoreStatus {
@@ -255,8 +306,13 @@ impl CanonicalComputeEntryPoint {
         handle: ComputeJobHandle,
     ) -> Result<ComputeJobHistoryLookup, ComputeHistoryLookupError> {
         if let Some(record) = self.service.job(handle.job_id) {
+            let recovery = self.recovery_by_job.get(&handle.job_id);
             return Ok(ComputeJobHistoryLookup::Found(Box::new(
-                PersistedJobRecord::from_job_record(record),
+                PersistedJobRecord::from_job_record(record).with_recovery(
+                    recovery.map(|r| r.source_job_id.0),
+                    recovery.map(|r| recovery_disposition_name(r.disposition).to_string()),
+                    recovery.map(|r| r.detail.clone()),
+                ),
             )));
         }
         let store = self
@@ -622,6 +678,7 @@ impl CanonicalComputeEntryPoint {
             shadow_job: None,
             has_missing_required_slot,
             latest_baseline_comparison: self.latest_baseline_comparison.clone(),
+            recovery: self.recovery_snapshot.clone(),
         }
     }
 
@@ -657,6 +714,97 @@ impl CanonicalComputeEntryPoint {
         }
     }
 
+    fn rehydrate_from_history(&mut self) {
+        let Some(store) = self.history_store.as_ref() else {
+            self.recovery_snapshot = None;
+            return;
+        };
+        let persisted = store.records().cloned().collect::<Vec<_>>();
+        let mut records = Vec::new();
+        let mut resumed_jobs = 0_usize;
+        let mut rerun_required_jobs = 0_usize;
+        let mut uncertain_jobs = 0_usize;
+        let mut failed_jobs = 0_usize;
+
+        for record in persisted {
+            let source_job_id = JobId(record.job_id);
+            let lifecycle = record.lifecycle_state.clone();
+            let (disposition, detail, should_resume) =
+                classify_recovery_disposition(&record, source_job_id);
+            let mut recovered = RecoveredJobStatus {
+                source_job_id,
+                source_lifecycle_state: lifecycle,
+                disposition,
+                resumed_as_job_id: None,
+                detail,
+            };
+            if should_resume {
+                if let Some(request) = record.canonical_request.as_ref().and_then(rebuild_request) {
+                    let submitted = self.service.submit(
+                        request,
+                        JobSubmissionMeta {
+                            submitted_at_unix_ms: now_unix_ms(),
+                            submitted_by: Some(format!(
+                                "recovery_resume_of_job_{}",
+                                source_job_id.0
+                            )),
+                        },
+                    );
+                    let resumed_id = submitted.job.id;
+                    self.recovery_by_job.insert(
+                        resumed_id,
+                        RecoveredJobStatus {
+                            source_job_id,
+                            source_lifecycle_state: "rehydrated".to_string(),
+                            disposition: RecoveryDisposition::RecoveryCompletedSuccessfully,
+                            resumed_as_job_id: Some(resumed_id),
+                            detail: "resumed as queued job from persisted pre-execution state"
+                                .to_string(),
+                        },
+                    );
+                    self.persist_job(resumed_id);
+                    recovered.disposition = RecoveryDisposition::RecoveryCompletedSuccessfully;
+                    recovered.resumed_as_job_id = Some(resumed_id);
+                    recovered.detail = format!("resumed as queued job {}", resumed_id.0);
+                    resumed_jobs = resumed_jobs.saturating_add(1);
+                } else {
+                    recovered.disposition = RecoveryDisposition::RestartRecoveryFailed;
+                    recovered.detail =
+                        "restart recovery failed: canonical request unavailable".to_string();
+                    failed_jobs = failed_jobs.saturating_add(1);
+                }
+            } else {
+                match recovered.disposition {
+                    RecoveryDisposition::RerunRequired => {
+                        rerun_required_jobs = rerun_required_jobs.saturating_add(1)
+                    }
+                    RecoveryDisposition::ResumeUnsupported => {
+                        rerun_required_jobs = rerun_required_jobs.saturating_add(1)
+                    }
+                    RecoveryDisposition::RunningStateUncertainAfterRestart
+                    | RecoveryDisposition::LostDueToRestart => {
+                        uncertain_jobs = uncertain_jobs.saturating_add(1)
+                    }
+                    RecoveryDisposition::RestartRecoveryFailed => {
+                        failed_jobs = failed_jobs.saturating_add(1)
+                    }
+                    _ => {}
+                }
+            }
+            self.recovery_by_job
+                .insert(source_job_id, recovered.clone());
+            records.push(recovered);
+        }
+        self.recovery_snapshot = Some(ComputeRecoverySnapshot {
+            recovered_jobs: records.len(),
+            resumed_jobs,
+            rerun_required_jobs,
+            uncertain_jobs,
+            failed_jobs,
+            records,
+        });
+    }
+
     fn replay_source(&self, job_id: JobId) -> Option<ReplaySourceRecord> {
         if let Some(record) = self.service.job(job_id) {
             return Some(ReplaySourceRecord::from_record(record));
@@ -672,11 +820,22 @@ impl CanonicalComputeEntryPoint {
         let Some(record) = self.service.job(job_id) else {
             return;
         };
-        if let Err(err) = store.upsert_from_job_record(record) {
+        let recovery = self.recovery_by_job.get(&job_id);
+        let persisted = PersistedJobRecord::from_job_record(record).with_recovery(
+            recovery.map(|r| r.source_job_id.0),
+            recovery.map(|r| recovery_disposition_name(r.disposition).to_string()),
+            recovery.map(|r| r.detail.clone()),
+        );
+        if let Err(err) = store.upsert(persisted) {
             self.last_history_error = Some(err);
         } else {
             self.last_history_error = None;
         }
+    }
+
+    fn status_from_record(&self, record: &JobRecord) -> ComputeJobStatus {
+        let recovery = self.recovery_by_job.get(&record.job.id);
+        status_from_record(record, recovery)
     }
 
     fn latest_baseline_for_candidate(&self, candidate_job_id: JobId) -> Option<ReplaySourceRecord> {
@@ -1063,7 +1222,10 @@ fn validate_request(request: &ComputeSubmitRequest) -> Option<ComputeInvalidRequ
     None
 }
 
-fn status_from_record(record: &JobRecord) -> ComputeJobStatus {
+fn status_from_record(
+    record: &JobRecord,
+    recovery: Option<&RecoveredJobStatus>,
+) -> ComputeJobStatus {
     ComputeJobStatus {
         handle: ComputeJobHandle {
             job_id: record.job.id,
@@ -1089,6 +1251,116 @@ fn status_from_record(record: &JobRecord) -> ComputeJobStatus {
         model_slots: record.accounting.model_slots.clone(),
         submitted_at_unix_ms: record.accounting.submitted_at_unix_ms,
         finished_at_unix_ms: record.accounting.finished_at_unix_ms,
+        recovery_disposition: recovery.map(|r| r.disposition),
+        recovery_source_job_id: recovery.map(|r| r.source_job_id),
+    }
+}
+
+fn recovery_disposition_name(disposition: RecoveryDisposition) -> &'static str {
+    match disposition {
+        RecoveryDisposition::CompletedBeforeRestart => "completed_before_restart",
+        RecoveryDisposition::PersistedNotYetResumed => "persisted_not_yet_resumed",
+        RecoveryDisposition::RunningStateUncertainAfterRestart => {
+            "running_state_uncertain_after_restart"
+        }
+        RecoveryDisposition::Resumable => "resumable",
+        RecoveryDisposition::ResumeUnsupported => "resume_unsupported",
+        RecoveryDisposition::RerunRequired => "rerun_required",
+        RecoveryDisposition::LostDueToRestart => "lost_due_to_restart",
+        RecoveryDisposition::RecoveryCompletedSuccessfully => "recovery_completed_successfully",
+        RecoveryDisposition::RestartRecoveryFailed => "restart_recovery_failed",
+    }
+}
+
+fn classify_recovery_disposition(
+    record: &PersistedJobRecord,
+    source_job_id: JobId,
+) -> (RecoveryDisposition, String, bool) {
+    let has_request = record.canonical_request.is_some();
+    match record.lifecycle_state.as_str() {
+        "completed" | "failed" | "timed_out" | "rejected" => (
+            RecoveryDisposition::CompletedBeforeRestart,
+            "job already terminal before restart".to_string(),
+            false,
+        ),
+        "running" => {
+            if has_request {
+                (
+                    RecoveryDisposition::RunningStateUncertainAfterRestart,
+                    format!(
+                        "job {id} was running at restart; worker status uncertain, rerun required",
+                        id = source_job_id.0
+                    ),
+                    false,
+                )
+            } else {
+                (
+                    RecoveryDisposition::LostDueToRestart,
+                    format!(
+                        "job {id} was running and is not resumable without canonical request",
+                        id = source_job_id.0
+                    ),
+                    false,
+                )
+            }
+        }
+        "submitted" | "admitted" | "queued" => {
+            if has_request {
+                (
+                    RecoveryDisposition::Resumable,
+                    "persisted pre-execution state can be resumed".to_string(),
+                    true,
+                )
+            } else {
+                (
+                    RecoveryDisposition::ResumeUnsupported,
+                    "resume unsupported: canonical request missing, rerun required".to_string(),
+                    false,
+                )
+            }
+        }
+        _ => (
+            RecoveryDisposition::RerunRequired,
+            "unknown persisted lifecycle state after restart; rerun required".to_string(),
+            false,
+        ),
+    }
+}
+
+fn rebuild_request(request: &PersistedCanonicalRequest) -> Option<CanonicalPipelineRequest> {
+    let context_digest = hex::decode(&request.context_digest_hex).ok()?;
+    if context_digest.len() != 32 {
+        return None;
+    }
+    let mut digest = [0_u8; 32];
+    digest.copy_from_slice(&context_digest[..32]);
+    Some(CanonicalPipelineRequest {
+        input: crate::ComputeInput {
+            frame_id: crate::FrameId(request.frame_id),
+            t: request.t,
+            context_digest: digest,
+        },
+        budget: crate::ComputeBudget {
+            max_micros: request.budget.max_micros,
+            hard_timeout_micros: request.budget.hard_timeout_micros,
+            seed: request.budget.seed,
+            profile_id: request.budget.profile_id,
+            global_work_units: request.budget.global_work_units,
+            world_units: request.budget.world_units,
+            sae_units: request.budget.sae_units,
+            ssm_units: request.budget.ssm_units,
+            lfm_units: request.budget.lfm_units,
+            degrade_policy: parse_degrade_policy(&request.budget.degrade_policy)?,
+            governor_tier: request.budget.governor_tier,
+        },
+    })
+}
+
+fn parse_degrade_policy(value: &str) -> Option<crate::DegradePolicy> {
+    match value {
+        "DegradeStages" => Some(crate::DegradePolicy::DegradeStages),
+        "FailFast" => Some(crate::DegradePolicy::FailFast),
+        _ => None,
     }
 }
 
@@ -1105,8 +1377,8 @@ mod tests {
         CanonicalComputeEntryPoint, ComputeExecutionMode, ComputeHistoryLookupError,
         ComputeJobHandle, ComputeJobHistoryLookup, ComputeReplayOutcome,
         ComputeRequestValidationCode, ComputeSubmitOutcome, ComputeSubmitRequest,
-        ReplayDeterminismClass, ReplayFailureCode, RuntimeOperation, RuntimeOperationCode,
-        RuntimeOpsState, RuntimeSignalState,
+        RecoveryDisposition, ReplayDeterminismClass, ReplayFailureCode, RuntimeOperation,
+        RuntimeOperationCode, RuntimeOpsState, RuntimeSignalState,
     };
     use crate::pipeline::{CanonicalFailureKind, CanonicalPipelineRequest};
     use crate::{InMemoryComputeService, JobHistoryStore, JobId, JobLifecycleState};
@@ -1447,6 +1719,82 @@ mod tests {
                 assert_eq!(code, ReplayFailureCode::ConfigurationIncomplete);
             }
             other => panic!("expected non-replayable, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn recovery_rehydrates_queued_jobs_and_marks_running_jobs_uncertain() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let history_path = dir.path().join("job_history.jsonl");
+        std::fs::write(
+            &history_path,
+            concat!(
+                r#"{"schema_version":3,"job_id":10,"submitted_by":"svc","request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101"},"canonical_request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101","budget":{"max_micros":5000,"hard_timeout_micros":5000,"seed":9,"profile_id":0,"global_work_units":65536,"world_units":16384,"sae_units":16384,"ssm_units":16384,"lfm_units":16384,"degrade_policy":"DegradeStages","governor_tier":1}},"lifecycle_state":"queued","completion_class":null,"execution_path":"LocalCanonical","submitted_at_unix_ms":1,"started_at_unix_ms":null,"finished_at_unix_ms":null,"queue_wait_ms":null,"execution_duration_micros":null,"total_duration_ms":null,"failure_kind":null,"pipeline_state":null,"work_summary":null,"model_slots":[]}"#,
+                "\n",
+                r#"{"schema_version":3,"job_id":11,"submitted_by":"svc","request":{"frame_id":2,"t":10,"context_digest_hex":"0202020202020202020202020202020202020202020202020202020202020202"},"canonical_request":{"frame_id":2,"t":10,"context_digest_hex":"0202020202020202020202020202020202020202020202020202020202020202","budget":{"max_micros":5000,"hard_timeout_micros":5000,"seed":10,"profile_id":0,"global_work_units":65536,"world_units":16384,"sae_units":16384,"ssm_units":16384,"lfm_units":16384,"degrade_policy":"DegradeStages","governor_tier":1}},"lifecycle_state":"running","completion_class":null,"execution_path":"WorkerIpc","submitted_at_unix_ms":2,"started_at_unix_ms":3,"finished_at_unix_ms":null,"queue_wait_ms":1,"execution_duration_micros":null,"total_duration_ms":null,"failure_kind":null,"pipeline_state":null,"work_summary":null,"model_slots":[]}"#
+            ),
+        )
+        .expect("history fixture");
+        let entry = CanonicalComputeEntryPoint::with_history_path(
+            InMemoryComputeService::new(crate::pipeline::ComputePipelineBackend::stub()),
+            &history_path,
+        )
+        .expect("entry with history");
+
+        let recovery = entry.recovery_status().expect("recovery status");
+        assert_eq!(recovery.recovered_jobs, 2);
+        assert_eq!(recovery.resumed_jobs, 1);
+        assert_eq!(recovery.uncertain_jobs, 1);
+        assert!(recovery
+            .records
+            .iter()
+            .any(|record| record.source_job_id == JobId(10) && record.resumed_as_job_id.is_some()));
+        assert!(recovery.records.iter().any(|record| {
+            record.source_job_id == JobId(11)
+                && record.disposition == RecoveryDisposition::RunningStateUncertainAfterRestart
+        }));
+    }
+
+    #[test]
+    fn recovery_status_is_carried_into_job_status_and_history() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let history_path = dir.path().join("job_history.jsonl");
+        std::fs::write(
+            &history_path,
+            r#"{"schema_version":3,"job_id":20,"submitted_by":"svc","request":{"frame_id":3,"t":12,"context_digest_hex":"0303030303030303030303030303030303030303030303030303030303030303"},"canonical_request":{"frame_id":3,"t":12,"context_digest_hex":"0303030303030303030303030303030303030303030303030303030303030303","budget":{"max_micros":5000,"hard_timeout_micros":5000,"seed":12,"profile_id":0,"global_work_units":65536,"world_units":16384,"sae_units":16384,"ssm_units":16384,"lfm_units":16384,"degrade_policy":"DegradeStages","governor_tier":1}},"lifecycle_state":"queued","completion_class":null,"execution_path":"LocalCanonical","submitted_at_unix_ms":1,"started_at_unix_ms":null,"finished_at_unix_ms":null,"queue_wait_ms":null,"execution_duration_micros":null,"total_duration_ms":null,"failure_kind":null,"pipeline_state":null,"work_summary":null,"model_slots":[]}"#,
+        )
+        .expect("history fixture");
+        let entry = CanonicalComputeEntryPoint::with_history_path(
+            InMemoryComputeService::new(crate::pipeline::ComputePipelineBackend::stub()),
+            &history_path,
+        )
+        .expect("entry with history");
+        let resumed = entry
+            .recovery_status()
+            .expect("recovery")
+            .records
+            .iter()
+            .find_map(|record| record.resumed_as_job_id)
+            .expect("resumed job id");
+        let status = entry
+            .status(ComputeJobHandle { job_id: resumed })
+            .expect("status");
+        assert_eq!(
+            status.recovery_disposition,
+            Some(RecoveryDisposition::RecoveryCompletedSuccessfully)
+        );
+        let history = entry
+            .history_lookup(ComputeJobHandle { job_id: resumed })
+            .expect("lookup");
+        match history {
+            ComputeJobHistoryLookup::Found(record) => {
+                assert_eq!(
+                    record.recovery_status.as_deref(),
+                    Some("recovery_completed_successfully")
+                );
+                assert_eq!(record.recovery_source_job_id, Some(20));
+            }
+            ComputeJobHistoryLookup::NotFound => panic!("expected recovered record"),
         }
     }
 

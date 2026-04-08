@@ -100,11 +100,11 @@ pub use service_surface::{
     BaselineComparisonFailureCode, BaselineComparisonOutcome, BaselineComparisonResult,
     BaselineComparisonSummary, BaselineReference, CanonicalComputeEntryPoint, ComputeExecutionMode,
     ComputeHistoryLookupError, ComputeHistoryStoreStatus, ComputeInvalidRequest, ComputeJobHandle,
-    ComputeJobHistoryLookup, ComputeJobStatus, ComputeReplayOutcome, ComputeReplayReport,
-    ComputeRequestValidationCode, ComputeSubmitOutcome, ComputeSubmitRequest,
-    ReplayConfigurationDiff, ReplayDeterminismClass, ReplayFailureCode, RuntimeOperation,
-    RuntimeOperationCode, RuntimeOperationOutcome, RuntimeOpsSnapshot, RuntimeOpsState,
-    RuntimeSignalState,
+    ComputeJobHistoryLookup, ComputeJobStatus, ComputeRecoverySnapshot, ComputeReplayOutcome,
+    ComputeReplayReport, ComputeRequestValidationCode, ComputeSubmitOutcome, ComputeSubmitRequest,
+    RecoveredJobStatus, RecoveryDisposition, ReplayConfigurationDiff, ReplayDeterminismClass,
+    ReplayFailureCode, RuntimeOperation, RuntimeOperationCode, RuntimeOperationOutcome,
+    RuntimeOpsSnapshot, RuntimeOpsState, RuntimeSignalState,
 };
 pub use work_meter::WorkMeter;
 

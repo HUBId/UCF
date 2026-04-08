@@ -397,3 +397,34 @@ Persistence failure semantics stay separate from compute execution semantics:
 - jobs can still complete/failed/timed_out/rejected in-memory even when history writes fail,
 - persistence errors are surfaced through `history_status()` (`configured`, `available`, `last_error`),
 - this keeps “job execution failed” distinct from “job succeeded but history persistence failed”.
+
+## Minimal restart / recovery / resume semantics (v1)
+
+`CanonicalComputeEntryPoint::with_history_store(...)` and `with_history_path(...)` now run a
+minimal recovery pass over persisted history records during service startup.
+
+Canonical behavior is intentionally narrow and explicit:
+
+- terminal jobs (`completed` / `failed` / `timed_out` / `rejected`) stay
+  `completed_before_restart` and are not replayed automatically,
+- pre-execution jobs (`submitted` / `admitted` / `queued`) are only resumed when a
+  `canonical_request` is present; resume is implemented as deterministic rehydration into the
+  in-memory queue,
+- `running` jobs from before restart are treated as uncertain runtime state and are surfaced as
+  `running_state_uncertain_after_restart`,
+- records without enough canonical request data are surfaced as
+  `resume_unsupported` / `rerun_required`,
+- hard restart recovery reconstruction failures are surfaced as `restart_recovery_failed`.
+
+This is an honest boundary:
+
+- **true in-process continuation of an interrupted execution is not implemented**,
+- resume currently means “recover pending pre-execution intent from persisted canonical request”,
+- interrupted or uncertain worker execution remains rerun-based, not checkpoint-resume.
+
+Recovery context is carried through ops/history surfaces:
+
+- `RuntimeOpsSnapshot.recovery` exposes aggregate recovery counts + per-job recovery records,
+- recovered jobs include recovery provenance in job status/history (`recovery_status`,
+  `recovery_source_job_id`, `recovery_note`),
+- replay/rerun tooling can distinguish restarted-context jobs from regular submissions.
