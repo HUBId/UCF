@@ -9,9 +9,12 @@ use crate::compute_service::{
     CapacityPressure, CapacityQueueDisposition, JobCompletionClass, JobId, JobLifecycleState,
     JobRecord, ResourceClass,
 };
-use crate::pipeline::{CanonicalFailureKind, CanonicalPipelineState};
+use crate::pipeline::{
+    classify_failure_kind, CanonicalFailureKind, CanonicalFaultDomain,
+    CanonicalIsolationDisposition, CanonicalPipelineState,
+};
 
-const JOB_HISTORY_SCHEMA_VERSION: u16 = 6;
+const JOB_HISTORY_SCHEMA_VERSION: u16 = 7;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PersistedJobRequestIdentity {
@@ -109,6 +112,12 @@ pub struct PersistedJobRecord {
     pub execution_duration_micros: Option<u64>,
     pub total_duration_ms: Option<u64>,
     pub failure_kind: Option<String>,
+    #[serde(default)]
+    pub fault_domain: Option<String>,
+    #[serde(default)]
+    pub fault_isolation: Option<String>,
+    #[serde(default)]
+    pub fault_systemic: Option<bool>,
     pub pipeline_state: Option<String>,
     #[serde(default)]
     pub execution_lane: Option<String>,
@@ -178,6 +187,18 @@ impl PersistedJobRecord {
             failure_kind: accounting
                 .failure_kind
                 .map(|kind| failure_kind_name(kind).to_string()),
+            fault_domain: accounting
+                .failure_kind
+                .map(classify_failure_kind)
+                .map(|classification| fault_domain_name(classification.domain).to_string()),
+            fault_isolation: accounting
+                .failure_kind
+                .map(classify_failure_kind)
+                .map(|classification| fault_isolation_name(classification.isolation).to_string()),
+            fault_systemic: accounting
+                .failure_kind
+                .map(classify_failure_kind)
+                .map(|classification| classification.systemic),
             pipeline_state: accounting
                 .pipeline_state
                 .map(|state| pipeline_state_name(state).to_string()),
@@ -459,6 +480,26 @@ fn pipeline_state_name(state: CanonicalPipelineState) -> &'static str {
     }
 }
 
+fn fault_domain_name(domain: CanonicalFaultDomain) -> &'static str {
+    match domain {
+        CanonicalFaultDomain::ArtifactModel => "artifact_model",
+        CanonicalFaultDomain::Stage => "stage",
+        CanonicalFaultDomain::Backend => "backend",
+        CanonicalFaultDomain::WorkerTransport => "worker_transport",
+        CanonicalFaultDomain::PlacementCapacity => "placement_capacity",
+        CanonicalFaultDomain::RuntimeService => "runtime_service",
+    }
+}
+
+fn fault_isolation_name(isolation: CanonicalIsolationDisposition) -> &'static str {
+    match isolation {
+        CanonicalIsolationDisposition::LocallyIsolated => "locally_isolated",
+        CanonicalIsolationDisposition::DegradedButServiceable => "degraded_but_serviceable",
+        CanonicalIsolationDisposition::HardEscalationJobFailure => "hard_escalation_job_failure",
+        CanonicalIsolationDisposition::ServiceRuntimeImpact => "service_runtime_impact",
+    }
+}
+
 fn execution_lane_name(lane: crate::pipeline::BackendExecutionLane) -> &'static str {
     match lane {
         crate::pipeline::BackendExecutionLane::Toy => "toy",
@@ -539,5 +580,36 @@ mod tests {
         assert!(loaded.capacity_pressure.is_some());
         assert!(!loaded.stage_profiles.is_empty());
         assert!(loaded.hotspot_summary.is_some());
+    }
+
+    #[test]
+    fn history_persists_fault_domain_for_failed_job() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("history.jsonl");
+        let mut service = InMemoryComputeService::new(ComputePipelineBackend::stub());
+        let record = service.submit(
+            CanonicalPipelineRequest {
+                input: ComputeInput {
+                    frame_id: FrameId(2),
+                    t: 0,
+                    context_digest: [3; 32],
+                },
+                budget: ComputeBudget::default(),
+            },
+            JobSubmissionMeta {
+                submitted_at_unix_ms: 124,
+                submitted_by: Some("test".to_string()),
+            },
+        );
+        let mut store = JobHistoryStore::open(&path).expect("open empty");
+        store.upsert_from_job_record(record).expect("persist");
+        let loaded = store.get(record.job.id).expect("record exists");
+        assert_eq!(loaded.failure_kind.as_deref(), Some("invalid_input"));
+        assert_eq!(loaded.fault_domain.as_deref(), Some("runtime_service"));
+        assert_eq!(
+            loaded.fault_isolation.as_deref(),
+            Some("service_runtime_impact")
+        );
+        assert_eq!(loaded.fault_systemic, Some(true));
     }
 }
