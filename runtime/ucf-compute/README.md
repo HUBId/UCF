@@ -2,6 +2,12 @@
 
 Deterministic offline compute pipeline used by the runtime.
 
+## Real-compute reference layer
+
+For a compact, repo-based reference map of the canonical kernel, extension
+paths, and diagnostic/test-near seams, see
+`docs/real_compute_reference_surface_v1.md`.
+
 ## Capability model
 
 The top-level runtime contract stays `AiComputeBackend`, but concrete backends are now composed from stable subtraits in `src/capabilities.rs`:

@@ -1,3 +1,29 @@
+//! Canonical reference surface for the real-compute runtime stack.
+//!
+//! This crate intentionally keeps one load-bearing compute core while exposing
+//! explicit extension and diagnostics seams.
+//!
+//! ## Canonical productive core
+//! - Entry/service surface: [`service_surface::CanonicalComputeEntryPoint`]
+//! - Bounded service + scheduling/placement: [`compute_service`]
+//! - Canonical stage pipeline contract: [`pipeline`]
+//! - Canonical backend onboarding lane: [`backends::build_canonical_production_backend`]
+//! - Artifact/model slot and warmup readiness: [`model_store`], [`backend_pack`]
+//!
+//! ## Load-bearing extensions (non-primary but supported)
+//! - Multi-worker/IPC/remote execution: [`worker_backend`], [`ipc`], [`remote_compute`]
+//! - Rollout and slot path enablement (`active/candidate/compare/shadow`): [`enablement`]
+//! - Ops/history/recovery/replay-facing persistence: [`job_history`], [`service_surface`]
+//!
+//! ## Diagnostic/test seams (not production defaults)
+//! - Compatibility/dev backend lane (`stub`, `candle` compatibility seam): [`backends`]
+//! - Compare/shadow and stage diagnostics: [`enablement`], [`world_vljepa_shadow`]
+//! - Test-only helpers: [`test_env`]
+//!
+//! ## Compatibility boundary
+//! `domains/ai*` integration remains a compatibility/legacy seam. The canonical
+//! runtime path for real compute is maintained in `runtime/ucf-compute`.
+//!
 #[cfg(all(feature = "compute-candle", feature = "compute-burn"))]
 compile_error!("invalid feature combo: compute-candle and compute-burn are mutually exclusive");
 #[cfg(all(feature = "llm-candle", feature = "llm-burn"))]

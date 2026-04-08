@@ -1,3 +1,17 @@
+//! Canonical service/reference surface over the bounded real-compute core.
+//!
+//! Terminology and boundary conventions used by load-bearing paths:
+//! - `request`: external submission envelope (`ComputeSubmitRequest`).
+//! - `job`: admitted runtime unit with lifecycle/accounting (`ComputeJobStatus`).
+//! - `run`: execution attempt of a job through canonical pipeline execution.
+//! - `replay`: history-backed rerun/re-evaluation path (`ComputeReplay*` types).
+//!
+//! Rollout/runtime context conventions:
+//! - `active`: productive path.
+//! - `candidate|compare|shadow`: non-primary rollout/diagnostic side paths.
+//! - `degraded|unavailable|failed`: canonical state/failure distinctions from
+//!   pipeline/service contracts (not interchangeable synonyms).
+//!
 use crate::compute_service::{
     InMemoryComputeService, JobCompletionClass, JobExecutionPath, JobId, JobLifecycleEvent,
     JobLifecycleState, JobRecord, JobSubmissionMeta,
