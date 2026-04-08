@@ -144,10 +144,7 @@ impl RuntimeProfile {
                 });
             }
 
-            if diagnostics.shadow_enabled
-                || diagnostics.compare_enabled
-                || diagnostics.slot_shadow_enabled
-            {
+            if diagnostics.shadow_enabled || diagnostics.compare_enabled {
                 return Err(ComputeError::InvalidInput {
                     reason:
                         "diagnostic-only shadow/compare configuration requested for production mode"
@@ -227,6 +224,25 @@ mod tests {
         });
 
         assert!(matches!(result, Err(ComputeError::InvalidInput { .. })));
+    }
+
+    #[test]
+    fn production_allows_slot_shadow_flags_without_global_shadow_mode() {
+        let _lock = crate::test_env::env_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _env = crate::test_env::clear_model_env_overrides();
+
+        std::env::set_var("UCF_SLOT_EBM_MODE", "shadow");
+        let result = RuntimeProfile::from_env(&ComputeBackendConfig {
+            kind: ComputeBackendKind::Burn,
+            ..ComputeBackendConfig::default()
+        });
+
+        let profile = result.expect("slot-level shadow remains allowed in production mode");
+        assert_eq!(profile.mode, RuntimeMode::Production);
+        assert!(profile.diagnostics.slot_shadow_enabled);
+        assert!(!profile.diagnostics.shadow_enabled);
     }
 
     #[test]
