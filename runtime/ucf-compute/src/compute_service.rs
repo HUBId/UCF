@@ -526,6 +526,7 @@ pub enum WorkerAvailability {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WorkerDispatchOutcome {
     Unavailable,
+    Deferred,
     DispatchFailure,
     TransportFailure,
     ExecutionFailure,
@@ -578,6 +579,7 @@ pub enum PlacementFailureKind {
     DeviceUnavailable,
     BackendUnavailable,
     WorkerPlacementFailed,
+    CurrentlyUnschedulable,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -661,6 +663,14 @@ struct QueuedJob {
     request: CanonicalPipelineRequest,
     meta: JobSubmissionMeta,
     requested_unit: Option<ExecutionUnitId>,
+    placement_attempts: u8,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SchedulingDecision {
+    RunNow,
+    QueueRequired,
+    NotPlaceable(PlacementFailureKind),
 }
 
 struct UnitSelection {
@@ -674,6 +684,7 @@ pub struct MultiWorkerComputeService {
     units: Vec<ExecutionUnit>,
     records: BTreeMap<JobId, MultiWorkerJobRecord>,
     round_robin_cursor: usize,
+    max_placement_attempts: u8,
 }
 
 impl MultiWorkerComputeService {
@@ -703,6 +714,7 @@ impl MultiWorkerComputeService {
             units: vec![local],
             records: BTreeMap::new(),
             round_robin_cursor: 0,
+            max_placement_attempts: 3,
         }
     }
 
@@ -782,6 +794,7 @@ impl MultiWorkerComputeService {
             request,
             meta,
             requested_unit,
+            placement_attempts: 0,
         });
         id
     }
@@ -795,6 +808,35 @@ impl MultiWorkerComputeService {
             let selection = match self.select_unit(&job.request, job.requested_unit.clone()) {
                 Some(selection) => selection,
                 None => {
+                    let scheduling = self.scheduling_decision(&job);
+                    if scheduling == SchedulingDecision::QueueRequired
+                        && job.requested_unit.is_none()
+                        && job.placement_attempts < self.max_placement_attempts
+                    {
+                        let mut deferred = job.clone();
+                        deferred.placement_attempts = deferred.placement_attempts.saturating_add(1);
+                        self.queue.push_back(deferred);
+                        let (placement, _, worker_dispatch_outcome) = self.rejected_placement(&job);
+                        let record = MultiWorkerJobRecord {
+                            id: job.id,
+                            state: JobLifecycleState::Queued,
+                            execution_failure: None,
+                            result: None,
+                            placement,
+                            worker_dispatch_outcome: worker_dispatch_outcome
+                                .or(Some(WorkerDispatchOutcome::Deferred)),
+                            placement_failure: Some(PlacementFailureKind::CurrentlyUnschedulable),
+                            provenance: WorkerExecutionProvenance {
+                                selected_unit: ExecutionUnitId("deferred".to_string()),
+                                completed_unit: ExecutionUnitId("deferred".to_string()),
+                                was_remote: false,
+                                redispatched_to_local: false,
+                            },
+                        };
+                        done.push(record.id);
+                        self.records.insert(record.id, record);
+                        continue;
+                    }
                     let (placement, placement_failure, worker_dispatch_outcome) =
                         self.rejected_placement(&job);
                     if let Some(requested_unit) = job.requested_unit.clone() {
@@ -827,12 +869,29 @@ impl MultiWorkerComputeService {
                         execution_failure: Some(CanonicalPipelineFailure {
                             kind: CanonicalFailureKind::ExecutionError,
                             stage: None,
-                            detail: "no suitable backend".to_string(),
+                            detail: match scheduling {
+                                SchedulingDecision::NotPlaceable(
+                                    PlacementFailureKind::BackendIncompatible,
+                                )
+                                | SchedulingDecision::NotPlaceable(
+                                    PlacementFailureKind::BackendDeviceIncompatible,
+                                ) => "no suitable backend/device for request".to_string(),
+                                SchedulingDecision::NotPlaceable(
+                                    PlacementFailureKind::CurrentlyUnschedulable,
+                                )
+                                | SchedulingDecision::QueueRequired => {
+                                    "job remained unschedulable under current capacity".to_string()
+                                }
+                                _ => "no suitable backend".to_string(),
+                            },
                         }),
                         result: None,
                         placement,
                         worker_dispatch_outcome,
-                        placement_failure: Some(placement_failure),
+                        placement_failure: Some(match scheduling {
+                            SchedulingDecision::NotPlaceable(kind) => kind,
+                            _ => placement_failure,
+                        }),
                         provenance: WorkerExecutionProvenance {
                             selected_unit: ExecutionUnitId("none".to_string()),
                             completed_unit: ExecutionUnitId("none".to_string()),
@@ -982,6 +1041,55 @@ impl MultiWorkerComputeService {
             best,
             None,
         )
+    }
+
+    fn scheduling_decision(&self, job: &QueuedJob) -> SchedulingDecision {
+        if self.selectable_candidate_exists(&job.request, job.requested_unit.as_ref()) {
+            return SchedulingDecision::RunNow;
+        }
+        let considered = self.assess_candidates(&job.request);
+        if job.requested_unit.is_some() {
+            return SchedulingDecision::NotPlaceable(PlacementFailureKind::WorkerPlacementFailed);
+        }
+        let has_transient_unavailable = considered.iter().any(|candidate| {
+            candidate.suitability == PlacementSuitability::Unavailable
+                && candidate.detail.starts_with("unit not dispatchable")
+        });
+        if has_transient_unavailable {
+            return SchedulingDecision::QueueRequired;
+        }
+        if considered
+            .iter()
+            .any(|candidate| candidate.suitability == PlacementSuitability::Incompatible)
+        {
+            return SchedulingDecision::NotPlaceable(PlacementFailureKind::BackendIncompatible);
+        }
+        if considered
+            .iter()
+            .any(|candidate| candidate.device_suitability == DeviceSuitability::Unsuitable)
+        {
+            return SchedulingDecision::NotPlaceable(
+                PlacementFailureKind::BackendDeviceIncompatible,
+            );
+        }
+        SchedulingDecision::NotPlaceable(PlacementFailureKind::NoSuitableBackend)
+    }
+
+    fn selectable_candidate_exists(
+        &self,
+        request: &CanonicalPipelineRequest,
+        requested: Option<&ExecutionUnitId>,
+    ) -> bool {
+        let considered = self.assess_candidates(request);
+        match requested {
+            Some(requested_unit) => considered.iter().any(|candidate| {
+                &candidate.unit_id == requested_unit
+                    && candidate.suitability == PlacementSuitability::Suitable
+            }),
+            None => considered
+                .iter()
+                .any(|candidate| candidate.suitability == PlacementSuitability::Suitable),
+        }
     }
 
     fn assess_candidates(
@@ -2181,6 +2289,86 @@ mod tests {
             .expect("failure expected")
             .detail
             .contains("worker placement failed"));
+    }
+
+    #[test]
+    fn multi_worker_transient_unavailability_is_deferred_then_runs() {
+        let backend = ComputePipelineBackend::new(
+            pack_with(BackendComponentId::ToyV1, Vec::new()),
+            FusionConfig::default(),
+            LimitsConfig::default(),
+        );
+        let mut service = MultiWorkerComputeService::new(backend, 1);
+        for unit in service.execution_units() {
+            service.set_worker_availability(&unit.id, WorkerAvailability::Unavailable);
+        }
+        let job_id = service.submit(
+            valid_request(),
+            JobSubmissionMeta {
+                submitted_at_unix_ms: 17,
+                submitted_by: Some("scheduler".to_string()),
+            },
+            None,
+        );
+        service.run_scheduler_cycle(1);
+        let deferred = service.job(job_id).expect("deferred record");
+        assert_eq!(deferred.state, JobLifecycleState::Queued);
+        assert_eq!(
+            deferred.placement_failure,
+            Some(PlacementFailureKind::CurrentlyUnschedulable)
+        );
+        assert_eq!(
+            deferred.worker_dispatch_outcome,
+            Some(WorkerDispatchOutcome::Deferred)
+        );
+
+        for unit in service.execution_units() {
+            service.set_worker_availability(&unit.id, WorkerAvailability::Available);
+        }
+        service.run_scheduler_cycle(1);
+        let ran = service.job(job_id).expect("executed record");
+        assert_ne!(ran.state, JobLifecycleState::Queued);
+        assert_ne!(
+            ran.placement_failure,
+            Some(PlacementFailureKind::CurrentlyUnschedulable)
+        );
+    }
+
+    #[test]
+    fn multi_worker_unschedulable_exhausts_retries_and_fails() {
+        let backend = ComputePipelineBackend::new(
+            pack_with(BackendComponentId::ToyV1, Vec::new()),
+            FusionConfig::default(),
+            LimitsConfig::default(),
+        );
+        let mut service = MultiWorkerComputeService::new(backend, 1);
+        for unit in service.execution_units() {
+            service.set_worker_availability(&unit.id, WorkerAvailability::Unavailable);
+        }
+        let job_id = service.submit(
+            valid_request(),
+            JobSubmissionMeta {
+                submitted_at_unix_ms: 18,
+                submitted_by: Some("scheduler".to_string()),
+            },
+            None,
+        );
+        service.run_scheduler_cycle(1);
+        service.run_scheduler_cycle(1);
+        service.run_scheduler_cycle(1);
+        service.run_scheduler_cycle(1);
+        let failed = service.job(job_id).expect("terminal record");
+        assert_eq!(failed.state, JobLifecycleState::Failed);
+        assert_eq!(
+            failed.placement_failure,
+            Some(PlacementFailureKind::DeviceUnavailable)
+        );
+        assert!(failed
+            .execution_failure
+            .as_ref()
+            .expect("failure expected")
+            .detail
+            .contains("unschedulable"));
     }
 
     #[test]

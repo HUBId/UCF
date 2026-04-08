@@ -62,6 +62,10 @@ Worker snapshots now also expose a narrow runtime lifecycle signal:
 `known|ready|busy|saturated|unavailable|unhealthy`, plus last dispatch/error metadata for
 operational triage without introducing fleet-management control planes.
 
+Multi-worker scheduling remains intentionally compact: jobs are either placed immediately, kept
+queued as currently-unschedulable (capacity/device temporarily unavailable), or rejected when no
+technical backend/device placement is possible.
+
 ## Backend selection (runtime)
 
 The orchestrator can be bootstrapped from env config via `RuntimeOrchestrator::try_new_from_env`.
