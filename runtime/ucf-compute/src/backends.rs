@@ -378,6 +378,13 @@ mod tests {
     }
 
     #[test]
+    fn compatibility_constructor_default_is_not_the_canonical_production_lane() {
+        let cfg = ComputeBackendConfig::default();
+        assert_eq!(cfg.kind, ComputeBackendKind::Stub);
+        assert_ne!(cfg.kind, CANONICAL_ONBOARDING_BACKEND);
+    }
+
+    #[test]
     fn onboarding_reference_backend_build_state_is_honest() {
         let _lock = crate::test_env::env_lock()
             .lock()

@@ -260,4 +260,20 @@ mod tests {
 
         assert!(matches!(result, Err(ComputeError::InvalidInput { .. })));
     }
+
+    #[test]
+    fn compare_runtime_alias_maps_to_diagnostic_mode() {
+        let _lock = crate::test_env::env_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _env = crate::test_env::clear_model_env_overrides();
+
+        std::env::set_var("UCF_RUNTIME_MODE", "compare");
+        let profile = RuntimeProfile::from_env(&ComputeBackendConfig {
+            kind: ComputeBackendKind::Stub,
+            ..ComputeBackendConfig::default()
+        })
+        .expect("compare alias maps to diagnostic runtime mode");
+        assert_eq!(profile.mode, RuntimeMode::Diagnostic);
+    }
 }
