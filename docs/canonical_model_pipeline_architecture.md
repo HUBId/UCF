@@ -101,6 +101,33 @@ Stub/Toy paths remain explicit development/testing paths, not hidden production-
 - structured failure (kind, stage, detail) when present
 - work/budget snapshot (`diagnostics.work`: per-stage remaining units + exceeded stage)
 - timing snapshot (`diagnostics.timing`: total + per-stage latency hints)
+- stage-level profiling snapshot (`diagnostics.stage_profiles`: stage id, state, duration, remaining work hints, detail)
+- hotspot/bottleneck sketch (`diagnostics.hotspots`: slowest/dominant stage + degraded/skipped/unavailable/failed counts)
 - evidence/provenance digest hook (`diagnostics.evidence_chain_digest_prefix`)
 
 This keeps diagnostics focused on canonical inference execution without introducing broad telemetry/governance extensions.
+
+## Minimal stage profiling semantics
+
+Canonical stage profiling intentionally stays narrow and operational:
+
+- states are limited to `success`, `slow_success`, `degraded`, `skipped`, `unavailable`, `failed`
+- LFM disabled path is surfaced as explicit `skipped` (no fake execution time)
+- budget/degradation paths remain aligned with existing `degraded fallback` semantics
+- hard stage failures stay in the same `CanonicalPipelineFailure` taxonomy and are mirrored in stage profile state (`failed`/`unavailable`)
+
+Hotspot derivation is also intentionally minimal:
+
+- `slowest_stage` and `dominant_stage` are selected from observed stage durations
+- `dominant_stage_share_bps` reports rough share of total runtime in basis points
+- counts of degraded/skipped/unavailable/failed stages provide direct operational triage hints
+
+## Job/Ops/History visibility
+
+The same load-bearing profile is threaded into job/history views:
+
+- `JobAccountingSummary.stage_profiles`
+- `JobAccountingSummary.hotspot_summary`
+- persisted job history (`PersistedJobRecord.stage_profiles` + `hotspot_summary`)
+
+This keeps one canonical diagnostics surface across runtime execution, job accounting, and replay/history summaries.

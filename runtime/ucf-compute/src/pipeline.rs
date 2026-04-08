@@ -109,6 +109,36 @@ pub struct CanonicalTimingSummary {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CanonicalStageProfileState {
+    Success,
+    SlowSuccess,
+    Degraded,
+    Skipped,
+    Unavailable,
+    Failed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CanonicalStageProfile {
+    pub stage: CanonicalStageId,
+    pub state: CanonicalStageProfileState,
+    pub duration_micros: Option<u64>,
+    pub remaining_work_units: Option<u64>,
+    pub detail: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CanonicalHotspotSummary {
+    pub slowest_stage: Option<CanonicalStageId>,
+    pub dominant_stage: Option<CanonicalStageId>,
+    pub dominant_stage_share_bps: Option<u16>,
+    pub degraded_stage_count: u8,
+    pub skipped_stage_count: u8,
+    pub unavailable_stage_count: u8,
+    pub failed_stage_count: u8,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CanonicalWorkSummary {
     pub global_budget_units: u64,
     pub global_remaining_units: u64,
@@ -123,6 +153,8 @@ pub struct CanonicalWorkSummary {
 pub struct CanonicalRunDiagnostics {
     pub timing: CanonicalTimingSummary,
     pub work: CanonicalWorkSummary,
+    pub stage_profiles: Vec<CanonicalStageProfile>,
+    pub hotspots: CanonicalHotspotSummary,
     pub evidence_chain_digest_prefix: Option<String>,
 }
 
@@ -281,6 +313,7 @@ struct UnavailableResultContext {
     nsr_stage: Option<NsrStageStatus>,
     backend_id: Option<u16>,
     budget_stage: Option<&'static str>,
+    stage_profiles: Option<Vec<CanonicalStageProfile>>,
     diagnostics: Option<CanonicalRunDiagnostics>,
 }
 
@@ -907,6 +940,7 @@ impl ComputePipelineBackend {
                     nsr_stage: None,
                     backend_id: None,
                     budget_stage: None,
+                    stage_profiles: None,
                     diagnostics: None,
                 },
             ));
@@ -949,6 +983,7 @@ impl ComputePipelineBackend {
                     nsr_stage: Some(nsr_disabled_stage(nsr_slot.clone(), nsr_mode)),
                     backend_id: None,
                     budget_stage: None,
+                    stage_profiles: None,
                     diagnostics: None,
                 },
             ));
@@ -1010,6 +1045,7 @@ impl ComputePipelineBackend {
                     nsr_stage: None,
                     backend_id: Some(pack_meta.world_backend as u16),
                     budget_stage: None,
+                    stage_profiles: None,
                     diagnostics: None,
                 },
             ));
@@ -1044,6 +1080,7 @@ impl ComputePipelineBackend {
                             nsr_stage: None,
                             backend_id: None,
                             budget_stage: Some(stage),
+                            stage_profiles: None,
                             diagnostics: None,
                         },
                     ));
@@ -1069,6 +1106,7 @@ impl ComputePipelineBackend {
                         nsr_stage: None,
                         backend_id: Some(pack_meta.world_backend as u16),
                         budget_stage: None,
+                        stage_profiles: None,
                         diagnostics: None,
                     },
                 ));
@@ -1177,6 +1215,7 @@ impl ComputePipelineBackend {
                     nsr_stage: None,
                     backend_id: Some(pack_meta.sae_backend as u16),
                     budget_stage: None,
+                    stage_profiles: None,
                     diagnostics: None,
                 },
             ));
@@ -1211,6 +1250,7 @@ impl ComputePipelineBackend {
                                 nsr_stage: None,
                                 backend_id: None,
                                 budget_stage: Some(stage),
+                                stage_profiles: None,
                                 diagnostics: None,
                             },
                         ));
@@ -1236,6 +1276,7 @@ impl ComputePipelineBackend {
                             nsr_stage: None,
                             backend_id: Some(pack_meta.sae_backend as u16),
                             budget_stage: None,
+                            stage_profiles: None,
                             diagnostics: None,
                         },
                     ));
@@ -1262,6 +1303,7 @@ impl ComputePipelineBackend {
                             nsr_stage: None,
                             backend_id: None,
                             budget_stage: Some(stage),
+                            stage_profiles: None,
                             diagnostics: None,
                         },
                     ));
@@ -1332,6 +1374,7 @@ impl ComputePipelineBackend {
                     nsr_stage: None,
                     backend_id: Some(pack_meta.ssm_backend as u16),
                     budget_stage: None,
+                    stage_profiles: None,
                     diagnostics: None,
                 },
             ));
@@ -1370,6 +1413,7 @@ impl ComputePipelineBackend {
                                 nsr_stage: None,
                                 backend_id: None,
                                 budget_stage: Some(stage),
+                                stage_profiles: None,
                                 diagnostics: None,
                             },
                         ));
@@ -1395,6 +1439,7 @@ impl ComputePipelineBackend {
                             nsr_stage: None,
                             backend_id: Some(pack_meta.ssm_backend as u16),
                             budget_stage: None,
+                            stage_profiles: None,
                             diagnostics: None,
                         },
                     ));
@@ -1421,6 +1466,7 @@ impl ComputePipelineBackend {
                             nsr_stage: None,
                             backend_id: None,
                             budget_stage: Some(stage),
+                            stage_profiles: None,
                             diagnostics: None,
                         },
                     ));
@@ -1504,6 +1550,7 @@ impl ComputePipelineBackend {
                     nsr_stage: None,
                     backend_id: Some(pack_meta.lfm_backend as u16),
                     budget_stage: None,
+                    stage_profiles: None,
                     diagnostics: None,
                 },
             ));
@@ -1556,6 +1603,7 @@ impl ComputePipelineBackend {
                                     nsr_stage: None,
                                     backend_id: None,
                                     budget_stage: Some(stage),
+                                    stage_profiles: None,
                                     diagnostics: None,
                                 },
                             ));
@@ -1581,6 +1629,7 @@ impl ComputePipelineBackend {
                                 nsr_stage: None,
                                 backend_id: Some(pack_meta.lfm_backend as u16),
                                 budget_stage: None,
+                                stage_profiles: None,
                                 diagnostics: None,
                             },
                         ));
@@ -1607,6 +1656,7 @@ impl ComputePipelineBackend {
                                 nsr_stage: None,
                                 backend_id: None,
                                 budget_stage: Some(stage),
+                                stage_profiles: None,
                                 diagnostics: None,
                             },
                         ));
@@ -1778,6 +1828,7 @@ impl ComputePipelineBackend {
                         nsr_stage: Some(nsr_outcome.status.clone()),
                         backend_id: None,
                         budget_stage: None,
+                        stage_profiles: None,
                         diagnostics: None,
                     },
                 ));
@@ -1927,18 +1978,45 @@ impl ComputePipelineBackend {
             violation_reason_mask: validation_report.violation_mask,
         };
 
+        let work = CanonicalWorkSummary {
+            global_budget_units: budget.global_work_units,
+            global_remaining_units: global_meter.remaining(),
+            world_remaining_units: world_meter.remaining(),
+            sae_remaining_units: sae_meter.remaining(),
+            ssm_remaining_units: ssm_meter.remaining(),
+            lfm_remaining_units: lfm_meter.remaining(),
+            budget_exceeded_stage: exceeded_stage,
+        };
         let diagnostics = CanonicalRunDiagnostics {
             timing,
-            work: CanonicalWorkSummary {
-                global_budget_units: budget.global_work_units,
-                global_remaining_units: global_meter.remaining(),
-                world_remaining_units: world_meter.remaining(),
-                sae_remaining_units: sae_meter.remaining(),
-                ssm_remaining_units: ssm_meter.remaining(),
-                lfm_remaining_units: lfm_meter.remaining(),
-                budget_exceeded_stage: exceeded_stage,
+            work,
+            stage_profiles: build_stage_profiles(
+                timing,
+                work,
+                &world_stage,
+                &lfm_stage,
+                &executed_stages,
+                sae_degraded,
+                ssm_degraded,
+                lfm_budget_degraded,
+                exceeded_stage,
+                None,
+            ),
+            hotspots: CanonicalHotspotSummary {
+                slowest_stage: None,
+                dominant_stage: None,
+                dominant_stage_share_bps: None,
+                degraded_stage_count: 0,
+                skipped_stage_count: 0,
+                unavailable_stage_count: 0,
+                failed_stage_count: 0,
             },
             evidence_chain_digest_prefix: Some(evidence_chain.digest_prefix_hex()),
+        };
+        let hotspots = build_hotspot_summary(&diagnostics.stage_profiles, timing.total_micros);
+        let diagnostics = CanonicalRunDiagnostics {
+            hotspots,
+            ..diagnostics
         };
 
         let mut state = CanonicalPipelineState::Ok;
@@ -2052,8 +2130,31 @@ impl ComputePipelineBackend {
                 lfm_remaining_units: budget.lfm_units,
                 budget_exceeded_stage: ctx.budget_stage,
             },
+            stage_profiles: ctx.stage_profiles.unwrap_or_else(|| {
+                default_unavailable_stage_profiles(
+                    ctx.failure.stage,
+                    ctx.failure.kind == CanonicalFailureKind::ExecutionError
+                        || ctx.failure.kind == CanonicalFailureKind::Timeout,
+                )
+            }),
+            hotspots: CanonicalHotspotSummary {
+                slowest_stage: None,
+                dominant_stage: None,
+                dominant_stage_share_bps: None,
+                degraded_stage_count: 0,
+                skipped_stage_count: 0,
+                unavailable_stage_count: 0,
+                failed_stage_count: 0,
+            },
             evidence_chain_digest_prefix: None,
         });
+        let diagnostics = CanonicalRunDiagnostics {
+            hotspots: build_hotspot_summary(
+                &diagnostics.stage_profiles,
+                diagnostics.timing.total_micros,
+            ),
+            ..diagnostics
+        };
         CanonicalPipelineResult {
             request: input.clone(),
             stage_order: CANONICAL_STAGE_SEQUENCE,
@@ -2080,6 +2181,179 @@ impl ComputePipelineBackend {
             model_slots: self.pack.model_slot_provenance().to_vec(),
             signals,
         }
+    }
+}
+
+fn stage_timing_for(stage: CanonicalStageId, timing: CanonicalTimingSummary) -> Option<u64> {
+    match stage {
+        CanonicalStageId::World => timing.world_micros,
+        CanonicalStageId::Sae => timing.sae_micros,
+        CanonicalStageId::Ssm => timing.ssm_micros,
+        CanonicalStageId::Lfm => timing.lfm_micros,
+    }
+}
+
+fn default_unavailable_stage_profiles(
+    failed_stage: Option<CanonicalStageId>,
+    hard_failure: bool,
+) -> Vec<CanonicalStageProfile> {
+    CANONICAL_STAGE_SEQUENCE
+        .iter()
+        .map(|stage| CanonicalStageProfile {
+            stage: *stage,
+            state: if Some(*stage) == failed_stage {
+                if hard_failure {
+                    CanonicalStageProfileState::Failed
+                } else {
+                    CanonicalStageProfileState::Unavailable
+                }
+            } else {
+                CanonicalStageProfileState::Unavailable
+            },
+            duration_micros: None,
+            remaining_work_units: None,
+            detail: None,
+        })
+        .collect()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_stage_profiles(
+    timing: CanonicalTimingSummary,
+    work: CanonicalWorkSummary,
+    world_stage: &WorldStageStatus,
+    lfm_stage: &LfmStageStatus,
+    executed_stages: &[CanonicalStageId],
+    sae_degraded: bool,
+    ssm_degraded: bool,
+    lfm_budget_degraded: bool,
+    exceeded_stage: Option<&'static str>,
+    failure: Option<&CanonicalPipelineFailure>,
+) -> Vec<CanonicalStageProfile> {
+    let slow_threshold_micros = timing.total_micros.saturating_mul(60) / 100;
+    CANONICAL_STAGE_SEQUENCE
+        .iter()
+        .map(|stage| {
+            let duration = stage_timing_for(*stage, timing);
+            let stage_executed = executed_stages.contains(stage);
+            let mut state = if !stage_executed {
+                CanonicalStageProfileState::Unavailable
+            } else {
+                CanonicalStageProfileState::Success
+            };
+            let mut detail = None;
+            if let Some(run_failure) = failure {
+                if run_failure.stage == Some(*stage) {
+                    state = CanonicalStageProfileState::Failed;
+                    detail = Some(run_failure.detail.clone());
+                }
+            }
+            match stage {
+                CanonicalStageId::World => {
+                    if world_stage.used
+                        && world_stage.readiness == WorldStageReadiness::ProductionBlocked
+                    {
+                        state = CanonicalStageProfileState::Degraded;
+                        detail = world_stage.detail.clone();
+                    }
+                }
+                CanonicalStageId::Sae => {
+                    if sae_degraded {
+                        state = CanonicalStageProfileState::Degraded;
+                        detail = Some("sae budget degraded fallback".to_string());
+                    }
+                }
+                CanonicalStageId::Ssm => {
+                    if ssm_degraded {
+                        state = CanonicalStageProfileState::Degraded;
+                        detail = Some("ssm budget degraded fallback".to_string());
+                    }
+                }
+                CanonicalStageId::Lfm => {
+                    if lfm_stage.state == LfmStageState::Disabled {
+                        state = CanonicalStageProfileState::Skipped;
+                        detail = Some("lfm backend disabled".to_string());
+                    } else if lfm_budget_degraded
+                        || lfm_stage.state == LfmStageState::DegradedBypass
+                    {
+                        state = CanonicalStageProfileState::Degraded;
+                        detail = Some("lfm budget degraded fallback".to_string());
+                    }
+                }
+            }
+            if let Some(micros) = duration {
+                if state == CanonicalStageProfileState::Success && micros >= slow_threshold_micros {
+                    state = CanonicalStageProfileState::SlowSuccess;
+                }
+            }
+            if let Some(budget_stage) = exceeded_stage {
+                if matches!(
+                    (*stage, budget_stage),
+                    (CanonicalStageId::World, "world_model/step")
+                        | (CanonicalStageId::Sae, "sae/extract")
+                        | (CanonicalStageId::Ssm, "ssm/step")
+                        | (CanonicalStageId::Lfm, "lfm/step")
+                ) && detail.is_none()
+                {
+                    detail = Some(format!("capacity pressure at {budget_stage}"));
+                }
+            }
+            CanonicalStageProfile {
+                stage: *stage,
+                state,
+                duration_micros: duration,
+                remaining_work_units: Some(match stage {
+                    CanonicalStageId::World => work.world_remaining_units,
+                    CanonicalStageId::Sae => work.sae_remaining_units,
+                    CanonicalStageId::Ssm => work.ssm_remaining_units,
+                    CanonicalStageId::Lfm => work.lfm_remaining_units,
+                }),
+                detail,
+            }
+        })
+        .collect()
+}
+
+fn build_hotspot_summary(
+    stage_profiles: &[CanonicalStageProfile],
+    total_micros: u64,
+) -> CanonicalHotspotSummary {
+    let mut slowest_stage = None;
+    let mut slowest_micros = 0_u64;
+    let mut dominant_stage = None;
+    let mut dominant_share_bps = None;
+    let mut degraded_stage_count = 0_u8;
+    let mut skipped_stage_count = 0_u8;
+    let mut unavailable_stage_count = 0_u8;
+    let mut failed_stage_count = 0_u8;
+    for profile in stage_profiles {
+        match profile.state {
+            CanonicalStageProfileState::Degraded => degraded_stage_count += 1,
+            CanonicalStageProfileState::Skipped => skipped_stage_count += 1,
+            CanonicalStageProfileState::Unavailable => unavailable_stage_count += 1,
+            CanonicalStageProfileState::Failed => failed_stage_count += 1,
+            CanonicalStageProfileState::Success | CanonicalStageProfileState::SlowSuccess => {}
+        }
+        if let Some(duration) = profile.duration_micros {
+            if duration >= slowest_micros {
+                slowest_micros = duration;
+                slowest_stage = Some(profile.stage);
+            }
+        }
+    }
+    if total_micros > 0 && slowest_micros > 0 {
+        dominant_stage = slowest_stage;
+        let bps = slowest_micros.saturating_mul(10_000) / total_micros;
+        dominant_share_bps = Some(bps.min(10_000) as u16);
+    }
+    CanonicalHotspotSummary {
+        slowest_stage,
+        dominant_stage,
+        dominant_stage_share_bps: dominant_share_bps,
+        degraded_stage_count,
+        skipped_stage_count,
+        unavailable_stage_count,
+        failed_stage_count,
     }
 }
 
@@ -2344,6 +2618,11 @@ mod tests {
         assert_eq!(result.stage_order, CANONICAL_STAGE_SEQUENCE);
         assert_eq!(result.executed_stages, CANONICAL_STAGE_SEQUENCE.to_vec());
         assert_ne!(result.state, CanonicalPipelineState::Unavailable);
+        assert_eq!(
+            result.diagnostics.stage_profiles.len(),
+            CANONICAL_STAGE_SEQUENCE.len()
+        );
+        assert!(result.diagnostics.hotspots.slowest_stage.is_some());
     }
 
     #[test]
@@ -2366,6 +2645,17 @@ mod tests {
         assert_eq!(failure.kind, CanonicalFailureKind::StageContractMismatch);
         assert_eq!(failure.stage, Some(CanonicalStageId::World));
         assert!(result.executed_stages.is_empty());
+        let world = result
+            .diagnostics
+            .stage_profiles
+            .iter()
+            .find(|profile| profile.stage == CanonicalStageId::World)
+            .expect("world profile");
+        assert!(matches!(
+            world.state,
+            CanonicalStageProfileState::Unavailable | CanonicalStageProfileState::Failed
+        ));
+        assert!(result.diagnostics.hotspots.unavailable_stage_count >= 1);
     }
 
     #[test]
@@ -2532,6 +2822,8 @@ mod tests {
             WorldStageReadiness::ContractReady | WorldStageReadiness::RuntimePathReady
         ));
         assert!(result.diagnostics.timing.total_micros > 0);
+        assert_eq!(result.diagnostics.stage_profiles.len(), 4);
+        assert!(result.diagnostics.hotspots.dominant_stage.is_some());
         assert_eq!(
             result.validation.violation_reason_mask,
             result.violation_reason_mask
@@ -2560,6 +2852,11 @@ mod tests {
             failure_kind,
             CanonicalFailureKind::DegradedFallback | CanonicalFailureKind::ValidationDegraded
         ));
+        assert!(canonical
+            .diagnostics
+            .stage_profiles
+            .iter()
+            .any(|profile| profile.state == CanonicalStageProfileState::Degraded));
     }
 
     #[test]

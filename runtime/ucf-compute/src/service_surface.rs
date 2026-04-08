@@ -6,8 +6,8 @@ use crate::job_history::{
     JobHistoryStore, JobHistoryStoreError, PersistedCanonicalRequest, PersistedJobRecord,
 };
 use crate::pipeline::{
-    CanonicalFailureKind, CanonicalPipelineFailure, CanonicalPipelineRequest,
-    CanonicalPipelineState, CanonicalWorkSummary,
+    CanonicalFailureKind, CanonicalHotspotSummary, CanonicalPipelineFailure,
+    CanonicalPipelineRequest, CanonicalPipelineState, CanonicalWorkSummary,
 };
 use crate::{ModelSlot, ModelSlotProvenance, SlotRuntimeStatus};
 use std::collections::BTreeMap;
@@ -55,6 +55,7 @@ pub struct ComputeJobStatus {
     pub failure_kind: Option<CanonicalFailureKind>,
     pub pipeline_state: Option<CanonicalPipelineState>,
     pub work_summary: Option<CanonicalWorkSummary>,
+    pub hotspot_summary: Option<CanonicalHotspotSummary>,
     pub model_slots: Vec<ModelSlotProvenance>,
     pub submitted_at_unix_ms: u64,
     pub finished_at_unix_ms: Option<u64>,
@@ -1248,6 +1249,7 @@ fn status_from_record(
         failure_kind: record.accounting.failure_kind,
         pipeline_state: record.accounting.pipeline_state,
         work_summary: record.accounting.work_summary,
+        hotspot_summary: record.accounting.hotspot_summary,
         model_slots: record.accounting.model_slots.clone(),
         submitted_at_unix_ms: record.accounting.submitted_at_unix_ms,
         finished_at_unix_ms: record.accounting.finished_at_unix_ms,

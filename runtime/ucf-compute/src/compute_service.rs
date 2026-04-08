@@ -6,9 +6,9 @@ use crate::backend_pack::{
 };
 use crate::pipeline::{
     BackendExecutionLane, CanonicalAdmissionDecision, CanonicalFailureKind,
-    CanonicalPipelineFailure, CanonicalPipelineRequest, CanonicalPipelineResult,
-    CanonicalPipelineState, CanonicalStageId, CanonicalWorkSummary, ComputePipelineBackend,
-    FusionConfig, LimitsConfig,
+    CanonicalHotspotSummary, CanonicalPipelineFailure, CanonicalPipelineRequest,
+    CanonicalPipelineResult, CanonicalPipelineState, CanonicalStageId, CanonicalStageProfile,
+    CanonicalWorkSummary, ComputePipelineBackend, FusionConfig, LimitsConfig,
 };
 use crate::ComputeError;
 
@@ -117,6 +117,8 @@ pub struct JobAccountingSummary {
     pub total_duration_ms: Option<u64>,
     pub failure_kind: Option<CanonicalFailureKind>,
     pub work_summary: Option<CanonicalWorkSummary>,
+    pub stage_profiles: Vec<CanonicalStageProfile>,
+    pub hotspot_summary: Option<CanonicalHotspotSummary>,
     pub pipeline_state: Option<CanonicalPipelineState>,
     pub stage_order: Option<[CanonicalStageId; 4]>,
     pub executed_stages: Vec<CanonicalStageId>,
@@ -267,6 +269,8 @@ impl InMemoryComputeService {
                 total_duration_ms: None,
                 failure_kind: None,
                 work_summary: None,
+                stage_profiles: Vec::new(),
+                hotspot_summary: None,
                 pipeline_state: None,
                 stage_order: None,
                 executed_stages: Vec::new(),
@@ -452,6 +456,8 @@ impl InMemoryComputeService {
         );
         if let Some(canonical_result) = record.result.as_ref() {
             record.accounting.work_summary = Some(canonical_result.diagnostics.work);
+            record.accounting.stage_profiles = canonical_result.diagnostics.stage_profiles.clone();
+            record.accounting.hotspot_summary = Some(canonical_result.diagnostics.hotspots);
             record.accounting.pipeline_state = Some(canonical_result.state);
             record.accounting.stage_order = Some(canonical_result.stage_order);
             record.accounting.executed_stages = canonical_result.executed_stages.clone();
@@ -2272,6 +2278,8 @@ mod tests {
         assert!(record.accounting.execution_duration_micros.is_some());
         assert!(record.accounting.total_duration_ms.is_some());
         assert!(record.accounting.work_summary.is_some());
+        assert!(!record.accounting.stage_profiles.is_empty());
+        assert!(record.accounting.hotspot_summary.is_some());
         assert!(record.accounting.pipeline_state.is_some());
         assert!(record.accounting.stage_order.is_some());
         assert!(!record.accounting.executed_stages.is_empty());
@@ -2350,6 +2358,14 @@ mod tests {
         assert_eq!(
             completed.accounting.executed_stages,
             result.executed_stages.clone()
+        );
+        assert_eq!(
+            completed.accounting.stage_profiles,
+            result.diagnostics.stage_profiles
+        );
+        assert_eq!(
+            completed.accounting.hotspot_summary,
+            Some(result.diagnostics.hotspots)
         );
         assert_eq!(completed.accounting.pipeline_state, Some(result.state));
     }
