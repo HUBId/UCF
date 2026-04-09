@@ -56,6 +56,37 @@ struct WorkerHandle {
     restart_count: u32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WorkerFailureClass {
+    DispatchFailedBeforeExecution,
+    TransportFailure,
+    WorkerUnavailableOrStale,
+    WorkerExecutionCrashed,
+    StructuredExecutionFailure,
+}
+
+impl WorkerFailureClass {
+    fn retryable(self) -> bool {
+        matches!(
+            self,
+            Self::DispatchFailedBeforeExecution
+                | Self::TransportFailure
+                | Self::WorkerUnavailableOrStale
+                | Self::WorkerExecutionCrashed
+        )
+    }
+
+    fn as_code(self) -> &'static str {
+        match self {
+            Self::DispatchFailedBeforeExecution => "worker_dispatch_failed_before_execution",
+            Self::TransportFailure => "worker_transport_failure",
+            Self::WorkerUnavailableOrStale => "worker_unavailable_or_stale",
+            Self::WorkerExecutionCrashed => "worker_execution_crashed",
+            Self::StructuredExecutionFailure => "worker_structured_execution_failure",
+        }
+    }
+}
+
 pub struct WorkerManager {
     workers: Mutex<BTreeMap<WorkerStage, WorkerHandle>>,
     audit: Mutex<WorkerAuditLog>,
@@ -65,6 +96,8 @@ pub struct WorkerManager {
 }
 
 impl WorkerManager {
+    const MAX_TRANSIENT_RETRIES: u8 = 1;
+
     pub fn new(seed: u64, model_hashes_digest: [u8; 32]) -> Self {
         Self {
             workers: Mutex::new(BTreeMap::new()),
@@ -194,7 +227,37 @@ impl WorkerManager {
         timeout_ms: u32,
         input: StageInput,
     ) -> Result<StageOutput, ComputeError> {
-        self.ensure_worker(stage)?;
+        let mut attempts = 0_u8;
+        loop {
+            attempts = attempts.saturating_add(1);
+            match self.compute_once(stage, t, timeout_ms, input.clone()) {
+                Ok(output) => return Ok(output),
+                Err((failure_class, err)) => {
+                    if !failure_class.retryable() || attempts > Self::MAX_TRANSIENT_RETRIES + 1 {
+                        return Err(err);
+                    }
+                    self.restart_worker(stage, failure_class.as_code(), t);
+                }
+            }
+        }
+    }
+
+    fn compute_once(
+        &self,
+        stage: WorkerStage,
+        t: u64,
+        timeout_ms: u32,
+        input: StageInput,
+    ) -> Result<StageOutput, (WorkerFailureClass, ComputeError)> {
+        self.ensure_worker(stage).map_err(|err| {
+            (
+                WorkerFailureClass::WorkerUnavailableOrStale,
+                prefix_worker_error(
+                    WorkerFailureClass::WorkerUnavailableOrStale,
+                    err.to_string(),
+                ),
+            )
+        })?;
         let req_id = self.request_id.fetch_add(1, Ordering::Relaxed);
         let req = WorkerRequest::Compute(Box::new(ComputeRequest {
             schema_version: IPC_SCHEMA_VERSION,
@@ -205,16 +268,32 @@ impl WorkerManager {
             timeout_ms,
             input,
         }));
-        let mut workers = self.workers.lock().map_err(|_| ComputeError::Internal {
-            reason: "worker mutex poisoned".to_string(),
+        let mut workers = self.workers.lock().map_err(|_| {
+            (
+                WorkerFailureClass::DispatchFailedBeforeExecution,
+                prefix_worker_error(
+                    WorkerFailureClass::DispatchFailedBeforeExecution,
+                    "worker mutex poisoned".to_string(),
+                ),
+            )
         })?;
-        let handle = workers
-            .get_mut(&stage)
-            .ok_or_else(|| ComputeError::Internal {
-                reason: "worker missing".to_string(),
-            })?;
-        write_frame(&mut handle.stdin, &req).map_err(|e| ComputeError::Internal {
-            reason: format!("request write: {e}"),
+        let handle = workers.get_mut(&stage).ok_or_else(|| {
+            (
+                WorkerFailureClass::DispatchFailedBeforeExecution,
+                prefix_worker_error(
+                    WorkerFailureClass::DispatchFailedBeforeExecution,
+                    "worker missing".to_string(),
+                ),
+            )
+        })?;
+        write_frame(&mut handle.stdin, &req).map_err(|e| {
+            (
+                WorkerFailureClass::DispatchFailedBeforeExecution,
+                prefix_worker_error(
+                    WorkerFailureClass::DispatchFailedBeforeExecution,
+                    format!("request write: {e}"),
+                ),
+            )
         })?;
         match handle
             .response_rx
@@ -223,43 +302,72 @@ impl WorkerManager {
             Ok(WorkerResponse::Compute(resp)) => {
                 let resp = *resp;
                 if resp.schema_version != IPC_SCHEMA_VERSION || resp.request_id != req_id {
-                    return Err(ComputeError::Internal {
-                        reason: "schema/request mismatch".to_string(),
-                    });
+                    return Err((
+                        WorkerFailureClass::TransportFailure,
+                        prefix_worker_error(
+                            WorkerFailureClass::TransportFailure,
+                            "schema/request mismatch".to_string(),
+                        ),
+                    ));
                 }
                 match resp.status {
-                    ComputeStatus::Ok => resp.output.ok_or_else(|| ComputeError::Internal {
-                        reason: "missing output".to_string(),
+                    ComputeStatus::Ok => resp.output.ok_or_else(|| {
+                        (
+                            WorkerFailureClass::TransportFailure,
+                            prefix_worker_error(
+                                WorkerFailureClass::TransportFailure,
+                                "missing output".to_string(),
+                            ),
+                        )
                     }),
                     ComputeStatus::Timeout => {
                         drop(workers);
                         self.restart_worker(stage, "timeout", t);
-                        Err(ComputeError::BudgetExceeded {
-                            stage: "worker/timeout",
-                            elapsed_micros: u64::from(timeout_ms) * 1000,
-                            limit_micros: u64::from(timeout_ms) * 1000,
-                        })
+                        Err((
+                            WorkerFailureClass::WorkerExecutionCrashed,
+                            ComputeError::BudgetExceeded {
+                                stage: "worker/timeout",
+                                elapsed_micros: u64::from(timeout_ms) * 1000,
+                                limit_micros: u64::from(timeout_ms) * 1000,
+                            },
+                        ))
                     }
-                    ComputeStatus::Error => Err(ComputeError::Internal {
-                        reason: resp
-                            .error_code
-                            .unwrap_or_else(|| "worker_error".to_string()),
-                    }),
+                    ComputeStatus::Error => Err((
+                        WorkerFailureClass::StructuredExecutionFailure,
+                        prefix_worker_error(
+                            WorkerFailureClass::StructuredExecutionFailure,
+                            resp.error_code
+                                .unwrap_or_else(|| "worker_error".to_string()),
+                        ),
+                    )),
                 }
             }
-            Ok(other) => Err(ComputeError::Internal {
-                reason: format!("unexpected response: {other:?}"),
-            }),
+            Ok(other) => Err((
+                WorkerFailureClass::TransportFailure,
+                prefix_worker_error(
+                    WorkerFailureClass::TransportFailure,
+                    format!("unexpected response: {other:?}"),
+                ),
+            )),
             Err(_) => {
                 drop(workers);
                 self.restart_worker(stage, "timeout", t);
-                Err(ComputeError::BudgetExceeded {
-                    stage: "worker/timeout",
-                    elapsed_micros: u64::from(timeout_ms) * 1000,
-                    limit_micros: u64::from(timeout_ms) * 1000,
-                })
+                Err((
+                    WorkerFailureClass::WorkerExecutionCrashed,
+                    ComputeError::BudgetExceeded {
+                        stage: "worker/timeout",
+                        elapsed_micros: u64::from(timeout_ms) * 1000,
+                        limit_micros: u64::from(timeout_ms) * 1000,
+                    },
+                ))
             }
         }
+    }
+}
+
+fn prefix_worker_error(class: WorkerFailureClass, detail: String) -> ComputeError {
+    ComputeError::Internal {
+        reason: format!("{}:{detail}", class.as_code()),
     }
 }
 
