@@ -1035,12 +1035,16 @@ fn rollout_status_detail(
         PromotionDecisionState::Active => "active_from_prior_promotion",
     };
     format!(
-        "{path};warmup={warmup};promotion_state={:?};promotion_transition={transition};promotion_blockers={blockers};baseline_ready={};runtime_ready={};readiness_ok={};degraded={}",
+        "{path};warmup={warmup};promotion_state={:?};promotion_transition={transition};promotion_blockers={blockers};baseline_ready={};runtime_ready={};readiness_ok={};degraded={};compare_shadow_context={:?};compare_outcome={:?};shadow_outcome={:?};promotion_disposition={:?}",
         promotion.state,
         promotion.signals.baseline_comparison_ready,
         promotion.signals.runtime_path_production_usable,
         promotion.signals.readiness_ok,
-        promotion.signals.degraded_beyond_acceptable_threshold
+        promotion.signals.degraded_beyond_acceptable_threshold,
+        promotion.compare_shadow.context,
+        promotion.compare_shadow.compare_outcome,
+        promotion.compare_shadow.shadow_outcome,
+        promotion.disposition,
     )
 }
 

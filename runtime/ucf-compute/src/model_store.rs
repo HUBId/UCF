@@ -181,6 +181,48 @@ pub struct SlotPathStatus {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
+pub enum CompareShadowContext {
+    ComparableSameEffectiveConfiguration,
+    ComparableWithCaveats,
+    NotComparableDifferentRuntimeContext,
+    BlockedMissingSignals,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ComparePathOutcome {
+    ComparedSuccessfully,
+    ComparisonInconclusive,
+    ComparisonBlocked,
+    ComparisonFailedTechnically,
+    NotComparable,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ShadowPathOutcome {
+    ShadowedSuccessfully,
+    ShadowInconclusive,
+    ShadowBlocked,
+    ShadowFailedTechnically,
+    NotComparable,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct CompareShadowEvaluation {
+    pub active_reference_hash: Option<String>,
+    pub candidate_hash: Option<String>,
+    pub compare_hash: Option<String>,
+    pub shadow_hash: Option<String>,
+    pub context: CompareShadowContext,
+    pub compare_outcome: ComparePathOutcome,
+    pub shadow_outcome: ShadowPathOutcome,
+    pub caveat: Option<String>,
+    pub blocker: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum SlotWarmupState {
     Cold,
     Prepared,
@@ -223,6 +265,17 @@ pub struct PromotionTechnicalSignals {
     pub runtime_path_production_usable: bool,
     pub readiness_ok: bool,
     pub degraded_beyond_acceptable_threshold: bool,
+    pub compare_or_shadow_diagnostic_ready: bool,
+    pub comparable_under_same_effective_configuration: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PromotionEvaluationDisposition {
+    CandidateRemainsBlocked,
+    CandidateMorePromotable,
+    CandidateComparisonInconclusive,
+    ActivePathRemainsPreferred,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -233,6 +286,8 @@ pub struct SlotPromotionDecision {
     pub state: PromotionDecisionState,
     pub blockers: Vec<PromotionBlockerCode>,
     pub signals: PromotionTechnicalSignals,
+    pub compare_shadow: CompareShadowEvaluation,
+    pub disposition: PromotionEvaluationDisposition,
     pub detail: String,
 }
 
@@ -692,6 +747,17 @@ impl ModelStore {
         let compare_warmup = warmup
             .iter()
             .find(|entry| entry.target_state == SlotTargetState::Compare);
+        let shadow = statuses
+            .iter()
+            .find(|entry| entry.target_state == SlotTargetState::Shadow);
+        let shadow_warmup = warmup
+            .iter()
+            .find(|entry| entry.target_state == SlotTargetState::Shadow);
+
+        let active_hash = active.and_then(|entry| entry.configured_hash.clone());
+        let candidate_hash = candidate.and_then(|entry| entry.configured_hash.clone());
+        let compare_hash = compare.and_then(|entry| entry.configured_hash.clone());
+        let shadow_hash = shadow.and_then(|entry| entry.configured_hash.clone());
 
         let baseline_comparison_ready =
             compare.is_some_and(|entry| entry.verified && entry.configured_hash.is_some());
@@ -703,11 +769,18 @@ impl ModelStore {
         let degraded_beyond_acceptable_threshold = compare_warmup
             .is_some_and(|entry| matches!(entry.state, SlotWarmupState::Blocked))
             && compare.is_some_and(|entry| entry.configured_hash.is_some());
+        let compare_or_shadow_diagnostic_ready = compare
+            .is_some_and(|entry| entry.verified && entry.configured_hash.is_some())
+            || shadow.is_some_and(|entry| entry.verified && entry.configured_hash.is_some());
+        let comparable_under_same_effective_configuration =
+            candidate_hash.is_some() && compare_hash == candidate_hash && baseline_comparison_ready;
         let signals = PromotionTechnicalSignals {
             baseline_comparison_ready,
             runtime_path_production_usable,
             readiness_ok,
             degraded_beyond_acceptable_threshold,
+            compare_or_shadow_diagnostic_ready,
+            comparable_under_same_effective_configuration,
         };
 
         let mut blockers = Vec::new();
@@ -739,13 +812,147 @@ impl ModelStore {
             PromotionDecisionState::Known
         };
 
+        let (context, caveat, blocker) = if !candidate_present {
+            (
+                CompareShadowContext::BlockedMissingSignals,
+                None,
+                Some("candidate path not configured".to_string()),
+            )
+        } else if candidate_hash == active_hash && candidate_hash.is_some() {
+            (
+                CompareShadowContext::ComparableWithCaveats,
+                Some("candidate hash matches active reference hash".to_string()),
+                None,
+            )
+        } else if comparable_under_same_effective_configuration {
+            (
+                CompareShadowContext::ComparableSameEffectiveConfiguration,
+                None,
+                None,
+            )
+        } else if candidate_hash.is_some()
+            && compare_hash.is_some()
+            && compare_hash != candidate_hash
+            && compare.is_some_and(|entry| entry.verified)
+        {
+            (
+                CompareShadowContext::NotComparableDifferentRuntimeContext,
+                None,
+                Some("compare path hash differs from candidate hash".to_string()),
+            )
+        } else if compare_hash.is_some() && !compare.is_some_and(|entry| entry.verified) {
+            (
+                CompareShadowContext::BlockedMissingSignals,
+                None,
+                Some("compare path configured but unavailable".to_string()),
+            )
+        } else if shadow_hash.is_some()
+            && candidate_hash.is_some()
+            && shadow_hash != candidate_hash
+            && shadow.is_some_and(|entry| entry.verified)
+        {
+            (
+                CompareShadowContext::NotComparableDifferentRuntimeContext,
+                None,
+                Some("shadow path hash differs from candidate hash".to_string()),
+            )
+        } else if shadow_hash.is_some() && !shadow.is_some_and(|entry| entry.verified) {
+            (
+                CompareShadowContext::BlockedMissingSignals,
+                None,
+                Some("shadow path configured but unavailable".to_string()),
+            )
+        } else if shadow_hash.is_some() && shadow_hash == candidate_hash {
+            (
+                CompareShadowContext::ComparableWithCaveats,
+                Some("candidate compared via shadow path without compare path".to_string()),
+                None,
+            )
+        } else {
+            (
+                CompareShadowContext::BlockedMissingSignals,
+                None,
+                Some("no compare/shadow path configured for candidate".to_string()),
+            )
+        };
+
+        let compare_outcome = if baseline_comparison_ready
+            && matches!(
+                context,
+                CompareShadowContext::ComparableSameEffectiveConfiguration
+            ) {
+            ComparePathOutcome::ComparedSuccessfully
+        } else if compare_warmup
+            .is_some_and(|entry| matches!(entry.state, SlotWarmupState::Blocked))
+            && compare.is_some_and(|entry| entry.verified && entry.configured_hash.is_some())
+        {
+            ComparePathOutcome::ComparisonFailedTechnically
+        } else if compare_hash.is_some() && !compare.is_some_and(|entry| entry.verified) {
+            ComparePathOutcome::ComparisonBlocked
+        } else if compare_hash.is_some() {
+            ComparePathOutcome::ComparisonInconclusive
+        } else {
+            ComparePathOutcome::NotComparable
+        };
+        let shadow_outcome = if shadow_warmup
+            .is_some_and(|entry| matches!(entry.state, SlotWarmupState::Prepared))
+            && shadow_hash.is_some()
+            && shadow_hash == candidate_hash
+        {
+            ShadowPathOutcome::ShadowedSuccessfully
+        } else if shadow_warmup.is_some_and(|entry| matches!(entry.state, SlotWarmupState::Blocked))
+            && shadow.is_some_and(|entry| entry.verified && entry.configured_hash.is_some())
+        {
+            ShadowPathOutcome::ShadowFailedTechnically
+        } else if shadow_hash.is_some() && !shadow.is_some_and(|entry| entry.verified) {
+            ShadowPathOutcome::ShadowBlocked
+        } else if shadow_hash.is_some() {
+            ShadowPathOutcome::ShadowInconclusive
+        } else {
+            ShadowPathOutcome::NotComparable
+        };
+        let compare_shadow = CompareShadowEvaluation {
+            active_reference_hash: active_hash.clone(),
+            candidate_hash: candidate_hash.clone(),
+            compare_hash,
+            shadow_hash,
+            context,
+            compare_outcome,
+            shadow_outcome,
+            caveat,
+            blocker,
+        };
+        let disposition = if runtime_path_production_usable {
+            PromotionEvaluationDisposition::ActivePathRemainsPreferred
+        } else if candidate_present && !blockers.is_empty() {
+            PromotionEvaluationDisposition::CandidateRemainsBlocked
+        } else if candidate_present
+            && (compare_outcome == ComparePathOutcome::ComparedSuccessfully
+                || shadow_outcome == ShadowPathOutcome::ShadowedSuccessfully)
+            && blockers.is_empty()
+        {
+            PromotionEvaluationDisposition::CandidateMorePromotable
+        } else if candidate_present
+            && (compare_outcome == ComparePathOutcome::ComparisonInconclusive
+                || shadow_outcome == ShadowPathOutcome::ShadowInconclusive
+                || compare_outcome == ComparePathOutcome::NotComparable)
+        {
+            PromotionEvaluationDisposition::CandidateComparisonInconclusive
+        } else if candidate_present {
+            PromotionEvaluationDisposition::CandidateRemainsBlocked
+        } else {
+            PromotionEvaluationDisposition::ActivePathRemainsPreferred
+        };
+
         SlotPromotionDecision {
             slot,
-            active_hash: active.and_then(|entry| entry.configured_hash.clone()),
-            candidate_hash: candidate.and_then(|entry| entry.configured_hash.clone()),
+            active_hash,
+            candidate_hash,
             state,
             blockers,
             signals,
+            compare_shadow,
+            disposition,
             detail: blocked
                 .map(|entry| entry.detail.clone())
                 .unwrap_or_else(|| "none".to_string()),
@@ -1491,6 +1698,148 @@ enabled = false
         assert!(decision
             .blockers
             .contains(&PromotionBlockerCode::RuntimePathNotProductionUsable));
+        assert_eq!(
+            decision.compare_shadow.context,
+            CompareShadowContext::BlockedMissingSignals
+        );
+        assert_eq!(
+            decision.disposition,
+            PromotionEvaluationDisposition::CandidateRemainsBlocked
+        );
         std::env::remove_var("UCF_MODEL_CANDIDATE_WORLD_JEPA");
+    }
+
+    #[test]
+    fn promotion_decision_marks_compare_success_with_same_candidate_context() {
+        let _lock = crate::test_env::env_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        std::env::remove_var("UCF_MODEL_PIN_WORLD_JEPA");
+        let temp = tempfile::tempdir().expect("tempdir");
+        let models = temp.path().join("models");
+        fs::create_dir_all(&models).expect("models");
+        let bytes = b"verified-model";
+        let hash = hex::encode(Sha256::digest(bytes));
+        let model_path = models
+            .join("promoted")
+            .join("world_jepa")
+            .join(&hash)
+            .join("model.safetensors");
+        fs::create_dir_all(model_path.parent().expect("parent")).expect("mkdirs");
+        fs::write(&model_path, bytes).expect("write");
+        std::env::set_var("UCF_MODEL_CANDIDATE_WORLD_JEPA", &hash);
+        std::env::set_var("UCF_MODEL_COMPARE_WORLD_JEPA", &hash);
+
+        let mut specs = BTreeMap::new();
+        specs.insert(
+            ModelSlot::WorldJepa,
+            ModelSlotSpec {
+                slot: ModelSlot::WorldJepa,
+                enabled: true,
+                path: None,
+                expected_sha256: parse_hash(
+                    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                ),
+                max_bytes: 1024,
+                format: ModelFormat::Burn,
+                device: ModelDevice::CpuOnly,
+                active_hash: Some(
+                    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
+                ),
+                contract_version: Some("v1".to_string()),
+            },
+        );
+        let store = ModelStore {
+            allowlist_root: models,
+            specs,
+        };
+        let decision = store.slot_promotion_decision(ModelSlot::WorldJepa);
+        assert_eq!(
+            decision.compare_shadow.context,
+            CompareShadowContext::ComparableSameEffectiveConfiguration
+        );
+        assert_eq!(
+            decision.compare_shadow.compare_outcome,
+            ComparePathOutcome::ComparedSuccessfully
+        );
+        assert!(decision.signals.compare_or_shadow_diagnostic_ready);
+        assert!(
+            decision
+                .signals
+                .comparable_under_same_effective_configuration
+        );
+        assert_eq!(
+            decision.disposition,
+            PromotionEvaluationDisposition::CandidateRemainsBlocked
+        );
+        std::env::remove_var("UCF_MODEL_CANDIDATE_WORLD_JEPA");
+        std::env::remove_var("UCF_MODEL_COMPARE_WORLD_JEPA");
+    }
+
+    #[test]
+    fn promotion_decision_marks_runtime_context_mismatch_as_not_comparable() {
+        let _lock = crate::test_env::env_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        std::env::remove_var("UCF_MODEL_PIN_WORLD_JEPA");
+        let temp = tempfile::tempdir().expect("tempdir");
+        let models = temp.path().join("models");
+        fs::create_dir_all(&models).expect("models");
+        let candidate_bytes = b"verified-model-candidate";
+        let compare_bytes = b"verified-model-compare";
+        let active_bytes = b"verified-model-active";
+        let candidate_hash = hex::encode(Sha256::digest(candidate_bytes));
+        let compare_hash = hex::encode(Sha256::digest(compare_bytes));
+        let active_hash = hex::encode(Sha256::digest(active_bytes));
+        for (hash, bytes) in [
+            (candidate_hash.as_str(), candidate_bytes.as_slice()),
+            (compare_hash.as_str(), compare_bytes.as_slice()),
+            (active_hash.as_str(), active_bytes.as_slice()),
+        ] {
+            let model_path = models
+                .join("promoted")
+                .join("world_jepa")
+                .join(hash)
+                .join("model.safetensors");
+            fs::create_dir_all(model_path.parent().expect("parent")).expect("mkdirs");
+            fs::write(&model_path, bytes).expect("write");
+        }
+        std::env::set_var("UCF_MODEL_CANDIDATE_WORLD_JEPA", &candidate_hash);
+        std::env::set_var("UCF_MODEL_COMPARE_WORLD_JEPA", &compare_hash);
+
+        let mut specs = BTreeMap::new();
+        specs.insert(
+            ModelSlot::WorldJepa,
+            ModelSlotSpec {
+                slot: ModelSlot::WorldJepa,
+                enabled: true,
+                path: None,
+                expected_sha256: parse_hash(&active_hash),
+                max_bytes: 1024,
+                format: ModelFormat::Burn,
+                device: ModelDevice::CpuOnly,
+                active_hash: Some(active_hash),
+                contract_version: Some("v1".to_string()),
+            },
+        );
+        let store = ModelStore {
+            allowlist_root: models,
+            specs,
+        };
+        let decision = store.slot_promotion_decision(ModelSlot::WorldJepa);
+        assert_eq!(
+            decision.compare_shadow.context,
+            CompareShadowContext::NotComparableDifferentRuntimeContext
+        );
+        assert_eq!(
+            decision.compare_shadow.compare_outcome,
+            ComparePathOutcome::ComparisonInconclusive
+        );
+        assert_eq!(
+            decision.disposition,
+            PromotionEvaluationDisposition::ActivePathRemainsPreferred
+        );
+        std::env::remove_var("UCF_MODEL_CANDIDATE_WORLD_JEPA");
+        std::env::remove_var("UCF_MODEL_COMPARE_WORLD_JEPA");
     }
 }

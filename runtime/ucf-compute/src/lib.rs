@@ -111,9 +111,10 @@ pub use evidence::{CodeVersionTag, EvidenceChain, COMPUTE_SUMMARY_SCHEMA_VERSION
 pub use feature_matrix::ReleaseFeatureMatrix;
 pub use job_history::{JobHistoryStore, JobHistoryStoreError, PersistedJobRecord};
 pub use model_store::{
-    ModelDevice, ModelFormat, ModelLoadError, ModelSlot, ModelSlotSpec, ModelStore,
-    PromotionBlockerCode, PromotionDecisionState, PromotionTechnicalSignals, SlotPromotionDecision,
-    SlotWarmupState, SlotWarmupStatus,
+    ComparePathOutcome, CompareShadowContext, CompareShadowEvaluation, ModelDevice, ModelFormat,
+    ModelLoadError, ModelSlot, ModelSlotSpec, ModelStore, PromotionBlockerCode,
+    PromotionDecisionState, PromotionEvaluationDisposition, PromotionTechnicalSignals,
+    ShadowPathOutcome, SlotPromotionDecision, SlotWarmupState, SlotWarmupStatus,
 };
 pub use pipeline::{
     BackendExecutionLane, CanonicalAdmissionDecision, CanonicalBackendRoute, CanonicalFailureKind,
