@@ -14,7 +14,7 @@ use crate::pipeline::{
     CanonicalIsolationDisposition, CanonicalPipelineState,
 };
 
-const JOB_HISTORY_SCHEMA_VERSION: u16 = 7;
+const JOB_HISTORY_SCHEMA_VERSION: u16 = 8;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PersistedJobRequestIdentity {
@@ -95,6 +95,21 @@ pub struct PersistedBackendRouteSummary {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct PersistedRemoteExecutionContext {
+    pub was_remote: bool,
+    pub execution_path: String,
+    #[serde(default)]
+    pub execution_lane: Option<String>,
+    #[serde(default)]
+    pub resource_class: Option<String>,
+    #[serde(default)]
+    pub capacity_pressure: Option<String>,
+    #[serde(default)]
+    pub capacity_queue_disposition: Option<String>,
+    pub context_completeness: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PersistedJobRecord {
     pub schema_version: u16,
     pub job_id: u64,
@@ -135,6 +150,8 @@ pub struct PersistedJobRecord {
     #[serde(default)]
     pub hotspot_summary: Option<PersistedHotspotSummary>,
     pub model_slots: Vec<PersistedModelSlotSummary>,
+    #[serde(default)]
+    pub remote_execution_context: Option<PersistedRemoteExecutionContext>,
     #[serde(default)]
     pub recovery_source_job_id: Option<u64>,
     #[serde(default)]
@@ -264,6 +281,36 @@ impl PersistedJobRecord {
                     warmup_state: extract_warmup_state(slot.detail.as_deref()),
                 })
                 .collect(),
+            remote_execution_context: Some(PersistedRemoteExecutionContext {
+                was_remote: matches!(
+                    record.execution_path,
+                    crate::compute_service::JobExecutionPath::WorkerIpc
+                ),
+                execution_path: format!("{:?}", record.execution_path),
+                execution_lane: Some(execution_lane_name(accounting.execution_lane).to_string()),
+                resource_class: Some(resource_class_name(accounting.resource_class).to_string()),
+                capacity_pressure: Some(
+                    capacity_pressure_name(accounting.capacity_pressure).to_string(),
+                ),
+                capacity_queue_disposition: Some(
+                    capacity_queue_disposition_name(accounting.capacity_queue_disposition)
+                        .to_string(),
+                ),
+                context_completeness: if matches!(
+                    record.execution_path,
+                    crate::compute_service::JobExecutionPath::WorkerIpc
+                ) && record.result.is_some()
+                {
+                    "complete".to_string()
+                } else if matches!(
+                    record.execution_path,
+                    crate::compute_service::JobExecutionPath::WorkerIpc
+                ) {
+                    "partial".to_string()
+                } else {
+                    "not_applicable".to_string()
+                },
+            }),
             recovery_source_job_id: None,
             recovery_status: None,
             recovery_note: None,

@@ -135,8 +135,9 @@ pub use service_surface::{
     ComputeJobHistoryLookup, ComputeJobStatus, ComputeRecoverySnapshot, ComputeReplayOutcome,
     ComputeReplayReport, ComputeRequestValidationCode, ComputeSubmitOutcome, ComputeSubmitRequest,
     RecoveredJobStatus, RecoveryDisposition, ReplayConfigurationDiff, ReplayDeterminismClass,
-    ReplayFailureCode, RuntimeOperation, RuntimeOperationCode, RuntimeOperationOutcome,
-    RuntimeOpsSnapshot, RuntimeOpsState, RuntimeSignalState, RuntimeWarmupState,
+    ReplayExecutionMode, ReplayFailureCode, ReplayRemoteContextReproducibility, RuntimeOperation,
+    RuntimeOperationCode, RuntimeOperationOutcome, RuntimeOpsSnapshot, RuntimeOpsState,
+    RuntimeSignalState, RuntimeWarmupState,
 };
 pub use work_meter::WorkMeter;
 
