@@ -103,6 +103,28 @@ The summary also reports:
 This keeps admission-vs-placement mismatches explicit (for example, admitted but no currently
 placeable worker) without introducing a global optimization scheduler.
 
+### Distributed degradation / recovery semantics (Serie A Prompt 7)
+
+`MultiWorkerComputeService` now also exposes a narrow `distributed_recovery_snapshot()` with one
+canonical degradation state for the active runtime:
+
+- `healthy`
+- `partially_degraded`
+- `constrained_but_serviceable`
+- `recovery_in_progress`
+- `unrecoverable_unavailable`
+
+Interpretation is intentionally worker+service scoped (not cluster-orchestrator scope):
+
+- Worker snapshots expose placement eligibility (`placement_eligible`) and a normalized degradation
+  state (`degradation_state`) alongside runtime status.
+- Unstable workers are excluded from placement candidacy while constrained-but-serviceable workers
+  remain dispatchable.
+- Recovery becomes visible when a previously degraded/unavailable worker returns and is marked with
+  `recovered_at_unix_ms`; the service reports `recovery_in_progress` during this bounded window.
+- Snapshot counters include uncertain and recovery-required in-flight jobs so redispatch/wait/orphan
+  pressure remains visible without adding a reconciliation platform.
+
 ### Remote execution consistency / provenance / replay fidelity (Serie A hardening)
 
 Remote (`worker_ipc`) execution stays on the same canonical top-level contract as local execution:

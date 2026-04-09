@@ -92,7 +92,8 @@ pub use backends::{
 };
 pub use compute_service::{
     CapacityPressure, CapacityQueueDisposition, ComputeJob, CoordinationFreshness,
-    CoordinationIssueKind, DeviceSuitability, DistributedPressureSnapshot, ExecutionDeviceClass,
+    CoordinationIssueKind, DeviceSuitability, DistributedDegradationState,
+    DistributedPressureSnapshot, DistributedRecoverySnapshot, ExecutionDeviceClass,
     ExecutionPlacement, ExecutionUnitId, ExecutionUnitKind, ExecutionUnitSnapshot,
     InFlightCoordinationState, InFlightJobSnapshot, InMemoryComputeService, JobAccountingSummary,
     JobCompletionClass, JobCoordinationSnapshot, JobExecutionPath, JobId, JobLifecycleEvent,

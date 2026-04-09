@@ -996,6 +996,9 @@ pub struct ExecutionUnitSnapshot {
     pub last_used_at_unix_ms: Option<u64>,
     pub last_health_contact_at_unix_ms: Option<u64>,
     pub quarantine_until_unix_ms: Option<u64>,
+    pub placement_eligible: bool,
+    pub degradation_state: DistributedDegradationState,
+    pub recovered_at_unix_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1006,6 +1009,32 @@ pub struct DistributedPressureSnapshot {
     pub constrained_units: Vec<ExecutionUnitId>,
     pub backpressured_units: Vec<ExecutionUnitId>,
     pub temporarily_unschedulable_units: Vec<ExecutionUnitId>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DistributedDegradationState {
+    Healthy,
+    PartiallyDegraded,
+    ConstrainedButServiceable,
+    RecoveryInProgress,
+    UnrecoverableUnavailable,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DistributedRecoverySnapshot {
+    pub state: DistributedDegradationState,
+    pub total_units: usize,
+    pub healthy_units: usize,
+    pub constrained_serviceable_units: usize,
+    pub degraded_units: usize,
+    pub recovering_units: usize,
+    pub unavailable_units: usize,
+    pub placement_eligible_units: Vec<ExecutionUnitId>,
+    pub excluded_units: Vec<ExecutionUnitId>,
+    pub recovered_units: Vec<ExecutionUnitId>,
+    pub queued_jobs: usize,
+    pub uncertain_jobs: usize,
+    pub recovery_required_jobs: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1036,6 +1065,7 @@ struct ExecutionUnit {
     last_used_at_unix_ms: Option<u64>,
     last_health_contact_at_unix_ms: Option<u64>,
     quarantine_until_unix_ms: Option<u64>,
+    recovered_at_unix_ms: Option<u64>,
     service: InMemoryComputeService,
 }
 
@@ -1088,6 +1118,7 @@ impl MultiWorkerComputeService {
             last_used_at_unix_ms: None,
             last_health_contact_at_unix_ms: Some(now_unix_ms()),
             quarantine_until_unix_ms: None,
+            recovered_at_unix_ms: None,
             service: InMemoryComputeService::with_scheduler(
                 local_backend,
                 SchedulerConfig {
@@ -1158,6 +1189,7 @@ impl MultiWorkerComputeService {
             last_used_at_unix_ms: None,
             last_health_contact_at_unix_ms: Some(now_unix_ms()),
             quarantine_until_unix_ms: None,
+            recovered_at_unix_ms: None,
             service: worker,
         });
     }
@@ -1169,10 +1201,20 @@ impl MultiWorkerComputeService {
     ) {
         for unit in &mut self.units {
             if &unit.id == worker_id {
+                let previous = unit.runtime_status();
                 unit.availability = availability;
                 unit.last_health_contact_at_unix_ms = Some(now_unix_ms());
                 if availability == WorkerAvailability::Available {
                     unit.quarantine_until_unix_ms = None;
+                    if matches!(
+                        previous,
+                        WorkerRuntimeStatus::Unavailable
+                            | WorkerRuntimeStatus::Stale
+                            | WorkerRuntimeStatus::Unhealthy
+                            | WorkerRuntimeStatus::Degraded
+                    ) {
+                        unit.recovered_at_unix_ms = unit.last_health_contact_at_unix_ms;
+                    }
                 }
             }
         }
@@ -1415,6 +1457,9 @@ impl MultiWorkerComputeService {
                 last_used_at_unix_ms: unit.last_used_at_unix_ms,
                 last_health_contact_at_unix_ms: unit.last_health_contact_at_unix_ms,
                 quarantine_until_unix_ms: unit.quarantine_until_unix_ms,
+                placement_eligible: unit.can_accept_dispatch(),
+                degradation_state: unit.degradation_state(),
+                recovered_at_unix_ms: unit.recovered_at_unix_ms,
             })
             .collect()
     }
@@ -1453,6 +1498,89 @@ impl MultiWorkerComputeService {
             constrained_units,
             backpressured_units,
             temporarily_unschedulable_units,
+        }
+    }
+
+    pub fn distributed_recovery_snapshot(&self) -> DistributedRecoverySnapshot {
+        let mut healthy_units = 0usize;
+        let mut constrained_serviceable_units = 0usize;
+        let mut degraded_units = 0usize;
+        let mut recovering_units = 0usize;
+        let mut unavailable_units = 0usize;
+        let mut placement_eligible_units = Vec::new();
+        let mut excluded_units = Vec::new();
+        let mut recovered_units = Vec::new();
+        for unit in &self.units {
+            let degradation = unit.degradation_state();
+            match degradation {
+                DistributedDegradationState::Healthy => healthy_units += 1,
+                DistributedDegradationState::ConstrainedButServiceable => {
+                    constrained_serviceable_units += 1
+                }
+                DistributedDegradationState::PartiallyDegraded => degraded_units += 1,
+                DistributedDegradationState::RecoveryInProgress => recovering_units += 1,
+                DistributedDegradationState::UnrecoverableUnavailable => unavailable_units += 1,
+            }
+            if unit.can_accept_dispatch() {
+                placement_eligible_units.push(unit.id.clone());
+            } else {
+                excluded_units.push(unit.id.clone());
+            }
+            if unit.recovered_at_unix_ms.is_some() {
+                recovered_units.push(unit.id.clone());
+            }
+        }
+        placement_eligible_units.sort();
+        excluded_units.sort();
+        recovered_units.sort();
+
+        let uncertain_jobs = self
+            .records
+            .values()
+            .filter(|record| {
+                record.coordination.freshness == CoordinationFreshness::Uncertain
+                    || matches!(
+                        record.coordination.issue,
+                        Some(CoordinationIssueKind::OrphanedInFlightJob)
+                            | Some(CoordinationIssueKind::MissingWorkerOutcome)
+                            | Some(CoordinationIssueKind::StaleWorkerOwnership)
+                    )
+            })
+            .count();
+        let recovery_required_jobs = self
+            .records
+            .values()
+            .filter(|record| {
+                record.coordination.recovery_signal == RecoverySignal::RecoveryDecisionRequired
+                    || record.coordination.recovery_signal == RecoverySignal::AwaitWorkerOutcome
+            })
+            .count();
+        let state = if unavailable_units == self.units.len() {
+            DistributedDegradationState::UnrecoverableUnavailable
+        } else if recovering_units > 0 {
+            DistributedDegradationState::RecoveryInProgress
+        } else if degraded_units > 0 || unavailable_units > 0 {
+            DistributedDegradationState::PartiallyDegraded
+        } else if constrained_serviceable_units > 0 || !self.queue.is_empty() {
+            DistributedDegradationState::ConstrainedButServiceable
+        } else {
+            DistributedDegradationState::Healthy
+        };
+
+        DistributedRecoverySnapshot {
+            state,
+            total_units: self.units.len(),
+            healthy_units,
+            constrained_serviceable_units,
+            degraded_units,
+            recovering_units,
+            unavailable_units,
+            placement_eligible_units,
+            excluded_units,
+            recovered_units,
+            queued_jobs: self.queue.len(),
+            uncertain_jobs,
+            recovery_required_jobs,
         }
     }
 
@@ -2240,6 +2368,7 @@ impl ExecutionUnit {
     const STALE_AFTER_MS: u64 = 30_000;
     const COOLDOWN_BASE_MS: u64 = 2_000;
     const COOLDOWN_MAX_MS: u64 = 30_000;
+    const RECOVERY_WINDOW_MS: u64 = 15_000;
 
     fn capacity_limit_units(&self) -> usize {
         self.max_parallel_jobs.max(1).saturating_mul(2)
@@ -2305,7 +2434,33 @@ impl ExecutionUnit {
         )
     }
 
+    fn degradation_state(&self) -> DistributedDegradationState {
+        let now = now_unix_ms();
+        if self
+            .recovered_at_unix_ms
+            .is_some_and(|at| now.saturating_sub(at) <= Self::RECOVERY_WINDOW_MS)
+        {
+            return DistributedDegradationState::RecoveryInProgress;
+        }
+        match self.runtime_status() {
+            WorkerRuntimeStatus::Known | WorkerRuntimeStatus::Ready | WorkerRuntimeStatus::Busy => {
+                DistributedDegradationState::Healthy
+            }
+            WorkerRuntimeStatus::Constrained => {
+                DistributedDegradationState::ConstrainedButServiceable
+            }
+            WorkerRuntimeStatus::Saturated
+            | WorkerRuntimeStatus::Backpressured
+            | WorkerRuntimeStatus::Degraded
+            | WorkerRuntimeStatus::Unhealthy => DistributedDegradationState::PartiallyDegraded,
+            WorkerRuntimeStatus::Unavailable
+            | WorkerRuntimeStatus::Stale
+            | WorkerRuntimeStatus::Unknown => DistributedDegradationState::UnrecoverableUnavailable,
+        }
+    }
+
     fn note_success(&mut self, job_id: JobId, outcome: WorkerDispatchOutcome) {
+        let previous = self.runtime_status();
         self.last_job_id = Some(job_id);
         self.last_dispatch_outcome = Some(outcome);
         self.last_error = None;
@@ -2313,6 +2468,17 @@ impl ExecutionUnit {
         self.last_used_at_unix_ms = Some(now_unix_ms());
         self.last_health_contact_at_unix_ms = self.last_used_at_unix_ms;
         self.quarantine_until_unix_ms = None;
+        if matches!(
+            previous,
+            WorkerRuntimeStatus::Degraded
+                | WorkerRuntimeStatus::Unhealthy
+                | WorkerRuntimeStatus::Saturated
+                | WorkerRuntimeStatus::Backpressured
+                | WorkerRuntimeStatus::Unavailable
+                | WorkerRuntimeStatus::Stale
+        ) {
+            self.recovered_at_unix_ms = self.last_used_at_unix_ms;
+        }
     }
 
     fn note_failure(&mut self, job_id: JobId, outcome: WorkerDispatchOutcome, detail: String) {
@@ -2327,6 +2493,7 @@ impl ExecutionUnit {
         let cooldown_ms =
             (Self::COOLDOWN_BASE_MS.saturating_mul(1_u64 << exp)).min(Self::COOLDOWN_MAX_MS);
         self.quarantine_until_unix_ms = Some(now.saturating_add(cooldown_ms));
+        self.recovered_at_unix_ms = None;
     }
 }
 
@@ -2536,13 +2703,13 @@ mod tests {
 
     use super::{
         CapacityPressure, CapacityQueueDisposition, CoordinationFreshness, CoordinationIssueKind,
-        DeviceSuitability, DistributedPlacementLocality, DistributedPlacementState,
-        ExecutionDeviceClass, ExecutionUnitId, ExecutionUnitKind, InFlightCoordinationState,
-        InMemoryComputeService, JobCompletionClass, JobCoordinationSnapshot, JobExecutionPath,
-        JobLifecycleState, JobSubmissionMeta, MultiWorkerComputeService, PlacementFailureKind,
-        PlacementSuitability, RecoverySignal, ResourceClass, SchedulerConfig,
-        TerminalCoordinationInput, WorkerAvailability, WorkerClass, WorkerDispatchOutcome,
-        WorkerRecoveryKind, WorkerRegistryRole, WorkerRuntimeStatus,
+        DeviceSuitability, DistributedDegradationState, DistributedPlacementLocality,
+        DistributedPlacementState, ExecutionDeviceClass, ExecutionUnitId, ExecutionUnitKind,
+        InFlightCoordinationState, InMemoryComputeService, JobCompletionClass,
+        JobCoordinationSnapshot, JobExecutionPath, JobLifecycleState, JobSubmissionMeta,
+        MultiWorkerComputeService, PlacementFailureKind, PlacementSuitability, RecoverySignal,
+        ResourceClass, SchedulerConfig, TerminalCoordinationInput, WorkerAvailability, WorkerClass,
+        WorkerDispatchOutcome, WorkerRecoveryKind, WorkerRegistryRole, WorkerRuntimeStatus,
     };
 
     struct NullLlm;
@@ -3742,6 +3909,114 @@ mod tests {
             CapacityPressure::TemporarilyUnschedulable
         );
         assert_eq!(pressure.queued_jobs, 1);
+    }
+
+    #[test]
+    fn distributed_recovery_snapshot_marks_partial_degradation_and_excludes_worker() {
+        let backend = ComputePipelineBackend::new(
+            pack_with(BackendComponentId::ToyV1, Vec::new()),
+            FusionConfig::default(),
+            LimitsConfig::default(),
+        );
+        let mut service = MultiWorkerComputeService::new(backend, 1);
+        let worker_backend = ComputePipelineBackend::new(
+            pack_with(BackendComponentId::ToyV1, Vec::new()),
+            FusionConfig::default(),
+            LimitsConfig::default(),
+        );
+        let worker_id = service.register_worker_backend("degraded-worker", worker_backend, 1);
+        service.set_worker_availability(&worker_id, WorkerAvailability::Unavailable);
+
+        let snapshot = service.distributed_recovery_snapshot();
+        assert_eq!(
+            snapshot.state,
+            DistributedDegradationState::PartiallyDegraded
+        );
+        assert!(snapshot.excluded_units.contains(&worker_id));
+        assert!(!snapshot.placement_eligible_units.contains(&worker_id));
+        assert_eq!(snapshot.unavailable_units, 1);
+    }
+
+    #[test]
+    fn distributed_recovery_snapshot_recovers_to_recovery_in_progress() {
+        let backend = ComputePipelineBackend::new(
+            pack_with(BackendComponentId::ToyV1, Vec::new()),
+            FusionConfig::default(),
+            LimitsConfig::default(),
+        );
+        let mut service = MultiWorkerComputeService::new(backend, 1);
+        let worker_backend = ComputePipelineBackend::new(
+            pack_with(BackendComponentId::ToyV1, Vec::new()),
+            FusionConfig::default(),
+            LimitsConfig::default(),
+        );
+        let worker_id = service.register_worker_backend("recover-worker", worker_backend, 1);
+        service.set_worker_availability(&worker_id, WorkerAvailability::Unavailable);
+        let degraded = service.distributed_recovery_snapshot();
+        assert_eq!(
+            degraded.state,
+            DistributedDegradationState::PartiallyDegraded
+        );
+
+        service.set_worker_availability(&worker_id, WorkerAvailability::Available);
+        let recovered = service.distributed_recovery_snapshot();
+        assert_eq!(
+            recovered.state,
+            DistributedDegradationState::RecoveryInProgress
+        );
+        assert!(recovered.recovered_units.contains(&worker_id));
+        assert!(recovered.placement_eligible_units.contains(&worker_id));
+    }
+
+    #[test]
+    fn distributed_recovery_snapshot_tracks_uncertain_and_recovery_required_jobs() {
+        let coordination = JobCoordinationSnapshot::from_terminal(TerminalCoordinationInput {
+            state: JobLifecycleState::Failed,
+            last_in_flight_state: Some(InFlightCoordinationState::AwaitingWorkerOutcome),
+            owner: ExecutionUnitId("remote-orphan".to_string()),
+            owner_kind: ExecutionUnitKind::Worker,
+            owner_last_contact_at_unix_ms: None,
+            issue: Some(CoordinationIssueKind::OrphanedInFlightJob),
+            recovered: false,
+            uncertain: true,
+            awaiting_outcome: true,
+        });
+        assert_eq!(
+            coordination.recovery_signal,
+            RecoverySignal::AwaitWorkerOutcome
+        );
+
+        let backend = ComputePipelineBackend::new(
+            pack_with(BackendComponentId::ToyV1, Vec::new()),
+            FusionConfig::default(),
+            LimitsConfig::default(),
+        );
+        let mut service = MultiWorkerComputeService::new(backend, 1);
+        let worker_backend = ComputePipelineBackend::new(
+            pack_with(BackendComponentId::ToyV1, Vec::new()),
+            FusionConfig::default(),
+            LimitsConfig::default(),
+        );
+        let worker_id = service.register_worker_backend("orphan-worker", worker_backend, 1);
+        service.set_worker_last_health_contact_for_test(&worker_id, Some(1));
+        let job = service.submit(
+            valid_request(),
+            JobSubmissionMeta {
+                submitted_at_unix_ms: 41,
+                submitted_by: Some("orphaned".to_string()),
+            },
+            Some(worker_id),
+        );
+        service.run_scheduler_cycle(1);
+        let snapshot = service.distributed_recovery_snapshot();
+        assert_eq!(snapshot.uncertain_jobs, 1);
+        assert_eq!(snapshot.recovery_required_jobs, 1);
+        let record = service.job(job).expect("record");
+        assert_eq!(record.coordination.freshness, CoordinationFreshness::Stale);
+        assert_eq!(
+            record.coordination.issue,
+            Some(CoordinationIssueKind::StaleWorkerOwnership)
+        );
     }
 
     #[test]
