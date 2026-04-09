@@ -212,15 +212,46 @@ Signals are explicitly technical and bounded:
 - baseline/compare readiness (`compare` path verified with configured hash),
 - runtime-path usability (`active` path verified + warm),
 - warmup/readiness state,
-- degraded flag derived from configured compare path that remains blocked.
+- degraded flag derived from configured compare path that remains blocked,
+- compare/shadow diagnostic readiness (`compare_or_shadow_diagnostic_ready`),
+- strict same-effective-config comparability (`comparable_under_same_effective_configuration`).
+
+Canonical compare/shadow evaluation terms (promotion-adjacent, technical only):
+
+- context:
+  - `comparable_same_effective_configuration`
+  - `comparable_with_caveats`
+  - `not_comparable_different_runtime_context`
+  - `blocked_missing_signals`
+- compare outcome:
+  - `compared_successfully`
+  - `comparison_inconclusive`
+  - `comparison_blocked`
+  - `comparison_failed_technically`
+  - `not_comparable`
+- shadow outcome:
+  - `shadowed_successfully`
+  - `shadow_inconclusive`
+  - `shadow_blocked`
+  - `shadow_failed_technically`
+  - `not_comparable`
+
+Promotion linkage remains intentionally narrow and non-governance:
+
+- `candidate_remains_blocked`
+- `candidate_more_promotable`
+- `candidate_comparison_inconclusive`
+- `active_path_remains_preferred`
 
 `backend_pack` provenance detail now carries this decision summary (`promotion_state`,
-`promotion_transition`, `promotion_blockers`) so runtime status/history/ops surfaces can distinguish:
+`promotion_transition`, `promotion_blockers`, compare/shadow context + outcomes, promotion disposition)
+so runtime status/history/ops surfaces can distinguish:
 
 - candidate became comparable,
 - comparable became promotable,
 - comparable but blocked,
-- active from prior promotion.
+- active from prior promotion,
+- compare/shadow completed vs blocked/inconclusive/not comparable with explicit diagnostics.
 
 Intentional boundary: this is not an approval/governance/MLOps workflow; it is a technical decision
 surface over existing compatibility, rollout, and readiness signals.

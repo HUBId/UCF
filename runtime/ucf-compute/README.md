@@ -219,7 +219,11 @@ can distinguish:
 
 - active path reference,
 - candidate/compare/shadow side paths,
-- compare/shadow availability failures that block activation for required slots.
+- compare/shadow availability failures that block activation for required slots,
+- compare/shadow context (`same_effective_config`, `with_caveats`, `not_comparable`, `blocked`),
+- compare/shadow outcome (`compared|shadowed|inconclusive|blocked|failed_technically|not_comparable`)
+  and promotion disposition (`candidate_remains_blocked|candidate_more_promotable|
+  candidate_comparison_inconclusive|active_path_remains_preferred`).
 
 Boundaries (intentional):
 
