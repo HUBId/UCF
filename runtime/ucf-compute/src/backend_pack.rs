@@ -832,6 +832,15 @@ fn resolve_slot_provenance(store: &ModelStore, pack: BackendPackKind) -> Vec<Mod
                     let rollout_status = store.slot_path_statuses(slot);
                     let warmup_status = store.warmup_slot_paths(slot);
                     let mut promotion_decision = store.slot_promotion_decision(slot);
+                    let activation_target = promotion_decision
+                        .candidate_hash
+                        .clone()
+                        .or_else(|| selected_hash_for_slot(slot, spec));
+                    let activation = activation_target.as_ref().map(|target| {
+                        store.assess_slot_activation(slot, target, spec.contract_version.as_deref())
+                    });
+                    let rollback =
+                        store.assess_slot_rollback(slot, None, spec.contract_version.as_deref());
                     if !gate.promotable {
                         promotion_decision
                             .blockers
@@ -884,6 +893,8 @@ fn resolve_slot_provenance(store: &ModelStore, pack: BackendPackKind) -> Vec<Mod
                                 &rollout_status,
                                 &warmup_status,
                                 &promotion_decision,
+                                activation.as_ref(),
+                                &rollback,
                             )),
                         )),
                         resolved_path: Some(verified.path.display().to_string()),
@@ -982,6 +993,8 @@ fn rollout_status_detail(
     statuses: &[crate::model_store::SlotPathStatus],
     warmup: &[crate::model_store::SlotWarmupStatus],
     promotion: &crate::model_store::SlotPromotionDecision,
+    activation: Option<&crate::model_store::SlotActivationAssessment>,
+    rollback: &crate::model_store::SlotRollbackAssessment,
 ) -> String {
     let path = statuses
         .iter()
@@ -1034,8 +1047,42 @@ fn rollout_status_detail(
         PromotionDecisionState::BlockedForPromotion => "comparable_but_blocked",
         PromotionDecisionState::Active => "active_from_prior_promotion",
     };
+    let activation_detail = activation
+        .map(|activation| {
+            format!(
+                "target={};outcome={:?};fallback={:?};rollback={:?};prior={};result={};blocked={};degraded={};technical={}",
+                hash_prefix(Some(activation.target_hash.as_str())),
+                activation.outcome,
+                activation.fallback,
+                activation.rollback,
+                hash_prefix(activation.prior_active_hash.as_deref()),
+                hash_prefix(activation.resulting_active_hash.as_deref()),
+                activation
+                    .blocked_reason
+                    .as_deref()
+                    .unwrap_or("none"),
+                activation
+                    .degraded_reason
+                    .as_deref()
+                    .unwrap_or("none"),
+                activation
+                    .technical_failure
+                    .as_deref()
+                    .unwrap_or("none"),
+            )
+        })
+        .unwrap_or_else(|| "target=none;outcome=pending;fallback=not_used;rollback=not_requested;prior=none;result=none;blocked=none;degraded=none;technical=none".to_string());
+    let rollback_detail = format!(
+        "outcome={:?};to={};prior={};replaced={};result={};detail={}",
+        rollback.outcome,
+        hash_prefix(rollback.rollback_hash.as_deref()),
+        hash_prefix(rollback.prior_active_hash.as_deref()),
+        hash_prefix(rollback.replaced_hash.as_deref()),
+        hash_prefix(rollback.resulting_active_hash.as_deref()),
+        rollback.detail
+    );
     format!(
-        "{path};warmup={warmup};promotion_state={:?};promotion_transition={transition};promotion_blockers={blockers};baseline_ready={};runtime_ready={};readiness_ok={};degraded={};compare_shadow_context={:?};compare_outcome={:?};shadow_outcome={:?};promotion_disposition={:?}",
+        "{path};warmup={warmup};promotion_state={:?};promotion_transition={transition};promotion_blockers={blockers};baseline_ready={};runtime_ready={};readiness_ok={};degraded={};compare_shadow_context={:?};compare_outcome={:?};shadow_outcome={:?};promotion_disposition={:?};activation={{{activation_detail}}};rollback={{{rollback_detail}}}",
         promotion.state,
         promotion.signals.baseline_comparison_ready,
         promotion.signals.runtime_path_production_usable,

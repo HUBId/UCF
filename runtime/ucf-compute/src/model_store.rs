@@ -291,6 +291,61 @@ pub struct SlotPromotionDecision {
     pub detail: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ActivationOutcome {
+    Pending,
+    Succeeded,
+    Degraded,
+    Blocked,
+    FailedTechnically,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ActivationFallbackState {
+    NotUsed,
+    FallbackToPriorActive,
+    FallbackUnavailable,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RollbackOutcome {
+    NotRequested,
+    Completed,
+    Unavailable,
+    Failed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct SlotActivationAssessment {
+    pub slot: ModelSlot,
+    pub target_hash: String,
+    pub prior_active_hash: Option<String>,
+    pub resulting_active_hash: Option<String>,
+    pub outcome: ActivationOutcome,
+    pub fallback: ActivationFallbackState,
+    pub rollback: RollbackOutcome,
+    pub promotion_state: PromotionDecisionState,
+    pub promotion_blockers: Vec<PromotionBlockerCode>,
+    pub blocked_reason: Option<String>,
+    pub degraded_reason: Option<String>,
+    pub technical_failure: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct SlotRollbackAssessment {
+    pub slot: ModelSlot,
+    pub requested_hash: Option<String>,
+    pub prior_active_hash: Option<String>,
+    pub rollback_hash: Option<String>,
+    pub replaced_hash: Option<String>,
+    pub resulting_active_hash: Option<String>,
+    pub outcome: RollbackOutcome,
+    pub detail: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VerifiedModelSlot {
     pub slot: ModelSlot,
@@ -595,6 +650,153 @@ impl ModelStore {
                 .map(ToOwned::to_owned)
                 .or(expected_contract_version),
         })
+    }
+
+    pub fn assess_slot_activation(
+        &self,
+        slot: ModelSlot,
+        target_hash: &str,
+        requested_contract_version: Option<&str>,
+    ) -> SlotActivationAssessment {
+        let target_hash = target_hash.trim().to_string();
+        let prior_active_hash = self.active_hash_for_slot(slot);
+        let promotion = self.slot_promotion_decision(slot);
+        let mut assessment = SlotActivationAssessment {
+            slot,
+            target_hash: target_hash.clone(),
+            prior_active_hash: prior_active_hash.clone(),
+            resulting_active_hash: prior_active_hash.clone(),
+            outcome: ActivationOutcome::Pending,
+            fallback: ActivationFallbackState::NotUsed,
+            rollback: RollbackOutcome::NotRequested,
+            promotion_state: promotion.state,
+            promotion_blockers: promotion.blockers.clone(),
+            blocked_reason: None,
+            degraded_reason: None,
+            technical_failure: None,
+        };
+        match self.plan_slot_activation(slot, &target_hash, requested_contract_version) {
+            Ok(_) => {}
+            Err(err) => {
+                assessment.outcome = ActivationOutcome::Blocked;
+                assessment.blocked_reason = Some(format!("{err:?}"));
+                assessment.fallback =
+                    self.fallback_state_for_prior(slot, prior_active_hash.as_deref());
+                return assessment;
+            }
+        }
+        if let Err(err) = self.prefetch_promoted_hash(slot, &target_hash) {
+            assessment.outcome = ActivationOutcome::FailedTechnically;
+            assessment.technical_failure = Some(format!("{err:?}"));
+            assessment.fallback = self.fallback_state_for_prior(slot, prior_active_hash.as_deref());
+            return assessment;
+        }
+
+        if prior_active_hash.as_deref() == Some(target_hash.as_str())
+            || promotion
+                .active_hash
+                .as_deref()
+                .is_some_and(|active| active == target_hash)
+        {
+            assessment.outcome = ActivationOutcome::Succeeded;
+            assessment.resulting_active_hash = Some(target_hash);
+            return assessment;
+        }
+
+        if promotion.candidate_hash.as_deref() == Some(target_hash.as_str())
+            && !promotion.blockers.is_empty()
+        {
+            let hard_blocked = promotion.blockers.iter().any(|blocker| {
+                matches!(
+                    blocker,
+                    PromotionBlockerCode::GateBlocked
+                        | PromotionBlockerCode::RuntimePathNotProductionUsable
+                )
+            });
+            if hard_blocked {
+                assessment.outcome = ActivationOutcome::Blocked;
+                assessment.blocked_reason = Some(format!(
+                    "candidate remains blocked for promotion: {:?}",
+                    promotion.blockers
+                ));
+                assessment.fallback =
+                    self.fallback_state_for_prior(slot, prior_active_hash.as_deref());
+                return assessment;
+            }
+        }
+
+        if !promotion.signals.baseline_comparison_ready
+            || !promotion.signals.compare_or_shadow_diagnostic_ready
+            || promotion.signals.degraded_beyond_acceptable_threshold
+        {
+            assessment.outcome = ActivationOutcome::Degraded;
+            assessment.degraded_reason = Some(format!(
+                "baseline_ready={};compare_shadow_ready={};degraded_threshold={}",
+                promotion.signals.baseline_comparison_ready,
+                promotion.signals.compare_or_shadow_diagnostic_ready,
+                promotion.signals.degraded_beyond_acceptable_threshold
+            ));
+            if prior_active_hash.as_deref() != Some(target_hash.as_str()) {
+                assessment.fallback =
+                    self.fallback_state_for_prior(slot, prior_active_hash.as_deref());
+            }
+            return assessment;
+        }
+        assessment.outcome = ActivationOutcome::Pending;
+        assessment.resulting_active_hash = prior_active_hash;
+        assessment
+    }
+
+    pub fn assess_slot_rollback(
+        &self,
+        slot: ModelSlot,
+        requested_hash: Option<&str>,
+        requested_contract_version: Option<&str>,
+    ) -> SlotRollbackAssessment {
+        let requested_hash = requested_hash
+            .map(|hash| hash.trim().to_string())
+            .filter(|hash| !hash.is_empty());
+        let prior_active_hash = self.active_hash_for_slot(slot);
+        let rollback_hash = requested_hash.clone().or_else(|| prior_active_hash.clone());
+        let replaced_hash = self
+            .slot_path_statuses(slot)
+            .into_iter()
+            .find(|status| status.target_state == SlotTargetState::Candidate)
+            .and_then(|status| status.configured_hash);
+        let mut assessment = SlotRollbackAssessment {
+            slot,
+            requested_hash,
+            prior_active_hash: prior_active_hash.clone(),
+            rollback_hash: rollback_hash.clone(),
+            replaced_hash,
+            resulting_active_hash: prior_active_hash.clone(),
+            outcome: RollbackOutcome::NotRequested,
+            detail: "rollback not requested".to_string(),
+        };
+        let Some(rollback_hash) = rollback_hash else {
+            assessment.outcome = RollbackOutcome::Unavailable;
+            assessment.detail = "no prior active hash available for rollback".to_string();
+            return assessment;
+        };
+
+        match self.plan_slot_activation(slot, &rollback_hash, requested_contract_version) {
+            Ok(_) => match self.prefetch_promoted_hash(slot, &rollback_hash) {
+                Ok(()) => {
+                    assessment.outcome = RollbackOutcome::Completed;
+                    assessment.resulting_active_hash = Some(rollback_hash.clone());
+                    assessment.detail = "rollback target is verified and warmable".to_string();
+                }
+                Err(err) => {
+                    assessment.outcome = RollbackOutcome::Failed;
+                    assessment.detail = format!("rollback prefetch failed: {err:?}");
+                }
+            },
+            Err(err) => {
+                assessment.outcome = RollbackOutcome::Failed;
+                assessment.detail = format!("rollback activation blocked: {err:?}");
+            }
+        }
+        assessment
     }
 
     pub fn slot_path_statuses(&self, slot: ModelSlot) -> Vec<SlotPathStatus> {
@@ -982,6 +1184,12 @@ impl ModelStore {
         Ok(())
     }
 
+    fn active_hash_for_slot(&self, slot: ModelSlot) -> Option<String> {
+        self.specs
+            .get(&slot)
+            .and_then(|spec| selected_hash(slot, spec))
+    }
+
     fn verify_promoted_hash(&self, slot: ModelSlot, hash: &str) -> Result<(), ModelLoadError> {
         let Some(spec) = self.specs.get(&slot) else {
             return Err(ModelLoadError::Disabled);
@@ -1002,6 +1210,44 @@ impl ModelStore {
             specs: scratch_specs,
         };
         store.verify_slot(slot).map(|_| ())
+    }
+
+    fn prefetch_promoted_hash(&self, slot: ModelSlot, hash: &str) -> Result<(), ModelLoadError> {
+        let Some(spec) = self.specs.get(&slot) else {
+            return Err(ModelLoadError::Disabled);
+        };
+        let mut scoped = spec.clone();
+        scoped.path = Some(PathBuf::from(format!(
+            "promoted/{}/{}/model.safetensors",
+            slot.as_str(),
+            hash.trim()
+        )));
+        scoped.active_hash = None;
+        scoped.expected_sha256 = parse_hash(hash);
+
+        let mut scratch_specs = self.specs.clone();
+        scratch_specs.insert(slot, scoped);
+        let store = Self {
+            allowlist_root: self.allowlist_root.clone(),
+            specs: scratch_specs,
+        };
+        let verified = store.verify_slot(slot)?;
+        store.read_verified_bytes(&verified).map(|_| ())
+    }
+
+    fn fallback_state_for_prior(
+        &self,
+        slot: ModelSlot,
+        prior_active_hash: Option<&str>,
+    ) -> ActivationFallbackState {
+        let Some(prior_hash) = prior_active_hash else {
+            return ActivationFallbackState::FallbackUnavailable;
+        };
+        if self.prefetch_promoted_hash(slot, prior_hash).is_ok() {
+            ActivationFallbackState::FallbackToPriorActive
+        } else {
+            ActivationFallbackState::FallbackUnavailable
+        }
     }
 
     fn path_status_for(
@@ -1841,5 +2087,177 @@ enabled = false
         );
         std::env::remove_var("UCF_MODEL_CANDIDATE_WORLD_JEPA");
         std::env::remove_var("UCF_MODEL_COMPARE_WORLD_JEPA");
+    }
+
+    #[test]
+    fn activation_assessment_reports_succeeded_for_current_verified_active_hash() {
+        let _lock = crate::test_env::env_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        std::env::remove_var("UCF_MODEL_CANDIDATE_WORLD_JEPA");
+        std::env::remove_var("UCF_MODEL_COMPARE_WORLD_JEPA");
+        std::env::remove_var("UCF_MODEL_SHADOW_WORLD_JEPA");
+        let temp = tempfile::tempdir().expect("tempdir");
+        let models = temp.path().join("models");
+        fs::create_dir_all(&models).expect("models");
+        let bytes = b"verified-model-active";
+        let hash = hex::encode(Sha256::digest(bytes));
+        let model_path = models
+            .join("promoted")
+            .join("world_jepa")
+            .join(&hash)
+            .join("model.safetensors");
+        fs::create_dir_all(model_path.parent().expect("parent")).expect("mkdirs");
+        fs::write(&model_path, bytes).expect("write");
+
+        let mut specs = BTreeMap::new();
+        specs.insert(
+            ModelSlot::WorldJepa,
+            ModelSlotSpec {
+                slot: ModelSlot::WorldJepa,
+                enabled: true,
+                path: None,
+                expected_sha256: parse_hash(&hash),
+                max_bytes: 1024,
+                format: ModelFormat::Burn,
+                device: ModelDevice::CpuOnly,
+                active_hash: Some(hash.clone()),
+                contract_version: Some("v1".to_string()),
+            },
+        );
+        let store = ModelStore {
+            allowlist_root: models,
+            specs,
+        };
+
+        let assessment = store.assess_slot_activation(ModelSlot::WorldJepa, &hash, Some("v1"));
+        assert_eq!(assessment.outcome, ActivationOutcome::Succeeded);
+        assert_eq!(assessment.fallback, ActivationFallbackState::NotUsed);
+        assert_eq!(assessment.prior_active_hash.as_deref(), Some(hash.as_str()));
+        assert_eq!(
+            assessment.resulting_active_hash.as_deref(),
+            Some(hash.as_str())
+        );
+    }
+
+    #[test]
+    fn activation_assessment_distinguishes_blocked_and_fallback_to_prior_active() {
+        let _lock = crate::test_env::env_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        std::env::remove_var("UCF_MODEL_COMPARE_WORLD_JEPA");
+        std::env::remove_var("UCF_MODEL_SHADOW_WORLD_JEPA");
+        let temp = tempfile::tempdir().expect("tempdir");
+        let models = temp.path().join("models");
+        fs::create_dir_all(&models).expect("models");
+        let active_bytes = b"verified-model-active";
+        let active_hash = hex::encode(Sha256::digest(active_bytes));
+        let active_path = models
+            .join("promoted")
+            .join("world_jepa")
+            .join(&active_hash)
+            .join("model.safetensors");
+        fs::create_dir_all(active_path.parent().expect("parent")).expect("mkdirs");
+        fs::write(&active_path, active_bytes).expect("write");
+
+        let blocked_hash = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        let mut specs = BTreeMap::new();
+        specs.insert(
+            ModelSlot::WorldJepa,
+            ModelSlotSpec {
+                slot: ModelSlot::WorldJepa,
+                enabled: true,
+                path: None,
+                expected_sha256: parse_hash(&active_hash),
+                max_bytes: 1024,
+                format: ModelFormat::Burn,
+                device: ModelDevice::CpuOnly,
+                active_hash: Some(active_hash.clone()),
+                contract_version: Some("v1".to_string()),
+            },
+        );
+        let store = ModelStore {
+            allowlist_root: models,
+            specs,
+        };
+
+        let assessment =
+            store.assess_slot_activation(ModelSlot::WorldJepa, blocked_hash, Some("v1"));
+        assert_eq!(assessment.outcome, ActivationOutcome::Blocked);
+        assert_eq!(
+            assessment.fallback,
+            ActivationFallbackState::FallbackToPriorActive
+        );
+        assert_eq!(
+            assessment.resulting_active_hash.as_deref(),
+            Some(active_hash.as_str())
+        );
+    }
+
+    #[test]
+    fn activation_assessment_distinguishes_degraded_from_rollback_semantics() {
+        let _lock = crate::test_env::env_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let temp = tempfile::tempdir().expect("tempdir");
+        let models = temp.path().join("models");
+        fs::create_dir_all(&models).expect("models");
+        let active_bytes = b"verified-model-active";
+        let active_hash = hex::encode(Sha256::digest(active_bytes));
+        let candidate_bytes = b"verified-model-candidate";
+        let candidate_hash = hex::encode(Sha256::digest(candidate_bytes));
+        for (hash, bytes) in [
+            (active_hash.as_str(), active_bytes.as_slice()),
+            (candidate_hash.as_str(), candidate_bytes.as_slice()),
+        ] {
+            let model_path = models
+                .join("promoted")
+                .join("world_jepa")
+                .join(hash)
+                .join("model.safetensors");
+            fs::create_dir_all(model_path.parent().expect("parent")).expect("mkdirs");
+            fs::write(&model_path, bytes).expect("write");
+        }
+        std::env::set_var("UCF_MODEL_CANDIDATE_WORLD_JEPA", &candidate_hash);
+        std::env::remove_var("UCF_MODEL_COMPARE_WORLD_JEPA");
+        std::env::remove_var("UCF_MODEL_SHADOW_WORLD_JEPA");
+
+        let mut specs = BTreeMap::new();
+        specs.insert(
+            ModelSlot::WorldJepa,
+            ModelSlotSpec {
+                slot: ModelSlot::WorldJepa,
+                enabled: true,
+                path: None,
+                expected_sha256: parse_hash(&active_hash),
+                max_bytes: 1024,
+                format: ModelFormat::Burn,
+                device: ModelDevice::CpuOnly,
+                active_hash: Some(active_hash.clone()),
+                contract_version: Some("v1".to_string()),
+            },
+        );
+        let store = ModelStore {
+            allowlist_root: models,
+            specs,
+        };
+
+        let activation =
+            store.assess_slot_activation(ModelSlot::WorldJepa, &candidate_hash, Some("v1"));
+        assert_eq!(activation.outcome, ActivationOutcome::Degraded);
+        assert_eq!(
+            activation.fallback,
+            ActivationFallbackState::FallbackToPriorActive
+        );
+        assert_eq!(activation.rollback, RollbackOutcome::NotRequested);
+
+        let rollback = store.assess_slot_rollback(ModelSlot::WorldJepa, None, Some("v1"));
+        assert_eq!(rollback.outcome, RollbackOutcome::Completed);
+        assert_eq!(
+            rollback.rollback_hash.as_deref(),
+            Some(active_hash.as_str())
+        );
+
+        std::env::remove_var("UCF_MODEL_CANDIDATE_WORLD_JEPA");
     }
 }
