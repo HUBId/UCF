@@ -32,6 +32,10 @@ This document defines the canonical, minimal pressure semantics used by `runtime
 
 - Per-worker snapshots include used/free units and derived `capacity_pressure`.
 - Service-level pressure can be queried via distributed pressure snapshot (`pressure_snapshot`).
+- Distributed degradation/recovery can be queried with `distributed_recovery_snapshot()`:
+  - state: `healthy|partially_degraded|constrained_but_serviceable|recovery_in_progress|unrecoverable_unavailable`
+  - unit sets: `placement_eligible_units`, `excluded_units`, `recovered_units`
+  - impact counters: `queued_jobs`, `uncertain_jobs`, `recovery_required_jobs`
 - Job records/history retain pressure and queue disposition fields for provenance.
 
 ## Non-goals
