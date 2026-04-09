@@ -45,10 +45,13 @@ Both paths preserve the same `CanonicalPipelineResult` / `CanonicalPipelineFailu
 
 `MultiWorkerComputeService` extends this with a thin execution-unit registry:
 - `ExecutionUnitKind::Local` and `ExecutionUnitKind::Worker`,
+- stable registry identity fields (`ExecutionUnitId`, worker class, registry role),
 - deterministic worker ids (`ExecutionUnitId`) and explicit availability (`available` / `unavailable`),
 - optional per-job placement hint (`requested_unit`) with deterministic fallback to capability-aware placement.
-- runtime worker lifecycle state (`known|ready|busy|saturated|unavailable|unhealthy`) derived from
-  dispatchability, in-flight usage, and consecutive failure streak.
+- runtime worker lifecycle state (`known|ready|busy|saturated|degraded|unavailable|stale|unknown|unhealthy`)
+  derived from availability, dispatch pressure, health-contact recency, and failure/cooldown streak.
+- per-unit health timestamps (`last_health_contact_at_unix_ms`) with narrow cooldown/quarantine
+  semantics to avoid immediate re-dispatch to intermittently failing workers.
 
 ## Backend capability matrix + execution placement (technical, narrow)
 
@@ -78,6 +81,10 @@ Selection rules stay intentionally simple:
 3. if no candidate is suitable right now:
    - transient unavailability is deferred (re-queued with bounded retry),
    - structural incompatibility is rejected as placement failure.
+
+Placement candidate diagnostics now include the runtime worker health state used at dispatch time,
+so skipped workers are visible with an explicit reason (for example `unit not dispatchable (Stale)` or
+`unit not dispatchable (Degraded)`).
 
 The resulting `ExecutionPlacement` now carries provenance fields:
 
@@ -140,6 +147,12 @@ For multi-worker execution, dispatch outcome is classified with a single linked 
 - `timeout`,
 - `completed`,
 - `redispatched_local` (worker failed, job completed via explicit local fallback).
+
+This keeps the worker failure semantics explicit without adding a second failure taxonomy:
+- no suitable healthy worker -> placement failure (`currently_unschedulable` or device/backend unavailable),
+- selected worker became unavailable/degraded/stale -> worker unavailable outcome,
+- dispatch transport/execute failure -> `transport_failure` / `execution_failure`,
+- fallback to local worker -> `redispatched_local` with preserved provenance.
 
 When a non-requested worker fails at dispatch/execution and a local unit is still suitable, a
 single minimal re-dispatch to local is attempted. Requested-worker submissions stay strict and do

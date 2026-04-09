@@ -97,7 +97,7 @@ pub use compute_service::{
     JobExecutionPath, JobId, JobLifecycleEvent, JobLifecycleState, JobRecord, JobSubmissionMeta,
     MultiWorkerComputeService, PlacementCandidateAssessment, PlacementFailureKind,
     PlacementSuitability, ResourceClass, SchedulerConfig, SchedulerSnapshot, WorkerAvailability,
-    WorkerDispatchOutcome,
+    WorkerClass, WorkerDispatchOutcome, WorkerRegistryRole, WorkerRuntimeStatus,
 };
 pub use contracts::{StageContractVersion, ValidationStatus};
 pub use enablement::{
