@@ -570,15 +570,20 @@ fn capacity_queue_disposition_name(disposition: CapacityQueueDisposition) -> &'s
         CapacityQueueDisposition::None => "none",
         CapacityQueueDisposition::QueuedDueToCapacity => "queued_due_to_capacity",
         CapacityQueueDisposition::DeferredDueToCapacity => "deferred_due_to_capacity",
+        CapacityQueueDisposition::DegradedPlacementDueToPressure => {
+            "degraded_placement_due_to_pressure"
+        }
         CapacityQueueDisposition::RejectedDueToCapacity => "rejected_due_to_capacity",
     }
 }
 
 fn capacity_pressure_name(pressure: CapacityPressure) -> &'static str {
     match pressure {
-        CapacityPressure::Nominal => "nominal",
+        CapacityPressure::Healthy => "healthy",
+        CapacityPressure::Constrained => "constrained",
         CapacityPressure::Saturated => "saturated",
-        CapacityPressure::Overloaded => "overloaded",
+        CapacityPressure::Backpressured => "backpressured",
+        CapacityPressure::TemporarilyUnschedulable => "temporarily_unschedulable",
     }
 }
 

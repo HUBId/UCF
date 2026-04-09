@@ -91,9 +91,11 @@ impl ResourceClass {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CapacityPressure {
-    Nominal,
+    Healthy,
+    Constrained,
     Saturated,
-    Overloaded,
+    Backpressured,
+    TemporarilyUnschedulable,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -101,6 +103,7 @@ pub enum CapacityQueueDisposition {
     None,
     QueuedDueToCapacity,
     DeferredDueToCapacity,
+    DegradedPlacementDueToPressure,
     RejectedDueToCapacity,
 }
 
@@ -279,7 +282,7 @@ impl InMemoryComputeService {
                 execution_lane: self.backend.execution_lane(),
                 resource_class,
                 capacity_queue_disposition: CapacityQueueDisposition::None,
-                capacity_pressure: CapacityPressure::Nominal,
+                capacity_pressure: CapacityPressure::Healthy,
             },
         };
         self.record_event(JobLifecycleEvent {
@@ -325,7 +328,7 @@ impl InMemoryComputeService {
                 record.accounting.capacity_queue_disposition =
                     CapacityQueueDisposition::QueuedDueToCapacity;
                 record.accounting.capacity_pressure = if self.queue.is_empty() {
-                    CapacityPressure::Nominal
+                    CapacityPressure::Healthy
                 } else {
                     CapacityPressure::Saturated
                 };
@@ -739,7 +742,9 @@ pub enum WorkerRuntimeStatus {
     Known,
     Ready,
     Busy,
+    Constrained,
     Saturated,
+    Backpressured,
     Degraded,
     Unavailable,
     Stale,
@@ -983,6 +988,7 @@ pub struct ExecutionUnitSnapshot {
     pub active_jobs: usize,
     pub used_capacity_units: usize,
     pub free_capacity_units: usize,
+    pub capacity_pressure: CapacityPressure,
     pub consecutive_failures: u32,
     pub last_job_id: Option<JobId>,
     pub last_dispatch_outcome: Option<WorkerDispatchOutcome>,
@@ -990,6 +996,16 @@ pub struct ExecutionUnitSnapshot {
     pub last_used_at_unix_ms: Option<u64>,
     pub last_health_contact_at_unix_ms: Option<u64>,
     pub quarantine_until_unix_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DistributedPressureSnapshot {
+    pub service_pressure: CapacityPressure,
+    pub queued_jobs: usize,
+    pub saturated_units: Vec<ExecutionUnitId>,
+    pub constrained_units: Vec<ExecutionUnitId>,
+    pub backpressured_units: Vec<ExecutionUnitId>,
+    pub temporarily_unschedulable_units: Vec<ExecutionUnitId>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1391,6 +1407,7 @@ impl MultiWorkerComputeService {
                 free_capacity_units: unit
                     .capacity_limit_units()
                     .saturating_sub(unit.used_capacity_units),
+                capacity_pressure: unit.capacity_pressure(),
                 consecutive_failures: unit.consecutive_failures,
                 last_job_id: unit.last_job_id,
                 last_dispatch_outcome: unit.last_dispatch_outcome,
@@ -1400,6 +1417,43 @@ impl MultiWorkerComputeService {
                 quarantine_until_unix_ms: unit.quarantine_until_unix_ms,
             })
             .collect()
+    }
+
+    pub fn pressure_snapshot(&self) -> DistributedPressureSnapshot {
+        let mut saturated_units = Vec::new();
+        let mut constrained_units = Vec::new();
+        let mut backpressured_units = Vec::new();
+        let mut temporarily_unschedulable_units = Vec::new();
+        for unit in &self.units {
+            match unit.capacity_pressure() {
+                CapacityPressure::Healthy => {}
+                CapacityPressure::Constrained => constrained_units.push(unit.id.clone()),
+                CapacityPressure::Saturated => saturated_units.push(unit.id.clone()),
+                CapacityPressure::Backpressured => backpressured_units.push(unit.id.clone()),
+                CapacityPressure::TemporarilyUnschedulable => {
+                    temporarily_unschedulable_units.push(unit.id.clone())
+                }
+            }
+        }
+        DistributedPressureSnapshot {
+            service_pressure: if !self.queue.is_empty() && backpressured_units.is_empty() {
+                CapacityPressure::TemporarilyUnschedulable
+            } else {
+                capacity_pressure_for(
+                    self.units.iter().map(|u| u.used_capacity_units).sum(),
+                    self.units
+                        .iter()
+                        .map(ExecutionUnit::capacity_limit_units)
+                        .sum(),
+                    !self.queue.is_empty(),
+                )
+            },
+            queued_jobs: self.queue.len(),
+            saturated_units,
+            constrained_units,
+            backpressured_units,
+            temporarily_unschedulable_units,
+        }
     }
 
     fn rejected_placement(
@@ -1456,7 +1510,7 @@ impl MultiWorkerComputeService {
                     device_fallback_from: None,
                     degraded_fallback: false,
                     resource_class: job.resource_class,
-                    capacity_pressure: CapacityPressure::Overloaded,
+                    capacity_pressure: CapacityPressure::Backpressured,
                     distributed,
                     reason: "requested unit not placeable".to_string(),
                     considered,
@@ -1513,7 +1567,7 @@ impl MultiWorkerComputeService {
                 device_fallback_from: None,
                 degraded_fallback: false,
                 resource_class: job.resource_class,
-                capacity_pressure: CapacityPressure::Overloaded,
+                capacity_pressure: CapacityPressure::Backpressured,
                 distributed,
                 reason: "no suitable execution unit".to_string(),
                 considered,
@@ -2146,7 +2200,7 @@ impl MultiWorkerComputeService {
                     },
                     worker_dispatch_outcome: Some(WorkerDispatchOutcome::RedispatchedLocal),
                     placement_failure: None,
-                    capacity_disposition: CapacityQueueDisposition::None,
+                    capacity_disposition: CapacityQueueDisposition::DegradedPlacementDueToPressure,
                     provenance: WorkerExecutionProvenance {
                         selected_unit: failed_worker,
                         completed_unit: local.id.clone(),
@@ -2212,10 +2266,17 @@ impl ExecutionUnit {
         if self.consecutive_failures >= 3 {
             return WorkerRuntimeStatus::Unhealthy;
         }
+        let limit = self.capacity_limit_units().max(1);
+        if self.used_capacity_units >= limit {
+            return WorkerRuntimeStatus::Backpressured;
+        }
         if self.active_jobs >= self.max_parallel_jobs
-            || self.used_capacity_units >= self.capacity_limit_units()
+            || self.used_capacity_units.saturating_mul(10) >= limit.saturating_mul(9)
         {
             return WorkerRuntimeStatus::Saturated;
+        }
+        if self.used_capacity_units.saturating_mul(10) >= limit.saturating_mul(7) {
+            return WorkerRuntimeStatus::Constrained;
         }
         if self.active_jobs > 0 {
             WorkerRuntimeStatus::Busy
@@ -2237,7 +2298,10 @@ impl ExecutionUnit {
     fn can_accept_dispatch(&self) -> bool {
         matches!(
             self.runtime_status(),
-            WorkerRuntimeStatus::Known | WorkerRuntimeStatus::Ready | WorkerRuntimeStatus::Busy
+            WorkerRuntimeStatus::Known
+                | WorkerRuntimeStatus::Ready
+                | WorkerRuntimeStatus::Busy
+                | WorkerRuntimeStatus::Constrained
         )
     }
 
@@ -2298,6 +2362,7 @@ fn device_suitability_for(
         WorkerRuntimeStatus::Unavailable
             | WorkerRuntimeStatus::Unhealthy
             | WorkerRuntimeStatus::Saturated
+            | WorkerRuntimeStatus::Backpressured
             | WorkerRuntimeStatus::Degraded
             | WorkerRuntimeStatus::Stale
             | WorkerRuntimeStatus::Unknown
@@ -2333,12 +2398,19 @@ fn capacity_pressure_for(
     limit_units: usize,
     has_backlog: bool,
 ) -> CapacityPressure {
-    if used_units >= limit_units {
-        CapacityPressure::Overloaded
+    let limit_units = limit_units.max(1);
+    if has_backlog && used_units < limit_units.saturating_mul(3) / 5 {
+        CapacityPressure::TemporarilyUnschedulable
+    } else if used_units >= limit_units
+        || (has_backlog && used_units.saturating_mul(10) >= limit_units.saturating_mul(9))
+    {
+        CapacityPressure::Backpressured
     } else if has_backlog || used_units.saturating_mul(10) >= limit_units.saturating_mul(8) {
         CapacityPressure::Saturated
+    } else if used_units.saturating_mul(10) >= limit_units.saturating_mul(6) {
+        CapacityPressure::Constrained
     } else {
-        CapacityPressure::Nominal
+        CapacityPressure::Healthy
     }
 }
 
@@ -2463,14 +2535,14 @@ mod tests {
     use crate::{ComputeBudget, ComputeError, ComputeInput, FrameId, ModelSlot};
 
     use super::{
-        CapacityQueueDisposition, CoordinationFreshness, CoordinationIssueKind, DeviceSuitability,
-        DistributedPlacementLocality, DistributedPlacementState, ExecutionDeviceClass,
-        ExecutionUnitId, ExecutionUnitKind, InFlightCoordinationState, InMemoryComputeService,
-        JobCompletionClass, JobCoordinationSnapshot, JobExecutionPath, JobLifecycleState,
-        JobSubmissionMeta, MultiWorkerComputeService, PlacementFailureKind, PlacementSuitability,
-        RecoverySignal, ResourceClass, SchedulerConfig, TerminalCoordinationInput,
-        WorkerAvailability, WorkerClass, WorkerDispatchOutcome, WorkerRecoveryKind,
-        WorkerRegistryRole, WorkerRuntimeStatus,
+        CapacityPressure, CapacityQueueDisposition, CoordinationFreshness, CoordinationIssueKind,
+        DeviceSuitability, DistributedPlacementLocality, DistributedPlacementState,
+        ExecutionDeviceClass, ExecutionUnitId, ExecutionUnitKind, InFlightCoordinationState,
+        InMemoryComputeService, JobCompletionClass, JobCoordinationSnapshot, JobExecutionPath,
+        JobLifecycleState, JobSubmissionMeta, MultiWorkerComputeService, PlacementFailureKind,
+        PlacementSuitability, RecoverySignal, ResourceClass, SchedulerConfig,
+        TerminalCoordinationInput, WorkerAvailability, WorkerClass, WorkerDispatchOutcome,
+        WorkerRecoveryKind, WorkerRegistryRole, WorkerRuntimeStatus,
     };
 
     struct NullLlm;
@@ -3633,6 +3705,82 @@ mod tests {
         assert_eq!(worker.worker_class, WorkerClass::RemoteSecondary);
         assert_eq!(worker.registry_role, WorkerRegistryRole::Secondary);
         assert!(worker.last_health_contact_at_unix_ms.is_some());
+    }
+
+    #[test]
+    fn pressure_snapshot_reports_backpressure_and_unschedulable_sets() {
+        let backend = ComputePipelineBackend::new(
+            pack_with_name("worker_v1", BackendComponentId::ToyV1, Vec::new()),
+            FusionConfig::default(),
+            LimitsConfig::default(),
+        );
+        let mut service = MultiWorkerComputeService::new(backend, 1);
+        let worker_backend = ComputePipelineBackend::new(
+            pack_with_name("worker_v1", BackendComponentId::ToyV1, Vec::new()),
+            FusionConfig::default(),
+            LimitsConfig::default(),
+        );
+        let worker_id = service.register_worker_backend("pressure-worker", worker_backend, 1);
+        service.set_worker_availability(&worker_id, WorkerAvailability::Unavailable);
+        let job_id = service.submit(
+            valid_request(),
+            JobSubmissionMeta {
+                submitted_at_unix_ms: 9,
+                submitted_by: Some("pressure".to_string()),
+            },
+            None,
+        );
+        let _ = service.run_scheduler_cycle(1);
+        let record = service.job(job_id).expect("record");
+        assert_eq!(
+            record.capacity_disposition,
+            CapacityQueueDisposition::DeferredDueToCapacity
+        );
+        let pressure = service.pressure_snapshot();
+        assert_eq!(
+            pressure.service_pressure,
+            CapacityPressure::TemporarilyUnschedulable
+        );
+        assert_eq!(pressure.queued_jobs, 1);
+    }
+
+    #[test]
+    fn local_redispatch_is_marked_as_degraded_due_to_pressure() {
+        let previous = std::env::var("UCF_WORKER_BIN").ok();
+        std::env::set_var("UCF_WORKER_BIN", "definitely-missing-ucf-worker-binary");
+
+        let local_backend = ComputePipelineBackend::new(
+            pack_with(BackendComponentId::ToyV1, Vec::new()),
+            FusionConfig::default(),
+            LimitsConfig::default(),
+        );
+        let mut service = MultiWorkerComputeService::new(local_backend, 1);
+        service
+            .register_worker("remote-failing-for-pressure", 77, 1)
+            .expect("register worker");
+        let job_id = service.submit(
+            valid_request(),
+            JobSubmissionMeta {
+                submitted_at_unix_ms: 10,
+                submitted_by: Some("pressure-fallback".to_string()),
+            },
+            None,
+        );
+        let _ = service.run_scheduler_cycle(1);
+        let record = service.job(job_id).expect("redispatched record");
+        assert_eq!(
+            record.worker_dispatch_outcome,
+            Some(WorkerDispatchOutcome::RedispatchedLocal)
+        );
+        assert_eq!(
+            record.capacity_disposition,
+            CapacityQueueDisposition::DegradedPlacementDueToPressure
+        );
+
+        match previous {
+            Some(value) => std::env::set_var("UCF_WORKER_BIN", value),
+            None => std::env::remove_var("UCF_WORKER_BIN"),
+        }
     }
 
     #[test]
