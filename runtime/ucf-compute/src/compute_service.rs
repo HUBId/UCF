@@ -686,6 +686,45 @@ pub enum WorkerRecoveryKind {
     LocalFallback,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InFlightCoordinationState {
+    Queued,
+    Dispatching,
+    Running,
+    AwaitingWorkerOutcome,
+    RetryPending,
+    RedispatchPending,
+    Uncertain,
+    Stale,
+    Completed,
+    Failed,
+    TimedOut,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CoordinationFreshness {
+    Current,
+    Stale,
+    Uncertain,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CoordinationIssueKind {
+    StaleWorkerOwnership,
+    MissingWorkerOutcome,
+    OrphanedInFlightJob,
+    RecoveredCoordinationState,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RecoverySignal {
+    SafeToRedispatch,
+    UnsafeUncertainPriorAttempt,
+    AwaitWorkerOutcome,
+    RecoveryDecisionRequired,
+    Terminal,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkerRetrySummary {
     pub attempts: u8,
@@ -789,6 +828,7 @@ pub struct MultiWorkerJobRecord {
     pub capacity_disposition: CapacityQueueDisposition,
     pub provenance: WorkerExecutionProvenance,
     pub retry_summary: WorkerRetrySummary,
+    pub coordination: JobCoordinationSnapshot,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -799,6 +839,30 @@ pub struct WorkerExecutionProvenance {
     pub redispatched_to_local: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JobCoordinationSnapshot {
+    pub state: InFlightCoordinationState,
+    pub last_in_flight_state: Option<InFlightCoordinationState>,
+    pub owner: Option<ExecutionUnitId>,
+    pub owner_kind: Option<ExecutionUnitKind>,
+    pub owner_last_contact_at_unix_ms: Option<u64>,
+    pub freshness: CoordinationFreshness,
+    pub issue: Option<CoordinationIssueKind>,
+    pub recovery_signal: RecoverySignal,
+}
+
+struct TerminalCoordinationInput {
+    state: JobLifecycleState,
+    last_in_flight_state: Option<InFlightCoordinationState>,
+    owner: ExecutionUnitId,
+    owner_kind: ExecutionUnitKind,
+    owner_last_contact_at_unix_ms: Option<u64>,
+    issue: Option<CoordinationIssueKind>,
+    recovered: bool,
+    uncertain: bool,
+    awaiting_outcome: bool,
+}
+
 impl WorkerRetrySummary {
     fn no_retry() -> Self {
         Self {
@@ -807,6 +871,75 @@ impl WorkerRetrySummary {
             uncertain_prior_attempt_outcome: false,
             recovered_by: None,
             last_failure_kind: None,
+        }
+    }
+}
+
+impl JobCoordinationSnapshot {
+    fn queued() -> Self {
+        Self {
+            state: InFlightCoordinationState::Queued,
+            last_in_flight_state: Some(InFlightCoordinationState::Queued),
+            owner: None,
+            owner_kind: None,
+            owner_last_contact_at_unix_ms: None,
+            freshness: CoordinationFreshness::Current,
+            issue: None,
+            recovery_signal: RecoverySignal::SafeToRedispatch,
+        }
+    }
+
+    fn stale_without_dispatch(owner: ExecutionUnitId, owner_kind: ExecutionUnitKind) -> Self {
+        Self {
+            state: InFlightCoordinationState::Stale,
+            last_in_flight_state: Some(InFlightCoordinationState::Dispatching),
+            owner: Some(owner),
+            owner_kind: Some(owner_kind),
+            owner_last_contact_at_unix_ms: None,
+            freshness: CoordinationFreshness::Stale,
+            issue: Some(CoordinationIssueKind::StaleWorkerOwnership),
+            recovery_signal: RecoverySignal::RecoveryDecisionRequired,
+        }
+    }
+
+    fn from_terminal(input: TerminalCoordinationInput) -> Self {
+        let terminal = match input.state {
+            JobLifecycleState::Completed => InFlightCoordinationState::Completed,
+            JobLifecycleState::TimedOut => InFlightCoordinationState::TimedOut,
+            _ => InFlightCoordinationState::Failed,
+        };
+        let freshness = if input.uncertain {
+            CoordinationFreshness::Uncertain
+        } else if input.issue == Some(CoordinationIssueKind::StaleWorkerOwnership) {
+            CoordinationFreshness::Stale
+        } else {
+            CoordinationFreshness::Current
+        };
+        let recovery_signal =
+            if input.recovered || matches!(input.state, JobLifecycleState::Completed) {
+                RecoverySignal::Terminal
+            } else if input.awaiting_outcome {
+                RecoverySignal::AwaitWorkerOutcome
+            } else if input.uncertain {
+                RecoverySignal::UnsafeUncertainPriorAttempt
+            } else if input.issue.is_some() {
+                RecoverySignal::RecoveryDecisionRequired
+            } else {
+                RecoverySignal::Terminal
+            };
+        Self {
+            state: terminal,
+            last_in_flight_state: input.last_in_flight_state,
+            owner: Some(input.owner),
+            owner_kind: Some(input.owner_kind),
+            owner_last_contact_at_unix_ms: input.owner_last_contact_at_unix_ms,
+            freshness,
+            issue: if input.recovered {
+                Some(CoordinationIssueKind::RecoveredCoordinationState)
+            } else {
+                input.issue
+            },
+            recovery_signal,
         }
     }
 }
@@ -830,6 +963,18 @@ pub struct ExecutionUnitSnapshot {
     pub last_used_at_unix_ms: Option<u64>,
     pub last_health_contact_at_unix_ms: Option<u64>,
     pub quarantine_until_unix_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InFlightJobSnapshot {
+    pub job_id: JobId,
+    pub state: InFlightCoordinationState,
+    pub owner: Option<ExecutionUnitId>,
+    pub owner_kind: Option<ExecutionUnitKind>,
+    pub owner_last_contact_at_unix_ms: Option<u64>,
+    pub freshness: CoordinationFreshness,
+    pub issue: Option<CoordinationIssueKind>,
+    pub recovery_signal: RecoverySignal,
 }
 
 struct ExecutionUnit {
@@ -1062,6 +1207,7 @@ impl MultiWorkerComputeService {
                                 redispatched_to_local: false,
                             },
                             retry_summary: WorkerRetrySummary::no_retry(),
+                            coordination: JobCoordinationSnapshot::queued(),
                         };
                         done.push(record.id);
                         self.records.insert(record.id, record);
@@ -1070,6 +1216,8 @@ impl MultiWorkerComputeService {
                     let (placement, placement_failure, worker_dispatch_outcome) =
                         self.rejected_placement(&job);
                     if let Some(requested_unit) = job.requested_unit.clone() {
+                        let placement_unit_id = placement.unit_id.clone();
+                        let placement_unit_kind = placement.unit_kind;
                         let record = MultiWorkerJobRecord {
                             id: job.id,
                             state: JobLifecycleState::Failed,
@@ -1090,6 +1238,10 @@ impl MultiWorkerComputeService {
                                 redispatched_to_local: false,
                             },
                             retry_summary: WorkerRetrySummary::no_retry(),
+                            coordination: JobCoordinationSnapshot::stale_without_dispatch(
+                                placement_unit_id,
+                                placement_unit_kind,
+                            ),
                         };
                         done.push(record.id);
                         self.records.insert(record.id, record);
@@ -1136,6 +1288,7 @@ impl MultiWorkerComputeService {
                             redispatched_to_local: false,
                         },
                         retry_summary: WorkerRetrySummary::no_retry(),
+                        coordination: JobCoordinationSnapshot::queued(),
                     };
                     done.push(record.id);
                     self.records.insert(record.id, record);
@@ -1151,6 +1304,48 @@ impl MultiWorkerComputeService {
 
     pub fn job(&self, id: JobId) -> Option<&MultiWorkerJobRecord> {
         self.records.get(&id)
+    }
+
+    pub fn in_flight_jobs(&self) -> Vec<InFlightJobSnapshot> {
+        let mut snapshots = self
+            .records
+            .values()
+            .filter(|record| {
+                matches!(
+                    record.coordination.state,
+                    InFlightCoordinationState::Queued
+                        | InFlightCoordinationState::Dispatching
+                        | InFlightCoordinationState::Running
+                        | InFlightCoordinationState::AwaitingWorkerOutcome
+                        | InFlightCoordinationState::RetryPending
+                        | InFlightCoordinationState::RedispatchPending
+                        | InFlightCoordinationState::Uncertain
+                        | InFlightCoordinationState::Stale
+                )
+            })
+            .map(|record| InFlightJobSnapshot {
+                job_id: record.id,
+                state: record.coordination.state,
+                owner: record.coordination.owner.clone(),
+                owner_kind: record.coordination.owner_kind,
+                owner_last_contact_at_unix_ms: record.coordination.owner_last_contact_at_unix_ms,
+                freshness: record.coordination.freshness,
+                issue: record.coordination.issue,
+                recovery_signal: record.coordination.recovery_signal,
+            })
+            .collect::<Vec<_>>();
+        snapshots.extend(self.queue.iter().map(|queued| InFlightJobSnapshot {
+            job_id: queued.id,
+            state: InFlightCoordinationState::Queued,
+            owner: None,
+            owner_kind: None,
+            owner_last_contact_at_unix_ms: None,
+            freshness: CoordinationFreshness::Current,
+            issue: None,
+            recovery_signal: RecoverySignal::SafeToRedispatch,
+        }));
+        snapshots.sort_by_key(|snapshot| snapshot.job_id);
+        snapshots
     }
 
     pub fn execution_units(&self) -> Vec<ExecutionUnitSnapshot> {
@@ -1553,6 +1748,7 @@ impl MultiWorkerComputeService {
         let required_units = job.resource_class.capacity_weight();
         if !self.units[unit_idx].can_accept_dispatch() {
             let unit = &mut self.units[unit_idx];
+            let status = unit.runtime_status();
             let failure = CanonicalPipelineFailure {
                 kind: CanonicalFailureKind::ExecutionError,
                 stage: None,
@@ -1579,6 +1775,20 @@ impl MultiWorkerComputeService {
                     redispatched_to_local: false,
                 },
                 retry_summary: WorkerRetrySummary::no_retry(),
+                coordination: if status == WorkerRuntimeStatus::Stale {
+                    JobCoordinationSnapshot::stale_without_dispatch(unit.id.clone(), unit.kind)
+                } else {
+                    JobCoordinationSnapshot {
+                        state: InFlightCoordinationState::Failed,
+                        last_in_flight_state: Some(InFlightCoordinationState::Dispatching),
+                        owner: Some(unit.id.clone()),
+                        owner_kind: Some(unit.kind),
+                        owner_last_contact_at_unix_ms: unit.last_health_contact_at_unix_ms,
+                        freshness: CoordinationFreshness::Current,
+                        issue: None,
+                        recovery_signal: RecoverySignal::RecoveryDecisionRequired,
+                    }
+                },
             };
         }
 
@@ -1609,9 +1819,15 @@ impl MultiWorkerComputeService {
             Ok(Some((record_job_id, state, execution_failure, result)))
                 if submitted_job_id == record_job_id =>
             {
-                let unit = &mut self.units[unit_idx];
-                let selected_unit = unit.id.clone();
-                let was_remote = unit.kind == ExecutionUnitKind::Worker;
+                let (selected_unit, selected_kind, selected_last_contact, was_remote) = {
+                    let unit = &self.units[unit_idx];
+                    (
+                        unit.id.clone(),
+                        unit.kind,
+                        unit.last_health_contact_at_unix_ms,
+                        unit.kind == ExecutionUnitKind::Worker,
+                    )
+                };
                 let dispatch_outcome = if placement.unit_kind != ExecutionUnitKind::Worker {
                     None
                 } else if state == JobLifecycleState::TimedOut {
@@ -1624,6 +1840,7 @@ impl MultiWorkerComputeService {
                     Some(WorkerDispatchOutcome::DispatchFailure)
                 };
                 if let Some(outcome) = dispatch_outcome {
+                    let unit = &mut self.units[unit_idx];
                     if state == JobLifecycleState::Completed && result.is_some() {
                         unit.note_success(job.id, outcome);
                     } else {
@@ -1660,11 +1877,24 @@ impl MultiWorkerComputeService {
                     capacity_disposition: CapacityQueueDisposition::None,
                     provenance: WorkerExecutionProvenance {
                         selected_unit: selected_unit.clone(),
-                        completed_unit: selected_unit,
+                        completed_unit: selected_unit.clone(),
                         was_remote,
                         redispatched_to_local: false,
                     },
                     retry_summary: WorkerRetrySummary::no_retry(),
+                    coordination: JobCoordinationSnapshot::from_terminal(
+                        TerminalCoordinationInput {
+                            state,
+                            last_in_flight_state: Some(InFlightCoordinationState::Running),
+                            owner: selected_unit.clone(),
+                            owner_kind: selected_kind,
+                            owner_last_contact_at_unix_ms: selected_last_contact,
+                            issue: None,
+                            recovered: false,
+                            uncertain: false,
+                            awaiting_outcome: false,
+                        },
+                    ),
                 }
             }
             Ok(_) => {
@@ -1701,7 +1931,7 @@ impl MultiWorkerComputeService {
                     capacity_disposition: CapacityQueueDisposition::RejectedDueToCapacity,
                     provenance: WorkerExecutionProvenance {
                         selected_unit: failed_unit.clone(),
-                        completed_unit: failed_unit,
+                        completed_unit: failed_unit.clone(),
                         was_remote: true,
                         redispatched_to_local: false,
                     },
@@ -1712,6 +1942,21 @@ impl MultiWorkerComputeService {
                         recovered_by: None,
                         last_failure_kind: Some(WorkerFailureKind::TransportFailure),
                     },
+                    coordination: JobCoordinationSnapshot::from_terminal(
+                        TerminalCoordinationInput {
+                            state: JobLifecycleState::Failed,
+                            last_in_flight_state: Some(
+                                InFlightCoordinationState::AwaitingWorkerOutcome,
+                            ),
+                            owner: failed_unit,
+                            owner_kind: ExecutionUnitKind::Worker,
+                            owner_last_contact_at_unix_ms: None,
+                            issue: Some(CoordinationIssueKind::MissingWorkerOutcome),
+                            recovered: false,
+                            uncertain: true,
+                            awaiting_outcome: true,
+                        },
+                    ),
                 }
             }
             Err(err) => {
@@ -1766,6 +2011,32 @@ impl MultiWorkerComputeService {
                         recovered_by: None,
                         last_failure_kind: Some(failure_kind),
                     },
+                    coordination: JobCoordinationSnapshot::from_terminal(
+                        TerminalCoordinationInput {
+                            state,
+                            last_in_flight_state: Some(InFlightCoordinationState::Running),
+                            owner: self.units[unit_idx].id.clone(),
+                            owner_kind: self.units[unit_idx].kind,
+                            owner_last_contact_at_unix_ms: self.units[unit_idx]
+                                .last_health_contact_at_unix_ms,
+                            issue: if matches!(
+                                failure_kind,
+                                WorkerFailureKind::DispatchFailedBeforeExecution
+                                    | WorkerFailureKind::WorkerUnavailableOrStale
+                            ) {
+                                Some(CoordinationIssueKind::OrphanedInFlightJob)
+                            } else {
+                                None
+                            },
+                            recovered: false,
+                            uncertain: matches!(
+                                failure_kind,
+                                WorkerFailureKind::WorkerUnavailableOrStale
+                                    | WorkerFailureKind::DispatchFailedBeforeExecution
+                            ),
+                            awaiting_outcome: state == JobLifecycleState::TimedOut,
+                        },
+                    ),
                 }
             }
         }
@@ -1846,6 +2117,21 @@ impl MultiWorkerComputeService {
                         recovered_by: Some(WorkerRecoveryKind::LocalFallback),
                         last_failure_kind: Some(WorkerFailureKind::WorkerExecutionCrashed),
                     },
+                    coordination: JobCoordinationSnapshot::from_terminal(
+                        TerminalCoordinationInput {
+                            state,
+                            last_in_flight_state: Some(
+                                InFlightCoordinationState::RedispatchPending,
+                            ),
+                            owner: local.id.clone(),
+                            owner_kind: local.kind,
+                            owner_last_contact_at_unix_ms: local.last_health_contact_at_unix_ms,
+                            issue: None,
+                            recovered: true,
+                            uncertain: false,
+                            awaiting_outcome: false,
+                        },
+                    ),
                 })
             }
             _ => None,
@@ -2053,11 +2339,13 @@ mod tests {
     use crate::{ComputeBudget, ComputeError, ComputeInput, FrameId, ModelSlot};
 
     use super::{
-        CapacityQueueDisposition, DeviceSuitability, ExecutionDeviceClass, ExecutionUnitId,
-        ExecutionUnitKind, InMemoryComputeService, JobCompletionClass, JobExecutionPath,
+        CapacityQueueDisposition, CoordinationFreshness, CoordinationIssueKind, DeviceSuitability,
+        ExecutionDeviceClass, ExecutionUnitId, ExecutionUnitKind, InFlightCoordinationState,
+        InMemoryComputeService, JobCompletionClass, JobCoordinationSnapshot, JobExecutionPath,
         JobLifecycleState, JobSubmissionMeta, MultiWorkerComputeService, PlacementFailureKind,
-        PlacementSuitability, ResourceClass, SchedulerConfig, WorkerAvailability, WorkerClass,
-        WorkerDispatchOutcome, WorkerRecoveryKind, WorkerRegistryRole, WorkerRuntimeStatus,
+        PlacementSuitability, RecoverySignal, ResourceClass, SchedulerConfig,
+        TerminalCoordinationInput, WorkerAvailability, WorkerClass, WorkerDispatchOutcome,
+        WorkerRecoveryKind, WorkerRegistryRole, WorkerRuntimeStatus,
     };
 
     struct NullLlm;
@@ -2957,6 +3245,31 @@ mod tests {
     }
 
     #[test]
+    fn queued_jobs_are_visible_in_in_flight_snapshot() {
+        let backend = ComputePipelineBackend::new(
+            pack_with(BackendComponentId::ToyV1, Vec::new()),
+            FusionConfig::default(),
+            LimitsConfig::default(),
+        );
+        let mut service = MultiWorkerComputeService::new(backend, 1);
+        let job_id = service.submit(
+            valid_request(),
+            JobSubmissionMeta {
+                submitted_at_unix_ms: 21,
+                submitted_by: Some("queue".to_string()),
+            },
+            None,
+        );
+        let in_flight = service.in_flight_jobs();
+        let queued = in_flight
+            .iter()
+            .find(|snapshot| snapshot.job_id == job_id)
+            .expect("queued snapshot");
+        assert_eq!(queued.state, InFlightCoordinationState::Queued);
+        assert_eq!(queued.recovery_signal, RecoverySignal::SafeToRedispatch);
+    }
+
+    #[test]
     fn remote_execution_failure_can_redispatch_to_local_with_provenance() {
         let _lock = crate::test_env::env_lock()
             .lock()
@@ -2993,6 +3306,14 @@ mod tests {
         assert_eq!(
             record.retry_summary.recovered_by,
             Some(WorkerRecoveryKind::LocalFallback)
+        );
+        assert_eq!(
+            record.coordination.issue,
+            Some(CoordinationIssueKind::RecoveredCoordinationState)
+        );
+        assert_eq!(
+            record.coordination.recovery_signal,
+            RecoverySignal::Terminal
         );
         assert!(record.result.is_some());
         match previous {
@@ -3158,5 +3479,38 @@ mod tests {
             .any(|c| c.unit_id == worker_id
                 && c.runtime_status == WorkerRuntimeStatus::Stale
                 && c.detail.contains("not dispatchable")));
+        assert_eq!(record.coordination.state, InFlightCoordinationState::Stale);
+        assert_eq!(
+            record.coordination.issue,
+            Some(CoordinationIssueKind::StaleWorkerOwnership)
+        );
+        assert_eq!(
+            record.coordination.recovery_signal,
+            RecoverySignal::RecoveryDecisionRequired
+        );
+    }
+
+    #[test]
+    fn uncertain_orphaned_coordination_requires_recovery_signal() {
+        let coordination = JobCoordinationSnapshot::from_terminal(TerminalCoordinationInput {
+            state: JobLifecycleState::Failed,
+            last_in_flight_state: Some(InFlightCoordinationState::AwaitingWorkerOutcome),
+            owner: ExecutionUnitId("remote-uncertain".to_string()),
+            owner_kind: ExecutionUnitKind::Worker,
+            owner_last_contact_at_unix_ms: None,
+            issue: Some(CoordinationIssueKind::OrphanedInFlightJob),
+            recovered: false,
+            uncertain: true,
+            awaiting_outcome: true,
+        });
+        assert_eq!(coordination.freshness, CoordinationFreshness::Uncertain);
+        assert_eq!(
+            coordination.issue,
+            Some(CoordinationIssueKind::OrphanedInFlightJob)
+        );
+        assert_eq!(
+            coordination.recovery_signal,
+            RecoverySignal::AwaitWorkerOutcome
+        );
     }
 }

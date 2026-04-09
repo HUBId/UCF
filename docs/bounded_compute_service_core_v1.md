@@ -159,6 +159,23 @@ provenance explicit in ops/history-style diagnostics:
   `transport_failure`, `worker_unavailable_or_stale`, `worker_execution_crashed`,
   `worker_structured_execution_failure`, `terminal_compute_execution_failure`).
 
+`MultiWorkerJobRecord` now also carries a narrow `coordination` snapshot so distributed in-flight
+state remains visible across worker/service/recovery boundaries without adding a workflow engine:
+- canonical in-flight state: `queued`, `dispatching`, `running`, `awaiting_worker_outcome`,
+  `retry_pending`, `redispatch_pending`, `uncertain`, `stale`,
+- canonical terminal coordination state: `completed`, `failed`, `timed_out`,
+- last in-flight state before terminalization (`last_in_flight_state`),
+- last known owner (`owner`, `owner_kind`) + owner last status contact timestamp,
+- freshness (`current`, `stale`, `uncertain`),
+- stale/orphan diagnostics (`stale_worker_ownership`, `missing_worker_outcome`,
+  `orphaned_in_flight_job`, `recovered_coordination_state`),
+- recovery/dispatch signal (`safe_to_redispatch`, `unsafe_uncertain_prior_attempt`,
+  `await_worker_outcome`, `recovery_decision_required`, `terminal`).
+
+`MultiWorkerComputeService::in_flight_jobs()` exposes a compact runtime snapshot of currently
+non-terminal coordination states (including queue-only jobs), so ops/recovery paths can
+differentiate truly running jobs from stale/uncertain/orphaned in-flight residue.
+
 This keeps the worker failure semantics explicit without adding a second failure taxonomy:
 - no suitable healthy worker -> placement failure (`currently_unschedulable` or device/backend unavailable),
 - selected worker became unavailable/degraded/stale -> worker unavailable outcome,
@@ -173,6 +190,14 @@ the worker remain terminal and are not auto-retried.
 When a non-requested worker fails at dispatch/execution and a local unit is still suitable, a
 single minimal re-dispatch to local is attempted. Requested-worker submissions stay strict and do
 not auto-fallback.
+
+Recovery/retry coupling remains intentionally small:
+- transport mismatch / missing correlated worker outcome -> `uncertain` + `missing_worker_outcome`
+  + `unsafe_uncertain_prior_attempt`,
+- stale ownership at dispatch boundary -> `stale` + `stale_worker_ownership`
+  + `recovery_decision_required`,
+- successful local redispatch after worker failure -> terminal record with
+  `recovered_coordination_state`.
 
 ## Canonical job lifecycle states
 

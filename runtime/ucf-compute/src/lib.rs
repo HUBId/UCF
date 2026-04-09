@@ -91,14 +91,15 @@ pub use backends::{
     CANONICAL_ONBOARDING_PACK,
 };
 pub use compute_service::{
-    CapacityPressure, CapacityQueueDisposition, ComputeJob, DeviceSuitability,
-    ExecutionDeviceClass, ExecutionPlacement, ExecutionUnitId, ExecutionUnitKind,
-    ExecutionUnitSnapshot, InMemoryComputeService, JobAccountingSummary, JobCompletionClass,
-    JobExecutionPath, JobId, JobLifecycleEvent, JobLifecycleState, JobRecord, JobSubmissionMeta,
-    MultiWorkerComputeService, PlacementCandidateAssessment, PlacementFailureKind,
-    PlacementSuitability, ResourceClass, SchedulerConfig, SchedulerSnapshot, WorkerAvailability,
-    WorkerClass, WorkerDispatchOutcome, WorkerFailureKind, WorkerRecoveryKind, WorkerRegistryRole,
-    WorkerRetrySummary, WorkerRuntimeStatus,
+    CapacityPressure, CapacityQueueDisposition, ComputeJob, CoordinationFreshness,
+    CoordinationIssueKind, DeviceSuitability, ExecutionDeviceClass, ExecutionPlacement,
+    ExecutionUnitId, ExecutionUnitKind, ExecutionUnitSnapshot, InFlightCoordinationState,
+    InFlightJobSnapshot, InMemoryComputeService, JobAccountingSummary, JobCompletionClass,
+    JobCoordinationSnapshot, JobExecutionPath, JobId, JobLifecycleEvent, JobLifecycleState,
+    JobRecord, JobSubmissionMeta, MultiWorkerComputeService, PlacementCandidateAssessment,
+    PlacementFailureKind, PlacementSuitability, RecoverySignal, ResourceClass, SchedulerConfig,
+    SchedulerSnapshot, WorkerAvailability, WorkerClass, WorkerDispatchOutcome, WorkerFailureKind,
+    WorkerRecoveryKind, WorkerRegistryRole, WorkerRetrySummary, WorkerRuntimeStatus,
 };
 pub use contracts::{StageContractVersion, ValidationStatus};
 pub use enablement::{
