@@ -74,6 +74,25 @@ Golden/negative safetensors fixtures are generated in unit tests at runtime (off
 - Job history persists per-slot warmup state (best-effort extraction) so cold-start vs warm/ready effects can be correlated with execution timing/hotspot summaries.
 - Intentional boundary: this is a slim readiness seam for active/candidate/compare/shadow paths, not a global cache manager or preload orchestrator.
 
+## Activation / fallback / rollback transition semantics (Serie B hardening)
+- Canonical activation assessment is now explicit via `ModelStore::assess_slot_activation(slot, target_hash, contract_version)`.
+- Canonical activation outcomes are intentionally narrow:
+  - `pending`: target is technically valid, but not yet the active path.
+  - `succeeded`: target hash is already the active verified path (or active reference).
+  - `degraded`: activation is technically possible, but compare/shadow baseline diagnostics are incomplete or degraded.
+  - `blocked`: activation preconditions are explicitly blocked (verification/contract/path/promotion blockers).
+  - `failed_technically`: activation preconditions passed, but target artifact warmup/prefetch failed.
+- Fallback and rollback are explicitly distinct:
+  - `fallback_to_prior_active`: runtime-near safety return to the prior active verified hash when activation is blocked/failed/degraded.
+  - `rollback`: explicit return assessment (`ModelStore::assess_slot_rollback`) to a prior/target hash with outcomes `completed|unavailable|failed`.
+- Prior active reference is carried in both assessments (`prior_active_hash`, `replaced_hash`, `resulting_active_hash`) to keep rollback/fallback traceability load-bearing without introducing a release-management state machine.
+- Backend slot provenance keeps rollout transition detail in one deterministic string (`rollout=...;activation={...};rollback={...}`) so ops/history/promotion consumers can observe:
+  - attempted activation target
+  - activation outcome (success/degraded/blocked/failed/pending)
+  - fallback usage
+  - rollback readiness/resulting active hash.
+- Intentional boundary: still no auto-promotion and no automatic operator workflow; this remains a slim technical transition seam.
+
 
 ## Envelope checks / fail-safe
 - Any `NaN`/`Inf` during JEPA/SAE/SSM yields deterministic degraded fallback (`StageQuality::DegradedFallback`).
