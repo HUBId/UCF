@@ -48,6 +48,8 @@ Legacy aliases (`cpu_stub`, `candle_dummy`, `burn_dummy`, `worker_v1`) are no lo
 - `Candle` remains a compatibility seam and is **not** a second onboarding default path.
 
 See also `docs/compute_onboarding_reference_path.md` for the compact readiness matrix.
+For the hard, repo-based closure matrix of Distributed Execution Hardening (Serie A), see
+`docs/distributed_execution_serie_a_closure_v1.md`.
 
 ## Execution-device classes (bounded service placement)
 
