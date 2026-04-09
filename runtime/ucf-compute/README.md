@@ -79,6 +79,30 @@ Multi-worker scheduling remains intentionally compact: jobs are either placed im
 queued as currently-unschedulable (capacity/device temporarily unavailable), or rejected when no
 technical backend/device placement is possible.
 
+### Distributed admission / placement consistency (Serie A Prompt 5)
+
+Admission and placement now share one worker-crossing diagnostic summary
+(`ExecutionPlacement.distributed`) derived from the same candidate assessments for local and
+remote units.
+
+Canonical distributed states:
+
+- `admissible_and_placeable`: request is technically admissible and currently placeable.
+- `admissible_placeable_on_subset`: admissible/placeable only on a subset of units.
+- `admissible_but_currently_unschedulable`: admissible in theory, blocked by readiness/capacity now.
+- `admissible_degraded_only`: placeable only through degraded fallback lane (for example candle fallback).
+- `blocked_incompatible`: no admissible worker/backend/device combination.
+
+The summary also reports:
+
+- locality scope (`none|local_only|remote_only|local_and_remote`);
+- admissible unit set (principally eligible units);
+- currently placeable unit set;
+- whether degraded fallback is currently possible.
+
+This keeps admission-vs-placement mismatches explicit (for example, admitted but no currently
+placeable worker) without introducing a global optimization scheduler.
+
 ### Remote execution consistency / provenance / replay fidelity (Serie A hardening)
 
 Remote (`worker_ipc`) execution stays on the same canonical top-level contract as local execution:
