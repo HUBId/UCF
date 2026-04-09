@@ -79,6 +79,27 @@ Multi-worker scheduling remains intentionally compact: jobs are either placed im
 queued as currently-unschedulable (capacity/device temporarily unavailable), or rejected when no
 technical backend/device placement is possible.
 
+### Remote execution consistency / provenance / replay fidelity (Serie A hardening)
+
+Remote (`worker_ipc`) execution stays on the same canonical top-level contract as local execution:
+`CanonicalPipelineRequest -> compute_canonical -> CanonicalPipelineResult|CanonicalPipelineFailure`.
+No parallel remote-only result/fault model is introduced.
+
+Load-bearing remote context is now carried in history/replay surfaces as a bounded summary:
+- execution path (`LocalCanonical` vs `WorkerIpc`);
+- execution lane;
+- backend route + model-slot summary;
+- resource class + capacity pressure context.
+
+Replay now classifies remote-context reproducibility explicitly:
+- `exact`: remote replay kept equivalent worker-context signals;
+- `partial`: replay completed but remote-context signals drifted;
+- `missing`: remote fidelity cannot be established under current runtime context;
+- `not_applicable_local`: source run was local.
+
+When historical remote records lack required context fields, replay is blocked with a structured
+`missing_remote_execution_context` failure instead of silently claiming equivalence.
+
 ## Resource classes and capacity accounting (runtime scope)
 
 Capacity is modeled as a narrow runtime signal (not a cluster manager):

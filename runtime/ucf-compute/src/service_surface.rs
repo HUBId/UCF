@@ -14,7 +14,7 @@
 //!
 use crate::compute_service::{
     InMemoryComputeService, JobCompletionClass, JobExecutionPath, JobId, JobLifecycleEvent,
-    JobLifecycleState, JobRecord, JobSubmissionMeta,
+    JobLifecycleState, JobRecord, JobSubmissionMeta, ResourceClass,
 };
 use crate::job_history::{
     JobHistoryStore, JobHistoryStoreError, PersistedCanonicalRequest, PersistedJobRecord,
@@ -392,6 +392,17 @@ impl CanonicalComputeEntryPoint {
                 })
             }
         };
+        if source.execution_mode() == ReplayExecutionMode::RemoteWorkerIpc
+            && !source.has_remote_context()
+        {
+            return Ok(ComputeReplayOutcome::NotReplayable {
+                source_job_id: source.job_id,
+                code: ReplayFailureCode::MissingRemoteExecutionContext,
+                detail: "replay fidelity blocked: source remote execution context is incomplete"
+                    .to_string(),
+            });
+        }
+        let source_execution_mode = source.execution_mode();
         let Some(request) = source.request else {
             return Ok(ComputeReplayOutcome::NotReplayable {
                 source_job_id: source.job_id,
@@ -466,6 +477,9 @@ impl CanonicalComputeEntryPoint {
                 == Some(format!("{:?}", replayed.accounting.execution_lane)),
             backend_route_match: source.backend_route == replayed.result.as_ref().map(|r| r.route),
             model_slots_match: source.model_slots == replay_slots,
+            resource_class_match: source.resource_class == Some(replayed.accounting.resource_class),
+            capacity_pressure_match: source.capacity_pressure
+                == Some(format!("{:?}", replayed.accounting.capacity_pressure)),
         };
         let replay_succeeded = replayed.state == JobLifecycleState::Completed;
         let completion_class_match = source.completion_class
@@ -479,6 +493,8 @@ impl CanonicalComputeEntryPoint {
             && diff.execution_lane_match
             && diff.backend_route_match
             && diff.model_slots_match
+            && diff.resource_class_match
+            && diff.capacity_pressure_match
         {
             ReplayDeterminismClass::SameEffectiveConfiguration
         } else if replay_succeeded {
@@ -493,10 +509,38 @@ impl CanonicalComputeEntryPoint {
         } else {
             None
         };
+        let replay_execution_mode = if replayed.execution_path == JobExecutionPath::WorkerIpc {
+            ReplayExecutionMode::RemoteWorkerIpc
+        } else {
+            ReplayExecutionMode::Local
+        };
+        let remote_context_reproducibility = match (
+            source_execution_mode,
+            replay_execution_mode,
+            diff.execution_lane_match
+                && diff.backend_route_match
+                && diff.model_slots_match
+                && diff.resource_class_match
+                && diff.capacity_pressure_match,
+        ) {
+            (ReplayExecutionMode::Local, ReplayExecutionMode::Local, _) => {
+                ReplayRemoteContextReproducibility::NotApplicableLocal
+            }
+            (ReplayExecutionMode::RemoteWorkerIpc, ReplayExecutionMode::RemoteWorkerIpc, true) => {
+                ReplayRemoteContextReproducibility::Exact
+            }
+            (ReplayExecutionMode::RemoteWorkerIpc, _, false) => {
+                ReplayRemoteContextReproducibility::Partial
+            }
+            _ => ReplayRemoteContextReproducibility::Missing,
+        };
         Ok(ComputeReplayOutcome::Completed(ComputeReplayReport {
             source_job_id: source.job_id,
             replay_job_id: replay_id,
             determinism_class,
+            source_execution_mode,
+            replay_execution_mode,
+            remote_context_reproducibility,
             configuration_diff: diff,
             replay_succeeded,
             completion_class_match,
@@ -559,6 +603,8 @@ impl CanonicalComputeEntryPoint {
 
         let config_equal = candidate_record.execution_path == baseline_record.execution_path
             && candidate_record.execution_lane == baseline_record.execution_lane
+            && candidate_record.resource_class == baseline_record.resource_class
+            && candidate_record.capacity_pressure == baseline_record.capacity_pressure
             && candidate_record.backend_route == baseline_record.backend_route
             && candidate_record.model_slots == baseline_record.model_slots
             && candidate_record.request_identity == baseline_record.request_identity
@@ -965,8 +1011,23 @@ pub enum ReplayFailureCode {
     ConfigurationIncomplete,
     RequiredArtifactUnavailable,
     BackendOrDeviceUnavailable,
+    MissingRemoteExecutionContext,
     ReplayExecutionFailed,
     ReplayCompletedWithChangedConfiguration,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReplayExecutionMode {
+    Local,
+    RemoteWorkerIpc,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReplayRemoteContextReproducibility {
+    NotApplicableLocal,
+    Exact,
+    Partial,
+    Missing,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -975,6 +1036,8 @@ pub struct ReplayConfigurationDiff {
     pub execution_lane_match: bool,
     pub backend_route_match: bool,
     pub model_slots_match: bool,
+    pub resource_class_match: bool,
+    pub capacity_pressure_match: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -982,6 +1045,9 @@ pub struct ComputeReplayReport {
     pub source_job_id: JobId,
     pub replay_job_id: JobId,
     pub determinism_class: ReplayDeterminismClass,
+    pub source_execution_mode: ReplayExecutionMode,
+    pub replay_execution_mode: ReplayExecutionMode,
+    pub remote_context_reproducibility: ReplayRemoteContextReproducibility,
     pub configuration_diff: ReplayConfigurationDiff,
     pub replay_succeeded: bool,
     pub completion_class_match: bool,
@@ -1056,6 +1122,8 @@ struct ReplaySourceRecord {
     request_budget: Option<BudgetComparisonFingerprint>,
     execution_path: String,
     execution_lane: Option<String>,
+    resource_class: Option<ResourceClass>,
+    capacity_pressure: Option<String>,
     backend_route: Option<crate::pipeline::CanonicalBackendRoute>,
     model_slots: Vec<String>,
     completion_class: Option<String>,
@@ -1088,6 +1156,8 @@ impl ReplaySourceRecord {
             request: Some(request),
             execution_path: format!("{:?}", record.execution_path),
             execution_lane: Some(format!("{:?}", record.accounting.execution_lane)),
+            resource_class: Some(record.accounting.resource_class),
+            capacity_pressure: Some(format!("{:?}", record.accounting.capacity_pressure)),
             backend_route: record.result.as_ref().map(|result| result.route),
             model_slots: record
                 .accounting
@@ -1143,6 +1213,15 @@ impl ReplaySourceRecord {
             }),
             execution_path: persisted.execution_path.clone(),
             execution_lane: persisted.execution_lane.clone(),
+            resource_class: persisted.resource_class.as_ref().and_then(|class| {
+                match class.as_str() {
+                    "light" => Some(ResourceClass::Light),
+                    "standard" => Some(ResourceClass::Standard),
+                    "heavy" => Some(ResourceClass::Heavy),
+                    _ => None,
+                }
+            }),
+            capacity_pressure: persisted.capacity_pressure.clone(),
             backend_route: persisted.backend_route.as_ref().map(|route| {
                 crate::pipeline::CanonicalBackendRoute {
                     pack_id: route.pack_id,
@@ -1173,6 +1252,20 @@ impl ReplaySourceRecord {
                     budget_exceeded_stage: None,
                 }),
         }
+    }
+
+    fn execution_mode(&self) -> ReplayExecutionMode {
+        if self.execution_path == "WorkerIpc" {
+            ReplayExecutionMode::RemoteWorkerIpc
+        } else {
+            ReplayExecutionMode::Local
+        }
+    }
+
+    fn has_remote_context(&self) -> bool {
+        self.execution_mode() == ReplayExecutionMode::RemoteWorkerIpc
+            && self.execution_lane.is_some()
+            && self.backend_route.is_some()
     }
 }
 
@@ -1450,8 +1543,9 @@ mod tests {
         BaselineReference, CanonicalComputeEntryPoint, ComputeExecutionMode,
         ComputeHistoryLookupError, ComputeJobHandle, ComputeJobHistoryLookup, ComputeReplayOutcome,
         ComputeRequestValidationCode, ComputeSubmitOutcome, ComputeSubmitRequest,
-        RecoveryDisposition, ReplayDeterminismClass, ReplayFailureCode, RuntimeOperation,
-        RuntimeOperationCode, RuntimeOpsState, RuntimeSignalState, RuntimeWarmupState,
+        RecoveryDisposition, ReplayDeterminismClass, ReplayExecutionMode, ReplayFailureCode,
+        ReplayRemoteContextReproducibility, RuntimeOperation, RuntimeOperationCode,
+        RuntimeOpsState, RuntimeSignalState, RuntimeWarmupState,
     };
     use crate::pipeline::{CanonicalFailureKind, CanonicalPipelineRequest};
     use crate::{InMemoryComputeService, JobHistoryStore, JobId, JobLifecycleState};
@@ -1787,6 +1881,12 @@ mod tests {
             ComputeReplayOutcome::Completed(report) => {
                 assert_eq!(report.source_job_id, source.job_id);
                 assert_ne!(report.replay_job_id, source.job_id);
+                assert_eq!(report.source_execution_mode, ReplayExecutionMode::Local);
+                assert_eq!(report.replay_execution_mode, ReplayExecutionMode::Local);
+                assert_eq!(
+                    report.remote_context_reproducibility,
+                    ReplayRemoteContextReproducibility::NotApplicableLocal
+                );
                 assert!(matches!(
                     report.determinism_class,
                     ReplayDeterminismClass::SameEffectiveConfiguration
@@ -1832,6 +1932,31 @@ mod tests {
         match replay {
             ComputeReplayOutcome::NotReplayable { code, .. } => {
                 assert_eq!(code, ReplayFailureCode::ConfigurationIncomplete);
+            }
+            other => panic!("expected non-replayable, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn replay_from_remote_history_without_remote_context_is_blocked() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let history_path = dir.path().join("job_history.jsonl");
+        std::fs::write(
+            &history_path,
+            r#"{"schema_version":8,"job_id":33,"submitted_by":"svc","request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101"},"canonical_request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101","budget":{"max_micros":5000,"hard_timeout_micros":5000,"seed":9,"profile_id":0,"global_work_units":65536,"world_units":16384,"sae_units":16384,"ssm_units":16384,"lfm_units":16384,"degrade_policy":"DegradeStages","governor_tier":1}},"lifecycle_state":"completed","completion_class":"completed","execution_path":"WorkerIpc","submitted_at_unix_ms":1,"started_at_unix_ms":2,"finished_at_unix_ms":3,"queue_wait_ms":1,"execution_duration_micros":5,"total_duration_ms":2,"failure_kind":null,"pipeline_state":"ok","backend_route":null,"execution_lane":null,"resource_class":"standard","capacity_pressure":"nominal","capacity_queue_disposition":"none","work_summary":null,"stage_profiles":[],"model_slots":[]}"#,
+        )
+        .expect("history fixture");
+        let mut entry = CanonicalComputeEntryPoint::with_history_path(
+            InMemoryComputeService::new(crate::pipeline::ComputePipelineBackend::stub()),
+            &history_path,
+        )
+        .expect("entry with history");
+        let replay = entry
+            .replay(ComputeJobHandle { job_id: JobId(33) })
+            .expect("replay");
+        match replay {
+            ComputeReplayOutcome::NotReplayable { code, .. } => {
+                assert_eq!(code, ReplayFailureCode::MissingRemoteExecutionContext);
             }
             other => panic!("expected non-replayable, got {other:?}"),
         }
