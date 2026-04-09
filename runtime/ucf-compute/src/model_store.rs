@@ -196,6 +196,46 @@ pub struct SlotWarmupStatus {
     pub detail: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PromotionDecisionState {
+    Known,
+    Candidate,
+    Comparable,
+    Promotable,
+    BlockedForPromotion,
+    Active,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PromotionBlockerCode {
+    NotComparableYet,
+    InsufficientBaselineSignal,
+    RuntimePathNotProductionUsable,
+    GateBlocked,
+    DegradedBeyondAcceptableThreshold,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct PromotionTechnicalSignals {
+    pub baseline_comparison_ready: bool,
+    pub runtime_path_production_usable: bool,
+    pub readiness_ok: bool,
+    pub degraded_beyond_acceptable_threshold: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct SlotPromotionDecision {
+    pub slot: ModelSlot,
+    pub active_hash: Option<String>,
+    pub candidate_hash: Option<String>,
+    pub state: PromotionDecisionState,
+    pub blockers: Vec<PromotionBlockerCode>,
+    pub signals: PromotionTechnicalSignals,
+    pub detail: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VerifiedModelSlot {
     pub slot: ModelSlot,
@@ -626,6 +666,90 @@ impl ModelStore {
             }
         }
         out
+    }
+
+    pub fn slot_promotion_decision(&self, slot: ModelSlot) -> SlotPromotionDecision {
+        let statuses = self.slot_path_statuses(slot);
+        let warmup = self.warmup_slot_paths(slot);
+        let active = statuses
+            .iter()
+            .find(|entry| entry.target_state == SlotTargetState::Active);
+        let candidate = statuses
+            .iter()
+            .find(|entry| entry.target_state == SlotTargetState::Candidate);
+        let compare = statuses
+            .iter()
+            .find(|entry| entry.target_state == SlotTargetState::Compare);
+        let blocked = statuses
+            .iter()
+            .find(|entry| entry.target_state == SlotTargetState::Blocked);
+        let active_warmup = warmup
+            .iter()
+            .find(|entry| entry.target_state == SlotTargetState::Active);
+        let candidate_warmup = warmup
+            .iter()
+            .find(|entry| entry.target_state == SlotTargetState::Candidate);
+        let compare_warmup = warmup
+            .iter()
+            .find(|entry| entry.target_state == SlotTargetState::Compare);
+
+        let baseline_comparison_ready =
+            compare.is_some_and(|entry| entry.verified && entry.configured_hash.is_some());
+        let runtime_path_production_usable = active.is_some_and(|entry| entry.verified)
+            && active_warmup.is_some_and(|entry| matches!(entry.state, SlotWarmupState::Warm));
+        let readiness_ok = candidate_warmup
+            .is_some_and(|entry| matches!(entry.state, SlotWarmupState::Prepared))
+            || runtime_path_production_usable;
+        let degraded_beyond_acceptable_threshold = compare_warmup
+            .is_some_and(|entry| matches!(entry.state, SlotWarmupState::Blocked))
+            && compare.is_some_and(|entry| entry.configured_hash.is_some());
+        let signals = PromotionTechnicalSignals {
+            baseline_comparison_ready,
+            runtime_path_production_usable,
+            readiness_ok,
+            degraded_beyond_acceptable_threshold,
+        };
+
+        let mut blockers = Vec::new();
+        let candidate_present = candidate.is_some_and(|entry| entry.configured_hash.is_some());
+        if candidate_present && !candidate.is_some_and(|entry| entry.comparable) {
+            blockers.push(PromotionBlockerCode::NotComparableYet);
+        }
+        if candidate_present && !baseline_comparison_ready {
+            blockers.push(PromotionBlockerCode::InsufficientBaselineSignal);
+        }
+        if candidate_present && !runtime_path_production_usable {
+            blockers.push(PromotionBlockerCode::RuntimePathNotProductionUsable);
+        }
+        if degraded_beyond_acceptable_threshold {
+            blockers.push(PromotionBlockerCode::DegradedBeyondAcceptableThreshold);
+        }
+
+        let state = if runtime_path_production_usable {
+            PromotionDecisionState::Active
+        } else if candidate_present && blockers.is_empty() && readiness_ok {
+            PromotionDecisionState::Promotable
+        } else if candidate_present && !blockers.is_empty() {
+            PromotionDecisionState::BlockedForPromotion
+        } else if candidate.is_some_and(|entry| entry.comparable) {
+            PromotionDecisionState::Comparable
+        } else if candidate_present {
+            PromotionDecisionState::Candidate
+        } else {
+            PromotionDecisionState::Known
+        };
+
+        SlotPromotionDecision {
+            slot,
+            active_hash: active.and_then(|entry| entry.configured_hash.clone()),
+            candidate_hash: candidate.and_then(|entry| entry.configured_hash.clone()),
+            state,
+            blockers,
+            signals,
+            detail: blocked
+                .map(|entry| entry.detail.clone())
+                .unwrap_or_else(|| "none".to_string()),
+        }
     }
 
     fn ensure_optional_path_verified(
@@ -1271,5 +1395,102 @@ enabled = false
 
         std::env::remove_var("UCF_MODEL_CANDIDATE_WORLD_JEPA");
         std::env::remove_var("UCF_MODEL_COMPARE_WORLD_JEPA");
+    }
+
+    #[test]
+    fn promotion_decision_marks_active_when_runtime_path_is_warm() {
+        let _lock = crate::test_env::env_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        std::env::remove_var("UCF_MODEL_CANDIDATE_WORLD_JEPA");
+        std::env::remove_var("UCF_MODEL_COMPARE_WORLD_JEPA");
+        let temp = tempfile::tempdir().expect("tempdir");
+        let models = temp.path().join("models");
+        fs::create_dir_all(&models).expect("models");
+        let bytes = b"verified-model";
+        let hash = hex::encode(Sha256::digest(bytes));
+        let model_path = models
+            .join("promoted")
+            .join("world_jepa")
+            .join(&hash)
+            .join("model.safetensors");
+        fs::create_dir_all(model_path.parent().expect("parent")).expect("mkdirs");
+        fs::write(&model_path, bytes).expect("write");
+        let mut specs = BTreeMap::new();
+        specs.insert(
+            ModelSlot::WorldJepa,
+            ModelSlotSpec {
+                slot: ModelSlot::WorldJepa,
+                enabled: true,
+                path: None,
+                expected_sha256: parse_hash(&hash),
+                max_bytes: 1024,
+                format: ModelFormat::Burn,
+                device: ModelDevice::CpuOnly,
+                active_hash: Some(hash),
+                contract_version: Some("v1".to_string()),
+            },
+        );
+        let store = ModelStore {
+            allowlist_root: models,
+            specs,
+        };
+        let decision = store.slot_promotion_decision(ModelSlot::WorldJepa);
+        assert_eq!(decision.state, PromotionDecisionState::Active);
+        assert!(decision.blockers.is_empty());
+        assert!(decision.signals.runtime_path_production_usable);
+    }
+
+    #[test]
+    fn promotion_decision_marks_candidate_blocked_when_baseline_or_runtime_signals_missing() {
+        let _lock = crate::test_env::env_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let temp = tempfile::tempdir().expect("tempdir");
+        let models = temp.path().join("models");
+        fs::create_dir_all(&models).expect("models");
+        let bytes = b"verified-model";
+        let hash = hex::encode(Sha256::digest(bytes));
+        let model_path = models
+            .join("promoted")
+            .join("world_jepa")
+            .join(&hash)
+            .join("model.safetensors");
+        fs::create_dir_all(model_path.parent().expect("parent")).expect("mkdirs");
+        fs::write(&model_path, bytes).expect("write");
+        std::env::set_var("UCF_MODEL_CANDIDATE_WORLD_JEPA", &hash);
+        std::env::remove_var("UCF_MODEL_COMPARE_WORLD_JEPA");
+        let mut specs = BTreeMap::new();
+        specs.insert(
+            ModelSlot::WorldJepa,
+            ModelSlotSpec {
+                slot: ModelSlot::WorldJepa,
+                enabled: true,
+                path: None,
+                expected_sha256: parse_hash(
+                    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                ),
+                max_bytes: 1024,
+                format: ModelFormat::Burn,
+                device: ModelDevice::CpuOnly,
+                active_hash: Some(
+                    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
+                ),
+                contract_version: Some("v1".to_string()),
+            },
+        );
+        let store = ModelStore {
+            allowlist_root: models,
+            specs,
+        };
+        let decision = store.slot_promotion_decision(ModelSlot::WorldJepa);
+        assert_eq!(decision.state, PromotionDecisionState::BlockedForPromotion);
+        assert!(decision
+            .blockers
+            .contains(&PromotionBlockerCode::InsufficientBaselineSignal));
+        assert!(decision
+            .blockers
+            .contains(&PromotionBlockerCode::RuntimePathNotProductionUsable));
+        std::env::remove_var("UCF_MODEL_CANDIDATE_WORLD_JEPA");
     }
 }

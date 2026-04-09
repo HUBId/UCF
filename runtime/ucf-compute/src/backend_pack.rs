@@ -25,7 +25,7 @@ use crate::worker_backend::WorkerBackendPack;
 use crate::world_model::MockJepaPredictor;
 use crate::{
     CodeVersionTag, ComputeError, ModelFormat, ModelLoadError, ModelSlot, ModelStore,
-    SlotWarmupState,
+    PromotionBlockerCode, PromotionDecisionState, SlotWarmupState,
 };
 
 const FIXTURE_SCHEMA_V1: u16 = 1;
@@ -831,9 +831,24 @@ fn resolve_slot_provenance(store: &ModelStore, pack: BackendPackKind) -> Vec<Mod
                         && activation_error.is_some();
                     let rollout_status = store.slot_path_statuses(slot);
                     let warmup_status = store.warmup_slot_paths(slot);
+                    let mut promotion_decision = store.slot_promotion_decision(slot);
+                    if !gate.promotable {
+                        promotion_decision
+                            .blockers
+                            .push(PromotionBlockerCode::GateBlocked);
+                    }
                     let (status, code, detail) = if activation_blocked {
                         gate.activatable = false;
                         gate.blocked_reason = Some(ProductionBlockReason::ActivationBlocked);
+                        if !promotion_decision
+                            .blockers
+                            .contains(&PromotionBlockerCode::RuntimePathNotProductionUsable)
+                        {
+                            promotion_decision
+                                .blockers
+                                .push(PromotionBlockerCode::RuntimePathNotProductionUsable);
+                        }
+                        promotion_decision.state = PromotionDecisionState::BlockedForPromotion;
                         (
                             SlotRuntimeStatus::Incompatible,
                             Some(ArtifactFailureCode::ActivationBlocked),
@@ -865,7 +880,11 @@ fn resolve_slot_provenance(store: &ModelStore, pack: BackendPackKind) -> Vec<Mod
                                 .as_deref()
                                 .or(activation_note.as_deref())
                                 .or(Some("slot verified")),
-                            Some(&rollout_status_detail(&rollout_status, &warmup_status)),
+                            Some(&rollout_status_detail(
+                                &rollout_status,
+                                &warmup_status,
+                                &promotion_decision,
+                            )),
                         )),
                         resolved_path: Some(verified.path.display().to_string()),
                         hash_prefix: Some(hex::encode(&verified.sha256[..6])),
@@ -962,6 +981,7 @@ fn hash_prefix(hash: Option<&str>) -> String {
 fn rollout_status_detail(
     statuses: &[crate::model_store::SlotPathStatus],
     warmup: &[crate::model_store::SlotWarmupStatus],
+    promotion: &crate::model_store::SlotPromotionDecision,
 ) -> String {
     let path = statuses
         .iter()
@@ -996,7 +1016,32 @@ fn rollout_status_detail(
         })
         .collect::<Vec<_>>()
         .join("|");
-    format!("{path};warmup={warmup}")
+    let blockers = if promotion.blockers.is_empty() {
+        "none".to_string()
+    } else {
+        promotion
+            .blockers
+            .iter()
+            .map(|blocker| format!("{blocker:?}").to_ascii_lowercase())
+            .collect::<Vec<_>>()
+            .join(",")
+    };
+    let transition = match promotion.state {
+        PromotionDecisionState::Known => "known",
+        PromotionDecisionState::Candidate => "known->candidate",
+        PromotionDecisionState::Comparable => "candidate->comparable",
+        PromotionDecisionState::Promotable => "comparable->promotable",
+        PromotionDecisionState::BlockedForPromotion => "comparable_but_blocked",
+        PromotionDecisionState::Active => "active_from_prior_promotion",
+    };
+    format!(
+        "{path};warmup={warmup};promotion_state={:?};promotion_transition={transition};promotion_blockers={blockers};baseline_ready={};runtime_ready={};readiness_ok={};degraded={}",
+        promotion.state,
+        promotion.signals.baseline_comparison_ready,
+        promotion.signals.runtime_path_production_usable,
+        promotion.signals.readiness_ok,
+        promotion.signals.degraded_beyond_acceptable_threshold
+    )
 }
 
 fn warmup_state_token(state: SlotWarmupState) -> &'static str {
