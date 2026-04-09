@@ -609,6 +609,27 @@ fn canonical_execution_failure(err: ComputeError) -> CanonicalPipelineFailure {
     }
 }
 
+fn classify_worker_failure(failure: &CanonicalPipelineFailure) -> WorkerFailureKind {
+    let detail = failure.detail.as_str();
+    if detail.contains("worker_dispatch_failed_before_execution") {
+        WorkerFailureKind::DispatchFailedBeforeExecution
+    } else if detail.contains("worker_transport_failure") || detail.contains("transport failure") {
+        WorkerFailureKind::TransportFailure
+    } else if detail.contains("worker_unavailable_or_stale")
+        || detail.contains("worker unavailable")
+    {
+        WorkerFailureKind::WorkerUnavailableOrStale
+    } else if detail.contains("worker_execution_crashed")
+        || failure.kind == CanonicalFailureKind::Timeout
+    {
+        WorkerFailureKind::WorkerExecutionCrashed
+    } else if detail.contains("worker_structured_execution_failure") {
+        WorkerFailureKind::StructuredExecutionFailure
+    } else {
+        WorkerFailureKind::TerminalComputeExecutionFailure
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ExecutionUnitId(pub String);
 
@@ -646,6 +667,32 @@ pub enum WorkerDispatchOutcome {
     Timeout,
     Completed,
     RedispatchedLocal,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkerFailureKind {
+    DispatchFailedBeforeExecution,
+    TransportFailure,
+    WorkerUnavailableOrStale,
+    WorkerExecutionCrashed,
+    StructuredExecutionFailure,
+    TerminalComputeExecutionFailure,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkerRecoveryKind {
+    RetrySameWorker,
+    RedispatchAlternateWorker,
+    LocalFallback,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkerRetrySummary {
+    pub attempts: u8,
+    pub retries_exhausted: bool,
+    pub uncertain_prior_attempt_outcome: bool,
+    pub recovered_by: Option<WorkerRecoveryKind>,
+    pub last_failure_kind: Option<WorkerFailureKind>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -741,6 +788,7 @@ pub struct MultiWorkerJobRecord {
     pub placement_failure: Option<PlacementFailureKind>,
     pub capacity_disposition: CapacityQueueDisposition,
     pub provenance: WorkerExecutionProvenance,
+    pub retry_summary: WorkerRetrySummary,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -749,6 +797,18 @@ pub struct WorkerExecutionProvenance {
     pub completed_unit: ExecutionUnitId,
     pub was_remote: bool,
     pub redispatched_to_local: bool,
+}
+
+impl WorkerRetrySummary {
+    fn no_retry() -> Self {
+        Self {
+            attempts: 1,
+            retries_exhausted: false,
+            uncertain_prior_attempt_outcome: false,
+            recovered_by: None,
+            last_failure_kind: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1001,6 +1061,7 @@ impl MultiWorkerComputeService {
                                 was_remote: false,
                                 redispatched_to_local: false,
                             },
+                            retry_summary: WorkerRetrySummary::no_retry(),
                         };
                         done.push(record.id);
                         self.records.insert(record.id, record);
@@ -1028,6 +1089,7 @@ impl MultiWorkerComputeService {
                                 was_remote: true,
                                 redispatched_to_local: false,
                             },
+                            retry_summary: WorkerRetrySummary::no_retry(),
                         };
                         done.push(record.id);
                         self.records.insert(record.id, record);
@@ -1073,6 +1135,7 @@ impl MultiWorkerComputeService {
                             was_remote: false,
                             redispatched_to_local: false,
                         },
+                        retry_summary: WorkerRetrySummary::no_retry(),
                     };
                     done.push(record.id);
                     self.records.insert(record.id, record);
@@ -1515,6 +1578,7 @@ impl MultiWorkerComputeService {
                     was_remote: unit.kind == ExecutionUnitKind::Worker,
                     redispatched_to_local: false,
                 },
+                retry_summary: WorkerRetrySummary::no_retry(),
             };
         }
 
@@ -1600,6 +1664,7 @@ impl MultiWorkerComputeService {
                         was_remote,
                         redispatched_to_local: false,
                     },
+                    retry_summary: WorkerRetrySummary::no_retry(),
                 }
             }
             Ok(_) => {
@@ -1640,6 +1705,13 @@ impl MultiWorkerComputeService {
                         was_remote: true,
                         redispatched_to_local: false,
                     },
+                    retry_summary: WorkerRetrySummary {
+                        attempts: 1,
+                        retries_exhausted: false,
+                        uncertain_prior_attempt_outcome: true,
+                        recovered_by: None,
+                        last_failure_kind: Some(WorkerFailureKind::TransportFailure),
+                    },
                 }
             }
             Err(err) => {
@@ -1649,6 +1721,7 @@ impl MultiWorkerComputeService {
                 } else {
                     JobLifecycleState::Failed
                 };
+                let failure_kind = classify_worker_failure(&failure);
                 let dispatch_outcome = if state == JobLifecycleState::TimedOut {
                     WorkerDispatchOutcome::Timeout
                 } else {
@@ -1661,6 +1734,8 @@ impl MultiWorkerComputeService {
                 };
                 if self.units[unit_idx].kind == ExecutionUnitKind::Worker
                     && dispatch_outcome != WorkerDispatchOutcome::Timeout
+                    && failure_kind != WorkerFailureKind::TerminalComputeExecutionFailure
+                    && failure_kind != WorkerFailureKind::StructuredExecutionFailure
                     && job.requested_unit.is_none()
                 {
                     if let Some(redispatched) =
@@ -1683,6 +1758,13 @@ impl MultiWorkerComputeService {
                         completed_unit: failed_unit,
                         was_remote: self.units[unit_idx].kind == ExecutionUnitKind::Worker,
                         redispatched_to_local: false,
+                    },
+                    retry_summary: WorkerRetrySummary {
+                        attempts: 1,
+                        retries_exhausted: false,
+                        uncertain_prior_attempt_outcome: false,
+                        recovered_by: None,
+                        last_failure_kind: Some(failure_kind),
                     },
                 }
             }
@@ -1756,6 +1838,13 @@ impl MultiWorkerComputeService {
                         completed_unit: local.id.clone(),
                         was_remote: true,
                         redispatched_to_local: true,
+                    },
+                    retry_summary: WorkerRetrySummary {
+                        attempts: 2,
+                        retries_exhausted: false,
+                        uncertain_prior_attempt_outcome: false,
+                        recovered_by: Some(WorkerRecoveryKind::LocalFallback),
+                        last_failure_kind: Some(WorkerFailureKind::WorkerExecutionCrashed),
                     },
                 })
             }
@@ -1968,7 +2057,7 @@ mod tests {
         ExecutionUnitKind, InMemoryComputeService, JobCompletionClass, JobExecutionPath,
         JobLifecycleState, JobSubmissionMeta, MultiWorkerComputeService, PlacementFailureKind,
         PlacementSuitability, ResourceClass, SchedulerConfig, WorkerAvailability, WorkerClass,
-        WorkerDispatchOutcome, WorkerRegistryRole, WorkerRuntimeStatus,
+        WorkerDispatchOutcome, WorkerRecoveryKind, WorkerRegistryRole, WorkerRuntimeStatus,
     };
 
     struct NullLlm;
@@ -2900,7 +2989,53 @@ mod tests {
         assert!(record.provenance.redispatched_to_local);
         assert!(record.provenance.was_remote);
         assert_eq!(record.provenance.completed_unit.0, "local");
+        assert_eq!(record.retry_summary.attempts, 2);
+        assert_eq!(
+            record.retry_summary.recovered_by,
+            Some(WorkerRecoveryKind::LocalFallback)
+        );
         assert!(record.result.is_some());
+        match previous {
+            Some(value) => std::env::set_var("UCF_WORKER_BIN", value),
+            None => std::env::remove_var("UCF_WORKER_BIN"),
+        }
+    }
+
+    #[test]
+    fn requested_worker_failure_stays_terminal_without_auto_fallback() {
+        let _lock = crate::test_env::env_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let previous = std::env::var("UCF_WORKER_BIN").ok();
+        std::env::set_var("UCF_WORKER_BIN", "definitely-missing-ucf-worker-binary");
+        let local_backend = ComputePipelineBackend::new(
+            pack_with(BackendComponentId::ToyV1, Vec::new()),
+            FusionConfig::default(),
+            LimitsConfig::default(),
+        );
+        let mut service = MultiWorkerComputeService::new(local_backend, 1);
+        let worker_id = service
+            .register_worker("remote-terminal", 200, 1)
+            .expect("register worker");
+        let job_id = service.submit(
+            valid_request(),
+            JobSubmissionMeta {
+                submitted_at_unix_ms: 23,
+                submitted_by: Some("terminal".to_string()),
+            },
+            Some(worker_id.clone()),
+        );
+        service.run_scheduler_cycle(1);
+        let record = service.job(job_id).expect("record");
+        assert_eq!(record.state, JobLifecycleState::Failed);
+        assert_eq!(record.provenance.selected_unit, worker_id);
+        assert!(!record.provenance.redispatched_to_local);
+        assert_eq!(record.retry_summary.attempts, 1);
+        assert!(record.retry_summary.recovered_by.is_none());
+        assert_ne!(
+            record.retry_summary.recovered_by,
+            Some(WorkerRecoveryKind::LocalFallback)
+        );
         match previous {
             Some(value) => std::env::set_var("UCF_WORKER_BIN", value),
             None => std::env::remove_var("UCF_WORKER_BIN"),

@@ -148,11 +148,27 @@ For multi-worker execution, dispatch outcome is classified with a single linked 
 - `completed`,
 - `redispatched_local` (worker failed, job completed via explicit local fallback).
 
+Additionally, each `MultiWorkerJobRecord` now carries `retry_summary` to make retry/redispatch
+provenance explicit in ops/history-style diagnostics:
+- `attempts`: terminal attempt count observed for the job execution path,
+- `retries_exhausted`: bounded retry budget was consumed without recovery,
+- `uncertain_prior_attempt_outcome`: set when transport-level mismatch means prior attempt
+  completion cannot be proven from IPC correlation alone,
+- `recovered_by`: recovery class (`retry_same_worker`, `redispatch_alternate_worker`, `local_fallback`) when recovery succeeded,
+- `last_failure_kind`: worker-failure classification (`dispatch_failed_before_execution`,
+  `transport_failure`, `worker_unavailable_or_stale`, `worker_execution_crashed`,
+  `worker_structured_execution_failure`, `terminal_compute_execution_failure`).
+
 This keeps the worker failure semantics explicit without adding a second failure taxonomy:
 - no suitable healthy worker -> placement failure (`currently_unschedulable` or device/backend unavailable),
 - selected worker became unavailable/degraded/stale -> worker unavailable outcome,
 - dispatch transport/execute failure -> `transport_failure` / `execution_failure`,
 - fallback to local worker -> `redispatched_local` with preserved provenance.
+
+Worker-IPC internals now apply a **single bounded same-worker retry** only for transient worker/IPC
+classes (`dispatch_failed_before_execution`, `transport_failure`,
+`worker_unavailable_or_stale`, `worker_execution_crashed`). Structured compute failures reported by
+the worker remain terminal and are not auto-retried.
 
 When a non-requested worker fails at dispatch/execution and a local unit is still suitable, a
 single minimal re-dispatch to local is attempted. Requested-worker submissions stay strict and do
