@@ -762,8 +762,35 @@ pub struct ExecutionPlacement {
     pub degraded_fallback: bool,
     pub resource_class: ResourceClass,
     pub capacity_pressure: CapacityPressure,
+    pub distributed: DistributedPlacementSummary,
     pub reason: String,
     pub considered: Vec<PlacementCandidateAssessment>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DistributedPlacementState {
+    AdmissibleAndPlaceable,
+    AdmissiblePlaceableOnSubset,
+    AdmissibleButCurrentlyUnschedulable,
+    AdmissibleDegradedOnly,
+    BlockedIncompatible,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DistributedPlacementLocality {
+    None,
+    LocalOnly,
+    RemoteOnly,
+    LocalAndRemote,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DistributedPlacementSummary {
+    pub state: DistributedPlacementState,
+    pub locality: DistributedPlacementLocality,
+    pub admissible_units: Vec<ExecutionUnitId>,
+    pub placeable_units: Vec<ExecutionUnitId>,
+    pub degraded_fallback_possible: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1384,6 +1411,7 @@ impl MultiWorkerComputeService {
         Option<WorkerDispatchOutcome>,
     ) {
         let mut considered = self.assess_candidates(&job.request, job.resource_class);
+        let distributed = distributed_summary(&considered);
         if let Some(requested) = job.requested_unit.clone() {
             let candidate = considered
                 .iter()
@@ -1429,6 +1457,7 @@ impl MultiWorkerComputeService {
                     degraded_fallback: false,
                     resource_class: job.resource_class,
                     capacity_pressure: CapacityPressure::Overloaded,
+                    distributed,
                     reason: "requested unit not placeable".to_string(),
                     considered,
                 },
@@ -1485,6 +1514,7 @@ impl MultiWorkerComputeService {
                 degraded_fallback: false,
                 resource_class: job.resource_class,
                 capacity_pressure: CapacityPressure::Overloaded,
+                distributed,
                 reason: "no suitable execution unit".to_string(),
                 considered,
             },
@@ -1494,6 +1524,8 @@ impl MultiWorkerComputeService {
     }
 
     fn scheduling_decision(&self, job: &QueuedJob) -> SchedulingDecision {
+        let considered = self.assess_candidates(&job.request, job.resource_class);
+        let distributed = distributed_summary(&considered);
         if self.selectable_candidate_exists(
             &job.request,
             job.resource_class,
@@ -1501,15 +1533,10 @@ impl MultiWorkerComputeService {
         ) {
             return SchedulingDecision::RunNow;
         }
-        let considered = self.assess_candidates(&job.request, job.resource_class);
         if job.requested_unit.is_some() {
             return SchedulingDecision::NotPlaceable(PlacementFailureKind::WorkerPlacementFailed);
         }
-        let has_transient_unavailable = considered.iter().any(|candidate| {
-            candidate.suitability == PlacementSuitability::Unavailable
-                && candidate.detail.starts_with("unit not dispatchable")
-        });
-        if has_transient_unavailable {
+        if distributed.state == DistributedPlacementState::AdmissibleButCurrentlyUnschedulable {
             return SchedulingDecision::QueueRequired;
         }
         if considered
@@ -1565,6 +1592,12 @@ impl MultiWorkerComputeService {
                 let device_class = unit_device_class(unit.kind);
                 let status = unit.runtime_status();
                 let device_suitability = device_suitability_for(unit.kind, lane, status);
+                let admission = unit.service.technical_admission(request);
+                let backend_suitability = admission
+                    .failure
+                    .as_ref()
+                    .map(|failure| suitability_for_failure(failure.kind))
+                    .unwrap_or(PlacementSuitability::Suitable);
                 if !unit.can_accept_dispatch() {
                     return PlacementCandidateAssessment {
                         unit_id: unit.id.clone(),
@@ -1574,9 +1607,12 @@ impl MultiWorkerComputeService {
                         device_class,
                         lane,
                         runtime_status: status,
-                        backend_suitability: PlacementSuitability::Unavailable,
+                        backend_suitability,
                         device_suitability,
-                        suitability: PlacementSuitability::Unavailable,
+                        suitability: combine_suitability(
+                            PlacementSuitability::Unavailable,
+                            device_suitability,
+                        ),
                         detail: format!("unit not dispatchable ({status:?})"),
                     };
                 }
@@ -1593,20 +1629,17 @@ impl MultiWorkerComputeService {
                         device_class,
                         lane,
                         runtime_status: status,
-                        backend_suitability: PlacementSuitability::Suitable,
+                        backend_suitability,
                         device_suitability,
-                        suitability: PlacementSuitability::Unavailable,
+                        suitability: combine_suitability(
+                            PlacementSuitability::Unavailable,
+                            device_suitability,
+                        ),
                         detail: format!(
                             "insufficient capacity units required={required_units} free={free_units}"
                         ),
                     };
                 }
-                let admission = unit.service.technical_admission(request);
-                let backend_suitability = admission
-                    .failure
-                    .as_ref()
-                    .map(|failure| suitability_for_failure(failure.kind))
-                    .unwrap_or(PlacementSuitability::Suitable);
                 let suitability = combine_suitability(backend_suitability, device_suitability);
                 if let Some(failure) = admission.failure {
                     PlacementCandidateAssessment {
@@ -1675,6 +1708,7 @@ impl MultiWorkerComputeService {
                     degraded_fallback: false,
                     resource_class: ResourceClass::classify(request),
                     capacity_pressure: self.units[idx].capacity_pressure(),
+                    distributed: distributed_summary(&assessments),
                     reason: "requested execution unit selected".to_string(),
                     considered: assessments,
                 },
@@ -1730,6 +1764,7 @@ impl MultiWorkerComputeService {
                 degraded_fallback: selected.lane == BackendExecutionLane::Candle,
                 resource_class: ResourceClass::classify(request),
                 capacity_pressure: self.units[idx].capacity_pressure(),
+                distributed: distributed_summary(&assessments),
                 reason: if selected.lane == BackendExecutionLane::Burn {
                     "selected burn-capable unit".to_string()
                 } else if selected.lane == BackendExecutionLane::Candle {
@@ -2079,6 +2114,13 @@ impl MultiWorkerComputeService {
                 if submitted_job_id == record_job_id =>
             {
                 local.note_success(job.id, WorkerDispatchOutcome::RedispatchedLocal);
+                let mut distributed = original_placement.distributed.clone();
+                if !distributed.placeable_units.contains(&local.id) {
+                    distributed.placeable_units.push(local.id.clone());
+                    distributed.placeable_units.sort();
+                }
+                distributed.state = DistributedPlacementState::AdmissibleDegradedOnly;
+                distributed.locality = DistributedPlacementLocality::LocalAndRemote;
                 Some(MultiWorkerJobRecord {
                     id: job.id,
                     state,
@@ -2098,6 +2140,7 @@ impl MultiWorkerComputeService {
                         degraded_fallback: true,
                         resource_class: job.resource_class,
                         capacity_pressure: local.capacity_pressure(),
+                        distributed,
                         reason: format!("worker {} failed; redispatched to local", failed_worker.0),
                         considered: original_placement.considered.clone(),
                     },
@@ -2317,6 +2360,87 @@ fn placement_failure_kind(
     }
 }
 
+fn distributed_summary(
+    assessments: &[PlacementCandidateAssessment],
+) -> DistributedPlacementSummary {
+    let mut admissible_units = assessments
+        .iter()
+        .filter(|candidate| {
+            candidate.backend_suitability == PlacementSuitability::Suitable
+                && candidate.device_suitability != DeviceSuitability::Unsuitable
+        })
+        .map(|candidate| candidate.unit_id.clone())
+        .collect::<Vec<_>>();
+    admissible_units.sort();
+
+    let mut placeable_units = assessments
+        .iter()
+        .filter(|candidate| candidate.suitability == PlacementSuitability::Suitable)
+        .map(|candidate| candidate.unit_id.clone())
+        .collect::<Vec<_>>();
+    placeable_units.sort();
+
+    let locality = locality_for_assessments(assessments, &admissible_units);
+    let placeable_is_degraded_only = !placeable_units.is_empty()
+        && assessments
+            .iter()
+            .filter(|candidate| candidate.suitability == PlacementSuitability::Suitable)
+            .all(|candidate| candidate.lane == BackendExecutionLane::Candle);
+    let state = if !placeable_units.is_empty() {
+        if placeable_is_degraded_only {
+            DistributedPlacementState::AdmissibleDegradedOnly
+        } else if placeable_units.len() < assessments.len() {
+            DistributedPlacementState::AdmissiblePlaceableOnSubset
+        } else {
+            DistributedPlacementState::AdmissibleAndPlaceable
+        }
+    } else if !admissible_units.is_empty() {
+        DistributedPlacementState::AdmissibleButCurrentlyUnschedulable
+    } else {
+        DistributedPlacementState::BlockedIncompatible
+    };
+
+    let has_burn = assessments.iter().any(|candidate| {
+        candidate.suitability == PlacementSuitability::Suitable
+            && candidate.lane == BackendExecutionLane::Burn
+    });
+    let has_candle = assessments.iter().any(|candidate| {
+        candidate.suitability == PlacementSuitability::Suitable
+            && candidate.lane == BackendExecutionLane::Candle
+    });
+
+    DistributedPlacementSummary {
+        state,
+        locality,
+        admissible_units,
+        placeable_units,
+        degraded_fallback_possible: has_candle && !has_burn,
+    }
+}
+
+fn locality_for_assessments(
+    assessments: &[PlacementCandidateAssessment],
+    admissible_units: &[ExecutionUnitId],
+) -> DistributedPlacementLocality {
+    let mut has_local = false;
+    let mut has_remote = false;
+    for candidate in assessments {
+        if !admissible_units.contains(&candidate.unit_id) {
+            continue;
+        }
+        match candidate.unit_kind {
+            ExecutionUnitKind::Local => has_local = true,
+            ExecutionUnitKind::Worker => has_remote = true,
+        }
+    }
+    match (has_local, has_remote) {
+        (true, true) => DistributedPlacementLocality::LocalAndRemote,
+        (true, false) => DistributedPlacementLocality::LocalOnly,
+        (false, true) => DistributedPlacementLocality::RemoteOnly,
+        (false, false) => DistributedPlacementLocality::None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::{Arc, Mutex};
@@ -2340,12 +2464,13 @@ mod tests {
 
     use super::{
         CapacityQueueDisposition, CoordinationFreshness, CoordinationIssueKind, DeviceSuitability,
-        ExecutionDeviceClass, ExecutionUnitId, ExecutionUnitKind, InFlightCoordinationState,
-        InMemoryComputeService, JobCompletionClass, JobCoordinationSnapshot, JobExecutionPath,
-        JobLifecycleState, JobSubmissionMeta, MultiWorkerComputeService, PlacementFailureKind,
-        PlacementSuitability, RecoverySignal, ResourceClass, SchedulerConfig,
-        TerminalCoordinationInput, WorkerAvailability, WorkerClass, WorkerDispatchOutcome,
-        WorkerRecoveryKind, WorkerRegistryRole, WorkerRuntimeStatus,
+        DistributedPlacementLocality, DistributedPlacementState, ExecutionDeviceClass,
+        ExecutionUnitId, ExecutionUnitKind, InFlightCoordinationState, InMemoryComputeService,
+        JobCompletionClass, JobCoordinationSnapshot, JobExecutionPath, JobLifecycleState,
+        JobSubmissionMeta, MultiWorkerComputeService, PlacementFailureKind, PlacementSuitability,
+        RecoverySignal, ResourceClass, SchedulerConfig, TerminalCoordinationInput,
+        WorkerAvailability, WorkerClass, WorkerDispatchOutcome, WorkerRecoveryKind,
+        WorkerRegistryRole, WorkerRuntimeStatus,
     };
 
     struct NullLlm;
@@ -3027,6 +3152,16 @@ mod tests {
             deferred.capacity_disposition,
             CapacityQueueDisposition::DeferredDueToCapacity
         );
+        assert_eq!(
+            deferred.placement.distributed.state,
+            DistributedPlacementState::AdmissibleButCurrentlyUnschedulable
+        );
+        assert_eq!(
+            deferred.placement.distributed.locality,
+            DistributedPlacementLocality::LocalOnly
+        );
+        assert_eq!(deferred.placement.distributed.admissible_units.len(), 1);
+        assert!(deferred.placement.distributed.placeable_units.is_empty());
 
         for unit in service.execution_units() {
             service.set_worker_availability(&unit.id, WorkerAvailability::Available);
@@ -3131,6 +3266,67 @@ mod tests {
         let candle_record = service.job(candle_job).expect("candle result");
         assert!(candle_record.placement.degraded_fallback);
         assert!(candle_record.placement.reason.contains("fallback"));
+        assert_eq!(
+            candle_record.placement.distributed.state,
+            DistributedPlacementState::AdmissibleDegradedOnly
+        );
+        assert!(
+            candle_record
+                .placement
+                .distributed
+                .degraded_fallback_possible
+        );
+    }
+
+    #[test]
+    fn distributed_placement_reports_local_only_subset_when_remote_is_incompatible() {
+        let local_backend = ComputePipelineBackend::new(
+            pack_with(BackendComponentId::ToyV1, Vec::new()),
+            FusionConfig::default(),
+            LimitsConfig::default(),
+        );
+        let mut service = MultiWorkerComputeService::new(local_backend, 1);
+        let disabled_world = vec![ModelSlotProvenance {
+            slot: ModelSlot::WorldJepa,
+            stage: "world",
+            required_for_pack: true,
+            status: SlotRuntimeStatus::Incompatible,
+            code: Some(ArtifactFailureCode::ArtifactIncompatible),
+            detail: Some("slot incompatible for distributed semantics test".to_string()),
+            resolved_path: None,
+            hash_prefix: None,
+            contract_version: Some("v1".to_string()),
+            format: None,
+            gate: Default::default(),
+        }];
+        let incompatible_backend = ComputePipelineBackend::new(
+            pack_with(BackendComponentId::ToyV1, disabled_world),
+            FusionConfig::default(),
+            LimitsConfig::default(),
+        );
+        service.register_worker_backend("remote-incompatible", incompatible_backend, 1);
+        let job = service.submit(
+            valid_request(),
+            JobSubmissionMeta {
+                submitted_at_unix_ms: 18,
+                submitted_by: Some("distributed".to_string()),
+            },
+            None,
+        );
+        service.run_scheduler_cycle(1);
+        let record = service.job(job).expect("record");
+        assert_eq!(
+            record.placement.distributed.state,
+            DistributedPlacementState::AdmissiblePlaceableOnSubset
+        );
+        assert_eq!(
+            record.placement.distributed.locality,
+            DistributedPlacementLocality::LocalOnly
+        );
+        assert_eq!(
+            record.placement.distributed.admissible_units,
+            vec![ExecutionUnitId("local".to_string())]
+        );
     }
 
     #[test]
