@@ -184,3 +184,43 @@ Runtime rules stay narrow and technical:
 - verified + compatible slots are only treated as active/usable when activation is technically valid on the canonical promoted-hash path.
 - required slots that fail activation planning are marked `incompatible` with `activation_blocked` and are rejected for production pack use.
 - placement/worker/device suitability remains evaluated by compute-service placement (`placement_failure` / candidate assessments), not by a second capability system.
+
+## Canonical promotion decision semantics (technical only)
+
+`ModelStore::slot_promotion_decision(slot)` now provides a narrow rollout/promotion classification for
+the existing slot-path model (`active/candidate/compare/shadow`) without introducing approval workflows.
+
+Canonical states:
+
+- `known`
+- `candidate`
+- `comparable`
+- `promotable`
+- `blocked_for_promotion`
+- `active`
+
+Canonical blockers (when present):
+
+- `not_comparable_yet`
+- `insufficient_baseline_signal`
+- `runtime_path_not_production_usable`
+- `gate_blocked`
+- `degraded_beyond_acceptable_threshold`
+
+Signals are explicitly technical and bounded:
+
+- baseline/compare readiness (`compare` path verified with configured hash),
+- runtime-path usability (`active` path verified + warm),
+- warmup/readiness state,
+- degraded flag derived from configured compare path that remains blocked.
+
+`backend_pack` provenance detail now carries this decision summary (`promotion_state`,
+`promotion_transition`, `promotion_blockers`) so runtime status/history/ops surfaces can distinguish:
+
+- candidate became comparable,
+- comparable became promotable,
+- comparable but blocked,
+- active from prior promotion.
+
+Intentional boundary: this is not an approval/governance/MLOps workflow; it is a technical decision
+surface over existing compatibility, rollout, and readiness signals.

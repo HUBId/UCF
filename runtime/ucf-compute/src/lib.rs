@@ -112,6 +112,7 @@ pub use feature_matrix::ReleaseFeatureMatrix;
 pub use job_history::{JobHistoryStore, JobHistoryStoreError, PersistedJobRecord};
 pub use model_store::{
     ModelDevice, ModelFormat, ModelLoadError, ModelSlot, ModelSlotSpec, ModelStore,
+    PromotionBlockerCode, PromotionDecisionState, PromotionTechnicalSignals, SlotPromotionDecision,
     SlotWarmupState, SlotWarmupStatus,
 };
 pub use pipeline::{
