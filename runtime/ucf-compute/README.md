@@ -212,6 +212,32 @@ Scheduling/placement uses the same signals for queue/defer/reject and fallback o
 pressure snapshots now expose queued `light|standard|heavy` counts so capacity pressure can be tied
 to job-class work mix.
 
+### Runtime optimization feedback loop (Serie C Prompt 5)
+
+`MultiWorkerComputeService` now derives one **narrow technical feedback view** from recent
+runtime outcomes (bounded lookback, deterministic reduction, no adaptive scorer):
+
+- repeated cold path penalties (`cold_runnable|stale_prepared` and cold-start units);
+- repeated degraded placement/fallback outcomes;
+- repeated worker/path pressure (`constrained|saturated|backpressured|temporarily_unschedulable`);
+- repeated retry/redispatch cost (`attempts > 1` / local redispatch);
+- repeated dominant hotspot stage from runtime-measured work summaries.
+
+The feedback is intentionally typed as:
+`strong|weak|stale|contradicted|insufficient`.
+
+Scheduling/placement can use it **only as a bounded hint**:
+
+- prefer a proven warm unit under similar current suitability;
+- avoid a repeatedly degraded unit when an equivalent suitable alternative exists;
+- surface cold-start repetition as prewarm signal context (without forcing a gate);
+- keep normal fallback behavior whenever feedback is weak/stale/contradicted/insufficient.
+
+Important boundary:
+feedback does **not** replace admission/readiness/capability/compatibility gates. It only acts
+inside already admissible placement space, and decision provenance remains visible in placement
+decisive signals plus per-job feedback view.
+
 ## Backend selection (runtime)
 
 The orchestrator can be bootstrapped from env config via `RuntimeOrchestrator::try_new_from_env`.
