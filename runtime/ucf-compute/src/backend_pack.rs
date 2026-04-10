@@ -20,6 +20,7 @@ use crate::lfm::CandleLfmKernel;
 #[cfg(feature = "lfm-lnn")]
 use crate::lfm::LnnOdeLfmKernel;
 use crate::lfm::{LfmKernel, ToyLfmKernel};
+use crate::model_store::SlotRolloutDiagnostics;
 use crate::ssm::{SsmKernel, ToySsmKernel};
 use crate::worker_backend::WorkerBackendPack;
 use crate::world_model::MockJepaPredictor;
@@ -244,6 +245,8 @@ pub struct ModelSlotProvenance {
     pub format: Option<ModelFormat>,
     #[serde(default)]
     pub gate: ProductionCompatibilityGate,
+    #[serde(default)]
+    pub rollout: Option<SlotRolloutDiagnostics>,
 }
 
 pub struct UnifiedBackendPack {
@@ -783,6 +786,7 @@ fn resolve_slot_provenance(store: &ModelStore, pack: BackendPackKind) -> Vec<Mod
                         activatable: false,
                         blocked_reason: Some(ProductionBlockReason::BlockedFromProductionUse),
                     },
+                    rollout: None,
                 };
             };
             if !spec.enabled {
@@ -810,6 +814,7 @@ fn resolve_slot_provenance(store: &ModelStore, pack: BackendPackKind) -> Vec<Mod
                         activatable: false,
                         blocked_reason: Some(ProductionBlockReason::BlockedFromProductionUse),
                     },
+                    rollout: None,
                 };
             }
             match store.verify_slot(slot) {
@@ -832,15 +837,8 @@ fn resolve_slot_provenance(store: &ModelStore, pack: BackendPackKind) -> Vec<Mod
                     let rollout_status = store.slot_path_statuses(slot);
                     let warmup_status = store.warmup_slot_paths(slot);
                     let mut promotion_decision = store.slot_promotion_decision(slot);
-                    let activation_target = promotion_decision
-                        .candidate_hash
-                        .clone()
-                        .or_else(|| selected_hash_for_slot(slot, spec));
-                    let activation = activation_target.as_ref().map(|target| {
-                        store.assess_slot_activation(slot, target, spec.contract_version.as_deref())
-                    });
-                    let rollback =
-                        store.assess_slot_rollback(slot, None, spec.contract_version.as_deref());
+                    let rollout_diagnostics =
+                        store.slot_rollout_diagnostics(slot, spec.contract_version.as_deref());
                     if !gate.promotable {
                         promotion_decision
                             .blockers
@@ -893,8 +891,7 @@ fn resolve_slot_provenance(store: &ModelStore, pack: BackendPackKind) -> Vec<Mod
                                 &rollout_status,
                                 &warmup_status,
                                 &promotion_decision,
-                                activation.as_ref(),
-                                &rollback,
+                                &rollout_diagnostics,
                             )),
                         )),
                         resolved_path: Some(verified.path.display().to_string()),
@@ -902,6 +899,7 @@ fn resolve_slot_provenance(store: &ModelStore, pack: BackendPackKind) -> Vec<Mod
                         contract_version: verified.contract_version.clone(),
                         format: Some(verified.format),
                         gate,
+                        rollout: Some(rollout_diagnostics),
                     }
                 }
                 Err(err) => {
@@ -936,6 +934,7 @@ fn resolve_slot_provenance(store: &ModelStore, pack: BackendPackKind) -> Vec<Mod
                             activatable: false,
                             blocked_reason: Some(ProductionBlockReason::VerificationFailed),
                         },
+                        rollout: None,
                     }
                 }
             }
@@ -993,8 +992,7 @@ fn rollout_status_detail(
     statuses: &[crate::model_store::SlotPathStatus],
     warmup: &[crate::model_store::SlotWarmupStatus],
     promotion: &crate::model_store::SlotPromotionDecision,
-    activation: Option<&crate::model_store::SlotActivationAssessment>,
-    rollback: &crate::model_store::SlotRollbackAssessment,
+    rollout: &crate::model_store::SlotRolloutDiagnostics,
 ) -> String {
     let path = statuses
         .iter()
@@ -1047,42 +1045,14 @@ fn rollout_status_detail(
         PromotionDecisionState::BlockedForPromotion => "comparable_but_blocked",
         PromotionDecisionState::Active => "active_from_prior_promotion",
     };
-    let activation_detail = activation
-        .map(|activation| {
-            format!(
-                "target={};outcome={:?};fallback={:?};rollback={:?};prior={};result={};blocked={};degraded={};technical={}",
-                hash_prefix(Some(activation.target_hash.as_str())),
-                activation.outcome,
-                activation.fallback,
-                activation.rollback,
-                hash_prefix(activation.prior_active_hash.as_deref()),
-                hash_prefix(activation.resulting_active_hash.as_deref()),
-                activation
-                    .blocked_reason
-                    .as_deref()
-                    .unwrap_or("none"),
-                activation
-                    .degraded_reason
-                    .as_deref()
-                    .unwrap_or("none"),
-                activation
-                    .technical_failure
-                    .as_deref()
-                    .unwrap_or("none"),
-            )
-        })
-        .unwrap_or_else(|| "target=none;outcome=pending;fallback=not_used;rollback=not_requested;prior=none;result=none;blocked=none;degraded=none;technical=none".to_string());
-    let rollback_detail = format!(
-        "outcome={:?};to={};prior={};replaced={};result={};detail={}",
-        rollback.outcome,
-        hash_prefix(rollback.rollback_hash.as_deref()),
-        hash_prefix(rollback.prior_active_hash.as_deref()),
-        hash_prefix(rollback.replaced_hash.as_deref()),
-        hash_prefix(rollback.resulting_active_hash.as_deref()),
-        rollback.detail
-    );
+    let rollout_events = rollout
+        .events
+        .iter()
+        .map(|event| format!("{:?}:{}", event.kind, event.detail))
+        .collect::<Vec<_>>()
+        .join("|");
     format!(
-        "{path};warmup={warmup};promotion_state={:?};promotion_transition={transition};promotion_blockers={blockers};baseline_ready={};runtime_ready={};readiness_ok={};degraded={};compare_shadow_context={:?};compare_outcome={:?};shadow_outcome={:?};promotion_disposition={:?};activation={{{activation_detail}}};rollback={{{rollback_detail}}}",
+        "{path};warmup={warmup};promotion_state={:?};promotion_transition={transition};promotion_blockers={blockers};baseline_ready={};runtime_ready={};readiness_ok={};degraded={};compare_shadow_context={:?};compare_outcome={:?};shadow_outcome={:?};promotion_disposition={:?};rollout_progress={:?};rollout_blockers={:?};rollout_events={}",
         promotion.state,
         promotion.signals.baseline_comparison_ready,
         promotion.signals.runtime_path_production_usable,
@@ -1092,6 +1062,9 @@ fn rollout_status_detail(
         promotion.compare_shadow.compare_outcome,
         promotion.compare_shadow.shadow_outcome,
         promotion.disposition,
+        rollout.progress,
+        rollout.blockers,
+        rollout_events,
     )
 }
 
@@ -1529,9 +1502,11 @@ mod tests {
         assert!(world.gate.promotable);
         assert!(world.gate.activatable);
         assert!(world.gate.blocked_reason.is_none());
+        assert!(world.rollout.is_some());
         let detail = world.detail.as_deref().expect("detail");
         assert!(detail.contains("state=active"));
         assert!(detail.contains("selector=active_hash"));
+        assert!(detail.contains("rollout_progress="));
     }
 
     #[test]
@@ -1575,9 +1550,11 @@ mod tests {
             .expect("world slot");
         assert_eq!(world.status, SlotRuntimeStatus::Used);
         assert!(world.gate.promotable);
+        assert!(world.rollout.is_some());
         let detail = world.detail.as_deref().expect("detail");
         assert!(detail.contains("rollout=Active:"));
         assert!(detail.contains("Compare:aaaaaaaaaaaa:blocked:not_comparable"));
+        assert!(detail.contains("rollout_events="));
         std::env::remove_var("UCF_MODEL_COMPARE_WORLD_JEPA");
     }
 
@@ -1714,9 +1691,11 @@ mod tests {
             Some(ProductionBlockReason::ActivationBlocked)
         );
         assert!(!world.gate.activatable);
+        assert!(world.rollout.is_some());
         let detail = world.detail.as_deref().expect("detail");
         assert!(detail.contains("rollout=Active:"));
         assert!(detail.contains("Compare:aaaaaaaaaaaa:blocked:not_comparable"));
+        assert!(detail.contains("rollout_blockers="));
         std::env::remove_var("UCF_MODEL_COMPARE_WORLD_JEPA");
     }
 

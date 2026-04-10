@@ -63,6 +63,45 @@ Die Primärentscheidung bleibt immer Toy-first in Shadow/Compare.
 
 Damit bleibt der Vergleich reproduzierbar und offline auswertbar.
 
+## Rollout Provenance / History / Diagnostics (Serie B)
+
+Zusätzlich zur Slot-Provenance wird jetzt pro Slot eine kompakte
+`SlotRolloutDiagnostics`-Sicht geführt (im Runtime-Provenance-Objekt):
+
+- Referenzen: `prior_active_hash`, `active_hash`, `candidate_hash`, `compare_hash`, `shadow_hash`,
+  `resulting_active_hash`
+- Entscheidungen: `promotion_state`, `promotion_disposition`, `activation_outcome`,
+  `fallback`, `rollback`
+- Diagnose-Klassifikation:
+  - `progressed`
+  - `blocked`
+  - `inconclusive`
+  - `degraded_but_active`
+  - `fallback_or_rollback_after_issue`
+- Blocker-Semantik:
+  - `gate_blocked`
+  - `missing_comparison_signal`
+  - `activation_issue`
+  - `compare_shadow_inconclusive`
+  - `fallback_or_rollback_required`
+
+Die Events sind absichtlich schmal und technisch:
+
+- `candidate_introduced`
+- `candidate_compared_or_shadowed`
+- `candidate_promotable|candidate_blocked|candidate_inconclusive`
+- `activation_attempted`
+- `activation_succeeded|activation_degraded|activation_blocked|activation_failed_technically`
+- `fallback_occurred`
+- `rollback_occurred`
+
+Grenzen (bewusst):
+
+- Keine Audit-Plattform oder Release-Management-Historie.
+- Keine Governance-/Approval-/Incident-Welt.
+- Keine separate Evidenz-Parallelwelt; Compare/Baseline/Gate-Signale bleiben in der
+  bestehenden Promotion-/Activation-Semantik.
+
 ## LLM v1 (Candle CPU) Rollout Notes
 
 - LLM bleibt in `shadow`/`compare` strikt nicht-entscheidend: Toy/Stub ist primär, Candle läuft nur beobachtend.
