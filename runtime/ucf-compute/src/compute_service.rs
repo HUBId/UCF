@@ -614,6 +614,10 @@ impl InMemoryComputeService {
         self.backend.execution_lane()
     }
 
+    pub fn model_slot_provenance(&self) -> &[ModelSlotProvenance] {
+        self.backend.model_slot_provenance()
+    }
+
     pub fn job(&self, job_id: JobId) -> Option<&JobRecord> {
         self.jobs.get(&job_id)
     }
@@ -840,6 +844,8 @@ pub struct ExecutionPlacement {
     pub resource_class: ResourceClass,
     pub capacity_pressure: CapacityPressure,
     pub distributed: DistributedPlacementSummary,
+    pub warmup: PlacementWarmupState,
+    pub cold_start_penalty_units: u16,
     pub reason: String,
     pub considered: Vec<PlacementCandidateAssessment>,
 }
@@ -905,6 +911,15 @@ pub enum DeviceSuitability {
     Unavailable,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlacementWarmupState {
+    ColdRunnable,
+    Prepared,
+    WarmReady,
+    StalePrepared,
+    BlockedUnavailable,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlacementCandidateAssessment {
     pub unit_id: ExecutionUnitId,
@@ -917,6 +932,8 @@ pub struct PlacementCandidateAssessment {
     pub backend_suitability: PlacementSuitability,
     pub device_suitability: DeviceSuitability,
     pub suitability: PlacementSuitability,
+    pub warmup: PlacementWarmupState,
+    pub cold_start_penalty_units: u16,
     pub detail: String,
 }
 
@@ -1747,6 +1764,16 @@ impl MultiWorkerComputeService {
                     resource_class: job.resource_class,
                     capacity_pressure: CapacityPressure::Backpressured,
                     distributed,
+                    warmup: candidate
+                        .as_ref()
+                        .map(|entry| entry.warmup)
+                        .unwrap_or(PlacementWarmupState::BlockedUnavailable),
+                    cold_start_penalty_units: candidate
+                        .as_ref()
+                        .map(|entry| entry.cold_start_penalty_units)
+                        .unwrap_or(cold_start_penalty_units(
+                            PlacementWarmupState::BlockedUnavailable,
+                        )),
                     reason: "requested unit not placeable".to_string(),
                     considered,
                 },
@@ -1804,6 +1831,10 @@ impl MultiWorkerComputeService {
                 resource_class: job.resource_class,
                 capacity_pressure: CapacityPressure::Backpressured,
                 distributed,
+                warmup: PlacementWarmupState::BlockedUnavailable,
+                cold_start_penalty_units: cold_start_penalty_units(
+                    PlacementWarmupState::BlockedUnavailable,
+                ),
                 reason: "no suitable execution unit".to_string(),
                 considered,
             },
@@ -1826,6 +1857,12 @@ impl MultiWorkerComputeService {
             return SchedulingDecision::NotPlaceable(PlacementFailureKind::WorkerPlacementFailed);
         }
         if distributed.state == DistributedPlacementState::AdmissibleButCurrentlyUnschedulable {
+            return SchedulingDecision::QueueRequired;
+        }
+        if considered
+            .iter()
+            .any(|candidate| candidate.warmup == PlacementWarmupState::BlockedUnavailable)
+        {
             return SchedulingDecision::QueueRequired;
         }
         if considered
@@ -1881,6 +1918,8 @@ impl MultiWorkerComputeService {
                 let device_class = unit_device_class(unit.kind);
                 let status = unit.runtime_status();
                 let device_suitability = device_suitability_for(unit.kind, lane, status);
+                let warmup = derive_placement_warmup_state(unit.service.model_slot_provenance());
+                let cold_start_penalty_units = cold_start_penalty_units(warmup);
                 let admission = unit.service.technical_admission(request);
                 let backend_suitability = admission
                     .failure
@@ -1902,7 +1941,11 @@ impl MultiWorkerComputeService {
                             PlacementSuitability::Unavailable,
                             device_suitability,
                         ),
-                        detail: format!("unit not dispatchable ({status:?})"),
+                        warmup,
+                        cold_start_penalty_units,
+                        detail: format!(
+                            "unit not dispatchable ({status:?}); warmup={warmup:?}; cold_start_penalty_units={cold_start_penalty_units}"
+                        ),
                     };
                 }
                 let required_units = resource_class.capacity_weight();
@@ -1924,11 +1967,18 @@ impl MultiWorkerComputeService {
                             PlacementSuitability::Unavailable,
                             device_suitability,
                         ),
+                        warmup,
+                        cold_start_penalty_units,
                         detail: format!(
-                            "insufficient capacity units required={required_units} free={free_units}"
+                            "insufficient capacity units required={required_units} free={free_units}; warmup={warmup:?}; cold_start_penalty_units={cold_start_penalty_units}"
                         ),
                     };
                 }
+                let backend_suitability = if warmup == PlacementWarmupState::BlockedUnavailable {
+                    PlacementSuitability::Unavailable
+                } else {
+                    backend_suitability
+                };
                 let suitability = combine_suitability(backend_suitability, device_suitability);
                 if let Some(failure) = admission.failure {
                     PlacementCandidateAssessment {
@@ -1942,7 +1992,12 @@ impl MultiWorkerComputeService {
                         backend_suitability,
                         device_suitability,
                         suitability,
-                        detail: failure.detail,
+                        warmup,
+                        cold_start_penalty_units,
+                        detail: format!(
+                            "{}; warmup={warmup:?}; cold_start_penalty_units={cold_start_penalty_units}",
+                            failure.detail
+                        ),
                     }
                 } else {
                     PlacementCandidateAssessment {
@@ -1956,7 +2011,11 @@ impl MultiWorkerComputeService {
                         backend_suitability,
                         device_suitability,
                         suitability,
-                        detail: "admitted".to_string(),
+                        warmup,
+                        cold_start_penalty_units,
+                        detail: format!(
+                            "admitted; warmup={warmup:?}; cold_start_penalty_units={cold_start_penalty_units}"
+                        ),
                     }
                 }
             })
@@ -1998,6 +2057,8 @@ impl MultiWorkerComputeService {
                     resource_class: ResourceClass::classify(request),
                     capacity_pressure: self.units[idx].capacity_pressure(),
                     distributed: distributed_summary(&assessments),
+                    warmup: selected.warmup,
+                    cold_start_penalty_units: selected.cold_start_penalty_units,
                     reason: "requested execution unit selected".to_string(),
                     considered: assessments,
                 },
@@ -2012,6 +2073,13 @@ impl MultiWorkerComputeService {
             return None;
         }
         suitable.sort_by_key(|candidate| {
+            let warmup_rank = match candidate.warmup {
+                PlacementWarmupState::WarmReady => 0usize,
+                PlacementWarmupState::Prepared => 1,
+                PlacementWarmupState::ColdRunnable => 2,
+                PlacementWarmupState::StalePrepared => 3,
+                PlacementWarmupState::BlockedUnavailable => 4,
+            };
             let lane_rank = match candidate.lane {
                 BackendExecutionLane::Burn => 0usize,
                 BackendExecutionLane::Candle => 1,
@@ -2024,11 +2092,15 @@ impl MultiWorkerComputeService {
                 .position(|unit| unit.id == candidate.unit_id)
                 .unwrap_or(usize::MAX);
             (
+                warmup_rank,
                 lane_rank,
                 (base + self.round_robin_cursor) % self.units.len().max(1),
             )
         });
         let selected = suitable.first()?.clone();
+        let warm_placeable_exists = suitable
+            .iter()
+            .any(|candidate| candidate.warmup == PlacementWarmupState::WarmReady);
         let idx = self
             .units
             .iter()
@@ -2054,12 +2126,21 @@ impl MultiWorkerComputeService {
                 resource_class: ResourceClass::classify(request),
                 capacity_pressure: self.units[idx].capacity_pressure(),
                 distributed: distributed_summary(&assessments),
+                warmup: selected.warmup,
+                cold_start_penalty_units: selected.cold_start_penalty_units,
                 reason: if selected.lane == BackendExecutionLane::Burn {
-                    "selected burn-capable unit".to_string()
+                    if selected.warmup == PlacementWarmupState::WarmReady {
+                        "selected burn-capable warm unit".to_string()
+                    } else {
+                        "selected burn-capable unit (no warm-ready alternative)".to_string()
+                    }
                 } else if selected.lane == BackendExecutionLane::Candle {
                     "burn unavailable; selected candle fallback".to_string()
+                } else if !warm_placeable_exists {
+                    "selected available non-burn unit (cold/prepared path required by current capacity/readiness)"
+                        .to_string()
                 } else {
-                    "selected available non-burn unit".to_string()
+                    "selected available non-burn warm unit".to_string()
                 },
                 considered: assessments,
             },
@@ -2482,6 +2563,8 @@ impl MultiWorkerComputeService {
                         resource_class: job.resource_class,
                         capacity_pressure: local.capacity_pressure(),
                         distributed,
+                        warmup: original_placement.warmup,
+                        cold_start_penalty_units: original_placement.cold_start_penalty_units,
                         reason: format!("worker {} failed; redispatched to local", failed_worker.0),
                         considered: original_placement.considered.clone(),
                     },
@@ -2653,6 +2736,48 @@ impl ExecutionUnit {
             (Self::COOLDOWN_BASE_MS.saturating_mul(1_u64 << exp)).min(Self::COOLDOWN_MAX_MS);
         self.quarantine_until_unix_ms = Some(now.saturating_add(cooldown_ms));
         self.recovered_at_unix_ms = None;
+    }
+}
+
+fn derive_placement_warmup_state(slots: &[ModelSlotProvenance]) -> PlacementWarmupState {
+    let mut saw_prepared = false;
+    let mut saw_cold = false;
+    let mut saw_stale = false;
+    for slot in slots.iter().filter(|entry| entry.required_for_pack) {
+        let detail = slot.detail.as_deref().unwrap_or_default();
+        if detail.contains(":blocked:") {
+            return PlacementWarmupState::BlockedUnavailable;
+        }
+        if detail.contains(":warm:") {
+            return PlacementWarmupState::WarmReady;
+        }
+        if detail.contains(":stale:") {
+            saw_stale = true;
+        }
+        if detail.contains(":prepared:") {
+            saw_prepared = true;
+        }
+        if detail.contains(":cold:") {
+            saw_cold = true;
+        }
+    }
+    if saw_stale {
+        PlacementWarmupState::StalePrepared
+    } else if saw_prepared {
+        PlacementWarmupState::Prepared
+    } else {
+        let _ = saw_cold;
+        PlacementWarmupState::ColdRunnable
+    }
+}
+
+fn cold_start_penalty_units(state: PlacementWarmupState) -> u16 {
+    match state {
+        PlacementWarmupState::WarmReady => 0,
+        PlacementWarmupState::Prepared => 256,
+        PlacementWarmupState::ColdRunnable => 1024,
+        PlacementWarmupState::StalePrepared => 1536,
+        PlacementWarmupState::BlockedUnavailable => 2048,
     }
 }
 
@@ -2976,10 +3101,11 @@ mod tests {
         DistributedPlacementState, ExecutionDeviceClass, ExecutionUnitId, ExecutionUnitKind,
         InFlightCoordinationState, InMemoryComputeService, JobCompletionClass,
         JobCoordinationSnapshot, JobExecutionPath, JobLifecycleState, JobSubmissionMeta,
-        MultiWorkerComputeService, PlacementFailureKind, PlacementSuitability, RecoverySignal,
-        ResourceClass, SchedulerConfig, TerminalCoordinationInput, WorkCostProvenance,
-        WorkCostTension, WorkerAvailability, WorkerClass, WorkerDispatchOutcome,
-        WorkerRecoveryKind, WorkerRegistryRole, WorkerRuntimeStatus,
+        MultiWorkerComputeService, PlacementFailureKind, PlacementSuitability,
+        PlacementWarmupState, RecoverySignal, ResourceClass, SchedulerConfig,
+        TerminalCoordinationInput, WorkCostProvenance, WorkCostTension, WorkerAvailability,
+        WorkerClass, WorkerDispatchOutcome, WorkerRecoveryKind, WorkerRegistryRole,
+        WorkerRuntimeStatus,
     };
 
     struct NullLlm;
@@ -4428,5 +4554,122 @@ mod tests {
             coordination.recovery_signal,
             RecoverySignal::AwaitWorkerOutcome
         );
+    }
+
+    #[test]
+    fn placement_assessment_surfaces_warm_and_cold_candidates_with_penalties() {
+        let cold_local = ComputePipelineBackend::new(
+            pack_with(
+                BackendComponentId::ToyV1,
+                vec![ModelSlotProvenance {
+                    slot: ModelSlot::WorldJepa,
+                    stage: "world",
+                    required_for_pack: true,
+                    status: SlotRuntimeStatus::Used,
+                    code: None,
+                    detail: Some("state=active;rollout=Active:cold:artifact verified".to_string()),
+                    resolved_path: None,
+                    hash_prefix: None,
+                    contract_version: None,
+                    format: None,
+                    gate: Default::default(),
+                    rollout: None,
+                }],
+            ),
+            FusionConfig::default(),
+            LimitsConfig::default(),
+        );
+        let mut service = MultiWorkerComputeService::new(cold_local, 1);
+        let warm_worker = ComputePipelineBackend::new(
+            pack_with(
+                BackendComponentId::BurnJepaV1,
+                vec![ModelSlotProvenance {
+                    slot: ModelSlot::WorldJepa,
+                    stage: "world",
+                    required_for_pack: true,
+                    status: SlotRuntimeStatus::Used,
+                    code: None,
+                    detail: Some("state=active;rollout=Active:warm:artifact verified".to_string()),
+                    resolved_path: None,
+                    hash_prefix: None,
+                    contract_version: None,
+                    format: None,
+                    gate: Default::default(),
+                    rollout: None,
+                }],
+            ),
+            FusionConfig::default(),
+            LimitsConfig::default(),
+        );
+        let worker_id = service.register_worker_backend("warm-worker", warm_worker, 1);
+        let job = service.submit(
+            valid_request(),
+            JobSubmissionMeta {
+                submitted_at_unix_ms: 50,
+                submitted_by: Some("warm-pref".to_string()),
+            },
+            None,
+        );
+        service.run_scheduler_cycle(1);
+        let record = service.job(job).expect("record");
+        assert!(record
+            .placement
+            .considered
+            .iter()
+            .any(|entry| entry.unit_id == worker_id
+                && entry.warmup == PlacementWarmupState::WarmReady
+                && entry.cold_start_penalty_units == 0));
+        assert!(record
+            .placement
+            .considered
+            .iter()
+            .any(|entry| entry.unit_id == ExecutionUnitId("local".to_string())
+                && entry.warmup == PlacementWarmupState::ColdRunnable
+                && entry.cold_start_penalty_units > 0));
+    }
+
+    #[test]
+    fn blocked_warmup_candidate_is_marked_unavailable_in_assessment() {
+        let local_backend = ComputePipelineBackend::new(
+            pack_with(
+                BackendComponentId::ToyV1,
+                vec![ModelSlotProvenance {
+                    slot: ModelSlot::WorldJepa,
+                    stage: "world",
+                    required_for_pack: true,
+                    status: SlotRuntimeStatus::Used,
+                    code: None,
+                    detail: Some("state=active;rollout=Active:blocked:warmup failed".to_string()),
+                    resolved_path: None,
+                    hash_prefix: None,
+                    contract_version: None,
+                    format: None,
+                    gate: Default::default(),
+                    rollout: None,
+                }],
+            ),
+            FusionConfig::default(),
+            LimitsConfig::default(),
+        );
+        let mut service = MultiWorkerComputeService::new(local_backend, 1);
+        let job = service.submit(
+            valid_request(),
+            JobSubmissionMeta {
+                submitted_at_unix_ms: 60,
+                submitted_by: Some("blocked".to_string()),
+            },
+            None,
+        );
+        service.run_scheduler_cycle(1);
+        let record = service.job(job).expect("record");
+        assert_eq!(
+            record.placement_failure,
+            Some(PlacementFailureKind::CurrentlyUnschedulable)
+        );
+        assert!(record
+            .placement
+            .considered
+            .iter()
+            .all(|entry| entry.warmup == PlacementWarmupState::BlockedUnavailable));
     }
 }

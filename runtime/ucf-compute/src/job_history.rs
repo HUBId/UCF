@@ -456,6 +456,12 @@ fn extract_warmup_state(detail: Option<&str>) -> Option<String> {
         Some("prepared".to_string())
     } else if detail.contains("Active:blocked:") || detail.contains("Blocked:blocked:") {
         Some("blocked".to_string())
+    } else if detail.contains("Active:stale:")
+        || detail.contains("Candidate:stale:")
+        || detail.contains("Compare:stale:")
+        || detail.contains("Shadow:stale:")
+    {
+        Some("stale".to_string())
     } else if detail.contains("Active:cold:") {
         Some("cold".to_string())
     } else {
