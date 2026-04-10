@@ -1052,7 +1052,7 @@ fn rollout_status_detail(
         .collect::<Vec<_>>()
         .join("|");
     format!(
-        "{path};warmup={warmup};promotion_state={:?};promotion_transition={transition};promotion_blockers={blockers};baseline_ready={};runtime_ready={};readiness_ok={};degraded={};compare_shadow_context={:?};compare_outcome={:?};shadow_outcome={:?};promotion_disposition={:?};activation_scope={:?};resulting_scope={:?};guardrail_reasons={:?};rollout_progress={:?};rollout_blockers={:?};rollout_events={}",
+        "{path};warmup={warmup};promotion_state={:?};promotion_transition={transition};promotion_blockers={blockers};baseline_ready={};runtime_ready={};readiness_ok={};degraded={};compare_shadow_context={:?};compare_outcome={:?};shadow_outcome={:?};promotion_disposition={:?};activation_scope={:?};resulting_scope={:?};guardrail_reasons={:?};rollout_progress={:?};rollout_blockers={:?};rollout_situation={:?};rollout_supporting_groups={:?};rollout_blocking_groups={:?};rollout_tensions={:?};rollout_events={}",
         promotion.state,
         promotion.signals.baseline_comparison_ready,
         promotion.signals.runtime_path_production_usable,
@@ -1067,6 +1067,10 @@ fn rollout_status_detail(
         rollout.guardrail_reasons,
         rollout.progress,
         rollout.blockers,
+        rollout.consolidated.situation,
+        rollout.consolidated.supporting_groups,
+        rollout.consolidated.blocking_groups,
+        rollout.consolidated.tensions,
         rollout_events,
     )
 }
