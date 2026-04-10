@@ -238,6 +238,29 @@ feedback does **not** replace admission/readiness/capability/compatibility gates
 inside already admissible placement space, and decision provenance remains visible in placement
 decisive signals plus per-job feedback view.
 
+### Cold-path minimization for productive reference paths (Serie C Prompt 7)
+
+Cold-path handling remains a **narrow runtime hint layer** and is now extended with explicit
+reference-path context:
+
+- each placement candidate now carries:
+  - `effective_reference_path` (`execution_kind:lane`, deterministic),
+  - `reference_path_class` (`active_production|guarded_active|candidate|compare_shadow|unknown`),
+  - `cold_start_sensitive` (cold/stale/blocked warmup context);
+- feedback marks repeated cold behavior not only per unit, but also per effective reference path,
+  plus repeated cold on `candidate|guarded_active` paths;
+- placement ranking keeps existing suitability gates, but now biases active production reference
+  paths before candidate/compare paths when technically equivalent.
+
+Decision provenance for ops/history stays explicit via `placement.decisive_signals`, including:
+
+- `reference_path=...`
+- `reference_path_class=...`
+- `cold_path_decision=warm_path_preferred_and_used|warm_path_preferred_but_unavailable|cold_path_unavoidable|preparation_warmup_insufficient|cold_start_penalty_accepted_due_to_stronger_constraints`
+
+This is intentionally **not** a warmup/caching platform: no global prewarming, no dynamic policy
+engine, no separate optimization control-plane.
+
 ## Backend selection (runtime)
 
 The orchestrator can be bootstrapped from env config via `RuntimeOrchestrator::try_new_from_env`.
