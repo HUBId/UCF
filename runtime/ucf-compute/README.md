@@ -177,6 +177,10 @@ Runtime now keeps one narrow `ConsolidatedWorkCostSummary` across scheduling/acc
   queue/disposition);
 - **stage/hotspot hook** (dominant stage + share, degraded stage count) without introducing a new
   profiling platform;
+- **stage-cost attribution hook** (`diagnostics.stage_cost_attribution`) with explicit provenance
+  (`measured_timing` vs `derived_from_budget_and_meter`), dominant timing/work flags, and narrow
+  runtime pattern classes (`slow_but_healthy`, `dominant_cost_driver`, `degraded_path_driver`,
+  `skipped_or_fallback`, `hard_failure`);
 - **failure/degradation tension semantics** (`expensive_but_successful`,
   `expensive_and_degraded`, `retried_with_additional_cost`, `low_cost_but_blocked`) for load-bearing
   diagnostics.

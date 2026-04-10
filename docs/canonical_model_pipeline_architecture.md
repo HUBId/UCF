@@ -102,6 +102,7 @@ Stub/Toy paths remain explicit development/testing paths, not hidden production-
 - work/budget snapshot (`diagnostics.work`: per-stage remaining units + exceeded stage)
 - timing snapshot (`diagnostics.timing`: total + per-stage latency hints)
 - stage-level profiling snapshot (`diagnostics.stage_profiles`: stage id, state, duration, remaining work hints, detail)
+- stage-cost attribution snapshot (`diagnostics.stage_cost_attribution`: measured timing share + derived work share + dominance/pattern classification + provenance)
 - hotspot/bottleneck sketch (`diagnostics.hotspots`: slowest/dominant stage + degraded/skipped/unavailable/failed counts)
 - evidence/provenance digest hook (`diagnostics.evidence_chain_digest_prefix`)
 
@@ -120,15 +121,25 @@ Hotspot derivation is also intentionally minimal:
 
 - `slowest_stage` and `dominant_stage` are selected from observed stage durations
 - `dominant_stage_share_bps` reports rough share of total runtime in basis points
+- `dominant_work_stage` and `dominant_work_stage_share_bps` expose budget/meter-derived work concentration
+- `degraded_stage` and `fallback_stage` make degraded-path vs skipped/fallback context explicit
 - counts of degraded/skipped/unavailable/failed stages provide direct operational triage hints
+
+Stage-cost attribution keeps provenance explicit without adding a tracing platform:
+
+- timing shares are marked as `measured_timing`
+- work shares are marked as `derived_from_budget_and_meter`
+- per-stage `pattern` distinguishes `slow_but_healthy`, `dominant_cost_driver`, `degraded_path_driver`, `skipped_or_fallback`, `hard_failure`, `inactive`
 
 ## Job/Ops/History visibility
 
 The same load-bearing profile is threaded into job/history views:
 
 - `JobAccountingSummary.stage_profiles`
+- `JobAccountingSummary.stage_cost_attribution`
 - `JobAccountingSummary.hotspot_summary`
-- persisted job history (`PersistedJobRecord.stage_profiles` + `hotspot_summary`)
+- persisted job history (`PersistedJobRecord.stage_profiles` + `stage_cost_attribution` + `hotspot_summary`)
+- runtime ops snapshot repeated-hotspot hint (`RuntimeOpsSnapshot.repeated_hotspot_stage` + run count)
 
 This keeps one canonical diagnostics surface across runtime execution, job accounting, and replay/history summaries.
 

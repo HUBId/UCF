@@ -22,7 +22,7 @@ use crate::job_history::{
 use crate::pipeline::{
     classify_failure_kind, CanonicalFailureKind, CanonicalFaultDomain, CanonicalHotspotSummary,
     CanonicalIsolationDisposition, CanonicalPipelineFailure, CanonicalPipelineRequest,
-    CanonicalPipelineState, CanonicalWorkSummary,
+    CanonicalPipelineState, CanonicalStageCostAttribution, CanonicalStageId, CanonicalWorkSummary,
 };
 use crate::{
     DeploymentProfile, ModelSlot, ModelSlotProvenance, RuntimeDiagnosticFlags, RuntimeMode,
@@ -76,6 +76,7 @@ pub struct ComputeJobStatus {
     pub fault_systemic: Option<bool>,
     pub pipeline_state: Option<CanonicalPipelineState>,
     pub work_summary: Option<CanonicalWorkSummary>,
+    pub stage_cost_attribution: Vec<CanonicalStageCostAttribution>,
     pub hotspot_summary: Option<CanonicalHotspotSummary>,
     pub model_slots: Vec<ModelSlotProvenance>,
     pub submitted_at_unix_ms: u64,
@@ -185,6 +186,8 @@ pub struct RuntimeOpsSnapshot {
     pub shadow_job: Option<ComputeJobHandle>,
     pub has_missing_required_slot: bool,
     pub latest_baseline_comparison: Option<BaselineComparisonSummary>,
+    pub repeated_hotspot_stage: Option<CanonicalStageId>,
+    pub repeated_hotspot_runs: usize,
     pub recovery: Option<ComputeRecoverySnapshot>,
 }
 
@@ -674,6 +677,7 @@ impl CanonicalComputeEntryPoint {
         let mut rejected_total = 0usize;
         let mut timed_out_total = 0usize;
         let mut degraded_total = 0usize;
+        let mut dominant_stage_counts: BTreeMap<CanonicalStageId, usize> = BTreeMap::new();
         let mut slots = Vec::new();
         let mut last_job = None;
 
@@ -691,6 +695,11 @@ impl CanonicalComputeEntryPoint {
                 JobLifecycleState::Rejected => rejected_total = rejected_total.saturating_add(1),
                 JobLifecycleState::TimedOut => timed_out_total = timed_out_total.saturating_add(1),
                 _ => {}
+            }
+            if let Some(hotspot) = record.accounting.hotspot_summary {
+                if let Some(stage) = hotspot.dominant_stage {
+                    *dominant_stage_counts.entry(stage).or_insert(0) += 1;
+                }
             }
             if !record.accounting.model_slots.is_empty() {
                 slots = record
@@ -740,6 +749,10 @@ impl CanonicalComputeEntryPoint {
         let runtime_profile = RuntimeProfile::from_runtime_env().unwrap_or_else(|_| {
             RuntimeProfile::fallback_for_execution_path(scheduler.execution_path)
         });
+        let repeated_hotspot = dominant_stage_counts
+            .into_iter()
+            .max_by_key(|(_, count)| *count)
+            .filter(|(_, count)| *count >= 2);
 
         RuntimeOpsSnapshot {
             state,
@@ -768,6 +781,8 @@ impl CanonicalComputeEntryPoint {
             shadow_job: None,
             has_missing_required_slot,
             latest_baseline_comparison: self.latest_baseline_comparison.clone(),
+            repeated_hotspot_stage: repeated_hotspot.map(|(stage, _)| stage),
+            repeated_hotspot_runs: repeated_hotspot.map(|(_, count)| count).unwrap_or(0),
             recovery: self.recovery_snapshot.clone(),
         }
     }
@@ -1413,6 +1428,7 @@ fn status_from_record(
         fault_systemic: failure_classification.map(|classification| classification.systemic),
         pipeline_state: record.accounting.pipeline_state,
         work_summary: record.accounting.work_summary,
+        stage_cost_attribution: record.accounting.stage_cost_attribution.clone(),
         hotspot_summary: record.accounting.hotspot_summary,
         model_slots: record.accounting.model_slots.clone(),
         submitted_at_unix_ms: record.accounting.submitted_at_unix_ms,
@@ -1650,6 +1666,7 @@ mod tests {
             status.lifecycle_state,
             JobLifecycleState::Completed | JobLifecycleState::Failed | JobLifecycleState::TimedOut
         ));
+        assert!(!status.stage_cost_attribution.is_empty());
         assert!(!entry.lifecycle(handle).is_empty());
     }
 
@@ -1714,6 +1731,27 @@ mod tests {
         );
         assert!(snapshot.diagnostic_flags.compare_enabled);
         assert!(snapshot.diagnostic_flags.shadow_enabled);
+    }
+
+    #[test]
+    fn operations_snapshot_surfaces_repeated_hotspot_stage() {
+        let mut entry = service();
+        for t in [9_u64, 10_u64] {
+            let mut request = valid_request();
+            request.input.t = t;
+            let outcome = entry
+                .submit(ComputeSubmitRequest {
+                    pipeline_request: request,
+                    submitted_by: Some("svc-test".to_string()),
+                    submitted_at_unix_ms: Some(200 + t),
+                    execution_mode: ComputeExecutionMode::ExecuteInline,
+                })
+                .expect("submit should not fail");
+            assert!(matches!(outcome, ComputeSubmitOutcome::Accepted { .. }));
+        }
+        let snapshot = entry.operations_snapshot();
+        assert!(snapshot.repeated_hotspot_stage.is_some());
+        assert!(snapshot.repeated_hotspot_runs >= 2);
     }
 
     #[test]

@@ -7,8 +7,9 @@ use crate::backend_pack::{
 use crate::pipeline::{
     BackendExecutionLane, CanonicalAdmissionDecision, CanonicalFailureKind,
     CanonicalHotspotSummary, CanonicalPipelineFailure, CanonicalPipelineRequest,
-    CanonicalPipelineResult, CanonicalPipelineState, CanonicalStageId, CanonicalStageProfile,
-    CanonicalWorkSummary, ComputePipelineBackend, FusionConfig, LimitsConfig,
+    CanonicalPipelineResult, CanonicalPipelineState, CanonicalStageCostAttribution,
+    CanonicalStageId, CanonicalStageProfile, CanonicalWorkSummary, ComputePipelineBackend,
+    FusionConfig, LimitsConfig,
 };
 use crate::ComputeError;
 
@@ -113,6 +114,10 @@ pub struct ConsolidatedWorkCostSummary {
     pub runtime_remaining_work_units: Option<u64>,
     pub dominant_stage: Option<CanonicalStageId>,
     pub dominant_stage_share_bps: Option<u16>,
+    pub dominant_work_stage: Option<CanonicalStageId>,
+    pub dominant_work_stage_share_bps: Option<u16>,
+    pub degraded_stage: Option<CanonicalStageId>,
+    pub fallback_stage: Option<CanonicalStageId>,
     pub degraded_stage_count: u8,
     pub retry_attempts: u8,
     pub redispatched_to_local: bool,
@@ -155,6 +160,7 @@ pub struct JobAccountingSummary {
     pub work_summary: Option<CanonicalWorkSummary>,
     pub work_cost_summary: Option<ConsolidatedWorkCostSummary>,
     pub stage_profiles: Vec<CanonicalStageProfile>,
+    pub stage_cost_attribution: Vec<CanonicalStageCostAttribution>,
     pub hotspot_summary: Option<CanonicalHotspotSummary>,
     pub pipeline_state: Option<CanonicalPipelineState>,
     pub stage_order: Option<[CanonicalStageId; 4]>,
@@ -313,6 +319,7 @@ impl InMemoryComputeService {
                     CapacityQueueDisposition::None,
                 )),
                 stage_profiles: Vec::new(),
+                stage_cost_attribution: Vec::new(),
                 hotspot_summary: None,
                 pipeline_state: None,
                 stage_order: None,
@@ -512,6 +519,8 @@ impl InMemoryComputeService {
         if let Some(canonical_result) = record.result.as_ref() {
             record.accounting.work_summary = Some(canonical_result.diagnostics.work);
             record.accounting.stage_profiles = canonical_result.diagnostics.stage_profiles.clone();
+            record.accounting.stage_cost_attribution =
+                canonical_result.diagnostics.stage_cost_attribution.clone();
             record.accounting.hotspot_summary = Some(canonical_result.diagnostics.hotspots);
             record.accounting.pipeline_state = Some(canonical_result.state);
             record.accounting.stage_order = Some(canonical_result.stage_order);
@@ -2746,6 +2755,10 @@ fn estimated_work_cost_summary(
         runtime_remaining_work_units: None,
         dominant_stage: None,
         dominant_stage_share_bps: None,
+        dominant_work_stage: None,
+        dominant_work_stage_share_bps: None,
+        degraded_stage: None,
+        fallback_stage: None,
         degraded_stage_count: 0,
         retry_attempts: 1,
         redispatched_to_local: false,
@@ -2818,6 +2831,11 @@ fn runtime_work_cost_summary(
         dominant_stage: hotspot_summary.and_then(|hotspot| hotspot.dominant_stage),
         dominant_stage_share_bps: hotspot_summary
             .and_then(|hotspot| hotspot.dominant_stage_share_bps),
+        dominant_work_stage: hotspot_summary.and_then(|hotspot| hotspot.dominant_work_stage),
+        dominant_work_stage_share_bps: hotspot_summary
+            .and_then(|hotspot| hotspot.dominant_work_stage_share_bps),
+        degraded_stage: hotspot_summary.and_then(|hotspot| hotspot.degraded_stage),
+        fallback_stage: hotspot_summary.and_then(|hotspot| hotspot.fallback_stage),
         degraded_stage_count,
         retry_attempts,
         redispatched_to_local,

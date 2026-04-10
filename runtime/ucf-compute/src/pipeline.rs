@@ -38,7 +38,7 @@ pub const CANONICAL_STAGE_SEQUENCE: [CanonicalStageId; 4] = [
     CanonicalStageId::Lfm,
 ];
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum CanonicalStageId {
     World,
     Sae,
@@ -204,10 +204,46 @@ pub struct CanonicalStageProfile {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StageCostSignalProvenance {
+    MeasuredTiming,
+    DerivedFromBudgetAndMeter,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CanonicalStageCostPattern {
+    SlowButHealthy,
+    DominantCostDriver,
+    DegradedPathDriver,
+    SkippedOrFallback,
+    HardFailure,
+    Inactive,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CanonicalStageCostAttribution {
+    pub stage: CanonicalStageId,
+    pub state: CanonicalStageProfileState,
+    pub timing_micros: Option<u64>,
+    pub timing_share_bps: Option<u16>,
+    pub work_consumed_units: u64,
+    pub work_share_bps: Option<u16>,
+    pub pattern: CanonicalStageCostPattern,
+    pub dominant_timing: bool,
+    pub dominant_work: bool,
+    pub timing_provenance: StageCostSignalProvenance,
+    pub work_provenance: StageCostSignalProvenance,
+    pub detail: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CanonicalHotspotSummary {
     pub slowest_stage: Option<CanonicalStageId>,
     pub dominant_stage: Option<CanonicalStageId>,
     pub dominant_stage_share_bps: Option<u16>,
+    pub dominant_work_stage: Option<CanonicalStageId>,
+    pub dominant_work_stage_share_bps: Option<u16>,
+    pub degraded_stage: Option<CanonicalStageId>,
+    pub fallback_stage: Option<CanonicalStageId>,
     pub degraded_stage_count: u8,
     pub skipped_stage_count: u8,
     pub unavailable_stage_count: u8,
@@ -230,6 +266,7 @@ pub struct CanonicalRunDiagnostics {
     pub timing: CanonicalTimingSummary,
     pub work: CanonicalWorkSummary,
     pub stage_profiles: Vec<CanonicalStageProfile>,
+    pub stage_cost_attribution: Vec<CanonicalStageCostAttribution>,
     pub hotspots: CanonicalHotspotSummary,
     pub evidence_chain_digest_prefix: Option<String>,
 }
@@ -2083,10 +2120,15 @@ impl ComputePipelineBackend {
                 exceeded_stage,
                 None,
             ),
+            stage_cost_attribution: Vec::new(),
             hotspots: CanonicalHotspotSummary {
                 slowest_stage: None,
                 dominant_stage: None,
                 dominant_stage_share_bps: None,
+                dominant_work_stage: None,
+                dominant_work_stage_share_bps: None,
+                degraded_stage: None,
+                fallback_stage: None,
                 degraded_stage_count: 0,
                 skipped_stage_count: 0,
                 unavailable_stage_count: 0,
@@ -2094,8 +2136,11 @@ impl ComputePipelineBackend {
             },
             evidence_chain_digest_prefix: Some(evidence_chain.digest_prefix_hex()),
         };
-        let hotspots = build_hotspot_summary(&diagnostics.stage_profiles, timing.total_micros);
+        let stage_cost_attribution =
+            build_stage_cost_attribution(&diagnostics.stage_profiles, timing, work, budget);
+        let hotspots = build_hotspot_summary(&diagnostics.stage_profiles, &stage_cost_attribution);
         let diagnostics = CanonicalRunDiagnostics {
+            stage_cost_attribution,
             hotspots,
             ..diagnostics
         };
@@ -2237,10 +2282,15 @@ impl ComputePipelineBackend {
                         || ctx.failure.kind == CanonicalFailureKind::Timeout,
                 )
             }),
+            stage_cost_attribution: Vec::new(),
             hotspots: CanonicalHotspotSummary {
                 slowest_stage: None,
                 dominant_stage: None,
                 dominant_stage_share_bps: None,
+                dominant_work_stage: None,
+                dominant_work_stage_share_bps: None,
+                degraded_stage: None,
+                fallback_stage: None,
                 degraded_stage_count: 0,
                 skipped_stage_count: 0,
                 unavailable_stage_count: 0,
@@ -2248,11 +2298,19 @@ impl ComputePipelineBackend {
             },
             evidence_chain_digest_prefix: None,
         });
-        let diagnostics = CanonicalRunDiagnostics {
-            hotspots: build_hotspot_summary(
+        let stage_cost_attribution = if diagnostics.stage_cost_attribution.is_empty() {
+            build_stage_cost_attribution(
                 &diagnostics.stage_profiles,
-                diagnostics.timing.total_micros,
-            ),
+                diagnostics.timing,
+                diagnostics.work,
+                budget,
+            )
+        } else {
+            diagnostics.stage_cost_attribution.clone()
+        };
+        let diagnostics = CanonicalRunDiagnostics {
+            stage_cost_attribution: stage_cost_attribution.clone(),
+            hotspots: build_hotspot_summary(&diagnostics.stage_profiles, &stage_cost_attribution),
             ..diagnostics
         };
         CanonicalPipelineResult {
@@ -2416,12 +2474,16 @@ fn build_stage_profiles(
 
 fn build_hotspot_summary(
     stage_profiles: &[CanonicalStageProfile],
-    total_micros: u64,
+    stage_cost_attribution: &[CanonicalStageCostAttribution],
 ) -> CanonicalHotspotSummary {
     let mut slowest_stage = None;
     let mut slowest_micros = 0_u64;
     let mut dominant_stage = None;
     let mut dominant_share_bps = None;
+    let mut dominant_work_stage = None;
+    let mut dominant_work_stage_share_bps = None;
+    let mut degraded_stage = None;
+    let mut fallback_stage = None;
     let mut degraded_stage_count = 0_u8;
     let mut skipped_stage_count = 0_u8;
     let mut unavailable_stage_count = 0_u8;
@@ -2429,7 +2491,12 @@ fn build_hotspot_summary(
     for profile in stage_profiles {
         match profile.state {
             CanonicalStageProfileState::Degraded => degraded_stage_count += 1,
-            CanonicalStageProfileState::Skipped => skipped_stage_count += 1,
+            CanonicalStageProfileState::Skipped => {
+                skipped_stage_count += 1;
+                if fallback_stage.is_none() {
+                    fallback_stage = Some(profile.stage);
+                }
+            }
             CanonicalStageProfileState::Unavailable => unavailable_stage_count += 1,
             CanonicalStageProfileState::Failed => failed_stage_count += 1,
             CanonicalStageProfileState::Success | CanonicalStageProfileState::SlowSuccess => {}
@@ -2441,20 +2508,131 @@ fn build_hotspot_summary(
             }
         }
     }
-    if total_micros > 0 && slowest_micros > 0 {
+    for attribution in stage_cost_attribution {
+        if attribution.dominant_timing {
+            dominant_stage = Some(attribution.stage);
+            dominant_share_bps = attribution.timing_share_bps;
+        }
+        if attribution.dominant_work {
+            dominant_work_stage = Some(attribution.stage);
+            dominant_work_stage_share_bps = attribution.work_share_bps;
+        }
+        if degraded_stage.is_none()
+            && attribution.pattern == CanonicalStageCostPattern::DegradedPathDriver
+        {
+            degraded_stage = Some(attribution.stage);
+        }
+        if fallback_stage.is_none()
+            && attribution.pattern == CanonicalStageCostPattern::SkippedOrFallback
+        {
+            fallback_stage = Some(attribution.stage);
+        }
+    }
+    if dominant_stage.is_none() && slowest_micros > 0 {
         dominant_stage = slowest_stage;
-        let bps = slowest_micros.saturating_mul(10_000) / total_micros;
-        dominant_share_bps = Some(bps.min(10_000) as u16);
     }
     CanonicalHotspotSummary {
         slowest_stage,
         dominant_stage,
         dominant_stage_share_bps: dominant_share_bps,
+        dominant_work_stage,
+        dominant_work_stage_share_bps,
+        degraded_stage,
+        fallback_stage,
         degraded_stage_count,
         skipped_stage_count,
         unavailable_stage_count,
         failed_stage_count,
     }
+}
+
+fn stage_budget_for(stage: CanonicalStageId, budget: ComputeBudget) -> u64 {
+    match stage {
+        CanonicalStageId::World => budget.world_units,
+        CanonicalStageId::Sae => budget.sae_units,
+        CanonicalStageId::Ssm => budget.ssm_units,
+        CanonicalStageId::Lfm => budget.lfm_units,
+    }
+}
+
+fn build_stage_cost_attribution(
+    stage_profiles: &[CanonicalStageProfile],
+    timing: CanonicalTimingSummary,
+    work: CanonicalWorkSummary,
+    budget: ComputeBudget,
+) -> Vec<CanonicalStageCostAttribution> {
+    let mut dominant_timing_stage = None;
+    let mut dominant_timing_micros = 0_u64;
+    let mut dominant_work_stage = None;
+    let mut dominant_work_units = 0_u64;
+
+    let mut precomputed = Vec::with_capacity(stage_profiles.len());
+    for profile in stage_profiles {
+        let stage_budget_units = stage_budget_for(profile.stage, budget);
+        let remaining_work_units = profile.remaining_work_units.unwrap_or(stage_budget_units);
+        let consumed_work_units = stage_budget_units.saturating_sub(remaining_work_units);
+        if profile.duration_micros.unwrap_or_default() >= dominant_timing_micros {
+            dominant_timing_micros = profile.duration_micros.unwrap_or_default();
+            dominant_timing_stage = Some(profile.stage);
+        }
+        if consumed_work_units >= dominant_work_units {
+            dominant_work_units = consumed_work_units;
+            dominant_work_stage = Some(profile.stage);
+        }
+        precomputed.push((profile, consumed_work_units));
+    }
+
+    precomputed
+        .into_iter()
+        .map(|(profile, consumed_work_units)| {
+            let timing_share_bps = profile.duration_micros.and_then(|micros| {
+                (timing.total_micros > 0).then_some(
+                    (micros.saturating_mul(10_000) / timing.total_micros).min(10_000) as u16,
+                )
+            });
+            let work_share_bps = (work.global_budget_units > 0).then_some(
+                (consumed_work_units.saturating_mul(10_000) / work.global_budget_units).min(10_000)
+                    as u16,
+            );
+            let dominant_timing = dominant_timing_stage == Some(profile.stage)
+                && profile.duration_micros.unwrap_or_default() > 0;
+            let dominant_work =
+                dominant_work_stage == Some(profile.stage) && consumed_work_units > 0;
+            let pattern = match profile.state {
+                CanonicalStageProfileState::Failed => CanonicalStageCostPattern::HardFailure,
+                CanonicalStageProfileState::Degraded => {
+                    CanonicalStageCostPattern::DegradedPathDriver
+                }
+                CanonicalStageProfileState::Skipped | CanonicalStageProfileState::Unavailable => {
+                    CanonicalStageCostPattern::SkippedOrFallback
+                }
+                CanonicalStageProfileState::SlowSuccess => {
+                    CanonicalStageCostPattern::SlowButHealthy
+                }
+                CanonicalStageProfileState::Success => {
+                    if dominant_timing || dominant_work {
+                        CanonicalStageCostPattern::DominantCostDriver
+                    } else {
+                        CanonicalStageCostPattern::Inactive
+                    }
+                }
+            };
+            CanonicalStageCostAttribution {
+                stage: profile.stage,
+                state: profile.state,
+                timing_micros: profile.duration_micros,
+                timing_share_bps,
+                work_consumed_units: consumed_work_units,
+                work_share_bps,
+                pattern,
+                dominant_timing,
+                dominant_work,
+                timing_provenance: StageCostSignalProvenance::MeasuredTiming,
+                work_provenance: StageCostSignalProvenance::DerivedFromBudgetAndMeter,
+                detail: profile.detail.clone(),
+            }
+        })
+        .collect()
 }
 
 fn first_artifact_failure(slots: &[ModelSlotProvenance]) -> Option<CanonicalPipelineFailure> {
@@ -2722,6 +2900,10 @@ mod tests {
             result.diagnostics.stage_profiles.len(),
             CANONICAL_STAGE_SEQUENCE.len()
         );
+        assert_eq!(
+            result.diagnostics.stage_cost_attribution.len(),
+            CANONICAL_STAGE_SEQUENCE.len()
+        );
         assert!(result.diagnostics.hotspots.slowest_stage.is_some());
     }
 
@@ -2926,7 +3108,13 @@ mod tests {
         ));
         assert!(result.diagnostics.timing.total_micros > 0);
         assert_eq!(result.diagnostics.stage_profiles.len(), 4);
+        assert_eq!(result.diagnostics.stage_cost_attribution.len(), 4);
         assert!(result.diagnostics.hotspots.dominant_stage.is_some());
+        assert!(result
+            .diagnostics
+            .stage_cost_attribution
+            .iter()
+            .any(|entry| entry.dominant_timing || entry.dominant_work));
         assert_eq!(
             result.validation.violation_reason_mask,
             result.violation_reason_mask
@@ -2960,6 +3148,12 @@ mod tests {
             .stage_profiles
             .iter()
             .any(|profile| profile.state == CanonicalStageProfileState::Degraded));
+        assert!(canonical
+            .diagnostics
+            .stage_cost_attribution
+            .iter()
+            .any(|entry| entry.pattern == CanonicalStageCostPattern::DegradedPathDriver));
+        assert!(canonical.diagnostics.hotspots.degraded_stage.is_some());
     }
 
     #[test]
