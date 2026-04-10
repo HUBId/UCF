@@ -965,7 +965,9 @@ impl ModelStore {
         let candidate_present = promotion.candidate_hash.is_some();
         let guardrail_issue = matches!(
             activation.outcome,
-            ActivationOutcome::Blocked | ActivationOutcome::Degraded | ActivationOutcome::FailedTechnically
+            ActivationOutcome::Blocked
+                | ActivationOutcome::Degraded
+                | ActivationOutcome::FailedTechnically
         );
         let rollback_triggered = guardrail_issue && rollback.outcome == RollbackOutcome::Completed;
 
