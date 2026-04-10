@@ -189,7 +189,21 @@ pub struct RuntimeOpsSnapshot {
     pub latest_baseline_comparison: Option<BaselineComparisonSummary>,
     pub repeated_hotspot_stage: Option<CanonicalStageId>,
     pub repeated_hotspot_runs: usize,
+    pub optimization_view: RuntimeOptimizationOpsView,
     pub recovery: Option<ComputeRecoverySnapshot>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeOptimizationOpsView {
+    pub current_state: String,
+    pub main_bottleneck: String,
+    pub queue_pressure: bool,
+    pub capacity_pressure: bool,
+    pub cold_or_warmup_pressure: bool,
+    pub stage_hotspot_pressure: bool,
+    pub mixed_bottlenecks: bool,
+    pub historical_feedback_alignment: String,
+    pub caveats: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -754,6 +768,82 @@ impl CanonicalComputeEntryPoint {
             .into_iter()
             .max_by_key(|(_, count)| *count)
             .filter(|(_, count)| *count >= 2);
+        let queue_pressure = scheduler.queued_jobs > 0;
+        let capacity_pressure = queue_pressure
+            || matches!(
+                state,
+                RuntimeOpsState::PartiallyUnavailable | RuntimeOpsState::Unavailable
+            );
+        let cold_or_warmup_pressure = slots.iter().any(|slot| {
+            matches!(
+                slot.warmup_state,
+                RuntimeWarmupState::Cold
+                    | RuntimeWarmupState::Preparing
+                    | RuntimeWarmupState::Blocked
+            )
+        });
+        let stage_hotspot_pressure = repeated_hotspot.is_some();
+        let mixed_bottlenecks = [
+            queue_pressure,
+            capacity_pressure,
+            cold_or_warmup_pressure,
+            stage_hotspot_pressure,
+        ]
+        .into_iter()
+        .filter(|flag| *flag)
+        .count()
+            > 1;
+        let mut caveats = Vec::new();
+        if queue_pressure {
+            caveats.push("queue_backlog_active".to_string());
+        }
+        if cold_or_warmup_pressure {
+            caveats.push("cold_or_warmup_slots_present".to_string());
+        }
+        if stage_hotspot_pressure {
+            caveats.push("repeated_stage_hotspot_pattern".to_string());
+        }
+        if mixed_bottlenecks {
+            caveats.push("mixed_bottleneck_picture".to_string());
+        }
+        let (current_state, main_bottleneck) = if submitted_total == 0 {
+            (
+                "inconclusive".to_string(),
+                "insufficient_signal".to_string(),
+            )
+        } else if mixed_bottlenecks {
+            (
+                "mixed_optimization_picture".to_string(),
+                "mixed".to_string(),
+            )
+        } else if queue_pressure || capacity_pressure {
+            (
+                "constrained_by_capacity".to_string(),
+                "queue_or_capacity".to_string(),
+            )
+        } else if cold_or_warmup_pressure {
+            (
+                "constrained_by_cold_or_warmup".to_string(),
+                "warmup_readiness".to_string(),
+            )
+        } else if stage_hotspot_pressure {
+            (
+                "constrained_by_dominant_stage_hotspot".to_string(),
+                "stage_hotspot".to_string(),
+            )
+        } else if state == RuntimeOpsState::Degraded {
+            (
+                "degraded_but_serviceable".to_string(),
+                "degraded_path".to_string(),
+            )
+        } else {
+            ("healthy_and_efficient".to_string(), "none".to_string())
+        };
+        let historical_feedback_alignment = self
+            .latest_baseline_comparison
+            .as_ref()
+            .map(|comparison| format!("{:?}", comparison.outcome).to_ascii_lowercase())
+            .unwrap_or_else(|| "insufficient_history_signal".to_string());
 
         RuntimeOpsSnapshot {
             state,
@@ -784,6 +874,17 @@ impl CanonicalComputeEntryPoint {
             latest_baseline_comparison: self.latest_baseline_comparison.clone(),
             repeated_hotspot_stage: repeated_hotspot.map(|(stage, _)| stage),
             repeated_hotspot_runs: repeated_hotspot.map(|(_, count)| count).unwrap_or(0),
+            optimization_view: RuntimeOptimizationOpsView {
+                current_state,
+                main_bottleneck,
+                queue_pressure,
+                capacity_pressure,
+                cold_or_warmup_pressure,
+                stage_hotspot_pressure,
+                mixed_bottlenecks,
+                historical_feedback_alignment,
+                caveats,
+            },
             recovery: self.recovery_snapshot.clone(),
         }
     }
@@ -1685,6 +1786,11 @@ mod tests {
         assert_eq!(snapshot.state, RuntimeOpsState::HealthyReady);
         assert_eq!(snapshot.state_signal, RuntimeSignalState::Unknown);
         assert_eq!(snapshot.jobs.submitted_total, 0);
+        assert_eq!(snapshot.optimization_view.current_state, "inconclusive");
+        assert_eq!(
+            snapshot.optimization_view.main_bottleneck,
+            "insufficient_signal"
+        );
     }
 
     #[test]
@@ -1760,6 +1866,8 @@ mod tests {
         let snapshot = entry.operations_snapshot();
         assert!(snapshot.repeated_hotspot_stage.is_some());
         assert!(snapshot.repeated_hotspot_runs >= 2);
+        assert!(snapshot.optimization_view.stage_hotspot_pressure);
+        assert!(!snapshot.optimization_view.current_state.is_empty());
     }
 
     #[test]

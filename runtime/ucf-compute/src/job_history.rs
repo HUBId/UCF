@@ -14,7 +14,7 @@ use crate::pipeline::{
     CanonicalIsolationDisposition, CanonicalPipelineState,
 };
 
-const JOB_HISTORY_SCHEMA_VERSION: u16 = 10;
+const JOB_HISTORY_SCHEMA_VERSION: u16 = 11;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PersistedJobRequestIdentity {
@@ -160,6 +160,17 @@ pub struct PersistedRemoteExecutionContext {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct PersistedOptimizationView {
+    pub state: String,
+    pub bottleneck: String,
+    pub queue_pressure: bool,
+    pub capacity_pressure: bool,
+    pub cold_or_warmup_pressure: bool,
+    pub stage_hotspot_pressure: bool,
+    pub caveats: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PersistedJobRecord {
     pub schema_version: u16,
     pub job_id: u64,
@@ -206,6 +217,8 @@ pub struct PersistedJobRecord {
     pub model_slots: Vec<PersistedModelSlotSummary>,
     #[serde(default)]
     pub remote_execution_context: Option<PersistedRemoteExecutionContext>,
+    #[serde(default)]
+    pub optimization_view: Option<PersistedOptimizationView>,
     #[serde(default)]
     pub recovery_source_job_id: Option<u64>,
     #[serde(default)]
@@ -425,6 +438,7 @@ impl PersistedJobRecord {
                     "not_applicable".to_string()
                 },
             }),
+            optimization_view: Some(build_persisted_optimization_view(accounting)),
             recovery_source_job_id: None,
             recovery_status: None,
             recovery_note: None,
@@ -466,6 +480,79 @@ fn extract_warmup_state(detail: Option<&str>) -> Option<String> {
         Some("cold".to_string())
     } else {
         None
+    }
+}
+
+fn build_persisted_optimization_view(
+    accounting: &crate::compute_service::JobAccountingSummary,
+) -> PersistedOptimizationView {
+    let queue_pressure = matches!(
+        accounting.capacity_queue_disposition,
+        CapacityQueueDisposition::QueuedDueToCapacity
+            | CapacityQueueDisposition::DeferredDueToCapacity
+    ) || accounting.queue_wait_ms.is_some_and(|wait| wait > 0);
+    let capacity_pressure = matches!(
+        accounting.capacity_pressure,
+        CapacityPressure::Constrained
+            | CapacityPressure::Saturated
+            | CapacityPressure::Backpressured
+            | CapacityPressure::TemporarilyUnschedulable
+    );
+    let cold_or_warmup_pressure = accounting
+        .model_slots
+        .iter()
+        .filter_map(|slot| extract_warmup_state(slot.detail.as_deref()))
+        .any(|state| state == "cold" || state == "blocked" || state == "stale");
+    let stage_hotspot_pressure = accounting.hotspot_summary.is_some_and(|hotspot| {
+        hotspot.degraded_stage_count > 0
+            || hotspot
+                .dominant_stage_share_bps
+                .is_some_and(|bps| bps >= 6_500)
+    });
+    let mut caveats = Vec::new();
+    if queue_pressure {
+        caveats.push("queue_pressure".to_string());
+    }
+    if capacity_pressure {
+        caveats.push("capacity_pressure".to_string());
+    }
+    if cold_or_warmup_pressure {
+        caveats.push("cold_or_warmup_pressure".to_string());
+    }
+    if stage_hotspot_pressure {
+        caveats.push("stage_hotspot_or_degraded_path".to_string());
+    }
+    let signals = [
+        queue_pressure,
+        capacity_pressure,
+        cold_or_warmup_pressure,
+        stage_hotspot_pressure,
+    ]
+    .into_iter()
+    .filter(|s| *s)
+    .count();
+    let (state, bottleneck) = if signals == 0 {
+        ("healthy_and_efficient", "none")
+    } else if signals > 1 {
+        ("mixed_optimization_picture", "mixed")
+    } else if queue_pressure || capacity_pressure {
+        ("constrained_by_capacity", "capacity_or_queue")
+    } else if cold_or_warmup_pressure {
+        ("constrained_by_cold_or_warmup", "warmup_readiness")
+    } else if stage_hotspot_pressure {
+        ("constrained_by_dominant_stage_hotspot", "stage_hotspot")
+    } else {
+        ("inconclusive", "none")
+    };
+
+    PersistedOptimizationView {
+        state: state.to_string(),
+        bottleneck: bottleneck.to_string(),
+        queue_pressure,
+        capacity_pressure,
+        cold_or_warmup_pressure,
+        stage_hotspot_pressure,
+        caveats,
     }
 }
 
@@ -770,6 +857,7 @@ mod tests {
         assert!(!loaded.stage_profiles.is_empty());
         assert!(!loaded.stage_cost_attribution.is_empty());
         assert!(loaded.hotspot_summary.is_some());
+        assert!(loaded.optimization_view.is_some());
     }
 
     #[test]
@@ -801,5 +889,6 @@ mod tests {
             Some("service_runtime_impact")
         );
         assert_eq!(loaded.fault_systemic, Some(true));
+        assert!(loaded.optimization_view.is_some());
     }
 }
