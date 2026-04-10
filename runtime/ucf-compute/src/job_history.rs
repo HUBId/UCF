@@ -7,14 +7,14 @@ use thiserror::Error;
 
 use crate::compute_service::{
     CapacityPressure, CapacityQueueDisposition, JobCompletionClass, JobId, JobLifecycleState,
-    JobRecord, ResourceClass,
+    JobRecord, ResourceClass, WorkCostProvenance, WorkCostTension,
 };
 use crate::pipeline::{
     classify_failure_kind, CanonicalFailureKind, CanonicalFaultDomain,
     CanonicalIsolationDisposition, CanonicalPipelineState,
 };
 
-const JOB_HISTORY_SCHEMA_VERSION: u16 = 8;
+const JOB_HISTORY_SCHEMA_VERSION: u16 = 9;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PersistedJobRequestIdentity {
@@ -55,6 +55,24 @@ pub struct PersistedWorkSummary {
     pub ssm_remaining_units: u64,
     pub lfm_remaining_units: u64,
     pub budget_exceeded_stage: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct PersistedWorkCostSummary {
+    pub provenance: String,
+    pub resource_class: String,
+    pub estimated_total_work_units: u64,
+    pub runtime_consumed_work_units: Option<u64>,
+    pub runtime_remaining_work_units: Option<u64>,
+    pub dominant_stage: Option<String>,
+    pub dominant_stage_share_bps: Option<u16>,
+    pub degraded_stage_count: u8,
+    pub retry_attempts: u8,
+    pub redispatched_to_local: bool,
+    pub queue_deferred_by_capacity: bool,
+    pub pressure: String,
+    pub queue_disposition: String,
+    pub tension: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -145,6 +163,8 @@ pub struct PersistedJobRecord {
     #[serde(default)]
     pub backend_route: Option<PersistedBackendRouteSummary>,
     pub work_summary: Option<PersistedWorkSummary>,
+    #[serde(default)]
+    pub work_cost_summary: Option<PersistedWorkCostSummary>,
     #[serde(default)]
     pub stage_profiles: Vec<PersistedStageProfileSummary>,
     #[serde(default)]
@@ -245,6 +265,27 @@ impl PersistedJobRecord {
                 ssm_remaining_units: summary.ssm_remaining_units,
                 lfm_remaining_units: summary.lfm_remaining_units,
                 budget_exceeded_stage: summary.budget_exceeded_stage.map(str::to_string),
+            }),
+            work_cost_summary: accounting.work_cost_summary.as_ref().map(|summary| {
+                PersistedWorkCostSummary {
+                    provenance: work_cost_provenance_name(summary.provenance).to_string(),
+                    resource_class: resource_class_name(summary.resource_class).to_string(),
+                    estimated_total_work_units: summary.estimated_total_work_units,
+                    runtime_consumed_work_units: summary.runtime_consumed_work_units,
+                    runtime_remaining_work_units: summary.runtime_remaining_work_units,
+                    dominant_stage: summary
+                        .dominant_stage
+                        .map(|stage| format!("{:?}", stage).to_ascii_lowercase()),
+                    dominant_stage_share_bps: summary.dominant_stage_share_bps,
+                    degraded_stage_count: summary.degraded_stage_count,
+                    retry_attempts: summary.retry_attempts,
+                    redispatched_to_local: summary.redispatched_to_local,
+                    queue_deferred_by_capacity: summary.queue_deferred_by_capacity,
+                    pressure: capacity_pressure_name(summary.pressure).to_string(),
+                    queue_disposition: capacity_queue_disposition_name(summary.queue_disposition)
+                        .to_string(),
+                    tension: work_cost_tension_name(summary.tension).to_string(),
+                }
             }),
             stage_profiles: accounting
                 .stage_profiles
@@ -584,6 +625,23 @@ fn capacity_pressure_name(pressure: CapacityPressure) -> &'static str {
         CapacityPressure::Saturated => "saturated",
         CapacityPressure::Backpressured => "backpressured",
         CapacityPressure::TemporarilyUnschedulable => "temporarily_unschedulable",
+    }
+}
+
+fn work_cost_provenance_name(provenance: WorkCostProvenance) -> &'static str {
+    match provenance {
+        WorkCostProvenance::EstimatedFromBudget => "estimated_from_budget",
+        WorkCostProvenance::RuntimeMeasured => "runtime_measured",
+    }
+}
+
+fn work_cost_tension_name(tension: WorkCostTension) -> &'static str {
+    match tension {
+        WorkCostTension::Nominal => "nominal",
+        WorkCostTension::ExpensiveButSuccessful => "expensive_but_successful",
+        WorkCostTension::ExpensiveAndDegraded => "expensive_and_degraded",
+        WorkCostTension::RetriedWithAdditionalCost => "retried_with_additional_cost",
+        WorkCostTension::LowCostButBlocked => "low_cost_but_blocked",
     }
 }
 
