@@ -167,6 +167,24 @@ Runtime/job provenance now includes resource class, queue/reject capacity dispos
 capacity pressure (`nominal|saturated|overloaded`) so ops/history can separate scheduling-capacity
 decisions from execution failures.
 
+### Consolidated work/cost runtime signals (Serie C)
+
+Runtime now keeps one narrow `ConsolidatedWorkCostSummary` across scheduling/accounting/history:
+
+- **provenance-aware** (`estimated_from_budget` vs `runtime_measured`) so consumers can distinguish
+  admission-time estimates from measured run summaries;
+- **job-level summary** (estimated work, consumed/remaining work when available, pressure,
+  queue/disposition);
+- **stage/hotspot hook** (dominant stage + share, degraded stage count) without introducing a new
+  profiling platform;
+- **failure/degradation tension semantics** (`expensive_but_successful`,
+  `expensive_and_degraded`, `retried_with_additional_cost`, `low_cost_but_blocked`) for load-bearing
+  diagnostics.
+
+Scheduling/placement uses the same signals for queue/defer/reject and fallback outcomes, and
+pressure snapshots now expose queued `light|standard|heavy` counts so capacity pressure can be tied
+to job-class work mix.
+
 ## Backend selection (runtime)
 
 The orchestrator can be bootstrapped from env config via `RuntimeOrchestrator::try_new_from_env`.

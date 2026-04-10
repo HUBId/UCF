@@ -90,6 +90,39 @@ impl ResourceClass {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkCostProvenance {
+    EstimatedFromBudget,
+    RuntimeMeasured,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkCostTension {
+    Nominal,
+    ExpensiveButSuccessful,
+    ExpensiveAndDegraded,
+    RetriedWithAdditionalCost,
+    LowCostButBlocked,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConsolidatedWorkCostSummary {
+    pub provenance: WorkCostProvenance,
+    pub resource_class: ResourceClass,
+    pub estimated_total_work_units: u64,
+    pub runtime_consumed_work_units: Option<u64>,
+    pub runtime_remaining_work_units: Option<u64>,
+    pub dominant_stage: Option<CanonicalStageId>,
+    pub dominant_stage_share_bps: Option<u16>,
+    pub degraded_stage_count: u8,
+    pub retry_attempts: u8,
+    pub redispatched_to_local: bool,
+    pub queue_deferred_by_capacity: bool,
+    pub pressure: CapacityPressure,
+    pub queue_disposition: CapacityQueueDisposition,
+    pub tension: WorkCostTension,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CapacityPressure {
     Healthy,
     Constrained,
@@ -120,6 +153,7 @@ pub struct JobAccountingSummary {
     pub total_duration_ms: Option<u64>,
     pub failure_kind: Option<CanonicalFailureKind>,
     pub work_summary: Option<CanonicalWorkSummary>,
+    pub work_cost_summary: Option<ConsolidatedWorkCostSummary>,
     pub stage_profiles: Vec<CanonicalStageProfile>,
     pub hotspot_summary: Option<CanonicalHotspotSummary>,
     pub pipeline_state: Option<CanonicalPipelineState>,
@@ -272,6 +306,12 @@ impl InMemoryComputeService {
                 total_duration_ms: None,
                 failure_kind: None,
                 work_summary: None,
+                work_cost_summary: Some(estimated_work_cost_summary(
+                    &request,
+                    resource_class,
+                    CapacityPressure::Healthy,
+                    CapacityQueueDisposition::None,
+                )),
                 stage_profiles: Vec::new(),
                 hotspot_summary: None,
                 pipeline_state: None,
@@ -332,6 +372,12 @@ impl InMemoryComputeService {
                 } else {
                     CapacityPressure::Saturated
                 };
+                record.accounting.work_cost_summary = Some(estimated_work_cost_summary(
+                    &record.job.request,
+                    record.accounting.resource_class,
+                    record.accounting.capacity_pressure,
+                    record.accounting.capacity_queue_disposition,
+                ));
                 self.queue.push_back(job_id);
                 self.record_event(JobLifecycleEvent {
                     job_id,
@@ -379,6 +425,12 @@ impl InMemoryComputeService {
                 record.accounting.queue_wait_ms =
                     Some(started_at_unix_ms.saturating_sub(record.accounting.submitted_at_unix_ms));
                 record.accounting.capacity_queue_disposition = CapacityQueueDisposition::None;
+                record.accounting.work_cost_summary = Some(estimated_work_cost_summary(
+                    &record.job.request,
+                    record.accounting.resource_class,
+                    record.accounting.capacity_pressure,
+                    record.accounting.capacity_queue_disposition,
+                ));
                 record.job.request.clone()
             }
             None => return Ok(()),
@@ -466,6 +518,17 @@ impl InMemoryComputeService {
             record.accounting.executed_stages = canonical_result.executed_stages.clone();
             record.accounting.model_slots = canonical_result.model_slots.clone();
         }
+        record.accounting.work_cost_summary = Some(runtime_work_cost_summary(
+            &record.job.request,
+            record.accounting.resource_class,
+            record.accounting.work_summary,
+            record.accounting.hotspot_summary,
+            record.accounting.completion_class,
+            record.accounting.capacity_pressure,
+            record.accounting.capacity_queue_disposition,
+            1,
+            false,
+        ));
         self.running.remove(&job_id);
         if let Some(failure) = execution_failure {
             self.record_event(JobLifecycleEvent {
@@ -854,6 +917,7 @@ pub struct MultiWorkerJobRecord {
     pub state: JobLifecycleState,
     pub execution_failure: Option<CanonicalPipelineFailure>,
     pub result: Option<CanonicalPipelineResult>,
+    pub work_cost_summary: ConsolidatedWorkCostSummary,
     pub placement: ExecutionPlacement,
     pub worker_dispatch_outcome: Option<WorkerDispatchOutcome>,
     pub placement_failure: Option<PlacementFailureKind>,
@@ -1005,6 +1069,9 @@ pub struct ExecutionUnitSnapshot {
 pub struct DistributedPressureSnapshot {
     pub service_pressure: CapacityPressure,
     pub queued_jobs: usize,
+    pub queued_light_jobs: usize,
+    pub queued_standard_jobs: usize,
+    pub queued_heavy_jobs: usize,
     pub saturated_units: Vec<ExecutionUnitId>,
     pub constrained_units: Vec<ExecutionUnitId>,
     pub backpressured_units: Vec<ExecutionUnitId>,
@@ -1280,6 +1347,12 @@ impl MultiWorkerComputeService {
                             state: JobLifecycleState::Queued,
                             execution_failure: None,
                             result: None,
+                            work_cost_summary: estimated_work_cost_summary(
+                                &job.request,
+                                job.resource_class,
+                                CapacityPressure::TemporarilyUnschedulable,
+                                CapacityQueueDisposition::DeferredDueToCapacity,
+                            ),
                             placement,
                             worker_dispatch_outcome: worker_dispatch_outcome
                                 .or(Some(WorkerDispatchOutcome::Deferred)),
@@ -1312,6 +1385,12 @@ impl MultiWorkerComputeService {
                                 detail: format!("worker placement failed: {}", requested_unit.0),
                             }),
                             result: None,
+                            work_cost_summary: estimated_work_cost_summary(
+                                &job.request,
+                                job.resource_class,
+                                CapacityPressure::Backpressured,
+                                CapacityQueueDisposition::RejectedDueToCapacity,
+                            ),
                             placement,
                             worker_dispatch_outcome,
                             placement_failure: Some(placement_failure),
@@ -1359,6 +1438,12 @@ impl MultiWorkerComputeService {
                             },
                         }),
                         result: None,
+                        work_cost_summary: estimated_work_cost_summary(
+                            &job.request,
+                            job.resource_class,
+                            CapacityPressure::Backpressured,
+                            CapacityQueueDisposition::RejectedDueToCapacity,
+                        ),
                         placement,
                         worker_dispatch_outcome,
                         placement_failure: Some(match scheduling {
@@ -1480,6 +1565,16 @@ impl MultiWorkerComputeService {
                 }
             }
         }
+        let mut queued_light_jobs = 0usize;
+        let mut queued_standard_jobs = 0usize;
+        let mut queued_heavy_jobs = 0usize;
+        for queued in &self.queue {
+            match queued.resource_class {
+                ResourceClass::Light => queued_light_jobs += 1,
+                ResourceClass::Standard => queued_standard_jobs += 1,
+                ResourceClass::Heavy => queued_heavy_jobs += 1,
+            }
+        }
         DistributedPressureSnapshot {
             service_pressure: if !self.queue.is_empty() && backpressured_units.is_empty() {
                 CapacityPressure::TemporarilyUnschedulable
@@ -1494,6 +1589,9 @@ impl MultiWorkerComputeService {
                 )
             },
             queued_jobs: self.queue.len(),
+            queued_light_jobs,
+            queued_standard_jobs,
+            queued_heavy_jobs,
             saturated_units,
             constrained_units,
             backpressured_units,
@@ -1981,6 +2079,12 @@ impl MultiWorkerComputeService {
                 state: JobLifecycleState::Failed,
                 execution_failure: Some(failure),
                 result: None,
+                work_cost_summary: estimated_work_cost_summary(
+                    &job.request,
+                    job.resource_class,
+                    placement.capacity_pressure,
+                    CapacityQueueDisposition::RejectedDueToCapacity,
+                ),
                 placement,
                 worker_dispatch_outcome: Some(WorkerDispatchOutcome::Unavailable),
                 placement_failure: Some(PlacementFailureKind::BackendUnavailable),
@@ -2083,11 +2187,28 @@ impl MultiWorkerComputeService {
                         return redispatched;
                     }
                 }
+                let work_cost_summary = runtime_work_cost_summary(
+                    &job.request,
+                    job.resource_class,
+                    result.as_ref().map(|r| r.diagnostics.work),
+                    result.as_ref().map(|r| r.diagnostics.hotspots),
+                    completion_class_for(
+                        state,
+                        &execution_failure,
+                        placement.execution_path,
+                        result.as_ref(),
+                    ),
+                    placement.capacity_pressure,
+                    CapacityQueueDisposition::None,
+                    1,
+                    false,
+                );
                 MultiWorkerJobRecord {
                     id: job.id,
                     state,
                     execution_failure,
                     result,
+                    work_cost_summary,
                     placement,
                     worker_dispatch_outcome: dispatch_outcome,
                     placement_failure: None,
@@ -2142,6 +2263,12 @@ impl MultiWorkerComputeService {
                         detail: format!("worker transport failure: {}", failed_unit.0),
                     }),
                     result: None,
+                    work_cost_summary: estimated_work_cost_summary(
+                        &job.request,
+                        job.resource_class,
+                        placement.capacity_pressure,
+                        CapacityQueueDisposition::RejectedDueToCapacity,
+                    ),
                     placement,
                     worker_dispatch_outcome: Some(WorkerDispatchOutcome::TransportFailure),
                     placement_failure: Some(PlacementFailureKind::WorkerPlacementFailed),
@@ -2211,6 +2338,12 @@ impl MultiWorkerComputeService {
                     state,
                     execution_failure: Some(failure),
                     result: None,
+                    work_cost_summary: estimated_work_cost_summary(
+                        &job.request,
+                        job.resource_class,
+                        placement.capacity_pressure,
+                        CapacityQueueDisposition::RejectedDueToCapacity,
+                    ),
                     placement,
                     worker_dispatch_outcome: Some(dispatch_outcome),
                     placement_failure: Some(PlacementFailureKind::WorkerPlacementFailed),
@@ -2303,11 +2436,28 @@ impl MultiWorkerComputeService {
                 }
                 distributed.state = DistributedPlacementState::AdmissibleDegradedOnly;
                 distributed.locality = DistributedPlacementLocality::LocalAndRemote;
+                let work_cost_summary = runtime_work_cost_summary(
+                    &job.request,
+                    job.resource_class,
+                    result.as_ref().map(|r| r.diagnostics.work),
+                    result.as_ref().map(|r| r.diagnostics.hotspots),
+                    completion_class_for(
+                        state,
+                        &execution_failure,
+                        JobExecutionPath::LocalCanonical,
+                        result.as_ref(),
+                    ),
+                    local.capacity_pressure(),
+                    CapacityQueueDisposition::DegradedPlacementDueToPressure,
+                    2,
+                    true,
+                );
                 Some(MultiWorkerJobRecord {
                     id: job.id,
                     state,
                     execution_failure,
                     result,
+                    work_cost_summary,
                     placement: ExecutionPlacement {
                         unit_id: local.id.clone(),
                         unit_kind: ExecutionUnitKind::Local,
@@ -2581,6 +2731,107 @@ fn capacity_pressure_for(
     }
 }
 
+fn estimated_work_cost_summary(
+    request: &CanonicalPipelineRequest,
+    resource_class: ResourceClass,
+    pressure: CapacityPressure,
+    queue_disposition: CapacityQueueDisposition,
+) -> ConsolidatedWorkCostSummary {
+    let estimated_total_work_units = request.budget.global_work_units;
+    ConsolidatedWorkCostSummary {
+        provenance: WorkCostProvenance::EstimatedFromBudget,
+        resource_class,
+        estimated_total_work_units,
+        runtime_consumed_work_units: None,
+        runtime_remaining_work_units: None,
+        dominant_stage: None,
+        dominant_stage_share_bps: None,
+        degraded_stage_count: 0,
+        retry_attempts: 1,
+        redispatched_to_local: false,
+        queue_deferred_by_capacity: matches!(
+            queue_disposition,
+            CapacityQueueDisposition::QueuedDueToCapacity
+                | CapacityQueueDisposition::DeferredDueToCapacity
+        ),
+        pressure,
+        queue_disposition,
+        tension: if matches!(
+            queue_disposition,
+            CapacityQueueDisposition::RejectedDueToCapacity
+        ) {
+            WorkCostTension::LowCostButBlocked
+        } else {
+            WorkCostTension::Nominal
+        },
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn runtime_work_cost_summary(
+    request: &CanonicalPipelineRequest,
+    resource_class: ResourceClass,
+    work_summary: Option<CanonicalWorkSummary>,
+    hotspot_summary: Option<CanonicalHotspotSummary>,
+    completion_class: JobCompletionClass,
+    pressure: CapacityPressure,
+    queue_disposition: CapacityQueueDisposition,
+    retry_attempts: u8,
+    redispatched_to_local: bool,
+) -> ConsolidatedWorkCostSummary {
+    let estimated_total_work_units = request.budget.global_work_units;
+    let (runtime_consumed_work_units, runtime_remaining_work_units) = work_summary
+        .map(|work| {
+            (
+                Some(
+                    work.global_budget_units
+                        .saturating_sub(work.global_remaining_units),
+                ),
+                Some(work.global_remaining_units),
+            )
+        })
+        .unwrap_or((None, None));
+    let degraded_stage_count = hotspot_summary
+        .map(|hotspot| hotspot.degraded_stage_count)
+        .unwrap_or(0);
+    let tension = if retry_attempts > 1 {
+        WorkCostTension::RetriedWithAdditionalCost
+    } else if degraded_stage_count > 0 {
+        WorkCostTension::ExpensiveAndDegraded
+    } else if matches!(completion_class, JobCompletionClass::Completed)
+        && runtime_consumed_work_units
+            .map(|consumed| {
+                consumed.saturating_mul(10) >= estimated_total_work_units.saturating_mul(8)
+            })
+            .unwrap_or(false)
+    {
+        WorkCostTension::ExpensiveButSuccessful
+    } else {
+        WorkCostTension::Nominal
+    };
+    ConsolidatedWorkCostSummary {
+        provenance: WorkCostProvenance::RuntimeMeasured,
+        resource_class,
+        estimated_total_work_units,
+        runtime_consumed_work_units,
+        runtime_remaining_work_units,
+        dominant_stage: hotspot_summary.and_then(|hotspot| hotspot.dominant_stage),
+        dominant_stage_share_bps: hotspot_summary
+            .and_then(|hotspot| hotspot.dominant_stage_share_bps),
+        degraded_stage_count,
+        retry_attempts,
+        redispatched_to_local,
+        queue_deferred_by_capacity: matches!(
+            queue_disposition,
+            CapacityQueueDisposition::QueuedDueToCapacity
+                | CapacityQueueDisposition::DeferredDueToCapacity
+        ),
+        pressure,
+        queue_disposition,
+        tension,
+    }
+}
+
 fn placement_failure_kind(
     suitability: PlacementSuitability,
     device_suitability: DeviceSuitability,
@@ -2708,8 +2959,9 @@ mod tests {
         InFlightCoordinationState, InMemoryComputeService, JobCompletionClass,
         JobCoordinationSnapshot, JobExecutionPath, JobLifecycleState, JobSubmissionMeta,
         MultiWorkerComputeService, PlacementFailureKind, PlacementSuitability, RecoverySignal,
-        ResourceClass, SchedulerConfig, TerminalCoordinationInput, WorkerAvailability, WorkerClass,
-        WorkerDispatchOutcome, WorkerRecoveryKind, WorkerRegistryRole, WorkerRuntimeStatus,
+        ResourceClass, SchedulerConfig, TerminalCoordinationInput, WorkCostProvenance,
+        WorkCostTension, WorkerAvailability, WorkerClass, WorkerDispatchOutcome,
+        WorkerRecoveryKind, WorkerRegistryRole, WorkerRuntimeStatus,
     };
 
     struct NullLlm;
@@ -2853,6 +3105,16 @@ mod tests {
             record.accounting.capacity_queue_disposition,
             CapacityQueueDisposition::QueuedDueToCapacity
         );
+        let work_cost = record
+            .accounting
+            .work_cost_summary
+            .as_ref()
+            .expect("work/cost summary");
+        assert_eq!(
+            work_cost.provenance,
+            WorkCostProvenance::EstimatedFromBudget
+        );
+        assert_eq!(work_cost.tension, WorkCostTension::Nominal);
         assert_eq!(
             service
                 .lifecycle_events()
@@ -3116,6 +3378,12 @@ mod tests {
         assert!(record.accounting.execution_duration_micros.is_some());
         assert!(record.accounting.total_duration_ms.is_some());
         assert!(record.accounting.work_summary.is_some());
+        let work_cost = record
+            .accounting
+            .work_cost_summary
+            .as_ref()
+            .expect("work/cost summary");
+        assert_eq!(work_cost.provenance, WorkCostProvenance::RuntimeMeasured);
         assert!(!record.accounting.stage_profiles.is_empty());
         assert!(record.accounting.hotspot_summary.is_some());
         assert!(record.accounting.pipeline_state.is_some());
@@ -3906,12 +4174,20 @@ mod tests {
             record.capacity_disposition,
             CapacityQueueDisposition::DeferredDueToCapacity
         );
+        assert_eq!(
+            record.work_cost_summary.provenance,
+            WorkCostProvenance::EstimatedFromBudget
+        );
+        assert!(record.work_cost_summary.queue_deferred_by_capacity);
         let pressure = service.pressure_snapshot();
         assert_eq!(
             pressure.service_pressure,
             CapacityPressure::TemporarilyUnschedulable
         );
         assert_eq!(pressure.queued_jobs, 1);
+        assert_eq!(pressure.queued_light_jobs, 1);
+        assert_eq!(pressure.queued_standard_jobs, 0);
+        assert_eq!(pressure.queued_heavy_jobs, 0);
     }
 
     #[test]
