@@ -42,3 +42,7 @@ Die abgeleitete Optimization-View unterscheidet jetzt explizit:
 - Keine adaptive globale Optimierungsplattform.
 - Keine neue Monitoring-/BI-/Dashboard-Datenplattform.
 - Ableitung bleibt deterministisch und stützt sich nur auf bereits vorhandene Runtime-Diagnostik plus minimale Konsolidierungslogik.
+
+## Serie-C-Abschlussreferenz
+
+Für die harte Abschlussmatrix inkl. expliziter Abschlusslinie und nächster priorisierter Vertiefungsserie siehe `docs/ops/serie_c_capacity_cost_runtime_closure.md`.
