@@ -25,7 +25,17 @@ This document defines the canonical, minimal pressure semantics used by `runtime
 ## Admission / placement / retry coupling
 
 - Admission remains canonical and technical; pressure does not create a second policy world.
-- Placement evaluates worker suitability plus free-vs-used capacity units.
+- Placement evaluates a single input view that combines:
+  - worker/runtime health and availability (`runtime_status`, dispatch eligibility),
+  - capacity/pressure (`free_capacity_units`, `capacity_pressure`),
+  - backend + device capability/suitability,
+  - warmup/readiness (`warm|prepared|cold|stale|blocked`),
+  - work class pressure (`light|standard|heavy` via capacity weight).
+- Placement uses small deterministic heuristics (not scoring/optimization):
+  - prefer technically suitable healthy candidates over marginal ones,
+  - prefer warm-ready over equivalent cold/prepared paths,
+  - avoid saturated/backpressured paths when comparable alternatives exist,
+  - use local/remote fallback only with explicit technical cause.
 - Retry/redispatch uses existing coordination signals and can mark degraded pressure-driven fallback explicitly.
 
 ## Visibility surface
@@ -37,6 +47,17 @@ This document defines the canonical, minimal pressure semantics used by `runtime
   - unit sets: `placement_eligible_units`, `excluded_units`, `recovered_units`
   - impact counters: `queued_jobs`, `uncertain_jobs`, `recovery_required_jobs`
 - Job records/history retain pressure and queue disposition fields for provenance.
+- Placement provenance now exposes:
+  - selected outcome (`optimal|constrained_valid|degraded_valid|queued/deferred constrained|hard_incompatible`),
+  - up to 1-3 decisive signals (for example warmup, runtime pressure, locality/backend fit),
+  - explicit reason text for queue/defer/fallback/degraded decisions.
+
+## Queue / defer / fallback / degraded semantics
+
+- `queued_due_to_capacity`: admissible work is held to wait for a better placement path.
+- `deferred_due_to_capacity`: all currently suitable paths are constrained/temporarily unavailable.
+- `degraded_placement_due_to_pressure`: degraded-but-valid path was selected (e.g. local redispatch after worker pressure/failure).
+- `rejected_due_to_capacity`: no acceptable placement was available under current hard constraints.
 
 ## Non-goals
 
