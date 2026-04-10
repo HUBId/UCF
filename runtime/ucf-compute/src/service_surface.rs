@@ -165,6 +165,7 @@ pub enum RuntimeWarmupState {
     Cold,
     Preparing,
     Ready,
+    Stale,
     Blocked,
     Unknown,
 }
@@ -986,6 +987,13 @@ fn parse_warmup_state(detail: Option<&str>) -> RuntimeWarmupState {
         && (detail.contains("Active:blocked:") || detail.contains("Blocked:blocked:"))
     {
         RuntimeWarmupState::Blocked
+    } else if detail.contains("warmup=")
+        && (detail.contains("Active:stale:")
+            || detail.contains("Candidate:stale:")
+            || detail.contains("Compare:stale:")
+            || detail.contains("Shadow:stale:"))
+    {
+        RuntimeWarmupState::Stale
     } else if detail.contains("warmup=") && detail.contains("Active:cold:") {
         RuntimeWarmupState::Cold
     } else {
@@ -1767,6 +1775,10 @@ mod tests {
         assert_eq!(
             parse_warmup_state(Some("rollout=x;warmup=Active:blocked:warmup failed")),
             RuntimeWarmupState::Blocked
+        );
+        assert_eq!(
+            parse_warmup_state(Some("rollout=x;warmup=Candidate:stale:prefetch expired")),
+            RuntimeWarmupState::Stale
         );
         assert_eq!(
             parse_warmup_state(Some("rollout=x;warmup=Active:cold:not configured")),

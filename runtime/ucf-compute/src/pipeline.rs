@@ -543,6 +543,10 @@ impl ComputePipelineBackend {
             (true, true) => BackendExecutionLane::Mixed,
         }
     }
+
+    pub fn model_slot_provenance(&self) -> &[ModelSlotProvenance] {
+        self.pack.model_slot_provenance()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

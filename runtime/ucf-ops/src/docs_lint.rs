@@ -261,7 +261,22 @@ fn prompt_index_check(args: &DocsLintArgs) -> Result<DocsLintCheck, OpsError> {
 fn module_map_check(args: &DocsLintArgs) -> Result<DocsLintCheck, OpsError> {
     let module_map_body = fs::read_to_string(&args.module_map)?;
     let module_keys = parse_module_map_keys(&module_map_body);
-    let metadata_names = cargo_metadata_package_names(&args.repo_root)?;
+    let metadata_names = match cargo_metadata_package_names(&args.repo_root) {
+        Ok(names) => names,
+        Err(OpsError::Io(err)) if err.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(DocsLintCheck {
+                name: "module_map".to_string(),
+                status: DocsLintStatus::Warn,
+                detail: "cargo metadata unavailable in environment; module_map check skipped"
+                    .to_string(),
+                remediation: Some(
+                    "ensure `cargo` is available in PATH to validate docs/module_map.md against workspace metadata"
+                        .to_string(),
+                ),
+            });
+        }
+        Err(err) => return Err(err),
+    };
 
     let unknown: Vec<String> = module_keys
         .iter()

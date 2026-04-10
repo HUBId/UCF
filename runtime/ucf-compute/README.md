@@ -81,6 +81,29 @@ Multi-worker scheduling remains intentionally compact: jobs are either placed im
 queued as currently-unschedulable (capacity/device temporarily unavailable), or rejected when no
 technical backend/device placement is possible.
 
+### Warmup/readiness-aware placement (Serie C Prompt 3)
+
+Placement candidates now carry a narrow warmup/readiness context derived from required model-slot
+rollout details:
+
+- `warm_ready`
+- `prepared`
+- `cold_runnable`
+- `stale_prepared`
+- `blocked_unavailable`
+
+The scheduler keeps this coupling intentionally small:
+
+- `blocked_unavailable` candidates are treated as not currently placeable and can be deferred.
+- Placeable candidates are ranked by warmup state first (warm > prepared > cold > stale), then by
+  lane preference.
+- Candidate diagnostics include a deterministic `cold_start_penalty_units` hint so runtime
+  decisions can explain why a cold path was still selected (for example due to current
+  capacity/readiness constraints).
+
+This is **not** a global warmup/caching orchestration system; it is a local placement signal that
+feeds existing admission/capacity/ops diagnostics.
+
 ### Distributed admission / placement consistency (Serie A Prompt 5)
 
 Admission and placement now share one worker-crossing diagnostic summary
