@@ -4619,13 +4619,10 @@ mod tests {
             .any(|entry| entry.unit_id == worker_id
                 && entry.warmup == PlacementWarmupState::WarmReady
                 && entry.cold_start_penalty_units == 0));
-        assert!(record
-            .placement
-            .considered
-            .iter()
-            .any(|entry| entry.unit_id == ExecutionUnitId("local".to_string())
-                && entry.warmup == PlacementWarmupState::ColdRunnable
-                && entry.cold_start_penalty_units > 0));
+        assert!(record.placement.considered.iter().any(|entry| entry.unit_id
+            == ExecutionUnitId("local".to_string())
+            && entry.warmup == PlacementWarmupState::ColdRunnable
+            && entry.cold_start_penalty_units > 0));
     }
 
     #[test]
