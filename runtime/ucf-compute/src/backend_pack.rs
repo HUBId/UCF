@@ -1052,7 +1052,7 @@ fn rollout_status_detail(
         .collect::<Vec<_>>()
         .join("|");
     format!(
-        "{path};warmup={warmup};promotion_state={:?};promotion_transition={transition};promotion_blockers={blockers};baseline_ready={};runtime_ready={};readiness_ok={};degraded={};compare_shadow_context={:?};compare_outcome={:?};shadow_outcome={:?};promotion_disposition={:?};activation_scope={:?};resulting_scope={:?};guardrail_reasons={:?};rollout_progress={:?};rollout_blockers={:?};rollout_situation={:?};rollout_supporting_groups={:?};rollout_blocking_groups={:?};rollout_tensions={:?};rollout_events={}",
+        "{path};warmup={warmup};promotion_state={:?};promotion_transition={transition};promotion_blockers={blockers};baseline_ready={};runtime_ready={};readiness_ok={};degraded={};compare_shadow_context={:?};compare_outcome={:?};shadow_outcome={:?};promotion_disposition={:?};activation_scope={:?};resulting_scope={:?};guardrail_reasons={:?};rollout_problem_kind={:?};rollout_recovery_outcome={:?};rollout_progress={:?};rollout_blockers={:?};rollout_situation={:?};rollout_supporting_groups={:?};rollout_blocking_groups={:?};rollout_tensions={:?};rollout_events={}",
         promotion.state,
         promotion.signals.baseline_comparison_ready,
         promotion.signals.runtime_path_production_usable,
@@ -1065,6 +1065,8 @@ fn rollout_status_detail(
         rollout.activation_scope,
         rollout.resulting_scope,
         rollout.guardrail_reasons,
+        rollout.problem_kind,
+        rollout.recovery_outcome,
         rollout.progress,
         rollout.blockers,
         rollout.consolidated.situation,
