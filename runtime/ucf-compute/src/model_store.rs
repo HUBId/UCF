@@ -340,6 +340,34 @@ pub enum RolloutProgressClassification {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
+pub enum RolloutActivationScope {
+    NotActive,
+    CompareShadowOnly,
+    GuardedActive,
+    FullyActive,
+    Blocked,
+    Reverted,
+}
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum GuardrailReason {
+    CandidateBlockedForPromotion,
+    MissingBaselineComparisonSignal,
+    MissingCompareOrShadowSignal,
+    RuntimePathNotProductionUsable,
+    DegradedBeyondAcceptableThreshold,
+    ActivationBlocked,
+    ActivationFailedTechnically,
+    GuardedActivationNotStable,
+    FallbackToPriorActive,
+    RollbackAfterGuardedActivation,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum RolloutEventKind {
     CandidateIntroduced,
     CandidateComparedOrShadowed,
@@ -351,8 +379,12 @@ pub enum RolloutEventKind {
     ActivationDegraded,
     ActivationBlocked,
     ActivationFailedTechnically,
+    GuardedActivationLimited,
+    GuardrailViolationDetected,
     FallbackOccurred,
+    GuardrailFallbackToPriorActive,
     RollbackOccurred,
+    GuardrailRollbackAfterGuardedActivation,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -375,6 +407,9 @@ pub struct SlotRolloutDiagnostics {
     pub compare_outcome: ComparePathOutcome,
     pub shadow_outcome: ShadowPathOutcome,
     pub activation_outcome: ActivationOutcome,
+    pub activation_scope: RolloutActivationScope,
+    pub resulting_scope: RolloutActivationScope,
+    pub guardrail_reasons: Vec<GuardrailReason>,
     pub fallback: ActivationFallbackState,
     pub rollback: RollbackOutcome,
     pub progress: RolloutProgressClassification,
@@ -389,6 +424,8 @@ pub struct SlotActivationAssessment {
     pub prior_active_hash: Option<String>,
     pub resulting_active_hash: Option<String>,
     pub outcome: ActivationOutcome,
+    pub scope: RolloutActivationScope,
+    pub guardrail_reasons: Vec<GuardrailReason>,
     pub fallback: ActivationFallbackState,
     pub rollback: RollbackOutcome,
     pub promotion_state: PromotionDecisionState,
@@ -731,6 +768,8 @@ impl ModelStore {
             prior_active_hash: prior_active_hash.clone(),
             resulting_active_hash: prior_active_hash.clone(),
             outcome: ActivationOutcome::Pending,
+            scope: RolloutActivationScope::NotActive,
+            guardrail_reasons: Vec::new(),
             fallback: ActivationFallbackState::NotUsed,
             rollback: RollbackOutcome::NotRequested,
             promotion_state: promotion.state,
@@ -743,6 +782,10 @@ impl ModelStore {
             Ok(_) => {}
             Err(err) => {
                 assessment.outcome = ActivationOutcome::Blocked;
+                assessment.scope = RolloutActivationScope::Blocked;
+                assessment
+                    .guardrail_reasons
+                    .push(GuardrailReason::ActivationBlocked);
                 assessment.blocked_reason = Some(format!("{err:?}"));
                 assessment.fallback =
                     self.fallback_state_for_prior(slot, prior_active_hash.as_deref());
@@ -751,6 +794,10 @@ impl ModelStore {
         }
         if let Err(err) = self.prefetch_promoted_hash(slot, &target_hash) {
             assessment.outcome = ActivationOutcome::FailedTechnically;
+            assessment.scope = RolloutActivationScope::Blocked;
+            assessment
+                .guardrail_reasons
+                .push(GuardrailReason::ActivationFailedTechnically);
             assessment.technical_failure = Some(format!("{err:?}"));
             assessment.fallback = self.fallback_state_for_prior(slot, prior_active_hash.as_deref());
             return assessment;
@@ -763,6 +810,7 @@ impl ModelStore {
                 .is_some_and(|active| active == target_hash)
         {
             assessment.outcome = ActivationOutcome::Succeeded;
+            assessment.scope = RolloutActivationScope::FullyActive;
             assessment.resulting_active_hash = Some(target_hash);
             return assessment;
         }
@@ -779,6 +827,10 @@ impl ModelStore {
             });
             if hard_blocked {
                 assessment.outcome = ActivationOutcome::Blocked;
+                assessment.scope = RolloutActivationScope::Blocked;
+                assessment
+                    .guardrail_reasons
+                    .push(GuardrailReason::CandidateBlockedForPromotion);
                 assessment.blocked_reason = Some(format!(
                     "candidate remains blocked for promotion: {:?}",
                     promotion.blockers
@@ -794,18 +846,51 @@ impl ModelStore {
             || promotion.signals.degraded_beyond_acceptable_threshold
         {
             assessment.outcome = ActivationOutcome::Degraded;
+            assessment.scope = RolloutActivationScope::GuardedActive;
             assessment.degraded_reason = Some(format!(
                 "baseline_ready={};compare_shadow_ready={};degraded_threshold={}",
                 promotion.signals.baseline_comparison_ready,
                 promotion.signals.compare_or_shadow_diagnostic_ready,
                 promotion.signals.degraded_beyond_acceptable_threshold
             ));
+            if !promotion.signals.baseline_comparison_ready {
+                assessment
+                    .guardrail_reasons
+                    .push(GuardrailReason::MissingBaselineComparisonSignal);
+            }
+            if !promotion.signals.compare_or_shadow_diagnostic_ready {
+                assessment
+                    .guardrail_reasons
+                    .push(GuardrailReason::MissingCompareOrShadowSignal);
+            }
+            if promotion.signals.degraded_beyond_acceptable_threshold {
+                assessment
+                    .guardrail_reasons
+                    .push(GuardrailReason::DegradedBeyondAcceptableThreshold);
+            }
+            assessment
+                .guardrail_reasons
+                .push(GuardrailReason::GuardedActivationNotStable);
             if prior_active_hash.as_deref() != Some(target_hash.as_str()) {
                 assessment.fallback =
                     self.fallback_state_for_prior(slot, prior_active_hash.as_deref());
             }
             return assessment;
         }
+        if !promotion.signals.runtime_path_production_usable {
+            assessment
+                .guardrail_reasons
+                .push(GuardrailReason::RuntimePathNotProductionUsable);
+        }
+        assessment.scope = if promotion.candidate_hash.as_deref() == Some(target_hash.as_str()) {
+            RolloutActivationScope::GuardedActive
+        } else if promotion.compare_shadow.compare_hash.as_deref() == Some(target_hash.as_str())
+            || promotion.compare_shadow.shadow_hash.as_deref() == Some(target_hash.as_str())
+        {
+            RolloutActivationScope::CompareShadowOnly
+        } else {
+            RolloutActivationScope::NotActive
+        };
         assessment.outcome = ActivationOutcome::Pending;
         assessment.resulting_active_hash = prior_active_hash;
         assessment
@@ -878,6 +963,13 @@ impl ModelStore {
             self.assess_slot_activation(slot, &target_hash, requested_contract_version);
         let rollback = self.assess_slot_rollback(slot, None, requested_contract_version);
         let candidate_present = promotion.candidate_hash.is_some();
+        let guardrail_issue = matches!(
+            activation.outcome,
+            ActivationOutcome::Blocked
+                | ActivationOutcome::Degraded
+                | ActivationOutcome::FailedTechnically
+        );
+        let rollback_triggered = guardrail_issue && rollback.outcome == RollbackOutcome::Completed;
 
         let mut blockers = Vec::new();
         if promotion
@@ -938,6 +1030,7 @@ impl ModelStore {
         };
 
         let mut events = Vec::new();
+        let mut guardrail_reasons = activation.guardrail_reasons.clone();
         if promotion.candidate_hash.is_some() {
             events.push(RolloutEvent {
                 kind: RolloutEventKind::CandidateIntroduced,
@@ -999,11 +1092,41 @@ impl ModelStore {
                 activation.technical_failure.as_deref().unwrap_or("none")
             ),
         });
+        if activation.scope == RolloutActivationScope::GuardedActive
+            && !matches!(activation.outcome, ActivationOutcome::Succeeded)
+        {
+            events.push(RolloutEvent {
+                kind: RolloutEventKind::GuardedActivationLimited,
+                detail: format!(
+                    "scope={:?} reasons={:?}",
+                    activation.scope, activation.guardrail_reasons
+                ),
+            });
+        }
+        if matches!(
+            activation.outcome,
+            ActivationOutcome::Blocked
+                | ActivationOutcome::Degraded
+                | ActivationOutcome::FailedTechnically
+        ) {
+            events.push(RolloutEvent {
+                kind: RolloutEventKind::GuardrailViolationDetected,
+                detail: format!(
+                    "outcome={:?} fallback={:?} blocked={} degraded={} technical={}",
+                    activation.outcome,
+                    activation.fallback,
+                    activation.blocked_reason.as_deref().unwrap_or("none"),
+                    activation.degraded_reason.as_deref().unwrap_or("none"),
+                    activation.technical_failure.as_deref().unwrap_or("none")
+                ),
+            });
+        }
         if matches!(
             activation.fallback,
             ActivationFallbackState::FallbackToPriorActive
                 | ActivationFallbackState::FallbackUnavailable
         ) {
+            guardrail_reasons.push(GuardrailReason::FallbackToPriorActive);
             events.push(RolloutEvent {
                 kind: RolloutEventKind::FallbackOccurred,
                 detail: format!(
@@ -1012,8 +1135,17 @@ impl ModelStore {
                     hash_prefix(activation.prior_active_hash.as_deref())
                 ),
             });
+            events.push(RolloutEvent {
+                kind: RolloutEventKind::GuardrailFallbackToPriorActive,
+                detail: format!(
+                    "fallback={:?} prior_active={}",
+                    activation.fallback,
+                    hash_prefix(activation.prior_active_hash.as_deref())
+                ),
+            });
         }
-        if rollback.outcome == RollbackOutcome::Completed {
+        if rollback_triggered {
+            guardrail_reasons.push(GuardrailReason::RollbackAfterGuardedActivation);
             events.push(RolloutEvent {
                 kind: RolloutEventKind::RollbackOccurred,
                 detail: format!(
@@ -1023,7 +1155,46 @@ impl ModelStore {
                     rollback.detail
                 ),
             });
+            events.push(RolloutEvent {
+                kind: RolloutEventKind::GuardrailRollbackAfterGuardedActivation,
+                detail: format!(
+                    "rollback_to={} detail={}",
+                    hash_prefix(rollback.rollback_hash.as_deref()),
+                    rollback.detail
+                ),
+            });
         }
+
+        guardrail_reasons.sort();
+        guardrail_reasons.dedup();
+        let activation_scope = if promotion.candidate_hash.is_none()
+            && (promotion.compare_shadow.compare_hash.is_some()
+                || promotion.compare_shadow.shadow_hash.is_some())
+        {
+            RolloutActivationScope::CompareShadowOnly
+        } else if activation.scope == RolloutActivationScope::NotActive
+            && promotion.active_hash.is_some()
+            && activation.outcome == ActivationOutcome::Succeeded
+        {
+            RolloutActivationScope::FullyActive
+        } else {
+            activation.scope
+        };
+        let resulting_scope = if matches!(
+            activation.fallback,
+            ActivationFallbackState::FallbackToPriorActive
+                | ActivationFallbackState::FallbackUnavailable
+        ) || rollback_triggered
+        {
+            RolloutActivationScope::Reverted
+        } else if matches!(
+            activation.outcome,
+            ActivationOutcome::Blocked | ActivationOutcome::FailedTechnically
+        ) {
+            RolloutActivationScope::Blocked
+        } else {
+            activation_scope
+        };
 
         SlotRolloutDiagnostics {
             slot,
@@ -1038,6 +1209,9 @@ impl ModelStore {
             compare_outcome: promotion.compare_shadow.compare_outcome,
             shadow_outcome: promotion.compare_shadow.shadow_outcome,
             activation_outcome: activation.outcome,
+            activation_scope,
+            resulting_scope,
+            guardrail_reasons,
             fallback: activation.fallback,
             rollback: rollback.outcome,
             progress,
@@ -2387,6 +2561,7 @@ enabled = false
 
         let assessment = store.assess_slot_activation(ModelSlot::WorldJepa, &hash, Some("v1"));
         assert_eq!(assessment.outcome, ActivationOutcome::Succeeded);
+        assert_eq!(assessment.scope, RolloutActivationScope::FullyActive);
         assert_eq!(assessment.fallback, ActivationFallbackState::NotUsed);
         assert_eq!(assessment.prior_active_hash.as_deref(), Some(hash.as_str()));
         assert_eq!(
@@ -2439,6 +2614,7 @@ enabled = false
         let assessment =
             store.assess_slot_activation(ModelSlot::WorldJepa, blocked_hash, Some("v1"));
         assert_eq!(assessment.outcome, ActivationOutcome::Blocked);
+        assert_eq!(assessment.scope, RolloutActivationScope::Blocked);
         assert_eq!(
             assessment.fallback,
             ActivationFallbackState::FallbackToPriorActive
@@ -2500,6 +2676,16 @@ enabled = false
         let activation =
             store.assess_slot_activation(ModelSlot::WorldJepa, &candidate_hash, Some("v1"));
         assert_eq!(activation.outcome, ActivationOutcome::Degraded);
+        assert_eq!(activation.scope, RolloutActivationScope::GuardedActive);
+        assert!(activation
+            .guardrail_reasons
+            .contains(&GuardrailReason::MissingBaselineComparisonSignal));
+        assert!(activation
+            .guardrail_reasons
+            .contains(&GuardrailReason::MissingCompareOrShadowSignal));
+        assert!(activation
+            .guardrail_reasons
+            .contains(&GuardrailReason::GuardedActivationNotStable));
         assert_eq!(
             activation.fallback,
             ActivationFallbackState::FallbackToPriorActive
@@ -2569,6 +2755,17 @@ enabled = false
             diagnostics.progress,
             RolloutProgressClassification::FallbackOrRollbackAfterIssue
         );
+        assert_eq!(
+            diagnostics.activation_scope,
+            RolloutActivationScope::GuardedActive
+        );
+        assert_eq!(
+            diagnostics.resulting_scope,
+            RolloutActivationScope::Reverted
+        );
+        assert!(diagnostics
+            .guardrail_reasons
+            .contains(&GuardrailReason::FallbackToPriorActive));
         assert!(diagnostics
             .blockers
             .contains(&RolloutBlockerKind::MissingComparisonSignal));
@@ -2583,6 +2780,10 @@ enabled = false
             .events
             .iter()
             .any(|event| event.kind == RolloutEventKind::ActivationDegraded));
+        assert!(diagnostics
+            .events
+            .iter()
+            .any(|event| event.kind == RolloutEventKind::GuardrailViolationDetected));
         std::env::remove_var("UCF_MODEL_CANDIDATE_WORLD_JEPA");
     }
 
@@ -2633,6 +2834,14 @@ enabled = false
             diagnostics.progress,
             RolloutProgressClassification::Progressed
         );
+        assert_eq!(
+            diagnostics.activation_scope,
+            RolloutActivationScope::FullyActive
+        );
+        assert_eq!(
+            diagnostics.resulting_scope,
+            RolloutActivationScope::FullyActive
+        );
         assert!(diagnostics.blockers.is_empty());
         assert!(diagnostics
             .events
@@ -2646,5 +2855,65 @@ enabled = false
             diagnostics.active_hash.as_deref(),
             Some(active_hash.as_str())
         );
+    }
+
+    #[test]
+    fn rollout_diagnostics_distinguish_compare_shadow_only_scope() {
+        let _lock = crate::test_env::env_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        std::env::remove_var("UCF_MODEL_CANDIDATE_WORLD_JEPA");
+        let temp = tempfile::tempdir().expect("tempdir");
+        let models = temp.path().join("models");
+        fs::create_dir_all(&models).expect("models");
+        let active_bytes = b"verified-model-active";
+        let active_hash = hex::encode(Sha256::digest(active_bytes));
+        let compare_bytes = b"verified-model-compare";
+        let compare_hash = hex::encode(Sha256::digest(compare_bytes));
+        for (hash, bytes) in [
+            (active_hash.as_str(), active_bytes.as_slice()),
+            (compare_hash.as_str(), compare_bytes.as_slice()),
+        ] {
+            let model_path = models
+                .join("promoted")
+                .join("world_jepa")
+                .join(hash)
+                .join("model.safetensors");
+            fs::create_dir_all(model_path.parent().expect("parent")).expect("mkdirs");
+            fs::write(&model_path, bytes).expect("write");
+        }
+        std::env::set_var("UCF_MODEL_COMPARE_WORLD_JEPA", &compare_hash);
+        std::env::remove_var("UCF_MODEL_SHADOW_WORLD_JEPA");
+
+        let mut specs = BTreeMap::new();
+        specs.insert(
+            ModelSlot::WorldJepa,
+            ModelSlotSpec {
+                slot: ModelSlot::WorldJepa,
+                enabled: true,
+                path: None,
+                expected_sha256: parse_hash(&active_hash),
+                max_bytes: 1024,
+                format: ModelFormat::Burn,
+                device: ModelDevice::CpuOnly,
+                active_hash: Some(active_hash),
+                contract_version: Some("v1".to_string()),
+            },
+        );
+        let store = ModelStore {
+            allowlist_root: models,
+            specs,
+        };
+        let diagnostics = store.slot_rollout_diagnostics(ModelSlot::WorldJepa, Some("v1"));
+        assert_eq!(
+            diagnostics.activation_scope,
+            RolloutActivationScope::CompareShadowOnly
+        );
+        assert_eq!(
+            diagnostics.resulting_scope,
+            RolloutActivationScope::CompareShadowOnly
+        );
+
+        std::env::remove_var("UCF_MODEL_COMPARE_WORLD_JEPA");
     }
 }

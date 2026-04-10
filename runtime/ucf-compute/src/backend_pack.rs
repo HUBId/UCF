@@ -1052,7 +1052,7 @@ fn rollout_status_detail(
         .collect::<Vec<_>>()
         .join("|");
     format!(
-        "{path};warmup={warmup};promotion_state={:?};promotion_transition={transition};promotion_blockers={blockers};baseline_ready={};runtime_ready={};readiness_ok={};degraded={};compare_shadow_context={:?};compare_outcome={:?};shadow_outcome={:?};promotion_disposition={:?};rollout_progress={:?};rollout_blockers={:?};rollout_events={}",
+        "{path};warmup={warmup};promotion_state={:?};promotion_transition={transition};promotion_blockers={blockers};baseline_ready={};runtime_ready={};readiness_ok={};degraded={};compare_shadow_context={:?};compare_outcome={:?};shadow_outcome={:?};promotion_disposition={:?};activation_scope={:?};resulting_scope={:?};guardrail_reasons={:?};rollout_progress={:?};rollout_blockers={:?};rollout_events={}",
         promotion.state,
         promotion.signals.baseline_comparison_ready,
         promotion.signals.runtime_path_production_usable,
@@ -1062,6 +1062,9 @@ fn rollout_status_detail(
         promotion.compare_shadow.compare_outcome,
         promotion.compare_shadow.shadow_outcome,
         promotion.disposition,
+        rollout.activation_scope,
+        rollout.resulting_scope,
+        rollout.guardrail_reasons,
         rollout.progress,
         rollout.blockers,
         rollout_events,

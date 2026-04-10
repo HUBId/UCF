@@ -224,6 +224,8 @@ can distinguish:
 - compare/shadow outcome (`compared|shadowed|inconclusive|blocked|failed_technically|not_comparable`)
   and promotion disposition (`candidate_remains_blocked|candidate_more_promotable|
   candidate_comparison_inconclusive|active_path_remains_preferred`).
+- activation scope (`not_active|compare_shadow_only|guarded_active|fully_active|blocked|reverted`)
+  with explicit guardrail reasons and resulting post-fallback/rollback scope.
 
 Boundaries (intentional):
 

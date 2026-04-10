@@ -76,6 +76,13 @@ Golden/negative safetensors fixtures are generated in unit tests at runtime (off
 
 ## Activation / fallback / rollback transition semantics (Serie B hardening)
 - Canonical activation assessment is now explicit via `ModelStore::assess_slot_activation(slot, target_hash, contract_version)`.
+- Activation includes a narrow blast-radius scope classification (`rollout_activation_scope`):
+  - `not_active`: target is not live on production path.
+  - `compare_shadow_only`: candidate is only exercised through compare/shadow path.
+  - `guarded_active`: candidate is activation-intended but held behind technical guardrails.
+  - `fully_active`: candidate/target is the active production hash.
+  - `blocked`: activation is technically blocked/failed.
+  - `reverted`: fallback/rollback kept or restored prior active hash after guardrail pressure.
 - Canonical activation outcomes are intentionally narrow:
   - `pending`: target is technically valid, but not yet the active path.
   - `succeeded`: target hash is already the active verified path (or active reference).
@@ -89,6 +96,8 @@ Golden/negative safetensors fixtures are generated in unit tests at runtime (off
 - Backend slot provenance keeps rollout transition detail in one deterministic string (`rollout=...;activation={...};rollback={...}`) so ops/history/promotion consumers can observe:
   - attempted activation target
   - activation outcome (success/degraded/blocked/failed/pending)
+  - guarded-vs-full activation scope and resulting scope after fallback/rollback
+  - explicit guardrail reasons (baseline/compare/runtime/degraded/fallback/rollback)
   - fallback usage
   - rollback readiness/resulting active hash.
 - Intentional boundary: still no auto-promotion and no automatic operator workflow; this remains a slim technical transition seam.
