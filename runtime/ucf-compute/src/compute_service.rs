@@ -846,8 +846,21 @@ pub struct ExecutionPlacement {
     pub distributed: DistributedPlacementSummary,
     pub warmup: PlacementWarmupState,
     pub cold_start_penalty_units: u16,
+    pub outcome: PlacementOutcome,
+    pub decisive_signals: Vec<String>,
     pub reason: String,
     pub considered: Vec<PlacementCandidateAssessment>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlacementOutcome {
+    Optimal,
+    ConstrainedValid,
+    DegradedValid,
+    QueuedAwaitingBetterPlacement,
+    DeferredConstrained,
+    AdmissibleButNoAcceptablePlacement,
+    HardIncompatible,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -983,6 +996,18 @@ struct TerminalCoordinationInput {
     recovered: bool,
     uncertain: bool,
     awaiting_outcome: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PlacementInputView {
+    has_suitable: bool,
+    has_warm_suitable: bool,
+    has_prepared_or_cold_suitable: bool,
+    has_local_suitable: bool,
+    has_remote_suitable: bool,
+    has_constrained_suitable: bool,
+    has_degraded_only_suitable: bool,
+    has_pressure_blocked_admissible: bool,
 }
 
 impl WorkerRetrySummary {
@@ -1367,7 +1392,17 @@ impl MultiWorkerComputeService {
                         let mut deferred = job.clone();
                         deferred.placement_attempts = deferred.placement_attempts.saturating_add(1);
                         self.queue.push_back(deferred);
-                        let (placement, _, worker_dispatch_outcome) = self.rejected_placement(&job);
+                        let (mut placement, _, worker_dispatch_outcome) =
+                            self.rejected_placement(&job);
+                        placement.outcome = PlacementOutcome::DeferredConstrained;
+                        placement.decisive_signals = vec![
+                            "defer_reason=capacity_or_readiness_wait".to_string(),
+                            format!("distributed_state={:?}", placement.distributed.state)
+                                .to_lowercase(),
+                            format!("placement_attempt={}", job.placement_attempts + 1),
+                        ];
+                        placement.reason =
+                            "deferred: all suitable placements currently constrained".to_string();
                         let record = MultiWorkerJobRecord {
                             id: job.id,
                             state: JobLifecycleState::Queued,
@@ -1397,7 +1432,7 @@ impl MultiWorkerComputeService {
                         self.records.insert(record.id, record);
                         continue;
                     }
-                    let (placement, placement_failure, worker_dispatch_outcome) =
+                    let (mut placement, placement_failure, worker_dispatch_outcome) =
                         self.rejected_placement(&job);
                     if let Some(requested_unit) = job.requested_unit.clone() {
                         let placement_unit_id = placement.unit_id.clone();
@@ -1436,6 +1471,12 @@ impl MultiWorkerComputeService {
                         done.push(record.id);
                         self.records.insert(record.id, record);
                         continue;
+                    }
+                    if matches!(scheduling, SchedulingDecision::QueueRequired) {
+                        placement.outcome = PlacementOutcome::QueuedAwaitingBetterPlacement;
+                        placement.reason =
+                            "queued: better placement expected after readiness/capacity improves"
+                                .to_string();
                     }
                     let record = MultiWorkerJobRecord {
                         id: job.id,
@@ -1718,6 +1759,7 @@ impl MultiWorkerComputeService {
     ) {
         let mut considered = self.assess_candidates(&job.request, job.resource_class);
         let distributed = distributed_summary(&considered);
+        let input_view = placement_input_view(&considered, &distributed);
         if let Some(requested) = job.requested_unit.clone() {
             let candidate = considered
                 .iter()
@@ -1744,7 +1786,7 @@ impl MultiWorkerComputeService {
                 };
             return (
                 ExecutionPlacement {
-                    unit_id: requested,
+                    unit_id: requested.clone(),
                     unit_kind: ExecutionUnitKind::Worker,
                     device_class: ExecutionDeviceClass::Worker,
                     execution_path: JobExecutionPath::WorkerIpc,
@@ -1774,6 +1816,12 @@ impl MultiWorkerComputeService {
                         .unwrap_or(cold_start_penalty_units(
                             PlacementWarmupState::BlockedUnavailable,
                         )),
+                    outcome: PlacementOutcome::AdmissibleButNoAcceptablePlacement,
+                    decisive_signals: vec![
+                        format!("requested_unit={}", requested.0),
+                        format!("suitability={suitability:?}").to_lowercase(),
+                        format!("device_suitability={device_suitability:?}").to_lowercase(),
+                    ],
                     reason: "requested unit not placeable".to_string(),
                     considered,
                 },
@@ -1830,11 +1878,28 @@ impl MultiWorkerComputeService {
                 degraded_fallback: false,
                 resource_class: job.resource_class,
                 capacity_pressure: CapacityPressure::Backpressured,
-                distributed,
+                distributed: distributed.clone(),
                 warmup: PlacementWarmupState::BlockedUnavailable,
                 cold_start_penalty_units: cold_start_penalty_units(
                     PlacementWarmupState::BlockedUnavailable,
                 ),
+                outcome: if best == PlacementFailureKind::BackendIncompatible
+                    || best == PlacementFailureKind::BackendDeviceIncompatible
+                {
+                    PlacementOutcome::HardIncompatible
+                } else if input_view.has_suitable {
+                    PlacementOutcome::AdmissibleButNoAcceptablePlacement
+                } else {
+                    PlacementOutcome::HardIncompatible
+                },
+                decisive_signals: vec![
+                    format!("distributed_state={:?}", distributed.state).to_lowercase(),
+                    format!(
+                        "pressure_blocked={}",
+                        input_view.has_pressure_blocked_admissible
+                    ),
+                    format!("failure={best:?}").to_lowercase(),
+                ],
                 reason: "no suitable execution unit".to_string(),
                 considered,
             },
@@ -2029,6 +2094,8 @@ impl MultiWorkerComputeService {
         requested: Option<ExecutionUnitId>,
     ) -> Option<UnitSelection> {
         let assessments = self.assess_candidates(request, resource_class);
+        let distributed = distributed_summary(&assessments);
+        let input_view = placement_input_view(&assessments, &distributed);
         if let Some(requested) = requested {
             let idx = self.units.iter().position(|unit| unit.id == requested)?;
             let selected = assessments
@@ -2056,9 +2123,15 @@ impl MultiWorkerComputeService {
                     degraded_fallback: false,
                     resource_class: ResourceClass::classify(request),
                     capacity_pressure: self.units[idx].capacity_pressure(),
-                    distributed: distributed_summary(&assessments),
+                    distributed,
                     warmup: selected.warmup,
                     cold_start_penalty_units: selected.cold_start_penalty_units,
+                    outcome: PlacementOutcome::ConstrainedValid,
+                    decisive_signals: vec![
+                        "requested_unit=true".to_string(),
+                        format!("warmup={:?}", selected.warmup).to_lowercase(),
+                        format!("runtime_status={:?}", selected.runtime_status).to_lowercase(),
+                    ],
                     reason: "requested execution unit selected".to_string(),
                     considered: assessments,
                 },
@@ -2106,10 +2179,21 @@ impl MultiWorkerComputeService {
             .iter()
             .position(|unit| unit.id == selected.unit_id)?;
         self.round_robin_cursor = (idx + 1) % self.units.len().max(1);
+        let outcome = if selected.lane == BackendExecutionLane::Candle
+            || input_view.has_degraded_only_suitable
+        {
+            PlacementOutcome::DegradedValid
+        } else if selected.runtime_status == WorkerRuntimeStatus::Constrained
+            || selected.runtime_status == WorkerRuntimeStatus::Busy
+        {
+            PlacementOutcome::ConstrainedValid
+        } else {
+            PlacementOutcome::Optimal
+        };
         Some(UnitSelection {
             idx,
             placement: ExecutionPlacement {
-                unit_id: selected.unit_id,
+                unit_id: selected.unit_id.clone(),
                 unit_kind: selected.unit_kind,
                 device_class: selected.device_class,
                 execution_path: match selected.unit_kind {
@@ -2125,9 +2209,11 @@ impl MultiWorkerComputeService {
                 degraded_fallback: selected.lane == BackendExecutionLane::Candle,
                 resource_class: ResourceClass::classify(request),
                 capacity_pressure: self.units[idx].capacity_pressure(),
-                distributed: distributed_summary(&assessments),
+                distributed,
                 warmup: selected.warmup,
                 cold_start_penalty_units: selected.cold_start_penalty_units,
+                outcome,
+                decisive_signals: decisive_signals_for_selection(&selected, input_view),
                 reason: if selected.lane == BackendExecutionLane::Burn {
                     if selected.warmup == PlacementWarmupState::WarmReady {
                         "selected burn-capable warm unit".to_string()
@@ -2565,6 +2651,13 @@ impl MultiWorkerComputeService {
                         distributed,
                         warmup: original_placement.warmup,
                         cold_start_penalty_units: original_placement.cold_start_penalty_units,
+                        outcome: PlacementOutcome::DegradedValid,
+                        decisive_signals: vec![
+                            "fallback=redispatched_local".to_string(),
+                            format!("failed_worker={}", failed_worker.0),
+                            format!("local_pressure={:?}", local.capacity_pressure())
+                                .to_lowercase(),
+                        ],
                         reason: format!("worker {} failed; redispatched to local", failed_worker.0),
                         considered: original_placement.considered.clone(),
                     },
@@ -3051,6 +3144,75 @@ fn distributed_summary(
     }
 }
 
+fn placement_input_view(
+    assessments: &[PlacementCandidateAssessment],
+    distributed: &DistributedPlacementSummary,
+) -> PlacementInputView {
+    let suitable = assessments
+        .iter()
+        .filter(|candidate| candidate.suitability == PlacementSuitability::Suitable);
+    let has_suitable = suitable.clone().next().is_some();
+    let has_warm_suitable = suitable
+        .clone()
+        .any(|candidate| candidate.warmup == PlacementWarmupState::WarmReady);
+    let has_prepared_or_cold_suitable = suitable.clone().any(|candidate| {
+        matches!(
+            candidate.warmup,
+            PlacementWarmupState::Prepared
+                | PlacementWarmupState::ColdRunnable
+                | PlacementWarmupState::StalePrepared
+        )
+    });
+    let has_local_suitable = suitable
+        .clone()
+        .any(|candidate| candidate.unit_kind == ExecutionUnitKind::Local);
+    let has_remote_suitable = suitable
+        .clone()
+        .any(|candidate| candidate.unit_kind == ExecutionUnitKind::Worker);
+    let has_constrained_suitable = suitable.clone().any(|candidate| {
+        matches!(
+            candidate.runtime_status,
+            WorkerRuntimeStatus::Constrained | WorkerRuntimeStatus::Busy
+        )
+    });
+    let has_degraded_only_suitable =
+        distributed.state == DistributedPlacementState::AdmissibleDegradedOnly;
+    let has_pressure_blocked_admissible = assessments.iter().any(|candidate| {
+        candidate.backend_suitability == PlacementSuitability::Suitable
+            && candidate.detail.contains("insufficient capacity units")
+    });
+    PlacementInputView {
+        has_suitable,
+        has_warm_suitable,
+        has_prepared_or_cold_suitable,
+        has_local_suitable,
+        has_remote_suitable,
+        has_constrained_suitable,
+        has_degraded_only_suitable,
+        has_pressure_blocked_admissible,
+    }
+}
+
+fn decisive_signals_for_selection(
+    selected: &PlacementCandidateAssessment,
+    view: PlacementInputView,
+) -> Vec<String> {
+    let mut out = Vec::with_capacity(3);
+    out.push(format!("warmup={:?}", selected.warmup).to_lowercase());
+    out.push(format!("runtime_status={:?}", selected.runtime_status).to_lowercase());
+    if view.has_remote_suitable && view.has_local_suitable {
+        out.push(format!("locality={:?}", selected.unit_kind).to_lowercase());
+    } else if view.has_degraded_only_suitable {
+        out.push("degraded_only_lane_available=true".to_string());
+    } else if view.has_pressure_blocked_admissible {
+        out.push("admissible_but_capacity_constrained=true".to_string());
+    } else if view.has_prepared_or_cold_suitable && !view.has_warm_suitable {
+        out.push("no_warm_path_available=true".to_string());
+    }
+    out.truncate(3);
+    out
+}
+
 fn locality_for_assessments(
     assessments: &[PlacementCandidateAssessment],
     admissible_units: &[ExecutionUnitId],
@@ -3101,7 +3263,7 @@ mod tests {
         DistributedPlacementState, ExecutionDeviceClass, ExecutionUnitId, ExecutionUnitKind,
         InFlightCoordinationState, InMemoryComputeService, JobCompletionClass,
         JobCoordinationSnapshot, JobExecutionPath, JobLifecycleState, JobSubmissionMeta,
-        MultiWorkerComputeService, PlacementFailureKind, PlacementSuitability,
+        MultiWorkerComputeService, PlacementFailureKind, PlacementOutcome, PlacementSuitability,
         PlacementWarmupState, RecoverySignal, ResourceClass, SchedulerConfig,
         TerminalCoordinationInput, WorkCostProvenance, WorkCostTension, WorkerAvailability,
         WorkerClass, WorkerDispatchOutcome, WorkerRecoveryKind, WorkerRegistryRole,
@@ -3649,6 +3811,8 @@ mod tests {
             record.placement.device_suitability,
             DeviceSuitability::Suitable
         );
+        assert_eq!(record.placement.outcome, PlacementOutcome::Optimal);
+        assert!(!record.placement.decisive_signals.is_empty());
         assert!(!record.placement.considered.is_empty());
         assert!(record.result.is_some());
     }
@@ -3805,6 +3969,14 @@ mod tests {
             CapacityQueueDisposition::DeferredDueToCapacity
         );
         assert_eq!(
+            deferred.placement.outcome,
+            PlacementOutcome::DeferredConstrained
+        );
+        assert!(deferred
+            .placement
+            .reason
+            .contains("all suitable placements currently constrained"));
+        assert_eq!(
             deferred.placement.distributed.state,
             DistributedPlacementState::AdmissibleButCurrentlyUnschedulable
         );
@@ -3917,6 +4089,10 @@ mod tests {
         service.run_scheduler_cycle(1);
         let candle_record = service.job(candle_job).expect("candle result");
         assert!(candle_record.placement.degraded_fallback);
+        assert_eq!(
+            candle_record.placement.outcome,
+            PlacementOutcome::DegradedValid
+        );
         assert!(candle_record.placement.reason.contains("fallback"));
         assert_eq!(
             candle_record.placement.distributed.state,
@@ -4317,6 +4493,10 @@ mod tests {
         assert_eq!(
             record.capacity_disposition,
             CapacityQueueDisposition::DeferredDueToCapacity
+        );
+        assert_eq!(
+            record.placement.outcome,
+            PlacementOutcome::DeferredConstrained
         );
         assert_eq!(
             record.work_cost_summary.provenance,
