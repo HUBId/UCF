@@ -14,7 +14,7 @@ use crate::pipeline::{
     CanonicalIsolationDisposition, CanonicalPipelineState,
 };
 
-const JOB_HISTORY_SCHEMA_VERSION: u16 = 9;
+const JOB_HISTORY_SCHEMA_VERSION: u16 = 10;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PersistedJobRequestIdentity {
@@ -66,6 +66,14 @@ pub struct PersistedWorkCostSummary {
     pub runtime_remaining_work_units: Option<u64>,
     pub dominant_stage: Option<String>,
     pub dominant_stage_share_bps: Option<u16>,
+    #[serde(default)]
+    pub dominant_work_stage: Option<String>,
+    #[serde(default)]
+    pub dominant_work_stage_share_bps: Option<u16>,
+    #[serde(default)]
+    pub degraded_stage: Option<String>,
+    #[serde(default)]
+    pub fallback_stage: Option<String>,
     pub degraded_stage_count: u8,
     pub retry_attempts: u8,
     pub redispatched_to_local: bool,
@@ -84,10 +92,34 @@ pub struct PersistedStageProfileSummary {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct PersistedStageCostAttribution {
+    pub stage: String,
+    pub state: String,
+    pub timing_micros: Option<u64>,
+    pub timing_share_bps: Option<u16>,
+    pub work_consumed_units: u64,
+    pub work_share_bps: Option<u16>,
+    pub pattern: String,
+    pub dominant_timing: bool,
+    pub dominant_work: bool,
+    pub timing_provenance: String,
+    pub work_provenance: String,
+    pub detail: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PersistedHotspotSummary {
     pub slowest_stage: Option<String>,
     pub dominant_stage: Option<String>,
     pub dominant_stage_share_bps: Option<u16>,
+    #[serde(default)]
+    pub dominant_work_stage: Option<String>,
+    #[serde(default)]
+    pub dominant_work_stage_share_bps: Option<u16>,
+    #[serde(default)]
+    pub degraded_stage: Option<String>,
+    #[serde(default)]
+    pub fallback_stage: Option<String>,
     pub degraded_stage_count: u8,
     pub skipped_stage_count: u8,
     pub unavailable_stage_count: u8,
@@ -167,6 +199,8 @@ pub struct PersistedJobRecord {
     pub work_cost_summary: Option<PersistedWorkCostSummary>,
     #[serde(default)]
     pub stage_profiles: Vec<PersistedStageProfileSummary>,
+    #[serde(default)]
+    pub stage_cost_attribution: Vec<PersistedStageCostAttribution>,
     #[serde(default)]
     pub hotspot_summary: Option<PersistedHotspotSummary>,
     pub model_slots: Vec<PersistedModelSlotSummary>,
@@ -277,6 +311,16 @@ impl PersistedJobRecord {
                         .dominant_stage
                         .map(|stage| format!("{:?}", stage).to_ascii_lowercase()),
                     dominant_stage_share_bps: summary.dominant_stage_share_bps,
+                    dominant_work_stage: summary
+                        .dominant_work_stage
+                        .map(|stage| format!("{:?}", stage).to_ascii_lowercase()),
+                    dominant_work_stage_share_bps: summary.dominant_work_stage_share_bps,
+                    degraded_stage: summary
+                        .degraded_stage
+                        .map(|stage| format!("{:?}", stage).to_ascii_lowercase()),
+                    fallback_stage: summary
+                        .fallback_stage
+                        .map(|stage| format!("{:?}", stage).to_ascii_lowercase()),
                     degraded_stage_count: summary.degraded_stage_count,
                     retry_attempts: summary.retry_attempts,
                     redispatched_to_local: summary.redispatched_to_local,
@@ -297,6 +341,25 @@ impl PersistedJobRecord {
                     detail: profile.detail.clone(),
                 })
                 .collect(),
+            stage_cost_attribution: accounting
+                .stage_cost_attribution
+                .iter()
+                .map(|entry| PersistedStageCostAttribution {
+                    stage: format!("{:?}", entry.stage).to_ascii_lowercase(),
+                    state: format!("{:?}", entry.state).to_ascii_lowercase(),
+                    timing_micros: entry.timing_micros,
+                    timing_share_bps: entry.timing_share_bps,
+                    work_consumed_units: entry.work_consumed_units,
+                    work_share_bps: entry.work_share_bps,
+                    pattern: format!("{:?}", entry.pattern).to_ascii_lowercase(),
+                    dominant_timing: entry.dominant_timing,
+                    dominant_work: entry.dominant_work,
+                    timing_provenance: format!("{:?}", entry.timing_provenance)
+                        .to_ascii_lowercase(),
+                    work_provenance: format!("{:?}", entry.work_provenance).to_ascii_lowercase(),
+                    detail: entry.detail.clone(),
+                })
+                .collect(),
             hotspot_summary: accounting
                 .hotspot_summary
                 .map(|hotspot| PersistedHotspotSummary {
@@ -307,6 +370,16 @@ impl PersistedJobRecord {
                         .dominant_stage
                         .map(|stage| format!("{:?}", stage).to_ascii_lowercase()),
                     dominant_stage_share_bps: hotspot.dominant_stage_share_bps,
+                    dominant_work_stage: hotspot
+                        .dominant_work_stage
+                        .map(|stage| format!("{:?}", stage).to_ascii_lowercase()),
+                    dominant_work_stage_share_bps: hotspot.dominant_work_stage_share_bps,
+                    degraded_stage: hotspot
+                        .degraded_stage
+                        .map(|stage| format!("{:?}", stage).to_ascii_lowercase()),
+                    fallback_stage: hotspot
+                        .fallback_stage
+                        .map(|stage| format!("{:?}", stage).to_ascii_lowercase()),
                     degraded_stage_count: hotspot.degraded_stage_count,
                     skipped_stage_count: hotspot.skipped_stage_count,
                     unavailable_stage_count: hotspot.unavailable_stage_count,
@@ -689,6 +762,7 @@ mod tests {
         assert_eq!(loaded.capacity_queue_disposition.as_deref(), Some("none"));
         assert!(loaded.capacity_pressure.is_some());
         assert!(!loaded.stage_profiles.is_empty());
+        assert!(!loaded.stage_cost_attribution.is_empty());
         assert!(loaded.hotspot_summary.is_some());
     }
 
