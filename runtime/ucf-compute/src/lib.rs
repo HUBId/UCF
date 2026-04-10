@@ -95,13 +95,13 @@ pub use compute_service::{
     CoordinationIssueKind, DeviceSuitability, DistributedDegradationState,
     DistributedPressureSnapshot, DistributedRecoverySnapshot, ExecutionDeviceClass,
     ExecutionPlacement, ExecutionUnitId, ExecutionUnitKind, ExecutionUnitSnapshot,
-    InFlightCoordinationState, InFlightJobSnapshot, InMemoryComputeService, JobAccountingSummary,
-    JobCompletionClass, JobCoordinationSnapshot, JobExecutionPath, JobId, JobLifecycleEvent,
-    JobLifecycleState, JobRecord, JobSubmissionMeta, MultiWorkerComputeService,
-    PlacementCandidateAssessment, PlacementFailureKind, PlacementSuitability, RecoverySignal,
-    ResourceClass, SchedulerConfig, SchedulerSnapshot, WorkerAvailability, WorkerClass,
-    WorkerDispatchOutcome, WorkerFailureKind, WorkerRecoveryKind, WorkerRegistryRole,
-    WorkerRetrySummary, WorkerRuntimeStatus,
+    FeedbackSignalStrength, InFlightCoordinationState, InFlightJobSnapshot, InMemoryComputeService,
+    JobAccountingSummary, JobCompletionClass, JobCoordinationSnapshot, JobExecutionPath, JobId,
+    JobLifecycleEvent, JobLifecycleState, JobRecord, JobSubmissionMeta, MultiWorkerComputeService,
+    PlacementCandidateAssessment, PlacementFailureKind, PlacementOptimizationFeedbackView,
+    PlacementSuitability, RecoverySignal, ResourceClass, SchedulerConfig, SchedulerSnapshot,
+    WorkerAvailability, WorkerClass, WorkerDispatchOutcome, WorkerFailureKind, WorkerRecoveryKind,
+    WorkerRegistryRole, WorkerRetrySummary, WorkerRuntimeStatus,
 };
 pub use contracts::{StageContractVersion, ValidationStatus};
 pub use enablement::{

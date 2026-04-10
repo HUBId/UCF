@@ -964,6 +964,43 @@ pub struct MultiWorkerJobRecord {
     pub provenance: WorkerExecutionProvenance,
     pub retry_summary: WorkerRetrySummary,
     pub coordination: JobCoordinationSnapshot,
+    pub optimization_feedback: PlacementOptimizationFeedbackView,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FeedbackSignalStrength {
+    Strong,
+    Weak,
+    Stale,
+    Contradicted,
+    Insufficient,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlacementOptimizationFeedbackView {
+    pub strength: FeedbackSignalStrength,
+    pub suggested_warm_unit: Option<ExecutionUnitId>,
+    pub avoid_unit: Option<ExecutionUnitId>,
+    pub repeated_cold_start_penalty: bool,
+    pub repeated_degraded_placement: bool,
+    pub repeated_worker_pressure: bool,
+    pub repeated_retry_or_redispatch_cost: bool,
+    pub repeated_hotspot_stage: Option<CanonicalStageId>,
+}
+
+impl PlacementOptimizationFeedbackView {
+    fn insufficient() -> Self {
+        Self {
+            strength: FeedbackSignalStrength::Insufficient,
+            suggested_warm_unit: None,
+            avoid_unit: None,
+            repeated_cold_start_penalty: false,
+            repeated_degraded_placement: false,
+            repeated_worker_pressure: false,
+            repeated_retry_or_redispatch_cost: false,
+            repeated_hotspot_stage: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1207,6 +1244,7 @@ enum SchedulingDecision {
 struct UnitSelection {
     idx: usize,
     placement: ExecutionPlacement,
+    feedback: PlacementOptimizationFeedbackView,
 }
 
 pub struct MultiWorkerComputeService {
@@ -1219,6 +1257,9 @@ pub struct MultiWorkerComputeService {
 }
 
 impl MultiWorkerComputeService {
+    const FEEDBACK_LOOKBACK: usize = 32;
+    const FEEDBACK_STALE_JOBS: u64 = 24;
+
     pub fn new(local_backend: ComputePipelineBackend, max_parallel_jobs: usize) -> Self {
         let local = ExecutionUnit {
             id: ExecutionUnitId("local".to_string()),
@@ -1427,6 +1468,8 @@ impl MultiWorkerComputeService {
                             },
                             retry_summary: WorkerRetrySummary::no_retry(),
                             coordination: JobCoordinationSnapshot::queued(),
+                            optimization_feedback: PlacementOptimizationFeedbackView::insufficient(
+                            ),
                         };
                         done.push(record.id);
                         self.records.insert(record.id, record);
@@ -1466,6 +1509,8 @@ impl MultiWorkerComputeService {
                             coordination: JobCoordinationSnapshot::stale_without_dispatch(
                                 placement_unit_id,
                                 placement_unit_kind,
+                            ),
+                            optimization_feedback: PlacementOptimizationFeedbackView::insufficient(
                             ),
                         };
                         done.push(record.id);
@@ -1526,6 +1571,7 @@ impl MultiWorkerComputeService {
                         },
                         retry_summary: WorkerRetrySummary::no_retry(),
                         coordination: JobCoordinationSnapshot::queued(),
+                        optimization_feedback: PlacementOptimizationFeedbackView::insufficient(),
                     };
                     done.push(record.id);
                     self.records.insert(record.id, record);
@@ -2087,6 +2133,135 @@ impl MultiWorkerComputeService {
             .collect()
     }
 
+    fn optimization_feedback_view(
+        &self,
+        assessments: &[PlacementCandidateAssessment],
+    ) -> PlacementOptimizationFeedbackView {
+        let latest_job_id = self.next_job_id.saturating_sub(1);
+        let mut sample_count = 0usize;
+        let mut cold_by_unit: BTreeMap<ExecutionUnitId, usize> = BTreeMap::new();
+        let mut degraded_by_unit: BTreeMap<ExecutionUnitId, usize> = BTreeMap::new();
+        let mut pressure_by_unit: BTreeMap<ExecutionUnitId, usize> = BTreeMap::new();
+        let mut retry_or_redispatch_count = 0usize;
+        let mut hotspot_counts: BTreeMap<CanonicalStageId, usize> = BTreeMap::new();
+
+        for record in self.records.values().rev().take(Self::FEEDBACK_LOOKBACK) {
+            sample_count = sample_count.saturating_add(1);
+            if matches!(
+                record.placement.warmup,
+                PlacementWarmupState::ColdRunnable | PlacementWarmupState::StalePrepared
+            ) || record.placement.cold_start_penalty_units > 0
+            {
+                *cold_by_unit
+                    .entry(record.placement.unit_id.clone())
+                    .or_insert(0) += 1;
+            }
+            if matches!(
+                record.placement.outcome,
+                PlacementOutcome::DegradedValid | PlacementOutcome::DeferredConstrained
+            ) || record.work_cost_summary.degraded_stage_count > 0
+            {
+                *degraded_by_unit
+                    .entry(record.placement.unit_id.clone())
+                    .or_insert(0) += 1;
+            }
+            if matches!(
+                record.work_cost_summary.pressure,
+                CapacityPressure::Constrained
+                    | CapacityPressure::Saturated
+                    | CapacityPressure::Backpressured
+                    | CapacityPressure::TemporarilyUnschedulable
+            ) {
+                *pressure_by_unit
+                    .entry(record.placement.unit_id.clone())
+                    .or_insert(0) += 1;
+            }
+            if record.retry_summary.attempts > 1 || record.provenance.redispatched_to_local {
+                retry_or_redispatch_count = retry_or_redispatch_count.saturating_add(1);
+            }
+            if let Some(stage) = record
+                .work_cost_summary
+                .dominant_work_stage
+                .or(record.work_cost_summary.dominant_stage)
+            {
+                *hotspot_counts.entry(stage).or_insert(0) += 1;
+            }
+        }
+
+        if sample_count == 0 {
+            return PlacementOptimizationFeedbackView::insufficient();
+        }
+        let newest_sample_id = self.records.keys().last().map_or(0, |id| id.0);
+        let stale = latest_job_id.saturating_sub(newest_sample_id) > Self::FEEDBACK_STALE_JOBS;
+        let suggested_warm_unit = assessments
+            .iter()
+            .filter(|candidate| {
+                candidate.suitability == PlacementSuitability::Suitable
+                    && candidate.warmup == PlacementWarmupState::WarmReady
+            })
+            .min_by_key(|candidate| cold_by_unit.get(&candidate.unit_id).copied().unwrap_or(0))
+            .map(|candidate| candidate.unit_id.clone());
+        let avoid_unit = assessments
+            .iter()
+            .filter(|candidate| candidate.suitability == PlacementSuitability::Suitable)
+            .max_by_key(|candidate| {
+                degraded_by_unit
+                    .get(&candidate.unit_id)
+                    .copied()
+                    .unwrap_or(0)
+            })
+            .and_then(|candidate| {
+                let count = degraded_by_unit
+                    .get(&candidate.unit_id)
+                    .copied()
+                    .unwrap_or(0);
+                (count >= 2).then(|| candidate.unit_id.clone())
+            });
+        let repeated_cold_start_penalty = cold_by_unit.values().any(|count| *count >= 2);
+        let repeated_degraded_placement = degraded_by_unit.values().any(|count| *count >= 2);
+        let repeated_worker_pressure = pressure_by_unit.values().any(|count| *count >= 2);
+        let repeated_retry_or_redispatch_cost = retry_or_redispatch_count >= 2;
+        let repeated_hotspot_stage = hotspot_counts
+            .into_iter()
+            .max_by_key(|(_, count)| *count)
+            .and_then(|(stage, count)| (count >= 2).then_some(stage));
+
+        let contradicted = suggested_warm_unit.as_ref().is_some_and(|unit_id| {
+            assessments
+                .iter()
+                .find(|candidate| &candidate.unit_id == unit_id)
+                .is_some_and(|candidate| candidate.suitability != PlacementSuitability::Suitable)
+        });
+        let strength = if stale {
+            FeedbackSignalStrength::Stale
+        } else if contradicted {
+            FeedbackSignalStrength::Contradicted
+        } else if sample_count >= 4
+            && (repeated_cold_start_penalty
+                || repeated_degraded_placement
+                || repeated_worker_pressure
+                || repeated_retry_or_redispatch_cost
+                || repeated_hotspot_stage.is_some())
+        {
+            FeedbackSignalStrength::Strong
+        } else if sample_count >= 2 {
+            FeedbackSignalStrength::Weak
+        } else {
+            FeedbackSignalStrength::Insufficient
+        };
+
+        PlacementOptimizationFeedbackView {
+            strength,
+            suggested_warm_unit,
+            avoid_unit,
+            repeated_cold_start_penalty,
+            repeated_degraded_placement,
+            repeated_worker_pressure,
+            repeated_retry_or_redispatch_cost,
+            repeated_hotspot_stage,
+        }
+    }
+
     fn select_unit(
         &mut self,
         request: &CanonicalPipelineRequest,
@@ -2094,6 +2269,7 @@ impl MultiWorkerComputeService {
         requested: Option<ExecutionUnitId>,
     ) -> Option<UnitSelection> {
         let assessments = self.assess_candidates(request, resource_class);
+        let feedback = self.optimization_feedback_view(&assessments);
         let distributed = distributed_summary(&assessments);
         let input_view = placement_input_view(&assessments, &distributed);
         if let Some(requested) = requested {
@@ -2104,8 +2280,15 @@ impl MultiWorkerComputeService {
             if selected.suitability != PlacementSuitability::Suitable {
                 return None;
             }
+            let requested_signals = vec![
+                "requested_unit=true".to_string(),
+                format!("warmup={:?}", selected.warmup).to_lowercase(),
+                format!("runtime_status={:?}", selected.runtime_status).to_lowercase(),
+                format!("feedback_strength={:?}", feedback.strength).to_lowercase(),
+            ];
             return Some(UnitSelection {
                 idx,
+                feedback,
                 placement: ExecutionPlacement {
                     unit_id: requested,
                     unit_kind: selected.unit_kind,
@@ -2127,11 +2310,7 @@ impl MultiWorkerComputeService {
                     warmup: selected.warmup,
                     cold_start_penalty_units: selected.cold_start_penalty_units,
                     outcome: PlacementOutcome::ConstrainedValid,
-                    decisive_signals: vec![
-                        "requested_unit=true".to_string(),
-                        format!("warmup={:?}", selected.warmup).to_lowercase(),
-                        format!("runtime_status={:?}", selected.runtime_status).to_lowercase(),
-                    ],
+                    decisive_signals: requested_signals,
                     reason: "requested execution unit selected".to_string(),
                     considered: assessments,
                 },
@@ -2167,6 +2346,16 @@ impl MultiWorkerComputeService {
             (
                 warmup_rank,
                 lane_rank,
+                feedback
+                    .suggested_warm_unit
+                    .as_ref()
+                    .map_or(1usize, |preferred| {
+                        usize::from(preferred != &candidate.unit_id)
+                    }),
+                feedback
+                    .avoid_unit
+                    .as_ref()
+                    .map_or(0usize, |avoid| usize::from(avoid == &candidate.unit_id)),
                 (base + self.round_robin_cursor) % self.units.len().max(1),
             )
         });
@@ -2190,8 +2379,10 @@ impl MultiWorkerComputeService {
         } else {
             PlacementOutcome::Optimal
         };
+        let decisive_signals = decisive_signals_for_selection(&selected, input_view, &feedback);
         Some(UnitSelection {
             idx,
+            feedback,
             placement: ExecutionPlacement {
                 unit_id: selected.unit_id.clone(),
                 unit_kind: selected.unit_kind,
@@ -2213,7 +2404,7 @@ impl MultiWorkerComputeService {
                 warmup: selected.warmup,
                 cold_start_penalty_units: selected.cold_start_penalty_units,
                 outcome,
-                decisive_signals: decisive_signals_for_selection(&selected, input_view),
+                decisive_signals,
                 reason: if selected.lane == BackendExecutionLane::Burn {
                     if selected.warmup == PlacementWarmupState::WarmReady {
                         "selected burn-capable warm unit".to_string()
@@ -2235,6 +2426,7 @@ impl MultiWorkerComputeService {
 
     fn execute(&mut self, job: QueuedJob, selection: UnitSelection) -> MultiWorkerJobRecord {
         let placement = selection.placement;
+        let optimization_feedback = selection.feedback;
         let unit_idx = selection.idx;
         let required_units = job.resource_class.capacity_weight();
         if !self.units[unit_idx].can_accept_dispatch() {
@@ -2286,6 +2478,7 @@ impl MultiWorkerComputeService {
                         recovery_signal: RecoverySignal::RecoveryDecisionRequired,
                     }
                 },
+                optimization_feedback,
             };
         }
 
@@ -2409,6 +2602,7 @@ impl MultiWorkerComputeService {
                             awaiting_outcome: false,
                         },
                     ),
+                    optimization_feedback,
                 }
             }
             Ok(_) => {
@@ -2477,6 +2671,7 @@ impl MultiWorkerComputeService {
                             awaiting_outcome: true,
                         },
                     ),
+                    optimization_feedback,
                 }
             }
             Err(err) => {
@@ -2563,6 +2758,7 @@ impl MultiWorkerComputeService {
                             awaiting_outcome: state == JobLifecycleState::TimedOut,
                         },
                     ),
+                    optimization_feedback,
                 }
             }
         }
@@ -2692,6 +2888,7 @@ impl MultiWorkerComputeService {
                             awaiting_outcome: false,
                         },
                     ),
+                    optimization_feedback: PlacementOptimizationFeedbackView::insufficient(),
                 })
             }
             _ => None,
@@ -3196,10 +3393,17 @@ fn placement_input_view(
 fn decisive_signals_for_selection(
     selected: &PlacementCandidateAssessment,
     view: PlacementInputView,
+    feedback: &PlacementOptimizationFeedbackView,
 ) -> Vec<String> {
-    let mut out = Vec::with_capacity(3);
+    let mut out = Vec::with_capacity(5);
     out.push(format!("warmup={:?}", selected.warmup).to_lowercase());
     out.push(format!("runtime_status={:?}", selected.runtime_status).to_lowercase());
+    out.push(format!("feedback_strength={:?}", feedback.strength).to_lowercase());
+    if feedback.suggested_warm_unit.as_ref() == Some(&selected.unit_id) {
+        out.push("feedback_prefer_warm_proven_path=true".to_string());
+    } else if feedback.avoid_unit.as_ref() == Some(&selected.unit_id) {
+        out.push("feedback_avoid_repeated_degraded_path=true".to_string());
+    }
     if view.has_remote_suitable && view.has_local_suitable {
         out.push(format!("locality={:?}", selected.unit_kind).to_lowercase());
     } else if view.has_degraded_only_suitable {
@@ -3209,7 +3413,7 @@ fn decisive_signals_for_selection(
     } else if view.has_prepared_or_cold_suitable && !view.has_warm_suitable {
         out.push("no_warm_path_available=true".to_string());
     }
-    out.truncate(3);
+    out.truncate(5);
     out
 }
 
@@ -3261,10 +3465,10 @@ mod tests {
         CapacityPressure, CapacityQueueDisposition, CoordinationFreshness, CoordinationIssueKind,
         DeviceSuitability, DistributedDegradationState, DistributedPlacementLocality,
         DistributedPlacementState, ExecutionDeviceClass, ExecutionUnitId, ExecutionUnitKind,
-        InFlightCoordinationState, InMemoryComputeService, JobCompletionClass,
-        JobCoordinationSnapshot, JobExecutionPath, JobLifecycleState, JobSubmissionMeta,
-        MultiWorkerComputeService, PlacementFailureKind, PlacementOutcome, PlacementSuitability,
-        PlacementWarmupState, RecoverySignal, ResourceClass, SchedulerConfig,
+        FeedbackSignalStrength, InFlightCoordinationState, InMemoryComputeService,
+        JobCompletionClass, JobCoordinationSnapshot, JobExecutionPath, JobLifecycleState,
+        JobSubmissionMeta, MultiWorkerComputeService, PlacementFailureKind, PlacementOutcome,
+        PlacementSuitability, PlacementWarmupState, RecoverySignal, ResourceClass, SchedulerConfig,
         TerminalCoordinationInput, WorkCostProvenance, WorkCostTension, WorkerAvailability,
         WorkerClass, WorkerDispatchOutcome, WorkerRecoveryKind, WorkerRegistryRole,
         WorkerRuntimeStatus,
@@ -4848,5 +5052,143 @@ mod tests {
             .considered
             .iter()
             .all(|entry| entry.warmup == PlacementWarmupState::BlockedUnavailable));
+    }
+
+    #[test]
+    fn strong_feedback_prefers_proven_warm_path_and_surfaces_provenance() {
+        let local_backend = ComputePipelineBackend::new(
+            pack_with(BackendComponentId::ToyV1, Vec::new()),
+            FusionConfig::default(),
+            LimitsConfig::default(),
+        );
+        let mut service = MultiWorkerComputeService::new(local_backend, 1);
+        let warm_worker = ComputePipelineBackend::new(
+            pack_with(
+                BackendComponentId::BurnJepaV1,
+                vec![ModelSlotProvenance {
+                    slot: ModelSlot::WorldJepa,
+                    stage: "world",
+                    required_for_pack: true,
+                    status: SlotRuntimeStatus::Used,
+                    code: None,
+                    detail: Some("state=active;rollout=Active:warm:artifact verified".to_string()),
+                    resolved_path: None,
+                    hash_prefix: None,
+                    contract_version: None,
+                    format: None,
+                    gate: Default::default(),
+                    rollout: None,
+                }],
+            ),
+            FusionConfig::default(),
+            LimitsConfig::default(),
+        );
+        let _warm_worker_id = service.register_worker_backend("feedback-warm", warm_worker, 1);
+        for i in 0..4 {
+            let job = service.submit(
+                valid_request(),
+                JobSubmissionMeta {
+                    submitted_at_unix_ms: 70 + i,
+                    submitted_by: Some("feedback-train".to_string()),
+                },
+                None,
+            );
+            service.run_scheduler_cycle(1);
+            let _record = service.job(job).expect("training record");
+        }
+
+        let evaluation_job = service.submit(
+            valid_request(),
+            JobSubmissionMeta {
+                submitted_at_unix_ms: 90,
+                submitted_by: Some("feedback-eval".to_string()),
+            },
+            None,
+        );
+        service.run_scheduler_cycle(1);
+        let record = service.job(evaluation_job).expect("evaluation record");
+        assert_eq!(
+            record.optimization_feedback.strength,
+            FeedbackSignalStrength::Strong
+        );
+        assert!(record
+            .placement
+            .decisive_signals
+            .iter()
+            .any(|signal| signal.contains("feedback_strength=strong")));
+    }
+
+    #[test]
+    fn weak_feedback_is_not_overinterpreted() {
+        let local_backend = ComputePipelineBackend::new(
+            pack_with(BackendComponentId::ToyV1, Vec::new()),
+            FusionConfig::default(),
+            LimitsConfig::default(),
+        );
+        let mut service = MultiWorkerComputeService::new(local_backend, 1);
+        let job = service.submit(
+            valid_request(),
+            JobSubmissionMeta {
+                submitted_at_unix_ms: 101,
+                submitted_by: Some("weak-feedback".to_string()),
+            },
+            None,
+        );
+        service.run_scheduler_cycle(1);
+        let record = service.job(job).expect("record");
+        assert_eq!(
+            record.optimization_feedback.strength,
+            FeedbackSignalStrength::Insufficient
+        );
+        assert!(record.optimization_feedback.suggested_warm_unit.is_none());
+    }
+
+    #[test]
+    fn stale_feedback_is_classified_without_replacing_current_placement_rules() {
+        let local_backend = ComputePipelineBackend::new(
+            pack_with(BackendComponentId::ToyV1, Vec::new()),
+            FusionConfig::default(),
+            LimitsConfig::default(),
+        );
+        let mut service = MultiWorkerComputeService::new(local_backend, 1);
+        let warm_worker = ComputePipelineBackend::new(
+            pack_with(BackendComponentId::BurnJepaV1, Vec::new()),
+            FusionConfig::default(),
+            LimitsConfig::default(),
+        );
+        service.register_worker_backend("stale-feedback-worker", warm_worker, 1);
+
+        for i in 0..3 {
+            let job = service.submit(
+                valid_request(),
+                JobSubmissionMeta {
+                    submitted_at_unix_ms: 120 + i,
+                    submitted_by: Some("stale-seed".to_string()),
+                },
+                None,
+            );
+            service.run_scheduler_cycle(1);
+            let _ = service.job(job).expect("seed record");
+        }
+        service.next_job_id = service.next_job_id.saturating_add(64);
+        let stale_job = service.submit(
+            valid_request(),
+            JobSubmissionMeta {
+                submitted_at_unix_ms: 190,
+                submitted_by: Some("stale-check".to_string()),
+            },
+            None,
+        );
+        service.run_scheduler_cycle(1);
+        let record = service.job(stale_job).expect("stale record");
+        assert_eq!(
+            record.optimization_feedback.strength,
+            FeedbackSignalStrength::Stale
+        );
+        assert!(record
+            .placement
+            .decisive_signals
+            .iter()
+            .any(|signal| signal.contains("feedback_strength=stale")));
     }
 }
