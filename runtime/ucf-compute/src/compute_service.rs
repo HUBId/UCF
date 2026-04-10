@@ -968,6 +968,40 @@ pub struct MultiWorkerJobRecord {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OptimizationRuntimeState {
+    HealthyEfficient,
+    ConstrainedByCapacity,
+    ConstrainedByColdWarmupReadiness,
+    ConstrainedByDominantStageHotspot,
+    DegradedButServiceable,
+    Mixed,
+    Inconclusive,
+    FailureUnrelatedToOptimization,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OptimizationBottleneck {
+    QueuePressure,
+    Capacity,
+    WarmupReadiness,
+    StageHotspot,
+    DegradedPath,
+    Mixed,
+    None,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeOptimizationView {
+    pub state: OptimizationRuntimeState,
+    pub bottleneck: OptimizationBottleneck,
+    pub queue_or_deferral_pressure: bool,
+    pub capacity_pressure: bool,
+    pub cold_or_warmup_pressure: bool,
+    pub hotspot_pressure: bool,
+    pub caveats: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FeedbackSignalStrength {
     Strong,
     Weak,
@@ -1000,6 +1034,25 @@ impl PlacementOptimizationFeedbackView {
             repeated_retry_or_redispatch_cost: false,
             repeated_hotspot_stage: None,
         }
+    }
+}
+
+impl MultiWorkerJobRecord {
+    pub fn optimization_view(&self) -> RuntimeOptimizationView {
+        derive_runtime_optimization_view(
+            self.state,
+            self.execution_failure.as_ref(),
+            self.placement.outcome,
+            self.placement_failure,
+            self.capacity_disposition,
+            self.work_cost_summary.pressure,
+            self.work_cost_summary.degraded_stage_count,
+            self.work_cost_summary
+                .dominant_work_stage_share_bps
+                .or(self.work_cost_summary.dominant_stage_share_bps),
+            self.placement.warmup,
+            &self.optimization_feedback,
+        )
     }
 }
 
@@ -1190,6 +1243,19 @@ pub struct DistributedRecoverySnapshot {
     pub queued_jobs: usize,
     pub uncertain_jobs: usize,
     pub recovery_required_jobs: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeOptimizationSnapshot {
+    pub current_state: OptimizationRuntimeState,
+    pub main_bottleneck: OptimizationBottleneck,
+    pub queue_pressure: bool,
+    pub capacity_pressure: bool,
+    pub cold_or_warmup_pressure: bool,
+    pub stage_hotspot_pressure: bool,
+    pub repeated_pattern_confirmed: bool,
+    pub historical_feedback_alignment: String,
+    pub caveats: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1444,7 +1510,7 @@ impl MultiWorkerComputeService {
                         ];
                         placement.reason =
                             "deferred: all suitable placements currently constrained".to_string();
-                        let record = MultiWorkerJobRecord {
+                        let mut record = MultiWorkerJobRecord {
                             id: job.id,
                             state: JobLifecycleState::Queued,
                             execution_failure: None,
@@ -1471,6 +1537,10 @@ impl MultiWorkerComputeService {
                             optimization_feedback: PlacementOptimizationFeedbackView::insufficient(
                             ),
                         };
+                        let optimization_state =
+                            format!("optimization_state={:?}", record.optimization_view().state)
+                                .to_lowercase();
+                        record.placement.decisive_signals.push(optimization_state);
                         done.push(record.id);
                         self.records.insert(record.id, record);
                         continue;
@@ -1480,7 +1550,7 @@ impl MultiWorkerComputeService {
                     if let Some(requested_unit) = job.requested_unit.clone() {
                         let placement_unit_id = placement.unit_id.clone();
                         let placement_unit_kind = placement.unit_kind;
-                        let record = MultiWorkerJobRecord {
+                        let mut record = MultiWorkerJobRecord {
                             id: job.id,
                             state: JobLifecycleState::Failed,
                             execution_failure: Some(CanonicalPipelineFailure {
@@ -1513,6 +1583,10 @@ impl MultiWorkerComputeService {
                             optimization_feedback: PlacementOptimizationFeedbackView::insufficient(
                             ),
                         };
+                        let optimization_state =
+                            format!("optimization_state={:?}", record.optimization_view().state)
+                                .to_lowercase();
+                        record.placement.decisive_signals.push(optimization_state);
                         done.push(record.id);
                         self.records.insert(record.id, record);
                         continue;
@@ -1523,7 +1597,7 @@ impl MultiWorkerComputeService {
                             "queued: better placement expected after readiness/capacity improves"
                                 .to_string();
                     }
-                    let record = MultiWorkerJobRecord {
+                    let mut record = MultiWorkerJobRecord {
                         id: job.id,
                         state: JobLifecycleState::Failed,
                         execution_failure: Some(CanonicalPipelineFailure {
@@ -1573,6 +1647,10 @@ impl MultiWorkerComputeService {
                         coordination: JobCoordinationSnapshot::queued(),
                         optimization_feedback: PlacementOptimizationFeedbackView::insufficient(),
                     };
+                    let optimization_state =
+                        format!("optimization_state={:?}", record.optimization_view().state)
+                            .to_lowercase();
+                    record.placement.decisive_signals.push(optimization_state);
                     done.push(record.id);
                     self.records.insert(record.id, record);
                     continue;
@@ -1792,6 +1870,68 @@ impl MultiWorkerComputeService {
             queued_jobs: self.queue.len(),
             uncertain_jobs,
             recovery_required_jobs,
+        }
+    }
+
+    pub fn runtime_optimization_snapshot(&self) -> RuntimeOptimizationSnapshot {
+        let pressure = self.pressure_snapshot();
+        let latest = self.records.values().last();
+        let latest_view = latest.map(MultiWorkerJobRecord::optimization_view);
+        let repeated_pattern_confirmed = latest
+            .map(|record| {
+                matches!(
+                    record.optimization_feedback.strength,
+                    FeedbackSignalStrength::Strong
+                )
+            })
+            .unwrap_or(false);
+        let historical_feedback_alignment = latest
+            .map(|record| match record.optimization_feedback.strength {
+                FeedbackSignalStrength::Strong | FeedbackSignalStrength::Weak => "aligned",
+                FeedbackSignalStrength::Stale => "stale_feedback",
+                FeedbackSignalStrength::Contradicted => "contradicted_by_current_context",
+                FeedbackSignalStrength::Insufficient => "insufficient_history_signal",
+            })
+            .unwrap_or("insufficient_history_signal")
+            .to_string();
+
+        let mut caveats = latest_view
+            .as_ref()
+            .map_or_else(Vec::new, |view| view.caveats.clone());
+        if pressure.queued_jobs > 0 && !caveats.iter().any(|c| c == "queue_backlog_active") {
+            caveats.push("queue_backlog_active".to_string());
+        }
+        if latest.is_none() {
+            caveats.push("insufficient_diagnostic_signal".to_string());
+        }
+
+        RuntimeOptimizationSnapshot {
+            current_state: latest_view
+                .as_ref()
+                .map_or(OptimizationRuntimeState::Inconclusive, |view| view.state),
+            main_bottleneck: latest_view
+                .as_ref()
+                .map_or(OptimizationBottleneck::None, |view| view.bottleneck),
+            queue_pressure: pressure.queued_jobs > 0
+                || latest_view
+                    .as_ref()
+                    .is_some_and(|view| view.queue_or_deferral_pressure),
+            capacity_pressure: !pressure.saturated_units.is_empty()
+                || !pressure.backpressured_units.is_empty()
+                || !pressure.constrained_units.is_empty()
+                || !pressure.temporarily_unschedulable_units.is_empty()
+                || latest_view
+                    .as_ref()
+                    .is_some_and(|view| view.capacity_pressure),
+            cold_or_warmup_pressure: latest_view
+                .as_ref()
+                .is_some_and(|view| view.cold_or_warmup_pressure),
+            stage_hotspot_pressure: latest_view
+                .as_ref()
+                .is_some_and(|view| view.hotspot_pressure),
+            repeated_pattern_confirmed,
+            historical_feedback_alignment,
+            caveats,
         }
     }
 
@@ -3440,6 +3580,148 @@ fn locality_for_assessments(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+fn derive_runtime_optimization_view(
+    lifecycle_state: JobLifecycleState,
+    execution_failure: Option<&CanonicalPipelineFailure>,
+    placement_outcome: PlacementOutcome,
+    placement_failure: Option<PlacementFailureKind>,
+    capacity_disposition: CapacityQueueDisposition,
+    capacity_pressure: CapacityPressure,
+    degraded_stage_count: u8,
+    dominant_stage_share_bps: Option<u16>,
+    warmup: PlacementWarmupState,
+    feedback: &PlacementOptimizationFeedbackView,
+) -> RuntimeOptimizationView {
+    let queue_or_deferral_pressure = matches!(
+        capacity_disposition,
+        CapacityQueueDisposition::QueuedDueToCapacity
+            | CapacityQueueDisposition::DeferredDueToCapacity
+    ) || matches!(
+        placement_outcome,
+        PlacementOutcome::DeferredConstrained | PlacementOutcome::QueuedAwaitingBetterPlacement
+    );
+    let capacity_pressure_flag = matches!(
+        capacity_pressure,
+        CapacityPressure::Constrained
+            | CapacityPressure::Saturated
+            | CapacityPressure::Backpressured
+            | CapacityPressure::TemporarilyUnschedulable
+    ) || matches!(
+        placement_failure,
+        Some(PlacementFailureKind::CapacityRejected)
+    );
+    let cold_or_warmup_pressure = matches!(
+        warmup,
+        PlacementWarmupState::ColdRunnable
+            | PlacementWarmupState::StalePrepared
+            | PlacementWarmupState::BlockedUnavailable
+    ) || feedback.repeated_cold_start_penalty;
+    let hotspot_pressure = degraded_stage_count > 0
+        || dominant_stage_share_bps.is_some_and(|share| share >= 6_500)
+        || feedback.repeated_hotspot_stage.is_some();
+    let degraded_path = matches!(
+        placement_outcome,
+        PlacementOutcome::DegradedValid | PlacementOutcome::DeferredConstrained
+    ) || degraded_stage_count > 0
+        || feedback.repeated_degraded_placement;
+
+    let mut caveats = Vec::new();
+    if queue_or_deferral_pressure {
+        caveats.push("queue_or_deferral_pressure".to_string());
+    }
+    if capacity_pressure_flag {
+        caveats.push("capacity_constrained".to_string());
+    }
+    if cold_or_warmup_pressure {
+        caveats.push("cold_or_warmup_readiness".to_string());
+    }
+    if hotspot_pressure {
+        caveats.push("dominant_stage_hotspot_or_degraded_stage".to_string());
+    }
+    if feedback.repeated_retry_or_redispatch_cost {
+        caveats.push("repeated_retry_or_redispatch_cost".to_string());
+    }
+
+    let signal_count = [
+        queue_or_deferral_pressure,
+        capacity_pressure_flag,
+        cold_or_warmup_pressure,
+        hotspot_pressure,
+        degraded_path,
+    ]
+    .into_iter()
+    .filter(|flag| *flag)
+    .count();
+
+    let (state, bottleneck) = if matches!(lifecycle_state, JobLifecycleState::Failed)
+        && execution_failure
+            .map(|failure| {
+                !matches!(
+                    failure.kind,
+                    CanonicalFailureKind::ExecutionError
+                        | CanonicalFailureKind::StageUnavailable
+                        | CanonicalFailureKind::Timeout
+                )
+            })
+            .unwrap_or(false)
+    {
+        (
+            OptimizationRuntimeState::FailureUnrelatedToOptimization,
+            OptimizationBottleneck::None,
+        )
+    } else if signal_count == 0 {
+        (
+            OptimizationRuntimeState::HealthyEfficient,
+            OptimizationBottleneck::None,
+        )
+    } else if signal_count > 1 {
+        (
+            OptimizationRuntimeState::Mixed,
+            OptimizationBottleneck::Mixed,
+        )
+    } else if capacity_pressure_flag || queue_or_deferral_pressure {
+        (
+            OptimizationRuntimeState::ConstrainedByCapacity,
+            if queue_or_deferral_pressure {
+                OptimizationBottleneck::QueuePressure
+            } else {
+                OptimizationBottleneck::Capacity
+            },
+        )
+    } else if cold_or_warmup_pressure {
+        (
+            OptimizationRuntimeState::ConstrainedByColdWarmupReadiness,
+            OptimizationBottleneck::WarmupReadiness,
+        )
+    } else if hotspot_pressure {
+        (
+            OptimizationRuntimeState::ConstrainedByDominantStageHotspot,
+            OptimizationBottleneck::StageHotspot,
+        )
+    } else if degraded_path {
+        (
+            OptimizationRuntimeState::DegradedButServiceable,
+            OptimizationBottleneck::DegradedPath,
+        )
+    } else {
+        (
+            OptimizationRuntimeState::Inconclusive,
+            OptimizationBottleneck::None,
+        )
+    };
+
+    RuntimeOptimizationView {
+        state,
+        bottleneck,
+        queue_or_deferral_pressure,
+        capacity_pressure: capacity_pressure_flag,
+        cold_or_warmup_pressure,
+        hotspot_pressure,
+        caveats,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::{Arc, Mutex};
@@ -3467,11 +3749,11 @@ mod tests {
         DistributedPlacementState, ExecutionDeviceClass, ExecutionUnitId, ExecutionUnitKind,
         FeedbackSignalStrength, InFlightCoordinationState, InMemoryComputeService,
         JobCompletionClass, JobCoordinationSnapshot, JobExecutionPath, JobLifecycleState,
-        JobSubmissionMeta, MultiWorkerComputeService, PlacementFailureKind, PlacementOutcome,
-        PlacementSuitability, PlacementWarmupState, RecoverySignal, ResourceClass, SchedulerConfig,
-        TerminalCoordinationInput, WorkCostProvenance, WorkCostTension, WorkerAvailability,
-        WorkerClass, WorkerDispatchOutcome, WorkerRecoveryKind, WorkerRegistryRole,
-        WorkerRuntimeStatus,
+        JobSubmissionMeta, MultiWorkerComputeService, OptimizationRuntimeState,
+        PlacementFailureKind, PlacementOutcome, PlacementSuitability, PlacementWarmupState,
+        RecoverySignal, ResourceClass, SchedulerConfig, TerminalCoordinationInput,
+        WorkCostProvenance, WorkCostTension, WorkerAvailability, WorkerClass,
+        WorkerDispatchOutcome, WorkerRecoveryKind, WorkerRegistryRole, WorkerRuntimeStatus,
     };
 
     struct NullLlm;
@@ -5190,5 +5472,55 @@ mod tests {
             .decisive_signals
             .iter()
             .any(|signal| signal.contains("feedback_strength=stale")));
+    }
+
+    #[test]
+    fn optimization_view_marks_capacity_constraint_for_deferred_job() {
+        let mut service = MultiWorkerComputeService::new(ComputePipelineBackend::stub(), 1);
+        for unit in service.execution_units() {
+            service.set_worker_availability(&unit.id, WorkerAvailability::Unavailable);
+        }
+        let job_id = service.submit(
+            valid_request(),
+            JobSubmissionMeta {
+                submitted_at_unix_ms: 90,
+                submitted_by: Some("opt-cap".to_string()),
+            },
+            None,
+        );
+        service.run_scheduler_cycle(1);
+        let deferred = service.job(job_id).expect("deferred");
+        let optimization = deferred.optimization_view();
+        assert!(matches!(
+            optimization.state,
+            OptimizationRuntimeState::ConstrainedByCapacity | OptimizationRuntimeState::Mixed
+        ));
+        assert!(optimization.queue_or_deferral_pressure);
+    }
+
+    #[test]
+    fn runtime_optimization_snapshot_captures_mixed_picture() {
+        let mut service = MultiWorkerComputeService::new(ComputePipelineBackend::stub(), 1);
+        for unit in service.execution_units() {
+            service.set_worker_availability(&unit.id, WorkerAvailability::Unavailable);
+        }
+        let job_id = service.submit(
+            valid_request(),
+            JobSubmissionMeta {
+                submitted_at_unix_ms: 91,
+                submitted_by: Some("opt-mixed".to_string()),
+            },
+            None,
+        );
+        service.run_scheduler_cycle(1);
+        let _ = service.job(job_id).expect("record");
+        let snapshot = service.runtime_optimization_snapshot();
+        assert!(!snapshot.caveats.is_empty());
+        assert!(matches!(
+            snapshot.current_state,
+            OptimizationRuntimeState::ConstrainedByCapacity
+                | OptimizationRuntimeState::Mixed
+                | OptimizationRuntimeState::Inconclusive
+        ));
     }
 }
