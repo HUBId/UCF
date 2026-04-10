@@ -381,6 +381,27 @@ pub enum RolloutProgressClassification {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
+pub enum RolloutProblemKind {
+    None,
+    ActivationUnstable,
+    ActivationInducedDegradation,
+    CandidateRejectedAfterActivationAttempt,
+    GeneralRuntimeFailureNoRolloutMeaning,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RolloutRecoveryOutcome {
+    NotNeeded,
+    GuardedActive,
+    FallbackToPriorActive,
+    RollbackCompleted,
+    CandidateBlocked,
+    IncompleteOrBlocked,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum RolloutActivationScope {
     NotActive,
     CompareShadowOnly,
@@ -426,6 +447,12 @@ pub enum RolloutEventKind {
     GuardrailFallbackToPriorActive,
     RollbackOccurred,
     GuardrailRollbackAfterGuardedActivation,
+    GuardrailPreventedWiderActivation,
+    ActivationBecameUnstableAfterGoingActive,
+    FallbackStabilizedService,
+    RollbackRestoredPriorActive,
+    CandidateRemainsBlockedAfterRecovery,
+    RecoveryIncompleteOrBlocked,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -453,6 +480,8 @@ pub struct SlotRolloutDiagnostics {
     pub guardrail_reasons: Vec<GuardrailReason>,
     pub fallback: ActivationFallbackState,
     pub rollback: RollbackOutcome,
+    pub problem_kind: RolloutProblemKind,
+    pub recovery_outcome: RolloutRecoveryOutcome,
     pub progress: RolloutProgressClassification,
     pub blockers: Vec<RolloutBlockerKind>,
     pub consolidated: RolloutSignalConsolidation,
@@ -1091,6 +1120,62 @@ impl ModelStore {
             RolloutProgressClassification::Progressed
         };
 
+        let candidate_targeted = promotion.candidate_hash.as_deref() == Some(target_hash.as_str());
+        let problem_kind = if !candidate_present
+            && matches!(
+                activation.outcome,
+                ActivationOutcome::Blocked | ActivationOutcome::FailedTechnically
+            ) {
+            RolloutProblemKind::GeneralRuntimeFailureNoRolloutMeaning
+        } else if candidate_targeted
+            && !promotion.blockers.is_empty()
+            && matches!(
+                activation.outcome,
+                ActivationOutcome::Blocked
+                    | ActivationOutcome::Degraded
+                    | ActivationOutcome::FailedTechnically
+            )
+        {
+            RolloutProblemKind::CandidateRejectedAfterActivationAttempt
+        } else if matches!(activation.outcome, ActivationOutcome::Degraded)
+            && promotion.signals.degraded_beyond_acceptable_threshold
+        {
+            RolloutProblemKind::ActivationInducedDegradation
+        } else if matches!(
+            activation.outcome,
+            ActivationOutcome::Degraded
+                | ActivationOutcome::Blocked
+                | ActivationOutcome::FailedTechnically
+        ) {
+            RolloutProblemKind::ActivationUnstable
+        } else {
+            RolloutProblemKind::None
+        };
+        let recovery_outcome = if rollback_triggered {
+            RolloutRecoveryOutcome::RollbackCompleted
+        } else if matches!(
+            activation.fallback,
+            ActivationFallbackState::FallbackToPriorActive
+        ) {
+            RolloutRecoveryOutcome::FallbackToPriorActive
+        } else if activation.scope == RolloutActivationScope::GuardedActive
+            && matches!(
+                activation.outcome,
+                ActivationOutcome::Pending | ActivationOutcome::Degraded
+            )
+        {
+            RolloutRecoveryOutcome::GuardedActive
+        } else if promotion.state == PromotionDecisionState::BlockedForPromotion {
+            RolloutRecoveryOutcome::CandidateBlocked
+        } else if matches!(
+            activation.outcome,
+            ActivationOutcome::Blocked | ActivationOutcome::FailedTechnically
+        ) {
+            RolloutRecoveryOutcome::IncompleteOrBlocked
+        } else {
+            RolloutRecoveryOutcome::NotNeeded
+        };
+
         let mut events = Vec::new();
         let mut guardrail_reasons = activation.guardrail_reasons.clone();
         if promotion.candidate_hash.is_some() {
@@ -1167,6 +1252,28 @@ impl ModelStore {
         }
         if matches!(
             activation.outcome,
+            ActivationOutcome::Blocked | ActivationOutcome::FailedTechnically
+        ) {
+            events.push(RolloutEvent {
+                kind: RolloutEventKind::GuardrailPreventedWiderActivation,
+                detail: format!(
+                    "outcome={:?} reasons={:?}",
+                    activation.outcome, activation.guardrail_reasons
+                ),
+            });
+        }
+        if matches!(activation.outcome, ActivationOutcome::Degraded) {
+            events.push(RolloutEvent {
+                kind: RolloutEventKind::ActivationBecameUnstableAfterGoingActive,
+                detail: activation
+                    .degraded_reason
+                    .as_deref()
+                    .unwrap_or("activation degraded under rollout guardrails")
+                    .to_string(),
+            });
+        }
+        if matches!(
+            activation.outcome,
             ActivationOutcome::Blocked
                 | ActivationOutcome::Degraded
                 | ActivationOutcome::FailedTechnically
@@ -1205,6 +1312,14 @@ impl ModelStore {
                     hash_prefix(activation.prior_active_hash.as_deref())
                 ),
             });
+            events.push(RolloutEvent {
+                kind: RolloutEventKind::FallbackStabilizedService,
+                detail: format!(
+                    "resulting_active={} prior_active={}",
+                    hash_prefix(activation.resulting_active_hash.as_deref()),
+                    hash_prefix(activation.prior_active_hash.as_deref())
+                ),
+            });
         }
         if rollback_triggered {
             guardrail_reasons.push(GuardrailReason::RollbackAfterGuardedActivation);
@@ -1223,6 +1338,33 @@ impl ModelStore {
                     "rollback_to={} detail={}",
                     hash_prefix(rollback.rollback_hash.as_deref()),
                     rollback.detail
+                ),
+            });
+            events.push(RolloutEvent {
+                kind: RolloutEventKind::RollbackRestoredPriorActive,
+                detail: format!(
+                    "resulting_active={} rollback_to={}",
+                    hash_prefix(rollback.resulting_active_hash.as_deref()),
+                    hash_prefix(rollback.rollback_hash.as_deref())
+                ),
+            });
+        }
+        if problem_kind == RolloutProblemKind::CandidateRejectedAfterActivationAttempt
+            || recovery_outcome == RolloutRecoveryOutcome::CandidateBlocked
+        {
+            events.push(RolloutEvent {
+                kind: RolloutEventKind::CandidateRemainsBlockedAfterRecovery,
+                detail: format!("promotion_blockers={:?}", promotion.blockers),
+            });
+        }
+        if recovery_outcome == RolloutRecoveryOutcome::IncompleteOrBlocked {
+            events.push(RolloutEvent {
+                kind: RolloutEventKind::RecoveryIncompleteOrBlocked,
+                detail: format!(
+                    "fallback={:?} rollback={:?} blocked_reason={}",
+                    activation.fallback,
+                    rollback.outcome,
+                    activation.blocked_reason.as_deref().unwrap_or("none")
                 ),
             });
         }
@@ -1276,6 +1418,8 @@ impl ModelStore {
             guardrail_reasons,
             fallback: activation.fallback,
             rollback: rollback.outcome,
+            problem_kind,
+            recovery_outcome,
             progress,
             blockers,
             consolidated,
@@ -2823,6 +2967,7 @@ enabled = false
         let _lock = crate::test_env::env_lock()
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
+        std::env::remove_var("UCF_MODEL_PIN_WORLD_JEPA");
         let temp = tempfile::tempdir().expect("tempdir");
         let models = temp.path().join("models");
         fs::create_dir_all(&models).expect("models");
@@ -2965,6 +3110,14 @@ enabled = false
             RolloutActivationScope::Reverted
         );
         assert_eq!(
+            diagnostics.problem_kind,
+            RolloutProblemKind::CandidateRejectedAfterActivationAttempt
+        );
+        assert_eq!(
+            diagnostics.recovery_outcome,
+            RolloutRecoveryOutcome::RollbackCompleted
+        );
+        assert_eq!(
             diagnostics.consolidated.situation,
             RolloutSignalSituation::ActiveButUnstable
         );
@@ -2993,6 +3146,10 @@ enabled = false
             .events
             .iter()
             .any(|event| event.kind == RolloutEventKind::GuardrailViolationDetected));
+        assert!(diagnostics.events.iter().any(|event| {
+            event.kind == RolloutEventKind::FallbackStabilizedService
+                || event.kind == RolloutEventKind::RollbackRestoredPriorActive
+        }));
         std::env::remove_var("UCF_MODEL_CANDIDATE_WORLD_JEPA");
     }
 
@@ -3050,6 +3207,11 @@ enabled = false
         assert_eq!(
             diagnostics.resulting_scope,
             RolloutActivationScope::FullyActive
+        );
+        assert_eq!(diagnostics.problem_kind, RolloutProblemKind::None);
+        assert_eq!(
+            diagnostics.recovery_outcome,
+            RolloutRecoveryOutcome::NotNeeded
         );
         assert_eq!(
             diagnostics.consolidated.situation,
@@ -3130,8 +3292,78 @@ enabled = false
             diagnostics.resulting_scope,
             RolloutActivationScope::CompareShadowOnly
         );
+        assert_eq!(diagnostics.problem_kind, RolloutProblemKind::None);
+        assert_eq!(
+            diagnostics.recovery_outcome,
+            RolloutRecoveryOutcome::NotNeeded
+        );
 
         std::env::remove_var("UCF_MODEL_COMPARE_WORLD_JEPA");
+    }
+
+    #[test]
+    fn rollout_diagnostics_marks_candidate_rejected_after_activation_attempt() {
+        let _lock = crate::test_env::env_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        std::env::remove_var("UCF_MODEL_PIN_WORLD_JEPA");
+        std::env::remove_var("UCF_MODEL_COMPARE_WORLD_JEPA");
+        std::env::remove_var("UCF_MODEL_SHADOW_WORLD_JEPA");
+        let temp = tempfile::tempdir().expect("tempdir");
+        let models = temp.path().join("models");
+        fs::create_dir_all(&models).expect("models");
+        let active_bytes = b"verified-model-active";
+        let active_hash = hex::encode(Sha256::digest(active_bytes));
+        let candidate_bytes = b"verified-model-candidate";
+        let candidate_hash = hex::encode(Sha256::digest(candidate_bytes));
+        for (hash, bytes) in [
+            (active_hash.as_str(), active_bytes.as_slice()),
+            (candidate_hash.as_str(), candidate_bytes.as_slice()),
+        ] {
+            let model_path = models
+                .join("promoted")
+                .join("world_jepa")
+                .join(hash)
+                .join("model.safetensors");
+            fs::create_dir_all(model_path.parent().expect("parent")).expect("mkdirs");
+            fs::write(&model_path, bytes).expect("write");
+        }
+        std::env::set_var("UCF_MODEL_CANDIDATE_WORLD_JEPA", &candidate_hash);
+
+        let mut specs = BTreeMap::new();
+        specs.insert(
+            ModelSlot::WorldJepa,
+            ModelSlotSpec {
+                slot: ModelSlot::WorldJepa,
+                enabled: true,
+                path: None,
+                expected_sha256: parse_hash(&active_hash),
+                max_bytes: 1024,
+                format: ModelFormat::Burn,
+                device: ModelDevice::CpuOnly,
+                active_hash: Some(active_hash),
+                contract_version: Some("v1".to_string()),
+            },
+        );
+        let store = ModelStore {
+            allowlist_root: models,
+            specs,
+        };
+
+        let diagnostics = store.slot_rollout_diagnostics(ModelSlot::WorldJepa, Some("v1"));
+        assert_eq!(
+            diagnostics.problem_kind,
+            RolloutProblemKind::CandidateRejectedAfterActivationAttempt
+        );
+        assert_eq!(
+            diagnostics.recovery_outcome,
+            RolloutRecoveryOutcome::RollbackCompleted
+        );
+        assert!(diagnostics
+            .events
+            .iter()
+            .any(|event| { event.kind == RolloutEventKind::CandidateRemainsBlockedAfterRecovery }));
+        std::env::remove_var("UCF_MODEL_CANDIDATE_WORLD_JEPA");
     }
 
     #[test]

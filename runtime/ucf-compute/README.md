@@ -226,6 +226,21 @@ can distinguish:
   candidate_comparison_inconclusive|active_path_remains_preferred`).
 - activation scope (`not_active|compare_shadow_only|guarded_active|fully_active|blocked|reverted`)
   with explicit guardrail reasons and resulting post-fallback/rollback scope.
+- rollout recovery classification:
+  - problem kind (`none|activation_unstable|activation_induced_degradation|
+    candidate_rejected_after_activation_attempt|general_runtime_failure_no_rollout_meaning`)
+  - recovery outcome (`not_needed|guarded_active|fallback_to_prior_active|rollback_completed|
+    candidate_blocked|incomplete_or_blocked`).
+  These keep bad activation / unstable candidate handling separate from generic runtime failures and
+  show whether recovery held candidate in guarded-active, fell back, rolled back, or stayed blocked.
+
+Recovery boundaries (narrow and intentional):
+- guardrail prevention (`GuardrailPreventedWiderActivation`) stays distinct from post-activation
+  instability (`ActivationBecameUnstableAfterGoingActive`);
+- fallback stabilization (`FallbackStabilizedService`) stays distinct from rollback restoration
+  (`RollbackRestoredPriorActive`);
+- candidate-blocking remains explicit (`CandidateRemainsBlockedAfterRecovery`);
+- no incident automation or release-orchestration loop is introduced.
 
 Boundaries (intentional):
 
