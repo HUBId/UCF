@@ -328,6 +328,47 @@ pub enum RolloutBlockerKind {
     FallbackOrRollbackRequired,
 }
 
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum RolloutSignalGroup {
+    CompatibilityGate,
+    BaselineCompareShadow,
+    ActivationGuardrails,
+    RuntimeOutcomes,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RolloutSignalSituation {
+    InsufficientSignal,
+    TechnicallyBlocked,
+    ComparableButInconclusive,
+    PromotableUnderGuardrails,
+    FullyPromotable,
+    ActiveButUnstable,
+}
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum RolloutSignalTension {
+    GatesPassedButRuntimeUnstable,
+    ComparisonPositiveButGuardrailRequired,
+    ActivationPossibleButSignalInsufficient,
+    ActiveButDegradedQuestionsStability,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct RolloutSignalConsolidation {
+    pub situation: RolloutSignalSituation,
+    pub supporting_groups: Vec<RolloutSignalGroup>,
+    pub blocking_groups: Vec<RolloutSignalGroup>,
+    pub tensions: Vec<RolloutSignalTension>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RolloutProgressClassification {
@@ -414,6 +455,7 @@ pub struct SlotRolloutDiagnostics {
     pub rollback: RollbackOutcome,
     pub progress: RolloutProgressClassification,
     pub blockers: Vec<RolloutBlockerKind>,
+    pub consolidated: RolloutSignalConsolidation,
     pub events: Vec<RolloutEvent>,
 }
 
@@ -430,6 +472,7 @@ pub struct SlotActivationAssessment {
     pub rollback: RollbackOutcome,
     pub promotion_state: PromotionDecisionState,
     pub promotion_blockers: Vec<PromotionBlockerCode>,
+    pub consolidated: RolloutSignalConsolidation,
     pub blocked_reason: Option<String>,
     pub degraded_reason: Option<String>,
     pub technical_failure: Option<String>,
@@ -774,6 +817,12 @@ impl ModelStore {
             rollback: RollbackOutcome::NotRequested,
             promotion_state: promotion.state,
             promotion_blockers: promotion.blockers.clone(),
+            consolidated: RolloutSignalConsolidation {
+                situation: RolloutSignalSituation::InsufficientSignal,
+                supporting_groups: Vec::new(),
+                blocking_groups: Vec::new(),
+                tensions: Vec::new(),
+            },
             blocked_reason: None,
             degraded_reason: None,
             technical_failure: None,
@@ -789,6 +838,7 @@ impl ModelStore {
                 assessment.blocked_reason = Some(format!("{err:?}"));
                 assessment.fallback =
                     self.fallback_state_for_prior(slot, prior_active_hash.as_deref());
+                assessment.consolidated = consolidate_rollout_signals(&promotion, &assessment);
                 return assessment;
             }
         }
@@ -800,6 +850,7 @@ impl ModelStore {
                 .push(GuardrailReason::ActivationFailedTechnically);
             assessment.technical_failure = Some(format!("{err:?}"));
             assessment.fallback = self.fallback_state_for_prior(slot, prior_active_hash.as_deref());
+            assessment.consolidated = consolidate_rollout_signals(&promotion, &assessment);
             return assessment;
         }
 
@@ -812,6 +863,7 @@ impl ModelStore {
             assessment.outcome = ActivationOutcome::Succeeded;
             assessment.scope = RolloutActivationScope::FullyActive;
             assessment.resulting_active_hash = Some(target_hash);
+            assessment.consolidated = consolidate_rollout_signals(&promotion, &assessment);
             return assessment;
         }
 
@@ -837,6 +889,7 @@ impl ModelStore {
                 ));
                 assessment.fallback =
                     self.fallback_state_for_prior(slot, prior_active_hash.as_deref());
+                assessment.consolidated = consolidate_rollout_signals(&promotion, &assessment);
                 return assessment;
             }
         }
@@ -875,6 +928,7 @@ impl ModelStore {
                 assessment.fallback =
                     self.fallback_state_for_prior(slot, prior_active_hash.as_deref());
             }
+            assessment.consolidated = consolidate_rollout_signals(&promotion, &assessment);
             return assessment;
         }
         if !promotion.signals.runtime_path_production_usable {
@@ -893,6 +947,7 @@ impl ModelStore {
         };
         assessment.outcome = ActivationOutcome::Pending;
         assessment.resulting_active_hash = prior_active_hash;
+        assessment.consolidated = consolidate_rollout_signals(&promotion, &assessment);
         assessment
     }
 
@@ -970,6 +1025,13 @@ impl ModelStore {
                 | ActivationOutcome::FailedTechnically
         );
         let rollback_triggered = guardrail_issue && rollback.outcome == RollbackOutcome::Completed;
+        let mut consolidated_activation = activation.clone();
+        consolidated_activation.rollback = if rollback_triggered {
+            rollback.outcome
+        } else {
+            RollbackOutcome::NotRequested
+        };
+        let consolidated = consolidate_rollout_signals(&promotion, &consolidated_activation);
 
         let mut blockers = Vec::new();
         if promotion
@@ -1216,6 +1278,7 @@ impl ModelStore {
             rollback: rollback.outcome,
             progress,
             blockers,
+            consolidated,
             events,
         }
     }
@@ -1742,6 +1805,128 @@ fn hash_prefix(value: Option<&str>) -> String {
         .filter(|v| !v.is_empty())
         .map(|v| v.chars().take(12).collect::<String>())
         .unwrap_or_else(|| "none".to_string())
+}
+
+fn consolidate_rollout_signals(
+    promotion: &SlotPromotionDecision,
+    activation: &SlotActivationAssessment,
+) -> RolloutSignalConsolidation {
+    let candidate_present = promotion.candidate_hash.is_some();
+    let gate_blocked = promotion.blockers.iter().any(|blocker| {
+        matches!(
+            blocker,
+            PromotionBlockerCode::GateBlocked
+                | PromotionBlockerCode::RuntimePathNotProductionUsable
+        )
+    });
+    let baseline_missing = !promotion.signals.baseline_comparison_ready
+        || !promotion.signals.compare_or_shadow_diagnostic_ready;
+    let compare_positive = matches!(
+        promotion.compare_shadow.compare_outcome,
+        ComparePathOutcome::ComparedSuccessfully
+    ) || matches!(
+        promotion.compare_shadow.shadow_outcome,
+        ShadowPathOutcome::ShadowedSuccessfully
+    );
+    let compare_inconclusive = candidate_present
+        && (matches!(
+            promotion.compare_shadow.compare_outcome,
+            ComparePathOutcome::ComparisonInconclusive | ComparePathOutcome::NotComparable
+        ) || matches!(
+            promotion.compare_shadow.shadow_outcome,
+            ShadowPathOutcome::ShadowInconclusive | ShadowPathOutcome::NotComparable
+        ));
+    let runtime_unstable = matches!(
+        activation.outcome,
+        ActivationOutcome::Degraded
+            | ActivationOutcome::Blocked
+            | ActivationOutcome::FailedTechnically
+    ) || !matches!(activation.fallback, ActivationFallbackState::NotUsed)
+        || !matches!(activation.rollback, RollbackOutcome::NotRequested);
+    let guardrails_required = !activation.guardrail_reasons.is_empty()
+        || matches!(activation.scope, RolloutActivationScope::GuardedActive)
+        || promotion.signals.degraded_beyond_acceptable_threshold;
+    let activation_possible = !matches!(
+        activation.outcome,
+        ActivationOutcome::Blocked | ActivationOutcome::FailedTechnically
+    );
+
+    let situation = if gate_blocked || matches!(activation.outcome, ActivationOutcome::Blocked) {
+        RolloutSignalSituation::TechnicallyBlocked
+    } else if runtime_unstable
+        && (promotion.active_hash.is_some()
+            || candidate_present
+            || activation.resulting_active_hash.is_some())
+    {
+        RolloutSignalSituation::ActiveButUnstable
+    } else if !candidate_present && promotion.signals.runtime_path_production_usable {
+        RolloutSignalSituation::FullyPromotable
+    } else if activation_possible && baseline_missing {
+        RolloutSignalSituation::InsufficientSignal
+    } else if compare_inconclusive {
+        RolloutSignalSituation::ComparableButInconclusive
+    } else if candidate_present && (guardrails_required || !promotion.signals.readiness_ok) {
+        RolloutSignalSituation::PromotableUnderGuardrails
+    } else if promotion.signals.runtime_path_production_usable || compare_positive {
+        RolloutSignalSituation::FullyPromotable
+    } else {
+        RolloutSignalSituation::InsufficientSignal
+    };
+
+    let mut supporting_groups = std::collections::BTreeSet::new();
+    if promotion.signals.runtime_path_production_usable {
+        supporting_groups.insert(RolloutSignalGroup::CompatibilityGate);
+    }
+    if promotion.signals.baseline_comparison_ready
+        || promotion.signals.compare_or_shadow_diagnostic_ready
+    {
+        supporting_groups.insert(RolloutSignalGroup::BaselineCompareShadow);
+    }
+    if activation_possible {
+        supporting_groups.insert(RolloutSignalGroup::ActivationGuardrails);
+    }
+    if !runtime_unstable {
+        supporting_groups.insert(RolloutSignalGroup::RuntimeOutcomes);
+    }
+
+    let mut blocking_groups = std::collections::BTreeSet::new();
+    if gate_blocked {
+        blocking_groups.insert(RolloutSignalGroup::CompatibilityGate);
+    }
+    if baseline_missing || compare_inconclusive {
+        blocking_groups.insert(RolloutSignalGroup::BaselineCompareShadow);
+    }
+    if matches!(
+        activation.outcome,
+        ActivationOutcome::Blocked | ActivationOutcome::FailedTechnically
+    ) || guardrails_required
+    {
+        blocking_groups.insert(RolloutSignalGroup::ActivationGuardrails);
+    }
+    if runtime_unstable {
+        blocking_groups.insert(RolloutSignalGroup::RuntimeOutcomes);
+    }
+
+    let mut tensions = std::collections::BTreeSet::new();
+    if promotion.signals.runtime_path_production_usable && runtime_unstable {
+        tensions.insert(RolloutSignalTension::GatesPassedButRuntimeUnstable);
+    }
+    if compare_positive && guardrails_required {
+        tensions.insert(RolloutSignalTension::ComparisonPositiveButGuardrailRequired);
+    }
+    if activation_possible && baseline_missing {
+        tensions.insert(RolloutSignalTension::ActivationPossibleButSignalInsufficient);
+    }
+    if matches!(activation.outcome, ActivationOutcome::Degraded) || runtime_unstable {
+        tensions.insert(RolloutSignalTension::ActiveButDegradedQuestionsStability);
+    }
+
+    RolloutSignalConsolidation {
+        situation,
+        supporting_groups: supporting_groups.into_iter().collect(),
+        blocking_groups: blocking_groups.into_iter().collect(),
+        tensions: tensions.into_iter().collect(),
+    }
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -2616,6 +2801,14 @@ enabled = false
         assert_eq!(assessment.outcome, ActivationOutcome::Blocked);
         assert_eq!(assessment.scope, RolloutActivationScope::Blocked);
         assert_eq!(
+            assessment.consolidated.situation,
+            RolloutSignalSituation::TechnicallyBlocked
+        );
+        assert!(assessment
+            .consolidated
+            .blocking_groups
+            .contains(&RolloutSignalGroup::ActivationGuardrails));
+        assert_eq!(
             assessment.fallback,
             ActivationFallbackState::FallbackToPriorActive
         );
@@ -2677,6 +2870,14 @@ enabled = false
             store.assess_slot_activation(ModelSlot::WorldJepa, &candidate_hash, Some("v1"));
         assert_eq!(activation.outcome, ActivationOutcome::Degraded);
         assert_eq!(activation.scope, RolloutActivationScope::GuardedActive);
+        assert_eq!(
+            activation.consolidated.situation,
+            RolloutSignalSituation::ActiveButUnstable
+        );
+        assert!(activation
+            .consolidated
+            .tensions
+            .contains(&RolloutSignalTension::ActivationPossibleButSignalInsufficient));
         assert!(activation
             .guardrail_reasons
             .contains(&GuardrailReason::MissingBaselineComparisonSignal));
@@ -2763,6 +2964,14 @@ enabled = false
             diagnostics.resulting_scope,
             RolloutActivationScope::Reverted
         );
+        assert_eq!(
+            diagnostics.consolidated.situation,
+            RolloutSignalSituation::ActiveButUnstable
+        );
+        assert!(diagnostics
+            .consolidated
+            .blocking_groups
+            .contains(&RolloutSignalGroup::RuntimeOutcomes));
         assert!(diagnostics
             .guardrail_reasons
             .contains(&GuardrailReason::FallbackToPriorActive));
@@ -2842,6 +3051,14 @@ enabled = false
             diagnostics.resulting_scope,
             RolloutActivationScope::FullyActive
         );
+        assert_eq!(
+            diagnostics.consolidated.situation,
+            RolloutSignalSituation::FullyPromotable
+        );
+        assert!(diagnostics
+            .consolidated
+            .supporting_groups
+            .contains(&RolloutSignalGroup::CompatibilityGate));
         assert!(diagnostics.blockers.is_empty());
         assert!(diagnostics
             .events
@@ -2914,6 +3131,73 @@ enabled = false
             RolloutActivationScope::CompareShadowOnly
         );
 
+        std::env::remove_var("UCF_MODEL_COMPARE_WORLD_JEPA");
+    }
+
+    #[test]
+    fn consolidated_rollout_view_marks_comparable_but_inconclusive_for_mismatched_compare_hash() {
+        let _lock = crate::test_env::env_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let temp = tempfile::tempdir().expect("tempdir");
+        let models = temp.path().join("models");
+        fs::create_dir_all(&models).expect("models");
+        let active_bytes = b"verified-model-active";
+        let candidate_bytes = b"verified-model-candidate";
+        let compare_bytes = b"verified-model-compare";
+        let active_hash = hex::encode(Sha256::digest(active_bytes));
+        let candidate_hash = hex::encode(Sha256::digest(candidate_bytes));
+        let compare_hash = hex::encode(Sha256::digest(compare_bytes));
+        for (hash, bytes) in [
+            (active_hash.as_str(), active_bytes.as_slice()),
+            (candidate_hash.as_str(), candidate_bytes.as_slice()),
+            (compare_hash.as_str(), compare_bytes.as_slice()),
+        ] {
+            let model_path = models
+                .join("promoted")
+                .join("world_jepa")
+                .join(hash)
+                .join("model.safetensors");
+            fs::create_dir_all(model_path.parent().expect("parent")).expect("mkdirs");
+            fs::write(&model_path, bytes).expect("write");
+        }
+        std::env::set_var("UCF_MODEL_CANDIDATE_WORLD_JEPA", &candidate_hash);
+        std::env::set_var("UCF_MODEL_COMPARE_WORLD_JEPA", &compare_hash);
+        std::env::remove_var("UCF_MODEL_SHADOW_WORLD_JEPA");
+
+        let mut specs = BTreeMap::new();
+        specs.insert(
+            ModelSlot::WorldJepa,
+            ModelSlotSpec {
+                slot: ModelSlot::WorldJepa,
+                enabled: true,
+                path: None,
+                expected_sha256: parse_hash(&active_hash),
+                max_bytes: 1024,
+                format: ModelFormat::Burn,
+                device: ModelDevice::CpuOnly,
+                active_hash: Some(active_hash),
+                contract_version: Some("v1".to_string()),
+            },
+        );
+        let store = ModelStore {
+            allowlist_root: models,
+            specs,
+        };
+
+        let activation =
+            store.assess_slot_activation(ModelSlot::WorldJepa, &candidate_hash, Some("v1"));
+        assert_eq!(activation.outcome, ActivationOutcome::Pending);
+        assert_eq!(
+            activation.consolidated.situation,
+            RolloutSignalSituation::ComparableButInconclusive
+        );
+        assert!(activation
+            .consolidated
+            .blocking_groups
+            .contains(&RolloutSignalGroup::BaselineCompareShadow));
+
+        std::env::remove_var("UCF_MODEL_CANDIDATE_WORLD_JEPA");
         std::env::remove_var("UCF_MODEL_COMPARE_WORLD_JEPA");
     }
 }

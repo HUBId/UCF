@@ -72,6 +72,26 @@ Zusätzlich zur Slot-Provenance wird jetzt pro Slot eine kompakte
   `resulting_active_hash`
 - Entscheidungen: `promotion_state`, `promotion_disposition`, `activation_outcome`,
   `fallback`, `rollback`
+- Konsolidierte Signal-View (`consolidated`), die load-bearing Quellen gemeinsam auswertet:
+  - `compatibility_gate`
+  - `baseline_compare_shadow`
+  - `activation_guardrails`
+  - `runtime_outcomes`
+- Kanonische konsolidierte Rollout-Lage (`rollout_signal_situation`):
+  - `insufficient_signal`
+  - `technically_blocked`
+  - `comparable_but_inconclusive`
+  - `promotable_under_guardrails`
+  - `fully_promotable`
+  - `active_but_unstable`
+- Pro Lage sichtbar:
+  - primäre stützende Signalgruppen (`supporting_groups`)
+  - primäre blockierende Signalgruppen (`blocking_groups`)
+  - explizite Spannungslagen (`tensions`), u.a.:
+    - `gates_passed_but_runtime_unstable`
+    - `comparison_positive_but_guardrail_required`
+    - `activation_possible_but_signal_insufficient`
+    - `active_but_degraded_questions_stability`
 - Diagnose-Klassifikation:
   - `progressed`
   - `blocked`
@@ -101,6 +121,7 @@ Grenzen (bewusst):
 - Keine Governance-/Approval-/Incident-Welt.
 - Keine separate Evidenz-Parallelwelt; Compare/Baseline/Gate-Signale bleiben in der
   bestehenden Promotion-/Activation-Semantik.
+- Keine Scoring-/Ranking-Engine; die Sicht bleibt eine schmale technische Konsolidierung.
 
 ## LLM v1 (Candle CPU) Rollout Notes
 
