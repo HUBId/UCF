@@ -947,7 +947,19 @@ pub struct PlacementCandidateAssessment {
     pub suitability: PlacementSuitability,
     pub warmup: PlacementWarmupState,
     pub cold_start_penalty_units: u16,
+    pub effective_reference_path: String,
+    pub reference_path_class: ReferencePathClass,
+    pub cold_start_sensitive: bool,
     pub detail: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReferencePathClass {
+    ActiveProduction,
+    GuardedActive,
+    Candidate,
+    CompareShadow,
+    Unknown,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1020,6 +1032,10 @@ pub struct PlacementOptimizationFeedbackView {
     pub repeated_worker_pressure: bool,
     pub repeated_retry_or_redispatch_cost: bool,
     pub repeated_hotspot_stage: Option<CanonicalStageId>,
+    pub repeated_cold_reference_path: bool,
+    pub repeated_cold_candidate_or_guarded_path: bool,
+    pub warm_reference_path_exists: bool,
+    pub warm_reference_path_underselected: bool,
 }
 
 impl PlacementOptimizationFeedbackView {
@@ -1033,6 +1049,10 @@ impl PlacementOptimizationFeedbackView {
             repeated_worker_pressure: false,
             repeated_retry_or_redispatch_cost: false,
             repeated_hotspot_stage: None,
+            repeated_cold_reference_path: false,
+            repeated_cold_candidate_or_guarded_path: false,
+            warm_reference_path_exists: false,
+            warm_reference_path_underselected: false,
         }
     }
 }
@@ -2171,6 +2191,16 @@ impl MultiWorkerComputeService {
                 let device_suitability = device_suitability_for(unit.kind, lane, status);
                 let warmup = derive_placement_warmup_state(unit.service.model_slot_provenance());
                 let cold_start_penalty_units = cold_start_penalty_units(warmup);
+                let effective_reference_path =
+                    format!("{:?}:{:?}", unit.kind, lane).to_ascii_lowercase();
+                let reference_path_class =
+                    derive_reference_path_class(unit.service.model_slot_provenance());
+                let cold_start_sensitive = matches!(
+                    warmup,
+                    PlacementWarmupState::ColdRunnable
+                        | PlacementWarmupState::StalePrepared
+                        | PlacementWarmupState::BlockedUnavailable
+                );
                 let admission = unit.service.technical_admission(request);
                 let backend_suitability = admission
                     .failure
@@ -2194,6 +2224,9 @@ impl MultiWorkerComputeService {
                         ),
                         warmup,
                         cold_start_penalty_units,
+                        effective_reference_path,
+                        reference_path_class,
+                        cold_start_sensitive,
                         detail: format!(
                             "unit not dispatchable ({status:?}); warmup={warmup:?}; cold_start_penalty_units={cold_start_penalty_units}"
                         ),
@@ -2220,6 +2253,9 @@ impl MultiWorkerComputeService {
                         ),
                         warmup,
                         cold_start_penalty_units,
+                        effective_reference_path,
+                        reference_path_class,
+                        cold_start_sensitive,
                         detail: format!(
                             "insufficient capacity units required={required_units} free={free_units}; warmup={warmup:?}; cold_start_penalty_units={cold_start_penalty_units}"
                         ),
@@ -2245,6 +2281,9 @@ impl MultiWorkerComputeService {
                         suitability,
                         warmup,
                         cold_start_penalty_units,
+                        effective_reference_path,
+                        reference_path_class,
+                        cold_start_sensitive,
                         detail: format!(
                             "{}; warmup={warmup:?}; cold_start_penalty_units={cold_start_penalty_units}",
                             failure.detail
@@ -2264,6 +2303,9 @@ impl MultiWorkerComputeService {
                         suitability,
                         warmup,
                         cold_start_penalty_units,
+                        effective_reference_path,
+                        reference_path_class,
+                        cold_start_sensitive,
                         detail: format!(
                             "admitted; warmup={warmup:?}; cold_start_penalty_units={cold_start_penalty_units}"
                         ),
@@ -2282,6 +2324,9 @@ impl MultiWorkerComputeService {
         let mut cold_by_unit: BTreeMap<ExecutionUnitId, usize> = BTreeMap::new();
         let mut degraded_by_unit: BTreeMap<ExecutionUnitId, usize> = BTreeMap::new();
         let mut pressure_by_unit: BTreeMap<ExecutionUnitId, usize> = BTreeMap::new();
+        let mut cold_by_reference_path: BTreeMap<String, usize> = BTreeMap::new();
+        let mut cold_candidate_or_guarded_path_count = 0usize;
+        let mut warm_reference_path_with_cold_selection_count = 0usize;
         let mut retry_or_redispatch_count = 0usize;
         let mut hotspot_counts: BTreeMap<CanonicalStageId, usize> = BTreeMap::new();
 
@@ -2295,6 +2340,29 @@ impl MultiWorkerComputeService {
                 *cold_by_unit
                     .entry(record.placement.unit_id.clone())
                     .or_insert(0) += 1;
+                *cold_by_reference_path
+                    .entry(effective_reference_path_for_placement(&record.placement))
+                    .or_insert(0) += 1;
+                if record.placement.considered.iter().any(|candidate| {
+                    candidate.unit_id == record.placement.unit_id
+                        && matches!(
+                            candidate.reference_path_class,
+                            ReferencePathClass::Candidate | ReferencePathClass::GuardedActive
+                        )
+                }) {
+                    cold_candidate_or_guarded_path_count =
+                        cold_candidate_or_guarded_path_count.saturating_add(1);
+                }
+                let selected_reference = effective_reference_path_for_placement(&record.placement);
+                let warm_equivalent_exists = record.placement.considered.iter().any(|candidate| {
+                    candidate.suitability == PlacementSuitability::Suitable
+                        && candidate.warmup == PlacementWarmupState::WarmReady
+                        && candidate.effective_reference_path == selected_reference
+                });
+                if warm_equivalent_exists {
+                    warm_reference_path_with_cold_selection_count =
+                        warm_reference_path_with_cold_selection_count.saturating_add(1);
+                }
             }
             if matches!(
                 record.placement.outcome,
@@ -2361,6 +2429,13 @@ impl MultiWorkerComputeService {
         let repeated_degraded_placement = degraded_by_unit.values().any(|count| *count >= 2);
         let repeated_worker_pressure = pressure_by_unit.values().any(|count| *count >= 2);
         let repeated_retry_or_redispatch_cost = retry_or_redispatch_count >= 2;
+        let repeated_cold_reference_path = cold_by_reference_path.values().any(|count| *count >= 2);
+        let repeated_cold_candidate_or_guarded_path = cold_candidate_or_guarded_path_count >= 2;
+        let warm_reference_path_exists = assessments.iter().any(|candidate| {
+            candidate.suitability == PlacementSuitability::Suitable
+                && candidate.warmup == PlacementWarmupState::WarmReady
+        });
+        let warm_reference_path_underselected = warm_reference_path_with_cold_selection_count >= 2;
         let repeated_hotspot_stage = hotspot_counts
             .into_iter()
             .max_by_key(|(_, count)| *count)
@@ -2381,6 +2456,9 @@ impl MultiWorkerComputeService {
                 || repeated_degraded_placement
                 || repeated_worker_pressure
                 || repeated_retry_or_redispatch_cost
+                || repeated_cold_reference_path
+                || repeated_cold_candidate_or_guarded_path
+                || warm_reference_path_underselected
                 || repeated_hotspot_stage.is_some())
         {
             FeedbackSignalStrength::Strong
@@ -2399,6 +2477,10 @@ impl MultiWorkerComputeService {
             repeated_worker_pressure,
             repeated_retry_or_redispatch_cost,
             repeated_hotspot_stage,
+            repeated_cold_reference_path,
+            repeated_cold_candidate_or_guarded_path,
+            warm_reference_path_exists,
+            warm_reference_path_underselected,
         }
     }
 
@@ -2465,6 +2547,13 @@ impl MultiWorkerComputeService {
             return None;
         }
         suitable.sort_by_key(|candidate| {
+            let reference_class_rank = match candidate.reference_path_class {
+                ReferencePathClass::ActiveProduction => 0usize,
+                ReferencePathClass::GuardedActive => 1,
+                ReferencePathClass::Candidate => 2,
+                ReferencePathClass::CompareShadow => 3,
+                ReferencePathClass::Unknown => 4,
+            };
             let warmup_rank = match candidate.warmup {
                 PlacementWarmupState::WarmReady => 0usize,
                 PlacementWarmupState::Prepared => 1,
@@ -2484,6 +2573,7 @@ impl MultiWorkerComputeService {
                 .position(|unit| unit.id == candidate.unit_id)
                 .unwrap_or(usize::MAX);
             (
+                reference_class_rank,
                 warmup_rank,
                 lane_rank,
                 feedback
@@ -2519,7 +2609,8 @@ impl MultiWorkerComputeService {
         } else {
             PlacementOutcome::Optimal
         };
-        let decisive_signals = decisive_signals_for_selection(&selected, input_view, &feedback);
+        let decisive_signals =
+            decisive_signals_for_selection(&selected, &suitable, input_view, &feedback);
         Some(UnitSelection {
             idx,
             feedback,
@@ -3201,6 +3292,25 @@ fn derive_placement_warmup_state(slots: &[ModelSlotProvenance]) -> PlacementWarm
     }
 }
 
+fn derive_reference_path_class(slots: &[ModelSlotProvenance]) -> ReferencePathClass {
+    for slot in slots.iter().filter(|entry| entry.required_for_pack) {
+        let detail = slot.detail.as_deref().unwrap_or_default();
+        if detail.contains("activation_scope=GuardedActive") {
+            return ReferencePathClass::GuardedActive;
+        }
+        if detail.contains("rollout=Active:") {
+            return ReferencePathClass::ActiveProduction;
+        }
+        if detail.contains("rollout=Candidate:") {
+            return ReferencePathClass::Candidate;
+        }
+        if detail.contains("rollout=Compare:") || detail.contains("rollout=Shadow:") {
+            return ReferencePathClass::CompareShadow;
+        }
+    }
+    ReferencePathClass::Unknown
+}
+
 fn cold_start_penalty_units(state: PlacementWarmupState) -> u16 {
     match state {
         PlacementWarmupState::WarmReady => 0,
@@ -3532,13 +3642,23 @@ fn placement_input_view(
 
 fn decisive_signals_for_selection(
     selected: &PlacementCandidateAssessment,
+    suitable: &[PlacementCandidateAssessment],
     view: PlacementInputView,
     feedback: &PlacementOptimizationFeedbackView,
 ) -> Vec<String> {
-    let mut out = Vec::with_capacity(5);
+    let mut out = Vec::with_capacity(8);
     out.push(format!("warmup={:?}", selected.warmup).to_lowercase());
     out.push(format!("runtime_status={:?}", selected.runtime_status).to_lowercase());
     out.push(format!("feedback_strength={:?}", feedback.strength).to_lowercase());
+    out.push(format!(
+        "reference_path={}",
+        selected.effective_reference_path
+    ));
+    out.push(format!("reference_path_class={:?}", selected.reference_path_class).to_lowercase());
+    out.push(format!(
+        "cold_path_decision={}",
+        cold_path_decision_for_selected(selected, suitable, view)
+    ));
     if feedback.suggested_warm_unit.as_ref() == Some(&selected.unit_id) {
         out.push("feedback_prefer_warm_proven_path=true".to_string());
     } else if feedback.avoid_unit.as_ref() == Some(&selected.unit_id) {
@@ -3553,8 +3673,43 @@ fn decisive_signals_for_selection(
     } else if view.has_prepared_or_cold_suitable && !view.has_warm_suitable {
         out.push("no_warm_path_available=true".to_string());
     }
-    out.truncate(5);
+    if feedback.repeated_cold_reference_path {
+        out.push("repeated_reference_path_cold=true".to_string());
+    }
+    if feedback.warm_reference_path_underselected {
+        out.push("warm_reference_path_underselected=true".to_string());
+    }
+    out.truncate(8);
     out
+}
+
+fn cold_path_decision_for_selected(
+    selected: &PlacementCandidateAssessment,
+    suitable: &[PlacementCandidateAssessment],
+    view: PlacementInputView,
+) -> &'static str {
+    if selected.warmup == PlacementWarmupState::WarmReady {
+        return "warm_path_preferred_and_used";
+    }
+    let warm_equivalent_for_reference = suitable.iter().any(|candidate| {
+        candidate.suitability == PlacementSuitability::Suitable
+            && candidate.warmup == PlacementWarmupState::WarmReady
+            && candidate.effective_reference_path == selected.effective_reference_path
+    });
+    if warm_equivalent_for_reference {
+        if view.has_degraded_only_suitable || view.has_pressure_blocked_admissible {
+            return "cold_start_penalty_accepted_due_to_stronger_constraints";
+        }
+        return "warm_path_preferred_but_unavailable";
+    }
+    if selected.warmup == PlacementWarmupState::Prepared {
+        return "preparation_warmup_insufficient";
+    }
+    "cold_path_unavoidable"
+}
+
+fn effective_reference_path_for_placement(placement: &ExecutionPlacement) -> String {
+    format!("{:?}:{:?}", placement.execution_path, placement.lane).to_ascii_lowercase()
 }
 
 fn locality_for_assessments(
@@ -5334,6 +5489,106 @@ mod tests {
             .considered
             .iter()
             .all(|entry| entry.warmup == PlacementWarmupState::BlockedUnavailable));
+    }
+
+    #[test]
+    fn repeated_cold_reference_path_and_candidate_path_are_reported() {
+        let local_backend = ComputePipelineBackend::new(
+            pack_with(
+                BackendComponentId::ToyV1,
+                vec![ModelSlotProvenance {
+                    slot: ModelSlot::WorldJepa,
+                    stage: "world",
+                    required_for_pack: true,
+                    status: SlotRuntimeStatus::Used,
+                    code: None,
+                    detail: Some(
+                        "state=candidate;rollout=Candidate:cold:artifact verified".to_string(),
+                    ),
+                    resolved_path: None,
+                    hash_prefix: None,
+                    contract_version: None,
+                    format: None,
+                    gate: Default::default(),
+                    rollout: None,
+                }],
+            ),
+            FusionConfig::default(),
+            LimitsConfig::default(),
+        );
+        let mut service = MultiWorkerComputeService::new(local_backend, 1);
+        for i in 0..3 {
+            let job = service.submit(
+                valid_request(),
+                JobSubmissionMeta {
+                    submitted_at_unix_ms: 300 + i,
+                    submitted_by: Some("cold-ref-train".to_string()),
+                },
+                None,
+            );
+            service.run_scheduler_cycle(1);
+            let _ = service.job(job).expect("record");
+        }
+
+        let eval = service.submit(
+            valid_request(),
+            JobSubmissionMeta {
+                submitted_at_unix_ms: 320,
+                submitted_by: Some("cold-ref-eval".to_string()),
+            },
+            None,
+        );
+        service.run_scheduler_cycle(1);
+        let record = service.job(eval).expect("evaluation record");
+        assert!(record.optimization_feedback.repeated_cold_reference_path);
+        assert!(
+            record
+                .optimization_feedback
+                .repeated_cold_candidate_or_guarded_path
+        );
+    }
+
+    #[test]
+    fn prepared_without_warm_path_is_marked_as_insufficient_preparation() {
+        let local_backend = ComputePipelineBackend::new(
+            pack_with(
+                BackendComponentId::ToyV1,
+                vec![ModelSlotProvenance {
+                    slot: ModelSlot::WorldJepa,
+                    stage: "world",
+                    required_for_pack: true,
+                    status: SlotRuntimeStatus::Used,
+                    code: None,
+                    detail: Some(
+                        "state=active;rollout=Active:prepared:artifact prefetched".to_string(),
+                    ),
+                    resolved_path: None,
+                    hash_prefix: None,
+                    contract_version: None,
+                    format: None,
+                    gate: Default::default(),
+                    rollout: None,
+                }],
+            ),
+            FusionConfig::default(),
+            LimitsConfig::default(),
+        );
+        let mut service = MultiWorkerComputeService::new(local_backend, 1);
+        let job = service.submit(
+            valid_request(),
+            JobSubmissionMeta {
+                submitted_at_unix_ms: 340,
+                submitted_by: Some("prepared-insufficient".to_string()),
+            },
+            None,
+        );
+        service.run_scheduler_cycle(1);
+        let record = service.job(job).expect("record");
+        assert!(record
+            .placement
+            .decisive_signals
+            .iter()
+            .any(|signal| signal.contains("cold_path_decision=preparation_warmup_insufficient")));
     }
 
     #[test]

@@ -9,6 +9,11 @@ Die Runtime-Optimization-View konsolidiert bestehende Queue-/Capacity-/Warmup-/W
 - Warmup-/Readiness-Kontext aus Warmup-State (`cold`, `stale`, `blocked`) inkl. Cold-Start-Hinweisen.
 - Work-/Cost-/Hotspot-Kontext aus `degraded_stage_count` und dominantem Stage-Anteil.
 - Historisches Feedback aus `PlacementOptimizationFeedbackView` (strong/weak/stale/contradicted/insufficient).
+- Referenzpfad-Kaltmuster aus Placement-Feedback:
+  - `repeated_cold_reference_path`
+  - `repeated_cold_candidate_or_guarded_path`
+  - `warm_reference_path_exists`
+  - `warm_reference_path_underselected`
 
 ## Kanonische Runtime-Lagen
 
@@ -26,6 +31,7 @@ Die abgeleitete Optimization-View unterscheidet jetzt explizit:
 ## Nutzung in Scheduling/Placement/Warmup/History/Ops
 
 - Multi-Worker-Placement ergänzt Entscheidungen um `optimization_state=...` in `decisive_signals`, damit Deferral-/Constrained-Entscheidungen im konsolidierten Lagebild erklärbar bleiben.
+- Placement trägt zusätzlich `reference_path`, `reference_path_class` und `cold_path_decision=...` in `decisive_signals`, damit cold-unavoidable vs warm-preferred-used vs warm-unavailable operativ unterscheidbar bleibt.
 - Job-History persistiert `optimization_view` pro Record als kompakte Lage (state, bottleneck, Druckdimensionen, caveats).
 - Runtime-Ops-Snapshot führt `optimization_view` als aktuellen operativen Überblick mit Hauptengpass, Mixed-Flag und Caveats.
 - Runtime-Optimization-Snapshot im Multi-Worker-Service verbindet aktuelle Lage mit historischem Feedback (`historical_feedback_alignment`, `repeated_pattern_confirmed`).
