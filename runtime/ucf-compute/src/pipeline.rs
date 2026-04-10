@@ -561,6 +561,7 @@ fn nsr_slot_provenance(slots: &[ModelSlotProvenance]) -> ModelSlotProvenance {
             contract_version: None,
             format: None,
             gate: Default::default(),
+            rollout: None,
         })
 }
 
@@ -2854,6 +2855,7 @@ mod tests {
             contract_version: Some("v1".to_string()),
             format: None,
             gate: Default::default(),
+            rollout: None,
         }];
         let failure = first_artifact_failure(&slots).expect("failure");
         assert_eq!(
@@ -2877,6 +2879,7 @@ mod tests {
             contract_version: Some("v1".to_string()),
             format: None,
             gate: Default::default(),
+            rollout: None,
         }];
         let failure = first_artifact_failure(&slots).expect("failure");
         assert_eq!(failure.kind, CanonicalFailureKind::ArtifactUnavailable);
@@ -2898,6 +2901,7 @@ mod tests {
             contract_version: Some("v9".to_string()),
             format: None,
             gate: Default::default(),
+            rollout: None,
         }];
         let failure = first_artifact_failure(&slots).expect("failure");
         assert_eq!(failure.kind, CanonicalFailureKind::ArtifactIncompatible);
@@ -3059,6 +3063,7 @@ mod tests {
             contract_version: Some("v1".to_string()),
             format: None,
             gate: Default::default(),
+            rollout: None,
         };
         let req = NsrRequest {
             base_risk: 0.3,
@@ -3098,6 +3103,7 @@ mod tests {
             contract_version: Some("v0".to_string()),
             format: None,
             gate: Default::default(),
+            rollout: None,
         };
         let req = NsrRequest {
             base_risk: 0.3,
