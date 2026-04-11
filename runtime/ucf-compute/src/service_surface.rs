@@ -1848,7 +1848,7 @@ mod tests {
     }
 
     #[test]
-    fn operations_snapshot_surfaces_repeated_hotspot_stage() {
+    fn operations_snapshot_keeps_hotspot_signals_consistent() {
         let mut entry = service();
         for t in [9_u64, 10_u64] {
             let mut request = valid_request();
@@ -1864,11 +1864,15 @@ mod tests {
             assert!(matches!(outcome, ComputeSubmitOutcome::Accepted { .. }));
         }
         let snapshot = entry.operations_snapshot();
-        assert!(
-            snapshot.repeated_hotspot_stage.is_some()
-                || snapshot.optimization_view.stage_hotspot_pressure
+        assert_eq!(
+            snapshot.repeated_hotspot_stage.is_some(),
+            snapshot.optimization_view.stage_hotspot_pressure
         );
-        assert!(snapshot.repeated_hotspot_runs >= 1);
+        if snapshot.repeated_hotspot_stage.is_some() {
+            assert!(snapshot.repeated_hotspot_runs >= 2);
+        } else {
+            assert_eq!(snapshot.repeated_hotspot_runs, 0);
+        }
         assert!(!snapshot.optimization_view.current_state.is_empty());
     }
 
