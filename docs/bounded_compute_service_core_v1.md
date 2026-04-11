@@ -370,10 +370,13 @@ No synthetic “always green” health outcome is emitted.
 
 `CanonicalComputeEntryPoint` now exposes a narrow replay trigger:
 
+- `replay_preflight(ComputeJobHandle) -> ComputeReplayPreflight`
 - `replay(ComputeJobHandle) -> ComputeReplayOutcome`
 
 Replay is intentionally grounded in the same canonical compute path (`submit` + `run_next`) and
 does not introduce a second replay pipeline.
+`replay(...)` always runs the technical preflight first and only starts execution if the replayability
+state is not blocked/insufficient.
 
 ### Replay record basis
 
@@ -394,7 +397,23 @@ replay checks. `partial` means replay may still run but only with limited fideli
 `insufficient` and `stale_or_incomplete` are explicitly non-load-bearing and treated as
 configuration-incomplete replay inputs.
 
-### Replayability and determinism classes
+### Replayability preflight classes (canonical)
+
+Preflight classifies a source run before replay execution:
+
+- `replay_ready`
+- `replayable_with_caveats`
+- `replayable_only_under_changed_context`
+- `insufficient_for_replay`
+- `blocked_for_replay`
+
+Preflight surfaces bounded reasons (`ReplayPreflightIssueCode`) for missing artifacts/slots,
+changed backend/device/worker context, incomplete snapshots, changed rollout context, local/remote
+path mismatch, and non-fidelity-equivalent caveats.
+
+This remains technical preflight only (no certification/governance workflow).
+
+### Replay outcome determinism classes
 
 Replay outcomes are explicitly classified:
 
@@ -412,6 +431,7 @@ The replay surface uses one bounded failure taxonomy:
 - `configuration_incomplete`
 - `required_artifact_unavailable`
 - `backend_or_device_unavailable`
+- `changed_runtime_context_incompatible`
 - `replay_execution_failed`
 - `replay_completed_with_changed_configuration`
 

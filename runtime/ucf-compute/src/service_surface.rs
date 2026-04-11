@@ -410,38 +410,28 @@ impl CanonicalComputeEntryPoint {
         &mut self,
         handle: ComputeJobHandle,
     ) -> Result<ComputeReplayOutcome, crate::ComputeError> {
-        let source = match self.replay_source(handle.job_id) {
+        let preflight = self.replay_preflight(handle);
+        if matches!(
+            preflight.replayability,
+            ReplayabilityClass::BlockedForReplay | ReplayabilityClass::InsufficientForReplay
+        ) {
+            let (code, detail) = replay_preflight_failure(&preflight);
+            return Ok(ComputeReplayOutcome::NotReplayable {
+                source_job_id: preflight.source_job_id,
+                code,
+                detail,
+            });
+        }
+        let source = match self.replay_source(preflight.source_job_id) {
             Some(source) => source,
             None => {
                 return Ok(ComputeReplayOutcome::NotReplayable {
-                    source_job_id: handle.job_id,
+                    source_job_id: preflight.source_job_id,
                     code: ReplayFailureCode::RecordMissing,
                     detail: "replay record missing".to_string(),
                 })
             }
         };
-        if matches!(
-            source.snapshot_readiness,
-            PersistedSnapshotReadiness::Insufficient
-                | PersistedSnapshotReadiness::StaleOrIncomplete
-        ) {
-            return Ok(ComputeReplayOutcome::NotReplayable {
-                source_job_id: source.job_id,
-                code: ReplayFailureCode::ConfigurationIncomplete,
-                detail: "replay snapshot is insufficient or stale for load-bearing replay"
-                    .to_string(),
-            });
-        }
-        if source.execution_mode() == ReplayExecutionMode::RemoteWorkerIpc
-            && !source.has_remote_context()
-        {
-            return Ok(ComputeReplayOutcome::NotReplayable {
-                source_job_id: source.job_id,
-                code: ReplayFailureCode::MissingRemoteExecutionContext,
-                detail: "replay fidelity blocked: source remote execution context is incomplete"
-                    .to_string(),
-            });
-        }
         let source_execution_mode = source.execution_mode();
         let Some(request) = source.request else {
             return Ok(ComputeReplayOutcome::NotReplayable {
@@ -587,6 +577,172 @@ impl CanonicalComputeEntryPoint {
             failure_kind_match,
             replay_failure,
         }))
+    }
+
+    pub fn replay_preflight(&self, handle: ComputeJobHandle) -> ComputeReplayPreflight {
+        let current_mode = current_replay_mode(self.operations_snapshot().execution_path);
+        let Some(source) = self.replay_source(handle.job_id) else {
+            return ComputeReplayPreflight {
+                source_job_id: handle.job_id,
+                replayability: ReplayabilityClass::BlockedForReplay,
+                source_execution_mode: current_mode,
+                current_execution_mode: current_mode,
+                snapshot_readiness: None,
+                locality: ReplayPreflightLocality::ChangedContextOnly,
+                fidelity_equivalent_possible: false,
+                issues: vec![ReplayPreflightIssue {
+                    code: ReplayPreflightIssueCode::RecordMissing,
+                    detail: "replay record missing".to_string(),
+                }],
+            };
+        };
+
+        let mut issues = Vec::new();
+        let source_mode = source.execution_mode();
+        if matches!(
+            source.snapshot_readiness,
+            PersistedSnapshotReadiness::Insufficient
+                | PersistedSnapshotReadiness::StaleOrIncomplete
+        ) {
+            issues.push(ReplayPreflightIssue {
+                code: ReplayPreflightIssueCode::SnapshotIncomplete,
+                detail: "replay snapshot is insufficient or stale for load-bearing replay"
+                    .to_string(),
+            });
+        }
+        if source.request.is_none() {
+            issues.push(ReplayPreflightIssue {
+                code: ReplayPreflightIssueCode::CanonicalRequestMissing,
+                detail: "canonical request unavailable for replay".to_string(),
+            });
+        }
+        if source_mode == ReplayExecutionMode::RemoteWorkerIpc && !source.has_remote_context() {
+            issues.push(ReplayPreflightIssue {
+                code: ReplayPreflightIssueCode::MissingRemoteExecutionContext,
+                detail: "source remote execution context is incomplete".to_string(),
+            });
+        }
+        if source_mode != current_mode {
+            issues.push(ReplayPreflightIssue {
+                code: ReplayPreflightIssueCode::LocalRemoteConstraintMismatch,
+                detail: format!(
+                    "current runtime execution mode changed from {:?} to {:?}",
+                    source_mode, current_mode
+                ),
+            });
+        }
+        if let (Some(source_hint), Some(current_hint)) = (
+            source.rollout_context_hint.as_deref(),
+            current_rollout_context_hint(self.operations_snapshot().available_slots.as_slice()),
+        ) {
+            if source_hint != current_hint {
+                issues.push(ReplayPreflightIssue {
+                    code: ReplayPreflightIssueCode::RolloutContextChangedTooMuch,
+                    detail: format!(
+                        "rollout context changed from `{source_hint}` to `{current_hint}`"
+                    ),
+                });
+            }
+        }
+
+        if let Some(request) = source.request.clone() {
+            let admission = self.service.technical_admission(&request);
+            if let Some(failure) = admission.failure {
+                let issue = match failure.kind {
+                    CanonicalFailureKind::ArtifactUnavailable
+                    | CanonicalFailureKind::ArtifactVerificationFailed
+                    | CanonicalFailureKind::ArtifactIncompatible => ReplayPreflightIssue {
+                        code: ReplayPreflightIssueCode::MissingArtifactOrSlot,
+                        detail: format!(
+                            "required artifact/slot no longer available: {}",
+                            failure.detail
+                        ),
+                    },
+                    CanonicalFailureKind::BackendDisabled
+                    | CanonicalFailureKind::StageUnavailable
+                    | CanonicalFailureKind::NsrBackendUnavailable => ReplayPreflightIssue {
+                        code: ReplayPreflightIssueCode::ChangedBackendDeviceWorkerContext,
+                        detail: format!(
+                            "backend/worker/device no longer suitable: {}",
+                            failure.detail
+                        ),
+                    },
+                    _ => ReplayPreflightIssue {
+                        code: ReplayPreflightIssueCode::SnapshotIncomplete,
+                        detail: format!("replay configuration incomplete: {}", failure.detail),
+                    },
+                };
+                issues.push(issue);
+            }
+        }
+
+        let blocked = issues.iter().any(|issue| {
+            matches!(
+                issue.code,
+                ReplayPreflightIssueCode::RecordMissing
+                    | ReplayPreflightIssueCode::MissingArtifactOrSlot
+                    | ReplayPreflightIssueCode::ChangedBackendDeviceWorkerContext
+                    | ReplayPreflightIssueCode::MissingRemoteExecutionContext
+            )
+        });
+        let insufficient = issues.iter().any(|issue| {
+            matches!(
+                issue.code,
+                ReplayPreflightIssueCode::SnapshotIncomplete
+                    | ReplayPreflightIssueCode::CanonicalRequestMissing
+            )
+        });
+        let changed_context = issues.iter().any(|issue| {
+            matches!(
+                issue.code,
+                ReplayPreflightIssueCode::RolloutContextChangedTooMuch
+                    | ReplayPreflightIssueCode::LocalRemoteConstraintMismatch
+            )
+        });
+        let has_caveat = source.snapshot_readiness == PersistedSnapshotReadiness::Partial;
+        if has_caveat {
+            issues.push(ReplayPreflightIssue {
+                code: ReplayPreflightIssueCode::ReplayNotFidelityEquivalent,
+                detail: "snapshot readiness is partial; replay may complete without fidelity equivalence".to_string(),
+            });
+        }
+
+        let replayability = if blocked {
+            ReplayabilityClass::BlockedForReplay
+        } else if insufficient {
+            ReplayabilityClass::InsufficientForReplay
+        } else if changed_context {
+            ReplayabilityClass::ReplayableOnlyUnderChangedContext
+        } else if has_caveat {
+            ReplayabilityClass::ReplayableWithCaveats
+        } else {
+            ReplayabilityClass::ReplayReady
+        };
+        let locality = match (source_mode, current_mode) {
+            (ReplayExecutionMode::Local, ReplayExecutionMode::Local) => {
+                ReplayPreflightLocality::LocalOnly
+            }
+            (ReplayExecutionMode::RemoteWorkerIpc, ReplayExecutionMode::RemoteWorkerIpc) => {
+                ReplayPreflightLocality::RemoteOnly
+            }
+            (ReplayExecutionMode::Local, ReplayExecutionMode::RemoteWorkerIpc)
+            | (ReplayExecutionMode::RemoteWorkerIpc, ReplayExecutionMode::Local) => {
+                ReplayPreflightLocality::ChangedContextOnly
+            }
+        };
+        let fidelity_equivalent_possible =
+            !changed_context && !has_caveat && !blocked && !insufficient;
+
+        ComputeReplayPreflight {
+            source_job_id: source.job_id,
+            replayability,
+            source_execution_mode: source_mode,
+            current_execution_mode: current_mode,
+            snapshot_readiness: Some(source.snapshot_readiness),
+            locality,
+            fidelity_equivalent_possible,
+            issues,
+        }
     }
 
     pub fn compare_against_baseline(
@@ -1203,6 +1359,7 @@ pub enum ReplayFailureCode {
     ConfigurationIncomplete,
     RequiredArtifactUnavailable,
     BackendOrDeviceUnavailable,
+    ChangedRuntimeContextIncompatible,
     MissingRemoteExecutionContext,
     ReplayExecutionFailed,
     ReplayCompletedWithChangedConfiguration,
@@ -1220,6 +1377,54 @@ pub enum ReplayRemoteContextReproducibility {
     Exact,
     Partial,
     Missing,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReplayabilityClass {
+    ReplayReady,
+    ReplayableWithCaveats,
+    ReplayableOnlyUnderChangedContext,
+    InsufficientForReplay,
+    BlockedForReplay,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReplayPreflightIssueCode {
+    RecordMissing,
+    SnapshotIncomplete,
+    CanonicalRequestMissing,
+    MissingArtifactOrSlot,
+    ChangedBackendDeviceWorkerContext,
+    MissingRemoteExecutionContext,
+    RolloutContextChangedTooMuch,
+    LocalRemoteConstraintMismatch,
+    ReplayNotFidelityEquivalent,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReplayPreflightIssue {
+    pub code: ReplayPreflightIssueCode,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReplayPreflightLocality {
+    LocalOnly,
+    RemoteOnly,
+    Either,
+    ChangedContextOnly,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ComputeReplayPreflight {
+    pub source_job_id: JobId,
+    pub replayability: ReplayabilityClass,
+    pub source_execution_mode: ReplayExecutionMode,
+    pub current_execution_mode: ReplayExecutionMode,
+    pub snapshot_readiness: Option<PersistedSnapshotReadiness>,
+    pub locality: ReplayPreflightLocality,
+    pub fidelity_equivalent_possible: bool,
+    pub issues: Vec<ReplayPreflightIssue>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1323,6 +1528,7 @@ struct ReplaySourceRecord {
     pipeline_state: Option<String>,
     work_summary: Option<CanonicalWorkSummary>,
     snapshot_readiness: PersistedSnapshotReadiness,
+    rollout_context_hint: Option<String>,
 }
 
 impl ReplaySourceRecord {
@@ -1377,6 +1583,7 @@ impl ReplaySourceRecord {
                 .map(str::to_string),
             work_summary: record.accounting.work_summary,
             snapshot_readiness: derive_live_snapshot_readiness(record),
+            rollout_context_hint: None,
         }
     }
 
@@ -1450,6 +1657,10 @@ impl ReplaySourceRecord {
                 .as_ref()
                 .map(|snapshot| snapshot.readiness)
                 .unwrap_or_else(|| infer_persisted_snapshot_readiness(persisted)),
+            rollout_context_hint: persisted
+                .execution_snapshot
+                .as_ref()
+                .map(|snapshot| snapshot.rollout.rollout_context_hint.clone()),
         }
     }
 
@@ -1773,6 +1984,78 @@ fn parse_degrade_policy(value: &str) -> Option<crate::DegradePolicy> {
     }
 }
 
+fn current_replay_mode(path: JobExecutionPath) -> ReplayExecutionMode {
+    if path == JobExecutionPath::WorkerIpc {
+        ReplayExecutionMode::RemoteWorkerIpc
+    } else {
+        ReplayExecutionMode::Local
+    }
+}
+
+fn current_rollout_context_hint(slots: &[RuntimeSlotSnapshot]) -> Option<&'static str> {
+    if slots.is_empty() {
+        return None;
+    }
+    if slots
+        .iter()
+        .any(|slot| matches!(slot.warmup_state, RuntimeWarmupState::Blocked))
+    {
+        return Some("blocked_or_stale");
+    }
+    if slots
+        .iter()
+        .any(|slot| matches!(slot.warmup_state, RuntimeWarmupState::Stale))
+    {
+        return Some("blocked_or_stale");
+    }
+    if slots
+        .iter()
+        .any(|slot| matches!(slot.warmup_state, RuntimeWarmupState::Preparing))
+    {
+        return Some("active_plus_candidate");
+    }
+    if slots
+        .iter()
+        .all(|slot| matches!(slot.warmup_state, RuntimeWarmupState::Ready))
+    {
+        return Some("active_or_warm");
+    }
+    Some("mixed_or_unknown")
+}
+
+fn replay_preflight_failure(preflight: &ComputeReplayPreflight) -> (ReplayFailureCode, String) {
+    for issue in &preflight.issues {
+        let code = match issue.code {
+            ReplayPreflightIssueCode::RecordMissing => Some(ReplayFailureCode::RecordMissing),
+            ReplayPreflightIssueCode::MissingArtifactOrSlot => {
+                Some(ReplayFailureCode::RequiredArtifactUnavailable)
+            }
+            ReplayPreflightIssueCode::ChangedBackendDeviceWorkerContext => {
+                Some(ReplayFailureCode::BackendOrDeviceUnavailable)
+            }
+            ReplayPreflightIssueCode::MissingRemoteExecutionContext => {
+                Some(ReplayFailureCode::MissingRemoteExecutionContext)
+            }
+            ReplayPreflightIssueCode::RolloutContextChangedTooMuch
+            | ReplayPreflightIssueCode::LocalRemoteConstraintMismatch => {
+                Some(ReplayFailureCode::ChangedRuntimeContextIncompatible)
+            }
+            ReplayPreflightIssueCode::SnapshotIncomplete
+            | ReplayPreflightIssueCode::CanonicalRequestMissing => {
+                Some(ReplayFailureCode::ConfigurationIncomplete)
+            }
+            ReplayPreflightIssueCode::ReplayNotFidelityEquivalent => None,
+        };
+        if let Some(code) = code {
+            return (code, issue.detail.clone());
+        }
+    }
+    (
+        ReplayFailureCode::ConfigurationIncomplete,
+        "replay preflight failed with unresolved prerequisites".to_string(),
+    )
+}
+
 fn now_unix_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -1787,8 +2070,9 @@ mod tests {
         ComputeHistoryLookupError, ComputeJobHandle, ComputeJobHistoryLookup, ComputeReplayOutcome,
         ComputeRequestValidationCode, ComputeSubmitOutcome, ComputeSubmitRequest,
         RecoveryDisposition, ReplayDeterminismClass, ReplayExecutionMode, ReplayFailureCode,
-        ReplayRemoteContextReproducibility, RuntimeOperation, RuntimeOperationCode,
-        RuntimeOpsState, RuntimeSignalState, RuntimeWarmupState,
+        ReplayPreflightIssueCode, ReplayRemoteContextReproducibility, ReplayabilityClass,
+        RuntimeOperation, RuntimeOperationCode, RuntimeOpsState, RuntimeSignalState,
+        RuntimeWarmupState,
     };
     use crate::pipeline::{CanonicalFailureKind, CanonicalPipelineRequest};
     use crate::{InMemoryComputeService, JobHistoryStore, JobId, JobLifecycleState};
@@ -2181,8 +2465,40 @@ mod tests {
     }
 
     #[test]
+    fn replay_preflight_classifies_ready_run() {
+        let mut entry = service();
+        let outcome = entry
+            .submit(ComputeSubmitRequest {
+                pipeline_request: valid_request(),
+                submitted_by: Some("svc-test".to_string()),
+                submitted_at_unix_ms: Some(100),
+                execution_mode: ComputeExecutionMode::ExecuteInline,
+            })
+            .expect("submit should not fail");
+        let source = match outcome {
+            ComputeSubmitOutcome::Accepted { completion, .. } => {
+                completion.expect("completion should exist").handle
+            }
+            other => panic!("expected accepted, got {other:?}"),
+        };
+        let preflight = entry.replay_preflight(source);
+        assert_eq!(preflight.replayability, ReplayabilityClass::ReplayReady);
+        assert!(preflight.fidelity_equivalent_possible);
+        assert!(preflight.issues.is_empty());
+    }
+
+    #[test]
     fn replay_reports_missing_record() {
         let mut entry = service();
+        let preflight = entry.replay_preflight(ComputeJobHandle { job_id: JobId(42) });
+        assert_eq!(
+            preflight.replayability,
+            ReplayabilityClass::BlockedForReplay
+        );
+        assert!(preflight
+            .issues
+            .iter()
+            .any(|issue| issue.code == ReplayPreflightIssueCode::RecordMissing));
         let replay = entry
             .replay(ComputeJobHandle { job_id: JobId(42) })
             .expect("replay");
@@ -2208,6 +2524,18 @@ mod tests {
             &history_path,
         )
         .expect("entry with history");
+        let preflight = entry.replay_preflight(ComputeJobHandle { job_id: JobId(7) });
+        assert_eq!(
+            preflight.replayability,
+            ReplayabilityClass::InsufficientForReplay
+        );
+        assert!(preflight.issues.iter().any(|issue| {
+            matches!(
+                issue.code,
+                ReplayPreflightIssueCode::SnapshotIncomplete
+                    | ReplayPreflightIssueCode::CanonicalRequestMissing
+            )
+        }));
         let replay = entry
             .replay(ComputeJobHandle { job_id: JobId(7) })
             .expect("replay");
@@ -2236,6 +2564,14 @@ mod tests {
             &history_path,
         )
         .expect("entry with history");
+        let preflight = entry.replay_preflight(ComputeJobHandle { job_id: JobId(33) });
+        assert_eq!(
+            preflight.replayability,
+            ReplayabilityClass::BlockedForReplay
+        );
+        assert!(preflight.issues.iter().any(|issue| {
+            issue.code == ReplayPreflightIssueCode::MissingRemoteExecutionContext
+        }));
         let replay = entry
             .replay(ComputeJobHandle { job_id: JobId(33) })
             .expect("replay");
@@ -2251,6 +2587,31 @@ mod tests {
             coverage.partial + coverage.insufficient + coverage.stale_or_incomplete,
             1
         );
+    }
+
+    #[test]
+    fn replay_preflight_marks_partial_snapshot_as_caveat() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let history_path = dir.path().join("job_history.jsonl");
+        std::fs::write(
+            &history_path,
+            r#"{"schema_version":8,"job_id":51,"submitted_by":"svc","request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101"},"canonical_request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101","budget":{"max_micros":5000,"hard_timeout_micros":5000,"seed":9,"profile_id":0,"global_work_units":65536,"world_units":16384,"sae_units":16384,"ssm_units":16384,"lfm_units":16384,"degrade_policy":"DegradeStages","governor_tier":1}},"lifecycle_state":"completed","completion_class":"completed","execution_path":"LocalCanonical","submitted_at_unix_ms":1,"started_at_unix_ms":2,"finished_at_unix_ms":3,"queue_wait_ms":1,"execution_duration_micros":5,"total_duration_ms":2,"failure_kind":null,"pipeline_state":"ok","execution_lane":"standard","resource_class":"standard","capacity_pressure":"nominal","capacity_queue_disposition":"none","backend_route":{"pack_id":1,"world_backend":1,"sae_backend":1,"ssm_backend":1,"lfm_backend":1},"work_summary":null,"stage_profiles":[],"model_slots":[],"execution_snapshot":{"request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101"},"canonical_request_available":true,"backend_route_available":true,"model_slot_count":0,"path":{"requested_execution_path":"LocalCanonical","executed_execution_path":"LocalCanonical","execution_lane":"standard","resource_class":"standard","was_remote":false,"redispatched_to_local":false,"retry_attempts":0},"rollout":{"active_or_warm_slots":1,"candidate_or_guarded_slots":0,"stale_or_blocked_slots":0,"rollout_context_hint":"active_or_warm"},"result":{"lifecycle_state":"completed","completion_class":"completed","pipeline_state":"ok","failure_kind":null},"readiness":"partial"}}"#,
+        )
+        .expect("history fixture");
+        let entry = CanonicalComputeEntryPoint::with_history_path(
+            InMemoryComputeService::new(crate::pipeline::ComputePipelineBackend::stub()),
+            &history_path,
+        )
+        .expect("entry with history");
+        let preflight = entry.replay_preflight(ComputeJobHandle { job_id: JobId(51) });
+        assert_eq!(
+            preflight.replayability,
+            ReplayabilityClass::ReplayableWithCaveats
+        );
+        assert!(preflight
+            .issues
+            .iter()
+            .any(|issue| issue.code == ReplayPreflightIssueCode::ReplayNotFidelityEquivalent));
     }
 
     #[test]
