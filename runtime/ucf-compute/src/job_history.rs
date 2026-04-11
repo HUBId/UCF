@@ -14,7 +14,7 @@ use crate::pipeline::{
     CanonicalIsolationDisposition, CanonicalPipelineState,
 };
 
-const JOB_HISTORY_SCHEMA_VERSION: u16 = 11;
+const JOB_HISTORY_SCHEMA_VERSION: u16 = 12;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PersistedJobRequestIdentity {
@@ -159,6 +159,54 @@ pub struct PersistedRemoteExecutionContext {
     pub context_completeness: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PersistedSnapshotReadiness {
+    ReplayReady,
+    Partial,
+    Insufficient,
+    StaleOrIncomplete,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct PersistedExecutionResultSummary {
+    pub lifecycle_state: String,
+    pub completion_class: Option<String>,
+    pub pipeline_state: Option<String>,
+    pub failure_kind: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct PersistedExecutionPathSummary {
+    pub requested_execution_path: Option<String>,
+    pub executed_execution_path: String,
+    pub execution_lane: Option<String>,
+    pub resource_class: Option<String>,
+    pub was_remote: bool,
+    pub redispatched_to_local: bool,
+    pub retry_attempts: u8,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct PersistedRolloutContextSummary {
+    pub active_or_warm_slots: usize,
+    pub candidate_or_guarded_slots: usize,
+    pub stale_or_blocked_slots: usize,
+    pub rollout_context_hint: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct PersistedExecutionSnapshot {
+    pub request: PersistedJobRequestIdentity,
+    pub canonical_request_available: bool,
+    pub backend_route_available: bool,
+    pub model_slot_count: usize,
+    pub path: PersistedExecutionPathSummary,
+    pub rollout: PersistedRolloutContextSummary,
+    pub result: PersistedExecutionResultSummary,
+    pub readiness: PersistedSnapshotReadiness,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PersistedOptimizationView {
     pub state: String,
@@ -219,6 +267,8 @@ pub struct PersistedJobRecord {
     pub remote_execution_context: Option<PersistedRemoteExecutionContext>,
     #[serde(default)]
     pub optimization_view: Option<PersistedOptimizationView>,
+    #[serde(default)]
+    pub execution_snapshot: Option<PersistedExecutionSnapshot>,
     #[serde(default)]
     pub recovery_source_job_id: Option<u64>,
     #[serde(default)]
@@ -439,6 +489,7 @@ impl PersistedJobRecord {
                 },
             }),
             optimization_view: Some(build_persisted_optimization_view(accounting)),
+            execution_snapshot: Some(build_execution_snapshot(record)),
             recovery_source_job_id: None,
             recovery_status: None,
             recovery_note: None,
@@ -553,6 +604,127 @@ fn build_persisted_optimization_view(
         cold_or_warmup_pressure,
         stage_hotspot_pressure,
         caveats,
+    }
+}
+
+fn build_execution_snapshot(record: &JobRecord) -> PersistedExecutionSnapshot {
+    let request = &record.job.request.input;
+    let work_cost = record.accounting.work_cost_summary.as_ref();
+    let execution_path = format!("{:?}", record.execution_path);
+    let execution_lane = Some(execution_lane_name(record.accounting.execution_lane).to_string());
+    let resource_class = Some(resource_class_name(record.accounting.resource_class).to_string());
+    let was_remote = matches!(
+        record.execution_path,
+        crate::compute_service::JobExecutionPath::WorkerIpc
+    );
+    let redispatched_to_local = work_cost.is_some_and(|summary| summary.redispatched_to_local);
+    let retry_attempts = work_cost.map_or(0, |summary| summary.retry_attempts);
+    let (active_or_warm_slots, candidate_or_guarded_slots, stale_or_blocked_slots) =
+        classify_rollout_slots(&record.accounting.model_slots);
+    let readiness = derive_snapshot_readiness(record, was_remote);
+    PersistedExecutionSnapshot {
+        request: PersistedJobRequestIdentity {
+            frame_id: request.frame_id.0,
+            t: request.t,
+            context_digest_hex: hex::encode(request.context_digest),
+        },
+        canonical_request_available: true,
+        backend_route_available: record.result.is_some(),
+        model_slot_count: record.accounting.model_slots.len(),
+        path: PersistedExecutionPathSummary {
+            requested_execution_path: Some(execution_path.clone()),
+            executed_execution_path: execution_path,
+            execution_lane,
+            resource_class,
+            was_remote,
+            redispatched_to_local,
+            retry_attempts,
+        },
+        rollout: PersistedRolloutContextSummary {
+            active_or_warm_slots,
+            candidate_or_guarded_slots,
+            stale_or_blocked_slots,
+            rollout_context_hint: rollout_context_hint(
+                active_or_warm_slots,
+                candidate_or_guarded_slots,
+                stale_or_blocked_slots,
+            ),
+        },
+        result: PersistedExecutionResultSummary {
+            lifecycle_state: lifecycle_state_name(record.state).to_string(),
+            completion_class: is_terminal(record.state)
+                .then(|| completion_class_name(record.accounting.completion_class).to_string()),
+            pipeline_state: record
+                .accounting
+                .pipeline_state
+                .map(|state| pipeline_state_name(state).to_string()),
+            failure_kind: record
+                .accounting
+                .failure_kind
+                .map(|kind| failure_kind_name(kind).to_string()),
+        },
+        readiness,
+    }
+}
+
+fn derive_snapshot_readiness(record: &JobRecord, was_remote: bool) -> PersistedSnapshotReadiness {
+    if record.result.is_none() && !is_terminal(record.state) {
+        return PersistedSnapshotReadiness::Insufficient;
+    }
+    if was_remote && record.result.is_none() {
+        return PersistedSnapshotReadiness::StaleOrIncomplete;
+    }
+    if record.accounting.model_slots.is_empty() || record.accounting.work_cost_summary.is_none() {
+        return PersistedSnapshotReadiness::Partial;
+    }
+    PersistedSnapshotReadiness::ReplayReady
+}
+
+fn classify_rollout_slots(
+    slots: &[crate::backend_pack::ModelSlotProvenance],
+) -> (usize, usize, usize) {
+    let mut active_or_warm_slots = 0usize;
+    let mut candidate_or_guarded_slots = 0usize;
+    let mut stale_or_blocked_slots = 0usize;
+    for slot in slots {
+        let detail = slot.detail.as_deref().unwrap_or_default();
+        if detail.contains("warm:")
+            || detail.contains("Active:prepared:")
+            || detail.contains("Compare:prepared:")
+        {
+            active_or_warm_slots = active_or_warm_slots.saturating_add(1);
+        }
+        if detail.contains("Candidate:")
+            || detail.contains("Compare:")
+            || detail.contains("Shadow:")
+            || detail.contains("Guarded")
+        {
+            candidate_or_guarded_slots = candidate_or_guarded_slots.saturating_add(1);
+        }
+        if detail.contains("stale:") || detail.contains("blocked:") {
+            stale_or_blocked_slots = stale_or_blocked_slots.saturating_add(1);
+        }
+    }
+    (
+        active_or_warm_slots,
+        candidate_or_guarded_slots,
+        stale_or_blocked_slots,
+    )
+}
+
+fn rollout_context_hint(
+    active_or_warm: usize,
+    candidate_or_guarded: usize,
+    stale: usize,
+) -> String {
+    if stale > 0 {
+        "fallback_or_stale_path".to_string()
+    } else if candidate_or_guarded > 0 {
+        "guarded_or_candidate_path".to_string()
+    } else if active_or_warm > 0 {
+        "active_path".to_string()
+    } else {
+        "unknown".to_string()
     }
 }
 
@@ -813,7 +985,7 @@ fn work_cost_tension_name(tension: WorkCostTension) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::JobHistoryStore;
+    use super::{JobHistoryStore, PersistedSnapshotReadiness};
     use crate::compute_service::JobSubmissionMeta;
     use crate::pipeline::{CanonicalPipelineRequest, ComputePipelineBackend};
     use crate::{ComputeBudget, ComputeInput, FrameId, InMemoryComputeService};
@@ -858,6 +1030,12 @@ mod tests {
         assert!(!loaded.stage_cost_attribution.is_empty());
         assert!(loaded.hotspot_summary.is_some());
         assert!(loaded.optimization_view.is_some());
+        let snapshot = loaded
+            .execution_snapshot
+            .as_ref()
+            .expect("execution snapshot should exist");
+        assert_eq!(snapshot.readiness, PersistedSnapshotReadiness::ReplayReady);
+        assert!(snapshot.canonical_request_available);
     }
 
     #[test]
@@ -890,5 +1068,6 @@ mod tests {
         );
         assert_eq!(loaded.fault_systemic, Some(true));
         assert!(loaded.optimization_view.is_some());
+        assert!(loaded.execution_snapshot.is_some());
     }
 }

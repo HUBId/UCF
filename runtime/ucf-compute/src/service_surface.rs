@@ -18,6 +18,7 @@ use crate::compute_service::{
 };
 use crate::job_history::{
     JobHistoryStore, JobHistoryStoreError, PersistedCanonicalRequest, PersistedJobRecord,
+    PersistedSnapshotReadiness,
 };
 use crate::pipeline::{
     classify_failure_kind, CanonicalFailureKind, CanonicalFaultDomain, CanonicalHotspotSummary,
@@ -190,7 +191,16 @@ pub struct RuntimeOpsSnapshot {
     pub repeated_hotspot_stage: Option<CanonicalStageId>,
     pub repeated_hotspot_runs: usize,
     pub optimization_view: RuntimeOptimizationOpsView,
+    pub replay_snapshot_coverage: ReplaySnapshotCoverage,
     pub recovery: Option<ComputeRecoverySnapshot>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReplaySnapshotCoverage {
+    pub replay_ready: usize,
+    pub partial: usize,
+    pub insufficient: usize,
+    pub stale_or_incomplete: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -410,6 +420,18 @@ impl CanonicalComputeEntryPoint {
                 })
             }
         };
+        if matches!(
+            source.snapshot_readiness,
+            PersistedSnapshotReadiness::Insufficient
+                | PersistedSnapshotReadiness::StaleOrIncomplete
+        ) {
+            return Ok(ComputeReplayOutcome::NotReplayable {
+                source_job_id: source.job_id,
+                code: ReplayFailureCode::ConfigurationIncomplete,
+                detail: "replay snapshot is insufficient or stale for load-bearing replay"
+                    .to_string(),
+            });
+        }
         if source.execution_mode() == ReplayExecutionMode::RemoteWorkerIpc
             && !source.has_remote_context()
         {
@@ -695,6 +717,10 @@ impl CanonicalComputeEntryPoint {
         let mut dominant_stage_counts: BTreeMap<CanonicalStageId, usize> = BTreeMap::new();
         let mut slots = Vec::new();
         let mut last_job = None;
+        let mut replay_ready = 0usize;
+        let mut partial = 0usize;
+        let mut insufficient = 0usize;
+        let mut stale_or_incomplete = 0usize;
 
         for record in self.service.jobs() {
             submitted_total = submitted_total.saturating_add(1);
@@ -728,6 +754,42 @@ impl CanonicalComputeEntryPoint {
                         warmup_state: parse_warmup_state(slot.detail.as_deref()),
                     })
                     .collect();
+            }
+            match derive_live_snapshot_readiness(record) {
+                PersistedSnapshotReadiness::ReplayReady => {
+                    replay_ready = replay_ready.saturating_add(1)
+                }
+                PersistedSnapshotReadiness::Partial => partial = partial.saturating_add(1),
+                PersistedSnapshotReadiness::Insufficient => {
+                    insufficient = insufficient.saturating_add(1)
+                }
+                PersistedSnapshotReadiness::StaleOrIncomplete => {
+                    stale_or_incomplete = stale_or_incomplete.saturating_add(1)
+                }
+            }
+        }
+        if let Some(store) = self.history_store.as_ref() {
+            for persisted in store.records() {
+                if self.service.job(JobId(persisted.job_id)).is_some() {
+                    continue;
+                }
+                match persisted
+                    .execution_snapshot
+                    .as_ref()
+                    .map(|snapshot| snapshot.readiness)
+                    .unwrap_or(PersistedSnapshotReadiness::Insufficient)
+                {
+                    PersistedSnapshotReadiness::ReplayReady => {
+                        replay_ready = replay_ready.saturating_add(1)
+                    }
+                    PersistedSnapshotReadiness::Partial => partial = partial.saturating_add(1),
+                    PersistedSnapshotReadiness::Insufficient => {
+                        insufficient = insufficient.saturating_add(1)
+                    }
+                    PersistedSnapshotReadiness::StaleOrIncomplete => {
+                        stale_or_incomplete = stale_or_incomplete.saturating_add(1)
+                    }
+                }
             }
         }
         slots.sort_by_key(|slot| slot.slot);
@@ -884,6 +946,12 @@ impl CanonicalComputeEntryPoint {
                 mixed_bottlenecks,
                 historical_feedback_alignment,
                 caveats,
+            },
+            replay_snapshot_coverage: ReplaySnapshotCoverage {
+                replay_ready,
+                partial,
+                insufficient,
+                stale_or_incomplete,
             },
             recovery: self.recovery_snapshot.clone(),
         }
@@ -1254,6 +1322,7 @@ struct ReplaySourceRecord {
     failure_kind: Option<String>,
     pipeline_state: Option<String>,
     work_summary: Option<CanonicalWorkSummary>,
+    snapshot_readiness: PersistedSnapshotReadiness,
 }
 
 impl ReplaySourceRecord {
@@ -1307,6 +1376,7 @@ impl ReplaySourceRecord {
                 .map(pipeline_state_name)
                 .map(str::to_string),
             work_summary: record.accounting.work_summary,
+            snapshot_readiness: derive_live_snapshot_readiness(record),
         }
     }
 
@@ -1375,6 +1445,11 @@ impl ReplaySourceRecord {
                     lfm_remaining_units: summary.lfm_remaining_units,
                     budget_exceeded_stage: None,
                 }),
+            snapshot_readiness: persisted
+                .execution_snapshot
+                .as_ref()
+                .map(|snapshot| snapshot.readiness)
+                .unwrap_or_else(|| infer_persisted_snapshot_readiness(persisted)),
         }
     }
 
@@ -1390,6 +1465,49 @@ impl ReplaySourceRecord {
         self.execution_mode() == ReplayExecutionMode::RemoteWorkerIpc
             && self.execution_lane.is_some()
             && self.backend_route.is_some()
+    }
+}
+
+fn derive_live_snapshot_readiness(record: &JobRecord) -> PersistedSnapshotReadiness {
+    let was_remote = matches!(record.execution_path, JobExecutionPath::WorkerIpc);
+    if record.result.is_none()
+        && !matches!(
+            record.state,
+            JobLifecycleState::Completed
+                | JobLifecycleState::Failed
+                | JobLifecycleState::Rejected
+                | JobLifecycleState::TimedOut
+        )
+    {
+        return PersistedSnapshotReadiness::Insufficient;
+    }
+    if was_remote && record.result.is_none() {
+        return PersistedSnapshotReadiness::StaleOrIncomplete;
+    }
+    if record.accounting.model_slots.is_empty() || record.accounting.work_cost_summary.is_none() {
+        return PersistedSnapshotReadiness::Partial;
+    }
+    PersistedSnapshotReadiness::ReplayReady
+}
+
+fn infer_persisted_snapshot_readiness(record: &PersistedJobRecord) -> PersistedSnapshotReadiness {
+    if record.canonical_request.is_none() {
+        return PersistedSnapshotReadiness::Insufficient;
+    }
+    if record.execution_path == "WorkerIpc" {
+        let complete_remote_context = record
+            .remote_execution_context
+            .as_ref()
+            .is_some_and(|ctx| ctx.context_completeness == "complete");
+        if complete_remote_context {
+            PersistedSnapshotReadiness::ReplayReady
+        } else {
+            PersistedSnapshotReadiness::Partial
+        }
+    } else if record.backend_route.is_some() {
+        PersistedSnapshotReadiness::ReplayReady
+    } else {
+        PersistedSnapshotReadiness::Partial
     }
 }
 
@@ -2099,6 +2217,9 @@ mod tests {
             }
             other => panic!("expected non-replayable, got {other:?}"),
         }
+        let coverage = entry.operations_snapshot().replay_snapshot_coverage;
+        assert_eq!(coverage.insufficient, 1);
+        assert_eq!(coverage.replay_ready, 0);
     }
 
     #[test]
@@ -2124,6 +2245,12 @@ mod tests {
             }
             other => panic!("expected non-replayable, got {other:?}"),
         }
+        let coverage = entry.operations_snapshot().replay_snapshot_coverage;
+        assert_eq!(coverage.replay_ready, 0);
+        assert_eq!(
+            coverage.partial + coverage.insufficient + coverage.stale_or_incomplete,
+            1
+        );
     }
 
     #[test]
