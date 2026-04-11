@@ -433,7 +433,7 @@ impl CanonicalComputeEntryPoint {
             }
         };
         let source_execution_mode = source.execution_mode();
-        let Some(request) = source.request else {
+        let Some(request) = source.request.clone() else {
             return Ok(ComputeReplayOutcome::NotReplayable {
                 source_job_id: source.job_id,
                 code: ReplayFailureCode::ConfigurationIncomplete,
@@ -544,6 +544,31 @@ impl CanonicalComputeEntryPoint {
         } else {
             ReplayExecutionMode::Local
         };
+        let replay_context = ReplayExecutionContextDescriptor {
+            execution_mode: replay_execution_mode,
+            execution_path: format!("{:?}", replayed.execution_path),
+            execution_lane: Some(format!("{:?}", replayed.accounting.execution_lane)),
+            resource_class: Some(format!("{:?}", replayed.accounting.resource_class)),
+            capacity_pressure: Some(format!("{:?}", replayed.accounting.capacity_pressure)),
+            has_backend_route: replayed.result.is_some(),
+            remote_context_completeness: if replay_execution_mode
+                == ReplayExecutionMode::RemoteWorkerIpc
+                && replayed.result.is_some()
+            {
+                "complete".to_string()
+            } else if replay_execution_mode == ReplayExecutionMode::RemoteWorkerIpc {
+                "partial".to_string()
+            } else {
+                "not_applicable".to_string()
+            },
+        };
+        let source_context = source.context_descriptor();
+        let context_bridge = build_context_bridge_summary(&source_context, &replay_context);
+        let context_consistency_class = classify_context_consistency(
+            &context_bridge,
+            replay_succeeded,
+            source.snapshot_readiness == PersistedSnapshotReadiness::Partial,
+        );
         let remote_context_reproducibility = match (
             source_execution_mode,
             replay_execution_mode,
@@ -571,6 +596,8 @@ impl CanonicalComputeEntryPoint {
             source_execution_mode,
             replay_execution_mode,
             remote_context_reproducibility,
+            context_consistency_class,
+            context_bridge,
             configuration_diff: diff,
             replay_succeeded,
             completion_class_match,
@@ -580,8 +607,20 @@ impl CanonicalComputeEntryPoint {
     }
 
     pub fn replay_preflight(&self, handle: ComputeJobHandle) -> ComputeReplayPreflight {
-        let current_mode = current_replay_mode(self.operations_snapshot().execution_path);
+        let ops = self.operations_snapshot();
+        let current_mode = current_replay_mode(ops.execution_path);
+        let current_context = current_context_descriptor(&ops);
         let Some(source) = self.replay_source(handle.job_id) else {
+            let source_context = ReplayExecutionContextDescriptor {
+                execution_mode: current_mode,
+                execution_path: "unknown".to_string(),
+                execution_lane: None,
+                resource_class: None,
+                capacity_pressure: None,
+                has_backend_route: false,
+                remote_context_completeness: "unavailable".to_string(),
+            };
+            let context_bridge = build_context_bridge_summary(&source_context, &current_context);
             return ComputeReplayPreflight {
                 source_job_id: handle.job_id,
                 replayability: ReplayabilityClass::BlockedForReplay,
@@ -589,6 +628,8 @@ impl CanonicalComputeEntryPoint {
                 current_execution_mode: current_mode,
                 snapshot_readiness: None,
                 locality: ReplayPreflightLocality::ChangedContextOnly,
+                context_consistency_class: ReplayContextConsistencyClass::NotMeaningfullyComparable,
+                context_bridge,
                 fidelity_equivalent_possible: false,
                 issues: vec![ReplayPreflightIssue {
                     code: ReplayPreflightIssueCode::RecordMissing,
@@ -621,6 +662,11 @@ impl CanonicalComputeEntryPoint {
                 code: ReplayPreflightIssueCode::MissingRemoteExecutionContext,
                 detail: "source remote execution context is incomplete".to_string(),
             });
+            issues.push(ReplayPreflightIssue {
+                code: ReplayPreflightIssueCode::OriginalContextUnavailable,
+                detail: "original remote execution context unavailable for context bridge"
+                    .to_string(),
+            });
         }
         if source_mode != current_mode {
             issues.push(ReplayPreflightIssue {
@@ -629,6 +675,12 @@ impl CanonicalComputeEntryPoint {
                     "current runtime execution mode changed from {:?} to {:?}",
                     source_mode, current_mode
                 ),
+            });
+            issues.push(ReplayPreflightIssue {
+                code: ReplayPreflightIssueCode::AlternativeContextWithCaveats,
+                detail:
+                    "replay requires local-vs-remote context bridge; diagnostics will be caveated"
+                        .to_string(),
             });
         }
         if let (Some(source_hint), Some(current_hint)) = (
@@ -683,6 +735,8 @@ impl CanonicalComputeEntryPoint {
                     | ReplayPreflightIssueCode::MissingArtifactOrSlot
                     | ReplayPreflightIssueCode::ChangedBackendDeviceWorkerContext
                     | ReplayPreflightIssueCode::MissingRemoteExecutionContext
+                    | ReplayPreflightIssueCode::OriginalContextUnavailable
+                    | ReplayPreflightIssueCode::ContextBridgeTooLossy
             )
         });
         let insufficient = issues.iter().any(|issue| {
@@ -697,9 +751,16 @@ impl CanonicalComputeEntryPoint {
                 issue.code,
                 ReplayPreflightIssueCode::RolloutContextChangedTooMuch
                     | ReplayPreflightIssueCode::LocalRemoteConstraintMismatch
+                    | ReplayPreflightIssueCode::AlternativeContextWithCaveats
             )
         });
         let has_caveat = source.snapshot_readiness == PersistedSnapshotReadiness::Partial;
+        if source_mode != current_mode && has_caveat {
+            issues.push(ReplayPreflightIssue {
+                code: ReplayPreflightIssueCode::ContextBridgeTooLossy,
+                detail: "context bridge is too lossy because source snapshot already carries partial fidelity".to_string(),
+            });
+        }
         if has_caveat {
             issues.push(ReplayPreflightIssue {
                 code: ReplayPreflightIssueCode::ReplayNotFidelityEquivalent,
@@ -732,6 +793,10 @@ impl CanonicalComputeEntryPoint {
         };
         let fidelity_equivalent_possible =
             !changed_context && !has_caveat && !blocked && !insufficient;
+        let source_context = source.context_descriptor();
+        let context_bridge = build_context_bridge_summary(&source_context, &current_context);
+        let context_consistency_class =
+            classify_preflight_context_consistency(replayability, changed_context, has_caveat);
 
         ComputeReplayPreflight {
             source_job_id: source.job_id,
@@ -740,6 +805,8 @@ impl CanonicalComputeEntryPoint {
             current_execution_mode: current_mode,
             snapshot_readiness: Some(source.snapshot_readiness),
             locality,
+            context_consistency_class,
+            context_bridge,
             fidelity_equivalent_possible,
             issues,
         }
@@ -1380,6 +1447,42 @@ pub enum ReplayRemoteContextReproducibility {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReplayContextConsistencyClass {
+    SameEffectiveExecutionContext,
+    ChangedComparableExecutionContext,
+    ChangedContextWithFidelityCaveat,
+    NotMeaningfullyComparable,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReplayContextTransition {
+    LocalToLocal,
+    LocalToRemote,
+    RemoteToLocal,
+    RemoteToRemoteSame,
+    RemoteToRemoteChanged,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReplayExecutionContextDescriptor {
+    pub execution_mode: ReplayExecutionMode,
+    pub execution_path: String,
+    pub execution_lane: Option<String>,
+    pub resource_class: Option<String>,
+    pub capacity_pressure: Option<String>,
+    pub has_backend_route: bool,
+    pub remote_context_completeness: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReplayContextBridgeSummary {
+    pub transition: ReplayContextTransition,
+    pub source: ReplayExecutionContextDescriptor,
+    pub replay: ReplayExecutionContextDescriptor,
+    pub major_mismatches: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReplayabilityClass {
     ReplayReady,
     ReplayableWithCaveats,
@@ -1396,6 +1499,9 @@ pub enum ReplayPreflightIssueCode {
     MissingArtifactOrSlot,
     ChangedBackendDeviceWorkerContext,
     MissingRemoteExecutionContext,
+    OriginalContextUnavailable,
+    AlternativeContextWithCaveats,
+    ContextBridgeTooLossy,
     RolloutContextChangedTooMuch,
     LocalRemoteConstraintMismatch,
     ReplayNotFidelityEquivalent,
@@ -1423,6 +1529,8 @@ pub struct ComputeReplayPreflight {
     pub current_execution_mode: ReplayExecutionMode,
     pub snapshot_readiness: Option<PersistedSnapshotReadiness>,
     pub locality: ReplayPreflightLocality,
+    pub context_consistency_class: ReplayContextConsistencyClass,
+    pub context_bridge: ReplayContextBridgeSummary,
     pub fidelity_equivalent_possible: bool,
     pub issues: Vec<ReplayPreflightIssue>,
 }
@@ -1445,6 +1553,8 @@ pub struct ComputeReplayReport {
     pub source_execution_mode: ReplayExecutionMode,
     pub replay_execution_mode: ReplayExecutionMode,
     pub remote_context_reproducibility: ReplayRemoteContextReproducibility,
+    pub context_consistency_class: ReplayContextConsistencyClass,
+    pub context_bridge: ReplayContextBridgeSummary,
     pub configuration_diff: ReplayConfigurationDiff,
     pub replay_succeeded: bool,
     pub completion_class_match: bool,
@@ -1453,6 +1563,7 @@ pub struct ComputeReplayReport {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(clippy::large_enum_variant)]
 pub enum ComputeReplayOutcome {
     Completed(ComputeReplayReport),
     NotReplayable {
@@ -1523,12 +1634,14 @@ struct ReplaySourceRecord {
     capacity_pressure: Option<String>,
     backend_route: Option<crate::pipeline::CanonicalBackendRoute>,
     model_slots: Vec<String>,
+    has_backend_route: bool,
     completion_class: Option<String>,
     failure_kind: Option<String>,
     pipeline_state: Option<String>,
     work_summary: Option<CanonicalWorkSummary>,
     snapshot_readiness: PersistedSnapshotReadiness,
     rollout_context_hint: Option<String>,
+    remote_context_completeness: Option<String>,
 }
 
 impl ReplaySourceRecord {
@@ -1558,6 +1671,7 @@ impl ReplaySourceRecord {
             resource_class: Some(record.accounting.resource_class),
             capacity_pressure: Some(format!("{:?}", record.accounting.capacity_pressure)),
             backend_route: record.result.as_ref().map(|result| result.route),
+            has_backend_route: record.result.is_some(),
             model_slots: record
                 .accounting
                 .model_slots
@@ -1584,6 +1698,17 @@ impl ReplaySourceRecord {
             work_summary: record.accounting.work_summary,
             snapshot_readiness: derive_live_snapshot_readiness(record),
             rollout_context_hint: None,
+            remote_context_completeness: Some(
+                if matches!(record.execution_path, JobExecutionPath::WorkerIpc)
+                    && record.result.is_some()
+                {
+                    "complete".to_string()
+                } else if matches!(record.execution_path, JobExecutionPath::WorkerIpc) {
+                    "partial".to_string()
+                } else {
+                    "not_applicable".to_string()
+                },
+            ),
         }
     }
 
@@ -1632,6 +1757,7 @@ impl ReplaySourceRecord {
                     lfm_backend: route.lfm_backend,
                 }
             }),
+            has_backend_route: persisted.backend_route.is_some(),
             model_slots: persisted
                 .model_slots
                 .iter()
@@ -1661,6 +1787,10 @@ impl ReplaySourceRecord {
                 .execution_snapshot
                 .as_ref()
                 .map(|snapshot| snapshot.rollout.rollout_context_hint.clone()),
+            remote_context_completeness: persisted
+                .remote_execution_context
+                .as_ref()
+                .map(|ctx| ctx.context_completeness.clone()),
         }
     }
 
@@ -1676,6 +1806,21 @@ impl ReplaySourceRecord {
         self.execution_mode() == ReplayExecutionMode::RemoteWorkerIpc
             && self.execution_lane.is_some()
             && self.backend_route.is_some()
+    }
+
+    fn context_descriptor(&self) -> ReplayExecutionContextDescriptor {
+        ReplayExecutionContextDescriptor {
+            execution_mode: self.execution_mode(),
+            execution_path: self.execution_path.clone(),
+            execution_lane: self.execution_lane.clone(),
+            resource_class: self.resource_class.map(|class| format!("{class:?}")),
+            capacity_pressure: self.capacity_pressure.clone(),
+            has_backend_route: self.has_backend_route,
+            remote_context_completeness: self
+                .remote_context_completeness
+                .clone()
+                .unwrap_or_else(|| "unknown".to_string()),
+        }
     }
 }
 
@@ -2023,6 +2168,134 @@ fn current_rollout_context_hint(slots: &[RuntimeSlotSnapshot]) -> Option<&'stati
     Some("mixed_or_unknown")
 }
 
+fn current_context_descriptor(snapshot: &RuntimeOpsSnapshot) -> ReplayExecutionContextDescriptor {
+    ReplayExecutionContextDescriptor {
+        execution_mode: current_replay_mode(snapshot.execution_path),
+        execution_path: format!("{:?}", snapshot.execution_path),
+        execution_lane: None,
+        resource_class: None,
+        capacity_pressure: None,
+        has_backend_route: false,
+        remote_context_completeness: match snapshot.execution_path {
+            JobExecutionPath::WorkerIpc => "partial".to_string(),
+            JobExecutionPath::LocalCanonical => "not_applicable".to_string(),
+        },
+    }
+}
+
+fn build_context_bridge_summary(
+    source: &ReplayExecutionContextDescriptor,
+    replay: &ReplayExecutionContextDescriptor,
+) -> ReplayContextBridgeSummary {
+    let transition = classify_context_transition(source, replay);
+    let mut major_mismatches = Vec::new();
+    if source.execution_mode != replay.execution_mode {
+        major_mismatches.push(format!(
+            "execution_mode:{:?}->{:?}",
+            source.execution_mode, replay.execution_mode
+        ));
+    }
+    if source.execution_lane != replay.execution_lane {
+        major_mismatches.push(format!(
+            "execution_lane:{:?}->{:?}",
+            source.execution_lane, replay.execution_lane
+        ));
+    }
+    if source.resource_class != replay.resource_class {
+        major_mismatches.push(format!(
+            "resource_class:{:?}->{:?}",
+            source.resource_class, replay.resource_class
+        ));
+    }
+    if source.capacity_pressure != replay.capacity_pressure {
+        major_mismatches.push(format!(
+            "capacity_pressure:{:?}->{:?}",
+            source.capacity_pressure, replay.capacity_pressure
+        ));
+    }
+    if source.has_backend_route != replay.has_backend_route {
+        major_mismatches.push(format!(
+            "backend_route:{}->{}",
+            source.has_backend_route, replay.has_backend_route
+        ));
+    }
+    if source.remote_context_completeness != replay.remote_context_completeness {
+        major_mismatches.push(format!(
+            "remote_context:{}->{}",
+            source.remote_context_completeness, replay.remote_context_completeness
+        ));
+    }
+    ReplayContextBridgeSummary {
+        transition,
+        source: source.clone(),
+        replay: replay.clone(),
+        major_mismatches,
+    }
+}
+
+fn classify_context_transition(
+    source: &ReplayExecutionContextDescriptor,
+    replay: &ReplayExecutionContextDescriptor,
+) -> ReplayContextTransition {
+    match (source.execution_mode, replay.execution_mode) {
+        (ReplayExecutionMode::Local, ReplayExecutionMode::Local) => {
+            ReplayContextTransition::LocalToLocal
+        }
+        (ReplayExecutionMode::Local, ReplayExecutionMode::RemoteWorkerIpc) => {
+            ReplayContextTransition::LocalToRemote
+        }
+        (ReplayExecutionMode::RemoteWorkerIpc, ReplayExecutionMode::Local) => {
+            ReplayContextTransition::RemoteToLocal
+        }
+        (ReplayExecutionMode::RemoteWorkerIpc, ReplayExecutionMode::RemoteWorkerIpc) => {
+            let same_remote = source.execution_lane == replay.execution_lane
+                && source.resource_class == replay.resource_class
+                && source.capacity_pressure == replay.capacity_pressure
+                && source.has_backend_route == replay.has_backend_route;
+            if same_remote {
+                ReplayContextTransition::RemoteToRemoteSame
+            } else {
+                ReplayContextTransition::RemoteToRemoteChanged
+            }
+        }
+    }
+}
+
+fn classify_preflight_context_consistency(
+    replayability: ReplayabilityClass,
+    changed_context: bool,
+    has_caveat: bool,
+) -> ReplayContextConsistencyClass {
+    match replayability {
+        ReplayabilityClass::BlockedForReplay | ReplayabilityClass::InsufficientForReplay => {
+            ReplayContextConsistencyClass::NotMeaningfullyComparable
+        }
+        _ if changed_context && has_caveat => {
+            ReplayContextConsistencyClass::ChangedContextWithFidelityCaveat
+        }
+        _ if changed_context => ReplayContextConsistencyClass::ChangedComparableExecutionContext,
+        _ if has_caveat => ReplayContextConsistencyClass::ChangedContextWithFidelityCaveat,
+        _ => ReplayContextConsistencyClass::SameEffectiveExecutionContext,
+    }
+}
+
+fn classify_context_consistency(
+    bridge: &ReplayContextBridgeSummary,
+    replay_succeeded: bool,
+    has_snapshot_caveat: bool,
+) -> ReplayContextConsistencyClass {
+    if !replay_succeeded {
+        return ReplayContextConsistencyClass::NotMeaningfullyComparable;
+    }
+    if bridge.major_mismatches.is_empty() {
+        return ReplayContextConsistencyClass::SameEffectiveExecutionContext;
+    }
+    if has_snapshot_caveat || bridge.major_mismatches.len() > 2 {
+        return ReplayContextConsistencyClass::ChangedContextWithFidelityCaveat;
+    }
+    ReplayContextConsistencyClass::ChangedComparableExecutionContext
+}
+
 fn replay_preflight_failure(preflight: &ComputeReplayPreflight) -> (ReplayFailureCode, String) {
     for issue in &preflight.issues {
         let code = match issue.code {
@@ -2036,8 +2309,15 @@ fn replay_preflight_failure(preflight: &ComputeReplayPreflight) -> (ReplayFailur
             ReplayPreflightIssueCode::MissingRemoteExecutionContext => {
                 Some(ReplayFailureCode::MissingRemoteExecutionContext)
             }
+            ReplayPreflightIssueCode::OriginalContextUnavailable => {
+                Some(ReplayFailureCode::MissingRemoteExecutionContext)
+            }
+            ReplayPreflightIssueCode::ContextBridgeTooLossy => {
+                Some(ReplayFailureCode::ChangedRuntimeContextIncompatible)
+            }
             ReplayPreflightIssueCode::RolloutContextChangedTooMuch
-            | ReplayPreflightIssueCode::LocalRemoteConstraintMismatch => {
+            | ReplayPreflightIssueCode::LocalRemoteConstraintMismatch
+            | ReplayPreflightIssueCode::AlternativeContextWithCaveats => {
                 Some(ReplayFailureCode::ChangedRuntimeContextIncompatible)
             }
             ReplayPreflightIssueCode::SnapshotIncomplete
@@ -2069,13 +2349,16 @@ mod tests {
         BaselineReference, CanonicalComputeEntryPoint, ComputeExecutionMode,
         ComputeHistoryLookupError, ComputeJobHandle, ComputeJobHistoryLookup, ComputeReplayOutcome,
         ComputeRequestValidationCode, ComputeSubmitOutcome, ComputeSubmitRequest,
-        RecoveryDisposition, ReplayDeterminismClass, ReplayExecutionMode, ReplayFailureCode,
-        ReplayPreflightIssueCode, ReplayRemoteContextReproducibility, ReplayabilityClass,
-        RuntimeOperation, RuntimeOperationCode, RuntimeOpsState, RuntimeSignalState,
-        RuntimeWarmupState,
+        RecoveryDisposition, ReplayContextConsistencyClass, ReplayContextTransition,
+        ReplayDeterminismClass, ReplayExecutionMode, ReplayFailureCode, ReplayPreflightIssueCode,
+        ReplayRemoteContextReproducibility, ReplayabilityClass, RuntimeOperation,
+        RuntimeOperationCode, RuntimeOpsState, RuntimeSignalState, RuntimeWarmupState,
     };
     use crate::pipeline::{CanonicalFailureKind, CanonicalPipelineRequest};
-    use crate::{InMemoryComputeService, JobHistoryStore, JobId, JobLifecycleState};
+    use crate::{
+        compute_service::SchedulerConfig, InMemoryComputeService, JobExecutionPath,
+        JobHistoryStore, JobId, JobLifecycleState,
+    };
 
     fn service() -> CanonicalComputeEntryPoint {
         CanonicalComputeEntryPoint::new(InMemoryComputeService::new(
@@ -2454,6 +2737,17 @@ mod tests {
                     ReplayRemoteContextReproducibility::NotApplicableLocal
                 );
                 assert!(matches!(
+                    report.context_consistency_class,
+                    ReplayContextConsistencyClass::SameEffectiveExecutionContext
+                        | ReplayContextConsistencyClass::ChangedComparableExecutionContext
+                        | ReplayContextConsistencyClass::ChangedContextWithFidelityCaveat
+                        | ReplayContextConsistencyClass::NotMeaningfullyComparable
+                ));
+                assert_eq!(
+                    report.context_bridge.transition,
+                    ReplayContextTransition::LocalToLocal
+                );
+                assert!(matches!(
                     report.determinism_class,
                     ReplayDeterminismClass::SameEffectiveConfiguration
                         | ReplayDeterminismClass::ReplayableNotStrictlyDeterministic
@@ -2483,8 +2777,103 @@ mod tests {
         };
         let preflight = entry.replay_preflight(source);
         assert_eq!(preflight.replayability, ReplayabilityClass::ReplayReady);
+        assert_eq!(
+            preflight.context_consistency_class,
+            ReplayContextConsistencyClass::SameEffectiveExecutionContext
+        );
+        assert_eq!(
+            preflight.context_bridge.transition,
+            ReplayContextTransition::LocalToLocal
+        );
         assert!(preflight.fidelity_equivalent_possible);
         assert!(preflight.issues.is_empty());
+    }
+
+    #[test]
+    fn replay_preflight_classifies_local_to_remote_as_changed_context_with_caveat() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let history_path = dir.path().join("job_history.jsonl");
+        std::fs::write(
+            &history_path,
+            r#"{"schema_version":8,"job_id":61,"submitted_by":"svc","request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101"},"canonical_request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101","budget":{"max_micros":5000,"hard_timeout_micros":5000,"seed":9,"profile_id":0,"global_work_units":65536,"world_units":16384,"sae_units":16384,"ssm_units":16384,"lfm_units":16384,"degrade_policy":"DegradeStages","governor_tier":1}},"lifecycle_state":"completed","completion_class":"completed","execution_path":"LocalCanonical","submitted_at_unix_ms":1,"started_at_unix_ms":2,"finished_at_unix_ms":3,"queue_wait_ms":1,"execution_duration_micros":5,"total_duration_ms":2,"failure_kind":null,"pipeline_state":"ok","execution_lane":"standard","resource_class":"standard","capacity_pressure":"nominal","capacity_queue_disposition":"none","backend_route":{"pack_id":1,"world_backend":1,"sae_backend":1,"ssm_backend":1,"lfm_backend":1},"work_summary":null,"stage_profiles":[],"model_slots":[]}"#,
+        )
+        .expect("history fixture");
+        let entry = CanonicalComputeEntryPoint::with_history_path(
+            InMemoryComputeService::with_scheduler(
+                crate::pipeline::ComputePipelineBackend::stub(),
+                SchedulerConfig {
+                    max_concurrent_jobs: 1,
+                    execution_path: JobExecutionPath::WorkerIpc,
+                },
+            ),
+            &history_path,
+        )
+        .expect("entry with history");
+        let preflight = entry.replay_preflight(ComputeJobHandle { job_id: JobId(61) });
+        assert_eq!(
+            preflight.replayability,
+            ReplayabilityClass::ReplayableOnlyUnderChangedContext
+        );
+        assert_eq!(
+            preflight.context_bridge.transition,
+            ReplayContextTransition::LocalToRemote
+        );
+        assert_eq!(
+            preflight.context_consistency_class,
+            ReplayContextConsistencyClass::ChangedComparableExecutionContext
+        );
+    }
+
+    #[test]
+    fn replay_preflight_classifies_remote_to_local_with_bridge_signals() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let history_path = dir.path().join("job_history.jsonl");
+        std::fs::write(
+            &history_path,
+            r#"{"schema_version":8,"job_id":62,"submitted_by":"svc","request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101"},"canonical_request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101","budget":{"max_micros":5000,"hard_timeout_micros":5000,"seed":9,"profile_id":0,"global_work_units":65536,"world_units":16384,"sae_units":16384,"ssm_units":16384,"lfm_units":16384,"degrade_policy":"DegradeStages","governor_tier":1}},"lifecycle_state":"completed","completion_class":"completed","execution_path":"WorkerIpc","submitted_at_unix_ms":1,"started_at_unix_ms":2,"finished_at_unix_ms":3,"queue_wait_ms":1,"execution_duration_micros":5,"total_duration_ms":2,"failure_kind":null,"pipeline_state":"ok","execution_lane":"worker","resource_class":"standard","capacity_pressure":"nominal","capacity_queue_disposition":"none","backend_route":{"pack_id":1,"world_backend":1,"sae_backend":1,"ssm_backend":1,"lfm_backend":1},"work_summary":null,"stage_profiles":[],"model_slots":[],"remote_execution_context":{"was_remote":true,"execution_path":"WorkerIpc","execution_lane":"worker","resource_class":"standard","capacity_pressure":"nominal","capacity_queue_disposition":"none","context_completeness":"complete"}}"#,
+        )
+        .expect("history fixture");
+        let entry = CanonicalComputeEntryPoint::with_history_path(
+            InMemoryComputeService::new(crate::pipeline::ComputePipelineBackend::stub()),
+            &history_path,
+        )
+        .expect("entry with history");
+        let preflight = entry.replay_preflight(ComputeJobHandle { job_id: JobId(62) });
+        assert_eq!(
+            preflight.context_bridge.transition,
+            ReplayContextTransition::RemoteToLocal
+        );
+        assert!(preflight.issues.iter().any(|issue| {
+            issue.code == ReplayPreflightIssueCode::AlternativeContextWithCaveats
+        }));
+    }
+
+    #[test]
+    fn replay_preflight_distinguishes_remote_to_other_remote_context() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let history_path = dir.path().join("job_history.jsonl");
+        std::fs::write(
+            &history_path,
+            r#"{"schema_version":8,"job_id":63,"submitted_by":"svc","request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101"},"canonical_request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101","budget":{"max_micros":5000,"hard_timeout_micros":5000,"seed":9,"profile_id":0,"global_work_units":65536,"world_units":16384,"sae_units":16384,"ssm_units":16384,"lfm_units":16384,"degrade_policy":"DegradeStages","governor_tier":1}},"lifecycle_state":"completed","completion_class":"completed","execution_path":"WorkerIpc","submitted_at_unix_ms":1,"started_at_unix_ms":2,"finished_at_unix_ms":3,"queue_wait_ms":1,"execution_duration_micros":5,"total_duration_ms":2,"failure_kind":null,"pipeline_state":"ok","execution_lane":"worker","resource_class":"standard","capacity_pressure":"nominal","capacity_queue_disposition":"none","backend_route":{"pack_id":1,"world_backend":1,"sae_backend":1,"ssm_backend":1,"lfm_backend":1},"work_summary":null,"stage_profiles":[],"model_slots":[],"remote_execution_context":{"was_remote":true,"execution_path":"WorkerIpc","execution_lane":"worker","resource_class":"standard","capacity_pressure":"nominal","capacity_queue_disposition":"none","context_completeness":"complete"}}"#,
+        )
+        .expect("history fixture");
+        let entry = CanonicalComputeEntryPoint::with_history_path(
+            InMemoryComputeService::with_scheduler(
+                crate::pipeline::ComputePipelineBackend::stub(),
+                SchedulerConfig {
+                    max_concurrent_jobs: 1,
+                    execution_path: JobExecutionPath::WorkerIpc,
+                },
+            ),
+            &history_path,
+        )
+        .expect("entry with history");
+        let preflight = entry.replay_preflight(ComputeJobHandle { job_id: JobId(63) });
+        assert_eq!(
+            preflight.context_bridge.transition,
+            ReplayContextTransition::RemoteToRemoteChanged
+        );
+        assert!(!preflight.context_bridge.major_mismatches.is_empty());
     }
 
     #[test]
