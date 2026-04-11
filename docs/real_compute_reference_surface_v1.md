@@ -66,3 +66,39 @@ This reference layer intentionally does **not** add:
 - large repository reorganization
 
 The goal is a coherent technical reference surface over the existing real-compute kernel.
+
+## 7) Replay context bridge semantics (local vs remote)
+
+Replay keeps a minimal execution-context bridge between source and replay runs, instead of
+assuming local-only or remote-only replay semantics:
+
+- source + replay context descriptors include:
+  - execution mode/path (`Local` vs `RemoteWorkerIpc`)
+  - lane/resource/capacity hints when available
+  - backend-route availability
+  - remote context completeness (`complete`, `partial`, `not_applicable`, `unavailable`)
+- context transitions are explicitly classified as:
+  - `local_to_local`
+  - `local_to_remote`
+  - `remote_to_local`
+  - `remote_to_remote_same`
+  - `remote_to_remote_changed`
+
+Replay preflight and replay reports classify consistency across context boundaries as:
+
+- `same_effective_execution_context`
+- `changed_comparable_execution_context`
+- `changed_context_with_fidelity_caveat`
+- `not_meaningfully_comparable`
+
+Preflight reuses the same replay path and explicitly marks context-bridge caveats/failures:
+
+- `original_context_unavailable` (e.g. missing source remote context)
+- `alternative_context_with_caveats` (e.g. local↔remote bridge required)
+- `context_bridge_too_lossy` (bridge would be too lossy for meaningful replay)
+
+Boundaries kept intentionally:
+
+- no deterministic equivalence guarantee across local/remote boundaries
+- no forensic diff platform or distributed reconciliation matrix
+- only load-bearing mismatch summaries for replay diagnostics and ops/history views

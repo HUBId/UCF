@@ -140,11 +140,12 @@ pub use service_surface::{
     ComputeJobHistoryLookup, ComputeJobStatus, ComputeRecoverySnapshot, ComputeReplayOutcome,
     ComputeReplayPreflight, ComputeReplayReport, ComputeRequestValidationCode,
     ComputeSubmitOutcome, ComputeSubmitRequest, RecoveredJobStatus, RecoveryDisposition,
-    ReplayConfigurationDiff, ReplayDeterminismClass, ReplayExecutionMode, ReplayFailureCode,
-    ReplayPreflightIssue, ReplayPreflightIssueCode, ReplayPreflightLocality,
-    ReplayRemoteContextReproducibility, ReplayabilityClass, RuntimeOperation, RuntimeOperationCode,
-    RuntimeOperationOutcome, RuntimeOpsSnapshot, RuntimeOpsState, RuntimeSignalState,
-    RuntimeWarmupState,
+    ReplayConfigurationDiff, ReplayContextBridgeSummary, ReplayContextConsistencyClass,
+    ReplayContextTransition, ReplayDeterminismClass, ReplayExecutionContextDescriptor,
+    ReplayExecutionMode, ReplayFailureCode, ReplayPreflightIssue, ReplayPreflightIssueCode,
+    ReplayPreflightLocality, ReplayRemoteContextReproducibility, ReplayabilityClass,
+    RuntimeOperation, RuntimeOperationCode, RuntimeOperationOutcome, RuntimeOpsSnapshot,
+    RuntimeOpsState, RuntimeSignalState, RuntimeWarmupState,
 };
 pub use work_meter::WorkMeter;
 
