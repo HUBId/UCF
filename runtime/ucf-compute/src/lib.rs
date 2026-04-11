@@ -144,6 +144,7 @@ pub use service_surface::{
     ReplayContextTransition, ReplayDeterminismClass, ReplayExecutionContextDescriptor,
     ReplayExecutionMode, ReplayFailureCode, ReplayPreflightIssue, ReplayPreflightIssueCode,
     ReplayPreflightLocality, ReplayRemoteContextReproducibility, ReplayabilityClass,
+    RolloutReplayComparability, RolloutReplayComparisonContext, RolloutReplayContextClass,
     RuntimeOperation, RuntimeOperationCode, RuntimeOperationOutcome, RuntimeOpsSnapshot,
     RuntimeOpsState, RuntimeSignalState, RuntimeWarmupState,
 };

@@ -171,6 +171,28 @@ Replay now classifies remote-context reproducibility explicitly:
 When historical remote records lack required context fields, replay is blocked with a structured
 `missing_remote_execution_context` failure instead of silently claiming equivalence.
 
+### Rollout-aware replay/comparison context (Serie D hardening)
+
+Replay and baseline-compare now carry a narrow rollout context view so before/after activation
+checks do not claim blind equivalence:
+
+- rollout context class:
+  - `active_or_warm`
+  - `guarded_or_candidate`
+  - `fallback_or_rollback`
+  - `mixed_or_unknown`
+  - `unavailable`
+- rollout comparability class:
+  - `comparable_across_rollout_boundary`
+  - `comparable_with_rollout_caveat`
+  - `not_meaningfully_comparable_across_rollout_boundary`
+  - `blocked_insufficient_rollout_context`
+  - `blocked_changed_execution_context_beyond_useful_comparison`
+
+The context is populated from persisted execution snapshots when available and from live slot
+warmup summaries for in-memory records. This keeps rollout-aware replay tied to existing
+history/replay/runtime surfaces and avoids separate experiment/release analytics planes.
+
 ## Resource classes and capacity accounting (runtime scope)
 
 Capacity is modeled as a narrow runtime signal (not a cluster manager):

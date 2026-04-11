@@ -564,6 +564,14 @@ impl CanonicalComputeEntryPoint {
         };
         let source_context = source.context_descriptor();
         let context_bridge = build_context_bridge_summary(&source_context, &replay_context);
+        let rollout_context = classify_rollout_context_comparability(
+            source.rollout_context_hint.as_deref(),
+            derive_live_rollout_context_hint(replayed).as_deref(),
+            false,
+            source.snapshot_readiness == PersistedSnapshotReadiness::Partial,
+            !replay_succeeded,
+            false,
+        );
         let context_consistency_class = classify_context_consistency(
             &context_bridge,
             replay_succeeded,
@@ -598,6 +606,7 @@ impl CanonicalComputeEntryPoint {
             remote_context_reproducibility,
             context_consistency_class,
             context_bridge,
+            rollout_context,
             configuration_diff: diff,
             replay_succeeded,
             completion_class_match,
@@ -630,6 +639,13 @@ impl CanonicalComputeEntryPoint {
                 locality: ReplayPreflightLocality::ChangedContextOnly,
                 context_consistency_class: ReplayContextConsistencyClass::NotMeaningfullyComparable,
                 context_bridge,
+                rollout_context: RolloutReplayComparisonContext {
+                    source: RolloutReplayContextClass::Unavailable,
+                    replay: RolloutReplayContextClass::Unavailable,
+                    source_hint: None,
+                    replay_hint: None,
+                    comparability: RolloutReplayComparability::BlockedInsufficientRolloutContext,
+                },
                 fidelity_equivalent_possible: false,
                 issues: vec![ReplayPreflightIssue {
                     code: ReplayPreflightIssueCode::RecordMissing,
@@ -797,6 +813,14 @@ impl CanonicalComputeEntryPoint {
         let context_bridge = build_context_bridge_summary(&source_context, &current_context);
         let context_consistency_class =
             classify_preflight_context_consistency(replayability, changed_context, has_caveat);
+        let rollout_context = classify_rollout_context_comparability(
+            source.rollout_context_hint.as_deref(),
+            current_rollout_context_hint(self.operations_snapshot().available_slots.as_slice()),
+            changed_context,
+            has_caveat,
+            blocked,
+            insufficient,
+        );
 
         ComputeReplayPreflight {
             source_job_id: source.job_id,
@@ -807,6 +831,7 @@ impl CanonicalComputeEntryPoint {
             locality,
             context_consistency_class,
             context_bridge,
+            rollout_context,
             fidelity_equivalent_possible,
             issues,
         }
@@ -924,7 +949,27 @@ impl CanonicalComputeEntryPoint {
                 .work_summary
                 .as_ref()
                 .map(|summary| summary.global_remaining_units),
+            rollout_context: classify_rollout_context_comparability(
+                baseline_record.rollout_context_hint.as_deref(),
+                candidate_record.rollout_context_hint.as_deref(),
+                false,
+                candidate_record.snapshot_readiness == PersistedSnapshotReadiness::Partial
+                    || baseline_record.snapshot_readiness == PersistedSnapshotReadiness::Partial,
+                false,
+                false,
+            ),
         };
+        if summary.rollout_context.comparability
+            == RolloutReplayComparability::NotMeaningfullyComparableAcrossRolloutBoundary
+        {
+            return BaselineComparisonResult::NotComparable {
+                candidate_job_id: candidate.job_id,
+                baseline_job_id: Some(baseline_record.job_id),
+                code: BaselineComparisonFailureCode::NotMeaningfulUnderRuntimeChange,
+                detail: "candidate and baseline crossed an incompatible rollout boundary"
+                    .to_string(),
+            };
+        }
         self.latest_baseline_comparison = Some(summary.clone());
         BaselineComparisonResult::Compared(summary)
     }
@@ -1454,6 +1499,35 @@ pub enum ReplayContextConsistencyClass {
     NotMeaningfullyComparable,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RolloutReplayContextClass {
+    ActiveOrWarm,
+    GuardedOrCandidate,
+    FallbackOrRollback,
+    MixedOrUnknown,
+    Unavailable,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RolloutReplayComparability {
+    ComparableAcrossRolloutBoundary,
+    ComparableWithRolloutCaveat,
+    NotMeaningfullyComparableAcrossRolloutBoundary,
+    BlockedInsufficientRolloutContext,
+    BlockedChangedExecutionContextBeyondUsefulComparison,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct RolloutReplayComparisonContext {
+    pub source: RolloutReplayContextClass,
+    pub replay: RolloutReplayContextClass,
+    pub source_hint: Option<String>,
+    pub replay_hint: Option<String>,
+    pub comparability: RolloutReplayComparability,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReplayContextTransition {
     LocalToLocal,
@@ -1531,6 +1605,7 @@ pub struct ComputeReplayPreflight {
     pub locality: ReplayPreflightLocality,
     pub context_consistency_class: ReplayContextConsistencyClass,
     pub context_bridge: ReplayContextBridgeSummary,
+    pub rollout_context: RolloutReplayComparisonContext,
     pub fidelity_equivalent_possible: bool,
     pub issues: Vec<ReplayPreflightIssue>,
 }
@@ -1555,6 +1630,7 @@ pub struct ComputeReplayReport {
     pub remote_context_reproducibility: ReplayRemoteContextReproducibility,
     pub context_consistency_class: ReplayContextConsistencyClass,
     pub context_bridge: ReplayContextBridgeSummary,
+    pub rollout_context: RolloutReplayComparisonContext,
     pub configuration_diff: ReplayConfigurationDiff,
     pub replay_succeeded: bool,
     pub completion_class_match: bool,
@@ -1607,6 +1683,7 @@ pub struct BaselineComparisonSummary {
     pub work_equal: bool,
     pub candidate_remaining_global_units: Option<u64>,
     pub baseline_remaining_global_units: Option<u64>,
+    pub rollout_context: RolloutReplayComparisonContext,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1697,7 +1774,7 @@ impl ReplaySourceRecord {
                 .map(str::to_string),
             work_summary: record.accounting.work_summary,
             snapshot_readiness: derive_live_snapshot_readiness(record),
-            rollout_context_hint: None,
+            rollout_context_hint: derive_live_rollout_context_hint(record),
             remote_context_completeness: Some(
                 if matches!(record.execution_path, JobExecutionPath::WorkerIpc)
                     && record.result.is_some()
@@ -1844,6 +1921,16 @@ fn derive_live_snapshot_readiness(record: &JobRecord) -> PersistedSnapshotReadin
         return PersistedSnapshotReadiness::Partial;
     }
     PersistedSnapshotReadiness::ReplayReady
+}
+
+fn derive_live_rollout_context_hint(record: &JobRecord) -> Option<String> {
+    let states = record
+        .accounting
+        .model_slots
+        .iter()
+        .map(|slot| parse_warmup_state(slot.detail.as_deref()))
+        .collect::<Vec<_>>();
+    classify_rollout_context_hint(states.as_slice()).map(str::to_string)
 }
 
 fn infer_persisted_snapshot_readiness(record: &PersistedJobRecord) -> PersistedSnapshotReadiness {
@@ -2138,34 +2225,88 @@ fn current_replay_mode(path: JobExecutionPath) -> ReplayExecutionMode {
 }
 
 fn current_rollout_context_hint(slots: &[RuntimeSlotSnapshot]) -> Option<&'static str> {
-    if slots.is_empty() {
+    let states = slots
+        .iter()
+        .map(|slot| slot.warmup_state)
+        .collect::<Vec<_>>();
+    classify_rollout_context_hint(states.as_slice())
+}
+
+fn classify_rollout_context_hint(states: &[RuntimeWarmupState]) -> Option<&'static str> {
+    if states.is_empty() {
         return None;
     }
-    if slots
+    if states
         .iter()
-        .any(|slot| matches!(slot.warmup_state, RuntimeWarmupState::Blocked))
+        .any(|state| matches!(state, RuntimeWarmupState::Blocked))
     {
         return Some("blocked_or_stale");
     }
-    if slots
+    if states
         .iter()
-        .any(|slot| matches!(slot.warmup_state, RuntimeWarmupState::Stale))
+        .any(|state| matches!(state, RuntimeWarmupState::Stale))
     {
         return Some("blocked_or_stale");
     }
-    if slots
+    if states
         .iter()
-        .any(|slot| matches!(slot.warmup_state, RuntimeWarmupState::Preparing))
+        .any(|state| matches!(state, RuntimeWarmupState::Preparing))
     {
         return Some("active_plus_candidate");
     }
-    if slots
+    if states
         .iter()
-        .all(|slot| matches!(slot.warmup_state, RuntimeWarmupState::Ready))
+        .all(|state| matches!(state, RuntimeWarmupState::Ready))
     {
         return Some("active_or_warm");
     }
     Some("mixed_or_unknown")
+}
+
+fn rollout_context_class_from_hint(hint: Option<&str>) -> RolloutReplayContextClass {
+    match hint {
+        Some("active_or_warm") => RolloutReplayContextClass::ActiveOrWarm,
+        Some("active_plus_candidate") => RolloutReplayContextClass::GuardedOrCandidate,
+        Some("blocked_or_stale") => RolloutReplayContextClass::FallbackOrRollback,
+        Some("mixed_or_unknown") => RolloutReplayContextClass::MixedOrUnknown,
+        Some(_) => RolloutReplayContextClass::MixedOrUnknown,
+        None => RolloutReplayContextClass::Unavailable,
+    }
+}
+
+fn classify_rollout_context_comparability(
+    source_hint: Option<&str>,
+    replay_hint: Option<&str>,
+    changed_context: bool,
+    has_caveat: bool,
+    blocked: bool,
+    insufficient: bool,
+) -> RolloutReplayComparisonContext {
+    let source = rollout_context_class_from_hint(source_hint);
+    let replay = rollout_context_class_from_hint(replay_hint);
+    let comparability = if blocked && changed_context {
+        RolloutReplayComparability::BlockedChangedExecutionContextBeyondUsefulComparison
+    } else if insufficient
+        || matches!(source, RolloutReplayContextClass::Unavailable)
+        || matches!(replay, RolloutReplayContextClass::Unavailable)
+    {
+        RolloutReplayComparability::BlockedInsufficientRolloutContext
+    } else if matches!(source, RolloutReplayContextClass::FallbackOrRollback)
+        != matches!(replay, RolloutReplayContextClass::FallbackOrRollback)
+    {
+        RolloutReplayComparability::NotMeaningfullyComparableAcrossRolloutBoundary
+    } else if source != replay || has_caveat || changed_context {
+        RolloutReplayComparability::ComparableWithRolloutCaveat
+    } else {
+        RolloutReplayComparability::ComparableAcrossRolloutBoundary
+    };
+    RolloutReplayComparisonContext {
+        source,
+        replay,
+        source_hint: source_hint.map(str::to_string),
+        replay_hint: replay_hint.map(str::to_string),
+        comparability,
+    }
 }
 
 fn current_context_descriptor(snapshot: &RuntimeOpsSnapshot) -> ReplayExecutionContextDescriptor {
@@ -2351,8 +2492,9 @@ mod tests {
         ComputeRequestValidationCode, ComputeSubmitOutcome, ComputeSubmitRequest,
         RecoveryDisposition, ReplayContextConsistencyClass, ReplayContextTransition,
         ReplayDeterminismClass, ReplayExecutionMode, ReplayFailureCode, ReplayPreflightIssueCode,
-        ReplayRemoteContextReproducibility, ReplayabilityClass, RuntimeOperation,
-        RuntimeOperationCode, RuntimeOpsState, RuntimeSignalState, RuntimeWarmupState,
+        ReplayRemoteContextReproducibility, ReplayabilityClass, RolloutReplayComparability,
+        RuntimeOperation, RuntimeOperationCode, RuntimeOpsState, RuntimeSignalState,
+        RuntimeWarmupState,
     };
     use crate::pipeline::{CanonicalFailureKind, CanonicalPipelineRequest};
     use crate::{
@@ -3001,6 +3143,31 @@ mod tests {
             .issues
             .iter()
             .any(|issue| issue.code == ReplayPreflightIssueCode::ReplayNotFidelityEquivalent));
+        assert_eq!(
+            preflight.rollout_context.comparability,
+            RolloutReplayComparability::BlockedInsufficientRolloutContext
+        );
+    }
+
+    #[test]
+    fn replay_preflight_marks_missing_rollout_context_as_blocked_for_comparison() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let history_path = dir.path().join("job_history.jsonl");
+        std::fs::write(
+            &history_path,
+            r#"{"schema_version":8,"job_id":52,"submitted_by":"svc","request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101"},"canonical_request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101","budget":{"max_micros":5000,"hard_timeout_micros":5000,"seed":9,"profile_id":0,"global_work_units":65536,"world_units":16384,"sae_units":16384,"ssm_units":16384,"lfm_units":16384,"degrade_policy":"DegradeStages","governor_tier":1}},"lifecycle_state":"completed","completion_class":"completed","execution_path":"LocalCanonical","submitted_at_unix_ms":1,"started_at_unix_ms":2,"finished_at_unix_ms":3,"queue_wait_ms":1,"execution_duration_micros":5,"total_duration_ms":2,"failure_kind":null,"pipeline_state":"ok","execution_lane":"standard","resource_class":"standard","capacity_pressure":"nominal","capacity_queue_disposition":"none","backend_route":{"pack_id":1,"world_backend":1,"sae_backend":1,"ssm_backend":1,"lfm_backend":1},"work_summary":null,"stage_profiles":[],"model_slots":[]}"#,
+        )
+        .expect("history fixture");
+        let entry = CanonicalComputeEntryPoint::with_history_path(
+            InMemoryComputeService::new(crate::pipeline::ComputePipelineBackend::stub()),
+            &history_path,
+        )
+        .expect("entry with history");
+        let preflight = entry.replay_preflight(ComputeJobHandle { job_id: JobId(52) });
+        assert_eq!(
+            preflight.rollout_context.comparability,
+            RolloutReplayComparability::BlockedInsufficientRolloutContext
+        );
     }
 
     #[test]
@@ -3179,6 +3346,39 @@ mod tests {
                 );
             }
             other => panic!("expected not-comparable changed-config result, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn baseline_comparison_marks_rollout_boundary_as_not_meaningful() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let history_path = dir.path().join("job_history.jsonl");
+        std::fs::write(
+            &history_path,
+            concat!(
+                r#"{"schema_version":8,"job_id":70,"submitted_by":"svc","request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101"},"canonical_request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101","budget":{"max_micros":5000,"hard_timeout_micros":5000,"seed":9,"profile_id":0,"global_work_units":65536,"world_units":16384,"sae_units":16384,"ssm_units":16384,"lfm_units":16384,"degrade_policy":"DegradeStages","governor_tier":1}},"lifecycle_state":"completed","completion_class":"completed","execution_path":"LocalCanonical","submitted_at_unix_ms":1,"started_at_unix_ms":2,"finished_at_unix_ms":3,"queue_wait_ms":1,"execution_duration_micros":5,"total_duration_ms":2,"failure_kind":null,"pipeline_state":"ok","execution_lane":"standard","resource_class":"standard","capacity_pressure":"nominal","capacity_queue_disposition":"none","backend_route":{"pack_id":1,"world_backend":1,"sae_backend":1,"ssm_backend":1,"lfm_backend":1},"work_summary":null,"stage_profiles":[],"model_slots":[],"execution_snapshot":{"request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101"},"canonical_request_available":true,"backend_route_available":true,"model_slot_count":0,"path":{"requested_execution_path":"LocalCanonical","executed_execution_path":"LocalCanonical","execution_lane":"standard","resource_class":"standard","was_remote":false,"redispatched_to_local":false,"retry_attempts":0},"rollout":{"active_or_warm_slots":1,"candidate_or_guarded_slots":0,"stale_or_blocked_slots":0,"rollout_context_hint":"active_or_warm"},"result":{"lifecycle_state":"completed","completion_class":"completed","pipeline_state":"ok","failure_kind":null},"readiness":"replay_ready"}}"#,
+                "\n",
+                r#"{"schema_version":8,"job_id":71,"submitted_by":"svc","request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101"},"canonical_request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101","budget":{"max_micros":5000,"hard_timeout_micros":5000,"seed":9,"profile_id":0,"global_work_units":65536,"world_units":16384,"sae_units":16384,"ssm_units":16384,"lfm_units":16384,"degrade_policy":"DegradeStages","governor_tier":1}},"lifecycle_state":"completed","completion_class":"completed","execution_path":"LocalCanonical","submitted_at_unix_ms":4,"started_at_unix_ms":5,"finished_at_unix_ms":6,"queue_wait_ms":1,"execution_duration_micros":5,"total_duration_ms":2,"failure_kind":null,"pipeline_state":"ok","execution_lane":"standard","resource_class":"standard","capacity_pressure":"nominal","capacity_queue_disposition":"none","backend_route":{"pack_id":1,"world_backend":1,"sae_backend":1,"ssm_backend":1,"lfm_backend":1},"work_summary":null,"stage_profiles":[],"model_slots":[],"execution_snapshot":{"request":{"frame_id":1,"t":9,"context_digest_hex":"0101010101010101010101010101010101010101010101010101010101010101"},"canonical_request_available":true,"backend_route_available":true,"model_slot_count":0,"path":{"requested_execution_path":"LocalCanonical","executed_execution_path":"LocalCanonical","execution_lane":"standard","resource_class":"standard","was_remote":false,"redispatched_to_local":false,"retry_attempts":0},"rollout":{"active_or_warm_slots":0,"candidate_or_guarded_slots":0,"stale_or_blocked_slots":1,"rollout_context_hint":"blocked_or_stale"},"result":{"lifecycle_state":"completed","completion_class":"completed","pipeline_state":"ok","failure_kind":null},"readiness":"replay_ready"}}"#
+            ),
+        )
+        .expect("history fixture");
+        let mut entry = CanonicalComputeEntryPoint::with_history_path(
+            InMemoryComputeService::new(crate::pipeline::ComputePipelineBackend::stub()),
+            &history_path,
+        )
+        .expect("entry with history");
+        let compare = entry.compare_against_baseline(
+            ComputeJobHandle { job_id: JobId(71) },
+            BaselineReference::Job(ComputeJobHandle { job_id: JobId(70) }),
+        );
+        match compare {
+            BaselineComparisonResult::NotComparable { code, .. } => {
+                assert_eq!(
+                    code,
+                    BaselineComparisonFailureCode::NotMeaningfulUnderRuntimeChange
+                );
+            }
+            other => panic!("expected rollout-boundary not comparable, got {other:?}"),
         }
     }
 
