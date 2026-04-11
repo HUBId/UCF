@@ -380,13 +380,19 @@ does not introduce a second replay pipeline.
 Replay uses existing job/history persistence (`PersistedJobRecord`) and extends it with minimal
 load-bearing replay fields:
 
-- canonical request snapshot (`input` + budget profile/scalars),
-- execution lane summary,
-- backend route summary,
-- model slot/runtime summary,
-- existing completion/fault/accounting summary.
+- canonical request basis (`request identity` + canonical budget snapshot),
+- executed path snapshot (`requested vs executed path`, lane/resource class, local/remote flag),
+- backend route + model-slot summary from the effective run,
+- rollout hint (`active` vs `guarded/candidate` vs `fallback_or_stale`) derived from slot status,
+- top-level execution result summary (lifecycle/completion/failure/pipeline state),
+- snapshot readiness class: `replay_ready`, `partial`, `insufficient`, `stale_or_incomplete`.
 
 This keeps replay tied to the same history layer used by normal jobs.
+
+`replay_ready` means canonical request + effective execution context are available for bounded
+replay checks. `partial` means replay may still run but only with limited fidelity checks.
+`insufficient` and `stale_or_incomplete` are explicitly non-load-bearing and treated as
+configuration-incomplete replay inputs.
 
 ### Replayability and determinism classes
 
